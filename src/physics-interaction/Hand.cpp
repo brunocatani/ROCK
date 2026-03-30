@@ -339,21 +339,6 @@ namespace frik::rock
 		// Priority: near beats far
 		SelectedObject best = nearCandidate.isValid() ? nearCandidate : farCandidate;
 
-		// Sticky selection bias: if we already have a valid selection and the new candidate
-		// is a DIFFERENT object, only switch if it's significantly closer (30% closer).
-		// This prevents flickering between two equidistant objects every frame.
-		if (best.isValid() && _currentSelection.isValid()
-			&& best.refr != _currentSelection.refr
-			&& !best.isFarSelection && !_currentSelection.isFarSelection) {
-			float stickyThreshold = _currentSelection.distance * 0.7f;
-			if (best.distance > stickyThreshold) {
-				// New candidate is not significantly closer — keep current
-				_currentSelection.distance = _currentSelection.distance;  // no-op, keep as-is
-				_selectionHoldFrames++;
-				return;
-			}
-		}
-
 		if (best.refr == _currentSelection.refr && best.isValid()) {
 			// Same object still detected -- update distance, increment hold counter
 			_currentSelection.distance = best.distance;
@@ -654,15 +639,15 @@ namespace frik::rock
 		}
 	}
 
-	void Hand::updateDebugColliderVis(const RE::NiPoint3& palmPos, bool show, RE::NiNode* parentNode,
+	void Hand::updateDebugSphere(const RE::NiPoint3& palmPos, bool show, RE::NiNode* parentNode,
 		float hx, float hy, float hz, int shapeType)
 	{
 		// Hot-reload: if shape type changed, destroy old and recreate
-		if (_debugColliderVis && _debugColliderVisShape != shapeType) {
-			destroyDebugColliderVis();
+		if (_debugSphere && _debugShapeType != shapeType) {
+			destroyDebugSphere();
 		}
 
-		if (show && !_debugColliderVis && parentNode) {
+		if (show && !_debugSphere && parentNode) {
 			const char* meshPath = nullptr;
 			switch (shapeType) {
 				case 0:  meshPath = "Data/Meshes/ROCK/DebugBox_Trigger256.nif"; break;
@@ -672,14 +657,14 @@ namespace frik::rock
 				case 4:  meshPath = "Data/Meshes/ROCK/DebugBox_VaultSuit.nif"; break;
 				default: meshPath = "Data/Meshes/ROCK/DebugBox_Trigger256.nif"; break;
 			}
-			_debugColliderVis = f4cf::f4vr::getClonedNiNodeForNifFileSetName(meshPath);
-			if (_debugColliderVis) {
-				_debugColliderVis->name = RE::BSFixedString(_isLeft ? "ROCK_DebugL" : "ROCK_DebugR");
-				parentNode->AttachChild(_debugColliderVis, true);
-				_debugColliderVisParent = parentNode;
-				_debugColliderVis->flags.flags &= 0xfffffffffffffffe;
-				_debugColliderVis->local.scale = 1.0f;
-				_debugColliderVisShape = shapeType;
+			_debugSphere = f4cf::f4vr::getClonedNiNodeForNifFileSetName(meshPath);
+			if (_debugSphere) {
+				_debugSphere->name = RE::BSFixedString(_isLeft ? "ROCK_DebugL" : "ROCK_DebugR");
+				parentNode->AttachChild(_debugSphere, true);
+				_debugParentNode = parentNode;
+				_debugSphere->flags.flags &= 0xfffffffffffffffe;
+				_debugSphere->local.scale = 1.0f;
+				_debugShapeType = shapeType;
 				ROCK_LOG_INFO(Hand, "{} debug box created: type={} mesh={}",
 					handName(), shapeType, meshPath);
 			} else {
@@ -688,20 +673,20 @@ namespace frik::rock
 		}
 
 		// Re-parent if the parent node changed (e.g. switched from FRIK bone to wand node)
-		if (_debugColliderVis && parentNode && _debugColliderVisParent != parentNode) {
-			if (_debugColliderVisParent) {
-				_debugColliderVisParent->DetachChild(_debugColliderVis);
+		if (_debugSphere && parentNode && _debugParentNode != parentNode) {
+			if (_debugParentNode) {
+				_debugParentNode->DetachChild(_debugSphere);
 			}
-			parentNode->AttachChild(_debugColliderVis, true);
-			_debugColliderVisParent = parentNode;
+			parentNode->AttachChild(_debugSphere, true);
+			_debugParentNode = parentNode;
 		}
 
-		if (_debugColliderVis && parentNode) {
+		if (_debugSphere && parentNode) {
 			if (show) {
-				_debugColliderVis->flags.flags &= 0xfffffffffffffffe;
+				_debugSphere->flags.flags &= 0xfffffffffffffffe;
 				// Compute local offset: transform world palmPos into parent's local space
 				RE::NiPoint3 offset = palmPos - parentNode->world.translate;
-				_debugColliderVis->local.translate = parentNode->world.rotate.Transpose() * offset;
+				_debugSphere->local.translate = parentNode->world.rotate.Transpose() * offset;
 
 				// Non-uniform scale via rotation matrix to match collision box extents.
 				// Scale factor depends on mesh size. Trigger boxes are 256 game units per side (half=128).
@@ -719,24 +704,24 @@ namespace frik::rock
 				scaledRot.entry[0][2] = 0.0f;
 				scaledRot.entry[1][2] = 0.0f;
 				scaledRot.entry[2][2] = hz * s;
-				_debugColliderVis->local.rotate = scaledRot;
+				_debugSphere->local.rotate = scaledRot;
 			} else {
-				_debugColliderVis->flags.flags |= 0x1;
-				_debugColliderVis->local.scale = 0;
+				_debugSphere->flags.flags |= 0x1;
+				_debugSphere->local.scale = 0;
 			}
 		}
 	}
 
-	void Hand::destroyDebugColliderVis()
+	void Hand::destroyDebugSphere()
 	{
-		if (_debugColliderVis) {
-			_debugColliderVis->flags.flags |= 0x1;
-			_debugColliderVis->local.scale = 0;
-			if (_debugColliderVis->parent) {
-				_debugColliderVis->parent->DetachChild(_debugColliderVis);
+		if (_debugSphere) {
+			_debugSphere->flags.flags |= 0x1;
+			_debugSphere->local.scale = 0;
+			if (_debugSphere->parent) {
+				_debugSphere->parent->DetachChild(_debugSphere);
 			}
-			_debugColliderVis = nullptr;
-			_debugColliderVisParent = nullptr;
+			_debugSphere = nullptr;
+			_debugParentNode = nullptr;
 		}
 	}
 

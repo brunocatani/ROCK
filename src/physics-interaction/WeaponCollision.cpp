@@ -5,6 +5,8 @@
 // Clones Hand.h::createCollision/updateCollisionTransform patterns for FRIK.
 
 #include "WeaponCollision.h"
+
+#include "HavokOffsets.h"
 #include "RockConfig.h"
 
 #include "RE/Bethesda/bhkPhysicsSystem.h"
@@ -248,7 +250,7 @@ namespace frik::rock
 				std::string(depth * 2, ' '), node->name.c_str(), depth);
 
 			auto* fieldAt20 = *reinterpret_cast<void**>(
-				reinterpret_cast<char*>(colObj) + 0x20);
+				reinterpret_cast<char*>(colObj) + offsets::kCollisionObject_PhysSystemPtr);
 			if (fieldAt20 && reinterpret_cast<std::uintptr_t>(fieldAt20) > 0x10000) {
 				auto* physSystem = reinterpret_cast<RE::bhkPhysicsSystem*>(fieldAt20);
 				auto* inst = physSystem->instance;
@@ -341,7 +343,7 @@ namespace frik::rock
 		// 6. Set KEYFRAMED via Bethesda's proper API
 		{
 			typedef void setKeyframed_t(void*, std::uint32_t);
-			static REL::Relocation<setKeyframed_t> setBodyKeyframed{ REL::Offset(0x1DF5CB0) };
+			static REL::Relocation<setKeyframed_t> setBodyKeyframed{ REL::Offset(offsets::kFunc_SetBodyKeyframed) };
 			setBodyKeyframed(world, bodyId.value);
 		}
 
@@ -403,9 +405,8 @@ namespace frik::rock
 		const auto targetPos = niPointToHkVector(weaponTransform.translate);
 
 		// Throttled diagnostic — log weapon body position every ~1s
-		static int posLogCounter = 0;
-		if (++posLogCounter >= 90) {
-			posLogCounter = 0;
+		if (++_posLogCounter >= 90) {
+			_posLogCounter = 0;
 			ROCK_LOG_INFO(Weapon, "updateBodyTransform: niPos=({:.1f},{:.1f},{:.1f}) hkPos=({:.4f},{:.4f},{:.4f}) bodyId={} dt={:.4f}",
 				weaponTransform.translate.x, weaponTransform.translate.y, weaponTransform.translate.z,
 				targetPos.x, targetPos.y, targetPos.z,
@@ -444,7 +445,7 @@ namespace frik::rock
 			typedef void computeHKF_t(void*, std::uint32_t, const float*, const float*,
 				float, float*, float*);
 			static REL::Relocation<computeHKF_t> computeHardKeyFrame{
-				REL::Offset(0x153a6a0) };
+				REL::Offset(offsets::kFunc_ComputeHardKeyFrame) };
 			computeHardKeyFrame(world, _weaponBodyId.value,
 				tgtPos, tgtQuat, dt, linVelOut, angVelOut);
 
@@ -469,7 +470,7 @@ namespace frik::rock
 			auto* linVel = reinterpret_cast<RE::hkVector4f*>(linVelOut);
 			auto* angVel = reinterpret_cast<RE::hkVector4f*>(angVelOut);
 			typedef void setVel_t(void*, std::uint32_t, RE::hkVector4f*, RE::hkVector4f*);
-			static REL::Relocation<setVel_t> setBodyVelocity{ REL::Offset(0x1539F30) };
+			static REL::Relocation<setVel_t> setBodyVelocity{ REL::Offset(offsets::kFunc_SetBodyVelocity) };
 			setBodyVelocity(world, _weaponBodyId.value, linVel, angVel);
 		}
 
@@ -487,11 +488,11 @@ namespace frik::rock
 
 		typedef void setCollisionFilter_t(void*, std::uint32_t, std::uint32_t, std::uint32_t);
 		static REL::Relocation<setCollisionFilter_t> setBodyCollisionFilterInfo{
-			REL::Offset(0x1DF5B80) };
+			REL::Offset(offsets::kFunc_SetBodyCollisionFilterInfo) };
 
 		auto* bodyArray = world->GetBodyArray();
 		auto* handBodyPtr = reinterpret_cast<char*>(&bodyArray[handBodyId.value]);
-		auto currentFilter = *reinterpret_cast<std::uint32_t*>(handBodyPtr + 0x44);
+		auto currentFilter = *reinterpret_cast<std::uint32_t*>(handBodyPtr + offsets::kBody_CollisionFilterInfo);
 		auto newFilter = currentFilter | (1u << 14);
 		setBodyCollisionFilterInfo(world, handBodyId.value, newFilter, 0);
 
@@ -508,11 +509,11 @@ namespace frik::rock
 
 		typedef void setCollisionFilter_t(void*, std::uint32_t, std::uint32_t, std::uint32_t);
 		static REL::Relocation<setCollisionFilter_t> setBodyCollisionFilterInfo{
-			REL::Offset(0x1DF5B80) };
+			REL::Offset(offsets::kFunc_SetBodyCollisionFilterInfo) };
 
 		auto* bodyArray = world->GetBodyArray();
 		auto* handBodyPtr = reinterpret_cast<char*>(&bodyArray[_disabledHandBodyId.value]);
-		auto currentFilter = *reinterpret_cast<std::uint32_t*>(handBodyPtr + 0x44);
+		auto currentFilter = *reinterpret_cast<std::uint32_t*>(handBodyPtr + offsets::kBody_CollisionFilterInfo);
 		auto newFilter = currentFilter & ~(1u << 14);
 		setBodyCollisionFilterInfo(world, _disabledHandBodyId.value, newFilter, 0);
 

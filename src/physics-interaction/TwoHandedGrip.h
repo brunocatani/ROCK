@@ -116,6 +116,9 @@ namespace frik::rock
 		/// Smooth rotation blending factor (0-1, ramps up on grip activation).
 		float _rotationBlend{ 0.0f };
 		static constexpr float ROTATION_BLEND_SPEED = 8.0f;
+
+		// Log throttle counter — reset per-instance for fresh diagnostics each session.
+		int _gripLogCounter{ 0 };
 	};
 
 } // namespace frik::rock

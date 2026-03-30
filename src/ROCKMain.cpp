@@ -136,7 +136,7 @@ namespace
         // Step 2: Clear the ROCKApi pointer.
         rock::api::setPhysicsInteractionInstance(nullptr);
 
-        // Step 3: Delete the instance (destructor calls shutdown/shutdownWithoutDestroy).
+        // Step 3: Delete the instance (destructor calls shutdown).
         delete s_physicsInteraction;
         s_physicsInteraction = nullptr;
 

@@ -52,6 +52,190 @@ namespace
 namespace frik::rock
 {
     // -------------------------------------------------------------------------
+    // resetToDefaults — set all config fields to compiled-in defaults.
+    // -------------------------------------------------------------------------
+    // WHY: Separating the default assignment from INI reading enables the
+    // load()/reload() semantic split. load() resets first so that readValuesFromIni()
+    // falls back to compiled defaults for missing keys. reload() skips the reset so
+    // that readValuesFromIni() falls back to the current runtime value instead.
+    void RockConfig::resetToDefaults()
+    {
+        rockEnabled = true;
+
+        // Hand collision body
+        rockHandCollisionHalfExtentX = 0.06f;
+        rockHandCollisionHalfExtentY = 0.02f;
+        rockHandCollisionHalfExtentZ = 0.015f;
+        rockHandCollisionOffsetX     = 0.0f;
+        rockHandCollisionOffsetY     = 0.086f;
+        rockHandCollisionOffsetZ     = -0.005f;
+        rockHandCollisionBoxRadius   = 0.0f;
+
+        // Palm offset
+        rockPalmOffsetForward = 6.0f;
+        rockPalmOffsetUp      = -2.4f;
+        rockPalmOffsetRight   = 0.0f;
+
+        // Feature toggles
+        rockWeaponCollisionEnabled = false;
+
+        // Debug
+        rockDebugShowColliders  = false;
+        rockDebugColliderShape  = 4;
+        rockDebugVerboseLogging = true;
+
+        // Object detection
+        rockNearDetectionRange = 25.0f;
+        rockFarDetectionRange  = 350.0f;
+
+        // Constraint motors: linear
+        rockGrabLinearTau                  = 0.03f;
+        rockGrabLinearDamping              = 1.0f;
+        rockGrabLinearProportionalRecovery = 4.1f;
+        rockGrabLinearConstantRecovery     = 2.1f;
+
+        // Constraint motors: angular
+        rockGrabAngularTau                  = 0.03f;
+        rockGrabAngularDamping              = 0.8f;
+        rockGrabAngularProportionalRecovery = 4.1f;
+        rockGrabAngularConstantRecovery     = 2.1f;
+
+        // Constraint force
+        rockGrabConstraintMaxForce       = 2000.0f;
+        rockGrabAngularToLinearForceRatio = 12.5f;
+        rockGrabMaxForceToMassRatio      = 500.0f;
+        rockGrabFadeInStartAngularRatio  = 100.0f;
+
+        // Constraint dynamics
+        rockGrabForceFadeInTime = 0.1f;
+        rockGrabTauMin          = 0.01f;
+        rockGrabTauMax          = 0.8f;
+        rockGrabTauLerpSpeed    = 0.5f;
+        rockGrabCloseThreshold  = 2.0f;
+        rockGrabFarThreshold    = 15.0f;
+
+        // Inertia normalization
+        rockGrabMaxInertiaRatio = 10.0f;
+
+        // Grab behavior
+        rockGrabMaxDeviation        = 50.0f;
+        rockGrabMaxDeviationTime    = 2.0f;
+        rockGrabButtonID            = 2;
+        rockThrowVelocityMultiplier = 1.5f;
+        rockGrabVelocityDamping     = 0.1f;
+
+        // Grab offset
+        rockGrabOffsetForward = 0.0f;
+        rockGrabOffsetUp      = 0.0f;
+        rockGrabOffsetRight   = 0.0f;
+
+        // Grab lerp
+        rockGrabLerpSpeed        = 300.0f;
+        rockGrabLerpAngularSpeed = 10.0f;
+        rockGrabLerpMaxTime      = 0.5f;
+
+        // Velocity clamp
+        rockMaxLinearVelocity  = 200.0f;
+        rockMaxAngularVelocity = 500.0f;
+
+        // Character controller
+        rockCharControllerRadiusScale  = 0.7f;
+        rockCollideWithCharControllers = false;
+    }
+
+    // -------------------------------------------------------------------------
+    // readValuesFromIni — single copy of all INI reads.
+    // -------------------------------------------------------------------------
+    // Each GetXxxValue call uses the CURRENT field value as the fallback default.
+    // When called after resetToDefaults(), "current" = compiled default.
+    // When called without reset (reload path), "current" = runtime value.
+    void RockConfig::readValuesFromIni(CSimpleIniA& ini)
+    {
+        // Enable
+        rockEnabled = ini.GetBoolValue(SECTION, "bEnabled", rockEnabled);
+
+        // Hand collision body
+        rockHandCollisionHalfExtentX = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionHalfExtentX", rockHandCollisionHalfExtentX));
+        rockHandCollisionHalfExtentY = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionHalfExtentY", rockHandCollisionHalfExtentY));
+        rockHandCollisionHalfExtentZ = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionHalfExtentZ", rockHandCollisionHalfExtentZ));
+        rockHandCollisionOffsetX     = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionOffsetX",     rockHandCollisionOffsetX));
+        rockHandCollisionOffsetY     = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionOffsetY",     rockHandCollisionOffsetY));
+        rockHandCollisionOffsetZ     = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionOffsetZ",     rockHandCollisionOffsetZ));
+        rockHandCollisionBoxRadius   = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionBoxRadius",   rockHandCollisionBoxRadius));
+
+        // Palm offset
+        rockPalmOffsetForward = static_cast<float>(ini.GetDoubleValue(SECTION, "fPalmOffsetForward", rockPalmOffsetForward));
+        rockPalmOffsetUp      = static_cast<float>(ini.GetDoubleValue(SECTION, "fPalmOffsetUp",      rockPalmOffsetUp));
+        rockPalmOffsetRight   = static_cast<float>(ini.GetDoubleValue(SECTION, "fPalmOffsetRight",   rockPalmOffsetRight));
+
+        // Feature toggles
+        rockWeaponCollisionEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionEnabled", rockWeaponCollisionEnabled);
+
+        // Debug
+        rockDebugShowColliders  = ini.GetBoolValue(SECTION,  "bDebugShowColliders",  rockDebugShowColliders);
+        rockDebugColliderShape  = static_cast<int>(ini.GetLongValue(SECTION, "iDebugColliderShape", rockDebugColliderShape));
+        rockDebugVerboseLogging = ini.GetBoolValue(SECTION,  "bDebugVerboseLogging", rockDebugVerboseLogging);
+
+        // Object detection
+        rockNearDetectionRange = static_cast<float>(ini.GetDoubleValue(SECTION, "fNearDetectionRange", rockNearDetectionRange));
+        rockFarDetectionRange  = static_cast<float>(ini.GetDoubleValue(SECTION, "fFarDetectionRange",  rockFarDetectionRange));
+
+        // Constraint motors: linear
+        rockGrabLinearTau                  = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLinearTau",                  rockGrabLinearTau));
+        rockGrabLinearDamping              = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLinearDamping",              rockGrabLinearDamping));
+        rockGrabLinearProportionalRecovery = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLinearProportionalRecovery", rockGrabLinearProportionalRecovery));
+        rockGrabLinearConstantRecovery     = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLinearConstantRecovery",     rockGrabLinearConstantRecovery));
+
+        // Constraint motors: angular
+        rockGrabAngularTau                  = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularTau",                  rockGrabAngularTau));
+        rockGrabAngularDamping              = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularDamping",              rockGrabAngularDamping));
+        rockGrabAngularProportionalRecovery = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularProportionalRecovery", rockGrabAngularProportionalRecovery));
+        rockGrabAngularConstantRecovery     = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularConstantRecovery",     rockGrabAngularConstantRecovery));
+
+        // Constraint force
+        rockGrabConstraintMaxForce        = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabConstraintMaxForce",        rockGrabConstraintMaxForce));
+        rockGrabAngularToLinearForceRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularToLinearForceRatio", rockGrabAngularToLinearForceRatio));
+        rockGrabMaxForceToMassRatio       = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxForceToMassRatio",       rockGrabMaxForceToMassRatio));
+        rockGrabFadeInStartAngularRatio   = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFadeInStartAngularRatio",   rockGrabFadeInStartAngularRatio));
+
+        // Constraint dynamics
+        rockGrabForceFadeInTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabForceFadeInTime", rockGrabForceFadeInTime));
+        rockGrabTauMin          = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauMin",          rockGrabTauMin));
+        rockGrabTauMax          = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauMax",          rockGrabTauMax));
+        rockGrabTauLerpSpeed    = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauLerpSpeed",    rockGrabTauLerpSpeed));
+        rockGrabCloseThreshold  = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabCloseThreshold",  rockGrabCloseThreshold));
+        rockGrabFarThreshold    = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFarThreshold",    rockGrabFarThreshold));
+
+        // Inertia normalization
+        rockGrabMaxInertiaRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxInertiaRatio", rockGrabMaxInertiaRatio));
+
+        // Grab behavior
+        rockGrabMaxDeviation        = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxDeviation",        rockGrabMaxDeviation));
+        rockGrabMaxDeviationTime    = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxDeviationTime",    rockGrabMaxDeviationTime));
+        rockGrabButtonID            = static_cast<int>(  ini.GetLongValue(  SECTION, "iGrabButtonID",            rockGrabButtonID));
+        rockThrowVelocityMultiplier = static_cast<float>(ini.GetDoubleValue(SECTION, "fThrowVelocityMultiplier", rockThrowVelocityMultiplier));
+        rockGrabVelocityDamping     = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabVelocityDamping",     rockGrabVelocityDamping));
+
+        // Grab offset
+        rockGrabOffsetForward = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabOffsetForward", rockGrabOffsetForward));
+        rockGrabOffsetUp      = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabOffsetUp",      rockGrabOffsetUp));
+        rockGrabOffsetRight   = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabOffsetRight",   rockGrabOffsetRight));
+
+        // Grab lerp
+        rockGrabLerpSpeed        = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLerpSpeed",        rockGrabLerpSpeed));
+        rockGrabLerpAngularSpeed = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLerpAngularSpeed", rockGrabLerpAngularSpeed));
+        rockGrabLerpMaxTime      = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLerpMaxTime",      rockGrabLerpMaxTime));
+
+        // Velocity clamp
+        rockMaxLinearVelocity  = static_cast<float>(ini.GetDoubleValue(SECTION, "fMaxLinearVelocity",  rockMaxLinearVelocity));
+        rockMaxAngularVelocity = static_cast<float>(ini.GetDoubleValue(SECTION, "fMaxAngularVelocity", rockMaxAngularVelocity));
+
+        // Character controller
+        rockCharControllerRadiusScale  = static_cast<float>(ini.GetDoubleValue(SECTION, "fCharControllerRadiusScale",  rockCharControllerRadiusScale));
+        rockCollideWithCharControllers = ini.GetBoolValue(SECTION, "bCollideWithCharControllers", rockCollideWithCharControllers);
+    }
+
+    // -------------------------------------------------------------------------
     // load — resolve path and read all values from disk.
     // -------------------------------------------------------------------------
     void RockConfig::load()
@@ -64,91 +248,10 @@ namespace frik::rock
         const SI_Error rc = ini.LoadFile(_iniFilePath.c_str());
         if (rc < 0) {
             ROCK_LOG_WARN(Config, "ROCK.ini not found or unreadable (code {}), using compiled-in defaults", static_cast<int>(rc));
-            // Fall through — every GetXxxValue call below returns its default argument.
         }
 
-        // --- Enable ---
-        rockEnabled = ini.GetBoolValue(SECTION, "bEnabled", true);
-
-        // --- Hand collision body ---
-        rockHandCollisionHalfExtentX   = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionHalfExtentX",  0.06));
-        rockHandCollisionHalfExtentY   = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionHalfExtentY",  0.02));
-        rockHandCollisionHalfExtentZ   = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionHalfExtentZ",  0.015));
-        rockHandCollisionOffsetX       = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionOffsetX",      0.0));
-        rockHandCollisionOffsetY       = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionOffsetY",      0.086));
-        rockHandCollisionOffsetZ       = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionOffsetZ",     -0.005));
-        rockHandCollisionBoxRadius     = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionBoxRadius",    0.0));
-
-        // --- Palm offset ---
-        rockPalmOffsetForward = static_cast<float>(ini.GetDoubleValue(SECTION, "fPalmOffsetForward",  6.0));
-        rockPalmOffsetUp      = static_cast<float>(ini.GetDoubleValue(SECTION, "fPalmOffsetUp",      -2.4));
-        rockPalmOffsetRight   = static_cast<float>(ini.GetDoubleValue(SECTION, "fPalmOffsetRight",    0.0));
-
-        // --- Feature toggles ---
-        rockWeaponCollisionEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionEnabled", false);
-
-        // --- Debug ---
-        rockDebugShowColliders  = ini.GetBoolValue(SECTION,  "bDebugShowColliders",  false);
-        rockDebugColliderShape  = static_cast<int>(ini.GetLongValue(SECTION, "iDebugColliderShape", 4));
-        rockDebugVerboseLogging = ini.GetBoolValue(SECTION,  "bDebugVerboseLogging", true);
-
-        // --- Object detection ---
-        rockNearDetectionRange = static_cast<float>(ini.GetDoubleValue(SECTION, "fNearDetectionRange",  25.0));
-        rockFarDetectionRange  = static_cast<float>(ini.GetDoubleValue(SECTION, "fFarDetectionRange",  350.0));
-
-        // --- Constraint motors: linear ---
-        rockGrabLinearTau                   = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLinearTau",                   0.03));
-        rockGrabLinearDamping               = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLinearDamping",               1.0));
-        rockGrabLinearProportionalRecovery  = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLinearProportionalRecovery",  4.1));
-        rockGrabLinearConstantRecovery      = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLinearConstantRecovery",      2.1));
-
-        // --- Constraint motors: angular ---
-        rockGrabAngularTau                   = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularTau",                   0.03));
-        rockGrabAngularDamping               = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularDamping",               0.8));
-        rockGrabAngularProportionalRecovery  = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularProportionalRecovery",  4.1));
-        rockGrabAngularConstantRecovery      = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularConstantRecovery",      2.1));
-
-        // --- Constraint force ---
-        rockGrabConstraintMaxForce        = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabConstraintMaxForce",        2000.0));
-        rockGrabAngularToLinearForceRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularToLinearForceRatio",   12.5));
-        rockGrabMaxForceToMassRatio       = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxForceToMassRatio",        500.0));
-        rockGrabFadeInStartAngularRatio   = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFadeInStartAngularRatio",    100.0));
-
-        // --- Constraint dynamics ---
-        rockGrabForceFadeInTime  = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabForceFadeInTime",  0.1));
-        rockGrabTauMin           = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauMin",           0.01));
-        rockGrabTauMax           = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauMax",           0.8));
-        rockGrabTauLerpSpeed     = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauLerpSpeed",     0.5));
-        rockGrabCloseThreshold   = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabCloseThreshold",   2.0));
-        rockGrabFarThreshold     = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFarThreshold",    15.0));
-
-        // --- Inertia normalization ---
-        rockGrabMaxInertiaRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxInertiaRatio", 10.0));
-
-        // --- Grab behavior ---
-        rockGrabMaxDeviation          = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxDeviation",          50.0));
-        rockGrabMaxDeviationTime      = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxDeviationTime",       2.0));
-        rockGrabButtonID              = static_cast<int>(  ini.GetLongValue(  SECTION, "iGrabButtonID",               2));
-        rockThrowVelocityMultiplier   = static_cast<float>(ini.GetDoubleValue(SECTION, "fThrowVelocityMultiplier",    1.5));
-        rockGrabVelocityDamping       = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabVelocityDamping",        0.1));
-
-        // --- Grab offset ---
-        rockGrabOffsetForward = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabOffsetForward", 0.0));
-        rockGrabOffsetUp      = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabOffsetUp",      0.0));
-        rockGrabOffsetRight   = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabOffsetRight",   0.0));
-
-        // --- Grab lerp ---
-        rockGrabLerpSpeed        = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLerpSpeed",        300.0));
-        rockGrabLerpAngularSpeed = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLerpAngularSpeed",  10.0));
-        rockGrabLerpMaxTime      = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLerpMaxTime",        0.5));
-
-        // --- Velocity clamp ---
-        rockMaxLinearVelocity  = static_cast<float>(ini.GetDoubleValue(SECTION, "fMaxLinearVelocity",  200.0));
-        rockMaxAngularVelocity = static_cast<float>(ini.GetDoubleValue(SECTION, "fMaxAngularVelocity", 500.0));
-
-        // --- Character controller ---
-        rockCharControllerRadiusScale    = static_cast<float>(ini.GetDoubleValue(SECTION, "fCharControllerRadiusScale",   0.7));
-        rockCollideWithCharControllers   = ini.GetBoolValue(SECTION, "bCollideWithCharControllers", false);
+        resetToDefaults();
+        readValuesFromIni(ini);
 
         ROCK_LOG_INFO(Config, "ROCK config loaded (rockEnabled={})", rockEnabled);
 
@@ -159,21 +262,16 @@ namespace frik::rock
     // -------------------------------------------------------------------------
     // reload — re-read the INI file that was resolved by load().
     // -------------------------------------------------------------------------
+    // Unlike load(), reload() does NOT call resetToDefaults() first. This means
+    // readValuesFromIni() falls back to current runtime values for missing keys,
+    // preserving tuned values that were removed from the INI during a live edit.
     void RockConfig::reload()
     {
-        // NOTE: Unlike load(), reload() uses the current field value as the fallback default
-        // when a key is missing from the INI. This means:
-        //   - load(): missing key → compiled-in default (e.g., rockEnabled defaults to true)
-        //   - reload(): missing key → current runtime value is preserved
-        // This is intentional: reload() should not reset tuned values just because
-        // a key was removed from the INI file during a live edit session.
-
         if (_iniFilePath.empty()) {
             ROCK_LOG_WARN(Config, "reload() called before load() — delegating to load()");
             load();
             return;
         }
-        ROCK_LOG_INFO(Config, "Reloading ROCK config from: {}", _iniFilePath);
 
         CSimpleIniA ini;
         ini.SetUnicode(false);
@@ -183,76 +281,7 @@ namespace frik::rock
             return;
         }
 
-        // Re-read every value.  Duplicating the call block here (rather than extracting to a shared
-        // helper that takes a CSimpleIniA&) keeps the load/reload paths independently readable and
-        // avoids introducing a mutable reference pathway that could be misused in future.
-        rockEnabled = ini.GetBoolValue(SECTION, "bEnabled", rockEnabled);
-
-        rockHandCollisionHalfExtentX   = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionHalfExtentX",  rockHandCollisionHalfExtentX));
-        rockHandCollisionHalfExtentY   = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionHalfExtentY",  rockHandCollisionHalfExtentY));
-        rockHandCollisionHalfExtentZ   = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionHalfExtentZ",  rockHandCollisionHalfExtentZ));
-        rockHandCollisionOffsetX       = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionOffsetX",      rockHandCollisionOffsetX));
-        rockHandCollisionOffsetY       = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionOffsetY",      rockHandCollisionOffsetY));
-        rockHandCollisionOffsetZ       = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionOffsetZ",      rockHandCollisionOffsetZ));
-        rockHandCollisionBoxRadius     = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionBoxRadius",    rockHandCollisionBoxRadius));
-
-        rockPalmOffsetForward = static_cast<float>(ini.GetDoubleValue(SECTION, "fPalmOffsetForward", rockPalmOffsetForward));
-        rockPalmOffsetUp      = static_cast<float>(ini.GetDoubleValue(SECTION, "fPalmOffsetUp",      rockPalmOffsetUp));
-        rockPalmOffsetRight   = static_cast<float>(ini.GetDoubleValue(SECTION, "fPalmOffsetRight",   rockPalmOffsetRight));
-
-        rockWeaponCollisionEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionEnabled", rockWeaponCollisionEnabled);
-
-        rockDebugShowColliders  = ini.GetBoolValue(SECTION, "bDebugShowColliders",  rockDebugShowColliders);
-        rockDebugColliderShape  = static_cast<int>(ini.GetLongValue(SECTION, "iDebugColliderShape", rockDebugColliderShape));
-        rockDebugVerboseLogging = ini.GetBoolValue(SECTION, "bDebugVerboseLogging", rockDebugVerboseLogging);
-
-        rockNearDetectionRange = static_cast<float>(ini.GetDoubleValue(SECTION, "fNearDetectionRange", rockNearDetectionRange));
-        rockFarDetectionRange  = static_cast<float>(ini.GetDoubleValue(SECTION, "fFarDetectionRange",  rockFarDetectionRange));
-
-        rockGrabLinearTau                   = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLinearTau",                  rockGrabLinearTau));
-        rockGrabLinearDamping               = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLinearDamping",              rockGrabLinearDamping));
-        rockGrabLinearProportionalRecovery  = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLinearProportionalRecovery", rockGrabLinearProportionalRecovery));
-        rockGrabLinearConstantRecovery      = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLinearConstantRecovery",     rockGrabLinearConstantRecovery));
-
-        rockGrabAngularTau                   = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularTau",                  rockGrabAngularTau));
-        rockGrabAngularDamping               = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularDamping",              rockGrabAngularDamping));
-        rockGrabAngularProportionalRecovery  = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularProportionalRecovery", rockGrabAngularProportionalRecovery));
-        rockGrabAngularConstantRecovery      = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularConstantRecovery",     rockGrabAngularConstantRecovery));
-
-        rockGrabConstraintMaxForce        = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabConstraintMaxForce",       rockGrabConstraintMaxForce));
-        rockGrabAngularToLinearForceRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularToLinearForceRatio",rockGrabAngularToLinearForceRatio));
-        rockGrabMaxForceToMassRatio       = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxForceToMassRatio",      rockGrabMaxForceToMassRatio));
-        rockGrabFadeInStartAngularRatio   = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFadeInStartAngularRatio",  rockGrabFadeInStartAngularRatio));
-
-        rockGrabForceFadeInTime  = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabForceFadeInTime",  rockGrabForceFadeInTime));
-        rockGrabTauMin           = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauMin",           rockGrabTauMin));
-        rockGrabTauMax           = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauMax",           rockGrabTauMax));
-        rockGrabTauLerpSpeed     = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauLerpSpeed",     rockGrabTauLerpSpeed));
-        rockGrabCloseThreshold   = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabCloseThreshold",   rockGrabCloseThreshold));
-        rockGrabFarThreshold     = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFarThreshold",     rockGrabFarThreshold));
-
-        rockGrabMaxInertiaRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxInertiaRatio", rockGrabMaxInertiaRatio));
-
-        rockGrabMaxDeviation        = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxDeviation",       rockGrabMaxDeviation));
-        rockGrabMaxDeviationTime    = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxDeviationTime",   rockGrabMaxDeviationTime));
-        rockGrabButtonID            = static_cast<int>(  ini.GetLongValue(  SECTION, "iGrabButtonID",           rockGrabButtonID));
-        rockThrowVelocityMultiplier = static_cast<float>(ini.GetDoubleValue(SECTION, "fThrowVelocityMultiplier",rockThrowVelocityMultiplier));
-        rockGrabVelocityDamping     = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabVelocityDamping",    rockGrabVelocityDamping));
-
-        rockGrabOffsetForward = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabOffsetForward", rockGrabOffsetForward));
-        rockGrabOffsetUp      = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabOffsetUp",      rockGrabOffsetUp));
-        rockGrabOffsetRight   = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabOffsetRight",   rockGrabOffsetRight));
-
-        rockGrabLerpSpeed        = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLerpSpeed",        rockGrabLerpSpeed));
-        rockGrabLerpAngularSpeed = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLerpAngularSpeed", rockGrabLerpAngularSpeed));
-        rockGrabLerpMaxTime      = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLerpMaxTime",      rockGrabLerpMaxTime));
-
-        rockMaxLinearVelocity  = static_cast<float>(ini.GetDoubleValue(SECTION, "fMaxLinearVelocity",  rockMaxLinearVelocity));
-        rockMaxAngularVelocity = static_cast<float>(ini.GetDoubleValue(SECTION, "fMaxAngularVelocity", rockMaxAngularVelocity));
-
-        rockCharControllerRadiusScale  = static_cast<float>(ini.GetDoubleValue(SECTION, "fCharControllerRadiusScale",  rockCharControllerRadiusScale));
-        rockCollideWithCharControllers = ini.GetBoolValue(SECTION, "bCollideWithCharControllers", rockCollideWithCharControllers);
-
+        readValuesFromIni(ini);
         ROCK_LOG_INFO(Config, "ROCK config reloaded (rockEnabled={})", rockEnabled);
     }
 
@@ -283,7 +312,12 @@ namespace frik::rock
             return;
         }
 
-        std::thread([this]() {
+        // Join any previous init thread before starting a new one.
+        if (_fileWatchInitThread.joinable()) {
+            _fileWatchInitThread.join();
+        }
+
+        _fileWatchInitThread = std::thread([this]() {
             ROCK_LOG_INFO(Config, "Starting file watch on '{}'", _iniFilePath);
 
             _fileWatch = std::make_unique<filewatch::FileWatch<std::string>>(
@@ -329,7 +363,12 @@ namespace frik::rock
                         subscriber(key);
                     }
                 });
-        }).detach();
+        });
+
+        // The thread's only job is to construct the FileWatch (which sets up the OS watch
+        // handle). Once that returns, FileWatch's internal monitoring thread takes over.
+        // Join here so we never have a detached thread capturing 'this'.
+        _fileWatchInitThread.join();
     }
 
     // -------------------------------------------------------------------------
@@ -337,6 +376,9 @@ namespace frik::rock
     // -------------------------------------------------------------------------
     void RockConfig::stopFileWatch()
     {
+        if (_fileWatchInitThread.joinable()) {
+            _fileWatchInitThread.join();
+        }
         if (_fileWatch) {
             ROCK_LOG_INFO(Config, "Stopping file watch on ROCK.ini");
             _fileWatch.reset();

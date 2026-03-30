@@ -10,7 +10,6 @@
 // Phase 2: Near/far object detection, selection with hysteresis, touch state, F4SE events.
 
 #include <atomic>
-#include <chrono>
 #include <unordered_set>
 
 #include "Hand.h"
@@ -76,12 +75,9 @@ namespace frik::rock
 		/// Called every frame after FRIK's full skeleton update.
 		void update();
 
-		/// Called before FRIK destroys its skeleton (PA transition, cell change, etc.).
+		/// Shut down the physics module. Destroys Havok bodies if the world is still valid,
+		/// otherwise just resets internal state. Caller does not need to know world state.
 		void shutdown();
-
-		/// Shutdown path for cell transitions — resets state without calling DestroyBodies.
-		/// The old hknpWorld is already destroyed, so we must NOT touch it.
-		void shutdownWithoutDestroy();
 
 		bool isInitialized() const { return _initialized; }
 
@@ -106,6 +102,10 @@ namespace frik::rock
 		const Hand& getLeftHand() const { return _leftHand; }
 
 	private:
+		/// Validate critical memory offsets at startup. Fails fast with clear error
+		/// if memory layout changed (e.g., game update) instead of crashing during gameplay.
+		bool validateCriticalOffsets() const;
+
 		/// Get the bhkWorld for the player's current cell.
 		RE::bhkWorld* getPlayerBhkWorld() const;
 
@@ -146,12 +146,6 @@ namespace frik::rock
 			RE::TESObjectREFR* refr = nullptr, std::uint32_t formID = 0,
 			std::uint32_t layer = 0);
 
-		/// Install hooks (once, not per-init).
-		static void installBumpHook();
-		static void installCCRadiusHook();
-		static void installNativeGrabHook();
-		static void installRefreshManifoldHook();
-
 		/// Static contact callback — dispatches to instance method.
 		static void onContactCallback(void* userData, void** worldPtrHolder, void* contactEventData);
 
@@ -183,8 +177,7 @@ namespace frik::rock
 		/// Cached bhkWorld pointer — refreshed each frame, NEVER used across frames.
 		RE::bhkWorld* _cachedBhkWorld = nullptr;
 
-		/// Frame timing for velocity computation.
-		std::chrono::steady_clock::time_point _prevFrameTime = std::chrono::steady_clock::now();
+		/// Frame timing for velocity computation — sourced from FRIK's getFrameTime().
 		float _deltaTime = 1.0f / 90.0f;  // default to 90Hz VR
 
 		/// Contact event logging throttle (modified on physics thread via handleContactEvent).
@@ -209,5 +202,9 @@ namespace frik::rock
 		RE::NiPoint3 _prevSmoothedPos;
 		int _deltaLogCounter = 0;
 		bool _hasPrevPositions = false;
+
+		// Log throttle counters — reset per-instance for fresh diagnostics each session.
+		int _wpnNodeLogCounter = 0;
+		int _wandDiagFrame = 0;
 	};
 }

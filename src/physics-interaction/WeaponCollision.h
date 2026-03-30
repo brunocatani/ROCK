@@ -120,6 +120,9 @@ namespace frik::rock
 		// Deferred body creation retry counter (throttles retries to ~1/sec)
 		int _retryCounter{ 0 };
 
+		// Log throttle counter — reset per-instance for fresh diagnostics each session.
+		int _posLogCounter{ 0 };
+
 		// Dominant hand collision disable state
 		bool _dominantHandDisabled{ false };
 		RE::hknpBodyId _disabledHandBodyId{ INVALID_BODY_ID };

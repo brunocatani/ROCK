@@ -72,6 +72,10 @@ namespace frik::rock
 	};
 	static_assert(sizeof(HkPositionMotor) == 0x30);
 
+	/// Size of HkPositionMotor as allocated by Havok heap (Ghidra-verified: 0x30 bytes).
+	/// Used by havokHeapFree to pass correct deallocation size.
+	constexpr std::size_t HK_POSITION_MOTOR_SIZE = 0x30;
+
 	/// Vtable address for hkpPositionConstraintMotor (Ghidra-verified).
 	inline constexpr std::uintptr_t MOTOR_VTABLE_POSITION = 0x142e95fe8;
 

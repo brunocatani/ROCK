@@ -1,4 +1,6 @@
 #include "GrabConstraint.h"
+
+#include "HavokOffsets.h"
 #include "RockConfig.h"
 
 // GrabConstraint.cpp — Custom grab constraint for ROCK (clean rewrite).
@@ -70,7 +72,7 @@ namespace frik::rock
 		float proportionalRecoveryVelocity, float constantRecoveryVelocity,
 		float minForce, float maxForce)
 	{
-		auto* motor = static_cast<HkPositionMotor*>(havokHeapAlloc(0x30));
+		auto* motor = static_cast<HkPositionMotor*>(havokHeapAlloc(HK_POSITION_MOTOR_SIZE));
 		if (!motor) {
 			ROCK_LOG_ERROR(GrabConstraint, "Failed to allocate position motor");
 			return nullptr;
@@ -258,6 +260,16 @@ namespace frik::rock
 		}
 
 		s_vtableBuilt = true;
+
+		// Harden: remove write permission from executable shellcode pages.
+		// Follows NX best practices — writable+executable memory is a security risk.
+		DWORD oldProtect;
+		for (int i = 0; i < s_shellcodeCount; i++) {
+			if (s_shellcodeBlocks[i]) {
+				VirtualProtect(s_shellcodeBlocks[i], 16, PAGE_EXECUTE_READ, &oldProtect);
+			}
+		}
+
 		ROCK_LOG_INFO(GrabConstraint, "Custom vtable built at {:p} (6 overrides: getType/isValid/getConstraintInfo/setSolvingMethod/getRuntimeInfo/addInstance)",
 			(void*)s_customVtable);
 	}
@@ -416,10 +428,10 @@ namespace frik::rock
 			// --- TransformA: IDENTITY rotation + pivotA ---
 			// HIGGS uses identity rotation for the hand body's constraint frame.
 			// This means LinMotor/AngMotor axes align with the hand body's own axes.
-			auto* tA_col0 = reinterpret_cast<float*>(header + 0x30);
-			auto* tA_col1 = reinterpret_cast<float*>(header + 0x40);
-			auto* tA_col2 = reinterpret_cast<float*>(header + 0x50);
-			auto* tA_pos  = reinterpret_cast<float*>(header + 0x60);
+			auto* tA_col0 = reinterpret_cast<float*>(header + offsets::kTransformA_Col0);
+			auto* tA_col1 = reinterpret_cast<float*>(header + offsets::kTransformA_Col1);
+			auto* tA_col2 = reinterpret_cast<float*>(header + offsets::kTransformA_Col2);
+			auto* tA_pos  = reinterpret_cast<float*>(header + offsets::kTransformA_Pos);
 
 			// Identity rotation columns
 			tA_col0[0] = 1.0f; tA_col0[1] = 0.0f; tA_col0[2] = 0.0f; tA_col0[3] = 0.0f;
@@ -445,10 +457,10 @@ namespace frik::rock
 			// PRE-1 result: GetRigidBodyTLocalTransform = identity in FO4VR
 			// Simplified: transformB.rotation = Inverse(grabHandSpace).rotation
 			// = Transpose(grabHandSpace.rotation) (rotation inverse = transpose for orthonormal)
-			auto* tB_col0 = reinterpret_cast<float*>(header + 0x70);
-			auto* tB_col1 = reinterpret_cast<float*>(header + 0x80);
-			auto* tB_col2 = reinterpret_cast<float*>(header + 0x90);
-			auto* tB_pos  = reinterpret_cast<float*>(header + 0xA0);
+			auto* tB_col0 = reinterpret_cast<float*>(header + offsets::kTransformB_Col0);
+			auto* tB_col1 = reinterpret_cast<float*>(header + offsets::kTransformB_Col1);
+			auto* tB_col2 = reinterpret_cast<float*>(header + offsets::kTransformB_Col2);
+			auto* tB_pos  = reinterpret_cast<float*>(header + offsets::kTransformB_Pos);
 
 			{
 				// Inverse(grabHandSpace).rotation = Transpose(grabHandSpace.rotate)
@@ -521,8 +533,8 @@ namespace frik::rock
 
 		if (!angMotor || !linMotor) {
 			ROCK_LOG_ERROR(GrabConstraint, "Motor creation failed — aborting");
-			if (angMotor) havokHeapFree(angMotor, 0x30);
-			if (linMotor) havokHeapFree(linMotor, 0x30);
+			if (angMotor) havokHeapFree(angMotor, HK_POSITION_MOTOR_SIZE);
+			if (linMotor) havokHeapFree(linMotor, HK_POSITION_MOTOR_SIZE);
 			havokHeapFree(cd, GRAB_CONSTRAINT_SIZE);
 			return result;
 		}
@@ -612,10 +624,10 @@ namespace frik::rock
 		// Motors are shared (same instance for all 3 axes), so free once each.
 		// Ghidra: dealloc takes 3 args (allocator, ptr, size).
 		if (constraint.angularMotor) {
-			havokHeapFree(constraint.angularMotor, 0x30);  // sizeof(HkPositionMotor)
+			havokHeapFree(constraint.angularMotor, HK_POSITION_MOTOR_SIZE);
 		}
 		if (constraint.linearMotor && constraint.linearMotor != constraint.angularMotor) {
-			havokHeapFree(constraint.linearMotor, 0x30);
+			havokHeapFree(constraint.linearMotor, HK_POSITION_MOTOR_SIZE);
 		}
 		if (constraint.constraintData) {
 			havokHeapFree(constraint.constraintData, GRAB_CONSTRAINT_SIZE);  // 0x168
@@ -665,7 +677,7 @@ namespace frik::rock
 
 		// Motion array at world+0xE0, stride 0x80 bytes
 		auto* worldBytes = reinterpret_cast<char*>(world);
-		auto* motionArrayPtr = *reinterpret_cast<char**>(worldBytes + 0xE0);
+		auto* motionArrayPtr = *reinterpret_cast<char**>(worldBytes + offsets::kHknpWorld_MotionArrayPtr);
 		if (!motionArrayPtr) return;
 
 		auto* motion = motionArrayPtr + motionIndex * 0x80;
@@ -732,7 +744,7 @@ namespace frik::rock
 		if (motionIndex == 0 || motionIndex > 4096) return;
 
 		auto* worldBytes = reinterpret_cast<char*>(world);
-		auto* motionArrayPtr = *reinterpret_cast<char**>(worldBytes + 0xE0);
+		auto* motionArrayPtr = *reinterpret_cast<char**>(worldBytes + offsets::kHknpWorld_MotionArrayPtr);
 		if (!motionArrayPtr) return;
 
 		auto* motion = motionArrayPtr + motionIndex * 0x80;

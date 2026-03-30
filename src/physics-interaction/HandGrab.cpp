@@ -1,5 +1,7 @@
 #include "Hand.h"
 
+#include "HavokOffsets.h"
+
 // HandGrab.cpp — Grab lifecycle methods for the ROCK Hand class.
 //
 // WHY: HIGGS uses dynamic constraint-based grabs — the object stays DYNAMIC and
@@ -84,7 +86,7 @@ namespace frik::rock
 		_savedObjectState.bodyId = objectBodyId;
 		_savedObjectState.refr = sel.refr;
 		_savedObjectState.originalFilterInfo = *reinterpret_cast<std::uint32_t*>(
-			reinterpret_cast<char*>(&body) + 0x44);
+			reinterpret_cast<char*>(&body) + offsets::kBody_CollisionFilterInfo);
 
 		auto* baseObj = sel.refr->GetObjectReference();
 		const char* objName = "(unnamed)";
@@ -113,7 +115,7 @@ namespace frik::rock
 				// Read full state
 				std::uint32_t bodyFlags = *reinterpret_cast<std::uint32_t*>(bodyPtr + 0x40);
 				std::uint8_t bodyMotionPropsId = *reinterpret_cast<std::uint8_t*>(bodyPtr + 0x72);
-				std::uint16_t motionPropsId = *reinterpret_cast<std::uint16_t*>(motionPtr + 0x38);
+				std::uint16_t motionPropsId = *reinterpret_cast<std::uint16_t*>(motionPtr + offsets::kMotion_PropertiesId);
 				std::uint16_t maxLinVelPacked = *reinterpret_cast<std::uint16_t*>(motionPtr + 0x3A);
 				std::uint16_t maxAngVelPacked = *reinterpret_cast<std::uint16_t*>(motionPtr + 0x3C);
 
@@ -200,7 +202,7 @@ namespace frik::rock
 					setBodyMotionProperties(world, objectBodyId.value, 1);
 
 					// Verify it took effect
-					std::uint16_t newPropsId = *reinterpret_cast<std::uint16_t*>(motionPtr + 0x38);
+					std::uint16_t newPropsId = *reinterpret_cast<std::uint16_t*>(motionPtr + offsets::kMotion_PropertiesId);
 					ROCK_LOG_INFO(Hand, "{} hand MOTION CONVERT: {} → {} (DYNAMIC preset)",
 						handName(), motionPropsId, newPropsId);
 				}
@@ -386,7 +388,7 @@ namespace frik::rock
 		{
 			alignas(16) float zeroVel[4] = { 0, 0, 0, 0 };
 			typedef void setVel_t(void*, std::uint32_t, const float*, const float*);
-			static REL::Relocation<setVel_t> setBodyVelocity{ REL::Offset(0x1539F30) };
+			static REL::Relocation<setVel_t> setBodyVelocity{ REL::Offset(offsets::kFunc_SetBodyVelocity) };
 			setBodyVelocity(world, objectBodyId.value, zeroVel, zeroVel);
 
 			// Zero velocity on ALL held bodies (weapon children: scope, barrel, stock)
@@ -408,11 +410,11 @@ namespace frik::rock
 		{
 			typedef void setCollisionFilter_t(void*, std::uint32_t, std::uint32_t, std::uint32_t);
 			static REL::Relocation<setCollisionFilter_t> setBodyCollisionFilterInfo{
-				REL::Offset(0x1DF5B80) };  // hknpBSWorld::setBodyCollisionFilterInfo
+				REL::Offset(offsets::kFunc_SetBodyCollisionFilterInfo) };
 
 			auto* bodyArray = world->GetBodyArray();
 			auto* handBodyPtr = reinterpret_cast<char*>(&bodyArray[_collisionBodyId.value]);
-			auto currentFilter = *reinterpret_cast<std::uint32_t*>(handBodyPtr + 0x44);
+			auto currentFilter = *reinterpret_cast<std::uint32_t*>(handBodyPtr + offsets::kBody_CollisionFilterInfo);
 			auto newFilter = currentFilter | (1u << 14);  // bit 14 = no-collision flag
 			setBodyCollisionFilterInfo(world, _collisionBodyId.value, newFilter, 0);  // 0 = rebuild caches
 			ROCK_LOG_INFO(Hand, "{} hand: disabled hand collision (bit 14 + broadphase rebuild) filter=0x{:08X}",
@@ -469,10 +471,10 @@ namespace frik::rock
 		// --- Log constraint data for debugging ---
 		{
 			auto* cd = static_cast<char*>(_activeConstraint.constraintData);
-			float* pivotA = reinterpret_cast<float*>(cd + 0x60);
-			float* pivotB = reinterpret_cast<float*>(cd + 0xA0);
-			float* tA_col0 = reinterpret_cast<float*>(cd + 0x30);
-			float* tB_col0 = reinterpret_cast<float*>(cd + 0x70);
+			float* pivotA = reinterpret_cast<float*>(cd + offsets::kTransformA_Pos);
+			float* pivotB = reinterpret_cast<float*>(cd + offsets::kTransformB_Pos);
+			float* tA_col0 = reinterpret_cast<float*>(cd + offsets::kTransformA_Col0);
+			float* tB_col0 = reinterpret_cast<float*>(cd + offsets::kTransformB_Col0);
 			ROCK_LOG_INFO(Hand, "{} DIAG: pivotA=({:.3f},{:.3f},{:.3f}) pivotB=({:.3f},{:.3f},{:.3f})",
 				handName(),
 				pivotA[0], pivotA[1], pivotA[2],
@@ -655,7 +657,7 @@ namespace frik::rock
 				constexpr float kHavokScale = 1.0f / 70.0f;
 				float combinedScale = objScale * kHavokScale;
 
-				auto* pivotB = reinterpret_cast<float*>(cd + 0xA0);
+				auto* pivotB = reinterpret_cast<float*>(cd + offsets::kTransformB_Pos);
 
 				// DIAGNOSTIC: Log the pivotB before and after the per-frame update.
 				// If these differ significantly on the first frame, that's the oscillation cause.
@@ -687,9 +689,9 @@ namespace frik::rock
 			// (keeps constraint internal state consistent)
 			// Atomic 16-byte writes (C3 fix — see angular target comment above)
 			{
-				auto* tB_col0 = reinterpret_cast<float*>(cd + 0x70);
-				auto* tB_col1 = reinterpret_cast<float*>(cd + 0x80);
-				auto* tB_col2 = reinterpret_cast<float*>(cd + 0x90);
+				auto* tB_col0 = reinterpret_cast<float*>(cd + offsets::kTransformB_Col0);
+				auto* tB_col1 = reinterpret_cast<float*>(cd + offsets::kTransformB_Col1);
+				auto* tB_col2 = reinterpret_cast<float*>(cd + offsets::kTransformB_Col2);
 				alignas(16) float c0[4] = { invRot.entry[0][0], invRot.entry[1][0], invRot.entry[2][0], 0.0f };
 				alignas(16) float c1[4] = { invRot.entry[0][1], invRot.entry[1][1], invRot.entry[2][1], 0.0f };
 				alignas(16) float c2[4] = { invRot.entry[0][2], invRot.entry[1][2], invRot.entry[2][2], 0.0f };
@@ -938,11 +940,11 @@ namespace frik::rock
 		if (world && hasCollisionBody()) {
 			typedef void setCollisionFilter_t(void*, std::uint32_t, std::uint32_t, std::uint32_t);
 			static REL::Relocation<setCollisionFilter_t> setBodyCollisionFilterInfo{
-				REL::Offset(0x1DF5B80) };  // hknpBSWorld::setBodyCollisionFilterInfo
+				REL::Offset(offsets::kFunc_SetBodyCollisionFilterInfo) };
 
 			auto* bodyArray = world->GetBodyArray();
 			auto* handBodyPtr = reinterpret_cast<char*>(&bodyArray[_collisionBodyId.value]);
-			auto currentFilter = *reinterpret_cast<std::uint32_t*>(handBodyPtr + 0x44);
+			auto currentFilter = *reinterpret_cast<std::uint32_t*>(handBodyPtr + offsets::kBody_CollisionFilterInfo);
 			auto newFilter = currentFilter & ~(1u << 14);
 			setBodyCollisionFilterInfo(world, _collisionBodyId.value, newFilter, 0);  // 0 = rebuild caches
 			ROCK_LOG_INFO(Hand, "{} hand: re-enabled hand collision (bit 14 cleared + broadphase rebuild) filter=0x{:08X}",

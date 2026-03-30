@@ -22,8 +22,13 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <thread>
 #include <unordered_map>
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <SimpleIni.h>
 #include <thomasmonkman-filewatch/FileWatch.hpp>
 
 namespace frik::rock
@@ -31,6 +36,8 @@ namespace frik::rock
     class RockConfig
     {
     public:
+        ~RockConfig() { stopFileWatch(); }
+
         // Load (or reload) values from ROCK.ini on disk.
         // On first call this also resolves the INI path via SHGetFolderPath.
         // Missing keys silently fall back to the compiled-in defaults below.
@@ -147,6 +154,12 @@ namespace frik::rock
         bool rockCollideWithCharControllers = false;    // Hand collision with NPC character controllers
 
     private:
+        /// Reset all config fields to compiled-in defaults.
+        void resetToDefaults();
+
+        /// Read all config fields from INI, falling back to current field values.
+        void readValuesFromIni(CSimpleIniA& ini);
+
         // Start filesystem watch on the INI file for live hot-reload.
         // Called once at the end of load() after the INI path is resolved.
         void startFileWatch();
@@ -167,6 +180,9 @@ namespace frik::rock
         // Self-write suppression: set to true before ROCK writes to the INI,
         // so the file-watch callback skips the resulting change event.
         std::atomic<bool> _ignoreNextIniFileChange = false;
+
+        /// Thread used to create FileWatch (joined after construction).
+        std::thread _fileWatchInitThread;
     };
 
     // Module-wide singleton — mirrors the g_config pattern in FRIK.

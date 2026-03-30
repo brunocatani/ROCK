@@ -344,9 +344,8 @@ namespace frik::rock
 		}
 
 		// --- Diagnostic log (throttled) ---
-		static int gripLogCounter = 0;
-		if (++gripLogCounter >= 90) {
-			gripLogCounter = 0;
+		if (++_gripLogCounter >= 90) {
+			_gripLogCounter = 0;
 			float separation = std::sqrt(dot(sub(primaryGripFinal, offhandGripFinal),
 				sub(primaryGripFinal, offhandGripFinal)));
 			ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: blend={:.2f}, separation={:.1f}gu, "

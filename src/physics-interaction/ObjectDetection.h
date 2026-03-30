@@ -19,6 +19,7 @@
 // query struct is ~0x78 bytes with precomputed inverse direction fields.
 // QueryAabb + dot product achieves equivalent results with a simpler, fully RE'd struct.
 
+#include "HavokOffsets.h"
 #include "PhysicsLog.h"
 #include "PhysicsUtils.h"
 
@@ -66,14 +67,14 @@ namespace frik::rock
 	// =========================================================================
 
 	/// Read the collision filter reference needed by all hknpWorld query structs.
-	/// Standard pattern: *(*(world+0x150) + 0x5E8). Stable across frames.
+	/// Standard pattern: *(*(world+dispatcher) + filterPtr). Stable across frames.
 	inline void* getQueryFilterRef(RE::hknpWorld* world)
 	{
 		if (!world) return nullptr;
 		auto dispatcherData = *reinterpret_cast<std::uintptr_t*>(
-			reinterpret_cast<std::uintptr_t>(world) + 0x150);
+			reinterpret_cast<std::uintptr_t>(world) + offsets::kHknpWorld_EventDispatcher);
 		if (!dispatcherData) return nullptr;
-		return *reinterpret_cast<void**>(dispatcherData + 0x5E8);
+		return *reinterpret_cast<void**>(dispatcherData + offsets::kDispatcher_FilterPtr);
 	}
 
 	// =========================================================================
