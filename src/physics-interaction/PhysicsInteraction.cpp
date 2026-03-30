@@ -204,6 +204,13 @@ namespace frik::rock
 
 	void PhysicsInteraction::update()
 	{
+		// CRITICAL: Update VR controller state for this frame.
+		// Each DLL has its own copy of the VRControllers inline global (separate instances
+		// per module). FRIK updates its copy in ModBase::onFrameUpdateSafe(), but ROCK
+		// has its own copy that must be updated independently. Without this, isPressed()
+		// and isReleased() always return false — grab never triggers.
+		vrcf::VRControllers.update(f4vr::isLeftHandedMode());
+
 		// Use FRIK's canonical frame time — both DLLs share the same clock source.
 		// This prevents physics/skeleton drift from independent timers.
 		_deltaTime = frik::api::FRIKApi::inst->getFrameTime();
@@ -436,8 +443,8 @@ namespace frik::rock
 		}
 
 		// 3. Common cleanup — always runs regardless of world state.
-		_rightHand.destroyDebugSphere();
-		_leftHand.destroyDebugSphere();
+		_rightHand.destroyDebugColliderVis();
+		_leftHand.destroyDebugColliderVis();
 		_twoHandedGrip.reset();
 		_weaponCollision.shutdown();
 		releaseAllObjects();
@@ -606,8 +613,8 @@ namespace frik::rock
 
 	void PhysicsInteraction::destroyHandCollisions(RE::hknpWorld* world)
 	{
-		_rightHand.destroyDebugSphere();
-		_leftHand.destroyDebugSphere();
+		_rightHand.destroyDebugColliderVis();
+		_leftHand.destroyDebugColliderVis();
 		_rightHand.destroyCollision(world);
 		_leftHand.destroyCollision(world);
 	}
@@ -687,7 +694,7 @@ namespace frik::rock
 			// Debug mesh attaches to wand node (not FRIK bone) so it tracks the
 			// collision body correctly. Falls back to FRIK bone if wand unavailable.
 			auto* rightDebugParent = rightWand ? static_cast<RE::NiNode*>(rightWand) : frik::api::FRIKApi::inst->getHandNode(frik::api::FRIKApi::Hand::Right);
-			_rightHand.updateDebugSphere(rightTransform.translate, g_rockConfig.rockDebugShowColliders,
+			_rightHand.updateDebugColliderVis(rightTransform.translate, g_rockConfig.rockDebugShowColliders,
 				rightDebugParent,
 				g_rockConfig.rockHandCollisionHalfExtentX,
 				g_rockConfig.rockHandCollisionHalfExtentY,
@@ -697,7 +704,7 @@ namespace frik::rock
 		if (!leftDisabled) {
 			_leftHand.updateCollisionTransform(world, leftTransform, _deltaTime);
 			auto* leftDebugParent = leftWand ? static_cast<RE::NiNode*>(leftWand) : frik::api::FRIKApi::inst->getHandNode(frik::api::FRIKApi::Hand::Left);
-			_leftHand.updateDebugSphere(leftTransform.translate, g_rockConfig.rockDebugShowColliders,
+			_leftHand.updateDebugColliderVis(leftTransform.translate, g_rockConfig.rockDebugShowColliders,
 				leftDebugParent,
 				g_rockConfig.rockHandCollisionHalfExtentX,
 				g_rockConfig.rockHandCollisionHalfExtentY,

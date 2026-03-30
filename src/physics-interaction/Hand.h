@@ -213,9 +213,9 @@ namespace frik::rock
 		RE::hknpShape* _shape = nullptr;  // Box shape (convex polytope via CreateBoxShape)
 
 		/// Debug visualization mesh (attached to scene graph). Shape switchable via INI.
-		RE::NiNode* _debugSphere = nullptr;
-		RE::NiNode* _debugParentNode = nullptr;  ///< Tracks which node the debug mesh is attached to
-		int _debugShapeType = -1;  ///< Current loaded shape type (-1 = none loaded)
+		RE::NiNode* _debugColliderVis = nullptr;         ///< Debug visualization mesh for the hand collider box
+		RE::NiNode* _debugColliderVisParent = nullptr;   ///< Tracks which node the debug mesh is attached to
+		int _debugColliderVisShape = -1;                  ///< Current loaded shape type (-1 = none loaded)
 
 		// --- Selection state (Phase 2) ---
 		SelectedObject _currentSelection;
@@ -307,32 +307,62 @@ namespace frik::rock
 		RE::TESObjectREFR* _highlightedRef = nullptr;  ///< Currently highlighted object
 		RE::ShaderReferenceEffect* _highlightEffect = nullptr;  ///< Active shader effect
 
+		// Cached shader pointer — invalidated when config changes FormID
+		RE::TESEffectShader* _cachedHighlightShader = nullptr;
+		std::uint32_t _cachedHighlightFormID = 0;
+
 	public:
 		/// Play highlight shader on a selected object (visual feedback before grab).
-		/// Uses the game's built-in TESEffectShader system.
+		/// Uses FO4's TESEffectShader system. The FormID is configurable in ROCK.ini
+		/// (sHighlightShaderFormID) and hot-reloaded via file-watcher.
+		/// Edit the INI in-game, save, and the new shader applies on next selection.
 		void playSelectionHighlight(RE::TESObjectREFR* refr)
 		{
-			// TODO: Find correct FO4VR highlight shader FormID.
-			// 0x00023038 doesn't exist in FO4VR. Need to search the ESM
-			// or create a custom effect shader .esp.
-			(void)refr;
+			if (!refr || refr == _highlightedRef) return;
+			if (!g_rockConfig.rockHighlightEnabled || g_rockConfig.rockHighlightShaderFormID == 0) return;
+
+			// Stop any existing highlight first
+			stopSelectionHighlight();
+
+			// Re-lookup shader if FormID changed (hot-reload support)
+			if (_cachedHighlightFormID != g_rockConfig.rockHighlightShaderFormID) {
+				_cachedHighlightFormID = g_rockConfig.rockHighlightShaderFormID;
+				_cachedHighlightShader = RE::TESForm::GetFormByID<RE::TESEffectShader>(_cachedHighlightFormID);
+				if (_cachedHighlightShader) {
+					ROCK_LOG_INFO(Hand, "Highlight shader loaded: FormID 0x{:08X}", _cachedHighlightFormID);
+				} else {
+					ROCK_LOG_WARN(Hand, "Highlight shader FormID 0x{:08X} not found — disabling highlight", _cachedHighlightFormID);
+				}
+			}
+
+			if (!_cachedHighlightShader) return;
+
+			// Apply the shader with a long duration (we manage stop explicitly).
+			_highlightEffect = refr->ApplyEffectShader(_cachedHighlightShader, 60.0f);
+			_highlightedRef = refr;
 		}
 
 		/// Stop highlight shader on the currently highlighted object.
+		/// Forces immediate removal by setting age past lifetime + finished flag.
 		void stopSelectionHighlight()
 		{
-			if (_highlightedRef && _highlightEffect) {
-				_highlightEffect->finished = true;  // Tells the effect system to remove it
+			if (_highlightEffect) {
+				// Set finished AND force age past any duration to prevent fade.
+				// Just finished=true allows the engine to fade out over time, causing
+				// ghost highlights on rapidly-switched objects.
+				_highlightEffect->finished = true;
+				_highlightEffect->effectShaderAge = 999.0f;
+				_highlightEffect->lifetime = 0.0f;
 				_highlightEffect = nullptr;
 			}
 			_highlightedRef = nullptr;
 		}
 
-		/// Show/hide a debug box visualizer at the palm collider position. See Hand.cpp for implementation.
-		void updateDebugSphere(const RE::NiPoint3& palmPos, bool show, RE::NiNode* parentNode,
-			float hx = 0.06f, float hy = 0.02f, float hz = 0.015f, int shapeType = 0);
+		/// Show/hide a debug collider visualizer at the palm position. See Hand.cpp for implementation.
+		void updateDebugColliderVis(const RE::NiPoint3& palmPos, bool show, RE::NiNode* parentNode,
+			float hx = 0.05f, float hy = 0.09f, float hz = 0.015f, int shapeType = 0);
 
-		/// Destroy the debug visualization mesh. See Hand.cpp for implementation.
-		void destroyDebugSphere();
+		/// Destroy the debug collider visualization mesh. See Hand.cpp for implementation.
+		void destroyDebugColliderVis();
 	};
 }

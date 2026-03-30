@@ -24,6 +24,8 @@
 #include <filesystem>
 #include <thread>
 
+#include "resources.h"
+#include "common/CommonUtils.h"
 #include "physics-interaction/PhysicsLog.h"
 
 namespace
@@ -31,16 +33,14 @@ namespace
     // Section name used in both FRIK.ini and ROCK.ini for backwards compatibility.
     constexpr auto SECTION = "PhysicsInteraction";
 
-    // Resolve Documents\My Games\Fallout4VR\FRIK_Config\ROCK.ini once.
+    // Resolve Documents\My Games\Fallout4VR\ROCK_Config\ROCK.ini once.
+    // ROCK uses its own config folder, separate from FRIK's FRIK_Config.
     std::string resolveIniPath()
     {
         char documents[MAX_PATH];
         if (SUCCEEDED(SHGetFolderPathA(nullptr, CSIDL_MYDOCUMENTS, nullptr, 0, documents))) {
-            std::string base = std::string(documents) + R"(\My Games\Fallout4VR\FRIK_Config)";
-            // Ensure the directory exists so that ROCK.ini can be created by the user or tooling.
-            std::error_code ec;
-            std::filesystem::create_directories(base, ec);
-            return base + R"(\ROCK.ini)";
+            // Directory creation is handled by createDirDeep() in load(), not here.
+            return std::string(documents) + R"(\My Games\Fallout4VR\ROCK_Config\ROCK.ini)";
         }
         // Fallback: use a path relative to the working directory (game root).
         // This should never be reached on a properly configured Windows system.
@@ -63,8 +63,8 @@ namespace frik::rock
         rockEnabled = true;
 
         // Hand collision body
-        rockHandCollisionHalfExtentX = 0.06f;
-        rockHandCollisionHalfExtentY = 0.02f;
+        rockHandCollisionHalfExtentX = 0.05f;
+        rockHandCollisionHalfExtentY = 0.09f;
         rockHandCollisionHalfExtentZ = 0.015f;
         rockHandCollisionOffsetX     = 0.0f;
         rockHandCollisionOffsetY     = 0.086f;
@@ -78,6 +78,10 @@ namespace frik::rock
 
         // Feature toggles
         rockWeaponCollisionEnabled = false;
+
+        // Selection highlight
+        rockHighlightShaderFormID = 0x00249733;  // VansActivateFXS
+        rockHighlightEnabled = true;
 
         // Debug
         rockDebugShowColliders  = false;
@@ -171,6 +175,17 @@ namespace frik::rock
         // Feature toggles
         rockWeaponCollisionEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionEnabled", rockWeaponCollisionEnabled);
 
+        // Selection highlight — FormID as hex string in INI (e.g., "00249733")
+        {
+            char hexBuf[16] = {};
+            snprintf(hexBuf, sizeof(hexBuf), "%08X", rockHighlightShaderFormID);
+            const char* hexStr = ini.GetValue(SECTION, "sHighlightShaderFormID", hexBuf);
+            if (hexStr && hexStr[0]) {
+                rockHighlightShaderFormID = static_cast<std::uint32_t>(std::strtoul(hexStr, nullptr, 16));
+            }
+        }
+        rockHighlightEnabled = ini.GetBoolValue(SECTION, "bHighlightEnabled", rockHighlightEnabled);
+
         // Debug
         rockDebugShowColliders  = ini.GetBoolValue(SECTION,  "bDebugShowColliders",  rockDebugShowColliders);
         rockDebugColliderShape  = static_cast<int>(ini.GetLongValue(SECTION, "iDebugColliderShape", rockDebugColliderShape));
@@ -242,6 +257,15 @@ namespace frik::rock
     {
         _iniFilePath = resolveIniPath();
         ROCK_LOG_INFO(Config, "Loading ROCK config from: {}", _iniFilePath);
+
+        // Create parent directories if they don't exist (same pattern as ConfigBase::load).
+        f4cf::common::createDirDeep(_iniFilePath);
+
+        // Extract the fully-commented default ROCK.ini from the embedded DLL resource
+        // if the file doesn't exist yet. This gives users a complete config file with
+        // all keys, descriptions, and shader FormID candidates on first install.
+        // Same pattern as ConfigBase::loadIniConfig() line 123.
+        f4cf::common::createFileFromResourceIfNotExists(_iniFilePath, "ROCK", IDR_ROCK_INI, true);
 
         CSimpleIniA ini;
         ini.SetUnicode(false);

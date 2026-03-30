@@ -67,9 +67,13 @@ namespace frik::rock
         bool rockEnabled = true;
 
         // --- Hand Collision Body ---
-        float rockHandCollisionHalfExtentX = 0.06f;    // Palm half-width (Havok units, ~12cm)
-        float rockHandCollisionHalfExtentY = 0.02f;    // Palm half-depth/finger direction (~2cm)
-        float rockHandCollisionHalfExtentZ = 0.015f;   // Palm thickness/radius (~1.5cm)
+        // Axis-aligned box half-extents in Havok units (meters). Full dimensions = 2x half-extent.
+        // Shape should be a flat palm slab: wide (X), long along fingers (Y), thin (Z).
+        // HIGGS defaults: X=0.05 (10cm), Y=0.015 (3cm thickness), Z=0.09 (18cm finger length)
+        // Note: HIGGS uses different axis convention (Z=finger). We use Y=finger direction.
+        float rockHandCollisionHalfExtentX = 0.05f;    // Palm half-width (side to side, ~10cm)
+        float rockHandCollisionHalfExtentY = 0.09f;    // Palm half-depth (wrist to fingertips, ~18cm)
+        float rockHandCollisionHalfExtentZ = 0.015f;   // Palm half-thickness (palm normal, ~3cm)
         // Collision body offset from wand origin, in Havok units (meters, 1 HU = 70 game units).
         // Applied in computeHandCollisionTransform() via kHavokToGame * offset along wand axes.
         float rockHandCollisionOffsetX = 0.0f;         // Wand-local X offset. Auto-mirrors for left hand.
@@ -89,6 +93,18 @@ namespace frik::rock
 
         // --- Feature Toggles ---
         bool rockWeaponCollisionEnabled = false;       // Weapon collision body on layer 44 (disabled until grab debugging complete)
+
+        // --- Selection Highlight ---
+        // FormID of the TESEffectShader to use for object selection highlight.
+        // Edit in ROCK.ini and save — hot-reloaded live via file-watcher.
+        // Set to 0 to disable highlight. Some candidates from Fallout4.esm:
+        //   0x00249733 = VansActivateFXS (VANS perk activation highlight)
+        //   0x00247A3F = DetectLifePATargetFXS (PA targeting scan-line)
+        //   0x0022517C = DetectLifeFXS (blue glow with particles)
+        //   0x001E077C = PowerArmorTargetingHUDFXS (PA targeting HUD)
+        //   0x00102B7E = (check EDID — may be a simple glow)
+        std::uint32_t rockHighlightShaderFormID = 0x00249733;
+        bool rockHighlightEnabled = true;
 
         // --- Debug ---
         bool rockDebugShowColliders = false;
