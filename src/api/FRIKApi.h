@@ -43,7 +43,7 @@ namespace frik::api
 #define FRIK_CALL __cdecl
 
     // API version for compatibility checking
-    inline constexpr std::uint32_t FRIK_API_VERSION = 3;
+    inline constexpr std::uint32_t FRIK_API_VERSION = 4;
 
     struct FRIKApi
     {
@@ -102,6 +102,31 @@ namespace frik::api
             const char* buttonIconNifPath;
             const char* callbackReceiverName;
             std::uint32_t callbackMessageType;
+        };
+
+        // -----------------------------------------------------------------
+        // FRIK lifecycle event message types.
+        // Dispatched via F4SE messaging on channel "F4VRBody".
+        // Listen with: _messaging->RegisterListener(callback, FRIKApi::FRIK_F4SE_MOD_NAME);
+        // -----------------------------------------------------------------
+        enum class LifecycleEvent : std::uint32_t
+        {
+            /// Fired AFTER skeleton is fully initialized (safe to create physics bodies).
+            /// Data: nullptr. Dispatched synchronously from FRIK's initSkeleton().
+            kSkeletonReady = 100,
+
+            /// Fired BEFORE skeleton teardown begins (must destroy physics bodies NOW).
+            /// Data: nullptr. Dispatched synchronously from FRIK's releaseSkeleton().
+            /// The skeleton is still valid when this fires — it will be deleted after
+            /// all listeners return.
+            kSkeletonDestroying = 101,
+
+            /// Fired when power armor state changes (enter or exit).
+            /// Data: bool* pointing to the new isInPowerArmor state.
+            /// NOTE: This always fires AFTER kSkeletonDestroying + kSkeletonReady pair,
+            /// since PA transitions trigger skeleton recreation. Provided for state queries
+            /// by mods that don't track skeleton lifecycle but need PA awareness.
+            kPowerArmorChanged = 102,
         };
 
         /**
@@ -252,6 +277,29 @@ namespace frik::api
          * Check if the offhand is near the weapon barrel (uses FRIK's detection geometry).
          */
         bool (FRIK_CALL*isOffhandNearWeaponBarrel)();
+
+        // --- Game State Queries (API v4) ---
+
+        /**
+         * Check if the player is currently in Power Armor.
+         */
+        bool (FRIK_CALL*isInPowerArmor)();
+
+        /**
+         * Check if the player has a weapon drawn (any weapon type).
+         */
+        bool (FRIK_CALL*isWeaponDrawn)();
+
+        /**
+         * Check if the player has a melee weapon drawn.
+         */
+        bool (FRIK_CALL*isMeleeWeaponDrawn)();
+
+        /**
+         * Get the per-frame time delta (seconds) from FRIK's smooth movement system.
+         * Use this as the canonical timestep for physics — both DLLs share the same clock.
+         */
+        float (FRIK_CALL*getFrameTime)();
 
         /**
          * Initialize the FRIK API object.

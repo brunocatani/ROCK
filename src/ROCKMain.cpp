@@ -36,14 +36,16 @@
 // and disables itself. All frame update logic is gated behind FRIKApi availability and
 // skeleton readiness checks.
 //
-// PHYSICSINTERACTION LIFECYCLE:
+// PHYSICSINTERACTION LIFECYCLE (Event-Driven, FRIKApi v4):
 //
-// Creation: When FRIKApi reports skeleton ready, create PhysicsInteraction, call init(),
-//           set hooks enabled, register with ROCKApi.
-// Update:   Each frame, if skeleton still valid, call update().
-// Teardown: When skeleton becomes invalid (PA transition, cell change, loading screen),
-//           disable hooks, delete PhysicsInteraction, clear ROCKApi pointer.
-// Session:  On new game / load game, tear down and wait for skeleton to become ready again.
+// Creation: FRIK dispatches kSkeletonReady → onFRIKMessage creates PhysicsInteraction.
+//           This is synchronous — executes inside FRIK's initSkeleton() callstack.
+// Update:   Each frame, if PhysicsInteraction exists, call update().
+// Teardown: FRIK dispatches kSkeletonDestroying → onFRIKMessage destroys PhysicsInteraction.
+//           This is synchronous — executes inside FRIK's releaseSkeleton() BEFORE skeleton
+//           is deleted. Identical ordering to the monolith.
+// Session:  On new game / load game, FRIK calls releaseSkeleton (fires kSkeletonDestroying)
+//           then later initSkeleton (fires kSkeletonReady). No separate handling needed.
 
 #include "api/FRIKApi.h"
 #define ROCK_API_EXPORTS
@@ -66,10 +68,6 @@ namespace
     /// PhysicsInteraction instance -- created when FRIK's skeleton becomes ready,
     /// destroyed when the skeleton is released (PA transition, cell change, etc.).
     PhysicsInteraction* s_physicsInteraction = nullptr;
-
-    /// Tracks whether the skeleton was ready on the previous frame.
-    /// Used to detect skeleton teardown (ready -> not ready transition).
-    bool s_wasSkeletonReady = false;
 
     /// Set to true after successful FRIKApi initialization in GameLoaded.
     /// If false, ROCK is disabled and the frame update is a no-op.
@@ -151,59 +149,30 @@ namespace
 
     /// Called every game frame via the main loop hook.
     ///
-    /// This is ROCK's heartbeat. The logic mirrors what the monolith FRIK.cpp did
-    /// at the end of its onFrameUpdate(), but with explicit skeleton readiness checks
-    /// via FRIKApi since ROCK no longer has direct access to the skeleton pointer.
+    /// With event-driven lifecycle (v4), creation and destruction of PhysicsInteraction
+    /// are handled by FRIK's lifecycle events (kSkeletonReady / kSkeletonDestroying).
+    /// This function only needs to call update() if the instance exists.
     ///
-    /// State machine:
-    /// - Skeleton NOT ready, PhysicsInteraction NOT created: wait (no-op).
-    /// - Skeleton became ready, PhysicsInteraction NOT created: create and init.
-    /// - Skeleton ready, PhysicsInteraction exists: call update().
-    /// - Skeleton became NOT ready, PhysicsInteraction exists: tear down.
+    /// The rockEnabled config check is the only additional guard — if the user disables
+    /// ROCK at runtime via ROCK.ini, we tear down here since no FRIK event covers that.
     void onFrameUpdate()
     {
         if (!s_pluginLoaded || !s_frikAvailable) {
             return;
         }
 
-        // Check if ROCK is enabled in config.
+        // Runtime disable check: if user turned off ROCK in config, tear down.
         if (!g_rockConfig.rockEnabled) {
-            // If PhysicsInteraction exists but ROCK was disabled at runtime, tear down.
             if (s_physicsInteraction) {
                 destroyPhysicsInteraction();
-                s_wasSkeletonReady = false;
             }
             return;
         }
 
-        const auto* frikApi = frik::api::FRIKApi::inst;
-        if (!frikApi) {
-            // FRIKApi was available at GameLoaded but is now gone -- should not happen,
-            // but guard defensively.
-            return;
-        }
-
-        const bool isSkeletonReady = frikApi->isSkeletonReady();
-
+        // Normal frame: if PhysicsInteraction exists, update it.
         if (s_physicsInteraction) {
-            if (!isSkeletonReady) {
-                // Skeleton was released (PA transition, cell change, loading screen).
-                destroyPhysicsInteraction();
-                s_wasSkeletonReady = false;
-            } else {
-                // Normal frame: skeleton valid, PhysicsInteraction active.
-                s_physicsInteraction->update();
-            }
-        } else {
-            if (isSkeletonReady && !s_wasSkeletonReady) {
-                // Skeleton just became ready -- create PhysicsInteraction.
-                createPhysicsInteraction();
-            }
-            // else: skeleton not ready yet, or was already ready but PI not created
-            // (should not happen unless creation failed -- logged inside create).
+            s_physicsInteraction->update();
         }
-
-        s_wasSkeletonReady = isSkeletonReady;
     }
 
     // =====================================================================
@@ -254,6 +223,63 @@ namespace
     }
 
     // =====================================================================
+    // FRIK lifecycle event handler
+    // =====================================================================
+
+    /// Handles FRIK lifecycle events dispatched on the "F4VRBody" channel.
+    ///
+    /// These events are dispatched SYNCHRONOUSLY from FRIK's main thread during
+    /// initSkeleton() and releaseSkeleton(). This means our handler executes
+    /// inside FRIK's callstack — identical ordering to the monolith where FRIK
+    /// directly called PhysicsInteraction methods.
+    ///
+    /// kSkeletonReady: Skeleton fully initialized, safe to create physics bodies.
+    /// kSkeletonDestroying: Skeleton about to be torn down, must destroy physics NOW.
+    /// kPowerArmorChanged: PA state changed (informational, skeleton already recreated).
+    void onFRIKMessage(F4SE::MessagingInterface::Message* msg)
+    {
+        if (!msg || !s_frikAvailable) {
+            return;
+        }
+
+        using LE = frik::api::FRIKApi::LifecycleEvent;
+
+        switch (static_cast<LE>(msg->type)) {
+
+        case LE::kSkeletonReady:
+            logger::info("ROCK: Received kSkeletonReady from FRIK.");
+            if (!g_rockConfig.rockEnabled) {
+                logger::info("ROCK: Physics disabled in config, skipping creation.");
+                break;
+            }
+            if (s_physicsInteraction) {
+                // Should not happen — kSkeletonDestroying should have fired first.
+                logger::warn("ROCK: PhysicsInteraction already exists on kSkeletonReady! Destroying first.");
+                destroyPhysicsInteraction();
+            }
+            createPhysicsInteraction();
+            break;
+
+        case LE::kSkeletonDestroying:
+            logger::info("ROCK: Received kSkeletonDestroying from FRIK.");
+            destroyPhysicsInteraction();
+            break;
+
+        case LE::kPowerArmorChanged:
+            if (msg->data && msg->dataLen >= sizeof(bool)) {
+                const bool isInPA = *static_cast<const bool*>(msg->data);
+                logger::info("ROCK: Power Armor state changed: {}", isInPA ? "IN PA" : "NOT IN PA");
+                // Future: adjust collision shapes, grab ranges, etc. for PA mode.
+            }
+            break;
+
+        default:
+            // Unknown message type from FRIK — ignore silently.
+            break;
+        }
+    }
+
+    // =====================================================================
     // F4SE messaging handler
     // =====================================================================
 
@@ -278,7 +304,7 @@ namespace
             logger::info("ROCK: GameLoaded -- initializing FRIKApi and loading config...");
 
             // Initialize FRIKApi (gets function pointers from FRIK.dll).
-            const int frikErr = frik::api::FRIKApi::initialize();
+            const int frikErr = frik::api::FRIKApi::initialize(4);
             if (frikErr != 0) {
                 logger::critical("ROCK: FRIKApi initialization FAILED (error {}). "
                     "FRIK.dll must be loaded before ROCK. ROCK is now DISABLED.", frikErr);
@@ -296,6 +322,10 @@ namespace
 
             s_frikAvailable = true;
 
+            // Register listener on FRIK's messaging channel for lifecycle events.
+            s_messaging->RegisterListener(onFRIKMessage, frik::api::FRIKApi::FRIK_F4SE_MOD_NAME);
+            logger::info("ROCK: Registered FRIK lifecycle event listener on '{}'.", frik::api::FRIKApi::FRIK_F4SE_MOD_NAME);
+
             logger::info("ROCK: Initialization complete. Waiting for skeleton...");
         }
 
@@ -307,7 +337,6 @@ namespace
             logger::info("ROCK: New game session -- resetting PhysicsInteraction...");
 
             destroyPhysicsInteraction();
-            s_wasSkeletonReady = false;
 
             // Reload config in case the user edited ROCK.ini between sessions.
             if (s_frikAvailable) {
