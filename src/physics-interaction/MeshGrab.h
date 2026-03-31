@@ -234,6 +234,19 @@ namespace frik::rock
 	}
 
 	// =========================================================================
+	// Check if a BSTriShape has a skin instance (skinned mesh).
+	// Skinned meshes have vertex positions in bone-local space that require
+	// per-bone transforms to produce correct world positions. Phase 1 skips
+	// these — the grab system falls back to the collision shape contact point.
+	// =========================================================================
+	inline bool isSkinned(RE::BSTriShape* triShape)
+	{
+		auto* base = reinterpret_cast<char*>(triShape);
+		auto* skinInst = *reinterpret_cast<void**>(base + VROffset::skinInstance);
+		return skinInst != nullptr;
+	}
+
+	// =========================================================================
 	// Recursively traverse the NiNode tree and extract all BSTriShape triangles.
 	// Triangles are in world space via each triShape->world transform.
 	// =========================================================================
@@ -249,7 +262,12 @@ namespace frik::rock
 		// Check if this node is a BSTriShape
 		auto* triShape = root->IsTriShape();
 		if (triShape) {
-			extractTrianglesFromTriShape(triShape, outTriangles);
+			if (isSkinned(triShape)) {
+				ROCK_LOG_INFO(MeshGrab, "Skipping skinned BSTriShape '{}'",
+					triShape->name.c_str() ? triShape->name.c_str() : "(null)");
+			} else {
+				extractTrianglesFromTriShape(triShape, outTriangles);
+			}
 			return;  // Don't recurse into geometry children
 		}
 
