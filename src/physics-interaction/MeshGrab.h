@@ -236,8 +236,7 @@ namespace frik::rock
 	// =========================================================================
 	// Check if a BSTriShape has a skin instance (skinned mesh).
 	// Skinned meshes have vertex positions in bone-local space that require
-	// per-bone transforms to produce correct world positions. Phase 1 skips
-	// these — the grab system falls back to the collision shape contact point.
+	// per-bone transforms to produce correct world positions.
 	// =========================================================================
 	inline bool isSkinned(RE::BSTriShape* triShape)
 	{
@@ -247,8 +246,273 @@ namespace frik::rock
 	}
 
 	// =========================================================================
+	// Extract triangles from a SKINNED BSTriShape with proper bone-weighted
+	// vertex skinning to produce correct world-space positions.
+	//
+	// WHY: Skinned meshes (clothing, armor, body parts) have vertex positions
+	// in bind-pose space. Unlike static meshes where triShape->world suffices,
+	// skinned vertices must be transformed through weighted bone matrices:
+	//   worldPos = sum(weight[i] * (boneWorldTransform[i] * skinToBone[i] * bindPosePos))
+	// for up to 4 bones per vertex. This is the standard GPU skinning formula
+	// replicated on the CPU to get accurate world-space triangle positions.
+	//
+	// Data chain: BSTriShape → BSSkin::Instance → bone nodes + BSSkin::BoneData
+	// Each bone node provides a world transform (NiTransform at node+0x70),
+	// and BSSkin::BoneData provides the inverse bind-pose (skinToBone) matrix
+	// that maps from model space to bone-local space.
+	//
+	// The combined transform per bone is:
+	//   skinToBonePos = skinToBoneRotation * bindPosePos + skinToBoneTranslation
+	//   worldPos = boneWorldRotation * skinToBonePos * boneWorldScale + boneWorldTranslation
+	//
+	// No triShape->world transform is applied — bone transforms already produce
+	// world-space coordinates directly.
+	// =========================================================================
+	inline int extractTrianglesFromSkinnedTriShape(RE::BSTriShape* triShape,
+		std::vector<TriangleData>& outTriangles)
+	{
+		auto* base = reinterpret_cast<char*>(triShape);
+		const char* shapeName = triShape->name.c_str() ? triShape->name.c_str() : "(null)";
+
+		// --- Detect BSDynamicTriShape (same skip as static path) ---
+		std::uint8_t geomType = *reinterpret_cast<std::uint8_t*>(base + 0x198);
+		if (geomType == 1) {
+			ROCK_LOG_INFO(MeshGrab, "Skipping skinned BSDynamicTriShape '{}' (type=1)", shapeName);
+			return 0;
+		}
+
+		// === Read vertex/triangle buffers (same as static path) ===
+		auto* rendererData = *reinterpret_cast<void**>(base + VROffset::rendererData);
+		if (!rendererData) {
+			ROCK_LOG_WARN(MeshGrab, "Skinned '{}': null rendererData", shapeName);
+			return 0;
+		}
+
+		std::uint32_t numTris = *reinterpret_cast<std::uint32_t*>(base + VROffset::numTriangles);
+		std::uint16_t numVerts = *reinterpret_cast<std::uint16_t*>(base + VROffset::numVertices);
+		std::uint64_t vtxDescRaw = *reinterpret_cast<std::uint64_t*>(base + VROffset::vertexDesc);
+		std::uint32_t vtxStride = static_cast<std::uint32_t>(vtxDescRaw & 0xF) * 4;
+
+		std::uint32_t posOffset = static_cast<std::uint32_t>((vtxDescRaw >> 2) & 0x3C);
+		bool fullPrecision = ((vtxDescRaw >> 54) & 1) != 0;
+
+		// Skin offset within vertex: byte offset to bone weights/indices
+		std::uint32_t skinOffset = static_cast<std::uint32_t>((vtxDescRaw >> 26) & 0x3C);
+
+		// Validate minimum stride: position data + skinning data (8 bytes weights + 4 bytes indices)
+		std::uint32_t minPosSize = fullPrecision ? (posOffset + 12) : (posOffset + 6);
+		std::uint32_t minSkinEnd = skinOffset + 12;  // 4x FP16 weights + 4x uint8 indices
+		std::uint32_t minStride = (std::max)(minPosSize, minSkinEnd);
+		if (numTris == 0 || numVerts == 0 || vtxStride < minStride) {
+			ROCK_LOG_WARN(MeshGrab, "Skinned '{}': bad geometry (tris={}, verts={}, stride={}, minNeeded={})",
+				shapeName, numTris, numVerts, vtxStride, minStride);
+			return 0;
+		}
+
+		auto* vertexDataPtr = *reinterpret_cast<void**>(reinterpret_cast<char*>(rendererData) + 0x08);
+		auto* triangleDataPtr = *reinterpret_cast<void**>(reinterpret_cast<char*>(rendererData) + 0x10);
+		if (!vertexDataPtr || !triangleDataPtr) {
+			ROCK_LOG_WARN(MeshGrab, "Skinned '{}': null vertex/triangle data", shapeName);
+			return 0;
+		}
+
+		auto* verts = *reinterpret_cast<std::uint8_t**>(reinterpret_cast<char*>(vertexDataPtr) + 0x08);
+		auto* tris = *reinterpret_cast<std::uint16_t**>(reinterpret_cast<char*>(triangleDataPtr) + 0x08);
+		if (!verts || !tris) {
+			ROCK_LOG_WARN(MeshGrab, "Skinned '{}': null CPU buffers", shapeName);
+			return 0;
+		}
+
+		// === Read BSSkin::Instance ===
+		auto* skinInst = *reinterpret_cast<char**>(base + VROffset::skinInstance);
+		if (!skinInst) {
+			ROCK_LOG_WARN(MeshGrab, "Skinned '{}': null skinInstance (should not happen)", shapeName);
+			return 0;
+		}
+
+		std::uint32_t boneCount = *reinterpret_cast<std::uint32_t*>(skinInst + 0x38);
+		if (boneCount == 0 || boneCount > 512) {
+			ROCK_LOG_WARN(MeshGrab, "Skinned '{}': suspicious boneCount={}", shapeName, boneCount);
+			return 0;
+		}
+
+		// Bone node array: NiTArray at skinInst+0x10, data pointer at +0x08 within array = skinInst+0x18
+		auto** boneNodes = *reinterpret_cast<RE::NiNode***>(skinInst + 0x18);
+		if (!boneNodes) {
+			ROCK_LOG_WARN(MeshGrab, "Skinned '{}': null bone node array", shapeName);
+			return 0;
+		}
+
+		// BSSkin::BoneData pointer at skinInst+0x40, transform array at boneData+0x10
+		auto* boneData = *reinterpret_cast<char**>(skinInst + 0x40);
+		if (!boneData) {
+			ROCK_LOG_WARN(MeshGrab, "Skinned '{}': null BSSkin::BoneData", shapeName);
+			return 0;
+		}
+		auto* skinToBoneArray = *reinterpret_cast<char**>(boneData + 0x10);
+		if (!skinToBoneArray) {
+			ROCK_LOG_WARN(MeshGrab, "Skinned '{}': null skinToBone transform array", shapeName);
+			return 0;
+		}
+
+		// === Pre-validate all bone nodes and cache combined transforms ===
+		// Each bone's combined transform: worldPos = boneWorld.rot * (stb.rot * pos + stb.trans) * boneWorld.scale + boneWorld.trans
+		// We pre-compute a combined 3x4 matrix per bone to avoid redundant work per vertex.
+		struct BoneCombined {
+			float m[12];  // Row-major 3x4: [R00,R01,R02,Tx, R10,R11,R12,Ty, R20,R21,R22,Tz]
+			bool valid;
+		};
+		std::vector<BoneCombined> boneTransforms(boneCount);
+
+		for (std::uint32_t b = 0; b < boneCount; b++) {
+			boneTransforms[b].valid = false;
+
+			auto* boneNode = boneNodes[b];
+			if (!boneNode) continue;
+
+			// Bone world transform: NiTransform at node+0x70
+			auto* boneWorldPtr = reinterpret_cast<char*>(boneNode) + 0x70;
+			// NiTransform layout: NiMatrix3 rotate (9 floats, row-major) at +0x00,
+			//                     NiPoint3 translate at +0x24, float scale at +0x30
+			const float* bwRot = reinterpret_cast<const float*>(boneWorldPtr);        // 3x3 rotation
+			const float* bwTrans = reinterpret_cast<const float*>(boneWorldPtr + 0x24); // translation
+			float bwScale = *reinterpret_cast<const float*>(boneWorldPtr + 0x30);       // scale
+
+			// SkinToBone: per-bone entry at stride 0x50, transform at +0x10 within entry
+			// Layout: 3x4 row-major float matrix (12 floats)
+			const float* stb = reinterpret_cast<const float*>(skinToBoneArray + b * 0x50 + 0x10);
+			// SkinToBone also has a scale at +0x4C within the entry
+			float stbScale = *reinterpret_cast<const float*>(skinToBoneArray + b * 0x50 + 0x4C);
+
+			// Combined transform: pos' = bwRot * (stbRot * pos + stbTrans) * (bwScale * stbScale) + bwTrans
+			// First compute combined rotation = bwRot * stbRot (both 3x3)
+			// stb is row-major 3x4: rows are [stb[0..2]], [stb[4..6]], [stb[8..10]]
+			//                        translation: [stb[3]], [stb[7]], [stb[11]]
+			// bwRot is row-major 3x3: rows are [bwRot[0..2]], [bwRot[3..5]], [bwRot[6..8]]
+			float combinedScale = bwScale * stbScale;
+
+			// Combined rotation (3x3) = bwRot * stbRot * combinedScale
+			// Combined translation = bwRot * stbTrans * combinedScale + bwTrans... wait, let me be precise.
+			//
+			// Full transform chain for a vertex position p:
+			//   step1 = stbRot * p + stbTrans          (skinToBone transform)
+			//   step2 = bwRot * step1 * bwScale + bwTrans  (bone world transform with scale)
+			//
+			// But stbScale also applies. The skinToBone entry has its own scale at +0x4C.
+			// step1 = stbRot * p * stbScale + stbTrans  (include stb scale on rotation)
+			// step2 = bwRot * step1 * bwScale + bwTrans
+			//
+			// Expanding:
+			//   step2 = bwRot * (stbRot * p * stbScale + stbTrans) * bwScale + bwTrans
+			//         = bwRot * stbRot * p * (stbScale * bwScale) + bwRot * stbTrans * bwScale + bwTrans
+			//
+			// So combined 3x4 matrix M:
+			//   M.rot = bwRot * stbRot * combinedScale
+			//   M.trans = bwRot * stbTrans * bwScale + bwTrans
+
+			float cr[9];  // combined rotation (with scale baked in)
+			for (int r = 0; r < 3; r++) {
+				for (int c = 0; c < 3; c++) {
+					cr[r * 3 + c] = (bwRot[r * 3 + 0] * stb[0 * 4 + c] +
+					                  bwRot[r * 3 + 1] * stb[1 * 4 + c] +
+					                  bwRot[r * 3 + 2] * stb[2 * 4 + c]) * combinedScale;
+				}
+			}
+
+			// Combined translation
+			float stbTx = stb[3], stbTy = stb[7], stbTz = stb[11];
+			float ct[3];
+			for (int r = 0; r < 3; r++) {
+				ct[r] = (bwRot[r * 3 + 0] * stbTx +
+				          bwRot[r * 3 + 1] * stbTy +
+				          bwRot[r * 3 + 2] * stbTz) * bwScale + bwTrans[r];
+			}
+
+			// Store as row-major 3x4
+			boneTransforms[b].m[0]  = cr[0]; boneTransforms[b].m[1]  = cr[1]; boneTransforms[b].m[2]  = cr[2]; boneTransforms[b].m[3]  = ct[0];
+			boneTransforms[b].m[4]  = cr[3]; boneTransforms[b].m[5]  = cr[4]; boneTransforms[b].m[6]  = cr[5]; boneTransforms[b].m[7]  = ct[1];
+			boneTransforms[b].m[8]  = cr[6]; boneTransforms[b].m[9]  = cr[7]; boneTransforms[b].m[10] = cr[8]; boneTransforms[b].m[11] = ct[2];
+			boneTransforms[b].valid = true;
+		}
+
+		ROCK_LOG_INFO(MeshGrab, "Skinned '{}': extracting {} tris, {} verts, {} bones (stride={}, skinOff={}, fullPrec={})",
+			shapeName, numTris, numVerts, boneCount, vtxStride, skinOffset, fullPrecision ? 1 : 0);
+
+		// === Skin all vertices to world space ===
+		std::vector<RE::NiPoint3> worldVerts(numVerts);
+		for (std::uint16_t vi = 0; vi < numVerts; vi++) {
+			const std::uint8_t* vtx = verts + vi * vtxStride;
+
+			// Read bind-pose position
+			RE::NiPoint3 bindPos = readVertexPosition(vtx, posOffset, fullPrecision);
+
+			// Read bone weights: 4x FP16 at skinOffset
+			const std::uint16_t* weightPtr = reinterpret_cast<const std::uint16_t*>(vtx + skinOffset);
+			float w0 = halfToFloat(weightPtr[0]);
+			float w1 = halfToFloat(weightPtr[1]);
+			float w2 = halfToFloat(weightPtr[2]);
+			float w3 = 1.0f - w0 - w1 - w2;  // Derive 4th weight for precision
+
+			// Read bone indices: 4x uint8 immediately after weights (at skinOffset+8)
+			const std::uint8_t* idxPtr = vtx + skinOffset + 8;
+			std::uint8_t bi0 = idxPtr[0];
+			std::uint8_t bi1 = idxPtr[1];
+			std::uint8_t bi2 = idxPtr[2];
+			std::uint8_t bi3 = idxPtr[3];
+
+			float weights[4] = { w0, w1, w2, w3 };
+			std::uint8_t indices[4] = { bi0, bi1, bi2, bi3 };
+
+			// Accumulate weighted bone transforms
+			float wx = 0.0f, wy = 0.0f, wz = 0.0f;
+			for (int k = 0; k < 4; k++) {
+				float w = weights[k];
+				if (w <= 0.0f) continue;
+
+				std::uint8_t bIdx = indices[k];
+				if (bIdx >= boneCount || !boneTransforms[bIdx].valid) continue;
+
+				const float* m = boneTransforms[bIdx].m;
+				// Apply combined 3x4 transform: result = M * [pos, 1]
+				float rx = m[0] * bindPos.x + m[1] * bindPos.y + m[2]  * bindPos.z + m[3];
+				float ry = m[4] * bindPos.x + m[5] * bindPos.y + m[6]  * bindPos.z + m[7];
+				float rz = m[8] * bindPos.x + m[9] * bindPos.y + m[10] * bindPos.z + m[11];
+
+				wx += w * rx;
+				wy += w * ry;
+				wz += w * rz;
+			}
+
+			worldVerts[vi] = RE::NiPoint3(wx, wy, wz);
+		}
+
+		// === Build triangles from skinned world-space vertices ===
+		int added = 0;
+		for (std::uint32_t i = 0; i < numTris; i++) {
+			std::uint16_t i0 = tris[i * 3 + 0];
+			std::uint16_t i1 = tris[i * 3 + 1];
+			std::uint16_t i2 = tris[i * 3 + 2];
+
+			if (i0 >= numVerts || i1 >= numVerts || i2 >= numVerts) continue;
+
+			TriangleData tri;
+			tri.v0 = worldVerts[i0];
+			tri.v1 = worldVerts[i1];
+			tri.v2 = worldVerts[i2];
+
+			// No triShape->world needed — bone transforms produce world positions directly
+			outTriangles.push_back(tri);
+			added++;
+		}
+
+		ROCK_LOG_INFO(MeshGrab, "Skinned '{}': extracted {} triangles", shapeName, added);
+		return added;
+	}
+
+	// =========================================================================
 	// Recursively traverse the NiNode tree and extract all BSTriShape triangles.
-	// Triangles are in world space via each triShape->world transform.
+	// Triangles are in world space via each triShape->world transform (static)
+	// or bone-weighted skinning (skinned meshes).
 	// =========================================================================
 	inline void extractAllTriangles(RE::NiAVObject* root,
 		std::vector<TriangleData>& outTriangles,
@@ -263,8 +527,7 @@ namespace frik::rock
 		auto* triShape = root->IsTriShape();
 		if (triShape) {
 			if (isSkinned(triShape)) {
-				ROCK_LOG_INFO(MeshGrab, "Skipping skinned BSTriShape '{}'",
-					triShape->name.c_str() ? triShape->name.c_str() : "(null)");
+				extractTrianglesFromSkinnedTriShape(triShape, outTriangles);
 			} else {
 				extractTrianglesFromTriShape(triShape, outTriangles);
 			}
