@@ -41,7 +41,7 @@ ROCK is built on top of the FRIK (Fallout 4 VR Body) project:
 ## Credits
 
 - **[rollingrock](https://github.com/rollingrock)** — Creator of FRIK (Fallout 4 VR Body)
-- **[arthurhub](https://github.com/ArthurHub) (Adonis)** — For his great work on FRIK , [CommonLibF4VR](https://github.com/alandtse/CommonLibF4) and [F4VR-CommonFramework](https://github.com/ArthurHub/F4VR-CommonFramework)
+- **[arthurhub](https://github.com/ArthurHub) (L.H.Adonis)** — For his great work on FRIK , [CommonLibF4VR](https://github.com/alandtse/CommonLibF4) and [F4VR-CommonFramework](https://github.com/ArthurHub/F4VR-CommonFramework)
 - **[HIGGS](https://www.nexusmods.com/skyrimspecialedition/mods/43930)** by FlyingParticle — The Skyrim VR mod whose architecture and approach ROCK ports to Fallout 4 VR
 - The Fallout 4 VR modding community
 
