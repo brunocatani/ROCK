@@ -347,12 +347,10 @@ namespace frik::rock
 			setBodyKeyframed(world, bodyId.value);
 		}
 
-		// 7. Unfreeze motion
-		auto* motion = world->GetBodyMotion(bodyId);
-		if (motion) {
-			motion->timeFactor = 1.0f;
-			motion->spaceSplitterWeight = 1.0f;
-		}
+		// NOTE: Previous code wrote 1.0f to hknpMotion+0x70/+0x7C ("timeFactor"/"spaceSplitterWeight")
+		// to "unfreeze" the motion. Ghidra audit proved those fields are previousStepAngularVelocity
+		// (hkVector4f) and timeFactor lives in hknpMotionProperties+0x0C (always 1.0). Removed.
+		// See Hand.cpp for full audit explanation.
 
 		// 8. Activate body
 		world->ActivateBody(bodyId);

@@ -537,12 +537,16 @@ namespace frik::rock
 			setBodyKeyframed(world, bodyId.value);
 		}
 
-		// Unfreeze motion timeFactor (AllocateMotion creates at 0.0 = frozen)
-		auto* motion_init = world->GetBodyMotion(bodyId);
-		if (motion_init) {
-			motion_init->timeFactor = 1.0f;
-			motion_init->spaceSplitterWeight = 1.0f;
-		}
+		// NOTE: Previous code wrote 1.0f to hknpMotion+0x70 and +0x7C here,
+		// calling them "timeFactor" and "spaceSplitterWeight" to "unfreeze" the motion.
+		// Ghidra audit (2026-03-31) proved this was wrong:
+		//   - timeFactor lives in hknpMotionProperties+0x0C (separate struct), NOT hknpMotion
+		//   - timeFactor is ALWAYS 1.0 for all 8 Bethesda presets — nothing is ever "frozen"
+		//   - hknpMotion+0x70-0x7F is previousStepAngularVelocity (hkVector4f)
+		//   - Writing 1.0f corrupted the X and W components of previous angular velocity
+		//   - initializeMotion (0x1417e1e40) already correctly zeroes +0x60/+0x70
+		// The writes were removed. Motion initialization is handled by AllocateMotion +
+		// CreateBody + the correct motionPropertiesId preset (KEYFRAMED = 2).
 
 		// Activate body
 		world->ActivateBody(bodyId);
