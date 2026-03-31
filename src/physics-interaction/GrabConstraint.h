@@ -58,8 +58,8 @@ namespace frik::rock
 	struct HkPositionMotor
 	{
 		void* vtable;                          // +0x00
-		std::uint16_t memSizeAndFlags;         // +0x08 — hkReferencedObject
-		std::int16_t referenceCount;           // +0x0A — -1 (0xFFFF) = immortal
+		std::int16_t referenceCount;           // +0x08 — low 16 bits of dword. -1 (0xFFFF) = immortal
+		std::uint16_t memSizeAndFlags;         // +0x0A — high 16 bits of dword
 		std::uint32_t pad0C;                   // +0x0C
 		std::uint8_t type;                     // +0x10 — motor type enum (1 = position, 2 = velocity)
 		std::uint8_t pad11[7];                 // +0x11

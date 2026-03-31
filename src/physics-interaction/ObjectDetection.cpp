@@ -130,7 +130,7 @@ namespace frik::rock
 	//
 	// hknpWorld::QueryAabb is self-locking (world+0x690) and does both broadphase
 	// and narrowphase testing. The query struct (hknpAabbQuery, 0x40 bytes) is
-	// fully RE'd from Ghidra (2026-03-19).
+	// fully RE'd from Ghidra.
 	// =========================================================================
 
 	SelectedObject findCloseObject(

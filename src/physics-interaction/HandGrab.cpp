@@ -817,12 +817,10 @@ namespace frik::rock
 				// This produced wrong mass → tiny force cap → object can't move
 				//
 				// Correct: read uint16 at +0x26 (invMass, index [3])
-				// Unpack: float = (ushort)packed / 65536.0f would give Havok's half-float
-				// But actually hknp uses a different packing — let's use the same approach
-				// as HIGGS: read the inverse mass from the float at a known offset.
-				//
-				// Actually the simplest correct approach: read the packed invMass int16,
-				// reconstruct as float using the same packing as inertia normalization.
+				// Unpack inverse mass: hknp packs floats as bfloat16 (upper 16 bits of
+				// IEEE 754 float). Verified by Ghidra audit of buildEffMassMatrixAt
+				// (0x1417d1ea0): uses PUNPCKLWD to shift packed<<16, then reads as float
+				// with no integer conversion. This is NOT linear scaling.
 				auto packedInvMass = *reinterpret_cast<std::uint16_t*>(
 					reinterpret_cast<char*>(objMotion) + 0x26);
 

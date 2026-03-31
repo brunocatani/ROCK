@@ -371,61 +371,55 @@ namespace frik::rock
 			if (!boneNode) continue;
 
 			// Bone world transform: NiTransform at node+0x70
+			// Ghidra-verified layout (blind audit 2026-03-30):
+			//   NiMatrix3: 3 rows of NiPoint4 (16 bytes each) at +0x00 from NiTransform
+			//   NiPoint3 translate: at +0x30 from NiTransform
+			//   float scale: at +0x3C from NiTransform
+			// So relative to node: rotate at +0x70, translate at +0xA0, scale at +0xAC
 			auto* boneWorldPtr = reinterpret_cast<char*>(boneNode) + 0x70;
-			// NiTransform layout: NiMatrix3 rotate (9 floats, row-major) at +0x00,
-			//                     NiPoint3 translate at +0x24, float scale at +0x30
-			const float* bwRot = reinterpret_cast<const float*>(boneWorldPtr);        // 3x3 rotation
-			const float* bwTrans = reinterpret_cast<const float*>(boneWorldPtr + 0x24); // translation
-			float bwScale = *reinterpret_cast<const float*>(boneWorldPtr + 0x30);       // scale
+			const float* bwRot = reinterpret_cast<const float*>(boneWorldPtr);          // NiMatrix3 (NiPoint4 rows, stride 4 floats)
+			const float* bwTrans = reinterpret_cast<const float*>(boneWorldPtr + 0x30); // NiPoint3 translate
+			float bwScale = *reinterpret_cast<const float*>(boneWorldPtr + 0x3C);       // scale
 
-			// SkinToBone: per-bone entry at stride 0x50, transform at +0x10 within entry
-			// Layout: 3x4 row-major float matrix (12 floats)
+			// SkinToBone: per-bone entry at stride 0x50, NiTransform at +0x10 within entry
+			// Ghidra-verified layout (blind audit 2026-03-30):
+			//   Entry+0x10: NiMatrix3 (3 NiPoint4 rows, 16 bytes each) = rotation
+			//   Entry+0x40: NiPoint3 translation (12 bytes)
+			//   Entry+0x4C: float scale (4 bytes)
+			// The NiPoint4 rows have padding in the 4th float — indices [3,7,11] are padding, NOT translation.
+			// Translation is at float indices [12,13,14] from the transform start.
 			const float* stb = reinterpret_cast<const float*>(skinToBoneArray + b * 0x50 + 0x10);
-			// SkinToBone also has a scale at +0x4C within the entry
 			float stbScale = *reinterpret_cast<const float*>(skinToBoneArray + b * 0x50 + 0x4C);
 
-			// Combined transform: pos' = bwRot * (stbRot * pos + stbTrans) * (bwScale * stbScale) + bwTrans
-			// First compute combined rotation = bwRot * stbRot (both 3x3)
-			// stb is row-major 3x4: rows are [stb[0..2]], [stb[4..6]], [stb[8..10]]
-			//                        translation: [stb[3]], [stb[7]], [stb[11]]
-			// bwRot is row-major 3x3: rows are [bwRot[0..2]], [bwRot[3..5]], [bwRot[6..8]]
+			// Combined transform for vertex position p:
+			//   step1 = stbRot * p * stbScale + stbTrans
+			//   step2 = bwRot * step1 * bwScale + bwTrans
+			// Expanding:
+			//   worldPos = bwRot * stbRot * p * (stbScale * bwScale)
+			//            + bwRot * stbTrans * bwScale + bwTrans
+			// Combined matrix M:
+			//   M.rot = bwRot * stbRot * combinedScale
+			//   M.trans = bwRot * stbTrans * bwScale + bwTrans
 			float combinedScale = bwScale * stbScale;
 
 			// Combined rotation (3x3) = bwRot * stbRot * combinedScale
-			// Combined translation = bwRot * stbTrans * combinedScale + bwTrans... wait, let me be precise.
-			//
-			// Full transform chain for a vertex position p:
-			//   step1 = stbRot * p + stbTrans          (skinToBone transform)
-			//   step2 = bwRot * step1 * bwScale + bwTrans  (bone world transform with scale)
-			//
-			// But stbScale also applies. The skinToBone entry has its own scale at +0x4C.
-			// step1 = stbRot * p * stbScale + stbTrans  (include stb scale on rotation)
-			// step2 = bwRot * step1 * bwScale + bwTrans
-			//
-			// Expanding:
-			//   step2 = bwRot * (stbRot * p * stbScale + stbTrans) * bwScale + bwTrans
-			//         = bwRot * stbRot * p * (stbScale * bwScale) + bwRot * stbTrans * bwScale + bwTrans
-			//
-			// So combined 3x4 matrix M:
-			//   M.rot = bwRot * stbRot * combinedScale
-			//   M.trans = bwRot * stbTrans * bwScale + bwTrans
-
-			float cr[9];  // combined rotation (with scale baked in)
+			// Both bwRot and stb use NiPoint4 rows (stride 4 floats, 4th is padding)
+			float cr[9];
 			for (int r = 0; r < 3; r++) {
 				for (int c = 0; c < 3; c++) {
-					cr[r * 3 + c] = (bwRot[r * 3 + 0] * stb[0 * 4 + c] +
-					                  bwRot[r * 3 + 1] * stb[1 * 4 + c] +
-					                  bwRot[r * 3 + 2] * stb[2 * 4 + c]) * combinedScale;
+					cr[r * 3 + c] = (bwRot[r * 4 + 0] * stb[0 * 4 + c] +
+					                  bwRot[r * 4 + 1] * stb[1 * 4 + c] +
+					                  bwRot[r * 4 + 2] * stb[2 * 4 + c]) * combinedScale;
 				}
 			}
 
-			// Combined translation
-			float stbTx = stb[3], stbTy = stb[7], stbTz = stb[11];
+			// Combined translation — stb translation at float indices [12,13,14]
+			float stbTx = stb[12], stbTy = stb[13], stbTz = stb[14];
 			float ct[3];
 			for (int r = 0; r < 3; r++) {
-				ct[r] = (bwRot[r * 3 + 0] * stbTx +
-				          bwRot[r * 3 + 1] * stbTy +
-				          bwRot[r * 3 + 2] * stbTz) * bwScale + bwTrans[r];
+				ct[r] = (bwRot[r * 4 + 0] * stbTx +
+				          bwRot[r * 4 + 1] * stbTy +
+				          bwRot[r * 4 + 2] * stbTz) * bwScale + bwTrans[r];
 			}
 
 			// Store as row-major 3x4

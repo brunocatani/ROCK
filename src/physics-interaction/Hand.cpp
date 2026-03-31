@@ -10,7 +10,7 @@ namespace frik::rock
 	/// HIGGS uses hkpBoxShape for flat palm collision -- better contact surface than
 	/// capsule's rounded ends. We create a capsule (same 8-vert 6-face topology),
 	/// then overwrite vtable to convex base and fill box vertex/normal/face data.
-	/// Ghidra RE (2026-03-23): capsule vtable=0x142c9a208, convex=0x142c9a108,
+	/// Ghidra RE: capsule vtable=0x142c9a208, convex=0x142c9a108,
 	/// polytope factory at FUN_1416ddbc0 confirms convex vtable for polytope shapes.
 	RE::hknpShape* CreateBoxShape(float hx, float hy, float hz, float convexRadius)
 	{
@@ -384,6 +384,8 @@ namespace frik::rock
 			stopSelectionHighlight();
 
 			_currentSelection = best;
+			// SelectedFar is a stub — no grab trigger or updateSelection guard handles it.
+			// Use SelectedClose for both near and far until the far-grab pipeline is built.
 			_state = HandState::SelectedClose;
 			_selectionHoldFrames = 0;
 
@@ -589,7 +591,7 @@ namespace frik::rock
 		// hknpWorld::computeHardKeyFrame (0x14153a6a0) reads current body state
 		// and computes both linear AND angular velocity to reach target in one step.
 		// CRITICAL: Previous code had ZERO angular velocity -- the solver couldn't
-		// predict hand rotation, causing oscillation (20-agent investigation 2026-03-22).
+		// predict hand rotation, causing oscillation.
 		// HIGGS uses hkpKeyFrameUtility::applyHardKeyFrame which does the same.
 		alignas(16) float linVelOut[4] = {0,0,0,0};
 		alignas(16) float angVelOut[4] = {0,0,0,0};

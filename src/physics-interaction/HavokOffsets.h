@@ -30,16 +30,19 @@ namespace frik::rock::offsets
     // hknpWorld internals
     // =========================================================================
 
-    // hknpWorld+0x150 holds the event dispatcher data pointer.
-    // Standard access: *(world+0x150) → dispatcherData.
-    // Used for query filter retrieval and collision layer configuration.
-    constexpr std::uintptr_t kHknpWorld_EventDispatcher = 0x150;
+    // hknpWorld+0x150 holds the hknpModifierManager* pointer (0x618 bytes).
+    // Ghidra-verified: hknpWorld ctor (0x141540d90) stores result of
+    // FUN_141725450 (modifierManager init) at param_1[0x2A] = world+0x150.
+    // The modifier manager holds 10×0x88 modifier slots + callback pointers
+    // + the collision filter reference at +0x5E8.
+    // NOTE: This is NOT the event dispatcher (which lives at world+0x648).
+    constexpr std::uintptr_t kHknpWorld_ModifierManager = 0x150;
 
-    // dispatcherData+0x5E8 holds the collision filter pointer.
-    // Standard pattern: *(*(world+0x150) + 0x5E8) → filter*.
-    // Used in ObjectDetection::getQueryFilterRef and PhysicsInteraction
-    // layer configuration.
-    constexpr std::uintptr_t kDispatcher_FilterPtr = 0x5E8;
+    // hknpModifierManager+0x5E8 holds the bhkCollisionFilter* pointer.
+    // Ghidra-verified: FUN_141725450 initializes *(param+0x5E8) = 0 (NULL),
+    // then Bethesda's world setup populates it with the active filter.
+    // Full chain: *(*(world+0x150) + 0x5E8) → bhkCollisionFilter*.
+    constexpr std::uintptr_t kModifierMgr_FilterPtr = 0x5E8;
 
     // filterPtr+0x1A0 is the collision matrix base (uint64 array indexed by layer).
     // Used to read/write per-layer collision masks.

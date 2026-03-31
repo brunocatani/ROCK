@@ -236,8 +236,8 @@ namespace frik::rock
 				if (bhkMenu) {
 					auto* hknpMenu = getHknpWorld(bhkMenu);
 					if (hknpMenu) {
-						if (_rightHand.isHolding()) _rightHand.releaseGrabbedObject(hknpMenu);
-						if (_leftHand.isHolding()) _leftHand.releaseGrabbedObject(hknpMenu);
+						if (_rightHand.isHolding()) { auto* r = _rightHand.getHeldRef(); _rightHand.releaseGrabbedObject(hknpMenu); if (r) releaseObject(r); }
+						if (_leftHand.isHolding()) { auto* r = _leftHand.getHeldRef(); _leftHand.releaseGrabbedObject(hknpMenu); if (r) releaseObject(r); }
 					}
 				}
 			}
@@ -288,10 +288,10 @@ namespace frik::rock
 		// Check our layer's mask every frame and re-register if it changed.
 		// Reference: HIGGS S09 section 9.2, FRIK_STUDY/ADD_TO_PLAN.md section S01-1.9.2
 		if (_collisionLayerRegistered && _expectedHandLayerMask != 0) {
-			auto dispatcherData = *reinterpret_cast<std::uintptr_t*>(
-				reinterpret_cast<std::uintptr_t>(hknp) + offsets::kHknpWorld_EventDispatcher);
-			if (dispatcherData) {
-				auto* filterPtr = *reinterpret_cast<void**>(dispatcherData + offsets::kDispatcher_FilterPtr);
+			auto modifierMgr = *reinterpret_cast<std::uintptr_t*>(
+				reinterpret_cast<std::uintptr_t>(hknp) + offsets::kHknpWorld_ModifierManager);
+			if (modifierMgr) {
+				auto* filterPtr = *reinterpret_cast<void**>(modifierMgr + offsets::kModifierMgr_FilterPtr);
 				if (filterPtr) {
 					auto* matrix = reinterpret_cast<std::uint64_t*>(
 						reinterpret_cast<std::uintptr_t>(filterPtr) + offsets::kFilter_CollisionMatrix);
@@ -315,8 +315,8 @@ namespace frik::rock
 				_cachedHalfExtentY, g_rockConfig.rockHandCollisionHalfExtentY,
 				_cachedHalfExtentZ, g_rockConfig.rockHandCollisionHalfExtentZ);
 			// Release any held objects before destroying hand bodies (constraint references bodyA)
-			if (_rightHand.isHolding()) _rightHand.releaseGrabbedObject(hknp);
-			if (_leftHand.isHolding()) _leftHand.releaseGrabbedObject(hknp);
+			if (_rightHand.isHolding()) { auto* r = _rightHand.getHeldRef(); _rightHand.releaseGrabbedObject(hknp); if (r) releaseObject(r); }
+			if (_leftHand.isHolding()) { auto* r = _leftHand.getHeldRef(); _leftHand.releaseGrabbedObject(hknp); if (r) releaseObject(r); }
 			destroyHandCollisions(hknp);  // also destroys debug spheres
 			createHandCollisions(hknp);
 			_cachedHalfExtentX = g_rockConfig.rockHandCollisionHalfExtentX;
@@ -434,8 +434,8 @@ namespace frik::rock
 
 		if (worldValid) {
 			auto* hknp = getHknpWorld(_cachedBhkWorld);
-			if (_rightHand.isHolding()) _rightHand.releaseGrabbedObject(hknp);
-			if (_leftHand.isHolding()) _leftHand.releaseGrabbedObject(hknp);
+			if (_rightHand.isHolding()) { auto* r = _rightHand.getHeldRef(); _rightHand.releaseGrabbedObject(hknp); if (r) releaseObject(r); }
+			if (_leftHand.isHolding()) { auto* r = _leftHand.getHeldRef(); _leftHand.releaseGrabbedObject(hknp); if (r) releaseObject(r); }
 			_weaponCollision.destroyWeaponBody(hknp);
 			destroyHandCollisions(hknp);
 		} else {
@@ -483,14 +483,16 @@ namespace frik::rock
 
 	void PhysicsInteraction::registerCollisionLayer(RE::hknpWorld* world)
 	{
-		// Phase 0A fix: Read collision filter from the hknpWorld's dispatcher,
+		// Phase 0A fix: Read collision filter from the hknpWorld's modifier manager,
 		// NOT from the global singleton. After world recreation (cell load), the new
 		// hknpWorld may use a different filter object than the persistent global singleton
 		// at REL::Offset(0x59429B8). The global singleton is created once in
-		// bhkWorld__InitSystem and never recreated, but the new world's dispatcher may
-		// reference a fresh filter where our custom layers are unconfigured.
+		// bhkWorld__InitSystem and never recreated, but the new world's modifier manager
+		// may reference a fresh filter where our custom layers are unconfigured.
 		//
 		// Path: *(*(world + 0x150) + 0x5E8) → bhkCollisionFilter*
+		// world+0x150 = hknpModifierManager* (Ghidra-verified: ctor 0x141540d90, param_1[0x2A])
+		// modifierMgr+0x5E8 = filter ptr (Ghidra-verified: init fn 0x141725450 zeros this slot)
 		// Same path used by ObjectDetection.h:getQueryFilterRef for query filters.
 		// Matrix at filter + 0x1A0: uint64_t[64] layer collision bitfield.
 		//
@@ -505,15 +507,15 @@ namespace frik::rock
 			return;
 		}
 
-		// Read filter from the world's dispatcher (not global singleton)
-		auto dispatcherData = *reinterpret_cast<std::uintptr_t*>(
-			reinterpret_cast<std::uintptr_t>(world) + offsets::kHknpWorld_EventDispatcher);
-		if (!dispatcherData) {
-			ROCK_LOG_ERROR(Config, "World dispatcher data (+0x150) is null — cannot configure layer");
+		// Read filter from the world's modifier manager (not global singleton)
+		auto modifierMgr = *reinterpret_cast<std::uintptr_t*>(
+			reinterpret_cast<std::uintptr_t>(world) + offsets::kHknpWorld_ModifierManager);
+		if (!modifierMgr) {
+			ROCK_LOG_ERROR(Config, "World modifier manager (+0x150) is null — cannot configure layer");
 			return;
 		}
 
-		auto* filterPtr = *reinterpret_cast<void**>(dispatcherData + offsets::kDispatcher_FilterPtr);
+		auto* filterPtr = *reinterpret_cast<void**>(modifierMgr + offsets::kModifierMgr_FilterPtr);
 		if (!filterPtr) {
 			// Fallback: try the global singleton (may be the same object on first init)
 			static REL::Relocation<void**> filterSingleton{ REL::Offset(0x59429B8) };
@@ -1157,6 +1159,7 @@ namespace frik::rock
 			heldRef ? heldRef->GetFormID() : 0);
 
 		hand.releaseGrabbedObject(hknp);
+		if (heldRef) releaseObject(heldRef);
 	}
 
 	// =========================================================================

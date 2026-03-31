@@ -10,7 +10,7 @@
 //   4. findCloseObject — near detection via QueryAabb + dot product
 //   5. findFarObject — far detection via bhkPickData ray
 //
-// Detection approach (decided 2026-03-19, Ghidra-verified):
+// Detection approach (Ghidra-verified):
 //   Near: hknpWorld::QueryAabb (0x40 byte struct, self-locking) + palm-forward dot product
 //   Far:  bhkWorld::PickObject (thin ray, self-locking)
 //   Both give proper spatial detection without manual lock management.
@@ -67,14 +67,15 @@ namespace frik::rock
 	// =========================================================================
 
 	/// Read the collision filter reference needed by all hknpWorld query structs.
-	/// Standard pattern: *(*(world+dispatcher) + filterPtr). Stable across frames.
+	/// Chain: *(*(world + modifierMgr) + filterPtr) → bhkCollisionFilter*.
+	/// The modifier manager at world+0x150 holds the active filter at +0x5E8.
 	inline void* getQueryFilterRef(RE::hknpWorld* world)
 	{
 		if (!world) return nullptr;
-		auto dispatcherData = *reinterpret_cast<std::uintptr_t*>(
-			reinterpret_cast<std::uintptr_t>(world) + offsets::kHknpWorld_EventDispatcher);
-		if (!dispatcherData) return nullptr;
-		return *reinterpret_cast<void**>(dispatcherData + offsets::kDispatcher_FilterPtr);
+		auto modifierMgr = *reinterpret_cast<std::uintptr_t*>(
+			reinterpret_cast<std::uintptr_t>(world) + offsets::kHknpWorld_ModifierManager);
+		if (!modifierMgr) return nullptr;
+		return *reinterpret_cast<void**>(modifierMgr + offsets::kModifierMgr_FilterPtr);
 	}
 
 	// =========================================================================

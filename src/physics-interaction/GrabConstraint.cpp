@@ -45,7 +45,7 @@ namespace frik::rock
 	}
 
 	/// Free memory via Havok's TLS-based heap allocator (vtable[2] = deallocate).
-	/// Ghidra-verified (2026-03-22): dealloc takes 3 args (allocator, ptr, size).
+	/// Ghidra-verified: dealloc takes 3 args (allocator, ptr, size).
 	/// Every Havok destructor in the binary passes size as the 3rd arg.
 	static void havokHeapFree(void* ptr, std::size_t size)
 	{
@@ -94,7 +94,7 @@ namespace frik::rock
 		// constant velocity mode (motor->damping) instead of position-error-proportional
 		// mode. IEEE 754 floats with zero LSB include 0.5, 1.0, 2.0, 4.0 — all BROKEN.
 		// Safe values: 0.1, 0.3, 0.9, 1.1, 2.1, 4.1 (any float with non-zero LSB).
-		// Ghidra-verified 2026-03-22 by 5-agent investigation.
+		// Ghidra-verified via hkCalcMotorData decompilation.
 		motor->proportionalRecoveryVelocity = proportionalRecoveryVelocity;
 		motor->constantRecoveryVelocity = constantRecoveryVelocity;
 
@@ -313,11 +313,11 @@ namespace frik::rock
 		// Header size confirmed by Ghidra: ragdoll getConstraintInfo does ADD RCX, 0x20.
 		*reinterpret_cast<void**>(cd) = s_customVtable;
 		auto* header = static_cast<char*>(cd);
-		*reinterpret_cast<std::uint16_t*>(header + 0x08) = 0x0001;  // memSizeAndFlags
-		// I1 FIX: Set referenceCount to -1 (0xFFFF = immortal). This prevents
-		// DestroyConstraints from decrementing to zero and double-freeing the data.
-		// We manage the constraint data lifetime ourselves in destroyGrabConstraint.
-		*reinterpret_cast<std::int16_t*>(header + 0x0A) = -1;       // referenceCount = immortal
+		// hkReferencedObject at +0x08: low 16 bits = referenceCount, high 16 bits = memSizeAndFlags
+		// Ghidra-verified: destroyBodies uses LOCK CMPXCHG on dword at +0x08, refcount in low 16.
+		// Set refcount = -1 (immortal) so DestroyConstraints won't double-free our managed data.
+		*reinterpret_cast<std::int16_t*>(header + 0x08) = -1;       // referenceCount = immortal (low 16)
+		*reinterpret_cast<std::uint16_t*>(header + 0x0A) = 0x0001;  // memSizeAndFlags (high 16)
 
 		// --- Step 3: Initialize atom type fields ---
 		// Each atom starts with uint16 type. The solver dispatches on these.
@@ -407,8 +407,8 @@ namespace frik::rock
 		// --- Step 6: Set body-local reference frames (HIGGS pattern) ---
 		// WHY NOT setInWorldSpace: It uses a twist axis to build arbitrary constraint
 		// frames that don't align with the bodies. This causes LinMotor axes to push
-		// in wrong directions (orbiting instead of convergence). 5-agent investigation
-		// confirmed: HIGGS uses setInBodySpace with identity rotation for transformA
+		// in wrong directions (orbiting instead of convergence).
+		// HIGGS uses setInBodySpace with identity rotation for transformA
 		// and R_obj^T * R_hand for transformB. We write directly to the atom.
 		//
 		// SetLocalTransforms atom layout (0x90 bytes at constraintData+0x20):
@@ -440,9 +440,9 @@ namespace frik::rock
 
 			// Phase 0B.1: PivotA = palm center in hand body-local space
 			// HIGGS S00 0.1a: pivotA uses palmPos, NOT the grab surface point.
-			// Body-local = delta * R^T in Havok's right-multiplication convention.
-			// Component j = dot(row_j, delta). Body is row-major (SetBodyTransform
-			// copies NiMatrix3 directly, Ghidra-verified). See HAVOK_CONVENTIONS.md.
+			// Body array is COLUMN-MAJOR (setBodyTransform copies hkTransformf directly).
+			// Havok uses LEFT-MULTIPLICATION: world = R * local + t.
+			// local = R^T * delta; dot(column_j, delta) = (R^T * delta)[j].
 			float dxA = palmWorldHk[0] - handBody[12];
 			float dyA = palmWorldHk[1] - handBody[13];
 			float dzA = palmWorldHk[2] - handBody[14];
@@ -480,7 +480,7 @@ namespace frik::rock
 
 			// Phase 0B.1: PivotB = grab surface point in object body-local space
 			// HIGGS S00 0.1b: pivotB uses ptPos (touch point on object surface)
-			// Body-local via right-multiplication: dot(row_j, delta). Same as pivotA.
+			// Column-major body-local: dot(column_j, delta) = (R^T * delta)[j].
 			float dxB = grabWorldHk[0] - objBody[12];
 			float dyB = grabWorldHk[1] - objBody[13];
 			float dzB = grabWorldHk[2] - objBody[14];
@@ -580,8 +580,7 @@ namespace frik::rock
 
 		// --- Step 9: Enable ALL motors AFTER constraint is in the world ---
 		// Both angular (RagdollMotor) and linear (LinMotor) enabled.
-		// Constraint targets (pivotA/B, angular target) are FIXED from grab time.
-		// Motor error comes from bodyA (hand) moving while bodyB (object) lags.
+		// PivotA/B set at creation. Angular target updated per-frame in updateHeldObject.
 		{
 			auto* ragAtom = header + ATOM_RAGDOLL_MOT;
 			*(ragAtom + 0x02) = 1;  // ragdoll motors ENABLED
@@ -644,7 +643,7 @@ namespace frik::rock
 	// inertia around the perpendicular axes. Without normalization, angular
 	// motors can't resist rotation on the low-inertia axis → cartwheeling.
 	//
-	// GHIDRA DISCOVERY (2026-03-22):
+	// GHIDRA DISCOVERY:
 	// hknpMotion stores inverse inertia as PACKED INT16 at motion+0x20, NOT as
 	// floats at motion+0x60 (which is Skyrim's hkpMotion offset / velocity area).
 	// 8 bytes at motion+0x20 contain 4 packed int16 via packssdw:
