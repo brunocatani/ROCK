@@ -240,13 +240,178 @@ namespace frik::rock
 			objectWorldTransform = handWorldTransform;
 		}
 
+		// --- DIAGNOSTIC: Compare hitNode (collidableNode) vs refRoot (Get3D) ---
+		// HIGGS uses collidableNode = GetNodeFromCollidable(collidable) — the NiNode
+		// where the collision body is attached. ROCK was using sel.refr->Get3D() (the
+		// NIF root). If they differ, the 75gu offset is the distance between them, and
+		// re-rooting to the root MOVES triangles AWAY from the physics body.
+		{
+			auto* bodyArray = world->GetBodyArray();
+			auto* objFloats = reinterpret_cast<float*>(&bodyArray[objectBodyId.value]);
+			float bodyPosX = objFloats[12] * 70.0f;
+			float bodyPosY = objFloats[13] * 70.0f;
+			float bodyPosZ = objFloats[14] * 70.0f;
+
+			ROCK_LOG_INFO(Hand, "=== GRAB NODE DIAGNOSTIC ===");
+			ROCK_LOG_INFO(Hand, "  refRoot (Get3D):  ({:.1f},{:.1f},{:.1f})",
+				node3D ? node3D->world.translate.x : 0.0f,
+				node3D ? node3D->world.translate.y : 0.0f,
+				node3D ? node3D->world.translate.z : 0.0f);
+			ROCK_LOG_INFO(Hand, "  hitNode (collNi): ({:.1f},{:.1f},{:.1f}) ptr={}",
+				sel.hitNode ? sel.hitNode->world.translate.x : 0.0f,
+				sel.hitNode ? sel.hitNode->world.translate.y : 0.0f,
+				sel.hitNode ? sel.hitNode->world.translate.z : 0.0f,
+				sel.hitNode ? "valid" : "NULL");
+			ROCK_LOG_INFO(Hand, "  havokBody*70:     ({:.1f},{:.1f},{:.1f})",
+				bodyPosX, bodyPosY, bodyPosZ);
+
+			if (node3D && sel.hitNode) {
+				float rootToHit = std::sqrt(
+					(node3D->world.translate.x - sel.hitNode->world.translate.x) *
+					(node3D->world.translate.x - sel.hitNode->world.translate.x) +
+					(node3D->world.translate.y - sel.hitNode->world.translate.y) *
+					(node3D->world.translate.y - sel.hitNode->world.translate.y) +
+					(node3D->world.translate.z - sel.hitNode->world.translate.z) *
+					(node3D->world.translate.z - sel.hitNode->world.translate.z));
+				float bodyToHit = std::sqrt(
+					(bodyPosX - sel.hitNode->world.translate.x) *
+					(bodyPosX - sel.hitNode->world.translate.x) +
+					(bodyPosY - sel.hitNode->world.translate.y) *
+					(bodyPosY - sel.hitNode->world.translate.y) +
+					(bodyPosZ - sel.hitNode->world.translate.z) *
+					(bodyPosZ - sel.hitNode->world.translate.z));
+				float bodyToRoot = std::sqrt(
+					(bodyPosX - node3D->world.translate.x) *
+					(bodyPosX - node3D->world.translate.x) +
+					(bodyPosY - node3D->world.translate.y) *
+					(bodyPosY - node3D->world.translate.y) +
+					(bodyPosZ - node3D->world.translate.z) *
+					(bodyPosZ - node3D->world.translate.z));
+				ROCK_LOG_INFO(Hand, "  rootToHitNode={:.1f}gu  bodyToHitNode={:.1f}gu  bodyToRoot={:.1f}gu",
+					rootToHit, bodyToHit, bodyToRoot);
+				ROCK_LOG_INFO(Hand, "  hitNode==refRoot: {}  hitNode name: {}",
+					(sel.hitNode == node3D) ? "YES" : "NO",
+					sel.hitNode->name.c_str() ? sel.hitNode->name.c_str() : "(null)");
+			}
+
+			// Walk NIF tree (first 2 levels) to show structure
+			if (node3D) {
+				ROCK_LOG_INFO(Hand, "  NIF tree root: '{}' type=NiNode",
+					node3D->name.c_str() ? node3D->name.c_str() : "(null)");
+				auto* rootNiNode = node3D->IsNode();
+				if (rootNiNode) {
+					auto& kids = rootNiNode->GetRuntimeData().children;
+					for (std::uint32_t ci = 0; ci < kids.size() && ci < 8; ci++) {
+						auto* kid = kids[ci].get();
+						if (!kid) continue;
+						bool hasCollision = (kid->collisionObject.get() != nullptr);
+						bool isTriShape = (kid->IsTriShape() != nullptr);
+						ROCK_LOG_INFO(Hand, "    child[{}]: '{}' pos=({:.1f},{:.1f},{:.1f}) {}{}",
+							ci,
+							kid->name.c_str() ? kid->name.c_str() : "(null)",
+							kid->world.translate.x, kid->world.translate.y, kid->world.translate.z,
+							isTriShape ? "BSTriShape " : "NiNode ",
+							hasCollision ? "+COLLISION" : "");
+						// One more level
+						auto* kidNode = kid->IsNode();
+						if (kidNode) {
+							auto& grandkids = kidNode->GetRuntimeData().children;
+							for (std::uint32_t gi = 0; gi < grandkids.size() && gi < 8; gi++) {
+								auto* gk = grandkids[gi].get();
+								if (!gk) continue;
+								bool gkColl = (gk->collisionObject.get() != nullptr);
+								bool gkTri = (gk->IsTriShape() != nullptr);
+								ROCK_LOG_INFO(Hand, "      grandchild[{}]: '{}' pos=({:.1f},{:.1f},{:.1f}) {}{}",
+									gi,
+									gk->name.c_str() ? gk->name.c_str() : "(null)",
+									gk->world.translate.x, gk->world.translate.y, gk->world.translate.z,
+									gkTri ? "BSTriShape " : "NiNode ",
+									gkColl ? "+COLLISION" : "");
+							}
+						}
+					}
+				}
+			}
+		}
+
 		// --- Mesh-based grab point alignment ---
+		// INVESTIGATION: Use hitNode (collidableNode) as the mesh extraction root
+		// instead of refRoot (Get3D). The hitNode is the NiNode where the physics
+		// body is attached — its world transform matches the Havok body position.
+		// Previous approach re-rooted to refRoot which may be 75gu away.
+		RE::NiAVObject* meshRoot = sel.hitNode ? sel.hitNode : node3D;
 		RE::NiPoint3 grabSurfacePoint = objectWorldTransform.translate;
 		bool meshGrabFound = false;
 
-		if (node3D) {
+		if (meshRoot) {
 			std::vector<TriangleData> triangles;
-			extractAllTriangles(node3D, triangles);
+			extractAllTriangles(meshRoot, triangles);
+
+			// --- Vertex format diagnostic for first BSTriShape in subtree ---
+			// Log vertexDesc fields to verify FP16/FP32 detection is working.
+			{
+				RE::BSTriShape* firstTriShape = meshRoot->IsTriShape();
+				if (!firstTriShape) {
+					// meshRoot is a NiNode — check first child
+					auto* meshNode = meshRoot->IsNode();
+					if (meshNode) {
+						auto& kids = meshNode->GetRuntimeData().children;
+						for (std::uint32_t ci = 0; ci < kids.size(); ci++) {
+							auto* kid = kids[ci].get();
+							if (kid && kid->IsTriShape()) {
+								firstTriShape = kid->IsTriShape();
+								break;
+							}
+						}
+					}
+				}
+				if (firstTriShape) {
+					auto* tsBase = reinterpret_cast<char*>(firstTriShape);
+					std::uint64_t vtxDesc = *reinterpret_cast<std::uint64_t*>(tsBase + VROffset::vertexDesc);
+					std::uint32_t stride = static_cast<std::uint32_t>(vtxDesc & 0xF) * 4;
+					std::uint32_t posOff = static_cast<std::uint32_t>((vtxDesc >> 2) & 0x3C);
+					bool fullPrec = ((vtxDesc >> 54) & 1) != 0;
+					std::uint8_t geomType = *reinterpret_cast<std::uint8_t*>(tsBase + 0x198);
+					void* skinInst = *reinterpret_cast<void**>(tsBase + VROffset::skinInstance);
+
+					ROCK_LOG_INFO(MeshGrab,
+						"VertexDiag '{}': vtxDesc=0x{:016X} stride={} posOffset={} fullPrec={} geomType={} skinned={}",
+						firstTriShape->name.c_str() ? firstTriShape->name.c_str() : "(null)",
+						vtxDesc, stride, posOff, fullPrec ? 1 : 0,
+						geomType, skinInst ? 1 : 0);
+				}
+			}
+
+			// NO re-rooting — if we extract from the hitNode subtree, the
+			// triShape->world should already be at the physics body position.
+			// The re-rooting was moving triangles to refRoot which is WRONG
+			// if refRoot != hitNode.
+			if (!triangles.empty()) {
+				// DIAGNOSTIC: log triangle centroid vs hitNode vs refRoot vs bodyPos
+				auto& t0 = triangles[0];
+				float cx = (t0.v0.x + t0.v1.x + t0.v2.x) / 3.0f;
+				float cy = (t0.v0.y + t0.v1.y + t0.v2.y) / 3.0f;
+				float cz = (t0.v0.z + t0.v1.z + t0.v2.z) / 3.0f;
+
+				auto* bodyArray = world->GetBodyArray();
+				auto* objFloats = reinterpret_cast<float*>(&bodyArray[objectBodyId.value]);
+
+				float distToHitNode = sel.hitNode ? std::sqrt(
+					(cx - sel.hitNode->world.translate.x) * (cx - sel.hitNode->world.translate.x) +
+					(cy - sel.hitNode->world.translate.y) * (cy - sel.hitNode->world.translate.y) +
+					(cz - sel.hitNode->world.translate.z) * (cz - sel.hitNode->world.translate.z)) : -1.0f;
+				float distToRoot = node3D ? std::sqrt(
+					(cx - node3D->world.translate.x) * (cx - node3D->world.translate.x) +
+					(cy - node3D->world.translate.y) * (cy - node3D->world.translate.y) +
+					(cz - node3D->world.translate.z) * (cz - node3D->world.translate.z)) : -1.0f;
+				float distToBody = std::sqrt(
+					(cx - objFloats[12]*70.0f) * (cx - objFloats[12]*70.0f) +
+					(cy - objFloats[13]*70.0f) * (cy - objFloats[13]*70.0f) +
+					(cz - objFloats[14]*70.0f) * (cz - objFloats[14]*70.0f));
+
+				ROCK_LOG_INFO(MeshGrab, "TRI[0] centroid=({:.1f},{:.1f},{:.1f}) distToHitNode={:.1f} distToRoot={:.1f} distToBody={:.1f}",
+					cx, cy, cz, distToHitNode, distToRoot, distToBody);
+			}
 
 			if (!triangles.empty()) {
 				RE::NiPoint3 palmPos = computePalmPosition(handWorldTransform, _isLeft);
@@ -346,12 +511,12 @@ namespace frik::rock
 			float dz = grabHk[2] - objBody[14];
 
 			// Transform world-space delta to body-local space.
-			// Body array is ROW-MAJOR (Ghidra-verified: SetBodyTransform does direct copy
-			// from NiMatrix3 row-major, no transposition). body[0,1,2] = row 0.
-			// Havok uses RIGHT-MULTIPLICATION convention (v' = v * R), so body-local
-			// coordinates = delta * R^T, component j = dot(row_j, delta).
-			// This is correct — NOT R * delta as left-multiplication would suggest.
-			// See havok/HAVOK_CONVENTIONS.md for full derivation.
+			// Body array is COLUMN-MAJOR (blind audit 2026-03-30: setBodyTransform at
+			// 0x1415395e0 copies hkTransformf directly, no transpose. hkTransformf is
+			// column-major). body[0,1,2] = column 0 = (R00, R10, R20).
+			// Havok uses LEFT-MULTIPLICATION: world = R * local + t.
+			// Inverse: local = R^T * delta. Dotting each column with delta gives R^T * delta.
+			// component j = dot(column_j, delta) = (R^T * delta)[j].
 			_grabPointLocal[0] = objBody[0] * dx + objBody[1] * dy + objBody[2] * dz;
 			_grabPointLocal[1] = objBody[4] * dx + objBody[5] * dy + objBody[6] * dz;
 			_grabPointLocal[2] = objBody[8] * dx + objBody[9] * dy + objBody[10] * dz;
@@ -454,6 +619,27 @@ namespace frik::rock
 			grabHk[2] = grabSurfacePoint.z * INV_HAVOK_SCALE;
 			grabHk[3] = 0.0f;
 
+			// DIAGNOSTIC: Log grab-time positions and distances
+			{
+				float palmToGrab = std::sqrt(
+					(palmHk[0]-grabHk[0])*(palmHk[0]-grabHk[0]) +
+					(palmHk[1]-grabHk[1])*(palmHk[1]-grabHk[1]) +
+					(palmHk[2]-grabHk[2])*(palmHk[2]-grabHk[2]));
+				float palmToWand = std::sqrt(
+					(palmPos.x - handWorldTransform.translate.x)*(palmPos.x - handWorldTransform.translate.x) +
+					(palmPos.y - handWorldTransform.translate.y)*(palmPos.y - handWorldTransform.translate.y) +
+					(palmPos.z - handWorldTransform.translate.z)*(palmPos.z - handWorldTransform.translate.z));
+				ROCK_LOG_INFO(Hand, "GRAB DIAG {}: palmPos=({:.1f},{:.1f},{:.1f}) wandPos=({:.1f},{:.1f},{:.1f}) "
+					"grabSurface=({:.1f},{:.1f},{:.1f}) meshGrab={} "
+					"palmToGrab_hk={:.4f} ({:.1f} game units) palmToWand={:.1f} game units",
+					handName(),
+					palmPos.x, palmPos.y, palmPos.z,
+					handWorldTransform.translate.x, handWorldTransform.translate.y, handWorldTransform.translate.z,
+					grabSurfacePoint.x, grabSurfacePoint.y, grabSurfacePoint.z,
+					meshGrabFound,
+					palmToGrab, palmToGrab * 70.0f, palmToWand);
+			}
+
 			_activeConstraint = createGrabConstraint(
 				world, _collisionBodyId, objectBodyId,
 				palmHk, grabHk, _grabHandSpace,
@@ -527,18 +713,13 @@ namespace frik::rock
 	}
 
 	// =========================================================================
-	// Per-Frame Held Update — Motor Parameter Ramp (HIGGS pattern)
+	// Per-Frame Held Update
 	//
-	// Constraint targets (pivotA, pivotB, m_target_bRca) are FIXED from grab
-	// time — set once in createGrabConstraint, never updated here.
-	//
-	// 5-agent investigation (2026-03-22) proved HIGGS pivotB is effectively
-	// constant (computed from frozen grab-time transform). Motor error comes
-	// from bodyA (hand, keyframed) moving while bodyB (object, dynamic) lags.
-	// Naive per-frame pivotB = R_obj^T*(handPos-objPos) zeros the error.
-	//
-	// This function only updates motor PARAMETERS (tau, force, damping)
-	// for fade-in and approach behavior.
+	// PivotA (palm in hand body-local) is set at grab time and constant.
+	// PivotB and angular target (m_target_bRca) are updated per-frame from
+	// the frozen _grabHandSpace transform.
+	// Motor PARAMETERS (tau, force, damping) are updated for fade-in and
+	// collision-adaptive behavior.
 	// =========================================================================
 
 	void Hand::updateHeldObject(RE::hknpWorld* world,
@@ -565,23 +746,7 @@ namespace frik::rock
 		_grabStartTime += deltaTime;
 
 		// =====================================================================
-		// Phase 0B.4-5: PER-FRAME CONSTRAINT TARGET UPDATE
-		//
-		// ROOT CAUSE FIX: The previous "5-agent investigation" INCORRECTLY
-		// concluded that HIGGS pivotB is "effectively constant." This is WRONG.
-		// HIGGS S05 section 5.3 clearly shows per-frame updates to BOTH:
-		//   1. transformB.translation (pivotB) — recomputed from frozen _grabHandSpace
-		//   2. m_target_bRca (angular target) — recomputed from Inverse(_grabHandSpace).rotation
-		//
-		// The frozen _grabHandSpace is NOT the current hand/object positions.
-		// It's the desired object position RELATIVE to the hand, stored at grab time.
-		// The per-frame update transforms this through the current object scale
-		// and the palm offset to produce the correct motor target.
-		//
-		// Without this update: object stays at grab-time distance (rubberbanding).
-		// With this update: motors drive the object to where the palm wants it.
-		//
-		// Reference: HIGGS S05 5.3, S00 0.7a/0.7b, PRE1 result (identity GetRigidBodyTLocalTransform)
+		// Per-frame: update angular target and pivotB from frozen _grabHandSpace.
 		// =====================================================================
 		if (_activeConstraint.constraintData) {
 			auto* cd = static_cast<char*>(_activeConstraint.constraintData);
@@ -629,10 +794,9 @@ namespace frik::rock
 				_mm_store_ps(target + 8, _mm_load_ps(col2));
 			}
 
-			// Phase 0B.4: Update pivotB (transformB.translation) at constraint+0xA0
-			// HIGGS S05 5.3: newPivotB = (desiredHandTransformHavokObjSpace * palmPosHandspace) * objectScale * havokWorldScale
-			// desiredHandTransformHavokObjSpace = {invRot, invPos, invScale}
-			// palmPosHandspace = palm offset in hand-local space
+			// Per-frame pivotB update from frozen _grabHandSpace + palm offset.
+			// UNDER INVESTIGATION (2026-03-30): First-frame pivotB jumps significantly
+			// from creation-time value. Needs proper audit against HIGGS before changing.
 			{
 				// Palm offset in hand-local space (from config, game units)
 				RE::NiPoint3 palmHS;
@@ -648,7 +812,6 @@ namespace frik::rock
 				transformed.z = (invRot.entry[2][0]*palmHS.x + invRot.entry[2][1]*palmHS.y + invRot.entry[2][2]*palmHS.z) * invScale + invPos.z;
 
 				// Apply object scale and Havok scale
-				// I3 FIX: Re-derive from refr instead of trusting cached _heldNode
 				float objScale = 1.0f;
 				if (_savedObjectState.refr) {
 					auto* objNode = _savedObjectState.refr->Get3D();
@@ -659,9 +822,6 @@ namespace frik::rock
 
 				auto* pivotB = reinterpret_cast<float*>(cd + offsets::kTransformB_Pos);
 
-				// DIAGNOSTIC: Log the pivotB before and after the per-frame update.
-				// If these differ significantly on the first frame, that's the oscillation cause.
-				// S1 FIX: Per-instance counter (member) instead of shared static.
 				if (_pivotBLogCounter++ < 5) {
 					ROCK_LOG_INFO(Hand, "{} PIVOTB[{}]: BEFORE=({:.4f},{:.4f},{:.4f}) AFTER=({:.4f},{:.4f},{:.4f}) "
 						"palmHS=({:.1f},{:.1f},{:.1f}) invPos=({:.2f},{:.2f},{:.2f}) "
@@ -675,7 +835,7 @@ namespace frik::rock
 						objScale, combinedScale);
 				}
 
-				// Atomic 16-byte write (C3 fix — see angular target comment above)
+				// Atomic 16-byte write
 				alignas(16) float newPivotB[4] = {
 					transformed.x * combinedScale,
 					transformed.y * combinedScale,
@@ -749,11 +909,11 @@ namespace frik::rock
 		}
 
 		// =====================================================================
-		// Mass-based force clamping (HIGGS pattern, 20-agent analysis 2026-03-22)
+		// Mass-based force clamping (HIGGS pattern)
 		// HIGGS: linearMaxForce = min(configMaxForce, mass * 600)
 		// Without clamping, light objects get maxForce=10000 → acceleration of
 		// 20000 m/s² for a 0.5kg object → massive overshoot → oscillation.
-		// Re-enabled 2026-03-24 after confirming collision filter fix didn't solve
+		// Re-enabled after confirming collision filter fix didn't solve
 		// the rubberbanding — the root cause was unclamped motor force.
 		// =====================================================================
 		{
@@ -842,32 +1002,62 @@ namespace frik::rock
 			auto* h = reinterpret_cast<float*>(&bodyArray[_collisionBodyId.value]);
 			auto* o = reinterpret_cast<float*>(&bodyArray[_savedObjectState.bodyId.value]);
 
-			// pivotB_world = objPos + R_obj * grabPointLocal
-			float pbx = o[12] + o[0]*_grabPointLocal[0] + o[4]*_grabPointLocal[1] + o[8]*_grabPointLocal[2];
-			float pby = o[13] + o[1]*_grabPointLocal[0] + o[5]*_grabPointLocal[1] + o[9]*_grabPointLocal[2];
-			float pbz = o[14] + o[2]*_grabPointLocal[0] + o[6]*_grabPointLocal[1] + o[10]*_grabPointLocal[2];
+			// Read ACTUAL pivotA and pivotB from the constraint data (not stale member vars)
+			auto* cd = static_cast<char*>(_activeConstraint.constraintData);
+			auto* pivotA_local = reinterpret_cast<float*>(cd + offsets::kTransformA_Pos);
+			auto* pivotB_local = reinterpret_cast<float*>(cd + offsets::kTransformB_Pos);
 
-			// pivotA_world ≈ handPos (pivotA is near zero)
-			float ex = h[12] - pbx;
-			float ey = h[13] - pby;
-			float ez = h[14] - pbz;
+			// pivotA_world = handBodyPos + R_hand * pivotA_local (includes palm offset!)
+			float pax = h[12] + h[0]*pivotA_local[0] + h[4]*pivotA_local[1] + h[8]*pivotA_local[2];
+			float pay = h[13] + h[1]*pivotA_local[0] + h[5]*pivotA_local[1] + h[9]*pivotA_local[2];
+			float paz = h[14] + h[2]*pivotA_local[0] + h[6]*pivotA_local[1] + h[10]*pivotA_local[2];
+
+			// pivotB_world = objBodyPos + R_obj * pivotB_local (current per-frame updated value)
+			float pbx = o[12] + o[0]*pivotB_local[0] + o[4]*pivotB_local[1] + o[8]*pivotB_local[2];
+			float pby = o[13] + o[1]*pivotB_local[0] + o[5]*pivotB_local[1] + o[9]*pivotB_local[2];
+			float pbz = o[14] + o[2]*pivotB_local[0] + o[6]*pivotB_local[1] + o[10]*pivotB_local[2];
+
+			// Motor error = world-space distance between pivotA and pivotB
+			float ex = pax - pbx, ey = pay - pby, ez = paz - pbz;
 			float pivotErr = std::sqrt(ex*ex + ey*ey + ez*ez);
 
-			// Also body center dist for reference
+			// Body center distance for reference
 			float dx = o[12] - h[12], dy = o[13] - h[13], dz = o[14] - h[14];
 			float bodyDist = std::sqrt(dx*dx + dy*dy + dz*dz);
 
-			ROCK_LOG_INFO(Hand, "{} HELD: tau={:.3f} linF={:.0f} angF={:.0f} pivotErr={:.3f} bodyDist={:.3f} "
-				"hand=({:.3f},{:.3f},{:.3f}) pivotB_w=({:.3f},{:.3f},{:.3f})",
-				handName(), currentTau, currentLinearForce, currentAngularForce, pivotErr, bodyDist,
-				h[12], h[13], h[14], pbx, pby, pbz);
+			// PivotA offset from hand body center (should be palm offset, NOT zero)
+			float paOffMag = std::sqrt(pivotA_local[0]*pivotA_local[0] +
+				pivotA_local[1]*pivotA_local[1] + pivotA_local[2]*pivotA_local[2]);
 
-			// In-game notification every ~3 seconds (every 6th log = 6*45 frames ≈ 3s at 90fps)
+			// Object velocity from motion array (velocity at motion+0x40)
+			float objVelMag = 0.0f;
+			{
+				auto* objMotion = world->GetBodyMotion(_savedObjectState.bodyId);
+				if (objMotion) {
+					auto* mv = reinterpret_cast<float*>(reinterpret_cast<char*>(objMotion) + 0x40);
+					objVelMag = std::sqrt(mv[0]*mv[0] + mv[1]*mv[1] + mv[2]*mv[2]);
+				}
+			}
+
+			ROCK_LOG_INFO(Hand, "{} HELD: tau={:.3f} linF={:.0f} angF={:.0f} "
+				"ERR={:.4f}({:.1f}gu) bDist={:.3f} objVel={:.3f} "
+				"paW=({:.1f},{:.1f},{:.1f}) pbW=({:.1f},{:.1f},{:.1f}) "
+				"handW=({:.1f},{:.1f},{:.1f}) objW=({:.1f},{:.1f},{:.1f})",
+				handName(), currentTau, currentLinearForce, currentAngularForce,
+				pivotErr, pivotErr * 70.0f, bodyDist, objVelMag,
+				pax*70.0f, pay*70.0f, paz*70.0f,
+				pbx*70.0f, pby*70.0f, pbz*70.0f,
+				h[12]*70.0f, h[13]*70.0f, h[14]*70.0f,
+				o[12]*70.0f, o[13]*70.0f, o[14]*70.0f);
+
+			// In-game notification with world positions
 			_notifCounter++;
 			if (_notifCounter >= 6) {
 				_notifCounter = 0;
-				f4vr::showNotification(std::format("[ROCK] err={:.2f} tau={:.3f} F={:.0f}",
-					pivotErr, currentTau, currentLinearForce));
+				float paToHand = std::sqrt((pax-h[12])*(pax-h[12])+(pay-h[13])*(pay-h[13])+(paz-h[14])*(paz-h[14])) * 70.0f;
+				float pbToObj = std::sqrt((pbx-o[12])*(pbx-o[12])+(pby-o[13])*(pby-o[13])+(pbz-o[14])*(pbz-o[14])) * 70.0f;
+				f4vr::showNotification(std::format("[ROCK] err={:.1f}gu F={:.0f} vel={:.2f} paOff={:.1f} pbOff={:.1f}",
+					pivotErr * 70.0f, currentLinearForce, objVelMag, paToHand, pbToObj));
 			}
 		}
 

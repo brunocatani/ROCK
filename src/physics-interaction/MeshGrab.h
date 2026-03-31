@@ -7,7 +7,7 @@
 // aligning the object so that point sits in the palm. This creates natural
 // grip alignment — you grab a gun by the handle, a mug by the rim, etc.
 //
-// FO4VR OFFSET DISCOVERY (2026-03-20):
+// FO4VR OFFSET DISCOVERY:
 // NiAVObject in FO4VR is 0x160 bytes (NOT 0x120 like flat FO4).
 // All BSGeometry/BSTriShape members are shifted +0x40 from CommonLibF4VR headers.
 // CommonLibF4VR's C++ struct member access reads WRONG offsets — must use raw
@@ -18,13 +18,16 @@
 //   +0x10 → TriangleData* → +0x08 → triangles (CPU uint16 indices)
 //
 // Vertex stride: (vertexDesc & 0xF) * 4 bytes per vertex.
-// Position is at offset 0 within each vertex (first 12 bytes = NiPoint3).
+// Position offset: (vertexDesc >> 2) & 0x3C (usually 0 for BSTriShape).
+// Position format: FP16 (half-float) by default, float32 if VF_FULLPREC
+//   flag is set (bit 54 of vertexDesc).
 
 #include "PhysicsLog.h"
 #include "RE/Fallout.h"
 
 #include <vector>
 #include <cmath>
+#include <cstring>
 #include <functional>
 #include <limits>
 
@@ -68,13 +71,112 @@ namespace frik::rock
 	};
 
 	// =========================================================================
+	// IEEE 754 binary16 (half-float) to binary32 (float) conversion.
+	//
+	// WHY: BSTriShape vertex buffers store positions as FP16 by default.
+	// Only when the VF_FULLPREC flag (bit 54 of vertexDesc) is set are
+	// positions stored as 32-bit floats. Reading FP16 data as float*
+	// produces garbage values (millions of game units off), which was the
+	// root cause of the 75gu mesh-physics offset bug.
+	//
+	// Implementation follows the standard IEEE 754 bit-manipulation approach:
+	// extract sign/exponent/mantissa from 16-bit, remap to 32-bit layout.
+	// Handles zero, denormals, normals, and infinity/NaN.
+	// =========================================================================
+	inline float halfToFloat(std::uint16_t h)
+	{
+		std::uint32_t sign     = (h >> 15) & 0x1;
+		std::uint32_t exponent = (h >> 10) & 0x1F;
+		std::uint32_t mantissa = h & 0x3FF;
+
+		std::uint32_t f;
+
+		if (exponent == 0) {
+			if (mantissa == 0) {
+				// Signed zero
+				f = sign << 31;
+			} else {
+				// Denormalized number — renormalize
+				// Shift mantissa until the leading 1 bit is in position 10
+				exponent = 1;
+				while ((mantissa & 0x400) == 0) {
+					mantissa <<= 1;
+					exponent++;
+				}
+				mantissa &= 0x3FF;  // Remove the leading 1 bit
+				// FP16 bias=15, FP32 bias=127. Exponent maps: (1-exponent) + (127-15)
+				f = (sign << 31) | ((127 - 15 + 1 - exponent) << 23) | (mantissa << 13);
+			}
+		} else if (exponent == 0x1F) {
+			// Infinity or NaN — preserve mantissa pattern
+			f = (sign << 31) | (0xFF << 23) | (mantissa << 13);
+		} else {
+			// Normalized number — rebias exponent from FP16 (bias=15) to FP32 (bias=127)
+			f = (sign << 31) | ((exponent - 15 + 127) << 23) | (mantissa << 13);
+		}
+
+		float result;
+		std::memcpy(&result, &f, sizeof(float));
+		return result;
+	}
+
+	// =========================================================================
+	// Read a vertex position from a BSTriShape vertex buffer.
+	//
+	// WHY: Vertex position encoding depends on the VF_FULLPREC flag in
+	// vertexDesc. Full-precision vertices store 3x float32 (12 bytes).
+	// Half-precision (default) stores 3x uint16 FP16 (6 bytes).
+	// The position offset within each vertex stride is computed from
+	// vertexDesc bits, not hardcoded to 0 (though it IS 0 for most
+	// standard BSTriShape — BSDynamicTriShape can differ).
+	//
+	// Parameters:
+	//   vertexBase  — pointer to start of this vertex within the buffer
+	//   posOffset   — byte offset to position data within the vertex
+	//   fullPrec    — true if VF_FULLPREC is set (32-bit floats)
+	// =========================================================================
+	inline RE::NiPoint3 readVertexPosition(const std::uint8_t* vertexBase,
+		std::uint32_t posOffset, bool fullPrec)
+	{
+		const std::uint8_t* posPtr = vertexBase + posOffset;
+		if (fullPrec) {
+			const float* fp = reinterpret_cast<const float*>(posPtr);
+			return RE::NiPoint3(fp[0], fp[1], fp[2]);
+		} else {
+			const std::uint16_t* hp = reinterpret_cast<const std::uint16_t*>(posPtr);
+			return RE::NiPoint3(
+				halfToFloat(hp[0]),
+				halfToFloat(hp[1]),
+				halfToFloat(hp[2]));
+		}
+	}
+
+	// =========================================================================
 	// Extract triangles from a single BSTriShape using VR-corrected offsets.
+	// Transforms model-space vertices to world space via triShape->world.
 	// Returns number of triangles added.
+	//
+	// Handles both full-precision (float32) and half-precision (FP16) vertex
+	// positions based on the VF_FULLPREC flag (bit 54 of vertexDesc).
+	// Detects BSDynamicTriShape (type byte at +0x198 == 1) and skips them
+	// for now — they use a separate pDynamicData buffer that requires
+	// special handling (future task).
 	// =========================================================================
 	inline int extractTrianglesFromTriShape(RE::BSTriShape* triShape,
 		std::vector<TriangleData>& outTriangles)
 	{
 		auto* base = reinterpret_cast<char*>(triShape);
+
+		// --- Detect BSDynamicTriShape ---
+		// Type byte at VR offset +0x198: BSTriShape=3, BSDynamicTriShape=1.
+		// Dynamic shapes use a separate pDynamicData buffer at +0x1A0 with
+		// stride=16 and full-precision positions. Skip for now.
+		std::uint8_t geomType = *reinterpret_cast<std::uint8_t*>(base + 0x198);
+		if (geomType == 1) {
+			ROCK_LOG_INFO(MeshGrab, "Skipping BSDynamicTriShape '{}' (type=1, needs special handling)",
+				triShape->name.c_str() ? triShape->name.c_str() : "(null)");
+			return 0;
+		}
 
 		// Read VR-corrected offsets
 		auto* rendererData = *reinterpret_cast<void**>(base + VROffset::rendererData);
@@ -85,7 +187,14 @@ namespace frik::rock
 		std::uint64_t vtxDescRaw = *reinterpret_cast<std::uint64_t*>(base + VROffset::vertexDesc);
 		std::uint32_t vtxStride = static_cast<std::uint32_t>(vtxDescRaw & 0xF) * 4;
 
-		if (numTris == 0 || numVerts == 0 || vtxStride < 12) return 0;
+		// Compute position offset and full-precision flag from vertexDesc
+		std::uint32_t posOffset = static_cast<std::uint32_t>((vtxDescRaw >> 2) & 0x3C);
+		bool fullPrecision = ((vtxDescRaw >> 54) & 1) != 0;
+
+		// Minimum stride: full-precision needs at least posOffset+12 bytes,
+		// half-precision needs at least posOffset+6 bytes per vertex.
+		std::uint32_t minStride = fullPrecision ? (posOffset + 12) : (posOffset + 6);
+		if (numTris == 0 || numVerts == 0 || vtxStride < minStride) return 0;
 
 		// BSGeometryData: vertexData at +0x08, triangleData at +0x10
 		auto* vertexDataPtr = *reinterpret_cast<void**>(reinterpret_cast<char*>(rendererData) + 0x08);
@@ -97,7 +206,10 @@ namespace frik::rock
 		auto* tris = *reinterpret_cast<std::uint16_t**>(reinterpret_cast<char*>(triangleDataPtr) + 0x08);
 		if (!verts || !tris) return 0;
 
-		// Get node world transform for model→world conversion
+		// Use triShape's own world transform — correct rotation/scale for this mesh.
+		// The resulting world-space positions may be offset from the object's root
+		// due to NIF-internal parent-chain transforms. The caller handles re-rooting
+		// after all triangles are extracted.
 		RE::NiTransform worldTransform = triShape->world;
 
 		int added = 0;
@@ -109,15 +221,11 @@ namespace frik::rock
 			// Bounds check
 			if (i0 >= numVerts || i1 >= numVerts || i2 >= numVerts) continue;
 
-			// Read vertex positions (position is first 12 bytes of each vertex)
-			auto* p0 = reinterpret_cast<float*>(verts + i0 * vtxStride);
-			auto* p1 = reinterpret_cast<float*>(verts + i1 * vtxStride);
-			auto* p2 = reinterpret_cast<float*>(verts + i2 * vtxStride);
-
+			// Read vertex positions using format-aware reader
 			TriangleData tri;
-			tri.v0 = RE::NiPoint3(p0[0], p0[1], p0[2]);
-			tri.v1 = RE::NiPoint3(p1[0], p1[1], p1[2]);
-			tri.v2 = RE::NiPoint3(p2[0], p2[1], p2[2]);
+			tri.v0 = readVertexPosition(verts + i0 * vtxStride, posOffset, fullPrecision);
+			tri.v1 = readVertexPosition(verts + i1 * vtxStride, posOffset, fullPrecision);
+			tri.v2 = readVertexPosition(verts + i2 * vtxStride, posOffset, fullPrecision);
 
 			// Transform from model space to world space
 			tri.applyTransform(worldTransform);
@@ -129,9 +237,12 @@ namespace frik::rock
 
 	// =========================================================================
 	// Recursively traverse the NiNode tree and extract all BSTriShape triangles.
+	// Triangles are in world space via each triShape->world transform.
+	// Caller is responsible for re-rooting if NIF-internal offsets are present.
 	// =========================================================================
 	inline void extractAllTriangles(RE::NiAVObject* root,
-		std::vector<TriangleData>& outTriangles, int maxDepth = 10)
+		std::vector<TriangleData>& outTriangles,
+		int maxDepth = 10)
 	{
 		if (!root || maxDepth <= 0) return;
 
@@ -178,6 +289,57 @@ namespace frik::rock
 
 	inline RE::NiPoint3 sub(const RE::NiPoint3& a, const RE::NiPoint3& b) {
 		return RE::NiPoint3(a.x - b.x, a.y - b.y, a.z - b.z);
+	}
+
+	// =========================================================================
+	// Re-root extracted world-space triangles to the object's root position.
+	//
+	// WHY: BSTriShape nodes in Bethesda NIFs often have parent-chain transforms
+	// that place them at a different world position than the reference root
+	// (e.g., billiard balls with 75gu structural offset). After extracting
+	// triangles via triShape->world, they're at the triShape's world position
+	// — not where the physics body is.
+	//
+	// This function computes the centroid of all extracted triangles, then
+	// shifts every vertex so the centroid lands at rootWorldPos. This preserves
+	// the mesh shape and relative vertex positions while centering the geometry
+	// on the physics body.
+	//
+	// HIGGS equivalent: adjustedTransform * inverse(originalTransform) applied
+	// per-triangle after extraction (hand.cpp:1199-1204).
+	// =========================================================================
+	inline void rerootTrianglesToPosition(
+		std::vector<TriangleData>& triangles,
+		const RE::NiPoint3& rootWorldPos)
+	{
+		if (triangles.empty()) return;
+
+		// Compute centroid of all extracted triangle vertices
+		RE::NiPoint3 centroid(0.0f, 0.0f, 0.0f);
+		int vertCount = 0;
+		for (const auto& tri : triangles) {
+			centroid.x += tri.v0.x + tri.v1.x + tri.v2.x;
+			centroid.y += tri.v0.y + tri.v1.y + tri.v2.y;
+			centroid.z += tri.v0.z + tri.v1.z + tri.v2.z;
+			vertCount += 3;
+		}
+		float inv = 1.0f / static_cast<float>(vertCount);
+		centroid.x *= inv;
+		centroid.y *= inv;
+		centroid.z *= inv;
+
+		// Shift = where we want the center to be - where it currently is
+		RE::NiPoint3 shift(
+			rootWorldPos.x - centroid.x,
+			rootWorldPos.y - centroid.y,
+			rootWorldPos.z - centroid.z);
+
+		// Apply shift to every vertex
+		for (auto& tri : triangles) {
+			tri.v0.x += shift.x; tri.v0.y += shift.y; tri.v0.z += shift.z;
+			tri.v1.x += shift.x; tri.v1.y += shift.y; tri.v1.z += shift.z;
+			tri.v2.x += shift.x; tri.v2.y += shift.y; tri.v2.z += shift.z;
+		}
 	}
 
 	// =========================================================================
