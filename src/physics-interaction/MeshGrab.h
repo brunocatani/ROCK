@@ -98,14 +98,15 @@ namespace frik::rock
 			} else {
 				// Denormalized number — renormalize
 				// Shift mantissa until the leading 1 bit is in position 10
-				exponent = 1;
+				exponent = 0;
 				while ((mantissa & 0x400) == 0) {
 					mantissa <<= 1;
 					exponent++;
 				}
 				mantissa &= 0x3FF;  // Remove the leading 1 bit
-				// FP16 bias=15, FP32 bias=127. Exponent maps: (1-exponent) + (127-15)
-				f = (sign << 31) | ((127 - 15 + 1 - exponent) << 23) | (mantissa << 13);
+				// FP16 denormal: value = 2^(-14) * (mantissa/1024). After renormalization
+				// with n shifts, effective biased exponent = 1 - n in FP16 = (114 - n) in FP32.
+				f = (sign << 31) | ((114 - exponent) << 23) | (mantissa << 13);
 			}
 		} else if (exponent == 0x1F) {
 			// Infinity or NaN — preserve mantissa pattern
@@ -207,9 +208,6 @@ namespace frik::rock
 		if (!verts || !tris) return 0;
 
 		// Use triShape's own world transform — correct rotation/scale for this mesh.
-		// The resulting world-space positions may be offset from the object's root
-		// due to NIF-internal parent-chain transforms. The caller handles re-rooting
-		// after all triangles are extracted.
 		RE::NiTransform worldTransform = triShape->world;
 
 		int added = 0;
@@ -238,7 +236,6 @@ namespace frik::rock
 	// =========================================================================
 	// Recursively traverse the NiNode tree and extract all BSTriShape triangles.
 	// Triangles are in world space via each triShape->world transform.
-	// Caller is responsible for re-rooting if NIF-internal offsets are present.
 	// =========================================================================
 	inline void extractAllTriangles(RE::NiAVObject* root,
 		std::vector<TriangleData>& outTriangles,
@@ -289,57 +286,6 @@ namespace frik::rock
 
 	inline RE::NiPoint3 sub(const RE::NiPoint3& a, const RE::NiPoint3& b) {
 		return RE::NiPoint3(a.x - b.x, a.y - b.y, a.z - b.z);
-	}
-
-	// =========================================================================
-	// Re-root extracted world-space triangles to the object's root position.
-	//
-	// WHY: BSTriShape nodes in Bethesda NIFs often have parent-chain transforms
-	// that place them at a different world position than the reference root
-	// (e.g., billiard balls with 75gu structural offset). After extracting
-	// triangles via triShape->world, they're at the triShape's world position
-	// — not where the physics body is.
-	//
-	// This function computes the centroid of all extracted triangles, then
-	// shifts every vertex so the centroid lands at rootWorldPos. This preserves
-	// the mesh shape and relative vertex positions while centering the geometry
-	// on the physics body.
-	//
-	// HIGGS equivalent: adjustedTransform * inverse(originalTransform) applied
-	// per-triangle after extraction (hand.cpp:1199-1204).
-	// =========================================================================
-	inline void rerootTrianglesToPosition(
-		std::vector<TriangleData>& triangles,
-		const RE::NiPoint3& rootWorldPos)
-	{
-		if (triangles.empty()) return;
-
-		// Compute centroid of all extracted triangle vertices
-		RE::NiPoint3 centroid(0.0f, 0.0f, 0.0f);
-		int vertCount = 0;
-		for (const auto& tri : triangles) {
-			centroid.x += tri.v0.x + tri.v1.x + tri.v2.x;
-			centroid.y += tri.v0.y + tri.v1.y + tri.v2.y;
-			centroid.z += tri.v0.z + tri.v1.z + tri.v2.z;
-			vertCount += 3;
-		}
-		float inv = 1.0f / static_cast<float>(vertCount);
-		centroid.x *= inv;
-		centroid.y *= inv;
-		centroid.z *= inv;
-
-		// Shift = where we want the center to be - where it currently is
-		RE::NiPoint3 shift(
-			rootWorldPos.x - centroid.x,
-			rootWorldPos.y - centroid.y,
-			rootWorldPos.z - centroid.z);
-
-		// Apply shift to every vertex
-		for (auto& tri : triangles) {
-			tri.v0.x += shift.x; tri.v0.y += shift.y; tri.v0.z += shift.z;
-			tri.v1.x += shift.x; tri.v1.y += shift.y; tri.v1.z += shift.z;
-			tri.v2.x += shift.x; tri.v2.y += shift.y; tri.v2.z += shift.z;
-		}
 	}
 
 	// =========================================================================

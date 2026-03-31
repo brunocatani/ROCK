@@ -240,120 +240,20 @@ namespace frik::rock
 			objectWorldTransform = handWorldTransform;
 		}
 
-		// --- DIAGNOSTIC: Compare hitNode (collidableNode) vs refRoot (Get3D) ---
-		// HIGGS uses collidableNode = GetNodeFromCollidable(collidable) — the NiNode
-		// where the collision body is attached. ROCK was using sel.refr->Get3D() (the
-		// NIF root). If they differ, the 75gu offset is the distance between them, and
-		// re-rooting to the root MOVES triangles AWAY from the physics body.
-		{
-			auto* bodyArray = world->GetBodyArray();
-			auto* objFloats = reinterpret_cast<float*>(&bodyArray[objectBodyId.value]);
-			float bodyPosX = objFloats[12] * 70.0f;
-			float bodyPosY = objFloats[13] * 70.0f;
-			float bodyPosZ = objFloats[14] * 70.0f;
-
-			ROCK_LOG_INFO(Hand, "=== GRAB NODE DIAGNOSTIC ===");
-			ROCK_LOG_INFO(Hand, "  refRoot (Get3D):  ({:.1f},{:.1f},{:.1f})",
-				node3D ? node3D->world.translate.x : 0.0f,
-				node3D ? node3D->world.translate.y : 0.0f,
-				node3D ? node3D->world.translate.z : 0.0f);
-			ROCK_LOG_INFO(Hand, "  hitNode (collNi): ({:.1f},{:.1f},{:.1f}) ptr={}",
-				sel.hitNode ? sel.hitNode->world.translate.x : 0.0f,
-				sel.hitNode ? sel.hitNode->world.translate.y : 0.0f,
-				sel.hitNode ? sel.hitNode->world.translate.z : 0.0f,
-				sel.hitNode ? "valid" : "NULL");
-			ROCK_LOG_INFO(Hand, "  havokBody*70:     ({:.1f},{:.1f},{:.1f})",
-				bodyPosX, bodyPosY, bodyPosZ);
-
-			if (node3D && sel.hitNode) {
-				float rootToHit = std::sqrt(
-					(node3D->world.translate.x - sel.hitNode->world.translate.x) *
-					(node3D->world.translate.x - sel.hitNode->world.translate.x) +
-					(node3D->world.translate.y - sel.hitNode->world.translate.y) *
-					(node3D->world.translate.y - sel.hitNode->world.translate.y) +
-					(node3D->world.translate.z - sel.hitNode->world.translate.z) *
-					(node3D->world.translate.z - sel.hitNode->world.translate.z));
-				float bodyToHit = std::sqrt(
-					(bodyPosX - sel.hitNode->world.translate.x) *
-					(bodyPosX - sel.hitNode->world.translate.x) +
-					(bodyPosY - sel.hitNode->world.translate.y) *
-					(bodyPosY - sel.hitNode->world.translate.y) +
-					(bodyPosZ - sel.hitNode->world.translate.z) *
-					(bodyPosZ - sel.hitNode->world.translate.z));
-				float bodyToRoot = std::sqrt(
-					(bodyPosX - node3D->world.translate.x) *
-					(bodyPosX - node3D->world.translate.x) +
-					(bodyPosY - node3D->world.translate.y) *
-					(bodyPosY - node3D->world.translate.y) +
-					(bodyPosZ - node3D->world.translate.z) *
-					(bodyPosZ - node3D->world.translate.z));
-				ROCK_LOG_INFO(Hand, "  rootToHitNode={:.1f}gu  bodyToHitNode={:.1f}gu  bodyToRoot={:.1f}gu",
-					rootToHit, bodyToHit, bodyToRoot);
-				ROCK_LOG_INFO(Hand, "  hitNode==refRoot: {}  hitNode name: {}",
-					(sel.hitNode == node3D) ? "YES" : "NO",
-					sel.hitNode->name.c_str() ? sel.hitNode->name.c_str() : "(null)");
-			}
-
-			// Walk NIF tree (first 2 levels) to show structure
-			if (node3D) {
-				ROCK_LOG_INFO(Hand, "  NIF tree root: '{}' type=NiNode",
-					node3D->name.c_str() ? node3D->name.c_str() : "(null)");
-				auto* rootNiNode = node3D->IsNode();
-				if (rootNiNode) {
-					auto& kids = rootNiNode->GetRuntimeData().children;
-					for (std::uint32_t ci = 0; ci < kids.size() && ci < 8; ci++) {
-						auto* kid = kids[ci].get();
-						if (!kid) continue;
-						bool hasCollision = (kid->collisionObject.get() != nullptr);
-						bool isTriShape = (kid->IsTriShape() != nullptr);
-						ROCK_LOG_INFO(Hand, "    child[{}]: '{}' pos=({:.1f},{:.1f},{:.1f}) {}{}",
-							ci,
-							kid->name.c_str() ? kid->name.c_str() : "(null)",
-							kid->world.translate.x, kid->world.translate.y, kid->world.translate.z,
-							isTriShape ? "BSTriShape " : "NiNode ",
-							hasCollision ? "+COLLISION" : "");
-						// One more level
-						auto* kidNode = kid->IsNode();
-						if (kidNode) {
-							auto& grandkids = kidNode->GetRuntimeData().children;
-							for (std::uint32_t gi = 0; gi < grandkids.size() && gi < 8; gi++) {
-								auto* gk = grandkids[gi].get();
-								if (!gk) continue;
-								bool gkColl = (gk->collisionObject.get() != nullptr);
-								bool gkTri = (gk->IsTriShape() != nullptr);
-								ROCK_LOG_INFO(Hand, "      grandchild[{}]: '{}' pos=({:.1f},{:.1f},{:.1f}) {}{}",
-									gi,
-									gk->name.c_str() ? gk->name.c_str() : "(null)",
-									gk->world.translate.x, gk->world.translate.y, gk->world.translate.z,
-									gkTri ? "BSTriShape " : "NiNode ",
-									gkColl ? "+COLLISION" : "");
-							}
-						}
-					}
-				}
-			}
-		}
-
 		// --- Mesh-based grab point alignment ---
-		// INVESTIGATION: Use hitNode (collidableNode) as the mesh extraction root
-		// instead of refRoot (Get3D). The hitNode is the NiNode where the physics
-		// body is attached — its world transform matches the Havok body position.
-		// Previous approach re-rooted to refRoot which may be 75gu away.
-		RE::NiAVObject* meshRoot = sel.hitNode ? sel.hitNode : node3D;
 		RE::NiPoint3 grabSurfacePoint = objectWorldTransform.translate;
 		bool meshGrabFound = false;
 
-		if (meshRoot) {
+		if (node3D) {
 			std::vector<TriangleData> triangles;
-			extractAllTriangles(meshRoot, triangles);
+			extractAllTriangles(node3D, triangles);
 
 			// --- Vertex format diagnostic for first BSTriShape in subtree ---
 			// Log vertexDesc fields to verify FP16/FP32 detection is working.
 			{
-				RE::BSTriShape* firstTriShape = meshRoot->IsTriShape();
+				RE::BSTriShape* firstTriShape = node3D->IsTriShape();
 				if (!firstTriShape) {
-					// meshRoot is a NiNode — check first child
-					auto* meshNode = meshRoot->IsNode();
+					auto* meshNode = node3D->IsNode();
 					if (meshNode) {
 						auto& kids = meshNode->GetRuntimeData().children;
 						for (std::uint32_t ci = 0; ci < kids.size(); ci++) {
@@ -382,12 +282,8 @@ namespace frik::rock
 				}
 			}
 
-			// NO re-rooting — if we extract from the hitNode subtree, the
-			// triShape->world should already be at the physics body position.
-			// The re-rooting was moving triangles to refRoot which is WRONG
-			// if refRoot != hitNode.
 			if (!triangles.empty()) {
-				// DIAGNOSTIC: log triangle centroid vs hitNode vs refRoot vs bodyPos
+				// Simplified centroid distance diagnostic
 				auto& t0 = triangles[0];
 				float cx = (t0.v0.x + t0.v1.x + t0.v2.x) / 3.0f;
 				float cy = (t0.v0.y + t0.v1.y + t0.v2.y) / 3.0f;
@@ -395,22 +291,13 @@ namespace frik::rock
 
 				auto* bodyArray = world->GetBodyArray();
 				auto* objFloats = reinterpret_cast<float*>(&bodyArray[objectBodyId.value]);
-
-				float distToHitNode = sel.hitNode ? std::sqrt(
-					(cx - sel.hitNode->world.translate.x) * (cx - sel.hitNode->world.translate.x) +
-					(cy - sel.hitNode->world.translate.y) * (cy - sel.hitNode->world.translate.y) +
-					(cz - sel.hitNode->world.translate.z) * (cz - sel.hitNode->world.translate.z)) : -1.0f;
-				float distToRoot = node3D ? std::sqrt(
-					(cx - node3D->world.translate.x) * (cx - node3D->world.translate.x) +
-					(cy - node3D->world.translate.y) * (cy - node3D->world.translate.y) +
-					(cz - node3D->world.translate.z) * (cz - node3D->world.translate.z)) : -1.0f;
 				float distToBody = std::sqrt(
 					(cx - objFloats[12]*70.0f) * (cx - objFloats[12]*70.0f) +
 					(cy - objFloats[13]*70.0f) * (cy - objFloats[13]*70.0f) +
 					(cz - objFloats[14]*70.0f) * (cz - objFloats[14]*70.0f));
 
-				ROCK_LOG_INFO(MeshGrab, "TRI[0] centroid=({:.1f},{:.1f},{:.1f}) distToHitNode={:.1f} distToRoot={:.1f} distToBody={:.1f}",
-					cx, cy, cz, distToHitNode, distToRoot, distToBody);
+				ROCK_LOG_INFO(MeshGrab, "TRI[0] centroid=({:.1f},{:.1f},{:.1f}) distToBody={:.1f}gu",
+					cx, cy, cz, distToBody);
 			}
 
 			if (!triangles.empty()) {
