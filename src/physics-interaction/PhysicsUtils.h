@@ -116,4 +116,58 @@ namespace frik::rock
 		outQuat[2] = q.z;
 		outQuat[3] = q.w;
 	}
+
+	// =========================================================================
+	// Center of Mass utilities (B8, blind audit 2026-03-31)
+	//
+	// In hknp, COM and body origin are DIFFERENT:
+	//   motion+0x00 = Center of Mass (COM) in Havok world space
+	//   body+0x30 (= body[12,13,14]) = body ORIGIN in Havok world space
+	//   body_origin = COM - R * comOffset
+	//   comOffset stored in W components: body+0x0C, +0x1C, +0x2C
+	//
+	// Constraint pivots are specified relative to body ORIGIN (not COM).
+	// ROCK's grab point math (dot columns with delta from body origin) is correct.
+	// COM is needed for: throw impulse application, gravity compensation,
+	// tipping prediction, and angular momentum computation.
+	//
+	// Verified via Ghidra: bhkNPCollisionObject::GetCenterOfMassInWorld (0x141e08ef0)
+	// reads motion+0x00 directly. hknpMotion::setFromMassProperties (0x1417d13a0)
+	// writes motion+0x00 = transform * localCOM.
+	// =========================================================================
+
+	/// Read the Center of Mass (COM) position from the motion array in Havok world coordinates.
+	/// Returns false if the body or motion is invalid.
+	/// NOTE: motion+0x00 is COM, body[12,13,14] is body origin. They differ for
+	/// objects with non-centered COM (most real objects).
+	inline bool getBodyCOMWorld(RE::hknpWorld* world, RE::hknpBodyId bodyId,
+		float& outX, float& outY, float& outZ)
+	{
+		if (!world || bodyId.value == 0x7FFF'FFFF) return false;
+
+		auto* bodyArray = world->GetBodyArray();
+		auto& body = bodyArray[bodyId.value];
+		auto motionIndex = body.motionIndex;
+		if (motionIndex == 0 || motionIndex > 4096) return false;
+
+		auto* worldBytes = reinterpret_cast<char*>(world);
+		auto* motionArrayPtr = *reinterpret_cast<char**>(worldBytes + 0xE0);
+		if (!motionArrayPtr) return false;
+
+		auto* motion = reinterpret_cast<float*>(motionArrayPtr + motionIndex * 0x80);
+		outX = motion[0];  // COM.x at motion+0x00
+		outY = motion[1];  // COM.y at motion+0x04
+		outZ = motion[2];  // COM.z at motion+0x08
+		return true;
+	}
+
+	/// Read the COM-to-body-origin offset from the body's rotation W components.
+	/// This offset is in body-local space. World offset = R * comOffset.
+	inline void getBodyCOMOffset(const float* bodyFloats,
+		float& outX, float& outY, float& outZ)
+	{
+		outX = bodyFloats[3];   // body+0x0C = W of rotation column 0
+		outY = bodyFloats[7];   // body+0x1C = W of rotation column 1
+		outZ = bodyFloats[11];  // body+0x2C = W of rotation column 2
+	}
 }

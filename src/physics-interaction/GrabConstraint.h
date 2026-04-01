@@ -176,13 +176,50 @@ namespace frik::rock
 	};
 
 	/// Packed inverse inertia layout at hknpMotion+0x20 (Ghidra-verified).
-	/// 8 bytes containing 4 int16 values (via packssdw):
+	/// 8 bytes containing 4 int16 values packed as bfloat16 (upper 16 bits of IEEE 754 float32):
 	///   [0] = invInertiaX, [1] = invInertiaY, [2] = invInertiaZ, [3] = invMass
-	/// Unpacking: float = (ushort)packed * 65536.0f
+	///
+	/// PACKING (verified via PSRAD 0x10 + PACKSSDW at 0x1415468a9 and 0x141e08c75):
+	///   int16 packed = (int16_t)( *(int32_t*)&float_value >> 16 )
+	///
+	/// UNPACKING (verified via PUNPCKLWD with zero at 0x1417d1ebf and 0x1417d1b32):
+	///   uint32_t expanded = (uint32_t)(uint16_t)packed << 16;
+	///   float value = *(float*)&expanded;
+	///
+	/// WARNING: bfloat16 is NOT linear. Ratios of raw int16 values are MEANINGLESS.
+	///   Example: packed=100 → float≈6.65e-39, packed=200 → float≈1.33e-38
+	///   Packed ratio = 0.5, actual float ratio = 0.001953
+	///   ALWAYS unpack to float before arithmetic, then repack.
+	///
 	/// Verified in: bhkNPCollisionObject::SetMass (0x141e08c00),
 	///              hknpMotion::setPointVelocity (0x1417d1a20),
-	///              hknpMotion::buildEffMassMatrixAt (0x1417d1ea0)
+	///              hknpMotion::buildEffMassMatrixAt (0x1417d1ea0),
+	///              hknpWorld::rebuildMotionMassProperties (0x141546570)
 	inline constexpr int MOTION_PACKED_INERTIA_OFFSET = 0x20;
+
+	/// Unpack a bfloat16 value (int16 at motion+0x20) to IEEE 754 float32.
+	/// Matches the PUNPCKLWD-with-zero pattern used by the engine.
+	inline float unpackBfloat16(std::int16_t packed)
+	{
+		std::uint32_t expanded = static_cast<std::uint32_t>(static_cast<std::uint16_t>(packed)) << 16;
+		float result;
+		std::memcpy(&result, &expanded, sizeof(float));
+		return result;
+	}
+
+	/// Pack a float32 to bfloat16 (int16 for motion+0x20).
+	/// Matches the PSRAD 0x10 + PACKSSDW pattern used by the engine.
+	/// Note: PACKSSDW uses signed saturation — values outside int16 range are clamped.
+	inline std::int16_t repackBfloat16(float value)
+	{
+		std::int32_t raw;
+		std::memcpy(&raw, &value, sizeof(std::int32_t));
+		std::int32_t shifted = raw >> 16;
+		// Signed saturation (matches PACKSSDW behavior)
+		if (shifted > 32767) shifted = 32767;
+		if (shifted < -32768) shifted = -32768;
+		return static_cast<std::int16_t>(shifted);
+	}
 
 	/// Saved state of an object before grab (restored on release).
 	struct SavedObjectState

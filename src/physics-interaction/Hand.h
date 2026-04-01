@@ -13,6 +13,7 @@
 // - Finger override through FRIK's HandPoseManager tags
 
 #include "RockConfig.h"
+#include "BethesdaPhysicsBody.h"
 #include "GrabConstraint.h"
 #include "ObjectDetection.h"
 #include "PhysicsLog.h"
@@ -179,18 +180,23 @@ namespace frik::rock
 			float nearRange, float farRange, RE::TESObjectREFR* otherHandRef);
 
 		// --- Collision body (Phase 1) ---
+		// Uses BethesdaPhysicsBody for proper engine integration (body+0x88, full API).
 
-		RE::hknpBodyId getCollisionBodyId() const { return _collisionBodyId; }
-		bool hasCollisionBody() const { return _collisionBodyId.value != INVALID_BODY_ID; }
+		RE::hknpBodyId getCollisionBodyId() const { return _handBody.getBodyId(); }
+		bool hasCollisionBody() const { return _handBody.isValid(); }
+		BethesdaPhysicsBody& getHandBody() { return _handBody; }
+		const BethesdaPhysicsBody& getHandBody() const { return _handBody; }
 
-		/// Create a box collision body in the Havok world. See Hand.cpp for implementation.
-		bool createCollision(RE::hknpWorld* world,
-			const RE::hkVector4f& orientation, float halfExtentX, float halfExtentY, float halfExtentZ);
+		/// Create a box collision body via BethesdaPhysicsBody (proper 12-step pipeline).
+		/// @param bhkWorld  The bhkWorld wrapper (needed for CreateInstance).
+		bool createCollision(RE::hknpWorld* world, void* bhkWorld,
+			float halfExtentX, float halfExtentY, float halfExtentZ);
 
-		/// Destroy the collision body from the Havok world. See Hand.cpp for implementation.
-		void destroyCollision(RE::hknpWorld* world);
+		/// Destroy the collision body cleanly.
+		void destroyCollision(void* bhkWorld);
 
-		/// Update the collision body position to track the VR controller. See Hand.cpp for implementation.
+		/// Update the collision body position to track the VR controller.
+		/// Now uses DriveToKeyFrame (single call) instead of manual 3-step process.
 		void updateCollisionTransform(RE::hknpWorld* world, const RE::NiTransform& handTransform,
 			float deltaTime);
 
@@ -206,11 +212,10 @@ namespace frik::rock
 		bool _grabRequested = false;
 		bool _releaseRequested = false;
 
-		/// Havok body ID for the hand collision shape.
-		RE::hknpBodyId _collisionBodyId{ INVALID_BODY_ID };
-
-		/// Cached shape pointer (owned by Havok after body creation).
-		RE::hknpShape* _shape = nullptr;  // Box shape (convex polytope via CreateBoxShape)
+		/// Hand collision body with full Bethesda wrapper chain.
+		/// Replaces raw _collisionBodyId + _shape with proper bhkNPCollisionObject pipeline.
+		/// Gives access to DriveToKeyFrame, SetMotionType, body+0x88 back-pointer, etc.
+		BethesdaPhysicsBody _handBody;
 
 		/// Debug visualization mesh (attached to scene graph). Shape switchable via INI.
 		RE::NiNode* _debugColliderVis = nullptr;         ///< Debug visualization mesh for the hand collider box

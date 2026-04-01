@@ -55,7 +55,7 @@ namespace frik::rock
 	static void nativeVRGrabDrop(void* playerChar, int handIndex)
 	{
 		typedef void func_t(void*, int);
-		static REL::Relocation<func_t> func{ REL::Offset(0xF1AB90) };
+		static REL::Relocation<func_t> func{ REL::Offset(offsets::kFunc_NativeVRGrabDrop) };
 		func(playerChar, handIndex);
 	}
 
@@ -187,24 +187,62 @@ namespace frik::rock
 					}
 				}
 
-				// --- HIGGS S03 Step 4: Convert to DYNAMIC preset ---
-				// Save original motionPropertiesId, then set to 1 (DYNAMIC preset).
-				// The DYNAMIC preset has standard damping/velocity parameters that
-				// allow constraint motors to converge properly.
-				// Without this, custom Bethesda presets (e.g. 5) may have velocity
-				// caps or high damping that prevent the object from reaching the hand.
 				_savedObjectState.originalMotionPropsId = motionPropsId;
+			}
+		}
 
-				if (motionPropsId != 1) {
+		// --- A1 FIX (2026-03-31): Use bhkNPCollisionObject::SetMotionType(DYNAMIC) ---
+		// WHY: Previous code called raw setBodyMotionProperties which only changed
+		// the motionPropertiesId (motion+0x38) but did NOT clear the KEYFRAMED flag
+		// (body+0x40 bit 0x4). With the KEYFRAMED flag still set:
+		//   1. FOIslandActivationCallback checks (flags & 0x5) → non-zero → may
+		//      force object back to KEYFRAMED on island activation events
+		//   2. Constraint motors push against infinite mass (keyframed bodies have
+		//      zeroed inverse mass at motion+0x20) → zero acceleration
+		//   3. IsBodyStaticOrKeyframed checks (body+0x40 & 0x5) → returns true →
+		//      game treats held object as immovable
+		//
+		// bhkNPCollisionObject::SetMotionType(1=DYNAMIC) at 0x141e07300 handles:
+		//   - Creating new motion slot with proper mass/inertia from shape
+		//   - Clearing KEYFRAMED flag, setting DYNAMIC flags in body+0x40
+		//   - Walking the linked body chain via body+0x64/0x68
+		//   - Computing total mass and rebuilding mass properties
+		//   - Rebuilding collision caches and updating broadphase
+		//
+		// Access path: sel.refr → Get3D() → collisionObject → bhkNPCollisionObject
+		{
+			auto* refrNode = sel.refr->Get3D();
+			auto* collObj = refrNode ? refrNode->collisionObject.get() : nullptr;
+			if (collObj) {
+				typedef void (*SetMotionType_t)(void*, int);
+				static REL::Relocation<SetMotionType_t> SetMotionType{
+					REL::Offset(offsets::kFunc_CollisionObject_SetMotionType) };
+				SetMotionType(collObj, 1);  // 1 = DYNAMIC
+
+				// Verify the transition took effect
+				auto* objMotion = world->GetBodyMotion(objectBodyId);
+				auto* bodyPtr = reinterpret_cast<char*>(&body);
+				if (objMotion) {
+					std::uint32_t newFlags = *reinterpret_cast<std::uint32_t*>(bodyPtr + 0x40);
+					std::uint16_t newPropsId = *reinterpret_cast<std::uint16_t*>(
+						reinterpret_cast<char*>(objMotion) + offsets::kMotion_PropertiesId);
+					bool isDynamic = (newFlags & 0x4) == 0;  // KEYFRAMED bit cleared
+					ROCK_LOG_INFO(Hand, "{} hand SetMotionType(DYNAMIC): flags=0x{:08X} "
+						"propsId={} isDynamic={} (KEYFRAMED bit {})",
+						handName(), newFlags, newPropsId, isDynamic,
+						(newFlags & 0x4) ? "STILL SET" : "cleared");
+				}
+			} else {
+				ROCK_LOG_WARN(Hand, "{} hand: no collision object on refr — "
+					"cannot call SetMotionType, using raw motionPropsId fallback",
+					handName());
+				// Fallback: raw motionPropertiesId change (less correct but functional)
+				auto* objMotion = world->GetBodyMotion(objectBodyId);
+				if (objMotion && _savedObjectState.originalMotionPropsId != 1) {
 					typedef void setMotionProps_t(void*, int, short);
 					static REL::Relocation<setMotionProps_t> setBodyMotionProperties{
-						REL::Offset(0x153b2f0) };
+						REL::Offset(offsets::kFunc_SetBodyMotionProperties) };
 					setBodyMotionProperties(world, objectBodyId.value, 1);
-
-					// Verify it took effect
-					std::uint16_t newPropsId = *reinterpret_cast<std::uint16_t*>(motionPtr + offsets::kMotion_PropertiesId);
-					ROCK_LOG_INFO(Hand, "{} hand MOTION CONVERT: {} → {} (DYNAMIC preset)",
-						handName(), motionPropsId, newPropsId);
 				}
 			}
 		}
@@ -375,7 +413,7 @@ namespace frik::rock
 		{
 			auto* bodyArray = world->GetBodyArray();
 			auto* objBody = reinterpret_cast<float*>(&bodyArray[objectBodyId.value]);
-			auto* handBody = reinterpret_cast<float*>(&bodyArray[_collisionBodyId.value]);
+			auto* handBody = reinterpret_cast<float*>(&bodyArray[_handBody.getBodyId().value]);
 
 			// Grab world position in Havok coords
 			float grabHk[3];
@@ -418,10 +456,13 @@ namespace frik::rock
 				meshGrabFound ? "yes" : "no");
 		}
 
-		// --- Log body positions for constraint debugging ---
+		// --- Log body positions + COM for constraint debugging ---
+		// B8 DIAG: Log both body origin and COM to measure the difference.
+		// Constraint pivots use body origin (current math correct).
+		// COM differs from body origin by R * comOffset for asymmetric objects.
 		{
 			auto* bodyArray = world->GetBodyArray();
-			auto* handFloats = reinterpret_cast<float*>(&bodyArray[_collisionBodyId.value]);
+			auto* handFloats = reinterpret_cast<float*>(&bodyArray[_handBody.getBodyId().value]);
 			auto* objFloats = reinterpret_cast<float*>(&bodyArray[objectBodyId.value]);
 			ROCK_LOG_INFO(Hand, "{} DIAG: handBody pos=({:.3f},{:.3f},{:.3f}) objBody pos=({:.3f},{:.3f},{:.3f})",
 				handName(),
@@ -431,22 +472,41 @@ namespace frik::rock
 				handName(),
 				handWorldTransform.translate.x, handWorldTransform.translate.y, handWorldTransform.translate.z,
 				objectWorldTransform.translate.x, objectWorldTransform.translate.y, objectWorldTransform.translate.z);
+
+			// B8: COM vs body origin diagnostic
+			float comX, comY, comZ;
+			if (getBodyCOMWorld(world, objectBodyId, comX, comY, comZ)) {
+				float comOffX, comOffY, comOffZ;
+				getBodyCOMOffset(objFloats, comOffX, comOffY, comOffZ);
+				float comDist = std::sqrt(
+					(comX - objFloats[12])*(comX - objFloats[12]) +
+					(comY - objFloats[13])*(comY - objFloats[13]) +
+					(comZ - objFloats[14])*(comZ - objFloats[14]));
+				ROCK_LOG_INFO(Hand, "{} B8 COM: com=({:.3f},{:.3f},{:.3f}) origin=({:.3f},{:.3f},{:.3f}) "
+					"offset=({:.4f},{:.4f},{:.4f}) dist={:.4f} ({:.1f}gu)",
+					handName(), comX, comY, comZ,
+					objFloats[12], objFloats[13], objFloats[14],
+					comOffX, comOffY, comOffZ,
+					comDist, comDist * 70.0f);
+			}
 		}
 
 		// --- Zero object velocity before constraint creation ---
 		// WHY: The object may have residual velocity (falling, bumped, etc.).
 		// Without zeroing, the constraint fights existing momentum → spinning/orbiting.
 		// HIGGS does this implicitly by damping nearby objects at grab time.
+		// B1/B2 FIX: Use deferred-safe velocity wrapper.
 		{
 			alignas(16) float zeroVel[4] = { 0, 0, 0, 0 };
-			typedef void setVel_t(void*, std::uint32_t, const float*, const float*);
-			static REL::Relocation<setVel_t> setBodyVelocity{ REL::Offset(offsets::kFunc_SetBodyVelocity) };
-			setBodyVelocity(world, objectBodyId.value, zeroVel, zeroVel);
+			typedef void (*setVelDeferred_t)(void*, std::uint32_t, const float*, const float*);
+			static REL::Relocation<setVelDeferred_t> setBodyVelocityDeferred{
+				REL::Offset(offsets::kFunc_SetBodyVelocityDeferred) };
+			setBodyVelocityDeferred(world, objectBodyId.value, zeroVel, zeroVel);
 
 			// Zero velocity on ALL held bodies (weapon children: scope, barrel, stock)
 			for (auto bid : _heldBodyIds) {
 				if (bid != objectBodyId.value) {
-					setBodyVelocity(world, bid, zeroVel, zeroVel);
+					setBodyVelocityDeferred(world, bid, zeroVel, zeroVel);
 				}
 			}
 		}
@@ -465,10 +525,10 @@ namespace frik::rock
 				REL::Offset(offsets::kFunc_SetBodyCollisionFilterInfo) };
 
 			auto* bodyArray = world->GetBodyArray();
-			auto* handBodyPtr = reinterpret_cast<char*>(&bodyArray[_collisionBodyId.value]);
+			auto* handBodyPtr = reinterpret_cast<char*>(&bodyArray[_handBody.getBodyId().value]);
 			auto currentFilter = *reinterpret_cast<std::uint32_t*>(handBodyPtr + offsets::kBody_CollisionFilterInfo);
 			auto newFilter = currentFilter | (1u << 14);  // bit 14 = no-collision flag
-			setBodyCollisionFilterInfo(world, _collisionBodyId.value, newFilter, 0);  // 0 = rebuild caches
+			setBodyCollisionFilterInfo(world, _handBody.getBodyId().value, newFilter, 0);  // 0 = rebuild caches
 			ROCK_LOG_INFO(Hand, "{} hand: disabled hand collision (bit 14 + broadphase rebuild) filter=0x{:08X}",
 				handName(), newFilter);
 		}
@@ -528,7 +588,7 @@ namespace frik::rock
 			}
 
 			_activeConstraint = createGrabConstraint(
-				world, _collisionBodyId, objectBodyId,
+				world, _handBody.getBodyId(), objectBodyId,
 				palmHk, grabHk, _grabHandSpace,
 				tau, damping, maxForce,
 				proportionalRecovery, constantRecovery);
@@ -562,14 +622,14 @@ namespace frik::rock
 
 		ROCK_LOG_INFO(Hand, "{} hand CONSTRAINT GRAB: constraintId={}, hand body={}, obj body={}, {} held bodies",
 			handName(), _activeConstraint.constraintId,
-			_collisionBodyId.value, objectBodyId.value, _heldBodyIds.size());
+			_handBody.getBodyId().value, objectBodyId.value, _heldBodyIds.size());
 
 		// --- Phase 2A: Enable contact event flag on ALL held bodies ---
 		// Ghidra: FUN_141e54750 shows body flag 0x80 must be enabled for contact events.
 		// HIGGS S10: registers listener on all connected bodies, not just primary.
 		{
 			typedef void enableBodyFlags_t(void*, std::uint32_t, std::uint32_t, std::uint32_t);
-			static REL::Relocation<enableBodyFlags_t> enableBodyFlags{ REL::Offset(0x153c090) };
+			static REL::Relocation<enableBodyFlags_t> enableBodyFlags{ REL::Offset(offsets::kFunc_EnableBodyFlags) };
 			for (auto bid : _heldBodyIds) {
 				enableBodyFlags(world, bid, 0x80, 0);
 			}
@@ -884,7 +944,7 @@ namespace frik::rock
 			_heldLogCounter = 0;
 
 			auto* bodyArray = world->GetBodyArray();
-			auto* h = reinterpret_cast<float*>(&bodyArray[_collisionBodyId.value]);
+			auto* h = reinterpret_cast<float*>(&bodyArray[_handBody.getBodyId().value]);
 			auto* o = reinterpret_cast<float*>(&bodyArray[_savedObjectState.bodyId.value]);
 
 			// Read ACTUAL pivotA and pivotB from the constraint data (not stale member vars)
@@ -954,7 +1014,7 @@ namespace frik::rock
 		// =====================================================================
 		{
 			typedef void activateBody_t(void*, std::uint32_t);
-			static REL::Relocation<activateBody_t> activateBody{ REL::Offset(0x1546ef0) };
+			static REL::Relocation<activateBody_t> activateBody{ REL::Offset(offsets::kFunc_ActivateBody) };
 			activateBody(world, _savedObjectState.bodyId.value);
 		}
 	}
@@ -979,17 +1039,40 @@ namespace frik::rock
 		// Restore original inertia before destroying constraint
 		restoreGrabbedInertia(world, _savedObjectState);
 
-		// --- Restore original motionPropertiesId (HIGGS S03 Step 4 reverse) ---
-		// At grab time we converted to DYNAMIC preset (1). Restore original preset.
+		// --- A1 FIX: Object stays DYNAMIC on release (HIGGS pattern) ---
+		// WHY: HIGGS does NOT restore KEYFRAMED on release. The object stays
+		// DYNAMIC so throw velocity can be applied (Phase 4), and so it falls
+		// naturally after release. The game's own FOIslandDeactivationCallback
+		// and TESObjectREFR::InitHavokPostLoad will eventually transition it
+		// back to KEYFRAMED when it settles or the cell reloads.
+		// We DO NOT call SetMotionType(KEYFRAMED) here — that would kill velocity.
+		//
+		// Restore the original motionPropertiesId preset if it was non-standard,
+		// so the object uses its original damping/velocity caps after release.
 		if (world && _savedObjectState.originalMotionPropsId != 0 &&
 			_savedObjectState.originalMotionPropsId != 1) {
-			typedef void setMotionProps_t(void*, int, short);
-			static REL::Relocation<setMotionProps_t> setBodyMotionProperties{
-				REL::Offset(0x153b2f0) };
-			setBodyMotionProperties(world, _savedObjectState.bodyId.value,
-				static_cast<short>(_savedObjectState.originalMotionPropsId));
-			ROCK_LOG_INFO(Hand, "{} hand MOTION RESTORE: {} → {} (original preset)",
-				handName(), 1, _savedObjectState.originalMotionPropsId);
+			// Restore via collision object if available, fallback to raw
+			RE::NiAVObject* releaseNode = nullptr;
+			if (_savedObjectState.refr && !_savedObjectState.refr->IsDeleted()) {
+				releaseNode = _savedObjectState.refr->Get3D();
+			}
+			auto* releaseCollObj = releaseNode ? releaseNode->collisionObject.get() : nullptr;
+			if (releaseCollObj) {
+				// The engine will handle restoring to the correct preset
+				// when the object eventually deactivates
+				ROCK_LOG_INFO(Hand, "{} hand: object stays DYNAMIC on release "
+					"(game deactivation will restore KEYFRAMED)",
+					handName());
+			} else {
+				// Fallback: restore motionPropertiesId directly
+				typedef void setMotionProps_t(void*, int, short);
+				static REL::Relocation<setMotionProps_t> setBodyMotionProperties{
+					REL::Offset(offsets::kFunc_SetBodyMotionProperties) };
+				setBodyMotionProperties(world, _savedObjectState.bodyId.value,
+					static_cast<short>(_savedObjectState.originalMotionPropsId));
+				ROCK_LOG_INFO(Hand, "{} hand MOTION RESTORE: propsId {} → {} (fallback)",
+					handName(), 1, _savedObjectState.originalMotionPropsId);
+			}
 		}
 
 		// --- Phase 2A: Clear thread-safe state FIRST (before any body IDs freed) ---
@@ -1000,7 +1083,7 @@ namespace frik::rock
 		// --- Phase 2A: Disable contact event flag on ALL held bodies ---
 		if (world) {
 			typedef void disableBodyFlags_t(void*, std::uint32_t, std::uint32_t, std::uint32_t);
-			static REL::Relocation<disableBodyFlags_t> disableBodyFlags{ REL::Offset(0x153c150) };
+			static REL::Relocation<disableBodyFlags_t> disableBodyFlags{ REL::Offset(offsets::kFunc_DisableBodyFlags) };
 			for (auto bid : _heldBodyIds) {
 				disableBodyFlags(world, bid, 0x80, 0);
 			}
@@ -1018,10 +1101,10 @@ namespace frik::rock
 				REL::Offset(offsets::kFunc_SetBodyCollisionFilterInfo) };
 
 			auto* bodyArray = world->GetBodyArray();
-			auto* handBodyPtr = reinterpret_cast<char*>(&bodyArray[_collisionBodyId.value]);
+			auto* handBodyPtr = reinterpret_cast<char*>(&bodyArray[_handBody.getBodyId().value]);
 			auto currentFilter = *reinterpret_cast<std::uint32_t*>(handBodyPtr + offsets::kBody_CollisionFilterInfo);
 			auto newFilter = currentFilter & ~(1u << 14);
-			setBodyCollisionFilterInfo(world, _collisionBodyId.value, newFilter, 0);  // 0 = rebuild caches
+			setBodyCollisionFilterInfo(world, _handBody.getBodyId().value, newFilter, 0);  // 0 = rebuild caches
 			ROCK_LOG_INFO(Hand, "{} hand: re-enabled hand collision (bit 14 cleared + broadphase rebuild) filter=0x{:08X}",
 				handName(), newFilter);
 		}

@@ -28,11 +28,13 @@ namespace frik::rock
 	// Havok heap allocator
 	// Pattern from motor clone function (0x141f610f0):
 	// TlsGetValue(DAT_145b63b20) → allocator at TLS+0x58 → vtable[1] = alloc
+	// I1 NOTE: This is duplicated in BethesdaPhysicsBody.cpp (havokAlloc/havokFree).
+	// Both copies are identical. Will be extracted to a shared header in a future restructuring.
 	// =========================================================================
 
 	static void* havokHeapAlloc(std::size_t size)
 	{
-		static REL::Relocation<std::uint32_t*> s_tlsIndex{ REL::Offset(0x5B63B20) };
+		static REL::Relocation<std::uint32_t*> s_tlsIndex{ REL::Offset(offsets::kData_HavokTlsAllocKey) };
 		LPVOID tlsBlock = TlsGetValue(*s_tlsIndex);
 		if (!tlsBlock) return nullptr;
 
@@ -51,7 +53,7 @@ namespace frik::rock
 	{
 		if (!ptr) return;
 
-		static REL::Relocation<std::uint32_t*> s_tlsIndex{ REL::Offset(0x5B63B20) };
+		static REL::Relocation<std::uint32_t*> s_tlsIndex{ REL::Offset(offsets::kData_HavokTlsAllocKey) };
 		LPVOID tlsBlock = TlsGetValue(*s_tlsIndex);
 		if (!tlsBlock) return;
 
@@ -115,7 +117,7 @@ namespace frik::rock
 	// This is the SAME function HIGGS calls at SkyrimVR 0xACC490.
 	// =========================================================================
 	using GetConstraintInfoUtil_t = void(const void*, int, void*);
-	static REL::Relocation<GetConstraintInfoUtil_t> s_getConstraintInfoUtil{ REL::Offset(0x1A4AD20) };
+	static REL::Relocation<GetConstraintInfoUtil_t> s_getConstraintInfoUtil{ REL::Offset(offsets::kFunc_GetConstraintInfoUtil) };
 
 	// =========================================================================
 	// Custom vtable — built once, shared by all grab constraints
@@ -643,25 +645,27 @@ namespace frik::rock
 	// inertia around the perpendicular axes. Without normalization, angular
 	// motors can't resist rotation on the low-inertia axis → cartwheeling.
 	//
-	// GHIDRA DISCOVERY:
-	// hknpMotion stores inverse inertia as PACKED INT16 at motion+0x20, NOT as
-	// floats at motion+0x60 (which is Skyrim's hkpMotion offset / velocity area).
-	// 8 bytes at motion+0x20 contain 4 packed int16 via packssdw:
+	// PACKING FORMAT (blind-audit verified 2026-03-31):
+	// hknpMotion+0x20 contains 4 bfloat16 values packed as int16:
 	//   int16[0] = invInertiaX, [1] = invInertiaY, [2] = invInertiaZ, [3] = invMass
-	// Unpacking: float = (ushort)packed * 65536.0f
-	// Verified in: bhkNPCollisionObject::SetMass (0x141e08c00),
-	//              hknpMotion::setPointVelocity (0x1417d1a20),
-	//              hknpMotion::buildEffMassMatrixAt (0x1417d1ea0),
-	//              hknpMotion::setFromMassProperties (0x1417d13a0),
-	//              hknpMotionManager::initializeMotion (0x1417e1e40)
+	// bfloat16 = upper 16 bits of IEEE 754 float32. NOT linear.
+	// Unpack: float = reinterpret((uint32_t)(uint16_t)packed << 16)
+	// Pack:   int16 = (int16_t)(reinterpret_as_int32(float) >> 16)
 	//
-	// The ratio of packed shorts equals the ratio of physical inverse inertia.
-	// So normalization works directly on the packed int16 values.
+	// CRITICAL BUG FIX (A5, 2026-03-31):
+	// Previous code compared/clamped raw int16 values as if they were linear.
+	// bfloat16 is a floating-point format — ratios of raw packed values are
+	// MEANINGLESS. Example: packed=100 → float≈6.65e-39, packed=200 → float≈1.33e-38.
+	// Packed ratio=0.5, actual float ratio=0.001953. Must unpack to float first.
 	//
 	// HIGGS normalizes by:
 	//   1. Clamping the ratio between max and min inverse inertia to 10x
 	//   2. Enforcing a minimum inertia (via max inverse inertia cap)
 	//   (grabbedObjectMaxInertiaRatio=10, grabbedObjectMinInertia=0.01)
+	//
+	// A3 FIX (2026-03-31): After modifying packed inertia, call
+	// rebuildMotionMassProperties to update all derived values (COM offset,
+	// AABB radius, velocity packing, body chain consistency).
 	// =========================================================================
 
 	void normalizeGrabbedInertia(RE::hknpWorld* world, RE::hknpBodyId bodyId, SavedObjectState& savedState)
@@ -681,8 +685,7 @@ namespace frik::rock
 
 		auto* motion = motionArrayPtr + motionIndex * 0x80;
 
-		// Packed inverse inertia: 4 int16 values at motion+0x20
-		// Layout (from packssdw): [invInertiaX, invInertiaY, invInertiaZ, invMass]
+		// Packed inverse inertia: 4 bfloat16 values at motion+0x20
 		auto* packed = reinterpret_cast<std::int16_t*>(motion + MOTION_PACKED_INERTIA_OFFSET);
 
 		// Save original packed inertia values (3 axes only — mass not modified)
@@ -690,47 +693,78 @@ namespace frik::rock
 		savedState.savedPackedInertia[1] = packed[1];  // invInertiaY
 		savedState.savedPackedInertia[2] = packed[2];  // invInertiaZ
 
-		ROCK_LOG_INFO(GrabConstraint, "Inertia pre-normalize: body={} packed=[{},{},{}] mass={}",
-			bodyId.value, packed[0], packed[1], packed[2], packed[3]);
-
-		// Skip if any axis has zero or negative inertia (fixed/keyframed body)
+		// Skip if any axis has zero or negative packed value (fixed/keyframed body)
 		if (packed[0] <= 0 || packed[1] <= 0 || packed[2] <= 0) {
 			ROCK_LOG_WARN(GrabConstraint, "Skipping inertia normalization: zero/negative packed value");
 			return;
 		}
 
-		// Find min and max of the 3 inertia components
-		// Higher packed value = higher inverse inertia = easier to spin on that axis
-		std::int16_t minI = (std::min)({packed[0], packed[1], packed[2]});
-		std::int16_t maxI = (std::max)({packed[0], packed[1], packed[2]});
+		// Unpack bfloat16 to float for correct ratio computation
+		float invI[3] = {
+			unpackBfloat16(packed[0]),
+			unpackBfloat16(packed[1]),
+			unpackBfloat16(packed[2])
+		};
 
-		int MAX_INERTIA_RATIO = static_cast<int>(g_rockConfig.rockGrabMaxInertiaRatio);
+		ROCK_LOG_INFO(GrabConstraint, "Inertia pre-normalize: body={} packed=[{},{},{}] "
+			"float=[{:.6e},{:.6e},{:.6e}] mass_packed={}",
+			bodyId.value, packed[0], packed[1], packed[2],
+			invI[0], invI[1], invI[2], packed[3]);
 
-		// I4 FIX: Compute in int32 to prevent overflow. minI * 10 can exceed
-		// int16_t range (max 32767) if minI > 3276. Clamp result to int16 max.
-		std::int32_t maxAllowedI32 = static_cast<std::int32_t>(minI) * MAX_INERTIA_RATIO;
-		if (maxI > maxAllowedI32) {
-			// Clamp: largest inverse inertia should be at most 10x the smallest
-			constexpr std::int32_t kInt16Max = 32767;
-			std::int16_t maxAllowed = static_cast<std::int16_t>(
-				(std::min)(maxAllowedI32, kInt16Max));
+		// Skip if any unpacked value is zero or denormalized to zero
+		if (invI[0] <= 0.0f || invI[1] <= 0.0f || invI[2] <= 0.0f) {
+			ROCK_LOG_WARN(GrabConstraint, "Skipping inertia normalization: zero unpacked float value");
+			return;
+		}
+
+		// Find min and max of the 3 inertia components (in float domain)
+		// Higher value = higher inverse inertia = easier to spin on that axis
+		float minI = (std::min)({invI[0], invI[1], invI[2]});
+		float maxI = (std::max)({invI[0], invI[1], invI[2]});
+
+		float MAX_INERTIA_RATIO = g_rockConfig.rockGrabMaxInertiaRatio;
+		float ratio = maxI / minI;
+
+		if (ratio > MAX_INERTIA_RATIO) {
+			// Clamp: largest inverse inertia should be at most MAX_INERTIA_RATIO × smallest
+			float maxAllowed = minI * MAX_INERTIA_RATIO;
 			for (int i = 0; i < 3; i++) {
-				if (packed[i] > maxAllowed) {
-					packed[i] = maxAllowed;
+				if (invI[i] > maxAllowed) {
+					invI[i] = maxAllowed;
 				}
 			}
 
-			ROCK_LOG_INFO(GrabConstraint, "Inertia ratio clamped: [{},{},{}] → [{},{},{}] (max {}x min)",
+			// Repack clamped float values to bfloat16
+			packed[0] = repackBfloat16(invI[0]);
+			packed[1] = repackBfloat16(invI[1]);
+			packed[2] = repackBfloat16(invI[2]);
+
+			ROCK_LOG_INFO(GrabConstraint, "Inertia ratio clamped: {:.1f}x → {:.1f}x "
+				"packed [{},{},{}] → [{},{},{}] float [{:.6e},{:.6e},{:.6e}]",
+				ratio, MAX_INERTIA_RATIO,
 				savedState.savedPackedInertia[0], savedState.savedPackedInertia[1], savedState.savedPackedInertia[2],
-				packed[0], packed[1], packed[2], MAX_INERTIA_RATIO);
+				packed[0], packed[1], packed[2],
+				invI[0], invI[1], invI[2]);
 		}
 		else {
-			ROCK_LOG_INFO(GrabConstraint, "Inertia ratio OK ({:.1f}x), no clamping needed",
-				static_cast<float>(maxI) / static_cast<float>(minI));
+			ROCK_LOG_INFO(GrabConstraint, "Inertia ratio OK ({:.1f}x), no clamping needed", ratio);
 		}
 
 		// invMass (packed[3]) is NOT modified — preserve original mass
 		savedState.inertiaModified = true;
+
+		// A3 FIX: Rebuild derived mass properties after modifying packed inertia.
+		// Without this, COM offset (body+0x80), AABB radius (body+0x7C), and
+		// body chain consistency are stale. Ghidra-confirmed: 0x141546570.
+		{
+			typedef void rebuildMass_t(void*, std::uint32_t, int);
+			static REL::Relocation<rebuildMass_t> rebuildMotionMassProperties{
+				REL::Offset(offsets::kFunc_RebuildMotionMassProperties) };
+			rebuildMotionMassProperties(world, motionIndex, 0);  // 0 = immediate rebuild
+
+			ROCK_LOG_INFO(GrabConstraint, "rebuildMotionMassProperties called for motionIndex={}",
+				motionIndex);
+		}
 	}
 
 	void restoreGrabbedInertia(RE::hknpWorld* world, SavedObjectState& savedState)
@@ -756,6 +790,16 @@ namespace frik::rock
 
 		ROCK_LOG_INFO(GrabConstraint, "Inertia restored: body={} → packed=[{},{},{}]",
 			savedState.bodyId.value, packed[0], packed[1], packed[2]);
+
+		// S4 FIX: Rebuild derived mass properties after restoring inertia.
+		// Same as normalizeGrabbedInertia — without this, COM offset, AABB radius,
+		// and body chain consistency remain stale until the engine rebuilds them.
+		{
+			typedef void rebuildMass_t(void*, std::uint32_t, int);
+			static REL::Relocation<rebuildMass_t> rebuildMotionMassProperties{
+				REL::Offset(offsets::kFunc_RebuildMotionMassProperties) };
+			rebuildMotionMassProperties(world, motionIndex, 0);
+		}
 
 		savedState.inertiaModified = false;
 	}

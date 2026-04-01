@@ -116,11 +116,11 @@ namespace frik::rock
 		/// Sets layer 43 to collide with world geometry but not character controller.
 		void registerCollisionLayer(RE::hknpWorld* world);
 
-		/// Create collision bodies for both hands.
-		void createHandCollisions(RE::hknpWorld* world);
+		/// Create collision bodies for both hands (via BethesdaPhysicsBody pipeline).
+		void createHandCollisions(RE::hknpWorld* world, void* bhkWorld);
 
 		/// Destroy collision bodies for both hands.
-		void destroyHandCollisions(RE::hknpWorld* world);
+		void destroyHandCollisions(void* bhkWorld);
 
 		/// Update both hand collision positions to track VR controllers.
 		void updateHandCollisions(RE::hknpWorld* world);

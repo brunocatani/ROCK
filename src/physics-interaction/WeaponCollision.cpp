@@ -9,6 +9,8 @@
 #include "HavokOffsets.h"
 #include "RockConfig.h"
 
+#include <intrin.h>  // _InterlockedCompareExchange for atomic refcount CAS
+
 #include "RE/Bethesda/bhkPhysicsSystem.h"
 #include "RE/Havok/hknpCapsuleShape.h"
 #include "RE/Havok/hknpMotion.h"
@@ -27,28 +29,41 @@ namespace frik::rock
 	// We manipulate the refcount directly because CommonLibF4VR doesn't expose
 	// addReference/removeReference methods.
 
-	// C4 FIX: Only modify the lower 16 bits (refcount), preserving upper bits
-	// (memory size + flags). Previous code did += 1 on the full uint32, which
-	// corrupts the memory size field if refcount overflows past 0xFFFF.
-	// Also skip if refcount is 0xFFFF (immortal sentinel — should not be touched).
+	// C1 FIX: Atomic refcount increment via CAS loop, matching the pattern used
+	// by releaseRefCounted() in BethesdaPhysicsBody.cpp. Non-atomic read-modify-write
+	// could corrupt the refcount if the physics thread touches it concurrently.
+	// Only modifies the lower 16 bits (refcount), preserving upper bits (memory size + flags).
+	// Skips if refcount is 0xFFFF (immortal sentinel — should not be touched).
 	static void shapeAddRef(const RE::hknpShape* shape) {
 		if (!shape) return;
-		auto* refObj = const_cast<RE::hkReferencedObject*>(
-			static_cast<const RE::hkReferencedObject*>(shape));
-		std::uint32_t val = refObj->memSizeAndRefCount;
-		std::uint16_t refCount = static_cast<std::uint16_t>(val & 0xFFFF);
-		if (refCount == 0xFFFF) return;  // immortal — don't touch
-		refObj->memSizeAndRefCount = (val & 0xFFFF0000u) | static_cast<std::uint32_t>(refCount + 1);
+		auto* refCountDword = reinterpret_cast<volatile long*>(
+			const_cast<char*>(reinterpret_cast<const char*>(shape)) + 0x08);
+		for (;;) {
+			long oldVal = *refCountDword;
+			std::uint16_t rc = static_cast<std::uint16_t>(oldVal & 0xFFFF);
+			if (rc == 0xFFFF) return;  // immortal — don't touch
+			long newVal = (oldVal & static_cast<long>(0xFFFF0000u)) |
+				static_cast<long>(static_cast<std::uint16_t>(rc + 1));
+			if (_InterlockedCompareExchange(refCountDword, newVal, oldVal) == oldVal) return;
+			// CAS failed — another thread modified refcount, retry
+		}
 	}
 
+	// C1 FIX: Atomic refcount decrement via CAS loop, matching the pattern used
+	// by releaseRefCounted() in BethesdaPhysicsBody.cpp.
 	static void shapeRemoveRef(const RE::hknpShape* shape) {
 		if (!shape) return;
-		auto* refObj = const_cast<RE::hkReferencedObject*>(
-			static_cast<const RE::hkReferencedObject*>(shape));
-		std::uint32_t val = refObj->memSizeAndRefCount;
-		std::uint16_t refCount = static_cast<std::uint16_t>(val & 0xFFFF);
-		if (refCount == 0xFFFF || refCount == 0) return;  // immortal or already zero
-		refObj->memSizeAndRefCount = (val & 0xFFFF0000u) | static_cast<std::uint32_t>(refCount - 1);
+		auto* refCountDword = reinterpret_cast<volatile long*>(
+			const_cast<char*>(reinterpret_cast<const char*>(shape)) + 0x08);
+		for (;;) {
+			long oldVal = *refCountDword;
+			std::uint16_t rc = static_cast<std::uint16_t>(oldVal & 0xFFFF);
+			if (rc == 0xFFFF || rc == 0) return;  // immortal or already zero
+			long newVal = (oldVal & static_cast<long>(0xFFFF0000u)) |
+				static_cast<long>(static_cast<std::uint16_t>(rc - 1));
+			if (_InterlockedCompareExchange(refCountDword, newVal, oldVal) == oldVal) return;
+			// CAS failed — another thread modified refcount, retry
+		}
 		// Note: we don't delete on zero — the engine manages shape memory.
 		// We just need to keep the refcount > 0 while we hold a pointer.
 	}
@@ -57,13 +72,14 @@ namespace frik::rock
 	// Init / Shutdown
 	// =========================================================================
 
-	void WeaponCollision::init(RE::hknpWorld* world)
+	void WeaponCollision::init(RE::hknpWorld* world, void* bhkWorld)
 	{
 		if (!g_rockConfig.rockWeaponCollisionEnabled) {
 			ROCK_LOG_INFO(Weapon, "WeaponCollision disabled via config — skipping init");
 			return;
 		}
 		_cachedWorld = world;
+		_cachedBhkWorld = bhkWorld;
 		_cachedWeaponKey = 0;
 		_weaponBodyPending = false;
 		_retryCounter = 0;
@@ -75,7 +91,7 @@ namespace frik::rock
 	{
 		// Don't call DestroyBodies — world may already be gone during cell transition.
 		_weaponBodyIdAtomic.store(INVALID_BODY_ID, std::memory_order_release);
-		_weaponBodyId.value = INVALID_BODY_ID;
+		_weaponBody.reset();  // Clear state without destruction (world may be gone)
 
 		if (_cachedShape) {
 			shapeRemoveRef(_cachedShape);
@@ -84,6 +100,7 @@ namespace frik::rock
 
 		_cachedWeaponKey = 0;
 		_cachedWorld = nullptr;
+		_cachedBhkWorld = nullptr;
 		_hasPrevTransform = false;
 		_weaponBodyPending = false;
 		_retryCounter = 0;
@@ -107,7 +124,7 @@ namespace frik::rock
 		if (world != _cachedWorld) {
 			ROCK_LOG_INFO(Weapon, "hknpWorld changed — resetting weapon collision state");
 			_weaponBodyIdAtomic.store(INVALID_BODY_ID, std::memory_order_release);
-			_weaponBodyId.value = INVALID_BODY_ID;
+			_weaponBody.reset();  // World is gone, just clear state
 			if (_cachedShape) {
 				shapeRemoveRef(_cachedShape);
 				_cachedShape = nullptr;
@@ -306,86 +323,56 @@ namespace frik::rock
 			return;
 		}
 
-		if (!shape || !world) return;
+		if (!shape || !world || !_cachedBhkWorld) return;
 
-		// 1. AddReference on shared shape (CRITICAL — prevents premature free)
+		// AddReference on shared shape (CRITICAL — prevents premature free)
 		shapeAddRef(shape);
 		_cachedShape = shape;
 
-		// 2. Allocate motion for keyframed body
-		auto motionId = world->AllocateMotion();
+		// Create via BethesdaPhysicsBody (same pipeline as Hand)
+		std::uint32_t filterInfo = (0x000B << 16) | (ROCK_WEAPON_LAYER & 0x7F);
+		bool ok = _weaponBody.create(world, _cachedBhkWorld,
+			const_cast<RE::hknpShape*>(shape), filterInfo, { 0 },
+			BethesdaMotionType::Keyframed, "ROCK_WeaponCollision");
 
-		// 3. Build body creation info (follows Hand::createCollision pattern)
-		RE::hknpBodyCinfo cinfo;
-		cinfo.shape = shape;
-		cinfo.motionId.value = motionId;
-		cinfo.motionPropertiesId.value = 0xFF;
-		cinfo.collisionFilterInfo = (0x000B << 16) | (ROCK_WEAPON_LAYER & 0x7F);
-		cinfo.position = RE::hkVector4f(0.0f, 0.0f, 0.0f, 0.0f);  // W=0 pattern
-		cinfo.orientation = RE::hkVector4f(0.0f, 0.0f, 0.0f, 1.0f);
-		cinfo.userData = 0;  // CRITICAL: FOIslandActivationListener dereferences unconditionally
-		cinfo.name = "ROCK_WeaponCollision";
-
-		// 4. Create body
-		auto bodyId = world->CreateBody(cinfo);
-		if (bodyId.value == INVALID_BODY_ID) {
-			ROCK_LOG_ERROR(Weapon, "CreateBody failed for weapon collision");
+		if (!ok) {
+			ROCK_LOG_ERROR(Weapon, "BethesdaPhysicsBody::create failed for weapon collision");
 			shapeRemoveRef(shape);
 			_cachedShape = nullptr;
 			return;
 		}
 
-		_weaponBodyId = bodyId;
+		// Create NiNode for scene graph integration
+		_weaponBody.createNiNode("ROCK_WeaponCollision");
 
-		// 5. Enable contact modifier + keep-awake flags
-		world->EnableBodyFlags(bodyId, 0x08020000, 1);
+		// Update atomic for physics thread
+		_weaponBodyIdAtomic.store(_weaponBody.getBodyId().value, std::memory_order_release);
 
-		// 6. Set KEYFRAMED via Bethesda's proper API
-		{
-			typedef void setKeyframed_t(void*, std::uint32_t);
-			static REL::Relocation<setKeyframed_t> setBodyKeyframed{ REL::Offset(offsets::kFunc_SetBodyKeyframed) };
-			setBodyKeyframed(world, bodyId.value);
-		}
-
-		// NOTE: Previous code wrote 1.0f to hknpMotion+0x70/+0x7C ("timeFactor"/"spaceSplitterWeight")
-		// to "unfreeze" the motion. Ghidra audit proved those fields are previousStepAngularVelocity
-		// (hkVector4f) and timeFactor lives in hknpMotionProperties+0x0C (always 1.0). Removed.
-		// See Hand.cpp for full audit explanation.
-
-		// 8. Activate body
-		world->ActivateBody(bodyId);
-
-		// 9. Update atomic for physics thread
-		_weaponBodyIdAtomic.store(bodyId.value, std::memory_order_release);
-
-		// 10. Initial transform
+		// Initial transform
 		_hasPrevTransform = false;
 		updateBodyTransform(world, initialTransform, 0.016f);
 
-		ROCK_LOG_INFO(Weapon, "Weapon collision body created — bodyId={}, layer=44, shape={:x}",
-			bodyId.value, reinterpret_cast<std::uintptr_t>(shape));
+		ROCK_LOG_INFO(Weapon, "Weapon collision body created via BethesdaPhysicsBody — bodyId={}, layer=44",
+			_weaponBody.getBodyId().value);
 	}
 
 	void WeaponCollision::destroyWeaponBody(RE::hknpWorld* world)
 	{
 		if (!hasWeaponBody()) return;
 
-		// 1. Clear atomic BEFORE destroying (physics thread safety)
+		// Clear atomic BEFORE destroying (physics thread safety)
 		_weaponBodyIdAtomic.store(INVALID_BODY_ID, std::memory_order_release);
 
-		// 2. Destroy body
-		if (world) {
-			world->DestroyBodies(&_weaponBodyId, 1);
-		}
-		_weaponBodyId.value = INVALID_BODY_ID;
+		// Destroy via BethesdaPhysicsBody (handles NiNode, body+0x88, refcounts)
+		_weaponBody.destroy(_cachedBhkWorld);
 
-		// 3. Release shape reference
+		// Release shape reference
 		if (_cachedShape) {
 			shapeRemoveRef(_cachedShape);
 			_cachedShape = nullptr;
 		}
 
-		// 4. Reset velocity tracking
+		// Reset velocity tracking
 		_hasPrevTransform = false;
 
 		ROCK_LOG_INFO(Weapon, "Weapon collision body destroyed");
@@ -400,16 +387,21 @@ namespace frik::rock
 	{
 		if (!hasWeaponBody() || !world) return;
 
-		const auto targetPos = niPointToHkVector(weaponTransform.translate);
+		// HIGGS pattern: game-space → Havok space for positioning
+		const float targetX = weaponTransform.translate.x * kGameToHavokScale;
+		const float targetY = weaponTransform.translate.y * kGameToHavokScale;
+		const float targetZ = weaponTransform.translate.z * kGameToHavokScale;
 
-		// Throttled diagnostic — log weapon body position every ~1s
+		// Throttled diagnostic
 		if (++_posLogCounter >= 90) {
 			_posLogCounter = 0;
 			ROCK_LOG_INFO(Weapon, "updateBodyTransform: niPos=({:.1f},{:.1f},{:.1f}) hkPos=({:.4f},{:.4f},{:.4f}) bodyId={} dt={:.4f}",
 				weaponTransform.translate.x, weaponTransform.translate.y, weaponTransform.translate.z,
-				targetPos.x, targetPos.y, targetPos.z,
-				_weaponBodyId.value, dt);
+				targetX, targetY, targetZ,
+				_weaponBody.getBodyId().value, dt);
 		}
+
+		auto bodyId = _weaponBody.getBodyId();
 
 		// --- Teleport detection (SetOrigin / cell transition) ---
 		if (_hasPrevTransform) {
@@ -421,33 +413,29 @@ namespace frik::rock
 				_prevPosition = weaponTransform.translate;
 				RE::hkTransformf hkTransform;
 				hkTransform.rotation = weaponTransform.rotate;
-				hkTransform.translation = RE::NiPoint4(targetPos.x, targetPos.y, targetPos.z, 0.0f);
-				world->SetBodyTransform(_weaponBodyId, hkTransform, 0);
+				hkTransform.translation = RE::NiPoint4(targetX, targetY, targetZ, 0.0f);
+				_weaponBody.setTransform(hkTransform);
 				return;
 			}
 		}
 
-		// --- Compute velocity via computeHardKeyFrame ---
+		// --- Compute velocity via computeHardKeyFrame (Havok space) ---
 		alignas(16) float linVelOut[4] = {0,0,0,0};
 		alignas(16) float angVelOut[4] = {0,0,0,0};
 
 		if (_hasPrevTransform && dt > 0.0001f) {
-			alignas(16) float tgtPos[4] = { targetPos.x, targetPos.y, targetPos.z, 0.0f };
+			alignas(16) float tgtPos[4] = { targetX, targetY, targetZ, 0.0f };
 			alignas(16) float tgtQuat[4];
 			niRotToHkQuat(weaponTransform.rotate, tgtQuat);
 
-			// CRITICAL FIX (C2): Pass dt, NOT 1/dt.
-			// Ghidra-verified: computeHardKeyFrame internally computes rcpps(param5) = 1/param5.
-			// For velocity = displacement/dt, param5 must be dt. Previous code passed invDt
-			// → velocity ≈ 8000× too low at 90fps. See Hand.h for full explanation.
-			typedef void computeHKF_t(void*, std::uint32_t, const float*, const float*,
+			typedef void (*computeHKF_t)(void*, std::uint32_t, const float*, const float*,
 				float, float*, float*);
 			static REL::Relocation<computeHKF_t> computeHardKeyFrame{
 				REL::Offset(offsets::kFunc_ComputeHardKeyFrame) };
-			computeHardKeyFrame(world, _weaponBodyId.value,
+			computeHardKeyFrame(world, bodyId.value,
 				tgtPos, tgtQuat, dt, linVelOut, angVelOut);
 
-			// Clamp velocity to prevent physics explosions
+			// Clamp linear velocity
 			constexpr float MAX_VEL = 50.0f;
 			float speed = std::sqrt(linVelOut[0]*linVelOut[0] + linVelOut[1]*linVelOut[1] +
 				linVelOut[2]*linVelOut[2]);
@@ -455,22 +443,28 @@ namespace frik::rock
 				float scale = MAX_VEL / speed;
 				linVelOut[0] *= scale; linVelOut[1] *= scale; linVelOut[2] *= scale;
 			}
+
+			// I3 FIX: Clamp angular velocity matching the pattern in Hand::updateCollisionTransform.
+			// Without this, fast wrist rotations produce extreme angular velocities that
+			// cause the weapon collision body to overshoot its target orientation and
+			// oscillate. Uses same default as Hand's config (100.0f rad/s).
+			constexpr float MAX_ANG_VEL = 100.0f;
+			float angSpeed = std::sqrt(angVelOut[0]*angVelOut[0] + angVelOut[1]*angVelOut[1] +
+				angVelOut[2]*angVelOut[2]);
+			if (angSpeed > MAX_ANG_VEL) {
+				float scale = MAX_ANG_VEL / angSpeed;
+				angVelOut[0] *= scale; angVelOut[1] *= scale; angVelOut[2] *= scale;
+			}
 		}
 
-		// --- Teleport body to target ---
-		RE::hkTransformf hkTransform;
-		hkTransform.rotation = weaponTransform.rotate;
-		hkTransform.translation = RE::NiPoint4(targetPos.x, targetPos.y, targetPos.z, 0.0f);
-		world->SetBodyTransform(_weaponBodyId, hkTransform, 0);
-
-		// --- Set velocity (for collision response) ---
+		// --- Set transform + velocity via BethesdaPhysicsBody (deferred-safe) ---
 		{
-			auto* linVel = reinterpret_cast<RE::hkVector4f*>(linVelOut);
-			auto* angVel = reinterpret_cast<RE::hkVector4f*>(angVelOut);
-			typedef void setVel_t(void*, std::uint32_t, RE::hkVector4f*, RE::hkVector4f*);
-			static REL::Relocation<setVel_t> setBodyVelocity{ REL::Offset(offsets::kFunc_SetBodyVelocity) };
-			setBodyVelocity(world, _weaponBodyId.value, linVel, angVel);
+			RE::hkTransformf hkTransform;
+			hkTransform.rotation = weaponTransform.rotate;
+			hkTransform.translation = RE::NiPoint4(targetX, targetY, targetZ, 0.0f);
+			_weaponBody.setTransform(hkTransform);
 		}
+		_weaponBody.setVelocity(linVelOut, angVelOut);
 
 		_prevPosition = weaponTransform.translate;
 		_hasPrevTransform = true;

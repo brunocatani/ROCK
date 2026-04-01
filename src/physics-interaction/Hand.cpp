@@ -27,7 +27,7 @@ namespace frik::rock
 		// --- Overwrite vtable: capsule -> convex polytope ---
 		// Capsule vtable (0x142c9a208) has capsule-specific AABB/raycast functions.
 		// Convex base vtable (0x142c9a108) iterates vertices generically -- correct for box.
-		static REL::Relocation<std::uintptr_t> convexVtable{ REL::Offset(0x2C9A108) };
+		static REL::Relocation<std::uintptr_t> convexVtable{ REL::Offset(offsets::kData_ConvexPolytopeVtable) };
 		*reinterpret_cast<std::uintptr_t*>(s) = convexVtable.address();
 
 		// --- Overwrite type code: 0x01C3 (capsule-specific) -> 0x0103 (convex polytope) ---
@@ -133,7 +133,7 @@ namespace frik::rock
 
 		// Call hknpMaterial constructor to set sane defaults
 		typedef void (*matCtor_t)(void*);
-		static REL::Relocation<matCtor_t> matCtor{ REL::Offset(0x1536CB0) };
+		static REL::Relocation<matCtor_t> matCtor{ REL::Offset(offsets::kFunc_MaterialCtor) };
 		matCtor(matBuffer);
 
 		// Set high friction for grip (prevents objects sliding off palm)
@@ -157,7 +157,7 @@ namespace frik::rock
 
 		// Register via addMaterial (world+0x5C8 = material library)
 		typedef void (*addMat_t)(void*, std::uint16_t*, void*);
-		static REL::Relocation<addMat_t> addMaterial{ REL::Offset(0x1537840) };
+		static REL::Relocation<addMat_t> addMaterial{ REL::Offset(offsets::kFunc_MaterialLibrary_AddMaterial) };
 
 		std::uint16_t newId = 0xFFFF;
 		addMaterial(matLib, &newId, matBuffer);
@@ -189,8 +189,7 @@ namespace frik::rock
 		_idleDesired = false;
 		_grabRequested = false;
 		_releaseRequested = false;
-		_collisionBodyId.value = INVALID_BODY_ID;
-		_shape = nullptr;
+		_handBody.reset();
 		_currentSelection.clear();
 		_cachedFarCandidate.clear();
 		_farDetectCounter = 0;
@@ -446,133 +445,61 @@ namespace frik::rock
 		}
 	}
 
-	bool Hand::createCollision(RE::hknpWorld* world,
-		const RE::hkVector4f& orientation, float halfExtentX, float halfExtentY, float halfExtentZ)
+	bool Hand::createCollision(RE::hknpWorld* world, void* bhkWorld,
+		float halfExtentX, float halfExtentY, float halfExtentZ)
 	{
 		if (hasCollisionBody()) {
 			ROCK_LOG_WARN(Hand, "{} hand already has collision body -- skipping create", handName());
 			return false;
 		}
 
-		if (!world) {
-			ROCK_LOG_ERROR(Hand, "{} hand createCollision: world is null", handName());
+		if (!world || !bhkWorld) {
+			ROCK_LOG_ERROR(Hand, "{} hand createCollision: world={} bhkWorld={}", handName(), (void*)world, bhkWorld);
 			return false;
 		}
 
-		// Box-shaped palm collider from INI config (Havok units, divide game units by 70):
-		//   X = palm half-width (side to side)
-		//   Y = palm half-depth (finger direction)
-		//   Z = palm half-thickness (palm normal)
-		// Defaults: X=0.06 (~12cm), Y=0.02 (~4cm), Z=0.015 (~3cm)
-		const float hx = halfExtentX;
-		const float hy = halfExtentY;
-		const float hz = halfExtentZ;
-		auto* shape = CreateBoxShape(hx, hy, hz, g_rockConfig.rockHandCollisionBoxRadius);
+		// Box-shaped palm collider (Havok units). See CreateBoxShape for vertex layout.
+		auto* shape = CreateBoxShape(halfExtentX, halfExtentY, halfExtentZ,
+			g_rockConfig.rockHandCollisionBoxRadius);
 		if (!shape) {
 			ROCK_LOG_ERROR(Hand, "{} hand createCollision: box shape creation failed", handName());
 			return false;
 		}
 
-		// Allocate motion for keyframed body
-		auto motionId = world->AllocateMotion();
+		// High-friction hand material for natural grip
+		auto materialId = registerHandMaterial(world);
 
-		// Fill body creation info
-		RE::hknpBodyCinfo cinfo;
-		cinfo.shape = shape;
-		cinfo.motionId.value = motionId;
-		cinfo.motionPropertiesId.value = 0xFF;  // Default -- setBodyKeyframed will override to KEYFRAMED
-		// FilterInfo format: bits 0-6 = layer, bits 16-31 = collision group.
-		// Reference CLUTTER bodies have filterInfo like 0x000B0004 (group=11, layer=4).
-		// Group 0 may be rejected by the filter. Use group 11 to match existing CLUTTER.
-		cinfo.collisionFilterInfo = (0x000B << 16) | (ROCK_HAND_LAYER & 0x7F);
-		// CRITICAL: Create body at ORIGIN (0,0,0), not at the hand position.
-		// CreateBody stores cinfo.position as the COM-to-body offset in the W
-		// components (body+0x0C/+0x1C/+0x2C). If non-zero, SetBodyTransform
-		// produces rotation-dependent positional drift because:
-		//   body.translation = motion.COM - R * W
-		// With W=0, body.translation = motion.COM always (no drift).
-		// We teleport to the correct position via SetBodyTransform after creation.
-		cinfo.position = RE::hkVector4f(0.0f, 0.0f, 0.0f, 0.0f);
-		cinfo.orientation = orientation;
-		// High-friction hand material for natural grip (registered once, cached)
-		cinfo.materialId = registerHandMaterial(world);
-		cinfo.userData = 0;  // MUST be 0 -- FOIslandActivationListener dereferences unconditionally
-		cinfo.name = _isLeft ? "ROCK_LeftHand" : "ROCK_RightHand";
+		// FilterInfo: bits 0-6 = layer (43), bits 16-31 = collision group (11).
+		std::uint32_t filterInfo = (0x000B << 16) | (ROCK_HAND_LAYER & 0x7F);
 
-		// Create body in the world (immediate mode)
-		auto bodyId = world->CreateBody(cinfo);
-		if (bodyId.value == INVALID_BODY_ID) {
-			ROCK_LOG_ERROR(Hand, "{} hand createCollision: CreateBody returned invalid ID", handName());
-			// Shape was allocated by CreateCapsuleShape (Havok heap). On success, CreateBody
-			// takes ownership and bumps refcount. On failure, we still hold the only reference.
-			// Decrement refcount to signal the Havok heap can reclaim the memory.
-			if (shape) {
-				auto* refObj = reinterpret_cast<RE::hkReferencedObject*>(shape);
-				std::uint32_t val = refObj->memSizeAndRefCount;
-				std::uint16_t refCount = static_cast<std::uint16_t>(val & 0xFFFF);
-				if (refCount > 0 && refCount != 0xFFFF) {
-					refObj->memSizeAndRefCount = (val & 0xFFFF0000u) | static_cast<std::uint32_t>(refCount - 1);
-					ROCK_LOG_WARN(Hand, "{} hand: shape at {:p} refcount decremented (body creation failed)", handName(), (void*)shape);
-				}
-			}
+		// Create via BethesdaPhysicsBody — full 12-step pipeline (CreatePhantomBody pattern).
+		// This creates bhkPhysicsSystem + bhkNPCollisionObject + sets body+0x88 back-pointer.
+		// Replaces raw CreateBody + manual flag setup + manual velocity writes.
+		bool ok = _handBody.create(world, bhkWorld, shape, filterInfo, materialId,
+			BethesdaMotionType::Keyframed,
+			_isLeft ? "ROCK_LeftHand" : "ROCK_RightHand");
+
+		if (!ok) {
+			ROCK_LOG_ERROR(Hand, "{} hand createCollision: BethesdaPhysicsBody::create failed", handName());
 			return false;
 		}
 
-		_collisionBodyId = bodyId;
-		_shape = shape;
+		// Create NiNode for scene graph integration (proper Bethesda pattern).
+		// This sets collisionObject+0x10 = niNode AND niNode+0x100 = collisionObject.
+		_handBody.createNiNode(_isLeft ? "ROCK_LeftHand" : "ROCK_RightHand");
 
-		// Enable contact modifier flag (0x20000) so contact events fire for this body.
-		// Enable keep-awake flag (0x8000000) so the body never goes to sleep.
-		world->EnableBodyFlags(bodyId, 0x08020000, 1);
-
-		// Set body as KEYFRAMED via Bethesda's proper API.
-		// This does critical setup that raw cinfo.motionPropertiesId=2 doesn't:
-		//   1. Zeroes inverse mass/inertia in motion (infinite mass -- pushes without being pushed)
-		//   2. Sets motionPropertiesId=2 in the MOTION struct (motion+0x38, separate from body+0x72)
-		//   3. Sets IS_KEYFRAMED flag (0x04) in body flags (body+0x40)
-		//   4. Rebuilds collision caches and updates broadphase
-		{
-			typedef void setKeyframed_t(void*, std::uint32_t);
-			static REL::Relocation<setKeyframed_t> setBodyKeyframed{ REL::Offset(offsets::kFunc_SetBodyKeyframed) };
-			setBodyKeyframed(world, bodyId.value);
-		}
-
-		// NOTE: Previous code wrote 1.0f to hknpMotion+0x70 and +0x7C here,
-		// calling them "timeFactor" and "spaceSplitterWeight" to "unfreeze" the motion.
-		// Ghidra audit (2026-03-31) proved this was wrong:
-		//   - timeFactor lives in hknpMotionProperties+0x0C (separate struct), NOT hknpMotion
-		//   - timeFactor is ALWAYS 1.0 for all 8 Bethesda presets — nothing is ever "frozen"
-		//   - hknpMotion+0x70-0x7F is previousStepAngularVelocity (hkVector4f)
-		//   - Writing 1.0f corrupted the X and W components of previous angular velocity
-		//   - initializeMotion (0x1417e1e40) already correctly zeroes +0x60/+0x70
-		// The writes were removed. Motion initialization is handled by AllocateMotion +
-		// CreateBody + the correct motionPropertiesId preset (KEYFRAMED = 2).
-
-		// Activate body
-		world->ActivateBody(bodyId);
-
-		ROCK_LOG_INFO(Hand, "{} hand collision created -- bodyId={}, motionId={}",
-			handName(), bodyId.value, motionId);
+		ROCK_LOG_INFO(Hand, "{} hand collision created via BethesdaPhysicsBody — bodyId={}",
+			handName(), _handBody.getBodyId().value);
 
 		return true;
 	}
 
-	void Hand::destroyCollision(RE::hknpWorld* world)
+	void Hand::destroyCollision(void* bhkWorld)
 	{
-		if (!hasCollisionBody()) {
-			return;
-		}
+		if (!hasCollisionBody()) return;
 
-		if (world) {
-			world->DestroyBodies(&_collisionBodyId, 1);
-			ROCK_LOG_INFO(Hand, "{} hand collision destroyed -- bodyId={}", handName(), _collisionBodyId.value);
-		} else {
-			ROCK_LOG_WARN(Hand, "{} hand collision orphaned (world null) -- bodyId={}", handName(), _collisionBodyId.value);
-		}
-
-		_collisionBodyId.value = INVALID_BODY_ID;
-		// Note: shape memory is managed by Havok's ref counting after body creation
-		_shape = nullptr;
+		ROCK_LOG_INFO(Hand, "{} hand collision destroying — bodyId={}", handName(), _handBody.getBodyId().value);
+		_handBody.destroy(bhkWorld);
 	}
 
 	void Hand::updateCollisionTransform(RE::hknpWorld* world, const RE::NiTransform& handTransform,
@@ -580,53 +507,57 @@ namespace frik::rock
 	{
 		if (!hasCollisionBody() || !world) return;
 
-		const auto targetPos = niPointToHkVector(handTransform.translate);
+		// HIGGS pattern (verified from source code analysis):
+		// 1. Convert game-space position → Havok space (* havokWorldScale)
+		// 2. Compute velocity via computeHardKeyFrame (Havok space)
+		// 3. Clamp velocity (ApplyHardKeyframeVelocityClamped)
+		// 4. Set transform + velocity via API
+		//
+		// WHY NOT DriveToKeyFrame: DriveToKeyFrame at 0x141e086e0 operates in
+		// GAME space (designed for skeleton bones that don't participate in constraints).
+		// Hand bodies MUST be in Havok space because they form constraints with
+		// grabbed objects (which are in Havok space). Mixing coordinate spaces
+		// produces 70× pivot error and non-functional motors.
+		//
+		// HIGGS ComputeHandCollisionTransform explicitly does:
+		//   transform.m_translation = NiPointToHkVector(
+		//       (handTransform * (offset / havokWorldScale)) * havokWorldScale);
+		// Net effect: game-space hand position → Havok space.
 
-		// Read current body position for teleport detection
+		const auto bodyId = _handBody.getBodyId();
+
+		// --- Step 1: Convert to Havok space ---
+		const float targetX = handTransform.translate.x * kGameToHavokScale;
+		const float targetY = handTransform.translate.y * kGameToHavokScale;
+		const float targetZ = handTransform.translate.z * kGameToHavokScale;
+
+		// Read current body position for teleport detection (Havok space)
 		auto* bodyArray = world->GetBodyArray();
-		auto* bodyFloats = reinterpret_cast<float*>(&bodyArray[_collisionBodyId.value]);
+		auto* bodyFloats = reinterpret_cast<float*>(&bodyArray[bodyId.value]);
 		float curX = bodyFloats[12], curY = bodyFloats[13], curZ = bodyFloats[14];
 
-		float dx = targetPos.x - curX, dy = targetPos.y - curY, dz = targetPos.z - curZ;
+		float dx = targetX - curX, dy = targetY - curY, dz = targetZ - curZ;
 		float dist = sqrtf(dx*dx + dy*dy + dz*dz);
 		bool isTeleport = (dist > 5.0f);
 
-		// --- Step 1: Compute velocity BEFORE teleport ---
-		// hknpWorld::computeHardKeyFrame (0x14153a6a0) reads current body state
-		// and computes both linear AND angular velocity to reach target in one step.
-		// CRITICAL: Previous code had ZERO angular velocity -- the solver couldn't
-		// predict hand rotation, causing oscillation.
-		// HIGGS uses hkpKeyFrameUtility::applyHardKeyFrame which does the same.
+		// --- Step 2: Compute velocity via computeHardKeyFrame (Havok space) ---
 		alignas(16) float linVelOut[4] = {0,0,0,0};
 		alignas(16) float angVelOut[4] = {0,0,0,0};
 
 		if (deltaTime > 0.0001f && !isTeleport) {
-			alignas(16) float tgtPos[4] = { targetPos.x, targetPos.y, targetPos.z, 0.0f };
+			alignas(16) float tgtPos[4] = { targetX, targetY, targetZ, 0.0f };
 			alignas(16) float tgtQuat[4];
-			niRotToHkQuat(handTransform.rotate, tgtQuat);  // PhysicsUtils.h -- normalized
+			niRotToHkQuat(handTransform.rotate, tgtQuat);
 
-			// CRITICAL FIX (C2): Pass deltaTime, NOT 1/deltaTime.
-			// Ghidra-verified: computeHardKeyFrame (0x14153a6a0) internally computes
-			// rcpps(param5) = 1/param5. For velocity = displacement/dt, it needs
-			// 1/param5 = 1/dt, therefore param5 = dt.
-			// Bethesda's UpdateKeyframedTransform (0x141e086e0) passes global dt directly.
-			// Previous code passed invDt (1/dt) -> function computed 1/(1/dt) = dt
-			// -> velocity = displacement x dt ~ 8000x too low at 90fps.
-			typedef void computeHKF_t(void*, std::uint32_t, const float*, const float*,
+			typedef void (*computeHKF_t)(void*, std::uint32_t, const float*, const float*,
 				float, float*, float*);
 			static REL::Relocation<computeHKF_t> computeHardKeyFrame{
 				REL::Offset(offsets::kFunc_ComputeHardKeyFrame) };
-			computeHardKeyFrame(world, _collisionBodyId.value,
+			computeHardKeyFrame(world, bodyId.value,
 				tgtPos, tgtQuat, deltaTime, linVelOut, angVelOut);
 		}
 
-		// --- Step 1b: Clamp velocity to prevent physics explosions ---
-		// Safety net for tracking glitches / frame hitches. Scales to max magnitude
-		// preserving direction -- NOT zeroing. Motor damping needs a directional
-		// velocity signal: force = -0.8 * (bodyB_vel - bodyA_vel). Zeroing bodyA
-		// velocity makes damping oppose all bodyB motion (pure friction).
-		// Thresholds are 10-25x above normal VR hand motion (1-50 rad/s, 5-20 m/s).
-		// HIGGS setRotation fallback does NOT zero angular velocity either.
+		// --- Step 3: Clamp velocity (HIGGS ApplyHardKeyframeVelocityClamped) ---
 		{
 			float MAX_LIN_VEL = g_rockConfig.rockMaxLinearVelocity;
 			float MAX_ANG_VEL = g_rockConfig.rockMaxAngularVelocity;
@@ -644,20 +575,16 @@ namespace frik::rock
 			}
 		}
 
-		// --- Step 2: Teleport body to target ---
-		RE::hkTransformf hkTransform;
-		hkTransform.rotation = handTransform.rotate;
-		hkTransform.translation = RE::NiPoint4(targetPos.x, targetPos.y, targetPos.z, 0.0f);
-		world->SetBodyTransform(_collisionBodyId, hkTransform, 0);
-
-		// --- Step 3: Set velocity AFTER teleport ---
-		// Always set velocity -- zero on teleport to clear stale motion,
-		// computed values on normal frames.
+		// --- Step 4: Set transform (Havok space, deferred-safe via BethesdaPhysicsBody) ---
 		{
-			typedef void setVel_t(void*, std::uint32_t, const float*, const float*);
-			static REL::Relocation<setVel_t> setBodyVelocity{ REL::Offset(offsets::kFunc_SetBodyVelocity) };
-			setBodyVelocity(world, _collisionBodyId.value, linVelOut, angVelOut);
+			RE::hkTransformf hkTransform;
+			hkTransform.rotation = handTransform.rotate;
+			hkTransform.translation = RE::NiPoint4(targetX, targetY, targetZ, 0.0f);
+			_handBody.setTransform(hkTransform);
 		}
+
+		// --- Step 5: Set velocity (deferred-safe via BethesdaPhysicsBody) ---
+		_handBody.setVelocity(linVelOut, angVelOut);
 	}
 
 	void Hand::updateDebugColliderVis(const RE::NiPoint3& palmPos, bool show, RE::NiNode* parentNode,

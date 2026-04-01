@@ -1,5 +1,6 @@
 #include "PhysicsHooks.h"
 
+#include "HavokOffsets.h"
 #include "PhysicsInteraction.h"
 #include "PhysicsLog.h"
 #include "PhysicsUtils.h"
@@ -153,7 +154,7 @@ namespace frik::rock
 		// write_branch<6> overwrites the function entry with a JMP and returns a
 		// trampoline thunk that executes the original first bytes + JMP to the rest.
 		// We MUST save the original from the return value, not from the raw address.
-		static REL::Relocation<std::uintptr_t> target{ REL::Offset(0x1E24980) };
+		static REL::Relocation<std::uintptr_t> target{ REL::Offset(offsets::kFunc_HandleBumpedCharacter) };
 		auto& trampoline = F4SE::GetTrampoline();
 
 		g_originalHandleBumped = reinterpret_cast<HandleBumpedCharacter_t>(
@@ -188,7 +189,7 @@ namespace frik::rock
 		installed = true;
 
 		// Patch VR Grab Initiate to return 0 immediately: xor eax,eax (31 C0) ; ret (C3)
-		static REL::Relocation<std::uintptr_t> target{ REL::Offset(0xF19250) };
+		static REL::Relocation<std::uintptr_t> target{ REL::Offset(offsets::kFunc_VRGrabInitiate) };
 		auto* addr = reinterpret_cast<std::uint8_t*>(target.address());
 
 		// Change memory protection to allow writing
@@ -364,7 +365,7 @@ namespace frik::rock
 		// Uses manual trampoline with VirtualAlloc(PAGE_EXECUTE_READWRITE) instead of
 		// F4SE trampoline, which allocates memory in non-executable regions causing
 		// EXCEPTION_ACCESS_VIOLATION when the original function is called through it.
-		static REL::Relocation<std::uintptr_t> target{ REL::Offset(0x1E4B7E0) };
+		static REL::Relocation<std::uintptr_t> target{ REL::Offset(offsets::kFunc_ProcessConstraintsCallback) };
 		auto* targetAddr = reinterpret_cast<std::uint8_t*>(target.address());
 
 		// Step 1: Allocate executable memory for trampoline

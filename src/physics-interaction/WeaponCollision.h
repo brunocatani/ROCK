@@ -16,6 +16,7 @@
 
 #include <atomic>
 
+#include "BethesdaPhysicsBody.h"
 #include "PhysicsLog.h"
 #include "PhysicsUtils.h"
 
@@ -47,8 +48,8 @@ namespace frik::rock
 	public:
 		// --- Public API (called by PhysicsInteraction) ---
 
-		/// Cache world pointer. Body creation deferred to update().
-		void init(RE::hknpWorld* world);
+		/// Cache world pointers. Body creation deferred to update().
+		void init(RE::hknpWorld* world, void* bhkWorld);
 
 		/// Reset state without calling DestroyBodies (world may be gone).
 		void shutdown();
@@ -62,15 +63,18 @@ namespace frik::rock
 			RE::hknpBodyId dominantHandBodyId, float dt);
 
 		/// Whether a weapon collision body currently exists in the world.
-		bool hasWeaponBody() const { return _weaponBodyId.value != INVALID_BODY_ID; }
+		bool hasWeaponBody() const { return _weaponBody.isValid(); }
 
-		/// Get the weapon body ID (main thread only — for constraint creation etc.).
-		RE::hknpBodyId getWeaponBodyId() const { return _weaponBodyId; }
+		/// Get the weapon body ID (main thread only).
+		RE::hknpBodyId getWeaponBodyId() const { return _weaponBody.getBodyId(); }
 
 		/// Thread-safe body ID read (for physics thread — processConstraintsCallback).
 		std::uint32_t getWeaponBodyIdAtomic() const {
 			return _weaponBodyIdAtomic.load(std::memory_order_acquire);
 		}
+
+		/// Get the BethesdaPhysicsBody (for direct API access).
+		BethesdaPhysicsBody& getWeaponBody() { return _weaponBody; }
 
 		/// Destroy the weapon body from the world (called by PhysicsInteraction::shutdown).
 		void destroyWeaponBody(RE::hknpWorld* world);
@@ -104,12 +108,13 @@ namespace frik::rock
 
 		// --- State ---
 
-		RE::hknpBodyId       _weaponBodyId{ INVALID_BODY_ID };
+		BethesdaPhysicsBody  _weaponBody;
 		const RE::hknpShape* _cachedShape{ nullptr };
-		std::uint64_t    _cachedWeaponKey{ 0 };  // Weapon node pointer as change-detection key
+		std::uint64_t    _cachedWeaponKey{ 0 };
 		RE::hknpWorld*   _cachedWorld{ nullptr };
+		void*            _cachedBhkWorld{ nullptr };
 		bool             _hasPrevTransform{ false };
-		bool             _weaponBodyPending{ false };  // Retry creation next frame (async NIF load)
+		bool             _weaponBodyPending{ false };
 
 		// Previous frame position for velocity computation
 		RE::NiPoint3 _prevPosition{};

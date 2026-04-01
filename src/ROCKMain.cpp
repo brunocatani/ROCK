@@ -51,6 +51,7 @@
 #define ROCK_API_EXPORTS
 #include "api/ROCKApi.h"
 #include "RockConfig.h"
+#include "physics-interaction/HavokOffsets.h"
 #include "physics-interaction/PhysicsInteraction.h"
 
 namespace
@@ -182,7 +183,7 @@ namespace
     /// We hook into the same game loop function call site that the framework uses.
     /// The trampoline chain preserves all previous hooks (including FRIK's).
     ///
-    /// Hook address 0xd8405e is a CALL instruction inside the main game loop that
+    /// Hook address kHookSite_MainLoop is a CALL instruction inside the main game loop that
     /// executes every frame. By overwriting it with a trampoline jump to our function,
     /// we get called every frame and then call the original (which may be FRIK's hook
     /// or the vanilla game function).
@@ -207,7 +208,7 @@ namespace
     void hookMainLoop()
     {
         // Same call site as F4VR-CommonFramework's MainLoopHook.h
-        REL::Relocation hookCallSite{ REL::Offset(0xd8405e) };
+        REL::Relocation hookCallSite{ REL::Offset(frik::rock::offsets::kHookSite_MainLoop) };
 
         logger::info("ROCK: Hooking main loop at (0x{:X})...", hookCallSite.address());
 

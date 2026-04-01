@@ -82,10 +82,11 @@ namespace frik::rock
 	{
 		// Check that the main loop hook site contains a CALL instruction (0xE8).
 		// If a game update moved it, our hook would corrupt arbitrary code.
-		REL::Relocation hookSite{ REL::Offset(0xd8405e) };
+		REL::Relocation hookSite{ REL::Offset(offsets::kHookSite_MainLoop) };
 		auto* hookByte = reinterpret_cast<const std::uint8_t*>(hookSite.address());
 		if (*hookByte != 0xE8 && *hookByte != 0xE9) {  // CALL or JMP (may be hooked already)
-			ROCK_LOG_ERROR(Init, "Hook site 0xd8405e is not a CALL/JMP instruction (found {:#x})", *hookByte);
+			ROCK_LOG_ERROR(Init, "Hook site 0x{:X} is not a CALL/JMP instruction (found {:#x})",
+				offsets::kHookSite_MainLoop, *hookByte);
 			return false;
 		}
 
@@ -149,7 +150,7 @@ namespace frik::rock
 		registerCollisionLayer(hknp);
 
 		// Create hand collision bodies
-		createHandCollisions(hknp);
+		createHandCollisions(hknp, bhk);
 		_cachedHalfExtentX = g_rockConfig.rockHandCollisionHalfExtentX;
 		_cachedHalfExtentY = g_rockConfig.rockHandCollisionHalfExtentY;
 		_cachedHalfExtentZ = g_rockConfig.rockHandCollisionHalfExtentZ;
@@ -158,7 +159,7 @@ namespace frik::rock
 		subscribeContactEvents(hknp);
 
 		// Initialize weapon collision system
-		_weaponCollision.init(hknp);
+		_weaponCollision.init(hknp, bhk);
 
 		// Kill FRIK's offhand grip permanently — ROCK owns weapon interaction now
 		if (frik::api::FRIKApi::inst) {
@@ -317,8 +318,8 @@ namespace frik::rock
 			// Release any held objects before destroying hand bodies (constraint references bodyA)
 			if (_rightHand.isHolding()) { auto* r = _rightHand.getHeldRef(); _rightHand.releaseGrabbedObject(hknp); if (r) releaseObject(r); }
 			if (_leftHand.isHolding()) { auto* r = _leftHand.getHeldRef(); _leftHand.releaseGrabbedObject(hknp); if (r) releaseObject(r); }
-			destroyHandCollisions(hknp);  // also destroys debug spheres
-			createHandCollisions(hknp);
+			destroyHandCollisions(bhk);  // also destroys debug spheres
+			createHandCollisions(hknp, bhk);
 			_cachedHalfExtentX = g_rockConfig.rockHandCollisionHalfExtentX;
 			_cachedHalfExtentY = g_rockConfig.rockHandCollisionHalfExtentY;
 			_cachedHalfExtentZ = g_rockConfig.rockHandCollisionHalfExtentZ;
@@ -437,7 +438,7 @@ namespace frik::rock
 			if (_rightHand.isHolding()) { auto* r = _rightHand.getHeldRef(); _rightHand.releaseGrabbedObject(hknp); if (r) releaseObject(r); }
 			if (_leftHand.isHolding()) { auto* r = _leftHand.getHeldRef(); _leftHand.releaseGrabbedObject(hknp); if (r) releaseObject(r); }
 			_weaponCollision.destroyWeaponBody(hknp);
-			destroyHandCollisions(hknp);
+			destroyHandCollisions(_cachedBhkWorld);
 		} else {
 			ROCK_LOG_INFO(Init, "World stale or null — skipping Havok body destruction");
 		}
@@ -486,7 +487,7 @@ namespace frik::rock
 		// Phase 0A fix: Read collision filter from the hknpWorld's modifier manager,
 		// NOT from the global singleton. After world recreation (cell load), the new
 		// hknpWorld may use a different filter object than the persistent global singleton
-		// at REL::Offset(0x59429B8). The global singleton is created once in
+		// at REL::Offset(offsets::kData_CollisionFilterSingleton). The global singleton is created once in
 		// bhkWorld__InitSystem and never recreated, but the new world's modifier manager
 		// may reference a fresh filter where our custom layers are unconfigured.
 		//
@@ -518,7 +519,7 @@ namespace frik::rock
 		auto* filterPtr = *reinterpret_cast<void**>(modifierMgr + offsets::kModifierMgr_FilterPtr);
 		if (!filterPtr) {
 			// Fallback: try the global singleton (may be the same object on first init)
-			static REL::Relocation<void**> filterSingleton{ REL::Offset(0x59429B8) };
+			static REL::Relocation<void**> filterSingleton{ REL::Offset(offsets::kData_CollisionFilterSingleton) };
 			filterPtr = *filterSingleton;
 			if (!filterPtr) {
 				ROCK_LOG_ERROR(Config, "Both world filter and global singleton are null — cannot configure layer");
@@ -530,7 +531,7 @@ namespace frik::rock
 
 		// Log which filter we're using for debugging
 		{
-			static REL::Relocation<void**> filterSingleton{ REL::Offset(0x59429B8) };
+			static REL::Relocation<void**> filterSingleton{ REL::Offset(offsets::kData_CollisionFilterSingleton) };
 			auto* globalFilter = *filterSingleton;
 			ROCK_LOG_INFO(Config, "Filter source: world={:p}, global={:p}, same={}",
 				filterPtr, (void*)globalFilter, filterPtr == globalFilter);
@@ -593,32 +594,30 @@ namespace frik::rock
 	// Hand Collision Bodies
 	// =========================================================================
 
-	void PhysicsInteraction::createHandCollisions(RE::hknpWorld* world)
+	void PhysicsInteraction::createHandCollisions(RE::hknpWorld* world, void* bhkWorld)
 	{
 		if (!frik::api::FRIKApi::inst || !frik::api::FRIKApi::inst->isSkeletonReady()) {
 			ROCK_LOG_ERROR(Hand, "Cannot create hand collisions — skeleton not ready");
 			return;
 		}
 
-		RE::hkVector4f identityQuat(0.0f, 0.0f, 0.0f, 1.0f);
-
-		_rightHand.createCollision(world, identityQuat,
+		_rightHand.createCollision(world, bhkWorld,
 			g_rockConfig.rockHandCollisionHalfExtentX,
 			g_rockConfig.rockHandCollisionHalfExtentY,
 			g_rockConfig.rockHandCollisionHalfExtentZ);
 
-		_leftHand.createCollision(world, identityQuat,
+		_leftHand.createCollision(world, bhkWorld,
 			g_rockConfig.rockHandCollisionHalfExtentX,
 			g_rockConfig.rockHandCollisionHalfExtentY,
 			g_rockConfig.rockHandCollisionHalfExtentZ);
 	}
 
-	void PhysicsInteraction::destroyHandCollisions(RE::hknpWorld* world)
+	void PhysicsInteraction::destroyHandCollisions(void* bhkWorld)
 	{
 		_rightHand.destroyDebugColliderVis();
 		_leftHand.destroyDebugColliderVis();
-		_rightHand.destroyCollision(world);
-		_leftHand.destroyCollision(world);
+		_rightHand.destroyCollision(bhkWorld);
+		_leftHand.destroyCollision(bhkWorld);
 	}
 
 	void PhysicsInteraction::updateHandCollisions(RE::hknpWorld* world)
@@ -986,7 +985,7 @@ namespace frik::rock
 
 		// subscribe_ext(signal, userData, callbackInfo)
 		typedef void subscribe_ext_t(void* signal, void* userData, void* callbackInfo);
-		static REL::Relocation<subscribe_ext_t> subscribeExt{ REL::Offset(0x3B9E50) };
+		static REL::Relocation<subscribe_ext_t> subscribeExt{ REL::Offset(offsets::kFunc_SubscribeContactEvent) };
 		subscribeExt(signal, static_cast<void*>(this), &cbInfo);
 
 		ROCK_LOG_INFO(Init, "Subscribed to contact events");
