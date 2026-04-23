@@ -63,18 +63,22 @@ namespace frik::rock
         rockEnabled = true;
 
         // Hand collision body
-        rockHandCollisionHalfExtentX = 0.05f;
-        rockHandCollisionHalfExtentY = 0.09f;
-        rockHandCollisionHalfExtentZ = 0.015f;
+        rockHandCollisionHalfExtentX = 0.09f;
+        rockHandCollisionHalfExtentY = 0.015f;
+        rockHandCollisionHalfExtentZ = 0.05f;
         rockHandCollisionOffsetX     = 0.0f;
         rockHandCollisionOffsetY     = 0.086f;
         rockHandCollisionOffsetZ     = -0.005f;
         rockHandCollisionBoxRadius   = 0.0f;
+        rockHandCollisionOffsetHandspace = RE::NiPoint3(0.086f, -0.005f, 0.0f);
 
         // Palm offset
         rockPalmOffsetForward = 6.0f;
         rockPalmOffsetUp      = -2.4f;
         rockPalmOffsetRight   = 0.0f;
+        rockPalmPositionHandspace = RE::NiPoint3(6.0f, -2.4f, 0.0f);
+        rockPalmNormalHandspace = RE::NiPoint3(0.0f, -1.0f, 0.0f);
+        rockPointingVectorHandspace = RE::NiPoint3(1.0f, 0.0f, 0.0f);
 
         // Feature toggles
         rockWeaponCollisionEnabled = false;
@@ -84,9 +88,12 @@ namespace frik::rock
         rockHighlightEnabled = true;
 
         // Debug
-        rockDebugShowColliders  = false;
-        rockDebugColliderShape  = 4;
-        rockDebugVerboseLogging = true;
+	        rockDebugShowColliders  = false;
+	        rockDebugShowPalmBasis  = false;
+	        rockDebugColliderShape  = 4;
+	        rockDebugVerboseLogging = true;
+	        rockDebugGrabFrameLogging = true;
+	        rockDebugHandTransformParity = false;
 
         // Object detection
         rockNearDetectionRange = 25.0f;
@@ -155,6 +162,12 @@ namespace frik::rock
     // When called without reset (reload path), "current" = runtime value.
     void RockConfig::readValuesFromIni(CSimpleIniA& ini)
     {
+		auto readVec3 = [&](const char* keyX, const char* keyY, const char* keyZ, RE::NiPoint3& value) {
+			value.x = static_cast<float>(ini.GetDoubleValue(SECTION, keyX, value.x));
+			value.y = static_cast<float>(ini.GetDoubleValue(SECTION, keyY, value.y));
+			value.z = static_cast<float>(ini.GetDoubleValue(SECTION, keyZ, value.z));
+		};
+
         // Enable
         rockEnabled = ini.GetBoolValue(SECTION, "bEnabled", rockEnabled);
 
@@ -166,11 +179,19 @@ namespace frik::rock
         rockHandCollisionOffsetY     = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionOffsetY",     rockHandCollisionOffsetY));
         rockHandCollisionOffsetZ     = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionOffsetZ",     rockHandCollisionOffsetZ));
         rockHandCollisionBoxRadius   = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionBoxRadius",   rockHandCollisionBoxRadius));
+        readVec3("fHandCollisionOffsetHandspaceX", "fHandCollisionOffsetHandspaceY", "fHandCollisionOffsetHandspaceZ",
+			rockHandCollisionOffsetHandspace);
 
         // Palm offset
         rockPalmOffsetForward = static_cast<float>(ini.GetDoubleValue(SECTION, "fPalmOffsetForward", rockPalmOffsetForward));
         rockPalmOffsetUp      = static_cast<float>(ini.GetDoubleValue(SECTION, "fPalmOffsetUp",      rockPalmOffsetUp));
         rockPalmOffsetRight   = static_cast<float>(ini.GetDoubleValue(SECTION, "fPalmOffsetRight",   rockPalmOffsetRight));
+        readVec3("fPalmPositionHandspaceX", "fPalmPositionHandspaceY", "fPalmPositionHandspaceZ",
+			rockPalmPositionHandspace);
+        readVec3("fPalmNormalHandspaceX", "fPalmNormalHandspaceY", "fPalmNormalHandspaceZ",
+			rockPalmNormalHandspace);
+        readVec3("fPointingVectorHandspaceX", "fPointingVectorHandspaceY", "fPointingVectorHandspaceZ",
+			rockPointingVectorHandspace);
 
         // Feature toggles
         rockWeaponCollisionEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionEnabled", rockWeaponCollisionEnabled);
@@ -187,9 +208,12 @@ namespace frik::rock
         rockHighlightEnabled = ini.GetBoolValue(SECTION, "bHighlightEnabled", rockHighlightEnabled);
 
         // Debug
-        rockDebugShowColliders  = ini.GetBoolValue(SECTION,  "bDebugShowColliders",  rockDebugShowColliders);
-        rockDebugColliderShape  = static_cast<int>(ini.GetLongValue(SECTION, "iDebugColliderShape", rockDebugColliderShape));
-        rockDebugVerboseLogging = ini.GetBoolValue(SECTION,  "bDebugVerboseLogging", rockDebugVerboseLogging);
+	        rockDebugShowColliders  = ini.GetBoolValue(SECTION,  "bDebugShowColliders",  rockDebugShowColliders);
+	        rockDebugShowPalmBasis  = ini.GetBoolValue(SECTION,  "bDebugShowPalmBasis",  rockDebugShowPalmBasis);
+	        rockDebugColliderShape  = static_cast<int>(ini.GetLongValue(SECTION, "iDebugColliderShape", rockDebugColliderShape));
+	        rockDebugVerboseLogging = ini.GetBoolValue(SECTION,  "bDebugVerboseLogging", rockDebugVerboseLogging);
+	        rockDebugGrabFrameLogging = ini.GetBoolValue(SECTION, "bDebugGrabFrameLogging", rockDebugGrabFrameLogging);
+	        rockDebugHandTransformParity = ini.GetBoolValue(SECTION, "bDebugHandTransformParity", rockDebugHandTransformParity);
 
         // Object detection
         rockNearDetectionRange = static_cast<float>(ini.GetDoubleValue(SECTION, "fNearDetectionRange", rockNearDetectionRange));

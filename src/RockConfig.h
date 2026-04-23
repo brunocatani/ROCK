@@ -25,6 +25,8 @@
 #include <thread>
 #include <unordered_map>
 
+#include "RE/NetImmerse/NiPoint.h"
+
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -68,28 +70,38 @@ namespace frik::rock
 
         // --- Hand Collision Body ---
         // Axis-aligned box half-extents in Havok units (meters). Full dimensions = 2x half-extent.
-        // Shape should be a flat palm slab: wide (X), long along fingers (Y), thin (Z).
-        // HIGGS defaults: X=0.05 (10cm), Y=0.015 (3cm thickness), Z=0.09 (18cm finger length)
-        // Note: HIGGS uses different axis convention (Z=finger). We use Y=finger direction.
-        float rockHandCollisionHalfExtentX = 0.05f;    // Palm half-width (side to side, ~10cm)
-        float rockHandCollisionHalfExtentY = 0.09f;    // Palm half-depth (wrist to fingertips, ~18cm)
-        float rockHandCollisionHalfExtentZ = 0.015f;   // Palm half-thickness (palm normal, ~3cm)
-        // Collision body offset from wand origin, in Havok units (meters, 1 HU = 70 game units).
-        // Applied in computeHandCollisionTransform() via kHavokToGame * offset along wand axes.
+        // These values are authored in ROCK hand-space:
+        //   +X = fingertips, +Y = back of hand, +Z = lateral
+        // PalmTransform maps that authored basis onto the raw FO4/FRIK hand node basis at runtime.
+        float rockHandCollisionHalfExtentX = 0.09f;    // Fingertip direction half-length (~18cm total)
+        float rockHandCollisionHalfExtentY = 0.015f;   // Palm-normal half-thickness (~3cm total)
+        float rockHandCollisionHalfExtentZ = 0.05f;    // Lateral half-width (~10cm total)
+        // Legacy collision body offset from wand origin, in Havok units (meters, 1 HU = 70 game units).
+        // Retained until Pre-00 Phase 3 migrates the runtime path off wand-local semantics.
         float rockHandCollisionOffsetX = 0.0f;         // Wand-local X offset. Auto-mirrors for left hand.
         float rockHandCollisionOffsetY = 0.086f;       // Wand-local Y offset — along barrel toward fingertips (HIGGS: 0.086)
         float rockHandCollisionOffsetZ = -0.005f;      // Wand-local Z offset — toward palm face (HIGGS: -0.005)
         float rockHandCollisionBoxRadius = 0.0f;       // Convex radius for rounded box edges (HIGGS: 0)
 
-        // --- Palm Offset (game units, in hand-local space) ---
-        // Defines where the palm CENTER is relative to the hand transform origin.
-        // This is NOT the collision body offset — it's used in the per-frame pivotB
-        // computation to drive the object's contact point TO the palm.
-        // FO4VR wand axes: Y=fingertips, Z=dorsal(-Z=palm face)
-        // Mapping from HIGGS: Z=6 -> our Forward(Y)=6, Y=-2.4 -> our Up(Z)=-2.4
+        // Hand-space collision offset seed used by the Pre-00 basis/parity path.
+        // Authored ROCK basis:
+        //   +X = fingertips, +Y = back of hand, +Z = lateral
+        // Units: Havok meters. Authored Z mirrors for the left hand before the fixed
+        // authored-space -> raw-hand-space remap is applied.
+        RE::NiPoint3 rockHandCollisionOffsetHandspace = RE::NiPoint3(0.086f, -0.005f, 0.0f);
+
+        // Legacy palm offset in wand-local space. Retained until Pre-00 runtime migration.
         float rockPalmOffsetForward = 6.0f;    // Along barrel toward fingertips (wand Y axis)
         float rockPalmOffsetUp = -2.4f;        // Toward palm face (wand -Z axis). Negative = into palm.
         float rockPalmOffsetRight = 0.0f;      // Side offset (wand X axis, auto-mirrors for left)
+
+        // Pre-00 authored hand-space vectors. These become the long-term source of truth once
+        // runtime call sites move to cached hand-bone transforms.
+        // Authored basis:
+        //   +X = fingertips, +Y = back of hand, +Z = lateral
+        RE::NiPoint3 rockPalmPositionHandspace = RE::NiPoint3(6.0f, -2.4f, 0.0f);          // Game units
+        RE::NiPoint3 rockPalmNormalHandspace = RE::NiPoint3(0.0f, -1.0f, 0.0f);            // Unit vector toward palm face
+        RE::NiPoint3 rockPointingVectorHandspace = RE::NiPoint3(1.0f, 0.0f, 0.0f);         // Unit vector toward fingertips
 
         // --- Feature Toggles ---
         bool rockWeaponCollisionEnabled = false;       // Weapon collision body on layer 44 (disabled until grab debugging complete)
@@ -107,9 +119,12 @@ namespace frik::rock
         bool rockHighlightEnabled = true;
 
         // --- Debug ---
-        bool rockDebugShowColliders = false;
-        int rockDebugColliderShape = 4;                // 0=Trigger256, 1=Trigger512, 2=Activator, 3=Utility, 4=VaultSuit
-        bool rockDebugVerboseLogging = true;           // Per-frame diagnostic logging (wand axes, AABB hits, grip positions, etc.)
+	        bool rockDebugShowColliders = false;
+	        bool rockDebugShowPalmBasis = false;           // Visualize raw hand origin plus local axis markers for basis tuning
+	        int rockDebugColliderShape = 4;                // 0=Trigger256, 1=Trigger512, 2=Activator, 3=Utility, 4=VaultSuit
+	        bool rockDebugVerboseLogging = true;           // Per-frame diagnostic logging (wand axes, AABB hits, grip positions, etc.)
+	        bool rockDebugGrabFrameLogging = true;         // Focused grab-frame diagnostics (raw vs authored hand-space target comparison)
+	        bool rockDebugHandTransformParity = false;     // Temporary Pre-00 validation: compare local cache vs FRIK API hand transform
 
         // --- Object Detection ---
         float rockNearDetectionRange = 25.0f;          // Near grab range (~35cm)

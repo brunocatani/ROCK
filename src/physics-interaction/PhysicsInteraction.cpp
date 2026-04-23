@@ -1,5 +1,9 @@
 #include "PhysicsInteraction.h"
 
+#include <algorithm>
+#include <cmath>
+#include <numbers>
+
 #include "HavokOffsets.h"
 #include "PalmTransform.h"
 #include "PhysicsHooks.h"
@@ -22,31 +26,54 @@
 
 namespace frik::rock
 {
-	/// Build hand collision transform from raw VR wand node (HIGGS pattern).
-	/// Uses raw controller tracking instead of FRIK's IK-solved position.
-	/// Applies configurable hand-local offset to position the collision box
-	/// over the palm/fingers instead of at the wrist bone origin.
-	/// HIGGS equivalent: ComputeHandCollisionTransform (hand.cpp:522-535).
-	/// Defined here (file scope) so all functions in the file can use it.
-	static RE::NiTransform computeHandCollisionTransform(RE::NiNode* wandNode, bool isLeft)
+		namespace
 	{
-		RE::NiTransform result = wandNode->world;
+		constexpr float kRawParityWarnPosition = 0.10f;
+		constexpr float kRawParityWarnRotationDegrees = 0.5f;
+		constexpr float kRawParityFailPosition = 0.50f;
+		constexpr float kRawParityFailRotationDegrees = 2.0f;
+		constexpr int kRawParityWarnFrames = 2;
+		constexpr int kRawParityFailFrames = 10;
+		constexpr int kRawParitySummaryFrames = 300;
+		constexpr int kRawParityLagFrames = 5;
+		constexpr float kRawParityLagSlack = 0.05f;
 
-		float offX = g_rockConfig.rockHandCollisionOffsetX * (isLeft ? -1.0f : 1.0f);
-		float offY = g_rockConfig.rockHandCollisionOffsetY;
-		float offZ = g_rockConfig.rockHandCollisionOffsetZ;
+		struct TransformDelta
+		{
+			float position = 0.0f;
+			float rotationDegrees = 0.0f;
+		};
 
-		const auto& R = result.rotate;
-		float worldOffX = R.entry[0][0]*offX + R.entry[0][1]*offY + R.entry[0][2]*offZ;
-		float worldOffY = R.entry[1][0]*offX + R.entry[1][1]*offY + R.entry[1][2]*offZ;
-		float worldOffZ = R.entry[2][0]*offX + R.entry[2][1]*offY + R.entry[2][2]*offZ;
+		TransformDelta measureTransformDelta(const RE::NiTransform& a, const RE::NiTransform& b)
+		{
+			const float dx = a.translate.x - b.translate.x;
+			const float dy = a.translate.y - b.translate.y;
+			const float dz = a.translate.z - b.translate.z;
 
-		constexpr float kHavokToGame = 70.0f;
-		result.translate.x += worldOffX * kHavokToGame;
-		result.translate.y += worldOffY * kHavokToGame;
-		result.translate.z += worldOffZ * kHavokToGame;
+			const auto qa = niRotToHkQuat(a.rotate);
+			const auto qb = niRotToHkQuat(b.rotate);
+			const float dot = std::clamp(std::fabs(qa.x * qb.x + qa.y * qb.y + qa.z * qb.z + qa.w * qb.w), 0.0f, 1.0f);
+			const float angleRadians = 2.0f * std::acos(dot);
 
-		return result;
+			return TransformDelta{
+				.position = std::sqrt(dx * dx + dy * dy + dz * dz),
+				.rotationDegrees = angleRadians * (180.0f / std::numbers::pi_v<float>)
+			};
+		}
+
+		float measurePointDelta(const RE::NiPoint3& a, const RE::NiPoint3& b)
+		{
+			const float dx = a.x - b.x;
+			const float dy = a.y - b.y;
+			const float dz = a.z - b.z;
+			return std::sqrt(dx * dx + dy * dy + dz * dz);
+		}
+
+		float measureDirectionDeltaDegrees(const RE::NiPoint3& a, const RE::NiPoint3& b)
+		{
+			const float dot = std::clamp(std::fabs(a.x * b.x + a.y * b.y + a.z * b.z), 0.0f, 1.0f);
+			return std::acos(dot) * (180.0f / std::numbers::pi_v<float>);
+		}
 	}
 
 	PhysicsInteraction::PhysicsInteraction()
@@ -115,6 +142,159 @@ namespace frik::rock
 		return true;
 	}
 
+	bool PhysicsInteraction::refreshHandBoneCache()
+	{
+		const bool cacheNeedsResolve = !_handBoneCache.isReady() || _handBoneCache.hasSkeletonChanged();
+		if (!cacheNeedsResolve) {
+			return true;
+		}
+
+		if (_handBoneCache.hasSkeletonChanged()) {
+			_handBoneCache.reset();
+		}
+
+		if (_handBoneCache.resolve()) {
+			_handCacheResolveLogCounter = 0;
+			return true;
+		}
+
+		if (g_rockConfig.rockDebugHandTransformParity) {
+			if (++_handCacheResolveLogCounter == 1 || _handCacheResolveLogCounter % 90 == 0) {
+				ROCK_LOG_WARN(Hand, "HandBoneCache unresolved; raw parity sampling skipped this frame");
+			}
+		}
+
+		return false;
+	}
+
+	RE::NiTransform PhysicsInteraction::getInteractionHandTransform(bool isLeft) const
+	{
+		if (_handBoneCache.isReady()) {
+			return _handBoneCache.getWorldTransform(isLeft);
+		}
+
+		if (frik::api::FRIKApi::inst) {
+			return frik::api::FRIKApi::inst->getHandWorldTransform(handFromBool(isLeft));
+		}
+
+		return RE::NiTransform();
+	}
+
+	RE::NiNode* PhysicsInteraction::getInteractionHandNode(bool isLeft) const
+	{
+		if (_handBoneCache.isReady()) {
+			return _handBoneCache.getNode(isLeft);
+		}
+
+		if (frik::api::FRIKApi::inst) {
+			return frik::api::FRIKApi::inst->getHandNode(handFromBool(isLeft));
+		}
+
+		return nullptr;
+	}
+
+	void PhysicsInteraction::sampleHandTransformParity()
+	{
+		if (!g_rockConfig.rockDebugHandTransformParity) {
+			_parityEnabledLogged = false;
+			_paritySummaryCounter = 0;
+			return;
+		}
+
+		if (!frik::api::FRIKApi::inst || !_handBoneCache.isReady()) {
+			return;
+		}
+
+		if (!_parityEnabledLogged) {
+			ROCK_LOG_INFO(Init, "Hand-transform parity enabled (raw + derived basis, local cache vs FRIK API, pre-write sampling)");
+			_parityEnabledLogged = true;
+		}
+
+		const bool playerMoving = frik::api::FRIKApi::inst->isPlayerMoving();
+		const bool emitSummary = (++_paritySummaryCounter >= kRawParitySummaryFrames);
+
+		auto sampleHand = [&](bool isLeft) {
+			auto& state = _rawHandParityStates[isLeft ? 1 : 0];
+			const auto handEnum = handFromBool(isLeft);
+			const auto localTransform = _handBoneCache.getWorldTransform(isLeft);
+			const auto apiTransform = frik::api::FRIKApi::inst->getHandWorldTransform(handEnum);
+			const auto delta = measureTransformDelta(localTransform, apiTransform);
+			const auto localCollisionTransform = computeHandCollisionTransformFromHandBasis(localTransform, isLeft);
+			const auto apiCollisionTransform = computeHandCollisionTransformFromHandBasis(apiTransform, isLeft);
+			const auto localPalmPosition = computePalmPositionFromHandBasis(localTransform, isLeft);
+			const auto apiPalmPosition = computePalmPositionFromHandBasis(apiTransform, isLeft);
+			const auto localPalmNormal = computePalmNormalFromHandBasis(localTransform, isLeft);
+			const auto apiPalmNormal = computePalmNormalFromHandBasis(apiTransform, isLeft);
+			const auto localPointing = computePointingVectorFromHandBasis(localTransform, isLeft);
+			const auto apiPointing = computePointingVectorFromHandBasis(apiTransform, isLeft);
+			state.lastPositionDelta = delta.position;
+			state.lastRotationDeltaDegrees = delta.rotationDegrees;
+
+			const bool warnExceeded = delta.position > kRawParityWarnPosition ||
+				delta.rotationDegrees > kRawParityWarnRotationDegrees;
+			const bool failExceeded = delta.position > kRawParityFailPosition ||
+				delta.rotationDegrees > kRawParityFailRotationDegrees;
+
+			state.warnFrames = warnExceeded ? state.warnFrames + 1 : 0;
+			state.failFrames = failExceeded ? state.failFrames + 1 : 0;
+
+			const char* handLabel = isLeft ? "Left" : "Right";
+			if (state.warnFrames == kRawParityWarnFrames) {
+				ROCK_LOG_WARN(Hand, "{} raw hand parity warning: posDelta={:.3f} rotDelta={:.3f}deg",
+					handLabel, delta.position, delta.rotationDegrees);
+			}
+
+			if (state.failFrames == kRawParityFailFrames) {
+				ROCK_LOG_ERROR(Hand, "{} raw hand parity failure: posDelta={:.3f} rotDelta={:.3f}deg",
+					handLabel, delta.position, delta.rotationDegrees);
+			}
+
+			if (playerMoving && state.hasPreviousApiTransform) {
+				const auto prevApiDelta = measureTransformDelta(localTransform, state.previousApiTransform);
+				if (prevApiDelta.position + kRawParityLagSlack < delta.position) {
+					state.lagFrames++;
+					if (state.lagFrames == kRawParityLagFrames) {
+						ROCK_LOG_WARN(Hand, "{} hand parity suggests possible one-frame lag: currentDelta={:.3f} prevApiDelta={:.3f}",
+							handLabel, delta.position, prevApiDelta.position);
+					}
+				} else {
+					state.lagFrames = 0;
+				}
+			} else {
+				state.lagFrames = 0;
+			}
+
+			state.previousApiTransform = apiTransform;
+			state.hasPreviousApiTransform = true;
+
+			if (emitSummary) {
+				const char* summaryHandLabel = isLeft ? "L" : "R";
+				ROCK_LOG_INFO(Hand,
+					"{} parity: raw(pos={:.3f}, rot={:.3f}deg) basis(collider={:.3f}, palmPos={:.3f}, palmNormal={:.3f}deg, pointing={:.3f}deg)",
+					summaryHandLabel,
+					delta.position,
+					delta.rotationDegrees,
+					measurePointDelta(localCollisionTransform.translate, apiCollisionTransform.translate),
+					measurePointDelta(localPalmPosition, apiPalmPosition),
+					measureDirectionDeltaDegrees(localPalmNormal, apiPalmNormal),
+					measureDirectionDeltaDegrees(localPointing, apiPointing));
+			}
+		};
+
+		sampleHand(false);
+		sampleHand(true);
+
+		if (emitSummary) {
+			_paritySummaryCounter = 0;
+			const auto& right = _rawHandParityStates[0];
+			const auto& left = _rawHandParityStates[1];
+			ROCK_LOG_INFO(Hand,
+				"Raw hand parity summary: R(pos={:.3f}, rot={:.3f}deg) L(pos={:.3f}, rot={:.3f}deg)",
+				right.lastPositionDelta, right.lastRotationDeltaDegrees,
+				left.lastPositionDelta, left.lastRotationDeltaDegrees);
+		}
+	}
+
 	void PhysicsInteraction::init()
 	{
 		if (_initialized) {
@@ -145,6 +325,9 @@ namespace frik::rock
 		}
 
 		_cachedBhkWorld = bhk;
+		if (!refreshHandBoneCache()) {
+			ROCK_LOG_WARN(Init, "HandBoneCache not ready during init; runtime remains on pre-00 transform paths");
+		}
 
 		// Register our custom collision layer (once per world)
 		registerCollisionLayer(hknp);
@@ -171,21 +354,10 @@ namespace frik::rock
 		// CreateBody places the body at origin (0,0,0) in the broadphase. SetBodyTransform
 		// updates the motion position AND the broadphase tree via synchronizeBodiesFromMotion.
 		{
-			// Use raw wand nodes for initial positioning (consistent with per-frame path)
-			auto* rWandInit = f4vr::getRightHandNode();
-			auto* lWandInit = f4vr::getLeftHandNode();
-			if (rWandInit && lWandInit) {
-				auto rTransform = computeHandCollisionTransform(rWandInit, false);
-				auto lTransform = computeHandCollisionTransform(lWandInit, true);
-				_rightHand.updateCollisionTransform(hknp, rTransform, 0.011f);
-				_leftHand.updateCollisionTransform(hknp, lTransform, 0.011f);
-			} else if (frik::api::FRIKApi::inst) {
-				// Fallback to FRIK API if wand nodes not yet available at init
-				auto rTransform = frik::api::FRIKApi::inst->getHandWorldTransform(frik::api::FRIKApi::Hand::Right);
-				auto lTransform = frik::api::FRIKApi::inst->getHandWorldTransform(frik::api::FRIKApi::Hand::Left);
-				_rightHand.updateCollisionTransform(hknp, rTransform, 0.011f);
-				_leftHand.updateCollisionTransform(hknp, lTransform, 0.011f);
-			}
+			auto rightTransform = computeHandCollisionTransformFromHandBasis(getInteractionHandTransform(false), false);
+			auto leftTransform = computeHandCollisionTransformFromHandBasis(getInteractionHandTransform(true), true);
+			_rightHand.updateCollisionTransform(hknp, rightTransform, 0.011f);
+			_leftHand.updateCollisionTransform(hknp, leftTransform, 0.011f);
 			ROCK_LOG_INFO(Init, "Initial hand positions set via SetBodyTransform");
 		}
 
@@ -205,6 +377,10 @@ namespace frik::rock
 
 	void PhysicsInteraction::update()
 	{
+		if (!frik::api::FRIKApi::inst) {
+			return;
+		}
+
 		// CRITICAL: Update VR controller state for this frame.
 		// Each DLL has its own copy of the VRControllers inline global (separate instances
 		// per module). FRIK updates its copy in ModBase::onFrameUpdateSafe(), but ROCK
@@ -222,7 +398,7 @@ namespace frik::rock
 		}
 
 		// Safety: don't run if skeleton isn't ready
-		if (!frik::api::FRIKApi::inst || !frik::api::FRIKApi::inst->isSkeletonReady()) {
+		if (!frik::api::FRIKApi::inst->isSkeletonReady()) {
 			if (_initialized) {
 				ROCK_LOG_WARN(Update, "Skeleton no longer ready — shutting down");
 				shutdown();
@@ -283,6 +459,9 @@ namespace frik::rock
 		if (!hknp) {
 			return;
 		}
+
+		refreshHandBoneCache();
+		sampleHandTransformParity();
 
 		// --- Per-frame collision layer verification (HIGGS EnsureHiggsCollisionLayer pattern) ---
 		// The game may reset the collision filter matrix on cell load or world recreation.
@@ -457,6 +636,12 @@ namespace frik::rock
 		_collisionLayerRegistered = false;
 		_initialized = false;
 		_hasPrevPositions = false;
+		_handBoneCache.reset();
+		_handCacheResolveLogCounter = 0;
+		_paritySummaryCounter = 0;
+		_parityEnabledLogged = false;
+		_runtimeScaleLogged = false;
+		_rawHandParityStates = {};
 
 		// 5. Free vtable shellcode (prevents executable memory leak on DLL hot-reload)
 		cleanupGrabConstraintVtable();
@@ -616,6 +801,8 @@ namespace frik::rock
 	{
 		_rightHand.destroyDebugColliderVis();
 		_leftHand.destroyDebugColliderVis();
+		_rightHand.destroyDebugBasisVis();
+		_leftHand.destroyDebugBasisVis();
 		_rightHand.destroyCollision(bhkWorld);
 		_leftHand.destroyCollision(bhkWorld);
 	}
@@ -629,88 +816,38 @@ namespace frik::rock
 		bool rightDisabled = s_rightHandDisabled.load(std::memory_order_acquire);
 		bool leftDisabled = s_leftHandDisabled.load(std::memory_order_acquire);
 
-		// --- HIGGS pattern: Use raw VR wand nodes for collision body positioning ---
-		// HIGGS deliberately reads the hand transform BEFORE VRIK runs (hand.cpp:4100):
-		//   "handTransform must be where the hand is in real life, as the hand
-		//    collision is what drives the grab constraint."
-		// The collision body should track the REAL controller position, not where
-		// FRIK's IK places the visible hand. This ensures the constraint drives
-		// the grabbed object to where the player's physical hand actually is.
-		auto* rightWand = f4vr::getRightHandNode();
-		auto* leftWand = f4vr::getLeftHandNode();
-
-		// --- Diagnostic: periodic wand axis logging for axis convention mapping ---
-		// Logs every ~2 seconds (180 frames at 90fps) during the first 60 seconds.
-		// Hold controller in known orientations while watching the log:
-		//   1. Point forward (fingertips away from you) — which column ≈ player facing?
-		//   2. Palm flat down — which column ≈ -Z (world down)?
-		//   3. Thumb up — which column ≈ +Z (world up)?
-		// FO4VR world: +X=East, +Y=North, +Z=Up (Bethesda convention)
-		if (g_rockConfig.rockDebugVerboseLogging) {
-			_wandDiagFrame++;
-			if (leftWand && (_wandDiagFrame % 180 == 0) && _wandDiagFrame < 5400) {
-				const auto& R = leftWand->world.rotate;
-				auto wandPos = leftWand->world.translate;
-				auto frikPos = frik::api::FRIKApi::inst->getHandWorldTransform(frik::api::FRIKApi::Hand::Left).translate;
-				float dx = wandPos.x - frikPos.x;
-				float dy = wandPos.y - frikPos.y;
-				float dz = wandPos.z - frikPos.z;
-				float dist = sqrtf(dx*dx + dy*dy + dz*dz);
-
-				// Log wand axes as named directions for easier reading
-				// Each column is a local axis expressed in world space
-				ROCK_LOG_INFO(Init,
-					"WAND_L[{:.0f}s] pos=({:.0f},{:.0f},{:.0f}) "
-					"X=[{:.2f},{:.2f},{:.2f}] Y=[{:.2f},{:.2f},{:.2f}] Z=[{:.2f},{:.2f},{:.2f}] "
-					"frikDist={:.0f}",
-					_wandDiagFrame / 90.0f,
-					wandPos.x, wandPos.y, wandPos.z,
-					R.entry[0][0], R.entry[1][0], R.entry[2][0],  // X axis in world
-					R.entry[0][1], R.entry[1][1], R.entry[2][1],  // Y axis in world
-					R.entry[0][2], R.entry[1][2], R.entry[2][2],  // Z axis in world
-					dist);
-			}
-		}
-
-		// Build collision transforms from raw wand nodes with hand-local offset
-		RE::NiTransform rightTransform, leftTransform;
-
-		if (rightWand) {
-			rightTransform = computeHandCollisionTransform(rightWand, false);
-		} else {
-			// Fallback to FRIK API if wand node unavailable
-			rightTransform = frik::api::FRIKApi::inst->getHandWorldTransform(frik::api::FRIKApi::Hand::Right);
-			rightTransform.translate = computePalmPosition(rightTransform, false);
-		}
-
-		if (leftWand) {
-			leftTransform = computeHandCollisionTransform(leftWand, true);
-		} else {
-			leftTransform = frik::api::FRIKApi::inst->getHandWorldTransform(frik::api::FRIKApi::Hand::Left);
-			leftTransform.translate = computePalmPosition(leftTransform, true);
-		}
+		const RE::NiTransform rightHandTransform = getInteractionHandTransform(false);
+		const RE::NiTransform leftHandTransform = getInteractionHandTransform(true);
+		RE::NiTransform rightTransform = computeHandCollisionTransformFromHandBasis(rightHandTransform, false);
+		RE::NiTransform leftTransform = computeHandCollisionTransformFromHandBasis(leftHandTransform, true);
+		const RE::NiPoint3 rightPalmCenter = computePalmPositionFromHandBasis(rightHandTransform, false);
+		const RE::NiPoint3 leftPalmCenter = computePalmPositionFromHandBasis(leftHandTransform, true);
 
 		if (!rightDisabled) {
 			_rightHand.updateCollisionTransform(world, rightTransform, _deltaTime);
-			// Debug mesh attaches to wand node (not FRIK bone) so it tracks the
-			// collision body correctly. Falls back to FRIK bone if wand unavailable.
-			auto* rightDebugParent = rightWand ? static_cast<RE::NiNode*>(rightWand) : frik::api::FRIKApi::inst->getHandNode(frik::api::FRIKApi::Hand::Right);
-			_rightHand.updateDebugColliderVis(rightTransform.translate, g_rockConfig.rockDebugShowColliders,
+			auto* rightDebugParent = getInteractionHandNode(false);
+			_rightHand.updateDebugColliderVis(rightTransform, g_rockConfig.rockDebugShowColliders,
 				rightDebugParent,
 				g_rockConfig.rockHandCollisionHalfExtentX,
 				g_rockConfig.rockHandCollisionHalfExtentY,
 				g_rockConfig.rockHandCollisionHalfExtentZ,
 				g_rockConfig.rockDebugColliderShape);
+			_rightHand.updateDebugBasisVis(rightTransform, rightPalmCenter, g_rockConfig.rockDebugShowPalmBasis, rightDebugParent);
+		} else {
+			_rightHand.destroyDebugBasisVis();
 		}
 		if (!leftDisabled) {
 			_leftHand.updateCollisionTransform(world, leftTransform, _deltaTime);
-			auto* leftDebugParent = leftWand ? static_cast<RE::NiNode*>(leftWand) : frik::api::FRIKApi::inst->getHandNode(frik::api::FRIKApi::Hand::Left);
-			_leftHand.updateDebugColliderVis(leftTransform.translate, g_rockConfig.rockDebugShowColliders,
+			auto* leftDebugParent = getInteractionHandNode(true);
+			_leftHand.updateDebugColliderVis(leftTransform, g_rockConfig.rockDebugShowColliders,
 				leftDebugParent,
 				g_rockConfig.rockHandCollisionHalfExtentX,
 				g_rockConfig.rockHandCollisionHalfExtentY,
 				g_rockConfig.rockHandCollisionHalfExtentZ,
 				g_rockConfig.rockDebugColliderShape);
+			_leftHand.updateDebugBasisVis(leftTransform, leftPalmCenter, g_rockConfig.rockDebugShowPalmBasis, leftDebugParent);
+		} else {
+			_leftHand.destroyDebugBasisVis();
 		}
 
 	}
@@ -723,24 +860,14 @@ namespace frik::rock
 	{
 		if (!frik::api::FRIKApi::inst || !frik::api::FRIKApi::inst->isSkeletonReady()) return;
 
-		// Palm transforms from raw wand nodes (consistent with collision body source).
-		// Forward direction derived from wand Y axis, not FRIK finger bone.
-		auto* rightWandSel = f4vr::getRightHandNode();
-		auto* leftWandSel = f4vr::getLeftHandNode();
-
-		RE::NiTransform rightTransform = rightWandSel
-			? computeHandCollisionTransform(rightWandSel, false)
-			: frik::api::FRIKApi::inst->getHandWorldTransform(frik::api::FRIKApi::Hand::Right);
-		auto rightPalmPos = computePalmPosition(rightTransform, false);
-		auto rightPalmFwd = computePalmForward(rightTransform, false);
-		rightTransform.translate = rightPalmPos;
-
-		RE::NiTransform leftTransform = leftWandSel
-			? computeHandCollisionTransform(leftWandSel, true)
-			: frik::api::FRIKApi::inst->getHandWorldTransform(frik::api::FRIKApi::Hand::Left);
-		auto leftPalmPos = computePalmPosition(leftTransform, true);
-		auto leftPalmFwd = computePalmForward(leftTransform, true);
-		leftTransform.translate = leftPalmPos;
+		const RE::NiTransform rightTransform = getInteractionHandTransform(false);
+		const RE::NiTransform leftTransform = getInteractionHandTransform(true);
+		auto rightPalmPos = computePalmPositionFromHandBasis(rightTransform, false);
+		auto rightPalmNormal = computePalmNormalFromHandBasis(rightTransform, false);
+		auto rightPointing = computePointingVectorFromHandBasis(rightTransform, false);
+		auto leftPalmPos = computePalmPositionFromHandBasis(leftTransform, true);
+		auto leftPalmNormal = computePalmNormalFromHandBasis(leftTransform, true);
+		auto leftPointing = computePointingVectorFromHandBasis(leftTransform, true);
 
 		// Other hand's selection (for mutual exclusion)
 		auto* rightHeldRef = _rightHand.hasSelection() ? _rightHand.getSelection().refr : nullptr;
@@ -749,14 +876,14 @@ namespace frik::rock
 		// Update each hand's selection
 		if (!s_rightHandDisabled.load(std::memory_order_acquire)) {
 			_rightHand.updateSelection(bhk, hknp,
-				rightPalmPos, rightPalmFwd,
+				rightPalmPos, rightPalmNormal, rightPointing,
 				g_rockConfig.rockNearDetectionRange, g_rockConfig.rockFarDetectionRange,
 				leftHeldRef);
 		}
 
 		if (!s_leftHandDisabled.load(std::memory_order_acquire)) {
 			_leftHand.updateSelection(bhk, hknp,
-				leftPalmPos, leftPalmFwd,
+				leftPalmPos, leftPalmNormal, leftPointing,
 				g_rockConfig.rockNearDetectionRange, g_rockConfig.rockFarDetectionRange,
 				rightHeldRef);
 		}
@@ -773,7 +900,7 @@ namespace frik::rock
 		int grabButton = g_rockConfig.rockGrabButtonID;
 
 		// Process each hand
-		auto processHand = [&](Hand& hand, bool isLeft) {
+			auto processHand = [&](Hand& hand, bool isLeft) {
 			if (isLeft && s_leftHandDisabled.load(std::memory_order_acquire)) return;
 			if (!isLeft && s_rightHandDisabled.load(std::memory_order_acquire)) return;
 
@@ -789,15 +916,9 @@ namespace frik::rock
 					dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, heldRef, heldFormID, 0);
 				} else {
 					// --- Per-frame held object update ---
-					// Use RAW wand transform (no collision body offset) for grab computation.
-					// HIGGS uses the raw hand bone for grab snapshot + pivotB formula.
-					// The collision body offset positions the physics box (collision detection).
-					// The palm offset (palmHS) positions the constraint pivot (grab anchoring).
-					// These are SEPARATE — stacking them double-counts the forward offset.
-					auto* wandNode = isLeft ? f4vr::getLeftHandNode() : f4vr::getRightHandNode();
-					auto transform = wandNode
-						? wandNode->world
-						: frik::api::FRIKApi::inst->getHandWorldTransform(handFromBool(isLeft));
+					// Use the visible-hand-first raw hand transform (no collision offset).
+					// Collision and palm offsets are applied separately inside the basis helpers.
+					auto transform = getInteractionHandTransform(isLeft);
 					hand.updateHeldObject(hknp, transform, _deltaTime,
 						g_rockConfig.rockGrabForceFadeInTime,
 						g_rockConfig.rockGrabTauMin, g_rockConfig.rockGrabTauMax,
@@ -813,8 +934,7 @@ namespace frik::rock
 					// Reference: FRIK_STUDY/PRE2_updateWorldFinal_RESULT.md
 					RE::NiTransform adjustedHand;
 					if (hand.getAdjustedHandTransform(adjustedHand)) {
-						auto handEnum = handFromBool(isLeft);
-						auto* handNode = frik::api::FRIKApi::inst->getHandNode(handEnum);
+						auto* handNode = getInteractionHandNode(isLeft);
 
 						if (handNode) {
 							handNode->world.translate = adjustedHand.translate;
@@ -870,13 +990,9 @@ namespace frik::rock
 						}
 					}
 
-					// Use RAW wand transform (no collision body offset) for grab initiation.
-					// Same reasoning as per-frame update: collision offset and palm offset
-					// are separate. The grab snapshot uses raw wand (like HIGGS uses raw bone).
-					auto* grabWandNode = isLeft ? f4vr::getLeftHandNode() : f4vr::getRightHandNode();
-					auto transform = grabWandNode
-						? grabWandNode->world
-						: frik::api::FRIKApi::inst->getHandWorldTransform(handFromBool(isLeft));
+					// Use the visible-hand-first raw hand transform (no collision offset) for the
+					// grab snapshot. Constraint pivots apply palm-space offsets separately.
+					auto transform = getInteractionHandTransform(isLeft);
 
 					bool grabbed = hand.grabSelectedObject(hknp, transform,
 						g_rockConfig.rockGrabLinearTau,

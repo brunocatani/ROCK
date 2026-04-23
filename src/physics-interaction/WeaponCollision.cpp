@@ -20,6 +20,35 @@
 
 namespace frik::rock
 {
+	namespace
+	{
+		float matrixDeterminant(const RE::NiMatrix3& matrix)
+		{
+			return
+				matrix.entry[0][0] * (matrix.entry[1][1] * matrix.entry[2][2] - matrix.entry[1][2] * matrix.entry[2][1]) -
+				matrix.entry[0][1] * (matrix.entry[1][0] * matrix.entry[2][2] - matrix.entry[1][2] * matrix.entry[2][0]) +
+				matrix.entry[0][2] * (matrix.entry[1][0] * matrix.entry[2][1] - matrix.entry[1][1] * matrix.entry[2][0]);
+		}
+
+		float bodyBasisDeterminant(const float* bodyFloats)
+		{
+			const float x0 = bodyFloats[0];
+			const float x1 = bodyFloats[1];
+			const float x2 = bodyFloats[2];
+			const float y0 = bodyFloats[4];
+			const float y1 = bodyFloats[5];
+			const float y2 = bodyFloats[6];
+			const float z0 = bodyFloats[8];
+			const float z1 = bodyFloats[9];
+			const float z2 = bodyFloats[10];
+
+			return
+				x0 * (y1 * z2 - y2 * z1) -
+				y0 * (x1 * z2 - x2 * z1) +
+				z0 * (x1 * y2 - x2 * y1);
+		}
+	}
+
 	// =========================================================================
 	// Shape ref counting helpers
 	// =========================================================================
@@ -391,17 +420,25 @@ namespace frik::rock
 		const float targetX = weaponTransform.translate.x * kGameToHavokScale;
 		const float targetY = weaponTransform.translate.y * kGameToHavokScale;
 		const float targetZ = weaponTransform.translate.z * kGameToHavokScale;
+		const bool logWitness = g_rockConfig.rockDebugVerboseLogging &&
+			(++_posLogCounter >= 90);
+		if (logWitness) {
+			_posLogCounter = 0;
+		}
+		auto bodyId = _weaponBody.getBodyId();
+		auto* bodyArray = world->GetBodyArray();
+		auto* bodyFloats = reinterpret_cast<float*>(&bodyArray[bodyId.value]);
+		const float curX = bodyFloats[12];
+		const float curY = bodyFloats[13];
+		const float curZ = bodyFloats[14];
 
 		// Throttled diagnostic
-		if (++_posLogCounter >= 90) {
-			_posLogCounter = 0;
+		if (logWitness) {
 			ROCK_LOG_INFO(Weapon, "updateBodyTransform: niPos=({:.1f},{:.1f},{:.1f}) hkPos=({:.4f},{:.4f},{:.4f}) bodyId={} dt={:.4f}",
 				weaponTransform.translate.x, weaponTransform.translate.y, weaponTransform.translate.z,
 				targetX, targetY, targetZ,
 				_weaponBody.getBodyId().value, dt);
 		}
-
-		auto bodyId = _weaponBody.getBodyId();
 
 		// --- Teleport detection (SetOrigin / cell transition) ---
 		if (_hasPrevTransform) {
@@ -415,6 +452,17 @@ namespace frik::rock
 				hkTransform.rotation = weaponTransform.rotate;
 				hkTransform.translation = RE::NiPoint4(targetX, targetY, targetZ, 0.0f);
 				_weaponBody.setTransform(hkTransform);
+				if (logWitness) {
+					ROCK_LOG_INFO(Weapon,
+						"transform witness: bodyId={} niPos=({:.1f},{:.1f},{:.1f}) hkTarget=({:.4f},{:.4f},{:.4f}) "
+						"liveOrigin=({:.4f},{:.4f},{:.4f}) teleport=world-reset targetDet={:.4f} liveDet={:.4f}",
+						bodyId.value,
+						weaponTransform.translate.x, weaponTransform.translate.y, weaponTransform.translate.z,
+						targetX, targetY, targetZ,
+						curX, curY, curZ,
+						matrixDeterminant(weaponTransform.rotate),
+						bodyBasisDeterminant(bodyFloats));
+				}
 				return;
 			}
 		}
@@ -460,11 +508,40 @@ namespace frik::rock
 		// --- Set transform + velocity via BethesdaPhysicsBody (deferred-safe) ---
 		{
 			RE::hkTransformf hkTransform;
-			hkTransform.rotation = weaponTransform.rotate;
+			hkTransform.rotation = niRotToHkTransformRotation(weaponTransform.rotate);
 			hkTransform.translation = RE::NiPoint4(targetX, targetY, targetZ, 0.0f);
 			_weaponBody.setTransform(hkTransform);
 		}
 		_weaponBody.setVelocity(linVelOut, angVelOut);
+
+		if (logWitness) {
+			const auto targetQuat = niRotToHkQuat(weaponTransform.rotate);
+			const float targetDet = matrixDeterminant(weaponTransform.rotate);
+			const float liveDet = bodyBasisDeterminant(bodyFloats);
+
+			ROCK_LOG_INFO(Weapon,
+				"transform witness: bodyId={} niPos=({:.1f},{:.1f},{:.1f}) hkTarget=({:.4f},{:.4f},{:.4f}) "
+				"liveOrigin=({:.4f},{:.4f},{:.4f}) targetDet={:.4f} liveDet={:.4f} dt={:.4f}",
+				bodyId.value,
+				weaponTransform.translate.x, weaponTransform.translate.y, weaponTransform.translate.z,
+				targetX, targetY, targetZ,
+				curX, curY, curZ,
+				targetDet, liveDet, dt);
+
+			ROCK_LOG_INFO(Weapon,
+				"transform basis: targetCols=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
+				"liveCols=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
+				"quat=({:.4f},{:.4f},{:.4f},{:.4f}) linVel=({:.4f},{:.4f},{:.4f}) angVel=({:.4f},{:.4f},{:.4f})",
+				weaponTransform.rotate.entry[0][0], weaponTransform.rotate.entry[1][0], weaponTransform.rotate.entry[2][0],
+				weaponTransform.rotate.entry[0][1], weaponTransform.rotate.entry[1][1], weaponTransform.rotate.entry[2][1],
+				weaponTransform.rotate.entry[0][2], weaponTransform.rotate.entry[1][2], weaponTransform.rotate.entry[2][2],
+				bodyFloats[0], bodyFloats[1], bodyFloats[2],
+				bodyFloats[4], bodyFloats[5], bodyFloats[6],
+				bodyFloats[8], bodyFloats[9], bodyFloats[10],
+				targetQuat.x, targetQuat.y, targetQuat.z, targetQuat.w,
+				linVelOut[0], linVelOut[1], linVelOut[2],
+				angVelOut[0], angVelOut[1], angVelOut[2]);
+		}
 
 		_prevPosition = weaponTransform.translate;
 		_hasPrevTransform = true;

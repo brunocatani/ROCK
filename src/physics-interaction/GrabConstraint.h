@@ -268,13 +268,14 @@ namespace frik::rock
 	/// pivotWorldHk = grab point in Havok world coordinates (constraint pivot).
 	/// Create grab constraint with HIGGS-correct pivot and transform computation.
 	/// Phase 0B: pivotA from palmWorldHk (palm center), pivotB from grabWorldHk (surface point).
-	/// TransformB rotation from Inverse(grabHandSpace).rotation (frozen grab-time offset).
-	/// Reference: HIGGS S00 sections 0.1a, 0.6, 0.6b; PRE-1 result (identity GetRigidBodyTLocalTransform).
+	/// TransformB rotation from Inverse(desiredBodyTransformHandSpace).rotation, where
+	/// desiredBodyTransformHandSpace = desiredNodeTransformHandSpace * bodyLocalTransform.
+	/// Reference: HIGGS S00 sections 0.1a, 0.6, 0.6b.
 	ActiveConstraint createGrabConstraint(
 		RE::hknpWorld* world,
 		RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
 		const float* palmWorldHk, const float* grabWorldHk,
-		const RE::NiTransform& grabHandSpace,
+		const RE::NiTransform& desiredBodyTransformHandSpace,
 		float tau, float damping, float maxForce,
 		float proportionalRecovery, float constantRecovery);
 

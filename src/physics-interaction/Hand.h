@@ -30,6 +30,8 @@
 #include "RE/Havok/hknpWorld.h"
 #include "RE/Havok/hkReferencedObject.h"
 
+#include <array>
+
 namespace frik::rock
 {
 	/// Collision layer for ROCK hand collision bodies.
@@ -176,7 +178,8 @@ namespace frik::rock
 		///   - Cooldown: after clearing, same object blocked for 10 frames
 		///   - Near distance filter: reject hits beyond nearRange (AABB can catch far centers)
 		void updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
-			const RE::NiPoint3& palmPos, const RE::NiPoint3& palmForward,
+			const RE::NiPoint3& palmPos, const RE::NiPoint3& palmNormal,
+			const RE::NiPoint3& pointingDirection,
 			float nearRange, float farRange, RE::TESObjectREFR* otherHandRef);
 
 		// --- Collision body (Phase 1) ---
@@ -196,7 +199,7 @@ namespace frik::rock
 		void destroyCollision(void* bhkWorld);
 
 		/// Update the collision body position to track the VR controller.
-		/// Now uses DriveToKeyFrame (single call) instead of manual 3-step process.
+		/// Uses the manual Havok-space path: computeHardKeyFrame + setTransform + setVelocity.
 		void updateCollisionTransform(RE::hknpWorld* world, const RE::NiTransform& handTransform,
 			float deltaTime);
 
@@ -221,6 +224,13 @@ namespace frik::rock
 		RE::NiNode* _debugColliderVis = nullptr;         ///< Debug visualization mesh for the hand collider box
 		RE::NiNode* _debugColliderVisParent = nullptr;   ///< Tracks which node the debug mesh is attached to
 		int _debugColliderVisShape = -1;                  ///< Current loaded shape type (-1 = none loaded)
+		std::array<RE::NiNode*, 8> _debugColliderVertexVis{};
+		RE::NiNode* _debugHandOriginVis = nullptr;
+		RE::NiNode* _debugPalmCenterVis = nullptr;
+		RE::NiNode* _debugAxisXVis = nullptr;
+		RE::NiNode* _debugAxisYVis = nullptr;
+		RE::NiNode* _debugAxisZVis = nullptr;
+		RE::NiNode* _debugBasisVisParent = nullptr;
 
 		// --- Selection state (Phase 2) ---
 		SelectedObject _currentSelection;
@@ -272,18 +282,43 @@ namespace frik::rock
 		// --- Grab state (Phase 3) ---
 		ActiveConstraint _activeConstraint;
 		SavedObjectState _savedObjectState;
-		float _grabPointLocal[4] = {0,0,0,0};  ///< Grab point in object's Havok body-local space (for pivot)
 		float _grabStartTime = 0.0f;  ///< Time since grab started (for HeldInit transition)
 		int _heldLogCounter = 0;      ///< Per-hand throttle for held state debug log
-		int _pivotBLogCounter = 0;    ///< Per-hand diagnostic counter for pivotB updates (S1 fix)
+		int _transformWitnessLogCounter = 0;  ///< Per-hand throttle for transform witness logging
 		int _notifCounter = 0;        ///< Per-hand in-game notification throttle (C2 fix)
 
-		/// Frozen hand-to-object transform (HIGGS desiredNodeTransformHandSpace).
-		/// Computed once at grab time: Invert(handWorld) * (objectWorld shifted by palmPos-grabPoint).
-		/// Used per-frame for visual hand adjustment: adjustedHand = objectWorld * Invert(_grabHandSpace).
+		/// Frozen visual hand-to-object transform.
+		/// Computed once at grab time from the grabbed collidable node world transform:
+		/// Invert(rawHandWorld) * shiftedObject.
+		/// Used only for visible-hand reverse transform:
+		/// adjustedHand = collidableNodeWorld * Invert(_grabHandSpace).
 		RE::NiTransform _grabHandSpace;
 
-		/// NiNode of the grabbed object's 3D root (for reading current world transform per-frame).
+		/// Frozen physics hand-to-object transform expressed in the authored ROCK hand basis.
+		/// This is the constraint-facing equivalent of HIGGS desiredNodeTransformHandSpace and
+		/// MUST share the same basis contract as the hand body / palm hand-space math.
+		RE::NiTransform _grabConstraintHandSpace;
+
+		/// FO4VR equivalent of HIGGS GetRigidBodyTLocalTransform.
+		/// Rigid transform from the grabbed collidable node's local space to the
+		/// Havok body local frame at grab time. This MUST be composed into the
+		/// constraint transform chain; assuming identity makes pivotB/rotation drift.
+		RE::NiTransform _grabBodyLocalTransform;
+
+		/// Diagnostic-only root-node equivalent of _grabBodyLocalTransform.
+		/// Captured from the reference 3D root at grab time so we can compare
+		/// whether the grabbed collidable node or the reference root better
+		/// matches the live body during hold.
+		RE::NiTransform _grabRootBodyLocalTransform;
+
+		/// Diagnostic-only owner-node equivalent of _grabBodyLocalTransform.
+		/// Captured from the body-backed collision owner node at grab time so
+		/// hold diagnostics can compare the binary-verified owner node against
+		/// the selected collidable node and the reference root.
+		RE::NiTransform _grabOwnerBodyLocalTransform;
+
+		/// Grabbed collidable node (NOT blindly the 3D root) used for per-frame world
+		/// transform/scale reads during hold.
 		/// I3 NOTE: _heldNode is a cached pointer to the held object's NiAVObject.
 		/// It CAN become stale if the object's NiNode is destroyed mid-grab (cell
 		/// unload, script disable). We guard with refr->IsDeleted()/IsDisabled()
@@ -363,11 +398,23 @@ namespace frik::rock
 			_highlightedRef = nullptr;
 		}
 
-		/// Show/hide a debug collider visualizer at the palm position. See Hand.cpp for implementation.
-		void updateDebugColliderVis(const RE::NiPoint3& palmPos, bool show, RE::NiNode* parentNode,
+		/// Show/hide a debug collider visualizer using the actual collider transform center and rotation,
+		/// plus tiny vertex markers at the 8 corners so the box extents are unambiguous.
+		void updateDebugColliderVis(const RE::NiTransform& colliderTransform, bool show, RE::NiNode* parentNode,
 			float hx = 0.05f, float hy = 0.09f, float hz = 0.015f, int shapeType = 0);
 
 		/// Destroy the debug collider visualization mesh. See Hand.cpp for implementation.
 		void destroyDebugColliderVis();
+
+		/// Show/hide collider-centered basis markers plus a palm-center marker.
+		/// The origin marker sits at the actual collider transform center so debug matches
+		/// the real physics body placement even when hand-space offsets are non-zero.
+		void updateDebugBasisVis(const RE::NiTransform& colliderTransform,
+			const RE::NiPoint3& palmCenterWorld,
+			bool show,
+			RE::NiNode* parentNode);
+
+		/// Destroy the raw hand-basis debug marker meshes. See Hand.cpp for implementation.
+		void destroyDebugBasisVis();
 	};
 }

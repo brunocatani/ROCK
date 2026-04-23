@@ -284,7 +284,7 @@ namespace frik::rock
 		RE::hknpWorld* world,
 		RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
 		const float* palmWorldHk, const float* grabWorldHk,
-		const RE::NiTransform& grabHandSpace,
+		const RE::NiTransform& desiredBodyTransformHandSpace,
 		float tau, float damping, float maxForce,
 		float proportionalRecovery, float constantRecovery)
 	{
@@ -440,32 +440,32 @@ namespace frik::rock
 			tA_col1[0] = 0.0f; tA_col1[1] = 1.0f; tA_col1[2] = 0.0f; tA_col1[3] = 0.0f;
 			tA_col2[0] = 0.0f; tA_col2[1] = 0.0f; tA_col2[2] = 1.0f; tA_col2[3] = 0.0f;
 
-			// Phase 0B.1: PivotA = palm center in hand body-local space
-			// HIGGS S00 0.1a: pivotA uses palmPos, NOT the grab surface point.
-			// Body array is COLUMN-MAJOR (setBodyTransform copies hkTransformf directly).
-			// Havok uses LEFT-MULTIPLICATION: world = R * local + t.
-			// local = R^T * delta; dot(column_j, delta) = (R^T * delta)[j].
-			float dxA = palmWorldHk[0] - handBody[12];
-			float dyA = palmWorldHk[1] - handBody[13];
-			float dzA = palmWorldHk[2] - handBody[14];
-			tA_pos[0] = handBody[0]*dxA + handBody[1]*dyA + handBody[2]*dzA;
-			tA_pos[1] = handBody[4]*dxA + handBody[5]*dyA + handBody[6]*dzA;
-			tA_pos[2] = handBody[8]*dxA + handBody[9]*dyA + handBody[10]*dzA;
+			// Phase 0B.1: PivotA = palm center in hand body-local space.
+			// HIGGS S00 0.1a uses palmPos, not the grab surface point.
+			// FO4VR's live hknp body basis is stored as contiguous Havok columns:
+			// X=[0,1,2], Y=[4,5,6], Z=[8,9,10]. Body-local = R^T * delta.
+			const RE::NiPoint3 handDelta{
+				palmWorldHk[0] - handBody[12],
+				palmWorldHk[1] - handBody[13],
+				palmWorldHk[2] - handBody[14]
+			};
+			const RE::NiPoint3 pivotALocal = worldDeltaToBodyLocal(handBody, handDelta);
+			tA_pos[0] = pivotALocal.x;
+			tA_pos[1] = pivotALocal.y;
+			tA_pos[2] = pivotALocal.z;
 			tA_pos[3] = 0.0f;
 
-			// --- Phase 0B.2: TransformB rotation = Inverse(grabHandSpace).rotation ---
+			// --- Phase 0B.2: TransformB rotation = Inverse(desiredBodyTransformHandSpace).rotation ---
 			// HIGGS S00 0.6b: transformB.rotation = Inverse(desiredNodeTransformHandSpace
-			//   * GetRigidBodyTLocalTransform()).rotation
-			// PRE-1 result: GetRigidBodyTLocalTransform = identity in FO4VR
-			// Simplified: transformB.rotation = Inverse(grabHandSpace).rotation
-			// = Transpose(grabHandSpace.rotation) (rotation inverse = transpose for orthonormal)
+			//   * GetRigidBodyTLocalTransform()).rotation. FO4VR uses the collidable-node →
+			//   body local transform captured at grab time instead of assuming identity.
 			auto* tB_col0 = reinterpret_cast<float*>(header + offsets::kTransformB_Col0);
 			auto* tB_col1 = reinterpret_cast<float*>(header + offsets::kTransformB_Col1);
 			auto* tB_col2 = reinterpret_cast<float*>(header + offsets::kTransformB_Col2);
 			auto* tB_pos  = reinterpret_cast<float*>(header + offsets::kTransformB_Pos);
 
 			{
-				// Inverse(grabHandSpace).rotation = Transpose(grabHandSpace.rotate)
+				// Inverse(desiredBodyTransformHandSpace).rotation = Transpose(desiredBodyTransformHandSpace.rotate)
 				// NiMatrix3 is row-major: entry[row][col]. Havok hkMatrix3 is column-major.
 				// Column-major col_j[i] represents matrix element [i][j].
 				// We want R^T: element [i][j] = R[j][i] = R.entry[j][i].
@@ -474,21 +474,24 @@ namespace frik::rock
 				// The per-frame update in HandGrab.cpp computes invRot = Transpose(R) first,
 				// then writes columns of invRot (col_j[i] = invRot[i][j] = R[j][i]).
 				// Both produce the same Havok matrix — just different intermediate steps.
-				const auto& R = grabHandSpace.rotate;
+				const auto& R = desiredBodyTransformHandSpace.rotate;
 				tB_col0[0] = R.entry[0][0]; tB_col0[1] = R.entry[0][1]; tB_col0[2] = R.entry[0][2]; tB_col0[3] = 0.0f;
 				tB_col1[0] = R.entry[1][0]; tB_col1[1] = R.entry[1][1]; tB_col1[2] = R.entry[1][2]; tB_col1[3] = 0.0f;
 				tB_col2[0] = R.entry[2][0]; tB_col2[1] = R.entry[2][1]; tB_col2[2] = R.entry[2][2]; tB_col2[3] = 0.0f;
 			}
 
-			// Phase 0B.1: PivotB = grab surface point in object body-local space
-			// HIGGS S00 0.1b: pivotB uses ptPos (touch point on object surface)
-			// Column-major body-local: dot(column_j, delta) = (R^T * delta)[j].
-			float dxB = grabWorldHk[0] - objBody[12];
-			float dyB = grabWorldHk[1] - objBody[13];
-			float dzB = grabWorldHk[2] - objBody[14];
-			tB_pos[0] = objBody[0]*dxB + objBody[1]*dyB + objBody[2]*dzB;
-			tB_pos[1] = objBody[4]*dxB + objBody[5]*dyB + objBody[6]*dzB;
-			tB_pos[2] = objBody[8]*dxB + objBody[9]*dyB + objBody[10]*dzB;
+			// Phase 0B.1: PivotB = grab surface point in object body-local space.
+			// HIGGS S00 0.1b uses ptPos, and FO4VR uses the same R^T * delta projection
+			// against the live Havok body basis columns.
+			const RE::NiPoint3 objectDelta{
+				grabWorldHk[0] - objBody[12],
+				grabWorldHk[1] - objBody[13],
+				grabWorldHk[2] - objBody[14]
+			};
+			const RE::NiPoint3 pivotBLocal = worldDeltaToBodyLocal(objBody, objectDelta);
+			tB_pos[0] = pivotBLocal.x;
+			tB_pos[1] = pivotBLocal.y;
+			tB_pos[2] = pivotBLocal.z;
 			tB_pos[3] = 0.0f;
 
 			ROCK_LOG_INFO(GrabConstraint, "setInBodySpace: pivotA=({:.3f},{:.3f},{:.3f}) [palm] "
@@ -500,7 +503,7 @@ namespace frik::rock
 		}
 
 		// --- Step 6b: Set angular motor target from transformB rotation ---
-		// Phase 0B.3: m_target_bRca = transformB.rotation (= Inverse(grabHandSpace).rotation)
+		// Phase 0B.3: m_target_bRca = transformB.rotation (= Inverse(desiredBodyTransformHandSpace).rotation)
 		// HIGGS S05 5.3: setTargetRelativeOrientationOfBodies(desiredHandTransformHavokObjSpace.rot)
 		// Since transformA.rotation = identity: target = bRa × identity = bRa = transformB.rotation
 		{

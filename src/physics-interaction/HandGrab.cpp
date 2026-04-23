@@ -45,6 +45,133 @@
 
 namespace frik::rock
 {
+		namespace
+		{
+			RE::NiPoint3 getMatrixColumn(const RE::NiMatrix3& matrix, int column)
+			{
+				return RE::NiPoint3(matrix.entry[0][column], matrix.entry[1][column], matrix.entry[2][column]);
+			}
+
+			const char* nodeDebugName(const RE::NiAVObject* node)
+			{
+				if (!node) {
+					return "(null)";
+				}
+
+				const char* name = node->name.c_str();
+				return name ? name : "(unnamed)";
+			}
+
+			float translationDeltaGameUnits(const RE::NiTransform& a, const RE::NiTransform& b)
+			{
+				const RE::NiPoint3 delta = a.translate - b.translate;
+				return std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
+			}
+
+			float rotationDeltaDegrees(const RE::NiMatrix3& a, const RE::NiMatrix3& b)
+			{
+				const RE::NiMatrix3 delta = a.Transpose() * b;
+				float cosTheta = (delta.entry[0][0] + delta.entry[1][1] + delta.entry[2][2] - 1.0f) * 0.5f;
+				if (cosTheta < -1.0f) {
+					cosTheta = -1.0f;
+				} else if (cosTheta > 1.0f) {
+					cosTheta = 1.0f;
+				}
+				return std::acos(cosTheta) * (180.0f / 3.14159265358979323846f);
+			}
+
+			RE::NiTransform makeIdentityTransform()
+			{
+				RE::NiTransform result{};
+				result.rotate.entry[0][0] = 1.0f;
+				result.rotate.entry[1][1] = 1.0f;
+			result.rotate.entry[2][2] = 1.0f;
+			result.scale = 1.0f;
+			return result;
+		}
+
+		RE::NiTransform invertTransform(const RE::NiTransform& transform)
+		{
+			RE::NiTransform result = makeIdentityTransform();
+			result.rotate = transform.rotate.Transpose();
+			result.scale = (transform.scale > 0.0001f) ? (1.0f / transform.scale) : 1.0f;
+
+			result.translate.x = -(result.rotate.entry[0][0] * transform.translate.x +
+				result.rotate.entry[0][1] * transform.translate.y +
+				result.rotate.entry[0][2] * transform.translate.z) * result.scale;
+			result.translate.y = -(result.rotate.entry[1][0] * transform.translate.x +
+				result.rotate.entry[1][1] * transform.translate.y +
+				result.rotate.entry[1][2] * transform.translate.z) * result.scale;
+				result.translate.z = -(result.rotate.entry[2][0] * transform.translate.x +
+					result.rotate.entry[2][1] * transform.translate.y +
+					result.rotate.entry[2][2] * transform.translate.z) * result.scale;
+				return result;
+			}
+
+			RE::NiTransform makeAuthoredHandTransform(const RE::NiTransform& rawHandTransform, bool isLeft)
+			{
+				RE::NiTransform result = rawHandTransform;
+				result.rotate = authoredHandspaceRotationFromRawHandBasis(rawHandTransform.rotate);
+				(void)isLeft;
+				return result;
+			}
+
+		RE::NiTransform multiplyTransforms(const RE::NiTransform& a, const RE::NiTransform& b)
+		{
+			RE::NiTransform result = makeIdentityTransform();
+			result.rotate = a.rotate * b.rotate;
+			result.scale = a.scale * b.scale;
+
+			RE::NiPoint3 rotated;
+			rotated.x = a.rotate.entry[0][0] * b.translate.x + a.rotate.entry[0][1] * b.translate.y + a.rotate.entry[0][2] * b.translate.z;
+			rotated.y = a.rotate.entry[1][0] * b.translate.x + a.rotate.entry[1][1] * b.translate.y + a.rotate.entry[1][2] * b.translate.z;
+			rotated.z = a.rotate.entry[2][0] * b.translate.x + a.rotate.entry[2][1] * b.translate.y + a.rotate.entry[2][2] * b.translate.z;
+
+			result.translate.x = a.translate.x + rotated.x * a.scale;
+			result.translate.y = a.translate.y + rotated.y * a.scale;
+			result.translate.z = a.translate.z + rotated.z * a.scale;
+			return result;
+		}
+
+		RE::NiTransform deriveNodeWorldFromBodyWorld(const RE::NiTransform& bodyWorld,
+			const RE::NiTransform& bodyLocalTransform)
+		{
+			return multiplyTransforms(bodyWorld, invertTransform(bodyLocalTransform));
+		}
+
+		RE::NiTransform getBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+		{
+			RE::NiTransform result = makeIdentityTransform();
+			if (!world || bodyId.value == INVALID_BODY_ID) {
+				return result;
+			}
+
+			auto* bodyArray = world->GetBodyArray();
+			auto* body = reinterpret_cast<float*>(&bodyArray[bodyId.value]);
+			// The live hknp body stores three contiguous Havok columns. Rebuild NiMatrix3
+			// from those basis vectors instead of treating the body block as Ni rows.
+			result.rotate = havokRotationBlocksToNiMatrix(body);
+			result.translate.x = body[12] * kHavokToGameScale;
+			result.translate.y = body[13] * kHavokToGameScale;
+			result.translate.z = body[14] * kHavokToGameScale;
+			return result;
+		}
+
+		RE::NiTransform computeRuntimeBodyLocalTransform(const RE::NiTransform& nodeWorld,
+			const RE::NiTransform& bodyWorld)
+		{
+			RE::NiTransform result = makeIdentityTransform();
+			const RE::NiMatrix3 invNodeRot = nodeWorld.rotate.Transpose();
+			const float invNodeScale = (nodeWorld.scale > 0.0001f) ? (1.0f / nodeWorld.scale) : 1.0f;
+			const RE::NiPoint3 delta = bodyWorld.translate - nodeWorld.translate;
+
+			result.rotate = invNodeRot * bodyWorld.rotate;
+			result.translate.x = (invNodeRot.entry[0][0] * delta.x + invNodeRot.entry[0][1] * delta.y + invNodeRot.entry[0][2] * delta.z) * invNodeScale;
+			result.translate.y = (invNodeRot.entry[1][0] * delta.x + invNodeRot.entry[1][1] * delta.y + invNodeRot.entry[1][2] * delta.z) * invNodeScale;
+			result.translate.z = (invNodeRot.entry[2][0] * delta.x + invNodeRot.entry[2][1] * delta.y + invNodeRot.entry[2][2] * delta.z) * invNodeScale;
+			return result;
+		}
+	}
 
 	// =========================================================================
 	// Native VR grab drop — Ghidra: 0x140F1AB90
@@ -209,10 +336,10 @@ namespace frik::rock
 		//   - Computing total mass and rebuilding mass properties
 		//   - Rebuilding collision caches and updating broadphase
 		//
-		// Access path: sel.refr → Get3D() → collisionObject → bhkNPCollisionObject
+		// Access path: selected collidable node → collisionObject → bhkNPCollisionObject
 		{
-			auto* refrNode = sel.refr->Get3D();
-			auto* collObj = refrNode ? refrNode->collisionObject.get() : nullptr;
+			auto* motionNode = sel.hitNode ? sel.hitNode : sel.refr->Get3D();
+			auto* collObj = motionNode ? motionNode->collisionObject.get() : nullptr;
 			if (collObj) {
 				typedef void (*SetMotionType_t)(void*, int);
 				static REL::Relocation<SetMotionType_t> SetMotionType{
@@ -269,29 +396,42 @@ namespace frik::rock
 			}
 		}
 
-		// --- Get object world transform ---
-		auto* node3D = sel.refr->Get3D();
+		// --- Resolve the collidable node used by the selection/grab pipeline ---
+		// HIGGS operates on the grabbed collidable node, not blindly the reference root.
+		// The collidable node is the visual frame that should stay aligned with the held body.
+		auto* rootNode = sel.refr->Get3D();
+		auto* collidableNode = sel.hitNode ? sel.hitNode : rootNode;
 		RE::NiTransform objectWorldTransform;
-		if (node3D) {
-			objectWorldTransform = node3D->world;
+		if (collidableNode) {
+			objectWorldTransform = collidableNode->world;
 		} else {
 			objectWorldTransform = handWorldTransform;
+		}
+
+		static bool s_runtimeScaleLogged = false;
+		if (!s_runtimeScaleLogged) {
+			auto* vrScaleSetting = f4vr::getIniSetting("fVrScale:VR");
+			const float vrScale = vrScaleSetting ? vrScaleSetting->GetFloat() : -1.0f;
+			ROCK_LOG_INFO(Hand,
+				"RUNTIME SCALE {}: handScale={:.3f} collidableScale={:.3f} vrScale={:.3f}",
+				handName(), handWorldTransform.scale, collidableNode ? collidableNode->world.scale : -1.0f, vrScale);
+			s_runtimeScaleLogged = true;
 		}
 
 		// --- Mesh-based grab point alignment ---
 		RE::NiPoint3 grabSurfacePoint = objectWorldTransform.translate;
 		bool meshGrabFound = false;
 
-		if (node3D) {
+		if (collidableNode) {
 			std::vector<TriangleData> triangles;
-			extractAllTriangles(node3D, triangles);
+			extractAllTriangles(collidableNode, triangles);
 
 			// --- Vertex format diagnostic for first BSTriShape in subtree ---
 			// Log vertexDesc fields to verify FP16/FP32 detection is working.
 			{
-				RE::BSTriShape* firstTriShape = node3D->IsTriShape();
+				RE::BSTriShape* firstTriShape = collidableNode->IsTriShape();
 				if (!firstTriShape) {
-					auto* meshNode = node3D->IsNode();
+					auto* meshNode = collidableNode->IsNode();
 					if (meshNode) {
 						auto& kids = meshNode->GetRuntimeData().children;
 						for (std::uint32_t ci = 0; ci < kids.size(); ci++) {
@@ -339,8 +479,8 @@ namespace frik::rock
 			}
 
 			if (!triangles.empty()) {
-				RE::NiPoint3 palmPos = computePalmPosition(handWorldTransform, _isLeft);
-				RE::NiPoint3 palmDir = computePalmForward(handWorldTransform, _isLeft);
+				RE::NiPoint3 palmPos = computePalmPositionFromHandBasis(handWorldTransform, _isLeft);
+				RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
 
 				GrabPoint grabPt;
 				if (findClosestGrabPoint(triangles, palmPos, palmDir, 1.0f, 1.0f, grabPt)) {
@@ -355,21 +495,20 @@ namespace frik::rock
 
 		_grabStartTime = 0.0f;
 
-		// --- Compute frozen hand-to-object transform for visual hand adjustment ---
-		// HIGGS pattern (desiredNodeTransformHandSpace): stores "where the object should
-		// be relative to the hand" at grab time. Per-frame, the hand is positioned at:
-		//   adjustedHand = objectWorld * Invert(_grabHandSpace)
-		// This makes the visible hand follow the object, hiding motor offset.
+		// Capture the visual and physics grab transforms separately.
+		// _grabHandSpace stays in the raw hand-node basis for visible-hand reversal.
+		// _grabConstraintHandSpace uses the authored ROCK hand basis so the
+		// constraint target shares the same local frame as the hand body / palm math.
 		{
-			RE::NiPoint3 palmPos = computePalmPosition(handWorldTransform, _isLeft);
+			const RE::NiPoint3 palmPos = computePalmPositionFromHandBasis(handWorldTransform, _isLeft);
 			RE::NiTransform shiftedObject = objectWorldTransform;
 			shiftedObject.translate.x += palmPos.x - grabSurfacePoint.x;
 			shiftedObject.translate.y += palmPos.y - grabSurfacePoint.y;
 			shiftedObject.translate.z += palmPos.z - grabSurfacePoint.z;
 
 			// handInverse = Invert(handWorldTransform)
-			RE::NiMatrix3 invR = handWorldTransform.rotate.Transpose();
-			float invS = (handWorldTransform.scale > 0.0001f) ? (1.0f / handWorldTransform.scale) : 1.0f;
+			const RE::NiMatrix3 invR = handWorldTransform.rotate.Transpose();
+			const float invS = (handWorldTransform.scale > 0.0001f) ? (1.0f / handWorldTransform.scale) : 1.0f;
 			RE::NiPoint3 invP;
 			invP.x = -(invR.entry[0][0] * handWorldTransform.translate.x +
 				invR.entry[0][1] * handWorldTransform.translate.y +
@@ -381,19 +520,109 @@ namespace frik::rock
 				invR.entry[2][1] * handWorldTransform.translate.y +
 				invR.entry[2][2] * handWorldTransform.translate.z) * invS;
 
-			// _grabHandSpace = handInverse * shiftedObject
+			// _grabHandSpace = handInverse * shiftedObject (visual/collidable node path)
 			// result.rot = invR * shifted.rot
 			// result.pos = invP + (invR * shifted.pos) * invS
 			_grabHandSpace.rotate = invR * shiftedObject.rotate;
 			_grabHandSpace.scale = invS * shiftedObject.scale;
-			RE::NiPoint3 rp;
-			rp.x = invR.entry[0][0] * shiftedObject.translate.x + invR.entry[0][1] * shiftedObject.translate.y + invR.entry[0][2] * shiftedObject.translate.z;
-			rp.y = invR.entry[1][0] * shiftedObject.translate.x + invR.entry[1][1] * shiftedObject.translate.y + invR.entry[1][2] * shiftedObject.translate.z;
-			rp.z = invR.entry[2][0] * shiftedObject.translate.x + invR.entry[2][1] * shiftedObject.translate.y + invR.entry[2][2] * shiftedObject.translate.z;
-			_grabHandSpace.translate.x = invP.x + rp.x * invS;
-			_grabHandSpace.translate.y = invP.y + rp.y * invS;
-			_grabHandSpace.translate.z = invP.z + rp.z * invS;
-			_heldNode = node3D;
+			RE::NiPoint3 rotatedShiftedPos;
+			rotatedShiftedPos.x = invR.entry[0][0] * shiftedObject.translate.x +
+				invR.entry[0][1] * shiftedObject.translate.y +
+				invR.entry[0][2] * shiftedObject.translate.z;
+			rotatedShiftedPos.y = invR.entry[1][0] * shiftedObject.translate.x +
+				invR.entry[1][1] * shiftedObject.translate.y +
+				invR.entry[1][2] * shiftedObject.translate.z;
+			rotatedShiftedPos.z = invR.entry[2][0] * shiftedObject.translate.x +
+				invR.entry[2][1] * shiftedObject.translate.y +
+				invR.entry[2][2] * shiftedObject.translate.z;
+			_grabHandSpace.translate.x = invP.x + rotatedShiftedPos.x * invS;
+			_grabHandSpace.translate.y = invP.y + rotatedShiftedPos.y * invS;
+			_grabHandSpace.translate.z = invP.z + rotatedShiftedPos.z * invS;
+
+			const RE::NiTransform liveBodyWorldAtGrab = getBodyWorldTransform(world, objectBodyId);
+			auto* ownerCellAtGrab = sel.refr ? sel.refr->GetParentCell() : nullptr;
+			auto* bhkWorldAtGrab = ownerCellAtGrab ? ownerCellAtGrab->GetbhkWorld() : nullptr;
+			auto* bodyCollisionObjectAtGrab = bhkWorldAtGrab
+				? RE::bhkNPCollisionObject::Getbhk(bhkWorldAtGrab, objectBodyId)
+				: nullptr;
+			auto* ownerNodeAtGrab = bodyCollisionObjectAtGrab ? bodyCollisionObjectAtGrab->sceneObject : nullptr;
+			_heldNode = collidableNode;
+			_grabBodyLocalTransform = collidableNode
+				? computeRuntimeBodyLocalTransform(objectWorldTransform, liveBodyWorldAtGrab)
+				: makeIdentityTransform();
+			_grabOwnerBodyLocalTransform = ownerNodeAtGrab
+				? computeRuntimeBodyLocalTransform(ownerNodeAtGrab->world, liveBodyWorldAtGrab)
+				: makeIdentityTransform();
+			_grabRootBodyLocalTransform = rootNode
+				? computeRuntimeBodyLocalTransform(rootNode->world, liveBodyWorldAtGrab)
+				: makeIdentityTransform();
+
+			const RE::NiTransform authoredHandTransform = makeAuthoredHandTransform(handWorldTransform, _isLeft);
+			_grabConstraintHandSpace = multiplyTransforms(invertTransform(authoredHandTransform), shiftedObject);
+
+			if (g_rockConfig.rockDebugGrabFrameLogging) {
+				const RE::NiTransform& constraintGrabHandSpace = _grabConstraintHandSpace;
+
+				const RE::NiPoint3 rawLateral = getMatrixColumn(handWorldTransform.rotate, 0);
+				const RE::NiPoint3 rawFinger = getMatrixColumn(handWorldTransform.rotate, 1);
+				const RE::NiPoint3 rawBack = getMatrixColumn(handWorldTransform.rotate, 2);
+				const RE::NiPoint3 constraintFinger = getMatrixColumn(authoredHandTransform.rotate, 0);
+				const RE::NiPoint3 constraintBack = getMatrixColumn(authoredHandTransform.rotate, 1);
+				const RE::NiPoint3 constraintLateral = getMatrixColumn(authoredHandTransform.rotate, 2);
+				const RE::NiPoint3 grabSpaceRawFinger = getMatrixColumn(_grabHandSpace.rotate, 0);
+				const RE::NiPoint3 grabSpaceConstraintFinger = getMatrixColumn(constraintGrabHandSpace.rotate, 0);
+				const RE::NiPoint3 grabPosDelta = constraintGrabHandSpace.translate - _grabHandSpace.translate;
+
+				ROCK_LOG_INFO(Hand,
+					"{} GRAB FRAME SNAPSHOT: rawVsConstraint rotDelta={:.2f}deg posDelta=({:.2f},{:.2f},{:.2f}) "
+					"rawFinger=({:.3f},{:.3f},{:.3f}) rawBack=({:.3f},{:.3f},{:.3f}) rawLat=({:.3f},{:.3f},{:.3f}) "
+					"constraintFinger=({:.3f},{:.3f},{:.3f}) constraintBack=({:.3f},{:.3f},{:.3f}) constraintLat=({:.3f},{:.3f},{:.3f})",
+					handName(),
+					rotationDeltaDegrees(_grabHandSpace.rotate, constraintGrabHandSpace.rotate),
+					grabPosDelta.x, grabPosDelta.y, grabPosDelta.z,
+					rawFinger.x, rawFinger.y, rawFinger.z,
+					rawBack.x, rawBack.y, rawBack.z,
+					rawLateral.x, rawLateral.y, rawLateral.z,
+					constraintFinger.x, constraintFinger.y, constraintFinger.z,
+					constraintBack.x, constraintBack.y, constraintBack.z,
+					constraintLateral.x, constraintLateral.y, constraintLateral.z);
+
+				ROCK_LOG_INFO(Hand,
+					"{} GRAB FRAME TARGETS: grabHSRaw.pos=({:.2f},{:.2f},{:.2f}) grabHSConstraint.pos=({:.2f},{:.2f},{:.2f}) "
+					"grabHSRawFinger=({:.3f},{:.3f},{:.3f}) grabHSConstraintFinger=({:.3f},{:.3f},{:.3f}) "
+					"bodyLocal.pos=({:.2f},{:.2f},{:.2f}) bodyLocalFinger=({:.3f},{:.3f},{:.3f})",
+					handName(),
+					_grabHandSpace.translate.x, _grabHandSpace.translate.y, _grabHandSpace.translate.z,
+					constraintGrabHandSpace.translate.x, constraintGrabHandSpace.translate.y, constraintGrabHandSpace.translate.z,
+					grabSpaceRawFinger.x, grabSpaceRawFinger.y, grabSpaceRawFinger.z,
+					grabSpaceConstraintFinger.x, grabSpaceConstraintFinger.y, grabSpaceConstraintFinger.z,
+					_grabBodyLocalTransform.translate.x, _grabBodyLocalTransform.translate.y, _grabBodyLocalTransform.translate.z,
+					_grabBodyLocalTransform.rotate.entry[0][0], _grabBodyLocalTransform.rotate.entry[1][0], _grabBodyLocalTransform.rotate.entry[2][0]);
+
+				const RE::NiPoint3 rootBodyLocalFinger = getMatrixColumn(_grabRootBodyLocalTransform.rotate, 0);
+				const RE::NiPoint3 ownerBodyLocalFinger = getMatrixColumn(_grabOwnerBodyLocalTransform.rotate, 0);
+				ROCK_LOG_INFO(Hand,
+					"{} GRAB NODE FRAMES: owner='{}'({:p}) hasCol={} ownsBodyCol={} "
+					"root='{}'({:p}) held='{}'({:p}) sameOwnerHeld={} sameRootHeld={} "
+					"ownerBodyLocal.pos=({:.2f},{:.2f},{:.2f}) ownerBodyLocalFinger=({:.3f},{:.3f},{:.3f}) "
+					"rootBodyLocal.pos=({:.2f},{:.2f},{:.2f}) rootBodyLocalFinger=({:.3f},{:.3f},{:.3f})",
+					handName(),
+					nodeDebugName(ownerNodeAtGrab), static_cast<const void*>(ownerNodeAtGrab),
+					(ownerNodeAtGrab && ownerNodeAtGrab->collisionObject.get()) ? "yes" : "no",
+					(ownerNodeAtGrab && ownerNodeAtGrab->collisionObject.get() == bodyCollisionObjectAtGrab) ? "yes" : "no",
+					nodeDebugName(rootNode), static_cast<const void*>(rootNode),
+					nodeDebugName(collidableNode), static_cast<const void*>(collidableNode),
+					ownerNodeAtGrab == collidableNode ? "yes" : "no",
+					rootNode == collidableNode ? "yes" : "no",
+					_grabOwnerBodyLocalTransform.translate.x,
+					_grabOwnerBodyLocalTransform.translate.y,
+					_grabOwnerBodyLocalTransform.translate.z,
+					ownerBodyLocalFinger.x, ownerBodyLocalFinger.y, ownerBodyLocalFinger.z,
+					_grabRootBodyLocalTransform.translate.x,
+					_grabRootBodyLocalTransform.translate.y,
+					_grabRootBodyLocalTransform.translate.z,
+					rootBodyLocalFinger.x, rootBodyLocalFinger.y, rootBodyLocalFinger.z);
+			}
 
 			ROCK_LOG_INFO(Hand, "{} GRAB HAND SPACE: pos=({:.1f},{:.1f},{:.1f}) "
 				"palmPos=({:.1f},{:.1f},{:.1f}) grabPt=({:.1f},{:.1f},{:.1f})",
@@ -401,59 +630,12 @@ namespace frik::rock
 				_grabHandSpace.translate.x, _grabHandSpace.translate.y, _grabHandSpace.translate.z,
 				palmPos.x, palmPos.y, palmPos.z,
 				grabSurfacePoint.x, grabSurfacePoint.y, grabSurfacePoint.z);
-		}
-
-		// --- Compute grab point in object's Havok body-local space ---
-		// WHY: The constraint pivot and velocity injection target must be at the
-		// SURFACE contact point, not the hand body center (wrist/palm).
-		// If the mesh grab found a surface point, use it. Otherwise fall back
-		// to the hand body position.
-		// grabPointLocal = R_obj^T * (grabWorldHk - objBodyPos)
-		// This is the grab point in the object's body-local frame.
-		{
-			auto* bodyArray = world->GetBodyArray();
-			auto* objBody = reinterpret_cast<float*>(&bodyArray[objectBodyId.value]);
-			auto* handBody = reinterpret_cast<float*>(&bodyArray[_handBody.getBodyId().value]);
-
-			// Grab world position in Havok coords
-			float grabHk[3];
-			if (meshGrabFound) {
-				// Use mesh surface contact point (game units → Havok)
-				constexpr float INV_HAVOK_SCALE = 1.0f / 70.0f;
-				grabHk[0] = grabSurfacePoint.x * INV_HAVOK_SCALE;
-				grabHk[1] = grabSurfacePoint.y * INV_HAVOK_SCALE;
-				grabHk[2] = grabSurfacePoint.z * INV_HAVOK_SCALE;
-			} else {
-				// Fallback: hand body position (palm)
-				grabHk[0] = handBody[12];
-				grabHk[1] = handBody[13];
-				grabHk[2] = handBody[14];
-			}
-
-			// Vector from object origin to grab point (world Havok space)
-			float dx = grabHk[0] - objBody[12];
-			float dy = grabHk[1] - objBody[13];
-			float dz = grabHk[2] - objBody[14];
-
-			// Transform world-space delta to body-local space.
-			// Body array is COLUMN-MAJOR (blind audit 2026-03-30: setBodyTransform at
-			// 0x1415395e0 copies hkTransformf directly, no transpose. hkTransformf is
-			// column-major). body[0,1,2] = column 0 = (R00, R10, R20).
-			// Havok uses LEFT-MULTIPLICATION: world = R * local + t.
-			// Inverse: local = R^T * delta. Dotting each column with delta gives R^T * delta.
-			// component j = dot(column_j, delta) = (R^T * delta)[j].
-			_grabPointLocal[0] = objBody[0] * dx + objBody[1] * dy + objBody[2] * dz;
-			_grabPointLocal[1] = objBody[4] * dx + objBody[5] * dy + objBody[6] * dz;
-			_grabPointLocal[2] = objBody[8] * dx + objBody[9] * dy + objBody[10] * dz;
-			_grabPointLocal[3] = 0.0f;
-
-			ROCK_LOG_INFO(Hand, "{} GRAB PIVOT: grabPointLocal=({:.4f},{:.4f},{:.4f}) "
-				"grabHk=({:.3f},{:.3f},{:.3f}) objHk=({:.3f},{:.3f},{:.3f}) meshGrab={}",
+			ROCK_LOG_INFO(Hand, "{} BODY LOCAL: pos=({:.2f},{:.2f},{:.2f}) scale={:.3f}",
 				handName(),
-				_grabPointLocal[0], _grabPointLocal[1], _grabPointLocal[2],
-				grabHk[0], grabHk[1], grabHk[2],
-				objBody[12], objBody[13], objBody[14],
-				meshGrabFound ? "yes" : "no");
+				_grabBodyLocalTransform.translate.x,
+				_grabBodyLocalTransform.translate.y,
+				_grabBodyLocalTransform.translate.z,
+				_grabBodyLocalTransform.scale);
 		}
 
 		// --- Log body positions + COM for constraint debugging ---
@@ -546,11 +728,12 @@ namespace frik::rock
 		// HIGGS S00 section 0.1a: pivotA = palmPos * havokWorldScale
 		// HIGGS S00 section 0.1b: pivotB = ptPos * havokWorldScale
 		//
-		// Phase 0B.2: TransformB rotation uses Inverse(_grabHandSpace).rotation
-		// (HIGGS S00 0.6b, simplified by PRE-1: no GetRigidBodyTLocalTransform in FO4VR)
+		// TransformB rotation uses Inverse(_grabConstraintHandSpace * _grabBodyLocalTransform).
+		// This matches the authored hand-space contract used by the hand body and palm math.
 		{
-			RE::NiPoint3 palmPos = computePalmPosition(handWorldTransform, _isLeft);
+			RE::NiPoint3 palmPos = computePalmPositionFromHandBasis(handWorldTransform, _isLeft);
 			constexpr float INV_HAVOK_SCALE = 1.0f / 70.0f;
+			const RE::NiTransform desiredBodyTransformHandSpace = multiplyTransforms(_grabConstraintHandSpace, _grabBodyLocalTransform);
 
 			// PivotA world position = palm center in Havok coords
 			float palmHk[4];
@@ -572,24 +755,24 @@ namespace frik::rock
 					(palmHk[0]-grabHk[0])*(palmHk[0]-grabHk[0]) +
 					(palmHk[1]-grabHk[1])*(palmHk[1]-grabHk[1]) +
 					(palmHk[2]-grabHk[2])*(palmHk[2]-grabHk[2]));
-				float palmToWand = std::sqrt(
+				float palmToHandOrigin = std::sqrt(
 					(palmPos.x - handWorldTransform.translate.x)*(palmPos.x - handWorldTransform.translate.x) +
 					(palmPos.y - handWorldTransform.translate.y)*(palmPos.y - handWorldTransform.translate.y) +
 					(palmPos.z - handWorldTransform.translate.z)*(palmPos.z - handWorldTransform.translate.z));
-				ROCK_LOG_INFO(Hand, "GRAB DIAG {}: palmPos=({:.1f},{:.1f},{:.1f}) wandPos=({:.1f},{:.1f},{:.1f}) "
+				ROCK_LOG_INFO(Hand, "GRAB DIAG {}: palmPos=({:.1f},{:.1f},{:.1f}) handPos=({:.1f},{:.1f},{:.1f}) "
 					"grabSurface=({:.1f},{:.1f},{:.1f}) meshGrab={} "
-					"palmToGrab_hk={:.4f} ({:.1f} game units) palmToWand={:.1f} game units",
+					"palmToGrab_hk={:.4f} ({:.1f} game units) palmToHandOrigin={:.1f} game units",
 					handName(),
 					palmPos.x, palmPos.y, palmPos.z,
 					handWorldTransform.translate.x, handWorldTransform.translate.y, handWorldTransform.translate.z,
 					grabSurfacePoint.x, grabSurfacePoint.y, grabSurfacePoint.z,
 					meshGrabFound,
-					palmToGrab, palmToGrab * 70.0f, palmToWand);
+					palmToGrab, palmToGrab * 70.0f, palmToHandOrigin);
 			}
 
 			_activeConstraint = createGrabConstraint(
 				world, _handBody.getBodyId(), objectBodyId,
-				palmHk, grabHk, _grabHandSpace,
+				palmHk, grabHk, desiredBodyTransformHandSpace,
 				tau, damping, maxForce,
 				proportionalRecovery, constantRecovery);
 		}
@@ -664,7 +847,7 @@ namespace frik::rock
 	//
 	// PivotA (palm in hand body-local) is set at grab time and constant.
 	// PivotB and angular target (m_target_bRca) are updated per-frame from
-	// the frozen _grabHandSpace transform.
+		// the frozen physics grab-space transform.
 	// Motor PARAMETERS (tau, force, damping) are updated for fade-in and
 	// collision-adaptive behavior.
 	// =========================================================================
@@ -675,6 +858,7 @@ namespace frik::rock
 		float tauIncrement, float tauDecrement,
 		float closeThreshold, float farThreshold)
 	{
+		(void)handWorldTransform;
 		(void)tauIncrement; (void)tauDecrement;
 		(void)closeThreshold; (void)farThreshold;
 
@@ -693,31 +877,33 @@ namespace frik::rock
 		_grabStartTime += deltaTime;
 
 		// =====================================================================
-		// Per-frame: update angular target and pivotB from frozen _grabHandSpace.
+		// Per-frame: update angular target and pivotB from frozen physics grab transform
+		// composed with the stored body-local transform term.
 		// =====================================================================
 		if (_activeConstraint.constraintData) {
 			auto* cd = static_cast<char*>(_activeConstraint.constraintData);
+			const RE::NiTransform desiredBodyTransformHandSpace = multiplyTransforms(_grabConstraintHandSpace, _grabBodyLocalTransform);
 
-			// Compute Inverse(_grabHandSpace)
-			// desiredHandTransformHavokObjSpace = Invert(_grabHandSpace)
+			// Compute Inverse(desiredBodyTransformHandSpace)
+			// desiredHandTransformHavokObjSpace = Invert(_grabConstraintHandSpace * _grabBodyLocalTransform)
 			// Rotation inverse = Transpose (orthonormal matrix)
-			RE::NiMatrix3 invRot = _grabHandSpace.rotate.Transpose();
-			float invScale = (_grabHandSpace.scale > 0.0001f) ? (1.0f / _grabHandSpace.scale) : 1.0f;
+			RE::NiMatrix3 invRot = desiredBodyTransformHandSpace.rotate.Transpose();
+			float invScale = (desiredBodyTransformHandSpace.scale > 0.0001f) ? (1.0f / desiredBodyTransformHandSpace.scale) : 1.0f;
 
 			// Inverse translation: -(R^T * pos) / scale
 			RE::NiPoint3 invPos;
-			invPos.x = -(invRot.entry[0][0] * _grabHandSpace.translate.x +
-				invRot.entry[0][1] * _grabHandSpace.translate.y +
-				invRot.entry[0][2] * _grabHandSpace.translate.z) * invScale;
-			invPos.y = -(invRot.entry[1][0] * _grabHandSpace.translate.x +
-				invRot.entry[1][1] * _grabHandSpace.translate.y +
-				invRot.entry[1][2] * _grabHandSpace.translate.z) * invScale;
-			invPos.z = -(invRot.entry[2][0] * _grabHandSpace.translate.x +
-				invRot.entry[2][1] * _grabHandSpace.translate.y +
-				invRot.entry[2][2] * _grabHandSpace.translate.z) * invScale;
+			invPos.x = -(invRot.entry[0][0] * desiredBodyTransformHandSpace.translate.x +
+				invRot.entry[0][1] * desiredBodyTransformHandSpace.translate.y +
+				invRot.entry[0][2] * desiredBodyTransformHandSpace.translate.z) * invScale;
+			invPos.y = -(invRot.entry[1][0] * desiredBodyTransformHandSpace.translate.x +
+				invRot.entry[1][1] * desiredBodyTransformHandSpace.translate.y +
+				invRot.entry[1][2] * desiredBodyTransformHandSpace.translate.z) * invScale;
+			invPos.z = -(invRot.entry[2][0] * desiredBodyTransformHandSpace.translate.x +
+				invRot.entry[2][1] * desiredBodyTransformHandSpace.translate.y +
+				invRot.entry[2][2] * desiredBodyTransformHandSpace.translate.z) * invScale;
 
 			// Phase 0B.5: Update angular target (m_target_bRca) at constraint+0xD0
-			// = Inverse(_grabHandSpace).rotation = invRot
+			// = Inverse(_grabConstraintHandSpace * _grabBodyLocalTransform).rotation = invRot
 			// Since transformA.rotation = identity: m_target_bRca = invRot
 			//
 			// THREAD SAFETY (C3 fix): The Havok solver may be reading this constraint
@@ -741,15 +927,11 @@ namespace frik::rock
 				_mm_store_ps(target + 8, _mm_load_ps(col2));
 			}
 
-			// Per-frame pivotB update from frozen _grabHandSpace + palm offset.
-			// UNDER INVESTIGATION (2026-03-30): First-frame pivotB jumps significantly
-			// from creation-time value. Needs proper audit against HIGGS before changing.
+			// Per-frame pivotB update from frozen _grabConstraintHandSpace + hand-space palm basis.
+			// This must use the same hand-local basis as grab creation; otherwise pivotB
+			// jumps on the first held frame even when the hand transform itself is stable.
 			{
-				// Palm offset in hand-local space (from config, game units)
-				RE::NiPoint3 palmHS;
-				palmHS.x = g_rockConfig.rockPalmOffsetRight;
-				palmHS.y = g_rockConfig.rockPalmOffsetForward;
-				palmHS.z = g_rockConfig.rockPalmOffsetUp;
+				RE::NiPoint3 palmHS = mirrorHandspaceZ(g_rockConfig.rockPalmPositionHandspace, _isLeft) * desiredBodyTransformHandSpace.scale;
 
 				// Transform palmHS through desiredHandTransformHavokObjSpace:
 				// result = invRot * palmHS * invScale + invPos
@@ -759,28 +941,10 @@ namespace frik::rock
 				transformed.z = (invRot.entry[2][0]*palmHS.x + invRot.entry[2][1]*palmHS.y + invRot.entry[2][2]*palmHS.z) * invScale + invPos.z;
 
 				// Apply object scale and Havok scale
-				float objScale = 1.0f;
-				if (_savedObjectState.refr) {
-					auto* objNode = _savedObjectState.refr->Get3D();
-					if (objNode) objScale = objNode->world.scale;
-				}
+				float objScale = (_heldNode ? _heldNode->world.scale : 1.0f);
 				constexpr float kHavokScale = 1.0f / 70.0f;
 				float combinedScale = objScale * kHavokScale;
-
 				auto* pivotB = reinterpret_cast<float*>(cd + offsets::kTransformB_Pos);
-
-				if (_pivotBLogCounter++ < 5) {
-					ROCK_LOG_INFO(Hand, "{} PIVOTB[{}]: BEFORE=({:.4f},{:.4f},{:.4f}) AFTER=({:.4f},{:.4f},{:.4f}) "
-						"palmHS=({:.1f},{:.1f},{:.1f}) invPos=({:.2f},{:.2f},{:.2f}) "
-						"transformed=({:.2f},{:.2f},{:.2f}) objScale={:.2f} combScale={:.4f}",
-						handName(), _pivotBLogCounter - 1,
-						pivotB[0], pivotB[1], pivotB[2],
-						transformed.x * combinedScale, transformed.y * combinedScale, transformed.z * combinedScale,
-						palmHS.x, palmHS.y, palmHS.z,
-						invPos.x, invPos.y, invPos.z,
-						transformed.x, transformed.y, transformed.z,
-						objScale, combinedScale);
-				}
 
 				// Atomic 16-byte write
 				alignas(16) float newPivotB[4] = {
@@ -792,20 +956,10 @@ namespace frik::rock
 				_mm_store_ps(pivotB, _mm_load_ps(newPivotB));
 			}
 
-			// Also update transformB.rotation to match angular target
-			// (keeps constraint internal state consistent)
-			// Atomic 16-byte writes (C3 fix — see angular target comment above)
-			{
-				auto* tB_col0 = reinterpret_cast<float*>(cd + offsets::kTransformB_Col0);
-				auto* tB_col1 = reinterpret_cast<float*>(cd + offsets::kTransformB_Col1);
-				auto* tB_col2 = reinterpret_cast<float*>(cd + offsets::kTransformB_Col2);
-				alignas(16) float c0[4] = { invRot.entry[0][0], invRot.entry[1][0], invRot.entry[2][0], 0.0f };
-				alignas(16) float c1[4] = { invRot.entry[0][1], invRot.entry[1][1], invRot.entry[2][1], 0.0f };
-				alignas(16) float c2[4] = { invRot.entry[0][2], invRot.entry[1][2], invRot.entry[2][2], 0.0f };
-				_mm_store_ps(tB_col0, _mm_load_ps(c0));
-				_mm_store_ps(tB_col1, _mm_load_ps(c1));
-				_mm_store_ps(tB_col2, _mm_load_ps(c2));
-			}
+			// Keep transformB.rotation fixed at grab-time body space.
+			// HIGGS only updates the angular target and transformB.translation
+			// during hold. Rewriting transformB.rotation every frame mutates the
+			// live solver frame instead of only changing the angular target.
 		}
 
 		// =====================================================================
@@ -943,6 +1097,142 @@ namespace frik::rock
 		if (_heldLogCounter >= 45) {
 			_heldLogCounter = 0;
 
+			if (g_rockConfig.rockDebugGrabFrameLogging) {
+				const RE::NiTransform authoredHandTransform = makeAuthoredHandTransform(handWorldTransform, _isLeft);
+				const RE::NiTransform desiredNodeWorldRaw = multiplyTransforms(handWorldTransform, _grabHandSpace);
+				const RE::NiTransform desiredNodeWorldConstraint = multiplyTransforms(authoredHandTransform, _grabConstraintHandSpace);
+				const RE::NiTransform desiredBodyTransformHandSpaceRaw = multiplyTransforms(_grabHandSpace, _grabBodyLocalTransform);
+				const RE::NiTransform desiredBodyTransformHandSpaceConstraint =
+					multiplyTransforms(_grabConstraintHandSpace, _grabBodyLocalTransform);
+				const RE::NiTransform desiredBodyWorldRaw =
+					multiplyTransforms(handWorldTransform, desiredBodyTransformHandSpaceRaw);
+				const RE::NiTransform desiredBodyWorldConstraint =
+					multiplyTransforms(authoredHandTransform, desiredBodyTransformHandSpaceConstraint);
+				const RE::NiMatrix3 invRot = desiredBodyTransformHandSpaceConstraint.rotate.Transpose();
+				const RE::NiTransform liveBodyWorld = getBodyWorldTransform(world, _savedObjectState.bodyId);
+				auto* ownerCell = _savedObjectState.refr ? _savedObjectState.refr->GetParentCell() : nullptr;
+				auto* heldBhkWorld = ownerCell ? ownerCell->GetbhkWorld() : nullptr;
+				auto* bodyCollisionObject = heldBhkWorld
+					? RE::bhkNPCollisionObject::Getbhk(heldBhkWorld, _savedObjectState.bodyId)
+					: nullptr;
+				auto* ownerNode = bodyCollisionObject ? bodyCollisionObject->sceneObject : nullptr;
+				auto* hitNode = (_currentSelection.refr == _savedObjectState.refr)
+					? _currentSelection.hitNode
+					: nullptr;
+				auto* rootNode = _savedObjectState.refr ? _savedObjectState.refr->Get3D() : nullptr;
+
+				struct NodeFrameMetrics
+				{
+					RE::NiAVObject* node = nullptr;
+					RE::NiTransform world = {};
+					RE::NiTransform expectedWorld = {};
+					RE::NiPoint3 finger = {};
+					RE::NiPoint3 expectedFinger = {};
+					float rotErrDeg = -1.0f;
+					float posErrGameUnits = -1.0f;
+					bool hasCollisionObject = false;
+					bool ownsBodyCollisionObject = false;
+				};
+
+				const auto captureNodeMetrics = [&](RE::NiAVObject* node, const RE::NiTransform& bodyLocalTransform) {
+					NodeFrameMetrics metrics{};
+					metrics.node = node;
+					metrics.world = node ? node->world : liveBodyWorld;
+					metrics.expectedWorld = node
+						? deriveNodeWorldFromBodyWorld(liveBodyWorld, bodyLocalTransform)
+						: liveBodyWorld;
+					metrics.finger = getMatrixColumn(metrics.world.rotate, 0);
+					metrics.expectedFinger = getMatrixColumn(metrics.expectedWorld.rotate, 0);
+					if (node) {
+						metrics.rotErrDeg = rotationDeltaDegrees(metrics.world.rotate, metrics.expectedWorld.rotate);
+						metrics.posErrGameUnits = translationDeltaGameUnits(metrics.world, metrics.expectedWorld);
+						auto* nodeCollisionObject = node->collisionObject.get();
+						metrics.hasCollisionObject = (nodeCollisionObject != nullptr);
+						metrics.ownsBodyCollisionObject = (nodeCollisionObject != nullptr && nodeCollisionObject == bodyCollisionObject);
+					}
+					return metrics;
+				};
+
+				const NodeFrameMetrics ownerMetrics = captureNodeMetrics(ownerNode, _grabOwnerBodyLocalTransform);
+				const NodeFrameMetrics hitMetrics = captureNodeMetrics(hitNode, _grabBodyLocalTransform);
+				const NodeFrameMetrics heldMetrics = captureNodeMetrics(_heldNode, _grabBodyLocalTransform);
+				const NodeFrameMetrics rootMetrics = captureNodeMetrics(rootNode, _grabRootBodyLocalTransform);
+
+				const RE::NiPoint3 worldPosDelta = desiredNodeWorldConstraint.translate - desiredNodeWorldRaw.translate;
+				const RE::NiPoint3 rawFinger = getMatrixColumn(handWorldTransform.rotate, 1);
+				const RE::NiPoint3 constraintFinger = getMatrixColumn(authoredHandTransform.rotate, 0);
+				const RE::NiPoint3 desiredRawFinger = getMatrixColumn(desiredBodyWorldRaw.rotate, 0);
+				const RE::NiPoint3 desiredConstraintFinger = getMatrixColumn(desiredBodyWorldConstraint.rotate, 0);
+				const RE::NiPoint3 bodyFinger = getMatrixColumn(liveBodyWorld.rotate, 0);
+
+				ROCK_LOG_INFO(Hand,
+					"{} GRAB FRAME HOLD: rawVsConstraintWorld={:.2f}deg rawVsConstraintTarget={:.2f}deg "
+					"bodyVsRaw={:.2f}deg bodyVsConstraint={:.2f}deg "
+					"ownerErr={:.2f}deg/{:.2f}gu hitErr={:.2f}deg/{:.2f}gu "
+					"heldErr={:.2f}deg/{:.2f}gu rootErr={:.2f}deg/{:.2f}gu "
+					"worldPosDelta=({:.2f},{:.2f},{:.2f}) "
+					"rawFinger=({:.3f},{:.3f},{:.3f}) constraintFinger=({:.3f},{:.3f},{:.3f})",
+					handName(),
+					rotationDeltaDegrees(desiredNodeWorldRaw.rotate, desiredNodeWorldConstraint.rotate),
+					rotationDeltaDegrees(desiredBodyTransformHandSpaceRaw.rotate, desiredBodyTransformHandSpaceConstraint.rotate),
+					rotationDeltaDegrees(liveBodyWorld.rotate, desiredBodyWorldRaw.rotate),
+					rotationDeltaDegrees(liveBodyWorld.rotate, desiredBodyWorldConstraint.rotate),
+					ownerMetrics.rotErrDeg, ownerMetrics.posErrGameUnits,
+					hitMetrics.rotErrDeg, hitMetrics.posErrGameUnits,
+					heldMetrics.rotErrDeg, heldMetrics.posErrGameUnits,
+					rootMetrics.rotErrDeg, rootMetrics.posErrGameUnits,
+					worldPosDelta.x, worldPosDelta.y, worldPosDelta.z,
+					rawFinger.x, rawFinger.y, rawFinger.z,
+					constraintFinger.x, constraintFinger.y, constraintFinger.z);
+
+				ROCK_LOG_INFO(Hand,
+					"{} GRAB FRAME NODES: bodyColl={:p} "
+					"owner='{}'({:p}) hasCol={} ownsBodyCol={} "
+					"hit='{}'({:p}) hasCol={} ownsBodyCol={} "
+					"held='{}'({:p}) hasCol={} ownsBodyCol={} "
+					"root='{}'({:p}) hasCol={} ownsBodyCol={} "
+					"sameOwnerHeld={} sameHitHeld={} sameRootHeld={}",
+					handName(),
+					static_cast<const void*>(bodyCollisionObject),
+					nodeDebugName(ownerMetrics.node), static_cast<const void*>(ownerMetrics.node),
+					ownerMetrics.hasCollisionObject ? "yes" : "no",
+					ownerMetrics.ownsBodyCollisionObject ? "yes" : "no",
+					nodeDebugName(hitMetrics.node), static_cast<const void*>(hitMetrics.node),
+					hitMetrics.hasCollisionObject ? "yes" : "no",
+					hitMetrics.ownsBodyCollisionObject ? "yes" : "no",
+					nodeDebugName(heldMetrics.node), static_cast<const void*>(heldMetrics.node),
+					heldMetrics.hasCollisionObject ? "yes" : "no",
+					heldMetrics.ownsBodyCollisionObject ? "yes" : "no",
+					nodeDebugName(rootMetrics.node), static_cast<const void*>(rootMetrics.node),
+					rootMetrics.hasCollisionObject ? "yes" : "no",
+					rootMetrics.ownsBodyCollisionObject ? "yes" : "no",
+					ownerMetrics.node == heldMetrics.node ? "yes" : "no",
+					hitMetrics.node == heldMetrics.node ? "yes" : "no",
+					rootMetrics.node == heldMetrics.node ? "yes" : "no");
+
+				ROCK_LOG_INFO(Hand,
+					"{} GRAB FRAME VISUALS: desiredRawFinger=({:.3f},{:.3f},{:.3f}) desiredConstraintFinger=({:.3f},{:.3f},{:.3f}) "
+					"bodyFinger=({:.3f},{:.3f},{:.3f}) "
+					"ownerFinger=({:.3f},{:.3f},{:.3f}) ownerExpectedFinger=({:.3f},{:.3f},{:.3f}) "
+					"hitFinger=({:.3f},{:.3f},{:.3f}) hitExpectedFinger=({:.3f},{:.3f},{:.3f}) "
+					"heldFinger=({:.3f},{:.3f},{:.3f}) heldExpectedFinger=({:.3f},{:.3f},{:.3f}) "
+					"rootFinger=({:.3f},{:.3f},{:.3f}) rootExpectedFinger=({:.3f},{:.3f},{:.3f}) "
+					"targetInvFinger=({:.3f},{:.3f},{:.3f})",
+					handName(),
+					desiredRawFinger.x, desiredRawFinger.y, desiredRawFinger.z,
+					desiredConstraintFinger.x, desiredConstraintFinger.y, desiredConstraintFinger.z,
+					bodyFinger.x, bodyFinger.y, bodyFinger.z,
+					ownerMetrics.finger.x, ownerMetrics.finger.y, ownerMetrics.finger.z,
+					ownerMetrics.expectedFinger.x, ownerMetrics.expectedFinger.y, ownerMetrics.expectedFinger.z,
+					hitMetrics.finger.x, hitMetrics.finger.y, hitMetrics.finger.z,
+					hitMetrics.expectedFinger.x, hitMetrics.expectedFinger.y, hitMetrics.expectedFinger.z,
+					heldMetrics.finger.x, heldMetrics.finger.y, heldMetrics.finger.z,
+					heldMetrics.expectedFinger.x, heldMetrics.expectedFinger.y, heldMetrics.expectedFinger.z,
+					rootMetrics.finger.x, rootMetrics.finger.y, rootMetrics.finger.z,
+					rootMetrics.expectedFinger.x, rootMetrics.expectedFinger.y, rootMetrics.expectedFinger.z,
+					invRot.entry[0][0], invRot.entry[1][0], invRot.entry[2][0]);
+			}
+
 			auto* bodyArray = world->GetBodyArray();
 			auto* h = reinterpret_cast<float*>(&bodyArray[_handBody.getBodyId().value]);
 			auto* o = reinterpret_cast<float*>(&bodyArray[_savedObjectState.bodyId.value]);
@@ -969,10 +1259,6 @@ namespace frik::rock
 			// Body center distance for reference
 			float dx = o[12] - h[12], dy = o[13] - h[13], dz = o[14] - h[14];
 			float bodyDist = std::sqrt(dx*dx + dy*dy + dz*dz);
-
-			// PivotA offset from hand body center (should be palm offset, NOT zero)
-			float paOffMag = std::sqrt(pivotA_local[0]*pivotA_local[0] +
-				pivotA_local[1]*pivotA_local[1] + pivotA_local[2]*pivotA_local[2]);
 
 			// Object velocity from motion array (velocity at motion+0x40)
 			float objVelMag = 0.0f;
@@ -1115,6 +1401,11 @@ namespace frik::rock
 		_savedObjectState.clear();
 		_activeConstraint.clear();
 		_heldBodyIds.clear();
+		_grabHandSpace = RE::NiTransform();
+		_grabConstraintHandSpace = RE::NiTransform();
+		_grabBodyLocalTransform = RE::NiTransform();
+		_grabRootBodyLocalTransform = RE::NiTransform();
+		_grabOwnerBodyLocalTransform = RE::NiTransform();
 		_heldNode = nullptr;
 		_currentSelection.clear();
 		_state = HandState::Idle;

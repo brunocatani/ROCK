@@ -20,6 +20,12 @@ namespace frik::rock::offsets
     // bhkNPCollisionObject layout
     // =========================================================================
 
+    // NiCollisionObject::sceneObject lives at +0x10 in the CommonLibF4VR layout and
+    // is the stable typed owner-node access path already used elsewhere in ROCK.
+    // Keep diagnostics aligned with the typed field instead of a raw owner-pointer
+    // assumption on a partially audited base layout.
+    constexpr std::uintptr_t kCollisionObject_OwnerNode = 0x10;
+
     // bhkNPCollisionObject+0x20 holds the bhkPhysicsSystem* pointer.
     // Used to traverse collision objects and enumerate body IDs.
     // Verified in Hand.cpp (collectHeldBodyIds) and WeaponCollision.cpp
@@ -60,6 +66,10 @@ namespace frik::rock::offsets
     // Used to save/restore filter info during grab and weapon collision setup.
     // Verified in HandGrab.cpp (grab/release filter save) and WeaponCollision.cpp.
     constexpr std::uintptr_t kBody_CollisionFilterInfo = 0x44;
+
+    // hknpBody+0x88 holds the bhkNPCollisionObject* back-pointer.
+    // Binary-verified in bhkNPCollisionObject::vfunction48 on 2026-04-22.
+    constexpr std::uintptr_t kBody_CollisionObjectBackPointer = 0x88;
 
     // =========================================================================
     // hknpMotion layout (within motion array)
@@ -192,7 +202,7 @@ namespace frik::rock::offsets
     constexpr std::uintptr_t kFunc_MaterialCtor = 0x1536CB0;
 
     // NiCollisionObject::LinkObject(this*, NiAVObject*)
-    // Sets bidirectional link: collObj+0x10=owner, niAVObject+0x100=collObj.
+    // Sets bidirectional link: collObj+0x08=owner, niAVObject+0x100=collObj.
     constexpr std::uintptr_t kFunc_CollisionObject_LinkObject = 0x2996CB0;
 
     // --- Body operations (require bhkNPCollisionObject as this*) ---

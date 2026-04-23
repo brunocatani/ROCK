@@ -10,8 +10,10 @@
 // Phase 2: Near/far object detection, selection with hysteresis, touch state, F4SE events.
 
 #include <atomic>
+#include <array>
 #include <unordered_set>
 
+#include "HandBoneCache.h"
 #include "Hand.h"
 #include "PhysicsLog.h"
 #include "TwoHandedGrip.h"
@@ -106,6 +108,22 @@ namespace frik::rock
 		/// if memory layout changed (e.g., game update) instead of crashing during gameplay.
 		bool validateCriticalOffsets() const;
 
+		/// Resolve or refresh the local hand-bone cache against the current skeleton.
+		bool refreshHandBoneCache();
+
+		/// Temporary Pre-00 validation scaffold: compare local cached hand nodes against
+		/// the FRIK API transform, then compare derived hand-basis outputs, before any
+		/// gameplay writes mutate visible hand nodes.
+		void sampleHandTransformParity();
+
+		/// Visible-hand-first runtime transform source for Pre-00. Prefers the local
+		/// ROCK cache, falls back to FRIK API only when the cache is not yet ready.
+		RE::NiTransform getInteractionHandTransform(bool isLeft) const;
+
+		/// Node companion to getInteractionHandTransform(). Used for debug parenting and
+		/// temporary visual-hand adjustment while Pre-00 migrates off FRIK API sourcing.
+		RE::NiNode* getInteractionHandNode(bool isLeft) const;
+
 		/// Get the bhkWorld for the player's current cell.
 		RE::bhkWorld* getPlayerBhkWorld() const;
 
@@ -155,6 +173,7 @@ namespace frik::rock
 		std::atomic<bool> _initialized{ false };
 		bool _collisionLayerRegistered = false;
 		std::uint64_t _expectedHandLayerMask = 0;  ///< Expected mask for per-frame verification
+		HandBoneCache _handBoneCache;
 
 		Hand _rightHand{ false };
 		Hand _leftHand{ true };
@@ -197,6 +216,23 @@ namespace frik::rock
 		float _cachedHalfExtentX = 0.0f;
 		float _cachedHalfExtentY = 0.0f;
 		float _cachedHalfExtentZ = 0.0f;
+		int _handCacheResolveLogCounter = 0;
+
+		struct RawHandParityState
+		{
+			RE::NiTransform previousApiTransform{};
+			float lastPositionDelta = 0.0f;
+			float lastRotationDeltaDegrees = 0.0f;
+			int warnFrames = 0;
+			int failFrames = 0;
+			int lagFrames = 0;
+			bool hasPreviousApiTransform = false;
+		};
+
+		std::array<RawHandParityState, 2> _rawHandParityStates{};
+		int _paritySummaryCounter = 0;
+		bool _parityEnabledLogged = false;
+		bool _runtimeScaleLogged = false;
 
 		/// Player-space delta tracking (Task 1.9).
 		RE::NiPoint3 _prevSmoothedPos;
@@ -205,6 +241,5 @@ namespace frik::rock
 
 		// Log throttle counters — reset per-instance for fresh diagnostics each session.
 		int _wpnNodeLogCounter = 0;
-		int _wandDiagFrame = 0;
 	};
 }

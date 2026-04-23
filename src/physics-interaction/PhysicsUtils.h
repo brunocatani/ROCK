@@ -7,7 +7,13 @@
 // conversion helpers prevents bugs from inconsistent scaling and gives us a
 // single place to adjust if the scale factor turns out to be different than expected.
 
+#include "HavokOffsets.h"
+
+#include "RE/Havok/hknpBody.h"
+#include "RE/Havok/hknpWorld.h"
 #include "RE/Havok/hkVector4.h"
+#include "RE/NetImmerse/NiAVObject.h"
+#include "RE/NetImmerse/NiCollisionObject.h"
 
 namespace frik::rock
 {
@@ -38,56 +44,166 @@ namespace frik::rock
 		};
 	}
 
+	/// Resolve the bhkNPCollisionObject back-pointer stored on a live hknp body.
+	///
+	/// WHY: The FO4VR binary does expose a real body -> collisionObject -> owner-node
+	/// contract, but not as a clean named helper like HIGGS/Skyrim VR. Centralizing
+	/// the audited offsets here keeps later diagnostics and fixes on one typed path
+	/// instead of repeating ad hoc `body+0x88` casts.
+	inline RE::NiCollisionObject* getCollisionObjectFromBody(const RE::hknpBody* body)
+	{
+		if (!body) {
+			return nullptr;
+		}
+
+		auto* bodyBytes = reinterpret_cast<const char*>(body);
+		return *reinterpret_cast<RE::NiCollisionObject* const*>(
+			bodyBytes + offsets::kBody_CollisionObjectBackPointer);
+	}
+
+	inline RE::NiCollisionObject* getCollisionObjectFromBody(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+	{
+		if (!world || bodyId.value == 0x7FFF'FFFF) {
+			return nullptr;
+		}
+
+		auto* bodyArray = world->GetBodyArray();
+		if (!bodyArray) {
+			return nullptr;
+		}
+
+		return getCollisionObjectFromBody(&bodyArray[bodyId.value]);
+	}
+
+	/// Resolve the owning NiAVObject from a NiCollisionObject.
+	///
+	/// WHY: The stable in-repo access path is the typed `sceneObject` field used by
+	/// ObjectDetection.cpp. The previous raw offset read diverged from that contract
+	/// and introduced a grab-time CTD in the new diagnostics path.
+	inline RE::NiAVObject* getOwnerNodeFromCollisionObject(const RE::NiCollisionObject* collisionObject)
+	{
+		if (!collisionObject) {
+			return nullptr;
+		}
+
+		return collisionObject->sceneObject;
+	}
+
+	inline RE::NiAVObject* getOwnerNodeFromBody(const RE::hknpBody* body)
+	{
+		return getOwnerNodeFromCollisionObject(getCollisionObjectFromBody(body));
+	}
+
+	inline RE::NiAVObject* getOwnerNodeFromBody(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+	{
+		return getOwnerNodeFromCollisionObject(getCollisionObjectFromBody(world, bodyId));
+	}
+
+	/// Pack a NiMatrix3 into the 48-byte hkTransform rotation block the way
+	/// bhkNPCollisionObject::SetTransform consumes it.
+	///
+	/// WHY: FO4VR's live hknp body stores its world basis as three contiguous Havok
+	/// columns (X=[0,1,2], Y=[4,5,6], Z=[8,9,10]), while SetTransform takes a raw
+	/// 3x4 block whose rows become those live columns. Matching HIGGS's
+	/// NiMatrixToHkMatrix convention therefore requires packing Ni columns into the
+	/// outgoing rows. Passing NiMatrix3 through unchanged would make the live Havok
+	/// columns equal the Ni rows and rotate against the wrong basis.
+	inline RE::NiMatrix3 niRotToHkTransformRotation(const RE::NiMatrix3& m)
+	{
+		RE::NiMatrix3 packed;
+		packed.entry[0][0] = m.entry[0][0];
+		packed.entry[0][1] = m.entry[1][0];
+		packed.entry[0][2] = m.entry[2][0];
+		packed.entry[0][3] = 0.0f;
+		packed.entry[1][0] = m.entry[0][1];
+		packed.entry[1][1] = m.entry[1][1];
+		packed.entry[1][2] = m.entry[2][1];
+		packed.entry[1][3] = 0.0f;
+		packed.entry[2][0] = m.entry[0][2];
+		packed.entry[2][1] = m.entry[1][2];
+		packed.entry[2][2] = m.entry[2][2];
+		packed.entry[2][3] = 0.0f;
+		return packed;
+	}
+
+	/// Rebuild a NiMatrix3 from the live hknp body rotation blocks.
+	///
+	/// WHY: The FO4VR body array stores three 16-byte Havok columns, not three Ni rows.
+	/// Reconstructing NiMatrix3 from those contiguous basis vectors keeps grab math,
+	/// held-object math, and transform witnesses aligned with the runtime body state.
+	inline RE::NiMatrix3 havokRotationBlocksToNiMatrix(const float* bodyFloats)
+	{
+		RE::NiMatrix3 result;
+		result.entry[0][0] = bodyFloats[0];
+		result.entry[1][0] = bodyFloats[1];
+		result.entry[2][0] = bodyFloats[2];
+		result.entry[0][1] = bodyFloats[4];
+		result.entry[1][1] = bodyFloats[5];
+		result.entry[2][1] = bodyFloats[6];
+		result.entry[0][2] = bodyFloats[8];
+		result.entry[1][2] = bodyFloats[9];
+		result.entry[2][2] = bodyFloats[10];
+		result.entry[0][3] = 0.0f;
+		result.entry[1][3] = 0.0f;
+		result.entry[2][3] = 0.0f;
+		return result;
+	}
+
+	/// Project a Havok-world delta into body-local coordinates using the live body basis.
+	///
+	/// WHY: hknp uses left-multiplication, so body-local = R^T * worldDelta. With the
+	/// live body basis stored as contiguous Havok columns, each local component is the
+	/// dot product of the world delta against one of those basis vectors.
+	inline RE::NiPoint3 worldDeltaToBodyLocal(const float* bodyFloats, const RE::NiPoint3& worldDelta)
+	{
+		return RE::NiPoint3{
+			bodyFloats[0] * worldDelta.x + bodyFloats[1] * worldDelta.y + bodyFloats[2] * worldDelta.z,
+			bodyFloats[4] * worldDelta.x + bodyFloats[5] * worldDelta.y + bodyFloats[6] * worldDelta.z,
+			bodyFloats[8] * worldDelta.x + bodyFloats[9] * worldDelta.y + bodyFloats[10] * worldDelta.z
+		};
+	}
+
 	/// Convert a NiMatrix3 rotation to an hkVector4f quaternion {x, y, z, w}.
 	/// NiMatrix3 is a 3x3 rotation matrix stored row-major.
 	/// Havok stores quaternions as hkVector4f with w = scalar component.
 	///
-	/// CRITICAL CONVENTION FIX (Session 2026-03-27):
-	/// Havok's internal matrix→quaternion function FUN_141722c10 (Ghidra: 0x1722c10)
-	/// uses the OPPOSITE sign convention for off-diagonal elements compared to the
-	/// standard textbook formula:
-	///   Textbook: qx = (m[2][1] - m[1][2]) * s
-	///   Havok:    qx = (m[1][2] - m[2][1]) * s   ← produces the CONJUGATE
+	/// WHY: ROCK's manual keyframed hand/weapon path computes angular velocity via
+	/// computeHardKeyFrame(), then teleports the body with a PACKED hkTransformf built
+	/// by niRotToHkTransformRotation(). Blind audit 2026-04-21 showed that
+	/// FUN_141722c10 only looks conjugated when it is fed a raw NiTransform row block,
+	/// which is Bethesda's separate DriveToKeyFrame(NiTransform*) contract.
 	///
-	/// Both are valid quaternions for the same rotation (q and conj(q) encode the
-	/// same rotation). BUT computeHardKeyFrame internally extracts the body's current
-	/// orientation via FUN_141722c10 and computes q_diff = q_target * conj(q_body).
-	/// If our target quaternion is already conjugated relative to Havok's convention,
-	/// the diff becomes q_diff = conj(q) * conj(q_body) = conj(q_body * q),
-	/// which produces angular velocity proportional to 2× the absolute world rotation
-	/// angle — NOT the frame-to-frame delta. This caused 30-100+ rad/s spurious
-	/// angular velocity on stationary hands, direction-dependent force, and left/right
-	/// hand asymmetry.
-	///
-	/// Fix: Swap subtraction order in all 4 branches to match FUN_141722c10.
-	/// Verified: dot(target, body) ≈ 1.0 after fix. Angular vel when still = 0-2 rad/s.
+	/// For ROCK's manual path we must instead match:
+	///   FUN_141722c10(niRotToHkTransformRotation(m))
+	/// i.e. the packed-Havok/live-body contract. That yields the normal textbook
+	/// quaternion of the authored Ni rotation matrix, not its conjugate.
 	inline RE::hkVector4f niRotToHkQuat(const RE::NiMatrix3& m)
 	{
-		// Matrix→quaternion conversion using Havok's sign convention (FUN_141722c10)
+		// Matrix→quaternion conversion matching the packed hkTransformf/live-body basis.
 		RE::hkVector4f q;
 		const float trace = m.entry[0][0] + m.entry[1][1] + m.entry[2][2];
 
 		if (trace > 0.0f) {
 			const float s = 0.5f / sqrtf(trace + 1.0f);
 			q.w = 0.25f / s;
-			q.x = (m.entry[1][2] - m.entry[2][1]) * s;
-			q.y = (m.entry[2][0] - m.entry[0][2]) * s;
-			q.z = (m.entry[0][1] - m.entry[1][0]) * s;
+			q.x = (m.entry[2][1] - m.entry[1][2]) * s;
+			q.y = (m.entry[0][2] - m.entry[2][0]) * s;
+			q.z = (m.entry[1][0] - m.entry[0][1]) * s;
 		} else if (m.entry[0][0] > m.entry[1][1] && m.entry[0][0] > m.entry[2][2]) {
 			const float s = 2.0f * sqrtf(1.0f + m.entry[0][0] - m.entry[1][1] - m.entry[2][2]);
-			q.w = (m.entry[1][2] - m.entry[2][1]) / s;
+			q.w = (m.entry[2][1] - m.entry[1][2]) / s;
 			q.x = 0.25f * s;
 			q.y = (m.entry[0][1] + m.entry[1][0]) / s;
 			q.z = (m.entry[0][2] + m.entry[2][0]) / s;
 		} else if (m.entry[1][1] > m.entry[2][2]) {
 			const float s = 2.0f * sqrtf(1.0f + m.entry[1][1] - m.entry[0][0] - m.entry[2][2]);
-			q.w = (m.entry[2][0] - m.entry[0][2]) / s;
+			q.w = (m.entry[0][2] - m.entry[2][0]) / s;
 			q.x = (m.entry[0][1] + m.entry[1][0]) / s;
 			q.y = 0.25f * s;
 			q.z = (m.entry[1][2] + m.entry[2][1]) / s;
 		} else {
 			const float s = 2.0f * sqrtf(1.0f + m.entry[2][2] - m.entry[0][0] - m.entry[1][1]);
-			q.w = (m.entry[0][1] - m.entry[1][0]) / s;
+			q.w = (m.entry[1][0] - m.entry[0][1]) / s;
 			q.x = (m.entry[0][2] + m.entry[2][0]) / s;
 			q.y = (m.entry[1][2] + m.entry[2][1]) / s;
 			q.z = 0.25f * s;
@@ -127,7 +243,8 @@ namespace frik::rock
 	//   comOffset stored in W components: body+0x0C, +0x1C, +0x2C
 	//
 	// Constraint pivots are specified relative to body ORIGIN (not COM).
-	// ROCK's grab point math (dot columns with delta from body origin) is correct.
+	// ROCK's grab math must dot the world delta against the live Havok basis columns
+	// X=[0,1,2], Y=[4,5,6], Z=[8,9,10] from that body origin.
 	// COM is needed for: throw impulse application, gravity compensation,
 	// tipping prediction, and angular momentum computation.
 	//
