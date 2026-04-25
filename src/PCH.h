@@ -10,8 +10,8 @@
 #include <algorithm>
 
 using namespace std::literals;
-using std::min;
 using std::max;
+using std::min;
 
 #include "Logger.h"
 

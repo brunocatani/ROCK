@@ -1,16 +1,16 @@
 #pragma once
 
-#include <cstdint>
 #include <Windows.h>
+#include <cstdint>
 
 #include "RE/NetImmerse/NiPoint.h"
 
 namespace rock::api
 {
 #if defined(ROCK_API_EXPORTS)
-#   define ROCK_API extern "C" __declspec(dllexport)
+#define ROCK_API extern "C" __declspec(dllexport)
 #else
-#   define ROCK_API extern "C" __declspec(dllimport)
+#define ROCK_API extern "C" __declspec(dllimport)
 #endif
 
 #define ROCK_CALL __cdecl
@@ -31,40 +31,40 @@ namespace rock::api
 
         enum PhysicsMessage : std::uint32_t
         {
-            kOnTouch            = 100,
-            kOnTouchEnd         = 101,
-            kOnGrab             = 102,
-            kOnRelease          = 103,
-            kOnPhysicsInit      = 104,
-            kOnPhysicsShutdown  = 105,
+            kOnTouch = 100,
+            kOnTouchEnd = 101,
+            kOnGrab = 102,
+            kOnRelease = 103,
+            kOnPhysicsInit = 104,
+            kOnPhysicsShutdown = 105,
         };
 
         struct PhysicsEventData
         {
-            bool              isLeft;
+            bool isLeft;
             RE::TESObjectREFR* refr;
-            std::uint32_t     formID;
-            std::uint32_t     collisionLayer;
+            std::uint32_t formID;
+            std::uint32_t collisionLayer;
         };
 
-        std::uint32_t (ROCK_CALL*getVersion)();
-        const char* (ROCK_CALL*getModVersion)();
-        bool (ROCK_CALL*isPhysicsInteractionReady)();
-        RE::NiPoint3 (ROCK_CALL*getPalmPosition)(Hand hand);
-        RE::NiPoint3 (ROCK_CALL*getPalmForward)(Hand hand);
-        bool (ROCK_CALL*isHandTouching)(Hand hand);
-        RE::TESObjectREFR* (ROCK_CALL*getLastTouchedObject)(Hand hand);
-        std::uint32_t (ROCK_CALL*getLastTouchedLayer)(Hand hand);
-        bool (ROCK_CALL*isHandHolding)(Hand hand);
-        RE::TESObjectREFR* (ROCK_CALL*getHeldObject)(Hand hand);
-        RE::TESObjectREFR* (ROCK_CALL*getSelectedObject)(Hand hand);
-        void (ROCK_CALL*disablePhysicsHand)(Hand hand);
-        void (ROCK_CALL*enablePhysicsHand)(Hand hand);
-        bool (ROCK_CALL*isPhysicsHandDisabled)(Hand hand);
-        bool (ROCK_CALL*claimPhysicsObject)(RE::TESObjectREFR* refr);
-        bool (ROCK_CALL*releasePhysicsObject)(RE::TESObjectREFR* refr);
-        bool (ROCK_CALL*isPhysicsObjectClaimed)(RE::TESObjectREFR* refr);
-        void (ROCK_CALL*forceDropObject)(Hand hand);
+        std::uint32_t(ROCK_CALL* getVersion)();
+        const char*(ROCK_CALL* getModVersion)();
+        bool(ROCK_CALL* isPhysicsInteractionReady)();
+        RE::NiPoint3(ROCK_CALL* getPalmPosition)(Hand hand);
+        RE::NiPoint3(ROCK_CALL* getPalmForward)(Hand hand);
+        bool(ROCK_CALL* isHandTouching)(Hand hand);
+        RE::TESObjectREFR*(ROCK_CALL* getLastTouchedObject)(Hand hand);
+        std::uint32_t(ROCK_CALL* getLastTouchedLayer)(Hand hand);
+        bool(ROCK_CALL* isHandHolding)(Hand hand);
+        RE::TESObjectREFR*(ROCK_CALL* getHeldObject)(Hand hand);
+        RE::TESObjectREFR*(ROCK_CALL* getSelectedObject)(Hand hand);
+        void(ROCK_CALL* disablePhysicsHand)(Hand hand);
+        void(ROCK_CALL* enablePhysicsHand)(Hand hand);
+        bool(ROCK_CALL* isPhysicsHandDisabled)(Hand hand);
+        bool(ROCK_CALL* claimPhysicsObject)(RE::TESObjectREFR* refr);
+        bool(ROCK_CALL* releasePhysicsObject)(RE::TESObjectREFR* refr);
+        bool(ROCK_CALL* isPhysicsObjectClaimed)(RE::TESObjectREFR* refr);
+        void(ROCK_CALL* forceDropObject)(Hand hand);
 
         [[nodiscard]] static int initialize(const uint32_t minVersion = ROCK_API_VERSION)
         {
@@ -77,7 +77,7 @@ namespace rock::api
                 return 1;
             }
 
-            const auto getApi = reinterpret_cast<const ROCKApi* (ROCK_CALL*)()>(GetProcAddress(rockDll, "ROCKAPI_GetApi"));
+            const auto getApi = reinterpret_cast<const ROCKApi*(ROCK_CALL*)()>(GetProcAddress(rockDll, "ROCKAPI_GetApi"));
             if (!getApi) {
                 return 2;
             }
@@ -100,7 +100,10 @@ namespace rock::api
 }
 
 #if defined(ROCK_API_EXPORTS)
-namespace frik::rock { class PhysicsInteraction; }
+namespace frik::rock
+{
+    class PhysicsInteraction;
+}
 
 namespace rock::api
 {

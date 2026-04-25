@@ -1,5 +1,5 @@
 {
-  "name": "frik",
+  "name": "rock",
   "version": "1",
   "dependencies": [
     "args",
@@ -17,6 +17,14 @@
     {
       "name": "cpptrace",
       "version": "1.0.0"
+    },
+    {
+      "name": "fmt",
+      "version": "10.2.1"
+    },
+    {
+      "name": "spdlog",
+      "version": "1.13.0"
     }
   ]
 }

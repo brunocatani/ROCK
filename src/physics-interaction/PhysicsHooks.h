@@ -2,8 +2,8 @@
 
 namespace frik::rock
 {
-	void installCCRadiusHook();
-	void installBumpHook();
-	void installNativeGrabHook();
-	void installRefreshManifoldHook();
+    void installCCRadiusHook();
+    void installBumpHook();
+    void installNativeGrabHook();
+    void installRefreshManifoldHook();
 }

@@ -1,6 +1,9 @@
 #pragma once
 
-namespace F4SE { class MessagingInterface; }
+namespace F4SE
+{
+    class MessagingInterface;
+}
 
 namespace rock
 {

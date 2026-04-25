@@ -1,405 +1,295 @@
 #include "ObjectDetection.h"
-#include "RockConfig.h"
 #include "MeshGrab.h"
 #include "PalmTransform.h"
+#include "RockConfig.h"
 
-#include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/PlayerCharacter.h"
+#include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/bhkCharacterController.h"
 
 namespace frik::rock
 {
-	// =========================================================================
-	// Object Filtering — isGrabbable
-	//
-	// WHY: Not every physics body should be grabbable. We need to exclude the
-	// player, static world geometry, doors, living NPCs, workshop objects, etc.
-	// This mirrors HIGGS's IsObjectSelectable/IsObjectGrabbable filtering
-	// (HIGGS_DATA/subsystems/07_utilities.md) adapted for FO4VR form types.
-	// =========================================================================
 
-	bool isGrabbable(RE::TESObjectREFR* ref, RE::TESObjectREFR* otherHandRef)
-	{
-		if (!ref) return false;
+    bool isGrabbable(RE::TESObjectREFR* ref, RE::TESObjectREFR* otherHandRef)
+    {
+        if (!ref)
+            return false;
 
-		// Never grab ourselves
-		if (ref == RE::PlayerCharacter::GetSingleton()) return false;
+        if (ref == RE::PlayerCharacter::GetSingleton())
+            return false;
 
-		// Skip deleted or disabled refs
-		if (ref->IsDeleted() || ref->IsDisabled()) return false;
+        if (ref->IsDeleted() || ref->IsDisabled())
+            return false;
 
-		// Skip if other hand already holds this
-		if (otherHandRef && ref == otherHandRef) return false;
+        if (otherHandRef && ref == otherHandRef)
+            return false;
 
-		// Check base form type — whitelist of grabbable types
-		auto* baseForm = ref->GetObjectReference();
-		if (!baseForm) return false;
+        auto* baseForm = ref->GetObjectReference();
+        if (!baseForm)
+            return false;
 
-		bool isGrabbableType =
-			baseForm->Is(RE::ENUM_FORM_ID::kMISC) ||  // Junk, components, misc items
-			baseForm->Is(RE::ENUM_FORM_ID::kWEAP) ||  // Weapons on the ground
-			baseForm->Is(RE::ENUM_FORM_ID::kAMMO) ||  // Ammo boxes/items
-			baseForm->Is(RE::ENUM_FORM_ID::kALCH) ||  // Chems, food, drinks
-			baseForm->Is(RE::ENUM_FORM_ID::kBOOK) ||  // Books, magazines
-			baseForm->Is(RE::ENUM_FORM_ID::kKEYM) ||  // Keys
-			baseForm->Is(RE::ENUM_FORM_ID::kNOTE) ||  // Notes, holotapes
-			baseForm->Is(RE::ENUM_FORM_ID::kARMO) ||  // Dropped armor pieces
-			baseForm->Is(RE::ENUM_FORM_ID::kFLOR) ||  // Flora (harvestable plants)
-			baseForm->Is(RE::ENUM_FORM_ID::kACTI);    // Activators with physics
+        bool isGrabbableType = baseForm->Is(RE::ENUM_FORM_ID::kMISC) || baseForm->Is(RE::ENUM_FORM_ID::kWEAP) || baseForm->Is(RE::ENUM_FORM_ID::kAMMO) ||
+            baseForm->Is(RE::ENUM_FORM_ID::kALCH) || baseForm->Is(RE::ENUM_FORM_ID::kBOOK) || baseForm->Is(RE::ENUM_FORM_ID::kKEYM) || baseForm->Is(RE::ENUM_FORM_ID::kNOTE) ||
+            baseForm->Is(RE::ENUM_FORM_ID::kARMO) || baseForm->Is(RE::ENUM_FORM_ID::kFLOR) || baseForm->Is(RE::ENUM_FORM_ID::kACTI);
 
-		if (!isGrabbableType) return false;
+        if (!isGrabbableType)
+            return false;
 
-		// Must have 3D loaded (can't grab invisible objects)
-		auto* root3D = ref->Get3D();
-		if (!root3D) return false;
+        auto* root3D = ref->Get3D();
+        if (!root3D)
+            return false;
 
-		// Must have collision object (LINKED, not Unlinked)
-		// Objects without physics collision can't be grabbed
-		auto* collObj = root3D->collisionObject.get();
-		if (!collObj) return false;
+        auto* collObj = root3D->collisionObject.get();
+        if (!collObj)
+            return false;
 
-		// TODO Phase 2.5: Workshop object exclusion
-		// Check if ref has WorkshopItem keyword or is linked to a workshop.
-		// For now, workshop objects pass the filter — they have physics and
-		// are technically grabbable. Add workshop check when we understand
-		// the keyword system better.
+        return true;
+    }
 
-		return true;
-	}
+    RE::TESObjectREFR* resolveBodyToRef(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::hknpBodyId bodyId)
+    {
+        if (!bhkWorld || !hknpWorld)
+            return nullptr;
+        if (bodyId.value == 0x7FFF'FFFF)
+            return nullptr;
 
-	// =========================================================================
-	// Body → Reference Resolution
-	//
-	// WHY: QueryAabb returns hknpBodyIds. We need to map these back to
-	// TESObjectREFR for gameplay filtering. The path is:
-	//   bodyId → bhkNPCollisionObject::Getbhk() → NiCollisionObject::sceneObject
-	//   → walk to root NiAVObject → TESObjectREFR::FindReferenceFor3D()
-	//
-	// bhkNPCollisionObject::Getbhk (REL::ID 730034) is a static function that
-	// looks up the collision object from a bodyId using body.userData (+0x88).
-	// =========================================================================
+        auto& body = hknpWorld->GetBody(bodyId);
+        if (body.motionIndex > 4096)
+            return nullptr;
 
-	RE::TESObjectREFR* resolveBodyToRef(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
-		RE::hknpBodyId bodyId)
-	{
-		if (!bhkWorld || !hknpWorld) return nullptr;
-		if (bodyId.value == 0x7FFF'FFFF) return nullptr;
+        if (body.motionIndex == 0)
+            return nullptr;
 
-		// Validate body — check it has a reasonable motionIndex (not garbage)
-		auto& body = hknpWorld->GetBody(bodyId);
-		if (body.motionIndex > 4096) return nullptr;
+        auto layer = body.collisionFilterInfo & 0x7F;
+        if (layer == 30) {
+            return nullptr;
+        }
 
-		// Static bodies (motionIndex == 0) are world geometry — skip
-		if (body.motionIndex == 0) return nullptr;
+        if (body.userData == 0)
+            return nullptr;
 
-		// Skip CHARCONTROLLER(30) — these are NPC movement capsules, not touchable geometry
-		auto layer = body.collisionFilterInfo & 0x7F;
-		if (layer == 30) {
-			return nullptr;
-		}
+        auto* collObj = RE::bhkNPCollisionObject::Getbhk(bhkWorld, bodyId);
+        if (!collObj)
+            return nullptr;
 
-		// Validate userData is non-null before calling Getbhk.
-		// body.userData (+0x88) is the back-reference. Bodies without game objects
-		// (our hand bodies, NPC ragdoll parts) have userData=0.
-		if (body.userData == 0) return nullptr;
+        auto* sceneObj = collObj->sceneObject;
+        if (!sceneObj)
+            return nullptr;
 
-		// Use bhkNPCollisionObject::Getbhk to get the collision object from bodyId.
-		// This reads body.userData (+0x88) which is the back-reference stored by
-		// bhkPhysicsSystem::CreateInstance (see 02-bethesda-wrappers.md).
-		auto* collObj = RE::bhkNPCollisionObject::Getbhk(bhkWorld, bodyId);
-		if (!collObj) return nullptr;
+        auto* ref = RE::TESObjectREFR::FindReferenceFor3D(sceneObj);
+        return ref;
+    }
 
-		// NiCollisionObject::sceneObject (+0x10) is the owner NiAVObject
-		auto* sceneObj = collObj->sceneObject;
-		if (!sceneObj) return nullptr;
+    SelectedObject findCloseObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& palmPos, const RE::NiPoint3& palmForward, float nearRange, bool isLeft,
+        RE::TESObjectREFR* otherHandRef)
+    {
+        SelectedObject result;
 
-		// Walk up to the root 3D node and resolve to TESObjectREFR
-		auto* ref = RE::TESObjectREFR::FindReferenceFor3D(sceneObj);
-		return ref;
-	}
+        if (!bhkWorld || !hknpWorld)
+            return result;
 
-	// =========================================================================
-	// Near Detection — QueryAabb + Dot Product
-	//
-	// WHY: We need to find objects near the player's palm. A thin raycast misses
-	// objects you're reaching near but not pointing directly at. QueryAabb finds
-	// all bodies within a box around the palm, then we filter by:
-	//   1. Palm-forward dot product (only objects in front of the hand)
-	//   2. isGrabbable (form type, not player, has collision, etc.)
-	//   3. Distance (closest wins)
-	//
-	// hknpWorld::QueryAabb is self-locking (world+0x690) and does both broadphase
-	// and narrowphase testing. The query struct (hknpAabbQuery, 0x40 bytes) is
-	// fully RE'd from Ghidra.
-	// =========================================================================
+        const float halfRange = nearRange * kGameToHavokScale;
+        auto palmHk = niPointToHkVector(palmPos);
 
-	SelectedObject findCloseObject(
-		RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
-		const RE::NiPoint3& palmPos, const RE::NiPoint3& palmForward,
-		float nearRange, bool isLeft, RE::TESObjectREFR* otherHandRef)
-	{
-		SelectedObject result;
+        RE::hknpAabbQuery query{};
+        query.filterRef = getQueryFilterRef(hknpWorld);
+        query.materialId = 0xFFFF;
 
-		if (!bhkWorld || !hknpWorld) return result;
+        query.collisionFilterInfo = (0x000B << 16) | 45;
 
-		// Build AABB in Havok space around palm position
-		const float halfRange = nearRange * kGameToHavokScale;
-		auto palmHk = niPointToHkVector(palmPos);
+        query.aabbMin[0] = palmHk.x - halfRange;
+        query.aabbMin[1] = palmHk.y - halfRange;
+        query.aabbMin[2] = palmHk.z - halfRange;
+        query.aabbMin[3] = 0.0f;
+        query.aabbMax[0] = palmHk.x + halfRange;
+        query.aabbMax[1] = palmHk.y + halfRange;
+        query.aabbMax[2] = palmHk.z + halfRange;
+        query.aabbMax[3] = 0.0f;
 
-		// Build query struct
-		RE::hknpAabbQuery query{};
-		query.filterRef = getQueryFilterRef(hknpWorld);
-		query.materialId = 0xFFFF;  // any material
+        RE::hknpAllHitsCollector collector;
+        hknpWorld->QueryAabb(&query, &collector);
 
-		// collisionFilterInfo: determines what layers the query detects.
-		// The game's own QueryAabb caller (FUN_140cac140) uses 0x0006002D (group=6, layer=45).
-		// We use layer 45 with group 11 to match our hand bodies' group.
-		// The collision filter checks: can query's layer collide with candidate body's layer?
-		query.collisionFilterInfo = (0x000B << 16) | 45;  // group=11, layer=45
+        int numHits = collector.hits._size;
 
-		query.aabbMin[0] = palmHk.x - halfRange;
-		query.aabbMin[1] = palmHk.y - halfRange;
-		query.aabbMin[2] = palmHk.z - halfRange;
-		query.aabbMin[3] = 0.0f;
-		query.aabbMax[0] = palmHk.x + halfRange;
-		query.aabbMax[1] = palmHk.y + halfRange;
-		query.aabbMax[2] = palmHk.z + halfRange;
-		query.aabbMax[3] = 0.0f;
+        bool logNearMetric = false;
+        if (g_rockConfig.rockDebugVerboseLogging) {
+            static int nearDiagCounterRight = 0;
+            static int nearDiagCounterLeft = 0;
+            int& nearDiagCounter = isLeft ? nearDiagCounterLeft : nearDiagCounterRight;
+            nearDiagCounter++;
+            if (nearDiagCounter >= 270) {
+                nearDiagCounter = 0;
+                logNearMetric = true;
+                ROCK_LOG_INFO(Hand, "Near AABB [{}]: palm=({:.2f},{:.2f},{:.2f}) halfRange={:.3f} hits={} filterRef={}", isLeft ? "L" : "R", palmHk.x, palmHk.y, palmHk.z,
+                    halfRange, numHits, query.filterRef);
+            }
+        }
 
-		// Execute query — self-locking, no manual lock needed
-		RE::hknpAllHitsCollector collector;
-		hknpWorld->QueryAabb(&query, &collector);
+        if (numHits == 0)
+            return result;
 
-		// Access hit data directly from inline array (avoids virtual dispatch linker issues)
-		int numHits = collector.hits._size;
+        float bestDist = FLT_MAX;
+        auto* hits = collector.hits._data;
+        int candidatesChecked = 0;
+        int meshMetricCount = 0;
+        int bodyFallbackCount = 0;
+        int no3DCount = 0;
+        int noTrianglesCount = 0;
+        int noClosestPointCount = 0;
+        const char* bestMetricMode = "none";
+        const char* bestFallbackReason = "none";
+        std::size_t bestTriangleCount = 0;
+        MeshExtractionStats bestMeshStats;
 
-		// Periodic diagnostic — log query results every ~3 seconds.
-		// Per-hand counters to avoid double-counting when both hands call each frame.
-		bool logNearMetric = false;
-		if (g_rockConfig.rockDebugVerboseLogging) {
-			static int nearDiagCounterRight = 0;
-			static int nearDiagCounterLeft = 0;
-			int& nearDiagCounter = isLeft ? nearDiagCounterLeft : nearDiagCounterRight;
-			nearDiagCounter++;
-			if (nearDiagCounter >= 270) {
-				nearDiagCounter = 0;
-				logNearMetric = true;
-				ROCK_LOG_INFO(Hand, "Near AABB [{}]: palm=({:.2f},{:.2f},{:.2f}) halfRange={:.3f} hits={} filterRef={}",
-					isLeft ? "L" : "R", palmHk.x, palmHk.y, palmHk.z, halfRange, numHits, query.filterRef);
-			}
-		}
+        for (int i = 0; i < numHits; i++) {
+            auto hitBodyId = hits[i].hitBodyInfo.m_bodyId;
 
-		if (numHits == 0) return result;
+            if (hitBodyId.value == 0x7FFF'FFFF)
+                continue;
 
-		// Process hits — find closest grabbable object by MESH SURFACE distance.
-		// The AABB query is the broadphase gate. For each candidate that passes
-		// all cheap filters (motionIndex, layer, userData, isGrabbable), we extract
-		// the mesh triangles and compute the closest surface point to the palm line.
-		// This means a rifle whose COM is 40gu away but whose stock is 5gu from
-		// your hand will be detected — COM distance is NOT used as a rejection gate.
-		float bestDist = FLT_MAX;
-		auto* hits = collector.hits._data;
-		int candidatesChecked = 0;
-		int meshMetricCount = 0;
-		int bodyFallbackCount = 0;
-		int no3DCount = 0;
-		int noTrianglesCount = 0;
-		int noClosestPointCount = 0;
-		const char* bestMetricMode = "none";
-		const char* bestFallbackReason = "none";
-		std::size_t bestTriangleCount = 0;
-		MeshExtractionStats bestMeshStats;
+            auto* motion = hknpWorld->GetBodyMotion(hitBodyId);
+            if (!motion)
+                continue;
 
-		for (int i = 0; i < numHits; i++) {
-			auto hitBodyId = hits[i].hitBodyInfo.m_bodyId;
+            auto* ref = resolveBodyToRef(bhkWorld, hknpWorld, hitBodyId);
+            if (!ref)
+                continue;
 
-			// Skip our own hand collision bodies
-			if (hitBodyId.value == 0x7FFF'FFFF) continue;
+            if (!isGrabbable(ref, otherHandRef))
+                continue;
+            candidatesChecked++;
 
-			// Get body position from motion (for fallback distance if no mesh)
-			auto* motion = hknpWorld->GetBodyMotion(hitBodyId);
-			if (!motion) continue;
+            float dist = FLT_MAX;
+            const char* metricMode = "bodyComFallback";
+            const char* fallbackReason = "none";
+            bool hasFallbackReason = false;
+            std::size_t candidateTriangleCount = 0;
+            MeshExtractionStats candidateMeshStats;
+            auto* node3D = ref->Get3D();
+            if (node3D) {
+                std::vector<TriangleData> triangles;
+                extractAllTriangles(node3D, triangles, 10, &candidateMeshStats);
+                candidateTriangleCount = triangles.size();
 
-			// Resolve body → TESObjectREFR
-			auto* ref = resolveBodyToRef(bhkWorld, hknpWorld, hitBodyId);
-			if (!ref) continue;
+                if (!triangles.empty()) {
+                    GrabPoint grabPt;
+                    if (findClosestGrabPoint(triangles, palmPos, palmForward, 1.0f, 1.0f, grabPt)) {
+                        dist = std::sqrt(grabPt.distance);
+                        metricMode = "meshSurface";
+                        meshMetricCount++;
+                    } else {
+                        noClosestPointCount++;
+                        fallbackReason = "noClosestSurfacePoint";
+                        hasFallbackReason = true;
+                    }
+                } else {
+                    noTrianglesCount++;
+                    fallbackReason = "noTriangles";
+                    hasFallbackReason = true;
+                }
+            } else {
+                no3DCount++;
+                fallbackReason = "no3D";
+                hasFallbackReason = true;
+            }
 
-			// Apply grabbability filter
-			if (!isGrabbable(ref, otherHandRef)) continue;
-			candidatesChecked++;
+            if (dist >= FLT_MAX - 1.0f) {
+                if (!hasFallbackReason) {
+                    fallbackReason = "unresolvedMeshDistance";
+                }
+                RE::NiPoint3 objPos = hkVectorToNiPoint(motion->position);
+                dist = (objPos - palmPos).Length();
+                bodyFallbackCount++;
+            }
 
-			// --- Mesh surface distance (primary metric) ---
-			// Extract triangles from the object's visual mesh and find the closest
-			// surface point to the palm line. This is what determines "how close is
-			// this object to my hand" — not the center of mass.
-			float dist = FLT_MAX;
-			const char* metricMode = "bodyComFallback";
-			const char* fallbackReason = "none";
-			bool hasFallbackReason = false;
-			std::size_t candidateTriangleCount = 0;
-			MeshExtractionStats candidateMeshStats;
-			auto* node3D = ref->Get3D();
-			if (node3D) {
-				std::vector<TriangleData> triangles;
-				extractAllTriangles(node3D, triangles, 10, &candidateMeshStats);
-				candidateTriangleCount = triangles.size();
+            if (dist > nearRange)
+                continue;
 
-				if (!triangles.empty()) {
-					GrabPoint grabPt;
-					if (findClosestGrabPoint(triangles, palmPos, palmForward,
-							1.0f, 1.0f, grabPt)) {
-						// grabPt.distance is weighted distSq — use sqrt for comparison
-						dist = std::sqrt(grabPt.distance);
-						metricMode = "meshSurface";
-						meshMetricCount++;
-					} else {
-						noClosestPointCount++;
-						fallbackReason = "noClosestSurfacePoint";
-						hasFallbackReason = true;
-					}
-				} else {
-					noTrianglesCount++;
-					fallbackReason = "noTriangles";
-					hasFallbackReason = true;
-				}
-			} else {
-				no3DCount++;
-				fallbackReason = "no3D";
-				hasFallbackReason = true;
-			}
+            if (dist < bestDist) {
+                bestDist = dist;
+                result.refr = ref;
+                result.bodyId = hitBodyId;
+                result.distance = dist;
+                result.isFarSelection = false;
+                bestMetricMode = metricMode;
+                bestFallbackReason = fallbackReason;
+                bestTriangleCount = candidateTriangleCount;
+                bestMeshStats = candidateMeshStats;
 
-			// Fallback: body/COM distance (for objects without usable CPU mesh data)
-			if (dist >= FLT_MAX - 1.0f) {
-				if (!hasFallbackReason) {
-					fallbackReason = "unresolvedMeshDistance";
-				}
-				RE::NiPoint3 objPos = hkVectorToNiPoint(motion->position);
-				dist = (objPos - palmPos).Length();
-				bodyFallbackCount++;
-			}
+                auto* collObj = RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId);
+                result.hitNode = collObj ? collObj->sceneObject : nullptr;
+                result.visualNode = node3D;
+            }
+        }
 
-			// Reject if surface is beyond nearRange (generous — surface, not COM)
-			if (dist > nearRange) continue;
+        if (logNearMetric) {
+            const float loggedBestDist = result.refr ? bestDist : -1.0f;
+            ROCK_LOG_INFO(Hand,
+                "Near metric [{}]: candidates={} meshSurface={} bodyComFallback={} no3D={} noTriangles={} noClosestPoint={} "
+                "bestMode={} bestFallbackReason={} bestDist={:.1f} bestTris={} bestShapes={} "
+                "bestStatic={}/{} bestDynamic={}/{} bestSkinned={}/{} bestDynamicSkinnedSkipped={}",
+                isLeft ? "L" : "R", candidatesChecked, meshMetricCount, bodyFallbackCount, no3DCount, noTrianglesCount, noClosestPointCount, bestMetricMode, bestFallbackReason,
+                loggedBestDist, bestTriangleCount, bestMeshStats.visitedShapes, bestMeshStats.staticShapes, bestMeshStats.staticTriangles, bestMeshStats.dynamicShapes,
+                bestMeshStats.dynamicTriangles, bestMeshStats.skinnedShapes, bestMeshStats.skinnedTriangles, bestMeshStats.dynamicSkinnedSkipped);
+        }
 
-			// Track closest by surface distance
-			if (dist < bestDist) {
-				bestDist = dist;
-				result.refr = ref;
-				result.bodyId = hitBodyId;
-				result.distance = dist;
-				result.isFarSelection = false;
-				bestMetricMode = metricMode;
-				bestFallbackReason = fallbackReason;
-				bestTriangleCount = candidateTriangleCount;
-				bestMeshStats = candidateMeshStats;
+        return result;
+    }
 
-				// Get the hit NiAVObject for later use
-				auto* collObj = RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId);
-				result.hitNode = collObj ? collObj->sceneObject : nullptr;
-				result.visualNode = node3D;
-			}
-		}
+    SelectedObject findFarObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& handPos, const RE::NiPoint3& pointingDir, float farRange,
+        RE::TESObjectREFR* otherHandRef)
+    {
+        SelectedObject result;
 
-		if (logNearMetric) {
-			const float loggedBestDist = result.refr ? bestDist : -1.0f;
-			ROCK_LOG_INFO(Hand,
-				"Near metric [{}]: candidates={} meshSurface={} bodyComFallback={} no3D={} noTriangles={} noClosestPoint={} "
-				"bestMode={} bestFallbackReason={} bestDist={:.1f} bestTris={} bestShapes={} "
-				"bestStatic={}/{} bestDynamic={}/{} bestSkinned={}/{} bestDynamicSkinnedSkipped={}",
-				isLeft ? "L" : "R",
-				candidatesChecked, meshMetricCount, bodyFallbackCount,
-				no3DCount, noTrianglesCount, noClosestPointCount,
-				bestMetricMode, bestFallbackReason, loggedBestDist, bestTriangleCount,
-				bestMeshStats.visitedShapes,
-				bestMeshStats.staticShapes, bestMeshStats.staticTriangles,
-				bestMeshStats.dynamicShapes, bestMeshStats.dynamicTriangles,
-				bestMeshStats.skinnedShapes, bestMeshStats.skinnedTriangles,
-				bestMeshStats.dynamicSkinnedSkipped);
-		}
+        if (!bhkWorld || !hknpWorld)
+            return result;
 
-		return result;
-	}
+        RE::NiPoint3 rayEnd(handPos.x + pointingDir.x * farRange, handPos.y + pointingDir.y * farRange, handPos.z + pointingDir.z * farRange);
 
-	// =========================================================================
-	// Far Detection — bhkPickData Ray
-	//
-	// WHY: For objects the player is pointing at from a distance, a thin ray is
-	// appropriate (you point at things with your finger, not your palm).
-	// bhkWorld::PickObject handles world locking, coordinate conversion, and
-	// provides NiAVObject resolution via GetNiAVObject().
-	//
-	// HIGGS uses a two-phase approach (ray pre-filter + sphere sweep), but for
-	// Phase 2 we start with just the ray. The sphere sweep can be added later
-	// if needed for pointing accuracy at medium range.
-	// =========================================================================
+        RE::bhkPickData pickData;
+        pickData.SetStartEnd(handPos, rayEnd);
 
-	SelectedObject findFarObject(
-		RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
-		const RE::NiPoint3& handPos, const RE::NiPoint3& pointingDir,
-		float farRange, RE::TESObjectREFR* otherHandRef)
-	{
-		SelectedObject result;
+        pickData.collisionFilter.filter = 0x02420028;
 
-		if (!bhkWorld || !hknpWorld) return result;
+        if (!bhkWorld->PickObject(pickData))
+            return result;
+        if (!pickData.HasHit())
+            return result;
 
-		// Build ray from hand in pointing direction
-		RE::NiPoint3 rayEnd(
-			handPos.x + pointingDir.x * farRange,
-			handPos.y + pointingDir.y * farRange,
-			handPos.z + pointingDir.z * farRange);
+        auto* hitNiObj = pickData.GetNiAVObject();
+        if (!hitNiObj)
+            return result;
 
-		// bhkPickData: Bethesda's thread-safe raycast wrapper
-		RE::bhkPickData pickData;
-		pickData.SetStartEnd(handPos, rayEnd);
+        RE::hknpBodyId hitBodyId{ 0x7FFF'FFFF };
+        auto* hitBody = pickData.GetBody();
+        if (hitBody) {
+            hitBodyId = hitBody->bodyId;
+        }
 
-		// Set collision filter to detect interactive objects
-		// 0x02420028 is the ItemPicker filter used by the game's activation system
-		pickData.collisionFilter.filter = 0x02420028;
+        auto* collObj = hitBodyId.value != 0x7FFF'FFFF ? RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId) : nullptr;
+        auto* ownerNode = collObj ? collObj->sceneObject : nullptr;
+        auto* refNode = ownerNode ? ownerNode : hitNiObj;
 
-		if (!bhkWorld->PickObject(pickData)) return result;
-		if (!pickData.HasHit()) return result;
+        auto* ref = RE::TESObjectREFR::FindReferenceFor3D(refNode);
+        if (!ref && refNode != hitNiObj) {
+            ref = RE::TESObjectREFR::FindReferenceFor3D(hitNiObj);
+        }
+        if (!ref)
+            return result;
 
-		// Resolve hit to NiAVObject
-		auto* hitNiObj = pickData.GetNiAVObject();
-		if (!hitNiObj) return result;
+        if (!isGrabbable(ref, otherHandRef))
+            return result;
 
-		// Get the body ID from the hit (for Phase 3 grab initiation)
-		RE::hknpBodyId hitBodyId{ 0x7FFF'FFFF };
-		auto* hitBody = pickData.GetBody();
-		if (hitBody) {
-			hitBodyId = hitBody->bodyId;
-		}
+        float hitFraction = pickData.GetHitFraction();
+        float hitDist = hitFraction * farRange;
 
-		// Resolve through the body collision owner first. Near selection already uses
-		// this path; far selection must not store an arbitrary visual hit node as the
-		// physics owner for later grab/body-local capture.
-		auto* collObj = hitBodyId.value != 0x7FFF'FFFF
-			? RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId)
-			: nullptr;
-		auto* ownerNode = collObj ? collObj->sceneObject : nullptr;
-		auto* refNode = ownerNode ? ownerNode : hitNiObj;
+        result.refr = ref;
+        result.bodyId = hitBodyId;
+        result.hitNode = ownerNode ? ownerNode : hitNiObj;
+        result.visualNode = hitNiObj;
+        result.distance = hitDist;
+        result.isFarSelection = true;
 
-		// Resolve NiAVObject to TESObjectREFR
-		auto* ref = RE::TESObjectREFR::FindReferenceFor3D(refNode);
-		if (!ref && refNode != hitNiObj) {
-			ref = RE::TESObjectREFR::FindReferenceFor3D(hitNiObj);
-		}
-		if (!ref) return result;
-
-		// Apply grabbability filter
-		if (!isGrabbable(ref, otherHandRef)) return result;
-
-		// Calculate hit distance
-		float hitFraction = pickData.GetHitFraction();
-		float hitDist = hitFraction * farRange;
-
-		result.refr = ref;
-		result.bodyId = hitBodyId;
-		result.hitNode = ownerNode ? ownerNode : hitNiObj;
-		result.visualNode = hitNiObj;
-		result.distance = hitDist;
-		result.isFarSelection = true;
-
-		return result;
-	}
+        return result;
+    }
 }
