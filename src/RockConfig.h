@@ -100,7 +100,7 @@ namespace frik::rock
         // Authored basis:
         //   +X = fingertips, +Y = back of hand, +Z = lateral
         RE::NiPoint3 rockPalmPositionHandspace = RE::NiPoint3(6.0f, -2.4f, 0.0f);          // Game units
-        RE::NiPoint3 rockPalmNormalHandspace = RE::NiPoint3(0.0f, -1.0f, 0.0f);            // Unit vector toward palm face
+		RE::NiPoint3 rockPalmNormalHandspace = RE::NiPoint3(0.261f, -0.965f, -0.018f);     // HIGGS palmVector remapped to ROCK hand-space
         RE::NiPoint3 rockPointingVectorHandspace = RE::NiPoint3(1.0f, 0.0f, 0.0f);         // Unit vector toward fingertips
 
         // --- Feature Toggles ---

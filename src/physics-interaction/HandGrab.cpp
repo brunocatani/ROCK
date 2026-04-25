@@ -52,6 +52,11 @@ namespace frik::rock
 				return RE::NiPoint3(matrix.entry[0][column], matrix.entry[1][column], matrix.entry[2][column]);
 			}
 
+			RE::NiPoint3 getMatrixRow(const RE::NiMatrix3& matrix, int row)
+			{
+				return RE::NiPoint3(matrix.entry[row][0], matrix.entry[row][1], matrix.entry[row][2]);
+			}
+
 			const char* nodeDebugName(const RE::NiAVObject* node)
 			{
 				if (!node) {
@@ -78,6 +83,59 @@ namespace frik::rock
 					cosTheta = 1.0f;
 				}
 				return std::acos(cosTheta) * (180.0f / 3.14159265358979323846f);
+			}
+
+			float axisDeltaDegrees(const RE::NiPoint3& a, const RE::NiPoint3& b)
+			{
+				const float dot = a.x * b.x + a.y * b.y + a.z * b.z;
+				const float lenA = std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+				const float lenB = std::sqrt(b.x * b.x + b.y * b.y + b.z * b.z);
+				if (lenA < 0.0001f || lenB < 0.0001f) {
+					return -1.0f;
+				}
+
+				float cosTheta = dot / (lenA * lenB);
+				if (cosTheta < -1.0f) {
+					cosTheta = -1.0f;
+				} else if (cosTheta > 1.0f) {
+					cosTheta = 1.0f;
+				}
+				return std::acos(cosTheta) * (180.0f / 3.14159265358979323846f);
+			}
+
+			float max3(float a, float b, float c)
+			{
+				return (std::max)((std::max)(a, b), c);
+			}
+
+			RE::NiMatrix3 matrixFromHkColumns(const float* hkMatrix)
+			{
+				RE::NiMatrix3 result{};
+				result.entry[0][0] = hkMatrix[0];
+				result.entry[1][0] = hkMatrix[1];
+				result.entry[2][0] = hkMatrix[2];
+				result.entry[0][1] = hkMatrix[4];
+				result.entry[1][1] = hkMatrix[5];
+				result.entry[2][1] = hkMatrix[6];
+				result.entry[0][2] = hkMatrix[8];
+				result.entry[1][2] = hkMatrix[9];
+				result.entry[2][2] = hkMatrix[10];
+				return result;
+			}
+
+			RE::NiMatrix3 matrixFromHkRows(const float* hkMatrix)
+			{
+				RE::NiMatrix3 result{};
+				result.entry[0][0] = hkMatrix[0];
+				result.entry[0][1] = hkMatrix[1];
+				result.entry[0][2] = hkMatrix[2];
+				result.entry[1][0] = hkMatrix[4];
+				result.entry[1][1] = hkMatrix[5];
+				result.entry[1][2] = hkMatrix[6];
+				result.entry[2][0] = hkMatrix[8];
+				result.entry[2][1] = hkMatrix[9];
+				result.entry[2][2] = hkMatrix[10];
+				return result;
 			}
 
 			RE::NiTransform makeIdentityTransform()
@@ -148,8 +206,8 @@ namespace frik::rock
 
 			auto* bodyArray = world->GetBodyArray();
 			auto* body = reinterpret_cast<float*>(&bodyArray[bodyId.value]);
-			// The live hknp body stores three contiguous Havok columns. Rebuild NiMatrix3
-			// from those basis vectors instead of treating the body block as Ni rows.
+			// FO4VR native visual sync treats the live hknp body rotation as row-indexed
+			// NiTransform slots, so rebuild NiMatrix3 rows directly.
 			result.rotate = havokRotationBlocksToNiMatrix(body);
 			result.translate.x = body[12] * kHavokToGameScale;
 			result.translate.y = body[13] * kHavokToGameScale;
@@ -184,6 +242,88 @@ namespace frik::rock
 		typedef void func_t(void*, int);
 		static REL::Relocation<func_t> func{ REL::Offset(offsets::kFunc_NativeVRGrabDrop) };
 		func(playerChar, handIndex);
+	}
+
+	static constexpr std::uint32_t kCollisionFilterNoCollideBit = 1u << 14;
+
+	void Hand::clearGrabHandCollisionSuppressionState()
+	{
+		_grabHandCollisionSuppressed = false;
+		_grabHandCollisionWasDisabled = false;
+		_grabHandCollisionBodyId = INVALID_BODY_ID;
+	}
+
+	void Hand::suppressHandCollisionForGrab(RE::hknpWorld* world)
+	{
+		if (!world || !hasCollisionBody()) return;
+
+		const auto handBodyId = _handBody.getBodyId();
+		if (handBodyId.value == INVALID_BODY_ID) return;
+
+		typedef void setCollisionFilter_t(void*, std::uint32_t, std::uint32_t, std::uint32_t);
+		static REL::Relocation<setCollisionFilter_t> setBodyCollisionFilterInfo{
+			REL::Offset(offsets::kFunc_SetBodyCollisionFilterInfo) };
+
+		auto* bodyArray = world->GetBodyArray();
+		auto* handBodyPtr = reinterpret_cast<char*>(&bodyArray[handBodyId.value]);
+		const auto currentFilter = *reinterpret_cast<std::uint32_t*>(handBodyPtr + offsets::kBody_CollisionFilterInfo);
+		const bool firstSuppression = !_grabHandCollisionSuppressed || _grabHandCollisionBodyId != handBodyId.value;
+
+		if (firstSuppression) {
+			_grabHandCollisionSuppressed = true;
+			_grabHandCollisionWasDisabled = (currentFilter & kCollisionFilterNoCollideBit) != 0;
+			_grabHandCollisionBodyId = handBodyId.value;
+		}
+
+		const auto disabledFilter = currentFilter | kCollisionFilterNoCollideBit;
+		if (disabledFilter != currentFilter) {
+			setBodyCollisionFilterInfo(world, handBodyId.value, disabledFilter, 0);
+			ROCK_LOG_INFO(Hand,
+				"{} hand: grab hand collision suppressed bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBeforeGrab={}",
+				handName(), handBodyId.value, currentFilter, disabledFilter,
+				_grabHandCollisionWasDisabled ? "yes" : "no");
+		} else if (firstSuppression) {
+			ROCK_LOG_INFO(Hand,
+				"{} hand: grab hand collision already suppressed bodyId={} filter=0x{:08X}",
+				handName(), handBodyId.value, currentFilter);
+		}
+	}
+
+	void Hand::restoreHandCollisionAfterGrab(RE::hknpWorld* world)
+	{
+		if (!_grabHandCollisionSuppressed) return;
+
+		if (!world || !hasCollisionBody()) {
+			clearGrabHandCollisionSuppressionState();
+			return;
+		}
+
+		const auto handBodyId = _handBody.getBodyId();
+		if (handBodyId.value == INVALID_BODY_ID || handBodyId.value != _grabHandCollisionBodyId) {
+			clearGrabHandCollisionSuppressionState();
+			return;
+		}
+
+		typedef void setCollisionFilter_t(void*, std::uint32_t, std::uint32_t, std::uint32_t);
+		static REL::Relocation<setCollisionFilter_t> setBodyCollisionFilterInfo{
+			REL::Offset(offsets::kFunc_SetBodyCollisionFilterInfo) };
+
+		auto* bodyArray = world->GetBodyArray();
+		auto* handBodyPtr = reinterpret_cast<char*>(&bodyArray[handBodyId.value]);
+		const auto currentFilter = *reinterpret_cast<std::uint32_t*>(handBodyPtr + offsets::kBody_CollisionFilterInfo);
+		const auto restoredFilter = _grabHandCollisionWasDisabled
+			? (currentFilter | kCollisionFilterNoCollideBit)
+			: (currentFilter & ~kCollisionFilterNoCollideBit);
+
+		if (restoredFilter != currentFilter) {
+			setBodyCollisionFilterInfo(world, handBodyId.value, restoredFilter, 0);
+		}
+
+		ROCK_LOG_INFO(Hand,
+			"{} hand: grab hand collision restored bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={}",
+			handName(), handBodyId.value, currentFilter, restoredFilter,
+			_grabHandCollisionWasDisabled ? "yes" : "no");
+		clearGrabHandCollisionSuppressionState();
 	}
 
 	// =========================================================================
@@ -396,11 +536,16 @@ namespace frik::rock
 			}
 		}
 
-		// --- Resolve the collidable node used by the selection/grab pipeline ---
-		// HIGGS operates on the grabbed collidable node, not blindly the reference root.
-		// The collidable node is the visual frame that should stay aligned with the held body.
+		// --- Resolve the node roles used by the selection/grab pipeline ---
+		// WHY: HIGGS uses the selected collidable as the physics frame but extracts
+		// geometry from the object root. FO4VR can report a body owner node that is
+		// not the best visual mesh seed, so ROCK must preserve both roles.
 		auto* rootNode = sel.refr->Get3D();
 		auto* collidableNode = sel.hitNode ? sel.hitNode : rootNode;
+		auto* meshSourceNode = sel.visualNode ? sel.visualNode : rootNode;
+		if (!meshSourceNode) {
+			meshSourceNode = collidableNode;
+		}
 		RE::NiTransform objectWorldTransform;
 		if (collidableNode) {
 			objectWorldTransform = collidableNode->world;
@@ -421,20 +566,35 @@ namespace frik::rock
 		// --- Mesh-based grab point alignment ---
 		RE::NiPoint3 grabSurfacePoint = objectWorldTransform.translate;
 		bool meshGrabFound = false;
+		MeshExtractionStats meshStats;
+		const char* grabPointMode = "objectNodeOriginFallback";
+		const char* grabFallbackReason = meshSourceNode ? "noTriangles" : "noMeshSourceNode";
 
-		if (collidableNode) {
+		if (meshSourceNode) {
 			std::vector<TriangleData> triangles;
-			extractAllTriangles(collidableNode, triangles);
+			extractAllTriangles(meshSourceNode, triangles, 10, &meshStats);
+
+			ROCK_LOG_INFO(Hand,
+				"{} hand mesh extraction: meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} "
+				"static={}/{} dynamic={}/{} skinned={}/{} dynamicSkinnedSkipped={} emptyShapes={} totalTris={}",
+				handName(), nodeDebugName(meshSourceNode), nodeDebugName(collidableNode), nodeDebugName(rootNode),
+				meshStats.visitedShapes,
+				meshStats.staticShapes, meshStats.staticTriangles,
+				meshStats.dynamicShapes, meshStats.dynamicTriangles,
+				meshStats.skinnedShapes, meshStats.skinnedTriangles,
+				meshStats.dynamicSkinnedSkipped, meshStats.emptyShapes,
+				meshStats.totalTriangles());
 
 			// --- Vertex format diagnostic for first BSTriShape in subtree ---
 			// Log vertexDesc fields to verify FP16/FP32 detection is working.
 			{
-				RE::BSTriShape* firstTriShape = collidableNode->IsTriShape();
+				RE::BSTriShape* firstTriShape = meshSourceNode->IsTriShape();
 				if (!firstTriShape) {
-					auto* meshNode = collidableNode->IsNode();
+					auto* meshNode = meshSourceNode->IsNode();
 					if (meshNode) {
 						auto& kids = meshNode->GetRuntimeData().children;
-						for (std::uint32_t ci = 0; ci < kids.size(); ci++) {
+						const auto childCount = kids.size();
+						for (auto ci = decltype(childCount){ 0 }; ci < childCount; ci++) {
 							auto* kid = kids[ci].get();
 							if (kid && kid->IsTriShape()) {
 								firstTriShape = kid->IsTriShape();
@@ -486,11 +646,35 @@ namespace frik::rock
 				if (findClosestGrabPoint(triangles, palmPos, palmDir, 1.0f, 1.0f, grabPt)) {
 					grabSurfacePoint = grabPt.position;
 					meshGrabFound = true;
-					ROCK_LOG_INFO(Hand, "{} hand MESH GRAB: {} tris, closest at ({:.1f},{:.1f},{:.1f})",
-						handName(), triangles.size(),
+					grabPointMode = "meshSurface";
+					grabFallbackReason = "none";
+					ROCK_LOG_INFO(Hand,
+						"{} hand MESH GRAB: mode={} tris={} staticTris={} dynamicTris={} skinnedTris={} "
+						"closest=({:.1f},{:.1f},{:.1f})",
+						handName(), grabPointMode, triangles.size(),
+						meshStats.staticTriangles, meshStats.dynamicTriangles, meshStats.skinnedTriangles,
 						grabPt.position.x, grabPt.position.y, grabPt.position.z);
+				} else {
+					grabFallbackReason = "noClosestSurfacePoint";
 				}
+			} else {
+				grabFallbackReason = "noTriangles";
 			}
+		}
+
+		if (!meshGrabFound) {
+			ROCK_LOG_WARN(Hand,
+				"{} hand GRAB POINT FALLBACK: mode={} reason={} meshNode='{}' ownerNode='{}' rootNode='{}' "
+				"shapes={} static={}/{} dynamic={}/{} skinned={}/{} dynamicSkinnedSkipped={} emptyShapes={} "
+				"fallbackPoint=({:.1f},{:.1f},{:.1f})",
+				handName(), grabPointMode, grabFallbackReason,
+				nodeDebugName(meshSourceNode), nodeDebugName(collidableNode), nodeDebugName(rootNode),
+				meshStats.visitedShapes,
+				meshStats.staticShapes, meshStats.staticTriangles,
+				meshStats.dynamicShapes, meshStats.dynamicTriangles,
+				meshStats.skinnedShapes, meshStats.skinnedTriangles,
+				meshStats.dynamicSkinnedSkipped, meshStats.emptyShapes,
+				grabSurfacePoint.x, grabSurfacePoint.y, grabSurfacePoint.z);
 		}
 
 		_grabStartTime = 0.0f;
@@ -603,7 +787,7 @@ namespace frik::rock
 				const RE::NiPoint3 ownerBodyLocalFinger = getMatrixColumn(_grabOwnerBodyLocalTransform.rotate, 0);
 				ROCK_LOG_INFO(Hand,
 					"{} GRAB NODE FRAMES: owner='{}'({:p}) hasCol={} ownsBodyCol={} "
-					"root='{}'({:p}) held='{}'({:p}) sameOwnerHeld={} sameRootHeld={} "
+					"root='{}'({:p}) held='{}'({:p}) mesh='{}'({:p}) sameOwnerHeld={} sameRootHeld={} "
 					"ownerBodyLocal.pos=({:.2f},{:.2f},{:.2f}) ownerBodyLocalFinger=({:.3f},{:.3f},{:.3f}) "
 					"rootBodyLocal.pos=({:.2f},{:.2f},{:.2f}) rootBodyLocalFinger=({:.3f},{:.3f},{:.3f})",
 					handName(),
@@ -612,6 +796,7 @@ namespace frik::rock
 					(ownerNodeAtGrab && ownerNodeAtGrab->collisionObject.get() == bodyCollisionObjectAtGrab) ? "yes" : "no",
 					nodeDebugName(rootNode), static_cast<const void*>(rootNode),
 					nodeDebugName(collidableNode), static_cast<const void*>(collidableNode),
+					nodeDebugName(meshSourceNode), static_cast<const void*>(meshSourceNode),
 					ownerNodeAtGrab == collidableNode ? "yes" : "no",
 					rootNode == collidableNode ? "yes" : "no",
 					_grabOwnerBodyLocalTransform.translate.x,
@@ -701,19 +886,7 @@ namespace frik::rock
 		// CRITICAL: Must use setBodyCollisionFilterInfo API (not direct memory write)
 		// so hknp rebuilds broadphase collision caches. Without rebuild, the physics
 		// system never learns the filter changed and collisions continue.
-		{
-			typedef void setCollisionFilter_t(void*, std::uint32_t, std::uint32_t, std::uint32_t);
-			static REL::Relocation<setCollisionFilter_t> setBodyCollisionFilterInfo{
-				REL::Offset(offsets::kFunc_SetBodyCollisionFilterInfo) };
-
-			auto* bodyArray = world->GetBodyArray();
-			auto* handBodyPtr = reinterpret_cast<char*>(&bodyArray[_handBody.getBodyId().value]);
-			auto currentFilter = *reinterpret_cast<std::uint32_t*>(handBodyPtr + offsets::kBody_CollisionFilterInfo);
-			auto newFilter = currentFilter | (1u << 14);  // bit 14 = no-collision flag
-			setBodyCollisionFilterInfo(world, _handBody.getBodyId().value, newFilter, 0);  // 0 = rebuild caches
-			ROCK_LOG_INFO(Hand, "{} hand: disabled hand collision (bit 14 + broadphase rebuild) filter=0x{:08X}",
-				handName(), newFilter);
-		}
+		suppressHandCollisionForGrab(world);
 
 		// --- Normalize object inertia for stable constraint grab ---
 		// WHY: Without normalization, weapons with high inertia ratios cartwheel
@@ -760,13 +933,13 @@ namespace frik::rock
 					(palmPos.y - handWorldTransform.translate.y)*(palmPos.y - handWorldTransform.translate.y) +
 					(palmPos.z - handWorldTransform.translate.z)*(palmPos.z - handWorldTransform.translate.z));
 				ROCK_LOG_INFO(Hand, "GRAB DIAG {}: palmPos=({:.1f},{:.1f},{:.1f}) handPos=({:.1f},{:.1f},{:.1f}) "
-					"grabSurface=({:.1f},{:.1f},{:.1f}) meshGrab={} "
+					"grabSurface=({:.1f},{:.1f},{:.1f}) meshGrab={} grabPointMode={} fallbackReason={} "
 					"palmToGrab_hk={:.4f} ({:.1f} game units) palmToHandOrigin={:.1f} game units",
 					handName(),
 					palmPos.x, palmPos.y, palmPos.z,
 					handWorldTransform.translate.x, handWorldTransform.translate.y, handWorldTransform.translate.z,
 					grabSurfacePoint.x, grabSurfacePoint.y, grabSurfacePoint.z,
-					meshGrabFound,
+					meshGrabFound, grabPointMode, grabFallbackReason,
 					palmToGrab, palmToGrab * 70.0f, palmToHandOrigin);
 			}
 
@@ -779,6 +952,7 @@ namespace frik::rock
 
 		if (!_activeConstraint.isValid()) {
 			ROCK_LOG_ERROR(Hand, "{} hand GRAB FAILED: constraint creation failed", handName());
+			restoreHandCollisionAfterGrab(world);
 			_savedObjectState.clear();
 			_heldBodyIds.clear();
 			return false;
@@ -859,7 +1033,7 @@ namespace frik::rock
 		float closeThreshold, float farThreshold)
 	{
 		(void)handWorldTransform;
-		(void)tauIncrement; (void)tauDecrement;
+		(void)tauMax; (void)tauIncrement; (void)tauDecrement;
 		(void)closeThreshold; (void)farThreshold;
 
 		if (!isHolding() || !world) return;
@@ -873,6 +1047,10 @@ namespace frik::rock
 			releaseGrabbedObject(world);
 			return;
 		}
+
+		// Match HIGGS' held-state behavior: the grabbing hand remains no-collide
+		// for the full hold, not only at the instant the constraint is created.
+		suppressHandCollisionForGrab(world);
 
 		_grabStartTime += deltaTime;
 
@@ -972,16 +1150,27 @@ namespace frik::rock
 		float targetForce = _activeConstraint.targetMaxForce;
 		float currentLinearForce = 0.0f;
 		float currentAngularForce = 0.0f;
-		// Collision-adaptive tau: normal=tauMax, colliding=tauMin, smooth lerp
-		float tauTarget = isHeldBodyColliding() ? tauMin : tauMax;
-		float tauDelta = tauTarget - _activeConstraint.currentTau;
-		float tauStep = g_rockConfig.rockGrabTauLerpSpeed * deltaTime;
-		float currentTau;
-		if (std::abs(tauDelta) > tauStep) {
-			currentTau = _activeConstraint.currentTau + (tauDelta > 0 ? tauStep : -tauStep);
-		} else {
-			currentTau = tauTarget;
-		}
+		// HIGGS uses separate object angular/linear tau targets. The old ROCK path
+		// drove every ordinary object toward actor tau (fGrabTauMax=0.8), which made
+		// the runtime log look "strong" while deviating from the non-actor constraint
+		// contract that HIGGS uses for clutter and weapons.
+		const bool heldBodyColliding = isHeldBodyColliding();
+		const float angularTauTarget = heldBodyColliding ? tauMin : g_rockConfig.rockGrabAngularTau;
+		const float linearTauTarget = heldBodyColliding ? tauMin : g_rockConfig.rockGrabLinearTau;
+		const float tauStep = g_rockConfig.rockGrabTauLerpSpeed * deltaTime;
+		auto advanceTau = [tauStep](float current, float target) {
+			const float delta = target - current;
+			if (std::abs(delta) > tauStep) {
+				return current + (delta > 0.0f ? tauStep : -tauStep);
+			}
+			return target;
+		};
+		const float currentAngularTau = advanceTau(
+			_activeConstraint.angularMotor ? _activeConstraint.angularMotor->tau : _activeConstraint.currentTau,
+			angularTauTarget);
+		const float currentLinearTau = advanceTau(
+			_activeConstraint.linearMotor ? _activeConstraint.linearMotor->tau : _activeConstraint.currentTau,
+			linearTauTarget);
 		tickHeldBodyContact();
 
 		float ANGULAR_RATIO_START = g_rockConfig.rockGrabFadeInStartAngularRatio;
@@ -1065,7 +1254,7 @@ namespace frik::rock
 		// Damping from config (0.8 HIGGS default).
 		// =====================================================================
 		if (_activeConstraint.angularMotor) {
-			_activeConstraint.angularMotor->tau = currentTau;
+			_activeConstraint.angularMotor->tau = currentAngularTau;
 			_activeConstraint.angularMotor->maxForce = currentAngularForce;
 			_activeConstraint.angularMotor->minForce = -currentAngularForce;
 			_activeConstraint.angularMotor->damping = g_rockConfig.rockGrabAngularDamping;
@@ -1073,14 +1262,14 @@ namespace frik::rock
 			_activeConstraint.angularMotor->constantRecoveryVelocity = g_rockConfig.rockGrabAngularConstantRecovery;
 		}
 		if (_activeConstraint.linearMotor) {
-			_activeConstraint.linearMotor->tau = currentTau;
+			_activeConstraint.linearMotor->tau = currentLinearTau;
 			_activeConstraint.linearMotor->maxForce = currentLinearForce;
 			_activeConstraint.linearMotor->minForce = -currentLinearForce;
 			_activeConstraint.linearMotor->damping = g_rockConfig.rockGrabLinearDamping;
 			_activeConstraint.linearMotor->proportionalRecoveryVelocity = g_rockConfig.rockGrabLinearProportionalRecovery;
 			_activeConstraint.linearMotor->constantRecoveryVelocity = g_rockConfig.rockGrabLinearConstantRecovery;
 		}
-		_activeConstraint.currentTau = currentTau;
+		_activeConstraint.currentTau = currentLinearTau;
 		_activeConstraint.currentMaxForce = currentLinearForce;
 
 		// No velocity injection on bodyB — motors are the sole mover.
@@ -1164,6 +1353,35 @@ namespace frik::rock
 				const RE::NiPoint3 desiredRawFinger = getMatrixColumn(desiredBodyWorldRaw.rotate, 0);
 				const RE::NiPoint3 desiredConstraintFinger = getMatrixColumn(desiredBodyWorldConstraint.rotate, 0);
 				const RE::NiPoint3 bodyFinger = getMatrixColumn(liveBodyWorld.rotate, 0);
+				const float rawRowMax = max3(
+					axisDeltaDegrees(getMatrixRow(liveBodyWorld.rotate, 0), getMatrixRow(desiredBodyWorldRaw.rotate, 0)),
+					axisDeltaDegrees(getMatrixRow(liveBodyWorld.rotate, 1), getMatrixRow(desiredBodyWorldRaw.rotate, 1)),
+					axisDeltaDegrees(getMatrixRow(liveBodyWorld.rotate, 2), getMatrixRow(desiredBodyWorldRaw.rotate, 2)));
+				const float rawColMax = max3(
+					axisDeltaDegrees(getMatrixColumn(liveBodyWorld.rotate, 0), getMatrixColumn(desiredBodyWorldRaw.rotate, 0)),
+					axisDeltaDegrees(getMatrixColumn(liveBodyWorld.rotate, 1), getMatrixColumn(desiredBodyWorldRaw.rotate, 1)),
+					axisDeltaDegrees(getMatrixColumn(liveBodyWorld.rotate, 2), getMatrixColumn(desiredBodyWorldRaw.rotate, 2)));
+				const float constraintRow0 = axisDeltaDegrees(getMatrixRow(liveBodyWorld.rotate, 0), getMatrixRow(desiredBodyWorldConstraint.rotate, 0));
+				const float constraintRow1 = axisDeltaDegrees(getMatrixRow(liveBodyWorld.rotate, 1), getMatrixRow(desiredBodyWorldConstraint.rotate, 1));
+				const float constraintRow2 = axisDeltaDegrees(getMatrixRow(liveBodyWorld.rotate, 2), getMatrixRow(desiredBodyWorldConstraint.rotate, 2));
+				const float constraintCol0 = axisDeltaDegrees(getMatrixColumn(liveBodyWorld.rotate, 0), getMatrixColumn(desiredBodyWorldConstraint.rotate, 0));
+				const float constraintCol1 = axisDeltaDegrees(getMatrixColumn(liveBodyWorld.rotate, 1), getMatrixColumn(desiredBodyWorldConstraint.rotate, 1));
+				const float constraintCol2 = axisDeltaDegrees(getMatrixColumn(liveBodyWorld.rotate, 2), getMatrixColumn(desiredBodyWorldConstraint.rotate, 2));
+				const float constraintRowMax = max3(constraintRow0, constraintRow1, constraintRow2);
+				const float constraintColMax = max3(constraintCol0, constraintCol1, constraintCol2);
+
+				// Angular target probe: do not change solver behavior here. The log compares
+				// the live constraint memory against the authored HIGGS-style target so the
+				// next fix can target packing/semantics instead of guessing at motor values.
+				auto* constraintData = static_cast<char*>(_activeConstraint.constraintData);
+				auto* target_bRca = reinterpret_cast<float*>(constraintData + ATOM_RAGDOLL_MOT + 0x10);
+				auto* transformB_rot = reinterpret_cast<float*>(constraintData + offsets::kTransformB_Col0);
+				const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(target_bRca);
+				const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(target_bRca);
+				const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformB_rot);
+				const RE::NiMatrix3 constraintTargetInv = desiredBodyTransformHandSpaceConstraint.rotate.Transpose();
+				const RE::NiMatrix3 rawTargetInv = desiredBodyTransformHandSpaceRaw.rotate.Transpose();
+				const int ragdollMotorEnabled = *(constraintData + ATOM_RAGDOLL_MOT + 0x02) ? 1 : 0;
 
 				ROCK_LOG_INFO(Hand,
 					"{} GRAB FRAME HOLD: rawVsConstraintWorld={:.2f}deg rawVsConstraintTarget={:.2f}deg "
@@ -1231,6 +1449,28 @@ namespace frik::rock
 					rootMetrics.finger.x, rootMetrics.finger.y, rootMetrics.finger.z,
 					rootMetrics.expectedFinger.x, rootMetrics.expectedFinger.y, rootMetrics.expectedFinger.z,
 					invRot.entry[0][0], invRot.entry[1][0], invRot.entry[2][0]);
+
+				ROCK_LOG_INFO(Hand,
+					"{} GRAB ANGULAR PROBE: rawAxisErr(rowMax={:.2f} colMax={:.2f}) "
+					"constraintAxisErr(rowMax={:.2f} colMax={:.2f} rows=({:.2f},{:.2f},{:.2f}) cols=({:.2f},{:.2f},{:.2f})) "
+					"targetMem(colsVsConstraintInv={:.2f} rowsVsConstraintInv={:.2f} "
+					"colsVsConstraintForward={:.2f} colsVsRawInv={:.2f} colsVsTransformB={:.2f}) "
+					"ragEnabled={} angMotor={:p} angTau={:.3f} linTau={:.3f} angF={:.0f}",
+					handName(),
+					rawRowMax, rawColMax,
+					constraintRowMax, constraintColMax,
+					constraintRow0, constraintRow1, constraintRow2,
+					constraintCol0, constraintCol1, constraintCol2,
+					rotationDeltaDegrees(targetAsHkColumns, constraintTargetInv),
+					rotationDeltaDegrees(targetAsHkRows, constraintTargetInv),
+					rotationDeltaDegrees(targetAsHkColumns, desiredBodyTransformHandSpaceConstraint.rotate),
+					rotationDeltaDegrees(targetAsHkColumns, rawTargetInv),
+					rotationDeltaDegrees(targetAsHkColumns, transformBAsHkColumns),
+					ragdollMotorEnabled,
+					static_cast<const void*>(_activeConstraint.angularMotor),
+					currentAngularTau,
+					currentLinearTau,
+					currentAngularForce);
 			}
 
 			auto* bodyArray = world->GetBodyArray();
@@ -1270,11 +1510,11 @@ namespace frik::rock
 				}
 			}
 
-			ROCK_LOG_INFO(Hand, "{} HELD: tau={:.3f} linF={:.0f} angF={:.0f} "
+			ROCK_LOG_INFO(Hand, "{} HELD: angTau={:.3f} linTau={:.3f} linF={:.0f} angF={:.0f} "
 				"ERR={:.4f}({:.1f}gu) bDist={:.3f} objVel={:.3f} "
 				"paW=({:.1f},{:.1f},{:.1f}) pbW=({:.1f},{:.1f},{:.1f}) "
 				"handW=({:.1f},{:.1f},{:.1f}) objW=({:.1f},{:.1f},{:.1f})",
-				handName(), currentTau, currentLinearForce, currentAngularForce,
+				handName(), currentAngularTau, currentLinearTau, currentLinearForce, currentAngularForce,
 				pivotErr, pivotErr * 70.0f, bodyDist, objVelMag,
 				pax*70.0f, pay*70.0f, paz*70.0f,
 				pbx*70.0f, pby*70.0f, pbz*70.0f,
@@ -1380,20 +1620,7 @@ namespace frik::rock
 			destroyGrabConstraint(world, _activeConstraint);
 		}
 
-		// Re-enable hand collision (clear bit 14) with broadphase rebuild
-		if (world && hasCollisionBody()) {
-			typedef void setCollisionFilter_t(void*, std::uint32_t, std::uint32_t, std::uint32_t);
-			static REL::Relocation<setCollisionFilter_t> setBodyCollisionFilterInfo{
-				REL::Offset(offsets::kFunc_SetBodyCollisionFilterInfo) };
-
-			auto* bodyArray = world->GetBodyArray();
-			auto* handBodyPtr = reinterpret_cast<char*>(&bodyArray[_handBody.getBodyId().value]);
-			auto currentFilter = *reinterpret_cast<std::uint32_t*>(handBodyPtr + offsets::kBody_CollisionFilterInfo);
-			auto newFilter = currentFilter & ~(1u << 14);
-			setBodyCollisionFilterInfo(world, _handBody.getBodyId().value, newFilter, 0);  // 0 = rebuild caches
-			ROCK_LOG_INFO(Hand, "{} hand: re-enabled hand collision (bit 14 cleared + broadphase rebuild) filter=0x{:08X}",
-				handName(), newFilter);
-		}
+		restoreHandCollisionAfterGrab(world);
 
 		// TODO Phase 4: Apply throw velocity here based on hand velocity history
 

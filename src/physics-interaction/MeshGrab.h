@@ -25,11 +25,12 @@
 #include "PhysicsLog.h"
 #include "RE/Fallout.h"
 
-#include <vector>
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
-#include <functional>
 #include <limits>
+#include <vector>
 
 namespace frik::rock
 {
@@ -42,9 +43,24 @@ namespace frik::rock
 	{
 		constexpr int rendererData = 0x188;  // BSGeometry::rendererData (was 0x148)
 		constexpr int vertexDesc   = 0x190;  // BSGeometry::vertexDesc (was 0x150)
+		constexpr int geometryType = 0x198;  // BSGeometry::type (was 0x158)
 		constexpr int numTriangles = 0x1A0;  // BSTriShape::numTriangles (was 0x160)
 		constexpr int numVertices  = 0x1A4;  // BSTriShape::numVertices (was 0x164)
 		constexpr int skinInstance = 0x180;  // BSGeometry::skinInstance (was 0x140)
+
+		constexpr int dynamicDataSize = 0x1B0;  // BSDynamicTriShape::uiDynamicDataSize (was 0x170)
+		constexpr int dynamicLock     = 0x1B8;  // BSDynamicTriShape::lock (was 0x178)
+		constexpr int dynamicLockCnt  = 0x1BC;  // lock recursion/count dword
+		constexpr int dynamicVertices = 0x1C0;  // BSDynamicTriShape::dynamicVertices (was 0x180)
+		constexpr int dynamicSegments = 0x1C8;  // BSDynamicTriShape::spSegments (was 0x188)
+
+		constexpr std::uint8_t kTypeBSTriShape = 3;
+		constexpr std::uint8_t kTypeBSDynamicTriShape = 4;
+
+		// Single-use FO4VR engine helpers, verified in
+		// docs/ghidra_dynamic_trishape_selection_audit_2026-04-25.md.
+		constexpr std::uintptr_t kFuncDynamicTriShapeLockVertices = 0x1C43B70;
+		constexpr std::uintptr_t kFuncDynamicTriShapeUnlockVertices = 0x1C43BD0;
 	}
 
 	// =========================================================================
@@ -152,6 +168,189 @@ namespace frik::rock
 		}
 	}
 
+	struct TriShapeRawGeometry
+	{
+		void* rendererData = nullptr;
+		std::uint32_t numTriangles = 0;
+		std::uint16_t numVertices = 0;
+		std::uint64_t vertexDesc = 0;
+		std::uint16_t* triangles = nullptr;
+	};
+
+	struct MeshExtractionStats
+	{
+		std::uint32_t visitedShapes = 0;
+		std::uint32_t staticShapes = 0;
+		std::uint32_t dynamicShapes = 0;
+		std::uint32_t skinnedShapes = 0;
+		std::uint32_t dynamicSkinnedSkipped = 0;
+		std::uint32_t emptyShapes = 0;
+		std::uint32_t staticTriangles = 0;
+		std::uint32_t dynamicTriangles = 0;
+		std::uint32_t skinnedTriangles = 0;
+
+		[[nodiscard]] std::uint32_t totalTriangles() const noexcept
+		{
+			return staticTriangles + dynamicTriangles + skinnedTriangles;
+		}
+	};
+
+	inline bool readTriShapeRawGeometry(RE::BSTriShape* triShape, TriShapeRawGeometry& out)
+	{
+		if (!triShape) return false;
+
+		auto* base = reinterpret_cast<char*>(triShape);
+		out.rendererData = *reinterpret_cast<void**>(base + VROffset::rendererData);
+		if (!out.rendererData) return false;
+
+		out.numTriangles = *reinterpret_cast<std::uint32_t*>(base + VROffset::numTriangles);
+		out.numVertices = *reinterpret_cast<std::uint16_t*>(base + VROffset::numVertices);
+		out.vertexDesc = *reinterpret_cast<std::uint64_t*>(base + VROffset::vertexDesc);
+		if (out.numTriangles == 0 || out.numVertices == 0) return false;
+
+		auto* triangleDataPtr = *reinterpret_cast<void**>(
+			reinterpret_cast<char*>(out.rendererData) + 0x10);
+		if (!triangleDataPtr) return false;
+
+		out.triangles = *reinterpret_cast<std::uint16_t**>(
+			reinterpret_cast<char*>(triangleDataPtr) + 0x08);
+		return out.triangles != nullptr;
+	}
+
+	inline std::uint8_t* readStaticVertexBlock(void* rendererData)
+	{
+		if (!rendererData) return nullptr;
+
+		auto* vertexDataPtr = *reinterpret_cast<void**>(
+			reinterpret_cast<char*>(rendererData) + 0x08);
+		if (!vertexDataPtr) return nullptr;
+
+		return *reinterpret_cast<std::uint8_t**>(
+			reinterpret_cast<char*>(vertexDataPtr) + 0x08);
+	}
+
+	inline bool isDynamicTriShape(RE::BSTriShape* triShape)
+	{
+		if (!triShape) return false;
+		auto* base = reinterpret_cast<char*>(triShape);
+		return *reinterpret_cast<std::uint8_t*>(base + VROffset::geometryType) ==
+		       VROffset::kTypeBSDynamicTriShape;
+	}
+
+	inline RE::NiPoint3 readDynamicVertexPosition(const std::uint8_t* vertexBase)
+	{
+		const auto* hp = reinterpret_cast<const std::uint16_t*>(vertexBase);
+		return RE::NiPoint3(
+			halfToFloat(hp[0]),
+			halfToFloat(hp[1]),
+			halfToFloat(hp[2]));
+	}
+
+	class DynamicTriShapeVertexLock
+	{
+	public:
+		explicit DynamicTriShapeVertexLock(RE::BSTriShape* triShape) :
+			_shape(triShape)
+		{
+			if (!_shape) return;
+
+			using lock_t = std::uint8_t* (*)(void*);
+			static REL::Relocation<lock_t> lock{
+				REL::Offset(VROffset::kFuncDynamicTriShapeLockVertices) };
+			_vertices = lock(_shape);
+			_locked = true;
+		}
+
+		~DynamicTriShapeVertexLock()
+		{
+			if (!_locked || !_shape) return;
+
+			using unlock_t = int (*)(void*);
+			static REL::Relocation<unlock_t> unlock{
+				REL::Offset(VROffset::kFuncDynamicTriShapeUnlockVertices) };
+			unlock(_shape);
+		}
+
+		DynamicTriShapeVertexLock(const DynamicTriShapeVertexLock&) = delete;
+		DynamicTriShapeVertexLock& operator=(const DynamicTriShapeVertexLock&) = delete;
+
+		[[nodiscard]] const std::uint8_t* vertices() const noexcept { return _vertices; }
+
+	private:
+		RE::BSTriShape* _shape = nullptr;
+		std::uint8_t* _vertices = nullptr;
+		bool _locked = false;
+	};
+
+	// =========================================================================
+	// Extract triangles from a FO4VR BSDynamicTriShape.
+	//
+	// WHY: Wave 5 Ghidra verification proved FO4VR dynamic trishapes are not
+	// type=1 and are not GPU-only. Their live CPU position stream is protected
+	// by native lock/unlock helpers and stored separately from rendererData.
+	// We therefore keep rendererData for triangle indices, but read positions
+	// from the locked dynamic vertex buffer so HIGGS-style surface grabbing works
+	// for dynamic meshes instead of falling back to COM distance.
+	// =========================================================================
+	inline int extractTrianglesFromDynamicTriShape(RE::BSTriShape* triShape,
+		std::vector<TriangleData>& outTriangles)
+	{
+		auto* base = reinterpret_cast<char*>(triShape);
+		const char* shapeName = triShape->name.c_str() ? triShape->name.c_str() : "(null)";
+
+		TriShapeRawGeometry geometry;
+		if (!readTriShapeRawGeometry(triShape, geometry)) return 0;
+
+		std::uint32_t dynamicStride = static_cast<std::uint32_t>(
+			(geometry.vertexDesc >> 2) & 0x3C);
+		if (dynamicStride < 6) {
+			ROCK_LOG_WARN(MeshGrab, "Dynamic '{}': bad dynamic stride {}", shapeName, dynamicStride);
+			return 0;
+		}
+
+		std::uint32_t dynamicDataSize =
+			*reinterpret_cast<std::uint32_t*>(base + VROffset::dynamicDataSize);
+		std::uint64_t requiredBytes =
+			static_cast<std::uint64_t>(dynamicStride) * geometry.numVertices;
+		if (dynamicDataSize < requiredBytes) {
+			ROCK_LOG_WARN(MeshGrab,
+				"Dynamic '{}': vertex buffer too small (size={}, required={}, verts={}, stride={})",
+				shapeName, dynamicDataSize, requiredBytes, geometry.numVertices, dynamicStride);
+			return 0;
+		}
+
+		DynamicTriShapeVertexLock lockedVertices(triShape);
+		const std::uint8_t* verts = lockedVertices.vertices();
+		if (!verts) {
+			ROCK_LOG_WARN(MeshGrab, "Dynamic '{}': null dynamic vertex buffer", shapeName);
+			return 0;
+		}
+
+		RE::NiTransform worldTransform = triShape->world;
+
+		int added = 0;
+		for (std::uint32_t i = 0; i < geometry.numTriangles; i++) {
+			std::uint16_t i0 = geometry.triangles[i * 3 + 0];
+			std::uint16_t i1 = geometry.triangles[i * 3 + 1];
+			std::uint16_t i2 = geometry.triangles[i * 3 + 2];
+
+			if (i0 >= geometry.numVertices || i1 >= geometry.numVertices || i2 >= geometry.numVertices) {
+				continue;
+			}
+
+			TriangleData tri;
+			tri.v0 = readDynamicVertexPosition(verts + i0 * dynamicStride);
+			tri.v1 = readDynamicVertexPosition(verts + i1 * dynamicStride);
+			tri.v2 = readDynamicVertexPosition(verts + i2 * dynamicStride);
+			tri.applyTransform(worldTransform);
+
+			outTriangles.push_back(tri);
+			added++;
+		}
+
+		return added;
+	}
+
 	// =========================================================================
 	// Extract triangles from a single BSTriShape using VR-corrected offsets.
 	// Transforms model-space vertices to world space via triShape->world.
@@ -159,65 +358,44 @@ namespace frik::rock
 	//
 	// Handles both full-precision (float32) and half-precision (FP16) vertex
 	// positions based on the VF_FULLPREC flag (bit 54 of vertexDesc).
-	// Detects BSDynamicTriShape (type byte at +0x198 == 1) and skips them
-	// for now — they use a separate pDynamicData buffer that requires
-	// special handling (future task).
+	// Dynamic shapes are handled by extractTrianglesFromDynamicTriShape(), which
+	// reads their locked live vertex stream instead of stale renderer vertices.
 	// =========================================================================
 	inline int extractTrianglesFromTriShape(RE::BSTriShape* triShape,
 		std::vector<TriangleData>& outTriangles)
 	{
-		auto* base = reinterpret_cast<char*>(triShape);
-
-		// --- Detect BSDynamicTriShape ---
-		// Type byte at VR offset +0x198: BSTriShape=3, BSDynamicTriShape=1.
-		// Dynamic shapes use a separate pDynamicData buffer at +0x1A0 with
-		// stride=16 and full-precision positions. Skip for now.
-		std::uint8_t geomType = *reinterpret_cast<std::uint8_t*>(base + 0x198);
-		if (geomType == 1) {
-			ROCK_LOG_INFO(MeshGrab, "Skipping BSDynamicTriShape '{}' (type=1, needs special handling)",
-				triShape->name.c_str() ? triShape->name.c_str() : "(null)");
-			return 0;
+		if (isDynamicTriShape(triShape)) {
+			return extractTrianglesFromDynamicTriShape(triShape, outTriangles);
 		}
 
-		// Read VR-corrected offsets
-		auto* rendererData = *reinterpret_cast<void**>(base + VROffset::rendererData);
-		if (!rendererData) return 0;
+		TriShapeRawGeometry geometry;
+		if (!readTriShapeRawGeometry(triShape, geometry)) return 0;
 
-		std::uint32_t numTris = *reinterpret_cast<std::uint32_t*>(base + VROffset::numTriangles);
-		std::uint16_t numVerts = *reinterpret_cast<std::uint16_t*>(base + VROffset::numVertices);
-		std::uint64_t vtxDescRaw = *reinterpret_cast<std::uint64_t*>(base + VROffset::vertexDesc);
-		std::uint32_t vtxStride = static_cast<std::uint32_t>(vtxDescRaw & 0xF) * 4;
+		std::uint32_t vtxStride = static_cast<std::uint32_t>(geometry.vertexDesc & 0xF) * 4;
 
 		// Compute position offset and full-precision flag from vertexDesc
-		std::uint32_t posOffset = static_cast<std::uint32_t>((vtxDescRaw >> 2) & 0x3C);
-		bool fullPrecision = ((vtxDescRaw >> 54) & 1) != 0;
+		std::uint32_t posOffset = static_cast<std::uint32_t>((geometry.vertexDesc >> 2) & 0x3C);
+		bool fullPrecision = ((geometry.vertexDesc >> 54) & 1) != 0;
 
 		// Minimum stride: full-precision needs at least posOffset+12 bytes,
 		// half-precision needs at least posOffset+6 bytes per vertex.
 		std::uint32_t minStride = fullPrecision ? (posOffset + 12) : (posOffset + 6);
-		if (numTris == 0 || numVerts == 0 || vtxStride < minStride) return 0;
+		if (vtxStride < minStride) return 0;
 
-		// BSGeometryData: vertexData at +0x08, triangleData at +0x10
-		auto* vertexDataPtr = *reinterpret_cast<void**>(reinterpret_cast<char*>(rendererData) + 0x08);
-		auto* triangleDataPtr = *reinterpret_cast<void**>(reinterpret_cast<char*>(rendererData) + 0x10);
-		if (!vertexDataPtr || !triangleDataPtr) return 0;
-
-		// CPU buffers: vertexBlock at VertexData+0x08, triangles at TriangleData+0x08
-		auto* verts = *reinterpret_cast<std::uint8_t**>(reinterpret_cast<char*>(vertexDataPtr) + 0x08);
-		auto* tris = *reinterpret_cast<std::uint16_t**>(reinterpret_cast<char*>(triangleDataPtr) + 0x08);
-		if (!verts || !tris) return 0;
+		auto* verts = readStaticVertexBlock(geometry.rendererData);
+		if (!verts) return 0;
 
 		// Use triShape's own world transform — correct rotation/scale for this mesh.
 		RE::NiTransform worldTransform = triShape->world;
 
 		int added = 0;
-		for (std::uint32_t i = 0; i < numTris; i++) {
-			std::uint16_t i0 = tris[i * 3 + 0];
-			std::uint16_t i1 = tris[i * 3 + 1];
-			std::uint16_t i2 = tris[i * 3 + 2];
+		for (std::uint32_t i = 0; i < geometry.numTriangles; i++) {
+			std::uint16_t i0 = geometry.triangles[i * 3 + 0];
+			std::uint16_t i1 = geometry.triangles[i * 3 + 1];
+			std::uint16_t i2 = geometry.triangles[i * 3 + 2];
 
 			// Bounds check
-			if (i0 >= numVerts || i1 >= numVerts || i2 >= numVerts) continue;
+			if (i0 >= geometry.numVertices || i1 >= geometry.numVertices || i2 >= geometry.numVertices) continue;
 
 			// Read vertex positions using format-aware reader
 			TriangleData tri;
@@ -275,9 +453,10 @@ namespace frik::rock
 		const char* shapeName = triShape->name.c_str() ? triShape->name.c_str() : "(null)";
 
 		// --- Detect BSDynamicTriShape (same skip as static path) ---
-		std::uint8_t geomType = *reinterpret_cast<std::uint8_t*>(base + 0x198);
-		if (geomType == 1) {
-			ROCK_LOG_INFO(MeshGrab, "Skipping skinned BSDynamicTriShape '{}' (type=1)", shapeName);
+		if (isDynamicTriShape(triShape)) {
+			ROCK_LOG_INFO(MeshGrab,
+				"Skipping skinned BSDynamicTriShape '{}' (dynamic+skinned extraction not yet verified)",
+				shapeName);
 			return 0;
 		}
 
@@ -510,7 +689,8 @@ namespace frik::rock
 	// =========================================================================
 	inline void extractAllTriangles(RE::NiAVObject* root,
 		std::vector<TriangleData>& outTriangles,
-		int maxDepth = 10)
+		int maxDepth = 10,
+		MeshExtractionStats* stats = nullptr)
 	{
 		if (!root || maxDepth <= 0) return;
 
@@ -520,10 +700,44 @@ namespace frik::rock
 		// Check if this node is a BSTriShape
 		auto* triShape = root->IsTriShape();
 		if (triShape) {
-			if (isSkinned(triShape)) {
+			if (stats) {
+				stats->visitedShapes++;
+			}
+
+			const auto before = outTriangles.size();
+			const bool dynamic = isDynamicTriShape(triShape);
+			const bool skinned = isSkinned(triShape);
+
+			if (skinned) {
+				if (dynamic && stats) {
+					stats->dynamicSkinnedSkipped++;
+				} else if (stats) {
+					stats->skinnedShapes++;
+				}
 				extractTrianglesFromSkinnedTriShape(triShape, outTriangles);
-			} else {
+				if (stats && !dynamic) {
+					stats->skinnedTriangles += static_cast<std::uint32_t>(outTriangles.size() - before);
+				}
+			} else if (dynamic) {
+				if (stats) {
+					stats->dynamicShapes++;
+				}
 				extractTrianglesFromTriShape(triShape, outTriangles);
+				if (stats) {
+					stats->dynamicTriangles += static_cast<std::uint32_t>(outTriangles.size() - before);
+				}
+			} else {
+				if (stats) {
+					stats->staticShapes++;
+				}
+				extractTrianglesFromTriShape(triShape, outTriangles);
+				if (stats) {
+					stats->staticTriangles += static_cast<std::uint32_t>(outTriangles.size() - before);
+				}
+			}
+
+			if (stats && outTriangles.size() == before) {
+				stats->emptyShapes++;
 			}
 			return;  // Don't recurse into geometry children
 		}
@@ -532,9 +746,9 @@ namespace frik::rock
 		auto* niNode = root->IsNode();
 		if (niNode) {
 			auto& kids = niNode->GetRuntimeData().children;
-			for (std::uint32_t i = 0; i < kids.size(); i++) {
+			for (auto i = decltype(kids.size()){ 0 }; i < kids.size(); i++) {
 				auto* kid = kids[i].get();
-				if (kid) extractAllTriangles(kid, outTriangles, maxDepth - 1);
+				if (kid) extractAllTriangles(kid, outTriangles, maxDepth - 1, stats);
 			}
 		}
 	}

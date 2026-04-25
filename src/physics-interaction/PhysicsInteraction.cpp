@@ -71,7 +71,7 @@ namespace frik::rock
 
 		float measureDirectionDeltaDegrees(const RE::NiPoint3& a, const RE::NiPoint3& b)
 		{
-			const float dot = std::clamp(std::fabs(a.x * b.x + a.y * b.y + a.z * b.z), 0.0f, 1.0f);
+			const float dot = std::clamp(a.x * b.x + a.y * b.y + a.z * b.z, -1.0f, 1.0f);
 			return std::acos(dot) * (180.0f / std::numbers::pi_v<float>);
 		}
 	}
@@ -524,12 +524,12 @@ namespace frik::rock
 				if (++_wpnNodeLogCounter >= 90) {
 					_wpnNodeLogCounter = 0;
 					if (weaponNode) {
-						ROCK_LOG_INFO(Weapon, "WeaponNode: '{}' pos=({:.1f},{:.1f},{:.1f}) hasBody={}",
+						ROCK_LOG_INFO(Weapon, "WeaponNode: '{}' pos=({:.1f},{:.1f},{:.1f}) hasBody={} bodyCount={}",
 							weaponNode->name.c_str(),
 							weaponNode->world.translate.x, weaponNode->world.translate.y, weaponNode->world.translate.z,
-							_weaponCollision.hasWeaponBody());
+							_weaponCollision.hasWeaponBody(), _weaponCollision.getWeaponBodyCount());
 					} else {
-						ROCK_LOG_INFO(Weapon, "WeaponNode: NULL hasBody={}", _weaponCollision.hasWeaponBody());
+						// ROCK_LOG_INFO(Weapon, "WeaponNode: NULL hasBody={}", _weaponCollision.hasWeaponBody());
 					}
 				}
 			}
@@ -1177,13 +1177,13 @@ namespace frik::rock
 
 		// Check if the off-hand is touching the weapon collision body
 		{
-			std::uint32_t weaponBid = _weaponCollision.getWeaponBodyIdAtomic();
-			if (weaponBid != 0x7FFF'FFFF) {
+			if (_weaponCollision.getWeaponBodyIdAtomic() != 0x7FFF'FFFF) {
 				// Determine which hand is the off-hand (non-dominant)
 				bool offhandIsLeft = !f4vr::isLeftHandedMode();
 				std::uint32_t offhandId = offhandIsLeft ? leftId : rightId;
 				bool offhandInvolved = (bodyIdA == offhandId || bodyIdB == offhandId);
-				bool weaponInvolved = (bodyIdA == weaponBid || bodyIdB == weaponBid);
+				bool weaponInvolved = _weaponCollision.isWeaponBodyIdAtomic(bodyIdA) ||
+					_weaponCollision.isWeaponBodyIdAtomic(bodyIdB);
 				if (offhandInvolved && weaponInvolved) {
 					_offhandTouchingWeapon.store(true, std::memory_order_release);
 				}

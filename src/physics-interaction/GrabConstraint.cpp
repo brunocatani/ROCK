@@ -91,12 +91,10 @@ namespace frik::rock
 		motor->maxForce = maxForce;
 		motor->tau = tau;
 		motor->damping = damping;
-		// CRITICAL: hkCalcMotorData (0x141afd6d9) checks the FIRST BYTE of motor+0x28
-		// (proportionalRecoveryVelocity) as a boolean. If byte==0x00, the motor uses
-		// constant velocity mode (motor->damping) instead of position-error-proportional
-		// mode. IEEE 754 floats with zero LSB include 0.5, 1.0, 2.0, 4.0 — all BROKEN.
-		// Safe values: 0.1, 0.3, 0.9, 1.1, 2.1, 4.1 (any float with non-zero LSB).
-		// Ghidra-verified via hkCalcMotorData decompilation.
+		// hkCalcMotorData starts at 0x141afd600. Position motors are type 1 and
+		// consume +0x28/+0x2C as floats. The byte-gated +0x28 path is the type-2
+		// velocity branch, not this motor type, so exact HIGGS recovery values are
+		// valid here without LSB-safe float substitutions.
 		motor->proportionalRecoveryVelocity = proportionalRecoveryVelocity;
 		motor->constantRecoveryVelocity = constantRecoveryVelocity;
 
@@ -442,8 +440,8 @@ namespace frik::rock
 
 			// Phase 0B.1: PivotA = palm center in hand body-local space.
 			// HIGGS S00 0.1a uses palmPos, not the grab surface point.
-			// FO4VR's live hknp body basis is stored as contiguous Havok columns:
-			// X=[0,1,2], Y=[4,5,6], Z=[8,9,10]. Body-local = R^T * delta.
+			// FO4VR's constraint pivot math uses hknp row-vector body-local space:
+			// body rows X=[0,1,2], Y=[4,5,6], Z=[8,9,10].
 			const RE::NiPoint3 handDelta{
 				palmWorldHk[0] - handBody[12],
 				palmWorldHk[1] - handBody[13],
@@ -481,8 +479,8 @@ namespace frik::rock
 			}
 
 			// Phase 0B.1: PivotB = grab surface point in object body-local space.
-			// HIGGS S00 0.1b uses ptPos, and FO4VR uses the same R^T * delta projection
-			// against the live Havok body basis columns.
+			// HIGGS S00 0.1b uses ptPos. FO4VR projects with the same native hknp
+			// row-vector body-local convention used for pivotA.
 			const RE::NiPoint3 objectDelta{
 				grabWorldHk[0] - objBody[12],
 				grabWorldHk[1] - objBody[13],

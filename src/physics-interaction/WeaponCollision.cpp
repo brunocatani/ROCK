@@ -18,6 +18,8 @@
 
 #include "f4vr/PlayerNodes.h"
 
+#include <string>
+
 namespace frik::rock
 {
 	namespace
@@ -46,6 +48,32 @@ namespace frik::rock
 				x0 * (y1 * z2 - y2 * z1) -
 				y0 * (x1 * z2 - x2 * z1) +
 				z0 * (x1 * y2 - x2 * y1);
+		}
+
+		RE::NiTransform makeIdentityTransform()
+		{
+			RE::NiTransform result{};
+			result.rotate.entry[0][0] = 1.0f;
+			result.rotate.entry[1][1] = 1.0f;
+			result.rotate.entry[2][2] = 1.0f;
+			result.scale = 1.0f;
+			return result;
+		}
+
+		RE::NiTransform getBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+		{
+			RE::NiTransform result = makeIdentityTransform();
+			if (!world || bodyId.value == 0x7FFF'FFFF) {
+				return result;
+			}
+
+			auto* bodyArray = world->GetBodyArray();
+			auto* bodyFloats = reinterpret_cast<float*>(&bodyArray[bodyId.value]);
+			result.rotate = havokRotationBlocksToNiMatrix(bodyFloats);
+			result.translate.x = bodyFloats[12] * kHavokToGameScale;
+			result.translate.y = bodyFloats[13] * kHavokToGameScale;
+			result.translate.z = bodyFloats[14] * kHavokToGameScale;
+			return result;
 		}
 	}
 
@@ -98,6 +126,79 @@ namespace frik::rock
 	}
 
 	// =========================================================================
+	// Public state helpers
+	// =========================================================================
+
+	WeaponCollision::WeaponCollision()
+	{
+		clearAtomicBodyIds();
+	}
+
+	bool WeaponCollision::hasWeaponBody() const
+	{
+		for (const auto& instance : _weaponBodies) {
+			if (instance.body.isValid()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	std::uint32_t WeaponCollision::getWeaponBodyCount() const
+	{
+		std::uint32_t count = 0;
+		for (const auto& instance : _weaponBodies) {
+			if (instance.body.isValid()) {
+				++count;
+			}
+		}
+		return count;
+	}
+
+	RE::hknpBodyId WeaponCollision::getWeaponBodyId() const
+	{
+		for (const auto& instance : _weaponBodies) {
+			if (instance.body.isValid()) {
+				return instance.body.getBodyId();
+			}
+		}
+		return RE::hknpBodyId{ INVALID_BODY_ID };
+	}
+
+	std::uint32_t WeaponCollision::getWeaponBodyIdAtomic() const
+	{
+		if (_weaponBodyCountAtomic.load(std::memory_order_acquire) == 0) {
+			return INVALID_BODY_ID;
+		}
+		return _weaponBodyIdsAtomic[0].load(std::memory_order_acquire);
+	}
+
+	bool WeaponCollision::isWeaponBodyIdAtomic(std::uint32_t bodyId) const
+	{
+		if (bodyId == INVALID_BODY_ID) {
+			return false;
+		}
+
+		const std::uint32_t count = _weaponBodyCountAtomic.load(std::memory_order_acquire);
+		for (std::uint32_t i = 0; i < count && i < MAX_WEAPON_BODIES; ++i) {
+			if (_weaponBodyIdsAtomic[i].load(std::memory_order_acquire) == bodyId) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	BethesdaPhysicsBody& WeaponCollision::getWeaponBody()
+	{
+		for (auto& instance : _weaponBodies) {
+			if (instance.body.isValid()) {
+				return instance.body;
+			}
+		}
+		return _weaponBodies[0].body;
+	}
+
+	// =========================================================================
 	// Init / Shutdown
 	// =========================================================================
 
@@ -112,25 +213,18 @@ namespace frik::rock
 		_cachedWeaponKey = 0;
 		_weaponBodyPending = false;
 		_retryCounter = 0;
-		_hasPrevTransform = false;
+		clearAtomicBodyIds();
 		ROCK_LOG_INFO(Weapon, "WeaponCollision initialized");
 	}
 
 	void WeaponCollision::shutdown()
 	{
 		// Don't call DestroyBodies — world may already be gone during cell transition.
-		_weaponBodyIdAtomic.store(INVALID_BODY_ID, std::memory_order_release);
-		_weaponBody.reset();  // Clear state without destruction (world may be gone)
-
-		if (_cachedShape) {
-			shapeRemoveRef(_cachedShape);
-			_cachedShape = nullptr;
-		}
+		resetWeaponBodiesWithoutDestroy();
 
 		_cachedWeaponKey = 0;
 		_cachedWorld = nullptr;
 		_cachedBhkWorld = nullptr;
-		_hasPrevTransform = false;
 		_weaponBodyPending = false;
 		_retryCounter = 0;
 		_dominantHandDisabled = false;
@@ -152,14 +246,8 @@ namespace frik::rock
 		// Detect world change (power armor entry/exit can recreate hknpWorld)
 		if (world != _cachedWorld) {
 			ROCK_LOG_INFO(Weapon, "hknpWorld changed — resetting weapon collision state");
-			_weaponBodyIdAtomic.store(INVALID_BODY_ID, std::memory_order_release);
-			_weaponBody.reset();  // World is gone, just clear state
-			if (_cachedShape) {
-				shapeRemoveRef(_cachedShape);
-				_cachedShape = nullptr;
-			}
+			resetWeaponBodiesWithoutDestroy();
 			_cachedWeaponKey = 0;
-			_hasPrevTransform = false;
 			_weaponBodyPending = false;
 			_cachedWorld = world;
 		}
@@ -178,31 +266,44 @@ namespace frik::rock
 			_weaponBodyPending = (currentKey != 0);
 		}
 
+		// --- Handle weapon holster (node goes null while FormID unchanged) ---
+		if (!weaponNode) {
+			if (hasWeaponBody()) {
+				ROCK_LOG_INFO(Weapon, "Weapon node gone (holstered?) — destroying weapon bodies");
+				destroyWeaponBody(world);
+			}
+			if (_dominantHandDisabled) {
+				enableDominantHandCollision(world);
+			}
+			return;
+		}
+
+		// Source body IDs can be recreated under the same visible weapon node after equip
+		// animation, mod swaps, or world reloads. Rebuild instead of continuing to drive
+		// clones from stale body slots.
+		if (hasWeaponBody() && !sourceBodiesStillValid(world)) {
+			ROCK_LOG_WARN(Weapon, "Weapon source body changed/invalid — rebuilding mirrored weapon bodies");
+			destroyWeaponBody(world);
+			_weaponBodyPending = true;
+			_retryCounter = 0;
+		}
+
 		// --- Deferred body creation (retry if weapon 3D wasn't ready last frame) ---
-		if (_weaponBodyPending && weaponNode) {
-			// Throttle retries — only try once per second to avoid log spam
-			if (++_retryCounter >= 90) {
-				_retryCounter = 0;
-				auto* shape = findWeaponShape(weaponNode, world);
-				if (shape) {
-					createWeaponBody(world, shape, weaponNode->world);
-					_weaponBodyPending = false;
+		if (_weaponBodyPending) {
+			const bool shouldAttemptCreate = (++_retryCounter >= 90) || (_retryCounter == 1);
+			if (shouldAttemptCreate) {
+				if (_retryCounter >= 90) {
+					_retryCounter = 0;
 				}
-			} else if (_retryCounter == 1) {
-				// First frame after weapon change — try immediately
-				auto* shape = findWeaponShape(weaponNode, world);
-				if (shape) {
-					createWeaponBody(world, shape, weaponNode->world);
-					_weaponBodyPending = false;
+
+				WeaponShapeSourceList sources{};
+				const std::size_t sourceCount = findWeaponShapeSources(weaponNode, world, sources);
+				if (sourceCount > 0) {
+					createWeaponBodies(world, sources, sourceCount);
+					_weaponBodyPending = !hasWeaponBody();
 					_retryCounter = 0;
 				}
 			}
-		}
-
-		// --- Handle weapon holster (node goes null while FormID unchanged) ---
-		if (!weaponNode && hasWeaponBody()) {
-			ROCK_LOG_INFO(Weapon, "Weapon node gone (holstered?) — destroying weapon body");
-			destroyWeaponBody(world);
 		}
 
 		// --- Dominant hand collision management ---
@@ -216,7 +317,14 @@ namespace frik::rock
 
 		// --- Per-frame body positioning ---
 		if (hasWeaponBody() && weaponNode) {
-			updateBodyTransform(world, weaponNode->world, dt);
+			for (std::size_t i = 0; i < _weaponBodies.size(); ++i) {
+				auto& instance = _weaponBodies[i];
+				if (!instance.body.isValid()) {
+					continue;
+				}
+				const RE::NiTransform sourceTransform = getSourceBodyTransform(world, instance, weaponNode->world);
+				updateBodyTransform(world, instance, sourceTransform, dt, i);
+			}
 		}
 	}
 
@@ -246,50 +354,54 @@ namespace frik::rock
 	// Shape Discovery
 	// =========================================================================
 
-	const RE::hknpShape* WeaponCollision::findWeaponShape(RE::NiAVObject* weaponNode, RE::hknpWorld* world)
+	std::size_t WeaponCollision::findWeaponShapeSources(RE::NiAVObject* weaponNode,
+		RE::hknpWorld* world, WeaponShapeSourceList& outSources)
 	{
-		if (!weaponNode || !world) return nullptr;
+		if (!weaponNode || !world) return 0;
 
-		// Diagnostic: log root node info
 		const char* rootName = weaponNode->name.c_str();
 		auto* rootNiNode = weaponNode->IsNode();
-		int childCount = rootNiNode ? static_cast<int>(rootNiNode->GetRuntimeData().children.size()) : 0;
-		bool hasCollision = (weaponNode->collisionObject.get() != nullptr);
-		ROCK_LOG_INFO(Weapon, "findWeaponShape: root='{}' children={} hasCollision={} addr={:x}",
+		const int childCount = rootNiNode ? static_cast<int>(rootNiNode->GetRuntimeData().children.size()) : 0;
+		const bool hasCollision = (weaponNode->collisionObject.get() != nullptr);
+		ROCK_LOG_INFO(Weapon, "findWeaponShapeSources: root='{}' children={} hasCollision={} addr={:x}",
 			rootName ? rootName : "(null)", childCount, hasCollision,
 			reinterpret_cast<std::uintptr_t>(weaponNode));
 
-		// Log first few children names for debugging
 		if (rootNiNode) {
 			auto& kids = rootNiNode->GetRuntimeData().children;
-			for (std::uint32_t i = 0; i < kids.size() && i < 8; i++) {
+			for (std::uint16_t i = 0; i < kids.size() && i < 8; i++) {
 				auto* kid = kids[i].get();
-				if (kid) {
-					const char* kidName = kid->name.c_str();
-					bool kidCol = (kid->collisionObject.get() != nullptr);
-					auto* kidNode = kid->IsNode();
-					int kidChildren = kidNode ? static_cast<int>(kidNode->GetRuntimeData().children.size()) : 0;
-					ROCK_LOG_INFO(Weapon, "  child[{}]: '{}' children={} hasCollision={}",
-						i, kidName ? kidName : "(null)", kidChildren, kidCol);
+				if (!kid) {
+					continue;
 				}
+
+				const char* kidName = kid->name.c_str();
+				const bool kidCol = (kid->collisionObject.get() != nullptr);
+				auto* kidNode = kid->IsNode();
+				const int kidChildren = kidNode ? static_cast<int>(kidNode->GetRuntimeData().children.size()) : 0;
+				ROCK_LOG_INFO(Weapon, "  child[{}]: '{}' children={} hasCollision={}",
+					i, kidName ? kidName : "(null)", kidChildren, kidCol);
 			}
 		}
 
-		auto* shape = findWeaponShapeRecursive(weaponNode, world, 0);
-		if (shape) {
-			ROCK_LOG_INFO(Weapon, "Found weapon shape at {:x}", reinterpret_cast<std::uintptr_t>(shape));
-		} else {
-			ROCK_LOG_INFO(Weapon, "NO collision shape found on weapon node tree (searched from '{}')",
+		std::size_t sourceCount = 0;
+		findWeaponShapeSourcesRecursive(weaponNode, world, 0, outSources, sourceCount);
+		if (sourceCount == 0) {
+			ROCK_LOG_INFO(Weapon, "NO collision source bodies found on weapon node tree (searched from '{}')",
 				rootName ? rootName : "(null)");
+		} else {
+			ROCK_LOG_INFO(Weapon, "Found {} weapon collision source bod{}", sourceCount,
+				sourceCount == 1 ? "y" : "ies");
 		}
-		return shape;
+		return sourceCount;
 	}
 
-	const RE::hknpShape* WeaponCollision::findWeaponShapeRecursive(RE::NiAVObject* node, RE::hknpWorld* world, int depth)
+	void WeaponCollision::findWeaponShapeSourcesRecursive(RE::NiAVObject* node,
+		RE::hknpWorld* world, int depth, WeaponShapeSourceList& outSources,
+		std::size_t& sourceCount)
 	{
-		if (!node || depth > 15) return nullptr;
+		if (!node || !world || depth > 15 || sourceCount >= MAX_WEAPON_BODIES) return;
 
-		// Check this node for a collision object (same pattern as Hand.h:112-133)
 		auto* colObj = node->collisionObject.get();
 		if (colObj) {
 			ROCK_LOG_INFO(Weapon, "{}colObj found on '{}' at depth {}",
@@ -300,20 +412,16 @@ namespace frik::rock
 			if (fieldAt20 && reinterpret_cast<std::uintptr_t>(fieldAt20) > 0x10000) {
 				auto* physSystem = reinterpret_cast<RE::bhkPhysicsSystem*>(fieldAt20);
 				auto* inst = physSystem->instance;
-				if (inst && reinterpret_cast<std::uintptr_t>(inst) > 0x10000) {
+				if (inst && reinterpret_cast<std::uintptr_t>(inst) > 0x10000 && inst->bodyIds) {
 					ROCK_LOG_INFO(Weapon, "{}physSystem OK, bodyCount={}", std::string(depth * 2, ' '), inst->bodyCount);
-					if (inst->bodyCount > 0) {
-						std::uint32_t bid = inst->bodyIds[0];
-						if (bid != INVALID_BODY_ID) {
-							auto* bodyArray = world->GetBodyArray();
-							auto& body = bodyArray[bid];
-							ROCK_LOG_INFO(Weapon, "{}bodyId={}, shape={:x}, flags=0x{:X}",
-								std::string(depth * 2, ' '), bid,
-								reinterpret_cast<std::uintptr_t>(body.shape),
-								body.flags);
-							if (body.shape) {
-								return body.shape;
-							}
+					if (inst->bodyCount > 0 && inst->bodyCount < 128) {
+						auto* sourceNode = getOwnerNodeFromCollisionObject(colObj);
+						if (!sourceNode) {
+							sourceNode = node;
+						}
+						for (std::int32_t i = 0; i < inst->bodyCount && sourceCount < MAX_WEAPON_BODIES; ++i) {
+							RE::hknpBodyId bodyId{ inst->bodyIds[i] };
+							addWeaponShapeSource(world, outSources, sourceCount, bodyId, sourceNode, depth);
 						}
 					}
 				} else {
@@ -324,108 +432,219 @@ namespace frik::rock
 			}
 		}
 
-		// Recurse into children
 		auto* niNode = node->IsNode();
 		if (niNode) {
 			auto& kids = niNode->GetRuntimeData().children;
-			for (std::uint32_t i = 0; i < kids.size(); i++) {
+			for (std::uint16_t i = 0; i < kids.size() && sourceCount < MAX_WEAPON_BODIES; i++) {
 				auto* kid = kids[i].get();
 				if (kid) {
-					auto* shape = findWeaponShapeRecursive(kid, world, depth + 1);
-					if (shape) return shape;
+					findWeaponShapeSourcesRecursive(kid, world, depth + 1, outSources, sourceCount);
 				}
 			}
 		}
+	}
 
-		return nullptr;
+	bool WeaponCollision::addWeaponShapeSource(RE::hknpWorld* world,
+		WeaponShapeSourceList& outSources, std::size_t& sourceCount,
+		RE::hknpBodyId sourceBodyId, RE::NiAVObject* sourceNode, int depth)
+	{
+		if (!world || sourceBodyId.value == INVALID_BODY_ID || sourceCount >= MAX_WEAPON_BODIES) {
+			return false;
+		}
+
+		for (std::size_t i = 0; i < sourceCount; ++i) {
+			if (outSources[i].sourceBodyId.value == sourceBodyId.value) {
+				return false;
+			}
+		}
+
+		auto* bodyArray = world->GetBodyArray();
+		auto& body = bodyArray[sourceBodyId.value];
+		if (!body.shape) {
+			return false;
+		}
+
+		outSources[sourceCount] = WeaponShapeSource{ body.shape, sourceBodyId, sourceNode };
+		ROCK_LOG_INFO(Weapon, "{}source[{}]: bodyId={} shape={:x} flags=0x{:X} owner='{}'",
+			std::string(depth * 2, ' '), sourceCount, sourceBodyId.value,
+			reinterpret_cast<std::uintptr_t>(body.shape), body.flags,
+			sourceNode ? sourceNode->name.c_str() : "(null)");
+		++sourceCount;
+		return true;
+	}
+
+	bool WeaponCollision::sourceBodiesStillValid(RE::hknpWorld* world) const
+	{
+		for (const auto& instance : _weaponBodies) {
+			if (instance.body.isValid() && !isSourceBodyValid(world, instance)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	bool WeaponCollision::isSourceBodyValid(RE::hknpWorld* world, const WeaponBodyInstance& instance) const
+	{
+		if (!world || !instance.shape || instance.sourceBodyId.value == INVALID_BODY_ID) {
+			return false;
+		}
+
+		auto* bodyArray = world->GetBodyArray();
+		auto& body = bodyArray[instance.sourceBodyId.value];
+		return body.bodyId.value == instance.sourceBodyId.value && body.shape == instance.shape;
+	}
+
+	RE::NiTransform WeaponCollision::getSourceBodyTransform(RE::hknpWorld* world,
+		const WeaponBodyInstance& instance, const RE::NiTransform& fallbackTransform) const
+	{
+		if (isSourceBodyValid(world, instance)) {
+			return getBodyWorldTransform(world, instance.sourceBodyId);
+		}
+		if (instance.sourceNode) {
+			return instance.sourceNode->world;
+		}
+		return fallbackTransform;
 	}
 
 	// =========================================================================
 	// Body Creation & Destruction
 	// =========================================================================
 
-	void WeaponCollision::createWeaponBody(RE::hknpWorld* world, const RE::hknpShape* shape,
-		const RE::NiTransform& initialTransform)
+	void WeaponCollision::createWeaponBodies(RE::hknpWorld* world,
+		const WeaponShapeSourceList& sources, std::size_t sourceCount)
 	{
 		if (hasWeaponBody()) {
-			ROCK_LOG_WARN(Weapon, "createWeaponBody called but body already exists — skipping");
+			ROCK_LOG_WARN(Weapon, "createWeaponBodies called but bodies already exist — skipping");
 			return;
 		}
+		if (!world || !_cachedBhkWorld || sourceCount == 0) return;
 
-		if (!shape || !world || !_cachedBhkWorld) return;
+		std::size_t createdCount = 0;
+		const std::uint32_t filterInfo = (0x000B << 16) | (ROCK_WEAPON_LAYER & 0x7F);
+		for (std::size_t sourceIndex = 0; sourceIndex < sourceCount && createdCount < MAX_WEAPON_BODIES; ++sourceIndex) {
+			const auto& source = sources[sourceIndex];
+			if (!source.shape || source.sourceBodyId.value == INVALID_BODY_ID) {
+				continue;
+			}
 
-		// AddReference on shared shape (CRITICAL — prevents premature free)
-		shapeAddRef(shape);
-		_cachedShape = shape;
+			auto& instance = _weaponBodies[createdCount];
+			shapeAddRef(source.shape);
+			instance.shape = source.shape;
+			instance.sourceBodyId = source.sourceBodyId;
+			instance.sourceNode = source.sourceNode;
+			instance.hasPrevTransform = false;
+			instance.prevPosition = {};
 
-		// Create via BethesdaPhysicsBody (same pipeline as Hand)
-		std::uint32_t filterInfo = (0x000B << 16) | (ROCK_WEAPON_LAYER & 0x7F);
-		bool ok = _weaponBody.create(world, _cachedBhkWorld,
-			const_cast<RE::hknpShape*>(shape), filterInfo, { 0 },
-			BethesdaMotionType::Keyframed, "ROCK_WeaponCollision");
+			const bool ok = instance.body.create(world, _cachedBhkWorld,
+				const_cast<RE::hknpShape*>(source.shape), filterInfo, { 0 },
+				BethesdaMotionType::Keyframed, "ROCK_WeaponCollision");
 
-		if (!ok) {
-			ROCK_LOG_ERROR(Weapon, "BethesdaPhysicsBody::create failed for weapon collision");
-			shapeRemoveRef(shape);
-			_cachedShape = nullptr;
-			return;
+			if (!ok) {
+				ROCK_LOG_ERROR(Weapon, "BethesdaPhysicsBody::create failed for weapon collision source bodyId={}",
+					source.sourceBodyId.value);
+				shapeRemoveRef(source.shape);
+				clearWeaponBodyInstance(instance, false);
+				continue;
+			}
+
+			instance.body.createNiNode("ROCK_WeaponCollision");
+			const RE::NiTransform initialTransform = getSourceBodyTransform(world, instance,
+				source.sourceNode ? source.sourceNode->world : makeIdentityTransform());
+			updateBodyTransform(world, instance, initialTransform, 0.016f, createdCount);
+
+			ROCK_LOG_INFO(Weapon,
+				"Weapon collision body created — mirrorIndex={} bodyId={} sourceBodyId={} layer=44",
+				createdCount, instance.body.getBodyId().value, source.sourceBodyId.value);
+			++createdCount;
 		}
 
-		// Create NiNode for scene graph integration
-		_weaponBody.createNiNode("ROCK_WeaponCollision");
-
-		// Update atomic for physics thread
-		_weaponBodyIdAtomic.store(_weaponBody.getBodyId().value, std::memory_order_release);
-
-		// Initial transform
-		_hasPrevTransform = false;
-		updateBodyTransform(world, initialTransform, 0.016f);
-
-		ROCK_LOG_INFO(Weapon, "Weapon collision body created via BethesdaPhysicsBody — bodyId={}, layer=44",
-			_weaponBody.getBodyId().value);
+		publishAtomicBodyIds();
+		ROCK_LOG_INFO(Weapon, "Weapon collision mirror created {}/{} source bodies", createdCount, sourceCount);
 	}
 
 	void WeaponCollision::destroyWeaponBody(RE::hknpWorld* world)
 	{
 		if (!hasWeaponBody()) return;
 
-		// Clear atomic BEFORE destroying (physics thread safety)
-		_weaponBodyIdAtomic.store(INVALID_BODY_ID, std::memory_order_release);
+		(void)world;
+		clearAtomicBodyIds();
 
-		// Destroy via BethesdaPhysicsBody (handles NiNode, body+0x88, refcounts)
-		_weaponBody.destroy(_cachedBhkWorld);
-
-		// Release shape reference
-		if (_cachedShape) {
-			shapeRemoveRef(_cachedShape);
-			_cachedShape = nullptr;
+		std::uint32_t destroyedCount = 0;
+		for (auto& instance : _weaponBodies) {
+			if (instance.body.isValid()) {
+				instance.body.destroy(_cachedBhkWorld);
+				++destroyedCount;
+			}
+			clearWeaponBodyInstance(instance, true);
 		}
 
-		// Reset velocity tracking
-		_hasPrevTransform = false;
+		ROCK_LOG_INFO(Weapon, "Weapon collision bodies destroyed count={}", destroyedCount);
+	}
 
-		ROCK_LOG_INFO(Weapon, "Weapon collision body destroyed");
+	void WeaponCollision::resetWeaponBodiesWithoutDestroy()
+	{
+		clearAtomicBodyIds();
+		for (auto& instance : _weaponBodies) {
+			instance.body.reset();
+			clearWeaponBodyInstance(instance, true);
+		}
+	}
+
+	void WeaponCollision::clearWeaponBodyInstance(WeaponBodyInstance& instance, bool releaseShapeRef)
+	{
+		if (releaseShapeRef && instance.shape) {
+			shapeRemoveRef(instance.shape);
+		}
+		instance.body.reset();
+		instance.shape = nullptr;
+		instance.sourceBodyId.value = INVALID_BODY_ID;
+		instance.sourceNode = nullptr;
+		instance.hasPrevTransform = false;
+		instance.prevPosition = {};
+	}
+
+	void WeaponCollision::clearAtomicBodyIds()
+	{
+		_weaponBodyCountAtomic.store(0, std::memory_order_release);
+		for (auto& id : _weaponBodyIdsAtomic) {
+			id.store(INVALID_BODY_ID, std::memory_order_release);
+		}
+	}
+
+	void WeaponCollision::publishAtomicBodyIds()
+	{
+		std::uint32_t count = 0;
+		for (auto& id : _weaponBodyIdsAtomic) {
+			id.store(INVALID_BODY_ID, std::memory_order_release);
+		}
+		for (const auto& instance : _weaponBodies) {
+			if (instance.body.isValid() && count < MAX_WEAPON_BODIES) {
+				_weaponBodyIdsAtomic[count].store(instance.body.getBodyId().value, std::memory_order_release);
+				++count;
+			}
+		}
+		_weaponBodyCountAtomic.store(count, std::memory_order_release);
 	}
 
 	// =========================================================================
 	// Per-Frame Body Positioning
 	// =========================================================================
 
-	void WeaponCollision::updateBodyTransform(RE::hknpWorld* world,
-		const RE::NiTransform& weaponTransform, float dt)
+	void WeaponCollision::updateBodyTransform(RE::hknpWorld* world, WeaponBodyInstance& instance,
+		const RE::NiTransform& weaponTransform, float dt, std::size_t bodyIndex)
 	{
-		if (!hasWeaponBody() || !world) return;
+		if (!instance.body.isValid() || !world) return;
 
 		// HIGGS pattern: game-space → Havok space for positioning
 		const float targetX = weaponTransform.translate.x * kGameToHavokScale;
 		const float targetY = weaponTransform.translate.y * kGameToHavokScale;
 		const float targetZ = weaponTransform.translate.z * kGameToHavokScale;
-		const bool logWitness = g_rockConfig.rockDebugVerboseLogging &&
+		const bool logWitness = bodyIndex == 0 && g_rockConfig.rockDebugVerboseLogging &&
 			(++_posLogCounter >= 90);
 		if (logWitness) {
 			_posLogCounter = 0;
 		}
-		auto bodyId = _weaponBody.getBodyId();
+		auto bodyId = instance.body.getBodyId();
 		auto* bodyArray = world->GetBodyArray();
 		auto* bodyFloats = reinterpret_cast<float*>(&bodyArray[bodyId.value]);
 		const float curX = bodyFloats[12];
@@ -434,24 +653,25 @@ namespace frik::rock
 
 		// Throttled diagnostic
 		if (logWitness) {
-			ROCK_LOG_INFO(Weapon, "updateBodyTransform: niPos=({:.1f},{:.1f},{:.1f}) hkPos=({:.4f},{:.4f},{:.4f}) bodyId={} dt={:.4f}",
+			ROCK_LOG_INFO(Weapon, "updateBodyTransform[{}]: sourceBodyId={} niPos=({:.1f},{:.1f},{:.1f}) hkPos=({:.4f},{:.4f},{:.4f}) bodyId={} dt={:.4f}",
+				bodyIndex, instance.sourceBodyId.value,
 				weaponTransform.translate.x, weaponTransform.translate.y, weaponTransform.translate.z,
 				targetX, targetY, targetZ,
-				_weaponBody.getBodyId().value, dt);
+				instance.body.getBodyId().value, dt);
 		}
 
 		// --- Teleport detection (SetOrigin / cell transition) ---
-		if (_hasPrevTransform) {
-			float dx = weaponTransform.translate.x - _prevPosition.x;
-			float dy = weaponTransform.translate.y - _prevPosition.y;
-			float dz = weaponTransform.translate.z - _prevPosition.z;
+		if (instance.hasPrevTransform) {
+			float dx = weaponTransform.translate.x - instance.prevPosition.x;
+			float dy = weaponTransform.translate.y - instance.prevPosition.y;
+			float dz = weaponTransform.translate.z - instance.prevPosition.z;
 			float distSq = dx*dx + dy*dy + dz*dz;
 			if (distSq > 1000.0f * 1000.0f) {
-				_prevPosition = weaponTransform.translate;
+				instance.prevPosition = weaponTransform.translate;
 				RE::hkTransformf hkTransform;
 				hkTransform.rotation = weaponTransform.rotate;
 				hkTransform.translation = RE::NiPoint4(targetX, targetY, targetZ, 0.0f);
-				_weaponBody.setTransform(hkTransform);
+				instance.body.setTransform(hkTransform);
 				if (logWitness) {
 					ROCK_LOG_INFO(Weapon,
 						"transform witness: bodyId={} niPos=({:.1f},{:.1f},{:.1f}) hkTarget=({:.4f},{:.4f},{:.4f}) "
@@ -471,7 +691,7 @@ namespace frik::rock
 		alignas(16) float linVelOut[4] = {0,0,0,0};
 		alignas(16) float angVelOut[4] = {0,0,0,0};
 
-		if (_hasPrevTransform && dt > 0.0001f) {
+		if (instance.hasPrevTransform && dt > 0.0001f) {
 			alignas(16) float tgtPos[4] = { targetX, targetY, targetZ, 0.0f };
 			alignas(16) float tgtQuat[4];
 			niRotToHkQuat(weaponTransform.rotate, tgtQuat);
@@ -510,9 +730,9 @@ namespace frik::rock
 			RE::hkTransformf hkTransform;
 			hkTransform.rotation = niRotToHkTransformRotation(weaponTransform.rotate);
 			hkTransform.translation = RE::NiPoint4(targetX, targetY, targetZ, 0.0f);
-			_weaponBody.setTransform(hkTransform);
+			instance.body.setTransform(hkTransform);
 		}
-		_weaponBody.setVelocity(linVelOut, angVelOut);
+		instance.body.setVelocity(linVelOut, angVelOut);
 
 		if (logWitness) {
 			const auto targetQuat = niRotToHkQuat(weaponTransform.rotate);
@@ -529,12 +749,12 @@ namespace frik::rock
 				targetDet, liveDet, dt);
 
 			ROCK_LOG_INFO(Weapon,
-				"transform basis: targetCols=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
-				"liveCols=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
+				"transform basis: targetRows=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
+				"liveRows=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
 				"quat=({:.4f},{:.4f},{:.4f},{:.4f}) linVel=({:.4f},{:.4f},{:.4f}) angVel=({:.4f},{:.4f},{:.4f})",
-				weaponTransform.rotate.entry[0][0], weaponTransform.rotate.entry[1][0], weaponTransform.rotate.entry[2][0],
-				weaponTransform.rotate.entry[0][1], weaponTransform.rotate.entry[1][1], weaponTransform.rotate.entry[2][1],
-				weaponTransform.rotate.entry[0][2], weaponTransform.rotate.entry[1][2], weaponTransform.rotate.entry[2][2],
+				weaponTransform.rotate.entry[0][0], weaponTransform.rotate.entry[0][1], weaponTransform.rotate.entry[0][2],
+				weaponTransform.rotate.entry[1][0], weaponTransform.rotate.entry[1][1], weaponTransform.rotate.entry[1][2],
+				weaponTransform.rotate.entry[2][0], weaponTransform.rotate.entry[2][1], weaponTransform.rotate.entry[2][2],
 				bodyFloats[0], bodyFloats[1], bodyFloats[2],
 				bodyFloats[4], bodyFloats[5], bodyFloats[6],
 				bodyFloats[8], bodyFloats[9], bodyFloats[10],
@@ -543,8 +763,8 @@ namespace frik::rock
 				angVelOut[0], angVelOut[1], angVelOut[2]);
 		}
 
-		_prevPosition = weaponTransform.translate;
-		_hasPrevTransform = true;
+		instance.prevPosition = weaponTransform.translate;
+		instance.hasPrevTransform = true;
 	}
 
 	// =========================================================================

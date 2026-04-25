@@ -277,15 +277,17 @@ namespace frik::rock
 			int count = (std::min)(manifoldCount, constraintCount);
 			int zeroed = 0;
 
-			// DIAGNOSTIC: dump raw data to find correct body ID offset
-			static int diagDumpCounter = 0;
-			bool doDiag = (++diagDumpCounter >= 45);
-			if (doDiag) {
-				diagDumpCounter = 0;
-				logger::info("[ROCK::CC] DIAG: manifold={} entries={} mCount={} constraints={} cCount={}",
-					manifold, (void*)manifoldEntries, manifoldCount,
-					(void*)constraintArray, constraintCount);
-			}
+			// DIAGNOSTIC: raw manifold dump for body-ID offset audits.
+			// Commented out during angular-grab investigation to keep runtime logs readable.
+			// static int diagDumpCounter = 0;
+			// bool doDiag = (++diagDumpCounter >= 45);
+			bool doDiag = false;
+			// if (doDiag) {
+			// 	diagDumpCounter = 0;
+			// 	logger::info("[ROCK::CC] DIAG: manifold={} entries={} mCount={} constraints={} cCount={}",
+			// 		manifold, (void*)manifoldEntries, manifoldCount,
+			// 		(void*)constraintArray, constraintCount);
+			// }
 
 			for (int i = 0; i < count; i++) {
 				char* manifoldEntry = manifoldEntries + i * 0x40;

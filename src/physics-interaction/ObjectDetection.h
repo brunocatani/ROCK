@@ -1,24 +1,5 @@
 #pragma once
 
-// ObjectDetection.h — Object selection & detection for ROCK Phase 2.
-//
-// WHY: Before we can grab objects (Phase 3), we need to detect what the player
-// is reaching toward or pointing at. This module provides:
-//   1. SelectedObject struct — tracks what each hand is targeting
-//   2. isGrabbable filter — determines if a ref can be picked up
-//   3. resolveBodyToRef — maps hknpBodyId → TESObjectREFR
-//   4. findCloseObject — near detection via QueryAabb + dot product
-//   5. findFarObject — far detection via bhkPickData ray
-//
-// Detection approach (Ghidra-verified):
-//   Near: hknpWorld::QueryAabb (0x40 byte struct, self-locking) + palm-forward dot product
-//   Far:  bhkWorld::PickObject (thin ray, self-locking)
-//   Both give proper spatial detection without manual lock management.
-//
-// HIGGS uses CastShape (sphere sweep) for near detection, but hknp's CastShape
-// query struct is ~0x78 bytes with precomputed inverse direction fields.
-// QueryAabb + dot product achieves equivalent results with a simpler, fully RE'd struct.
-
 #include "HavokOffsets.h"
 #include "PhysicsLog.h"
 #include "PhysicsUtils.h"
@@ -38,23 +19,21 @@
 
 namespace frik::rock
 {
-	// =========================================================================
-	// SelectedObject — tracks a candidate/selected object for one hand
-	// =========================================================================
-
 	struct SelectedObject
 	{
-		RE::TESObjectREFR* refr = nullptr;    ///< The selected reference
-		RE::hknpBodyId bodyId{ 0x7FFF'FFFF }; ///< Specific Havok body we'd grab
-		RE::NiAVObject* hitNode = nullptr;     ///< NiAVObject that owns the collision
-		float distance = FLT_MAX;              ///< Distance from hand to object (game units)
-		bool isFarSelection = false;           ///< True = far ray, false = near AABB
+		RE::TESObjectREFR* refr = nullptr;
+		RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
+		RE::NiAVObject* hitNode = nullptr;
+		RE::NiAVObject* visualNode = nullptr;
+		float distance = FLT_MAX;
+		bool isFarSelection = false;
 
 		void clear()
 		{
 			refr = nullptr;
 			bodyId.value = 0x7FFF'FFFF;
 			hitNode = nullptr;
+			visualNode = nullptr;
 			distance = FLT_MAX;
 			isFarSelection = false;
 		}
@@ -62,13 +41,6 @@ namespace frik::rock
 		bool isValid() const { return refr != nullptr; }
 	};
 
-	// =========================================================================
-	// Query helpers
-	// =========================================================================
-
-	/// Read the collision filter reference needed by all hknpWorld query structs.
-	/// Chain: *(*(world + modifierMgr) + filterPtr) → bhkCollisionFilter*.
-	/// The modifier manager at world+0x150 holds the active filter at +0x5E8.
 	inline void* getQueryFilterRef(RE::hknpWorld* world)
 	{
 		if (!world) return nullptr;
@@ -78,38 +50,16 @@ namespace frik::rock
 		return *reinterpret_cast<void**>(modifierMgr + offsets::kModifierMgr_FilterPtr);
 	}
 
-	// =========================================================================
-	// Object filtering
-	// =========================================================================
-
-	/// Check if a TESObjectREFR can be grabbed by ROCK.
-	/// Filters: player, deleted/disabled, static, doors, living NPCs, PA, workshop objects.
 	bool isGrabbable(RE::TESObjectREFR* ref, RE::TESObjectREFR* otherHandRef = nullptr);
 
-	// =========================================================================
-	// Body → Reference resolution
-	// =========================================================================
-
-	/// Resolve an hknpBodyId to a TESObjectREFR using bhkNPCollisionObject.
-	/// Path: bodyId → bhkNPCollisionObject::Getbhk → NiCollisionObject::sceneObject → FindReferenceFor3D
-	/// Returns nullptr if body has no game-object back-reference.
 	RE::TESObjectREFR* resolveBodyToRef(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
 		RE::hknpBodyId bodyId);
 
-	// =========================================================================
-	// Detection functions
-	// =========================================================================
-
-	/// Near detection: QueryAabb around palm + dot product filter.
-	/// Returns the closest grabbable object within nearRange of the palm,
-	/// in the forward hemisphere (dot > threshold with palm forward direction).
 	SelectedObject findCloseObject(
 		RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
 		const RE::NiPoint3& palmPos, const RE::NiPoint3& palmForward,
 		float nearRange, bool isLeft, RE::TESObjectREFR* otherHandRef = nullptr);
 
-	/// Far detection: bhkPickData thin ray from hand pointing direction.
-	/// Returns the closest grabbable object hit by a ray up to farRange.
 	SelectedObject findFarObject(
 		RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
 		const RE::NiPoint3& handPos, const RE::NiPoint3& pointingDir,

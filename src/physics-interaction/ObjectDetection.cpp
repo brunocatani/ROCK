@@ -175,6 +175,7 @@ namespace frik::rock
 
 		// Periodic diagnostic — log query results every ~3 seconds.
 		// Per-hand counters to avoid double-counting when both hands call each frame.
+		bool logNearMetric = false;
 		if (g_rockConfig.rockDebugVerboseLogging) {
 			static int nearDiagCounterRight = 0;
 			static int nearDiagCounterLeft = 0;
@@ -182,6 +183,7 @@ namespace frik::rock
 			nearDiagCounter++;
 			if (nearDiagCounter >= 270) {
 				nearDiagCounter = 0;
+				logNearMetric = true;
 				ROCK_LOG_INFO(Hand, "Near AABB [{}]: palm=({:.2f},{:.2f},{:.2f}) halfRange={:.3f} hits={} filterRef={}",
 					isLeft ? "L" : "R", palmHk.x, palmHk.y, palmHk.z, halfRange, numHits, query.filterRef);
 			}
@@ -197,6 +199,16 @@ namespace frik::rock
 		// your hand will be detected — COM distance is NOT used as a rejection gate.
 		float bestDist = FLT_MAX;
 		auto* hits = collector.hits._data;
+		int candidatesChecked = 0;
+		int meshMetricCount = 0;
+		int bodyFallbackCount = 0;
+		int no3DCount = 0;
+		int noTrianglesCount = 0;
+		int noClosestPointCount = 0;
+		const char* bestMetricMode = "none";
+		const char* bestFallbackReason = "none";
+		std::size_t bestTriangleCount = 0;
+		MeshExtractionStats bestMeshStats;
 
 		for (int i = 0; i < numHits; i++) {
 			auto hitBodyId = hits[i].hitBodyInfo.m_bodyId;
@@ -214,16 +226,23 @@ namespace frik::rock
 
 			// Apply grabbability filter
 			if (!isGrabbable(ref, otherHandRef)) continue;
+			candidatesChecked++;
 
 			// --- Mesh surface distance (primary metric) ---
 			// Extract triangles from the object's visual mesh and find the closest
 			// surface point to the palm line. This is what determines "how close is
 			// this object to my hand" — not the center of mass.
 			float dist = FLT_MAX;
+			const char* metricMode = "bodyComFallback";
+			const char* fallbackReason = "none";
+			bool hasFallbackReason = false;
+			std::size_t candidateTriangleCount = 0;
+			MeshExtractionStats candidateMeshStats;
 			auto* node3D = ref->Get3D();
 			if (node3D) {
 				std::vector<TriangleData> triangles;
-				extractAllTriangles(node3D, triangles);
+				extractAllTriangles(node3D, triangles, 10, &candidateMeshStats);
+				candidateTriangleCount = triangles.size();
 
 				if (!triangles.empty()) {
 					GrabPoint grabPt;
@@ -231,14 +250,32 @@ namespace frik::rock
 							1.0f, 1.0f, grabPt)) {
 						// grabPt.distance is weighted distSq — use sqrt for comparison
 						dist = std::sqrt(grabPt.distance);
+						metricMode = "meshSurface";
+						meshMetricCount++;
+					} else {
+						noClosestPointCount++;
+						fallbackReason = "noClosestSurfacePoint";
+						hasFallbackReason = true;
 					}
+				} else {
+					noTrianglesCount++;
+					fallbackReason = "noTriangles";
+					hasFallbackReason = true;
 				}
+			} else {
+				no3DCount++;
+				fallbackReason = "no3D";
+				hasFallbackReason = true;
 			}
 
-			// Fallback: COM distance (for objects without CPU mesh data)
+			// Fallback: body/COM distance (for objects without usable CPU mesh data)
 			if (dist >= FLT_MAX - 1.0f) {
+				if (!hasFallbackReason) {
+					fallbackReason = "unresolvedMeshDistance";
+				}
 				RE::NiPoint3 objPos = hkVectorToNiPoint(motion->position);
 				dist = (objPos - palmPos).Length();
+				bodyFallbackCount++;
 			}
 
 			// Reject if surface is beyond nearRange (generous — surface, not COM)
@@ -251,11 +288,33 @@ namespace frik::rock
 				result.bodyId = hitBodyId;
 				result.distance = dist;
 				result.isFarSelection = false;
+				bestMetricMode = metricMode;
+				bestFallbackReason = fallbackReason;
+				bestTriangleCount = candidateTriangleCount;
+				bestMeshStats = candidateMeshStats;
 
 				// Get the hit NiAVObject for later use
 				auto* collObj = RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId);
 				result.hitNode = collObj ? collObj->sceneObject : nullptr;
+				result.visualNode = node3D;
 			}
+		}
+
+		if (logNearMetric) {
+			const float loggedBestDist = result.refr ? bestDist : -1.0f;
+			ROCK_LOG_INFO(Hand,
+				"Near metric [{}]: candidates={} meshSurface={} bodyComFallback={} no3D={} noTriangles={} noClosestPoint={} "
+				"bestMode={} bestFallbackReason={} bestDist={:.1f} bestTris={} bestShapes={} "
+				"bestStatic={}/{} bestDynamic={}/{} bestSkinned={}/{} bestDynamicSkinnedSkipped={}",
+				isLeft ? "L" : "R",
+				candidatesChecked, meshMetricCount, bodyFallbackCount,
+				no3DCount, noTrianglesCount, noClosestPointCount,
+				bestMetricMode, bestFallbackReason, loggedBestDist, bestTriangleCount,
+				bestMeshStats.visitedShapes,
+				bestMeshStats.staticShapes, bestMeshStats.staticTriangles,
+				bestMeshStats.dynamicShapes, bestMeshStats.dynamicTriangles,
+				bestMeshStats.skinnedShapes, bestMeshStats.skinnedTriangles,
+				bestMeshStats.dynamicSkinnedSkipped);
 		}
 
 		return result;
@@ -304,8 +363,27 @@ namespace frik::rock
 		auto* hitNiObj = pickData.GetNiAVObject();
 		if (!hitNiObj) return result;
 
+		// Get the body ID from the hit (for Phase 3 grab initiation)
+		RE::hknpBodyId hitBodyId{ 0x7FFF'FFFF };
+		auto* hitBody = pickData.GetBody();
+		if (hitBody) {
+			hitBodyId = hitBody->bodyId;
+		}
+
+		// Resolve through the body collision owner first. Near selection already uses
+		// this path; far selection must not store an arbitrary visual hit node as the
+		// physics owner for later grab/body-local capture.
+		auto* collObj = hitBodyId.value != 0x7FFF'FFFF
+			? RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId)
+			: nullptr;
+		auto* ownerNode = collObj ? collObj->sceneObject : nullptr;
+		auto* refNode = ownerNode ? ownerNode : hitNiObj;
+
 		// Resolve NiAVObject to TESObjectREFR
-		auto* ref = RE::TESObjectREFR::FindReferenceFor3D(hitNiObj);
+		auto* ref = RE::TESObjectREFR::FindReferenceFor3D(refNode);
+		if (!ref && refNode != hitNiObj) {
+			ref = RE::TESObjectREFR::FindReferenceFor3D(hitNiObj);
+		}
 		if (!ref) return result;
 
 		// Apply grabbability filter
@@ -315,16 +393,10 @@ namespace frik::rock
 		float hitFraction = pickData.GetHitFraction();
 		float hitDist = hitFraction * farRange;
 
-		// Get the body ID from the hit (for Phase 3 grab initiation)
-		RE::hknpBodyId hitBodyId{ 0x7FFF'FFFF };
-		auto* hitBody = pickData.GetBody();
-		if (hitBody) {
-			hitBodyId = hitBody->bodyId;
-		}
-
 		result.refr = ref;
 		result.bodyId = hitBodyId;
-		result.hitNode = hitNiObj;
+		result.hitNode = ownerNode ? ownerNode : hitNiObj;
+		result.visualNode = hitNiObj;
 		result.distance = hitDist;
 		result.isFarSelection = true;
 

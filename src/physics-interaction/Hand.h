@@ -95,6 +95,9 @@ namespace frik::rock
 
 	private:
 		void collectBodyIdsRecursive(RE::NiAVObject* node, int maxDepth = 10);
+		void suppressHandCollisionForGrab(RE::hknpWorld* world);
+		void restoreHandCollisionAfterGrab(RE::hknpWorld* world);
+		void clearGrabHandCollisionSuppressionState();
 
 	public:
 
@@ -251,6 +254,10 @@ namespace frik::rock
 		// Frame counter pattern: set to 0 on contact, incremented per main-thread frame.
 		// IsColliding = counter < threshold. Stale contacts expire naturally.
 		std::atomic<int> _heldBodyContactFrame{ 100 };  ///< Frames since last held-body contact (100 = no contact)
+		// Grab-owned no-collision suppression: restore the pre-grab bit-14 state on release.
+		bool _grabHandCollisionSuppressed = false;
+		bool _grabHandCollisionWasDisabled = false;
+		std::uint32_t _grabHandCollisionBodyId = INVALID_BODY_ID;
 
 	public:
 		/// Is the held body currently in contact with world geometry?

@@ -332,6 +332,7 @@ namespace frik::rock
 		_grabRootBodyLocalTransform = RE::NiTransform();
 		_grabOwnerBodyLocalTransform = RE::NiTransform();
 		_heldNode = nullptr;
+		clearGrabHandCollisionSuppressionState();
 	}
 
 	void Hand::collectHeldBodyIds(RE::TESObjectREFR* refr)
@@ -737,13 +738,13 @@ namespace frik::rock
 				targetDet, liveDet);
 
 			ROCK_LOG_INFO(Hand,
-				"{} transform basis: targetCols=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
-				"liveCols=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
+				"{} transform basis: targetRows=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
+				"liveRows=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
 				"quat=({:.4f},{:.4f},{:.4f},{:.4f}) linVel=({:.4f},{:.4f},{:.4f}) angVel=({:.4f},{:.4f},{:.4f})",
 				handName(),
-				handTransform.rotate.entry[0][0], handTransform.rotate.entry[1][0], handTransform.rotate.entry[2][0],
-				handTransform.rotate.entry[0][1], handTransform.rotate.entry[1][1], handTransform.rotate.entry[2][1],
-				handTransform.rotate.entry[0][2], handTransform.rotate.entry[1][2], handTransform.rotate.entry[2][2],
+				handTransform.rotate.entry[0][0], handTransform.rotate.entry[0][1], handTransform.rotate.entry[0][2],
+				handTransform.rotate.entry[1][0], handTransform.rotate.entry[1][1], handTransform.rotate.entry[1][2],
+				handTransform.rotate.entry[2][0], handTransform.rotate.entry[2][1], handTransform.rotate.entry[2][2],
 				bodyFloats[0], bodyFloats[1], bodyFloats[2],
 				bodyFloats[4], bodyFloats[5], bodyFloats[6],
 				bodyFloats[8], bodyFloats[9], bodyFloats[10],

@@ -21,6 +21,7 @@
 
 #include <ShlObj.h>
 #include <SimpleIni.h>
+#include <cmath>
 #include <filesystem>
 #include <thread>
 
@@ -32,6 +33,7 @@ namespace
 {
     // Section name used in both FRIK.ini and ROCK.ini for backwards compatibility.
     constexpr auto SECTION = "PhysicsInteraction";
+	const RE::NiPoint3 kDefaultPalmNormalHandspace{ 0.261f, -0.965f, -0.018f };
 
     // Resolve Documents\My Games\Fallout4VR\ROCK_Config\ROCK.ini once.
     // ROCK uses its own config folder, separate from FRIK's FRIK_Config.
@@ -77,7 +79,7 @@ namespace frik::rock
         rockPalmOffsetUp      = -2.4f;
         rockPalmOffsetRight   = 0.0f;
         rockPalmPositionHandspace = RE::NiPoint3(6.0f, -2.4f, 0.0f);
-        rockPalmNormalHandspace = RE::NiPoint3(0.0f, -1.0f, 0.0f);
+		rockPalmNormalHandspace = kDefaultPalmNormalHandspace;
         rockPointingVectorHandspace = RE::NiPoint3(1.0f, 0.0f, 0.0f);
 
         // Feature toggles
@@ -190,6 +192,13 @@ namespace frik::rock
 			rockPalmPositionHandspace);
         readVec3("fPalmNormalHandspaceX", "fPalmNormalHandspaceY", "fPalmNormalHandspaceZ",
 			rockPalmNormalHandspace);
+		if (std::abs(rockPalmNormalHandspace.x) < 0.0001f &&
+			std::abs(rockPalmNormalHandspace.y + 1.0f) < 0.0001f &&
+			std::abs(rockPalmNormalHandspace.z) < 0.0001f) {
+			// WHY: `{0,-1,0}` was a simplified pre-quaternion-fix default that loses
+			// HIGGS' fingertip/lateral components and keeps old INIs on the damaged axis.
+			rockPalmNormalHandspace = kDefaultPalmNormalHandspace;
+		}
         readVec3("fPointingVectorHandspaceX", "fPointingVectorHandspaceY", "fPointingVectorHandspaceZ",
 			rockPointingVectorHandspace);
 

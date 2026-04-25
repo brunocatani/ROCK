@@ -3,18 +3,21 @@
 // WeaponCollision.h — Equipped weapon physics presence for ROCK.
 //
 // WHY: Equipped weapons in FO4VR have their collision disabled by the engine
-// (FUN_1410552a0). This module creates a SEPARATE KEYFRAMED physics body that
-// mirrors the weapon's collision shape on layer 44, giving the weapon physical
-// presence — it pushes objects, NPCs, and enables future melee/contact features.
+// (FUN_1410552a0). This module creates SEPARATE KEYFRAMED physics bodies that
+// mirror the weapon's source collision bodies on layer 44, giving the weapon
+// physical presence across every discovered collision part.
 //
-// APPROACH: Clone the weapon's existing hknpShape (shared with AddReference),
-// create our own body on layer 44, position it each frame via SetBodyTransform
-// + velocity. This follows HIGGS's weaponBody pattern exactly (hand.cpp:720-791).
+// APPROACH: Clone each existing hknpShape (shared with AddReference), create our
+// own bodies on layer 44, and position each frame from the corresponding source
+// body transform. This follows HIGGS's weaponBody pattern (hand.cpp:720-791),
+// adapted for FO4VR weapon trees that expose multiple body IDs.
 //
 // SAFETY: userData=0 (FOIslandActivationListener), shape AddReference/RemoveReference,
 // atomic body ID for physics thread, dual world pointer check (bhk+hknp).
 
+#include <array>
 #include <atomic>
+#include <cstddef>
 
 #include "BethesdaPhysicsBody.h"
 #include "PhysicsLog.h"
@@ -46,6 +49,8 @@ namespace frik::rock
 	class WeaponCollision
 	{
 	public:
+		WeaponCollision();
+
 		// --- Public API (called by PhysicsInteraction) ---
 
 		/// Cache world pointers. Body creation deferred to update().
@@ -62,39 +67,75 @@ namespace frik::rock
 		void update(RE::hknpWorld* world, RE::NiAVObject* weaponNode,
 			RE::hknpBodyId dominantHandBodyId, float dt);
 
-		/// Whether a weapon collision body currently exists in the world.
-		bool hasWeaponBody() const { return _weaponBody.isValid(); }
+		/// Whether any weapon collision body currently exists in the world.
+		bool hasWeaponBody() const;
 
-		/// Get the weapon body ID (main thread only).
-		RE::hknpBodyId getWeaponBodyId() const { return _weaponBody.getBodyId(); }
+		/// Number of mirrored weapon collision bodies currently active.
+		std::uint32_t getWeaponBodyCount() const;
 
-		/// Thread-safe body ID read (for physics thread — processConstraintsCallback).
-		std::uint32_t getWeaponBodyIdAtomic() const {
-			return _weaponBodyIdAtomic.load(std::memory_order_acquire);
-		}
+		/// Get the primary weapon body ID (main thread only; first active body).
+		RE::hknpBodyId getWeaponBodyId() const;
 
-		/// Get the BethesdaPhysicsBody (for direct API access).
-		BethesdaPhysicsBody& getWeaponBody() { return _weaponBody; }
+		/// Thread-safe primary body ID read (for legacy physics-thread callers).
+		std::uint32_t getWeaponBodyIdAtomic() const;
+
+		/// Thread-safe membership test for all mirrored weapon bodies.
+		bool isWeaponBodyIdAtomic(std::uint32_t bodyId) const;
+
+		/// Get the primary BethesdaPhysicsBody (for direct API access).
+		BethesdaPhysicsBody& getWeaponBody();
 
 		/// Destroy the weapon body from the world (called by PhysicsInteraction::shutdown).
 		void destroyWeaponBody(RE::hknpWorld* world);
 
 	private:
 		static constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
+		static constexpr std::size_t MAX_WEAPON_BODIES = 16;
+
+		struct WeaponShapeSource
+		{
+			const RE::hknpShape* shape{ nullptr };
+			RE::hknpBodyId sourceBodyId{ INVALID_BODY_ID };
+			RE::NiAVObject* sourceNode{ nullptr };
+		};
+
+		using WeaponShapeSourceList = std::array<WeaponShapeSource, MAX_WEAPON_BODIES>;
+
+		struct WeaponBodyInstance
+		{
+			BethesdaPhysicsBody body;
+			const RE::hknpShape* shape{ nullptr };
+			RE::hknpBodyId sourceBodyId{ INVALID_BODY_ID };
+			RE::NiAVObject* sourceNode{ nullptr };
+			bool hasPrevTransform{ false };
+			RE::NiPoint3 prevPosition{};
+		};
 
 		// --- Body lifecycle ---
 
-		void createWeaponBody(RE::hknpWorld* world, const RE::hknpShape* shape,
-			const RE::NiTransform& initialTransform);
+		void createWeaponBodies(RE::hknpWorld* world, const WeaponShapeSourceList& sources,
+			std::size_t sourceCount);
+		void resetWeaponBodiesWithoutDestroy();
+		void clearWeaponBodyInstance(WeaponBodyInstance& instance, bool releaseShapeRef);
+		void clearAtomicBodyIds();
+		void publishAtomicBodyIds();
 
 		// --- Shape discovery ---
 
-		/// Walk the weapon NiNode tree to find the first collision shape.
-		/// Returns the hknpShape* from the first bhkNPCollisionObject found, or nullptr.
-		const RE::hknpShape* findWeaponShape(RE::NiAVObject* weaponNode, RE::hknpWorld* world);
+		/// Walk the weapon NiNode tree to find all source collision bodies to mirror.
+		std::size_t findWeaponShapeSources(RE::NiAVObject* weaponNode, RE::hknpWorld* world,
+			WeaponShapeSourceList& outSources);
 
-		/// Recursive helper for findWeaponShape.
-		const RE::hknpShape* findWeaponShapeRecursive(RE::NiAVObject* node, RE::hknpWorld* world, int depth);
+		/// Recursive helper for findWeaponShapeSources.
+		void findWeaponShapeSourcesRecursive(RE::NiAVObject* node, RE::hknpWorld* world,
+			int depth, WeaponShapeSourceList& outSources, std::size_t& sourceCount);
+		bool addWeaponShapeSource(RE::hknpWorld* world, WeaponShapeSourceList& outSources,
+			std::size_t& sourceCount, RE::hknpBodyId sourceBodyId, RE::NiAVObject* sourceNode,
+			int depth);
+		bool sourceBodiesStillValid(RE::hknpWorld* world) const;
+		bool isSourceBodyValid(RE::hknpWorld* world, const WeaponBodyInstance& instance) const;
+		RE::NiTransform getSourceBodyTransform(RE::hknpWorld* world,
+			const WeaponBodyInstance& instance, const RE::NiTransform& fallbackTransform) const;
 
 		// --- Equip detection ---
 
@@ -104,23 +145,20 @@ namespace frik::rock
 
 		// --- Per-frame positioning ---
 
-		void updateBodyTransform(RE::hknpWorld* world, const RE::NiTransform& weaponTransform, float dt);
+		void updateBodyTransform(RE::hknpWorld* world, WeaponBodyInstance& instance,
+			const RE::NiTransform& weaponTransform, float dt, std::size_t bodyIndex);
 
 		// --- State ---
 
-		BethesdaPhysicsBody  _weaponBody;
-		const RE::hknpShape* _cachedShape{ nullptr };
+		std::array<WeaponBodyInstance, MAX_WEAPON_BODIES> _weaponBodies{};
 		std::uint64_t    _cachedWeaponKey{ 0 };
 		RE::hknpWorld*   _cachedWorld{ nullptr };
 		void*            _cachedBhkWorld{ nullptr };
-		bool             _hasPrevTransform{ false };
 		bool             _weaponBodyPending{ false };
 
-		// Previous frame position for velocity computation
-		RE::NiPoint3 _prevPosition{};
-
-		// Thread-safe body ID for physics thread access
-		std::atomic<std::uint32_t> _weaponBodyIdAtomic{ INVALID_BODY_ID };
+		// Thread-safe body IDs for physics thread access.
+		std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodyIdsAtomic;
+		std::atomic<std::uint32_t> _weaponBodyCountAtomic{ 0 };
 
 		// Deferred body creation retry counter (throttles retries to ~1/sec)
 		int _retryCounter{ 0 };
