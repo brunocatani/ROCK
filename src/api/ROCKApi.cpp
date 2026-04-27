@@ -24,6 +24,65 @@ static_assert(static_cast<int>(rock::api::ROCKApi::Hand::Offhand) == static_cast
 static_assert(static_cast<int>(rock::api::ROCKApi::Hand::Right) == static_cast<int>(frik::api::FRIKApi::Hand::Right), "Hand::Right mismatch");
 static_assert(static_cast<int>(rock::api::ROCKApi::Hand::Left) == static_cast<int>(frik::api::FRIKApi::Hand::Left), "Hand::Left mismatch");
 
+#define ROCK_ASSERT_API_ENUM(API_ENUM, INTERNAL_ENUM, VALUE)                                                                                                      \
+    static_assert(static_cast<int>(rock::api::ROCKApi::API_ENUM::VALUE) == static_cast<int>(frik::rock::INTERNAL_ENUM::VALUE), #API_ENUM "::" #VALUE " mismatch")
+
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Receiver);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Barrel);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Handguard);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Foregrip);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Pump);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Stock);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Grip);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Magazine);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Magwell);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Bolt);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Slide);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, ChargingHandle);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, BreakAction);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Cylinder);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Chamber);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Shell);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Round);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, LaserCell);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Lever);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Sight);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Accessory);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, CosmeticAmmo);
+ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Other);
+
+ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, Idle);
+ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, ReloadRequested);
+ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, WeaponOpened);
+ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, WeaponUnloaded);
+ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, PouchAvailable);
+ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, AmmoHeld);
+ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, AmmoAligned);
+ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, AmmoInserted);
+ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, ActionRequired);
+ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, ActionManipulating);
+ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, Completing);
+ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, Canceled);
+
+ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, Idle);
+ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, ReloadRequested);
+ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, VanillaReloadStarted);
+ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, AmmoDetachWindow);
+ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, AmmoCommitted);
+ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, ActionWindow);
+ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, Completing);
+ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, Complete);
+ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, Canceled);
+ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, UnsafeUnknown);
+
+ROCK_ASSERT_API_ENUM(WeaponReloadStageSource, WeaponReloadStageSource, None);
+ROCK_ASSERT_API_ENUM(WeaponReloadStageSource, WeaponReloadStageSource, NativeReloadEvent);
+ROCK_ASSERT_API_ENUM(WeaponReloadStageSource, WeaponReloadStageSource, NativeAmmoCountEvent);
+ROCK_ASSERT_API_ENUM(WeaponReloadStageSource, WeaponReloadStageSource, PollingFallback);
+ROCK_ASSERT_API_ENUM(WeaponReloadStageSource, WeaponReloadStageSource, ConfigFallback);
+
+#undef ROCK_ASSERT_API_ENUM
+
 namespace
 {
     using namespace rock::api;
@@ -219,6 +278,38 @@ namespace
         pi->forceDropHeldObject(isLeft);
     }
 
+    std::uint32_t ROCK_CALL apiGetLastTouchedWeaponPartKind()
+    {
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!pi || !pi->isInitialized())
+            return static_cast<std::uint32_t>(ROCKApi::WeaponPartKind::Other);
+        return pi->getLastTouchedWeaponPartKind();
+    }
+
+    std::uint32_t ROCK_CALL apiGetActiveWeaponReloadState()
+    {
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!pi || !pi->isInitialized())
+            return static_cast<std::uint32_t>(ROCKApi::WeaponReloadState::Idle);
+        return pi->getActiveWeaponReloadState();
+    }
+
+    std::uint32_t ROCK_CALL apiGetObservedWeaponReloadStage()
+    {
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!pi || !pi->isInitialized())
+            return static_cast<std::uint32_t>(ROCKApi::WeaponVanillaReloadStage::Idle);
+        return pi->getObservedWeaponReloadStage();
+    }
+
+    std::uint32_t ROCK_CALL apiGetWeaponReloadStageSource()
+    {
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!pi || !pi->isInitialized())
+            return static_cast<std::uint32_t>(ROCKApi::WeaponReloadStageSource::None);
+        return pi->getWeaponReloadStageSource();
+    }
+
     constexpr ROCKApi ROCK_API_FUNCTIONS_TABLE{
         .getVersion = &apiGetVersion,
         .getModVersion = &apiGetModVersion,
@@ -238,6 +329,10 @@ namespace
         .releasePhysicsObject = &apiReleasePhysicsObject,
         .isPhysicsObjectClaimed = &apiIsPhysicsObjectClaimed,
         .forceDropObject = &apiForceDropObject,
+        .getLastTouchedWeaponPartKind = &apiGetLastTouchedWeaponPartKind,
+        .getActiveWeaponReloadState = &apiGetActiveWeaponReloadState,
+        .getObservedWeaponReloadStage = &apiGetObservedWeaponReloadStage,
+        .getWeaponReloadStageSource = &apiGetWeaponReloadStageSource,
     };
 }
 

@@ -11,13 +11,21 @@
 #include "physics-interaction/GrabFingerPoseMath.h"
 #include "physics-interaction/HandVisualLerpMath.h"
 #include "physics-interaction/HeldObjectDampingMath.h"
+#include "physics-interaction/HeldObjectPhysicsMath.h"
 #include "physics-interaction/HandCollisionSuppressionMath.h"
 #include "physics-interaction/HandspaceConvention.h"
+#include "physics-interaction/NativeMeleeSuppressionPolicy.h"
 #include "physics-interaction/PointingDirectionMath.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/WeaponCollisionAdjustmentMath.h"
 #include "physics-interaction/WeaponCollisionGeometryMath.h"
 #include "physics-interaction/WeaponCollisionLimits.h"
+#include "physics-interaction/WeaponInteractionProbeMath.h"
+#include "physics-interaction/WeaponInteractionRouter.h"
+#include "physics-interaction/WeaponPartClassifier.h"
+#include "physics-interaction/WeaponReloadStageObserver.h"
+#include "physics-interaction/WeaponSemanticHullBudget.h"
+#include "physics-interaction/WeaponTwoHandedSolver.h"
 
 struct TestMatrix
 {
@@ -408,7 +416,240 @@ int main()
         frik::rock::debug_overlay_policy::shouldUseBoundsForHeavyConvex(192, 64, false) ? 1.0f : 0.0f,
         0.0f);
 
-    ok &= expectFloat("weapon collision body cap", static_cast<float>(frik::rock::MAX_WEAPON_COLLISION_BODIES), 32.0f);
+    ok &= expectFloat("weapon collision body cap", static_cast<float>(frik::rock::MAX_WEAPON_COLLISION_BODIES), 64.0f);
+
+    const auto magazinePart = frik::rock::classifyWeaponPartName("AssaultRifle:MagazineLarge");
+    ok &= expectFloat("weapon classifier magazine kind", static_cast<float>(magazinePart.partKind), static_cast<float>(frik::rock::WeaponPartKind::Magazine));
+    ok &= expectFloat("weapon classifier magazine reload role", static_cast<float>(magazinePart.reloadRole), static_cast<float>(frik::rock::WeaponReloadRole::MagazineBody));
+
+    const auto magwellPart = frik::rock::classifyWeaponPartName("CombatRifle:MagwellSocket");
+    ok &= expectFloat("weapon classifier magwell kind", static_cast<float>(magwellPart.partKind), static_cast<float>(frik::rock::WeaponPartKind::Magwell));
+    ok &= expectFloat("weapon classifier magwell socket role", static_cast<float>(magwellPart.socketRole), static_cast<float>(frik::rock::WeaponSocketRole::Magwell));
+
+    const auto handguardPart = frik::rock::classifyWeaponPartName("LaserRifle:Handguard");
+    ok &= expectFloat("weapon classifier handguard support", static_cast<float>(handguardPart.supportGripRole), static_cast<float>(frik::rock::WeaponSupportGripRole::SupportSurface));
+    ok &= expectFloat("weapon classifier handguard pose", static_cast<float>(handguardPart.fallbackGripPose), static_cast<float>(frik::rock::WeaponGripPoseId::HandguardClamp));
+
+    std::vector<frik::rock::WeaponSemanticHullBudgetInput> semanticBudgetInputs;
+    semanticBudgetInputs.push_back({ .semantic = frik::rock::classifyWeaponPartKind(frik::rock::WeaponPartKind::Other), .sourceIndex = 0, .pointCount = 300 });
+    semanticBudgetInputs.push_back({ .semantic = frik::rock::classifyWeaponPartKind(frik::rock::WeaponPartKind::CosmeticAmmo), .sourceIndex = 1, .pointCount = 900 });
+    semanticBudgetInputs.push_back({ .semantic = frik::rock::classifyWeaponPartKind(frik::rock::WeaponPartKind::Magazine), .sourceIndex = 2, .pointCount = 20 });
+    semanticBudgetInputs.push_back({ .semantic = frik::rock::classifyWeaponPartKind(frik::rock::WeaponPartKind::Magwell), .sourceIndex = 3, .pointCount = 25 });
+    semanticBudgetInputs.push_back({ .semantic = frik::rock::classifyWeaponPartKind(frik::rock::WeaponPartKind::Bolt), .sourceIndex = 4, .pointCount = 15 });
+    const auto semanticBudgetIndices = frik::rock::selectSemanticWeaponHullIndices(semanticBudgetInputs, 3);
+    ok &= expectFloat("weapon semantic budget count", static_cast<float>(semanticBudgetIndices.size()), 3.0f);
+    ok &= expectFloat("weapon semantic budget keeps magwell first", static_cast<float>(semanticBudgetIndices[0]), 3.0f);
+    ok &= expectFloat("weapon semantic budget keeps magazine second", static_cast<float>(semanticBudgetIndices[1]), 2.0f);
+    ok &= expectFloat("weapon semantic budget keeps bolt third", static_cast<float>(semanticBudgetIndices[2]), 4.0f);
+
+    std::vector<frik::rock::WeaponSemanticHullBudgetInput> duplicateSupportBudgetInputs;
+    duplicateSupportBudgetInputs.push_back({ .semantic = frik::rock::classifyWeaponPartKind(frik::rock::WeaponPartKind::Handguard), .sourceIndex = 10, .pointCount = 900 });
+    duplicateSupportBudgetInputs.push_back({ .semantic = frik::rock::classifyWeaponPartKind(frik::rock::WeaponPartKind::Handguard), .sourceIndex = 11, .pointCount = 800 });
+    duplicateSupportBudgetInputs.push_back({ .semantic = frik::rock::classifyWeaponPartKind(frik::rock::WeaponPartKind::Handguard), .sourceIndex = 12, .pointCount = 700 });
+    duplicateSupportBudgetInputs.push_back({ .semantic = frik::rock::classifyWeaponPartKind(frik::rock::WeaponPartKind::Magazine), .sourceIndex = 13, .pointCount = 20 });
+    duplicateSupportBudgetInputs.push_back({ .semantic = frik::rock::classifyWeaponPartKind(frik::rock::WeaponPartKind::Bolt), .sourceIndex = 14, .pointCount = 15 });
+    const auto duplicateSupportBudgetIndices = frik::rock::selectSemanticWeaponHullIndices(duplicateSupportBudgetInputs, 3);
+    const auto hasBudgetIndex = [&duplicateSupportBudgetIndices](std::size_t index) {
+        return std::find(duplicateSupportBudgetIndices.begin(), duplicateSupportBudgetIndices.end(), index) != duplicateSupportBudgetIndices.end();
+    };
+    ok &= expectFloat("weapon semantic budget keeps one handguard", (hasBudgetIndex(10) || hasBudgetIndex(11) || hasBudgetIndex(12)) ? 1.0f : 0.0f, 1.0f);
+    ok &= expectFloat("weapon semantic budget keeps magazine despite lower priority duplicate", hasBudgetIndex(13) ? 1.0f : 0.0f, 1.0f);
+    ok &= expectFloat("weapon semantic budget keeps bolt despite lower priority duplicate", hasBudgetIndex(14) ? 1.0f : 0.0f, 1.0f);
+
+    frik::rock::WeaponInteractionContact handguardContact{};
+    handguardContact.valid = true;
+    handguardContact.bodyId = 200;
+    handguardContact.partKind = handguardPart.partKind;
+    handguardContact.supportGripRole = handguardPart.supportGripRole;
+    handguardContact.reloadRole = handguardPart.reloadRole;
+    handguardContact.socketRole = handguardPart.socketRole;
+    handguardContact.actionRole = handguardPart.actionRole;
+    const auto supportRoute = frik::rock::routeWeaponInteraction(handguardContact, frik::rock::WeaponReloadRuntimeState{});
+    ok &= expectFloat("weapon router support grip", static_cast<float>(supportRoute.kind), static_cast<float>(frik::rock::WeaponInteractionKind::SupportGrip));
+
+    frik::rock::WeaponInteractionContact magazineContact{};
+    magazineContact.valid = true;
+    magazineContact.bodyId = 201;
+    magazineContact.partKind = magazinePart.partKind;
+    magazineContact.supportGripRole = magazinePart.supportGripRole;
+    magazineContact.reloadRole = magazinePart.reloadRole;
+    magazineContact.socketRole = magazinePart.socketRole;
+    magazineContact.actionRole = magazinePart.actionRole;
+    frik::rock::WeaponReloadRuntimeState activeReload{};
+    activeReload.state = frik::rock::WeaponReloadState::ReloadRequested;
+    const auto reloadRoute = frik::rock::routeWeaponInteraction(magazineContact, activeReload);
+    ok &= expectFloat("weapon router magazine reload", static_cast<float>(reloadRoute.kind), static_cast<float>(frik::rock::WeaponInteractionKind::RemoveMagazine));
+
+    frik::rock::WeaponReloadObserverState reloadObserver{};
+    const auto idleReloadStage =
+        frik::rock::advanceWeaponReloadStageObserver(reloadObserver, frik::rock::WeaponReloadNativeSnapshot{ .weaponEquipped = true, .sequence = 1 });
+    ok &= expectFloat("reload observer starts idle", static_cast<float>(idleReloadStage.stage), static_cast<float>(frik::rock::WeaponVanillaReloadStage::Idle));
+
+    const auto reloadStartedStage = frik::rock::advanceWeaponReloadStageObserver(
+        reloadObserver,
+        frik::rock::WeaponReloadNativeSnapshot{ .weaponEquipped = true, .reloadEventReceived = true, .reloadEventValue = true, .sequence = 2 });
+    ok &= expectFloat("reload observer native start", static_cast<float>(reloadStartedStage.stage),
+        static_cast<float>(frik::rock::WeaponVanillaReloadStage::VanillaReloadStarted));
+    ok &= expectFloat("reload observer native source", static_cast<float>(reloadStartedStage.source),
+        static_cast<float>(frik::rock::WeaponReloadStageSource::NativeReloadEvent));
+
+    const auto ammoCommittedStage = frik::rock::advanceWeaponReloadStageObserver(
+        reloadObserver,
+        frik::rock::WeaponReloadNativeSnapshot{ .weaponEquipped = true, .ammoEventReceived = true, .clipAmmo = 30, .reserveAmmo = 90, .sequence = 3 });
+    ok &= expectFloat("reload observer ammo commit", static_cast<float>(ammoCommittedStage.stage),
+        static_cast<float>(frik::rock::WeaponVanillaReloadStage::AmmoCommitted));
+
+    frik::rock::WeaponReloadObserverState combinedReloadObserver{};
+    const auto combinedReloadAmmoStage = frik::rock::advanceWeaponReloadStageObserver(
+        combinedReloadObserver,
+        frik::rock::WeaponReloadNativeSnapshot{ .weaponEquipped = true,
+            .reloadEventReceived = true,
+            .reloadEventValue = true,
+            .ammoEventReceived = true,
+            .clipAmmo = 12,
+            .reserveAmmo = 48,
+            .sequence = 30 });
+    ok &= expectFloat("reload observer same frame ammo commit", static_cast<float>(combinedReloadAmmoStage.stage),
+        static_cast<float>(frik::rock::WeaponVanillaReloadStage::AmmoCommitted));
+    ok &= expectFloat("reload observer same frame ammo source", static_cast<float>(combinedReloadAmmoStage.source),
+        static_cast<float>(frik::rock::WeaponReloadStageSource::NativeAmmoCountEvent));
+
+    const auto reloadCompleteStage = frik::rock::advanceWeaponReloadStageObserver(
+        reloadObserver,
+        frik::rock::WeaponReloadNativeSnapshot{ .weaponEquipped = true, .reloadEventReceived = true, .reloadEventValue = false, .sequence = 4 });
+    ok &= expectFloat("reload observer native complete", static_cast<float>(reloadCompleteStage.stage), static_cast<float>(frik::rock::WeaponVanillaReloadStage::Complete));
+
+    frik::rock::WeaponReloadCoordinatorState reloadCoordinator{};
+    const auto coordinatorStart = frik::rock::advanceWeaponReloadCoordinator(
+        reloadCoordinator,
+        frik::rock::WeaponReloadObserverOutput{ .stage = frik::rock::WeaponVanillaReloadStage::VanillaReloadStarted,
+            .source = frik::rock::WeaponReloadStageSource::NativeReloadEvent,
+            .sequence = 10 },
+        false);
+    ok &= expectFloat("reload coordinator request", static_cast<float>(coordinatorStart.runtime.state), static_cast<float>(frik::rock::WeaponReloadState::ReloadRequested));
+    ok &= expectFloat("reload coordinator blocks support", coordinatorStart.runtime.supportGripAllowed ? 1.0f : 0.0f, 0.0f);
+
+    const auto coordinatorAmmo = frik::rock::advanceWeaponReloadCoordinator(
+        reloadCoordinator,
+        frik::rock::WeaponReloadObserverOutput{ .stage = frik::rock::WeaponVanillaReloadStage::AmmoCommitted,
+            .source = frik::rock::WeaponReloadStageSource::NativeAmmoCountEvent,
+            .sequence = 11 },
+        false);
+    ok &= expectFloat("reload coordinator unloaded", static_cast<float>(coordinatorAmmo.runtime.state), static_cast<float>(frik::rock::WeaponReloadState::WeaponUnloaded));
+
+    const auto coordinatorBlockedComplete = frik::rock::advanceWeaponReloadCoordinator(
+        reloadCoordinator,
+        frik::rock::WeaponReloadObserverOutput{ .stage = frik::rock::WeaponVanillaReloadStage::Complete,
+            .source = frik::rock::WeaponReloadStageSource::NativeReloadEvent,
+            .sequence = 12 },
+        false,
+        true);
+    ok &= expectFloat("reload coordinator blocks vanilla complete without physical gate", static_cast<float>(coordinatorBlockedComplete.runtime.state),
+        static_cast<float>(frik::rock::WeaponReloadState::WeaponUnloaded));
+    ok &= expectFloat("reload coordinator reports physical gate", coordinatorBlockedComplete.vanillaCompletionNeedsPhysicalGate ? 1.0f : 0.0f, 1.0f);
+
+    const auto coordinatorPhysical = frik::rock::advanceWeaponReloadCoordinator(
+        reloadCoordinator,
+        frik::rock::WeaponReloadObserverOutput{ .stage = frik::rock::WeaponVanillaReloadStage::AmmoCommitted,
+            .source = frik::rock::WeaponReloadStageSource::NativeAmmoCountEvent,
+            .sequence = 13 },
+        true);
+    ok &= expectFloat("reload coordinator inserted", static_cast<float>(coordinatorPhysical.runtime.state), static_cast<float>(frik::rock::WeaponReloadState::AmmoInserted));
+
+    frik::rock::WeaponReloadCoordinatorState fallbackReloadCoordinator{};
+    const auto coordinatorFallbackComplete = frik::rock::advanceWeaponReloadCoordinator(
+        fallbackReloadCoordinator,
+        frik::rock::WeaponReloadObserverOutput{ .stage = frik::rock::WeaponVanillaReloadStage::AmmoCommitted,
+            .source = frik::rock::WeaponReloadStageSource::NativeAmmoCountEvent,
+            .sequence = 14 },
+        true,
+        false);
+    ok &= expectFloat("reload coordinator ammo commit fallback completes", static_cast<float>(coordinatorFallbackComplete.runtime.state),
+        static_cast<float>(frik::rock::WeaponReloadState::Idle));
+    ok &= expectFloat("reload coordinator ammo commit fallback allows support", coordinatorFallbackComplete.runtime.supportGripAllowed ? 1.0f : 0.0f, 1.0f);
+
+    frik::rock::WeaponInteractionContact magwellReloadContact{};
+    magwellReloadContact.valid = true;
+    magwellReloadContact.bodyId = 202;
+    magwellReloadContact.partKind = magwellPart.partKind;
+    magwellReloadContact.supportGripRole = magwellPart.supportGripRole;
+    magwellReloadContact.socketRole = magwellPart.socketRole;
+    const auto socketRoute = frik::rock::routeWeaponInteraction(magwellReloadContact, coordinatorPhysical.runtime);
+    ok &= expectFloat("weapon router reload socket wins over support", static_cast<float>(socketRoute.kind), static_cast<float>(frik::rock::WeaponInteractionKind::SocketInsert));
+
+    ok &= expectFloat("reload physical gate falls back when unsupported",
+        frik::rock::shouldRequireWeaponReloadPhysicalCompletion(true, true, false) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("reload physical gate remains strict when fallback disabled",
+        frik::rock::shouldRequireWeaponReloadPhysicalCompletion(true, false, false) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("reload physical gate remains strict when supported",
+        frik::rock::shouldRequireWeaponReloadPhysicalCompletion(true, true, true) ? 1.0f : 0.0f,
+        1.0f);
+
+    ok &= expectFloat("stale reload fallback inactive when strict physical gate",
+        frik::rock::shouldFallbackCompleteStaleReload(true, true, true, 240, 180) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("stale reload fallback active when unsupported fallback times out",
+        frik::rock::shouldFallbackCompleteStaleReload(true, false, true, 180, 180) ? 1.0f : 0.0f,
+        1.0f);
+
+    const float probeInside = frik::rock::weapon_interaction_probe_math::pointAabbDistanceSquared(
+        TestVector{ 1.0f, 2.0f, 3.0f },
+        TestVector{ 0.0f, 0.0f, 0.0f },
+        TestVector{ 2.0f, 4.0f, 6.0f });
+    ok &= expectFloat("weapon interaction probe point inside aabb", probeInside, 0.0f);
+    const float probeOutside = frik::rock::weapon_interaction_probe_math::pointAabbDistanceSquared(
+        TestVector{ 5.0f, 2.0f, 3.0f },
+        TestVector{ 0.0f, 0.0f, 0.0f },
+        TestVector{ 2.0f, 4.0f, 6.0f });
+    ok &= expectFloat("weapon interaction probe point outside aabb", probeOutside, 9.0f);
+    ok &= expectFloat("weapon interaction probe radius check",
+        frik::rock::weapon_interaction_probe_math::isWithinProbeRadiusSquared(probeOutside, 3.0f) ? 1.0f : 0.0f,
+        1.0f);
+
+    TestTransform twoHandWeapon{};
+    twoHandWeapon.rotate = identity;
+    twoHandWeapon.scale = 1.0f;
+    twoHandWeapon.translate = TestVector{ 3.0f, 4.0f, 5.0f };
+    frik::rock::WeaponTwoHandedSolverInput<TestTransform, TestVector> solverInput{};
+    solverInput.weaponWorldTransform = twoHandWeapon;
+    solverInput.primaryGripLocal = TestVector{ 0.5f, 0.0f, 0.0f };
+    solverInput.supportGripLocal = TestVector{ 0.5f, 2.0f, 0.0f };
+    solverInput.primaryTargetWorld = TestVector{ 10.0f, 20.0f, 30.0f };
+    solverInput.supportTargetWorld = TestVector{ 16.0f, 20.0f, 30.0f };
+
+    const auto solvedTwoHand = frik::rock::solveTwoHandedWeaponTransform(solverInput);
+    ok &= expectFloat("two handed solver solved", solvedTwoHand.solved ? 1.0f : 0.0f, 1.0f);
+    const auto solvedPrimaryWorld = frik::rock::transform_math::localPointToWorld(solvedTwoHand.weaponWorldTransform, solverInput.primaryGripLocal);
+    const auto solvedSupportWorld = frik::rock::transform_math::localPointToWorld(solvedTwoHand.weaponWorldTransform, solverInput.supportGripLocal);
+    ok &= expectFloat("two handed solver primary x", solvedPrimaryWorld.x, 10.0f);
+    ok &= expectFloat("two handed solver primary y", solvedPrimaryWorld.y, 20.0f);
+    ok &= expectFloat("two handed solver primary z", solvedPrimaryWorld.z, 30.0f);
+
+    TestTransform twoHandTwistWeapon{};
+    twoHandTwistWeapon.rotate = identity;
+    twoHandTwistWeapon.scale = 1.0f;
+    twoHandTwistWeapon.translate = TestVector{ 0.0f, 0.0f, 0.0f };
+    frik::rock::WeaponTwoHandedSolverInput<TestTransform, TestVector> twistSolverInput{};
+    twistSolverInput.weaponWorldTransform = twoHandTwistWeapon;
+    twistSolverInput.primaryGripLocal = TestVector{ 0.0f, 0.0f, 0.0f };
+    twistSolverInput.supportGripLocal = TestVector{ 2.0f, 0.0f, 0.0f };
+    twistSolverInput.primaryTargetWorld = TestVector{ 0.0f, 0.0f, 0.0f };
+    twistSolverInput.supportTargetWorld = TestVector{ 2.0f, 0.0f, 0.0f };
+    twistSolverInput.supportNormalLocal = TestVector{ 0.0f, 0.0f, 1.0f };
+    twistSolverInput.supportNormalTargetWorld = TestVector{ 0.0f, 1.0f, 0.0f };
+    twistSolverInput.useSupportNormalTwist = true;
+    twistSolverInput.supportNormalTwistFactor = 1.0f;
+    const auto solvedTwist = frik::rock::solveTwoHandedWeaponTransform(twistSolverInput);
+    const auto solvedTwistNormal = frik::rock::transform_math::localVectorToWorld(solvedTwist.weaponWorldTransform, twistSolverInput.supportNormalLocal);
+    ok &= expectFloat("two handed solver twist solved", solvedTwist.solved ? 1.0f : 0.0f, 1.0f);
+    ok &= expectFloat("two handed solver twists support normal x", solvedTwistNormal.x, 0.0f);
+    ok &= expectFloat("two handed solver twists support normal y", solvedTwistNormal.y, 1.0f);
+    ok &= expectFloat("two handed solver twists support normal z", solvedTwistNormal.z, 0.0f);
+    ok &= expectFloat("two handed solver support x", solvedSupportWorld.x, 12.0f);
+    ok &= expectFloat("two handed solver support y", solvedSupportWorld.y, 20.0f);
+    ok &= expectFloat("two handed solver support z", solvedSupportWorld.z, 30.0f);
 
     ok &= expectFloat("held velocity damping clamp low", frik::rock::held_object_damping_math::clampVelocityDamping(-2.0f), 0.0f);
     ok &= expectFloat("held velocity damping clamp high", frik::rock::held_object_damping_math::clampVelocityDamping(1.5f), 1.0f);
@@ -418,6 +659,54 @@ int main()
     ok &= expectFloat("held damped velocity x", dampedVelocity.x, 7.5f);
     ok &= expectFloat("held damped velocity y", dampedVelocity.y, -15.0f);
     ok &= expectFloat("held damped velocity z", dampedVelocity.z, 3.75f);
+
+    const auto playerVelocity = frik::rock::held_object_physics_math::gameUnitsDeltaToHavokVelocity(TestVector{ 70.0f, -140.0f, 35.0f }, 0.5f);
+    ok &= expectFloat("held player velocity x", playerVelocity.x, 2.0f);
+    ok &= expectFloat("held player velocity y", playerVelocity.y, -4.0f);
+    ok &= expectFloat("held player velocity z", playerVelocity.z, 1.0f);
+
+    const auto residualDampedVelocity =
+        frik::rock::held_object_physics_math::applyResidualVelocityDamping(TestVector{ 12.0f, 0.0f, 0.0f }, TestVector{ 8.0f, 0.0f, 0.0f }, 0.25f);
+    ok &= expectFloat("held residual damping preserves player x", residualDampedVelocity.x, 11.0f);
+    ok &= expectFloat("held residual damping preserves player y", residualDampedVelocity.y, 0.0f);
+    ok &= expectFloat("held residual damping preserves player z", residualDampedVelocity.z, 0.0f);
+
+    ok &= expectFloat("held player-space warp below threshold",
+        frik::rock::held_object_physics_math::shouldWarpPlayerSpaceDelta(TestVector{ 35.0f, 0.0f, 0.0f }, 35.0f) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("held player-space warp above threshold",
+        frik::rock::held_object_physics_math::shouldWarpPlayerSpaceDelta(TestVector{ 36.0f, 0.0f, 0.0f }, 35.0f) ? 1.0f : 0.0f,
+        1.0f);
+
+    const auto releaseVelocity =
+        frik::rock::held_object_physics_math::composeReleaseVelocity(TestVector{ 3.0f, 0.0f, 0.0f }, TestVector{ 8.0f, 1.0f, 0.0f }, 1.5f);
+    ok &= expectFloat("held release velocity x", releaseVelocity.x, 12.5f);
+    ok &= expectFloat("held release velocity y", releaseVelocity.y, 1.0f);
+    ok &= expectFloat("held release velocity z", releaseVelocity.z, 0.0f);
+
+    std::array<TestVector, 5> releaseHistory{};
+    releaseHistory[0] = TestVector{ 1.0f, 0.0f, 0.0f };
+    releaseHistory[1] = TestVector{ 4.0f, 0.0f, 0.0f };
+    releaseHistory[2] = TestVector{ 7.0f, 0.0f, 0.0f };
+    releaseHistory[3] = TestVector{ 4.0f, 0.0f, 0.0f };
+    releaseHistory[4] = TestVector{ 1.0f, 0.0f, 0.0f };
+    const auto maxReleaseVelocity = frik::rock::held_object_physics_math::maxMagnitudeVelocity(releaseHistory, 5);
+    ok &= expectFloat("held release max history x", maxReleaseVelocity.x, 5.0f);
+    ok &= expectFloat("held release max history y", maxReleaseVelocity.y, 0.0f);
+    ok &= expectFloat("held release max history z", maxReleaseVelocity.z, 0.0f);
+
+    ok &= expectFloat("held lerp duration min",
+        frik::rock::held_object_physics_math::computeHandLerpDuration(7.0f, 0.10f, 0.20f, 7.0f, 14.0f),
+        0.10f);
+    ok &= expectFloat("held lerp duration midpoint",
+        frik::rock::held_object_physics_math::computeHandLerpDuration(10.5f, 0.10f, 0.20f, 7.0f, 14.0f),
+        0.15f);
+    ok &= expectFloat("held tau advance",
+        frik::rock::held_object_physics_math::advanceToward(0.03f, 0.01f, 0.5f, 0.02f),
+        0.02f);
+    ok &= expectFloat("held angular force ratio",
+        frik::rock::held_object_physics_math::angularForceFromRatio(2000.0f, 12.5f),
+        160.0f);
 
     TestTransform currentHandVisual{};
     currentHandVisual.rotate = identity;
@@ -501,6 +790,64 @@ int main()
     ok &= expectFloat("weapon spell layer enabled",
         (weaponLayerMatrix[frik::rock::collision_layer_policy::ROCK_LAYER_WEAPON] & (1ULL << frik::rock::collision_layer_policy::FO4_LAYER_SPELL)) ? 1.0f : 0.0f,
         1.0f);
+
+    using frik::rock::native_melee_suppression::NativeMeleeEvent;
+    using frik::rock::native_melee_suppression::NativeMeleePolicyInput;
+    using frik::rock::native_melee_suppression::NativeMeleeSuppressionAction;
+    using frik::rock::native_melee_suppression::evaluateNativeMeleeSuppression;
+
+    const NativeMeleePolicyInput npcSwingInput{ .rockEnabled = true,
+        .suppressionEnabled = true,
+        .suppressWeaponSwing = true,
+        .suppressHitFrame = true,
+        .actorIsPlayer = false,
+        .physicalSwingActive = false };
+    ok &= expectFloat("native melee npc swing calls native",
+        static_cast<float>(evaluateNativeMeleeSuppression(NativeMeleeEvent::WeaponSwing, npcSwingInput).action),
+        static_cast<float>(NativeMeleeSuppressionAction::CallNative));
+
+    const NativeMeleePolicyInput playerSwingInput{ .rockEnabled = true,
+        .suppressionEnabled = true,
+        .suppressWeaponSwing = true,
+        .suppressHitFrame = true,
+        .actorIsPlayer = true,
+        .physicalSwingActive = false };
+    ok &= expectFloat("native melee player weapon swing suppressed",
+        static_cast<float>(evaluateNativeMeleeSuppression(NativeMeleeEvent::WeaponSwing, playerSwingInput).action),
+        static_cast<float>(NativeMeleeSuppressionAction::ReturnUnhandled));
+
+    const NativeMeleePolicyInput playerHitFrameInput{ .rockEnabled = true,
+        .suppressionEnabled = true,
+        .suppressWeaponSwing = true,
+        .suppressHitFrame = true,
+        .actorIsPlayer = true,
+        .physicalSwingActive = false };
+    ok &= expectFloat("native melee player hitframe suppressed without physical swing",
+        static_cast<float>(evaluateNativeMeleeSuppression(NativeMeleeEvent::HitFrame, playerHitFrameInput).action),
+        static_cast<float>(NativeMeleeSuppressionAction::ReturnUnhandled));
+
+    const NativeMeleePolicyInput physicalSwingHitFrameInput{ .rockEnabled = true,
+        .suppressionEnabled = true,
+        .suppressWeaponSwing = true,
+        .suppressHitFrame = true,
+        .actorIsPlayer = true,
+        .physicalSwingActive = true };
+    ok &= expectFloat("native melee player hitframe handled by physical swing",
+        static_cast<float>(evaluateNativeMeleeSuppression(NativeMeleeEvent::HitFrame, physicalSwingHitFrameInput).action),
+        static_cast<float>(NativeMeleeSuppressionAction::ReturnHandled));
+
+    const NativeMeleePolicyInput disabledSuppressionInput{ .rockEnabled = true,
+        .suppressionEnabled = false,
+        .suppressWeaponSwing = true,
+        .suppressHitFrame = true,
+        .actorIsPlayer = true,
+        .physicalSwingActive = false };
+    ok &= expectFloat("native melee disabled policy calls native",
+        static_cast<float>(evaluateNativeMeleeSuppression(NativeMeleeEvent::WeaponSwing, disabledSuppressionInput).action),
+        static_cast<float>(NativeMeleeSuppressionAction::CallNative));
+    ok &= expectFloat("native melee swing lease inactive with no expiry", frik::rock::native_melee_suppression::isPhysicalSwingLeaseActive(100, 0) ? 1.0f : 0.0f, 0.0f);
+    ok &= expectFloat("native melee swing lease active before expiry", frik::rock::native_melee_suppression::isPhysicalSwingLeaseActive(100, 110) ? 1.0f : 0.0f, 1.0f);
+    ok &= expectFloat("native melee swing lease inactive after expiry", frik::rock::native_melee_suppression::isPhysicalSwingLeaseActive(111, 110) ? 1.0f : 0.0f, 0.0f);
 
     return ok ? 0 : 1;
 }

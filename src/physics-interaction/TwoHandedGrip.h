@@ -7,6 +7,7 @@
 #include "PalmTransform.h"
 #include "PhysicsLog.h"
 #include "PhysicsUtils.h"
+#include "WeaponInteractionRouter.h"
 
 #include "RE/NetImmerse/NiAVObject.h"
 #include "RE/NetImmerse/NiNode.h"
@@ -24,7 +25,12 @@ namespace frik::rock
     class TwoHandedGrip
     {
     public:
-        void update(RE::NiNode* weaponNode, bool offhandTouching, bool gripPressed, bool isLeftHanded, float dt);
+        void update(
+            RE::NiNode* weaponNode,
+            const WeaponInteractionContact& leftWeaponContact,
+            bool leftGripPressed,
+            float dt,
+            const WeaponReloadRuntimeState& reloadState);
 
         void reset();
 
@@ -34,16 +40,18 @@ namespace frik::rock
 
         TwoHandedState getState() const { return _state; }
 
+        bool getSolvedWeaponTransform(RE::NiTransform& outTransform) const;
+
     private:
-        void transitionToTouching(RE::NiNode* weaponNode);
-        void transitionToGripping(RE::NiNode* weaponNode, bool isLeftHanded);
-        void transitionToInactive(bool isLeftHanded);
+        void transitionToTouching(RE::NiNode* weaponNode, const WeaponInteractionDecision& decision);
+        void transitionToGripping(RE::NiNode* weaponNode, const WeaponInteractionDecision& decision);
+        void transitionToInactive();
 
-        void updateGripping(RE::NiNode* weaponNode, bool isLeftHanded, float dt);
+        void updateGripping(RE::NiNode* weaponNode, float dt);
 
-        void setBarrelGripPose(bool isLeft, const std::array<float, 5>* meshFingerPose);
+        void setSupportGripPose(bool isLeft, WeaponGripPoseId poseId, const std::array<float, 5>* meshFingerPose);
 
-        void clearBarrelGripPose(bool isLeft);
+        void clearSupportGripPose(bool isLeft);
 
         static void killFrikOffhandGrip();
 
@@ -63,6 +71,12 @@ namespace frik::rock
 
         RE::NiPoint3 _grabNormal{};
 
+        RE::NiPoint3 _supportNormalLocal{};
+
+        WeaponGripPoseId _supportGripPose{ WeaponGripPoseId::BarrelWrap };
+
+        WeaponPartKind _supportPartKind{ WeaponPartKind::Other };
+
         int _touchFrames{ 0 };
         static constexpr int TOUCH_TIMEOUT_FRAMES = 5;
 
@@ -70,6 +84,14 @@ namespace frik::rock
         static constexpr float ROTATION_BLEND_SPEED = 8.0f;
 
         int _gripLogCounter{ 0 };
+
+        RE::NiTransform _lastSolvedWeaponTransform{};
+
+        bool _hasSolvedWeaponTransform{ false };
+
+        RE::NiNode* _activeWeaponNode{ nullptr };
+        RE::NiTransform _weaponNodeLocalBaseline{};
+        bool _hasWeaponNodeLocalBaseline{ false };
     };
 
 }

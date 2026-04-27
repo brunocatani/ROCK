@@ -11,6 +11,7 @@
 #include "PhysicsLog.h"
 #include "PhysicsUtils.h"
 #include "WeaponCollisionLimits.h"
+#include "WeaponSemanticTypes.h"
 
 #include "RE/Havok/hknpBody.h"
 #include "RE/Havok/hknpBodyCinfo.h"
@@ -60,9 +61,19 @@ namespace frik::rock
 
         bool isWeaponBodyIdAtomic(std::uint32_t bodyId) const;
 
+        bool tryGetWeaponContactAtomic(std::uint32_t bodyId, WeaponInteractionContact& outContact) const;
+
+        bool tryFindInteractionContactNearPoint(
+            const RE::NiAVObject* weaponNode,
+            const RE::NiPoint3& probeWorldPoint,
+            float probeRadiusGame,
+            WeaponInteractionContact& outContact) const;
+
         BethesdaPhysicsBody& getWeaponBody();
 
         void destroyWeaponBody(RE::hknpWorld* world);
+
+        void updateBodiesFromWeaponRootTransform(RE::hknpWorld* world, const RE::NiTransform& weaponRootTransform, float dt);
 
     private:
         static constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
@@ -76,6 +87,7 @@ namespace frik::rock
             RE::NiPoint3 localMaxGame{};
             RE::NiAVObject* sourceRoot{ nullptr };
             std::string sourceName;
+            WeaponPartClassification semantic{};
         };
 
         struct WeaponBodyInstance
@@ -84,13 +96,15 @@ namespace frik::rock
             const RE::hknpShape* shape{ nullptr };
             RE::NiAVObject* sourceNode{ nullptr };
             RE::NiPoint3 generatedLocalCenterGame{};
+            RE::NiPoint3 generatedLocalMinGame{};
+            RE::NiPoint3 generatedLocalMaxGame{};
+            WeaponPartClassification semantic{};
             bool ownsShapeRef{ false };
             bool hasPrevTransform{ false };
             RE::NiPoint3 prevPosition{};
         };
 
         void createGeneratedWeaponBodies(RE::hknpWorld* world, const std::vector<GeneratedHullSource>& sources);
-        void resetWeaponBodiesWithoutDestroy();
         void clearWeaponBodyInstance(WeaponBodyInstance& instance, bool releaseShapeRef);
         void clearAtomicBodyIds();
         void publishAtomicBodyIds();
@@ -113,6 +127,12 @@ namespace frik::rock
         bool _weaponBodyPending{ false };
 
         std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodyIdsAtomic;
+        std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodyPartKindsAtomic;
+        std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodyReloadRolesAtomic;
+        std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodySupportRolesAtomic;
+        std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodySocketRolesAtomic;
+        std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodyActionRolesAtomic;
+        std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodyGripPosesAtomic;
         std::atomic<std::uint32_t> _weaponBodyCountAtomic{ 0 };
 
         int _retryCounter{ 0 };

@@ -60,6 +60,20 @@ namespace frik::rock
         RE::NiPoint3 rockWeaponCollisionRotationDegrees = RE::NiPoint3(0.0f, 0.0f, 0.0f);
         float rockWeaponCollisionConvexRadius = 0.01f;
         float rockWeaponCollisionPointDedupGrid = 0.002f;
+        float rockWeaponCollisionMaxLinearVelocity = 50.0f;
+        float rockWeaponCollisionMaxAngularVelocity = 100.0f;
+        float rockWeaponInteractionProbeRadius = 12.0f;
+
+        bool rockReloadUseVanillaStageObserver = true;
+        bool rockReloadRequirePhysicalCompletion = true;
+        bool rockReloadAllowStageFallbacks = true;
+        int rockReloadObserverStaleFrameTimeout = 180;
+        bool rockReloadDebugStageLogging = false;
+
+        bool rockNativeMeleeSuppressionEnabled = true;
+        bool rockNativeMeleeSuppressWeaponSwing = true;
+        bool rockNativeMeleeSuppressHitFrame = true;
+        bool rockNativeMeleeDebugLogging = false;
 
         std::uint32_t rockHighlightShaderFormID = 0x00249733;
         bool rockHighlightEnabled = true;
@@ -87,14 +101,14 @@ namespace frik::rock
         float rockFarDetectionRange = 350.0f;
 
         float rockGrabLinearTau = 0.03f;
-        float rockGrabLinearDamping = 1.0f;
-        float rockGrabLinearProportionalRecovery = 4.1f;
-        float rockGrabLinearConstantRecovery = 2.1f;
+        float rockGrabLinearDamping = 0.8f;
+        float rockGrabLinearProportionalRecovery = 2.0f;
+        float rockGrabLinearConstantRecovery = 1.0f;
 
         float rockGrabAngularTau = 0.03f;
         float rockGrabAngularDamping = 0.8f;
-        float rockGrabAngularProportionalRecovery = 4.1f;
-        float rockGrabAngularConstantRecovery = 2.1f;
+        float rockGrabAngularProportionalRecovery = 2.0f;
+        float rockGrabAngularConstantRecovery = 1.0f;
 
         float rockGrabConstraintMaxForce = 2000.0f;
         float rockGrabAngularToLinearForceRatio = 12.5f;
@@ -115,8 +129,16 @@ namespace frik::rock
         int rockGrabButtonID = 2;
         float rockThrowVelocityMultiplier = 1.5f;
         float rockGrabVelocityDamping = 0.25f;
+        bool rockGrabPlayerSpaceCompensation = true;
+        float rockGrabPlayerSpaceWarpDistance = 35.0f;
+        bool rockGrabResidualVelocityDamping = true;
         bool rockGrabHandLerpEnabled = true;
+        float rockGrabHandLerpTimeMin = 0.10f;
+        float rockGrabHandLerpTimeMax = 0.20f;
+        float rockGrabHandLerpMinDistance = 7.0f;
+        float rockGrabHandLerpMaxDistance = 14.0f;
         bool rockGrabMeshFingerPoseEnabled = true;
+        int rockGrabFingerPoseUpdateInterval = 3;
         float rockGrabFingerMinValue = 0.2f;
 
         RE::NiPoint3 rockGrabPivotAOffsetHandspace = RE::NiPoint3(0.0f, 0.0f, 0.0f);

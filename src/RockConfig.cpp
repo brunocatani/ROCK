@@ -57,6 +57,20 @@ namespace frik::rock
         rockWeaponCollisionRotationDegrees = RE::NiPoint3(0.0f, 0.0f, 0.0f);
         rockWeaponCollisionConvexRadius = 0.01f;
         rockWeaponCollisionPointDedupGrid = 0.002f;
+        rockWeaponCollisionMaxLinearVelocity = 50.0f;
+        rockWeaponCollisionMaxAngularVelocity = 100.0f;
+        rockWeaponInteractionProbeRadius = 12.0f;
+
+        rockReloadUseVanillaStageObserver = true;
+        rockReloadRequirePhysicalCompletion = true;
+        rockReloadAllowStageFallbacks = true;
+        rockReloadObserverStaleFrameTimeout = 180;
+        rockReloadDebugStageLogging = false;
+
+        rockNativeMeleeSuppressionEnabled = true;
+        rockNativeMeleeSuppressWeaponSwing = true;
+        rockNativeMeleeSuppressHitFrame = true;
+        rockNativeMeleeDebugLogging = false;
 
         rockHighlightShaderFormID = 0x00249733;
         rockHighlightEnabled = true;
@@ -84,14 +98,14 @@ namespace frik::rock
         rockFarDetectionRange = 350.0f;
 
         rockGrabLinearTau = 0.03f;
-        rockGrabLinearDamping = 1.0f;
-        rockGrabLinearProportionalRecovery = 4.1f;
-        rockGrabLinearConstantRecovery = 2.1f;
+        rockGrabLinearDamping = 0.8f;
+        rockGrabLinearProportionalRecovery = 2.0f;
+        rockGrabLinearConstantRecovery = 1.0f;
 
         rockGrabAngularTau = 0.03f;
         rockGrabAngularDamping = 0.8f;
-        rockGrabAngularProportionalRecovery = 4.1f;
-        rockGrabAngularConstantRecovery = 2.1f;
+        rockGrabAngularProportionalRecovery = 2.0f;
+        rockGrabAngularConstantRecovery = 1.0f;
 
         rockGrabConstraintMaxForce = 2000.0f;
         rockGrabAngularToLinearForceRatio = 12.5f;
@@ -112,8 +126,16 @@ namespace frik::rock
         rockGrabButtonID = 2;
         rockThrowVelocityMultiplier = 1.5f;
         rockGrabVelocityDamping = 0.25f;
+        rockGrabPlayerSpaceCompensation = true;
+        rockGrabPlayerSpaceWarpDistance = 35.0f;
+        rockGrabResidualVelocityDamping = true;
         rockGrabHandLerpEnabled = true;
+        rockGrabHandLerpTimeMin = 0.10f;
+        rockGrabHandLerpTimeMax = 0.20f;
+        rockGrabHandLerpMinDistance = 7.0f;
+        rockGrabHandLerpMaxDistance = 14.0f;
         rockGrabMeshFingerPoseEnabled = true;
+        rockGrabFingerPoseUpdateInterval = 3;
         rockGrabFingerMinValue = 0.2f;
 
         rockGrabPivotAOffsetHandspace = RE::NiPoint3(0.0f, 0.0f, 0.0f);
@@ -164,6 +186,22 @@ namespace frik::rock
         readVec3("fWeaponCollisionRotationX", "fWeaponCollisionRotationY", "fWeaponCollisionRotationZ", rockWeaponCollisionRotationDegrees);
         rockWeaponCollisionConvexRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionConvexRadius", rockWeaponCollisionConvexRadius));
         rockWeaponCollisionPointDedupGrid = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionPointDedupGrid", rockWeaponCollisionPointDedupGrid));
+        rockWeaponCollisionMaxLinearVelocity =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionMaxLinearVelocity", rockWeaponCollisionMaxLinearVelocity));
+        rockWeaponCollisionMaxAngularVelocity =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionMaxAngularVelocity", rockWeaponCollisionMaxAngularVelocity));
+        rockWeaponInteractionProbeRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponInteractionProbeRadius", rockWeaponInteractionProbeRadius));
+
+        rockReloadUseVanillaStageObserver = ini.GetBoolValue(SECTION, "bReloadUseVanillaStageObserver", rockReloadUseVanillaStageObserver);
+        rockReloadRequirePhysicalCompletion = ini.GetBoolValue(SECTION, "bReloadRequirePhysicalCompletion", rockReloadRequirePhysicalCompletion);
+        rockReloadAllowStageFallbacks = ini.GetBoolValue(SECTION, "bReloadAllowStageFallbacks", rockReloadAllowStageFallbacks);
+        rockReloadObserverStaleFrameTimeout = static_cast<int>(ini.GetLongValue(SECTION, "iReloadObserverStaleFrameTimeout", rockReloadObserverStaleFrameTimeout));
+        rockReloadDebugStageLogging = ini.GetBoolValue(SECTION, "bReloadDebugStageLogging", rockReloadDebugStageLogging);
+
+        rockNativeMeleeSuppressionEnabled = ini.GetBoolValue(SECTION, "bNativeMeleeSuppressionEnabled", rockNativeMeleeSuppressionEnabled);
+        rockNativeMeleeSuppressWeaponSwing = ini.GetBoolValue(SECTION, "bNativeMeleeSuppressWeaponSwing", rockNativeMeleeSuppressWeaponSwing);
+        rockNativeMeleeSuppressHitFrame = ini.GetBoolValue(SECTION, "bNativeMeleeSuppressHitFrame", rockNativeMeleeSuppressHitFrame);
+        rockNativeMeleeDebugLogging = ini.GetBoolValue(SECTION, "bNativeMeleeDebugLogging", rockNativeMeleeDebugLogging);
 
         {
             char hexBuf[16] = {};
@@ -226,8 +264,16 @@ namespace frik::rock
         rockGrabButtonID = static_cast<int>(ini.GetLongValue(SECTION, "iGrabButtonID", rockGrabButtonID));
         rockThrowVelocityMultiplier = static_cast<float>(ini.GetDoubleValue(SECTION, "fThrowVelocityMultiplier", rockThrowVelocityMultiplier));
         rockGrabVelocityDamping = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabVelocityDamping", rockGrabVelocityDamping));
+        rockGrabPlayerSpaceCompensation = ini.GetBoolValue(SECTION, "bGrabPlayerSpaceCompensation", rockGrabPlayerSpaceCompensation);
+        rockGrabPlayerSpaceWarpDistance = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabPlayerSpaceWarpDistance", rockGrabPlayerSpaceWarpDistance));
+        rockGrabResidualVelocityDamping = ini.GetBoolValue(SECTION, "bGrabResidualVelocityDamping", rockGrabResidualVelocityDamping);
         rockGrabHandLerpEnabled = ini.GetBoolValue(SECTION, "bGrabHandLerpEnabled", rockGrabHandLerpEnabled);
+        rockGrabHandLerpTimeMin = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabHandLerpTimeMin", rockGrabHandLerpTimeMin));
+        rockGrabHandLerpTimeMax = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabHandLerpTimeMax", rockGrabHandLerpTimeMax));
+        rockGrabHandLerpMinDistance = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabHandLerpMinDistance", rockGrabHandLerpMinDistance));
+        rockGrabHandLerpMaxDistance = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabHandLerpMaxDistance", rockGrabHandLerpMaxDistance));
         rockGrabMeshFingerPoseEnabled = ini.GetBoolValue(SECTION, "bGrabMeshFingerPoseEnabled", rockGrabMeshFingerPoseEnabled);
+        rockGrabFingerPoseUpdateInterval = static_cast<int>(ini.GetLongValue(SECTION, "iGrabFingerPoseUpdateInterval", rockGrabFingerPoseUpdateInterval));
         rockGrabFingerMinValue = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFingerMinValue", rockGrabFingerMinValue));
 
         readVec3("fGrabPivotAOffsetHandspaceX", "fGrabPivotAOffsetHandspaceY", "fGrabPivotAOffsetHandspaceZ", rockGrabPivotAOffsetHandspace);

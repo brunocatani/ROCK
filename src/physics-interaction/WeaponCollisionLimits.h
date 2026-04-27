@@ -11,5 +11,5 @@ namespace frik::rock
      * private literal so collision creation, debug publishing, and tests stay on
      * the same body budget.
      */
-    inline constexpr std::size_t MAX_WEAPON_COLLISION_BODIES = 32;
+    inline constexpr std::size_t MAX_WEAPON_COLLISION_BODIES = 64;
 }

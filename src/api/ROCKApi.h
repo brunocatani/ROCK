@@ -15,7 +15,7 @@ namespace rock::api
 
 #define ROCK_CALL __cdecl
 
-    inline constexpr std::uint32_t ROCK_API_VERSION = 1;
+    inline constexpr std::uint32_t ROCK_API_VERSION = 2;
 
     struct ROCKApi
     {
@@ -37,6 +37,72 @@ namespace rock::api
             kOnRelease = 103,
             kOnPhysicsInit = 104,
             kOnPhysicsShutdown = 105,
+        };
+
+        enum class WeaponPartKind : std::uint8_t
+        {
+            Receiver,
+            Barrel,
+            Handguard,
+            Foregrip,
+            Pump,
+            Stock,
+            Grip,
+            Magazine,
+            Magwell,
+            Bolt,
+            Slide,
+            ChargingHandle,
+            BreakAction,
+            Cylinder,
+            Chamber,
+            Shell,
+            Round,
+            LaserCell,
+            Lever,
+            Sight,
+            Accessory,
+            CosmeticAmmo,
+            Other,
+        };
+
+        enum class WeaponReloadState : std::uint8_t
+        {
+            Idle,
+            ReloadRequested,
+            WeaponOpened,
+            WeaponUnloaded,
+            PouchAvailable,
+            AmmoHeld,
+            AmmoAligned,
+            AmmoInserted,
+            ActionRequired,
+            ActionManipulating,
+            Completing,
+            Canceled,
+        };
+
+        enum class WeaponVanillaReloadStage : std::uint8_t
+        {
+            Idle,
+            ReloadRequested,
+            VanillaReloadStarted,
+            AmmoDetachWindow,
+            AmmoCommitted,
+            ActionWindow,
+            Completing,
+            Complete,
+            Canceled,
+            UnsafeUnknown,
+        };
+
+        enum class WeaponReloadStageSource : std::uint8_t
+        {
+            None,
+            NativeReloadEvent,
+            NativeAmmoCountEvent,
+            PollingFallback,
+            ConfigFallback,
         };
 
         struct PhysicsEventData
@@ -65,6 +131,10 @@ namespace rock::api
         bool(ROCK_CALL* releasePhysicsObject)(RE::TESObjectREFR* refr);
         bool(ROCK_CALL* isPhysicsObjectClaimed)(RE::TESObjectREFR* refr);
         void(ROCK_CALL* forceDropObject)(Hand hand);
+        std::uint32_t(ROCK_CALL* getLastTouchedWeaponPartKind)();
+        std::uint32_t(ROCK_CALL* getActiveWeaponReloadState)();
+        std::uint32_t(ROCK_CALL* getObservedWeaponReloadStage)();
+        std::uint32_t(ROCK_CALL* getWeaponReloadStageSource)();
 
         [[nodiscard]] static int initialize(const uint32_t minVersion = ROCK_API_VERSION)
         {

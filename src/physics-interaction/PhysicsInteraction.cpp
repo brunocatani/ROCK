@@ -5,10 +5,13 @@
 #include <cmath>
 #include <numbers>
 
+#include "BodyCollisionControl.h"
 #include "CollisionLayerPolicy.h"
 #include "HavokOffsets.h"
 #include "DebugBodyOverlay.h"
 #include "DebugOverlayPolicy.h"
+#include "HeldObjectPhysicsMath.h"
+#include "HandCollisionSuppressionMath.h"
 #include "PalmTransform.h"
 #include "PhysicsHooks.h"
 #include "PhysicsUtils.h"
@@ -74,6 +77,81 @@ namespace frik::rock
         {
             const float dot = std::clamp(a.x * b.x + a.y * b.y + a.z * b.z, -1.0f, 1.0f);
             return std::acos(dot) * (180.0f / std::numbers::pi_v<float>);
+        }
+
+        const char* reloadStageName(WeaponVanillaReloadStage stage)
+        {
+            switch (stage) {
+            case WeaponVanillaReloadStage::Idle:
+                return "Idle";
+            case WeaponVanillaReloadStage::ReloadRequested:
+                return "ReloadRequested";
+            case WeaponVanillaReloadStage::VanillaReloadStarted:
+                return "VanillaReloadStarted";
+            case WeaponVanillaReloadStage::AmmoDetachWindow:
+                return "AmmoDetachWindow";
+            case WeaponVanillaReloadStage::AmmoCommitted:
+                return "AmmoCommitted";
+            case WeaponVanillaReloadStage::ActionWindow:
+                return "ActionWindow";
+            case WeaponVanillaReloadStage::Completing:
+                return "Completing";
+            case WeaponVanillaReloadStage::Complete:
+                return "Complete";
+            case WeaponVanillaReloadStage::Canceled:
+                return "Canceled";
+            case WeaponVanillaReloadStage::UnsafeUnknown:
+                return "UnsafeUnknown";
+            }
+            return "Unknown";
+        }
+
+        const char* reloadSourceName(WeaponReloadStageSource source)
+        {
+            switch (source) {
+            case WeaponReloadStageSource::None:
+                return "None";
+            case WeaponReloadStageSource::NativeReloadEvent:
+                return "NativeReloadEvent";
+            case WeaponReloadStageSource::NativeAmmoCountEvent:
+                return "NativeAmmoCountEvent";
+            case WeaponReloadStageSource::PollingFallback:
+                return "PollingFallback";
+            case WeaponReloadStageSource::ConfigFallback:
+                return "ConfigFallback";
+            }
+            return "Unknown";
+        }
+
+        const char* reloadRuntimeStateName(WeaponReloadState state)
+        {
+            switch (state) {
+            case WeaponReloadState::Idle:
+                return "Idle";
+            case WeaponReloadState::ReloadRequested:
+                return "ReloadRequested";
+            case WeaponReloadState::WeaponOpened:
+                return "WeaponOpened";
+            case WeaponReloadState::WeaponUnloaded:
+                return "WeaponUnloaded";
+            case WeaponReloadState::PouchAvailable:
+                return "PouchAvailable";
+            case WeaponReloadState::AmmoHeld:
+                return "AmmoHeld";
+            case WeaponReloadState::AmmoAligned:
+                return "AmmoAligned";
+            case WeaponReloadState::AmmoInserted:
+                return "AmmoInserted";
+            case WeaponReloadState::ActionRequired:
+                return "ActionRequired";
+            case WeaponReloadState::ActionManipulating:
+                return "ActionManipulating";
+            case WeaponReloadState::Completing:
+                return "Completing";
+            case WeaponReloadState::Canceled:
+                return "Canceled";
+            }
+            return "Unknown";
         }
     }
 
@@ -304,6 +382,10 @@ namespace frik::rock
             return;
         }
 
+        if (!installNativeMeleeSuppressionHooks() && g_rockConfig.rockNativeMeleeSuppressionEnabled) {
+            ROCK_LOG_CRITICAL(Init, "Native melee suppression requested but hook installation failed; ROCK will continue without melee suppression");
+        }
+
         ROCK_LOG_INFO(Init, "Initializing ROCK physics module...");
 
         auto* bhk = getPlayerBhkWorld();
@@ -357,6 +439,9 @@ namespace frik::rock
         }
 
         _hasPrevPositions = false;
+        _hasHeldPlayerSpacePosition = false;
+        _heldObjectPlayerSpaceFrame = {};
+        _heldPlayerSpaceLogCounter = 0;
         _deltaLogCounter = 0;
         _contactLogCounter = 0;
 
@@ -392,6 +477,7 @@ namespace frik::rock
 
         if (frik::api::FRIKApi::inst->isAnyMenuOpen()) {
             if (_initialized) {
+                resetWeaponReloadStateForInterruption("menu");
                 auto* bhkMenu = getPlayerBhkWorld();
                 if (bhkMenu) {
                     auto* hknpMenu = getHknpWorld(bhkMenu);
@@ -416,6 +502,7 @@ namespace frik::rock
         }
 
         if (!g_rockConfig.rockEnabled) {
+            resetWeaponReloadStateForInterruption("disabled");
             debug::ClearFrame();
             return;
         }
@@ -505,8 +592,7 @@ namespace frik::rock
             auto* rootNode = f4vr::getRootNode();
             RE::NiAVObject* weaponNode = rootNode ? f4vr::findNode(rootNode, "Weapon") : nullptr;
 
-            bool isLeftHanded = f4vr::isLeftHandedMode();
-            auto dominantHandBodyId = isLeftHanded ? _leftHand.getCollisionBodyId() : _rightHand.getCollisionBodyId();
+            auto dominantHandBodyId = _rightHand.getCollisionBodyId();
 
             if (g_rockConfig.rockDebugVerboseLogging) {
                 if (++_wpnNodeLogCounter >= 90) {
@@ -522,17 +608,80 @@ namespace frik::rock
         }
 
         {
-            bool offhandTouching = _offhandTouchingWeapon.exchange(false, std::memory_order_acquire);
-            bool isLeftHanded = f4vr::isLeftHandedMode();
-            bool gripPressed = vrcf::VRControllers.isPressHeldDown(vrcf::Hand::Offhand, g_rockConfig.rockGrabButtonID);
-
+            WeaponInteractionContact leftWeaponContact{};
             auto* rootNode2 = f4vr::getRootNode();
             RE::NiNode* weaponNode = rootNode2 ? f4vr::findNode(rootNode2, "Weapon") : nullptr;
 
-            _twoHandedGrip.update(weaponNode, offhandTouching, gripPressed, isLeftHanded, _deltaTime);
+            auto publishLeftWeaponProbeContact = [&](WeaponInteractionContact& contact) {
+                _leftWeaponContactPartKind.store(static_cast<std::uint32_t>(contact.partKind), std::memory_order_release);
+                _leftWeaponContactReloadRole.store(static_cast<std::uint32_t>(contact.reloadRole), std::memory_order_release);
+                _leftWeaponContactSupportRole.store(static_cast<std::uint32_t>(contact.supportGripRole), std::memory_order_release);
+                _leftWeaponContactSocketRole.store(static_cast<std::uint32_t>(contact.socketRole), std::memory_order_release);
+                _leftWeaponContactActionRole.store(static_cast<std::uint32_t>(contact.actionRole), std::memory_order_release);
+                _leftWeaponContactGripPose.store(static_cast<std::uint32_t>(contact.fallbackGripPose), std::memory_order_release);
+                contact.sequence = _leftWeaponContactSequence.fetch_add(1, std::memory_order_acq_rel) + 1;
+                _leftWeaponContactMissedFrames.store(0, std::memory_order_release);
+            };
+
+            const std::uint32_t leftWeaponBodyId = _leftWeaponContactBodyId.exchange(INVALID_CONTACT_BODY_ID, std::memory_order_acquire);
+            if (leftWeaponBodyId != INVALID_CONTACT_BODY_ID) {
+                _leftWeaponContactMissedFrames.store(0, std::memory_order_release);
+                leftWeaponContact.valid = true;
+                leftWeaponContact.bodyId = leftWeaponBodyId;
+                leftWeaponContact.partKind = static_cast<WeaponPartKind>(_leftWeaponContactPartKind.load(std::memory_order_acquire));
+                leftWeaponContact.reloadRole = static_cast<WeaponReloadRole>(_leftWeaponContactReloadRole.load(std::memory_order_acquire));
+                leftWeaponContact.supportGripRole = static_cast<WeaponSupportGripRole>(_leftWeaponContactSupportRole.load(std::memory_order_acquire));
+                leftWeaponContact.socketRole = static_cast<WeaponSocketRole>(_leftWeaponContactSocketRole.load(std::memory_order_acquire));
+                leftWeaponContact.actionRole = static_cast<WeaponActionRole>(_leftWeaponContactActionRole.load(std::memory_order_acquire));
+                leftWeaponContact.fallbackGripPose = static_cast<WeaponGripPoseId>(_leftWeaponContactGripPose.load(std::memory_order_acquire));
+                leftWeaponContact.sequence = _leftWeaponContactSequence.load(std::memory_order_acquire);
+            } else if (weaponNode) {
+                const RE::NiTransform leftHandTransform = getInteractionHandTransform(true);
+                const RE::NiPoint3 leftProbePoint = computeGrabPivotAPositionFromHandBasis(leftHandTransform, true);
+                if (_weaponCollision.tryFindInteractionContactNearPoint(weaponNode, leftProbePoint, g_rockConfig.rockWeaponInteractionProbeRadius, leftWeaponContact)) {
+                    publishLeftWeaponProbeContact(leftWeaponContact);
+                    if (g_rockConfig.rockDebugVerboseLogging && ++_weaponInteractionProbeLogCounter >= 90) {
+                        _weaponInteractionProbeLogCounter = 0;
+                        ROCK_LOG_INFO(Weapon, "WeaponInteractionProbe: bodyId={} partKind={} supportRole={} reloadRole={} actionRole={} radius={:.1f}",
+                            leftWeaponContact.bodyId,
+                            static_cast<int>(leftWeaponContact.partKind),
+                            static_cast<int>(leftWeaponContact.supportGripRole),
+                            static_cast<int>(leftWeaponContact.reloadRole),
+                            static_cast<int>(leftWeaponContact.actionRole),
+                            g_rockConfig.rockWeaponInteractionProbeRadius);
+                    }
+                } else {
+                    const auto missedFrames = _leftWeaponContactMissedFrames.fetch_add(1, std::memory_order_acq_rel) + 1;
+                    if (missedFrames > WEAPON_CONTACT_TIMEOUT_FRAMES) {
+                        clearLeftWeaponContact();
+                    }
+                }
+            } else {
+                const auto missedFrames = _leftWeaponContactMissedFrames.fetch_add(1, std::memory_order_acq_rel) + 1;
+                if (missedFrames > WEAPON_CONTACT_TIMEOUT_FRAMES) {
+                    clearLeftWeaponContact();
+                }
+            }
+
+            bool gripPressed = vrcf::VRControllers.isPressHeldDown(vrcf::Hand::Left, g_rockConfig.rockGrabButtonID);
+
+            updateWeaponReloadState(weaponNode != nullptr);
+
+            _twoHandedGrip.update(weaponNode, leftWeaponContact, gripPressed, _deltaTime, _weaponReloadCoordinator.runtime);
+            if (_twoHandedGrip.isGripping()) {
+                suppressLeftHandCollisionForWeaponSupport(hknp);
+            } else {
+                restoreLeftHandCollisionAfterWeaponSupport(hknp);
+            }
+            RE::NiTransform solvedWeaponTransform{};
+            if (_twoHandedGrip.getSolvedWeaponTransform(solvedWeaponTransform)) {
+                _weaponCollision.updateBodiesFromWeaponRootTransform(hknp, solvedWeaponTransform, _deltaTime);
+            }
         }
 
         updateSelection(bhk, hknp);
+
+        _heldObjectPlayerSpaceFrame = sampleHeldObjectPlayerSpaceFrame();
 
         updateGrabInput(hknp);
 
@@ -571,6 +720,199 @@ namespace frik::rock
         }
     }
 
+    void PhysicsInteraction::updateWeaponReloadState(bool weaponEquipped)
+    {
+        if (!g_rockConfig.rockReloadUseVanillaStageObserver) {
+            if (_weaponReloadEventBridge.isInstalled()) {
+                _weaponReloadEventBridge.uninstall();
+            }
+            _weaponReloadEventBridge.reset();
+            resetWeaponReloadStateForInterruption("reload observer disabled");
+            return;
+        }
+
+        _weaponReloadEventBridge.install();
+
+        const auto snapshot = _weaponReloadEventBridge.consumeSnapshot(weaponEquipped);
+        const auto observed = advanceWeaponReloadStageObserver(_weaponReloadObserver, snapshot);
+        _lastWeaponReloadObservation = observed;
+
+        constexpr bool kPhysicalReloadCompletionSupported = false;
+        const bool requirePhysicalCompletion = shouldRequireWeaponReloadPhysicalCompletion(
+            g_rockConfig.rockReloadRequirePhysicalCompletion, g_rockConfig.rockReloadAllowStageFallbacks, kPhysicalReloadCompletionSupported);
+        const bool physicalAmmoInserted = !requirePhysicalCompletion && observed.stage == WeaponVanillaReloadStage::AmmoCommitted;
+        auto coordinated = advanceWeaponReloadCoordinator(_weaponReloadCoordinator, observed, physicalAmmoInserted, requirePhysicalCompletion);
+
+        const bool nativeEventReceived = snapshot.reloadEventReceived || snapshot.ammoEventReceived;
+        if (!coordinated.runtime.isReloadActive() || nativeEventReceived || coordinated.stateChanged) {
+            _reloadObserverStaleFrames = 0;
+        } else {
+            ++_reloadObserverStaleFrames;
+        }
+
+        const std::uint32_t staleTimeoutFrames = static_cast<std::uint32_t>((std::max)(0, g_rockConfig.rockReloadObserverStaleFrameTimeout));
+        if (shouldFallbackCompleteStaleReload(
+                coordinated.runtime.isReloadActive(),
+                requirePhysicalCompletion,
+                g_rockConfig.rockReloadAllowStageFallbacks,
+                _reloadObserverStaleFrames,
+                staleTimeoutFrames)) {
+            ROCK_LOG_WARN(Weapon,
+                "ReloadObserver stale fallback: stage={} runtime={} frames={} timeout={} — restoring support grip until physical reload completion is implemented",
+                reloadStageName(coordinated.vanillaStage),
+                reloadRuntimeStateName(coordinated.runtime.state),
+                _reloadObserverStaleFrames,
+                staleTimeoutFrames);
+
+            _weaponReloadObserver = {};
+            _weaponReloadCoordinator = {};
+            _reloadObserverStaleFrames = 0;
+            coordinated.runtime = _weaponReloadCoordinator.runtime;
+            coordinated.vanillaStage = WeaponVanillaReloadStage::Idle;
+            coordinated.source = WeaponReloadStageSource::PollingFallback;
+            coordinated.stateChanged = true;
+            coordinated.vanillaCompletionNeedsPhysicalGate = false;
+        }
+
+        _observedWeaponReloadStage.store(static_cast<std::uint32_t>(coordinated.vanillaStage), std::memory_order_release);
+        _weaponReloadStageSource.store(static_cast<std::uint32_t>(coordinated.source), std::memory_order_release);
+        _activeWeaponReloadState.store(static_cast<std::uint32_t>(coordinated.runtime.state), std::memory_order_release);
+
+        const bool shouldLogTransition = observed.stageChanged || coordinated.stateChanged;
+        const bool shouldLogDebug = g_rockConfig.rockReloadDebugStageLogging && (++_reloadStateLogCounter >= 60);
+        if (shouldLogTransition || shouldLogDebug) {
+            _reloadStateLogCounter = 0;
+            ROCK_LOG_INFO(Weapon,
+                "ReloadObserver: equipped={} vanillaStage={} source={} runtime={} supportAllowed={} clip={} reserve={} seq={} physicalGateNeeded={} physicalGateSupported={} fallbackAllowed={}",
+                weaponEquipped,
+                reloadStageName(coordinated.vanillaStage),
+                reloadSourceName(coordinated.source),
+                reloadRuntimeStateName(coordinated.runtime.state),
+                coordinated.runtime.supportGripAllowed,
+                observed.clipAmmo,
+                observed.reserveAmmo,
+                observed.sequence,
+                coordinated.vanillaCompletionNeedsPhysicalGate,
+                kPhysicalReloadCompletionSupported,
+                g_rockConfig.rockReloadAllowStageFallbacks);
+        }
+    }
+
+    void PhysicsInteraction::resetWeaponReloadStateForInterruption(const char* reason)
+    {
+        const bool wasActive = _weaponReloadCoordinator.runtime.isReloadActive();
+        _weaponReloadObserver = {};
+        _weaponReloadCoordinator = {};
+        _lastWeaponReloadObservation = {};
+        _activeWeaponReloadState.store(static_cast<std::uint32_t>(WeaponReloadState::Idle), std::memory_order_release);
+        _observedWeaponReloadStage.store(static_cast<std::uint32_t>(WeaponVanillaReloadStage::Idle), std::memory_order_release);
+        _weaponReloadStageSource.store(static_cast<std::uint32_t>(WeaponReloadStageSource::None), std::memory_order_release);
+        _reloadStateLogCounter = 0;
+        _reloadObserverStaleFrames = 0;
+        _weaponInteractionProbeLogCounter = 0;
+
+        if (wasActive || g_rockConfig.rockReloadDebugStageLogging) {
+            ROCK_LOG_INFO(Weapon, "ReloadObserver reset ({})", reason ? reason : "unknown");
+        }
+    }
+
+    void PhysicsInteraction::clearLeftWeaponContact()
+    {
+        _leftWeaponContactBodyId.store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
+        _leftWeaponContactPartKind.store(static_cast<std::uint32_t>(WeaponPartKind::Other), std::memory_order_release);
+        _leftWeaponContactReloadRole.store(static_cast<std::uint32_t>(WeaponReloadRole::None), std::memory_order_release);
+        _leftWeaponContactSupportRole.store(static_cast<std::uint32_t>(WeaponSupportGripRole::None), std::memory_order_release);
+        _leftWeaponContactSocketRole.store(static_cast<std::uint32_t>(WeaponSocketRole::None), std::memory_order_release);
+        _leftWeaponContactActionRole.store(static_cast<std::uint32_t>(WeaponActionRole::None), std::memory_order_release);
+        _leftWeaponContactGripPose.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
+        _leftWeaponContactMissedFrames.store(WEAPON_CONTACT_TIMEOUT_FRAMES + 1, std::memory_order_release);
+    }
+
+    void PhysicsInteraction::suppressLeftHandCollisionForWeaponSupport(RE::hknpWorld* world)
+    {
+        /*
+         * Layer 43 vs 44 is intentionally allowed so the offhand can physically
+         * touch the equipped weapon before support grip starts. Once support
+         * grip owns the transform, the left hand body becomes a driver and must
+         * stop solving against the weapon package, matching the HIGGS pattern
+         * used for held-object hand collision suppression.
+         */
+        if (!world || !_leftHand.hasCollisionBody()) {
+            return;
+        }
+
+        const auto handBodyId = _leftHand.getCollisionBodyId();
+        if (handBodyId.value == INVALID_CONTACT_BODY_ID) {
+            return;
+        }
+
+        std::uint32_t currentFilter = 0;
+        if (!body_collision::tryReadFilterInfo(world, handBodyId, currentFilter)) {
+            return;
+        }
+
+        const bool firstSuppression = !_leftWeaponSupportCollisionSuppression.active || _leftWeaponSupportCollisionSuppression.bodyId != handBodyId.value;
+        const auto disabledFilter = hand_collision_suppression_math::beginSuppression(_leftWeaponSupportCollisionSuppression, handBodyId.value, currentFilter);
+        if (disabledFilter != currentFilter) {
+            body_collision::setFilterInfo(world, handBodyId, disabledFilter);
+        }
+
+        const bool broadPhaseSet = body_collision::setBroadPhaseEnabled(world, handBodyId, false);
+        _leftWeaponSupportBroadPhaseSuppressed = _leftWeaponSupportBroadPhaseSuppressed || broadPhaseSet;
+
+        if (firstSuppression || disabledFilter != currentFilter) {
+            ROCK_LOG_INFO(Weapon, "TwoHandedGrip: left hand collision suppressed bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBefore={} broadphase={}",
+                handBodyId.value,
+                currentFilter,
+                disabledFilter,
+                _leftWeaponSupportCollisionSuppression.wasNoCollideBeforeSuppression ? "yes" : "no",
+                broadPhaseSet ? "disabled" : "unchanged");
+        }
+    }
+
+    void PhysicsInteraction::restoreLeftHandCollisionAfterWeaponSupport(RE::hknpWorld* world)
+    {
+        if (!_leftWeaponSupportCollisionSuppression.active) {
+            return;
+        }
+
+        if (!world || !_leftHand.hasCollisionBody()) {
+            hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
+            _leftWeaponSupportBroadPhaseSuppressed = false;
+            return;
+        }
+
+        const auto handBodyId = _leftHand.getCollisionBodyId();
+        if (handBodyId.value == INVALID_CONTACT_BODY_ID || handBodyId.value != _leftWeaponSupportCollisionSuppression.bodyId) {
+            hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
+            _leftWeaponSupportBroadPhaseSuppressed = false;
+            return;
+        }
+
+        std::uint32_t currentFilter = 0;
+        if (!body_collision::tryReadFilterInfo(world, handBodyId, currentFilter)) {
+            hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
+            _leftWeaponSupportBroadPhaseSuppressed = false;
+            return;
+        }
+
+        const auto restoredFilter = hand_collision_suppression_math::restoreFilter(_leftWeaponSupportCollisionSuppression, currentFilter);
+        if (restoredFilter != currentFilter) {
+            body_collision::setFilterInfo(world, handBodyId, restoredFilter);
+        }
+
+        const bool broadPhaseRestored = _leftWeaponSupportBroadPhaseSuppressed && body_collision::setBroadPhaseEnabled(world, handBodyId, true);
+        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: left hand collision restored bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} broadphase={}",
+            handBodyId.value,
+            currentFilter,
+            restoredFilter,
+            _leftWeaponSupportCollisionSuppression.wasNoCollideBeforeSuppression ? "yes" : "no",
+            broadPhaseRestored ? "enabled" : "unchanged");
+
+        hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
+        _leftWeaponSupportBroadPhaseSuppressed = false;
+    }
+
     void PhysicsInteraction::shutdown()
     {
         if (!_initialized) {
@@ -586,6 +928,7 @@ namespace frik::rock
 
         if (worldValid) {
             auto* hknp = getHknpWorld(_cachedBhkWorld);
+            restoreLeftHandCollisionAfterWeaponSupport(hknp);
             if (_rightHand.isHolding()) {
                 auto* r = _rightHand.getHeldRef();
                 _rightHand.releaseGrabbedObject(hknp);
@@ -602,11 +945,17 @@ namespace frik::rock
             destroyHandCollisions(_cachedBhkWorld);
         } else {
             ROCK_LOG_INFO(Init, "World stale or null — skipping Havok body destruction");
+            hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
+            _leftWeaponSupportBroadPhaseSuppressed = false;
         }
 
         debug::ClearFrame();
         _twoHandedGrip.reset();
         _weaponCollision.shutdown();
+        _weaponReloadEventBridge.uninstall();
+        _weaponReloadEventBridge.reset();
+        resetWeaponReloadStateForInterruption("shutdown");
+        clearLeftWeaponContact();
         releaseAllObjects();
         _rightHand.reset();
         _leftHand.reset();
@@ -615,6 +964,9 @@ namespace frik::rock
         _collisionLayerRegistered = false;
         _initialized = false;
         _hasPrevPositions = false;
+        _hasHeldPlayerSpacePosition = false;
+        _heldObjectPlayerSpaceFrame = {};
+        _heldPlayerSpaceLogCounter = 0;
         _handBoneCache.reset();
         _handCacheResolveLogCounter = 0;
         _paritySummaryCounter = 0;
@@ -704,6 +1056,7 @@ namespace frik::rock
         disablePair(ROCK_WEAPON_LAYER, 42);
         collision_layer_policy::applyWeaponProjectileBlockingPolicy(
             matrix, ROCK_WEAPON_LAYER, g_rockConfig.rockWeaponCollisionBlocksProjectiles, g_rockConfig.rockWeaponCollisionBlocksSpells);
+        enablePair(ROCK_HAND_LAYER, ROCK_WEAPON_LAYER);
 
         _expectedHandLayerMask = matrix[ROCK_HAND_LAYER];
         _collisionLayerRegistered = true;
@@ -1015,6 +1368,46 @@ namespace frik::rock
         }
     }
 
+    HeldObjectPlayerSpaceFrame PhysicsInteraction::sampleHeldObjectPlayerSpaceFrame()
+    {
+        HeldObjectPlayerSpaceFrame frame{};
+        auto* api = frik::api::FRIKApi::inst;
+        if (!api) {
+            _hasHeldPlayerSpacePosition = false;
+            return frame;
+        }
+
+        const RE::NiPoint3 smoothPos = api->getSmoothedPlayerPosition();
+        if (!g_rockConfig.rockGrabPlayerSpaceCompensation) {
+            _prevHeldPlayerSpacePosition = smoothPos;
+            _hasHeldPlayerSpacePosition = true;
+            return frame;
+        }
+
+        frame.enabled = true;
+        if (_hasHeldPlayerSpacePosition) {
+            frame.deltaGameUnits = smoothPos - _prevHeldPlayerSpacePosition;
+            frame.velocityHavok = held_object_physics_math::gameUnitsDeltaToHavokVelocity(frame.deltaGameUnits, _deltaTime);
+            frame.warp = held_object_physics_math::shouldWarpPlayerSpaceDelta(frame.deltaGameUnits, g_rockConfig.rockGrabPlayerSpaceWarpDistance);
+        }
+
+        _prevHeldPlayerSpacePosition = smoothPos;
+        _hasHeldPlayerSpacePosition = true;
+
+        if (g_rockConfig.rockDebugGrabFrameLogging && (_rightHand.isHolding() || _leftHand.isHolding())) {
+            ++_heldPlayerSpaceLogCounter;
+            if (_heldPlayerSpaceLogCounter >= 45 || frame.warp) {
+                _heldPlayerSpaceLogCounter = 0;
+                ROCK_LOG_INFO(Hand,
+                    "Held player-space: enabled={} warp={} delta=({:.2f},{:.2f},{:.2f}) velHk=({:.3f},{:.3f},{:.3f})",
+                    frame.enabled ? "yes" : "no", frame.warp ? "yes" : "no", frame.deltaGameUnits.x, frame.deltaGameUnits.y, frame.deltaGameUnits.z,
+                    frame.velocityHavok.x, frame.velocityHavok.y, frame.velocityHavok.z);
+            }
+        }
+
+        return frame;
+    }
+
     void PhysicsInteraction::updateGrabInput(RE::hknpWorld* hknp)
     {
         if (!frik::api::FRIKApi::inst || !frik::api::FRIKApi::inst->isSkeletonReady())
@@ -1040,8 +1433,7 @@ namespace frik::rock
                     dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, heldRef, heldFormID, 0);
                 } else {
                     auto transform = getInteractionHandTransform(isLeft);
-                    hand.updateHeldObject(hknp, transform, _deltaTime, g_rockConfig.rockGrabForceFadeInTime, g_rockConfig.rockGrabTauMin, g_rockConfig.rockGrabTauMax, 2.0f, 5.0f,
-                        g_rockConfig.rockGrabCloseThreshold, g_rockConfig.rockGrabFarThreshold);
+                    hand.updateHeldObject(hknp, transform, _heldObjectPlayerSpaceFrame, _deltaTime, g_rockConfig.rockGrabForceFadeInTime, g_rockConfig.rockGrabTauMin);
 
                     RE::NiTransform adjustedHand;
                     if (hand.getAdjustedHandTransform(adjustedHand)) {
@@ -1237,15 +1629,19 @@ namespace frik::rock
             return;
         }
 
-        {
-            if (_weaponCollision.getWeaponBodyIdAtomic() != 0x7FFF'FFFF) {
-                bool offhandIsLeft = !f4vr::isLeftHandedMode();
-                std::uint32_t offhandId = offhandIsLeft ? leftId : rightId;
-                bool offhandInvolved = (bodyIdA == offhandId || bodyIdB == offhandId);
-                bool weaponInvolved = _weaponCollision.isWeaponBodyIdAtomic(bodyIdA) || _weaponCollision.isWeaponBodyIdAtomic(bodyIdB);
-                if (offhandInvolved && weaponInvolved) {
-                    _offhandTouchingWeapon.store(true, std::memory_order_release);
-                }
+        if (isLeft) {
+            const std::uint32_t otherForLeft = (bodyIdA == leftId) ? bodyIdB : bodyIdA;
+            WeaponInteractionContact weaponContact{};
+            if (_weaponCollision.tryGetWeaponContactAtomic(otherForLeft, weaponContact)) {
+                _leftWeaponContactPartKind.store(static_cast<std::uint32_t>(weaponContact.partKind), std::memory_order_release);
+                _leftWeaponContactReloadRole.store(static_cast<std::uint32_t>(weaponContact.reloadRole), std::memory_order_release);
+                _leftWeaponContactSupportRole.store(static_cast<std::uint32_t>(weaponContact.supportGripRole), std::memory_order_release);
+                _leftWeaponContactSocketRole.store(static_cast<std::uint32_t>(weaponContact.socketRole), std::memory_order_release);
+                _leftWeaponContactActionRole.store(static_cast<std::uint32_t>(weaponContact.actionRole), std::memory_order_release);
+                _leftWeaponContactGripPose.store(static_cast<std::uint32_t>(weaponContact.fallbackGripPose), std::memory_order_release);
+                _leftWeaponContactSequence.fetch_add(1, std::memory_order_acq_rel);
+                _leftWeaponContactMissedFrames.store(0, std::memory_order_release);
+                _leftWeaponContactBodyId.store(otherForLeft, std::memory_order_release);
             }
         }
 

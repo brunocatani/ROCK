@@ -9,6 +9,9 @@
 #include "RockConfig.h"
 #include "WeaponCollisionAdjustmentMath.h"
 #include "WeaponCollisionGeometryMath.h"
+#include "WeaponInteractionProbeMath.h"
+#include "WeaponPartClassifier.h"
+#include "WeaponSemanticHullBudget.h"
 
 #include <intrin.h>
 
@@ -25,6 +28,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <unordered_set>
 #include <string>
 #include <string_view>
@@ -245,35 +249,41 @@ namespace frik::rock
              * visual tree as one coherent source; for FO4VR firearms this selector
              * keeps that same package-level intent while capping bodies.
              */
-            if (sourceNameContains(sourceName, "cartridge") || sourceNameContains(sourceName, "casing") || sourceNameContains(sourceName, "bullet") ||
-                sourceNameContains(sourceName, "shell") || sourceNameContains(sourceName, "ammo")) {
-                return { HullCoverageCosmeticAmmo, 90, true, "cosmetic-ammo" };
+            const auto semantic = classifyWeaponPartName(sourceName);
+            switch (semantic.partKind) {
+            case WeaponPartKind::Stock:
+            case WeaponPartKind::Grip:
+                return { HullCoverageStock, semantic.priority, semantic.cosmetic, "stock/grip" };
+            case WeaponPartKind::Receiver:
+                return { HullCoverageReceiver, semantic.priority, semantic.cosmetic, "receiver/body" };
+            case WeaponPartKind::Barrel:
+            case WeaponPartKind::Handguard:
+            case WeaponPartKind::Foregrip:
+            case WeaponPartKind::Pump:
+                return { HullCoverageBarrel, semantic.priority, semantic.cosmetic, "barrel/support" };
+            case WeaponPartKind::Magazine:
+            case WeaponPartKind::Magwell:
+                return { HullCoverageMagazine, semantic.priority, semantic.cosmetic, "magazine/socket" };
+            case WeaponPartKind::Sight:
+            case WeaponPartKind::Accessory:
+                return { HullCoverageTopAccessory, semantic.priority, semantic.cosmetic, "top/accessory" };
+            case WeaponPartKind::Bolt:
+            case WeaponPartKind::Slide:
+            case WeaponPartKind::ChargingHandle:
+            case WeaponPartKind::BreakAction:
+            case WeaponPartKind::Cylinder:
+            case WeaponPartKind::Chamber:
+            case WeaponPartKind::LaserCell:
+            case WeaponPartKind::Lever:
+                return { HullCoverageAction, semantic.priority, semantic.cosmetic, "action/reload" };
+            case WeaponPartKind::Shell:
+            case WeaponPartKind::Round:
+            case WeaponPartKind::CosmeticAmmo:
+                return { HullCoverageCosmeticAmmo, semantic.priority, true, "cosmetic-ammo" };
+            case WeaponPartKind::Other:
+            default:
+                return { HullCoverageOther, semantic.priority, semantic.cosmetic, "other" };
             }
-            if (sourceNameContains(sourceName, "stock") || sourceNameContains(sourceName, "butt") || sourceNameContains(sourceName, "grip")) {
-                return { HullCoverageStock, 10, false, "stock/grip" };
-            }
-            if (sourceNameContains(sourceName, "barrel") || sourceNameContains(sourceName, "muzzle") || sourceNameContains(sourceName, "suppressor") ||
-                sourceNameContains(sourceName, "silencer")) {
-                return { HullCoverageBarrel, 10, false, "barrel/muzzle" };
-            }
-            if (sourceNameContains(sourceName, "receiver") || sourceNameContains(sourceName, "frame") || sourceNameContains(sourceName, "body") ||
-                sourceNameContains(sourceName, "machinegun:") || sourceNameContains(sourceName, "rifle:") || sourceNameContains(sourceName, "pistol:") ||
-                sourceNameContains(sourceName, "shotgun:")) {
-                return { HullCoverageReceiver, 15, false, "receiver/body" };
-            }
-            if (sourceNameContains(sourceName, "magazine") || sourceNameContains(sourceName, "magmedium") || sourceNameContains(sourceName, "magshort") ||
-                sourceNameContains(sourceName, "maglong") || sourceNameContains(sourceName, "magstraight") || sourceNameContains(sourceName, "magdrum") ||
-                sourceNameContains(sourceName, "magwell") || sourceNameContains(sourceName, "clip")) {
-                return { HullCoverageMagazine, 20, false, "magazine" };
-            }
-            if (sourceNameContains(sourceName, "handle") || sourceNameContains(sourceName, "sight") || sourceNameContains(sourceName, "scope") ||
-                sourceNameContains(sourceName, "rail")) {
-                return { HullCoverageTopAccessory, 30, false, "top/accessory" };
-            }
-            if (sourceNameContains(sourceName, "bolt") || sourceNameContains(sourceName, "slide") || sourceNameContains(sourceName, "charging")) {
-                return { HullCoverageAction, 35, false, "action" };
-            }
-            return { HullCoverageOther, 50, false, "other" };
         }
 
         weapon_collision_geometry_math::HullSelectionInput makeHullSelectionInput(const RE::NiPoint3& localCenterGame, const RE::NiPoint3& localMinGame,
@@ -476,6 +486,91 @@ namespace frik::rock
         return false;
     }
 
+    bool WeaponCollision::tryGetWeaponContactAtomic(std::uint32_t bodyId, WeaponInteractionContact& outContact) const
+    {
+        outContact = {};
+        if (bodyId == INVALID_BODY_ID) {
+            return false;
+        }
+
+        const std::uint32_t count = _weaponBodyCountAtomic.load(std::memory_order_acquire);
+        for (std::uint32_t i = 0; i < count && i < MAX_WEAPON_BODIES; ++i) {
+            if (_weaponBodyIdsAtomic[i].load(std::memory_order_acquire) != bodyId) {
+                continue;
+            }
+
+            outContact.valid = true;
+            outContact.bodyId = bodyId;
+            outContact.partKind = static_cast<WeaponPartKind>(_weaponBodyPartKindsAtomic[i].load(std::memory_order_acquire));
+            outContact.reloadRole = static_cast<WeaponReloadRole>(_weaponBodyReloadRolesAtomic[i].load(std::memory_order_acquire));
+            outContact.supportGripRole = static_cast<WeaponSupportGripRole>(_weaponBodySupportRolesAtomic[i].load(std::memory_order_acquire));
+            outContact.socketRole = static_cast<WeaponSocketRole>(_weaponBodySocketRolesAtomic[i].load(std::memory_order_acquire));
+            outContact.actionRole = static_cast<WeaponActionRole>(_weaponBodyActionRolesAtomic[i].load(std::memory_order_acquire));
+            outContact.fallbackGripPose = static_cast<WeaponGripPoseId>(_weaponBodyGripPosesAtomic[i].load(std::memory_order_acquire));
+            return true;
+        }
+        return false;
+    }
+
+    bool WeaponCollision::tryFindInteractionContactNearPoint(
+        const RE::NiAVObject* weaponNode,
+        const RE::NiPoint3& probeWorldPoint,
+        float probeRadiusGame,
+        WeaponInteractionContact& outContact) const
+    {
+        outContact = {};
+        if (!weaponNode || probeRadiusGame <= 0.0f) {
+            return false;
+        }
+
+        const RE::NiPoint3 probeLocal = weapon_collision_geometry_math::worldPointToLocal(
+            weaponNode->world.rotate,
+            weaponNode->world.translate,
+            weaponNode->world.scale,
+            probeWorldPoint);
+
+        float bestDistanceSquared = std::numeric_limits<float>::max();
+        const WeaponBodyInstance* bestInstance = nullptr;
+
+        for (const auto& instance : _weaponBodies) {
+            if (!instance.body.isValid()) {
+                continue;
+            }
+
+            const auto& semantic = instance.semantic;
+            const bool interactive = semantic.supportGripRole != WeaponSupportGripRole::None || semantic.reloadRole != WeaponReloadRole::None ||
+                                     semantic.socketRole != WeaponSocketRole::None || semantic.actionRole != WeaponActionRole::None;
+            if (!interactive) {
+                continue;
+            }
+
+            const float distanceSquared = weapon_interaction_probe_math::pointAabbDistanceSquared(
+                probeLocal,
+                instance.generatedLocalMinGame,
+                instance.generatedLocalMaxGame);
+            if (!weapon_interaction_probe_math::isWithinProbeRadiusSquared(distanceSquared, probeRadiusGame) || distanceSquared >= bestDistanceSquared) {
+                continue;
+            }
+
+            bestDistanceSquared = distanceSquared;
+            bestInstance = &instance;
+        }
+
+        if (!bestInstance) {
+            return false;
+        }
+
+        outContact.valid = true;
+        outContact.bodyId = bestInstance->body.getBodyId().value;
+        outContact.partKind = bestInstance->semantic.partKind;
+        outContact.reloadRole = bestInstance->semantic.reloadRole;
+        outContact.supportGripRole = bestInstance->semantic.supportGripRole;
+        outContact.socketRole = bestInstance->semantic.socketRole;
+        outContact.actionRole = bestInstance->semantic.actionRole;
+        outContact.fallbackGripPose = bestInstance->semantic.fallbackGripPose;
+        return true;
+    }
+
     BethesdaPhysicsBody& WeaponCollision::getWeaponBody()
     {
         for (auto& instance : _weaponBodies) {
@@ -510,7 +605,10 @@ namespace frik::rock
 
     void WeaponCollision::shutdown()
     {
-        resetWeaponBodiesWithoutDestroy();
+        if (hasWeaponBody()) {
+            ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown destroying generated bodies from cached context");
+            destroyWeaponBody(_cachedWorld);
+        }
 
         _cachedWeaponKey = 0;
         _cachedWorld = nullptr;
@@ -549,7 +647,11 @@ namespace frik::rock
 
         if (world != _cachedWorld) {
             ROCK_LOG_INFO(Weapon, "hknpWorld changed — resetting weapon collision state");
-            resetWeaponBodiesWithoutDestroy();
+            if (hasWeaponBody()) {
+                destroyWeaponBody(_cachedWorld ? _cachedWorld : world);
+            } else {
+                clearAtomicBodyIds();
+            }
             _cachedWeaponKey = 0;
             _weaponBodyPending = false;
             _cachedWorld = world;
@@ -710,20 +812,26 @@ namespace frik::rock
         }
 
         if (outSources.size() > MAX_WEAPON_BODIES) {
-            std::vector<weapon_collision_geometry_math::HullSelectionInput> selectionInputs;
+            std::vector<WeaponSemanticHullBudgetInput> selectionInputs;
             selectionInputs.reserve(outSources.size());
             std::uint32_t cosmeticCount = 0;
-            for (const auto& source : outSources) {
-                const auto input = makeHullSelectionInput(
-                    source.localCenterGame, source.localMinGame, source.localMaxGame, source.localPointsGame.size(), source.sourceName);
-                if (input.cosmetic) {
+            std::uint32_t gameplayCriticalCount = 0;
+            for (std::size_t i = 0; i < outSources.size(); ++i) {
+                const auto& source = outSources[i];
+                if (source.semantic.cosmetic) {
                     ++cosmeticCount;
                 }
-                selectionInputs.push_back(input);
+                if (source.semantic.gameplayCritical) {
+                    ++gameplayCriticalCount;
+                }
+                selectionInputs.push_back(WeaponSemanticHullBudgetInput{
+                    .semantic = source.semantic,
+                    .sourceIndex = i,
+                    .pointCount = source.localPointsGame.size(),
+                });
             }
 
-            const int lengthAxis = weapon_collision_geometry_math::longestAxisForHullSelection(selectionInputs);
-            const auto selectedIndices = weapon_collision_geometry_math::selectBalancedHullIndices(selectionInputs, MAX_WEAPON_BODIES);
+            const auto selectedIndices = selectSemanticWeaponHullIndices(selectionInputs, MAX_WEAPON_BODIES);
 
             std::vector<GeneratedHullSource> selectedSources;
             selectedSources.reserve(selectedIndices.size());
@@ -734,8 +842,8 @@ namespace frik::rock
             }
 
             ROCK_LOG_INFO(Weapon,
-                "Generated weapon mesh hull budget: extracted={} kept={} dropped={} cosmeticDroppedOrDeferred={} lengthAxis={} maxBodies={} policy=coverage-balanced",
-                outSources.size(), selectedSources.size(), outSources.size() - selectedSources.size(), cosmeticCount, hullAxisName(lengthAxis), MAX_WEAPON_BODIES);
+                "Generated weapon mesh hull budget: extracted={} kept={} dropped={} gameplayCritical={} cosmetic={} maxBodies={} policy=semantic-priority",
+                outSources.size(), selectedSources.size(), outSources.size() - selectedSources.size(), gameplayCriticalCount, cosmeticCount, MAX_WEAPON_BODIES);
 
             outSources = std::move(selectedSources);
         }
@@ -812,6 +920,7 @@ namespace frik::rock
                     source.sourceName += "#";
                     source.sourceName += std::to_string(clusterIndex);
                 }
+                source.semantic = classifyWeaponPartName(source.sourceName);
                 ROCK_LOG_INFO(Weapon, "{}generated mesh source '{}': points={} center=({:.2f},{:.2f},{:.2f})", std::string(depth * 2, ' '), source.sourceName,
                     source.localPointsGame.size(), source.localCenterGame.x, source.localCenterGame.y, source.localCenterGame.z);
                 outSources.push_back(std::move(source));
@@ -884,6 +993,9 @@ namespace frik::rock
             instance.shape = shape;
             instance.sourceNode = source.sourceRoot;
             instance.generatedLocalCenterGame = source.localCenterGame;
+            instance.generatedLocalMinGame = source.localMinGame;
+            instance.generatedLocalMaxGame = source.localMaxGame;
+            instance.semantic = source.semantic;
             instance.ownsShapeRef = true;
             instance.hasPrevTransform = false;
             instance.prevPosition = {};
@@ -904,8 +1016,9 @@ namespace frik::rock
             updateBodyTransform(world, instance, initialTransform, 0.016f, createdCount);
 
             ROCK_LOG_INFO(Weapon,
-                "Generated weapon mesh collision body created — meshIndex={} bodyId={} source='{}' root='{}' points={} center=({:.2f},{:.2f},{:.2f}) layer=44",
-                createdCount, instance.body.getBodyId().value, source.sourceName, safeNodeName(source.sourceRoot), source.localPointsGame.size(), source.localCenterGame.x,
+                "Generated weapon mesh collision body created — meshIndex={} bodyId={} source='{}' root='{}' partKind={} supportRole={} reloadRole={} points={} center=({:.2f},{:.2f},{:.2f}) layer=44",
+                createdCount, instance.body.getBodyId().value, source.sourceName, safeNodeName(source.sourceRoot), static_cast<int>(source.semantic.partKind),
+                static_cast<int>(source.semantic.supportGripRole), static_cast<int>(source.semantic.reloadRole), source.localPointsGame.size(), source.localCenterGame.x,
                 source.localCenterGame.y, source.localCenterGame.z);
             ++createdCount;
         }
@@ -934,15 +1047,6 @@ namespace frik::rock
         ROCK_LOG_INFO(Weapon, "Weapon collision bodies destroyed count={}", destroyedCount);
     }
 
-    void WeaponCollision::resetWeaponBodiesWithoutDestroy()
-    {
-        clearAtomicBodyIds();
-        for (auto& instance : _weaponBodies) {
-            instance.body.reset();
-            clearWeaponBodyInstance(instance, true);
-        }
-    }
-
     void WeaponCollision::clearWeaponBodyInstance(WeaponBodyInstance& instance, bool releaseShapeRef)
     {
         if (releaseShapeRef && instance.ownsShapeRef && instance.shape) {
@@ -952,6 +1056,9 @@ namespace frik::rock
         instance.shape = nullptr;
         instance.sourceNode = nullptr;
         instance.generatedLocalCenterGame = {};
+        instance.generatedLocalMinGame = {};
+        instance.generatedLocalMaxGame = {};
+        instance.semantic = {};
         instance.ownsShapeRef = false;
         instance.hasPrevTransform = false;
         instance.prevPosition = {};
@@ -963,21 +1070,60 @@ namespace frik::rock
         for (auto& id : _weaponBodyIdsAtomic) {
             id.store(INVALID_BODY_ID, std::memory_order_release);
         }
+        for (auto& value : _weaponBodyPartKindsAtomic) {
+            value.store(static_cast<std::uint32_t>(WeaponPartKind::Other), std::memory_order_release);
+        }
+        for (auto& value : _weaponBodyReloadRolesAtomic) {
+            value.store(static_cast<std::uint32_t>(WeaponReloadRole::None), std::memory_order_release);
+        }
+        for (auto& value : _weaponBodySupportRolesAtomic) {
+            value.store(static_cast<std::uint32_t>(WeaponSupportGripRole::None), std::memory_order_release);
+        }
+        for (auto& value : _weaponBodySocketRolesAtomic) {
+            value.store(static_cast<std::uint32_t>(WeaponSocketRole::None), std::memory_order_release);
+        }
+        for (auto& value : _weaponBodyActionRolesAtomic) {
+            value.store(static_cast<std::uint32_t>(WeaponActionRole::None), std::memory_order_release);
+        }
+        for (auto& value : _weaponBodyGripPosesAtomic) {
+            value.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
+        }
     }
 
     void WeaponCollision::publishAtomicBodyIds()
     {
         std::uint32_t count = 0;
-        for (auto& id : _weaponBodyIdsAtomic) {
-            id.store(INVALID_BODY_ID, std::memory_order_release);
-        }
+        clearAtomicBodyIds();
         for (const auto& instance : _weaponBodies) {
             if (instance.body.isValid() && count < MAX_WEAPON_BODIES) {
+                _weaponBodyPartKindsAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.partKind), std::memory_order_release);
+                _weaponBodyReloadRolesAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.reloadRole), std::memory_order_release);
+                _weaponBodySupportRolesAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.supportGripRole), std::memory_order_release);
+                _weaponBodySocketRolesAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.socketRole), std::memory_order_release);
+                _weaponBodyActionRolesAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.actionRole), std::memory_order_release);
+                _weaponBodyGripPosesAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.fallbackGripPose), std::memory_order_release);
                 _weaponBodyIdsAtomic[count].store(instance.body.getBodyId().value, std::memory_order_release);
                 ++count;
             }
         }
         _weaponBodyCountAtomic.store(count, std::memory_order_release);
+    }
+
+    void WeaponCollision::updateBodiesFromWeaponRootTransform(RE::hknpWorld* world, const RE::NiTransform& weaponRootTransform, float dt)
+    {
+        if (!world || !hasWeaponBody()) {
+            return;
+        }
+
+        for (std::size_t i = 0; i < _weaponBodies.size(); ++i) {
+            auto& instance = _weaponBodies[i];
+            if (!instance.body.isValid()) {
+                continue;
+            }
+
+            const RE::NiTransform generatedTransform = makeGeneratedBodyWorldTransform(weaponRootTransform, instance.generatedLocalCenterGame);
+            updateBodyTransform(world, instance, generatedTransform, dt, i);
+        }
     }
 
     void WeaponCollision::updateBodyTransform(RE::hknpWorld* world, WeaponBodyInstance& instance, const RE::NiTransform& weaponTransform, float dt, std::size_t bodyIndex)
@@ -1039,19 +1185,19 @@ namespace frik::rock
             static REL::Relocation<computeHKF_t> computeHardKeyFrame{ REL::Offset(offsets::kFunc_ComputeHardKeyFrame) };
             computeHardKeyFrame(world, bodyId.value, tgtPos, tgtQuat, dt, linVelOut, angVelOut);
 
-            constexpr float MAX_VEL = 50.0f;
+            const float maxVel = (std::max)(0.01f, g_rockConfig.rockWeaponCollisionMaxLinearVelocity);
             float speed = std::sqrt(linVelOut[0] * linVelOut[0] + linVelOut[1] * linVelOut[1] + linVelOut[2] * linVelOut[2]);
-            if (speed > MAX_VEL) {
-                float scale = MAX_VEL / speed;
+            if (speed > maxVel) {
+                float scale = maxVel / speed;
                 linVelOut[0] *= scale;
                 linVelOut[1] *= scale;
                 linVelOut[2] *= scale;
             }
 
-            constexpr float MAX_ANG_VEL = 100.0f;
+            const float maxAngVel = (std::max)(0.01f, g_rockConfig.rockWeaponCollisionMaxAngularVelocity);
             float angSpeed = std::sqrt(angVelOut[0] * angVelOut[0] + angVelOut[1] * angVelOut[1] + angVelOut[2] * angVelOut[2]);
-            if (angSpeed > MAX_ANG_VEL) {
-                float scale = MAX_ANG_VEL / angSpeed;
+            if (angSpeed > maxAngVel) {
+                float scale = maxAngVel / angSpeed;
                 angVelOut[0] *= scale;
                 angVelOut[1] *= scale;
                 angVelOut[2] *= scale;

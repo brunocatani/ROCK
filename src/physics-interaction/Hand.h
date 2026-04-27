@@ -20,6 +20,8 @@
 #include "RE/Havok/hknpWorld.h"
 
 #include <array>
+#include <cstddef>
+#include <vector>
 
 namespace frik::rock
 {
@@ -54,6 +56,21 @@ namespace frik::rock
         RE::NiPoint3 handBodyWorld{};
         RE::NiPoint3 objectBodyWorld{};
         float pivotErrorGameUnits = 0.0f;
+    };
+
+    struct HeldObjectPlayerSpaceFrame
+    {
+        RE::NiPoint3 deltaGameUnits{};
+        RE::NiPoint3 velocityHavok{};
+        bool enabled = false;
+        bool warp = false;
+    };
+
+    struct GrabLocalTriangle
+    {
+        RE::NiPoint3 v0{};
+        RE::NiPoint3 v1{};
+        RE::NiPoint3 v2{};
     };
 
     class Hand
@@ -126,8 +143,8 @@ namespace frik::rock
         bool grabSelectedObject(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float tau, float damping, float maxForce, float proportionalRecovery,
             float constantRecovery);
 
-        void updateHeldObject(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float deltaTime, float forceFadeInTime, float tauMin, float tauMax,
-            float tauIncrement, float tauDecrement, float closeThreshold, float farThreshold);
+        void updateHeldObject(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, const HeldObjectPlayerSpaceFrame& playerSpaceFrame, float deltaTime,
+            float forceFadeInTime, float tauMin);
 
         void releaseGrabbedObject(RE::hknpWorld* world);
 
@@ -207,9 +224,20 @@ namespace frik::rock
         RE::NiTransform _adjustedHandTransform;
         bool _hasAdjustedHandTransform = false;
         float _grabVisualLerpElapsed = 0.0f;
+        float _grabVisualLerpDuration = 0.5f;
         std::array<RE::NiPoint3, 5> _grabFingerProbeStart{};
         std::array<RE::NiPoint3, 5> _grabFingerProbeEnd{};
         bool _hasGrabFingerProbeDebug = false;
+        std::vector<GrabLocalTriangle> _grabLocalMeshTriangles;
+        RE::NiPoint3 _grabSurfacePointLocal{};
+        bool _hasGrabMeshPoseData = false;
+        int _grabFingerPoseFrameCounter = 0;
+
+        static constexpr std::size_t GRAB_RELEASE_VELOCITY_HISTORY = 5;
+        std::array<RE::NiPoint3, GRAB_RELEASE_VELOCITY_HISTORY> _heldLocalLinearVelocityHistory{};
+        std::size_t _heldLocalLinearVelocityHistoryCount = 0;
+        std::size_t _heldLocalLinearVelocityHistoryNext = 0;
+        RE::NiPoint3 _lastPlayerSpaceVelocityHavok{};
 
         RE::NiTransform _grabConstraintHandSpace;
 

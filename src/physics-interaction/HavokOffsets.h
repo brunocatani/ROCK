@@ -168,9 +168,21 @@ namespace frik::rock::offsets
 
     constexpr std::uintptr_t kFunc_ProcessConstraintsCallback = 0x1E4B7E0;
 
+    constexpr std::uintptr_t kFunc_WeaponSwingHandler_Handle = 0x0FEF820;
+
+    constexpr std::uintptr_t kFunc_HitFrameHandler_Handle = 0x0FEFFB0;
+
+    constexpr std::uintptr_t kVtableEntry_WeaponSwingHandler_Handle = 0x2D8CA00;
+
+    constexpr std::uintptr_t kVtableEntry_HitFrameHandler_Handle = 0x2D8CB98;
+
     constexpr std::uintptr_t kHookSite_MainLoop = 0xD8405E;
 
     constexpr std::uintptr_t kData_CollisionFilterSingleton = 0x59429B8;
 
     constexpr std::uintptr_t kFunc_SubscribeContactEvent = 0x3B9E50;
+
+    constexpr std::uintptr_t kData_PlayerWeaponReloadEventSource = 0x5AC1378;
+
+    constexpr std::uintptr_t kData_PlayerAmmoCountEventSource = 0x5AC1368;
 }

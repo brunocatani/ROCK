@@ -8,6 +8,7 @@
 #include "GrabConstraint.h"
 #include "HandVisualLerpMath.h"
 #include "HeldObjectDampingMath.h"
+#include "HeldObjectPhysicsMath.h"
 #include "MeshGrab.h"
 #include "PalmTransform.h"
 #include "PhysicsUtils.h"
@@ -124,6 +125,34 @@ namespace frik::rock
             return multiplyTransforms(bodyWorld, invertTransform(bodyLocalTransform));
         }
 
+        std::vector<GrabLocalTriangle> cacheTrianglesInLocalSpace(const std::vector<TriangleData>& worldTriangles, const RE::NiTransform& nodeWorld)
+        {
+            std::vector<GrabLocalTriangle> localTriangles;
+            localTriangles.reserve(worldTriangles.size());
+            for (const auto& triangle : worldTriangles) {
+                localTriangles.push_back(GrabLocalTriangle{
+                    transform_math::worldPointToLocal(nodeWorld, triangle.v0),
+                    transform_math::worldPointToLocal(nodeWorld, triangle.v1),
+                    transform_math::worldPointToLocal(nodeWorld, triangle.v2),
+                });
+            }
+            return localTriangles;
+        }
+
+        std::vector<TriangleData> rebuildTrianglesInWorldSpace(const std::vector<GrabLocalTriangle>& localTriangles, const RE::NiTransform& nodeWorld)
+        {
+            std::vector<TriangleData> worldTriangles;
+            worldTriangles.reserve(localTriangles.size());
+            for (const auto& triangle : localTriangles) {
+                worldTriangles.push_back(TriangleData{
+                    transform_math::localPointToWorld(nodeWorld, triangle.v0),
+                    transform_math::localPointToWorld(nodeWorld, triangle.v1),
+                    transform_math::localPointToWorld(nodeWorld, triangle.v2),
+                });
+            }
+            return worldTriangles;
+        }
+
         RE::NiTransform getBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
         {
             RE::NiTransform result = makeIdentityTransform();
@@ -146,16 +175,33 @@ namespace frik::rock
             return multiplyTransforms(invertTransform(nodeWorld), bodyWorld);
         }
 
-        void applyHeldVelocityDamping(RE::hknpWorld* world, RE::hknpBodyId primaryBodyId, const std::vector<std::uint32_t>& heldBodyIds, float damping)
+        struct HeldMotionCompensationResult
         {
-            const float keep = held_object_damping_math::velocityKeepFactor(damping);
-            if (!world || keep >= 0.9999f) {
-                return;
+            RE::NiPoint3 primaryLocalLinearVelocity{};
+            bool hasPrimaryVelocity = false;
+        };
+
+        HeldMotionCompensationResult applyHeldMotionCompensation(RE::hknpWorld* world,
+            RE::hknpBodyId primaryBodyId,
+            const std::vector<std::uint32_t>& heldBodyIds,
+            const HeldObjectPlayerSpaceFrame& playerSpaceFrame,
+            const RE::NiPoint3& previousPlayerSpaceVelocityHavok,
+            float damping,
+            bool residualDampingEnabled)
+        {
+            HeldMotionCompensationResult result{};
+            if (!world) {
+                return result;
             }
+
+            const float keep = residualDampingEnabled ? held_object_damping_math::velocityKeepFactor(damping) : 1.0f;
+            const bool applyPlayerSpaceVelocity = playerSpaceFrame.enabled && !playerSpaceFrame.warp;
+            const RE::NiPoint3 currentPlayerVelocity = applyPlayerSpaceVelocity ? playerSpaceFrame.velocityHavok : RE::NiPoint3{};
+            const RE::NiPoint3 previousPlayerVelocity = applyPlayerSpaceVelocity ? previousPlayerSpaceVelocityHavok : RE::NiPoint3{};
 
             auto* bodyArray = world->GetBodyArray();
             if (!bodyArray) {
-                return;
+                return result;
             }
 
             typedef void (*setVelDeferred_t)(void*, std::uint32_t, const float*, const float*);
@@ -174,7 +220,7 @@ namespace frik::rock
                 return false;
             };
 
-            auto dampBody = [&](std::uint32_t bodyId) {
+            auto compensateBody = [&](std::uint32_t bodyId) {
                 if (bodyId == INVALID_BODY_ID) {
                     return;
                 }
@@ -196,10 +242,22 @@ namespace frik::rock
 
                 dampedMotionSlots[dampedMotionSlotCount++] = motionIndex;
 
+                const RE::NiPoint3 currentLinearVelocity{ motion->linearVelocity.x, motion->linearVelocity.y, motion->linearVelocity.z };
+                const RE::NiPoint3 localLinearVelocity{
+                    currentLinearVelocity.x - previousPlayerVelocity.x,
+                    currentLinearVelocity.y - previousPlayerVelocity.y,
+                    currentLinearVelocity.z - previousPlayerVelocity.z,
+                };
+
+                if (bodyId == primaryBodyId.value) {
+                    result.primaryLocalLinearVelocity = localLinearVelocity;
+                    result.hasPrimaryVelocity = true;
+                }
+
                 alignas(16) float linearVelocity[4] = {
-                    motion->linearVelocity.x * keep,
-                    motion->linearVelocity.y * keep,
-                    motion->linearVelocity.z * keep,
+                    currentPlayerVelocity.x + localLinearVelocity.x * keep,
+                    currentPlayerVelocity.y + localLinearVelocity.y * keep,
+                    currentPlayerVelocity.z + localLinearVelocity.z * keep,
                     0.0f,
                 };
                 alignas(16) float angularVelocity[4] = {
@@ -212,9 +270,70 @@ namespace frik::rock
                 setBodyVelocityDeferred(world, bodyId, linearVelocity, angularVelocity);
             };
 
-            dampBody(primaryBodyId.value);
+            compensateBody(primaryBodyId.value);
             for (const auto bodyId : heldBodyIds) {
-                dampBody(bodyId);
+                compensateBody(bodyId);
+            }
+
+            return result;
+        }
+
+        void setHeldLinearVelocity(RE::hknpWorld* world, RE::hknpBodyId primaryBodyId, const std::vector<std::uint32_t>& heldBodyIds, const RE::NiPoint3& linearVelocity)
+        {
+            if (!world) {
+                return;
+            }
+
+            auto* bodyArray = world->GetBodyArray();
+            if (!bodyArray) {
+                return;
+            }
+
+            typedef void (*setVelDeferred_t)(void*, std::uint32_t, const float*, const float*);
+            static REL::Relocation<setVelDeferred_t> setBodyVelocityDeferred{ REL::Offset(offsets::kFunc_SetBodyVelocityDeferred) };
+
+            constexpr std::size_t kMaxVelocityMotionSlots = 96;
+            std::array<std::uint32_t, kMaxVelocityMotionSlots> updatedMotionSlots{};
+            std::size_t updatedMotionSlotCount = 0;
+
+            auto alreadyUpdated = [&updatedMotionSlots, &updatedMotionSlotCount](std::uint32_t motionIndex) {
+                for (std::size_t i = 0; i < updatedMotionSlotCount; ++i) {
+                    if (updatedMotionSlots[i] == motionIndex) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            auto setBody = [&](std::uint32_t bodyId) {
+                if (bodyId == INVALID_BODY_ID) {
+                    return;
+                }
+
+                const auto& body = bodyArray[bodyId];
+                const std::uint32_t motionIndex = body.motionIndex;
+                if (motionIndex == 0 || motionIndex > 4096 || alreadyUpdated(motionIndex)) {
+                    return;
+                }
+
+                if (updatedMotionSlotCount >= updatedMotionSlots.size()) {
+                    return;
+                }
+
+                auto* motion = world->GetBodyMotion(RE::hknpBodyId{ bodyId });
+                if (!motion) {
+                    return;
+                }
+
+                updatedMotionSlots[updatedMotionSlotCount++] = motionIndex;
+                alignas(16) float linear[4] = { linearVelocity.x, linearVelocity.y, linearVelocity.z, 0.0f };
+                alignas(16) float angular[4] = { motion->angularVelocity.x, motion->angularVelocity.y, motion->angularVelocity.z, 0.0f };
+                setBodyVelocityDeferred(world, bodyId, linear, angular);
+            };
+
+            setBody(primaryBodyId.value);
+            for (const auto bodyId : heldBodyIds) {
+                setBody(bodyId);
             }
         }
 
@@ -229,15 +348,17 @@ namespace frik::rock
             if (g_rockConfig.rockGrabMeshFingerPoseEnabled && fingerPose.solved && api->setHandPoseCustomFingerPositionsWithPriority) {
                 api->setHandPoseCustomFingerPositionsWithPriority("ROCK_Grab", hand, fingerPose.values[0], fingerPose.values[1], fingerPose.values[2], fingerPose.values[3],
                     fingerPose.values[4], 100);
-                ROCK_LOG_INFO(Hand,
-                    "{} hand FINGER POSE: mesh values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} candidateTris={}",
-                    isLeft ? "Left" : "Right", fingerPose.values[0], fingerPose.values[1], fingerPose.values[2], fingerPose.values[3], fingerPose.values[4],
-                    fingerPose.hitCount, fingerPose.candidateTriangleCount);
+                if (g_rockConfig.rockDebugGrabFrameLogging) {
+                    ROCK_LOG_INFO(Hand,
+                        "{} hand FINGER POSE: mesh values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} candidateTris={}",
+                        isLeft ? "Left" : "Right", fingerPose.values[0], fingerPose.values[1], fingerPose.values[2], fingerPose.values[3], fingerPose.values[4],
+                        fingerPose.hitCount, fingerPose.candidateTriangleCount);
+                }
                 return;
             }
 
             api->setHandPoseWithPriority("ROCK_Grab", hand, frik::api::FRIKApi::HandPoses::Fist, 100);
-            if (g_rockConfig.rockGrabMeshFingerPoseEnabled) {
+            if (g_rockConfig.rockGrabMeshFingerPoseEnabled && g_rockConfig.rockDebugGrabFrameLogging) {
                 ROCK_LOG_INFO(Hand, "{} hand FINGER POSE: fallback fist solved={} hits={} candidateTris={}", isLeft ? "Left" : "Right", fingerPose.solved ? "yes" : "no",
                     fingerPose.hitCount, fingerPose.candidateTriangleCount);
             }
@@ -660,6 +781,23 @@ namespace frik::rock
             _adjustedHandTransform = handWorldTransform;
             _hasAdjustedHandTransform = true;
             _grabVisualLerpElapsed = 0.0f;
+            const RE::NiPoint3 initialGrabDelta = grabPivotAWorld - grabSurfacePoint;
+            const float initialGrabDistance =
+                std::sqrt(initialGrabDelta.x * initialGrabDelta.x + initialGrabDelta.y * initialGrabDelta.y + initialGrabDelta.z * initialGrabDelta.z);
+            _grabVisualLerpDuration = held_object_physics_math::computeHandLerpDuration(initialGrabDistance, g_rockConfig.rockGrabHandLerpTimeMin,
+                g_rockConfig.rockGrabHandLerpTimeMax, g_rockConfig.rockGrabHandLerpMinDistance, g_rockConfig.rockGrabHandLerpMaxDistance);
+            _grabLocalMeshTriangles.clear();
+            _grabSurfacePointLocal = transform_math::worldPointToLocal(objectWorldTransform, grabSurfacePoint);
+            _hasGrabMeshPoseData = false;
+            _grabFingerPoseFrameCounter = 0;
+            if (!grabMeshTriangles.empty()) {
+                _grabLocalMeshTriangles = cacheTrianglesInLocalSpace(grabMeshTriangles, objectWorldTransform);
+                _hasGrabMeshPoseData = !_grabLocalMeshTriangles.empty();
+            }
+            _heldLocalLinearVelocityHistory = {};
+            _heldLocalLinearVelocityHistoryCount = 0;
+            _heldLocalLinearVelocityHistoryNext = 0;
+            _lastPlayerSpaceVelocityHavok = {};
 
             if (g_rockConfig.rockDebugGrabFrameLogging) {
                 const RE::NiTransform& constraintGrabHandSpace = _grabConstraintHandSpace;
@@ -865,15 +1003,13 @@ namespace frik::rock
         return true;
     }
 
-    void Hand::updateHeldObject(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float deltaTime, float forceFadeInTime, float tauMin, float tauMax,
-        float tauIncrement, float tauDecrement, float closeThreshold, float farThreshold)
+    void Hand::updateHeldObject(RE::hknpWorld* world,
+        const RE::NiTransform& handWorldTransform,
+        const HeldObjectPlayerSpaceFrame& playerSpaceFrame,
+        float deltaTime,
+        float forceFadeInTime,
+        float tauMin)
     {
-        (void)tauMax;
-        (void)tauIncrement;
-        (void)tauDecrement;
-        (void)closeThreshold;
-        (void)farThreshold;
-
         if (!isHolding() || !world)
             return;
         if (!_activeConstraint.isValid()) {
@@ -899,7 +1035,7 @@ namespace frik::rock
                     _hasAdjustedHandTransform = true;
                 }
 
-                const bool lerpExpired = _grabVisualLerpElapsed >= g_rockConfig.rockGrabLerpMaxTime;
+                const bool lerpExpired = _grabVisualLerpElapsed >= _grabVisualLerpDuration;
                 if (!g_rockConfig.rockGrabHandLerpEnabled || lerpExpired) {
                     _adjustedHandTransform = adjustedTarget;
                 } else {
@@ -907,7 +1043,7 @@ namespace frik::rock
                         g_rockConfig.rockGrabLerpAngularSpeed, deltaTime);
                     _adjustedHandTransform = advanced.transform;
                     _grabVisualLerpElapsed += (std::max)(0.0f, deltaTime);
-                    if (advanced.reachedTarget || _grabVisualLerpElapsed >= g_rockConfig.rockGrabLerpMaxTime) {
+                    if (advanced.reachedTarget || _grabVisualLerpElapsed >= _grabVisualLerpDuration) {
                         _adjustedHandTransform = adjustedTarget;
                     }
                 }
@@ -971,16 +1107,10 @@ namespace frik::rock
         const bool heldBodyColliding = isHeldBodyColliding();
         const float angularTauTarget = heldBodyColliding ? tauMin : g_rockConfig.rockGrabAngularTau;
         const float linearTauTarget = heldBodyColliding ? tauMin : g_rockConfig.rockGrabLinearTau;
-        const float tauStep = g_rockConfig.rockGrabTauLerpSpeed * deltaTime;
-        auto advanceTau = [tauStep](float current, float target) {
-            const float delta = target - current;
-            if (std::abs(delta) > tauStep) {
-                return current + (delta > 0.0f ? tauStep : -tauStep);
-            }
-            return target;
-        };
-        const float currentAngularTau = advanceTau(_activeConstraint.angularMotor ? _activeConstraint.angularMotor->tau : _activeConstraint.currentTau, angularTauTarget);
-        const float currentLinearTau = advanceTau(_activeConstraint.linearMotor ? _activeConstraint.linearMotor->tau : _activeConstraint.currentTau, linearTauTarget);
+        const float currentAngularTau = held_object_physics_math::advanceToward(
+            _activeConstraint.angularMotor ? _activeConstraint.angularMotor->tau : _activeConstraint.currentTau, angularTauTarget, g_rockConfig.rockGrabTauLerpSpeed, deltaTime);
+        const float currentLinearTau = held_object_physics_math::advanceToward(
+            _activeConstraint.linearMotor ? _activeConstraint.linearMotor->tau : _activeConstraint.currentTau, linearTauTarget, g_rockConfig.rockGrabTauLerpSpeed, deltaTime);
         tickHeldBodyContact();
 
         float ANGULAR_RATIO_START = g_rockConfig.rockGrabFadeInStartAngularRatio;
@@ -993,7 +1123,7 @@ namespace frik::rock
 
             float angFadeT = (FADE_IN_TIME > 0.001f) ? (std::min)(1.0f, _grabStartTime / FADE_IN_TIME) : 1.0f;
             float currentAngularRatio = ANGULAR_RATIO_START + (ANGULAR_RATIO_END - ANGULAR_RATIO_START) * angFadeT;
-            currentAngularForce = currentLinearForce / currentAngularRatio;
+            currentAngularForce = held_object_physics_math::angularForceFromRatio(currentLinearForce, currentAngularRatio);
 
             if (fadeT >= 0.999f) {
                 _state = HandState::HeldBody;
@@ -1001,7 +1131,7 @@ namespace frik::rock
             }
         } else {
             currentLinearForce = targetForce;
-            currentAngularForce = targetForce / ANGULAR_RATIO_END;
+            currentAngularForce = held_object_physics_math::angularForceFromRatio(targetForce, ANGULAR_RATIO_END);
         }
 
         {
@@ -1017,10 +1147,10 @@ namespace frik::rock
 
                     if (invMass > 0.0001f) {
                         float mass = 1.0f / invMass;
-                        float massCappedForce = mass * MASS_FORCE_RATIO;
-                        if (massCappedForce < currentLinearForce) {
-                            currentLinearForce = massCappedForce;
-                            currentAngularForce = massCappedForce / ANGULAR_RATIO_END;
+                        const float cappedLinearForce = held_object_physics_math::capForceByMassRatio(currentLinearForce, mass, MASS_FORCE_RATIO);
+                        if (cappedLinearForce < currentLinearForce) {
+                            currentLinearForce = cappedLinearForce;
+                            currentAngularForce = held_object_physics_math::angularForceFromRatio(cappedLinearForce, ANGULAR_RATIO_END);
                         }
                     }
                 }
@@ -1046,7 +1176,36 @@ namespace frik::rock
         _activeConstraint.currentTau = currentLinearTau;
         _activeConstraint.currentMaxForce = currentLinearForce;
 
-        applyHeldVelocityDamping(world, _savedObjectState.bodyId, _heldBodyIds, g_rockConfig.rockGrabVelocityDamping);
+        {
+            const auto compensationResult = applyHeldMotionCompensation(world, _savedObjectState.bodyId, _heldBodyIds, playerSpaceFrame,
+                _lastPlayerSpaceVelocityHavok, g_rockConfig.rockGrabVelocityDamping, g_rockConfig.rockGrabResidualVelocityDamping);
+            if (compensationResult.hasPrimaryVelocity) {
+                _heldLocalLinearVelocityHistory[_heldLocalLinearVelocityHistoryNext] = compensationResult.primaryLocalLinearVelocity;
+                _heldLocalLinearVelocityHistoryNext = (_heldLocalLinearVelocityHistoryNext + 1) % _heldLocalLinearVelocityHistory.size();
+                if (_heldLocalLinearVelocityHistoryCount < _heldLocalLinearVelocityHistory.size()) {
+                    ++_heldLocalLinearVelocityHistoryCount;
+                }
+            }
+            _lastPlayerSpaceVelocityHavok = (playerSpaceFrame.enabled && !playerSpaceFrame.warp) ? playerSpaceFrame.velocityHavok : RE::NiPoint3{};
+        }
+
+        if (g_rockConfig.rockGrabMeshFingerPoseEnabled && _hasGrabMeshPoseData && !_grabLocalMeshTriangles.empty()) {
+            const int updateInterval = (std::max)(1, g_rockConfig.rockGrabFingerPoseUpdateInterval);
+            ++_grabFingerPoseFrameCounter;
+            if (_grabFingerPoseFrameCounter >= updateInterval) {
+                _grabFingerPoseFrameCounter = 0;
+                const RE::NiTransform liveBodyWorld = getBodyWorldTransform(world, _savedObjectState.bodyId);
+                const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(liveBodyWorld, _grabBodyLocalTransform);
+                const auto worldTriangles = rebuildTrianglesInWorldSpace(_grabLocalMeshTriangles, currentNodeWorld);
+                const RE::NiPoint3 grabSurfaceWorld = transform_math::localPointToWorld(currentNodeWorld, _grabSurfacePointLocal);
+                const auto fingerPose = grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(worldTriangles, handWorldTransform, _isLeft,
+                    computeGrabPivotAPositionFromHandBasis(handWorldTransform, _isLeft), grabSurfaceWorld, g_rockConfig.rockGrabFingerMinValue);
+                _grabFingerProbeStart = fingerPose.probeStart;
+                _grabFingerProbeEnd = fingerPose.probeEnd;
+                _hasGrabFingerProbeDebug = fingerPose.candidateTriangleCount > 0;
+                applyRockGrabHandPose(_isLeft, fingerPose);
+            }
+        }
 
         _heldLogCounter++;
         if (_heldLogCounter >= 45) {
@@ -1255,6 +1414,25 @@ namespace frik::rock
         ROCK_LOG_INFO(Hand, "{} hand RELEASE: bodyId={} constraintId={}", handName(), _savedObjectState.bodyId.value,
             _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu);
 
+        if (world && _heldLocalLinearVelocityHistoryCount > 0) {
+            std::array<RE::NiPoint3, GRAB_RELEASE_VELOCITY_HISTORY> orderedHistory{};
+            const std::size_t historySize = _heldLocalLinearVelocityHistory.size();
+            const std::size_t firstIndex = (_heldLocalLinearVelocityHistoryNext + historySize - _heldLocalLinearVelocityHistoryCount) % historySize;
+            for (std::size_t i = 0; i < _heldLocalLinearVelocityHistoryCount; ++i) {
+                orderedHistory[i] = _heldLocalLinearVelocityHistory[(firstIndex + i) % historySize];
+            }
+
+            const RE::NiPoint3 localReleaseVelocity = held_object_physics_math::maxMagnitudeVelocity(orderedHistory, _heldLocalLinearVelocityHistoryCount);
+            const RE::NiPoint3 releaseVelocity =
+                held_object_physics_math::composeReleaseVelocity(localReleaseVelocity, _lastPlayerSpaceVelocityHavok, g_rockConfig.rockThrowVelocityMultiplier);
+            setHeldLinearVelocity(world, _savedObjectState.bodyId, _heldBodyIds, releaseVelocity);
+            ROCK_LOG_INFO(Hand,
+                "{} hand RELEASE VELOCITY: local=({:.3f},{:.3f},{:.3f}) player=({:.3f},{:.3f},{:.3f}) final=({:.3f},{:.3f},{:.3f}) history={} multiplier={:.2f}",
+                handName(), localReleaseVelocity.x, localReleaseVelocity.y, localReleaseVelocity.z, _lastPlayerSpaceVelocityHavok.x, _lastPlayerSpaceVelocityHavok.y,
+                _lastPlayerSpaceVelocityHavok.z, releaseVelocity.x, releaseVelocity.y, releaseVelocity.z, _heldLocalLinearVelocityHistoryCount,
+                g_rockConfig.rockThrowVelocityMultiplier);
+        }
+
         restoreGrabbedInertia(world, _savedObjectState);
 
         if (world && _savedObjectState.originalMotionPropsId != 0 && _savedObjectState.originalMotionPropsId != 1) {
@@ -1294,7 +1472,9 @@ namespace frik::rock
 
         restoreHandCollisionAfterGrab(world);
 
-        frik::api::FRIKApi::inst->clearHandPose("ROCK_Grab", handFromBool(_isLeft));
+        if (frik::api::FRIKApi::inst) {
+            frik::api::FRIKApi::inst->clearHandPose("ROCK_Grab", handFromBool(_isLeft));
+        }
         _savedObjectState.clear();
         _activeConstraint.clear();
         _heldBodyIds.clear();
@@ -1302,9 +1482,18 @@ namespace frik::rock
         _adjustedHandTransform = RE::NiTransform();
         _hasAdjustedHandTransform = false;
         _grabVisualLerpElapsed = 0.0f;
+        _grabVisualLerpDuration = g_rockConfig.rockGrabLerpMaxTime;
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};
         _hasGrabFingerProbeDebug = false;
+        _grabLocalMeshTriangles.clear();
+        _grabSurfacePointLocal = {};
+        _hasGrabMeshPoseData = false;
+        _grabFingerPoseFrameCounter = 0;
+        _heldLocalLinearVelocityHistory = {};
+        _heldLocalLinearVelocityHistoryCount = 0;
+        _heldLocalLinearVelocityHistoryNext = 0;
+        _lastPlayerSpaceVelocityHavok = {};
         _grabConstraintHandSpace = RE::NiTransform();
         _grabBodyLocalTransform = RE::NiTransform();
         _grabRootBodyLocalTransform = RE::NiTransform();

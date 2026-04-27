@@ -1,6 +1,7 @@
 #include "PhysicsHooks.h"
 
 #include "HavokOffsets.h"
+#include "NativeMeleeSuppressionPolicy.h"
 #include "PhysicsInteraction.h"
 #include "PhysicsLog.h"
 #include "PhysicsUtils.h"
@@ -10,8 +11,219 @@
 #include "f4vr/F4VRUtils.h"
 #include "f4vr/PlayerNodes.h"
 
+#include <array>
+#include <atomic>
+#include <string_view>
+
 namespace frik::rock
 {
+    namespace
+    {
+        using NativeMeleeHandler_t = bool (*)(void*, RE::Actor*, RE::BSFixedString*);
+
+        static NativeMeleeHandler_t g_originalWeaponSwingHandler = nullptr;
+        static NativeMeleeHandler_t g_originalHitFrameHandler = nullptr;
+        static std::array<std::atomic<std::uint64_t>, 2> g_nativeMeleePhysicalSwingExpiresAtMs{};
+        constexpr std::uint64_t kNativeMeleePhysicalSwingLeaseMs = 250;
+
+        bool isAddressInGameText(std::uintptr_t address)
+        {
+            const auto text = REL::Module::get().segment(REL::Segment::text);
+            return address >= text.address() && address < text.address() + text.size();
+        }
+
+        bool validateNativeMeleeVtableTarget(std::uintptr_t entryOffset, std::uintptr_t expectedFunctionOffset, const char* label)
+        {
+            REL::Relocation<std::uintptr_t> entry{ REL::Offset(entryOffset) };
+            auto* slot = reinterpret_cast<std::uintptr_t*>(entry.address());
+            if (!slot) {
+                ROCK_LOG_ERROR(Init, "{} vtable validation failed: slot is null", label);
+                return false;
+            }
+
+            const auto current = *slot;
+            const auto expected = REL::Offset(expectedFunctionOffset).address();
+            if (!current) {
+                ROCK_LOG_ERROR(Init, "{} vtable validation failed: current target is null", label);
+                return false;
+            }
+
+            if (current == expected) {
+                return true;
+            }
+
+            if (isAddressInGameText(current)) {
+                ROCK_LOG_ERROR(Init, "{} vtable validation failed: slot 0x{:X} points to game text 0x{:X}, expected 0x{:X}", label, entry.address(), current, expected);
+                return false;
+            }
+
+            ROCK_LOG_WARN(Init, "{} vtable slot 0x{:X} is already patched to external target 0x{:X}; ROCK will chain it if hook install proceeds", label, entry.address(), current);
+            return true;
+        }
+
+        bool isPlayerActor(const RE::Actor* actor)
+        {
+            const auto* player = RE::PlayerCharacter::GetSingleton();
+            return actor && player && reinterpret_cast<const void*>(actor) == reinterpret_cast<const void*>(player);
+        }
+
+        bool isLeftSideString(const RE::BSFixedString* side)
+        {
+            if (!side) {
+                return false;
+            }
+
+            const char* text = side->c_str();
+            if (!text) {
+                return false;
+            }
+
+            return std::string_view(text) == "Left";
+        }
+
+        bool isAnyNativeMeleePhysicalSwingActive()
+        {
+            const auto now = GetTickCount64();
+            return native_melee_suppression::isPhysicalSwingLeaseActive(now, g_nativeMeleePhysicalSwingExpiresAtMs[0].load(std::memory_order_acquire)) ||
+                   native_melee_suppression::isPhysicalSwingLeaseActive(now, g_nativeMeleePhysicalSwingExpiresAtMs[1].load(std::memory_order_acquire));
+        }
+
+        bool isNativeMeleePhysicalSwingActiveForSide(const RE::BSFixedString* side)
+        {
+            if (!side) {
+                return isAnyNativeMeleePhysicalSwingActive();
+            }
+
+            const bool isLeft = isLeftSideString(side);
+            const auto now = GetTickCount64();
+            return native_melee_suppression::isPhysicalSwingLeaseActive(now, g_nativeMeleePhysicalSwingExpiresAtMs[isLeft ? 1 : 0].load(std::memory_order_acquire));
+        }
+
+        native_melee_suppression::NativeMeleePolicyInput makeNativeMeleePolicyInput(
+            const native_melee_suppression::NativeMeleeEvent event, const RE::Actor* actor, const RE::BSFixedString* side)
+        {
+            return native_melee_suppression::NativeMeleePolicyInput{ .rockEnabled = g_rockConfig.rockEnabled,
+                .suppressionEnabled = g_rockConfig.rockNativeMeleeSuppressionEnabled,
+                .suppressWeaponSwing = g_rockConfig.rockNativeMeleeSuppressWeaponSwing,
+                .suppressHitFrame = g_rockConfig.rockNativeMeleeSuppressHitFrame,
+                .actorIsPlayer = isPlayerActor(actor),
+                .physicalSwingActive = event == native_melee_suppression::NativeMeleeEvent::HitFrame ? isNativeMeleePhysicalSwingActiveForSide(side)
+                                                                                                     : isAnyNativeMeleePhysicalSwingActive() };
+        }
+
+        bool applyNativeMeleeDecision(const native_melee_suppression::NativeMeleeEvent event, const native_melee_suppression::NativeMeleePolicyDecision& decision)
+        {
+            using native_melee_suppression::NativeMeleeEvent;
+            using native_melee_suppression::NativeMeleeSuppressionAction;
+
+            if (g_rockConfig.rockNativeMeleeDebugLogging || decision.action != NativeMeleeSuppressionAction::CallNative) {
+                static std::atomic<std::uint32_t> weaponLogCounter{ 0 };
+                static std::atomic<std::uint32_t> hitFrameLogCounter{ 0 };
+                auto& counter = event == NativeMeleeEvent::WeaponSwing ? weaponLogCounter : hitFrameLogCounter;
+                const auto count = counter.fetch_add(1, std::memory_order_relaxed) + 1;
+
+                if (count == 1 || (g_rockConfig.rockNativeMeleeDebugLogging && count % 45 == 0) || count % 180 == 0) {
+                    ROCK_LOG_INFO(Combat, "Native melee {} decision={} reason={} count={}",
+                        event == NativeMeleeEvent::WeaponSwing ? "WeaponSwing" : "HitFrame",
+                        decision.action == NativeMeleeSuppressionAction::CallNative      ? "native"
+                            : decision.action == NativeMeleeSuppressionAction::ReturnHandled ? "handled"
+                                                                                              : "unhandled",
+                        decision.reason, count);
+                }
+            }
+
+            switch (decision.action) {
+            case native_melee_suppression::NativeMeleeSuppressionAction::CallNative:
+                return true;
+            case native_melee_suppression::NativeMeleeSuppressionAction::ReturnHandled:
+                return true;
+            case native_melee_suppression::NativeMeleeSuppressionAction::ReturnUnhandled:
+                return false;
+            }
+
+            return true;
+        }
+
+        bool hookedWeaponSwingHandler(void* handler, RE::Actor* actor, RE::BSFixedString* side)
+        {
+            const auto input = makeNativeMeleePolicyInput(native_melee_suppression::NativeMeleeEvent::WeaponSwing, actor, side);
+            const auto decision = native_melee_suppression::evaluateNativeMeleeSuppression(native_melee_suppression::NativeMeleeEvent::WeaponSwing, input);
+
+            const bool shouldCallNative = decision.action == native_melee_suppression::NativeMeleeSuppressionAction::CallNative;
+            const bool decisionResult = applyNativeMeleeDecision(native_melee_suppression::NativeMeleeEvent::WeaponSwing, decision);
+            return shouldCallNative ? (g_originalWeaponSwingHandler ? g_originalWeaponSwingHandler(handler, actor, side) : false) : decisionResult;
+        }
+
+        bool hookedHitFrameHandler(void* handler, RE::Actor* actor, RE::BSFixedString* side)
+        {
+            const auto input = makeNativeMeleePolicyInput(native_melee_suppression::NativeMeleeEvent::HitFrame, actor, side);
+            const auto decision = native_melee_suppression::evaluateNativeMeleeSuppression(native_melee_suppression::NativeMeleeEvent::HitFrame, input);
+
+            const bool shouldCallNative = decision.action == native_melee_suppression::NativeMeleeSuppressionAction::CallNative;
+            const bool decisionResult = applyNativeMeleeDecision(native_melee_suppression::NativeMeleeEvent::HitFrame, decision);
+            return shouldCallNative ? (g_originalHitFrameHandler ? g_originalHitFrameHandler(handler, actor, side) : false) : decisionResult;
+        }
+
+        bool installNativeMeleeVtableHook(std::uintptr_t entryOffset, NativeMeleeHandler_t hook, NativeMeleeHandler_t& original, const char* label)
+        {
+            REL::Relocation<std::uintptr_t> entry{ REL::Offset(entryOffset) };
+            auto* slot = reinterpret_cast<std::uintptr_t*>(entry.address());
+            if (!slot) {
+                ROCK_LOG_ERROR(Init, "FAILED to install {} hook: vtable slot is null", label);
+                return false;
+            }
+
+            const auto hookAddress = reinterpret_cast<std::uintptr_t>(hook);
+            const auto currentTarget = *slot;
+            if (currentTarget == hookAddress) {
+                ROCK_LOG_INFO(Init, "{} hook already installed at 0x{:X}", label, entry.address());
+                return original != nullptr;
+            }
+
+            original = reinterpret_cast<NativeMeleeHandler_t>(currentTarget);
+            if (!original) {
+                ROCK_LOG_ERROR(Init, "FAILED to install {} hook at 0x{:X}: original is null", label, entry.address());
+                return false;
+            }
+
+            DWORD oldProtect = 0;
+            if (!VirtualProtect(slot, sizeof(*slot), PAGE_EXECUTE_READWRITE, &oldProtect)) {
+                ROCK_LOG_ERROR(Init, "FAILED to install {} hook at 0x{:X}: VirtualProtect failed", label, entry.address());
+                original = nullptr;
+                return false;
+            }
+
+            *slot = hookAddress;
+            FlushInstructionCache(GetCurrentProcess(), slot, sizeof(*slot));
+            VirtualProtect(slot, sizeof(*slot), oldProtect, &oldProtect);
+
+            ROCK_LOG_INFO(Init, "Installed {} vtable hook at 0x{:X}, original=0x{:X}, hook=0x{:X}", label, entry.address(), reinterpret_cast<std::uintptr_t>(original),
+                hookAddress);
+            return true;
+        }
+    }
+
+    bool validateNativeMeleeSuppressionHookTargets()
+    {
+        const bool swingValid = validateNativeMeleeVtableTarget(
+            offsets::kVtableEntry_WeaponSwingHandler_Handle, offsets::kFunc_WeaponSwingHandler_Handle, "WeaponSwingHandler::Handle");
+        const bool hitFrameValid =
+            validateNativeMeleeVtableTarget(offsets::kVtableEntry_HitFrameHandler_Handle, offsets::kFunc_HitFrameHandler_Handle, "HitFrameHandler::Handle");
+        return swingValid && hitFrameValid;
+    }
+
+    void setNativeMeleePhysicalSwingActive(bool isLeft, bool active)
+    {
+        const auto expiresAt = active ? (GetTickCount64() + kNativeMeleePhysicalSwingLeaseMs) : 0;
+        g_nativeMeleePhysicalSwingExpiresAtMs[isLeft ? 1 : 0].store(expiresAt, std::memory_order_release);
+    }
+
+    bool isNativeMeleePhysicalSwingActive(bool isLeft)
+    {
+        return native_melee_suppression::isPhysicalSwingLeaseActive(
+            GetTickCount64(), g_nativeMeleePhysicalSwingExpiresAtMs[isLeft ? 1 : 0].load(std::memory_order_acquire));
+    }
+
 
     using HandleBumpedCharacter_t = void (*)(void*, void*, void*);
     static HandleBumpedCharacter_t g_originalHandleBumped = nullptr;
@@ -131,6 +343,34 @@ namespace frik::rock
         } else {
             ROCK_LOG_ERROR(Init, "FAILED to patch VR Grab Initiate at 0x{:X} — VirtualProtect failed", target.address());
         }
+    }
+
+    bool installNativeMeleeSuppressionHooks()
+    {
+        static bool weaponSwingInstalled = false;
+        static bool hitFrameInstalled = false;
+        if (weaponSwingInstalled && hitFrameInstalled) {
+            return true;
+        }
+
+        if (!validateNativeMeleeSuppressionHookTargets()) {
+            ROCK_LOG_ERROR(Init, "Native melee suppression hook validation failed; install deferred");
+            return false;
+        }
+
+        if (!weaponSwingInstalled) {
+            weaponSwingInstalled = installNativeMeleeVtableHook(
+                offsets::kVtableEntry_WeaponSwingHandler_Handle, &hookedWeaponSwingHandler, g_originalWeaponSwingHandler, "WeaponSwingHandler::Handle");
+        }
+        if (!hitFrameInstalled) {
+            hitFrameInstalled =
+                installNativeMeleeVtableHook(offsets::kVtableEntry_HitFrameHandler_Handle, &hookedHitFrameHandler, g_originalHitFrameHandler, "HitFrameHandler::Handle");
+        }
+
+        ROCK_LOG_INFO(Init, "Native melee suppression hooks installed: weaponSwing={} hitFrame={} enabled={} suppressSwing={} suppressHitFrame={}",
+            weaponSwingInstalled ? "yes" : "no", hitFrameInstalled ? "yes" : "no", g_rockConfig.rockNativeMeleeSuppressionEnabled ? "yes" : "no",
+            g_rockConfig.rockNativeMeleeSuppressWeaponSwing ? "yes" : "no", g_rockConfig.rockNativeMeleeSuppressHitFrame ? "yes" : "no");
+        return weaponSwingInstalled && hitFrameInstalled;
     }
 
     using ProcessConstraints_t = void (*)(void*, void*, void*, void*);

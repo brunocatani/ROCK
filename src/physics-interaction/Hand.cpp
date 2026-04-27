@@ -244,9 +244,18 @@ namespace frik::rock
         _adjustedHandTransform = RE::NiTransform();
         _hasAdjustedHandTransform = false;
         _grabVisualLerpElapsed = 0.0f;
+        _grabVisualLerpDuration = g_rockConfig.rockGrabLerpMaxTime;
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};
         _hasGrabFingerProbeDebug = false;
+        _grabLocalMeshTriangles.clear();
+        _grabSurfacePointLocal = {};
+        _hasGrabMeshPoseData = false;
+        _grabFingerPoseFrameCounter = 0;
+        _heldLocalLinearVelocityHistory = {};
+        _heldLocalLinearVelocityHistoryCount = 0;
+        _heldLocalLinearVelocityHistoryNext = 0;
+        _lastPlayerSpaceVelocityHavok = {};
         _grabConstraintHandSpace = RE::NiTransform();
         _grabBodyLocalTransform = RE::NiTransform();
         _grabRootBodyLocalTransform = RE::NiTransform();
