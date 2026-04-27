@@ -68,6 +68,7 @@ namespace frik::rock
         bool rockDebugShowTargetColliders = false;
         bool rockDebugShowHandAxes = false;
         bool rockDebugShowGrabPivots = false;
+        bool rockDebugShowGrabFingerProbes = false;
         bool rockDebugShowPalmVectors = false;
         bool rockDebugShowPalmBasis = false;
         bool rockDebugDrawHandColliders = true;
@@ -113,13 +114,16 @@ namespace frik::rock
         float rockGrabMaxDeviationTime = 2.0f;
         int rockGrabButtonID = 2;
         float rockThrowVelocityMultiplier = 1.5f;
-        float rockGrabVelocityDamping = 0.1f;
+        float rockGrabVelocityDamping = 0.25f;
+        bool rockGrabHandLerpEnabled = true;
+        bool rockGrabMeshFingerPoseEnabled = true;
+        float rockGrabFingerMinValue = 0.2f;
 
         RE::NiPoint3 rockGrabPivotAOffsetHandspace = RE::NiPoint3(0.0f, 0.0f, 0.0f);
         bool rockReverseGrabPivotAOffset = false;
 
         float rockGrabLerpSpeed = 300.0f;
-        float rockGrabLerpAngularSpeed = 10.0f;
+        float rockGrabLerpAngularSpeed = 360.0f;
         float rockGrabLerpMaxTime = 0.5f;
 
         float rockMaxLinearVelocity = 200.0f;

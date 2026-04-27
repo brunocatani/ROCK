@@ -1,6 +1,7 @@
 #include "PhysicsInteraction.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
 
@@ -782,8 +783,10 @@ namespace frik::rock
     void PhysicsInteraction::publishDebugBodyOverlay(RE::hknpWorld* hknp)
     {
         const bool drawGrabPivots = g_rockConfig.rockDebugShowGrabPivots;
+        const bool drawFingerProbes = g_rockConfig.rockDebugShowGrabFingerProbes;
         const bool drawPalmVectors = g_rockConfig.rockDebugShowPalmVectors;
-        if (!g_rockConfig.rockDebugShowColliders && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawPalmVectors) {
+        if (!g_rockConfig.rockDebugShowColliders && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawFingerProbes &&
+            !drawPalmVectors) {
             debug::ClearFrame();
             return;
         }
@@ -795,7 +798,7 @@ namespace frik::rock
         frame.drawRockBodies = g_rockConfig.rockDebugShowColliders;
         frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
         frame.drawAxes = g_rockConfig.rockDebugShowHandAxes;
-        frame.drawMarkers = drawGrabPivots || drawPalmVectors;
+        frame.drawMarkers = drawGrabPivots || drawFingerProbes || drawPalmVectors;
         const bool rightDisabled = s_rightHandDisabled.load(std::memory_order_acquire);
         const bool leftDisabled = s_leftHandDisabled.load(std::memory_order_acquire);
 
@@ -927,6 +930,28 @@ namespace frik::rock
 
             addGrabPivotDebug(_rightHand);
             addGrabPivotDebug(_leftHand);
+        }
+
+        if (drawFingerProbes) {
+            auto addFingerProbeDebug = [&](const Hand& hand) {
+                if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
+                    return;
+                }
+
+                std::array<RE::NiPoint3, 5> starts{};
+                std::array<RE::NiPoint3, 5> ends{};
+                if (!hand.getGrabFingerProbeDebug(starts, ends)) {
+                    return;
+                }
+
+                const auto role = hand.isLeft() ? debug::MarkerOverlayRole::LeftGrabFingerProbe : debug::MarkerOverlayRole::RightGrabFingerProbe;
+                for (std::size_t i = 0; i < starts.size(); ++i) {
+                    addMarkerLine(role, starts[i], ends[i]);
+                }
+            };
+
+            addFingerProbeDebug(_rightHand);
+            addFingerProbeDebug(_leftHand);
         }
 
         if (frame.drawRockBodies) {

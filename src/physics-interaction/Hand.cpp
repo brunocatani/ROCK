@@ -241,6 +241,12 @@ namespace frik::rock
         _transformWitnessLogCounter = 0;
         _heldBodyIds.clear();
         _grabHandSpace = RE::NiTransform();
+        _adjustedHandTransform = RE::NiTransform();
+        _hasAdjustedHandTransform = false;
+        _grabVisualLerpElapsed = 0.0f;
+        _grabFingerProbeStart = {};
+        _grabFingerProbeEnd = {};
+        _hasGrabFingerProbeDebug = false;
         _grabConstraintHandSpace = RE::NiTransform();
         _grabBodyLocalTransform = RE::NiTransform();
         _grabRootBodyLocalTransform = RE::NiTransform();
@@ -294,7 +300,7 @@ namespace frik::rock
         }
     }
 
-    bool Hand::getAdjustedHandTransform(RE::NiTransform& outTransform) const
+    bool Hand::computeAdjustedHandTransformTarget(RE::NiTransform& outTransform) const
     {
         if (!isHolding())
             return false;
@@ -309,6 +315,19 @@ namespace frik::rock
         outTransform = transform_math::composeTransforms(node->world, transform_math::invertTransform(_grabHandSpace));
 
         return true;
+    }
+
+    bool Hand::getAdjustedHandTransform(RE::NiTransform& outTransform) const
+    {
+        if (!isHolding())
+            return false;
+
+        if (_hasAdjustedHandTransform) {
+            outTransform = _adjustedHandTransform;
+            return true;
+        }
+
+        return computeAdjustedHandTransformTarget(outTransform);
     }
 
     void Hand::updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& palmNormal,

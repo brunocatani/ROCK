@@ -4,10 +4,14 @@
 
 #include "BodyCollisionControl.h"
 #include "DebugPivotMath.h"
+#include "GrabFingerPoseRuntime.h"
 #include "GrabConstraint.h"
+#include "HandVisualLerpMath.h"
+#include "HeldObjectDampingMath.h"
 #include "MeshGrab.h"
 #include "PalmTransform.h"
 #include "PhysicsUtils.h"
+#include "RE/Havok/hknpMotion.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RockConfig.h"
 #include "RockUtils.h"
@@ -17,6 +21,7 @@
 
 #include <cmath>
 #include <format>
+#include <array>
 #include <xmmintrin.h>
 
 namespace frik::rock
@@ -139,6 +144,103 @@ namespace frik::rock
         RE::NiTransform computeRuntimeBodyLocalTransform(const RE::NiTransform& nodeWorld, const RE::NiTransform& bodyWorld)
         {
             return multiplyTransforms(invertTransform(nodeWorld), bodyWorld);
+        }
+
+        void applyHeldVelocityDamping(RE::hknpWorld* world, RE::hknpBodyId primaryBodyId, const std::vector<std::uint32_t>& heldBodyIds, float damping)
+        {
+            const float keep = held_object_damping_math::velocityKeepFactor(damping);
+            if (!world || keep >= 0.9999f) {
+                return;
+            }
+
+            auto* bodyArray = world->GetBodyArray();
+            if (!bodyArray) {
+                return;
+            }
+
+            typedef void (*setVelDeferred_t)(void*, std::uint32_t, const float*, const float*);
+            static REL::Relocation<setVelDeferred_t> setBodyVelocityDeferred{ REL::Offset(offsets::kFunc_SetBodyVelocityDeferred) };
+
+            constexpr std::size_t kMaxDampedMotionSlots = 96;
+            std::array<std::uint32_t, kMaxDampedMotionSlots> dampedMotionSlots{};
+            std::size_t dampedMotionSlotCount = 0;
+
+            auto motionSlotAlreadyDamped = [&dampedMotionSlots, &dampedMotionSlotCount](std::uint32_t motionIndex) {
+                for (std::size_t i = 0; i < dampedMotionSlotCount; ++i) {
+                    if (dampedMotionSlots[i] == motionIndex) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            auto dampBody = [&](std::uint32_t bodyId) {
+                if (bodyId == INVALID_BODY_ID) {
+                    return;
+                }
+
+                const auto& body = bodyArray[bodyId];
+                const std::uint32_t motionIndex = body.motionIndex;
+                if (motionIndex == 0 || motionIndex > 4096 || motionSlotAlreadyDamped(motionIndex)) {
+                    return;
+                }
+
+                if (dampedMotionSlotCount >= dampedMotionSlots.size()) {
+                    return;
+                }
+
+                auto* motion = world->GetBodyMotion(RE::hknpBodyId{ bodyId });
+                if (!motion) {
+                    return;
+                }
+
+                dampedMotionSlots[dampedMotionSlotCount++] = motionIndex;
+
+                alignas(16) float linearVelocity[4] = {
+                    motion->linearVelocity.x * keep,
+                    motion->linearVelocity.y * keep,
+                    motion->linearVelocity.z * keep,
+                    0.0f,
+                };
+                alignas(16) float angularVelocity[4] = {
+                    motion->angularVelocity.x * keep,
+                    motion->angularVelocity.y * keep,
+                    motion->angularVelocity.z * keep,
+                    0.0f,
+                };
+
+                setBodyVelocityDeferred(world, bodyId, linearVelocity, angularVelocity);
+            };
+
+            dampBody(primaryBodyId.value);
+            for (const auto bodyId : heldBodyIds) {
+                dampBody(bodyId);
+            }
+        }
+
+        void applyRockGrabHandPose(bool isLeft, const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose)
+        {
+            auto* api = frik::api::FRIKApi::inst;
+            if (!api) {
+                return;
+            }
+
+            const auto hand = handFromBool(isLeft);
+            if (g_rockConfig.rockGrabMeshFingerPoseEnabled && fingerPose.solved && api->setHandPoseCustomFingerPositionsWithPriority) {
+                api->setHandPoseCustomFingerPositionsWithPriority("ROCK_Grab", hand, fingerPose.values[0], fingerPose.values[1], fingerPose.values[2], fingerPose.values[3],
+                    fingerPose.values[4], 100);
+                ROCK_LOG_INFO(Hand,
+                    "{} hand FINGER POSE: mesh values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} candidateTris={}",
+                    isLeft ? "Left" : "Right", fingerPose.values[0], fingerPose.values[1], fingerPose.values[2], fingerPose.values[3], fingerPose.values[4],
+                    fingerPose.hitCount, fingerPose.candidateTriangleCount);
+                return;
+            }
+
+            api->setHandPoseWithPriority("ROCK_Grab", hand, frik::api::FRIKApi::HandPoses::Fist, 100);
+            if (g_rockConfig.rockGrabMeshFingerPoseEnabled) {
+                ROCK_LOG_INFO(Hand, "{} hand FINGER POSE: fallback fist solved={} hits={} candidateTris={}", isLeft ? "Left" : "Right", fingerPose.solved ? "yes" : "no",
+                    fingerPose.hitCount, fingerPose.candidateTriangleCount);
+            }
         }
     }
 
@@ -441,12 +543,12 @@ namespace frik::rock
         RE::NiPoint3 grabSurfacePoint = objectWorldTransform.translate;
         bool meshGrabFound = false;
         MeshExtractionStats meshStats;
+        std::vector<TriangleData> grabMeshTriangles;
         const char* grabPointMode = "objectNodeOriginFallback";
         const char* grabFallbackReason = meshSourceNode ? "noTriangles" : "noMeshSourceNode";
 
         if (meshSourceNode) {
-            std::vector<TriangleData> triangles;
-            extractAllTriangles(meshSourceNode, triangles, 10, &meshStats);
+            extractAllTriangles(meshSourceNode, grabMeshTriangles, 10, &meshStats);
 
             ROCK_LOG_INFO(Hand,
                 "{} hand mesh extraction: meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} "
@@ -485,8 +587,8 @@ namespace frik::rock
                 }
             }
 
-            if (!triangles.empty()) {
-                auto& t0 = triangles[0];
+            if (!grabMeshTriangles.empty()) {
+                auto& t0 = grabMeshTriangles[0];
                 float cx = (t0.v0.x + t0.v1.x + t0.v2.x) / 3.0f;
                 float cy = (t0.v0.y + t0.v1.y + t0.v2.y) / 3.0f;
                 float cz = (t0.v0.z + t0.v1.z + t0.v2.z) / 3.0f;
@@ -499,12 +601,12 @@ namespace frik::rock
                 ROCK_LOG_INFO(MeshGrab, "TRI[0] centroid=({:.1f},{:.1f},{:.1f}) distToBody={:.1f}gu", cx, cy, cz, distToBody);
             }
 
-            if (!triangles.empty()) {
+            if (!grabMeshTriangles.empty()) {
                 RE::NiPoint3 grabPivotAWorld = computeGrabPivotAPositionFromHandBasis(handWorldTransform, _isLeft);
                 RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
 
                 GrabPoint grabPt;
-                if (findClosestGrabPoint(triangles, grabPivotAWorld, palmDir, 1.0f, 1.0f, grabPt)) {
+                if (findClosestGrabPoint(grabMeshTriangles, grabPivotAWorld, palmDir, 1.0f, 1.0f, grabPt)) {
                     grabSurfacePoint = grabPt.position;
                     meshGrabFound = true;
                     grabPointMode = "meshSurface";
@@ -512,7 +614,7 @@ namespace frik::rock
                     ROCK_LOG_INFO(Hand,
                         "{} hand MESH GRAB: mode={} tris={} staticTris={} dynamicTris={} skinnedTris={} "
                         "closest=({:.1f},{:.1f},{:.1f})",
-                        handName(), grabPointMode, triangles.size(), meshStats.staticTriangles, meshStats.dynamicTriangles, meshStats.skinnedTriangles, grabPt.position.x,
+                        handName(), grabPointMode, grabMeshTriangles.size(), meshStats.staticTriangles, meshStats.dynamicTriangles, meshStats.skinnedTriangles, grabPt.position.x,
                         grabPt.position.y, grabPt.position.z);
                 } else {
                     grabFallbackReason = "noClosestSurfacePoint";
@@ -555,6 +657,9 @@ namespace frik::rock
             _grabRootBodyLocalTransform = rootNode ? computeRuntimeBodyLocalTransform(rootNode->world, liveBodyWorldAtGrab) : makeIdentityTransform();
 
             _grabConstraintHandSpace = _grabHandSpace;
+            _adjustedHandTransform = handWorldTransform;
+            _hasAdjustedHandTransform = true;
+            _grabVisualLerpElapsed = 0.0f;
 
             if (g_rockConfig.rockDebugGrabFrameLogging) {
                 const RE::NiTransform& constraintGrabHandSpace = _grabConstraintHandSpace;
@@ -744,7 +849,15 @@ namespace frik::rock
         }
 
         stopSelectionHighlight();
-        frik::api::FRIKApi::inst->setHandPoseWithPriority("ROCK_Grab", handFromBool(_isLeft), frik::api::FRIKApi::HandPoses::Fist, 100);
+        const auto fingerPose = g_rockConfig.rockGrabMeshFingerPoseEnabled ?
+            grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(
+                grabMeshTriangles, handWorldTransform, _isLeft, computeGrabPivotAPositionFromHandBasis(handWorldTransform, _isLeft), grabSurfacePoint,
+                g_rockConfig.rockGrabFingerMinValue) :
+            grab_finger_pose_runtime::SolvedGrabFingerPose{};
+        _grabFingerProbeStart = fingerPose.probeStart;
+        _grabFingerProbeEnd = fingerPose.probeEnd;
+        _hasGrabFingerProbeDebug = fingerPose.candidateTriangleCount > 0;
+        applyRockGrabHandPose(_isLeft, fingerPose);
 
         _state = HandState::HeldInit;
 
@@ -776,6 +889,32 @@ namespace frik::rock
         suppressHandCollisionForGrab(world);
 
         _grabStartTime += deltaTime;
+
+        {
+            RE::NiTransform adjustedTarget{};
+            if (computeAdjustedHandTransformTarget(adjustedTarget)) {
+                if (!_hasAdjustedHandTransform) {
+                    _adjustedHandTransform = handWorldTransform;
+                    _grabVisualLerpElapsed = 0.0f;
+                    _hasAdjustedHandTransform = true;
+                }
+
+                const bool lerpExpired = _grabVisualLerpElapsed >= g_rockConfig.rockGrabLerpMaxTime;
+                if (!g_rockConfig.rockGrabHandLerpEnabled || lerpExpired) {
+                    _adjustedHandTransform = adjustedTarget;
+                } else {
+                    const auto advanced = hand_visual_lerp_math::advanceTransform(_adjustedHandTransform, adjustedTarget, g_rockConfig.rockGrabLerpSpeed,
+                        g_rockConfig.rockGrabLerpAngularSpeed, deltaTime);
+                    _adjustedHandTransform = advanced.transform;
+                    _grabVisualLerpElapsed += (std::max)(0.0f, deltaTime);
+                    if (advanced.reachedTarget || _grabVisualLerpElapsed >= g_rockConfig.rockGrabLerpMaxTime) {
+                        _adjustedHandTransform = adjustedTarget;
+                    }
+                }
+            } else {
+                _hasAdjustedHandTransform = false;
+            }
+        }
 
         if (_activeConstraint.constraintData) {
             auto* cd = static_cast<char*>(_activeConstraint.constraintData);
@@ -906,6 +1045,8 @@ namespace frik::rock
         }
         _activeConstraint.currentTau = currentLinearTau;
         _activeConstraint.currentMaxForce = currentLinearForce;
+
+        applyHeldVelocityDamping(world, _savedObjectState.bodyId, _heldBodyIds, g_rockConfig.rockGrabVelocityDamping);
 
         _heldLogCounter++;
         if (_heldLogCounter >= 45) {
@@ -1158,6 +1299,12 @@ namespace frik::rock
         _activeConstraint.clear();
         _heldBodyIds.clear();
         _grabHandSpace = RE::NiTransform();
+        _adjustedHandTransform = RE::NiTransform();
+        _hasAdjustedHandTransform = false;
+        _grabVisualLerpElapsed = 0.0f;
+        _grabFingerProbeStart = {};
+        _grabFingerProbeEnd = {};
+        _hasGrabFingerProbeDebug = false;
         _grabConstraintHandSpace = RE::NiTransform();
         _grabBodyLocalTransform = RE::NiTransform();
         _grabRootBodyLocalTransform = RE::NiTransform();

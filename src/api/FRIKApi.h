@@ -16,7 +16,7 @@ namespace frik::api
 
 #define FRIK_CALL __cdecl
 
-    inline constexpr std::uint32_t FRIK_API_VERSION = 4;
+    inline constexpr std::uint32_t FRIK_API_VERSION = 5;
 
     struct FRIKApi
     {
@@ -129,6 +129,10 @@ namespace frik::api
         bool(FRIK_CALL* isMeleeWeaponDrawn)();
 
         float(FRIK_CALL* getFrameTime)();
+
+        bool(FRIK_CALL* setHandPoseCustomFingerPositionsWithPriority)(const char* tag, Hand hand, float thumb, float index, float middle, float ring, float pinky, int priority);
+
+        bool(FRIK_CALL* setHandPoseCustomJointPositionsWithPriority)(const char* tag, Hand hand, const float values[15], int priority);
 
         [[nodiscard]] static int initialize(const uint32_t minVersion = FRIK_API_VERSION)
         {

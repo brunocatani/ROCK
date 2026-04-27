@@ -8,6 +8,9 @@
 #include "physics-interaction/DebugOverlayPolicy.h"
 #include "physics-interaction/CollisionLayerPolicy.h"
 #include "physics-interaction/GrabAnchorMath.h"
+#include "physics-interaction/GrabFingerPoseMath.h"
+#include "physics-interaction/HandVisualLerpMath.h"
+#include "physics-interaction/HeldObjectDampingMath.h"
 #include "physics-interaction/HandCollisionSuppressionMath.h"
 #include "physics-interaction/HandspaceConvention.h"
 #include "physics-interaction/PointingDirectionMath.h"
@@ -406,6 +409,64 @@ int main()
         0.0f);
 
     ok &= expectFloat("weapon collision body cap", static_cast<float>(frik::rock::MAX_WEAPON_COLLISION_BODIES), 32.0f);
+
+    ok &= expectFloat("held velocity damping clamp low", frik::rock::held_object_damping_math::clampVelocityDamping(-2.0f), 0.0f);
+    ok &= expectFloat("held velocity damping clamp high", frik::rock::held_object_damping_math::clampVelocityDamping(1.5f), 1.0f);
+    ok &= expectFloat("held velocity damping keep factor", frik::rock::held_object_damping_math::velocityKeepFactor(0.25f), 0.75f);
+
+    const auto dampedVelocity = frik::rock::held_object_damping_math::applyVelocityDamping(TestVector{ 10.0f, -20.0f, 5.0f }, 0.25f);
+    ok &= expectFloat("held damped velocity x", dampedVelocity.x, 7.5f);
+    ok &= expectFloat("held damped velocity y", dampedVelocity.y, -15.0f);
+    ok &= expectFloat("held damped velocity z", dampedVelocity.z, 3.75f);
+
+    TestTransform currentHandVisual{};
+    currentHandVisual.rotate = identity;
+    currentHandVisual.scale = 1.0f;
+    currentHandVisual.translate = TestVector{ 0.0f, 0.0f, 0.0f };
+    TestTransform targetHandVisual = currentHandVisual;
+    targetHandVisual.translate = TestVector{ 10.0f, 0.0f, 0.0f };
+    const auto advancedHandVisual = frik::rock::hand_visual_lerp_math::advanceTransform(currentHandVisual, targetHandVisual, 25.0f, 360.0f, 0.2f);
+    ok &= expectFloat("hand visual lerp still advancing", advancedHandVisual.reachedTarget ? 1.0f : 0.0f, 0.0f);
+    ok &= expectFloat("hand visual lerp x", advancedHandVisual.transform.translate.x, 5.0f);
+
+    const auto completedHandVisual =
+        frik::rock::hand_visual_lerp_math::advanceTransform(advancedHandVisual.transform, targetHandVisual, 25.0f, 360.0f, 0.2f);
+    ok &= expectFloat("hand visual lerp reached", completedHandVisual.reachedTarget ? 1.0f : 0.0f, 1.0f);
+    ok &= expectFloat("hand visual lerp target x", completedHandVisual.transform.translate.x, 10.0f);
+
+    std::vector<frik::rock::grab_finger_pose_math::Triangle<TestVector>> fingerTriangles;
+    fingerTriangles.push_back({ TestVector{ 4.0f, -1.0f, -1.0f }, TestVector{ 4.0f, 1.0f, -1.0f }, TestVector{ 4.0f, 0.0f, 1.0f } });
+    const auto fingerValue = frik::rock::grab_finger_pose_math::solveFingerCurlValue(
+        fingerTriangles,
+        TestVector{ 0.0f, 0.0f, 0.0f },
+        TestVector{ 1.0f, 0.0f, 0.0f },
+        8.0f,
+        0.2f,
+        2.0f);
+    ok &= expectFloat("finger curl triangle hit", fingerValue.hit ? 1.0f : 0.0f, 1.0f);
+    ok &= expectFloat("finger curl half extended", fingerValue.value, 0.5f);
+
+    std::vector<frik::rock::grab_finger_pose_math::Triangle<TestVector>> nearFingerTriangles;
+    nearFingerTriangles.push_back({ TestVector{ 4.0f, 0.20f, -1.0f }, TestVector{ 4.0f, 0.20f, 1.0f }, TestVector{ 4.0f, 1.20f, 0.0f } });
+    const auto nearFingerValue = frik::rock::grab_finger_pose_math::solveFingerCurlValue(
+        nearFingerTriangles,
+        TestVector{ 0.0f, 0.0f, 0.0f },
+        TestVector{ 1.0f, 0.0f, 0.0f },
+        8.0f,
+        0.2f,
+        0.25f);
+    ok &= expectFloat("finger curl probe-radius near hit", nearFingerValue.hit ? 1.0f : 0.0f, 1.0f);
+    ok &= expectFloat("finger curl probe-radius distance", nearFingerValue.distance, 4.0f);
+
+    const auto missedFingerValue = frik::rock::grab_finger_pose_math::solveFingerCurlValue(
+        fingerTriangles,
+        TestVector{ 0.0f, 5.0f, 0.0f },
+        TestVector{ 1.0f, 0.0f, 0.0f },
+        8.0f,
+        0.2f,
+        0.25f);
+    ok &= expectFloat("finger curl miss closes", missedFingerValue.hit ? 1.0f : 0.0f, 0.0f);
+    ok &= expectFloat("finger curl miss min", missedFingerValue.value, 0.2f);
 
     std::uint64_t weaponLayerMatrix[48]{};
     for (std::uint32_t i = 0; i < 48; ++i) {

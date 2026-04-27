@@ -1135,6 +1135,18 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[1] = 0.08f;
                 color[2] = 0.04f;
                 break;
+            case MarkerOverlayRole::RightGrabFingerProbe:
+                color[0] = 0.45f;
+                color[1] = 1.0f;
+                color[2] = 0.45f;
+                color[3] = 0.75f;
+                break;
+            case MarkerOverlayRole::LeftGrabFingerProbe:
+                color[0] = 1.0f;
+                color[1] = 0.45f;
+                color[2] = 0.95f;
+                color[3] = 0.75f;
+                break;
             }
         }
 

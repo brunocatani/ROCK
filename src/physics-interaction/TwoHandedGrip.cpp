@@ -2,13 +2,17 @@
 
 #include "TwoHandedGrip.h"
 
+#include "GrabFingerPoseRuntime.h"
 #include "PalmTransform.h"
+#include "RockConfig.h"
 #include "RockUtils.h"
 #include "TransformMath.h"
 #include "WeaponCollisionGeometryMath.h"
 #include "api/FRIKApi.h"
 #include "common/Quaternion.h"
 #include "f4vr/F4VRUtils.h"
+
+#include <array>
 
 namespace frik::rock
 {
@@ -141,7 +145,23 @@ namespace frik::rock
             _grabNormal = palmDir;
         }
 
-        setBarrelGripPose(offhandIsLeft);
+        std::array<float, 5> meshFingerPose{};
+        const std::array<float, 5>* meshFingerPosePtr = nullptr;
+        if (g_rockConfig.rockGrabMeshFingerPoseEnabled) {
+            const RE::NiPoint3 gripWorldPoint = meshFound ? grabPoint.position : palmPos;
+            const auto solvedFingerPose = grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(
+                triangles, offhandTransform, offhandIsLeft, palmPos, gripWorldPoint, g_rockConfig.rockGrabFingerMinValue);
+            if (solvedFingerPose.solved) {
+                meshFingerPose = solvedFingerPose.values;
+                meshFingerPosePtr = &meshFingerPose;
+                ROCK_LOG_INFO(Weapon,
+                    "TwoHandedGrip: mesh finger pose hand={} values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} candidateTris={}",
+                    offhandIsLeft ? "left" : "right", meshFingerPose[0], meshFingerPose[1], meshFingerPose[2], meshFingerPose[3], meshFingerPose[4],
+                    solvedFingerPose.hitCount, solvedFingerPose.candidateTriangleCount);
+            }
+        }
+
+        setBarrelGripPose(offhandIsLeft, meshFingerPosePtr);
 
         _state = TwoHandedState::Gripping;
         _rotationBlend = 0.0f;
@@ -264,11 +284,28 @@ namespace frik::rock
         }
     }
 
-    void TwoHandedGrip::setBarrelGripPose(bool isLeft)
+    void TwoHandedGrip::setBarrelGripPose(bool isLeft, const std::array<float, 5>* meshFingerPose)
     {
         static constexpr float BARREL_GRIP_POSE[] = { 0.85f, 0.80f, 0.75f, 0.35f, 0.30f, 0.25f, 0.30f, 0.25f, 0.20f, 0.35f, 0.30f, 0.25f, 0.40f, 0.35f, 0.30f };
 
-        frik::api::FRIKApi::inst->setHandPoseCustomJointPositions("ROCK_BarrelGrip", handFromBool(isLeft), BARREL_GRIP_POSE);
+        auto* api = frik::api::FRIKApi::inst;
+        if (!api) {
+            return;
+        }
+
+        const auto hand = handFromBool(isLeft);
+        if (meshFingerPose && api->setHandPoseCustomFingerPositionsWithPriority) {
+            api->setHandPoseCustomFingerPositionsWithPriority("ROCK_BarrelGrip", hand, (*meshFingerPose)[0], (*meshFingerPose)[1], (*meshFingerPose)[2], (*meshFingerPose)[3],
+                (*meshFingerPose)[4], 100);
+            return;
+        }
+
+        if (api->setHandPoseCustomJointPositionsWithPriority) {
+            api->setHandPoseCustomJointPositionsWithPriority("ROCK_BarrelGrip", hand, BARREL_GRIP_POSE, 100);
+            return;
+        }
+
+        api->setHandPoseCustomJointPositions("ROCK_BarrelGrip", hand, BARREL_GRIP_POSE);
     }
 
     void TwoHandedGrip::clearBarrelGripPose(bool isLeft) { frik::api::FRIKApi::inst->clearHandPose("ROCK_BarrelGrip", handFromBool(isLeft)); }

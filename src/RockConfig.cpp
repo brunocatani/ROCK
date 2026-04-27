@@ -65,6 +65,7 @@ namespace frik::rock
         rockDebugShowTargetColliders = false;
         rockDebugShowHandAxes = false;
         rockDebugShowGrabPivots = false;
+        rockDebugShowGrabFingerProbes = false;
         rockDebugShowPalmVectors = false;
         rockDebugShowPalmBasis = false;
         rockDebugDrawHandColliders = true;
@@ -110,13 +111,16 @@ namespace frik::rock
         rockGrabMaxDeviationTime = 2.0f;
         rockGrabButtonID = 2;
         rockThrowVelocityMultiplier = 1.5f;
-        rockGrabVelocityDamping = 0.1f;
+        rockGrabVelocityDamping = 0.25f;
+        rockGrabHandLerpEnabled = true;
+        rockGrabMeshFingerPoseEnabled = true;
+        rockGrabFingerMinValue = 0.2f;
 
         rockGrabPivotAOffsetHandspace = RE::NiPoint3(0.0f, 0.0f, 0.0f);
         rockReverseGrabPivotAOffset = false;
 
         rockGrabLerpSpeed = 300.0f;
-        rockGrabLerpAngularSpeed = 10.0f;
+        rockGrabLerpAngularSpeed = 360.0f;
         rockGrabLerpMaxTime = 0.5f;
 
         rockMaxLinearVelocity = 200.0f;
@@ -175,6 +179,7 @@ namespace frik::rock
         rockDebugShowTargetColliders = ini.GetBoolValue(SECTION, "bDebugShowTargetColliders", rockDebugShowTargetColliders);
         rockDebugShowHandAxes = ini.GetBoolValue(SECTION, "bDebugShowHandAxes", rockDebugShowHandAxes);
         rockDebugShowGrabPivots = ini.GetBoolValue(SECTION, "bDebugShowGrabPivots", rockDebugShowGrabPivots);
+        rockDebugShowGrabFingerProbes = ini.GetBoolValue(SECTION, "bDebugShowGrabFingerProbes", rockDebugShowGrabFingerProbes);
         rockDebugShowPalmVectors = ini.GetBoolValue(SECTION, "bDebugShowPalmVectors", rockDebugShowPalmVectors);
         rockDebugShowPalmBasis = ini.GetBoolValue(SECTION, "bDebugShowPalmBasis", rockDebugShowPalmBasis);
         rockDebugDrawHandColliders = ini.GetBoolValue(SECTION, "bDebugDrawHandColliders", rockDebugDrawHandColliders);
@@ -221,6 +226,9 @@ namespace frik::rock
         rockGrabButtonID = static_cast<int>(ini.GetLongValue(SECTION, "iGrabButtonID", rockGrabButtonID));
         rockThrowVelocityMultiplier = static_cast<float>(ini.GetDoubleValue(SECTION, "fThrowVelocityMultiplier", rockThrowVelocityMultiplier));
         rockGrabVelocityDamping = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabVelocityDamping", rockGrabVelocityDamping));
+        rockGrabHandLerpEnabled = ini.GetBoolValue(SECTION, "bGrabHandLerpEnabled", rockGrabHandLerpEnabled);
+        rockGrabMeshFingerPoseEnabled = ini.GetBoolValue(SECTION, "bGrabMeshFingerPoseEnabled", rockGrabMeshFingerPoseEnabled);
+        rockGrabFingerMinValue = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFingerMinValue", rockGrabFingerMinValue));
 
         readVec3("fGrabPivotAOffsetHandspaceX", "fGrabPivotAOffsetHandspaceY", "fGrabPivotAOffsetHandspaceZ", rockGrabPivotAOffsetHandspace);
         rockReverseGrabPivotAOffset = ini.GetBoolValue(SECTION, "bReverseGrabPivotAOffset", rockReverseGrabPivotAOffset);

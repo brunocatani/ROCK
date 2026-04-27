@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <array>
 
 #include "MeshGrab.h"
 #include "PalmTransform.h"
@@ -40,7 +41,7 @@ namespace frik::rock
 
         void updateGripping(RE::NiNode* weaponNode, bool isLeftHanded, float dt);
 
-        void setBarrelGripPose(bool isLeft);
+        void setBarrelGripPose(bool isLeft, const std::array<float, 5>* meshFingerPose);
 
         void clearBarrelGripPose(bool isLeft);
 

@@ -74,6 +74,7 @@ namespace frik::rock
         void suppressHandCollisionForGrab(RE::hknpWorld* world);
         void restoreHandCollisionAfterGrab(RE::hknpWorld* world);
         void clearGrabHandCollisionSuppressionState();
+        bool computeAdjustedHandTransformTarget(RE::NiTransform& outTransform) const;
 
     public:
         const std::vector<std::uint32_t>& getHeldBodyIds() const { return _heldBodyIds; }
@@ -113,6 +114,14 @@ namespace frik::rock
         bool getGrabPivotDebugSnapshot(RE::hknpWorld* world, GrabPivotDebugSnapshot& out) const;
 
         bool getAdjustedHandTransform(RE::NiTransform& outTransform) const;
+        bool getGrabFingerProbeDebug(std::array<RE::NiPoint3, 5>& outStart, std::array<RE::NiPoint3, 5>& outEnd) const
+        {
+            if (!_hasGrabFingerProbeDebug)
+                return false;
+            outStart = _grabFingerProbeStart;
+            outEnd = _grabFingerProbeEnd;
+            return true;
+        }
 
         bool grabSelectedObject(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float tau, float damping, float maxForce, float proportionalRecovery,
             float constantRecovery);
@@ -195,6 +204,12 @@ namespace frik::rock
         int _notifCounter = 0;
 
         RE::NiTransform _grabHandSpace;
+        RE::NiTransform _adjustedHandTransform;
+        bool _hasAdjustedHandTransform = false;
+        float _grabVisualLerpElapsed = 0.0f;
+        std::array<RE::NiPoint3, 5> _grabFingerProbeStart{};
+        std::array<RE::NiPoint3, 5> _grabFingerProbeEnd{};
+        bool _hasGrabFingerProbeDebug = false;
 
         RE::NiTransform _grabConstraintHandSpace;
 

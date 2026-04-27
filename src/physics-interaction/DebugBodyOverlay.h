@@ -54,7 +54,9 @@ namespace frik::rock::debug
         RightGrabPivotB,
         LeftGrabPivotB,
         RightGrabPivotError,
-        LeftGrabPivotError
+        LeftGrabPivotError,
+        RightGrabFingerProbe,
+        LeftGrabFingerProbe
     };
 
     struct BodyOverlayEntry
