@@ -6,6 +6,7 @@
 #include "physics-interaction/DebugAxisMath.h"
 #include "physics-interaction/DebugPivotMath.h"
 #include "physics-interaction/DebugOverlayPolicy.h"
+#include "physics-interaction/CollisionLayerPolicy.h"
 #include "physics-interaction/GrabAnchorMath.h"
 #include "physics-interaction/HandCollisionSuppressionMath.h"
 #include "physics-interaction/HandspaceConvention.h"
@@ -405,6 +406,40 @@ int main()
         0.0f);
 
     ok &= expectFloat("weapon collision body cap", static_cast<float>(frik::rock::MAX_WEAPON_COLLISION_BODIES), 32.0f);
+
+    std::uint64_t weaponLayerMatrix[48]{};
+    for (std::uint32_t i = 0; i < 48; ++i) {
+        weaponLayerMatrix[i] = ~0ULL;
+    }
+    frik::rock::collision_layer_policy::applyWeaponProjectileBlockingPolicy(
+        weaponLayerMatrix, frik::rock::collision_layer_policy::ROCK_LAYER_WEAPON, false, false);
+    ok &= expectFloat("weapon projectile layer disabled",
+        (weaponLayerMatrix[frik::rock::collision_layer_policy::ROCK_LAYER_WEAPON] & (1ULL << frik::rock::collision_layer_policy::FO4_LAYER_PROJECTILE)) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("projectile reciprocal disabled",
+        (weaponLayerMatrix[frik::rock::collision_layer_policy::FO4_LAYER_PROJECTILE] & (1ULL << frik::rock::collision_layer_policy::ROCK_LAYER_WEAPON)) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("weapon cone projectile layer disabled",
+        (weaponLayerMatrix[frik::rock::collision_layer_policy::ROCK_LAYER_WEAPON] & (1ULL << frik::rock::collision_layer_policy::FO4_LAYER_CONEPROJECTILE)) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("weapon spell layer disabled",
+        (weaponLayerMatrix[frik::rock::collision_layer_policy::ROCK_LAYER_WEAPON] & (1ULL << frik::rock::collision_layer_policy::FO4_LAYER_SPELL)) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("weapon clutter/world layer unchanged",
+        (weaponLayerMatrix[frik::rock::collision_layer_policy::ROCK_LAYER_WEAPON] & (1ULL << 1)) ? 1.0f : 0.0f,
+        1.0f);
+
+    frik::rock::collision_layer_policy::applyWeaponProjectileBlockingPolicy(
+        weaponLayerMatrix, frik::rock::collision_layer_policy::ROCK_LAYER_WEAPON, true, true);
+    ok &= expectFloat("weapon projectile layer enabled",
+        (weaponLayerMatrix[frik::rock::collision_layer_policy::ROCK_LAYER_WEAPON] & (1ULL << frik::rock::collision_layer_policy::FO4_LAYER_PROJECTILE)) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("weapon cone projectile layer enabled",
+        (weaponLayerMatrix[frik::rock::collision_layer_policy::ROCK_LAYER_WEAPON] & (1ULL << frik::rock::collision_layer_policy::FO4_LAYER_CONEPROJECTILE)) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("weapon spell layer enabled",
+        (weaponLayerMatrix[frik::rock::collision_layer_policy::ROCK_LAYER_WEAPON] & (1ULL << frik::rock::collision_layer_policy::FO4_LAYER_SPELL)) ? 1.0f : 0.0f,
+        1.0f);
 
     return ok ? 0 : 1;
 }

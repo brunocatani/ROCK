@@ -51,6 +51,8 @@ namespace frik::rock
         rockHandspaceBasisMode = 1;
 
         rockWeaponCollisionEnabled = false;
+        rockWeaponCollisionBlocksProjectiles = false;
+        rockWeaponCollisionBlocksSpells = false;
         rockWeaponCollisionRotationCorrectionEnabled = false;
         rockWeaponCollisionRotationDegrees = RE::NiPoint3(0.0f, 0.0f, 0.0f);
         rockWeaponCollisionConvexRadius = 0.01f;
@@ -151,6 +153,8 @@ namespace frik::rock
         rockHandspaceBasisMode = static_cast<int>(ini.GetLongValue(SECTION, "iHandspaceBasisMode", rockHandspaceBasisMode));
 
         rockWeaponCollisionEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionEnabled", rockWeaponCollisionEnabled);
+        rockWeaponCollisionBlocksProjectiles = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksProjectiles", rockWeaponCollisionBlocksProjectiles);
+        rockWeaponCollisionBlocksSpells = ini.GetBoolValue(SECTION, "bWeaponCollisionBlocksSpells", rockWeaponCollisionBlocksSpells);
         rockWeaponCollisionRotationCorrectionEnabled =
             ini.GetBoolValue(SECTION, "bWeaponCollisionRotationCorrectionEnabled", rockWeaponCollisionRotationCorrectionEnabled);
         readVec3("fWeaponCollisionRotationX", "fWeaponCollisionRotationY", "fWeaponCollisionRotationZ", rockWeaponCollisionRotationDegrees);

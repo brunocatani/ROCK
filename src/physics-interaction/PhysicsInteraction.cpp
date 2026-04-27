@@ -4,6 +4,7 @@
 #include <cmath>
 #include <numbers>
 
+#include "CollisionLayerPolicy.h"
 #include "HavokOffsets.h"
 #include "DebugBodyOverlay.h"
 #include "DebugOverlayPolicy.h"
@@ -700,12 +701,17 @@ namespace frik::rock
         disablePair(ROCK_WEAPON_LAYER, 36);
         disablePair(ROCK_WEAPON_LAYER, 41);
         disablePair(ROCK_WEAPON_LAYER, 42);
+        collision_layer_policy::applyWeaponProjectileBlockingPolicy(
+            matrix, ROCK_WEAPON_LAYER, g_rockConfig.rockWeaponCollisionBlocksProjectiles, g_rockConfig.rockWeaponCollisionBlocksSpells);
 
         _expectedHandLayerMask = matrix[ROCK_HAND_LAYER];
         _collisionLayerRegistered = true;
 
         ROCK_LOG_INFO(Config, "Registered layer {} (hand) mask=0x{:016X}", ROCK_HAND_LAYER, matrix[ROCK_HAND_LAYER]);
         ROCK_LOG_INFO(Config, "Registered layer {} (weapon) mask=0x{:016X}", ROCK_WEAPON_LAYER, matrix[ROCK_WEAPON_LAYER]);
+        ROCK_LOG_INFO(Config, "Weapon projectile blocking: projectiles={} spells={} layerMask=0x{:016X}",
+            g_rockConfig.rockWeaponCollisionBlocksProjectiles ? "enabled" : "disabled",
+            g_rockConfig.rockWeaponCollisionBlocksSpells ? "enabled" : "disabled", matrix[ROCK_WEAPON_LAYER]);
     }
 
     bool PhysicsInteraction::createHandCollisions(RE::hknpWorld* world, void* bhkWorld)

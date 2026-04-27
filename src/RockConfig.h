@@ -54,6 +54,8 @@ namespace frik::rock
         int rockHandspaceBasisMode = 1;
 
         bool rockWeaponCollisionEnabled = false;
+        bool rockWeaponCollisionBlocksProjectiles = false;
+        bool rockWeaponCollisionBlocksSpells = false;
         bool rockWeaponCollisionRotationCorrectionEnabled = false;
         RE::NiPoint3 rockWeaponCollisionRotationDegrees = RE::NiPoint3(0.0f, 0.0f, 0.0f);
         float rockWeaponCollisionConvexRadius = 0.01f;
