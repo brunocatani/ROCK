@@ -4,6 +4,7 @@
 #define ROCK_API_EXPORTS
 #include "RockConfig.h"
 #include "api/ROCKApi.h"
+#include "physics-interaction/DebugBodyOverlay.h"
 #include "physics-interaction/HavokOffsets.h"
 #include "physics-interaction/PhysicsInteraction.h"
 
@@ -179,6 +180,7 @@ namespace
 
             g_rockConfig.load();
             logger::info("ROCK: Config loaded (rockEnabled={}).", g_rockConfig.rockEnabled);
+            frik::rock::debug::Install();
 
             s_frikAvailable = true;
 
@@ -258,8 +260,8 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     }
     s_messaging->RegisterListener(onF4SEMessage);
 
-    logger::info("ROCK: Allocate trampoline (256 bytes)...");
-    F4SE::AllocTrampoline(256);
+    logger::info("ROCK: Allocate trampoline (1024 bytes)...");
+    F4SE::AllocTrampoline(1024);
 
     logger::info("ROCK: Install main loop hook...");
     if (!hookMainLoop()) {

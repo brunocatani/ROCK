@@ -42,11 +42,20 @@ namespace frik::rock
         void applyTransform(const RE::NiTransform& t)
         {
             auto xform = [&](const RE::NiPoint3& p) -> RE::NiPoint3 {
+                /*
+                 * Mesh extraction must match FO4VR's native NiTransform compose
+                 * convention, not CommonLib's row-style point helper. Ghidra
+                 * verification of the engine compose path showed child-local
+                 * vectors are applied through the parent column basis. Weapon
+                 * hulls are baked from these world triangles once at creation;
+                 * using the opposite basis makes the baked hull depend on how
+                 * tilted the weapon was when the collision was created.
+                 */
                 RE::NiPoint3 scaled(p.x * t.scale, p.y * t.scale, p.z * t.scale);
                 RE::NiPoint3 rotated;
-                rotated.x = t.rotate.entry[0][0] * scaled.x + t.rotate.entry[0][1] * scaled.y + t.rotate.entry[0][2] * scaled.z;
-                rotated.y = t.rotate.entry[1][0] * scaled.x + t.rotate.entry[1][1] * scaled.y + t.rotate.entry[1][2] * scaled.z;
-                rotated.z = t.rotate.entry[2][0] * scaled.x + t.rotate.entry[2][1] * scaled.y + t.rotate.entry[2][2] * scaled.z;
+                rotated.x = t.rotate.entry[0][0] * scaled.x + t.rotate.entry[1][0] * scaled.y + t.rotate.entry[2][0] * scaled.z;
+                rotated.y = t.rotate.entry[0][1] * scaled.x + t.rotate.entry[1][1] * scaled.y + t.rotate.entry[2][1] * scaled.z;
+                rotated.z = t.rotate.entry[0][2] * scaled.x + t.rotate.entry[1][2] * scaled.y + t.rotate.entry[2][2] * scaled.z;
                 return RE::NiPoint3(rotated.x + t.translate.x, rotated.y + t.translate.y, rotated.z + t.translate.z);
             };
             v0 = xform(v0);

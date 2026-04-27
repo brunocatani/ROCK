@@ -2,52 +2,39 @@
 
 #include "TwoHandedGrip.h"
 
-#include "RockConfig.h"
+#include "PalmTransform.h"
 #include "RockUtils.h"
+#include "TransformMath.h"
+#include "WeaponCollisionGeometryMath.h"
 #include "api/FRIKApi.h"
 #include "common/Quaternion.h"
 #include "f4vr/F4VRUtils.h"
-#include "f4vr/PlayerNodes.h"
 
 namespace frik::rock
 {
 
-    static RE::NiTransform getWandTransform(bool isLeft)
+    static RE::NiTransform getHandBoneTransform(bool isLeft)
     {
-        auto* wand = isLeft ? f4vr::getLeftHandNode() : f4vr::getRightHandNode();
-        if (wand) {
-            RE::NiTransform result = wand->world;
-            float offX = g_rockConfig.rockHandCollisionOffsetX * (isLeft ? -1.0f : 1.0f);
-            float offY = g_rockConfig.rockHandCollisionOffsetY;
-            float offZ = g_rockConfig.rockHandCollisionOffsetZ;
-            const auto& R = result.rotate;
-            constexpr float kHavokToGame = 70.0f;
-            result.translate.x += (R.entry[0][0] * offX + R.entry[0][1] * offY + R.entry[0][2] * offZ) * kHavokToGame;
-            result.translate.y += (R.entry[1][0] * offX + R.entry[1][1] * offY + R.entry[1][2] * offZ) * kHavokToGame;
-            result.translate.z += (R.entry[2][0] * offX + R.entry[2][1] * offY + R.entry[2][2] * offZ) * kHavokToGame;
-            return result;
+        if (!frik::api::FRIKApi::inst) {
+            return transform_math::makeIdentityTransform<RE::NiTransform>();
         }
         return frik::api::FRIKApi::inst->getHandWorldTransform(handFromBool(isLeft));
     }
 
     RE::NiPoint3 TwoHandedGrip::worldToWeaponLocal(const RE::NiPoint3& worldPos, const RE::NiNode* weaponNode)
     {
-        RE::NiPoint3 delta = sub(worldPos, weaponNode->world.translate);
-        float invScale = 1.0f / weaponNode->world.scale;
-        auto& R = weaponNode->world.rotate;
-
-        return { (R.entry[0][0] * delta.x + R.entry[1][0] * delta.y + R.entry[2][0] * delta.z) * invScale,
-            (R.entry[0][1] * delta.x + R.entry[1][1] * delta.y + R.entry[2][1] * delta.z) * invScale,
-            (R.entry[0][2] * delta.x + R.entry[1][2] * delta.y + R.entry[2][2] * delta.z) * invScale };
+        if (!weaponNode) {
+            return {};
+        }
+        return weapon_collision_geometry_math::worldPointToLocal(weaponNode->world.rotate, weaponNode->world.translate, weaponNode->world.scale, worldPos);
     }
 
     RE::NiPoint3 TwoHandedGrip::weaponLocalToWorld(const RE::NiPoint3& localPos, const RE::NiNode* weaponNode)
     {
-        float s = weaponNode->world.scale;
-        auto& R = weaponNode->world.rotate;
-        return { (R.entry[0][0] * localPos.x + R.entry[0][1] * localPos.y + R.entry[0][2] * localPos.z) * s + weaponNode->world.translate.x,
-            (R.entry[1][0] * localPos.x + R.entry[1][1] * localPos.y + R.entry[1][2] * localPos.z) * s + weaponNode->world.translate.y,
-            (R.entry[2][0] * localPos.x + R.entry[2][1] * localPos.y + R.entry[2][2] * localPos.z) * s + weaponNode->world.translate.z };
+        if (!weaponNode) {
+            return {};
+        }
+        return weapon_collision_geometry_math::localPointToWorld(weaponNode->world.rotate, weaponNode->world.translate, weaponNode->world.scale, localPos);
     }
 
     void TwoHandedGrip::snapHandToWorldPos(RE::NiAVObject* handBone, const RE::NiPoint3& targetWorld, const RE::NiNode* weaponNode)
@@ -56,16 +43,7 @@ namespace frik::rock
         if (!parent)
             return;
 
-        RE::NiPoint3 delta = sub(targetWorld, parent->world.translate);
-        float pScale = parent->world.scale;
-        if (pScale < 0.001f)
-            pScale = 1.0f;
-
-        auto& pRot = parent->world.rotate;
-
-        handBone->local.translate.x = (pRot.entry[0][0] * delta.x + pRot.entry[1][0] * delta.y + pRot.entry[2][0] * delta.z) / pScale;
-        handBone->local.translate.y = (pRot.entry[0][1] * delta.x + pRot.entry[1][1] * delta.y + pRot.entry[2][1] * delta.z) / pScale;
-        handBone->local.translate.z = (pRot.entry[0][2] * delta.x + pRot.entry[1][2] * delta.y + pRot.entry[2][2] * delta.z) / pScale;
+        handBone->local.translate = transform_math::worldPointToLocal(parent->world, targetWorld);
 
         f4vr::updateTransformsDown(handBone, true, weaponNode ? weaponNode->name.c_str() : nullptr);
     }
@@ -139,12 +117,12 @@ namespace frik::rock
 
         killFrikOffhandGrip();
 
-        auto primaryTransform = getWandTransform(!offhandIsLeft);
-        _primaryGripLocal = worldToWeaponLocal(primaryTransform.translate, weaponNode);
+        auto primaryTransform = getHandBoneTransform(!offhandIsLeft);
+        _primaryGripLocal = worldToWeaponLocal(computeGrabPivotAPositionFromHandBasis(primaryTransform, !offhandIsLeft), weaponNode);
 
-        auto offhandTransform = getWandTransform(offhandIsLeft);
-        RE::NiPoint3 palmPos = computePalmPosition(offhandTransform, offhandIsLeft);
-        RE::NiPoint3 palmDir = computePalmForward(offhandTransform, offhandIsLeft);
+        auto offhandTransform = getHandBoneTransform(offhandIsLeft);
+        RE::NiPoint3 palmPos = computeGrabPivotAPositionFromHandBasis(offhandTransform, offhandIsLeft);
+        RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(offhandTransform, offhandIsLeft);
 
         std::vector<TriangleData> triangles;
         extractAllTriangles(weaponNode, triangles);
@@ -199,10 +177,10 @@ namespace frik::rock
 
         _rotationBlend = (std::min)(1.0f, _rotationBlend + dt * ROTATION_BLEND_SPEED);
 
-        auto primaryTransform = getWandTransform(!offhandIsLeft);
-        auto offhandTransform = getWandTransform(offhandIsLeft);
-        RE::NiPoint3 primaryController = primaryTransform.translate;
-        RE::NiPoint3 offhandController = offhandTransform.translate;
+        auto primaryTransform = getHandBoneTransform(!offhandIsLeft);
+        auto offhandTransform = getHandBoneTransform(offhandIsLeft);
+        RE::NiPoint3 primaryController = computeGrabPivotAPositionFromHandBasis(primaryTransform, !offhandIsLeft);
+        RE::NiPoint3 offhandController = computeGrabPivotAPositionFromHandBasis(offhandTransform, offhandIsLeft);
 
         RE::NiPoint3 axisLocal = sub(_offhandGripLocal, _primaryGripLocal);
         float axisLocalLen = std::sqrt(dot(axisLocal, axisLocal));
@@ -249,13 +227,10 @@ namespace frik::rock
         RE::NiPoint3 posOffset = sub(primaryController, primaryGripWorld);
 
         if (parent) {
-            auto& pRot = parent->world.rotate;
-            float pScale = parent->world.scale;
-            if (pScale < 0.001f)
-                pScale = 1.0f;
-            weaponNode->local.translate.x += (pRot.entry[0][0] * posOffset.x + pRot.entry[1][0] * posOffset.y + pRot.entry[2][0] * posOffset.z) / pScale;
-            weaponNode->local.translate.y += (pRot.entry[0][1] * posOffset.x + pRot.entry[1][1] * posOffset.y + pRot.entry[2][1] * posOffset.z) / pScale;
-            weaponNode->local.translate.z += (pRot.entry[0][2] * posOffset.x + pRot.entry[1][2] * posOffset.y + pRot.entry[2][2] * posOffset.z) / pScale;
+            const RE::NiPoint3 localOffset = transform_math::worldVectorToLocal(parent->world, posOffset);
+            weaponNode->local.translate.x += localOffset.x;
+            weaponNode->local.translate.y += localOffset.y;
+            weaponNode->local.translate.z += localOffset.z;
         } else {
             weaponNode->local.translate.x += posOffset.x;
             weaponNode->local.translate.y += posOffset.y;

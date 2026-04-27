@@ -70,7 +70,7 @@ namespace
         auto transform = frikApi->getHandWorldTransform(frikHand);
 
         bool isLeft = getIsLeftForHandEnum(hand);
-        return computePalmPosition(transform, isLeft);
+        return computePalmPositionFromHandBasis(transform, isLeft);
     }
 
     RE::NiPoint3 ROCK_CALL apiGetPalmForward(const ROCKApi::Hand hand)
@@ -83,7 +83,7 @@ namespace
         auto transform = frikApi->getHandWorldTransform(frikHand);
 
         bool isLeft = getIsLeftForHandEnum(hand);
-        return computePalmForward(transform, isLeft);
+        return computePalmNormalFromHandBasis(transform, isLeft);
     }
 
     bool ROCK_CALL apiIsHandTouching(const ROCKApi::Hand hand)

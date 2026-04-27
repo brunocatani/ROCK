@@ -2,6 +2,8 @@
 
 #include "HavokOffsets.h"
 
+#include "BodyCollisionControl.h"
+#include "DebugPivotMath.h"
 #include "GrabConstraint.h"
 #include "MeshGrab.h"
 #include "PalmTransform.h"
@@ -9,6 +11,7 @@
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RockConfig.h"
 #include "RockUtils.h"
+#include "TransformMath.h"
 #include "api/FRIKApi.h"
 #include "f4vr/F4VRUtils.h"
 
@@ -104,56 +107,12 @@ namespace frik::rock
 
         RE::NiTransform makeIdentityTransform()
         {
-            RE::NiTransform result{};
-            result.rotate.entry[0][0] = 1.0f;
-            result.rotate.entry[1][1] = 1.0f;
-            result.rotate.entry[2][2] = 1.0f;
-            result.scale = 1.0f;
-            return result;
+            return transform_math::makeIdentityTransform<RE::NiTransform>();
         }
 
-        RE::NiTransform invertTransform(const RE::NiTransform& transform)
-        {
-            RE::NiTransform result = makeIdentityTransform();
-            result.rotate = transform.rotate.Transpose();
-            result.scale = (transform.scale > 0.0001f) ? (1.0f / transform.scale) : 1.0f;
+        RE::NiTransform invertTransform(const RE::NiTransform& transform) { return transform_math::invertTransform(transform); }
 
-            result.translate.x =
-                -(result.rotate.entry[0][0] * transform.translate.x + result.rotate.entry[0][1] * transform.translate.y + result.rotate.entry[0][2] * transform.translate.z) *
-                result.scale;
-            result.translate.y =
-                -(result.rotate.entry[1][0] * transform.translate.x + result.rotate.entry[1][1] * transform.translate.y + result.rotate.entry[1][2] * transform.translate.z) *
-                result.scale;
-            result.translate.z =
-                -(result.rotate.entry[2][0] * transform.translate.x + result.rotate.entry[2][1] * transform.translate.y + result.rotate.entry[2][2] * transform.translate.z) *
-                result.scale;
-            return result;
-        }
-
-        RE::NiTransform makeAuthoredHandTransform(const RE::NiTransform& rawHandTransform, bool isLeft)
-        {
-            RE::NiTransform result = rawHandTransform;
-            result.rotate = authoredHandspaceRotationFromRawHandBasis(rawHandTransform.rotate);
-            (void)isLeft;
-            return result;
-        }
-
-        RE::NiTransform multiplyTransforms(const RE::NiTransform& a, const RE::NiTransform& b)
-        {
-            RE::NiTransform result = makeIdentityTransform();
-            result.rotate = a.rotate * b.rotate;
-            result.scale = a.scale * b.scale;
-
-            RE::NiPoint3 rotated;
-            rotated.x = a.rotate.entry[0][0] * b.translate.x + a.rotate.entry[0][1] * b.translate.y + a.rotate.entry[0][2] * b.translate.z;
-            rotated.y = a.rotate.entry[1][0] * b.translate.x + a.rotate.entry[1][1] * b.translate.y + a.rotate.entry[1][2] * b.translate.z;
-            rotated.z = a.rotate.entry[2][0] * b.translate.x + a.rotate.entry[2][1] * b.translate.y + a.rotate.entry[2][2] * b.translate.z;
-
-            result.translate.x = a.translate.x + rotated.x * a.scale;
-            result.translate.y = a.translate.y + rotated.y * a.scale;
-            result.translate.z = a.translate.z + rotated.z * a.scale;
-            return result;
-        }
+        RE::NiTransform multiplyTransforms(const RE::NiTransform& parent, const RE::NiTransform& child) { return transform_math::composeTransforms(parent, child); }
 
         RE::NiTransform deriveNodeWorldFromBodyWorld(const RE::NiTransform& bodyWorld, const RE::NiTransform& bodyLocalTransform)
         {
@@ -179,16 +138,7 @@ namespace frik::rock
 
         RE::NiTransform computeRuntimeBodyLocalTransform(const RE::NiTransform& nodeWorld, const RE::NiTransform& bodyWorld)
         {
-            RE::NiTransform result = makeIdentityTransform();
-            const RE::NiMatrix3 invNodeRot = nodeWorld.rotate.Transpose();
-            const float invNodeScale = (nodeWorld.scale > 0.0001f) ? (1.0f / nodeWorld.scale) : 1.0f;
-            const RE::NiPoint3 delta = bodyWorld.translate - nodeWorld.translate;
-
-            result.rotate = invNodeRot * bodyWorld.rotate;
-            result.translate.x = (invNodeRot.entry[0][0] * delta.x + invNodeRot.entry[0][1] * delta.y + invNodeRot.entry[0][2] * delta.z) * invNodeScale;
-            result.translate.y = (invNodeRot.entry[1][0] * delta.x + invNodeRot.entry[1][1] * delta.y + invNodeRot.entry[1][2] * delta.z) * invNodeScale;
-            result.translate.z = (invNodeRot.entry[2][0] * delta.x + invNodeRot.entry[2][1] * delta.y + invNodeRot.entry[2][2] * delta.z) * invNodeScale;
-            return result;
+            return multiplyTransforms(invertTransform(nodeWorld), bodyWorld);
         }
     }
 
@@ -199,13 +149,10 @@ namespace frik::rock
         func(playerChar, handIndex);
     }
 
-    static constexpr std::uint32_t kCollisionFilterNoCollideBit = 1u << 14;
-
     void Hand::clearGrabHandCollisionSuppressionState()
     {
-        _grabHandCollisionSuppressed = false;
-        _grabHandCollisionWasDisabled = false;
-        _grabHandCollisionBodyId = INVALID_BODY_ID;
+        hand_collision_suppression_math::clear(_grabHandCollisionSuppression);
+        _grabHandCollisionBroadPhaseSuppressed = false;
     }
 
     void Hand::suppressHandCollisionForGrab(RE::hknpWorld* world)
@@ -217,33 +164,30 @@ namespace frik::rock
         if (handBodyId.value == INVALID_BODY_ID)
             return;
 
-        typedef void setCollisionFilter_t(void*, std::uint32_t, std::uint32_t, std::uint32_t);
-        static REL::Relocation<setCollisionFilter_t> setBodyCollisionFilterInfo{ REL::Offset(offsets::kFunc_SetBodyCollisionFilterInfo) };
-
-        auto* bodyArray = world->GetBodyArray();
-        auto* handBodyPtr = reinterpret_cast<char*>(&bodyArray[handBodyId.value]);
-        const auto currentFilter = *reinterpret_cast<std::uint32_t*>(handBodyPtr + offsets::kBody_CollisionFilterInfo);
-        const bool firstSuppression = !_grabHandCollisionSuppressed || _grabHandCollisionBodyId != handBodyId.value;
-
-        if (firstSuppression) {
-            _grabHandCollisionSuppressed = true;
-            _grabHandCollisionWasDisabled = (currentFilter & kCollisionFilterNoCollideBit) != 0;
-            _grabHandCollisionBodyId = handBodyId.value;
+        std::uint32_t currentFilter = 0;
+        if (!body_collision::tryReadFilterInfo(world, handBodyId, currentFilter)) {
+            return;
         }
 
-        const auto disabledFilter = currentFilter | kCollisionFilterNoCollideBit;
+        const bool firstSuppression = !_grabHandCollisionSuppression.active || _grabHandCollisionSuppression.bodyId != handBodyId.value;
+        const auto disabledFilter = hand_collision_suppression_math::beginSuppression(_grabHandCollisionSuppression, handBodyId.value, currentFilter);
         if (disabledFilter != currentFilter) {
-            setBodyCollisionFilterInfo(world, handBodyId.value, disabledFilter, 0);
-            ROCK_LOG_INFO(Hand, "{} hand: grab hand collision suppressed bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBeforeGrab={}", handName(), handBodyId.value, currentFilter,
-                disabledFilter, _grabHandCollisionWasDisabled ? "yes" : "no");
-        } else if (firstSuppression) {
-            ROCK_LOG_INFO(Hand, "{} hand: grab hand collision already suppressed bodyId={} filter=0x{:08X}", handName(), handBodyId.value, currentFilter);
+            body_collision::setFilterInfo(world, handBodyId, disabledFilter);
+        }
+
+        const bool broadPhaseSet = body_collision::setBroadPhaseEnabled(world, handBodyId, false);
+        _grabHandCollisionBroadPhaseSuppressed = _grabHandCollisionBroadPhaseSuppressed || broadPhaseSet;
+
+        if (disabledFilter != currentFilter || firstSuppression) {
+            ROCK_LOG_INFO(Hand, "{} hand: grab hand collision suppressed bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBeforeGrab={} broadphase={}", handName(),
+                handBodyId.value, currentFilter, disabledFilter, _grabHandCollisionSuppression.wasNoCollideBeforeSuppression ? "yes" : "no",
+                broadPhaseSet ? "disabled" : "unchanged");
         }
     }
 
     void Hand::restoreHandCollisionAfterGrab(RE::hknpWorld* world)
     {
-        if (!_grabHandCollisionSuppressed)
+        if (!_grabHandCollisionSuppression.active)
             return;
 
         if (!world || !hasCollisionBody()) {
@@ -252,26 +196,63 @@ namespace frik::rock
         }
 
         const auto handBodyId = _handBody.getBodyId();
-        if (handBodyId.value == INVALID_BODY_ID || handBodyId.value != _grabHandCollisionBodyId) {
+        if (handBodyId.value == INVALID_BODY_ID || handBodyId.value != _grabHandCollisionSuppression.bodyId) {
             clearGrabHandCollisionSuppressionState();
             return;
         }
 
-        typedef void setCollisionFilter_t(void*, std::uint32_t, std::uint32_t, std::uint32_t);
-        static REL::Relocation<setCollisionFilter_t> setBodyCollisionFilterInfo{ REL::Offset(offsets::kFunc_SetBodyCollisionFilterInfo) };
-
-        auto* bodyArray = world->GetBodyArray();
-        auto* handBodyPtr = reinterpret_cast<char*>(&bodyArray[handBodyId.value]);
-        const auto currentFilter = *reinterpret_cast<std::uint32_t*>(handBodyPtr + offsets::kBody_CollisionFilterInfo);
-        const auto restoredFilter = _grabHandCollisionWasDisabled ? (currentFilter | kCollisionFilterNoCollideBit) : (currentFilter & ~kCollisionFilterNoCollideBit);
-
-        if (restoredFilter != currentFilter) {
-            setBodyCollisionFilterInfo(world, handBodyId.value, restoredFilter, 0);
+        std::uint32_t currentFilter = 0;
+        if (!body_collision::tryReadFilterInfo(world, handBodyId, currentFilter)) {
+            clearGrabHandCollisionSuppressionState();
+            return;
         }
 
-        ROCK_LOG_INFO(Hand, "{} hand: grab hand collision restored bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={}", handName(), handBodyId.value, currentFilter,
-            restoredFilter, _grabHandCollisionWasDisabled ? "yes" : "no");
+        const auto restoredFilter = hand_collision_suppression_math::restoreFilter(_grabHandCollisionSuppression, currentFilter);
+
+        if (restoredFilter != currentFilter) {
+            body_collision::setFilterInfo(world, handBodyId, restoredFilter);
+        }
+
+        const bool broadPhaseRestored = _grabHandCollisionBroadPhaseSuppressed && body_collision::setBroadPhaseEnabled(world, handBodyId, true);
+
+        ROCK_LOG_INFO(Hand, "{} hand: grab hand collision restored bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} broadphase={}", handName(), handBodyId.value,
+            currentFilter, restoredFilter, _grabHandCollisionSuppression.wasNoCollideBeforeSuppression ? "yes" : "no", broadPhaseRestored ? "enabled" : "unchanged");
         clearGrabHandCollisionSuppressionState();
+    }
+
+    bool Hand::getGrabPivotDebugSnapshot(RE::hknpWorld* world, GrabPivotDebugSnapshot& out) const
+    {
+        out = {};
+
+        if (!world || !isHolding() || !_activeConstraint.isValid() || !_activeConstraint.constraintData || !_handBody.isValid() ||
+            _savedObjectState.bodyId.value == INVALID_BODY_ID) {
+            return false;
+        }
+
+        const auto handBodyId = _handBody.getBodyId();
+        if (handBodyId.value == INVALID_BODY_ID) {
+            return false;
+        }
+
+        auto* bodyArray = world->GetBodyArray();
+        if (!bodyArray) {
+            return false;
+        }
+
+        auto* handBody = reinterpret_cast<const float*>(&bodyArray[handBodyId.value]);
+        auto* objectBody = reinterpret_cast<const float*>(&bodyArray[_savedObjectState.bodyId.value]);
+        auto* constraintData = static_cast<const char*>(_activeConstraint.constraintData);
+        auto* pivotALocal = reinterpret_cast<const float*>(constraintData + offsets::kTransformA_Pos);
+        auto* pivotBLocal = reinterpret_cast<const float*>(constraintData + offsets::kTransformB_Pos);
+
+        out.handPivotWorld = debug_pivot_math::bodyLocalPointToWorldGamePoint<RE::NiPoint3>(handBody, pivotALocal, kHavokToGameScale);
+        out.objectPivotWorld = debug_pivot_math::bodyLocalPointToWorldGamePoint<RE::NiPoint3>(objectBody, pivotBLocal, kHavokToGameScale);
+        out.handBodyWorld = debug_pivot_math::bodyOriginToWorldGamePoint<RE::NiPoint3>(handBody, kHavokToGameScale);
+        out.objectBodyWorld = debug_pivot_math::bodyOriginToWorldGamePoint<RE::NiPoint3>(objectBody, kHavokToGameScale);
+
+        const RE::NiPoint3 error = out.handPivotWorld - out.objectPivotWorld;
+        out.pivotErrorGameUnits = std::sqrt(error.x * error.x + error.y * error.y + error.z * error.z);
+        return true;
     }
 
     bool Hand::grabSelectedObject(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float tau, float damping, float maxForce, float proportionalRecovery,
@@ -519,11 +500,11 @@ namespace frik::rock
             }
 
             if (!triangles.empty()) {
-                RE::NiPoint3 palmPos = computePalmPositionFromHandBasis(handWorldTransform, _isLeft);
+                RE::NiPoint3 grabPivotAWorld = computeGrabPivotAPositionFromHandBasis(handWorldTransform, _isLeft);
                 RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
 
                 GrabPoint grabPt;
-                if (findClosestGrabPoint(triangles, palmPos, palmDir, 1.0f, 1.0f, grabPt)) {
+                if (findClosestGrabPoint(triangles, grabPivotAWorld, palmDir, 1.0f, 1.0f, grabPt)) {
                     grabSurfacePoint = grabPt.position;
                     meshGrabFound = true;
                     grabPointMode = "meshSurface";
@@ -555,30 +536,13 @@ namespace frik::rock
 
         {
             const RE::NiPoint3 palmPos = computePalmPositionFromHandBasis(handWorldTransform, _isLeft);
+            const RE::NiPoint3 grabPivotAWorld = computeGrabPivotAPositionFromHandBasis(handWorldTransform, _isLeft);
             RE::NiTransform shiftedObject = objectWorldTransform;
-            shiftedObject.translate.x += palmPos.x - grabSurfacePoint.x;
-            shiftedObject.translate.y += palmPos.y - grabSurfacePoint.y;
-            shiftedObject.translate.z += palmPos.z - grabSurfacePoint.z;
+            shiftedObject.translate.x += grabPivotAWorld.x - grabSurfacePoint.x;
+            shiftedObject.translate.y += grabPivotAWorld.y - grabSurfacePoint.y;
+            shiftedObject.translate.z += grabPivotAWorld.z - grabSurfacePoint.z;
 
-            const RE::NiMatrix3 invR = handWorldTransform.rotate.Transpose();
-            const float invS = (handWorldTransform.scale > 0.0001f) ? (1.0f / handWorldTransform.scale) : 1.0f;
-            RE::NiPoint3 invP;
-            invP.x =
-                -(invR.entry[0][0] * handWorldTransform.translate.x + invR.entry[0][1] * handWorldTransform.translate.y + invR.entry[0][2] * handWorldTransform.translate.z) * invS;
-            invP.y =
-                -(invR.entry[1][0] * handWorldTransform.translate.x + invR.entry[1][1] * handWorldTransform.translate.y + invR.entry[1][2] * handWorldTransform.translate.z) * invS;
-            invP.z =
-                -(invR.entry[2][0] * handWorldTransform.translate.x + invR.entry[2][1] * handWorldTransform.translate.y + invR.entry[2][2] * handWorldTransform.translate.z) * invS;
-
-            _grabHandSpace.rotate = invR * shiftedObject.rotate;
-            _grabHandSpace.scale = invS * shiftedObject.scale;
-            RE::NiPoint3 rotatedShiftedPos;
-            rotatedShiftedPos.x = invR.entry[0][0] * shiftedObject.translate.x + invR.entry[0][1] * shiftedObject.translate.y + invR.entry[0][2] * shiftedObject.translate.z;
-            rotatedShiftedPos.y = invR.entry[1][0] * shiftedObject.translate.x + invR.entry[1][1] * shiftedObject.translate.y + invR.entry[1][2] * shiftedObject.translate.z;
-            rotatedShiftedPos.z = invR.entry[2][0] * shiftedObject.translate.x + invR.entry[2][1] * shiftedObject.translate.y + invR.entry[2][2] * shiftedObject.translate.z;
-            _grabHandSpace.translate.x = invP.x + rotatedShiftedPos.x * invS;
-            _grabHandSpace.translate.y = invP.y + rotatedShiftedPos.y * invS;
-            _grabHandSpace.translate.z = invP.z + rotatedShiftedPos.z * invS;
+            _grabHandSpace = multiplyTransforms(invertTransform(handWorldTransform), shiftedObject);
 
             const RE::NiTransform liveBodyWorldAtGrab = getBodyWorldTransform(world, objectBodyId);
             auto* ownerCellAtGrab = sel.refr ? sel.refr->GetParentCell() : nullptr;
@@ -590,18 +554,17 @@ namespace frik::rock
             _grabOwnerBodyLocalTransform = ownerNodeAtGrab ? computeRuntimeBodyLocalTransform(ownerNodeAtGrab->world, liveBodyWorldAtGrab) : makeIdentityTransform();
             _grabRootBodyLocalTransform = rootNode ? computeRuntimeBodyLocalTransform(rootNode->world, liveBodyWorldAtGrab) : makeIdentityTransform();
 
-            const RE::NiTransform authoredHandTransform = makeAuthoredHandTransform(handWorldTransform, _isLeft);
-            _grabConstraintHandSpace = multiplyTransforms(invertTransform(authoredHandTransform), shiftedObject);
+            _grabConstraintHandSpace = _grabHandSpace;
 
             if (g_rockConfig.rockDebugGrabFrameLogging) {
                 const RE::NiTransform& constraintGrabHandSpace = _grabConstraintHandSpace;
 
                 const RE::NiPoint3 rawLateral = getMatrixColumn(handWorldTransform.rotate, 0);
-                const RE::NiPoint3 rawFinger = getMatrixColumn(handWorldTransform.rotate, 1);
-                const RE::NiPoint3 rawBack = getMatrixColumn(handWorldTransform.rotate, 2);
-                const RE::NiPoint3 constraintFinger = getMatrixColumn(authoredHandTransform.rotate, 0);
-                const RE::NiPoint3 constraintBack = getMatrixColumn(authoredHandTransform.rotate, 1);
-                const RE::NiPoint3 constraintLateral = getMatrixColumn(authoredHandTransform.rotate, 2);
+                const RE::NiPoint3 rawFinger = getMatrixColumn(handWorldTransform.rotate, 2);
+                const RE::NiPoint3 rawBack = getMatrixColumn(handWorldTransform.rotate, 1);
+                const RE::NiPoint3 constraintFinger = getMatrixColumn(handWorldTransform.rotate, 2);
+                const RE::NiPoint3 constraintBack = getMatrixColumn(handWorldTransform.rotate, 1);
+                const RE::NiPoint3 constraintLateral = getMatrixColumn(handWorldTransform.rotate, 0);
                 const RE::NiPoint3 grabSpaceRawFinger = getMatrixColumn(_grabHandSpace.rotate, 0);
                 const RE::NiPoint3 grabSpaceConstraintFinger = getMatrixColumn(constraintGrabHandSpace.rotate, 0);
                 const RE::NiPoint3 grabPosDelta = constraintGrabHandSpace.translate - _grabHandSpace.translate;
@@ -643,9 +606,9 @@ namespace frik::rock
 
             ROCK_LOG_INFO(Hand,
                 "{} GRAB HAND SPACE: pos=({:.1f},{:.1f},{:.1f}) "
-                "palmPos=({:.1f},{:.1f},{:.1f}) grabPt=({:.1f},{:.1f},{:.1f})",
-                handName(), _grabHandSpace.translate.x, _grabHandSpace.translate.y, _grabHandSpace.translate.z, palmPos.x, palmPos.y, palmPos.z, grabSurfacePoint.x,
-                grabSurfacePoint.y, grabSurfacePoint.z);
+                "palmPos=({:.1f},{:.1f},{:.1f}) pivotA=({:.1f},{:.1f},{:.1f}) grabPt=({:.1f},{:.1f},{:.1f})",
+                handName(), _grabHandSpace.translate.x, _grabHandSpace.translate.y, _grabHandSpace.translate.z, palmPos.x, palmPos.y, palmPos.z, grabPivotAWorld.x,
+                grabPivotAWorld.y, grabPivotAWorld.z, grabSurfacePoint.x, grabSurfacePoint.y, grabSurfacePoint.z);
             ROCK_LOG_INFO(Hand, "{} BODY LOCAL: pos=({:.2f},{:.2f},{:.2f}) scale={:.3f}", handName(), _grabBodyLocalTransform.translate.x, _grabBodyLocalTransform.translate.y,
                 _grabBodyLocalTransform.translate.z, _grabBodyLocalTransform.scale);
         }
@@ -692,14 +655,15 @@ namespace frik::rock
 
         {
             RE::NiPoint3 palmPos = computePalmPositionFromHandBasis(handWorldTransform, _isLeft);
+            RE::NiPoint3 grabPivotAWorld = computeGrabPivotAPositionFromHandBasis(handWorldTransform, _isLeft);
             constexpr float INV_HAVOK_SCALE = 1.0f / 70.0f;
             const RE::NiTransform desiredBodyTransformHandSpace = multiplyTransforms(_grabConstraintHandSpace, _grabBodyLocalTransform);
 
-            float palmHk[4];
-            palmHk[0] = palmPos.x * INV_HAVOK_SCALE;
-            palmHk[1] = palmPos.y * INV_HAVOK_SCALE;
-            palmHk[2] = palmPos.z * INV_HAVOK_SCALE;
-            palmHk[3] = 0.0f;
+            float pivotAHk[4];
+            pivotAHk[0] = grabPivotAWorld.x * INV_HAVOK_SCALE;
+            pivotAHk[1] = grabPivotAWorld.y * INV_HAVOK_SCALE;
+            pivotAHk[2] = grabPivotAWorld.z * INV_HAVOK_SCALE;
+            pivotAHk[3] = 0.0f;
 
             float grabHk[4];
             grabHk[0] = grabSurfacePoint.x * INV_HAVOK_SCALE;
@@ -708,20 +672,25 @@ namespace frik::rock
             grabHk[3] = 0.0f;
 
             {
-                float palmToGrab = std::sqrt(
-                    (palmHk[0] - grabHk[0]) * (palmHk[0] - grabHk[0]) + (palmHk[1] - grabHk[1]) * (palmHk[1] - grabHk[1]) + (palmHk[2] - grabHk[2]) * (palmHk[2] - grabHk[2]));
+                float pivotAToGrab = std::sqrt(
+                    (pivotAHk[0] - grabHk[0]) * (pivotAHk[0] - grabHk[0]) + (pivotAHk[1] - grabHk[1]) * (pivotAHk[1] - grabHk[1]) +
+                    (pivotAHk[2] - grabHk[2]) * (pivotAHk[2] - grabHk[2]));
                 float palmToHandOrigin = std::sqrt((palmPos.x - handWorldTransform.translate.x) * (palmPos.x - handWorldTransform.translate.x) +
                     (palmPos.y - handWorldTransform.translate.y) * (palmPos.y - handWorldTransform.translate.y) +
                     (palmPos.z - handWorldTransform.translate.z) * (palmPos.z - handWorldTransform.translate.z));
+                float pivotAToHandOrigin = std::sqrt((grabPivotAWorld.x - handWorldTransform.translate.x) * (grabPivotAWorld.x - handWorldTransform.translate.x) +
+                    (grabPivotAWorld.y - handWorldTransform.translate.y) * (grabPivotAWorld.y - handWorldTransform.translate.y) +
+                    (grabPivotAWorld.z - handWorldTransform.translate.z) * (grabPivotAWorld.z - handWorldTransform.translate.z));
                 ROCK_LOG_INFO(Hand,
                     "GRAB DIAG {}: palmPos=({:.1f},{:.1f},{:.1f}) handPos=({:.1f},{:.1f},{:.1f}) "
-                    "grabSurface=({:.1f},{:.1f},{:.1f}) meshGrab={} grabPointMode={} fallbackReason={} "
-                    "palmToGrab_hk={:.4f} ({:.1f} game units) palmToHandOrigin={:.1f} game units",
-                    handName(), palmPos.x, palmPos.y, palmPos.z, handWorldTransform.translate.x, handWorldTransform.translate.y, handWorldTransform.translate.z, grabSurfacePoint.x,
-                    grabSurfacePoint.y, grabSurfacePoint.z, meshGrabFound, grabPointMode, grabFallbackReason, palmToGrab, palmToGrab * 70.0f, palmToHandOrigin);
+                    "pivotA=({:.1f},{:.1f},{:.1f}) grabSurface=({:.1f},{:.1f},{:.1f}) meshGrab={} grabPointMode={} fallbackReason={} "
+                    "pivotAToGrab_hk={:.4f} ({:.1f} game units) palmToHandOrigin={:.1f} pivotAToHandOrigin={:.1f} game units",
+                    handName(), palmPos.x, palmPos.y, palmPos.z, handWorldTransform.translate.x, handWorldTransform.translate.y, handWorldTransform.translate.z, grabPivotAWorld.x,
+                    grabPivotAWorld.y, grabPivotAWorld.z, grabSurfacePoint.x, grabSurfacePoint.y, grabSurfacePoint.z, meshGrabFound, grabPointMode, grabFallbackReason, pivotAToGrab,
+                    pivotAToGrab * 70.0f, palmToHandOrigin, pivotAToHandOrigin);
             }
 
-            _activeConstraint = createGrabConstraint(world, _handBody.getBodyId(), objectBodyId, palmHk, grabHk, desiredBodyTransformHandSpace, tau, damping, maxForce,
+            _activeConstraint = createGrabConstraint(world, _handBody.getBodyId(), objectBodyId, pivotAHk, grabHk, desiredBodyTransformHandSpace, tau, damping, maxForce,
                 proportionalRecovery, constantRecovery);
         }
 
@@ -786,7 +755,6 @@ namespace frik::rock
     void Hand::updateHeldObject(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float deltaTime, float forceFadeInTime, float tauMin, float tauMax,
         float tauIncrement, float tauDecrement, float closeThreshold, float farThreshold)
     {
-        (void)handWorldTransform;
         (void)tauMax;
         (void)tauIncrement;
         (void)tauDecrement;
@@ -813,19 +781,8 @@ namespace frik::rock
             auto* cd = static_cast<char*>(_activeConstraint.constraintData);
             const RE::NiTransform desiredBodyTransformHandSpace = multiplyTransforms(_grabConstraintHandSpace, _grabBodyLocalTransform);
 
-            RE::NiMatrix3 invRot = desiredBodyTransformHandSpace.rotate.Transpose();
-            float invScale = (desiredBodyTransformHandSpace.scale > 0.0001f) ? (1.0f / desiredBodyTransformHandSpace.scale) : 1.0f;
-
-            RE::NiPoint3 invPos;
-            invPos.x = -(invRot.entry[0][0] * desiredBodyTransformHandSpace.translate.x + invRot.entry[0][1] * desiredBodyTransformHandSpace.translate.y +
-                           invRot.entry[0][2] * desiredBodyTransformHandSpace.translate.z) *
-                invScale;
-            invPos.y = -(invRot.entry[1][0] * desiredBodyTransformHandSpace.translate.x + invRot.entry[1][1] * desiredBodyTransformHandSpace.translate.y +
-                           invRot.entry[1][2] * desiredBodyTransformHandSpace.translate.z) *
-                invScale;
-            invPos.z = -(invRot.entry[2][0] * desiredBodyTransformHandSpace.translate.x + invRot.entry[2][1] * desiredBodyTransformHandSpace.translate.y +
-                           invRot.entry[2][2] * desiredBodyTransformHandSpace.translate.z) *
-                invScale;
+            const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
+            const RE::NiMatrix3& invRot = desiredBodyToHandSpace.rotate;
 
             {
                 auto* target = reinterpret_cast<float*>(cd + ATOM_RAGDOLL_MOT + 0x10);
@@ -839,12 +796,24 @@ namespace frik::rock
             }
 
             {
-                RE::NiPoint3 palmHS = mirrorHandspaceZ(g_rockConfig.rockPalmPositionHandspace, _isLeft) * desiredBodyTransformHandSpace.scale;
+                auto* bodyArray = world->GetBodyArray();
+                if (bodyArray && _handBody.getBodyId().value != INVALID_BODY_ID) {
+                    auto* handBody = reinterpret_cast<const float*>(&bodyArray[_handBody.getBodyId().value]);
+                    const RE::NiPoint3 grabPivotAWorld = computeGrabPivotAPositionFromHandBasis(handWorldTransform, _isLeft);
+                    const RE::NiPoint3 pivotAHk{ grabPivotAWorld.x * kGameToHavokScale, grabPivotAWorld.y * kGameToHavokScale, grabPivotAWorld.z * kGameToHavokScale };
+                    const RE::NiPoint3 handDelta{ pivotAHk.x - handBody[12], pivotAHk.y - handBody[13], pivotAHk.z - handBody[14] };
+                    const RE::NiPoint3 pivotALocal = worldDeltaToBodyLocal(handBody, handDelta);
+                    auto* pivotA = reinterpret_cast<float*>(cd + offsets::kTransformA_Pos);
+                    pivotA[0] = pivotALocal.x;
+                    pivotA[1] = pivotALocal.y;
+                    pivotA[2] = pivotALocal.z;
+                    pivotA[3] = 0.0f;
+                }
+            }
 
-                RE::NiPoint3 transformed;
-                transformed.x = (invRot.entry[0][0] * palmHS.x + invRot.entry[0][1] * palmHS.y + invRot.entry[0][2] * palmHS.z) * invScale + invPos.x;
-                transformed.y = (invRot.entry[1][0] * palmHS.x + invRot.entry[1][1] * palmHS.y + invRot.entry[1][2] * palmHS.z) * invScale + invPos.y;
-                transformed.z = (invRot.entry[2][0] * palmHS.x + invRot.entry[2][1] * palmHS.y + invRot.entry[2][2] * palmHS.z) * invScale + invPos.z;
+            {
+                const RE::NiPoint3 pivotAHandspace = authoredHandspaceToRawHandspaceForHand(computeGrabPivotAHandspacePosition(_isLeft), _isLeft);
+                const RE::NiPoint3 transformed = transform_math::localPointToWorld(desiredBodyToHandSpace, pivotAHandspace);
 
                 float objScale = (_heldNode ? _heldNode->world.scale : 1.0f);
                 constexpr float kHavokScale = 1.0f / 70.0f;
@@ -943,13 +912,12 @@ namespace frik::rock
             _heldLogCounter = 0;
 
             if (g_rockConfig.rockDebugGrabFrameLogging) {
-                const RE::NiTransform authoredHandTransform = makeAuthoredHandTransform(handWorldTransform, _isLeft);
                 const RE::NiTransform desiredNodeWorldRaw = multiplyTransforms(handWorldTransform, _grabHandSpace);
-                const RE::NiTransform desiredNodeWorldConstraint = multiplyTransforms(authoredHandTransform, _grabConstraintHandSpace);
+                const RE::NiTransform desiredNodeWorldConstraint = multiplyTransforms(handWorldTransform, _grabConstraintHandSpace);
                 const RE::NiTransform desiredBodyTransformHandSpaceRaw = multiplyTransforms(_grabHandSpace, _grabBodyLocalTransform);
                 const RE::NiTransform desiredBodyTransformHandSpaceConstraint = multiplyTransforms(_grabConstraintHandSpace, _grabBodyLocalTransform);
                 const RE::NiTransform desiredBodyWorldRaw = multiplyTransforms(handWorldTransform, desiredBodyTransformHandSpaceRaw);
-                const RE::NiTransform desiredBodyWorldConstraint = multiplyTransforms(authoredHandTransform, desiredBodyTransformHandSpaceConstraint);
+                const RE::NiTransform desiredBodyWorldConstraint = multiplyTransforms(handWorldTransform, desiredBodyTransformHandSpaceConstraint);
                 const RE::NiMatrix3 invRot = desiredBodyTransformHandSpaceConstraint.rotate.Transpose();
                 const RE::NiTransform liveBodyWorld = getBodyWorldTransform(world, _savedObjectState.bodyId);
                 auto* ownerCell = _savedObjectState.refr ? _savedObjectState.refr->GetParentCell() : nullptr;
@@ -995,8 +963,8 @@ namespace frik::rock
                 const NodeFrameMetrics rootMetrics = captureNodeMetrics(rootNode, _grabRootBodyLocalTransform);
 
                 const RE::NiPoint3 worldPosDelta = desiredNodeWorldConstraint.translate - desiredNodeWorldRaw.translate;
-                const RE::NiPoint3 rawFinger = getMatrixColumn(handWorldTransform.rotate, 1);
-                const RE::NiPoint3 constraintFinger = getMatrixColumn(authoredHandTransform.rotate, 0);
+                const RE::NiPoint3 rawFinger = getMatrixColumn(handWorldTransform.rotate, 2);
+                const RE::NiPoint3 constraintFinger = getMatrixColumn(handWorldTransform.rotate, 2);
                 const RE::NiPoint3 desiredRawFinger = getMatrixColumn(desiredBodyWorldRaw.rotate, 0);
                 const RE::NiPoint3 desiredConstraintFinger = getMatrixColumn(desiredBodyWorldConstraint.rotate, 0);
                 const RE::NiPoint3 bodyFinger = getMatrixColumn(liveBodyWorld.rotate, 0);

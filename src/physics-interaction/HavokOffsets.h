@@ -47,6 +47,10 @@ namespace frik::rock::offsets
 
     constexpr std::uintptr_t kFunc_RebuildMotionMassProperties = 0x1546570;
 
+    constexpr std::uintptr_t kFunc_ConvexBuildConfig_Init = 0x16D4AB0;
+
+    constexpr std::uintptr_t kFunc_ConvexShape_FromPoints = 0x16D4B30;
+
     constexpr std::uintptr_t kFunc_CollisionObject_SetMotionType = 0x1E07300;
 
     constexpr std::uintptr_t kFunc_CollisionObject_Ctor = 0x1E07710;
@@ -114,6 +118,8 @@ namespace frik::rock::offsets
     constexpr std::uintptr_t kFunc_EnableBodyFlags = 0x153C090;
 
     constexpr std::uintptr_t kFunc_DisableBodyFlags = 0x153C150;
+
+    constexpr std::uintptr_t kFunc_SetBodyBroadPhaseEnabled = 0x153C440;
 
     constexpr std::uintptr_t kFunc_ActivateBody = 0x1546EF0;
 

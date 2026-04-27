@@ -2,6 +2,7 @@
 
 #include "BethesdaPhysicsBody.h"
 #include "GrabConstraint.h"
+#include "HandCollisionSuppressionMath.h"
 #include "ObjectDetection.h"
 #include "PhysicsLog.h"
 #include "PhysicsUtils.h"
@@ -44,6 +45,15 @@ namespace frik::rock
         GrabFromOtherHand,
         SelectedTwoHand,
         HeldTwoHanded,
+    };
+
+    struct GrabPivotDebugSnapshot
+    {
+        RE::NiPoint3 handPivotWorld{};
+        RE::NiPoint3 objectPivotWorld{};
+        RE::NiPoint3 handBodyWorld{};
+        RE::NiPoint3 objectBodyWorld{};
+        float pivotErrorGameUnits = 0.0f;
     };
 
     class Hand
@@ -100,6 +110,7 @@ namespace frik::rock
         RE::TESObjectREFR* getHeldRef() const { return _savedObjectState.refr; }
         const ActiveConstraint& getActiveConstraint() const { return _activeConstraint; }
         const SavedObjectState& getSavedObjectState() const { return _savedObjectState; }
+        bool getGrabPivotDebugSnapshot(RE::hknpWorld* world, GrabPivotDebugSnapshot& out) const;
 
         bool getAdjustedHandTransform(RE::NiTransform& outTransform) const;
 
@@ -113,8 +124,8 @@ namespace frik::rock
 
         void tickTouchState() { _touchActiveFrames++; }
 
-        void updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& palmPos, const RE::NiPoint3& palmNormal, const RE::NiPoint3& pointingDirection,
-            float nearRange, float farRange, RE::TESObjectREFR* otherHandRef);
+        void updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& palmNormal,
+            const RE::NiPoint3& pointingDirection, float nearRange, float farRange, RE::TESObjectREFR* otherHandRef);
 
         RE::hknpBodyId getCollisionBodyId() const { return _handBody.getBodyId(); }
         bool hasCollisionBody() const { return _handBody.isValid(); }
@@ -138,10 +149,6 @@ namespace frik::rock
 
         BethesdaPhysicsBody _handBody;
 
-        RE::NiNode* _debugColliderVis = nullptr;
-        RE::NiNode* _debugColliderVisParent = nullptr;
-        int _debugColliderVisShape = -1;
-        std::array<RE::NiNode*, 8> _debugColliderVertexVis{};
         RE::NiNode* _debugHandOriginVis = nullptr;
         RE::NiNode* _debugPalmCenterVis = nullptr;
         RE::NiNode* _debugAxisXVis = nullptr;
@@ -163,9 +170,8 @@ namespace frik::rock
 
         std::atomic<int> _heldBodyContactFrame{ 100 };
 
-        bool _grabHandCollisionSuppressed = false;
-        bool _grabHandCollisionWasDisabled = false;
-        std::uint32_t _grabHandCollisionBodyId = INVALID_BODY_ID;
+        hand_collision_suppression_math::SuppressionState _grabHandCollisionSuppression{};
+        bool _grabHandCollisionBroadPhaseSuppressed = false;
 
     public:
         bool isHeldBodyColliding() const { return _heldBodyContactFrame.load(std::memory_order_acquire) < 5; }
@@ -252,12 +258,7 @@ namespace frik::rock
             _highlightedRef = nullptr;
         }
 
-        void updateDebugColliderVis(const RE::NiTransform& colliderTransform, bool show, RE::NiNode* parentNode, float hx = 0.05f, float hy = 0.09f, float hz = 0.015f,
-            int shapeType = 0);
-
-        void destroyDebugColliderVis();
-
-        void updateDebugBasisVis(const RE::NiTransform& colliderTransform, const RE::NiPoint3& palmCenterWorld, bool show, RE::NiNode* parentNode);
+        void updateDebugBasisVis(const RE::NiTransform& colliderTransform, const RE::NiPoint3& grabAnchorWorld, bool show, RE::NiNode* parentNode);
 
         void destroyDebugBasisVis();
     };

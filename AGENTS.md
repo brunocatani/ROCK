@@ -42,7 +42,6 @@ The HIGGS mod has been completely mapped and the codebase is present in the HIGG
 # CRITICAL: REFERENCE-DRIVEN IMPLEMENTATION
 # For EVERY modification, BEFORE writing any code:
 # 1. Check HIGGS source code at E:\fo4dev\skirymvr_mods\source_codes\higgs
-# 2. Check Ghidra findings in ROCK/docs/ and PLAN/
 # 3. Cross-check against the FO4VR binary via Ghidra MCP
 # 4. DO NOT implement from memory, assumptions, or "general knowledge"
 # 5. If the reference doesn't exist, ASK the user for it.
@@ -51,7 +50,6 @@ The HIGGS mod has been completely mapped and the codebase is present in the HIGG
 # Ghidra MCP is a shared resource. Before EVERY Ghidra operation:
 # 1. EXPLAIN to the user WHY you need to use Ghidra
 # 2. WAIT for the user to approve
-# 3. Save ALL Ghidra findings to ROCK/docs/ or PLAN/
 
 # CRITICAL: BLIND VERIFICATION
 # Use /blind-verification-audit for ALL reverse engineering claims, struct layouts,
@@ -71,9 +69,6 @@ HELD OBJECT DYNAMIC IN HIGGS (CONSTRAINT ADDED) = OUR IMPLEMENTATION OF DYNAMIC 
 
 Prefer complex well implemented approaches, using existing reference mods like HIGGS, active ragdoll and others when available for implementations that do the same thing but on skyrim
 
-* All development must be made with plans, using the superpowers skill or planning with files skill
-* All plans are in `PLAN/` — active plan at `PLAN/task_plan.md`, findings at `PLAN/findings.md`, progress at `PLAN/progress.md`
-* When uncertain of objectives and progress always ask or refer to the plans folder
 * Local builds for fast iteration during development. GitHub Actions for "release" builds only after everything is tested locally.
 * All code must be developed with a focus on quality, logging, testing and longevity, trying to match the specification and objectives as close as possible as this project requires complex integrations and logic
 * When in doubt, always use mods/source_code from projects that already have or have similar mechanisms and features as the desired

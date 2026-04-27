@@ -39,35 +39,46 @@ namespace frik::rock
         bool rockEnabled = true;
 
         float rockHandCollisionHalfExtentX = 0.09f;
-        float rockHandCollisionHalfExtentY = 0.015f;
-        float rockHandCollisionHalfExtentZ = 0.05f;
+        float rockHandCollisionHalfExtentY = 0.05f;
+        float rockHandCollisionHalfExtentZ = 0.02f;
 
-        float rockHandCollisionOffsetX = 0.0f;
-        float rockHandCollisionOffsetY = 0.086f;
-        float rockHandCollisionOffsetZ = -0.005f;
         float rockHandCollisionBoxRadius = 0.0f;
 
         RE::NiPoint3 rockHandCollisionOffsetHandspace = RE::NiPoint3(0.086f, -0.005f, 0.0f);
 
-        float rockPalmOffsetForward = 6.0f;
-        float rockPalmOffsetUp = -2.4f;
-        float rockPalmOffsetRight = 0.0f;
-
-        RE::NiPoint3 rockPalmPositionHandspace = RE::NiPoint3(6.0f, -2.4f, 0.0f);
-        RE::NiPoint3 rockPalmNormalHandspace = RE::NiPoint3(0.261f, -0.965f, -0.018f);
-        RE::NiPoint3 rockPointingVectorHandspace = RE::NiPoint3(1.0f, 0.0f, 0.0f);
+        RE::NiPoint3 rockPalmPositionHandspace = RE::NiPoint3(0.0f, -2.4f, 6.0f);
+        RE::NiPoint3 rockPalmNormalHandspace = RE::NiPoint3(0.0f, 0.0f, 1.0f);
+        RE::NiPoint3 rockPointingVectorHandspace = RE::NiPoint3(0.0f, 0.0f, 1.0f);
+        bool rockReversePalmNormal = true;
+        bool rockReverseFarGrabNormal = false;
+        int rockHandspaceBasisMode = 1;
 
         bool rockWeaponCollisionEnabled = false;
+        bool rockWeaponCollisionRotationCorrectionEnabled = false;
+        RE::NiPoint3 rockWeaponCollisionRotationDegrees = RE::NiPoint3(0.0f, 0.0f, 0.0f);
+        float rockWeaponCollisionConvexRadius = 0.01f;
+        float rockWeaponCollisionPointDedupGrid = 0.002f;
 
         std::uint32_t rockHighlightShaderFormID = 0x00249733;
         bool rockHighlightEnabled = true;
 
         bool rockDebugShowColliders = false;
+        bool rockDebugShowTargetColliders = false;
+        bool rockDebugShowHandAxes = false;
+        bool rockDebugShowGrabPivots = false;
+        bool rockDebugShowPalmVectors = false;
         bool rockDebugShowPalmBasis = false;
-        int rockDebugColliderShape = 4;
+        bool rockDebugDrawHandColliders = true;
+        bool rockDebugDrawWeaponColliders = true;
+        int rockDebugMaxWeaponBodiesDrawn = 6;
+        int rockDebugMaxShapeGenerationsPerFrame = 2;
+        int rockDebugMaxConvexSupportVertices = 64;
+        bool rockDebugUseBoundsForHeavyConvex = true;
         bool rockDebugVerboseLogging = true;
         bool rockDebugGrabFrameLogging = true;
         bool rockDebugHandTransformParity = false;
+        int rockHandFrameSource = 3;
+        bool rockHandFrameSwapWands = false;
 
         float rockNearDetectionRange = 25.0f;
         float rockFarDetectionRange = 350.0f;
@@ -102,9 +113,8 @@ namespace frik::rock
         float rockThrowVelocityMultiplier = 1.5f;
         float rockGrabVelocityDamping = 0.1f;
 
-        float rockGrabOffsetForward = 0.0f;
-        float rockGrabOffsetUp = 0.0f;
-        float rockGrabOffsetRight = 0.0f;
+        RE::NiPoint3 rockGrabPivotAOffsetHandspace = RE::NiPoint3(0.0f, 0.0f, 0.0f);
+        bool rockReverseGrabPivotAOffset = false;
 
         float rockGrabLerpSpeed = 300.0f;
         float rockGrabLerpAngularSpeed = 10.0f;

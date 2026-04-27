@@ -16,7 +16,7 @@ namespace
 {
 
     constexpr auto SECTION = "PhysicsInteraction";
-    const RE::NiPoint3 kDefaultPalmNormalHandspace{ 0.261f, -0.965f, -0.018f };
+    const RE::NiPoint3 kDefaultPalmNormalHandspace{ 0.0f, 0.0f, 1.0f };
 
     std::string resolveIniPath()
     {
@@ -38,32 +38,44 @@ namespace frik::rock
         rockEnabled = true;
 
         rockHandCollisionHalfExtentX = 0.09f;
-        rockHandCollisionHalfExtentY = 0.015f;
-        rockHandCollisionHalfExtentZ = 0.05f;
-        rockHandCollisionOffsetX = 0.0f;
-        rockHandCollisionOffsetY = 0.086f;
-        rockHandCollisionOffsetZ = -0.005f;
+        rockHandCollisionHalfExtentY = 0.05f;
+        rockHandCollisionHalfExtentZ = 0.02f;
         rockHandCollisionBoxRadius = 0.0f;
         rockHandCollisionOffsetHandspace = RE::NiPoint3(0.086f, -0.005f, 0.0f);
 
-        rockPalmOffsetForward = 6.0f;
-        rockPalmOffsetUp = -2.4f;
-        rockPalmOffsetRight = 0.0f;
-        rockPalmPositionHandspace = RE::NiPoint3(6.0f, -2.4f, 0.0f);
+        rockPalmPositionHandspace = RE::NiPoint3(0.0f, -2.4f, 6.0f);
         rockPalmNormalHandspace = kDefaultPalmNormalHandspace;
-        rockPointingVectorHandspace = RE::NiPoint3(1.0f, 0.0f, 0.0f);
+        rockPointingVectorHandspace = RE::NiPoint3(0.0f, 0.0f, 1.0f);
+        rockReversePalmNormal = true;
+        rockReverseFarGrabNormal = false;
+        rockHandspaceBasisMode = 1;
 
         rockWeaponCollisionEnabled = false;
+        rockWeaponCollisionRotationCorrectionEnabled = false;
+        rockWeaponCollisionRotationDegrees = RE::NiPoint3(0.0f, 0.0f, 0.0f);
+        rockWeaponCollisionConvexRadius = 0.01f;
+        rockWeaponCollisionPointDedupGrid = 0.002f;
 
         rockHighlightShaderFormID = 0x00249733;
         rockHighlightEnabled = true;
 
         rockDebugShowColliders = false;
+        rockDebugShowTargetColliders = false;
+        rockDebugShowHandAxes = false;
+        rockDebugShowGrabPivots = false;
+        rockDebugShowPalmVectors = false;
         rockDebugShowPalmBasis = false;
-        rockDebugColliderShape = 4;
+        rockDebugDrawHandColliders = true;
+        rockDebugDrawWeaponColliders = true;
+        rockDebugMaxWeaponBodiesDrawn = 6;
+        rockDebugMaxShapeGenerationsPerFrame = 2;
+        rockDebugMaxConvexSupportVertices = 64;
+        rockDebugUseBoundsForHeavyConvex = true;
         rockDebugVerboseLogging = false;
         rockDebugGrabFrameLogging = false;
         rockDebugHandTransformParity = false;
+        rockHandFrameSource = 3;
+        rockHandFrameSwapWands = false;
 
         rockNearDetectionRange = 25.0f;
         rockFarDetectionRange = 350.0f;
@@ -98,9 +110,8 @@ namespace frik::rock
         rockThrowVelocityMultiplier = 1.5f;
         rockGrabVelocityDamping = 0.1f;
 
-        rockGrabOffsetForward = 0.0f;
-        rockGrabOffsetUp = 0.0f;
-        rockGrabOffsetRight = 0.0f;
+        rockGrabPivotAOffsetHandspace = RE::NiPoint3(0.0f, 0.0f, 0.0f);
+        rockReverseGrabPivotAOffset = false;
 
         rockGrabLerpSpeed = 300.0f;
         rockGrabLerpAngularSpeed = 10.0f;
@@ -126,23 +137,25 @@ namespace frik::rock
         rockHandCollisionHalfExtentX = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionHalfExtentX", rockHandCollisionHalfExtentX));
         rockHandCollisionHalfExtentY = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionHalfExtentY", rockHandCollisionHalfExtentY));
         rockHandCollisionHalfExtentZ = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionHalfExtentZ", rockHandCollisionHalfExtentZ));
-        rockHandCollisionOffsetX = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionOffsetX", rockHandCollisionOffsetX));
-        rockHandCollisionOffsetY = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionOffsetY", rockHandCollisionOffsetY));
-        rockHandCollisionOffsetZ = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionOffsetZ", rockHandCollisionOffsetZ));
         rockHandCollisionBoxRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fHandCollisionBoxRadius", rockHandCollisionBoxRadius));
         readVec3("fHandCollisionOffsetHandspaceX", "fHandCollisionOffsetHandspaceY", "fHandCollisionOffsetHandspaceZ", rockHandCollisionOffsetHandspace);
 
-        rockPalmOffsetForward = static_cast<float>(ini.GetDoubleValue(SECTION, "fPalmOffsetForward", rockPalmOffsetForward));
-        rockPalmOffsetUp = static_cast<float>(ini.GetDoubleValue(SECTION, "fPalmOffsetUp", rockPalmOffsetUp));
-        rockPalmOffsetRight = static_cast<float>(ini.GetDoubleValue(SECTION, "fPalmOffsetRight", rockPalmOffsetRight));
         readVec3("fPalmPositionHandspaceX", "fPalmPositionHandspaceY", "fPalmPositionHandspaceZ", rockPalmPositionHandspace);
         readVec3("fPalmNormalHandspaceX", "fPalmNormalHandspaceY", "fPalmNormalHandspaceZ", rockPalmNormalHandspace);
         if (std::abs(rockPalmNormalHandspace.x) < 0.0001f && std::abs(rockPalmNormalHandspace.y + 1.0f) < 0.0001f && std::abs(rockPalmNormalHandspace.z) < 0.0001f) {
             rockPalmNormalHandspace = kDefaultPalmNormalHandspace;
         }
         readVec3("fPointingVectorHandspaceX", "fPointingVectorHandspaceY", "fPointingVectorHandspaceZ", rockPointingVectorHandspace);
+        rockReversePalmNormal = ini.GetBoolValue(SECTION, "bReversePalmNormal", rockReversePalmNormal);
+        rockReverseFarGrabNormal = ini.GetBoolValue(SECTION, "bReverseFarGrabNormal", rockReverseFarGrabNormal);
+        rockHandspaceBasisMode = static_cast<int>(ini.GetLongValue(SECTION, "iHandspaceBasisMode", rockHandspaceBasisMode));
 
         rockWeaponCollisionEnabled = ini.GetBoolValue(SECTION, "bWeaponCollisionEnabled", rockWeaponCollisionEnabled);
+        rockWeaponCollisionRotationCorrectionEnabled =
+            ini.GetBoolValue(SECTION, "bWeaponCollisionRotationCorrectionEnabled", rockWeaponCollisionRotationCorrectionEnabled);
+        readVec3("fWeaponCollisionRotationX", "fWeaponCollisionRotationY", "fWeaponCollisionRotationZ", rockWeaponCollisionRotationDegrees);
+        rockWeaponCollisionConvexRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionConvexRadius", rockWeaponCollisionConvexRadius));
+        rockWeaponCollisionPointDedupGrid = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionPointDedupGrid", rockWeaponCollisionPointDedupGrid));
 
         {
             char hexBuf[16] = {};
@@ -155,11 +168,22 @@ namespace frik::rock
         rockHighlightEnabled = ini.GetBoolValue(SECTION, "bHighlightEnabled", rockHighlightEnabled);
 
         rockDebugShowColliders = ini.GetBoolValue(SECTION, "bDebugShowColliders", rockDebugShowColliders);
+        rockDebugShowTargetColliders = ini.GetBoolValue(SECTION, "bDebugShowTargetColliders", rockDebugShowTargetColliders);
+        rockDebugShowHandAxes = ini.GetBoolValue(SECTION, "bDebugShowHandAxes", rockDebugShowHandAxes);
+        rockDebugShowGrabPivots = ini.GetBoolValue(SECTION, "bDebugShowGrabPivots", rockDebugShowGrabPivots);
+        rockDebugShowPalmVectors = ini.GetBoolValue(SECTION, "bDebugShowPalmVectors", rockDebugShowPalmVectors);
         rockDebugShowPalmBasis = ini.GetBoolValue(SECTION, "bDebugShowPalmBasis", rockDebugShowPalmBasis);
-        rockDebugColliderShape = static_cast<int>(ini.GetLongValue(SECTION, "iDebugColliderShape", rockDebugColliderShape));
+        rockDebugDrawHandColliders = ini.GetBoolValue(SECTION, "bDebugDrawHandColliders", rockDebugDrawHandColliders);
+        rockDebugDrawWeaponColliders = ini.GetBoolValue(SECTION, "bDebugDrawWeaponColliders", rockDebugDrawWeaponColliders);
+        rockDebugMaxWeaponBodiesDrawn = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxWeaponBodiesDrawn", rockDebugMaxWeaponBodiesDrawn));
+        rockDebugMaxShapeGenerationsPerFrame = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxShapeGenerationsPerFrame", rockDebugMaxShapeGenerationsPerFrame));
+        rockDebugMaxConvexSupportVertices = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxConvexSupportVertices", rockDebugMaxConvexSupportVertices));
+        rockDebugUseBoundsForHeavyConvex = ini.GetBoolValue(SECTION, "bDebugUseBoundsForHeavyConvex", rockDebugUseBoundsForHeavyConvex);
         rockDebugVerboseLogging = ini.GetBoolValue(SECTION, "bDebugVerboseLogging", rockDebugVerboseLogging);
         rockDebugGrabFrameLogging = ini.GetBoolValue(SECTION, "bDebugGrabFrameLogging", rockDebugGrabFrameLogging);
         rockDebugHandTransformParity = ini.GetBoolValue(SECTION, "bDebugHandTransformParity", rockDebugHandTransformParity);
+        rockHandFrameSource = static_cast<int>(ini.GetLongValue(SECTION, "iHandFrameSource", rockHandFrameSource));
+        rockHandFrameSwapWands = ini.GetBoolValue(SECTION, "bHandFrameSwapWands", rockHandFrameSwapWands);
 
         rockNearDetectionRange = static_cast<float>(ini.GetDoubleValue(SECTION, "fNearDetectionRange", rockNearDetectionRange));
         rockFarDetectionRange = static_cast<float>(ini.GetDoubleValue(SECTION, "fFarDetectionRange", rockFarDetectionRange));
@@ -194,9 +218,8 @@ namespace frik::rock
         rockThrowVelocityMultiplier = static_cast<float>(ini.GetDoubleValue(SECTION, "fThrowVelocityMultiplier", rockThrowVelocityMultiplier));
         rockGrabVelocityDamping = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabVelocityDamping", rockGrabVelocityDamping));
 
-        rockGrabOffsetForward = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabOffsetForward", rockGrabOffsetForward));
-        rockGrabOffsetUp = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabOffsetUp", rockGrabOffsetUp));
-        rockGrabOffsetRight = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabOffsetRight", rockGrabOffsetRight));
+        readVec3("fGrabPivotAOffsetHandspaceX", "fGrabPivotAOffsetHandspaceY", "fGrabPivotAOffsetHandspaceZ", rockGrabPivotAOffsetHandspace);
+        rockReverseGrabPivotAOffset = ini.GetBoolValue(SECTION, "bReverseGrabPivotAOffset", rockReverseGrabPivotAOffset);
 
         rockGrabLerpSpeed = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLerpSpeed", rockGrabLerpSpeed));
         rockGrabLerpAngularSpeed = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLerpAngularSpeed", rockGrabLerpAngularSpeed));

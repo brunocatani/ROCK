@@ -96,6 +96,9 @@ target_include_directories(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
   PRIVATE
     F4VRCommon::framework
+    d3d11.lib
+    dxgi.lib
+    d3dcompiler.lib
 )
 
 find_package(cpptrace CONFIG REQUIRED)
@@ -187,3 +190,12 @@ add_custom_command(
           -DCONFIG=$(Configuration)
           -P "${ROOT_DIR}/cmake/package.cmake"
 )
+
+option(BUILD_ROCK_TESTS "Build ROCK focused regression tests" OFF)
+if(BUILD_ROCK_TESTS)
+  add_executable(ROCKTransformConventionTests
+    "${ROOT_DIR}/tests/TransformConventionTests.cpp"
+  )
+  target_compile_features(ROCKTransformConventionTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKTransformConventionTests PRIVATE ${SOURCE_DIR})
+endif()

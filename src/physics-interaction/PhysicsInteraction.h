@@ -7,6 +7,7 @@
 
 #include "Hand.h"
 #include "HandBoneCache.h"
+#include "HandFrameResolver.h"
 #include "PhysicsLog.h"
 #include "TwoHandedGrip.h"
 #include "WeaponCollision.h"
@@ -103,6 +104,8 @@ namespace frik::rock
 
         void resolveAndLogContact(const char* handName, RE::bhkWorld* bhk, RE::hknpWorld* hknp, RE::hknpBodyId bodyId);
 
+        void publishDebugBodyOverlay(RE::hknpWorld* hknp);
+
         void subscribeContactEvents(RE::hknpWorld* world);
 
         void dispatchPhysicsMessage(std::uint32_t msgType, bool isLeft, RE::TESObjectREFR* refr = nullptr, std::uint32_t formID = 0, std::uint32_t layer = 0);
@@ -115,6 +118,7 @@ namespace frik::rock
         bool _collisionLayerRegistered = false;
         std::uint64_t _expectedHandLayerMask = 0;
         HandBoneCache _handBoneCache;
+        HandFrameResolver _handFrameResolver;
 
         Hand _rightHand{ false };
         Hand _leftHand{ true };

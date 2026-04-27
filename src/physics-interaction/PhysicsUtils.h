@@ -1,6 +1,7 @@
 #pragma once
 
 #include "HavokOffsets.h"
+#include "TransformMath.h"
 
 #include "RE/Havok/hkVector4.h"
 #include "RE/Havok/hknpBody.h"
@@ -55,25 +56,9 @@ namespace frik::rock
 
     inline RE::NiAVObject* getOwnerNodeFromBody(RE::hknpWorld* world, RE::hknpBodyId bodyId) { return getOwnerNodeFromCollisionObject(getCollisionObjectFromBody(world, bodyId)); }
 
-    inline RE::NiMatrix3 niRotToHkTransformRotation(const RE::NiMatrix3& m) { return m; }
+    inline RE::NiMatrix3 niRotToHkTransformRotation(const RE::NiMatrix3& m) { return transform_math::niRowsToHavokColumns(m); }
 
-    inline RE::NiMatrix3 havokRotationBlocksToNiMatrix(const float* bodyFloats)
-    {
-        RE::NiMatrix3 result;
-        result.entry[0][0] = bodyFloats[0];
-        result.entry[0][1] = bodyFloats[1];
-        result.entry[0][2] = bodyFloats[2];
-        result.entry[1][0] = bodyFloats[4];
-        result.entry[1][1] = bodyFloats[5];
-        result.entry[1][2] = bodyFloats[6];
-        result.entry[2][0] = bodyFloats[8];
-        result.entry[2][1] = bodyFloats[9];
-        result.entry[2][2] = bodyFloats[10];
-        result.entry[0][3] = 0.0f;
-        result.entry[1][3] = 0.0f;
-        result.entry[2][3] = 0.0f;
-        return result;
-    }
+    inline RE::NiMatrix3 havokRotationBlocksToNiMatrix(const float* bodyFloats) { return transform_math::havokColumnsToNiRows<RE::NiMatrix3>(bodyFloats); }
 
     inline RE::NiPoint3 worldDeltaToBodyLocal(const float* bodyFloats, const RE::NiPoint3& worldDelta)
     {
@@ -84,44 +69,13 @@ namespace frik::rock
 
     inline RE::hkVector4f niRotToHkQuat(const RE::NiMatrix3& m)
     {
+        float values[4]{};
+        transform_math::niRowsToHavokQuaternion(m, values);
         RE::hkVector4f q;
-        const float trace = m.entry[0][0] + m.entry[1][1] + m.entry[2][2];
-
-        if (trace > 0.0f) {
-            const float s = 0.5f / sqrtf(trace + 1.0f);
-            q.w = 0.25f / s;
-            q.x = (m.entry[1][2] - m.entry[2][1]) * s;
-            q.y = (m.entry[2][0] - m.entry[0][2]) * s;
-            q.z = (m.entry[0][1] - m.entry[1][0]) * s;
-        } else if (m.entry[0][0] > m.entry[1][1] && m.entry[0][0] > m.entry[2][2]) {
-            const float s = 2.0f * sqrtf(1.0f + m.entry[0][0] - m.entry[1][1] - m.entry[2][2]);
-            q.w = (m.entry[1][2] - m.entry[2][1]) / s;
-            q.x = 0.25f * s;
-            q.y = (m.entry[0][1] + m.entry[1][0]) / s;
-            q.z = (m.entry[0][2] + m.entry[2][0]) / s;
-        } else if (m.entry[1][1] > m.entry[2][2]) {
-            const float s = 2.0f * sqrtf(1.0f + m.entry[1][1] - m.entry[0][0] - m.entry[2][2]);
-            q.w = (m.entry[2][0] - m.entry[0][2]) / s;
-            q.x = (m.entry[0][1] + m.entry[1][0]) / s;
-            q.y = 0.25f * s;
-            q.z = (m.entry[1][2] + m.entry[2][1]) / s;
-        } else {
-            const float s = 2.0f * sqrtf(1.0f + m.entry[2][2] - m.entry[0][0] - m.entry[1][1]);
-            q.w = (m.entry[0][1] - m.entry[1][0]) / s;
-            q.x = (m.entry[0][2] + m.entry[2][0]) / s;
-            q.y = (m.entry[1][2] + m.entry[2][1]) / s;
-            q.z = 0.25f * s;
-        }
-
-        const float len = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
-        if (len > 0.0f) {
-            const float inv = 1.0f / len;
-            q.x *= inv;
-            q.y *= inv;
-            q.z *= inv;
-            q.w *= inv;
-        }
-
+        q.x = values[0];
+        q.y = values[1];
+        q.z = values[2];
+        q.w = values[3];
         return q;
     }
 

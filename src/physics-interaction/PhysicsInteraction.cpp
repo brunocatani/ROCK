@@ -5,6 +5,8 @@
 #include <numbers>
 
 #include "HavokOffsets.h"
+#include "DebugBodyOverlay.h"
+#include "DebugOverlayPolicy.h"
 #include "PalmTransform.h"
 #include "PhysicsHooks.h"
 #include "PhysicsUtils.h"
@@ -153,12 +155,21 @@ namespace frik::rock
 
     RE::NiTransform PhysicsInteraction::getInteractionHandTransform(bool isLeft) const
     {
-        if (_handBoneCache.isReady()) {
-            return _handBoneCache.getWorldTransform(isLeft);
-        }
+        RE::NiNode* handBone = _handBoneCache.isReady() ? _handBoneCache.getNode(isLeft) : nullptr;
+        RE::NiNode* frikNode = nullptr;
+        RE::NiTransform frikTransform{};
+        bool frikValid = false;
 
         if (frik::api::FRIKApi::inst) {
-            return frik::api::FRIKApi::inst->getHandWorldTransform(handFromBool(isLeft));
+            const auto hand = handFromBool(isLeft);
+            frikTransform = frik::api::FRIKApi::inst->getHandWorldTransform(hand);
+            frikNode = frik::api::FRIKApi::inst->getHandNode(hand);
+            frikValid = true;
+        }
+
+        const auto frame = _handFrameResolver.resolve(isLeft, handBone, frikNode, frikTransform, frikValid);
+        if (frame.valid) {
+            return frame.transform;
         }
 
         return RE::NiTransform();
@@ -166,12 +177,21 @@ namespace frik::rock
 
     RE::NiNode* PhysicsInteraction::getInteractionHandNode(bool isLeft) const
     {
-        if (_handBoneCache.isReady()) {
-            return _handBoneCache.getNode(isLeft);
-        }
+        RE::NiNode* handBone = _handBoneCache.isReady() ? _handBoneCache.getNode(isLeft) : nullptr;
+        RE::NiNode* frikNode = nullptr;
+        RE::NiTransform frikTransform{};
+        bool frikValid = false;
 
         if (frik::api::FRIKApi::inst) {
-            return frik::api::FRIKApi::inst->getHandNode(handFromBool(isLeft));
+            const auto hand = handFromBool(isLeft);
+            frikTransform = frik::api::FRIKApi::inst->getHandWorldTransform(hand);
+            frikNode = frik::api::FRIKApi::inst->getHandNode(hand);
+            frikValid = true;
+        }
+
+        const auto frame = _handFrameResolver.resolve(isLeft, handBone, frikNode, frikTransform, frikValid);
+        if (frame.valid) {
+            return frame.node;
         }
 
         return nullptr;
@@ -389,10 +409,12 @@ namespace frik::rock
                     }
                 }
             }
+            debug::ClearFrame();
             return;
         }
 
         if (!g_rockConfig.rockEnabled) {
+            debug::ClearFrame();
             return;
         }
 
@@ -422,6 +444,7 @@ namespace frik::rock
 
         auto* hknp = getHknpWorld(bhk);
         if (!hknp) {
+            debug::ClearFrame();
             return;
         }
 
@@ -511,6 +534,8 @@ namespace frik::rock
 
         updateGrabInput(hknp);
 
+        publishDebugBodyOverlay(hknp);
+
         resolveContacts(bhk, hknp);
 
         bool wasTouchingR = _rightHand.isTouching();
@@ -577,8 +602,7 @@ namespace frik::rock
             ROCK_LOG_INFO(Init, "World stale or null — skipping Havok body destruction");
         }
 
-        _rightHand.destroyDebugColliderVis();
-        _leftHand.destroyDebugColliderVis();
+        debug::ClearFrame();
         _twoHandedGrip.reset();
         _weaponCollision.shutdown();
         releaseAllObjects();
@@ -711,8 +735,6 @@ namespace frik::rock
 
     void PhysicsInteraction::destroyHandCollisions(void* bhkWorld)
     {
-        _rightHand.destroyDebugColliderVis();
-        _leftHand.destroyDebugColliderVis();
         _rightHand.destroyDebugBasisVis();
         _leftHand.destroyDebugBasisVis();
         _rightHand.destroyCollision(bhkWorld);
@@ -732,27 +754,207 @@ namespace frik::rock
         const RE::NiTransform leftHandTransform = getInteractionHandTransform(true);
         RE::NiTransform rightTransform = computeHandCollisionTransformFromHandBasis(rightHandTransform, false);
         RE::NiTransform leftTransform = computeHandCollisionTransformFromHandBasis(leftHandTransform, true);
-        const RE::NiPoint3 rightPalmCenter = computePalmPositionFromHandBasis(rightHandTransform, false);
-        const RE::NiPoint3 leftPalmCenter = computePalmPositionFromHandBasis(leftHandTransform, true);
+        const RE::NiPoint3 rightGrabAnchor = computeGrabPivotAPositionFromHandBasis(rightHandTransform, false);
+        const RE::NiPoint3 leftGrabAnchor = computeGrabPivotAPositionFromHandBasis(leftHandTransform, true);
 
         if (!rightDisabled) {
             _rightHand.updateCollisionTransform(world, rightTransform, _deltaTime);
             auto* rightDebugParent = getInteractionHandNode(false);
-            _rightHand.updateDebugColliderVis(rightTransform, g_rockConfig.rockDebugShowColliders, rightDebugParent, g_rockConfig.rockHandCollisionHalfExtentX,
-                g_rockConfig.rockHandCollisionHalfExtentY, g_rockConfig.rockHandCollisionHalfExtentZ, g_rockConfig.rockDebugColliderShape);
-            _rightHand.updateDebugBasisVis(rightTransform, rightPalmCenter, g_rockConfig.rockDebugShowPalmBasis, rightDebugParent);
+            _rightHand.updateDebugBasisVis(rightTransform, rightGrabAnchor, g_rockConfig.rockDebugShowPalmBasis, rightDebugParent);
         } else {
             _rightHand.destroyDebugBasisVis();
         }
         if (!leftDisabled) {
             _leftHand.updateCollisionTransform(world, leftTransform, _deltaTime);
             auto* leftDebugParent = getInteractionHandNode(true);
-            _leftHand.updateDebugColliderVis(leftTransform, g_rockConfig.rockDebugShowColliders, leftDebugParent, g_rockConfig.rockHandCollisionHalfExtentX,
-                g_rockConfig.rockHandCollisionHalfExtentY, g_rockConfig.rockHandCollisionHalfExtentZ, g_rockConfig.rockDebugColliderShape);
-            _leftHand.updateDebugBasisVis(leftTransform, leftPalmCenter, g_rockConfig.rockDebugShowPalmBasis, leftDebugParent);
+            _leftHand.updateDebugBasisVis(leftTransform, leftGrabAnchor, g_rockConfig.rockDebugShowPalmBasis, leftDebugParent);
         } else {
             _leftHand.destroyDebugBasisVis();
         }
+    }
+
+    void PhysicsInteraction::publishDebugBodyOverlay(RE::hknpWorld* hknp)
+    {
+        const bool drawGrabPivots = g_rockConfig.rockDebugShowGrabPivots;
+        const bool drawPalmVectors = g_rockConfig.rockDebugShowPalmVectors;
+        if (!g_rockConfig.rockDebugShowColliders && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawPalmVectors) {
+            debug::ClearFrame();
+            return;
+        }
+
+        debug::Install();
+
+        debug::BodyOverlayFrame frame{};
+        frame.world = hknp;
+        frame.drawRockBodies = g_rockConfig.rockDebugShowColliders;
+        frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
+        frame.drawAxes = g_rockConfig.rockDebugShowHandAxes;
+        frame.drawMarkers = drawGrabPivots || drawPalmVectors;
+        const bool rightDisabled = s_rightHandDisabled.load(std::memory_order_acquire);
+        const bool leftDisabled = s_leftHandDisabled.load(std::memory_order_acquire);
+
+        auto addBody = [&](RE::hknpBodyId bodyId, debug::BodyOverlayRole role) {
+            if (bodyId.value == INVALID_BODY_ID || frame.count >= frame.entries.size()) {
+                return;
+            }
+
+            for (std::uint32_t i = 0; i < frame.count; i++) {
+                if (frame.entries[i].bodyId.value == bodyId.value && frame.entries[i].role == role) {
+                    return;
+                }
+            }
+
+            frame.entries[frame.count++] = debug::BodyOverlayEntry{ bodyId, role };
+        };
+
+        auto addAxisTransform = [&](const RE::NiTransform& transform, debug::AxisOverlayRole role, const RE::NiPoint3& translationStart, bool drawTranslationLine) {
+            if (!frame.drawAxes || frame.axisCount >= frame.axisEntries.size()) {
+                return;
+            }
+
+            auto& entry = frame.axisEntries[frame.axisCount++];
+            entry.source = debug::AxisOverlaySource::Transform;
+            entry.role = role;
+            entry.transform = transform;
+            entry.translationStart = translationStart;
+            entry.drawTranslationLine = drawTranslationLine;
+        };
+
+        auto addAxisBody = [&](RE::hknpBodyId bodyId, debug::AxisOverlayRole role, const RE::NiPoint3& translationStart, bool drawTranslationLine) {
+            if (!frame.drawAxes || bodyId.value == INVALID_BODY_ID || frame.axisCount >= frame.axisEntries.size()) {
+                return;
+            }
+
+            auto& entry = frame.axisEntries[frame.axisCount++];
+            entry.source = debug::AxisOverlaySource::Body;
+            entry.role = role;
+            entry.bodyId = bodyId;
+            entry.translationStart = translationStart;
+            entry.drawTranslationLine = drawTranslationLine;
+        };
+
+        auto addMarker = [&](debug::MarkerOverlayRole role, const RE::NiPoint3& position, const RE::NiPoint3& lineEnd, float size, bool drawPoint, bool drawLine) {
+            if (!frame.drawMarkers || frame.markerCount >= frame.markerEntries.size()) {
+                return;
+            }
+
+            auto& entry = frame.markerEntries[frame.markerCount++];
+            entry.role = role;
+            entry.position = position;
+            entry.lineEnd = lineEnd;
+            entry.size = size;
+            entry.drawPoint = drawPoint;
+            entry.drawLine = drawLine;
+        };
+
+        auto addMarkerPoint = [&](debug::MarkerOverlayRole role, const RE::NiPoint3& position, float size) {
+            addMarker(role, position, position, size, true, false);
+        };
+
+        auto addMarkerRay = [&](debug::MarkerOverlayRole role, const RE::NiPoint3& start, const RE::NiPoint3& end, float startSize) {
+            addMarker(role, start, end, startSize, true, true);
+        };
+
+        auto addMarkerLine = [&](debug::MarkerOverlayRole role, const RE::NiPoint3& start, const RE::NiPoint3& end) {
+            addMarker(role, start, end, 0.0f, false, true);
+        };
+
+        if (frame.drawAxes) {
+            if (!rightDisabled) {
+                const RE::NiTransform rawHand = getInteractionHandTransform(false);
+                const RE::NiTransform colliderHand = computeHandCollisionTransformFromHandBasis(rawHand, false);
+                addAxisTransform(rawHand, debug::AxisOverlayRole::RightHandRaw, rawHand.translate, false);
+                addAxisTransform(colliderHand, debug::AxisOverlayRole::RightHandCollider, rawHand.translate, true);
+                addAxisBody(_rightHand.getCollisionBodyId(), debug::AxisOverlayRole::RightHandBody, rawHand.translate, true);
+            }
+
+            if (!leftDisabled) {
+                const RE::NiTransform rawHand = getInteractionHandTransform(true);
+                const RE::NiTransform colliderHand = computeHandCollisionTransformFromHandBasis(rawHand, true);
+                addAxisTransform(rawHand, debug::AxisOverlayRole::LeftHandRaw, rawHand.translate, false);
+                addAxisTransform(colliderHand, debug::AxisOverlayRole::LeftHandCollider, rawHand.translate, true);
+                addAxisBody(_leftHand.getCollisionBodyId(), debug::AxisOverlayRole::LeftHandBody, rawHand.translate, true);
+            }
+        }
+
+        if (drawPalmVectors) {
+            auto addPalmVectorDebug = [&](bool isLeft) {
+                if ((isLeft && leftDisabled) || (!isLeft && rightDisabled)) {
+                    return;
+                }
+
+                const RE::NiTransform rawHand = getInteractionHandTransform(isLeft);
+                const RE::NiPoint3 grabAnchor = computeGrabPivotAPositionFromHandBasis(rawHand, isLeft);
+                const RE::NiPoint3 palmNormal = computePalmNormalFromHandBasis(rawHand, isLeft);
+                const RE::NiPoint3 pointing = computePointingVectorFromHandBasis(rawHand, isLeft);
+                const float palmNormalLength = (std::max)(5.0f, g_rockConfig.rockNearDetectionRange);
+                const float pointingLength = (std::min)(90.0f, (std::max)(20.0f, g_rockConfig.rockFarDetectionRange));
+
+                addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabAnchor : debug::MarkerOverlayRole::RightGrabAnchor, grabAnchor, 2.0f);
+                addMarkerRay(isLeft ? debug::MarkerOverlayRole::LeftPalmNormal : debug::MarkerOverlayRole::RightPalmNormal, grabAnchor,
+                    grabAnchor + palmNormal * palmNormalLength, 1.6f);
+                addMarkerRay(isLeft ? debug::MarkerOverlayRole::LeftPointing : debug::MarkerOverlayRole::RightPointing, grabAnchor,
+                    grabAnchor + pointing * pointingLength, 1.2f);
+            };
+
+            addPalmVectorDebug(false);
+            addPalmVectorDebug(true);
+        }
+
+        if (drawGrabPivots) {
+            auto addGrabPivotDebug = [&](const Hand& hand) {
+                if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
+                    return;
+                }
+
+                GrabPivotDebugSnapshot snapshot{};
+                if (!hand.getGrabPivotDebugSnapshot(hknp, snapshot)) {
+                    return;
+                }
+
+                const bool isLeft = hand.isLeft();
+                addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabPivotA : debug::MarkerOverlayRole::RightGrabPivotA, snapshot.handPivotWorld, 3.0f);
+                addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabPivotB : debug::MarkerOverlayRole::RightGrabPivotB, snapshot.objectPivotWorld, 3.0f);
+                addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabPivotError : debug::MarkerOverlayRole::RightGrabPivotError, snapshot.handPivotWorld,
+                    snapshot.objectPivotWorld);
+            };
+
+            addGrabPivotDebug(_rightHand);
+            addGrabPivotDebug(_leftHand);
+        }
+
+        if (frame.drawRockBodies) {
+            if (debug_overlay_policy::shouldDrawHandBody(frame.drawRockBodies, g_rockConfig.rockDebugDrawHandColliders)) {
+                addBody(_rightHand.getCollisionBodyId(), debug::BodyOverlayRole::RightHand);
+                addBody(_leftHand.getCollisionBodyId(), debug::BodyOverlayRole::LeftHand);
+            }
+
+            const auto weaponCount = _weaponCollision.getWeaponBodyCount();
+            for (std::uint32_t i = 0; i < weaponCount; i++) {
+                if (debug_overlay_policy::shouldDrawWeaponBody(frame.drawRockBodies, g_rockConfig.rockDebugDrawWeaponColliders, i, g_rockConfig.rockDebugMaxWeaponBodiesDrawn)) {
+                    addBody(RE::hknpBodyId{ _weaponCollision.getWeaponBodyIdAtomic(i) }, debug::BodyOverlayRole::Weapon);
+                }
+            }
+        }
+
+        if (frame.drawTargetBodies) {
+            auto addHandTarget = [&](const Hand& hand) {
+                if (hand.isHolding()) {
+                    addBody(hand.getSavedObjectState().bodyId, debug::BodyOverlayRole::Target);
+                    addAxisBody(hand.getSavedObjectState().bodyId, debug::AxisOverlayRole::TargetBody, getInteractionHandTransform(hand.isLeft()).translate, true);
+                    return;
+                }
+                if (hand.hasSelection()) {
+                    addBody(hand.getSelection().bodyId, debug::BodyOverlayRole::Target);
+                    addAxisBody(hand.getSelection().bodyId, debug::AxisOverlayRole::TargetBody, getInteractionHandTransform(hand.isLeft()).translate, true);
+                }
+            };
+
+            addHandTarget(_rightHand);
+            addHandTarget(_leftHand);
+        }
+
+        debug::PublishFrame(frame);
     }
 
     void PhysicsInteraction::updateSelection(RE::bhkWorld* bhk, RE::hknpWorld* hknp)
@@ -762,10 +964,10 @@ namespace frik::rock
 
         const RE::NiTransform rightTransform = getInteractionHandTransform(false);
         const RE::NiTransform leftTransform = getInteractionHandTransform(true);
-        auto rightPalmPos = computePalmPositionFromHandBasis(rightTransform, false);
+        auto rightGrabAnchor = computeGrabPivotAPositionFromHandBasis(rightTransform, false);
         auto rightPalmNormal = computePalmNormalFromHandBasis(rightTransform, false);
         auto rightPointing = computePointingVectorFromHandBasis(rightTransform, false);
-        auto leftPalmPos = computePalmPositionFromHandBasis(leftTransform, true);
+        auto leftGrabAnchor = computeGrabPivotAPositionFromHandBasis(leftTransform, true);
         auto leftPalmNormal = computePalmNormalFromHandBasis(leftTransform, true);
         auto leftPointing = computePointingVectorFromHandBasis(leftTransform, true);
 
@@ -773,12 +975,12 @@ namespace frik::rock
         auto* leftHeldRef = _leftHand.hasSelection() ? _leftHand.getSelection().refr : nullptr;
 
         if (!s_rightHandDisabled.load(std::memory_order_acquire)) {
-            _rightHand.updateSelection(bhk, hknp, rightPalmPos, rightPalmNormal, rightPointing, g_rockConfig.rockNearDetectionRange, g_rockConfig.rockFarDetectionRange,
+            _rightHand.updateSelection(bhk, hknp, rightGrabAnchor, rightPalmNormal, rightPointing, g_rockConfig.rockNearDetectionRange, g_rockConfig.rockFarDetectionRange,
                 leftHeldRef);
         }
 
         if (!s_leftHandDisabled.load(std::memory_order_acquire)) {
-            _leftHand.updateSelection(bhk, hknp, leftPalmPos, leftPalmNormal, leftPointing, g_rockConfig.rockNearDetectionRange, g_rockConfig.rockFarDetectionRange, rightHeldRef);
+            _leftHand.updateSelection(bhk, hknp, leftGrabAnchor, leftPalmNormal, leftPointing, g_rockConfig.rockNearDetectionRange, g_rockConfig.rockFarDetectionRange, rightHeldRef);
         }
     }
 

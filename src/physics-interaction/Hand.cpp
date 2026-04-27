@@ -2,8 +2,10 @@
 
 #include <cmath>
 
+#include "DebugAxisMath.h"
 #include "HavokOffsets.h"
 #include "PalmTransform.h"
+#include "TransformMath.h"
 
 namespace frik::rock
 {
@@ -54,32 +56,6 @@ namespace frik::rock
             result.entry[0][0] = 1.0f;
             result.entry[1][1] = 1.0f;
             result.entry[2][2] = 1.0f;
-            return result;
-        }
-
-        RE::NiMatrix3 multiplyDebugMatrix(const RE::NiMatrix3& a, const RE::NiMatrix3& b)
-        {
-            RE::NiMatrix3 result{};
-            for (int row = 0; row < 3; row++) {
-                for (int col = 0; col < 3; col++) {
-                    result.entry[row][col] = a.entry[row][0] * b.entry[0][col] + a.entry[row][1] * b.entry[1][col] + a.entry[row][2] * b.entry[2][col];
-                }
-            }
-            return result;
-        }
-
-        RE::NiMatrix3 buildScaledLocalBasis(const RE::NiMatrix3& localBasis, float sx, float sy, float sz)
-        {
-            RE::NiMatrix3 result = localBasis;
-            result.entry[0][0] *= sx;
-            result.entry[1][0] *= sx;
-            result.entry[2][0] *= sx;
-            result.entry[0][1] *= sy;
-            result.entry[1][1] *= sy;
-            result.entry[2][1] *= sy;
-            result.entry[0][2] *= sz;
-            result.entry[1][2] *= sz;
-            result.entry[2][2] *= sz;
             return result;
         }
 
@@ -330,43 +306,24 @@ namespace frik::rock
         if (!node)
             return false;
 
-        RE::NiMatrix3 invRot = _grabHandSpace.rotate.Transpose();
-        float invScale = (_grabHandSpace.scale > 0.0001f) ? (1.0f / _grabHandSpace.scale) : 1.0f;
-        RE::NiPoint3 invPos;
-        invPos.x =
-            -(invRot.entry[0][0] * _grabHandSpace.translate.x + invRot.entry[0][1] * _grabHandSpace.translate.y + invRot.entry[0][2] * _grabHandSpace.translate.z) * invScale;
-        invPos.y =
-            -(invRot.entry[1][0] * _grabHandSpace.translate.x + invRot.entry[1][1] * _grabHandSpace.translate.y + invRot.entry[1][2] * _grabHandSpace.translate.z) * invScale;
-        invPos.z =
-            -(invRot.entry[2][0] * _grabHandSpace.translate.x + invRot.entry[2][1] * _grabHandSpace.translate.y + invRot.entry[2][2] * _grabHandSpace.translate.z) * invScale;
-
-        const auto& obj = node->world;
-        outTransform.rotate = obj.rotate * invRot;
-        outTransform.scale = obj.scale * invScale;
-        RE::NiPoint3 rotatedPos;
-        rotatedPos.x = obj.rotate.entry[0][0] * invPos.x + obj.rotate.entry[0][1] * invPos.y + obj.rotate.entry[0][2] * invPos.z;
-        rotatedPos.y = obj.rotate.entry[1][0] * invPos.x + obj.rotate.entry[1][1] * invPos.y + obj.rotate.entry[1][2] * invPos.z;
-        rotatedPos.z = obj.rotate.entry[2][0] * invPos.x + obj.rotate.entry[2][1] * invPos.y + obj.rotate.entry[2][2] * invPos.z;
-        outTransform.translate.x = obj.translate.x + rotatedPos.x * obj.scale;
-        outTransform.translate.y = obj.translate.y + rotatedPos.y * obj.scale;
-        outTransform.translate.z = obj.translate.z + rotatedPos.z * obj.scale;
+        outTransform = transform_math::composeTransforms(node->world, transform_math::invertTransform(_grabHandSpace));
 
         return true;
     }
 
-    void Hand::updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& palmPos, const RE::NiPoint3& palmNormal, const RE::NiPoint3& pointingDirection,
-        float nearRange, float farRange, RE::TESObjectREFR* otherHandRef)
+    void Hand::updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& palmNormal,
+        const RE::NiPoint3& pointingDirection, float nearRange, float farRange, RE::TESObjectREFR* otherHandRef)
     {
         if (_state != HandState::Idle && _state != HandState::SelectedClose)
             return;
 
-        auto nearCandidate = findCloseObject(bhkWorld, hknpWorld, palmPos, palmNormal, nearRange, _isLeft, otherHandRef);
+        auto nearCandidate = findCloseObject(bhkWorld, hknpWorld, selectionOrigin, palmNormal, nearRange, _isLeft, otherHandRef);
 
         SelectedObject farCandidate;
         _farDetectCounter++;
         if (_farDetectCounter >= 3) {
             _farDetectCounter = 0;
-            farCandidate = findFarObject(bhkWorld, hknpWorld, palmPos, pointingDirection, farRange, otherHandRef);
+            farCandidate = findFarObject(bhkWorld, hknpWorld, selectionOrigin, pointingDirection, farRange, otherHandRef);
             _cachedFarCandidate = farCandidate;
         } else {
             farCandidate = _cachedFarCandidate;
@@ -436,7 +393,7 @@ namespace frik::rock
                     auto* motion = hknpWorld->GetBodyMotion(_currentSelection.bodyId);
                     if (motion) {
                         RE::NiPoint3 objPos = hkVectorToNiPoint(motion->position);
-                        _currentSelection.distance = (objPos - palmPos).Length();
+                        _currentSelection.distance = (objPos - selectionOrigin).Length();
                     }
                 } else {
                     _currentSelection.clear();
@@ -577,6 +534,8 @@ namespace frik::rock
 
         if (logWitness) {
             const auto targetQuat = niRotToHkQuat(handTransform.rotate);
+            const auto targetHkRotation = niRotToHkTransformRotation(handTransform.rotate);
+            const auto* targetHk = reinterpret_cast<const float*>(&targetHkRotation);
             const float targetDet = matrixDeterminant(handTransform.rotate);
             const float liveDet = bodyBasisDeterminant(bodyFloats);
 
@@ -588,170 +547,19 @@ namespace frik::rock
                 dist, deltaTime, isTeleport ? "yes" : "no", targetDet, liveDet);
 
             ROCK_LOG_INFO(Hand,
-                "{} transform basis: targetRows=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
-                "liveRows=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
+                "{} transform basis: targetNiRows=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
+                "targetHkCols=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
+                "liveHkCols=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
                 "quat=({:.4f},{:.4f},{:.4f},{:.4f}) linVel=({:.4f},{:.4f},{:.4f}) angVel=({:.4f},{:.4f},{:.4f})",
                 handName(), handTransform.rotate.entry[0][0], handTransform.rotate.entry[0][1], handTransform.rotate.entry[0][2], handTransform.rotate.entry[1][0],
                 handTransform.rotate.entry[1][1], handTransform.rotate.entry[1][2], handTransform.rotate.entry[2][0], handTransform.rotate.entry[2][1],
-                handTransform.rotate.entry[2][2], bodyFloats[0], bodyFloats[1], bodyFloats[2], bodyFloats[4], bodyFloats[5], bodyFloats[6], bodyFloats[8], bodyFloats[9],
-                bodyFloats[10], targetQuat.x, targetQuat.y, targetQuat.z, targetQuat.w, linVelOut[0], linVelOut[1], linVelOut[2], angVelOut[0], angVelOut[1], angVelOut[2]);
+                handTransform.rotate.entry[2][2], targetHk[0], targetHk[1], targetHk[2], targetHk[4], targetHk[5], targetHk[6], targetHk[8], targetHk[9], targetHk[10],
+                bodyFloats[0], bodyFloats[1], bodyFloats[2], bodyFloats[4], bodyFloats[5], bodyFloats[6], bodyFloats[8], bodyFloats[9], bodyFloats[10], targetQuat.x,
+                targetQuat.y, targetQuat.z, targetQuat.w, linVelOut[0], linVelOut[1], linVelOut[2], angVelOut[0], angVelOut[1], angVelOut[2]);
         }
     }
 
-    void Hand::updateDebugColliderVis(const RE::NiTransform& colliderTransform, bool show, RE::NiNode* parentNode, float hx, float hy, float hz, int shapeType)
-    {
-        auto destroyMarker = [](RE::NiNode*& marker) {
-            if (!marker) {
-                return;
-            }
-
-            marker->flags.flags |= 0x1;
-            marker->local.scale = 0;
-            if (marker->parent) {
-                marker->parent->DetachChild(marker);
-            }
-            marker = nullptr;
-        };
-
-        if (_debugColliderVis && _debugColliderVisShape != shapeType) {
-            destroyDebugColliderVis();
-        }
-
-        if (show && !_debugColliderVis && parentNode) {
-            const char* meshPath = nullptr;
-            switch (shapeType) {
-            case 0:
-                meshPath = "Data/Meshes/ROCK/DebugBox_Trigger256.nif";
-                break;
-            case 1:
-                meshPath = "Data/Meshes/ROCK/DebugBox_Trigger512.nif";
-                break;
-            case 2:
-                meshPath = "Data/Meshes/ROCK/DebugBox_Activator.nif";
-                break;
-            case 3:
-                meshPath = "Data/Meshes/ROCK/DebugBox_Utility.nif";
-                break;
-            case 4:
-                meshPath = "Data/Meshes/ROCK/DebugBox_VaultSuit.nif";
-                break;
-            default:
-                meshPath = "Data/Meshes/ROCK/DebugBox_Trigger256.nif";
-                break;
-            }
-            _debugColliderVis = f4cf::f4vr::getClonedNiNodeForNifFileSetName(meshPath);
-            if (_debugColliderVis) {
-                _debugColliderVis->name = RE::BSFixedString(_isLeft ? "ROCK_DebugL" : "ROCK_DebugR");
-                parentNode->AttachChild(_debugColliderVis, true);
-                _debugColliderVisParent = parentNode;
-                _debugColliderVis->flags.flags &= 0xfffffffffffffffe;
-                _debugColliderVis->local.scale = 1.0f;
-                _debugColliderVisShape = shapeType;
-                ROCK_LOG_INFO(Hand, "{} debug box created: type={} mesh={}", handName(), shapeType, meshPath);
-            } else {
-                ROCK_LOG_WARN(Hand, "{} debug box FAILED to load {}", handName(), meshPath);
-            }
-        }
-
-        if (_debugColliderVis && parentNode && _debugColliderVisParent != parentNode) {
-            if (_debugColliderVisParent) {
-                _debugColliderVisParent->DetachChild(_debugColliderVis);
-            }
-            parentNode->AttachChild(_debugColliderVis, true);
-            _debugColliderVisParent = parentNode;
-            for (auto* marker : _debugColliderVertexVis) {
-                if (marker && marker->parent != parentNode) {
-                    if (marker->parent) {
-                        marker->parent->DetachChild(marker);
-                    }
-                    parentNode->AttachChild(marker, true);
-                }
-            }
-        }
-
-        if (!show || !_debugColliderVis || !parentNode) {
-            if (_debugColliderVis) {
-                _debugColliderVis->flags.flags |= 0x1;
-                _debugColliderVis->local.scale = 0;
-            }
-            for (auto& marker : _debugColliderVertexVis) {
-                destroyMarker(marker);
-            }
-            return;
-        }
-
-        _debugColliderVis->flags.flags &= 0xfffffffffffffffe;
-        const RE::NiMatrix3 parentInvRot = parentNode->world.rotate.Transpose();
-        const RE::NiPoint3 localCenter = parentInvRot * (colliderTransform.translate - parentNode->world.translate);
-        const RE::NiMatrix3 localBasis = multiplyDebugMatrix(parentInvRot, colliderTransform.rotate);
-
-        float meshHalf = 128.0f;
-        if (shapeType == 2)
-            meshHalf = 64.0f;
-        if (shapeType == 4)
-            meshHalf = 32.0f;
-        const float s = 70.0f / meshHalf;
-        _debugColliderVis->local.translate = localCenter;
-        _debugColliderVis->local.rotate = buildScaledLocalBasis(localBasis, hx * s, hy * s, hz * s);
-
-        for (int i = 0; i < 8; i++) {
-            if (!_debugColliderVertexVis[i]) {
-                _debugColliderVertexVis[i] = f4cf::f4vr::getClonedNiNodeForNifFileSetName("Data/Meshes/ROCK/DebugBox_VaultSuit.nif");
-                if (_debugColliderVertexVis[i]) {
-                    _debugColliderVertexVis[i]->name = RE::BSFixedString(_isLeft ? "ROCK_DebugVertL" : "ROCK_DebugVertR");
-                    parentNode->AttachChild(_debugColliderVertexVis[i], true);
-                    _debugColliderVertexVis[i]->flags.flags &= 0xfffffffffffffffe;
-                } else {
-                    ROCK_LOG_WARN(Hand, "{} collider vertex marker FAILED to load DebugBox_VaultSuit.nif", handName());
-                }
-            }
-        }
-
-        const float hxGame = hx * 70.0f;
-        const float hyGame = hy * 70.0f;
-        const float hzGame = hz * 70.0f;
-        const RE::NiPoint3 localVerts[8] = { RE::NiPoint3(-hxGame, -hyGame, -hzGame), RE::NiPoint3(+hxGame, -hyGame, -hzGame), RE::NiPoint3(-hxGame, +hyGame, -hzGame),
-            RE::NiPoint3(+hxGame, +hyGame, -hzGame), RE::NiPoint3(-hxGame, -hyGame, +hzGame), RE::NiPoint3(+hxGame, -hyGame, +hzGame), RE::NiPoint3(-hxGame, +hyGame, +hzGame),
-            RE::NiPoint3(+hxGame, +hyGame, +hzGame) };
-
-        for (int i = 0; i < 8; i++) {
-            auto* marker = _debugColliderVertexVis[i];
-            if (!marker) {
-                continue;
-            }
-
-            marker->flags.flags &= 0xfffffffffffffffe;
-            marker->local.translate = localCenter + localBasis * localVerts[i];
-            marker->local.rotate = makeIdentityRotation();
-            marker->local.scale = 0.015f;
-        }
-    }
-
-    void Hand::destroyDebugColliderVis()
-    {
-        if (_debugColliderVis) {
-            _debugColliderVis->flags.flags |= 0x1;
-            _debugColliderVis->local.scale = 0;
-            if (_debugColliderVis->parent) {
-                _debugColliderVis->parent->DetachChild(_debugColliderVis);
-            }
-            _debugColliderVis = nullptr;
-            _debugColliderVisParent = nullptr;
-        }
-
-        for (auto& marker : _debugColliderVertexVis) {
-            if (marker) {
-                marker->flags.flags |= 0x1;
-                marker->local.scale = 0;
-                if (marker->parent) {
-                    marker->parent->DetachChild(marker);
-                }
-                marker = nullptr;
-            }
-        }
-    }
-
-    void Hand::updateDebugBasisVis(const RE::NiTransform& colliderTransform, const RE::NiPoint3& palmCenterWorld, bool show, RE::NiNode* parentNode)
+    void Hand::updateDebugBasisVis(const RE::NiTransform& colliderTransform, const RE::NiPoint3& grabAnchorWorld, bool show, RE::NiNode* parentNode)
     {
         auto destroyMarker = [](RE::NiNode*& marker) {
             if (!marker) {
@@ -792,16 +600,19 @@ namespace frik::rock
         }
 
         createMarker(_debugHandOriginVis, "Data/Meshes/ROCK/DebugBox_VaultSuit.nif", _isLeft ? "ROCK_HandOriginL" : "ROCK_HandOriginR");
-        createMarker(_debugPalmCenterVis, "Data/Meshes/ROCK/1x1Sphere.nif", _isLeft ? "ROCK_PalmCenterL" : "ROCK_PalmCenterR");
+        createMarker(_debugPalmCenterVis, "Data/Meshes/ROCK/1x1Sphere.nif", _isLeft ? "ROCK_GrabAnchorL" : "ROCK_GrabAnchorR");
         createMarker(_debugAxisXVis, "Data/Meshes/ROCK/marker_arrow.nif", _isLeft ? "ROCK_AxisXL" : "ROCK_AxisXR");
         createMarker(_debugAxisYVis, "Data/Meshes/ROCK/marker_travel.nif", _isLeft ? "ROCK_AxisYL" : "ROCK_AxisYR");
         createMarker(_debugAxisZVis, "Data/Meshes/ROCK/marker_decal.nif", _isLeft ? "ROCK_AxisZL" : "ROCK_AxisZR");
 
         _debugBasisVisParent = parentNode;
         const RE::NiPoint3 colliderCenter = colliderTransform.translate;
-        const RE::NiPoint3 axisXEndpoint = colliderCenter + normalizeDebugDirection(colliderTransform.rotate * RE::NiPoint3(1.0f, 0.0f, 0.0f)) * 6.0f;
-        const RE::NiPoint3 axisYEndpoint = colliderCenter + normalizeDebugDirection(colliderTransform.rotate * RE::NiPoint3(0.0f, 1.0f, 0.0f)) * 9.0f;
-        const RE::NiPoint3 axisZEndpoint = colliderCenter + normalizeDebugDirection(colliderTransform.rotate * RE::NiPoint3(0.0f, 0.0f, 1.0f)) * 12.0f;
+        const RE::NiPoint3 axisXEndpoint =
+            colliderCenter + normalizeDebugDirection(debug_axis_math::rotateNiLocalToWorld(colliderTransform.rotate, RE::NiPoint3(1.0f, 0.0f, 0.0f))) * 6.0f;
+        const RE::NiPoint3 axisYEndpoint =
+            colliderCenter + normalizeDebugDirection(debug_axis_math::rotateNiLocalToWorld(colliderTransform.rotate, RE::NiPoint3(0.0f, 1.0f, 0.0f))) * 9.0f;
+        const RE::NiPoint3 axisZEndpoint =
+            colliderCenter + normalizeDebugDirection(debug_axis_math::rotateNiLocalToWorld(colliderTransform.rotate, RE::NiPoint3(0.0f, 0.0f, 1.0f))) * 12.0f;
 
         auto updateMarker = [&](RE::NiNode* marker, const RE::NiPoint3& localPos, const RE::NiMatrix3& localRot, float scale) {
             if (!marker) {
@@ -814,15 +625,14 @@ namespace frik::rock
             marker->local.scale = scale;
         };
 
-        const RE::NiMatrix3 parentInvRot = parentNode->world.rotate.Transpose();
-        const RE::NiPoint3 localColliderCenterPos = parentInvRot * (colliderCenter - parentNode->world.translate);
-        const RE::NiPoint3 localPalmCenterPos = parentInvRot * (palmCenterWorld - parentNode->world.translate);
-        const RE::NiPoint3 localAxisXPos = parentInvRot * (axisXEndpoint - parentNode->world.translate);
-        const RE::NiPoint3 localAxisYPos = parentInvRot * (axisYEndpoint - parentNode->world.translate);
-        const RE::NiPoint3 localAxisZPos = parentInvRot * (axisZEndpoint - parentNode->world.translate);
+        const RE::NiPoint3 localColliderCenterPos = transform_math::worldPointToLocal(parentNode->world, colliderCenter);
+        const RE::NiPoint3 localGrabAnchorPos = transform_math::worldPointToLocal(parentNode->world, grabAnchorWorld);
+        const RE::NiPoint3 localAxisXPos = transform_math::worldPointToLocal(parentNode->world, axisXEndpoint);
+        const RE::NiPoint3 localAxisYPos = transform_math::worldPointToLocal(parentNode->world, axisYEndpoint);
+        const RE::NiPoint3 localAxisZPos = transform_math::worldPointToLocal(parentNode->world, axisZEndpoint);
 
         updateMarker(_debugHandOriginVis, localColliderCenterPos, makeIdentityRotation(), 0.05f);
-        updateMarker(_debugPalmCenterVis, localPalmCenterPos, makeIdentityRotation(), 0.03f);
+        updateMarker(_debugPalmCenterVis, localGrabAnchorPos, makeIdentityRotation(), 0.03f);
         updateMarker(_debugAxisXVis, localAxisXPos, buildArrowLocalRotation(RE::NiPoint3(1.0f, 0.0f, 0.0f)), 0.035f);
         updateMarker(_debugAxisYVis, localAxisYPos, buildArrowLocalRotation(RE::NiPoint3(0.0f, 1.0f, 0.0f)), 0.045f);
         updateMarker(_debugAxisZVis, localAxisZPos, buildArrowLocalRotation(RE::NiPoint3(0.0f, 0.0f, 1.0f)), 0.055f);

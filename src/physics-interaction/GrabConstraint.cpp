@@ -298,15 +298,15 @@ namespace frik::rock
             {
                 const auto& R = desiredBodyTransformHandSpace.rotate;
                 tB_col0[0] = R.entry[0][0];
-                tB_col0[1] = R.entry[0][1];
-                tB_col0[2] = R.entry[0][2];
+                tB_col0[1] = R.entry[1][0];
+                tB_col0[2] = R.entry[2][0];
                 tB_col0[3] = 0.0f;
-                tB_col1[0] = R.entry[1][0];
+                tB_col1[0] = R.entry[0][1];
                 tB_col1[1] = R.entry[1][1];
-                tB_col1[2] = R.entry[1][2];
+                tB_col1[2] = R.entry[2][1];
                 tB_col1[3] = 0.0f;
-                tB_col2[0] = R.entry[2][0];
-                tB_col2[1] = R.entry[2][1];
+                tB_col2[0] = R.entry[0][2];
+                tB_col2[1] = R.entry[1][2];
                 tB_col2[2] = R.entry[2][2];
                 tB_col2[3] = 0.0f;
             }
