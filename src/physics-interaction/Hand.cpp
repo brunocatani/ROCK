@@ -5,6 +5,8 @@
 #include "DebugAxisMath.h"
 #include "HavokOffsets.h"
 #include "PalmTransform.h"
+#include "SelectionQueryPolicy.h"
+#include "SelectionStatePolicy.h"
 #include "TransformMath.h"
 
 namespace frik::rock
@@ -153,7 +155,7 @@ namespace frik::rock
 
         *reinterpret_cast<std::uint16_t*>(s + 0x44) = 6;
 
-        ROCK_LOG_INFO(Hand, "Created box shape: hx={:.4f} hy={:.4f} hz={:.4f} radius={:.4f}", hx, hy, hz, convexRadius);
+        ROCK_LOG_DEBUG(Hand, "Created box shape: hx={:.4f} hy={:.4f} hz={:.4f} radius={:.4f}", hx, hy, hz, convexRadius);
 
         return reinterpret_cast<RE::hknpShape*>(capsule);
     }
@@ -202,7 +204,7 @@ namespace frik::rock
         if (newId != 0xFFFF) {
             cachedId.value = newId;
             cachedMaterialLibrary = matLib;
-            ROCK_LOG_INFO(Hand, "Registered ROCK_Hand material ID={} (dynFriction=200, staticFriction=1.0, restitution=0.0)", newId);
+            ROCK_LOG_DEBUG(Hand, "Registered ROCK_Hand material ID={} (dynFriction=200, staticFriction=1.0, restitution=0.0)", newId);
         } else {
             ROCK_LOG_WARN(Hand, "Failed to register ROCK_Hand material -- using default 0");
             return { 0 };
@@ -240,6 +242,7 @@ namespace frik::rock
         _notifCounter = 0;
         _transformWitnessLogCounter = 0;
         _heldBodyIds.clear();
+        clearPullRuntimeState();
         _grabHandSpace = RE::NiTransform();
         _adjustedHandTransform = RE::NiTransform();
         _hasAdjustedHandTransform = false;
@@ -262,6 +265,17 @@ namespace frik::rock
         _grabOwnerBodyLocalTransform = RE::NiTransform();
         _heldNode = nullptr;
         clearGrabHandCollisionSuppressionState();
+    }
+
+    void Hand::clearPullRuntimeState()
+    {
+        _pulledBodyIds.clear();
+        _pulledPrimaryBodyId = INVALID_BODY_ID;
+        _pullPointOffsetHavok = {};
+        _pullTargetHavok = {};
+        _pullElapsedSeconds = 0.0f;
+        _pullDurationSeconds = 0.0f;
+        _pullHasTarget = false;
     }
 
     void Hand::collectHeldBodyIds(RE::TESObjectREFR* refr)
@@ -339,10 +353,37 @@ namespace frik::rock
         return computeAdjustedHandTransformTarget(outTransform);
     }
 
+    bool Hand::lockFarSelection()
+    {
+        if (_state != HandState::SelectedFar || !_currentSelection.isValid() || !_currentSelection.isFarSelection) {
+            return false;
+        }
+
+        _state = HandState::SelectionLocked;
+        _selectionHoldFrames = 0;
+        ROCK_LOG_DEBUG(Hand, "{} hand locked far selection formID={:08X} dist={:.1f}", handName(), _currentSelection.refr ? _currentSelection.refr->GetFormID() : 0,
+            _currentSelection.distance);
+        return true;
+    }
+
+    void Hand::clearSelectionState(bool rememberDeselect)
+    {
+        stopSelectionHighlight();
+        if (rememberDeselect) {
+            _lastDeselectedRef = _currentSelection.refr;
+            _deselectCooldown = 10;
+        }
+        _currentSelection.clear();
+        _cachedFarCandidate.clear();
+        clearPullRuntimeState();
+        _state = HandState::Idle;
+        _selectionHoldFrames = 0;
+    }
+
     void Hand::updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& palmNormal,
         const RE::NiPoint3& pointingDirection, float nearRange, float farRange, RE::TESObjectREFR* otherHandRef)
     {
-        if (_state != HandState::Idle && _state != HandState::SelectedClose)
+        if (!selection_state_policy::canUpdateSelectionFromState(_state))
             return;
 
         auto nearCandidate = findCloseObject(bhkWorld, hknpWorld, selectionOrigin, palmNormal, nearRange, _isLeft, otherHandRef);
@@ -379,7 +420,19 @@ namespace frik::rock
         }
 
         if (best.refr == _currentSelection.refr && best.isValid()) {
-            _currentSelection.distance = best.distance;
+            const bool refreshedSource = selection_query_policy::shouldReplaceSelectionForSameRef(
+                _currentSelection.isFarSelection, best.isFarSelection, _currentSelection.bodyId.value, best.bodyId.value);
+            _currentSelection = best;
+            _state = selection_state_policy::stateForSelection(best.isFarSelection);
+            if (refreshedSource) {
+                ROCK_LOG_DEBUG(Hand,
+                    "{} hand refreshed selection source -> {} formID={:08X} body={} dist={:.1f}",
+                    handName(),
+                    best.isFarSelection ? "far" : "near",
+                    best.refr ? best.refr->GetFormID() : 0,
+                    best.bodyId.value,
+                    best.distance);
+            }
             _selectionHoldFrames++;
         } else if (best.isValid()) {
             auto* baseObj = best.refr->GetObjectReference();
@@ -389,10 +442,10 @@ namespace frik::rock
             const char* nameStr = objName.empty() ? "(unnamed)" : objName.data();
 
             if (_currentSelection.isValid()) {
-                ROCK_LOG_INFO(Hand, "{} hand switched -> {} [{}] '{}' formID={:08X} dist={:.1f}", handName(), best.isFarSelection ? "far" : "near", typeName, nameStr,
+                ROCK_LOG_DEBUG(Hand, "{} hand switched -> {} [{}] '{}' formID={:08X} dist={:.1f}", handName(), best.isFarSelection ? "far" : "near", typeName, nameStr,
                     best.refr->GetFormID(), best.distance);
             } else {
-                ROCK_LOG_INFO(Hand, "{} hand selected {} [{}] '{}' formID={:08X} dist={:.1f}", handName(), best.isFarSelection ? "far" : "near", typeName, nameStr,
+                ROCK_LOG_DEBUG(Hand, "{} hand selected {} [{}] '{}' formID={:08X} dist={:.1f}", handName(), best.isFarSelection ? "far" : "near", typeName, nameStr,
                     best.refr->GetFormID(), best.distance);
             }
 
@@ -400,7 +453,7 @@ namespace frik::rock
 
             _currentSelection = best;
 
-            _state = HandState::SelectedClose;
+            _state = selection_state_policy::stateForSelection(best.isFarSelection);
             _selectionHoldFrames = 0;
 
             playSelectionHighlight(best.refr);
@@ -434,14 +487,9 @@ namespace frik::rock
             bool refInvalid = !_currentSelection.refr || _currentSelection.refr->IsDeleted() || _currentSelection.refr->IsDisabled();
 
             if (refInvalid || _currentSelection.distance > hysteresisRange) {
-                ROCK_LOG_INFO(Hand, "{} hand cleared (formID={:08X}, dist={:.1f}, held={}f)", handName(), _currentSelection.refr ? _currentSelection.refr->GetFormID() : 0,
+                ROCK_LOG_DEBUG(Hand, "{} hand cleared (formID={:08X}, dist={:.1f}, held={}f)", handName(), _currentSelection.refr ? _currentSelection.refr->GetFormID() : 0,
                     _currentSelection.distance, _selectionHoldFrames);
-                stopSelectionHighlight();
-                _lastDeselectedRef = _currentSelection.refr;
-                _deselectCooldown = 10;
-                _currentSelection.clear();
-                _state = HandState::Idle;
-                _selectionHoldFrames = 0;
+                clearSelectionState(true);
             }
         } else {
             _state = HandState::Idle;
@@ -479,7 +527,7 @@ namespace frik::rock
 
         _handBody.createNiNode(_isLeft ? "ROCK_LeftHand" : "ROCK_RightHand");
 
-        ROCK_LOG_INFO(Hand, "{} hand collision created via BethesdaPhysicsBody — bodyId={}", handName(), _handBody.getBodyId().value);
+        ROCK_LOG_DEBUG(Hand, "{} hand collision created via BethesdaPhysicsBody — bodyId={}", handName(), _handBody.getBodyId().value);
 
         return true;
     }
@@ -489,7 +537,7 @@ namespace frik::rock
         if (!hasCollisionBody())
             return;
 
-        ROCK_LOG_INFO(Hand, "{} hand collision destroying — bodyId={}", handName(), _handBody.getBodyId().value);
+        ROCK_LOG_DEBUG(Hand, "{} hand collision destroying — bodyId={}", handName(), _handBody.getBodyId().value);
         _handBody.destroy(bhkWorld);
     }
 
@@ -567,14 +615,14 @@ namespace frik::rock
             const float targetDet = matrixDeterminant(handTransform.rotate);
             const float liveDet = bodyBasisDeterminant(bodyFloats);
 
-            ROCK_LOG_INFO(Hand,
+            ROCK_LOG_DEBUG(Hand,
                 "{} transform witness: bodyId={} niPos=({:.1f},{:.1f},{:.1f}) hkTarget=({:.4f},{:.4f},{:.4f}) "
                 "liveOrigin=({:.4f},{:.4f},{:.4f}) delta=({:.4f},{:.4f},{:.4f}) dist={:.4f} dt={:.4f} "
                 "teleport={} targetDet={:.4f} liveDet={:.4f}",
                 handName(), bodyId.value, handTransform.translate.x, handTransform.translate.y, handTransform.translate.z, targetX, targetY, targetZ, curX, curY, curZ, dx, dy, dz,
                 dist, deltaTime, isTeleport ? "yes" : "no", targetDet, liveDet);
 
-            ROCK_LOG_INFO(Hand,
+            ROCK_LOG_TRACE(Hand,
                 "{} transform basis: targetNiRows=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
                 "targetHkCols=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
                 "liveHkCols=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "

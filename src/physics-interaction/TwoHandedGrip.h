@@ -22,6 +22,15 @@ namespace frik::rock
         Gripping,
     };
 
+    struct TwoHandedGripDebugSnapshot
+    {
+        RE::NiTransform weaponWorld{};
+        RE::NiTransform rightRequestedHandWorld{};
+        RE::NiTransform leftRequestedHandWorld{};
+        RE::NiPoint3 rightGripWorld{};
+        RE::NiPoint3 leftGripWorld{};
+    };
+
     class TwoHandedGrip
     {
     public:
@@ -29,6 +38,7 @@ namespace frik::rock
             RE::NiNode* weaponNode,
             const WeaponInteractionContact& leftWeaponContact,
             bool leftGripPressed,
+            bool supportHandHoldingObject,
             float dt,
             const WeaponReloadRuntimeState& reloadState);
 
@@ -42,16 +52,26 @@ namespace frik::rock
 
         bool getSolvedWeaponTransform(RE::NiTransform& outTransform) const;
 
+        bool getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const;
+
     private:
         void transitionToTouching(RE::NiNode* weaponNode, const WeaponInteractionDecision& decision);
         void transitionToGripping(RE::NiNode* weaponNode, const WeaponInteractionDecision& decision);
-        void transitionToInactive();
+        void transitionToInactive(bool publishRestoredWeaponTransform);
 
         void updateGripping(RE::NiNode* weaponNode, float dt);
 
         void setSupportGripPose(bool isLeft, WeaponGripPoseId poseId, const std::array<float, 5>* meshFingerPose);
 
         void clearSupportGripPose(bool isLeft);
+
+        bool applyWeaponVisualAuthority(RE::NiNode* weaponNode, const RE::NiTransform& solvedWeaponWorld);
+
+        bool applyLockedHandVisualAuthority(RE::NiNode* weaponNode);
+
+        void publishGripHandPoses(bool supportHandIsLeft);
+
+        void clearPrimaryGripPose(bool isLeft);
 
         static void killFrikOffhandGrip();
 
@@ -60,8 +80,6 @@ namespace frik::rock
         static RE::NiPoint3 worldToWeaponLocal(const RE::NiPoint3& worldPos, const RE::NiNode* weaponNode);
 
         static RE::NiPoint3 weaponLocalToWorld(const RE::NiPoint3& localPos, const RE::NiNode* weaponNode);
-
-        static void snapHandToWorldPos(RE::NiAVObject* handBone, const RE::NiPoint3& targetWorld, const RE::NiNode* weaponNode);
 
         TwoHandedState _state{ TwoHandedState::Inactive };
 
@@ -72,6 +90,8 @@ namespace frik::rock
         RE::NiPoint3 _grabNormal{};
 
         RE::NiPoint3 _supportNormalLocal{};
+
+        float _lockedGripSeparationWorld{ 0.0f };
 
         WeaponGripPoseId _supportGripPose{ WeaponGripPoseId::BarrelWrap };
 
@@ -88,6 +108,17 @@ namespace frik::rock
         RE::NiTransform _lastSolvedWeaponTransform{};
 
         bool _hasSolvedWeaponTransform{ false };
+
+        RE::NiTransform _primaryHandWeaponLocal{};
+
+        RE::NiTransform _supportHandWeaponLocal{};
+
+        bool _hasHandWeaponLocalFrames{ false };
+
+        std::array<float, 15> _supportFingerPose{};
+        bool _hasSupportFingerPose{ false };
+
+        float _primaryGripConfidence{ 0.0f };
 
         RE::NiNode* _activeWeaponNode{ nullptr };
         RE::NiTransform _weaponNodeLocalBaseline{};

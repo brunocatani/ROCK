@@ -89,13 +89,15 @@ namespace
     using GameLoopFunc = void (*)(std::uint64_t rcx);
     GameLoopFunc s_originalGameLoopFunc = nullptr;
 
+    // ROCK applies weapon visual/collision authority after the chained frame update
+    // so FRIK finishes its skeleton and weapon pass before ROCK writes final state.
     void onGameFrameUpdateHook(const std::uint64_t rcx)
     {
-        onFrameUpdate();
-
         if (s_originalGameLoopFunc) {
             s_originalGameLoopFunc(rcx);
         }
+
+        onFrameUpdate();
     }
 
     bool hookMainLoop()
@@ -166,7 +168,7 @@ namespace
         if (msg->type == F4SE::MessagingInterface::kGameLoaded) {
             logger::info("ROCK: GameLoaded -- initializing FRIKApi and loading config...");
 
-            const int frikErr = frik::api::FRIKApi::initialize(4);
+            const int frikErr = frik::api::FRIKApi::initialize(frik::api::FRIK_API_VERSION);
             if (frikErr != 0) {
                 logger::critical(
                     "ROCK: FRIKApi initialization FAILED (error {}). "

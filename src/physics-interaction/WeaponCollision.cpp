@@ -512,6 +512,26 @@ namespace frik::rock
         return false;
     }
 
+    bool WeaponCollision::tryGetWeaponContactDebugInfo(std::uint32_t bodyId, WeaponInteractionDebugInfo& outInfo) const
+    {
+        outInfo = {};
+        if (bodyId == INVALID_BODY_ID) {
+            return false;
+        }
+
+        for (const auto& instance : _weaponBodies) {
+            if (!instance.body.isValid() || instance.body.getBodyId().value != bodyId) {
+                continue;
+            }
+
+            outInfo.sourceName = instance.sourceName;
+            outInfo.sourceRootName = instance.sourceRootName;
+            return true;
+        }
+
+        return false;
+    }
+
     bool WeaponCollision::tryFindInteractionContactNearPoint(
         const RE::NiAVObject* weaponNode,
         const RE::NiPoint3& probeWorldPoint,
@@ -627,6 +647,8 @@ namespace frik::rock
 
     void WeaponCollision::update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, RE::hknpBodyId dominantHandBodyId, float dt)
     {
+        (void)dt;
+
         if (!g_rockConfig.rockWeaponCollisionEnabled) {
             if (hasWeaponBody() && world) {
                 ROCK_LOG_INFO(Weapon, "WeaponCollision disabled via hot reload — destroying generated weapon bodies");
@@ -722,7 +744,7 @@ namespace frik::rock
                     _cachedConvexRadius = g_rockConfig.rockWeaponCollisionConvexRadius;
                     _cachedPointDedupGrid = g_rockConfig.rockWeaponCollisionPointDedupGrid;
                 } else {
-                    ROCK_LOG_WARN(Weapon, "Generated weapon mesh collision unavailable — keeping weapon pending for retry");
+                    ROCK_LOG_SAMPLE_WARN(Weapon, g_rockConfig.rockLogSampleMilliseconds, "Generated weapon mesh collision unavailable — keeping weapon pending for retry");
                     _weaponBodyPending = true;
                 }
             }
@@ -734,17 +756,13 @@ namespace frik::rock
             enableDominantHandCollision(world);
         }
 
-        if (hasWeaponBody() && weaponNode) {
-            for (std::size_t i = 0; i < _weaponBodies.size(); ++i) {
-                auto& instance = _weaponBodies[i];
-                if (!instance.body.isValid()) {
-                    continue;
-                }
-                const RE::NiTransform& sourceRootTransform = instance.sourceNode ? instance.sourceNode->world : weaponNode->world;
-                const RE::NiTransform generatedTransform = makeGeneratedBodyWorldTransform(sourceRootTransform, instance.generatedLocalCenterGame);
-                updateBodyTransform(world, instance, generatedTransform, dt, i);
-            }
-        }
+        /*
+         * Per-frame body transforms are synchronized after weapon visual authority
+         * settles in PhysicsInteraction. HIGGS uses one final desired weapon frame
+         * for visual weapon, collision offset, offset node, and wand updates; ROCK
+         * follows that ownership rule here instead of moving generated Havok bodies
+         * once from FRIK/current state and again from ROCK two-handed authority.
+         */
     }
 
     std::uint64_t WeaponCollision::getEquippedWeaponKey(RE::NiAVObject* weaponNode, WeaponVisualKeyStats& stats) const
@@ -782,7 +800,7 @@ namespace frik::rock
         outSources.clear();
         const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode);
         if (candidates.empty()) {
-            ROCK_LOG_INFO(Weapon, "Generated weapon mesh source scan: no weapon root candidates");
+            ROCK_LOG_DEBUG(Weapon, "Generated weapon mesh source scan: no weapon root candidates");
             return 0;
         }
 
@@ -794,7 +812,7 @@ namespace frik::rock
             std::uint32_t extractedTriangles = 0;
             findGeneratedWeaponShapeSourcesRecursive(candidate.root, candidate.root, candidate.root->world, 0, candidateSources, visitedShapes, extractedTriangles);
 
-            ROCK_LOG_INFO(Weapon,
+            ROCK_LOG_DEBUG(Weapon,
                 "Generated weapon mesh candidate: label='{}' root='{}' addr={:x} visitedShapes={} triangles={} hulls={}",
                 candidate.label, safeNodeName(candidate.root), reinterpret_cast<std::uintptr_t>(candidate.root), visitedShapes, extractedTriangles, candidateSources.size());
 
@@ -807,7 +825,7 @@ namespace frik::rock
         }
 
         if (!selectedRoot) {
-            ROCK_LOG_INFO(Weapon, "Generated weapon mesh source scan: all {} candidates produced zero hulls", candidates.size());
+            ROCK_LOG_DEBUG(Weapon, "Generated weapon mesh source scan: all {} candidates produced zero hulls", candidates.size());
             return 0;
         }
 
@@ -841,7 +859,7 @@ namespace frik::rock
                 }
             }
 
-            ROCK_LOG_INFO(Weapon,
+            ROCK_LOG_DEBUG(Weapon,
                 "Generated weapon mesh hull budget: extracted={} kept={} dropped={} gameplayCritical={} cosmetic={} maxBodies={} policy=semantic-priority",
                 outSources.size(), selectedSources.size(), outSources.size() - selectedSources.size(), gameplayCriticalCount, cosmeticCount, MAX_WEAPON_BODIES);
 
@@ -850,14 +868,14 @@ namespace frik::rock
 
         for (std::size_t i = 0; i < outSources.size(); ++i) {
             const auto coverage = classifyGeneratedHull(outSources[i].sourceName);
-            ROCK_LOG_INFO(Weapon,
+            ROCK_LOG_TRACE(Weapon,
                 "Generated weapon mesh selected[{}]: category={} source='{}' points={} center=({:.2f},{:.2f},{:.2f}) boundsMin=({:.2f},{:.2f},{:.2f}) boundsMax=({:.2f},{:.2f},{:.2f})",
                 i, coverage.label, outSources[i].sourceName, outSources[i].localPointsGame.size(), outSources[i].localCenterGame.x, outSources[i].localCenterGame.y,
                 outSources[i].localCenterGame.z, outSources[i].localMinGame.x, outSources[i].localMinGame.y, outSources[i].localMinGame.z, outSources[i].localMaxGame.x,
                 outSources[i].localMaxGame.y, outSources[i].localMaxGame.z);
         }
 
-        ROCK_LOG_INFO(Weapon, "Generated weapon mesh source selected: label='{}' root='{}' hulls={}", selectedLabel, safeNodeName(selectedRoot), outSources.size());
+        ROCK_LOG_DEBUG(Weapon, "Generated weapon mesh source selected: label='{}' root='{}' hulls={}", selectedLabel, safeNodeName(selectedRoot), outSources.size());
         return outSources.size();
     }
 
@@ -879,7 +897,7 @@ namespace frik::rock
             const bool skinned = isSkinned(triShape);
             const int added = skinned ? extractTrianglesFromSkinnedTriShape(triShape, triangles) : extractTrianglesFromTriShape(triShape, triangles);
             if (added <= 0) {
-                ROCK_LOG_INFO(Weapon, "{}generated mesh source skipped '{}': no extractable triangles", std::string(depth * 2, ' '), safeNodeName(node));
+                ROCK_LOG_TRACE(Weapon, "{}generated mesh source skipped '{}': no extractable triangles", std::string(depth * 2, ' '), safeNodeName(node));
                 return;
             }
             extractedTriangles += static_cast<std::uint32_t>(added);
@@ -895,7 +913,7 @@ namespace frik::rock
             const float dedupGridGame = (std::max)(g_rockConfig.rockWeaponCollisionPointDedupGrid * kHavokToGameScale, 0.01f);
             localPoints = dedupePointCloud(localPoints, dedupGridGame);
             if (!pointCloudCanBuildHull(localPoints)) {
-                ROCK_LOG_INFO(Weapon, "{}generated mesh source skipped '{}': degenerate point cloud points={}", std::string(depth * 2, ' '), safeNodeName(node),
+                ROCK_LOG_TRACE(Weapon, "{}generated mesh source skipped '{}': degenerate point cloud points={}", std::string(depth * 2, ' '), safeNodeName(node),
                     localPoints.size());
                 return;
             }
@@ -921,7 +939,7 @@ namespace frik::rock
                     source.sourceName += std::to_string(clusterIndex);
                 }
                 source.semantic = classifyWeaponPartName(source.sourceName);
-                ROCK_LOG_INFO(Weapon, "{}generated mesh source '{}': points={} center=({:.2f},{:.2f},{:.2f})", std::string(depth * 2, ' '), source.sourceName,
+                ROCK_LOG_TRACE(Weapon, "{}generated mesh source '{}': points={} center=({:.2f},{:.2f},{:.2f})", std::string(depth * 2, ' '), source.sourceName,
                     source.localPointsGame.size(), source.localCenterGame.x, source.localCenterGame.y, source.localCenterGame.z);
                 outSources.push_back(std::move(source));
             }
@@ -992,6 +1010,8 @@ namespace frik::rock
             auto& instance = _weaponBodies[createdCount];
             instance.shape = shape;
             instance.sourceNode = source.sourceRoot;
+            instance.sourceName = source.sourceName;
+            instance.sourceRootName = source.sourceRoot ? safeNodeName(source.sourceRoot) : "";
             instance.generatedLocalCenterGame = source.localCenterGame;
             instance.generatedLocalMinGame = source.localMinGame;
             instance.generatedLocalMaxGame = source.localMaxGame;
@@ -1015,7 +1035,7 @@ namespace frik::rock
             const RE::NiTransform initialTransform = makeGeneratedBodyWorldTransform(sourceRootTransform, source.localCenterGame);
             updateBodyTransform(world, instance, initialTransform, 0.016f, createdCount);
 
-            ROCK_LOG_INFO(Weapon,
+            ROCK_LOG_DEBUG(Weapon,
                 "Generated weapon mesh collision body created — meshIndex={} bodyId={} source='{}' root='{}' partKind={} supportRole={} reloadRole={} points={} center=({:.2f},{:.2f},{:.2f}) layer=44",
                 createdCount, instance.body.getBodyId().value, source.sourceName, safeNodeName(source.sourceRoot), static_cast<int>(source.semantic.partKind),
                 static_cast<int>(source.semantic.supportGripRole), static_cast<int>(source.semantic.reloadRole), source.localPointsGame.size(), source.localCenterGame.x,
@@ -1055,6 +1075,8 @@ namespace frik::rock
         instance.body.reset();
         instance.shape = nullptr;
         instance.sourceNode = nullptr;
+        instance.sourceName.clear();
+        instance.sourceRootName.clear();
         instance.generatedLocalCenterGame = {};
         instance.generatedLocalMinGame = {};
         instance.generatedLocalMaxGame = {};
@@ -1109,7 +1131,7 @@ namespace frik::rock
         _weaponBodyCountAtomic.store(count, std::memory_order_release);
     }
 
-    void WeaponCollision::updateBodiesFromWeaponRootTransform(RE::hknpWorld* world, const RE::NiTransform& weaponRootTransform, float dt)
+    void WeaponCollision::updateBodiesFromCurrentSourceTransforms(RE::hknpWorld* world, RE::NiAVObject* fallbackWeaponNode, float dt)
     {
         if (!world || !hasWeaponBody()) {
             return;
@@ -1121,7 +1143,8 @@ namespace frik::rock
                 continue;
             }
 
-            const RE::NiTransform generatedTransform = makeGeneratedBodyWorldTransform(weaponRootTransform, instance.generatedLocalCenterGame);
+            const RE::NiTransform& sourceRootTransform = instance.sourceNode ? instance.sourceNode->world : fallbackWeaponNode ? fallbackWeaponNode->world : makeIdentityTransform();
+            const RE::NiTransform generatedTransform = makeGeneratedBodyWorldTransform(sourceRootTransform, instance.generatedLocalCenterGame);
             updateBodyTransform(world, instance, generatedTransform, dt, i);
         }
     }
@@ -1147,7 +1170,7 @@ namespace frik::rock
         const float curZ = bodyFloats[14];
 
         if (logWitness) {
-            ROCK_LOG_INFO(Weapon, "updateBodyTransform[{}]: niPos=({:.1f},{:.1f},{:.1f}) hkPos=({:.4f},{:.4f},{:.4f}) bodyId={} dt={:.4f}", bodyIndex,
+            ROCK_LOG_DEBUG(Weapon, "updateBodyTransform[{}]: niPos=({:.1f},{:.1f},{:.1f}) hkPos=({:.4f},{:.4f},{:.4f}) bodyId={} dt={:.4f}", bodyIndex,
                 weaponTransform.translate.x, weaponTransform.translate.y, weaponTransform.translate.z, targetX, targetY, targetZ, instance.body.getBodyId().value, dt);
         }
 
@@ -1163,7 +1186,7 @@ namespace frik::rock
                 hkTransform.translation = RE::NiPoint4(targetX, targetY, targetZ, 0.0f);
                 instance.body.setTransform(hkTransform);
                 if (logWitness) {
-                    ROCK_LOG_INFO(Weapon,
+                    ROCK_LOG_DEBUG(Weapon,
                         "transform witness: bodyId={} niPos=({:.1f},{:.1f},{:.1f}) hkTarget=({:.4f},{:.4f},{:.4f}) "
                         "liveOrigin=({:.4f},{:.4f},{:.4f}) teleport=world-reset targetDet={:.4f} liveDet={:.4f}",
                         bodyId.value, weaponTransform.translate.x, weaponTransform.translate.y, weaponTransform.translate.z, targetX, targetY, targetZ, curX, curY, curZ,
@@ -1219,13 +1242,13 @@ namespace frik::rock
             const float targetDet = matrixDeterminant(adjustedWeaponRotation);
             const float liveDet = bodyBasisDeterminant(bodyFloats);
 
-            ROCK_LOG_INFO(Weapon,
+            ROCK_LOG_DEBUG(Weapon,
                 "transform witness: bodyId={} niPos=({:.1f},{:.1f},{:.1f}) hkTarget=({:.4f},{:.4f},{:.4f}) "
                 "liveOrigin=({:.4f},{:.4f},{:.4f}) targetDet={:.4f} liveDet={:.4f} dt={:.4f}",
                 bodyId.value, weaponTransform.translate.x, weaponTransform.translate.y, weaponTransform.translate.z, targetX, targetY, targetZ, curX, curY, curZ, targetDet,
                 liveDet, dt);
 
-            ROCK_LOG_INFO(Weapon,
+            ROCK_LOG_TRACE(Weapon,
                 "transform basis: targetNiRows=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
                 "targetHkCols=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
                 "liveHkCols=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
@@ -1263,7 +1286,7 @@ namespace frik::rock
         _dominantHandDisabled = true;
         _disabledHandBodyId = handBodyId;
 
-        ROCK_LOG_INFO(Weapon, "Dominant hand collision DISABLED bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBefore={} broadphase={}", handBodyId.value, currentFilter,
+        ROCK_LOG_DEBUG(Weapon, "Dominant hand collision disabled bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBefore={} broadphase={}", handBodyId.value, currentFilter,
             newFilter, _dominantHandSuppression.wasNoCollideBeforeSuppression ? "yes" : "no", broadPhaseSet ? "disabled" : "unchanged");
     }
 
@@ -1288,7 +1311,7 @@ namespace frik::rock
 
         const bool broadPhaseRestored = _dominantHandBroadPhaseSuppressed && body_collision::setBroadPhaseEnabled(world, _disabledHandBodyId, true);
 
-        ROCK_LOG_INFO(Weapon, "Dominant hand collision RE-ENABLED bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} broadphase={}", _disabledHandBodyId.value, currentFilter,
+        ROCK_LOG_DEBUG(Weapon, "Dominant hand collision re-enabled bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} broadphase={}", _disabledHandBodyId.value, currentFilter,
             newFilter, _dominantHandSuppression.wasNoCollideBeforeSuppression ? "yes" : "no", broadPhaseRestored ? "enabled" : "unchanged");
 
         _dominantHandDisabled = false;

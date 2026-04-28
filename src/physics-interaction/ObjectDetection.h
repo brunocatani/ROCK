@@ -25,8 +25,10 @@ namespace frik::rock
         RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
         RE::NiAVObject* hitNode = nullptr;
         RE::NiAVObject* visualNode = nullptr;
+        RE::NiPoint3 hitPointWorld{};
         float distance = FLT_MAX;
         bool isFarSelection = false;
+        bool hasHitPoint = false;
 
         void clear()
         {
@@ -34,22 +36,14 @@ namespace frik::rock
             bodyId.value = 0x7FFF'FFFF;
             hitNode = nullptr;
             visualNode = nullptr;
+            hitPointWorld = {};
             distance = FLT_MAX;
             isFarSelection = false;
+            hasHitPoint = false;
         }
 
         bool isValid() const { return refr != nullptr; }
     };
-
-    inline void* getQueryFilterRef(RE::hknpWorld* world)
-    {
-        if (!world)
-            return nullptr;
-        auto modifierMgr = *reinterpret_cast<std::uintptr_t*>(reinterpret_cast<std::uintptr_t>(world) + offsets::kHknpWorld_ModifierManager);
-        if (!modifierMgr)
-            return nullptr;
-        return *reinterpret_cast<void**>(modifierMgr + offsets::kModifierMgr_FilterPtr);
-    }
 
     bool isGrabbable(RE::TESObjectREFR* ref, RE::TESObjectREFR* otherHandRef = nullptr);
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -290,6 +291,44 @@ namespace frik::rock::grab_finger_pose_math
             result.value = std::clamp(bestT / maxDistance, std::clamp(minValue, 0.0f, 1.0f), 1.0f);
         }
 
+        return result;
+    }
+
+    inline std::array<float, 15> expandFingerCurlsToJointValues(const std::array<float, 5>& values)
+    {
+        std::array<float, 15> joints{};
+        for (std::size_t finger = 0; finger < values.size(); ++finger) {
+            const float value = std::clamp(values[finger], 0.0f, 1.0f);
+            const float closed = 1.0f - value;
+            const float proximalOpenBias = (finger == 0) ? 0.15f : 0.25f;
+            const float distalCloseBias = (finger == 0) ? 0.10f : 0.15f;
+            const std::size_t base = finger * 3;
+            joints[base + 0] = std::clamp(value + closed * proximalOpenBias, 0.0f, 1.0f);
+            joints[base + 1] = value;
+            joints[base + 2] = std::clamp(value - closed * distalCloseBias, 0.0f, 1.0f);
+        }
+        return joints;
+    }
+
+    inline std::array<float, 15> advanceJointValues(const std::array<float, 15>& current, const std::array<float, 15>& target, float speed, float deltaTime)
+    {
+        std::array<float, 15> result{};
+        if (!std::isfinite(speed) || speed <= 0.0f) {
+            return target;
+        }
+
+        const float dt = (std::isfinite(deltaTime) && deltaTime > 0.0f) ? deltaTime : (1.0f / 90.0f);
+        const float step = speed * dt;
+        for (std::size_t i = 0; i < result.size(); ++i) {
+            const float from = std::clamp(current[i], 0.0f, 1.0f);
+            const float to = std::clamp(target[i], 0.0f, 1.0f);
+            const float delta = to - from;
+            if (std::abs(delta) <= step) {
+                result[i] = to;
+            } else {
+                result[i] = from + (delta > 0.0f ? step : -step);
+            }
+        }
         return result;
     }
 }

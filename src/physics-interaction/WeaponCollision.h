@@ -63,6 +63,8 @@ namespace frik::rock
 
         bool tryGetWeaponContactAtomic(std::uint32_t bodyId, WeaponInteractionContact& outContact) const;
 
+        bool tryGetWeaponContactDebugInfo(std::uint32_t bodyId, WeaponInteractionDebugInfo& outInfo) const;
+
         bool tryFindInteractionContactNearPoint(
             const RE::NiAVObject* weaponNode,
             const RE::NiPoint3& probeWorldPoint,
@@ -73,7 +75,7 @@ namespace frik::rock
 
         void destroyWeaponBody(RE::hknpWorld* world);
 
-        void updateBodiesFromWeaponRootTransform(RE::hknpWorld* world, const RE::NiTransform& weaponRootTransform, float dt);
+        void updateBodiesFromCurrentSourceTransforms(RE::hknpWorld* world, RE::NiAVObject* fallbackWeaponNode, float dt);
 
     private:
         static constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
@@ -95,6 +97,8 @@ namespace frik::rock
             BethesdaPhysicsBody body;
             const RE::hknpShape* shape{ nullptr };
             RE::NiAVObject* sourceNode{ nullptr };
+            std::string sourceName;
+            std::string sourceRootName;
             RE::NiPoint3 generatedLocalCenterGame{};
             RE::NiPoint3 generatedLocalMinGame{};
             RE::NiPoint3 generatedLocalMaxGame{};

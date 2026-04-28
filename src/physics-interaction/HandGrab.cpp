@@ -4,14 +4,19 @@
 
 #include "BodyCollisionControl.h"
 #include "DebugPivotMath.h"
-#include "GrabFingerPoseRuntime.h"
 #include "GrabConstraint.h"
+#include "GrabConstraintMath.h"
+#include "GrabFingerPoseRuntime.h"
+#include "GrabMotionController.h"
 #include "HandVisualLerpMath.h"
 #include "HeldObjectDampingMath.h"
 #include "HeldObjectPhysicsMath.h"
 #include "MeshGrab.h"
+#include "ObjectPhysicsBodySet.h"
 #include "PalmTransform.h"
+#include "PhysicsRecursiveWrappers.h"
 #include "PhysicsUtils.h"
+#include "PullMotionMath.h"
 #include "RE/Havok/hknpMotion.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RockConfig.h"
@@ -114,6 +119,33 @@ namespace frik::rock
         RE::NiTransform makeIdentityTransform()
         {
             return transform_math::makeIdentityTransform<RE::NiTransform>();
+        }
+
+        physics_recursive_wrappers::MotionPreset motionPresetFromSavedPropsId(std::uint16_t propsId)
+        {
+            switch (propsId & 0xFF) {
+            case 0:
+                return physics_recursive_wrappers::MotionPreset::Static;
+            case 2:
+                return physics_recursive_wrappers::MotionPreset::Keyframed;
+            case 1:
+            default:
+                return physics_recursive_wrappers::MotionPreset::Dynamic;
+            }
+        }
+
+        std::uint16_t motionPropsIdFromRecordMotionType(physics_body_classifier::BodyMotionType motionType, std::uint16_t fallback)
+        {
+            switch (motionType) {
+            case physics_body_classifier::BodyMotionType::Static:
+                return 0;
+            case physics_body_classifier::BodyMotionType::Dynamic:
+                return 1;
+            case physics_body_classifier::BodyMotionType::Keyframed:
+                return 2;
+            default:
+                return fallback;
+            }
         }
 
         RE::NiTransform invertTransform(const RE::NiTransform& transform) { return transform_math::invertTransform(transform); }
@@ -337,7 +369,36 @@ namespace frik::rock
             }
         }
 
-        void applyRockGrabHandPose(bool isLeft, const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose)
+        float readBodyMass(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+        {
+            if (!world || bodyId.value == INVALID_BODY_ID) {
+                return 0.0f;
+            }
+
+            auto* motion = world->GetBodyMotion(bodyId);
+            if (!motion) {
+                return 0.0f;
+            }
+
+            auto packedInvMass = *reinterpret_cast<std::uint16_t*>(reinterpret_cast<char*>(motion) + 0x26);
+            if (packedInvMass == 0) {
+                return 0.0f;
+            }
+
+            std::uint32_t asUint = static_cast<std::uint32_t>(packedInvMass) << 16;
+            float invMass = 0.0f;
+            std::memcpy(&invMass, &asUint, sizeof(float));
+            if (!std::isfinite(invMass) || invMass <= 0.0001f) {
+                return 0.0f;
+            }
+            return 1.0f / invMass;
+        }
+
+        void applyRockGrabHandPose(bool isLeft,
+            const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose,
+            std::array<float, 15>& currentJointPose,
+            bool& hasCurrentJointPose,
+            float deltaTime)
         {
             auto* api = frik::api::FRIKApi::inst;
             if (!api) {
@@ -345,11 +406,32 @@ namespace frik::rock
             }
 
             const auto hand = handFromBool(isLeft);
+            if (g_rockConfig.rockGrabMeshFingerPoseEnabled && g_rockConfig.rockGrabMeshJointPoseEnabled && fingerPose.solved && fingerPose.hasJointValues &&
+                api->setHandPoseCustomJointPositionsWithPriority) {
+                if (!hasCurrentJointPose) {
+                    currentJointPose = fingerPose.jointValues;
+                    hasCurrentJointPose = true;
+                } else {
+                    currentJointPose = grab_finger_pose_math::advanceJointValues(
+                        currentJointPose, fingerPose.jointValues, g_rockConfig.rockGrabFingerPoseSmoothingSpeed, deltaTime);
+                }
+
+                api->setHandPoseCustomJointPositionsWithPriority("ROCK_Grab", hand, currentJointPose.data(), 100);
+                if (g_rockConfig.rockDebugGrabFrameLogging) {
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} hand FINGER JOINT POSE: thumb=({:.2f},{:.2f},{:.2f}) index=({:.2f},{:.2f},{:.2f}) hits={} candidateTris={}",
+                        isLeft ? "Left" : "Right", currentJointPose[0], currentJointPose[1], currentJointPose[2], currentJointPose[3], currentJointPose[4],
+                        currentJointPose[5], fingerPose.hitCount, fingerPose.candidateTriangleCount);
+                }
+                return;
+            }
+
             if (g_rockConfig.rockGrabMeshFingerPoseEnabled && fingerPose.solved && api->setHandPoseCustomFingerPositionsWithPriority) {
+                hasCurrentJointPose = false;
                 api->setHandPoseCustomFingerPositionsWithPriority("ROCK_Grab", hand, fingerPose.values[0], fingerPose.values[1], fingerPose.values[2], fingerPose.values[3],
                     fingerPose.values[4], 100);
                 if (g_rockConfig.rockDebugGrabFrameLogging) {
-                    ROCK_LOG_INFO(Hand,
+                    ROCK_LOG_DEBUG(Hand,
                         "{} hand FINGER POSE: mesh values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} candidateTris={}",
                         isLeft ? "Left" : "Right", fingerPose.values[0], fingerPose.values[1], fingerPose.values[2], fingerPose.values[3], fingerPose.values[4],
                         fingerPose.hitCount, fingerPose.candidateTriangleCount);
@@ -357,9 +439,10 @@ namespace frik::rock
                 return;
             }
 
+            hasCurrentJointPose = false;
             api->setHandPoseWithPriority("ROCK_Grab", hand, frik::api::FRIKApi::HandPoses::Fist, 100);
             if (g_rockConfig.rockGrabMeshFingerPoseEnabled && g_rockConfig.rockDebugGrabFrameLogging) {
-                ROCK_LOG_INFO(Hand, "{} hand FINGER POSE: fallback fist solved={} hits={} candidateTris={}", isLeft ? "Left" : "Right", fingerPose.solved ? "yes" : "no",
+                ROCK_LOG_DEBUG(Hand, "{} hand FINGER POSE: fallback fist solved={} hits={} candidateTris={}", isLeft ? "Left" : "Right", fingerPose.solved ? "yes" : "no",
                     fingerPose.hitCount, fingerPose.candidateTriangleCount);
             }
         }
@@ -402,7 +485,7 @@ namespace frik::rock
         _grabHandCollisionBroadPhaseSuppressed = _grabHandCollisionBroadPhaseSuppressed || broadPhaseSet;
 
         if (disabledFilter != currentFilter || firstSuppression) {
-            ROCK_LOG_INFO(Hand, "{} hand: grab hand collision suppressed bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBeforeGrab={} broadphase={}", handName(),
+            ROCK_LOG_DEBUG(Hand, "{} hand: grab hand collision suppressed bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBeforeGrab={} broadphase={}", handName(),
                 handBodyId.value, currentFilter, disabledFilter, _grabHandCollisionSuppression.wasNoCollideBeforeSuppression ? "yes" : "no",
                 broadPhaseSet ? "disabled" : "unchanged");
         }
@@ -438,7 +521,7 @@ namespace frik::rock
 
         const bool broadPhaseRestored = _grabHandCollisionBroadPhaseSuppressed && body_collision::setBroadPhaseEnabled(world, handBodyId, true);
 
-        ROCK_LOG_INFO(Hand, "{} hand: grab hand collision restored bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} broadphase={}", handName(), handBodyId.value,
+        ROCK_LOG_DEBUG(Hand, "{} hand: grab hand collision restored bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} broadphase={}", handName(), handBodyId.value,
             currentFilter, restoredFilter, _grabHandCollisionSuppression.wasNoCollideBeforeSuppression ? "yes" : "no", broadPhaseRestored ? "enabled" : "unchanged");
         clearGrabHandCollisionSuppressionState();
     }
@@ -478,6 +561,226 @@ namespace frik::rock
         return true;
     }
 
+    bool Hand::startDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform)
+    {
+        /*
+         * Long-range pull remains a dynamic-object operation. ROCK promotes the selected
+         * object tree through FO4VR's recursive wrappers, scans the resulting dynamic body
+         * set, and then applies short-lived predicted velocity to the accepted motions.
+         * This mirrors HIGGS' pull behavior without introducing a keyframed object path
+         * that would conflict with the dynamic grab constraint used after arrival.
+         */
+        if (!world || _state != HandState::SelectionLocked || !_currentSelection.isValid() || !_currentSelection.isFarSelection) {
+            return false;
+        }
+
+        auto* selectedRef = _currentSelection.refr;
+        if (!selectedRef || selectedRef->IsDeleted() || selectedRef->IsDisabled()) {
+            clearSelectionState(true);
+            return false;
+        }
+
+        auto* rootNode = selectedRef->Get3D();
+        if (!rootNode) {
+            ROCK_LOG_WARN(Hand, "{} hand PULL failed: selected ref has no 3D root", handName());
+            clearSelectionState(true);
+            return false;
+        }
+
+        auto* ownerCell = selectedRef->GetParentCell();
+        auto* bhkWorld = ownerCell ? ownerCell->GetbhkWorld() : nullptr;
+        if (!bhkWorld) {
+            ROCK_LOG_WARN(Hand, "{} hand PULL failed: selected ref has no bhkWorld", handName());
+            clearSelectionState(true);
+            return false;
+        }
+
+        std::uint16_t selectedOriginalMotionPropsId = 1;
+        if (_currentSelection.bodyId.value != INVALID_BODY_ID) {
+            if (auto* selectedMotion = world->GetBodyMotion(_currentSelection.bodyId)) {
+                selectedOriginalMotionPropsId = *reinterpret_cast<std::uint16_t*>(reinterpret_cast<char*>(selectedMotion) + offsets::kMotion_PropertiesId);
+            }
+        }
+
+        object_physics_body_set::BodySetScanOptions scanOptions{};
+        scanOptions.mode = physics_body_classifier::InteractionMode::ActiveGrab;
+        scanOptions.rightHandBodyId = _isLeft ? INVALID_BODY_ID : _handBody.getBodyId().value;
+        scanOptions.leftHandBodyId = _isLeft ? _handBody.getBodyId().value : INVALID_BODY_ID;
+        scanOptions.sourceBodyId = _handBody.getBodyId().value;
+        scanOptions.heldBySameHand = &_heldBodyIds;
+        scanOptions.maxDepth = g_rockConfig.rockObjectPhysicsTreeMaxDepth;
+
+        const auto beforePrepBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, selectedRef, scanOptions);
+        const bool motionConverted =
+            physics_recursive_wrappers::setMotionRecursive(rootNode, physics_recursive_wrappers::MotionPreset::Dynamic, true, true, true);
+        const bool collisionEnabled = physics_recursive_wrappers::enableCollisionRecursive(rootNode, true, true, true);
+        auto restoreFailedPullPrep = [&]() {
+            if (motionConverted && selectedOriginalMotionPropsId != 1) {
+                physics_recursive_wrappers::setMotionRecursive(rootNode, motionPresetFromSavedPropsId(selectedOriginalMotionPropsId), false, true, true);
+            }
+        };
+        const auto preparedBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, selectedRef, scanOptions);
+        const auto primaryChoice = preparedBodySet.choosePrimaryBody(_currentSelection.bodyId.value, object_physics_body_set::PurePoint3{ handWorldTransform.translate });
+
+        if (primaryChoice.bodyId == INVALID_BODY_ID) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand PULL failed: no accepted dynamic body after recursive prep formID={:08X} beforeBodies={} afterBodies={} accepted={} rejected={} "
+                "setMotion={} enableCollision={}",
+                handName(),
+                selectedRef->GetFormID(),
+                beforePrepBodySet.records.size(),
+                preparedBodySet.records.size(),
+                preparedBodySet.acceptedCount(),
+                preparedBodySet.rejectedCount(),
+                motionConverted ? "ok" : "failed",
+                collisionEnabled ? "ok" : "failed");
+            restoreFailedPullPrep();
+            clearSelectionState(true);
+            return false;
+        }
+
+        _pulledPrimaryBodyId = primaryChoice.bodyId;
+        _pulledBodyIds = preparedBodySet.uniqueAcceptedMotionBodyIds();
+        if (_pulledBodyIds.empty()) {
+            _pulledBodyIds.push_back(_pulledPrimaryBodyId);
+        }
+
+        for (const auto bodyId : _pulledBodyIds) {
+            physics_recursive_wrappers::activateBody(world, bodyId);
+        }
+
+        _currentSelection.bodyId = RE::hknpBodyId{ _pulledPrimaryBodyId };
+        if (!_currentSelection.visualNode) {
+            _currentSelection.visualNode = rootNode;
+        }
+        if (!_currentSelection.hitNode) {
+            _currentSelection.hitNode = getOwnerNodeFromBody(world, RE::hknpBodyId{ _pulledPrimaryBodyId });
+        }
+
+        auto* motion = world->GetBodyMotion(RE::hknpBodyId{ _pulledPrimaryBodyId });
+        if (!motion) {
+            ROCK_LOG_WARN(Hand, "{} hand PULL failed: primary dynamic body has no motion bodyId={}", handName(), _pulledPrimaryBodyId);
+            restoreFailedPullPrep();
+            clearPullRuntimeState();
+            clearSelectionState(true);
+            return false;
+        }
+
+        const auto palmWorld = computePalmPositionFromHandBasis(handWorldTransform, _isLeft);
+        const auto palmHavok = niPointToHkVector(palmWorld);
+        const auto selectedPointWorld = _currentSelection.hasHitPoint ? _currentSelection.hitPointWorld : hkVectorToNiPoint(motion->position);
+        const auto selectedPointHavok = niPointToHkVector(selectedPointWorld);
+        _pullPointOffsetHavok = RE::NiPoint3{
+            selectedPointHavok.x - motion->position.x,
+            selectedPointHavok.y - motion->position.y,
+            selectedPointHavok.z - motion->position.z,
+        };
+
+        const RE::NiPoint3 objectPointHavok{
+            motion->position.x + _pullPointOffsetHavok.x,
+            motion->position.y + _pullPointOffsetHavok.y,
+            motion->position.z + _pullPointOffsetHavok.z,
+        };
+        const RE::NiPoint3 palmPointHavok{ palmHavok.x, palmHavok.y, palmHavok.z };
+        const float pullDistance = (palmPointHavok - objectPointHavok).Length();
+
+        _pullElapsedSeconds = 0.0f;
+        _pullDurationSeconds = pull_motion_math::computePullDurationSeconds(pullDistance, g_rockConfig.rockPullDurationA, g_rockConfig.rockPullDurationB, g_rockConfig.rockPullDurationC);
+        _pullTargetHavok = {};
+        _pullHasTarget = false;
+        _state = HandState::Pulled;
+        stopSelectionHighlight();
+
+        ROCK_LOG_INFO(Hand,
+            "{} hand PULL start: formID={:08X} primaryBody={} bodyCount={} distanceHk={:.3f} duration={:.3f}s setMotion={} enableCollision={}",
+            handName(),
+            selectedRef->GetFormID(),
+            _pulledPrimaryBodyId,
+            _pulledBodyIds.size(),
+            pullDistance,
+            _pullDurationSeconds,
+            motionConverted ? "ok" : "failed",
+            collisionEnabled ? "ok" : "failed");
+        return true;
+    }
+
+    bool Hand::updateDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float deltaTime)
+    {
+        if (_state != HandState::Pulled || !world || _pulledPrimaryBodyId == INVALID_BODY_ID || !_currentSelection.isValid()) {
+            return false;
+        }
+
+        auto* selectedRef = _currentSelection.refr;
+        if (!selectedRef || selectedRef->IsDeleted() || selectedRef->IsDisabled()) {
+            clearSelectionState(true);
+            return false;
+        }
+
+        auto* motion = world->GetBodyMotion(RE::hknpBodyId{ _pulledPrimaryBodyId });
+        if (!motion) {
+            clearSelectionState(true);
+            return false;
+        }
+
+        const auto palmWorld = computePalmPositionFromHandBasis(handWorldTransform, _isLeft);
+        const auto palmHavokVector = niPointToHkVector(palmWorld);
+        const RE::NiPoint3 palmHavok{ palmHavokVector.x, palmHavokVector.y, palmHavokVector.z };
+        const RE::NiPoint3 objectPointHavok{
+            motion->position.x + _pullPointOffsetHavok.x,
+            motion->position.y + _pullPointOffsetHavok.y,
+            motion->position.z + _pullPointOffsetHavok.z,
+        };
+
+        const float distanceGameUnits = (palmHavok - objectPointHavok).Length() * kHavokToGameScale;
+        _currentSelection.distance = distanceGameUnits;
+        if (distanceGameUnits <= g_rockConfig.rockPullAutoGrabDistanceGameUnits) {
+            _currentSelection.isFarSelection = false;
+            _currentSelection.hitPointWorld = RE::NiPoint3{
+                objectPointHavok.x * kHavokToGameScale,
+                objectPointHavok.y * kHavokToGameScale,
+                objectPointHavok.z * kHavokToGameScale,
+            };
+            _currentSelection.hasHitPoint = true;
+            clearPullRuntimeState();
+            _state = HandState::SelectedClose;
+            ROCK_LOG_DEBUG(Hand, "{} hand PULL arrived -> close grab window dist={:.1f}", handName(), distanceGameUnits);
+            return true;
+        }
+
+        const auto motionResult = pull_motion_math::computePullMotion<RE::NiPoint3>(
+            pull_motion_math::PullMotionInput<RE::NiPoint3>{
+                .handHavok = palmHavok,
+                .objectPointHavok = objectPointHavok,
+                .previousTargetHavok = _pullTargetHavok,
+                .elapsedSeconds = _pullElapsedSeconds,
+                .durationSeconds = _pullDurationSeconds,
+                .applyVelocitySeconds = g_rockConfig.rockPullApplyVelocityTime,
+                .trackHandSeconds = g_rockConfig.rockPullTrackHandTime,
+                .destinationOffsetHavok = g_rockConfig.rockPullDestinationZOffsetHavok,
+                .maxVelocityHavok = g_rockConfig.rockPullMaxVelocityHavok,
+                .hasPreviousTarget = _pullHasTarget,
+            });
+
+        _pullElapsedSeconds += (std::max)(0.0f, deltaTime);
+        if (motionResult.refreshTarget) {
+            _pullTargetHavok = motionResult.targetHavok;
+            _pullHasTarget = true;
+        }
+
+        if (motionResult.expired || !motionResult.applyVelocity) {
+            ROCK_LOG_DEBUG(Hand, "{} hand PULL expired before arrival dist={:.1f}", handName(), distanceGameUnits);
+            clearSelectionState(true);
+            return false;
+        }
+
+        setHeldLinearVelocity(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, _pulledBodyIds, motionResult.velocityHavok);
+        for (const auto bodyId : _pulledBodyIds) {
+            physics_recursive_wrappers::activateBody(world, bodyId);
+        }
+
+        return false;
+    }
+
     bool Hand::grabSelectedObject(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float tau, float damping, float maxForce, float proportionalRecovery,
         float constantRecovery)
     {
@@ -493,11 +796,20 @@ namespace frik::rock
             return false;
 
         auto objectBodyId = sel.bodyId;
+        auto* rootNode = sel.refr->Get3D();
+        if (!rootNode) {
+            ROCK_LOG_WARN(Hand, "{} hand GRAB failed: selected ref has no 3D root", handName());
+            return false;
+        }
+
+        auto* ownerCell = sel.refr->GetParentCell();
+        auto* bhkWorld = ownerCell ? ownerCell->GetbhkWorld() : nullptr;
+        if (!bhkWorld) {
+            ROCK_LOG_WARN(Hand, "{} hand GRAB failed: selected ref has no bhkWorld for object-tree scan", handName());
+            return false;
+        }
 
         auto& body = world->GetBody(objectBodyId);
-        _savedObjectState.bodyId = objectBodyId;
-        _savedObjectState.refr = sel.refr;
-        _savedObjectState.originalFilterInfo = *reinterpret_cast<std::uint32_t*>(reinterpret_cast<char*>(&body) + offsets::kBody_CollisionFilterInfo);
 
         auto* baseObj = sel.refr->GetObjectReference();
         const char* objName = "(unnamed)";
@@ -508,6 +820,7 @@ namespace frik::rock
         }
 
         const char* motionTypeStr = "UNKNOWN";
+        std::uint16_t selectedOriginalMotionPropsId = 1;
         {
             auto* objMotion = world->GetBodyMotion(objectBodyId);
             auto* bodyPtr = reinterpret_cast<char*>(&body);
@@ -517,6 +830,7 @@ namespace frik::rock
                 std::uint32_t bodyFlags = *reinterpret_cast<std::uint32_t*>(bodyPtr + 0x40);
                 std::uint8_t bodyMotionPropsId = *reinterpret_cast<std::uint8_t*>(bodyPtr + 0x72);
                 std::uint16_t motionPropsId = *reinterpret_cast<std::uint16_t*>(motionPtr + offsets::kMotion_PropertiesId);
+                selectedOriginalMotionPropsId = motionPropsId;
                 std::uint16_t maxLinVelPacked = *reinterpret_cast<std::uint16_t*>(motionPtr + 0x3A);
                 std::uint16_t maxAngVelPacked = *reinterpret_cast<std::uint16_t*>(motionPtr + 0x3C);
 
@@ -544,7 +858,7 @@ namespace frik::rock
                     break;
                 }
 
-                ROCK_LOG_INFO(Hand,
+                ROCK_LOG_DEBUG(Hand,
                     "{} hand GRAB MOTION: body={} motionPropsId={} ({}) "
                     "bodyFlags=0x{:08X} dynInit={} keyfr={} bodyPropsId={} "
                     "maxLinVel={:.1f} maxAngVel={:.1f}",
@@ -560,7 +874,7 @@ namespace frik::rock
                             auto* arrayBase = *reinterpret_cast<char**>(libraryPtr + 0x28);
 
                             int arraySize = *reinterpret_cast<int*>(libraryPtr + 0x30);
-                            ROCK_LOG_INFO(Hand, "=== MOTION PROPERTIES LIBRARY: {} entries, stride=0x40 ===", arraySize);
+                            ROCK_LOG_TRACE(Hand, "Motion properties library: {} entries, stride=0x40", arraySize);
                             int dumpCount = (arraySize < 16) ? arraySize : 16;
                             if (arrayBase) {
                                 for (int i = 0; i < dumpCount; i++) {
@@ -568,13 +882,13 @@ namespace frik::rock
 
                                     auto* f = reinterpret_cast<float*>(entry);
                                     auto* u = reinterpret_cast<std::uint32_t*>(entry);
-                                    ROCK_LOG_INFO(Hand,
+                                    ROCK_LOG_TRACE(Hand,
                                         "  [{}] +00: {:.4f} {:.4f} {:.4f} {:.4f} | "
                                         "+10: {:.4f} {:.4f} {:.4f} {:.4f} | "
                                         "+20: {:.4f} {:.4f} {:.4f} {:.4f} | "
                                         "+30: {:.4f} {:.4f} {:.4f} {:.4f}",
                                         i, f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8], f[9], f[10], f[11], f[12], f[13], f[14], f[15]);
-                                    ROCK_LOG_INFO(Hand,
+                                    ROCK_LOG_TRACE(Hand,
                                         "  [{}] hex: {:08X} {:08X} {:08X} {:08X} | "
                                         "{:08X} {:08X} {:08X} {:08X}",
                                         i, u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7]);
@@ -583,53 +897,76 @@ namespace frik::rock
                         }
                     }
                 }
-
-                _savedObjectState.originalMotionPropsId = motionPropsId;
             }
         }
 
-        {
-            auto* motionNode = sel.hitNode ? sel.hitNode : sel.refr->Get3D();
-            auto* collObj = motionNode ? motionNode->collisionObject.get() : nullptr;
-            if (collObj) {
-                typedef void (*SetMotionType_t)(void*, int);
-                static REL::Relocation<SetMotionType_t> SetMotionType{ REL::Offset(offsets::kFunc_CollisionObject_SetMotionType) };
-                SetMotionType(collObj, 1);
+        object_physics_body_set::BodySetScanOptions scanOptions{};
+        scanOptions.mode = physics_body_classifier::InteractionMode::ActiveGrab;
+        scanOptions.rightHandBodyId = _isLeft ? INVALID_BODY_ID : _handBody.getBodyId().value;
+        scanOptions.leftHandBodyId = _isLeft ? _handBody.getBodyId().value : INVALID_BODY_ID;
+        scanOptions.sourceBodyId = _handBody.getBodyId().value;
+        scanOptions.heldBySameHand = &_heldBodyIds;
+        scanOptions.maxDepth = g_rockConfig.rockObjectPhysicsTreeMaxDepth;
 
-                auto* objMotion = world->GetBodyMotion(objectBodyId);
-                auto* bodyPtr = reinterpret_cast<char*>(&body);
-                if (objMotion) {
-                    std::uint32_t newFlags = *reinterpret_cast<std::uint32_t*>(bodyPtr + 0x40);
-                    std::uint16_t newPropsId = *reinterpret_cast<std::uint16_t*>(reinterpret_cast<char*>(objMotion) + offsets::kMotion_PropertiesId);
-                    bool isDynamic = (newFlags & 0x4) == 0;
-                    ROCK_LOG_INFO(Hand,
-                        "{} hand SetMotionType(DYNAMIC): flags=0x{:08X} "
-                        "propsId={} isDynamic={} (KEYFRAMED bit {})",
-                        handName(), newFlags, newPropsId, isDynamic, (newFlags & 0x4) ? "STILL SET" : "cleared");
-                }
-            } else {
-                ROCK_LOG_WARN(Hand,
-                    "{} hand: no collision object on refr — "
-                    "cannot call SetMotionType, using raw motionPropsId fallback",
-                    handName());
+        const auto beforePrepBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, sel.refr, scanOptions);
 
-                auto* objMotion = world->GetBodyMotion(objectBodyId);
-                if (objMotion && _savedObjectState.originalMotionPropsId != 1) {
-                    typedef void setMotionProps_t(void*, int, short);
-                    static REL::Relocation<setMotionProps_t> setBodyMotionProperties{ REL::Offset(offsets::kFunc_SetBodyMotionProperties) };
-                    setBodyMotionProperties(world, objectBodyId.value, 1);
-                }
+        const bool motionConverted =
+            physics_recursive_wrappers::setMotionRecursive(rootNode, physics_recursive_wrappers::MotionPreset::Dynamic, true, true, true);
+        const bool collisionEnabled = physics_recursive_wrappers::enableCollisionRecursive(rootNode, true, true, true);
+
+        auto preparedBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, sel.refr, scanOptions);
+        const auto primaryChoice = preparedBodySet.choosePrimaryBody(sel.bodyId.value, object_physics_body_set::PurePoint3{ handWorldTransform.translate });
+
+        ROCK_LOG_DEBUG(Hand,
+            "{} hand object-tree prep: ref='{}' formID={:08X} beforeBodies={} afterBodies={} accepted={} rejected={} "
+            "setMotion={} enableCollision={} primaryBody={} choiceReason={}",
+            handName(),
+            objName,
+            sel.refr->GetFormID(),
+            beforePrepBodySet.records.size(),
+            preparedBodySet.records.size(),
+            preparedBodySet.acceptedCount(),
+            preparedBodySet.rejectedCount(),
+            motionConverted ? "ok" : "failed",
+            collisionEnabled ? "ok" : "failed",
+            primaryChoice.bodyId,
+            static_cast<int>(primaryChoice.reason));
+
+        if (primaryChoice.bodyId == INVALID_BODY_ID) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand GRAB failed: no accepted dynamic body after recursive prep for '{}' formID={:08X} visitedNodes={} collisionObjects={}",
+                handName(),
+                objName,
+                sel.refr->GetFormID(),
+                preparedBodySet.diagnostics.visitedNodes,
+                preparedBodySet.diagnostics.collisionObjects);
+            if (motionConverted && selectedOriginalMotionPropsId != 1) {
+                physics_recursive_wrappers::setMotionRecursive(rootNode, motionPresetFromSavedPropsId(selectedOriginalMotionPropsId), false, true, true);
             }
+            return false;
+        }
+
+        objectBodyId = RE::hknpBodyId{ primaryChoice.bodyId };
+        auto& preparedBody = world->GetBody(objectBodyId);
+        _savedObjectState.bodyId = objectBodyId;
+        _savedObjectState.refr = sel.refr;
+        _savedObjectState.originalFilterInfo = *reinterpret_cast<std::uint32_t*>(reinterpret_cast<char*>(&preparedBody) + offsets::kBody_CollisionFilterInfo);
+        _savedObjectState.originalMotionPropsId = selectedOriginalMotionPropsId;
+        if (const auto* originalPrimaryRecord = beforePrepBodySet.findRecord(objectBodyId.value)) {
+            _savedObjectState.originalMotionPropsId = motionPropsIdFromRecordMotionType(originalPrimaryRecord->motionType, selectedOriginalMotionPropsId);
         }
 
         ROCK_LOG_INFO(Hand, "{} hand GRAB: '{}' formID={:08X} bodyId={}", handName(), objName, sel.refr->GetFormID(), objectBodyId.value);
 
-        {
+        if (g_rockConfig.rockDebugShowGrabNotifications) {
             auto msg = std::format("[ROCK] {} GRAB: {} ({})", _isLeft ? "L" : "R", objName, motionTypeStr);
             f4vr::showNotification(msg);
         }
 
-        collectHeldBodyIds(sel.refr);
+        _heldBodyIds = preparedBodySet.acceptedBodyIds();
+        if (_heldBodyIds.empty()) {
+            _heldBodyIds.push_back(objectBodyId.value);
+        }
 
         {
             auto* player = RE::PlayerCharacter::GetSingleton();
@@ -639,7 +976,6 @@ namespace frik::rock
             }
         }
 
-        auto* rootNode = sel.refr->Get3D();
         auto* collidableNode = sel.hitNode ? sel.hitNode : rootNode;
         auto* meshSourceNode = sel.visualNode ? sel.visualNode : rootNode;
         if (!meshSourceNode) {
@@ -656,7 +992,7 @@ namespace frik::rock
         if (!s_runtimeScaleLogged) {
             auto* vrScaleSetting = f4vr::getIniSetting("fVrScale:VR");
             const float vrScale = vrScaleSetting ? vrScaleSetting->GetFloat() : -1.0f;
-            ROCK_LOG_INFO(Hand, "RUNTIME SCALE {}: handScale={:.3f} collidableScale={:.3f} vrScale={:.3f}", handName(), handWorldTransform.scale,
+            ROCK_LOG_DEBUG(Hand, "Runtime scale {}: handScale={:.3f} collidableScale={:.3f} vrScale={:.3f}", handName(), handWorldTransform.scale,
                 collidableNode ? collidableNode->world.scale : -1.0f, vrScale);
             s_runtimeScaleLogged = true;
         }
@@ -671,7 +1007,7 @@ namespace frik::rock
         if (meshSourceNode) {
             extractAllTriangles(meshSourceNode, grabMeshTriangles, 10, &meshStats);
 
-            ROCK_LOG_INFO(Hand,
+            ROCK_LOG_DEBUG(Hand,
                 "{} hand mesh extraction: meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} "
                 "static={}/{} dynamic={}/{} skinned={}/{} dynamicSkinnedSkipped={} emptyShapes={} totalTris={}",
                 handName(), nodeDebugName(meshSourceNode), nodeDebugName(collidableNode), nodeDebugName(rootNode), meshStats.visitedShapes, meshStats.staticShapes,
@@ -703,7 +1039,7 @@ namespace frik::rock
                     std::uint8_t geomType = *reinterpret_cast<std::uint8_t*>(tsBase + 0x198);
                     void* skinInst = *reinterpret_cast<void**>(tsBase + VROffset::skinInstance);
 
-                    ROCK_LOG_INFO(MeshGrab, "VertexDiag '{}': vtxDesc=0x{:016X} stride={} posOffset={} fullPrec={} geomType={} skinned={}",
+                    ROCK_LOG_TRACE(MeshGrab, "VertexDiag '{}': vtxDesc=0x{:016X} stride={} posOffset={} fullPrec={} geomType={} skinned={}",
                         firstTriShape->name.c_str() ? firstTriShape->name.c_str() : "(null)", vtxDesc, stride, posOff, fullPrec ? 1 : 0, geomType, skinInst ? 1 : 0);
                 }
             }
@@ -719,7 +1055,7 @@ namespace frik::rock
                 float distToBody = std::sqrt((cx - objFloats[12] * 70.0f) * (cx - objFloats[12] * 70.0f) + (cy - objFloats[13] * 70.0f) * (cy - objFloats[13] * 70.0f) +
                     (cz - objFloats[14] * 70.0f) * (cz - objFloats[14] * 70.0f));
 
-                ROCK_LOG_INFO(MeshGrab, "TRI[0] centroid=({:.1f},{:.1f},{:.1f}) distToBody={:.1f}gu", cx, cy, cz, distToBody);
+                ROCK_LOG_TRACE(MeshGrab, "TRI[0] centroid=({:.1f},{:.1f},{:.1f}) distToBody={:.1f}gu", cx, cy, cz, distToBody);
             }
 
             if (!grabMeshTriangles.empty()) {
@@ -732,7 +1068,7 @@ namespace frik::rock
                     meshGrabFound = true;
                     grabPointMode = "meshSurface";
                     grabFallbackReason = "none";
-                    ROCK_LOG_INFO(Hand,
+                    ROCK_LOG_DEBUG(Hand,
                         "{} hand MESH GRAB: mode={} tris={} staticTris={} dynamicTris={} skinnedTris={} "
                         "closest=({:.1f},{:.1f},{:.1f})",
                         handName(), grabPointMode, grabMeshTriangles.size(), meshStats.staticTriangles, meshStats.dynamicTriangles, meshStats.skinnedTriangles, grabPt.position.x,
@@ -812,7 +1148,7 @@ namespace frik::rock
                 const RE::NiPoint3 grabSpaceConstraintFinger = getMatrixColumn(constraintGrabHandSpace.rotate, 0);
                 const RE::NiPoint3 grabPosDelta = constraintGrabHandSpace.translate - _grabHandSpace.translate;
 
-                ROCK_LOG_INFO(Hand,
+                ROCK_LOG_DEBUG(Hand,
                     "{} GRAB FRAME SNAPSHOT: rawVsConstraint rotDelta={:.2f}deg posDelta=({:.2f},{:.2f},{:.2f}) "
                     "rawFinger=({:.3f},{:.3f},{:.3f}) rawBack=({:.3f},{:.3f},{:.3f}) rawLat=({:.3f},{:.3f},{:.3f}) "
                     "constraintFinger=({:.3f},{:.3f},{:.3f}) constraintBack=({:.3f},{:.3f},{:.3f}) constraintLat=({:.3f},{:.3f},{:.3f})",
@@ -820,7 +1156,7 @@ namespace frik::rock
                     rawFinger.y, rawFinger.z, rawBack.x, rawBack.y, rawBack.z, rawLateral.x, rawLateral.y, rawLateral.z, constraintFinger.x, constraintFinger.y, constraintFinger.z,
                     constraintBack.x, constraintBack.y, constraintBack.z, constraintLateral.x, constraintLateral.y, constraintLateral.z);
 
-                ROCK_LOG_INFO(Hand,
+                ROCK_LOG_DEBUG(Hand,
                     "{} GRAB FRAME TARGETS: grabHSRaw.pos=({:.2f},{:.2f},{:.2f}) grabHSConstraint.pos=({:.2f},{:.2f},{:.2f}) "
                     "grabHSRawFinger=({:.3f},{:.3f},{:.3f}) grabHSConstraintFinger=({:.3f},{:.3f},{:.3f}) "
                     "bodyLocal.pos=({:.2f},{:.2f},{:.2f}) bodyLocalFinger=({:.3f},{:.3f},{:.3f})",
@@ -832,7 +1168,7 @@ namespace frik::rock
 
                 const RE::NiPoint3 rootBodyLocalFinger = getMatrixColumn(_grabRootBodyLocalTransform.rotate, 0);
                 const RE::NiPoint3 ownerBodyLocalFinger = getMatrixColumn(_grabOwnerBodyLocalTransform.rotate, 0);
-                ROCK_LOG_INFO(Hand,
+                ROCK_LOG_DEBUG(Hand,
                     "{} GRAB NODE FRAMES: owner='{}'({:p}) hasCol={} ownsBodyCol={} "
                     "root='{}'({:p}) held='{}'({:p}) mesh='{}'({:p}) sameOwnerHeld={} sameRootHeld={} "
                     "ownerBodyLocal.pos=({:.2f},{:.2f},{:.2f}) ownerBodyLocalFinger=({:.3f},{:.3f},{:.3f}) "
@@ -847,12 +1183,12 @@ namespace frik::rock
                     _grabRootBodyLocalTransform.translate.z, rootBodyLocalFinger.x, rootBodyLocalFinger.y, rootBodyLocalFinger.z);
             }
 
-            ROCK_LOG_INFO(Hand,
+            ROCK_LOG_DEBUG(Hand,
                 "{} GRAB HAND SPACE: pos=({:.1f},{:.1f},{:.1f}) "
                 "palmPos=({:.1f},{:.1f},{:.1f}) pivotA=({:.1f},{:.1f},{:.1f}) grabPt=({:.1f},{:.1f},{:.1f})",
                 handName(), _grabHandSpace.translate.x, _grabHandSpace.translate.y, _grabHandSpace.translate.z, palmPos.x, palmPos.y, palmPos.z, grabPivotAWorld.x,
                 grabPivotAWorld.y, grabPivotAWorld.z, grabSurfacePoint.x, grabSurfacePoint.y, grabSurfacePoint.z);
-            ROCK_LOG_INFO(Hand, "{} BODY LOCAL: pos=({:.2f},{:.2f},{:.2f}) scale={:.3f}", handName(), _grabBodyLocalTransform.translate.x, _grabBodyLocalTransform.translate.y,
+            ROCK_LOG_DEBUG(Hand, "{} BODY LOCAL: pos=({:.2f},{:.2f},{:.2f}) scale={:.3f}", handName(), _grabBodyLocalTransform.translate.x, _grabBodyLocalTransform.translate.y,
                 _grabBodyLocalTransform.translate.z, _grabBodyLocalTransform.scale);
         }
 
@@ -860,9 +1196,9 @@ namespace frik::rock
             auto* bodyArray = world->GetBodyArray();
             auto* handFloats = reinterpret_cast<float*>(&bodyArray[_handBody.getBodyId().value]);
             auto* objFloats = reinterpret_cast<float*>(&bodyArray[objectBodyId.value]);
-            ROCK_LOG_INFO(Hand, "{} DIAG: handBody pos=({:.3f},{:.3f},{:.3f}) objBody pos=({:.3f},{:.3f},{:.3f})", handName(), handFloats[12], handFloats[13], handFloats[14],
+            ROCK_LOG_TRACE(Hand, "{} DIAG: handBody pos=({:.3f},{:.3f},{:.3f}) objBody pos=({:.3f},{:.3f},{:.3f})", handName(), handFloats[12], handFloats[13], handFloats[14],
                 objFloats[12], objFloats[13], objFloats[14]);
-            ROCK_LOG_INFO(Hand, "{} DIAG: handNi pos=({:.1f},{:.1f},{:.1f}) objNi pos=({:.1f},{:.1f},{:.1f})", handName(), handWorldTransform.translate.x,
+            ROCK_LOG_TRACE(Hand, "{} DIAG: handNi pos=({:.1f},{:.1f},{:.1f}) objNi pos=({:.1f},{:.1f},{:.1f})", handName(), handWorldTransform.translate.x,
                 handWorldTransform.translate.y, handWorldTransform.translate.z, objectWorldTransform.translate.x, objectWorldTransform.translate.y,
                 objectWorldTransform.translate.z);
 
@@ -872,7 +1208,7 @@ namespace frik::rock
                 getBodyCOMOffset(objFloats, comOffX, comOffY, comOffZ);
                 float comDist =
                     std::sqrt((comX - objFloats[12]) * (comX - objFloats[12]) + (comY - objFloats[13]) * (comY - objFloats[13]) + (comZ - objFloats[14]) * (comZ - objFloats[14]));
-                ROCK_LOG_INFO(Hand,
+                ROCK_LOG_TRACE(Hand,
                     "{} B8 COM: com=({:.3f},{:.3f},{:.3f}) origin=({:.3f},{:.3f},{:.3f}) "
                     "offset=({:.4f},{:.4f},{:.4f}) dist={:.4f} ({:.1f}gu)",
                     handName(), comX, comY, comZ, objFloats[12], objFloats[13], objFloats[14], comOffX, comOffY, comOffZ, comDist, comDist * 70.0f);
@@ -924,7 +1260,7 @@ namespace frik::rock
                 float pivotAToHandOrigin = std::sqrt((grabPivotAWorld.x - handWorldTransform.translate.x) * (grabPivotAWorld.x - handWorldTransform.translate.x) +
                     (grabPivotAWorld.y - handWorldTransform.translate.y) * (grabPivotAWorld.y - handWorldTransform.translate.y) +
                     (grabPivotAWorld.z - handWorldTransform.translate.z) * (grabPivotAWorld.z - handWorldTransform.translate.z));
-                ROCK_LOG_INFO(Hand,
+                ROCK_LOG_DEBUG(Hand,
                     "GRAB DIAG {}: palmPos=({:.1f},{:.1f},{:.1f}) handPos=({:.1f},{:.1f},{:.1f}) "
                     "pivotA=({:.1f},{:.1f},{:.1f}) grabSurface=({:.1f},{:.1f},{:.1f}) meshGrab={} grabPointMode={} fallbackReason={} "
                     "pivotAToGrab_hk={:.4f} ({:.1f} game units) palmToHandOrigin={:.1f} pivotAToHandOrigin={:.1f} game units",
@@ -941,9 +1277,7 @@ namespace frik::rock
             ROCK_LOG_ERROR(Hand, "{} hand GRAB FAILED: constraint creation failed", handName());
             restoreGrabbedInertia(world, _savedObjectState);
             if (world && _savedObjectState.originalMotionPropsId != 0 && _savedObjectState.originalMotionPropsId != 1) {
-                typedef void setMotionProps_t(void*, int, short);
-                static REL::Relocation<setMotionProps_t> setBodyMotionProperties{ REL::Offset(offsets::kFunc_SetBodyMotionProperties) };
-                setBodyMotionProperties(world, _savedObjectState.bodyId.value, static_cast<short>(_savedObjectState.originalMotionPropsId));
+                physics_recursive_wrappers::setMotionRecursive(rootNode, motionPresetFromSavedPropsId(_savedObjectState.originalMotionPropsId), false, true, true);
             }
             restoreHandCollisionAfterGrab(world);
             _savedObjectState.clear();
@@ -957,15 +1291,15 @@ namespace frik::rock
             float* pivotB = reinterpret_cast<float*>(cd + offsets::kTransformB_Pos);
             float* tA_col0 = reinterpret_cast<float*>(cd + offsets::kTransformA_Col0);
             float* tB_col0 = reinterpret_cast<float*>(cd + offsets::kTransformB_Col0);
-            ROCK_LOG_INFO(Hand, "{} DIAG: pivotA=({:.3f},{:.3f},{:.3f}) pivotB=({:.3f},{:.3f},{:.3f})", handName(), pivotA[0], pivotA[1], pivotA[2], pivotB[0], pivotB[1],
+            ROCK_LOG_TRACE(Hand, "{} DIAG: pivotA=({:.3f},{:.3f},{:.3f}) pivotB=({:.3f},{:.3f},{:.3f})", handName(), pivotA[0], pivotA[1], pivotA[2], pivotB[0], pivotB[1],
                 pivotB[2]);
-            ROCK_LOG_INFO(Hand, "{} DIAG: tA_col0=({:.3f},{:.3f},{:.3f}) tB_col0=({:.3f},{:.3f},{:.3f})", handName(), tA_col0[0], tA_col0[1], tA_col0[2], tB_col0[0], tB_col0[1],
+            ROCK_LOG_TRACE(Hand, "{} DIAG: tA_col0=({:.3f},{:.3f},{:.3f}) tB_col0=({:.3f},{:.3f},{:.3f})", handName(), tA_col0[0], tA_col0[1], tA_col0[2], tB_col0[0], tB_col0[1],
                 tB_col0[2]);
-            ROCK_LOG_INFO(Hand, "{} DIAG: tau={:.3f} damping={:.2f} force={:.0f} propRecov={:.1f} constRecov={:.1f}", handName(), tau, damping, maxForce, proportionalRecovery,
+            ROCK_LOG_TRACE(Hand, "{} DIAG: tau={:.3f} damping={:.2f} force={:.0f} propRecov={:.1f} constRecov={:.1f}", handName(), tau, damping, maxForce, proportionalRecovery,
                 constantRecovery);
         }
 
-        ROCK_LOG_INFO(Hand, "{} hand CONSTRAINT GRAB: constraintId={}, hand body={}, obj body={}, {} held bodies", handName(), _activeConstraint.constraintId,
+        ROCK_LOG_DEBUG(Hand, "{} hand constraint grab: constraintId={}, hand body={}, obj body={}, {} held bodies", handName(), _activeConstraint.constraintId,
             _handBody.getBodyId().value, objectBodyId.value, _heldBodyIds.size());
 
         {
@@ -995,11 +1329,12 @@ namespace frik::rock
         _grabFingerProbeStart = fingerPose.probeStart;
         _grabFingerProbeEnd = fingerPose.probeEnd;
         _hasGrabFingerProbeDebug = fingerPose.candidateTriangleCount > 0;
-        applyRockGrabHandPose(_isLeft, fingerPose);
+        applyRockGrabHandPose(_isLeft, fingerPose, _grabFingerJointPose, _hasGrabFingerJointPose, 0.0f);
 
         _state = HandState::HeldInit;
+        clearPullRuntimeState();
 
-        ROCK_LOG_INFO(Hand, "{} hand GRAB SUCCESS → HeldInit: bodyId={}", handName(), objectBodyId.value);
+        ROCK_LOG_INFO(Hand, "{} hand grab success -> HeldInit: bodyId={}", handName(), objectBodyId.value);
         return true;
     }
 
@@ -1057,17 +1392,10 @@ namespace frik::rock
             const RE::NiTransform desiredBodyTransformHandSpace = multiplyTransforms(_grabConstraintHandSpace, _grabBodyLocalTransform);
 
             const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
-            const RE::NiMatrix3& invRot = desiredBodyToHandSpace.rotate;
 
             {
                 auto* target = reinterpret_cast<float*>(cd + ATOM_RAGDOLL_MOT + 0x10);
-
-                alignas(16) float col0[4] = { invRot.entry[0][0], invRot.entry[1][0], invRot.entry[2][0], 0.0f };
-                alignas(16) float col1[4] = { invRot.entry[0][1], invRot.entry[1][1], invRot.entry[2][1], 0.0f };
-                alignas(16) float col2[4] = { invRot.entry[0][2], invRot.entry[1][2], invRot.entry[2][2], 0.0f };
-                _mm_store_ps(target + 0, _mm_load_ps(col0));
-                _mm_store_ps(target + 4, _mm_load_ps(col1));
-                _mm_store_ps(target + 8, _mm_load_ps(col2));
+                grab_constraint_math::writeHavokRotationColumns(target, desiredBodyToHandSpace.rotate);
             }
 
             {
@@ -1100,60 +1428,53 @@ namespace frik::rock
             }
         }
 
-        float targetForce = _activeConstraint.targetMaxForce;
-        float currentLinearForce = 0.0f;
-        float currentAngularForce = 0.0f;
-
-        const bool heldBodyColliding = isHeldBodyColliding();
-        const float angularTauTarget = heldBodyColliding ? tauMin : g_rockConfig.rockGrabAngularTau;
-        const float linearTauTarget = heldBodyColliding ? tauMin : g_rockConfig.rockGrabLinearTau;
-        const float currentAngularTau = held_object_physics_math::advanceToward(
-            _activeConstraint.angularMotor ? _activeConstraint.angularMotor->tau : _activeConstraint.currentTau, angularTauTarget, g_rockConfig.rockGrabTauLerpSpeed, deltaTime);
-        const float currentLinearTau = held_object_physics_math::advanceToward(
-            _activeConstraint.linearMotor ? _activeConstraint.linearMotor->tau : _activeConstraint.currentTau, linearTauTarget, g_rockConfig.rockGrabTauLerpSpeed, deltaTime);
-        tickHeldBodyContact();
-
-        float ANGULAR_RATIO_START = g_rockConfig.rockGrabFadeInStartAngularRatio;
-        float ANGULAR_RATIO_END = g_rockConfig.rockGrabAngularToLinearForceRatio;
-        float FADE_IN_TIME = g_rockConfig.rockGrabForceFadeInTime;
-
-        if (_state == HandState::HeldInit) {
-            float fadeT = (forceFadeInTime > 0.001f) ? (std::min)(1.0f, _grabStartTime / forceFadeInTime) : 1.0f;
-            currentLinearForce = targetForce * fadeT;
-
-            float angFadeT = (FADE_IN_TIME > 0.001f) ? (std::min)(1.0f, _grabStartTime / FADE_IN_TIME) : 1.0f;
-            float currentAngularRatio = ANGULAR_RATIO_START + (ANGULAR_RATIO_END - ANGULAR_RATIO_START) * angFadeT;
-            currentAngularForce = held_object_physics_math::angularForceFromRatio(currentLinearForce, currentAngularRatio);
-
-            if (fadeT >= 0.999f) {
-                _state = HandState::HeldBody;
-                ROCK_LOG_INFO(Hand, "{} hand: HeldInit → HeldBody (force fade-in complete, {:.2f}s)", handName(), _grabStartTime);
-            }
-        } else {
-            currentLinearForce = targetForce;
-            currentAngularForce = held_object_physics_math::angularForceFromRatio(targetForce, ANGULAR_RATIO_END);
+        float grabPositionErrorGameUnits = 0.0f;
+        float grabRotationErrorDegrees = 0.0f;
+        {
+            const RE::NiTransform desiredBodyTransformHandSpace = multiplyTransforms(_grabConstraintHandSpace, _grabBodyLocalTransform);
+            const RE::NiTransform desiredBodyWorld = multiplyTransforms(handWorldTransform, desiredBodyTransformHandSpace);
+            const RE::NiTransform liveBodyWorld = getBodyWorldTransform(world, _savedObjectState.bodyId);
+            grabPositionErrorGameUnits = translationDeltaGameUnits(liveBodyWorld, desiredBodyWorld);
+            grabRotationErrorDegrees = rotationDeltaDegrees(liveBodyWorld.rotate, desiredBodyWorld.rotate);
         }
 
-        {
-            float MASS_FORCE_RATIO = g_rockConfig.rockGrabMaxForceToMassRatio;
-            auto* objMotion = world->GetBodyMotion(_savedObjectState.bodyId);
-            if (objMotion) {
-                auto packedInvMass = *reinterpret_cast<std::uint16_t*>(reinterpret_cast<char*>(objMotion) + 0x26);
+        const bool heldBodyColliding = isHeldBodyColliding();
+        tickHeldBodyContact();
 
-                if (packedInvMass > 0) {
-                    std::uint32_t asUint = static_cast<std::uint32_t>(packedInvMass) << 16;
-                    float invMass = 0.0f;
-                    std::memcpy(&invMass, &asUint, sizeof(float));
+        grab_motion_controller::MotorInput motorInput{};
+        motorInput.enabled = g_rockConfig.rockGrabAdaptiveMotorEnabled;
+        motorInput.heldBodyColliding = heldBodyColliding;
+        motorInput.positionErrorGameUnits = grabPositionErrorGameUnits;
+        motorInput.rotationErrorDegrees = grabRotationErrorDegrees;
+        motorInput.fullPositionErrorGameUnits = g_rockConfig.rockGrabAdaptivePositionFullError;
+        motorInput.fullRotationErrorDegrees = g_rockConfig.rockGrabAdaptiveRotationFullError;
+        motorInput.baseLinearTau = g_rockConfig.rockGrabLinearTau;
+        motorInput.baseAngularTau = g_rockConfig.rockGrabAngularTau;
+        motorInput.collisionTau = tauMin;
+        motorInput.maxTau = g_rockConfig.rockGrabTauMax;
+        motorInput.currentLinearTau = _activeConstraint.linearMotor ? _activeConstraint.linearMotor->tau : _activeConstraint.currentTau;
+        motorInput.currentAngularTau = _activeConstraint.angularMotor ? _activeConstraint.angularMotor->tau : _activeConstraint.currentTau;
+        motorInput.tauLerpSpeed = g_rockConfig.rockGrabTauLerpSpeed;
+        motorInput.deltaTime = deltaTime;
+        motorInput.baseMaxForce = _activeConstraint.targetMaxForce;
+        motorInput.maxForceMultiplier = g_rockConfig.rockGrabAdaptiveMaxForceMultiplier;
+        motorInput.mass = readBodyMass(world, _savedObjectState.bodyId);
+        motorInput.forceToMassRatio = g_rockConfig.rockGrabMaxForceToMassRatio;
+        motorInput.angularToLinearForceRatio = g_rockConfig.rockGrabAngularToLinearForceRatio;
+        motorInput.fadeElapsed = _state == HandState::HeldInit ? _grabStartTime : forceFadeInTime;
+        motorInput.fadeDuration = forceFadeInTime;
+        motorInput.fadeStartAngularRatio = g_rockConfig.rockGrabFadeInStartAngularRatio;
 
-                    if (invMass > 0.0001f) {
-                        float mass = 1.0f / invMass;
-                        const float cappedLinearForce = held_object_physics_math::capForceByMassRatio(currentLinearForce, mass, MASS_FORCE_RATIO);
-                        if (cappedLinearForce < currentLinearForce) {
-                            currentLinearForce = cappedLinearForce;
-                            currentAngularForce = held_object_physics_math::angularForceFromRatio(cappedLinearForce, ANGULAR_RATIO_END);
-                        }
-                    }
-                }
+        const auto motorTargets = grab_motion_controller::solveMotorTargets(motorInput);
+        const float currentLinearForce = motorTargets.linearMaxForce;
+        const float currentAngularForce = motorTargets.angularMaxForce;
+        const float currentLinearTau = motorTargets.linearTau;
+        const float currentAngularTau = motorTargets.angularTau;
+
+        if (_state == HandState::HeldInit) {
+            if (motorTargets.fadeFactor >= 0.999f) {
+                _state = HandState::HeldBody;
+                ROCK_LOG_DEBUG(Hand, "{} hand: HeldInit -> HeldBody (force fade-in complete, {:.2f}s)", handName(), _grabStartTime);
             }
         }
 
@@ -1203,7 +1524,7 @@ namespace frik::rock
                 _grabFingerProbeStart = fingerPose.probeStart;
                 _grabFingerProbeEnd = fingerPose.probeEnd;
                 _hasGrabFingerProbeDebug = fingerPose.candidateTriangleCount > 0;
-                applyRockGrabHandPose(_isLeft, fingerPose);
+                applyRockGrabHandPose(_isLeft, fingerPose, _grabFingerJointPose, _hasGrabFingerJointPose, deltaTime);
             }
         }
 
@@ -1293,7 +1614,7 @@ namespace frik::rock
                 const RE::NiMatrix3 rawTargetInv = desiredBodyTransformHandSpaceRaw.rotate.Transpose();
                 const int ragdollMotorEnabled = *(constraintData + ATOM_RAGDOLL_MOT + 0x02) ? 1 : 0;
 
-                ROCK_LOG_INFO(Hand,
+                ROCK_LOG_DEBUG(Hand,
                     "{} GRAB FRAME HOLD: rawVsConstraintWorld={:.2f}deg rawVsConstraintTarget={:.2f}deg "
                     "bodyVsRaw={:.2f}deg bodyVsConstraint={:.2f}deg "
                     "ownerErr={:.2f}deg/{:.2f}gu hitErr={:.2f}deg/{:.2f}gu "
@@ -1307,7 +1628,7 @@ namespace frik::rock
                     rootMetrics.rotErrDeg, rootMetrics.posErrGameUnits, worldPosDelta.x, worldPosDelta.y, worldPosDelta.z, rawFinger.x, rawFinger.y, rawFinger.z,
                     constraintFinger.x, constraintFinger.y, constraintFinger.z);
 
-                ROCK_LOG_INFO(Hand,
+                ROCK_LOG_TRACE(Hand,
                     "{} GRAB FRAME NODES: bodyColl={:p} "
                     "owner='{}'({:p}) hasCol={} ownsBodyCol={} "
                     "hit='{}'({:p}) hasCol={} ownsBodyCol={} "
@@ -1322,7 +1643,7 @@ namespace frik::rock
                     rootMetrics.hasCollisionObject ? "yes" : "no", rootMetrics.ownsBodyCollisionObject ? "yes" : "no", ownerMetrics.node == heldMetrics.node ? "yes" : "no",
                     hitMetrics.node == heldMetrics.node ? "yes" : "no", rootMetrics.node == heldMetrics.node ? "yes" : "no");
 
-                ROCK_LOG_INFO(Hand,
+                ROCK_LOG_TRACE(Hand,
                     "{} GRAB FRAME VISUALS: desiredRawFinger=({:.3f},{:.3f},{:.3f}) desiredConstraintFinger=({:.3f},{:.3f},{:.3f}) "
                     "bodyFinger=({:.3f},{:.3f},{:.3f}) "
                     "ownerFinger=({:.3f},{:.3f},{:.3f}) ownerExpectedFinger=({:.3f},{:.3f},{:.3f}) "
@@ -1337,17 +1658,18 @@ namespace frik::rock
                     heldMetrics.expectedFinger.y, heldMetrics.expectedFinger.z, rootMetrics.finger.x, rootMetrics.finger.y, rootMetrics.finger.z, rootMetrics.expectedFinger.x,
                     rootMetrics.expectedFinger.y, rootMetrics.expectedFinger.z, invRot.entry[0][0], invRot.entry[1][0], invRot.entry[2][0]);
 
-                ROCK_LOG_INFO(Hand,
+                ROCK_LOG_TRACE(Hand,
                     "{} GRAB ANGULAR PROBE: rawAxisErr(rowMax={:.2f} colMax={:.2f}) "
                     "constraintAxisErr(rowMax={:.2f} colMax={:.2f} rows=({:.2f},{:.2f},{:.2f}) cols=({:.2f},{:.2f},{:.2f})) "
                     "targetMem(colsVsConstraintInv={:.2f} rowsVsConstraintInv={:.2f} "
                     "colsVsConstraintForward={:.2f} colsVsRawInv={:.2f} colsVsTransformB={:.2f}) "
-                    "ragEnabled={} angMotor={:p} angTau={:.3f} linTau={:.3f} angF={:.0f}",
+                    "motorErr=({:.2f}gu,{:.2f}deg,{:.2f}) mass={:.2f} "
+                    "ragEnabled={} angMotor={:p} angTau={:.3f} linTau={:.3f} linF={:.0f} angF={:.0f}",
                     handName(), rawRowMax, rawColMax, constraintRowMax, constraintColMax, constraintRow0, constraintRow1, constraintRow2, constraintCol0, constraintCol1,
                     constraintCol2, rotationDeltaDegrees(targetAsHkColumns, constraintTargetInv), rotationDeltaDegrees(targetAsHkRows, constraintTargetInv),
                     rotationDeltaDegrees(targetAsHkColumns, desiredBodyTransformHandSpaceConstraint.rotate), rotationDeltaDegrees(targetAsHkColumns, rawTargetInv),
-                    rotationDeltaDegrees(targetAsHkColumns, transformBAsHkColumns), ragdollMotorEnabled, static_cast<const void*>(_activeConstraint.angularMotor),
-                    currentAngularTau, currentLinearTau, currentAngularForce);
+                    rotationDeltaDegrees(targetAsHkColumns, transformBAsHkColumns), grabPositionErrorGameUnits, grabRotationErrorDegrees, motorTargets.errorFactor, motorInput.mass,
+                    ragdollMotorEnabled, static_cast<const void*>(_activeConstraint.angularMotor), currentAngularTau, currentLinearTau, currentLinearForce, currentAngularForce);
             }
 
             auto* bodyArray = world->GetBodyArray();
@@ -1381,7 +1703,7 @@ namespace frik::rock
                 }
             }
 
-            ROCK_LOG_INFO(Hand,
+            ROCK_LOG_DEBUG(Hand,
                 "{} HELD: angTau={:.3f} linTau={:.3f} linF={:.0f} angF={:.0f} "
                 "ERR={:.4f}({:.1f}gu) bDist={:.3f} objVel={:.3f} "
                 "paW=({:.1f},{:.1f},{:.1f}) pbW=({:.1f},{:.1f},{:.1f}) "
@@ -1390,7 +1712,7 @@ namespace frik::rock
                 paz * 70.0f, pbx * 70.0f, pby * 70.0f, pbz * 70.0f, h[12] * 70.0f, h[13] * 70.0f, h[14] * 70.0f, o[12] * 70.0f, o[13] * 70.0f, o[14] * 70.0f);
 
             _notifCounter++;
-            if (_notifCounter >= 6) {
+            if (g_rockConfig.rockDebugShowGrabNotifications && _notifCounter >= 6) {
                 _notifCounter = 0;
                 float paToHand = std::sqrt((pax - h[12]) * (pax - h[12]) + (pay - h[13]) * (pay - h[13]) + (paz - h[14]) * (paz - h[14])) * 70.0f;
                 float pbToObj = std::sqrt((pbx - o[12]) * (pbx - o[12]) + (pby - o[13]) * (pby - o[13]) + (pbz - o[14]) * (pbz - o[14])) * 70.0f;
@@ -1426,7 +1748,7 @@ namespace frik::rock
             const RE::NiPoint3 releaseVelocity =
                 held_object_physics_math::composeReleaseVelocity(localReleaseVelocity, _lastPlayerSpaceVelocityHavok, g_rockConfig.rockThrowVelocityMultiplier);
             setHeldLinearVelocity(world, _savedObjectState.bodyId, _heldBodyIds, releaseVelocity);
-            ROCK_LOG_INFO(Hand,
+            ROCK_LOG_DEBUG(Hand,
                 "{} hand RELEASE VELOCITY: local=({:.3f},{:.3f},{:.3f}) player=({:.3f},{:.3f},{:.3f}) final=({:.3f},{:.3f},{:.3f}) history={} multiplier={:.2f}",
                 handName(), localReleaseVelocity.x, localReleaseVelocity.y, localReleaseVelocity.z, _lastPlayerSpaceVelocityHavok.x, _lastPlayerSpaceVelocityHavok.y,
                 _lastPlayerSpaceVelocityHavok.z, releaseVelocity.x, releaseVelocity.y, releaseVelocity.z, _heldLocalLinearVelocityHistoryCount,
@@ -1436,22 +1758,10 @@ namespace frik::rock
         restoreGrabbedInertia(world, _savedObjectState);
 
         if (world && _savedObjectState.originalMotionPropsId != 0 && _savedObjectState.originalMotionPropsId != 1) {
-            RE::NiAVObject* releaseNode = nullptr;
-            if (_savedObjectState.refr && !_savedObjectState.refr->IsDeleted()) {
-                releaseNode = _savedObjectState.refr->Get3D();
-            }
-            auto* releaseCollObj = releaseNode ? releaseNode->collisionObject.get() : nullptr;
-            if (releaseCollObj) {
-                ROCK_LOG_INFO(Hand,
-                    "{} hand: object stays DYNAMIC on release "
-                    "(game deactivation will restore KEYFRAMED)",
-                    handName());
-            } else {
-                typedef void setMotionProps_t(void*, int, short);
-                static REL::Relocation<setMotionProps_t> setBodyMotionProperties{ REL::Offset(offsets::kFunc_SetBodyMotionProperties) };
-                setBodyMotionProperties(world, _savedObjectState.bodyId.value, static_cast<short>(_savedObjectState.originalMotionPropsId));
-                ROCK_LOG_INFO(Hand, "{} hand MOTION RESTORE: propsId {} → {} (fallback)", handName(), 1, _savedObjectState.originalMotionPropsId);
-            }
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand: object tree stays DYNAMIC on release "
+                "(successful active prep is not partially restored per-body)",
+                handName());
         }
 
         _isHoldingFlag.store(false, std::memory_order_release);
@@ -1486,6 +1796,8 @@ namespace frik::rock
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};
         _hasGrabFingerProbeDebug = false;
+        _grabFingerJointPose = {};
+        _hasGrabFingerJointPose = false;
         _grabLocalMeshTriangles.clear();
         _grabSurfacePointLocal = {};
         _hasGrabMeshPoseData = false;
@@ -1502,6 +1814,6 @@ namespace frik::rock
         _currentSelection.clear();
         _state = HandState::Idle;
 
-        ROCK_LOG_INFO(Hand, "{} hand: Idle", handName());
+        ROCK_LOG_DEBUG(Hand, "{} hand: Idle", handName());
     }
 }

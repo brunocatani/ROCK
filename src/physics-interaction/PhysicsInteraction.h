@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <mutex>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "Hand.h"
@@ -12,6 +13,8 @@
 #include "PhysicsLog.h"
 #include "TwoHandedGrip.h"
 #include "WeaponCollision.h"
+#include "WeaponDebugNotificationPolicy.h"
+#include "WeaponPrimaryGripAuthority.h"
 #include "WeaponReloadEventBridge.h"
 #include "WeaponReloadStageObserver.h"
 
@@ -120,6 +123,13 @@ namespace frik::rock
 
         void resolveAndLogContact(const char* handName, RE::bhkWorld* bhk, RE::hknpWorld* hknp, RE::hknpBodyId bodyId);
 
+        void applyDynamicPushAssist(const char* sourceName,
+            RE::bhkWorld* bhk,
+            RE::hknpWorld* hknp,
+            std::uint32_t sourceBodyId,
+            std::uint32_t targetBodyId,
+            bool sourceIsWeapon);
+
         void publishDebugBodyOverlay(RE::hknpWorld* hknp);
 
         void updateWeaponReloadState(bool weaponEquipped);
@@ -143,6 +153,7 @@ namespace frik::rock
         std::atomic<bool> _initialized{ false };
         bool _collisionLayerRegistered = false;
         std::uint64_t _expectedHandLayerMask = 0;
+        std::uint64_t _expectedWeaponLayerMask = 0;
         HandBoneCache _handBoneCache;
         HandFrameResolver _handFrameResolver;
 
@@ -150,6 +161,8 @@ namespace frik::rock
         Hand _leftHand{ true };
 
         WeaponCollision _weaponCollision;
+
+        WeaponPrimaryGripAuthority _primaryGripAuthority;
 
         TwoHandedGrip _twoHandedGrip;
 
@@ -171,6 +184,10 @@ namespace frik::rock
 
         std::atomic<std::uint32_t> _lastContactBodyRight{ 0xFFFFFFFF };
         std::atomic<std::uint32_t> _lastContactBodyLeft{ 0xFFFFFFFF };
+        std::atomic<std::uint32_t> _lastContactBodyWeapon{ 0xFFFFFFFF };
+        std::atomic<std::uint32_t> _lastContactSourceWeapon{ 0xFFFFFFFF };
+        float _dynamicPushElapsedSeconds = 0.0f;
+        std::unordered_map<std::uint64_t, float> _dynamicPushCooldownUntil;
 
         static constexpr std::uint32_t INVALID_CONTACT_BODY_ID = 0x7FFF'FFFF;
         static constexpr std::uint32_t WEAPON_CONTACT_TIMEOUT_FRAMES = 5;
@@ -189,6 +206,7 @@ namespace frik::rock
         std::atomic<std::uint32_t> _activeWeaponReloadState{ static_cast<std::uint32_t>(WeaponReloadState::Idle) };
         std::atomic<std::uint32_t> _observedWeaponReloadStage{ static_cast<std::uint32_t>(WeaponVanillaReloadStage::Idle) };
         std::atomic<std::uint32_t> _weaponReloadStageSource{ static_cast<std::uint32_t>(WeaponReloadStageSource::None) };
+        weapon_debug_notification_policy::WeaponNotificationState _weaponDebugNotificationState{};
 
         float _cachedHalfExtentX = 0.0f;
         float _cachedHalfExtentY = 0.0f;

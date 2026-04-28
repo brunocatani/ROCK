@@ -540,7 +540,7 @@ float4 main(PS_INPUT input) : SV_Target {
                     static_cast<std::uint32_t>(vertices.size()),
                     g_rockConfig.rockDebugMaxConvexSupportVertices,
                     g_rockConfig.rockDebugUseBoundsForHeavyConvex)) {
-                ROCK_LOG_INFO(Hand, "Debug overlay using bounds LOD for heavy convex: shape=0x{:X} supportVertices={} cap={}", shapeAddress, vertices.size(),
+                ROCK_LOG_DEBUG(Hand, "Debug overlay using bounds LOD for heavy convex: shape=0x{:X} supportVertices={} cap={}", shapeAddress, vertices.size(),
                     debug_overlay_policy::clampMaxConvexSupportVertices(g_rockConfig.rockDebugMaxConvexSupportVertices));
                 return generateBoundsBox(vertices);
             }
@@ -1062,6 +1062,12 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::RightHandBody:
             case AxisOverlayRole::LeftHandBody:
                 return kBodyAxisLength;
+            case AxisOverlayRole::WeaponAuthority:
+            case AxisOverlayRole::RightWeaponPrimaryGrip:
+            case AxisOverlayRole::LeftWeaponSupportGrip:
+            case AxisOverlayRole::RightFrikAppliedHand:
+            case AxisOverlayRole::LeftFrikAppliedHand:
+                return kColliderAxisLength;
             case AxisOverlayRole::TargetBody:
                 return kTargetAxisLength;
             }
@@ -1077,6 +1083,12 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::RightHandCollider:
             case AxisOverlayRole::LeftHandCollider:
                 return 0.78f;
+            case AxisOverlayRole::WeaponAuthority:
+            case AxisOverlayRole::RightWeaponPrimaryGrip:
+            case AxisOverlayRole::LeftWeaponSupportGrip:
+            case AxisOverlayRole::RightFrikAppliedHand:
+            case AxisOverlayRole::LeftFrikAppliedHand:
+                return 0.92f;
             default:
                 return 1.0f;
             }
@@ -1146,6 +1158,22 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[1] = 0.45f;
                 color[2] = 0.95f;
                 color[3] = 0.75f;
+                break;
+            case MarkerOverlayRole::RightWeaponPrimaryGrip:
+                color[0] = 0.10f;
+                color[1] = 0.95f;
+                color[2] = 1.0f;
+                break;
+            case MarkerOverlayRole::LeftWeaponSupportGrip:
+                color[0] = 1.0f;
+                color[1] = 0.40f;
+                color[2] = 0.85f;
+                break;
+            case MarkerOverlayRole::RightWeaponAuthorityMismatch:
+            case MarkerOverlayRole::LeftWeaponAuthorityMismatch:
+                color[0] = 1.0f;
+                color[1] = 0.15f;
+                color[2] = 0.05f;
                 break;
             }
         }
@@ -1382,7 +1410,7 @@ float4 main(PS_INPUT input) : SV_Target {
 
                 if (g_rockConfig.rockDebugVerboseLogging && ++s_overlayStatsLogCounter >= 90) {
                     s_overlayStatsLogCounter = 0;
-                    ROCK_LOG_INFO(Hand,
+                    ROCK_LOG_DEBUG(Hand,
                         "Debug overlay frame: entries={} drawn={} axes={} markers={} cacheHits={} cacheMisses={} shapeGenerations={} genCap={}",
                         stats.bodyEntries, stats.bodiesDrawn, frame.axisCount, frame.markerCount, stats.shapeCacheHits, stats.shapeCacheMisses, stats.shapeGenerations,
                         debug_overlay_policy::clampShapeGenerationsPerFrame(g_rockConfig.rockDebugMaxShapeGenerationsPerFrame));

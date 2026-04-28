@@ -152,6 +152,8 @@ namespace frik::rock::offsets
 
     constexpr std::uintptr_t kFunc_World_QueryAabbBroadphaseOnly = 0x15A6330;
 
+    constexpr std::uintptr_t kFunc_CreateSphereShape = 0x15FF4E0;
+
     constexpr std::uintptr_t kFunc_NativeVRGrabDrop = 0xF1AB90;
 
     constexpr std::uintptr_t kFunc_SetBodyMotionProperties = 0x153B2F0;

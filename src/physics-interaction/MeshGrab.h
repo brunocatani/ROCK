@@ -331,7 +331,7 @@ namespace frik::rock
         const char* shapeName = triShape->name.c_str() ? triShape->name.c_str() : "(null)";
 
         if (isDynamicTriShape(triShape)) {
-            ROCK_LOG_INFO(MeshGrab, "Skipping skinned BSDynamicTriShape '{}' (dynamic+skinned extraction not yet verified)", shapeName);
+            ROCK_LOG_DEBUG(MeshGrab, "Skipping skinned BSDynamicTriShape '{}' (dynamic+skinned extraction not yet verified)", shapeName);
             return 0;
         }
 
@@ -454,7 +454,7 @@ namespace frik::rock
             boneTransforms[b].valid = true;
         }
 
-        ROCK_LOG_INFO(MeshGrab, "Skinned '{}': extracting {} tris, {} verts, {} bones (stride={}, skinOff={}, fullPrec={})", shapeName, numTris, numVerts, boneCount, vtxStride,
+        ROCK_LOG_DEBUG(MeshGrab, "Skinned '{}': extracting {} tris, {} verts, {} bones (stride={}, skinOff={}, fullPrec={})", shapeName, numTris, numVerts, boneCount, vtxStride,
             skinOffset, fullPrecision ? 1 : 0);
 
         std::vector<RE::NiPoint3> worldVerts(numVerts);
@@ -520,7 +520,7 @@ namespace frik::rock
             added++;
         }
 
-        ROCK_LOG_INFO(MeshGrab, "Skinned '{}': extracted {} triangles", shapeName, added);
+        ROCK_LOG_DEBUG(MeshGrab, "Skinned '{}': extracted {} triangles", shapeName, added);
         return added;
     }
 

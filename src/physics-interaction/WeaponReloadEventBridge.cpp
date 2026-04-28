@@ -115,7 +115,7 @@ namespace frik::rock
         _reloadSequence.store(sequence, std::memory_order_release);
 
         if (g_rockConfig.rockReloadDebugStageLogging) {
-            ROCK_LOG_INFO(Weapon, "WeaponReloadEventBridge reload event active={} seq={}", reloadActive, sequence);
+            ROCK_LOG_DEBUG(Weapon, "WeaponReloadEventBridge reload event active={} seq={}", reloadActive, sequence);
         }
 
         return RE::BSEventNotifyControl::kContinue;
@@ -135,7 +135,7 @@ namespace frik::rock
         _ammoSequence.store(sequence, std::memory_order_release);
 
         if (g_rockConfig.rockReloadDebugStageLogging) {
-            ROCK_LOG_INFO(Weapon, "WeaponReloadEventBridge ammo event clip={} reserve={} seq={}", counts.clipAmmo, counts.reserveAmmo, sequence);
+            ROCK_LOG_DEBUG(Weapon, "WeaponReloadEventBridge ammo event clip={} reserve={} seq={}", counts.clipAmmo, counts.reserveAmmo, sequence);
         }
 
         return RE::BSEventNotifyControl::kContinue;

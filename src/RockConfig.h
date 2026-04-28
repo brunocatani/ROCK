@@ -16,6 +16,8 @@
 #include <SimpleIni.h>
 #include <thomasmonkman-filewatch/FileWatch.hpp>
 
+#include "physics-interaction/SelectionQueryPolicy.h"
+
 namespace frik::rock
 {
     class RockConfig
@@ -37,6 +39,10 @@ namespace frik::rock
         void suppressNextFileWatchReload() { _ignoreNextIniFileChange.store(true); }
 
         bool rockEnabled = true;
+
+        int rockLogLevel = 2;
+        std::string rockLogPattern = "%Y-%m-%d %H:%M:%S.%e [%l] %v";
+        int rockLogSampleMilliseconds = 2000;
 
         float rockHandCollisionHalfExtentX = 0.09f;
         float rockHandCollisionHalfExtentY = 0.05f;
@@ -63,6 +69,7 @@ namespace frik::rock
         float rockWeaponCollisionMaxLinearVelocity = 50.0f;
         float rockWeaponCollisionMaxAngularVelocity = 100.0f;
         float rockWeaponInteractionProbeRadius = 12.0f;
+        bool rockOneHandedMeshPrimaryGripAuthorityEnabled = false;
 
         bool rockReloadUseVanillaStageObserver = true;
         bool rockReloadRequirePhysicalCompletion = true;
@@ -91,14 +98,34 @@ namespace frik::rock
         int rockDebugMaxShapeGenerationsPerFrame = 2;
         int rockDebugMaxConvexSupportVertices = 64;
         bool rockDebugUseBoundsForHeavyConvex = true;
-        bool rockDebugVerboseLogging = true;
-        bool rockDebugGrabFrameLogging = true;
+        bool rockDebugVerboseLogging = false;
+        bool rockDebugGrabFrameLogging = false;
+        bool rockDebugShowGrabNotifications = false;
+        bool rockDebugShowWeaponNotifications = false;
         bool rockDebugHandTransformParity = false;
         int rockHandFrameSource = 3;
         bool rockHandFrameSwapWands = false;
 
         float rockNearDetectionRange = 25.0f;
         float rockFarDetectionRange = 350.0f;
+        float rockNearCastRadiusGameUnits = 6.0f;
+        float rockNearCastDistanceGameUnits = 25.0f;
+        float rockFarCastRadiusGameUnits = 21.0f;
+        std::uint32_t rockSelectionShapeCastFilterInfo = selection_query_policy::kDefaultShapeCastFilterInfo;
+        std::uint32_t rockFarClipRayFilterInfo = selection_query_policy::kDefaultFarClipRayFilterInfo;
+        float rockPullApplyVelocityTime = 0.2f;
+        float rockPullTrackHandTime = 0.1f;
+        float rockPullDestinationZOffsetHavok = 0.01f;
+        float rockPullDurationA = 0.715619f;
+        float rockPullDurationB = -0.415619f;
+        float rockPullDurationC = 0.656256f;
+        float rockPullMaxVelocityHavok = 10.0f;
+        float rockPullAutoGrabDistanceGameUnits = 18.0f;
+        int rockObjectPhysicsTreeMaxDepth = 12;
+        bool rockDynamicPushAssistEnabled = true;
+        float rockDynamicPushMinSpeed = 0.35f;
+        float rockDynamicPushMaxImpulse = 2.0f;
+        float rockDynamicPushCooldownSeconds = 0.08f;
 
         float rockGrabLinearTau = 0.03f;
         float rockGrabLinearDamping = 0.8f;
@@ -121,6 +148,10 @@ namespace frik::rock
         float rockGrabTauLerpSpeed = 0.5f;
         float rockGrabCloseThreshold = 2.0f;
         float rockGrabFarThreshold = 15.0f;
+        bool rockGrabAdaptiveMotorEnabled = true;
+        float rockGrabAdaptivePositionFullError = 20.0f;
+        float rockGrabAdaptiveRotationFullError = 60.0f;
+        float rockGrabAdaptiveMaxForceMultiplier = 4.0f;
 
         float rockGrabMaxInertiaRatio = 10.0f;
 
@@ -138,8 +169,10 @@ namespace frik::rock
         float rockGrabHandLerpMinDistance = 7.0f;
         float rockGrabHandLerpMaxDistance = 14.0f;
         bool rockGrabMeshFingerPoseEnabled = true;
+        bool rockGrabMeshJointPoseEnabled = true;
         int rockGrabFingerPoseUpdateInterval = 3;
         float rockGrabFingerMinValue = 0.2f;
+        float rockGrabFingerPoseSmoothingSpeed = 14.0f;
 
         RE::NiPoint3 rockGrabPivotAOffsetHandspace = RE::NiPoint3(0.0f, 0.0f, 0.0f);
         bool rockReverseGrabPivotAOffset = false;

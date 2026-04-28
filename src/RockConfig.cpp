@@ -5,17 +5,20 @@
 #include <ShlObj.h>
 #include <SimpleIni.h>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <thread>
 
 #include "common/CommonUtils.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/RockLoggingPolicy.h"
 #include "resources.h"
 
 namespace
 {
 
     constexpr auto SECTION = "PhysicsInteraction";
+    constexpr auto DEBUG_SECTION = "Debug";
     const RE::NiPoint3 kDefaultPalmNormalHandspace{ 0.0f, 0.0f, 1.0f };
 
     std::string resolveIniPath()
@@ -36,6 +39,10 @@ namespace frik::rock
     void RockConfig::resetToDefaults()
     {
         rockEnabled = true;
+
+        rockLogLevel = logging_policy::DefaultLogLevel;
+        rockLogPattern = logging_policy::DefaultLogPattern;
+        rockLogSampleMilliseconds = logging_policy::DefaultLogSampleMilliseconds;
 
         rockHandCollisionHalfExtentX = 0.09f;
         rockHandCollisionHalfExtentY = 0.05f;
@@ -60,6 +67,7 @@ namespace frik::rock
         rockWeaponCollisionMaxLinearVelocity = 50.0f;
         rockWeaponCollisionMaxAngularVelocity = 100.0f;
         rockWeaponInteractionProbeRadius = 12.0f;
+        rockOneHandedMeshPrimaryGripAuthorityEnabled = false;
 
         rockReloadUseVanillaStageObserver = true;
         rockReloadRequirePhysicalCompletion = true;
@@ -90,12 +98,32 @@ namespace frik::rock
         rockDebugUseBoundsForHeavyConvex = true;
         rockDebugVerboseLogging = false;
         rockDebugGrabFrameLogging = false;
+        rockDebugShowGrabNotifications = false;
+        rockDebugShowWeaponNotifications = false;
         rockDebugHandTransformParity = false;
         rockHandFrameSource = 3;
         rockHandFrameSwapWands = false;
 
         rockNearDetectionRange = 25.0f;
         rockFarDetectionRange = 350.0f;
+        rockNearCastRadiusGameUnits = 6.0f;
+        rockNearCastDistanceGameUnits = 25.0f;
+        rockFarCastRadiusGameUnits = 21.0f;
+        rockSelectionShapeCastFilterInfo = selection_query_policy::kDefaultShapeCastFilterInfo;
+        rockFarClipRayFilterInfo = selection_query_policy::kDefaultFarClipRayFilterInfo;
+        rockPullApplyVelocityTime = 0.2f;
+        rockPullTrackHandTime = 0.1f;
+        rockPullDestinationZOffsetHavok = 0.01f;
+        rockPullDurationA = 0.715619f;
+        rockPullDurationB = -0.415619f;
+        rockPullDurationC = 0.656256f;
+        rockPullMaxVelocityHavok = 10.0f;
+        rockPullAutoGrabDistanceGameUnits = 18.0f;
+        rockObjectPhysicsTreeMaxDepth = 12;
+        rockDynamicPushAssistEnabled = true;
+        rockDynamicPushMinSpeed = 0.35f;
+        rockDynamicPushMaxImpulse = 2.0f;
+        rockDynamicPushCooldownSeconds = 0.08f;
 
         rockGrabLinearTau = 0.03f;
         rockGrabLinearDamping = 0.8f;
@@ -118,6 +146,10 @@ namespace frik::rock
         rockGrabTauLerpSpeed = 0.5f;
         rockGrabCloseThreshold = 2.0f;
         rockGrabFarThreshold = 15.0f;
+        rockGrabAdaptiveMotorEnabled = true;
+        rockGrabAdaptivePositionFullError = 20.0f;
+        rockGrabAdaptiveRotationFullError = 60.0f;
+        rockGrabAdaptiveMaxForceMultiplier = 4.0f;
 
         rockGrabMaxInertiaRatio = 10.0f;
 
@@ -135,8 +167,10 @@ namespace frik::rock
         rockGrabHandLerpMinDistance = 7.0f;
         rockGrabHandLerpMaxDistance = 14.0f;
         rockGrabMeshFingerPoseEnabled = true;
+        rockGrabMeshJointPoseEnabled = true;
         rockGrabFingerPoseUpdateInterval = 3;
         rockGrabFingerMinValue = 0.2f;
+        rockGrabFingerPoseSmoothingSpeed = 14.0f;
 
         rockGrabPivotAOffsetHandspace = RE::NiPoint3(0.0f, 0.0f, 0.0f);
         rockReverseGrabPivotAOffset = false;
@@ -159,6 +193,25 @@ namespace frik::rock
             value.y = static_cast<float>(ini.GetDoubleValue(SECTION, keyY, value.y));
             value.z = static_cast<float>(ini.GetDoubleValue(SECTION, keyZ, value.z));
         };
+        auto readHexFilter = [&](const char* key, std::uint32_t currentValue, std::uint32_t fallback) {
+            char hexBuf[16] = {};
+            snprintf(hexBuf, sizeof(hexBuf), "%08X", currentValue);
+            const char* hexStr = ini.GetValue(SECTION, key, hexBuf);
+            if (!hexStr || !hexStr[0]) {
+                return selection_query_policy::sanitizeFilterInfo(currentValue, fallback);
+            }
+
+            return selection_query_policy::sanitizeFilterInfo(static_cast<std::uint32_t>(std::strtoul(hexStr, nullptr, 16)), fallback);
+        };
+
+        rockLogLevel = logging_policy::clampLogLevel(static_cast<int>(ini.GetLongValue(DEBUG_SECTION, "iLogLevel", rockLogLevel)));
+        rockLogPattern = ini.GetValue(DEBUG_SECTION, "sLogPattern", rockLogPattern.c_str());
+        if (rockLogPattern.empty()) {
+            rockLogPattern = logging_policy::DefaultLogPattern;
+        }
+        rockLogSampleMilliseconds =
+            logging_policy::sanitizeSampleMilliseconds(static_cast<int>(ini.GetLongValue(DEBUG_SECTION, "iLogSampleMilliseconds", rockLogSampleMilliseconds)));
+        logger::setLogLevelAndPattern(rockLogLevel, rockLogPattern);
 
         rockEnabled = ini.GetBoolValue(SECTION, "bEnabled", rockEnabled);
 
@@ -191,6 +244,8 @@ namespace frik::rock
         rockWeaponCollisionMaxAngularVelocity =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionMaxAngularVelocity", rockWeaponCollisionMaxAngularVelocity));
         rockWeaponInteractionProbeRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponInteractionProbeRadius", rockWeaponInteractionProbeRadius));
+        rockOneHandedMeshPrimaryGripAuthorityEnabled =
+            ini.GetBoolValue(SECTION, "bOneHandedMeshPrimaryGripAuthorityEnabled", rockOneHandedMeshPrimaryGripAuthorityEnabled);
 
         rockReloadUseVanillaStageObserver = ini.GetBoolValue(SECTION, "bReloadUseVanillaStageObserver", rockReloadUseVanillaStageObserver);
         rockReloadRequirePhysicalCompletion = ini.GetBoolValue(SECTION, "bReloadRequirePhysicalCompletion", rockReloadRequirePhysicalCompletion);
@@ -228,12 +283,33 @@ namespace frik::rock
         rockDebugUseBoundsForHeavyConvex = ini.GetBoolValue(SECTION, "bDebugUseBoundsForHeavyConvex", rockDebugUseBoundsForHeavyConvex);
         rockDebugVerboseLogging = ini.GetBoolValue(SECTION, "bDebugVerboseLogging", rockDebugVerboseLogging);
         rockDebugGrabFrameLogging = ini.GetBoolValue(SECTION, "bDebugGrabFrameLogging", rockDebugGrabFrameLogging);
+        rockDebugShowGrabNotifications = ini.GetBoolValue(SECTION, "bDebugShowGrabNotifications", rockDebugShowGrabNotifications);
+        rockDebugShowWeaponNotifications = ini.GetBoolValue(SECTION, "bDebugShowWeaponNotifications", rockDebugShowWeaponNotifications);
         rockDebugHandTransformParity = ini.GetBoolValue(SECTION, "bDebugHandTransformParity", rockDebugHandTransformParity);
         rockHandFrameSource = static_cast<int>(ini.GetLongValue(SECTION, "iHandFrameSource", rockHandFrameSource));
         rockHandFrameSwapWands = ini.GetBoolValue(SECTION, "bHandFrameSwapWands", rockHandFrameSwapWands);
 
         rockNearDetectionRange = static_cast<float>(ini.GetDoubleValue(SECTION, "fNearDetectionRange", rockNearDetectionRange));
         rockFarDetectionRange = static_cast<float>(ini.GetDoubleValue(SECTION, "fFarDetectionRange", rockFarDetectionRange));
+        rockNearCastRadiusGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fNearCastRadiusGameUnits", rockNearCastRadiusGameUnits));
+        rockNearCastDistanceGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fNearCastDistanceGameUnits", rockNearDetectionRange));
+        rockFarCastRadiusGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fFarCastRadiusGameUnits", rockFarCastRadiusGameUnits));
+        rockSelectionShapeCastFilterInfo =
+            readHexFilter("sSelectionShapeCastFilterInfo", rockSelectionShapeCastFilterInfo, selection_query_policy::kDefaultShapeCastFilterInfo);
+        rockFarClipRayFilterInfo = readHexFilter("sFarClipRayFilterInfo", rockFarClipRayFilterInfo, selection_query_policy::kDefaultFarClipRayFilterInfo);
+        rockPullApplyVelocityTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullApplyVelocityTime", rockPullApplyVelocityTime));
+        rockPullTrackHandTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullTrackHandTime", rockPullTrackHandTime));
+        rockPullDestinationZOffsetHavok = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullDestinationZOffsetHavok", rockPullDestinationZOffsetHavok));
+        rockPullDurationA = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullDurationA", rockPullDurationA));
+        rockPullDurationB = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullDurationB", rockPullDurationB));
+        rockPullDurationC = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullDurationC", rockPullDurationC));
+        rockPullMaxVelocityHavok = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullMaxVelocityHavok", rockPullMaxVelocityHavok));
+        rockPullAutoGrabDistanceGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fPullAutoGrabDistanceGameUnits", rockPullAutoGrabDistanceGameUnits));
+        rockObjectPhysicsTreeMaxDepth = static_cast<int>(ini.GetLongValue(SECTION, "iObjectPhysicsTreeMaxDepth", rockObjectPhysicsTreeMaxDepth));
+        rockDynamicPushAssistEnabled = ini.GetBoolValue(SECTION, "bDynamicPushAssistEnabled", rockDynamicPushAssistEnabled);
+        rockDynamicPushMinSpeed = static_cast<float>(ini.GetDoubleValue(SECTION, "fDynamicPushMinSpeed", rockDynamicPushMinSpeed));
+        rockDynamicPushMaxImpulse = static_cast<float>(ini.GetDoubleValue(SECTION, "fDynamicPushMaxImpulse", rockDynamicPushMaxImpulse));
+        rockDynamicPushCooldownSeconds = static_cast<float>(ini.GetDoubleValue(SECTION, "fDynamicPushCooldownSeconds", rockDynamicPushCooldownSeconds));
 
         rockGrabLinearTau = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLinearTau", rockGrabLinearTau));
         rockGrabLinearDamping = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLinearDamping", rockGrabLinearDamping));
@@ -256,6 +332,10 @@ namespace frik::rock
         rockGrabTauLerpSpeed = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauLerpSpeed", rockGrabTauLerpSpeed));
         rockGrabCloseThreshold = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabCloseThreshold", rockGrabCloseThreshold));
         rockGrabFarThreshold = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFarThreshold", rockGrabFarThreshold));
+        rockGrabAdaptiveMotorEnabled = ini.GetBoolValue(SECTION, "bGrabAdaptiveMotorEnabled", rockGrabAdaptiveMotorEnabled);
+        rockGrabAdaptivePositionFullError = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAdaptivePositionFullError", rockGrabAdaptivePositionFullError));
+        rockGrabAdaptiveRotationFullError = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAdaptiveRotationFullError", rockGrabAdaptiveRotationFullError));
+        rockGrabAdaptiveMaxForceMultiplier = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAdaptiveMaxForceMultiplier", rockGrabAdaptiveMaxForceMultiplier));
 
         rockGrabMaxInertiaRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxInertiaRatio", rockGrabMaxInertiaRatio));
 
@@ -273,8 +353,10 @@ namespace frik::rock
         rockGrabHandLerpMinDistance = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabHandLerpMinDistance", rockGrabHandLerpMinDistance));
         rockGrabHandLerpMaxDistance = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabHandLerpMaxDistance", rockGrabHandLerpMaxDistance));
         rockGrabMeshFingerPoseEnabled = ini.GetBoolValue(SECTION, "bGrabMeshFingerPoseEnabled", rockGrabMeshFingerPoseEnabled);
+        rockGrabMeshJointPoseEnabled = ini.GetBoolValue(SECTION, "bGrabMeshJointPoseEnabled", rockGrabMeshJointPoseEnabled);
         rockGrabFingerPoseUpdateInterval = static_cast<int>(ini.GetLongValue(SECTION, "iGrabFingerPoseUpdateInterval", rockGrabFingerPoseUpdateInterval));
         rockGrabFingerMinValue = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFingerMinValue", rockGrabFingerMinValue));
+        rockGrabFingerPoseSmoothingSpeed = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFingerPoseSmoothingSpeed", rockGrabFingerPoseSmoothingSpeed));
 
         readVec3("fGrabPivotAOffsetHandspaceX", "fGrabPivotAOffsetHandspaceY", "fGrabPivotAOffsetHandspaceZ", rockGrabPivotAOffsetHandspace);
         rockReverseGrabPivotAOffset = ini.GetBoolValue(SECTION, "bReverseGrabPivotAOffset", rockReverseGrabPivotAOffset);
@@ -309,7 +391,12 @@ namespace frik::rock
         resetToDefaults();
         readValuesFromIni(ini);
 
-        ROCK_LOG_INFO(Config, "ROCK config loaded (rockEnabled={})", rockEnabled);
+        ROCK_LOG_INFO(Config,
+            "ROCK config loaded (rockEnabled={}, logLevel={} {}, sample={}ms)",
+            rockEnabled,
+            rockLogLevel,
+            logging_policy::logLevelName(rockLogLevel),
+            rockLogSampleMilliseconds);
 
         startFileWatch();
     }
@@ -331,7 +418,12 @@ namespace frik::rock
         }
 
         readValuesFromIni(ini);
-        ROCK_LOG_INFO(Config, "ROCK config reloaded (rockEnabled={})", rockEnabled);
+        ROCK_LOG_INFO(Config,
+            "ROCK config reloaded (rockEnabled={}, logLevel={} {}, sample={}ms)",
+            rockEnabled,
+            rockLogLevel,
+            logging_policy::logLevelName(rockLogLevel),
+            rockLogSampleMilliseconds);
     }
 
     void RockConfig::processPendingReload()
@@ -344,7 +436,7 @@ namespace frik::rock
         reload();
 
         for (const auto& [key, subscriber] : _onConfigChangedSubscribers) {
-            ROCK_LOG_INFO(Config, "Notify config change subscriber '{}'", key);
+            ROCK_LOG_DEBUG(Config, "Notify config change subscriber '{}'", key);
             subscriber(key);
         }
     }
@@ -364,7 +456,7 @@ namespace frik::rock
         }
 
         _fileWatchInitThread = std::thread([this]() {
-            ROCK_LOG_INFO(Config, "Starting file watch on '{}'", _iniFilePath);
+            ROCK_LOG_DEBUG(Config, "Starting file watch on '{}'", _iniFilePath);
 
             _fileWatch = std::make_unique<filewatch::FileWatch<std::string>>(_iniFilePath, [this](const std::string&, const filewatch::Event changeType) {
                 if (changeType != filewatch::Event::modified) {
@@ -406,7 +498,7 @@ namespace frik::rock
             _fileWatchInitThread.join();
         }
         if (_fileWatch) {
-            ROCK_LOG_INFO(Config, "Stopping file watch on ROCK.ini");
+            ROCK_LOG_DEBUG(Config, "Stopping file watch on ROCK.ini");
             _fileWatch.reset();
         }
     }

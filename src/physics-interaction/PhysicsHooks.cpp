@@ -123,7 +123,7 @@ namespace frik::rock
                 const auto count = counter.fetch_add(1, std::memory_order_relaxed) + 1;
 
                 if (count == 1 || (g_rockConfig.rockNativeMeleeDebugLogging && count % 45 == 0) || count % 180 == 0) {
-                    ROCK_LOG_INFO(Combat, "Native melee {} decision={} reason={} count={}",
+                    ROCK_LOG_DEBUG(Combat, "Native melee {} decision={} reason={} count={}",
                         event == NativeMeleeEvent::WeaponSwing ? "WeaponSwing" : "HitFrame",
                         decision.action == NativeMeleeSuppressionAction::CallNative      ? "native"
                             : decision.action == NativeMeleeSuppressionAction::ReturnHandled ? "handled"
@@ -245,7 +245,7 @@ namespace frik::rock
                         static int holdSkipLogCounter = 0;
                         if (++holdSkipLogCounter >= 30) {
                             holdSkipLogCounter = 0;
-                            logger::info("[ROCK::Bump] Skipped bump — holding object");
+                            ROCK_LOG_DEBUG(Bump, "Skipped bump — holding object");
                         }
                         return;
                     }
@@ -268,7 +268,7 @@ namespace frik::rock
                         static int skipLogCounter = 0;
                         if (++skipLogCounter >= 10) {
                             skipLogCounter = 0;
-                            logger::info("[ROCK::Bump] Skipped bump — hand dist R={:.1f} L={:.1f} contact=({:.1f},{:.1f},{:.1f})", distR, distL, contactPos.x, contactPos.y,
+                            ROCK_LOG_DEBUG(Bump, "Skipped bump — hand dist R={:.1f} L={:.1f} contact=({:.1f},{:.1f},{:.1f})", distR, distL, contactPos.x, contactPos.y,
                                 contactPos.z);
                         }
                         return;
@@ -425,7 +425,7 @@ namespace frik::rock
                 std::uint32_t at3C = *reinterpret_cast<std::uint32_t*>(manifoldEntry + 0x3C);
 
                 if (doDiag) {
-                    logger::info("[ROCK::CC]   [{}] +20={} +24={} +28={} +2C={} +30={} +34={} +38={} +3C={}", i, at20, at24, at28, at2C, at30, at34, at38, at3C);
+                    ROCK_LOG_TRACE(CC, "[{}] +20={} +24={} +28={} +2C={} +30={} +34={} +38={} +3C={}", i, at20, at24, at28, at2C, at30, at34, at38, at3C);
                 }
 
                 std::uint32_t bodyId = at28;
@@ -445,7 +445,7 @@ namespace frik::rock
                     zeroed++;
 
                     if (doDiag) {
-                        logger::info("[ROCK::CC]   → ZEROED constraint {} (matched body ID)", i);
+                        ROCK_LOG_TRACE(CC, "Zeroed constraint {} (matched body ID)", i);
                     }
                 }
             }
@@ -454,7 +454,7 @@ namespace frik::rock
                 static int zeroLogCounter = 0;
                 if (++zeroLogCounter >= 90) {
                     zeroLogCounter = 0;
-                    logger::info("[ROCK::CC] Zeroed surface velocity for {} held body constraints", zeroed);
+                    ROCK_LOG_DEBUG(CC, "Zeroed surface velocity for {} held body constraints", zeroed);
                 }
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) {

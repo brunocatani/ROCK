@@ -34,6 +34,7 @@ namespace frik::rock
     struct WeaponTwoHandedSolverResult
     {
         Transform weaponWorldTransform{};
+        decltype(Transform{}.rotate) rotationDelta{};
         bool solved{ false };
         float primaryError{ 0.0f };
         float supportError{ 0.0f };
@@ -201,11 +202,43 @@ namespace frik::rock
         return weaponSolverSub(vector, weaponSolverScale(planeNormal, normalDot));
     }
 
+    template <class Vector>
+    inline Vector makeLockedSupportGripTarget(
+        const Vector& primaryTargetWorld,
+        const Vector& supportControllerWorld,
+        const Vector& fallbackSupportTargetWorld,
+        float lockedGripDistance,
+        float minimumSeparation)
+    {
+        /*
+         * HIGGS keeps two-handed weapon grabs as captured hand-to-weapon
+         * relationships and uses controller motion to rotate the held weapon,
+         * not to slide the visual contact point along the model. ROCK keeps
+         * that rule explicit by preserving the captured primary-support
+         * distance while still using the support controller direction for aim.
+         */
+        if (lockedGripDistance <= minimumSeparation) {
+            return fallbackSupportTargetWorld;
+        }
+
+        Vector targetAxis = weaponSolverSub(supportControllerWorld, primaryTargetWorld);
+        if (weaponSolverLength(targetAxis) <= minimumSeparation) {
+            targetAxis = weaponSolverSub(fallbackSupportTargetWorld, primaryTargetWorld);
+        }
+        if (weaponSolverLength(targetAxis) <= minimumSeparation) {
+            return fallbackSupportTargetWorld;
+        }
+
+        const Vector direction = weaponSolverNormalize(targetAxis);
+        return weaponSolverAdd(primaryTargetWorld, weaponSolverScale(direction, lockedGripDistance));
+    }
+
     template <class Transform, class Vector>
     inline WeaponTwoHandedSolverResult<Transform> solveTwoHandedWeaponTransform(const WeaponTwoHandedSolverInput<Transform, Vector>& input)
     {
         WeaponTwoHandedSolverResult<Transform> result{};
         result.weaponWorldTransform = input.weaponWorldTransform;
+        result.rotationDelta = transform_math::makeIdentityRotation<decltype(input.weaponWorldTransform.rotate)>();
 
         const Vector localAxis = weaponSolverSub(input.supportGripLocal, input.primaryGripLocal);
         const Vector currentAxisWorld = transform_math::localVectorToWorld(input.weaponWorldTransform, localAxis);
@@ -216,6 +249,7 @@ namespace frik::rock
         }
 
         const auto rotationDelta = weaponSolverRotationBetweenStored<decltype(input.weaponWorldTransform.rotate), Vector>(currentAxisWorld, desiredAxisWorld);
+        result.rotationDelta = rotationDelta;
         result.weaponWorldTransform.rotate =
             weaponSolverApplyWorldRotationToStoredBasis<decltype(input.weaponWorldTransform.rotate), Vector>(rotationDelta, input.weaponWorldTransform.rotate);
 
@@ -240,6 +274,8 @@ namespace frik::rock
                 const Vector crossValue = weaponSolverCross(currentProjected, desiredProjected);
                 const float signedAngle = std::atan2(weaponSolverDot(twistAxis, crossValue), dotValue) * input.supportNormalTwistFactor;
                 const auto twistRotation = weaponSolverAxisAngleStored<decltype(input.weaponWorldTransform.rotate), Vector>(twistAxis, signedAngle);
+                result.rotationDelta =
+                    weaponSolverApplyWorldRotationToStoredBasis<decltype(input.weaponWorldTransform.rotate), Vector>(twistRotation, result.rotationDelta);
 
                 const Vector supportPivot = input.supportTargetWorld;
                 const Vector pivotToWeapon = weaponSolverSub(result.weaponWorldTransform.translate, supportPivot);
@@ -261,5 +297,20 @@ namespace frik::rock
 
         result.solved = true;
         return result;
+    }
+
+    template <class Transform, class Vector>
+    inline WeaponTwoHandedSolverResult<Transform> solveTwoHandedWeaponTransformFrikPivot(const WeaponTwoHandedSolverInput<Transform, Vector>& input)
+    {
+        /*
+         * This named entry point is intentionally kept beside the generic
+         * solver. FRIK's suppressed two-handed grip already proved the right
+         * firearm behavior: aim from the right-hand primary grip toward the
+         * offhand support point, then retranslate the weapon so the primary
+         * grip pivot does not drift. ROCK adds HIGGS-style semantic mesh
+         * anchors and full weapon/collision authority around that same math
+         * instead of inventing a second aiming convention.
+         */
+        return solveTwoHandedWeaponTransform(input);
     }
 }

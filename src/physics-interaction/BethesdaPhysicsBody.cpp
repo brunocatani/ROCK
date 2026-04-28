@@ -268,7 +268,7 @@ namespace frik::rock
                 return false;
             }
 
-            ROCK_LOG_INFO(BethesdaBody, "Body created via raw CreateBody: bodyId={} motionId={}", _bodyId.value, motionId);
+            ROCK_LOG_DEBUG(BethesdaBody, "Body created via raw CreateBody: bodyId={} motionId={}", _bodyId.value, motionId);
         }
 
         {
@@ -306,7 +306,7 @@ namespace frik::rock
 
             *reinterpret_cast<char**>(reinterpret_cast<char*>(_physicsSystem) + 0x18) = instance;
 
-            ROCK_LOG_INFO(BethesdaBody, "Physics system instance constructed: instance={:p} world={:p} bodyId={}", (void*)instance, (void*)world, _bodyId.value);
+            ROCK_LOG_DEBUG(BethesdaBody, "Physics system instance constructed: instance={:p} world={:p} bodyId={}", (void*)instance, (void*)world, _bodyId.value);
         }
 
         {
@@ -314,7 +314,7 @@ namespace frik::rock
             auto* bodyPtr = reinterpret_cast<char*>(&bodyArray[_bodyId.value]);
             *reinterpret_cast<void**>(bodyPtr + 0x88) = _collisionObject;
 
-            ROCK_LOG_INFO(BethesdaBody, "body+0x88 back-pointer set manually: {:p}", _collisionObject);
+            ROCK_LOG_DEBUG(BethesdaBody, "body+0x88 back-pointer set manually: {:p}", _collisionObject);
         }
 
         if (motionType == BethesdaMotionType::Keyframed) {
@@ -338,7 +338,7 @@ namespace frik::rock
 
         _created = true;
 
-        ROCK_LOG_INFO(BethesdaBody, "Created '{}': bodyId={} collObj={:p} physSys={:p} sysData={:p} motionType={}", name, _bodyId.value, _collisionObject, _physicsSystem,
+        ROCK_LOG_DEBUG(BethesdaBody, "Created '{}': bodyId={} collObj={:p} physSys={:p} sysData={:p} motionType={}", name, _bodyId.value, _collisionObject, _physicsSystem,
             _systemData, static_cast<int>(motionType));
 
         {
@@ -346,7 +346,7 @@ namespace frik::rock
             auto* bodyPtr = reinterpret_cast<char*>(&bodyArray[_bodyId.value]);
             auto* backPtr = *reinterpret_cast<void**>(bodyPtr + 0x88);
             if (backPtr == _collisionObject) {
-                ROCK_LOG_INFO(BethesdaBody, "  body+0x88 back-pointer VERIFIED: {:p} == collisionObject", backPtr);
+                ROCK_LOG_DEBUG(BethesdaBody, "  body+0x88 back-pointer VERIFIED: {:p} == collisionObject", backPtr);
             } else {
                 ROCK_LOG_ERROR(BethesdaBody, "  body+0x88 back-pointer MISMATCH: {:p} != {:p}", backPtr, _collisionObject);
             }
@@ -361,7 +361,7 @@ namespace frik::rock
         if (!_created)
             return;
 
-        ROCK_LOG_INFO(BethesdaBody, "Destroying body: bodyId={} collObj={:p}", _bodyId.value, _collisionObject);
+        ROCK_LOG_DEBUG(BethesdaBody, "Destroying body: bodyId={} collObj={:p}", _bodyId.value, _collisionObject);
 
         destroyNiNode();
 
@@ -383,7 +383,7 @@ namespace frik::rock
                 auto* worldPtr = *reinterpret_cast<RE::hknpWorld**>(physSysInstance + 0x18);
                 if (worldPtr) {
                     worldPtr->DestroyBodies(&_bodyId, 1);
-                    ROCK_LOG_INFO(BethesdaBody, "Body {} destroyed from world", _bodyId.value);
+                    ROCK_LOG_DEBUG(BethesdaBody, "Body {} destroyed from world", _bodyId.value);
                 }
             }
         }
@@ -470,7 +470,7 @@ namespace frik::rock
             bool ownerOk = (collObjOwner == _niNode);
             bool collOk = (nodeCollObj == _collisionObject);
 
-            ROCK_LOG_INFO(BethesdaBody, "NiNode '{}' created: node={:p} collObj→owner={} node→collObj={}", name ? name : "(null)", _niNode, ownerOk ? "VERIFIED" : "MISMATCH",
+        ROCK_LOG_DEBUG(BethesdaBody, "NiNode '{}' created: node={:p} collObj→owner={} node→collObj={}", name ? name : "(null)", _niNode, ownerOk ? "VERIFIED" : "MISMATCH",
                 collOk ? "VERIFIED" : "MISMATCH");
         }
 
@@ -491,7 +491,7 @@ namespace frik::rock
         releaseRefCounted(_niNode);
         _niNode = nullptr;
 
-        ROCK_LOG_INFO(BethesdaBody, "NiNode destroyed");
+        ROCK_LOG_DEBUG(BethesdaBody, "NiNode destroyed");
     }
 
     void BethesdaPhysicsBody::registerContactSignal(const char* signalName)

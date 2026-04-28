@@ -35,7 +35,7 @@ namespace frik::rock
             _ready = true;
 
             if (changed) {
-                ROCK_LOG_INFO(Hand, "HandBoneCache resolved fpSkeleton={:p} RArm_Hand={:p} LArm_Hand={:p}", static_cast<void*>(_skeleton), static_cast<void*>(_rightHand),
+                ROCK_LOG_DEBUG(Hand, "HandBoneCache resolved fpSkeleton={:p} RArm_Hand={:p} LArm_Hand={:p}", static_cast<void*>(_skeleton), static_cast<void*>(_rightHand),
                     static_cast<void*>(_leftHand));
             }
 

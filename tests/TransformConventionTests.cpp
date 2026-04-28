@@ -1,6 +1,10 @@
 #include <cmath>
 #include <cstdio>
 #include <algorithm>
+#include <bit>
+#include <cstddef>
+#include <cstring>
+#include <string>
 #include <vector>
 
 #include "physics-interaction/DebugAxisMath.h"
@@ -8,24 +12,44 @@
 #include "physics-interaction/DebugOverlayPolicy.h"
 #include "physics-interaction/CollisionLayerPolicy.h"
 #include "physics-interaction/GrabAnchorMath.h"
+#include "physics-interaction/GrabConstraintMath.h"
 #include "physics-interaction/GrabFingerPoseMath.h"
+#include "physics-interaction/GrabInteractionPolicy.h"
+#include "physics-interaction/GrabMotionController.h"
 #include "physics-interaction/HandVisualLerpMath.h"
 #include "physics-interaction/HeldObjectDampingMath.h"
 #include "physics-interaction/HeldObjectPhysicsMath.h"
 #include "physics-interaction/HandCollisionSuppressionMath.h"
 #include "physics-interaction/HandspaceConvention.h"
 #include "physics-interaction/NativeMeleeSuppressionPolicy.h"
+#include "physics-interaction/ObjectPhysicsBodySet.h"
+#include "physics-interaction/PhysicsBodyClassifier.h"
+#include "physics-interaction/PhysicsRecursiveWrappers.h"
+#include "physics-interaction/PhysicsShapeCastMath.h"
 #include "physics-interaction/PointingDirectionMath.h"
+#include "physics-interaction/PullMotionMath.h"
+#include "physics-interaction/PushAssist.h"
+#include "physics-interaction/RockLoggingPolicy.h"
+#include "physics-interaction/SelectionQueryPolicy.h"
+#include "physics-interaction/SelectionStatePolicy.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/WeaponVisualAuthorityMath.h"
 #include "physics-interaction/WeaponCollisionAdjustmentMath.h"
 #include "physics-interaction/WeaponCollisionGeometryMath.h"
 #include "physics-interaction/WeaponCollisionLimits.h"
+#include "physics-interaction/WeaponDebugNotificationPolicy.h"
+#include "physics-interaction/WeaponAuthorityLifecyclePolicy.h"
+#include "physics-interaction/WeaponPrimaryGripAuthorityPolicy.h"
 #include "physics-interaction/WeaponInteractionProbeMath.h"
 #include "physics-interaction/WeaponInteractionRouter.h"
+#include "physics-interaction/WeaponMuzzleAuthorityMath.h"
 #include "physics-interaction/WeaponPartClassifier.h"
+#include "physics-interaction/WeaponPrimaryGripMath.h"
 #include "physics-interaction/WeaponReloadStageObserver.h"
 #include "physics-interaction/WeaponSemanticHullBudget.h"
+#include "physics-interaction/WeaponTwoHandedGripMath.h"
 #include "physics-interaction/WeaponTwoHandedSolver.h"
+#include "api/FRIKApi.h"
 
 struct TestMatrix
 {
@@ -89,6 +113,26 @@ namespace
         std::printf("%s expected selected index %zu\n", label, expected);
         return false;
     }
+
+    bool expectString(const char* label, const char* actual, const char* expected)
+    {
+        if (actual && std::strcmp(actual, expected) == 0) {
+            return true;
+        }
+
+        std::printf("%s expected '%s' got '%s'\n", label, expected, actual ? actual : "(null)");
+        return false;
+    }
+
+    bool expectString(const char* label, const std::string& actual, const char* expected)
+    {
+        if (actual == expected) {
+            return true;
+        }
+
+        std::printf("%s expected '%s' got '%s'\n", label, expected, actual.c_str());
+        return false;
+    }
 }
 
 int main()
@@ -107,6 +151,30 @@ int main()
     ok &= expectFloat("hk[8]", hkFloats[8], niRotation.entry[0][2]);
     ok &= expectFloat("hk[9]", hkFloats[9], niRotation.entry[1][2]);
     ok &= expectFloat("hk[10]", hkFloats[10], niRotation.entry[2][2]);
+
+    TestTransform desiredGrabFrame{};
+    desiredGrabFrame.rotate = niRotation;
+    desiredGrabFrame.scale = 1.0f;
+    alignas(16) float initialTransformB[12]{};
+    alignas(16) float initialTargetBRca[12]{};
+    frik::rock::grab_constraint_math::writeInitialGrabAngularFrame(initialTransformB, initialTargetBRca, desiredGrabFrame);
+    const TestMatrix expectedBodyToHandRotation = frik::rock::transform_math::transposeRotation(niRotation);
+    ok &= expectFloat("grab initial transformB inverse col0.x", initialTransformB[0], expectedBodyToHandRotation.entry[0][0]);
+    ok &= expectFloat("grab initial transformB inverse col0.y", initialTransformB[1], expectedBodyToHandRotation.entry[1][0]);
+    ok &= expectFloat("grab initial transformB inverse col0.z", initialTransformB[2], expectedBodyToHandRotation.entry[2][0]);
+    ok &= expectFloat("grab initial transformB inverse col1.x", initialTransformB[4], expectedBodyToHandRotation.entry[0][1]);
+    ok &= expectFloat("grab initial transformB inverse col1.y", initialTransformB[5], expectedBodyToHandRotation.entry[1][1]);
+    ok &= expectFloat("grab initial transformB inverse col1.z", initialTransformB[6], expectedBodyToHandRotation.entry[2][1]);
+    ok &= expectFloat("grab initial transformB inverse col2.x", initialTransformB[8], expectedBodyToHandRotation.entry[0][2]);
+    ok &= expectFloat("grab initial transformB inverse col2.y", initialTransformB[9], expectedBodyToHandRotation.entry[1][2]);
+    ok &= expectFloat("grab initial transformB inverse col2.z", initialTransformB[10], expectedBodyToHandRotation.entry[2][2]);
+    for (int columnStart = 0; columnStart <= 8; columnStart += 4) {
+        for (int component = 0; component < 4; ++component) {
+            char label[64];
+            std::snprintf(label, sizeof(label), "grab initial target matches transformB[%d]", columnStart + component);
+            ok &= expectFloat(label, initialTargetBRca[columnStart + component], initialTransformB[columnStart + component]);
+        }
+    }
 
     const TestMatrix roundTrip = frik::rock::transform_math::havokColumnsToNiRows<TestMatrix>(hkFloats);
     for (int row = 0; row < 3; ++row) {
@@ -467,6 +535,83 @@ int main()
     const auto supportRoute = frik::rock::routeWeaponInteraction(handguardContact, frik::rock::WeaponReloadRuntimeState{});
     ok &= expectFloat("weapon router support grip", static_cast<float>(supportRoute.kind), static_cast<float>(frik::rock::WeaponInteractionKind::SupportGrip));
 
+    ok &= expectString("weapon debug part name", frik::rock::weapon_debug_notification_policy::nameOf(frik::rock::WeaponPartKind::Handguard), "Handguard");
+    ok &= expectString(
+        "weapon debug interaction name",
+        frik::rock::weapon_debug_notification_policy::nameOf(frik::rock::WeaponInteractionKind::SupportGrip),
+        "SupportGrip");
+    ok &= expectString(
+        "weapon debug reload state name",
+        frik::rock::weapon_debug_notification_policy::nameOf(frik::rock::WeaponReloadState::ReloadRequested),
+        "ReloadRequested");
+
+    frik::rock::weapon_debug_notification_policy::WeaponNotificationState weaponNotificationState{};
+    const auto firstWeaponNotificationKey = frik::rock::weapon_debug_notification_policy::makeWeaponNotificationKey(
+        handguardContact,
+        supportRoute,
+        frik::rock::WeaponReloadRuntimeState{},
+        frik::rock::weapon_debug_notification_policy::WeaponContactSource::Probe);
+    ok &= expectFloat(
+        "weapon debug first contact notifies",
+        frik::rock::weapon_debug_notification_policy::shouldNotifyWeaponContact(weaponNotificationState, firstWeaponNotificationKey) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat(
+        "weapon debug repeated contact suppressed",
+        frik::rock::weapon_debug_notification_policy::shouldNotifyWeaponContact(weaponNotificationState, firstWeaponNotificationKey) ? 1.0f : 0.0f,
+        0.0f);
+
+    frik::rock::WeaponInteractionContact barrelContact = handguardContact;
+    barrelContact.partKind = frik::rock::WeaponPartKind::Barrel;
+    barrelContact.fallbackGripPose = frik::rock::WeaponGripPoseId::BarrelWrap;
+    const auto barrelRoute = frik::rock::routeWeaponInteraction(barrelContact, frik::rock::WeaponReloadRuntimeState{});
+    const auto changedWeaponNotificationKey = frik::rock::weapon_debug_notification_policy::makeWeaponNotificationKey(
+        barrelContact,
+        barrelRoute,
+        frik::rock::WeaponReloadRuntimeState{},
+        frik::rock::weapon_debug_notification_policy::WeaponContactSource::Probe);
+    ok &= expectFloat(
+        "weapon debug changed contact notifies",
+        frik::rock::weapon_debug_notification_policy::shouldNotifyWeaponContact(weaponNotificationState, changedWeaponNotificationKey) ? 1.0f : 0.0f,
+        1.0f);
+    frik::rock::WeaponInteractionDebugInfo weaponDebugInfo{};
+    weaponDebugInfo.weaponName = "Hunting Rifle";
+    weaponDebugInfo.weaponFormId = 0x0004F46A;
+    weaponDebugInfo.weaponNodeName = "Weapon";
+    weaponDebugInfo.sourceRootName = "firstPersonSkeleton:Weapon";
+    weaponDebugInfo.sourceName = "MagazineLarge";
+    ok &= expectFloat(
+        "weapon debug grip start",
+        static_cast<float>(frik::rock::weapon_debug_notification_policy::observeWeaponSupportGrip(weaponNotificationState, true)),
+        static_cast<float>(frik::rock::weapon_debug_notification_policy::WeaponGripNotificationEvent::Started));
+    ok &= expectFloat(
+        "weapon debug repeated grip active",
+        static_cast<float>(frik::rock::weapon_debug_notification_policy::observeWeaponSupportGrip(weaponNotificationState, true)),
+        static_cast<float>(frik::rock::weapon_debug_notification_policy::WeaponGripNotificationEvent::None));
+    ok &= expectString(
+        "weapon debug grip start message",
+        frik::rock::weapon_debug_notification_policy::formatWeaponGripNotification(
+            frik::rock::weapon_debug_notification_policy::WeaponGripNotificationEvent::Started,
+            changedWeaponNotificationKey,
+            weaponDebugInfo),
+        "[ROCK] WPN GRIP START weapon='Hunting Rifle' form=0004F46A node='Weapon' root='firstPersonSkeleton:Weapon' nif='MagazineLarge' part=Barrel route=SupportGrip pose=BarrelWrap reload=Idle body=200");
+    ok &= expectString(
+        "weapon debug grip start fallback message",
+        frik::rock::weapon_debug_notification_policy::formatWeaponGripNotification(
+            frik::rock::weapon_debug_notification_policy::WeaponGripNotificationEvent::Started,
+            changedWeaponNotificationKey,
+            frik::rock::WeaponInteractionDebugInfo{}),
+        "[ROCK] WPN GRIP START weapon='(unknown)' form=00000000 node='(unknown)' root='(unknown)' nif='(unknown)' part=Barrel route=SupportGrip pose=BarrelWrap reload=Idle body=200");
+    ok &= expectFloat(
+        "weapon debug grip end",
+        static_cast<float>(frik::rock::weapon_debug_notification_policy::observeWeaponSupportGrip(weaponNotificationState, false)),
+        static_cast<float>(frik::rock::weapon_debug_notification_policy::WeaponGripNotificationEvent::Ended));
+    ok &= expectString(
+        "weapon debug grip end message",
+        frik::rock::weapon_debug_notification_policy::formatWeaponGripNotification(
+            frik::rock::weapon_debug_notification_policy::WeaponGripNotificationEvent::Ended,
+            changedWeaponNotificationKey),
+        "[ROCK] WPN GRIP END");
+
     frik::rock::WeaponInteractionContact magazineContact{};
     magazineContact.valid = true;
     magazineContact.bodyId = 201;
@@ -651,6 +796,267 @@ int main()
     ok &= expectFloat("two handed solver support y", solvedSupportWorld.y, 20.0f);
     ok &= expectFloat("two handed solver support z", solvedSupportWorld.z, 30.0f);
 
+    TestTransform frikStyleWeapon{};
+    frikStyleWeapon.rotate = identity;
+    frikStyleWeapon.scale = 1.0f;
+    frikStyleWeapon.translate = TestVector{ 4.0f, 5.0f, 6.0f };
+    frik::rock::WeaponTwoHandedSolverInput<TestTransform, TestVector> frikStyleInput{};
+    frikStyleInput.weaponWorldTransform = frikStyleWeapon;
+    frikStyleInput.primaryGripLocal = TestVector{ 0.0f, 0.0f, 0.0f };
+    frikStyleInput.supportGripLocal = TestVector{ 0.0f, 10.0f, 0.0f };
+    frikStyleInput.primaryTargetWorld = TestVector{ 12.0f, 20.0f, 30.0f };
+    frikStyleInput.supportTargetWorld = TestVector{ 22.0f, 20.0f, 30.0f };
+    const auto frikStyleSolved = frik::rock::solveTwoHandedWeaponTransformFrikPivot(frikStyleInput);
+    const auto frikStylePrimaryWorld = frik::rock::transform_math::localPointToWorld(frikStyleSolved.weaponWorldTransform, frikStyleInput.primaryGripLocal);
+    const auto frikStyleSupportWorld = frik::rock::transform_math::localPointToWorld(frikStyleSolved.weaponWorldTransform, frikStyleInput.supportGripLocal);
+    const auto frikStyleRotatedForward = frik::rock::transform_math::rotateLocalVectorToWorld(frikStyleSolved.rotationDelta, TestVector{ 0.0f, 1.0f, 0.0f });
+    ok &= expectFloat("two handed frik-pivot solver solved", frikStyleSolved.solved ? 1.0f : 0.0f, 1.0f);
+    ok &= expectFloat("two handed frik-pivot primary x", frikStylePrimaryWorld.x, 12.0f);
+    ok &= expectFloat("two handed frik-pivot primary y", frikStylePrimaryWorld.y, 20.0f);
+    ok &= expectFloat("two handed frik-pivot primary z", frikStylePrimaryWorld.z, 30.0f);
+    ok &= expectFloat("two handed frik-pivot support x", frikStyleSupportWorld.x, 22.0f);
+    ok &= expectFloat("two handed frik-pivot support y", frikStyleSupportWorld.y, 20.0f);
+    ok &= expectFloat("two handed frik-pivot support z", frikStyleSupportWorld.z, 30.0f);
+    ok &= expectFloat("two handed frik-pivot delta forward x", frikStyleRotatedForward.x, 1.0f);
+    ok &= expectFloat("two handed frik-pivot delta forward y", frikStyleRotatedForward.y, 0.0f);
+    ok &= expectFloat("two handed frik-pivot delta forward z", frikStyleRotatedForward.z, 0.0f);
+
+    const auto lockedSupportTarget = frik::rock::makeLockedSupportGripTarget(
+        TestVector{ 0.0f, 0.0f, 0.0f },
+        TestVector{ 0.0f, 25.0f, 0.0f },
+        TestVector{ 0.0f, 10.0f, 0.0f },
+        10.0f,
+        0.001f);
+    ok &= expectFloat("two handed locked support target ignores axial slide x", lockedSupportTarget.x, 0.0f);
+    ok &= expectFloat("two handed locked support target ignores axial slide y", lockedSupportTarget.y, 10.0f);
+    ok &= expectFloat("two handed locked support target ignores axial slide z", lockedSupportTarget.z, 0.0f);
+
+    const auto lockedSupportPivotTarget = frik::rock::makeLockedSupportGripTarget(
+        TestVector{ 0.0f, 0.0f, 0.0f },
+        TestVector{ 10.0f, 10.0f, 0.0f },
+        TestVector{ 0.0f, 10.0f, 0.0f },
+        10.0f,
+        0.001f);
+    ok &= expectFloat("two handed locked support target preserves lateral pivot x", lockedSupportPivotTarget.x, 7.0711f);
+    ok &= expectFloat("two handed locked support target preserves lateral pivot y", lockedSupportPivotTarget.y, 7.0711f);
+    ok &= expectFloat("two handed locked support target preserves lateral pivot z", lockedSupportPivotTarget.z, 0.0f);
+
+    ok &= expectFloat("frik api v6 required", static_cast<float>(frik::api::FRIK_API_VERSION), 6.0f);
+    ok &= expectFloat("frik api hand target appended",
+        offsetof(frik::api::FRIKApi, applyExternalHandWorldTransform) > offsetof(frik::api::FRIKApi, setHandPoseCustomJointPositionsWithPriority) ? 1.0f : 0.0f,
+        1.0f);
+
+    TestTransform supportHandFrame{};
+    supportHandFrame.rotate = identity;
+    supportHandFrame.scale = 1.0f;
+    supportHandFrame.translate = TestVector{ 100.0f, 200.0f, 300.0f };
+    const auto alignedSupportHandFrame = frik::rock::weapon_two_handed_grip_math::alignHandFrameToGripPoint(
+        supportHandFrame,
+        TestVector{ 101.0f, 203.0f, 307.0f },
+        TestVector{ 110.0f, 220.0f, 340.0f });
+    ok &= expectFloat("two handed support hand frame aligned x", alignedSupportHandFrame.translate.x, 109.0f);
+    ok &= expectFloat("two handed support hand frame aligned y", alignedSupportHandFrame.translate.y, 217.0f);
+    ok &= expectFloat("two handed support hand frame aligned z", alignedSupportHandFrame.translate.z, 333.0f);
+    ok &= expectFloat("two handed support can start free hand",
+        frik::rock::weapon_two_handed_grip_math::canStartSupportGrip(true, true, false) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("two handed support cannot start while holding",
+        frik::rock::weapon_two_handed_grip_math::canStartSupportGrip(true, true, true) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("two handed support cannot continue while holding",
+        frik::rock::weapon_two_handed_grip_math::shouldContinueSupportGrip(true, true) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("normal right grab allowed without weapon",
+        frik::rock::weapon_two_handed_grip_math::canProcessNormalGrabInput(false, false, false) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("normal right grab suppressed with right weapon",
+        frik::rock::weapon_two_handed_grip_math::canProcessNormalGrabInput(false, false, true) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("normal left grab suppressed during support grip",
+        frik::rock::weapon_two_handed_grip_math::canProcessNormalGrabInput(true, true, true) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("normal left grab allowed with right weapon only",
+        frik::rock::weapon_two_handed_grip_math::canProcessNormalGrabInput(true, false, true) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("near selected grab not constrained by far range",
+        frik::rock::grab_interaction_policy::canAttemptSelectedObjectGrab(false, 900.0f, 350.0f) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("far selected grab allowed within configured range",
+        frik::rock::grab_interaction_policy::canAttemptSelectedObjectGrab(true, 229.0f, 350.0f) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("far selected grab rejected beyond configured range",
+        frik::rock::grab_interaction_policy::canAttemptSelectedObjectGrab(true, 351.0f, 350.0f) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("far selected grab rejected with invalid configured range",
+        frik::rock::grab_interaction_policy::canAttemptSelectedObjectGrab(true, 20.0f, 0.0f) ? 1.0f : 0.0f,
+        0.0f);
+
+    std::vector<frik::rock::weapon_primary_grip_math::PrimaryGripCandidate<TestVector>> primaryGripCandidates;
+    primaryGripCandidates.push_back({ .name = "ReceiverShell",
+        .partKind = frik::rock::WeaponPartKind::Receiver,
+        .localMin = TestVector{ -2.0f, -2.0f, -2.0f },
+        .localMax = TestVector{ 2.0f, 2.0f, 2.0f },
+        .localCenter = TestVector{ 0.0f, 0.0f, 0.0f },
+        .triangleCount = 48 });
+    primaryGripCandidates.push_back({ .name = "P-Grip",
+        .partKind = frik::rock::WeaponPartKind::Grip,
+        .localMin = TestVector{ 4.0f, -1.0f, -1.0f },
+        .localMax = TestVector{ 6.0f, 1.0f, 1.0f },
+        .localCenter = TestVector{ 5.0f, 0.0f, 0.0f },
+        .triangleCount = 24 });
+    TestTransform fallbackPrimaryGrip{};
+    fallbackPrimaryGrip.rotate = identity;
+    fallbackPrimaryGrip.scale = 1.0f;
+    fallbackPrimaryGrip.translate = TestVector{ 20.0f, 0.0f, 0.0f };
+    const auto selectedPrimaryGrip = frik::rock::weapon_primary_grip_math::selectPrimaryGripFrame<TestTransform, TestVector>(primaryGripCandidates, fallbackPrimaryGrip, false);
+    ok &= expectFloat("primary grip selects mesh", static_cast<float>(selectedPrimaryGrip.source), static_cast<float>(frik::rock::weapon_primary_grip_math::PrimaryGripSource::Mesh));
+    ok &= expectFloat("primary grip center x", selectedPrimaryGrip.gripWeaponLocal.translate.x, 5.0f);
+    ok &= expectFloat("primary grip confidence high", selectedPrimaryGrip.confidence >= 0.90f ? 1.0f : 0.0f, 1.0f);
+    const auto iniOverrideBeatsMeshGrip =
+        frik::rock::weapon_primary_grip_math::selectPrimaryGripFrame<TestTransform, TestVector>(primaryGripCandidates, fallbackPrimaryGrip, true);
+    ok &= expectFloat("primary grip ini override beats mesh source",
+        static_cast<float>(iniOverrideBeatsMeshGrip.source),
+        static_cast<float>(frik::rock::weapon_primary_grip_math::PrimaryGripSource::IniOverride));
+    ok &= expectFloat("primary grip ini override beats mesh x", iniOverrideBeatsMeshGrip.gripWeaponLocal.translate.x, 20.0f);
+    ok &= expectFloat("primary grip p-grip accepted by name",
+        frik::rock::weapon_primary_grip_math::isPrimaryGripName("P-Grip") ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("primary grip foregrip rejected by name",
+        frik::rock::weapon_primary_grip_math::isPrimaryGripName("VerticalForegrip") ? 1.0f : 0.0f,
+        0.0f);
+    std::vector<frik::rock::weapon_primary_grip_math::PrimaryGripCandidate<TestVector>> foregripOnlyCandidates;
+    foregripOnlyCandidates.push_back({ .name = "ReceiverShell",
+        .partKind = frik::rock::WeaponPartKind::Receiver,
+        .localMin = TestVector{ -2.0f, -2.0f, -2.0f },
+        .localMax = TestVector{ 2.0f, 2.0f, 2.0f },
+        .localCenter = TestVector{ 0.0f, 0.0f, 0.0f },
+        .triangleCount = 48 });
+    foregripOnlyCandidates.push_back({ .name = "VerticalForegrip",
+        .partKind = frik::rock::WeaponPartKind::Foregrip,
+        .localMin = TestVector{ 50.0f, -1.0f, -1.0f },
+        .localMax = TestVector{ 60.0f, 1.0f, 1.0f },
+        .localCenter = TestVector{ 55.0f, 0.0f, 0.0f },
+        .triangleCount = 24 });
+    const auto foregripRejectedPrimaryGrip =
+        frik::rock::weapon_primary_grip_math::selectPrimaryGripFrame<TestTransform, TestVector>(foregripOnlyCandidates, fallbackPrimaryGrip, false);
+    ok &= expectFloat("primary grip foregrip not selected source",
+        static_cast<float>(foregripRejectedPrimaryGrip.source),
+        static_cast<float>(frik::rock::weapon_primary_grip_math::PrimaryGripSource::FallbackCurrent));
+    ok &= expectFloat("primary grip foregrip fallback x", foregripRejectedPrimaryGrip.gripWeaponLocal.translate.x, 20.0f);
+
+    std::vector<frik::rock::weapon_primary_grip_math::PrimaryGripCandidate<TestVector>> lowConfidenceGripCandidates;
+    lowConfidenceGripCandidates.push_back({ .name = "Decoration",
+        .partKind = frik::rock::WeaponPartKind::Accessory,
+        .localMin = TestVector{ -1.0f, -1.0f, -1.0f },
+        .localMax = TestVector{ 1.0f, 1.0f, 1.0f },
+        .localCenter = TestVector{ 0.0f, 0.0f, 0.0f },
+        .triangleCount = 16 });
+    const auto iniFallbackPrimaryGrip =
+        frik::rock::weapon_primary_grip_math::selectPrimaryGripFrame<TestTransform, TestVector>(lowConfidenceGripCandidates, fallbackPrimaryGrip, true);
+    ok &= expectFloat("primary grip ini override source", static_cast<float>(iniFallbackPrimaryGrip.source), static_cast<float>(frik::rock::weapon_primary_grip_math::PrimaryGripSource::IniOverride));
+    ok &= expectFloat("primary grip ini override x", iniFallbackPrimaryGrip.gripWeaponLocal.translate.x, 20.0f);
+
+    TestTransform rightHandTarget{};
+    rightHandTarget.rotate = identity;
+    rightHandTarget.scale = 1.0f;
+    rightHandTarget.translate = TestVector{ 100.0f, 200.0f, 300.0f };
+    TestTransform rightGripLocal{};
+    rightGripLocal.rotate = identity;
+    rightGripLocal.scale = 1.0f;
+    rightGripLocal.translate = TestVector{ 4.0f, -2.0f, 8.0f };
+    const auto solvedPrimaryWeapon = frik::rock::weapon_primary_grip_math::solveWeaponWorldFromPrimaryGrip(rightHandTarget, rightGripLocal);
+    const auto solvedRightGripWorld = frik::rock::transform_math::composeTransforms(solvedPrimaryWeapon, rightGripLocal);
+    ok &= expectFloat("primary grip solve target x", solvedRightGripWorld.translate.x, rightHandTarget.translate.x);
+    ok &= expectFloat("primary grip solve target y", solvedRightGripWorld.translate.y, rightHandTarget.translate.y);
+    ok &= expectFloat("primary grip solve target z", solvedRightGripWorld.translate.z, rightHandTarget.translate.z);
+
+    TestTransform weaponParentWorld{};
+    weaponParentWorld.rotate = identity;
+    weaponParentWorld.scale = 2.0f;
+    weaponParentWorld.translate = TestVector{ 10.0f, 20.0f, 30.0f };
+    TestTransform targetWeaponWorld{};
+    targetWeaponWorld.rotate = makeNonSymmetricRotation();
+    targetWeaponWorld.scale = 2.0f;
+    targetWeaponWorld.translate = TestVector{ 30.0f, 60.0f, 90.0f };
+    const auto weaponParentLocal = frik::rock::weapon_visual_authority_math::worldTargetToParentLocal(weaponParentWorld, targetWeaponWorld);
+    const auto recomposedWeaponWorld = frik::rock::transform_math::composeTransforms(weaponParentWorld, weaponParentLocal);
+    ok &= expectFloat("weapon visual authority parent local x", recomposedWeaponWorld.translate.x, targetWeaponWorld.translate.x);
+    ok &= expectFloat("weapon visual authority parent local y", recomposedWeaponWorld.translate.y, targetWeaponWorld.translate.y);
+    ok &= expectFloat("weapon visual authority parent local z", recomposedWeaponWorld.translate.z, targetWeaponWorld.translate.z);
+    ok &= expectFloat("weapon visual authority parent local scale", recomposedWeaponWorld.scale, targetWeaponWorld.scale);
+    ok &= expectFloat("weapon visual authority parent local rot 00", recomposedWeaponWorld.rotate.entry[0][0], targetWeaponWorld.rotate.entry[0][0]);
+    ok &= expectFloat("weapon visual authority parent local rot 01", recomposedWeaponWorld.rotate.entry[0][1], targetWeaponWorld.rotate.entry[0][1]);
+    ok &= expectFloat("weapon visual authority parent local rot 10", recomposedWeaponWorld.rotate.entry[1][0], targetWeaponWorld.rotate.entry[1][0]);
+    TestTransform lockedHandWeaponLocal{};
+    lockedHandWeaponLocal.rotate = identity;
+    lockedHandWeaponLocal.scale = 1.0f;
+    lockedHandWeaponLocal.translate = TestVector{ 4.0f, -2.0f, 8.0f };
+    const auto lockedHandWorld = frik::rock::weapon_visual_authority_math::weaponLocalFrameToWorld(targetWeaponWorld, lockedHandWeaponLocal);
+    const auto lockedHandLocalRoundTrip =
+        frik::rock::transform_math::composeTransforms(frik::rock::transform_math::invertTransform(targetWeaponWorld), lockedHandWorld);
+    ok &= expectFloat("weapon visual authority locked hand local x", lockedHandLocalRoundTrip.translate.x, lockedHandWeaponLocal.translate.x);
+    ok &= expectFloat("weapon visual authority locked hand local y", lockedHandLocalRoundTrip.translate.y, lockedHandWeaponLocal.translate.y);
+    ok &= expectFloat("weapon visual authority locked hand local z", lockedHandLocalRoundTrip.translate.z, lockedHandWeaponLocal.translate.z);
+    ok &= expectFloat("weapon visual authority locked hand ignores controller x", lockedHandWorld.translate.x == 999.0f ? 1.0f : 0.0f, 0.0f);
+    ok &= expectFloat("weapon hand authority publishes pose before locked transform",
+        frik::rock::weapon_visual_authority_math::handPosePrecedesLockedHandAuthority() ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("weapon hand authority applies weapon before locked transform",
+        frik::rock::weapon_visual_authority_math::weaponVisualPrecedesLockedHandAuthority() ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("weapon hand authority keeps primary native pose",
+        frik::rock::weapon_visual_authority_math::shouldPublishTwoHandedGripPose(frik::rock::weapon_visual_authority_math::LockedHandRole::Primary) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("weapon hand authority publishes support pose",
+        frik::rock::weapon_visual_authority_math::shouldPublishTwoHandedGripPose(frik::rock::weapon_visual_authority_math::LockedHandRole::Support) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("weapon hand authority preserves primary grab-start rotation",
+        frik::rock::weapon_visual_authority_math::shouldUseMeshGripFrameRotationAtGrabStart(frik::rock::weapon_visual_authority_math::LockedHandRole::Primary) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("weapon hand authority preserves support grab-start rotation",
+        frik::rock::weapon_visual_authority_math::shouldUseMeshGripFrameRotationAtGrabStart(frik::rock::weapon_visual_authority_math::LockedHandRole::Support) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("weapon hand authority keeps primary grip point current",
+        frik::rock::weapon_visual_authority_math::shouldSelectMeshGripPointAtGrabStart(frik::rock::weapon_visual_authority_math::LockedHandRole::Primary) ? 1.0f : 0.0f,
+        0.0f);
+
+    TestTransform projectileWorld{};
+    projectileWorld.rotate = makeNonSymmetricRotation();
+    projectileWorld.scale = 1.0f;
+    projectileWorld.translate = TestVector{ 42.0f, 84.0f, 126.0f };
+    const auto muzzleFireLocal = frik::rock::weapon_muzzle_authority_math::fireNodeLocalFromProjectileWorld(projectileWorld);
+    ok &= expectFloat("muzzle authority copies projectile x", muzzleFireLocal.translate.x, projectileWorld.translate.x);
+    ok &= expectFloat("muzzle authority copies projectile y", muzzleFireLocal.translate.y, projectileWorld.translate.y);
+    ok &= expectFloat("muzzle authority copies projectile z", muzzleFireLocal.translate.z, projectileWorld.translate.z);
+    ok &= expectFloat("muzzle authority copies projectile rot 00", muzzleFireLocal.rotate.entry[0][0], projectileWorld.rotate.entry[0][0]);
+    ok &= expectFloat("muzzle authority copies projectile rot 01", muzzleFireLocal.rotate.entry[0][1], projectileWorld.rotate.entry[0][1]);
+    ok &= expectFloat("muzzle authority copies projectile rot 10", muzzleFireLocal.rotate.entry[1][0], projectileWorld.rotate.entry[1][0]);
+
+    ok &= expectFloat("authority lifecycle clears on menu",
+        frik::rock::weapon_authority_lifecycle_policy::shouldClearWeaponAuthorityForUpdateInterruption(true, false, false) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("authority lifecycle clears on disabled update",
+        frik::rock::weapon_authority_lifecycle_policy::shouldClearWeaponAuthorityForUpdateInterruption(false, true, false) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("authority lifecycle keeps normal frame",
+        frik::rock::weapon_authority_lifecycle_policy::shouldClearWeaponAuthorityForUpdateInterruption(false, false, false) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("primary authority publishes mesh one-hand",
+        frik::rock::weapon_primary_grip_authority_policy::shouldPublishPrimaryGripAuthority(true, false, true, false, true) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("primary authority yields to support grip",
+        frik::rock::weapon_primary_grip_authority_policy::shouldPublishPrimaryGripAuthority(true, true, true, false, true) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("primary authority rejects fallback geometry",
+        frik::rock::weapon_primary_grip_authority_policy::shouldPublishPrimaryGripAuthority(false, false, true, false, true) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("primary authority rejects melee",
+        frik::rock::weapon_primary_grip_authority_policy::shouldPublishPrimaryGripAuthority(true, false, true, true, true) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("primary authority disabled by config",
+        frik::rock::weapon_primary_grip_authority_policy::shouldPublishPrimaryGripAuthority(true, false, true, false, false) ? 1.0f : 0.0f,
+        0.0f);
+
     ok &= expectFloat("held velocity damping clamp low", frik::rock::held_object_damping_math::clampVelocityDamping(-2.0f), 0.0f);
     ok &= expectFloat("held velocity damping clamp high", frik::rock::held_object_damping_math::clampVelocityDamping(1.5f), 1.0f);
     ok &= expectFloat("held velocity damping keep factor", frik::rock::held_object_damping_math::velocityKeepFactor(0.25f), 0.75f);
@@ -708,6 +1114,46 @@ int main()
         frik::rock::held_object_physics_math::angularForceFromRatio(2000.0f, 12.5f),
         160.0f);
 
+    frik::rock::grab_motion_controller::MotorInput quietMotor{};
+    quietMotor.enabled = true;
+    quietMotor.positionErrorGameUnits = 0.0f;
+    quietMotor.rotationErrorDegrees = 0.0f;
+    quietMotor.baseLinearTau = 0.03f;
+    quietMotor.baseAngularTau = 0.03f;
+    quietMotor.collisionTau = 0.01f;
+    quietMotor.maxTau = 0.8f;
+    quietMotor.currentLinearTau = 0.03f;
+    quietMotor.currentAngularTau = 0.03f;
+    quietMotor.tauLerpSpeed = 10.0f;
+    quietMotor.deltaTime = 0.1f;
+    quietMotor.baseMaxForce = 2000.0f;
+    quietMotor.mass = 10.0f;
+    quietMotor.forceToMassRatio = 500.0f;
+    quietMotor.maxForceMultiplier = 4.0f;
+    quietMotor.fullPositionErrorGameUnits = 20.0f;
+    quietMotor.fullRotationErrorDegrees = 60.0f;
+    quietMotor.fadeElapsed = 1.0f;
+    quietMotor.fadeDuration = 0.1f;
+    quietMotor.angularToLinearForceRatio = 12.5f;
+    quietMotor.fadeStartAngularRatio = 100.0f;
+    const auto quietMotorResult = frik::rock::grab_motion_controller::solveMotorTargets(quietMotor);
+    ok &= expectFloat("grab adaptive quiet force", quietMotorResult.linearMaxForce, 2000.0f);
+    ok &= expectFloat("grab adaptive quiet tau", quietMotorResult.linearTau, 0.03f);
+
+    auto laggingMotor = quietMotor;
+    laggingMotor.positionErrorGameUnits = 20.0f;
+    laggingMotor.rotationErrorDegrees = 60.0f;
+    const auto laggingMotorResult = frik::rock::grab_motion_controller::solveMotorTargets(laggingMotor);
+    ok &= expectFloat("grab adaptive lag error factor", laggingMotorResult.errorFactor, 1.0f);
+    ok &= expectFloat("grab adaptive lag force mass capped", laggingMotorResult.linearMaxForce, 5000.0f);
+    ok &= expectFloat("grab adaptive lag angular force", laggingMotorResult.angularMaxForce, 400.0f);
+    ok &= expectFloat("grab adaptive lag tau reaches max", laggingMotorResult.linearTau, 0.8f);
+
+    auto collidingMotor = laggingMotor;
+    collidingMotor.heldBodyColliding = true;
+    const auto collidingMotorResult = frik::rock::grab_motion_controller::solveMotorTargets(collidingMotor);
+    ok &= expectFloat("grab adaptive collision tau min", collidingMotorResult.linearTau, 0.01f);
+
     TestTransform currentHandVisual{};
     currentHandVisual.rotate = identity;
     currentHandVisual.scale = 1.0f;
@@ -757,6 +1203,24 @@ int main()
     ok &= expectFloat("finger curl miss closes", missedFingerValue.hit ? 1.0f : 0.0f, 0.0f);
     ok &= expectFloat("finger curl miss min", missedFingerValue.value, 0.2f);
 
+    const std::array<float, 5> curlValues{ 0.40f, 0.55f, 0.70f, 0.85f, 1.0f };
+    const auto jointValues = frik::rock::grab_finger_pose_math::expandFingerCurlsToJointValues(curlValues);
+    ok &= expectFloat("finger joint thumb proximal keeps knuckle open", jointValues[0], 0.49f);
+    ok &= expectFloat("finger joint thumb middle", jointValues[1], 0.40f);
+    ok &= expectFloat("finger joint index proximal", jointValues[3], 0.6625f);
+    ok &= expectFloat("finger joint index distal closes more", jointValues[5], 0.4825f);
+    ok &= expectFloat("finger joint pinky open distal", jointValues[14], 1.0f);
+
+    const std::array<float, 15> previousJointValues{
+        1.0f, 1.0f, 1.0f,
+        1.0f, 1.0f, 1.0f,
+        1.0f, 1.0f, 1.0f,
+        1.0f, 1.0f, 1.0f,
+        1.0f, 1.0f, 1.0f,
+    };
+    const auto smoothedJoints = frik::rock::grab_finger_pose_math::advanceJointValues(previousJointValues, jointValues, 2.0f, 0.1f);
+    ok &= expectFloat("finger joint smoothing steps toward target", smoothedJoints[1], 0.8f);
+
     std::uint64_t weaponLayerMatrix[48]{};
     for (std::uint32_t i = 0; i < 48; ++i) {
         weaponLayerMatrix[i] = ~0ULL;
@@ -790,6 +1254,268 @@ int main()
     ok &= expectFloat("weapon spell layer enabled",
         (weaponLayerMatrix[frik::rock::collision_layer_policy::ROCK_LAYER_WEAPON] & (1ULL << frik::rock::collision_layer_policy::FO4_LAYER_SPELL)) ? 1.0f : 0.0f,
         1.0f);
+
+    ok &= expectFloat("dynamic prop layer clutter accepted",
+        frik::rock::collision_layer_policy::isDynamicPropInteractionLayer(frik::rock::collision_layer_policy::FO4_LAYER_CLUTTER) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("dynamic prop layer weapon accepted",
+        frik::rock::collision_layer_policy::isDynamicPropInteractionLayer(frik::rock::collision_layer_policy::FO4_LAYER_WEAPON) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("dynamic prop layer shell casing accepted",
+        frik::rock::collision_layer_policy::isDynamicPropInteractionLayer(frik::rock::collision_layer_policy::FO4_LAYER_SHELLCASING) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("dynamic prop layer char controller rejected",
+        frik::rock::collision_layer_policy::isDynamicPropInteractionLayer(frik::rock::collision_layer_policy::FO4_LAYER_CHARCONTROLLER) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("hand mask includes clutter",
+        (frik::rock::collision_layer_policy::buildRockHandExpectedMask(false, false) & (1ULL << frik::rock::collision_layer_policy::FO4_LAYER_CLUTTER)) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("hand mask excludes char controller when disabled",
+        (frik::rock::collision_layer_policy::buildRockHandExpectedMask(false, false) & (1ULL << frik::rock::collision_layer_policy::FO4_LAYER_CHARCONTROLLER)) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("weapon mask includes weapon props",
+        (frik::rock::collision_layer_policy::buildRockWeaponExpectedMask(false, false) & (1ULL << frik::rock::collision_layer_policy::FO4_LAYER_WEAPON)) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("weapon mask excludes projectile by default",
+        (frik::rock::collision_layer_policy::buildRockWeaponExpectedMask(false, false) & (1ULL << frik::rock::collision_layer_policy::FO4_LAYER_PROJECTILE)) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("weapon mask excludes unidentified layer",
+        (frik::rock::collision_layer_policy::buildRockWeaponExpectedMask(false, false) & (1ULL << frik::rock::collision_layer_policy::FO4_LAYER_UNIDENTIFIED)) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("weapon mask excludes static layer",
+        (frik::rock::collision_layer_policy::buildRockWeaponExpectedMask(false, false) & (1ULL << frik::rock::collision_layer_policy::FO4_LAYER_STATIC)) ? 1.0f : 0.0f,
+        0.0f);
+    const auto handExpectedMask = frik::rock::collision_layer_policy::buildRockHandExpectedMask(false, true);
+    ok &= expectFloat("configured layer compare ignores unmanaged high bits",
+        frik::rock::collision_layer_policy::configuredLayerMaskMatches(handExpectedMask | (1ULL << 55), handExpectedMask) ? 1.0f : 0.0f,
+        1.0f);
+
+    using frik::rock::physics_body_classifier::BodyClassificationInput;
+    using frik::rock::physics_body_classifier::BodyMotionType;
+    using frik::rock::physics_body_classifier::BodyRejectReason;
+    using frik::rock::physics_body_classifier::InteractionMode;
+    using frik::rock::physics_body_classifier::classifyBody;
+    using frik::rock::physics_body_classifier::motionTypeFromMotionPropertiesId;
+
+    BodyClassificationInput dynamicClutter{};
+    dynamicClutter.bodyId = 100;
+    dynamicClutter.motionId = 10;
+    dynamicClutter.layer = frik::rock::collision_layer_policy::FO4_LAYER_CLUTTER;
+    dynamicClutter.motionType = BodyMotionType::Dynamic;
+    ok &= expectFloat("classifier accepts passive dynamic clutter",
+        classifyBody(dynamicClutter, InteractionMode::PassivePush).accepted ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("motion properties id dynamic maps to dynamic",
+        motionTypeFromMotionPropertiesId(1) == BodyMotionType::Dynamic ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("motion properties id default maps to other",
+        motionTypeFromMotionPropertiesId(0xFF) == BodyMotionType::Other ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("body flags static maps to static",
+        frik::rock::physics_body_classifier::motionTypeFromBodyFlags(0x00000001) == BodyMotionType::Static ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("body flags dynamic maps to dynamic",
+        frik::rock::physics_body_classifier::motionTypeFromBodyFlags(0x0004008A) == BodyMotionType::Dynamic ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("body flags keyframed maps to keyframed",
+        frik::rock::physics_body_classifier::motionTypeFromBodyFlags(0x00000006) == BodyMotionType::Keyframed ? 1.0f : 0.0f,
+        1.0f);
+
+    auto dynamicMotionZero = dynamicClutter;
+    dynamicMotionZero.motionId = 0;
+    dynamicMotionZero.motionType = BodyMotionType::Dynamic;
+    const auto dynamicMotionZeroResult = classifyBody(dynamicMotionZero, InteractionMode::PassivePush);
+    ok &= expectFloat("classifier rejects motion id zero even when dynamic",
+        dynamicMotionZeroResult.reason == BodyRejectReason::InvalidMotionId ? 1.0f : 0.0f,
+        1.0f);
+
+    auto keyframedPassive = dynamicClutter;
+    keyframedPassive.motionType = BodyMotionType::Keyframed;
+    const auto keyframedPassiveResult = classifyBody(keyframedPassive, InteractionMode::PassivePush);
+    ok &= expectFloat("classifier rejects passive keyframed",
+        keyframedPassiveResult.reason == BodyRejectReason::KeyframedPassive ? 1.0f : 0.0f,
+        1.0f);
+
+    auto staticActive = dynamicClutter;
+    staticActive.motionType = BodyMotionType::Static;
+    const auto staticActiveResult = classifyBody(staticActive, InteractionMode::ActiveGrab);
+    ok &= expectFloat("classifier rejects active static after prep",
+        staticActiveResult.reason == BodyRejectReason::StaticMotion ? 1.0f : 0.0f,
+        1.0f);
+
+    auto heldSelf = dynamicClutter;
+    heldSelf.isHeldBySameHand = true;
+    const auto heldSelfResult = classifyBody(heldSelf, InteractionMode::PassivePush);
+    ok &= expectFloat("classifier rejects same-hand held body",
+        heldSelfResult.reason == BodyRejectReason::HeldBySameHand ? 1.0f : 0.0f,
+        1.0f);
+
+    auto bipedBody = dynamicClutter;
+    bipedBody.layer = frik::rock::collision_layer_policy::FO4_LAYER_BIPED;
+    const auto bipedResult = classifyBody(bipedBody, InteractionMode::PassivePush);
+    ok &= expectFloat("classifier rejects biped layer",
+        bipedResult.reason == BodyRejectReason::ActorLayer ? 1.0f : 0.0f,
+        1.0f);
+
+    const auto setMotionArgs = frik::rock::physics_recursive_wrappers::makeSetMotionCommand(
+        frik::rock::physics_recursive_wrappers::MotionPreset::Dynamic, true, true, true);
+    ok &= expectFloat("set motion command preset dynamic", static_cast<float>(setMotionArgs.presetValue), 1.0f);
+    ok &= expectFloat("set motion command activate", setMotionArgs.activate ? 1.0f : 0.0f, 1.0f);
+    ok &= expectFloat("set motion command propagate", setMotionArgs.propagate ? 1.0f : 0.0f, 1.0f);
+    const auto enableCollisionArgs = frik::rock::physics_recursive_wrappers::makeEnableCollisionCommand(true, true, true);
+    ok &= expectFloat("enable collision command recursive", enableCollisionArgs.recursive ? 1.0f : 0.0f, 1.0f);
+
+    using frik::rock::physics_shape_cast_math::RuntimeShapeCastQuery;
+    using frik::rock::physics_shape_cast_math::ShapeCastVec4;
+    using frik::rock::physics_shape_cast_math::buildRuntimeShapeCastQuery;
+    static_assert(sizeof(RuntimeShapeCastQuery) == 0x80);
+    static_assert(offsetof(RuntimeShapeCastQuery, filterRef) == 0x00);
+    static_assert(offsetof(RuntimeShapeCastQuery, collisionFilterInfo) == 0x0C);
+    static_assert(offsetof(RuntimeShapeCastQuery, shape) == 0x20);
+    static_assert(offsetof(RuntimeShapeCastQuery, start) == 0x30);
+    static_assert(offsetof(RuntimeShapeCastQuery, displacement) == 0x40);
+    static_assert(offsetof(RuntimeShapeCastQuery, inverseDisplacementAndSign) == 0x50);
+    static_assert(offsetof(RuntimeShapeCastQuery, tolerance) == 0x60);
+
+    void* fakeFilter = reinterpret_cast<void*>(0x12345678);
+    void* fakeShape = reinterpret_cast<void*>(0x87654321);
+    const ShapeCastVec4 castStart{ 1.0f, 2.0f, 3.0f, 0.0f };
+    const ShapeCastVec4 castDisplacement{ 2.0f, -4.0f, 0.0f, 1.0f };
+    const auto castQuery = buildRuntimeShapeCastQuery(fakeFilter, fakeShape, 0x000B002D, castStart, castDisplacement);
+    ok &= expectFloat("shape cast query material id", static_cast<float>(castQuery.materialId), 65535.0f);
+    ok &= expectFloat("shape cast query filter info", static_cast<float>(castQuery.collisionFilterInfo), static_cast<float>(0x000B002D));
+    ok &= expectFloat("shape cast query start x", castQuery.start.x, 1.0f);
+    ok &= expectFloat("shape cast query displacement y", castQuery.displacement.y, -4.0f);
+    ok &= expectFloat("shape cast query inverse x", castQuery.inverseDisplacementAndSign.x, 0.5f);
+    ok &= expectFloat("shape cast query inverse y", castQuery.inverseDisplacementAndSign.y, -0.25f);
+    ok &= expectFloat("shape cast query tolerance", castQuery.tolerance, 0.001f);
+    const std::uint32_t signMaskBits = std::bit_cast<std::uint32_t>(castQuery.inverseDisplacementAndSign.w);
+    ok &= expectFloat("shape cast query sign mask", static_cast<float>(signMaskBits), static_cast<float>(0x3F000005));
+
+    ok &= expectFloat("selection near maps SelectedClose",
+        frik::rock::selection_state_policy::stateForSelection(false) == frik::rock::HandState::SelectedClose ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("selection far maps SelectedFar",
+        frik::rock::selection_state_policy::stateForSelection(true) == frik::rock::HandState::SelectedFar ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("selection process accepts close",
+        frik::rock::selection_state_policy::canProcessSelectedState(frik::rock::HandState::SelectedClose) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("selection process accepts far",
+        frik::rock::selection_state_policy::canProcessSelectedState(frik::rock::HandState::SelectedFar) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("selection same ref refreshes far to near",
+        frik::rock::selection_query_policy::shouldReplaceSelectionForSameRef(true, false, 10, 10) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("selection same ref refreshes changed body",
+        frik::rock::selection_query_policy::shouldReplaceSelectionForSameRef(false, false, 10, 11) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("selection same ref keeps unchanged body source",
+        frik::rock::selection_query_policy::shouldReplaceSelectionForSameRef(false, false, 10, 10) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("far shape selection tie prefers nearer hit",
+        frik::rock::selection_query_policy::isBetterShapeCastCandidate(true, 0.0f, 5.0f, 0.0f, 10.0f) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("far shape selection tie rejects farther hit",
+        frik::rock::selection_query_policy::isBetterShapeCastCandidate(true, 0.0f, 15.0f, 0.0f, 10.0f) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("selection shape filter fallback",
+        static_cast<float>(frik::rock::selection_query_policy::sanitizeFilterInfo(0, frik::rock::selection_query_policy::kDefaultShapeCastFilterInfo)),
+        static_cast<float>(frik::rock::selection_query_policy::kDefaultShapeCastFilterInfo));
+    ok &= expectFloat("selection shape filter configured",
+        static_cast<float>(frik::rock::selection_query_policy::sanitizeFilterInfo(0x0006002D, frik::rock::selection_query_policy::kDefaultShapeCastFilterInfo)),
+        static_cast<float>(0x0006002D));
+    ok &= expectFloat("selected object policy blocks fixed activator",
+        frik::rock::grab_interaction_policy::shouldBlockSelectedObjectInteraction("ACTI", false, true, 2) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("selected object policy allows dynamic activator",
+        frik::rock::grab_interaction_policy::shouldBlockSelectedObjectInteraction("ACTI", false, true, 1) ? 1.0f : 0.0f,
+        0.0f);
+    ok &= expectFloat("selected object policy blocks live npc",
+        frik::rock::grab_interaction_policy::shouldBlockSelectedObjectInteraction("NPC_", true, false, 0) ? 1.0f : 0.0f,
+        1.0f);
+    ok &= expectFloat("selected object policy allows dead npc",
+        frik::rock::grab_interaction_policy::shouldBlockSelectedObjectInteraction("NPC_", false, false, 0) ? 1.0f : 0.0f,
+        0.0f);
+
+    const float higgsPullDuration = frik::rock::pull_motion_math::computePullDurationSeconds(1.0f, 0.715619f, -0.415619f, 0.656256f);
+    ok &= expectFloat("pull duration matches HIGGS curve at 1m", higgsPullDuration, 0.5f);
+
+    const frik::rock::pull_motion_math::PullMotionInput<TestVector> pullStart{
+        .handHavok = TestVector{ 0.0f, 0.0f, 0.0f },
+        .objectPointHavok = TestVector{ -0.25f, 0.0f, 0.0f },
+        .elapsedSeconds = 0.0f,
+        .durationSeconds = 0.5f,
+        .applyVelocitySeconds = 0.2f,
+        .trackHandSeconds = 0.1f,
+        .destinationOffsetHavok = 0.01f,
+        .maxVelocityHavok = 10.0f,
+    };
+    const auto pullStartMotion = frik::rock::pull_motion_math::computePullMotion(pullStart);
+    ok &= expectFloat("pull motion starts applying velocity", pullStartMotion.applyVelocity ? 1.0f : 0.0f, 1.0f);
+    ok &= expectFloat("pull motion tracks hand initially", pullStartMotion.refreshTarget ? 1.0f : 0.0f, 1.0f);
+    ok &= expectFloat("pull motion horizontal velocity", pullStartMotion.velocityHavok.x, 0.5f);
+    ok &= expectFloat("pull motion vertical arc velocity", pullStartMotion.velocityHavok.z, 2.4725f);
+
+    const frik::rock::pull_motion_math::PullMotionInput<TestVector> pullAfterTrack{
+        .handHavok = TestVector{ 5.0f, 0.0f, 0.0f },
+        .objectPointHavok = TestVector{ 0.0f, 0.0f, 0.0f },
+        .previousTargetHavok = TestVector{ 1.0f, 0.0f, 0.0f },
+        .elapsedSeconds = 0.15f,
+        .durationSeconds = 0.5f,
+        .applyVelocitySeconds = 0.2f,
+        .trackHandSeconds = 0.1f,
+        .destinationOffsetHavok = 0.01f,
+        .maxVelocityHavok = 10.0f,
+        .hasPreviousTarget = true,
+    };
+    const auto pullAfterTrackMotion = frik::rock::pull_motion_math::computePullMotion(pullAfterTrack);
+    ok &= expectFloat("pull motion stops tracking after window", pullAfterTrackMotion.refreshTarget ? 1.0f : 0.0f, 0.0f);
+    ok &= expectFloat("pull motion keeps previous target", pullAfterTrackMotion.targetHavok.x, 1.0f);
+
+    auto pullExpired = pullStart;
+    pullExpired.elapsedSeconds = 0.25f;
+    const auto pullExpiredMotion = frik::rock::pull_motion_math::computePullMotion(pullExpired);
+    ok &= expectFloat("pull motion expires after apply window", pullExpiredMotion.expired ? 1.0f : 0.0f, 1.0f);
+    ok &= expectFloat("pull motion expired skips velocity", pullExpiredMotion.applyVelocity ? 1.0f : 0.0f, 0.0f);
+
+    using frik::rock::object_physics_body_set::BodySetBuilder;
+    using frik::rock::object_physics_body_set::PureBodyRecord;
+    BodySetBuilder pureSetBuilder;
+    pureSetBuilder.addForTest(PureBodyRecord{ .bodyId = 10, .motionId = 2, .accepted = true, .position = TestVector{ 10.0f, 0.0f, 0.0f } });
+    pureSetBuilder.addForTest(PureBodyRecord{ .bodyId = 10, .motionId = 2, .accepted = true, .position = TestVector{ 11.0f, 0.0f, 0.0f } });
+    pureSetBuilder.addForTest(PureBodyRecord{ .bodyId = 11, .motionId = 2, .accepted = true, .position = TestVector{ 2.0f, 0.0f, 0.0f } });
+    pureSetBuilder.addForTest(PureBodyRecord{ .bodyId = 12, .motionId = 3, .accepted = true, .position = TestVector{ 4.0f, 0.0f, 0.0f } });
+    pureSetBuilder.addForTest(PureBodyRecord{ .bodyId = 13, .motionId = 4, .accepted = false, .position = TestVector{ 0.0f, 0.0f, 0.0f } });
+    const auto pureBodySet = pureSetBuilder.build();
+    ok &= expectFloat("body set dedupes body IDs", static_cast<float>(pureBodySet.records.size()), 4.0f);
+    ok &= expectFloat("body set unique accepted motions", static_cast<float>(pureBodySet.uniqueAcceptedMotionBodyIds().size()), 2.0f);
+    ok &= expectFloat("body set prefers accepted original hit",
+        static_cast<float>(pureBodySet.choosePrimaryBody(12, TestVector{ 0.0f, 0.0f, 0.0f }).bodyId),
+        12.0f);
+    ok &= expectFloat("body set falls back nearest accepted body",
+        static_cast<float>(pureBodySet.choosePrimaryBody(99, TestVector{ 0.0f, 0.0f, 0.0f }).bodyId),
+        11.0f);
+
+    const frik::rock::push_assist::PushAssistInput pushInput{
+        .enabled = true,
+        .sourceVelocity = TestVector{ 3.0f, 4.0f, 0.0f },
+        .minSpeed = 2.0f,
+        .maxImpulse = 3.0f,
+        .layerMultiplier = 1.0f,
+        .cooldownRemainingSeconds = 0.0f,
+    };
+    const auto pushResult = frik::rock::push_assist::computePushImpulse(pushInput);
+    ok &= expectFloat("push assist accepted", pushResult.apply ? 1.0f : 0.0f, 1.0f);
+    ok &= expectFloat("push assist clamps magnitude", pushResult.impulseMagnitude, 3.0f);
+    const frik::rock::push_assist::PushAssistInput pushCooldownInput{ .enabled = true,
+        .sourceVelocity = TestVector{ 3.0f, 4.0f, 0.0f },
+        .minSpeed = 2.0f,
+        .maxImpulse = 3.0f,
+        .layerMultiplier = 1.0f,
+        .cooldownRemainingSeconds = 0.1f };
+    const auto pushCooldown = frik::rock::push_assist::computePushImpulse(pushCooldownInput);
+    ok &= expectFloat("push assist cooldown skips", pushCooldown.apply ? 1.0f : 0.0f, 0.0f);
 
     using frik::rock::native_melee_suppression::NativeMeleeEvent;
     using frik::rock::native_melee_suppression::NativeMeleePolicyInput;
@@ -848,6 +1574,15 @@ int main()
     ok &= expectFloat("native melee swing lease inactive with no expiry", frik::rock::native_melee_suppression::isPhysicalSwingLeaseActive(100, 0) ? 1.0f : 0.0f, 0.0f);
     ok &= expectFloat("native melee swing lease active before expiry", frik::rock::native_melee_suppression::isPhysicalSwingLeaseActive(100, 110) ? 1.0f : 0.0f, 1.0f);
     ok &= expectFloat("native melee swing lease inactive after expiry", frik::rock::native_melee_suppression::isPhysicalSwingLeaseActive(111, 110) ? 1.0f : 0.0f, 0.0f);
+
+    ok &= expectFloat("logging clamps below trace", static_cast<float>(frik::rock::logging_policy::clampLogLevel(-4)), 0.0f);
+    ok &= expectFloat("logging clamps above off", static_cast<float>(frik::rock::logging_policy::clampLogLevel(99)), 6.0f);
+    ok &= expectFloat("logging info emits info", frik::rock::logging_policy::shouldEmit(2, frik::rock::logging_policy::LogLevel::Info) ? 1.0f : 0.0f, 1.0f);
+    ok &= expectFloat("logging info suppresses debug", frik::rock::logging_policy::shouldEmit(2, frik::rock::logging_policy::LogLevel::Debug) ? 1.0f : 0.0f, 0.0f);
+    ok &= expectFloat("logging warn emits error", frik::rock::logging_policy::shouldEmit(3, frik::rock::logging_policy::LogLevel::Error) ? 1.0f : 0.0f, 1.0f);
+    ok &= expectFloat("logging off suppresses critical", frik::rock::logging_policy::shouldEmit(6, frik::rock::logging_policy::LogLevel::Critical) ? 1.0f : 0.0f, 0.0f);
+    ok &= expectFloat("logging sample clamps low", static_cast<float>(frik::rock::logging_policy::sanitizeSampleMilliseconds(1)), 250.0f);
+    ok &= expectFloat("logging sample clamps high", static_cast<float>(frik::rock::logging_policy::sanitizeSampleMilliseconds(90000)), 60000.0f);
 
     return ok ? 0 : 1;
 }

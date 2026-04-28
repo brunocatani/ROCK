@@ -6,6 +6,11 @@
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
 
+namespace RE
+{
+    class NiNode;
+}
+
 namespace frik::api
 {
 #if defined(FRIK_API_EXPORTS)
@@ -16,7 +21,7 @@ namespace frik::api
 
 #define FRIK_CALL __cdecl
 
-    inline constexpr std::uint32_t FRIK_API_VERSION = 5;
+    inline constexpr std::uint32_t FRIK_API_VERSION = 6;
 
     struct FRIKApi
     {
@@ -134,6 +139,8 @@ namespace frik::api
 
         bool(FRIK_CALL* setHandPoseCustomJointPositionsWithPriority)(const char* tag, Hand hand, const float values[15], int priority);
 
+        bool(FRIK_CALL* applyExternalHandWorldTransform)(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority);
+
         [[nodiscard]] static int initialize(const uint32_t minVersion = FRIK_API_VERSION)
         {
             if (inst) {
@@ -165,4 +172,6 @@ namespace frik::api
 
         inline static const FRIKApi* inst = nullptr;
     };
+
+    static_assert(FRIK_API_VERSION == 6, "ROCK requires FRIK API v6 external hand world transform support");
 }

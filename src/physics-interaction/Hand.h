@@ -3,6 +3,7 @@
 #include "BethesdaPhysicsBody.h"
 #include "GrabConstraint.h"
 #include "HandCollisionSuppressionMath.h"
+#include "HandState.h"
 #include "ObjectDetection.h"
 #include "PhysicsLog.h"
 #include "PhysicsUtils.h"
@@ -33,21 +34,6 @@ namespace frik::rock
     RE::hknpShape* CreateBoxShape(float hx, float hy, float hz, float convexRadius = 0.0f);
 
     RE::hknpMaterialId registerHandMaterial(RE::hknpWorld* world);
-
-    enum class HandState : std::uint8_t
-    {
-        Idle,
-        SelectedClose,
-        SelectedFar,
-        SelectionLocked,
-        HeldInit,
-        HeldBody,
-        Pulled,
-        PreGrabItem,
-        GrabFromOtherHand,
-        SelectedTwoHand,
-        HeldTwoHanded,
-    };
 
     struct GrabPivotDebugSnapshot
     {
@@ -91,6 +77,7 @@ namespace frik::rock
         void suppressHandCollisionForGrab(RE::hknpWorld* world);
         void restoreHandCollisionAfterGrab(RE::hknpWorld* world);
         void clearGrabHandCollisionSuppressionState();
+        void clearPullRuntimeState();
         bool computeAdjustedHandTransformTarget(RE::NiTransform& outTransform) const;
 
     public:
@@ -147,6 +134,11 @@ namespace frik::rock
             float forceFadeInTime, float tauMin);
 
         void releaseGrabbedObject(RE::hknpWorld* world);
+
+        bool lockFarSelection();
+        bool startDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform);
+        bool updateDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float deltaTime);
+        void clearSelectionState(bool rememberDeselect);
 
         void tickTouchState() { _touchActiveFrames++; }
 
@@ -228,6 +220,8 @@ namespace frik::rock
         std::array<RE::NiPoint3, 5> _grabFingerProbeStart{};
         std::array<RE::NiPoint3, 5> _grabFingerProbeEnd{};
         bool _hasGrabFingerProbeDebug = false;
+        std::array<float, 15> _grabFingerJointPose{};
+        bool _hasGrabFingerJointPose = false;
         std::vector<GrabLocalTriangle> _grabLocalMeshTriangles;
         RE::NiPoint3 _grabSurfacePointLocal{};
         bool _hasGrabMeshPoseData = false;
@@ -250,6 +244,13 @@ namespace frik::rock
         RE::NiAVObject* _heldNode = nullptr;
 
         std::vector<std::uint32_t> _heldBodyIds;
+        std::vector<std::uint32_t> _pulledBodyIds;
+        std::uint32_t _pulledPrimaryBodyId = INVALID_BODY_ID;
+        RE::NiPoint3 _pullPointOffsetHavok{};
+        RE::NiPoint3 _pullTargetHavok{};
+        float _pullElapsedSeconds = 0.0f;
+        float _pullDurationSeconds = 0.0f;
+        bool _pullHasTarget = false;
 
         static constexpr int MAX_HELD_BODIES = 64;
         std::uint32_t _heldBodyIdsSnapshot[MAX_HELD_BODIES] = {};

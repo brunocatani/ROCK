@@ -32,7 +32,12 @@ namespace frik::rock::debug
         LeftHandCollider,
         RightHandBody,
         LeftHandBody,
-        TargetBody
+        TargetBody,
+        WeaponAuthority,
+        RightWeaponPrimaryGrip,
+        LeftWeaponSupportGrip,
+        RightFrikAppliedHand,
+        LeftFrikAppliedHand
     };
 
     enum class AxisOverlaySource : std::uint8_t
@@ -56,7 +61,11 @@ namespace frik::rock::debug
         RightGrabPivotError,
         LeftGrabPivotError,
         RightGrabFingerProbe,
-        LeftGrabFingerProbe
+        LeftGrabFingerProbe,
+        RightWeaponPrimaryGrip,
+        LeftWeaponSupportGrip,
+        RightWeaponAuthorityMismatch,
+        LeftWeaponAuthorityMismatch
     };
 
     struct BodyOverlayEntry
@@ -89,8 +98,8 @@ namespace frik::rock::debug
     {
         RE::hknpWorld* world{ nullptr };
         std::array<BodyOverlayEntry, MAX_WEAPON_COLLISION_BODIES + 8> entries{};
-        std::array<AxisOverlayEntry, 16> axisEntries{};
-        std::array<MarkerOverlayEntry, 32> markerEntries{};
+        std::array<AxisOverlayEntry, 24> axisEntries{};
+        std::array<MarkerOverlayEntry, 48> markerEntries{};
         std::uint32_t count{ 0 };
         std::uint32_t axisCount{ 0 };
         std::uint32_t markerCount{ 0 };

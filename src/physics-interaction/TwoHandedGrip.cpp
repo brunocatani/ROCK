@@ -8,18 +8,23 @@
 #include "RockUtils.h"
 #include "TransformMath.h"
 #include "WeaponCollisionGeometryMath.h"
+#include "WeaponTwoHandedGripMath.h"
 #include "WeaponTwoHandedSolver.h"
+#include "WeaponVisualAuthorityMath.h"
 #include "api/FRIKApi.h"
 #include "f4vr/F4VRUtils.h"
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 namespace frik::rock
 {
     namespace
     {
+        constexpr const char* PRIMARY_GRIP_TAG = "ROCK_WeaponPrimaryGrip";
         constexpr const char* SUPPORT_GRIP_TAG = "ROCK_WeaponSupportGrip";
+        constexpr int GRIP_HAND_POSE_PRIORITY = 100;
         constexpr float SUPPORT_NORMAL_TWIST_FACTOR = 0.5f;
 
         constexpr std::array<float, 15> BARREL_WRAP_POSE = { 0.85f, 0.80f, 0.75f, 0.35f, 0.30f, 0.25f, 0.30f, 0.25f, 0.20f, 0.35f, 0.30f, 0.25f, 0.40f, 0.35f, 0.30f };
@@ -55,6 +60,7 @@ namespace frik::rock
             const float t = (std::max)(0.0f, (std::min)(1.0f, alpha));
             return RE::NiPoint3{ from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t, from.z + (to.z - from.z) * t };
         }
+
     }
 
     static RE::NiTransform getHandBoneTransform(bool isLeft)
@@ -81,21 +87,11 @@ namespace frik::rock
         return weapon_collision_geometry_math::localPointToWorld(weaponNode->world.rotate, weaponNode->world.translate, weaponNode->world.scale, localPos);
     }
 
-    void TwoHandedGrip::snapHandToWorldPos(RE::NiAVObject* handBone, const RE::NiPoint3& targetWorld, const RE::NiNode* weaponNode)
-    {
-        auto* parent = handBone->parent;
-        if (!parent)
-            return;
-
-        handBone->local.translate = transform_math::worldPointToLocal(parent->world, targetWorld);
-
-        f4vr::updateTransformsDown(handBone, true, weaponNode ? weaponNode->name.c_str() : nullptr);
-    }
-
     void TwoHandedGrip::update(
         RE::NiNode* weaponNode,
         const WeaponInteractionContact& leftWeaponContact,
         bool leftGripPressed,
+        bool supportHandHoldingObject,
         float dt,
         const WeaponReloadRuntimeState& reloadState)
     {
@@ -103,7 +99,7 @@ namespace frik::rock
 
         if (!frik::api::FRIKApi::inst || !frik::api::FRIKApi::inst->isSkeletonReady() || !weaponNode) {
             if (_state != TwoHandedState::Inactive) {
-                transitionToInactive();
+                transitionToInactive(false);
             }
             return;
         }
@@ -113,12 +109,16 @@ namespace frik::rock
 
         switch (_state) {
         case TwoHandedState::Inactive:
-            if (leftTouchingSupport) {
+            if (leftTouchingSupport && !supportHandHoldingObject) {
                 transitionToTouching(weaponNode, decision);
             }
             break;
 
         case TwoHandedState::Touching:
+            if (supportHandHoldingObject) {
+                _state = TwoHandedState::Inactive;
+                break;
+            }
             if (leftTouchingSupport) {
                 _touchFrames = 0;
             } else {
@@ -128,14 +128,20 @@ namespace frik::rock
                     break;
                 }
             }
-            if (leftGripPressed && leftTouchingSupport) {
+            if (weapon_two_handed_grip_math::canStartSupportGrip(leftTouchingSupport, leftGripPressed, supportHandHoldingObject)) {
                 transitionToGripping(weaponNode, decision);
             }
             break;
 
         case TwoHandedState::Gripping:
-            if (!leftGripPressed) {
-                transitionToInactive();
+            if (weaponNode != _activeWeaponNode) {
+                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because weapon node changed during support grip");
+                transitionToInactive(false);
+            } else if (!reloadState.supportGripAllowed) {
+                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because reload state disabled support grip");
+                transitionToInactive(false);
+            } else if (!weapon_two_handed_grip_math::shouldContinueSupportGrip(leftGripPressed, supportHandHoldingObject)) {
+                transitionToInactive(true);
             } else {
                 updateGripping(weaponNode, dt);
             }
@@ -145,8 +151,10 @@ namespace frik::rock
 
     void TwoHandedGrip::reset()
     {
+        clearPrimaryGripPose(false);
+        clearSupportGripPose(true);
         if (_state != TwoHandedState::Inactive) {
-            transitionToInactive();
+            transitionToInactive(false);
             return;
         }
         _state = TwoHandedState::Inactive;
@@ -162,6 +170,12 @@ namespace frik::rock
         _activeWeaponNode = nullptr;
         _weaponNodeLocalBaseline = {};
         _hasWeaponNodeLocalBaseline = false;
+        _primaryHandWeaponLocal = {};
+        _supportHandWeaponLocal = {};
+        _hasHandWeaponLocalFrames = false;
+        _supportFingerPose = {};
+        _hasSupportFingerPose = false;
+        _primaryGripConfidence = 0.0f;
     }
 
     bool TwoHandedGrip::getSolvedWeaponTransform(RE::NiTransform& outTransform) const
@@ -173,13 +187,27 @@ namespace frik::rock
         return true;
     }
 
+    bool TwoHandedGrip::getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const
+    {
+        if (!_hasSolvedWeaponTransform || !_hasHandWeaponLocalFrames) {
+            return false;
+        }
+
+        outSnapshot.weaponWorld = _lastSolvedWeaponTransform;
+        outSnapshot.rightRequestedHandWorld = transform_math::composeTransforms(_lastSolvedWeaponTransform, _primaryHandWeaponLocal);
+        outSnapshot.leftRequestedHandWorld = transform_math::composeTransforms(_lastSolvedWeaponTransform, _supportHandWeaponLocal);
+        outSnapshot.rightGripWorld = transform_math::localPointToWorld(_lastSolvedWeaponTransform, _primaryGripLocal);
+        outSnapshot.leftGripWorld = transform_math::localPointToWorld(_lastSolvedWeaponTransform, _offhandGripLocal);
+        return true;
+    }
+
     void TwoHandedGrip::transitionToTouching(RE::NiNode* weaponNode, const WeaponInteractionDecision& decision)
     {
         _state = TwoHandedState::Touching;
         _touchFrames = 0;
         _supportGripPose = decision.gripPose != WeaponGripPoseId::None ? decision.gripPose : WeaponGripPoseId::BarrelWrap;
         _supportPartKind = decision.partKind;
-        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: TOUCHING weapon='{}' bodyId={} partKind={} pose={}", weaponNode->name.c_str(), decision.bodyId,
+        ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: touching weapon='{}' bodyId={} partKind={} pose={}", weaponNode->name.c_str(), decision.bodyId,
             static_cast<int>(_supportPartKind), static_cast<int>(_supportGripPose));
     }
 
@@ -193,11 +221,19 @@ namespace frik::rock
         _activeWeaponNode = weaponNode;
         _weaponNodeLocalBaseline = weaponNode->local;
         _hasWeaponNodeLocalBaseline = true;
+        _hasSupportFingerPose = false;
+        _primaryGripConfidence = 0.0f;
+        clearPrimaryGripPose(primaryHandIsLeft);
+        clearSupportGripPose(supportHandIsLeft);
 
         killFrikOffhandGrip();
 
         auto primaryTransform = getHandBoneTransform(primaryHandIsLeft);
-        _primaryGripLocal = worldToWeaponLocal(computeGrabPivotAPositionFromHandBasis(primaryTransform, primaryHandIsLeft), weaponNode);
+        const RE::NiPoint3 primaryPalmPos = computeGrabPivotAPositionFromHandBasis(primaryTransform, primaryHandIsLeft);
+        _primaryGripLocal = worldToWeaponLocal(primaryPalmPos, weaponNode);
+        _primaryGripConfidence = 1.0f;
+        const RE::NiPoint3 primaryGripWorldPoint = primaryPalmPos;
+        const RE::NiTransform adjustedPrimaryTransform = primaryTransform;
 
         auto supportTransform = getHandBoneTransform(supportHandIsLeft);
         RE::NiPoint3 palmPos = computeGrabPivotAPositionFromHandBasis(supportTransform, supportHandIsLeft);
@@ -219,7 +255,15 @@ namespace frik::rock
             _offhandGripLocal = worldToWeaponLocal(palmPos, weaponNode);
             _grabNormal = palmDir;
         }
+        const RE::NiPoint3 supportGripWorldPoint = meshFound ? grabPoint.position : palmPos;
+        const RE::NiTransform adjustedSupportTransform =
+            weapon_two_handed_grip_math::alignHandFrameToGripPoint(supportTransform, palmPos, supportGripWorldPoint);
+        _primaryHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), adjustedPrimaryTransform);
+        _supportHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), adjustedSupportTransform);
+        _hasHandWeaponLocalFrames = true;
         _supportNormalLocal = transform_math::worldVectorToLocal(weaponNode->world, palmDir);
+        const RE::NiPoint3 primaryToSupportWorld = sub(supportGripWorldPoint, primaryGripWorldPoint);
+        _lockedGripSeparationWorld = std::sqrt(dot(primaryToSupportWorld, primaryToSupportWorld));
 
         std::array<float, 5> meshFingerPose{};
         const std::array<float, 5>* meshFingerPosePtr = nullptr;
@@ -230,7 +274,7 @@ namespace frik::rock
             if (solvedFingerPose.solved) {
                 meshFingerPose = solvedFingerPose.values;
                 meshFingerPosePtr = &meshFingerPose;
-                ROCK_LOG_INFO(Weapon,
+                ROCK_LOG_DEBUG(Weapon,
                     "TwoHandedGrip: mesh finger pose hand={} values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} candidateTris={}",
                     supportHandIsLeft ? "left" : "right", meshFingerPose[0], meshFingerPose[1], meshFingerPose[2], meshFingerPose[3], meshFingerPose[4],
                     solvedFingerPose.hitCount, solvedFingerPose.candidateTriangleCount);
@@ -241,23 +285,32 @@ namespace frik::rock
 
         _state = TwoHandedState::Gripping;
         _rotationBlend = 0.0f;
+        _gripLogCounter = 0;
 
         float gripDist = std::sqrt(dot(sub(_offhandGripLocal, _primaryGripLocal), sub(_offhandGripLocal, _primaryGripLocal)));
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: GRIP ACTIVATED — weapon='{}', "
+            "TwoHandedGrip: grip active weapon='{}', "
             "primaryLocal=({:.3f},{:.3f},{:.3f}), supportLocal=({:.3f},{:.3f},{:.3f}), "
-            "gripSeparation={:.3f}, meshGrab={}, triangles={}, partKind={}, pose={}",
+            "gripSeparation={:.3f}, primaryGripSource={}, primaryGripConfidence={:.2f}, meshGrab={}, triangles={}, partKind={}, pose={}",
             weaponNode->name.c_str(), _primaryGripLocal.x, _primaryGripLocal.y, _primaryGripLocal.z, _offhandGripLocal.x, _offhandGripLocal.y, _offhandGripLocal.z, gripDist,
-            meshFound ? "YES" : "FALLBACK", triangles.size(), static_cast<int>(_supportPartKind), static_cast<int>(_supportGripPose));
+            "current-frik", _primaryGripConfidence, meshFound ? "YES" : "FALLBACK", triangles.size(), static_cast<int>(_supportPartKind),
+            static_cast<int>(_supportGripPose));
     }
 
-    void TwoHandedGrip::transitionToInactive()
+    void TwoHandedGrip::transitionToInactive(bool publishRestoredWeaponTransform)
     {
+        clearPrimaryGripPose(false);
         clearSupportGripPose(true);
         restoreFrikOffhandGrip();
+        bool restoredWeaponTransformAvailable = false;
+        RE::NiTransform restoredWeaponTransform{};
         if (_hasWeaponNodeLocalBaseline && _activeWeaponNode) {
-            _activeWeaponNode->local = _weaponNodeLocalBaseline;
-            f4vr::updateTransforms(_activeWeaponNode);
+            if (_activeWeaponNode->parent) {
+                restoredWeaponTransform = transform_math::composeTransforms(_activeWeaponNode->parent->world, _weaponNodeLocalBaseline);
+            } else {
+                restoredWeaponTransform = _weaponNodeLocalBaseline;
+            }
+            restoredWeaponTransformAvailable = true;
         }
 
         _state = TwoHandedState::Inactive;
@@ -267,14 +320,24 @@ namespace frik::rock
         _primaryGripLocal = {};
         _grabNormal = {};
         _supportNormalLocal = {};
+        _lockedGripSeparationWorld = 0.0f;
         _supportGripPose = WeaponGripPoseId::BarrelWrap;
         _supportPartKind = WeaponPartKind::Other;
-        _hasSolvedWeaponTransform = false;
+        _hasSolvedWeaponTransform = publishRestoredWeaponTransform && restoredWeaponTransformAvailable;
+        if (_hasSolvedWeaponTransform) {
+            _lastSolvedWeaponTransform = restoredWeaponTransform;
+        }
+        _primaryHandWeaponLocal = {};
+        _supportHandWeaponLocal = {};
+        _hasHandWeaponLocalFrames = false;
+        _supportFingerPose = {};
+        _hasSupportFingerPose = false;
+        _primaryGripConfidence = 0.0f;
         _activeWeaponNode = nullptr;
         _weaponNodeLocalBaseline = {};
         _hasWeaponNodeLocalBaseline = false;
 
-        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: GRIP RELEASED");
+        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: grip released");
     }
 
     void TwoHandedGrip::updateGripping(RE::NiNode* weaponNode, float dt)
@@ -290,7 +353,13 @@ namespace frik::rock
         RE::NiPoint3 supportController = computeGrabPivotAPositionFromHandBasis(supportTransform, supportHandIsLeft);
 
         const RE::NiPoint3 currentSupportWorld = weaponLocalToWorld(_offhandGripLocal, weaponNode);
-        const RE::NiPoint3 blendedSupportTarget = lerpPoint(currentSupportWorld, supportController, _rotationBlend);
+        const RE::NiPoint3 lockedSupportControllerTarget = makeLockedSupportGripTarget(
+            primaryController,
+            supportController,
+            currentSupportWorld,
+            _lockedGripSeparationWorld,
+            0.001f);
+        const RE::NiPoint3 blendedSupportTarget = lerpPoint(currentSupportWorld, lockedSupportControllerTarget, _rotationBlend);
 
         WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3> solverInput{};
         solverInput.weaponWorldTransform = weaponNode->world;
@@ -303,35 +372,34 @@ namespace frik::rock
         solverInput.useSupportNormalTwist = true;
         solverInput.supportNormalTwistFactor = SUPPORT_NORMAL_TWIST_FACTOR;
 
-        const auto solved = solveTwoHandedWeaponTransform(solverInput);
+        const auto solved = solveTwoHandedWeaponTransformFrikPivot(solverInput);
         if (!solved.solved) {
             return;
         }
 
-        auto* parent = weaponNode->parent;
-        const RE::NiTransform solvedLocal =
-            parent ? transform_math::composeTransforms(transform_math::invertTransform(parent->world), solved.weaponWorldTransform) : solved.weaponWorldTransform;
+        if (!applyWeaponVisualAuthority(weaponNode, solved.weaponWorldTransform)) {
+            _hasSolvedWeaponTransform = false;
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing support grip because ROCK visual weapon authority failed");
+            transitionToInactive(false);
+            return;
+        }
 
-        weaponNode->local.rotate = solvedLocal.rotate;
-        weaponNode->local.translate = solvedLocal.translate;
-        weaponNode->local.scale = solvedLocal.scale;
+        static_assert(weapon_visual_authority_math::handPosePrecedesLockedHandAuthority());
+        static_assert(weapon_visual_authority_math::weaponVisualPrecedesLockedHandAuthority());
+        publishGripHandPoses(supportHandIsLeft);
 
-        f4vr::updateTransforms(weaponNode);
+        if (!applyLockedHandVisualAuthority(weaponNode)) {
+            _hasSolvedWeaponTransform = false;
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing support grip because ROCK locked hand authority failed");
+            transitionToInactive(false);
+            return;
+        }
+
         _lastSolvedWeaponTransform = weaponNode->world;
         _hasSolvedWeaponTransform = true;
 
-        RE::NiPoint3 primaryGripFinal = weaponLocalToWorld(_primaryGripLocal, weaponNode);
-        RE::NiPoint3 offhandGripFinal = weaponLocalToWorld(_offhandGripLocal, weaponNode);
-
-        auto* primaryHandNode = frik::api::FRIKApi::inst->getHandNode(frik::api::FRIKApi::Hand::Right);
-        auto* offhandHandNode = frik::api::FRIKApi::inst->getHandNode(frik::api::FRIKApi::Hand::Left);
-
-        if (primaryHandNode) {
-            snapHandToWorldPos(primaryHandNode, primaryGripFinal, weaponNode);
-        }
-        if (offhandHandNode) {
-            snapHandToWorldPos(offhandHandNode, offhandGripFinal, weaponNode);
-        }
+        RE::NiPoint3 primaryGripFinal = transform_math::localPointToWorld(_lastSolvedWeaponTransform, _primaryGripLocal);
+        RE::NiPoint3 offhandGripFinal = transform_math::localPointToWorld(_lastSolvedWeaponTransform, _offhandGripLocal);
 
         if (++_gripLogCounter >= 90) {
             _gripLogCounter = 0;
@@ -345,33 +413,82 @@ namespace frik::rock
 
     void TwoHandedGrip::setSupportGripPose(bool isLeft, WeaponGripPoseId poseId, const std::array<float, 5>* meshFingerPose)
     {
-        auto* api = frik::api::FRIKApi::inst;
-        if (!api) {
-            return;
-        }
-
-        const auto hand = handFromBool(isLeft);
-        if (meshFingerPose && api->setHandPoseCustomFingerPositionsWithPriority) {
-            api->setHandPoseCustomFingerPositionsWithPriority(SUPPORT_GRIP_TAG, hand, (*meshFingerPose)[0], (*meshFingerPose)[1], (*meshFingerPose)[2], (*meshFingerPose)[3],
-                (*meshFingerPose)[4], 100);
+        (void)isLeft;
+        if (meshFingerPose) {
+            _supportFingerPose = grab_finger_pose_math::expandFingerCurlsToJointValues(*meshFingerPose);
+            _hasSupportFingerPose = true;
             return;
         }
 
         const auto& poseValues = poseValuesForGrip(poseId);
-        if (api->setHandPoseCustomJointPositionsWithPriority) {
-            api->setHandPoseCustomJointPositionsWithPriority(SUPPORT_GRIP_TAG, hand, poseValues.data(), 100);
-            return;
-        }
-
-        api->setHandPoseCustomJointPositions(SUPPORT_GRIP_TAG, hand, poseValues.data());
+        _supportFingerPose = poseValues;
+        _hasSupportFingerPose = true;
     }
 
     void TwoHandedGrip::clearSupportGripPose(bool isLeft)
     {
-        if (!frik::api::FRIKApi::inst) {
+        _supportFingerPose = {};
+        _hasSupportFingerPose = false;
+
+        if (frik::api::FRIKApi::inst) {
+            frik::api::FRIKApi::inst->clearHandPose(SUPPORT_GRIP_TAG, handFromBool(isLeft));
+        }
+    }
+
+    bool TwoHandedGrip::applyWeaponVisualAuthority(RE::NiNode* weaponNode, const RE::NiTransform& solvedWeaponWorld)
+    {
+        if (!weaponNode) {
+            return false;
+        }
+
+        if (weaponNode->parent) {
+            weaponNode->local = weapon_visual_authority_math::worldTargetToParentLocal(weaponNode->parent->world, solvedWeaponWorld);
+            f4vr::updateTransformsDown(weaponNode, true);
+        } else {
+            weaponNode->local = solvedWeaponWorld;
+            weaponNode->world = solvedWeaponWorld;
+            f4vr::updateTransformsDown(weaponNode, false);
+        }
+        return true;
+    }
+
+    bool TwoHandedGrip::applyLockedHandVisualAuthority(RE::NiNode* weaponNode)
+    {
+        if (!weaponNode || !_hasHandWeaponLocalFrames) {
+            return false;
+        }
+
+        auto* api = frik::api::FRIKApi::inst;
+        if (!api || !api->applyExternalHandWorldTransform) {
+            return false;
+        }
+
+        const RE::NiTransform primaryHandWorld =
+            weapon_visual_authority_math::weaponLocalFrameToWorld(weaponNode->world, _primaryHandWeaponLocal);
+        const RE::NiTransform supportHandWorld =
+            weapon_visual_authority_math::weaponLocalFrameToWorld(weaponNode->world, _supportHandWeaponLocal);
+
+        return api->applyExternalHandWorldTransform(PRIMARY_GRIP_TAG, frik::api::FRIKApi::Hand::Right, primaryHandWorld, GRIP_HAND_POSE_PRIORITY) &&
+               api->applyExternalHandWorldTransform(SUPPORT_GRIP_TAG, frik::api::FRIKApi::Hand::Left, supportHandWorld, GRIP_HAND_POSE_PRIORITY);
+    }
+
+    void TwoHandedGrip::publishGripHandPoses(bool supportHandIsLeft)
+    {
+        auto* api = frik::api::FRIKApi::inst;
+        if (!api || !api->setHandPoseCustomJointPositionsWithPriority) {
             return;
         }
-        frik::api::FRIKApi::inst->clearHandPose(SUPPORT_GRIP_TAG, handFromBool(isLeft));
+
+        if (weapon_visual_authority_math::shouldPublishTwoHandedGripPose(weapon_visual_authority_math::LockedHandRole::Support) && _hasSupportFingerPose) {
+            api->setHandPoseCustomJointPositionsWithPriority(SUPPORT_GRIP_TAG, handFromBool(supportHandIsLeft), _supportFingerPose.data(), GRIP_HAND_POSE_PRIORITY);
+        }
+    }
+
+    void TwoHandedGrip::clearPrimaryGripPose(bool isLeft)
+    {
+        if (frik::api::FRIKApi::inst) {
+            frik::api::FRIKApi::inst->clearHandPose(PRIMARY_GRIP_TAG, handFromBool(isLeft));
+        }
     }
 
     void TwoHandedGrip::killFrikOffhandGrip()
@@ -379,7 +496,7 @@ namespace frik::rock
         if (!frik::api::FRIKApi::inst)
             return;
         frik::api::FRIKApi::inst->blockOffHandWeaponGripping("ROCK_TwoHanded", true);
-        ROCK_LOG_INFO(Weapon, "FRIK offhand grip SUPPRESSED");
+        ROCK_LOG_DEBUG(Weapon, "FRIK offhand grip suppressed");
     }
 
     void TwoHandedGrip::restoreFrikOffhandGrip()
@@ -387,7 +504,7 @@ namespace frik::rock
         if (!frik::api::FRIKApi::inst)
             return;
         frik::api::FRIKApi::inst->blockOffHandWeaponGripping("ROCK_TwoHanded", false);
-        ROCK_LOG_INFO(Weapon, "FRIK offhand grip RESTORED");
+        ROCK_LOG_DEBUG(Weapon, "FRIK offhand grip restored");
     }
 
 }

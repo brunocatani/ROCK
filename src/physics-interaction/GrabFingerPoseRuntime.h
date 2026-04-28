@@ -25,11 +25,13 @@ namespace frik::rock::grab_finger_pose_runtime
     struct SolvedGrabFingerPose
     {
         std::array<float, 5> values{ 0.2f, 0.2f, 0.2f, 0.2f, 0.2f };
+        std::array<float, 15> jointValues{};
         std::array<RE::NiPoint3, 5> probeStart{};
         std::array<RE::NiPoint3, 5> probeEnd{};
         int hitCount = 0;
         int candidateTriangleCount = 0;
         bool solved = false;
+        bool hasJointValues = false;
     };
 
     inline const std::array<RE::NiPoint3, 5>& normalFingerBasesAuthored()
@@ -42,6 +44,11 @@ namespace frik::rock::grab_finger_pose_runtime
             RE::NiPoint3(6.637259f, -3.018480f, -0.357420f),
         };
         return kBases;
+    }
+
+    inline RE::NiPoint3 alternateThumbBaseAuthored()
+    {
+        return RE::NiPoint3(2.9f, 0.55f, -0.45f);
     }
 
     inline float distanceSquared(const RE::NiPoint3& a, const RE::NiPoint3& b)
@@ -114,6 +121,7 @@ namespace frik::rock::grab_finger_pose_runtime
         const RE::NiPoint3 palmToContact = grabSurfacePoint - grabAnchorWorld;
         const RE::NiPoint3 fallbackDirection = transformHandspaceDirection(handTransform, RE::NiPoint3(1.0f, 0.0f, 0.0f), isLeft);
         const auto& bases = normalFingerBasesAuthored();
+        std::array<grab_finger_pose_math::FingerCurlValue, 5> solvedFingers{};
 
         for (std::size_t finger = 0; finger < bases.size(); ++finger) {
             const RE::NiPoint3 baseWorld = transformHandspacePosition(handTransform, bases[finger], isLeft) + palmToContact;
@@ -125,13 +133,34 @@ namespace frik::rock::grab_finger_pose_runtime
             result.probeEnd[finger] = baseWorld + probeDirection * probeDistance;
 
             const auto solved = grab_finger_pose_math::solveFingerCurlValue(candidateTriangles, baseWorld, probeDirection, probeDistance, clampedMin, kFingerProbeRadius);
+            solvedFingers[finger] = solved;
             result.values[finger] = solved.value;
             if (solved.hit) {
                 result.hitCount++;
             }
         }
 
+        {
+            const RE::NiPoint3 baseWorld = transformHandspacePosition(handTransform, alternateThumbBaseAuthored(), isLeft) + palmToContact;
+            const RE::NiPoint3 toContact = grabSurfacePoint - baseWorld;
+            const float distanceToContact = std::sqrt(distanceSquared(grabSurfacePoint, baseWorld));
+            const float probeDistance = std::clamp(distanceToContact + kFingerReachPadding, kMinFingerProbeDistance, kMaxFingerProbeDistance);
+            const RE::NiPoint3 probeDirection = normalizedOrFallback(toContact, fallbackDirection);
+            const auto alternateThumb =
+                grab_finger_pose_math::solveFingerCurlValue(candidateTriangles, baseWorld, probeDirection, probeDistance, clampedMin, kFingerProbeRadius);
+            if (alternateThumb.hit && (!solvedFingers[0].hit || alternateThumb.value > result.values[0])) {
+                if (!solvedFingers[0].hit) {
+                    result.hitCount++;
+                }
+                result.values[0] = alternateThumb.value;
+                result.probeStart[0] = baseWorld;
+                result.probeEnd[0] = baseWorld + probeDirection * probeDistance;
+            }
+        }
+
         result.solved = result.hitCount > 0;
+        result.jointValues = grab_finger_pose_math::expandFingerCurlsToJointValues(result.values);
+        result.hasJointValues = result.solved;
         return result;
     }
 }

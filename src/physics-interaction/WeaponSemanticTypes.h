@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace frik::rock
 {
@@ -144,6 +145,24 @@ namespace frik::rock
         WeaponActionRole actionRole{ WeaponActionRole::None };
         WeaponGripPoseId fallbackGripPose{ WeaponGripPoseId::None };
         std::uint32_t sequence{ 0 };
+    };
+
+    /*
+     * Grab diagnostics intentionally live beside the semantic contact types
+     * instead of inside the contact itself. HIGGS exposes grabbed node names as
+     * diagnostic/API metadata, while its live interaction path stays focused on
+     * physics state. ROCK follows that split so collision callbacks keep using
+     * compact numeric data and the main-thread grab edge can still report the
+     * weapon form, current weapon node, and generated NIF source that produced
+     * a routed two-hand contact.
+     */
+    struct WeaponInteractionDebugInfo
+    {
+        std::string weaponName;
+        std::uint32_t weaponFormId{ 0 };
+        std::string weaponNodeName;
+        std::string sourceName;
+        std::string sourceRootName;
     };
 
     struct WeaponInteractionDecision

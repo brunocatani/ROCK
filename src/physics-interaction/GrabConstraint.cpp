@@ -1,5 +1,6 @@
 #include "GrabConstraint.h"
 
+#include "GrabConstraintMath.h"
 #include "HavokOffsets.h"
 #include "RockConfig.h"
 
@@ -65,7 +66,7 @@ namespace frik::rock
         motor->proportionalRecoveryVelocity = proportionalRecoveryVelocity;
         motor->constantRecoveryVelocity = constantRecoveryVelocity;
 
-        ROCK_LOG_INFO(GrabConstraint,
+        ROCK_LOG_DEBUG(GrabConstraint,
             "Motor created: tau={:.3f} damping={:.2f} "
             "force=[{:.0f},{:.0f}] propRecov={:.1f} constRecov={:.1f}",
             tau, damping, minForce, maxForce, proportionalRecoveryVelocity, constantRecoveryVelocity);
@@ -96,10 +97,10 @@ namespace frik::rock
 
     static void __cdecl addInstanceCallback(void* thisPtr, void* constraint, void* runtime, int sizeOfRuntime)
     {
-        ROCK_LOG_INFO(GrabConstraint, "addInstance CALLED: this={:p} constraint={:p} runtime={:p} size={}", thisPtr, constraint, runtime, sizeOfRuntime);
+        ROCK_LOG_TRACE(GrabConstraint, "addInstance CALLED: this={:p} constraint={:p} runtime={:p} size={}", thisPtr, constraint, runtime, sizeOfRuntime);
         if (runtime) {
             std::memset(runtime, 0, sizeOfRuntime);
-            ROCK_LOG_INFO(GrabConstraint, "  → memset runtime OK");
+            ROCK_LOG_TRACE(GrabConstraint, "  memset runtime OK");
         }
     }
 
@@ -179,7 +180,7 @@ namespace frik::rock
             }
         }
 
-        ROCK_LOG_INFO(GrabConstraint, "Custom vtable built at {:p} (6 overrides: getType/isValid/getConstraintInfo/setSolvingMethod/getRuntimeInfo/addInstance)",
+        ROCK_LOG_DEBUG(GrabConstraint, "Custom vtable built at {:p} (6 overrides: getType/isValid/getConstraintInfo/setSolvingMethod/getRuntimeInfo/addInstance)",
             (void*)s_customVtable);
     }
 
@@ -255,10 +256,10 @@ namespace frik::rock
             }
         }
 
-        ROCK_LOG_INFO(GrabConstraint, "Custom constraint data at {:p} ({:#x} bytes, 6 atoms, {} solver results, runtime {:#x})", cd, GRAB_CONSTRAINT_SIZE, RUNTIME_SOLVER_RESULTS,
+        ROCK_LOG_DEBUG(GrabConstraint, "Custom constraint data at {:p} ({:#x} bytes, 6 atoms, {} solver results, runtime {:#x})", cd, GRAB_CONSTRAINT_SIZE, RUNTIME_SOLVER_RESULTS,
             RUNTIME_REPORTED_SIZE);
-        ROCK_LOG_INFO(GrabConstraint, "  RagdollMotor offsets: init={:#x} prevAng={:#x} (relative to ptr at 0x00)", RT_RAGDOLL_INIT_OFFSET, RT_RAGDOLL_PREV_ANG_OFFSET);
-        ROCK_LOG_INFO(GrabConstraint, "  LinMotor offsets: [0x40,0x44] [0x31,0x38] [0x22,0x2C] (relative to per-atom ptrs at 0x30,0x40,0x50)");
+        ROCK_LOG_TRACE(GrabConstraint, "RagdollMotor offsets: init={:#x} prevAng={:#x} (relative to ptr at 0x00)", RT_RAGDOLL_INIT_OFFSET, RT_RAGDOLL_PREV_ANG_OFFSET);
+        ROCK_LOG_TRACE(GrabConstraint, "LinMotor offsets: [0x40,0x44] [0x31,0x38] [0x22,0x2C] (relative to per-atom ptrs at 0x30,0x40,0x50)");
 
         {
             auto* bodyArray = world->GetBodyArray();
@@ -291,25 +292,10 @@ namespace frik::rock
             tA_pos[3] = 0.0f;
 
             auto* tB_col0 = reinterpret_cast<float*>(header + offsets::kTransformB_Col0);
-            auto* tB_col1 = reinterpret_cast<float*>(header + offsets::kTransformB_Col1);
-            auto* tB_col2 = reinterpret_cast<float*>(header + offsets::kTransformB_Col2);
             auto* tB_pos = reinterpret_cast<float*>(header + offsets::kTransformB_Pos);
+            auto* targetBRca = reinterpret_cast<float*>(header + ATOM_RAGDOLL_MOT + 0x10);
 
-            {
-                const auto& R = desiredBodyTransformHandSpace.rotate;
-                tB_col0[0] = R.entry[0][0];
-                tB_col0[1] = R.entry[1][0];
-                tB_col0[2] = R.entry[2][0];
-                tB_col0[3] = 0.0f;
-                tB_col1[0] = R.entry[0][1];
-                tB_col1[1] = R.entry[1][1];
-                tB_col1[2] = R.entry[2][1];
-                tB_col1[3] = 0.0f;
-                tB_col2[0] = R.entry[0][2];
-                tB_col2[1] = R.entry[1][2];
-                tB_col2[2] = R.entry[2][2];
-                tB_col2[3] = 0.0f;
-            }
+            grab_constraint_math::writeInitialGrabAngularFrame(tB_col0, targetBRca, desiredBodyTransformHandSpace);
 
             const RE::NiPoint3 objectDelta{ grabWorldHk[0] - objBody[12], grabWorldHk[1] - objBody[13], grabWorldHk[2] - objBody[14] };
             const RE::NiPoint3 pivotBLocal = worldDeltaToBodyLocal(objBody, objectDelta);
@@ -318,20 +304,14 @@ namespace frik::rock
             tB_pos[2] = pivotBLocal.z;
             tB_pos[3] = 0.0f;
 
-            ROCK_LOG_INFO(GrabConstraint,
+            ROCK_LOG_TRACE(GrabConstraint,
                 "setInBodySpace: pivotA=({:.3f},{:.3f},{:.3f}) [palm] "
                 "pivotB=({:.3f},{:.3f},{:.3f}) [surface] "
-                "tB_col0=({:.3f},{:.3f},{:.3f})",
+                "tB_inverse_col0=({:.3f},{:.3f},{:.3f})",
                 tA_pos[0], tA_pos[1], tA_pos[2], tB_pos[0], tB_pos[1], tB_pos[2], tB_col0[0], tB_col0[1], tB_col0[2]);
-        }
 
-        {
-            auto* transformB_rot = header + 0x70;
-            auto* target_bRca = header + ATOM_RAGDOLL_MOT + 0x10;
-            std::memcpy(target_bRca, transformB_rot, 48);
-
-            auto* t = reinterpret_cast<float*>(target_bRca);
-            ROCK_LOG_INFO(GrabConstraint, "target_bRca: col0=[{:.3f},{:.3f},{:.3f}] col1=[{:.3f},{:.3f},{:.3f}]", t[0], t[1], t[2], t[4], t[5], t[6]);
+            ROCK_LOG_TRACE(GrabConstraint, "target_bRca initial inverse: col0=[{:.3f},{:.3f},{:.3f}] col1=[{:.3f},{:.3f},{:.3f}]", targetBRca[0], targetBRca[1],
+                targetBRca[2], targetBRca[4], targetBRca[5], targetBRca[6]);
         }
 
         float angularForceRatio = g_rockConfig.rockGrabAngularToLinearForceRatio;
@@ -364,7 +344,7 @@ namespace frik::rock
             }
         }
 
-        ROCK_LOG_INFO(GrabConstraint, "Motors attached (disabled): angular={:.0f}, linear={:.0f}", maxForce / angularForceRatio, maxForce);
+        ROCK_LOG_DEBUG(GrabConstraint, "Motors attached (disabled): angular={:.0f}, linear={:.0f}", maxForce / angularForceRatio, maxForce);
 
         RE::hknpConstraintCinfo cinfo{};
         cinfo.constraintData = reinterpret_cast<RE::hkpConstraintData*>(cd);
@@ -389,7 +369,7 @@ namespace frik::rock
             }
         }
 
-        ROCK_LOG_INFO(GrabConstraint, "Constraint created: id={}, hand={}, obj={}", outId, handBodyId.value, objectBodyId.value);
+        ROCK_LOG_DEBUG(GrabConstraint, "Constraint created: id={}, hand={}, obj={}", outId, handBodyId.value, objectBodyId.value);
 
         result.constraintId = outId;
         result.constraintData = cd;
@@ -410,7 +390,7 @@ namespace frik::rock
         if (world) {
             std::uint32_t ids[1] = { constraint.constraintId };
             world->DestroyConstraints(ids, 1);
-            ROCK_LOG_INFO(GrabConstraint, "Constraint {} destroyed", constraint.constraintId);
+            ROCK_LOG_DEBUG(GrabConstraint, "Constraint {} destroyed", constraint.constraintId);
         }
 
         if (constraint.angularMotor) {
@@ -457,7 +437,7 @@ namespace frik::rock
 
         float invI[3] = { unpackBfloat16(packed[0]), unpackBfloat16(packed[1]), unpackBfloat16(packed[2]) };
 
-        ROCK_LOG_INFO(GrabConstraint,
+        ROCK_LOG_DEBUG(GrabConstraint,
             "Inertia pre-normalize: body={} packed=[{},{},{}] "
             "float=[{:.6e},{:.6e},{:.6e}] mass_packed={}",
             bodyId.value, packed[0], packed[1], packed[2], invI[0], invI[1], invI[2], packed[3]);
@@ -485,13 +465,13 @@ namespace frik::rock
             packed[1] = repackBfloat16(invI[1]);
             packed[2] = repackBfloat16(invI[2]);
 
-            ROCK_LOG_INFO(GrabConstraint,
+            ROCK_LOG_DEBUG(GrabConstraint,
                 "Inertia ratio clamped: {:.1f}x → {:.1f}x "
                 "packed [{},{},{}] → [{},{},{}] float [{:.6e},{:.6e},{:.6e}]",
                 ratio, MAX_INERTIA_RATIO, savedState.savedPackedInertia[0], savedState.savedPackedInertia[1], savedState.savedPackedInertia[2], packed[0], packed[1], packed[2],
                 invI[0], invI[1], invI[2]);
         } else {
-            ROCK_LOG_INFO(GrabConstraint, "Inertia ratio OK ({:.1f}x), no clamping needed", ratio);
+            ROCK_LOG_DEBUG(GrabConstraint, "Inertia ratio OK ({:.1f}x), no clamping needed", ratio);
         }
 
         savedState.inertiaModified = true;
@@ -501,7 +481,7 @@ namespace frik::rock
             static REL::Relocation<rebuildMass_t> rebuildMotionMassProperties{ REL::Offset(offsets::kFunc_RebuildMotionMassProperties) };
             rebuildMotionMassProperties(world, motionIndex, 0);
 
-            ROCK_LOG_INFO(GrabConstraint, "rebuildMotionMassProperties called for motionIndex={}", motionIndex);
+            ROCK_LOG_TRACE(GrabConstraint, "rebuildMotionMassProperties called for motionIndex={}", motionIndex);
         }
     }
 
@@ -528,7 +508,7 @@ namespace frik::rock
         packed[1] = savedState.savedPackedInertia[1];
         packed[2] = savedState.savedPackedInertia[2];
 
-        ROCK_LOG_INFO(GrabConstraint, "Inertia restored: body={} → packed=[{},{},{}]", savedState.bodyId.value, packed[0], packed[1], packed[2]);
+        ROCK_LOG_DEBUG(GrabConstraint, "Inertia restored: body={} -> packed=[{},{},{}]", savedState.bodyId.value, packed[0], packed[1], packed[2]);
 
         {
             typedef void rebuildMass_t(void*, std::uint32_t, int);
@@ -549,6 +529,6 @@ namespace frik::rock
         }
         s_shellcodeCount = 0;
         s_vtableBuilt = false;
-        ROCK_LOG_INFO(GrabConstraint, "Vtable shellcode freed");
+        ROCK_LOG_DEBUG(GrabConstraint, "Vtable shellcode freed");
     }
 }

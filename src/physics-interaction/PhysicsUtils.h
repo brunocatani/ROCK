@@ -19,6 +19,20 @@ namespace frik::rock
 
     inline RE::NiPoint3 hkVectorToNiPoint(const RE::hkVector4f& v) { return RE::NiPoint3{ v.x * kHavokToGameScale, v.y * kHavokToGameScale, v.z * kHavokToGameScale }; }
 
+    inline void* getQueryFilterRef(RE::hknpWorld* world)
+    {
+        if (!world) {
+            return nullptr;
+        }
+
+        auto modifierMgr = *reinterpret_cast<std::uintptr_t*>(reinterpret_cast<std::uintptr_t>(world) + offsets::kHknpWorld_ModifierManager);
+        if (!modifierMgr) {
+            return nullptr;
+        }
+
+        return *reinterpret_cast<void**>(modifierMgr + offsets::kModifierMgr_FilterPtr);
+    }
+
     inline RE::NiCollisionObject* getCollisionObjectFromBody(const RE::hknpBody* body)
     {
         if (!body) {

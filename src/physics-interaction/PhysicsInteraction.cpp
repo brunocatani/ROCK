@@ -3,32 +3,45 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <numbers>
+#include <string_view>
 
 #include "BodyCollisionControl.h"
 #include "CollisionLayerPolicy.h"
 #include "HavokOffsets.h"
 #include "DebugBodyOverlay.h"
 #include "DebugOverlayPolicy.h"
+#include "GrabInteractionPolicy.h"
 #include "HeldObjectPhysicsMath.h"
 #include "HandCollisionSuppressionMath.h"
+#include "ObjectPhysicsBodySet.h"
 #include "PalmTransform.h"
 #include "PhysicsHooks.h"
+#include "PhysicsRecursiveWrappers.h"
 #include "PhysicsUtils.h"
+#include "PushAssist.h"
+#include "SelectionStatePolicy.h"
+#include "WeaponTwoHandedGripMath.h"
+#include "WeaponAuthorityLifecyclePolicy.h"
+#include "WeaponMuzzleAuthorityMath.h"
 
 #include "RE/Bethesda/BSHavok.h"
 #include "RE/Bethesda/FormComponents.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/TESForms.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
+#include "RE/Havok/hknpMotion.h"
 #include "RE/Havok/hknpWorld.h"
 
 #include "ROCKMain.h"
 #include "RockConfig.h"
 #include "RockUtils.h"
 #include "api/FRIKApi.h"
+#include "f4vr/MiscStructs.h"
 #include "f4vr/F4VRUtils.h"
 #include "f4vr/PlayerNodes.h"
+#include "f4sevr/Forms.h"
 #include "vrcf/VRControllersManager.h"
 
 namespace frik::rock
@@ -153,6 +166,101 @@ namespace frik::rock
             }
             return "Unknown";
         }
+
+        const char* weaponDiagnosticNodeName(const RE::NiAVObject* node)
+        {
+            if (!node) {
+                return "";
+            }
+
+            const char* name = node->name.c_str();
+            return name ? name : "";
+        }
+
+        const char* pushAssistSkipReasonName(push_assist::PushAssistSkipReason reason)
+        {
+            switch (reason) {
+            case push_assist::PushAssistSkipReason::None:
+                return "none";
+            case push_assist::PushAssistSkipReason::Disabled:
+                return "disabled";
+            case push_assist::PushAssistSkipReason::Cooldown:
+                return "cooldown";
+            case push_assist::PushAssistSkipReason::BelowMinSpeed:
+                return "below-min-speed";
+            case push_assist::PushAssistSkipReason::InvalidImpulse:
+                return "invalid-impulse";
+            }
+            return "unknown";
+        }
+
+        WeaponInteractionDebugInfo makeWeaponInteractionDebugInfo(
+            const WeaponCollision& weaponCollision,
+            RE::NiNode* weaponNode,
+            const WeaponInteractionContact& contact)
+        {
+            WeaponInteractionDebugInfo info{};
+            info.weaponNodeName = weaponDiagnosticNodeName(weaponNode);
+
+            auto* player = f4vr::getPlayer();
+            auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
+            auto* equipData = processData ? processData->equipData : nullptr;
+            auto* weaponForm = equipData ? equipData->item : nullptr;
+            if (weaponForm) {
+                info.weaponFormId = weaponForm->formID;
+                if (const char* fullName = weaponForm->GetFullName()) {
+                    info.weaponName = fullName;
+                }
+            }
+
+            if (contact.valid) {
+                WeaponInteractionDebugInfo sourceInfo{};
+                if (weaponCollision.tryGetWeaponContactDebugInfo(contact.bodyId, sourceInfo)) {
+                    info.sourceName = sourceInfo.sourceName;
+                    info.sourceRootName = sourceInfo.sourceRootName;
+                }
+            }
+
+            return info;
+        }
+
+        f4vr::MuzzleFlash* getEquippedMuzzleFlashNodes()
+        {
+            /*
+             * Ported from FRIK's WeaponPositionAdjuster muzzle fix because ROCK
+             * is now the final weapon visual owner during mesh/hand authority.
+             * FRIK still performs its own fix earlier in the frame, but any
+             * later ROCK weapon write must re-own the fire node from the current
+             * projectile node so the origin remains at the barrel tip.
+             */
+            const auto equipWeaponData = f4vr::getEquippedWeaponData();
+            if (!equipWeaponData) {
+                return nullptr;
+            }
+
+            const auto vfunc = reinterpret_cast<std::uint64_t*>(equipWeaponData);
+            if ((*vfunc & 0xFFFF) != (f4vr::EquippedWeaponData_vfunc.get() & 0xFFFF)) {
+                return nullptr;
+            }
+
+            const auto muzzle = reinterpret_cast<f4vr::MuzzleFlash*>(equipWeaponData->unk28);
+            if (!muzzle || !muzzle->fireNode || !muzzle->projectileNode) {
+                return nullptr;
+            }
+
+            return muzzle;
+        }
+
+        void applyFinalWeaponMuzzleAuthority()
+        {
+            auto* muzzle = getEquippedMuzzleFlashNodes();
+            if (!muzzle) {
+                return;
+            }
+
+            muzzle->fireNode->local = weapon_muzzle_authority_math::fireNodeLocalFromProjectileWorld(muzzle->projectileNode->world);
+            f4vr::updateTransformsDown(muzzle->fireNode, true);
+        }
     }
 
     PhysicsInteraction::PhysicsInteraction()
@@ -188,7 +296,7 @@ namespace frik::rock
 
         auto* bhk = getPlayerBhkWorld();
         if (!bhk) {
-            ROCK_LOG_INFO(Init, "No bhkWorld available for offset validation (will retry)");
+            ROCK_LOG_SAMPLE_DEBUG(Init, g_rockConfig.rockLogSampleMilliseconds, "No bhkWorld available for offset validation (will retry)");
             return true;
         }
 
@@ -349,7 +457,7 @@ namespace frik::rock
 
             if (emitSummary) {
                 const char* summaryHandLabel = isLeft ? "L" : "R";
-                ROCK_LOG_INFO(Hand, "{} parity: raw(pos={:.3f}, rot={:.3f}deg) basis(collider={:.3f}, palmPos={:.3f}, palmNormal={:.3f}deg, pointing={:.3f}deg)", summaryHandLabel,
+                ROCK_LOG_DEBUG(Hand, "{} parity: raw(pos={:.3f}, rot={:.3f}deg) basis(collider={:.3f}, palmPos={:.3f}, palmNormal={:.3f}deg, pointing={:.3f}deg)", summaryHandLabel,
                     delta.position, delta.rotationDegrees, measurePointDelta(localCollisionTransform.translate, apiCollisionTransform.translate),
                     measurePointDelta(localPalmPosition, apiPalmPosition), measureDirectionDeltaDegrees(localPalmNormal, apiPalmNormal),
                     measureDirectionDeltaDegrees(localPointing, apiPointing));
@@ -363,7 +471,7 @@ namespace frik::rock
             _paritySummaryCounter = 0;
             const auto& right = _rawHandParityStates[0];
             const auto& left = _rawHandParityStates[1];
-            ROCK_LOG_INFO(Hand, "Raw hand parity summary: R(pos={:.3f}, rot={:.3f}deg) L(pos={:.3f}, rot={:.3f}deg)", right.lastPositionDelta, right.lastRotationDeltaDegrees,
+            ROCK_LOG_DEBUG(Hand, "Raw hand parity summary: R(pos={:.3f}, rot={:.3f}deg) L(pos={:.3f}, rot={:.3f}deg)", right.lastPositionDelta, right.lastRotationDeltaDegrees,
                 left.lastPositionDelta, left.lastRotationDeltaDegrees);
         }
     }
@@ -444,6 +552,12 @@ namespace frik::rock
         _heldPlayerSpaceLogCounter = 0;
         _deltaLogCounter = 0;
         _contactLogCounter = 0;
+        _dynamicPushElapsedSeconds = 0.0f;
+        _dynamicPushCooldownUntil.clear();
+        _lastContactBodyRight.store(0xFFFFFFFF, std::memory_order_release);
+        _lastContactBodyLeft.store(0xFFFFFFFF, std::memory_order_release);
+        _lastContactBodyWeapon.store(0xFFFFFFFF, std::memory_order_release);
+        _lastContactSourceWeapon.store(0xFFFFFFFF, std::memory_order_release);
 
         _initialized = true;
 
@@ -466,6 +580,16 @@ namespace frik::rock
         if (_deltaTime <= 0.0f || _deltaTime > 0.1f) {
             _deltaTime = 1.0f / 90.0f;
         }
+        _dynamicPushElapsedSeconds += _deltaTime;
+        if (_dynamicPushCooldownUntil.size() > 512) {
+            for (auto it = _dynamicPushCooldownUntil.begin(); it != _dynamicPushCooldownUntil.end();) {
+                if (it->second <= _dynamicPushElapsedSeconds) {
+                    it = _dynamicPushCooldownUntil.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
 
         if (!frik::api::FRIKApi::inst->isSkeletonReady()) {
             if (_initialized) {
@@ -475,13 +599,19 @@ namespace frik::rock
             return;
         }
 
-        if (frik::api::FRIKApi::inst->isAnyMenuOpen()) {
+        if (weapon_authority_lifecycle_policy::shouldClearWeaponAuthorityForUpdateInterruption(
+                frik::api::FRIKApi::inst->isAnyMenuOpen(),
+                false,
+                false)) {
             if (_initialized) {
                 resetWeaponReloadStateForInterruption("menu");
+                _primaryGripAuthority.reset();
+                _twoHandedGrip.reset();
                 auto* bhkMenu = getPlayerBhkWorld();
                 if (bhkMenu) {
                     auto* hknpMenu = getHknpWorld(bhkMenu);
                     if (hknpMenu) {
+                        restoreLeftHandCollisionAfterWeaponSupport(hknpMenu);
                         if (_rightHand.isHolding()) {
                             auto* r = _rightHand.getHeldRef();
                             _rightHand.releaseGrabbedObject(hknpMenu);
@@ -495,14 +625,24 @@ namespace frik::rock
                                 releaseObject(r);
                         }
                     }
+                } else {
+                    hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
+                    _leftWeaponSupportBroadPhaseSuppressed = false;
                 }
             }
             debug::ClearFrame();
             return;
         }
 
-        if (!g_rockConfig.rockEnabled) {
+        if (weapon_authority_lifecycle_policy::shouldClearWeaponAuthorityForUpdateInterruption(
+                false,
+                !g_rockConfig.rockEnabled,
+                false)) {
             resetWeaponReloadStateForInterruption("disabled");
+            _primaryGripAuthority.reset();
+            if (_initialized) {
+                shutdown();
+            }
             debug::ClearFrame();
             return;
         }
@@ -540,15 +680,25 @@ namespace frik::rock
         refreshHandBoneCache();
         sampleHandTransformParity();
 
-        if (_collisionLayerRegistered && _expectedHandLayerMask != 0) {
+        if (_collisionLayerRegistered && (_expectedHandLayerMask != 0 || _expectedWeaponLayerMask != 0)) {
             auto modifierMgr = *reinterpret_cast<std::uintptr_t*>(reinterpret_cast<std::uintptr_t>(hknp) + offsets::kHknpWorld_ModifierManager);
             if (modifierMgr) {
                 auto* filterPtr = *reinterpret_cast<void**>(modifierMgr + offsets::kModifierMgr_FilterPtr);
                 if (filterPtr) {
                     auto* matrix = reinterpret_cast<std::uint64_t*>(reinterpret_cast<std::uintptr_t>(filterPtr) + offsets::kFilter_CollisionMatrix);
-                    if (matrix[ROCK_HAND_LAYER] != _expectedHandLayerMask) {
-                        ROCK_LOG_WARN(Config, "Layer {} mask changed! Expected=0x{:016X} Current=0x{:016X} — re-registering", ROCK_HAND_LAYER, _expectedHandLayerMask,
-                            matrix[ROCK_HAND_LAYER]);
+                    const auto currentHandMask = matrix[ROCK_HAND_LAYER];
+                    const auto currentWeaponMask = matrix[ROCK_WEAPON_LAYER];
+                    const bool handMaskDrifted =
+                        _expectedHandLayerMask != 0 && !collision_layer_policy::configuredLayerMaskMatches(currentHandMask, _expectedHandLayerMask);
+                    const bool weaponMaskDrifted =
+                        _expectedWeaponLayerMask != 0 && !collision_layer_policy::configuredLayerMaskMatches(currentWeaponMask, _expectedWeaponLayerMask);
+                    if (handMaskDrifted || weaponMaskDrifted) {
+                        ROCK_LOG_WARN(Config,
+                            "ROCK configured layer mask drift detected; hand expected=0x{:016X} current=0x{:016X}, weapon expected=0x{:016X} current=0x{:016X}; re-registering",
+                            collision_layer_policy::configuredMask(_expectedHandLayerMask),
+                            collision_layer_policy::configuredMask(currentHandMask),
+                            collision_layer_policy::configuredMask(_expectedWeaponLayerMask),
+                            collision_layer_policy::configuredMask(currentWeaponMask));
                         _collisionLayerRegistered = false;
                         registerCollisionLayer(hknp);
                     }
@@ -589,8 +739,7 @@ namespace frik::rock
         updateHandCollisions(hknp);
 
         {
-            auto* rootNode = f4vr::getRootNode();
-            RE::NiAVObject* weaponNode = rootNode ? f4vr::findNode(rootNode, "Weapon") : nullptr;
+            RE::NiNode* weaponNode = f4vr::getWeaponNode();
 
             auto dominantHandBodyId = _rightHand.getCollisionBodyId();
 
@@ -598,7 +747,7 @@ namespace frik::rock
                 if (++_wpnNodeLogCounter >= 90) {
                     _wpnNodeLogCounter = 0;
                     if (weaponNode) {
-                        ROCK_LOG_INFO(Weapon, "WeaponNode: '{}' pos=({:.1f},{:.1f},{:.1f}) hasBody={} bodyCount={}", weaponNode->name.c_str(), weaponNode->world.translate.x,
+                        ROCK_LOG_DEBUG(Weapon, "WeaponNode: '{}' pos=({:.1f},{:.1f},{:.1f}) hasBody={} bodyCount={}", weaponNode->name.c_str(), weaponNode->world.translate.x,
                             weaponNode->world.translate.y, weaponNode->world.translate.z, _weaponCollision.hasWeaponBody(), _weaponCollision.getWeaponBodyCount());
                     } else {
                     }
@@ -609,8 +758,8 @@ namespace frik::rock
 
         {
             WeaponInteractionContact leftWeaponContact{};
-            auto* rootNode2 = f4vr::getRootNode();
-            RE::NiNode* weaponNode = rootNode2 ? f4vr::findNode(rootNode2, "Weapon") : nullptr;
+            auto leftWeaponContactSource = weapon_debug_notification_policy::WeaponContactSource::None;
+            RE::NiNode* weaponNode = f4vr::getWeaponNode();
 
             auto publishLeftWeaponProbeContact = [&](WeaponInteractionContact& contact) {
                 _leftWeaponContactPartKind.store(static_cast<std::uint32_t>(contact.partKind), std::memory_order_release);
@@ -635,14 +784,16 @@ namespace frik::rock
                 leftWeaponContact.actionRole = static_cast<WeaponActionRole>(_leftWeaponContactActionRole.load(std::memory_order_acquire));
                 leftWeaponContact.fallbackGripPose = static_cast<WeaponGripPoseId>(_leftWeaponContactGripPose.load(std::memory_order_acquire));
                 leftWeaponContact.sequence = _leftWeaponContactSequence.load(std::memory_order_acquire);
+                leftWeaponContactSource = weapon_debug_notification_policy::WeaponContactSource::Contact;
             } else if (weaponNode) {
                 const RE::NiTransform leftHandTransform = getInteractionHandTransform(true);
                 const RE::NiPoint3 leftProbePoint = computeGrabPivotAPositionFromHandBasis(leftHandTransform, true);
                 if (_weaponCollision.tryFindInteractionContactNearPoint(weaponNode, leftProbePoint, g_rockConfig.rockWeaponInteractionProbeRadius, leftWeaponContact)) {
                     publishLeftWeaponProbeContact(leftWeaponContact);
+                    leftWeaponContactSource = weapon_debug_notification_policy::WeaponContactSource::Probe;
                     if (g_rockConfig.rockDebugVerboseLogging && ++_weaponInteractionProbeLogCounter >= 90) {
                         _weaponInteractionProbeLogCounter = 0;
-                        ROCK_LOG_INFO(Weapon, "WeaponInteractionProbe: bodyId={} partKind={} supportRole={} reloadRole={} actionRole={} radius={:.1f}",
+                        ROCK_LOG_DEBUG(Weapon, "WeaponInteractionProbe: bodyId={} partKind={} supportRole={} reloadRole={} actionRole={} radius={:.1f}",
                             leftWeaponContact.bodyId,
                             static_cast<int>(leftWeaponContact.partKind),
                             static_cast<int>(leftWeaponContact.supportGripRole),
@@ -667,15 +818,56 @@ namespace frik::rock
 
             updateWeaponReloadState(weaponNode != nullptr);
 
-            _twoHandedGrip.update(weaponNode, leftWeaponContact, gripPressed, _deltaTime, _weaponReloadCoordinator.runtime);
-            if (_twoHandedGrip.isGripping()) {
+            const WeaponInteractionDecision leftWeaponDecision = routeWeaponInteraction(leftWeaponContact, _weaponReloadCoordinator.runtime);
+            const auto weaponNotificationKey = weapon_debug_notification_policy::makeWeaponNotificationKey(
+                leftWeaponContact,
+                leftWeaponDecision,
+                _weaponReloadCoordinator.runtime,
+                leftWeaponContactSource);
+
+            const bool leftHandHoldingObject = _leftHand.isHolding();
+            _twoHandedGrip.update(weaponNode, leftWeaponContact, gripPressed, leftHandHoldingObject, _deltaTime, _weaponReloadCoordinator.runtime);
+            const bool weaponSupportGripActive = _twoHandedGrip.isGripping();
+            if (g_rockConfig.rockDebugShowWeaponNotifications) {
+                const auto gripNotificationEvent =
+                    weapon_debug_notification_policy::observeWeaponSupportGrip(_weaponDebugNotificationState, weaponSupportGripActive);
+                if (gripNotificationEvent != weapon_debug_notification_policy::WeaponGripNotificationEvent::None) {
+                    if (gripNotificationEvent == weapon_debug_notification_policy::WeaponGripNotificationEvent::Started) {
+                        const auto weaponDebugInfo = makeWeaponInteractionDebugInfo(_weaponCollision, weaponNode, leftWeaponContact);
+                        f4vr::showNotification(
+                            weapon_debug_notification_policy::formatWeaponGripNotification(gripNotificationEvent, weaponNotificationKey, weaponDebugInfo));
+                        ROCK_LOG_INFO(Weapon,
+                            "WeaponGripDiagnostics: weapon='{}' formID={:08X} node='{}' root='{}' nif='{}' part={} route={} pose={} reload={} body={} source={}",
+                            weapon_debug_notification_policy::debugTextOrUnknown(weaponDebugInfo.weaponName),
+                            weaponDebugInfo.weaponFormId,
+                            weapon_debug_notification_policy::debugTextOrUnknown(weaponDebugInfo.weaponNodeName),
+                            weapon_debug_notification_policy::debugTextOrUnknown(weaponDebugInfo.sourceRootName),
+                            weapon_debug_notification_policy::debugTextOrUnknown(weaponDebugInfo.sourceName),
+                            weapon_debug_notification_policy::nameOf(weaponNotificationKey.partKind),
+                            weapon_debug_notification_policy::nameOf(weaponNotificationKey.interactionKind),
+                            weapon_debug_notification_policy::nameOf(weaponNotificationKey.gripPose),
+                            weapon_debug_notification_policy::nameOf(weaponNotificationKey.reloadState),
+                            weaponNotificationKey.bodyId,
+                            weapon_debug_notification_policy::nameOf(weaponNotificationKey.source));
+                    } else {
+                        f4vr::showNotification(weapon_debug_notification_policy::formatWeaponGripNotification(gripNotificationEvent, weaponNotificationKey));
+                    }
+                }
+            } else {
+                _weaponDebugNotificationState.supportGripActive = weaponSupportGripActive;
+            }
+
+            if (weaponSupportGripActive) {
+                _primaryGripAuthority.reset();
                 suppressLeftHandCollisionForWeaponSupport(hknp);
             } else {
                 restoreLeftHandCollisionAfterWeaponSupport(hknp);
+                _primaryGripAuthority.update(weaponNode, false, _weaponReloadCoordinator.runtime, g_rockConfig.rockOneHandedMeshPrimaryGripAuthorityEnabled);
             }
-            RE::NiTransform solvedWeaponTransform{};
-            if (_twoHandedGrip.getSolvedWeaponTransform(solvedWeaponTransform)) {
-                _weaponCollision.updateBodiesFromWeaponRootTransform(hknp, solvedWeaponTransform, _deltaTime);
+
+            _weaponCollision.updateBodiesFromCurrentSourceTransforms(hknp, weaponNode, _deltaTime);
+            if (f4vr::isNodeVisible(weaponNode)) {
+                applyFinalWeaponMuzzleAuthority();
             }
         }
 
@@ -782,7 +974,7 @@ namespace frik::rock
         const bool shouldLogDebug = g_rockConfig.rockReloadDebugStageLogging && (++_reloadStateLogCounter >= 60);
         if (shouldLogTransition || shouldLogDebug) {
             _reloadStateLogCounter = 0;
-            ROCK_LOG_INFO(Weapon,
+            ROCK_LOG_DEBUG(Weapon,
                 "ReloadObserver: equipped={} vanillaStage={} source={} runtime={} supportAllowed={} clip={} reserve={} seq={} physicalGateNeeded={} physicalGateSupported={} fallbackAllowed={}",
                 weaponEquipped,
                 reloadStageName(coordinated.vanillaStage),
@@ -861,7 +1053,7 @@ namespace frik::rock
         _leftWeaponSupportBroadPhaseSuppressed = _leftWeaponSupportBroadPhaseSuppressed || broadPhaseSet;
 
         if (firstSuppression || disabledFilter != currentFilter) {
-            ROCK_LOG_INFO(Weapon, "TwoHandedGrip: left hand collision suppressed bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBefore={} broadphase={}",
+            ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: left hand collision suppressed bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBefore={} broadphase={}",
                 handBodyId.value,
                 currentFilter,
                 disabledFilter,
@@ -902,7 +1094,7 @@ namespace frik::rock
         }
 
         const bool broadPhaseRestored = _leftWeaponSupportBroadPhaseSuppressed && body_collision::setBroadPhaseEnabled(world, handBodyId, true);
-        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: left hand collision restored bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} broadphase={}",
+        ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip: left hand collision restored bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} broadphase={}",
             handBodyId.value,
             currentFilter,
             restoredFilter,
@@ -950,6 +1142,7 @@ namespace frik::rock
         }
 
         debug::ClearFrame();
+        _primaryGripAuthority.reset();
         _twoHandedGrip.reset();
         _weaponCollision.shutdown();
         _weaponReloadEventBridge.uninstall();
@@ -973,6 +1166,11 @@ namespace frik::rock
         _parityEnabledLogged = false;
         _runtimeScaleLogged = false;
         _rawHandParityStates = {};
+        _dynamicPushCooldownUntil.clear();
+        _lastContactBodyRight.store(0xFFFFFFFF, std::memory_order_release);
+        _lastContactBodyLeft.store(0xFFFFFFFF, std::memory_order_release);
+        _lastContactBodyWeapon.store(0xFFFFFFFF, std::memory_order_release);
+        _lastContactSourceWeapon.store(0xFFFFFFFF, std::memory_order_release);
 
         cleanupGrabConstraintVtable();
 
@@ -1015,57 +1213,30 @@ namespace frik::rock
         {
             static REL::Relocation<void**> filterSingleton{ REL::Offset(offsets::kData_CollisionFilterSingleton) };
             auto* globalFilter = *filterSingleton;
-            ROCK_LOG_INFO(Config, "Filter source: world={:p}, global={:p}, same={}", filterPtr, (void*)globalFilter, filterPtr == globalFilter);
+            ROCK_LOG_DEBUG(Config, "Filter source: world={:p}, global={:p}, same={}", filterPtr, (void*)globalFilter, filterPtr == globalFilter);
         }
 
         auto* matrix = reinterpret_cast<std::uint64_t*>(reinterpret_cast<std::uintptr_t>(filterPtr) + offsets::kFilter_CollisionMatrix);
 
-        auto disablePair = [&](std::uint32_t layerA, std::uint32_t layerB) {
-            matrix[layerA] &= ~(1ULL << layerB);
-            matrix[layerB] &= ~(1ULL << layerA);
-        };
+        ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", ROCK_HAND_LAYER, matrix[ROCK_HAND_LAYER]);
+        ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", ROCK_WEAPON_LAYER, matrix[ROCK_WEAPON_LAYER]);
 
-        auto enablePair = [&](std::uint32_t layerA, std::uint32_t layerB) {
-            matrix[layerA] |= (1ULL << layerB);
-            matrix[layerB] |= (1ULL << layerA);
-        };
+        collision_layer_policy::applyRockHandLayerPolicy(matrix, g_rockConfig.rockCollideWithCharControllers, true);
+        collision_layer_policy::applyRockWeaponLayerPolicy(
+            matrix, g_rockConfig.rockWeaponCollisionBlocksProjectiles, g_rockConfig.rockWeaponCollisionBlocksSpells);
 
-        ROCK_LOG_INFO(Config, "Layer {} pre-set mask=0x{:016X}", ROCK_HAND_LAYER, matrix[ROCK_HAND_LAYER]);
-        ROCK_LOG_INFO(Config, "Layer {} pre-set mask=0x{:016X}", ROCK_WEAPON_LAYER, matrix[ROCK_WEAPON_LAYER]);
-
-        for (std::uint32_t i = 0; i < 48; i++) {
-            enablePair(ROCK_HAND_LAYER, i);
-        }
-
-        disablePair(ROCK_HAND_LAYER, 15);
-        disablePair(ROCK_HAND_LAYER, ROCK_HAND_LAYER);
-        if (!g_rockConfig.rockCollideWithCharControllers) {
-            disablePair(ROCK_HAND_LAYER, 30);
-        }
-
-        for (std::uint32_t i = 0; i < 48; i++) {
-            enablePair(ROCK_WEAPON_LAYER, i);
-        }
-        disablePair(ROCK_WEAPON_LAYER, 0);
-        disablePair(ROCK_WEAPON_LAYER, 15);
-        disablePair(ROCK_WEAPON_LAYER, 30);
-
-        disablePair(ROCK_WEAPON_LAYER, ROCK_WEAPON_LAYER);
-        disablePair(ROCK_WEAPON_LAYER, 36);
-        disablePair(ROCK_WEAPON_LAYER, 41);
-        disablePair(ROCK_WEAPON_LAYER, 42);
-        collision_layer_policy::applyWeaponProjectileBlockingPolicy(
-            matrix, ROCK_WEAPON_LAYER, g_rockConfig.rockWeaponCollisionBlocksProjectiles, g_rockConfig.rockWeaponCollisionBlocksSpells);
-        enablePair(ROCK_HAND_LAYER, ROCK_WEAPON_LAYER);
-
-        _expectedHandLayerMask = matrix[ROCK_HAND_LAYER];
+        _expectedHandLayerMask = collision_layer_policy::buildRockHandExpectedMask(g_rockConfig.rockCollideWithCharControllers, true);
+        _expectedWeaponLayerMask =
+            collision_layer_policy::buildRockWeaponExpectedMask(g_rockConfig.rockWeaponCollisionBlocksProjectiles, g_rockConfig.rockWeaponCollisionBlocksSpells);
         _collisionLayerRegistered = true;
 
-        ROCK_LOG_INFO(Config, "Registered layer {} (hand) mask=0x{:016X}", ROCK_HAND_LAYER, matrix[ROCK_HAND_LAYER]);
-        ROCK_LOG_INFO(Config, "Registered layer {} (weapon) mask=0x{:016X}", ROCK_WEAPON_LAYER, matrix[ROCK_WEAPON_LAYER]);
-        ROCK_LOG_INFO(Config, "Weapon projectile blocking: projectiles={} spells={} layerMask=0x{:016X}",
+        ROCK_LOG_INFO(Config, "Registered ROCK collision layers: hand={} mask=0x{:016X}, weapon={} mask=0x{:016X}, projectiles={}, spells={}",
+            ROCK_HAND_LAYER,
+            matrix[ROCK_HAND_LAYER],
+            ROCK_WEAPON_LAYER,
+            matrix[ROCK_WEAPON_LAYER],
             g_rockConfig.rockWeaponCollisionBlocksProjectiles ? "enabled" : "disabled",
-            g_rockConfig.rockWeaponCollisionBlocksSpells ? "enabled" : "disabled", matrix[ROCK_WEAPON_LAYER]);
+            g_rockConfig.rockWeaponCollisionBlocksSpells ? "enabled" : "disabled");
     }
 
     bool PhysicsInteraction::createHandCollisions(RE::hknpWorld* world, void* bhkWorld)
@@ -1138,8 +1309,9 @@ namespace frik::rock
         const bool drawGrabPivots = g_rockConfig.rockDebugShowGrabPivots;
         const bool drawFingerProbes = g_rockConfig.rockDebugShowGrabFingerProbes;
         const bool drawPalmVectors = g_rockConfig.rockDebugShowPalmVectors;
+        const bool drawWeaponAuthorityDebug = _twoHandedGrip.isGripping() && (g_rockConfig.rockDebugShowHandAxes || drawGrabPivots);
         if (!g_rockConfig.rockDebugShowColliders && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawFingerProbes &&
-            !drawPalmVectors) {
+            !drawPalmVectors && !drawWeaponAuthorityDebug) {
             debug::ClearFrame();
             return;
         }
@@ -1151,7 +1323,7 @@ namespace frik::rock
         frame.drawRockBodies = g_rockConfig.rockDebugShowColliders;
         frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
         frame.drawAxes = g_rockConfig.rockDebugShowHandAxes;
-        frame.drawMarkers = drawGrabPivots || drawFingerProbes || drawPalmVectors;
+        frame.drawMarkers = drawGrabPivots || drawFingerProbes || drawPalmVectors || drawWeaponAuthorityDebug;
         const bool rightDisabled = s_rightHandDisabled.load(std::memory_order_acquire);
         const bool leftDisabled = s_leftHandDisabled.load(std::memory_order_acquire);
 
@@ -1219,6 +1391,11 @@ namespace frik::rock
 
         auto addMarkerLine = [&](debug::MarkerOverlayRole role, const RE::NiPoint3& start, const RE::NiPoint3& end) {
             addMarker(role, start, end, 0.0f, false, true);
+        };
+
+        auto pointDistance = [](const RE::NiPoint3& lhs, const RE::NiPoint3& rhs) {
+            const RE::NiPoint3 delta = lhs - rhs;
+            return std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
         };
 
         if (frame.drawAxes) {
@@ -1305,6 +1482,34 @@ namespace frik::rock
 
             addFingerProbeDebug(_rightHand);
             addFingerProbeDebug(_leftHand);
+        }
+
+        if (drawWeaponAuthorityDebug) {
+            TwoHandedGripDebugSnapshot snapshot{};
+            if (_twoHandedGrip.getDebugAuthoritySnapshot(snapshot)) {
+                addAxisTransform(snapshot.weaponWorld, debug::AxisOverlayRole::WeaponAuthority, snapshot.weaponWorld.translate, false);
+                addAxisTransform(snapshot.rightRequestedHandWorld, debug::AxisOverlayRole::RightWeaponPrimaryGrip, snapshot.rightGripWorld, true);
+                addAxisTransform(snapshot.leftRequestedHandWorld, debug::AxisOverlayRole::LeftWeaponSupportGrip, snapshot.leftGripWorld, true);
+                addMarkerPoint(debug::MarkerOverlayRole::RightWeaponPrimaryGrip, snapshot.rightGripWorld, 3.0f);
+                addMarkerPoint(debug::MarkerOverlayRole::LeftWeaponSupportGrip, snapshot.leftGripWorld, 3.0f);
+
+                if (frik::api::FRIKApi::inst) {
+                    const RE::NiTransform appliedRight = frik::api::FRIKApi::inst->getHandWorldTransform(frik::api::FRIKApi::Hand::Right);
+                    const RE::NiTransform appliedLeft = frik::api::FRIKApi::inst->getHandWorldTransform(frik::api::FRIKApi::Hand::Left);
+                    addAxisTransform(appliedRight, debug::AxisOverlayRole::RightFrikAppliedHand, snapshot.rightRequestedHandWorld.translate, true);
+                    addAxisTransform(appliedLeft, debug::AxisOverlayRole::LeftFrikAppliedHand, snapshot.leftRequestedHandWorld.translate, true);
+                    addMarkerLine(debug::MarkerOverlayRole::RightWeaponAuthorityMismatch, snapshot.rightRequestedHandWorld.translate, appliedRight.translate);
+                    addMarkerLine(debug::MarkerOverlayRole::LeftWeaponAuthorityMismatch, snapshot.leftRequestedHandWorld.translate, appliedLeft.translate);
+
+                    static std::uint32_t authorityMismatchLogCounter = 0;
+                    if (++authorityMismatchLogCounter >= 120) {
+                        authorityMismatchLogCounter = 0;
+                        ROCK_LOG_DEBUG(Weapon, "TwoHandedGrip authority mismatch: right={:.2f}gu left={:.2f}gu",
+                            pointDistance(snapshot.rightRequestedHandWorld.translate, appliedRight.translate),
+                            pointDistance(snapshot.leftRequestedHandWorld.translate, appliedLeft.translate));
+                    }
+                }
+            }
         }
 
         if (frame.drawRockBodies) {
@@ -1398,7 +1603,7 @@ namespace frik::rock
             ++_heldPlayerSpaceLogCounter;
             if (_heldPlayerSpaceLogCounter >= 45 || frame.warp) {
                 _heldPlayerSpaceLogCounter = 0;
-                ROCK_LOG_INFO(Hand,
+                ROCK_LOG_DEBUG(Hand,
                     "Held player-space: enabled={} warp={} delta=({:.2f},{:.2f},{:.2f}) velHk=({:.3f},{:.3f},{:.3f})",
                     frame.enabled ? "yes" : "no", frame.warp ? "yes" : "no", frame.deltaGameUnits.x, frame.deltaGameUnits.y, frame.deltaGameUnits.z,
                     frame.velocityHavok.x, frame.velocityHavok.y, frame.velocityHavok.z);
@@ -1414,14 +1619,76 @@ namespace frik::rock
             return;
 
         int grabButton = g_rockConfig.rockGrabButtonID;
+        const bool rightHandWeaponEquipped = frik::api::FRIKApi::inst->isWeaponDrawn() && f4vr::getWeaponNode();
+        const bool equippedWeaponSupportGripActive = _twoHandedGrip.isGripping();
+
+        auto releaseSuppressedHeldObject = [&](Hand& hand, bool isLeft, const char* reason) {
+            auto* heldRef = hand.getHeldRef();
+            auto heldFormID = heldRef ? heldRef->GetFormID() : 0u;
+            hand.releaseGrabbedObject(hknp);
+            if (heldRef) {
+                releaseObject(heldRef);
+            }
+            ROCK_LOG_DEBUG(Hand, "{} hand: released held object because normal grab input is suppressed ({})", hand.handName(), reason ? reason : "unknown");
+            dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, heldRef, heldFormID, 0);
+        };
 
         auto processHand = [&](Hand& hand, bool isLeft) {
             if (isLeft && s_leftHandDisabled.load(std::memory_order_acquire))
                 return;
             if (!isLeft && s_rightHandDisabled.load(std::memory_order_acquire))
                 return;
+            if (!weapon_two_handed_grip_math::canProcessNormalGrabInput(isLeft, equippedWeaponSupportGripActive, rightHandWeaponEquipped)) {
+                if (hand.isHolding()) {
+                    releaseSuppressedHeldObject(hand, isLeft, isLeft ? "equipped weapon support grip active" : "right-hand weapon equipped");
+                } else if (hand.getState() == HandState::Pulled || hand.getState() == HandState::SelectionLocked) {
+                    auto* selectedRef = hand.getSelection().refr;
+                    hand.clearSelectionState(true);
+                    releaseObject(selectedRef);
+                    ROCK_LOG_DEBUG(Hand, "{} hand: cleared pull/locked selection because normal grab input is suppressed", hand.handName());
+                }
+                return;
+            }
 
             vrcf::Hand vrHand = isLeft ? vrcf::Hand::Left : vrcf::Hand::Right;
+            auto selectedObjectInteractionBlocked = [&]() {
+                const auto& sel = hand.getSelection();
+                auto* selRef = sel.refr;
+                if (!selRef) {
+                    return false;
+                }
+
+                auto* baseObj = selRef->GetObjectReference();
+                if (!baseObj) {
+                    return false;
+                }
+
+                const char* typeStr = baseObj->GetFormTypeString();
+                const std::string_view formType = typeStr ? std::string_view(typeStr) : std::string_view{};
+
+                bool hasMotionProps = false;
+                std::uint16_t motionProps = 0;
+                if (formType == "ACTI" && sel.bodyId.value != 0x7FFF'FFFF && hknp) {
+                    if (auto* motion = hknp->GetBodyMotion(sel.bodyId)) {
+                        motionProps = *reinterpret_cast<std::uint16_t*>(reinterpret_cast<char*>(motion) + offsets::kMotion_PropertiesId);
+                        hasMotionProps = true;
+                    }
+                }
+
+                const bool isLiveNpc = formType == "NPC_" && !selRef->IsDead(false);
+                const bool blocked = grab_interaction_policy::shouldBlockSelectedObjectInteraction(formType, isLiveNpc, hasMotionProps, motionProps);
+                if (blocked) {
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} hand: selected object interaction blocked formType={} formID={:08X} far={} motionProps={} hasMotionProps={}",
+                        hand.handName(),
+                        formType.empty() ? "???" : typeStr,
+                        selRef->GetFormID(),
+                        sel.isFarSelection ? "yes" : "no",
+                        motionProps,
+                        hasMotionProps ? "yes" : "no");
+                }
+                return blocked;
+            };
 
             if (hand.isHolding()) {
                 if (vrcf::VRControllers.isReleased(vrHand, grabButton)) {
@@ -1446,44 +1713,31 @@ namespace frik::rock
                         }
                     }
                 }
-            } else if (hand.getState() == HandState::SelectedClose && hand.hasSelection()) {
+            } else if (selection_state_policy::canProcessSelectedState(hand.getState()) && hand.hasSelection()) {
                 if (vrcf::VRControllers.isPressed(vrHand, grabButton)) {
-                    if (hand.getSelection().isFarSelection && hand.getSelection().distance > 50.0f) {
-                        ROCK_LOG_INFO(Hand, "{} hand: far grab blocked (dist={:.1f}) — too far", hand.handName(), hand.getSelection().distance);
+                    if (!grab_interaction_policy::canAttemptSelectedObjectGrab(
+                            hand.getSelection().isFarSelection, hand.getSelection().distance, g_rockConfig.rockFarDetectionRange)) {
+                        ROCK_LOG_DEBUG(Hand,
+                            "{} hand: far grab blocked (dist={:.1f}, configuredFarRange={:.1f})",
+                            hand.handName(),
+                            hand.getSelection().distance,
+                            g_rockConfig.rockFarDetectionRange);
                         return;
                     }
 
-                    auto* selRef = hand.getSelection().refr;
-                    if (selRef) {
-                        auto* baseObj = selRef->GetObjectReference();
-                        if (baseObj) {
-                            const char* typeStr = baseObj->GetFormTypeString();
+                    if (selectedObjectInteractionBlocked()) {
+                        return;
+                    }
 
-                            if (typeStr) {
-                                std::string_view t(typeStr);
-                                if (t == "DOOR" || t == "CONT" || t == "TERM" || t == "FURN") {
-                                    return;
-                                }
-
-                                if (t == "ACTI") {
-                                    auto& sel = hand.getSelection();
-                                    if (sel.bodyId.value != 0x7FFF'FFFF) {
-                                        auto* motion = hknp->GetBodyMotion(sel.bodyId);
-                                        if (motion) {
-                                            auto motionProps = *reinterpret_cast<std::uint16_t*>(reinterpret_cast<char*>(motion) + offsets::kMotion_PropertiesId);
-                                            if (motionProps == 2 || motionProps == 0) {
-                                                return;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (std::string_view(baseObj->GetFormTypeString()) == "NPC_") {
-                                if (!selRef->IsDead(false))
-                                    return;
-                            }
+                    if (hand.getSelection().isFarSelection) {
+                        auto* selectedRef = hand.getSelection().refr;
+                        auto transform = getInteractionHandTransform(isLeft);
+                        if (hand.lockFarSelection() && hand.startDynamicPull(hknp, transform)) {
+                            claimObject(selectedRef);
+                        } else {
+                            releaseObject(selectedRef);
                         }
+                        return;
                     }
 
                     auto transform = getInteractionHandTransform(isLeft);
@@ -1495,6 +1749,42 @@ namespace frik::rock
                         auto* heldRef = hand.getHeldRef();
                         claimObject(heldRef);
                         dispatchPhysicsMessage(kPhysMsg_OnGrab, isLeft, heldRef, heldRef ? heldRef->GetFormID() : 0, 0);
+                    }
+                }
+            } else if (hand.getState() == HandState::SelectionLocked) {
+                if (vrcf::VRControllers.isReleased(vrHand, grabButton)) {
+                    auto* selectedRef = hand.getSelection().refr;
+                    ROCK_LOG_DEBUG(Hand, "{} hand released locked far selection", hand.handName());
+                    hand.clearSelectionState(true);
+                    releaseObject(selectedRef);
+                }
+            } else if (hand.getState() == HandState::Pulled) {
+                auto* pulledRef = hand.getSelection().refr;
+                if (vrcf::VRControllers.isReleased(vrHand, grabButton)) {
+                    ROCK_LOG_DEBUG(Hand, "{} hand released dynamic pull", hand.handName());
+                    hand.clearSelectionState(true);
+                    releaseObject(pulledRef);
+                    return;
+                }
+
+                auto transform = getInteractionHandTransform(isLeft);
+                const bool readyToGrab = hand.updateDynamicPull(hknp, transform, _deltaTime);
+                if (!hand.hasSelection() || hand.getState() == HandState::Idle) {
+                    releaseObject(pulledRef);
+                    return;
+                }
+
+                if (readyToGrab) {
+                    bool grabbed = hand.grabSelectedObject(hknp, transform, g_rockConfig.rockGrabLinearTau, g_rockConfig.rockGrabLinearDamping,
+                        g_rockConfig.rockGrabConstraintMaxForce, g_rockConfig.rockGrabLinearProportionalRecovery, g_rockConfig.rockGrabLinearConstantRecovery);
+
+                    if (grabbed) {
+                        auto* heldRef = hand.getHeldRef();
+                        claimObject(heldRef);
+                        dispatchPhysicsMessage(kPhysMsg_OnGrab, isLeft, heldRef, heldRef ? heldRef->GetFormID() : 0, 0);
+                    } else {
+                        hand.clearSelectionState(true);
+                        releaseObject(pulledRef);
                     }
                 }
             }
@@ -1509,11 +1799,154 @@ namespace frik::rock
         auto rightContactBody = _lastContactBodyRight.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
         if (rightContactBody != 0xFFFFFFFF) {
             resolveAndLogContact("Right", bhk, hknp, RE::hknpBodyId{ rightContactBody });
+            applyDynamicPushAssist("Right", bhk, hknp, _rightHand.getCollisionBodyId().value, rightContactBody, false);
         }
 
         auto leftContactBody = _lastContactBodyLeft.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
         if (leftContactBody != 0xFFFFFFFF) {
             resolveAndLogContact("Left", bhk, hknp, RE::hknpBodyId{ leftContactBody });
+            applyDynamicPushAssist("Left", bhk, hknp, _leftHand.getCollisionBodyId().value, leftContactBody, false);
+        }
+
+        auto weaponContactBody = _lastContactBodyWeapon.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
+        auto weaponSourceBody = _lastContactSourceWeapon.exchange(0xFFFFFFFF, std::memory_order_acq_rel);
+        if (weaponContactBody != 0xFFFFFFFF && weaponSourceBody != 0xFFFFFFFF) {
+            applyDynamicPushAssist("Weapon", bhk, hknp, weaponSourceBody, weaponContactBody, true);
+        }
+    }
+
+    void PhysicsInteraction::applyDynamicPushAssist(const char* sourceName,
+        RE::bhkWorld* bhk,
+        RE::hknpWorld* hknp,
+        std::uint32_t sourceBodyId,
+        std::uint32_t targetBodyId,
+        bool sourceIsWeapon)
+    {
+        if (!bhk || !hknp || sourceBodyId == 0xFFFFFFFF || targetBodyId == 0xFFFFFFFF ||
+            sourceBodyId == object_physics_body_set::INVALID_BODY_ID || targetBodyId == object_physics_body_set::INVALID_BODY_ID || sourceBodyId == targetBodyId) {
+            return;
+        }
+
+        auto* targetRef = resolveBodyToRef(bhk, hknp, RE::hknpBodyId{ targetBodyId });
+        if (!targetRef || targetRef->IsDeleted() || targetRef->IsDisabled()) {
+            ROCK_LOG_SAMPLE_DEBUG(Hand, g_rockConfig.rockLogSampleMilliseconds, "{} dynamic push skipped: target body {} has no valid ref", sourceName, targetBodyId);
+            return;
+        }
+
+        object_physics_body_set::BodySetScanOptions scanOptions{};
+        scanOptions.mode = physics_body_classifier::InteractionMode::PassivePush;
+        scanOptions.rightHandBodyId = _rightHand.getCollisionBodyId().value;
+        scanOptions.leftHandBodyId = _leftHand.getCollisionBodyId().value;
+        scanOptions.sourceBodyId = sourceBodyId;
+        scanOptions.sourceWeaponBodyId = sourceIsWeapon ? sourceBodyId : object_physics_body_set::INVALID_BODY_ID;
+        scanOptions.maxDepth = g_rockConfig.rockObjectPhysicsTreeMaxDepth;
+        if (!sourceIsWeapon) {
+            if (sourceBodyId == _rightHand.getCollisionBodyId().value) {
+                scanOptions.heldBySameHand = &_rightHand.getHeldBodyIds();
+            } else if (sourceBodyId == _leftHand.getCollisionBodyId().value) {
+                scanOptions.heldBySameHand = &_leftHand.getHeldBodyIds();
+            }
+        }
+
+        const auto bodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhk, hknp, targetRef, scanOptions);
+        const auto* targetRecord = bodySet.findRecord(targetBodyId);
+        if (!targetRecord) {
+            ROCK_LOG_SAMPLE_DEBUG(Hand,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "{} dynamic push skipped: target body {} not found in ref tree formID={:08X} visitedNodes={} collisionObjects={}",
+                sourceName,
+                targetBodyId,
+                targetRef->GetFormID(),
+                bodySet.diagnostics.visitedNodes,
+                bodySet.diagnostics.collisionObjects);
+            return;
+        }
+        if (!targetRecord->accepted) {
+            ROCK_LOG_SAMPLE_DEBUG(Hand,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "{} dynamic push skipped: target body {} rejected reason={} layer={} motionId={} motionType={}",
+                sourceName,
+                targetBodyId,
+                physics_body_classifier::rejectReasonName(targetRecord->rejectReason),
+                targetRecord->collisionLayer,
+                targetRecord->motionId,
+                static_cast<int>(targetRecord->motionType));
+            return;
+        }
+
+        const auto uniqueMotionBodyIds = bodySet.uniqueAcceptedMotionBodyIds();
+        if (uniqueMotionBodyIds.empty()) {
+            ROCK_LOG_SAMPLE_DEBUG(Hand,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "{} dynamic push skipped: accepted target body {} produced no unique motion bodies",
+                sourceName,
+                targetBodyId);
+            return;
+        }
+
+        auto* sourceMotion = hknp->GetBodyMotion(RE::hknpBodyId{ sourceBodyId });
+        if (!sourceMotion) {
+            return;
+        }
+
+        const RE::NiPoint3 sourceVelocityHavok{ sourceMotion->linearVelocity.x, sourceMotion->linearVelocity.y, sourceMotion->linearVelocity.z };
+        const std::uint64_t cooldownKey = (static_cast<std::uint64_t>(sourceBodyId) << 32) | targetBodyId;
+        float cooldownRemaining = 0.0f;
+        if (const auto it = _dynamicPushCooldownUntil.find(cooldownKey); it != _dynamicPushCooldownUntil.end() && it->second > _dynamicPushElapsedSeconds) {
+            cooldownRemaining = it->second - _dynamicPushElapsedSeconds;
+        }
+
+        const push_assist::PushAssistInput<RE::NiPoint3> pushInput{
+            .enabled = g_rockConfig.rockDynamicPushAssistEnabled,
+            .sourceVelocity = sourceVelocityHavok,
+            .minSpeed = g_rockConfig.rockDynamicPushMinSpeed,
+            .maxImpulse = g_rockConfig.rockDynamicPushMaxImpulse,
+            .layerMultiplier = 1.0f,
+            .cooldownRemainingSeconds = cooldownRemaining,
+        };
+        const auto push = push_assist::computePushImpulse(pushInput);
+        if (!push.apply) {
+            ROCK_LOG_SAMPLE_DEBUG(Hand,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "{} dynamic push skipped: reason={} speed=({:.3f},{:.3f},{:.3f}) targetBody={} layer={} acceptedBodies={}",
+                sourceName,
+                pushAssistSkipReasonName(push.skipReason),
+                sourceVelocityHavok.x,
+                sourceVelocityHavok.y,
+                sourceVelocityHavok.z,
+                targetBodyId,
+                targetRecord->collisionLayer,
+                bodySet.acceptedCount());
+            return;
+        }
+
+        std::uint32_t appliedCount = 0;
+        for (const auto bodyId : uniqueMotionBodyIds) {
+            physics_recursive_wrappers::activateBody(hknp, bodyId);
+            if (push_assist::applyLinearVelocityDeltaDeferred(hknp, bodyId, push.impulse)) {
+                ++appliedCount;
+            }
+        }
+
+        if (appliedCount > 0) {
+            _dynamicPushCooldownUntil[cooldownKey] =
+                _dynamicPushElapsedSeconds + (std::max)(0.0f, g_rockConfig.rockDynamicPushCooldownSeconds);
+            auto* baseObj = targetRef->GetObjectReference();
+            auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
+            const char* nameStr = objName.empty() ? "(unnamed)" : objName.data();
+            ROCK_LOG_SAMPLE_DEBUG(Hand,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "{} dynamic push applied: '{}' formID={:08X} targetBody={} layer={} acceptedBodies={} uniqueMotions={} deltaVel=({:.3f},{:.3f},{:.3f})",
+                sourceName,
+                nameStr,
+                targetRef->GetFormID(),
+                targetBodyId,
+                targetRecord->collisionLayer,
+                bodySet.acceptedCount(),
+                appliedCount,
+                push.impulse.x,
+                push.impulse.y,
+                push.impulse.z);
         }
     }
 
@@ -1532,7 +1965,7 @@ namespace frik::rock
             auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
             const char* nameStr = objName.empty() ? "(unnamed)" : objName.data();
 
-            ROCK_LOG_INFO(Hand, "{} hand TOUCHED [{}] '{}' formID={:08X} body={} layer={}", handName, typeName, nameStr, ref->GetFormID(), bodyId.value, layer);
+            ROCK_LOG_DEBUG(Hand, "{} hand touched [{}] '{}' formID={:08X} body={} layer={}", handName, typeName, nameStr, ref->GetFormID(), bodyId.value, layer);
 
             bool isLeft = (std::string_view(handName) == "Left");
             auto& hand = isLeft ? _leftHand : _rightHand;
@@ -1624,6 +2057,17 @@ namespace frik::rock
 
         bool isRight = (bodyIdA == rightId || bodyIdB == rightId);
         bool isLeft = (bodyIdA == leftId || bodyIdB == leftId);
+
+        const bool bodyAIsWeapon = _weaponCollision.isWeaponBodyIdAtomic(bodyIdA);
+        const bool bodyBIsWeapon = _weaponCollision.isWeaponBodyIdAtomic(bodyIdB);
+        if (bodyAIsWeapon != bodyBIsWeapon) {
+            const std::uint32_t sourceWeaponBody = bodyAIsWeapon ? bodyIdA : bodyIdB;
+            const std::uint32_t otherBody = bodyAIsWeapon ? bodyIdB : bodyIdA;
+            if (otherBody != rightId && otherBody != leftId && !_weaponCollision.isWeaponBodyIdAtomic(otherBody)) {
+                _lastContactSourceWeapon.store(sourceWeaponBody, std::memory_order_release);
+                _lastContactBodyWeapon.store(otherBody, std::memory_order_release);
+            }
+        }
 
         if (!isRight && !isLeft) {
             return;

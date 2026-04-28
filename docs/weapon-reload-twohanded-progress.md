@@ -254,6 +254,53 @@ Verification run:
 - `build\Release\ROCKTransformConventionTests.exe`
 - `cmake --build build --config Release`
 
+## Two-Handed Equipped Weapon Authority Follow-Up
+
+Status: implemented and unit-tested on 2026-04-27. Full in-game validation is still required.
+
+Why this slice is being implemented this way:
+
+FRIK's suppressed two-handed firearm grip already solved the part ROCK should not replace: aiming from the fixed right-hand weapon grip toward the left-hand support point while preserving the primary pivot. HIGGS supplies the better state model: select the support point from real mesh/contact data, store weapon-local relationships, compute hand/finger pose from mesh, then drive the weapon and hands as a keyframed authority state. This slice keeps FRIK's aiming convention but moves ROCK's active two-handed weapon path from point-only hand snapping to full weapon-local hand frames, so visual hands, generated weapon collision, and semantic support anchors can agree.
+
+Controlling behavior:
+
+- Right hand remains the equipped weapon owner.
+- Left hand remains the support/reload interaction hand.
+- Active equipped-weapon two-handed grip is separate from dynamic object two-handed grab.
+- Layer 43 vs 44 contact/probe is needed before activation so the left hand can find weapon parts.
+- During active support grip, hand-vs-weapon collision is suppressed elsewhere to avoid solver fighting; both bodies are keyframed, so penetration must be solved by transform authority and hand posing.
+- One-handed firearms use the actual touched semantic mesh/body point.
+- Fixed two-handed categories should prefer semantic grip profiles first, then fall back to touched mesh points.
+
+Implemented in this slice:
+
+- Added `solveTwoHandedWeaponTransformFrikPivot()` as the named FRIK-style aiming contract.
+- Added solver `rotationDelta` output for right-wrist/primary-hand twist consumers.
+- Added focused unit coverage for the FRIK-style contract:
+  - fixed primary grip stays on the right-hand target;
+  - support point pulls the weapon as one package;
+  - rotation delta maps weapon forward toward the two-hand vector.
+- Updated `TwoHandedGrip` to store right-hand and left-hand transforms in weapon-local space at activation.
+- Updated active grip runtime to apply full hand world targets from the solved weapon transform through FRIK API v6's skeleton-only arm-chain service instead of translating wrist nodes directly.
+- Added locked support-target math so support controller motion along the captured primary/support axis preserves the grabbed mesh point while lateral motion still pivots the weapon.
+- Kept the generated weapon collision handoff through `WeaponCollision::updateBodiesFromWeaponRootTransform`, so colliders continue to follow the solved weapon root as one package.
+
+Review fixes applied after the first implementation:
+
+- Mesh-selected support points now adjust the stored support-hand frame so the hand grab pivot lands on the exact touched weapon mesh point.
+- Equipped-weapon support grip can no longer start or continue while the left hand owns a normal dynamic-object grab.
+- Normal left-hand grab processing is skipped while ROCK equipped-weapon support grip is active, preserving the separation between weapon support and dynamic object manipulation.
+- Releasing equipped-weapon support grip publishes the restored weapon-root transform for the same frame, so generated weapon collision bodies do not lag behind the visual weapon restore.
+- Right-hand normal object grabbing is suppressed while the right-hand weapon is drawn/equipped; if a normal object is already held when weapon ownership becomes active, ROCK releases that object instead of allowing dual right-hand ownership.
+
+Required in-game validation:
+
+- Visible gun must rotate around the right-hand grip when left support grip is active.
+- Generated weapon colliders must keep following the visible gun as one coherent package.
+- Left hand should no longer visually pass through or slide along the selected grip point during support grip; FRIK now applies ROCK's requested hand target through the arm chain rather than accepting a direct hand-node overwrite.
+- Release must restore FRIK offhand grip behavior without leaving ROCK poses active.
+- Projectile/muzzle origin should remain coherent after two-handed manipulation; if it does not, the native first-person weapon offset/projectile node update path needs the next Ghidra-verified implementation slice.
+
 ## Ghidra Verification Needed Before Native Runtime Work
 
 Ask user approval before each Ghidra operation.
