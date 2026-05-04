@@ -1,6 +1,7 @@
 #include "PhysicsHooks.h"
 
 #include "HavokOffsets.h"
+#include "HeldGrabCharacterControllerPolicy.h"
 #include "NativeMeleeSuppressionPolicy.h"
 #include "PhysicsInteraction.h"
 #include "PhysicsLog.h"
@@ -11,8 +12,10 @@
 #include "f4vr/F4VRUtils.h"
 #include "f4vr/PlayerNodes.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
+#include <cstring>
 #include <string_view>
 
 namespace frik::rock
@@ -104,6 +107,7 @@ namespace frik::rock
         {
             return native_melee_suppression::NativeMeleePolicyInput{ .rockEnabled = g_rockConfig.rockEnabled,
                 .suppressionEnabled = g_rockConfig.rockNativeMeleeSuppressionEnabled,
+                .fullSuppression = g_rockConfig.rockNativeMeleeFullSuppression,
                 .suppressWeaponSwing = g_rockConfig.rockNativeMeleeSuppressWeaponSwing,
                 .suppressHitFrame = g_rockConfig.rockNativeMeleeSuppressHitFrame,
                 .actorIsPlayer = isPlayerActor(actor),
@@ -123,7 +127,7 @@ namespace frik::rock
                 const auto count = counter.fetch_add(1, std::memory_order_relaxed) + 1;
 
                 if (count == 1 || (g_rockConfig.rockNativeMeleeDebugLogging && count % 45 == 0) || count % 180 == 0) {
-                    ROCK_LOG_INFO(Combat, "Native melee {} decision={} reason={} count={}",
+                    ROCK_LOG_DEBUG(Combat, "Native melee {} decision={} reason={} count={}",
                         event == NativeMeleeEvent::WeaponSwing ? "WeaponSwing" : "HitFrame",
                         decision.action == NativeMeleeSuppressionAction::CallNative      ? "native"
                             : decision.action == NativeMeleeSuppressionAction::ReturnHandled ? "handled"
@@ -228,6 +232,79 @@ namespace frik::rock
     using HandleBumpedCharacter_t = void (*)(void*, void*, void*);
     static HandleBumpedCharacter_t g_originalHandleBumped = nullptr;
 
+    static void writeAbsoluteJump(std::uint8_t* target, std::uintptr_t destination)
+    {
+        target[0] = 0xFF;
+        target[1] = 0x25;
+        target[2] = 0x00;
+        target[3] = 0x00;
+        target[4] = 0x00;
+        target[5] = 0x00;
+        *reinterpret_cast<std::uintptr_t*>(target + 6) = destination;
+    }
+
+    static bool installEntryTrampolineHook(const char* label,
+        std::uintptr_t targetOffset,
+        const std::uint8_t* expectedPrefix,
+        std::size_t stolenBytes,
+        void* hook,
+        void*& original)
+    {
+        if (stolenBytes < 14) {
+            ROCK_LOG_ERROR(Init, "{} hook install failed: stolen byte count {} cannot hold an absolute jump", label, stolenBytes);
+            return false;
+        }
+
+        REL::Relocation<std::uintptr_t> target{ REL::Offset(targetOffset) };
+        auto* targetAddr = reinterpret_cast<std::uint8_t*>(target.address());
+        if (!targetAddr || !expectedPrefix) {
+            ROCK_LOG_ERROR(Init, "{} hook install failed: target or validation bytes are null", label);
+            return false;
+        }
+
+        if (std::memcmp(targetAddr, expectedPrefix, stolenBytes) != 0) {
+            ROCK_LOG_ERROR(Init, "{} hook validation failed at 0x{:X}; native bytes changed, hook not installed", label, target.address());
+            return false;
+        }
+
+        constexpr std::size_t kJumpBytes = 14;
+        const std::size_t trampolineBytes = stolenBytes + kJumpBytes;
+        auto* trampolineMem = reinterpret_cast<std::uint8_t*>(VirtualAlloc(nullptr, trampolineBytes, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+        if (!trampolineMem) {
+            ROCK_LOG_ERROR(Init, "{} hook install failed: trampoline allocation failed", label);
+            return false;
+        }
+
+        std::memcpy(trampolineMem, targetAddr, stolenBytes);
+        writeAbsoluteJump(trampolineMem + stolenBytes, target.address() + stolenBytes);
+
+        DWORD oldTrampolineProtect = 0;
+        if (!VirtualProtect(trampolineMem, trampolineBytes, PAGE_EXECUTE_READ, &oldTrampolineProtect)) {
+            ROCK_LOG_ERROR(Init, "{} hook install failed: trampoline protection failed", label);
+            VirtualFree(trampolineMem, 0, MEM_RELEASE);
+            return false;
+        }
+
+        DWORD oldProtect = 0;
+        if (!VirtualProtect(targetAddr, stolenBytes, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+            ROCK_LOG_ERROR(Init, "{} hook install failed at 0x{:X}: target protection failed", label, target.address());
+            VirtualFree(trampolineMem, 0, MEM_RELEASE);
+            return false;
+        }
+
+        writeAbsoluteJump(targetAddr, reinterpret_cast<std::uintptr_t>(hook));
+        for (std::size_t i = kJumpBytes; i < stolenBytes; ++i) {
+            targetAddr[i] = 0x90;
+        }
+
+        FlushInstructionCache(GetCurrentProcess(), targetAddr, stolenBytes);
+        VirtualProtect(targetAddr, stolenBytes, oldProtect, &oldProtect);
+
+        original = trampolineMem;
+        ROCK_LOG_INFO(Init, "Installed {} hook at 0x{:X}, original trampoline=0x{:X}", label, target.address(), reinterpret_cast<std::uintptr_t>(trampolineMem));
+        return true;
+    }
+
     void hookedHandleBumpedCharacter(void* controller, void* bumpedCC, void* contactInfo)
     {
         if (!PhysicsInteraction::s_hooksEnabled.load(std::memory_order_acquire)) {
@@ -245,7 +322,7 @@ namespace frik::rock
                         static int holdSkipLogCounter = 0;
                         if (++holdSkipLogCounter >= 30) {
                             holdSkipLogCounter = 0;
-                            logger::info("[ROCK::Bump] Skipped bump — holding object");
+                            ROCK_LOG_DEBUG(Bump, "Skipped bump — holding object");
                         }
                         return;
                     }
@@ -255,7 +332,7 @@ namespace frik::rock
                 auto* lWandBump = f4vr::getLeftHandNode();
                 if (rWandBump && lWandBump) {
                     auto* ci = reinterpret_cast<float*>(contactInfo);
-                    RE::NiPoint3 contactPos(ci[0] * rock::kHavokToGameScale, ci[1] * rock::kHavokToGameScale, ci[2] * rock::kHavokToGameScale);
+                    RE::NiPoint3 contactPos(ci[0] * rock::havokToGameScale(), ci[1] * rock::havokToGameScale(), ci[2] * rock::havokToGameScale());
 
                     const auto rightHand = rWandBump->world.translate;
                     const auto leftHand = lWandBump->world.translate;
@@ -268,7 +345,7 @@ namespace frik::rock
                         static int skipLogCounter = 0;
                         if (++skipLogCounter >= 10) {
                             skipLogCounter = 0;
-                            logger::info("[ROCK::Bump] Skipped bump — hand dist R={:.1f} L={:.1f} contact=({:.1f},{:.1f},{:.1f})", distR, distL, contactPos.x, contactPos.y,
+                            ROCK_LOG_DEBUG(Bump, "Skipped bump — hand dist R={:.1f} L={:.1f} contact=({:.1f},{:.1f},{:.1f})", distR, distL, contactPos.x, contactPos.y,
                                 contactPos.z);
                         }
                         return;
@@ -276,7 +353,9 @@ namespace frik::rock
                 }
             }
 
-            g_originalHandleBumped(controller, bumpedCC, contactInfo);
+            if (g_originalHandleBumped) {
+                g_originalHandleBumped(controller, bumpedCC, contactInfo);
+            }
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             static int sehLogCounter = 0;
             if (sehLogCounter++ % 100 == 0) {
@@ -288,39 +367,32 @@ namespace frik::rock
         }
     }
 
-    typedef void (*UpdateShapes_t)(void*);
-    static UpdateShapes_t g_originalUpdateShapes = nullptr;
-
-    void hookedUpdateShapes(void* charController)
-    {
-        g_originalUpdateShapes(charController);
-
-        if (g_rockConfig.rockEnabled && g_rockConfig.rockCharControllerRadiusScale < 1.0f) {
-            auto* cc = reinterpret_cast<std::uint8_t*>(charController);
-            auto* radius1 = reinterpret_cast<float*>(cc + 0x58);
-            auto* radius2 = reinterpret_cast<float*>(cc + 0x5C);
-
-            *radius1 *= g_rockConfig.rockCharControllerRadiusScale;
-            *radius2 *= g_rockConfig.rockCharControllerRadiusScale;
-        }
-    }
-
-    void installCCRadiusHook() { ROCK_LOG_INFO(Init, "CC radius hook DISABLED (trampoline incompatible with target function)"); }
-
     void installBumpHook()
     {
         static bool installed = false;
+        static bool installAttempted = false;
         if (installed)
             return;
-        installed = true;
+        if (installAttempted)
+            return;
+        installAttempted = true;
 
-        static REL::Relocation<std::uintptr_t> target{ REL::Offset(offsets::kFunc_HandleBumpedCharacter) };
-        auto& trampoline = F4SE::GetTrampoline();
+        // Ghidra verified HandleBumpedCharacter at 0x141E24980 starts with ordinary
+        // prologue instructions, not an existing branch/call. CommonLib write_branch
+        // cannot derive a callable original from those bytes, so this hook uses an
+        // explicit relocated-entry trampoline and validates the exact whole
+        // instructions before patching.
+        constexpr std::array<std::uint8_t, 15> expectedPrefix{
+            0x48, 0x89, 0x5C, 0x24, 0x08,
+            0x48, 0x89, 0x74, 0x24, 0x18,
+            0x57,
+            0x48, 0x83, 0xEC, 0x70
+        };
 
-        g_originalHandleBumped =
-            reinterpret_cast<HandleBumpedCharacter_t>(trampoline.write_branch<6>(target.address(), reinterpret_cast<std::uintptr_t>(&hookedHandleBumpedCharacter)));
-
-        ROCK_LOG_INFO(Init, "Installed HandleBumpedCharacter hook at 0x{:X}, original at 0x{:X}", target.address(), reinterpret_cast<std::uintptr_t>(g_originalHandleBumped));
+        void* original = reinterpret_cast<void*>(g_originalHandleBumped);
+        installed = installEntryTrampolineHook(
+            "HandleBumpedCharacter", offsets::kFunc_HandleBumpedCharacter, expectedPrefix.data(), expectedPrefix.size(), &hookedHandleBumpedCharacter, original);
+        g_originalHandleBumped = reinterpret_cast<HandleBumpedCharacter_t>(original);
     }
 
     void installNativeGrabHook()
@@ -367,9 +439,10 @@ namespace frik::rock
                 installNativeMeleeVtableHook(offsets::kVtableEntry_HitFrameHandler_Handle, &hookedHitFrameHandler, g_originalHitFrameHandler, "HitFrameHandler::Handle");
         }
 
-        ROCK_LOG_INFO(Init, "Native melee suppression hooks installed: weaponSwing={} hitFrame={} enabled={} suppressSwing={} suppressHitFrame={}",
+        ROCK_LOG_INFO(Init, "Native melee suppression hooks installed: weaponSwing={} hitFrame={} enabled={} full={} suppressSwing={} suppressHitFrame={}",
             weaponSwingInstalled ? "yes" : "no", hitFrameInstalled ? "yes" : "no", g_rockConfig.rockNativeMeleeSuppressionEnabled ? "yes" : "no",
-            g_rockConfig.rockNativeMeleeSuppressWeaponSwing ? "yes" : "no", g_rockConfig.rockNativeMeleeSuppressHitFrame ? "yes" : "no");
+            g_rockConfig.rockNativeMeleeFullSuppression ? "yes" : "no", g_rockConfig.rockNativeMeleeSuppressWeaponSwing ? "yes" : "no",
+            g_rockConfig.rockNativeMeleeSuppressHitFrame ? "yes" : "no");
         return weaponSwingInstalled && hitFrameInstalled;
     }
 
@@ -378,89 +451,110 @@ namespace frik::rock
 
     void hookedProcessConstraintsCallback(void* controller, void* charProxy, void* manifold, void* simplexInput)
     {
+        bool originalAttempted = false;
         if (!PhysicsInteraction::s_hooksEnabled.load(std::memory_order_acquire)) {
             if (g_originalProcessConstraints) {
+                originalAttempted = true;
                 g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
             }
             return;
         }
 
         __try {
-            g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
-
             auto* pi = PhysicsInteraction::s_instance.load(std::memory_order_acquire);
-            if (!pi || !pi->isInitialized())
+            if (!pi || !pi->isInitialized()) {
+                if (g_originalProcessConstraints) {
+                    originalAttempted = true;
+                    g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
+                }
                 return;
+            }
 
             bool rightHolding = pi->getRightHand().isHoldingAtomic();
             bool leftHolding = pi->getLeftHand().isHoldingAtomic();
-            if (!rightHolding && !leftHolding)
-                return;
-
-            auto** manifoldPtrs = reinterpret_cast<char**>(manifold);
-            char* manifoldEntries = manifoldPtrs[0];
-            int manifoldCount = *reinterpret_cast<int*>(&manifoldPtrs[1]);
-
-            char* constraintArray = *reinterpret_cast<char**>(reinterpret_cast<char*>(simplexInput) + 0x48);
-            int constraintCount = *reinterpret_cast<int*>(reinterpret_cast<char*>(simplexInput) + 0x50);
-
-            if (!manifoldEntries || !constraintArray)
-                return;
-
-            int count = (std::min)(manifoldCount, constraintCount);
-            int zeroed = 0;
-
-            bool doDiag = false;
-
-            for (int i = 0; i < count; i++) {
-                char* manifoldEntry = manifoldEntries + i * 0x40;
-
-                std::uint32_t at20 = *reinterpret_cast<std::uint32_t*>(manifoldEntry + 0x20);
-                std::uint32_t at24 = *reinterpret_cast<std::uint32_t*>(manifoldEntry + 0x24);
-                std::uint32_t at28 = *reinterpret_cast<std::uint32_t*>(manifoldEntry + 0x28);
-                std::uint32_t at2C = *reinterpret_cast<std::uint32_t*>(manifoldEntry + 0x2C);
-                std::uint32_t at30 = *reinterpret_cast<std::uint32_t*>(manifoldEntry + 0x30);
-                std::uint32_t at34 = *reinterpret_cast<std::uint32_t*>(manifoldEntry + 0x34);
-                std::uint32_t at38 = *reinterpret_cast<std::uint32_t*>(manifoldEntry + 0x38);
-                std::uint32_t at3C = *reinterpret_cast<std::uint32_t*>(manifoldEntry + 0x3C);
-
-                if (doDiag) {
-                    logger::info("[ROCK::CC]   [{}] +20={} +24={} +28={} +2C={} +30={} +34={} +38={} +3C={}", i, at20, at24, at28, at2C, at30, at34, at38, at3C);
+            if (!rightHolding && !leftHolding) {
+                if (g_originalProcessConstraints) {
+                    originalAttempted = true;
+                    g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
                 }
+                return;
+            }
 
-                std::uint32_t bodyId = at28;
+            const bool diagnosticsEnabled = g_rockConfig.rockDebugGrabFrameLogging || g_rockConfig.rockDebugVerboseLogging;
+            const auto contactPolicy = held_grab_cc_policy::evaluateHeldGrabContactPolicy(held_grab_cc_policy::HeldGrabContactPolicyInput{
+                .hooksEnabled = true,
+                .holdingHeldObject = rightHolding || leftHolding,
+                .diagnosticsEnabled = diagnosticsEnabled,
+            });
+            if (!contactPolicy.mayFilterBeforeOriginal) {
+                if (g_originalProcessConstraints) {
+                    originalAttempted = true;
+                    g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
+                }
+                return;
+            }
+
+            const auto contactBuffers = held_grab_cc_policy::makeGeneratedContactBufferView(manifold, simplexInput);
+            if (!contactBuffers.valid) {
+                if (g_rockConfig.rockDebugVerboseLogging) {
+                    ROCK_LOG_SAMPLE_DEBUG(CC,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "Skipped held body character-controller pre-filter reason={} manifoldCount={} constraintCount={}",
+                        contactBuffers.reason,
+                        contactBuffers.manifoldCount,
+                        contactBuffers.constraintCount);
+                }
+                if (g_originalProcessConstraints) {
+                    originalAttempted = true;
+                    g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
+                }
+                return;
+            }
+
+            const auto filterResult = held_grab_cc_policy::filterGeneratedContactBuffers(contactBuffers, [&](std::uint32_t bodyId) {
                 bool isHeld = false;
-                if (rightHolding)
+                if (rightHolding) {
                     isHeld = pi->getRightHand().isHeldBodyId(bodyId);
-                if (!isHeld && leftHolding)
+                }
+                if (!isHeld && leftHolding) {
                     isHeld = pi->getLeftHand().isHeldBodyId(bodyId);
+                }
+                return isHeld;
+            });
 
-                if (isHeld) {
-                    char* constraintEntry = constraintArray + i * 0x40;
-                    auto* surfaceVel = reinterpret_cast<float*>(constraintEntry + 0x10);
-                    surfaceVel[0] = 0.0f;
-                    surfaceVel[1] = 0.0f;
-                    surfaceVel[2] = 0.0f;
-                    surfaceVel[3] = 0.0f;
-                    zeroed++;
-
-                    if (doDiag) {
-                        logger::info("[ROCK::CC]   → ZEROED constraint {} (matched body ID)", i);
-                    }
+            if (diagnosticsEnabled && filterResult.valid) {
+                if (filterResult.removedPairCount > 0) {
+                    ROCK_LOG_SAMPLE_DEBUG(CC,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "Filtered {} held body character-controller contacts before original listener kept={} originalPairs={} reason={}",
+                        filterResult.removedPairCount,
+                        filterResult.keptPairCount,
+                        filterResult.originalPairCount,
+                        contactPolicy.reason);
+                } else if (g_rockConfig.rockDebugVerboseLogging) {
+                    ROCK_LOG_SAMPLE_DEBUG(CC,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "Held body character-controller pre-filter found no held contacts originalPairs={} reason={}",
+                        filterResult.originalPairCount,
+                        filterResult.reason);
                 }
             }
 
-            if (zeroed > 0) {
-                static int zeroLogCounter = 0;
-                if (++zeroLogCounter >= 90) {
-                    zeroLogCounter = 0;
-                    logger::info("[ROCK::CC] Zeroed surface velocity for {} held body constraints", zeroed);
-                }
+            if (g_originalProcessConstraints) {
+                originalAttempted = true;
+                g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
             }
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             static int sehCount = 0;
             if (sehCount++ % 100 == 0) {
                 logger::error("[ROCK::CC] SEH exception in hookedProcessConstraintsCallback (count={})", sehCount);
+            }
+            if (!originalAttempted && g_originalProcessConstraints) {
+                __try {
+                    originalAttempted = true;
+                    g_originalProcessConstraints(controller, charProxy, manifold, simplexInput);
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                }
             }
         }
     }

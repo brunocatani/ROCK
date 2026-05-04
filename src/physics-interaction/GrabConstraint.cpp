@@ -1,50 +1,19 @@
 #include "GrabConstraint.h"
 
+#include "GrabConstraintMath.h"
 #include "HavokOffsets.h"
+#include "HavokRuntime.h"
 #include "RockConfig.h"
 
 #include <limits>
+#include <unordered_set>
 #include <windows.h>
 
 namespace frik::rock
 {
-
-    static void* havokHeapAlloc(std::size_t size)
-    {
-        static REL::Relocation<std::uint32_t*> s_tlsIndex{ REL::Offset(offsets::kData_HavokTlsAllocKey) };
-        LPVOID tlsBlock = TlsGetValue(*s_tlsIndex);
-        if (!tlsBlock)
-            return nullptr;
-
-        auto** allocator = reinterpret_cast<void***>(reinterpret_cast<char*>(tlsBlock) + 0x58);
-        if (!allocator || !*allocator)
-            return nullptr;
-
-        auto* vtable = reinterpret_cast<void* (**)(void*, std::size_t)>(**allocator);
-        return vtable[1](*allocator, size);
-    }
-
-    static void havokHeapFree(void* ptr, std::size_t size)
-    {
-        if (!ptr)
-            return;
-
-        static REL::Relocation<std::uint32_t*> s_tlsIndex{ REL::Offset(offsets::kData_HavokTlsAllocKey) };
-        LPVOID tlsBlock = TlsGetValue(*s_tlsIndex);
-        if (!tlsBlock)
-            return;
-
-        auto** allocator = reinterpret_cast<void***>(reinterpret_cast<char*>(tlsBlock) + 0x58);
-        if (!allocator || !*allocator)
-            return;
-
-        auto* vtable = reinterpret_cast<void (**)(void*, void*, std::size_t)>(**allocator);
-        vtable[2](*allocator, ptr, size);
-    }
-
     HkPositionMotor* createPositionMotor(float tau, float damping, float proportionalRecoveryVelocity, float constantRecoveryVelocity, float minForce, float maxForce)
     {
-        auto* motor = static_cast<HkPositionMotor*>(havokHeapAlloc(HK_POSITION_MOTOR_SIZE));
+        auto* motor = static_cast<HkPositionMotor*>(havok_runtime::allocateHavok(HK_POSITION_MOTOR_SIZE));
         if (!motor) {
             ROCK_LOG_ERROR(GrabConstraint, "Failed to allocate position motor");
             return nullptr;
@@ -65,7 +34,7 @@ namespace frik::rock
         motor->proportionalRecoveryVelocity = proportionalRecoveryVelocity;
         motor->constantRecoveryVelocity = constantRecoveryVelocity;
 
-        ROCK_LOG_INFO(GrabConstraint,
+        ROCK_LOG_DEBUG(GrabConstraint,
             "Motor created: tau={:.3f} damping={:.2f} "
             "force=[{:.0f},{:.0f}] propRecov={:.1f} constRecov={:.1f}",
             tau, damping, minForce, maxForce, proportionalRecoveryVelocity, constantRecoveryVelocity);
@@ -96,10 +65,10 @@ namespace frik::rock
 
     static void __cdecl addInstanceCallback(void* thisPtr, void* constraint, void* runtime, int sizeOfRuntime)
     {
-        ROCK_LOG_INFO(GrabConstraint, "addInstance CALLED: this={:p} constraint={:p} runtime={:p} size={}", thisPtr, constraint, runtime, sizeOfRuntime);
+        ROCK_LOG_TRACE(GrabConstraint, "addInstance CALLED: this={:p} constraint={:p} runtime={:p} size={}", thisPtr, constraint, runtime, sizeOfRuntime);
         if (runtime) {
             std::memset(runtime, 0, sizeOfRuntime);
-            ROCK_LOG_INFO(GrabConstraint, "  → memset runtime OK");
+            ROCK_LOG_TRACE(GrabConstraint, "  memset runtime OK");
         }
     }
 
@@ -179,11 +148,27 @@ namespace frik::rock
             }
         }
 
-        ROCK_LOG_INFO(GrabConstraint, "Custom vtable built at {:p} (6 overrides: getType/isValid/getConstraintInfo/setSolvingMethod/getRuntimeInfo/addInstance)",
+        ROCK_LOG_DEBUG(GrabConstraint, "Custom vtable built at {:p} (6 overrides: getType/isValid/getConstraintInfo/setSolvingMethod/getRuntimeInfo/addInstance)",
             (void*)s_customVtable);
     }
 
-    ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId, const float* palmWorldHk, const float* grabWorldHk,
+    static void setGrabMotorAtomsActive(char* header, bool active)
+    {
+        if (!header) {
+            return;
+        }
+
+        const auto enabled = active ? 1 : 0;
+        *(header + ATOM_RAGDOLL_MOT + 0x02) = static_cast<char>(enabled);
+
+        const int linAtomOffsets[3] = { ATOM_LIN_MOTOR_0, ATOM_LIN_MOTOR_1, ATOM_LIN_MOTOR_2 };
+        for (int axis = 0; axis < 3; axis++) {
+            *(header + linAtomOffsets[axis] + 0x02) = static_cast<char>(enabled);
+        }
+    }
+
+    ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
+        const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
         const RE::NiTransform& desiredBodyTransformHandSpace, float tau, float damping, float maxForce, float proportionalRecovery, float constantRecovery)
     {
         ActiveConstraint result;
@@ -194,7 +179,7 @@ namespace frik::rock
 
         buildCustomVtable();
 
-        void* cd = havokHeapAlloc(GRAB_CONSTRAINT_SIZE);
+        void* cd = havok_runtime::allocateHavok(GRAB_CONSTRAINT_SIZE);
         if (!cd) {
             ROCK_LOG_ERROR(GrabConstraint, "Failed to allocate constraint data ({:#x} bytes)", GRAB_CONSTRAINT_SIZE);
             return result;
@@ -213,6 +198,7 @@ namespace frik::rock
         *reinterpret_cast<std::uint16_t*>(header + ATOM_LIN_MOTOR_0) = ATOM_TYPE_LIN_MOTOR;
         *reinterpret_cast<std::uint16_t*>(header + ATOM_LIN_MOTOR_1) = ATOM_TYPE_LIN_MOTOR;
         *reinterpret_cast<std::uint16_t*>(header + ATOM_LIN_MOTOR_2) = ATOM_TYPE_LIN_MOTOR;
+        grab_constraint_math::writeSetupStabilizationDefaults(header + ATOM_STABILIZE);
 
         {
             auto* ragAtom = header + ATOM_RAGDOLL_MOT;
@@ -255,16 +241,12 @@ namespace frik::rock
             }
         }
 
-        ROCK_LOG_INFO(GrabConstraint, "Custom constraint data at {:p} ({:#x} bytes, 6 atoms, {} solver results, runtime {:#x})", cd, GRAB_CONSTRAINT_SIZE, RUNTIME_SOLVER_RESULTS,
+        ROCK_LOG_DEBUG(GrabConstraint, "Custom constraint data at {:p} ({:#x} bytes, 6 atoms, {} solver results, runtime {:#x})", cd, GRAB_CONSTRAINT_SIZE, RUNTIME_SOLVER_RESULTS,
             RUNTIME_REPORTED_SIZE);
-        ROCK_LOG_INFO(GrabConstraint, "  RagdollMotor offsets: init={:#x} prevAng={:#x} (relative to ptr at 0x00)", RT_RAGDOLL_INIT_OFFSET, RT_RAGDOLL_PREV_ANG_OFFSET);
-        ROCK_LOG_INFO(GrabConstraint, "  LinMotor offsets: [0x40,0x44] [0x31,0x38] [0x22,0x2C] (relative to per-atom ptrs at 0x30,0x40,0x50)");
+        ROCK_LOG_TRACE(GrabConstraint, "RagdollMotor offsets: init={:#x} prevAng={:#x} (relative to ptr at 0x00)", RT_RAGDOLL_INIT_OFFSET, RT_RAGDOLL_PREV_ANG_OFFSET);
+        ROCK_LOG_TRACE(GrabConstraint, "LinMotor offsets: [0x40,0x44] [0x31,0x38] [0x22,0x2C] (relative to per-atom ptrs at 0x30,0x40,0x50)");
 
         {
-            auto* bodyArray = world->GetBodyArray();
-            auto* handBody = reinterpret_cast<const float*>(&bodyArray[handBodyId.value]);
-            auto* objBody = reinterpret_cast<const float*>(&bodyArray[objectBodyId.value]);
-
             auto* tA_col0 = reinterpret_cast<float*>(header + offsets::kTransformA_Col0);
             auto* tA_col1 = reinterpret_cast<float*>(header + offsets::kTransformA_Col1);
             auto* tA_col2 = reinterpret_cast<float*>(header + offsets::kTransformA_Col2);
@@ -283,55 +265,27 @@ namespace frik::rock
             tA_col2[2] = 1.0f;
             tA_col2[3] = 0.0f;
 
-            const RE::NiPoint3 handDelta{ palmWorldHk[0] - handBody[12], palmWorldHk[1] - handBody[13], palmWorldHk[2] - handBody[14] };
-            const RE::NiPoint3 pivotALocal = worldDeltaToBodyLocal(handBody, handDelta);
-            tA_pos[0] = pivotALocal.x;
-            tA_pos[1] = pivotALocal.y;
-            tA_pos[2] = pivotALocal.z;
-            tA_pos[3] = 0.0f;
+            grab_constraint_math::writeConstraintPivotLocalTranslation(tA_pos, handBodyWorld, palmWorldGame, gameToHavokScale());
 
             auto* tB_col0 = reinterpret_cast<float*>(header + offsets::kTransformB_Col0);
-            auto* tB_col1 = reinterpret_cast<float*>(header + offsets::kTransformB_Col1);
-            auto* tB_col2 = reinterpret_cast<float*>(header + offsets::kTransformB_Col2);
             auto* tB_pos = reinterpret_cast<float*>(header + offsets::kTransformB_Pos);
+            auto* targetBRca = reinterpret_cast<float*>(header + ATOM_RAGDOLL_MOT + 0x10);
 
-            {
-                const auto& R = desiredBodyTransformHandSpace.rotate;
-                tB_col0[0] = R.entry[0][0];
-                tB_col0[1] = R.entry[1][0];
-                tB_col0[2] = R.entry[2][0];
-                tB_col0[3] = 0.0f;
-                tB_col1[0] = R.entry[0][1];
-                tB_col1[1] = R.entry[1][1];
-                tB_col1[2] = R.entry[2][1];
-                tB_col1[3] = 0.0f;
-                tB_col2[0] = R.entry[0][2];
-                tB_col2[1] = R.entry[1][2];
-                tB_col2[2] = R.entry[2][2];
-                tB_col2[3] = 0.0f;
-            }
+            grab_constraint_math::writeInitialGrabAngularFrame(tB_col0, targetBRca, desiredBodyTransformHandSpace);
 
-            const RE::NiPoint3 objectDelta{ grabWorldHk[0] - objBody[12], grabWorldHk[1] - objBody[13], grabWorldHk[2] - objBody[14] };
-            const RE::NiPoint3 pivotBLocal = worldDeltaToBodyLocal(objBody, objectDelta);
-            tB_pos[0] = pivotBLocal.x;
-            tB_pos[1] = pivotBLocal.y;
-            tB_pos[2] = pivotBLocal.z;
+            tB_pos[0] = pivotBBodyLocalHk[0];
+            tB_pos[1] = pivotBBodyLocalHk[1];
+            tB_pos[2] = pivotBBodyLocalHk[2];
             tB_pos[3] = 0.0f;
 
-            ROCK_LOG_INFO(GrabConstraint,
+            ROCK_LOG_TRACE(GrabConstraint,
                 "setInBodySpace: pivotA=({:.3f},{:.3f},{:.3f}) [palm] "
                 "pivotB=({:.3f},{:.3f},{:.3f}) [surface] "
-                "tB_col0=({:.3f},{:.3f},{:.3f})",
+                "tB_inverse_col0=({:.3f},{:.3f},{:.3f})",
                 tA_pos[0], tA_pos[1], tA_pos[2], tB_pos[0], tB_pos[1], tB_pos[2], tB_col0[0], tB_col0[1], tB_col0[2]);
-        }
 
-        {
-            auto* transformB_rot = header + 0x70;
-            auto* target_bRca = header + ATOM_RAGDOLL_MOT + 0x10;
-            std::memcpy(target_bRca, transformB_rot, 48);
-
-            auto* t = reinterpret_cast<float*>(target_bRca);
-            ROCK_LOG_INFO(GrabConstraint, "target_bRca: col0=[{:.3f},{:.3f},{:.3f}] col1=[{:.3f},{:.3f},{:.3f}]", t[0], t[1], t[2], t[4], t[5], t[6]);
+            ROCK_LOG_TRACE(GrabConstraint, "target_bRca initial inverse: col0=[{:.3f},{:.3f},{:.3f}] col1=[{:.3f},{:.3f},{:.3f}]", targetBRca[0], targetBRca[1],
+                targetBRca[2], targetBRca[4], targetBRca[5], targetBRca[6]);
         }
 
         float angularForceRatio = g_rockConfig.rockGrabAngularToLinearForceRatio;
@@ -344,10 +298,10 @@ namespace frik::rock
         if (!angMotor || !linMotor) {
             ROCK_LOG_ERROR(GrabConstraint, "Motor creation failed — aborting");
             if (angMotor)
-                havokHeapFree(angMotor, HK_POSITION_MOTOR_SIZE);
+                havok_runtime::freeHavok(angMotor, HK_POSITION_MOTOR_SIZE);
             if (linMotor)
-                havokHeapFree(linMotor, HK_POSITION_MOTOR_SIZE);
-            havokHeapFree(cd, GRAB_CONSTRAINT_SIZE);
+                havok_runtime::freeHavok(linMotor, HK_POSITION_MOTOR_SIZE);
+            havok_runtime::freeHavok(cd, GRAB_CONSTRAINT_SIZE);
             return result;
         }
 
@@ -364,7 +318,15 @@ namespace frik::rock
             }
         }
 
-        ROCK_LOG_INFO(GrabConstraint, "Motors attached (disabled): angular={:.0f}, linear={:.0f}", maxForce / angularForceRatio, maxForce);
+        /*
+         * HIGGS enables grab motors after building the constraint instance but
+         * before adding it to the Havok world. FO4VR hknp's CreateConstraint
+         * performs world insertion in one call, so the atom enabled flags must
+         * be live before CreateConstraint builds solver runtime for the grab.
+         */
+        setGrabMotorAtomsActive(header, true);
+
+        ROCK_LOG_DEBUG(GrabConstraint, "Motors attached and enabled before CreateConstraint: angular={:.0f}, linear={:.0f}", maxForce / angularForceRatio, maxForce);
 
         RE::hknpConstraintCinfo cinfo{};
         cinfo.constraintData = reinterpret_cast<RE::hkpConstraintData*>(cd);
@@ -379,17 +341,7 @@ namespace frik::rock
             return result;
         }
 
-        {
-            auto* ragAtom = header + ATOM_RAGDOLL_MOT;
-            *(ragAtom + 0x02) = 1;
-
-            const int linAtomOffsets[3] = { ATOM_LIN_MOTOR_0, ATOM_LIN_MOTOR_1, ATOM_LIN_MOTOR_2 };
-            for (int axis = 0; axis < 3; axis++) {
-                *(header + linAtomOffsets[axis] + 0x02) = 1;
-            }
-        }
-
-        ROCK_LOG_INFO(GrabConstraint, "Constraint created: id={}, hand={}, obj={}", outId, handBodyId.value, objectBodyId.value);
+        ROCK_LOG_DEBUG(GrabConstraint, "Constraint created: id={}, hand={}, obj={}", outId, handBodyId.value, objectBodyId.value);
 
         result.constraintId = outId;
         result.constraintData = cd;
@@ -410,98 +362,152 @@ namespace frik::rock
         if (world) {
             std::uint32_t ids[1] = { constraint.constraintId };
             world->DestroyConstraints(ids, 1);
-            ROCK_LOG_INFO(GrabConstraint, "Constraint {} destroyed", constraint.constraintId);
+            ROCK_LOG_DEBUG(GrabConstraint, "Constraint {} destroyed", constraint.constraintId);
         }
 
         if (constraint.angularMotor) {
-            havokHeapFree(constraint.angularMotor, HK_POSITION_MOTOR_SIZE);
+            havok_runtime::freeHavok(constraint.angularMotor, HK_POSITION_MOTOR_SIZE);
         }
         if (constraint.linearMotor && constraint.linearMotor != constraint.angularMotor) {
-            havokHeapFree(constraint.linearMotor, HK_POSITION_MOTOR_SIZE);
+            havok_runtime::freeHavok(constraint.linearMotor, HK_POSITION_MOTOR_SIZE);
         }
         if (constraint.constraintData) {
-            havokHeapFree(constraint.constraintData, GRAB_CONSTRAINT_SIZE);
+            havok_runtime::freeHavok(constraint.constraintData, GRAB_CONSTRAINT_SIZE);
         }
 
         constraint.clear();
     }
 
-    void normalizeGrabbedInertia(RE::hknpWorld* world, RE::hknpBodyId bodyId, SavedObjectState& savedState)
+    namespace
     {
-        if (!world)
-            return;
+        bool normalizeGrabbedInertiaMotion(RE::hknpWorld* world, RE::hknpBodyId bodyId, SavedObjectState::SavedMotionInertiaState& savedMotionState)
+        {
+            if (!world)
+                return false;
 
-        auto* bodyArray = world->GetBodyArray();
-        auto& body = bodyArray[bodyId.value];
-        auto motionIndex = body.motionIndex;
-        if (motionIndex == 0 || motionIndex > 4096)
-            return;
+            auto* body = havok_runtime::getBody(world, bodyId);
+            if (!body)
+                return false;
 
-        auto* worldBytes = reinterpret_cast<char*>(world);
-        auto* motionArrayPtr = *reinterpret_cast<char**>(worldBytes + offsets::kHknpWorld_MotionArrayPtr);
-        if (!motionArrayPtr)
-            return;
+            auto motionIndex = body->motionIndex;
+            auto* motion = havok_runtime::getMotion(world, motionIndex);
+            if (!motion)
+                return false;
 
-        auto* motion = motionArrayPtr + motionIndex * 0x80;
+            auto* packed = reinterpret_cast<std::int16_t*>(reinterpret_cast<char*>(motion) + MOTION_PACKED_INERTIA_OFFSET);
 
-        auto* packed = reinterpret_cast<std::int16_t*>(motion + MOTION_PACKED_INERTIA_OFFSET);
+            savedMotionState.bodyId = bodyId;
+            savedMotionState.motionIndex = motionIndex;
+            savedMotionState.savedPackedInertia[0] = packed[0];
+            savedMotionState.savedPackedInertia[1] = packed[1];
+            savedMotionState.savedPackedInertia[2] = packed[2];
 
-        savedState.savedPackedInertia[0] = packed[0];
-        savedState.savedPackedInertia[1] = packed[1];
-        savedState.savedPackedInertia[2] = packed[2];
-
-        if (packed[0] <= 0 || packed[1] <= 0 || packed[2] <= 0) {
-            ROCK_LOG_WARN(GrabConstraint, "Skipping inertia normalization: zero/negative packed value");
-            return;
-        }
-
-        float invI[3] = { unpackBfloat16(packed[0]), unpackBfloat16(packed[1]), unpackBfloat16(packed[2]) };
-
-        ROCK_LOG_INFO(GrabConstraint,
-            "Inertia pre-normalize: body={} packed=[{},{},{}] "
-            "float=[{:.6e},{:.6e},{:.6e}] mass_packed={}",
-            bodyId.value, packed[0], packed[1], packed[2], invI[0], invI[1], invI[2], packed[3]);
-
-        if (invI[0] <= 0.0f || invI[1] <= 0.0f || invI[2] <= 0.0f) {
-            ROCK_LOG_WARN(GrabConstraint, "Skipping inertia normalization: zero unpacked float value");
-            return;
-        }
-
-        float minI = (std::min)({ invI[0], invI[1], invI[2] });
-        float maxI = (std::max)({ invI[0], invI[1], invI[2] });
-
-        float MAX_INERTIA_RATIO = g_rockConfig.rockGrabMaxInertiaRatio;
-        float ratio = maxI / minI;
-
-        if (ratio > MAX_INERTIA_RATIO) {
-            float maxAllowed = minI * MAX_INERTIA_RATIO;
-            for (int i = 0; i < 3; i++) {
-                if (invI[i] > maxAllowed) {
-                    invI[i] = maxAllowed;
-                }
+            if (packed[0] <= 0 || packed[1] <= 0 || packed[2] <= 0) {
+                ROCK_LOG_WARN(GrabConstraint, "Skipping inertia normalization: zero/negative packed value");
+                return false;
             }
 
-            packed[0] = repackBfloat16(invI[0]);
-            packed[1] = repackBfloat16(invI[1]);
-            packed[2] = repackBfloat16(invI[2]);
+            float invI[3] = { unpackBfloat16(packed[0]), unpackBfloat16(packed[1]), unpackBfloat16(packed[2]) };
 
-            ROCK_LOG_INFO(GrabConstraint,
-                "Inertia ratio clamped: {:.1f}x → {:.1f}x "
-                "packed [{},{},{}] → [{},{},{}] float [{:.6e},{:.6e},{:.6e}]",
-                ratio, MAX_INERTIA_RATIO, savedState.savedPackedInertia[0], savedState.savedPackedInertia[1], savedState.savedPackedInertia[2], packed[0], packed[1], packed[2],
-                invI[0], invI[1], invI[2]);
-        } else {
-            ROCK_LOG_INFO(GrabConstraint, "Inertia ratio OK ({:.1f}x), no clamping needed", ratio);
+            ROCK_LOG_DEBUG(GrabConstraint,
+                "Inertia pre-normalize: body={} motion={} packed=[{},{},{}] "
+                "float=[{:.6e},{:.6e},{:.6e}] mass_packed={}",
+                bodyId.value, motionIndex, packed[0], packed[1], packed[2], invI[0], invI[1], invI[2], packed[3]);
+
+            if (invI[0] <= 0.0f || invI[1] <= 0.0f || invI[2] <= 0.0f) {
+                ROCK_LOG_WARN(GrabConstraint, "Skipping inertia normalization: zero unpacked float value");
+                return false;
+            }
+
+            float minI = (std::min)({ invI[0], invI[1], invI[2] });
+            float maxI = (std::max)({ invI[0], invI[1], invI[2] });
+
+            float MAX_INERTIA_RATIO = g_rockConfig.rockGrabMaxInertiaRatio;
+            float ratio = maxI / minI;
+
+            if (ratio > MAX_INERTIA_RATIO) {
+                float maxAllowed = minI * MAX_INERTIA_RATIO;
+                for (int i = 0; i < 3; i++) {
+                    if (invI[i] > maxAllowed) {
+                        invI[i] = maxAllowed;
+                    }
+                }
+
+                packed[0] = repackBfloat16(invI[0]);
+                packed[1] = repackBfloat16(invI[1]);
+                packed[2] = repackBfloat16(invI[2]);
+
+                ROCK_LOG_DEBUG(GrabConstraint,
+                    "Inertia ratio clamped: {:.1f}x -> {:.1f}x "
+                    "packed [{},{},{}] -> [{},{},{}] float [{:.6e},{:.6e},{:.6e}]",
+                    ratio, MAX_INERTIA_RATIO, savedMotionState.savedPackedInertia[0], savedMotionState.savedPackedInertia[1], savedMotionState.savedPackedInertia[2], packed[0],
+                    packed[1], packed[2], invI[0], invI[1], invI[2]);
+            } else {
+                ROCK_LOG_DEBUG(GrabConstraint, "Inertia ratio OK ({:.1f}x), no clamping needed", ratio);
+            }
+
+            savedMotionState.inertiaModified = true;
+
+            havok_runtime::rebuildMotionMassProperties(world, motionIndex);
+            ROCK_LOG_TRACE(GrabConstraint, "rebuildMotionMassProperties called for motionIndex={}", motionIndex);
+            return true;
+        }
+    }
+
+    void normalizeGrabbedInertia(RE::hknpWorld* world, RE::hknpBodyId bodyId, SavedObjectState& savedState)
+    {
+        savedState.motionInertiaStates.clear();
+        savedState.inertiaModified = false;
+        SavedObjectState::SavedMotionInertiaState savedMotion{};
+        if (normalizeGrabbedInertiaMotion(world, bodyId, savedMotion)) {
+            savedState.savedPackedInertia[0] = savedMotion.savedPackedInertia[0];
+            savedState.savedPackedInertia[1] = savedMotion.savedPackedInertia[1];
+            savedState.savedPackedInertia[2] = savedMotion.savedPackedInertia[2];
+            savedState.inertiaModified = true;
+            savedState.motionInertiaStates.push_back(savedMotion);
+        }
+    }
+
+    void normalizeGrabbedInertiaForBodies(RE::hknpWorld* world, RE::hknpBodyId primaryBodyId, const std::vector<std::uint32_t>& heldBodyIds, SavedObjectState& savedState)
+    {
+        savedState.motionInertiaStates.clear();
+        savedState.inertiaModified = false;
+
+        if (!world) {
+            return;
         }
 
-        savedState.inertiaModified = true;
+        std::vector<std::uint32_t> bodyIds;
+        bodyIds.reserve(heldBodyIds.size() + 1);
+        bodyIds.push_back(primaryBodyId.value);
+        for (const auto bodyId : heldBodyIds) {
+            bodyIds.push_back(bodyId);
+        }
 
-        {
-            typedef void rebuildMass_t(void*, std::uint32_t, int);
-            static REL::Relocation<rebuildMass_t> rebuildMotionMassProperties{ REL::Offset(offsets::kFunc_RebuildMotionMassProperties) };
-            rebuildMotionMassProperties(world, motionIndex, 0);
+        std::unordered_set<std::uint32_t> seenMotionIds;
+        for (const auto rawBodyId : bodyIds) {
+            if (rawBodyId == 0x7FFF'FFFF) {
+                continue;
+            }
+            auto* body = havok_runtime::getBody(world, RE::hknpBodyId{ rawBodyId });
+            if (!body) {
+                continue;
+            }
+            if (!seenMotionIds.insert(body->motionIndex).second) {
+                continue;
+            }
+            SavedObjectState::SavedMotionInertiaState savedMotion{};
+            if (normalizeGrabbedInertiaMotion(world, RE::hknpBodyId{ rawBodyId }, savedMotion)) {
+                savedState.motionInertiaStates.push_back(savedMotion);
+            }
+        }
 
-            ROCK_LOG_INFO(GrabConstraint, "rebuildMotionMassProperties called for motionIndex={}", motionIndex);
+        if (!savedState.motionInertiaStates.empty()) {
+            const auto& primarySaved = savedState.motionInertiaStates.front();
+            savedState.savedPackedInertia[0] = primarySaved.savedPackedInertia[0];
+            savedState.savedPackedInertia[1] = primarySaved.savedPackedInertia[1];
+            savedState.savedPackedInertia[2] = primarySaved.savedPackedInertia[2];
+            savedState.inertiaModified = true;
         }
     }
 
@@ -510,33 +516,40 @@ namespace frik::rock
         if (!world || !savedState.inertiaModified)
             return;
 
-        auto* bodyArray = world->GetBodyArray();
-        auto& body = bodyArray[savedState.bodyId.value];
-        auto motionIndex = body.motionIndex;
-        if (motionIndex == 0 || motionIndex > 4096)
-            return;
-
-        auto* worldBytes = reinterpret_cast<char*>(world);
-        auto* motionArrayPtr = *reinterpret_cast<char**>(worldBytes + offsets::kHknpWorld_MotionArrayPtr);
-        if (!motionArrayPtr)
-            return;
-
-        auto* motion = motionArrayPtr + motionIndex * 0x80;
-        auto* packed = reinterpret_cast<std::int16_t*>(motion + MOTION_PACKED_INERTIA_OFFSET);
-
-        packed[0] = savedState.savedPackedInertia[0];
-        packed[1] = savedState.savedPackedInertia[1];
-        packed[2] = savedState.savedPackedInertia[2];
-
-        ROCK_LOG_INFO(GrabConstraint, "Inertia restored: body={} → packed=[{},{},{}]", savedState.bodyId.value, packed[0], packed[1], packed[2]);
-
-        {
-            typedef void rebuildMass_t(void*, std::uint32_t, int);
-            static REL::Relocation<rebuildMass_t> rebuildMotionMassProperties{ REL::Offset(offsets::kFunc_RebuildMotionMassProperties) };
-            rebuildMotionMassProperties(world, motionIndex, 0);
+        if (savedState.motionInertiaStates.empty()) {
+            SavedObjectState::SavedMotionInertiaState legacyState{};
+            legacyState.bodyId = savedState.bodyId;
+            legacyState.savedPackedInertia[0] = savedState.savedPackedInertia[0];
+            legacyState.savedPackedInertia[1] = savedState.savedPackedInertia[1];
+            legacyState.savedPackedInertia[2] = savedState.savedPackedInertia[2];
+            legacyState.inertiaModified = savedState.inertiaModified;
+            if (auto* body = havok_runtime::getBody(world, savedState.bodyId)) {
+                legacyState.motionIndex = body->motionIndex;
+            }
+            savedState.motionInertiaStates.push_back(legacyState);
         }
 
+        for (auto& savedMotion : savedState.motionInertiaStates) {
+            if (!savedMotion.inertiaModified) {
+                continue;
+            }
+            auto* motion = havok_runtime::getMotion(world, savedMotion.motionIndex);
+            if (!motion) {
+                continue;
+            }
+            auto* packed = reinterpret_cast<std::int16_t*>(reinterpret_cast<char*>(motion) + MOTION_PACKED_INERTIA_OFFSET);
+
+            packed[0] = savedMotion.savedPackedInertia[0];
+            packed[1] = savedMotion.savedPackedInertia[1];
+            packed[2] = savedMotion.savedPackedInertia[2];
+
+            ROCK_LOG_DEBUG(
+                GrabConstraint, "Inertia restored: body={} motion={} -> packed=[{},{},{}]", savedMotion.bodyId.value, savedMotion.motionIndex, packed[0], packed[1], packed[2]);
+            havok_runtime::rebuildMotionMassProperties(world, savedMotion.motionIndex);
+            savedMotion.inertiaModified = false;
+        }
         savedState.inertiaModified = false;
+        savedState.motionInertiaStates.clear();
     }
 
     void cleanupGrabConstraintVtable()
@@ -549,6 +562,6 @@ namespace frik::rock
         }
         s_shellcodeCount = 0;
         s_vtableBuilt = false;
-        ROCK_LOG_INFO(GrabConstraint, "Vtable shellcode freed");
+        ROCK_LOG_DEBUG(GrabConstraint, "Vtable shellcode freed");
     }
 }

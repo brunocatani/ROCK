@@ -2,6 +2,7 @@
 
 #include <DirectXMath.h>
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -17,6 +18,7 @@
 
 #include "HavokOffsets.h"
 #include "DebugOverlayPolicy.h"
+#include "PhysicsBodyFrame.h"
 #include "PhysicsLog.h"
 #include "PhysicsUtils.h"
 #include "RockConfig.h"
@@ -59,6 +61,7 @@ namespace frik::rock::debug
         constexpr float kColliderAxisLength = 12.0f;
         constexpr float kBodyAxisLength = 16.0f;
         constexpr float kTargetAxisLength = 20.0f;
+        constexpr std::uint32_t kTextVertexCapacity = 131072;
 
         struct Vertex
         {
@@ -175,12 +178,15 @@ namespace frik::rock::debug
         static std::uint32_t s_overlayStatsLogCounter = 0;
 
         static ID3D11VertexShader* s_vertexShader = nullptr;
+        static ID3D11VertexShader* s_screenTextVertexShader = nullptr;
         static ID3D11PixelShader* s_pixelShader = nullptr;
         static ID3D11InputLayout* s_inputLayout = nullptr;
         static ID3D11Buffer* s_cameraCB = nullptr;
         static ID3D11Buffer* s_modelCB = nullptr;
         static ID3D11Buffer* s_axisLineVB = nullptr;
+        static ID3D11Buffer* s_textVB = nullptr;
         static ID3D11RasterizerState* s_wireRasterizer = nullptr;
+        static ID3D11RasterizerState* s_solidRasterizer = nullptr;
         static ID3D11DepthStencilState* s_depthStencil = nullptr;
         static ID3D11BlendState* s_blendState = nullptr;
         static SavedState s_saved{};
@@ -233,6 +239,29 @@ VS_OUTPUT main(VS_INPUT input) {
     output.vPos = pos;
     output.vPos.x *= 0.5;
     output.vPos.x += eyeOffsetScale[input.instanceId] * output.vPos.w;
+    return output;
+}
+)";
+
+        const char* kScreenTextVertexShaderSource = R"(
+struct VS_INPUT {
+    float3 vPos : POS;
+};
+
+struct VS_OUTPUT {
+    float4 vPos : SV_POSITION;
+    float4 vColor : COLOR0;
+};
+
+cbuffer Model : register(b1) {
+    row_major float4x4 matModel;
+    float4 color;
+};
+
+VS_OUTPUT main(VS_INPUT input) {
+    VS_OUTPUT output;
+    output.vPos = float4(input.vPos.xy, 0.0f, 1.0f);
+    output.vColor = color;
     return output;
 }
 )";
@@ -388,7 +417,7 @@ float4 main(PS_INPUT input) : SV_Target {
             MeshData mesh;
             constexpr int segments = 12;
             constexpr int rings = 12;
-            const float radius = havokRadius * kHavokToGameScale;
+            const float radius = havokRadius * havokToGameScale();
             constexpr float pi = 3.14159265358979323846f;
 
             for (int ring = 0; ring <= rings; ring++) {
@@ -423,10 +452,10 @@ float4 main(PS_INPUT input) : SV_Target {
             constexpr int segments = 12;
             constexpr int rings = 6;
             constexpr float pi = 3.14159265358979323846f;
-            const float radius = havokRadius * kHavokToGameScale;
+            const float radius = havokRadius * havokToGameScale();
 
-            Vertex va{ vertexA[0] * kHavokToGameScale, vertexA[1] * kHavokToGameScale, vertexA[2] * kHavokToGameScale };
-            Vertex vb{ vertexB[0] * kHavokToGameScale, vertexB[1] * kHavokToGameScale, vertexB[2] * kHavokToGameScale };
+            Vertex va{ vertexA[0] * havokToGameScale(), vertexA[1] * havokToGameScale(), vertexA[2] * havokToGameScale() };
+            Vertex vb{ vertexB[0] * havokToGameScale(), vertexB[1] * havokToGameScale(), vertexB[2] * havokToGameScale() };
             Vertex direction = sub(vb, va);
             const float capsuleLength = std::sqrt(lengthSq(direction));
             if (capsuleLength < 0.001f) {
@@ -519,7 +548,7 @@ float4 main(PS_INPUT input) : SV_Target {
 
             for (int i = 0; i < vertexCount; i++) {
                 const float* values = reinterpret_cast<const float*>(&resultVertices[i]);
-                Vertex vertex{ values[0] * kHavokToGameScale, values[1] * kHavokToGameScale, values[2] * kHavokToGameScale };
+                Vertex vertex{ values[0] * havokToGameScale(), values[1] * havokToGameScale(), values[2] * havokToGameScale() };
                 bool duplicate = false;
                 for (const auto& existing : vertices) {
                     if (lengthSq(sub(existing, vertex)) < kDedupThreshold) {
@@ -540,7 +569,7 @@ float4 main(PS_INPUT input) : SV_Target {
                     static_cast<std::uint32_t>(vertices.size()),
                     g_rockConfig.rockDebugMaxConvexSupportVertices,
                     g_rockConfig.rockDebugUseBoundsForHeavyConvex)) {
-                ROCK_LOG_INFO(Hand, "Debug overlay using bounds LOD for heavy convex: shape=0x{:X} supportVertices={} cap={}", shapeAddress, vertices.size(),
+                ROCK_LOG_DEBUG(Hand, "Debug overlay using bounds LOD for heavy convex: shape=0x{:X} supportVertices={} cap={}", shapeAddress, vertices.size(),
                     debug_overlay_policy::clampMaxConvexSupportVertices(g_rockConfig.rockDebugMaxConvexSupportVertices));
                 return generateBoundsBox(vertices);
             }
@@ -555,7 +584,7 @@ float4 main(PS_INPUT input) : SV_Target {
 
             auto triangles = triangulateConvexHull(vertices);
             if (convexRadius > 0.0f) {
-                const float radius = convexRadius * kHavokToGameScale;
+                const float radius = convexRadius * havokToGameScale();
                 std::vector<Vertex> inflated;
                 for (const auto& triangle : triangles) {
                     auto [a, b, c] = triangle;
@@ -635,7 +664,16 @@ float4 main(PS_INPUT input) : SV_Target {
         {
             const DirectX::XMMATRIX rotation = quaternionToMatrix(orientation);
             const DirectX::XMMATRIX translation =
-                DirectX::XMMatrixTranslation(position[0] * kHavokToGameScale, position[1] * kHavokToGameScale, position[2] * kHavokToGameScale);
+                DirectX::XMMatrixTranslation(position[0] * havokToGameScale(), position[1] * havokToGameScale(), position[2] * havokToGameScale());
+            return DirectX::XMMatrixMultiply(rotation, translation);
+        }
+
+        DirectX::XMMATRIX bodyToWorldMatrix(const float* transform)
+        {
+            const DirectX::XMMATRIX rotation = DirectX::XMMatrixSet(transform[0], transform[4], transform[8], 0.0f, transform[1], transform[5], transform[9], 0.0f,
+                transform[2], transform[6], transform[10], 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+            const DirectX::XMMATRIX translation =
+                DirectX::XMMatrixTranslation(transform[12] * havokToGameScale(), transform[13] * havokToGameScale(), transform[14] * havokToGameScale());
             return DirectX::XMMatrixMultiply(rotation, translation);
         }
 
@@ -672,18 +710,18 @@ float4 main(PS_INPUT input) : SV_Target {
             out.filterInfo = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyFilterOffset);
             out.motionPropertiesId = *reinterpret_cast<std::uint16_t*>(bodyAddress + kBodyMotionPropertiesOffset);
 
-            if (motionIndex > 0 && motionIndex < kMaxMotionIndex) {
+            const auto frameSource = body_frame::chooseColliderFrameSource(true, body_frame::hasUsableMotionIndex(motionIndex));
+            if (frameSource == body_frame::BodyFrameSource::BodyTransform) {
+                const auto* transform = reinterpret_cast<const float*>(bodyAddress);
+                out.worldMatrix = bodyToWorldMatrix(transform);
+            } else if (motionIndex > 0 && motionIndex < kMaxMotionIndex) {
                 const auto motionAddress = motionArray + static_cast<std::uintptr_t>(motionIndex) * kMotionStride;
                 const auto* position = reinterpret_cast<const float*>(motionAddress + kMotionPositionOffset);
                 const auto* orientation = reinterpret_cast<const float*>(motionAddress + kMotionOrientationOffset);
                 out.worldMatrix = motionToWorldMatrix(position, orientation);
             } else {
                 const auto* transform = reinterpret_cast<const float*>(bodyAddress);
-                const DirectX::XMMATRIX rotation = DirectX::XMMatrixSet(transform[0], transform[4], transform[8], 0.0f, transform[1], transform[5], transform[9], 0.0f,
-                    transform[2], transform[6], transform[10], 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
-                const DirectX::XMMATRIX translation =
-                    DirectX::XMMatrixTranslation(transform[12] * kHavokToGameScale, transform[13] * kHavokToGameScale, transform[14] * kHavokToGameScale);
-                out.worldMatrix = DirectX::XMMatrixMultiply(rotation, translation);
+                out.worldMatrix = bodyToWorldMatrix(transform);
             }
 
             return true;
@@ -857,6 +895,22 @@ float4 main(PS_INPUT input) : SV_Target {
                 return false;
             }
 
+            hr = D3DCompile(kScreenTextVertexShaderSource, std::strlen(kScreenTextVertexShaderSource), "ROCKDebugTextVS", nullptr, nullptr, "main", "vs_5_0",
+                D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR, 0, &vsBlob, &errorBlob);
+            if (FAILED(hr)) {
+                if (errorBlob) {
+                    ROCK_LOG_ERROR(Hand, "Debug overlay text vertex shader compile failed: {}", static_cast<const char*>(errorBlob->GetBufferPointer()));
+                    errorBlob->Release();
+                }
+                return false;
+            }
+
+            hr = device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, &s_screenTextVertexShader);
+            vsBlob->Release();
+            if (FAILED(hr)) {
+                return false;
+            }
+
             hr = D3DCompile(kPixelShaderSource, std::strlen(kPixelShaderSource), "ROCKDebugBodyPS", nullptr, nullptr, "main", "ps_5_0",
                 D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR, 0, &psBlob, &errorBlob);
             if (FAILED(hr)) {
@@ -900,12 +954,26 @@ float4 main(PS_INPUT input) : SV_Target {
                 return false;
             }
 
+            D3D11_BUFFER_DESC textDesc{};
+            textDesc.Usage = D3D11_USAGE_DYNAMIC;
+            textDesc.ByteWidth = sizeof(Vertex) * kTextVertexCapacity;
+            textDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+            textDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+            if (FAILED(device->CreateBuffer(&textDesc, nullptr, &s_textVB))) {
+                return false;
+            }
+
             D3D11_RASTERIZER_DESC rasterDesc{};
             rasterDesc.FillMode = D3D11_FILL_WIREFRAME;
             rasterDesc.CullMode = D3D11_CULL_NONE;
             rasterDesc.FrontCounterClockwise = TRUE;
             rasterDesc.DepthClipEnable = TRUE;
             if (FAILED(device->CreateRasterizerState(&rasterDesc, &s_wireRasterizer))) {
+                return false;
+            }
+
+            rasterDesc.FillMode = D3D11_FILL_SOLID;
+            if (FAILED(device->CreateRasterizerState(&rasterDesc, &s_solidRasterizer))) {
                 return false;
             }
 
@@ -1035,6 +1103,18 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[1] = 0.25f;
                 color[2] = 0.9f;
                 break;
+            case BodyOverlayRole::RightHandSegment:
+                color[0] = 0.10f;
+                color[1] = 0.65f;
+                color[2] = 1.0f;
+                color[3] = 0.55f;
+                break;
+            case BodyOverlayRole::LeftHandSegment:
+                color[0] = 1.0f;
+                color[1] = 0.20f;
+                color[2] = 0.85f;
+                color[3] = 0.55f;
+                break;
             case BodyOverlayRole::Weapon:
                 color[0] = 0.35f;
                 color[1] = 1.0f;
@@ -1056,12 +1136,25 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::RightHandRaw:
             case AxisOverlayRole::LeftHandRaw:
                 return kRawAxisLength;
-            case AxisOverlayRole::RightHandCollider:
-            case AxisOverlayRole::LeftHandCollider:
-                return kColliderAxisLength;
             case AxisOverlayRole::RightHandBody:
             case AxisOverlayRole::LeftHandBody:
                 return kBodyAxisLength;
+            case AxisOverlayRole::WeaponAuthority:
+            case AxisOverlayRole::RightWeaponPrimaryGrip:
+            case AxisOverlayRole::LeftWeaponSupportGrip:
+            case AxisOverlayRole::RightFrikAppliedHand:
+            case AxisOverlayRole::LeftFrikAppliedHand:
+            case AxisOverlayRole::RightGrabHiggsReverse:
+            case AxisOverlayRole::LeftGrabHiggsReverse:
+            case AxisOverlayRole::RightGrabConstraintReverse:
+            case AxisOverlayRole::LeftGrabConstraintReverse:
+            case AxisOverlayRole::RightGrabRockVisualTarget:
+            case AxisOverlayRole::LeftGrabRockVisualTarget:
+            case AxisOverlayRole::RightGrabDesiredObject:
+            case AxisOverlayRole::LeftGrabDesiredObject:
+            case AxisOverlayRole::RightGrabHeldNode:
+            case AxisOverlayRole::LeftGrabHeldNode:
+                return kColliderAxisLength;
             case AxisOverlayRole::TargetBody:
                 return kTargetAxisLength;
             }
@@ -1074,9 +1167,22 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::RightHandRaw:
             case AxisOverlayRole::LeftHandRaw:
                 return 0.55f;
-            case AxisOverlayRole::RightHandCollider:
-            case AxisOverlayRole::LeftHandCollider:
-                return 0.78f;
+            case AxisOverlayRole::WeaponAuthority:
+            case AxisOverlayRole::RightWeaponPrimaryGrip:
+            case AxisOverlayRole::LeftWeaponSupportGrip:
+            case AxisOverlayRole::RightFrikAppliedHand:
+            case AxisOverlayRole::LeftFrikAppliedHand:
+            case AxisOverlayRole::RightGrabHiggsReverse:
+            case AxisOverlayRole::LeftGrabHiggsReverse:
+            case AxisOverlayRole::RightGrabConstraintReverse:
+            case AxisOverlayRole::LeftGrabConstraintReverse:
+            case AxisOverlayRole::RightGrabRockVisualTarget:
+            case AxisOverlayRole::LeftGrabRockVisualTarget:
+            case AxisOverlayRole::RightGrabDesiredObject:
+            case AxisOverlayRole::LeftGrabDesiredObject:
+            case AxisOverlayRole::RightGrabHeldNode:
+            case AxisOverlayRole::LeftGrabHeldNode:
+                return 0.92f;
             default:
                 return 1.0f;
             }
@@ -1135,6 +1241,51 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[1] = 0.08f;
                 color[2] = 0.04f;
                 break;
+            case MarkerOverlayRole::RightGrabSurfacePoint:
+                color[0] = 0.10f;
+                color[1] = 1.0f;
+                color[2] = 0.90f;
+                color[3] = 0.95f;
+                break;
+            case MarkerOverlayRole::LeftGrabSurfacePoint:
+                color[0] = 1.0f;
+                color[1] = 0.25f;
+                color[2] = 0.95f;
+                color[3] = 0.95f;
+                break;
+            case MarkerOverlayRole::RightGrabSurfaceNormal:
+            case MarkerOverlayRole::LeftGrabSurfaceNormal:
+                color[0] = 1.0f;
+                color[1] = 0.90f;
+                color[2] = 0.05f;
+                color[3] = 0.95f;
+                break;
+            case MarkerOverlayRole::RightGrabSurfaceTangent:
+            case MarkerOverlayRole::LeftGrabSurfaceTangent:
+                color[0] = 0.25f;
+                color[1] = 0.65f;
+                color[2] = 1.0f;
+                color[3] = 0.90f;
+                break;
+            case MarkerOverlayRole::RightGrabSurfaceBitangent:
+            case MarkerOverlayRole::LeftGrabSurfaceBitangent:
+                color[0] = 0.35f;
+                color[1] = 1.0f;
+                color[2] = 0.35f;
+                color[3] = 0.90f;
+                break;
+            case MarkerOverlayRole::RightGrabContactPatchSample:
+                color[0] = 0.05f;
+                color[1] = 0.80f;
+                color[2] = 1.0f;
+                color[3] = 0.80f;
+                break;
+            case MarkerOverlayRole::LeftGrabContactPatchSample:
+                color[0] = 1.0f;
+                color[1] = 0.20f;
+                color[2] = 0.90f;
+                color[3] = 0.80f;
+                break;
             case MarkerOverlayRole::RightGrabFingerProbe:
                 color[0] = 0.45f;
                 color[1] = 1.0f;
@@ -1146,6 +1297,168 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[1] = 0.45f;
                 color[2] = 0.95f;
                 color[3] = 0.75f;
+                break;
+            case MarkerOverlayRole::RightHandBoneContact:
+                color[0] = 0.0f;
+                color[1] = 1.0f;
+                color[2] = 1.0f;
+                color[3] = 0.95f;
+                break;
+            case MarkerOverlayRole::LeftHandBoneContact:
+                color[0] = 1.0f;
+                color[1] = 0.25f;
+                color[2] = 1.0f;
+                color[3] = 0.95f;
+                break;
+            case MarkerOverlayRole::RightWeaponPrimaryGrip:
+                color[0] = 0.10f;
+                color[1] = 0.95f;
+                color[2] = 1.0f;
+                break;
+            case MarkerOverlayRole::LeftWeaponSupportGrip:
+                color[0] = 1.0f;
+                color[1] = 0.40f;
+                color[2] = 0.85f;
+                break;
+            case MarkerOverlayRole::RightWeaponAuthorityMismatch:
+            case MarkerOverlayRole::LeftWeaponAuthorityMismatch:
+                color[0] = 1.0f;
+                color[1] = 0.15f;
+                color[2] = 0.05f;
+                break;
+            case MarkerOverlayRole::RightRootFlattenedFingerSkeleton:
+                color[0] = 0.05f;
+                color[1] = 0.95f;
+                color[2] = 1.0f;
+                color[3] = 0.88f;
+                break;
+            case MarkerOverlayRole::LeftRootFlattenedFingerSkeleton:
+                color[0] = 1.0f;
+                color[1] = 0.25f;
+                color[2] = 0.95f;
+                color[3] = 0.88f;
+                break;
+            case MarkerOverlayRole::TargetVisualOrigin:
+                color[0] = 0.20f;
+                color[1] = 1.0f;
+                color[2] = 0.35f;
+                color[3] = 0.95f;
+                break;
+            case MarkerOverlayRole::TargetRawBodyOrigin:
+                color[0] = 1.0f;
+                color[1] = 0.45f;
+                color[2] = 0.05f;
+                color[3] = 0.95f;
+                break;
+            case MarkerOverlayRole::TargetBodyTransformOrigin:
+                color[0] = 1.0f;
+                color[1] = 0.85f;
+                color[2] = 0.10f;
+                color[3] = 0.95f;
+                break;
+            case MarkerOverlayRole::TargetMotionOrigin:
+                color[0] = 0.95f;
+                color[1] = 0.15f;
+                color[2] = 1.0f;
+                color[3] = 0.95f;
+                break;
+            case MarkerOverlayRole::TargetBestOriginCandidate:
+                color[0] = 0.10f;
+                color[1] = 0.75f;
+                color[2] = 1.0f;
+                color[3] = 0.95f;
+                break;
+            case MarkerOverlayRole::TargetOriginErrorLine:
+                color[0] = 1.0f;
+                color[1] = 0.05f;
+                color[2] = 0.05f;
+                color[3] = 0.95f;
+                break;
+            case MarkerOverlayRole::RightGrabHiggsReverseError:
+            case MarkerOverlayRole::LeftGrabHiggsReverseError:
+                color[0] = 0.15f;
+                color[1] = 1.0f;
+                color[2] = 0.25f;
+                color[3] = 0.95f;
+                break;
+            case MarkerOverlayRole::RightGrabConstraintReverseError:
+            case MarkerOverlayRole::LeftGrabConstraintReverseError:
+                color[0] = 0.20f;
+                color[1] = 0.55f;
+                color[2] = 1.0f;
+                color[3] = 0.95f;
+                break;
+            case MarkerOverlayRole::RightGrabRockVisualError:
+            case MarkerOverlayRole::LeftGrabRockVisualError:
+                color[0] = 1.0f;
+                color[1] = 0.75f;
+                color[2] = 0.05f;
+                color[3] = 0.95f;
+                break;
+            case MarkerOverlayRole::RightGrabHeldDesiredError:
+            case MarkerOverlayRole::LeftGrabHeldDesiredError:
+                color[0] = 1.0f;
+                color[1] = 0.35f;
+                color[2] = 0.90f;
+                color[3] = 0.95f;
+                break;
+            case MarkerOverlayRole::RightGrabTelemetryLabelAnchor:
+            case MarkerOverlayRole::LeftGrabTelemetryLabelAnchor:
+                color[0] = 0.95f;
+                color[1] = 1.0f;
+                color[2] = 0.20f;
+                color[3] = 0.95f;
+                break;
+            }
+        }
+
+        void skeletonColorForRole(SkeletonOverlayRole role, bool inPowerArmor, float color[4])
+        {
+            color[0] = 0.90f;
+            color[1] = 0.90f;
+            color[2] = 0.90f;
+            color[3] = inPowerArmor ? 0.95f : 0.78f;
+
+            switch (role) {
+            case SkeletonOverlayRole::Core:
+                color[0] = inPowerArmor ? 0.95f : 0.85f;
+                color[1] = inPowerArmor ? 0.80f : 0.85f;
+                color[2] = inPowerArmor ? 0.30f : 0.95f;
+                break;
+            case SkeletonOverlayRole::Head:
+                color[0] = 1.0f;
+                color[1] = 0.95f;
+                color[2] = 0.65f;
+                break;
+            case SkeletonOverlayRole::RightArm:
+                color[0] = 0.10f;
+                color[1] = 0.95f;
+                color[2] = 1.0f;
+                break;
+            case SkeletonOverlayRole::LeftArm:
+                color[0] = 1.0f;
+                color[1] = 0.25f;
+                color[2] = 0.95f;
+                break;
+            case SkeletonOverlayRole::RightFinger:
+                color[0] = 0.10f;
+                color[1] = 1.0f;
+                color[2] = 0.55f;
+                break;
+            case SkeletonOverlayRole::LeftFinger:
+                color[0] = 1.0f;
+                color[1] = 0.55f;
+                color[2] = 0.95f;
+                break;
+            case SkeletonOverlayRole::RightLeg:
+                color[0] = 0.30f;
+                color[1] = 0.55f;
+                color[2] = 1.0f;
+                break;
+            case SkeletonOverlayRole::LeftLeg:
+                color[0] = 0.75f;
+                color[1] = 0.45f;
+                color[2] = 1.0f;
                 break;
             }
         }
@@ -1273,6 +1586,315 @@ float4 main(PS_INPUT input) : SV_Target {
             }
         }
 
+        void drawSkeletonOverlays(ID3D11DeviceContext* context, const BodyOverlayFrame& frame)
+        {
+            if (!frame.drawSkeleton || frame.skeletonCount == 0) {
+                return;
+            }
+
+            context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+            for (std::uint32_t i = 0; i < frame.skeletonCount && i < frame.skeletonEntries.size(); i++) {
+                const auto& entry = frame.skeletonEntries[i];
+                float color[4]{};
+                skeletonColorForRole(entry.role, entry.inPowerArmor, color);
+
+                if (entry.hasParent) {
+                    drawDebugLine(context, toVertex(entry.parentPosition), toVertex(entry.transform.translate), color);
+                }
+                if (entry.drawPoint) {
+                    drawPointMarker(context, entry.transform.translate, entry.pointSize, color);
+                }
+                if (entry.drawAxis) {
+                    const auto endpoints = skeleton_bone_debug_math::computeAxisEndpoints(entry.transform, entry.axisLength);
+                    const float axisAlpha = entry.inPowerArmor ? 0.95f : 0.70f;
+                    const float xColor[4] = { 1.0f, 0.08f, 0.06f, axisAlpha };
+                    const float yColor[4] = { 0.05f, 1.0f, 0.10f, axisAlpha };
+                    const float zColor[4] = { 0.10f, 0.35f, 1.0f, axisAlpha };
+                    drawDebugLine(context, toVertex(entry.transform.translate), toVertex(endpoints.xEnd), xColor);
+                    drawDebugLine(context, toVertex(entry.transform.translate), toVertex(endpoints.yEnd), yColor);
+                    drawDebugLine(context, toVertex(entry.transform.translate), toVertex(endpoints.zEnd), zColor);
+                }
+            }
+        }
+
+        std::array<std::uint8_t, 7> glyphRows(char ch)
+        {
+            if (ch >= 'a' && ch <= 'z') {
+                ch = static_cast<char>(ch - 'a' + 'A');
+            }
+
+            switch (ch) {
+            case '0':
+                return { 0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E };
+            case '1':
+                return { 0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E };
+            case '2':
+                return { 0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F };
+            case '3':
+                return { 0x1E, 0x01, 0x01, 0x0E, 0x01, 0x01, 0x1E };
+            case '4':
+                return { 0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02 };
+            case '5':
+                return { 0x1F, 0x10, 0x10, 0x1E, 0x01, 0x01, 0x1E };
+            case '6':
+                return { 0x0E, 0x10, 0x10, 0x1E, 0x11, 0x11, 0x0E };
+            case '7':
+                return { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08 };
+            case '8':
+                return { 0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E };
+            case '9':
+                return { 0x0E, 0x11, 0x11, 0x0F, 0x01, 0x01, 0x0E };
+            case 'A':
+                return { 0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 };
+            case 'B':
+                return { 0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E };
+            case 'C':
+                return { 0x0F, 0x10, 0x10, 0x10, 0x10, 0x10, 0x0F };
+            case 'D':
+                return { 0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E };
+            case 'E':
+                return { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F };
+            case 'F':
+                return { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10 };
+            case 'G':
+                return { 0x0F, 0x10, 0x10, 0x13, 0x11, 0x11, 0x0F };
+            case 'H':
+                return { 0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11 };
+            case 'I':
+                return { 0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E };
+            case 'J':
+                return { 0x01, 0x01, 0x01, 0x01, 0x11, 0x11, 0x0E };
+            case 'K':
+                return { 0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11 };
+            case 'L':
+                return { 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F };
+            case 'M':
+                return { 0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11 };
+            case 'N':
+                return { 0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11 };
+            case 'O':
+                return { 0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E };
+            case 'P':
+                return { 0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10 };
+            case 'Q':
+                return { 0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D };
+            case 'R':
+                return { 0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11 };
+            case 'S':
+                return { 0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E };
+            case 'T':
+                return { 0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04 };
+            case 'U':
+                return { 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E };
+            case 'V':
+                return { 0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04 };
+            case 'W':
+                return { 0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0A };
+            case 'X':
+                return { 0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11 };
+            case 'Y':
+                return { 0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04 };
+            case 'Z':
+                return { 0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F };
+            case '-':
+                return { 0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00 };
+            case '+':
+                return { 0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00 };
+            case '=':
+                return { 0x00, 0x00, 0x1F, 0x00, 0x1F, 0x00, 0x00 };
+            case '.':
+                return { 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C };
+            case ',':
+                return { 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x08 };
+            case ':':
+                return { 0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00 };
+            case '/':
+                return { 0x01, 0x01, 0x02, 0x04, 0x08, 0x10, 0x10 };
+            case '(':
+                return { 0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02 };
+            case ')':
+                return { 0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08 };
+            default:
+                return { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+            }
+        }
+
+        void appendTextQuad(std::vector<Vertex>& vertices, float x, float y, float size, float textureWidth, float textureHeight)
+        {
+            if (vertices.size() + 6 > kTextVertexCapacity) {
+                return;
+            }
+
+            const auto toClip = [&](float px, float py) {
+                return Vertex{ (px / textureWidth) * 2.0f - 1.0f, 1.0f - (py / textureHeight) * 2.0f, 0.0f };
+            };
+
+            const Vertex a = toClip(x, y);
+            const Vertex b = toClip(x + size, y);
+            const Vertex c = toClip(x + size, y + size);
+            const Vertex d = toClip(x, y + size);
+            vertices.push_back(a);
+            vertices.push_back(b);
+            vertices.push_back(c);
+            vertices.push_back(a);
+            vertices.push_back(c);
+            vertices.push_back(d);
+        }
+
+        float textPixelWidth(const TextOverlayEntry& entry)
+        {
+            std::size_t length = 0;
+            while (length < sizeof(entry.text) && entry.text[length] != '\0') {
+                ++length;
+            }
+            return static_cast<float>(length) * 6.0f * (std::max)(1.0f, entry.size);
+        }
+
+        bool projectWorldAnchorToScreen(const RE::NiPoint3& anchor,
+            const DirectX::XMMATRIX& eyeViewProj,
+            const DirectX::XMFLOAT4& adjust,
+            std::uint32_t eyeIndex,
+            float textureWidth,
+            float textureHeight,
+            float& outX,
+            float& outY)
+        {
+            DirectX::XMFLOAT4 clip{};
+            const DirectX::XMVECTOR world = DirectX::XMVectorSet(anchor.x - adjust.x, anchor.y - adjust.y, anchor.z - adjust.z, 1.0f);
+            DirectX::XMStoreFloat4(&clip, DirectX::XMVector4Transform(world, eyeViewProj));
+            if (!std::isfinite(clip.x) || !std::isfinite(clip.y) || !std::isfinite(clip.w) || std::fabs(clip.w) < 1.0e-5f) {
+                return false;
+            }
+
+            const float invW = 1.0f / clip.w;
+            const float ndcX = clip.x * invW;
+            const float ndcY = clip.y * invW;
+            if (clip.w < 0.0f || ndcX < -2.0f || ndcX > 2.0f || ndcY < -2.0f || ndcY > 2.0f) {
+                return false;
+            }
+
+            const float halfWidth = textureWidth * 0.5f;
+            const float eyeMinX = eyeIndex == 0 ? 0.0f : halfWidth;
+            outX = eyeMinX + (ndcX * 0.5f + 0.5f) * halfWidth;
+            outY = (-ndcY * 0.5f + 0.5f) * textureHeight;
+            return true;
+        }
+
+        void appendTextGlyphs(std::vector<Vertex>& vertices, const TextOverlayEntry& entry, float baseX, float baseY, float maxX, float textureWidth, float textureHeight)
+        {
+            constexpr float kGlyphColumns = 5.0f;
+            constexpr float kGlyphAdvanceColumns = 6.0f;
+            const float pixel = (std::max)(1.0f, entry.size);
+            float cursorX = baseX;
+            const float cursorY = baseY;
+            for (std::size_t i = 0; i < sizeof(entry.text) && entry.text[i] != '\0'; ++i) {
+                const auto rows = glyphRows(entry.text[i]);
+                for (std::size_t row = 0; row < rows.size(); ++row) {
+                    for (std::uint8_t col = 0; col < static_cast<std::uint8_t>(kGlyphColumns); ++col) {
+                        const std::uint8_t bit = static_cast<std::uint8_t>(1u << (4u - col));
+                        if ((rows[row] & bit) != 0) {
+                            appendTextQuad(vertices, cursorX + static_cast<float>(col) * pixel, cursorY + static_cast<float>(row) * pixel, pixel, textureWidth, textureHeight);
+                        }
+                    }
+                }
+                cursorX += kGlyphAdvanceColumns * pixel;
+                if (cursorX >= maxX || cursorX >= textureWidth - 8.0f) {
+                    break;
+                }
+            }
+        }
+
+        void appendWorldAnchoredTextGlyphs(std::vector<Vertex>& vertices,
+            const TextOverlayEntry& entry,
+            const DirectX::XMMATRIX& eye0,
+            const DirectX::XMMATRIX& eye1,
+            const DirectX::XMFLOAT4& adjust0,
+            const DirectX::XMFLOAT4& adjust1,
+            float textureWidth,
+            float textureHeight)
+        {
+            const bool stereo = g_rockConfig.rockDebugGrabTransformTelemetryTextMode == 0;
+            const float halfWidth = textureWidth * 0.5f;
+            const float approximateWidth = textPixelWidth(entry);
+            auto appendEye = [&](std::uint32_t eyeIndex, const DirectX::XMMATRIX& eye, const DirectX::XMFLOAT4& adjust) {
+                float projectedX = 0.0f;
+                float projectedY = 0.0f;
+                if (!projectWorldAnchorToScreen(entry.worldAnchor, eye, adjust, eyeIndex, textureWidth, textureHeight, projectedX, projectedY)) {
+                    return;
+                }
+
+                const float eyeMinX = eyeIndex == 0 ? 0.0f : halfWidth;
+                const float eyeMaxX = eyeMinX + halfWidth;
+                const float minX = eyeMinX + 24.0f;
+                const float maxX = (std::max)(minX, eyeMaxX - approximateWidth - 24.0f);
+                const float baseX = std::clamp(projectedX + entry.x, minX, maxX);
+                const float baseY = std::clamp(projectedY + entry.y, 24.0f, (std::max)(24.0f, textureHeight - 64.0f));
+                appendTextGlyphs(vertices, entry, baseX, baseY, eyeMaxX - 8.0f, textureWidth, textureHeight);
+            };
+
+            appendEye(0, eye0, adjust0);
+            if (stereo) {
+                appendEye(1, eye1, adjust1);
+            }
+        }
+
+        void drawTextOverlays(ID3D11DeviceContext* context,
+            float textureWidth,
+            float textureHeight,
+            const BodyOverlayFrame& frame,
+            const DirectX::XMMATRIX& eye0,
+            const DirectX::XMMATRIX& eye1,
+            const DirectX::XMFLOAT4& adjust0,
+            const DirectX::XMFLOAT4& adjust1)
+        {
+            if (!frame.drawText || frame.textCount == 0 || !s_textVB || !s_screenTextVertexShader || textureWidth <= 0.0f || textureHeight <= 0.0f) {
+                return;
+            }
+
+            context->IASetInputLayout(s_inputLayout);
+            context->VSSetShader(s_screenTextVertexShader, nullptr, 0);
+            context->PSSetShader(s_pixelShader, nullptr, 0);
+            context->RSSetState(s_solidRasterizer);
+            context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+            constexpr UINT stride = sizeof(Vertex);
+            constexpr UINT offset = 0;
+            ID3D11Buffer* vertexBuffer = s_textVB;
+            context->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+            context->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
+
+            const bool duplicatePerEye = g_rockConfig.rockDebugGrabTransformTelemetryTextMode == 0;
+            const float eyeWidth = duplicatePerEye ? textureWidth * 0.5f : textureWidth;
+            for (std::uint32_t i = 0; i < frame.textCount && i < frame.textEntries.size(); ++i) {
+                const auto& entry = frame.textEntries[i];
+                std::vector<Vertex> vertices;
+                vertices.reserve(4096);
+                if (entry.worldAnchored) {
+                    appendWorldAnchoredTextGlyphs(vertices, entry, eye0, eye1, adjust0, adjust1, textureWidth, textureHeight);
+                } else {
+                    appendTextGlyphs(vertices, entry, entry.x, entry.y, eyeWidth - 8.0f, textureWidth, textureHeight);
+                    if (duplicatePerEye) {
+                        appendTextGlyphs(vertices, entry, entry.x + eyeWidth, entry.y, textureWidth - 8.0f, textureWidth, textureHeight);
+                    }
+                }
+                if (vertices.empty()) {
+                    continue;
+                }
+                if (vertices.size() > kTextVertexCapacity) {
+                    vertices.resize(kTextVertexCapacity);
+                }
+
+                D3D11_MAPPED_SUBRESOURCE mapped{};
+                if (FAILED(context->Map(s_textVB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
+                    continue;
+                }
+                std::memcpy(mapped.pData, vertices.data(), vertices.size() * sizeof(Vertex));
+                context->Unmap(s_textVB, 0);
+                uploadColorModel(context, DirectX::XMMatrixIdentity(), entry.color);
+                context->Draw(static_cast<UINT>(vertices.size()), 0);
+            }
+        }
+
         void drawOverlayToSubmittedTexture(const vr::Texture_t* texture)
         {
             BodyOverlayFrame frame{};
@@ -1284,7 +1906,9 @@ float4 main(PS_INPUT input) : SV_Target {
             const bool hasBodiesToDraw = (frame.drawRockBodies || frame.drawTargetBodies) && frame.count > 0;
             const bool hasAxesToDraw = frame.drawAxes && frame.axisCount > 0;
             const bool hasMarkersToDraw = frame.drawMarkers && frame.markerCount > 0;
-            if ((!hasBodiesToDraw && !hasAxesToDraw && !hasMarkersToDraw) || !frame.world) {
+            const bool hasSkeletonToDraw = frame.drawSkeleton && frame.skeletonCount > 0;
+            const bool hasTextToDraw = frame.drawText && frame.textCount > 0;
+            if ((!hasBodiesToDraw && !hasAxesToDraw && !hasMarkersToDraw && !hasSkeletonToDraw && !hasTextToDraw) || !frame.world) {
                 return;
             }
 
@@ -1294,14 +1918,20 @@ float4 main(PS_INPUT input) : SV_Target {
                 return;
             }
 
-            const std::uint64_t overlaySettingsKey =
-                (frame.drawRockBodies ? 1ull : 0ull) | (frame.drawTargetBodies ? 2ull : 0ull) | (frame.drawAxes ? 4ull : 0ull) | (frame.drawMarkers ? 8ull : 0ull) |
-                (static_cast<std::uint64_t>(g_rockConfig.rockDebugDrawHandColliders ? 1 : 0) << 8) |
-                (static_cast<std::uint64_t>(g_rockConfig.rockDebugDrawWeaponColliders ? 1 : 0) << 9) |
-                (static_cast<std::uint64_t>(g_rockConfig.rockDebugMaxWeaponBodiesDrawn & 0xFFFF) << 16) |
-                (static_cast<std::uint64_t>(debug_overlay_policy::clampShapeGenerationsPerFrame(g_rockConfig.rockDebugMaxShapeGenerationsPerFrame)) << 32) |
-                (static_cast<std::uint64_t>(debug_overlay_policy::clampMaxConvexSupportVertices(g_rockConfig.rockDebugMaxConvexSupportVertices)) << 40) |
-                (static_cast<std::uint64_t>(g_rockConfig.rockDebugUseBoundsForHeavyConvex ? 1 : 0) << 48);
+            const std::uint64_t overlaySettingsKey = debug_overlay_policy::makeOverlaySettingsKey(frame.drawRockBodies,
+                frame.drawTargetBodies,
+                frame.drawAxes,
+                frame.drawMarkers,
+                frame.drawSkeleton,
+                frame.drawText,
+                g_rockConfig.rockDebugDrawHandColliders,
+                g_rockConfig.rockDebugDrawHandBoneColliders,
+                g_rockConfig.rockDebugDrawWeaponColliders,
+                g_rockConfig.rockDebugMaxHandBoneBodiesDrawn,
+                g_rockConfig.rockDebugMaxWeaponBodiesDrawn,
+                g_rockConfig.rockDebugMaxShapeGenerationsPerFrame,
+                g_rockConfig.rockDebugMaxConvexSupportVertices,
+                g_rockConfig.rockDebugUseBoundsForHeavyConvex);
             if (overlaySettingsKey != s_previousOverlaySettingsKey) {
                 ClearShapeCache();
                 s_previousOverlaySettingsKey = overlaySettingsKey;
@@ -1351,7 +1981,8 @@ float4 main(PS_INPUT input) : SV_Target {
                     for (std::uint32_t i = 0; i < frame.count && i < frame.entries.size(); i++) {
                         ++stats.bodyEntries;
                         const auto& entry = frame.entries[i];
-                        const bool rockRole = entry.role == BodyOverlayRole::RightHand || entry.role == BodyOverlayRole::LeftHand || entry.role == BodyOverlayRole::Weapon;
+                        const bool rockRole = entry.role == BodyOverlayRole::RightHand || entry.role == BodyOverlayRole::LeftHand ||
+                            entry.role == BodyOverlayRole::RightHandSegment || entry.role == BodyOverlayRole::LeftHandSegment || entry.role == BodyOverlayRole::Weapon;
                         if ((rockRole && !frame.drawRockBodies) || (!rockRole && !frame.drawTargetBodies)) {
                             continue;
                         }
@@ -1379,12 +2010,14 @@ float4 main(PS_INPUT input) : SV_Target {
 
                 drawAxisOverlays(context, frame.world, frame);
                 drawMarkerOverlays(context, frame);
+                drawSkeletonOverlays(context, frame);
+                drawTextOverlays(context, static_cast<float>(textureDesc.Width), static_cast<float>(textureDesc.Height), frame, eye0, eye1, adjust0, adjust1);
 
                 if (g_rockConfig.rockDebugVerboseLogging && ++s_overlayStatsLogCounter >= 90) {
                     s_overlayStatsLogCounter = 0;
-                    ROCK_LOG_INFO(Hand,
-                        "Debug overlay frame: entries={} drawn={} axes={} markers={} cacheHits={} cacheMisses={} shapeGenerations={} genCap={}",
-                        stats.bodyEntries, stats.bodiesDrawn, frame.axisCount, frame.markerCount, stats.shapeCacheHits, stats.shapeCacheMisses, stats.shapeGenerations,
+                    ROCK_LOG_DEBUG(Hand,
+                        "Debug overlay frame: entries={} drawn={} axes={} markers={} skeleton={} text={} cacheHits={} cacheMisses={} shapeGenerations={} genCap={}",
+                        stats.bodyEntries, stats.bodiesDrawn, frame.axisCount, frame.markerCount, frame.skeletonCount, frame.textCount, stats.shapeCacheHits, stats.shapeCacheMisses, stats.shapeGenerations,
                         debug_overlay_policy::clampShapeGenerationsPerFrame(g_rockConfig.rockDebugMaxShapeGenerationsPerFrame));
                 }
 
@@ -1497,7 +2130,9 @@ float4 main(PS_INPUT input) : SV_Target {
             const bool hasBodiesToDraw = (frame.drawRockBodies || frame.drawTargetBodies) && frame.count > 0;
             const bool hasAxesToDraw = frame.drawAxes && frame.axisCount > 0;
             const bool hasMarkersToDraw = frame.drawMarkers && frame.markerCount > 0;
-            s_enabled.store(hasBodiesToDraw || hasAxesToDraw || hasMarkersToDraw, std::memory_order_release);
+            const bool hasSkeletonToDraw = frame.drawSkeleton && frame.skeletonCount > 0;
+            const bool hasTextToDraw = frame.drawText && frame.textCount > 0;
+            s_enabled.store(hasBodiesToDraw || hasAxesToDraw || hasMarkersToDraw || hasSkeletonToDraw || hasTextToDraw, std::memory_order_release);
         }
 
     void ClearFrame()

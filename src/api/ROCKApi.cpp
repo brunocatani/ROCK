@@ -4,6 +4,7 @@
 #include "ROCKApi.h"
 
 #include <atomic>
+#include <cstddef>
 
 #include "FRIKApi.h"
 #include "physics-interaction/PalmTransform.h"
@@ -51,36 +52,6 @@ ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Accessory);
 ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, CosmeticAmmo);
 ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Other);
 
-ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, Idle);
-ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, ReloadRequested);
-ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, WeaponOpened);
-ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, WeaponUnloaded);
-ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, PouchAvailable);
-ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, AmmoHeld);
-ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, AmmoAligned);
-ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, AmmoInserted);
-ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, ActionRequired);
-ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, ActionManipulating);
-ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, Completing);
-ROCK_ASSERT_API_ENUM(WeaponReloadState, WeaponReloadState, Canceled);
-
-ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, Idle);
-ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, ReloadRequested);
-ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, VanillaReloadStarted);
-ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, AmmoDetachWindow);
-ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, AmmoCommitted);
-ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, ActionWindow);
-ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, Completing);
-ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, Complete);
-ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, Canceled);
-ROCK_ASSERT_API_ENUM(WeaponVanillaReloadStage, WeaponVanillaReloadStage, UnsafeUnknown);
-
-ROCK_ASSERT_API_ENUM(WeaponReloadStageSource, WeaponReloadStageSource, None);
-ROCK_ASSERT_API_ENUM(WeaponReloadStageSource, WeaponReloadStageSource, NativeReloadEvent);
-ROCK_ASSERT_API_ENUM(WeaponReloadStageSource, WeaponReloadStageSource, NativeAmmoCountEvent);
-ROCK_ASSERT_API_ENUM(WeaponReloadStageSource, WeaponReloadStageSource, PollingFallback);
-ROCK_ASSERT_API_ENUM(WeaponReloadStageSource, WeaponReloadStageSource, ConfigFallback);
-
 #undef ROCK_ASSERT_API_ENUM
 
 namespace
@@ -121,27 +92,29 @@ namespace
 
     RE::NiPoint3 ROCK_CALL apiGetPalmPosition(const ROCKApi::Hand hand)
     {
-        const auto* frikApi = frik::api::FRIKApi::inst;
-        if (!frikApi)
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!pi || !pi->isInitialized())
             return RE::NiPoint3{};
 
-        auto frikHand = static_cast<frik::api::FRIKApi::Hand>(static_cast<std::uint8_t>(hand));
-        auto transform = frikApi->getHandWorldTransform(frikHand);
-
         bool isLeft = getIsLeftForHandEnum(hand);
+        RE::NiTransform transform{};
+        if (!pi->tryGetRootFlattenedHandTransform(isLeft, transform))
+            return RE::NiPoint3{};
+
         return computePalmPositionFromHandBasis(transform, isLeft);
     }
 
     RE::NiPoint3 ROCK_CALL apiGetPalmForward(const ROCKApi::Hand hand)
     {
-        const auto* frikApi = frik::api::FRIKApi::inst;
-        if (!frikApi)
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!pi || !pi->isInitialized())
             return RE::NiPoint3{};
 
-        auto frikHand = static_cast<frik::api::FRIKApi::Hand>(static_cast<std::uint8_t>(hand));
-        auto transform = frikApi->getHandWorldTransform(frikHand);
-
         bool isLeft = getIsLeftForHandEnum(hand);
+        RE::NiTransform transform{};
+        if (!pi->tryGetRootFlattenedHandTransform(isLeft, transform))
+            return RE::NiPoint3{};
+
         return computePalmNormalFromHandBasis(transform, isLeft);
     }
 
@@ -288,29 +261,69 @@ namespace
 
     std::uint32_t ROCK_CALL apiGetActiveWeaponReloadState()
     {
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
-        if (!pi || !pi->isInitialized())
-            return static_cast<std::uint32_t>(ROCKApi::WeaponReloadState::Idle);
-        return pi->getActiveWeaponReloadState();
+        return 0;
     }
 
     std::uint32_t ROCK_CALL apiGetObservedWeaponReloadStage()
     {
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
-        if (!pi || !pi->isInitialized())
-            return static_cast<std::uint32_t>(ROCKApi::WeaponVanillaReloadStage::Idle);
-        return pi->getObservedWeaponReloadStage();
+        return 0;
     }
 
     std::uint32_t ROCK_CALL apiGetWeaponReloadStageSource()
     {
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
-        if (!pi || !pi->isInitialized())
-            return static_cast<std::uint32_t>(ROCKApi::WeaponReloadStageSource::None);
-        return pi->getWeaponReloadStageSource();
+        return 0;
     }
 
-    constexpr ROCKApi ROCK_API_FUNCTIONS_TABLE{
+    bool ROCK_CALL apiRequestReloadProfileAuthoring(const std::uint32_t archetypeValue)
+    {
+        (void)archetypeValue;
+        return false;
+    }
+
+    bool ROCK_CALL apiRequestReloadProfileAuthoringRoleSkip()
+    {
+        return false;
+    }
+
+    bool ROCK_CALL apiCancelReloadProfileAuthoring()
+    {
+        return false;
+    }
+
+    struct ROCKApiCompatV3
+    {
+        std::uint32_t(ROCK_CALL* getVersion)();
+        const char*(ROCK_CALL* getModVersion)();
+        bool(ROCK_CALL* isPhysicsInteractionReady)();
+        RE::NiPoint3(ROCK_CALL* getPalmPosition)(ROCKApi::Hand hand);
+        RE::NiPoint3(ROCK_CALL* getPalmForward)(ROCKApi::Hand hand);
+        bool(ROCK_CALL* isHandTouching)(ROCKApi::Hand hand);
+        RE::TESObjectREFR*(ROCK_CALL* getLastTouchedObject)(ROCKApi::Hand hand);
+        std::uint32_t(ROCK_CALL* getLastTouchedLayer)(ROCKApi::Hand hand);
+        bool(ROCK_CALL* isHandHolding)(ROCKApi::Hand hand);
+        RE::TESObjectREFR*(ROCK_CALL* getHeldObject)(ROCKApi::Hand hand);
+        RE::TESObjectREFR*(ROCK_CALL* getSelectedObject)(ROCKApi::Hand hand);
+        void(ROCK_CALL* disablePhysicsHand)(ROCKApi::Hand hand);
+        void(ROCK_CALL* enablePhysicsHand)(ROCKApi::Hand hand);
+        bool(ROCK_CALL* isPhysicsHandDisabled)(ROCKApi::Hand hand);
+        bool(ROCK_CALL* claimPhysicsObject)(RE::TESObjectREFR* refr);
+        bool(ROCK_CALL* releasePhysicsObject)(RE::TESObjectREFR* refr);
+        bool(ROCK_CALL* isPhysicsObjectClaimed)(RE::TESObjectREFR* refr);
+        void(ROCK_CALL* forceDropObject)(ROCKApi::Hand hand);
+        std::uint32_t(ROCK_CALL* getLastTouchedWeaponPartKind)();
+        std::uint32_t(ROCK_CALL* getActiveWeaponReloadState)();
+        std::uint32_t(ROCK_CALL* getObservedWeaponReloadStage)();
+        std::uint32_t(ROCK_CALL* getWeaponReloadStageSource)();
+        bool(ROCK_CALL* requestReloadProfileAuthoring)(std::uint32_t archetypeValue);
+        bool(ROCK_CALL* requestReloadProfileAuthoringRoleSkip)();
+        bool(ROCK_CALL* cancelReloadProfileAuthoring)();
+    };
+
+    static_assert(offsetof(ROCKApiCompatV3, getLastTouchedWeaponPartKind) == offsetof(ROCKApi, getLastTouchedWeaponPartKind),
+        "ROCKApi v4 prefix must stay binary-compatible with legacy v3 table");
+    static_assert(sizeof(ROCKApiCompatV3) > sizeof(ROCKApi), "Legacy compatibility table must retain detached reload stub slots");
+
+    constexpr ROCKApiCompatV3 ROCK_API_FUNCTIONS_TABLE{
         .getVersion = &apiGetVersion,
         .getModVersion = &apiGetModVersion,
         .isPhysicsInteractionReady = &apiIsPhysicsInteractionReady,
@@ -333,12 +346,15 @@ namespace
         .getActiveWeaponReloadState = &apiGetActiveWeaponReloadState,
         .getObservedWeaponReloadStage = &apiGetObservedWeaponReloadStage,
         .getWeaponReloadStageSource = &apiGetWeaponReloadStageSource,
+        .requestReloadProfileAuthoring = &apiRequestReloadProfileAuthoring,
+        .requestReloadProfileAuthoringRoleSkip = &apiRequestReloadProfileAuthoringRoleSkip,
+        .cancelReloadProfileAuthoring = &apiCancelReloadProfileAuthoring,
     };
 }
 
 namespace rock::api
 {
-    ROCK_API const ROCKApi* ROCK_CALL ROCKAPI_GetApi() { return &ROCK_API_FUNCTIONS_TABLE; }
+    ROCK_API const ROCKApi* ROCK_CALL ROCKAPI_GetApi() { return reinterpret_cast<const ROCKApi*>(&ROCK_API_FUNCTIONS_TABLE); }
 
     void setPhysicsInteractionInstance(frik::rock::PhysicsInteraction* pi) { s_physicsInteraction.store(pi, std::memory_order_release); }
 }

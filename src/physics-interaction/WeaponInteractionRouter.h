@@ -1,18 +1,20 @@
 #pragma once
 
 #include "WeaponSemanticTypes.h"
+#include "WeaponSupportGripPolicy.h"
 
 namespace frik::rock
 {
     /*
-     * Left-hand weapon behavior needs one authority. The previous boolean
-     * offhand-touch path could only say "some weapon body touched", which is
-     * not enough once support grip, reload sockets, and action parts all share
-     * collision. This router is the small deterministic layer that turns a
-     * semantic body contact into the interaction ROCK should run this frame.
+     * Left-hand weapon behavior needs one authority. Generated layer 44 weapon
+     * colliders can describe authored parts, but HIGGS' live weapon collision
+     * model is still one equipped weapon package, not independent child bodies.
+     * This router therefore keeps normal semantic contacts usable for support
+     * grip. PAPER consumes reload/socket/action evidence through the provider
+     * API and owns all physical reload action decisions.
      */
 
-    inline WeaponInteractionDecision routeWeaponInteraction(const WeaponInteractionContact& contact, const WeaponReloadRuntimeState& reloadState)
+    inline WeaponInteractionDecision routeWeaponInteraction(const WeaponInteractionContact& contact, const WeaponInteractionRuntimeState& runtimeState)
     {
         WeaponInteractionDecision decision{};
         if (!contact.valid) {
@@ -20,31 +22,19 @@ namespace frik::rock
         }
 
         decision.partKind = contact.partKind;
+        decision.reloadRole = contact.reloadRole;
+        decision.socketRole = contact.socketRole;
+        decision.actionRole = contact.actionRole;
         decision.gripPose = contact.fallbackGripPose;
+        decision.reloadActionAuthority = contact.reloadActionAuthority;
         decision.bodyId = contact.bodyId;
+        decision.interactionRoot = contact.interactionRoot;
+        decision.sourceRoot = contact.sourceRoot;
+        decision.weaponGenerationKey = contact.weaponGenerationKey;
 
-        if (reloadState.isReloadActive()) {
-            if (contact.reloadRole == WeaponReloadRole::MagazineBody) {
-                decision.kind = WeaponInteractionKind::RemoveMagazine;
-                return decision;
-            }
-            if (contact.socketRole != WeaponSocketRole::None) {
-                decision.kind = WeaponInteractionKind::SocketInsert;
-                return decision;
-            }
-            if (contact.actionRole != WeaponActionRole::None) {
-                decision.kind = WeaponInteractionKind::ManipulateAction;
-                return decision;
-            }
-        }
-
-        if (reloadState.supportGripAllowed && contact.supportGripRole != WeaponSupportGripRole::None) {
+        if (weapon_support_grip_policy::canUseContactForSupportGrip(contact, runtimeState)) {
             decision.kind = WeaponInteractionKind::SupportGrip;
-            return decision;
-        }
-
-        if (contact.actionRole != WeaponActionRole::None) {
-            decision.kind = WeaponInteractionKind::ManipulateAction;
+            decision.gripPose = weapon_support_grip_policy::resolveSupportGripPose(contact);
             return decision;
         }
 

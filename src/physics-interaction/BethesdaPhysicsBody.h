@@ -45,11 +45,11 @@ namespace frik::rock
         void* getCollisionObject() const { return _collisionObject; }
         void* getPhysicsSystem() const { return _physicsSystem; }
 
-        bool driveToKeyFrame(const RE::NiTransform& target, float dt);
+        bool driveToKeyFrame(const RE::hkTransformf& target, float dt);
 
-        void setTransform(const RE::hkTransformf& transform);
+        bool setTransform(const RE::hkTransformf& transform);
 
-        void setVelocity(const float* linVel, const float* angVel);
+        bool setVelocity(const float* linVel, const float* angVel);
 
         void setMotionType(BethesdaMotionType type);
 
@@ -57,9 +57,9 @@ namespace frik::rock
 
         void setMass(float mass);
 
-        void applyLinearImpulse(const float* impulse);
+        bool applyLinearImpulse(const float* impulse);
 
-        void applyPointImpulse(const float* impulse, const float* worldPoint);
+        bool applyPointImpulse(const float* impulse, const float* worldPoint);
 
         bool getCenterOfMassWorld(float& outX, float& outY, float& outZ);
 

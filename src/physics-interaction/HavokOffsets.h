@@ -9,6 +9,12 @@ namespace frik::rock::offsets
 
     constexpr std::uintptr_t kCollisionObject_PhysSystemPtr = 0x20;
 
+    constexpr std::uintptr_t kBhkPhysicsSystem_Instance = 0x18;
+
+    constexpr std::uintptr_t kHknpPhysicsSystemInstance_World = 0x18;
+
+    constexpr std::uintptr_t kNiAVObject_CollisionObject = 0x100;
+
     constexpr std::uintptr_t kHknpWorld_ModifierManager = 0x150;
 
     constexpr std::uintptr_t kModifierMgr_FilterPtr = 0x5E8;
@@ -51,11 +57,23 @@ namespace frik::rock::offsets
 
     constexpr std::uintptr_t kFunc_ConvexShape_FromPoints = 0x16D4B30;
 
+    constexpr std::uintptr_t kFunc_CompoundShapeCinfo_FromInstances = 0x16E1CF0;
+
+    constexpr std::uintptr_t kFunc_StaticCompoundShape_Ctor = 0x1E9C950;
+
+    constexpr std::uintptr_t kFunc_ShapeInstance_SetShape = 0x16E1780;
+
+    constexpr std::uintptr_t kFunc_ShapeInstance_SetTransform = 0x16E1840;
+
+    constexpr std::uintptr_t kFunc_ShapeInstance_SetScale = 0x16E1910;
+
     constexpr std::uintptr_t kFunc_CollisionObject_SetMotionType = 0x1E07300;
 
     constexpr std::uintptr_t kFunc_CollisionObject_Ctor = 0x1E07710;
 
     constexpr std::uintptr_t kFunc_CollisionObject_CreateInstance = 0x1E07AC0;
+
+    constexpr std::uintptr_t kFunc_CollisionObject_AddToWorld = 0x1E07BE0;
 
     constexpr std::uintptr_t kFunc_PhysicsSystem_Ctor = 0x1E0C2B0;
 
@@ -95,9 +113,13 @@ namespace frik::rock::offsets
 
     constexpr std::uintptr_t kFunc_World_AddPhysicsSystem = 0x1DFAC30;
 
-    constexpr std::uintptr_t kFunc_World_RemovePhysicsSystem = 0x1DFAD00;
+    constexpr std::uintptr_t kFunc_BhkWorld_RemovePhysicsSystemInstance = 0x1DFAD00;
 
-    constexpr std::uintptr_t kFunc_World_SetMotion = 0x1DF95B0;
+    constexpr std::uintptr_t kFunc_HknpWorld_SetBodyMotion = 0x153BAE0;
+
+    constexpr std::uintptr_t kFunc_HknpWorld_SetBodyMaterial = 0x153AFC0;
+
+    constexpr std::uintptr_t kFunc_BhkWorld_SetMotionRecursive = 0x1DF95B0;
 
     constexpr std::uintptr_t kFunc_World_EnableCollision = 0x1DF9940;
 
@@ -105,9 +127,27 @@ namespace frik::rock::offsets
 
     constexpr std::uintptr_t kFunc_World_AddStepListener = 0x1DFA7B0;
 
+    constexpr std::uintptr_t kData_BhkWorldRawDeltaSeconds = 0x65A3D70;
+
+    constexpr std::uintptr_t kData_BhkWorldSubstepDeltaSeconds = 0x65A3D74;
+
+    constexpr std::uintptr_t kData_BhkWorldRemainderDeltaSeconds = 0x65A3D7C;
+
+    constexpr std::uintptr_t kData_BhkWorldAccumulatedDeltaSeconds = 0x65A3D84;
+
+    constexpr std::uintptr_t kData_BhkWorldSubstepCount = 0x65A3D8C;
+
     constexpr std::uintptr_t kData_BethesdaAllocatorPool = 0x392E400;
 
+    constexpr std::uintptr_t kData_BethesdaAllocatorState = 0x392E880;
+
+    constexpr std::uintptr_t kData_BethesdaTlsIndex = 0x689CACC;
+
+    constexpr std::uintptr_t kBethesdaTlsAllocatorContext = 0x9C0;
+
     constexpr std::uintptr_t kFunc_BethesdaAlloc = 0x1B91950;
+
+    constexpr std::uintptr_t kFunc_BethesdaAllocatorInit = 0x1B91DD0;
 
     constexpr std::uintptr_t kData_HavokTlsAllocKey = 0x5B63B20;
 
@@ -115,17 +155,25 @@ namespace frik::rock::offsets
 
     constexpr std::uintptr_t kData_HkArrayAllocatorGlobal = 0x3866310;
 
+    constexpr std::uintptr_t kFunc_MotionCinfo_Ctor = 0x17A2FC0;
+
+    constexpr std::uintptr_t kData_HavokGameToHavokScale = 0x5A38628;
+
+    constexpr std::uintptr_t kData_HavokToGameScale = 0x3718110;
+
+    constexpr std::uintptr_t kData_VRScalePrimary = 0x5B29178;
+
+    constexpr std::uintptr_t kData_RaycastResultScale = 0x37CEA5C;
+
     constexpr std::uintptr_t kFunc_EnableBodyFlags = 0x153C090;
 
     constexpr std::uintptr_t kFunc_DisableBodyFlags = 0x153C150;
 
-    constexpr std::uintptr_t kFunc_SetBodyBroadPhaseEnabled = 0x153C440;
-
     constexpr std::uintptr_t kFunc_ActivateBody = 0x1546EF0;
 
-    constexpr std::uintptr_t kFunc_NiNode_Ctor = 0x1C17DD0;
+    constexpr std::uintptr_t kFunc_NiNode_Ctor = 0x1C17D30;
 
-    constexpr std::uintptr_t kFunc_NiNode_CtorWithParent = 0x1C17D30;
+    constexpr std::uintptr_t kFunc_NiNode_Dtor = 0x1C17DD0;
 
     constexpr std::uintptr_t kFunc_NiNode_SetName = 0x1C16C30;
 
@@ -140,6 +188,7 @@ namespace frik::rock::offsets
     constexpr int kSysData_Materials = 0x10;
     constexpr int kSysData_Array1 = 0x20;
     constexpr int kSysData_Array2 = 0x30;
+    constexpr int kSysData_MotionCinfos = kSysData_Array2;
     constexpr int kSysData_BodyCinfos = 0x40;
     constexpr int kSysData_ConstraintInfos = 0x50;
     constexpr int kSysData_Shapes = 0x60;
@@ -151,6 +200,8 @@ namespace frik::rock::offsets
     constexpr std::uintptr_t kFunc_World_QueryAabb = 0x15A64B0;
 
     constexpr std::uintptr_t kFunc_World_QueryAabbBroadphaseOnly = 0x15A6330;
+
+    constexpr std::uintptr_t kFunc_CreateSphereShape = 0x15FF4E0;
 
     constexpr std::uintptr_t kFunc_NativeVRGrabDrop = 0xF1AB90;
 
@@ -182,7 +233,7 @@ namespace frik::rock::offsets
 
     constexpr std::uintptr_t kFunc_SubscribeContactEvent = 0x3B9E50;
 
-    constexpr std::uintptr_t kData_PlayerWeaponReloadEventSource = 0x5AC1378;
+    constexpr std::uintptr_t kFunc_UnsubscribeSignalCallback = 0x1725B70;
 
-    constexpr std::uintptr_t kData_PlayerAmmoCountEventSource = 0x5AC1368;
+    constexpr std::uintptr_t kFunc_ExtractContactSignalPoints = 0x175C650;
 }

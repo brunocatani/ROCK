@@ -17,6 +17,8 @@
 #include "RE/NetImmerse/NiAVObject.h"
 #include "RE/NetImmerse/NiCollisionObject.h"
 
+#include <cstdint>
+
 namespace frik::rock
 {
     struct SelectedObject
@@ -25,8 +27,16 @@ namespace frik::rock
         RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
         RE::NiAVObject* hitNode = nullptr;
         RE::NiAVObject* visualNode = nullptr;
+        RE::NiPoint3 hitPointWorld{};
+        RE::NiPoint3 hitNormalWorld{};
         float distance = FLT_MAX;
+        float hitFraction = 1.0f;
+        std::uint32_t hitShapeKey = 0xFFFF'FFFF;
+        std::uint32_t hitShapeCollisionFilterInfo = 0;
         bool isFarSelection = false;
+        bool hasHitPoint = false;
+        bool hasHitNormal = false;
+        bool hasHitShapeKey = false;
 
         void clear()
         {
@@ -34,22 +44,20 @@ namespace frik::rock
             bodyId.value = 0x7FFF'FFFF;
             hitNode = nullptr;
             visualNode = nullptr;
+            hitPointWorld = {};
+            hitNormalWorld = {};
             distance = FLT_MAX;
+            hitFraction = 1.0f;
+            hitShapeKey = 0xFFFF'FFFF;
+            hitShapeCollisionFilterInfo = 0;
             isFarSelection = false;
+            hasHitPoint = false;
+            hasHitNormal = false;
+            hasHitShapeKey = false;
         }
 
         bool isValid() const { return refr != nullptr; }
     };
-
-    inline void* getQueryFilterRef(RE::hknpWorld* world)
-    {
-        if (!world)
-            return nullptr;
-        auto modifierMgr = *reinterpret_cast<std::uintptr_t*>(reinterpret_cast<std::uintptr_t>(world) + offsets::kHknpWorld_ModifierManager);
-        if (!modifierMgr)
-            return nullptr;
-        return *reinterpret_cast<void**>(modifierMgr + offsets::kModifierMgr_FilterPtr);
-    }
 
     bool isGrabbable(RE::TESObjectREFR* ref, RE::TESObjectREFR* otherHandRef = nullptr);
 

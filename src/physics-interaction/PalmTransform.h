@@ -2,9 +2,7 @@
 
 #include <cmath>
 
-#include "GrabAnchorMath.h"
 #include "HandspaceConvention.h"
-#include "PhysicsUtils.h"
 #include "PointingDirectionMath.h"
 #include "RockConfig.h"
 
@@ -12,12 +10,12 @@ namespace frik::rock
 {
     inline RE::NiPoint3 authoredHandspaceToRawHandspace(RE::NiPoint3 value)
     {
-        return handspace_convention::authoredToRaw(value, g_rockConfig.rockHandspaceBasisMode);
+        return handspace_convention::authoredToRaw(value);
     }
 
     inline RE::NiPoint3 authoredHandspaceToRawHandspaceForHand(RE::NiPoint3 value, bool isLeft)
     {
-        return handspace_convention::authoredToRawForHand(value, isLeft, g_rockConfig.rockHandspaceBasisMode);
+        return handspace_convention::authoredToRawForHand(value, isLeft);
     }
 
     inline RE::NiPoint3 normalizeDirection(RE::NiPoint3 value)
@@ -32,22 +30,6 @@ namespace frik::rock
         value.y *= inverseLength;
         value.z *= inverseLength;
         return value;
-    }
-
-    inline void setRotationColumns(RE::NiMatrix3& matrix, const RE::NiPoint3& xAxis, const RE::NiPoint3& yAxis, const RE::NiPoint3& zAxis)
-    {
-        matrix.entry[0][0] = xAxis.x;
-        matrix.entry[1][0] = xAxis.y;
-        matrix.entry[2][0] = xAxis.z;
-        matrix.entry[0][1] = yAxis.x;
-        matrix.entry[1][1] = yAxis.y;
-        matrix.entry[2][1] = yAxis.z;
-        matrix.entry[0][2] = zAxis.x;
-        matrix.entry[1][2] = zAxis.y;
-        matrix.entry[2][2] = zAxis.z;
-        matrix.entry[0][3] = 0.0f;
-        matrix.entry[1][3] = 0.0f;
-        matrix.entry[2][3] = 0.0f;
     }
 
     inline RE::NiPoint3 transformHandspaceLocalToWorld(const RE::NiTransform& handTransform, const RE::NiPoint3& localVector)
@@ -70,28 +52,14 @@ namespace frik::rock
         return normalizeDirection(transformHandspaceLocalToWorld(handTransform, authoredHandspaceToRawHandspaceForHand(localDirection, isLeft)));
     }
 
-    inline RE::NiMatrix3 computeAuthoredHandspaceRotation(const RE::NiTransform& handTransform)
+    inline RE::NiPoint3 computeGrabPivotAHandspacePosition(bool isLeft)
     {
-        const RE::NiPoint3 xAxis = normalizeDirection(transformHandspaceLocalToWorld(handTransform, authoredHandspaceToRawHandspace(RE::NiPoint3(1.0f, 0.0f, 0.0f))));
-        const RE::NiPoint3 yAxis = normalizeDirection(transformHandspaceLocalToWorld(handTransform, authoredHandspaceToRawHandspace(RE::NiPoint3(0.0f, 1.0f, 0.0f))));
-        const RE::NiPoint3 zAxis = normalizeDirection(transformHandspaceLocalToWorld(handTransform, authoredHandspaceToRawHandspace(RE::NiPoint3(0.0f, 0.0f, 1.0f))));
-
-        RE::NiMatrix3 result{};
-        setRotationColumns(result, xAxis, yAxis, zAxis);
-        return result;
-    }
-
-    inline RE::NiTransform computeHandCollisionTransformFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
-    {
-        RE::NiTransform result = handTransform;
-        result.rotate = computeAuthoredHandspaceRotation(handTransform);
-        result.translate = transformHandspacePosition(handTransform, g_rockConfig.rockHandCollisionOffsetHandspace * kHavokToGameScale, isLeft);
-        return result;
+        return isLeft ? g_rockConfig.rockLeftGrabPivotAHandspace : g_rockConfig.rockRightGrabPivotAHandspace;
     }
 
     inline RE::NiPoint3 computePalmPositionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
-        return transformHandspacePosition(handTransform, g_rockConfig.rockPalmPositionHandspace, isLeft);
+        return transformHandspacePosition(handTransform, computeGrabPivotAHandspacePosition(isLeft), isLeft);
     }
 
     inline RE::NiPoint3 computePalmNormalFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
@@ -116,12 +84,6 @@ namespace frik::rock
     {
         return pointing_direction_math::applyFarGrabNormalReversal(
             transformHandspaceDirection(handTransform, g_rockConfig.rockPointingVectorHandspace, isLeft), g_rockConfig.rockReverseFarGrabNormal);
-    }
-
-    inline RE::NiPoint3 computeGrabPivotAHandspacePosition(bool isLeft)
-    {
-        return grab_anchor_math::makeGrabAnchorHandspaceForHand(
-            g_rockConfig.rockPalmPositionHandspace, g_rockConfig.rockGrabPivotAOffsetHandspace, g_rockConfig.rockReverseGrabPivotAOffset, isLeft);
     }
 
     inline RE::NiPoint3 computeGrabPivotAPositionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)

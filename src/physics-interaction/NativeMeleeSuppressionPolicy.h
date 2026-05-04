@@ -31,6 +31,7 @@ namespace frik::rock::native_melee_suppression
     {
         bool rockEnabled = false;
         bool suppressionEnabled = false;
+        bool fullSuppression = true;
         bool suppressWeaponSwing = true;
         bool suppressHitFrame = true;
         bool actorIsPlayer = false;
@@ -67,16 +68,18 @@ namespace frik::rock::native_melee_suppression
             if (!input.suppressWeaponSwing) {
                 return { .action = NativeMeleeSuppressionAction::CallNative, .reason = "weapon-swing-pass-through" };
             }
-            return { .action = NativeMeleeSuppressionAction::ReturnUnhandled, .reason = "player-weapon-swing-suppressed" };
+            return { .action = NativeMeleeSuppressionAction::ReturnUnhandled,
+                .reason = input.fullSuppression ? "player-weapon-swing-full-suppressed" : "player-weapon-swing-suppressed" };
 
         case NativeMeleeEvent::HitFrame:
             if (!input.suppressHitFrame) {
                 return { .action = NativeMeleeSuppressionAction::CallNative, .reason = "hitframe-pass-through" };
             }
-            if (input.physicalSwingActive) {
+            if (input.physicalSwingActive && !input.fullSuppression) {
                 return { .action = NativeMeleeSuppressionAction::ReturnHandled, .reason = "physical-swing-handled-hitframe" };
             }
-            return { .action = NativeMeleeSuppressionAction::ReturnUnhandled, .reason = "player-hitframe-suppressed" };
+            return { .action = NativeMeleeSuppressionAction::ReturnUnhandled,
+                .reason = input.fullSuppression ? "player-hitframe-full-suppressed" : "player-hitframe-suppressed" };
         }
 
         return { .action = NativeMeleeSuppressionAction::CallNative, .reason = "unknown-event" };

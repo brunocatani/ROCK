@@ -1,11 +1,19 @@
 #include "ObjectDetection.h"
-#include "MeshGrab.h"
+#include "ObjectPhysicsBodySet.h"
 #include "PalmTransform.h"
+#include "PhysicsShapeCast.h"
 #include "RockConfig.h"
+#include "SelectionQueryPolicy.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/bhkCharacterController.h"
+
+#include <algorithm>
+#include <cfloat>
+#include <cmath>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace frik::rock
 {
@@ -39,8 +47,7 @@ namespace frik::rock
         if (!root3D)
             return false;
 
-        auto* collObj = root3D->collisionObject.get();
-        if (!collObj)
+        if (!object_physics_body_set::hasCollisionObjectInSubtree(root3D, (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth)))
             return false;
 
         return true;
@@ -55,9 +62,6 @@ namespace frik::rock
 
         auto& body = hknpWorld->GetBody(bodyId);
         if (body.motionIndex > 4096)
-            return nullptr;
-
-        if (body.motionIndex == 0)
             return nullptr;
 
         auto layer = body.collisionFilterInfo & 0x7F;
@@ -80,6 +84,140 @@ namespace frik::rock
         return ref;
     }
 
+    namespace
+    {
+        float pointDistance(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
+        {
+            const RE::NiPoint3 delta(lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z);
+            return std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
+        }
+
+        bool normalizeGameDirection(RE::NiPoint3 value, RE::NiPoint3& out)
+        {
+            const float lengthSquared = value.x * value.x + value.y * value.y + value.z * value.z;
+            if (lengthSquared <= 1.0e-6f) {
+                out = RE::NiPoint3{};
+                return false;
+            }
+
+            const float inverseLength = 1.0f / std::sqrt(lengthSquared);
+            out = RE::NiPoint3(value.x * inverseLength, value.y * inverseLength, value.z * inverseLength);
+            return true;
+        }
+
+        RE::NiPoint3 hkDirectionToNiPoint(const RE::hkVector4f& value)
+        {
+            return RE::NiPoint3{ value.x, value.y, value.z };
+        }
+
+        float lateralDistanceToRay(const RE::NiPoint3& start, const RE::NiPoint3& directionUnit, const RE::NiPoint3& hit)
+        {
+            const RE::NiPoint3 startToHit(hit.x - start.x, hit.y - start.y, hit.z - start.z);
+            const float along = startToHit.x * directionUnit.x + startToHit.y * directionUnit.y + startToHit.z * directionUnit.z;
+            const RE::NiPoint3 lateral(startToHit.x - directionUnit.x * along, startToHit.y - directionUnit.y * along, startToHit.z - directionUnit.z * along);
+            return std::sqrt(lateral.x * lateral.x + lateral.y * lateral.y + lateral.z * lateral.z);
+        }
+
+        float alongDistanceOnRay(const RE::NiPoint3& start, const RE::NiPoint3& directionUnit, const RE::NiPoint3& hit)
+        {
+            const RE::NiPoint3 startToHit(hit.x - start.x, hit.y - start.y, hit.z - start.z);
+            return (std::max)(0.0f, startToHit.x * directionUnit.x + startToHit.y * directionUnit.y + startToHit.z * directionUnit.z);
+        }
+
+        SelectedObject chooseShapeCastSelection(RE::bhkWorld* bhkWorld,
+            RE::hknpWorld* hknpWorld,
+            const RE::NiPoint3& start,
+            const RE::NiPoint3& directionUnit,
+            const RE::hknpAllHitsCollector& collector,
+            bool isFarSelection,
+            RE::TESObjectREFR* otherHandRef,
+            int& outCandidates,
+            int& outRejectedInvalidBody,
+            int& outRejectedNoRef,
+            int& outRejectedNotGrabbable,
+            int& outDuplicateBodies)
+        {
+            SelectedObject result;
+            float bestLateralDistance = FLT_MAX;
+            float bestAlongDistance = FLT_MAX;
+            std::unordered_set<std::uint32_t> seenBodyIds;
+            std::unordered_map<std::uint32_t, RE::TESObjectREFR*> refByBodyId;
+            std::unordered_map<std::uint32_t, bool> grabbableByBodyId;
+
+            auto* hits = collector.hits._data;
+            const int numHits = collector.hits._size;
+            for (int i = 0; i < numHits; ++i) {
+                const auto& hit = hits[i];
+                auto hitBodyId = hit.hitBodyInfo.m_bodyId;
+                if (hitBodyId.value == 0x7FFF'FFFF) {
+                    ++outRejectedInvalidBody;
+                    continue;
+                }
+
+                if (!seenBodyIds.insert(hitBodyId.value).second) {
+                    ++outDuplicateBodies;
+                }
+
+                RE::TESObjectREFR* ref = nullptr;
+                if (const auto cachedRef = refByBodyId.find(hitBodyId.value); cachedRef != refByBodyId.end()) {
+                    ref = cachedRef->second;
+                } else {
+                    ref = resolveBodyToRef(bhkWorld, hknpWorld, hitBodyId);
+                    refByBodyId.emplace(hitBodyId.value, ref);
+                }
+                if (!ref) {
+                    ++outRejectedNoRef;
+                    continue;
+                }
+
+                bool grabbable = false;
+                if (const auto cachedGrabbable = grabbableByBodyId.find(hitBodyId.value); cachedGrabbable != grabbableByBodyId.end()) {
+                    grabbable = cachedGrabbable->second;
+                } else {
+                    grabbable = isGrabbable(ref, otherHandRef);
+                    grabbableByBodyId.emplace(hitBodyId.value, grabbable);
+                }
+                if (!grabbable) {
+                    ++outRejectedNotGrabbable;
+                    continue;
+                }
+
+                ++outCandidates;
+                const RE::NiPoint3 hitPoint = hkVectorToNiPoint(hit.position);
+                const float lateralDistance = lateralDistanceToRay(start, directionUnit, hitPoint);
+                const float alongDistance = alongDistanceOnRay(start, directionUnit, hitPoint);
+                if (!selection_query_policy::isBetterShapeCastCandidate(isFarSelection, lateralDistance, alongDistance, bestLateralDistance, bestAlongDistance)) {
+                    continue;
+                }
+
+                RE::NiPoint3 hitNormal{};
+                const bool hasHitNormal = normalizeGameDirection(hkDirectionToNiPoint(hit.normal), hitNormal);
+                const std::uint32_t shapeKey = hit.hitBodyInfo.m_shapeKey.storage;
+
+                bestLateralDistance = lateralDistance;
+                bestAlongDistance = alongDistance;
+                result.refr = ref;
+                result.bodyId = hitBodyId;
+                result.hitPointWorld = hitPoint;
+                result.hitNormalWorld = hitNormal;
+                result.distance = alongDistance;
+                result.hitFraction = hit.fraction.storage;
+                result.hitShapeKey = shapeKey;
+                result.hitShapeCollisionFilterInfo = hit.hitBodyInfo.m_shapeCollisionFilterInfo.storage;
+                result.isFarSelection = isFarSelection;
+                result.hasHitPoint = true;
+                result.hasHitNormal = hasHitNormal;
+                result.hasHitShapeKey = shapeKey != 0xFFFF'FFFF;
+
+                auto* collObj = RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId);
+                result.hitNode = collObj ? collObj->sceneObject : nullptr;
+                result.visualNode = ref->Get3D();
+            }
+
+            return result;
+        }
+    }
+
     SelectedObject findCloseObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& palmPos, const RE::NiPoint3& palmForward, float nearRange, bool isLeft,
         RE::TESObjectREFR* otherHandRef)
     {
@@ -88,28 +226,27 @@ namespace frik::rock
         if (!bhkWorld || !hknpWorld)
             return result;
 
-        const float halfRange = nearRange * kGameToHavokScale;
-        auto palmHk = niPointToHkVector(palmPos);
+        RE::NiPoint3 direction{};
+        if (!normalizeGameDirection(palmForward, direction))
+            return result;
 
-        RE::hknpAabbQuery query{};
-        query.filterRef = getQueryFilterRef(hknpWorld);
-        query.materialId = 0xFFFF;
-
-        query.collisionFilterInfo = (0x000B << 16) | 45;
-
-        query.aabbMin[0] = palmHk.x - halfRange;
-        query.aabbMin[1] = palmHk.y - halfRange;
-        query.aabbMin[2] = palmHk.z - halfRange;
-        query.aabbMin[3] = 0.0f;
-        query.aabbMax[0] = palmHk.x + halfRange;
-        query.aabbMax[1] = palmHk.y + halfRange;
-        query.aabbMax[2] = palmHk.z + halfRange;
-        query.aabbMax[3] = 0.0f;
+        const float configuredCastDistance = g_rockConfig.rockNearCastDistanceGameUnits > 0.0f ? g_rockConfig.rockNearCastDistanceGameUnits : nearRange;
+        const float castDistance = (std::max)(0.0f, configuredCastDistance);
+        const float castRadius = (std::max)(0.0f, g_rockConfig.rockNearCastRadiusGameUnits);
 
         RE::hknpAllHitsCollector collector;
-        hknpWorld->QueryAabb(&query, &collector);
-
-        int numHits = collector.hits._size;
+        physics_shape_cast::SphereCastDiagnostics diagnostics;
+        if (!physics_shape_cast::castSelectionSphere(
+                hknpWorld,
+                physics_shape_cast::SphereCastInput{ .startGame = palmPos,
+                    .directionGame = direction,
+                    .distanceGame = castDistance,
+                    .radiusGame = castRadius,
+                    .collisionFilterInfo = g_rockConfig.rockSelectionShapeCastFilterInfo },
+                collector,
+                &diagnostics)) {
+            return result;
+        }
 
         bool logNearMetric = false;
         if (g_rockConfig.rockDebugVerboseLogging) {
@@ -120,117 +257,26 @@ namespace frik::rock
             if (nearDiagCounter >= 270) {
                 nearDiagCounter = 0;
                 logNearMetric = true;
-                ROCK_LOG_INFO(Hand, "Near AABB [{}]: palm=({:.2f},{:.2f},{:.2f}) halfRange={:.3f} hits={} filterRef={}", isLeft ? "L" : "R", palmHk.x, palmHk.y, palmHk.z,
-                    halfRange, numHits, query.filterRef);
             }
         }
 
-        if (numHits == 0)
-            return result;
-
-        float bestDist = FLT_MAX;
-        auto* hits = collector.hits._data;
         int candidatesChecked = 0;
-        int meshMetricCount = 0;
-        int bodyFallbackCount = 0;
-        int no3DCount = 0;
-        int noTrianglesCount = 0;
-        int noClosestPointCount = 0;
-        const char* bestMetricMode = "none";
-        const char* bestFallbackReason = "none";
-        std::size_t bestTriangleCount = 0;
-        MeshExtractionStats bestMeshStats;
-
-        for (int i = 0; i < numHits; i++) {
-            auto hitBodyId = hits[i].hitBodyInfo.m_bodyId;
-
-            if (hitBodyId.value == 0x7FFF'FFFF)
-                continue;
-
-            auto* motion = hknpWorld->GetBodyMotion(hitBodyId);
-            if (!motion)
-                continue;
-
-            auto* ref = resolveBodyToRef(bhkWorld, hknpWorld, hitBodyId);
-            if (!ref)
-                continue;
-
-            if (!isGrabbable(ref, otherHandRef))
-                continue;
-            candidatesChecked++;
-
-            float dist = FLT_MAX;
-            const char* metricMode = "bodyComFallback";
-            const char* fallbackReason = "none";
-            bool hasFallbackReason = false;
-            std::size_t candidateTriangleCount = 0;
-            MeshExtractionStats candidateMeshStats;
-            auto* node3D = ref->Get3D();
-            if (node3D) {
-                std::vector<TriangleData> triangles;
-                extractAllTriangles(node3D, triangles, 10, &candidateMeshStats);
-                candidateTriangleCount = triangles.size();
-
-                if (!triangles.empty()) {
-                    GrabPoint grabPt;
-                    if (findClosestGrabPoint(triangles, palmPos, palmForward, 1.0f, 1.0f, grabPt)) {
-                        dist = std::sqrt(grabPt.distance);
-                        metricMode = "meshSurface";
-                        meshMetricCount++;
-                    } else {
-                        noClosestPointCount++;
-                        fallbackReason = "noClosestSurfacePoint";
-                        hasFallbackReason = true;
-                    }
-                } else {
-                    noTrianglesCount++;
-                    fallbackReason = "noTriangles";
-                    hasFallbackReason = true;
-                }
-            } else {
-                no3DCount++;
-                fallbackReason = "no3D";
-                hasFallbackReason = true;
-            }
-
-            if (dist >= FLT_MAX - 1.0f) {
-                if (!hasFallbackReason) {
-                    fallbackReason = "unresolvedMeshDistance";
-                }
-                RE::NiPoint3 objPos = hkVectorToNiPoint(motion->position);
-                dist = (objPos - palmPos).Length();
-                bodyFallbackCount++;
-            }
-
-            if (dist > nearRange)
-                continue;
-
-            if (dist < bestDist) {
-                bestDist = dist;
-                result.refr = ref;
-                result.bodyId = hitBodyId;
-                result.distance = dist;
-                result.isFarSelection = false;
-                bestMetricMode = metricMode;
-                bestFallbackReason = fallbackReason;
-                bestTriangleCount = candidateTriangleCount;
-                bestMeshStats = candidateMeshStats;
-
-                auto* collObj = RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId);
-                result.hitNode = collObj ? collObj->sceneObject : nullptr;
-                result.visualNode = node3D;
-            }
-        }
+        int rejectedInvalidBody = 0;
+        int rejectedNoRef = 0;
+        int rejectedNotGrabbable = 0;
+        int duplicateBodies = 0;
+        result = chooseShapeCastSelection(bhkWorld, hknpWorld, palmPos, direction, collector, false, otherHandRef, candidatesChecked, rejectedInvalidBody, rejectedNoRef,
+            rejectedNotGrabbable, duplicateBodies);
 
         if (logNearMetric) {
-            const float loggedBestDist = result.refr ? bestDist : -1.0f;
-            ROCK_LOG_INFO(Hand,
-                "Near metric [{}]: candidates={} meshSurface={} bodyComFallback={} no3D={} noTriangles={} noClosestPoint={} "
-                "bestMode={} bestFallbackReason={} bestDist={:.1f} bestTris={} bestShapes={} "
-                "bestStatic={}/{} bestDynamic={}/{} bestSkinned={}/{} bestDynamicSkinnedSkipped={}",
-                isLeft ? "L" : "R", candidatesChecked, meshMetricCount, bodyFallbackCount, no3DCount, noTrianglesCount, noClosestPointCount, bestMetricMode, bestFallbackReason,
-                loggedBestDist, bestTriangleCount, bestMeshStats.visitedShapes, bestMeshStats.staticShapes, bestMeshStats.staticTriangles, bestMeshStats.dynamicShapes,
-                bestMeshStats.dynamicTriangles, bestMeshStats.skinnedShapes, bestMeshStats.skinnedTriangles, bestMeshStats.dynamicSkinnedSkipped);
+            ROCK_LOG_DEBUG(Hand,
+                "Near shape cast [{}]: start=({:.1f},{:.1f},{:.1f}) dir=({:.2f},{:.2f},{:.2f}) radius={:.1f} distance={:.1f} "
+                "filter=0x{:08X} hits={} candidates={} dup={} rejectInvalid={} rejectNoRef={} rejectNotGrab={} selected={} formID={:08X} dist={:.2f} "
+                "normal=({:.2f},{:.2f},{:.2f}) shapeKey=0x{:08X}",
+                isLeft ? "L" : "R", palmPos.x, palmPos.y, palmPos.z, direction.x, direction.y, direction.z, castRadius, castDistance, diagnostics.collisionFilterInfo,
+                diagnostics.hitCount, candidatesChecked, duplicateBodies, rejectedInvalidBody, rejectedNoRef, rejectedNotGrabbable, result.isValid() ? "yes" : "no",
+                result.refr ? result.refr->GetFormID() : 0, result.isValid() ? result.distance : -1.0f, result.hitNormalWorld.x, result.hitNormalWorld.y,
+                result.hitNormalWorld.z, result.hitShapeKey);
         }
 
         return result;
@@ -244,51 +290,71 @@ namespace frik::rock
         if (!bhkWorld || !hknpWorld)
             return result;
 
-        RE::NiPoint3 rayEnd(handPos.x + pointingDir.x * farRange, handPos.y + pointingDir.y * farRange, handPos.z + pointingDir.z * farRange);
+        RE::NiPoint3 direction{};
+        if (!normalizeGameDirection(pointingDir, direction))
+            return result;
+
+        float clippedFarRange = farRange;
+        RE::NiPoint3 rayEnd(handPos.x + direction.x * farRange, handPos.y + direction.y * farRange, handPos.z + direction.z * farRange);
 
         RE::bhkPickData pickData;
         pickData.SetStartEnd(handPos, rayEnd);
 
-        pickData.collisionFilter.filter = 0x02420028;
+        pickData.collisionFilter.filter = g_rockConfig.rockFarClipRayFilterInfo;
 
-        if (!bhkWorld->PickObject(pickData))
-            return result;
-        if (!pickData.HasHit())
-            return result;
-
-        auto* hitNiObj = pickData.GetNiAVObject();
-        if (!hitNiObj)
-            return result;
-
-        RE::hknpBodyId hitBodyId{ 0x7FFF'FFFF };
-        auto* hitBody = pickData.GetBody();
-        if (hitBody) {
-            hitBodyId = hitBody->bodyId;
+        if (bhkWorld->PickObject(pickData) && pickData.HasHit()) {
+            clippedFarRange = (std::max)(0.0f, pickData.GetHitFraction() * farRange);
         }
 
-        auto* collObj = hitBodyId.value != 0x7FFF'FFFF ? RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId) : nullptr;
-        auto* ownerNode = collObj ? collObj->sceneObject : nullptr;
-        auto* refNode = ownerNode ? ownerNode : hitNiObj;
-
-        auto* ref = RE::TESObjectREFR::FindReferenceFor3D(refNode);
-        if (!ref && refNode != hitNiObj) {
-            ref = RE::TESObjectREFR::FindReferenceFor3D(hitNiObj);
+        RE::hknpAllHitsCollector collector;
+        physics_shape_cast::SphereCastDiagnostics diagnostics;
+        if (!physics_shape_cast::castSelectionSphere(
+                hknpWorld,
+                physics_shape_cast::SphereCastInput{ .startGame = handPos,
+                    .directionGame = direction,
+                    .distanceGame = clippedFarRange,
+                    .radiusGame = g_rockConfig.rockFarCastRadiusGameUnits,
+                    .collisionFilterInfo = g_rockConfig.rockSelectionShapeCastFilterInfo },
+                collector,
+                &diagnostics)) {
+            return result;
         }
-        if (!ref)
-            return result;
 
-        if (!isGrabbable(ref, otherHandRef))
-            return result;
+        int candidatesChecked = 0;
+        int rejectedInvalidBody = 0;
+        int rejectedNoRef = 0;
+        int rejectedNotGrabbable = 0;
+        int duplicateBodies = 0;
+        result = chooseShapeCastSelection(bhkWorld, hknpWorld, handPos, direction, collector, true, otherHandRef, candidatesChecked, rejectedInvalidBody, rejectedNoRef,
+            rejectedNotGrabbable, duplicateBodies);
 
-        float hitFraction = pickData.GetHitFraction();
-        float hitDist = hitFraction * farRange;
+        // Near reach remains collision-query based even when the directional close cast misses.
+        // Released objects can rest beside or partly behind the palm, where the far sphere cast
+        // sees a hit at the hand origin. Treating that as a pull creates a false "can't re-grab"
+        // state; HIGGS keeps active hand-reachable objects on the close-grab path.
+        const float configuredNearReach = g_rockConfig.rockNearCastDistanceGameUnits > 0.0f ? g_rockConfig.rockNearCastDistanceGameUnits : g_rockConfig.rockNearDetectionRange;
+        if (result.isValid() && result.hasHitPoint) {
+            const float hitDistance = pointDistance(handPos, result.hitPointWorld);
+            if (selection_query_policy::shouldPromoteFarHitToClose(hitDistance, configuredNearReach)) {
+                result.isFarSelection = false;
+                result.distance = hitDistance;
+            }
+        }
 
-        result.refr = ref;
-        result.bodyId = hitBodyId;
-        result.hitNode = ownerNode ? ownerNode : hitNiObj;
-        result.visualNode = hitNiObj;
-        result.distance = hitDist;
-        result.isFarSelection = true;
+        if (g_rockConfig.rockDebugVerboseLogging) {
+            static int farDiagCounter = 0;
+            if (++farDiagCounter >= 270) {
+                farDiagCounter = 0;
+                ROCK_LOG_DEBUG(Hand,
+                    "Far shape cast: start=({:.1f},{:.1f},{:.1f}) dir=({:.2f},{:.2f},{:.2f}) radius={:.1f} distance={:.1f}/{:.1f} "
+                    "filter=0x{:08X} hits={} candidates={} dup={} rejectInvalid={} rejectNoRef={} rejectNotGrab={} selected={} formID={:08X} dist={:.1f} "
+                    "normal=({:.2f},{:.2f},{:.2f}) shapeKey=0x{:08X}",
+                    handPos.x, handPos.y, handPos.z, direction.x, direction.y, direction.z, g_rockConfig.rockFarCastRadiusGameUnits, clippedFarRange, farRange,
+                    diagnostics.collisionFilterInfo, diagnostics.hitCount, candidatesChecked, duplicateBodies, rejectedInvalidBody, rejectedNoRef, rejectedNotGrabbable,
+                    result.isValid() ? "yes" : "no", result.refr ? result.refr->GetFormID() : 0, result.isValid() ? result.distance : -1.0f,
+                    result.hitNormalWorld.x, result.hitNormalWorld.y, result.hitNormalWorld.z, result.hitShapeKey);
+            }
+        }
 
         return result;
     }

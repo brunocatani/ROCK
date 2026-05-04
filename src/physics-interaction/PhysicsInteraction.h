@@ -3,22 +3,28 @@
 #include <array>
 #include <atomic>
 #include <mutex>
+#include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "Hand.h"
 #include "HandBoneCache.h"
 #include "HandCollisionSuppressionMath.h"
 #include "HandFrameResolver.h"
+#include "ContactActivityTracker.h"
 #include "PhysicsLog.h"
+#include "PhysicsFrameContext.h"
+#include "PhysicsStepDriveCoordinator.h"
 #include "TwoHandedGrip.h"
 #include "WeaponCollision.h"
-#include "WeaponReloadEventBridge.h"
-#include "WeaponReloadStageObserver.h"
+#include "WeaponDebugNotificationPolicy.h"
+#include "api/ROCKProviderApi.h"
 
 namespace RE
 {
     class bhkWorld;
     class hknpWorld;
+    class TESAmmo;
     class TESObjectREFR;
 }
 
@@ -83,9 +89,23 @@ namespace frik::rock
             }
             return _leftWeaponContactPartKind.load(std::memory_order_acquire);
         }
-        std::uint32_t getActiveWeaponReloadState() const { return _activeWeaponReloadState.load(std::memory_order_acquire); }
-        std::uint32_t getObservedWeaponReloadStage() const { return _observedWeaponReloadStage.load(std::memory_order_acquire); }
-        std::uint32_t getWeaponReloadStageSource() const { return _weaponReloadStageSource.load(std::memory_order_acquire); }
+        bool tryGetRootFlattenedHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
+        void fillProviderFrameSnapshot(::rock::provider::RockProviderFrameSnapshot& outSnapshot) const;
+        bool queryProviderWeaponContactAtPoint(
+            const ::rock::provider::RockProviderWeaponContactQuery& query,
+            ::rock::provider::RockProviderWeaponContactResult& outResult) const;
+        std::uint32_t copyProviderWeaponEvidenceDescriptors(
+            ::rock::provider::RockProviderWeaponEvidenceDescriptor* outDescriptors,
+            std::uint32_t maxDescriptors) const;
+        std::uint32_t getProviderWeaponEvidenceDetailCountV3() const;
+        std::uint32_t copyProviderWeaponEvidenceDetailsV3(
+            ::rock::provider::RockProviderWeaponEvidenceDetailV3* outDetails,
+            std::uint32_t maxDetails) const;
+        std::uint32_t getProviderWeaponEvidenceDetailPointCountV3(std::uint32_t bodyId) const;
+        std::uint32_t copyProviderWeaponEvidenceDetailPointsV3(
+            std::uint32_t bodyId,
+            ::rock::provider::RockProviderPoint3* outPoints,
+            std::uint32_t maxPoints) const;
 
     private:
         bool validateCriticalOffsets() const;
@@ -102,29 +122,41 @@ namespace frik::rock
 
         static RE::hknpWorld* getHknpWorld(RE::bhkWorld* bhk);
 
+        PhysicsFrameContext buildFrameContext(RE::bhkWorld* bhk, RE::hknpWorld* hknp, float deltaSeconds);
+
         void registerCollisionLayer(RE::hknpWorld* world);
 
         bool createHandCollisions(RE::hknpWorld* world, void* bhkWorld);
 
         void destroyHandCollisions(void* bhkWorld);
 
-        void updateHandCollisions(RE::hknpWorld* world);
+        void updateHandCollisions(const PhysicsFrameContext& frame);
 
-        void updateSelection(RE::bhkWorld* bhk, RE::hknpWorld* hknp);
+        void driveGeneratedBodiesFromPhysicsStep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
 
-        void updateGrabInput(RE::hknpWorld* hknp);
+        static void onGeneratedBodyPhysicsStep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
 
-        HeldObjectPlayerSpaceFrame sampleHeldObjectPlayerSpaceFrame();
+        void updateSelection(const PhysicsFrameContext& frame);
 
-        void resolveContacts(RE::bhkWorld* bhk, RE::hknpWorld* hknp);
+        void updateGrabInput(const PhysicsFrameContext& frame);
+
+        HeldObjectPlayerSpaceFrame sampleHeldObjectPlayerSpaceFrame(float deltaSeconds);
+
+        void applyHeldPlayerSpaceVelocity(RE::hknpWorld* hknp);
+
+        void resolveContacts(const PhysicsFrameContext& frame);
 
         void resolveAndLogContact(const char* handName, RE::bhkWorld* bhk, RE::hknpWorld* hknp, RE::hknpBodyId bodyId);
 
-        void publishDebugBodyOverlay(RE::hknpWorld* hknp);
+        void applyDynamicPushAssist(const char* sourceName,
+            RE::bhkWorld* bhk,
+            RE::hknpWorld* hknp,
+            std::uint32_t sourceBodyId,
+            std::uint32_t targetBodyId,
+            bool sourceIsWeapon,
+            const Hand* sourceHand = nullptr);
 
-        void updateWeaponReloadState(bool weaponEquipped);
-
-        void resetWeaponReloadStateForInterruption(const char* reason);
+        void publishDebugBodyOverlay(const PhysicsFrameContext& frame);
 
         void clearLeftWeaponContact();
 
@@ -133,16 +165,19 @@ namespace frik::rock
         void restoreLeftHandCollisionAfterWeaponSupport(RE::hknpWorld* world);
 
         void subscribeContactEvents(RE::hknpWorld* world);
+        void unsubscribeContactEvents(RE::hknpWorld* liveWorld);
 
         void dispatchPhysicsMessage(std::uint32_t msgType, bool isLeft, RE::TESObjectREFR* refr = nullptr, std::uint32_t formID = 0, std::uint32_t layer = 0);
 
         static void onContactCallback(void* userData, void** worldPtrHolder, void* contactEventData);
 
-        void handleContactEvent(void* contactEventData);
+        void handleContactEvent(RE::hknpWorld* world, void* contactEventData);
 
         std::atomic<bool> _initialized{ false };
         bool _collisionLayerRegistered = false;
         std::uint64_t _expectedHandLayerMask = 0;
+        std::uint64_t _expectedWeaponLayerMask = 0;
+        std::uint64_t _expectedReloadLayerMask = 0;
         HandBoneCache _handBoneCache;
         HandFrameResolver _handFrameResolver;
 
@@ -151,14 +186,9 @@ namespace frik::rock
 
         WeaponCollision _weaponCollision;
 
-        TwoHandedGrip _twoHandedGrip;
+        PhysicsStepDriveCoordinator _generatedBodyStepDrive;
 
-        WeaponReloadEventBridge _weaponReloadEventBridge;
-        WeaponReloadObserverState _weaponReloadObserver;
-        WeaponReloadCoordinatorState _weaponReloadCoordinator;
-        WeaponReloadObserverOutput _lastWeaponReloadObservation;
-        int _reloadStateLogCounter = 0;
-        std::uint32_t _reloadObserverStaleFrames = 0;
+        TwoHandedGrip _twoHandedGrip;
 
         mutable std::mutex _ownedObjectsMutex;
         std::unordered_set<std::uint32_t> _ownedObjects;
@@ -168,9 +198,18 @@ namespace frik::rock
         float _deltaTime = 1.0f / 90.0f;
 
         std::atomic<int> _contactLogCounter{ 0 };
+        std::atomic<RE::hknpWorld*> _contactEventWorld{ nullptr };
+        std::atomic<void*> _contactEventSignal{ nullptr };
+        contact_activity_tracker::ContactActivityTracker _handContactActivity;
 
+        std::atomic<std::uint32_t> _lastContactSourceRight{ 0xFFFFFFFF };
+        std::atomic<std::uint32_t> _lastContactSourceLeft{ 0xFFFFFFFF };
         std::atomic<std::uint32_t> _lastContactBodyRight{ 0xFFFFFFFF };
         std::atomic<std::uint32_t> _lastContactBodyLeft{ 0xFFFFFFFF };
+        std::atomic<std::uint32_t> _lastContactBodyWeapon{ 0xFFFFFFFF };
+        std::atomic<std::uint32_t> _lastContactSourceWeapon{ 0xFFFFFFFF };
+        float _dynamicPushElapsedSeconds = 0.0f;
+        std::unordered_map<std::uint64_t, float> _dynamicPushCooldownUntil;
 
         static constexpr std::uint32_t INVALID_CONTACT_BODY_ID = 0x7FFF'FFFF;
         static constexpr std::uint32_t WEAPON_CONTACT_TIMEOUT_FRAMES = 5;
@@ -184,15 +223,9 @@ namespace frik::rock
         std::atomic<std::uint32_t> _leftWeaponContactSequence{ 0 };
         std::atomic<std::uint32_t> _leftWeaponContactMissedFrames{ WEAPON_CONTACT_TIMEOUT_FRAMES + 1 };
         int _weaponInteractionProbeLogCounter = 0;
-        hand_collision_suppression_math::SuppressionState _leftWeaponSupportCollisionSuppression{};
-        bool _leftWeaponSupportBroadPhaseSuppressed = false;
-        std::atomic<std::uint32_t> _activeWeaponReloadState{ static_cast<std::uint32_t>(WeaponReloadState::Idle) };
-        std::atomic<std::uint32_t> _observedWeaponReloadStage{ static_cast<std::uint32_t>(WeaponVanillaReloadStage::Idle) };
-        std::atomic<std::uint32_t> _weaponReloadStageSource{ static_cast<std::uint32_t>(WeaponReloadStageSource::None) };
+        hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _leftWeaponSupportCollisionSuppression{};
+        weapon_debug_notification_policy::WeaponNotificationState _weaponDebugNotificationState{};
 
-        float _cachedHalfExtentX = 0.0f;
-        float _cachedHalfExtentY = 0.0f;
-        float _cachedHalfExtentZ = 0.0f;
         int _handCacheResolveLogCounter = 0;
 
         struct RawHandParityState
@@ -210,13 +243,26 @@ namespace frik::rock
         int _paritySummaryCounter = 0;
         bool _parityEnabledLogged = false;
         bool _runtimeScaleLogged = false;
+        struct GrabTransformTelemetryState
+        {
+            bool active = false;
+            std::uint32_t session = 0;
+            std::uint64_t frame = 0;
+            std::uint64_t logFrameCounter = 0;
+        };
+
+        std::array<GrabTransformTelemetryState, 2> _grabTransformTelemetryStates{};
+        std::uint32_t _grabTransformTelemetryNextSession = 1;
 
         RE::NiPoint3 _prevSmoothedPos;
         int _deltaLogCounter = 0;
         bool _hasPrevPositions = false;
         RE::NiPoint3 _prevHeldPlayerSpacePosition{};
+        RE::NiTransform _prevHeldPlayerSpaceTransform{};
         HeldObjectPlayerSpaceFrame _heldObjectPlayerSpaceFrame{};
         bool _hasHeldPlayerSpacePosition = false;
+        bool _hasHeldPlayerSpaceTransform = false;
+        RE::NiPoint3 _lastCentralHeldPlayerSpaceVelocityHavok{};
         int _heldPlayerSpaceLogCounter = 0;
 
         int _wpnNodeLogCounter = 0;

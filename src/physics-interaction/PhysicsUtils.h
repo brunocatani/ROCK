@@ -1,64 +1,107 @@
 #pragma once
 
-#include "HavokOffsets.h"
+#include "HavokRuntime.h"
+#include "PhysicsBodyFrame.h"
+#include "PhysicsScale.h"
 #include "TransformMath.h"
 
 #include "RE/Havok/hkVector4.h"
 #include "RE/Havok/hknpBody.h"
+#include "RE/Havok/hknpMotion.h"
 #include "RE/Havok/hknpWorld.h"
 #include "RE/NetImmerse/NiAVObject.h"
 #include "RE/NetImmerse/NiCollisionObject.h"
+#include "RE/NetImmerse/NiTransform.h"
 
 namespace frik::rock
 {
+    inline constexpr std::uintptr_t kHknpWorldBodyHighWaterMarkOffset = havok_runtime::kHknpWorldBodyHighWaterMarkOffset;
 
-    constexpr float kGameToHavokScale = 1.0f / 70.0f;
-    constexpr float kHavokToGameScale = 70.0f;
+    inline float gameToHavokScale() { return physics_scale::gameToHavok(); }
 
-    inline RE::hkVector4f niPointToHkVector(const RE::NiPoint3& p) { return RE::hkVector4f{ p.x * kGameToHavokScale, p.y * kGameToHavokScale, p.z * kGameToHavokScale, 0.0f }; }
+    inline float havokToGameScale() { return physics_scale::havokToGame(); }
 
-    inline RE::NiPoint3 hkVectorToNiPoint(const RE::hkVector4f& v) { return RE::NiPoint3{ v.x * kHavokToGameScale, v.y * kHavokToGameScale, v.z * kHavokToGameScale }; }
+    inline RE::hkVector4f niPointToHkVector(const RE::NiPoint3& p)
+    {
+        const float scale = gameToHavokScale();
+        return RE::hkVector4f{ p.x * scale, p.y * scale, p.z * scale, 0.0f };
+    }
+
+    inline RE::NiPoint3 hkVectorToNiPoint(const RE::hkVector4f& v)
+    {
+        const float scale = havokToGameScale();
+        return RE::NiPoint3{ v.x * scale, v.y * scale, v.z * scale };
+    }
+
+    inline void* getQueryFilterRef(RE::hknpWorld* world)
+    {
+        return havok_runtime::getQueryFilterRef(world);
+    }
 
     inline RE::NiCollisionObject* getCollisionObjectFromBody(const RE::hknpBody* body)
     {
-        if (!body) {
-            return nullptr;
-        }
+        return havok_runtime::getCollisionObjectFromBody(body);
+    }
 
-        auto* bodyBytes = reinterpret_cast<const char*>(body);
-        return *reinterpret_cast<RE::NiCollisionObject* const*>(bodyBytes + offsets::kBody_CollisionObjectBackPointer);
+    inline bool bodySlotLooksReadable(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+    {
+        return havok_runtime::bodySlotLooksReadable(world, bodyId);
     }
 
     inline RE::NiCollisionObject* getCollisionObjectFromBody(RE::hknpWorld* world, RE::hknpBodyId bodyId)
     {
-        if (!world || bodyId.value == 0x7FFF'FFFF) {
-            return nullptr;
-        }
-
-        auto* bodyArray = world->GetBodyArray();
-        if (!bodyArray) {
-            return nullptr;
-        }
-
-        return getCollisionObjectFromBody(&bodyArray[bodyId.value]);
+        return havok_runtime::getCollisionObjectFromBody(world, bodyId);
     }
 
     inline RE::NiAVObject* getOwnerNodeFromCollisionObject(const RE::NiCollisionObject* collisionObject)
     {
-        if (!collisionObject) {
-            return nullptr;
-        }
-
-        return collisionObject->sceneObject;
+        return havok_runtime::getOwnerNodeFromCollisionObject(collisionObject);
     }
 
-    inline RE::NiAVObject* getOwnerNodeFromBody(const RE::hknpBody* body) { return getOwnerNodeFromCollisionObject(getCollisionObjectFromBody(body)); }
+    inline RE::NiAVObject* getOwnerNodeFromBody(const RE::hknpBody* body) { return havok_runtime::getOwnerNodeFromBody(body); }
 
-    inline RE::NiAVObject* getOwnerNodeFromBody(RE::hknpWorld* world, RE::hknpBodyId bodyId) { return getOwnerNodeFromCollisionObject(getCollisionObjectFromBody(world, bodyId)); }
+    inline RE::NiAVObject* getOwnerNodeFromBody(RE::hknpWorld* world, RE::hknpBodyId bodyId) { return havok_runtime::getOwnerNodeFromBody(world, bodyId); }
 
     inline RE::NiMatrix3 niRotToHkTransformRotation(const RE::NiMatrix3& m) { return transform_math::niRowsToHavokColumns(m); }
 
     inline RE::NiMatrix3 havokRotationBlocksToNiMatrix(const float* bodyFloats) { return transform_math::havokColumnsToNiRows<RE::NiMatrix3>(bodyFloats); }
+
+    using ResolvedBodyWorldTransform = havok_runtime::ResolvedBodyWorldTransform;
+
+    inline RE::NiTransform bodyArrayWorldTransform(const RE::hknpBody& body)
+    {
+        return havok_runtime::bodyArrayWorldTransform(body);
+    }
+
+    inline bool tryGetBodyArrayWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform)
+    {
+        return havok_runtime::tryGetBodyArrayWorldTransform(world, bodyId, outTransform);
+    }
+
+    inline bool tryGetBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform)
+    {
+        return havok_runtime::tryGetBodyWorldTransform(world, bodyId, outTransform);
+    }
+
+    inline bool tryGetMotionWorldTransform(RE::hknpWorld* world, const RE::hknpBody& body, RE::NiTransform& outTransform)
+    {
+        return havok_runtime::tryGetMotionWorldTransform(world, body, outTransform);
+    }
+
+    inline ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+    {
+        return havok_runtime::resolveLiveBodyWorldTransform(world, bodyId);
+    }
+
+    inline bool tryResolveLiveBodyWorldTransform(
+        RE::hknpWorld* world,
+        RE::hknpBodyId bodyId,
+        RE::NiTransform& outTransform,
+        body_frame::BodyFrameSource* outSource = nullptr,
+        std::uint32_t* outMotionIndex = nullptr)
+    {
+        return havok_runtime::tryResolveLiveBodyWorldTransform(world, bodyId, outTransform, outSource, outMotionIndex);
+    }
 
     inline RE::NiPoint3 worldDeltaToBodyLocal(const float* bodyFloats, const RE::NiPoint3& worldDelta)
     {
@@ -90,25 +133,7 @@ namespace frik::rock
 
     inline bool getBodyCOMWorld(RE::hknpWorld* world, RE::hknpBodyId bodyId, float& outX, float& outY, float& outZ)
     {
-        if (!world || bodyId.value == 0x7FFF'FFFF)
-            return false;
-
-        auto* bodyArray = world->GetBodyArray();
-        auto& body = bodyArray[bodyId.value];
-        auto motionIndex = body.motionIndex;
-        if (motionIndex == 0 || motionIndex > 4096)
-            return false;
-
-        auto* worldBytes = reinterpret_cast<char*>(world);
-        auto* motionArrayPtr = *reinterpret_cast<char**>(worldBytes + 0xE0);
-        if (!motionArrayPtr)
-            return false;
-
-        auto* motion = reinterpret_cast<float*>(motionArrayPtr + motionIndex * 0x80);
-        outX = motion[0];
-        outY = motion[1];
-        outZ = motion[2];
-        return true;
+        return havok_runtime::getBodyCOMWorld(world, bodyId, outX, outY, outZ);
     }
 
     inline void getBodyCOMOffset(const float* bodyFloats, float& outX, float& outY, float& outZ)

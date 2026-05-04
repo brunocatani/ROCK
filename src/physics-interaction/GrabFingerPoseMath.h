@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -25,9 +26,34 @@ namespace frik::rock::grab_finger_pose_math
     struct FingerCurlValue
     {
         float value = 0.0f;
+        float rawCurveValue = 0.0f;
         bool hit = false;
         float distance = 0.0f;
+        bool openedByBehindContact = false;
     };
+
+    template <class Vector>
+    struct ThumbAwareFingerCurveCurlValue
+    {
+        FingerCurlValue value{};
+        FingerCurlValue primary{};
+        FingerCurlValue alternateThumb{};
+        bool usedAlternateThumbCurve = false;
+    };
+
+    inline bool shouldRunFallbackRayAfterCurveSolve(std::size_t fingerIndex, bool curveHit, bool usedAlternateThumbCurve)
+    {
+        /*
+         * HIGGS does not run a second straight-ray solve after choosing the
+         * alternate thumb curve. ROCK keeps the ray fallback for non-thumb misses
+         * and primary-thumb misses, but an alternate-thumb decision must remain
+         * internally consistent with the local transform override that follows.
+         */
+        if (curveHit) {
+            return false;
+        }
+        return !(fingerIndex == 0 && usedAlternateThumbCurve);
+    }
 
     template <class Vector>
     inline Vector sub(const Vector& a, const Vector& b)
@@ -80,6 +106,69 @@ namespace frik::rock::grab_finger_pose_math
         }
         const float inv = 1.0f / len;
         return Vector{ value.x * inv, value.y * inv, value.z * inv };
+    }
+
+    template <class Vector>
+    inline std::vector<Triangle<Vector>> filterTrianglesNearPoint(const std::vector<Triangle<Vector>>& triangles, const Vector& point, float maxDistanceSquared)
+    {
+        std::vector<Triangle<Vector>> result;
+        if (!std::isfinite(maxDistanceSquared) || maxDistanceSquared <= 0.0f) {
+            return result;
+        }
+
+        result.reserve((std::min)(triangles.size(), static_cast<std::size_t>(256)));
+        for (const auto& triangle : triangles) {
+            const Vector centroid = scale(add(add(triangle.v0, triangle.v1), triangle.v2), 1.0f / 3.0f);
+            const float bestVertexOrCentroidDistance = (std::min)({
+                lengthSquared(sub(centroid, point)),
+                lengthSquared(sub(triangle.v0, point)),
+                lengthSquared(sub(triangle.v1, point)),
+                lengthSquared(sub(triangle.v2, point)),
+            });
+            if (bestVertexOrCentroidDistance <= maxDistanceSquared) {
+                result.push_back(triangle);
+            }
+        }
+        return result;
+    }
+
+    template <class Vector>
+    inline float clampedUnitDot(const Vector& a, const Vector& b)
+    {
+        return std::clamp(dot(normalize(a), normalize(b)), -1.0f, 1.0f);
+    }
+
+    template <class Vector>
+    inline float signedAngleAroundNormal(const Vector& vector, const Vector& zeroAngleVector, const Vector& normal)
+    {
+        const Vector v = normalize(vector);
+        const Vector zero = normalize(zeroAngleVector);
+        float angle = std::acos(clampedUnitDot(v, zero));
+        if (dot(normalize(normal), cross(zero, v)) < 0.0f) {
+            angle *= -1.0f;
+        }
+        return angle;
+    }
+
+    template <class Vector>
+    inline bool planeIntersectsSegment(const Vector& planePoint, const Vector& planeNormal, const Vector& a, const Vector& b, Vector& outPoint)
+    {
+        const Vector normal = normalize(planeNormal);
+        const float da = dot(normal, sub(a, planePoint));
+        const float db = dot(normal, sub(b, planePoint));
+        if ((da > 0.0f && db > 0.0f) || (da < 0.0f && db < 0.0f)) {
+            return false;
+        }
+
+        const float denom = da - db;
+        if (std::abs(denom) <= 0.000001f) {
+            outPoint = a;
+            return true;
+        }
+
+        const float t = std::clamp(da / denom, 0.0f, 1.0f);
+        outPoint = add(a, scale(sub(b, a), t));
+        return true;
     }
 
     template <class Vector>
@@ -287,9 +376,184 @@ namespace frik::rock::grab_finger_pose_math
 
         if (result.hit) {
             result.distance = bestT;
-            result.value = std::clamp(bestT / maxDistance, std::clamp(minValue, 0.0f, 1.0f), 1.0f);
+            result.rawCurveValue = bestT / maxDistance;
+            result.value = std::clamp(result.rawCurveValue, std::clamp(minValue, 0.0f, 1.0f), 1.0f);
         }
 
+        return result;
+    }
+
+    template <class Vector>
+    inline FingerCurlValue solveFingerCurveCurlValue(const std::vector<Triangle<Vector>>& triangles, const Vector& center, const Vector& normal,
+        const Vector& zeroAngleVector, float maxCurlAngleRadians, float fingerLength, float minValue)
+    {
+        /*
+         * HIGGS does not fire straight rays from the fingers. It intersects the
+         * object's local triangle slice with the finger curl disk and converts the
+         * hit angle back into an open/closed curve value. ROCK keeps that same
+         * geometric contract here while using compact parametric curves instead of
+         * copying HIGGS' large generated lookup tables into runtime code.
+         */
+        FingerCurlValue result{};
+        result.value = std::clamp(minValue, 0.0f, 1.0f);
+
+        if (triangles.empty() || !std::isfinite(maxCurlAngleRadians) || maxCurlAngleRadians <= 0.0001f ||
+            !std::isfinite(fingerLength) || fingerLength <= 0.0001f) {
+            return result;
+        }
+
+        const float clampedMin = std::clamp(minValue, 0.0f, 1.0f);
+        const Vector planeNormal = normalize(normal);
+        const Vector zero = normalize(zeroAngleVector);
+        const float maxAngle = (std::max)(0.0001f, maxCurlAngleRadians);
+        constexpr float kCurveThickness = 0.35f;
+
+        float bestPositiveAngle = (std::numeric_limits<float>::max)();
+        bool foundBehindContact = false;
+
+        auto considerPoint = [&](const Vector& point) {
+            const Vector fromCenter = sub(point, center);
+            const float radius = length(fromCenter);
+            if (radius <= 0.0001f || radius > fingerLength + kCurveThickness) {
+                return;
+            }
+
+            const float angle = signedAngleAroundNormal(fromCenter, zero, planeNormal);
+            if (angle < 0.0f && std::abs(angle) <= maxAngle) {
+                foundBehindContact = true;
+                return;
+            }
+            if (angle >= 0.0f && angle <= maxAngle && angle < bestPositiveAngle) {
+                bestPositiveAngle = angle;
+            }
+        };
+
+        for (const auto& triangle : triangles) {
+            std::array<Vector, 3> intersections{};
+            std::size_t intersectionCount = 0;
+            auto addIntersection = [&](const Vector& a, const Vector& b) {
+                if (intersectionCount >= intersections.size()) {
+                    return;
+                }
+                Vector intersection{};
+                if (planeIntersectsSegment(center, planeNormal, a, b, intersection)) {
+                    intersections[intersectionCount++] = intersection;
+                }
+            };
+
+            addIntersection(triangle.v0, triangle.v1);
+            addIntersection(triangle.v1, triangle.v2);
+            addIntersection(triangle.v2, triangle.v0);
+
+            if (intersectionCount == 0) {
+                continue;
+            }
+
+            for (std::size_t i = 0; i < intersectionCount; ++i) {
+                considerPoint(intersections[i]);
+            }
+            if (intersectionCount >= 2) {
+                considerPoint(scale(add(intersections[0], intersections[1]), 0.5f));
+            }
+        }
+
+        if (foundBehindContact) {
+            result.hit = true;
+            result.value = 1.0f;
+            result.rawCurveValue = -1.0f;
+            result.openedByBehindContact = true;
+            return result;
+        }
+
+        if (bestPositiveAngle != (std::numeric_limits<float>::max)()) {
+            result.hit = true;
+            result.distance = bestPositiveAngle;
+            result.rawCurveValue = 1.0f - (bestPositiveAngle / maxAngle);
+            result.value = std::clamp(result.rawCurveValue, clampedMin, 1.0f);
+        }
+        return result;
+    }
+
+    template <class Vector>
+    inline ThumbAwareFingerCurveCurlValue<Vector> solveThumbAwareFingerCurveCurlValue(const std::vector<Triangle<Vector>>& triangles,
+        const Vector& center,
+        const Vector& primaryNormal,
+        const Vector& alternateThumbNormal,
+        const Vector& zeroAngleVector,
+        float maxCurlAngleRadians,
+        float fingerLength,
+        float minValue,
+        bool allowAlternateThumbCurve)
+    {
+        /*
+         * HIGGS carries a sixth curve for the thumb because the thumb can close
+         * across the palm instead of curling in the same plane as the other
+         * fingers. ROCK keeps the public five-finger pose contract but evaluates
+         * a second thumb plane when the normal calibrated plane misses, so thumb
+         * contacts on weapon supports and small held objects can still influence
+         * the value sent to FRIK.
+         */
+        ThumbAwareFingerCurveCurlValue<Vector> result{};
+        result.primary = solveFingerCurveCurlValue(triangles, center, primaryNormal, zeroAngleVector, maxCurlAngleRadians, fingerLength, minValue);
+        result.value = result.primary;
+
+        if (!allowAlternateThumbCurve) {
+            return result;
+        }
+
+        result.alternateThumb = solveFingerCurveCurlValue(triangles, center, alternateThumbNormal, zeroAngleVector, maxCurlAngleRadians, fingerLength, minValue);
+        constexpr float kClosedEpsilon = 0.0001f;
+        const bool primaryClosedOrMissed = !result.primary.hit || result.primary.rawCurveValue <= kClosedEpsilon;
+        const bool primaryNeedsAlternate = primaryClosedOrMissed || result.primary.openedByBehindContact;
+        const bool alternatePositive =
+            result.alternateThumb.hit && !result.alternateThumb.openedByBehindContact && result.alternateThumb.rawCurveValue > kClosedEpsilon;
+        const bool alternateClosedOrMissed =
+            !result.alternateThumb.hit || (!result.alternateThumb.openedByBehindContact && result.alternateThumb.rawCurveValue <= kClosedEpsilon);
+        const bool bothCurvesClosedOrMissed = primaryClosedOrMissed && !result.primary.openedByBehindContact && alternateClosedOrMissed;
+
+        if (primaryNeedsAlternate && (alternatePositive || bothCurvesClosedOrMissed)) {
+            result.value = result.alternateThumb;
+            result.usedAlternateThumbCurve = true;
+        }
+
+        return result;
+    }
+
+    inline std::array<float, 15> expandFingerCurlsToJointValues(const std::array<float, 5>& values)
+    {
+        std::array<float, 15> joints{};
+        for (std::size_t finger = 0; finger < values.size(); ++finger) {
+            const float value = std::clamp(values[finger], 0.0f, 1.0f);
+            const float closed = 1.0f - value;
+            const float proximalOpenBias = (finger == 0) ? 0.15f : 0.25f;
+            const float distalCloseBias = (finger == 0) ? 0.10f : 0.15f;
+            const std::size_t base = finger * 3;
+            joints[base + 0] = std::clamp(value + closed * proximalOpenBias, 0.0f, 1.0f);
+            joints[base + 1] = value;
+            joints[base + 2] = std::clamp(value - closed * distalCloseBias, 0.0f, 1.0f);
+        }
+        return joints;
+    }
+
+    inline std::array<float, 15> advanceJointValues(const std::array<float, 15>& current, const std::array<float, 15>& target, float speed, float deltaTime)
+    {
+        std::array<float, 15> result{};
+        if (!std::isfinite(speed) || speed <= 0.0f) {
+            return target;
+        }
+
+        const float dt = (std::isfinite(deltaTime) && deltaTime > 0.0f) ? deltaTime : (1.0f / 90.0f);
+        const float step = speed * dt;
+        for (std::size_t i = 0; i < result.size(); ++i) {
+            const float from = std::clamp(current[i], 0.0f, 1.0f);
+            const float to = std::clamp(target[i], 0.0f, 1.0f);
+            const float delta = to - from;
+            if (std::abs(delta) <= step) {
+                result[i] = to;
+            } else {
+                result[i] = from + (delta > 0.0f ? step : -step);
+            }
+        }
         return result;
     }
 }

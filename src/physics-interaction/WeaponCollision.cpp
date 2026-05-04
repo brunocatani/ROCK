@@ -3,15 +3,19 @@
 #include "WeaponCollision.h"
 
 #include "BodyCollisionControl.h"
+#include "CollisionSuppressionRegistry.h"
+#include "HavokCompoundShapeBuilder.h"
 #include "HavokConvexShapeBuilder.h"
 #include "HavokOffsets.h"
 #include "MeshGrab.h"
 #include "RockConfig.h"
-#include "WeaponCollisionAdjustmentMath.h"
 #include "WeaponCollisionGeometryMath.h"
+#include "WeaponCollisionGroupingPolicy.h"
 #include "WeaponInteractionProbeMath.h"
+#include "WeaponAuthorityLifecyclePolicy.h"
 #include "WeaponPartClassifier.h"
 #include "WeaponSemanticHullBudget.h"
+#include "WeaponVisualCompositionPolicy.h"
 
 #include <intrin.h>
 
@@ -25,9 +29,11 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <limits>
 #include <unordered_set>
 #include <string>
@@ -40,8 +46,6 @@ namespace frik::rock
     {
         constexpr std::size_t MAX_CONVEX_HULL_POINTS = 0xFC;
         constexpr float MIN_HULL_DIAGONAL_GAME_UNITS = 0.5f;
-        constexpr std::uint64_t WEAPON_VISUAL_KEY_OFFSET = 1469598103934665603ull;
-        constexpr std::uint64_t WEAPON_VISUAL_KEY_PRIME = 1099511628211ull;
 
         struct QuantizedPointKey
         {
@@ -73,6 +77,15 @@ namespace frik::rock
         {
             RE::NiPoint3 min{};
             RE::NiPoint3 max{};
+        };
+
+        struct SemanticPartPointCloud
+        {
+            RE::NiAVObject* driveRoot = nullptr;
+            RE::NiAVObject* semanticRoot = nullptr;
+            std::string sourceName;
+            WeaponPartClassification semantic{};
+            std::vector<RE::NiPoint3> localPointsGame;
         };
 
         enum GeneratedHullCoverageClass : int
@@ -136,8 +149,7 @@ namespace frik::rock
 
         void mixWeaponVisualKey(std::uint64_t& key, std::uint64_t value)
         {
-            key ^= value;
-            key *= WEAPON_VISUAL_KEY_PRIME;
+            weapon_visual_composition_policy::mixValue(key, value);
         }
 
         void mixWeaponVisualString(std::uint64_t& key, const char* value)
@@ -145,9 +157,7 @@ namespace frik::rock
             if (!value) {
                 return;
             }
-            for (const auto* cursor = reinterpret_cast<const unsigned char*>(value); *cursor; ++cursor) {
-                mixWeaponVisualKey(key, static_cast<std::uint64_t>(*cursor));
-            }
+            weapon_visual_composition_policy::mixString(key, value);
         }
 
         std::vector<RE::NiPoint3> dedupePointCloud(const std::vector<RE::NiPoint3>& points, float grid)
@@ -355,8 +365,8 @@ namespace frik::rock
             std::vector<RE::NiPoint3> result;
             result.reserve(localPointsGame.size());
             for (const auto& point : localPointsGame) {
-                result.emplace_back((point.x - localCenterGame.x) * kGameToHavokScale, (point.y - localCenterGame.y) * kGameToHavokScale,
-                    (point.z - localCenterGame.z) * kGameToHavokScale);
+                result.emplace_back((point.x - localCenterGame.x) * gameToHavokScale(), (point.y - localCenterGame.y) * gameToHavokScale(),
+                    (point.z - localCenterGame.z) * gameToHavokScale());
             }
             return result;
         }
@@ -370,20 +380,93 @@ namespace frik::rock
             return name ? name : "(null)";
         }
 
-        void accumulateWeaponVisualKey(RE::NiAVObject* node, int depth, std::uint64_t& key, WeaponVisualKeyStats& stats)
+        bool weaponVisualNodeVisible(const RE::NiAVObject* node)
+        {
+            if (!node) {
+                return false;
+            }
+            return (node->flags.flags & 1) == 0 && !node->GetAppCulled() && node->local.scale != 0.0f;
+        }
+
+        std::uintptr_t readRendererChildPointer(void* rendererData, std::ptrdiff_t rendererChildOffset)
+        {
+            if (!rendererData) {
+                return 0;
+            }
+            auto* child = *reinterpret_cast<void**>(reinterpret_cast<char*>(rendererData) + rendererChildOffset);
+            if (!child) {
+                return 0;
+            }
+            return reinterpret_cast<std::uintptr_t>(*reinterpret_cast<void**>(reinterpret_cast<char*>(child) + 0x08));
+        }
+
+        weapon_visual_composition_policy::VisualRecord makeWeaponVisualRecord(
+            RE::NiAVObject* node,
+            RE::NiAVObject* parent,
+            std::uint32_t childIndex,
+            std::uint32_t childCount,
+            std::uint32_t depth,
+            bool visible)
+        {
+            weapon_visual_composition_policy::VisualRecord record{
+                .nodeAddress = reinterpret_cast<std::uintptr_t>(node),
+                .parentAddress = reinterpret_cast<std::uintptr_t>(parent ? parent : node ? node->parent : nullptr),
+                .name = safeNodeName(node),
+                .depth = depth,
+                .childIndex = childIndex,
+                .childCount = childCount,
+                .visible = visible,
+                .triShape = node && node->IsTriShape(),
+            };
+
+            if (auto* triShape = node ? node->IsTriShape() : nullptr) {
+                auto* base = reinterpret_cast<char*>(triShape);
+                auto* rendererData = *reinterpret_cast<void**>(base + VROffset::rendererData);
+                record.rendererData = reinterpret_cast<std::uintptr_t>(rendererData);
+                record.skinInstance = reinterpret_cast<std::uintptr_t>(*reinterpret_cast<void**>(base + VROffset::skinInstance));
+                record.vertexDesc = *reinterpret_cast<std::uint64_t*>(base + VROffset::vertexDesc);
+                record.numTriangles = *reinterpret_cast<std::uint32_t*>(base + VROffset::numTriangles);
+                record.numVertices = *reinterpret_cast<std::uint16_t*>(base + VROffset::numVertices);
+                record.geometryType = *reinterpret_cast<std::uint8_t*>(base + VROffset::geometryType);
+                record.vertexBlock = readRendererChildPointer(rendererData, 0x08);
+                record.triangleBlock = readRendererChildPointer(rendererData, 0x10);
+            }
+
+            return record;
+        }
+
+        void accumulateWeaponVisualKey(RE::NiAVObject* node, RE::NiAVObject* parent, std::uint32_t childIndex, int depth, std::uint64_t& key, WeaponVisualKeyStats& stats)
         {
             if (!node || depth > 15 || stats.nodeCount > 512) {
                 return;
             }
 
+            const bool visible = weaponVisualNodeVisible(node);
             ++stats.nodeCount;
-            mixWeaponVisualKey(key, reinterpret_cast<std::uintptr_t>(node));
-            mixWeaponVisualKey(key, static_cast<std::uint64_t>(depth));
-            mixWeaponVisualString(key, safeNodeName(node));
+            if (!visible) {
+                ++stats.invisibleNodeCount;
+            }
+
+            std::uint32_t childCount = 0;
+            if (auto* niNode = node->IsNode()) {
+                childCount = static_cast<std::uint32_t>(niNode->GetRuntimeData().children.size());
+            }
+            const auto record = makeWeaponVisualRecord(node, parent, childIndex, childCount, static_cast<std::uint32_t>(depth), visible);
+            weapon_visual_composition_policy::mixVisualRecord(key, record);
+
+            if (!visible) {
+                return;
+            }
 
             if (node->IsTriShape()) {
                 ++stats.triShapeCount;
-                mixWeaponVisualKey(key, 0x7472697368617065ull);
+                if (record.rendererData == 0 || record.vertexBlock == 0 || record.triangleBlock == 0) {
+                    ++stats.missingRendererCount;
+                } else if (record.numTriangles == 0 || record.numVertices == 0) {
+                    ++stats.emptyGeometryCount;
+                } else {
+                    ++stats.visibleTriShapeCount;
+                }
                 return;
             }
 
@@ -393,12 +476,9 @@ namespace frik::rock
             }
 
             auto& kids = niNode->GetRuntimeData().children;
-            mixWeaponVisualKey(key, static_cast<std::uint64_t>(kids.size()));
             for (std::uint16_t i = 0; i < kids.size(); ++i) {
                 auto* kid = kids[i].get();
-                mixWeaponVisualKey(key, static_cast<std::uint64_t>(i));
-                mixWeaponVisualKey(key, reinterpret_cast<std::uintptr_t>(kid));
-                accumulateWeaponVisualKey(kid, depth + 1, key, stats);
+                accumulateWeaponVisualKey(kid, node, i, depth + 1, key, stats);
             }
         }
     }
@@ -419,32 +499,56 @@ namespace frik::rock
         }
     }
 
+    std::uint32_t generatedWeaponCollisionFilterInfo(bool collisionEnabled)
+    {
+        const std::uint32_t baseFilterInfo = (0x000B << 16) | (ROCK_WEAPON_LAYER & 0x7F);
+        return collisionEnabled ? baseFilterInfo : (baseFilterInfo | collision_suppression_registry::kSuppressionNoCollideBit);
+    }
+
     WeaponCollision::WeaponCollision() { clearAtomicBodyIds(); }
+
+    WeaponCollision::WeaponBodyBank& WeaponCollision::activeWeaponBodies()
+    {
+        return _usingReplacementWeaponBodies ? _weaponReplacementBodies : _weaponBodies;
+    }
+
+    const WeaponCollision::WeaponBodyBank& WeaponCollision::activeWeaponBodies() const
+    {
+        return _usingReplacementWeaponBodies ? _weaponReplacementBodies : _weaponBodies;
+    }
+
+    WeaponCollision::WeaponBodyBank& WeaponCollision::inactiveWeaponBodies()
+    {
+        return _usingReplacementWeaponBodies ? _weaponBodies : _weaponReplacementBodies;
+    }
+
+    bool WeaponCollision::bankHasWeaponBody(const WeaponBodyBank& bank)
+    {
+        return std::any_of(bank.begin(), bank.end(), [](const WeaponBodyInstance& instance) {
+            return instance.body.isValid();
+        });
+    }
+
+    std::uint32_t WeaponCollision::bankWeaponBodyCount(const WeaponBodyBank& bank)
+    {
+        return static_cast<std::uint32_t>(std::count_if(bank.begin(), bank.end(), [](const WeaponBodyInstance& instance) {
+            return instance.body.isValid();
+        }));
+    }
 
     bool WeaponCollision::hasWeaponBody() const
     {
-        for (const auto& instance : _weaponBodies) {
-            if (instance.body.isValid()) {
-                return true;
-            }
-        }
-        return false;
+        return bankHasWeaponBody(activeWeaponBodies());
     }
 
     std::uint32_t WeaponCollision::getWeaponBodyCount() const
     {
-        std::uint32_t count = 0;
-        for (const auto& instance : _weaponBodies) {
-            if (instance.body.isValid()) {
-                ++count;
-            }
-        }
-        return count;
+        return bankWeaponBodyCount(activeWeaponBodies());
     }
 
     RE::hknpBodyId WeaponCollision::getWeaponBodyId() const
     {
-        for (const auto& instance : _weaponBodies) {
+        for (const auto& instance : activeWeaponBodies()) {
             if (instance.body.isValid()) {
                 return instance.body.getBodyId();
             }
@@ -507,8 +611,119 @@ namespace frik::rock
             outContact.socketRole = static_cast<WeaponSocketRole>(_weaponBodySocketRolesAtomic[i].load(std::memory_order_acquire));
             outContact.actionRole = static_cast<WeaponActionRole>(_weaponBodyActionRolesAtomic[i].load(std::memory_order_acquire));
             outContact.fallbackGripPose = static_cast<WeaponGripPoseId>(_weaponBodyGripPosesAtomic[i].load(std::memory_order_acquire));
+            outContact.interactionRoot = reinterpret_cast<RE::NiAVObject*>(_weaponBodyInteractionRootsAtomic[i].load(std::memory_order_acquire));
+            outContact.sourceRoot = reinterpret_cast<RE::NiAVObject*>(_weaponBodySourceRootsAtomic[i].load(std::memory_order_acquire));
+            outContact.weaponGenerationKey = _weaponBodyGenerationKeysAtomic[i].load(std::memory_order_acquire);
             return true;
         }
+        return false;
+    }
+
+    bool WeaponCollision::tryGetWeaponContactDebugInfo(std::uint32_t bodyId, WeaponInteractionDebugInfo& outInfo) const
+    {
+        outInfo = {};
+        if (bodyId == INVALID_BODY_ID) {
+            return false;
+        }
+
+        for (const auto& instance : activeWeaponBodies()) {
+            if (!instance.body.isValid() || instance.body.getBodyId().value != bodyId) {
+                continue;
+            }
+
+            outInfo.sourceName = instance.sourceName;
+            outInfo.sourceRootName = instance.sourceRootName;
+            return true;
+        }
+
+        return false;
+    }
+
+    std::vector<WeaponCollisionProfileEvidenceDescriptor> WeaponCollision::getProfileEvidenceDescriptors() const
+    {
+        std::vector<WeaponCollisionProfileEvidenceDescriptor> descriptors;
+        descriptors.reserve(getWeaponBodyCount());
+
+        auto copyLocalPoints = [](const std::vector<RE::NiPoint3>& points) {
+            std::vector<WeaponEvidencePoint3> result;
+            result.reserve(points.size());
+            for (const auto& point : points) {
+                result.push_back(makeWeaponEvidencePoint(point.x, point.y, point.z));
+            }
+            return result;
+        };
+
+        for (const auto& instance : activeWeaponBodies()) {
+            if (!instance.body.isValid()) {
+                continue;
+            }
+
+            WeaponCollisionProfileEvidenceDescriptor descriptor{};
+            descriptor.valid = true;
+            descriptor.bodyId = instance.body.getBodyId().value;
+            descriptor.sourceRootAddress = reinterpret_cast<std::uintptr_t>(instance.sourceNode);
+            descriptor.geometryRootAddress = reinterpret_cast<std::uintptr_t>(instance.driveNode);
+            descriptor.sourceRootName = instance.sourceRootName;
+            descriptor.geometryRootName = instance.driveNode ? safeNodeName(instance.driveNode) : "";
+            descriptor.sourceName = instance.sourceName;
+            descriptor.semantic = instance.semantic;
+            descriptor.localBoundsGame = WeaponEvidenceBounds3{
+                .min = makeWeaponEvidencePoint(instance.generatedLocalMinGame.x, instance.generatedLocalMinGame.y, instance.generatedLocalMinGame.z),
+                .max = makeWeaponEvidencePoint(instance.generatedLocalMaxGame.x, instance.generatedLocalMaxGame.y, instance.generatedLocalMaxGame.z),
+                .valid = true,
+            };
+            descriptor.localMeshPointsGame = copyLocalPoints(instance.generatedLocalPointsGame);
+            descriptor.pointCount = instance.generatedPointCount;
+            descriptors.push_back(std::move(descriptor));
+        }
+
+        return descriptors;
+    }
+
+    bool WeaponCollision::tryGetProfileEvidenceDescriptorForBodyId(
+        std::uint32_t bodyId,
+        WeaponCollisionProfileEvidenceDescriptor& outDescriptor,
+        RE::NiAVObject*& outSourceNode) const
+    {
+        outDescriptor = {};
+        outSourceNode = nullptr;
+        if (bodyId == INVALID_BODY_ID) {
+            return false;
+        }
+
+        auto copyLocalPoints = [](const std::vector<RE::NiPoint3>& points) {
+            std::vector<WeaponEvidencePoint3> result;
+            result.reserve(points.size());
+            for (const auto& point : points) {
+                result.push_back(makeWeaponEvidencePoint(point.x, point.y, point.z));
+            }
+            return result;
+        };
+
+        for (const auto& instance : activeWeaponBodies()) {
+            if (!instance.body.isValid() || instance.body.getBodyId().value != bodyId) {
+                continue;
+            }
+
+            outDescriptor.valid = true;
+            outDescriptor.bodyId = bodyId;
+            outDescriptor.sourceRootAddress = reinterpret_cast<std::uintptr_t>(instance.sourceNode);
+            outDescriptor.geometryRootAddress = reinterpret_cast<std::uintptr_t>(instance.driveNode);
+            outDescriptor.sourceRootName = instance.sourceRootName;
+            outDescriptor.geometryRootName = instance.driveNode ? safeNodeName(instance.driveNode) : "";
+            outDescriptor.sourceName = instance.sourceName;
+            outDescriptor.semantic = instance.semantic;
+            outDescriptor.localBoundsGame = WeaponEvidenceBounds3{
+                .min = makeWeaponEvidencePoint(instance.generatedLocalMinGame.x, instance.generatedLocalMinGame.y, instance.generatedLocalMinGame.z),
+                .max = makeWeaponEvidencePoint(instance.generatedLocalMaxGame.x, instance.generatedLocalMaxGame.y, instance.generatedLocalMaxGame.z),
+                .valid = true,
+            };
+            outDescriptor.localMeshPointsGame = copyLocalPoints(instance.generatedLocalPointsGame);
+            outDescriptor.pointCount = instance.generatedPointCount;
+            outSourceNode = instance.sourceNode;
+            return true;
+        }
+
         return false;
     }
 
@@ -523,26 +738,24 @@ namespace frik::rock
             return false;
         }
 
-        const RE::NiPoint3 probeLocal = weapon_collision_geometry_math::worldPointToLocal(
-            weaponNode->world.rotate,
-            weaponNode->world.translate,
-            weaponNode->world.scale,
-            probeWorldPoint);
-
         float bestDistanceSquared = std::numeric_limits<float>::max();
         const WeaponBodyInstance* bestInstance = nullptr;
 
-        for (const auto& instance : _weaponBodies) {
+        for (const auto& instance : activeWeaponBodies()) {
             if (!instance.body.isValid()) {
                 continue;
             }
 
-            const auto& semantic = instance.semantic;
-            const bool interactive = semantic.supportGripRole != WeaponSupportGripRole::None || semantic.reloadRole != WeaponReloadRole::None ||
-                                     semantic.socketRole != WeaponSocketRole::None || semantic.actionRole != WeaponActionRole::None;
-            if (!interactive) {
+            const RE::NiAVObject* driveRoot = instance.driveNode ? instance.driveNode : instance.sourceNode ? instance.sourceNode : weaponNode;
+            if (!driveRoot) {
                 continue;
             }
+
+            const RE::NiPoint3 probeLocal = weapon_collision_geometry_math::worldPointToLocal(
+                driveRoot->world.rotate,
+                driveRoot->world.translate,
+                driveRoot->world.scale,
+                probeWorldPoint);
 
             const float distanceSquared = weapon_interaction_probe_math::pointAabbDistanceSquared(
                 probeLocal,
@@ -568,17 +781,21 @@ namespace frik::rock
         outContact.socketRole = bestInstance->semantic.socketRole;
         outContact.actionRole = bestInstance->semantic.actionRole;
         outContact.fallbackGripPose = bestInstance->semantic.fallbackGripPose;
+        outContact.interactionRoot = bestInstance->driveNode;
+        outContact.sourceRoot = bestInstance->sourceNode;
+        outContact.weaponGenerationKey = _cachedWeaponKey;
+        outContact.probeDistanceGame = std::sqrt(bestDistanceSquared);
         return true;
     }
 
     BethesdaPhysicsBody& WeaponCollision::getWeaponBody()
     {
-        for (auto& instance : _weaponBodies) {
+        for (auto& instance : activeWeaponBodies()) {
             if (instance.body.isValid()) {
                 return instance.body;
             }
         }
-        return _weaponBodies[0].body;
+        return activeWeaponBodies()[0].body;
     }
 
     void WeaponCollision::init(RE::hknpWorld* world, void* bhkWorld)
@@ -589,10 +806,16 @@ namespace frik::rock
         _cachedWorld = world;
         _cachedBhkWorld = bhkWorld;
         _cachedWeaponKey = 0;
+        _pendingWeaponKey = 0;
+        _visualSettleState = {};
         _weaponBodyPending = false;
+        _usingReplacementWeaponBodies = false;
+        _driveRebuildRequested.store(false, std::memory_order_release);
+        _driveFailureCount.store(0, std::memory_order_release);
         _retryCounter = 0;
         _cachedConvexRadius = -1.0f;
         _cachedPointDedupGrid = -1.0f;
+        _cachedGroupingMode = -1;
         clearAtomicBodyIds();
 
         if (!g_rockConfig.rockWeaponCollisionEnabled) {
@@ -608,18 +831,24 @@ namespace frik::rock
         if (hasWeaponBody()) {
             ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown destroying generated bodies from cached context");
             destroyWeaponBody(_cachedWorld);
+        } else if (_dominantHandDisabled && _cachedWorld) {
+            enableDominantHandCollision(_cachedWorld);
         }
 
         _cachedWeaponKey = 0;
+        _pendingWeaponKey = 0;
+        _visualSettleState = {};
         _cachedWorld = nullptr;
         _cachedBhkWorld = nullptr;
         _weaponBodyPending = false;
+        _usingReplacementWeaponBodies = false;
+        _driveRebuildRequested.store(false, std::memory_order_release);
+        _driveFailureCount.store(0, std::memory_order_release);
         _retryCounter = 0;
         _cachedConvexRadius = -1.0f;
         _cachedPointDedupGrid = -1.0f;
+        _cachedGroupingMode = -1;
         _dominantHandDisabled = false;
-        hand_collision_suppression_math::clear(_dominantHandSuppression);
-        _dominantHandBroadPhaseSuppressed = false;
         _disabledHandBodyId.value = INVALID_BODY_ID;
 
         ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown");
@@ -627,6 +856,8 @@ namespace frik::rock
 
     void WeaponCollision::update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, RE::hknpBodyId dominantHandBodyId, float dt)
     {
+        (void)dt;
+
         if (!g_rockConfig.rockWeaponCollisionEnabled) {
             if (hasWeaponBody() && world) {
                 ROCK_LOG_INFO(Weapon, "WeaponCollision disabled via hot reload — destroying generated weapon bodies");
@@ -636,10 +867,15 @@ namespace frik::rock
                 enableDominantHandCollision(world);
             }
             _cachedWeaponKey = 0;
+            _pendingWeaponKey = 0;
+            _visualSettleState = {};
             _weaponBodyPending = false;
+            _driveRebuildRequested.store(false, std::memory_order_release);
+            _driveFailureCount.store(0, std::memory_order_release);
             _retryCounter = 0;
             _cachedConvexRadius = -1.0f;
             _cachedPointDedupGrid = -1.0f;
+            _cachedGroupingMode = -1;
             return;
         }
         if (!world)
@@ -653,10 +889,15 @@ namespace frik::rock
                 clearAtomicBodyIds();
             }
             _cachedWeaponKey = 0;
+            _pendingWeaponKey = 0;
+            _visualSettleState = {};
             _weaponBodyPending = false;
+            _driveRebuildRequested.store(false, std::memory_order_release);
+            _driveFailureCount.store(0, std::memory_order_release);
             _cachedWorld = world;
             _cachedConvexRadius = -1.0f;
             _cachedPointDedupGrid = -1.0f;
+            _cachedGroupingMode = -1;
         }
 
         if (!weaponNode) {
@@ -667,63 +908,200 @@ namespace frik::rock
             if (_dominantHandDisabled) {
                 enableDominantHandCollision(world);
             }
+            _cachedWeaponKey = 0;
+            _pendingWeaponKey = 0;
+            _visualSettleState = {};
+            _weaponBodyPending = false;
+            _driveRebuildRequested.store(false, std::memory_order_release);
+            _driveFailureCount.store(0, std::memory_order_release);
+            _retryCounter = 0;
+            _cachedConvexRadius = -1.0f;
+            _cachedPointDedupGrid = -1.0f;
+            _cachedGroupingMode = -1;
             return;
         }
 
         WeaponVisualKeyStats visualKeyStats{};
-        std::uint64_t currentKey = getEquippedWeaponKey(weaponNode, visualKeyStats);
+        const std::uint64_t observedKey = getEquippedWeaponKey(weaponNode, visualKeyStats);
+        const auto visualSettle = weapon_visual_composition_policy::advanceVisualSettle(_visualSettleState, observedKey);
+        std::uint64_t currentKey = visualSettle.settled ? observedKey : _cachedWeaponKey;
 
-        if (currentKey != _cachedWeaponKey) {
-            ROCK_LOG_INFO(Weapon, "Weapon changed: {:016X} -> {:016X} visualRoots={} visualNodes={} visualTriShapes={}", _cachedWeaponKey, currentKey,
-                visualKeyStats.rootCount, visualKeyStats.nodeCount, visualKeyStats.triShapeCount);
-
+        if (_driveRebuildRequested.exchange(false, std::memory_order_acq_rel)) {
+            ROCK_LOG_WARN(Weapon,
+                "Generated weapon collision drive failure requested rebuild cachedKey={:016X} observedKey={:016X}",
+                _cachedWeaponKey,
+                observedKey);
             if (hasWeaponBody()) {
                 destroyWeaponBody(world);
             }
-
-            _cachedWeaponKey = currentKey;
-            _weaponBodyPending = (currentKey != 0);
-            _cachedConvexRadius = -1.0f;
-            _cachedPointDedupGrid = -1.0f;
-        }
-
-        if (hasWeaponBody() && weaponCollisionSettingsChanged()) {
-            ROCK_LOG_INFO(Weapon, "Generated weapon collision settings changed — rebuilding weapon bodies");
-            destroyWeaponBody(world);
-            _weaponBodyPending = (currentKey != 0);
+            _cachedWeaponKey = 0;
+            _pendingWeaponKey = observedKey;
+            _weaponBodyPending = (observedKey != 0);
             _retryCounter = 0;
+            _driveFailureCount.store(0, std::memory_order_release);
+            currentKey = visualSettle.settled ? observedKey : 0;
         }
 
-        if (_weaponBodyPending) {
-            const bool shouldAttemptCreate = (++_retryCounter >= 90) || (_retryCounter == 1);
-            if (shouldAttemptCreate) {
-                if (_retryCounter >= 90) {
-                    _retryCounter = 0;
-                }
+        if (!visualSettle.settled) {
+            if (visualSettle.keyChanged) {
+                ROCK_LOG_INFO(Weapon,
+                    "Weapon visual composition changed: cached={:016X} observed={:016X} visualRoots={} visualNodes={} visualTriShapes={} visibleTriShapes={} missingGeometry={} invisibleNodes={} — waiting for stable geometry",
+                    _cachedWeaponKey,
+                    observedKey,
+                    visualKeyStats.rootCount,
+                    visualKeyStats.nodeCount,
+                    visualKeyStats.triShapeCount,
+                    visualKeyStats.visibleTriShapeCount,
+                    visualKeyStats.missingRendererCount + visualKeyStats.emptyGeometryCount,
+                    visualKeyStats.invisibleNodeCount);
+            } else {
+                ROCK_LOG_DEBUG(Weapon,
+                    "Weapon visual composition settling: observed={:016X} stableFrames={}/{} visualRoots={} visualNodes={} visibleTriShapes={} missingGeometry={}",
+                    observedKey,
+                    visualSettle.stableFrames,
+                    weapon_visual_composition_policy::kRequiredStableVisualFrames,
+                    visualKeyStats.rootCount,
+                    visualKeyStats.nodeCount,
+                    visualKeyStats.visibleTriShapeCount,
+                    visualKeyStats.missingRendererCount + visualKeyStats.emptyGeometryCount);
+            }
+        } else {
+            if (visualSettle.keyChanged || observedKey != _cachedWeaponKey) {
+                ROCK_LOG_DEBUG(Weapon,
+                    "Weapon visual composition settled: cached={:016X} observed={:016X} stableFrames={} visualRoots={} visualNodes={} visualTriShapes={} visibleTriShapes={} missingGeometry={} invisibleNodes={}",
+                    _cachedWeaponKey,
+                    observedKey,
+                    visualSettle.stableFrames,
+                    visualKeyStats.rootCount,
+                    visualKeyStats.nodeCount,
+                    visualKeyStats.triShapeCount,
+                    visualKeyStats.visibleTriShapeCount,
+                    visualKeyStats.missingRendererCount + visualKeyStats.emptyGeometryCount,
+                    visualKeyStats.invisibleNodeCount);
+            }
 
-                /*
-                 * Mesh-only weapon collision:
-                 * Mirroring existing FO4VR bodies was useful during bring-up, but
-                 * those native shapes are incomplete for firearms and use different
-                 * authoring frames from the generated visible-mesh hulls. If the
-                 * visible mesh has not streamed in yet, keep the weapon pending and
-                 * retry instead of creating a second, stale collision convention.
-                 */
-                std::vector<GeneratedHullSource> generatedSources;
-                const std::size_t generatedCount = findGeneratedWeaponShapeSources(weaponNode, generatedSources);
-                if (generatedCount > 0) {
-                    createGeneratedWeaponBodies(world, generatedSources);
-                }
-                const bool created = hasWeaponBody();
-
-                if (created) {
-                    _weaponBodyPending = false;
-                    _retryCounter = 0;
-                    _cachedConvexRadius = g_rockConfig.rockWeaponCollisionConvexRadius;
-                    _cachedPointDedupGrid = g_rockConfig.rockWeaponCollisionPointDedupGrid;
+            if (currentKey != _cachedWeaponKey) {
+                if (hasWeaponBody()) {
+                    if (_pendingWeaponKey != currentKey) {
+                        ROCK_LOG_INFO(Weapon,
+                            "Weapon visual composition changed while generated bodies are valid: cached={:016X} pending={:016X} visualRoots={} visualNodes={} visualTriShapes={} visibleTriShapes={} — keeping old bodies until replacement mesh is ready",
+                            _cachedWeaponKey,
+                            currentKey,
+                            visualKeyStats.rootCount,
+                            visualKeyStats.nodeCount,
+                            visualKeyStats.triShapeCount,
+                            visualKeyStats.visibleTriShapeCount);
+                    }
+                    _pendingWeaponKey = currentKey;
+                    _weaponBodyPending = (currentKey != 0);
                 } else {
-                    ROCK_LOG_WARN(Weapon, "Generated weapon mesh collision unavailable — keeping weapon pending for retry");
-                    _weaponBodyPending = true;
+                    ROCK_LOG_INFO(Weapon,
+                        "Weapon changed: {:016X} -> {:016X} visualRoots={} visualNodes={} visualTriShapes={} visibleTriShapes={} missingGeometry={} invisibleNodes={}",
+                        _cachedWeaponKey,
+                        currentKey,
+                        visualKeyStats.rootCount,
+                        visualKeyStats.nodeCount,
+                        visualKeyStats.triShapeCount,
+                        visualKeyStats.visibleTriShapeCount,
+                        visualKeyStats.missingRendererCount + visualKeyStats.emptyGeometryCount,
+                        visualKeyStats.invisibleNodeCount);
+                    _cachedWeaponKey = currentKey;
+                    _pendingWeaponKey = currentKey;
+                    _weaponBodyPending = (currentKey != 0);
+                    _cachedConvexRadius = -1.0f;
+                    _cachedPointDedupGrid = -1.0f;
+                    _cachedGroupingMode = -1;
+                }
+            }
+
+            if (hasWeaponBody() && weaponCollisionSettingsChanged()) {
+                ROCK_LOG_INFO(Weapon, "Generated weapon collision settings changed — keeping current bodies while replacement is pending");
+                _pendingWeaponKey = currentKey;
+                _weaponBodyPending = (currentKey != 0);
+                _retryCounter = 0;
+            }
+
+            if (_weaponBodyPending) {
+                const bool shouldAttemptCreate = (++_retryCounter >= 90) || (_retryCounter == 1);
+                if (shouldAttemptCreate) {
+                    if (_retryCounter >= 90) {
+                        _retryCounter = 0;
+                    }
+
+                    /*
+                     * Mesh-only weapon collision:
+                     * Mirroring existing FO4VR bodies was useful during bring-up, but
+                     * those native shapes are incomplete for firearms and use different
+                     * authoring frames from the generated visible-mesh hulls. If the
+                     * visible mesh has not streamed in yet, keep the weapon pending and
+                     * retry instead of creating a second, stale collision convention.
+                     */
+                    std::vector<GeneratedHullSource> generatedSources;
+                    const std::size_t generatedCount = findGeneratedWeaponShapeSources(weaponNode, generatedSources);
+                    const bool hasBuildableSource = std::any_of(generatedSources.begin(), generatedSources.end(), [](const GeneratedHullSource& source) {
+                        return pointCloudCanBuildHull(source.localPointsGame);
+                    });
+                    const std::uint64_t replacementKey = (_pendingWeaponKey != 0) ? _pendingWeaponKey : currentKey;
+                    const auto rebuildDecision = weapon_authority_lifecycle_policy::evaluateGeneratedCollisionRebuild(
+                        weapon_authority_lifecycle_policy::GeneratedCollisionRebuildInput{
+                            .hasExistingBodies = hasWeaponBody(),
+                            .cachedKey = _cachedWeaponKey,
+                            .currentKey = replacementKey,
+                            .settingsChanged = weaponCollisionSettingsChanged(),
+                            .generatedSourceCount = generatedCount,
+                            .hasBuildableSource = hasBuildableSource,
+                        });
+
+                    bool created = false;
+                    if (rebuildDecision.action == weapon_authority_lifecycle_policy::GeneratedCollisionRebuildAction::CreateInitial) {
+                        _cachedWeaponKey = replacementKey;
+                        created = createGeneratedWeaponBodiesInBank(world, generatedSources, activeWeaponBodies(), true) > 0;
+                    } else if (rebuildDecision.action == weapon_authority_lifecycle_policy::GeneratedCollisionRebuildAction::ReplaceExisting) {
+                        auto& replacementBank = inactiveWeaponBodies();
+                        destroyWeaponBodyBank(replacementBank, true);
+                        const auto replacementCount = createGeneratedWeaponBodiesInBank(world, generatedSources, replacementBank, false);
+                        if (replacementCount > 0) {
+                            ROCK_LOG_INFO(Weapon,
+                                "Replacing generated weapon collision bodies cachedKey={:016X} pendingKey={:016X} sourceCount={} replacementBodies={} reason={}",
+                                _cachedWeaponKey,
+                                replacementKey,
+                                generatedCount,
+                                replacementCount,
+                                rebuildDecision.reason);
+                            if (_dominantHandDisabled && world) {
+                                enableDominantHandCollision(world);
+                            }
+                            destroyWeaponBodyBank(activeWeaponBodies(), true);
+                            _usingReplacementWeaponBodies = !_usingReplacementWeaponBodies;
+                            _cachedWeaponKey = replacementKey;
+                            setWeaponBodyBankCollisionEnabled(world, activeWeaponBodies(), true);
+                            publishAtomicBodyIds(activeWeaponBodies());
+                            created = true;
+                        } else {
+                            destroyWeaponBodyBank(replacementBank, true);
+                            created = false;
+                        }
+                    } else {
+                        created = hasWeaponBody() && rebuildDecision.keepExistingBodies;
+                    }
+
+                    if (created && !rebuildDecision.pending) {
+                        _weaponBodyPending = false;
+                        _pendingWeaponKey = 0;
+                        _retryCounter = 0;
+                        _cachedConvexRadius = g_rockConfig.rockWeaponCollisionConvexRadius;
+                        _cachedPointDedupGrid = g_rockConfig.rockWeaponCollisionPointDedupGrid;
+                        _cachedGroupingMode = g_rockConfig.rockWeaponCollisionGroupingMode;
+                    } else {
+                        ROCK_LOG_SAMPLE_WARN(Weapon,
+                            g_rockConfig.rockLogSampleMilliseconds,
+                            "Generated weapon mesh collision unavailable — keeping weapon pending for retry cachedKey={:016X} pendingKey={:016X} sources={} reason={}",
+                            _cachedWeaponKey,
+                            _pendingWeaponKey,
+                            generatedCount,
+                            rebuildDecision.reason);
+                        _weaponBodyPending = true;
+                    }
                 }
             }
         }
@@ -734,17 +1112,13 @@ namespace frik::rock
             enableDominantHandCollision(world);
         }
 
-        if (hasWeaponBody() && weaponNode) {
-            for (std::size_t i = 0; i < _weaponBodies.size(); ++i) {
-                auto& instance = _weaponBodies[i];
-                if (!instance.body.isValid()) {
-                    continue;
-                }
-                const RE::NiTransform& sourceRootTransform = instance.sourceNode ? instance.sourceNode->world : weaponNode->world;
-                const RE::NiTransform generatedTransform = makeGeneratedBodyWorldTransform(sourceRootTransform, instance.generatedLocalCenterGame);
-                updateBodyTransform(world, instance, generatedTransform, dt, i);
-            }
-        }
+        /*
+         * Per-frame body transforms are synchronized after weapon visual authority
+         * settles in PhysicsInteraction. HIGGS uses one final desired weapon frame
+         * for visual weapon, collision offset, offset node, and wand updates; ROCK
+         * follows that ownership rule here instead of moving generated Havok bodies
+         * once from FRIK/current state and again from ROCK two-handed authority.
+         */
     }
 
     std::uint64_t WeaponCollision::getEquippedWeaponKey(RE::NiAVObject* weaponNode, WeaponVisualKeyStats& stats) const
@@ -761,7 +1135,7 @@ namespace frik::rock
          * current TriShape subtree makes generated collision rebuild when the
          * mesh changes while still ignoring per-frame transform movement.
          */
-        std::uint64_t key = WEAPON_VISUAL_KEY_OFFSET;
+        std::uint64_t key = weapon_visual_composition_policy::kWeaponVisualCompositionOffset;
         const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode);
         for (const auto& candidate : candidates) {
             if (!candidate.root) {
@@ -771,10 +1145,10 @@ namespace frik::rock
             ++stats.rootCount;
             mixWeaponVisualString(key, candidate.label);
             mixWeaponVisualKey(key, reinterpret_cast<std::uintptr_t>(candidate.root));
-            accumulateWeaponVisualKey(candidate.root, 0, key, stats);
+            accumulateWeaponVisualKey(candidate.root, nullptr, 0, 0, key, stats);
         }
 
-        return key != WEAPON_VISUAL_KEY_OFFSET ? key : reinterpret_cast<std::uint64_t>(weaponNode);
+        return key != weapon_visual_composition_policy::kWeaponVisualCompositionOffset ? key : reinterpret_cast<std::uint64_t>(weaponNode);
     }
 
     std::size_t WeaponCollision::findGeneratedWeaponShapeSources(RE::NiAVObject* weaponNode, std::vector<GeneratedHullSource>& outSources)
@@ -782,32 +1156,283 @@ namespace frik::rock
         outSources.clear();
         const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode);
         if (candidates.empty()) {
-            ROCK_LOG_INFO(Weapon, "Generated weapon mesh source scan: no weapon root candidates");
+            ROCK_LOG_DEBUG(Weapon, "Generated weapon mesh source scan: no weapon root candidates");
             return 0;
         }
 
         RE::NiAVObject* selectedRoot = nullptr;
         const char* selectedLabel = "";
+        std::uint64_t selectedScore = 0;
+        const auto groupingMode = weapon_collision_grouping_policy::sanitizeWeaponCollisionGroupingMode(g_rockConfig.rockWeaponCollisionGroupingMode);
         for (const auto& candidate : candidates) {
             std::vector<GeneratedHullSource> candidateSources;
             std::uint32_t visitedShapes = 0;
             std::uint32_t extractedTriangles = 0;
-            findGeneratedWeaponShapeSourcesRecursive(candidate.root, candidate.root, candidate.root->world, 0, candidateSources, visitedShapes, extractedTriangles);
+            if (groupingMode == weapon_collision_grouping_policy::WeaponCollisionGroupingMode::LegacyTriShape) {
+                findGeneratedWeaponShapeSourcesRecursive(candidate.root, candidate.root, candidate.root->world, 0, candidateSources, visitedShapes, extractedTriangles);
+            } else {
+                /*
+                 * Semantic modes keep the HIGGS-style idea of a coherent owned
+                 * weapon collision package, but they respect FO4VR visible
+                 * weapon authoring. Mode 1 preserves one authored semantic node
+                 * per generated source. Mode 2 additionally treats helper nodes
+                 * such as WeaponExtra* as structure and merges compatible part
+                 * evidence before source creation so PAPER sees one reload body
+                 * intent for magazines, stocks, bolts, and action pieces. The
+                 * selected visual root remains the physics drive root; semantic
+                 * roots are metadata and grouping boundaries, not independent
+                 * keyframed weapon roots. Loaded ammo display visuals stay out
+                 * of permanent weapon collision.
+                 */
+                const bool compoundGroupingMode =
+                    groupingMode == weapon_collision_grouping_policy::WeaponCollisionGroupingMode::CompoundSemanticPart;
+                std::deque<SemanticPartPointCloud> partClouds;
 
-            ROCK_LOG_INFO(Weapon,
-                "Generated weapon mesh candidate: label='{}' root='{}' addr={:x} visitedShapes={} triangles={} hulls={}",
-                candidate.label, safeNodeName(candidate.root), reinterpret_cast<std::uintptr_t>(candidate.root), visitedShapes, extractedTriangles, candidateSources.size());
+                auto classifyNodeSemantic = [compoundGroupingMode](std::string_view nodeName) {
+                    return compoundGroupingMode ? weapon_collision_grouping_policy::classifyCompoundSemanticWeaponPartName(nodeName) :
+                                                  classifyWeaponPartName(nodeName);
+                };
+                auto excludeNodeSemantic = [compoundGroupingMode](const WeaponPartClassification& semantic) {
+                    return compoundGroupingMode ? weapon_collision_grouping_policy::excludeFromCompoundSemanticWeaponCollision(semantic) :
+                                                  weapon_collision_grouping_policy::excludeFromSemanticWeaponCollision(semantic);
+                };
+                auto startsPartGroup = [compoundGroupingMode](const WeaponPartClassification& semantic) {
+                    return compoundGroupingMode ? weapon_collision_grouping_policy::startsCompoundSemanticWeaponPartGroup(semantic) :
+                                                  weapon_collision_grouping_policy::startsSemanticWeaponPartGroup(semantic);
+                };
+                auto childSplitsFromParent = [compoundGroupingMode](const WeaponPartClassification& parent, const WeaponPartClassification& child) {
+                    return compoundGroupingMode ? weapon_collision_grouping_policy::compoundSemanticChildSplitsFromParent(parent, child) :
+                                                  weapon_collision_grouping_policy::semanticChildSplitsFromParent(parent, child);
+                };
+
+                auto appendGeneratedSource = [&](RE::NiAVObject* driveRoot,
+                                                 RE::NiAVObject* sourceRoot,
+                                                 std::string sourceName,
+                                                 const WeaponPartClassification& semantic,
+                                                 std::vector<RE::NiPoint3> localPoints,
+                                                 int depth) {
+                    const float dedupGridGame = (std::max)(g_rockConfig.rockWeaponCollisionPointDedupGrid * havokToGameScale(), 0.01f);
+                    localPoints = dedupePointCloud(localPoints, dedupGridGame);
+                    if (!pointCloudCanBuildHull(localPoints)) {
+                        ROCK_LOG_TRACE(Weapon, "{}generated mesh source skipped '{}': degenerate grouped point cloud points={}", std::string(depth * 2, ' '), sourceName,
+                            localPoints.size());
+                        return;
+                    }
+
+                    std::vector<std::vector<RE::NiPoint3>> clusters;
+                    weapon_collision_geometry_math::splitOversizedCluster(localPoints, MAX_CONVEX_HULL_POINTS, clusters);
+                    if (compoundGroupingMode) {
+                        GeneratedHullSource source;
+                        source.localCenterGame = weapon_collision_geometry_math::pointCenter(localPoints);
+                        const auto sourceBounds = pointCloudBounds(localPoints);
+                        source.localMinGame = sourceBounds.min;
+                        source.localMaxGame = sourceBounds.max;
+                        source.localPointsGame = std::move(localPoints);
+                        source.driveRoot = driveRoot ? driveRoot : sourceRoot;
+                        source.sourceRoot = sourceRoot;
+                        source.sourceGroupId = reinterpret_cast<std::uintptr_t>(sourceRoot ? sourceRoot : source.driveRoot);
+                        source.sourceName = std::move(sourceName);
+                        source.semantic = semantic;
+
+                        for (auto& clusterPoints : clusters) {
+                            auto cluster = weapon_collision_geometry_math::limitPointCloud(std::move(clusterPoints), MAX_CONVEX_HULL_POINTS);
+                            if (pointCloudCanBuildHull(cluster)) {
+                                source.childLocalPointCloudsGame.push_back(std::move(cluster));
+                            }
+                        }
+
+                        if (source.childLocalPointCloudsGame.empty()) {
+                            ROCK_LOG_TRACE(Weapon,
+                                "{}generated compound mesh source skipped '{}': no buildable child clusters",
+                                std::string(depth * 2, ' '),
+                                source.sourceName);
+                            return;
+                        }
+
+                        ROCK_LOG_TRACE(Weapon,
+                            "{}generated compound mesh source '{}': points={} children={} center=({:.2f},{:.2f},{:.2f}) root='{}'",
+                            std::string(depth * 2, ' '),
+                            source.sourceName,
+                            source.localPointsGame.size(),
+                            source.childLocalPointCloudsGame.size(),
+                            source.localCenterGame.x,
+                            source.localCenterGame.y,
+                            source.localCenterGame.z,
+                            safeNodeName(sourceRoot));
+                        candidateSources.push_back(std::move(source));
+                        return;
+                    }
+
+                    for (std::size_t clusterIndex = 0; clusterIndex < clusters.size(); ++clusterIndex) {
+                        auto cluster = weapon_collision_geometry_math::limitPointCloud(std::move(clusters[clusterIndex]), MAX_CONVEX_HULL_POINTS);
+                        if (!pointCloudCanBuildHull(cluster)) {
+                            continue;
+                        }
+
+                        GeneratedHullSource source;
+                        source.localCenterGame = weapon_collision_geometry_math::pointCenter(cluster);
+                        const auto bounds = pointCloudBounds(cluster);
+                        source.localMinGame = bounds.min;
+                        source.localMaxGame = bounds.max;
+                        source.localPointsGame = std::move(cluster);
+                        source.driveRoot = driveRoot ? driveRoot : sourceRoot;
+                        source.sourceRoot = sourceRoot;
+                        source.sourceGroupId = reinterpret_cast<std::uintptr_t>(sourceRoot ? sourceRoot : source.driveRoot);
+                        source.sourceName = sourceName;
+                        if (clusters.size() > 1) {
+                            source.sourceName += "#";
+                            source.sourceName += std::to_string(clusterIndex);
+                        }
+                        source.semantic = semantic;
+                        ROCK_LOG_TRACE(Weapon,
+                            "{}generated grouped mesh source '{}': points={} center=({:.2f},{:.2f},{:.2f}) root='{}'",
+                            std::string(depth * 2, ' '),
+                            source.sourceName,
+                            source.localPointsGame.size(),
+                            source.localCenterGame.x,
+                            source.localCenterGame.y,
+                            source.localCenterGame.z,
+                            safeNodeName(sourceRoot));
+                        candidateSources.push_back(std::move(source));
+                    }
+                };
+
+                auto appendTrianglesAsLocalPoints = [](const std::vector<TriangleData>& triangles, const RE::NiTransform& rootTransform, std::vector<RE::NiPoint3>& points) {
+                    points.reserve(points.size() + triangles.size() * 3);
+                    for (const auto& triangle : triangles) {
+                        points.push_back(weapon_collision_geometry_math::worldPointToLocal(rootTransform.rotate, rootTransform.translate, rootTransform.scale, triangle.v0));
+                        points.push_back(weapon_collision_geometry_math::worldPointToLocal(rootTransform.rotate, rootTransform.translate, rootTransform.scale, triangle.v1));
+                        points.push_back(weapon_collision_geometry_math::worldPointToLocal(rootTransform.rotate, rootTransform.translate, rootTransform.scale, triangle.v2));
+                    }
+                };
+
+                auto findPartCloud = [&](RE::NiAVObject* sourceRoot, const WeaponPartClassification& semantic) -> SemanticPartPointCloud* {
+                    for (auto& part : partClouds) {
+                        if (compoundGroupingMode &&
+                            weapon_collision_grouping_policy::compoundSemanticPartsMayShareBody(part.semantic, semantic)) {
+                            return &part;
+                        }
+                        if (!compoundGroupingMode && part.semanticRoot == sourceRoot) {
+                            return &part;
+                        }
+                    }
+                    return nullptr;
+                };
+
+                auto ensurePartCloud = [&](RE::NiAVObject* sourceRoot, const char* sourceName, const WeaponPartClassification& semantic) -> SemanticPartPointCloud* {
+                    if (auto* existing = findPartCloud(sourceRoot, semantic)) {
+                        return existing;
+                    }
+                    SemanticPartPointCloud part{};
+                    part.driveRoot = candidate.root;
+                    part.semanticRoot = sourceRoot;
+                    part.sourceName = sourceName ? sourceName : "";
+                    part.semantic = semantic;
+                    partClouds.push_back(std::move(part));
+                    return &partClouds.back();
+                };
+
+                auto traverseSemantic = [&](auto&& self, RE::NiAVObject* node, SemanticPartPointCloud* activePart, int depth) -> void {
+                    if (!node || depth > 15) {
+                        return;
+                    }
+                    if (!weaponVisualNodeVisible(node)) {
+                        return;
+                    }
+
+                    const char* nodeName = safeNodeName(node);
+                    const auto nodeSemantic = classifyNodeSemantic(nodeName);
+
+                    if (auto* triShape = node->IsTriShape()) {
+                        ++visitedShapes;
+                        std::vector<TriangleData> triangles;
+                        const bool skinned = isSkinned(triShape);
+                        const int added = skinned ? extractTrianglesFromSkinnedTriShape(triShape, triangles) : extractTrianglesFromTriShape(triShape, triangles);
+                        if (added <= 0) {
+                            ROCK_LOG_TRACE(Weapon, "{}generated grouped mesh source skipped '{}': no extractable triangles", std::string(depth * 2, ' '), nodeName);
+                            return;
+                        }
+                        extractedTriangles += static_cast<std::uint32_t>(added);
+
+                        if (excludeNodeSemantic(nodeSemantic)) {
+                            ROCK_LOG_TRACE(Weapon, "{}generated grouped mesh source skipped '{}': ammo display semantic excluded", std::string(depth * 2, ' '), nodeName);
+                            return;
+                        }
+
+                        if (activePart && !childSplitsFromParent(activePart->semantic, nodeSemantic)) {
+                            appendTrianglesAsLocalPoints(triangles, activePart->driveRoot->world, activePart->localPointsGame);
+                            return;
+                        }
+
+                        const bool triShapeIsSemanticPart = startsPartGroup(nodeSemantic);
+                        RE::NiAVObject* sourceRoot = triShapeIsSemanticPart ? node : candidate.root;
+                        std::vector<RE::NiPoint3> localPoints;
+                        appendTrianglesAsLocalPoints(triangles, candidate.root->world, localPoints);
+                        if (compoundGroupingMode && triShapeIsSemanticPart) {
+                            if (auto* part = ensurePartCloud(sourceRoot, nodeName, nodeSemantic)) {
+                                part->localPointsGame.insert(part->localPointsGame.end(), localPoints.begin(), localPoints.end());
+                            }
+                            return;
+                        }
+                        appendGeneratedSource(candidate.root, sourceRoot, nodeName, triShapeIsSemanticPart ? nodeSemantic : classifyNodeSemantic(nodeName), std::move(localPoints), depth);
+                        return;
+                    }
+
+                    SemanticPartPointCloud* nextPart = activePart;
+                    if (node != candidate.root) {
+                        if (excludeNodeSemantic(nodeSemantic)) {
+                            ROCK_LOG_TRACE(Weapon, "{}generated grouped mesh subtree skipped '{}': ammo display semantic excluded", std::string(depth * 2, ' '), nodeName);
+                            return;
+                        }
+                        if (startsPartGroup(nodeSemantic) && (!activePart || childSplitsFromParent(activePart->semantic, nodeSemantic))) {
+                            nextPart = ensurePartCloud(node, nodeName, nodeSemantic);
+                        }
+                    }
+
+                    auto* niNode = node->IsNode();
+                    if (!niNode) {
+                        return;
+                    }
+
+                    auto& kids = niNode->GetRuntimeData().children;
+                    for (std::uint16_t i = 0; i < kids.size(); ++i) {
+                        if (auto* kid = kids[i].get()) {
+                            self(self, kid, nextPart, depth + 1);
+                        }
+                    }
+                };
+
+                traverseSemantic(traverseSemantic, candidate.root, nullptr, 0);
+
+                for (auto& part : partClouds) {
+                    appendGeneratedSource(part.driveRoot, part.semanticRoot, part.sourceName, part.semantic, std::move(part.localPointsGame), 0);
+                }
+            }
+
+            ROCK_LOG_DEBUG(Weapon,
+                "Generated weapon mesh candidate: label='{}' root='{}' addr={:x} grouping={} visitedShapes={} triangles={} hulls={}",
+                candidate.label,
+                safeNodeName(candidate.root),
+                reinterpret_cast<std::uintptr_t>(candidate.root),
+                weapon_collision_grouping_policy::weaponCollisionGroupingModeName(groupingMode),
+                visitedShapes,
+                extractedTriangles,
+                candidateSources.size());
 
             if (!candidateSources.empty()) {
-                selectedRoot = candidate.root;
-                selectedLabel = candidate.label;
-                outSources = std::move(candidateSources);
-                break;
+                const std::uint64_t candidateScore =
+                    weapon_collision_grouping_policy::weaponCollisionCandidateScore(candidateSources.size(), extractedTriangles);
+                if (!selectedRoot || candidateScore > selectedScore) {
+                    selectedScore = candidateScore;
+                    selectedRoot = candidate.root;
+                    selectedLabel = candidate.label;
+                    outSources = std::move(candidateSources);
+                }
             }
         }
 
         if (!selectedRoot) {
-            ROCK_LOG_INFO(Weapon, "Generated weapon mesh source scan: all {} candidates produced zero hulls", candidates.size());
+            ROCK_LOG_DEBUG(Weapon, "Generated weapon mesh source scan: all {} candidates produced zero hulls", candidates.size());
             return 0;
         }
 
@@ -827,11 +1452,25 @@ namespace frik::rock
                 selectionInputs.push_back(WeaponSemanticHullBudgetInput{
                     .semantic = source.semantic,
                     .sourceIndex = i,
+                    .sourceGroupId = source.sourceGroupId,
                     .pointCount = source.localPointsGame.size(),
                 });
             }
 
             const auto selectedIndices = selectSemanticWeaponHullIndices(selectionInputs, MAX_WEAPON_BODIES);
+            std::unordered_set<std::size_t> selectedIndexSet(selectedIndices.begin(), selectedIndices.end());
+            for (std::size_t i = 0; i < outSources.size(); ++i) {
+                if (selectedIndexSet.find(i) == selectedIndexSet.end()) {
+                    const auto& dropped = outSources[i];
+                    ROCK_LOG_DEBUG(Weapon,
+                        "Generated weapon mesh hull budget dropped source='{}' root='{}' partKind={} points={} sourceGroup={:x}",
+                        dropped.sourceName,
+                        safeNodeName(dropped.sourceRoot),
+                        static_cast<int>(dropped.semantic.partKind),
+                        dropped.localPointsGame.size(),
+                        dropped.sourceGroupId);
+                }
+            }
 
             std::vector<GeneratedHullSource> selectedSources;
             selectedSources.reserve(selectedIndices.size());
@@ -841,7 +1480,7 @@ namespace frik::rock
                 }
             }
 
-            ROCK_LOG_INFO(Weapon,
+            ROCK_LOG_DEBUG(Weapon,
                 "Generated weapon mesh hull budget: extracted={} kept={} dropped={} gameplayCritical={} cosmetic={} maxBodies={} policy=semantic-priority",
                 outSources.size(), selectedSources.size(), outSources.size() - selectedSources.size(), gameplayCriticalCount, cosmeticCount, MAX_WEAPON_BODIES);
 
@@ -850,14 +1489,14 @@ namespace frik::rock
 
         for (std::size_t i = 0; i < outSources.size(); ++i) {
             const auto coverage = classifyGeneratedHull(outSources[i].sourceName);
-            ROCK_LOG_INFO(Weapon,
+            ROCK_LOG_TRACE(Weapon,
                 "Generated weapon mesh selected[{}]: category={} source='{}' points={} center=({:.2f},{:.2f},{:.2f}) boundsMin=({:.2f},{:.2f},{:.2f}) boundsMax=({:.2f},{:.2f},{:.2f})",
                 i, coverage.label, outSources[i].sourceName, outSources[i].localPointsGame.size(), outSources[i].localCenterGame.x, outSources[i].localCenterGame.y,
                 outSources[i].localCenterGame.z, outSources[i].localMinGame.x, outSources[i].localMinGame.y, outSources[i].localMinGame.z, outSources[i].localMaxGame.x,
                 outSources[i].localMaxGame.y, outSources[i].localMaxGame.z);
         }
 
-        ROCK_LOG_INFO(Weapon, "Generated weapon mesh source selected: label='{}' root='{}' hulls={}", selectedLabel, safeNodeName(selectedRoot), outSources.size());
+        ROCK_LOG_DEBUG(Weapon, "Generated weapon mesh source selected: label='{}' root='{}' hulls={}", selectedLabel, safeNodeName(selectedRoot), outSources.size());
         return outSources.size();
     }
 
@@ -867,7 +1506,7 @@ namespace frik::rock
         if (!node || depth > 15) {
             return;
         }
-        if (node->flags.flags & 1) {
+        if (!weaponVisualNodeVisible(node)) {
             return;
         }
 
@@ -879,7 +1518,7 @@ namespace frik::rock
             const bool skinned = isSkinned(triShape);
             const int added = skinned ? extractTrianglesFromSkinnedTriShape(triShape, triangles) : extractTrianglesFromTriShape(triShape, triangles);
             if (added <= 0) {
-                ROCK_LOG_INFO(Weapon, "{}generated mesh source skipped '{}': no extractable triangles", std::string(depth * 2, ' '), safeNodeName(node));
+                ROCK_LOG_TRACE(Weapon, "{}generated mesh source skipped '{}': no extractable triangles", std::string(depth * 2, ' '), safeNodeName(node));
                 return;
             }
             extractedTriangles += static_cast<std::uint32_t>(added);
@@ -892,10 +1531,10 @@ namespace frik::rock
                 localPoints.push_back(weapon_collision_geometry_math::worldPointToLocal(weaponRootTransform.rotate, weaponRootTransform.translate, weaponRootTransform.scale, triangle.v2));
             }
 
-            const float dedupGridGame = (std::max)(g_rockConfig.rockWeaponCollisionPointDedupGrid * kHavokToGameScale, 0.01f);
+            const float dedupGridGame = (std::max)(g_rockConfig.rockWeaponCollisionPointDedupGrid * havokToGameScale(), 0.01f);
             localPoints = dedupePointCloud(localPoints, dedupGridGame);
             if (!pointCloudCanBuildHull(localPoints)) {
-                ROCK_LOG_INFO(Weapon, "{}generated mesh source skipped '{}': degenerate point cloud points={}", std::string(depth * 2, ' '), safeNodeName(node),
+                ROCK_LOG_TRACE(Weapon, "{}generated mesh source skipped '{}': degenerate point cloud points={}", std::string(depth * 2, ' '), safeNodeName(node),
                     localPoints.size());
                 return;
             }
@@ -914,14 +1553,16 @@ namespace frik::rock
                 source.localMinGame = bounds.min;
                 source.localMaxGame = bounds.max;
                 source.localPointsGame = std::move(cluster);
+                source.driveRoot = sourceRoot;
                 source.sourceRoot = sourceRoot;
+                source.sourceGroupId = reinterpret_cast<std::uintptr_t>(node);
                 source.sourceName = safeNodeName(node);
                 if (clusters.size() > 1) {
                     source.sourceName += "#";
                     source.sourceName += std::to_string(clusterIndex);
                 }
                 source.semantic = classifyWeaponPartName(source.sourceName);
-                ROCK_LOG_INFO(Weapon, "{}generated mesh source '{}': points={} center=({:.2f},{:.2f},{:.2f})", std::string(depth * 2, ' '), source.sourceName,
+                ROCK_LOG_TRACE(Weapon, "{}generated mesh source '{}': points={} center=({:.2f},{:.2f},{:.2f})", std::string(depth * 2, ' '), source.sourceName,
                     source.localPointsGame.size(), source.localCenterGame.x, source.localCenterGame.y, source.localCenterGame.z);
                 outSources.push_back(std::move(source));
             }
@@ -942,63 +1583,114 @@ namespace frik::rock
     RE::NiTransform WeaponCollision::makeGeneratedBodyWorldTransform(const RE::NiTransform& weaponRootTransform, const RE::NiPoint3& localCenterGame) const
     {
         RE::NiTransform result = weaponRootTransform;
-        const RE::NiMatrix3 generatedPackageRotation = weapon_collision_geometry_math::transposeRotation(weaponRootTransform.rotate);
-        RE::NiPoint3 correctedLocalCenter = localCenterGame;
-        if (g_rockConfig.rockWeaponCollisionRotationCorrectionEnabled) {
-            const auto correction = weapon_collision_adjustment_math::makeLocalEulerCorrection<RE::NiMatrix3>(g_rockConfig.rockWeaponCollisionRotationDegrees);
-            correctedLocalCenter = weapon_collision_geometry_math::rotateLocalPoint(correction, localCenterGame);
-        }
-
-        result.rotate = weapon_collision_adjustment_math::applyLocalEulerCorrection(
-            generatedPackageRotation, g_rockConfig.rockWeaponCollisionRotationDegrees, g_rockConfig.rockWeaponCollisionRotationCorrectionEnabled);
-        result.translate = weapon_collision_geometry_math::localPointToWorld(weaponRootTransform.rotate, weaponRootTransform.translate, weaponRootTransform.scale, correctedLocalCenter);
+        result.rotate = weaponRootTransform.rotate;
+        result.translate = weapon_collision_geometry_math::localPointToWorld(weaponRootTransform.rotate, weaponRootTransform.translate, weaponRootTransform.scale, localCenterGame);
         return result;
     }
 
     bool WeaponCollision::weaponCollisionSettingsChanged() const
     {
-        if (_cachedConvexRadius < 0.0f || _cachedPointDedupGrid < 0.0f) {
+        if (_cachedConvexRadius < 0.0f || _cachedPointDedupGrid < 0.0f || _cachedGroupingMode < 0) {
             return false;
         }
         return std::abs(g_rockConfig.rockWeaponCollisionConvexRadius - _cachedConvexRadius) > 0.00001f ||
-               std::abs(g_rockConfig.rockWeaponCollisionPointDedupGrid - _cachedPointDedupGrid) > 0.00001f;
+               std::abs(g_rockConfig.rockWeaponCollisionPointDedupGrid - _cachedPointDedupGrid) > 0.00001f ||
+               weapon_collision_grouping_policy::weaponCollisionGroupingModeChanged(_cachedGroupingMode, g_rockConfig.rockWeaponCollisionGroupingMode);
     }
 
-    void WeaponCollision::createGeneratedWeaponBodies(RE::hknpWorld* world, const std::vector<GeneratedHullSource>& sources)
+    std::size_t WeaponCollision::createGeneratedWeaponBodiesInBank(RE::hknpWorld* world,
+        const std::vector<GeneratedHullSource>& sources,
+        WeaponBodyBank& bank,
+        bool publishAfterCreate)
     {
-        if (hasWeaponBody()) {
-            ROCK_LOG_WARN(Weapon, "createGeneratedWeaponBodies called but bodies already exist — skipping");
-            return;
+        if (bankHasWeaponBody(bank)) {
+            ROCK_LOG_WARN(Weapon, "createGeneratedWeaponBodiesInBank called but target bank already has bodies — skipping");
+            return 0;
         }
         if (!world || !_cachedBhkWorld || sources.empty()) {
-            return;
+            return 0;
         }
 
         std::size_t createdCount = 0;
-        const std::uint32_t filterInfo = (0x000B << 16) | (ROCK_WEAPON_LAYER & 0x7F);
+        const std::uint32_t filterInfo = generatedWeaponCollisionFilterInfo(publishAfterCreate);
+        auto buildSourceShape = [&](const GeneratedHullSource& source) -> RE::hknpShape* {
+            if (source.childLocalPointCloudsGame.size() <= 1) {
+                auto centeredHavokPoints = makeCenteredHavokPointCloud(source.localPointsGame, source.localCenterGame);
+                return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(centeredHavokPoints, g_rockConfig.rockWeaponCollisionConvexRadius);
+            }
+
+            std::vector<RE::hknpShape*> childShapes;
+            std::vector<havok_compound_shape_builder::CompoundChild> children;
+            childShapes.reserve(source.childLocalPointCloudsGame.size());
+            children.reserve(source.childLocalPointCloudsGame.size());
+
+            for (const auto& childLocalPointsGame : source.childLocalPointCloudsGame) {
+                if (!pointCloudCanBuildHull(childLocalPointsGame)) {
+                    continue;
+                }
+
+                const auto childCenterGame = weapon_collision_geometry_math::pointCenter(childLocalPointsGame);
+                auto centeredChildHavokPoints = makeCenteredHavokPointCloud(childLocalPointsGame, childCenterGame);
+                auto* childShape =
+                    havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(centeredChildHavokPoints, g_rockConfig.rockWeaponCollisionConvexRadius);
+                if (!childShape) {
+                    ROCK_LOG_WARN(Weapon, "Generated weapon compound source '{}' failed child convex build", source.sourceName);
+                    continue;
+                }
+
+                childShapes.push_back(childShape);
+
+                havok_compound_shape_builder::CompoundChild child{};
+                child.shape = childShape;
+                child.transform.translation.x = (childCenterGame.x - source.localCenterGame.x) * gameToHavokScale();
+                child.transform.translation.y = (childCenterGame.y - source.localCenterGame.y) * gameToHavokScale();
+                child.transform.translation.z = (childCenterGame.z - source.localCenterGame.z) * gameToHavokScale();
+                child.transform.translation.w = 1.0f;
+                children.push_back(child);
+            }
+
+            RE::hknpShape* compoundShape = nullptr;
+            if (children.size() > 1) {
+                compoundShape = havok_compound_shape_builder::buildStaticCompoundShape(children);
+            } else if (children.size() == 1) {
+                compoundShape = const_cast<RE::hknpShape*>(children.front().shape);
+                childShapes.clear();
+            }
+
+            for (auto* childShape : childShapes) {
+                shapeRemoveRef(childShape);
+            }
+
+            return compoundShape;
+        };
+
         for (std::size_t sourceIndex = 0; sourceIndex < sources.size() && createdCount < MAX_WEAPON_BODIES; ++sourceIndex) {
             const auto& source = sources[sourceIndex];
             if (!pointCloudCanBuildHull(source.localPointsGame)) {
                 continue;
             }
 
-            auto centeredHavokPoints = makeCenteredHavokPointCloud(source.localPointsGame, source.localCenterGame);
-            auto* shape = havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(centeredHavokPoints, g_rockConfig.rockWeaponCollisionConvexRadius);
+            auto* shape = buildSourceShape(source);
             if (!shape) {
-                ROCK_LOG_WARN(Weapon, "Generated weapon mesh hull '{}' failed native convex shape build", source.sourceName);
+                ROCK_LOG_WARN(Weapon, "Generated weapon mesh hull '{}' failed native shape build", source.sourceName);
                 continue;
             }
 
-            auto& instance = _weaponBodies[createdCount];
+            auto& instance = bank[createdCount];
             instance.shape = shape;
+            instance.driveNode = source.driveRoot ? source.driveRoot : source.sourceRoot;
             instance.sourceNode = source.sourceRoot;
+            instance.sourceName = source.sourceName;
+            instance.sourceRootName = source.sourceRoot ? safeNodeName(source.sourceRoot) : "";
             instance.generatedLocalCenterGame = source.localCenterGame;
             instance.generatedLocalMinGame = source.localMinGame;
             instance.generatedLocalMaxGame = source.localMaxGame;
+            instance.generatedLocalPointsGame = source.localPointsGame;
+            instance.generatedPointCount = static_cast<std::uint32_t>(
+                (std::min)(source.localPointsGame.size(), static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())));
             instance.semantic = source.semantic;
             instance.ownsShapeRef = true;
-            instance.hasPrevTransform = false;
-            instance.prevPosition = {};
+            clearGeneratedKeyframedBodyDriveState(instance.driveState);
 
             const bool ok =
                 instance.body.create(world, _cachedBhkWorld, shape, filterInfo, { 0 }, BethesdaMotionType::Keyframed, "ROCK_WeaponMeshCollision");
@@ -1011,40 +1703,115 @@ namespace frik::rock
             }
 
             instance.body.createNiNode("ROCK_WeaponMeshCollision");
-            const RE::NiTransform sourceRootTransform = source.sourceRoot ? source.sourceRoot->world : makeIdentityTransform();
-            const RE::NiTransform initialTransform = makeGeneratedBodyWorldTransform(sourceRootTransform, source.localCenterGame);
-            updateBodyTransform(world, instance, initialTransform, 0.016f, createdCount);
+            const RE::NiTransform driveRootTransform = instance.driveNode ? instance.driveNode->world : makeIdentityTransform();
+            const RE::NiTransform initialTransform = makeGeneratedBodyWorldTransform(driveRootTransform, source.localCenterGame);
+            if (!placeGeneratedKeyframedBodyImmediately(instance.body, initialTransform)) {
+                ROCK_LOG_ERROR(Weapon,
+                    "Generated weapon mesh collision initial placement failed meshIndex={} bodyId={} source='{}' root='{}'",
+                    createdCount,
+                    instance.body.getBodyId().value,
+                    source.sourceName,
+                    safeNodeName(source.sourceRoot));
+                instance.body.destroy(_cachedBhkWorld);
+                shapeRemoveRef(shape);
+                clearWeaponBodyInstance(instance, false);
+                continue;
+            }
+            instance.driveState.previousTargetPosition = initialTransform.translate;
+            instance.driveState.hasPreviousTarget = true;
 
-            ROCK_LOG_INFO(Weapon,
-                "Generated weapon mesh collision body created — meshIndex={} bodyId={} source='{}' root='{}' partKind={} supportRole={} reloadRole={} points={} center=({:.2f},{:.2f},{:.2f}) layer=44",
+            ROCK_LOG_DEBUG(Weapon,
+                "Generated weapon mesh collision body created — meshIndex={} bodyId={} source='{}' root='{}' partKind={} supportRole={} reloadRole={} points={} children={} center=({:.2f},{:.2f},{:.2f}) layer=44",
                 createdCount, instance.body.getBodyId().value, source.sourceName, safeNodeName(source.sourceRoot), static_cast<int>(source.semantic.partKind),
-                static_cast<int>(source.semantic.supportGripRole), static_cast<int>(source.semantic.reloadRole), source.localPointsGame.size(), source.localCenterGame.x,
-                source.localCenterGame.y, source.localCenterGame.z);
+                static_cast<int>(source.semantic.supportGripRole), static_cast<int>(source.semantic.reloadRole), source.localPointsGame.size(),
+                source.childLocalPointCloudsGame.size(), source.localCenterGame.x, source.localCenterGame.y, source.localCenterGame.z);
             ++createdCount;
         }
 
-        publishAtomicBodyIds();
+        if (publishAfterCreate) {
+            publishAtomicBodyIds(bank);
+        }
+        if (createdCount > 0) {
+            _driveRebuildRequested.store(false, std::memory_order_release);
+            _driveFailureCount.store(0, std::memory_order_release);
+        }
         ROCK_LOG_INFO(Weapon, "Generated weapon mesh collision created {}/{} hull bodies", createdCount, sources.size());
+        return createdCount;
     }
 
     void WeaponCollision::destroyWeaponBody(RE::hknpWorld* world)
     {
-        if (!hasWeaponBody())
+        if (!bankHasWeaponBody(_weaponBodies) && !bankHasWeaponBody(_weaponReplacementBodies))
             return;
 
-        (void)world;
-        clearAtomicBodyIds();
-
-        std::uint32_t destroyedCount = 0;
-        for (auto& instance : _weaponBodies) {
-            if (instance.body.isValid()) {
-                instance.body.destroy(_cachedBhkWorld);
-                ++destroyedCount;
-            }
-            clearWeaponBodyInstance(instance, true);
+        if (_dominantHandDisabled && world) {
+            enableDominantHandCollision(world);
         }
 
-        ROCK_LOG_INFO(Weapon, "Weapon collision bodies destroyed count={}", destroyedCount);
+        clearAtomicBodyIds();
+
+        const auto activeDestroyed = bankWeaponBodyCount(activeWeaponBodies());
+        const auto inactiveDestroyed = bankWeaponBodyCount(inactiveWeaponBodies());
+        destroyWeaponBodyBank(activeWeaponBodies(), true);
+        destroyWeaponBodyBank(inactiveWeaponBodies(), true);
+        _usingReplacementWeaponBodies = false;
+        _driveRebuildRequested.store(false, std::memory_order_release);
+        _driveFailureCount.store(0, std::memory_order_release);
+
+        ROCK_LOG_INFO(Weapon, "Weapon collision bodies destroyed count={}", activeDestroyed + inactiveDestroyed);
+    }
+
+    void WeaponCollision::invalidateForScaleChange(RE::hknpWorld* world)
+    {
+        const auto decision = weapon_authority_lifecycle_policy::evaluateGeneratedCollisionScaleInvalidation(hasWeaponBody(), _cachedWeaponKey, _pendingWeaponKey);
+
+        if (decision.destroyExistingBodies) {
+            ROCK_LOG_INFO(Weapon, "Generated weapon collision invalidated by physics scale change — pendingKey={:016X} reason={}", decision.pendingKey, decision.reason);
+            destroyWeaponBody(world);
+        } else {
+            clearAtomicBodyIds();
+            if (_dominantHandDisabled && world) {
+                enableDominantHandCollision(world);
+            }
+            ROCK_LOG_DEBUG(Weapon, "Generated weapon collision scale invalidation had no active bodies — pendingKey={:016X} reason={}", decision.pendingKey, decision.reason);
+        }
+
+        if (decision.resetCachedIdentity) {
+            _cachedWeaponKey = 0;
+            _pendingWeaponKey = decision.pendingKey;
+            _visualSettleState = {};
+            _weaponBodyPending = decision.pending;
+        }
+        if (decision.resetCachedSettings) {
+            _cachedConvexRadius = -1.0f;
+            _cachedPointDedupGrid = -1.0f;
+            _cachedGroupingMode = -1;
+        }
+        _retryCounter = 0;
+    }
+
+    void WeaponCollision::destroyWeaponBodyBank(WeaponBodyBank& bank, bool releaseShapeRef)
+    {
+        for (auto& instance : bank) {
+            if (instance.body.isValid()) {
+                instance.body.destroy(_cachedBhkWorld);
+            }
+            clearWeaponBodyInstance(instance, releaseShapeRef);
+        }
+    }
+
+    void WeaponCollision::setWeaponBodyBankCollisionEnabled(RE::hknpWorld* world, WeaponBodyBank& bank, bool enabled)
+    {
+        if (!world) {
+            return;
+        }
+
+        const std::uint32_t filterInfo = generatedWeaponCollisionFilterInfo(enabled);
+        for (auto& instance : bank) {
+            if (instance.body.isValid()) {
+                body_collision::setFilterInfo(world, instance.body.getBodyId(), filterInfo);
+            }
+        }
     }
 
     void WeaponCollision::clearWeaponBodyInstance(WeaponBodyInstance& instance, bool releaseShapeRef)
@@ -1054,14 +1821,18 @@ namespace frik::rock
         }
         instance.body.reset();
         instance.shape = nullptr;
+        instance.driveNode = nullptr;
         instance.sourceNode = nullptr;
+        instance.sourceName.clear();
+        instance.sourceRootName.clear();
         instance.generatedLocalCenterGame = {};
         instance.generatedLocalMinGame = {};
         instance.generatedLocalMaxGame = {};
+        instance.generatedLocalPointsGame.clear();
+        instance.generatedPointCount = 0;
         instance.semantic = {};
         instance.ownsShapeRef = false;
-        instance.hasPrevTransform = false;
-        instance.prevPosition = {};
+        clearGeneratedKeyframedBodyDriveState(instance.driveState);
     }
 
     void WeaponCollision::clearAtomicBodyIds()
@@ -1088,13 +1859,22 @@ namespace frik::rock
         for (auto& value : _weaponBodyGripPosesAtomic) {
             value.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
         }
+        for (auto& value : _weaponBodyInteractionRootsAtomic) {
+            value.store(0, std::memory_order_release);
+        }
+        for (auto& value : _weaponBodySourceRootsAtomic) {
+            value.store(0, std::memory_order_release);
+        }
+        for (auto& value : _weaponBodyGenerationKeysAtomic) {
+            value.store(0, std::memory_order_release);
+        }
     }
 
-    void WeaponCollision::publishAtomicBodyIds()
+    void WeaponCollision::publishAtomicBodyIds(const WeaponBodyBank& bank)
     {
         std::uint32_t count = 0;
         clearAtomicBodyIds();
-        for (const auto& instance : _weaponBodies) {
+        for (const auto& instance : bank) {
             if (instance.body.isValid() && count < MAX_WEAPON_BODIES) {
                 _weaponBodyPartKindsAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.partKind), std::memory_order_release);
                 _weaponBodyReloadRolesAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.reloadRole), std::memory_order_release);
@@ -1102,6 +1882,9 @@ namespace frik::rock
                 _weaponBodySocketRolesAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.socketRole), std::memory_order_release);
                 _weaponBodyActionRolesAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.actionRole), std::memory_order_release);
                 _weaponBodyGripPosesAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.fallbackGripPose), std::memory_order_release);
+                _weaponBodyInteractionRootsAtomic[count].store(reinterpret_cast<std::uintptr_t>(instance.driveNode), std::memory_order_release);
+                _weaponBodySourceRootsAtomic[count].store(reinterpret_cast<std::uintptr_t>(instance.sourceNode), std::memory_order_release);
+                _weaponBodyGenerationKeysAtomic[count].store(_cachedWeaponKey, std::memory_order_release);
                 _weaponBodyIdsAtomic[count].store(instance.body.getBodyId().value, std::memory_order_release);
                 ++count;
             }
@@ -1109,137 +1892,81 @@ namespace frik::rock
         _weaponBodyCountAtomic.store(count, std::memory_order_release);
     }
 
-    void WeaponCollision::updateBodiesFromWeaponRootTransform(RE::hknpWorld* world, const RE::NiTransform& weaponRootTransform, float dt)
+    void WeaponCollision::updateBodiesFromCurrentSourceTransforms(RE::hknpWorld* world, RE::NiAVObject* fallbackWeaponNode)
     {
         if (!world || !hasWeaponBody()) {
             return;
         }
 
-        for (std::size_t i = 0; i < _weaponBodies.size(); ++i) {
-            auto& instance = _weaponBodies[i];
+        auto& bank = activeWeaponBodies();
+        for (std::size_t i = 0; i < bank.size(); ++i) {
+            auto& instance = bank[i];
             if (!instance.body.isValid()) {
                 continue;
             }
 
-            const RE::NiTransform generatedTransform = makeGeneratedBodyWorldTransform(weaponRootTransform, instance.generatedLocalCenterGame);
-            updateBodyTransform(world, instance, generatedTransform, dt, i);
+            const RE::NiTransform& driveRootTransform = instance.driveNode ? instance.driveNode->world : fallbackWeaponNode ? fallbackWeaponNode->world : makeIdentityTransform();
+            const RE::NiTransform generatedTransform = makeGeneratedBodyWorldTransform(driveRootTransform, instance.generatedLocalCenterGame);
+            queueBodyTarget(instance, generatedTransform);
         }
     }
 
-    void WeaponCollision::updateBodyTransform(RE::hknpWorld* world, WeaponBodyInstance& instance, const RE::NiTransform& weaponTransform, float dt, std::size_t bodyIndex)
+    void WeaponCollision::queueBodyTarget(WeaponBodyInstance& instance, const RE::NiTransform& weaponTransform)
     {
-        if (!instance.body.isValid() || !world)
+        if (!instance.body.isValid()) {
             return;
-
-        const float targetX = weaponTransform.translate.x * kGameToHavokScale;
-        const float targetY = weaponTransform.translate.y * kGameToHavokScale;
-        const float targetZ = weaponTransform.translate.z * kGameToHavokScale;
-        const RE::NiMatrix3& adjustedWeaponRotation = weaponTransform.rotate;
-        const bool logWitness = bodyIndex == 0 && g_rockConfig.rockDebugVerboseLogging && (++_posLogCounter >= 90);
-        if (logWitness) {
-            _posLogCounter = 0;
-        }
-        auto bodyId = instance.body.getBodyId();
-        auto* bodyArray = world->GetBodyArray();
-        auto* bodyFloats = reinterpret_cast<float*>(&bodyArray[bodyId.value]);
-        const float curX = bodyFloats[12];
-        const float curY = bodyFloats[13];
-        const float curZ = bodyFloats[14];
-
-        if (logWitness) {
-            ROCK_LOG_INFO(Weapon, "updateBodyTransform[{}]: niPos=({:.1f},{:.1f},{:.1f}) hkPos=({:.4f},{:.4f},{:.4f}) bodyId={} dt={:.4f}", bodyIndex,
-                weaponTransform.translate.x, weaponTransform.translate.y, weaponTransform.translate.z, targetX, targetY, targetZ, instance.body.getBodyId().value, dt);
         }
 
-        if (instance.hasPrevTransform) {
-            float dx = weaponTransform.translate.x - instance.prevPosition.x;
-            float dy = weaponTransform.translate.y - instance.prevPosition.y;
-            float dz = weaponTransform.translate.z - instance.prevPosition.z;
-            float distSq = dx * dx + dy * dy + dz * dz;
-            if (distSq > 1000.0f * 1000.0f) {
-                instance.prevPosition = weaponTransform.translate;
-                RE::hkTransformf hkTransform;
-                hkTransform.rotation = niRotToHkTransformRotation(adjustedWeaponRotation);
-                hkTransform.translation = RE::NiPoint4(targetX, targetY, targetZ, 0.0f);
-                instance.body.setTransform(hkTransform);
-                if (logWitness) {
-                    ROCK_LOG_INFO(Weapon,
-                        "transform witness: bodyId={} niPos=({:.1f},{:.1f},{:.1f}) hkTarget=({:.4f},{:.4f},{:.4f}) "
-                        "liveOrigin=({:.4f},{:.4f},{:.4f}) teleport=world-reset targetDet={:.4f} liveDet={:.4f}",
-                        bodyId.value, weaponTransform.translate.x, weaponTransform.translate.y, weaponTransform.translate.z, targetX, targetY, targetZ, curX, curY, curZ,
-                        matrixDeterminant(adjustedWeaponRotation), bodyBasisDeterminant(bodyFloats));
-                }
-                return;
+        queueGeneratedKeyframedBodyTarget(instance.driveState, weaponTransform, 1000.0f);
+    }
+
+    void WeaponCollision::flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
+    {
+        if (!world || !hasWeaponBody()) {
+            return;
+        }
+
+        auto& bank = activeWeaponBodies();
+        for (std::size_t i = 0; i < bank.size(); ++i) {
+            auto& instance = bank[i];
+            if (!instance.body.isValid()) {
+                continue;
             }
+            const auto bodyIndex = static_cast<std::uint32_t>(i);
+            handleGeneratedBodyDriveResult(
+                driveGeneratedKeyframedBody(world, instance.body, instance.driveState, timing, "weapon-collision", bodyIndex),
+                "weapon-collision",
+                bodyIndex);
+        }
+    }
+
+    void WeaponCollision::handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex)
+    {
+        if (!result.attempted || result.skippedStale) {
+            return;
         }
 
-        alignas(16) float linVelOut[4] = { 0, 0, 0, 0 };
-        alignas(16) float angVelOut[4] = { 0, 0, 0, 0 };
-
-        if (instance.hasPrevTransform && dt > 0.0001f) {
-            alignas(16) float tgtPos[4] = { targetX, targetY, targetZ, 0.0f };
-            alignas(16) float tgtQuat[4];
-            niRotToHkQuat(adjustedWeaponRotation, tgtQuat);
-
-            typedef void (*computeHKF_t)(void*, std::uint32_t, const float*, const float*, float, float*, float*);
-            static REL::Relocation<computeHKF_t> computeHardKeyFrame{ REL::Offset(offsets::kFunc_ComputeHardKeyFrame) };
-            computeHardKeyFrame(world, bodyId.value, tgtPos, tgtQuat, dt, linVelOut, angVelOut);
-
-            const float maxVel = (std::max)(0.01f, g_rockConfig.rockWeaponCollisionMaxLinearVelocity);
-            float speed = std::sqrt(linVelOut[0] * linVelOut[0] + linVelOut[1] * linVelOut[1] + linVelOut[2] * linVelOut[2]);
-            if (speed > maxVel) {
-                float scale = maxVel / speed;
-                linVelOut[0] *= scale;
-                linVelOut[1] *= scale;
-                linVelOut[2] *= scale;
-            }
-
-            const float maxAngVel = (std::max)(0.01f, g_rockConfig.rockWeaponCollisionMaxAngularVelocity);
-            float angSpeed = std::sqrt(angVelOut[0] * angVelOut[0] + angVelOut[1] * angVelOut[1] + angVelOut[2] * angVelOut[2]);
-            if (angSpeed > maxAngVel) {
-                float scale = maxAngVel / angSpeed;
-                angVelOut[0] *= scale;
-                angVelOut[1] *= scale;
-                angVelOut[2] *= scale;
-            }
+        if (result.driven) {
+            _driveFailureCount.store(0, std::memory_order_release);
+            return;
         }
 
-        {
-            RE::hkTransformf hkTransform;
-            hkTransform.rotation = niRotToHkTransformRotation(adjustedWeaponRotation);
-            hkTransform.translation = RE::NiPoint4(targetX, targetY, targetZ, 0.0f);
-            instance.body.setTransform(hkTransform);
-        }
-        instance.body.setVelocity(linVelOut, angVelOut);
-
-        if (logWitness) {
-            const auto targetQuat = niRotToHkQuat(adjustedWeaponRotation);
-            const auto targetHkRotation = niRotToHkTransformRotation(adjustedWeaponRotation);
-            const auto* targetHk = reinterpret_cast<const float*>(&targetHkRotation);
-            const float targetDet = matrixDeterminant(adjustedWeaponRotation);
-            const float liveDet = bodyBasisDeterminant(bodyFloats);
-
-            ROCK_LOG_INFO(Weapon,
-                "transform witness: bodyId={} niPos=({:.1f},{:.1f},{:.1f}) hkTarget=({:.4f},{:.4f},{:.4f}) "
-                "liveOrigin=({:.4f},{:.4f},{:.4f}) targetDet={:.4f} liveDet={:.4f} dt={:.4f}",
-                bodyId.value, weaponTransform.translate.x, weaponTransform.translate.y, weaponTransform.translate.z, targetX, targetY, targetZ, curX, curY, curZ, targetDet,
-                liveDet, dt);
-
-            ROCK_LOG_INFO(Weapon,
-                "transform basis: targetNiRows=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
-                "targetHkCols=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
-                "liveHkCols=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
-                "quat=({:.4f},{:.4f},{:.4f},{:.4f}) linVel=({:.4f},{:.4f},{:.4f}) angVel=({:.4f},{:.4f},{:.4f})",
-                adjustedWeaponRotation.entry[0][0], adjustedWeaponRotation.entry[0][1], adjustedWeaponRotation.entry[0][2], adjustedWeaponRotation.entry[1][0],
-                adjustedWeaponRotation.entry[1][1], adjustedWeaponRotation.entry[1][2], adjustedWeaponRotation.entry[2][0], adjustedWeaponRotation.entry[2][1],
-                adjustedWeaponRotation.entry[2][2], targetHk[0], targetHk[1], targetHk[2], targetHk[4], targetHk[5], targetHk[6], targetHk[8], targetHk[9],
-                targetHk[10], bodyFloats[0], bodyFloats[1], bodyFloats[2], bodyFloats[4], bodyFloats[5], bodyFloats[6], bodyFloats[8], bodyFloats[9], bodyFloats[10],
-                targetQuat.x,
-                targetQuat.y, targetQuat.z, targetQuat.w, linVelOut[0], linVelOut[1], linVelOut[2], angVelOut[0], angVelOut[1], angVelOut[2]);
+        if (!result.shouldRequestRebuild()) {
+            return;
         }
 
-        instance.prevPosition = weaponTransform.translate;
-        instance.hasPrevTransform = true;
+        const auto failures = _driveFailureCount.fetch_add(1, std::memory_order_acq_rel) + 1;
+        _driveRebuildRequested.store(true, std::memory_order_release);
+        ROCK_LOG_SAMPLE_WARN(Weapon,
+            g_rockConfig.rockLogSampleMilliseconds,
+            "Weapon generated collider drive result requested rebuild owner={} bodyIndex={} failures={} missingBody={} placementFailed={} nativeDriveFailed={} bodyDeltaGame={:.2f}",
+            ownerName ? ownerName : "unknown",
+            bodyIndex,
+            failures,
+            result.missingBody ? "yes" : "no",
+            result.placementFailed ? "yes" : "no",
+            result.nativeDriveFailed ? "yes" : "no",
+            result.hasLiveBodyTransform ? result.bodyDeltaGameUnits : -1.0f);
     }
 
     void WeaponCollision::disableDominantHandCollision(RE::hknpWorld* world, RE::hknpBodyId handBodyId)
@@ -1247,24 +1974,25 @@ namespace frik::rock
         if (!world || handBodyId.value == INVALID_BODY_ID)
             return;
 
-        std::uint32_t currentFilter = 0;
-        if (!body_collision::tryReadFilterInfo(world, handBodyId, currentFilter)) {
+        const auto result = collision_suppression_registry::globalCollisionSuppressionRegistry().acquire(
+            world,
+            handBodyId.value,
+            collision_suppression_registry::CollisionSuppressionOwner::WeaponDominantHand,
+            "weapon-dominant-hand");
+        if (result.readFailed || !result.valid) {
             return;
         }
-
-        auto newFilter = hand_collision_suppression_math::beginSuppression(_dominantHandSuppression, handBodyId.value, currentFilter);
-        if (newFilter != currentFilter) {
-            body_collision::setFilterInfo(world, handBodyId, newFilter);
-        }
-
-        const bool broadPhaseSet = body_collision::setBroadPhaseEnabled(world, handBodyId, false);
-        _dominantHandBroadPhaseSuppressed = _dominantHandBroadPhaseSuppressed || broadPhaseSet;
 
         _dominantHandDisabled = true;
         _disabledHandBodyId = handBodyId;
 
-        ROCK_LOG_INFO(Weapon, "Dominant hand collision DISABLED bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBefore={} broadphase={}", handBodyId.value, currentFilter,
-            newFilter, _dominantHandSuppression.wasNoCollideBeforeSuppression ? "yes" : "no", broadPhaseSet ? "disabled" : "unchanged");
+        ROCK_LOG_DEBUG(Weapon,
+            "Dominant hand collision lease acquired bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBefore={} leases={}",
+            handBodyId.value,
+            result.filterBefore,
+            result.filterAfter,
+            result.wasNoCollideBeforeSuppression ? "yes" : "no",
+            result.activeLeaseCount);
     }
 
     void WeaponCollision::enableDominantHandCollision(RE::hknpWorld* world)
@@ -1272,28 +2000,25 @@ namespace frik::rock
         if (!world || _disabledHandBodyId.value == INVALID_BODY_ID)
             return;
 
-        std::uint32_t currentFilter = 0;
-        if (!body_collision::tryReadFilterInfo(world, _disabledHandBodyId, currentFilter)) {
-            hand_collision_suppression_math::clear(_dominantHandSuppression);
-            _dominantHandBroadPhaseSuppressed = false;
-            _dominantHandDisabled = false;
-            _disabledHandBodyId.value = INVALID_BODY_ID;
+        const auto result = collision_suppression_registry::globalCollisionSuppressionRegistry().release(
+            world,
+            _disabledHandBodyId.value,
+            collision_suppression_registry::CollisionSuppressionOwner::WeaponDominantHand,
+            "weapon-dominant-hand");
+        if (result.readFailed) {
+            ROCK_LOG_WARN(Weapon, "Dominant hand collision restore deferred bodyId={}", _disabledHandBodyId.value);
             return;
         }
 
-        auto newFilter = hand_collision_suppression_math::restoreFilter(_dominantHandSuppression, currentFilter);
-        if (newFilter != currentFilter) {
-            body_collision::setFilterInfo(world, _disabledHandBodyId, newFilter);
-        }
-
-        const bool broadPhaseRestored = _dominantHandBroadPhaseSuppressed && body_collision::setBroadPhaseEnabled(world, _disabledHandBodyId, true);
-
-        ROCK_LOG_INFO(Weapon, "Dominant hand collision RE-ENABLED bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} broadphase={}", _disabledHandBodyId.value, currentFilter,
-            newFilter, _dominantHandSuppression.wasNoCollideBeforeSuppression ? "yes" : "no", broadPhaseRestored ? "enabled" : "unchanged");
+        ROCK_LOG_DEBUG(Weapon,
+            "Dominant hand collision lease released bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} fullyReleased={}",
+            _disabledHandBodyId.value,
+            result.filterBefore,
+            result.filterAfter,
+            result.wasNoCollideBeforeSuppression ? "yes" : "no",
+            result.bodyFullyReleased ? "yes" : "no");
 
         _dominantHandDisabled = false;
-        hand_collision_suppression_math::clear(_dominantHandSuppression);
-        _dominantHandBroadPhaseSuppressed = false;
         _disabledHandBodyId.value = INVALID_BODY_ID;
     }
 

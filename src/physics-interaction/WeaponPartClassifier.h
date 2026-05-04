@@ -169,6 +169,16 @@ namespace frik::rock
         if (weaponPartNameContains(sourceName, "pump")) {
             return classifyWeaponPartKind(WeaponPartKind::Pump);
         }
+        if (weaponPartNameContains(sourceName, "shell")) {
+            return classifyWeaponPartKind(WeaponPartKind::Shell);
+        }
+        if (weaponPartNameContains(sourceName, "round") || weaponPartNameContains(sourceName, "cartridge")) {
+            return classifyWeaponPartKind(WeaponPartKind::Round);
+        }
+        if (weaponPartNameContains(sourceName, "casing") || weaponPartNameContains(sourceName, "bullet") ||
+            weaponPartNameContains(sourceName, "ammo")) {
+            return classifyWeaponPartKind(WeaponPartKind::CosmeticAmmo);
+        }
         if (weaponPartNameContains(sourceName, "magazine") || weaponPartNameContains(sourceName, " clip")) {
             return classifyWeaponPartKind(WeaponPartKind::Magazine);
         }
@@ -203,16 +213,6 @@ namespace frik::rock
         if (weaponPartNameContains(sourceName, "barrel") || weaponPartNameContains(sourceName, "muzzle") ||
             weaponPartNameContains(sourceName, "suppressor") || weaponPartNameContains(sourceName, "silencer")) {
             return classifyWeaponPartKind(WeaponPartKind::Barrel);
-        }
-        if (weaponPartNameContains(sourceName, "shell")) {
-            return classifyWeaponPartKind(WeaponPartKind::Shell);
-        }
-        if (weaponPartNameContains(sourceName, "round") || weaponPartNameContains(sourceName, "cartridge")) {
-            return classifyWeaponPartKind(WeaponPartKind::Round);
-        }
-        if (weaponPartNameContains(sourceName, "casing") || weaponPartNameContains(sourceName, "bullet") ||
-            weaponPartNameContains(sourceName, "ammo")) {
-            return classifyWeaponPartKind(WeaponPartKind::CosmeticAmmo);
         }
         if (weaponPartNameContains(sourceName, "sight") || weaponPartNameContains(sourceName, "scope")) {
             return classifyWeaponPartKind(WeaponPartKind::Sight);

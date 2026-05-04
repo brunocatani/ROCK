@@ -8,6 +8,7 @@
 #include "PhysicsLog.h"
 #include "PhysicsUtils.h"
 #include "WeaponInteractionRouter.h"
+#include "WeaponSupportAuthorityPolicy.h"
 
 #include "RE/NetImmerse/NiAVObject.h"
 #include "RE/NetImmerse/NiNode.h"
@@ -15,11 +16,25 @@
 
 namespace frik::rock
 {
+    namespace grab_finger_pose_runtime
+    {
+        struct SolvedGrabFingerPose;
+    }
+
     enum class TwoHandedState
     {
         Inactive,
         Touching,
         Gripping,
+    };
+
+    struct TwoHandedGripDebugSnapshot
+    {
+        RE::NiTransform weaponWorld{};
+        RE::NiTransform rightRequestedHandWorld{};
+        RE::NiTransform leftRequestedHandWorld{};
+        RE::NiPoint3 rightGripWorld{};
+        RE::NiPoint3 leftGripWorld{};
     };
 
     class TwoHandedGrip
@@ -29,8 +44,11 @@ namespace frik::rock
             RE::NiNode* weaponNode,
             const WeaponInteractionContact& leftWeaponContact,
             bool leftGripPressed,
+            bool supportHandHoldingObject,
             float dt,
-            const WeaponReloadRuntimeState& reloadState);
+            std::uint64_t currentWeaponGenerationKey,
+            const WeaponInteractionRuntimeState& runtimeState,
+            weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode);
 
         void reset();
 
@@ -40,30 +58,53 @@ namespace frik::rock
 
         TwoHandedState getState() const { return _state; }
 
+        weapon_support_authority_policy::WeaponSupportAuthorityMode getAuthorityMode() const { return _authorityMode; }
+
+        bool ownsWeaponTransform() const;
+
         bool getSolvedWeaponTransform(RE::NiTransform& outTransform) const;
+
+        bool getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const;
 
     private:
         void transitionToTouching(RE::NiNode* weaponNode, const WeaponInteractionDecision& decision);
-        void transitionToGripping(RE::NiNode* weaponNode, const WeaponInteractionDecision& decision);
-        void transitionToInactive();
+        void transitionToGripping(
+            RE::NiNode* weaponNode,
+            const WeaponInteractionDecision& decision,
+            weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode);
+        void transitionToInactive(bool publishRestoredWeaponTransform);
 
         void updateGripping(RE::NiNode* weaponNode, float dt);
 
-        void setSupportGripPose(bool isLeft, WeaponGripPoseId poseId, const std::array<float, 5>* meshFingerPose);
+        void updateFullWeaponAuthorityGrip(RE::NiNode* weaponNode, float dt);
+
+        void updateVisualOnlySupportGrip(RE::NiNode* weaponNode);
+
+        void setSupportGripPose(bool isLeft, WeaponGripPoseId poseId, const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose);
 
         void clearSupportGripPose(bool isLeft);
+
+        bool applyWeaponVisualAuthority(RE::NiNode* weaponNode, const RE::NiTransform& solvedWeaponWorld);
+
+        bool applyLockedHandVisualAuthority(RE::NiNode* weaponNode, bool applyPrimaryHand, bool applySupportHand);
+
+        void publishGripHandPoses(bool supportHandIsLeft);
+
+        void clearPrimaryGripPose(bool isLeft);
 
         static void killFrikOffhandGrip();
 
         static void restoreFrikOffhandGrip();
 
-        static RE::NiPoint3 worldToWeaponLocal(const RE::NiPoint3& worldPos, const RE::NiNode* weaponNode);
+        static RE::NiPoint3 worldToWeaponLocal(const RE::NiPoint3& worldPos, const RE::NiAVObject* weaponNode);
 
-        static RE::NiPoint3 weaponLocalToWorld(const RE::NiPoint3& localPos, const RE::NiNode* weaponNode);
-
-        static void snapHandToWorldPos(RE::NiAVObject* handBone, const RE::NiPoint3& targetWorld, const RE::NiNode* weaponNode);
+        static RE::NiPoint3 weaponLocalToWorld(const RE::NiPoint3& localPos, const RE::NiAVObject* weaponNode);
 
         TwoHandedState _state{ TwoHandedState::Inactive };
+
+        weapon_support_authority_policy::WeaponSupportAuthorityMode _authorityMode{
+            weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver
+        };
 
         RE::NiPoint3 _offhandGripLocal{};
 
@@ -72,6 +113,8 @@ namespace frik::rock
         RE::NiPoint3 _grabNormal{};
 
         RE::NiPoint3 _supportNormalLocal{};
+
+        float _lockedGripSeparationWorld{ 0.0f };
 
         WeaponGripPoseId _supportGripPose{ WeaponGripPoseId::BarrelWrap };
 
@@ -89,7 +132,25 @@ namespace frik::rock
 
         bool _hasSolvedWeaponTransform{ false };
 
+        RE::NiTransform _primaryHandWeaponLocal{};
+
+        RE::NiTransform _supportHandWeaponLocal{};
+
+        bool _hasHandWeaponLocalFrames{ false };
+
+        std::array<float, 15> _supportFingerPose{};
+        std::array<float, 5> _supportFingerValues{};
+        std::array<RE::NiTransform, 15> _supportFingerLocalTransforms{};
+        std::uint16_t _supportFingerLocalTransformMask{ 0 };
+        bool _hasSupportFingerPose{ false };
+        bool _hasSupportFingerValues{ false };
+        bool _hasSupportFingerLocalTransforms{ false };
+
+        float _primaryGripConfidence{ 0.0f };
+
         RE::NiNode* _activeWeaponNode{ nullptr };
+        RE::NiAVObject* _activeSourceRoot{ nullptr };
+        std::uint64_t _activeWeaponGenerationKey{ 0 };
         RE::NiTransform _weaponNodeLocalBaseline{};
         bool _hasWeaponNodeLocalBaseline{ false };
     };

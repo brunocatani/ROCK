@@ -164,6 +164,9 @@ if(POST_BUILD_COPY_PLUGIN)
         POST_BUILD
         COMMENT "Copying ${PROJECT_NAME}.dll and .pdb to plugins folder: '${copy_path}/F4SE/Plugins/'"
         COMMAND ${CMAKE_COMMAND} -E make_directory ${copy_path}/F4SE/Plugins/
+        COMMAND ${CMAKE_COMMAND} -E rm -f "${copy_path}/ROCK.esp"
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "${copy_path}/Scripts/ROCK"
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "${copy_path}/Meshes/ROCK"
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${PROJECT_NAME}> ${copy_path}/F4SE/Plugins/
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_PDB_FILE:${PROJECT_NAME}> ${copy_path}/F4SE/Plugins/
       )
@@ -198,4 +201,86 @@ if(BUILD_ROCK_TESTS)
   )
   target_compile_features(ROCKTransformConventionTests PRIVATE cxx_std_23)
   target_include_directories(ROCKTransformConventionTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKTransformConventionTests PRIVATE F4VRCommon::framework)
+
+  add_executable(ROCKSelectionHighlightPolicyTests
+    "${ROOT_DIR}/tests/SelectionHighlightPolicyTests.cpp"
+  )
+  target_compile_features(ROCKSelectionHighlightPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKSelectionHighlightPolicyTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKSelectionHighlightPolicyTests PRIVATE F4VRCommon::framework)
+
+  add_executable(ROCKWorldOriginDiagnosticsTests
+    "${ROOT_DIR}/tests/WorldOriginDiagnosticsTests.cpp"
+  )
+  target_compile_features(ROCKWorldOriginDiagnosticsTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKWorldOriginDiagnosticsTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKWorldOriginDiagnosticsTests PRIVATE F4VRCommon::framework)
+
+  add_executable(ROCKBodyFramePolicyTests
+    "${ROOT_DIR}/tests/BodyFramePolicyTests.cpp"
+  )
+  target_compile_features(ROCKBodyFramePolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKBodyFramePolicyTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKBodyFramePolicyTests PRIVATE F4VRCommon::framework)
+
+  add_executable(ROCKInputRemapPolicyTests
+    "${ROOT_DIR}/tests/InputRemapPolicyTests.cpp"
+  )
+  target_compile_features(ROCKInputRemapPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKInputRemapPolicyTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKInputRemapPolicyTests PRIVATE F4VRCommon::framework)
+
+  add_executable(ROCKHandStateMachineTests
+    "${ROOT_DIR}/tests/HandStateMachineTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/HandInteractionStateMachine.cpp"
+  )
+  target_compile_features(ROCKHandStateMachineTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKHandStateMachineTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKHandStateMachineTests PRIVATE F4VRCommon::framework)
+
+  add_executable(ROCKHavokRuntimePolicyTests
+    "${ROOT_DIR}/tests/HavokRuntimePolicyTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/HavokRuntime.cpp"
+    "${ROOT_DIR}/tests/HavokRuntimePolicyScaleStub.cpp"
+  )
+  target_compile_features(ROCKHavokRuntimePolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKHavokRuntimePolicyTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKHavokRuntimePolicyTests PRIVATE F4VRCommon::framework)
+
+  add_executable(ROCKUnsafeNativeToggleBoundaryTests
+    "${ROOT_DIR}/tests/UnsafeNativeToggleBoundaryTests.cpp"
+  )
+  target_compile_features(ROCKUnsafeNativeToggleBoundaryTests PRIVATE cxx_std_23)
+  target_compile_definitions(ROCKUnsafeNativeToggleBoundaryTests PRIVATE
+    "ROCK_PHYSICS_INTERACTION_SOURCE_DIR=\"${SOURCE_DIR}/physics-interaction\""
+  )
+
+  add_executable(ROCKGrabFingerLocalTransformPolicyTests
+    "${ROOT_DIR}/tests/GrabFingerLocalTransformPolicyTests.cpp"
+  )
+  target_compile_features(ROCKGrabFingerLocalTransformPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKGrabFingerLocalTransformPolicyTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKGrabFingerLocalTransformPolicyTests PRIVATE F4VRCommon::framework)
+
+  add_executable(ROCKProviderBoundaryTests
+    "${ROOT_DIR}/tests/ProviderBoundaryTests.cpp"
+  )
+  target_compile_features(ROCKProviderBoundaryTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKProviderBoundaryTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKProviderBoundaryTests PRIVATE F4VRCommon::framework)
+
+  add_executable(ROCKContactPipelinePolicyTests
+    "${ROOT_DIR}/tests/ContactPipelinePolicyTests.cpp"
+  )
+  target_compile_features(ROCKContactPipelinePolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKContactPipelinePolicyTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKContactPipelinePolicyTests PRIVATE F4VRCommon::framework)
+
+  add_executable(ROCKContactRuntimePolicyTests
+    "${ROOT_DIR}/tests/ContactRuntimePolicyTests.cpp"
+  )
+  target_compile_features(ROCKContactRuntimePolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKContactRuntimePolicyTests PRIVATE ${SOURCE_DIR})
+  target_link_libraries(ROCKContactRuntimePolicyTests PRIVATE F4VRCommon::framework)
 endif()

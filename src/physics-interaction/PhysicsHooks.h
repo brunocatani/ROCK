@@ -2,7 +2,6 @@
 
 namespace frik::rock
 {
-    void installCCRadiusHook();
     void installBumpHook();
     void installNativeGrabHook();
     bool validateNativeMeleeSuppressionHookTargets();

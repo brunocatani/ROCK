@@ -1,6 +1,7 @@
 #pragma once
 
 #include "HeldObjectDampingMath.h"
+#include "PhysicsScale.h"
 
 #include <algorithm>
 #include <array>
@@ -16,8 +17,6 @@ namespace frik::rock::held_object_physics_math
      * formulas in a pure helper makes the constraint code and the release path use
      * one convention instead of accumulating one-off scale and damping rules.
      */
-    constexpr float kGameUnitsPerHavokUnit = 70.0f;
-
     template <class Vec3>
     inline Vec3 makeVector(float x, float y, float z)
     {
@@ -46,9 +45,10 @@ namespace frik::rock::held_object_physics_math
     }
 
     template <class Vec3>
-    inline Vec3 gameUnitsDeltaToHavokVelocity(const Vec3& deltaGameUnits, float deltaTime)
+    inline Vec3 gameUnitsDeltaToHavokVelocity(const Vec3& deltaGameUnits, float deltaTime, float havokToGameScale = physics_scale::kFallbackHavokToGame)
     {
-        const float scale = 1.0f / (kGameUnitsPerHavokUnit * safeDeltaTime(deltaTime));
+        const float unitsPerHavok = physics_scale::isUsableScale(havokToGameScale) ? havokToGameScale : physics_scale::kFallbackHavokToGame;
+        const float scale = 1.0f / (unitsPerHavok * safeDeltaTime(deltaTime));
         return makeVector<Vec3>(deltaGameUnits.x * scale, deltaGameUnits.y * scale, deltaGameUnits.z * scale);
     }
 
@@ -130,6 +130,27 @@ namespace frik::rock::held_object_physics_math
 
         const float t = std::clamp((distanceGameUnits - minDistanceGameUnits) / (maxDistanceGameUnits - minDistanceGameUnits), 0.0f, 1.0f);
         return minTime + (maxTime - minTime) * t;
+    }
+
+    inline float advanceDeviationSeconds(float currentSeconds, float deviationGameUnits, float maxDeviationGameUnits, float deltaTime)
+    {
+        if (!std::isfinite(maxDeviationGameUnits) || maxDeviationGameUnits <= 0.0f) {
+            return 0.0f;
+        }
+        if (!std::isfinite(deviationGameUnits) || deviationGameUnits <= maxDeviationGameUnits) {
+            return 0.0f;
+        }
+
+        const float current = std::isfinite(currentSeconds) && currentSeconds > 0.0f ? currentSeconds : 0.0f;
+        return current + safeDeltaTime(deltaTime);
+    }
+
+    inline bool deviationExceeded(float accumulatedSeconds, float allowedSeconds)
+    {
+        if (!std::isfinite(allowedSeconds) || allowedSeconds <= 0.0f) {
+            return false;
+        }
+        return std::isfinite(accumulatedSeconds) && accumulatedSeconds >= allowedSeconds;
     }
 
     inline float advanceToward(float current, float target, float speed, float deltaTime)

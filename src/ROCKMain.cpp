@@ -4,8 +4,10 @@
 #define ROCK_API_EXPORTS
 #include "RockConfig.h"
 #include "api/ROCKApi.h"
+#include "api/ROCKProviderApi.h"
 #include "physics-interaction/DebugBodyOverlay.h"
 #include "physics-interaction/HavokOffsets.h"
+#include "physics-interaction/InputRemapRuntime.h"
 #include "physics-interaction/PhysicsInteraction.h"
 
 namespace
@@ -29,6 +31,7 @@ namespace
 
         PhysicsInteraction::s_hooksEnabled.store(true, std::memory_order_release);
         rock::api::setPhysicsInteractionInstance(s_physicsInteraction);
+        rock::provider::setPhysicsInteractionInstance(s_physicsInteraction);
         s_physicsPublished = true;
         logger::info("ROCK: PhysicsInteraction initialized and published.");
     }
@@ -57,6 +60,8 @@ namespace
         PhysicsInteraction::s_hooksEnabled.store(false, std::memory_order_release);
 
         rock::api::setPhysicsInteractionInstance(nullptr);
+        rock::provider::setPhysicsInteractionInstance(nullptr);
+        rock::provider::clearExternalBodiesForProviderLoss();
         s_physicsPublished = false;
 
         delete s_physicsInteraction;
@@ -68,10 +73,22 @@ namespace
     void onFrameUpdate()
     {
         if (!s_pluginLoaded || !s_frikAvailable) {
+            input_remap_runtime::setGameplayInputAllowed(false);
+            input_remap_runtime::setWeaponDrawn(false);
             return;
         }
 
-        g_rockConfig.processPendingReload();
+        g_rockConfig.processPendingConfigReload();
+        input_remap_runtime::installInputRemapHooks();
+
+        auto* frikApi = frik::api::FRIKApi::inst;
+        const bool weaponDrawn = frikApi && frikApi->isWeaponDrawn();
+        const bool menuInputActive = input_remap_runtime::isMenuInputActive();
+        const bool gameplayInputAllowed = g_rockConfig.rockEnabled && frikApi && frikApi->isSkeletonReady() && !frikApi->isAnyMenuOpen() && !frikApi->isConfigOpen() &&
+                                          !frikApi->isWristPipboyOpen() && !menuInputActive;
+        input_remap_runtime::setWeaponDrawn(weaponDrawn);
+        input_remap_runtime::setGameplayInputAllowed(gameplayInputAllowed);
+        input_remap_runtime::processPendingWeaponToggleRequests();
 
         if (!g_rockConfig.rockEnabled) {
             if (s_physicsInteraction) {
@@ -89,13 +106,15 @@ namespace
     using GameLoopFunc = void (*)(std::uint64_t rcx);
     GameLoopFunc s_originalGameLoopFunc = nullptr;
 
+    // ROCK applies weapon visual/collision authority after the chained frame update
+    // so FRIK finishes its skeleton and weapon pass before ROCK writes final state.
     void onGameFrameUpdateHook(const std::uint64_t rcx)
     {
-        onFrameUpdate();
-
         if (s_originalGameLoopFunc) {
             s_originalGameLoopFunc(rcx);
         }
+
+        onFrameUpdate();
     }
 
     bool hookMainLoop()
@@ -166,12 +185,28 @@ namespace
         if (msg->type == F4SE::MessagingInterface::kGameLoaded) {
             logger::info("ROCK: GameLoaded -- initializing FRIKApi and loading config...");
 
-            const int frikErr = frik::api::FRIKApi::initialize(4);
+            const int frikErr = frik::api::FRIKApi::initialize(frik::api::FRIK_API_VERSION);
             if (frikErr != 0) {
-                logger::critical(
-                    "ROCK: FRIKApi initialization FAILED (error {}). "
-                    "FRIK.dll must be loaded before ROCK. ROCK is now DISABLED.",
-                    frikErr);
+                switch (frikErr) {
+                case 1:
+                    logger::critical("ROCK: FRIKApi initialization FAILED (error 1). FRIK.dll is not loaded. ROCK is now DISABLED.");
+                    break;
+                case 2:
+                    logger::critical("ROCK: FRIKApi initialization FAILED (error 2). FRIKAPI_GetApi export was not found. ROCK is now DISABLED.");
+                    break;
+                case 3:
+                    logger::critical("ROCK: FRIKApi initialization FAILED (error 3). FRIKAPI_GetApi returned null. ROCK is now DISABLED.");
+                    break;
+                case 4:
+                    logger::critical(
+                        "ROCK: FRIKApi initialization FAILED (error 4). "
+                        "Loaded FRIK API is older than required API v{}. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.",
+                        frik::api::FRIK_API_VERSION);
+                    break;
+                default:
+                    logger::critical("ROCK: FRIKApi initialization FAILED (error {}). ROCK is now DISABLED.", frikErr);
+                    break;
+                }
                 s_frikAvailable = false;
                 return;
             }
@@ -180,6 +215,7 @@ namespace
 
             g_rockConfig.load();
             logger::info("ROCK: Config loaded (rockEnabled={}).", g_rockConfig.rockEnabled);
+            frik::rock::input_remap_runtime::installInputRemapHooks();
             frik::rock::debug::Install();
 
             s_frikAvailable = true;

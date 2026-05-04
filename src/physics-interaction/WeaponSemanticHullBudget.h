@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <unordered_set>
 #include <vector>
 
@@ -19,6 +20,7 @@ namespace frik::rock
     {
         WeaponPartClassification semantic{};
         std::size_t sourceIndex{ 0 };
+        std::uintptr_t sourceGroupId{ 0 };
         std::size_t pointCount{ 0 };
     };
 
@@ -53,7 +55,11 @@ namespace frik::rock
         std::vector<std::size_t> selected;
         selected.reserve(budget);
         std::unordered_set<std::size_t> selectedSourceIndices;
-        std::unordered_set<std::uint32_t> selectedPartKinds;
+        std::unordered_set<std::uintptr_t> selectedSourceGroups;
+
+        auto groupIdFor = [](const WeaponSemanticHullBudgetInput& input) {
+            return input.sourceGroupId != 0 ? input.sourceGroupId : (0x5747500000000000ull | static_cast<std::uintptr_t>(input.semantic.partKind));
+        };
 
         auto trySelect = [&](const WeaponSemanticHullBudgetInput& input) {
             if (selected.size() >= budget) {
@@ -64,12 +70,12 @@ namespace frik::rock
             }
             selected.push_back(input.sourceIndex);
             selectedSourceIndices.insert(input.sourceIndex);
-            selectedPartKinds.insert(static_cast<std::uint32_t>(input.semantic.partKind));
+            selectedSourceGroups.insert(groupIdFor(input));
         };
 
         for (const auto& input : ranked) {
-            const auto partKind = static_cast<std::uint32_t>(input.semantic.partKind);
-            if (!input.semantic.gameplayCritical || selectedPartKinds.find(partKind) != selectedPartKinds.end()) {
+            const auto groupId = groupIdFor(input);
+            if (!input.semantic.gameplayCritical || selectedSourceGroups.find(groupId) != selectedSourceGroups.end()) {
                 continue;
             }
             trySelect(input);

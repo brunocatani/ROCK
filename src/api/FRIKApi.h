@@ -6,6 +6,11 @@
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
 
+namespace RE
+{
+    class NiNode;
+}
+
 namespace frik::api
 {
 #if defined(FRIK_API_EXPORTS)
@@ -16,7 +21,7 @@ namespace frik::api
 
 #define FRIK_CALL __cdecl
 
-    inline constexpr std::uint32_t FRIK_API_VERSION = 5;
+    inline constexpr std::uint32_t FRIK_API_VERSION = 9;
 
     struct FRIKApi
     {
@@ -58,6 +63,13 @@ namespace frik::api
             const char* buttonIconNifPath;
             const char* callbackReceiverName;
             std::uint32_t callbackMessageType;
+        };
+
+        struct FingerLocalTransformOverride
+        {
+            std::uint16_t enabledMask = 0;
+            std::uint16_t reserved[3] = {};
+            RE::NiTransform localTransforms[15] = {};
         };
 
         enum class LifecycleEvent : std::uint32_t
@@ -134,6 +146,17 @@ namespace frik::api
 
         bool(FRIK_CALL* setHandPoseCustomJointPositionsWithPriority)(const char* tag, Hand hand, const float values[15], int priority);
 
+        bool(FRIK_CALL* applyExternalHandWorldTransform)(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority);
+
+        bool(FRIK_CALL* clearExternalHandWorldTransform)(const char* tag, Hand hand);
+
+        // Local transforms augment an existing scalar/per-joint pose under the
+        // same tag; FRIK rejects transform-only tags so vanilla weapon hand poses
+        // are not suppressed by incomplete overrides.
+        bool(FRIK_CALL* setHandPoseCustomLocalTransformsWithPriority)(const char* tag, Hand hand, const FingerLocalTransformOverride* overrideData, int priority);
+
+        bool(FRIK_CALL* getHandPoseLocalTransformsForJointPositions)(Hand hand, const float values[15], FingerLocalTransformOverride* outTransforms);
+
         [[nodiscard]] static int initialize(const uint32_t minVersion = FRIK_API_VERSION)
         {
             if (inst) {
@@ -165,4 +188,6 @@ namespace frik::api
 
         inline static const FRIKApi* inst = nullptr;
     };
+
+    static_assert(FRIK_API_VERSION == 9, "ROCK requires FRIK API v9 baseline local finger transform support");
 }

@@ -7,6 +7,8 @@
 #include "RE/Havok/hknpConstraintCinfo.h"
 #include "RE/Havok/hknpWorld.h"
 
+#include <vector>
+
 namespace frik::rock
 {
 
@@ -110,6 +112,14 @@ namespace frik::rock
 
     struct SavedObjectState
     {
+        struct SavedMotionInertiaState
+        {
+            RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
+            std::uint32_t motionIndex = 0;
+            std::int16_t savedPackedInertia[3] = { 0, 0, 0 };
+            bool inertiaModified = false;
+        };
+
         RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
         RE::TESObjectREFR* refr = nullptr;
         std::uint32_t originalFilterInfo = 0;
@@ -117,6 +127,7 @@ namespace frik::rock
         float inverseMass = 0.0f;
         std::int16_t savedPackedInertia[3] = { 0, 0, 0 };
         bool inertiaModified = false;
+        std::vector<SavedMotionInertiaState> motionInertiaStates;
 
         bool isValid() const { return bodyId.value != 0x7FFF'FFFF && refr != nullptr; }
 
@@ -129,16 +140,20 @@ namespace frik::rock
             inverseMass = 0.0f;
             savedPackedInertia[0] = savedPackedInertia[1] = savedPackedInertia[2] = 0;
             inertiaModified = false;
+            motionInertiaStates.clear();
         }
     };
 
     void normalizeGrabbedInertia(RE::hknpWorld* world, RE::hknpBodyId bodyId, SavedObjectState& savedState);
 
+    void normalizeGrabbedInertiaForBodies(RE::hknpWorld* world, RE::hknpBodyId primaryBodyId, const std::vector<std::uint32_t>& heldBodyIds, SavedObjectState& savedState);
+
     void restoreGrabbedInertia(RE::hknpWorld* world, SavedObjectState& savedState);
 
     HkPositionMotor* createPositionMotor(float tau, float damping, float proportionalRecoveryVelocity, float constantRecoveryVelocity, float minForce, float maxForce);
 
-    ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId, const float* palmWorldHk, const float* grabWorldHk,
+    ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
+        const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
         const RE::NiTransform& desiredBodyTransformHandSpace, float tau, float damping, float maxForce, float proportionalRecovery, float constantRecovery);
 
     void destroyGrabConstraint(RE::hknpWorld* world, ActiveConstraint& constraint);

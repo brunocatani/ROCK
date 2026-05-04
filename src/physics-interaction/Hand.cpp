@@ -1,161 +1,115 @@
 #include "Hand.h"
 
 #include <cmath>
+#include <string>
 
-#include "DebugAxisMath.h"
+#include "GrabVisualAuthorityPolicy.h"
+#include "HandLifecyclePolicy.h"
+#include "HandVisualAuthorityMath.h"
 #include "HavokOffsets.h"
 #include "PalmTransform.h"
+#include "PhysicsBodyFrame.h"
+#include "SelectionQueryPolicy.h"
+#include "SelectionStatePolicy.h"
+#include "SelectedCloseFingerPolicy.h"
 #include "TransformMath.h"
+#include "RockUtils.h"
+#include "api/FRIKApi.h"
 
 namespace frik::rock
 {
     namespace
     {
-        RE::NiPoint3 normalizeDebugDirection(RE::NiPoint3 value)
+        constexpr const char* GRAB_EXTERNAL_HAND_TAG = "ROCK_GrabVisual";
+
+        void clearGrabExternalHandWorldTransform(bool isLeft)
         {
-            const float lengthSquared = value.x * value.x + value.y * value.y + value.z * value.z;
-            if (lengthSquared <= 1.0e-8f) {
-                return RE::NiPoint3(0.0f, 0.0f, 1.0f);
+            auto* api = frik::api::FRIKApi::inst;
+            if (!api || !api->clearExternalHandWorldTransform) {
+                return;
             }
 
-            const float inverseLength = 1.0f / std::sqrt(lengthSquared);
-            value.x *= inverseLength;
-            value.y *= inverseLength;
-            value.z *= inverseLength;
-            return value;
+            api->clearExternalHandWorldTransform(GRAB_EXTERNAL_HAND_TAG, handFromBool(isLeft));
         }
 
-        RE::NiPoint3 crossDebug(const RE::NiPoint3& a, const RE::NiPoint3& b) { return RE::NiPoint3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x); }
-
-        RE::NiMatrix3 buildArrowLocalRotation(const RE::NiPoint3& forwardLocal)
+        RE::NiTransform getLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
         {
-            const RE::NiPoint3 xAxis = normalizeDebugDirection(forwardLocal);
-            RE::NiPoint3 upHint = std::fabs(xAxis.z) > 0.95f ? RE::NiPoint3(0.0f, 1.0f, 0.0f) : RE::NiPoint3(0.0f, 0.0f, 1.0f);
-
-            const float upDot = upHint.x * xAxis.x + upHint.y * xAxis.y + upHint.z * xAxis.z;
-            RE::NiPoint3 zAxis(upHint.x - xAxis.x * upDot, upHint.y - xAxis.y * upDot, upHint.z - xAxis.z * upDot);
-            zAxis = normalizeDebugDirection(zAxis);
-            const RE::NiPoint3 yAxis = normalizeDebugDirection(crossDebug(zAxis, xAxis));
-
-            RE::NiMatrix3 result{};
-            result.entry[0][0] = xAxis.x;
-            result.entry[1][0] = xAxis.y;
-            result.entry[2][0] = xAxis.z;
-            result.entry[0][1] = yAxis.x;
-            result.entry[1][1] = yAxis.y;
-            result.entry[2][1] = yAxis.z;
-            result.entry[0][2] = zAxis.x;
-            result.entry[1][2] = zAxis.y;
-            result.entry[2][2] = zAxis.z;
+            RE::NiTransform result = transform_math::makeIdentityTransform<RE::NiTransform>();
+            tryResolveLiveBodyWorldTransform(world, bodyId, result);
             return result;
         }
 
-        RE::NiMatrix3 makeIdentityRotation()
+        constexpr const char* SELECTED_CLOSE_FINGER_TAG = "ROCK_SelectedClose";
+
+        const char* handStateName(HandState state)
         {
-            RE::NiMatrix3 result{};
-            result.entry[0][0] = 1.0f;
-            result.entry[1][1] = 1.0f;
-            result.entry[2][2] = 1.0f;
-            return result;
+            switch (state) {
+            case HandState::Idle:
+                return "Idle";
+            case HandState::SelectedClose:
+                return "SelectedClose";
+            case HandState::SelectedFar:
+                return "SelectedFar";
+            case HandState::SelectionLocked:
+                return "SelectionLocked";
+            case HandState::HeldInit:
+                return "HeldInit";
+            case HandState::HeldBody:
+                return "HeldBody";
+            case HandState::Pulled:
+                return "Pulled";
+            case HandState::GrabFromOtherHand:
+                return "GrabFromOtherHand";
+            case HandState::SelectedTwoHand:
+                return "SelectedTwoHand";
+            case HandState::HeldTwoHanded:
+                return "HeldTwoHanded";
+            }
+            return "Unknown";
         }
 
-        float matrixDeterminant(const RE::NiMatrix3& matrix)
+        const char* handEventName(HandInteractionEvent event)
         {
-            return matrix.entry[0][0] * (matrix.entry[1][1] * matrix.entry[2][2] - matrix.entry[1][2] * matrix.entry[2][1]) -
-                matrix.entry[0][1] * (matrix.entry[1][0] * matrix.entry[2][2] - matrix.entry[1][2] * matrix.entry[2][0]) +
-                matrix.entry[0][2] * (matrix.entry[1][0] * matrix.entry[2][1] - matrix.entry[1][1] * matrix.entry[2][0]);
+            switch (event) {
+            case HandInteractionEvent::Initialize:
+                return "Initialize";
+            case HandInteractionEvent::SelectionFoundClose:
+                return "SelectionFoundClose";
+            case HandInteractionEvent::SelectionFoundFar:
+                return "SelectionFoundFar";
+            case HandInteractionEvent::SelectionLost:
+                return "SelectionLost";
+            case HandInteractionEvent::LockFarSelection:
+                return "LockFarSelection";
+            case HandInteractionEvent::BeginPull:
+                return "BeginPull";
+            case HandInteractionEvent::PullArrivedClose:
+                return "PullArrivedClose";
+            case HandInteractionEvent::BeginGrabCommit:
+                return "BeginGrabCommit";
+            case HandInteractionEvent::GrabCommitSucceeded:
+                return "GrabCommitSucceeded";
+            case HandInteractionEvent::HeldFadeComplete:
+                return "HeldFadeComplete";
+            case HandInteractionEvent::ReleaseRequested:
+                return "ReleaseRequested";
+            case HandInteractionEvent::ObjectInvalidated:
+                return "ObjectInvalidated";
+            case HandInteractionEvent::WorldInvalidated:
+                return "WorldInvalidated";
+            case HandInteractionEvent::BeginOtherHandTransfer:
+                return "BeginOtherHandTransfer";
+            case HandInteractionEvent::CompleteOtherHandTransfer:
+                return "CompleteOtherHandTransfer";
+            case HandInteractionEvent::BeginTwoHandSelection:
+                return "BeginTwoHandSelection";
+            case HandInteractionEvent::BeginTwoHandHold:
+                return "BeginTwoHandHold";
+            case HandInteractionEvent::EndTwoHandHold:
+                return "EndTwoHandHold";
+            }
+            return "Unknown";
         }
-
-        float bodyBasisDeterminant(const float* bodyFloats)
-        {
-            const float x0 = bodyFloats[0];
-            const float x1 = bodyFloats[1];
-            const float x2 = bodyFloats[2];
-            const float y0 = bodyFloats[4];
-            const float y1 = bodyFloats[5];
-            const float y2 = bodyFloats[6];
-            const float z0 = bodyFloats[8];
-            const float z1 = bodyFloats[9];
-            const float z2 = bodyFloats[10];
-
-            return x0 * (y1 * z2 - y2 * z1) - y0 * (x1 * z2 - x2 * z1) + z0 * (x1 * y2 - x2 * y1);
-        }
-    }
-
-    RE::hknpShape* CreateBoxShape(float hx, float hy, float hz, float convexRadius)
-    {
-        RE::hkVector4f start(-hx, 0.0f, 0.0f, 0.0f);
-        RE::hkVector4f end(hx, 0.0f, 0.0f, 0.0f);
-        float allocRadius = (hy > hz) ? hy : hz;
-        auto* capsule = RE::hknpCapsuleShape::CreateCapsuleShape(start, end, allocRadius);
-        if (!capsule)
-            return nullptr;
-
-        auto* s = reinterpret_cast<char*>(capsule);
-
-        static REL::Relocation<std::uintptr_t> convexVtable{ REL::Offset(offsets::kData_ConvexPolytopeVtable) };
-        *reinterpret_cast<std::uintptr_t*>(s) = convexVtable.address();
-
-        *reinterpret_cast<std::uint16_t*>(s + 0x10) = 0x0103;
-
-        *reinterpret_cast<float*>(s + 0x14) = convexRadius;
-
-        auto* v = reinterpret_cast<float*>(s + 0x70);
-        auto setVert = [&](int i, float x, float y, float z) {
-            v[i * 4 + 0] = x;
-            v[i * 4 + 1] = y;
-            v[i * 4 + 2] = z;
-            std::uint32_t w = 0x3F000000u | static_cast<std::uint32_t>(i);
-            v[i * 4 + 3] = *reinterpret_cast<float*>(&w);
-        };
-        setVert(0, -hx, -hy, -hz);
-        setVert(1, +hx, -hy, -hz);
-        setVert(2, -hx, +hy, -hz);
-        setVert(3, +hx, +hy, -hz);
-        setVert(4, -hx, -hy, +hz);
-        setVert(5, +hx, -hy, +hz);
-        setVert(6, -hx, +hy, +hz);
-        setVert(7, +hx, +hy, +hz);
-
-        auto* n = reinterpret_cast<float*>(s + 0xF0);
-        auto setNormal = [&](int i, float nx, float ny, float nz, float d) {
-            n[i * 4 + 0] = nx;
-            n[i * 4 + 1] = ny;
-            n[i * 4 + 2] = nz;
-            n[i * 4 + 3] = d;
-        };
-        setNormal(0, +1.0f, 0.0f, 0.0f, hx);
-        setNormal(1, -1.0f, 0.0f, 0.0f, hx);
-        setNormal(2, 0.0f, +1.0f, 0.0f, hy);
-        setNormal(3, 0.0f, -1.0f, 0.0f, hy);
-        setNormal(4, 0.0f, 0.0f, +1.0f, hz);
-        setNormal(5, 0.0f, 0.0f, -1.0f, hz);
-
-        setNormal(6, +1.0f, 0.0f, 0.0f, hx);
-        setNormal(7, -1.0f, 0.0f, 0.0f, hx);
-
-        auto* faceTable = reinterpret_cast<std::uint8_t*>(s + 0x170);
-        for (int i = 0; i < 6; i++) {
-            auto* entry = faceTable + i * 4;
-            std::uint16_t offset = static_cast<std::uint16_t>(i * 4);
-            *reinterpret_cast<std::uint16_t*>(entry) = offset;
-            entry[2] = 4;
-            entry[3] = 4;
-        }
-
-        auto* edges = reinterpret_cast<std::uint32_t*>(s + 0x190);
-        edges[0] = 0x05070301;
-        edges[1] = 0x00020604;
-        edges[2] = 0x03070602;
-        edges[3] = 0x04050100;
-        edges[4] = 0x06070504;
-        edges[5] = 0x03020001;
-
-        *reinterpret_cast<std::uint16_t*>(s + 0x44) = 6;
-
-        ROCK_LOG_INFO(Hand, "Created box shape: hx={:.4f} hy={:.4f} hz={:.4f} radius={:.4f}", hx, hy, hz, convexRadius);
-
-        return reinterpret_cast<RE::hknpShape*>(capsule);
     }
 
     RE::hknpMaterialId registerHandMaterial(RE::hknpWorld* world)
@@ -202,7 +156,7 @@ namespace frik::rock
         if (newId != 0xFFFF) {
             cachedId.value = newId;
             cachedMaterialLibrary = matLib;
-            ROCK_LOG_INFO(Hand, "Registered ROCK_Hand material ID={} (dynFriction=200, staticFriction=1.0, restitution=0.0)", newId);
+            ROCK_LOG_DEBUG(Hand, "Registered ROCK_Hand material ID={} (dynFriction=200, staticFriction=1.0, restitution=0.0)", newId);
         } else {
             ROCK_LOG_WARN(Hand, "Failed to register ROCK_Hand material -- using default 0");
             return { 0 };
@@ -213,6 +167,21 @@ namespace frik::rock
 
     void Hand::reset()
     {
+        const bool suppressionActive = hand_collision_suppression_math::hasActive(_grabHandCollisionSuppression);
+        const bool cleanupRequired = hand_lifecycle_policy::requiresHavokCleanupBeforeReset(
+            _activeConstraint.isValid(), suppressionActive, _heldBodyIds.size(), _savedObjectState.isValid(), hasCollisionBody());
+        if (cleanupRequired) {
+            ROCK_LOG_ERROR(Hand,
+                "{} hand reset blocked: native Havok state still needs cleanup (constraint={} suppression={} heldBodies={} savedState={} handBody={})",
+                handName(),
+                _activeConstraint.isValid() ? "yes" : "no",
+                suppressionActive ? "yes" : "no",
+                _heldBodyIds.size(),
+                _savedObjectState.isValid() ? "yes" : "no",
+                hasCollisionBody() ? "yes" : "no");
+            return;
+        }
+
         stopSelectionHighlight();
         _isHoldingFlag.store(false, std::memory_order_release);
         _heldBodyIdsCount.store(0, std::memory_order_release);
@@ -222,6 +191,7 @@ namespace frik::rock
         _idleDesired = false;
         _grabRequested = false;
         _releaseRequested = false;
+        _boneColliders.reset();
         _handBody.reset();
         _currentSelection.clear();
         _cachedFarCandidate.clear();
@@ -233,35 +203,100 @@ namespace frik::rock
         _lastTouchedFormID = 0;
         _lastTouchedLayer = 0;
         _touchActiveFrames = 100;
+        _semanticContactFrameCounter.store(0, std::memory_order_release);
+        _semanticContactValid.store(0, std::memory_order_release);
+        _semanticContactSequence.store(0, std::memory_order_release);
+        _semanticContactRole.store(static_cast<std::uint32_t>(hand_collider_semantics::HandColliderRole::PalmAnchor), std::memory_order_release);
+        _semanticContactFinger.store(static_cast<std::uint32_t>(hand_collider_semantics::HandFinger::None), std::memory_order_release);
+        _semanticContactSegment.store(static_cast<std::uint32_t>(hand_collider_semantics::HandFingerSegment::None), std::memory_order_release);
+        _semanticContactHandBodyId.store(hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
+        _semanticContactOtherBodyId.store(hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
+        _semanticContactFrames.store(0xFFFF'FFFFu, std::memory_order_release);
+        for (std::size_t i = 0; i < hand_semantic_contact_state::kMaxSemanticContactRecords; ++i) {
+            _semanticContactSetValid[i].store(0, std::memory_order_release);
+            _semanticContactSetRole[i].store(static_cast<std::uint32_t>(hand_collider_semantics::HandColliderRole::PalmAnchor), std::memory_order_release);
+            _semanticContactSetFinger[i].store(static_cast<std::uint32_t>(hand_collider_semantics::HandFinger::None), std::memory_order_release);
+            _semanticContactSetSegment[i].store(static_cast<std::uint32_t>(hand_collider_semantics::HandFingerSegment::None), std::memory_order_release);
+            _semanticContactSetHandBodyId[i].store(hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
+            _semanticContactSetOtherBodyId[i].store(hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
+            _semanticContactSetFrames[i].store(0xFFFF'FFFFu, std::memory_order_release);
+            _semanticContactSetSequence[i].store(0, std::memory_order_release);
+        }
         _activeConstraint.clear();
         _savedObjectState.clear();
+        _activeGrabLifecycle.clear();
         _grabStartTime = 0.0f;
         _heldLogCounter = 0;
         _notifCounter = 0;
-        _transformWitnessLogCounter = 0;
         _heldBodyIds.clear();
-        _grabHandSpace = RE::NiTransform();
+        clearPullRuntimeState();
+        if (_nearbyGrabDamping.active || !_nearbyGrabDamping.motions.empty()) {
+            ROCK_LOG_WARN(Hand, "{} hand reset cleared nearby velocity-damping state without a world; no native damping fields were modified", handName());
+        }
+        _nearbyGrabDamping.clear();
+        _grabFrame.clear();
         _adjustedHandTransform = RE::NiTransform();
         _hasAdjustedHandTransform = false;
+        clearGrabExternalHandWorldTransform(_isLeft);
         _grabVisualLerpElapsed = 0.0f;
         _grabVisualLerpDuration = g_rockConfig.rockGrabLerpMaxTime;
+        _grabDeviationExceededSeconds = 0.0f;
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};
         _hasGrabFingerProbeDebug = false;
-        _grabLocalMeshTriangles.clear();
-        _grabSurfacePointLocal = {};
-        _hasGrabMeshPoseData = false;
+        _grabFingerJointPose = {};
+        _hasGrabFingerJointPose = false;
+        clearSelectedCloseFingerPose();
+        _lastSelectedCloseOrigin = {};
+        _hasLastSelectedCloseOrigin = false;
+        _selectedCloseHandSpeedMetersPerSecond = 0.0f;
         _grabFingerPoseFrameCounter = 0;
         _heldLocalLinearVelocityHistory = {};
         _heldLocalLinearVelocityHistoryCount = 0;
         _heldLocalLinearVelocityHistoryNext = 0;
         _lastPlayerSpaceVelocityHavok = {};
-        _grabConstraintHandSpace = RE::NiTransform();
-        _grabBodyLocalTransform = RE::NiTransform();
-        _grabRootBodyLocalTransform = RE::NiTransform();
-        _grabOwnerBodyLocalTransform = RE::NiTransform();
-        _heldNode = nullptr;
         clearGrabHandCollisionSuppressionState();
+    }
+
+    HandTransitionResult Hand::applyTransition(const HandTransitionRequest& request)
+    {
+        HandTransitionRequest evaluatedRequest = request;
+        evaluatedRequest.current = _state;
+        const auto result = evaluateHandTransition(evaluatedRequest);
+        if (!result.accepted) {
+            ROCK_LOG_TRACE(Hand,
+                "{} hand state transition rejected: state={} event={} reason={}",
+                handName(),
+                handStateName(_state),
+                handEventName(evaluatedRequest.event),
+                result.reason ? result.reason : "");
+            return result;
+        }
+
+        const auto oldState = _state;
+        if (result.next != oldState) {
+            _prevState = oldState;
+            _state = result.next;
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand state {} -> {} via {}",
+                handName(),
+                handStateName(oldState),
+                handStateName(result.next),
+                handEventName(evaluatedRequest.event));
+        }
+
+        return result;
+    }
+
+    void Hand::clearPullRuntimeState()
+    {
+        _pulledBodyIds.clear();
+        _pulledPrimaryBodyId = INVALID_BODY_ID;
+        _pullPointOffsetHavok = {};
+        _pullTargetHavok = {};
+        _pullElapsedSeconds = 0.0f;
+        _pullDurationSeconds = 0.0f;
+        _pullHasTarget = false;
     }
 
     void Hand::collectHeldBodyIds(RE::TESObjectREFR* refr)
@@ -311,18 +346,38 @@ namespace frik::rock
 
     bool Hand::computeAdjustedHandTransformTarget(RE::NiTransform& outTransform) const
     {
+        return computeAdjustedHandTransformTarget(nullptr, outTransform);
+    }
+
+    bool Hand::computeAdjustedHandTransformTarget(RE::hknpWorld* world, RE::NiTransform& outTransform) const
+    {
+        (void)world;
+
         if (!isHolding())
             return false;
 
         RE::NiAVObject* node = nullptr;
         if (_savedObjectState.refr && !_savedObjectState.refr->IsDeleted() && !_savedObjectState.refr->IsDisabled()) {
-            node = _heldNode ? _heldNode : _savedObjectState.refr->Get3D();
+            node = _grabFrame.heldNode ? _grabFrame.heldNode : _savedObjectState.refr->Get3D();
         }
         if (!node)
             return false;
+        if (!_grabFrame.visualAuthorityContactValid)
+            return false;
 
-        outTransform = transform_math::composeTransforms(node->world, transform_math::invertTransform(_grabHandSpace));
-
+        /*
+         * Visual hand authority follows HIGGS' object-owned visual-node solve:
+         * adjustedHand = heldVisualNodeWorld * inverse(rawObjectHandSpace).
+         * The hand-body/constraint frame remains the physics source of truth, but
+         * feeding that body-derived frame back into FRIK visual IK can reverse the
+         * rendered wrist when the body frame and the visual node disagree.
+         */
+        outTransform = hand_visual_authority_math::buildAppliedVisualAuthorityHandWorld(
+            node->world,
+            _grabFrame.rawHandSpace,
+            transform_math::makeIdentityTransform<RE::NiTransform>(),
+            _grabFrame.constraintHandSpace,
+            _grabFrame.handBodyToRawHandAtGrab);
         return true;
     }
 
@@ -330,6 +385,11 @@ namespace frik::rock
     {
         if (!isHolding())
             return false;
+
+        if (!grab_visual_authority_policy::shouldApplyObjectReverseAlignedExternalHandTransform(
+                g_rockConfig.rockGrabObjectVisualHandAuthorityEnabled, true, _grabFrame.visualAuthorityContactValid)) {
+            return false;
+        }
 
         if (_hasAdjustedHandTransform) {
             outTransform = _adjustedHandTransform;
@@ -339,10 +399,275 @@ namespace frik::rock
         return computeAdjustedHandTransformTarget(outTransform);
     }
 
-    void Hand::updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& palmNormal,
-        const RE::NiPoint3& pointingDirection, float nearRange, float farRange, RE::TESObjectREFR* otherHandRef)
+    RE::NiPoint3 Hand::computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const
     {
-        if (_state != HandState::Idle && _state != HandState::SelectedClose)
+        /*
+         * Bone-derived collision makes the palm anchor body the authoritative
+         * hand-side constraint actor. Pivot A must therefore come from the live
+         * anchor body when it exists; the INI-authored pivot remains available
+         * only as diagnostic/fallback data when bone collision is disabled or
+         * the anchor is unavailable during transitions.
+         */
+        if (g_rockConfig.rockGrabUseBoneDerivedPalmPivot && g_rockConfig.rockHandColliderRuntimeMode != 0 && world && _handBody.isValid()) {
+            RE::NiTransform bodyWorld{};
+            if (tryResolveLiveBodyWorldTransform(world, _handBody.getBodyId(), bodyWorld)) {
+                return bodyWorld.translate;
+            }
+        }
+
+        return computeGrabPivotAPositionFromHandBasis(fallbackHandWorldTransform, _isLeft);
+    }
+
+    void Hand::recordSemanticContact(const HandColliderBodyMetadata& metadata, std::uint32_t otherBodyId)
+    {
+        if (!metadata.valid || metadata.bodyId == hand_semantic_contact_state::kInvalidBodyId || otherBodyId == hand_semantic_contact_state::kInvalidBodyId) {
+            return;
+        }
+
+        const std::uint32_t contactFrame = _semanticContactFrameCounter.load(std::memory_order_acquire);
+        _semanticContactValid.store(0, std::memory_order_release);
+        std::uint32_t contactSequence = _semanticContactSequence.fetch_add(1, std::memory_order_acq_rel) + 1;
+        if ((contactSequence & 1u) == 0) {
+            contactSequence = _semanticContactSequence.fetch_add(1, std::memory_order_acq_rel) + 1;
+        }
+        _semanticContactRole.store(static_cast<std::uint32_t>(metadata.role), std::memory_order_release);
+        _semanticContactFinger.store(static_cast<std::uint32_t>(metadata.finger), std::memory_order_release);
+        _semanticContactSegment.store(static_cast<std::uint32_t>(metadata.segment), std::memory_order_release);
+        _semanticContactHandBodyId.store(metadata.bodyId, std::memory_order_release);
+        _semanticContactOtherBodyId.store(otherBodyId, std::memory_order_release);
+        _semanticContactFrames.store(contactFrame, std::memory_order_release);
+        _semanticContactSequence.store(contactSequence + 1, std::memory_order_release);
+        _semanticContactValid.store(1, std::memory_order_release);
+
+        const std::size_t slot = hand_semantic_contact_state::semanticContactSlotForRole(metadata.role);
+        _semanticContactSetValid[slot].store(0, std::memory_order_release);
+        std::uint32_t slotSequence = _semanticContactSetSequence[slot].fetch_add(1, std::memory_order_acq_rel) + 1;
+        if ((slotSequence & 1u) == 0) {
+            slotSequence = _semanticContactSetSequence[slot].fetch_add(1, std::memory_order_acq_rel) + 1;
+        }
+        _semanticContactSetRole[slot].store(static_cast<std::uint32_t>(metadata.role), std::memory_order_release);
+        _semanticContactSetFinger[slot].store(static_cast<std::uint32_t>(metadata.finger), std::memory_order_release);
+        _semanticContactSetSegment[slot].store(static_cast<std::uint32_t>(metadata.segment), std::memory_order_release);
+        _semanticContactSetHandBodyId[slot].store(metadata.bodyId, std::memory_order_release);
+        _semanticContactSetOtherBodyId[slot].store(otherBodyId, std::memory_order_release);
+        _semanticContactSetFrames[slot].store(contactFrame, std::memory_order_release);
+        _semanticContactSetSequence[slot].store(slotSequence + 1, std::memory_order_release);
+        _semanticContactSetValid[slot].store(1, std::memory_order_release);
+    }
+
+    void Hand::tickSemanticContactState()
+    {
+        _semanticContactFrameCounter.fetch_add(1, std::memory_order_acq_rel);
+    }
+
+    bool Hand::getLastSemanticContact(hand_semantic_contact_state::SemanticContactRecord& outContact) const
+    {
+        outContact = {};
+        for (int attempt = 0; attempt < 3; ++attempt) {
+            const auto sequenceBefore = _semanticContactSequence.load(std::memory_order_acquire);
+            if ((sequenceBefore & 1u) != 0) {
+                continue;
+            }
+            if (_semanticContactValid.load(std::memory_order_acquire) == 0) {
+                return false;
+            }
+
+            hand_semantic_contact_state::SemanticContactRecord contact{};
+            contact.valid = true;
+            contact.isLeft = _isLeft;
+            contact.role = static_cast<hand_collider_semantics::HandColliderRole>(_semanticContactRole.load(std::memory_order_acquire));
+            contact.finger = static_cast<hand_collider_semantics::HandFinger>(_semanticContactFinger.load(std::memory_order_acquire));
+            contact.segment = static_cast<hand_collider_semantics::HandFingerSegment>(_semanticContactSegment.load(std::memory_order_acquire));
+            contact.handBodyId = _semanticContactHandBodyId.load(std::memory_order_acquire);
+            contact.otherBodyId = _semanticContactOtherBodyId.load(std::memory_order_acquire);
+            const auto contactFrame = _semanticContactFrames.load(std::memory_order_acquire);
+            contact.sequence = sequenceBefore;
+            contact.framesSinceContact = hand_semantic_contact_state::semanticFramesSinceContact(
+                _semanticContactFrameCounter.load(std::memory_order_acquire),
+                contactFrame);
+            const auto sequenceAfter = _semanticContactSequence.load(std::memory_order_acquire);
+            if (!hand_semantic_contact_state::semanticContactSequenceSnapshotStable(sequenceBefore, sequenceAfter)) {
+                continue;
+            }
+            if (contact.handBodyId == hand_semantic_contact_state::kInvalidBodyId || contact.otherBodyId == hand_semantic_contact_state::kInvalidBodyId) {
+                return false;
+            }
+            outContact = contact;
+            return true;
+        }
+        return false;
+    }
+
+    bool Hand::getFreshSemanticContactForRole(
+        hand_collider_semantics::HandColliderRole role,
+        std::uint32_t maxFramesSinceContact,
+        hand_semantic_contact_state::SemanticContactRecord& outContact) const
+    {
+        outContact = {};
+        const std::size_t slot = hand_semantic_contact_state::semanticContactSlotForRole(role);
+        for (int attempt = 0; attempt < 3; ++attempt) {
+            const auto sequenceBefore = _semanticContactSetSequence[slot].load(std::memory_order_acquire);
+            if ((sequenceBefore & 1u) != 0) {
+                continue;
+            }
+            if (_semanticContactSetValid[slot].load(std::memory_order_acquire) == 0) {
+                return false;
+            }
+
+            hand_semantic_contact_state::SemanticContactRecord contact{};
+            contact.valid = true;
+            contact.isLeft = _isLeft;
+            contact.role = static_cast<hand_collider_semantics::HandColliderRole>(_semanticContactSetRole[slot].load(std::memory_order_acquire));
+            contact.finger = static_cast<hand_collider_semantics::HandFinger>(_semanticContactSetFinger[slot].load(std::memory_order_acquire));
+            contact.segment = static_cast<hand_collider_semantics::HandFingerSegment>(_semanticContactSetSegment[slot].load(std::memory_order_acquire));
+            contact.handBodyId = _semanticContactSetHandBodyId[slot].load(std::memory_order_acquire);
+            contact.otherBodyId = _semanticContactSetOtherBodyId[slot].load(std::memory_order_acquire);
+            const auto contactFrame = _semanticContactSetFrames[slot].load(std::memory_order_acquire);
+            contact.sequence = sequenceBefore;
+            contact.framesSinceContact = hand_semantic_contact_state::semanticFramesSinceContact(
+                _semanticContactFrameCounter.load(std::memory_order_acquire),
+                contactFrame);
+            const auto sequenceAfter = _semanticContactSetSequence[slot].load(std::memory_order_acquire);
+            if (!hand_semantic_contact_state::semanticContactSequenceSnapshotStable(sequenceBefore, sequenceAfter)) {
+                continue;
+            }
+
+            if (contact.role != role ||
+                contact.handBodyId == hand_semantic_contact_state::kInvalidBodyId ||
+                contact.otherBodyId == hand_semantic_contact_state::kInvalidBodyId ||
+                contact.framesSinceContact > maxFramesSinceContact) {
+                return false;
+            }
+            outContact = contact;
+            return true;
+        }
+        return false;
+    }
+
+    hand_semantic_contact_state::SemanticContactCollection Hand::collectFreshSemanticContactsForBody(std::uint32_t targetBodyId, std::uint32_t maxFramesSinceContact) const
+    {
+        hand_semantic_contact_state::SemanticContactCollection contacts{};
+        if (targetBodyId == hand_semantic_contact_state::kInvalidBodyId) {
+            return contacts;
+        }
+
+        for (std::size_t i = 0; i < hand_semantic_contact_state::kMaxSemanticContactRecords; ++i) {
+            for (int attempt = 0; attempt < 3; ++attempt) {
+                const auto sequenceBefore = _semanticContactSetSequence[i].load(std::memory_order_acquire);
+                if ((sequenceBefore & 1u) != 0) {
+                    continue;
+                }
+                if (_semanticContactSetValid[i].load(std::memory_order_acquire) == 0) {
+                    break;
+                }
+
+                hand_semantic_contact_state::SemanticContactRecord record{};
+                record.valid = true;
+                record.isLeft = _isLeft;
+                record.role = static_cast<hand_collider_semantics::HandColliderRole>(_semanticContactSetRole[i].load(std::memory_order_acquire));
+                record.finger = static_cast<hand_collider_semantics::HandFinger>(_semanticContactSetFinger[i].load(std::memory_order_acquire));
+                record.segment = static_cast<hand_collider_semantics::HandFingerSegment>(_semanticContactSetSegment[i].load(std::memory_order_acquire));
+                record.handBodyId = _semanticContactSetHandBodyId[i].load(std::memory_order_acquire);
+                record.otherBodyId = _semanticContactSetOtherBodyId[i].load(std::memory_order_acquire);
+                const auto contactFrame = _semanticContactSetFrames[i].load(std::memory_order_acquire);
+                record.framesSinceContact = hand_semantic_contact_state::semanticFramesSinceContact(
+                    _semanticContactFrameCounter.load(std::memory_order_acquire),
+                    contactFrame);
+                record.sequence = sequenceBefore;
+                const auto sequenceAfter = _semanticContactSetSequence[i].load(std::memory_order_acquire);
+                if (!hand_semantic_contact_state::semanticContactSequenceSnapshotStable(sequenceBefore, sequenceAfter)) {
+                    continue;
+                }
+
+                if (record.handBodyId == hand_semantic_contact_state::kInvalidBodyId || record.otherBodyId != targetBodyId) {
+                    break;
+                }
+                if (record.framesSinceContact <= maxFramesSinceContact) {
+                    contacts.add(record);
+                }
+                break;
+            }
+        }
+
+        return contacts;
+    }
+
+    bool Hand::tryGetHandColliderMetadataForRole(hand_collider_semantics::HandColliderRole role, HandColliderBodyMetadata& outMetadata) const
+    {
+        outMetadata = {};
+        const auto count = getHandColliderBodyCount();
+        for (std::uint32_t i = 0; i < count; ++i) {
+            const std::uint32_t bodyId = getHandColliderBodyIdAtomic(i);
+            if (bodyId == hand_collider_semantics::kInvalidBodyId) {
+                continue;
+            }
+            HandColliderBodyMetadata metadata{};
+            if (!tryGetHandColliderMetadata(bodyId, metadata) || !metadata.valid) {
+                continue;
+            }
+            if (metadata.role == role) {
+                outMetadata = metadata;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool Hand::isFingerTouching(hand_collider_semantics::HandFinger finger) const
+    {
+        hand_semantic_contact_state::SemanticContactRecord contact{};
+        return getLastSemanticContact(contact) && contact.framesSinceContact < 5 && contact.finger == finger;
+    }
+
+    bool Hand::isFingerTipTouching(hand_collider_semantics::HandFinger finger) const
+    {
+        hand_semantic_contact_state::SemanticContactRecord contact{};
+        return getLastSemanticContact(contact) && contact.framesSinceContact < 5 && contact.finger == finger &&
+               contact.segment == hand_collider_semantics::HandFingerSegment::Tip;
+    }
+
+    bool Hand::lockFarSelection()
+    {
+        if (_state != HandState::SelectedFar || !_currentSelection.isValid() || !_currentSelection.isFarSelection) {
+            return false;
+        }
+
+        const auto transition = applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::LockFarSelection });
+        if (!transition.accepted) {
+            return false;
+        }
+        _selectionHoldFrames = 0;
+        ROCK_LOG_DEBUG(Hand, "{} hand locked far selection formID={:08X} dist={:.1f}", handName(), _currentSelection.refr ? _currentSelection.refr->GetFormID() : 0,
+            _currentSelection.distance);
+        return true;
+    }
+
+    void Hand::clearSelectionState(bool rememberDeselect)
+    {
+        stopSelectionHighlight();
+        clearSelectedCloseFingerPose();
+        if (rememberDeselect) {
+            _lastDeselectedRef = _currentSelection.refr;
+            _deselectCooldown = 10;
+        }
+        _currentSelection.clear();
+        _cachedFarCandidate.clear();
+        clearPullRuntimeState();
+        _lastSelectedCloseOrigin = {};
+        _hasLastSelectedCloseOrigin = false;
+        _selectedCloseHandSpeedMetersPerSecond = 0.0f;
+        const auto event =
+            (_state == HandState::SelectedClose || _state == HandState::SelectedFar) ? HandInteractionEvent::SelectionLost :
+            (_state == HandState::Idle) ? HandInteractionEvent::Initialize :
+                                          HandInteractionEvent::ObjectInvalidated;
+        applyTransition(HandTransitionRequest{ .event = event });
+        _selectionHoldFrames = 0;
+    }
+
+    void Hand::updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& palmNormal,
+        const RE::NiPoint3& pointingDirection, float nearRange, float farRange, float deltaTime, RE::TESObjectREFR* otherHandRef)
+    {
+        if (!selection_state_policy::canUpdateSelectionFromState(_state))
             return;
 
         auto nearCandidate = findCloseObject(bhkWorld, hknpWorld, selectionOrigin, palmNormal, nearRange, _isLeft, otherHandRef);
@@ -374,25 +699,44 @@ namespace frik::rock
             if (best.distance > stickyThreshold) {
                 _currentSelection.distance = _currentSelection.distance;
                 _selectionHoldFrames++;
+                refreshSelectionHighlight(_currentSelection);
                 return;
             }
         }
 
         if (best.refr == _currentSelection.refr && best.isValid()) {
-            _currentSelection.distance = best.distance;
+            const bool refreshedSource = selection_query_policy::shouldReplaceSelectionForSameRef(
+                _currentSelection.isFarSelection, best.isFarSelection, _currentSelection.bodyId.value, best.bodyId.value);
+            _currentSelection = best;
+            applyTransition(
+                HandTransitionRequest{ .event = best.isFarSelection ? HandInteractionEvent::SelectionFoundFar : HandInteractionEvent::SelectionFoundClose });
+            if (refreshedSource) {
+                ROCK_LOG_DEBUG(Hand,
+                    "{} hand refreshed selection source -> {} formID={:08X} body={} dist={:.1f}",
+                    handName(),
+                    best.isFarSelection ? "far" : "near",
+                    best.refr ? best.refr->GetFormID() : 0,
+                    best.bodyId.value,
+                    best.distance);
+            }
             _selectionHoldFrames++;
+            if (refreshedSource) {
+                playSelectionHighlight(_currentSelection);
+            } else {
+                refreshSelectionHighlight(_currentSelection);
+            }
         } else if (best.isValid()) {
             auto* baseObj = best.refr->GetObjectReference();
             const char* typeName = baseObj ? baseObj->GetFormTypeString() : "???";
 
             auto objName = baseObj ? RE::TESFullName::GetFullName(*baseObj, false) : std::string_view{};
-            const char* nameStr = objName.empty() ? "(unnamed)" : objName.data();
+            const std::string nameStr = objName.empty() ? std::string("(unnamed)") : std::string(objName);
 
             if (_currentSelection.isValid()) {
-                ROCK_LOG_INFO(Hand, "{} hand switched -> {} [{}] '{}' formID={:08X} dist={:.1f}", handName(), best.isFarSelection ? "far" : "near", typeName, nameStr,
+                ROCK_LOG_DEBUG(Hand, "{} hand switched -> {} [{}] '{}' formID={:08X} dist={:.1f}", handName(), best.isFarSelection ? "far" : "near", typeName, nameStr,
                     best.refr->GetFormID(), best.distance);
             } else {
-                ROCK_LOG_INFO(Hand, "{} hand selected {} [{}] '{}' formID={:08X} dist={:.1f}", handName(), best.isFarSelection ? "far" : "near", typeName, nameStr,
+                ROCK_LOG_DEBUG(Hand, "{} hand selected {} [{}] '{}' formID={:08X} dist={:.1f}", handName(), best.isFarSelection ? "far" : "near", typeName, nameStr,
                     best.refr->GetFormID(), best.distance);
             }
 
@@ -400,55 +744,142 @@ namespace frik::rock
 
             _currentSelection = best;
 
-            _state = HandState::SelectedClose;
+            applyTransition(
+                HandTransitionRequest{ .event = best.isFarSelection ? HandInteractionEvent::SelectionFoundFar : HandInteractionEvent::SelectionFoundClose });
             _selectionHoldFrames = 0;
 
-            playSelectionHighlight(best.refr);
+            playSelectionHighlight(_currentSelection);
         } else if (_currentSelection.isValid()) {
             constexpr int MIN_HOLD_FRAMES = 15;
 
             if (_selectionHoldFrames < MIN_HOLD_FRAMES) {
                 _selectionHoldFrames++;
+                refreshSelectionHighlight(_currentSelection);
                 return;
             }
 
             float hysteresisRange = _currentSelection.isFarSelection ? farRange * 2.5f : nearRange * 2.5f;
 
-            if (_currentSelection.bodyId.value != 0x7FFF'FFFF) {
-                auto& body = hknpWorld->GetBody(_currentSelection.bodyId);
+            if (_currentSelection.bodyId.value != 0x7FFF'FFFF && hknpWorld) {
+                RE::NiTransform bodyWorld{};
+                const bool hasBodyTransform = tryGetBodyWorldTransform(hknpWorld, _currentSelection.bodyId, bodyWorld);
 
-                if (body.motionIndex > 0 && body.motionIndex < 4096) {
-                    auto* motion = hknpWorld->GetBodyMotion(_currentSelection.bodyId);
-                    if (motion) {
-                        RE::NiPoint3 objPos = hkVectorToNiPoint(motion->position);
-                        _currentSelection.distance = (objPos - selectionOrigin).Length();
-                    }
+                RE::NiPoint3 ownerNodePosition{};
+                bool hasOwnerNode = false;
+                if (auto* ownerNode = getOwnerNodeFromBody(hknpWorld, _currentSelection.bodyId)) {
+                    ownerNodePosition = ownerNode->world.translate;
+                    hasOwnerNode = true;
+                }
+
+                RE::NiPoint3 motionCenterOfMass{};
+                bool hasMotionCenterOfMass = false;
+                if (auto* motion = havok_runtime::getBodyMotion(hknpWorld, _currentSelection.bodyId)) {
+                    motionCenterOfMass = hkVectorToNiPoint(motion->position);
+                    hasMotionCenterOfMass = true;
+                }
+
+                const auto anchor = body_frame::chooseSelectionDistanceAnchor(false,
+                    _currentSelection.hitPointWorld,
+                    hasBodyTransform,
+                    bodyWorld.translate,
+                    hasOwnerNode,
+                    ownerNodePosition,
+                    hasMotionCenterOfMass,
+                    motionCenterOfMass,
+                    selectionOrigin);
+                if (anchor.source != body_frame::BodyFrameSource::Fallback) {
+                    _currentSelection.distance = body_frame::distance(anchor.position, selectionOrigin);
                 } else {
+                    stopSelectionHighlight();
                     _currentSelection.clear();
-                    _state = HandState::Idle;
+                    applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::SelectionLost });
                     _selectionHoldFrames = 0;
+                    clearSelectedCloseFingerPose();
                     return;
                 }
             }
 
             bool refInvalid = !_currentSelection.refr || _currentSelection.refr->IsDeleted() || _currentSelection.refr->IsDisabled();
 
-            if (refInvalid || _currentSelection.distance > hysteresisRange) {
-                ROCK_LOG_INFO(Hand, "{} hand cleared (formID={:08X}, dist={:.1f}, held={}f)", handName(), _currentSelection.refr ? _currentSelection.refr->GetFormID() : 0,
+            const bool keepAfterMiss = selection_query_policy::shouldKeepSelectionAfterMiss(
+                _currentSelection.isFarSelection,
+                _selectionHoldFrames,
+                MIN_HOLD_FRAMES,
+                _currentSelection.distance,
+                hysteresisRange);
+
+            if (refInvalid || !keepAfterMiss) {
+                ROCK_LOG_DEBUG(Hand, "{} hand cleared (formID={:08X}, dist={:.1f}, held={}f)", handName(), _currentSelection.refr ? _currentSelection.refr->GetFormID() : 0,
                     _currentSelection.distance, _selectionHoldFrames);
-                stopSelectionHighlight();
-                _lastDeselectedRef = _currentSelection.refr;
-                _deselectCooldown = 10;
-                _currentSelection.clear();
-                _state = HandState::Idle;
-                _selectionHoldFrames = 0;
+                clearSelectionState(true);
+            } else {
+                refreshSelectionHighlight(_currentSelection);
             }
         } else {
-            _state = HandState::Idle;
+            if (_state != HandState::Idle) {
+                applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::SelectionLost });
+            }
+        }
+
+        if (_state == HandState::SelectedClose && _currentSelection.isValid()) {
+            if (_hasLastSelectedCloseOrigin) {
+                const float dx = selectionOrigin.x - _lastSelectedCloseOrigin.x;
+                const float dy = selectionOrigin.y - _lastSelectedCloseOrigin.y;
+                const float dz = selectionOrigin.z - _lastSelectedCloseOrigin.z;
+                const float distanceGameUnits = std::sqrt(dx * dx + dy * dy + dz * dz);
+                _selectedCloseHandSpeedMetersPerSecond =
+                    selected_close_finger_policy::estimateHandSpeedMetersPerSecond(distanceGameUnits, deltaTime, havokToGameScale());
+            } else {
+                _selectedCloseHandSpeedMetersPerSecond = 0.0f;
+            }
+            _lastSelectedCloseOrigin = selectionOrigin;
+            _hasLastSelectedCloseOrigin = true;
+        } else {
+            _lastSelectedCloseOrigin = {};
+            _hasLastSelectedCloseOrigin = false;
+            _selectedCloseHandSpeedMetersPerSecond = 0.0f;
+        }
+
+        updateSelectedCloseFingerPose();
+    }
+
+    void Hand::updateSelectedCloseFingerPose()
+    {
+        auto* api = frik::api::FRIKApi::inst;
+        const bool shouldApply = selected_close_finger_policy::shouldApplyPreCurl(
+            g_rockConfig.rockSelectedCloseFingerCurlEnabled,
+            _state == HandState::SelectedClose,
+            _currentSelection.isValid(),
+            _selectedCloseHandSpeedMetersPerSecond,
+            g_rockConfig.rockSelectedCloseFingerAnimMaxHandSpeed);
+        if (!api || !shouldApply) {
+            clearSelectedCloseFingerPose();
+            return;
+        }
+
+        const float value = std::clamp(g_rockConfig.rockSelectedCloseFingerAnimValue, 0.0f, 1.0f);
+        const auto hand = handFromBool(_isLeft);
+        if (api->setHandPoseCustomFingerPositionsWithPriority) {
+            api->setHandPoseCustomFingerPositionsWithPriority(SELECTED_CLOSE_FINGER_TAG, hand, value, value, value, value, value, 10);
+            _selectedCloseFingerPoseActive = true;
         }
     }
 
-    bool Hand::createCollision(RE::hknpWorld* world, void* bhkWorld, float halfExtentX, float halfExtentY, float halfExtentZ)
+    void Hand::clearSelectedCloseFingerPose()
+    {
+        if (!_selectedCloseFingerPoseActive) {
+            return;
+        }
+
+        if (auto* api = frik::api::FRIKApi::inst) {
+            if (api->clearHandPose) {
+                api->clearHandPose(SELECTED_CLOSE_FINGER_TAG, handFromBool(_isLeft));
+            }
+        }
+        _selectedCloseFingerPoseActive = false;
+    }
+
+    bool Hand::createCollision(RE::hknpWorld* world, void* bhkWorld)
     {
         if (hasCollisionBody()) {
             ROCK_LOG_WARN(Hand, "{} hand already has collision body -- skipping create", handName());
@@ -460,233 +891,50 @@ namespace frik::rock
             return false;
         }
 
-        auto* shape = CreateBoxShape(halfExtentX, halfExtentY, halfExtentZ, g_rockConfig.rockHandCollisionBoxRadius);
-        if (!shape) {
-            ROCK_LOG_ERROR(Hand, "{} hand createCollision: box shape creation failed", handName());
+        if (g_rockConfig.rockHandColliderRuntimeMode == 0) {
+            ROCK_LOG_WARN(Hand, "{} bone-derived hand collision disabled by iHandColliderRuntimeMode=0", handName());
             return false;
         }
 
-        auto materialId = registerHandMaterial(world);
-
-        std::uint32_t filterInfo = (0x000B << 16) | (ROCK_HAND_LAYER & 0x7F);
-
-        bool ok = _handBody.create(world, bhkWorld, shape, filterInfo, materialId, BethesdaMotionType::Keyframed, _isLeft ? "ROCK_LeftHand" : "ROCK_RightHand");
-
-        if (!ok) {
-            ROCK_LOG_ERROR(Hand, "{} hand createCollision: BethesdaPhysicsBody::create failed", handName());
+        if (!_boneColliders.create(world, bhkWorld, _isLeft, _handBody)) {
+            ROCK_LOG_ERROR(Hand, "{} bone-derived hand collision create failed", handName());
             return false;
         }
 
-        _handBody.createNiNode(_isLeft ? "ROCK_LeftHand" : "ROCK_RightHand");
-
-        ROCK_LOG_INFO(Hand, "{} hand collision created via BethesdaPhysicsBody — bodyId={}", handName(), _handBody.getBodyId().value);
+        ROCK_LOG_INFO(Hand,
+            "{} hand collision created from live skeleton bones — palmAnchorBody={} generatedBodies={}",
+            handName(),
+            _handBody.getBodyId().value,
+            _boneColliders.getBodyCount());
 
         return true;
     }
 
     void Hand::destroyCollision(void* bhkWorld)
     {
-        if (!hasCollisionBody())
+        if (!hasCollisionBody() && !_boneColliders.hasBodies())
             return;
 
-        ROCK_LOG_INFO(Hand, "{} hand collision destroying — bodyId={}", handName(), _handBody.getBodyId().value);
-        _handBody.destroy(bhkWorld);
+        ROCK_LOG_DEBUG(Hand, "{} hand collision destroying — palmAnchorBody={}", handName(), _handBody.getBodyId().value);
+        _boneColliders.destroy(bhkWorld, _handBody);
+        clearGrabHandCollisionSuppressionState();
     }
 
-    void Hand::updateCollisionTransform(RE::hknpWorld* world, const RE::NiTransform& handTransform, float deltaTime)
+    void Hand::updateCollisionTransform(RE::hknpWorld* world, float deltaTime)
     {
         if (!hasCollisionBody() || !world)
             return;
 
-        const auto bodyId = _handBody.getBodyId();
-
-        const float targetX = handTransform.translate.x * kGameToHavokScale;
-        const float targetY = handTransform.translate.y * kGameToHavokScale;
-        const float targetZ = handTransform.translate.z * kGameToHavokScale;
-
-        auto* bodyArray = world->GetBodyArray();
-        auto* bodyFloats = reinterpret_cast<float*>(&bodyArray[bodyId.value]);
-        float curX = bodyFloats[12], curY = bodyFloats[13], curZ = bodyFloats[14];
-
-        float dx = targetX - curX, dy = targetY - curY, dz = targetZ - curZ;
-        float dist = sqrtf(dx * dx + dy * dy + dz * dz);
-        bool isTeleport = (dist > 5.0f);
-        const bool logWitness = g_rockConfig.rockDebugVerboseLogging && (++_transformWitnessLogCounter >= 90);
-        if (logWitness) {
-            _transformWitnessLogCounter = 0;
-        }
-
-        alignas(16) float linVelOut[4] = { 0, 0, 0, 0 };
-        alignas(16) float angVelOut[4] = { 0, 0, 0, 0 };
-
-        if (deltaTime > 0.0001f && !isTeleport) {
-            alignas(16) float tgtPos[4] = { targetX, targetY, targetZ, 0.0f };
-            alignas(16) float tgtQuat[4];
-            niRotToHkQuat(handTransform.rotate, tgtQuat);
-
-            typedef void (*computeHKF_t)(void*, std::uint32_t, const float*, const float*, float, float*, float*);
-            static REL::Relocation<computeHKF_t> computeHardKeyFrame{ REL::Offset(offsets::kFunc_ComputeHardKeyFrame) };
-            computeHardKeyFrame(world, bodyId.value, tgtPos, tgtQuat, deltaTime, linVelOut, angVelOut);
-        }
-
-        {
-            float MAX_LIN_VEL = g_rockConfig.rockMaxLinearVelocity;
-            float MAX_ANG_VEL = g_rockConfig.rockMaxAngularVelocity;
-
-            float linSpeed = sqrtf(linVelOut[0] * linVelOut[0] + linVelOut[1] * linVelOut[1] + linVelOut[2] * linVelOut[2]);
-            if (linSpeed > MAX_LIN_VEL) {
-                float s = MAX_LIN_VEL / linSpeed;
-                linVelOut[0] *= s;
-                linVelOut[1] *= s;
-                linVelOut[2] *= s;
-            }
-
-            float angSpeed = sqrtf(angVelOut[0] * angVelOut[0] + angVelOut[1] * angVelOut[1] + angVelOut[2] * angVelOut[2]);
-            if (angSpeed > MAX_ANG_VEL) {
-                float s = MAX_ANG_VEL / angSpeed;
-                angVelOut[0] *= s;
-                angVelOut[1] *= s;
-                angVelOut[2] *= s;
-            }
-        }
-
-        {
-            RE::hkTransformf hkTransform;
-
-            hkTransform.rotation = niRotToHkTransformRotation(handTransform.rotate);
-            hkTransform.translation = RE::NiPoint4(targetX, targetY, targetZ, 0.0f);
-            _handBody.setTransform(hkTransform);
-        }
-
-        _handBody.setVelocity(linVelOut, angVelOut);
-
-        if (logWitness) {
-            const auto targetQuat = niRotToHkQuat(handTransform.rotate);
-            const auto targetHkRotation = niRotToHkTransformRotation(handTransform.rotate);
-            const auto* targetHk = reinterpret_cast<const float*>(&targetHkRotation);
-            const float targetDet = matrixDeterminant(handTransform.rotate);
-            const float liveDet = bodyBasisDeterminant(bodyFloats);
-
-            ROCK_LOG_INFO(Hand,
-                "{} transform witness: bodyId={} niPos=({:.1f},{:.1f},{:.1f}) hkTarget=({:.4f},{:.4f},{:.4f}) "
-                "liveOrigin=({:.4f},{:.4f},{:.4f}) delta=({:.4f},{:.4f},{:.4f}) dist={:.4f} dt={:.4f} "
-                "teleport={} targetDet={:.4f} liveDet={:.4f}",
-                handName(), bodyId.value, handTransform.translate.x, handTransform.translate.y, handTransform.translate.z, targetX, targetY, targetZ, curX, curY, curZ, dx, dy, dz,
-                dist, deltaTime, isTeleport ? "yes" : "no", targetDet, liveDet);
-
-            ROCK_LOG_INFO(Hand,
-                "{} transform basis: targetNiRows=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
-                "targetHkCols=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
-                "liveHkCols=[({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f}) ({:.4f},{:.4f},{:.4f})] "
-                "quat=({:.4f},{:.4f},{:.4f},{:.4f}) linVel=({:.4f},{:.4f},{:.4f}) angVel=({:.4f},{:.4f},{:.4f})",
-                handName(), handTransform.rotate.entry[0][0], handTransform.rotate.entry[0][1], handTransform.rotate.entry[0][2], handTransform.rotate.entry[1][0],
-                handTransform.rotate.entry[1][1], handTransform.rotate.entry[1][2], handTransform.rotate.entry[2][0], handTransform.rotate.entry[2][1],
-                handTransform.rotate.entry[2][2], targetHk[0], targetHk[1], targetHk[2], targetHk[4], targetHk[5], targetHk[6], targetHk[8], targetHk[9], targetHk[10],
-                bodyFloats[0], bodyFloats[1], bodyFloats[2], bodyFloats[4], bodyFloats[5], bodyFloats[6], bodyFloats[8], bodyFloats[9], bodyFloats[10], targetQuat.x,
-                targetQuat.y, targetQuat.z, targetQuat.w, linVelOut[0], linVelOut[1], linVelOut[2], angVelOut[0], angVelOut[1], angVelOut[2]);
-        }
+        _boneColliders.update(world, _isLeft, _handBody, deltaTime);
     }
 
-    void Hand::updateDebugBasisVis(const RE::NiTransform& colliderTransform, const RE::NiPoint3& grabAnchorWorld, bool show, RE::NiNode* parentNode)
+    void Hand::flushPendingCollisionPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
-        auto destroyMarker = [](RE::NiNode*& marker) {
-            if (!marker) {
-                return;
-            }
-
-            marker->flags.flags |= 0x1;
-            marker->local.scale = 0;
-            if (marker->parent) {
-                marker->parent->DetachChild(marker);
-            }
-            marker = nullptr;
-        };
-
-        auto createMarker = [&](RE::NiNode*& marker, const char* meshPath, const char* name) {
-            if (marker || !parentNode) {
-                return;
-            }
-
-            marker = f4cf::f4vr::getClonedNiNodeForNifFileSetName(meshPath);
-            if (marker) {
-                marker->name = RE::BSFixedString(name);
-                parentNode->AttachChild(marker, true);
-                marker->flags.flags &= 0xfffffffffffffffe;
-                marker->local.scale = 0.25f;
-            } else {
-                ROCK_LOG_WARN(Hand, "{} basis debug marker FAILED to load {}", handName(), meshPath);
-            }
-        };
-
-        if (!show || !parentNode) {
-            destroyDebugBasisVis();
+        if (!hasCollisionBody() || !world) {
             return;
         }
 
-        if (_debugBasisVisParent && _debugBasisVisParent != parentNode) {
-            destroyDebugBasisVis();
-        }
-
-        createMarker(_debugHandOriginVis, "Data/Meshes/ROCK/DebugBox_VaultSuit.nif", _isLeft ? "ROCK_HandOriginL" : "ROCK_HandOriginR");
-        createMarker(_debugPalmCenterVis, "Data/Meshes/ROCK/1x1Sphere.nif", _isLeft ? "ROCK_GrabAnchorL" : "ROCK_GrabAnchorR");
-        createMarker(_debugAxisXVis, "Data/Meshes/ROCK/marker_arrow.nif", _isLeft ? "ROCK_AxisXL" : "ROCK_AxisXR");
-        createMarker(_debugAxisYVis, "Data/Meshes/ROCK/marker_travel.nif", _isLeft ? "ROCK_AxisYL" : "ROCK_AxisYR");
-        createMarker(_debugAxisZVis, "Data/Meshes/ROCK/marker_decal.nif", _isLeft ? "ROCK_AxisZL" : "ROCK_AxisZR");
-
-        _debugBasisVisParent = parentNode;
-        const RE::NiPoint3 colliderCenter = colliderTransform.translate;
-        const RE::NiPoint3 axisXEndpoint =
-            colliderCenter + normalizeDebugDirection(debug_axis_math::rotateNiLocalToWorld(colliderTransform.rotate, RE::NiPoint3(1.0f, 0.0f, 0.0f))) * 6.0f;
-        const RE::NiPoint3 axisYEndpoint =
-            colliderCenter + normalizeDebugDirection(debug_axis_math::rotateNiLocalToWorld(colliderTransform.rotate, RE::NiPoint3(0.0f, 1.0f, 0.0f))) * 9.0f;
-        const RE::NiPoint3 axisZEndpoint =
-            colliderCenter + normalizeDebugDirection(debug_axis_math::rotateNiLocalToWorld(colliderTransform.rotate, RE::NiPoint3(0.0f, 0.0f, 1.0f))) * 12.0f;
-
-        auto updateMarker = [&](RE::NiNode* marker, const RE::NiPoint3& localPos, const RE::NiMatrix3& localRot, float scale) {
-            if (!marker) {
-                return;
-            }
-
-            marker->flags.flags &= 0xfffffffffffffffe;
-            marker->local.translate = localPos;
-            marker->local.rotate = localRot;
-            marker->local.scale = scale;
-        };
-
-        const RE::NiPoint3 localColliderCenterPos = transform_math::worldPointToLocal(parentNode->world, colliderCenter);
-        const RE::NiPoint3 localGrabAnchorPos = transform_math::worldPointToLocal(parentNode->world, grabAnchorWorld);
-        const RE::NiPoint3 localAxisXPos = transform_math::worldPointToLocal(parentNode->world, axisXEndpoint);
-        const RE::NiPoint3 localAxisYPos = transform_math::worldPointToLocal(parentNode->world, axisYEndpoint);
-        const RE::NiPoint3 localAxisZPos = transform_math::worldPointToLocal(parentNode->world, axisZEndpoint);
-
-        updateMarker(_debugHandOriginVis, localColliderCenterPos, makeIdentityRotation(), 0.05f);
-        updateMarker(_debugPalmCenterVis, localGrabAnchorPos, makeIdentityRotation(), 0.03f);
-        updateMarker(_debugAxisXVis, localAxisXPos, buildArrowLocalRotation(RE::NiPoint3(1.0f, 0.0f, 0.0f)), 0.035f);
-        updateMarker(_debugAxisYVis, localAxisYPos, buildArrowLocalRotation(RE::NiPoint3(0.0f, 1.0f, 0.0f)), 0.045f);
-        updateMarker(_debugAxisZVis, localAxisZPos, buildArrowLocalRotation(RE::NiPoint3(0.0f, 0.0f, 1.0f)), 0.055f);
-    }
-
-    void Hand::destroyDebugBasisVis()
-    {
-        auto destroyMarker = [](RE::NiNode*& marker) {
-            if (!marker) {
-                return;
-            }
-
-            marker->flags.flags |= 0x1;
-            marker->local.scale = 0;
-            if (marker->parent) {
-                marker->parent->DetachChild(marker);
-            }
-            marker = nullptr;
-        };
-
-        destroyMarker(_debugHandOriginVis);
-        destroyMarker(_debugPalmCenterVis);
-        destroyMarker(_debugAxisXVis);
-        destroyMarker(_debugAxisYVis);
-        destroyMarker(_debugAxisZVis);
-        _debugBasisVisParent = nullptr;
+        _boneColliders.flushPendingPhysicsDrive(world, timing, _handBody);
     }
 
 }

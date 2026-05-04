@@ -1,46 +1,17 @@
 #include "BethesdaPhysicsBody.h"
 
+#include "HavokRefCount.h"
 #include "HavokOffsets.h"
+#include "HavokRuntime.h"
 #include "PhysicsLog.h"
 
+#include "RE/Havok/hknpBody.h"
+
+#include <intrin.h>
 #include <windows.h>
 
 namespace frik::rock
 {
-
-    static void* havokAlloc(std::size_t size)
-    {
-        static REL::Relocation<std::uint32_t*> s_tlsIndex{ REL::Offset(offsets::kData_HavokTlsAllocKey) };
-        LPVOID tlsBlock = TlsGetValue(*s_tlsIndex);
-        if (!tlsBlock)
-            return nullptr;
-
-        auto** allocator = reinterpret_cast<void***>(reinterpret_cast<char*>(tlsBlock) + 0x58);
-        if (!allocator || !*allocator)
-            return nullptr;
-
-        auto* vtable = reinterpret_cast<void* (**)(void*, std::size_t)>(**allocator);
-        return vtable[1](*allocator, size);
-    }
-
-    static void havokFree(void* ptr, std::size_t size)
-    {
-        if (!ptr)
-            return;
-
-        static REL::Relocation<std::uint32_t*> s_tlsIndex{ REL::Offset(offsets::kData_HavokTlsAllocKey) };
-        LPVOID tlsBlock = TlsGetValue(*s_tlsIndex);
-        if (!tlsBlock)
-            return;
-
-        auto** allocator = reinterpret_cast<void***>(reinterpret_cast<char*>(tlsBlock) + 0x58);
-        if (!allocator || !*allocator)
-            return;
-
-        auto* vtable = reinterpret_cast<void (**)(void*, void*, std::size_t)>(**allocator);
-        vtable[2](*allocator, ptr, size);
-    }
-
     static void releaseRefCounted(void* obj)
     {
         if (!obj)
@@ -67,41 +38,267 @@ namespace frik::rock
         }
     }
 
+    static void* bethesdaAllocatorPool()
+    {
+        static REL::Relocation<std::uintptr_t> allocPool{ REL::Offset(offsets::kData_BethesdaAllocatorPool) };
+        return reinterpret_cast<void*>(allocPool.address());
+    }
+
+    static bool ensureBethesdaAllocatorInitialized()
+    {
+        using AllocatorInit_t = void* (*)(void*, std::uint32_t*);
+        static REL::Relocation<AllocatorInit_t> initFunc{ REL::Offset(offsets::kFunc_BethesdaAllocatorInit) };
+        static REL::Relocation<std::uint32_t*> allocatorState{ REL::Offset(offsets::kData_BethesdaAllocatorState) };
+
+        auto* state = allocatorState.get();
+        if (!state) {
+            return false;
+        }
+
+        if (*state != 2) {
+            initFunc(bethesdaAllocatorPool(), state);
+        }
+
+        return *state == 2;
+    }
+
+    static std::uint32_t* bethesdaAllocatorContextSlot()
+    {
+#if defined(_M_X64)
+        static REL::Relocation<std::uint32_t*> tlsIndex{ REL::Offset(offsets::kData_BethesdaTlsIndex) };
+        auto* tlsSlots = reinterpret_cast<void**>(__readgsqword(0x58));
+        if (!tlsSlots) {
+            return nullptr;
+        }
+
+        auto* tlsBlock = static_cast<std::uint8_t*>(tlsSlots[*tlsIndex]);
+        if (!tlsBlock) {
+            return nullptr;
+        }
+
+        return reinterpret_cast<std::uint32_t*>(tlsBlock + offsets::kBethesdaTlsAllocatorContext);
+#else
+        return nullptr;
+#endif
+    }
+
+    class BethesdaAllocatorContextGuard
+    {
+    public:
+        explicit BethesdaAllocatorContextGuard(std::uint32_t context)
+        {
+            _slot = bethesdaAllocatorContextSlot();
+            if (_slot) {
+                _previous = *_slot;
+                *_slot = context;
+                _active = true;
+            }
+        }
+
+        ~BethesdaAllocatorContextGuard()
+        {
+            if (_active && _slot) {
+                *_slot = _previous;
+            }
+        }
+
+        BethesdaAllocatorContextGuard(const BethesdaAllocatorContextGuard&) = delete;
+        BethesdaAllocatorContextGuard& operator=(const BethesdaAllocatorContextGuard&) = delete;
+
+        bool active() const { return _active; }
+
+    private:
+        std::uint32_t* _slot = nullptr;
+        std::uint32_t _previous = 0;
+        bool _active = false;
+    };
+
     static void* bethesdaAlloc(std::size_t size)
     {
-        typedef void* (*alloc_t)(void*, std::size_t, int);
+        typedef void* (*alloc_t)(void*, std::size_t, std::uint32_t, char);
         static REL::Relocation<alloc_t> allocFunc{ REL::Offset(offsets::kFunc_BethesdaAlloc) };
-        static REL::Relocation<std::uintptr_t> allocPool{ REL::Offset(offsets::kData_BethesdaAllocatorPool) };
 
-        return allocFunc(reinterpret_cast<void*>(allocPool.address()), size, 0);
+        if (!ensureBethesdaAllocatorInitialized()) {
+            return nullptr;
+        }
+
+        return allocFunc(bethesdaAllocatorPool(), size, 0, '\0');
     }
 
     using PhysicsSystemDataCtor_t = void* (*)(void*);
     using BodyCinfoCtor_t = void* (*)(void*);
+    using MotionCinfoCtor_t = void* (*)(void*);
     using MaterialCtor_t = void* (*)(void*);
     using PhysicsSystemCtor_t = void* (*)(void*, void*);
+    using PhysicsSystemGetBodyId_t = void (*)(void*, RE::hknpBodyId*, std::int32_t);
     using CollisionObjectCtor_t = void* (*)(void*, std::uint32_t, void*);
-    using CreateInstance_t = void (*)(void*, void*);
+    using CollisionObjectAddToWorld_t = void (*)(void*, void*);
     using SetMotionType_t = void (*)(void*, int);
     using LinkObject_t = void (*)(void*, void*);
-    using GetBodyId_t = void (*)(void*, void*, std::uint32_t);
+    using SetBodyKeyframed_t = void (*)(void*, std::uint32_t);
+    using SetBodyMaterial_t = void (*)(void*, std::uint32_t, std::uint16_t, std::int32_t);
+    using RemovePhysicsSystem_t = void (*)(void*, void*);
 
-    using DriveToKeyFrame_t = bool (*)(void*, const void*, float);
-    using SetTransform_t = void (*)(void*, const void*);
-    using SetVelocity_t = void (*)(void*, const float*, const float*);
-    using ApplyImpulse_t = void (*)(void*, const float*);
-    using ApplyPointImpulse_t = void (*)(void*, const float*, const float*);
+    using DriveToKeyFrame_t = std::uint8_t (*)(void*, const void*, float);
+    using SetTransform_t = std::uint8_t (*)(void*, const void*);
+    using SetVelocity_t = std::uint8_t (*)(void*, const float*, const float*);
+    using ApplyImpulse_t = std::uint8_t (*)(void*, const float*);
+    using ApplyPointImpulse_t = std::uint8_t (*)(void*, const float*, const float*);
     using SetMass_t = void (*)(void*, float);
-    using GetCOM_t = bool (*)(void*, float*);
-    using GetFilterInfo_t = std::uint32_t (*)(void*);
+    using GetCOM_t = std::uint8_t (*)(void*, float*);
+    using GetFilterInfo_t = std::uint32_t* (*)(void*, std::uint32_t*);
     using GetShape_t = void* (*)(void*);
     using IsConstrained_t = bool (*)(void*);
 
-    using SetCollisionFilter_t = void (*)(void*, std::uint32_t, std::uint32_t, std::uint32_t);
     using EnableBodyFlags_t = void (*)(void*, std::uint32_t, std::uint32_t, std::uint32_t);
-    using ActivateBody_t = void (*)(void*, std::uint32_t);
+    constexpr std::uint16_t kGeneratedSystemLocalMaterialIndex = 0;
+    constexpr std::uint32_t kInvalidGeneratedId = 0x7FFF'FFFF;
+    constexpr std::uint32_t kStaticLocalMotionIndex = kInvalidGeneratedId;
 
-    using HkArrayReserveMore_t = void (*)(void*, void*, int);
+    static std::uint16_t generatedInitialQualityId(BethesdaMotionType motionType)
+    {
+        /*
+         * Generated wrapper bodies enter FO4VR through hknpPhysicsSystemData,
+         * not direct hknpWorld::CreateBody. Ghidra shows the wrapper treats
+         * bodyCinfo+0x0C as a local motion-cinfo index and converts
+         * 0x7FFFFFFF to static motion 0 before creation. Therefore non-static
+         * ROCK colliders must supply a local motion cinfo up front and must not
+         * patch in a world motion after AddToWorld. The keyframed state is
+         * still applied after AddToWorld through Bethesda's own keyframed body
+         * path, matching the last known-good direct-call behavior.
+         */
+        switch (motionType) {
+        case BethesdaMotionType::Static:
+            return 0;
+        case BethesdaMotionType::Dynamic:
+            return 1;
+        case BethesdaMotionType::Keyframed:
+            return 0xFF;
+        }
+
+        return 0xFF;
+    }
+
+    static bool isUsableGeneratedMotion(std::uint32_t motionIndex)
+    {
+        return motionIndex != 0 && motionIndex != 0x7FFF'FFFF && motionIndex != 0xFFFF'FFFF;
+    }
+
+    static void* nativePhysicsSystemInstance(void* physicsSystem)
+    {
+        /*
+         * FO4VR keeps two ownership layers here: bhkPhysicsSystem is the
+         * ref-counted Bethesda wrapper stored on bhkNPCollisionObject, while
+         * bhkWorld::RemovePhysicsSystem and native body operations consume the
+         * runtime hknpPhysicsSystemInstance created by AddToWorld. Centralizing
+         * this unwrap prevents teardown and per-body calls from crossing the
+         * wrapper/native boundary with the wrong pointer type.
+         */
+        if (!physicsSystem) {
+            return nullptr;
+        }
+
+        return *reinterpret_cast<void**>(reinterpret_cast<char*>(physicsSystem) + offsets::kBhkPhysicsSystem_Instance);
+    }
+
+    static RE::hknpWorld* nativeWorldFromPhysicsSystem(void* physicsSystem)
+    {
+        auto* instance = nativePhysicsSystemInstance(physicsSystem);
+        if (!instance) {
+            return nullptr;
+        }
+
+        return *reinterpret_cast<RE::hknpWorld**>(reinterpret_cast<char*>(instance) + offsets::kHknpPhysicsSystemInstance_World);
+    }
+
+    static bool validateGeneratedBodyMotion(RE::hknpWorld* world, RE::hknpBodyId bodyId, BethesdaMotionType motionType)
+    {
+        if (!world || bodyId.value == kInvalidGeneratedId) {
+            return false;
+        }
+
+        if (motionType == BethesdaMotionType::Static) {
+            return true;
+        }
+
+        const auto before = havok_runtime::snapshotBody(world, bodyId);
+        if (!before.valid) {
+            ROCK_LOG_ERROR(BethesdaBody, "Native wrapper body {} is not readable after add-to-world", bodyId.value);
+            return false;
+        }
+
+        if (isUsableGeneratedMotion(before.motionIndex)) {
+            return true;
+        }
+
+        ROCK_LOG_ERROR(
+            BethesdaBody,
+            "Generated body {} was created without a live non-static motion: observedMotion={}",
+            bodyId.value,
+            before.motionIndex);
+        return false;
+    }
+
+    static bool applyGeneratedBodyMaterial(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::hknpMaterialId materialId)
+    {
+        /*
+         * FO4VR remaps hknpPhysicsSystemData material IDs through the local
+         * system-data material array during AddToWorld. ROCK therefore seeds
+         * generated systems with local material index 0 and assigns the desired
+         * global world material only after the native body exists. This prevents
+         * a local/global material mismatch from feeding invalid material data
+         * into Havok's surface-velocity contact modifier.
+         */
+        if (!world || bodyId.value == 0x7FFF'FFFF || materialId.value == 0xFFFF) {
+            return false;
+        }
+
+        static REL::Relocation<SetBodyMaterial_t> setBodyMaterial{ REL::Offset(offsets::kFunc_HknpWorld_SetBodyMaterial) };
+        setBodyMaterial(world, bodyId.value, materialId.value, 0);
+
+        const auto snapshot = havok_runtime::snapshotBody(world, bodyId);
+        if (!snapshot.valid || !snapshot.body || snapshot.body->materialId.value != materialId.value) {
+            ROCK_LOG_ERROR(
+                BethesdaBody,
+                "Generated body {} material assignment failed: requested={} observed={} readable={}",
+                bodyId.value,
+                materialId.value,
+                snapshot.body ? snapshot.body->materialId.value : 0xFFFF,
+                snapshot.valid ? "yes" : "no");
+            return false;
+        }
+
+        ROCK_LOG_DEBUG(BethesdaBody, "Generated body {} assigned world material {}", bodyId.value, materialId.value);
+        return true;
+    }
+
+    static void applyCollisionObjectMotionType(void* collisionObject, BethesdaMotionType motionType)
+    {
+        if (!collisionObject) {
+            return;
+        }
+
+        static REL::Relocation<SetMotionType_t> setMotion{ REL::Offset(offsets::kFunc_CollisionObject_SetMotionType) };
+        setMotion(collisionObject, static_cast<int>(motionType));
+    }
+
+    static void applyGeneratedBodyMotionType(RE::hknpWorld* world, void* collisionObject, RE::hknpBodyId bodyId, BethesdaMotionType motionType)
+    {
+        /*
+         * ROCK-generated bodies are solver drivers. The bhk collision-object
+         * wrapper is still needed for Bethesda methods, but keyframed driver
+         * bodies must be promoted on the hknp body itself. Dynamic/fixed modes
+         * keep using the wrapper method because Bethesda routes those through
+         * the collision object consistently.
+         */
+        if (motionType == BethesdaMotionType::Keyframed && world && bodyId.value != 0x7FFF'FFFF) {
+            static REL::Relocation<SetBodyKeyframed_t> setBodyKeyframed{ REL::Offset(offsets::kFunc_SetBodyKeyframed) };
+            setBodyKeyframed(world, bodyId.value);
+            return;
+        }
+
+        applyCollisionObjectMotionType(collisionObject, motionType);
+    }
 
     bool BethesdaPhysicsBody::create(RE::hknpWorld* world, void* bhkWorld, RE::hknpShape* shape, std::uint32_t filterInfo, RE::hknpMaterialId materialId,
         BethesdaMotionType motionType, const char* name)
@@ -115,7 +312,7 @@ namespace frik::rock
             return false;
         }
 
-        _systemData = havokAlloc(0x78);
+        _systemData = havok_runtime::allocateHavok(0x78);
         if (!_systemData) {
             ROCK_LOG_ERROR(BethesdaBody, "Failed to allocate hknpPhysicsSystemData (0x78 bytes)");
             return false;
@@ -124,6 +321,13 @@ namespace frik::rock
             static REL::Relocation<PhysicsSystemDataCtor_t> ctor{ REL::Offset(offsets::kFunc_PhysicsSystemData_Ctor) };
             ctor(_systemData);
         }
+        bool ownsSystemDataLocalRef = true;
+        auto releaseLocalSystemDataRef = [&]() {
+            if (ownsSystemDataLocalRef && _systemData) {
+                havok_ref_count::release(_systemData);
+                ownsSystemDataLocalRef = false;
+            }
+        };
 
         auto hkArrayAppendOne = [&](char* arrayBase, int stride) -> char* {
             auto*& dataPtr = *reinterpret_cast<char**>(arrayBase);
@@ -132,11 +336,9 @@ namespace frik::rock
             std::int32_t capacity = capFlags & 0x3FFFFFFF;
 
             if (size >= capacity) {
-                using ReserveMore_t = void (*)(void*, void*, int);
-                static REL::Relocation<ReserveMore_t> reserveMore{ REL::Offset(offsets::kFunc_HkArray_ReserveMore) };
-                static REL::Relocation<std::uintptr_t> arrayAllocGlobal{ REL::Offset(offsets::kData_HkArrayAllocatorGlobal) };
-                auto* allocParam = reinterpret_cast<void*>(arrayAllocGlobal.address());
-                reserveMore(allocParam, arrayBase, stride);
+                if (!havok_runtime::hkArrayReserveMore(arrayBase, stride)) {
+                    return nullptr;
+                }
             }
 
             if (!dataPtr)
@@ -147,6 +349,32 @@ namespace frik::rock
             return newEntry;
         };
 
+        std::uint32_t generatedLocalMotionIndex = kStaticLocalMotionIndex;
+        if (motionType != BethesdaMotionType::Static) {
+            auto* motionCinfoArray = reinterpret_cast<char*>(_systemData) + offsets::kSysData_MotionCinfos;
+            const auto motionIndexBeforeAppend = *reinterpret_cast<std::int32_t*>(motionCinfoArray + 0x08);
+            if (motionIndexBeforeAppend < 0) {
+                ROCK_LOG_ERROR(BethesdaBody, "Generated motion-cinfo array has invalid size {}", motionIndexBeforeAppend);
+
+                releaseLocalSystemDataRef();
+                _systemData = nullptr;
+                return false;
+            }
+
+            auto* motionCinfo = hkArrayAppendOne(motionCinfoArray, 0x70);
+            if (!motionCinfo) {
+                ROCK_LOG_ERROR(BethesdaBody, "Failed to grow motionCinfos array");
+
+                releaseLocalSystemDataRef();
+                _systemData = nullptr;
+                return false;
+            }
+
+            static REL::Relocation<MotionCinfoCtor_t> motionCinfoCtor{ REL::Offset(offsets::kFunc_MotionCinfo_Ctor) };
+            motionCinfoCtor(motionCinfo);
+            generatedLocalMotionIndex = static_cast<std::uint32_t>(motionIndexBeforeAppend);
+        }
+
         void* bodyCinfo = nullptr;
         {
             auto* bodyCinfoArray = reinterpret_cast<char*>(_systemData) + offsets::kSysData_BodyCinfos;
@@ -154,7 +382,7 @@ namespace frik::rock
             if (!bodyCinfo) {
                 ROCK_LOG_ERROR(BethesdaBody, "Failed to grow bodyCinfos array");
 
-                havokFree(_systemData, 0x78);
+                releaseLocalSystemDataRef();
                 _systemData = nullptr;
                 return false;
             }
@@ -164,11 +392,13 @@ namespace frik::rock
 
             auto* ci = reinterpret_cast<char*>(bodyCinfo);
             *reinterpret_cast<RE::hknpShape**>(ci + 0x00) = shape;
-            *reinterpret_cast<std::uint32_t*>(ci + 0x08) = 0x7FFF'FFFF;
-            *reinterpret_cast<std::uint32_t*>(ci + 0x0C) = 0x7FFF'FFFF;
-            *reinterpret_cast<std::uint8_t*>(ci + 0x10) = 0xFF;
-            *reinterpret_cast<std::uint16_t*>(ci + 0x12) = materialId.value;
+            *reinterpret_cast<std::uint32_t*>(ci + 0x08) = kInvalidGeneratedId;
+            *reinterpret_cast<std::uint32_t*>(ci + 0x0C) = generatedLocalMotionIndex;
+            *reinterpret_cast<std::uint16_t*>(ci + 0x10) = generatedInitialQualityId(motionType);
+            *reinterpret_cast<std::uint16_t*>(ci + 0x12) = kGeneratedSystemLocalMaterialIndex;
             *reinterpret_cast<std::uint32_t*>(ci + 0x14) = filterInfo;
+            *reinterpret_cast<const char**>(ci + 0x20) = name;
+            *reinterpret_cast<std::uintptr_t*>(ci + 0x28) = 0;
         }
 
         {
@@ -177,7 +407,7 @@ namespace frik::rock
             if (!material) {
                 ROCK_LOG_ERROR(BethesdaBody, "Failed to grow materials array");
 
-                havokFree(_systemData, 0x78);
+                releaseLocalSystemDataRef();
                 _systemData = nullptr;
                 return false;
             }
@@ -192,17 +422,7 @@ namespace frik::rock
             auto* shapeSlot = hkArrayAppendOne(shapeRefsArray, 8);
             if (shapeSlot) {
                 *reinterpret_cast<RE::hknpShape**>(shapeSlot) = shape;
-
-                auto* refCountDword = reinterpret_cast<volatile long*>(reinterpret_cast<char*>(shape) + 0x08);
-                for (;;) {
-                    long oldVal = *refCountDword;
-                    std::uint16_t rc = static_cast<std::uint16_t>(oldVal & 0xFFFF);
-                    if (rc == 0xFFFF)
-                        break;
-                    long newVal = (oldVal & static_cast<long>(0xFFFF0000u)) | static_cast<long>(static_cast<std::uint16_t>(rc + 1));
-                    if (_InterlockedCompareExchange(refCountDword, newVal, oldVal) == oldVal)
-                        break;
-                }
+                havok_ref_count::addRef(shape);
             }
         }
 
@@ -210,145 +430,121 @@ namespace frik::rock
         if (!_physicsSystem) {
             ROCK_LOG_ERROR(BethesdaBody, "Failed to allocate bhkPhysicsSystem (0x28 bytes)");
 
-            havokFree(_systemData, 0x78);
+            releaseLocalSystemDataRef();
             _systemData = nullptr;
             return false;
         }
         {
             static REL::Relocation<PhysicsSystemCtor_t> physSysCtor{ REL::Offset(offsets::kFunc_PhysicsSystem_Ctor) };
             physSysCtor(_physicsSystem, _systemData);
+            releaseLocalSystemDataRef();
         }
 
-        _collisionObject = bethesdaAlloc(0x30);
-        if (!_collisionObject) {
-            ROCK_LOG_ERROR(BethesdaBody, "Failed to allocate bhkNPCollisionObject (0x30 bytes)");
-
-            releaseRefCounted(_physicsSystem);
-            _physicsSystem = nullptr;
-            _systemData = nullptr;
-            return false;
-        }
+        /*
+         * ROCK-generated colliders need Bethesda wrapper ownership and hknp
+         * broadphase registration to behave like normal game bodies. FO4VR's
+         * collision-object phase at vfunction49 creates the runtime physics
+         * system instance, inserts it into bhkWorld, and publishes the body
+         * back-pointer; calling the lower creation phase alone leaves a body ID
+         * that Havok contact/constraint code does not actually solve against.
+         */
         {
+            BethesdaAllocatorContextGuard collisionObjectAllocatorContext{ 0x41 };
+            if (!collisionObjectAllocatorContext.active()) {
+                ROCK_LOG_ERROR(BethesdaBody, "Failed to access Bethesda allocator TLS context for bhkNPCollisionObject allocation");
+
+                releaseRefCounted(_physicsSystem);
+                _physicsSystem = nullptr;
+                _systemData = nullptr;
+                return false;
+            }
+
+            _collisionObject = bethesdaAlloc(0x30);
+            if (!_collisionObject) {
+                ROCK_LOG_ERROR(BethesdaBody, "Failed to allocate bhkNPCollisionObject (0x30 bytes)");
+
+                releaseRefCounted(_physicsSystem);
+                _physicsSystem = nullptr;
+                _systemData = nullptr;
+                return false;
+            }
+
             static REL::Relocation<CollisionObjectCtor_t> collObjCtor{ REL::Offset(offsets::kFunc_CollisionObject_Ctor) };
             collObjCtor(_collisionObject, 0, _physicsSystem);
         }
 
-        {
-            auto* bodyCinfoArray = reinterpret_cast<char*>(_systemData) + offsets::kSysData_BodyCinfos;
-            auto* cinfoData = *reinterpret_cast<char**>(bodyCinfoArray);
-            if (!cinfoData) {
-                ROCK_LOG_ERROR(BethesdaBody, "bodyCinfo array data is null");
-                releaseRefCounted(_collisionObject);
-                _collisionObject = nullptr;
-                _physicsSystem = nullptr;
-                _systemData = nullptr;
-                return false;
-            }
-
-            RE::hknpBodyCinfo cinfo;
-            cinfo.shape = *reinterpret_cast<RE::hknpShape**>(cinfoData + 0x00);
-            cinfo.collisionFilterInfo = *reinterpret_cast<std::uint32_t*>(cinfoData + 0x14);
-            cinfo.materialId.value = *reinterpret_cast<std::uint16_t*>(cinfoData + 0x12);
-            cinfo.motionPropertiesId.value = 0xFF;
-            cinfo.position = RE::hkVector4f(0.0f, 0.0f, 0.0f, 0.0f);
-            cinfo.orientation = RE::hkVector4f(0.0f, 0.0f, 0.0f, 1.0f);
-            cinfo.userData = 0;
-            cinfo.name = name;
-
-            auto motionId = world->AllocateMotion();
-            cinfo.motionId.value = motionId;
-
-            _bodyId = world->CreateBody(cinfo);
-            if (_bodyId.value == 0x7FFF'FFFF) {
-                ROCK_LOG_ERROR(BethesdaBody, "CreateBody returned invalid ID");
-                releaseRefCounted(_collisionObject);
-                _collisionObject = nullptr;
-                _physicsSystem = nullptr;
-                _systemData = nullptr;
-                return false;
-            }
-
-            ROCK_LOG_INFO(BethesdaBody, "Body created via raw CreateBody: bodyId={} motionId={}", _bodyId.value, motionId);
+        if (!createNiNode(name)) {
+            ROCK_LOG_ERROR(BethesdaBody, "Failed to create/link owner NiNode for generated body '{}'", name ? name : "(null)");
+            releaseRefCounted(_collisionObject);
+            _collisionObject = nullptr;
+            _physicsSystem = nullptr;
+            _systemData = nullptr;
+            return false;
         }
 
         {
-            constexpr std::size_t INSTANCE_SIZE = 0x30;
-            auto* instance = reinterpret_cast<char*>(havokAlloc(INSTANCE_SIZE));
-            if (!instance) {
-                ROCK_LOG_ERROR(BethesdaBody, "Failed to allocate physics system instance (0x30 bytes)");
-                world->DestroyBodies(&_bodyId, 1);
-                _bodyId.value = 0x7FFF'FFFF;
-                releaseRefCounted(_collisionObject);
-                _collisionObject = nullptr;
-                _physicsSystem = nullptr;
-                _systemData = nullptr;
-                return false;
-            }
-            std::memset(instance, 0, INSTANCE_SIZE);
-
-            auto* bodyIdArray = reinterpret_cast<std::uint32_t*>(havokAlloc(sizeof(std::uint32_t)));
-            if (!bodyIdArray) {
-                ROCK_LOG_ERROR(BethesdaBody, "Failed to allocate physics system body ID array");
-                havokFree(instance, INSTANCE_SIZE);
-                world->DestroyBodies(&_bodyId, 1);
-                _bodyId.value = 0x7FFF'FFFF;
-                releaseRefCounted(_collisionObject);
-                _collisionObject = nullptr;
-                _physicsSystem = nullptr;
-                _systemData = nullptr;
-                return false;
-            }
-            *bodyIdArray = _bodyId.value;
-
-            *reinterpret_cast<void**>(instance + 0x18) = world;
-            *reinterpret_cast<std::uint32_t**>(instance + 0x20) = bodyIdArray;
-            *reinterpret_cast<std::int32_t*>(instance + 0x28) = 1;
-
-            *reinterpret_cast<char**>(reinterpret_cast<char*>(_physicsSystem) + 0x18) = instance;
-
-            ROCK_LOG_INFO(BethesdaBody, "Physics system instance constructed: instance={:p} world={:p} bodyId={}", (void*)instance, (void*)world, _bodyId.value);
+            static REL::Relocation<CollisionObjectAddToWorld_t> addToWorld{ REL::Offset(offsets::kFunc_CollisionObject_AddToWorld) };
+            addToWorld(_collisionObject, bhkWorld);
         }
 
+        RE::hknpBodyId bodyId{ kInvalidGeneratedId };
         {
-            auto* bodyArray = world->GetBodyArray();
-            auto* bodyPtr = reinterpret_cast<char*>(&bodyArray[_bodyId.value]);
-            *reinterpret_cast<void**>(bodyPtr + 0x88) = _collisionObject;
+            static REL::Relocation<PhysicsSystemGetBodyId_t> getBodyId{ REL::Offset(offsets::kFunc_PhysicsSystem_GetBodyId) };
+            getBodyId(_physicsSystem, &bodyId, 0);
+            if (bodyId.value == kInvalidGeneratedId) {
+                ROCK_LOG_ERROR(BethesdaBody, "Native wrapper add-to-world returned invalid body id for '{}'", name ? name : "(null)");
+                destroy(bhkWorld);
+                return false;
+            }
 
-            ROCK_LOG_INFO(BethesdaBody, "body+0x88 back-pointer set manually: {:p}", _collisionObject);
+            _bodyId = bodyId;
         }
 
-        if (motionType == BethesdaMotionType::Keyframed) {
-            typedef void (*setKeyframed_t)(void*, std::uint32_t);
-            static REL::Relocation<setKeyframed_t> setBodyKeyframed{ REL::Offset(offsets::kFunc_SetBodyKeyframed) };
-            setBodyKeyframed(world, _bodyId.value);
-        } else {
-            static REL::Relocation<SetMotionType_t> setMotion{ REL::Offset(offsets::kFunc_CollisionObject_SetMotionType) };
-            setMotion(_collisionObject, static_cast<int>(motionType));
+        if (!validateGeneratedBodyMotion(world, bodyId, motionType)) {
+            destroy(bhkWorld);
+            return false;
         }
+
+        if (!applyGeneratedBodyMaterial(world, bodyId, materialId)) {
+            destroy(bhkWorld);
+            return false;
+        }
+
+        applyGeneratedBodyMotionType(world, _collisionObject, bodyId, motionType);
+
+        havok_runtime::setFilterInfo(world, bodyId, filterInfo, 1);
 
         {
             static REL::Relocation<EnableBodyFlags_t> enableFlags{ REL::Offset(offsets::kFunc_EnableBodyFlags) };
-            enableFlags(world, _bodyId.value, 0x08020000, 1);
+            enableFlags(world, bodyId.value, 0x08020000, 1);
         }
 
-        {
-            static REL::Relocation<ActivateBody_t> activate{ REL::Offset(offsets::kFunc_ActivateBody) };
-            activate(world, _bodyId.value);
+        havok_runtime::activateBody(world, bodyId.value);
+
+        const auto snapshot = havok_runtime::snapshotBody(world, bodyId);
+        if (snapshot.valid) {
+            ROCK_LOG_DEBUG(BethesdaBody,
+                "Native wrapper body state: bodyId={} motion={} filter=0x{:08X} collObj={:p} ownerNode={:p}",
+                bodyId.value,
+                snapshot.motionIndex,
+                snapshot.collisionFilterInfo,
+                static_cast<void*>(snapshot.collisionObject),
+                static_cast<void*>(snapshot.ownerNode));
+        } else {
+            ROCK_LOG_ERROR(BethesdaBody, "Native wrapper body {} is not readable after setup", bodyId.value);
         }
 
         _created = true;
 
-        ROCK_LOG_INFO(BethesdaBody, "Created '{}': bodyId={} collObj={:p} physSys={:p} sysData={:p} motionType={}", name, _bodyId.value, _collisionObject, _physicsSystem,
+        ROCK_LOG_DEBUG(BethesdaBody, "Created '{}': bodyId={} collObj={:p} physSys={:p} sysData={:p} motionType={}", name, _bodyId.value, _collisionObject, _physicsSystem,
             _systemData, static_cast<int>(motionType));
 
         {
-            auto* bodyArray = world->GetBodyArray();
-            auto* bodyPtr = reinterpret_cast<char*>(&bodyArray[_bodyId.value]);
-            auto* backPtr = *reinterpret_cast<void**>(bodyPtr + 0x88);
+            auto* backPtr = havok_runtime::getCollisionObjectFromBody(world, _bodyId);
             if (backPtr == _collisionObject) {
-                ROCK_LOG_INFO(BethesdaBody, "  body+0x88 back-pointer VERIFIED: {:p} == collisionObject", backPtr);
+                ROCK_LOG_DEBUG(BethesdaBody, "  body+0x88 back-pointer VERIFIED: {:p} == collisionObject", static_cast<void*>(backPtr));
             } else {
-                ROCK_LOG_ERROR(BethesdaBody, "  body+0x88 back-pointer MISMATCH: {:p} != {:p}", backPtr, _collisionObject);
+                ROCK_LOG_ERROR(BethesdaBody, "  body+0x88 back-pointer MISMATCH: {:p} != {:p}", static_cast<void*>(backPtr), _collisionObject);
             }
         }
 
@@ -357,49 +553,26 @@ namespace frik::rock
 
     void BethesdaPhysicsBody::destroy(void* bhkWorld)
     {
-        (void)bhkWorld;
-        if (!_created)
+        if (!_created && !_collisionObject && !_niNode)
             return;
 
-        ROCK_LOG_INFO(BethesdaBody, "Destroying body: bodyId={} collObj={:p}", _bodyId.value, _collisionObject);
+        ROCK_LOG_DEBUG(BethesdaBody, "Destroying body: bodyId={} collObj={:p}", _bodyId.value, _collisionObject);
+
+        auto* physicsSystemInstance = nativePhysicsSystemInstance(_physicsSystem);
+        if (bhkWorld && physicsSystemInstance) {
+            static REL::Relocation<RemovePhysicsSystem_t> removePhysicsSystem{ REL::Offset(offsets::kFunc_BhkWorld_RemovePhysicsSystemInstance) };
+            removePhysicsSystem(bhkWorld, physicsSystemInstance);
+            ROCK_LOG_DEBUG(BethesdaBody, "Removed native physics system instance for body {}", _bodyId.value);
+        } else if (_physicsSystem) {
+            ROCK_LOG_WARN(
+                BethesdaBody,
+                "Destroying body {} without native physics-system removal: bhkWorld={:p} instance={:p}",
+                _bodyId.value,
+                bhkWorld,
+                physicsSystemInstance);
+        }
 
         destroyNiNode();
-
-        if (_physicsSystem) {
-            auto* physSysInstance = *reinterpret_cast<char**>(reinterpret_cast<char*>(_physicsSystem) + 0x18);
-            if (physSysInstance) {
-                auto* worldPtr = *reinterpret_cast<RE::hknpWorld**>(physSysInstance + 0x18);
-                if (worldPtr && _bodyId.value != 0x7FFF'FFFF) {
-                    auto* bodyArray = worldPtr->GetBodyArray();
-                    auto* bodyPtr = reinterpret_cast<char*>(&bodyArray[_bodyId.value]);
-                    *reinterpret_cast<void**>(bodyPtr + 0x88) = nullptr;
-                }
-            }
-        }
-
-        if (_bodyId.value != 0x7FFF'FFFF && _physicsSystem) {
-            auto* physSysInstance = *reinterpret_cast<char**>(reinterpret_cast<char*>(_physicsSystem) + 0x18);
-            if (physSysInstance) {
-                auto* worldPtr = *reinterpret_cast<RE::hknpWorld**>(physSysInstance + 0x18);
-                if (worldPtr) {
-                    worldPtr->DestroyBodies(&_bodyId, 1);
-                    ROCK_LOG_INFO(BethesdaBody, "Body {} destroyed from world", _bodyId.value);
-                }
-            }
-        }
-
-        if (_physicsSystem) {
-            auto* instance = *reinterpret_cast<char**>(reinterpret_cast<char*>(_physicsSystem) + 0x18);
-            if (instance) {
-                auto* bodyIdArray = *reinterpret_cast<void**>(instance + 0x20);
-                if (bodyIdArray) {
-                    havokFree(bodyIdArray, sizeof(std::uint32_t));
-                }
-                havokFree(instance, 0x30);
-
-                *reinterpret_cast<char**>(reinterpret_cast<char*>(_physicsSystem) + 0x18) = nullptr;
-            }
-        }
 
         if (_collisionObject) {
             releaseRefCounted(_collisionObject);
@@ -420,12 +593,12 @@ namespace frik::rock
 
     bool BethesdaPhysicsBody::createNiNode(const char* name)
     {
-        if (!isValid() || !_collisionObject) {
-            ROCK_LOG_ERROR(BethesdaBody, "createNiNode: body not valid or no collision object");
+        if (!_collisionObject) {
+            ROCK_LOG_ERROR(BethesdaBody, "createNiNode: no collision object");
             return false;
         }
         if (_niNode) {
-            ROCK_LOG_WARN(BethesdaBody, "createNiNode: already has NiNode — skipping");
+            ROCK_LOG_DEBUG(BethesdaBody, "createNiNode: already has NiNode");
             return true;
         }
 
@@ -438,9 +611,9 @@ namespace frik::rock
         std::memset(mem, 0, offsets::kNiNodeSize);
 
         {
-            using NiNodeCtor_t = void (*)(void*);
+            using NiNodeCtor_t = void* (*)(void*, std::uint16_t);
             static REL::Relocation<NiNodeCtor_t> niNodeCtor{ REL::Offset(offsets::kFunc_NiNode_Ctor) };
-            niNodeCtor(mem);
+            niNodeCtor(mem, 0);
             _niNode = mem;
         }
 
@@ -464,13 +637,13 @@ namespace frik::rock
         }
 
         {
-            auto* collObjOwner = *reinterpret_cast<void**>(reinterpret_cast<char*>(_collisionObject) + 0x10);
-            auto* nodeCollObj = *reinterpret_cast<void**>(reinterpret_cast<char*>(_niNode) + 0x100);
+            auto* collObjOwner = *reinterpret_cast<void**>(reinterpret_cast<char*>(_collisionObject) + offsets::kCollisionObject_OwnerNode);
+            auto* nodeCollObj = *reinterpret_cast<void**>(reinterpret_cast<char*>(_niNode) + offsets::kNiAVObject_CollisionObject);
 
             bool ownerOk = (collObjOwner == _niNode);
             bool collOk = (nodeCollObj == _collisionObject);
 
-            ROCK_LOG_INFO(BethesdaBody, "NiNode '{}' created: node={:p} collObj→owner={} node→collObj={}", name ? name : "(null)", _niNode, ownerOk ? "VERIFIED" : "MISMATCH",
+            ROCK_LOG_DEBUG(BethesdaBody, "NiNode '{}' created: node={:p} collObjOwner={} nodeCollObj={}", name ? name : "(null)", _niNode, ownerOk ? "VERIFIED" : "MISMATCH",
                 collOk ? "VERIFIED" : "MISMATCH");
         }
 
@@ -483,15 +656,20 @@ namespace frik::rock
             return;
 
         if (_collisionObject) {
-            *reinterpret_cast<void**>(reinterpret_cast<char*>(_collisionObject) + 0x10) = nullptr;
+            *reinterpret_cast<void**>(reinterpret_cast<char*>(_collisionObject) + offsets::kCollisionObject_OwnerNode) = nullptr;
         }
 
-        *reinterpret_cast<void**>(reinterpret_cast<char*>(_niNode) + 0x100) = nullptr;
+        auto** nodeCollisionObjectSlot = reinterpret_cast<void**>(reinterpret_cast<char*>(_niNode) + offsets::kNiAVObject_CollisionObject);
+        void* nodeCollisionObject = *nodeCollisionObjectSlot;
+        *nodeCollisionObjectSlot = nullptr;
+        if (nodeCollisionObject) {
+            releaseRefCounted(nodeCollisionObject);
+        }
 
         releaseRefCounted(_niNode);
         _niNode = nullptr;
 
-        ROCK_LOG_INFO(BethesdaBody, "NiNode destroyed");
+        ROCK_LOG_DEBUG(BethesdaBody, "NiNode destroyed");
     }
 
     void BethesdaPhysicsBody::registerContactSignal(const char* signalName)
@@ -505,28 +683,28 @@ namespace frik::rock
             signalName ? signalName : "(null)");
     }
 
-    bool BethesdaPhysicsBody::driveToKeyFrame(const RE::NiTransform& target, float dt)
+    bool BethesdaPhysicsBody::driveToKeyFrame(const RE::hkTransformf& target, float dt)
     {
         if (!isValid())
             return false;
         static REL::Relocation<DriveToKeyFrame_t> drive{ REL::Offset(offsets::kFunc_CollisionObject_DriveToKeyFrame) };
-        return drive(_collisionObject, &target, dt);
+        return drive(_collisionObject, &target, dt) != 0;
     }
 
-    void BethesdaPhysicsBody::setTransform(const RE::hkTransformf& transform)
+    bool BethesdaPhysicsBody::setTransform(const RE::hkTransformf& transform)
     {
         if (!isValid())
-            return;
+            return false;
         static REL::Relocation<SetTransform_t> setXform{ REL::Offset(offsets::kFunc_CollisionObject_SetTransform) };
-        setXform(_collisionObject, &transform);
+        return setXform(_collisionObject, &transform) != 0;
     }
 
-    void BethesdaPhysicsBody::setVelocity(const float* linVel, const float* angVel)
+    bool BethesdaPhysicsBody::setVelocity(const float* linVel, const float* angVel)
     {
         if (!isValid())
-            return;
+            return false;
         static REL::Relocation<SetVelocity_t> setVel{ REL::Offset(offsets::kFunc_CollisionObject_SetVelocity) };
-        setVel(_collisionObject, linVel, angVel);
+        return setVel(_collisionObject, linVel, angVel) != 0;
     }
 
     void BethesdaPhysicsBody::setMotionType(BethesdaMotionType type)
@@ -542,15 +720,10 @@ namespace frik::rock
         if (!isValid())
             return;
 
-        static REL::Relocation<SetCollisionFilter_t> setFilter{ REL::Offset(offsets::kFunc_SetBodyCollisionFilterInfo) };
-
-        auto* physSysInst = *reinterpret_cast<char**>(reinterpret_cast<char*>(_physicsSystem) + 0x18);
-        if (!physSysInst)
-            return;
-        auto* world = *reinterpret_cast<void**>(physSysInst + 0x18);
+        auto* world = nativeWorldFromPhysicsSystem(_physicsSystem);
         if (!world)
             return;
-        setFilter(world, _bodyId.value, filterInfo, rebuildMode);
+        havok_runtime::setFilterInfo(world, _bodyId, filterInfo, rebuildMode);
     }
 
     void BethesdaPhysicsBody::setMass(float mass)
@@ -561,20 +734,20 @@ namespace frik::rock
         setM(_collisionObject, mass);
     }
 
-    void BethesdaPhysicsBody::applyLinearImpulse(const float* impulse)
+    bool BethesdaPhysicsBody::applyLinearImpulse(const float* impulse)
     {
         if (!isValid())
-            return;
+            return false;
         static REL::Relocation<ApplyImpulse_t> apply{ REL::Offset(offsets::kFunc_CollisionObject_ApplyLinearImpulse) };
-        apply(_collisionObject, impulse);
+        return apply(_collisionObject, impulse) != 0;
     }
 
-    void BethesdaPhysicsBody::applyPointImpulse(const float* impulse, const float* worldPoint)
+    bool BethesdaPhysicsBody::applyPointImpulse(const float* impulse, const float* worldPoint)
     {
         if (!isValid())
-            return;
+            return false;
         static REL::Relocation<ApplyPointImpulse_t> apply{ REL::Offset(offsets::kFunc_CollisionObject_ApplyPointImpulse) };
-        apply(_collisionObject, impulse, worldPoint);
+        return apply(_collisionObject, impulse, worldPoint) != 0;
     }
 
     bool BethesdaPhysicsBody::getCenterOfMassWorld(float& outX, float& outY, float& outZ)
@@ -583,7 +756,7 @@ namespace frik::rock
             return false;
         alignas(16) float com[4] = { 0, 0, 0, 0 };
         static REL::Relocation<GetCOM_t> getCOM{ REL::Offset(offsets::kFunc_CollisionObject_GetCOMWorld) };
-        bool ok = getCOM(_collisionObject, com);
+        bool ok = getCOM(_collisionObject, com) != 0;
         if (ok) {
             outX = com[0];
             outY = com[1];
@@ -597,7 +770,9 @@ namespace frik::rock
         if (!isValid())
             return 0;
         static REL::Relocation<GetFilterInfo_t> getFilter{ REL::Offset(offsets::kFunc_CollisionObject_GetFilterInfo) };
-        return getFilter(_collisionObject);
+        std::uint32_t filterInfo = 0xFFFF'FFFF;
+        getFilter(_collisionObject, &filterInfo);
+        return filterInfo;
     }
 
     void* BethesdaPhysicsBody::getShape()
@@ -630,10 +805,7 @@ namespace frik::rock
     {
         if (!isValid())
             return;
-        auto* physSysInst = *reinterpret_cast<char**>(reinterpret_cast<char*>(_physicsSystem) + 0x18);
-        if (!physSysInst)
-            return;
-        auto* world = *reinterpret_cast<void**>(physSysInst + 0x18);
+        auto* world = nativeWorldFromPhysicsSystem(_physicsSystem);
         if (!world)
             return;
 
@@ -645,15 +817,11 @@ namespace frik::rock
     {
         if (!isValid())
             return;
-        auto* physSysInst = *reinterpret_cast<char**>(reinterpret_cast<char*>(_physicsSystem) + 0x18);
-        if (!physSysInst)
-            return;
-        auto* world = *reinterpret_cast<void**>(physSysInst + 0x18);
+        auto* world = nativeWorldFromPhysicsSystem(_physicsSystem);
         if (!world)
             return;
 
-        static REL::Relocation<ActivateBody_t> activate{ REL::Offset(offsets::kFunc_ActivateBody) };
-        activate(world, _bodyId.value);
+        havok_runtime::activateBody(world, _bodyId.value);
     }
 
 }

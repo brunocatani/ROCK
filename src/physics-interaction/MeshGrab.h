@@ -4,10 +4,12 @@
 #include "RE/Fallout.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <unordered_map>
 #include <vector>
 
 namespace frik::rock
@@ -63,6 +65,98 @@ namespace frik::rock
             v2 = xform(v2);
         }
     };
+
+    enum class GrabSurfaceSourceKind : std::uint8_t
+    {
+        Static,
+        Dynamic,
+        Skinned,
+        CollisionQuery,
+        AuthoredNode,
+        Fallback
+    };
+
+    struct GrabSurfaceVertexInfluence
+    {
+        RE::NiAVObject* bone = nullptr;
+        float weight = 0.0f;
+    };
+
+    struct GrabSurfaceTriangleData
+    {
+        TriangleData triangle{};
+        RE::NiAVObject* sourceNode = nullptr;
+        RE::BSTriShape* sourceShape = nullptr;
+        std::uint32_t triangleIndex = 0;
+        GrabSurfaceSourceKind sourceKind = GrabSurfaceSourceKind::Static;
+        std::array<std::array<GrabSurfaceVertexInfluence, 4>, 3> skinInfluences{};
+        bool hasSkinInfluences = false;
+    };
+
+    struct GrabSurfaceHit
+    {
+        RE::NiPoint3 position{};
+        RE::NiPoint3 normal{};
+        int triangleIndex = -1;
+        float distance = 1e30f;
+        RE::NiAVObject* sourceNode = nullptr;
+        RE::BSTriShape* sourceShape = nullptr;
+        TriangleData triangle{};
+        GrabSurfaceSourceKind sourceKind = GrabSurfaceSourceKind::Fallback;
+        std::uint32_t shapeKey = 0xFFFF'FFFF;
+        std::uint32_t shapeCollisionFilterInfo = 0;
+        float hitFraction = 1.0f;
+        float pivotToSurfaceDistanceGameUnits = 0.0f;
+        float selectionToMeshDistanceGameUnits = 0.0f;
+        bool hasSelectionHit = false;
+        bool resolvedOwnerMatchesBody = false;
+        bool hasTriangle = false;
+        bool hasShapeKey = false;
+        bool valid = false;
+    };
+
+    inline const char* grabSurfaceSourceKindName(GrabSurfaceSourceKind kind)
+    {
+        switch (kind) {
+        case GrabSurfaceSourceKind::Static:
+            return "static";
+        case GrabSurfaceSourceKind::Dynamic:
+            return "dynamic";
+        case GrabSurfaceSourceKind::Skinned:
+            return "skinned";
+        case GrabSurfaceSourceKind::CollisionQuery:
+            return "collisionQuery";
+        case GrabSurfaceSourceKind::AuthoredNode:
+            return "authoredNode";
+        case GrabSurfaceSourceKind::Fallback:
+        default:
+            return "fallback";
+        }
+    }
+
+    inline void appendSurfaceTriangle(std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles,
+        const TriangleData& triangle,
+        RE::BSTriShape* sourceShape,
+        std::uint32_t triangleIndex,
+        GrabSurfaceSourceKind sourceKind,
+        const std::array<std::array<GrabSurfaceVertexInfluence, 4>, 3>* skinInfluences = nullptr)
+    {
+        if (!outSurfaceTriangles) {
+            return;
+        }
+
+        GrabSurfaceTriangleData surfaceTriangle{};
+        surfaceTriangle.triangle = triangle;
+        surfaceTriangle.sourceNode = sourceShape;
+        surfaceTriangle.sourceShape = sourceShape;
+        surfaceTriangle.triangleIndex = triangleIndex;
+        surfaceTriangle.sourceKind = sourceKind;
+        if (skinInfluences) {
+            surfaceTriangle.skinInfluences = *skinInfluences;
+            surfaceTriangle.hasSkinInfluences = true;
+        }
+        outSurfaceTriangles->push_back(surfaceTriangle);
+    }
 
     inline float halfToFloat(std::uint16_t h)
     {
@@ -217,7 +311,10 @@ namespace frik::rock
         bool _locked = false;
     };
 
-    inline int extractTrianglesFromDynamicTriShape(RE::BSTriShape* triShape, std::vector<TriangleData>& outTriangles)
+    inline int extractTrianglesFromDynamicTriShape(
+        RE::BSTriShape* triShape,
+        std::vector<TriangleData>& outTriangles,
+        std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr)
     {
         auto* base = reinterpret_cast<char*>(triShape);
         const char* shapeName = triShape->name.c_str() ? triShape->name.c_str() : "(null)";
@@ -266,16 +363,20 @@ namespace frik::rock
             tri.applyTransform(worldTransform);
 
             outTriangles.push_back(tri);
+            appendSurfaceTriangle(outSurfaceTriangles, tri, triShape, i, GrabSurfaceSourceKind::Dynamic);
             added++;
         }
 
         return added;
     }
 
-    inline int extractTrianglesFromTriShape(RE::BSTriShape* triShape, std::vector<TriangleData>& outTriangles)
+    inline int extractTrianglesFromTriShape(
+        RE::BSTriShape* triShape,
+        std::vector<TriangleData>& outTriangles,
+        std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr)
     {
         if (isDynamicTriShape(triShape)) {
-            return extractTrianglesFromDynamicTriShape(triShape, outTriangles);
+            return extractTrianglesFromDynamicTriShape(triShape, outTriangles, outSurfaceTriangles);
         }
 
         TriShapeRawGeometry geometry;
@@ -313,6 +414,7 @@ namespace frik::rock
 
             tri.applyTransform(worldTransform);
             outTriangles.push_back(tri);
+            appendSurfaceTriangle(outSurfaceTriangles, tri, triShape, i, GrabSurfaceSourceKind::Static);
             added++;
         }
         return added;
@@ -325,13 +427,16 @@ namespace frik::rock
         return skinInst != nullptr;
     }
 
-    inline int extractTrianglesFromSkinnedTriShape(RE::BSTriShape* triShape, std::vector<TriangleData>& outTriangles)
+    inline int extractTrianglesFromSkinnedTriShape(
+        RE::BSTriShape* triShape,
+        std::vector<TriangleData>& outTriangles,
+        std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr)
     {
         auto* base = reinterpret_cast<char*>(triShape);
         const char* shapeName = triShape->name.c_str() ? triShape->name.c_str() : "(null)";
 
         if (isDynamicTriShape(triShape)) {
-            ROCK_LOG_INFO(MeshGrab, "Skipping skinned BSDynamicTriShape '{}' (dynamic+skinned extraction not yet verified)", shapeName);
+            ROCK_LOG_DEBUG(MeshGrab, "Skipping skinned BSDynamicTriShape '{}' (dynamic+skinned extraction not yet verified)", shapeName);
             return 0;
         }
 
@@ -454,10 +559,11 @@ namespace frik::rock
             boneTransforms[b].valid = true;
         }
 
-        ROCK_LOG_INFO(MeshGrab, "Skinned '{}': extracting {} tris, {} verts, {} bones (stride={}, skinOff={}, fullPrec={})", shapeName, numTris, numVerts, boneCount, vtxStride,
+        ROCK_LOG_DEBUG(MeshGrab, "Skinned '{}': extracting {} tris, {} verts, {} bones (stride={}, skinOff={}, fullPrec={})", shapeName, numTris, numVerts, boneCount, vtxStride,
             skinOffset, fullPrecision ? 1 : 0);
 
         std::vector<RE::NiPoint3> worldVerts(numVerts);
+        std::vector<std::array<GrabSurfaceVertexInfluence, 4>> vertexInfluences(numVerts);
         for (std::uint16_t vi = 0; vi < numVerts; vi++) {
             const std::uint8_t* vtx = verts + vi * vtxStride;
 
@@ -497,6 +603,7 @@ namespace frik::rock
                 wx += w * rx;
                 wy += w * ry;
                 wz += w * rz;
+                vertexInfluences[vi][k] = GrabSurfaceVertexInfluence{ boneNodes[bIdx], w };
             }
 
             worldVerts[vi] = RE::NiPoint3(wx, wy, wz);
@@ -517,10 +624,15 @@ namespace frik::rock
             tri.v2 = worldVerts[i2];
 
             outTriangles.push_back(tri);
+            std::array<std::array<GrabSurfaceVertexInfluence, 4>, 3> skinInfluences{};
+            skinInfluences[0] = vertexInfluences[i0];
+            skinInfluences[1] = vertexInfluences[i1];
+            skinInfluences[2] = vertexInfluences[i2];
+            appendSurfaceTriangle(outSurfaceTriangles, tri, triShape, i, GrabSurfaceSourceKind::Skinned, &skinInfluences);
             added++;
         }
 
-        ROCK_LOG_INFO(MeshGrab, "Skinned '{}': extracted {} triangles", shapeName, added);
+        ROCK_LOG_DEBUG(MeshGrab, "Skinned '{}': extracted {} triangles", shapeName, added);
         return added;
     }
 
@@ -587,6 +699,73 @@ namespace frik::rock
         }
     }
 
+    inline void extractAllSurfaceTriangles(RE::NiAVObject* root,
+        std::vector<TriangleData>& outTriangles,
+        std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles,
+        int maxDepth = 10,
+        MeshExtractionStats* stats = nullptr)
+    {
+        if (!root || maxDepth <= 0)
+            return;
+
+        if (root->flags.flags & 1)
+            return;
+
+        auto* triShape = root->IsTriShape();
+        if (triShape) {
+            if (stats) {
+                stats->visitedShapes++;
+            }
+
+            const auto before = outTriangles.size();
+            const bool dynamic = isDynamicTriShape(triShape);
+            const bool skinned = isSkinned(triShape);
+
+            if (skinned) {
+                if (dynamic && stats) {
+                    stats->dynamicSkinnedSkipped++;
+                } else if (stats) {
+                    stats->skinnedShapes++;
+                }
+                extractTrianglesFromSkinnedTriShape(triShape, outTriangles, &outSurfaceTriangles);
+                if (stats && !dynamic) {
+                    stats->skinnedTriangles += static_cast<std::uint32_t>(outTriangles.size() - before);
+                }
+            } else if (dynamic) {
+                if (stats) {
+                    stats->dynamicShapes++;
+                }
+                extractTrianglesFromTriShape(triShape, outTriangles, &outSurfaceTriangles);
+                if (stats) {
+                    stats->dynamicTriangles += static_cast<std::uint32_t>(outTriangles.size() - before);
+                }
+            } else {
+                if (stats) {
+                    stats->staticShapes++;
+                }
+                extractTrianglesFromTriShape(triShape, outTriangles, &outSurfaceTriangles);
+                if (stats) {
+                    stats->staticTriangles += static_cast<std::uint32_t>(outTriangles.size() - before);
+                }
+            }
+
+            if (stats && outTriangles.size() == before) {
+                stats->emptyShapes++;
+            }
+            return;
+        }
+
+        auto* niNode = root->IsNode();
+        if (niNode) {
+            auto& kids = niNode->GetRuntimeData().children;
+            for (auto i = decltype(kids.size()){ 0 }; i < kids.size(); i++) {
+                auto* kid = kids[i].get();
+                if (kid)
+                    extractAllSurfaceTriangles(kid, outTriangles, outSurfaceTriangles, maxDepth - 1, stats);
+            }
+        }
+    }
+
     inline float dot(const RE::NiPoint3& a, const RE::NiPoint3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
     inline RE::NiPoint3 cross(const RE::NiPoint3& a, const RE::NiPoint3& b) { return RE::NiPoint3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x); }
@@ -600,6 +779,67 @@ namespace frik::rock
     }
 
     inline RE::NiPoint3 sub(const RE::NiPoint3& a, const RE::NiPoint3& b) { return RE::NiPoint3(a.x - b.x, a.y - b.y, a.z - b.z); }
+
+    inline RE::NiPoint3 closestPointOnTriangleToPoint(const RE::NiPoint3& point, const TriangleData& tri, float& outDistSq)
+    {
+        const RE::NiPoint3 ab = sub(tri.v1, tri.v0);
+        const RE::NiPoint3 ac = sub(tri.v2, tri.v0);
+        const RE::NiPoint3 ap = sub(point, tri.v0);
+        const float d1 = dot(ab, ap);
+        const float d2 = dot(ac, ap);
+        if (d1 <= 0.0f && d2 <= 0.0f) {
+            outDistSq = dot(sub(point, tri.v0), sub(point, tri.v0));
+            return tri.v0;
+        }
+
+        const RE::NiPoint3 bp = sub(point, tri.v1);
+        const float d3 = dot(ab, bp);
+        const float d4 = dot(ac, bp);
+        if (d3 >= 0.0f && d4 <= d3) {
+            outDistSq = dot(sub(point, tri.v1), sub(point, tri.v1));
+            return tri.v1;
+        }
+
+        const float vc = d1 * d4 - d3 * d2;
+        if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+            const float v = d1 / (d1 - d3);
+            const RE::NiPoint3 result{ tri.v0.x + ab.x * v, tri.v0.y + ab.y * v, tri.v0.z + ab.z * v };
+            outDistSq = dot(sub(point, result), sub(point, result));
+            return result;
+        }
+
+        const RE::NiPoint3 cp = sub(point, tri.v2);
+        const float d5 = dot(ab, cp);
+        const float d6 = dot(ac, cp);
+        if (d6 >= 0.0f && d5 <= d6) {
+            outDistSq = dot(sub(point, tri.v2), sub(point, tri.v2));
+            return tri.v2;
+        }
+
+        const float vb = d5 * d2 - d1 * d6;
+        if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+            const float w = d2 / (d2 - d6);
+            const RE::NiPoint3 result{ tri.v0.x + ac.x * w, tri.v0.y + ac.y * w, tri.v0.z + ac.z * w };
+            outDistSq = dot(sub(point, result), sub(point, result));
+            return result;
+        }
+
+        const float va = d3 * d6 - d5 * d4;
+        if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
+            const float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+            const RE::NiPoint3 bc = sub(tri.v2, tri.v1);
+            const RE::NiPoint3 result{ tri.v1.x + bc.x * w, tri.v1.y + bc.y * w, tri.v1.z + bc.z * w };
+            outDistSq = dot(sub(point, result), sub(point, result));
+            return result;
+        }
+
+        const float denom = 1.0f / (va + vb + vc);
+        const float v = vb * denom;
+        const float w = vc * denom;
+        const RE::NiPoint3 result{ tri.v0.x + ab.x * v + ac.x * w, tri.v0.y + ab.y * v + ac.y * w, tri.v0.z + ab.z * v + ac.z * w };
+        outDistSq = dot(sub(point, result), sub(point, result));
+        return result;
+    }
 
     inline RE::NiPoint3 closestPointOnTriangleToLine(const RE::NiPoint3& linePoint, const RE::NiPoint3& lineDir, const TriangleData& tri, float& outDistSq)
     {
@@ -679,6 +919,40 @@ namespace frik::rock
         float distance = 1e30f;
     };
 
+    inline RE::NiAVObject* resolveDominantSurfaceOwnerNode(const GrabSurfaceTriangleData& surfaceTriangle, const RE::NiPoint3& hitPoint)
+    {
+        if (!surfaceTriangle.hasSkinInfluences) {
+            return surfaceTriangle.sourceNode;
+        }
+
+        std::unordered_map<RE::NiAVObject*, float> accumulated;
+        const RE::NiPoint3 vertices[3] = { surfaceTriangle.triangle.v0, surfaceTriangle.triangle.v1, surfaceTriangle.triangle.v2 };
+        for (std::size_t vertex = 0; vertex < 3; ++vertex) {
+            const RE::NiPoint3 delta = sub(vertices[vertex], hitPoint);
+            float distance = std::sqrt(dot(delta, delta));
+            if (distance < 0.001f) {
+                distance = 0.001f;
+            }
+            const float distanceWeight = 1.0f / distance;
+            for (const auto& influence : surfaceTriangle.skinInfluences[vertex]) {
+                if (!influence.bone || influence.weight <= 0.0f) {
+                    continue;
+                }
+                accumulated[influence.bone] += influence.weight * distanceWeight;
+            }
+        }
+
+        RE::NiAVObject* best = nullptr;
+        float bestWeight = 0.0f;
+        for (const auto& [bone, weight] : accumulated) {
+            if (bone && weight > bestWeight) {
+                best = bone;
+                bestWeight = weight;
+            }
+        }
+        return best ? best : surfaceTriangle.sourceNode;
+    }
+
     inline bool findClosestGrabPoint(const std::vector<TriangleData>& triangles, const RE::NiPoint3& palmPos, const RE::NiPoint3& palmDir, float lateralWeight,
         float directionalWeight, GrabPoint& outResult)
     {
@@ -722,5 +996,125 @@ namespace frik::rock
             return true;
         }
         return false;
+    }
+
+    inline bool findClosestGrabSurfaceHit(const std::vector<GrabSurfaceTriangleData>& triangles,
+        const RE::NiPoint3& palmPos,
+        const RE::NiPoint3& palmDir,
+        float lateralWeight,
+        float directionalWeight,
+        GrabSurfaceHit& outResult)
+    {
+        float bestDist = 1e30f;
+        int bestIdx = -1;
+        RE::NiPoint3 bestPos;
+
+        for (int i = 0; i < static_cast<int>(triangles.size()); i++) {
+            const auto& surfaceTriangle = triangles[i];
+            const auto& tri = surfaceTriangle.triangle;
+
+            RE::NiPoint3 triNormal = normalize(cross(sub(tri.v1, tri.v0), sub(tri.v2, tri.v1)));
+
+            if (dot(triNormal, palmDir) > 0.0f)
+                continue;
+
+            float distSq;
+            RE::NiPoint3 closest = closestPointOnTriangleToLine(palmPos, palmDir, tri, distSq);
+
+            RE::NiPoint3 toClosest = sub(closest, palmPos);
+            float dirComponent = dot(toClosest, palmDir);
+            RE::NiPoint3 dirVec(palmDir.x * dirComponent, palmDir.y * dirComponent, palmDir.z * dirComponent);
+            RE::NiPoint3 latVec = sub(toClosest, dirVec);
+
+            float dirDist = dirComponent * dirComponent;
+            float latDist = dot(latVec, latVec);
+            float weightedDist = directionalWeight * dirDist + lateralWeight * latDist;
+
+            if (weightedDist < bestDist) {
+                bestDist = weightedDist;
+                bestIdx = i;
+                bestPos = closest;
+            }
+        }
+
+        if (bestIdx >= 0) {
+            const auto& surfaceTriangle = triangles[bestIdx];
+            const auto& tri = surfaceTriangle.triangle;
+            outResult.position = bestPos;
+            outResult.normal = normalize(cross(sub(tri.v1, tri.v0), sub(tri.v2, tri.v1)));
+            outResult.triangleIndex = bestIdx;
+            outResult.distance = bestDist;
+            outResult.sourceNode = resolveDominantSurfaceOwnerNode(surfaceTriangle, bestPos);
+            outResult.sourceShape = surfaceTriangle.sourceShape;
+            outResult.triangle = tri;
+            outResult.sourceKind = surfaceTriangle.sourceKind;
+            outResult.hasTriangle = true;
+            outResult.valid = true;
+            return true;
+        }
+        return false;
+    }
+
+    inline bool findClosestGrabSurfaceHitToPoint(const std::vector<GrabSurfaceTriangleData>& triangles,
+        const RE::NiPoint3& point,
+        const RE::NiPoint3& expectedNormal,
+        float maxDistanceGameUnits,
+        float maxNormalAngleDegrees,
+        GrabSurfaceHit& outResult)
+    {
+        const RE::NiPoint3 expected = normalize(expectedNormal);
+        if (dot(expected, expected) <= 0.0f || maxDistanceGameUnits < 0.0f) {
+            return false;
+        }
+
+        const float maxDistSq = maxDistanceGameUnits * maxDistanceGameUnits;
+        const float minNormalDot = std::cos(std::clamp(maxNormalAngleDegrees, 0.0f, 179.0f) * 3.14159265358979323846f / 180.0f);
+        float bestDistSq = (std::numeric_limits<float>::max)();
+        int bestIdx = -1;
+        RE::NiPoint3 bestPoint{};
+        RE::NiPoint3 bestNormal{};
+
+        for (int i = 0; i < static_cast<int>(triangles.size()); ++i) {
+            const auto& surfaceTriangle = triangles[i];
+            const auto& tri = surfaceTriangle.triangle;
+            RE::NiPoint3 triNormal = normalize(cross(sub(tri.v1, tri.v0), sub(tri.v2, tri.v0)));
+            if (dot(triNormal, triNormal) <= 0.0f) {
+                continue;
+            }
+            if (dot(triNormal, expected) < 0.0f) {
+                triNormal = RE::NiPoint3{ -triNormal.x, -triNormal.y, -triNormal.z };
+            }
+            if (dot(triNormal, expected) < minNormalDot) {
+                continue;
+            }
+
+            float distSq = 0.0f;
+            const RE::NiPoint3 candidate = closestPointOnTriangleToPoint(point, tri, distSq);
+            if (distSq > maxDistSq || distSq >= bestDistSq) {
+                continue;
+            }
+
+            bestDistSq = distSq;
+            bestIdx = i;
+            bestPoint = candidate;
+            bestNormal = triNormal;
+        }
+
+        if (bestIdx < 0) {
+            return false;
+        }
+
+        const auto& surfaceTriangle = triangles[bestIdx];
+        outResult.position = bestPoint;
+        outResult.normal = bestNormal;
+        outResult.triangleIndex = bestIdx;
+        outResult.distance = bestDistSq;
+        outResult.sourceNode = resolveDominantSurfaceOwnerNode(surfaceTriangle, bestPoint);
+        outResult.sourceShape = surfaceTriangle.sourceShape;
+        outResult.triangle = surfaceTriangle.triangle;
+        outResult.sourceKind = surfaceTriangle.sourceKind;
+        outResult.hasTriangle = true;
+        outResult.valid = true;
+        return true;
     }
 }
