@@ -1,4 +1,4 @@
-#include "physics-interaction/PhysicsScale.h"
+#include "physics-interaction/native/PhysicsScale.h"
 
 namespace frik::rock::physics_scale
 {

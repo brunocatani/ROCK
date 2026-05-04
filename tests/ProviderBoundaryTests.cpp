@@ -3,8 +3,8 @@
 #include <type_traits>
 
 #include "api/ROCKProviderApi.h"
-#include "physics-interaction/ExternalBodyRegistry.h"
-#include "physics-interaction/OffhandInteractionReservation.h"
+#include "physics-interaction/object/ExternalBodyRegistry.h"
+#include "physics-interaction/weapon/WeaponInteraction.h"
 
 namespace
 {

@@ -1,4 +1,4 @@
-#include "physics-interaction/InputRemapPolicy.h"
+#include "physics-interaction/input/InputRemapPolicy.h"
 
 #include <cstdio>
 #include <cstdint>

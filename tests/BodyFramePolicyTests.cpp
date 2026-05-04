@@ -2,9 +2,9 @@
 #include <cstring>
 
 #include "physics-interaction/PhysicsBodyFrame.h"
-#include "physics-interaction/PhysicsScale.h"
+#include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/TransformMath.h"
-#include "physics-interaction/WeaponAuthorityLifecyclePolicy.h"
+#include "physics-interaction/weapon/WeaponAuthority.h"
 
 struct TestMatrix
 {

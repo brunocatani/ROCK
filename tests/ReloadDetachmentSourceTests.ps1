@@ -23,7 +23,7 @@ $checks = @(
         )
     },
     @{
-        Path = 'src/physics-interaction/PhysicsInteraction.h'
+        Path = 'src/physics-interaction/core/PhysicsInteraction.h'
         Forbidden = @(
             'WeaponReloadEventBridge',
             'WeaponReloadAmmoGate',
@@ -43,7 +43,7 @@ $checks = @(
         )
     },
     @{
-        Path = 'src/physics-interaction/PhysicsInteraction.cpp'
+        Path = 'src/physics-interaction/core/PhysicsInteraction.cpp'
         Forbidden = @(
             'WeaponReloadClipWriteGateRuntime',
             'WeaponReloadAuthoring',
@@ -60,14 +60,14 @@ $checks = @(
         )
     },
     @{
-        Path = 'src/physics-interaction/PhysicsHooks.h'
+        Path = 'src/physics-interaction/core/PhysicsHooks.h'
         Forbidden = @(
             'PhysicalReload',
             'AmmoClipHook'
         )
     },
     @{
-        Path = 'src/physics-interaction/PhysicsHooks.cpp'
+        Path = 'src/physics-interaction/core/PhysicsHooks.cpp'
         Forbidden = @(
             'WeaponReloadClipWriteGateRuntime',
             'ActorSetCurrentAmmoCount',

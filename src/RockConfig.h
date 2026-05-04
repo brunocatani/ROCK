@@ -16,8 +16,8 @@
 #include <SimpleIni.h>
 #include <thomasmonkman-filewatch/FileWatch.hpp>
 
-#include "physics-interaction/SelectionQueryPolicy.h"
-#include "physics-interaction/WeaponCollisionGroupingPolicy.h"
+#include "physics-interaction/hand/HandSelection.h"
+#include "physics-interaction/weapon/WeaponSemantics.h"
 
 namespace frik::rock
 {

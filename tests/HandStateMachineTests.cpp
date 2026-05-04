@@ -1,4 +1,4 @@
-#include "physics-interaction/HandInteractionStateMachine.h"
+#include "physics-interaction/hand/HandInteractionStateMachine.h"
 
 #include <cstdio>
 #include <cstdint>

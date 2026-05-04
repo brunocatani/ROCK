@@ -1,8 +1,8 @@
 #include <cstdio>
 
 #include "api/ROCKProviderApi.h"
-#include "physics-interaction/CollisionLayerPolicy.h"
-#include "physics-interaction/ContactPipelinePolicy.h"
+#include "physics-interaction/collision/CollisionLayerPolicy.h"
+#include "physics-interaction/collision/ContactPipelinePolicy.h"
 
 namespace
 {

@@ -7,8 +7,8 @@
 #include <cstddef>
 
 #include "FRIKApi.h"
-#include "physics-interaction/PalmTransform.h"
-#include "physics-interaction/PhysicsInteraction.h"
+#include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/core/PhysicsInteraction.h"
 
 static_assert(sizeof(frik::rock::PhysicsEventData) == sizeof(rock::api::ROCKApi::PhysicsEventData), "Internal and API PhysicsEventData must have identical size");
 static_assert(offsetof(frik::rock::PhysicsEventData, isLeft) == offsetof(rock::api::ROCKApi::PhysicsEventData, isLeft), "PhysicsEventData::isLeft offset mismatch");

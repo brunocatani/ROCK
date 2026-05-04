@@ -11,10 +11,10 @@
 #include <thread>
 
 #include "common/CommonUtils.h"
-#include "physics-interaction/GrabNodeNamePolicy.h"
-#include "physics-interaction/HandCollisionSuppressionMath.h"
-#include "physics-interaction/InputRemapPolicy.h"
-#include "physics-interaction/NearbyGrabDamping.h"
+#include "physics-interaction/grab/GrabNodeNamePolicy.h"
+#include "physics-interaction/hand/HandLifecycle.h"
+#include "physics-interaction/input/InputRemapPolicy.h"
+#include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/RockLoggingPolicy.h"
 #include "resources.h"

@@ -5,10 +5,10 @@
 #include "RockConfig.h"
 #include "api/ROCKApi.h"
 #include "api/ROCKProviderApi.h"
-#include "physics-interaction/DebugBodyOverlay.h"
-#include "physics-interaction/HavokOffsets.h"
-#include "physics-interaction/InputRemapRuntime.h"
-#include "physics-interaction/PhysicsInteraction.h"
+#include "physics-interaction/debug/DebugBodyOverlay.h"
+#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/input/InputRemapRuntime.h"
+#include "physics-interaction/core/PhysicsInteraction.h"
 
 namespace
 {

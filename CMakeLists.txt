@@ -233,7 +233,7 @@ if(BUILD_ROCK_TESTS)
 
   add_executable(ROCKHandStateMachineTests
     "${ROOT_DIR}/tests/HandStateMachineTests.cpp"
-    "${SOURCE_DIR}/physics-interaction/HandInteractionStateMachine.cpp"
+    "${SOURCE_DIR}/physics-interaction/hand/HandInteractionStateMachine.cpp"
   )
   target_compile_features(ROCKHandStateMachineTests PRIVATE cxx_std_23)
   target_include_directories(ROCKHandStateMachineTests PRIVATE ${SOURCE_DIR})
@@ -241,7 +241,7 @@ if(BUILD_ROCK_TESTS)
 
   add_executable(ROCKHavokRuntimePolicyTests
     "${ROOT_DIR}/tests/HavokRuntimePolicyTests.cpp"
-    "${SOURCE_DIR}/physics-interaction/HavokRuntime.cpp"
+    "${SOURCE_DIR}/physics-interaction/native/HavokRuntime.cpp"
     "${ROOT_DIR}/tests/HavokRuntimePolicyScaleStub.cpp"
   )
   target_compile_features(ROCKHavokRuntimePolicyTests PRIVATE cxx_std_23)

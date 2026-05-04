@@ -5,8 +5,8 @@
 #include <atomic>
 #include <mutex>
 
-#include "physics-interaction/ExternalBodyRegistry.h"
-#include "physics-interaction/PhysicsInteraction.h"
+#include "physics-interaction/object/ExternalBodyRegistry.h"
+#include "physics-interaction/core/PhysicsInteraction.h"
 
 namespace
 {

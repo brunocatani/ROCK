@@ -1,7 +1,7 @@
 #include <cstdio>
 #include <cstdint>
 
-#include "physics-interaction/PhysicsWorldOriginDiagnostics.h"
+#include "physics-interaction/debug/PhysicsWorldOriginDiagnostics.h"
 
 namespace
 {

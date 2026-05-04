@@ -1,4 +1,4 @@
-#include "physics-interaction/GrabFingerLocalTransformMath.h"
+#include "physics-interaction/grab/GrabFinger.h"
 
 #include <cmath>
 #include <cstdio>

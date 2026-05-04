@@ -1,5 +1,5 @@
-#include "physics-interaction/SelectionHighlightPolicy.h"
-#include "physics-interaction/SelectionQueryPolicy.h"
+#include "physics-interaction/hand/HandSelection.h"
+#include "physics-interaction/hand/HandSelection.h"
 
 #include <cstdio>
 #include <cstdint>

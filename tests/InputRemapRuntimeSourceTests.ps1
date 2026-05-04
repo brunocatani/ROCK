@@ -35,12 +35,12 @@ function Reject-Text {
     }
 }
 
-Require-Text 'src/physics-interaction/InputRemapRuntime.cpp' 'ContainerMenu' 'ContainerMenu must stay game-stopping so menu actions such as Store All/Take All receive raw input.'
-Require-Text 'src/physics-interaction/InputRemapRuntime.cpp' 'FavoritesMenu' 'FavoritesMenu must stay game-stopping once it is actually open.'
-Reject-Text 'src/physics-interaction/InputRemapRuntime.cpp' '"WSLootMenu"' 'WSLootMenu is a gameplay quick-loot overlay and must not keep remap suppression disabled during normal play.'
-Require-Text 'src/physics-interaction/InputRemapRuntime.cpp' 'decision\.filteredAxisMask' 'Game-facing input filtering must apply policy-requested OpenVR analog axis suppression.'
-Require-Text 'src/physics-interaction/InputRemapRuntime.cpp' 'state->rAxis\[axisIndex\]\.x = 0\.0f;' 'Right trigger suppression must clear the OpenVR Axis1.x analog value, not only the button bit.'
-Require-Text 'src/physics-interaction/InputRemapRuntime.cpp' 'suppressRightTriggerGameInput = g_rockConfig\.rockSuppressNativeReadyWeaponAutoReady' 'Native auto-ready suppression must also remove right-trigger game input while holstered.'
+Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'ContainerMenu' 'ContainerMenu must stay game-stopping so menu actions such as Store All/Take All receive raw input.'
+Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'FavoritesMenu' 'FavoritesMenu must stay game-stopping once it is actually open.'
+Reject-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' '"WSLootMenu"' 'WSLootMenu is a gameplay quick-loot overlay and must not keep remap suppression disabled during normal play.'
+Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'decision\.filteredAxisMask' 'Game-facing input filtering must apply policy-requested OpenVR analog axis suppression.'
+Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'state->rAxis\[axisIndex\]\.x = 0\.0f;' 'Right trigger suppression must clear the OpenVR Axis1.x analog value, not only the button bit.'
+Require-Text 'src/physics-interaction/input/InputRemapRuntime.cpp' 'suppressRightTriggerGameInput = g_rockConfig\.rockSuppressNativeReadyWeaponAutoReady' 'Native auto-ready suppression must also remove right-trigger game input while holstered.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Input remap runtime source boundary failed:'

@@ -1,7 +1,7 @@
 #include <cstdio>
 
-#include "physics-interaction/ContactActivityTracker.h"
-#include "physics-interaction/ContactSignalSubscriptionPolicy.h"
+#include "physics-interaction/collision/ContactActivityTracker.h"
+#include "physics-interaction/collision/ContactSignalSubscriptionPolicy.h"
 
 namespace
 {
