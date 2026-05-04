@@ -40,7 +40,7 @@ namespace
 
 int main()
 {
-    using namespace frik::rock;
+    using namespace rock;
 
     bool ok = true;
 

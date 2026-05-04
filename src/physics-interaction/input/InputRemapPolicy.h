@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace frik::rock::input_remap_policy
+namespace rock::input_remap_policy
 {
     enum class Hand : std::uint8_t
     {

@@ -6,6 +6,8 @@ This is the project folder for ROCK, a physics-based hand interaction system for
 
 The HIGGS mod has been completely mapped and the codebase is present in the HIGGS folder.
 
+ROCK's own runtime/source namespace is `rock`. Do not introduce `frik::rock`. The `frik::api` namespace is still correct for the external FRIK API integration boundary.
+
 # Git
 - Repository: `https://github.com/brunocatani/ROCK` (private)
 - Branch: `main`
@@ -74,6 +76,9 @@ Prefer complex well implemented approaches, using existing reference mods like H
 * When in doubt, always use mods/source_code from projects that already have or have similar mechanisms and features as the desired
 * BETHESDA MAY HAVE STRIPPED MANY FUNCTIONS FROM FALLOUT 4 VR — when necessary for confirmation, use Ghidra to study and map everything. If something is found, save to a relevant skill or reference file. Also check the FO4 flat binary for answers.
 * FO4 Mods have almost 11 years of community development — always ask or refer to available source code for implementations and mod building
+* Production native layout reads, raw `REL::Offset` use, and direct Havok/Bethesda memory boundary logic belong in `src/physics-interaction/native/` behind named helpers. Debug-only renderer/overlay reads may stay isolated in `src/physics-interaction/debug/` when source-boundary tests explicitly allow them.
+* Config defaults must stay single-source in behavior: compiled defaults, `RockConfig::resetToDefaults()`, and packaged `data/config/ROCK.ini` values must agree unless a documented migration reason says otherwise.
+* Public API/provider structs are binary contracts. Keep layout/size/static-assert coverage when changing anything in `src/api/ROCKApi.h` or `src/api/ROCKProviderApi.h`.
 
 
 ## Implementations, approaches and plans must always focus a proper implementation of the desired features, no matter how many sessions it takes. Use multiple .md files with plans, specs and approaches as needed to scope, map and study everything necessary.
@@ -101,6 +106,9 @@ Prefer complex well implemented approaches, using existing reference mods like H
 - Build command: `cd ROCK && VCPKG_ROOT="C:/vcpkg" cmake --build build --config Release`
 - Output: `ROCK/build/Release/ROCK.dll`
 - CMakeUserPresets.json points to local library paths
+- Focused tests are controlled by `BUILD_ROCK_TESTS`. C++ regression tests and PowerShell `tests/*SourceTests.ps1` source-boundary tests are registered through CTest when the required runner is available.
+- Source-boundary tests are part of the contract. When adding a new architecture rule, add or update a focused source test instead of relying on review memory.
+- If local Linux tooling lacks CMake, Visual Studio, or PowerShell, still run source scans that prove the touched boundary, then clearly report which build/test commands could not be executed.
 
 # Available External Tools
 

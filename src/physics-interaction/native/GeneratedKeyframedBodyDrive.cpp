@@ -7,7 +7,7 @@
 
 #include <cmath>
 
-namespace frik::rock
+namespace rock
 {
     namespace
     {

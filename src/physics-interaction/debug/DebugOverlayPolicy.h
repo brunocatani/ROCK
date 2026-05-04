@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace frik::rock::debug_overlay_policy
+namespace rock::debug_overlay_policy
 {
     /*
      * Debug body rendering is accurate but expensive because shape support

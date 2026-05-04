@@ -12,7 +12,7 @@
 
 #include <cstdint>
 
-namespace frik::rock::geometry_body_resolver
+namespace rock::geometry_body_resolver
 {
     inline constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFF;
 

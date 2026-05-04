@@ -5,7 +5,7 @@
 #include "RE/Havok/hknpShape.h"
 #include "RE/NetImmerse/NiPoint.h"
 
-namespace frik::rock::havok_convex_shape_builder
+namespace rock::havok_convex_shape_builder
 {
     RE::hknpShape* buildConvexShapeFromLocalHavokPoints(const std::vector<RE::NiPoint3>& points, float convexRadius);
 }

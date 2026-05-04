@@ -6,7 +6,7 @@
 
 #include <cstdint>
 
-namespace frik::rock
+namespace rock
 {
     /*
      * FO4VR clears bhkWorld physics step listeners after each world update.

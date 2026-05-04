@@ -7,7 +7,7 @@
 #include <limits>
 #include <mutex>
 
-namespace frik::rock::contact_activity_tracker
+namespace rock::contact_activity_tracker
 {
     /*
      * ROCK's semantic hand contacts answer "which generated hand part touched

@@ -10,7 +10,7 @@
 #include "physics-interaction/weapon/WeaponTypes.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 
-namespace frik::rock
+namespace rock
 {
     /*
      * Left-hand weapon behavior needs one authority. Generated layer 44 weapon
@@ -56,7 +56,7 @@ namespace frik::rock
 
 #include "api/ROCKProviderApi.h"
 
-namespace frik::rock
+namespace rock
 {
     enum class OffhandInteractionReservation : std::uint8_t
     {

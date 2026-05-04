@@ -19,7 +19,7 @@ namespace RE
     class hknpWorld;
 }
 
-namespace frik::rock::object_physics_body_set
+namespace rock::object_physics_body_set
 {
     inline constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
 

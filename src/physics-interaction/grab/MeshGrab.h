@@ -12,7 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace frik::rock
+namespace rock
 {
 
     namespace VROffset

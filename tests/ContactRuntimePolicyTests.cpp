@@ -39,8 +39,8 @@ namespace
 
 int main()
 {
-    using namespace frik::rock::contact_activity_tracker;
-    using namespace frik::rock::contact_signal_subscription_policy;
+    using namespace rock::contact_activity_tracker;
+    using namespace rock::contact_signal_subscription_policy;
 
     bool ok = true;
 

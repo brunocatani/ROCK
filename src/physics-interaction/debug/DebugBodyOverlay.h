@@ -16,7 +16,7 @@ namespace RE
     class hknpWorld;
 }
 
-namespace frik::rock::debug
+namespace rock::debug
 {
     enum class BodyOverlayRole : std::uint8_t
     {

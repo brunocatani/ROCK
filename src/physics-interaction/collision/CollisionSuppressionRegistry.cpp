@@ -3,7 +3,7 @@
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/PhysicsLog.h"
 
-namespace frik::rock::collision_suppression_registry
+namespace rock::collision_suppression_registry
 {
     namespace
     {

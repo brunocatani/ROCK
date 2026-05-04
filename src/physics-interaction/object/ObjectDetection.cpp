@@ -15,7 +15,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace frik::rock
+namespace rock
 {
 
     bool isGrabbable(RE::TESObjectREFR* ref, RE::TESObjectREFR* otherHandRef)

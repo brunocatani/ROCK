@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <limits>
 
-namespace frik::rock::physics_scale
+namespace rock::physics_scale
 {
     /*
      * ROCK must not guess the game/Havok conversion from round numbers or from

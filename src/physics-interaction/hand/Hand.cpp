@@ -7,6 +7,7 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/hand/HandSelection.h"
@@ -14,7 +15,7 @@
 #include "RockUtils.h"
 #include "api/FRIKApi.h"
 
-namespace frik::rock
+namespace rock
 {
     namespace
     {
@@ -314,22 +315,20 @@ namespace frik::rock
             return;
 
         auto* collObj = node->collisionObject.get();
-        if (collObj) {
-            constexpr std::uintptr_t kMinValidPointer = 0x10000;
-            auto* fieldAt20 = *reinterpret_cast<void**>(reinterpret_cast<char*>(collObj) + offsets::kCollisionObject_PhysSystemPtr);
-            if (fieldAt20 && reinterpret_cast<std::uintptr_t>(fieldAt20) > kMinValidPointer) {
-                auto* physSystem = reinterpret_cast<RE::bhkPhysicsSystem*>(fieldAt20);
-                auto* inst = physSystem->instance;
-                if (inst && reinterpret_cast<std::uintptr_t>(inst) > kMinValidPointer) {
-                    for (std::int32_t i = 0; i < inst->bodyCount && i < 64; i++) {
-                        std::uint32_t bid = inst->bodyIds[i];
-                        if (bid != 0x7FFF'FFFF) {
-                            _heldBodyIds.push_back(bid);
-                        }
-                    }
-                }
+        struct HeldBodyCollector
+        {
+            std::vector<std::uint32_t>* ids = nullptr;
+        } collector{ &_heldBodyIds };
+
+        auto appendBodyId = [](std::uint32_t bodyId, void* userData) {
+            auto* state = static_cast<HeldBodyCollector*>(userData);
+            if (!state || !state->ids) {
+                return false;
             }
-        }
+            state->ids->push_back(bodyId);
+            return true;
+        };
+        havok_runtime::forEachPhysicsSystemBodyId(collObj, nullptr, 64, appendBodyId, &collector);
 
         auto* niNode = node->IsNode();
         if (niNode) {

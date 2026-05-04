@@ -1,6 +1,6 @@
 #include "physics-interaction/hand/HandInteractionStateMachine.h"
 
-namespace frik::rock
+namespace rock
 {
     namespace
     {

@@ -12,7 +12,7 @@
 
 #include <string_view>
 
-namespace frik::rock::root_flattened_finger_skeleton_runtime
+namespace rock::root_flattened_finger_skeleton_runtime
 {
     namespace
     {

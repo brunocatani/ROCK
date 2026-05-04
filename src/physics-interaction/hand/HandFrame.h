@@ -7,7 +7,7 @@
 
 // ---- HandspaceConvention.h ----
 
-namespace frik::rock::handspace_convention
+namespace rock::handspace_convention
 {
     /*
      * FO4/FRIK hand nodes use the active ROCK authored handspace convention:
@@ -45,7 +45,7 @@ namespace frik::rock::handspace_convention
 
 #include "RockConfig.h"
 
-namespace frik::rock
+namespace rock
 {
     inline RE::NiPoint3 authoredHandspaceToRawHandspace(RE::NiPoint3 value)
     {
@@ -133,7 +133,7 @@ namespace frik::rock
 
 // ---- PointingDirectionMath.h ----
 
-namespace frik::rock::pointing_direction_math
+namespace rock::pointing_direction_math
 {
     /*
      * HIGGS keeps close palm selection and far pointing selection as separate

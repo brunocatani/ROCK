@@ -11,7 +11,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace frik::rock::held_object_body_set_policy
+namespace rock::held_object_body_set_policy
 {
     inline constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFF;
 
@@ -61,7 +61,7 @@ namespace frik::rock::held_object_body_set_policy
 #include <algorithm>
 #include <cmath>
 
-namespace frik::rock::held_object_damping_math
+namespace rock::held_object_damping_math
 {
     // Held-object smoothing is applied as a velocity attenuation on the already constrained
     // body instead of changing hand/body frames. The grab frame math and pivots remain the
@@ -102,7 +102,7 @@ namespace frik::rock::held_object_damping_math
 #include <cmath>
 #include <cstddef>
 
-namespace frik::rock::held_object_physics_math
+namespace rock::held_object_physics_math
 {
     /*
      * Held-object motion needs to preserve player-space movement separately from
@@ -297,7 +297,7 @@ namespace frik::rock::held_object_physics_math
 #include <algorithm>
 #include <cmath>
 
-namespace frik::rock::held_player_space_math
+namespace rock::held_player_space_math
 {
     /*
      * HIGGS treats smooth/snap turning as a room-space warp instead of a large
@@ -361,7 +361,7 @@ namespace frik::rock::held_player_space_math
 #include <cstdint>
 #include <cstring>
 
-namespace frik::rock::held_grab_cc_policy
+namespace rock::held_grab_cc_policy
 {
     inline constexpr int kGeneratedContactStride = 0x40;
     inline constexpr int kGeneratedContactBodyIdOffset = 0x28;

@@ -1,6 +1,6 @@
 #pragma once
 
-namespace frik::rock::debug_axis_math
+namespace rock::debug_axis_math
 {
     // FO4VR's NiAVObject world update uses Bethesda's transform compose helper
     // at 0x1401A8D60. Local basis vectors become world vectors through the

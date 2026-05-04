@@ -28,7 +28,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace frik::rock::weapon_support_authority_policy
+namespace rock::weapon_support_authority_policy
 {
     enum class WeaponSupportAuthorityMode
     {
@@ -190,7 +190,7 @@ namespace frik::rock::weapon_support_authority_policy
 
 #include "physics-interaction/weapon/WeaponTypes.h"
 
-namespace frik::rock::weapon_support_grip_policy
+namespace rock::weapon_support_grip_policy
 {
     /*
      * HIGGS gates two-handing by whether the held item is two-handable and by
@@ -260,7 +260,7 @@ namespace frik::rock::weapon_support_grip_policy
  * alternate path and the provider can actually accept those transforms.
  */
 
-namespace frik::rock::weapon_support_thumb_pose_policy
+namespace rock::weapon_support_thumb_pose_policy
 {
     [[nodiscard]] constexpr bool shouldPublishAlternateThumbLocalOverride(
         const bool solvedFingerPose,
@@ -307,7 +307,7 @@ namespace frik::rock::weapon_support_thumb_pose_policy
 // ---- WeaponTwoHandedGripMath.h ----
 
 
-namespace frik::rock::weapon_two_handed_grip_math
+namespace rock::weapon_two_handed_grip_math
 {
     /*
      * Equipped weapon two-hand support has two independent ownership rules:
@@ -353,7 +353,7 @@ namespace frik::rock::weapon_two_handed_grip_math
 #include <algorithm>
 #include <cmath>
 
-namespace frik::rock
+namespace rock
 {
     /*
      * FRIK's suppressed offhand grip works because it solves the weapon

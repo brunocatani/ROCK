@@ -16,7 +16,7 @@
 #include <memory>
 #include <vector>
 
-namespace frik::rock::havok_compound_shape_builder
+namespace rock::havok_compound_shape_builder
 {
     namespace
     {

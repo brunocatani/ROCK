@@ -8,7 +8,7 @@
 #include <cstddef>
 #include <new>
 
-namespace frik::rock
+namespace rock
 {
     struct PhysicsStepDriveCoordinatorNativeStepListenerVTable
     {

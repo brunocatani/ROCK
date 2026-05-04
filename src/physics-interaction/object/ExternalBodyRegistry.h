@@ -6,7 +6,7 @@
 
 #include "api/ROCKProviderApi.h"
 
-namespace frik::rock
+namespace rock
 {
     /*
      * PAPER-owned reload bodies need to participate in ROCK hand contact routing

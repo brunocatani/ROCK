@@ -28,7 +28,7 @@
 #include <cstdio>
 #include <string>
 
-namespace frik::rock::grab_transform_telemetry
+namespace rock::grab_transform_telemetry
 {
     struct FrameStamp
     {
@@ -288,7 +288,7 @@ namespace frik::rock::grab_transform_telemetry
 
 #include "RE/NetImmerse/NiTransform.h"
 
-namespace frik::rock::grab_transform_telemetry_overlay
+namespace rock::grab_transform_telemetry_overlay
 {
     /*
      * Grab telemetry must be visually tied to the same live hand frame that

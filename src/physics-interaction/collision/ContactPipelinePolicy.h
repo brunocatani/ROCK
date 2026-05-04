@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace frik::rock::contact_pipeline_policy
+namespace rock::contact_pipeline_policy
 {
     /*
      * Contact handling is split into capture, classification, and routing so

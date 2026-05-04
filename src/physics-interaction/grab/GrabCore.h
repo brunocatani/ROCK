@@ -9,7 +9,7 @@
 
 #include <cstdint>
 
-namespace frik::rock::active_object_prep_policy
+namespace rock::active_object_prep_policy
 {
     /*
      * Active grab/pull temporarily promotes the selected object tree through
@@ -46,7 +46,7 @@ namespace frik::rock::active_object_prep_policy
 #include <cstdint>
 #include <vector>
 
-namespace frik::rock::active_grab_body_lifecycle
+namespace rock::active_grab_body_lifecycle
 {
     inline constexpr std::uint32_t kInvalidBodyId = object_physics_body_set::INVALID_BODY_ID;
     inline constexpr std::uint16_t kDynamicMotionPropertiesId = 1;
@@ -374,7 +374,7 @@ namespace RE
     class NiAVObject;
 }
 
-namespace frik::rock
+namespace rock
 {
     inline constexpr std::size_t kMaxGrabContactPatchSamples = 5;
 
@@ -528,7 +528,7 @@ namespace frik::rock
 #include <cstdint>
 #include <string_view>
 
-namespace frik::rock::grab_interaction_policy
+namespace rock::grab_interaction_policy
 {
     /*
      * HIGGS treats a far-selected object as an active interaction candidate and
@@ -586,7 +586,7 @@ namespace frik::rock::grab_interaction_policy
 
 #include <utility>
 
-namespace frik::rock::grab_frame_math
+namespace rock::grab_frame_math
 {
     template <class Transform>
     struct SplitGrabFrame
@@ -684,7 +684,7 @@ namespace frik::rock::grab_frame_math
 #include <algorithm>
 #include <cmath>
 
-namespace frik::rock::pull_motion_math
+namespace rock::pull_motion_math
 {
     template <class Vec3>
     struct PullMotionInput

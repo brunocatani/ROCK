@@ -19,8 +19,8 @@ namespace
 
     bool expectCandidateKind(
         const char* label,
-        frik::rock::origin_diagnostics::OriginCandidateKind actual,
-        frik::rock::origin_diagnostics::OriginCandidateKind expected)
+        rock::origin_diagnostics::OriginCandidateKind actual,
+        rock::origin_diagnostics::OriginCandidateKind expected)
     {
         if (actual == expected) {
             return true;
@@ -28,8 +28,8 @@ namespace
 
         std::printf("%s expected %s got %s\n",
             label,
-            frik::rock::origin_diagnostics::candidateKindName(expected),
-            frik::rock::origin_diagnostics::candidateKindName(actual));
+            rock::origin_diagnostics::candidateKindName(expected),
+            rock::origin_diagnostics::candidateKindName(actual));
         return false;
     }
 
@@ -46,7 +46,7 @@ namespace
 
 int main()
 {
-    namespace origin_diagnostics = frik::rock::origin_diagnostics;
+    namespace origin_diagnostics = rock::origin_diagnostics;
 
     bool ok = true;
 

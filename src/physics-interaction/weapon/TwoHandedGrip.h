@@ -14,7 +14,7 @@
 #include "RE/NetImmerse/NiNode.h"
 #include "RE/NetImmerse/NiTransform.h"
 
-namespace frik::rock
+namespace rock
 {
     namespace grab_finger_pose_runtime
     {

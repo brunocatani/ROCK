@@ -8,7 +8,7 @@ namespace RE
     class hknpWorld;
 }
 
-namespace frik::rock::physics_recursive_wrappers
+namespace rock::physics_recursive_wrappers
 {
     /*
      * ROCK uses FO4VR's recursive NiAVObject physics command wrappers for

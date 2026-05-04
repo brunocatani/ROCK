@@ -28,7 +28,7 @@ namespace RE
     class bhkWorld;
 }
 
-namespace frik::rock
+namespace rock
 {
 
     inline constexpr std::uint32_t ROCK_WEAPON_LAYER = 44;

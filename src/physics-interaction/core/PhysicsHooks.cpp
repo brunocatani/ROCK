@@ -18,7 +18,7 @@
 #include <cstring>
 #include <string_view>
 
-namespace frik::rock
+namespace rock
 {
     namespace
     {

@@ -4,7 +4,7 @@
 #include <cmath>
 #include <cstdint>
 
-namespace frik::rock::havok_physics_timing
+namespace rock::havok_physics_timing
 {
     /*
      * ROCK-generated keyframed bodies are consumed by FO4VR's hknp solver, so

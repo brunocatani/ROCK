@@ -1,6 +1,6 @@
 #include "physics-interaction/native/PhysicsScale.h"
 
-namespace frik::rock::physics_scale
+namespace rock::physics_scale
 {
     /*
      * HavokRuntime policy tests compile the runtime facade without loading the

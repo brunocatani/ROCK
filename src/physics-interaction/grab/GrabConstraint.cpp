@@ -9,7 +9,7 @@
 #include <unordered_set>
 #include <windows.h>
 
-namespace frik::rock
+namespace rock
 {
     HkPositionMotor* createPositionMotor(float tau, float damping, float proportionalRecoveryVelocity, float constantRecoveryVelocity, float minForce, float maxForce)
     {

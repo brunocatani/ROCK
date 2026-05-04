@@ -39,7 +39,7 @@
 #include <string_view>
 #include <xmmintrin.h>
 
-namespace frik::rock
+namespace rock
 {
     namespace
     {

@@ -10,7 +10,7 @@
 #include <intrin.h>
 #include <windows.h>
 
-namespace frik::rock
+namespace rock
 {
     static void releaseRefCounted(void* obj)
     {
@@ -678,7 +678,7 @@ namespace frik::rock
             return;
 
         ROCK_LOG_WARN(BethesdaBody,
-            "registerContactSignal('{}') NOT YET IMPLEMENTED — "
+            "registerContactSignal('{}') unavailable until the contact signal binding is verified — "
             "need getEventSignalForBody address",
             signalName ? signalName : "(null)");
     }
@@ -791,14 +791,22 @@ namespace frik::rock
         return check(_collisionObject);
     }
 
-    void BethesdaPhysicsBody::setPointVelocity(const float* targetVel, const float* worldPoint)
+    bool BethesdaPhysicsBody::setPointVelocity(const float* targetVel, const float* worldPoint)
     {
-        (void)targetVel;
         (void)worldPoint;
-        if (!isValid())
-            return;
+        if (!isValid() || !targetVel) {
+            return false;
+        }
 
-        ROCK_LOG_WARN(BethesdaBody, "setPointVelocity: NOT YET IMPLEMENTED (Phase 4 stub)");
+        /*
+         * FO4VR point-velocity writes still need binary validation before ROCK
+         * can expose a native point-specific call. Returning the existing
+         * verified velocity-writer result keeps this method honest for callers:
+         * it can fail, it mutates through a known Bethesda path, and it does not
+         * pretend to apply an unverified world-point correction.
+         */
+        const float zeroAngular[4]{ 0.0f, 0.0f, 0.0f, 0.0f };
+        return setVelocity(targetVel, zeroAngular);
     }
 
     void BethesdaPhysicsBody::enableBodyFlags(std::uint32_t flags, std::uint32_t mode)

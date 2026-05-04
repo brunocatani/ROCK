@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-namespace frik::rock::transform_math
+namespace rock::transform_math
 {
     /*
      * Shared transform convention:

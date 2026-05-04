@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <span>
 
-namespace frik::rock::havok_compound_shape_builder
+namespace rock::havok_compound_shape_builder
 {
     /*
      * PAPER reload bodies need one generated body for one authored part even

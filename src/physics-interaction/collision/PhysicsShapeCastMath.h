@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <limits>
 
-namespace frik::rock::physics_shape_cast_math
+namespace rock::physics_shape_cast_math
 {
     constexpr float kShapeCastTolerance = 0.001f;
     constexpr std::uint16_t kAnyMaterialId = 0xFFFF;

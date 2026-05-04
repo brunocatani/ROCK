@@ -40,9 +40,9 @@ namespace
 
 int main()
 {
-    using namespace frik::rock;
-    using namespace frik::rock::contact_pipeline_policy;
-    using namespace frik::rock::collision_layer_policy;
+    using namespace rock;
+    using namespace rock::contact_pipeline_policy;
+    using namespace rock::collision_layer_policy;
     using rock::provider::RockProviderExternalSourceKind;
     using rock::provider::RockProviderHand;
 

@@ -19,7 +19,7 @@
 
 #include <cstdint>
 
-namespace frik::rock
+namespace rock
 {
     struct SelectedObject
     {

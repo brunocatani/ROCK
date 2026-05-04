@@ -1,6 +1,6 @@
 #pragma once
 
-namespace frik::rock::debug_pivot_math
+namespace rock::debug_pivot_math
 {
     // Grab pivots live in hknp constraint atom local space, while the visualizer
     // draws game-space world coordinates. Keep this conversion isolated because

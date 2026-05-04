@@ -28,7 +28,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace frik::rock
+namespace rock
 {
 
     constexpr std::uint32_t ROCK_HAND_LAYER = 43;

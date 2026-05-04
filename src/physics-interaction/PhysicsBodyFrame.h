@@ -6,7 +6,7 @@
 
 #include "RE/NetImmerse/NiPoint.h"
 
-namespace frik::rock::body_frame
+namespace rock::body_frame
 {
     /*
      * ROCK keeps the hknp body/shape frame separate from the motion center-of-mass

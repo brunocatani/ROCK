@@ -8,7 +8,7 @@
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/Havok/hknpWorld.h"
 
-namespace frik::rock
+namespace rock
 {
 
     enum class BethesdaMotionType : int
@@ -69,7 +69,7 @@ namespace frik::rock
 
         bool isConstrained();
 
-        void setPointVelocity(const float* targetVel, const float* worldPoint);
+        bool setPointVelocity(const float* targetVel, const float* worldPoint);
 
         void enableBodyFlags(std::uint32_t flags, std::uint32_t mode);
 

@@ -9,7 +9,7 @@
 
 #include <cstddef>
 
-namespace frik::rock::hand_lifecycle_policy
+namespace rock::hand_lifecycle_policy
 {
     /*
      * Hand::reset is only safe after native Havok ownership has already been
@@ -32,7 +32,7 @@ namespace frik::rock::hand_lifecycle_policy
 
 #include <cstdint>
 
-namespace frik::rock
+namespace rock
 {
     enum class HandState : std::uint8_t
     {
@@ -58,7 +58,7 @@ namespace frik::rock
 #include <cstddef>
 #include <cstdint>
 
-namespace frik::rock::hand_semantic_contact_state
+namespace rock::hand_semantic_contact_state
 {
     /*
      * Semantic hand contacts are stored separately from generic touch state so
@@ -301,7 +301,7 @@ namespace frik::rock::hand_semantic_contact_state
 #include <cstdint>
 #include <cstddef>
 
-namespace frik::rock::hand_collision_suppression_math
+namespace rock::hand_collision_suppression_math
 {
     /*
      * ROCK suppresses its own hand bodies during physical grabs because the hand body

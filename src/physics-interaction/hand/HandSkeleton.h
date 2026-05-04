@@ -15,7 +15,7 @@
 
 #include "RE/NetImmerse/NiTransform.h"
 
-namespace frik::rock
+namespace rock
 {
     struct DirectSkeletonBoneEntry
     {
@@ -90,7 +90,7 @@ namespace frik::rock
 
 #include <string_view>
 
-namespace frik::rock
+namespace rock
 {
     class HandBoneCache
     {
@@ -208,7 +208,7 @@ namespace frik::rock
 #include <cstddef>
 #include <string>
 
-namespace frik::rock::root_flattened_finger_skeleton_runtime
+namespace rock::root_flattened_finger_skeleton_runtime
 {
     struct FingerChain
     {
@@ -350,7 +350,7 @@ namespace frik::rock::root_flattened_finger_skeleton_runtime
 #include "RE/NetImmerse/NiNode.h"
 #include "RE/NetImmerse/NiTransform.h"
 
-namespace frik::rock
+namespace rock
 {
     struct HandFrame
     {

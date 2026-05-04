@@ -15,7 +15,7 @@
 #include <atomic>
 #include <cstdint>
 
-namespace frik::rock
+namespace rock
 {
     struct HandColliderBodyMetadata
     {

@@ -10,7 +10,7 @@ namespace RE
     class hknpWorld;
 }
 
-namespace frik::rock::push_assist
+namespace rock::push_assist
 {
     enum class PushAssistSkipReason : std::uint8_t
     {

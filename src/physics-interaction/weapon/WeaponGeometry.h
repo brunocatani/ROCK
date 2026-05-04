@@ -15,7 +15,7 @@
 #include <limits>
 #include <vector>
 
-namespace frik::rock::weapon_collision_geometry_math
+namespace rock::weapon_collision_geometry_math
 {
     /*
      * Weapon mesh collision is generated in weapon-root local space so every
@@ -395,7 +395,7 @@ namespace frik::rock::weapon_collision_geometry_math
 #include <algorithm>
 #include <cmath>
 
-namespace frik::rock::weapon_interaction_probe_math
+namespace rock::weapon_interaction_probe_math
 {
     /*
      * HIGGS drives two-handed weapon selection from an active near-hand search

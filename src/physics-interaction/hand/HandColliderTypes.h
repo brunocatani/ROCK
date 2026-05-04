@@ -11,7 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace frik::rock::hand_collider_semantics
+namespace rock::hand_collider_semantics
 {
     /*
      * ROCK now treats the live FRIK-mutated root skeleton as the hand collision
@@ -280,7 +280,7 @@ namespace frik::rock::hand_collider_semantics
 #include <cmath>
 #include <vector>
 
-namespace frik::rock::hand_bone_collider_geometry_math
+namespace rock::hand_bone_collider_geometry_math
 {
     /*
      * These helpers convert the validated live bone graph into stable collider
@@ -540,7 +540,7 @@ namespace frik::rock::hand_bone_collider_geometry_math
 #include <cmath>
 #include <cstddef>
 
-namespace frik::rock::hand_bone_grab_pivot_math
+namespace rock::hand_bone_grab_pivot_math
 {
     /*
      * A bone-derived hand can choose a grab pivot from what actually touched the

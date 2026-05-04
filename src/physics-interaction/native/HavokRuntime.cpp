@@ -8,6 +8,7 @@
 #include "RE/RTTI.h"
 #include "RE/RTTI_IDs.h"
 #include "RE/VTABLE_IDs.h"
+#include "RE/Bethesda/bhkPhysicsSystem.h"
 #include "RE/Havok/hkVector4.h"
 #include "RE/Havok/hknpCollisionQueryCollector.h"
 #include "RE/Havok/hknpBody.h"
@@ -22,7 +23,7 @@
 #include <cmath>
 #include <windows.h>
 
-namespace frik::rock::havok_runtime
+namespace rock::havok_runtime
 {
     namespace
     {
@@ -106,6 +107,11 @@ namespace frik::rock::havok_runtime
 
             auto& body = bodyArray[bodyId.value];
             return body.bodyId.value == bodyId.value ? &body : nullptr;
+        }
+
+        bool pointerLooksReadable(const void* ptr)
+        {
+            return reinterpret_cast<std::uintptr_t>(ptr) > 0x10000;
         }
     }
 
@@ -214,6 +220,71 @@ namespace frik::rock::havok_runtime
         }
 
         return *reinterpret_cast<RE::hknpWorld**>(reinterpret_cast<std::uintptr_t>(bhkWorld) + offsets::kBhkWorld_HknpWorldPtr);
+    }
+
+    RE::bhkPhysicsSystem* getPhysicsSystemFromCollisionObject(RE::NiCollisionObject* collisionObject)
+    {
+        /*
+         * NiCollisionObject -> bhkPhysicsSystem is a native ownership edge used
+         * by object scanning and held-body capture. Keeping the offset read here
+         * lets higher-level systems enumerate body ids without learning the
+         * collision-object wrapper layout.
+         */
+        if (!collisionObject) {
+            return nullptr;
+        }
+
+        auto* field = *reinterpret_cast<void**>(reinterpret_cast<char*>(collisionObject) + offsets::kCollisionObject_PhysSystemPtr);
+        if (!pointerLooksReadable(field)) {
+            return nullptr;
+        }
+
+        return reinterpret_cast<RE::bhkPhysicsSystem*>(field);
+    }
+
+    void* getPhysicsSystemInstance(RE::bhkPhysicsSystem* physicsSystem)
+    {
+        if (!pointerLooksReadable(physicsSystem)) {
+            return nullptr;
+        }
+
+        auto* instance = physicsSystem->instance;
+        return pointerLooksReadable(instance) ? instance : nullptr;
+    }
+
+    bool forEachPhysicsSystemBodyId(
+        RE::NiCollisionObject* collisionObject,
+        RE::hknpWorld* expectedWorld,
+        std::uint32_t maxBodies,
+        bool (*visitor)(std::uint32_t bodyId, void* userData),
+        void* userData)
+    {
+        if (!visitor || maxBodies == 0) {
+            return false;
+        }
+
+        auto* physicsSystem = getPhysicsSystemFromCollisionObject(collisionObject);
+        auto* instance = static_cast<RE::hknpPhysicsSystemInstance*>(getPhysicsSystemInstance(physicsSystem));
+        if (!instance || !instance->bodyIds) {
+            return false;
+        }
+
+        if (expectedWorld && instance->world != expectedWorld) {
+            return false;
+        }
+
+        const std::int32_t count = (std::min)(instance->bodyCount, static_cast<std::int32_t>(maxBodies));
+        for (std::int32_t i = 0; i < count; ++i) {
+            const std::uint32_t bodyId = instance->bodyIds[i];
+            if (bodyId == body_frame::kInvalidBodyId || bodyId > 0x000F'FFFF) {
+                continue;
+            }
+            if (!visitor(bodyId, userData)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     void* getQueryFilterRefWithFallback(RE::hknpWorld* world)

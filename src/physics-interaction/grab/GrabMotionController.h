@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace frik::rock::grab_motion_controller
+namespace rock::grab_motion_controller
 {
     /*
      * HIGGS' grabbed-object feel comes from a motor controller, not from a

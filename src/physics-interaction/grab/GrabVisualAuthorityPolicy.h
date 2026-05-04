@@ -18,7 +18,7 @@
  * the physical grab use a good source while the visual IK path rejects it.
  */
 
-namespace frik::rock::grab_visual_authority_policy
+namespace rock::grab_visual_authority_policy
 {
     struct VisualAuthorityContactState
     {

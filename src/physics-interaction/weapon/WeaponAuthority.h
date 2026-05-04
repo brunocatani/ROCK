@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <cstddef>
 
-namespace frik::rock::weapon_authority_lifecycle_policy
+namespace rock::weapon_authority_lifecycle_policy
 {
     /*
      * HIGGS stops advancing hand interaction when game-stopping menus or world
@@ -135,7 +135,7 @@ namespace frik::rock::weapon_authority_lifecycle_policy
 
 #include <array>
 
-namespace frik::rock::weapon_visual_authority_math
+namespace rock::weapon_visual_authority_math
 {
     /*
      * ROCK-owned equipped weapon authority must write the same final visual
@@ -248,7 +248,7 @@ namespace frik::rock::weapon_visual_authority_math
 
 // ---- WeaponMuzzleAuthorityMath.h ----
 
-namespace frik::rock::weapon_muzzle_authority_math
+namespace rock::weapon_muzzle_authority_math
 {
     /*
      * ROCK writes the final equipped weapon transform after FRIK's normal weapon
@@ -269,7 +269,7 @@ namespace frik::rock::weapon_muzzle_authority_math
 #include <cstdint>
 #include <string_view>
 
-namespace frik::rock::weapon_visual_composition_policy
+namespace rock::weapon_visual_composition_policy
 {
     /*
      * Weapon mod swaps can expose the weapon node before the edited part's

@@ -33,7 +33,7 @@
 
 #include "physics-interaction/debug/DebugAxisMath.h"
 
-namespace frik::rock::debug
+namespace rock::debug
 {
     namespace
     {

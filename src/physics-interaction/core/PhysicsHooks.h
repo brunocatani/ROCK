@@ -1,6 +1,6 @@
 #pragma once
 
-namespace frik::rock
+namespace rock
 {
     void installBumpHook();
     void installNativeGrabHook();

@@ -10,7 +10,7 @@
 #include "f4vr/F4VRUtils.h"
 #include "f4vr/PlayerNodes.h"
 
-namespace frik::rock
+namespace rock
 {
     namespace
     {

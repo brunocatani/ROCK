@@ -8,7 +8,7 @@
 #include "RE/Havok/hknpWorld.h"
 #include "RE/NetImmerse/NiPoint.h"
 
-namespace frik::rock::physics_shape_cast
+namespace rock::physics_shape_cast
 {
     constexpr std::uint32_t kSelectionQueryCollisionFilterInfo = selection_query_policy::kDefaultShapeCastFilterInfo;
 

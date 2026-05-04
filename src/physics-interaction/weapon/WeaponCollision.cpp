@@ -34,7 +34,7 @@
 #include <string_view>
 #include <vector>
 
-namespace frik::rock
+namespace rock
 {
     namespace
     {

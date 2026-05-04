@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace frik::rock::offsets
+namespace rock::offsets
 {
 
     constexpr std::uintptr_t kCollisionObject_OwnerNode = 0x10;

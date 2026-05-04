@@ -48,7 +48,7 @@ namespace
 
 int main()
 {
-    using namespace frik::rock::input_remap_policy;
+    using namespace rock::input_remap_policy;
 
     bool ok = true;
 

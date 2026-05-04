@@ -27,7 +27,7 @@ namespace RE
     class TESObjectREFR;
 }
 
-namespace frik::rock
+namespace rock
 {
 
     enum PhysicsMessageType : std::uint32_t

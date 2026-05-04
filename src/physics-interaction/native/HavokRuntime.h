@@ -11,6 +11,7 @@
 namespace RE
 {
     class bhkWorld;
+    struct bhkPhysicsSystem;
     class hkVector4f;
     struct hknpBody;
     struct hknpMotion;
@@ -20,7 +21,7 @@ namespace RE
     class NiPoint3;
 }
 
-namespace frik::rock::havok_runtime
+namespace rock::havok_runtime
 {
     /*
      * ROCK has several systems reading the same FO4VR hknp body and motion
@@ -90,6 +91,14 @@ namespace frik::rock::havok_runtime
     BodySnapshot snapshotBody(RE::hknpWorld* world, RE::hknpBodyId bodyId);
 
     RE::hknpWorld* getHknpWorldFromBhk(RE::bhkWorld* bhkWorld);
+    RE::bhkPhysicsSystem* getPhysicsSystemFromCollisionObject(RE::NiCollisionObject* collisionObject);
+    void* getPhysicsSystemInstance(RE::bhkPhysicsSystem* physicsSystem);
+    bool forEachPhysicsSystemBodyId(
+        RE::NiCollisionObject* collisionObject,
+        RE::hknpWorld* expectedWorld,
+        std::uint32_t maxBodies,
+        bool (*visitor)(std::uint32_t bodyId, void* userData),
+        void* userData);
     void* getQueryFilterRef(RE::hknpWorld* world);
     void* getQueryFilterRefWithFallback(RE::hknpWorld* world);
     RE::NiCollisionObject* getCollisionObjectFromBody(const RE::hknpBody* body);

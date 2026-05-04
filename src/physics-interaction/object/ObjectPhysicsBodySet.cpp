@@ -5,7 +5,7 @@
 #include <limits>
 #include <unordered_map>
 
-#include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
@@ -13,15 +13,15 @@
 #include "RE/Bethesda/BSHavok.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
-#include "RE/Bethesda/bhkPhysicsSystem.h"
 #include "RE/Havok/hknpBody.h"
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/Havok/hknpMotion.h"
 #include "RE/Havok/hknpWorld.h"
 #include "RE/NetImmerse/NiAVObject.h"
+#include "RE/NetImmerse/NiCollisionObject.h"
 #include "RE/NetImmerse/NiNode.h"
 
-namespace frik::rock::object_physics_body_set
+namespace rock::object_physics_body_set
 {
     namespace
     {
@@ -81,84 +81,91 @@ namespace frik::rock::object_physics_body_set
             if (collisionObject) {
                 ++out.diagnostics.collisionObjects;
 
-                constexpr std::uintptr_t kMinValidPointer = 0x10000;
-                auto* fieldAt20 = *reinterpret_cast<void**>(reinterpret_cast<char*>(collisionObject) + offsets::kCollisionObject_PhysSystemPtr);
-                if (fieldAt20 && reinterpret_cast<std::uintptr_t>(fieldAt20) > kMinValidPointer) {
-                    auto* physSystem = reinterpret_cast<RE::bhkPhysicsSystem*>(fieldAt20);
-                    auto* instance = physSystem->instance;
-                    if (instance && reinterpret_cast<std::uintptr_t>(instance) > kMinValidPointer && instance->world == hknpWorld && instance->bodyIds) {
-                        const std::int32_t count = (std::min)(instance->bodyCount, 256);
-                        for (std::int32_t i = 0; i < count; ++i) {
-                            const std::uint32_t rawBodyId = instance->bodyIds[i];
-                            if (rawBodyId == INVALID_BODY_ID || rawBodyId > 0x000F'FFFF) {
-                                continue;
-                            }
-                            if (!seenBodyIds.insert(rawBodyId).second) {
-                                ++out.diagnostics.duplicateBodySkips;
-                                continue;
-                            }
+                struct ScanBodyContext
+                {
+                    RE::bhkWorld* bhkWorld = nullptr;
+                    RE::hknpWorld* hknpWorld = nullptr;
+                    RE::TESObjectREFR* rootRef = nullptr;
+                    RE::NiAVObject* node = nullptr;
+                    RE::NiCollisionObject* collisionObject = nullptr;
+                    const BodySetScanOptions* options = nullptr;
+                    ObjectPhysicsBodySet* out = nullptr;
+                    std::unordered_set<std::uint32_t>* seenBodyIds = nullptr;
+                } context{ bhkWorld, hknpWorld, rootRef, node, collisionObject, &options, &out, &seenBodyIds };
 
-                            RE::hknpBodyId bodyId{ rawBodyId };
-                            auto* body = havok_runtime::getBody(hknpWorld, bodyId);
-                            if (!body) {
-                                continue;
-                            }
-
-                            ObjectPhysicsBodyRecord record{};
-                            record.bodyId = rawBodyId;
-                            record.motionId = body->motionIndex;
-                            record.filterInfo = body->collisionFilterInfo;
-                            record.collisionLayer = body->collisionFilterInfo & 0x7F;
-                            auto* motion = havok_runtime::getMotion(hknpWorld, record.motionId);
-                            const std::uint16_t motionPropertiesId =
-                                motion ? motion->motionPropertiesId : static_cast<std::uint16_t>(body->motionPropertiesId);
-                            record.bodyFlags = body->flags;
-                            record.motionPropertiesId = motionPropertiesId;
-                            record.motionType = physics_body_classifier::motionTypeFromBodyFlags(record.bodyFlags);
-                            if (record.motionType == physics_body_classifier::BodyMotionType::Unknown) {
-                                record.motionType = physics_body_classifier::motionTypeFromMotionPropertiesId(motionPropertiesId);
-                            }
-                            record.owningNode = node;
-                            record.collisionObject = collisionObject;
-                            record.resolvedRef = rootRef;
-
-                            const auto* bodyFloats = reinterpret_cast<const float*>(body);
-                            record.positionGame.x = bodyFloats[12] * havokToGameScale();
-                            record.positionGame.y = bodyFloats[13] * havokToGameScale();
-                            record.positionGame.z = bodyFloats[14] * havokToGameScale();
-
-                            auto* resolved = resolveBodyToRef(bhkWorld, hknpWorld, bodyId);
-                            if (resolved) {
-                                record.resolvedRef = resolved;
-                            }
-
-                            physics_body_classifier::BodyClassificationInput input{};
-                            input.bodyId = rawBodyId;
-                            input.motionId = record.motionId;
-                            input.layer = record.collisionLayer;
-                            input.filterInfo = record.filterInfo;
-                            input.motionType = record.motionType;
-                            input.bodyFlags = record.bodyFlags;
-                            input.referenceDeletedOrDisabled =
-                                !record.resolvedRef || record.resolvedRef->IsDeleted() || record.resolvedRef->IsDisabled();
-                            input.isRockHandBody =
-                                rawBodyId == options.rightHandBodyId || rawBodyId == options.leftHandBodyId ||
-                                record.collisionLayer == collision_layer_policy::ROCK_LAYER_HAND;
-                            input.isRockWeaponSourceBody = rawBodyId == options.sourceWeaponBodyId || rawBodyId == options.sourceBodyId;
-                            input.isHeldBySameHand = containsBodyId(options.heldBySameHand, rawBodyId);
-                            input.isPlayerBody = record.resolvedRef == RE::PlayerCharacter::GetSingleton();
-
-                            const auto classification = physics_body_classifier::classifyBody(input, options.mode);
-                            record.accepted = classification.accepted;
-                            record.rejectReason = classification.reason;
-                            if (!record.accepted) {
-                                recordReject(out.diagnostics, record.rejectReason);
-                            }
-
-                            out.records.push_back(record);
-                        }
+                auto visitBody = [](std::uint32_t rawBodyId, void* userData) {
+                    auto* context = static_cast<ScanBodyContext*>(userData);
+                    if (!context || !context->hknpWorld || !context->options || !context->out || !context->seenBodyIds) {
+                        return false;
                     }
-                }
+                    auto& out = *context->out;
+                    auto& seenBodyIds = *context->seenBodyIds;
+                    const auto& options = *context->options;
+                    auto* hknpWorld = context->hknpWorld;
+
+                    if (!seenBodyIds.insert(rawBodyId).second) {
+                        ++out.diagnostics.duplicateBodySkips;
+                        return true;
+                    }
+
+                    RE::hknpBodyId bodyId{ rawBodyId };
+                    auto* body = havok_runtime::getBody(hknpWorld, bodyId);
+                    if (!body) {
+                        return true;
+                    }
+
+                    ObjectPhysicsBodyRecord record{};
+                    record.bodyId = rawBodyId;
+                    record.motionId = body->motionIndex;
+                    record.filterInfo = body->collisionFilterInfo;
+                    record.collisionLayer = body->collisionFilterInfo & 0x7F;
+                    auto* motion = havok_runtime::getMotion(hknpWorld, record.motionId);
+                    const std::uint16_t motionPropertiesId = motion ? motion->motionPropertiesId : static_cast<std::uint16_t>(body->motionPropertiesId);
+                    record.bodyFlags = body->flags;
+                    record.motionPropertiesId = motionPropertiesId;
+                    record.motionType = physics_body_classifier::motionTypeFromBodyFlags(record.bodyFlags);
+                    if (record.motionType == physics_body_classifier::BodyMotionType::Unknown) {
+                        record.motionType = physics_body_classifier::motionTypeFromMotionPropertiesId(motionPropertiesId);
+                    }
+                    record.owningNode = context->node;
+                    record.collisionObject = context->collisionObject;
+                    record.resolvedRef = context->rootRef;
+
+                    const auto* bodyFloats = reinterpret_cast<const float*>(body);
+                    record.positionGame.x = bodyFloats[12] * havokToGameScale();
+                    record.positionGame.y = bodyFloats[13] * havokToGameScale();
+                    record.positionGame.z = bodyFloats[14] * havokToGameScale();
+
+                    auto* resolved = resolveBodyToRef(context->bhkWorld, hknpWorld, bodyId);
+                    if (resolved) {
+                        record.resolvedRef = resolved;
+                    }
+
+                    physics_body_classifier::BodyClassificationInput input{};
+                    input.bodyId = rawBodyId;
+                    input.motionId = record.motionId;
+                    input.layer = record.collisionLayer;
+                    input.filterInfo = record.filterInfo;
+                    input.motionType = record.motionType;
+                    input.bodyFlags = record.bodyFlags;
+                    input.referenceDeletedOrDisabled = !record.resolvedRef || record.resolvedRef->IsDeleted() || record.resolvedRef->IsDisabled();
+                    input.isRockHandBody =
+                        rawBodyId == options.rightHandBodyId || rawBodyId == options.leftHandBodyId || record.collisionLayer == collision_layer_policy::ROCK_LAYER_HAND;
+                    input.isRockWeaponSourceBody = rawBodyId == options.sourceWeaponBodyId || rawBodyId == options.sourceBodyId;
+                    input.isHeldBySameHand = containsBodyId(options.heldBySameHand, rawBodyId);
+                    input.isPlayerBody = record.resolvedRef == RE::PlayerCharacter::GetSingleton();
+
+                    const auto classification = physics_body_classifier::classifyBody(input, options.mode);
+                    record.accepted = classification.accepted;
+                    record.rejectReason = classification.reason;
+                    if (!record.accepted) {
+                        recordReject(out.diagnostics, record.rejectReason);
+                    }
+
+                    out.records.push_back(record);
+                    return true;
+                };
+                havok_runtime::forEachPhysicsSystemBodyId(collisionObject, hknpWorld, 256, visitBody, &context);
             }
 
             auto* niNode = node->IsNode();

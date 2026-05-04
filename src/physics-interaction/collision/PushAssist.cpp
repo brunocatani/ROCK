@@ -6,7 +6,7 @@
 #include "RE/Havok/hknpWorld.h"
 #include "RE/NetImmerse/NiPoint.h"
 
-namespace frik::rock::push_assist
+namespace rock::push_assist
 {
     bool applyLinearImpulse(void* collisionObject, const RE::NiPoint3& impulseHavok)
     {

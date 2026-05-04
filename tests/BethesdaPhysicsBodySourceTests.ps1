@@ -85,6 +85,9 @@ Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.h' 'bool setTra
 Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.h' 'bool setVelocity\(const float\* linVel,\s*const float\* angVel\)' 'SetVelocity wrapper must expose native failure to callers.'
 Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.h' 'bool applyLinearImpulse\(const float\* impulse\)' 'ApplyLinearImpulse wrapper must expose native failure to callers.'
 Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.h' 'bool applyPointImpulse\(const float\* impulse,\s*const float\* worldPoint\)' 'ApplyPointImpulse wrapper must expose native failure to callers.'
+Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.h' 'bool setPointVelocity\(const float\* targetVel,\s*const float\* worldPoint\)' 'Point-velocity wrapper must expose native failure to callers.'
+Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' 'bool BethesdaPhysicsBody::setPointVelocity\(const float\* targetVel,\s*const float\* worldPoint\)' 'Point-velocity wrapper must return a success/failure result instead of being an inert void method.'
+Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' 'return setVelocity\(targetVel,\s*zeroAngular\)' 'Point-velocity wrapper must at least route through the verified velocity writer until a verified native point-velocity API exists.'
 
 Reject-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' 'world->CreateBody' 'Generated collider bodies must not bypass the Bethesda wrapper with direct hknpWorld::CreateBody.'
 Reject-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' 'Physics system instance constructed' 'Generated collider bodies must not fabricate a bhkPhysicsSystem instance.'
@@ -103,6 +106,7 @@ Reject-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' 'ci \+ 0x50
 Reject-Text 'src/physics-interaction/native/HavokOffsets.h' 'kFunc_NiNode_Ctor\s*=\s*0x1C17DD0' 'NiNode constructor offset must not point at the verified NiNode destructor.'
 Reject-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' 'GetFilterInfo_t\s*=\s*std::uint32_t\s*\(\*\)\(void\*\)' 'bhkNPCollisionObject::GetFilterInfo must not be called as a return-value-only function.'
 Reject-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' 'return getFilter\(_collisionObject\)' 'bhkNPCollisionObject::GetFilterInfo must not write through an uninitialized native out pointer.'
+Reject-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' 'NOT YET IMPLEMENTED' 'BethesdaPhysicsBody must not expose inert runtime stubs as production methods.'
 
 $handSet = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/hand/HandBoneColliderSet.cpp')
 if ($handSet -match 'createBodyForRole[\s\S]{0,260}else\s+if\s*\(\s*g_rockConfig\.rockHandBoneCollidersRequireAllFingerBones\s*\)') {

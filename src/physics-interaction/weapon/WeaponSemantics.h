@@ -13,7 +13,7 @@
 #include <cctype>
 #include <string_view>
 
-namespace frik::rock
+namespace rock
 {
     /*
      * The generated mesh path sees weapon parts through FO4VR NIF node names,
@@ -250,7 +250,7 @@ namespace frik::rock
 #include <unordered_set>
 #include <vector>
 
-namespace frik::rock
+namespace rock
 {
     /*
      * Weapon body budgets must preserve gameplay parts before decorative
@@ -343,7 +343,7 @@ namespace frik::rock
 #include <cstdint>
 #include <string_view>
 
-namespace frik::rock::weapon_collision_grouping_policy
+namespace rock::weapon_collision_grouping_policy
 {
     /*
      * Weapon mesh collision is generated from runtime visual geometry because

@@ -6,7 +6,7 @@
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
 
-namespace frik::rock
+namespace rock
 {
     /*
      * A physics frame reads the same world pointers, hand transforms, hand

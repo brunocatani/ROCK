@@ -7,7 +7,7 @@
 #include "RE/NetImmerse/NiAVObject.h"
 #include "RE/Havok/hknpWorld.h"
 
-namespace frik::rock::physics_recursive_wrappers
+namespace rock::physics_recursive_wrappers
 {
     bool setMotionRecursive(RE::NiAVObject* root, MotionPreset preset, bool recursive, bool force, bool activate)
     {

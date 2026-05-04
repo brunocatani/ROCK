@@ -4,7 +4,7 @@
 
 #include <REL/Relocation.h>
 
-namespace frik::rock::havok_physics_timing
+namespace rock::havok_physics_timing
 {
     namespace
     {

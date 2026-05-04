@@ -6,10 +6,10 @@
 
 namespace
 {
-    using frik::rock::HandInteractionEvent;
-    using frik::rock::HandState;
-    using frik::rock::HandTransitionEffect;
-    using frik::rock::HandTransitionRequest;
+    using rock::HandInteractionEvent;
+    using rock::HandState;
+    using rock::HandTransitionEffect;
+    using rock::HandTransitionRequest;
 
     bool expectTrue(const char* label, bool value)
     {
@@ -73,7 +73,7 @@ namespace
 
     bool expectAccepted(const char* label, HandState current, HandInteractionEvent event, HandState next, std::uint32_t requiredEffects = 0)
     {
-        const auto result = frik::rock::evaluateHandTransition(request(current, event));
+        const auto result = rock::evaluateHandTransition(request(current, event));
         bool ok = true;
         ok &= expectTrue(label, result.accepted);
         ok &= expectState(label, result.next, next);
@@ -84,7 +84,7 @@ namespace
 
     bool expectRejected(const char* label, HandState current, HandInteractionEvent event)
     {
-        const auto result = frik::rock::evaluateHandTransition(request(current, event));
+        const auto result = rock::evaluateHandTransition(request(current, event));
         bool ok = true;
         ok &= expectFalse(label, result.accepted);
         ok &= expectState(label, result.next, current);
@@ -96,7 +96,7 @@ namespace
 
 int main()
 {
-    using namespace frik::rock;
+    using namespace rock;
 
     bool ok = true;
 

@@ -336,15 +336,15 @@ namespace rock::provider
     static_assert(std::is_trivially_copyable_v<RockProviderWeaponEvidenceDetailV3>);
 }
 
-namespace frik::rock
+namespace rock
 {
     class PhysicsInteraction;
 }
 
 namespace rock::provider
 {
-    void setPhysicsInteractionInstance(frik::rock::PhysicsInteraction* pi);
-    void dispatchFrameCallbacks(frik::rock::PhysicsInteraction& pi);
+    void setPhysicsInteractionInstance(rock::PhysicsInteraction* pi);
+    void dispatchFrameCallbacks(rock::PhysicsInteraction& pi);
     void clearExternalBodiesForProviderLoss();
     bool isExternalBodyId(std::uint32_t bodyId);
     bool isExternalBodyDynamicPushSuppressed(std::uint32_t bodyId);

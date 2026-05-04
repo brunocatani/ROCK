@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <intrin.h>
 
-namespace frik::rock::havok_ref_count
+namespace rock::havok_ref_count
 {
     /*
      * FO4VR hknp objects use Havok's hkReferencedObject ref-count word rather

@@ -4,7 +4,7 @@
 
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 
-namespace frik::rock::physics_body_classifier
+namespace rock::physics_body_classifier
 {
     enum class BodyMotionType : std::uint8_t
     {

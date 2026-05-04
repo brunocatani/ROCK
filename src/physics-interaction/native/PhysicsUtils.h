@@ -13,7 +13,7 @@
 #include "RE/NetImmerse/NiCollisionObject.h"
 #include "RE/NetImmerse/NiTransform.h"
 
-namespace frik::rock
+namespace rock
 {
     inline constexpr std::uintptr_t kHknpWorldBodyHighWaterMarkOffset = havok_runtime::kHknpWorldBodyHighWaterMarkOffset;
 

@@ -23,7 +23,7 @@
 
 #include <cmath>
 
-namespace frik::rock::hand_visual_authority_math
+namespace rock::hand_visual_authority_math
 {
     template <class Transform>
     inline Transform buildHiggsReverseAlignedHandWorld(const Transform& heldNodeWorld, const Transform& rawHandSpace)
@@ -235,7 +235,7 @@ namespace frik::rock::hand_visual_authority_math
 #include <algorithm>
 #include <cmath>
 
-namespace frik::rock::hand_visual_lerp_math
+namespace rock::hand_visual_lerp_math
 {
     /*
      * Visual hand lerp is intentionally isolated from collision and grab constraint math.

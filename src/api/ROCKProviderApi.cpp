@@ -11,7 +11,7 @@
 namespace
 {
     using namespace rock::provider;
-    using namespace frik::rock;
+    using namespace rock;
 
     struct CallbackSlot
     {
@@ -301,12 +301,12 @@ namespace rock::provider
         return &ROCK_PROVIDER_API_FUNCTION_TABLE;
     }
 
-    void setPhysicsInteractionInstance(frik::rock::PhysicsInteraction* pi)
+    void setPhysicsInteractionInstance(rock::PhysicsInteraction* pi)
     {
         s_physicsInteraction.store(pi, std::memory_order_release);
     }
 
-    void dispatchFrameCallbacks(frik::rock::PhysicsInteraction& pi)
+    void dispatchFrameCallbacks(rock::PhysicsInteraction& pi)
     {
         RockProviderFrameSnapshot snapshot{};
         snapshot.frameIndex = s_nextFrameIndex.fetch_add(1, std::memory_order_acq_rel);

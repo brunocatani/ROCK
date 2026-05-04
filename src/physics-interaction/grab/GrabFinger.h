@@ -13,7 +13,7 @@
 #include <limits>
 #include <vector>
 
-namespace frik::rock::grab_finger_pose_math
+namespace rock::grab_finger_pose_math
 {
     /*
      * The first mesh-matched pose pass keeps the expensive choice localized:
@@ -578,7 +578,7 @@ namespace frik::rock::grab_finger_pose_math
 #include <cmath>
 #include <vector>
 
-namespace frik::rock::grab_finger_pose_runtime
+namespace rock::grab_finger_pose_runtime
 {
     /*
      * HIGGS solves grasped fingers from the held object's triangle geometry and
@@ -781,7 +781,7 @@ namespace frik::rock::grab_finger_pose_runtime
 #include <cstdint>
 #include <cstddef>
 
-namespace frik::rock::grab_finger_local_transform_math
+namespace rock::grab_finger_local_transform_math
 {
     inline constexpr std::size_t kFingerLocalTransformCount = 15;
     inline constexpr std::uint16_t kFullFingerLocalTransformMask = 0x7FFF;
@@ -978,7 +978,7 @@ namespace frik::rock::grab_finger_local_transform_math
 #include <cstdint>
 #include <string_view>
 
-namespace frik::rock::grab_finger_local_transform_runtime
+namespace rock::grab_finger_local_transform_runtime
 {
     struct Options
     {

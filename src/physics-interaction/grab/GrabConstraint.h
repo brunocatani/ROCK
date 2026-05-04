@@ -9,7 +9,7 @@
 
 #include <vector>
 
-namespace frik::rock
+namespace rock
 {
 
     struct HkPositionMotor

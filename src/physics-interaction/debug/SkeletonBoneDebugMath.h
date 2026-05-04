@@ -9,7 +9,7 @@
 
 #include "physics-interaction/debug/DebugAxisMath.h"
 
-namespace frik::rock::skeleton_bone_debug_math
+namespace rock::skeleton_bone_debug_math
 {
     // ROCK needs a skeleton map that can stand on its own instead of depending
     // on the FRIK API for every bone. HIGGS used debug transforms to make live

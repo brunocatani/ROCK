@@ -19,12 +19,12 @@ namespace RE
     class hknpWorld;
 }
 
-namespace frik::rock::debug
+namespace rock::debug
 {
     struct BodyOverlayFrame;
 }
 
-namespace frik::rock::origin_diagnostics
+namespace rock::origin_diagnostics
 {
     /*
      * FO4VR creates exterior Havok worlds with a per-world origin/broadphase frame.

@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace frik::rock::contact_signal_subscription_policy
+namespace rock::contact_signal_subscription_policy
 {
     /*
      * FO4VR exposes contact notifications through an hkSignal slot rather than

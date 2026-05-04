@@ -12,7 +12,7 @@
 #include <cmath>
 #include <unordered_set>
 
-namespace frik::rock::nearby_grab_damping
+namespace rock::nearby_grab_damping
 {
     namespace
     {

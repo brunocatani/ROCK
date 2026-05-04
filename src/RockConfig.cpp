@@ -38,7 +38,7 @@ namespace
     }
 }
 
-namespace frik::rock
+namespace rock
 {
 
     void RockConfig::resetToDefaults()
@@ -60,7 +60,7 @@ namespace frik::rock
         rockReversePalmNormal = true;
         rockReverseFarGrabNormal = false;
 
-        rockWeaponCollisionEnabled = false;
+        rockWeaponCollisionEnabled = true;
         rockWeaponCollisionBlocksProjectiles = false;
         rockWeaponCollisionBlocksSpells = false;
         rockWeaponCollisionGroupingMode = weapon_collision_grouping_policy::kDefaultWeaponCollisionGroupingMode;
@@ -79,22 +79,22 @@ namespace frik::rock
 
         rockHighlightEnabled = true;
 
-        rockDebugShowColliders = false;
-        rockDebugShowTargetColliders = false;
-        rockDebugShowHandAxes = false;
-        rockDebugShowGrabPivots = false;
-        rockDebugShowGrabSurfaceFrame = false;
+        rockDebugShowColliders = true;
+        rockDebugShowTargetColliders = true;
+        rockDebugShowHandAxes = true;
+        rockDebugShowGrabPivots = true;
+        rockDebugShowGrabSurfaceFrame = true;
         rockDebugDrawGrabContactPatch = true;
-        rockDebugShowGrabFingerProbes = false;
-        rockDebugShowPalmVectors = false;
+        rockDebugShowGrabFingerProbes = true;
+        rockDebugShowPalmVectors = true;
         rockDebugDrawHandColliders = true;
         rockDebugDrawHandBoneColliders = true;
         rockDebugDrawHandBoneContacts = true;
         rockDebugMaxHandBoneBodiesDrawn = 48;
         rockDebugDrawWeaponColliders = true;
-        rockDebugMaxWeaponBodiesDrawn = 6;
-        rockDebugMaxShapeGenerationsPerFrame = 2;
-        rockDebugMaxConvexSupportVertices = 64;
+        rockDebugMaxWeaponBodiesDrawn = 100;
+        rockDebugMaxShapeGenerationsPerFrame = 100;
+        rockDebugMaxConvexSupportVertices = 6;
         rockDebugUseBoundsForHeavyConvex = true;
         rockDebugVerboseLogging = false;
         rockDebugGrabFrameLogging = false;
@@ -109,7 +109,7 @@ namespace frik::rock
         rockDebugWorldObjectOriginDiagnostics = false;
         rockDebugWorldObjectOriginLogIntervalFrames = 120;
         rockDebugWorldObjectOriginMismatchWarnGameUnits = 5.0f;
-        rockDebugShowRootFlattenedFingerSkeletonMarkers = false;
+        rockDebugShowRootFlattenedFingerSkeletonMarkers = true;
         rockDebugShowSkeletonBoneVisualizer = true;
         rockDebugDrawSkeletonBoneAxes = true;
         rockDebugLogSkeletonBones = true;
@@ -127,7 +127,7 @@ namespace frik::rock
 
         rockHandColliderRuntimeMode = 1;
         rockHandBoneCollidersRequirePalmAnchor = true;
-        rockHandBoneCollidersRequireAllFingerBones = false;
+        rockHandBoneCollidersRequireAllFingerBones = true;
         rockHandBoneColliderMaxLinearVelocity = 200.0f;
         rockHandBoneColliderMaxAngularVelocity = 500.0f;
 
@@ -462,7 +462,7 @@ namespace frik::rock
         rockNearDetectionRange = static_cast<float>(ini.GetDoubleValue(SECTION, "fNearDetectionRange", rockNearDetectionRange));
         rockFarDetectionRange = static_cast<float>(ini.GetDoubleValue(SECTION, "fFarDetectionRange", rockFarDetectionRange));
         rockNearCastRadiusGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fNearCastRadiusGameUnits", rockNearCastRadiusGameUnits));
-        rockNearCastDistanceGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fNearCastDistanceGameUnits", rockNearDetectionRange));
+        rockNearCastDistanceGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fNearCastDistanceGameUnits", rockNearCastDistanceGameUnits));
         rockFarCastRadiusGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fFarCastRadiusGameUnits", rockFarCastRadiusGameUnits));
         rockSelectionShapeCastFilterInfo =
             readHexFilter("sSelectionShapeCastFilterInfo", rockSelectionShapeCastFilterInfo, selection_query_policy::kDefaultShapeCastFilterInfo);
@@ -516,7 +516,7 @@ namespace frik::rock
         }
         rockThrowVelocityMultiplier = static_cast<float>(ini.GetDoubleValue(SECTION, "fThrowVelocityMultiplier", rockThrowVelocityMultiplier));
         rockGrabReleaseHandCollisionDelaySeconds =
-            frik::rock::hand_collision_suppression_math::sanitizeDelaySeconds(
+            rock::hand_collision_suppression_math::sanitizeDelaySeconds(
                 static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabReleaseHandCollisionDelaySeconds", rockGrabReleaseHandCollisionDelaySeconds)));
         rockGrabVelocityDamping = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabVelocityDamping", rockGrabVelocityDamping));
         rockGrabPlayerSpaceCompensation = ini.GetBoolValue(SECTION, "bGrabPlayerSpaceCompensation", rockGrabPlayerSpaceCompensation);

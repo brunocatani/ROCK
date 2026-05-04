@@ -9,7 +9,7 @@
 
 #include <cstdint>
 
-namespace frik::rock::selection_query_policy
+namespace rock::selection_query_policy
 {
     constexpr std::uint32_t kDefaultShapeCastFilterInfo = 0x000B002D;
     constexpr std::uint32_t kDefaultFarClipRayFilterInfo = 0x02420028;
@@ -72,7 +72,7 @@ namespace RE
     class NiAVObject;
 }
 
-namespace frik::rock::selection_highlight_policy
+namespace rock::selection_highlight_policy
 {
     /*
      * ROCK selection highlights whole grab targets, so it follows FO4VR's
@@ -159,15 +159,15 @@ namespace frik::rock::selection_highlight_policy
 
 #include "physics-interaction/hand/HandInteractionStateMachine.h"
 
-namespace frik::rock::selection_state_policy
+namespace rock::selection_state_policy
 {
     inline HandState stateForSelection(bool isFarSelection) { return isFarSelection ? HandState::SelectedFar : HandState::SelectedClose; }
 
-    inline bool canUpdateSelectionFromState(HandState state) { return frik::rock::canUpdateSelectionFromState(state); }
+    inline bool canUpdateSelectionFromState(HandState state) { return rock::canUpdateSelectionFromState(state); }
 
-    inline bool canProcessSelectedState(HandState state) { return frik::rock::canProcessSelectedState(state); }
+    inline bool canProcessSelectedState(HandState state) { return rock::canProcessSelectedState(state); }
 
-    inline bool hasExclusiveObjectSelection(HandState state) { return frik::rock::hasExclusiveObjectSelection(state); }
+    inline bool hasExclusiveObjectSelection(HandState state) { return rock::hasExclusiveObjectSelection(state); }
 }
 
 // ---- SelectedCloseFingerPolicy.h ----
@@ -175,7 +175,7 @@ namespace frik::rock::selection_state_policy
 #include <algorithm>
 #include <cmath>
 
-namespace frik::rock::selected_close_finger_policy
+namespace rock::selected_close_finger_policy
 {
     /*
      * HIGGS only pre-curls fingers around a close-selected object when the hand
@@ -216,7 +216,7 @@ namespace RE
     class TESObjectREFR;
 }
 
-namespace frik::rock
+namespace rock
 {
     namespace detail
     {

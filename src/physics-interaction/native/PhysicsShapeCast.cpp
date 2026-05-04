@@ -16,7 +16,7 @@
 #include <unordered_map>
 #include <xmmintrin.h>
 
-namespace frik::rock::physics_shape_cast
+namespace rock::physics_shape_cast
 {
     namespace
     {

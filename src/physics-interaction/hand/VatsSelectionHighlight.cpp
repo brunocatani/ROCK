@@ -13,7 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace frik::rock
+namespace rock
 {
     namespace detail
     {

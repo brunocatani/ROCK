@@ -128,13 +128,13 @@ namespace rock::api
 }
 
 #if defined(ROCK_API_EXPORTS)
-namespace frik::rock
+namespace rock
 {
     class PhysicsInteraction;
 }
 
 namespace rock::api
 {
-    void setPhysicsInteractionInstance(frik::rock::PhysicsInteraction* pi);
+    void setPhysicsInteractionInstance(rock::PhysicsInteraction* pi);
 }
 #endif

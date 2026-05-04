@@ -7,7 +7,7 @@
 #include "RE/Havok/hknpMotion.h"
 #include "RE/Havok/hknpWorld.h"
 
-namespace frik::rock::held_player_space_registry
+namespace rock::held_player_space_registry
 {
     namespace
     {

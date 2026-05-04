@@ -45,6 +45,10 @@ $forbiddenOutsideNative = @(
     @{
         Pattern = '->GetBody\s*\('
         Message = 'High-level modules must use guarded havok_runtime body access instead of direct hknpWorld::GetBody.'
+    },
+    @{
+        Pattern = 'kCollisionObject_PhysSystemPtr'
+        Message = 'Collision-object physics-system layout reads must stay behind havok_runtime helpers.'
     }
 )
 
@@ -62,13 +66,17 @@ $requiredNativeText = @{
     'src/physics-interaction/native/HavokRuntime.h' = @(
         'getHknpWorldFromBhk',
         'getQueryFilterRefWithFallback',
+        'getPhysicsSystemFromCollisionObject',
+        'getPhysicsSystemInstance',
+        'forEachPhysicsSystemBodyId',
         'setBodyTransformDeferred',
         'enableBodyFlags',
         'disableBodyFlags'
     )
     'src/physics-interaction/core/PhysicsInteraction.cpp' = @(
         'havok_runtime::getHknpWorldFromBhk',
-        'havok_runtime::getQueryFilterRefWithFallback'
+        'havok_runtime::getQueryFilterRefWithFallback',
+        'PhysicsInteractionFrame.inl'
     )
 }
 

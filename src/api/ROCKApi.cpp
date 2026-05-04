@@ -10,14 +10,14 @@
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
 
-static_assert(sizeof(frik::rock::PhysicsEventData) == sizeof(rock::api::ROCKApi::PhysicsEventData), "Internal and API PhysicsEventData must have identical size");
-static_assert(offsetof(frik::rock::PhysicsEventData, isLeft) == offsetof(rock::api::ROCKApi::PhysicsEventData, isLeft), "PhysicsEventData::isLeft offset mismatch");
-static_assert(offsetof(frik::rock::PhysicsEventData, refr) == offsetof(rock::api::ROCKApi::PhysicsEventData, refr), "PhysicsEventData::refr offset mismatch");
-static_assert(offsetof(frik::rock::PhysicsEventData, formID) == offsetof(rock::api::ROCKApi::PhysicsEventData, formID), "PhysicsEventData::formID offset mismatch");
-static_assert(offsetof(frik::rock::PhysicsEventData, collisionLayer) == offsetof(rock::api::ROCKApi::PhysicsEventData, collisionLayer),
+static_assert(sizeof(rock::PhysicsEventData) == sizeof(rock::api::ROCKApi::PhysicsEventData), "Internal and API PhysicsEventData must have identical size");
+static_assert(offsetof(rock::PhysicsEventData, isLeft) == offsetof(rock::api::ROCKApi::PhysicsEventData, isLeft), "PhysicsEventData::isLeft offset mismatch");
+static_assert(offsetof(rock::PhysicsEventData, refr) == offsetof(rock::api::ROCKApi::PhysicsEventData, refr), "PhysicsEventData::refr offset mismatch");
+static_assert(offsetof(rock::PhysicsEventData, formID) == offsetof(rock::api::ROCKApi::PhysicsEventData, formID), "PhysicsEventData::formID offset mismatch");
+static_assert(offsetof(rock::PhysicsEventData, collisionLayer) == offsetof(rock::api::ROCKApi::PhysicsEventData, collisionLayer),
     "PhysicsEventData::collisionLayer offset mismatch");
 
-static_assert(sizeof(frik::rock::PhysicsEventData) == 24, "PhysicsEventData unexpected size — check struct packing");
+static_assert(sizeof(rock::PhysicsEventData) == 24, "PhysicsEventData unexpected size — check struct packing");
 static_assert(sizeof(rock::api::ROCKApi::PhysicsEventData) == 24, "ROCKApi::PhysicsEventData unexpected size — check struct packing");
 
 static_assert(static_cast<int>(rock::api::ROCKApi::Hand::Primary) == static_cast<int>(frik::api::FRIKApi::Hand::Primary), "Hand::Primary mismatch");
@@ -26,7 +26,7 @@ static_assert(static_cast<int>(rock::api::ROCKApi::Hand::Right) == static_cast<i
 static_assert(static_cast<int>(rock::api::ROCKApi::Hand::Left) == static_cast<int>(frik::api::FRIKApi::Hand::Left), "Hand::Left mismatch");
 
 #define ROCK_ASSERT_API_ENUM(API_ENUM, INTERNAL_ENUM, VALUE)                                                                                                      \
-    static_assert(static_cast<int>(rock::api::ROCKApi::API_ENUM::VALUE) == static_cast<int>(frik::rock::INTERNAL_ENUM::VALUE), #API_ENUM "::" #VALUE " mismatch")
+    static_assert(static_cast<int>(rock::api::ROCKApi::API_ENUM::VALUE) == static_cast<int>(rock::INTERNAL_ENUM::VALUE), #API_ENUM "::" #VALUE " mismatch")
 
 ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Receiver);
 ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Barrel);
@@ -57,7 +57,7 @@ ROCK_ASSERT_API_ENUM(WeaponPartKind, WeaponPartKind, Other);
 namespace
 {
     using namespace rock::api;
-    using namespace frik::rock;
+    using namespace rock;
 
     std::atomic<PhysicsInteraction*> s_physicsInteraction{ nullptr };
 
@@ -356,5 +356,5 @@ namespace rock::api
 {
     ROCK_API const ROCKApi* ROCK_CALL ROCKAPI_GetApi() { return reinterpret_cast<const ROCKApi*>(&ROCK_API_FUNCTIONS_TABLE); }
 
-    void setPhysicsInteractionInstance(frik::rock::PhysicsInteraction* pi) { s_physicsInteraction.store(pi, std::memory_order_release); }
+    void setPhysicsInteractionInstance(rock::PhysicsInteraction* pi) { s_physicsInteraction.store(pi, std::memory_order_release); }
 }

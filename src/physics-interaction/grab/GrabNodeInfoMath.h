@@ -13,7 +13,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace frik::rock::grab_node_info_math
+namespace rock::grab_node_info_math
 {
     template <class Transform, class Vector>
     inline Transform buildPalmTargetFrame(const Transform& handWorldTransform, const Vector& grabPivotWorld)

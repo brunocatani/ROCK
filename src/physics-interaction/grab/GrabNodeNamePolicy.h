@@ -3,7 +3,7 @@
 #include <string>
 #include <string_view>
 
-namespace frik::rock::grab_node_name_policy
+namespace rock::grab_node_name_policy
 {
     /*
      * ROCK uses HIGGS as the behavior reference, but NIF marker names are part of

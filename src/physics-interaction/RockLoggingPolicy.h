@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace frik::rock::logging_policy
+namespace rock::logging_policy
 {
     /*
      * ROCK shares FRIK's spdlog-backed level numbering so both DLLs can be

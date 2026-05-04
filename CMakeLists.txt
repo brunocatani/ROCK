@@ -196,12 +196,19 @@ add_custom_command(
 
 option(BUILD_ROCK_TESTS "Build ROCK focused regression tests" OFF)
 if(BUILD_ROCK_TESTS)
+  enable_testing()
+
+  function(add_rock_test TARGET_NAME)
+    add_test(NAME ${TARGET_NAME} COMMAND $<TARGET_FILE:${TARGET_NAME}>)
+  endfunction()
+
   add_executable(ROCKTransformConventionTests
     "${ROOT_DIR}/tests/TransformConventionTests.cpp"
   )
   target_compile_features(ROCKTransformConventionTests PRIVATE cxx_std_23)
   target_include_directories(ROCKTransformConventionTests PRIVATE ${SOURCE_DIR})
   target_link_libraries(ROCKTransformConventionTests PRIVATE F4VRCommon::framework)
+  add_rock_test(ROCKTransformConventionTests)
 
   add_executable(ROCKSelectionHighlightPolicyTests
     "${ROOT_DIR}/tests/SelectionHighlightPolicyTests.cpp"
@@ -209,6 +216,7 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKSelectionHighlightPolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKSelectionHighlightPolicyTests PRIVATE ${SOURCE_DIR})
   target_link_libraries(ROCKSelectionHighlightPolicyTests PRIVATE F4VRCommon::framework)
+  add_rock_test(ROCKSelectionHighlightPolicyTests)
 
   add_executable(ROCKWorldOriginDiagnosticsTests
     "${ROOT_DIR}/tests/WorldOriginDiagnosticsTests.cpp"
@@ -216,6 +224,7 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKWorldOriginDiagnosticsTests PRIVATE cxx_std_23)
   target_include_directories(ROCKWorldOriginDiagnosticsTests PRIVATE ${SOURCE_DIR})
   target_link_libraries(ROCKWorldOriginDiagnosticsTests PRIVATE F4VRCommon::framework)
+  add_rock_test(ROCKWorldOriginDiagnosticsTests)
 
   add_executable(ROCKBodyFramePolicyTests
     "${ROOT_DIR}/tests/BodyFramePolicyTests.cpp"
@@ -223,6 +232,7 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKBodyFramePolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKBodyFramePolicyTests PRIVATE ${SOURCE_DIR})
   target_link_libraries(ROCKBodyFramePolicyTests PRIVATE F4VRCommon::framework)
+  add_rock_test(ROCKBodyFramePolicyTests)
 
   add_executable(ROCKInputRemapPolicyTests
     "${ROOT_DIR}/tests/InputRemapPolicyTests.cpp"
@@ -230,6 +240,7 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKInputRemapPolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKInputRemapPolicyTests PRIVATE ${SOURCE_DIR})
   target_link_libraries(ROCKInputRemapPolicyTests PRIVATE F4VRCommon::framework)
+  add_rock_test(ROCKInputRemapPolicyTests)
 
   add_executable(ROCKHandStateMachineTests
     "${ROOT_DIR}/tests/HandStateMachineTests.cpp"
@@ -238,6 +249,7 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKHandStateMachineTests PRIVATE cxx_std_23)
   target_include_directories(ROCKHandStateMachineTests PRIVATE ${SOURCE_DIR})
   target_link_libraries(ROCKHandStateMachineTests PRIVATE F4VRCommon::framework)
+  add_rock_test(ROCKHandStateMachineTests)
 
   add_executable(ROCKHavokRuntimePolicyTests
     "${ROOT_DIR}/tests/HavokRuntimePolicyTests.cpp"
@@ -247,6 +259,7 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKHavokRuntimePolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKHavokRuntimePolicyTests PRIVATE ${SOURCE_DIR})
   target_link_libraries(ROCKHavokRuntimePolicyTests PRIVATE F4VRCommon::framework)
+  add_rock_test(ROCKHavokRuntimePolicyTests)
 
   add_executable(ROCKUnsafeNativeToggleBoundaryTests
     "${ROOT_DIR}/tests/UnsafeNativeToggleBoundaryTests.cpp"
@@ -255,6 +268,7 @@ if(BUILD_ROCK_TESTS)
   target_compile_definitions(ROCKUnsafeNativeToggleBoundaryTests PRIVATE
     "ROCK_PHYSICS_INTERACTION_SOURCE_DIR=\"${SOURCE_DIR}/physics-interaction\""
   )
+  add_rock_test(ROCKUnsafeNativeToggleBoundaryTests)
 
   add_executable(ROCKGrabFingerLocalTransformPolicyTests
     "${ROOT_DIR}/tests/GrabFingerLocalTransformPolicyTests.cpp"
@@ -262,6 +276,7 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKGrabFingerLocalTransformPolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKGrabFingerLocalTransformPolicyTests PRIVATE ${SOURCE_DIR})
   target_link_libraries(ROCKGrabFingerLocalTransformPolicyTests PRIVATE F4VRCommon::framework)
+  add_rock_test(ROCKGrabFingerLocalTransformPolicyTests)
 
   add_executable(ROCKProviderBoundaryTests
     "${ROOT_DIR}/tests/ProviderBoundaryTests.cpp"
@@ -269,6 +284,7 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKProviderBoundaryTests PRIVATE cxx_std_23)
   target_include_directories(ROCKProviderBoundaryTests PRIVATE ${SOURCE_DIR})
   target_link_libraries(ROCKProviderBoundaryTests PRIVATE F4VRCommon::framework)
+  add_rock_test(ROCKProviderBoundaryTests)
 
   add_executable(ROCKContactPipelinePolicyTests
     "${ROOT_DIR}/tests/ContactPipelinePolicyTests.cpp"
@@ -276,6 +292,7 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKContactPipelinePolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKContactPipelinePolicyTests PRIVATE ${SOURCE_DIR})
   target_link_libraries(ROCKContactPipelinePolicyTests PRIVATE F4VRCommon::framework)
+  add_rock_test(ROCKContactPipelinePolicyTests)
 
   add_executable(ROCKContactRuntimePolicyTests
     "${ROOT_DIR}/tests/ContactRuntimePolicyTests.cpp"
@@ -283,4 +300,23 @@ if(BUILD_ROCK_TESTS)
   target_compile_features(ROCKContactRuntimePolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKContactRuntimePolicyTests PRIVATE ${SOURCE_DIR})
   target_link_libraries(ROCKContactRuntimePolicyTests PRIVATE F4VRCommon::framework)
+  add_rock_test(ROCKContactRuntimePolicyTests)
+
+  find_program(ROCK_POWERSHELL_EXECUTABLE NAMES pwsh powershell)
+  if(ROCK_POWERSHELL_EXECUTABLE)
+    file(GLOB ROCK_SOURCE_BOUNDARY_TESTS CONFIGURE_DEPENDS "${ROOT_DIR}/tests/*SourceTests.ps1")
+    foreach(ROCK_SOURCE_BOUNDARY_TEST IN LISTS ROCK_SOURCE_BOUNDARY_TESTS)
+      get_filename_component(ROCK_SOURCE_BOUNDARY_TEST_NAME "${ROCK_SOURCE_BOUNDARY_TEST}" NAME_WE)
+      add_test(
+        NAME ${ROCK_SOURCE_BOUNDARY_TEST_NAME}
+        COMMAND "${ROCK_POWERSHELL_EXECUTABLE}"
+                -NoProfile
+                -ExecutionPolicy Bypass
+                -File "${ROCK_SOURCE_BOUNDARY_TEST}"
+                -Root "${ROOT_DIR}"
+      )
+    endforeach()
+  else()
+    message(WARNING "PowerShell was not found; ROCK source-boundary .ps1 tests will not be registered in this configure.")
+  endif()
 endif()

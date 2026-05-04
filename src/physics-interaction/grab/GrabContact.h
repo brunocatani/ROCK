@@ -18,7 +18,7 @@
  * resolved object's rendered mesh.
  */
 
-namespace frik::rock::grab_contact_source_policy
+namespace rock::grab_contact_source_policy
 {
     struct GrabContactSourcePolicy
     {
@@ -91,7 +91,7 @@ namespace frik::rock::grab_contact_source_policy
 #include <algorithm>
 #include <cstdint>
 
-namespace frik::rock::grab_contact_evidence_policy
+namespace rock::grab_contact_evidence_policy
 {
     enum class GrabContactQualityMode : int
     {
@@ -259,7 +259,7 @@ namespace frik::rock::grab_contact_evidence_policy
 #include <limits>
 #include <vector>
 
-namespace frik::rock::grab_contact_patch_math
+namespace rock::grab_contact_patch_math
 {
     template <class Vector>
     struct GrabContactPatchSample
@@ -747,7 +747,7 @@ namespace frik::rock::grab_contact_patch_math
 
 #include "physics-interaction/TransformMath.h"
 
-namespace frik::rock::grab_surface_frame_math
+namespace rock::grab_surface_frame_math
 {
     enum class GrabOrientationMode
     {
@@ -1244,7 +1244,7 @@ namespace frik::rock::grab_surface_frame_math
 
 #include <cmath>
 
-namespace frik::rock::grab_opposition_frame_math
+namespace rock::grab_opposition_frame_math
 {
     template <class Transform, class Vector>
     struct OppositionFrameInput
@@ -1463,7 +1463,7 @@ namespace frik::rock::grab_opposition_frame_math
 #include <limits>
 #include <vector>
 
-namespace frik::rock::grab_multi_finger_contact_math
+namespace rock::grab_multi_finger_contact_math
 {
     inline constexpr std::uint32_t kInvalidBodyId = hand_collider_semantics::kInvalidBodyId;
     inline constexpr std::size_t kMaxFingerGroups = hand_collider_semantics::kHandFingerCount;

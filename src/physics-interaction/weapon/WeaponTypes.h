@@ -15,7 +15,7 @@ namespace RE
     class NiAVObject;
 }
 
-namespace frik::rock
+namespace rock
 {
     /*
      * Weapon collision hulls are now gameplay entities, not anonymous debug
@@ -198,7 +198,7 @@ namespace frik::rock
 #include <string>
 #include <vector>
 
-namespace frik::rock
+namespace rock
 {
     /*
      * ROCK publishes equipped-weapon evidence for external systems without
@@ -249,7 +249,7 @@ namespace frik::rock
 
 #include <cstddef>
 
-namespace frik::rock
+namespace rock
 {
     /*
      * Weapon mesh collision is generated as several convex hull bodies so long

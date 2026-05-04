@@ -12,7 +12,7 @@
 
 namespace
 {
-    using namespace frik::rock;
+    using namespace rock;
 
     const F4SE::MessagingInterface* s_messaging = nullptr;
 
@@ -47,6 +47,28 @@ namespace
         if (!s_physicsPublished) {
             logger::warn("ROCK: PhysicsInteraction init deferred; hooks/API remain disabled until lazy init succeeds.");
         }
+    }
+
+    void ensurePhysicsInteractionForReadySkeleton()
+    {
+        /*
+         * ROCK creation is event-driven when FRIK first announces skeleton
+         * readiness, but config hot reload can disable the module during that
+         * event and re-enable it later. The frame loop is the only place that
+         * sees the current config and live FRIK readiness together, so it owns
+         * this narrow recovery path instead of forcing users to reload a save
+         * to receive a second skeleton-ready message.
+         */
+        if (s_physicsInteraction || !g_rockConfig.rockEnabled) {
+            return;
+        }
+
+        auto* frikApi = frik::api::FRIKApi::inst;
+        if (!frikApi || !frikApi->isSkeletonReady()) {
+            return;
+        }
+
+        createPhysicsInteraction();
     }
 
     void destroyPhysicsInteraction()
@@ -97,6 +119,8 @@ namespace
             return;
         }
 
+        ensurePhysicsInteractionForReadySkeleton();
+
         if (s_physicsInteraction) {
             s_physicsInteraction->update();
             publishPhysicsInteractionIfReady();
@@ -119,7 +143,7 @@ namespace
 
     bool hookMainLoop()
     {
-        REL::Relocation hookCallSite{ REL::Offset(frik::rock::offsets::kHookSite_MainLoop) };
+        REL::Relocation hookCallSite{ REL::Offset(rock::offsets::kHookSite_MainLoop) };
 
         logger::info("ROCK: Hooking main loop at (0x{:X})...", hookCallSite.address());
 
@@ -215,8 +239,8 @@ namespace
 
             g_rockConfig.load();
             logger::info("ROCK: Config loaded (rockEnabled={}).", g_rockConfig.rockEnabled);
-            frik::rock::input_remap_runtime::installInputRemapHooks();
-            frik::rock::debug::Install();
+            rock::input_remap_runtime::installInputRemapHooks();
+            rock::debug::Install();
 
             s_frikAvailable = true;
 

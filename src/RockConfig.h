@@ -19,7 +19,7 @@
 #include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
 
-namespace frik::rock
+namespace rock
 {
     class RockConfig
     {
@@ -57,7 +57,7 @@ namespace frik::rock
         bool rockReversePalmNormal = true;
         bool rockReverseFarGrabNormal = false;
 
-        bool rockWeaponCollisionEnabled = false;
+        bool rockWeaponCollisionEnabled = true;
         bool rockWeaponCollisionBlocksProjectiles = false;
         bool rockWeaponCollisionBlocksSpells = false;
         int rockWeaponCollisionGroupingMode = weapon_collision_grouping_policy::kDefaultWeaponCollisionGroupingMode;
@@ -76,22 +76,22 @@ namespace frik::rock
 
         bool rockHighlightEnabled = true;
 
-        bool rockDebugShowColliders = false;
-        bool rockDebugShowTargetColliders = false;
-        bool rockDebugShowHandAxes = false;
-        bool rockDebugShowGrabPivots = false;
-        bool rockDebugShowGrabSurfaceFrame = false;
+        bool rockDebugShowColliders = true;
+        bool rockDebugShowTargetColliders = true;
+        bool rockDebugShowHandAxes = true;
+        bool rockDebugShowGrabPivots = true;
+        bool rockDebugShowGrabSurfaceFrame = true;
         bool rockDebugDrawGrabContactPatch = true;
-        bool rockDebugShowGrabFingerProbes = false;
-        bool rockDebugShowPalmVectors = false;
+        bool rockDebugShowGrabFingerProbes = true;
+        bool rockDebugShowPalmVectors = true;
         bool rockDebugDrawHandColliders = true;
         bool rockDebugDrawHandBoneColliders = true;
         bool rockDebugDrawHandBoneContacts = true;
         int rockDebugMaxHandBoneBodiesDrawn = 48;
         bool rockDebugDrawWeaponColliders = true;
-        int rockDebugMaxWeaponBodiesDrawn = 6;
-        int rockDebugMaxShapeGenerationsPerFrame = 2;
-        int rockDebugMaxConvexSupportVertices = 64;
+        int rockDebugMaxWeaponBodiesDrawn = 100;
+        int rockDebugMaxShapeGenerationsPerFrame = 100;
+        int rockDebugMaxConvexSupportVertices = 6;
         bool rockDebugUseBoundsForHeavyConvex = true;
         bool rockDebugVerboseLogging = false;
         bool rockDebugGrabFrameLogging = false;
@@ -124,7 +124,7 @@ namespace frik::rock
 
         int rockHandColliderRuntimeMode = 1;
         bool rockHandBoneCollidersRequirePalmAnchor = true;
-        bool rockHandBoneCollidersRequireAllFingerBones = false;
+        bool rockHandBoneCollidersRequireAllFingerBones = true;
         float rockHandBoneColliderMaxLinearVelocity = 200.0f;
         float rockHandBoneColliderMaxAngularVelocity = 500.0f;
 

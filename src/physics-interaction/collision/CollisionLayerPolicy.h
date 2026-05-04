@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace frik::rock::collision_layer_policy
+namespace rock::collision_layer_policy
 {
     /*
      * Weapons of Fate turns firearm shots into real projectile bodies. ROCK's

@@ -44,7 +44,7 @@ namespace
 
 int main()
 {
-    using namespace frik::rock::selection_highlight_policy;
+    using namespace rock::selection_highlight_policy;
 
     bool ok = true;
 
@@ -73,7 +73,7 @@ int main()
     ok &= expectFalse("selection highlight refresh blocks missing ref", shouldRefreshVatsHighlightAttempt(true, false, 10, 10));
     ok &= expectFalse("selection highlight refresh throttles selected ref", shouldRefreshVatsHighlightAttempt(true, true, 9, 10));
 
-    using frik::rock::selection_query_policy::shouldKeepSelectionAfterMiss;
+    using rock::selection_query_policy::shouldKeepSelectionAfterMiss;
     ok &= expectTrue("selection miss grace keeps far target briefly", shouldKeepSelectionAfterMiss(true, 14, 15, 100.0f, 50.0f));
     ok &= expectFalse("selection miss clears far target after grace", shouldKeepSelectionAfterMiss(true, 15, 15, 10.0f, 500.0f));
     ok &= expectTrue("selection miss keeps close target inside hysteresis", shouldKeepSelectionAfterMiss(false, 15, 15, 10.0f, 50.0f));

@@ -10,7 +10,7 @@
 
 #include <cstdint>
 
-namespace frik::rock
+namespace rock
 {
     /*
      * Generated hand and weapon colliders are solver inputs, not visual nodes.

@@ -32,7 +32,7 @@ namespace
 int main()
 {
     using namespace rock::provider;
-    using namespace frik::rock;
+    using namespace rock;
 
     static_assert(std::is_standard_layout_v<RockProviderFrameSnapshot>);
     static_assert(std::is_trivially_copyable_v<RockProviderFrameSnapshot>);

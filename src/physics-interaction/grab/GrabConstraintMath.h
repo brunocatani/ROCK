@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace frik::rock::grab_constraint_math
+namespace rock::grab_constraint_math
 {
     /*
      * HIGGS creates grab angular constraints in the object-to-hand frame and

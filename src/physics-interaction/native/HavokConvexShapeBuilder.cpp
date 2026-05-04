@@ -7,7 +7,7 @@
 #include <array>
 #include <cstdint>
 
-namespace frik::rock::havok_convex_shape_builder
+namespace rock::havok_convex_shape_builder
 {
     namespace
     {

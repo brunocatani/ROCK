@@ -25,7 +25,7 @@ namespace RE
     class hknpWorld;
 }
 
-namespace frik::rock::nearby_grab_damping
+namespace rock::nearby_grab_damping
 {
     inline constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
 

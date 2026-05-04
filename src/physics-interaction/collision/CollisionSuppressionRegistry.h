@@ -19,7 +19,7 @@ namespace RE
     class hknpWorld;
 }
 
-namespace frik::rock::collision_suppression_registry
+namespace rock::collision_suppression_registry
 {
     inline constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFF;
     inline constexpr std::uint32_t kSuppressionNoCollideBit = 1u << 14;

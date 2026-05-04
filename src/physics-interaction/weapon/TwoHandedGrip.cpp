@@ -19,7 +19,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace frik::rock
+namespace rock
 {
     namespace
     {

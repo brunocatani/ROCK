@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace frik::rock::input_remap_runtime
+namespace rock::input_remap_runtime
 {
     struct RawButtonState
     {

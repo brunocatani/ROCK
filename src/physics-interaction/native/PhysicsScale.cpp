@@ -10,7 +10,7 @@
 #include <cmath>
 #include <mutex>
 
-namespace frik::rock::physics_scale
+namespace rock::physics_scale
 {
     namespace
     {

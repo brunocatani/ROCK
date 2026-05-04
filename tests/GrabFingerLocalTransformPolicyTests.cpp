@@ -62,7 +62,7 @@ namespace
 int main()
 {
     bool ok = true;
-    using namespace frik::rock::grab_finger_local_transform_math;
+    using namespace rock::grab_finger_local_transform_math;
 
     ok &= expectBool("full 15-bone mask is sanitized",
         sanitizeFingerLocalTransformMask(0xFFFF) == kFullFingerLocalTransformMask, true);

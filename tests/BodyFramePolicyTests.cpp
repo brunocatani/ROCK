@@ -37,8 +37,8 @@ namespace
 
     bool expectSource(
         const char* label,
-        frik::rock::body_frame::BodyFrameSource actual,
-        frik::rock::body_frame::BodyFrameSource expected)
+        rock::body_frame::BodyFrameSource actual,
+        rock::body_frame::BodyFrameSource expected)
     {
         if (actual == expected) {
             return true;
@@ -46,8 +46,8 @@ namespace
 
         std::printf("%s expected %s got %s\n",
             label,
-            frik::rock::body_frame::bodyFrameSourceName(expected),
-            frik::rock::body_frame::bodyFrameSourceName(actual));
+            rock::body_frame::bodyFrameSourceName(expected),
+            rock::body_frame::bodyFrameSourceName(actual));
         return false;
     }
 
@@ -64,7 +64,7 @@ namespace
 
 int main()
 {
-    namespace body_frame = frik::rock::body_frame;
+    namespace body_frame = rock::body_frame;
 
     bool ok = true;
 
@@ -109,7 +109,7 @@ int main()
         body_frame::bodySlotCanBeRead(64, 64),
         true);
 
-    namespace physics_scale = frik::rock::physics_scale;
+    namespace physics_scale = rock::physics_scale;
     const float engineHavokToGame = 69.99125f;
     const auto engineScale = physics_scale::makeSnapshot(1.0f / engineHavokToGame, engineHavokToGame, 71.0f, 7);
     ok &= expectFloat("physics scale reciprocal drift is zero for engine pair", physics_scale::reciprocalDriftGameUnits(engineScale), 0.0f);
@@ -117,7 +117,7 @@ int main()
     const auto mismatchedScale = physics_scale::makeSnapshot(1.0f / 70.0f, engineHavokToGame, 71.0f, 8);
     ok &= expectBool("physics scale reciprocal mismatch crosses warning threshold", physics_scale::hasReciprocalMismatch(mismatchedScale, 0.001f), true);
 
-    namespace weapon_lifecycle = frik::rock::weapon_authority_lifecycle_policy;
+    namespace weapon_lifecycle = rock::weapon_authority_lifecycle_policy;
     const auto scaleInvalidation = weapon_lifecycle::evaluateGeneratedCollisionScaleInvalidation(true, 0x1234, 0);
     ok &= expectBool("scale invalidation destroys existing generated weapon bodies", scaleInvalidation.destroyExistingBodies, true);
     ok &= expectBool("scale invalidation marks generated weapon pending", scaleInvalidation.pending, true);
@@ -125,7 +125,7 @@ int main()
     ok &= expectFloat("scale invalidation preserves pending generation key", static_cast<float>(scaleInvalidation.pendingKey), static_cast<float>(0x1234));
 
     const float zQuarterTurn[4]{ 0.0f, 0.0f, 0.7071067f, 0.7071067f };
-    const auto motionRotation = frik::rock::transform_math::havokQuaternionToNiRows<TestMatrix>(zQuarterTurn);
+    const auto motionRotation = rock::transform_math::havokQuaternionToNiRows<TestMatrix>(zQuarterTurn);
     ok &= expectFloat("motion quaternion row 0 col 0", motionRotation.entry[0][0], 0.0f);
     ok &= expectFloat("motion quaternion row 0 col 1", motionRotation.entry[0][1], -1.0f);
     ok &= expectFloat("motion quaternion row 1 col 0", motionRotation.entry[1][0], 1.0f);

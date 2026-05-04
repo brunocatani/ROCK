@@ -20,7 +20,7 @@ namespace RE
     class NiTransform;
 }
 
-namespace frik::rock::held_player_space_registry
+namespace rock::held_player_space_registry
 {
     inline constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFF;
 

@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-namespace frik::rock
+namespace rock
 {
     /*
      * Hand state transitions are kept as a pure policy layer so the current grab,

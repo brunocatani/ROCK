@@ -13,7 +13,7 @@
 #include <cstdint>
 #include <string>
 
-namespace frik::rock::weapon_debug_notification_policy
+namespace rock::weapon_debug_notification_policy
 {
     /*
      * Weapon debug notifications are intentionally split from the live

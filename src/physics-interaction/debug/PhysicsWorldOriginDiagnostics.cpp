@@ -16,7 +16,7 @@
 #include "RE/Havok/hknpWorld.h"
 #include "RE/NetImmerse/NiAVObject.h"
 
-namespace frik::rock::origin_diagnostics
+namespace rock::origin_diagnostics
 {
     namespace
     {

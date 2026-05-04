@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace frik::rock::native_melee_suppression
+namespace rock::native_melee_suppression
 {
     /*
      * ROCK suppresses player native melee at the animation-event boundary because
