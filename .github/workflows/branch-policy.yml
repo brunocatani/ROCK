@@ -1,0 +1,57 @@
+name: Branch Policy
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - edited
+      - ready_for_review
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    name: Validate Branch And Commit Policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          base="${{ github.base_ref }}"
+          head="${{ github.head_ref }}"
+
+          if [[ "$base" == "main" ]]; then
+            if [[ "$head" != "develop" ]]; then
+              echo "Pull requests into main must come from develop."
+              exit 1
+            fi
+            exit 0
+          fi
+
+          if [[ "$base" == "develop" ]]; then
+            if [[ "$head" != feature/* && "$head" != fix/* ]]; then
+              echo "Pull requests into develop must come from feature/* or fix/* branches."
+              exit 1
+            fi
+
+            git fetch origin "$base" --depth=1
+            bad_subjects="$(git log --format=%s "origin/$base..HEAD" | grep -Ev '^(feature|fix)/[^:]+: .+' || true)"
+            if [[ -n "$bad_subjects" ]]; then
+              echo "Commit subjects must use: feature/<scope>: <change> or fix/<scope>: <change>"
+              echo "$bad_subjects"
+              exit 1
+            fi
+          fi
