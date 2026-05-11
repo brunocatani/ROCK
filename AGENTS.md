@@ -4,6 +4,18 @@
 
 This is the project folder for ROCK, a physics-based hand interaction system for Fallout 4 VR. ROCK began as a port of HIGGS (Skyrim VR) concepts, functionality, and interaction logic into FO4VR, but it has evolved into its own FO4VR-native system with FRIK as the body/skeleton provider and several systems that now exceed HIGGS behavior.
 
+# Branching And CI/CD Policy
+- `main` is release-only. NEVER push, force-push, merge, or commit to `main` unless the user gives that explicit ROCK command.
+- `develop` is the always-current integration branch. All normal ROCK work starts from `develop`, and all completed feature/fix work returns to `develop`.
+- Feature branches must be created from `develop` and named `feature/<short-scope>`.
+- Fix branches must be created from `develop` and named `fix/<short-scope>`.
+- Commit messages must identify the change class and scope: `feature/<scope>: <specific change>` or `fix/<scope>: <specific correction>`.
+- Keep feature and fix work separated into separate commits. Do not mix unrelated features, fixes, build changes, docs, and cleanup in one commit.
+- Release flow is manual: the user decides when `develop` becomes a release, then explicitly instructs the merge/push/tag/release build for `main`.
+- CI branch policy must reject PRs into `develop` unless the source branch is `feature/*` or `fix/*`.
+- CI branch policy must reject PRs into `main` unless the source branch is `develop`.
+- Build/release CI uses a self-hosted Windows runner with VS2022, CMake, vcpkg, local FO4VR/CommonLib dependencies, and local ignored Havok files where required. GitHub-hosted runners are not the ROCK build authority because native dependency files are intentionally local-only.
+
 HIGGS source location: `E:\fo4dev\skirymvr_mods\source_codes\higgs`.
 HIGGS WAS THE ORIGINAL BASELINE, NOT THE CURRENT AUTHORITY. It is historical/reference material for understanding the first-stage port, old interaction categories, constraints, and failure cases.
 DO NOT use HIGGS as the default baseline for new ROCK implementation, behavior comparison, or correctness checks unless the user explicitly asks for HIGGS comparison/porting guidance or explicitly approves HIGGS as a base for the current task.

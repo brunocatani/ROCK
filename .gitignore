@@ -8,9 +8,6 @@ build*
 
 CMakeUserPresets*.json
 
-# Local Codex/agent instruction overlays
-AGENTS.md
-
 # User-specific files
 *.rsuser
 *.suo
