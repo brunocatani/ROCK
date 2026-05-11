@@ -11,10 +11,10 @@ This is the project folder for ROCK, a physics-based hand interaction system for
 - Fix branches must be created from `develop` and named `fix/<short-scope>`.
 - Commit messages must identify the change class and scope: `feature/<scope>: <specific change>` or `fix/<scope>: <specific correction>`.
 - Keep feature and fix work separated into separate commits. Do not mix unrelated features, fixes, build changes, docs, and cleanup in one commit.
-- Release flow is manual: the user decides when `develop` becomes a release, then explicitly instructs the merge/push/tag/release build for `main`.
+- Release flow is manual: the user decides when `develop` becomes a release, then explicitly instructs the merge/push/tag and local release build/deploy steps for `main`.
 - CI branch policy must reject PRs into `develop` unless the source branch is `feature/*` or `fix/*`.
 - CI branch policy must reject PRs into `main` unless the source branch is `develop`.
-- Build/release CI uses a self-hosted Windows runner with VS2022, CMake, vcpkg, local FO4VR/CommonLib dependencies, and local ignored Havok files where required. GitHub-hosted runners are not the ROCK build authority because native dependency files are intentionally local-only.
+- Builds are local-only. Do not add GitHub Actions build or release jobs unless the user explicitly asks. GitHub Actions may enforce branch policy only.
 
 HIGGS source location: `E:\fo4dev\skirymvr_mods\source_codes\higgs`.
 HIGGS WAS THE ORIGINAL BASELINE, NOT THE CURRENT AUTHORITY. It is historical/reference material for understanding the first-stage port, old interaction categories, constraints, and failure cases.
