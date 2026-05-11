@@ -1,5 +1,7 @@
 # ROCK — Realistic Overengineered Character Kinetics
 
+Canonical project name: **ROCK** — Realistic Overengineered Character Kinetics.
+
 A physics-based hand interaction system for **Fallout 4 VR**, porting the functionality of [HIGGS](https://www.nexusmods.com/skyrimspecialedition/mods/43930) (Skyrim VR) to the Fallout 4 VR engine. ROCK builds on top of [FRIK](https://www.nexusmods.com/fallout4/mods/53464/) as the body and skeleton provider, adding realistic physics-driven hand interactions to the game.
 
 ## Features
