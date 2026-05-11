@@ -4,8 +4,6 @@
 
 This is the project folder for ROCK, a physics-based hand interaction system for Fallout 4 VR. ROCK began as a port of HIGGS (Skyrim VR) concepts, functionality, and interaction logic into FO4VR, but it has evolved into its own FO4VR-native system with FRIK as the body/skeleton provider and several systems that now exceed HIGGS behavior.
 
-Canonical project name: **ROCK** — Realistic Overengineered Character Kinetics.
-
 # Branching And CI/CD Policy
 - `main` is release-only. NEVER push, force-push, merge, or commit to `main` unless the user gives that explicit ROCK command.
 - `develop` is the always-current integration branch. All normal ROCK work starts from `develop`, and all completed feature/fix work returns to `develop`.
