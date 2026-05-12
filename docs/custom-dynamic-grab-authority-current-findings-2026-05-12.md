@@ -3996,3 +3996,130 @@ Open questions after this HIGGS timing pass:
 - Need verify whether ROCK already has a visual hand deviation path separate from collision/proxy driving, and if so whether it is fed from actual held-object lag or only from target error.
 - Need map where FO4VR can safely publish adjusted hand visuals without corrupting FRIK's next root-flattened sample or PAPER/weapon visual state.
 - Need continue Ghidra/source research on FO4VR hknp proxy body lifecycle and direct hard-keyframe velocity command usage before any implementation plan.
+
+## 2026-05-12 continuation: ROCK existing visual hand lag/deviation layer
+
+Research question:
+
+- Does ROCK already have the HIGGS-style rendered-hand feedback layer, or would that need to be designed from scratch when replacing mouse-spring authority with custom finite motors?
+
+Source inspected:
+
+- `src/physics-interaction/hand/HandGrab.cpp`
+- `src/physics-interaction/hand/HandVisual.h`
+- `src/physics-interaction/hand/Hand.h`
+- `src/physics-interaction/core/PhysicsInteraction.cpp`
+- `src/physics-interaction/core/PhysicsInteractionFrame.inl`
+- `src/physics-interaction/hand/HandSkeleton.h`
+- `src/api/FRIKApi.h`
+- `E:\fo4dev\PROJECT_ROCK_V2\Fallout-4-VR-Body(FRIK)\src\api\FRIKApi.cpp`
+- `E:\fo4dev\PROJECT_ROCK_V2\Fallout-4-VR-Body(FRIK)\src\skeleton\Skeleton.cpp`
+- `E:\fo4dev\PROJECT_ROCK_V2\Fallout-4-VR-Body(FRIK)\src\FRIK.cpp`
+- `E:\fo4dev\PROJECT_ROCK_V2\Fallout-4-VR-Body(FRIK)\src\pipboy\Pipboy.cpp`
+
+Confirmed ROCK visual hand pieces:
+
+- `HandVisual.h`
+  - Explicitly states these helpers are visual interpolation only.
+  - `buildHeldObjectRelativeHandWorld(heldObjectWorld, frozenObjectHandSpace)` computes the HIGGS-shaped relation:
+    - adjusted/visual hand = live held object world transform * inverse(frozen object-in-hand transform).
+  - `advanceTransform(...)` lerps position by speed and rotation by slerp/angular speed.
+  - Helpers do not feed object targets, pivots, collision bodies, or rotation authority.
+- `HandGrab.cpp:1535-1555`
+  - Defines external visual tag `ROCK_GrabVisual`.
+  - Applies it through FRIK `applyExternalHandWorldTransform`.
+  - Clears it through FRIK `clearExternalHandWorldTransform`.
+  - Priority is 90.
+- `HandGrab.cpp:3790-3840`
+  - On grab-frame capture, clears any previous `ROCK_GrabVisual`, initializes `_grabVisualHandTransform` from the current raw hand transform, clears visual deviation timers, and records whether a large initial sync should fade motor force.
+- `HandGrab.cpp:4496-4602`
+  - Visual adjustment is active when:
+    - `_grabFrame.hasTelemetryCapture`, and
+    - phase is `TouchHeld`, or the object is in near/gravity converge and within the acquisition visual envelope.
+  - It resolves live held object visual/body-derived world transform.
+  - Computes `targetVisualHandWorld = buildHeldObjectRelativeHandWorld(heldVisualNodeWorld, _grabFrame.rawHandSpace)`.
+  - Preserves hand scale from current raw hand transform.
+  - Lerps `_grabVisualHandTransform` toward target if `rockGrabHandLerpEnabled`.
+  - Computes visual hand deviation against the raw hand transform.
+  - Accumulates `_grabVisualDeviationExceededSeconds` through `held_object_physics_math::advanceDeviationSeconds`.
+  - Releases if deviation exceeds `rockGrabMaxDeviation` for `rockGrabMaxDeviationTime`.
+  - Publishes the visual hand through `applyGrabExternalHandWorldTransform(_isLeft, _grabVisualHandTransform)`.
+  - Clears the external transform when no held visual/body transform is available or when the phase is not eligible.
+- `Hand.h`
+  - Stores `_grabVisualHandTransform`, `_hasGrabVisualHandTransform`, and `_grabVisualDeviationExceededSeconds`.
+- `Hand.cpp` reset/world-loss paths
+  - Clear `ROCK_Grab` pose and `ROCK_GrabVisual` external transform on reset and world-loss abandon.
+- `HandGrab.cpp` release path
+  - Clears `ROCK_GrabVisual` on release.
+
+Confirmed ROCK raw/root hand frame source:
+
+- `HandBoneCache::resolve` in `HandSkeleton.h`
+  - Captures `HandsAndForearmsOnly` from `GameRootFlattenedBoneTree`.
+  - Finds `RArm_Hand` and `LArm_Hand`.
+  - Stores copied transforms, not node pointers.
+- `PhysicsInteraction::refreshHandBoneCache`
+  - Refreshes the cache once per update before frame context construction.
+- `PhysicsInteractionFrame.inl`
+  - `buildFrameContext` consumes the copied root-flattened hand transforms via `getInteractionHandTransform`.
+  - Builds `rawHandWorld`, `grabAnchorWorld`, palm normal, and pointing direction from that coherent frame.
+- `PhysicsInteraction::update`
+  - Calls `refreshHandBoneCache`, `sampleHandTransformParity`, then `buildFrameContext`.
+  - Later calls `updateGrabInput(frame)` with the already-built raw hand frame.
+  - Therefore current-frame grab physics/math consumes the prebuilt raw/root-flattened hand snapshot, not the external visual hand transform applied later during `updateHeldObject`.
+
+Confirmed FRIK external hand authority behavior:
+
+- `FRIKApi.cpp`
+  - External hand transforms are stored per hand as tagged entries with priority and generation.
+  - Highest priority wins; if priority ties, newest generation wins.
+  - `apiApplyExternalHandWorldTransform` applies the selected target immediately if the caller's tag wins.
+  - `apiClearExternalHandWorldTransform` restores tracked hand authority if no other tag remains, or applies the next selected authority.
+- `Skeleton::applyExternalHandWorldTransform`
+  - Rejects non-finite transforms.
+  - Restores the arm chain to FRIK baseline.
+  - Runs full-arm IK to the external hand target.
+  - Excludes the first-person weapon child while updating the primary-hand hierarchy so weapon ownership does not get reapplied accidentally.
+  - Returns whether the resulting hand transform is finite.
+- `FRIK::refreshAfterExternalHandAuthority`
+  - Reapplies current hand pose and final world update after external authority.
+- `Pipboy::syncAfterExternalHandAuthority`
+  - Clears/stabilizes Pip-Boy movement dampening state when the external authority affects the Pip-Boy arm.
+
+Priority/context findings:
+
+- ROCK dynamic grab visual hand priority: `ROCK_GrabVisual = 90`.
+- ROCK equipped/two-hand weapon external hand priority: `ROCK_WeaponPrimaryGrip` / `ROCK_WeaponSupportGrip = 100`.
+- Soft-contact visual priority defaults to 80 and is clamped to 0..99.
+- Therefore loose dynamic grab visual lag should lose to equipped/two-hand weapon authority and beat soft-contact visual authority.
+
+Important parity conclusion:
+
+- ROCK already has the HIGGS-shaped visual hand lag/deviation layer.
+- It is explicitly visual-only and does not feed body A, mouse spring, constraint pivots, object orientation, or motor targets.
+- This matches the corrected HIGGS timing split: raw hand drives the physical anchor, actual held object pose drives rendered hand lag/deviation.
+
+Why ROCK can still feel "superman" despite this layer:
+
+- The visual layer can only show lag if the held object actually lags behind the raw hand target.
+- In the current ordinary one-hand path, body B is driven by native mouse spring with static response/lead tuning.
+- If native mouse spring authority is too strong, the held object reaches the raw target too easily; `targetVisualHandWorld` stays close to `handWorldTransform`, so the FRIK visual layer has little visible yielding to show.
+- The HIGGS-quality weight feel therefore still depends on replacing or governing the physical drive authority, not on adding a visual-hand system from scratch.
+
+Current ROCK visual-layer gaps to track:
+
+- The visual layer is gated by `TouchHeld` or near/gravity converge within acquisition visual envelope. HIGGS updates adjusted visual hand throughout `HeldBody` once dynamic held state is valid. ROCK likely reaches `TouchHeld` for true held contact, but this phase gate should be audited under far/pull/heavy-object cases.
+- Deviation timing differs:
+  - HIGGS uses a rolling average of 5 hand-deviation samples and explicit ignore windows.
+  - ROCK uses accumulated seconds over threshold through `advanceDeviationSeconds`.
+  - This may be fine, but it is not 1:1 and should be reviewed as a FO4VR design choice.
+- `rockGrabHandLerpTimeMin/Max` exist in config, but the inspected visual update currently calls `advanceTransform` with `rockGrabLerpSpeed` and `rockGrabLerpAngularSpeed`. Need verify whether the min/max hand lerp settings are used elsewhere or are stale.
+- Because FRIK refreshes final world state immediately after external hand authority, the next root-flattened sample could include the externally solved pose depending on frame order. Current ROCK frame context is built before applying `ROCK_GrabVisual`, so current-frame grab math is safe. Need verify next-frame FRIK normal update order before assuming no feedback across frames.
+- Future custom proxy/constraint authority should continue consuming the prebuilt raw/root-flattened frame, not FRIK `getHandWorldTransform` after visual authority has been applied.
+
+Updated design implication:
+
+- Do not design a new visual hand lag system first. The existing one is close to the HIGGS pattern.
+- The future custom motor/proxy research should focus on making body B lag believably under finite force and inertia while preserving this visual layer.
+- The proxy should be driven from the raw/root-flattened frame captured before external visual writes.
+- The visual layer should keep deriving from the actual held object transform, not from desired target transform, otherwise it cannot show physical yield.
