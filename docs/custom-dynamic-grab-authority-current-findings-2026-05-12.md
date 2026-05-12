@@ -1109,6 +1109,170 @@ Design implication for ROCK:
 
 This section is behavioral mapping from the approved HIGGS source tree at `E:\fo4dev\skirymvr_mods\source_codes\higgs`. It is not a FO4VR implementation decision. It is used to define which behavior ROCK must reproduce or surpass with FO4VR-native mechanisms.
 
+### Dynamic state machine boundary
+
+Confirmed HIGGS states in `include/hand.h`:
+
+- `Idle`;
+- `SelectedFar`;
+- `SelectedClose`;
+- `SelectionLocked`;
+- `PreGrabItem`;
+- `PrePullItem`;
+- `Pulled`;
+- `HeldInit`;
+- `Held`;
+- `HeldBody`;
+- `GrabFromOtherHand`;
+- `GrabExternal`;
+- `LootOtherHand`;
+- `SelectedTwoHand`;
+- `HeldTwoHanded`.
+
+Dynamic scope for this ROCK research:
+
+- `SelectedClose`, `SelectedFar`, `SelectionLocked`, `Pulled`, `HeldBody`, and release from `HeldBody` are relevant.
+- `HeldInit` and `Held` are keyframed-object states and are only boundary context.
+- `SelectedTwoHand` and `HeldTwoHanded` are out of scope except where they share body/constraint cleanup.
+- Actor/ragdoll-specific branches inside `HeldBody` are out of scope except where they share the same custom constraint and connected-body functions.
+
+### Detection pipeline
+
+Confirmed `Hand::FindCloseObject(...)` behavior:
+
+- Temporarily reconfigures a sphere phantom:
+  - collision filter info set to `0x2C`;
+  - radius set to `nearCastRadius`;
+  - transform moved to the hand/palm start.
+- Performs `hkpWorld_LinearCast` from palm start to `start + castDirection * nearCastDistance`.
+- Iterates hit collidables and requires:
+  - valid rigid body;
+  - valid user data wrapper;
+  - reference not equal to player;
+  - selectable object, or the other hand's selected object when the other-hand grab path is valid.
+- Projectiles are filtered so only impacted/stuck projectiles are grabbable.
+- Candidate priority is the hit distance from the cast ray, not distance to COM.
+- A special offhand two-handed weapon branch can select the other hand's weapon body, but this is outside current loose-object scope.
+- If no normal close candidate is found and the hand has a pulled object, it performs a wider penetration check against that pulled object and returns the pulled body if present.
+- It restores phantom filter, radius, and transform after the query.
+
+Confirmed `Hand::FindFarObject(...)` behavior:
+
+- Computes a far target along the pointing direction.
+- Performs a raycast first; if the ray hits world geometry, the later linear cast is clipped to the ray hit position.
+- Temporarily reconfigures the same sphere phantom:
+  - filter `0x2C`;
+  - radius `farCastRadius`;
+  - transform at ray start.
+- Performs a sphere linear cast to the clipped target.
+- Filters candidates similarly to close detection.
+- Requires the candidate direction from HMD to hit point to satisfy `requiredCastDotProduct` against HMD forward.
+- Candidate priority is again distance from hit point to the pointing ray.
+
+Behavioral meaning:
+
+- HIGGS detection is contact/geometry based from the beginning.
+- The selected point is the cast/contact hit point carried forward into selection and grab state.
+- COM is not part of candidate priority.
+- Pull fallback intentionally broadens only for the already-pulled object so a pulled object can be caught as it arrives.
+
+### Selection, lock, and pull entry
+
+Confirmed behavior in the main `Hand::Update` state logic:
+
+- In `SelectedFar`, pressing grab within the trigger leeway locks the selection:
+  - stores `pulledPointOffset = selectedObject.point - hkObjPos`;
+  - enters `SelectionLocked`;
+  - keeps the selected contact point relative to the object motion position for later pull/arrival.
+- In `SelectedClose`, pressing grab goes directly toward `TransitionHeld(...)` after geometry-based rigid-body selection:
+  - `GetRigidBodyToGrabBasedOnGeometry(...)` may replace the originally hit rigid body with the body that best matches graphics/contact geometry;
+  - `ComputeInitialObjectTransformFromUpdatedCollidableNode(...)` may provide an initial transform for authored/standard adjustments;
+  - `TransitionHeld(...)` receives the selected object point and palm frame.
+- In `SelectionLocked`, if the locked object becomes close and the detected close body is the selected body, HIGGS calls `TransitionHeld(...)` with the newly detected close contact point.
+- If the locked object is not close, HIGGS checks controller velocity projected toward the selected point:
+  - if speed toward the hand exceeds `pullSpeedThreshold`;
+  - and `IsObjectPullable()` allows it;
+  - it enters the pulled path.
+
+Behavioral meaning:
+
+- HIGGS separates far lock from pull from close grab.
+- A far selection does not immediately create a hand/object constraint.
+- Touch/close grab can refresh the actual close contact point when the object arrives.
+- Pulling is velocity-driven by a deliberate hand motion, not only by holding selection.
+
+### Pull/converge behavior
+
+Confirmed `TransitionPulled` behavior:
+
+- Cancels/restores an existing pulled object if pulling a new one.
+- Stores pulled object handle/body.
+- Saves the pulled body's angular damping and replaces it with `pulledAngularDamping`.
+- Converts keyframed pulled bodies to dynamic.
+- Converts debris quality to moving quality when configured.
+- Handles impacted projectiles by forcing a collision filter/motion-type change so they become physically movable.
+- Computes pull duration with `SetPulledDuration(...)`:
+  - distance = length from palm to pulled object point;
+  - `pullDuration = A + B * exp(-C * distance)`;
+  - `pulledExpireTime = pullDuration + 1.0`.
+- Triggers haptic/sound/API pulled callbacks and enters `Pulled`.
+
+Confirmed `State::Pulled` update:
+
+- Uses object motion position plus `pulledPointOffset` as the pull point.
+- For `pullApplyVelocityTime`, computes a predicted velocity to reach `pullTarget`.
+- During `pullTrackHandTime`, updates `pullTarget` to palm plus a small vertical destination offset.
+- Horizontal velocity is `horizontalDelta / remainingDuration`.
+- Vertical velocity includes a gravity compensation term: `0.5 * 9.81 * duration + verticalDelta / duration`.
+- Collects connected rigid bodies every frame.
+- Updates pulled collision-ignored bodies to the connected set.
+- If the grabbed connected set is not attached to fixed bodies, applies the same velocity to every moveable connected body.
+- If attached to a fixed body, only the selected body receives the velocity.
+- After the velocity application window expires, HIGGS deselects and returns to idle.
+
+Behavioral meaning:
+
+- Pull/converge is not a spring-to-COM constraint.
+- It is a short finite predicted velocity phase toward the hand with gravity compensation.
+- Connected/multipart bodies are moved coherently when safe.
+- Pull is intentionally time-limited and hands off to close grab when contact arrives.
+
+### Dynamic release behavior
+
+Confirmed release from `HeldBody`:
+
+- Release consumes the release request and sets `idleDesired`.
+- If another hand is still holding the same body, drop events and consume/stash are suppressed for this hand.
+- It computes hand release velocity:
+  - base hand velocity from controller/hand velocity;
+  - optional boost if above `throwVelocityThreshold`;
+  - player/world velocity component;
+  - optional tangential velocity from hand angular velocity.
+- Tangential velocity uses COM only as release lever data:
+  - axis = normalized hand angular velocity;
+  - hand-to-COM vector = object COM world - palm;
+  - project hand-to-COM onto the rotation plane;
+  - tangential direction = cross(axis, projected vector);
+  - tangential magnitude = lever distance * angular speed;
+  - clamp to `tangentialVelocityLimit`;
+  - if clamped, angular velocity is reduced to match the clamp.
+- If release velocity is above threshold, HIGGS temporarily disables hand/object contacts to avoid immediate throw collision.
+- For `HeldBody`, it collects connected rigid bodies and computes a release object velocity from recent local object linear velocities.
+- The held-body release path writes the selected body's linear velocity from that object velocity plus player-space smoothing.
+- It removes the grab constraint from world and hand body.
+- It removes entity contact listeners from connected bodies.
+- It restores saved contact callback delays unless the other hand still owns that connected body.
+- It restores saved inverse inertia unless the other hand still owns that connected body.
+- It clears saved contact-delay and inertia maps.
+- It queues haptics, sounds, drop callbacks, and dropped tracking when appropriate.
+
+Behavioral meaning:
+
+- COM is used on release for realistic tangential throw contribution, not pivot authority.
+- Release velocity comes from both hand motion and actual recent object motion, not from an arbitrary final controller target.
+- Cleanup is multipart-aware and two-hand-aware.
+- Collision ignore on throw is temporary and conditional on release velocity.
+
 ### Dynamic transition into held state
 
 Relevant HIGGS functions/files:
