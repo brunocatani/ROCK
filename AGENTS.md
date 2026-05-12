@@ -5,10 +5,11 @@
 This is the project folder for ROCK, a physics-based hand interaction system for Fallout 4 VR. ROCK began as a port of HIGGS (Skyrim VR) concepts, functionality, and interaction logic into FO4VR, but it has evolved into its own FO4VR-native system with FRIK as the body/skeleton provider and several systems that now exceed HIGGS behavior.
 
 # Branching And CI/CD Policy
+- NEVER switch branches, check out another branch, create a branch, delete a branch, merge, rebase, or perform any other branch-changing operation unless the user explicitly gives permission for that exact branch operation. Mapping work and implementation must stay on the currently checked-out branch unless the user orders otherwise.
 - `main` is release-only. NEVER push, force-push, merge, or commit to `main` unless the user gives that explicit ROCK command.
 - `develop` is the always-current integration branch. All normal ROCK work starts from `develop`, and all completed feature/fix work returns to `develop`.
-- Feature branches must be created from `develop` and named `feature/<short-scope>`.
-- Fix branches must be created from `develop` and named `fix/<short-scope>`.
+- When the user explicitly permits branch creation, feature branches must be created from `develop` and named `feature/<short-scope>`.
+- When the user explicitly permits branch creation, fix branches must be created from `develop` and named `fix/<short-scope>`.
 - Commit messages must identify the change class and scope: `feature/<scope>: <specific change>` or `fix/<scope>: <specific correction>`.
 - After finishing any modification or fix, commit the completed work before handing it back unless the user explicitly says not to commit. The commit message must describe what was changed and why.
 - Keep feature and fix work separated into separate commits. Do not mix unrelated features, fixes, build changes, docs, and cleanup in one commit.
