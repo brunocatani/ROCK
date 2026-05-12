@@ -2325,9 +2325,9 @@ namespace rock
             _grabAuthorityProxyFrameValid = true;
             _grabAuthorityPendingTarget = GrabAuthorityProxyPendingTarget{
                 .proxyWorld = proxyWorldTransform,
-                .deltaTime = 0.0f,
-                .forceFadeInTime = 0.0f,
-                .tauMin = 0.0f,
+                .deltaTime = 1.0f / 90.0f,
+                .forceFadeInTime = g_rockConfig.rockGrabForceFadeInTime,
+                .tauMin = g_rockConfig.rockGrabTauMin,
                 .grabPositionErrorGameUnits = 0.0f,
                 .grabRotationErrorDegrees = 0.0f,
                 .heldBodyColliding = false,
@@ -2451,7 +2451,6 @@ namespace rock
 
         outActivePivotBBodyLocalGame =
             grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformProxySpace, _grabAuthorityPivotAProxyLocalGame);
-        _grabAuthorityPivotBBodyLocalGame = outActivePivotBBodyLocalGame;
         outDesiredTargetPointWorld = transform_math::localPointToWorld(outDesiredBodyWorld, outActivePivotBBodyLocalGame);
         return true;
     }
