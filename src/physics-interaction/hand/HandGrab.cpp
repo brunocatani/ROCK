@@ -1730,9 +1730,8 @@ namespace rock
         return _grabFrame.pivotBBodyLocalGame;
     }
 
-    void Hand::clearGrabAuthorityProxyRuntime()
+    void Hand::clearGrabAuthorityProxyRuntimeLocked()
     {
-        std::scoped_lock lock(_grabAuthorityProxyMutex);
         _grabAuthorityProxyBhkWorld = nullptr;
         _grabAuthorityProxyHknpWorld = nullptr;
         _grabAuthorityPivotAProxyLocalGame = {};
@@ -1746,43 +1745,39 @@ namespace rock
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
     }
 
-    void Hand::destroyGrabAuthorityProxy(RE::bhkWorld* bhkWorld)
+    void Hand::clearGrabAuthorityProxyRuntime()
     {
         std::scoped_lock lock(_grabAuthorityProxyMutex);
+        clearGrabAuthorityProxyRuntimeLocked();
+    }
+
+    void Hand::destroyGrabAuthorityProxyLocked(RE::bhkWorld* bhkWorld)
+    {
         auto* destroyWorld = bhkWorld ? bhkWorld : _grabAuthorityProxyBhkWorld;
         if (_grabAuthorityProxy.isValid()) {
             _grabAuthorityProxy.destroy(destroyWorld);
         } else {
             _grabAuthorityProxy.reset();
         }
-        _grabAuthorityProxyBhkWorld = nullptr;
-        _grabAuthorityProxyHknpWorld = nullptr;
-        _grabAuthorityPivotAProxyLocalGame = {};
-        _grabAuthorityPivotBBodyLocalGame = {};
-        _grabAuthorityProxyFrameValid = false;
-        _grabAuthorityPendingTarget = {};
-        _lastAppliedGrabAuthorityProxyWorld = {};
-        _hasLastAppliedGrabAuthorityProxyWorld = false;
-        _grabAuthorityProxyFlushSequence = 0;
-        _grabAuthorityProxyLogCounter = 0;
-        _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
+        clearGrabAuthorityProxyRuntimeLocked();
+    }
+
+    void Hand::destroyGrabAuthorityProxy(RE::bhkWorld* bhkWorld)
+    {
+        std::scoped_lock lock(_grabAuthorityProxyMutex);
+        destroyGrabAuthorityProxyLocked(bhkWorld);
+    }
+
+    void Hand::abandonGrabAuthorityProxyLocked()
+    {
+        _grabAuthorityProxy.reset();
+        clearGrabAuthorityProxyRuntimeLocked();
     }
 
     void Hand::abandonGrabAuthorityProxy()
     {
         std::scoped_lock lock(_grabAuthorityProxyMutex);
-        _grabAuthorityProxy.reset();
-        _grabAuthorityProxyBhkWorld = nullptr;
-        _grabAuthorityProxyHknpWorld = nullptr;
-        _grabAuthorityPivotAProxyLocalGame = {};
-        _grabAuthorityPivotBBodyLocalGame = {};
-        _grabAuthorityProxyFrameValid = false;
-        _grabAuthorityPendingTarget = {};
-        _lastAppliedGrabAuthorityProxyWorld = {};
-        _hasLastAppliedGrabAuthorityProxyWorld = false;
-        _grabAuthorityProxyFlushSequence = 0;
-        _grabAuthorityProxyLogCounter = 0;
-        _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
+        abandonGrabAuthorityProxyLocked();
     }
 
     bool Hand::tryGetHeldObjectGrabPivotWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const
@@ -5275,13 +5270,20 @@ namespace rock
         GrabAuthorityProxyPendingTarget pending{};
         RE::NiTransform previousProxyWorld{};
         RE::hknpBodyId proxyBodyId{ INVALID_BODY_ID };
-        bool hasAuthority = false;
+        bool setTransformOk = false;
+        bool setVelocityOk = false;
+        bool targetUpdateOk = false;
+        bool shouldLog = false;
+        RE::NiTransform desiredObjectWorld{};
+        RE::NiTransform desiredBodyWorld{};
+        RE::NiPoint3 desiredTargetPointWorld{};
+        RE::NiPoint3 activePivotBBodyLocalGame{};
         {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
-            hasAuthority = _heldDriveMode == HeldObjectDriveMode::ProxyConstraint &&
-                           _grabAuthorityProxy.isValid() &&
-                           _grabAuthorityProxyHknpWorld == world &&
-                           _grabAuthorityPendingTarget.valid;
+            const bool hasAuthority = _heldDriveMode == HeldObjectDriveMode::ProxyConstraint &&
+                                      _grabAuthorityProxy.isValid() &&
+                                      _grabAuthorityProxyHknpWorld == world &&
+                                      _grabAuthorityPendingTarget.valid;
             if (!hasAuthority) {
                 return;
             }
@@ -5289,34 +5291,50 @@ namespace rock
             pending = _grabAuthorityPendingTarget;
             previousProxyWorld = _hasLastAppliedGrabAuthorityProxyWorld ? _lastAppliedGrabAuthorityProxyWorld : pending.proxyWorld;
             proxyBodyId = _grabAuthorityProxy.getBodyId();
-        }
 
-        const float driveDelta = havok_physics_timing::driveDeltaSeconds(timing);
-        const RE::hkTransformf targetHavok = grab_authority_proxy::makeHavokTransform(pending.proxyWorld);
-        float linearVelocityHavok[4]{};
-        float angularVelocityHavok[4]{};
-        grab_authority_proxy::computeLinearVelocityHavok(previousProxyWorld, pending.proxyWorld, driveDelta, linearVelocityHavok);
-
-        bool setTransformOk = false;
-        bool setVelocityOk = false;
-        {
-            std::scoped_lock lock(_grabAuthorityProxyMutex);
-            if (_heldDriveMode != HeldObjectDriveMode::ProxyConstraint || !_grabAuthorityProxy.isValid() ||
-                _grabAuthorityProxy.getBodyId().value != proxyBodyId.value || _grabAuthorityProxyHknpWorld != world) {
-                return;
-            }
+            const float driveDelta = havok_physics_timing::driveDeltaSeconds(timing);
+            const RE::hkTransformf targetHavok = grab_authority_proxy::makeHavokTransform(pending.proxyWorld);
+            float linearVelocityHavok[4]{};
+            float angularVelocityHavok[4]{};
+            grab_authority_proxy::computeLinearVelocityHavok(previousProxyWorld, pending.proxyWorld, driveDelta, linearVelocityHavok);
 
             setTransformOk = _grabAuthorityProxy.setTransform(targetHavok);
             setVelocityOk = _grabAuthorityProxy.setVelocity(linearVelocityHavok, angularVelocityHavok);
-            if (setTransformOk && setVelocityOk) {
-                _lastAppliedGrabAuthorityProxyWorld = pending.proxyWorld;
-                _hasLastAppliedGrabAuthorityProxyWorld = true;
-                ++_grabAuthorityProxyFlushSequence;
+            if (!setTransformOk || !setVelocityOk) {
+                _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);
+            } else {
+                targetUpdateOk = updateProxyConstraintGrabDriveTarget(
+                    world,
+                    pending.proxyWorld,
+                    desiredObjectWorld,
+                    desiredBodyWorld,
+                    desiredTargetPointWorld,
+                    activePivotBBodyLocalGame);
+                if (!targetUpdateOk) {
+                    _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);
+                } else {
+                    updateConstraintGrabDriveMotors(
+                        world,
+                        driveDelta,
+                        pending.forceFadeInTime,
+                        pending.tauMin,
+                        pending.grabPositionErrorGameUnits,
+                        pending.grabRotationErrorDegrees,
+                        pending.heldBodyColliding);
+
+                    _lastAppliedGrabAuthorityProxyWorld = pending.proxyWorld;
+                    _hasLastAppliedGrabAuthorityProxyWorld = true;
+                    ++_grabAuthorityProxyFlushSequence;
+                    ++_grabAuthorityProxyLogCounter;
+                    if (_grabAuthorityProxyLogCounter >= 45) {
+                        _grabAuthorityProxyLogCounter = 0;
+                        shouldLog = true;
+                    }
+                }
             }
         }
 
         if (!setTransformOk || !setVelocityOk) {
-            _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);
             ROCK_LOG_WARN(Hand,
                 "{} hand proxy dynamic grab drive failed; release queued: proxyBody={} setTransform={} setVelocity={} substep={}/{} dt={:.6f}",
                 handName(),
@@ -5325,22 +5343,11 @@ namespace rock
                 setVelocityOk ? "ok" : "fail",
                 timing.substepIndex,
                 timing.substepCount,
-                driveDelta);
+                havok_physics_timing::driveDeltaSeconds(timing));
             return;
         }
 
-        RE::NiTransform desiredObjectWorld{};
-        RE::NiTransform desiredBodyWorld{};
-        RE::NiPoint3 desiredTargetPointWorld{};
-        RE::NiPoint3 activePivotBBodyLocalGame{};
-        if (!updateProxyConstraintGrabDriveTarget(
-                world,
-                pending.proxyWorld,
-                desiredObjectWorld,
-                desiredBodyWorld,
-                desiredTargetPointWorld,
-                activePivotBBodyLocalGame)) {
-            _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);
+        if (!targetUpdateOk) {
             ROCK_LOG_WARN(Hand,
                 "{} hand proxy dynamic grab target update failed; release queued: proxyBody={} constraint={} substep={}/{}",
                 handName(),
@@ -5350,28 +5357,6 @@ namespace rock
                 timing.substepCount);
             return;
         }
-
-        updateConstraintGrabDriveMotors(
-            world,
-            driveDelta,
-            pending.forceFadeInTime,
-            pending.tauMin,
-            pending.grabPositionErrorGameUnits,
-            pending.grabRotationErrorDegrees,
-            pending.heldBodyColliding);
-
-        bool shouldLog = false;
-        int logCounter = 0;
-        {
-            std::scoped_lock lock(_grabAuthorityProxyMutex);
-            ++_grabAuthorityProxyLogCounter;
-            if (_grabAuthorityProxyLogCounter >= 45) {
-                _grabAuthorityProxyLogCounter = 0;
-                shouldLog = true;
-            }
-            logCounter = _grabAuthorityProxyLogCounter;
-        }
-        (void)logCounter;
 
         if (shouldLog && g_rockConfig.rockDebugGrabFrameLogging) {
             std::uint32_t filterInfo = 0;
@@ -5383,7 +5368,7 @@ namespace rock
                 _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
                 timing.substepIndex,
                 timing.substepCount,
-                driveDelta,
+                havok_physics_timing::driveDeltaSeconds(timing),
                 pending.proxyWorld.translate.x,
                 pending.proxyWorld.translate.y,
                 pending.proxyWorld.translate.z,
@@ -5587,16 +5572,24 @@ namespace rock
             }
         }
 
-        if (_activeConstraint.isValid()) {
-            destroyGrabConstraint(world, _activeConstraint);
-        }
-        if (_nativeGrab.isValid()) {
-            _nativeGrab.destroy(world, releaseContext.finalObjectRelease);
-        }
-        if (_grabAuthorityProxy.isValid()) {
-            destroyGrabAuthorityProxy(nullptr);
+        if (_heldDriveMode == HeldObjectDriveMode::ProxyConstraint) {
+            std::scoped_lock lock(_grabAuthorityProxyMutex);
+            if (_activeConstraint.isValid()) {
+                destroyGrabConstraint(world, _activeConstraint);
+            }
+            destroyGrabAuthorityProxyLocked(nullptr);
         } else {
-            clearGrabAuthorityProxyRuntime();
+            if (_activeConstraint.isValid()) {
+                destroyGrabConstraint(world, _activeConstraint);
+            }
+            if (_nativeGrab.isValid()) {
+                _nativeGrab.destroy(world, releaseContext.finalObjectRelease);
+            }
+            if (_grabAuthorityProxy.isValid()) {
+                destroyGrabAuthorityProxy(nullptr);
+            } else {
+                clearGrabAuthorityProxyRuntime();
+            }
         }
 
         const bool delayRestore = collisionRestoreMode == GrabReleaseCollisionRestoreMode::Delayed &&

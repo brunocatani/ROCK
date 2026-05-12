@@ -386,6 +386,9 @@ namespace rock
         void destroyGrabAuthorityProxy(RE::bhkWorld* bhkWorld);
         void abandonGrabAuthorityProxy();
         void clearGrabAuthorityProxyRuntime();
+        void destroyGrabAuthorityProxyLocked(RE::bhkWorld* bhkWorld);
+        void abandonGrabAuthorityProxyLocked();
+        void clearGrabAuthorityProxyRuntimeLocked();
         RE::NiPoint3 activeGrabDrivePivotBBodyLocalGame() const;
 
         /*

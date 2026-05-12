@@ -43,6 +43,7 @@ This section records the implementation direction currently being applied so com
 - `PhysicsInteraction::driveGrabAuthorityPhase0ProbeFromBetweenStep(...)` now flushes both hands' custom grab authority before running the optional Phase 0 probe.
 - `Hand::flushPendingCustomGrabAuthority(...)` drives the proxy body with direct `setTransform`/`setVelocity`, then refreshes transform A/B and linear/angular motor values in the same between-collide-and-solve callback.
 - Release now destroys the custom constraint before destroying the proxy body, and reset/world-loss paths abandon proxy state together with native/action/constraint state.
+- Proxy flush and proxy release/destruction are serialized through the hand proxy mutex so the physics callback cannot update the active constraint while release is destroying the same constraint/proxy pair.
 - Native mouse spring code remains present as a verified boundary and fallback/diagnostic wrapper, but ordinary production dynamic grab authority is no longer supposed to create `_nativeGrab`.
 
 Current source-test policy being updated:
