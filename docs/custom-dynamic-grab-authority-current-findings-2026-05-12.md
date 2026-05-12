@@ -5037,3 +5037,110 @@ Design consequence:
 - If not, should ROCK compute body-A transform atoms from raw hand target or explicit predicted proxy target instead of current proxy transform?
 - Is `0x14153ABD0` safe to call inside the between-collide-and-solve listener when the world update is already in progress?
 - Can ROCK use the command-safe `0x141DF5930` wrapper in a way that guarantees queued velocity application in the between-collide-and-solve command drain?
+
+## 2026-05-12 continuation: constraint row builder prediction audit
+
+This pass narrows the previous open question: whether the live hknp constraint row builder predicts a velocity-driven body's pose before interpreting constraint atoms.
+
+### `0x1415451A0` xref audit
+
+Direct code xrefs to the native predicted-transform helper `0x1415451A0`:
+
+- `0x141958656`
+  - `hkbnpPhysicsInterface::vfunction16_for_hkReferencedObject`.
+  - Calls `0x1415451A0(world, bodyId, param_2, outTransform)`.
+  - Copies the predicted transform into a high-level physics interface output.
+- `0x141E09AF7`
+  - `bhkNPCollisionObject::vfunction44`.
+  - Calls `0x1415451A0(world, bodyId, DAT_1465A3D7C, outTransform)`.
+  - Uses the predicted transform to update/sync the high-level collision object transform path.
+  - In a separate branch, calls `0x141DF5930` and then `0x141DF55F0`, showing native collision-object sync can combine hard-keyframe velocity and explicit transform setting depending on state.
+- `0x141E0A4F7`
+  - `bhkNPCollisionProxyObject::vfunction44`.
+  - Calls `0x1415451A0(world, bodyId, DAT_1465A3D7C, outTransform)`.
+  - Applies additional proxy transform composition before updating the high-level object transform path.
+
+Not found:
+
+- No direct xref from the live constraint row builders `0x1419799E0` or `0x141979EF0`.
+- No direct xref from the atom interpreter `0x141A55550`.
+
+Current interpretation:
+
+- `0x1415451A0` is a real FO4VR predicted-transform helper, but the direct users found in this pass are high-level physics-interface / collision-object sync paths, not constraint solver row construction.
+- This weakens the assumption that a proxy velocity written after collide automatically becomes a predicted body-A pose for the same constraint solve.
+
+### Row builder input assembly
+
+`0x1419799E0` and `0x141979EF0` assemble a solver/atom input structure before calling `0x141A55550`.
+
+Relevant input layout observed from the stack structure passed as `param_3` to `0x141A55550`:
+
+- `param_3 + 0x00..0x2C`
+  - solver context scalars copied by `0x141979960`;
+  - includes timestep-like and inverse-timestep-like values from the hknp task/world context.
+- `param_3 + 0x30`
+  - pointer to a per-body motion/cache block assembled on the stack for one constraint body.
+- `param_3 + 0x38`
+  - pointer to the paired per-body motion/cache block for the other constraint body.
+- `param_3 + 0x40`
+  - pointer to one hknp body slot.
+- `param_3 + 0x48`
+  - pointer to the paired hknp body slot.
+
+The row builders source those pointers directly from:
+
+- body array:
+  - `world + 0x20 + bodyId * 0x90`
+- motion array:
+  - `world + 0xE0 + motionIndex * 0x80`
+
+### Body slot transform versus velocity fields
+
+In `0x141A55550`, the atom interpreter begins by copying transform-like data from the body slot pointers:
+
+- reads `*(param_3 + 0x40)` into local body transform basis;
+- reads `*(param_3 + 0x48)` into paired local body transform basis;
+- copies rows/translation from those body slot pointers into local variables used by later atom cases.
+
+The row builders also copy motion fields into the per-body cache blocks:
+
+- motion fields around `+0x40..+0x5C` are copied and made available to the atom interpreter;
+- motion fields around `+0x60..+0x7C` are also copied;
+- inverse mass/inertia-like data from the body/motion cache are used by constraint row formulas.
+
+Observed behavior inside `0x141A55550`:
+
+- Setup-style atom cases use body slot transform rows and translation as the positional/orientation basis.
+- Velocity/motion fields are used in row equations and effective-mass/velocity terms.
+- No direct call to `0x1415451A0` was found in this path.
+- No obvious full `position += velocity * dt` / quaternion-integrated predicted transform replacement was found before the body transform basis is used.
+
+Confirmed narrow finding:
+
+- The live row builder consumes current body slot transforms plus current motion velocity/cache fields.
+- This pass does not support the claim that the constraint row builder automatically replaces the body-A transform with the `ApplyHardKeyFrame` target pose in the same frame.
+
+### Consequence for hidden body-A proxy design
+
+For a future custom dynamic-grab authority path:
+
+- `ApplyHardKeyFrame` can still be a good way to drive a hidden no-contact proxy because it computes physically meaningful proxy linear/angular velocities without `DriveToKeyFrame`'s snap fallback.
+- But a between-collide-and-solve `ApplyHardKeyFrame` call should be treated as a velocity update, not as proof that the proxy body slot transform now equals the raw hand/palm target for that same constraint build.
+- The custom constraint update must therefore be designed around one of these verified models:
+  - body-A proxy transform from the previous integrated step plus fresh velocity terms;
+  - explicit raw/root-flattened hand target written into constraint target atoms;
+  - explicit predicted proxy transform computed by ROCK or by a verified native helper before writing constraint target atoms.
+
+What not to do:
+
+- Do not use `DriveToKeyFrame` transform snapping to force the proxy body slot to the hand every step.
+- Do not assume native row build predicts body-A pose unless a later pass finds a separate inline prediction path.
+- Do not drive the grabbed object with `ApplyHardKeyFrame`; the object remains finite-force linear/angular motor driven.
+
+### Updated open questions
+
+- Which body-A frame should ROCK use for constraint atom target updates: current proxy body transform, raw/root-flattened hand target, or a predicted proxy transform?
+- If ROCK computes a predicted proxy transform, should it call `0x1415451A0`, duplicate the relevant math safely, or avoid prediction by using raw hand target directly for constraint targets?
+- Does using raw hand target for constraint atoms while body-A proxy lags create solver inconsistency, or is that acceptable because body-A is a keyframed/kinematic authority body?
+- Can the hidden proxy be driven early enough in the frame that its body slot transform is already integrated before row build without introducing contact/render lag?
