@@ -64,13 +64,13 @@ namespace rock::grab_authority_phase0
         RE::NiTransform makeProbeTarget(std::uint64_t sequence, float amplitudeGameUnits)
         {
             const float amplitude = std::clamp(std::isfinite(amplitudeGameUnits) ? amplitudeGameUnits : kDefaultAmplitudeGameUnits, 0.25f, 64.0f);
-            const float phase = static_cast<float>(sequence % 240) * (kTwoPi / 240.0f);
+            const double phase = static_cast<double>(sequence) * (static_cast<double>(kTwoPi) / 240.0);
 
             auto target = transform_math::makeIdentityTransform<RE::NiTransform>();
-            target.rotate = makeZRotation(phase * 0.5f);
-            target.translate.x = std::sin(phase) * amplitude;
-            target.translate.y = std::cos(phase * 0.7f) * amplitude * 0.5f;
-            target.translate.z = std::sin(phase * 0.37f) * amplitude * 0.25f;
+            target.rotate = makeZRotation(static_cast<float>(std::fmod(phase * 0.5, static_cast<double>(kTwoPi))));
+            target.translate.x = static_cast<float>(std::sin(std::fmod(phase, static_cast<double>(kTwoPi))) * amplitude);
+            target.translate.y = static_cast<float>(std::cos(std::fmod(phase * 0.7, static_cast<double>(kTwoPi))) * amplitude * 0.5);
+            target.translate.z = static_cast<float>(std::sin(std::fmod(phase * 0.37, static_cast<double>(kTwoPi))) * amplitude * 0.25);
             return target;
         }
 

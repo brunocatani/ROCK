@@ -54,8 +54,12 @@ Require-Text 'src/physics-interaction/native/GrabAuthorityPhase0Probe.cpp' 'note
     'Phase 0 probe must check semantic contact body ids for hidden proxy leakage.'
 Require-Text 'src/physics-interaction/native/GrabAuthorityPhase0Probe.cpp' '_createRetryFrames\s*=\s*120' `
     'Phase 0 body creation must retry after transient world/setup failures instead of latching off forever.'
+Require-Text 'src/physics-interaction/native/GrabAuthorityPhase0Probe.cpp' 'std::fmod\(phase \* 0\.7' `
+    'Phase 0 probe target must keep non-integer component phases continuous across long runtime samples.'
 Reject-Text 'src/physics-interaction/native/GrabAuthorityPhase0Probe.cpp' '_createAttempted' `
     'Phase 0 body creation must not use a one-shot create-attempt latch.'
+Reject-Text 'src/physics-interaction/native/GrabAuthorityPhase0Probe.cpp' 'sequence\s*%\s*240' `
+    'Phase 0 probe target must not hard-wrap the base phase; that creates false after-solve error spikes.'
 Reject-Text 'src/physics-interaction/native/GrabAuthorityPhase0Probe.cpp' 'NativeMouseSpringGrab|flushPendingHeldNativeGrab' `
     'Phase 0 diagnostics must not call native mouse-spring grab authority.'
 

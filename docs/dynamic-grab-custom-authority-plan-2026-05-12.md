@@ -471,6 +471,38 @@ Phase 0 does not:
 - register probe bodies as semantic contact evidence;
 - create a production fallback path.
 
+### Phase 0 runtime log review - 2026-05-12
+
+Reviewed log:
+
+- `C:\Users\SENECA\Documents\My Games\Fallout4VR\F4SE\ROCK.log`
+
+Confirmed from the 17:42-17:46 run:
+
+- `GrabPhase0` emitted 838 lines.
+- 4 proxy/receiver create events were paired by 4 destroy events.
+- 415 `between` samples and 415 `afterSolve` samples were logged.
+- There were no `GrabPhase0` error lines.
+- There were no `setTransform=fail`, `setVelocity=fail`, `readback=fail`, `proxyRead=fail`, or `receiverRead=fail` lines.
+- There were no `semanticLeak=yes` lines.
+- There were no `noContact=no`, `proxyNoContact=no`, or `receiverNoContact=no` lines.
+- The active gameplay grab path stayed on `drive=nativeMouseSpring`; Phase 0 did not replace active grab.
+- Runtime filter policy was `nonCollidable+bit14`, filter `0x000B400F`.
+- TLS command mode read back as readable and `tlsCmd=queue`; same-callback transform readback still returned `posErr=0.0000` and `rotErr=0.000`, so the wrapper state is queue-mode while the body readback path sees the written transform immediately.
+
+Observed diagnostic bug and fix:
+
+- `afterSolve` periodically reported `targetProxyErr=5.5097` and `receiverLagFromProxy=6.0490`.
+- This was not accepted as solver evidence because the probe target used a hard `sequence % 240` base-phase wrap while Y and Z used non-integer multipliers (`0.7`, `0.37`), creating a false target discontinuity every 240 physics ticks.
+- The probe target was corrected to use a continuous base phase and per-component `std::fmod(...)` only at the final trigonometric input.
+- `GrabAuthorityPhase0ProbeSourceTests.ps1` now rejects `sequence % 240` in the probe target so this diagnostic artifact does not return.
+
+Current interpretation:
+
+- Proxy lifecycle, no-contact filtering, semantic invisibility, and same-callback setter/readback are validated by the log.
+- Solver-consumption quality must be re-sampled after the continuous-target fix before using `receiverLagFromProxy` as a production design signal.
+- The log does not show evidence that Phase 0 touched or degraded active mouse-spring dynamic grab behavior.
+
 ### Phase 0 - Validation gates and diagnostics
 
 Purpose: prove the future drive surface before replacing the working native one-hand path.
