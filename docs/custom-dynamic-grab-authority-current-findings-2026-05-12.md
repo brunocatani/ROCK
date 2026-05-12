@@ -5260,3 +5260,131 @@ Current best research hypothesis:
 - Does the generated `BethesdaPhysicsBody` wrapper expose enough to call the combined pattern without reusing `driveGeneratedKeyframedBody`?
 - If the combined pattern is used, should transform be raw/root-flattened hand pose while velocity is computed from previous proxy pose toward raw/root-flattened hand pose?
 - Does setting transform on a hidden no-contact keyframed proxy every step introduce any solver instability, or is it equivalent to the native collision-object sync expectation?
+
+## 2026-05-12 continuation: wrapper queue versus physics-step local command drain
+
+This pass separates two command mechanisms that looked similar in earlier notes:
+
+1. The physics-step listener local command list passed through `bhkWorld::Update`.
+2. The global/thread wrapper command buffer used by standard body wrappers when TLS byte `+0x1528` is set.
+
+They are not proven to be the same drain path.
+
+### Standard wrapper queue behavior
+
+`0x141DF55F0` set transform wrapper:
+
+- If TLS byte `+0x1528 == 0`:
+  - calls `0x1415395E0(world, bodyId, transform, mode)` directly.
+- If TLS byte `+0x1528 != 0`:
+  - builds command `0x50 / 0x60100`;
+  - sends it through `0x141DFC8D0`.
+
+`0x141DF56F0` set velocity wrapper:
+
+- If TLS byte `+0x1528 == 0`:
+  - calls `0x141539F30(world, bodyId, linearVelocity, angularVelocity)` directly.
+- If TLS byte `+0x1528 != 0`:
+  - builds command `0x30 / 0x90100`;
+  - sends it through `0x141DFC8D0`.
+- After either path, if linear/angular velocity is nonzero, calls `0x141DF60C0(world, bodyId)` to activate/wake the body.
+
+`0x141DF5930` command-safe `ApplyHardKeyFrame` wrapper:
+
+- Computes target linear/angular velocity with `0x14153A6A0`.
+- If TLS byte `+0x1528 == 0`, direct-calls `0x141539F30`.
+- If TLS byte `+0x1528 != 0`, queues the same velocity command through `0x141DFC8D0`.
+
+### `0x141DFC8D0` global/thread wrapper command bridge
+
+`0x141DFC8D0` uses:
+
+- TLS dword `+0x152C` as a thread index;
+- global command storage rooted at `DAT_1465A3E30`;
+- per-thread stride `0xA8`;
+- per-command grouped buffers inside that global storage.
+
+It appends command records by command type:
+
+- command `6` / wrapper metadata `0x60100` for transform-like commands;
+- command `7` for another body command class;
+- command `9` / wrapper metadata `0x90100` for velocity-like commands;
+- command `0x12` and `0x2C` for other body/object command classes.
+
+Important finding:
+
+- `0x141DFC8D0` does not append into the `local_128` listener command list visible in `bhkWorld::Update`.
+- It appends into `DAT_1465A3E30`-based global/thread command storage.
+
+### Global wrapper-command drain `0x141DF4F60`
+
+`0x141DF4F60` drains the global/thread wrapper command storage:
+
+- It processes transform commands first and calls `0x1415395E0`.
+- It processes velocity commands next and calls `0x141539F30`.
+- It then processes other body/object command groups and clears counts.
+
+Observed xrefs:
+
+- `0x140D06610`
+- `0x140D06DB0`
+- one data/code reference around `0x140D04C90` that Ghidra did not identify as a normal function start.
+
+The decompiled callers `0x140D06610` and `0x140D06DB0` look like higher-level update/tick paths:
+
+- call time/update helpers;
+- call `0x141DF4F60`;
+- then call a vtable function on a player/camera/current-world object.
+
+Current interpretation:
+
+- `0x141DF4F60` is a global wrapper-command flush.
+- It is not the same as the between-collide-and-solve local command drain in `bhkWorld::Update`.
+- This means queueing a wrapper command through `0x141DFC8D0` from a ROCK physics-step listener would not automatically mean the command drains before the immediately following solve.
+
+### Physics-step local command drain
+
+The between-collide-and-solve local drain is `0x141DFDE70`.
+
+Observed behavior:
+
+- Takes `param_1` as the local command list passed through `bhkWorld::Update` (`local_128` in the decompiler).
+- If the list has one direct command, calls that command's vtable `+0x20`.
+- Otherwise builds worker batches with `0x141DFFBB0`, dispatches work, waits, releases local command refs, and clears the local list.
+- It does not reference `DAT_1465A3E30`.
+- It does not call `0x141DF4F60`.
+- It is effectively identical in shape to the other phase-local drain helpers (`0x141DFDB30`, `0x141DFDCD0`, etc.).
+
+Confirmed implication:
+
+- The pre-solve listener drain is real, but it drains the listener local command list.
+- The standard body wrappers do not obviously write to that local command list.
+- Therefore, relying on wrapper queue mode for same-step pre-solve updates is not supported by current evidence.
+
+### Consequence for future hidden proxy updates
+
+For a future custom dynamic-grab body-A proxy:
+
+- Calling standard wrappers from the between-collide-and-solve listener has two possible behaviors:
+  - if TLS `+0x1528 == 0`, the wrapper direct-writes through the engine's direct body update functions;
+  - if TLS `+0x1528 != 0`, the wrapper queues into global/thread wrapper storage, which is not proven to drain before the current solve.
+- The earlier assumption "command-capable wrapper equals between-phase command drain" is wrong.
+
+Research-safe design options now look like:
+
+1. Direct locked writes in the between-collide-and-solve callback
+   - Use direct/standard wrapper paths only if they direct-call `0x1415395E0` and `0x141539F30`.
+   - Must verify reentrancy/safety inside `bhkWorld::Update`.
+2. Explicit local listener-command integration
+   - Requires understanding the local command-list item layout and vtable command objects used by `0x141DFDE70`.
+   - More binary-risky, but would guarantee pre-solve drain.
+3. Earlier-frame update outside the physics listener
+   - Avoids direct writes inside the physics step.
+   - Risks one-frame stale proxy pose relative to row building.
+
+### Updated open questions
+
+- Is TLS `+0x1528` clear during ROCK's between-collide-and-solve listener callback in practice?
+- If clear, are direct `0x1415395E0` / `0x141539F30` calls safe while `bhkWorld::Update` is between collide and solve?
+- If set, where is `DAT_1465A3E30` flushed relative to `bhkWorld::Update`, and would queued wrapper commands miss the current solve?
+- Can ROCK append body transform/velocity commands into the local `local_128` listener command list without reverse-engineering too much engine-owned command object state?
