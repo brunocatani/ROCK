@@ -4720,3 +4720,164 @@ Open questions after this pass:
 - Should the constraint target frame be computed from the raw hand target, current proxy transform, or predicted proxy transform after ApplyHardKeyFrame velocity?
 - Does ROCK's current `transform_math::niRowsToHavokColumns(...)` plus any quaternion helper produce the same xyzw convention as `0x141722C10`?
 - Should a future wrapper call the native `0x141722C10` helper directly to avoid quaternion convention drift, or should ROCK implement and test an equivalent conversion?
+
+## 2026-05-12 continuation: physics listener timing and ApplyHardKeyFrame command safety
+
+This pass checks whether a future hidden proxy can be driven from the native between-collide-and-solve listener and whether `ApplyHardKeyFrame` would direct-write or queue in that callback context.
+
+### ROCK source state
+
+Source files inspected:
+
+- `src/physics-interaction/native/PhysicsStepDriveCoordinator.h`
+- `src/physics-interaction/native/PhysicsStepDriveCoordinator.cpp`
+- `src/physics-interaction/core/PhysicsInteraction.cpp`
+
+Current ROCK coordinator facts:
+
+- `PhysicsStepDriveCoordinator::setDriveCallbacks(...)` exposes only:
+  - whole-pre-step callback;
+  - substep-pre-collide callback.
+- Current native listener vtable layout has slots:
+  - `+0x08` before whole;
+  - `+0x18` before any;
+  - `+0x28` between collide and solve;
+  - `+0x38` after any;
+  - `+0x48` after whole.
+- Current `betweenCollideAndSolve(...)`, `afterAny(...)`, and `afterWhole(...)` functions are no-ops.
+- `PhysicsInteraction` currently registers:
+  - `driveGeneratedCollidersFromPhysicsWholeStep`;
+  - `driveGeneratedCollidersFromPhysicsSubstep`.
+- Generated hand/body/weapon colliders are therefore driven pre-collide, which is correct for contact generation, but there is no current ROCK callback for custom proxy + constraint target/motor writes after collide and before solve.
+
+Interpretation:
+
+- Future custom dynamic grab authority needs a new coordinator surface for between-collide-and-solve.
+- This should be scoped to the hidden authority proxy and grab constraint fields, not to visible generated contact colliders.
+- The existing pre-collide generated collider driving should remain a separate phase because those bodies need to be in place before collision/contact generation.
+
+### Ghidra-confirmed listener order
+
+`bhkWorld::vfunction43` at `0x141DF73A0` confirms the per-substep order:
+
+1. Before-any listener slot `+0x18`.
+2. Before-any command drain helper `0x141DFE3B0`.
+3. Listener companion slot `+0x20`.
+4. Collide helper `0x141DFE010`.
+5. Between-collide-and-solve listener slot `+0x28`.
+6. Between command drain helper `0x141DFDE70`.
+7. Between companion slot `+0x30`.
+8. Solve helper `0x141DFE1E0`.
+9. After-any listener slot `+0x38`.
+10. After-any command drain helper `0x141DFDCD0`.
+11. After-any companion slot `+0x40`.
+
+Important detail:
+
+- The between-collide-and-solve callback is followed by a command drain before solve.
+- Therefore commands that are actually enqueued into the phase command list during the between callback can be applied before solve.
+
+### Command-drain helpers
+
+Ghidra-decompiled helpers:
+
+- `0x141DFDB30`
+- `0x141DFE3B0`
+- `0x141DFE010`
+- `0x141DFDE70`
+- `0x141DFE1E0`
+- `0x141DFDCD0`
+- `0x141DFD990`
+
+Observed common behavior:
+
+- Inspect command list count in `param_1[1]`.
+- If one command exists and its metadata marks it direct/immediate, call command vtable `+0x20`.
+- Otherwise build worker batch with `0x141DFFBB0`, dispatch through worker queue helpers, wait on worker completion, then release command refs.
+- Clear command list count/state after drain.
+
+Interpretation:
+
+- The drain after between-collide-and-solve is real and not only a label.
+- This supports the future phase choice if the write primitive actually queues into the command list.
+
+### TLS command-state uncertainty
+
+Relevant native wrappers branch on TLS byte `+0x1528`:
+
+- `0x141DF55F0` set transform wrapper:
+  - direct `0x1415395E0` when TLS `+0x1528 == 0`;
+  - command `0x50 / 0x60100` when TLS `+0x1528 != 0`.
+- `0x141DF56F0` set velocity wrapper:
+  - direct velocity write when TLS `+0x1528 == 0`;
+  - command `0x30 / 0x90100` when TLS `+0x1528 != 0`.
+- `0x141DF5930` command-safe ApplyHardKeyFrame wrapper:
+  - computes hard-keyframe velocity;
+  - direct `0x141539F30` when TLS `+0x1528 == 0`;
+  - command `0x30 / 0x90100` when TLS `+0x1528 != 0`.
+- `0x141DFC8D0` command bridge reads TLS `+0x152C` to select thread command storage at `DAT_1465A3E30 + threadIndex * 0xA8`.
+
+What was checked:
+
+- `bhkWorld::vfunction43` decompilation and disassembly around listener calls.
+- Phase drain helpers.
+- Command bridge `0x141DFC8D0`.
+- World lock helpers:
+  - `0x141DF5FB0`;
+  - `0x141DF5FD0`;
+  - `0x141DF6010`.
+
+Current finding:
+
+- `bhkWorld::vfunction43` visibly checks TLS byte `+0x1529` for world locking decisions.
+- This pass did not find `bhkWorld::vfunction43` setting TLS byte `+0x1528` around listener callbacks.
+- The visible listener call sequence passes `&local_128` command list to listener callbacks, then drains it, but the standard set-transform/set-velocity/ApplyHardKeyFrame wrappers only queue when TLS `+0x1528` is already active.
+- `0x141DFC8D0` itself does not decide direct-versus-queued; it assumes the caller already chose to queue.
+
+Interpretation:
+
+- It is confirmed that the between phase has a pre-solve command drain.
+- It is not confirmed that a normal wrapper call from a ROCK between listener will automatically queue into that drain.
+- If TLS `+0x1528` is false in the listener callback, `0x141DF5930` will direct-write velocity through `0x141539F30`.
+- Direct `0x14153ABD0` is different: it locks `world + 0x690`, computes hard-keyframe velocity, writes velocity, then unlocks. It does not queue, but it owns its body-array lock internally.
+
+### Consequence for future proxy drive primitive
+
+Current evidence does not let us blindly choose `0x141DF5930` just because it is command-capable.
+
+Candidate future primitives:
+
+1. `0x141DF5930` from between-collide-and-solve
+   - Pros:
+     - command-capable if TLS command mode is active;
+     - no DriveToKeyFrame snap branch;
+     - native callers already use it for transform-targeted velocity application.
+   - Risk:
+     - if TLS `+0x1528` is false in ROCK's listener, it direct-writes through `0x141539F30` without the explicit lock seen in `0x14153ABD0`.
+2. `0x14153ABD0` direct ApplyHardKeyFrame from between-collide-and-solve
+   - Pros:
+     - no snap branch;
+     - explicitly locks around compute/write;
+     - parameter convention now mapped.
+   - Risk:
+     - not command-queued; must verify it is safe to call while inside bhkWorld update and before solve.
+3. A custom explicit command-list path
+   - Pros:
+     - would guarantee the proxy velocity command drains before solve.
+   - Risk:
+     - requires more binary-backed command object layout knowledge; higher implementation risk.
+
+Research conclusion from this pass:
+
+- Between-collide-and-solve remains the correct phase for future proxy + constraint updates.
+- The exact ApplyHardKeyFrame primitive is still unresolved.
+- The safest next research is to verify whether direct body velocity writes in the between listener affect the same solve step, and whether `0x14153ABD0` is safe under the world lock state present in `bhkWorld::vfunction43`.
+- Do not implement a proxy drive until this is resolved; choosing the wrong primitive can create one-frame stale body-A motion or unsafe direct writes.
+
+### Open questions after this pass
+
+- Where, if anywhere, is TLS byte `+0x1528` set before physics callbacks?
+- Is it possible or appropriate for ROCK to explicitly set command mode around its callback, or is that engine-owned state?
+- Does `0x14153ABD0` direct ApplyHardKeyFrame produce same-step proxy motion before solver build when called after collide?
+- Does the solver use body-A transform immediately, integrated velocity prediction, or both when building rows for the custom constraint?
+- If ApplyHardKeyFrame only writes velocity, should ROCK compute constraint targets from the raw hand target/predicted proxy instead of the current proxy body transform?
