@@ -127,32 +127,25 @@ namespace rock::transform_math
         return result;
     }
 
-    /*
-     * FO4VR hknp transform operations verified in Ghidra at 0x1416DBE90 and
-     * 0x1401A8D60 consume row blocks:
-     *
-     *     world = local.x * row0 + local.y * row1 + local.z * row2 + translation
-     *
-     * ROCK's NiTransform helpers use the same stored-row convention for local to
-     * world. Keep hknp boundary conversion direct; transposing here inverts body
-     * axes and makes dynamic grabs solve against the wrong wrist/body frame.
-     */
+    // FO4VR hknp consumes hkTransformf rotation as Havok column blocks, while
+    // CommonLib NiMatrix3 math is written in row form. Keep this conversion
+    // explicit so hand, grab, and weapon bodies all use one verified convention.
     template <class Matrix>
     inline Matrix niRowsToHavokColumns(const Matrix& matrix)
     {
         Matrix result{};
         result.entry[0][0] = matrix.entry[0][0];
-        result.entry[0][1] = matrix.entry[0][1];
-        result.entry[0][2] = matrix.entry[0][2];
+        result.entry[0][1] = matrix.entry[1][0];
+        result.entry[0][2] = matrix.entry[2][0];
         result.entry[0][3] = 0.0f;
 
-        result.entry[1][0] = matrix.entry[1][0];
+        result.entry[1][0] = matrix.entry[0][1];
         result.entry[1][1] = matrix.entry[1][1];
-        result.entry[1][2] = matrix.entry[1][2];
+        result.entry[1][2] = matrix.entry[2][1];
         result.entry[1][3] = 0.0f;
 
-        result.entry[2][0] = matrix.entry[2][0];
-        result.entry[2][1] = matrix.entry[2][1];
+        result.entry[2][0] = matrix.entry[0][2];
+        result.entry[2][1] = matrix.entry[1][2];
         result.entry[2][2] = matrix.entry[2][2];
         result.entry[2][3] = 0.0f;
         return result;
@@ -163,17 +156,17 @@ namespace rock::transform_math
     {
         Matrix result{};
         result.entry[0][0] = bodyFloats[0];
-        result.entry[0][1] = bodyFloats[1];
-        result.entry[0][2] = bodyFloats[2];
+        result.entry[0][1] = bodyFloats[4];
+        result.entry[0][2] = bodyFloats[8];
         result.entry[0][3] = 0.0f;
 
-        result.entry[1][0] = bodyFloats[4];
+        result.entry[1][0] = bodyFloats[1];
         result.entry[1][1] = bodyFloats[5];
-        result.entry[1][2] = bodyFloats[6];
+        result.entry[1][2] = bodyFloats[9];
         result.entry[1][3] = 0.0f;
 
-        result.entry[2][0] = bodyFloats[8];
-        result.entry[2][1] = bodyFloats[9];
+        result.entry[2][0] = bodyFloats[2];
+        result.entry[2][1] = bodyFloats[6];
         result.entry[2][2] = bodyFloats[10];
         result.entry[2][3] = 0.0f;
         return result;
