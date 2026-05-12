@@ -4881,3 +4881,159 @@ Research conclusion from this pass:
 - Does `0x14153ABD0` direct ApplyHardKeyFrame produce same-step proxy motion before solver build when called after collide?
 - Does the solver use body-A transform immediately, integrated velocity prediction, or both when building rows for the custom constraint?
 - If ApplyHardKeyFrame only writes velocity, should ROCK compute constraint targets from the raw hand target/predicted proxy instead of the current proxy body transform?
+
+## 2026-05-12 continuation: solver consumption of ApplyHardKeyFrame velocity
+
+This pass follows up the `ApplyHardKeyFrame` question from the solver side. The research question is not whether `ApplyHardKeyFrame` is useful in general; it is whether a hidden no-contact body-A proxy driven by hard-keyframe velocity would be seen by the same solver pass as the intended hand transform, or only as current body transform plus velocity.
+
+### Functions inspected
+
+- `0x141DFE1E0`
+  - Solve-phase helper called from `bhkWorld::Update` after the between-collide-and-solve listener and its command drain.
+- `0x1415435E0`
+  - hknp solve dispatch reached by `0x141DFE1E0`.
+- `0x1419799E0`
+  - Constraint row build caller that gathers hknp body and motion data before delegating to the atom interpreter.
+- `0x141979EF0`
+  - Related constraint row build caller with the same body/motion data pattern.
+- `0x141F5B800`
+  - Malleable-constraint wrapper build delegate; confirms wrapped constraint data eventually reaches the normal atom interpreter path.
+- `0x141539F30`
+  - Direct body velocity writer used by `ApplyHardKeyFrame` and the command-safe velocity path.
+- `0x14153D440`
+  - Helper called after velocity writes to update linked bodies/broadphase-related body data.
+- `0x1417D3BF0`
+  - Body broadphase/swept-extent update helper called from `0x14153D440`.
+- `0x1415395E0`
+  - Direct body transform writer.
+- `0x14153CC40`
+  - Helper called after transform writes to update body/motion transform state.
+- `0x1415451A0`
+  - Native body transform prediction/interpolation helper.
+- `0x14153EE00`
+  - Signal path reached after velocity changes.
+
+### Solve dispatch evidence
+
+`0x141DFE1E0` is the solve helper reached after the between-collide-and-solve callback and the command drain. It calls:
+
+```text
+0x1415435E0(*param_5, param_5[1], param_1)
+```
+
+before its cleanup/drain tail.
+
+`0x1415435E0` locks the world-side state around the hknp solve dispatch and then calls through the live hknp world/task machinery. This confirms that any body/proxy write intended to affect the same solve must be visible before this solve dispatch begins.
+
+### Constraint row build consumes live hknp body/motion arrays
+
+`0x1419799E0` and `0x141979EF0` gather body and motion data directly from the hknp world arrays:
+
+- body slot base:
+  - `world + 0x20 + bodyId * 0x90`
+- motion slot base:
+  - `world + 0xE0 + body.motionIndex * 0x80`
+
+They extract transform/orientation/motion fields from those slots and pass the assembled input to the atom interpreter path, including `0x141A55550`.
+
+Confirmed implication:
+
+- The solver row build consumes live hknp body/motion arrays.
+- It does not consume NiNode transforms or high-level ROCK visual hand transforms.
+- A hidden proxy design must make the hknp body/motion arrays correct before row build, or compute target frames from a separate predicted/raw hand transform and write those target frames into the constraint atoms before row build.
+
+### What direct SetBodyVelocity actually writes
+
+`0x141539F30` is the direct body velocity writer reached by `ApplyHardKeyFrame`-style paths.
+
+Observed behavior:
+
+- Locks or enters the world body/motion update path.
+- Validates the body id and body flags.
+- If velocity is effectively unchanged, can early-exit.
+- Wakes/activates the body when the body state requires it.
+- Writes linear velocity into the motion slot fields corresponding to motion `+0x40..+0x4C`.
+- Writes angular velocity into the motion slot fields corresponding to motion `+0x50..+0x5C`.
+- Calls `0x14153D440(world, bodyId, motionSlot)`.
+- Emits a velocity/body-change signal through the `0x14153EE00` path.
+
+`0x14153D440` iterates bodies linked to the same motion and calls `0x1417D3BF0(...)`.
+
+`0x1417D3BF0` updates body broadphase/swept-extent data using the motion velocity and world margins/scale. It writes packed body extent data around body `+0x50`. It does not look like a full committed transform integration step.
+
+Confirmed implication:
+
+- Direct velocity write is more than a raw field poke: it wakes/signals and updates swept/broadphase-related body data.
+- It is not the same as setting the body transform.
+- This pass did not prove that `0x141539F30` immediately makes the proxy body's transform equal the hard-keyframe target before constraint row build.
+
+### What direct SetBodyTransform does differently
+
+`0x1415395E0` is the direct body transform writer.
+
+Observed behavior:
+
+- Writes placement/transform state directly.
+- Calls `0x14153CC40(...)`.
+
+`0x14153CC40` updates motion/body transform state and marks associated world/broadphase/island data dirty.
+
+Confirmed implication:
+
+- SetBodyTransform is the placement/warp path.
+- It is the path that makes body transform state immediately match a target transform.
+- It is not the desired steady proxy drive by itself because it can behave like a teleport/keyframe snap and can erase the finite lag the proxy is supposed to express.
+
+### Native predicted body transform helper
+
+`0x1415451A0` computes a predicted/interpolated transform for a body at a time offset.
+
+Observed behavior:
+
+- Reads the body slot and its motion slot.
+- For non-positive time offsets, uses one set of motion/orientation fields around the motion slot's previous/current transform state.
+- For positive time offsets, uses motion velocity fields around `+0x40..+0x5C` plus current orientation fields around `+0x10..+0x1C`.
+- Integrates orientation using angular velocity/quaternion math and writes an output transform.
+
+Native usage note:
+
+- `bhkNPCollisionObject::vfunction44` uses this helper with the engine's remainder/interpolation dt before updating a high-level object transform path.
+
+Confirmed implication:
+
+- FO4VR has a native helper capable of predicting where a velocity-driven body will be over a time slice.
+- This is directly relevant to hidden-proxy design because `ApplyHardKeyFrame` writes velocity, not guaranteed immediate target transform.
+- A future custom dynamic-grab design may need to compute the constraint body-A/target frame from the raw hand target or from a predicted proxy transform, rather than assuming the proxy body's current transform already equals the intended palm transform in the same step.
+
+### ApplyHardKeyFrame relevance after this solver-side pass
+
+Confirmed:
+
+- `ApplyHardKeyFrame` / `ComputeHardKeyFrame` is relevant as a native way to turn a target proxy transform into linear/angular velocity.
+- It avoids `DriveToKeyFrame`'s cap-triggered transform snap.
+- Its velocity write path updates hknp motion velocities, wakes/signals the body, and updates swept/broadphase body data.
+
+Not confirmed:
+
+- That calling `ApplyHardKeyFrame` after collide makes the proxy body's transform equal the target palm transform before the same constraint row build.
+- That the atom interpreter builds motor rows against predicted body transforms rather than current body/motion transforms.
+
+Design consequence:
+
+- Do not design the custom motor authority path around the assumption that body-A proxy transform is already at the raw hand target after an `ApplyHardKeyFrame` velocity write.
+- The safer architecture is to treat body-A proxy drive and constraint target update as a coupled solver-adjacent operation:
+  - drive the hidden proxy with hard-keyframe velocity;
+  - compute/write constraint target frames from the same raw/root-flattened hand frame, or from a verified predicted proxy transform;
+  - let finite-force linear/angular motors govern the held object;
+  - never let proxy drive become object drive.
+
+### Current answer to the user's ApplyHardKeyFrame note
+
+`ApplyHardKeyFrame` is relevant, but only for the hidden hand/palm authority proxy. It should not become the grabbed-object drive and should not define grip pivot, orientation, or object seating. Its value is that it can move a generated hknp proxy with native velocity semantics without the `DriveToKeyFrame` transform-snap fallback.
+
+### Open questions after this pass
+
+- Does the live constraint row builder call any predicted-transform helper equivalent to `0x1415451A0` for velocity-driven bodies before atom interpretation?
+- If not, should ROCK compute body-A transform atoms from raw hand target or explicit predicted proxy target instead of current proxy transform?
+- Is `0x14153ABD0` safe to call inside the between-collide-and-solve listener when the world update is already in progress?
+- Can ROCK use the command-safe `0x141DF5930` wrapper in a way that guarantees queued velocity application in the between-collide-and-solve command drain?
