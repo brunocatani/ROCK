@@ -93,13 +93,18 @@ namespace rock
         RE::NiMatrix3 makeMouseSpringTargetRotation(const RE::NiMatrix3& targetBodyWorldRotation)
         {
             /*
-             * This native action boundary uses the transposed Ni target basis.
+             * Ghidra verification of hknpBSMouseSpringAction shows the target
+             * transform is consumed as the same row-block basis used by hknpBody
+             * transforms and FO4VR's transform-position helper. Do not transpose
+             * here; doing so feeds the spring an inverse angular target and makes
+             * held objects twist against the controller frame.
+             *
              * Higher-level grab relations stay in root-flattened hand space and
-             * native BODY object space. Keep the conversion isolated here so
-             * hand/object math does not start carrying native packing details
-             * through the rest of the grab pipeline.
+             * native BODY object space. Keep this boundary isolated so hand/object
+             * math does not start carrying native packing details through the rest
+             * of the grab pipeline.
              */
-            return transform_math::transposeRotation(targetBodyWorldRotation);
+            return targetBodyWorldRotation;
         }
 
         void writeTransformColumns(MouseSpringCinfo& cinfo, std::size_t offset, const RE::NiMatrix3& rotation)
