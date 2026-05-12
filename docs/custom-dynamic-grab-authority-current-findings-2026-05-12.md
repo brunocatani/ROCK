@@ -3145,6 +3145,82 @@ Still unresolved:
 - Need define staleness policy for proxy authority if no fresh root-flattened hand sample is available.
 - Need map how player-space movement compensation should apply to the cached hand authority sample versus the held object constraint target.
 
+### ROCK held player-space compensation source audit
+
+Research question:
+
+- How does ROCK currently prevent held objects from stuttering or drifting when the player/room space moves, and what does that imply for a future custom motor authority?
+
+Current source facts:
+
+- `PhysicsInteraction::update()` calls these in order:
+  - `updateSelection(frame)`;
+  - `_heldObjectPlayerSpaceFrame = sampleHeldObjectPlayerSpaceFrame(frame.deltaSeconds)`;
+  - `applyHeldPlayerSpaceVelocity(hknp)`;
+  - `updateGrabInput(frame)`.
+- The source comment before `applyHeldPlayerSpaceVelocity(...)` states that compensation is applied before held-object grab constraints are updated so the constraint target does not solve against stale body velocity.
+- `HeldObjectPlayerSpaceFrame` stores:
+  - translation delta in game units;
+  - player-space velocity in Havok units;
+  - previous/current player-space transforms;
+  - rotation delta;
+  - source string;
+  - enabled/warp flags.
+- `sampleHeldObjectPlayerSpaceFrame(...)`:
+  - uses `FRIKApi::getSmoothedPlayerPosition()`;
+  - uses `PlayerNodes::roomnode` rotation when available;
+  - produces `velocityHavok` from smooth-position delta;
+  - marks distance and rotation warps separately;
+  - stores previous/current player-space transforms for runtime transform warp.
+- `applyHeldPlayerSpaceVelocity(...)`:
+  - gathers primary and connected held body ids from both hands;
+  - computes residual velocity keep from grab velocity damping;
+  - decides whether runtime transform warp should apply;
+  - calls `held_player_space_registry::applyCentralPlayerSpaceVelocity(...)`;
+  - stores `_lastCentralHeldPlayerSpaceVelocityHavok` only when compensation stays enabled and writes at least one motion.
+- `HeldPlayerSpaceRegistry`:
+  - registers held bodies by body id and motion index;
+  - deduplicates writes by motion index;
+  - subtracts previous player velocity to recover local body velocity;
+  - adds current player velocity back with residual keep;
+  - applies runtime transform warp by transforming body world through previous/current player-space transforms;
+  - records the expected steady-state writer mask as `ConstraintTarget | PlayerSpaceCentral`.
+- `Hand::recordHeldControllerMotionSample(...)`:
+  - computes raw hand velocity from root-flattened hand position delta;
+  - subtracts `playerSpaceFrame.velocityHavok` when player-space compensation is enabled and not warped;
+  - stores local hand velocity and angular velocity histories;
+  - clears histories on player-space warp.
+- `Hand::recordHeldObjectVelocitySample(...)`:
+  - samples held object motion after subtracting previous player-space velocity;
+  - stores local held-object velocity history for release/lead behavior;
+  - updates `_lastPlayerSpaceVelocityHavok`.
+- `Hand::captureHeldReleaseMotion(...)` is called before release and records both hand and object local motion using the same player-space frame.
+- `Hand::applyReleaseVelocitySnapshot(...)` applies the captured release velocity only from the release snapshot path, deduping connected bodies by the saved snapshot.
+
+Confirmed interpretation:
+
+- ROCK already has the correct high-level HIGGS-like concept here: held-object motion is expressed relative to player-space movement, while player movement itself is handled centrally.
+- The current design deliberately avoids per-hand held loops writing player-space velocity, because two hands or connected multipart bodies could otherwise write the same hknp motion more than once.
+- This is directly relevant to old motor stutter: any future custom motor authority that adds another per-hand compensation writer would violate the existing writer-mask invariant.
+
+Design implication for future custom dynamic grab authority:
+
+- The hidden body-A proxy should be driven from the cached root-flattened hand frame.
+- The held object body set should continue to receive player-space compensation from one central writer unless research proves it must move phases.
+- The proxy itself should not be registered as a held object in `HeldPlayerSpaceRegistry`.
+- Constraint target/motor updates should account for the same frame of player-space movement as the held object, but should not create a second player-space velocity path.
+- The target architecture should preserve the steady-state mental model:
+  - one constraint/proxy target authority for hand-to-object relation;
+  - one central player-space writer for room/player movement;
+  - release history samples local hand/object motion with player velocity removed.
+
+Still unresolved:
+
+- Need decide whether central player-space compensation must remain in game update before `updateGrabInput(...)`, or move into the same physics phase as proxy/constraint updates for the custom-authority path.
+- Need map whether moving only proxy/constraint updates to between-collide-and-solve while leaving player-space compensation earlier creates a one-phase mismatch.
+- Need decide how runtime transform warp should interact with the hidden proxy during teleport-like room/player-space changes.
+- Need preserve `HeldPlayerSpaceRegistry` dedupe by motion index for multipart loose weapons and multi-body objects.
+
 ### FO4VR no-collide bit and constraint-contact separation
 
 This Ghidra pass resolves the open `1 << 14` question and clarifies why a hidden no-contact authority proxy is still compatible with a custom constraint drive.
