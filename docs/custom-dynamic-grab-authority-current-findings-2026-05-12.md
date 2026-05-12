@@ -5718,3 +5718,181 @@ The researched options now rank like this:
 - For a hidden no-contact proxy, does set-transform after collide and before solve have any negative consequence if the proxy is not expected to contribute contacts?
 - If the proxy ever needs contact feedback later, it cannot be moved after collide because collision data would be from the previous pose.
 - The future implementation must decide whether body-A proxy velocity is computed through `ComputeHardKeyFrame` or through ROCK's own raw/root-flattened hand velocity sample, but this is a later design decision after the command/listener safety map is complete.
+
+## 2026-05-12 continuation: direct setter notification side effects and current ROCK constraint timing
+
+This pass connects the direct-setter Ghidra findings to ROCK's current custom constraint source path.
+
+### Direct set-transform notification side effects
+
+`0x1415395E0` direct set body transform:
+
+- enters the hknp write/mutate guard at `world + 0x690`;
+- validates body slot / body id mappings;
+- writes the body transform into the hknp body slot;
+- calls `0x14153CC40(...)`;
+- then iterates a listener list rooted at `hknpWorld + 0x538` and calls each listener's vtable slot `+0x10` with `(listener, world, bodyId)`;
+- exits the hknp write/mutate guard.
+
+`0x14153CC40(...)` is a broad dirty/update path. It:
+
+- re-enters the same hknp write/mutate guard, so direct set-transform uses nested/reentrant hknp mutation guards;
+- calls `0x14153EE00(hknpWorld + 0x510, world, bodyId)` in one path;
+- updates dirty broadphase/island/body ranges and calls `0x1417D8590(...)` for affected bodies;
+- notifies lower-level world systems through vtable calls rooted around `world + 0x178`.
+
+`0x14153EE00(...)` iterates a linked listener list encoded in the low bits of its list head. It calls listener vtable slot `+0x10` and removes marked nodes.
+
+Important separation:
+
+- The physics step listener array in `bhkWorld::vfunction43` is stored/iterated from the `bhkWorld` listener storage around the decompiler's `offset_0x10`, `offset_0x20`, and `offset_0x40`.
+- Direct hknp body setters notify hknp-world body-change lists at `hknpWorld + 0x510` and `hknpWorld + 0x538`.
+- Current evidence shows these are separate listener structures, not the same step-listener array.
+
+Open side-effect:
+
+- Even if the storage is separate, body-change listeners can still run during a between-phase direct setter. Their side effects are not fully mapped.
+- For a hidden no-contact proxy this risk is narrower than for a normal gameplay body, but it still exists.
+
+### Direct set-velocity notification side effects
+
+`0x141539F30` direct set body velocity:
+
+- enters the hknp write/mutate guard at `world + 0x690`;
+- validates the body is motion-capable (`body.flags & 2`);
+- reads the motion slot from the body motion index;
+- wakes/activates the body through `0x141546EF0(...)` when allowed;
+- writes linear velocity to motion fields around `+0x40..+0x4C`;
+- writes angular velocity to motion fields around `+0x50..+0x5C`, transformed through the body's motion frame;
+- calls `0x14153D440(...)`;
+- notifies `hknpWorld + 0x538` through `0x14153EE00(...)`;
+- exits the hknp write/mutate guard.
+
+`0x14153D440(...)` updates swept/broadphase extents for all bodies sharing the same motion.
+
+Confirmed implication:
+
+- A future hidden proxy must use its own motion and must not share motion with the held object or any multipart weapon/object body.
+- A proxy velocity write has real native broadphase/swept side effects, even if the proxy is no-contact.
+
+### ROCK current custom constraint creation
+
+Source files:
+
+- `src/physics-interaction/grab/GrabConstraint.cpp`
+- `src/physics-interaction/grab/GrabConstraint.h`
+- `src/physics-interaction/grab/GrabConstraintMath.h`
+- `src/physics-interaction/grab/GrabMotionController.h`
+- `src/physics-interaction/hand/HandGrab.cpp`
+
+`createGrabConstraint(...)` builds a persistent custom atom stream:
+
+- custom vtable copied from the ragdoll constraint data vtable with overrides for type/info/runtime/addInstance;
+- atom chain:
+  - set-local-transforms atom at `0x20`;
+  - setup-stabilization atom at `0xB0`;
+  - ragdoll motor atom at `0xC0`;
+  - linear motor atoms at `0x120`, `0x138`, `0x150`;
+- runtime reports `0x100` bytes and 12 solver results;
+- position motors are explicit `HkPositionMotor` allocations with vtable `0x142E95FE8`;
+- the same angular position motor is assigned to the three ragdoll axes;
+- the same linear position motor is assigned to the three linear axes;
+- motors are enabled before `hknpWorld::CreateConstraint(...)`.
+
+The custom constraint atom/motor layout is already consistent with the earlier Ghidra solver atom map.
+
+### ROCK current custom constraint target update
+
+`Hand::updateConstraintGrabDriveTarget(...)` currently runs from `Hand::updateHeldObject(...)`, not from a physics-step between callback.
+
+It:
+
+- starts with raw-hand desired object/body output for diagnostics;
+- requires `_activeConstraint`, `_handBody`, and live `_handBody` world transform;
+- recomputes desired object/body world from `liveHandBodyWorld`, `_grabFrame.constraintHandSpace`, and `_grabFrame.bodyLocal`;
+- writes transform A translation from `_grabFrame.pivotAHandBodyLocalGame`;
+- writes transform B rotation and ragdoll angular target from `desiredBodyTransformHandSpace`;
+- writes dynamic transform B translation from:
+  - `desiredBodyTransformHandSpace`;
+  - `_grabFrame.pivotAHandBodyLocalGame`;
+  - `grab_constraint_math::computeDynamicTransformBTranslationGame(...)`.
+
+Important:
+
+- Transform B is not supposed to be a static frozen pivot when the angular frame changes.
+- ROCK already has math for dynamic transform-B translation, preserving contact/palm relation instead of COM authority.
+- The current source gap is timing/authority: these writes are performed in game/update flow for `SharedConstraint`, not in the solver-consumed between phase for ordinary one-hand dynamic grab.
+
+### ROCK current custom motor update
+
+`Hand::updateConstraintGrabDriveMotors(...)` also currently runs from `Hand::updateHeldObject(...)`, only when `_heldDriveMode == SharedConstraint`.
+
+It calls `grab_motion_controller::solveMotorTargets(...)` with:
+
+- held-body collision flag;
+- position and rotation error;
+- base linear/angular tau;
+- collision tau;
+- tau lerp speed;
+- base max force;
+- adaptive max-force multiplier;
+- body mass;
+- force-to-mass ratio;
+- angular-to-linear force ratio;
+- startup fade state;
+- loose-weapon multipliers.
+
+`GrabMotionController` confirms the desired finite-force behavior already exists in source form:
+
+- linear authority is capped by mass via `capForceByMass(force, mass, forceToMassRatio)`;
+- angular max force is derived from linear max force via `linearForce / angularToLinearForceRatio`;
+- tau moves gradually with `advanceToward(...)` instead of snapping;
+- collision uses a softer collision tau;
+- startup fade reduces force and starts angular authority weaker through `fadeStartAngularRatio`.
+
+Important:
+
+- These rules are close to the HIGGS-style finite-force/mass/angular/collision behavior the user wants.
+- They are currently not the ordinary one-hand loose-object authority path.
+- They are currently not guaranteed to be written in the same solver step that consumes the constraint rows.
+
+### ROCK current ordinary one-hand path
+
+In `Hand::grabSelectedObject(...)`:
+
+- peer-held / joining another hand uses `createConstraintGrabDrive(...)`.
+- ordinary single-hand loose object / loose weapon sets `_heldDriveMode = HeldObjectDriveMode::NativeMouseSpring`.
+- ordinary single-hand creates `_nativeGrab` with native mouse-spring tuning.
+
+In `Hand::updateHeldObject(...)`:
+
+- native path computes the desired body transform from raw hand and `_grabFrame.rawHandSpace/bodyLocal`;
+- applies adaptive lead only for native mouse spring;
+- queues native target through `_nativeGrab.queueTarget(...)`;
+- the target is later flushed in `Hand::flushPendingHeldNativeGrab(...)` from whole-pre-step.
+
+Therefore:
+
+- ordinary one-hand loose object/weapon is still native mouse-spring authority;
+- custom finite-force motors are present but only active for `SharedConstraint`;
+- visual hand lag is downstream of object lag and cannot create weight if the native action follows too strongly.
+
+### Updated parity gap
+
+The key gap is no longer "ROCK lacks finite-force motor math."
+
+The current evidence says ROCK lacks a correctly phased ordinary one-hand custom-authority path that combines:
+
+- generated/raw root-flattened hand frame as body-A source;
+- hidden/no-contact solver-visible proxy or equivalent body-A authority;
+- between-collide-and-solve proxy and constraint target/motor writes;
+- existing contact/palm non-COM grab frame;
+- existing `GrabMotionController` finite-force/mass/angular/collision behavior;
+- ordinary one-hand loose-object and loose-weapon routing, separate from equipped/two-hand weapons and actor ragdoll.
+
+### Updated open questions
+
+- Can direct body setter notifications on `hknpWorld +0x510/+0x538` cause unsafe reentrancy during the between listener phase, or are they ordinary body-change callbacks that remain safe under the hknp write guard?
+- If not safe enough, can ROCK construct local command-list entries for command `6` transform and command `9` velocity and append them to `local_128`?
+- Should future motor target/motor writes happen exclusively in the between callback, or should game update prepare a pending target snapshot that the between callback applies?
+- Does current `updateConstraintGrabDriveTarget(...)` depend on live generated hand-body transform being already current? If so, a future hidden proxy must replace that dependency for ordinary one-hand grab.
