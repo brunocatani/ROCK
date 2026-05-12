@@ -412,6 +412,8 @@ namespace rock
             return false;
         }
         initializeGeneratedKeyframedBodyDriveState(_palmAnchorDriveState, anchorFrame.transform);
+        _latestPalmAnchorTarget = anchorFrame.transform;
+        _hasLatestPalmAnchorTarget = true;
 
         std::size_t createdCount = 0;
         for (const auto role : hand_collider_semantics::kHandNonAnchorColliderRoles) {
@@ -476,6 +478,8 @@ namespace rock
         _cachedWorld = nullptr;
         _cachedBhkWorld = nullptr;
         clearGeneratedKeyframedBodyDriveState(_palmAnchorDriveState);
+        _latestPalmAnchorTarget = {};
+        _hasLatestPalmAnchorTarget = false;
         _cachedSkeleton = nullptr;
         _cachedBoneTree = nullptr;
         _cachedPowerArmor = false;
@@ -495,6 +499,8 @@ namespace rock
         _cachedWorld = nullptr;
         _cachedBhkWorld = nullptr;
         clearGeneratedKeyframedBodyDriveState(_palmAnchorDriveState);
+        _latestPalmAnchorTarget = {};
+        _hasLatestPalmAnchorTarget = false;
         _cachedSkeleton = nullptr;
         _cachedBoneTree = nullptr;
         _cachedPowerArmor = false;
@@ -546,6 +552,8 @@ namespace rock
 
         RoleFrameResult anchorFrame{};
         if (makeRoleFrame(lookup, isLeft, HandColliderRole::PalmAnchor, anchorFrame)) {
+            _latestPalmAnchorTarget = anchorFrame.transform;
+            _hasLatestPalmAnchorTarget = true;
             queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState);
         }
 
@@ -602,6 +610,22 @@ namespace rock
 
         queueGeneratedKeyframedBodyTarget(driveState, target, sourceDeltaSeconds, 1000.0f);
         publishSampledVelocityAtomic(body.getBodyId().value, driveState);
+    }
+
+    bool HandBoneColliderSet::tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const
+    {
+        /*
+         * Dynamic grab authority needs the same root-flattened palm convention
+         * as the generated hand collider, but it must not read back the hknp
+         * body as transform authority. This exposes the latest sampled target
+         * from the skeleton update phase so a hidden no-contact proxy can use
+         * the correct body-A frame without coupling to collider contacts.
+         */
+        if (!_hasLatestPalmAnchorTarget) {
+            return false;
+        }
+        outTarget = _latestPalmAnchorTarget;
+        return true;
     }
 
     void HandBoneColliderSet::handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex)

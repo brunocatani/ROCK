@@ -47,6 +47,7 @@ namespace rock
         bool isColliderBodyIdAtomic(std::uint32_t bodyId) const;
         bool tryGetBodyMetadataAtomic(std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const;
         bool tryGetBodyRoleAtomic(std::uint32_t bodyId, hand_collider_semantics::HandColliderRole& outRole) const;
+        bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const;
 
     private:
         static constexpr std::size_t MAX_SEGMENT_BODIES = hand_collider_semantics::kHandSegmentColliderBodyCountPerHand;
@@ -97,6 +98,8 @@ namespace rock
         RE::hknpWorld* _cachedWorld = nullptr;
         void* _cachedBhkWorld = nullptr;
         GeneratedKeyframedBodyDriveState _palmAnchorDriveState{};
+        RE::NiTransform _latestPalmAnchorTarget{};
+        bool _hasLatestPalmAnchorTarget = false;
         const void* _cachedSkeleton = nullptr;
         const void* _cachedBoneTree = nullptr;
         bool _cachedPowerArmor = false;

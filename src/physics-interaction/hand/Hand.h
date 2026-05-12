@@ -369,6 +369,11 @@ namespace rock
             RE::NiTransform& outDesiredBodyWorld,
             RE::NiPoint3& outDesiredTargetPointWorld,
             RE::NiPoint3& outActivePivotBBodyLocalGame);
+        bool resolveGrabAuthorityProxyFrame(RE::hknpWorld* world,
+            const RE::NiTransform& rawHandWorld,
+            const RE::NiTransform* fallbackPalmAnchorWorld,
+            RE::NiTransform& outProxyWorld,
+            const char*& outSource) const;
         void updateConstraintGrabDriveMotors(RE::hknpWorld* world,
             float deltaTime,
             float forceFadeInTime,
@@ -530,7 +535,10 @@ namespace rock
         GrabAuthorityProxyPendingTarget _grabAuthorityPendingTarget{};
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
         bool _hasLastAppliedGrabAuthorityProxyWorld = false;
+        std::uint64_t _grabAuthorityProxyQueuedSequence = 0;
         std::uint64_t _grabAuthorityProxyFlushSequence = 0;
+        std::uint64_t _grabAuthorityProxyFailedFlushes = 0;
+        float _grabAuthorityProxyLastFlushDeltaSeconds = 0.0f;
         int _grabAuthorityProxyLogCounter = 0;
         std::atomic<bool> _grabAuthorityProxyReleasePending{ false };
         std::mutex _grabAuthorityProxyMutex;

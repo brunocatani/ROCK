@@ -6210,3 +6210,52 @@ There are two possible future drive surfaces:
 2. Add narrowly scoped direct lower hknp setter wrappers around `0x1415395E0` and `0x141539F30`, but only after explicitly accepting the binary dependency and documenting why bypassing the wrapper queue is required.
 
 No production implementation should assume wrapper calls are same-step pre-solve until the TLS `+0x1528` state is confirmed in the real callback.
+
+## 2026-05-12 runtime log follow-up: proxy frame convention
+
+Live test log inspected:
+
+- `C:\Users\SENECA\Documents\My Games\Fallout4VR\F4SE\ROCK.log`
+- Test window around `2026-05-12 19:02:01` through `19:03:30`.
+
+Confirmed runtime facts:
+
+- Ordinary dynamic grabs were routed to `driveMode=proxyConstraint`.
+- Loose non-equipped weapons also routed to `driveMode=proxyConstraint`.
+- Proxy bodies were created with the no-contact policy: `filter=0x000B400F`, `policy=nonCollidable+bit14`.
+- The Phase 0 proxy continued to report `setTransform=ok`, `setVelocity=ok`, `readback=ok`, and `semanticLeak=no`.
+- Held-object logs still displayed `queued=0 flushed=0 lastDt=0.000000` because the held telemetry was reading `_nativeGrab.debugState()` even while the active authority was the proxy constraint.
+
+Runtime symptom evidence:
+
+- Proxy creation for the SA58 FAL showed:
+  - captured raw hand-space relation: `GRAB HAND SPACE: pos=(10.2,-7.3,-3.4)`;
+  - proxy drive created with `pivotAProxy=(6.00,-2.00,0.21)`;
+  - high and unstable held rotation errors, commonly `70..170deg`;
+  - target/body/pivot drift even though the custom proxy path was active.
+- This points to a body-A frame convention mismatch, not a COM pivot failure and not a native mouse-spring fallback.
+
+Correction made from this pass:
+
+- The hidden grab authority proxy now resolves its target frame from the same root-flattened generated palm-anchor target used by the hand collider runtime.
+- The proxy path now composes desired object/body frames from `_grabFrame.constraintHandSpace`, not `_grabFrame.rawHandSpace`.
+- Grab-frame capture now builds the constraint hand-space relation against the resolved proxy/palm frame instead of stale live hknp hand-body readback.
+- Held proxy telemetry now reports proxy queue/flush/failure counters instead of native mouse-spring counters when `driveMode=proxyConstraint`.
+
+Important non-changes:
+
+- The unusual linear motor runtime offsets in `GrabConstraint.cpp` were not changed. The later Ghidra mapping in this document supersedes the early concern: with ROCK's FO4VR atom stream, the current offsets are relative to the current runtime cursor and resolve to non-overlapping runtime fields at `0x70/0x71/0x72` and `0x74/0x78/0x7C`.
+- COM remains weight/inertia/diagnostic data only.
+- The held object remains dynamic; only the hidden body-A proxy is keyframed/no-contact.
+
+Validation after this correction:
+
+- Focused source checks passed:
+  - `GrabAuthorityProxyFrameSourceTests.ps1`
+  - `HandGrabNativeBoundarySourceTests.ps1`
+  - `SharedHeldObjectGrabSourceTests.ps1`
+  - `GrabAuthorityPhase0ProbeSourceTests.ps1`
+- Release build passed with `VCPKG_ROOT=C:/vcpkg cmake --build build --config Release`.
+- The Release build deployed `ROCK.dll` and `ROCK.pdb` to `D:\FO4\mods\ROCK\F4SE\Plugins` at `2026-05-12 19:22:09`.
+- Registered CTest suite passed `15/15`.
+- The existing runtime log was last written at `2026-05-12 19:03:34`, before this deployed build. It cannot validate the new `proxyFrame=rootFlattenedPalmAnchorTarget/ok` telemetry yet.
