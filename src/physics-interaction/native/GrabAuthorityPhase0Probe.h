@@ -70,10 +70,10 @@ namespace rock::grab_authority_phase0
         bool _hasPreviousProxyTarget = false;
         bool _activeSolverProbeEnabled = true;
         int _activeFilterPolicy = static_cast<int>(ProxyFilterPolicy::NonCollidableLayerPlusNoCollideBit);
+        int _createRetryFrames = 0;
         std::uint64_t _driveSequence = 0;
         int _betweenLogCounter = 0;
         int _afterSolveLogCounter = 0;
-        bool _createAttempted = false;
         std::uint32_t _lastSemanticRightHandBodyId = 0xFFFF'FFFFu;
         std::uint32_t _lastSemanticLeftHandBodyId = 0xFFFF'FFFFu;
         std::uint32_t _lastSemanticWeaponBodyId = 0xFFFF'FFFFu;

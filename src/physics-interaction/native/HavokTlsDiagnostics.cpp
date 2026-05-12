@@ -21,7 +21,11 @@ namespace rock::havok_tls_diagnostics
         }
 
         state.tlsIndex = tlsIndex;
+        SetLastError(ERROR_SUCCESS);
         auto* tlsBlock = TlsGetValue(tlsIndex);
+        if (!tlsBlock && GetLastError() != ERROR_SUCCESS) {
+            return state;
+        }
         state.tlsBlock = tlsBlock;
         if (!tlsBlock) {
             return state;

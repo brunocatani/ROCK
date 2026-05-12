@@ -175,7 +175,7 @@ namespace rock::grab_authority_phase0
             if (hasBodies() || _solverConstraint.isValid()) {
                 shutdown(bhkWorld);
             }
-            _createAttempted = false;
+            _createRetryFrames = 0;
             return;
         }
 
@@ -187,16 +187,23 @@ namespace rock::grab_authority_phase0
                                        _activeSolverProbeEnabled != config.solverProbeEnabled);
         if (configChanged) {
             destroyBodies(_bhkWorld ? _bhkWorld : bhkWorld);
+            _createRetryFrames = 0;
         }
 
         if (!bhkWorld || !hknpWorld) {
             return;
         }
 
-        if (!hasBodies() && !_createAttempted) {
-            _createAttempted = true;
+        if (!hasBodies()) {
+            if (_createRetryFrames > 0) {
+                --_createRetryFrames;
+                return;
+            }
+
             if (createBodies(bhkWorld, hknpWorld, config)) {
-                _createAttempted = false;
+                _createRetryFrames = 0;
+            } else {
+                _createRetryFrames = 120;
             }
         }
     }
@@ -318,7 +325,7 @@ namespace rock::grab_authority_phase0
     void Probe::shutdown(RE::bhkWorld* fallbackBhkWorld)
     {
         destroyBodies(_bhkWorld ? _bhkWorld : fallbackBhkWorld);
-        _createAttempted = false;
+        _createRetryFrames = 0;
     }
 
     void Probe::abandon()
@@ -332,7 +339,7 @@ namespace rock::grab_authority_phase0
         _driveSequence = 0;
         _betweenLogCounter = 0;
         _afterSolveLogCounter = 0;
-        _createAttempted = false;
+        _createRetryFrames = 0;
     }
 
     bool Probe::createBodies(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const Config& config)
@@ -469,6 +476,7 @@ namespace rock::grab_authority_phase0
         _driveSequence = 0;
         _betweenLogCounter = 0;
         _afterSolveLogCounter = 0;
+        _createRetryFrames = 0;
 
         if (proxyId != kInvalidBodyId || receiverId != kInvalidBodyId || constraintId != kInvalidBodyId) {
             ROCK_LOG_INFO(GrabPhase0, "destroyed proxy={} receiver={} constraint={}", proxyId, receiverId, constraintId);

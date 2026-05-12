@@ -52,6 +52,10 @@ Require-Text 'src/physics-interaction/native/GrabAuthorityPhase0Probe.cpp' 'FO4_
     'Phase 0 default proxy filter policy must use the native noncollidable layer.'
 Require-Text 'src/physics-interaction/native/GrabAuthorityPhase0Probe.cpp' 'noteSemanticContactBodyIds' `
     'Phase 0 probe must check semantic contact body ids for hidden proxy leakage.'
+Require-Text 'src/physics-interaction/native/GrabAuthorityPhase0Probe.cpp' '_createRetryFrames\s*=\s*120' `
+    'Phase 0 body creation must retry after transient world/setup failures instead of latching off forever.'
+Reject-Text 'src/physics-interaction/native/GrabAuthorityPhase0Probe.cpp' '_createAttempted' `
+    'Phase 0 body creation must not use a one-shot create-attempt latch.'
 Reject-Text 'src/physics-interaction/native/GrabAuthorityPhase0Probe.cpp' 'NativeMouseSpringGrab|flushPendingHeldNativeGrab' `
     'Phase 0 diagnostics must not call native mouse-spring grab authority.'
 
