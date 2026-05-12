@@ -3864,3 +3864,135 @@ The next custom-authority design should be judged against these confirmed HIGGS 
 - FO4VR-specific: does the current generated palm anchor rebuild deferral (`isConstrained`) create any stale body-frame issue if it becomes ordinary one-hand constraint body A?
 - HIGGS behavior extension: loose weapon long-axis / grip-to-COM lever length is not an explicit dynamic motor branch in inspected HIGGS. ROCK may be able to surpass HIGGS by deriving angular force scaling from grip-to-COM/long-axis inertia, but that must be treated as a new FO4VR design, not a copied HIGGS fact.
 - HIGGS timing: HIGGS updates constraint params in its normal update loop on Skyrim hkp. FO4VR hknp step ordering may require a stricter solver-phase update to avoid stutter.
+
+## 2026-05-12 continuation: HIGGS adjusted visual hand versus physical hand body timing
+
+Research question:
+
+- During dynamic held-state, does HIGGS drive the constraint body A from the raw controller/real hand, or from the adjusted visual hand that follows the finite-force held object?
+- This matters for ROCK because the future custom-authority proxy must reproduce the correct authority split: raw input, physical proxy, visual hand lag/deviation, and object constraint drive.
+
+Source inspected:
+
+- `E:\fo4dev\skirymvr_mods\source_codes\higgs\src\hand.cpp`
+- `E:\fo4dev\skirymvr_mods\source_codes\higgs\include\hand.h`
+- `E:\fo4dev\skirymvr_mods\source_codes\higgs\src\main.cpp`
+- `E:\fo4dev\skirymvr_mods\source_codes\higgs\include\config.h`
+
+Confirmed functions and fields:
+
+- `Hand::PreUpdateHandsUpdate` (`src/hand.cpp:4462`)
+  - Captures animation/world transforms into `fpAnimHandTransform` and `fpAnimWeaponTransform` before Bethesda hand update.
+- `Hand::PreUpdate` (`src/hand.cpp:4065`)
+  - Runs before `Hand::Update`.
+  - Saves `m_handTransformWithoutVrikOffset = handNode->m_worldTransform` before optional VRIK offset is applied.
+  - If VRIK offsetting is active, applies the offset to the visual hand through `UpdateHandTransform`.
+- `Hand::Update` (`src/hand.cpp:2295`)
+  - Saves `m_handTransform = handNode->m_worldTransform` at frame start, after `PreUpdate` may have applied the VRIK offset.
+  - Uses this as the real/desired hand pose for held-object deviation checks.
+- `Hand::UpdateHandTransform` (`src/hand.cpp:2235`)
+  - Updates the first-person hand/clavicle scene transform. This is visual/scene hand transform work, not direct hkp body A velocity work.
+- `Hand::ComputeHandCollisionTransform` (`src/hand.cpp:522`)
+  - Explicit source comment: the hand transform must be where the hand is in real life because the hand collision drives the grab constraint.
+  - Default input is `m_handTransformWithoutVrikOffset`, unless an explicit transform is supplied.
+  - Builds the hand collision transform from configured hand-collision offset and real hand rotation.
+- `Hand::UpdateHandCollision` (`src/hand.cpp:643`)
+  - Disables hand-body collision while `state == State::HeldBody` by OR-ing collision filter bit 14.
+  - Registers `handBody` for player-space movement compensation when enabled.
+  - Does not itself compute the held-state adjusted visual hand. It manages filter/lifecycle/registration.
+- `Hand::MoveHandAndWeaponCollision` (`src/hand.cpp:690`)
+  - Drives `handBody` with `ComputeHandCollisionTransform(isBeast)` and `ApplyHardKeyframeVelocityClamped`.
+  - Because no explicit transform is passed in the held path, the driven physical hand body uses `m_handTransformWithoutVrikOffset`, not `m_adjustedHandTransform`.
+- `Hand::PostUpdate` (`src/hand.cpp:4110`)
+  - Calls `UpdateHandCollision(world)` and `UpdateWeaponCollision()` after normal held-state logic.
+  - Then removes the VRIK visual offset if needed.
+- `Update` in `main.cpp` (`src/main.cpp:626-651`)
+  - Runs both hands in this order: `PreUpdate`, `Update`, `PostUpdate`.
+- `PlayerPostApplyMovementDeltaUpdate` related path in `main.cpp` (`src/main.cpp:483-496`)
+  - Calls `MoveHandAndWeaponCollision(...)` for both hands while applying player movement compensation/delta handling.
+  - This is where the HIGGS hand collision body is actually hard-keyframed to the saved real-hand collision transform plus player-space offset.
+
+Confirmed HIGGS held-state visual/deviation loop:
+
+- In `State::HeldBody`, HIGGS computes:
+  - `heldTransform = collidableNode->m_worldTransform`
+  - `inverseDesired = InverseTransform(desiredNodeTransformHandSpace)`
+  - `m_adjustedHandTransform = heldTransform * inverseDesired`
+- It then blends `m_adjustedHandTransform` from `m_handTransform` over `startGrabLerpHandDuration` during startup.
+- It computes `handDeviation = length(m_adjustedHandTransform.pos - m_handTransform.pos)`.
+- `handDeviations` is a rolling deque of 5 samples (`include/hand.h:355`).
+- If average deviation exceeds `MaxHandDistance / havokWorldScale` after ignore windows, HIGGS requests idle/drop.
+- Otherwise HIGGS calls `UpdateHandTransform(m_adjustedHandTransform)` so the rendered hand follows the object under finite constraint authority.
+- After visual hand adjustment, HIGGS updates the live grab constraint:
+  - recomputes desired hand/object transform from `desiredNodeTransformHandSpace * GetRigidBodyTLocalTransform(selectedObject.rigidBody)`;
+  - writes angular target through `GrabConstraintData::setTargetRelativeOrientationOfBodies`;
+  - writes transform-B translation from `desiredHandTransformHavokObjSpace * palmPosHandspace`;
+  - updates linear/angular motor force, tau, damping, and recovery fields.
+
+Confirmed timing split:
+
+1. `PreUpdate` records real hand without VRIK offset into `m_handTransformWithoutVrikOffset`.
+2. `PreUpdate` may apply VRIK offset to the scene hand.
+3. `Update` records the current visual/real desired hand into `m_handTransform`.
+4. Held dynamic logic derives `m_adjustedHandTransform` from the held object's actual finite-force pose.
+5. HIGGS uses `m_adjustedHandTransform` to move the rendered hand/clavicle toward the object.
+6. HIGGS measures deviation between adjusted visual hand and real desired hand and drops if too far.
+7. `PostUpdate` updates collision/filter state and removes visual VRIK offset if needed.
+8. The physical `handBody` used as constraint body A is driven by `MoveHandAndWeaponCollision`, which uses `ComputeHandCollisionTransform` from `m_handTransformWithoutVrikOffset`, not `m_adjustedHandTransform`.
+
+Important correction to earlier proxy uncertainty:
+
+- HIGGS does not use the adjusted visual hand as body-A authority in the inspected source path.
+- HIGGS body A is the real-hand collision body, hard-keyframed from `m_handTransformWithoutVrikOffset`.
+- HIGGS still makes the hand appear physically weighted by moving the rendered hand toward the object after solving/observing finite object lag.
+- Therefore "virtual/adjusted hand follows object" is a visual/deviation feedback layer, not the body-A transform source.
+
+Why this matters for ROCK:
+
+- Future ROCK custom dynamic grab should keep these as separate roles:
+  - raw/root-flattened controller hand frame: desired input authority;
+  - hidden no-contact body A/proxy: physical constraint anchor driven from the raw hand frame, with player-space compensation;
+  - held object body B: finite-force dynamic body driven by the custom constraint;
+  - visual hand adjustment: derived from actual held-object transform and captured desired hand/object relation;
+  - deviation release: compares adjusted visual hand against raw/root-flattened hand.
+- If ROCK drives the proxy from the adjusted visual hand, it risks feedback-looping object lag back into the constraint anchor and weakening the finite-force effect.
+- If ROCK drives only the object toward the raw hand with unlimited or overly high authority and does not adjust the visual hand, the player gets the current "superman" feel: the object obeys too much and the hand never visibly yields.
+- The HIGGS-like quality is not just finite motor force. It is finite motor force plus a visual hand lag/deviation layer that admits the object did not reach the real hand.
+
+HIGGS config values relevant to this split:
+
+- `MaxHandDistance = 0.7`
+- `physicsGrabIgnoreHandDistanceTime = 0.2`
+- `sneakUnsneakIgnoreHandDistanceTime = 0.1`
+- `physicsGrabLerpHandTimeMin = 0.1`
+- `physicsGrabLerpHandTimeMax = 0.2`
+- `physicsGrabLerpHandMinDistance = 0.1`
+- `physicsGrabLerpHandMaxDistance = 0.2`
+- `grabConstraintLinearMaxForce = 2000`
+- `grabConstraintLinearMaxForceWeapon = 9000`
+- `grabConstraintAngularToLinearForceRatio = 12.5`
+- `grabConstraintMaxForceToMassRatio = 500`
+- `grabConstraintCollidingAngularTau = 0.01`
+- `grabConstraintCollidingLinearTau = 0.01`
+- `grabConstraintTauLerpSpeed = 0.5`
+- `grabConstraintFadeInStartAngularMaxForceRatio = 100`
+- `grabConstraintFadeInTime = 0.1`
+
+FO4VR design implication, not implementation:
+
+- The future hidden dynamic-grab body A should still be rooted in the current flattened hand frame, matching the user's clarification that the generated palm body is created from the root-flattened hand-frame bone tree.
+- The proxy should be no-contact / collision-suppressed during held dynamic grab, equivalent to HIGGS bit-14 suppression on `handBody` in `State::HeldBody`.
+- The visual hand adjustment should be a separate ROCK layer, probably consuming:
+  - captured `desiredNodeTransformHandSpace` / equivalent grab frame;
+  - actual held object body/node transform;
+  - raw flattened hand pose;
+  - startup hand-lag lerp duration from capture distance;
+  - rolling deviation average and release threshold.
+- The physical constraint should not use the adjusted visual hand as its anchor unless a later FO4VR-specific design intentionally differs from HIGGS and proves the feedback loop is stable.
+
+Open questions after this HIGGS timing pass:
+
+- ROCK currently uses FRIK/root-flattened frames and generated colliders; HIGGS directly mutates the first-person hand/clavicle scene transform. Need map ROCK's visual hand adjustment options before copying the visual feedback concept.
+- Need verify whether ROCK already has a visual hand deviation path separate from collision/proxy driving, and if so whether it is fed from actual held-object lag or only from target error.
+- Need map where FO4VR can safely publish adjusted hand visuals without corrupting FRIK's next root-flattened sample or PAPER/weapon visual state.
+- Need continue Ghidra/source research on FO4VR hknp proxy body lifecycle and direct hard-keyframe velocity command usage before any implementation plan.
