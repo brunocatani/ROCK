@@ -13,6 +13,7 @@
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/TESForms.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
+#include "RE/VTABLE_IDs.h"
 
 #include "REL/Relocation.h"
 
@@ -25,6 +26,7 @@
 #include <cstring>
 #include <limits>
 #include <mutex>
+#include <optional>
 
 namespace rock::weapon_instance_witness_runtime
 {
@@ -46,6 +48,8 @@ namespace rock::weapon_instance_witness_runtime
             std::uint16_t uniqueID{ 0 };
             std::uint8_t attachIndex{ 0 };
             std::uint8_t rank{ 0 };
+            bool requireActiveMod{ true };
+            bool mutatingModRemoved{ false };
             std::uint32_t scansRemaining{ 0 };
             WitnessClock::time_point expiresAt{};
             WitnessClock::time_point nextScanAfter{};
@@ -56,6 +60,7 @@ namespace rock::weapon_instance_witness_runtime
         std::atomic<std::uint64_t> s_nextSignalSequence{ 1 };
         std::atomic<bool> s_runtimeInstalled{ false };
         std::atomic<bool> s_attachModHookInstalled{ false };
+        std::atomic<bool> s_applyChangesHookInstalled{ false };
         std::atomic<bool> s_equipEventSinkInstalled{ false };
 
         PendingSignal s_pendingSignal{};
@@ -72,6 +77,13 @@ namespace rock::weapon_instance_witness_runtime
 
         AttachModToReference_t s_originalAttachModToReference = nullptr;
         void* s_attachModOriginalTrampoline = nullptr;
+
+        using ApplyChangesWriteDataImpl_t = void (*)(
+            RE::ApplyChangesFunctor*,
+            RE::TESBoundObject&,
+            RE::BGSInventoryItem::Stack&);
+
+        ApplyChangesWriteDataImpl_t s_originalApplyChangesWriteDataImpl = nullptr;
 
         void writeAbsoluteJump(std::uint8_t* target, std::uintptr_t destination)
         {
@@ -181,6 +193,34 @@ namespace rock::weapon_instance_witness_runtime
             }
 
             return false;
+        }
+
+        std::optional<std::uint32_t> findPlayerInventoryStackIndex(
+            const RE::TESBoundObject& object,
+            const RE::BGSInventoryItem::Stack& targetStack)
+        {
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            auto* inventoryList = player ? player->inventoryList : nullptr;
+            if (!player || !inventoryList) {
+                return std::nullopt;
+            }
+
+            const RE::BSAutoReadLock lock{ inventoryList->rwLock };
+            std::uint32_t stackIndex = 0;
+            for (auto& item : inventoryList->data) {
+                if (item.object != &object) {
+                    continue;
+                }
+
+                for (auto* stack = item.stackData.get(); stack; stack = stack->nextStack.get()) {
+                    const auto currentStackIndex = stackIndex++;
+                    if (stack == &targetStack) {
+                        return currentStackIndex;
+                    }
+                }
+            }
+
+            return std::nullopt;
         }
 
         void mixObjectInstanceExtraWitness(
@@ -329,6 +369,83 @@ namespace rock::weapon_instance_witness_runtime
             return witness;
         }
 
+        void activateEquippedWeaponWitness(
+            AuthoritativeEquippedWeaponWitness witness,
+            const char* reason)
+        {
+            if (witness.source == WeaponInstanceWitnessSource::None || witness.signature == 0) {
+                return;
+            }
+
+            const auto now = WitnessClock::now();
+            {
+                std::scoped_lock lock{ s_stateLock };
+                if (witness.source == WeaponInstanceWitnessSource::GameLoadBaseline) {
+                    s_gameLoadBaselineWitness = witness;
+                }
+                s_activeWitness = witness;
+                s_activeWitnessExpiresAt = now + kActiveWitnessLifetime;
+                s_activeWitnessNextValidationAfter = now + kActiveWitnessRevalidateInterval;
+                s_pendingSignal = {};
+            }
+
+            ROCK_LOG_INFO(Weapon,
+                "Captured equipped weapon instance witness source={} sequence={} signature={:016X} form={:08X}/{:x} instance={:x} keyword={:x} extra={:x} equippedData={:x} mods={}/{} stack={} uniqueID={} mod={:08X} removed={} attachIndex={} rank={} reason={} name={}",
+                sourceName(witness.source),
+                witness.sequence,
+                witness.signature,
+                witness.weaponFormID,
+                witness.weaponFormAddress,
+                witness.instanceDataAddress,
+                witness.instanceKeywordDataAddress,
+                witness.objectInstanceExtraAddress,
+                witness.equippedDataAddress,
+                witness.activeModCount,
+                witness.objectIndexDataCount,
+                witness.stackIndex,
+                witness.uniqueID,
+                witness.mutatingModFormID,
+                witness.mutatingModRemoved ? "yes" : "no",
+                witness.attachIndex,
+                witness.rank,
+                reason ? reason : "",
+                witness.displayName);
+        }
+
+        void recordWorkbenchApplyChangesWitness(
+            const RE::ApplyChangesFunctor& functor,
+            RE::TESBoundObject& baseObj,
+            RE::BGSInventoryItem::Stack& stack)
+        {
+            /*
+             * The workbench commit path has already mutated this inventory
+             * stack when ApplyChangesFunctor::WriteDataImpl returns. Capturing
+             * the equipped player stack directly is narrower than treating the
+             * attach-mod helper as authority, and it works for removals because
+             * the changed OMOD does not have to remain active after the write.
+             */
+            if (!stack.IsEquipped() || !isWeaponForm(&baseObj)) {
+                return;
+            }
+
+            const auto stackIndex = findPlayerInventoryStackIndex(baseObj, stack);
+            if (!stackIndex) {
+                return;
+            }
+
+            const auto sequence = s_nextSignalSequence.fetch_add(1, std::memory_order_acq_rel);
+            auto witness = makeWitnessFromInventoryStack(
+                WeaponInstanceWitnessSource::WorkbenchApplyChanges,
+                sequence,
+                baseObj,
+                stack,
+                *stackIndex);
+            witness.mutatingModFormID = functor.mod ? functor.mod->GetFormID() : 0;
+            witness.rank = functor.rank;
+            witness.mutatingModRemoved = functor.remove;
+            activateEquippedWeaponWitness(witness, "ApplyChangesFunctorWriteDataImplPostCall");
+        }
+
         bool scanEquippedWeaponInventoryStack(
             const PendingSignal& signal,
             AuthoritativeEquippedWeaponWitness& outWitness)
@@ -363,7 +480,7 @@ namespace rock::weapon_instance_witness_runtime
                         continue;
                     }
                     const auto* objectInstanceExtra = extraList ? extraList->GetByType<RE::BGSObjectInstanceExtra>() : nullptr;
-                    if (!objectInstanceExtraHasActiveMod(objectInstanceExtra, signal.modFormID)) {
+                    if (signal.requireActiveMod && !objectInstanceExtraHasActiveMod(objectInstanceExtra, signal.modFormID)) {
                         continue;
                     }
 
@@ -371,6 +488,7 @@ namespace rock::weapon_instance_witness_runtime
                     outWitness.mutatingModFormID = signal.modFormID;
                     outWitness.attachIndex = signal.attachIndex;
                     outWitness.rank = signal.rank;
+                    outWitness.mutatingModRemoved = signal.mutatingModRemoved;
                     return outWitness.weaponFormID != 0 && outWitness.weaponFormAddress != 0;
                 }
             }
@@ -384,9 +502,13 @@ namespace rock::weapon_instance_witness_runtime
         {
             if (active.source != WeaponInstanceWitnessSource::GameLoadBaseline &&
                 active.source != WeaponInstanceWitnessSource::InventoryEquip &&
-                active.source != WeaponInstanceWitnessSource::AttachMod) {
+                active.source != WeaponInstanceWitnessSource::AttachMod &&
+                active.source != WeaponInstanceWitnessSource::WorkbenchApplyChanges) {
                 return false;
             }
+
+            const bool requireActiveMod =
+                !(active.source == WeaponInstanceWitnessSource::WorkbenchApplyChanges && active.mutatingModRemoved);
 
             return scanEquippedWeaponInventoryStack(
                 PendingSignal{
@@ -397,10 +519,50 @@ namespace rock::weapon_instance_witness_runtime
                     .uniqueID = active.uniqueID,
                     .attachIndex = active.attachIndex,
                     .rank = active.rank,
+                    .requireActiveMod = requireActiveMod,
+                    .mutatingModRemoved = active.mutatingModRemoved,
                     .scansRemaining = 1,
                     .reason = "activeWitnessRevalidate",
                 },
                 outWitness);
+        }
+
+        bool nativeVisualRemapAuthorizedSource(WeaponInstanceWitnessSource source)
+        {
+            /*
+             * Native visual remap is allowed only after ROCK has witnessed the
+             * actual equipped stack after an engine mutation. Inventory equips
+             * and attach-mod helper calls can identify pending collision state,
+             * but they do not prove the workbench commit path has completed.
+             */
+            switch (source) {
+            case WeaponInstanceWitnessSource::WorkbenchApplyChanges:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        bool witnessSourceSupersedesActive(
+            WeaponInstanceWitnessSource source,
+            const AuthoritativeEquippedWeaponWitness& active,
+            WitnessClock::time_point activeExpiresAt,
+            WitnessClock::time_point now)
+        {
+            if (active.source == WeaponInstanceWitnessSource::None || active.signature == 0) {
+                return true;
+            }
+            if (activeExpiresAt != WitnessClock::time_point{} && now >= activeExpiresAt) {
+                return true;
+            }
+            if (source == WeaponInstanceWitnessSource::WorkbenchApplyChanges) {
+                return true;
+            }
+            if (source == WeaponInstanceWitnessSource::AttachMod &&
+                active.source == WeaponInstanceWitnessSource::WorkbenchApplyChanges) {
+                return false;
+            }
+            return true;
         }
 
         void recordPendingSignal(
@@ -429,7 +591,8 @@ namespace rock::weapon_instance_witness_runtime
                     .nextScanAfter = now,
                     .reason = reason,
                 };
-                if (source != WeaponInstanceWitnessSource::GameLoadBaseline) {
+                if (source != WeaponInstanceWitnessSource::GameLoadBaseline &&
+                    witnessSourceSupersedesActive(source, s_activeWitness, s_activeWitnessExpiresAt, now)) {
                     s_activeWitness = {};
                     s_activeWitnessExpiresAt = {};
                     s_activeWitnessNextValidationAfter = {};
@@ -483,23 +646,37 @@ namespace rock::weapon_instance_witness_runtime
 
             AuthoritativeEquippedWeaponWitness witness{};
             if (scanEquippedWeaponInventoryStack(signal, witness)) {
+                bool captured = true;
                 {
                     std::scoped_lock lock{ s_stateLock };
                     if (s_pendingSignal.sequence != signal.sequence) {
                         return;
                     }
 
-                    if (signal.source == WeaponInstanceWitnessSource::GameLoadBaseline) {
-                        s_gameLoadBaselineWitness = witness;
+                    if (witnessSourceSupersedesActive(signal.source, s_activeWitness, s_activeWitnessExpiresAt, now)) {
+                        if (signal.source == WeaponInstanceWitnessSource::GameLoadBaseline) {
+                            s_gameLoadBaselineWitness = witness;
+                        }
+                        s_activeWitness = witness;
+                        s_activeWitnessExpiresAt = now + kActiveWitnessLifetime;
+                        s_activeWitnessNextValidationAfter = now + kActiveWitnessRevalidateInterval;
+                    } else {
+                        captured = false;
                     }
-                    s_activeWitness = witness;
-                    s_activeWitnessExpiresAt = now + kActiveWitnessLifetime;
-                    s_activeWitnessNextValidationAfter = now + kActiveWitnessRevalidateInterval;
                     s_pendingSignal = {};
                 }
 
+                if (!captured) {
+                    ROCK_LOG_DEBUG(Weapon,
+                        "Ignored secondary weapon instance witness source={} sequence={} signature={:016X}; stronger workbench witness is still active",
+                        sourceName(witness.source),
+                        witness.sequence,
+                        witness.signature);
+                    return;
+                }
+
                 ROCK_LOG_INFO(Weapon,
-                    "Captured equipped weapon instance witness source={} sequence={} signature={:016X} form={:08X}/{:x} instance={:x} keyword={:x} extra={:x} equippedData={:x} mods={}/{} stack={} uniqueID={} mod={:08X} attachIndex={} rank={} name={}",
+                    "Captured equipped weapon instance witness source={} sequence={} signature={:016X} form={:08X}/{:x} instance={:x} keyword={:x} extra={:x} equippedData={:x} mods={}/{} stack={} uniqueID={} mod={:08X} removed={} attachIndex={} rank={} name={}",
                     sourceName(witness.source),
                     witness.sequence,
                     witness.signature,
@@ -514,6 +691,7 @@ namespace rock::weapon_instance_witness_runtime
                     witness.stackIndex,
                     witness.uniqueID,
                     witness.mutatingModFormID,
+                    witness.mutatingModRemoved ? "yes" : "no",
                     witness.attachIndex,
                     witness.rank,
                     witness.displayName);
@@ -562,12 +740,20 @@ namespace rock::weapon_instance_witness_runtime
             }
 
             const bool result = original(ref, mod, attachIndex, rank);
-            if (result && isPlayerReference(&ref)) {
+            const auto modFormID = mod.GetFormID();
+            if (result && modFormID != 0) {
+                /*
+                 * AttachModToReference is not guaranteed to receive the player
+                 * reference for weapon workbench edits. The post-call signal is
+                 * therefore only a mutation hint; the pending scan below still
+                 * has to find the equipped player inventory stack that contains
+                 * this OMOD before it can become authoritative evidence.
+                 */
                 recordPendingSignal(
                     WeaponInstanceWitnessSource::AttachMod,
                     0,
                     0,
-                    mod.GetFormID(),
+                    modFormID,
                     attachIndex,
                     rank,
                     "AttachModToReferencePostCall");
@@ -605,6 +791,55 @@ namespace rock::weapon_instance_witness_runtime
             s_attachModOriginalTrampoline = original;
             s_originalAttachModToReference = reinterpret_cast<AttachModToReference_t>(original);
             s_attachModHookInstalled.store(true, std::memory_order_release);
+            return true;
+        }
+
+        void hookedApplyChangesWriteDataImpl(
+            RE::ApplyChangesFunctor* functor,
+            RE::TESBoundObject& baseObj,
+            RE::BGSInventoryItem::Stack& stack)
+        {
+            auto* original = s_originalApplyChangesWriteDataImpl;
+            if (!original || !functor) {
+                return;
+            }
+
+            original(functor, baseObj, stack);
+            recordWorkbenchApplyChangesWitness(*functor, baseObj, stack);
+        }
+
+        bool installWorkbenchApplyChangesHook()
+        {
+            if (s_applyChangesHookInstalled.load(std::memory_order_acquire)) {
+                return true;
+            }
+
+            REL::Relocation<std::uintptr_t> applyChangesVtable{ RE::VTABLE::__ApplyChangesFunctor[0] };
+            REL::Relocation<std::uintptr_t> expectedWriteDataImpl{ REL::Offset(0xB53B70) };
+            const auto vtableAddress = applyChangesVtable.address();
+            if (vtableAddress == 0) {
+                ROCK_LOG_ERROR(Init, "Weapon workbench ApplyChanges witness hook install failed: missing vtable address");
+                return false;
+            }
+
+            const auto original = *reinterpret_cast<std::uintptr_t*>(vtableAddress);
+            if (original != expectedWriteDataImpl.address()) {
+                ROCK_LOG_ERROR(Init,
+                    "Weapon workbench ApplyChanges witness hook validation failed at 0x{:X}: expected WriteDataImpl 0x{:X}, actual 0x{:X}",
+                    vtableAddress,
+                    expectedWriteDataImpl.address(),
+                    original);
+                return false;
+            }
+
+            s_originalApplyChangesWriteDataImpl = reinterpret_cast<ApplyChangesWriteDataImpl_t>(original);
+            const auto hook = reinterpret_cast<std::uintptr_t>(&hookedApplyChangesWriteDataImpl);
+            REL::safe_write(vtableAddress, &hook, sizeof(hook));
+            s_applyChangesHookInstalled.store(true, std::memory_order_release);
+            ROCK_LOG_INFO(Init,
+                "Installed WeaponWorkbenchApplyChangesWitness vtable hook at 0x{:X}, original=0x{:X}",
+                vtableAddress,
+                original);
             return true;
         }
 
@@ -667,6 +902,8 @@ namespace rock::weapon_instance_witness_runtime
             return "inventoryEquip";
         case WeaponInstanceWitnessSource::AttachMod:
             return "attachMod";
+        case WeaponInstanceWitnessSource::WorkbenchApplyChanges:
+            return "workbenchApplyChanges";
         case WeaponInstanceWitnessSource::None:
         default:
             return "none";
@@ -681,7 +918,8 @@ namespace rock::weapon_instance_witness_runtime
 
         const bool equipSinkInstalled = installEquipEventSink();
         const bool attachHookInstalled = installAttachModHook();
-        const bool installed = equipSinkInstalled && attachHookInstalled;
+        const bool workbenchHookInstalled = installWorkbenchApplyChangesHook();
+        const bool installed = equipSinkInstalled && attachHookInstalled && workbenchHookInstalled;
         if (installed) {
             s_runtimeInstalled.store(true, std::memory_order_release);
             ROCK_LOG_INFO(Init, "Weapon instance witness runtime installed");
@@ -775,6 +1013,7 @@ namespace rock::weapon_instance_witness_runtime
                 refreshed.mutatingModFormID = active.mutatingModFormID;
                 refreshed.attachIndex = active.attachIndex;
                 refreshed.rank = active.rank;
+                refreshed.mutatingModRemoved = active.mutatingModRemoved;
                 s_activeWitness = refreshed;
                 s_activeWitnessNextValidationAfter = now + kActiveWitnessRevalidateInterval;
             }
@@ -809,7 +1048,7 @@ namespace rock::weapon_instance_witness_runtime
         std::uint64_t expectedSignature,
         const char*& outReason)
     {
-        outReason = "nativeRemapBlockedNoAttachWitness";
+        outReason = "nativeRemapBlockedNoWorkbenchWitness";
         refreshPendingSignal();
 
         AuthoritativeEquippedWeaponWitness active{};
@@ -822,25 +1061,36 @@ namespace rock::weapon_instance_witness_runtime
             return false;
         }
 
-        if (active.source != WeaponInstanceWitnessSource::AttachMod) {
-            outReason = active.source == WeaponInstanceWitnessSource::InventoryEquip ?
-                "nativeRemapBlockedInventoryEquip" :
-                "nativeRemapBlockedNonAttachWitness";
+        if (!nativeVisualRemapAuthorizedSource(active.source)) {
+            switch (active.source) {
+            case WeaponInstanceWitnessSource::InventoryEquip:
+                outReason = "nativeRemapBlockedInventoryEquip";
+                break;
+            case WeaponInstanceWitnessSource::GameLoadBaseline:
+                outReason = "nativeRemapBlockedGameLoadBaseline";
+                break;
+            case WeaponInstanceWitnessSource::AttachMod:
+                outReason = "nativeRemapBlockedAttachModSecondary";
+                break;
+            default:
+                outReason = "nativeRemapBlockedNonWorkbenchWitness";
+                break;
+            }
             return false;
         }
 
         if (expectedSignature != 0 && active.signature != expectedSignature) {
-            outReason = "nativeRemapBlockedAttachWitnessMismatch";
+            outReason = "nativeRemapBlockedWorkbenchWitnessMismatch";
             return false;
         }
 
         AuthoritativeEquippedWeaponWitness revalidated{};
         if (!tryGetAuthoritativeEquippedWeaponWitness(expectedSignature, revalidated)) {
-            outReason = "nativeRemapBlockedAttachWitnessStale";
+            outReason = "nativeRemapBlockedWorkbenchWitnessStale";
             return false;
         }
 
-        outReason = "nativeRemapAllowedAttachModWitness";
+        outReason = "nativeRemapAllowedWorkbenchApplyChanges";
         return true;
     }
 

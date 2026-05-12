@@ -4,7 +4,8 @@
  * ROCK needs an equipped-instance witness that does not depend on FO4VR's
  * stale first-person weapon visual tree. This runtime records three engine
  * signals that are earlier than generated visual publication: game-load
- * baseline, player inventory equips, and post-mutation weapon attach-mod calls.
+ * baseline, player inventory equips, attach-mod mutation hints, and the
+ * workbench ApplyChanges stack write that owns the committed mod list.
  * The witness is intentionally bounded: it is evidence for a pending native
  * visual remap window, not a permanent replacement for FO4VR's equipped state.
  * It never builds collision, mutates weapon mods, or queues native visual work;
@@ -24,6 +25,7 @@ namespace rock::weapon_instance_witness_runtime
         GameLoadBaseline,
         InventoryEquip,
         AttachMod,
+        WorkbenchApplyChanges,
     };
 
     struct AuthoritativeEquippedWeaponWitness
@@ -48,6 +50,7 @@ namespace rock::weapon_instance_witness_runtime
         std::uint16_t uniqueID{ 0 };
         std::uint8_t attachIndex{ 0 };
         std::uint8_t rank{ 0 };
+        bool mutatingModRemoved{ false };
         std::string_view displayName{};
         std::uint64_t signature{ 0 };
     };

@@ -235,6 +235,10 @@ namespace rock
                 return;
             }
 
+            if (outcome.result == weapon_visual_remap_runtime::RequestResult::Disabled) {
+                return;
+            }
+
             state = weapon_native_visual_remap_policy::recordNativeVisualRemapAcquireFailed(
                 state,
                 pendingInstanceSignature);
@@ -2456,15 +2460,25 @@ namespace rock
                         generatedSummary,
                         hasBuildableSource);
                     _pendingGeneratedWeaponVisualWitness = observedGeneratedVisualWitness;
+                    const bool ownerIdentityChanged =
+                        _cachedEquippedWeaponOwnerKey != 0 &&
+                        replacementOwnerKey != 0 &&
+                        replacementOwnerKey != _cachedEquippedWeaponOwnerKey;
+                    const bool settingsChangedForRebuild = weaponCollisionSettingsChanged();
                     const std::uint64_t sourceSettleKey = hasBuildableSource ?
-                        weapon_generated_source_completeness_policy::makeGeneratedSourceReplacementSettleKey(_cachedGeneratedSourceCompleteness, generatedSummary) :
+                        weapon_generated_source_completeness_policy::makeGeneratedSourcePendingSettleKey(
+                            _cachedGeneratedSourceCompleteness,
+                            generatedSummary,
+                            ownerIdentityChanged,
+                            settingsChangedForRebuild) :
                         0;
                     const auto sourceSettle = weapon_generated_source_completeness_policy::advanceGeneratedSourceSettle(_generatedSourceSettleState, sourceSettleKey);
                     const bool sourceSetSettling = hasBuildableSource && !sourceSettle.settled;
                     if (sourceSetSettling) {
                         ROCK_LOG_DEBUG(Weapon,
-                            "Generated weapon source set settling: signature={:016X} stableFrames={}/{} sources={} points={} children={} semanticMask=0x{:08X}",
+                            "Generated weapon source set settling: signature={:016X} settleKey={:016X} stableFrames={}/{} sources={} points={} children={} semanticMask=0x{:08X}",
                             generatedSummary.signature,
+                            sourceSettleKey,
                             sourceSettle.stableFrames,
                             weapon_generated_source_completeness_policy::kRequiredStableGeneratedSourceFrames,
                             generatedSummary.sourceCount,
@@ -2474,13 +2488,14 @@ namespace rock
                         _weaponBodyPending = true;
                         _pendingEquippedWeaponInstanceWitness = replacementInstanceWitness;
                         _pendingGeneratedWeaponVisualWitness = observedGeneratedVisualWitness;
-                        requestPendingGeneratedRebuildAttemptNextFrame();
+                        const bool smallSourceSet =
+                            generatedSummary.sourceCount <= 8 &&
+                            generatedSummary.pointCount <= 512 &&
+                            generatedSummary.childClusterCount <= 16;
+                        if (smallSourceSet && !sourceSettle.keyChanged) {
+                            requestPendingGeneratedRebuildAttemptNextFrame();
+                        }
                     } else {
-                        const bool ownerIdentityChanged =
-                            _cachedEquippedWeaponOwnerKey != 0 &&
-                            replacementOwnerKey != 0 &&
-                            replacementOwnerKey != _cachedEquippedWeaponOwnerKey;
-                        const bool settingsChangedForRebuild = weaponCollisionSettingsChanged();
                         const bool equippedInstanceChanged =
                             _cachedEquippedWeaponInstanceWitness.signature != 0 &&
                             replacementInstanceWitness.signature != 0 &&
@@ -2517,7 +2532,6 @@ namespace rock
                             _pendingEquippedWeaponInstanceWitness = replacementInstanceWitness;
                             _pendingGeneratedWeaponVisualWitness = observedGeneratedVisualWitness;
                             _weaponBodyPending = staleVisualDecision.pending;
-                            _generatedSourceSettleState = {};
                             if (_weaponBodiesDisabledForMissingVisual && hasWeaponBody()) {
                                 publishAtomicBodyIds(activeWeaponBodies());
                                 setWeaponBodyBankCollisionEnabled(world, activeWeaponBodies(), true);
@@ -2526,9 +2540,15 @@ namespace rock
                             _nativeVisualRemapAttemptState = weapon_native_visual_remap_policy::observeNativeVisualRemapStillStale(
                                 _nativeVisualRemapAttemptState,
                                 replacementInstanceWitness.signature);
+                            const char* nativeVisualRemapEligibilityReason = "";
+                            const bool nativeVisualRemapAuthorized =
+                                weapon_instance_witness_runtime::nativeVisualRemapAllowedForWitness(
+                                    replacementInstanceWitness.signature,
+                                    nativeVisualRemapEligibilityReason);
                             const auto nativeVisualRemapDecision = weapon_native_visual_remap_policy::evaluateNativeVisualRemap(
                                 weapon_native_visual_remap_policy::NativeVisualRemapInput{
                                     .enabled = g_rockConfig.rockWeaponCollisionNativeVisualRemapEnabled,
+                                    .authorizedWitness = nativeVisualRemapAuthorized,
                                     .staleVisualSource = staleVisualDecision.staleVisualSource,
                                     .equippedInstanceChanged = staleVisibleEquipWitnessChanged,
                                     .pendingInstanceSignature = replacementInstanceWitness.signature,
@@ -2536,7 +2556,9 @@ namespace rock
                                     .attemptState = _nativeVisualRemapAttemptState,
                                 });
                             const char* nativeVisualRemapResult = "notRequested";
-                            const char* nativeVisualRemapDetail = nativeVisualRemapDecision.reason;
+                            const char* nativeVisualRemapDetail = nativeVisualRemapAuthorized ?
+                                nativeVisualRemapDecision.reason :
+                                nativeVisualRemapEligibilityReason;
                             std::uint32_t nativeVisualRemapFormID = replacementInstanceWitness.formID;
                             std::uintptr_t nativeVisualRemapFormAddress = 0;
                             std::uintptr_t nativeVisualRemapInstanceDataAddress = 0;

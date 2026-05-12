@@ -94,6 +94,7 @@ int main()
 
     const auto amcarBarrelRemap = evaluateNativeVisualRemap(NativeVisualRemapInput{
         .enabled = true,
+        .authorizedWitness = true,
         .staleVisualSource = staleVisualSource.staleVisualSource,
         .equippedInstanceChanged = true,
         .pendingInstanceSignature = 0xB001,
@@ -104,6 +105,7 @@ int main()
 
     const auto amcarBarrelDuplicateFrame = evaluateNativeVisualRemap(NativeVisualRemapInput{
         .enabled = true,
+        .authorizedWitness = true,
         .staleVisualSource = staleVisualSource.staleVisualSource,
         .equippedInstanceChanged = true,
         .pendingInstanceSignature = 0xB001,
@@ -114,6 +116,7 @@ int main()
     auto queuedBarrelAttempt = recordNativeVisualRemapQueued(NativeVisualRemapAttemptState{}, 0xB001);
     const auto amcarBarrelAwaitingNativeResult = evaluateNativeVisualRemap(NativeVisualRemapInput{
         .enabled = true,
+        .authorizedWitness = true,
         .staleVisualSource = staleVisualSource.staleVisualSource,
         .equippedInstanceChanged = true,
         .pendingInstanceSignature = 0xB001,
@@ -125,6 +128,7 @@ int main()
     queuedBarrelAttempt = observeNativeVisualRemapStillStale(queuedBarrelAttempt, 0xB001);
     const auto amcarBarrelQueuedRetry = evaluateNativeVisualRemap(NativeVisualRemapInput{
         .enabled = true,
+        .authorizedWitness = true,
         .staleVisualSource = staleVisualSource.staleVisualSource,
         .equippedInstanceChanged = true,
         .pendingInstanceSignature = 0xB001,
@@ -135,6 +139,7 @@ int main()
     auto failedAcquireAttempt = recordNativeVisualRemapAcquireFailed(NativeVisualRemapAttemptState{}, 0xB002);
     const auto amcarAcquireBackoff = evaluateNativeVisualRemap(NativeVisualRemapInput{
         .enabled = true,
+        .authorizedWitness = true,
         .staleVisualSource = staleVisualSource.staleVisualSource,
         .equippedInstanceChanged = true,
         .pendingInstanceSignature = 0xB002,
@@ -147,6 +152,7 @@ int main()
     }
     const auto amcarAcquireRetry = evaluateNativeVisualRemap(NativeVisualRemapInput{
         .enabled = true,
+        .authorizedWitness = true,
         .staleVisualSource = staleVisualSource.staleVisualSource,
         .equippedInstanceChanged = true,
         .pendingInstanceSignature = 0xB002,
@@ -156,6 +162,7 @@ int main()
 
     const auto amcarStockRemap = evaluateNativeVisualRemap(NativeVisualRemapInput{
         .enabled = true,
+        .authorizedWitness = true,
         .staleVisualSource = staleVisualSource.staleVisualSource,
         .equippedInstanceChanged = true,
         .pendingInstanceSignature = 0xC001,
@@ -165,6 +172,7 @@ int main()
 
     const auto amcarSightBank20Remap = evaluateNativeVisualRemap(NativeVisualRemapInput{
         .enabled = true,
+        .authorizedWitness = true,
         .staleVisualSource = staleVisualSource.staleVisualSource,
         .equippedInstanceChanged = true,
         .pendingInstanceSignature = 0xD001,
@@ -174,6 +182,7 @@ int main()
 
     const auto pipboyMissingVisualNoRemap = evaluateNativeVisualRemap(NativeVisualRemapInput{
         .enabled = true,
+        .authorizedWitness = false,
         .staleVisualSource = false,
         .equippedInstanceChanged = true,
         .pendingInstanceSignature = 0xD101,
@@ -186,6 +195,7 @@ int main()
     priorStaleVisibleAttempt = observeNativeVisualRemapStillStale(priorStaleVisibleAttempt, 0xD001);
     const auto pipboyMissingVisualDoesNotRetry = evaluateNativeVisualRemap(NativeVisualRemapInput{
         .enabled = true,
+        .authorizedWitness = false,
         .staleVisualSource = false,
         .equippedInstanceChanged = true,
         .pendingInstanceSignature = 0xD202,
@@ -284,6 +294,7 @@ int main()
     exhaustedSightAttempt = observeNativeVisualRemapStillStale(exhaustedSightAttempt, 0xD001);
     const auto amcarSightExhausted = evaluateNativeVisualRemap(NativeVisualRemapInput{
         .enabled = true,
+        .authorizedWitness = true,
         .staleVisualSource = true,
         .equippedInstanceChanged = true,
         .pendingInstanceSignature = 0xD001,
@@ -293,12 +304,33 @@ int main()
 
     const auto amcarRemapDisabled = evaluateNativeVisualRemap(NativeVisualRemapInput{
         .enabled = false,
+        .authorizedWitness = true,
         .staleVisualSource = staleVisualSource.staleVisualSource,
         .equippedInstanceChanged = true,
         .pendingInstanceSignature = 0xE001,
         .lastRequestedInstanceSignature = 0,
     });
     ok &= expectFalse("native visual remap kill switch suppresses queued remap", amcarRemapDisabled.requestRemap);
+
+    const auto inventoryEquipWitnessBlocked = evaluateNativeVisualRemap(NativeVisualRemapInput{
+        .enabled = true,
+        .authorizedWitness = false,
+        .staleVisualSource = staleVisualSource.staleVisualSource,
+        .equippedInstanceChanged = true,
+        .pendingInstanceSignature = 0xF001,
+        .lastRequestedInstanceSignature = 0,
+    });
+    ok &= expectFalse("inventory equip witness cannot authorize native visual remap", inventoryEquipWitnessBlocked.requestRemap);
+
+    const auto workbenchWitnessAuthorized = evaluateNativeVisualRemap(NativeVisualRemapInput{
+        .enabled = true,
+        .authorizedWitness = true,
+        .staleVisualSource = staleVisualSource.staleVisualSource,
+        .equippedInstanceChanged = true,
+        .pendingInstanceSignature = 0xF002,
+        .lastRequestedInstanceSignature = 0,
+    });
+    ok &= expectTrue("workbench direct equipped-stack witness authorizes native visual remap", workbenchWitnessAuthorized.requestRemap);
 
     const NativeVisualRemapTargetWitness expectedRemapTarget{
         .formID = 0x01020304,
@@ -387,6 +419,31 @@ int main()
         sourceSetHasMaterialDurableGeometryDifference(cached, smallerMaterialVisualSource));
     ok &= expectTrue("same structure material shrink uses geometry settle key",
         makeGeneratedSourceReplacementSettleKey(cached, smallerMaterialVisualSource) != smallerMaterialVisualSource.signature);
+    ok &= expectTrue("same-owner pending material replacement keeps geometry settle key",
+        makeGeneratedSourcePendingSettleKey(cached, smallerMaterialVisualSource, false, false) != smallerMaterialVisualSource.signature);
+
+    auto ownerChangedHeavySource = cached;
+    ownerChangedHeavySource.signature = 0x711;
+    ownerChangedHeavySource.geometryHash = 0x811;
+    ownerChangedHeavySource.durableGeometryHash = 0x911;
+    ownerChangedHeavySource.sourceCount = 17;
+    ownerChangedHeavySource.pointCount = 886;
+    ownerChangedHeavySource.childClusterCount = 42;
+    ownerChangedHeavySource.durableSourceCount = 17;
+    ownerChangedHeavySource.durablePointCount = 886;
+    ownerChangedHeavySource.durableChildClusterCount = 42;
+    auto ownerChangedHeavySourceJitter = ownerChangedHeavySource;
+    ownerChangedHeavySourceJitter.geometryHash = 0x812;
+    ownerChangedHeavySourceJitter.durableGeometryHash = 0x912;
+    ownerChangedHeavySourceJitter.pointCount = 899;
+    ownerChangedHeavySourceJitter.durablePointCount = 899;
+    ownerChangedHeavySourceJitter.boundsExtentScore += 25;
+    ownerChangedHeavySourceJitter.durableBoundsExtentScore += 25;
+    ok &= expectTrue("owner-changed pending source uses structural settle key",
+        makeGeneratedSourcePendingSettleKey(cached, ownerChangedHeavySource, true, false) == ownerChangedHeavySource.signature);
+    ok &= expectTrue("owner-changed pending source ignores skinned geometry jitter in settle key",
+        makeGeneratedSourcePendingSettleKey(cached, ownerChangedHeavySource, true, false) ==
+            makeGeneratedSourcePendingSettleKey(cached, ownerChangedHeavySourceJitter, true, false));
 
     auto grownVisualSource = cached;
     grownVisualSource.signature = 0x101;

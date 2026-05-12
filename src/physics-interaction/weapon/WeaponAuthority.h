@@ -1169,6 +1169,28 @@ namespace rock::weapon_generated_source_completeness_policy
         return observed.signature;
     }
 
+    inline std::uint64_t makeGeneratedSourcePendingSettleKey(
+        const GeneratedSourceCompleteness& cached,
+        const GeneratedSourceCompleteness& observed,
+        bool ownerIdentityChanged,
+        bool settingsChanged)
+    {
+        /*
+         * Pending weapon replacement settles the identity of the visible source
+         * package before colliders are rebuilt. Owner/settings changes already
+         * require a full replacement, so their settle key must stay structural:
+         * skinned or animated heavy weapons can jitter point counts and support
+         * fits every frame without changing the actual attached part set.
+         */
+        if (observed.signature == 0) {
+            return 0;
+        }
+        if (ownerIdentityChanged || settingsChanged || cached.signature == 0 || observed.signature != cached.signature) {
+            return observed.signature;
+        }
+        return makeGeneratedSourceReplacementSettleKey(cached, observed);
+    }
+
     struct GeneratedSourceReplacementInput
     {
         bool hasExistingBodies = false;
@@ -1550,6 +1572,7 @@ namespace rock::weapon_native_visual_remap_policy
     struct NativeVisualRemapInput
     {
         bool enabled = false;
+        bool authorizedWitness = true;
         bool staleVisualSource = false;
         bool equippedInstanceChanged = false;
         std::uint64_t pendingInstanceSignature = 0;
@@ -1601,6 +1624,13 @@ namespace rock::weapon_native_visual_remap_policy
             return NativeVisualRemapDecision{
                 .requestRemap = false,
                 .reason = "nativeVisualRemapDisabled",
+            };
+        }
+
+        if (!input.authorizedWitness) {
+            return NativeVisualRemapDecision{
+                .requestRemap = false,
+                .reason = "nativeVisualRemapAwaitingAuthorizedWitness",
             };
         }
 
