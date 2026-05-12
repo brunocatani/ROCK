@@ -6137,3 +6137,76 @@ A future custom one-hand authority proxy probably needs:
 - What minimal shape should the proxy use so it is valid to the engine but has negligible broadphase/contact cost?
 - Does using `BethesdaPhysicsBody::setTransform(...)` and `setVelocity(...)` from between phase through the collision-object wrapper direct-call immediately, or could TLS `+0x1528` force global queueing in that callback?
 - If TLS queueing is active during between callbacks, direct lower hknp setters would need dedicated wrappers, or local command ABI work becomes required.
+
+## 2026-05-12 continuation: wrapper direct/queue behavior for future proxy drive
+
+This pass verifies what the existing `BethesdaPhysicsBody::setTransform(...)` and `setVelocity(...)` methods would do if called from a future between-phase proxy drive.
+
+### Collision-object wrapper layer
+
+`BethesdaPhysicsBody::setTransform(...)` calls `0x141E08A70`.
+
+Ghidra for `0x141E08A70`:
+
+- resolves native world through the collision object's physics system;
+- resolves body id through the physics system/body index;
+- calls world wrapper `0x141DF55F0(world, bodyId, transform, 1)`;
+- returns success if the collision object has a live world/body.
+
+`BethesdaPhysicsBody::setVelocity(...)` calls `0x141E082A0`.
+
+Ghidra for `0x141E082A0`:
+
+- resolves native world through the collision object's physics system;
+- resolves body id through the physics system/body index;
+- calls world wrapper `0x141DF56F0(world, bodyId, linearVelocity, angularVelocity)`;
+- returns success if the collision object has a live world/body.
+
+This means `BethesdaPhysicsBody` is convenient but not phase-neutral. It uses the same direct-or-queued world wrappers already mapped.
+
+### World transform wrapper `0x141DF55F0`
+
+`0x141DF55F0`:
+
+- checks TLS byte `+0x1528`;
+- if clear:
+  - calls direct set body transform `0x1415395E0(world, bodyId, transform, mode)`;
+- if set:
+  - builds a 0x50-byte command payload;
+  - command metadata includes `0x60100`;
+  - queues through `0x141DFC8D0`.
+
+### World velocity wrapper `0x141DF56F0`
+
+`0x141DF56F0`:
+
+- checks TLS byte `+0x1528`;
+- if clear:
+  - calls direct set body velocity `0x141539F30(world, bodyId, linearVelocity, angularVelocity)`;
+- if set:
+  - builds a 0x30-byte command payload;
+  - command metadata includes `0x90100`;
+  - queues through `0x141DFC8D0`;
+- if either linear or angular velocity is non-zero, calls `0x141DF60C0(world, bodyId)` afterward.
+
+### TLS `+0x1528` status in update loop
+
+The decompiled `bhkWorld::vfunction43` update loop visibly checks TLS `+0x1529` for world-lock behavior, but this pass still did not find a write to TLS `+0x1528` in the update-loop function itself.
+
+`0x141DFB150`, called near the start of `bhkWorld::Update`, also checks TLS `+0x1529` but does not set `+0x1528`.
+
+Current evidence:
+
+- If ROCK's between callback runs with TLS `+0x1528` clear, existing `BethesdaPhysicsBody::setTransform(...)` / `setVelocity(...)` should direct-call the hknp setters.
+- If TLS `+0x1528` is set by some wider engine context not visible in `bhkWorld::vfunction43`, those methods will queue globally and lose the researched same-step pre-solve guarantee.
+
+This must be treated as unresolved until a runtime diagnostic or deeper TLS writer search proves the byte state inside the actual ROCK callback.
+
+### Future implementation implication
+
+There are two possible future drive surfaces:
+
+1. Use `BethesdaPhysicsBody::setTransform(...)` / `setVelocity(...)` from the between callback, guarded by runtime telemetry that proves they direct-call in that phase.
+2. Add narrowly scoped direct lower hknp setter wrappers around `0x1415395E0` and `0x141539F30`, but only after explicitly accepting the binary dependency and documenting why bypassing the wrapper queue is required.
+
+No production implementation should assume wrapper calls are same-step pre-solve until the TLS `+0x1528` state is confirmed in the real callback.
