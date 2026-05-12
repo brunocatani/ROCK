@@ -5489,3 +5489,232 @@ Design consequence:
 - Do native physics-step listeners ever call direct body setters from before/between/after callbacks?
 - Is it safer to call direct setters from a before-any step callback instead of between-collide-and-solve if broadphase/contact state is involved?
 - For a no-contact proxy, is broadphase update cost/state relevant if filter bit 14 or noncollidable layer ensures no contacts?
+
+## 2026-05-12 continuation: ROCK step-coordinator source reread after command-drain audit
+
+This pass rereads the current ROCK source after the Ghidra command-drain work. It is documentation only; no implementation has been changed.
+
+### Source files reread
+
+- `src/physics-interaction/native/PhysicsStepDriveCoordinator.h`
+- `src/physics-interaction/native/PhysicsStepDriveCoordinator.cpp`
+- `src/physics-interaction/core/PhysicsInteraction.cpp`
+- `src/physics-interaction/hand/HandGrab.cpp`
+
+### Current ROCK callback shape
+
+`PhysicsStepDriveCoordinator` has a native-compatible step-listener vtable with slots matching the Ghidra-observed FO4VR listener call offsets:
+
+- `beforeWhole` at vtable offset `+0x08`.
+- `beforeAny` at vtable offset `+0x18`.
+- `betweenCollideAndSolve` at vtable offset `+0x28`.
+- `afterAny` at vtable offset `+0x38`.
+- `afterWhole` at vtable offset `+0x48`.
+
+The public callback API currently exposes only:
+
+- `_wholePreStepCallback`
+- `_substepPreCollideCallback`
+
+The current between/after functions are no-ops:
+
+- `betweenCollideAndSolve(...) {}`.
+- `afterAny(...) {}`.
+- `afterWhole(...) {}`.
+
+`PhysicsInteraction::PhysicsInteraction` wires the two exposed callbacks as:
+
+- whole-pre-step: `PhysicsInteraction::onNativeGrabPhysicsStep`.
+- substep-pre-collide: `PhysicsInteraction::onGeneratedColliderPhysicsSubstep`.
+
+`driveNativeGrabFromPhysicsStep(...)` runs whole-pre-step and calls:
+
+- `_rightHand.flushPendingHeldNativeGrab(world, timing)`.
+- `_leftHand.flushPendingHeldNativeGrab(world, timing)`.
+
+`driveGeneratedCollidersFromPhysicsSubstep(...)` runs pre-collide substep and calls:
+
+- `_rightHand.flushPendingCollisionPhysicsDrive(world, timing)`.
+- `_leftHand.flushPendingCollisionPhysicsDrive(world, timing)`.
+- `_bodyBoneColliders.flushPendingPhysicsDrive(world, timing)`.
+- `_weaponCollision.flushPendingPhysicsDrive(world, timing)`.
+
+`Hand::flushPendingHeldNativeGrab(...)` only flushes `_nativeGrab`. It does not update custom constraint targets or any future proxy body.
+
+### Confirmed source-level gap
+
+ROCK already has the native vtable slot needed for between-collide-and-solve work, but the slot is not surfaced to `PhysicsInteraction` and currently does nothing.
+
+Therefore any future custom one-hand dynamic-grab authority cannot be correctly placed in the between phase without adding a first-class callback path. Piggybacking on the existing callbacks would put work in the wrong phase:
+
+- whole-pre-step for native mouse-spring target flush;
+- before-any/pre-collide for generated contact colliders;
+- no current path for post-collide/pre-solve proxy or constraint target writes.
+
+### Design consequence for later implementation planning
+
+The future custom-authority path should not reuse `driveNativeGrabFromPhysicsStep(...)` as-is, because that name and timing are tied to native mouse-spring flushing.
+
+The likely future architecture needs an explicitly named between-phase callback for:
+
+- hidden palm/body-A proxy pose/velocity update, if a proxy is used;
+- custom constraint target atom updates;
+- custom motor tuning updates;
+- any held-body finite-force authority state that must be consumed by the same solver step.
+
+This is still research-only. The exact callback shape is not an implementation decision until the remaining binary safety questions are closed.
+
+## 2026-05-12 continuation: between-phase direct setter lock and solver-consumption audit
+
+This pass checks whether the FO4VR between-collide-and-solve listener phase is structurally compatible with direct transform/velocity writes for a future hidden authority proxy. The goal is not to choose implementation yet; it is to understand what the solver can consume in the same step.
+
+### `bhkWorld::vfunction43` / update loop `0x141DF73A0`
+
+The FO4VR update loop calls listener phases in this order:
+
+1. `BeforeWholePhysicsUpdate`
+2. each substep:
+   - `BeforeAnyPhysicsStep`
+   - `Collide`
+   - `BetweenPhysicsCollideAndSolve`
+   - `Solve`
+   - `AfterAnyPhysicsStep`
+3. `AfterWholePhysicsUpdate`
+
+For every listener phase, the update loop acquires a listener-array lock around iteration:
+
+- acquire: `0x141B932B0`
+- release: `0x141B93570`
+
+The between phase specifically does:
+
+- call listener vtable slot `+0x28`;
+- drain the local command list with `0x141DFDE70`;
+- call companion listener vtable slot `+0x30`;
+- release the listener-array lock;
+- then enter `TtSolve` through `0x141DFE1E0`.
+
+The listener-array lock is not the hknp body/world mutation guard used by the direct body setters.
+
+### Listener-array lock functions
+
+`0x141B932B0` is a recursive/shared-style lock helper:
+
+- if current thread already owns it, it increments a count;
+- otherwise it atomically increments the low-count field;
+- waits with `Sleep(...)` if unavailable.
+
+`0x141B93570` decrements the count.
+
+`0x141B93330` / `0x141B93580` are exclusive-style helpers used elsewhere in the same update loop when clearing listener arrays after the step.
+
+### hknp thread-safety guard functions
+
+The direct hknp body writers use a separate guard at `world + 0x690`.
+
+`0x141538AF0` is the write/mutate guard:
+
+- enters a critical section;
+- asserts no read lock bits are active (`low 5 bits`);
+- validates owner thread if already owned;
+- increments write-depth bits (`0xE0`);
+- records the current thread id in the high owner bits.
+
+`0x141538CB0` releases that write/mutate guard:
+
+- validates owner thread;
+- decrements write-depth bits;
+- clears owner state when depth reaches zero.
+
+`0x1415388F0` / `0x141538A30` are the read guard pair:
+
+- read enter increments low 5 bits;
+- read exit decrements low 5 bits;
+- the write guard rejects mutation if those read bits are active.
+
+### Collide helper lock timing
+
+`0x141DFE010` is the update-loop collide helper wrapper. It calls `0x1415433B0(...)`.
+
+`0x1415433B0`:
+
+- enters the hknp write/mutate guard with `0x141538AF0(world + 0x690)`;
+- runs the collide phase work under the `TtCollide` timer;
+- exits through `0x141538CB0(world + 0x690)` before returning.
+
+Because `bhkWorld::vfunction43` calls the between listener phase only after `0x141DFE010` returns, the hknp write/mutate guard used by collide is not still held by collide when the between callback starts.
+
+### Solve helper lock timing
+
+`0x141DFE1E0` is the update-loop solve helper wrapper. It calls `0x1415435E0(...)`.
+
+`0x1415435E0`:
+
+- enters the hknp write/mutate guard with `0x141538AF0(world + 0x690)`;
+- runs the solve path under the `TtSolve` timer;
+- performs command dispatch/constraint-row/solve work from the current body/motion/constraint state;
+- exits through `0x141538CB0(world + 0x690)`.
+
+Because `bhkWorld::vfunction43` calls `0x141DFE1E0` only after the between listener phase and its local command drain, changes made during the between phase can be visible to the solve helper if they update the body/motion/constraint arrays directly or through same-phase local commands.
+
+### Direct setter compatibility finding
+
+Current binary evidence supports this narrow statement:
+
+- The between listener callback runs after collide has released the hknp write/mutate guard and before solve has acquired it.
+- Direct body setters acquire the hknp write/mutate guard themselves.
+- The update loop still holds the listener-array iteration lock while invoking between callbacks, but that is a different lock family from `world + 0x690`.
+- Therefore a between-phase direct body update is not immediately disqualified by an already-active hknp read/write guard from collide or solve.
+
+This does not prove every future direct write is safe. It does remove one major blocker: collide does not appear to leave the hknp mutation guard active across the between listener callback.
+
+### Same-step solver consumption implication
+
+The solve helper is entered after the between callback and after the between local command drain.
+
+Combined with earlier row-builder evidence that constraint row building reads current body/motion arrays, the current best binary-backed model is:
+
+- pure `ApplyHardKeyFrame` / velocity write before solve updates motion velocity fields but does not set the body slot pose to the target transform;
+- pure set-transform before solve updates the body slot pose but may leave velocity stale;
+- combined hard-keyframe velocity plus set-transform before solve can make both current pose and velocity visible to the solve phase;
+- a future body-A proxy should be driven before solve if its transform is used as constraint body A in the same solver step.
+
+For a hidden no-contact proxy, the strongest researched timing remains the between-collide-and-solve phase, not whole-pre-step and not after-solve.
+
+### Local command processor evidence
+
+`hknpApiCommandProcessor::vfunction5` at `0x1417F258F` confirms the local command machinery can execute body mutation commands:
+
+- command `6`: calls direct set body transform `0x1415395E0`.
+- command `9`: calls direct set body velocity `0x141539F30`.
+- command `2`: destroy body path `0x141544E80`.
+- command `3`: remove body path `0x141544B00`.
+- command `0x15`: set body motion properties `0x14153B2F0`.
+
+This matters because the between-phase drain `0x141DFDE70` executes commands from the local step command list before solve.
+
+However, ROCK does not currently have a mapped safe way to append transform/velocity commands into that `local_128` list from its listener callback. The standard Bethesda wrappers queue through `0x141DFC8D0` into global/thread wrapper storage, not into this local step list.
+
+### Updated future proxy timing options
+
+The researched options now rank like this:
+
+1. Direct setter calls in a new between-collide-and-solve callback.
+   - Best current same-step evidence.
+   - Uses native direct writer paths with hknp mutation guard.
+   - Must still account for listener-array lock and body-change listener side effects.
+2. Explicit local command-list integration.
+   - Would match FO4VR's intended local command drain timing.
+   - Requires mapping the command object allocation/appending ABI; not yet researched enough.
+3. Whole-pre-step or before-any drive.
+   - Existing ROCK callbacks can do it today, but the proxy/body-A pose may be stale by the time solve consumes rows, especially under substep/controller timing mismatch.
+4. Wrapper queued commands.
+   - Not acceptable as a same-step pre-solve assumption because wrapper queue storage is separate from the between local command list.
+
+### Updated open questions
+
+- Does direct set-transform from inside a listener callback trigger body-change listeners that can mutate the same step-listener array or otherwise recurse into unsafe update paths?
+- Is command-list integration practical enough to avoid direct setter calls, or would it require too much engine-owned allocation/state reconstruction?
+- For a hidden no-contact proxy, does set-transform after collide and before solve have any negative consequence if the proxy is not expected to contribute contacts?
+- If the proxy ever needs contact feedback later, it cannot be moved after collide because collision data would be from the previous pose.
+- The future implementation must decide whether body-A proxy velocity is computed through `ComputeHardKeyFrame` or through ROCK's own raw/root-flattened hand velocity sample, but this is a later design decision after the command/listener safety map is complete.
