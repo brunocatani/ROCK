@@ -3287,6 +3287,110 @@ Unresolved after this audit:
 - Need map whether the future proxy should share the existing palm-anchor body lifetime or become a separate `BethesdaPhysicsBody` with its own no-contact filter. Current evidence favors separate hidden proxy, but source ownership/lifecycle still needs a full pass.
 - Need decide proxy no-contact policy: bit 14, layer 15, or dedicated extended zero-row layer. The binary confirms bit 14 is real; it does not decide the production policy.
 
+### FO4VR live constraint atom update safety audit
+
+Research question:
+
+- If ROCK returns to a custom linear/angular motor authority, can it update constraint target/motor atom fields before solve, or does FO4VR require a separate dirty/rebuild notification for every target change?
+
+#### Constraint creation stores live data pointers
+
+Ghidra-confirmed function roles:
+
+- `0x1415469B0`:
+  - gameplay hknp world constraint creation path;
+  - locks the world;
+  - assigns a world constraint id with `0x1417E46F0`;
+  - computes the constraint slot at `world[0x128] + id * 0x38`;
+  - initializes the slot through `0x1417E39C0`;
+  - emits the create signal at `world + 0x550`;
+  - if enabled and the constraint data type is valid, adds/builds the live constraint through `0x14154A810`;
+  - emits the add signal at `world + 0x560`.
+- `0x1417E39C0`:
+  - initializes a hknp world constraint slot from a constraint cinfo/data object;
+  - stores body ids at slot offsets `+0x00` and `+0x04`;
+  - stores a refcounted pointer to the constraint data at slot `+0x08`;
+  - calls the constraint data vtable method at `+0x28` to get atom/constraint-info data;
+  - stores the returned atom pointer at slot `+0x18`;
+  - stores atom/runtime metadata at slot offsets around `+0x20`, `+0x22`, `+0x25`, and `+0x26`;
+  - allocates and zeroes solver runtime memory at slot `+0x28` only when runtime size is nonzero.
+
+Confirmed conclusion:
+
+- Constraint creation does not copy the full atom stream into a separate immutable world buffer.
+- The world slot keeps a pointer to the constraint data and a pointer to the atom stream reported by the constraint data.
+- Runtime memory is separate from atom target/motor fields and is allocated once at creation.
+
+Design implication:
+
+- A future ROCK custom grab authority must treat the custom constraint data object as live-owned state.
+- Target/motor field writes should update that live atom stream before the solver builds jacobians.
+- Recreating the constraint or reallocating runtime every frame would throw away solver history and is a plausible source of the old custom-motor stutter.
+
+#### Solver build reads current atom memory
+
+Ghidra-confirmed function roles:
+
+- `0x141A55550`:
+  - live hknp build-jacobians atom interpreter;
+  - receives an atom pointer, an atom byte count/end offset, a solver context, and an output cursor;
+  - iterates from `atomBase` to `atomBase + atomByteCount`;
+  - reads the atom type from the current atom memory with `*(ushort*)atom`;
+  - dispatches through a switch table at `0x141A5A32C`;
+  - reads transform, stabilization, ragdoll-motor, and linear-motor fields from the current atom pointer while building the solver output.
+- `0x1419799E0`:
+  - live constraint build caller;
+  - passes the active constraint atom pointer and atom byte count into `0x141A55550`.
+- `0x141979EF0`:
+  - second live constraint build caller;
+  - passes the active world-slot atom pointer and atom byte count into `0x141A55550`.
+- `hknpMalleableConstraintData::vfunction22` at `0x141F5B891`:
+  - wrapper path that builds a transformed local context and delegates into the same atom interpreter.
+
+Confirmed conclusion:
+
+- The solver build path consumes the current atom stream each build-jacobian pass.
+- If ROCK writes transform A/B, transform-B pivot, angular target, linear motor targets, ragdoll motor targets, tau, damping, and max impulse/force fields before the relevant solve/build phase, the solver should consume those updated values in that pass.
+
+#### Dirty notification evidence
+
+Ghidra-confirmed supporting evidence:
+
+- `0x14153C5A0` has many xrefs from body/motion/filter/material/inertia update paths.
+- The inspected xrefs fit body dirtying and broadphase/body-state propagation.
+- No inspected evidence shows `0x14153C5A0` is required for ordinary constraint target or motor field changes.
+
+Confirmed conclusion:
+
+- There is currently no binary evidence that per-frame target/motor atom writes require a body dirty call.
+- Calling broad body dirtying for every grab target update would be the wrong default until a future binary pass proves otherwise.
+
+Important caveats:
+
+- This conclusion applies to target/motor field updates inside an existing constraint data atom stream.
+- It does not apply to structural changes such as changing body ids, changing atom count/layout, changing runtime size, add/remove constraint, or rebuilding the constraint data object.
+- Toggling motor enabled state every frame may still be solver-history-disruptive even if the atom offsets are correct.
+- The stable design should create the grab constraint once, keep the motor atoms structurally enabled, and update values instead of repeatedly enabling/disabling/recreating.
+
+#### Research conclusion from this audit
+
+The custom-authority architecture should not be rejected because "motors need dirty notifications" unless later evidence proves that. The stronger current explanation for old motor stutter is:
+
+- targets were written from the wrong timing phase;
+- body A/contact palm and object B were not updated as one matched physics-phase unit;
+- constraint fields were fed from game update instead of the solver-adjacent phase;
+- one or more writers affected the same body;
+- constraints or motors were toggled/recreated, clearing runtime history;
+- body A was a contact collider instead of a hidden no-contact authority proxy rooted in the flattened hand frame.
+
+For the future custom dynamic grab plan, the binary-backed update model is:
+
+1. Keep one persistent custom constraint while held.
+2. Keep atom layout and motor enablement structurally stable.
+3. During the chosen physics phase, update the hidden proxy motion and the live atom target/motor fields together.
+4. Let the normal solver build consume the current atom stream.
+5. Avoid body dirty/rebuild calls for ordinary target changes unless a later Ghidra pass proves a specific required notification.
+
 ### Research conclusion from this pass
 
 The next custom-authority design should be judged against these confirmed HIGGS rules:
