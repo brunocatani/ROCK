@@ -361,6 +361,197 @@ Possible relevance:
 - Could support future overforce release behavior.
 - Not part of immediate dynamic grab authority until understood.
 
+## Follow-Up Ghidra Audit - Slots, Native Easing, Wrappers
+
+This section records the follow-up audit from the same 2026-05-12 research pass. It supersedes any older note that treats the custom add-instance vtable slot itself as the main suspected issue.
+
+### Custom `addInstance` vtable slot correction
+
+Source fact:
+
+- ROCK currently defines `VTABLE_SLOT_ADD_INSTANCE = 20` in `src/physics-interaction/grab/GrabConstraint.h`.
+- ROCK installs `addInstanceCallback` into that slot in `src/physics-interaction/grab/GrabConstraint.cpp`.
+
+Ghidra facts:
+
+- `hkpConstraintData::vfunction20` at `0x141A4ACD0` returns the runtime pointer-like second parameter unchanged.
+- Xrefs for `0x141A4ACD0` include ragdoll vtable data at `0x142E18330`.
+- `hkpConstraintData::vfunction21` at `0x141A4ACE0` zeroes a runtime pointer for a supplied byte count.
+- Xrefs for `0x141A4ACE0` include ragdoll vtable data at `0x142E18338`.
+- Earlier ragdoll vtable evidence places `hkpRagdollConstraintData::vfunction19` runtime-info at `0x1419B2900`, with xref at `0x142E18328`.
+
+Interpretation:
+
+- Raw vtable offsets line up as:
+  - runtime info at vtable `+0x90`;
+  - base `vfunction20` at vtable `+0x98`;
+  - base `vfunction21` at vtable `+0xA0`.
+- ROCK's zero-based slot `20` maps to vtable `+0xA0`, not to `+0x98`.
+- Therefore the slot offset is likely correct for the inherited runtime-zeroing/add-instance-like function.
+
+Remaining risk:
+
+- The exact FO4VR call signature for this slot is still not fully proven.
+- The base function decompiles as `(this, runtime, size)` because it only uses those parameters.
+- HIGGS-style code often models add-instance as `(this, constraint, runtime, size)`.
+- Current ROCK callback is declared as `(thisPtr, constraint, runtime, sizeOfRuntime)`.
+- If FO4VR ever calls the base form with only runtime and size, a custom callback with the longer signature would see shifted arguments.
+- However, the verified `0x1417E39C0` insertion path allocates/zeros runtime itself and may not call this slot in the common creation path.
+
+Current verdict:
+
+- Do not blame the vtable slot number without more evidence.
+- Keep the runtime-layout risk as the higher-confidence custom motor problem.
+- Before implementation, verify whether custom add-instance is ever called during ROCK constraint creation, either by binary callsite trace or instrumented logging on a research branch.
+
+### Native ease action is not a generic custom-grab smoother
+
+#### `0x1419086F0` - `hknpEaseConstraintsAction::vfunction7`
+
+Confirmed behavior:
+
+- Iterates tracked bodies/constraint ids and removes invalid body entries.
+- Reads duration at object offset around `+0x20` and elapsed time at `+0x24`.
+- If duration is positive, advances elapsed time by `dt`.
+- Calls `FUN_141908C30` with interpolation factor `dt / (duration - previousElapsed)`.
+- When the ease finishes, calls `FUN_1419086B0(this, world, 0.0)` and returns completion.
+
+#### `0x141908C30` - native ease field interpolator
+
+Confirmed behavior:
+
+- Reads the wrapped constraint data and calls its type function at vtable `+0x20`.
+- Handles only type `2` and type `7`.
+- Type `2` interpolates two fields on native limited-hinge-style data.
+- Type `7` interpolates five fields on native ragdoll-style data.
+- Any other type emits a Havok error from `Extensions\Actions\EaseConstraints\hknpEaseConstraintsAction.cpp` saying the action does not handle this type.
+
+Interpretation:
+
+- This action is not a generic ease wrapper for arbitrary custom constraint data.
+- It does not know how to ease ROCK's custom grab type.
+- It may only help if ROCK deliberately uses native limited hinge/ragdoll data classes for a future feature.
+- It should not be planned as the smoothing layer for the custom dynamic grab constraint.
+
+#### `0x141E568C0` - safe-ease event callback
+
+Confirmed behavior:
+
+- Searches its tracked constraint ids for an event-supplied id.
+- If matched, calls `FUN_1419086B0(..., 0.0)`.
+- Removes the action from the world through a world/action removal helper.
+
+Interpretation:
+
+- Safe-ease is a lifecycle guard around native ease state.
+- It does not change the above type limitation.
+
+### `hknpMalleableConstraintData` is a real wrapper, but semantics need one more pass
+
+#### Constructor `0x141F5B600`
+
+Confirmed behavior:
+
+- Calls `hkpWrappedConstraintData` constructor with the wrapped data pointer.
+- Sets vtable to `hknpMalleableConstraintData`.
+- Initializes an internal atom-like block at object offset around `+0x18`.
+- Stores a boolean-like constructor argument at `+0x30`.
+- Stores float bits `0x3C23D70A` at `+0x34`, which is approximately `0.01f`.
+- Calls a helper that queries the wrapped constraint runtime info via wrapped vtable `+0x90`.
+
+#### `0x141F5B760` - type function
+
+Confirmed behavior:
+
+- Returns type `0x0D`.
+
+#### `0x141F5B770` - constraint info function
+
+Confirmed behavior:
+
+- Calls the wrapped constraint's info function at vtable `+0x28`.
+- Adds/points wrapper atom info at object offset around `+0x18` with size `0x18`.
+
+#### `0x141F5B7E0` - runtime info function
+
+Confirmed behavior:
+
+- Delegates runtime-info query to the wrapped data's vtable `+0x90`.
+
+#### `0x141F5B800` - solver/build function
+
+Confirmed behavior:
+
+- Copies a solver/build input structure.
+- Multiplies a float at input offset around `+0x24` by wrapper field `+0x34`.
+- Calls the wrapped constraint's info function.
+- Calls a solver helper with the modified input.
+
+#### `0x141A4B450` - wrapped-data accessor
+
+Confirmed behavior:
+
+- Returns the wrapped data pointer stored at object offset `+0x10`.
+
+Interpretation:
+
+- Malleable is not a second drive authority. It wraps an existing constraint and scales at least one solver/build input value before delegating.
+- The default scale of roughly `0.01f` suggests softness/strength modulation, but the exact solver meaning of input offset `+0x24` is not yet proven.
+- It may be useful for FO4VR-native grab authority shaping if it can wrap ROCK's custom motorized constraint without disturbing motor force/tau semantics.
+- It must not be used until its scale field and solver input semantics are independently mapped.
+
+### `hknpBreakableConstraintData` remains future-only
+
+#### Constructor `0x141960980`
+
+Confirmed behavior:
+
+- Calls `hkpWrappedConstraintData` constructor with the wrapped data pointer.
+- Sets vtable to `hknpBreakableConstraintData`.
+- Writes float bits `0x41200000` at object offset around `+0x18`, which is `10.0f`.
+
+Interpretation:
+
+- This is plausibly a threshold field, but its break condition and callback behavior are not mapped yet.
+- It is not needed for ordinary one-hand dynamic grab parity.
+- It may become useful later for overforce release, weapon snag release, or safety detachment, after separate research.
+
+## Proxy Collision/Layer Audit Update
+
+Additional source facts:
+
+- `CollisionLayerPolicy.h` defines `FO4_LAYER_NONCOLLIDABLE = 15`.
+- `PhysicsBodyClassifier.h` rejects active grab candidates on layer `FO4_LAYER_NONCOLLIDABLE`, so a future proxy on that layer should not become a selectable loose-object candidate.
+- Current ROCK generated hand and weapon masks explicitly remove `FO4_LAYER_NONCOLLIDABLE`.
+- ROCK currently owns generated interaction layers:
+  - `ROCK_LAYER_HAND = 43`;
+  - `ROCK_LAYER_WEAPON = 44`;
+  - `ROCK_LAYER_BODY = 47`.
+- The comments state vanilla configured layers stop at `46`, while the hknp matrix is 64 rows wide and ROCK currently owns `47` as extended matrix capacity.
+- `isRockOwnedReusableLayer` currently returns true only for `43`, `44`, and `47`.
+- `applyRockGeneratedLayerPolicies` currently normalizes only hand, weapon/reload, and body policies.
+
+Generated body creation facts:
+
+- `BethesdaPhysicsBody::create` requires a non-null hknp shape.
+- It creates an `hknpPhysicsSystemData`, appends body/motion/material/shape entries, creates a `bhkNPCollisionObject`, adds it to the world, obtains the runtime body id, assigns material, applies motion type, sets filter info, enables body flags `0x08020000`, and activates the body.
+- A future authority proxy therefore cannot be a pure transform handle in current ROCK infrastructure. It must be represented by at least a tiny or inert shape unless a new direct hknp body creation path is researched.
+
+Proxy layer implications:
+
+- `FO4_LAYER_NONCOLLIDABLE` is the lowest-scaffolding candidate because it is already rejected by active grab classification and excluded by ROCK hand/weapon masks.
+- A dedicated extended ROCK proxy layer, for example in the unused `48..63` matrix range, would be cleaner architecturally because ROCK could explicitly set its row to zero and log/watchdog it.
+- However, adding a new extended layer would require expanding layer policy ownership and verification beyond the current `ROCK_LAYER_BODY = 47` row.
+
+Current verdict:
+
+- The authority proxy should be a dedicated no-contact per-hand body, not the existing palm anchor.
+- The proxy should be rooted from the same flattened hand frame source as the generated palm anchor, because that source is already the convention the user confirmed works.
+- The no-contact layer choice is not final:
+  - layer `15` is likely safe but relies on existing noncollidable behavior;
+  - a new extended ROCK proxy layer is architecturally cleaner but needs explicit matrix policy work and verification.
+- The proxy drive likely needs a proxy-specific physics-step path, because the existing generated keyframed body drive flushes pre-collide for contact colliders, while grab authority should update proxy and constraint fields together after collide and before solve.
+
 ## Mouse Spring Current Role
 
 Current native mouse spring findings remain valid:
@@ -401,7 +592,8 @@ What is missing or suspect:
 - no-contact proxy filter/layer policy;
 - unified authority for proxy + constraint update before solve;
 - source tests that enforce custom one-hand authority instead of native one-hand authority;
-- possible FO4VR-native easing/malleable wrapper integration, if verified useful.
+- possible FO4VR-native malleable wrapper integration, if verified useful.
+- native `hknpEaseConstraintsAction` is no longer a likely custom-grab smoothing candidate because it handles only native type `2` and type `7`.
 
 ## No-Code Implementation Implications
 
@@ -423,9 +615,7 @@ Before any custom one-hand replacement can be implemented:
    - Decide whether existing generated keyframed drive can be reused or needs a proxy-specific drive.
 
 4. Continue FO4VR-native feature research.
-   - `hknpEaseConstraintsAction`;
-   - `hknpSafeEaseConstraintsAction`;
-   - `hknpMalleableConstraintData`;
+   - `hknpMalleableConstraintData` solver input semantics;
    - `hknpBreakableConstraintData`.
 
 5. Only then create implementation branch from `develop`.
@@ -434,8 +624,9 @@ Before any custom one-hand replacement can be implemented:
 ## Open Questions
 
 - Does FO4VR's hknp bridge require doubled runtime memory for custom hkp constraints, as HIGGS did, or can it use exact runtime size safely?
+- Is ROCK's current custom add-instance callback ever called during actual constraint insertion, and if yes, what exact FO4VR call signature reaches vtable `+0xA0`?
 - Can `hknpMalleableConstraintData` scale a custom motorized hkp constraint in a useful way?
-- Can `hknpEaseConstraintsAction` safely ease a held grab constraint without becoming a second authority?
+- What exactly does the malleable wrapper scale at solver/build input offset around `+0x24`?
 - Is `FO4_LAYER_NONCOLLIDABLE` safe for a constrained keyframed proxy body, or should ROCK add a dedicated no-contact layer/matrix row?
 - Should proxy drive use `CollisionObject_DriveToKeyFrame`, direct velocity, or a specialized between-collide-and-solve keyframe update?
 - Should loose weapon dynamic grab add lever-length-aware angular force scaling beyond mass cap, using grip-to-COM only as weight data?
@@ -443,8 +634,8 @@ Before any custom one-hand replacement can be implemented:
 ## Immediate Next Research Actions
 
 - Inspect custom constraint addInstance/runtime usage deeper in FO4VR.
-- Inspect `hknpEaseConstraintsAction` update/apply behavior.
 - Inspect `hknpMalleableConstraintData` solve behavior and fields.
 - Inspect no-contact layer behavior and generated body constraints.
+- Inspect direct hknp body creation or no-shape alternatives for a non-contact authority proxy.
+- Inspect native APIs for changing/limiting dynamic body motion properties, velocity caps, and inertia safely during held state.
 - Update the old tracker only to point at this file as superseding if needed.
-
