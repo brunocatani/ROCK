@@ -2997,6 +2997,105 @@ Open verification still needed:
 - Verify whether a noncollidable-layer body can still participate as constraint body A without being filtered from constraint solving.
 - Verify whether a dedicated extended zero-row proxy layer in `48..63` gives better diagnostics/lifecycle control than layer `15` without touching detection semantics.
 
+### FO4VR no-collide bit and constraint-contact separation
+
+This Ghidra pass resolves the open `1 << 14` question and clarifies why a hidden no-contact authority proxy is still compatible with a custom constraint drive.
+
+#### Contact filtering predicate
+
+Confirmed functions:
+
+- `bhkCollisionFilter::vfunction5` at `0x141E11800`:
+  - iterates candidate body-id pairs;
+  - reads each body's collision filter info from hknp body slot offset `+0x44`;
+  - calls `0x141E115B0` with the two filter values;
+  - keeps only the pairs where `0x141E115B0` returns true.
+- `bhkCollisionFilter::vfunction6` at `0x141E11930`:
+  - also calls `0x141E115B0` with two filter values.
+- Contact filter predicate `0x141E115B0`:
+  - reads bit 14 from both filter infos via `filterInfo >> 0xE & 1`;
+  - if either filter has bit 14 set, it returns false before layer/matrix checks;
+  - extracts the collision layer as `filterInfo & 0x7F`;
+  - uses the matrix at `this + 0x1A0 + layer * 8` for normal layer-pair permission;
+  - has extra group/subsystem branches for upper filter bits, including same-system checks and special handling around layer `0x1E`.
+
+Confirmed conclusion:
+
+- `kSuppressionNoCollideBit = 1u << 14` is a real FO4VR contact-filter bit.
+- Setting bit 14 on a body disables ordinary contact generation against that body through the active `bhkCollisionFilter` path.
+- This is not just a ROCK convention.
+
+#### Constraint insertion is separate from contact filtering
+
+Reconfirmed function:
+
+- hknp world constraint creation at `0x1415469B0`:
+  - reserves/adds a constraint id in the world constraint table;
+  - initializes the constraint slot through `0x1417E39C0`;
+  - emits the world constraint-add signal at `world + 0x560` through `0x14155A050`;
+  - does not call `0x141E115B0`;
+  - does not read body filter info `+0x44` as a condition for accepting the constraint.
+
+Confirmed conclusion:
+
+- Ordinary contact filter/layer permission is not the gate for constraint creation.
+- A body can be non-contact filtered and still be a constraint body, at least by the insertion path evidence. This still needs runtime validation once implementation is allowed, but the binary does not show contact-filter rejection in the constraint creation path.
+
+#### Optional hknp constraint collision filter
+
+Confirmed functions:
+
+- `hknpConstraintCollisionFilter` constructors:
+  - `0x1417ED4F0`;
+  - `0x1417ED530`.
+- hknp world constructor path around `0x141540D90`:
+  - initializes signal slots at `world + 0x560` and `world + 0x568`;
+  - if cinfo field `+0xA8` is non-null and its byte at `+0x10` equals `1`, calls `0x1417ED680`.
+- `0x1417ED680`:
+  - unregisters old signal state through `0x1417ED6F0`;
+  - registers member slots on `world + 0x560` and `world + 0x568`;
+  - stores the world pointer at filter offset `+0x30`.
+- `0x1417ED740`:
+  - add-constraint signal handler;
+  - resolves the constraint slot from `world + 0x128 + constraintId * 0x38`;
+  - reads the two body ids from the constraint slot;
+  - calls `0x14196DE70`.
+- `0x14196DE70`:
+  - sorts the two body ids into a stable pair key;
+  - increments/stores that pair in a pair-filter map at filter offset `+0x18`;
+  - calls `0x14153C5A0` on one selected body to dirty/wake/update collision state.
+- `0x1417ED7D0`:
+  - remove-constraint signal handler;
+  - resolves the same pair from the constraint slot;
+  - calls `0x14196DF80`.
+- `0x14196DF80`:
+  - decrements the pair count;
+  - removes the pair when the count reaches zero;
+  - if both body ids are still valid dynamic bodies, calls `0x14153C8F0` with the pair to refresh collision state.
+
+Confirmed conclusion:
+
+- FO4VR has a separate constraint-collision filter that suppresses contacts between constrained body pairs.
+- That filter listens to constraint lifecycle signals. It is not the same thing as the layer/matrix filter predicate.
+- Its job is to avoid contact generation fighting constrained pairs, not to stop constraints from solving.
+
+Design interpretation for future custom dynamic grab authority:
+
+- A hidden body-A authority proxy can be born non-contact through bit 14 or a no-contact layer and still participate in a body-A/body-B grab constraint.
+- If the hknp constraint collision filter is active in the world cinfo, adding the grab constraint may also suppress contacts specifically between body A and body B through the pair-filter map.
+- That pair suppression would be harmless for a hidden proxy because the proxy should not generate contacts anyway.
+- The held object itself should keep its normal object layer and collision behavior; only the hidden proxy/contact-hand bodies should be non-contact relative to the held body.
+- This supports a clean separation:
+  - contact bodies: find/select/pose and then suppress against the held object while held;
+  - hidden authority proxy: no-contact, flattened-hand-frame body A for stable custom motor authority;
+  - held object body: normal dynamic body B with finite linear/angular motors.
+
+Still unresolved:
+
+- Whether layer `15`, bit 14, or a dedicated extended zero-row layer is the best proxy non-contact policy is still an implementation design choice.
+- Need verify the exact `BethesdaPhysicsBody` creation flags/motion type that produce the best body-A proxy with no contact and no broadphase churn.
+- Need verify whether constraint-add pair suppression is active in the actual FO4VR world cinfo used by gameplay, although the world constructor supports it.
+
 ### Research conclusion from this pass
 
 The next custom-authority design should be judged against these confirmed HIGGS rules:
