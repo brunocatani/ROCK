@@ -2547,6 +2547,53 @@ This explanation now combines FO4VR Ghidra findings and HIGGS source behavior:
   - ordinary one-hand path not using the finite-force motor controller, so tuning was never exercised in the real path;
   - possible competing authority during promotion/destroy transitions.
 
+### FO4VR proxy drive follow-up: direct hard-keyframe velocity versus DriveToKeyFrame
+
+This section records the post-compaction Ghidra pass on FO4VR-native ways to drive a future no-contact grab authority proxy. This is not an implementation decision. It narrows which native path is safer to keep researching if ROCK replaces mouse-spring authority with a custom body-A plus linear/angular motor constraint.
+
+Confirmed functions:
+
+- `0x14153ABD0`:
+  - locks the world through `world + 0x690`;
+  - calls `0x14153A6A0` to compute linear and angular velocity from current body transform to a target position/rotation over the supplied inverse timestep;
+  - calls `0x141539F30` to write those velocities to the body's motion;
+  - unlocks the world.
+- `0x14153A6A0`:
+  - computes hard-keyframe linear and angular velocity for a body id and target transform;
+  - reads the body from `world + 0x20 + bodyId * 0x90`;
+  - reads the motion from `world + 0xE0 + motionIndex * 0x80`;
+  - compares current body/motion transform against the target position/quaternion and writes velocity outputs;
+  - does not visibly perform a transform snap in this function.
+- `0x141539F30`:
+  - writes linear velocity to motion `+0x40`;
+  - writes angular velocity to motion `+0x50`;
+  - wakes/activates the body through `0x141546EF0` when the body flags require activation;
+  - calls `0x14153D440`;
+  - notifies the world listener/list at `world + 0x538` through `0x14153EE00`.
+- `0x141E086E0`:
+  - is the DriveToKeyFrame-style path used by wrapper-level keyframe driving;
+  - resolves world/body through wrapper helpers;
+  - calls `0x14153A6A0` to compute hard-keyframe velocities;
+  - reads motion properties from the table at `world + 0x5D0`, indexed by the motion-properties id at motion `+0x38`, stride `0x40`;
+  - checks max linear velocity at motion-properties `+0x10`;
+  - checks max angular velocity at motion-properties `+0x14`;
+  - if either computed velocity exceeds the caps, calls `0x141DF55F0(world, bodyId, targetTransform, 1)` and then applies zero velocities;
+  - otherwise applies the computed velocities through `0x141DF56F0`.
+
+Interpretation:
+
+- `0x14153ABD0` is the cleaner direct velocity-authority candidate because the inspected path computes and writes hard-keyframe velocity without the visible cap-triggered transform snap used by `0x141E086E0`.
+- `0x141E086E0` is still useful for understanding existing generated collider drive behavior, but its cap-triggered `0x141DF55F0` branch is a concrete stutter/snap risk if reused unchanged for a grab authority proxy.
+- This supports the current research direction: if ROCK creates a dedicated no-contact body-A proxy, the proxy drive should be studied around direct velocity writes and solver-phase timing rather than blindly copying generated collider `DriveToKeyFrame`.
+- This does not mean transform correction should never exist. It means correction needs to be explicit, bounded, and coordinated with the custom constraint target/motor update, not hidden inside a wrapper cap branch.
+
+Still unresolved:
+
+- `0x141DF55F0` needs direct decompilation to confirm exact set/snap transform side effects.
+- `0x141DF56F0` needs direct decompilation to confirm whether it is only a safe velocity wrapper around `0x141539F30` or adds extra state changes.
+- `0x141546EF0` needs direct decompilation to confirm activation/wake behavior and any island/state side effects.
+- Xrefs to `0x14153ABD0` and `0x141E086E0` should be checked to identify native callers and whether Bethesda uses the direct path for any specific body class.
+
 ### Research conclusion from this pass
 
 The next custom-authority design should be judged against these confirmed HIGGS rules:
