@@ -195,13 +195,14 @@ namespace rock
     {
         const bool suppressionActive = hand_collision_suppression_math::hasActive(_grabHandCollisionSuppression);
         const bool cleanupRequired = hand_lifecycle_policy::requiresHavokCleanupBeforeReset(
-            _activeConstraint.isValid() || _nativeGrab.isValid(), suppressionActive, _heldBodyIds.size(), _savedObjectState.isValid(), hasCollisionBody());
+            _activeConstraint.isValid() || _nativeGrab.isValid() || _grabAuthorityProxy.isValid(), suppressionActive, _heldBodyIds.size(), _savedObjectState.isValid(), hasCollisionBody());
         if (cleanupRequired) {
             ROCK_LOG_ERROR(Hand,
-                "{} hand reset blocked: native Havok state still needs cleanup (constraint={} nativeGrab={} suppression={} heldBodies={} savedState={} handBody={})",
+                "{} hand reset blocked: native Havok state still needs cleanup (constraint={} nativeGrab={} proxy={} suppression={} heldBodies={} savedState={} handBody={})",
                 handName(),
                 _activeConstraint.isValid() ? "yes" : "no",
                 _nativeGrab.isValid() ? "yes" : "no",
+                _grabAuthorityProxy.isValid() ? "yes" : "no",
                 suppressionActive ? "yes" : "no",
                 _heldBodyIds.size(),
                 _savedObjectState.isValid() ? "yes" : "no",
@@ -255,6 +256,7 @@ namespace rock
         }
         _activeConstraint.clear();
         _nativeGrab.clear();
+        abandonGrabAuthorityProxy();
         _heldDriveMode = HeldObjectDriveMode::NativeMouseSpring;
         _savedObjectState.clear();
         _activeGrabLifecycle.clear();
@@ -283,6 +285,7 @@ namespace rock
         _hasGrabVisualHandTransform = false;
         _grabVisualDeviationExceededSeconds = 0.0f;
         _nativeGrabReleasePending.store(false, std::memory_order_release);
+        _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};
         _hasGrabFingerProbeDebug = false;
@@ -328,26 +331,29 @@ namespace rock
          */
         const bool hadNativeGrab = _nativeGrab.isValid();
         const bool hadConstraint = _activeConstraint.isValid();
+        const bool hadProxy = _grabAuthorityProxy.isValid();
         const bool hadSuppression = hand_collision_suppression_math::hasActive(_grabHandCollisionSuppression);
         const auto heldBodyCount = _heldBodyIds.size();
         const bool hadSavedState = _savedObjectState.isValid();
         const bool hadHandBody = hasCollisionBody();
 
-        if (!hadNativeGrab && !hadConstraint && !hadSuppression && heldBodyCount == 0 && !hadSavedState && !hadHandBody) {
+        if (!hadNativeGrab && !hadConstraint && !hadProxy && !hadSuppression && heldBodyCount == 0 && !hadSavedState && !hadHandBody) {
             return;
         }
 
         ROCK_LOG_WARN(Hand,
-            "{} hand abandoning Havok state after world loss: nativeGrab={} constraint={} suppression={} heldBodies={} savedState={} handBody={}",
+            "{} hand abandoning Havok state after world loss: nativeGrab={} constraint={} proxy={} suppression={} heldBodies={} savedState={} handBody={}",
             handName(),
             hadNativeGrab ? "yes" : "no",
             hadConstraint ? "yes" : "no",
+            hadProxy ? "yes" : "no",
             hadSuppression ? "yes" : "no",
             heldBodyCount,
             hadSavedState ? "yes" : "no",
             hadHandBody ? "yes" : "no");
 
         _activeConstraint.clear();
+        abandonGrabAuthorityProxy();
         if (hadNativeGrab) {
             _nativeGrab.destroy(nullptr);
         } else {
@@ -375,6 +381,7 @@ namespace rock
         _boneColliders.reset();
         _handBody.reset();
         _nativeGrabReleasePending.store(false, std::memory_order_release);
+        _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
         clearGrabHandPose(_isLeft);
         clearGrabExternalHandWorldTransform(_isLeft);
         _grabVisualHandTransform = {};

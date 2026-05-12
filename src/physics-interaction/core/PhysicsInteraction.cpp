@@ -2731,6 +2731,9 @@ namespace rock
             return;
         }
 
+        _rightHand.flushPendingCustomGrabAuthority(world, timing);
+        _leftHand.flushPendingCustomGrabAuthority(world, timing);
+
         _grabAuthorityPhase0Probe.noteSemanticContactBodyIds(
             _lastContactBodyRight.load(std::memory_order_acquire),
             _lastContactBodyLeft.load(std::memory_order_acquire),

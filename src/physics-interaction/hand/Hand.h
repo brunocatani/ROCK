@@ -137,7 +137,8 @@ namespace rock
     enum class HeldObjectDriveMode : std::uint8_t
     {
         NativeMouseSpring,
-        SharedConstraint
+        SharedConstraint,
+        ProxyConstraint
     };
 
     class Hand
@@ -327,6 +328,7 @@ namespace rock
 
         void flushPendingCollisionPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void flushPendingHeldNativeGrab(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
+        void flushPendingCustomGrabAuthority(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         bool beginStashCandidate();
         bool cancelStashCandidate();
 
@@ -343,8 +345,26 @@ namespace rock
             float constantRecovery,
             bool looseWeaponGrab,
             const char* reason);
+        bool createProxyConstraintGrabDrive(RE::bhkWorld* bhkWorld,
+            RE::hknpWorld* world,
+            RE::hknpBodyId objectBodyId,
+            const RE::NiTransform& proxyWorldTransform,
+            const RE::NiPoint3& grabPivotAWorld,
+            float tau,
+            float damping,
+            float maxForce,
+            float proportionalRecovery,
+            float constantRecovery,
+            bool looseWeaponGrab,
+            const char* reason);
         bool updateConstraintGrabDriveTarget(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
+            RE::NiTransform& outDesiredObjectWorld,
+            RE::NiTransform& outDesiredBodyWorld,
+            RE::NiPoint3& outDesiredTargetPointWorld,
+            RE::NiPoint3& outActivePivotBBodyLocalGame);
+        bool updateProxyConstraintGrabDriveTarget(RE::hknpWorld* world,
+            const RE::NiTransform& proxyWorldTransform,
             RE::NiTransform& outDesiredObjectWorld,
             RE::NiTransform& outDesiredBodyWorld,
             RE::NiPoint3& outDesiredTargetPointWorld,
@@ -356,6 +376,17 @@ namespace rock
             float grabPositionErrorGameUnits,
             float grabRotationErrorDegrees,
             bool heldBodyColliding);
+        void queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
+            float deltaTime,
+            float forceFadeInTime,
+            float tauMin,
+            float grabPositionErrorGameUnits,
+            float grabRotationErrorDegrees,
+            bool heldBodyColliding);
+        void destroyGrabAuthorityProxy(RE::bhkWorld* bhkWorld);
+        void abandonGrabAuthorityProxy();
+        void clearGrabAuthorityProxyRuntime();
+        RE::NiPoint3 activeGrabDrivePivotBBodyLocalGame() const;
 
         /*
          * Far-pull arrival needs explicit ownership separate from button edges.
@@ -476,6 +507,30 @@ namespace rock
         ActiveConstraint _activeConstraint;
         NativeMouseSpringGrab _nativeGrab;
         HeldObjectDriveMode _heldDriveMode = HeldObjectDriveMode::NativeMouseSpring;
+        BethesdaPhysicsBody _grabAuthorityProxy;
+        RE::bhkWorld* _grabAuthorityProxyBhkWorld = nullptr;
+        RE::hknpWorld* _grabAuthorityProxyHknpWorld = nullptr;
+        RE::NiPoint3 _grabAuthorityPivotAProxyLocalGame{};
+        RE::NiPoint3 _grabAuthorityPivotBBodyLocalGame{};
+        bool _grabAuthorityProxyFrameValid = false;
+        struct GrabAuthorityProxyPendingTarget
+        {
+            RE::NiTransform proxyWorld{};
+            float deltaTime = 0.0f;
+            float forceFadeInTime = 0.0f;
+            float tauMin = 0.0f;
+            float grabPositionErrorGameUnits = 0.0f;
+            float grabRotationErrorDegrees = 0.0f;
+            bool heldBodyColliding = false;
+            bool valid = false;
+        };
+        GrabAuthorityProxyPendingTarget _grabAuthorityPendingTarget{};
+        RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
+        bool _hasLastAppliedGrabAuthorityProxyWorld = false;
+        std::uint64_t _grabAuthorityProxyFlushSequence = 0;
+        int _grabAuthorityProxyLogCounter = 0;
+        std::atomic<bool> _grabAuthorityProxyReleasePending{ false };
+        std::mutex _grabAuthorityProxyMutex;
         SavedObjectState _savedObjectState;
         active_grab_body_lifecycle::BodyLifecycleSnapshot _activeGrabLifecycle;
         float _grabStartTime = 0.0f;

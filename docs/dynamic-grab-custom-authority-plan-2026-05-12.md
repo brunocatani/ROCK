@@ -2,7 +2,7 @@
 
 Date: 2026-05-12
 Branch: `feature/ghidra-grab-motor-mapping`
-Status: Phase 0 diagnostics/scaffolding implemented; active grab authority unchanged
+Status: Implementation in progress; Phase 0 validated; ordinary dynamic grab is being moved to proxy custom authority
 
 This document supersedes scattered implementation planning notes for the next dynamic grab redesign. The evidence tracker remains
 `docs/custom-dynamic-grab-authority-current-findings-2026-05-12.md`; this file turns those findings into a concrete plan.
@@ -18,7 +18,38 @@ We do not yet have enough to safely implement the full replacement without first
 - which minimal proxy shape is valid and cheap;
 - how two-hand total force is budgeted so two hands add stability without making the player infinitely strong.
 
-Those gates should be answered as part of the first implementation phase, not by guessing values or switching drive modes blindly.
+Those gates were answered by the Phase 0 runtime probe before replacement work began. The active implementation now follows the validated proxy authority path below.
+
+## 2026-05-12 Implementation Tracking
+
+This section records the implementation direction currently being applied so compaction does not erase the intended architecture.
+
+- Pre-replacement marker commit exists: `e4c2db0 feature/grab-authority: mark pre mouse spring replacement milestone`.
+- Added `src/physics-interaction/grab/GrabAuthorityProxy.h` as the shared production utility for the hidden proxy body:
+  - no-contact filter is native noncollidable layer plus confirmed suppression bit 14;
+  - proxy shape is the same tiny tetrahedral convex hull pattern validated by Phase 0;
+  - proxy transform conversion uses the same Ni-row to Havok-column convention as the Phase 0 probe.
+- Added `HeldObjectDriveMode::ProxyConstraint`.
+- Added per-hand proxy authority state:
+  - hidden `BethesdaPhysicsBody` proxy;
+  - owning `bhkWorld`/`hknpWorld` pointers for lifecycle validation;
+  - proxy-local pivot A;
+  - active object body-local pivot B computed from raw-hand relation;
+  - queued game-frame target/errors consumed by physics-step flush;
+  - release-pending flag for deterministic cleanup on physics drive failure.
+- Ordinary dynamic loose-object and loose non-equipped weapon grab creation now targets `createProxyConstraintGrabDrive(...)` instead of `_nativeGrab.create(...)`.
+- Joining a peer-held loose object uses the same proxy constraint path for the joining hand. The peer promotion helper now treats an existing `ProxyConstraint` as already promoted.
+- Game-frame `updateHeldObject(...)` queues raw hand proxy target and current error values for `ProxyConstraint`; it does not write the constraint/motors directly.
+- `PhysicsInteraction::driveGrabAuthorityPhase0ProbeFromBetweenStep(...)` now flushes both hands' custom grab authority before running the optional Phase 0 probe.
+- `Hand::flushPendingCustomGrabAuthority(...)` drives the proxy body with direct `setTransform`/`setVelocity`, then refreshes transform A/B and linear/angular motor values in the same between-collide-and-solve callback.
+- Release now destroys the custom constraint before destroying the proxy body, and reset/world-loss paths abandon proxy state together with native/action/constraint state.
+- Native mouse spring code remains present as a verified boundary and fallback/diagnostic wrapper, but ordinary production dynamic grab authority is no longer supposed to create `_nativeGrab`.
+
+Current source-test policy being updated:
+
+- native wrapper tests must keep verifying offsets, cinfo layout, target packing, mutex discipline, and fallback flush handling;
+- production dynamic grab tests must reject ordinary `_nativeGrab.create(...)`;
+- production dynamic grab tests must require `createProxyConstraintGrabDrive(...)`, `queueProxyGrabAuthorityTarget(...)`, `flushPendingCustomGrabAuthority(...)`, and between-phase coordinator wiring.
 
 ## Scope
 
