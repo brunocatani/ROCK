@@ -61,6 +61,7 @@ namespace rock::weapon_instance_witness_runtime
         std::atomic<bool> s_runtimeInstalled{ false };
         std::atomic<bool> s_attachModHookInstalled{ false };
         std::atomic<bool> s_applyChangesHookInstalled{ false };
+        std::atomic<bool> s_modifyModDataHookInstalled{ false };
         std::atomic<bool> s_equipEventSinkInstalled{ false };
 
         PendingSignal s_pendingSignal{};
@@ -84,6 +85,13 @@ namespace rock::weapon_instance_witness_runtime
             RE::BGSInventoryItem::Stack&);
 
         ApplyChangesWriteDataImpl_t s_originalApplyChangesWriteDataImpl = nullptr;
+
+        using ModifyModDataWriteDataImpl_t = void (*)(
+            RE::BGSInventoryItem::ModifyModDataFunctor*,
+            RE::TESBoundObject&,
+            RE::BGSInventoryItem::Stack&);
+
+        ModifyModDataWriteDataImpl_t s_originalModifyModDataWriteDataImpl = nullptr;
 
         void writeAbsoluteJump(std::uint8_t* target, std::uintptr_t destination)
         {
@@ -418,11 +426,13 @@ namespace rock::weapon_instance_witness_runtime
             RE::BGSInventoryItem::Stack& stack)
         {
             /*
-             * The workbench commit path has already mutated this inventory
-             * stack when ApplyChangesFunctor::WriteDataImpl returns. Capturing
-             * the equipped player stack directly is narrower than treating the
-             * attach-mod helper as authority, and it works for removals because
-             * the changed OMOD does not have to remain active after the write.
+             * Workbench mod commits can write the equipped inventory stack
+             * through more than one native functor. The collision lifecycle only
+             * needs the common post-mutation boundary: after the native stack
+             * writer returns, capture the equipped player stack itself instead
+             * of treating visual-tree refreshes or attach helper calls as proof.
+             * This also covers removals because the changed OMOD does not have
+             * to remain active after the write.
              */
             if (!stack.IsEquipped() || !isWeaponForm(&baseObj)) {
                 return;
@@ -444,6 +454,39 @@ namespace rock::weapon_instance_witness_runtime
             witness.rank = functor.rank;
             witness.mutatingModRemoved = functor.remove;
             activateEquippedWeaponWitness(witness, "ApplyChangesFunctorWriteDataImplPostCall");
+        }
+
+        void recordWorkbenchModifyModDataWitness(
+            const RE::BGSInventoryItem::ModifyModDataFunctor& functor,
+            RE::TESBoundObject& baseObj,
+            RE::BGSInventoryItem::Stack& stack)
+        {
+            /*
+             * Weapon workbench edits observed in-game use the mod-data writer
+             * rather than ApplyChangesFunctor. Capture it at the same
+             * post-mutation equipped-stack boundary so the native remap policy
+             * can distinguish real workbench commits from ordinary equips.
+             */
+            if (!stack.IsEquipped() || !isWeaponForm(&baseObj)) {
+                return;
+            }
+
+            const auto stackIndex = findPlayerInventoryStackIndex(baseObj, stack);
+            if (!stackIndex) {
+                return;
+            }
+
+            const auto sequence = s_nextSignalSequence.fetch_add(1, std::memory_order_acq_rel);
+            auto witness = makeWitnessFromInventoryStack(
+                WeaponInstanceWitnessSource::WorkbenchApplyChanges,
+                sequence,
+                baseObj,
+                stack,
+                *stackIndex);
+            witness.mutatingModFormID = functor.mod ? functor.mod->GetFormID() : 0;
+            witness.attachIndex = functor.slotIndex >= 0 ? static_cast<std::uint8_t>(functor.slotIndex) : 0;
+            witness.mutatingModRemoved = !functor.attach;
+            activateEquippedWeaponWitness(witness, "ModifyModDataFunctorWriteDataImplPostCall");
         }
 
         bool scanEquippedWeaponInventoryStack(
@@ -808,6 +851,20 @@ namespace rock::weapon_instance_witness_runtime
             recordWorkbenchApplyChangesWitness(*functor, baseObj, stack);
         }
 
+        void hookedModifyModDataWriteDataImpl(
+            RE::BGSInventoryItem::ModifyModDataFunctor* functor,
+            RE::TESBoundObject& baseObj,
+            RE::BGSInventoryItem::Stack& stack)
+        {
+            auto* original = s_originalModifyModDataWriteDataImpl;
+            if (!original || !functor) {
+                return;
+            }
+
+            original(functor, baseObj, stack);
+            recordWorkbenchModifyModDataWitness(*functor, baseObj, stack);
+        }
+
         bool installWorkbenchApplyChangesHook()
         {
             if (s_applyChangesHookInstalled.load(std::memory_order_acquire)) {
@@ -838,6 +895,38 @@ namespace rock::weapon_instance_witness_runtime
             s_applyChangesHookInstalled.store(true, std::memory_order_release);
             ROCK_LOG_INFO(Init,
                 "Installed WeaponWorkbenchApplyChangesWitness vtable hook at 0x{:X}, original=0x{:X}",
+                vtableAddress,
+                original);
+            return true;
+        }
+
+        bool installWorkbenchModifyModDataHook()
+        {
+            if (s_modifyModDataHookInstalled.load(std::memory_order_acquire)) {
+                return true;
+            }
+
+            REL::Relocation<std::uintptr_t> modifyModDataVtable{ RE::VTABLE::BGSInventoryItem__ModifyModDataFunctor[0] };
+            const auto vtableAddress = modifyModDataVtable.address();
+            if (vtableAddress == 0) {
+                ROCK_LOG_ERROR(Init, "Weapon workbench ModifyModData witness hook install failed: missing vtable address");
+                return false;
+            }
+
+            const auto original = *reinterpret_cast<std::uintptr_t*>(vtableAddress);
+            if (original == 0) {
+                ROCK_LOG_ERROR(Init,
+                    "Weapon workbench ModifyModData witness hook validation failed at 0x{:X}: null WriteDataImpl entry",
+                    vtableAddress);
+                return false;
+            }
+
+            s_originalModifyModDataWriteDataImpl = reinterpret_cast<ModifyModDataWriteDataImpl_t>(original);
+            const auto hook = reinterpret_cast<std::uintptr_t>(&hookedModifyModDataWriteDataImpl);
+            REL::safe_write(vtableAddress, &hook, sizeof(hook));
+            s_modifyModDataHookInstalled.store(true, std::memory_order_release);
+            ROCK_LOG_INFO(Init,
+                "Installed WeaponWorkbenchModifyModDataWitness vtable hook at 0x{:X}, original=0x{:X}",
                 vtableAddress,
                 original);
             return true;
@@ -919,7 +1008,8 @@ namespace rock::weapon_instance_witness_runtime
         const bool equipSinkInstalled = installEquipEventSink();
         const bool attachHookInstalled = installAttachModHook();
         const bool workbenchHookInstalled = installWorkbenchApplyChangesHook();
-        const bool installed = equipSinkInstalled && attachHookInstalled && workbenchHookInstalled;
+        const bool workbenchModifyModHookInstalled = installWorkbenchModifyModDataHook();
+        const bool installed = equipSinkInstalled && attachHookInstalled && workbenchHookInstalled && workbenchModifyModHookInstalled;
         if (installed) {
             s_runtimeInstalled.store(true, std::memory_order_release);
             ROCK_LOG_INFO(Init, "Weapon instance witness runtime installed");
