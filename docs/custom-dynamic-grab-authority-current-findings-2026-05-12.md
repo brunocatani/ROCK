@@ -5983,3 +5983,157 @@ Therefore, until more command-object creation code is mapped, direct native sett
 - Are there native step listeners that receive `&local_128` and append command objects in their vtable `+0x28` implementation?
 - Can a command object be allocated with the same vtable/refcount semantics as the command processor expects, or is that too much binary-owned ABI for ROCK?
 - If direct setters are used instead, does a minimal no-contact proxy avoid enough side effects that local command integration is unnecessary?
+
+## 2026-05-12 continuation: hidden proxy creation and motion-type requirements
+
+This pass maps whether ROCK's existing generated Bethesda body wrapper can create the future hidden body-A authority proxy, and which parts must not be reused as-is.
+
+### Source-level generated body lifecycle
+
+`BethesdaPhysicsBody::create(...)` creates a generated body through Bethesda wrapper ownership, not a raw hknp slot write:
+
+- allocates `hknpPhysicsSystemData`;
+- appends local motion cinfo when `motionType != Static`;
+- appends body cinfo with:
+  - shape pointer at `bodyCinfo + 0x00`;
+  - invalid body id at `+0x08`;
+  - local motion cinfo index at `+0x0C`;
+  - initial quality id at `+0x10`;
+  - local material index at `+0x12`;
+  - filter info at `+0x14`;
+  - name pointer at `+0x20`;
+- appends material and shape refs;
+- creates `bhkPhysicsSystem`;
+- creates `bhkNPCollisionObject`;
+- creates/link owner `NiNode`;
+- calls collision-object add-to-world `0x141E07BE0`;
+- retrieves body id from physics system;
+- validates non-static bodies have a live non-static motion;
+- assigns world material;
+- applies motion type;
+- writes filter info with rebuild mode `1`;
+- enables body flags `0x08020000`;
+- activates the body;
+- verifies body `+0x88` collision-object back pointer.
+
+This remains the best existing lifecycle for a future hidden proxy because it gives Bethesda wrapper ownership, broadphase registration, teardown through `RemovePhysicsSystemInstance`, and valid body/collision-object back pointers.
+
+### Motion cinfo requirement
+
+Generated non-static bodies must append a local motion cinfo before add-to-world.
+
+The source comment is consistent with previous Ghidra findings:
+
+- body cinfo `+0x0C` is interpreted as a local motion-cinfo index;
+- `0x7FFFFFFF` becomes static motion 0;
+- a non-static generated body cannot be made correct by patching in a world motion after add-to-world.
+
+Future proxy consequence:
+
+- The hidden body-A proxy must be created as non-static from the start.
+- It should have its own motion, not share motion with the held object or weapon body set.
+
+### Keyframed body transition evidence
+
+ROCK source currently calls `applyGeneratedBodyMotionType(...)` after body creation.
+
+For `BethesdaMotionType::Keyframed`, source calls `kFunc_SetBodyKeyframed = 0x141DF5CB0` directly on the hknp world/body id.
+
+Ghidra/disassembly for `0x141DF5CB0`:
+
+- signature is effectively `(hknpWorld*, bodyId)` at the wrapper boundary;
+- direct path checks TLS `+0x1528`;
+- if not queued:
+  - enters hknp write/mutate guard `0x141538AF0(world + 0x690)`;
+  - moves body id from `EDX`;
+  - explicitly zeros `XMM2`;
+  - calls `0x14153B640(world, bodyId, xmm2_zero)`;
+  - releases hknp guard.
+- if queued:
+  - builds command type `0x10` with body id and zero control value;
+  - queues through `0x141DFC8D0`.
+
+This explains the confusing decompiler output: the lower function `0x14153B640` has an additional control value, but the wrapper intentionally supplies zero for the keyframed transition path.
+
+### Collision-object SetMotionType evidence
+
+`0x141E07300` is the collision-object `SetMotionType` wrapper used by `BethesdaPhysicsBody::setMotionType(...)`.
+
+Important branches:
+
+- `param_2 == 2` enters the keyframed path.
+  - If the body is not already keyframed and not in the special fixed/static path, it calls `0x141DF5CB0(world, bodyId)`.
+  - If the body has another state, it creates motion cinfo/path data and changes motion through additional helpers.
+- `param_2 == 1` enters dynamic path logic.
+- `param_2 == 0` enters static/fixed path logic.
+
+This supports using `BethesdaMotionType::Keyframed` for a hidden proxy at creation time. It does not support changing a proxy repeatedly between motion types during grab.
+
+### Drive loop warning
+
+Existing `GeneratedKeyframedBodyDrive` drives normal generated visible colliders through:
+
+- `BethesdaPhysicsBody::driveToKeyFrame(...)` -> `0x141E086E0`.
+
+Earlier Ghidra work found `DriveToKeyFrame` can:
+
+- compute hard-keyframe velocity;
+- but snap/set transform and zero velocity when motion caps are exceeded.
+
+That is acceptable for visible generated hand/body collision hulls where hard sync is sometimes desired, but it is not the right authority for a hidden solver body-A proxy that must not introduce frame snaps into constraint row targets.
+
+Future proxy consequence:
+
+- Use `BethesdaPhysicsBody::create(...)` / `destroy(...)` lifecycle.
+- Do not use `driveGeneratedKeyframedBody(...)` or `driveToKeyFrame(...)` as the proxy drive loop.
+- Research-backed drive candidates remain:
+  - direct set-transform plus direct set-velocity in between phase;
+  - or local command-list transform/velocity if that ABI is later mapped safely.
+
+### Filter/no-contact requirement
+
+The future proxy should be created with no-contact filtering from birth, not converted after it has already participated in contacts.
+
+Existing layer/filter evidence:
+
+- FO4 layer 15 is noncollidable.
+- ROCK layers:
+  - 43 hand/tool;
+  - 44 weapon/tool/gun;
+  - 47 body/fullbody generated layer.
+- hknp filter bit 14 is confirmed by Ghidra to suppress contact pairs before the normal layer matrix.
+- Constraint creation is separate from contact filtering; no-contact filtering does not block a constraint.
+
+Future proxy policy is still unresolved:
+
+- layer 15;
+- or existing ROCK layer plus bit 14;
+- or an extended ROCK-owned no-contact layer with matrix row explicitly disabled.
+
+Current best safety rule:
+
+- hidden proxy should be no-contact regardless of layer policy;
+- it should not be registered as hand contact evidence;
+- it should not be included in semantic hand/body/weapon contact metadata;
+- it should not be part of the held-object connected body set.
+
+### Updated proxy requirements
+
+A future custom one-hand authority proxy probably needs:
+
+- `BethesdaPhysicsBody` lifecycle for correct wrapper/world ownership;
+- non-static local motion cinfo from creation;
+- keyframed body state applied once after creation;
+- own independent motion;
+- minimal shape, because `BethesdaPhysicsBody::create(...)` requires a non-null hknp shape;
+- no-contact filter at creation;
+- explicit destruction through the physics-system removal path;
+- between-phase drive that does not use `DriveToKeyFrame`;
+- no publication as contact metadata.
+
+### Updated open questions
+
+- Which proxy filter policy is safest in production: layer 15, bit 14 on a ROCK layer, or dedicated extended layer with zero matrix row?
+- What minimal shape should the proxy use so it is valid to the engine but has negligible broadphase/contact cost?
+- Does using `BethesdaPhysicsBody::setTransform(...)` and `setVelocity(...)` from between phase through the collision-object wrapper direct-call immediately, or could TLS `+0x1528` force global queueing in that callback?
+- If TLS queueing is active during between callbacks, direct lower hknp setters would need dedicated wrappers, or local command ABI work becomes required.
