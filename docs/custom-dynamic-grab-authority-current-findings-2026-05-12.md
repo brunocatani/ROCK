@@ -2726,6 +2726,88 @@ New unresolved items:
 - Need identify the exact native caller/phase for `bhkNPCollisionObject::vfunction44` relative to physics step. If it runs outside the desired between-collide-and-solve phase, copying that call site timing is not sufficient for custom grab.
 - Need map the filter/layer path for creating a no-contact proxy body in FO4VR, because body-A should be an authority anchor, not contact evidence.
 
+### FO4VR proxy filter/layer follow-up
+
+This section verifies the collision-filter write path that a future hidden authority proxy would use if it is created through the current `BethesdaPhysicsBody` lifecycle.
+
+ROCK source facts reconfirmed:
+
+- Current generated layers:
+  - `ROCK_LAYER_HAND = 43`;
+  - `ROCK_LAYER_WEAPON = 44`;
+  - `ROCK_LAYER_BODY = 47`;
+  - `ROCK_LAYER_RELOAD = ROCK_LAYER_HAND`.
+- Vanilla configured layer names stop at `46`, but FO4VR's hknp matrix is addressable through 64 rows.
+- `ROCK_LAYER_EXTENDED_FIRST = ROCK_LAYER_BODY`, `ROCK_LAYER_EXTENDED_LAST = 63`.
+- `isRockOwnedReusableLayer()` currently returns only `43`, `44`, and `47`.
+- `applyRockGeneratedLayerPolicies()` currently writes only hand/reload, weapon, and body rows.
+- Active grab classification rejects:
+  - ROCK hand bodies;
+  - ROCK generated bodies;
+  - ROCK weapon source bodies;
+  - player/character-controller bodies;
+  - actor/biped layers for ordinary active grab;
+  - `FO4_LAYER_NONCOLLIDABLE = 15`;
+  - unsupported non-dynamic prop layers.
+
+Ghidra-confirmed filter-info write path:
+
+- `0x141DF5B80`:
+  - thin wrapper;
+  - calls `0x14153AF00(world, bodyId, filterInfo, rebuildMode)`.
+- `0x14153AF00`:
+  - locks world `+0x690`;
+  - resolves body slot from `world + 0x20 + bodyId * 0x90`;
+  - writes collision filter info to body offset `+0x44`;
+  - if `rebuildMode == 0` and body `+0x6C` is not `-1`, calls `0x14153C5A0(world, bodyId)`;
+  - notifies world listener list `world + 0x538` through `0x14153EE00`.
+- `bhkNPCollisionObject::vfunction51` at `0x141E08EC5`:
+  - resolves the body id from the collision object's physics system;
+  - calls `0x141DF5B80(nativeWorld, bodyId, newFilterInfo, 0)`.
+- `0x14153C5A0`:
+  - handles the expensive rebuild/dirty path after filter changes;
+  - for non-motion bodies calls `0x141547050`;
+  - for dynamic eligible bodies calls `0x141546EF0` activation/dirty-island helper;
+  - clears packed AABB/broadphase state in the table at `world + 0x38`;
+  - marks body flags with `|= 0x400`.
+
+Interpretation:
+
+- Filter info is the authoritative per-body value at hknp body offset `+0x44`.
+- Changing a proxy's filter after creation can be more expensive than choosing the right filter at creation, because rebuild mode `0` invalidates broadphase/body state and can wake/dirty islands.
+- `BethesdaPhysicsBody::create(...)` already sets the requested filter immediately after add-to-world using `havok_runtime::setFilterInfo(world, bodyId, filterInfo, 1)`, which writes/notifies without the `0x14153C5A0` rebuild branch.
+- Later suppression/restoration paths often use the default rebuild mode `0`, which is correct for real contact bodies but is a cost/risk to avoid for a hidden proxy during steady held state.
+
+Proxy layer/filter implications:
+
+- A hidden body-A authority proxy should be born already non-contact if possible.
+- `FO4_LAYER_NONCOLLIDABLE = 15` remains a viable low-scaffolding candidate because:
+  - current active-grab classification rejects it;
+  - current ROCK hand/weapon masks exclude it;
+  - it avoids extending the ROCK-owned layer namespace.
+- A dedicated extended proxy layer in `48..63` remains architecturally cleaner if ROCK wants explicit ownership/logging/watchdog control, but it is not free:
+  - add a named layer constant;
+  - extend reusable-layer policy;
+  - write the row/column to zero or an explicit expected mask;
+  - extend watchdog validation;
+  - extend classifier rejection/debug reporting;
+  - ensure generated contact suppression ignores it as a hidden authority body.
+- The current user layer clarification fits the source:
+  - layer `43` for hands/reload tools;
+  - layer `44` for guns/weapons;
+  - layer `47` for generated body/full-body;
+  - rows above those are technically usable only after ROCK owns and applies the full matrix/policy path.
+
+Still unresolved:
+
+- The exact hknp filter function that tests the no-collide suppression bit `1 << 14` has not been re-found in this pass. ROCK source documents it as already Ghidra-confirmed, but this active pass has only reconfirmed the write path to body `+0x44`.
+- Need a separate blind verification wave if the implementation plan depends on filter bit `14` rather than layer-row no-contact.
+- Need decide later whether proxy non-contact should be achieved by:
+  - layer `15`;
+  - a dedicated extended zero-row layer;
+  - filter bit `14`;
+  - or a combination at creation time only.
+
 ### Research conclusion from this pass
 
 The next custom-authority design should be judged against these confirmed HIGGS rules:
