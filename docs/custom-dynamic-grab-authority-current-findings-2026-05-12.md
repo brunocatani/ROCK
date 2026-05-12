@@ -4123,3 +4123,191 @@ Updated design implication:
 - The future custom motor/proxy research should focus on making body B lag believably under finite force and inertia while preserving this visual layer.
 - The proxy should be driven from the raw/root-flattened frame captured before external visual writes.
 - The visual layer should keep deriving from the actual held object transform, not from desired target transform, otherwise it cannot show physical yield.
+
+## 2026-05-12 Ghidra continuation: FO4VR body lifecycle and direct velocity command bridge
+
+Research question:
+
+- If ROCK creates a future hidden no-contact body-A proxy for custom dynamic grab authority, what FO4VR native paths create, add, drive, remove, and destroy bodies?
+- Which paths are remove-only versus full destroy?
+- Is direct hard-keyframe velocity usable from physics/listener context, or does it require a command payload?
+
+Binary inspected:
+
+- Ghidra MCP on FO4VR runtime loaded in the current Ghidra project.
+- User-provided executable reference if needed: `E:\fo4dev\reverse_engineering\Fallout4VR.exe.unpacked.exe`.
+
+### Body creation / add path
+
+Ghidra-confirmed functions:
+
+- `0x141546350`
+  - Allocates/initializes an hknp motion entry from a motion cinfo-like structure.
+  - Uses the world motion allocator at `world + 0xD8`.
+  - Writes/initializes a motion slot at `world[0xE0] + motionId * 0x80`.
+  - Grows/updates the world motion metadata array at `world + 0x4A0`.
+  - Emits a motion-created signal through `world + 0x500`.
+- `0x141543FF0`
+  - Creates an hknp body slot from body cinfo-like data.
+  - Allocates or reuses a body id from the world body allocator at `world + 0x10`.
+  - Initializes the body slot at `world[0x20] + bodyId * 0x90`.
+  - If the body has motion data, calls the motion link/setup path at `0x1415486A0`.
+  - Emits body-created callbacks/signals through `world + 0x4D0`.
+  - If `param_4 != 0`, calls `0x1415441F0` to add the body to active/broadphase world state.
+- `0x1415486A0`
+  - Links a body slot to a motion slot.
+  - Writes body `+0x68` / `+0x6C`-style motion linkage fields.
+  - Updates motion/body linked-list membership.
+  - Recomputes motion/body inertia/state fields and dirty/signals dependent body state.
+- `0x1415441F0`
+  - Adds bodies to the live broadphase/active world state.
+  - Emits profiling markers `LtAddBodies`, `StSetup`, `StAddToBroadPhase`, and `StFireCallbacks`.
+  - Updates active-body index tables at `world + 0x98` / `world + 0xA8`.
+  - Calls broadphase add through world vtable paths at `world + 0x178`.
+  - Emits add callbacks/signals, including through `world + 0x4D8`.
+
+Interpretation:
+
+- A future dedicated proxy should not be made by only fabricating a body slot; it needs the full create + motion + add path or the existing `BethesdaPhysicsBody::create` wrapper that already exercises the equivalent engine route.
+- The previous design preference for a separate hidden body-A proxy remains viable, but lifecycle must be owned as a real hknp body with a real remove/destroy path, not as a borrowed generated collider.
+
+### Remove versus destroy path
+
+Ghidra-confirmed functions:
+
+- `0x141544B00`
+  - Body remove path.
+  - Fires `TtFireBodyRemoved`.
+  - Walks removed-body listeners/signals at `world + 0x4E0`.
+  - Removes body from active/island/broadphase tables.
+  - Clears active/motion linkage state, including body `+0x6C = -1`.
+  - Marks body flags with `& 0xfffbffff | 0x400`.
+  - Calls `0x14154AA50` for motion/body unlink cleanup.
+  - Does not release the body shape reference or free the body id as a destroyed/free body.
+- `0x141544E80`
+  - Body destroy path.
+  - Acquires world lock/scheduler state, then calls `0x141544B00`.
+  - Fires `TtFireBodyDestroyed` through listeners/signals at `world + 0x4E8`.
+  - Releases shape/mass-properties reference from body `+0x48`.
+  - Clears low body flags at `+0x40`.
+  - Pushes the body id back to the free/dead body-id table at `world + 0x98` / `world + 0xA8`.
+  - Increments world destroy/change counter at `world + 0x6C`.
+  - Flushes body-destroy bookkeeping through `world + 0x4A0`.
+
+Caller evidence:
+
+- `0x141544E80` is called by:
+  - `~hknpPhysicsSystem` at `0x1415655CE`;
+  - a bhk/collision-object replacement path around `0x1412CE290`;
+  - `hknpBallGun::vfunction6` at `0x142032F6F`, where old temporary ball bodies are destroyed after ring-buffer expiry.
+- `0x141544B00` is called by:
+  - `0x141544E80`;
+  - `0x141565A00`, which removes all bodies in a physics system-like container;
+  - `bhkPhysicsSystem::vfunction44` at `0x141E0D5C0`, which removes bodies and tears down constraints that reference removed body ids.
+
+Interpretation:
+
+- Remove-only and destroy are not equivalent.
+- A persistent proxy that may be reused within one world can be removed if the wrapper expects reuse, but final lifecycle cleanup must reach the destroy path or a Bethesda wrapper that does.
+- If ROCK creates a new proxy per grab/world lifecycle, final cleanup must not stop at `0x141544B00`; otherwise shape refs/body ids can leak or remain in stale free/active state.
+- Constraint cleanup must happen before or during remove. `bhkPhysicsSystem::vfunction44` explicitly scans constraints for removed body ids and calls constraint removal (`0x141546C60`) before removing bodies.
+
+### Direct hard-keyframe velocity path
+
+Ghidra-confirmed functions:
+
+- `0x14153A6A0`
+  - Computes hard-keyframe linear and angular velocity from:
+    - target position;
+    - target rotation/quaternion;
+    - current body/motion transform;
+    - `deltaSeconds`-style time value.
+  - It computes reciprocal `1 / param_5`; this means the wrapper's time parameter is delta time, not pre-inverted dt.
+  - Output is linear velocity and angular velocity vectors.
+  - It uses the current hknp body slot and motion slot, so the body must be a valid live dynamic/keyframed body with motion.
+- `0x141539F30`
+  - Direct set-body-velocity path.
+  - Reads the body slot and linked motion slot.
+  - Wakes/marks body if needed through `0x141546EF0`.
+  - Writes linear velocity to motion fields around `motion + 0x10`.
+  - Writes angular velocity-derived fields around `motion + 0x14..0x17`/derived rotation velocity fields.
+  - Calls `0x14153D440`.
+  - Emits velocity/body-change signal through `world + 0x538`.
+- `0x141DF5930`
+  - Wrapper: compute hard-keyframe velocity through `0x14153A6A0`, then apply it.
+  - If TLS byte `+0x1528` is false, calls `0x141539F30` directly.
+  - If TLS byte `+0x1528` is true, queues a command through `0x141DFC8D0`.
+  - Queued velocity command uses:
+    - command size/type field `0x30`;
+    - command id/flags `0x90100`;
+    - body id;
+    - computed linear and angular velocities.
+  - If either computed velocity is nonzero beyond tiny thresholds, calls `0x141DF60C0` after the write/queue.
+- `0x141DF56F0`
+  - Direct set-body-velocity wrapper.
+  - Same direct-versus-queued TLS branch as `0x141DF5930`.
+  - Queued command is also `0x30 / 0x90100`.
+- `0x141DF55F0`
+  - Set-body-transform wrapper.
+  - If TLS byte `+0x1528` is false, calls direct transform write `0x1415395E0`.
+  - If TLS byte `+0x1528` is true, queues command:
+    - command size/type field `0x50`;
+    - command id/flags `0x60100`;
+    - body id;
+    - transform payload;
+    - transform-mode/int parameter.
+- `0x141DF60C0`
+  - Post-write/post-queue activation or dirty/wakeup helper.
+  - Validates body id and active/body flags.
+  - If body is not already in the desired active state and a flag at body `+0x40 >> 0x12` is set, queues/records the body id in a world-side set around `world + 0x6E8`.
+
+Interpretation:
+
+- The direct hard-keyframe velocity wrapper is a better proxy-drive candidate than `DriveToKeyFrame` because it does not include the verified DriveToKeyFrame cap-triggered transform snap branch.
+- It is still not a magic "set target transform" authority. It computes and writes velocities from current body state toward a target for the current dt.
+- In a physics-step listener/command context, the wrapper may queue velocity command `0x30 / 0x90100` rather than writing immediately, depending on TLS `+0x1528`.
+- The previously mapped between-collide-and-solve drain means queued commands can be consumed before solve if they are queued into the active local command list. However, this pass still does not prove TLS `+0x1528` is set in ROCK's callback context. That remains a required verification point before implementation.
+
+### Command bridge / queue path
+
+Ghidra-confirmed functions:
+
+- `0x141DFC8D0`
+  - Shared command enqueue bridge.
+  - Reads TLS `+0x152C` to select a per-thread command staging area at `DAT_1465A3E30 + threadIndex * 0xA8`.
+  - Handles command type/size variants including:
+    - `0x50 / 0x60100` set-transform payload;
+    - `0x30 / 0x90100` set-velocity payload;
+    - other command groups `6`, `7`, `9`, `0x12`, and `0x2C` that stage different payload sizes and references.
+  - Links the command list for the target world.
+- `0x141DFDE70`
+  - Command drain/dispatch function.
+  - If exactly one command exists and its command-list metadata indicates immediate/direct (`second qword == 1`), dispatches through command vtable `+0x20`.
+  - Otherwise builds a work batch, starts worker dispatch, waits, then clears command refs.
+  - Clears command list count/state after execution and releases referenced command objects.
+
+Interpretation:
+
+- Future proxy drive from a physics listener should prefer an engine wrapper that is correct in both direct-write and queued contexts.
+- If ROCK bypasses the wrapper and writes velocity fields manually, it also bypasses the engine's dirty/signal/activation path at `0x141539F30` and `0x141DF60C0`.
+- If ROCK calls the wrapper from a context where TLS queue state is active but not linked to the local pre-solve command list, the command may not be applied before the constraint solve. This is the remaining timing risk.
+
+### Updated proxy-drive conclusion
+
+Binary-backed requirements for a future hidden no-contact body-A proxy:
+
+1. Create it through a full body/motion/add lifecycle path or through ROCK's existing `BethesdaPhysicsBody::create` wrapper if that wrapper is verified to call the same native chain.
+2. Keep it persistent while the dynamic grab is held; do not create/destroy every frame.
+3. Drive it from the raw/root-flattened hand frame through a velocity path, not by transforming the held object or using COM as authority.
+4. Prefer the direct hard-keyframe velocity semantics (`0x141DF5930` / `0x14153A6A0` / `0x141539F30`) over DriveToKeyFrame for hidden proxy research, because DriveToKeyFrame can snap transforms when caps are exceeded.
+5. Use set-transform only for creation/initial placement or verified warp cases, not as the steady held proxy drive.
+6. Keep remove/destroy ownership explicit. Final proxy cleanup must reach the destroy-equivalent path, not only remove.
+7. Do not assume queued wrapper calls made from ROCK's future between-collide-and-solve callback apply before solve until TLS command-list state is verified in that callback context.
+
+Unresolved after this Ghidra pass:
+
+- Verify whether `BethesdaPhysicsBody::create`, `reset`, and destruction paths in ROCK exactly map to the create/add/remove/destroy paths above for a generated standalone body.
+- Verify whether `0x141DF5930` is directly callable from ROCK with stable typed parameters, or whether ROCK should compute velocity via a safer local wrapper around `0x14153A6A0` + `setBodyVelocityDeferred`.
+- Verify TLS `+0x1528` / `+0x152C` state inside `PhysicsStepDriveCoordinator` callbacks, especially the future between-collide-and-solve slot.
+- Verify whether direct velocity command application before solve updates the proxy body's transform early enough for the constraint solver's body-A frame, or whether the constraint target should be computed against predicted proxy transform instead of current body transform.
+- Verify whether a no-contact proxy should use bit-14 suppression, layer 15, or a ROCK-owned extended layer, now that lifecycle and drive are clearer.
