@@ -6259,3 +6259,45 @@ Validation after this correction:
 - The Release build deployed `ROCK.dll` and `ROCK.pdb` to `D:\FO4\mods\ROCK\F4SE\Plugins` at `2026-05-12 19:22:09`.
 - Registered CTest suite passed `15/15`.
 - The existing runtime log was last written at `2026-05-12 19:03:34`, before this deployed build. It cannot validate the new `proxyFrame=rootFlattenedPalmAnchorTarget/ok` telemetry yet.
+
+## 2026-05-12 follow-up: removed live shared hand-body authority fallback
+
+Source audit after the palm-frame correction found one remaining legacy custom-authority route:
+
+- `HeldObjectDriveMode::SharedConstraint`;
+- `Hand::createConstraintGrabDrive(...)`;
+- `Hand::updateConstraintGrabDriveTarget(...)`.
+
+That path used the generated semantic hand body as constraint body A and refreshed the target from live `_handBody` readback. That is the exact convention the proxy-authority design was created to avoid. It was mostly dormant after ordinary dynamic grabs moved to `ProxyConstraint`, but it could still be reached by peer-held promotion if a held object was still on native mouse-spring fallback when the second hand joined.
+
+Correction made in source:
+
+- removed `HeldObjectDriveMode::SharedConstraint`;
+- removed `Hand::createConstraintGrabDrive(...)`;
+- removed `Hand::updateConstraintGrabDriveTarget(...)`;
+- changed `Hand::promoteHeldObjectToConstraintDrive(...)` to take `RE::bhkWorld*` and create the same hidden no-contact proxy authority used by ordinary one-hand dynamic grab;
+- kept two-hand/peer promotion on the same proxy body-A convention and same between-collide-and-solve flush path;
+- kept the finite-force motor controller in `updateConstraintGrabDriveMotors(...)`, now fed only by `updateProxyConstraintGrabDriveTarget(...)` from `flushPendingCustomGrabAuthority(...)`.
+
+Important naming note:
+
+- Config fields named `rockGrabLooseWeaponSharedConstraint*` still exist as compatibility/tuning names. They are currently consumed by proxy-constraint tuning. Their name is stale, but they are not an active `SharedConstraint` drive mode or a second implementation.
+
+Validation requirement after this correction:
+
+- rebuild and redeploy ROCK;
+- rerun focused source tests and CTest;
+- collect a fresh runtime log newer than the deployed DLL;
+- verify `drive=proxyConstraint`, `proxyFrame=rootFlattenedPalmAnchorTarget/ok`, queued/flushed proxy counters advancing, and no `nativeMouseSpring` authority for ordinary loose object or loose non-equipped weapon dynamic grab.
+
+Validation completed after this correction:
+
+- focused source checks passed:
+  - `GrabAuthorityProxyFrameSourceTests.ps1`;
+  - `HandGrabNativeBoundarySourceTests.ps1`;
+  - `SharedHeldObjectGrabSourceTests.ps1`;
+  - `GrabAuthorityPhase0ProbeSourceTests.ps1`;
+- Release build passed with `VCPKG_ROOT=C:/vcpkg cmake --build build --config Release`;
+- Release build deployed `ROCK.dll` and `ROCK.pdb` to `D:\FO4\mods\ROCK\F4SE\Plugins` at `2026-05-12 19:33:53`;
+- registered CTest suite passed `15/15`;
+- runtime log was still last written at `2026-05-12 19:03:34`, so runtime grab behavior for this build remains unvalidated until the game writes a fresh log.

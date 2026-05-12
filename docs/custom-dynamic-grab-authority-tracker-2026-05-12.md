@@ -410,3 +410,29 @@ Continue read-only research:
 3. Source audit generated body creation for no-contact proxy reuse.
 4. Source audit ROCK tests that must change for hard replacement.
 5. Only after this, write a decision-complete implementation plan and then implement on a branch created from `develop`.
+
+## Superseded by current implementation pass
+
+The old tracker notes above predate the proxy-authority implementation and should not be read as live architecture.
+
+Current live direction on `2026-05-12`:
+
+- ordinary one-hand dynamic loose-object grab uses `ProxyConstraint`;
+- loose non-equipped dynamic weapon grab uses `ProxyConstraint`;
+- peer/two-hand promotion must also use `ProxyConstraint`;
+- `SharedConstraint`, `createConstraintGrabDrive(...)`, and `updateConstraintGrabDriveTarget(...)` were removed from live code because they used generated hand-body readback as body-A authority;
+- config fields still containing `SharedConstraint` in their names are compatibility/tuning names only and are consumed by proxy-constraint motor tuning.
+
+Current validation gate:
+
+- build/deploy the changed DLL;
+- run focused source tests plus CTest;
+- collect a fresh runtime log newer than the deployed DLL;
+- verify proxy queue/flush counters advance and `proxyFrame=rootFlattenedPalmAnchorTarget/ok` appears during held dynamic grab.
+
+Completed local validation:
+
+- focused source checks passed;
+- Release build passed and deployed at `2026-05-12 19:33:53`;
+- CTest passed `15/15`;
+- runtime validation still needs a fresh `ROCK.log` newer than the deployed DLL.

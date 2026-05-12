@@ -137,7 +137,6 @@ namespace rock
     enum class HeldObjectDriveMode : std::uint8_t
     {
         NativeMouseSpring,
-        SharedConstraint,
         ProxyConstraint
     };
 
@@ -239,7 +238,8 @@ namespace rock
             const RE::NiPoint3& palmNormal,
             float nearRange);
 
-        bool promoteHeldObjectToConstraintDrive(RE::hknpWorld* world,
+        bool promoteHeldObjectToConstraintDrive(RE::bhkWorld* bhkWorld,
+            RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
             float tau,
             float damping,
@@ -335,16 +335,6 @@ namespace rock
     private:
         HandTransitionResult applyTransition(const HandTransitionRequest& request);
 
-        bool createConstraintGrabDrive(RE::hknpWorld* world,
-            RE::hknpBodyId objectBodyId,
-            const RE::NiTransform& handWorldTransform,
-            float tau,
-            float damping,
-            float maxForce,
-            float proportionalRecovery,
-            float constantRecovery,
-            bool looseWeaponGrab,
-            const char* reason);
         bool createProxyConstraintGrabDrive(RE::bhkWorld* bhkWorld,
             RE::hknpWorld* world,
             RE::hknpBodyId objectBodyId,
@@ -357,12 +347,6 @@ namespace rock
             float constantRecovery,
             bool looseWeaponGrab,
             const char* reason);
-        bool updateConstraintGrabDriveTarget(RE::hknpWorld* world,
-            const RE::NiTransform& handWorldTransform,
-            RE::NiTransform& outDesiredObjectWorld,
-            RE::NiTransform& outDesiredBodyWorld,
-            RE::NiPoint3& outDesiredTargetPointWorld,
-            RE::NiPoint3& outActivePivotBBodyLocalGame);
         bool updateProxyConstraintGrabDriveTarget(RE::hknpWorld* world,
             const RE::NiTransform& proxyWorldTransform,
             RE::NiTransform& outDesiredObjectWorld,

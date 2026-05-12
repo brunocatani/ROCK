@@ -239,7 +239,7 @@ namespace rock
             return (std::max)(0.001f, sanitizedRatio / sanitizedMultiplier);
         }
 
-        GrabConstraintMotorTuning buildSharedConstraintMotorTuning(
+        GrabConstraintMotorTuning buildProxyConstraintMotorTuning(
             float tau,
             float damping,
             float maxForce,
@@ -304,8 +304,6 @@ namespace rock
             switch (mode) {
             case HeldObjectDriveMode::ProxyConstraint:
                 return "proxyConstraint";
-            case HeldObjectDriveMode::SharedConstraint:
-                return "sharedConstraint";
             case HeldObjectDriveMode::NativeMouseSpring:
             default:
                 return "nativeMouseSpring";
@@ -2112,89 +2110,6 @@ namespace rock
         return true;
     }
 
-    bool Hand::createConstraintGrabDrive(RE::hknpWorld* world,
-        RE::hknpBodyId objectBodyId,
-        const RE::NiTransform& handWorldTransform,
-        float tau,
-        float damping,
-        float maxForce,
-        float proportionalRecovery,
-        float constantRecovery,
-        bool looseWeaponGrab,
-        const char* reason)
-    {
-        /*
-         * Loose-object two-hand grabbing uses one constraint per hand, both
-         * attached to the same dynamic body, with the object-to-hand angular
-         * frame written through the same convention used by createGrabConstraint.
-         * Single-hand grabs keep the native mouse-spring path because FO4VR
-         * already gives that path stable dynamic-body follow behavior; shared
-         * grabs need full angular authority from both hands so the object can
-         * pivot instead of only translating.
-         */
-        if (!world || objectBodyId.value == INVALID_BODY_ID || !_handBody.isValid() || _handBody.getBodyId().value == INVALID_BODY_ID) {
-            return false;
-        }
-
-        RE::NiTransform handBodyWorld = _grabFrame.handBodyWorldAtGrab;
-        if (!tryResolveLiveBodyWorldTransform(world, _handBody.getBodyId(), handBodyWorld)) {
-            handBodyWorld = _grabFrame.hasTelemetryCapture ? _grabFrame.handBodyWorldAtGrab : handWorldTransform;
-        }
-
-        const RE::NiPoint3 grabPivotAWorld = _grabFrame.hasTelemetryCapture ?
-            transform_math::localPointToWorld(handBodyWorld, _grabFrame.pivotAHandBodyLocalGame) :
-            computeGrabPivotAWorld(world, handWorldTransform);
-        const RE::NiTransform desiredBodyTransformHandSpace =
-            grab_frame_math::desiredBodyInHandBodySpace(_grabFrame.constraintHandSpace, _grabFrame.bodyLocal);
-        const RE::NiPoint3 activePivotBBodyLocalGame = constraintDrivePivotBBodyLocalGame(_grabFrame);
-
-        const float gameToHkScale = gameToHavokScale();
-        float pivotBBodyLocalHk[4]{
-            activePivotBBodyLocalGame.x * gameToHkScale,
-            activePivotBBodyLocalGame.y * gameToHkScale,
-            activePivotBBodyLocalGame.z * gameToHkScale,
-            0.0f,
-        };
-
-        const GrabConstraintMotorTuning motorTuning =
-            buildSharedConstraintMotorTuning(tau, damping, maxForce, proportionalRecovery, constantRecovery, looseWeaponGrab);
-
-        _activeConstraint = createGrabConstraint(world,
-            _handBody.getBodyId(),
-            objectBodyId,
-            handBodyWorld,
-            grabPivotAWorld,
-            pivotBBodyLocalHk,
-            desiredBodyTransformHandSpace,
-            motorTuning);
-        if (!_activeConstraint.isValid()) {
-            ROCK_LOG_ERROR(Hand,
-                "{} hand shared constraint grab drive failed: body={} handBody={} reason={}",
-                handName(),
-                objectBodyId.value,
-                _handBody.getBodyId().value,
-                reason ? reason : "unknown");
-            return false;
-        }
-
-        _heldDriveMode = HeldObjectDriveMode::SharedConstraint;
-        ROCK_LOG_DEBUG(Hand,
-            "{} hand shared constraint grab drive: constraint={} looseWeapon={} handBody={} objBody={} linearTau={:.3f} angularTau={:.3f} linearDamping={:.2f} angularDamping={:.2f} linearForce={:.0f} angularForce={:.0f} reason={}",
-            handName(),
-            _activeConstraint.constraintId,
-            looseWeaponGrab ? "yes" : "no",
-            _handBody.getBodyId().value,
-            objectBodyId.value,
-            motorTuning.linearTau,
-            motorTuning.angularTau,
-            motorTuning.linearDamping,
-            motorTuning.angularDamping,
-            motorTuning.linearMaxForce,
-            motorTuning.angularMaxForce,
-            reason ? reason : "unknown");
-        return true;
-    }
-
     bool Hand::createProxyConstraintGrabDrive(RE::bhkWorld* bhkWorld,
         RE::hknpWorld* world,
         RE::hknpBodyId objectBodyId,
@@ -2298,7 +2213,7 @@ namespace rock
         };
 
         const GrabConstraintMotorTuning motorTuning =
-            buildSharedConstraintMotorTuning(tau, damping, maxForce, proportionalRecovery, constantRecovery, looseWeaponGrab);
+            buildProxyConstraintMotorTuning(tau, damping, maxForce, proportionalRecovery, constantRecovery, looseWeaponGrab);
 
         _activeConstraint = createGrabConstraint(world,
             _grabAuthorityProxy.getBodyId(),
@@ -2366,55 +2281,6 @@ namespace rock
             motorTuning.linearMaxForce,
             motorTuning.angularMaxForce,
             reason ? reason : "unknown");
-        return true;
-    }
-
-    bool Hand::updateConstraintGrabDriveTarget(RE::hknpWorld* world,
-        const RE::NiTransform& handWorldTransform,
-        RE::NiTransform& outDesiredObjectWorld,
-        RE::NiTransform& outDesiredBodyWorld,
-        RE::NiPoint3& outDesiredTargetPointWorld,
-        RE::NiPoint3& outActivePivotBBodyLocalGame)
-    {
-        outDesiredObjectWorld = multiplyTransforms(handWorldTransform, _grabFrame.rawHandSpace);
-        outDesiredBodyWorld = multiplyTransforms(handWorldTransform, multiplyTransforms(_grabFrame.rawHandSpace, _grabFrame.bodyLocal));
-        outDesiredTargetPointWorld = transform_math::localPointToWorld(outDesiredBodyWorld, _grabFrame.pivotBBodyLocalGame);
-        outActivePivotBBodyLocalGame = _grabFrame.pivotBBodyLocalGame;
-
-        if (!_activeConstraint.isValid() || !_activeConstraint.constraintData || !_handBody.isValid() || _handBody.getBodyId().value == INVALID_BODY_ID) {
-            return false;
-        }
-
-        RE::NiTransform liveHandBodyWorld{};
-        if (!tryResolveLiveBodyWorldTransform(world, _handBody.getBodyId(), liveHandBodyWorld)) {
-            return false;
-        }
-
-        const RE::NiTransform desiredBodyTransformHandSpace =
-            grab_frame_math::desiredBodyInHandBodySpace(_grabFrame.constraintHandSpace, _grabFrame.bodyLocal);
-        outDesiredObjectWorld = multiplyTransforms(liveHandBodyWorld, _grabFrame.constraintHandSpace);
-        outDesiredBodyWorld = multiplyTransforms(liveHandBodyWorld, desiredBodyTransformHandSpace);
-
-        auto* constraintData = static_cast<char*>(_activeConstraint.constraintData);
-        auto* transformAPos = reinterpret_cast<float*>(constraintData + offsets::kTransformA_Pos);
-        const float gameToHkScale = gameToHavokScale();
-        transformAPos[0] = _grabFrame.pivotAHandBodyLocalGame.x * gameToHkScale;
-        transformAPos[1] = _grabFrame.pivotAHandBodyLocalGame.y * gameToHkScale;
-        transformAPos[2] = _grabFrame.pivotAHandBodyLocalGame.z * gameToHkScale;
-        transformAPos[3] = 0.0f;
-
-        auto* transformBRotation = reinterpret_cast<float*>(constraintData + offsets::kTransformB_Col0);
-        auto* transformBTranslation = reinterpret_cast<float*>(constraintData + offsets::kTransformB_Pos);
-        auto* targetBRca = reinterpret_cast<float*>(constraintData + ATOM_RAGDOLL_MOT + 0x10);
-        grab_constraint_math::writeInitialGrabAngularFrame(transformBRotation, targetBRca, desiredBodyTransformHandSpace);
-        grab_constraint_math::writeDynamicTransformBTranslation(
-            transformBTranslation,
-            desiredBodyTransformHandSpace,
-            _grabFrame.pivotAHandBodyLocalGame,
-            gameToHkScale);
-
-        outActivePivotBBodyLocalGame = constraintDrivePivotBBodyLocalGame(_grabFrame);
-        outDesiredTargetPointWorld = transform_math::localPointToWorld(outDesiredBodyWorld, outActivePivotBBodyLocalGame);
         return true;
     }
 
@@ -2603,7 +2469,8 @@ namespace rock
         ++_grabAuthorityProxyQueuedSequence;
     }
 
-    bool Hand::promoteHeldObjectToConstraintDrive(RE::hknpWorld* world,
+    bool Hand::promoteHeldObjectToConstraintDrive(RE::bhkWorld* bhkWorld,
+        RE::hknpWorld* world,
         const RE::NiTransform& handWorldTransform,
         float tau,
         float damping,
@@ -2612,11 +2479,18 @@ namespace rock
         float constantRecovery,
         const char* reason)
     {
-        if (!isHolding() || !world || !_savedObjectState.isValid()) {
+        /*
+         * Two-hand loose-object grab must not resurrect the old semantic hand
+         * body shared-constraint path. If a held object ever still uses native
+         * mouse-spring fallback when the other hand joins, promote it into the
+         * same hidden no-contact proxy authority used by ordinary dynamic grab
+         * so both hands share the same body-A convention and physics-step timing.
+         */
+        if (!isHolding() || !bhkWorld || !world || !_savedObjectState.isValid()) {
             return false;
         }
 
-        if (_heldDriveMode == HeldObjectDriveMode::SharedConstraint || _heldDriveMode == HeldObjectDriveMode::ProxyConstraint) {
+        if (_heldDriveMode == HeldObjectDriveMode::ProxyConstraint) {
             return _activeConstraint.isValid();
         }
 
@@ -2624,10 +2498,19 @@ namespace rock
             return false;
         }
 
-        if (!createConstraintGrabDrive(
+        RE::NiTransform proxyWorldTransform = handWorldTransform;
+        const char* proxyFrameSource = "unresolved";
+        resolveGrabAuthorityProxyFrame(world, handWorldTransform, nullptr, proxyWorldTransform, proxyFrameSource);
+        const RE::NiPoint3 grabPivotAWorld = _grabFrame.hasTelemetryCapture ?
+            transform_math::localPointToWorld(proxyWorldTransform, _grabFrame.pivotAHandBodyLocalGame) :
+            computeGrabPivotAWorld(world, handWorldTransform);
+
+        if (!createProxyConstraintGrabDrive(
+                bhkWorld,
                 world,
                 _savedObjectState.bodyId,
-                handWorldTransform,
+                proxyWorldTransform,
+                grabPivotAWorld,
                 tau,
                 damping,
                 maxForce,
@@ -2642,10 +2525,11 @@ namespace rock
         _nativeGrab.clear();
         _nativeGrabReleasePending.store(false, std::memory_order_release);
         ROCK_LOG_DEBUG(Hand,
-            "{} hand promoted held object to shared constraint drive: formID={:08X} body={} reason={}",
+            "{} hand promoted held object to proxy constraint drive: formID={:08X} body={} proxyFrame={} reason={}",
             handName(),
             _savedObjectState.refr ? _savedObjectState.refr->GetFormID() : 0,
             _savedObjectState.bodyId.value,
+            proxyFrameSource,
             reason ? reason : "peer-joined-held-object");
         return true;
     }
@@ -4698,10 +4582,6 @@ namespace rock
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
             return;
         }
-        if (_heldDriveMode == HeldObjectDriveMode::SharedConstraint && !_activeConstraint.isValid()) {
-            releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
-            return;
-        }
         if (_heldDriveMode == HeldObjectDriveMode::ProxyConstraint &&
             (_grabAuthorityProxyReleasePending.load(std::memory_order_acquire) || !_activeConstraint.isValid() || !_grabAuthorityProxy.isValid())) {
             ROCK_LOG_WARN(Hand, "{} hand release: proxy constraint authority marked grab invalid", handName());
@@ -4810,13 +4690,6 @@ namespace rock
                 grabPositionErrorGameUnits,
                 grabRotationErrorDegrees,
                 heldBodyColliding);
-        } else {
-            if (!updateConstraintGrabDriveTarget(
-                    world, handWorldTransform, desiredObjectWorld, desiredBodyWorld, desiredTargetPointWorld, activePivotBBodyLocalGame)) {
-                ROCK_LOG_WARN(Hand, "{} hand release: shared constraint target update failed", handName());
-                releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
-                return;
-            }
         }
 
         _grabDeviationExceededSeconds = held_object_physics_math::advanceDeviationSeconds(
@@ -4833,17 +4706,6 @@ namespace rock
         }
 
         tickHeldBodyContact();
-        if (_heldDriveMode == HeldObjectDriveMode::SharedConstraint) {
-            updateConstraintGrabDriveMotors(
-                world,
-                deltaTime,
-                forceFadeInTime,
-                tauMin,
-                grabPositionErrorGameUnits,
-                grabRotationErrorDegrees,
-                heldBodyColliding);
-        }
-
         const bool convergingAcquisitionPhase =
             _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::NearConverging ||
             _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::GravityPulling;

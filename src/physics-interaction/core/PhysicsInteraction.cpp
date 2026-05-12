@@ -3217,7 +3217,8 @@ namespace rock
                     if (sharedContext.joiningPeerHeldObject) {
                         Hand& peer = isLeft ? _rightHand : _leftHand;
                         const auto& peerInput = isLeft ? frame.right : frame.left;
-                        if (!peer.promoteHeldObjectToConstraintDrive(hknp,
+                        if (!peer.promoteHeldObjectToConstraintDrive(frame.bhkWorld,
+                                hknp,
                                 peerInput.rawHandWorld,
                                 g_rockConfig.rockGrabLinearTau,
                                 g_rockConfig.rockGrabLinearDamping,
