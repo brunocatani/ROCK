@@ -2,10 +2,12 @@
 
 /*
  * ROCK needs an equipped-instance witness that does not depend on FO4VR's
- * stale first-person weapon visual tree. This runtime records three engine
+ * stale first-person weapon visual tree. This runtime records bounded engine
  * signals that are earlier than generated visual publication: game-load
- * baseline, player inventory equips, attach-mod mutation hints, and the
- * workbench ApplyChanges stack write that owns the committed mod list.
+ * baseline, player inventory equips, attach-mod mutation hints, stack writer
+ * commits, and direct BGSObjectInstanceExtra OMOD mutations. The object-extra
+ * path exists because FO4VR can mutate the already-equipped extra data without
+ * routing through the stack functors that earlier hooks observed.
  * The witness is intentionally bounded: it is evidence for a pending native
  * visual remap window, not a permanent replacement for FO4VR's equipped state.
  * It never builds collision, mutates weapon mods, or queues native visual work;

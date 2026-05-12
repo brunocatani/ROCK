@@ -45,6 +45,7 @@ namespace rock::weapon_instance_witness_runtime
             std::uint64_t sequence{ 0 };
             std::uint32_t weaponFormID{ 0 };
             std::uint32_t modFormID{ 0 };
+            std::uintptr_t objectInstanceExtraAddress{ 0 };
             std::uint16_t uniqueID{ 0 };
             std::uint8_t attachIndex{ 0 };
             std::uint8_t rank{ 0 };
@@ -62,6 +63,8 @@ namespace rock::weapon_instance_witness_runtime
         std::atomic<bool> s_attachModHookInstalled{ false };
         std::atomic<bool> s_applyChangesHookInstalled{ false };
         std::atomic<bool> s_modifyModDataHookInstalled{ false };
+        std::atomic<bool> s_objectInstanceAddModHookInstalled{ false };
+        std::atomic<bool> s_objectInstanceRemoveModHookInstalled{ false };
         std::atomic<bool> s_equipEventSinkInstalled{ false };
 
         PendingSignal s_pendingSignal{};
@@ -92,6 +95,24 @@ namespace rock::weapon_instance_witness_runtime
             RE::BGSInventoryItem::Stack&);
 
         ModifyModDataWriteDataImpl_t s_originalModifyModDataWriteDataImpl = nullptr;
+
+        using ObjectInstanceAddMod_t = void (*)(
+            RE::BGSObjectInstanceExtra*,
+            const RE::BGSMod::Attachment::Mod&,
+            std::uint8_t,
+            std::uint8_t,
+            bool);
+
+        ObjectInstanceAddMod_t s_originalObjectInstanceAddMod = nullptr;
+        void* s_objectInstanceAddModOriginalTrampoline = nullptr;
+
+        using ObjectInstanceRemoveMod_t = std::uint32_t (*)(
+            RE::BGSObjectInstanceExtra*,
+            const RE::BGSMod::Attachment::Mod*,
+            std::uint8_t);
+
+        ObjectInstanceRemoveMod_t s_originalObjectInstanceRemoveMod = nullptr;
+        void* s_objectInstanceRemoveModOriginalTrampoline = nullptr;
 
         void writeAbsoluteJump(std::uint8_t* target, std::uintptr_t destination)
         {
@@ -523,6 +544,10 @@ namespace rock::weapon_instance_witness_runtime
                         continue;
                     }
                     const auto* objectInstanceExtra = extraList ? extraList->GetByType<RE::BGSObjectInstanceExtra>() : nullptr;
+                    if (signal.objectInstanceExtraAddress != 0 &&
+                        reinterpret_cast<std::uintptr_t>(objectInstanceExtra) != signal.objectInstanceExtraAddress) {
+                        continue;
+                    }
                     if (signal.requireActiveMod && !objectInstanceExtraHasActiveMod(objectInstanceExtra, signal.modFormID)) {
                         continue;
                     }
@@ -559,6 +584,7 @@ namespace rock::weapon_instance_witness_runtime
                     .sequence = active.sequence,
                     .weaponFormID = active.weaponFormID,
                     .modFormID = active.mutatingModFormID,
+                    .objectInstanceExtraAddress = active.objectInstanceExtraAddress,
                     .uniqueID = active.uniqueID,
                     .attachIndex = active.attachIndex,
                     .rank = active.rank,
@@ -613,8 +639,11 @@ namespace rock::weapon_instance_witness_runtime
             std::uint32_t weaponFormID,
             std::uint16_t uniqueID,
             std::uint32_t modFormID,
+            std::uintptr_t objectInstanceExtraAddress,
             std::uint8_t attachIndex,
             std::uint8_t rank,
+            bool requireActiveMod,
+            bool mutatingModRemoved,
             const char* reason)
         {
             const auto sequence = s_nextSignalSequence.fetch_add(1, std::memory_order_acq_rel);
@@ -626,9 +655,12 @@ namespace rock::weapon_instance_witness_runtime
                     .sequence = sequence,
                     .weaponFormID = weaponFormID,
                     .modFormID = modFormID,
+                    .objectInstanceExtraAddress = objectInstanceExtraAddress,
                     .uniqueID = uniqueID,
                     .attachIndex = attachIndex,
                     .rank = rank,
+                    .requireActiveMod = requireActiveMod,
+                    .mutatingModRemoved = mutatingModRemoved,
                     .scansRemaining = kMaxPendingWitnessScans,
                     .expiresAt = now + kPendingWitnessCaptureWindow,
                     .nextScanAfter = now,
@@ -643,15 +675,57 @@ namespace rock::weapon_instance_witness_runtime
             }
 
             ROCK_LOG_INFO(Weapon,
-                "Weapon instance witness signal source={} sequence={} form={:08X} uniqueID={} mod={:08X} attachIndex={} rank={} reason={}",
+                "Weapon instance witness signal source={} sequence={} form={:08X} uniqueID={} mod={:08X} objectExtra={:x} requireActiveMod={} removed={} attachIndex={} rank={} reason={}",
                 sourceName(source),
                 sequence,
                 weaponFormID,
                 uniqueID,
                 modFormID,
+                objectInstanceExtraAddress,
+                requireActiveMod ? "yes" : "no",
+                mutatingModRemoved ? "yes" : "no",
                 attachIndex,
                 rank,
                 reason ? reason : "");
+        }
+
+        void recordWorkbenchObjectInstanceModMutationSignal(
+            const RE::BGSObjectInstanceExtra* objectInstanceExtra,
+            const RE::BGSMod::Attachment::Mod* mod,
+            std::uint8_t attachIndex,
+            std::uint8_t rank,
+            bool removed,
+            const char* reason)
+        {
+            /*
+             * FO4VR has a direct object-instance mutation path that bypasses
+             * both ApplyChangesFunctor and ModifyModDataFunctor. The low-level
+             * add/remove functions do not carry the owning weapon stack, so the
+             * hook records only a bounded signal tied to the exact
+             * BGSObjectInstanceExtra address. The normal equipped-stack scan
+             * must then prove that this mutated extra belongs to the player's
+             * equipped weapon before it can authorize native visual remap.
+             */
+            if (!objectInstanceExtra || !mod) {
+                return;
+            }
+
+            const auto modFormID = mod->GetFormID();
+            if (modFormID == 0) {
+                return;
+            }
+
+            recordPendingSignal(
+                WeaponInstanceWitnessSource::WorkbenchApplyChanges,
+                0,
+                0,
+                modFormID,
+                reinterpret_cast<std::uintptr_t>(objectInstanceExtra),
+                attachIndex,
+                rank,
+                !removed,
+                removed,
+                reason);
         }
 
         void refreshPendingSignal()
@@ -797,8 +871,11 @@ namespace rock::weapon_instance_witness_runtime
                     0,
                     0,
                     modFormID,
+                    0,
                     attachIndex,
                     rank,
+                    true,
+                    false,
                     "AttachModToReferencePostCall");
             }
             return result;
@@ -863,6 +940,51 @@ namespace rock::weapon_instance_witness_runtime
 
             original(functor, baseObj, stack);
             recordWorkbenchModifyModDataWitness(*functor, baseObj, stack);
+        }
+
+        void hookedObjectInstanceAddMod(
+            RE::BGSObjectInstanceExtra* objectInstanceExtra,
+            const RE::BGSMod::Attachment::Mod& mod,
+            std::uint8_t attachIndex,
+            std::uint8_t rank,
+            bool removeInvalidMods)
+        {
+            auto* original = s_originalObjectInstanceAddMod;
+            if (!original) {
+                return;
+            }
+
+            original(objectInstanceExtra, mod, attachIndex, rank, removeInvalidMods);
+            recordWorkbenchObjectInstanceModMutationSignal(
+                objectInstanceExtra,
+                &mod,
+                attachIndex,
+                rank,
+                false,
+                "BGSObjectInstanceExtraAddModPostCall");
+        }
+
+        std::uint32_t hookedObjectInstanceRemoveMod(
+            RE::BGSObjectInstanceExtra* objectInstanceExtra,
+            const RE::BGSMod::Attachment::Mod* mod,
+            std::uint8_t attachIndex)
+        {
+            auto* original = s_originalObjectInstanceRemoveMod;
+            if (!original) {
+                return (std::numeric_limits<std::uint32_t>::max)();
+            }
+
+            const auto remainingMods = original(objectInstanceExtra, mod, attachIndex);
+            if (remainingMods != (std::numeric_limits<std::uint32_t>::max)()) {
+                recordWorkbenchObjectInstanceModMutationSignal(
+                    objectInstanceExtra,
+                    mod,
+                    attachIndex,
+                    0,
+                    true,
+                    "BGSObjectInstanceExtraRemoveModPostCall");
+            }
+            return remainingMods;
         }
 
         bool installWorkbenchApplyChangesHook()
@@ -932,6 +1054,68 @@ namespace rock::weapon_instance_witness_runtime
             return true;
         }
 
+        bool installObjectInstanceAddModHook()
+        {
+            if (s_objectInstanceAddModHookInstalled.load(std::memory_order_acquire)) {
+                return true;
+            }
+
+            REL::Relocation<std::uintptr_t> addModTarget{ REL::RelocationID(1191757, 2189025) };
+            constexpr std::uint8_t kExpectedAddModPrefix[] = {
+                0x44, 0x88, 0x4C, 0x24, 0x20,
+                0x44, 0x88, 0x44, 0x24, 0x18,
+                0x48, 0x89, 0x54, 0x24, 0x10,
+            };
+
+            void* original = nullptr;
+            if (!installEntryHook(
+                    "WeaponObjectInstanceAddModWitness",
+                    addModTarget.address(),
+                    kExpectedAddModPrefix,
+                    sizeof(kExpectedAddModPrefix),
+                    reinterpret_cast<void*>(&hookedObjectInstanceAddMod),
+                    original)) {
+                return false;
+            }
+
+            s_objectInstanceAddModOriginalTrampoline = original;
+            s_originalObjectInstanceAddMod = reinterpret_cast<ObjectInstanceAddMod_t>(original);
+            s_objectInstanceAddModHookInstalled.store(true, std::memory_order_release);
+            return true;
+        }
+
+        bool installObjectInstanceRemoveModHook()
+        {
+            if (s_objectInstanceRemoveModHookInstalled.load(std::memory_order_acquire)) {
+                return true;
+            }
+
+            REL::Relocation<std::uintptr_t> removeModTarget{ REL::RelocationID(1136607, 2189027) };
+            constexpr std::uint8_t kExpectedRemoveModPrefix[] = {
+                0x4C, 0x8B, 0xDC,
+                0x45, 0x88, 0x43, 0x18,
+                0x49, 0x89, 0x53, 0x10,
+                0x57,
+                0x48, 0x81, 0xEC, 0x90, 0x00, 0x00, 0x00,
+            };
+
+            void* original = nullptr;
+            if (!installEntryHook(
+                    "WeaponObjectInstanceRemoveModWitness",
+                    removeModTarget.address(),
+                    kExpectedRemoveModPrefix,
+                    sizeof(kExpectedRemoveModPrefix),
+                    reinterpret_cast<void*>(&hookedObjectInstanceRemoveMod),
+                    original)) {
+                return false;
+            }
+
+            s_objectInstanceRemoveModOriginalTrampoline = original;
+            s_originalObjectInstanceRemoveMod = reinterpret_cast<ObjectInstanceRemoveMod_t>(original);
+            s_objectInstanceRemoveModHookInstalled.store(true, std::memory_order_release);
+            return true;
+        }
+
         class EquipEventSink final :
             public RE::BSTEventSink<RE::TESEquipEvent>
         {
@@ -956,6 +1140,9 @@ namespace rock::weapon_instance_witness_runtime
                     0,
                     0,
                     0,
+                    0,
+                    true,
+                    false,
                     "TESEquipEvent");
                 return RE::BSEventNotifyControl::kContinue;
             }
@@ -1009,7 +1196,15 @@ namespace rock::weapon_instance_witness_runtime
         const bool attachHookInstalled = installAttachModHook();
         const bool workbenchHookInstalled = installWorkbenchApplyChangesHook();
         const bool workbenchModifyModHookInstalled = installWorkbenchModifyModDataHook();
-        const bool installed = equipSinkInstalled && attachHookInstalled && workbenchHookInstalled && workbenchModifyModHookInstalled;
+        const bool objectInstanceAddModHookInstalled = installObjectInstanceAddModHook();
+        const bool objectInstanceRemoveModHookInstalled = installObjectInstanceRemoveModHook();
+        const bool installed =
+            equipSinkInstalled &&
+            attachHookInstalled &&
+            workbenchHookInstalled &&
+            workbenchModifyModHookInstalled &&
+            objectInstanceAddModHookInstalled &&
+            objectInstanceRemoveModHookInstalled;
         if (installed) {
             s_runtimeInstalled.store(true, std::memory_order_release);
             ROCK_LOG_INFO(Init, "Weapon instance witness runtime installed");
@@ -1031,7 +1226,7 @@ namespace rock::weapon_instance_witness_runtime
 
     void noteGameLoadWeaponWitnessBaseline()
     {
-        recordPendingSignal(WeaponInstanceWitnessSource::GameLoadBaseline, 0, 0, 0, 0, 0, "gameLoadBaseline");
+        recordPendingSignal(WeaponInstanceWitnessSource::GameLoadBaseline, 0, 0, 0, 0, 0, 0, true, false, "gameLoadBaseline");
         refreshPendingSignal();
     }
 
