@@ -2898,6 +2898,78 @@ Design implication for future custom motor authority:
   - or both queued/drained in that phase;
   - but not one direct and one deferred without proof of ordering.
 
+### FO4VR between-collide-and-solve command context follow-up
+
+Research question:
+
+- If ROCK writes future custom body-A proxy motion from the between-collide-and-solve listener, will native wrappers apply immediately or queue into the phase command drain before solve?
+
+Ghidra-confirmed `bhkWorld::vfunction43` details at `0x141DF73A0`:
+
+- The world update creates a local command/list state around `local_128`.
+- For each listener phase, `bhkWorld::vfunction43` passes `&local_128` into the listener callback.
+- Between collide and solve:
+  - emits timing label `TtPhysicsStepListeners-BetweenPhysicsCollideAndSolve`;
+  - locks/copies the listener array;
+  - calls listener vtable slot `+0x28` with `(listener, threadCount, &local_128, collideState, substepProgress, substepDt)`;
+  - immediately calls command drain helper `0x141DFDE70(&local_128, workerQueue, threadCount, 1)`;
+  - calls companion listener slot `+0x30`;
+  - then emits timing label `TtSolve` and calls solve helper `0x141DFE1E0`.
+- This establishes a hard phase order:
+  - collide;
+  - between-collide-and-solve callback;
+  - between-collide-and-solve command drain;
+  - companion callback;
+  - solve.
+
+Ghidra-confirmed command drain behavior:
+
+- `0x141DFDE70`:
+  - checks command count at `param_1[1]`;
+  - if exactly one command is present and the command field at `+0x08` equals `1`, directly calls the command object's vtable `+0x20`;
+  - otherwise builds batches through `0x141DFFBB0`;
+  - schedules work through `0x141BCFE80` / `0x141BCFE60`;
+  - waits on the global job handle at `DAT_145A3CD30 + 0x38`;
+  - releases command refs and clears command counts before returning.
+- `0x141DFC8D0`:
+  - is the shared wrapper queue path used by set-transform, set-velocity, set-keyframed, and other world commands;
+  - stores command payloads in per-thread command arrays keyed by TLS `+0x152C`;
+  - registers/links the command list for the target world;
+  - handles command type `9` for velocity payloads from `0x141DF56F0` / `0x141DF5930`;
+  - handles command type `6` for transform payloads from `0x141DF55F0`.
+
+Confirmed conclusion:
+
+- FO4VR has an explicit command-list handoff inside every physics listener phase.
+- Commands queued during between-collide-and-solve are drained before solve.
+- This is the strongest binary evidence so far that a solver-adjacent proxy drive can be phase-coherent if it uses the same command model intentionally.
+
+Important unresolved detail:
+
+- This pass did not prove whether TLS command mode byte `+0x1528` is set while ROCK's listener callback is executing.
+- Native wrappers such as `0x141DF5930` and `0x141DF56F0` branch on TLS `+0x1528`:
+  - if clear, they write velocity directly through `0x141539F30`;
+  - if set, they queue command `9` through `0x141DFC8D0`.
+- The local command-list argument and immediate drain prove the queue path is supported by the phase, but not that every wrapper call from a custom ROCK listener will automatically queue.
+
+Design implication:
+
+- A future implementation cannot assume "call wrapper from listener" is enough without verifying runtime execution mode.
+- The proxy velocity write and constraint atom writes must still be designed as one coherent unit:
+  - direct proxy velocity plus direct atom writes under a verified safe write context;
+  - queued proxy velocity plus queued/deferred atom writes that drain in the same phase;
+  - or a ROCK-owned phase command that writes both proxy motion and constraint atom fields together.
+- The current evidence supports between-collide-and-solve as the right phase, but not yet the exact write primitive.
+
+Additional physics nuance to resolve:
+
+- Direct hard-keyframe velocity changes body velocity, not necessarily body transform before the solver builds the constraint.
+- A custom constraint target update must decide whether transform A/B should be computed from:
+  - current proxy body transform;
+  - desired proxy target transform;
+  - or a predicted proxy transform from current transform plus hard-keyframe velocity over the substep.
+- This matters because writing atoms from the desired hand frame while body A remains at its previous transform could recreate a one-frame mismatch.
+
 ### ROCK custom constraint source reread after phase-safety mapping
 
 Current source facts:
