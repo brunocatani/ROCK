@@ -207,6 +207,49 @@ Implications:
 - For ROCK custom grab, native hkp constructors are layout witnesses; live hknp world insertion plus the build-jacobians atom interpreter are the production-relevant paths.
 - `hknpMalleableConstraintData` remains a research candidate, not a selected design. It is live-compatible in structure, but not proven useful for per-frame grab feel.
 
+### 2026-05-12 follow-up: linear motor runtime offset witnesses
+
+Additional native witnesses:
+
+- `hkpPrismaticConstraintData::hkpPrismaticConstraintData` at `0x1419B1350`:
+  - atom stream starts at object `+0x18`;
+  - type `2` set-local-transforms atom starts at atom-stream offset `0x00`;
+  - type `0x0B` linear motor atom appears at object offset around `+0xA8`, i.e. atom-stream relative offset `0x90`;
+  - that linear motor atom writes initialized offset `0x50`;
+  - that linear motor atom writes previous-target-position offset `0x54`.
+- `hkpPrismaticConstraintData::vfunction19` at `0x1419B1B20`:
+  - runtime size `0x58`;
+  - solver results `10`;
+  - `10 * 8 = 0x50`, so the linear motor initialized byte at `0x50` begins immediately after the solver-result block.
+- `hkpLimitedHingeConstraintData::hkpLimitedHingeConstraintData` at `0x1419ACA30`:
+  - motor-related packed runtime offsets include `0x50` and `0x54`;
+  - this is a second independent native witness that motor runtime offsets are absolute from the runtime base.
+- `hkpPositionConstraintMotor::vfunction5` at `0x141F61120`:
+  - clones a 0x30-byte position motor;
+  - copies type byte at `+0x10`;
+  - copies min/max force at `+0x18/+0x1C`;
+  - copies tau/damping at `+0x20/+0x24`;
+  - copies proportional/constant recovery velocity at `+0x28/+0x2C`.
+
+Implications for ROCK:
+
+- The current source log saying linear motor offsets are relative to per-atom runtime pointers is not supported by the native witnesses or by `0x1417E39C0`.
+- FO4VR's normal insertion path allocates one runtime block for the constraint and passes that block to the solver; no per-atom runtime base was found in the insertion path.
+- Under ROCK's current reported runtime info:
+  - solver results = `12`;
+  - solver-result block = `0x00..0x5F`;
+  - ragdoll runtime offsets `0x60/0x64` are coherent with that report;
+  - linear offsets `0x40,0x31,0x22` and `0x44,0x38,0x2C` overlap solver-result storage.
+- Under the HIGGS-shaped custom runtime:
+  - solver results = `6`;
+  - solver-result block = `0x00..0x2F`;
+  - angular state starts at `0x30`;
+  - linear offsets should be `0x40/0x41/0x42` and `0x44/0x48/0x4C`.
+- Therefore, the current ROCK linear motor runtime offsets are incompatible with both:
+  - ROCK's own current `12` solver-result report;
+  - the original HIGGS custom grab runtime shape.
+- This is a strong explanation candidate for the old custom-motor stutter/fighting behavior, but not the only candidate. Timing phase, proxy drive snapping, body-A authority, and target continuity are still open contributors.
+
 Likely correction direction, pending final verification:
 
 - Use a coherent custom runtime layout, probably HIGGS-shaped:
