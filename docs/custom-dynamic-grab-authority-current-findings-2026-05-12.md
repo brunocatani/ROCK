@@ -2808,6 +2808,96 @@ Still unresolved:
   - filter bit `14`;
   - or a combination at creation time only.
 
+### FO4VR physics listener command-safety follow-up
+
+This section maps whether future proxy/constraint writes from a physics-step callback should use native wrappers, direct world functions, or command queues.
+
+Ghidra-confirmed `bhkWorld::vfunction43` / update facts:
+
+- Function address inspected: `0x141DF73A0`.
+- The update pushes timer labels for:
+  - `TtPhysicsStepListeners-BeforeWholePhysicsUpdate`;
+  - `TtPhysicsStepListeners-BeforeAnyPhysicsStep`;
+  - `TtCollide`;
+  - `TtPhysicsStepListeners-BetweenPhysicsCollideAndSolve`;
+  - `TtSolve`;
+  - `TtPhysicsStepListeners-AfterAnyPhysicsStep`;
+  - `TtPhysicsStepListeners-AfterWholePhysicsUpdate`.
+- For each listener phase, FO4VR:
+  - locks/copies the bhkWorld listener array;
+  - calls the listener vtable slot;
+  - calls a phase companion slot;
+  - drains a command list associated with `local_128` through a phase helper.
+
+Phase callback/flush pattern:
+
+- Before whole:
+  - listener slot `+0x08`;
+  - command drain helper `0x141DFDB30`;
+  - companion slot `+0x10`.
+- Before any substep:
+  - listener slot `+0x18`;
+  - command drain helper `0x141DFE3B0`;
+  - companion slot `+0x20`.
+- Between collide and solve:
+  - listener slot `+0x28`;
+  - command drain helper `0x141DFDE70`;
+  - companion slot `+0x30`.
+- After any substep:
+  - listener slot `+0x38`;
+  - command drain helper `0x141DFDCD0`;
+  - companion slot `+0x40`.
+- After whole:
+  - listener slot `+0x48`;
+  - command drain helper `0x141DFD990`;
+  - companion slot `+0x50`.
+
+Command drain helper findings:
+
+- `0x141DFDB30`, `0x141DFE3B0`, `0x141DFDE70`, and `0x141DFDCD0` decompile to the same command-drain shape.
+- Each checks command count at `param_1[1]`.
+- If one command is present and a small command field equals `1`, it calls the command object's vtable `+0x20` directly.
+- Otherwise it builds command batches through `0x141DFFBB0`, schedules work through `0x141BCFE80` / `0x141BCFE60`, waits on a global handle at `DAT_145A3CD30 + 0x38`, and releases refs.
+- This means commands queued by wrappers during a listener callback are not simply "later someday"; the world update has explicit phase drains immediately after callbacks.
+
+World lock helper findings:
+
+- `0x141DF5FB0(worldLike)` calls `0x141B93330(worldLike + 0x6D8)`.
+- `0x141DF5FD0(worldLike)` calls `0x141B93580(worldLike + 0x6D8)`.
+- `0x141DF6010(worldLike)` calls `0x141B93570(worldLike + 0x6D8)`.
+- `0x141B93330` is a recursive current-thread lock/acquire helper using `GetCurrentThreadId`.
+- `0x141B93580` is a corresponding release helper that clears the owner when the recursion count reaches the terminal value.
+- `0x141B93570` is a lighter decrement/release helper.
+- Native mouse spring update `0x141E4AA30` uses these helpers around its world/body work, which is another reason it avoids unsafe concurrent direct writes.
+
+hknp thread-safety helpers:
+
+- `0x1415388F0` increments a read counter in the world thread-safety check at `world + 0x690`.
+- `0x141538A30` decrements that read counter.
+- `0x141538AF0` increments a write counter and stamps the current thread id.
+- `0x141538CB0` decrements the write counter and clears the writer thread marker when write count reaches zero.
+- These are checks/guards around hknp world access, not grab drive policies.
+
+Interpretation:
+
+- A future between-collide-and-solve custom authority callback can be made phase-coherent because FO4VR has a native listener slot exactly between collision generation and solver build.
+- Wrapper calls made inside that callback may queue and then be drained immediately by the phase helper, depending on TLS state.
+- Direct world functions also take hknp thread-safety locks, but using direct calls in the wrong TLS/world-lock state can fight FO4VR's command scheduling model.
+- The safest implementation design cannot be chosen until this is decided explicitly:
+  - call wrapper functions and rely on the phase command drain;
+  - call direct compute/write functions only after proving the callback is already in a safe execution mode;
+  - or build a ROCK-owned phase command that mirrors native queue semantics.
+
+Design implication for future custom motor authority:
+
+- Body-A proxy target, constraint transform A/B, angular target, and motor field updates should be committed in one phase.
+- The strongest candidate remains `BetweenPhysicsCollideAndSolve`, but the write primitive should be selected as part of the implementation plan, not assumed.
+- If a proxy velocity wrapper queues and drains after the listener callback, then constraint target writes performed directly inside the callback may become one phase earlier than the proxy velocity write. That would reintroduce body-A/body-B disagreement.
+- Therefore proxy drive and constraint field writes must share the same execution model:
+  - both direct in the callback, if verified safe;
+  - or both queued/drained in that phase;
+  - but not one direct and one deferred without proof of ordering.
+
 ### Research conclusion from this pass
 
 The next custom-authority design should be judged against these confirmed HIGGS rules:
