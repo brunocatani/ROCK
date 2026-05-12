@@ -5896,3 +5896,90 @@ The current evidence says ROCK lacks a correctly phased ordinary one-hand custom
 - If not safe enough, can ROCK construct local command-list entries for command `6` transform and command `9` velocity and append them to `local_128`?
 - Should future motor target/motor writes happen exclusively in the between callback, or should game update prepare a pending target snapshot that the between callback applies?
 - Does current `updateConstraintGrabDriveTarget(...)` depend on live generated hand-body transform being already current? If so, a future hidden proxy must replace that dependency for ordinary one-hand grab.
+
+## 2026-05-12 continuation: local command-list ABI boundary
+
+This pass checks whether the pre-solve local command list is practical to use from ROCK instead of direct setter calls.
+
+### Between-phase local command list refresher
+
+`bhkWorld::vfunction43` creates a local command list on the stack (`local_128` in the decompiler). The same list is passed to step listeners and phase drains.
+
+For the between-collide-and-solve phase:
+
+- listener vtable slot `+0x28` receives `&local_128`;
+- `0x141DFDE70(&local_128, workerQueue, threadCount, 1)` drains commands;
+- listener vtable slot `+0x30` runs after the drain;
+- solve then begins.
+
+`0x141DFDE70` only drains the local list it receives. It has no xrefs other than the update loop and no evidence of reading the global wrapper queue.
+
+### Local command list layout evidence
+
+`0x141DFFBB0` converts the local command list into worker batches.
+
+From that function:
+
+- input `param_2` is treated as two array-like regions:
+  - `param_2[0]`, `param_2[1]`, and capacity at `param_2 + 0x0C` for command entries;
+  - `param_2[2]`, `param_2[3]` for dependency pairs;
+- each command entry appears to be 0x10 bytes in the source list;
+- batch entries are 0x18 bytes in the worker batch;
+- dependency pairs are packed as two `ushort` values;
+- the batcher also does reference-count increments/decrements on command objects.
+
+This is enough to say the list is not just a simple array of `{type, bodyId, payload}` structs. It is a command object/dependency graph with refcount handling.
+
+### Local command execution evidence
+
+`hknpApiCommandProcessor::vfunction5` at `0x1417F258F` confirms command meanings once a command reaches the command processor:
+
+- command `6`: direct set body transform `0x1415395E0`.
+- command `7`: another transform/orientation setter `0x1415391C0`.
+- command `8`: another position/orientation setter `0x141539380`.
+- command `9`: direct set body velocity `0x141539F30`.
+- command `0x0A`: linear velocity-only setter `0x141539C10`.
+- command `0x0B`: angular velocity-only setter `0x141539D30`.
+- command `0x15`: set body motion properties `0x14153B2F0`.
+- command `2`: destroy body `0x141544E80`.
+- command `3`: remove body `0x141544B00`.
+
+The command processor itself reads body slots under the hknp read guard, then executes the command through the normal direct world mutation paths.
+
+### Global wrapper queue evidence
+
+`0x141DFC8D0` is the known Bethesda wrapper queue function. It does not append into `local_128`.
+
+It:
+
+- checks the command type at `this + 0x04`;
+- for command `6` transform, copies a 0x50-byte transform command into `DAT_1465A3E30 + threadIndex*0xA8 + 0x00`;
+- for command `9` velocity, copies a 0x40-byte velocity command into `DAT_1465A3E30 + threadIndex*0xA8 + 0x18`;
+- for command `0x12`, copies into `+0x30`;
+- for command `7`, copies into `+0x48`;
+- for command `0x2C`, copies into `+0x60`;
+- then updates dependency/ref bookkeeping in a structure at `+0x80`.
+
+The thread index comes from TLS `+0x152C`.
+
+This confirms the wrapper queue has its own per-thread global storage. It is not the same structure as the phase-local `local_128` list drained by `0x141DFDE70`.
+
+### Practical conclusion
+
+Using local pre-solve commands would be architecturally clean, but it is not currently safe to implement from the mapped evidence alone.
+
+Reasons:
+
+- ROCK's current `PhysicsStepDriveCoordinator` callback signature discards the `&local_128` command-list pointer.
+- The local list requires command objects and dependency/refcount handling, not only raw command payload structs.
+- The mapped wrapper queue function only teaches the global queue layout, not the local command object allocation ABI.
+- A wrong local command entry could corrupt the command graph or reference counts inside the physics update.
+
+Therefore, until more command-object creation code is mapped, direct native setters in the between phase remain the better-researched future option for a hidden proxy.
+
+### Updated open questions
+
+- Which engine function appends command objects directly to the phase-local command list passed to step listeners?
+- Are there native step listeners that receive `&local_128` and append command objects in their vtable `+0x28` implementation?
+- Can a command object be allocated with the same vtable/refcount semantics as the command processor expects, or is that too much binary-owned ABI for ROCK?
+- If direct setters are used instead, does a minimal no-contact proxy avoid enough side effects that local command integration is unnecessary?
