@@ -2668,6 +2668,64 @@ Remaining unresolved:
 - `0x1417D3BF0` needs inspection before fully naming the post-velocity chain update in `0x14153D440`.
 - `0x141DFC8D0` and the command headers need inspection if ROCK ever calls these wrappers from non-physics threads instead of an already-safe physics step callback.
 
+Second follow-up confirmed:
+
+- `0x1417D8590`:
+  - receives a manager pointer and body id;
+  - reads the world through `*param_1`;
+  - resolves the body slot from `world + 0x20 + bodyId * 0x90`;
+  - skips when body flag bit `0x01` is set;
+  - for ordinary bodies without body flag bit `0x08`, walks a linked island/body list through a table at `param_1[3]`;
+  - marks entries at offset `+0x59` and pushes their ids into an array at `param_1[0xB]`, growing it through `0x14155D820` if needed;
+  - for bodies with flag bit `0x08`, uses motion index `body + 0x68` and writes a byte at a motion-manager slot `param_1[1] + motionIndex * 0x10 + 0x0B`;
+  - this supports naming it as a body/island activation or dirty-island enqueue helper, not a general transform setter.
+- `0x14153CC40`:
+  - is called by direct transform set `0x1415395E0`;
+  - for static/no-motion bodies, updates broadphase/AABB state and fires/listens through world offsets including `+0x510`, `+0x178`, and `+0x4A0`;
+  - computes packed AABB/min-max state from shape bounds and world scale data;
+  - calls broadphase update methods at `world + 0x178` vtable slots including `+0x18` and `+0x50`;
+  - may wake overlapping bodies through `0x1417D8590` depending on `param_5` and AABB overlap changes;
+  - for motion-backed bodies, updates motion transform/body bounds through `0x1417D51E0` and `0x14153CB10`, then wakes the body through `0x1417D8590`.
+- `0x1417D3BF0`:
+  - is called by `0x14153D440` after velocity writes;
+  - recomputes body extents/AABB-like packed values at body offsets around `+0x50..+0x76`;
+  - uses shape/body transform callbacks and world scale/bounds data;
+  - supports naming `0x14153D440` as velocity-postupdate body-chain bounds refresh, not just a listener notification.
+- `0x141DFC8D0`:
+  - is a thread-local command queue/enqueue function;
+  - switches on a short command id read from the caller-provided command header;
+  - stores command payloads in per-thread arrays at `DAT_1465A3E30 + threadIndex * 0xA8 + offsets`;
+  - recognizes command ids including `6`, `7`, `9`, `0x12`, and `0x2C`;
+  - uses `0x141DFD7A0` / `0x141E04930` to register or synchronize against the target world key;
+  - command headers seen so far:
+    - transform set wrapper `0x141DF55F0`: local bytes `0x50 / 0x60100`;
+    - velocity wrapper `0x141DF56F0` and hard-keyframe velocity wrapper `0x141DF5930`: local bytes `0x30 / 0x90100`.
+
+Updated side-effect interpretation:
+
+- Direct transform set is expensive and broadphase-visible:
+  - writes body transform;
+  - updates bounds/AABB state;
+  - may wake nearby/overlapping bodies;
+  - notifies transform listeners.
+- Direct velocity drive is solver/motion-friendly:
+  - writes linear/angular motion velocity;
+  - refreshes body-chain bounds;
+  - wakes the body/island if the requested velocity is non-zero;
+  - avoids steady-state transform snapping when used through `0x141DF5930` or `0x14153ABD0`.
+- For a future custom dynamic grab proxy, the cleaner steady-state drive candidate remains:
+  - calculate proxy target from the flattened real hand frame;
+  - commit proxy velocity through direct hard-keyframe velocity semantics;
+  - commit constraint target and motor fields in the same after-collide/before-solve phase;
+  - reserve direct transform set for create/teleport/recovery transitions only.
+- If ROCK updates body A through direct transform set every frame, it risks broadphase wake churn and implicit snap-like correction. That is consistent with the old "wrist-breaking" and stutter failure mode when combined with a custom constraint on body B.
+
+New unresolved items:
+
+- Need verify whether `0x141DF5930` can be called safely from the physics listener phase ROCK controls, or whether direct `0x14153A6A0 + 0x141539F30` is preferable inside an already-locked/safe context.
+- Need identify the exact native caller/phase for `bhkNPCollisionObject::vfunction44` relative to physics step. If it runs outside the desired between-collide-and-solve phase, copying that call site timing is not sufficient for custom grab.
+- Need map the filter/layer path for creating a no-contact proxy body in FO4VR, because body-A should be an authority anchor, not contact evidence.
+
 ### Research conclusion from this pass
 
 The next custom-authority design should be judged against these confirmed HIGGS rules:
