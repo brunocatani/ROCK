@@ -1688,6 +1688,59 @@ Still unresolved:
 - The exact decompiled case bodies for atom type `0x0B` linear motor and atom type `0x13` ragdoll motor are still being narrowed inside `0x141A55550`.
 - The Ghidra MCP decompile/disassembly output for the full interpreter is very large and truncates the middle of the function in normal output, so the next pass must identify the relevant switch table entries and inspect those case bodies without relying on truncated output.
 
+### 2026-05-12 Ghidra follow-up: malleable wrapper semantics
+
+Binary-confirmed functions:
+
+- `hknpMalleableConstraintData::hknpMalleableConstraintData` at `0x141F5B600`;
+- setup helper `0x141F5B5A0`;
+- runtime-info helper `0x141F5B5C0`;
+- type function `0x141F5B760`;
+- constraint-info function `0x141F5B770`;
+- runtime-info function `0x141F5B7E0`;
+- solver/build delegate `0x141F5B800`;
+- wrapped-data accessor `0x141A4B450`.
+
+Confirmed behavior:
+
+- Constructor wraps an inner constraint data pointer through `hkpWrappedConstraintData`.
+- Type function returns `0x0D`.
+- The wrapper owns a small atom/block at object offset `+0x18`.
+- Constructor initializes wrapper state:
+  - word at wrapper block `+0x18` is set to `1`;
+  - pointer at wrapper block `+0x20` is set to null by setup helper;
+  - object byte `+0x30` stores the constructor flag;
+  - object float/value at `+0x34` is initialized to `0x3C23D70A`;
+  - helper `0x141F5B5C0` queries wrapped constraint runtime info through wrapped vtable `+0x90`.
+- Constraint-info function calls the wrapped constraint's info function at vtable `+0x28`, then exposes the wrapper atom/block at `this + 0x18` with size `0x18`.
+- Runtime-info function delegates to the wrapped constraint's vtable `+0x90`.
+- Solver/build delegate `0x141F5B800`:
+  - copies the incoming build context to a local context;
+  - multiplies the incoming float at context offset `+0x24` by the wrapper value at object offset `+0x34`;
+  - queries the wrapped constraint's atom info;
+  - calls the same live atom interpreter `0x141A55550(...)` on the wrapped atom stream with the modified local context and the same writer/runtime state.
+- `hkpWrappedConstraintData::vfunction25` at `0x141A4B450` returns the wrapped inner constraint data pointer.
+
+Interpretation:
+
+- `hknpMalleableConstraintData` is not a second motor authority.
+- It does not expose separate linear/angular/pivot/deviation policy.
+- It broadly scales one solver/build context float before delegating the wrapped atom stream to the normal interpreter.
+- It may be useful as a global softness/strength wrapper only if the context `+0x24` field is proven to correspond to the desired impulse/constraint-strength term in the live solver path.
+- It is not a substitute for the HIGGS-style per-frame policy:
+  - mass-capped linear max force;
+  - angular max force derived from linear force;
+  - collision tau;
+  - fade-in angular ratio;
+  - loose-weapon force policy;
+  - deviation/lag behavior.
+
+Replacement implication:
+
+- Do not design the custom one-hand grab replacement around malleable as the primary quality mechanism.
+- Keep malleable as an optional later wrapper only after the core custom motor runtime, proxy, phase timing, and per-frame motor tuning are correct.
+- If malleable is ever used, it should be treated as a coarse wrapper layered around a correct custom motor constraint, not as the source of physical grab feel.
+
 ### Current release path
 
 `Hand::releaseGrabbedObject(...)` source-confirmed behavior:
