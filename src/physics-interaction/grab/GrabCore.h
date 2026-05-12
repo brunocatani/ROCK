@@ -427,6 +427,7 @@ namespace rock
     {
         RE::NiTransform rawHandSpace{};
         RE::NiTransform constraintHandSpace{};
+        RE::NiTransform constraintBodyHandSpace{};
         RE::NiTransform handBodyToRawHandAtGrab{};
         RE::NiTransform bodyLocal{};
         RE::NiTransform rootBodyLocal{};
@@ -435,6 +436,7 @@ namespace rock
         RE::NiTransform handBodyWorldAtGrab{};
         RE::NiTransform objectNodeWorldAtGrab{};
         RE::NiTransform desiredObjectWorldAtGrab{};
+        RE::NiTransform desiredBodyWorldAtGrab{};
         RE::NiPoint3 pivotAHandBodyLocalGame{};
         RE::NiPoint3 grabPivotWorldAtGrab{};
         RE::NiPoint3 gripPointWorldAtGrab{};
@@ -497,6 +499,7 @@ namespace rock
         {
             rawHandSpace = RE::NiTransform();
             constraintHandSpace = RE::NiTransform();
+            constraintBodyHandSpace = RE::NiTransform();
             handBodyToRawHandAtGrab = RE::NiTransform();
             bodyLocal = RE::NiTransform();
             rootBodyLocal = RE::NiTransform();
@@ -505,6 +508,7 @@ namespace rock
             handBodyWorldAtGrab = RE::NiTransform();
             objectNodeWorldAtGrab = RE::NiTransform();
             desiredObjectWorldAtGrab = RE::NiTransform();
+            desiredBodyWorldAtGrab = RE::NiTransform();
             pivotAHandBodyLocalGame = {};
             grabPivotWorldAtGrab = {};
             gripPointWorldAtGrab = {};

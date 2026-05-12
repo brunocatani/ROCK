@@ -286,7 +286,7 @@ namespace rock
         bool rockGrabAdaptiveMotorEnabled = true;
         float rockGrabAdaptivePositionFullError = 20.0f;
         float rockGrabAdaptiveRotationFullError = 60.0f;
-        float rockGrabAdaptiveMaxForceMultiplier = 4.0f;
+        float rockGrabAdaptiveMaxForceMultiplier = 1.0f;
 
         float rockGrabMaxInertiaRatio = 10.0f;
 

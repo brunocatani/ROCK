@@ -6325,6 +6325,7 @@ Correction made:
 - when `GrabReleaseContext::peerHandStillHolding` is true, each hand queues and flushes a `0.5` force-budget share so two proxy constraints do not double total object authority;
 - the joining hand starts with the shared budget during proxy constraint creation, avoiding a full-force first frame on second-hand join;
 - held-object physical deviation and visual hand deviation now use five-sample rolling averages before the max-deviation release timer advances;
+- `fGrabAdaptiveMaxForceMultiplier` default was changed from `4.0` to `1.0` in source defaults, packaged config, and the active local ROCK.ini so adaptive motor behavior changes tau without multiplying max force beyond the HIGGS-style finite budget;
 - held and proxy telemetry now logs `forceBudget`, and visual telemetry logs raw plus averaged deviation;
 - stale grab-domain comments were updated to describe proxy-constraint dynamic authority rather than native mouse-spring production authority.
 

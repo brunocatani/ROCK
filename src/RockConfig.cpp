@@ -325,7 +325,7 @@ namespace rock
         rockGrabAdaptiveMotorEnabled = true;
         rockGrabAdaptivePositionFullError = 20.0f;
         rockGrabAdaptiveRotationFullError = 60.0f;
-        rockGrabAdaptiveMaxForceMultiplier = 4.0f;
+        rockGrabAdaptiveMaxForceMultiplier = 1.0f;
 
         rockGrabMaxInertiaRatio = 10.0f;
 

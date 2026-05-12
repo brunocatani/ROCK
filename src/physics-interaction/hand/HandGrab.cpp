@@ -2108,7 +2108,8 @@ namespace rock
             auto* transformBRotation = reinterpret_cast<const float*>(constraintData + offsets::kTransformB_Col0);
             auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + offsets::kTransformB_Pos);
 
-            const RE::NiTransform desiredBodyTransformHandSpace = multiplyTransforms(_grabFrame.constraintHandSpace, _grabFrame.bodyLocal);
+            const RE::NiTransform desiredBodyTransformHandSpace =
+                _heldDriveMode == HeldObjectDriveMode::ProxyConstraint ? _grabFrame.constraintBodyHandSpace : multiplyTransforms(_grabFrame.constraintHandSpace, _grabFrame.bodyLocal);
             const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
             const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
             const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
@@ -2232,10 +2233,8 @@ namespace rock
         }
 
         const RE::NiPoint3 pivotAProxyLocalGame = transform_math::worldPointToLocal(proxyWorldTransform, grabPivotAWorld);
-        const RE::NiTransform desiredBodyTransformProxySpace =
-            grab_frame_math::desiredBodyInHandBodySpace(_grabFrame.constraintHandSpace, _grabFrame.bodyLocal);
-        const RE::NiPoint3 activePivotBBodyLocalGame =
-            grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformProxySpace, pivotAProxyLocalGame);
+        const RE::NiTransform desiredBodyTransformProxySpace = _grabFrame.constraintBodyHandSpace;
+        const RE::NiPoint3 activePivotBBodyLocalGame = activeGrabDrivePivotBBodyLocalGame();
 
         const float gameToHkScale = gameToHavokScale();
         float pivotBBodyLocalHk[4]{
@@ -2330,8 +2329,7 @@ namespace rock
         RE::NiPoint3& outDesiredTargetPointWorld,
         RE::NiPoint3& outActivePivotBBodyLocalGame)
     {
-        const RE::NiTransform desiredBodyTransformProxySpace =
-            grab_frame_math::desiredBodyInHandBodySpace(_grabFrame.constraintHandSpace, _grabFrame.bodyLocal);
+        const RE::NiTransform desiredBodyTransformProxySpace = _grabFrame.constraintBodyHandSpace;
         outDesiredObjectWorld = multiplyTransforms(proxyWorldTransform, _grabFrame.constraintHandSpace);
         outDesiredBodyWorld = multiplyTransforms(proxyWorldTransform, desiredBodyTransformProxySpace);
         outActivePivotBBodyLocalGame = activeGrabDrivePivotBBodyLocalGame();
@@ -2354,14 +2352,10 @@ namespace rock
         auto* transformBTranslation = reinterpret_cast<float*>(constraintData + offsets::kTransformB_Pos);
         auto* targetBRca = reinterpret_cast<float*>(constraintData + ATOM_RAGDOLL_MOT + 0x10);
         grab_constraint_math::writeInitialGrabAngularFrame(transformBRotation, targetBRca, desiredBodyTransformProxySpace);
-        grab_constraint_math::writeDynamicTransformBTranslation(
-            transformBTranslation,
-            desiredBodyTransformProxySpace,
-            _grabAuthorityPivotAProxyLocalGame,
-            gameToHkScale);
-
-        outActivePivotBBodyLocalGame =
-            grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformProxySpace, _grabAuthorityPivotAProxyLocalGame);
+        transformBTranslation[0] = outActivePivotBBodyLocalGame.x * gameToHkScale;
+        transformBTranslation[1] = outActivePivotBBodyLocalGame.y * gameToHkScale;
+        transformBTranslation[2] = outActivePivotBBodyLocalGame.z * gameToHkScale;
+        transformBTranslation[3] = 0.0f;
         outDesiredTargetPointWorld = transform_math::localPointToWorld(outDesiredBodyWorld, outActivePivotBBodyLocalGame);
         return true;
     }
@@ -3869,6 +3863,7 @@ namespace rock
             _grabFrame.bodyLocal = makeIdentityTransform();
             _grabFrame.ownerBodyLocal = ownerNodeAtGrab ? computeRuntimeBodyLocalTransform(ownerNodeAtGrab->world, grabBodyWorldAtGrab) : makeIdentityTransform();
             _grabFrame.rootBodyLocal = rootNode ? computeRuntimeBodyLocalTransform(rootNode->world, grabBodyWorldAtGrab) : makeIdentityTransform();
+            const RE::NiTransform objectToBodyAtGrab = computeRuntimeBodyLocalTransform(objectWorldTransform, grabBodyWorldAtGrab);
             _grabFrame.localMeshTriangles.clear();
             _grabFrame.gripPointLocal = transform_math::worldPointToLocal(objectWorldTransform, grabGripPoint);
             _grabFrame.gripEvidenceLocal = _grabFrame.gripPointLocal;
@@ -3925,6 +3920,7 @@ namespace rock
             }
 
             RE::NiTransform desiredObjectWorld = objectWorldTransform;
+            RE::NiTransform desiredBodyWorld = grabBodyWorldAtGrab;
             const auto oppositionContacts = hand_semantic_contact_state::selectThumbOppositionContacts(semanticContacts);
             /*
              * Runtime grab authority is intentionally single-source. Mesh hits,
@@ -4025,6 +4021,7 @@ namespace rock
                     if (pulledGrabAdjust > 0.0f) {
                         desiredObjectWorld.translate = desiredObjectWorld.translate + pocket.palmNormalWorld * pulledGrabAdjust;
                     }
+                    desiredBodyWorld = multiplyTransforms(desiredObjectWorld, objectToBodyAtGrab);
 
                     const auto threePhaseFingerTargets =
                         buildRuntimeFingerPoseTargets(grabGripPoint,
@@ -4111,12 +4108,14 @@ namespace rock
                 grabPivotAWorld);
             _grabFrame.rawHandSpace = splitGrabFrame.rawHandSpace;
             _grabFrame.constraintHandSpace = splitGrabFrame.constraintHandSpace;
+            _grabFrame.constraintBodyHandSpace = grab_frame_math::objectInFrameSpace(proxyFrameWorldAtGrab, desiredBodyWorld);
             _grabFrame.handBodyToRawHandAtGrab = splitGrabFrame.handBodyToRawHandAtGrab;
             _grabFrame.pivotAHandBodyLocalGame = splitGrabFrame.pivotAHandBodyLocal;
             _grabFrame.liveHandWorldAtGrab = handWorldTransform;
             _grabFrame.handBodyWorldAtGrab = proxyFrameWorldAtGrab;
             _grabFrame.objectNodeWorldAtGrab = objectWorldTransform;
             _grabFrame.desiredObjectWorldAtGrab = desiredObjectWorld;
+            _grabFrame.desiredBodyWorldAtGrab = desiredBodyWorld;
             _grabFrame.hasTelemetryCapture = true;
             _grabFrame.grabPivotWorldAtGrab = grabPivotAWorld;
             _grabFrame.gripPointWorldAtGrab = grabGripPoint;
@@ -4682,8 +4681,7 @@ namespace rock
             _heldDriveMode == HeldObjectDriveMode::ProxyConstraint &&
             resolveGrabAuthorityProxyFrame(world, handWorldTransform, nullptr, proxyAuthorityWorld, proxyAuthoritySource);
         if (_heldDriveMode == HeldObjectDriveMode::ProxyConstraint) {
-            const RE::NiTransform desiredBodyTransformProxySpace =
-                grab_frame_math::desiredBodyInHandBodySpace(_grabFrame.constraintHandSpace, _grabFrame.bodyLocal);
+            const RE::NiTransform desiredBodyTransformProxySpace = _grabFrame.constraintBodyHandSpace;
             desiredObjectWorld = multiplyTransforms(proxyAuthorityWorld, _grabFrame.constraintHandSpace);
             desiredBodyWorld = multiplyTransforms(proxyAuthorityWorld, desiredBodyTransformProxySpace);
             activePivotBBodyLocalGame = activeGrabDrivePivotBBodyLocalGame();

@@ -443,6 +443,7 @@ The next source-level HIGGS parity correction is in progress:
 
 - add shared per-object force budgeting so two hands do not each apply a full finite motor budget to the same loose object;
 - add five-sample averaged physical/visual deviation before release decisions, matching the HIGGS short-history hand-distance guard;
+- keep adaptive max-force amplification neutral by default (`fGrabAdaptiveMaxForceMultiplier = 1.0`) so held-object lag does not multiply finite force beyond the mass-capped budget;
 - keep COM as mass/release data only;
 - keep the hidden proxy as body-A authority and the selected contact/palm relation as grip authority.
 
@@ -461,3 +462,27 @@ Completed local validation for this pass:
 - Release build passed and deployed at `2026-05-12 19:54:33`;
 - CTest passed `17/17`;
 - runtime log remains older than the deployed DLL, so runtime validation is still pending.
+
+## Runtime log finding: proxy frame mismatch
+
+Fresh runtime testing showed the custom proxy path is active for ordinary dynamic grabs and is not yet correct:
+
+- `Dirty Water` grab at `2026-05-12 20:00:24` created `drive=proxyConstraint` with correct captured BODY pivot `pivotB=(1.72,15.33,3.22)`, but constraint creation logged `pivotB=(0.46,2.91,15.99)`, which matches visual/object `gripLocal`, not BODY-local `pivotB`.
+- `10mm` loose weapon grab at `2026-05-12 20:00:27` captured BODY pivot `pivotB=(3.61,2.93,0.44)`, but constraint creation logged `pivotB=(1.25,-3.91,-2.98)`, again matching visual/object `gripLocal`.
+- Held telemetry then showed immediate rotation/pivot failure: Dirty Water reached `rotErr=118.5deg` and `ERR=30.3gu`; 10mm rose from `rotErr=8.4deg` to `79.4deg` with `ERR=18.0gu`.
+- Force tuning was not the primary failure in this log. `forceBudget=1.00`, adaptive lead was `0`, and the wrong rotation appeared immediately from a reference-frame mismatch.
+
+Correction applied in source:
+
+- keep the visual object hand-space relation and BODY/proxy constraint relation separate;
+- preserve the visual object to hknp BODY transform captured at grab time;
+- derive desired BODY world from desired visual object world plus the captured object-to-BODY relation;
+- store `_grabFrame.constraintBodyHandSpace` for proxy constraint math;
+- write transform-B from the frozen BODY-local selected grip pivot, not from recomputed visual/object local coordinates.
+
+Local validation for this correction:
+
+- focused source tests passed: `GrabAuthorityProxyFrameSourceTests.ps1`, `SharedHeldObjectGrabSourceTests.ps1`, `HandGrabNativeBoundarySourceTests.ps1`;
+- Release build passed and deployed to `D:\FO4\mods\ROCK\F4SE\Plugins` at `2026-05-12 20:10:29`;
+- CTest passed `17/17`;
+- runtime validation still needs a fresh in-game log newer than `2026-05-12 20:10:29`.
