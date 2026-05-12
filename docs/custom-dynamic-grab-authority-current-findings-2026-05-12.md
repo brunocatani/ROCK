@@ -3073,6 +3073,78 @@ Still unresolved:
 - Need decide whether the proxy should use bit 14, layer 15, or a dedicated extended layer after comparing debug visibility, matrix behavior, and collision-suppression restore risk.
 - Need map how the latest root-flattened hand sample is cached for a between-collide-and-solve callback without reading stale generated body transforms.
 
+### ROCK root-flattened hand-frame authority source audit
+
+Research question:
+
+- How should a future hidden body-A proxy get the same hand-frame convention that already works, without reading stale generated hknp palm-anchor transforms?
+
+Current source facts:
+
+- `PhysicsInteraction::update()`:
+  - calls `refreshHandBoneCache()`;
+  - calls `sampleHandTransformParity()`;
+  - then builds one `PhysicsFrameContext` through `buildFrameContext(bhk, hknp, _deltaTime)`.
+- `HandBoneCache::resolve()`:
+  - captures `DebugSkeletonBoneMode::HandsAndForearmsOnly`;
+  - uses `DebugSkeletonBoneSource::GameRootFlattenedBoneTree`;
+  - finds `RArm_Hand` and `LArm_Hand`;
+  - stores copied `RE::NiTransform` values for both hands;
+  - stores skeleton/bone-tree/power-armor identity;
+  - does not store scene-node authority.
+- `HandFrameResolver::resolve(...)`:
+  - returns the root-flattened copied hand transform when the cache is ready;
+  - returns `node = nullptr`;
+  - labels the frame as `left-root-flattened-hand-bone` or `right-root-flattened-hand-bone`;
+  - explicitly avoids mixing scene-node conventions into collision, palm selection, grab math, and debug axes.
+- `PhysicsInteraction::buildFrameContext(...)`:
+  - reads `getInteractionHandTransform(isLeft)`;
+  - fills `HandFrameInput::rawHandWorld`;
+  - computes `grabAnchorWorld` through `hand.computeGrabPivotAWorld(hknp, input.rawHandWorld)`;
+  - computes `palmNormalWorld` and `pointingWorld` from the same raw hand frame;
+  - gives selection, grab input, soft contact, debug, and held-object logic one coherent per-frame hand snapshot.
+- `HandBoneColliderSet::captureBoneLookup(...)` independently reads the same `GameRootFlattenedBoneTree` source for generated hand colliders.
+- `Hand::computeGrabPivotAWorld(...)` deliberately uses the raw hand transform, not `_handBody`, because the generated hknp palm anchor is a physics-step follower and can be stale during game-frame grab setup.
+
+Confirmed interpretation:
+
+- The proven ROCK convention is already the root-flattened hand bone transform, not native FO4VR mouse-spring conventions and not scene-node fallback transforms.
+- The future custom grab authority should keep that convention:
+  - raw/root-flattened hand frame is authority;
+  - generated palm/finger colliders are contact evidence;
+  - hidden no-contact proxy is the solver-side body-A representative of that raw hand frame.
+- The proxy should not read `_handBody` as its authority source.
+- The proxy should not read FRIK/skeleton state directly from inside a physics-step callback unless a future thread-safety pass proves that is safe.
+
+Current architecture gap:
+
+- `PhysicsStepDriveCoordinator` currently exposes only:
+  - whole-pre-step callback;
+  - substep-pre-collide callback.
+- The native vtable already has a `betweenCollideAndSolve` slot, but ROCK's current implementation is a no-op.
+- The current callbacks pass only `(userData, hknpWorld, timing)`.
+- There is no dedicated cached `DynamicGrabAuthorityFrame` or similar payload for solver-adjacent held-grab authority.
+
+Design implication for future custom dynamic grab authority:
+
+- The future body-A proxy update should consume a cached hand authority sample produced during game-frame update from the same `PhysicsFrameContext` convention.
+- That cache should include, at minimum:
+  - right/left raw root-flattened hand transforms;
+  - right/left palm pivot positions;
+  - right/left palm normals/pointing vectors if needed for diagnostics;
+  - frame delta/time sequence;
+  - disabled/valid flags;
+  - world/lifecycle generation guards.
+- The between-collide-and-solve callback should consume the latest valid cached sample, not call `DirectSkeletonBoneReader` or read `_handBody` transforms.
+- Visual hand override from held-object deviation should remain visual-only and must not feed back into this authority sample.
+
+Still unresolved:
+
+- Need design a thread-safe cache handoff from game-frame `PhysicsFrameContext` to the physics-step coordinator.
+- Need verify whether the existing coordinator can be extended cleanly to support a `betweenCollideAndSolve` callback without disrupting generated contact-collider pre-collide driving.
+- Need define staleness policy for proxy authority if no fresh root-flattened hand sample is available.
+- Need map how player-space movement compensation should apply to the cached hand authority sample versus the held object constraint target.
+
 ### FO4VR no-collide bit and constraint-contact separation
 
 This Ghidra pass resolves the open `1 << 14` question and clarifies why a hidden no-contact authority proxy is still compatible with a custom constraint drive.
