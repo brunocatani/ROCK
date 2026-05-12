@@ -2130,3 +2130,450 @@ Before any custom one-hand replacement can be implemented:
 - Inspect native destruction/removal path for direct hknp-created proxy bodies.
 - Inspect HIGGS dynamic release and pull/converge transitions only for dynamic behavior mapping, not as FO4VR implementation authority.
 - Update the old tracker only to point at this file as superseding if needed.
+
+## 2026-05-12 Continuation: HIGGS Dynamic Grab Source Mapping
+
+This section is source-mapped from:
+
+- `E:\fo4dev\skirymvr_mods\source_codes\higgs\src\hand.cpp`
+- `E:\fo4dev\skirymvr_mods\source_codes\higgs\include\hand.h`
+- `E:\fo4dev\skirymvr_mods\source_codes\higgs\src\constraint.cpp`
+- `E:\fo4dev\skirymvr_mods\source_codes\higgs\include\constraint.h`
+- `E:\fo4dev\skirymvr_mods\source_codes\higgs\src\RE\havok.cpp`
+- `E:\fo4dev\skirymvr_mods\source_codes\higgs\src\math_utils.cpp`
+- `E:\fo4dev\skirymvr_mods\source_codes\higgs\src\finger_animator.cpp`
+- `E:\fo4dev\skirymvr_mods\source_codes\higgs\src\finger_curves.cpp`
+- `E:\fo4dev\skirymvr_mods\source_codes\higgs\src\main.cpp`
+- `E:\fo4dev\skirymvr_mods\source_codes\higgs\src\physics.cpp`
+- `E:\fo4dev\skirymvr_mods\source_codes\higgs\src\utils.cpp`
+
+This is still research only. No ROCK implementation change is implied by this section.
+
+### HIGGS dynamic contact model: not "no contact"
+
+Confirmed source fact:
+
+- HIGGS does not avoid contact as a design principle.
+- HIGGS uses contact/casts/geometry heavily for:
+  - close object detection;
+  - far object detection;
+  - pulled-object catch;
+  - choosing the selected object point;
+  - choosing the actual rigid body for skinned/multipart objects;
+  - selecting finger curl values from object triangles;
+  - held-object collision-state feedback through contact listeners.
+- During `State::HeldBody`, HIGGS disables the generated hand collision body against the world/object by setting collision-disabled bit 14 in `Hand::UpdateHandCollision`.
+- The same generated keyframed hand body still remains the constraint body A.
+
+Interpretation:
+
+- "No-contact authority proxy" should not mean "ignore contact evidence".
+- The HIGGS-like rule is closer to:
+  - contact is used before and around grab to understand the object;
+  - the held drive anchor itself should not keep colliding with the held object while the constraint is driving it.
+- In HIGGS, body A is the keyframed hand collision body. Its source comment is explicit: `handTransform must be where the hand is in real life, as the hand collision is what drives the grab constraint`.
+- For ROCK, this reopens the body-A design question:
+  - a dedicated no-contact authority proxy is still plausible in FO4VR if it avoids generated-collider lifecycle contamination;
+  - but HIGGS does not prove a separate proxy is required. HIGGS proves that the body-A drive frame must be real-hand/root-frame aligned and non-colliding while held.
+
+### HIGGS detection pipeline
+
+`Hand::FindCloseObject(...)`:
+
+- Temporarily configures the hand sphere phantom:
+  - collision filter info `0x2C`;
+  - radius `nearCastRadius`;
+  - position at the hand/palm start.
+- Performs `hkpWorld_LinearCast` from start to `start + castDirection * nearCastDistance`.
+- Filters hits:
+  - requires a rigid body and `m_userData`;
+  - requires a non-player reference or the other hand's weapon when in offhand two-hand mode;
+  - ignores disabled-collision bodies via bit 14;
+  - only accepts selectable refs or the other hand's grabbable selected object;
+  - ignores mid-flight projectiles by requiring impact data;
+  - for the other hand's weapon path, requires weapon collision to be enabled.
+- Prioritizes by perpendicular distance from hit point to the cast ray, not by COM distance.
+- If no normal close object is found and a pulled object exists, it widens the sphere to `widePullGrabRadius` and uses `hkpWorld_GetPenetrations` against the pulled object as a catch fallback.
+
+`Hand::FindFarObject(...)`:
+
+- First raycasts to the far target to clip the linear cast at walls/occluders.
+- Then linear-casts the sphere to the clipped point with filter `0x2C` and radius `farCastRadius`.
+- Filters:
+  - excludes the other hand's exclusive object;
+  - requires selectable refs;
+  - ignores mid-flight projectiles;
+  - gates actor/loot targets through looting config;
+  - requires the hit point to be within the HMD forward cone using `requiredCastDotProduct`;
+  - prioritizes perpendicular ray distance, same as close selection.
+
+`Hand::GetRigidBodyToGrabBasedOnGeometry(...)`:
+
+- Builds current skinned and static object triangles.
+- Applies any adjusted/initial object transform before geometry testing.
+- Finds the closest point on graphics geometry to the palm line.
+- For static triangle hits, walks to the closest parent with moveable collision and returns that rigid body.
+- For skinned triangle hits:
+  - maps triangle vertices back through partition vertex maps;
+  - weights each contributing bone by skin weight divided by distance to the grabbed triangle point;
+  - chooses the highest accumulated bone;
+  - walks to closest parent with moveable collision and returns that rigid body.
+
+Interpretation:
+
+- HIGGS body choice is contact/mesh/skin driven.
+- It is not COM based.
+- This function is important for multipart objects/weapons because it avoids constraining a generic root when the actual contacted part belongs to a different body.
+
+### HIGGS state transitions: dynamic scope only
+
+Relevant dynamic states found in `Hand::Update(...)` and `Hand::TransitionHeld(...)`:
+
+- `Idle`
+- selected close/far object
+- `SelectionLocked`
+- `Pulled`
+- `PreGrabItem` / `PrePullItem` only as spawned-item handoff scaffolding
+- `HeldInit`
+- `HeldBody`
+- release/drop back to `Idle`
+
+Pull/converge behavior:
+
+- When selected far/locked and the controller moves toward the selected point faster than `pullSpeedThreshold`, HIGGS enters `Pulled`.
+- Pull setup:
+  - records pulled object handle/body;
+  - saves angular damping;
+  - sets angular damping to `pulledAngularDamping` default `8.0f` to prevent spin-out;
+  - converts keyframed/projectile/fixed-ish bodies to dynamic where needed;
+  - computes a pull duration;
+  - stores `pulledPointOffset` from COM to the selected point for pull targeting only.
+- During early `Pulled`, HIGGS applies predicted velocity for `pullApplyVelocityTime`, and tracks hand target only during `pullTrackHandTime`.
+- Close catch uses `FindCloseObject`; when the pulled object is near enough, `TransitionHeld(...)` takes over.
+
+Held transition:
+
+- `TransitionHeld(...)` prepares object state, mesh/triangle state, desired transform, finger pose, connected bodies, constraint, inertia, listeners, and state.
+- Dynamic behavior enters `HeldBody` when `ShouldUsePhysicsBasedGrab(...)` returns true.
+- In the production HIGGS config under this task, `ForcePhysicsGrab=1`, so ordinary grabs resolve to this dynamic path.
+
+Release:
+
+- On release from `HeldBody`, HIGGS removes the grab constraint from the world and from the hand body.
+- It restores contact listener callback delay and saved inverse inertia for every connected body unless the other hand still owns that connected component.
+- It sets release velocity using held-object velocity history and controller-derived components.
+- COM is used for tangential throw velocity only, as release lever data, not as grip pivot.
+
+### HIGGS pivot and reference-frame pipeline
+
+Confirmed in `TransitionHeld(...)`:
+
+- `closestPoint` arrives in Havok meters and becomes `ptPos = closestPoint / havokWorldScale`.
+- If graphics geometry is available, HIGGS replaces the collision point with the closest graphics triangle point `triPos`.
+- `ptPos` is the object-side grip/contact point.
+- `palmPos` is the hand-side palm point.
+- `desiredNodeTransform` starts as the current/adjusted object transform, preserving object rotation.
+- Translation is applied as:
+  - `desiredNodeTransform.pos += palmPos - ptPos`
+- This seats the selected object point into the palm without rotating the object around COM.
+- `desiredNodeTransformHandSpace = inverseHand * desiredNodeTransform`.
+
+Constraint construction:
+
+- `hkPivotA = palmPos * havokWorldScale`.
+- `hkPivotB = ptPos * havokWorldScale`.
+- `pivotA` is transformed into body A local space using the hand body transform.
+- `pivotB` is transformed into body B local space using the grabbed body transform.
+- `handTransformHandSpace.pos = pivotA`.
+- `desiredHavokTransformHandSpace = desiredNodeTransformHandSpace * GetRigidBodyTLocalTransform(selectedObject.rigidBody)`.
+- `handTransformObjSpace = InverseTransform(desiredHavokTransformHandSpace)`.
+- `handTransformObjSpace.pos = pivotB`.
+- `CreateGrabConstraint(bodyA, bodyB, handTransformHandSpace, handTransformObjSpace)` creates the actual dynamic drive.
+
+Held update:
+
+- HIGGS computes `heldTransform = collidableNode->m_worldTransform`.
+- Visual hand target is `m_adjustedHandTransform = heldTransform * inverse(desiredNodeTransformHandSpace)`.
+- For the constraint:
+  - `desiredTransformHandSpace = desiredNodeTransformHandSpace * GetRigidBodyTLocalTransform(selectedObject.rigidBody)`;
+  - `desiredHandTransformHavokObjSpace = InverseTransform(desiredTransformHandSpace)`;
+  - angular target is `desiredHandTransformHavokObjSpace.rot`;
+  - transform B translation is recomputed from:
+    - `(desiredHandTransformHavokObjSpace * palmPosHandspace) * collidableNode->m_worldTransform.scale * havokWorldScale`.
+
+Interpretation:
+
+- The initial pivot B starts from the selected object contact point.
+- The per-frame transform-B translation is not blindly frozen to COM or to a static body-local point. It is recomputed from the frozen hand/object reference relation so the linear and angular goals remain coherent as the desired hand/object frame changes.
+- COM is absent from this pivot/target/orientation pipeline.
+- COM appears later for release tangential velocity and mass/inertia behavior only.
+
+### HIGGS custom constraint and motor pipeline
+
+`CreateGrabConstraint(...)` in `src\RE\havok.cpp`:
+
+- Creates `hkConstraintCinfo`.
+- Sets priority to `PRIORITY_TOI`.
+- Sets rigid body A to the hand body and body B to the grabbed body.
+- Allocates `GrabConstraintData`.
+- Calls `setInBodySpace(transformA, transformB)`.
+- Constructs `bhkGroupConstraint`.
+- Sets collision group from body B.
+- Calls `setTargetRelativeOrientationOfBodies(...)`.
+- Calls `setMotorsActive(..., true)`.
+
+`GrabConstraintData` in `constraint.cpp/.h`:
+
+- Atom chain:
+  - set local transforms;
+  - setup stabilization;
+  - ragdoll motor atom;
+  - three linear motor atoms.
+- Solver results:
+  - 3 angular motor solver results;
+  - 3 linear motor solver results;
+  - `SOLVER_RESULT_MAX = 6` in Skyrim/HIGGS.
+- Runtime:
+  - angular initialized bytes;
+  - angular previous target angles;
+  - linear initialized bytes;
+  - linear previous target positions.
+- `getRuntimeInfo` reports `Runtime::getSizeOfExternalRuntime()`, which is `sizeof(Runtime) * 2` because HIGGS observed crashes with exact runtime size/aligned runtime size.
+- `addInstance` zeroes runtime.
+- `setMotorsActive(false)` clears solver result history.
+
+Important FO4VR comparison:
+
+- HIGGS runtime count/offsets are hkp/Skyrim-specific and are not directly portable.
+- FO4VR Ghidra already corrected ROCK's current atom runtime interpretation: ROCK's 12 solver results are coherent for its current FO4VR atom stream, and the current-runtime-cursor offsets avoid overlap.
+- HIGGS still matters as behavior architecture: custom linear + angular motors with finite max force and per-frame motor field updates.
+
+### HIGGS mass, inertia, finite-force, collision, and deviation behavior
+
+HIGGS dynamic grab is not "strong spring to hand". It uses several layers together.
+
+Per-frame non-actor motor values in `HeldBody`:
+
+- `isWeapon = baseForm->formType == kFormType_Weapon`.
+- Linear max force:
+  - normal object: `grabConstraintLinearMaxForce`, default `2000`.
+  - loose weapon: `grabConstraintLinearMaxForceWeapon`, default `9000`.
+- Angular max force:
+  - `linearMotor->m_maxForce / angularToLinearForceRatio`.
+  - default ratio `12.5`.
+- Startup angular fade:
+  - if `fadeInGrabConstraint`, angular ratio lerps from `grabConstraintFadeInStartAngularMaxForceRatio` default `100` down to `12.5` over `grabConstraintFadeInTime` default `0.1`.
+  - This deliberately makes angular authority weak at startup while the object seats into the hand.
+- Collision state:
+  - contact listeners on connected bodies feed `EntityCollisionListener::IsColliding()`.
+  - if colliding, angular and linear tau targets become `grabConstraintCollidingAngularTau` and `grabConstraintCollidingLinearTau`, both default `0.01`.
+  - otherwise tau targets are normal `grabConstraintAngularTau` and `grabConstraintLinearTau`, both default `0.03`.
+  - tau changes through `AdvanceFloat(..., grabConstraintTauLerpSpeed)`, default speed `0.5`, so it does not snap.
+- Mass cap:
+  - final linear force is capped to `mass * grabConstraintMaxForceToMassRatio`, default ratio `500`.
+  - angular force is capped again from the capped linear force and angular ratio.
+- Min forces are mirrored negative max forces.
+- Recovery/damping are set every frame:
+  - angular proportional recovery default `2`;
+  - angular constant recovery default `1`;
+  - angular damping default `0.8`;
+  - linear proportional recovery default `2`;
+  - linear constant recovery default `1`;
+  - linear damping default `0.8`.
+
+Loose weapon interpretation:
+
+- HIGGS loose weapons are still ordinary dynamic held objects in this branch.
+- Loose weapon special treatment is not equipped weapon logic.
+- The only confirmed loose-weapon dynamic motor distinction in this source pass is a higher base linear max force before mass cap.
+- Because the mass cap still applies, weapon force is not infinite:
+  - with default ratio `500`, a weapon under 18 mass caps below the `9000` weapon force.
+  - angular force then derives from that capped linear force.
+- Long-object lever effects are not an explicit separate weapon branch in the inspected HIGGS code. They emerge from:
+  - finite angular max force;
+  - inertia tensor normalization;
+  - grip-to-COM geometry in release tangential velocity;
+  - solver effective mass around the selected pivot.
+
+Inertia normalization:
+
+- On grab, HIGGS collects all connected grabbed rigid bodies.
+- For each connected body:
+  - saves contact point callback delay and sets it to 0 for immediate collision listener feedback;
+  - saves inverse inertia;
+  - clamps each inverse-inertia axis so it is no more than `grabbedObjectMaxInertiaRatio` default `10` times the minimum inverse-inertia axis;
+  - enforces minimum inertia through `grabbedObjectMinInertia` default `0.01`.
+- On release, HIGGS restores saved inverse inertia unless the other hand still owns the connected component.
+
+Deviation and visual lag:
+
+- HIGGS does not force the real hand to perfectly match the held object.
+- It computes a visual/adjusted hand transform from the live held object:
+  - `adjustedHand = heldObjectWorld * inverse(desiredNodeTransformHandSpace)`.
+- At grab start, it lerps from real hand transform to adjusted hand transform. Duration is distance-based between:
+  - `physicsGrabLerpHandTimeMin` default `0.1`;
+  - `physicsGrabLerpHandTimeMax` default `0.2`.
+- It tracks five frames of hand deviation:
+  - current deviation = distance between adjusted/visual hand and real/controller hand.
+  - average deviation over five samples is used.
+- It ignores hand distance briefly after grab/sneak transition:
+  - `physicsGrabIgnoreHandDistanceTime` default `0.2`;
+  - `sneakUnsneakIgnoreHandDistanceTime` default `0.1`.
+- If average deviation exceeds `maxHandDistance` after the ignore windows, HIGGS releases/drops instead of applying unlimited force.
+
+Mass effects outside the constraint:
+
+- `RegisterObjectMass(...)` accumulates unique held masses each frame.
+- `UpdateSpeedReduction()` slows player movement from total held mass using:
+  - `slowMovementMassProportion`;
+  - `slowMovementMassExponent`;
+  - `slowMovementMaxReduction`;
+  - fade-out time.
+- Jump height is also reduced from total held mass in the jump hook.
+- Player-space compensation registers held/connected/contained bodies so player locomotion is added consistently to them instead of making the object lag behind room movement.
+
+Interpretation:
+
+- HIGGS weight feel is a system, not a single COM trick.
+- The core held-object "not Superman" behavior comes from finite force caps, mass cap, angular force ratio, weak angular startup, collision tau softening, inertia normalization, deviation/visual lag, and movement/jump penalties.
+- COM is not used as grip target. COM is only weight/release data.
+
+### HIGGS hand posing and finger blend
+
+Confirmed dynamic hand pose setup in `TransitionHeld(...)`:
+
+- HIGGS builds/skinning object triangles at grab time:
+  - skinned triangles from partitions and bone transforms;
+  - static triangles from geometry;
+  - filtered by blacklists, hair, soft/decal/blood flags, and optional vertex-alpha cutoff.
+- It finds the closest point on graphics geometry to the palm line.
+- It filters nearby triangles around the selected point.
+- It computes `palmToPoint = ptPos - palmPos`.
+- For each finger:
+  - reads hand-space normal, zero-angle vector, and start position from generated finger curve data;
+  - flips left-hand axes as needed;
+  - transforms those vectors/points through the live hand transform;
+  - offsets `startFingerPos += palmToPoint` so the test is performed as if the hand has already seated onto the object point.
+- `GetIntersections(...)` tests each finger against nearby triangles using precomputed inner/outer/tip finger curves.
+- The intersection logic:
+  - slices triangle edges against the finger plane;
+  - converts edge intersections into angular/radial finger-curve space;
+  - tests inner, outer, and tip curves;
+  - handles negative/behind-finger hits;
+  - chooses the largest curve value, i.e. the least-curling valid hit.
+- Thumb has an alternate curve (`index 5`) if the standard thumb curve misses or produces a negative angle.
+- Result rules:
+  - negative angle opens the finger;
+  - positive curve value is used directly;
+  - no intersection closes the finger;
+  - minimum finger value is clamped to `0.2` to avoid overcurl;
+  - no graphics point falls back to `0.9` for all fingers.
+
+`FingerAnimator` behavior:
+
+- Finger animation stores target values in `grabbedFingerValues[5]`.
+- It uses precomputed open/closed local positions and rotations from `finger_curves.cpp`.
+- It lerps/slerps local transforms for three joints per finger.
+- It advances toward target at configured linear/angular speeds:
+  - grab default `fingerAnimateGrabLinearSpeed = 4`;
+  - grab default `fingerAnimateGrabAngularSpeed = 630`;
+  - start/end speeds are separate.
+- It restores fingers when they stop being set.
+
+Important conclusion:
+
+- HIGGS hand posing is math/geometry driven.
+- It does not require HIGGS_R/L mesh-specific grip nodes for ordinary dynamic grab.
+- Optional HIGGS grab nodes and attach transforms can override initial object transform for specific objects, but the generic pose-quality path is:
+  - live hand frame;
+  - object graphics triangles;
+  - generated finger curves;
+  - finger-plane/curve intersection.
+
+### ROCK parity checkpoint from source after this HIGGS pass
+
+ROCK currently has equivalents for many HIGGS dynamic pieces:
+
+- contact/mesh/palm evidence and a three-phase pocket model;
+- non-COM captured grip point;
+- body-frame frozen pivot;
+- raw hand frame and generated hand-body frame split;
+- hand-relative visual relation;
+- visual hand deviation guard;
+- nearby grab damping;
+- inertia normalization and restore across unique motion slots;
+- connected held body set handling;
+- custom constraint atom chain;
+- finite-force motor controller:
+  - mass cap;
+  - angular-to-linear ratio;
+  - collision tau;
+  - tau lerp;
+  - startup angular fade;
+  - loose weapon multiplier surfaces;
+- release velocity using object/hand history plus COM only for tangential release.
+
+ROCK current gaps relative to HIGGS dynamic behavior:
+
+- Ordinary one-hand loose object and loose non-equipped weapon grabs still use `HeldObjectDriveMode::NativeMouseSpring`.
+- `GrabMotionController` is only fed into `updateConstraintGrabDriveMotors(...)`, and that path only runs for `SharedConstraint`.
+- The native one-hand path queues target frames and adaptive lead, but it does not apply HIGGS-style per-frame finite linear/angular motor caps to the held body.
+- Native one-hand mouse spring has scale knobs, but it does not expose the full HIGGS policy surface:
+  - linear force max;
+  - angular force max derived from linear;
+  - per-frame mass cap;
+  - collision tau softening;
+  - finite angular startup fade;
+  - per-axis motor recovery fields.
+- `PhysicsStepDriveCoordinator` has a verified `betweenCollideAndSolve` vtable slot at `+0x28`, but the callback is currently no-op and the public callback interface only supports whole-pre-step and substep-pre-collide.
+- Shared custom constraint target/motor writes currently occur from held-object update flow, not from the verified after-collide/before-solve slot.
+- ROCK body-A design is still unsettled:
+  - HIGGS uses the generated hand collision body as body A and disables collision while held.
+  - ROCK's generated palm anchor is root-flattened and valid as a hand frame source, but it has generated-collider lifecycle/rebuild responsibilities.
+  - A separate no-contact authority body may be better in FO4VR, but this is an FO4VR design choice, not a HIGGS requirement.
+- Loose weapon behavior in ROCK should remain separate from equipped/two-hand weapon behavior. HIGGS source confirms loose weapons are treated in ordinary dynamic held-object logic, not equipped weapon grip logic.
+
+### Corrected explanation for why native mouse spring feels smoother than old custom motors
+
+This explanation now combines FO4VR Ghidra findings and HIGGS source behavior:
+
+- Native mouse spring is smoother because ROCK flushes it from a physics-step boundary and the native hknp action internally has dt-aware smoothing/caps/deadband-like behavior.
+- The old custom motor path is likely not failing because of current ROCK atom runtime offset overlap; that earlier suspicion was corrected by FO4VR switch-table and range-disassembly evidence.
+- The remaining likely old-custom stutter causes are systemic:
+  - target/constraint fields updated from game update rather than the solver-safe phase;
+  - body A drive and constraint target not committed in the same phase;
+  - generated body drive using `DriveToKeyFrame`, which has a verified cap-triggered transform snap path;
+  - contact palm body lifecycle/rebuild behavior interacting with constraint ownership;
+  - ordinary one-hand path not using the finite-force motor controller, so tuning was never exercised in the real path;
+  - possible competing authority during promotion/destroy transitions.
+
+### Research conclusion from this pass
+
+The next custom-authority design should be judged against these confirmed HIGGS rules:
+
+- Preserve object rotation unless an explicit authored grab transform is selected.
+- Seat selected contact/mesh point into palm/pocket by translation, not COM.
+- Use body A as a real-hand/root-frame-aligned keyframed authority.
+- Disable body-A collision while held or use a no-contact authority body that has the same effect.
+- Drive body B through one custom linear/angular motor constraint.
+- Update angular target and transform-B translation from the same captured hand/object frame every held update.
+- Feed finite motor fields every frame:
+  - linear max force;
+  - angular max force derived from linear;
+  - mass cap;
+  - collision tau;
+  - startup angular fade;
+  - recovery/damping.
+- Normalize/restore held connected-body inertia.
+- Track visual hand deviation and release instead of applying unlimited authority.
+- Use COM only for mass/inertia/release/tangential velocity data.
+- Keep loose non-equipped weapon handling in the loose-object dynamic path, with weapon-specific force policy but without equipped weapon grip assumptions.
+
+### Open questions after this pass
+
+- FO4VR-specific: should custom target/motor writes happen in `betweenCollideAndSolve` rather than game update? Current evidence strongly suggests yes, but the implementation plan still needs a concrete callback API shape.
+- FO4VR-specific: should body A be the existing palm anchor with held collision disabled, or a new dedicated no-contact authority proxy rooted in the same flattened hand frame?
+- FO4VR-specific: if a new proxy is used, should it be driven by direct hard-keyframe velocity (`ApplyHardKeyFrame`/direct velocity path) instead of generated-collider `DriveToKeyFrame`?
+- FO4VR-specific: does the current generated palm anchor rebuild deferral (`isConstrained`) create any stale body-frame issue if it becomes ordinary one-hand constraint body A?
+- HIGGS behavior extension: loose weapon long-axis / grip-to-COM lever length is not an explicit dynamic motor branch in inspected HIGGS. ROCK may be able to surpass HIGGS by deriving angular force scaling from grip-to-COM/long-axis inertia, but that must be treated as a new FO4VR design, not a copied HIGGS fact.
+- HIGGS timing: HIGGS updates constraint params in its normal update loop on Skyrim hkp. FO4VR hknp step ordering may require a stricter solver-phase update to avoid stutter.
