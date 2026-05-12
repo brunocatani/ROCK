@@ -5144,3 +5144,119 @@ What not to do:
 - If ROCK computes a predicted proxy transform, should it call `0x1415451A0`, duplicate the relevant math safely, or avoid prediction by using raw hand target directly for constraint targets?
 - Does using raw hand target for constraint atoms while body-A proxy lags create solver inconsistency, or is that acceptable because body-A is a keyframed/kinematic authority body?
 - Can the hidden proxy be driven early enough in the frame that its body slot transform is already integrated before row build without introducing contact/render lag?
+
+## 2026-05-12 continuation: native combined velocity-plus-transform pattern
+
+The row-builder prediction audit showed that pure `ApplyHardKeyFrame` velocity should not be assumed to update body slot transform for the same constraint row build. This pass checks whether FO4VR has a native pattern that combines hard-keyframe velocity with an explicit transform update.
+
+### `bhkNPCollisionObject::vfunction44` combined path
+
+`0x141E09AF7` / `bhkNPCollisionObject::vfunction44` contains a native branch that does both operations:
+
+1. Build target transform from the high-level object/Ni transform path.
+2. If the body is motion-capable and `DAT_1465A3D84 > 0`:
+   - calls `0x141722C10` to convert the target transform/matrix into a quaternion;
+   - calls `0x141DF5930(world, bodyId, targetPosition, targetQuaternion, dt)` to compute/apply hard-keyframe velocity.
+3. Calls `0x141DF55F0(world, bodyId, targetTransform, 1)` to set the body transform.
+
+Important distinction:
+
+- This is not the same as `DriveToKeyFrame`.
+- `DriveToKeyFrame` can snap only when hard-keyframe velocity exceeds motion-property caps.
+- This vfunction branch intentionally computes velocity and then explicitly sets transform as separate operations.
+
+Why this matters for a future hidden proxy:
+
+- A pure velocity proxy may leave body-A transform one integrated step behind the raw hand target.
+- A transform-only proxy would make body-A pose correct but may lose velocity information needed for believable constraint response.
+- The native collision-object sync path shows FO4VR sometimes wants both: pose correctness plus velocity correctness.
+
+### Other `ApplyHardKeyFrame` wrapper caller
+
+`0x1412CB4E0` is the other direct code caller of `0x141DF5930` found in this pass.
+
+Observed behavior:
+
+- It updates a body associated with a camera/player-related object path.
+- If `DAT_1465A3D84 <= 0`, it calls a linear-velocity wrapper path.
+- Otherwise it calls `0x141DF5930(world, bodyId, targetPosition, identityQuaternion, DAT_1465A3D84)`.
+- This caller does not immediately pair the hard-keyframe velocity call with `0x141DF55F0` in the same branch.
+
+Interpretation:
+
+- FO4VR uses `ApplyHardKeyFrame` both as a standalone velocity target and as part of a velocity-plus-transform sync pattern.
+- The combined velocity-plus-transform pattern is not universal; it is specifically visible in the collision-object sync branch where high-level transform and hknp body transform need to be reconciled.
+
+### `DriveToKeyFrame` comparison
+
+`0x141E086E0` / `DriveToKeyFrame` behavior remains distinct:
+
+- Converts target transform to quaternion.
+- Calls `0x14153A6A0` to compute hard-keyframe linear/angular velocity.
+- Checks motion-property max linear/angular velocity caps.
+- If a cap is exceeded:
+  - calls `0x141DF55F0` to set transform;
+  - then calls `0x141DF56F0` with zero velocities.
+- If caps are not exceeded:
+  - calls `0x141DF56F0` with computed linear/angular velocity.
+
+Confirmed distinction:
+
+- `DriveToKeyFrame` is either velocity drive or cap-triggered transform snap plus zero velocity.
+- `bhkNPCollisionObject::vfunction44` can do hard-keyframe velocity and set transform in the same update branch.
+- For a hidden no-contact proxy, the latter pattern is more relevant than `DriveToKeyFrame` if the design requires both same-step body-A pose correctness and body-A velocity correctness.
+
+### Command flush ordering
+
+`0x141DF4F60` processes queued command groups in a fixed order:
+
+1. body transform commands:
+   - validates body id;
+   - calls `0x1415395E0` direct set transform.
+2. body velocity commands:
+   - validates body id;
+   - calls `0x141539F30` direct set velocity.
+3. other body commands, including activation/motion-property-like operations.
+
+Implication:
+
+- If `0x141DF55F0` and `0x141DF56F0` / `0x141DF5930` both queue into the same command buffer, the flush applies transform commands before velocity commands.
+- That ordering is good for a hidden proxy pattern that wants:
+  - body slot transform current for row building;
+  - velocity fields current for constraint velocity terms.
+- It still does not prove that normal ROCK listener calls enter queued mode; TLS command state remains separately unresolved.
+
+### Updated proxy-drive interpretation
+
+The research direction should now distinguish three possible proxy drive primitives:
+
+1. Pure `ApplyHardKeyFrame` velocity
+   - Pros:
+     - native velocity computation;
+     - no `DriveToKeyFrame` snap fallback.
+   - Cons:
+     - row-builder evidence does not prove same-step body slot transform correctness.
+2. Pure set transform
+   - Pros:
+     - row-builder sees the correct body-A pose immediately.
+   - Cons:
+     - may leave velocity terms stale or zero, weakening finite-force response and making constraint rows less physically honest.
+3. Combined hard-keyframe velocity plus set transform
+   - Pros:
+     - native FO4VR collision-object sync has this pattern;
+     - can provide both correct body-A pose and correct velocity terms before row build if applied in the right phase.
+   - Cons:
+     - must be verified for hidden no-contact generated bodies and the chosen callback/command context;
+     - must not be confused with driving the grabbed object or snapping the held object.
+
+Current best research hypothesis:
+
+- A future hidden body-A authority proxy may need the combined pattern, not pure `ApplyHardKeyFrame`.
+- This does not violate the no-superman requirement because the proxy is only the hand-side constraint body. The held object would still be governed by finite-force linear/angular motors, mass caps, angular caps, collision tau, and deviation logic.
+
+### Open questions after this pass
+
+- Can ROCK safely issue both transform and hard-keyframe velocity updates for a hidden proxy inside the chosen physics phase?
+- Does the generated `BethesdaPhysicsBody` wrapper expose enough to call the combined pattern without reusing `driveGeneratedKeyframedBody`?
+- If the combined pattern is used, should transform be raw/root-flattened hand pose while velocity is computed from previous proxy pose toward raw/root-flattened hand pose?
+- Does setting transform on a hidden no-contact keyframed proxy every step introduce any solver instability, or is it equivalent to the native collision-object sync expectation?
