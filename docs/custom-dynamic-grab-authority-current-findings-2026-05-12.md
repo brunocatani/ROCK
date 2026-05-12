@@ -5388,3 +5388,104 @@ Research-safe design options now look like:
 - If clear, are direct `0x1415395E0` / `0x141539F30` calls safe while `bhkWorld::Update` is between collide and solve?
 - If set, where is `DAT_1465A3E30` flushed relative to `bhkWorld::Update`, and would queued wrapper commands miss the current solve?
 - Can ROCK append body transform/velocity commands into the local `local_128` listener command list without reverse-engineering too much engine-owned command object state?
+
+## 2026-05-12 continuation: direct body setter safety map
+
+This pass checks the direct transform and velocity writers used by the standard wrappers when TLS byte `+0x1528` is clear.
+
+### `0x1415395E0` direct set body transform
+
+Observed behavior:
+
+- Acquires the world/body update lock through `0x141538AF0(param_1 + 0x690)`.
+- Computes body slot:
+  - `world + 0x20 + bodyId * 0x90`.
+- Compares the requested transform against current body transform using `0x14158E790`.
+- If transform differs:
+  - converts the input transform orientation into quaternion-like body/motion representation;
+  - writes the new transform rows/translation into the hknp body slot;
+  - calls `0x14153CC40(world, bodyId, quaternion, 0, mode)`;
+  - signals body-transform listeners through a list rooted around `world + 0x538`;
+  - releases/removes listener nodes as needed.
+- Releases the world/body update lock through `0x141538CB0(param_1 + 0x690)`.
+
+Confirmed:
+
+- Direct set-transform is an engine-owned path with lock, dirty update, and listener signaling.
+- It is not a raw write to the body array.
+- It makes body slot transform current immediately, unlike pure velocity write.
+
+### `0x14153CC40` transform dirty/update helper
+
+Observed behavior:
+
+- Receives world, body id, quaternion/rotation data, and mode flags.
+- Updates motion/body transform state for motion-backed bodies.
+- Rebuilds or updates bounds/filter/proxy data associated with the moved body.
+- Calls island/broadphase dirty paths such as `0x1417D8590(...)`.
+- Can notify lower-level world systems through vtable calls from `world + 0x178`.
+
+Confirmed:
+
+- Set-transform has a large follow-up path. It is not only changing visual transform.
+- If used for a hidden proxy, the proxy should be no-contact and minimal specifically to reduce broadphase/contact side effects.
+
+### `0x141539F30` direct set body velocity
+
+Observed behavior:
+
+- Acquires the world/body update lock through `0x141538AF0(param_1 + 0x690)`.
+- Validates the body and only proceeds for motion-capable bodies (`body + 0x40` bit `2`).
+- Computes body slot and motion slot.
+- Compares requested linear/angular velocity with existing motion velocity.
+- If velocity differs:
+  - wakes/activates body via `0x141546EF0(world, bodyId)` when body flags allow;
+  - writes linear velocity into motion fields around `+0x40..+0x4C`;
+  - writes angular velocity into motion fields around `+0x50..+0x5C`, transformed into the body's motion frame;
+  - calls `0x14153D440(world, bodyId, motionSlot)`;
+  - signals velocity/body-change listeners through `0x14153EE00(world + 0x538, world, bodyId)`.
+- Releases the world/body update lock.
+
+Confirmed:
+
+- Direct set-velocity is also an engine-owned path with lock, wake, swept update, and listener signaling.
+- It updates velocity and swept/broadphase-related body data, but it does not directly set the body slot transform to the target pose.
+
+### `0x14153D440` velocity dirty/update helper
+
+Observed behavior:
+
+- Iterates all bodies linked to the same motion.
+- Calls `0x1417D3BF0(bodySlot, motionSlot, ...)` for each linked body.
+- `0x1417D3BF0` updates body broadphase/swept extents from velocity/motion data.
+
+Confirmed:
+
+- Velocity writes update swept bounds for all bodies sharing the motion.
+- This matters for multipart weapons/objects: a proxy must not share motion with held object parts, and held object connected-body handling must remain separate.
+
+### Safety interpretation
+
+Current evidence supports the following narrow statement:
+
+- `0x1415395E0` and `0x141539F30` are proper native hknp body mutation paths.
+- They take the world/body lock internally.
+- They dirty/signals the same world systems native callers rely on.
+
+What is still not proven:
+
+- That calling both direct setters from a ROCK between-collide-and-solve listener cannot deadlock or violate a phase invariant.
+- Whether the body-list lock held by `bhkWorld::Update` around listener callbacks is compatible with body update locks in all cases.
+
+Design consequence:
+
+- Direct setters are now better-supported candidates than global wrapper queueing for same-step pre-solve hidden proxy updates.
+- They still need a final reentrancy/lock-order pass before any implementation.
+- If used, the proxy must be hidden/no-contact/minimal because transform dirty paths are broadphase-aware.
+
+### Updated open questions
+
+- Does `bhkWorld::Update` hold any lock during listener callbacks that can conflict with `0x141538AF0(world + 0x690)`?
+- Do native physics-step listeners ever call direct body setters from before/between/after callbacks?
+- Is it safer to call direct setters from a before-any step callback instead of between-collide-and-solve if broadphase/contact state is involved?
+- For a no-contact proxy, is broadphase update cost/state relevant if filter bit 14 or noncollidable layer ensures no contacts?
