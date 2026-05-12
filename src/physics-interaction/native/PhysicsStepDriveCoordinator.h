@@ -23,7 +23,12 @@ namespace rock
 
         PhysicsStepDriveCoordinator();
 
-        void setDriveCallbacks(DriveCallback wholePreStepCallback, DriveCallback substepPreCollideCallback, void* userData);
+        void setDriveCallbacks(
+            DriveCallback wholePreStepCallback,
+            DriveCallback substepPreCollideCallback,
+            DriveCallback betweenCollideAndSolveCallback,
+            DriveCallback substepPostSolveCallback,
+            void* userData);
         void registerForNextStep(void* bhkWorld, RE::hknpWorld* hknpWorld);
         void reset();
 
@@ -31,15 +36,20 @@ namespace rock
         std::uint64_t stepSequence() const { return _stepSequence; }
         void onBeforeWholePhysicsUpdate();
         void onBeforeAnyPhysicsStep(float substepProgress, float substepDeltaSeconds);
+        void onBetweenCollideAndSolve(float substepProgress, float substepDeltaSeconds);
+        void onAfterAnyPhysicsStep(float substepProgress, float substepDeltaSeconds);
 
     private:
         NativeStepListener* nativeListener();
 
         DriveCallback _wholePreStepCallback = nullptr;
         DriveCallback _substepPreCollideCallback = nullptr;
+        DriveCallback _betweenCollideAndSolveCallback = nullptr;
+        DriveCallback _substepPostSolveCallback = nullptr;
         void* _userData = nullptr;
         RE::hknpWorld* _registeredWorld = nullptr;
         havok_physics_timing::PhysicsTimingSample _lastTimingSample{};
+        havok_physics_timing::PhysicsTimingSample _lastSubstepTimingSample{};
         std::uint64_t _registrationSequence = 0;
         std::uint64_t _stepSequence = 0;
         std::uint32_t _currentSubstepIndex = 0;

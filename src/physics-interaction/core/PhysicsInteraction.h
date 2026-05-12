@@ -21,6 +21,7 @@
 #include "physics-interaction/core/PhysicsLifecycleState.h"
 #include "physics-interaction/input/GrabInputIntentPolicy.h"
 #include "physics-interaction/native/PhysicsStepDriveCoordinator.h"
+#include "physics-interaction/native/GrabAuthorityPhase0Probe.h"
 #include "physics-interaction/stash/ShoulderStashDetector.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
@@ -169,9 +170,13 @@ namespace rock
 
         void driveNativeGrabFromPhysicsStep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void driveGeneratedCollidersFromPhysicsSubstep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
+        void driveGrabAuthorityPhase0ProbeFromBetweenStep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
+        void observeGrabAuthorityPhase0ProbeAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
 
         static void onNativeGrabPhysicsStep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         static void onGeneratedColliderPhysicsSubstep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
+        static void onGrabAuthorityPhase0BetweenStep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
+        static void onGrabAuthorityPhase0AfterSolve(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
 
         void updateSelection(const PhysicsFrameContext& frame);
         GrabReleaseContext makeGrabReleaseContext(const Hand& hand, bool isLeft) const;
@@ -250,6 +255,7 @@ namespace rock
         WeaponCollision _weaponCollision;
 
         PhysicsStepDriveCoordinator _generatedBodyStepDrive;
+        grab_authority_phase0::Probe _grabAuthorityPhase0Probe;
 
         TwoHandedGrip _twoHandedGrip;
         SoftContactRuntime _softContactRuntime;

@@ -62,11 +62,25 @@ namespace rock
             }
         }
 
-        void betweenCollideAndSolve(PhysicsStepDriveCoordinator::NativeStepListener*, std::uint32_t, void*, std::uint32_t, float, float)
-        {}
+        void betweenCollideAndSolve(
+            PhysicsStepDriveCoordinator::NativeStepListener* listener,
+            std::uint32_t,
+            void*,
+            std::uint32_t,
+            float substepProgress,
+            float substepDeltaSeconds)
+        {
+            if (listener && listener->owner) {
+                listener->owner->onBetweenCollideAndSolve(substepProgress, substepDeltaSeconds);
+            }
+        }
 
-        void afterAny(PhysicsStepDriveCoordinator::NativeStepListener*, std::uint32_t, void*, float, float)
-        {}
+        void afterAny(PhysicsStepDriveCoordinator::NativeStepListener* listener, std::uint32_t, void*, float substepProgress, float substepDeltaSeconds)
+        {
+            if (listener && listener->owner) {
+                listener->owner->onAfterAnyPhysicsStep(substepProgress, substepDeltaSeconds);
+            }
+        }
 
         void afterWhole(PhysicsStepDriveCoordinator::NativeStepListener*, std::uint32_t, void*)
         {}
@@ -106,10 +120,17 @@ namespace rock
         _nativeListener = allocateProcessLifetimeListener(this);
     }
 
-    void PhysicsStepDriveCoordinator::setDriveCallbacks(DriveCallback wholePreStepCallback, DriveCallback substepPreCollideCallback, void* userData)
+    void PhysicsStepDriveCoordinator::setDriveCallbacks(
+        DriveCallback wholePreStepCallback,
+        DriveCallback substepPreCollideCallback,
+        DriveCallback betweenCollideAndSolveCallback,
+        DriveCallback substepPostSolveCallback,
+        void* userData)
     {
         _wholePreStepCallback = wholePreStepCallback;
         _substepPreCollideCallback = substepPreCollideCallback;
+        _betweenCollideAndSolveCallback = betweenCollideAndSolveCallback;
+        _substepPostSolveCallback = substepPostSolveCallback;
         _userData = userData;
     }
 
@@ -135,6 +156,7 @@ namespace rock
     {
         _registeredWorld = nullptr;
         _lastTimingSample = {};
+        _lastSubstepTimingSample = {};
         _registrationSequence = 0;
         _stepSequence = 0;
         _currentSubstepIndex = 0;
@@ -151,6 +173,7 @@ namespace rock
     void PhysicsStepDriveCoordinator::onBeforeWholePhysicsUpdate()
     {
         _lastTimingSample = havok_physics_timing::sampleCurrentTiming();
+        _lastSubstepTimingSample = {};
         ++_stepSequence;
         _currentSubstepIndex = 0;
 
@@ -169,7 +192,38 @@ namespace rock
 
         const auto timing =
             havok_physics_timing::makeSubstepTimingSample(_lastTimingSample, substepProgress, substepDeltaSeconds, _currentSubstepIndex);
+        _lastSubstepTimingSample = timing;
         ++_currentSubstepIndex;
         _substepPreCollideCallback(_userData, _registeredWorld, timing);
+    }
+
+    void PhysicsStepDriveCoordinator::onBetweenCollideAndSolve(float substepProgress, float substepDeltaSeconds)
+    {
+        if (!_betweenCollideAndSolveCallback || !_registeredWorld) {
+            return;
+        }
+
+        if (!_lastSubstepTimingSample.valid) {
+            _lastSubstepTimingSample = havok_physics_timing::makeSubstepTimingSample(_lastTimingSample, substepProgress, substepDeltaSeconds, _currentSubstepIndex);
+        }
+
+        const auto timing =
+            havok_physics_timing::makeSubstepPhaseTimingSample(_lastSubstepTimingSample, havok_physics_timing::PhysicsStepPhase::BetweenCollideAndSolve);
+        _betweenCollideAndSolveCallback(_userData, _registeredWorld, timing);
+    }
+
+    void PhysicsStepDriveCoordinator::onAfterAnyPhysicsStep(float substepProgress, float substepDeltaSeconds)
+    {
+        if (!_substepPostSolveCallback || !_registeredWorld) {
+            return;
+        }
+
+        if (!_lastSubstepTimingSample.valid) {
+            _lastSubstepTimingSample = havok_physics_timing::makeSubstepTimingSample(_lastTimingSample, substepProgress, substepDeltaSeconds, _currentSubstepIndex);
+        }
+
+        const auto timing =
+            havok_physics_timing::makeSubstepPhaseTimingSample(_lastSubstepTimingSample, havok_physics_timing::PhysicsStepPhase::SubstepPostSolve);
+        _substepPostSolveCallback(_userData, _registeredWorld, timing);
     }
 }

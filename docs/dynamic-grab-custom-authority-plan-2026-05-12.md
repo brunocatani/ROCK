@@ -2,7 +2,7 @@
 
 Date: 2026-05-12
 Branch: `feature/ghidra-grab-motor-mapping`
-Status: research-to-plan only, no implementation
+Status: Phase 0 diagnostics/scaffolding implemented; active grab authority unchanged
 
 This document supersedes scattered implementation planning notes for the next dynamic grab redesign. The evidence tracker remains
 `docs/custom-dynamic-grab-authority-current-findings-2026-05-12.md`; this file turns those findings into a concrete plan.
@@ -420,7 +420,56 @@ Finger pose:
 
 ## Implementation Plan
 
-No code should be written until this plan is reviewed and the validation gates are accepted.
+Phase 0 is now implemented as disabled-by-default diagnostics. It does not replace the current one-hand native mouse-spring dynamic grab path. Later phases still require runtime log review before any grab authority replacement.
+
+### Phase 0 implementation record
+
+Implemented files:
+
+- `src/physics-interaction/native/PhysicsStepDriveCoordinator.h`
+- `src/physics-interaction/native/PhysicsStepDriveCoordinator.cpp`
+- `src/physics-interaction/native/HavokPhysicsTiming.h`
+- `src/physics-interaction/native/HavokTlsDiagnostics.h`
+- `src/physics-interaction/native/HavokTlsDiagnostics.cpp`
+- `src/physics-interaction/native/GrabAuthorityPhase0Probe.h`
+- `src/physics-interaction/native/GrabAuthorityPhase0Probe.cpp`
+- `src/physics-interaction/core/PhysicsInteraction.h`
+- `src/physics-interaction/core/PhysicsInteraction.cpp`
+- `src/RockConfig.h`
+- `src/RockConfig.cpp`
+- `data/config/ROCK.ini`
+- `tests/GrabAuthorityPhase0ProbeSourceTests.ps1`
+
+Runtime enablement keys, all under `[PhysicsInteraction]`:
+
+- `bDebugGrabAuthorityPhase0ProbeEnabled=false`
+- `bDebugGrabAuthorityPhase0SolverProbeEnabled=true`
+- `iDebugGrabAuthorityPhase0ProxyFilterPolicy=0`
+- `iDebugGrabAuthorityPhase0LogIntervalFrames=30`
+- `fDebugGrabAuthorityPhase0MotionAmplitudeGameUnits=8.0`
+
+Implemented diagnostic behavior:
+
+- Adds a real `betweenCollideAndSolve` callback surface and an after-solve callback surface.
+- Creates a hidden keyframed proxy body and optional hidden dynamic receiver body only when explicitly enabled.
+- Uses Bethesda body lifecycle wrappers for create/destroy.
+- Uses a minimal native convex shape.
+- Applies the selected no-contact filter policy from birth.
+- Creates an isolated custom grab constraint between proxy and receiver when solver probe is enabled.
+- Drives proxy transform and velocity from the between-collide-and-solve callback.
+- Reads proxy transform/filter in the same callback to test setter/readback behavior.
+- Reads proxy and receiver after solve to test solver response.
+- Logs Havok TLS command-mode byte `+0x1528`, physics-context byte `+0x1529`, and thread command index `+0x152C` when readable.
+- Checks whether proxy or receiver body ids appear in current semantic hand/weapon contact ids.
+
+Phase 0 does not:
+
+- touch `HandGrab.cpp`;
+- replace ordinary one-hand dynamic grab authority;
+- disable or alter native mouse-spring flush;
+- use COM as pivot or target authority;
+- register probe bodies as semantic contact evidence;
+- create a production fallback path.
 
 ### Phase 0 - Validation gates and diagnostics
 
