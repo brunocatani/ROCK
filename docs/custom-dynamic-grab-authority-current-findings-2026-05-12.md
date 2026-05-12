@@ -3096,6 +3096,197 @@ Still unresolved:
 - Need verify the exact `BethesdaPhysicsBody` creation flags/motion type that produce the best body-A proxy with no contact and no broadphase churn.
 - Need verify whether constraint-add pair suppression is active in the actual FO4VR world cinfo used by gameplay, although the world constructor supports it.
 
+### FO4VR gameplay world filter and proxy timing audit
+
+This pass corrects the older "optional constraint collision filter may be active" interpretation. FO4VR contains the constraint-pair filter machinery, but the gameplay `bhkWorld` creation path inspected here does not appear to install it as the world collision filter. It installs Bethesda's normal `bhkCollisionFilter`.
+
+#### Gameplay hknp world cinfo path
+
+Confirmed functions:
+
+- `bhkWorld::vfunction44` at `0x141DF99E0`:
+  - constructs a stack hknp world cinfo through `0x141724500`;
+  - sets world capacity/timing/broadphase/body-quality fields;
+  - sets cinfo collision filter pointer `+0xA8` to global `DAT_1459429B8`;
+  - allocates the hknp world object and inlines the `hknpBSWorld`/`hknpWorld` construction path.
+- hknp world cinfo initializer `0x141724500`:
+  - initializes cinfo filter pointers `+0xA0`, `+0xA8`, `+0xB0` to zero;
+  - sets other default simulation/broadphase/body-quality fields;
+  - does not create a constraint-pair filter by itself.
+- `bhkCollisionFilter::bhkCollisionFilter` at `0x141E11480`:
+  - writes `DAT_1459429B8 = this`;
+  - sets its hknp collision-filter type byte at object offset `+0x10` to `4`;
+  - initializes Bethesda layer/name/matrix data;
+  - calls `0x141E11950`, which fits the active `bhkCollisionFilter` setup path already tied to `vfunction5`/`vfunction6` and predicate `0x141E115B0`.
+
+Confirmed conclusion:
+
+- The gameplay `bhkWorld` path feeds hknp world cinfo `+0xA8` with `DAT_1459429B8`.
+- `DAT_1459429B8` is a `bhkCollisionFilter` whose type byte is `4`.
+- This is the normal contact filter that applies bit 14 and the layer matrix.
+- This is not the `hknpConstraintCollisionFilter` type.
+
+#### Constraint collision filter support is present but not the default gameplay filter
+
+Confirmed functions:
+
+- `hknpConstraintCollisionFilter::hknpConstraintCollisionFilter` at `0x1417ED4F0`:
+  - calls `hknpPairCollisionFilter` construction;
+  - sets its hknp collision-filter type byte at object offset `+0x10` to `1`;
+  - initializes its pair map state.
+- hknp world constructor tail at `0x1415424D1` to `0x1415424E6`:
+  - reads cinfo pointer `+0xA8`;
+  - if non-null and byte `+0x10 == 1`, calls `0x1417ED680`;
+  - `0x1417ED680` registers callbacks on world constraint add/remove signal slots `world + 0x560` and `world + 0x568`.
+- `hkbnpPhysicsInterface::hkbnpPhysicsInterface` at `0x141956570`:
+  - if cinfo `+0xA8` is null, allocates a group-style collision filter and sets its type byte to `2`;
+  - then constructs an hknp world using that cinfo;
+  - this confirms the constructor check is a generic hknp filter-type hook, not a guarantee that gameplay uses the constraint filter.
+
+Corrected conclusion:
+
+- FO4VR has the constraint-pair filter class and hknp world can register it.
+- The inspected gameplay `bhkWorld` creation path uses `bhkCollisionFilter` type `4`, so automatic hknp constraint-pair contact suppression should not be assumed active for normal ROCK gameplay worlds.
+- The earlier section's "if active" wording remains true only for worlds whose cinfo `+0xA8` is explicitly a type-`1` `hknpConstraintCollisionFilter`; it is not true for the gameplay world path mapped here.
+
+Design implication:
+
+- A future custom dynamic grab authority path cannot rely on hknp automatically suppressing contacts between constrained body A and body B.
+- The clean split remains:
+  - hand/contact bodies provide detection, selection, mesh evidence, finger pose, and collision/deviation data;
+  - while held, those contact bodies need ROCK's existing bit-14 suppression against the held object;
+  - a hidden authority proxy should be born no-contact, using bit 14 or a no-contact layer policy;
+  - the held object stays on its normal layer and remains the only dynamic constrained body B.
+- Replacing the gameplay collision filter with `hknpConstraintCollisionFilter` is not a safe inferred option because Bethesda's `bhkCollisionFilter` owns layer matrix behavior, the bit-14 suppression branch, and game-specific group/subsystem logic.
+
+#### Body-A proxy motion type and drive surface
+
+Current source facts:
+
+- `BethesdaPhysicsBody::create(...)`:
+  - creates a Bethesda-owned hknp physics system and `bhkNPCollisionObject`;
+  - inserts it through `bhkNPCollisionObject` add-to-world;
+  - for non-static bodies, supplies a local motion cinfo before add-to-world;
+  - for `BethesdaMotionType::Keyframed`, calls `kFunc_SetBodyKeyframed` after add-to-world;
+  - sets filter info with rebuild mode `1`;
+  - enables flags `0x08020000`;
+  - activates the body.
+- Generated hand, body, and weapon colliders are all currently created as `BethesdaMotionType::Keyframed`.
+- The generated palm anchor body is already rooted in the flattened hand-frame bone tree; future custom grab body A should use that same convention for target/source transform semantics.
+
+Ghidra-confirmed functions:
+
+- `kFunc_SetBodyKeyframed` / `0x141DF5CB0`:
+  - direct path locks the world and calls `0x14153B640`;
+  - queued path emits command `0x10` with command flags `0x120100`.
+- `0x14153B640`:
+  - sets the keyframed flag/state on the hknp body/motion;
+  - dirties the body and linked/connected chain through `0x14153C5A0`;
+  - notifies through `world + 0x538`;
+  - this is a motion-state promotion path, not a per-frame target drive.
+- `bhkNPCollisionObject::SetMotionType` / `0x141E07300`:
+  - routes static/dynamic/keyframed modes through multiple hknp world helpers;
+  - can rebuild mass/motion state depending on current flags;
+  - should not be part of steady held-frame proxy movement.
+
+Confirmed conclusion:
+
+- A hidden authority proxy should probably be a keyframed generated Bethesda body, matching the existing hand/weapon generated-body ownership model.
+- Keyframed state is a creation/setup property; it does not by itself define the grab authority behavior.
+- Steady held motion still needs a separate per-frame drive primitive.
+
+#### Current generated drive still uses DriveToKeyFrame
+
+Current source facts:
+
+- `GeneratedKeyframedBodyDrive::driveGeneratedKeyframedBody(...)`:
+  - locks the drive state;
+  - rejects stale sources after `0.10s`;
+  - selects pending or interpolated target;
+  - if `pendingTeleport` is set, calls immediate placement through `setTransform` + zero velocity;
+  - otherwise calls `BethesdaPhysicsBody::driveToKeyFrame(...)`;
+  - currently ignores the `maxLinearVelocityHavok` and `maxAngularVelocityRadians` parameters.
+- `PhysicsInteraction` registers:
+  - native held grab flush on whole-pre-step;
+  - generated collider drive flush on substep-pre-collide.
+- `PhysicsStepDriveCoordinator` has a native vtable slot for between-collide-and-solve but the current ROCK implementation is no-op.
+- `HavokPhysicsTiming::PhysicsStepPhase` currently only names `WholePreStep` and `SubstepPreCollide`.
+
+Ghidra-confirmed drive functions:
+
+- `bhkNPCollisionObject::DriveToKeyFrame` wrapper `0x141E086E0`:
+  - computes hard-keyframe velocity;
+  - checks body motion-property max linear/angular velocity caps;
+  - if a cap is exceeded, uses `0x141DF55F0` to set body transform and zeros velocity;
+  - otherwise uses `0x141DF56F0` to apply velocity.
+- Direct hard-keyframe velocity wrapper `0x141DF5930`:
+  - calls `0x14153A6A0` to compute linear/angular velocities from current body transform to target transform using `dt`;
+  - applies velocities through `0x141539F30` or queues the same velocity command;
+  - does not contain the `DriveToKeyFrame` cap-triggered transform-snap branch.
+- `0x141DF56F0`:
+  - applies linear/angular velocity directly through `0x141539F30` when not in queued command mode;
+  - queues command `0x30` with flags `0x90100` when TLS command mode is active;
+  - calls `0x141DF60C0` when the velocity is nonzero enough to require body/island notification.
+- `0x141DF55F0`:
+  - direct path calls `0x1415395E0` to write body transform;
+  - queued path emits command `0x50` with flags `0x60100`;
+  - this is broadphase-visible and should be reserved for create/teleport/recovery, not normal held-frame drive.
+- `0x141539F30`:
+  - writes motion linear velocity and angular velocity;
+  - wakes/activates the body if needed through `0x141546EF0`;
+  - calls `0x14153D440`;
+  - signals `world + 0x538`.
+
+Confirmed conclusion:
+
+- The current generated-collider drive is still a `DriveToKeyFrame` user.
+- The direct velocity path remains the cleaner candidate for a future no-contact authority proxy because it avoids the cap-triggered transform snap.
+- This does not mean existing contact colliders should be moved to the new drive without separate validation; generated contact colliders need pre-collide placement for contact evidence, while a hidden grab authority proxy can be treated as a solver anchor.
+
+#### Physics phase implications for custom linear/angular grab authority
+
+Ghidra-confirmed `bhkWorld::vfunction43` order at `0x141DF73A0`:
+
+- before-whole listeners;
+- command drain `0x141DFDB30`;
+- for each substep:
+  - before-any listeners;
+  - command drain `0x141DFE3B0`;
+  - collide;
+  - between-collide-and-solve listeners;
+  - command drain `0x141DFDE70`;
+  - solve;
+  - after-any listeners;
+  - command drain `0x141DFDCD0`;
+- after-whole listeners;
+- command drain `0x141DFD990`.
+
+Confirmed conclusion:
+
+- Between-collide-and-solve is the first phase where collision has finished and the solver has not yet consumed constraint state.
+- If a future authority proxy uses a velocity wrapper that queues commands during the callback, FO4VR drains those queued commands before solve.
+- Therefore a coherent future custom-authority update unit can be designed around one between-collide-and-solve callback:
+  - compute proxy target from the latest flattened hand frame sample;
+  - drive the hidden no-contact body A through direct hard-keyframe velocity semantics;
+  - write constraint transform A/B, transform-B pivot, and angular target;
+  - write finite linear/angular motor fields;
+  - let the command drain run;
+  - then solve consumes a matched proxy/constraint/motor frame.
+
+Important caution:
+
+- This is a future design implication, not an implementation change.
+- Do not move all generated collider driving to between-collide-and-solve. Hand/body/weapon contact colliders exist to generate contact during collide and still need pre-collide placement.
+- The future between-collide-and-solve path should be scoped to the hidden dynamic-grab authority proxy and grab constraint fields only.
+- Do not only switch ordinary one-hand grabs to the current `SharedConstraint` path. The current `SharedConstraint` updates constraint fields from held-object/game update flow and uses the contact palm body as body A, which does not satisfy the matched physics-phase authority unit above.
+
+Unresolved after this audit:
+
+- Need verify whether calling `0x141DF5930` directly from a ROCK wrapper is safer than computing velocity through `0x14153A6A0` plus `setVelocity`, given available typed signatures and queued-command behavior.
+- Need verify if future custom constraint field writes need any explicit constraint dirty notification beyond writing atom memory before solve. Current atom interpreter evidence says solver reads atom stream each build-jacobian pass, but this should get one more focused Ghidra pass.
+- Need map whether the future proxy should share the existing palm-anchor body lifetime or become a separate `BethesdaPhysicsBody` with its own no-contact filter. Current evidence favors separate hidden proxy, but source ownership/lifecycle still needs a full pass.
+- Need decide proxy no-contact policy: bit 14, layer 15, or dedicated extended zero-row layer. The binary confirms bit 14 is real; it does not decide the production policy.
+
 ### Research conclusion from this pass
 
 The next custom-authority design should be judged against these confirmed HIGGS rules:
