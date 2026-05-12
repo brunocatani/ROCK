@@ -360,11 +360,11 @@ namespace rock::held_object_physics_math
 namespace rock::grab_held_response
 {
     /*
-     * ROCK keeps ordinary one-hand grabs on FO4VR's native mouse spring, so grab
-     * quality has to improve around that verified boundary instead of by writing
-     * unverified action internals. These helpers derive bounded target leading
-     * and release velocity from controller motion, held-body lag, player motion,
-     * and COM-relative angular swing while remaining pure enough for policy tests.
+     * ROCK dynamic grab authority now uses proxy-backed finite motors for
+     * ordinary loose-object holds. Native mouse-spring helpers remain as a
+     * diagnostic/fallback boundary, while these helpers derive bounded target
+     * leading and release velocity from controller motion, held-body lag, player
+     * motion, and COM-relative angular swing without making COM a grip pivot.
      */
     inline float finiteOr(float value, float fallback)
     {

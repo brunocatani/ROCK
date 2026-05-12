@@ -33,6 +33,7 @@ namespace rock::grab_motion_controller
 
         float baseMaxForce = 2000.0f;
         float maxForceMultiplier = 4.0f;
+        float authorityForceScale = 1.0f;
         float mass = 0.0f;
         float forceToMassRatio = 500.0f;
         float angularToLinearForceRatio = 12.5f;
@@ -147,8 +148,9 @@ namespace rock::grab_motion_controller
         const float maxMultiplier = (std::max)(1.0f, safePositive(input.maxForceMultiplier, 1.0f));
         const float baseForce = (std::max)(0.0f, finiteOr(input.baseMaxForce, 0.0f));
         const float targetForce = baseForce * (1.0f + (maxMultiplier - 1.0f) * out.errorFactor);
+        const float authorityForceScale = std::clamp(safePositive(input.authorityForceScale, 1.0f), 0.05f, 1.0f);
         out.fadeFactor = input.fadeInEnabled ? computeFadeFactor(input.fadeElapsed, input.fadeDuration) : 1.0f;
-        out.linearMaxForce = capForceByMass(targetForce * out.fadeFactor, input.mass, input.forceToMassRatio);
+        out.linearMaxForce = capForceByMass(targetForce * out.fadeFactor, input.mass, input.forceToMassRatio) * authorityForceScale;
 
         const float angularFadeRatio =
             safePositive(input.fadeStartAngularRatio, input.angularToLinearForceRatio) +

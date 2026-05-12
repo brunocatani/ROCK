@@ -232,6 +232,38 @@ namespace rock
             return (std::isfinite(value) ? value : 0.0f) * (std::isfinite(multiplier) ? multiplier : 1.0f);
         }
 
+        float sharedGrabAuthorityForceScale(bool peerHandStillHolding)
+        {
+            /*
+             * Two ROCK proxy constraints on one loose object must share the
+             * finite force budget instead of each hand receiving a full HIGGS-
+             * style mass-capped motor. The selected grip points remain
+             * independent; only the total per-object authority is budgeted.
+             */
+            return peerHandStillHolding ? 0.5f : 1.0f;
+        }
+
+        template <std::size_t N>
+        float recordDeviationAverage(std::array<float, N>& history, std::size_t& count, std::size_t& next, float sample)
+        {
+            if constexpr (N == 0) {
+                return std::isfinite(sample) ? sample : 0.0f;
+            } else {
+                const float sanitizedSample = std::isfinite(sample) && sample > 0.0f ? sample : 0.0f;
+                history[next] = sanitizedSample;
+                next = (next + 1) % N;
+                if (count < N) {
+                    ++count;
+                }
+
+                float total = 0.0f;
+                for (std::size_t i = 0; i < count; ++i) {
+                    total += history[i];
+                }
+                return count > 0 ? total / static_cast<float>(count) : sanitizedSample;
+            }
+        }
+
         float angularForceRatioForMultiplier(float ratio, float angularForceMultiplier)
         {
             const float sanitizedRatio = (std::isfinite(ratio) && ratio > 0.001f) ? ratio : 12.5f;
@@ -315,9 +347,9 @@ namespace rock
             /*
              * ROCK writes the constraint's object-space transform-B pivot from
              * the same captured hand/body frame used for angular drive. The
-             * native mouse-spring surface pivot remains for one-hand grabs, but
-             * constraint grabs must measure and solve against this active pivot
-             * so linear and angular two-hand authority do not disagree.
+             * original surface pivot remains telemetry and release context, but
+             * proxy constraint grabs must measure and solve against this active
+             * pivot so linear and angular authority do not disagree.
              */
             const RE::NiTransform desiredBodyTransformHandSpace =
                 grab_frame_math::desiredBodyInHandBodySpace(frame.constraintHandSpace, frame.bodyLocal);
@@ -2118,6 +2150,7 @@ namespace rock
         float tau,
         float damping,
         float maxForce,
+        float authorityForceScale,
         float proportionalRecovery,
         float constantRecovery,
         bool looseWeaponGrab,
@@ -2212,8 +2245,12 @@ namespace rock
             0.0f,
         };
 
+        const float sanitizedAuthorityForceScale = std::clamp(
+            std::isfinite(authorityForceScale) && authorityForceScale > 0.0f ? authorityForceScale : 1.0f,
+            0.05f,
+            1.0f);
         const GrabConstraintMotorTuning motorTuning =
-            buildProxyConstraintMotorTuning(tau, damping, maxForce, proportionalRecovery, constantRecovery, looseWeaponGrab);
+            buildProxyConstraintMotorTuning(tau, damping, maxForce * sanitizedAuthorityForceScale, proportionalRecovery, constantRecovery, looseWeaponGrab);
 
         _activeConstraint = createGrabConstraint(world,
             _grabAuthorityProxy.getBodyId(),
@@ -2248,6 +2285,7 @@ namespace rock
                 .tauMin = g_rockConfig.rockGrabTauMin,
                 .grabPositionErrorGameUnits = 0.0f,
                 .grabRotationErrorDegrees = 0.0f,
+                .authorityForceScale = sanitizedAuthorityForceScale,
                 .heldBodyColliding = false,
                 .valid = true,
             };
@@ -2263,7 +2301,7 @@ namespace rock
 
         _heldDriveMode = HeldObjectDriveMode::ProxyConstraint;
         ROCK_LOG_DEBUG(Hand,
-            "{} hand proxy constraint grab drive: constraint={} looseWeapon={} proxyBody={} objBody={} filter=0x{:08X} pivotAProxy=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) linearTau={:.3f} angularTau={:.3f} linearForce={:.0f} angularForce={:.0f} reason={}",
+            "{} hand proxy constraint grab drive: constraint={} looseWeapon={} proxyBody={} objBody={} filter=0x{:08X} pivotAProxy=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) linearTau={:.3f} angularTau={:.3f} linearForce={:.0f} angularForce={:.0f} forceBudget={:.2f} reason={}",
             handName(),
             _activeConstraint.constraintId,
             looseWeaponGrab ? "yes" : "no",
@@ -2280,6 +2318,7 @@ namespace rock
             motorTuning.angularTau,
             motorTuning.linearMaxForce,
             motorTuning.angularMaxForce,
+            sanitizedAuthorityForceScale,
             reason ? reason : "unknown");
         return true;
     }
@@ -2368,6 +2407,7 @@ namespace rock
         float tauMin,
         float grabPositionErrorGameUnits,
         float grabRotationErrorDegrees,
+        float authorityForceScale,
         bool heldBodyColliding)
     {
         if (!_activeConstraint.isValid() || !_activeConstraint.linearMotor || !_activeConstraint.angularMotor) {
@@ -2411,6 +2451,7 @@ namespace rock
             .deltaTime = deltaTime,
             .baseMaxForce = sharedBaseMaxForce,
             .maxForceMultiplier = g_rockConfig.rockGrabAdaptiveMaxForceMultiplier,
+            .authorityForceScale = authorityForceScale,
             .mass = readBodyMass(world, _savedObjectState.bodyId),
             .forceToMassRatio = g_rockConfig.rockGrabMaxForceToMassRatio,
             .angularToLinearForceRatio =
@@ -2442,7 +2483,10 @@ namespace rock
 
         _activeConstraint.currentTau = output.linearTau;
         _activeConstraint.currentMaxForce = output.linearMaxForce;
-        _activeConstraint.targetMaxForce = sharedBaseMaxForce;
+        _activeConstraint.targetMaxForce = sharedBaseMaxForce * std::clamp(
+            std::isfinite(authorityForceScale) && authorityForceScale > 0.0f ? authorityForceScale : 1.0f,
+            0.05f,
+            1.0f);
     }
 
     void Hand::queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
@@ -2451,6 +2495,7 @@ namespace rock
         float tauMin,
         float grabPositionErrorGameUnits,
         float grabRotationErrorDegrees,
+        float authorityForceScale,
         bool heldBodyColliding)
     {
         std::scoped_lock lock(_grabAuthorityProxyMutex);
@@ -2464,6 +2509,10 @@ namespace rock
         _grabAuthorityPendingTarget.tauMin = tauMin;
         _grabAuthorityPendingTarget.grabPositionErrorGameUnits = grabPositionErrorGameUnits;
         _grabAuthorityPendingTarget.grabRotationErrorDegrees = grabRotationErrorDegrees;
+        _grabAuthorityPendingTarget.authorityForceScale = std::clamp(
+            std::isfinite(authorityForceScale) && authorityForceScale > 0.0f ? authorityForceScale : 1.0f,
+            0.05f,
+            1.0f);
         _grabAuthorityPendingTarget.heldBodyColliding = heldBodyColliding;
         _grabAuthorityPendingTarget.valid = true;
         ++_grabAuthorityProxyQueuedSequence;
@@ -2491,6 +2540,15 @@ namespace rock
         }
 
         if (_heldDriveMode == HeldObjectDriveMode::ProxyConstraint) {
+            std::scoped_lock lock(_grabAuthorityProxyMutex);
+            _grabAuthorityPendingTarget.authorityForceScale = sharedGrabAuthorityForceScale(true);
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand peer promotion kept existing proxy constraint drive: formID={:08X} body={} forceBudget={:.2f} reason={}",
+                handName(),
+                _savedObjectState.refr ? _savedObjectState.refr->GetFormID() : 0,
+                _savedObjectState.bodyId.value,
+                _grabAuthorityPendingTarget.authorityForceScale,
+                reason ? reason : "peer-joined-held-object");
             return _activeConstraint.isValid();
         }
 
@@ -2514,6 +2572,7 @@ namespace rock
                 tau,
                 damping,
                 maxForce,
+                sharedGrabAuthorityForceScale(true),
                 proportionalRecovery,
                 constantRecovery,
                 _heldObjectIsLooseWeapon,
@@ -4305,6 +4364,7 @@ namespace rock
                     tau,
                     damping,
                     maxForce,
+                    sharedGrabAuthorityForceScale(joiningPeerHeldObject),
                     proportionalRecovery,
                     constantRecovery,
                     looseWeaponGrab,
@@ -4647,6 +4707,7 @@ namespace rock
         }
 
         const bool heldBodyColliding = isHeldBodyColliding();
+        const float authorityForceScale = sharedGrabAuthorityForceScale(releaseContext.peerHandStillHolding);
         grab_held_response::AdaptiveHeldLeadOutput<RE::NiPoint3> adaptiveLead{};
         if (_heldDriveMode == HeldObjectDriveMode::NativeMouseSpring) {
             const float looseWeaponAdaptiveLeadMultiplier =
@@ -4689,16 +4750,22 @@ namespace rock
                 tauMin,
                 grabPositionErrorGameUnits,
                 grabRotationErrorDegrees,
+                authorityForceScale,
                 heldBodyColliding);
         }
 
+        const float averageGrabDeviationGameUnits = recordDeviationAverage(
+            _grabDeviationHistory,
+            _grabDeviationHistoryCount,
+            _grabDeviationHistoryNext,
+            grabPositionErrorGameUnits);
         _grabDeviationExceededSeconds = held_object_physics_math::advanceDeviationSeconds(
-            _grabDeviationExceededSeconds, grabPositionErrorGameUnits, g_rockConfig.rockGrabMaxDeviation, deltaTime);
+            _grabDeviationExceededSeconds, averageGrabDeviationGameUnits, g_rockConfig.rockGrabMaxDeviation, deltaTime);
         if (held_object_physics_math::deviationExceeded(_grabDeviationExceededSeconds, g_rockConfig.rockGrabMaxDeviationTime)) {
             ROCK_LOG_WARN(Hand,
-                "{} hand release: held object exceeded max deviation ({:.1f}gu > {:.1f}gu for {:.2f}s)",
+                "{} hand release: held object exceeded max deviation average ({:.1f}gu > {:.1f}gu for {:.2f}s)",
                 handName(),
-                grabPositionErrorGameUnits,
+                averageGrabDeviationGameUnits,
                 g_rockConfig.rockGrabMaxDeviation,
                 _grabDeviationExceededSeconds);
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
@@ -4766,16 +4833,21 @@ namespace rock
 
                 const float visualHandDeviationGameUnits =
                     pointDistanceGameUnits(nextVisualHandWorld.translate, handWorldTransform.translate);
+                const float averageVisualHandDeviationGameUnits = recordDeviationAverage(
+                    _grabVisualDeviationHistory,
+                    _grabVisualDeviationHistoryCount,
+                    _grabVisualDeviationHistoryNext,
+                    visualHandDeviationGameUnits);
                 _grabVisualDeviationExceededSeconds = held_object_physics_math::advanceDeviationSeconds(
                     _grabVisualDeviationExceededSeconds,
-                    visualHandDeviationGameUnits,
+                    averageVisualHandDeviationGameUnits,
                     g_rockConfig.rockGrabMaxDeviation,
                     deltaTime);
                 if (held_object_physics_math::deviationExceeded(_grabVisualDeviationExceededSeconds, g_rockConfig.rockGrabMaxDeviationTime)) {
                     ROCK_LOG_WARN(Hand,
-                        "{} hand release: visual held-object hand target exceeded max deviation ({:.1f}gu > {:.1f}gu for {:.2f}s)",
+                        "{} hand release: visual held-object hand target exceeded max deviation average ({:.1f}gu > {:.1f}gu for {:.2f}s)",
                         handName(),
-                        visualHandDeviationGameUnits,
+                        averageVisualHandDeviationGameUnits,
                         g_rockConfig.rockGrabMaxDeviation,
                         _grabVisualDeviationExceededSeconds);
                     clearGrabExternalHandWorldTransform(_isLeft);
@@ -4788,7 +4860,7 @@ namespace rock
 
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} GRAB VISUAL HAND: relation=heldRelative phase={} visualOnly=yes target=({:.1f},{:.1f},{:.1f}) applied=({:.1f},{:.1f},{:.1f}) live=({:.1f},{:.1f},{:.1f}) deviation={:.2f}gu normalAuthority=false",
+                    "{} GRAB VISUAL HAND: relation=heldRelative phase={} visualOnly=yes target=({:.1f},{:.1f},{:.1f}) applied=({:.1f},{:.1f},{:.1f}) live=({:.1f},{:.1f},{:.1f}) deviation={:.2f}gu avgDeviation={:.2f}gu normalAuthority=false",
                     handName(),
                     grab_three_phase::phaseName(_grabAcquisitionPhase),
                     targetVisualHandWorld.translate.x,
@@ -4800,9 +4872,13 @@ namespace rock
                     handWorldTransform.translate.x,
                     handWorldTransform.translate.y,
                     handWorldTransform.translate.z,
-                    visualHandDeviationGameUnits);
+                    visualHandDeviationGameUnits,
+                    averageVisualHandDeviationGameUnits);
             } else {
                 _grabVisualDeviationExceededSeconds = 0.0f;
+                _grabVisualDeviationHistory = {};
+                _grabVisualDeviationHistoryCount = 0;
+                _grabVisualDeviationHistoryNext = 0;
                 if (_hasGrabVisualHandTransform) {
                     clearGrabExternalHandWorldTransform(_isLeft);
                     _hasGrabVisualHandTransform = false;
@@ -4810,6 +4886,9 @@ namespace rock
             }
         } else {
             _grabVisualDeviationExceededSeconds = 0.0f;
+            _grabVisualDeviationHistory = {};
+            _grabVisualDeviationHistoryCount = 0;
+            _grabVisualDeviationHistoryNext = 0;
             if (_hasGrabVisualHandTransform) {
                 clearGrabExternalHandWorldTransform(_isLeft);
                 _hasGrabVisualHandTransform = false;
@@ -5128,7 +5207,7 @@ namespace rock
 
             ROCK_LOG_DEBUG(Hand,
                 "{} HELD dynamic: drive={} looseWeapon={} formID={:08X} action={:p} constraint={} queued={} flushed={} failedFlushes={} lastDt={:.6f} proxyFrame={}/{} "
-                "phase={} posePublished={} fade={:.2f}/{} reason={} colliding={} adaptiveLeadFactor={:.2f} adaptiveLeadLinear={:.2f}gu adaptiveLeadAngular={:.1f}deg ERR={:.1f}gu rotErr={:.1f}deg bDist={:.1f}gu objVel={:.3f} "
+                "phase={} posePublished={} fade={:.2f}/{} reason={} colliding={} forceBudget={:.2f} adaptiveLeadFactor={:.2f} adaptiveLeadLinear={:.2f}gu adaptiveLeadAngular={:.1f}deg ERR={:.1f}gu avgErr={:.1f}gu rotErr={:.1f}deg bDist={:.1f}gu objVel={:.3f} "
                 "paW=({:.1f},{:.1f},{:.1f}) pbW=({:.1f},{:.1f},{:.1f}) "
                 "targetBody=({:.1f},{:.1f},{:.1f}) objW=({:.1f},{:.1f},{:.1f})",
                 handName(),
@@ -5149,10 +5228,12 @@ namespace rock
                 _grabFrame.fadeInGrabConstraint ? "on" : "off",
                 _grabFrame.motorFadeReason,
                 heldBodyColliding ? "yes" : "no",
+                authorityForceScale,
                 adaptiveLead.factor,
                 adaptiveLeadLinearGame,
                 adaptiveLead.angularLeadRadians * kRadiansToDegrees,
                 pivotErrGame,
+                averageGrabDeviationGameUnits,
                 grabRotationErrorDegrees,
                 bodyDistGame,
                 objVelMag,
@@ -5259,6 +5340,7 @@ namespace rock
                         pending.tauMin,
                         pending.grabPositionErrorGameUnits,
                         pending.grabRotationErrorDegrees,
+                        pending.authorityForceScale,
                         pending.heldBodyColliding);
 
                     _lastAppliedGrabAuthorityProxyWorld = pending.proxyWorld;
@@ -5302,7 +5384,7 @@ namespace rock
             std::uint32_t filterInfo = 0;
             const bool filterReadOk = havok_runtime::tryReadFilterInfo(world, proxyBodyId, filterInfo);
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
                 proxyBodyId.value,
                 _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
@@ -5320,6 +5402,7 @@ namespace rock
                 activePivotBBodyLocalGame.z,
                 pending.grabPositionErrorGameUnits,
                 pending.grabRotationErrorDegrees,
+                pending.authorityForceScale,
                 pending.heldBodyColliding ? "yes" : "no",
                 filterReadOk ? "ok" : "fail",
                 filterInfo,
@@ -5566,9 +5649,15 @@ namespace rock
         _grabConvergeStableInsidePocketFrames = 0;
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
         _grabDeviationExceededSeconds = 0.0f;
+        _grabDeviationHistory = {};
+        _grabDeviationHistoryCount = 0;
+        _grabDeviationHistoryNext = 0;
         _grabVisualHandTransform = {};
         _hasGrabVisualHandTransform = false;
         _grabVisualDeviationExceededSeconds = 0.0f;
+        _grabVisualDeviationHistory = {};
+        _grabVisualDeviationHistoryCount = 0;
+        _grabVisualDeviationHistoryNext = 0;
         _nativeGrabReleasePending.store(false, std::memory_order_release);
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};

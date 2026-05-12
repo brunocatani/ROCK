@@ -6301,3 +6301,47 @@ Validation completed after this correction:
 - Release build deployed `ROCK.dll` and `ROCK.pdb` to `D:\FO4\mods\ROCK\F4SE\Plugins` at `2026-05-12 19:33:53`;
 - registered CTest suite passed `15/15`;
 - runtime log was still last written at `2026-05-12 19:03:34`, so runtime grab behavior for this build remains unvalidated until the game writes a fresh log.
+
+## 2026-05-12 follow-up: HIGGS-style shared force budget and averaged deviation
+
+No fresh runtime log exists yet for the `19:33:53` deployed DLL, so this pass used source-level parity against the mapped HIGGS dynamic held-object loop.
+
+Confirmed HIGGS source behavior:
+
+- each held dynamic object computes hand deviation as distance between the adjusted/held visual hand and the real/controller hand;
+- HIGGS keeps a short hand-deviation history and releases from the averaged value, not from one isolated spike;
+- non-actor motor force is finite: base linear max force is capped by body mass and angular max force derives from the capped linear force;
+- HIGGS has one active hand constraint for ordinary loose dynamic grab, so it does not accidentally double the finite motor budget across two independent hand constraints.
+
+ROCK gap found:
+
+- ROCK's proxy path already had mass-capped motor force per hand, but when both hands held the same loose object each hand could still own a full mass-capped constraint;
+- ROCK deviation release used sustained raw threshold time, not a short averaged deviation value;
+- stale docs/comments still described ordinary one-hand loose grab as native mouse-spring authority.
+
+Correction made:
+
+- added `authorityForceScale` to `grab_motion_controller::MotorInput`;
+- when `GrabReleaseContext::peerHandStillHolding` is true, each hand queues and flushes a `0.5` force-budget share so two proxy constraints do not double total object authority;
+- the joining hand starts with the shared budget during proxy constraint creation, avoiding a full-force first frame on second-hand join;
+- held-object physical deviation and visual hand deviation now use five-sample rolling averages before the max-deviation release timer advances;
+- held and proxy telemetry now logs `forceBudget`, and visual telemetry logs raw plus averaged deviation;
+- stale grab-domain comments were updated to describe proxy-constraint dynamic authority rather than native mouse-spring production authority.
+
+Validation requirement:
+
+- run the new `ROCKGrabMotionControllerPolicyTests`;
+- run the new `GrabDeviationParitySourceTests.ps1`;
+- rebuild/deploy and run the full CTest suite;
+- collect fresh runtime logs and verify `forceBudget=0.50` when two hands hold the same loose object, `forceBudget=1.00` for one hand, and averaged deviation values in visual logs.
+
+Validation completed:
+
+- focused source checks passed:
+  - `GrabDeviationParitySourceTests.ps1`;
+  - `SharedHeldObjectGrabSourceTests.ps1`;
+  - `GrabAuthorityProxyFrameSourceTests.ps1`;
+  - `HandGrabNativeBoundarySourceTests.ps1`;
+- Release build passed and deployed `ROCK.dll` / `ROCK.pdb` to `D:\FO4\mods\ROCK\F4SE\Plugins` at `2026-05-12 19:54:33`;
+- registered CTest suite passed `17/17`, including `ROCKGrabMotionControllerPolicyTests` and `GrabDeviationParitySourceTests`;
+- runtime log was still last written at `2026-05-12 19:03:34`, so in-game validation for force-budget telemetry and averaged deviation remains pending.

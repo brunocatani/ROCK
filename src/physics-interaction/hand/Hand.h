@@ -343,6 +343,7 @@ namespace rock
             float tau,
             float damping,
             float maxForce,
+            float authorityForceScale,
             float proportionalRecovery,
             float constantRecovery,
             bool looseWeaponGrab,
@@ -364,6 +365,7 @@ namespace rock
             float tauMin,
             float grabPositionErrorGameUnits,
             float grabRotationErrorDegrees,
+            float authorityForceScale,
             bool heldBodyColliding);
         void queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
             float deltaTime,
@@ -371,6 +373,7 @@ namespace rock
             float tauMin,
             float grabPositionErrorGameUnits,
             float grabRotationErrorDegrees,
+            float authorityForceScale,
             bool heldBodyColliding);
         void destroyGrabAuthorityProxy(RE::bhkWorld* bhkWorld);
         void abandonGrabAuthorityProxy();
@@ -513,6 +516,7 @@ namespace rock
             float tauMin = 0.0f;
             float grabPositionErrorGameUnits = 0.0f;
             float grabRotationErrorDegrees = 0.0f;
+            float authorityForceScale = 1.0f;
             bool heldBodyColliding = false;
             bool valid = false;
         };
@@ -541,9 +545,15 @@ namespace rock
         float _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
         nearby_grab_damping::NearbyGrabDampingState _nearbyGrabDamping;
         float _grabDeviationExceededSeconds = 0.0f;
+        std::array<float, 5> _grabDeviationHistory{};
+        std::size_t _grabDeviationHistoryCount = 0;
+        std::size_t _grabDeviationHistoryNext = 0;
         RE::NiTransform _grabVisualHandTransform{};
         bool _hasGrabVisualHandTransform = false;
         float _grabVisualDeviationExceededSeconds = 0.0f;
+        std::array<float, 5> _grabVisualDeviationHistory{};
+        std::size_t _grabVisualDeviationHistoryCount = 0;
+        std::size_t _grabVisualDeviationHistoryNext = 0;
         std::atomic<bool> _nativeGrabReleasePending{ false };
         std::array<RE::NiPoint3, 5> _grabFingerProbeStart{};
         std::array<RE::NiPoint3, 5> _grabFingerProbeEnd{};

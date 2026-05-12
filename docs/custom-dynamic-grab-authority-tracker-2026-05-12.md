@@ -436,3 +436,28 @@ Completed local validation:
 - Release build passed and deployed at `2026-05-12 19:33:53`;
 - CTest passed `15/15`;
 - runtime validation still needs a fresh `ROCK.log` newer than the deployed DLL.
+
+## Current parity pass: force budget and averaged deviation
+
+The next source-level HIGGS parity correction is in progress:
+
+- add shared per-object force budgeting so two hands do not each apply a full finite motor budget to the same loose object;
+- add five-sample averaged physical/visual deviation before release decisions, matching the HIGGS short-history hand-distance guard;
+- keep COM as mass/release data only;
+- keep the hidden proxy as body-A authority and the selected contact/palm relation as grip authority.
+
+Validation to complete for this pass:
+
+- `ROCKGrabMotionControllerPolicyTests`;
+- `GrabDeviationParitySourceTests.ps1`;
+- focused source tests for proxy/native/shared boundaries;
+- Release build/deploy;
+- full CTest;
+- fresh runtime log after in-game one-hand and two-hand grab testing.
+
+Completed local validation for this pass:
+
+- focused source tests passed;
+- Release build passed and deployed at `2026-05-12 19:54:33`;
+- CTest passed `17/17`;
+- runtime log remains older than the deployed DLL, so runtime validation is still pending.
