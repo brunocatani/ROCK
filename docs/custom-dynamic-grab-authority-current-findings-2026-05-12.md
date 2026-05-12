@@ -2898,6 +2898,55 @@ Design implication for future custom motor authority:
   - or both queued/drained in that phase;
   - but not one direct and one deferred without proof of ordering.
 
+### ROCK custom constraint source reread after phase-safety mapping
+
+Current source facts:
+
+- `Hand::createConstraintGrabDrive(...)`:
+  - currently uses `_handBody.getBodyId()` as body A;
+  - resolves live hand body world transform if possible;
+  - computes pivot A from `_grabFrame.pivotAHandBodyLocalGame`;
+  - computes pivot B from `constraintDrivePivotBBodyLocalGame(_grabFrame)`;
+  - creates `ActiveConstraint` through `createGrabConstraint(...)`;
+  - sets `_heldDriveMode = HeldObjectDriveMode::SharedConstraint`.
+- `Hand::updateConstraintGrabDriveTarget(...)`:
+  - recomputes desired body-in-hand-body space from `_grabFrame.constraintHandSpace` and `_grabFrame.bodyLocal`;
+  - resolves live hand body world transform;
+  - directly writes transform A position at `constraintData + offsets::kTransformA_Pos`;
+  - directly writes transform B rotation and ragdoll target matrix through `grab_constraint_math::writeInitialGrabAngularFrame(...)`;
+  - directly writes transform B translation through `grab_constraint_math::writeDynamicTransformBTranslation(...)`.
+- `Hand::updateConstraintGrabDriveMotors(...)`:
+  - calls `grab_motion_controller::solveMotorTargets(...)`;
+  - feeds held collision state, position error, rotation error, base tau, collision tau, tau lerp speed, mass, force-to-mass ratio, angular-to-linear ratio, startup fade, and loose-weapon multipliers;
+  - directly writes linear motor tau/damping/recovery/min/max force;
+  - directly writes angular motor tau/damping/recovery/min/max force.
+- `Hand::updateHeldObject(...)`:
+  - ordinary native path queues `_nativeGrab.queueTarget(nativeTargetBodyWorld)`;
+  - constraint path calls `updateConstraintGrabDriveTarget(...)`;
+  - motor update only runs when `_heldDriveMode == HeldObjectDriveMode::SharedConstraint`.
+
+Important interpretation:
+
+- ROCK already has most of the finite-force HIGGS-style policy surface in `GrabMotionController`.
+- The missing quality path is not primarily "invent motor values"; it is authority architecture:
+  - ordinary one-hand loose objects/weapons do not use the custom constraint path;
+  - custom target/motor writes happen from held-object update flow, not a verified solver-safe phase;
+  - body A is the contact/lifecycle palm body, not a dedicated hidden authority proxy;
+  - proxy/body-A drive and constraint target writes are not currently one atomic phase operation.
+- Any future custom-authority implementation should treat current `createConstraintGrabDrive`, `updateConstraintGrabDriveTarget`, and `updateConstraintGrabDriveMotors` as the source scaffolding to preserve, but the owning phase and body-A source must be redesigned.
+
+Specific risk to avoid:
+
+- Do not only switch `HeldObjectDriveMode::NativeMouseSpring` to `SharedConstraint`.
+- That would reuse the existing direct game-update writes and contact palm body, which the current research identifies as likely stutter/fighting sources.
+- The replacement needs a coherent authority update unit:
+  - proxy target capture from flattened hand frame;
+  - proxy drive primitive;
+  - constraint transform A/B update;
+  - angular target update;
+  - finite motor field update;
+  - all committed in the same selected physics phase.
+
 ### Research conclusion from this pass
 
 The next custom-authority design should be judged against these confirmed HIGGS rules:
