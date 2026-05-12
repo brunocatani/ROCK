@@ -326,9 +326,6 @@ MigrationBackup/
 
 .zip
 
-# Local Codex/agent instructions stay machine-local.
-AGENTS.md
-
 # Local research, analysis, and Markdown notes stay machine-local.
 /docs/
 /analysis/
