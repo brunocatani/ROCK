@@ -12,6 +12,17 @@ HIGGS is the behavioral reference for polished dynamic grab feel, not a 1:1 impl
 
 The target remains ordinary dynamic one-hand grab for loose objects and loose non-equipped weapons. Equipped weapons, two-hand equipped weapon behavior, actor ragdoll grab, and HIGGS keyframed grab are outside this pass unless a shared infrastructure function must be understood.
 
+Important FO4VR binary caveat:
+
+- Many `hkp*` classes and helpers are still present in the FO4VR binary.
+- Presence of an `hkp*` symbol is not proof that the live FO4VR runtime path uses it correctly or at all.
+- `hkp*` findings are useful for atom layouts, vtable intent, motor field layouts, and compatibility evidence.
+- A claim becomes production-relevant only after a live `hknp` world/constraint/action insertion or update path is traced to that code or to an equivalent wrapper.
+- For this research, every `hkp*` finding must therefore be tagged as one of:
+  - live `hknp` path confirmed;
+  - layout witness only;
+  - unresolved / possibly dead compatibility code.
+
 ## Locked Behavioral Rules
 
 - COM is never grip pivot authority.
@@ -159,6 +170,42 @@ Current audit verdict:
 - The custom vtable slots look structurally plausible.
 - The custom runtime layout constants are not currently trustworthy.
 - This must be resolved before custom authority becomes the primary one-hand dynamic grab path.
+
+### 2026-05-12 follow-up: live hknp path versus hkp witnesses
+
+Confirmed from Ghidra:
+
+- `0x1417E39C0` is reached by the live hknp world constraint creation path.
+- It calls the constraint data vtable for:
+  - type at `+0x20`;
+  - atom/constraint info at `+0x28`;
+  - runtime info at `+0x90`;
+  - wrapper unwrapping at `+0xC0` when type is `0x0C` or `0x0D`.
+- It allocates runtime memory from the returned runtime byte size and zeroes that runtime directly.
+- No normal insertion-path call to vtable `+0xA0` was visible in this function.
+
+Confirmed solver path:
+
+- `hknpPrepareConstraintsTask::vfunction5` groups active constraints before solve.
+- `hknpBuildConstraintJacobiansTask::vfunction5` builds solver jacobians for grouped constraints.
+- The build task calls `0x141A55550`, a large atom-stream interpreter, using the stored atom stream pointer/size from the live constraint slot.
+- This means hkp-style atom streams are not merely dead leftovers: the live hknp solver path consumes atom streams through the hknp task pipeline.
+
+Confirmed wrapper path:
+
+- `hknpBreakableConstraintData` wraps an inner `hkpWrappedConstraintData` and returns type `0x0C`.
+- `hknpMalleableConstraintData` wraps an inner `hkpWrappedConstraintData` and returns type `0x0D`.
+- Both wrappers delegate inner atom/constraint info and runtime info to the wrapped constraint data.
+- `hknpMalleableConstraintData::vfunction6` delegates inner info, then appends a 0x18-byte wrapper atom at `this + 0x18`.
+- `hknpMalleableConstraintData` stores a default float `0x3c23d70a` at object offset `+0x3C`, and clone/copy preserves that value.
+- Constructor/copy xrefs found so far are class/clone/setup paths, not a confirmed Bethesda gameplay use of malleable constraints.
+
+Implications:
+
+- The user's warning is correct: an `hkp*` symbol alone is not enough.
+- However, the live FO4VR hknp constraint solver is explicitly built to consume hkp-style constraint data/atoms through hknp world tasks.
+- For ROCK custom grab, native hkp constructors are layout witnesses; live hknp world insertion plus the build-jacobians atom interpreter are the production-relevant paths.
+- `hknpMalleableConstraintData` remains a research candidate, not a selected design. It is live-compatible in structure, but not proven useful for per-frame grab feel.
 
 Likely correction direction, pending final verification:
 
@@ -792,6 +839,212 @@ Interpretation:
 - Direct body lifetime/destruction and broadphase detach are not fully mapped yet.
 - Current production-safe proxy research should assume a valid tiny shape is required, whether through the existing `BethesdaPhysicsBody` wrapper or a later direct hknp proxy helper.
 
+### Body lifetime commands
+
+Ghidra confirms the hknp API command processor dispatch table at `hknpApiCommandProcessor::vfunction5`:
+
+- command `1` -> `0x1415441F0`: add bodies to world/broadphase/island state;
+- command `2` -> `0x141544E80`: destroy body;
+- command `3` -> `0x141544B00`: remove body;
+- command `6` -> `0x1415395E0`: set body transform;
+- command `9` -> `0x141539F30`: set body velocity;
+- command `0x15` -> `0x14153B2F0`: set body motion-properties id;
+- command `0x1A` -> `0x14153C090` / `0x14153C150`: enable/disable body flags.
+
+Confirmed lifecycle details:
+
+- `0x141544B00` removes a body from active world/broadphase state:
+  - fires `TtFireBodyRemoved`;
+  - invokes world body-removed listeners at world `+0x4E0`;
+  - detaches broadphase/island/collision cache state;
+  - sets body `+0x6C` to `-1`;
+  - marks body flags at `+0x40` with `& 0xFFFBFFFF | 0x400`;
+  - calls motion cleanup around `0x14154AA50`.
+- `0x141544E80` calls `0x141544B00` first, then fully destroys/releases:
+  - fires `TtFireBodyDestroyed`;
+  - invokes world body-destroyed listeners at world `+0x4E8`;
+  - releases shape references;
+  - clears body flags;
+  - appends the body slot to the free list;
+  - increments world body/destruction bookkeeping;
+  - calls `0x1417D8820` after the batch.
+- `0x1415441F0` is the add path and handles broadphase/callback/island insertion. A future direct hknp proxy cannot safely skip this class of work.
+
+Interpretation:
+
+- Existing `BethesdaPhysicsBody` wrapper creation is still the safest known production lifecycle because it creates a real physics-system instance, adds it through Bethesda's bhk world path, assigns filter/material, enables flags, activates the body, and destroys through `BhkWorld_RemovePhysicsSystemInstance`.
+- Direct hknp body creation remains possible research, but production use would need a verified add/remove/destroy pairing and listener behavior. This is not complete yet.
+
+## ROCK Layer And Generated Body Lifecycle
+
+ROCK source confirms the current project layer namespace:
+
+- layer `43`: ROCK hand/reload bodies;
+- layer `44`: ROCK weapon/gun bodies;
+- layer `47`: ROCK body/fullbody generated bodies;
+- layers `48..63`: matrix-addressable extended rows, but not currently named/owned by ROCK policy.
+
+Important source files:
+
+- `src/physics-interaction/collision/CollisionLayerPolicy.h`
+  - `ROCK_LAYER_HAND = 43`;
+  - `ROCK_LAYER_WEAPON = 44`;
+  - `ROCK_LAYER_BODY = 47`;
+  - `ROCK_LAYER_EXTENDED_FIRST = ROCK_LAYER_BODY`;
+  - `ROCK_LAYER_EXTENDED_LAST = 63`;
+  - `isRockOwnedReusableLayer()` currently returns only `43`, `44`, and `47`;
+  - `applyRockGeneratedLayerPolicies()` writes the hand, weapon, reload, and body matrix rows and normalizes extended-layer symmetry.
+- `src/physics-interaction/core/PhysicsInteraction.cpp`
+  - `registerCollisionLayer()` obtains the native collision matrix, applies `applyRockGeneratedLayerPolicies()`, stores expected masks, and logs pair state;
+  - the watchdog re-registers if hand/weapon/reload/body masks or critical actor/body pair symmetry drift.
+- `src/physics-interaction/body/BodyBoneColliderSet.cpp`
+  - generated fullbody bodies use filter info `(0x000B << 16) | 47`;
+  - root flattened skeleton capture is through `DirectSkeletonBoneReader::capture(..., GameRootFlattenedBoneTree)`;
+  - bodies are created with `BethesdaPhysicsBody::create(..., Keyframed)`;
+  - creation calls `placeGeneratedKeyframedBodyImmediately()` and `initializeGeneratedKeyframedBodyDriveState()`;
+  - per-frame target capture uses `queueGeneratedKeyframedBodyTarget(..., teleportDistance=1000.0f)`;
+  - physics-step flush uses `driveGeneratedKeyframedBody()`.
+- `src/physics-interaction/hand/HandBoneColliderSet.cpp`
+  - generated hand bodies use filter info `(0x000B << 16) | 43`;
+  - palm anchor and non-anchor colliders follow the same generated keyframed body lifecycle.
+- `src/physics-interaction/weapon/WeaponCollision.cpp`
+  - generated weapon bodies use filter info `(0x000B << 16) | 44`;
+  - collision can be suppressed by OR-ing the suppression no-collide bit;
+  - bodies start collision-disabled according to options, then are published/enabled later.
+- `src/physics-interaction/native/BethesdaPhysicsBody.cpp`
+  - wrapper creation builds `hknpPhysicsSystemData`, body cinfo, motion cinfo, material, shape refs, `bhkPhysicsSystem`, `bhkNPCollisionObject`, and a linked `NiNode`;
+  - `AddToWorld` creates the runtime hknp physics-system instance and body id;
+  - post-add setup validates motion, assigns global material, applies motion type, sets filter info, enables flags `0x08020000`, activates the body, and verifies the body `+0x88` collision-object back pointer;
+  - destroy removes the native physics-system instance from bhkWorld, destroys the NiNode, releases the collision object, and resets state.
+
+Design implication:
+
+- A future hidden authority proxy can reuse the proven generated-body lifecycle and activation discipline, but it should not automatically reuse the generated collider drive method.
+- If a dedicated proxy layer is chosen from `48..63`, policy, watchdog, classifier, debug, suppression, and detection rejection all need to be explicitly extended. Current source does not yet own those rows.
+- A no-contact proxy layer would be for the hidden solver anchor only. Contact-capable hand/weapon/body generated colliders should remain on layers `43`, `44`, and `47`.
+
+## FO4VR Physics-Step Listener Timing
+
+Ghidra-confirmed update loop: `bhkWorld::vfunction43` at `0x141DF73D6`.
+
+The native update order is:
+
+1. `TtPhysicsStepListeners-BeforeWholePhysicsUpdate`
+   - listener vtable `+0x08`;
+   - engine companion callback after it at `+0x10`.
+2. Per substep: `TtPhysicsStepListeners-BeforeAnyPhysicsStep`
+   - listener vtable `+0x18`;
+   - engine companion callback after it at `+0x20`.
+3. `TtCollide`.
+4. Per substep: `TtPhysicsStepListeners-BetweenPhysicsCollideAndSolve`
+   - listener vtable `+0x28`;
+   - engine companion callback after it at `+0x30`.
+5. `TtSolve`.
+6. Per substep: `TtPhysicsStepListeners-AfterAnyPhysicsStep`
+   - listener vtable `+0x38`;
+   - engine companion callback after it at `+0x40`.
+7. `TtPhysicsStepListeners-AfterWholePhysicsUpdate`
+   - listener vtable `+0x48`;
+   - engine companion callback after it at `+0x50`.
+
+`0x141DFA7B0` is the step-listener registration helper. It appends a listener pointer to the bhkWorld listener array if not already present. The bhkWorld update clears the listener array after the world update, matching ROCK's current re-register-for-next-step design.
+
+ROCK source state:
+
+- `src/physics-interaction/native/PhysicsStepDriveCoordinator.cpp` already matches the confirmed vtable offsets.
+- Current callbacks forward only:
+  - `beforeWhole`;
+  - `beforeAny`.
+- Current `betweenCollideAndSolve`, `afterAny`, and `afterWhole` callbacks are no-op.
+- `src/physics-interaction/core/PhysicsInteraction.cpp` flushes held native grab and generated colliders from the current substep pre-collide callback.
+
+Design implication:
+
+- The old custom motor stutter risk is consistent with game-frame target writes or pre-collide-only writes being out of phase with collide/solve.
+- A future proxy + constraint authority path should be researched around `betweenCollideAndSolve`, because it is the native slot after contact generation and before constraint solving.
+- This is not an implementation instruction yet; it is the confirmed timing map needed before designing the next custom authority path.
+
+## Direct Velocity Path Versus DriveToKeyFrame
+
+Confirmed functions:
+
+- `0x14153A6A0`: computes hard-keyframe linear and angular velocity needed to move a body from current motion to a target transform over `dt`;
+- `0x14153ABD0`: direct hard-keyframe velocity helper;
+  - calls `0x14153A6A0`;
+  - calls `0x141539F30` with the computed velocities;
+  - does not apply the DriveToKeyFrame cap-triggered transform snap in this wrapper.
+- `0x141539F30`: set body velocity;
+  - writes linear velocity to motion `+0x40`;
+  - transforms/writes angular velocity into motion orientation/body-local convention at motion `+0x50`;
+  - deadbands tiny linear/angular changes;
+  - activates/marks the body when needed;
+  - notifies world listeners through world `+0x538`.
+- `0x141DF56F0`: deferred/direct set-velocity wrapper;
+  - direct-calls `0x141539F30` when not inside the command queue context;
+  - otherwise queues command `9`;
+  - calls `0x141DF60C0` when either linear or angular velocity is meaningfully nonzero.
+- `0x141DF55F0`: deferred/direct set-transform wrapper;
+  - direct-calls `0x1415395E0` when not inside command queue context;
+  - otherwise queues command `6`.
+- `0x141E086E0`: collision-object DriveToKeyFrame wrapper;
+  - computes hard-keyframe velocities through `0x14153A6A0`;
+  - reads current motion-properties record from world `+0x5D0`;
+  - compares computed linear velocity magnitude against record `+0x10`;
+  - compares computed angular velocity magnitude against record `+0x14`;
+  - if either cap is exceeded, calls set-transform and then zeroes velocity;
+  - otherwise calls set-velocity with the computed velocities.
+
+Design implication:
+
+- DriveToKeyFrame is convenient for generated collider following, but it is not a clean proxy-drive primitive for grab authority because a fast hand movement can trigger a transform snap and velocity zero.
+- The direct hard-keyframe velocity path is the more relevant research target for a no-contact authority proxy: it preserves the native compute-velocity math and velocity writer while avoiding the cap-triggered snap branch.
+- This does not prove direct velocity is sufficient; it still needs phase, target continuity, and deactivation behavior mapped.
+
+## Motion-Properties Record Map
+
+Confirmed by Ghidra:
+
+- world `+0x5D0` points to the motion-properties library;
+- library `+0x28` points to 0x40-byte records;
+- library `+0x30` is the live record count;
+- `0x141767A70` adds/reuses a 0x40-byte record:
+  - if input record starts with zero at `+0x00`, it searches existing entries for a byte-identical 0x40-byte record;
+  - otherwise it allocates from the free list;
+  - writes the input record to `entries + id * 0x40`;
+  - notifies library listeners;
+  - returns the new/reused short id.
+- `0x14153B2F0` sets a body's current motion `motionPropertiesId`:
+  - resolves body `+0x68` to motion index;
+  - writes the short id at motion `+0x38`;
+  - notifies world listeners through world `+0x538`.
+
+Record field evidence:
+
+- `+0x10`: max linear velocity used by DriveToKeyFrame cap test;
+- `+0x14`: max angular velocity used by DriveToKeyFrame cap test;
+- `+0x18`: damping-like float, currently used by ROCK nearby grab damping as linear damping;
+- `+0x1C`: damping-like float, currently used by ROCK nearby grab damping as angular damping;
+- `+0x20` / `+0x24`: written by `0x141841E60` based on mode and input scale; not fully named;
+- `+0x28`: written as `param2 * param2` by `0x141841F30`; not fully named;
+- `+0x2C`: written as clamped squared value from `param3 * DAT_142E01440`; not fully named;
+- `+0x30`: written as reciprocal of a scaled `param2`; not fully named;
+- `+0x34` / `+0x36`: short fields written by `0x141842020`; not fully named;
+- `+0x38`: byte written by `0x141841F30`; not fully named;
+- `+0x39` / `+0x3A` / `+0x3B` / `+0x3C`: compact byte fields written by `0x141841F30` and `0x141842020`; not fully named.
+
+Preset builder evidence:
+
+- `0x141841D30` zeroes record bytes from `+0x04` through `+0x3F`, then fills fields for preset modes `0..4`.
+- Mode `1` and mode `2` write high velocity caps (`+0x14 = 100.0f`) and zero damping at `+0x18/+0x1C`.
+- Mode `3` writes `+0x18 = 30.0f` and `+0x1C = 30.0f`, then zeroes velocity caps.
+- Mode `4` writes small linear damping-like value at `+0x18`, angular damping-like value `0.5f` at `+0x1C`, and lower angular cap-like value `10.0f` at `+0x14`.
+
+Design implication:
+
+- ROCK's existing nearby damping lease is using a Ghidra-confirmed native field pair, but that is only damping. It does not by itself reproduce HIGGS-style finite force or angular lever feel.
+- Velocity caps are confirmed to influence DriveToKeyFrame snap behavior. Changing caps for a proxy or held body could change snap thresholds, but this is risky unless the drive primitive is also chosen deliberately.
+- Motion properties are useful for held-state polish and damping, but they are not a replacement for finite-force constraint authority.
+
 ## Mouse Spring Current Role
 
 Current native mouse spring findings remain valid:
@@ -809,6 +1062,232 @@ Future research implication:
 
 - When replacing it, ROCK must preserve the good action-style timing/smoothing properties using FO4VR-native step timing and possibly native constraint-easing helpers.
 - The replacement must not copy native mouse-spring pivot/orientation conventions as design authority.
+
+## Contact Versus No-Contact Authority Proxy Clarification
+
+Important correction:
+
+- HIGGS does not implement dynamic grab as a globally no-contact interaction.
+- HIGGS uses contact heavily for detection, haptics, held-state collision state, collision-aware tau changes, and release cleanup.
+- The "no-contact proxy" idea in this document is a ROCK/FO4VR architecture proposal for a hidden motor-authority anchor only. It should not be read as "make the whole grab no-contact."
+
+Confirmed HIGGS behavior:
+
+- `Hand::CreateHandCollision` in `src/hand.cpp:560-614` creates a real keyframed `handBody`:
+  - real `bhkBoxShape`;
+  - layer `56` plus player collision group;
+  - bit `15` set for same-group behavior;
+  - bit `14` initially set to disable collision until update enables it;
+  - added to the world with `hkpWorld_AddEntity`.
+- `Hand::UpdateHandCollision` in `src/hand.cpp:655-666` disables hand collision while `state == State::HeldBody`:
+  - this prevents the hand collider from directly colliding against the object it is currently constraining;
+  - it is not a general removal of contact from the dynamic grab system.
+- `Hand::TransitionHeld` in `src/hand.cpp:1592-1619` constrains the real `handBody->hkBody` to the selected object body:
+  - `pivotA` is computed from `palmPos` transformed into hand body local space;
+  - `pivotB` is computed from selected `ptPos` transformed into object body local space;
+  - `CreateGrabConstraint(bodyA, bodyB, handTransformHandSpace, handTransformObjSpace)` creates the motorized constraint.
+- `Hand::TransitionHeld` in `src/hand.cpp:1636-1646` adds entity contact listeners to connected held bodies and forces `setContactPointCallbackDelay(0)`.
+- `PhysicsListener::contactPointCallback` in `src/physics.cpp:660-719`:
+  - ignores already disabled contacts;
+  - treats HIGGS hand, weapon, and held bodies as special;
+  - disables only specific held-object contacts against the player's collision group;
+  - calls `HandleIgnoredContact` for temporary pair-specific release/throw ignore windows;
+  - records used contact points and separating velocity for collision state and haptics.
+- `EntityCollisionListener::contactPointCallback` in `src/physics.cpp:798-808` records used contact points for held connected bodies.
+- `Hand::Update` held-body logic in `src/hand.cpp:3971-3978` uses `EntityCollisionListener::IsColliding()` to select colliding versus non-colliding tau targets.
+
+Design implication for ROCK:
+
+- If ROCK creates a dedicated custom motor authority body, that body should likely be no-contact because it is not a physical hand collider; it is a hidden solver anchor.
+- ROCK should still keep separate contact-capable hand/collider systems for detection, haptics, world touch, held-object collision state, and collision-aware motor response.
+- The clean architecture is therefore two roles, not one:
+  - visible/physical hand collision bodies: contact evidence and world interaction;
+  - hidden grab authority proxy: stable no-contact body A for the custom constraint.
+- This separation may avoid a HIGGS-specific compromise where the same `handBody` is both the contact collider and the constraint anchor, requiring collision disable while physically holding.
+
+## HIGGS Dynamic Grab Behavior Map - Source Audit
+
+This section is behavioral mapping from the approved HIGGS source tree at `E:\fo4dev\skirymvr_mods\source_codes\higgs`. It is not a FO4VR implementation decision. It is used to define which behavior ROCK must reproduce or surpass with FO4VR-native mechanisms.
+
+### Dynamic transition into held state
+
+Relevant HIGGS functions/files:
+
+- `src/hand.cpp`
+  - `Hand::TransitionHeld(...)`;
+  - `Hand::Update(...)` / held-body branch;
+  - nearby selection and pull/converge state logic around the same state machine.
+- `include/constraint.h`, `src/constraint.cpp`
+  - `GrabConstraintData`;
+  - `CreateGrabConstraint(...)`;
+  - `GrabConstraintData::setTargetRelativeOrientationOfBodies(...)`.
+
+Confirmed `TransitionHeld` behavior:
+
+- The selected object mass at grab time is captured from inverse mass for haptics/weight context.
+- A selected point is established from the closest/contact point and may be improved by graphics-triangle evidence.
+- The desired object transform preserves the object's current rotation.
+- The desired object transform is translated so the selected object point seats into the hand/palm point.
+- The object is not rotated around COM to fit the hand.
+- COM is not used as grip pivot.
+- For dynamic physics grab, HIGGS creates:
+  - `pivotA` from the palm/hand-side point transformed into the hand body frame;
+  - `pivotB` from the selected object contact point transformed into the object body frame;
+  - a desired hand/object transform relation from the seated desired transform;
+  - a custom grab constraint between hand body and object body.
+- Connected bodies are collected and contact listeners are attached for held collision state.
+- Inertia is captured and clamped/normalized on the grabbed body set, then restored later by lifecycle cleanup.
+
+### HIGGS custom grab constraint shape
+
+Confirmed HIGGS custom constraint fields:
+
+- It uses a custom `hkpConstraintData` with:
+  - a set-local-transforms atom;
+  - setup-stabilization atom;
+  - one ragdoll motor atom for angular authority;
+  - three linear motor atoms for X/Y/Z linear authority.
+- Runtime layout:
+  - six solver results at `0x00..0x2F`;
+  - angular initialized bytes at `0x30`;
+  - angular previous target angles at `0x34`;
+  - linear initialized bytes at `0x40,0x41,0x42`;
+  - linear previous target positions at `0x44,0x48,0x4C`;
+  - source runtime struct size `0x50`;
+  - external runtime reported as `sizeof(Runtime) * 2`, i.e. `0xA0`.
+- `setMotorsActive(false)` clears the six solver results, which explicitly resets motor history when disabling motors.
+- `setTargetRelativeOrientationOfBodies(bRa)` writes angular target as `bRa * transformA.rotation`.
+
+Research implication for ROCK:
+
+- ROCK's custom motor path must treat linear motor runtime offsets as absolute runtime offsets, matching the native FO4VR witnesses.
+- ROCK's current axis 1/2 linear runtime offsets are a high-risk mismatch against both HIGGS custom runtime and FO4VR native motor witnesses.
+- The FO4VR live hknp insertion path confirms vtable/runtime allocation is reachable, but the exact safe runtime size and solver-result count still need final verification.
+
+### Held-state dynamic update loop
+
+Confirmed HIGGS held-body behavior:
+
+- HIGGS updates visual hand pose from the held object's current transform, not by forcing the held object to visually match the controller perfectly.
+- It computes:
+  - `heldTransform` from the current object/collidable node transform;
+  - inverse of the desired object-in-hand relation captured during grab;
+  - adjusted hand transform = held object transform * inverse desired relation.
+- At grab start, the visual hand can lerp from the current hand transform to the adjusted hand transform over a short duration derived from the grab distance.
+- It tracks hand deviation as distance between adjusted/held visual hand and the physical/controller hand.
+- Deviation is accumulated in a rolling buffer.
+- If average deviation exceeds configured allowed hand distance after ignore windows, HIGGS releases/drops instead of infinitely forcing the object.
+
+Behavioral meaning:
+
+- Heavy or blocked objects are allowed to lag behind the physical hand.
+- The player's visual hand follows the actual held object relation during dynamic hold.
+- The system does not make the player hand an infinitely strong kinematic authority.
+- Deviation is both polish and safety: it allows mass/constraint lag, then releases when the hand/object relationship becomes physically unreasonable.
+
+### Per-frame pivot and target refresh
+
+Confirmed HIGGS held-body constraint update:
+
+- Rebuilds the desired hand/object relation each frame from the captured desired node transform and the rigid-body local transform.
+- Updates angular motor target through `GrabConstraintData::setTargetRelativeOrientationOfBodies(...)`.
+- Recomputes object-side pivot B from the desired hand transform in object space applied to the palm point.
+- Writes that new transform-B translation into the constraint transform atom.
+
+Behavioral meaning:
+
+- Pivot remains hand/contact-frame based.
+- The solver target can stay stable even when body-local rigid transforms and graphical object transforms differ.
+- The object-side pivot is not recaptured from COM or from current closest point during held state.
+- COM remains weight data only.
+
+### Mass, force, angular authority, and collision response
+
+Confirmed HIGGS non-actor held-body motor policy:
+
+- It distinguishes non-actor ordinary objects from weapons using the selected object's base form type.
+- Loose weapons use a different linear max force constant than ordinary objects.
+- Angular max force is derived from linear max force through `angularToLinearForceRatio`.
+- During fade-in, `angularToLinearForceRatio` can interpolate from a fade-in ratio to the normal ratio.
+- Collision state comes from `EntityCollisionListener::IsColliding()`.
+- Collision state selects different target tau values for linear and angular motors.
+- Tau values are advanced gradually toward target values with a configured lerp speed.
+- For non-actor objects, actual mass caps the linear max force:
+  - mass is derived from inverse mass;
+  - linear max force is limited by `mass * grabConstraintMaxForceToMassRatio`;
+  - angular max force is limited again from the capped linear force divided by the angular-to-linear ratio.
+- Motor min force is set to negative max force.
+- Motor tau, damping, recovery, and force values are written each frame.
+- The grabbed rigid body is activated after updates.
+
+Behavioral meaning:
+
+- Heavy objects do not become unmovable, but they are not controlled with infinite authority.
+- The heavier the body, the more finite the acceleration feels because motor force is capped against body mass.
+- Angular authority is not an independent magic value; it is linked to linear authority through a ratio.
+- Collision changes responsiveness, so the held object behaves differently when colliding than when freely moving.
+- Loose weapons get explicit dynamic-grab force policy, but still use the loose-object dynamic path, not equipped weapon logic.
+
+### Inertia and connected-body handling
+
+Confirmed HIGGS behavior:
+
+- At transition into held state, HIGGS saves inverse inertia for connected grabbed bodies.
+- It clamps per-axis inverse inertia so no axis can become too extreme relative to the minimum inverse inertia axis.
+- It also clamps against a configured minimum inertia.
+- Connected bodies are collected through constraint relationships.
+- Non-moveable connected bodies are detected and marked.
+- Connected/contained bodies feed object mass registration and player-space body registration.
+
+Behavioral meaning:
+
+- Long/heavy/multipart objects are not treated as a single point at the palm.
+- Inertia normalization prevents pathological rotation without replacing grip pivot with COM.
+- Connected body collection is part of weight, contact, cleanup, and player-space compensation, not just grab creation.
+
+### Dynamic hand pose and finger math
+
+Confirmed HIGGS dynamic pose path in `Hand::TransitionHeld`:
+
+- Finger pose is computed during dynamic grab from geometry/contact context, not from special per-object `HIGGS_R/L` grip nodes.
+- Graphics triangles near the palm/grab line are gathered and transformed to world space.
+- The selected/contact point can be improved using closest graphics geometry intersection evidence.
+- A hand scale is derived from the configured hand size.
+- For each finger curve:
+  - a start position is transformed from hand space to world space;
+  - a finger normal is transformed to world space;
+  - a zero-angle vector is transformed to world space;
+  - the finger start is offset by the palm-to-selected-point vector so the test is performed as if the palm is seated onto the object.
+- HIGGS calls `GetIntersections(...)` against nearby triangles to find where each finger curve contacts the object.
+- If an intersection exists, the intersection angle drives the finger curl.
+- If a finger does not intersect, the fallback behavior differs from full geometry contact and can result in open/default pose values.
+- Thumb has alternate curve handling when the standard thumb curve is invalid/misses.
+- Finger values are clamped to avoid overcurl.
+- During held state, `fingerAnimator.SetFingerValues(...)` blends toward the captured dynamic values with speed increasing over the early grab window.
+
+Behavioral meaning:
+
+- The natural hand blend comes from solving fingers against nearby object triangles after seating the palm/contact relation.
+- Special authored grip nodes are not the core hand-pose solution for ordinary dynamic grab.
+- The system computes a plausible static target curl from local object geometry and then animates toward it.
+- ROCK can reproduce this in FO4VR if it can gather/render or collision-triangle evidence around the seated palm/grip relation, without requiring per-object `ROCK_R/L` nodes.
+
+### Loose weapon dynamic behavior
+
+Confirmed HIGGS loose weapon behavior in the dynamic held loop:
+
+- Loose weapons are detected from base form type in the ordinary dynamic held-object path.
+- They use weapon-specific linear max force.
+- Angular max force still derives from linear force through the angular-to-linear ratio.
+- Mass cap still applies to non-actor loose weapons.
+- They are not treated as equipped weapon grips in this dynamic path.
+- The available source evidence does not show loose dynamic weapons using hardcoded equipped weapon hand offsets as the authority model.
+
+Research implication for ROCK:
+
+- ROCK loose non-equipped weapon dynamic grab should be researched and implemented as a loose-object dynamic variant with weapon force/lever policy.
+- Equipped weapon handling and two-hand equipped weapon handling remain separate.
+- For loose weapons, grip-to-COM lever length should be considered only as weight/torque/inertia data, not as pivot selection.
 
 ## Current Parity Gap Summary
 
@@ -829,7 +1308,7 @@ What is missing or suspect:
 - trustworthy custom constraint runtime layout;
 - physics-phase-safe custom target writes;
 - dedicated grab proxy body;
-- no-contact proxy filter/layer policy;
+- no-contact proxy filter/layer policy for a hidden authority anchor only, not for the whole grab interaction;
 - unified authority for proxy + constraint update before solve;
 - proxy drive primitive that avoids `DriveToKeyFrame` snap fallback under fast hand motion;
 - source tests that enforce custom one-hand authority instead of native one-hand authority;
@@ -852,7 +1331,7 @@ Before any custom one-hand replacement can be implemented:
    - Do not assume `CollisionObject_DriveToKeyFrame` is acceptable for the proxy; it has a verified cap-triggered transform snap fallback.
 
 3. Finish proxy design.
-   - Choose no-contact filter/layer.
+   - Choose no-contact filter/layer for hidden authority proxy only.
    - Choose tiny/minimal shape.
    - Decide whether proxy should use direct hard-keyframe velocity (`0x14153ABD0`/`0x141539F30`) instead of generated-collider `DriveToKeyFrame`.
 
@@ -868,22 +1347,23 @@ Before any custom one-hand replacement can be implemented:
 ## Open Questions
 
 - Does FO4VR's hknp bridge require doubled runtime memory for custom hkp constraints, as HIGGS did, or can it use exact runtime size safely?
-- Is ROCK's current custom add-instance callback ever called during actual constraint insertion, and if yes, what exact FO4VR call signature reaches vtable `+0xA0`?
-- Can `hknpMalleableConstraintData` scale a custom motorized hkp constraint in a useful way?
+- Is ROCK's current custom add-instance callback called from any alternate path outside normal constraint insertion, or is runtime zeroing entirely owned by `0x1417E39C0`?
+- Can `hknpMalleableConstraintData` scale a custom motorized hkp constraint in a useful way, or is it only generic Havok compatibility plumbing in this binary?
 - What exactly does the malleable wrapper scale at solver/build input offset around `+0x24`?
 - Is `FO4_LAYER_NONCOLLIDABLE` safe for a constrained keyframed proxy body, or should ROCK add a dedicated no-contact layer/matrix row?
 - Should proxy drive use direct hard-keyframe velocity, direct deferred velocity, or a specialized between-collide-and-solve keyframe update?
 - Can a direct hknp proxy body be safely created/destroyed without Bethesda `bhkNPCollisionObject`, or is the wrapper path required for production safety?
 - Which motion-properties fields beyond `+0x10/+0x14/+0x18/+0x1C` affect hknp held-object response?
 - Should loose weapon dynamic grab add lever-length-aware angular force scaling beyond mass cap, using grip-to-COM only as weight data?
+- Are ROCK's current linear motor runtime offsets the main old custom-motor stutter source, or only one of several sources along with phase timing and proxy drive snapping?
 
 ## Immediate Next Research Actions
 
-- Inspect custom constraint addInstance/runtime usage deeper in FO4VR.
+- Inspect custom constraint runtime usage deeper in FO4VR, now focused on runtime size/solver-result counts and atom interpreter behavior rather than normal-path addInstance.
 - Inspect `hknpMalleableConstraintData` solve behavior and fields.
 - Inspect no-contact layer behavior and generated body constraints.
 - Inspect direct hknp body creation or no-shape alternatives for a non-contact authority proxy.
 - Inspect native APIs for changing/limiting dynamic body motion properties, velocity caps, and inertia safely during held state.
 - Inspect native destruction/removal path for direct hknp-created proxy bodies.
-- Inspect HIGGS dynamic held loop again only for behavior mapping of deviation/hand lag/mass feel, not for FO4VR function addresses.
+- Inspect HIGGS dynamic release and pull/converge transitions only for dynamic behavior mapping, not as FO4VR implementation authority.
 - Update the old tracker only to point at this file as superseding if needed.
