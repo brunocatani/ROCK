@@ -4516,3 +4516,207 @@ Current best-supported future design shape, pending more Ghidra timing checks:
 - Verify TLS `+0x1528/+0x152C` state inside the existing physics step listener callbacks.
 - Verify whether pre-solve velocity writes update body transforms early enough for the same solver step, or whether the custom constraint should use predicted proxy transform as its target frame.
 - Verify final generated-body destroy ownership through collision object / physics system refcount release if the future proxy creates many bodies across world reloads.
+
+## 2026-05-12 continuation: ApplyHardKeyFrame / ComputeHardKeyFrame convention map
+
+This pass follows the user's note that `ApplyHardKeyFrame` may be relevant. It is relevant, but it must be treated precisely: it is a native FO4VR body velocity application path, not the grab model itself and not a replacement for finite-force held-object motors.
+
+### Names and addresses
+
+Binary-confirmed functions:
+
+- `0x14153A6A0`
+  - Proposed name: `hknpWorld::ComputeHardKeyFrame`.
+  - Role: compute linear and angular velocity required to move one live body toward a target position/rotation over `dt`.
+- `0x14153ABD0`
+  - Proposed name: `hknpWorld::ApplyHardKeyFrame`.
+  - Role: lock world/body access, call `ComputeHardKeyFrame`, then call direct set-body-velocity.
+- `0x141DF5930`
+  - Proposed name: deferred/command-safe `ApplyHardKeyFrame` wrapper.
+  - Role: call `ComputeHardKeyFrame`, then either direct-write velocity or queue velocity command `0x30 / 0x90100` depending on TLS command state.
+- `0x141E086E0`
+  - Existing wrapper target: `bhkNPCollisionObject::DriveToKeyFrame`.
+  - Role: compute hard-keyframe velocity, but snap target transform if motion-property velocity caps are exceeded.
+- `0x141722C10`
+  - Proposed name: transform/matrix-to-quaternion helper.
+  - Role: converts a transform rotation matrix payload into quaternion xyzw-like float4.
+
+Secondary local header evidence:
+
+- `libraries_and_tools/CommonLibF4VR/CommonLibF4/include/RE/Havok/hknpWorld.h` names:
+  - `ComputeHardKeyFrame(...)`;
+  - `ApplyHardKeyFrame(...)`;
+  - comments target rotation as quaternion `xyzw`.
+- This header is not used as authority because CommonLibF4VR can be wrong. It is recorded only because its naming matches the independent Ghidra behavior.
+
+### `0x14153ABD0` direct ApplyHardKeyFrame
+
+Decompiled shape:
+
+```text
+lock world/body access at world + 0x690
+ComputeHardKeyFrame(world, bodyId, targetPos, targetRotQuat, dt, localLinVel, localAngVel)
+SetBodyVelocity(world, bodyId, localLinVel, localAngVel)
+unlock world/body access
+```
+
+Confirmed behavior:
+
+- Calls `0x141538AF0(world + 0x690)` before the compute/write.
+- Calls `0x14153A6A0(...)`.
+- Calls `0x141539F30(...)` direct velocity write.
+- Calls `0x141538CB0(world + 0x690)` after the write.
+- Has no TLS queued-command branch.
+- Has no DriveToKeyFrame cap-triggered transform snap branch.
+
+Interpretation:
+
+- This is the clean native "apply hard keyframe velocity now" path.
+- It is probably the function users and local headers call `ApplyHardKeyFrame`.
+- It is not automatically safe from every ROCK callback context because it locks directly and does not route through the command bridge.
+- It may be appropriate when the caller is in a normal game-thread/non-command context. For a physics listener context, the command-safe wrapper may be safer if TLS state is active and drains before solve.
+
+### `0x141DF5930` deferred/command-safe ApplyHardKeyFrame wrapper
+
+Confirmed behavior:
+
+- Calls `0x14153A6A0(world, bodyId, targetPos, targetRotQuat, dt, localLinVel, localAngVel)`.
+- If TLS byte `+0x1528` is false:
+  - calls `0x141539F30(world, bodyId, localLinVel, localAngVel)` directly.
+- If TLS byte `+0x1528` is true:
+  - builds velocity command:
+    - command size `0x30`;
+    - command id/flags `0x90100`;
+    - body id;
+    - computed linear velocity;
+    - computed angular velocity;
+  - enqueues with `0x141DFC8D0`.
+- If computed velocity is nonzero beyond small thresholds:
+  - calls activation/dirty helper `0x141DF60C0(world, bodyId)`.
+- Has no DriveToKeyFrame cap-triggered transform snap branch.
+
+Known native callers:
+
+- `0x1412CB4E0`
+  - Appears to update a camera or camera-attached object/body.
+  - If global dt `DAT_1465A3D84` is positive, calls `0x141DF5930(world, bodyId, targetPos, identity/defaultQuat, dt)`.
+  - If dt is not positive, uses `0x141DF5680` set-position-style wrapper instead.
+- `bhkNPCollisionObject::vfunction44` at `0x141E09C37`
+  - Builds a transform payload from Ni/object state.
+  - Converts rotation through `0x141722C10`.
+  - Calls `0x141DF5930(world, bodyId, targetPos, targetQuat, dt)` in a keyframed/update branch.
+  - In another branch it also calls `DriveToKeyFrame`, confirming that `ApplyHardKeyFrame` and `DriveToKeyFrame` are separate native behaviors.
+
+Interpretation:
+
+- `0x141DF5930` is currently the better candidate for a future ROCK hidden hand-proxy drive than `0x14153ABD0` because it respects the engine's direct-versus-queued command state.
+- This still needs TLS verification inside ROCK's listener phases. If the wrapper queues into a command list that drains before solve, it is ideal. If it queues too late or into a different list, the proxy may be one step stale.
+
+### `0x14153A6A0` ComputeHardKeyFrame parameter convention
+
+Confirmed by Ghidra:
+
+- Parameter 1: `hknpWorld*`.
+- Parameter 2: body id.
+- Parameter 3: target position float4.
+- Parameter 4: target rotation quaternion float4.
+- Parameter 5: delta seconds.
+- Parameter 6: output linear velocity float4.
+- Parameter 7: output angular velocity float4.
+
+Evidence:
+
+- The function computes reciprocal `1 / dt` using `RCPPS` plus Newton-Raphson refinement.
+- It reads the live hknp body slot at `world + 0x20 + bodyId * 0x90`.
+- It reads the live motion slot through body `+0x68`, stride `0x80`.
+- It calls `0x141722C10` on the current body transform to obtain the current quaternion.
+- It compares target quaternion against current quaternion to compute angular velocity.
+- Native callers pass:
+  - target position pointer to the transform translation float4;
+  - target rotation pointer to a quaternion produced by `0x141722C10`;
+  - not a raw transform matrix pointer.
+
+Important convention finding:
+
+- `targetRot` must be quaternion xyzw-style float4, not a matrix pointer.
+- Native callers produce that quaternion from transform rotation with `0x141722C10`.
+- Passing the wrong rotation representation, wrong quaternion order, or unconverted `NiMatrix3` rows/columns would break axes and can reproduce the old "hand target does not follow real hand rotation" failure.
+
+### `0x141722C10` transform-to-quaternion helper
+
+Confirmed behavior:
+
+- Reads a transform/matrix-like float array.
+- Uses matrix diagonal trace path when trace is positive.
+- Uses fallback dominant-axis path when trace is not positive.
+- Writes four floats that native callers feed as target rotation to `ComputeHardKeyFrame`.
+
+Interpretation:
+
+- Future ROCK wrapper planning should not invent a new rotation conversion without comparing it against the existing transform math conventions.
+- If ROCK already has a reliable `NiTransform` to Havok rotation conversion for constraints, it still needs to confirm the output quaternion order matches `0x14153A6A0`.
+- This is one of the highest-risk convention points because a mostly correct position path with wrong target quaternion convention produces exactly the broken wrist/rotated-axis behavior that already happened.
+
+### Relationship to mouse spring
+
+`hknpBSMouseSpringAction` update at `0x141E4AA30` also calls `0x14153A6A0`.
+
+Confirmed from decompilation:
+
+- It validates the target body id and motion.
+- It converts the stored/target transform rotation through `0x141722C10`.
+- It calls `ComputeHardKeyFrame`.
+- It then adds its own mouse-spring behavior:
+  - previous error/deadband checks;
+  - velocity/motion damping;
+  - local grab point handling;
+  - force/scale fields;
+  - direct velocity and angular/force writes;
+  - dirty/activation flag writes.
+
+Interpretation:
+
+- Mouse spring smoothness is partly because it uses the same native hard-keyframe velocity math, then layers damping/deadband/local-point correction on top.
+- Replacing mouse spring with custom authority does not mean ignoring this path. The useful native part is `ComputeHardKeyFrame` / `ApplyHardKeyFrame` for the hidden hand proxy, while held-object authority should still come from ROCK's finite-force linear/angular constraint.
+- The proxy drive must follow raw/root-flattened hand transform smoothly; the held object must then lag/yield through finite motor force. Those are separate layers.
+
+### Relationship to DriveToKeyFrame
+
+`bhkNPCollisionObject::DriveToKeyFrame` at `0x141E086E0`:
+
+- converts target rotation through `0x141722C10`;
+- calls `ComputeHardKeyFrame`;
+- checks linear/angular velocity against motion-property caps;
+- if caps are exceeded:
+  - calls set transform `0x141DF55F0`;
+  - then zeroes velocity through `0x141DF56F0`;
+- otherwise:
+  - applies computed velocity through `0x141DF56F0`.
+
+Interpretation:
+
+- DriveToKeyFrame is not equivalent to ApplyHardKeyFrame.
+- DriveToKeyFrame is acceptable for visible generated colliders where snapping may be tolerable after stale/teleport conditions, but it is a bad steady drive candidate for a hidden constraint authority proxy because snap-to-target destroys smooth finite-force behavior.
+- Future custom dynamic grab authority should not reuse `driveGeneratedKeyframedBody(...)` as the proxy drive loop unless that loop is split to use ApplyHardKeyFrame semantics.
+
+### ApplyHardKeyFrame conclusions for future custom dynamic grab
+
+Confirmed design-relevant facts:
+
+- ApplyHardKeyFrame operates on a body transform target, not a grab pivot.
+- It should be used, if used, only to drive a hidden no-contact hand/palm proxy body toward the raw/root-flattened hand transform.
+- It must not drive the grabbed object directly.
+- It must not choose the grip pivot.
+- It must not define the hand/object relation.
+- It does not replace finite-force object motors; it gives the motor constraint a stable body-A frame.
+- The grabbed object should still be governed by finite linear/angular motor constraints with contact/palm/object pivot frames and mass/collision/deviation force limits.
+
+Open questions after this pass:
+
+- Which wrapper is correct inside ROCK's future between-collide-and-solve listener:
+  - direct `0x14153ABD0`, or
+  - command-safe `0x141DF5930`?
+- Does a velocity write through `0x141DF5930` update the proxy transform early enough for the same solver step, or only its velocity for integration?
+- Should the constraint target frame be computed from the raw hand target, current proxy transform, or predicted proxy transform after ApplyHardKeyFrame velocity?
+- Does ROCK's current `transform_math::niRowsToHavokColumns(...)` plus any quaternion helper produce the same xyzw convention as `0x141722C10`?
+- Should a future wrapper call the native `0x141722C10` helper directly to avoid quaternion convention drift, or should ROCK implement and test an equivalent conversion?
