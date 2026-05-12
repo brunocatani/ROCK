@@ -1873,6 +1873,108 @@ Case `0x141A5873C`, interpretation:
 - In ROCK's stream the ragdoll motor is the first solver-producing atom after set-local-transforms/setup-stabilization, so its current runtime cursor is the runtime base.
 - ROCK's ragdoll initialized/previous-angle offsets `0x60/0x64` therefore land immediately after the 12-result solver-result block.
 
+### 2026-05-12 Ghidra follow-up: motor helper semantics
+
+Binary-confirmed helper functions from live atom interpreter xrefs:
+
+- `0x141AFD820` - linear motor constraint row preparation helper.
+- `0x141AFD600` - constraint motor policy evaluator.
+- `0x141AFD970` - linear motor schema/jacobian output writer.
+- `0x141F61120` - `hkpPositionConstraintMotor::vfunction5` clone/copy helper.
+
+Xrefs:
+
+- `0x141AFD820` is called by live atom interpreter type `0x0B` at `0x141A571CF`.
+- `0x141AFD600` is called by:
+  - type `0x0B` at `0x141A57249`;
+  - type `0x13` at `0x141A58E45`;
+  - other motorized atom paths.
+- `0x141AFD970` is called by live type `0x0B` at `0x141A5725E`.
+
+`0x141AFD600` position motor field use:
+
+- Reads motor type byte at motor `+0x10`.
+- ROCK creates `HkPositionMotor::type = 1`, so the type-1 path is the relevant one.
+- For type 1:
+  - reads proportional recovery velocity at motor `+0x28`;
+  - reads constant recovery velocity at motor `+0x2C`;
+  - reads max force at motor `+0x1C`;
+  - derives min force as the sign-flipped value from motor `+0x1C` in the decompiled path, while other paths also read motor `+0x18`;
+  - reads tau at motor `+0x20`;
+  - reads damping at motor `+0x24`;
+  - uses timestep/inverse timestep from the solver context carried in the motor input block.
+- It writes a compact output block used by the row writer:
+  - target/error-like value;
+  - previous/velocity correction contribution;
+  - force limits;
+  - tau;
+  - damping.
+
+Interpretation:
+
+- FO4VR's live motor helper consumes the same fields ROCK writes:
+  - min/max force;
+  - tau;
+  - damping;
+  - proportional recovery velocity;
+  - constant recovery velocity.
+- That means the custom motor path can express finite-force mass feel without inventing a new low-level motor class.
+- HIGGS-style mass/weight polish should be implemented as per-frame policy feeding these fields, not by changing pivot authority or using COM as target authority.
+
+`0x141AFD820` linear row preparation helper:
+
+- Uses body pointers from the build context at `param_3 + 0x30` and `param_3 + 0x38`.
+- Builds Jacobian/effective-mass data from:
+  - current body transforms;
+  - pivot/axis vectors;
+  - body inverse mass/inertia fields around motion offsets `+0x30..+0x3C`;
+  - the target/axis state from the type `0x0B` atom.
+- Writes prepared data into the schema block consumed by `0x141AFD600` and `0x141AFD970`.
+
+Interpretation:
+
+- Linear motor strength is not a raw teleport target. It goes through effective-mass/Jacobian preparation and motor force limits.
+- This supports the replacement direction: corrected custom motors can produce weight and lag if fed sane finite-force parameters in the correct physics phase.
+
+`0x141AFD970` linear row writer:
+
+- Writes schema row type byte `10`.
+- Scales output by the solver context values at `param_2 + 0x04` and `param_2 + 0x08`.
+- Advances the schema output pointer by `0x50`, matching the constraint-info utility's type `0x0B` schema size.
+
+Interpretation:
+
+- The type `0x0B` linear atom is a real finite-force solver row path, not a dead hkp leftover.
+- The custom replacement should use this existing position-motor path and fix authority timing/body setup rather than bypassing it with direct velocity writes to the held object.
+
+ROCK source connection:
+
+- `createPositionMotor(...)` writes exactly the fields consumed by `0x141AFD600`.
+- `updateConstraintGrabDriveMotors(...)` already rewrites those fields each held update for the shared-constraint path:
+  - linear/angular tau;
+  - damping;
+  - proportional and constant recovery;
+  - min/max force.
+- `grab_motion_controller::solveMotorTargets(...)` already contains the HIGGS-like policy shape:
+  - error factor from position/rotation deviation;
+  - collision tau;
+  - tau lerp;
+  - force fade-in;
+  - mass-capped max force;
+  - angular force derived from linear force by ratio;
+  - loose-weapon multipliers.
+
+Current interpretation:
+
+- ROCK does not lack native motor capability.
+- The likely old-custom-motor failure mode has moved away from "bad runtime offsets" toward:
+  - ordinary one-hand path not using this controller;
+  - custom targets/motor writes occurring from game update instead of the verified pre-solve physics phase;
+  - body A being a contact palm body rather than a dedicated authority proxy;
+  - proxy drive/body-A discontinuity;
+  - possible double authority during promote/destroy transitions;
+  - tuning values that make the finite-force path feel too stiff or too weak when moved to ordinary one-hand grab.
+
 ### 2026-05-12 Ghidra follow-up: malleable wrapper semantics
 
 Binary-confirmed functions:
@@ -1956,6 +2058,7 @@ What ROCK already has:
 - hand-relative object relation;
 - held visual relation/deviation scaffolding;
 - custom motor constraint path;
+- live-confirmed FO4VR position motor helper support for tau, damping, recovery, and finite min/max force;
 - mass cap policy in `GrabMotionController`;
 - loose weapon tuning surfaces;
 - generated root-flattened hand bodies;
@@ -1969,6 +2072,7 @@ What is missing or suspect:
 - no-contact proxy filter/layer policy for a hidden authority anchor only, not for the whole grab interaction;
 - unified authority for proxy + constraint update before solve;
 - proxy drive primitive that avoids `DriveToKeyFrame` snap fallback under fast hand motion;
+- ordinary one-hand dynamic path still bypasses the custom finite-force motor controller;
 - source tests that enforce custom one-hand authority instead of native one-hand authority;
 - possible FO4VR-native malleable wrapper integration, if verified useful.
 - native `hknpEaseConstraintsAction` is no longer a likely custom-grab smoothing candidate because it handles only native type `2` and type `7`.
