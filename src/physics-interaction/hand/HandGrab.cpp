@@ -5294,6 +5294,8 @@ namespace rock
         RE::NiTransform desiredBodyWorld{};
         RE::NiPoint3 desiredTargetPointWorld{};
         RE::NiPoint3 activePivotBBodyLocalGame{};
+        float proxyLinearVelocityHavokMagnitude = 0.0f;
+        float proxyAngularVelocityRadiansPerSecond = 0.0f;
         {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
             const bool hasAuthority = _heldDriveMode == HeldObjectDriveMode::ProxyConstraint &&
@@ -5313,6 +5315,13 @@ namespace rock
             float linearVelocityHavok[4]{};
             float angularVelocityHavok[4]{};
             grab_authority_proxy::computeLinearVelocityHavok(previousProxyWorld, pending.proxyWorld, driveDelta, linearVelocityHavok);
+            grab_authority_proxy::computeAngularVelocityRadiansPerSecond(previousProxyWorld, pending.proxyWorld, driveDelta, angularVelocityHavok);
+            proxyLinearVelocityHavokMagnitude = std::sqrt(
+                linearVelocityHavok[0] * linearVelocityHavok[0] + linearVelocityHavok[1] * linearVelocityHavok[1] +
+                linearVelocityHavok[2] * linearVelocityHavok[2]);
+            proxyAngularVelocityRadiansPerSecond = std::sqrt(
+                angularVelocityHavok[0] * angularVelocityHavok[0] + angularVelocityHavok[1] * angularVelocityHavok[1] +
+                angularVelocityHavok[2] * angularVelocityHavok[2]);
 
             setTransformOk = _grabAuthorityProxy.setTransform(targetHavok);
             setVelocityOk = _grabAuthorityProxy.setVelocity(linearVelocityHavok, angularVelocityHavok);
@@ -5382,7 +5391,7 @@ namespace rock
             std::uint32_t filterInfo = 0;
             const bool filterReadOk = havok_runtime::tryReadFilterInfo(world, proxyBodyId, filterInfo);
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
                 proxyBodyId.value,
                 _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
@@ -5400,6 +5409,8 @@ namespace rock
                 activePivotBBodyLocalGame.z,
                 pending.grabPositionErrorGameUnits,
                 pending.grabRotationErrorDegrees,
+                proxyLinearVelocityHavokMagnitude,
+                proxyAngularVelocityRadiansPerSecond,
                 pending.authorityForceScale,
                 pending.heldBodyColliding ? "yes" : "no",
                 filterReadOk ? "ok" : "fail",

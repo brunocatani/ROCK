@@ -486,3 +486,31 @@ Local validation for this correction:
 - Release build passed and deployed to `D:\FO4\mods\ROCK\F4SE\Plugins` at `2026-05-12 20:10:29`;
 - CTest passed `17/17`;
 - runtime validation still needs a fresh in-game log newer than `2026-05-12 20:10:29`.
+
+## Runtime log finding: pivot corrected, angular proxy motion still missing
+
+Fresh runtime testing after the BODY-pivot correction showed the correction landed, but dynamic grab is still wrong:
+
+- Sugar Bombs, Toaster, and Shovel grabs all created `drive=proxyConstraint` with constraint `pivotB` matching the captured frozen BODY-local pivot.
+- Example: Toaster at `2026-05-12 20:15:04.364` captured `pivotB=(0.61,-0.57,5.68)` and constraint creation used the same `pivotB=(0.61,-0.57,5.68)`.
+- The remaining failure is angular/authority convention, not contact pivot selection: `rotErr` jumped from small values to roughly `90-175deg` while the proxy frame reported `rootFlattenedPalmAnchorTarget/ok`.
+- The proxy flush path wrote target transform and linear velocity, but left `angularVelocityHavok` as zero before calling `setVelocity(linearVelocityHavok, angularVelocityHavok)`.
+- This means the hidden keyframed proxy could be teleported/posed to the flattened palm transform while still advertising no angular motion to the solver.
+
+Current correction in progress:
+
+- add proxy angular velocity derived from previous/current root-flattened proxy frame deltas;
+- feed that angular velocity into the proxy body velocity write in the between-collide-and-solve flush;
+- keep the selected contact/body-local pivot unchanged;
+- keep COM excluded from pivot/target authority;
+- add policy tests so the proxy cannot regress to zero angular velocity while its transform rotates.
+
+Correction applied and locally validated:
+
+- `GrabAuthorityProxyMotion.h` now owns the light, testable proxy velocity math.
+- `flushPendingCustomGrabAuthority(...)` computes both linear and angular proxy velocity from the previous/current proxy palm frame before `setVelocity(...)`.
+- Proxy authority logs now include `proxyVel` and `proxyAngVel` when grab-frame logging is enabled.
+- Active runtime INI was updated in place for the next launch with grab-frame logging and grab-transform telemetry enabled, text/axes disabled, log interval `15`.
+- Release build passed and deployed to `D:\FO4\mods\ROCK\F4SE\Plugins` at `2026-05-12 20:37:35`.
+- CTest passed `18/18`.
+- Runtime validation still needs a fresh in-game log newer than `2026-05-12 20:37:35`.

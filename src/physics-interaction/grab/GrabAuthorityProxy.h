@@ -10,6 +10,7 @@
 
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
+#include "physics-interaction/grab/GrabAuthorityProxyMotion.h"
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 
@@ -75,17 +76,11 @@ namespace rock::grab_authority_proxy
 
     inline void computeLinearVelocityHavok(const RE::NiTransform& previous, const RE::NiTransform& current, float deltaSeconds, float outVelocity[4])
     {
-        outVelocity[0] = 0.0f;
-        outVelocity[1] = 0.0f;
-        outVelocity[2] = 0.0f;
-        outVelocity[3] = 0.0f;
-        if (!havok_physics_timing::isUsableDelta(deltaSeconds)) {
-            return;
-        }
+        grab_authority_proxy_motion::computeLinearVelocityHavok(previous, current, deltaSeconds, gameToHavokScale(), outVelocity);
+    }
 
-        const float scale = gameToHavokScale() / deltaSeconds;
-        outVelocity[0] = (current.translate.x - previous.translate.x) * scale;
-        outVelocity[1] = (current.translate.y - previous.translate.y) * scale;
-        outVelocity[2] = (current.translate.z - previous.translate.z) * scale;
+    inline void computeAngularVelocityRadiansPerSecond(const RE::NiTransform& previous, const RE::NiTransform& current, float deltaSeconds, float outVelocity[4])
+    {
+        grab_authority_proxy_motion::computeAngularVelocityRadiansPerSecond(previous, current, deltaSeconds, outVelocity);
     }
 }
