@@ -3237,6 +3237,58 @@ Ghidra-confirmed drive functions:
   - calls `0x14153D440`;
   - signals `world + 0x538`.
 
+Follow-up Ghidra call-site audit:
+
+- `0x141DF5930` xrefs:
+  - data xref at `0x146AEA160`;
+  - call from `0x1412CB4E0`;
+  - call from `bhkNPCollisionObject::vfunction44` at `0x141E09890`.
+- `0x1412CB4E0`:
+  - is a camera/update-adjacent path that calls `TESCamera::vfunction4`;
+  - later drives a body id stored around the owner object with either `0x141DF5680` or `0x141DF5930`;
+  - uses world lock helpers around the operation when a world pointer is present.
+- `bhkNPCollisionObject::vfunction44` at `0x141E09890`:
+  - resolves the body id from the `bhkNPCollisionObject`;
+  - uses world lock helper `0x141DF5FB0` unless TLS `+0x1529` indicates an already-active physics context;
+  - reads the hknp body flags at body slot `+0x40`;
+  - when the target body/path uses the DriveToKeyFrame branch, calls `0x141E086E0`;
+  - when the body/path uses the velocity-drive branch and `DAT_1465A3D84 > 0.0`, calls `0x141DF5930`;
+  - then, in the same native vfunction flow, can also call `0x141DF55F0` to sync/set the body transform.
+
+Confirmed nuance:
+
+- `0x141DF5930` itself is a compute-velocity/apply-velocity wrapper and has no cap-triggered transform snap branch.
+- The generic `bhkNPCollisionObject::vfunction44` update path is not a pure velocity primitive, because it can combine direct velocity with transform setting/sync in the same object update.
+- Therefore "use the direct velocity path" must mean using the world/body velocity primitive deliberately, not blindly routing the hidden proxy through the normal generated-collision-object vfunction/update behavior.
+
+Thread-safety/command-mode findings:
+
+- `0x14153ABD0`:
+  - takes the hknp world write guard through `0x141538AF0`;
+  - computes hard-keyframe velocity through `0x14153A6A0`;
+  - writes velocity through `0x141539F30`;
+  - releases the write guard through `0x141538CB0`;
+  - does not use the queued command wrapper.
+- `0x141DF5930`:
+  - computes hard-keyframe velocity through `0x14153A6A0`;
+  - writes through `0x141539F30` when TLS command mode `+0x1528` is clear;
+  - queues command `0x30` with flags `0x90100` when TLS command mode `+0x1528` is set;
+  - calls `0x141DF60C0` when nonzero velocity requires activation/island handling.
+- `0x141DF56F0`:
+  - has the same direct-versus-queued set-velocity behavior for caller-supplied linear/angular velocity.
+- `0x141DF55F0`:
+  - sets body transform directly through `0x1415395E0` or queues command `0x50`;
+  - should remain create/teleport/recovery/sync behavior, not steady hidden-proxy authority.
+
+Design implication:
+
+- For a hidden no-contact body-A proxy, the future implementation should not reuse the existing generated-collider `driveGeneratedKeyframedBody` path as-is.
+- The proxy needs a deliberately scoped drive primitive:
+  - either a wrapper-style call to `0x141DF5930` inside a phase where queued commands drain before solve;
+  - or a direct compute/write path equivalent to `0x14153ABD0` only after proving the callback already owns a safe hknp write context;
+  - or a ROCK-owned phase command that keeps proxy velocity and constraint atom target writes in the same execution model.
+- The proxy drive and custom constraint target/motor writes must stay phase-matched. A design where proxy velocity is deferred but constraint atoms are written immediately would reintroduce body-A/body-B disagreement.
+
 Confirmed conclusion:
 
 - The current generated-collider drive is still a `DriveToKeyFrame` user.
