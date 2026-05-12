@@ -552,6 +552,246 @@ Current verdict:
   - a new extended ROCK proxy layer is architecturally cleaner but needs explicit matrix policy work and verification.
 - The proxy drive likely needs a proxy-specific physics-step path, because the existing generated keyframed body drive flushes pre-collide for contact colliders, while grab authority should update proxy and constraint fields together after collide and before solve.
 
+## Follow-Up Ghidra Audit - Runtime Insertion, Velocity Drive, Weight Data
+
+This section adds a correction from user testing context: native mouse spring is smoother and stutters less than the old custom motor path, but it still stutters and is not the quality target. The goal is not to preserve mouse spring as "good enough"; the goal is to understand why it is less bad, then reproduce/surpass that stability with proper custom dynamic authority.
+
+### Constraint insertion does not call the custom add-instance slot in the normal path
+
+#### `0x1415469B0` - constraint creation wrapper
+
+Confirmed call flow:
+
+- reserves/allocates a constraint id;
+- calls `0x1417E39C0` to initialize the world constraint slot;
+- dispatches create/constraint notifications;
+- if needed, notifies body constraint graph changes.
+
+#### `0x1417E39C0` - world constraint slot initialization
+
+Disassembly confirms:
+
+- calls constraint data vtable `+0x28` for constraint/atom info;
+- calls vtable `+0x20` for type;
+- if type is wrapper `0x0C` or `0x0D`, calls vtable `+0xC0` to get wrapped inner data and then calls the wrapped type function;
+- calls vtable `+0x90` for runtime info;
+- allocates the runtime buffer using the returned byte size;
+- zeros the allocated runtime directly with `REP STOSD`;
+- stores runtime byte size at constraint slot offset `+0x26`;
+- stores runtime pointer at constraint slot offset `+0x28`.
+
+Important implication:
+
+- Normal FO4VR constraint insertion does not visibly call vtable `+0xA0` / ROCK's custom add-instance callback.
+- The previous concern about add-instance callback signature is lower priority than the runtime layout itself.
+- The strongest current custom motor stutter/corruption suspect remains mismatched solver-result count and runtime offsets.
+
+### `DriveToKeyFrame` has a built-in transform snap fallback
+
+#### `0x141E086E0` - `bhkNPCollisionObject` drive-to-keyframe wrapper
+
+Confirmed behavior:
+
+- Resolves the collision object's world and body id.
+- Calls `0x14153A6A0` to compute linear and angular velocity needed to reach the target transform over `dt`.
+- Looks up the body's motion-properties record from the motion properties library.
+- Reads two float fields from that record:
+  - record `+0x10` is used as a max linear velocity magnitude;
+  - record `+0x14` is used as a max angular velocity magnitude.
+- If the required linear or angular velocity exceeds the corresponding limit:
+  - calls `0x141DF55F0` to set body transform;
+  - calls `0x141DF56F0` with zero vectors to zero velocity.
+- Otherwise:
+  - calls `0x141DF56F0` to set the computed velocity.
+
+Interpretation:
+
+- `DriveToKeyFrame` is smooth only while the required follow velocity stays below motion-property caps.
+- When the target jump exceeds caps, it deliberately snaps transform and zeroes velocity.
+- This is a plausible source of visible stutter in generated body/proxy-style drives.
+- A future grab-authority proxy should not blindly reuse the current generated collider `driveToKeyFrame` path without accounting for this fallback.
+
+### `ApplyHardKeyFrame` computes and writes velocity directly
+
+#### `0x14153ABD0`
+
+Confirmed behavior:
+
+- Calls `0x14153A6A0` to compute target linear/angular velocity from target position/orientation and `dt`.
+- Calls `0x141539F30` to write the computed velocities.
+- Does not perform the `DriveToKeyFrame` max-velocity snap fallback.
+
+Interpretation:
+
+- For a no-contact authority proxy, this direct hard-keyframe velocity path may be a better research candidate than `CollisionObject_DriveToKeyFrame`.
+- It still needs phase correctness, deadband/filtering, max velocity policy, and safe activation handling.
+- It should be studied as a proxy drive primitive, not as held-object authority.
+
+### `SetBodyVelocity` / deferred velocity path
+
+#### `0x141DF56F0`
+
+Confirmed behavior:
+
+- If not inside the command-buffer/TLS mode, calls `0x141539F30` directly.
+- If inside command-buffer mode, queues an API command with body id and linear/angular velocity.
+- After a non-zero velocity write, calls `0x141DF60C0`, which handles activation/island bookkeeping for the body.
+
+#### `0x141539F30`
+
+Confirmed behavior:
+
+- Resolves body -> motion.
+- Writes motion linear velocity at motion offset `+0x40`.
+- Converts/writes angular velocity into the motion orientation frame and stores at motion offset `+0x50`.
+- Skips tiny changes through epsilon/deadband comparisons.
+- Triggers motion/body changed notifications.
+
+Interpretation:
+
+- Direct velocity writes are a native FO4VR primitive and have their own deadband.
+- They can avoid transform snap if used correctly.
+- They are not a grip model and must not write the held object as a second authority beside the constraint.
+
+### Mouse spring update is an action-style finite drive, not just smoothing
+
+#### Constructor `0x141E4A850`
+
+Confirmed fields copied from cinfo-like input include:
+
+- body id around action offset `+0x18`;
+- target transform block written later at `+0x60..+0x88`;
+- target position written later at `+0x90..+0x98`;
+- local/body-space grab point around `+0xA0`;
+- prior error/deadband state around `+0xB0`;
+- tuning fields around `+0xC0..+0xCC`;
+- body flag field around `+0xD0`.
+
+#### Setters
+
+- `0x141E4A960` writes target position to action offsets `+0x90..+0x98`.
+- `0x141E4A980` writes target transform to action offsets `+0x60..+0x88`.
+
+#### Update helper `0x141E4AA30`
+
+Confirmed behavior:
+
+- validates target body id and live simulation state;
+- computes current grabbed-point world position from the body and stored local grab point;
+- compares grabbed-point error to previous error state for deadband/early-out;
+- calls `0x14153A6A0` to compute hard-keyframe-style velocities toward the target;
+- scales/carries existing linear/angular velocity with the field around `+0xCC`;
+- computes position-error correction using tuning fields around `+0xC4/+0xC8`;
+- computes angular correction and clamps it by a field around `+0xC0 * dt`;
+- writes angular velocity through `0x141539D30`;
+- applies a linear impulse-like correction through `0x14153A250`;
+- optionally enables body flags from the field around `+0xD0`;
+- stores previous error back to `+0xB0..+0xBC`.
+
+Interpretation:
+
+- Mouse spring is smoother than the old motor path because it is one per-body hknp action with:
+  - physics-step timing;
+  - deadband;
+  - previous-error state;
+  - velocity carry;
+  - finite angular clamp;
+  - direct native velocity/impulse helpers.
+- Mouse spring is still not HIGGS-quality because its tuning is mostly static and does not implement the full HIGGS-style finite-force mass, collision, deviation, and weapon/lever behavior.
+- Future custom motor authority should reproduce the useful action-style stability traits without adopting mouse spring as pivot/orientation authority.
+
+### Motion properties are a verified temporary-weight-feel surface
+
+#### `0x14153B2F0` - set body motion properties
+
+Confirmed behavior:
+
+- resolves body id to motion id;
+- writes the supplied motion-properties id into the motion at offset `+0x38`;
+- dispatches a body/motion changed notification through the world signal/list around `+0x538`.
+
+ROCK source cross-check:
+
+- `NearbyGrabDamping.cpp` already uses this native function through a lease/restore system.
+- It clones motion-properties records, modifies damping fields, adds/reuses the cloned record, sets the body motion-properties id, and restores the original id when the lease ends.
+
+#### `0x141767A70` - motion properties library add/reuse
+
+Confirmed behavior:
+
+- compares 16 dwords of a candidate record against existing library entries for reuse;
+- if no matching record exists, inserts a new 0x40-byte motion-properties record;
+- returns the motion-properties id.
+
+Current known record fields:
+
+- `+0x10`: used by `DriveToKeyFrame` as max linear velocity.
+- `+0x14`: used by `DriveToKeyFrame` as max angular velocity.
+- `+0x18`: currently used by ROCK nearby damping as linear damping.
+- `+0x1C`: currently used by ROCK nearby damping as angular damping.
+
+Interpretation:
+
+- Motion-properties leases are already a proven ROCK pattern for temporary physics feel changes.
+- Future held-weight research should consider a held-object motion-properties lease that controls damping and possibly velocity caps, but only if it does not create snap fallback through `DriveToKeyFrame`.
+- This is weight/response data only; it must not affect grip pivot authority.
+
+### Mass and inertia functions are powerful but dangerous
+
+#### `0x141E08C00` - `bhkNPCollisionObject` set mass
+
+Confirmed behavior:
+
+- resolves the collision object's body id and motion;
+- computes inverse mass from the supplied mass;
+- rewrites packed inverse inertia / inverse mass data at motion offset `+0x20`;
+- uses the current packed inertia ratios while scaling the mass component.
+
+Interpretation:
+
+- FO4VR exposes a native wrapper that can mutate mass/inertia data.
+- This is not a pivot function and does not choose grip.
+- Mutating held-object mass/inertia during grab could produce stronger weight feel but has high restore risk, especially for shared-motion/multipart objects.
+- If this is ever used, it needs the same kind of lease/restore discipline as motion-properties damping, plus multipart/shared-motion handling.
+- Safer first design direction is still: use actual mass/inertia as input to finite motor force, damping, angular force ratio, deviation, haptics, and release calculations; do not rewrite mass unless research proves it is needed.
+
+#### `0x141E08EF0` - get COM world
+
+Confirmed behavior:
+
+- resolves body -> motion;
+- returns the motion position at motion offset `+0x00`.
+
+Interpretation:
+
+- COM is easy to read and should be treated as weight/lever data only.
+- It must not become pivot, target frame, or grip authority.
+
+### Direct hknp body creation exists but is not yet production-ready for the proxy
+
+#### `0x141543FF0` - direct body creation path
+
+Confirmed behavior:
+
+- allocates or uses a body id;
+- initializes body data through `0x141764C60` or `0x141764CF0` depending on motion/static state;
+- can add the body to broadphase/world systems;
+- invokes the shape vtable during creation/registration.
+
+Related functions:
+
+- `0x141764C60` initializes one body mode and sets body flags including static-style bit `0x1`.
+- `0x141764CF0` initializes another body mode and sets body flags including dynamic-style bit `0x2`.
+- `0x141546350` allocates/initializes a motion.
+- `0x1415464C0` removes/frees motion ids from the world motion manager.
+
+Interpretation:
+
+- FO4VR has a direct hknp body path that could avoid Bethesda `bhkNPCollisionObject` wrapper overhead for a no-contact authority proxy.
+- This path still requires a valid shape; a pure no-shape transform handle is not proven and likely unsafe.
+- Direct body lifetime/destruction and broadphase detach are not fully mapped yet.
+- Current production-safe proxy research should assume a valid tiny shape is required, whether through the existing `BethesdaPhysicsBody` wrapper or a later direct hknp proxy helper.
+
 ## Mouse Spring Current Role
 
 Current native mouse spring findings remain valid:
@@ -591,6 +831,7 @@ What is missing or suspect:
 - dedicated grab proxy body;
 - no-contact proxy filter/layer policy;
 - unified authority for proxy + constraint update before solve;
+- proxy drive primitive that avoids `DriveToKeyFrame` snap fallback under fast hand motion;
 - source tests that enforce custom one-hand authority instead of native one-hand authority;
 - possible FO4VR-native malleable wrapper integration, if verified useful.
 - native `hknpEaseConstraintsAction` is no longer a likely custom-grab smoothing candidate because it handles only native type `2` and type `7`.
@@ -608,15 +849,18 @@ Before any custom one-hand replacement can be implemented:
 2. Finish step-phase integration design.
    - Add planned architecture for a `betweenCollideAndSolve` callback.
    - Ensure proxy and constraint writes happen in the same phase.
+   - Do not assume `CollisionObject_DriveToKeyFrame` is acceptable for the proxy; it has a verified cap-triggered transform snap fallback.
 
 3. Finish proxy design.
    - Choose no-contact filter/layer.
    - Choose tiny/minimal shape.
-   - Decide whether existing generated keyframed drive can be reused or needs a proxy-specific drive.
+   - Decide whether proxy should use direct hard-keyframe velocity (`0x14153ABD0`/`0x141539F30`) instead of generated-collider `DriveToKeyFrame`.
 
 4. Continue FO4VR-native feature research.
    - `hknpMalleableConstraintData` solver input semantics;
    - `hknpBreakableConstraintData`.
+   - motion-properties max velocity/damping fields for held weight feel;
+   - mass/inertia lease feasibility only if force/motor input is insufficient.
 
 5. Only then create implementation branch from `develop`.
    - Suggested branch remains `feature/custom-dynamic-grab-authority`.
@@ -628,7 +872,9 @@ Before any custom one-hand replacement can be implemented:
 - Can `hknpMalleableConstraintData` scale a custom motorized hkp constraint in a useful way?
 - What exactly does the malleable wrapper scale at solver/build input offset around `+0x24`?
 - Is `FO4_LAYER_NONCOLLIDABLE` safe for a constrained keyframed proxy body, or should ROCK add a dedicated no-contact layer/matrix row?
-- Should proxy drive use `CollisionObject_DriveToKeyFrame`, direct velocity, or a specialized between-collide-and-solve keyframe update?
+- Should proxy drive use direct hard-keyframe velocity, direct deferred velocity, or a specialized between-collide-and-solve keyframe update?
+- Can a direct hknp proxy body be safely created/destroyed without Bethesda `bhkNPCollisionObject`, or is the wrapper path required for production safety?
+- Which motion-properties fields beyond `+0x10/+0x14/+0x18/+0x1C` affect hknp held-object response?
 - Should loose weapon dynamic grab add lever-length-aware angular force scaling beyond mass cap, using grip-to-COM only as weight data?
 
 ## Immediate Next Research Actions
@@ -638,4 +884,6 @@ Before any custom one-hand replacement can be implemented:
 - Inspect no-contact layer behavior and generated body constraints.
 - Inspect direct hknp body creation or no-shape alternatives for a non-contact authority proxy.
 - Inspect native APIs for changing/limiting dynamic body motion properties, velocity caps, and inertia safely during held state.
+- Inspect native destruction/removal path for direct hknp-created proxy bodies.
+- Inspect HIGGS dynamic held loop again only for behavior mapping of deviation/hand lag/mass feel, not for FO4VR function addresses.
 - Update the old tracker only to point at this file as superseding if needed.
