@@ -13,26 +13,26 @@
 namespace rock::shoulder_stash
 {
     /*
-     * The detector treats shoulder stash as a body-zone interaction first, not
-     * a head-relative gesture. Generated FRIK body colliders provide the actual
-     * shoulder volume, recent hknp contact confirms borderline cases, and the
-     * HMD-relative volume remains only as a fallback for frames where body
-     * colliders are unavailable or rebuilding.
+     * The detector treats shoulder stash as a head-relative back gesture first
+     * so storing loose items does not require the player to touch their real
+     * back. Generated FRIK body colliders and recent hknp contact remain as a
+     * backup path for missing HMD evidence and as reusable body-zone evidence
+     * for holsters, where physical collider precision is still the right tool.
      */
     struct DetectorConfig
     {
         bool enabled = true;
         bool useBodyZoneColliders = true;
-        bool allowHmdFallback = true;
+        bool useHmdBackVolume = true;
         float enterPaddingGameUnits = 5.0f;
         float exitPaddingGameUnits = 8.0f;
         float minDwellSeconds = 0.08f;
         float maxSpeedGameUnitsPerSecond = 140.0f;
         int recentContactFrames = 4;
         int sustainedContactMissFrames = 18;
-        RE::NiPoint3 fallbackRightOffsetGameUnits{ 17.5f, -5.0f, -6.85f };
-        RE::NiPoint3 fallbackLeftOffsetGameUnits{ -17.5f, -5.0f, -6.85f };
-        float fallbackRadiusGameUnits = 11.0f;
+        RE::NiPoint3 hmdBackRightOffsetGameUnits{ 17.5f, -5.0f, -6.85f };
+        RE::NiPoint3 hmdBackLeftOffsetGameUnits{ -17.5f, -5.0f, -6.85f };
+        float hmdBackRadiusGameUnits = 11.0f;
     };
 
     struct DetectorInput

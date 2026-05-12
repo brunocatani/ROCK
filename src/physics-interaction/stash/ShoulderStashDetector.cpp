@@ -41,12 +41,6 @@ namespace rock::shoulder_stash
         struct BodyCandidateSearchResult
         {
             Candidate candidate{};
-            bool queryAttempted = false;
-            bool shoulderEvidenceReadable = false;
-            bool leftShoulderEvidenceReadable = false;
-            bool rightShoulderEvidenceReadable = false;
-            bool rebuildPending = false;
-            bool bodyAuthorityAvailable = false;
         };
 
         [[nodiscard]] bool heldBodyContains(const std::vector<std::uint32_t>* heldBodyIds, std::uint32_t bodyId) noexcept
@@ -247,18 +241,16 @@ namespace rock::shoulder_stash
         [[nodiscard]] BodyCandidateSearchResult findBodyColliderCandidate(const DetectorInput& input, const RuntimeState& runtime)
         {
             /*
-             * HMD fallback is a missing-authority substitute, not a second vote.
-             * We therefore track whether readable shoulder colliders existed even
-             * when the probe missed them; a clean miss from real body geometry must
-             * not be overridden by the looser head-relative sphere.
+             * Body-zone evidence is retained as a backup for shoulder stash and
+             * as the precise authority future holsters need. It no longer vetoes
+             * the HMD-relative back volume; the caller only selects this result
+             * when the HMD path has no candidate.
              */
             BodyCandidateSearchResult result{};
             if (!input.config.useBodyZoneColliders || !input.world || !input.bodyColliders || !input.bodyColliders->hasBodies()) {
                 return result;
             }
 
-            result.queryAttempted = true;
-            result.rebuildPending = input.bodyColliders->isRebuildPendingAtomic();
             const auto bodyCount = input.bodyColliders->getBodyCount();
             for (std::uint32_t i = 0; i < bodyCount; ++i) {
                 const auto bodyId = input.bodyColliders->getBodyIdAtomic(i);
@@ -270,12 +262,6 @@ namespace rock::shoulder_stash
                 RE::NiTransform bodyWorld{};
                 if (!tryGetBodyWorldTransform(input.world, RE::hknpBodyId{ bodyId }, bodyWorld)) {
                     continue;
-                }
-                result.shoulderEvidenceReadable = true;
-                if (metadata.zone == body_zone::BodyZoneKind::LeftShoulder) {
-                    result.leftShoulderEvidenceReadable = true;
-                } else if (metadata.zone == body_zone::BodyZoneKind::RightShoulder) {
-                    result.rightShoulderEvidenceReadable = true;
                 }
 
                 const float halfLength = (std::max)(metadata.lengthGameUnits * 0.5f, 0.5f);
@@ -310,7 +296,6 @@ namespace rock::shoulder_stash
                 considerCandidate(result.candidate, candidate);
             }
 
-            result.bodyAuthorityAvailable = result.shoulderEvidenceReadable && !result.rebuildPending;
             return result;
         }
 
@@ -348,22 +333,12 @@ namespace rock::shoulder_stash
             return best;
         }
 
-        [[nodiscard]] bool sideBodyAuthorityAvailable(const BodyCandidateSearchResult& bodySearch, bool leftSide) noexcept
-        {
-            if (bodySearch.rebuildPending) {
-                return false;
-            }
-
-            return leftSide ? bodySearch.leftShoulderEvidenceReadable : bodySearch.rightShoulderEvidenceReadable;
-        }
-
-        [[nodiscard]] Candidate findHmdFallbackCandidate(
+        [[nodiscard]] Candidate findHmdBackVolumeCandidate(
             const DetectorInput& input,
-            const RuntimeState& runtime,
-            const BodyCandidateSearchResult& bodySearch)
+            const RuntimeState& runtime)
         {
             Candidate best{};
-            if (!input.config.allowHmdFallback || !input.hasHmdFrame || !finitePoint(input.hmdPositionWorld) || !finitePoint(input.hmdForwardWorld)) {
+            if (!input.config.useHmdBackVolume || !input.hasHmdFrame || !finitePoint(input.hmdPositionWorld) || !finitePoint(input.hmdForwardWorld)) {
                 return best;
             }
 
@@ -373,20 +348,13 @@ namespace rock::shoulder_stash
                 right = RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
             }
 
-            auto considerFallbackSide = [&](bool leftSide) {
-                if (!shouldUseHmdFallback(
-                        input.config.allowHmdFallback,
-                        input.config.useBodyZoneColliders,
-                        sideBodyAuthorityAvailable(bodySearch, leftSide))) {
-                    return;
-                }
-
-                const auto offset = leftSide ? input.config.fallbackLeftOffsetGameUnits : input.config.fallbackRightOffsetGameUnits;
+            auto considerHmdBackSide = [&](bool leftSide) {
+                const auto offset = leftSide ? input.config.hmdBackLeftOffsetGameUnits : input.config.hmdBackRightOffsetGameUnits;
                 const auto center =
                     add(add(add(input.hmdPositionWorld, mul(right, offset.x)), mul(forward, offset.y)), mul(kWorldUp, offset.z));
-                const float radius = (std::max)(input.config.fallbackRadiusGameUnits, 0.1f);
+                const float radius = (std::max)(input.config.hmdBackRadiusGameUnits, 0.1f);
                 const body_zone::BodyZoneKind zone = leftSide ? body_zone::BodyZoneKind::LeftShoulder : body_zone::BodyZoneKind::RightShoulder;
-                const bool continuing = runtime.candidate && runtime.zone == zone && runtime.source == EvidenceSource::HmdFallback;
+                const bool continuing = runtime.candidate && runtime.zone == zone && runtime.source == EvidenceSource::HmdBackVolume;
                 const float padding = continuing ? input.config.exitPaddingGameUnits : input.config.enterPaddingGameUnits;
                 const float threshold = radius + (std::max)(0.0f, padding);
                 const float distance = length(sub(input.probe.pointGame, center));
@@ -397,17 +365,17 @@ namespace rock::shoulder_stash
                 Candidate candidate{};
                 candidate.valid = true;
                 candidate.zone = zone;
-                candidate.source = EvidenceSource::HmdFallback;
+                candidate.source = EvidenceSource::HmdBackVolume;
                 candidate.shoulderBodyId = kInvalidBodyId;
                 candidate.nearestPointGame = center;
                 candidate.distanceGameUnits = distance;
                 candidate.radiusGameUnits = radius;
-                candidate.confidence = candidateConfidence(distance, radius, threshold, isSameSideShoulder(input.isLeftHand, zone)) * 0.72f;
+                candidate.confidence = candidateConfidence(distance, radius, threshold, isSameSideShoulder(input.isLeftHand, zone));
                 considerCandidate(best, candidate);
             };
 
-            considerFallbackSide(true);
-            considerFallbackSide(false);
+            considerHmdBackSide(true);
+            considerHmdBackSide(false);
             return best;
         }
 
@@ -459,25 +427,26 @@ namespace rock::shoulder_stash
             return decision;
         }
 
+        Candidate best = findHmdBackVolumeCandidate(input, runtime);
         const BodyCandidateSearchResult bodySearch = findBodyColliderCandidate(input, runtime);
-        Candidate best = bodySearch.candidate;
+        Candidate bodyBackup = bodySearch.candidate;
         const Candidate contact = findContactCandidate(input);
         if (contact.valid) {
             captureSustainedContactAnchor(input, contact, runtime);
-            if (best.valid && best.zone == contact.zone) {
-                best.source = EvidenceSource::BodyZoneColliderAndContact;
-                best.heldBodyId = contact.heldBodyId;
-                best.confidence = (std::max)(best.confidence, contact.confidence);
-                best.nearestPointGame = contact.nearestPointGame;
-                best.distanceGameUnits = (std::min)(best.distanceGameUnits, contact.distanceGameUnits);
+            if (bodyBackup.valid && bodyBackup.zone == contact.zone) {
+                bodyBackup.source = EvidenceSource::BodyZoneColliderAndContact;
+                bodyBackup.heldBodyId = contact.heldBodyId;
+                bodyBackup.confidence = (std::max)(bodyBackup.confidence, contact.confidence);
+                bodyBackup.nearestPointGame = contact.nearestPointGame;
+                bodyBackup.distanceGameUnits = (std::min)(bodyBackup.distanceGameUnits, contact.distanceGameUnits);
             } else {
-                considerCandidate(best, contact);
+                considerCandidate(bodyBackup, contact);
             }
         } else {
-            considerCandidate(best, findSustainedContactCandidate(input, runtime));
+            considerCandidate(bodyBackup, findSustainedContactCandidate(input, runtime));
         }
         if (!best.valid) {
-            best = findHmdFallbackCandidate(input, runtime, bodySearch);
+            best = bodyBackup;
         }
 
         if (!best.valid) {

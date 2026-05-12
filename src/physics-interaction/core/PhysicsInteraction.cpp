@@ -109,16 +109,16 @@ namespace rock
             shoulder_stash::DetectorConfig config{};
             config.enabled = g_rockConfig.rockShoulderStashEnabled;
             config.useBodyZoneColliders = g_rockConfig.rockShoulderStashUseBodyZoneColliders;
-            config.allowHmdFallback = g_rockConfig.rockShoulderStashAllowHmdFallback;
+            config.useHmdBackVolume = g_rockConfig.rockShoulderStashUseHmdBackVolume;
             config.enterPaddingGameUnits = g_rockConfig.rockShoulderStashEnterPaddingGameUnits;
             config.exitPaddingGameUnits = g_rockConfig.rockShoulderStashExitPaddingGameUnits;
             config.minDwellSeconds = g_rockConfig.rockShoulderStashMinDwellSeconds;
             config.maxSpeedGameUnitsPerSecond = g_rockConfig.rockShoulderStashMaxSpeedGameUnitsPerSecond;
             config.recentContactFrames = g_rockConfig.rockShoulderStashRecentContactFrames;
             config.sustainedContactMissFrames = g_rockConfig.rockShoulderStashSustainedContactMissFrames;
-            config.fallbackRightOffsetGameUnits = g_rockConfig.rockShoulderStashFallbackRightOffsetGameUnits;
-            config.fallbackLeftOffsetGameUnits = g_rockConfig.rockShoulderStashFallbackLeftOffsetGameUnits;
-            config.fallbackRadiusGameUnits = g_rockConfig.rockShoulderStashFallbackRadiusGameUnits;
+            config.hmdBackRightOffsetGameUnits = g_rockConfig.rockShoulderStashHmdBackRightOffsetGameUnits;
+            config.hmdBackLeftOffsetGameUnits = g_rockConfig.rockShoulderStashHmdBackLeftOffsetGameUnits;
+            config.hmdBackRadiusGameUnits = g_rockConfig.rockShoulderStashHmdBackRadiusGameUnits;
             return config;
         }
 

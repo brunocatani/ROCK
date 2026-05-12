@@ -337,16 +337,16 @@ namespace rock
         rockGrabReleaseHandCollisionDelaySeconds = 0.10f;
         rockShoulderStashEnabled = true;
         rockShoulderStashUseBodyZoneColliders = true;
-        rockShoulderStashAllowHmdFallback = true;
+        rockShoulderStashUseHmdBackVolume = true;
         rockShoulderStashEnterPaddingGameUnits = 5.0f;
         rockShoulderStashExitPaddingGameUnits = 8.0f;
         rockShoulderStashMinDwellSeconds = 0.08f;
         rockShoulderStashMaxSpeedGameUnitsPerSecond = 140.0f;
         rockShoulderStashRecentContactFrames = 4;
         rockShoulderStashSustainedContactMissFrames = 18;
-        rockShoulderStashFallbackRightOffsetGameUnits = RE::NiPoint3(17.5f, -5.0f, -6.85f);
-        rockShoulderStashFallbackLeftOffsetGameUnits = RE::NiPoint3(-17.5f, -5.0f, -6.85f);
-        rockShoulderStashFallbackRadiusGameUnits = 11.0f;
+        rockShoulderStashHmdBackRightOffsetGameUnits = RE::NiPoint3(17.5f, -5.0f, -6.85f);
+        rockShoulderStashHmdBackLeftOffsetGameUnits = RE::NiPoint3(-17.5f, -5.0f, -6.85f);
+        rockShoulderStashHmdBackRadiusGameUnits = 11.0f;
         rockShoulderStashSkipActivateBooks = true;
         rockShoulderStashSkipActivateNotes = true;
         rockGrabVelocityDamping = 0.25f;
@@ -1442,8 +1442,8 @@ namespace rock
         rockShoulderStashEnabled = ini.GetBoolValue(SECTION, "bShoulderStashEnabled", rockShoulderStashEnabled);
         rockShoulderStashUseBodyZoneColliders =
             ini.GetBoolValue(SECTION, "bShoulderStashUseBodyZoneColliders", rockShoulderStashUseBodyZoneColliders);
-        rockShoulderStashAllowHmdFallback =
-            ini.GetBoolValue(SECTION, "bShoulderStashAllowHmdFallback", rockShoulderStashAllowHmdFallback);
+        rockShoulderStashUseHmdBackVolume =
+            ini.GetBoolValue(SECTION, "bShoulderStashUseHmdBackVolume", rockShoulderStashUseHmdBackVolume);
         readClampedFloat("fShoulderStashEnterPaddingGameUnits", rockShoulderStashEnterPaddingGameUnits, 5.0f, 0.0f, 40.0f);
         readClampedFloat("fShoulderStashExitPaddingGameUnits", rockShoulderStashExitPaddingGameUnits, 8.0f, 0.0f, 60.0f);
         readClampedFloat("fShoulderStashMinDwellSeconds", rockShoulderStashMinDwellSeconds, 0.08f, 0.0f, 1.0f);
@@ -1454,15 +1454,15 @@ namespace rock
         rockShoulderStashSustainedContactMissFrames =
             static_cast<int>(ini.GetLongValue(SECTION, "iShoulderStashSustainedContactMissFrames", rockShoulderStashSustainedContactMissFrames));
         rockShoulderStashSustainedContactMissFrames = std::clamp(rockShoulderStashSustainedContactMissFrames, 0, 120);
-        readOptionalVec3("fShoulderStashFallbackRightOffsetXGameUnits",
-            "fShoulderStashFallbackRightOffsetYGameUnits",
-            "fShoulderStashFallbackRightOffsetZGameUnits",
-            rockShoulderStashFallbackRightOffsetGameUnits);
-        readOptionalVec3("fShoulderStashFallbackLeftOffsetXGameUnits",
-            "fShoulderStashFallbackLeftOffsetYGameUnits",
-            "fShoulderStashFallbackLeftOffsetZGameUnits",
-            rockShoulderStashFallbackLeftOffsetGameUnits);
-        readClampedFloat("fShoulderStashFallbackRadiusGameUnits", rockShoulderStashFallbackRadiusGameUnits, 11.0f, 1.0f, 80.0f);
+        readOptionalVec3("fShoulderStashHmdBackRightOffsetXGameUnits",
+            "fShoulderStashHmdBackRightOffsetYGameUnits",
+            "fShoulderStashHmdBackRightOffsetZGameUnits",
+            rockShoulderStashHmdBackRightOffsetGameUnits);
+        readOptionalVec3("fShoulderStashHmdBackLeftOffsetXGameUnits",
+            "fShoulderStashHmdBackLeftOffsetYGameUnits",
+            "fShoulderStashHmdBackLeftOffsetZGameUnits",
+            rockShoulderStashHmdBackLeftOffsetGameUnits);
+        readClampedFloat("fShoulderStashHmdBackRadiusGameUnits", rockShoulderStashHmdBackRadiusGameUnits, 11.0f, 1.0f, 80.0f);
         rockShoulderStashSkipActivateBooks =
             ini.GetBoolValue(SECTION, "bShoulderStashSkipActivateBooks", rockShoulderStashSkipActivateBooks);
         rockShoulderStashSkipActivateNotes =

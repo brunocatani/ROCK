@@ -232,6 +232,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGrabNodeNamePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabNodeNamePolicyTests)
 
+  add_executable(ROCKShoulderStashPolicyTests
+    "${ROOT_DIR}/tests/ShoulderStashPolicyTests.cpp"
+  )
+  target_compile_features(ROCKShoulderStashPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKShoulderStashPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKShoulderStashPolicyTests)
+
   add_executable(ROCKWeaponCollisionLifecyclePolicyTests
     "${ROOT_DIR}/tests/WeaponCollisionLifecyclePolicyTests.cpp"
   )
@@ -244,6 +251,7 @@ if(BUILD_ROCK_TESTS)
     ROCKGrabFingerLocalTransformPolicyTests
     ROCKGrabHapticPolicyTests
     ROCKGrabNodeNamePolicyTests
+    ROCKShoulderStashPolicyTests
     ROCKWeaponCollisionLifecyclePolicyTests
   )
   foreach(ROCK_COMMONLIB_TEST_TARGET IN LISTS ROCK_COMMONLIB_TEST_TARGETS)

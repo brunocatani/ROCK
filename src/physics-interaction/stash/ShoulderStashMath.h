@@ -11,11 +11,12 @@
 namespace rock::shoulder_stash
 {
     /*
-     * Shoulder stash uses ROCK's generated body-zone colliders as the primary
-     * spatial authority because they follow the FRIK torso and power-armor body
-     * profile. The math is kept isolated so future holster/backpack zones can
-     * reuse the same point-vs-capsule and hysteresis behavior without coupling
-     * those systems to grab release or inventory transfer.
+     * Shoulder stash now uses the HMD-relative back volume as the primary
+     * spatial authority because a literal shoulder-collider touch makes storage
+     * require the player to reach their real back. Generated body-zone collider
+     * and contact evidence remains as an explicit backup for tracking loss,
+     * transitional compatibility, and future holster systems that need physical
+     * body-zone precision.
      */
     inline constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFFu;
 
@@ -26,7 +27,7 @@ namespace rock::shoulder_stash
         BodyZoneContact,
         BodyZoneSustainedContact,
         BodyZoneColliderAndContact,
-        HmdFallback,
+        HmdBackVolume,
     };
 
     struct CapsuleZone
@@ -93,8 +94,8 @@ namespace rock::shoulder_stash
             return "body-zone-sustained-contact";
         case EvidenceSource::BodyZoneColliderAndContact:
             return "body-zone-collider-and-contact";
-        case EvidenceSource::HmdFallback:
-            return "hmd-fallback";
+        case EvidenceSource::HmdBackVolume:
+            return "hmd-back-volume";
         default:
             return "none";
         }
@@ -125,12 +126,9 @@ namespace rock::shoulder_stash
         state.hasSustainedPointGame = false;
     }
 
-    [[nodiscard]] inline bool shouldUseHmdFallback(
-        bool allowHmdFallback,
-        bool useBodyZoneColliders,
-        bool bodyAuthorityAvailable) noexcept
+    [[nodiscard]] inline bool isHmdBackVolumeEvidenceSource(EvidenceSource source) noexcept
     {
-        return allowHmdFallback && (!useBodyZoneColliders || !bodyAuthorityAvailable);
+        return source == EvidenceSource::HmdBackVolume;
     }
 
     [[nodiscard]] inline bool shoulderStashDwellIdentityMatches(
@@ -141,15 +139,24 @@ namespace rock::shoulder_stash
         EvidenceSource nextSource,
         std::uint32_t nextShoulderBodyId) noexcept
     {
-        if (previousZone != nextZone || previousShoulderBodyId != nextShoulderBodyId) {
+        if (previousZone != nextZone) {
             return false;
         }
 
-        if (previousSource == nextSource) {
+        if (previousSource == nextSource && previousShoulderBodyId == nextShoulderBodyId) {
             return true;
         }
 
-        return isBodyZoneEvidenceSource(previousSource) && isBodyZoneEvidenceSource(nextSource);
+        const bool previousHmd = isHmdBackVolumeEvidenceSource(previousSource);
+        const bool nextHmd = isHmdBackVolumeEvidenceSource(nextSource);
+        if (previousHmd != nextHmd) {
+            const auto bodySource = previousHmd ? nextSource : previousSource;
+            return isBodyZoneEvidenceSource(bodySource);
+        }
+
+        return isBodyZoneEvidenceSource(previousSource) &&
+               isBodyZoneEvidenceSource(nextSource) &&
+               previousShoulderBodyId == nextShoulderBodyId;
     }
 
     [[nodiscard]] inline bool finitePoint(const RE::NiPoint3& value) noexcept
