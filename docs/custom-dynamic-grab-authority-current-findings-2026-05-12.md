@@ -4311,3 +4311,208 @@ Unresolved after this Ghidra pass:
 - Verify TLS `+0x1528` / `+0x152C` state inside `PhysicsStepDriveCoordinator` callbacks, especially the future between-collide-and-solve slot.
 - Verify whether direct velocity command application before solve updates the proxy body's transform early enough for the constraint solver's body-A frame, or whether the constraint target should be computed against predicted proxy transform instead of current body transform.
 - Verify whether a no-contact proxy should use bit-14 suppression, layer 15, or a ROCK-owned extended layer, now that lifecycle and drive are clearer.
+
+## 2026-05-12 continuation: ROCK `BethesdaPhysicsBody` wrapper against Ghidra lifecycle
+
+This pass reconciles the existing ROCK generated-body wrapper with the Ghidra-confirmed hknp body/motion/add/remove paths above. The goal is not implementation. The goal is to decide what parts of the existing wrapper are a reliable future body-A proxy foundation, and what parts are unsuitable for steady custom dynamic grab authority.
+
+### Source files inspected
+
+- `src/physics-interaction/native/BethesdaPhysicsBody.h`
+- `src/physics-interaction/native/BethesdaPhysicsBody.cpp`
+- `src/physics-interaction/native/HavokOffsets.h`
+- `src/physics-interaction/native/HavokRuntime.cpp`
+- `src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp`
+
+### Current ROCK wrapper creation path
+
+`BethesdaPhysicsBody::create(...)` is a full generated-body wrapper, not a shallow hknp body-slot write.
+
+Confirmed source behavior:
+
+- Requires:
+  - `RE::hknpWorld* world`;
+  - `bhkWorld`;
+  - non-null `RE::hknpShape* shape`;
+  - filter info;
+  - material id;
+  - `BethesdaMotionType`;
+  - optional debug/name string.
+- Allocates `hknpPhysicsSystemData` as `0x78` bytes.
+- Calls `offsets::kFunc_PhysicsSystemData_Ctor = 0x5EAB0`.
+- Appends:
+  - motion cinfo entry at system data `+0x30` for non-static bodies, stride `0x70`;
+  - body cinfo entry at system data `+0x40`, stride `0x60`;
+  - material entry at system data `+0x10`, stride `0x50`;
+  - shape ref entry at system data `+0x60`, stride `8`.
+- Body cinfo fields written by ROCK:
+  - shape pointer at `+0x00`;
+  - invalid generated id at `+0x08`;
+  - generated local motion index at `+0x0C`;
+  - quality id at `+0x10`;
+  - local material index at `+0x12`;
+  - collision filter info at `+0x14`;
+  - name pointer at `+0x20`;
+  - user data / extra pointer at `+0x28` set to zero.
+- Adds a ref to the shape when recording the shape slot.
+- Allocates `bhkPhysicsSystem` as `0x28` bytes.
+- Calls `offsets::kFunc_PhysicsSystem_Ctor = 0x1E0C2B0`.
+- Allocates `bhkNPCollisionObject` as `0x30` bytes under Bethesda allocator TLS context `0x41`.
+- Calls `offsets::kFunc_CollisionObject_Ctor = 0x1E07710`.
+- Creates and links a NiNode owner.
+- Calls `offsets::kFunc_CollisionObject_AddToWorld = 0x1E07BE0`.
+- Calls `offsets::kFunc_PhysicsSystem_GetBodyId = 0x1E0C460`.
+- Validates generated body motion.
+- Applies generated material.
+- Applies generated body motion type.
+- Calls `havok_runtime::setFilterInfo(world, bodyId, filterInfo, 1)`.
+- Calls `offsets::kFunc_EnableBodyFlags = 0x153C090` with flags `0x08020000`, mode `1`.
+- Activates the body.
+- Reads a snapshot and verifies body `+0x88` collision-object back-pointer equals the wrapper collision object.
+
+Ghidra cross-check:
+
+- `0x141E07BE0` is `bhkNPCollisionObject::vfunction49`.
+- It ensures the collision object has a native physics system instance, attaches or moves it to the current bhkWorld's hknp world, obtains body id through `0x141E0C460`, and writes the collision-object back-pointer into the hknp body slot at body `+0x88`.
+- This matches ROCK's post-create back-pointer verification.
+
+Interpretation:
+
+- `BethesdaPhysicsBody::create(...)` is currently the safest known production-style path for a generated proxy body because it exercises Bethesda's collision object and physics-system ownership path instead of only fabricating hknp slots.
+- The wrapper still requires a real shape. A future hidden no-contact proxy therefore needs a minimal valid shape policy; it should not be shape-less unless a new Ghidra-backed path proves a shape-less body is valid in FO4VR.
+- The wrapper's creation path can accept a no-contact filter at birth. It already writes creation-time filter info after add-to-world with rebuild mode `1`.
+- This supports a separate hidden proxy body design more than reusing the visible palm/collider body, because the wrapper can create a real body that is not published as hand contact metadata and can carry its own filter policy.
+
+### Current ROCK wrapper destruction path
+
+`BethesdaPhysicsBody::destroy(void* bhkWorld)`:
+
+- returns if no created/collision/ni node state exists;
+- fetches `nativePhysicsSystemInstance(_physicsSystem)`;
+- if `bhkWorld` and instance are valid, calls `offsets::kFunc_BhkWorld_RemovePhysicsSystemInstance = 0x1DFAD00`;
+- destroys the owner NiNode;
+- releases the collision object;
+- resets local pointers/body id/created flag.
+
+Ghidra cross-check:
+
+- `0x141DFAD00`:
+  - obtains native hknp world from `bhkWorld + 0x60`;
+  - if TLS byte `+0x1529` is false and world exists, locks/synchronizes around world `+0x6D8`;
+  - calls `0x141565A00(param_2)`;
+  - unlocks after removal.
+- Earlier Ghidra mapping of `0x141565A00`:
+  - removes all bodies in the physics system-like container;
+  - reaches the body remove path `0x141544B00`;
+  - `bhkPhysicsSystem::vfunction44` also scans constraints referencing removed body ids and removes those constraints before removing bodies.
+- The wrapper then releases the collision object. The release path is outside this pass, but the native physics-system instance removal does not by itself prove shape/body-id destruction; final release/refcount behavior still depends on the collision object / physics system ownership chain.
+
+Interpretation:
+
+- `BethesdaPhysicsBody::destroy(...)` is still the preferred current cleanup route over direct body remove because it goes through Bethesda's physics-system-instance removal and collision-object ownership.
+- A future proxy must ensure any custom constraint using the proxy body is removed before or as part of this destruction path. The Ghidra remove path is constraint-aware in the physics-system path, but relying on late cleanup is still a bad ownership boundary.
+- The remaining unresolved point is whether wrapper destruction always reaches the hknp destroy-equivalent cleanup for generated system bodies after refcount release. Current evidence is strong enough to prefer the wrapper, but not strong enough to bypass explicit constraint cleanup or to create/destroy proxies per frame.
+
+### Current ROCK wrapper drive methods
+
+`BethesdaPhysicsBody` exposes:
+
+- `driveToKeyFrame(target, dt)`:
+  - calls `offsets::kFunc_CollisionObject_DriveToKeyFrame = 0x1E086E0`.
+- `setTransform(transform)`:
+  - calls `offsets::kFunc_CollisionObject_SetTransform = 0x1E08A70`.
+- `setVelocity(linVel, angVel)`:
+  - calls `offsets::kFunc_CollisionObject_SetVelocity = 0x1E082A0`.
+- `setPointVelocity(targetVel, worldPoint)`:
+  - explicitly ignores `worldPoint`;
+  - calls `setVelocity(targetVel, zeroAngular)`;
+  - source comment says native point-specific velocity still needs binary validation.
+
+Ghidra cross-check:
+
+- `0x141E082A0`:
+  - validates native physics system through `0x141E0C530`;
+  - obtains body id through `0x141E0C460`;
+  - obtains hknp world through `0x141E0C4E0`;
+  - calls world/body velocity wrapper `0x141DF56F0(world, bodyId, linear, angular)`.
+- `0x141E08A70`:
+  - validates native physics system;
+  - obtains body id and hknp world;
+  - calls world/body transform wrapper `0x141DF55F0(world, bodyId, transform, 1)`.
+- `0x141E086E0`:
+  - sets Bethesda allocator TLS context `0x41` during the call;
+  - validates native physics system and positive dt;
+  - converts the target transform through `0x141722C10`;
+  - obtains body id, body slot, motion array, and motion properties;
+  - calls hard-keyframe velocity compute `0x14153A6A0`;
+  - compares computed linear/angular velocity magnitudes against motion-property caps at motion-properties `+0x10` and `+0x14`;
+  - if either cap is exceeded, calls set transform `0x141DF55F0(..., mode 1)` and then set velocity `0x141DF56F0(..., zero, zero)`;
+  - otherwise calls set velocity `0x141DF56F0(..., computedLinear, computedAngular)`;
+  - returns success value `0x901` on normal positive-dt path.
+- `0x141DF5930`:
+  - computes hard-keyframe velocity with `0x14153A6A0`;
+  - writes or queues the resulting velocity through direct body velocity function/command;
+  - calls activation/dirty helper when nonzero;
+  - does not contain the cap-triggered transform snap branch seen in `0x141E086E0`.
+
+Interpretation:
+
+- The existing wrapper is suitable for lifecycle, but its current steady drive options are not yet the right custom-authority proxy drive:
+  - `driveToKeyFrame` can snap transforms if motion-property caps are exceeded.
+  - `setTransform` is a warp/placement tool, not steady solver-friendly authority.
+  - `setVelocity` is a raw velocity writer and does not compute target-transform-to-velocity correction.
+  - `setPointVelocity` is not point-specific despite its name and must not be used for off-COM authority.
+- The direct hard-keyframe velocity wrapper at `0x141DF5930` remains the cleaner research target for future proxy drive because it gives FO4VR's target-transform-to-velocity math without DriveToKeyFrame's cap-triggered transform snap.
+- `BethesdaPhysicsBody` does not currently expose `0x141DF5930`. That is a future implementation-plan item only after the timing/TLS questions are resolved.
+
+### Relationship to generated hand/body colliders
+
+Current generated hand/body/weapon collision code uses `BethesdaPhysicsBody::create(..., Keyframed)` and `driveGeneratedKeyframedBody(...)`.
+
+`driveGeneratedKeyframedBody(...)`:
+
+- selects an immediate placement target only for pending teleports / hard sync;
+- otherwise converts target to Havok transform and calls `body.driveToKeyFrame(targetHavok, driveDelta)`;
+- logs native drive failure but does not avoid the native DriveToKeyFrame snap branch;
+- currently ignores its `maxLinearVelocityHavok` and `maxAngularVelocityRadians` parameters at the top of the function.
+
+Interpretation:
+
+- Reusing the generated collider drive loop as-is for a hidden authority proxy would inherit DriveToKeyFrame's cap-triggered transform snap behavior.
+- This does not make current hand collision wrong; it explains why the hidden authority proxy should have its own drive semantics even if it reuses `BethesdaPhysicsBody` creation/destruction.
+- The generated visible collider path and the future hidden authority proxy path should be separated:
+  - visible colliders: contact evidence, detection, gameplay collision, and debug/telemetry;
+  - hidden proxy: no-contact body-A authority for custom finite-force linear/angular constraint.
+
+### Updated body-A proxy conclusion
+
+Current best-supported future design shape, pending more Ghidra timing checks:
+
+1. Create a separate persistent `BethesdaPhysicsBody` for the dynamic grab authority proxy.
+2. Use the same root-flattened hand frame source that currently creates the generated palm body.
+3. Give the proxy its own no-contact filter policy at creation time.
+4. Do not publish the proxy as hand contact metadata.
+5. Do not drive the proxy with existing `driveGeneratedKeyframedBody(...)`.
+6. Do not use `setPointVelocity(...)`; it is not point-specific.
+7. Research exposing or wrapping `0x141DF5930` for target-transform-to-velocity proxy drive.
+8. Keep the proxy persistent over a held grab, then remove custom constraints before destroying it.
+9. Use set-transform only for initial placement/teleport, not steady held drive.
+
+### Confirmed facts from this pass
+
+- ROCK's current generated-body wrapper uses Bethesda's collision object + physics system path and validates body `+0x88` back-pointer.
+- `0x141E07BE0` writes the collision-object back-pointer to body `+0x88`.
+- `BethesdaPhysicsBody::driveToKeyFrame(...)` maps to `0x141E086E0`.
+- `0x141E086E0` contains a motion-cap-triggered transform snap branch.
+- `BethesdaPhysicsBody::setVelocity(...)` maps to `0x141E082A0`, which calls `0x141DF56F0`.
+- `BethesdaPhysicsBody::setTransform(...)` maps to `0x141E08A70`, which calls `0x141DF55F0`.
+- `BethesdaPhysicsBody::setPointVelocity(...)` currently ignores the point and zeroes angular velocity.
+- `driveGeneratedKeyframedBody(...)` still calls `driveToKeyFrame(...)` for normal steady generated collider motion.
+
+### Unresolved after this pass
+
+- Verify whether `0x141DF5930` can be safely called from ROCK with a direct wrapper around `world`, `bodyId`, `targetPosition`, `targetQuaternion/rotation`, and `dt`.
+- Verify exact parameter convention of `0x141DF5930` versus `0x14153A6A0` using disassembly if needed, especially whether the rotation input expects quaternion, transform rotation rows, or the converted target payload from `0x141722C10`.
+- Verify TLS `+0x1528/+0x152C` state inside the existing physics step listener callbacks.
+- Verify whether pre-solve velocity writes update body transforms early enough for the same solver step, or whether the custom constraint should use predicted proxy transform as its target frame.
+- Verify final generated-body destroy ownership through collision object / physics system refcount release if the future proxy creates many bodies across world reloads.
