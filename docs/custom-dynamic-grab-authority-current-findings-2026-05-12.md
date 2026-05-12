@@ -2997,6 +2997,82 @@ Open verification still needed:
 - Verify whether a noncollidable-layer body can still participate as constraint body A without being filtered from constraint solving.
 - Verify whether a dedicated extended zero-row proxy layer in `48..63` gives better diagnostics/lifecycle control than layer `15` without touching detection semantics.
 
+### ROCK palm anchor versus hidden authority proxy source audit
+
+Research question:
+
+- Should the future custom one-hand dynamic grab use the existing generated palm anchor as constraint body A, or a separate hidden no-contact authority proxy rooted in the same flattened hand frame?
+
+Current source facts:
+
+- `Hand::_handBody` is the generated palm anchor body.
+- `Hand::createCollisionBodies(...)` calls `_boneColliders.create(world, bhkWorld, _isLeft, _handBody)`.
+- `HandBoneColliderSet::create(...)`:
+  - captures the live flattened hand bone lookup;
+  - builds the `PalmAnchor` frame from the flattened root hand frame and finger/back direction;
+  - creates `_handBody` as a `BethesdaPhysicsBody` with `BethesdaMotionType::Keyframed`;
+  - places it immediately with `placeGeneratedKeyframedBodyImmediately(...)`;
+  - initializes `_palmAnchorDriveState`;
+  - publishes the palm anchor body id as the primary hand collider id.
+- `HandBoneColliderSet::update(...)`:
+  - captures the current flattened hand bone lookup each game-frame update;
+  - queues the palm anchor target with `queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState)`;
+  - queues all other hand collider role targets the same way.
+- `HandBoneColliderSet::flushPendingPhysicsDrive(...)`:
+  - drives the palm anchor first through `driveGeneratedKeyframedBody(...)`;
+  - then drives each finger/palm role body through the same generated keyframed drive.
+- `driveGeneratedKeyframedBody(...)`:
+  - rejects stale source samples;
+  - uses immediate placement only when `pendingTeleport` is set;
+  - otherwise calls `BethesdaPhysicsBody::driveToKeyFrame(...)`;
+  - currently ignores its max linear/angular velocity arguments.
+- `HandBoneColliderSet::update(...)` defers full generated hand collider rebuilds while `palmAnchorBody.isConstrained()` is true.
+- `Hand::computeGrabPivotAWorld(...)` intentionally does not read `_handBody` during grab-frame capture. Its source comment states:
+  - ROCK computes grab authority from the raw tracked hand transform;
+  - the generated hknp palm anchor is a driven follower flushed on the physics-step boundary;
+  - reading it during game-frame setup can capture a one-step-old collider pose;
+  - the generated hknp palm anchor remains contact evidence and debug geometry, not grab-frame transform authority.
+- `Hand::createConstraintGrabDrive(...)` currently uses `_handBody.getBodyId()` as constraint body A.
+- `Hand::updateConstraintGrabDriveTarget(...)` currently resolves live `_handBody` world transform and writes constraint atoms from held-object update flow.
+- `Hand::updateHeldObject(...)` only calls `updateConstraintGrabDriveTarget(...)` and `updateConstraintGrabDriveMotors(...)` when `_heldDriveMode == HeldObjectDriveMode::SharedConstraint`; ordinary one-hand loose grabs use `_nativeGrab.queueTarget(...)`.
+
+Confirmed interpretation:
+
+- The existing palm anchor is a contact/evidence collider and generated-body follower.
+- It is useful for detection, semantic contact, debug geometry, and palm/finger collision evidence.
+- It is not an ideal future body-A authority for ordinary one-hand custom motor grab because:
+  - it is driven in the generated-collider pre-collide path;
+  - it uses `DriveToKeyFrame`, which has a cap-triggered transform snap in the native wrapper;
+  - its lifecycle is tied to hand collider rebuild/shape ownership;
+  - rebuilds are explicitly deferred while constrained;
+  - it is published as a real contact body and must be suppressed during held grab;
+  - the source itself already warns that it can be one physics step stale relative to raw hand authority.
+
+Design implication for future custom dynamic grab authority:
+
+- Reusing the current `SharedConstraint` path as-is would repeat the wrong body-A/timing architecture.
+- The future body-A should be a separate hidden no-contact authority proxy:
+  - rooted in the same flattened hand-frame sample used to build the palm anchor;
+  - not published as semantic contact evidence;
+  - born with a no-contact filter/layer rather than repeatedly suppressed/restored;
+  - driven in the selected solver-adjacent phase;
+  - used only as the constraint body A anchor for the held object;
+  - independent from hand/finger contact collider rebuilds.
+- The current `createConstraintGrabDrive(...)`, `updateConstraintGrabDriveTarget(...)`, `updateConstraintGrabDriveMotors(...)`, `GrabConstraintMath`, and `GrabMotionController` remain valuable scaffolding, but the future authority path must replace the body-A owner and update phase.
+
+Important boundary:
+
+- This is not a no-contact grab design.
+- Contact bodies remain required for dynamic detection, mesh/contact pivot selection, palm seating, finger pose, collision feedback, and release/deviation policy.
+- Only the hidden authority proxy should be no-contact; the real held object keeps normal object collision behavior.
+
+Still unresolved:
+
+- Need design the proxy owner/lifecycle surface separately from `HandBoneColliderSet` so it cannot participate in contact metadata or collider rebuild deferral.
+- Need verify whether `BethesdaPhysicsBody` is the safest first proxy body wrapper, or whether a later direct hknp body helper is worth the lifecycle cost.
+- Need decide whether the proxy should use bit 14, layer 15, or a dedicated extended layer after comparing debug visibility, matrix behavior, and collision-suppression restore risk.
+- Need map how the latest root-flattened hand sample is cached for a between-collide-and-solve callback without reading stale generated body transforms.
+
 ### FO4VR no-collide bit and constraint-contact separation
 
 This Ghidra pass resolves the open `1 << 14` question and clarifies why a hidden no-contact authority proxy is still compatible with a custom constraint drive.
