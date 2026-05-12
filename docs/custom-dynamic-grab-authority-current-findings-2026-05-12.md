@@ -144,9 +144,10 @@ Interpretation:
   - three linear motors therefore contribute 6;
   - total = 12.
 - The remaining runtime-layout risk is narrower:
-  - exact live interpreter field reads for atom type `0x0B` still need range-level inspection;
-  - the earlier "absolute from runtime base" conclusion is weakened because the visible live interpreter pattern uses a current runtime writer/cursor;
-  - ROCK's odd-looking linear offsets may be intentional relative-to-current-runtime-cursor values, not immediate overlap bugs.
+  - focused range disassembly now confirms atom type `0x0B` and `0x13` use current-runtime-cursor offset semantics;
+  - the earlier "absolute from runtime base" conclusion is incorrect for ROCK's linear atom placement;
+  - ROCK's odd-looking linear offsets are coherent relative-to-current-runtime-cursor values, not immediate overlap bugs;
+  - the unresolved part is runtime size/padding and any helper-side warm-start behavior, not solver-result overlap.
 
 Current ROCK constants:
 
@@ -1784,9 +1785,9 @@ Corrected runtime-offset interpretation:
 - The earlier "all motor runtime offsets are absolute from runtime base" conclusion is no longer strong enough.
 - The live atom interpreter maintains runtime writer/cursor pointers in `param_4[1]` and `param_4[2]`.
 - A visible live case, type `0x16` at `0x141A59AF8`, reads atom-provided runtime offsets by adding them to the current runtime writer/cursor, then advances that cursor by one solver result.
-- The exact type `0x0B` linear motor case at `0x141A57162` is not yet fully printed by Ghidra MCP because the huge interpreter body truncates the middle of the function.
-- However, FO4VR's constraint-info utility proves that each type `0x0B` linear motor advances the runtime solver-result cursor by 2 solver results (`0x10` bytes).
-- If type `0x0B` follows the same current-cursor convention as the visible motor-like cases, ROCK's linear offsets resolve as:
+- Focused range disassembly of the approved unpacked FO4VR executable confirmed the type `0x0B` linear motor case at `0x141A57162` also adds runtime offsets to the current runtime writer/cursor.
+- FO4VR's constraint-info utility proves that each type `0x0B` linear motor advances the runtime solver-result cursor by 2 solver results (`0x10` bytes), and the live case does exactly that at `0x141A5727E/0x141A5728C`.
+- ROCK's linear offsets therefore resolve as:
   - linear 0 current cursor after ragdoll = `0x30`; init `0x40` -> runtime `0x70`; previous target `0x44` -> runtime `0x74`;
   - linear 1 current cursor = `0x40`; init `0x31` -> runtime `0x71`; previous target `0x38` -> runtime `0x78`;
   - linear 2 current cursor = `0x50`; init `0x22` -> runtime `0x72`; previous target `0x2C` -> runtime `0x7C`.
@@ -1798,20 +1799,79 @@ Corrected runtime-offset interpretation:
 Current verdict:
 
 - ROCK's atom stream order, atom sizes, and reported solver-result count now look structurally coherent for FO4VR.
-- The previous custom-motor stutter/fighting explanation should not be reduced to "solver count/runtime offsets are obviously corrupt."
+- ROCK's current linear motor runtime offsets are not the obvious corruption source previously suspected.
+- The previous custom-motor stutter/fighting explanation should not be reduced to "solver count/runtime offsets are corrupt."
 - The remaining custom-authority risks are now more likely a combination of:
-  - exact type `0x0B` runtime field interpretation still needing range-level confirmation;
   - target writes occurring outside the verified physics phase;
   - using a contact palm body as body A rather than a dedicated authority proxy;
   - `DriveToKeyFrame` snap fallback if used for the proxy;
   - more than one authority writing the held body;
   - motor tuning/finite-force policy not matching HIGGS-style mass/collision/deviation behavior.
 
-Unresolved:
+Still worth verifying, but no longer the main blocker:
 
-- Need exact range-level inspection of live interpreter case `0x141A57162` for type `0x0B`.
-- Need exact range-level inspection of live interpreter case `0x141A5873C` for type `0x13`.
-- Ghidra MCP currently exposes whole-function decompile/disassembly for `0x141A55550`, which truncates the middle; a different Ghidra-side inspection method or focused range output is needed before treating the field reads as closed.
+- Whether `RUNTIME_REPORTED_SIZE = 0x100` is required padding or could be reduced.
+- Whether zeroing the whole runtime block remains sufficient on every insertion path.
+- Whether helper calls inside type `0x0B` and type `0x13` have side effects that matter for motor tuning or warm-start behavior.
+
+#### Focused range disassembly: type `0x0B` linear motor case
+
+Reason for focused local disassembly:
+
+- Ghidra MCP decompiles `0x141A55550` only as one huge function and truncates the middle of the output.
+- The switch table and case addresses were first confirmed in Ghidra MCP.
+- The byte-range disassembly used only the user-provided binary path:
+  - `E:\fo4dev\reverse_engineering\Fallout4VR.exe.unpacked.exe`;
+  - PE image base verified as `0x140000000`;
+  - `.text` section verified to cover the case addresses.
+
+Case `0x141A57162`, atom type `0x0B`, confirmed field reads:
+
+- `0x141A57162`: checks enabled byte at atom `+0x02`.
+- `0x141A5716D`: checks motor pointer at atom `+0x10`.
+- `0x141A57178`: reads signed 16-bit initialized offset from atom `+0x04`.
+- `0x141A5717D`: reads signed 16-bit previous-target offset from atom `+0x06`.
+- `0x141A57186`: adds initialized offset to current runtime cursor at writer state `[+0x08]`.
+- `0x141A5718A`: adds previous-target offset to current runtime cursor at writer state `[+0x08]`.
+- `0x141A5718E`: reads initialized byte at the computed runtime address.
+- `0x141A57195`: if uninitialized, copies atom target float from atom `+0x08` into the computed previous-target runtime address.
+- `0x141A571A9`: reads axis byte at atom `+0x03`.
+- `0x141A57202`: reads current target float from atom `+0x08`.
+- `0x141A57275/0x141A57279`: updates previous target and sets initialized byte when needed.
+- `0x141A5727E`: advances runtime cursor `[+0x08]` by `0x10`.
+- `0x141A5728C`: advances secondary runtime/schema cursor `[+0x10]` by `0x10`.
+- `0x141A57288`: advances atom cursor by `0x18`.
+
+Case `0x141A57162`, interpretation:
+
+- Linear motor runtime offsets are relative to the current runtime cursor.
+- Each linear atom owns 2 solver-result slots (`0x10` bytes), matching `0x141A4AD20`.
+- ROCK's `{0x40,0x31,0x22}` initialized offsets and `{0x44,0x38,0x2C}` previous-target offsets intentionally collapse to contiguous post-solver runtime storage when added to each linear atom's current cursor.
+
+#### Focused range disassembly: type `0x13` ragdoll motor case
+
+Case `0x141A5873C`, atom type `0x13`, confirmed field reads:
+
+- `0x141A5873C`: checks enabled byte at atom `+0x02`.
+- `0x141A58747`: reads signed 16-bit initialized offset from atom `+0x04`.
+- `0x141A5874C`: reads signed 16-bit previous-angle offset from atom `+0x06`.
+- `0x141A58755`: adds initialized offset to current runtime cursor at writer state `[+0x08]`.
+- `0x141A58759`: adds previous-angle offset to current runtime cursor at writer state `[+0x08]`.
+- `0x141A5875D`: passes target rotation matrix at atom `+0x10` into helper `0x1417D05F0`.
+- `0x141A5877B`: treats atom `+0x40` as the start of the three angular motor pointer slots.
+- The loop processes three angular axes; null motor pointers produce inactive/fallback schema output.
+- `0x141A58CE8/0x141A58CEE`: initializes previous-angle/runtime state for an axis and sets the initialized byte.
+- `0x141A58EDB`: updates previous angle when the solved target differs.
+- `0x141A58F35`: advances runtime cursor `[+0x08]` by `0x30`.
+- `0x141A58F55`: advances secondary runtime/schema cursor `[+0x10]` by `0x30`.
+- `0x141A58F51`: advances atom cursor by `0x60`.
+- Disabled path at `0x141A58F5F` also advances atom cursor by `0x60` and runtime cursors by `0x30`.
+
+Case `0x141A5873C`, interpretation:
+
+- Ragdoll motor runtime offsets are also relative to the current runtime cursor.
+- In ROCK's stream the ragdoll motor is the first solver-producing atom after set-local-transforms/setup-stabilization, so its current runtime cursor is the runtime base.
+- ROCK's ragdoll initialized/previous-angle offsets `0x60/0x64` therefore land immediately after the 12-result solver-result block.
 
 ### 2026-05-12 Ghidra follow-up: malleable wrapper semantics
 
@@ -1903,7 +1963,7 @@ What ROCK already has:
 
 What is missing or suspect:
 
-- exact custom constraint runtime field-read verification for the live type `0x0B` and type `0x13` interpreter cases;
+- exact custom constraint runtime size/padding decision after the type `0x0B` and type `0x13` field-read correction;
 - physics-phase-safe custom target writes;
 - dedicated grab proxy body;
 - no-contact proxy filter/layer policy for a hidden authority anchor only, not for the whole grab interaction;
@@ -1919,8 +1979,8 @@ Before any custom one-hand replacement can be implemented:
 
 1. Finish the custom runtime layout audit.
    - Solver result count `12` is now coherent with FO4VR's native constraint-info utility for the current ROCK atom stream.
+   - Live type `0x0B` and type `0x13` field reads now confirm current-runtime-cursor offset semantics.
    - Confirm final runtime size and whether `0x100` is required or simply padded.
-   - Confirm live type `0x0B` and type `0x13` runtime field reads by focused case inspection.
    - Confirm addInstance slot behavior and whether zeroing full runtime is sufficient.
 
 2. Finish step-phase integration design.
@@ -1954,11 +2014,11 @@ Before any custom one-hand replacement can be implemented:
 - Can a direct hknp proxy body be safely created/destroyed without Bethesda `bhkNPCollisionObject`, or is the wrapper path required for production safety?
 - Which motion-properties fields beyond `+0x10/+0x14/+0x18/+0x1C` affect hknp held-object response?
 - Should loose weapon dynamic grab add lever-length-aware angular force scaling beyond mass cap, using grip-to-COM only as weight data?
-- Are ROCK's current linear motor runtime offsets actually correct relative-to-current-runtime-cursor values, as the new utility audit suggests, and was old custom-motor stutter instead dominated by phase timing, body-A choice, proxy drive snapping, or competing authorities?
+- Since ROCK's current linear motor runtime offsets now look correct relative to the runtime cursor, was old custom-motor stutter dominated by phase timing, body-A choice, proxy drive snapping, or competing authorities?
 
 ## Immediate Next Research Actions
 
-- Inspect custom constraint runtime usage deeper in FO4VR, now focused on exact type `0x0B` and type `0x13` interpreter field reads, runtime size, and atom interpreter behavior rather than normal-path addInstance.
+- Inspect custom constraint runtime usage deeper in FO4VR, now focused on runtime size/padding, add-instance behavior, and atom helper side effects rather than solver-result count.
 - Inspect `hknpMalleableConstraintData` solve behavior and fields.
 - Inspect no-contact layer behavior and generated body constraints.
 - Inspect direct hknp body creation or no-shape alternatives for a non-contact authority proxy.
