@@ -3293,6 +3293,101 @@ Still unresolved:
 - Need decide how runtime transform warp should interact with the hidden proxy during teleport-like room/player-space changes.
 - Need preserve `HeldPlayerSpaceRegistry` dedupe by motion index for multipart loose weapons and multi-body objects.
 
+### HIGGS dynamic body-A and keyframed hand-body logic source audit
+
+Research question:
+
+- In the HIGGS dynamic grab path, what is the actual body-A authority and how does it avoid turning COM or mouse-spring behavior into the grip model?
+
+Confirmed HIGGS source facts:
+
+- `Hand::TransitionHeld(...)`:
+  - computes `desiredNodeTransform = adjustedTransform`;
+  - translates `desiredNodeTransform.pos += palmPos - ptPos`;
+  - stores `desiredNodeTransformHandSpace = inverseHand * desiredNodeTransform`;
+  - collects all grabbed/connected rigid bodies;
+  - if `usePhysicsGrab` and `warpToHand`, teleports the grabbed body and sibling bodies so the selected point seats at the palm;
+  - computes `hkPivotA` from `palmPos`;
+  - computes `hkPivotB` from `ptPos`;
+  - resolves `bodyA = handBody->hkBody`;
+  - resolves `bodyB = selectedObject.rigidBody->hkBody`;
+  - transforms pivot A into body-A local space;
+  - transforms pivot B into body-B local space;
+  - builds `handTransformHandSpace` from local pivot A;
+  - builds `desiredHavokTransformHandSpace = desiredNodeTransformHandSpace * GetRigidBodyTLocalTransform(selectedObject.rigidBody)`;
+  - builds `handTransformObjSpace = InverseTransform(desiredHavokTransformHandSpace)`;
+  - stores pivot B into `handTransformObjSpace.pos`;
+  - calls `CreateGrabConstraint(bodyA, bodyB, handTransformHandSpace, handTransformObjSpace)`;
+  - adds the resulting constraint to the hand body and world.
+- `UpdateKeyframedNode(...)`:
+  - updates the node transform;
+  - calls `NiAVObject_UpdateNode` with flag `0x2000` so the collision object is moved by velocity;
+  - for `bhkRigidBodyT`, manually computes the rigid-body transform and calls `ApplyHardKeyframeVelocityClamped(...)`;
+  - updates bone matrices so visual geometry is not a frame behind.
+- `ApplyHardKeyframeVelocityClamped(...)`:
+  - calls `hkpKeyFrameUtility_applyHardKeyFrame(...)`;
+  - if computed linear velocity exceeds the body's native max, sets position directly;
+  - if angular velocity exceeds max, sets rotation directly.
+- `Hand::Update` while `state == HeldBody`:
+  - refreshes finger animation values;
+  - registers object/connected/contained body mass;
+  - registers player-space bodies when player movement compensation is enabled;
+  - computes `heldTransform = collidableNode->m_worldTransform`;
+  - computes `inverseDesired = InverseTransform(desiredNodeTransformHandSpace)`;
+  - computes `m_adjustedHandTransform = heldTransform * inverseDesired`;
+  - lerps adjusted hand transform during startup;
+  - tracks hand deviation from the real hand and drops when average deviation exceeds the configured max;
+  - calls `UpdateHandTransform(m_adjustedHandTransform)` for the visual/adjusted hand;
+  - updates `GrabConstraintData::setTargetRelativeOrientationOfBodies(...)`;
+  - recomputes transform-B translation as `(desiredHandTransformHavokObjSpace * palmPosHandspace) * objectScale * havokWorldScale`;
+  - updates linear/angular motor tau, damping, recovery, min/max force.
+- HIGGS non-actor mass behavior:
+  - loose weapons get `grabConstraintLinearMaxForceWeapon`;
+  - generic loose objects get `grabConstraintLinearMaxForce`;
+  - angular max force is derived from linear max force divided by `grabConstraintAngularToLinearForceRatio`;
+  - collision switches linear/angular tau toward colliding tau values;
+  - final non-actor force is capped by `mass * grabConstraintMaxForceToMassRatio`;
+  - angular max force is capped again from the capped linear force.
+- HIGGS player-space behavior:
+  - held and connected bodies are registered with `RegisterPlayerSpaceBody(...)`;
+  - room/player movement adds velocity to registered bodies when movement is smooth;
+  - room/player rotation warp transforms registered bodies through previous/current room transforms;
+  - hand/weapon collision is moved by the same player-space delta, then hand keyframe velocity overwrites it in the following hand update.
+
+Confirmed interpretation:
+
+- HIGGS dynamic grab body A is the hand collision body, not mouse spring and not the grabbed object COM.
+- HIGGS body A is effectively a keyframed hand body driven from the hand/node transform.
+- HIGGS body B is the selected dynamic held object body.
+- The constraint frames are palm/contact based:
+  - pivot A from palm;
+  - pivot B from selected contact/mesh point;
+  - object rotation preserved through `desiredNodeTransform`;
+  - object translated so selected point seats at the palm.
+- HIGGS uses COM/mass only to cap force, compute held weight/speed effects, and release/throw behavior.
+- HIGGS does allow visual hand deviation: the rendered/adjusted hand follows the object when finite force cannot keep up, and deviation limits decide release instead of giving the player infinite strength.
+
+FO4VR/ROCK mapping implication:
+
+- The FO4VR equivalent of HIGGS body A should be a keyframed hand-frame body rooted in ROCK's root-flattened hand frame.
+- Because ROCK's current palm anchor is also a contact/evidence collider with pre-collide `DriveToKeyFrame` lifecycle, a separate hidden no-contact authority proxy can reproduce the HIGGS body-A role more cleanly in FO4VR hknp.
+- The proxy is not a different grab model. It is ROCK's FO4VR-native way to recreate HIGGS' "keyframed hand body A" without making the contact palm collider fight the held object.
+- The constraint logic to preserve from HIGGS is:
+  - contact/palm pivot capture;
+  - body-A/body-B local pivots;
+  - preserved object rotation;
+  - per-frame transform-B pivot refresh;
+  - angular target refresh;
+  - finite motor force/tau policy;
+  - visual hand deviation and release.
+- The implementation must not copy HIGGS' hkp timing blindly. FO4VR hknp has a different step/listener/command model, so the HIGGS concept maps to FO4VR's solver-adjacent hidden proxy and live atom updates.
+
+Still unresolved:
+
+- Need verify whether FO4VR's hknp constraint solver expects body-A transform A to be current, desired, or predicted when body A is velocity-driven instead of transform-snapped.
+- Need decide whether the hidden proxy should ever use direct transform set for teleport/warp recovery, matching HIGGS' clamp fallback, while using velocity drive for normal smooth movement.
+- Need decide how ROCK's visual hand deviation system should map HIGGS' `m_adjustedHandTransform` for a future custom constraint authority without feeding visual hand correction back into the physical hand-frame source.
+
 ### FO4VR no-collide bit and constraint-contact separation
 
 This Ghidra pass resolves the open `1 << 14` question and clarifies why a hidden no-contact authority proxy is still compatible with a custom constraint drive.
