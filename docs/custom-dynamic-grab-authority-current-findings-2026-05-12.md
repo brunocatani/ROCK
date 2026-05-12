@@ -2589,10 +2589,84 @@ Interpretation:
 
 Still unresolved:
 
-- `0x141DF55F0` needs direct decompilation to confirm exact set/snap transform side effects.
-- `0x141DF56F0` needs direct decompilation to confirm whether it is only a safe velocity wrapper around `0x141539F30` or adds extra state changes.
-- `0x141546EF0` needs direct decompilation to confirm activation/wake behavior and any island/state side effects.
-- Xrefs to `0x14153ABD0` and `0x141E086E0` should be checked to identify native callers and whether Bethesda uses the direct path for any specific body class.
+Follow-up confirmed:
+
+- `0x141DF55F0`:
+  - is a thread-aware wrapper around direct transform set `0x1415395E0`;
+  - if TLS flag `+0x1528` says direct execution is allowed, calls `0x1415395E0(world, bodyId, targetTransform, flag)`;
+  - otherwise queues a command through `0x141DFC8D0` with command-like local header bytes `0x50 / 0x60100`.
+- `0x1415395E0`:
+  - locks the world;
+  - validates broadphase/body mappings;
+  - compares current transform against target transform;
+  - writes the body transform matrix directly into the body slot at `world + 0x20 + bodyId * 0x90`;
+  - calls `0x14153CC40(...)`;
+  - fires transform-change style notifications through the listener list at `world + 0x538`;
+  - unlocks the world.
+- `0x141DF56F0`:
+  - is a thread-aware wrapper around velocity write `0x141539F30`;
+  - if direct execution is allowed, calls `0x141539F30(world, bodyId, linearVelocity, angularVelocity)`;
+  - otherwise queues a command through `0x141DFC8D0` with command-like local header bytes `0x30 / 0x90100`;
+  - after the write/queue, compares requested linear and angular velocities against zero thresholds and calls `0x141DF60C0(world, bodyId)` if either is non-zero.
+- `0x141539F30`:
+  - locks the world and resolves the body and motion;
+  - only writes when body flags include dynamic/motion-backed bit `0x02`;
+  - compares requested velocities against current motion velocities;
+  - wakes/activates the body through `0x141546EF0` when body flags do not include the no-activation bits tested by `(flags & 9)`;
+  - writes linear velocity into motion `+0x40`;
+  - writes angular velocity into motion `+0x50`;
+  - calls `0x14153D440(...)`;
+  - notifies listeners at `world + 0x538` through `0x14153EE00`.
+- `0x14153D440`:
+  - iterates a body chain using body offset `+0x64`;
+  - calls `0x1417D3BF0(...)` for each body in that chain using the velocity/motion pointer and world data at `+0x1E0`, `+0x330`, and `+0x180`;
+  - likely updates broadphase/motion-derived body state after velocity changes, but exact semantic name remains unresolved.
+- `0x141546EF0`:
+  - locks the world;
+  - checks the body slot at `world + 0x20 + bodyId * 0x90`;
+  - if body `+0x6C` is not `-1`, calls `0x1417D8590(*(world + 0x4A0), bodyId)`;
+  - likely wakes or activates the body/island. Exact side effects inside `0x1417D8590` remain unresolved.
+- `0x141DF60C0`:
+  - validates body id, flags, and body `+0x6C`;
+  - if the body is not already in the desired active path, checks body flags derived from `body + 0x40`;
+  - for a specific high flag bit, enters a world-side queue/critical region at `world + 0x6E8` / `world + 0x708`;
+  - likely schedules activation/island work for bodies with non-zero target velocity. Exact queue semantics remain unresolved.
+
+Caller context:
+
+- `0x141E4AA30`, the native mouse-spring action update, calls:
+  - `0x14153A6A0` to compute velocity to its current target;
+  - `0x141539F30` to write linear/angular velocities;
+  - additional velocity/angular-impulse style helpers after damping/capping.
+- `0x141E086E0`, the DriveToKeyFrame-style wrapper, is called by:
+  - `0x141E18F90`, a recursive collision-object scene/update path;
+  - `bhkNPCollisionObject::vfunction44` around `0x141E09AB7`, where generated collision object transforms are driven and can fall through to `0x141DF55F0`.
+- `0x141DF5930` is a separate wrapper that calls:
+  - `0x14153A6A0` to compute hard-keyframe velocity;
+  - `0x141539F30` or the queued equivalent to apply velocity;
+  - `0x141DF60C0` if the requested velocity is non-zero;
+  - it does not contain the motion-property cap branch or transform-snap branch found in `0x141E086E0`.
+- `0x141DF5930` is called by:
+  - `bhkNPCollisionObject::vfunction44`;
+  - `0x1412CB4E0`, a camera/update path that drives a body by velocity when global timestep `DAT_1465A3D84` is positive.
+
+Updated interpretation:
+
+- FO4VR has both a snap-cap keyframe wrapper and a compute-velocity keyframe wrapper.
+- The generated collision-object path can use both:
+  - direct velocity drive through `0x141DF5930`;
+  - direct transform set through `0x141DF55F0`;
+  - cap-triggered transform set through `0x141E086E0`.
+- Native mouse spring smoothness is not because it is magic or because it owns the correct grab model. It is smoother because its update does dt-aware target math and then writes velocities through the hknp motion path, with damping/capping before the write.
+- A future custom motor body-A proxy should therefore research using `0x141DF5930` / `0x14153A6A0 + 0x141539F30` semantics for velocity drive, not `0x141E086E0` as-is.
+- If transform snapping is needed for large correction or teleport recovery, it should be a deliberate state transition outside steady held-grab solve, not an implicit cap branch inside the per-frame drive.
+
+Remaining unresolved:
+
+- `0x1417D8590` needs direct inspection before relying on the exact wake/island semantics of `0x141546EF0`.
+- `0x14153CC40` needs inspection before fully naming the transform-set side effects of `0x1415395E0`.
+- `0x1417D3BF0` needs inspection before fully naming the post-velocity chain update in `0x14153D440`.
+- `0x141DFC8D0` and the command headers need inspection if ROCK ever calls these wrappers from non-physics threads instead of an already-safe physics step callback.
 
 ### Research conclusion from this pass
 
