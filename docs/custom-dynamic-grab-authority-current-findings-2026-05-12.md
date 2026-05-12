@@ -2947,6 +2947,56 @@ Specific risk to avoid:
   - finite motor field update;
   - all committed in the same selected physics phase.
 
+### ROCK held hand collision suppression reread
+
+This source reread matters because HIGGS dynamic grab uses contact to find and shape the grab, but does not let the held object fight a collidable hand body during the held constraint. ROCK currently has both contact evidence bodies and grab authority bodies tied together more tightly than the future custom-authority design should.
+
+Current source facts:
+
+- `Hand::suppressHandCollisionForGrab(RE::hknpWorld* world)`:
+  - clears `_grabHandCollisionDelayedRestore` before applying active suppression;
+  - returns if there is no world or no hand collision body;
+  - suppresses every generated bone-collider body when `_boneColliders.getBodyCount() > 0`;
+  - falls back to `_handBody.getBodyId()` only when no bone-collider bodies exist;
+  - reads each body's current filter with `body_collision::tryReadFilterInfo`;
+  - records the body/filter in `_grabHandCollisionSuppression` through `hand_collision_suppression_math::beginSuppression`;
+  - acquires a shared registry lease with owner `CollisionSuppressionOwner::Grab` and context `"held-grab-hand"`.
+- `CollisionSuppressionRegistry::acquire(...)`:
+  - captures the original filter the first time a body is suppressed;
+  - records whether the body already had suppression bit `1 << 14`;
+  - ORs `kSuppressionNoCollideBit = 1u << 14` into the current filter;
+  - writes the changed filter through `body_collision::setFilterInfo`.
+- `CollisionSuppressionRegistry::release(...)`:
+  - keeps the no-collide bit set while any other owner lease remains;
+  - restores the bit to the original pre-suppression state only after the final owner releases;
+  - defers if the current filter cannot be read.
+- `body_collision::setFilterInfo(...)` calls `havok_runtime::setFilterInfo(world, bodyId, filterInfo)` with the default rebuild mode.
+- `BethesdaPhysicsBody::create(...)` sets the creation-time filter with `havok_runtime::setFilterInfo(world, bodyId, filterInfo, 1)`, which is different from the later suppression path.
+- `Hand::grabSelectedObject(...)` calls `suppressHandCollisionForGrab(world)` before inertia normalization and drive creation.
+- `Hand::updateHeldObject(...)` calls `suppressHandCollisionForGrab(world)` again every held update.
+- `Hand::releaseGrabbedObject(...)` either begins delayed restore through `hand_collision_suppression_math::beginDelayedRestore(...)` or calls `restoreHandCollisionAfterGrab(world)` immediately.
+
+Ghidra tie-in from the filter write path already mapped in this file:
+
+- The default filter write path reaches `0x14153AF00` with rebuild mode `0`.
+- In rebuild mode `0`, if body `+0x6C` is not `-1`, `0x14153AF00` calls `0x14153C5A0`.
+- `0x14153C5A0` is the expensive dirty/rebuild path that wakes or dirties bodies/islands and clears packed broadphase/AABB state.
+- Creation-time filter assignment through `BethesdaPhysicsBody::create(...)` uses rebuild mode `1`, avoiding that rebuild branch.
+
+Interpretation for future custom dynamic grab authority:
+
+- Real hand/contact bodies still need suppression while holding a grabbed object, because those bodies are contact evidence and would otherwise collide against the constrained held object.
+- The authority body A should not be one of those real contact bodies if the goal is a stable custom one-hand motor path.
+- A hidden authority proxy born with a non-contact filter/layer avoids steady held-state filter changes and avoids using a contact/rebuild lifecycle body as the solver authority body.
+- The proxy should therefore be created already non-contact, not repeatedly suppressed/restored through the shared collision suppression registry.
+- This is not a "no contact" grab design: contact still drives detection, point selection, palm seating, finger pose, collision response, and release/deviation behavior. The no-contact proxy is only the hidden constraint authority anchor.
+
+Open verification still needed:
+
+- Re-find the actual FO4VR hknp collision-filter branch that consumes `1 << 14`; ROCK source and old notes treat it as Ghidra-confirmed, but this pass has only reconfirmed the filter write path.
+- Verify whether a noncollidable-layer body can still participate as constraint body A without being filtered from constraint solving.
+- Verify whether a dedicated extended zero-row proxy layer in `48..63` gives better diagnostics/lifecycle control than layer `15` without touching detection semantics.
+
 ### Research conclusion from this pass
 
 The next custom-authority design should be judged against these confirmed HIGGS rules:
