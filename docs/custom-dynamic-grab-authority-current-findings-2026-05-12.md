@@ -867,6 +867,11 @@ Confirmed behavior:
 - initializes body data through `0x141764C60` or `0x141764CF0` depending on motion/static state;
 - can add the body to broadphase/world systems;
 - invokes the shape vtable during creation/registration.
+- locks the world while allocating/reusing the body id and initializing the body slot;
+- calls `0x141561CA0` or `0x1415486A0` for motion/system setup depending on the incoming body description;
+- when adding immediately, calls `0x1415441F0`;
+- when a shape/mass payload is present and body flags do not include `0x80000`, registers shape/mass properties through the world structure around `+0x610`;
+- fires body-created listeners through the world listener array around `+0x4D0`.
 
 Related functions:
 
@@ -879,7 +884,7 @@ Interpretation:
 
 - FO4VR has a direct hknp body path that could avoid Bethesda `bhkNPCollisionObject` wrapper overhead for a no-contact authority proxy.
 - This path still requires a valid shape; a pure no-shape transform handle is not proven and likely unsafe.
-- Direct body lifetime/destruction and broadphase detach are not fully mapped yet.
+- Direct body lifetime/destruction and broadphase detach are now partially mapped, but still too lifecycle-heavy to treat as a trivial helper.
 - Current production-safe proxy research should assume a valid tiny shape is required, whether through the existing `BethesdaPhysicsBody` wrapper or a later direct hknp proxy helper.
 
 ### Body lifetime commands
@@ -896,10 +901,18 @@ Ghidra confirms the hknp API command processor dispatch table at `hknpApiCommand
 
 Confirmed lifecycle details:
 
+- `0x1415441F0` adds bodies to active world/broadphase/island state:
+  - has timer regions including `LtAddBodies`, `StSetup`, `StAddToBroadPhase`, and `StFireCallbacks`;
+  - registers body ids into world mappings and active structures;
+  - invokes body/shape virtuals while preparing insertion;
+  - computes broadphase AABBs from shape, motion, and world extent data;
+  - inserts into broadphase through the world broadphase interface around `world + 0x178`, vtable slot `+0x08`;
+  - fires body-added callbacks through world listener state around `+0x4D8` via helper `0x14153EE00`.
 - `0x141544B00` removes a body from active world/broadphase state:
   - fires `TtFireBodyRemoved`;
   - invokes world body-removed listeners at world `+0x4E0`;
   - detaches broadphase/island/collision cache state;
+  - removes from broadphase through the world broadphase interface around `world + 0x178`, vtable slot `+0x10`;
   - sets body `+0x6C` to `-1`;
   - marks body flags at `+0x40` with `& 0xFFFBFFFF | 0x400`;
   - calls motion cleanup around `0x14154AA50`.
@@ -907,16 +920,18 @@ Confirmed lifecycle details:
   - fires `TtFireBodyDestroyed`;
   - invokes world body-destroyed listeners at world `+0x4E8`;
   - releases shape references;
+  - removes shape/mass property registration from the world structure around `+0x610`;
+  - if the body owns motion state, removes the motion through `0x1417E2940`;
+  - calls body cleanup helper `0x141548940`;
   - clears body flags;
   - appends the body slot to the free list;
   - increments world body/destruction bookkeeping;
   - calls `0x1417D8820` after the batch.
-- `0x1415441F0` is the add path and handles broadphase/callback/island insertion. A future direct hknp proxy cannot safely skip this class of work.
 
 Interpretation:
 
 - Existing `BethesdaPhysicsBody` wrapper creation is still the safest known production lifecycle because it creates a real physics-system instance, adds it through Bethesda's bhk world path, assigns filter/material, enables flags, activates the body, and destroys through `BhkWorld_RemovePhysicsSystemInstance`.
-- Direct hknp body creation remains possible research, but production use would need a verified add/remove/destroy pairing and listener behavior. This is not complete yet.
+- Direct hknp body creation remains possible research, but production use would need a verified add/remove/destroy pairing, listener behavior, broadphase behavior, shape/mass-property lifetime, and motion-owner cleanup. This is not complete enough to select for first implementation.
 
 ## ROCK Layer And Generated Body Lifecycle
 
