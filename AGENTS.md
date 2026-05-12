@@ -4,19 +4,16 @@
 
 This is the project folder for ROCK, a physics-based hand interaction system for Fallout 4 VR. ROCK began as a port of HIGGS (Skyrim VR) concepts, functionality, and interaction logic into FO4VR, but it has evolved into its own FO4VR-native system with FRIK as the body/skeleton provider and several systems that now exceed HIGGS behavior.
 
-# Branching And CI/CD Policy
-- NEVER switch branches, check out another branch, create a branch, delete a branch, merge, rebase, or perform any other branch-changing operation unless the user explicitly gives permission for that exact branch operation. Mapping work and implementation must stay on the currently checked-out branch unless the user orders otherwise.
+# Branching And Commit Policy
+- NEVER switch branches, check out another branch, create a branch, delete a branch, merge, rebase, pull, push, or perform any other branch-changing/history-sharing operation unless the user explicitly gives permission for that exact operation. Mapping work and implementation must stay on the currently checked-out branch unless the user orders otherwise.
+- Do not infer that work should start from, move to, or return to `develop`, `main`, or any other branch. The current checked-out branch is the working branch until the user explicitly orders a different branch operation.
 - `main` is release-only. NEVER push, force-push, merge, or commit to `main` unless the user gives that explicit ROCK command.
-- `develop` is the always-current integration branch. All normal ROCK work starts from `develop`, and all completed feature/fix work returns to `develop`.
-- When the user explicitly permits branch creation, feature branches must be created from `develop` and named `feature/<short-scope>`.
-- When the user explicitly permits branch creation, fix branches must be created from `develop` and named `fix/<short-scope>`.
+- `feature/<scope>` and `fix/<scope>` are commit-message classes, NOT branch names and NOT instructions to create or switch branches.
 - Commit messages must identify the change class and scope: `feature/<scope>: <specific change>` or `fix/<scope>: <specific correction>`.
 - After finishing any modification or fix, commit the completed work before handing it back unless the user explicitly says not to commit. The commit message must describe what was changed and why.
 - Keep feature and fix work separated into separate commits. Do not mix unrelated features, fixes, build changes, docs, and cleanup in one commit.
-- Release flow is manual: the user decides when `develop` becomes a release, then explicitly instructs the merge/push/tag and local release build/deploy steps for `main`.
-- CI branch policy must reject PRs into `develop` unless the source branch is `feature/*` or `fix/*`.
-- CI branch policy must reject PRs into `main` unless the source branch is `develop`.
-- Builds are local-only. Do not add GitHub Actions build or release jobs unless the user explicitly asks. GitHub Actions may enforce branch policy only.
+- Release flow is manual: the user explicitly instructs any required merge, push, tag, and local release build/deploy steps.
+- Builds are local-only. Do not add GitHub Actions build or release jobs unless the user explicitly asks.
 
 # Cleanup And Rollback Discipline
 - This rule exists because stale fallback paths hide regressions, split behavior across multiple implementations, and make rollback harder than a clean git commit.
