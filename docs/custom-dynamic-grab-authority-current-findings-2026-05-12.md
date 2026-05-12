@@ -134,6 +134,20 @@ Interpretation:
 
 ## Major New Finding: ROCK Custom Runtime Layout Is High Risk
 
+2026-05-12 later audit correction:
+
+- This section is partially superseded by the later "constraint-info utility and switch-table audit" section.
+- The original concern that `RUNTIME_SOLVER_RESULTS = 12` was probably wrong is no longer supported.
+- FO4VR's own constraint-info utility reports the ROCK atom stream shape as 12 solver results:
+  - ragdoll motor atom type `0x13` contributes 6;
+  - each linear motor atom type `0x0B` contributes 2;
+  - three linear motors therefore contribute 6;
+  - total = 12.
+- The remaining runtime-layout risk is narrower:
+  - exact live interpreter field reads for atom type `0x0B` still need range-level inspection;
+  - the earlier "absolute from runtime base" conclusion is weakened because the visible live interpreter pattern uses a current runtime writer/cursor;
+  - ROCK's odd-looking linear offsets may be intentional relative-to-current-runtime-cursor values, not immediate overlap bugs.
+
 Current ROCK constants:
 
 - `RUNTIME_SOLVER_RESULTS = 12`
@@ -1703,6 +1717,102 @@ Still unresolved:
 - The exact decompiled case bodies for atom type `0x0B` linear motor and atom type `0x13` ragdoll motor are still being narrowed inside `0x141A55550`.
 - The Ghidra MCP decompile/disassembly output for the full interpreter is very large and truncates the middle of the function in normal output, so the next pass must identify the relevant switch table entries and inspect those case bodies without relying on truncated output.
 
+### 2026-05-12 Ghidra follow-up: constraint-info utility and switch-table audit
+
+Binary-confirmed functions/data:
+
+- `0x141A4AD20` - native constraint-info utility used by ROCK through `offsets::kFunc_GetConstraintInfoUtil`.
+- `0x141A4AEE8` - constraint-info utility switch table for atom types `0x00..0x22`.
+- `0x141A55550` - live hknp build-jacobians atom interpreter.
+- `0x141A5A32C` - live atom-interpreter switch table for atom types `0x00..0x1A`.
+
+Constraint-info utility findings from `0x141A4AD20`:
+
+- Type `0x02` / set-local-transforms:
+  - switch-table entry points to `0x141A4AED1`;
+  - advances the atom cursor by `0x90` bytes;
+  - does not add solver results.
+- Type `0x17` / setup-stabilization:
+  - switch-table entry points to `0x141A4ADEF`;
+  - matches native ragdoll/limited-hinge helper placement before motor atoms;
+  - still needs exact case-level disassembly, but it is not the source of the 12-result count.
+- Type `0x13` / ragdoll motor:
+  - switch-table entry points to `0x141A4AE8D`;
+  - adds `0xC0` bytes of schema/jacobian output;
+  - adds 6 solver results;
+  - advances the atom cursor by `0x60` bytes.
+- Type `0x0B` / linear motor:
+  - switch-table entry points to `0x141A4AE16`;
+  - adds `0x50` bytes of schema/jacobian output;
+  - adds 2 solver results;
+  - advances the atom cursor by `0x18` bytes.
+
+Implication for ROCK's atom stream:
+
+- ROCK stream:
+  - set-local-transforms type `0x02` at atom offset `0x00`, size `0x90`;
+  - setup-stabilization type `0x17` at atom offset `0x90`, size `0x10`;
+  - ragdoll motor type `0x13` at atom offset `0xA0`, size `0x60`;
+  - three linear motor type `0x0B` atoms at atom offsets `0x100/0x118/0x130`, size `0x18` each.
+- That shape exactly matches the source layout:
+  - `ATOM_TRANSFORMS = 0x20`;
+  - `ATOM_STABILIZE = 0xB0`;
+  - `ATOM_RAGDOLL_MOT = 0xC0`;
+  - `ATOM_LIN_MOTOR_0/1/2 = 0x120/0x138/0x150`;
+  - `ATOMS_SIZE = 0x148`.
+- The native info utility's solver-result count for this stream is:
+  - ragdoll motor: 6;
+  - linear motor 0: 2;
+  - linear motor 1: 2;
+  - linear motor 2: 2;
+  - total: 12.
+- Therefore `RUNTIME_SOLVER_RESULTS = 12` is coherent with FO4VR's native info utility for the current atom stream.
+
+Native constructor cross-checks:
+
+- `hkpRagdollConstraintData` helper `0x1419B2910` constructs:
+  - type `0x02` at stream offset `0x00`;
+  - type `0x17` at stream offset `0x90`;
+  - type `0x13` at stream offset `0xA0`;
+  - later angular/limit atoms after the ragdoll motor.
+- The ragdoll constructor packs runtime offsets `0x90/0x94` into the type `0x13` atom, and native runtime info reports size `0xB0`, solver results `18`.
+- `hkpPrismaticConstraintData` constructor `0x1419B1350` writes a type `0x0B` linear motor atom at its own stream offset `0x90`, packs runtime offsets `0x50/0x54`, and native runtime info reports size `0x58`, solver results `10`.
+- `hkpLimitedHingeConstraintData` helper `0x1419AD2B0` constructs type `0x12` angular motor layout and also packs motor runtime offsets around `0x50/0x54`.
+
+Corrected runtime-offset interpretation:
+
+- The earlier "all motor runtime offsets are absolute from runtime base" conclusion is no longer strong enough.
+- The live atom interpreter maintains runtime writer/cursor pointers in `param_4[1]` and `param_4[2]`.
+- A visible live case, type `0x16` at `0x141A59AF8`, reads atom-provided runtime offsets by adding them to the current runtime writer/cursor, then advances that cursor by one solver result.
+- The exact type `0x0B` linear motor case at `0x141A57162` is not yet fully printed by Ghidra MCP because the huge interpreter body truncates the middle of the function.
+- However, FO4VR's constraint-info utility proves that each type `0x0B` linear motor advances the runtime solver-result cursor by 2 solver results (`0x10` bytes).
+- If type `0x0B` follows the same current-cursor convention as the visible motor-like cases, ROCK's linear offsets resolve as:
+  - linear 0 current cursor after ragdoll = `0x30`; init `0x40` -> runtime `0x70`; previous target `0x44` -> runtime `0x74`;
+  - linear 1 current cursor = `0x40`; init `0x31` -> runtime `0x71`; previous target `0x38` -> runtime `0x78`;
+  - linear 2 current cursor = `0x50`; init `0x22` -> runtime `0x72`; previous target `0x2C` -> runtime `0x7C`.
+- Under that interpretation:
+  - total solver-result block is `12 * 8 = 0x60`;
+  - ragdoll initialized/previous-angle data at `0x60/0x64` starts immediately after solver results;
+  - linear initialized bytes at `0x70/0x71/0x72` and previous targets at `0x74/0x78/0x7C` do not overlap solver results.
+
+Current verdict:
+
+- ROCK's atom stream order, atom sizes, and reported solver-result count now look structurally coherent for FO4VR.
+- The previous custom-motor stutter/fighting explanation should not be reduced to "solver count/runtime offsets are obviously corrupt."
+- The remaining custom-authority risks are now more likely a combination of:
+  - exact type `0x0B` runtime field interpretation still needing range-level confirmation;
+  - target writes occurring outside the verified physics phase;
+  - using a contact palm body as body A rather than a dedicated authority proxy;
+  - `DriveToKeyFrame` snap fallback if used for the proxy;
+  - more than one authority writing the held body;
+  - motor tuning/finite-force policy not matching HIGGS-style mass/collision/deviation behavior.
+
+Unresolved:
+
+- Need exact range-level inspection of live interpreter case `0x141A57162` for type `0x0B`.
+- Need exact range-level inspection of live interpreter case `0x141A5873C` for type `0x13`.
+- Ghidra MCP currently exposes whole-function decompile/disassembly for `0x141A55550`, which truncates the middle; a different Ghidra-side inspection method or focused range output is needed before treating the field reads as closed.
+
 ### 2026-05-12 Ghidra follow-up: malleable wrapper semantics
 
 Binary-confirmed functions:
@@ -1793,7 +1903,7 @@ What ROCK already has:
 
 What is missing or suspect:
 
-- trustworthy custom constraint runtime layout;
+- exact custom constraint runtime field-read verification for the live type `0x0B` and type `0x13` interpreter cases;
 - physics-phase-safe custom target writes;
 - dedicated grab proxy body;
 - no-contact proxy filter/layer policy for a hidden authority anchor only, not for the whole grab interaction;
@@ -1808,9 +1918,9 @@ What is missing or suspect:
 Before any custom one-hand replacement can be implemented:
 
 1. Finish the custom runtime layout audit.
-   - Confirm final solver result count.
-   - Confirm final runtime size.
-   - Confirm ragdoll and linear motor offsets.
+   - Solver result count `12` is now coherent with FO4VR's native constraint-info utility for the current ROCK atom stream.
+   - Confirm final runtime size and whether `0x100` is required or simply padded.
+   - Confirm live type `0x0B` and type `0x13` runtime field reads by focused case inspection.
    - Confirm addInstance slot behavior and whether zeroing full runtime is sufficient.
 
 2. Finish step-phase integration design.
@@ -1835,6 +1945,7 @@ Before any custom one-hand replacement can be implemented:
 ## Open Questions
 
 - Does FO4VR's hknp bridge require doubled runtime memory for custom hkp constraints, as HIGGS did, or can it use exact runtime size safely?
+- Is ROCK's current `RUNTIME_REPORTED_SIZE = 0x100` intentionally padded, or can/should it be reduced after exact field-read verification?
 - Is ROCK's current custom add-instance callback called from any alternate path outside normal constraint insertion, or is runtime zeroing entirely owned by `0x1417E39C0`?
 - Can `hknpMalleableConstraintData` scale a custom motorized hkp constraint in a useful way, or is it only generic Havok compatibility plumbing in this binary?
 - What exactly does the malleable wrapper scale at solver/build input offset around `+0x24`?
@@ -1843,11 +1954,11 @@ Before any custom one-hand replacement can be implemented:
 - Can a direct hknp proxy body be safely created/destroyed without Bethesda `bhkNPCollisionObject`, or is the wrapper path required for production safety?
 - Which motion-properties fields beyond `+0x10/+0x14/+0x18/+0x1C` affect hknp held-object response?
 - Should loose weapon dynamic grab add lever-length-aware angular force scaling beyond mass cap, using grip-to-COM only as weight data?
-- Are ROCK's current linear motor runtime offsets the main old custom-motor stutter source, or only one of several sources along with phase timing and proxy drive snapping?
+- Are ROCK's current linear motor runtime offsets actually correct relative-to-current-runtime-cursor values, as the new utility audit suggests, and was old custom-motor stutter instead dominated by phase timing, body-A choice, proxy drive snapping, or competing authorities?
 
 ## Immediate Next Research Actions
 
-- Inspect custom constraint runtime usage deeper in FO4VR, now focused on runtime size/solver-result counts and atom interpreter behavior rather than normal-path addInstance.
+- Inspect custom constraint runtime usage deeper in FO4VR, now focused on exact type `0x0B` and type `0x13` interpreter field reads, runtime size, and atom interpreter behavior rather than normal-path addInstance.
 - Inspect `hknpMalleableConstraintData` solve behavior and fields.
 - Inspect no-contact layer behavior and generated body constraints.
 - Inspect direct hknp body creation or no-shape alternatives for a non-contact authority proxy.
