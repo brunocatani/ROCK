@@ -56,6 +56,68 @@ namespace rock::held_object_body_set_policy
     }
 }
 
+// ---- HeldObjectContactPolicy.h ----
+
+namespace rock::held_object_contact_policy
+{
+    /*
+     * Multipart held refs need one external-impact signal for the whole held
+     * object, not a feedback loop where two bodies from that same object keep
+     * telling grab code that the object is colliding with the world. This policy
+     * keeps the HIGGS connected-component rule at the ROCK contact boundary:
+     * same-held-object contacts are internal, while held-to-world/object/body
+     * contacts still notify the active grab.
+     */
+    struct HeldExternalContactInput
+    {
+        bool handHolding = false;
+        bool bodyAIsHeld = false;
+        bool bodyBIsHeld = false;
+        bool otherIsRightHand = false;
+        bool otherIsLeftHand = false;
+        bool otherIsRightPalmBody = false;
+        bool otherIsLeftPalmBody = false;
+        bool otherIsBodyCollider = false;
+        bool otherIsExternalProvider = false;
+    };
+
+    struct HeldExternalContactDecision
+    {
+        bool notify = false;
+        bool sameHeldObject = false;
+        const char* reason = "not-held-contact";
+    };
+
+    inline HeldExternalContactDecision evaluateHeldExternalContact(const HeldExternalContactInput& input)
+    {
+        if (!input.handHolding) {
+            return HeldExternalContactDecision{ .reason = "hand-not-holding" };
+        }
+        if (!input.bodyAIsHeld && !input.bodyBIsHeld) {
+            return HeldExternalContactDecision{ .reason = "no-held-endpoint" };
+        }
+        if (input.bodyAIsHeld && input.bodyBIsHeld) {
+            return HeldExternalContactDecision{
+                .sameHeldObject = true,
+                .reason = "same-held-object",
+            };
+        }
+        if (input.otherIsRightHand || input.otherIsLeftHand || input.otherIsRightPalmBody || input.otherIsLeftPalmBody) {
+            return HeldExternalContactDecision{ .reason = "hand-endpoint" };
+        }
+        if (input.otherIsBodyCollider) {
+            return HeldExternalContactDecision{ .reason = "body-collider-endpoint" };
+        }
+        if (input.otherIsExternalProvider) {
+            return HeldExternalContactDecision{ .reason = "external-provider-endpoint" };
+        }
+        return HeldExternalContactDecision{
+            .notify = true,
+            .reason = "external-held-impact",
+        };
+    }
+}
+
 // ---- HeldObjectDampingMath.h ----
 
 #include <algorithm>

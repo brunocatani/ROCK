@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/WeaponVisualRemapRuntime.h"
 
 #include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/WeaponInstanceWitnessRuntime.h"
 
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/BSLock.h"
@@ -125,6 +126,23 @@ namespace rock::weapon_visual_remap_runtime
             }
 
             return equipIndex;
+        }
+
+        std::optional<RE::BGSEquipIndex> findLiveCompatibleEquipIndex(
+            const std::vector<EquippedWeaponSnapshot>& snapshots,
+            const RE::TESForm* weaponForm)
+        {
+            if (!weaponForm) {
+                return std::nullopt;
+            }
+
+            for (const auto& snapshot : snapshots) {
+                if (snapshot.weaponForm == weaponForm) {
+                    return snapshot.equipIndex;
+                }
+            }
+
+            return std::nullopt;
         }
 
         bool snapshotAlreadyCaptured(
@@ -273,12 +291,10 @@ namespace rock::weapon_visual_remap_runtime
             EquippedWeaponSnapshot& firstObserved)
         {
             const auto snapshots = collectCurrentEquippedWeapons(actor, player);
-            if (snapshots.empty()) {
-                mismatchReason = "currentEquippedWeaponMissing";
-                return std::nullopt;
+            const bool hasCurrentSnapshots = !snapshots.empty();
+            if (hasCurrentSnapshots) {
+                firstObserved = snapshots.front();
             }
-
-            firstObserved = snapshots.front();
             mismatchReason = "targetMissing";
             const weapon_native_visual_remap_policy::NativeVisualRemapTargetWitness expected{
                 .formID = input.expectedWeaponFormID,
@@ -309,6 +325,66 @@ namespace rock::weapon_visual_remap_runtime
                 }
             }
 
+            weapon_instance_witness_runtime::AuthoritativeEquippedWeaponWitness authoritativeWitness{};
+            const bool authoritativeFallbackRequiresLiveEquipSnapshot =
+                actor.currentProcess &&
+                actor.currentProcess->middleHigh &&
+                hasCurrentSnapshots;
+            if (authoritativeFallbackRequiresLiveEquipSnapshot &&
+                weapon_instance_witness_runtime::tryGetAuthoritativeEquippedWeaponWitness(
+                    input.pendingInstanceSignature,
+                    authoritativeWitness)) {
+                auto* authoritativeForm = reinterpret_cast<RE::TESForm*>(authoritativeWitness.weaponFormAddress);
+                auto* authoritativeWeapon = authoritativeForm ? authoritativeForm->As<RE::TESObjectWEAP>() : nullptr;
+                const auto authoritativeEquipIndex = findLiveCompatibleEquipIndex(snapshots, authoritativeForm);
+                if (!authoritativeEquipIndex) {
+                    if (!mismatchReasonCaptured) {
+                        mismatchReason = "authoritativeWitnessNoLiveEquipSlot";
+                        mismatchReasonCaptured = true;
+                    }
+                    if (!hasCurrentSnapshots) {
+                        mismatchReason = "currentEquippedWeaponMissing";
+                    }
+                    return std::nullopt;
+                }
+
+                EquippedWeaponSnapshot authoritativeSnapshot{};
+                authoritativeSnapshot.weaponForm = authoritativeForm;
+                authoritativeSnapshot.weapon = authoritativeWeapon;
+                authoritativeSnapshot.instanceData = reinterpret_cast<RE::TBO_InstanceData*>(authoritativeWitness.instanceDataAddress);
+                authoritativeSnapshot.objectInstanceExtra = reinterpret_cast<const RE::BGSObjectInstanceExtra*>(authoritativeWitness.objectInstanceExtraAddress);
+                authoritativeSnapshot.equipIndex = *authoritativeEquipIndex;
+                authoritativeSnapshot.weaponFormID = authoritativeWitness.weaponFormID;
+                authoritativeSnapshot.weaponFormAddress = authoritativeWitness.weaponFormAddress;
+                authoritativeSnapshot.instanceDataAddress = authoritativeWitness.instanceDataAddress;
+                authoritativeSnapshot.objectInstanceExtraAddress = authoritativeWitness.objectInstanceExtraAddress;
+                authoritativeSnapshot.sourceSlotIndex = authoritativeWitness.stackIndex;
+                authoritativeSnapshot.source = weapon_instance_witness_runtime::sourceName(authoritativeWitness.source);
+
+                const weapon_native_visual_remap_policy::NativeVisualRemapTargetWitness observed{
+                    .formID = authoritativeSnapshot.weaponFormID,
+                    .formAddress = authoritativeSnapshot.weaponFormAddress,
+                    .instanceDataAddress = authoritativeSnapshot.instanceDataAddress,
+                    .objectInstanceExtraAddress = authoritativeSnapshot.objectInstanceExtraAddress,
+                };
+                const auto decision = weapon_native_visual_remap_policy::evaluateNativeVisualRemapTargetMatch(
+                    expected,
+                    observed);
+                if (decision.matches) {
+                    mismatchReason = decision.reason;
+                    return authoritativeSnapshot;
+                }
+
+                if (!mismatchReasonCaptured) {
+                    firstObserved = authoritativeSnapshot;
+                    mismatchReason = decision.reason;
+                    mismatchReasonCaptured = true;
+                }
+            }
+
+            if (!hasCurrentSnapshots) {
+                mismatchReason = "currentEquippedWeaponMissing";
+            }
             return std::nullopt;
         }
 

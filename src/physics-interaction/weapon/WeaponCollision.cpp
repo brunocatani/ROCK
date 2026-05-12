@@ -11,6 +11,7 @@
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/WeaponInstanceWitnessRuntime.h"
 #include "physics-interaction/weapon/WeaponVisualRemapRuntime.h"
 
 #include <intrin.h>
@@ -193,6 +194,21 @@ namespace rock
             const weapon_generation_identity_policy::EquippedWeaponInstanceWitness& witness,
             const char* reason)
         {
+            const char* eligibilityReason = "";
+            if (!weapon_instance_witness_runtime::nativeVisualRemapAllowedForWitness(
+                    witness.signature,
+                    eligibilityReason)) {
+                return weapon_visual_remap_runtime::RequestOutcome{
+                    .result = weapon_visual_remap_runtime::RequestResult::Disabled,
+                    .pendingInstanceSignature = witness.signature,
+                    .weaponFormID = witness.formID,
+                    .weaponFormAddress = witness.formAddress,
+                    .instanceDataAddress = witness.instanceDataAddress,
+                    .objectInstanceExtraAddress = witness.objectInstanceExtraAddress,
+                    .detail = eligibilityReason,
+                };
+            }
+
             return weapon_visual_remap_runtime::requestCurrentFirstPersonWeaponVisualRemap(
                 weapon_visual_remap_runtime::RequestInput{
                     .enabled = g_rockConfig.rockWeaponCollisionNativeVisualRemapEnabled,
@@ -222,6 +238,19 @@ namespace rock
             state = weapon_native_visual_remap_policy::recordNativeVisualRemapAcquireFailed(
                 state,
                 pendingInstanceSignature);
+        }
+
+        void clearAuthoritativeWitnessForSettledInstance(
+            const weapon_generation_identity_policy::EquippedWeaponInstanceWitness& witness,
+            const char* reason)
+        {
+            if (witness.signature == 0) {
+                return;
+            }
+
+            weapon_instance_witness_runtime::clearAuthoritativeEquippedWeaponWitness(
+                witness.signature,
+                reason);
         }
 
         float matrixDeterminant(const RE::NiMatrix3& matrix)
@@ -609,6 +638,27 @@ namespace rock
         weapon_generation_identity_policy::EquippedWeaponGenerationIdentity readEquippedWeaponGenerationIdentity()
         {
             weapon_generation_identity_policy::EquippedWeaponGenerationIdentity identity{};
+            weapon_instance_witness_runtime::AuthoritativeEquippedWeaponWitness authoritativeWitness{};
+            if (weapon_instance_witness_runtime::tryGetAuthoritativeEquippedWeaponIdentity(identity, &authoritativeWitness)) {
+                ROCK_LOG_SAMPLE_DEBUG(Weapon,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Using authoritative equipped weapon instance witness source={} sequence={} signature={:016X} form={:08X}/{:x} instance={:x} keyword={:x} extra={:x} mods={}/{} stack={} uniqueID={} name={}",
+                    weapon_instance_witness_runtime::sourceName(authoritativeWitness.source),
+                    authoritativeWitness.sequence,
+                    authoritativeWitness.signature,
+                    authoritativeWitness.weaponFormID,
+                    authoritativeWitness.weaponFormAddress,
+                    authoritativeWitness.instanceDataAddress,
+                    authoritativeWitness.instanceKeywordDataAddress,
+                    authoritativeWitness.objectInstanceExtraAddress,
+                    authoritativeWitness.activeModCount,
+                    authoritativeWitness.objectIndexDataCount,
+                    authoritativeWitness.stackIndex,
+                    authoritativeWitness.uniqueID,
+                    authoritativeWitness.displayName);
+                return identity;
+            }
+
             auto* player = f4vr::getPlayer();
             auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
             auto* equipData = processData ? processData->equipData : nullptr;
@@ -1123,6 +1173,7 @@ namespace rock
     {
         _cachedEquippedWeaponInstanceWitness = {};
         _pendingEquippedWeaponInstanceWitness = {};
+        weapon_instance_witness_runtime::clearAuthoritativeEquippedWeaponWitness(0, "weaponCollisionWitnessTrackingReset");
         resetStaleWeaponVisualTracking();
     }
 
@@ -2219,24 +2270,75 @@ namespace rock
                 _pendingWeaponKey == currentKey;
             if (_weaponBodyPending &&
                 hasWeaponBody() &&
-                !settingsChanged &&
                 currentKey != 0 &&
                 currentKey == _cachedWeaponKey &&
                 _pendingWeaponKey != 0 &&
                 _pendingWeaponKey != currentKey) {
-                ROCK_LOG_INFO(Weapon,
-                    "Weapon visual composition returned to cached key - cancelling transient pending replacement cached={:016X} stalePending={:016X}",
-                    _cachedWeaponKey,
-                    _pendingWeaponKey);
-                _weaponBodyPending = false;
-                _pendingWeaponKey = 0;
-                _pendingEquippedWeaponOwnerKey = 0;
-                _pendingEquippedWeaponInstanceWitness = {};
-                _pendingGeneratedWeaponVisualWitness = {};
-                resetStaleWeaponVisualTracking();
-                _generatedSourceSettleState = {};
-                _retryCounter = 0;
-                _pendingGeneratedRebuildAttemptRequested = false;
+                const auto returnedCachedPendingDecision =
+                    weapon_authority_lifecycle_policy::evaluateReturnedCachedVisualPending(
+                        weapon_authority_lifecycle_policy::ReturnedCachedVisualPendingInput{
+                            .hasExistingBodies = hasWeaponBody(),
+                            .settingsChanged = settingsChanged,
+                            .cachedKey = _cachedWeaponKey,
+                            .currentKey = currentKey,
+                            .pendingKey = _pendingWeaponKey,
+                            .cachedInstanceSignature = _cachedEquippedWeaponInstanceWitness.signature,
+                            .pendingInstanceSignature = _pendingEquippedWeaponInstanceWitness.signature,
+                            .cachedFormID = _cachedEquippedWeaponInstanceWitness.formID,
+                            .pendingFormID = _pendingEquippedWeaponInstanceWitness.formID,
+                            .cachedInstanceDataAddress = _cachedEquippedWeaponInstanceWitness.instanceDataAddress,
+                            .pendingInstanceDataAddress = _pendingEquippedWeaponInstanceWitness.instanceDataAddress,
+                            .cachedInstanceKeywordDataAddress = _cachedEquippedWeaponInstanceWitness.instanceKeywordDataAddress,
+                            .pendingInstanceKeywordDataAddress = _pendingEquippedWeaponInstanceWitness.instanceKeywordDataAddress,
+                            .cachedObjectInstanceExtraAddress = _cachedEquippedWeaponInstanceWitness.objectInstanceExtraAddress,
+                            .pendingObjectInstanceExtraAddress = _pendingEquippedWeaponInstanceWitness.objectInstanceExtraAddress,
+                        });
+                if (returnedCachedPendingDecision.keepPendingForStaleVisibleCheck) {
+                    ROCK_LOG_INFO(Weapon,
+                        "Weapon visual composition returned to cached key with same-form pending equipped instance - keeping pending witness for stale visible remap cached={:016X} pending={:016X} cachedInstance={:016X} pendingInstance={:016X} cachedForm={:08X} pendingForm={:08X} cachedInstanceData={:x} pendingInstanceData={:x} cachedKeywordData={:x} pendingKeywordData={:x} cachedExtra={:x} pendingExtra={:x} reason={}",
+                        _cachedWeaponKey,
+                        _pendingWeaponKey,
+                        _cachedEquippedWeaponInstanceWitness.signature,
+                        _pendingEquippedWeaponInstanceWitness.signature,
+                        _cachedEquippedWeaponInstanceWitness.formID,
+                        _pendingEquippedWeaponInstanceWitness.formID,
+                        _cachedEquippedWeaponInstanceWitness.instanceDataAddress,
+                        _pendingEquippedWeaponInstanceWitness.instanceDataAddress,
+                        _cachedEquippedWeaponInstanceWitness.instanceKeywordDataAddress,
+                        _pendingEquippedWeaponInstanceWitness.instanceKeywordDataAddress,
+                        _cachedEquippedWeaponInstanceWitness.objectInstanceExtraAddress,
+                        _pendingEquippedWeaponInstanceWitness.objectInstanceExtraAddress,
+                        returnedCachedPendingDecision.reason);
+                    requestPendingGeneratedRebuildAttemptNextFrame();
+                } else if (returnedCachedPendingDecision.cancelPending) {
+                    ROCK_LOG_INFO(Weapon,
+                        "Weapon visual composition returned to cached key - cancelling transient pending replacement cached={:016X} stalePending={:016X} cachedInstance={:016X} pendingInstance={:016X} cachedForm={:08X} pendingForm={:08X} cachedInstanceData={:x} pendingInstanceData={:x} cachedKeywordData={:x} pendingKeywordData={:x} cachedExtra={:x} pendingExtra={:x} reason={}",
+                        _cachedWeaponKey,
+                        _pendingWeaponKey,
+                        _cachedEquippedWeaponInstanceWitness.signature,
+                        _pendingEquippedWeaponInstanceWitness.signature,
+                        _cachedEquippedWeaponInstanceWitness.formID,
+                        _pendingEquippedWeaponInstanceWitness.formID,
+                        _cachedEquippedWeaponInstanceWitness.instanceDataAddress,
+                        _pendingEquippedWeaponInstanceWitness.instanceDataAddress,
+                        _cachedEquippedWeaponInstanceWitness.instanceKeywordDataAddress,
+                        _pendingEquippedWeaponInstanceWitness.instanceKeywordDataAddress,
+                        _cachedEquippedWeaponInstanceWitness.objectInstanceExtraAddress,
+                        _pendingEquippedWeaponInstanceWitness.objectInstanceExtraAddress,
+                        returnedCachedPendingDecision.reason);
+                    _weaponBodyPending = false;
+                    _pendingWeaponKey = 0;
+                    _pendingEquippedWeaponOwnerKey = 0;
+                    clearAuthoritativeWitnessForSettledInstance(
+                        _pendingEquippedWeaponInstanceWitness,
+                        "returnedCachedVisualCancelledPending");
+                    _pendingEquippedWeaponInstanceWitness = {};
+                    _pendingGeneratedWeaponVisualWitness = {};
+                    resetStaleWeaponVisualTracking();
+                    _generatedSourceSettleState = {};
+                    _retryCounter = 0;
+                    _pendingGeneratedRebuildAttemptRequested = false;
+                }
             }
             if (hasWeaponBody() && settingsChanged && !settingsRebuildAlreadyPending) {
                 ROCK_LOG_INFO(Weapon, "Generated weapon collision settings changed — keeping current bodies while replacement is pending");
@@ -2260,6 +2362,9 @@ namespace rock
                 _weaponBodyPending = false;
                 _pendingWeaponKey = 0;
                 _pendingEquippedWeaponOwnerKey = 0;
+                clearAuthoritativeWitnessForSettledInstance(
+                    _pendingEquippedWeaponInstanceWitness,
+                    "returnedUnchangedVisualCancelledPending");
                 _pendingEquippedWeaponInstanceWitness = {};
                 _pendingGeneratedWeaponVisualWitness = {};
                 resetStaleWeaponVisualTracking();
@@ -2277,6 +2382,9 @@ namespace rock
                     currentKey);
                 _weaponBodyPending = false;
                 _pendingEquippedWeaponOwnerKey = 0;
+                clearAuthoritativeWitnessForSettledInstance(
+                    _pendingEquippedWeaponInstanceWitness,
+                    "pendingInvariantZeroKeyRepaired");
                 _pendingEquippedWeaponInstanceWitness = {};
                 _pendingGeneratedWeaponVisualWitness = {};
                 resetStaleWeaponVisualTracking();
@@ -2377,10 +2485,26 @@ namespace rock
                             _cachedEquippedWeaponInstanceWitness.signature != 0 &&
                             replacementInstanceWitness.signature != 0 &&
                             replacementInstanceWitness.signature != _cachedEquippedWeaponInstanceWitness.signature;
+                        const bool equippedRemapWitnessChanged =
+                            weapon_authority_lifecycle_policy::sameFormEquippedInstanceRemapWitnessChanged(
+                                weapon_authority_lifecycle_policy::EquippedInstanceRemapWitnessInput{
+                                    .cachedInstanceSignature = _cachedEquippedWeaponInstanceWitness.signature,
+                                    .pendingInstanceSignature = replacementInstanceWitness.signature,
+                                    .cachedFormID = _cachedEquippedWeaponInstanceWitness.formID,
+                                    .pendingFormID = replacementInstanceWitness.formID,
+                                    .cachedInstanceDataAddress = _cachedEquippedWeaponInstanceWitness.instanceDataAddress,
+                                    .pendingInstanceDataAddress = replacementInstanceWitness.instanceDataAddress,
+                                    .cachedInstanceKeywordDataAddress = _cachedEquippedWeaponInstanceWitness.instanceKeywordDataAddress,
+                                    .pendingInstanceKeywordDataAddress = replacementInstanceWitness.instanceKeywordDataAddress,
+                                    .cachedObjectInstanceExtraAddress = _cachedEquippedWeaponInstanceWitness.objectInstanceExtraAddress,
+                                    .pendingObjectInstanceExtraAddress = replacementInstanceWitness.objectInstanceExtraAddress,
+                                });
+                        const bool staleVisibleEquipWitnessChanged =
+                            equippedInstanceChanged || equippedRemapWitnessChanged || ownerIdentityChanged;
                         const auto staleVisualDecision = weapon_instance_visual_witness_policy::evaluateInstanceVisualSync(
                             weapon_instance_visual_witness_policy::InstanceVisualSyncInput{
                                 .hasExistingBodies = hasWeaponBody(),
-                                .equippedInstanceChanged = equippedInstanceChanged || ownerIdentityChanged,
+                                .equippedInstanceChanged = staleVisibleEquipWitnessChanged,
                                 .settingsChanged = settingsChangedForRebuild,
                                 .hasBuildableSource = hasBuildableSource,
                                 .cachedSource = _cachedGeneratedSourceCompleteness,
@@ -2406,7 +2530,7 @@ namespace rock
                                 weapon_native_visual_remap_policy::NativeVisualRemapInput{
                                     .enabled = g_rockConfig.rockWeaponCollisionNativeVisualRemapEnabled,
                                     .staleVisualSource = staleVisualDecision.staleVisualSource,
-                                    .equippedInstanceChanged = equippedInstanceChanged || ownerIdentityChanged,
+                                    .equippedInstanceChanged = staleVisibleEquipWitnessChanged,
                                     .pendingInstanceSignature = replacementInstanceWitness.signature,
                                     .lastRequestedInstanceSignature = _lastNativeVisualRemapRequestedInstanceSignature,
                                     .attemptState = _nativeVisualRemapAttemptState,
@@ -2481,13 +2605,18 @@ namespace rock
                             }
                             ROCK_LOG_SAMPLE_WARN(Weapon,
                                 g_rockConfig.rockLogSampleMilliseconds,
-                                "Equipped weapon instance changed but generated visual source is stale - keeping cached bodies active cachedKey={:016X} pendingKey={:016X} cachedOwner={:016X} pendingOwner={:016X} cachedInstance={:016X} pendingInstance={:016X} cachedMods={} pendingMods={} cachedExtra={:x} pendingExtra={:x} visualKey={:016X} roots={} nodes={} visibleTriShapes={} cachedSources={} observedSources={} cachedPoints={} observedPoints={} cachedMask=0x{:08X} observedMask=0x{:08X} observations={} nativeRemap={} nativeDetail={} nativeForm={:08X}/{:x} nativeInstance={:x} nativeExtra={:x} nativeEquipIndex={} nativeSource={} nativeSlot={} reason={}",
+                                "Equipped weapon instance changed but generated visual source is stale - keeping cached bodies active cachedKey={:016X} pendingKey={:016X} cachedOwner={:016X} pendingOwner={:016X} cachedInstance={:016X} pendingInstance={:016X} remapWitnessChanged={} cachedInstanceData={:x} pendingInstanceData={:x} cachedKeywordData={:x} pendingKeywordData={:x} cachedMods={} pendingMods={} cachedExtra={:x} pendingExtra={:x} visualKey={:016X} roots={} nodes={} visibleTriShapes={} cachedSources={} observedSources={} cachedPoints={} observedPoints={} cachedMask=0x{:08X} observedMask=0x{:08X} observations={} nativeRemap={} nativeDetail={} nativeForm={:08X}/{:x} nativeInstance={:x} nativeExtra={:x} nativeEquipIndex={} nativeSource={} nativeSlot={} reason={}",
                                 _cachedWeaponKey,
                                 replacementKey,
                                 _cachedEquippedWeaponOwnerKey,
                                 replacementOwnerKey,
                                 _cachedEquippedWeaponInstanceWitness.signature,
                                 replacementInstanceWitness.signature,
+                                equippedRemapWitnessChanged,
+                                _cachedEquippedWeaponInstanceWitness.instanceDataAddress,
+                                replacementInstanceWitness.instanceDataAddress,
+                                _cachedEquippedWeaponInstanceWitness.instanceKeywordDataAddress,
+                                replacementInstanceWitness.instanceKeywordDataAddress,
                                 _cachedEquippedWeaponInstanceWitness.activeModCount,
                                 replacementInstanceWitness.activeModCount,
                                 _cachedEquippedWeaponInstanceWitness.objectInstanceExtraAddress,
@@ -2546,6 +2675,9 @@ namespace rock
                                 _cachedGeneratedWeaponVisualWitness = observedGeneratedVisualWitness;
                                 _pendingWeaponKey = 0;
                                 _pendingEquippedWeaponOwnerKey = 0;
+                                clearAuthoritativeWitnessForSettledInstance(
+                                    replacementInstanceWitness,
+                                    "sourceReplacementAdoptedExistingBodies");
                                 _pendingEquippedWeaponInstanceWitness = {};
                                 _pendingGeneratedWeaponVisualWitness = {};
                                 _weaponBodyPending = false;
@@ -2672,6 +2804,9 @@ namespace rock
                                 _weaponBodyPending = false;
                                 _pendingWeaponKey = 0;
                                 _pendingEquippedWeaponOwnerKey = 0;
+                                clearAuthoritativeWitnessForSettledInstance(
+                                    replacementInstanceWitness,
+                                    "generatedCollisionReplacementSettled");
                                 _pendingEquippedWeaponInstanceWitness = {};
                                 _pendingGeneratedWeaponVisualWitness = {};
                                 resetStaleWeaponVisualTracking();
@@ -3328,6 +3463,7 @@ namespace rock
             resetWeaponBodySetGeneration();
             _pendingWeaponKey = decision.pendingKey;
             _pendingEquippedWeaponOwnerKey = decision.pending ? pendingOwnerKey : 0;
+            weapon_instance_witness_runtime::clearAuthoritativeEquippedWeaponWitness(0, "generatedCollisionScaleInvalidatedIdentity");
             _pendingEquippedWeaponInstanceWitness = {};
             _visualSettleState = {};
             resetGeneratedSourceCompletenessTracking();

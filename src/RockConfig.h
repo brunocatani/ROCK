@@ -411,11 +411,11 @@ namespace rock
         float rockHeldImpactHapticCooldownSeconds = 0.12f;
         float rockHeldImpactHapticDampedMultiplier = 0.55f;
         bool rockShoulderStashHapticsEnabled = true;
-        float rockShoulderStashCandidateHapticDurationSeconds = 0.025f;
-        float rockShoulderStashCandidateHapticIntensity = 0.20f;
-        float rockShoulderStashCandidateHapticIntervalSeconds = 0.20f;
-        float rockShoulderStashCommitHapticDurationSeconds = 0.08f;
-        float rockShoulderStashCommitHapticIntensity = 0.50f;
+        float rockShoulderStashCandidateHapticDurationSeconds = 0.05f;
+        float rockShoulderStashCandidateHapticIntensity = 0.42f;
+        float rockShoulderStashCandidateHapticIntervalSeconds = 0.12f;
+        float rockShoulderStashCommitHapticDurationSeconds = 0.12f;
+        float rockShoulderStashCommitHapticIntensity = 0.85f;
 
     private:
         void resetToDefaults();

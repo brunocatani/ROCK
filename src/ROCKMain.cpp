@@ -14,6 +14,7 @@
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/weapon/SeeThroughScopesCompatibility.h"
+#include "physics-interaction/weapon/WeaponInstanceWitnessRuntime.h"
 
 namespace
 {
@@ -290,6 +291,10 @@ namespace
             see_through_scopes::refreshRuntimeState();
             logger::info("ROCK: Config loaded (rockEnabled={}).", g_rockConfig.rockEnabled);
             rock::input_remap_runtime::installInputRemapHooks();
+            if (!rock::weapon_instance_witness_runtime::installWeaponInstanceWitnessRuntime()) {
+                logger::error("ROCK: Weapon instance witness runtime failed to install.");
+            }
+            rock::weapon_instance_witness_runtime::noteGameLoadWeaponWitnessBaseline();
             rock::debug::Install();
 
             s_frikAvailable = true;
@@ -302,6 +307,7 @@ namespace
 
         if (msg->type == F4SE::MessagingInterface::kPostLoadGame || msg->type == F4SE::MessagingInterface::kNewGame) {
             logger::info("ROCK: New game session -- resetting PhysicsInteraction...");
+            rock::weapon_instance_witness_runtime::noteGameSessionReset("newGameSession");
             const auto providerGeneration = bumpGeneration(s_providerGeneration);
             if (s_physicsInteraction) {
                 s_physicsInteraction->noteProviderLifecycle(
@@ -315,6 +321,7 @@ namespace
                 see_through_scopes::resetRuntimeState();
                 g_rockConfig.reload();
                 see_through_scopes::refreshRuntimeState();
+                rock::weapon_instance_witness_runtime::noteGameLoadWeaponWitnessBaseline();
                 logger::info("ROCK: Config reloaded for new session.");
             }
         }

@@ -196,6 +196,86 @@ int main()
         "Pip-Boy missing first-person visual root cannot reuse stale-visible retry state as native remap evidence",
         pipboyMissingVisualDoesNotRetry.requestRemap);
 
+    const auto sameFormPointerOnlyRemapWitnessChanged = sameFormEquippedInstanceRemapWitnessChanged(EquippedInstanceRemapWitnessInput{
+        .cachedInstanceSignature = 0xC001,
+        .pendingInstanceSignature = 0xC001,
+        .cachedFormID = 0x06033B60,
+        .pendingFormID = 0x06033B60,
+        .cachedInstanceDataAddress = 0x2000,
+        .pendingInstanceDataAddress = 0x2100,
+        .cachedObjectInstanceExtraAddress = 0x3000,
+        .pendingObjectInstanceExtraAddress = 0x3100,
+    });
+    ok &= expectTrue(
+        "same-form native remap witness changes when instance data or object extra changes even if content signature is stable",
+        sameFormPointerOnlyRemapWitnessChanged);
+
+    const auto differentFormPointerOnlyRemapWitnessChanged = sameFormEquippedInstanceRemapWitnessChanged(EquippedInstanceRemapWitnessInput{
+        .cachedInstanceSignature = 0xC001,
+        .pendingInstanceSignature = 0xC001,
+        .cachedFormID = 0x06033B60,
+        .pendingFormID = 0x000DF42E,
+        .cachedInstanceDataAddress = 0x2000,
+        .pendingInstanceDataAddress = 0x2100,
+        .cachedObjectInstanceExtraAddress = 0x3000,
+        .pendingObjectInstanceExtraAddress = 0x3100,
+    });
+    ok &= expectFalse(
+        "different-form native remap witness changes do not enter same-form stale-visible remap",
+        differentFormPointerOnlyRemapWitnessChanged);
+
+    const auto amcarMissingVisualReturnedCached = evaluateReturnedCachedVisualPending(ReturnedCachedVisualPendingInput{
+        .hasExistingBodies = true,
+        .settingsChanged = false,
+        .cachedKey = 0xA001,
+        .currentKey = 0xA001,
+        .pendingKey = 0xB001,
+        .cachedInstanceSignature = 0xC001,
+        .pendingInstanceSignature = 0xC001,
+        .cachedFormID = 0x06033B60,
+        .pendingFormID = 0x06033B60,
+        .cachedInstanceDataAddress = 0x2000,
+        .pendingInstanceDataAddress = 0x2100,
+        .cachedObjectInstanceExtraAddress = 0x3000,
+        .pendingObjectInstanceExtraAddress = 0x3100,
+    });
+    ok &= expectFalse("AMCAR missing visual return does not cancel same-form changed native remap witness", amcarMissingVisualReturnedCached.cancelPending);
+    ok &= expectTrue(
+        "AMCAR missing visual return keeps pending native remap witness so stale-visible remap can run",
+        amcarMissingVisualReturnedCached.keepPendingForStaleVisibleCheck);
+
+    const auto pipboyDifferentWeaponReturnedCached = evaluateReturnedCachedVisualPending(ReturnedCachedVisualPendingInput{
+        .hasExistingBodies = true,
+        .settingsChanged = false,
+        .cachedKey = 0xA001,
+        .currentKey = 0xA001,
+        .pendingKey = 0xB001,
+        .cachedInstanceSignature = 0xC001,
+        .pendingInstanceSignature = 0xC002,
+        .cachedFormID = 0x06033B60,
+        .pendingFormID = 0x000DF42E,
+    });
+    ok &= expectTrue("Pip-Boy different weapon returning cached visual cancels pending ROCK remap state", pipboyDifferentWeaponReturnedCached.cancelPending);
+    ok &= expectFalse(
+        "Pip-Boy different weapon returning cached visual does not enter stale-visible remap",
+        pipboyDifferentWeaponReturnedCached.keepPendingForStaleVisibleCheck);
+
+    const auto transientMissingVisualReturnedCached = evaluateReturnedCachedVisualPending(ReturnedCachedVisualPendingInput{
+        .hasExistingBodies = true,
+        .settingsChanged = false,
+        .cachedKey = 0xA001,
+        .currentKey = 0xA001,
+        .pendingKey = 0xB001,
+        .cachedInstanceSignature = 0xC001,
+        .pendingInstanceSignature = 0xC001,
+        .cachedFormID = 0x06033B60,
+        .pendingFormID = 0x06033B60,
+    });
+    ok &= expectTrue("same equipped instance returning cached visual remains a transient cancel", transientMissingVisualReturnedCached.cancelPending);
+    ok &= expectFalse(
+        "same equipped instance returning cached visual does not request stale-visible remap",
+        transientMissingVisualReturnedCached.keepPendingForStaleVisibleCheck);
+
     auto exhaustedSightAttempt = recordNativeVisualRemapQueued(NativeVisualRemapAttemptState{}, 0xD001);
     exhaustedSightAttempt = observeNativeVisualRemapStillStale(exhaustedSightAttempt, 0xD001);
     exhaustedSightAttempt = observeNativeVisualRemapStillStale(exhaustedSightAttempt, 0xD001);

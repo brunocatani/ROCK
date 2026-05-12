@@ -450,11 +450,11 @@ namespace rock
         rockHeldImpactHapticCooldownSeconds = 0.12f;
         rockHeldImpactHapticDampedMultiplier = 0.55f;
         rockShoulderStashHapticsEnabled = true;
-        rockShoulderStashCandidateHapticDurationSeconds = 0.025f;
-        rockShoulderStashCandidateHapticIntensity = 0.20f;
-        rockShoulderStashCandidateHapticIntervalSeconds = 0.20f;
-        rockShoulderStashCommitHapticDurationSeconds = 0.08f;
-        rockShoulderStashCommitHapticIntensity = 0.50f;
+        rockShoulderStashCandidateHapticDurationSeconds = 0.05f;
+        rockShoulderStashCandidateHapticIntensity = 0.42f;
+        rockShoulderStashCandidateHapticIntervalSeconds = 0.12f;
+        rockShoulderStashCommitHapticDurationSeconds = 0.12f;
+        rockShoulderStashCommitHapticIntensity = 0.85f;
 
     }
 
@@ -1492,12 +1492,12 @@ namespace rock
         rockShoulderStashHapticsEnabled =
             ini.GetBoolValue(SECTION, "bShoulderStashHapticsEnabled", rockShoulderStashHapticsEnabled);
         readClampedFloat(
-            "fShoulderStashCandidateHapticDurationSeconds", rockShoulderStashCandidateHapticDurationSeconds, 0.025f, 0.0f, 0.2f);
-        readClampedFloat("fShoulderStashCandidateHapticIntensity", rockShoulderStashCandidateHapticIntensity, 0.20f, 0.0f, 1.0f);
-        readClampedFloat("fShoulderStashCandidateHapticIntervalSeconds", rockShoulderStashCandidateHapticIntervalSeconds, 0.20f, 0.0f, 2.0f);
+            "fShoulderStashCandidateHapticDurationSeconds", rockShoulderStashCandidateHapticDurationSeconds, 0.05f, 0.0f, 0.2f);
+        readClampedFloat("fShoulderStashCandidateHapticIntensity", rockShoulderStashCandidateHapticIntensity, 0.42f, 0.0f, 1.0f);
+        readClampedFloat("fShoulderStashCandidateHapticIntervalSeconds", rockShoulderStashCandidateHapticIntervalSeconds, 0.12f, 0.0f, 2.0f);
         readClampedFloat(
-            "fShoulderStashCommitHapticDurationSeconds", rockShoulderStashCommitHapticDurationSeconds, 0.08f, 0.0f, 0.2f);
-        readClampedFloat("fShoulderStashCommitHapticIntensity", rockShoulderStashCommitHapticIntensity, 0.50f, 0.0f, 1.0f);
+            "fShoulderStashCommitHapticDurationSeconds", rockShoulderStashCommitHapticDurationSeconds, 0.12f, 0.0f, 0.2f);
+        readClampedFloat("fShoulderStashCommitHapticIntensity", rockShoulderStashCommitHapticIntensity, 0.85f, 0.0f, 1.0f);
 
     }
 

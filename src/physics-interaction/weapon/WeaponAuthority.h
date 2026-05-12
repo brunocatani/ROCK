@@ -236,6 +236,131 @@ namespace rock::weapon_authority_lifecycle_policy
             .reason = resetForTransition ? "pendingKeyStarted" : "pendingKeyContinuing",
         };
     }
+
+    struct ReturnedCachedVisualPendingInput
+    {
+        bool hasExistingBodies = false;
+        bool settingsChanged = false;
+        std::uint64_t cachedKey = 0;
+        std::uint64_t currentKey = 0;
+        std::uint64_t pendingKey = 0;
+        std::uint64_t cachedInstanceSignature = 0;
+        std::uint64_t pendingInstanceSignature = 0;
+        std::uint32_t cachedFormID = 0;
+        std::uint32_t pendingFormID = 0;
+        std::uintptr_t cachedInstanceDataAddress = 0;
+        std::uintptr_t pendingInstanceDataAddress = 0;
+        std::uintptr_t cachedInstanceKeywordDataAddress = 0;
+        std::uintptr_t pendingInstanceKeywordDataAddress = 0;
+        std::uintptr_t cachedObjectInstanceExtraAddress = 0;
+        std::uintptr_t pendingObjectInstanceExtraAddress = 0;
+    };
+
+    struct ReturnedCachedVisualPendingDecision
+    {
+        bool cancelPending = false;
+        bool keepPendingForStaleVisibleCheck = false;
+        const char* reason = "notReturnedCachedPending";
+    };
+
+    struct EquippedInstanceRemapWitnessInput
+    {
+        std::uint64_t cachedInstanceSignature = 0;
+        std::uint64_t pendingInstanceSignature = 0;
+        std::uint32_t cachedFormID = 0;
+        std::uint32_t pendingFormID = 0;
+        std::uintptr_t cachedInstanceDataAddress = 0;
+        std::uintptr_t pendingInstanceDataAddress = 0;
+        std::uintptr_t cachedInstanceKeywordDataAddress = 0;
+        std::uintptr_t pendingInstanceKeywordDataAddress = 0;
+        std::uintptr_t cachedObjectInstanceExtraAddress = 0;
+        std::uintptr_t pendingObjectInstanceExtraAddress = 0;
+    };
+
+    inline bool sameFormEquippedInstanceRemapWitnessChanged(const EquippedInstanceRemapWitnessInput& input)
+    {
+        const bool sameWeaponForm =
+            input.cachedFormID != 0 &&
+            input.pendingFormID != 0 &&
+            input.cachedFormID == input.pendingFormID;
+        if (!sameWeaponForm) {
+            return false;
+        }
+
+        if (input.cachedInstanceSignature != 0 &&
+            input.pendingInstanceSignature != 0 &&
+            input.cachedInstanceSignature != input.pendingInstanceSignature) {
+            return true;
+        }
+
+        if (input.cachedInstanceDataAddress != 0 &&
+            input.pendingInstanceDataAddress != 0 &&
+            input.cachedInstanceDataAddress != input.pendingInstanceDataAddress) {
+            return true;
+        }
+
+        if (input.cachedInstanceKeywordDataAddress != 0 &&
+            input.pendingInstanceKeywordDataAddress != 0 &&
+            input.cachedInstanceKeywordDataAddress != input.pendingInstanceKeywordDataAddress) {
+            return true;
+        }
+
+        return input.cachedObjectInstanceExtraAddress != 0 &&
+            input.pendingObjectInstanceExtraAddress != 0 &&
+            input.cachedObjectInstanceExtraAddress != input.pendingObjectInstanceExtraAddress;
+    }
+
+    inline ReturnedCachedVisualPendingDecision evaluateReturnedCachedVisualPending(
+        const ReturnedCachedVisualPendingInput& input)
+    {
+        /*
+         * Manual weapon mod edits can remove the first-person weapon root, then
+         * restore the same stale visible tree. Cancelling the pending equipped
+         * witness at that point prevents the stale-visible native remap policy
+         * from ever running, which leaves the last applied mod without a body.
+         * The content signature can remain stable for the exact failure case,
+         * so the remap witness also includes the native instance-data and
+         * object-instance-extra pointers that the attach remap task must match.
+         * Different-form returns are weapon swaps and must stay on the normal
+         * native attach path instead of forcing ROCK's remap task.
+         */
+        if (!input.hasExistingBodies || input.settingsChanged || input.cachedKey == 0 || input.currentKey == 0 ||
+            input.pendingKey == 0 || input.currentKey != input.cachedKey || input.pendingKey == input.currentKey) {
+            return ReturnedCachedVisualPendingDecision{};
+        }
+
+        const bool sameWeaponForm =
+            input.cachedFormID != 0 &&
+            input.pendingFormID != 0 &&
+            input.cachedFormID == input.pendingFormID;
+        const bool remapWitnessChanged = sameFormEquippedInstanceRemapWitnessChanged(
+            EquippedInstanceRemapWitnessInput{
+                .cachedInstanceSignature = input.cachedInstanceSignature,
+                .pendingInstanceSignature = input.pendingInstanceSignature,
+                .cachedFormID = input.cachedFormID,
+                .pendingFormID = input.pendingFormID,
+                .cachedInstanceDataAddress = input.cachedInstanceDataAddress,
+                .pendingInstanceDataAddress = input.pendingInstanceDataAddress,
+                .cachedInstanceKeywordDataAddress = input.cachedInstanceKeywordDataAddress,
+                .pendingInstanceKeywordDataAddress = input.pendingInstanceKeywordDataAddress,
+                .cachedObjectInstanceExtraAddress = input.cachedObjectInstanceExtraAddress,
+                .pendingObjectInstanceExtraAddress = input.pendingObjectInstanceExtraAddress,
+            });
+
+        if (remapWitnessChanged) {
+            return ReturnedCachedVisualPendingDecision{
+                .cancelPending = false,
+                .keepPendingForStaleVisibleCheck = true,
+                .reason = "sameWeaponRemapWitnessChangedCachedVisualReturned",
+            };
+        }
+
+        return ReturnedCachedVisualPendingDecision{
+            .cancelPending = true,
+            .keepPendingForStaleVisibleCheck = false,
+            .reason = sameWeaponForm ? "transientMissingVisualReturnedCached" : "differentWeaponReturnedCachedVisual",
+        };
+    }
 }
 
 // ---- WeaponVisualAuthorityMath.h ----

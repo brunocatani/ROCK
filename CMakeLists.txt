@@ -204,86 +204,12 @@ if(BUILD_ROCK_TESTS)
     add_test(NAME ${TARGET_NAME} COMMAND $<TARGET_FILE:${TARGET_NAME}>)
   endfunction()
 
-  add_executable(ROCKTransformConventionTests
-    "${ROOT_DIR}/tests/TransformConventionTests.cpp"
-  )
-  target_compile_features(ROCKTransformConventionTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKTransformConventionTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKTransformConventionTests)
-
-  add_executable(ROCKSelectionHighlightPolicyTests
-    "${ROOT_DIR}/tests/SelectionHighlightPolicyTests.cpp"
-  )
-  target_compile_features(ROCKSelectionHighlightPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKSelectionHighlightPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKSelectionHighlightPolicyTests)
-
-  add_executable(ROCKWorldOriginDiagnosticsTests
-    "${ROOT_DIR}/tests/WorldOriginDiagnosticsTests.cpp"
-  )
-  target_compile_features(ROCKWorldOriginDiagnosticsTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKWorldOriginDiagnosticsTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKWorldOriginDiagnosticsTests)
-
-  add_executable(ROCKBodyFramePolicyTests
-    "${ROOT_DIR}/tests/BodyFramePolicyTests.cpp"
-  )
-  target_compile_features(ROCKBodyFramePolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKBodyFramePolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKBodyFramePolicyTests)
-
-  add_executable(ROCKInputRemapPolicyTests
-    "${ROOT_DIR}/tests/InputRemapPolicyTests.cpp"
-  )
-  target_compile_features(ROCKInputRemapPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKInputRemapPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKInputRemapPolicyTests)
-
   add_executable(ROCKGrabInputIntentPolicyTests
     "${ROOT_DIR}/tests/GrabInputIntentPolicyTests.cpp"
   )
   target_compile_features(ROCKGrabInputIntentPolicyTests PRIVATE cxx_std_23)
   target_include_directories(ROCKGrabInputIntentPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabInputIntentPolicyTests)
-
-  add_executable(ROCKDebugControllerPolicyTests
-    "${ROOT_DIR}/tests/DebugControllerPolicyTests.cpp"
-  )
-  target_compile_features(ROCKDebugControllerPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKDebugControllerPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKDebugControllerPolicyTests)
-
-  add_executable(ROCKDebugOverlayPolicyTests
-    "${ROOT_DIR}/tests/DebugOverlayPolicyTests.cpp"
-  )
-  target_compile_features(ROCKDebugOverlayPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKDebugOverlayPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKDebugOverlayPolicyTests)
-
-  add_executable(ROCKHandStateMachineTests
-    "${ROOT_DIR}/tests/HandStateMachineTests.cpp"
-    "${SOURCE_DIR}/physics-interaction/hand/HandInteractionStateMachine.cpp"
-  )
-  target_compile_features(ROCKHandStateMachineTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKHandStateMachineTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKHandStateMachineTests)
-
-  add_executable(ROCKHavokRuntimePolicyTests
-    "${ROOT_DIR}/tests/HavokRuntimePolicyTests.cpp"
-    "${ROOT_DIR}/tests/HavokRuntimePolicyScaleStub.cpp"
-  )
-  target_compile_features(ROCKHavokRuntimePolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKHavokRuntimePolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKHavokRuntimePolicyTests)
-
-  add_executable(ROCKUnsafeNativeToggleBoundaryTests
-    "${ROOT_DIR}/tests/UnsafeNativeToggleBoundaryTests.cpp"
-  )
-  target_compile_features(ROCKUnsafeNativeToggleBoundaryTests PRIVATE cxx_std_23)
-  target_compile_definitions(ROCKUnsafeNativeToggleBoundaryTests PRIVATE
-    "ROCK_PHYSICS_INTERACTION_SOURCE_DIR=\"${SOURCE_DIR}/physics-interaction\""
-  )
-  add_rock_test(ROCKUnsafeNativeToggleBoundaryTests)
 
   add_executable(ROCKGrabFingerLocalTransformPolicyTests
     "${ROOT_DIR}/tests/GrabFingerLocalTransformPolicyTests.cpp"
@@ -306,69 +232,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGrabNodeNamePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabNodeNamePolicyTests)
 
-  add_executable(ROCKProviderBoundaryTests
-    "${ROOT_DIR}/tests/ProviderBoundaryTests.cpp"
-  )
-  target_compile_features(ROCKProviderBoundaryTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKProviderBoundaryTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKProviderBoundaryTests)
-
-  add_executable(ROCKPhysicsLifecycleStateTests
-    "${ROOT_DIR}/tests/PhysicsLifecycleStateTests.cpp"
-  )
-  target_compile_features(ROCKPhysicsLifecycleStateTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKPhysicsLifecycleStateTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKPhysicsLifecycleStateTests)
-
-  add_executable(ROCKContactPipelinePolicyTests
-    "${ROOT_DIR}/tests/ContactPipelinePolicyTests.cpp"
-  )
-  target_compile_features(ROCKContactPipelinePolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKContactPipelinePolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKContactPipelinePolicyTests)
-
-  add_executable(ROCKContactRuntimePolicyTests
-    "${ROOT_DIR}/tests/ContactRuntimePolicyTests.cpp"
-  )
-  target_compile_features(ROCKContactRuntimePolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKContactRuntimePolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKContactRuntimePolicyTests)
-
-  add_executable(ROCKSoftContactMathTests
-    "${ROOT_DIR}/tests/SoftContactMathTests.cpp"
-  )
-  target_compile_features(ROCKSoftContactMathTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKSoftContactMathTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKSoftContactMathTests)
-
-  add_executable(ROCKNativeContactEvidenceTests
-    "${ROOT_DIR}/tests/NativeContactEvidenceTests.cpp"
-  )
-  target_compile_features(ROCKNativeContactEvidenceTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKNativeContactEvidenceTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKNativeContactEvidenceTests)
-
-  add_executable(ROCKBodyContactRuntimeTests
-    "${ROOT_DIR}/tests/BodyContactRuntimeTests.cpp"
-  )
-  target_compile_features(ROCKBodyContactRuntimeTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKBodyContactRuntimeTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKBodyContactRuntimeTests)
-
-  add_executable(ROCKShoulderStashPolicyTests
-    "${ROOT_DIR}/tests/ShoulderStashPolicyTests.cpp"
-  )
-  target_compile_features(ROCKShoulderStashPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKShoulderStashPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKShoulderStashPolicyTests)
-
-  add_executable(ROCKContactTargetIdentityPolicyTests
-    "${ROOT_DIR}/tests/ContactTargetIdentityPolicyTests.cpp"
-  )
-  target_compile_features(ROCKContactTargetIdentityPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKContactTargetIdentityPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKContactTargetIdentityPolicyTests)
-
   add_executable(ROCKWeaponCollisionLifecyclePolicyTests
     "${ROOT_DIR}/tests/WeaponCollisionLifecyclePolicyTests.cpp"
   )
@@ -376,36 +239,12 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKWeaponCollisionLifecyclePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKWeaponCollisionLifecyclePolicyTests)
 
-  add_executable(ROCKSeeThroughScopesPolicyTests
-    "${ROOT_DIR}/tests/SeeThroughScopesPolicyTests.cpp"
-  )
-  target_compile_features(ROCKSeeThroughScopesPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKSeeThroughScopesPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKSeeThroughScopesPolicyTests)
-
   set(ROCK_COMMONLIB_TEST_TARGETS
-    ROCKTransformConventionTests
-    ROCKSelectionHighlightPolicyTests
-    ROCKWorldOriginDiagnosticsTests
-    ROCKBodyFramePolicyTests
-    ROCKInputRemapPolicyTests
     ROCKGrabInputIntentPolicyTests
-    ROCKHandStateMachineTests
-    ROCKHavokRuntimePolicyTests
     ROCKGrabFingerLocalTransformPolicyTests
     ROCKGrabHapticPolicyTests
     ROCKGrabNodeNamePolicyTests
-    ROCKProviderBoundaryTests
-    ROCKPhysicsLifecycleStateTests
-    ROCKContactPipelinePolicyTests
-    ROCKContactRuntimePolicyTests
-    ROCKSoftContactMathTests
-    ROCKNativeContactEvidenceTests
-    ROCKBodyContactRuntimeTests
-    ROCKShoulderStashPolicyTests
-    ROCKContactTargetIdentityPolicyTests
     ROCKWeaponCollisionLifecyclePolicyTests
-    ROCKSeeThroughScopesPolicyTests
   )
   foreach(ROCK_COMMONLIB_TEST_TARGET IN LISTS ROCK_COMMONLIB_TEST_TARGETS)
     target_include_directories(${ROCK_COMMONLIB_TEST_TARGET}

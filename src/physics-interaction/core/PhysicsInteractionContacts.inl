@@ -866,30 +866,47 @@
             _bodyContactRuntime.record(record);
         };
 
-        if (_rightHand.isHoldingAtomic()) {
-            if (bodyAIsRightHeld || bodyBIsRightHeld) {
-                std::uint32_t heldId = bodyAIsRightHeld ? bodyIdA : bodyIdB;
-                std::uint32_t other = (bodyIdA == heldId) ? bodyIdB : bodyIdA;
-                if (!_rightHand.isHandColliderBodyId(other) && !_leftHand.isHandColliderBodyId(other) && other != rightId && other != leftId &&
-                    !_bodyBoneColliders.isColliderBodyIdAtomic(other) &&
-                    !::rock::provider::isExternalBodyId(other)) {
-                    _rightHand.notifyHeldBodyContact();
-                    _lastHeldImpactPairRight.store(packHeldImpactPair(heldId, other), std::memory_order_release);
-                }
+        auto notifyHeldExternalContact = [&](Hand& hand,
+                                             std::atomic<std::uint64_t>& impactPair,
+                                             bool bodyAIsHeld,
+                                             bool bodyBIsHeld) {
+            if (!bodyAIsHeld && !bodyBIsHeld) {
+                return;
             }
-        }
-        if (_leftHand.isHoldingAtomic()) {
-            if (bodyAIsLeftHeld || bodyBIsLeftHeld) {
-                std::uint32_t heldId = bodyAIsLeftHeld ? bodyIdA : bodyIdB;
-                std::uint32_t other = (bodyIdA == heldId) ? bodyIdB : bodyIdA;
-                if (!_rightHand.isHandColliderBodyId(other) && !_leftHand.isHandColliderBodyId(other) && other != rightId && other != leftId &&
-                    !_bodyBoneColliders.isColliderBodyIdAtomic(other) &&
-                    !::rock::provider::isExternalBodyId(other)) {
-                    _leftHand.notifyHeldBodyContact();
-                    _lastHeldImpactPairLeft.store(packHeldImpactPair(heldId, other), std::memory_order_release);
-                }
+
+            const std::uint32_t heldId = bodyAIsHeld ? bodyIdA : bodyIdB;
+            const std::uint32_t other = bodyAIsHeld ? bodyIdB : bodyIdA;
+            const auto decision = held_object_contact_policy::evaluateHeldExternalContact(
+                held_object_contact_policy::HeldExternalContactInput{
+                    .handHolding = hand.isHoldingAtomic(),
+                    .bodyAIsHeld = bodyAIsHeld,
+                    .bodyBIsHeld = bodyBIsHeld,
+                    .otherIsRightHand = _rightHand.isHandColliderBodyId(other),
+                    .otherIsLeftHand = _leftHand.isHandColliderBodyId(other),
+                    .otherIsRightPalmBody = other == rightId,
+                    .otherIsLeftPalmBody = other == leftId,
+                    .otherIsBodyCollider = _bodyBoneColliders.isColliderBodyIdAtomic(other),
+                    .otherIsExternalProvider = ::rock::provider::isExternalBodyId(other),
+                });
+            if (decision.sameHeldObject) {
+                ROCK_LOG_SAMPLE_DEBUG(Hand,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "{} held self-contact suppressed: bodyA={} bodyB={}",
+                    hand.handName(),
+                    bodyIdA,
+                    bodyIdB);
+                return;
             }
-        }
+            if (!decision.notify) {
+                return;
+            }
+
+            hand.notifyHeldBodyContact();
+            impactPair.store(packHeldImpactPair(heldId, other), std::memory_order_release);
+        };
+
+        notifyHeldExternalContact(_rightHand, _lastHeldImpactPairRight, bodyAIsRightHeld, bodyBIsRightHeld);
+        notifyHeldExternalContact(_leftHand, _lastHeldImpactPairLeft, bodyAIsLeftHeld, bodyBIsLeftHeld);
 
         recordBodyContactEvidence();
 
