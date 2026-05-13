@@ -381,7 +381,9 @@ namespace rock
         void destroyGrabAuthorityProxyLocked(RE::bhkWorld* bhkWorld);
         void abandonGrabAuthorityProxyLocked();
         void clearGrabAuthorityProxyRuntimeLocked();
+        bool tryGetGrabDriveObjectWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform) const;
         RE::NiPoint3 activeGrabDrivePivotBBodyLocalGame() const;
+        RE::NiPoint3 activeProxyConstraintPivotBLocalGame() const;
 
         /*
          * Far-pull arrival needs explicit ownership separate from button edges.
@@ -506,7 +508,7 @@ namespace rock
         RE::bhkWorld* _grabAuthorityProxyBhkWorld = nullptr;
         RE::hknpWorld* _grabAuthorityProxyHknpWorld = nullptr;
         RE::NiPoint3 _grabAuthorityPivotAProxyLocalGame{};
-        RE::NiPoint3 _grabAuthorityPivotBBodyLocalGame{};
+        RE::NiPoint3 _grabAuthorityPivotBConstraintLocalGame{};
         bool _grabAuthorityProxyFrameValid = false;
         struct GrabAuthorityProxyPendingTarget
         {

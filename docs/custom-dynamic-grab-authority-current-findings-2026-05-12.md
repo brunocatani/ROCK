@@ -6444,3 +6444,43 @@ The failure appeared only after the proxy constraint began solving:
 - after seven flushed proxy targets: `rotErr=111.9deg`, then it stayed around 140deg and could spike near 175deg.
 
 This means the captured visual/contact relation was correct, but the raw matrix storage for the custom ragdoll motor was presenting the forward body relation to the hknp solver. HIGGS stores `transformB.rotation` and `target_bRca` through real `hkMatrix` storage; ROCK writes raw bytes. The correct ROCK writer for this path is therefore Havok column-block storage of the inverse body-to-hand rotation, not the row writer that only made the diagnostic row-reader look correct.
+
+## 2026-05-12 follow-up: proxy constraint body-B frame split
+
+Fresh runtime testing after the column-block angular-target correction still showed the same visible grab-start snap. The important log difference was that the low-level target storage was now correct while the object still rotated:
+
+- `targetErr(colsInv=0.000deg ... colsTransformB=0.000deg)` on the bad grabs;
+- `nativeToHeld=180.000deg` for hammer-style objects and `nativeToHeld=90.000deg` for the heavy object;
+- capture-time `motionBodyToGrabBody` deltas of roughly `90..180deg`;
+- frame-1 `bodyToConDesired` already large while `heldToRawDesired` was still near the expected preserved visual-object relation.
+
+Conclusion:
+
+- the previous matrix-storage bug was fixed;
+- the remaining snap was not COM fallback and not a target matrix writer issue;
+- the custom proxy constraint was still expressing body-B pivot/target data in the native BODY slot convention;
+- the active hknp live/solver frame for the custom constraint path is the motion/COM frame when readable;
+- BODY must remain the visual/native/release frame, but proxy constraint atoms need their own solver-local body-B relation.
+
+Correction made:
+
+- added `_grabFrame.constraintBodyLocal`, preserving `_grabFrame.bodyLocal` for visual/native BODY reconstruction;
+- added `_grabFrame.pivotBConstraintLocalGame`, preserving `_grabFrame.pivotBBodyLocalGame` for visual/native/release handling;
+- capture now freezes the same selected world grip point twice:
+  - BODY-local copy for visual/native/release;
+  - solver-local copy using `constraintBodyWorldAtGrab`, which is MOTION when `tryResolveLiveBodyWorldTransform(...)` resolves to `MotionCenterOfMass`;
+- proxy constraint creation and per-frame target updates now use `activeProxyConstraintPivotBLocalGame()` and `_grabFrame.constraintBodyHandSpace`;
+- active-drive error/convergence/pivot telemetry now uses `tryGetGrabDriveObjectWorldTransform(...)`, which selects the solver frame for `ProxyConstraint` and BODY for native mouse spring;
+- release tangential velocity still uses BODY-local grip point through the visual/native frame, because release lever origin should remain the selected visual contact point, not COM fallback;
+- capture logs now distinguish `pivotBBodyLocal`, `pivotBConstraintLocal`, and `constraintObjectFrame=BODY|MOTION`.
+
+Important invariant:
+
+- COM/MOTION is still not pivot authority. The chosen pivot remains the contact/authored grip world point. The fix only changes the local coordinate frame used to encode that same point for hknp custom constraint body-B atoms.
+
+Expected validation signature:
+
+- on a fresh build after this correction, `GRAB BASIS CAPTURE` should show `constraintObjectFrame=MOTION` for objects where `motionBodyToGrabBody` was previously large;
+- `targetErr(colsInv=...)` should remain near zero;
+- first-frame `bodyToConDesired`, `rotErr`, and visual `bodyNodeToVisual` should no longer jump toward the old `90/180deg` BODY-vs-MOTION delta;
+- if any object still snaps, the next log to inspect is the relation between `desiredConstraintBody`, `motionBody`, and live visual BODY reconstruction, not COM fallback or matrix row/column storage.

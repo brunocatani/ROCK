@@ -428,6 +428,7 @@ namespace rock
         RE::NiTransform rawHandSpace{};
         RE::NiTransform constraintHandSpace{};
         RE::NiTransform constraintBodyHandSpace{};
+        RE::NiTransform constraintBodyLocal{};
         RE::NiTransform handBodyToRawHandAtGrab{};
         RE::NiTransform bodyLocal{};
         RE::NiTransform rootBodyLocal{};
@@ -454,6 +455,7 @@ namespace rock
         std::array<std::uint8_t, 5> fingerPoseTargetNormalValid{};
         RE::NiPoint3 gripPointBodyLocalGame{};
         RE::NiPoint3 pivotBBodyLocalGame{};
+        RE::NiPoint3 pivotBConstraintLocalGame{};
         std::array<grab_contact_patch_math::GrabContactPatchSample<RE::NiPoint3>, kMaxGrabContactPatchSamples> contactPatchSamples{};
         std::uint32_t gripEvidenceTriangleIndex = 0xFFFF'FFFF;
         std::uint32_t gripEvidenceShapeKey = 0xFFFF'FFFF;
@@ -500,6 +502,7 @@ namespace rock
             rawHandSpace = RE::NiTransform();
             constraintHandSpace = RE::NiTransform();
             constraintBodyHandSpace = RE::NiTransform();
+            constraintBodyLocal = RE::NiTransform();
             handBodyToRawHandAtGrab = RE::NiTransform();
             bodyLocal = RE::NiTransform();
             rootBodyLocal = RE::NiTransform();
@@ -526,6 +529,7 @@ namespace rock
             fingerPoseTargetNormalValid = {};
             gripPointBodyLocalGame = {};
             pivotBBodyLocalGame = {};
+            pivotBConstraintLocalGame = {};
             contactPatchSamples = {};
             gripEvidenceTriangleIndex = 0xFFFF'FFFF;
             gripEvidenceShapeKey = 0xFFFF'FFFF;
