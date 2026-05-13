@@ -6346,3 +6346,83 @@ Validation completed:
 - Release build passed and deployed `ROCK.dll` / `ROCK.pdb` to `D:\FO4\mods\ROCK\F4SE\Plugins` at `2026-05-12 19:54:33`;
 - registered CTest suite passed `17/17`, including `ROCKGrabMotionControllerPolicyTests` and `GrabDeviationParitySourceTests`;
 - runtime log was still last written at `2026-05-12 19:03:34`, so in-game validation for force-budget telemetry and averaged deviation remains pending.
+
+## 2026-05-12 follow-up: orientation-basis diagnostics for grab-start snap
+
+Fresh runtime testing still shows a grab-start visual/object rotation snap that is not explained by the existing scalar error logs. The existing `GRAB TELEMETRY` lines can show that rotation error grows, but they cannot reconstruct exactly which native local X/Y/Z axis rotates first or whether the bad rotation is already present at capture time.
+
+Diagnostic scope added in this pass:
+
+- no gameplay behavior change;
+- no pivot, motor, constraint, release, or collision change;
+- capture-time orientation logging inside dynamic grab commit;
+- per-frame orientation logging in the existing grab transform telemetry stream;
+- explicit left/right separation on every new basis line.
+
+Important convention:
+
+- new `OrientationBasis` uses `transform_math::rotateLocalVectorToWorld` for local X/Y/Z, matching ROCK's verified FO4VR `NiTransform` convention;
+- this is distinct from older matrix-column debug values, which are still useful as low-level solver diagnostics but do not directly answer "where does native local X/Y/Z point in world";
+- each logged basis is therefore a native mesh/object/hand axis view: `X`, `Y`, and `Z` as world directions.
+
+New capture-time log lines:
+
+- `GRAB BASIS CAPTURE side=<left|right> phase=capture convention=niLocalVectorToWorld ...`
+- `GRAB BASIS CAPTURE DELTA side=<left|right> phase=capture ...`
+
+Capture-time frames logged:
+
+- raw root-flattened hand frame;
+- resolved palm/proxy frame;
+- visible object frame at grab;
+- desired visible object frame at grab;
+- desired BODY frame at grab;
+- hknp grab BODY frame at grab;
+- hknp motion/body readback frame at grab when available.
+
+New per-frame telemetry log lines:
+
+- `GRAB BASIS ... side=<left|right> convention=niLocalVectorToWorld ...`
+- `GRAB BASIS ... objectFrames ...`
+- `GRAB BASIS ... desiredFrames ...`
+- `GRAB BASIS DELTA ... side=<left|right> ...`
+
+Per-frame frames logged:
+
+- raw hand;
+- generated palm-anchor target from `HandBoneColliderSet::tryGetPalmAnchorTarget`;
+- held visual node;
+- body-derived visual node;
+- held BODY;
+- native BODY;
+- captured object-at-grab;
+- desired-at-grab;
+- current raw desired object;
+- current constraint desired object;
+- current constraint desired BODY;
+- held-relative visual hand target;
+- constraint-space reverse hand target.
+
+Palm/finger-line data logged:
+
+- root-flattened finger base center;
+- root-flattened finger tip center;
+- normalized hand-to-finger-base line;
+- normalized finger-base-to-tip open line;
+- root-flattened palm normal;
+- generated palm-anchor basis.
+
+What this should prove from the next runtime log:
+
+- whether `objectAtGrabToDesiredObject` is already non-zero at capture, meaning the snap is introduced before solver/runtime movement;
+- whether `rawHandToProxyPalm` is large, meaning the generated palm/proxy frame is not aligned with the root-flattened raw hand frame the visual system expects;
+- whether `desiredObjectToDesiredBody` or `grabBodyToDesiredBody` carries the unexpected rotation, meaning the visual-object-to-BODY relation is wrong;
+- whether `heldNodeToRawDesired`, `heldNodeToConDesiredObj`, or `heldBodyToConDesiredBody` spikes first after capture;
+- whether left and right hands diverge, proving handedness/basis convention is part of the snap.
+
+Validation requirement:
+
+- run `GrabOrientationBasisTelemetrySourceTests.ps1`;
+- rebuild/deploy;
+- test one right-hand grab and one left-hand grab with `bDebugGrabTransformTelemetry=true`;
+- compare `GRAB BASIS CAPTURE` against first `GRAB BASIS ... START` and later `HELD` frames.

@@ -49,6 +49,13 @@ namespace rock::grab_transform_telemetry
         float z = 0.0f;
     };
 
+    struct OrientationBasis
+    {
+        RE::NiPoint3 x{ 1.0f, 0.0f, 0.0f };
+        RE::NiPoint3 y{ 0.0f, 1.0f, 0.0f };
+        RE::NiPoint3 z{ 0.0f, 0.0f, 1.0f };
+    };
+
     template <class Vector>
     struct PointPairDelta
     {
@@ -74,6 +81,7 @@ namespace rock::grab_transform_telemetry
         RE::NiTransform heldBodyDerivedNodeWorld{};
         RE::NiTransform liveHandWorldAtGrab{};
         RE::NiTransform handBodyWorldAtGrab{};
+        RE::NiTransform palmAnchorTargetWorld{};
         RE::NiTransform objectNodeWorldAtGrab{};
         RE::NiTransform desiredObjectWorldAtGrab{};
         RE::NiTransform currentRawDesiredObjectWorld{};
@@ -86,6 +94,26 @@ namespace rock::grab_transform_telemetry
         RE::NiTransform heldRelativeHandTargetWorld{};
         RE::NiTransform constraintReverseTargetWorld{};
 
+        OrientationBasis rawHandBasis{};
+        OrientationBasis handBodyBasis{};
+        OrientationBasis palmAnchorTargetBasis{};
+        OrientationBasis heldBodyBasis{};
+        OrientationBasis heldNativeBodyBasis{};
+        OrientationBasis heldNodeBasis{};
+        OrientationBasis heldBodyDerivedNodeBasis{};
+        OrientationBasis liveHandWorldAtGrabBasis{};
+        OrientationBasis handBodyWorldAtGrabBasis{};
+        OrientationBasis objectNodeWorldAtGrabBasis{};
+        OrientationBasis desiredObjectWorldAtGrabBasis{};
+        OrientationBasis currentRawDesiredObjectWorldBasis{};
+        OrientationBasis currentConstraintDesiredObjectWorldBasis{};
+        OrientationBasis currentConstraintDesiredBodyWorldBasis{};
+        OrientationBasis rawHandSpaceBasis{};
+        OrientationBasis constraintHandSpaceBasis{};
+        OrientationBasis bodyLocalBasis{};
+        OrientationBasis heldRelativeHandTargetBasis{};
+        OrientationBasis constraintReverseTargetBasis{};
+
         RE::NiPoint3 pivotAWorld{};
         RE::NiPoint3 pivotBWorld{};
         RE::NiPoint3 pivotDeltaWorld{};
@@ -93,7 +121,14 @@ namespace rock::grab_transform_telemetry
         RE::NiPoint3 desiredTransformBLocalGame{};
         PointPairDelta<RE::NiPoint3> transformBLocalDelta{};
 
+        RE::NiPoint3 rootFingerBaseCenterWorld{};
+        RE::NiPoint3 rootFingerTipCenterWorld{};
+        RE::NiPoint3 rootFingerBaseLineWorld{ 1.0f, 0.0f, 0.0f };
+        RE::NiPoint3 rootFingerOpenLineWorld{ 1.0f, 0.0f, 0.0f };
+        RE::NiPoint3 rootPalmNormalWorld{ 0.0f, 0.0f, -1.0f };
+
         TransformDelta rawToHandBody{};
+        TransformDelta rawToPalmAnchorTarget{};
         TransformDelta heldNativeBodyToHeldBody{};
         TransformDelta heldNodeToDesiredObjectAtGrab{};
         TransformDelta heldNodeToRawDesiredObject{};
@@ -124,11 +159,13 @@ namespace rock::grab_transform_telemetry
         bool valid = false;
         bool isLeft = false;
         bool hasHandBodyWorld = false;
+        bool hasPalmAnchorTarget = false;
         bool hasHeldBodyWorld = false;
         bool hasHeldNativeBodyWorld = false;
         bool hasHeldNodeWorld = false;
         bool hasHeldBodyDerivedNodeWorld = false;
         bool hasGrabStartFrames = false;
+        bool hasRootFingerLandmarks = false;
         bool hasHeldRelativeHandTarget = false;
         bool hasConstraintReverseTarget = false;
         bool hasConstraintAngularTelemetry = false;
@@ -142,6 +179,42 @@ namespace rock::grab_transform_telemetry
     inline float vectorLength(const Vector& value)
     {
         return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
+    }
+
+    inline RE::NiPoint3 normalizeDirectionOrFallback(const RE::NiPoint3& value, const RE::NiPoint3& fallback)
+    {
+        const float length = vectorLength(value);
+        if (!std::isfinite(length) || length <= 1.0e-6f) {
+            const float fallbackLength = vectorLength(fallback);
+            if (!std::isfinite(fallbackLength) || fallbackLength <= 1.0e-6f) {
+                return RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+            }
+            return RE::NiPoint3{ fallback.x / fallbackLength, fallback.y / fallbackLength, fallback.z / fallbackLength };
+        }
+
+        return RE::NiPoint3{ value.x / length, value.y / length, value.z / length };
+    }
+
+    inline OrientationBasis makeOrientationBasis(const RE::NiTransform& transform)
+    {
+        /*
+         * This is the native-mesh axis view: local X/Y/Z transformed through the
+         * same verified FO4VR NiTransform convention used by collision/grab math.
+         * It intentionally does not use matrix columns, because those are useful
+         * low-level diagnostics but not the engine-authored "where local axis
+         * points in world" view the grab snap needs.
+         */
+        OrientationBasis result{};
+        result.x = normalizeDirectionOrFallback(
+            transform_math::rotateLocalVectorToWorld(transform.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }),
+            RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+        result.y = normalizeDirectionOrFallback(
+            transform_math::rotateLocalVectorToWorld(transform.rotate, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }),
+            RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+        result.z = normalizeDirectionOrFallback(
+            transform_math::rotateLocalVectorToWorld(transform.rotate, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }),
+            RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+        return result;
     }
 
     template <class Vector>
@@ -221,6 +294,30 @@ namespace rock::grab_transform_telemetry
         return (std::clamp)((a.x * b.x + a.y * b.y + a.z * b.z) / (aLength * bLength), -1.0f, 1.0f);
     }
 
+    inline AxisAlignmentDots orientationBasisDots(const OrientationBasis& a, const OrientationBasis& b)
+    {
+        AxisAlignmentDots result{};
+        result.x = directionDot(a.x, b.x);
+        result.y = directionDot(a.y, b.y);
+        result.z = directionDot(a.z, b.z);
+        return result;
+    }
+
+    inline AxisAlignmentDots orientationBasisAxisDeltaDegrees(const OrientationBasis& a, const OrientationBasis& b)
+    {
+        AxisAlignmentDots result{};
+        result.x = directionDeltaDegrees(a.x, b.x);
+        result.y = directionDeltaDegrees(a.y, b.y);
+        result.z = directionDeltaDegrees(a.z, b.z);
+        return result;
+    }
+
+    inline float orientationBasisMaxDeltaDegrees(const OrientationBasis& a, const OrientationBasis& b)
+    {
+        const auto degrees = orientationBasisAxisDeltaDegrees(a, b);
+        return (std::max)(degrees.x, (std::max)(degrees.y, degrees.z));
+    }
+
     template <class Matrix>
     inline AxisAlignmentDots axisAlignmentDots(const Matrix& a, const Matrix& b)
     {
@@ -249,6 +346,55 @@ namespace rock::grab_transform_telemetry
         result.positionGameUnits = measurePointPair(a.translate, b.translate).distance;
         result.rotationDegrees = rotationDeltaDegrees(a.rotate, b.rotate);
         return result;
+    }
+
+    inline std::string formatVector3(const RE::NiPoint3& value)
+    {
+        char buffer[96]{};
+        std::snprintf(buffer, sizeof(buffer), "(%.3f,%.3f,%.3f)", value.x, value.y, value.z);
+        return std::string(buffer);
+    }
+
+    inline std::string formatBasis(const char* label, const OrientationBasis& basis)
+    {
+        char buffer[320]{};
+        std::snprintf(buffer,
+            sizeof(buffer),
+            "%s.X=(%.3f,%.3f,%.3f) %s.Y=(%.3f,%.3f,%.3f) %s.Z=(%.3f,%.3f,%.3f)",
+            label ? label : "basis",
+            basis.x.x,
+            basis.x.y,
+            basis.x.z,
+            label ? label : "basis",
+            basis.y.x,
+            basis.y.y,
+            basis.y.z,
+            label ? label : "basis",
+            basis.z.x,
+            basis.z.y,
+            basis.z.z);
+        return std::string(buffer);
+    }
+
+    inline std::string formatBasisDelta(const char* label, const OrientationBasis& a, const OrientationBasis& b)
+    {
+        const auto dots = orientationBasisDots(a, b);
+        const auto degrees = orientationBasisAxisDeltaDegrees(a, b);
+        char buffer[256]{};
+        std::snprintf(buffer,
+            sizeof(buffer),
+            "%s.dot=(%.3f,%.3f,%.3f) %s.deg=(%.2f,%.2f,%.2f) %s.max=%.2f",
+            label ? label : "basisDelta",
+            dots.x,
+            dots.y,
+            dots.z,
+            label ? label : "basisDelta",
+            degrees.x,
+            degrees.y,
+            degrees.z,
+            label ? label : "basisDelta",
+            (std::max)(degrees.x, (std::max)(degrees.y, degrees.z)));
+        return std::string(buffer);
     }
 
     template <class Transform>

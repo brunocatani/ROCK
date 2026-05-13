@@ -1952,14 +1952,51 @@ namespace rock
         out.valid = true;
         out.isLeft = _isLeft;
         out.rawHandWorld = rawHandWorld;
+        out.rawHandBasis = grab_transform_telemetry::makeOrientationBasis(out.rawHandWorld);
         out.heldFormId = _savedObjectState.refr ? _savedObjectState.refr->GetFormID() : 0;
         out.heldBodyId = _savedObjectState.bodyId.value;
         out.handBodyId = _handBody.isValid() ? _handBody.getBodyId().value : INVALID_BODY_ID;
+
+        if (_boneColliders.tryGetPalmAnchorTarget(out.palmAnchorTargetWorld)) {
+            out.hasPalmAnchorTarget = true;
+            out.palmAnchorTargetBasis = grab_transform_telemetry::makeOrientationBasis(out.palmAnchorTargetWorld);
+            out.rawToPalmAnchorTarget =
+                grab_transform_telemetry::measureTransformDelta(out.rawHandWorld, out.palmAnchorTargetWorld);
+        }
+
+        root_flattened_finger_skeleton_runtime::Snapshot fingerSnapshot{};
+        if (root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, fingerSnapshot)) {
+            RE::NiPoint3 baseSum{};
+            RE::NiPoint3 tipSum{};
+            std::uint32_t validFingers = 0;
+            for (const auto& finger : fingerSnapshot.fingers) {
+                if (!finger.valid) {
+                    continue;
+                }
+                baseSum = baseSum + finger.points[0];
+                tipSum = tipSum + finger.points[2];
+                ++validFingers;
+            }
+
+            if (validFingers > 0) {
+                const float inv = 1.0f / static_cast<float>(validFingers);
+                out.rootFingerBaseCenterWorld = baseSum * inv;
+                out.rootFingerTipCenterWorld = tipSum * inv;
+                out.rootFingerBaseLineWorld =
+                    grab_transform_telemetry::normalizeDirectionOrFallback(out.rootFingerBaseCenterWorld - out.rawHandWorld.translate, out.rawHandBasis.x);
+                out.rootFingerOpenLineWorld =
+                    grab_transform_telemetry::normalizeDirectionOrFallback(out.rootFingerTipCenterWorld - out.rootFingerBaseCenterWorld, out.rootFingerBaseLineWorld);
+                out.rootPalmNormalWorld =
+                    grab_transform_telemetry::normalizeDirectionOrFallback(fingerSnapshot.palmNormalWorld, out.rawHandBasis.z);
+                out.hasRootFingerLandmarks = true;
+            }
+        }
 
         if (_handBody.isValid() && _handBody.getBodyId().value != INVALID_BODY_ID) {
             const auto handBodyFrame = resolveLiveBodyWorldTransform(world, _handBody.getBodyId());
             if (handBodyFrame.valid) {
                 out.handBodyWorld = handBodyFrame.transform;
+                out.handBodyBasis = grab_transform_telemetry::makeOrientationBasis(out.handBodyWorld);
                 out.handBodySource = handBodyFrame.source;
                 out.handMotionIndex = handBodyFrame.motionIndex;
                 out.hasHandBodyWorld = true;
@@ -1969,6 +2006,7 @@ namespace rock
 
         const auto heldBodyFrame = resolveLiveBodyWorldTransform(world, _savedObjectState.bodyId);
         out.heldBodyWorld = heldBodyFrame.transform;
+        out.heldBodyBasis = grab_transform_telemetry::makeOrientationBasis(out.heldBodyWorld);
         out.heldBodySource = heldBodyFrame.source;
         out.heldMotionIndex = heldBodyFrame.motionIndex;
         out.hasHeldBodyWorld = heldBodyFrame.valid;
@@ -1977,6 +2015,7 @@ namespace rock
         RE::NiTransform heldNativeBodyWorld{};
         if (tryGetNativeMouseSpringBodyWorldTransform(world, _savedObjectState.bodyId, heldNativeBodyWorld)) {
             out.heldNativeBodyWorld = heldNativeBodyWorld;
+            out.heldNativeBodyBasis = grab_transform_telemetry::makeOrientationBasis(out.heldNativeBodyWorld);
             out.hasHeldNativeBodyWorld = true;
             if (heldBodyFrame.valid) {
                 out.heldNativeBodyToHeldBody = grab_transform_telemetry::measureTransformDelta(out.heldNativeBodyWorld, out.heldBodyWorld);
@@ -1986,6 +2025,7 @@ namespace rock
         if (heldBodyFrame.valid || out.hasHeldNativeBodyWorld) {
             const RE::NiTransform& bodyLocalAuthorityFrame = out.hasHeldNativeBodyWorld ? out.heldNativeBodyWorld : out.heldBodyWorld;
             out.heldBodyDerivedNodeWorld = deriveNodeWorldFromBodyWorld(bodyLocalAuthorityFrame, _grabFrame.bodyLocal);
+            out.heldBodyDerivedNodeBasis = grab_transform_telemetry::makeOrientationBasis(out.heldBodyDerivedNodeWorld);
             out.hasHeldBodyDerivedNodeWorld = true;
         }
 
@@ -2002,9 +2042,11 @@ namespace rock
         }
         if (heldVisualNode) {
             out.heldNodeWorld = heldVisualNode->world;
+            out.heldNodeBasis = grab_transform_telemetry::makeOrientationBasis(out.heldNodeWorld);
             out.hasHeldNodeWorld = true;
         } else if (out.hasHeldBodyDerivedNodeWorld) {
             out.heldNodeWorld = out.heldBodyDerivedNodeWorld;
+            out.heldNodeBasis = grab_transform_telemetry::makeOrientationBasis(out.heldNodeWorld);
             out.hasHeldNodeWorld = true;
         }
         if (out.hasHeldNodeWorld && out.hasHeldBodyDerivedNodeWorld) {
@@ -2020,8 +2062,16 @@ namespace rock
             out.constraintHandSpace = _grabFrame.constraintHandSpace;
             out.handBodyToRawHandAtGrab = _grabFrame.handBodyToRawHandAtGrab;
             out.bodyLocal = _grabFrame.bodyLocal;
+            out.liveHandWorldAtGrabBasis = grab_transform_telemetry::makeOrientationBasis(out.liveHandWorldAtGrab);
+            out.handBodyWorldAtGrabBasis = grab_transform_telemetry::makeOrientationBasis(out.handBodyWorldAtGrab);
+            out.objectNodeWorldAtGrabBasis = grab_transform_telemetry::makeOrientationBasis(out.objectNodeWorldAtGrab);
+            out.desiredObjectWorldAtGrabBasis = grab_transform_telemetry::makeOrientationBasis(out.desiredObjectWorldAtGrab);
+            out.rawHandSpaceBasis = grab_transform_telemetry::makeOrientationBasis(out.rawHandSpace);
+            out.constraintHandSpaceBasis = grab_transform_telemetry::makeOrientationBasis(out.constraintHandSpace);
+            out.bodyLocalBasis = grab_transform_telemetry::makeOrientationBasis(out.bodyLocal);
             out.currentRawDesiredObjectWorld =
                 grab_transform_telemetry::computeCurrentDesiredObjectFromFrame(out.rawHandWorld, _grabFrame.rawHandSpace);
+            out.currentRawDesiredObjectWorldBasis = grab_transform_telemetry::makeOrientationBasis(out.currentRawDesiredObjectWorld);
             {
                 const RE::NiPoint3 currentPalmAnchorWorld = computeGrabPivotAWorld(world, out.rawHandWorld);
                 const RE::NiPoint3 currentDesiredGripWorld =
@@ -2045,6 +2095,8 @@ namespace rock
             if (nativeState.hasTarget) {
                 out.currentConstraintDesiredBodyWorld = nativeState.targetBodyWorldGame;
                 out.currentConstraintDesiredObjectWorld = deriveNodeWorldFromBodyWorld(nativeState.targetBodyWorldGame, _grabFrame.bodyLocal);
+                out.currentConstraintDesiredBodyWorldBasis = grab_transform_telemetry::makeOrientationBasis(out.currentConstraintDesiredBodyWorld);
+                out.currentConstraintDesiredObjectWorldBasis = grab_transform_telemetry::makeOrientationBasis(out.currentConstraintDesiredObjectWorld);
                 if (out.hasHeldNodeWorld) {
                     out.heldNodeToConstraintDesiredObject =
                         grab_transform_telemetry::measureHeldNodeVsDesiredObject(out.heldNodeWorld, out.currentConstraintDesiredObjectWorld);
@@ -2063,6 +2115,8 @@ namespace rock
                     grab_transform_telemetry::computeCurrentDesiredObjectFromFrame(out.handBodyWorld, _grabFrame.constraintHandSpace);
                 out.currentConstraintDesiredBodyWorld =
                     grab_transform_telemetry::computeCurrentDesiredBodyFromHandBody(out.handBodyWorld, _grabFrame.constraintHandSpace, _grabFrame.bodyLocal);
+                out.currentConstraintDesiredObjectWorldBasis = grab_transform_telemetry::makeOrientationBasis(out.currentConstraintDesiredObjectWorld);
+                out.currentConstraintDesiredBodyWorldBasis = grab_transform_telemetry::makeOrientationBasis(out.currentConstraintDesiredBodyWorld);
                 if (out.hasHeldNodeWorld) {
                     out.heldNodeToConstraintDesiredObject =
                         grab_transform_telemetry::measureHeldNodeVsDesiredObject(out.heldNodeWorld, out.currentConstraintDesiredObjectWorld);
@@ -2078,11 +2132,13 @@ namespace rock
         }
         if (out.hasHeldNodeWorld) {
             out.heldRelativeHandTargetWorld = grab_transform_telemetry::computeHeldRelativeHandTarget(out.heldNodeWorld, _grabFrame.rawHandSpace);
+            out.heldRelativeHandTargetBasis = grab_transform_telemetry::makeOrientationBasis(out.heldRelativeHandTargetWorld);
             out.hasHeldRelativeHandTarget = true;
             out.rawToHeldRelativeHandTarget = grab_transform_telemetry::measureTransformDelta(out.rawHandWorld, out.heldRelativeHandTargetWorld);
             out.rawToHeldRelativeHandTargetAxes = grab_transform_telemetry::axisAlignmentDots(out.rawHandWorld.rotate, out.heldRelativeHandTargetWorld.rotate);
             out.constraintReverseTargetWorld =
                 grab_transform_telemetry::computeConstraintReverseTarget(out.heldNodeWorld, _grabFrame.constraintHandSpace);
+            out.constraintReverseTargetBasis = grab_transform_telemetry::makeOrientationBasis(out.constraintReverseTargetWorld);
             out.hasConstraintReverseTarget = true;
             out.rawToConstraintReverse = grab_transform_telemetry::measureTransformDelta(out.rawHandWorld, out.constraintReverseTargetWorld);
             out.rawToConstraintReverseAxes = grab_transform_telemetry::axisAlignmentDots(out.rawHandWorld.rotate, out.constraintReverseTargetWorld.rotate);
@@ -4223,6 +4279,37 @@ namespace rock
                     handName(), rawVsConstraintRot, grabPosDelta.x, grabPosDelta.y, grabPosDelta.z, rawFinger.x,
                     rawFinger.y, rawFinger.z, rawBack.x, rawBack.y, rawBack.z, rawLateral.x, rawLateral.y, rawLateral.z, constraintFinger.x, constraintFinger.y, constraintFinger.z,
                     constraintBack.x, constraintBack.y, constraintBack.z, constraintLateral.x, constraintLateral.y, constraintLateral.z);
+
+                const auto rawHandBasis = grab_transform_telemetry::makeOrientationBasis(handWorldTransform);
+                const auto proxyPalmBasis = grab_transform_telemetry::makeOrientationBasis(proxyFrameWorldAtGrab);
+                const auto objectAtGrabBasis = grab_transform_telemetry::makeOrientationBasis(objectWorldTransform);
+                const auto desiredObjectBasis = grab_transform_telemetry::makeOrientationBasis(desiredObjectWorld);
+                const auto desiredBodyBasis = grab_transform_telemetry::makeOrientationBasis(desiredBodyWorld);
+                const auto grabBodyBasis = grab_transform_telemetry::makeOrientationBasis(grabBodyWorldAtGrab);
+                const auto motionBodyBasis = grab_transform_telemetry::makeOrientationBasis(motionBodyWorldAtGrab);
+                ROCK_LOG_DEBUG(Hand,
+                    "{} GRAB BASIS CAPTURE side={} phase=capture convention=niLocalVectorToWorld proxySource={} motionBody={} {} {} {} {} {} {} {}",
+                    handName(),
+                    _isLeft ? "left" : "right",
+                    proxyFrameSourceAtGrab,
+                    hasMotionBodyWorldAtGrab ? "yes" : "no",
+                    grab_transform_telemetry::formatBasis("rawHand", rawHandBasis),
+                    grab_transform_telemetry::formatBasis("proxyPalm", proxyPalmBasis),
+                    grab_transform_telemetry::formatBasis("objectAtGrab", objectAtGrabBasis),
+                    grab_transform_telemetry::formatBasis("desiredObject", desiredObjectBasis),
+                    grab_transform_telemetry::formatBasis("desiredBody", desiredBodyBasis),
+                    grab_transform_telemetry::formatBasis("grabBody", grabBodyBasis),
+                    grab_transform_telemetry::formatBasis("motionBody", motionBodyBasis));
+
+                ROCK_LOG_DEBUG(Hand,
+                    "{} GRAB BASIS CAPTURE DELTA side={} phase=capture {} {} {} {} {}",
+                    handName(),
+                    _isLeft ? "left" : "right",
+                    grab_transform_telemetry::formatBasisDelta("rawHandToProxyPalm", rawHandBasis, proxyPalmBasis),
+                    grab_transform_telemetry::formatBasisDelta("objectAtGrabToDesiredObject", objectAtGrabBasis, desiredObjectBasis),
+                    grab_transform_telemetry::formatBasisDelta("desiredObjectToDesiredBody", desiredObjectBasis, desiredBodyBasis),
+                    grab_transform_telemetry::formatBasisDelta("grabBodyToDesiredBody", grabBodyBasis, desiredBodyBasis),
+                    grab_transform_telemetry::formatBasisDelta("motionBodyToGrabBody", motionBodyBasis, grabBodyBasis));
 
                 ROCK_LOG_DEBUG(Hand,
                     "{} GRAB FRAME TARGETS: grabHSRaw.pos=({:.2f},{:.2f},{:.2f}) grabHSConstraint.pos=({:.2f},{:.2f},{:.2f}) "
