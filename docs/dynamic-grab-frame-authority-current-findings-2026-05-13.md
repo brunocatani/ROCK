@@ -1632,3 +1632,86 @@ Next investigation should stay on object-side frame ownership:
 - why `heldBodyToConDesiredBody` and `nativeBodyToHeldBody` can report
   150-180 degree deltas immediately after capture even though visual object
   rotation was preserved.
+
+## 2026-05-13 Checkpoint: Object-Side Solver Frame Fix
+
+### Confirmed failure in source
+
+The attach-rotation logs were backed by a hardcoded source mismatch:
+
+```cpp
+constexpr bool constraintUsesMotionBodyAtGrab = false;
+const RE::NiTransform constraintBodyWorldAtGrab = grabBodyWorldAtGrab;
+```
+
+That forced all proxy-constraint body-B data to be captured in the native BODY
+frame even when `tryResolveLiveBodyWorldTransform(...)` reported the live hknp
+frame as `MotionCenterOfMass`. The bad runtime signature was:
+
+```text
+conDesiredBody ~= nativeBody[BODY]
+heldBody[MOTION] ~= 150-180 deg away from conDesiredBody
+```
+
+So transform-B and angular target storage could be internally consistent while
+still being authored for the wrong body-B frame.
+
+### Fix policy
+
+This does not make COM a grip fallback or pivot authority.
+
+The selected object-side grip point remains:
+
+```text
+mesh/contact/authored grip world point
+```
+
+The hand-side anchor remains:
+
+```text
+root-flattened palm/proxy frame
+```
+
+The change is only the coordinate system used to store custom constraint
+body-B data:
+
+```text
+if live body-B source == MOTION:
+    constraint body-B frame = motionBodyWorldAtGrab
+else:
+    constraint body-B frame = grabBodyWorldAtGrab
+```
+
+ROCK now keeps both local copies:
+
+- `_grabFrame.pivotBBodyLocalGame`: selected grip point in BODY space for
+  native/visual/release reconstruction;
+- `_grabFrame.pivotBConstraintLocalGame`: the same selected grip point in the
+  solver body-B frame for transform-B;
+- `_grabFrame.bodyLocal`: visible object to native BODY relation;
+- `_grabFrame.constraintBodyLocal`: visible object to solver body-B relation;
+- `_grabFrame.constraintBodyHandSpace`: desired solver body-B frame relative to
+  the proxy/palm authority frame.
+
+Runtime proxy error and pivot reads now use `tryGetGrabDriveObjectWorldTransform`.
+For proxy constraint drive that prefers live `MotionCenterOfMass` readback when
+available, then falls back to BODY if no motion frame exists. Native mouse-spring
+and native visual/body reconstruction keep using the BODY helper.
+
+### What the next in-game test should decide
+
+Expected healthy attach signature:
+
+```text
+constraintObjectFrame=MOTION
+desiredConstraintBody ~= heldBody[MOTION]
+heldBodyToConDesiredBody near zero at frame 1
+nativeBodyToHeldBody may remain nonzero as a diagnostic BODY/MOTION delta
+objectAtGrabToDesiredObject remains zero for generic point-to-palm grabs
+relationPivotErr remains near zero
+```
+
+If the object still snaps while `desiredConstraintBody` matches
+`heldBody[MOTION]`, then the next suspect is not body-B frame selection. The
+remaining candidates would be constraint angular target interpretation,
+body-A/proxy after-solve readback, or visual hand publication timing.
