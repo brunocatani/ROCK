@@ -931,3 +931,89 @@ rawToProxyDirectDeg is near zero, or intentionally small if palm-frame
 first-frame visual hand/object snap gone
 COM fallback remains disabled
 ```
+
+## Continuation: Visible Hand Attachment Path
+
+This pass mapped the visual hand side of the same bug. The visual symptom is
+that the hand appears to attach to the object and rotate with it at grab start.
+The current code confirms that the visual hand layer is not an independent
+physics authority; it follows the held object using the frozen raw-hand relation.
+
+The external hand target is sent through FRIK:
+
+```text
+GRAB_EXTERNAL_HAND_TAG = "ROCK_GrabVisual"
+GRAB_EXTERNAL_HAND_PRIORITY = 90
+
+applyGrabExternalHandWorldTransform(...)
+  -> FRIKApi::applyExternalHandWorldTransform(
+         "ROCK_GrabVisual",
+         left/right,
+         adjustedHandTransform,
+         90)
+```
+
+During held update, the target is computed as:
+
+```text
+heldVisualNodeWorld = _grabFrame.heldNode->world
+  or deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal)
+
+targetVisualHandWorld =
+  hand_visual_lerp_math::buildHeldObjectRelativeHandWorld(
+      heldVisualNodeWorld,
+      _grabFrame.rawHandSpace)
+
+buildHeldObjectRelativeHandWorld(heldObjectWorld, frozenObjectHandSpace)
+  = heldObjectWorld * inverse(frozenObjectHandSpace)
+```
+
+So the visual hand is driven from the held object and the raw-hand capture
+relation:
+
+```text
+_grabFrame.rawHandSpace = inverse(rawHandWorldAtGrab) * desiredObjectWorldAtGrab
+visual hand target      = currentHeldObjectWorld * inverse(rawHandSpace)
+```
+
+This mirrors the HIGGS held update pattern:
+
+```text
+HIGGS:
+  inverseDesired = InverseTransform(desiredNodeTransformHandSpace)
+  m_adjustedHandTransform = heldTransform * inverseDesired
+```
+
+The visual hand bug is therefore downstream of the object/body-A bug:
+
+1. `rawHandSpace` is captured correctly from raw hand to desired object.
+2. `constraintHandSpace` is captured against the transposed proxy palm.
+3. The custom constraint rotates the object into the transposed proxy relation.
+4. The visual hand follows the now-rotated object via `rawHandSpace`.
+5. The player sees both object and visible hand rotate at attachment.
+
+This means the visual hand layer should not be fixed by changing the visual
+formula. The formula is the correct held-object-relative formula. The fix must
+make the object stop rotating into the wrong body-A/proxy frame in the first
+place.
+
+Visual-hand interpolation does not hide this bug because its target is already
+wrong:
+
+- if lerp is disabled, the hand snaps directly to the wrong target;
+- if lerp is enabled, the hand moves toward the wrong target over time;
+- either way, the object has already been given a transposed body-A authority
+  target, so visual smoothing cannot restore the original object rotation.
+
+### Visual Path Boundary
+
+Do not treat these as root causes for the current after-grab rotation:
+
+- FRIK external transform API;
+- `ROCK_GrabVisual` priority;
+- `hand_visual_lerp_math::buildHeldObjectRelativeHandWorld(...)`;
+- `rawHandSpace` visual formula;
+- visual hand lerp speed or angular speed.
+
+They may need polish later, but changing them now would mask the symptom while
+leaving the object driven by the wrong constraint authority frame.
