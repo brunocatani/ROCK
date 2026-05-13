@@ -1231,8 +1231,10 @@ Interpretation:
 - generated hand/body `bodyRotErr ~= 0deg` and grab proxy/readback diverges:
   the next fault is after palm target capture, inside proxy body-A drive or
   constraint update timing.
-- weapon `bodyRotErr` should be read separately because weapon generated hulls
-  still use their own root-local mesh path and explicit transpose policy.
+- `owner=weapon-collision` body telemetry is for equipped/generated weapon
+  collision bodies only. It is not evidence for loose dynamic weapon grab,
+  because loose grabbed weapons use the object's existing/native collision in
+  this path.
 
 ## 2026-05-13 Current Stage Checkpoint
 
@@ -1252,8 +1254,10 @@ flip:
 - the generated palm anchor target uses the same convention;
 - the hidden grab-authority proxy uses the same palm frame;
 - `generatedColliderFrameToGrabAuthorityFrame(...)` is now identity;
-- weapon generated mesh colliders are not part of this helper and still use the
-  weapon-specific root-local mesh path and explicit transpose policy.
+- equipped weapon generated/managed collision is not part of this loose dynamic
+  grab diagnostic. Loose non-equipped grabbed weapons do not get ROCK-generated
+  weapon colliders here; they use their existing/native object collision as the
+  grabbed physics body.
 
 This is a diagnostic build, not a final physics-quality solution. It does not
 change COM, pivot selection, mass, hand pose, mouse spring response, or angular
@@ -1329,12 +1333,15 @@ Use this for generated collider native-drive proof:
 
 - `owner=hand-bone-collider`
 - `owner=body-bone-collider`
-- `owner=weapon-collision`
 - `bodyDeltaGame`
 - `bodyRotErr`
 - `axisDeg=(x,y,z)`
 - `targetX/Y/Z`
 - `bodyX/Y/Z`
+
+Do not use `owner=weapon-collision` as evidence for loose dynamic grabbed
+weapons. That owner belongs to equipped/generated weapon collision work, which
+is separate from loose object/weapon dynamic grab.
 
 ```text
 PROXY GRAB AFTER_SOLVE ...
@@ -1409,21 +1416,26 @@ Effect on next work:
 - map grab-start object frame capture and constraint target construction;
 - do not keep changing hand collider conventions.
 
-#### Result E: Loose weapons behave differently from generic objects
+#### Result E: Loose grabbed weapons behave differently from generic objects
 
 Meaning:
 
-- weapon generated collision is on a separate convention path and must be read
-  independently;
-- equipped weapon and two-hand weapon logic are out of scope for this dynamic
-  loose-grab test.
+- do not jump to equipped weapon generated-collider conclusions;
+- loose non-equipped weapon grab uses the grabbed weapon's existing/native
+  collision body, the same dynamic-grab authority path as other loose objects;
+- equipped weapon collisions, equipped weapon handling, and two-hand equipped
+  weapon logic are separate systems and out of scope for this test.
 
 Effect on next work:
 
-- compare `owner=weapon-collision` body frame telemetry against generic
-  object/hand proxy telemetry;
-- do not generalize hand/body collider results to weapon mesh hulls without
-  checking weapon-specific logs.
+- compare loose weapon sessions through `GRAB BASIS FRAMECOMPARE`,
+  proxy/readback, desired object, held body/object transform, and release logs;
+- do not use `owner=weapon-collision` logs to explain loose grabbed weapon
+  behavior unless a later implementation explicitly adds generated weapon
+  colliders to loose dynamic grabs;
+- if loose weapons differ while generic objects are clean, inspect object-side
+  frame capture, multipart body selection, native collision shape/body relation,
+  and weapon form/type-specific tuning in the dynamic grab path.
 
 ### What This Test Decides
 
