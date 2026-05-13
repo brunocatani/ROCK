@@ -411,51 +411,38 @@ namespace rock::hand_bone_collider_geometry_math
     inline Matrix matrixFromAxes(const Vector& xAxis, const Vector& yAxis, const Vector& zAxis)
     {
         /*
-         * Generated body/hand colliders use the convention that has been
-         * verified in-game for their physical hull placement: each generated
-         * axis is stored as a column of the Ni matrix. Dynamic grab must adapt
-         * this at the grab-authority boundary instead of changing the collider
-         * convention, because the same helper builds the active body and hand
-         * collision bodies.
+         * This helper is the single generated-collider basis policy for hand
+         * and body colliders built from the root-flattened skeleton. The axes
+         * are stored in ROCK's Ni local-vector convention, where local X/Y/Z
+         * rotated through TransformMath::rotateLocalVectorToWorld yields the
+         * supplied world axes. Keeping the full collider pipeline on the same
+         * convention lets runtime visuals, contact bodies, and grab authority
+         * be compared directly instead of hiding a transpose at grab time.
          */
         Matrix matrix{};
         matrix.entry[0][0] = xAxis.x;
-        matrix.entry[1][0] = xAxis.y;
-        matrix.entry[2][0] = xAxis.z;
-        matrix.entry[0][1] = yAxis.x;
+        matrix.entry[0][1] = xAxis.y;
+        matrix.entry[0][2] = xAxis.z;
+        matrix.entry[1][0] = yAxis.x;
         matrix.entry[1][1] = yAxis.y;
-        matrix.entry[2][1] = yAxis.z;
-        matrix.entry[0][2] = zAxis.x;
-        matrix.entry[1][2] = zAxis.y;
+        matrix.entry[1][2] = yAxis.z;
+        matrix.entry[2][0] = zAxis.x;
+        matrix.entry[2][1] = zAxis.y;
         matrix.entry[2][2] = zAxis.z;
         return matrix;
-    }
-
-    template <class Matrix>
-    inline Matrix transposeStoredRotation(const Matrix& matrix)
-    {
-        Matrix result{};
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                result.entry[row][column] = matrix.entry[column][row];
-            }
-        }
-        return result;
     }
 
     template <class Transform>
     inline Transform generatedColliderFrameToGrabAuthorityFrame(const Transform& colliderFrame)
     {
         /*
-         * Grab-frame math composes NiTransform relationships through ROCK's
-         * local-vector convention, while generated collider placement uses the
-         * column-stored hull convention above. The palm-anchor collider remains
-         * untouched for contacts; only the frame handed to the grab proxy/body-A
-         * authority is transposed into grab math convention.
+         * The previous diagnostic build adapted generated collider frames only
+         * at the grab boundary. This build intentionally moves the whole
+         * generated-collider pipeline to the same Ni local-vector convention,
+         * so the grab boundary adapter is identity and telemetry should report
+         * direct-to-authority rotation near zero.
          */
-        Transform result = colliderFrame;
-        result.rotate = transposeStoredRotation(colliderFrame.rotate);
-        return result;
+        return colliderFrame;
     }
 
     template <class Transform, class Vector>

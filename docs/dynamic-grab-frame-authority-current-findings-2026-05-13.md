@@ -1154,3 +1154,40 @@ between-collide-and-solve write/readback boundary:
 - If the in-game test still fails, the failure is treated as a new boundary
   mismatch after the generated-frame transpose has been eliminated, not as a
   reason to reintroduce COM fallback or visual-hand hacks.
+
+## 2026-05-13 Full Generated Collider Convention Diagnostic
+
+The grab-only adapter build preserved generated hand/body collider placement and
+converted only at the grab-authority boundary. The next diagnostic build tests
+the other side of that fork explicitly: change the generated collider frame
+policy itself and make the grab-boundary adapter identity.
+
+### What Changed
+
+- `matrixFromAxes(...)` now stores generated X/Y/Z axes in ROCK's Ni
+  local-vector convention:
+  - matrix row 0 = generated local X in world;
+  - matrix row 1 = generated local Y in world;
+  - matrix row 2 = generated local Z in world.
+- `generatedColliderFrameToGrabAuthorityFrame(...)` remains as an explicit
+  boundary function, but now returns the input frame unchanged.
+- Hand, palm, finger, and body generated colliders built through
+  `hand_bone_collider_geometry_math::buildSegmentColliderFrame(...)` and
+  `buildPalmAnchorFrame(...)` all participate in this diagnostic convention.
+- The visual grab telemetry still draws generated palm, grab authority, and live
+  proxy/readback triads, but generated direct-to-authority rotation should now be
+  near zero. If it is not, the mismatch is outside this helper.
+
+### What This Proves
+
+This build answers whether the previous in-game collider behavior was hiding a
+global basis convention mismatch. If generated hand/body colliders visually
+rotate or translate incorrectly, then the old column-stored generated collider
+policy was required for native body placement and the grab problem is elsewhere.
+If colliders remain correct and grab attach rotation improves, then the previous
+grab-only adapter was too narrow and the generated collider convention itself was
+part of the grab-frame mismatch.
+
+This remains a frame-convention diagnostic. It does not change COM, pivot
+selection, mouse-spring tuning, mass force, angular authority, or hand pose
+logic.
