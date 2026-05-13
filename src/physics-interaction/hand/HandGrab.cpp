@@ -3152,7 +3152,7 @@ namespace rock
             objectWorldTransform = handWorldTransform;
         }
 
-        RE::NiPoint3 grabGripPoint = sel.hasHitPoint ? sel.hitPointWorld : objectWorldTransform.translate;
+        RE::NiPoint3 grabGripPoint = sel.hasHitPoint ? sel.hitPointWorld : grabPivotAForPrimaryChoice;
         float selectionToMeshDistanceGameUnits = 0.0f;
         bool meshGrabFound = false;
         MeshExtractionStats meshStats;
@@ -3172,7 +3172,7 @@ namespace rock
         RE::NiAVObject* surfaceOwnerNode = nullptr;
         RE::NiAVObject* authoredGrabNode = nullptr;
         const bool meshContactOnly = g_rockConfig.rockGrabMeshContactOnly;
-        const char* grabPointMode = sel.hasHitPoint ? "selectionHitPointFallback" : "objectNodeOriginFallback";
+        const char* grabPointMode = sel.hasHitPoint ? "selectionHitPointFallback" : "noContactPointPending";
         const char* grabFallbackReason = meshSourceNode ? "noTriangles" : "noMeshSourceNode";
         const char* palmSeatPointMode = grabPointMode;
         const char* palmSeatFallbackReason = grabFallbackReason;
@@ -3593,6 +3593,21 @@ namespace rock
             }
         }
 
+        if (!meshGrabFound && !sel.hasHitPoint && !authoredGrabNode) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand GRAB failed: no object-side contact point for '{}' formID={:08X}; object origin/COM fallback is not valid dynamic grab authority reason={} meshNode='{}' ownerNode='{}' rootNode='{}'",
+                handName(),
+                objName,
+                sel.refr->GetFormID(),
+                grabFallbackReason,
+                nodeDebugName(meshSourceNode),
+                nodeDebugName(collidableNode),
+                nodeDebugName(rootNode));
+            restoreFailedGrabPrep();
+            clearGrabExternalHandWorldTransform(_isLeft);
+            return false;
+        }
+
         palmSeatPointWorld = grabGripPoint;
         palmSeatSurfaceHit = grabSurfaceHit;
         palmSeatPointMode = grabPointMode;
@@ -3850,20 +3865,18 @@ namespace rock
             auto* bodyCollisionObjectAtGrab = bhkWorldAtGrab ? RE::bhkNPCollisionObject::Getbhk(bhkWorldAtGrab, objectBodyId) : nullptr;
             auto* ownerNodeAtGrab = bodyCollisionObjectAtGrab ? bodyCollisionObjectAtGrab->sceneObject : nullptr;
             _grabFrame.heldNode = collidableNode;
+            const RE::NiTransform objectToBodyAtGrab = computeRuntimeBodyLocalTransform(objectWorldTransform, grabBodyWorldAtGrab);
             /*
-             * Native dynamic grab is driven in FO4VR's hknp BODY frame. Runtime
-             * logs from mixed bottle/book grabs show that this BODY frame is also
-             * the frame followed by the held visual node. Applying an additional
-             * node-to-body local offset here double-counts the body-local relation:
-             * the object point can mathematically target the palm while the visible
-             * object remains offset by the captured BODY/MOTION gap. Keep BODY as
-             * the object frame for this native path; owner/root locals below remain
-             * diagnostics for detecting unexpected scene-node divergence.
+             * Custom proxy authority must preserve the same visual-object to hknp
+             * BODY relation that native mouse-spring target composition already
+             * depended on. The root-flattened palm frame owns hand movement, the
+             * visual object frame owns the captured grip relation, and BODY owns
+             * the solver frame. Treating BODY as if it were the visible object
+             * makes the angular motor rotate the held item immediately on grab.
              */
-            _grabFrame.bodyLocal = makeIdentityTransform();
+            _grabFrame.bodyLocal = objectToBodyAtGrab;
             _grabFrame.ownerBodyLocal = ownerNodeAtGrab ? computeRuntimeBodyLocalTransform(ownerNodeAtGrab->world, grabBodyWorldAtGrab) : makeIdentityTransform();
             _grabFrame.rootBodyLocal = rootNode ? computeRuntimeBodyLocalTransform(rootNode->world, grabBodyWorldAtGrab) : makeIdentityTransform();
-            const RE::NiTransform objectToBodyAtGrab = computeRuntimeBodyLocalTransform(objectWorldTransform, grabBodyWorldAtGrab);
             _grabFrame.localMeshTriangles.clear();
             _grabFrame.gripPointLocal = transform_math::worldPointToLocal(objectWorldTransform, grabGripPoint);
             _grabFrame.gripEvidenceLocal = _grabFrame.gripPointLocal;

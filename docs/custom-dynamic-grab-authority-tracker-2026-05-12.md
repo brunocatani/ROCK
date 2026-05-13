@@ -514,3 +514,94 @@ Correction applied and locally validated:
 - Release build passed and deployed to `D:\FO4\mods\ROCK\F4SE\Plugins` at `2026-05-12 20:37:35`.
 - CTest passed `18/18`.
 - Runtime validation still needs a fresh in-game log newer than `2026-05-12 20:37:35`.
+
+## Runtime log finding: visual object relation was collapsed into BODY
+
+Fresh runtime testing after proxy angular velocity landed showed the issue starts immediately after grab, before any heavy swing:
+
+- deployed DLL: `2026-05-12 20:37:35`;
+- fresh log: `2026-05-12 20:38:54-20:38:59`;
+- one-hand grabs are using `drive=proxyConstraint` and the proxy frame is `rootFlattenedPalmAnchorTarget/ok`;
+- frozen BODY pivot is stable: `transformBLocal` equals `desiredTransformBLocal` and `transformBErr=0.000gu`;
+- raw visual relation is preserved at grab start: example `heldToRawDesired=11.854gu/0.034deg` and `rotationPreservedDeg=0.000`;
+- custom BODY relation is wrong immediately: same grab reports `bodyToConDesired=116.689deg`, then `rotErr` climbs through `101-167deg`;
+- BODY and visible node are not the same frame in this runtime data: `nativeToHeld=8.766gu/180.000deg` and `bodyNodeToVisual` ranges roughly `62-131deg`.
+
+Conclusion:
+
+- the bad custom constraint path did not have a COM pivot problem in this log;
+- it had a visual-object-to-BODY convention problem;
+- source had collapsed `_grabFrame.bodyLocal` to identity, which erased the captured visual-object to hknp BODY relation;
+- that made the angular motor solve the held BODY as though it were the visible node, causing the object to rotate immediately and making the visual hand look like it was being dragged/broken by the object.
+
+Correction applied in source:
+
+- `_grabFrame.bodyLocal` now stores `objectToBodyAtGrab = computeRuntimeBodyLocalTransform(objectWorldTransform, grabBodyWorldAtGrab)`;
+- desired BODY targets remain derived from desired visual object targets via `desiredBodyWorld = desiredObjectWorld * objectToBodyAtGrab`;
+- one-hand and joining second-hand proxy constraints both use the same captured frame because they share the same grab commit path and `createProxyConstraintGrabDrive(...)`;
+- source tests now reject `_grabFrame.bodyLocal = makeIdentityTransform()` for dynamic grab and require the captured visual-to-BODY relation;
+- `GrabAuthorityProxyPolicyTests` now includes a transform policy case proving that a non-identity visual-to-BODY relation round-trips the desired visible object frame, while identity body-local would not.
+
+Local validation after this correction:
+
+- focused source tests passed: `GrabAuthorityProxyFrameSourceTests.ps1`, `HandGrabNativeBoundarySourceTests.ps1`, `SharedHeldObjectGrabSourceTests.ps1`;
+- `ROCKGrabAuthorityProxyPolicyTests` passed after adding the non-identity visual-to-BODY round-trip case;
+- Release build passed and deployed to `D:\FO4\mods\ROCK\F4SE\Plugins` at `2026-05-12 20:48:05`;
+- CTest passed `18/18`.
+
+Runtime validation still needed:
+
+- fresh one-hand runtime log must show near-zero immediate visual/body target rotation, no snap after grab, and `bodyTargetNodeErr` remaining near zero;
+- fresh two-hand runtime log must show both hands using proxy authority with shared force budget and no second-hand recapture/rotation snap.
+
+## Runtime clarification: remaining failure is grab-start angular capture/write
+
+User clarification after the `2026-05-12 20:48:05` build:
+
+- the bad behavior happens at the grab moment;
+- the object and visible hand rotate immediately when the grab initiates;
+- after the grab stabilizes, physical controller translation/rotation mostly maps to the expected movement;
+- this means the remaining issue is not the steady-state root-flattened palm follow axis;
+- the remaining issue is the first-frame angular target/reference frame handed to the custom constraint.
+
+Relevant runtime evidence from the same build:
+
+- `heldToRawDesired` and `rotationPreservedDeg` were near zero at creation, so the visual object relation capture was not the direct source of the first-frame snap;
+- `bodyTargetNodeErr` was near zero at creation, so the desired BODY target and visual node relation were internally consistent after the BODY-local correction;
+- `targetErr(colsInv=0.040deg rowsInv=47.866deg ...)` showed the raw `target_bRca` memory looked correct when interpreted through the old column-reader diagnostics, while the grab still snapped by the row-style error;
+- later frames showed the visual hand following the object after the solver had already rotated it, which matches the user-facing symptom of the hand becoming a passenger.
+
+Correction applied in source:
+
+- FO4VR custom grab angular setup now writes both `transformB.rotation` and `target_bRca` in the solver-visible row layout through `grab_constraint_math::writeHavokRotationRows(...)`;
+- the old column writer was removed from the active custom grab setup;
+- transform-B rotation and target_bRca are still written from the same captured body-to-hand rotation, so creation and per-frame refresh cannot introduce separate angular offsets;
+- the COM/object-origin fallback was removed from dynamic grab startup: if there is no mesh/contact/selection/authored object-side contact point, the grab fails instead of treating object origin or COM-like data as authority.
+
+Why this is specifically about the grab-start snap:
+
+- HIGGS establishes the initial dynamic relation by preserving object rotation, seating the selected contact point into the palm, and initializing the constraint angular target from the captured object/body-to-hand relation;
+- ROCK was already preserving that relation at the visual-frame level after the previous correction;
+- the solver-facing raw atom write still had a fixed convention mismatch, so the constraint corrected the body immediately at creation even though the higher-level frame math looked valid;
+- once that wrong initial angular correction completed, later controller motion could still appear to follow because the proxy palm frame was stable and angular proxy velocity was already being written.
+
+Validation target for next runtime build:
+
+- immediately after grab, `rowsInv` should become the near-zero diagnostic and the old column diagnostic may become non-zero;
+- `bodyToConDesired` and `rotErr` should not jump by tens of degrees on frame 1;
+- the visible hand should no longer rotate first and then stabilize;
+- failed no-contact/object-origin grabs should log `no object-side contact point ... object origin/COM fallback is not valid dynamic grab authority` instead of starting at the object center.
+
+Local validation after this correction:
+
+- moved the no-contact failure check after runtime contact-patch resolution, so valid contact-patch pivots are still allowed and only true no-evidence grabs fail;
+- focused source tests passed: `GrabAuthorityProxyFrameSourceTests.ps1`, `HandGrabNativeBoundarySourceTests.ps1`, `SharedHeldObjectGrabSourceTests.ps1`;
+- `ROCKGrabAuthorityProxyPolicyTests` compiled and passed, including the row-layout angular setup case;
+- Release build passed and deployed to `D:\FO4\mods\ROCK\F4SE\Plugins` at `2026-05-12 21:09:10`;
+- CTest passed `18/18`.
+
+Runtime validation still needed:
+
+- fresh one-hand runtime log after `2026-05-12 21:09:10`;
+- first held-frame telemetry must be checked for which diagnostic is now near zero (`rowsInv` expected, `colsInv` may be non-zero);
+- if the object still snaps at grab start, the next thing to map is not steady-state hand motion but the raw atom interpretation around transform-B/target-bRca consumption in the FO4VR solver.

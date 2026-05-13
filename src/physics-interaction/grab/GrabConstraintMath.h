@@ -48,24 +48,24 @@ namespace rock::grab_constraint_math
     }
 
     template <class Matrix>
-    inline void writeHavokRotationColumns(float* target, const Matrix& rotation)
+    inline void writeHavokRotationRows(float* target, const Matrix& rotation)
     {
         if (!target) {
             return;
         }
 
         target[0] = rotation.entry[0][0];
-        target[1] = rotation.entry[1][0];
-        target[2] = rotation.entry[2][0];
+        target[1] = rotation.entry[0][1];
+        target[2] = rotation.entry[0][2];
         target[3] = 0.0f;
 
-        target[4] = rotation.entry[0][1];
+        target[4] = rotation.entry[1][0];
         target[5] = rotation.entry[1][1];
-        target[6] = rotation.entry[2][1];
+        target[6] = rotation.entry[1][2];
         target[7] = 0.0f;
 
-        target[8] = rotation.entry[0][2];
-        target[9] = rotation.entry[1][2];
+        target[8] = rotation.entry[2][0];
+        target[9] = rotation.entry[2][1];
         target[10] = rotation.entry[2][2];
         target[11] = 0.0f;
     }
@@ -73,9 +73,19 @@ namespace rock::grab_constraint_math
     template <class Transform>
     inline void writeInitialGrabAngularFrame(float* transformBRotation, float* targetBRca, const Transform& desiredBodyTransformHandSpace)
     {
+        /*
+         * FO4VR hknp consumes this custom ragdoll-motor atom through the raw
+         * hknp constraint-data memory layout, not through HIGGS' Skyrim hkp
+         * wrapper. Runtime logs showed the grabbed object snapping at creation
+         * while telemetry read target_bRca as correct only when interpreted as
+         * column blocks; the solver-visible convention is the row layout here.
+         * Keep transform-B rotation and target_bRca on the same body-to-hand
+         * rotation so creation and per-frame refresh cannot introduce a fixed
+         * angular offset at grab start.
+         */
         const auto bodyToHandRotation = desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
-        writeHavokRotationColumns(transformBRotation, bodyToHandRotation);
-        writeHavokRotationColumns(targetBRca, bodyToHandRotation);
+        writeHavokRotationRows(transformBRotation, bodyToHandRotation);
+        writeHavokRotationRows(targetBRca, bodyToHandRotation);
     }
 
     template <class Transform, class Vector>
