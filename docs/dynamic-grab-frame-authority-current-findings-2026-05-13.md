@@ -1233,3 +1233,203 @@ Interpretation:
   constraint update timing.
 - weapon `bodyRotErr` should be read separately because weapon generated hulls
   still use their own root-local mesh path and explicit transpose policy.
+
+## 2026-05-13 Current Stage Checkpoint
+
+### Current Build Stage
+
+Active diagnostic build:
+
+- `d1ffe81 fix/grab-frame: test unified generated collider convention`
+- `1a802aa fix/grab-frame: add generated body rotation telemetry`
+
+The deployed build intentionally tests the full generated-collider convention
+flip:
+
+- generated hand colliders use the new shared `matrixFromAxes(...)` convention;
+- generated body colliders that reuse `buildSegmentColliderFrame(...)` use the
+  same convention;
+- the generated palm anchor target uses the same convention;
+- the hidden grab-authority proxy uses the same palm frame;
+- `generatedColliderFrameToGrabAuthorityFrame(...)` is now identity;
+- weapon generated mesh colliders are not part of this helper and still use the
+  weapon-specific root-local mesh path and explicit transpose policy.
+
+This is a diagnostic build, not a final physics-quality solution. It does not
+change COM, pivot selection, mass, hand pose, mouse spring response, or angular
+authority.
+
+### Current Runtime Issue Being Investigated
+
+The visible symptom before this checkpoint:
+
+- at the grab moment, the grabbed object and visible hand rotate unexpectedly;
+- after the initial snap/rotation, physical controller translation and rotation
+  mostly match expected movement;
+- this points to attach-time frame capture / body-A proxy / generated-frame
+  convention, not to COM-based pivoting or post-hold input tracking.
+
+The current question:
+
+- Are generated hand/body colliders and the hidden grab-authority proxy using a
+  consistent transform convention?
+- If they are consistent in code, does FO4VR's native generated-body placement
+  consume that convention differently when the body is actually driven?
+
+### Test Setup Expected In Game
+
+The active production INI should have:
+
+```ini
+bDebugGrabFrameLogging = true
+bDebugGrabTransformTelemetry = true
+bDebugGrabTransformTelemetryText = true
+bDebugGrabTransformTelemetryAxes = true
+iDebugGrabTransformTelemetryLogIntervalFrames = 1
+```
+
+In game, test a normal loose one-hand dynamic object grab and, if possible, one
+loose non-equipped weapon grab. Use the right and left hands separately if time
+allows; logs are side-separated.
+
+Visual overlay expectations:
+
+- generated palm direct triad and palm authority triad are drawn at different
+  positions for readability, so do not judge by screen overlap;
+- judge their orientation/basis by the axes and by the numeric
+  `directToAuthority` log value;
+- proxy/readback triad shows what the hidden authority body actually has after
+  native body placement/readback;
+- red/local X should point toward finger bases;
+- blue/local Z should point out the back of the hand;
+- negative blue should point into palm/object;
+- green/local Y should run across the palm.
+
+### Log Lines To Capture
+
+The important log families:
+
+```text
+GRAB BASIS FRAMECOMPARE ...
+```
+
+Use this for:
+
+- `directToAuthority`
+- `authorityToProxy`
+- generated palm basis
+- grab-authority palm basis
+- proxy/readback basis
+
+```text
+Generated body frame compare owner=...
+```
+
+Use this for generated collider native-drive proof:
+
+- `owner=hand-bone-collider`
+- `owner=body-bone-collider`
+- `owner=weapon-collision`
+- `bodyDeltaGame`
+- `bodyRotErr`
+- `axisDeg=(x,y,z)`
+- `targetX/Y/Z`
+- `bodyX/Y/Z`
+
+```text
+PROXY GRAB AFTER_SOLVE ...
+PROXY GRAB AUTHORITY ...
+```
+
+Use this for body-A proxy timing/readback if the palm boundary is clean but the
+grab still snaps.
+
+### Result Matrix
+
+#### Result A: Hand/body colliders visually break
+
+Meaning:
+
+- the old column-stored generated collider convention was required for native
+  generated body placement;
+- the unified convention flip is not production-safe.
+
+Effect on next work:
+
+- revert only the full generated-collider convention flip;
+- keep the generated-body rotation telemetry;
+- return to a grab-only adapter or a more explicit native-placement adapter;
+- do not treat COM or mass as related to this failure.
+
+#### Result B: Hand/body colliders look correct, `directToAuthority ~= 0deg`,
+but generated hand/body `bodyRotErr` is large
+
+Meaning:
+
+- sampled generated frames are internally consistent;
+- the native generated-body placement/readback path is consuming or returning
+  rotation in a different convention.
+
+Effect on next work:
+
+- keep investigating `niRotToHkTransformRotation(...)`,
+  `driveGeneratedKeyframedBody(...)`, `setTransform(...)`, and readback source
+  convention;
+- likely fix belongs at the native generated-body placement/readback boundary,
+  not in grab pivot logic.
+
+#### Result C: Hand/body colliders look correct and generated hand/body
+`bodyRotErr ~= 0deg`, but `authorityToProxy` is large
+
+Meaning:
+
+- generated collider and native generated-body drive are likely correct;
+- hidden proxy/body-A authority is diverging after palm target capture.
+
+Effect on next work:
+
+- inspect proxy target queue/flush, between-collide-and-solve timing, and
+  after-solve readback;
+- compare queued proxy target, immediate setter readback, and after-solve
+  readback for the same session/frame.
+
+#### Result D: `directToAuthority ~= 0deg`, generated body `bodyRotErr ~= 0deg`,
+`authorityToProxy ~= 0deg`, but object/visual hand still snaps at grab start
+
+Meaning:
+
+- the palm/proxy generated-frame convention is probably not the attach snap
+  source;
+- the next suspect is object-side capture: `objectToBodyAtGrab`,
+  `objectToConstraintBodyAtGrab`, transform-B, angular target, or desired
+  object/held-node relation.
+
+Effect on next work:
+
+- map grab-start object frame capture and constraint target construction;
+- do not keep changing hand collider conventions.
+
+#### Result E: Loose weapons behave differently from generic objects
+
+Meaning:
+
+- weapon generated collision is on a separate convention path and must be read
+  independently;
+- equipped weapon and two-hand weapon logic are out of scope for this dynamic
+  loose-grab test.
+
+Effect on next work:
+
+- compare `owner=weapon-collision` body frame telemetry against generic
+  object/hand proxy telemetry;
+- do not generalize hand/body collider results to weapon mesh hulls without
+  checking weapon-specific logs.
+
+### What This Test Decides
+
+This test decides whether to keep or reject the full generated-collider
+convention flip.
+
+It does not decide final grab quality, mass feel, HIGGS-style weight, or motor
+architecture. Those remain later work after the attach-time frame snap is
+resolved with clean evidence.
