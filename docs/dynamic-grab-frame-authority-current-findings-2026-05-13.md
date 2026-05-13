@@ -1017,3 +1017,105 @@ Do not treat these as root causes for the current after-grab rotation:
 
 They may need polish later, but changing them now would mask the symptom while
 leaving the object driven by the wrong constraint authority frame.
+
+## 2026-05-13 Implementation Contract: Generated Hand/Proxy Frame Convention
+
+### Problem To Fully Fix
+
+The remaining attach-time rotation bug is not a COM pivot bug and not a visual
+hand formula bug. The capture logs showed the object-side state was sane:
+
+- the selected contact/object-side pivot stayed local to the grabbed object;
+- the desired object rotation was preserved at grab start;
+- COM was not required to explain the immediate rotation;
+- the visual hand followed the held object through the frozen raw-hand relation.
+
+The bad relation was between the raw/root-flattened palm frame and the generated
+physics palm/proxy frame used as body A. At grab start, the generated frame axes
+were the transpose of the frame convention consumed by ROCK's transform helpers.
+That made the custom authority path solve the held object toward a different
+palm orientation than the one used by pivot capture and visual-hand reverse
+relation. The visible hand then looked broken because it was following an object
+that had already been rotated by the wrong body-A frame.
+
+### Required Fix
+
+`hand_bone_collider_geometry_math::matrixFromAxes(...)` must store generated
+collider axes in the Ni row convention used by:
+
+- `transform_math::rotateLocalVectorToWorld(...)`;
+- ROCK grab-frame math;
+- FO4VR `NiTransform` composition as used by the existing transform helpers.
+
+Required storage:
+
+```text
+row 0 = local X axis in world space
+row 1 = local Y axis in world space
+row 2 = local Z axis in world space
+```
+
+Column storage is forbidden for generated hand collider frames because the same
+function builds the palm anchor frame later used as the dynamic-grab body-A
+proxy authority. Column storage transposes body A and recreates the attach-time
+object/visual-hand rotation.
+
+### Files In This Fix
+
+- `src/physics-interaction/hand/HandColliderTypes.h`
+  - owns `matrixFromAxes(...)`;
+  - owns generated palm/finger collider frame construction;
+  - now documents why root-flattened hand collider axes must use the row
+    convention.
+- `tests/HandColliderFramePolicyTests.cpp`
+  - locks `matrixFromAxes(...)` against `rotateLocalVectorToWorld(...)`;
+  - verifies `buildPalmAnchorFrame(...)` local axes read back as the generated
+    palm axes;
+  - verifies `buildSegmentColliderFrame(...)` local axes read back as the
+    generated segment axes.
+- `CMakeLists.txt`
+  - registers `ROCKHandColliderFramePolicyTests`;
+  - includes it in the CommonLib-backed policy test target list.
+
+### What This Fix Does Not Change
+
+- It does not use COM as pivot authority.
+- It does not change selected contact pivot capture.
+- It does not change the visual-hand formula.
+- It does not retune mouse spring, motors, mass, tau, damping, or lead.
+- It does not change actor ragdoll grab, equipped weapon grab, or two-hand
+  weapon handling.
+- It does not remove the diagnostic/proxy scaffolding already present in the
+  working tree.
+
+### Runtime Proof Needed After Build
+
+A fresh in-game grab log should show the generated proxy/palm basis matching the
+raw/root-flattened hand basis in the same convention:
+
+```text
+GRAB BASIS CAPTURE ... convention=niLocalVectorToWorld ...
+  rawHandToProxyPalm max ~= 0deg
+```
+
+The object should no longer rotate immediately at attachment. If an attach-time
+rotation remains after this axis fix, the next data to collect is not more COM
+data. The next target is the active body-A transform source at the exact
+between-collide-and-solve write/readback boundary:
+
+- queued proxy target world transform;
+- proxy body transform immediately after setter;
+- proxy body transform after solve;
+- raw hand/root-flattened hand transform for the same frame;
+- object desired transform and actual body transform for the same frame;
+- separated left/right session ids.
+
+### Completion Criteria For This Frame Bug
+
+- Release build succeeds.
+- Full CTest suite passes.
+- `ROCK.dll` and `ROCK.pdb` are deployed to the production ROCK plugin folder.
+- In-game attach test no longer rotates the object/visual hand at grab start.
+- If the in-game test still fails, the failure is treated as a new boundary
+  mismatch after the generated-frame transpose has been eliminated, not as a
+  reason to reintroduce COM fallback or visual-hand hacks.

@@ -239,6 +239,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGrabAuthorityProxyPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabAuthorityProxyPolicyTests)
 
+  add_executable(ROCKHandColliderFramePolicyTests
+    "${ROOT_DIR}/tests/HandColliderFramePolicyTests.cpp"
+  )
+  target_compile_features(ROCKHandColliderFramePolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKHandColliderFramePolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKHandColliderFramePolicyTests)
+
   add_executable(ROCKGrabNodeNamePolicyTests
     "${ROOT_DIR}/tests/GrabNodeNamePolicyTests.cpp"
   )
@@ -266,6 +273,7 @@ if(BUILD_ROCK_TESTS)
     ROCKGrabHapticPolicyTests
     ROCKGrabMotionControllerPolicyTests
     ROCKGrabAuthorityProxyPolicyTests
+    ROCKHandColliderFramePolicyTests
     ROCKGrabNodeNamePolicyTests
     ROCKShoulderStashPolicyTests
     ROCKWeaponCollisionLifecyclePolicyTests

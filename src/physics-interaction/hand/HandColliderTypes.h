@@ -286,9 +286,9 @@ namespace rock::hand_bone_collider_geometry_math
     /*
      * These helpers convert the validated live bone graph into stable collider
      * frames. Child bone translation defines each segment direction, while bone
-     * rotation supplies roll. Palm landmarks are derived from the hand node plus
-     * live finger bases so the new constraint anchor follows the visual hand
-     * instead of the removed legacy box.
+     * rotation supplies roll. Palm landmarks are derived from the root-flattened
+     * hand bone plus live finger bases so the new constraint anchor follows the
+     * visual hand instead of the removed legacy box.
      */
 
     template <class Vector>
@@ -410,15 +410,24 @@ namespace rock::hand_bone_collider_geometry_math
     template <class Matrix, class Vector>
     inline Matrix matrixFromAxes(const Vector& xAxis, const Vector& yAxis, const Vector& zAxis)
     {
+        /*
+         * Generated hand colliders and the dynamic-grab body-A proxy are fed
+         * from the same root-flattened palm/finger frames. Store axes in the
+         * Ni row convention used by TransformMath and FO4VR compose: local X is
+         * row 0, local Y is row 1, local Z is row 2. Column storage transposes
+         * the generated palm frame, which makes the grab constraint rotate the
+         * object and visible hand at attachment even though the object-side
+         * contact pivot and desired rotation were captured correctly.
+         */
         Matrix matrix{};
         matrix.entry[0][0] = xAxis.x;
-        matrix.entry[1][0] = xAxis.y;
-        matrix.entry[2][0] = xAxis.z;
-        matrix.entry[0][1] = yAxis.x;
+        matrix.entry[0][1] = xAxis.y;
+        matrix.entry[0][2] = xAxis.z;
+        matrix.entry[1][0] = yAxis.x;
         matrix.entry[1][1] = yAxis.y;
-        matrix.entry[2][1] = yAxis.z;
-        matrix.entry[0][2] = zAxis.x;
-        matrix.entry[1][2] = zAxis.y;
+        matrix.entry[1][2] = yAxis.z;
+        matrix.entry[2][0] = zAxis.x;
+        matrix.entry[2][1] = zAxis.y;
         matrix.entry[2][2] = zAxis.z;
         return matrix;
     }
