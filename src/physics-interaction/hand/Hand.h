@@ -329,6 +329,7 @@ namespace rock
         void flushPendingCollisionPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void flushPendingHeldNativeGrab(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void flushPendingCustomGrabAuthority(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
+        void observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         bool beginStashCandidate();
         bool cancelStashCandidate();
 
@@ -530,6 +531,7 @@ namespace rock
         std::uint64_t _grabAuthorityProxyFailedFlushes = 0;
         float _grabAuthorityProxyLastFlushDeltaSeconds = 0.0f;
         int _grabAuthorityProxyLogCounter = 0;
+        std::uint64_t _grabAuthorityProxyAfterSolveLogCounter = 0;
         std::atomic<bool> _grabAuthorityProxyReleasePending{ false };
         std::mutex _grabAuthorityProxyMutex;
         SavedObjectState _savedObjectState;

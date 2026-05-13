@@ -603,6 +603,44 @@
                 }
 
                 if (drawGrabTransformTelemetryAxes) {
+                    const auto palmDebugBasis = grab_transform_telemetry_overlay::buildHandAttachedTextBasis(sample.rawHandWorld, isLeft);
+                    const RE::NiPoint3 palmReference =
+                        sample.hasPalmAnchorTarget ? sample.palmAnchorTargetWorld.translate : sample.rawHandWorld.translate;
+                    auto withOverlayOrigin = [](RE::NiTransform transform, const RE::NiPoint3& origin) {
+                        transform.translate = origin;
+                        return transform;
+                    };
+
+                    if (sample.hasPalmAnchorTarget) {
+                        /*
+                         * These palm triads intentionally compare two meanings
+                         * of the same generated palm collider transform. The
+                         * short/direct triad is how grab math reads the
+                         * collider frame without conversion. The longer
+                         * authority triad is the converted frame that should
+                         * anatomically match the palm/finger skeleton while
+                         * leaving the physical collider convention untouched.
+                         */
+                        addAxisTransform(
+                            withOverlayOrigin(sample.palmAnchorTargetWorld, palmReference - palmDebugBasis.panelRight * 8.0f),
+                            isLeft ? debug::AxisOverlayRole::LeftGrabPalmGeneratedDirect : debug::AxisOverlayRole::RightGrabPalmGeneratedDirect,
+                            palmReference,
+                            true);
+                    }
+                    if (sample.hasPalmAnchorGrabAuthority) {
+                        addAxisTransform(
+                            withOverlayOrigin(sample.palmAnchorGrabAuthorityWorld, palmReference),
+                            isLeft ? debug::AxisOverlayRole::LeftGrabPalmAuthorityFrame : debug::AxisOverlayRole::RightGrabPalmAuthorityFrame,
+                            palmReference,
+                            false);
+                    }
+                    if (sample.hasProxyReadback) {
+                        addAxisTransform(
+                            withOverlayOrigin(sample.proxyReadbackWorld, palmReference + palmDebugBasis.panelRight * 8.0f),
+                            isLeft ? debug::AxisOverlayRole::LeftGrabProxyReadback : debug::AxisOverlayRole::RightGrabProxyReadback,
+                            palmReference,
+                            true);
+                    }
                     if (sample.hasGrabStartFrames) {
                         addAxisTransform(sample.currentConstraintDesiredObjectWorld,
                             isLeft ? debug::AxisOverlayRole::LeftGrabDesiredObject : debug::AxisOverlayRole::RightGrabDesiredObject,
@@ -760,6 +798,18 @@
                         sample.rawToConstraintReverseAxes.x,
                         sample.rawToConstraintReverseAxes.y,
                         sample.rawToConstraintReverseAxes.z);
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 13),
+                        color,
+                        "PALM direct->auth %.2fgu %.2fdeg raw->direct %.2fdeg",
+                        sample.palmAnchorTargetToGrabAuthority.positionGameUnits,
+                        sample.palmAnchorTargetToGrabAuthority.rotationDegrees,
+                        sample.rawToPalmAnchorTarget.rotationDegrees);
+                    addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 14),
+                        color,
+                        "PROXY auth->read %.2fgu %.2fdeg has%d",
+                        sample.grabAuthorityToProxyReadback.positionGameUnits,
+                        sample.grabAuthorityToProxyReadback.rotationDegrees,
+                        sample.hasProxyReadback ? 1 : 0);
                 }
 
                 ++telemetryState.logFrameCounter;
@@ -919,6 +969,21 @@
                         grab_transform_telemetry::formatVector3(sample.rootPalmNormalWorld),
                         sample.rawToPalmAnchorTarget.positionGameUnits,
                         sample.rawToPalmAnchorTarget.rotationDegrees);
+                    ROCK_LOG_INFO(Hand,
+                        "GRAB BASIS FRAMECOMPARE {} {} side={} palmDirect={} palmAuthority={} proxyReadback={} directToAuthority={:.3f}gu/{:.3f}deg authorityToProxy={:.3f}gu/{:.3f}deg {} {} {}",
+                        prefix,
+                        phaseLabel,
+                        sideLabel,
+                        sample.hasPalmAnchorTarget ? "yes" : "no",
+                        sample.hasPalmAnchorGrabAuthority ? "yes" : "no",
+                        sample.hasProxyReadback ? "yes" : "no",
+                        sample.palmAnchorTargetToGrabAuthority.positionGameUnits,
+                        sample.palmAnchorTargetToGrabAuthority.rotationDegrees,
+                        sample.grabAuthorityToProxyReadback.positionGameUnits,
+                        sample.grabAuthorityToProxyReadback.rotationDegrees,
+                        grab_transform_telemetry::formatBasis("palmDirect", sample.palmAnchorTargetBasis),
+                        grab_transform_telemetry::formatBasis("palmAuthority", sample.palmAnchorGrabAuthorityBasis),
+                        grab_transform_telemetry::formatBasis("proxyReadback", sample.proxyReadbackBasis));
                     ROCK_LOG_INFO(Hand,
                         "GRAB BASIS {} {} side={} objectFrames {} {} {} {} {} {}",
                         prefix,

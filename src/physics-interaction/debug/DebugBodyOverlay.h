@@ -53,7 +53,13 @@ namespace rock::debug
         RightGrabDesiredObject,
         LeftGrabDesiredObject,
         RightGrabHeldNode,
-        LeftGrabHeldNode
+        LeftGrabHeldNode,
+        RightGrabPalmGeneratedDirect,
+        LeftGrabPalmGeneratedDirect,
+        RightGrabPalmAuthorityFrame,
+        LeftGrabPalmAuthorityFrame,
+        RightGrabProxyReadback,
+        LeftGrabProxyReadback
     };
 
     enum class AxisOverlaySource : std::uint8_t
@@ -188,10 +194,10 @@ namespace rock::debug
                 (hand_collider_semantics::kHandColliderBodyCountPerHand * 2) +
                 skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size() + 8>
             entries{};
-        std::array<AxisOverlayEntry, 24> axisEntries{};
+        std::array<AxisOverlayEntry, 40> axisEntries{};
         std::array<MarkerOverlayEntry, 192> markerEntries{};
         std::array<SkeletonOverlayEntry, skeleton_bone_debug_math::skeletonOverlayBudget()> skeletonEntries{};
-        std::array<TextOverlayEntry, 24> textEntries{};
+        std::array<TextOverlayEntry, 40> textEntries{};
         std::uint32_t count{ 0 };
         std::uint32_t axisCount{ 0 };
         std::uint32_t markerCount{ 0 };

@@ -2751,6 +2751,8 @@ namespace rock
             _lastContactBodyRight.load(std::memory_order_acquire),
             _lastContactBodyLeft.load(std::memory_order_acquire),
             _lastContactBodyWeapon.load(std::memory_order_acquire));
+        _rightHand.observeCustomGrabAuthorityAfterSolve(world, timing);
+        _leftHand.observeCustomGrabAuthorityAfterSolve(world, timing);
         _grabAuthorityPhase0Probe.observeAfterAny(world, timing, makeGrabAuthorityPhase0ProbeConfig());
     }
 

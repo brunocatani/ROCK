@@ -1353,6 +1353,15 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::RightGrabHeldNode:
             case AxisOverlayRole::LeftGrabHeldNode:
                 return kColliderAxisLength;
+            case AxisOverlayRole::RightGrabPalmGeneratedDirect:
+            case AxisOverlayRole::LeftGrabPalmGeneratedDirect:
+                return 7.0f;
+            case AxisOverlayRole::RightGrabPalmAuthorityFrame:
+            case AxisOverlayRole::LeftGrabPalmAuthorityFrame:
+                return 11.0f;
+            case AxisOverlayRole::RightGrabProxyReadback:
+            case AxisOverlayRole::LeftGrabProxyReadback:
+                return 15.0f;
             case AxisOverlayRole::TargetBody:
                 return kTargetAxisLength;
             }
@@ -1381,6 +1390,15 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::RightGrabHeldNode:
             case AxisOverlayRole::LeftGrabHeldNode:
                 return 0.92f;
+            case AxisOverlayRole::RightGrabPalmGeneratedDirect:
+            case AxisOverlayRole::LeftGrabPalmGeneratedDirect:
+                return 0.42f;
+            case AxisOverlayRole::RightGrabPalmAuthorityFrame:
+            case AxisOverlayRole::LeftGrabPalmAuthorityFrame:
+                return 0.98f;
+            case AxisOverlayRole::RightGrabProxyReadback:
+            case AxisOverlayRole::LeftGrabProxyReadback:
+                return 0.72f;
             default:
                 return 1.0f;
             }

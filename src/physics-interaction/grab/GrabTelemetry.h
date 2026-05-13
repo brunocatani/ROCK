@@ -82,6 +82,8 @@ namespace rock::grab_transform_telemetry
         RE::NiTransform liveHandWorldAtGrab{};
         RE::NiTransform handBodyWorldAtGrab{};
         RE::NiTransform palmAnchorTargetWorld{};
+        RE::NiTransform palmAnchorGrabAuthorityWorld{};
+        RE::NiTransform proxyReadbackWorld{};
         RE::NiTransform objectNodeWorldAtGrab{};
         RE::NiTransform desiredObjectWorldAtGrab{};
         RE::NiTransform currentRawDesiredObjectWorld{};
@@ -97,6 +99,8 @@ namespace rock::grab_transform_telemetry
         OrientationBasis rawHandBasis{};
         OrientationBasis handBodyBasis{};
         OrientationBasis palmAnchorTargetBasis{};
+        OrientationBasis palmAnchorGrabAuthorityBasis{};
+        OrientationBasis proxyReadbackBasis{};
         OrientationBasis heldBodyBasis{};
         OrientationBasis heldNativeBodyBasis{};
         OrientationBasis heldNodeBasis{};
@@ -129,6 +133,8 @@ namespace rock::grab_transform_telemetry
 
         TransformDelta rawToHandBody{};
         TransformDelta rawToPalmAnchorTarget{};
+        TransformDelta palmAnchorTargetToGrabAuthority{};
+        TransformDelta grabAuthorityToProxyReadback{};
         TransformDelta heldNativeBodyToHeldBody{};
         TransformDelta heldNodeToDesiredObjectAtGrab{};
         TransformDelta heldNodeToRawDesiredObject{};
@@ -160,6 +166,8 @@ namespace rock::grab_transform_telemetry
         bool isLeft = false;
         bool hasHandBodyWorld = false;
         bool hasPalmAnchorTarget = false;
+        bool hasPalmAnchorGrabAuthority = false;
+        bool hasProxyReadback = false;
         bool hasHeldBodyWorld = false;
         bool hasHeldNativeBodyWorld = false;
         bool hasHeldNodeWorld = false;

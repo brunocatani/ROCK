@@ -1040,39 +1040,53 @@ that had already been rotated by the wrong body-A frame.
 
 ### Required Fix
 
-`hand_bone_collider_geometry_math::matrixFromAxes(...)` must store generated
-collider axes in the Ni row convention used by:
+Correction after collider-scope review: generated body/hand colliders were
+already verified correct in-game with the existing column-stored collider
+convention. The grab bug must therefore be fixed at the grab-authority boundary,
+not by changing shared collider placement.
 
-- `transform_math::rotateLocalVectorToWorld(...)`;
-- ROCK grab-frame math;
-- FO4VR `NiTransform` composition as used by the existing transform helpers.
+`hand_bone_collider_geometry_math::matrixFromAxes(...)` must keep the generated
+collider convention:
 
 Required storage:
 
 ```text
-row 0 = local X axis in world space
-row 1 = local Y axis in world space
-row 2 = local Z axis in world space
+column 0 = generated local X axis in world space
+column 1 = generated local Y axis in world space
+column 2 = generated local Z axis in world space
 ```
 
-Column storage is forbidden for generated hand collider frames because the same
-function builds the palm anchor frame later used as the dynamic-grab body-A
-proxy authority. Column storage transposes body A and recreates the attach-time
-object/visual-hand rotation.
+Dynamic grab must convert only the palm-anchor/proxy transform into the
+grab-frame convention before storing `constraintHandSpace` and
+`constraintBodyHandSpace`:
+
+```text
+grab proxy frame = generatedColliderFrameToGrabAuthorityFrame(palm anchor frame)
+                 = same translation and scale, transposed rotation
+```
+
+This preserves all generated hand/body collider placement while preventing the
+custom grab constraint from using the physical collider storage convention as
+the body-A grip authority convention.
 
 ### Files In This Fix
 
 - `src/physics-interaction/hand/HandColliderTypes.h`
   - owns `matrixFromAxes(...)`;
   - owns generated palm/finger collider frame construction;
-  - now documents why root-flattened hand collider axes must use the row
-    convention.
+  - keeps the verified generated collider column convention;
+  - owns `generatedColliderFrameToGrabAuthorityFrame(...)`, the explicit
+    grab-only adapter.
+- `src/physics-interaction/hand/HandGrab.cpp`
+  - adapts `_boneColliders.tryGetPalmAnchorTarget(...)` output before using it
+    as the custom grab proxy/body-A authority frame;
+  - adapts palm-anchor fallback/readback frames the same way;
+  - leaves raw hand fallback unadapted because it is not a generated collider
+    frame.
 - `tests/HandColliderFramePolicyTests.cpp`
-  - locks `matrixFromAxes(...)` against `rotateLocalVectorToWorld(...)`;
-  - verifies `buildPalmAnchorFrame(...)` local axes read back as the generated
-    palm axes;
-  - verifies `buildSegmentColliderFrame(...)` local axes read back as the
-    generated segment axes.
+  - locks `matrixFromAxes(...)` to column-stored generated collider axes;
+  - verifies the grab-only adapter converts palm and segment generated frames
+    into the local-vector convention expected by grab math.
 - `CMakeLists.txt`
   - registers `ROCKHandColliderFramePolicyTests`;
   - includes it in the CommonLib-backed policy test target list.
@@ -1085,18 +1099,39 @@ object/visual-hand rotation.
 - It does not retune mouse spring, motors, mass, tau, damping, or lead.
 - It does not change actor ragdoll grab, equipped weapon grab, or two-hand
   weapon handling.
+- It does not change generated hand/body collider placement convention.
 - It does not remove the diagnostic/proxy scaffolding already present in the
   working tree.
 
 ### Runtime Proof Needed After Build
 
-A fresh in-game grab log should show the generated proxy/palm basis matching the
-raw/root-flattened hand basis in the same convention:
+A fresh in-game grab log and overlay should show the generated palm, converted
+grab-authority palm, and proxy/body-A readback as separate frames:
 
 ```text
-GRAB BASIS CAPTURE ... convention=niLocalVectorToWorld ...
-  rawHandToProxyPalm max ~= 0deg
+GRAB BASIS FRAMECOMPARE ...
+  palmDirect=yes
+  palmAuthority=yes
+  proxyReadback=yes
+  directToAuthority=...deg
+  authorityToProxy=...deg
 ```
+
+With `bDebugGrabTransformTelemetry`, `bDebugGrabTransformTelemetryAxes`, and
+optionally `bDebugGrabTransformTelemetryText` enabled, the overlay draws:
+
+- short palm triad offset to one side: generated palm collider frame consumed
+  directly by grab math;
+- longer center palm triad: generated palm converted to grab-authority frame;
+- longest palm triad offset to the other side: live proxy/body-A readback;
+- existing object triads: desired object and actual held node/body frames.
+
+The visual reference is the hand, not the world and not the grabbed object:
+
+- red/local X should run from the wrist/hand root toward finger bases;
+- blue/local Z should point out the back of the hand;
+- negative blue should point into the palm/object;
+- green/local Y should run across the palm.
 
 The object should no longer rotate immediately at attachment. If an attach-time
 rotation remains after this axis fix, the next data to collect is not more COM

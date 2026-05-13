@@ -1755,17 +1755,14 @@ namespace rock
     bool Hand::tryGetGrabDriveObjectWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform) const
     {
         /*
-         * Native mouse spring and visual-node reconstruction use FO4VR's hknp
-         * BODY slot convention. The custom proxy constraint is different: its
-         * atom body-B frame is consumed by the solver against the live hknp
-         * motion/COM frame when one exists. The grip point is still the selected
-         * contact point; this helper only chooses the coordinate frame used to
-         * express that same point for the active drive.
+         * Custom grab authority and native mouse spring both measure held-object
+         * transform authority from the hknp BODY slot. Ghidra mapping of the
+         * type-2 local-transform atom shows transform A/B are composed against
+         * the body slot pointers; MOTION/COM data belongs to mass, inertia, and
+         * diagnostics only. Keeping this helper BODY-only prevents the selected
+         * contact pivot from being re-encoded through COM space at grab start.
          */
         outTransform = makeIdentityTransform();
-        if (_heldDriveMode == HeldObjectDriveMode::ProxyConstraint) {
-            return tryResolveLiveBodyWorldTransform(world, bodyId, outTransform);
-        }
         return tryGetGrabAuthorityBodyWorldTransform(world, bodyId, outTransform);
     }
 
@@ -1797,6 +1794,7 @@ namespace rock
         _grabAuthorityProxyFailedFlushes = 0;
         _grabAuthorityProxyLastFlushDeltaSeconds = 0.0f;
         _grabAuthorityProxyLogCounter = 0;
+        _grabAuthorityProxyAfterSolveLogCounter = 0;
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
     }
 
@@ -1891,7 +1889,7 @@ namespace rock
         RE::NiTransform anchorBodyWorld{};
         if (_heldDriveMode == HeldObjectDriveMode::ProxyConstraint) {
             if (!_grabAuthorityProxy.isValid() || _grabAuthorityProxy.getBodyId().value == INVALID_BODY_ID ||
-                !tryResolveLiveBodyWorldTransform(world, _grabAuthorityProxy.getBodyId(), anchorBodyWorld)) {
+                !tryGetGrabAuthorityBodyWorldTransform(world, _grabAuthorityProxy.getBodyId(), anchorBodyWorld)) {
                 return false;
             }
         } else if (_handBody.isValid() && _handBody.getBodyId().value != INVALID_BODY_ID) {
@@ -1984,8 +1982,14 @@ namespace rock
         if (_boneColliders.tryGetPalmAnchorTarget(out.palmAnchorTargetWorld)) {
             out.hasPalmAnchorTarget = true;
             out.palmAnchorTargetBasis = grab_transform_telemetry::makeOrientationBasis(out.palmAnchorTargetWorld);
+            out.palmAnchorGrabAuthorityWorld =
+                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(out.palmAnchorTargetWorld);
+            out.palmAnchorGrabAuthorityBasis = grab_transform_telemetry::makeOrientationBasis(out.palmAnchorGrabAuthorityWorld);
+            out.hasPalmAnchorGrabAuthority = true;
             out.rawToPalmAnchorTarget =
                 grab_transform_telemetry::measureTransformDelta(out.rawHandWorld, out.palmAnchorTargetWorld);
+            out.palmAnchorTargetToGrabAuthority =
+                grab_transform_telemetry::measureTransformDelta(out.palmAnchorTargetWorld, out.palmAnchorGrabAuthorityWorld);
         }
 
         root_flattened_finger_skeleton_runtime::Snapshot fingerSnapshot{};
@@ -2025,6 +2029,19 @@ namespace rock
                 out.handMotionIndex = handBodyFrame.motionIndex;
                 out.hasHandBodyWorld = true;
                 out.rawToHandBody = grab_transform_telemetry::measureTransformDelta(out.rawHandWorld, out.handBodyWorld);
+            }
+        }
+
+        if (_grabAuthorityProxy.isValid() && _grabAuthorityProxy.getBodyId().value != INVALID_BODY_ID) {
+            RE::NiTransform proxyWorld{};
+            if (tryGetGrabAuthorityBodyWorldTransform(world, _grabAuthorityProxy.getBodyId(), proxyWorld)) {
+                out.proxyReadbackWorld = proxyWorld;
+                out.proxyReadbackBasis = grab_transform_telemetry::makeOrientationBasis(out.proxyReadbackWorld);
+                out.hasProxyReadback = true;
+                if (out.hasPalmAnchorGrabAuthority) {
+                    out.grabAuthorityToProxyReadback =
+                        grab_transform_telemetry::measureTransformDelta(out.palmAnchorGrabAuthorityWorld, out.proxyReadbackWorld);
+                }
             }
         }
 
@@ -2139,7 +2156,7 @@ namespace rock
                 if (_heldDriveMode == HeldObjectDriveMode::ProxyConstraint && _grabAuthorityProxy.isValid() &&
                     _grabAuthorityProxy.getBodyId().value != INVALID_BODY_ID) {
                     RE::NiTransform proxyWorld{};
-                    if (tryResolveLiveBodyWorldTransform(world, _grabAuthorityProxy.getBodyId(), proxyWorld)) {
+                    if (tryGetGrabAuthorityBodyWorldTransform(world, _grabAuthorityProxy.getBodyId(), proxyWorld)) {
                         constraintAnchorWorld = proxyWorld;
                     }
                 }
@@ -2468,19 +2485,21 @@ namespace rock
          * startup/world-loss gaps where no sampled palm target exists yet.
          */
         if (_boneColliders.tryGetPalmAnchorTarget(outProxyWorld)) {
-            outSource = "rootFlattenedPalmAnchorTarget";
+            outProxyWorld = hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(outProxyWorld);
+            outSource = "rootFlattenedPalmAnchorTargetGrabFrame";
             return true;
         }
 
         if (fallbackPalmAnchorWorld) {
-            outProxyWorld = *fallbackPalmAnchorWorld;
-            outSource = "palmAnchorFallback";
+            outProxyWorld = hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(*fallbackPalmAnchorWorld);
+            outSource = "palmAnchorFallbackGrabFrame";
             return true;
         }
 
         if (world && _handBody.isValid() && _handBody.getBodyId().value != INVALID_BODY_ID &&
             tryResolveLiveBodyWorldTransform(world, _handBody.getBodyId(), outProxyWorld)) {
-            outSource = "livePalmAnchorReadbackFallback";
+            outProxyWorld = hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(outProxyWorld);
+            outSource = "livePalmAnchorReadbackFallbackGrabFrame";
             return true;
         }
 
@@ -3951,10 +3970,15 @@ namespace rock
             body_frame::BodyFrameSource motionBodySourceAtGrab = body_frame::BodyFrameSource::Fallback;
             const bool hasMotionBodyWorldAtGrab =
                 tryResolveLiveBodyWorldTransform(world, objectBodyId, motionBodyWorldAtGrab, &motionBodySourceAtGrab);
-            const bool constraintUsesMotionBodyAtGrab =
-                hasMotionBodyWorldAtGrab && motionBodySourceAtGrab == body_frame::BodyFrameSource::MotionCenterOfMass;
-            const RE::NiTransform constraintBodyWorldAtGrab =
-                constraintUsesMotionBodyAtGrab ? motionBodyWorldAtGrab : grabBodyWorldAtGrab;
+            /*
+             * FO4VR hknp constraint atoms consume transform A/B through the body
+             * slot transforms. The live motion/COM transform is still captured
+             * here for diagnostics and later mass/inertia decisions, but it must
+             * not own the grip pivot or desired body frame for the custom grab
+             * constraint.
+             */
+            constexpr bool constraintUsesMotionBodyAtGrab = false;
+            const RE::NiTransform constraintBodyWorldAtGrab = grabBodyWorldAtGrab;
             const RE::NiTransform handBodyWorldAtGrab = getLiveBodyWorldTransform(world, _handBody.getBodyId());
             proxyFrameWorldAtGrab = handBodyWorldAtGrab;
             hasPalmProxyFrameAtGrab =
@@ -3970,11 +3994,10 @@ namespace rock
              * Custom proxy authority must preserve the same visual-object to hknp
              * BODY relation that native mouse-spring target composition already
              * depended on. The root-flattened palm frame owns hand movement, the
-             * visual object frame owns the captured grip relation. The custom
-             * constraint also stores a separate solver-local body relation because
-             * hknp consumes constraint body-B data through the live motion frame
-             * when that frame exists. That is a coordinate conversion of the same
-             * selected contact point, not COM pivot authority.
+             * visual object frame owns the captured grip relation, and the custom
+             * constraint stores its body-B local data in the same hknp BODY frame
+             * consumed by the solver atom chain. MOTION/COM remains weight data,
+             * never pivot or reference-frame authority.
              */
             _grabFrame.bodyLocal = objectToBodyAtGrab;
             _grabFrame.constraintBodyLocal = objectToConstraintBodyAtGrab;
@@ -4343,11 +4366,12 @@ namespace rock
                 const auto grabBodyBasis = grab_transform_telemetry::makeOrientationBasis(grabBodyWorldAtGrab);
                 const auto motionBodyBasis = grab_transform_telemetry::makeOrientationBasis(motionBodyWorldAtGrab);
                 ROCK_LOG_DEBUG(Hand,
-                    "{} GRAB BASIS CAPTURE side={} phase=capture convention=niLocalVectorToWorld proxySource={} motionBody={} constraintObjectFrame={} {} {} {} {} {} {} {} {}",
+                    "{} GRAB BASIS CAPTURE side={} phase=capture convention=niLocalVectorToWorld proxySource={} motionBody={} motionSrc={} constraintObjectFrame={} {} {} {} {} {} {} {} {}",
                     handName(),
                     _isLeft ? "left" : "right",
                     proxyFrameSourceAtGrab,
                     hasMotionBodyWorldAtGrab ? "yes" : "no",
+                    body_frame::bodyFrameSourceCode(motionBodySourceAtGrab),
                     constraintUsesMotionBodyAtGrab ? "MOTION" : "BODY",
                     grab_transform_telemetry::formatBasis("rawHand", rawHandBasis),
                     grab_transform_telemetry::formatBasis("proxyPalm", proxyPalmBasis),
@@ -5207,11 +5231,29 @@ namespace rock
 
             if (g_rockConfig.rockDebugGrabFrameLogging) {
                 const RE::NiTransform desiredNodeWorldRaw = multiplyTransforms(handWorldTransform, _grabFrame.rawHandSpace);
-                const RE::NiTransform desiredNodeWorldConstraint = hasLiveHandBody ? multiplyTransforms(liveHandBodyWorld, _grabFrame.constraintHandSpace) : desiredNodeWorldRaw;
+                RE::NiTransform constraintAnchorWorld = liveHandBodyWorld;
+                const char* constraintAnchorSource = "handBody";
+                bool hasConstraintAnchor = hasLiveHandBody;
+                if (_heldDriveMode == HeldObjectDriveMode::ProxyConstraint && _grabAuthorityProxy.isValid() &&
+                    _grabAuthorityProxy.getBodyId().value != INVALID_BODY_ID) {
+                    RE::NiTransform proxyWorld{};
+                    if (tryGetGrabAuthorityBodyWorldTransform(world, _grabAuthorityProxy.getBodyId(), proxyWorld)) {
+                        constraintAnchorWorld = proxyWorld;
+                        constraintAnchorSource = "proxyBody";
+                        hasConstraintAnchor = true;
+                    } else {
+                        constraintAnchorSource = "proxyFallbackHandBody";
+                    }
+                }
+                const RE::NiTransform desiredNodeWorldConstraint =
+                    hasConstraintAnchor ? multiplyTransforms(constraintAnchorWorld, _grabFrame.constraintHandSpace) : desiredNodeWorldRaw;
                 const RE::NiTransform desiredBodyTransformHandSpaceRaw = multiplyTransforms(_grabFrame.rawHandSpace, _grabFrame.bodyLocal);
                 const RE::NiTransform desiredBodyWorldRaw = multiplyTransforms(handWorldTransform, desiredBodyTransformHandSpaceRaw);
+                const RE::NiTransform desiredBodyTransformConstraintSpace =
+                    _heldDriveMode == HeldObjectDriveMode::ProxyConstraint ? _grabFrame.constraintBodyHandSpace :
+                                                                              multiplyTransforms(_grabFrame.constraintHandSpace, _grabFrame.bodyLocal);
                 const RE::NiTransform desiredBodyWorldConstraint =
-                    hasLiveHandBody ? multiplyTransforms(liveHandBodyWorld, multiplyTransforms(_grabFrame.constraintHandSpace, _grabFrame.bodyLocal)) : desiredBodyWorldRaw;
+                    hasConstraintAnchor ? multiplyTransforms(constraintAnchorWorld, desiredBodyTransformConstraintSpace) : desiredBodyWorldRaw;
                 const RE::NiTransform grabAuthorityBodyWorld = hasGrabObjectBody ? grabObjectBodyWorld : getGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId);
                 auto* ownerCell = _savedObjectState.refr ? _savedObjectState.refr->GetParentCell() : nullptr;
                 auto* heldBhkWorld = ownerCell ? ownerCell->GetbhkWorld() : nullptr;
@@ -5257,7 +5299,7 @@ namespace rock
 
                 const RE::NiPoint3 worldPosDelta = desiredNodeWorldConstraint.translate - desiredNodeWorldRaw.translate;
                 const RE::NiPoint3 rawFinger = getMatrixColumn(handWorldTransform.rotate, 2);
-                const RE::NiPoint3 constraintFinger = getMatrixColumn(liveHandBodyWorld.rotate, 2);
+                const RE::NiPoint3 constraintFinger = getMatrixColumn(constraintAnchorWorld.rotate, 2);
                 const RE::NiPoint3 desiredRawFinger = getMatrixColumn(desiredBodyWorldRaw.rotate, 0);
                 const RE::NiPoint3 desiredConstraintFinger = getMatrixColumn(desiredBodyWorldConstraint.rotate, 0);
                 const RE::NiPoint3 bodyFinger = getMatrixColumn(grabAuthorityBodyWorld.rotate, 0);
@@ -5273,13 +5315,13 @@ namespace rock
                     axisDeltaDegrees(getMatrixColumn(grabAuthorityBodyWorld.rotate, 2), getMatrixColumn(desiredBodyWorldRaw.rotate, 2)));
 
                 ROCK_LOG_DEBUG(Hand,
-                    "{} GRAB FRAME HOLD: rawVsConstraintWorld={:.2f}deg rawVsConstraintTarget={:.2f}deg "
+                    "{} GRAB FRAME HOLD: constraintAnchor={} rawVsConstraintWorld={:.2f}deg rawVsConstraintTarget={:.2f}deg "
                     "bodyVsRaw={:.2f}deg bodyVsConstraint={:.2f}deg "
                     "ownerErr={:.2f}deg/{:.2f}gu hitErr={:.2f}deg/{:.2f}gu "
                     "heldErr={:.2f}deg/{:.2f}gu rootErr={:.2f}deg/{:.2f}gu "
                     "worldPosDelta=({:.2f},{:.2f},{:.2f}) "
                     "rawFinger=({:.3f},{:.3f},{:.3f}) constraintFinger=({:.3f},{:.3f},{:.3f})",
-                    handName(), rotationDeltaDegrees(desiredNodeWorldRaw.rotate, desiredNodeWorldConstraint.rotate),
+                    handName(), constraintAnchorSource, rotationDeltaDegrees(desiredNodeWorldRaw.rotate, desiredNodeWorldConstraint.rotate),
                     rotationDeltaDegrees(desiredBodyWorldRaw.rotate, desiredBodyWorldConstraint.rotate),
                     rotationDeltaDegrees(grabAuthorityBodyWorld.rotate, desiredBodyWorldRaw.rotate), rotationDeltaDegrees(grabAuthorityBodyWorld.rotate, desiredBodyWorldConstraint.rotate),
                     ownerMetrics.rotErrDeg, ownerMetrics.posErrGameUnits, hitMetrics.rotErrDeg, hitMetrics.posErrGameUnits, heldMetrics.rotErrDeg, heldMetrics.posErrGameUnits,
@@ -5456,6 +5498,14 @@ namespace rock
         RE::NiPoint3 activePivotBBodyLocalGame{};
         float proxyLinearVelocityHavokMagnitude = 0.0f;
         float proxyAngularVelocityRadiansPerSecond = 0.0f;
+        RE::NiTransform proxyReadbackBetween{};
+        body_frame::BodyFrameSource proxyReadbackSourceBetween = body_frame::BodyFrameSource::Fallback;
+        std::uint32_t proxyReadbackMotionIndexBetween = body_frame::kFreeMotionIndex;
+        bool proxyReadbackBetweenOk = false;
+        float proxyReadbackBetweenPositionErrorGameUnits = -1.0f;
+        float proxyReadbackBetweenRotationErrorDegrees = -1.0f;
+        std::uint64_t queuedSequence = 0;
+        std::uint64_t flushSequence = 0;
         {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
             const bool hasAuthority = _heldDriveMode == HeldObjectDriveMode::ProxyConstraint &&
@@ -5485,6 +5535,20 @@ namespace rock
 
             setTransformOk = _grabAuthorityProxy.setTransform(targetHavok);
             setVelocityOk = _grabAuthorityProxy.setVelocity(linearVelocityHavok, angularVelocityHavok);
+            if (setTransformOk) {
+                proxyReadbackSourceBetween = body_frame::BodyFrameSource::BodyTransform;
+                proxyReadbackMotionIndexBetween = body_frame::kFreeMotionIndex;
+                proxyReadbackBetweenOk = tryGetGrabAuthorityBodyWorldTransform(world, proxyBodyId, proxyReadbackBetween);
+                if (!proxyReadbackBetweenOk) {
+                    proxyReadbackSourceBetween = body_frame::BodyFrameSource::Fallback;
+                }
+                if (proxyReadbackBetweenOk) {
+                    proxyReadbackBetweenPositionErrorGameUnits =
+                        pointDistanceGameUnits(proxyReadbackBetween.translate, pending.proxyWorld.translate);
+                    proxyReadbackBetweenRotationErrorDegrees =
+                        rotationDeltaDegrees(proxyReadbackBetween.rotate, pending.proxyWorld.rotate);
+                }
+            }
             if (!setTransformOk || !setVelocityOk) {
                 ++_grabAuthorityProxyFailedFlushes;
                 _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);
@@ -5514,8 +5578,13 @@ namespace rock
                     _hasLastAppliedGrabAuthorityProxyWorld = true;
                     _grabAuthorityProxyLastFlushDeltaSeconds = driveDelta;
                     ++_grabAuthorityProxyFlushSequence;
+                    flushSequence = _grabAuthorityProxyFlushSequence;
+                    queuedSequence = _grabAuthorityProxyQueuedSequence;
                     ++_grabAuthorityProxyLogCounter;
-                    if (_grabAuthorityProxyLogCounter >= 45) {
+                    if (flushSequence <= 16 || _grabAuthorityProxyLogCounter >= 45 ||
+                        !proxyReadbackBetweenOk ||
+                        proxyReadbackBetweenPositionErrorGameUnits > 1.0f ||
+                        proxyReadbackBetweenRotationErrorDegrees > 1.0f) {
                         _grabAuthorityProxyLogCounter = 0;
                         shouldLog = true;
                     }
@@ -5551,8 +5620,10 @@ namespace rock
             std::uint32_t filterInfo = 0;
             const bool filterReadOk = havok_runtime::tryReadFilterInfo(world, proxyBodyId, filterInfo);
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+columnTarget proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
+                flushSequence,
+                queuedSequence,
                 proxyBodyId.value,
                 _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
                 timing.substepIndex,
@@ -5571,12 +5642,160 @@ namespace rock
                 pending.grabRotationErrorDegrees,
                 proxyLinearVelocityHavokMagnitude,
                 proxyAngularVelocityRadiansPerSecond,
+                proxyReadbackBetweenOk ? "ok" : "fail",
+                body_frame::bodyFrameSourceCode(proxyReadbackSourceBetween),
+                proxyReadbackMotionIndexBetween,
+                proxyReadbackBetweenPositionErrorGameUnits,
+                proxyReadbackBetweenRotationErrorDegrees,
                 pending.authorityForceScale,
                 pending.heldBodyColliding ? "yes" : "no",
                 filterReadOk ? "ok" : "fail",
                 filterInfo,
                 grab_authority_proxy::hasNoContactFilterInfo(filterInfo) ? "yes" : "no");
         }
+    }
+
+    void Hand::observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
+    {
+        if (!g_rockConfig.rockDebugGrabFrameLogging || !world) {
+            return;
+        }
+
+        RE::hknpBodyId proxyBodyId{ INVALID_BODY_ID };
+        RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };
+        RE::NiTransform targetProxyWorld{};
+        RE::NiTransform constraintHandSpace{};
+        RE::NiTransform constraintBodyHandSpace{};
+        RE::NiPoint3 pivotBConstraintLocalGame{};
+        std::uint64_t queuedSequence = 0;
+        std::uint64_t flushSequence = 0;
+        std::uint64_t afterSolveSequence = 0;
+        std::uint32_t constraintId = 0x7FFF'FFFFu;
+        {
+            std::scoped_lock lock(_grabAuthorityProxyMutex);
+            const bool hasAuthority = _heldDriveMode == HeldObjectDriveMode::ProxyConstraint &&
+                                      _grabAuthorityProxy.isValid() &&
+                                      _grabAuthorityProxyHknpWorld == world &&
+                                      _hasLastAppliedGrabAuthorityProxyWorld;
+            if (!hasAuthority) {
+                return;
+            }
+
+            proxyBodyId = _grabAuthorityProxy.getBodyId();
+            objectBodyId = _savedObjectState.bodyId;
+            targetProxyWorld = _lastAppliedGrabAuthorityProxyWorld;
+            constraintHandSpace = _grabFrame.constraintHandSpace;
+            constraintBodyHandSpace = _grabFrame.constraintBodyHandSpace;
+            pivotBConstraintLocalGame = activeProxyConstraintPivotBLocalGame();
+            queuedSequence = _grabAuthorityProxyQueuedSequence;
+            flushSequence = _grabAuthorityProxyFlushSequence;
+            afterSolveSequence = ++_grabAuthorityProxyAfterSolveLogCounter;
+            constraintId = _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu;
+        }
+
+        RE::NiTransform proxyReadback{};
+        RE::NiTransform objectReadback{};
+        body_frame::BodyFrameSource proxySource = body_frame::BodyFrameSource::Fallback;
+        body_frame::BodyFrameSource objectSource = body_frame::BodyFrameSource::Fallback;
+        std::uint32_t proxyMotionIndex = body_frame::kFreeMotionIndex;
+        std::uint32_t objectMotionIndex = body_frame::kFreeMotionIndex;
+        proxySource = body_frame::BodyFrameSource::BodyTransform;
+        objectSource = body_frame::BodyFrameSource::BodyTransform;
+        proxyMotionIndex = body_frame::kFreeMotionIndex;
+        objectMotionIndex = body_frame::kFreeMotionIndex;
+        const bool proxyOk = tryGetGrabAuthorityBodyWorldTransform(world, proxyBodyId, proxyReadback);
+        const bool objectOk = tryGetGrabAuthorityBodyWorldTransform(world, objectBodyId, objectReadback);
+        if (!proxyOk) {
+            proxySource = body_frame::BodyFrameSource::Fallback;
+        }
+        if (!objectOk) {
+            objectSource = body_frame::BodyFrameSource::Fallback;
+        }
+
+        const RE::NiTransform desiredObjectFromTarget = multiplyTransforms(targetProxyWorld, constraintHandSpace);
+        const RE::NiTransform desiredBodyFromTarget = multiplyTransforms(targetProxyWorld, constraintBodyHandSpace);
+        const RE::NiTransform desiredObjectFromLiveProxy = proxyOk ? multiplyTransforms(proxyReadback, constraintHandSpace) : desiredObjectFromTarget;
+        const RE::NiTransform desiredBodyFromLiveProxy = proxyOk ? multiplyTransforms(proxyReadback, constraintBodyHandSpace) : desiredBodyFromTarget;
+
+        const float proxyTargetPositionErrorGameUnits =
+            proxyOk ? pointDistanceGameUnits(proxyReadback.translate, targetProxyWorld.translate) : -1.0f;
+        const float proxyTargetRotationErrorDegrees =
+            proxyOk ? rotationDeltaDegrees(proxyReadback.rotate, targetProxyWorld.rotate) : -1.0f;
+        const float objectTargetPositionErrorGameUnits =
+            objectOk ? pointDistanceGameUnits(objectReadback.translate, desiredBodyFromTarget.translate) : -1.0f;
+        const float objectTargetRotationErrorDegrees =
+            objectOk ? rotationDeltaDegrees(objectReadback.rotate, desiredBodyFromTarget.rotate) : -1.0f;
+        const float objectLiveProxyPositionErrorGameUnits =
+            objectOk ? pointDistanceGameUnits(objectReadback.translate, desiredBodyFromLiveProxy.translate) : -1.0f;
+        const float objectLiveProxyRotationErrorDegrees =
+            objectOk ? rotationDeltaDegrees(objectReadback.rotate, desiredBodyFromLiveProxy.rotate) : -1.0f;
+
+        float gripTargetErrorGameUnits = -1.0f;
+        float gripLiveProxyErrorGameUnits = -1.0f;
+        if (objectOk) {
+            const RE::NiPoint3 liveGripWorld = transform_math::localPointToWorld(objectReadback, pivotBConstraintLocalGame);
+            const RE::NiPoint3 targetGripWorld = transform_math::localPointToWorld(desiredBodyFromTarget, pivotBConstraintLocalGame);
+            const RE::NiPoint3 liveProxyGripWorld = transform_math::localPointToWorld(desiredBodyFromLiveProxy, pivotBConstraintLocalGame);
+            gripTargetErrorGameUnits = pointDistanceGameUnits(liveGripWorld, targetGripWorld);
+            gripLiveProxyErrorGameUnits = pointDistanceGameUnits(liveGripWorld, liveProxyGripWorld);
+        }
+
+        const bool shouldLogSequence = afterSolveSequence <= 16 || (afterSolveSequence % 45u) == 0u;
+        const bool shouldLogAnomaly =
+            !proxyOk ||
+            !objectOk ||
+            proxyTargetPositionErrorGameUnits > 1.0f ||
+            proxyTargetRotationErrorDegrees > 1.0f ||
+            objectTargetPositionErrorGameUnits > 5.0f ||
+            objectTargetRotationErrorDegrees > 15.0f ||
+            gripTargetErrorGameUnits > 5.0f;
+        if (!shouldLogSequence && !shouldLogAnomaly) {
+            return;
+        }
+
+        ROCK_LOG_DEBUG(Hand,
+            "{} PROXY GRAB AFTER_SOLVE: seq={}/{} afterSeq={} diag=bodyFrameConstraint+columnTarget proxyBody={} objBody={} constraint={} substep={}/{} proxyRead={} proxySrc={} proxyMotion={} objectRead={} objectSrc={} objectMotion={} proxyTargetErr={:.3f}gu/{:.2f}deg objectTargetErr={:.2f}gu/{:.1f}deg objectLiveProxyErr={:.2f}gu/{:.1f}deg gripTargetErr={:.2f}gu gripLiveProxyErr={:.2f}gu targetProxy=({:.1f},{:.1f},{:.1f}) liveProxy=({:.1f},{:.1f},{:.1f}) targetObj=({:.1f},{:.1f},{:.1f}) liveObj=({:.1f},{:.1f},{:.1f}) desiredObjectTarget=({:.1f},{:.1f},{:.1f}) desiredObjectLiveProxy=({:.1f},{:.1f},{:.1f})",
+            handName(),
+            flushSequence,
+            queuedSequence,
+            afterSolveSequence,
+            proxyBodyId.value,
+            objectBodyId.value,
+            constraintId,
+            timing.substepIndex,
+            timing.substepCount,
+            proxyOk ? "ok" : "fail",
+            body_frame::bodyFrameSourceCode(proxySource),
+            proxyMotionIndex,
+            objectOk ? "ok" : "fail",
+            body_frame::bodyFrameSourceCode(objectSource),
+            objectMotionIndex,
+            proxyTargetPositionErrorGameUnits,
+            proxyTargetRotationErrorDegrees,
+            objectTargetPositionErrorGameUnits,
+            objectTargetRotationErrorDegrees,
+            objectLiveProxyPositionErrorGameUnits,
+            objectLiveProxyRotationErrorDegrees,
+            gripTargetErrorGameUnits,
+            gripLiveProxyErrorGameUnits,
+            targetProxyWorld.translate.x,
+            targetProxyWorld.translate.y,
+            targetProxyWorld.translate.z,
+            proxyReadback.translate.x,
+            proxyReadback.translate.y,
+            proxyReadback.translate.z,
+            desiredBodyFromTarget.translate.x,
+            desiredBodyFromTarget.translate.y,
+            desiredBodyFromTarget.translate.z,
+            objectReadback.translate.x,
+            objectReadback.translate.y,
+            objectReadback.translate.z,
+            desiredObjectFromTarget.translate.x,
+            desiredObjectFromTarget.translate.y,
+            desiredObjectFromTarget.translate.z,
+            desiredObjectFromLiveProxy.translate.x,
+            desiredObjectFromLiveProxy.translate.y,
+            desiredObjectFromLiveProxy.translate.z);
     }
 
     GrabReleaseOutcome Hand::releaseGrabbedObject(
