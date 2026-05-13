@@ -1562,3 +1562,73 @@ construction.
 
 If `authorityToProxy` is large, the hidden proxy/body-A authority is not
 actually following the generated palm frame seen by the diagnostic target.
+
+## 2026-05-13 Checkpoint: Full Generated-Collider Convention Rejected
+
+### In-game result
+
+The full generated-collider convention test was rejected by in-game visual
+inspection. Hand/body generated colliders had been correct before this test, and
+the full-convention build made them rotate in the wrong directions.
+
+The production-safe conclusion is:
+
+- generated hand/body colliders must keep the old native placement convention;
+- `matrixFromAxes(...)` stores generated axes as columns;
+- this convention belongs to generated physical hull placement, not to generic
+  grab-frame math;
+- grab/proxy code must adapt the generated palm frame at the explicit
+  `generatedColliderFrameToGrabAuthorityFrame(...)` boundary;
+- the full-convention identity adapter must not remain.
+
+### Code result
+
+Restored policy:
+
+```text
+generated collider matrix:
+  column 0 = generated local X in world
+  column 1 = generated local Y in world
+  column 2 = generated local Z in world
+
+grab authority adapter:
+  transpose generated collider rotation before handing it to grab/proxy math
+```
+
+This keeps the generated colliders on the convention that already worked in
+game while preserving an explicit comparison point for grab-authority telemetry.
+
+### What the fresh logs say about the attach rotation
+
+The same log that rejected the full-convention collider test also points away
+from generated-collider orientation as the attach-rotation root cause:
+
+- `rawHandToProxyPalm` is near zero at capture;
+- `objectAtGrabToDesiredObject` is zero at capture, so object visual rotation is
+  preserved initially;
+- `relationPivotErr` stays near zero;
+- `transformBErr` is zero;
+- `targetErr(colsInv)` is zero.
+
+The suspicious mismatch is object-side BODY/MOTION authority:
+
+```text
+frame=1:
+  conDesiredBody ~= nativeBody[BODY]
+  heldBody[MOTION] is approximately 180 deg away from conDesiredBody/nativeBody
+```
+
+That means the custom proxy constraint appears to be targeting a BODY-authored
+frame while the hknp solver/readback path being driven is MOTION-oriented for
+this object. That mismatch explains the visible first-frame angular correction
+better than the generated hand collider convention does.
+
+Next investigation should stay on object-side frame ownership:
+
+- which frame hknp constraints consume for body B;
+- whether `constraintBodyWorldAtGrab` is actually BODY or MOTION for the solver;
+- whether `desiredConstraintBodyWorld` should be built from the solver body-B
+  frame instead of native BODY;
+- why `heldBodyToConDesiredBody` and `nativeBodyToHeldBody` can report
+  150-180 degree deltas immediately after capture even though visual object
+  rotation was preserved.

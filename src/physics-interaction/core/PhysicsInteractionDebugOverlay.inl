@@ -615,12 +615,10 @@
                         /*
                          * These palm triads intentionally keep the generated
                          * collider frame, grab-authority frame, and live proxy
-                         * readback separate. In the full-convention diagnostic
-                         * build the first two use separate origins for visual
-                         * readability but should report near-zero rotation in
-                         * the direct-to-authority text/log delta. If that
-                         * delta is not near zero, the convention split is still
-                         * present before the proxy/body-A boundary.
+                         * readback separate. The generated collider frame uses
+                         * the in-game verified native placement convention; the
+                         * grab-authority frame is the explicit adapter handed
+                         * to proxy/body-A grab math.
                          */
                         addAxisTransform(
                             withOverlayOrigin(sample.palmAnchorTargetWorld, palmReference - palmDebugBasis.panelRight * 8.0f),
