@@ -6426,3 +6426,21 @@ Validation requirement:
 - rebuild/deploy;
 - test one right-hand grab and one left-hand grab with `bDebugGrabTransformTelemetry=true`;
 - compare `GRAB BASIS CAPTURE` against first `GRAB BASIS ... START` and later `HELD` frames.
+
+## 2026-05-12 runtime follow-up: angular matrix storage is the snap source
+
+Fresh runtime logs from the deployed diagnostic build showed the grab-start snap is not a COM/pivot fallback in the tested sessions:
+
+- contact/mesh evidence selected the grip point (`rockPointToPalm`, `meshSnap`, `multiFinger=yes`);
+- `objectAtGrabToDesiredObject.max=0.00`;
+- `heldNodeToObjectAtGrab.max=0.00` at frame 1;
+- `heldNodeToRawDesired.max` stayed near zero at frame 1;
+- `transformBLocal == desiredTransformBLocal`.
+
+The failure appeared only after the proxy constraint began solving:
+
+- session 6 frame 1: `targetErr(colsInv=103.802deg rowsInv=0.069deg colsForward=0.074deg)`;
+- session 6 frame 1: `heldBodyToConDesiredBody.max=176.56deg`;
+- after seven flushed proxy targets: `rotErr=111.9deg`, then it stayed around 140deg and could spike near 175deg.
+
+This means the captured visual/contact relation was correct, but the raw matrix storage for the custom ragdoll motor was presenting the forward body relation to the hknp solver. HIGGS stores `transformB.rotation` and `target_bRca` through real `hkMatrix` storage; ROCK writes raw bytes. The correct ROCK writer for this path is therefore Havok column-block storage of the inverse body-to-hand rotation, not the row writer that only made the diagnostic row-reader look correct.
