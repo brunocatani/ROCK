@@ -166,18 +166,17 @@ namespace rock
             (void*)s_customVtable);
     }
 
-    static void setGrabMotorAtomsActive(char* header, bool active)
+    static void setGrabMotorAtomsActive(char* header, bool linearActive, bool angularActive)
     {
         if (!header) {
             return;
         }
 
-        const auto enabled = active ? 1 : 0;
-        *(header + ATOM_RAGDOLL_MOT + 0x02) = static_cast<char>(enabled);
+        *(header + ATOM_RAGDOLL_MOT + 0x02) = static_cast<char>(angularActive ? 1 : 0);
 
         const int linAtomOffsets[3] = { ATOM_LIN_MOTOR_0, ATOM_LIN_MOTOR_1, ATOM_LIN_MOTOR_2 };
         for (int axis = 0; axis < 3; axis++) {
-            *(header + linAtomOffsets[axis] + 0x02) = static_cast<char>(enabled);
+            *(header + linAtomOffsets[axis] + 0x02) = static_cast<char>(linearActive ? 1 : 0);
         }
     }
 
@@ -354,13 +353,19 @@ namespace rock
         }
 
         /*
-         * ROCK enables grab motors before FO4VR hknp builds the constraint
-         * solver runtime. CreateConstraint performs world insertion in one call,
-         * so the atom enabled flags must be live before that call.
+         * FO4VR's type-19 ragdoll angular atom is not used as dynamic grab
+         * rotation authority. Runtime logs showed the proxy and linear pivot
+         * tracking correctly while the object stayed 90-180 degrees off, and
+         * Ghidra shows the hknp-era atom composes target_bRca through body B in
+         * a solver path that is not proven equivalent to HIGGS' Skyrim hkp
+         * equation. The linear atoms stay enabled for the selected contact
+         * pivot; angular authority is applied once per physics step through the
+         * verified FO4VR hknp angular-velocity API using the same finite motor
+         * budget stored in angularMotor below.
          */
-        setGrabMotorAtomsActive(header, true);
+        setGrabMotorAtomsActive(header, true, false);
 
-        ROCK_LOG_DEBUG(GrabConstraint, "Motors attached and enabled before CreateConstraint: angular={:.0f}, linear={:.0f}", angularMaxForce, linearMaxForce);
+        ROCK_LOG_DEBUG(GrabConstraint, "Motors attached before CreateConstraint: angularBudget={:.0f} directAngularDrive=yes ragdollAtom=disabled linear={:.0f}", angularMaxForce, linearMaxForce);
 
         RE::hknpConstraintCinfo cinfo{};
         cinfo.constraintData = reinterpret_cast<RE::hkpConstraintData*>(cd);

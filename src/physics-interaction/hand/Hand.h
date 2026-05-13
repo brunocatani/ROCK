@@ -368,6 +368,12 @@ namespace rock
             float grabRotationErrorDegrees,
             float authorityForceScale,
             bool heldBodyColliding);
+        bool applyProxyConstraintAngularVelocityDrive(RE::hknpWorld* world,
+            const RE::NiTransform& desiredBodyWorld,
+            float deltaTime,
+            float& outRawAngularSpeedRadiansPerSecond,
+            float& outAppliedAngularSpeedRadiansPerSecond,
+            float& outMaxAngularSpeedRadiansPerSecond);
         void queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
             float deltaTime,
             float forceFadeInTime,

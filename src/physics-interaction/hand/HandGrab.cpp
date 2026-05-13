@@ -28,6 +28,7 @@
 #include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/native/HavokMaterialRegistry.h"
 #include "physics-interaction/native/HavokRefCount.h"
+#include "RE/Havok/hkVector4.h"
 #include "RE/Havok/hknpMotion.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RockConfig.h"
@@ -166,16 +167,6 @@ namespace rock
                 return RE::NiPoint3{};
             }
 
-            RE::NiPoint3 axisSum{};
-            for (int column = 0; column < 3; ++column) {
-                axisSum = axisSum + crossProduct(getMatrixColumn(previous, column), getMatrixColumn(current, column));
-            }
-
-            const RE::NiPoint3 axis = normalizeOrZero(axisSum);
-            if (lengthSquared(axis) <= 0.000001f) {
-                return RE::NiPoint3{};
-            }
-
             const float trace =
                 previous.entry[0][0] * current.entry[0][0] + previous.entry[0][1] * current.entry[0][1] + previous.entry[0][2] * current.entry[0][2] +
                 previous.entry[1][0] * current.entry[1][0] + previous.entry[1][1] * current.entry[1][1] + previous.entry[1][2] * current.entry[1][2] +
@@ -183,6 +174,36 @@ namespace rock
             const float angle = std::acos(std::clamp((trace - 1.0f) * 0.5f, -1.0f, 1.0f));
             if (!std::isfinite(angle) || angle <= 0.000001f) {
                 return RE::NiPoint3{};
+            }
+
+            RE::NiPoint3 axisSum{};
+            for (int column = 0; column < 3; ++column) {
+                axisSum = axisSum + crossProduct(getMatrixColumn(previous, column), getMatrixColumn(current, column));
+            }
+
+            RE::NiPoint3 axis = normalizeOrZero(axisSum);
+            if (lengthSquared(axis) <= 0.000001f) {
+                /*
+                 * At exactly 180 degrees the cross-sum axis is singular even
+                 * though the correction is maximal. Pick the strongest
+                 * unchanged-axis witness from previous+current columns so the
+                 * direct angular drive still unwinds the bad half-turn state
+                 * seen in runtime logs instead of outputting zero velocity.
+                 */
+                float bestAxisLength = 0.0f;
+                RE::NiPoint3 bestAxis{};
+                for (int column = 0; column < 3; ++column) {
+                    const RE::NiPoint3 candidate = getMatrixColumn(previous, column) + getMatrixColumn(current, column);
+                    const float candidateLength = lengthSquared(candidate);
+                    if (candidateLength > bestAxisLength) {
+                        bestAxisLength = candidateLength;
+                        bestAxis = candidate;
+                    }
+                }
+                axis = normalizeOrZero(bestAxis);
+                if (lengthSquared(axis) <= 0.000001f) {
+                    return RE::NiPoint3{};
+                }
             }
 
             return scalePoint(axis, angle / deltaTime);
@@ -230,6 +251,29 @@ namespace rock
         float scaleDriveValue(float value, float multiplier)
         {
             return (std::isfinite(value) ? value : 0.0f) * (std::isfinite(multiplier) ? multiplier : 1.0f);
+        }
+
+        float vectorMagnitude(const RE::NiPoint3& value)
+        {
+            return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
+        }
+
+        RE::NiPoint3 clampAngularVelocityVector(const RE::NiPoint3& value, float maxRadiansPerSecond)
+        {
+            if (!std::isfinite(maxRadiansPerSecond) || maxRadiansPerSecond <= 0.0f) {
+                return RE::NiPoint3{};
+            }
+
+            const float magnitude = vectorMagnitude(value);
+            if (!std::isfinite(magnitude) || magnitude <= 0.000001f) {
+                return RE::NiPoint3{};
+            }
+            if (magnitude <= maxRadiansPerSecond) {
+                return value;
+            }
+
+            const float scale = maxRadiansPerSecond / magnitude;
+            return RE::NiPoint3{ value.x * scale, value.y * scale, value.z * scale };
         }
 
         float sharedGrabAuthorityForceScale(bool peerHandStillHolding)
@@ -2612,6 +2656,86 @@ namespace rock
             std::isfinite(authorityForceScale) && authorityForceScale > 0.0f ? authorityForceScale : 1.0f,
             0.05f,
             1.0f);
+    }
+
+    bool Hand::applyProxyConstraintAngularVelocityDrive(RE::hknpWorld* world,
+        const RE::NiTransform& desiredBodyWorld,
+        float deltaTime,
+        float& outRawAngularSpeedRadiansPerSecond,
+        float& outAppliedAngularSpeedRadiansPerSecond,
+        float& outMaxAngularSpeedRadiansPerSecond)
+    {
+        outRawAngularSpeedRadiansPerSecond = 0.0f;
+        outAppliedAngularSpeedRadiansPerSecond = 0.0f;
+        outMaxAngularSpeedRadiansPerSecond = 0.0f;
+
+        if (!world || _heldDriveMode != HeldObjectDriveMode::ProxyConstraint || !_activeConstraint.isValid() ||
+            !_activeConstraint.angularMotor || _savedObjectState.bodyId.value == INVALID_BODY_ID ||
+            !havok_physics_timing::isUsableDelta(deltaTime)) {
+            return false;
+        }
+
+        RE::NiTransform liveBodyWorld{};
+        if (!tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, liveBodyWorld)) {
+            return false;
+        }
+
+        const RE::NiPoint3 rawAngularVelocity =
+            angularVelocityFromRotationDelta(liveBodyWorld.rotate, desiredBodyWorld.rotate, deltaTime);
+        outRawAngularSpeedRadiansPerSecond = vectorMagnitude(rawAngularVelocity);
+        if (!std::isfinite(outRawAngularSpeedRadiansPerSecond)) {
+            outRawAngularSpeedRadiansPerSecond = 0.0f;
+        }
+
+        /*
+         * Dynamic grab rotation is a single-writer FO4VR-native velocity motor.
+         * The type-19 ragdoll angular atom is disabled because live tests showed
+         * it driving the object to the wrong frame; this path keeps the contact
+         * pivot and linear constraint intact while mapping the already-computed
+         * mass-capped angular motor budget to a bounded angular velocity. The
+         * reference value is the existing default HIGGS-style angular budget
+         * (2000 linear / 12.5 ratio = 160), so heavy/mass-capped objects receive
+         * proportionally slower rotation instead of an infinite-strength snap.
+         */
+        constexpr float kReferenceAngularBudget = 160.0f;
+        const float angularBudget = (std::max)(
+            std::fabs(_activeConstraint.angularMotor->minForce),
+            std::fabs(_activeConstraint.angularMotor->maxForce));
+        const float budgetScale = std::clamp(
+            (std::isfinite(angularBudget) && angularBudget > 0.0f) ? angularBudget / kReferenceAngularBudget : 0.0f,
+            0.05f,
+            1.0f);
+
+        float configuredMaxSpeed = std::isfinite(g_rockConfig.rockGrabThrowMaxAngularVelocityRadiansPerSecond) ?
+            g_rockConfig.rockGrabThrowMaxAngularVelocityRadiansPerSecond :
+            18.0f;
+        configuredMaxSpeed = std::clamp(configuredMaxSpeed, 0.25f, 64.0f);
+
+        if (auto* motion = havok_runtime::getBodyMotion(world, _savedObjectState.bodyId)) {
+            havok_runtime::MotionVelocityCaps caps{};
+            if (havok_runtime::tryReadMotionVelocityCaps(motion, caps) &&
+                std::isfinite(caps.maxAngularVelocity) &&
+                caps.maxAngularVelocity > 0.25f) {
+                configuredMaxSpeed = (std::min)(configuredMaxSpeed, caps.maxAngularVelocity);
+            }
+        }
+
+        outMaxAngularSpeedRadiansPerSecond = (std::max)(0.25f, configuredMaxSpeed * budgetScale);
+        const RE::NiPoint3 appliedAngularVelocity =
+            clampAngularVelocityVector(rawAngularVelocity, outMaxAngularSpeedRadiansPerSecond);
+        outAppliedAngularSpeedRadiansPerSecond = vectorMagnitude(appliedAngularVelocity);
+        if (!std::isfinite(outAppliedAngularSpeedRadiansPerSecond)) {
+            outAppliedAngularSpeedRadiansPerSecond = 0.0f;
+        }
+
+        RE::hkVector4f angularVelocity{
+            appliedAngularVelocity.x,
+            appliedAngularVelocity.y,
+            appliedAngularVelocity.z,
+            0.0f,
+        };
+        world->SetBodyAngularVelocity(_savedObjectState.bodyId, angularVelocity);
+        return true;
     }
 
     void Hand::queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
@@ -5511,6 +5635,7 @@ namespace rock
         bool setTransformOk = false;
         bool setVelocityOk = false;
         bool targetUpdateOk = false;
+        bool angularDriveOk = false;
         bool shouldLog = false;
         RE::NiTransform desiredObjectWorld{};
         RE::NiTransform desiredBodyWorld{};
@@ -5524,6 +5649,9 @@ namespace rock
         bool proxyReadbackBetweenOk = false;
         float proxyReadbackBetweenPositionErrorGameUnits = -1.0f;
         float proxyReadbackBetweenRotationErrorDegrees = -1.0f;
+        float rawAngularDriveSpeedRadiansPerSecond = 0.0f;
+        float appliedAngularDriveSpeedRadiansPerSecond = 0.0f;
+        float maxAngularDriveSpeedRadiansPerSecond = 0.0f;
         std::uint64_t queuedSequence = 0;
         std::uint64_t flushSequence = 0;
         {
@@ -5593,6 +5721,17 @@ namespace rock
                         pending.grabRotationErrorDegrees,
                         pending.authorityForceScale,
                         pending.heldBodyColliding);
+                    angularDriveOk = applyProxyConstraintAngularVelocityDrive(
+                        world,
+                        desiredBodyWorld,
+                        driveDelta,
+                        rawAngularDriveSpeedRadiansPerSecond,
+                        appliedAngularDriveSpeedRadiansPerSecond,
+                        maxAngularDriveSpeedRadiansPerSecond);
+                    if (!angularDriveOk) {
+                        ++_grabAuthorityProxyFailedFlushes;
+                        _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);
+                    }
 
                     _lastAppliedGrabAuthorityProxyWorld = pending.proxyWorld;
                     _hasLastAppliedGrabAuthorityProxyWorld = true;
@@ -5603,6 +5742,7 @@ namespace rock
                     ++_grabAuthorityProxyLogCounter;
                     if (flushSequence <= 16 || _grabAuthorityProxyLogCounter >= 45 ||
                         !proxyReadbackBetweenOk ||
+                        !angularDriveOk ||
                         proxyReadbackBetweenPositionErrorGameUnits > 1.0f ||
                         proxyReadbackBetweenRotationErrorDegrees > 1.0f) {
                         _grabAuthorityProxyLogCounter = 0;
@@ -5636,11 +5776,23 @@ namespace rock
             return;
         }
 
+        if (!angularDriveOk) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand proxy dynamic grab angular drive failed; release queued: proxyBody={} objBody={} constraint={} substep={}/{}",
+                handName(),
+                proxyBodyId.value,
+                _savedObjectState.bodyId.value,
+                _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
+                timing.substepIndex,
+                timing.substepCount);
+            return;
+        }
+
         if (shouldLog && g_rockConfig.rockDebugGrabFrameLogging) {
             std::uint32_t filterInfo = 0;
             const bool filterReadOk = havok_runtime::tryReadFilterInfo(world, proxyBodyId, filterInfo);
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+columnTarget proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+directAngularVelocity proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s directAngular={} rawAng={:.3f}rad/s appliedAng={:.3f}rad/s capAng={:.3f}rad/s proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -5662,6 +5814,10 @@ namespace rock
                 pending.grabRotationErrorDegrees,
                 proxyLinearVelocityHavokMagnitude,
                 proxyAngularVelocityRadiansPerSecond,
+                angularDriveOk ? "ok" : "fail",
+                rawAngularDriveSpeedRadiansPerSecond,
+                appliedAngularDriveSpeedRadiansPerSecond,
+                maxAngularDriveSpeedRadiansPerSecond,
                 proxyReadbackBetweenOk ? "ok" : "fail",
                 body_frame::bodyFrameSourceCode(proxyReadbackSourceBetween),
                 proxyReadbackMotionIndexBetween,
@@ -5774,7 +5930,7 @@ namespace rock
         }
 
         ROCK_LOG_DEBUG(Hand,
-            "{} PROXY GRAB AFTER_SOLVE: seq={}/{} afterSeq={} diag=bodyFrameConstraint+columnTarget proxyBody={} objBody={} constraint={} substep={}/{} proxyRead={} proxySrc={} proxyMotion={} objectRead={} objectSrc={} objectMotion={} proxyTargetErr={:.3f}gu/{:.2f}deg objectTargetErr={:.2f}gu/{:.1f}deg objectLiveProxyErr={:.2f}gu/{:.1f}deg gripTargetErr={:.2f}gu gripLiveProxyErr={:.2f}gu targetProxy=({:.1f},{:.1f},{:.1f}) liveProxy=({:.1f},{:.1f},{:.1f}) targetObj=({:.1f},{:.1f},{:.1f}) liveObj=({:.1f},{:.1f},{:.1f}) desiredObjectTarget=({:.1f},{:.1f},{:.1f}) desiredObjectLiveProxy=({:.1f},{:.1f},{:.1f})",
+            "{} PROXY GRAB AFTER_SOLVE: seq={}/{} afterSeq={} diag=bodyFrameConstraint+directAngularVelocity proxyBody={} objBody={} constraint={} substep={}/{} proxyRead={} proxySrc={} proxyMotion={} objectRead={} objectSrc={} objectMotion={} proxyTargetErr={:.3f}gu/{:.2f}deg objectTargetErr={:.2f}gu/{:.1f}deg objectLiveProxyErr={:.2f}gu/{:.1f}deg gripTargetErr={:.2f}gu gripLiveProxyErr={:.2f}gu targetProxy=({:.1f},{:.1f},{:.1f}) liveProxy=({:.1f},{:.1f},{:.1f}) targetObj=({:.1f},{:.1f},{:.1f}) liveObj=({:.1f},{:.1f},{:.1f}) desiredObjectTarget=({:.1f},{:.1f},{:.1f}) desiredObjectLiveProxy=({:.1f},{:.1f},{:.1f})",
             handName(),
             flushSequence,
             queuedSequence,
