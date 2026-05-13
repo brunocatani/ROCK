@@ -396,3 +396,238 @@ After the frame-authority bug is removed, continue HIGGS-style dynamic polish:
 Those are real quality gaps, but they should be evaluated only after the initial
 body-A frame is coherent. Otherwise their telemetry will be contaminated by the
 wrong hand authority frame.
+
+## Continuation: Runtime Proof From Fresh Logs
+
+This section records the latest findings before compaction. It supersedes any
+older notes that treated transform-B, COM fallback, or angular target byte
+storage as the active root cause of the current grab-start snap.
+
+The current visible symptom is specific:
+
+- immediately after grab starts, the object and visible hand rotate into a wrong
+  orientation;
+- after the object has seated into that wrong orientation, physical hand
+  translation and rotation map mostly as expected;
+- this means the per-frame relation becomes internally stable after capture, but
+  the captured hand/object authority frame is wrong at grab start.
+
+Fresh logs show the custom proxy constraint path is active:
+
+- `drive=proxyConstraint`;
+- `proxyFrame=rootFlattenedPalmAnchorTarget/ok`;
+- `proxy constraint grab drive`;
+- `constraintObjectFrame=BODY`.
+
+The same fresh logs also show the object-side capture is not the failing piece:
+
+- `objectAtGrabToDesiredObject.max=0.00` on the checked bad grabs;
+- `grabBodyToDesiredBody.max=0.00` on the checked bad grabs;
+- `transformBLocal == desiredTransformBLocal`;
+- `targetErr(colsInv=0.000deg)`;
+- `rotationPreservedDeg=0.000` or close enough to prove the desired object
+  rotation was not recaptured from COM or object origin.
+
+The failing value is the hand-side body-A/proxy frame:
+
+- `rawHandToProxyPalm.max` is large at capture;
+- raw hand axes and proxy palm axes are not merely offset by a palm translation;
+- proxy palm orientation is exactly the transpose of the raw hand orientation in
+  all sampled failed captures.
+
+### Transpose Evidence
+
+The following table was generated from the last twelve `GRAB BASIS CAPTURE`
+records in `ROCK.log`. For each capture, it compares the proxy palm axes against
+the raw hand axes directly, and against the transpose of the raw hand basis.
+
+`Transpose*Deg = 0.00` means the proxy palm local axis exactly matches the
+transposed raw hand axis. The direct axis columns show the actual runtime
+misalignment the player sees as a 90/180 degree grab-start snap.
+
+```text
+Line   Side   TransposeXDeg  TransposeYDeg  TransposeZDeg  DirectXDeg  DirectYDeg  DirectZDeg
+1482   right           0.00           0.00           0.00       90.00        0.00      180.00
+1996   left            0.00           0.00           0.00      180.00      180.00        0.00
+2833   right           0.00           0.00           0.00        0.00      180.00      180.00
+3239   left            0.00           0.00           0.00       90.00       90.00       90.00
+4128   left            0.00           0.00           0.00       90.00       90.00      180.00
+5742   left            0.00           0.00           0.00        0.00      180.00      180.00
+6574   left            0.00           0.00           0.00       90.00       90.00       90.00
+7278   left            0.00           0.00           0.00       90.00       90.00      180.00
+8254   right           0.00           0.00           0.00       90.00        0.00       90.00
+8990   right           0.00           0.00           0.00        0.00       90.00      180.00
+9755   left            0.00           0.00           0.00      180.00       90.00       90.00
+10677  right           0.00           0.00           0.00        0.00      180.00       90.00
+```
+
+This is decisive because a random hand/object bug would not produce perfect
+transpose matches across both hands and multiple object grabs. The generated
+palm/proxy frame is being built in the opposite storage convention from the raw
+hand frame and ROCK's transform helpers.
+
+### Current Source Map For The Transpose
+
+`src/physics-interaction/TransformMath.h` and the Ghidra-verified FO4VR compose
+helper at `0x1401A8D60` agree on the local-vector convention:
+
+- local X world axis is row 0 `(m00,m01,m02)` in ROCK's NiMatrix view;
+- local Y world axis is row 1 `(m10,m11,m12)`;
+- local Z world axis is row 2 `(m20,m21,m22)`;
+- `rotateLocalVectorToWorld(matrix, vector)` follows that row-axis convention.
+
+`src/physics-interaction/debug/DebugAxisMath.h` uses the same convention for
+diagnostics, and `src/physics-interaction/grab/GrabTelemetry.h` uses
+`transform_math::rotateLocalVectorToWorld(...)` for the stronger `GRAB BASIS`
+orientation logs.
+
+The generated hand/palm frame path is different:
+
+- `src/physics-interaction/hand/HandColliderTypes.h`
+- `matrixFromAxes(...)`
+- `buildSegmentColliderFrame(...)`
+- `buildPalmAnchorFrame(...)`
+
+`matrixFromAxes(...)` currently writes the supplied axes as columns:
+
+```cpp
+matrix.entry[0][0] = xAxis.x;
+matrix.entry[1][0] = xAxis.y;
+matrix.entry[2][0] = xAxis.z;
+matrix.entry[0][1] = yAxis.x;
+matrix.entry[1][1] = yAxis.y;
+matrix.entry[2][1] = yAxis.z;
+matrix.entry[0][2] = zAxis.x;
+matrix.entry[1][2] = zAxis.y;
+matrix.entry[2][2] = zAxis.z;
+```
+
+Under the verified ROCK/FO4VR convention, if a helper promises "local X points
+at `xAxis`, local Y points at `yAxis`, local Z points at `zAxis`", it must store
+those axes as rows:
+
+```cpp
+row 0 = xAxis.x, xAxis.y, xAxis.z
+row 1 = yAxis.x, yAxis.y, yAxis.z
+row 2 = zAxis.x, zAxis.y, zAxis.z
+```
+
+This is exactly the transpose shown in runtime logs.
+
+### Origin Collider / Proxy Source
+
+The hand body used by grab authority is the generated palm anchor body, not the
+raw root hand node:
+
+- `Hand::createCollision(...)` calls `_boneColliders.create(..., _handBody)`;
+- `HandBoneColliderSet::create(...)` creates `ROCK_LeftPalmAnchor` /
+  `ROCK_RightPalmAnchor`;
+- `_handBody` is set to that palm-anchor generated body;
+- `Hand::updateCollisionTransform(...)` updates the same body through
+  `_boneColliders.update(...)`;
+- `Hand::flushPendingCollisionPhysicsDrive(...)` flushes the generated
+  keyframed drive for that body;
+- `Hand::resolveGrabAuthorityProxyFrame(...)` first resolves
+  `_boneColliders.tryGetPalmAnchorTarget(outProxyWorld)`;
+- only after that does it fall back to reading `_handBody`, and only later to raw
+  hand.
+
+So the hidden body-A proxy used by the custom grab constraint inherits the
+generated palm-anchor frame. If that generated frame is transposed, the
+constraint's body-A authority is transposed from the first solver frame.
+
+### Palm Anchor Axis Meaning
+
+`buildPalmAnchorFrame(...)` is not using arbitrary axes:
+
+- `xAxis` is the finger/front direction from the root-flattened hand bone toward
+  the average finger base position;
+- `zAxis` is the back-of-hand direction from root-flattened hand local `+Z`;
+- palm face is therefore `-zAxis`, consistent with `PalmFace` moving by
+  `-lookup.backDirection`;
+- `yAxis` is the cross-palm/lateral direction from `cross(backAxis, xAxis)`;
+- translation is the average hand/finger palm center, projected off the current
+  back offset and then moved slightly toward the palm face.
+
+Those axis meanings are valid. The current problem is storage convention, not
+the semantic choice of finger/front, lateral, and back-of-hand directions.
+
+`RootFlattenedFingerSkeletonRuntime` separately computes palm normal as hand
+local `(0,0,-1)`, while `HandBoneColliderSet` stores back direction as hand local
+`(0,0,+1)`. This is consistent if code treats palm face as negative
+back-direction. It is not currently evidence of the grab-start rotation bug.
+
+### Capture Sequence That Explains The Visual Bug
+
+The current failing sequence is:
+
+1. Raw root-flattened hand frame is valid.
+2. Three-phase/pocket object alignment preserves object rotation and only shifts
+   translation so the selected grip point seats into the palm.
+3. `resolveGrabAuthorityProxyFrame(...)` supplies the generated palm-anchor
+   frame as the constraint/proxy authority frame.
+4. That generated palm-anchor orientation is the transpose of raw hand.
+5. `_grabFrame.rawHandSpace` is captured from raw hand to desired object.
+6. `_grabFrame.constraintHandSpace` and `_grabFrame.constraintBodyHandSpace` are
+   captured from transposed proxy palm to desired object/body.
+7. Hidden proxy body-A is created from the transposed frame.
+8. The custom constraint pulls body B to satisfy the transposed body-A relation.
+9. The visible hand follows the held object from the raw relation, so both object
+   and visible hand appear to rotate at the grab moment.
+10. After seating into the wrong captured relation, subsequent physical hand
+    motion maps mostly correctly because the relation is stable, just wrong.
+
+This exactly matches the user's in-game report.
+
+### HIGGS Parity For This Specific Case
+
+HIGGS dynamic grab uses a hand collision transform whose rotation is the real
+hand transform:
+
+- selected/contact point chooses object-side pivot;
+- palm point chooses hand-side pivot;
+- object rotation is preserved at grab transition;
+- body-A/hand frame drives the constraint from the real hand relation;
+- COM is only mass/inertia/throw data, not pivot or frame authority.
+
+The production lesson is not "copy HIGGS 1:1". FO4VR has hknp, generated
+root-flattened bodies, and richer hand/body systems. The parity rule for this
+bug is narrower:
+
+- body-A rotation must be coherent with the raw physical hand authority frame;
+- palm anchor may provide a better palm contact translation;
+- palm anchor must not introduce a separate transposed rotation authority;
+- COM must not be used as a fallback grip frame or fallback pivot.
+
+### Current Non-Implementation Conclusion
+
+The current root cause is not mass, damping, tau, lead, COM, transform-B, or
+`target_bRca` storage. Those can still matter for later polish, but they are not
+the reason the object and visible hand rotate immediately at grab start.
+
+The current root cause is:
+
+```text
+generated palm/proxy body-A orientation == transpose(raw hand orientation)
+```
+
+That transposed body-A frame then becomes the custom constraint authority frame.
+
+### Research Still Needed Before Code Change
+
+Before changing implementation, the next evidence to collect or preserve is:
+
+- confirm whether fixing `matrixFromAxes(...)` makes generated palm-anchor basis
+  match raw hand basis within expected anatomical offsets;
+- confirm whether segment colliders that use the same helper were visually or
+  collision-wise depending on the old transposed storage;
+- decide whether grab proxy authority should use:
+  - palm-anchor translation plus raw hand rotation, or
+  - fully corrected palm-anchor transform after shared axis storage fix;
+- add a source test proving `matrixFromAxes(...)` and
+  `rotateLocalVectorToWorld(...)` agree on local X/Y/Z;
+- add separate left/right runtime acceptance logs for direct raw-to-proxy axis
+  deltas and transpose-match deltas.
+
+The most likely durable fix is a coherent generated-frame convention correction,
+not a mass/force tune and not another COM fallback.
