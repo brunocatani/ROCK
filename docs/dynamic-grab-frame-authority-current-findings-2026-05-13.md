@@ -1633,7 +1633,7 @@ Next investigation should stay on object-side frame ownership:
   150-180 degree deltas immediately after capture even though visual object
   rotation was preserved.
 
-## 2026-05-13 Checkpoint: Object-Side Solver Frame Fix
+## 2026-05-13 Checkpoint: Object-Side MOTION Frame Hypothesis Rejected
 
 ### Confirmed failure in source
 
@@ -1656,9 +1656,38 @@ heldBody[MOTION] ~= 150-180 deg away from conDesiredBody
 So transform-B and angular target storage could be internally consistent while
 still being authored for the wrong body-B frame.
 
-### Fix policy
+### Rejected policy
 
-This does not make COM a grip fallback or pivot authority.
+The attempted fix changed proxy-constraint body-B data from BODY space to live
+MOTION/COM space when `tryResolveLiveBodyWorldTransform(...)` reported
+`MotionCenterOfMass`.
+
+That was rejected by in-game testing.
+
+The failure signature after the attempted MOTION-frame change was worse than
+before:
+
+```text
+proxyTargetErr stays small
+objectRead=MOTION
+objectTargetErr stays roughly 90-180 deg
+heldBodyToConDesiredBody stays large after settle
+visual hand/object rotation does not match controller even after settling
+```
+
+So the MOTION-frame theory made telemetry compare against the chosen frame, but
+the real constraint did not drive the object into that frame. The inference is
+that FO4VR's hknp constraint body-B local transform still has to be authored
+against the rigid BODY frame for this custom hkp-style atom chain.
+
+This confirms the HIGGS-side pattern as the safer parity rule: HIGGS freezes
+pivot B from the rigid body transform and updates transform-B/target against the
+rigid body local convention. COM/motion is weight data and diagnostics, not the
+constraint local-frame owner.
+
+### Restored policy
+
+This keeps COM out of grip fallback or pivot authority.
 
 The selected object-side grip point remains:
 
@@ -1673,13 +1702,11 @@ root-flattened palm/proxy frame
 ```
 
 The change is only the coordinate system used to store custom constraint
-body-B data:
+body-B data after the rejected test:
 
 ```text
-if live body-B source == MOTION:
-    constraint body-B frame = motionBodyWorldAtGrab
-else:
-    constraint body-B frame = grabBodyWorldAtGrab
+constraint body-B frame = grabBodyWorldAtGrab
+motionBodyWorldAtGrab = diagnostic / mass / COM data only
 ```
 
 ROCK now keeps both local copies:
@@ -1687,31 +1714,29 @@ ROCK now keeps both local copies:
 - `_grabFrame.pivotBBodyLocalGame`: selected grip point in BODY space for
   native/visual/release reconstruction;
 - `_grabFrame.pivotBConstraintLocalGame`: the same selected grip point in the
-  solver body-B frame for transform-B;
+  BODY constraint frame for transform-B;
 - `_grabFrame.bodyLocal`: visible object to native BODY relation;
-- `_grabFrame.constraintBodyLocal`: visible object to solver body-B relation;
-- `_grabFrame.constraintBodyHandSpace`: desired solver body-B frame relative to
+- `_grabFrame.constraintBodyLocal`: visible object to BODY constraint relation;
+- `_grabFrame.constraintBodyHandSpace`: desired BODY constraint frame relative to
   the proxy/palm authority frame.
 
 Runtime proxy error and pivot reads now use `tryGetGrabDriveObjectWorldTransform`.
-For proxy constraint drive that prefers live `MotionCenterOfMass` readback when
-available, then falls back to BODY if no motion frame exists. Native mouse-spring
-and native visual/body reconstruction keep using the BODY helper.
+For proxy constraint drive that helper stays on the same BODY authority helper as
+native visual/body reconstruction.
 
 ### What the next in-game test should decide
 
 Expected healthy attach signature:
 
 ```text
-constraintObjectFrame=MOTION
-desiredConstraintBody ~= heldBody[MOTION]
-heldBodyToConDesiredBody near zero at frame 1
-nativeBodyToHeldBody may remain nonzero as a diagnostic BODY/MOTION delta
+constraintObjectFrame=BODY
+desiredConstraintBody ~= nativeBody[BODY]
+nativeBodyToHeldBody may remain nonzero as diagnostic BODY/MOTION delta
 objectAtGrabToDesiredObject remains zero for generic point-to-palm grabs
 relationPivotErr remains near zero
 ```
 
-If the object still snaps while `desiredConstraintBody` matches
-`heldBody[MOTION]`, then the next suspect is not body-B frame selection. The
-remaining candidates would be constraint angular target interpretation,
-body-A/proxy after-solve readback, or visual hand publication timing.
+If the object still snaps while `desiredConstraintBody` matches native BODY,
+then the next suspect is not body-B frame ownership. The remaining candidates
+are constraint angular target interpretation, body-A/proxy after-solve readback,
+visual hand publication timing, or the exact hkp ragdoll motor target formula.

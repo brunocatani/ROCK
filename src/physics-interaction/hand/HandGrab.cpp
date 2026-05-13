@@ -1755,24 +1755,14 @@ namespace rock
     bool Hand::tryGetGrabDriveObjectWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform) const
     {
         /*
-         * Runtime reads must match the active drive's solver convention. Native
-         * mouse spring keeps using the FO4VR BODY slot because its local grab
-         * point and visual-node relation were captured against that boundary.
-         * The custom proxy constraint, however, is solved against hknp's live
-         * body-B frame when a motion-backed frame exists. That is not COM pivot
-         * authority: the selected contact point is still the grip authority, but
-         * its local coordinates must be read in the same body-B frame the
-         * constraint consumes or the first solver step will rotate BODY-authored
-         * targets toward a MOTION-oriented object.
+         * Active grab drive reads use the rigid BODY frame. FO4VR also exposes a
+         * motion/COM frame, but runtime testing rejected using that as the custom
+         * constraint body-B local frame: the proxy target remained stable while
+         * the object settled 90-180 degrees away from the hand. The selected
+         * contact point stays frozen in BODY space for constraint, visual, and
+         * release reconstruction; MOTION stays diagnostics/weight data only.
          */
         outTransform = makeIdentityTransform();
-        if (_heldDriveMode == HeldObjectDriveMode::ProxyConstraint) {
-            body_frame::BodyFrameSource source = body_frame::BodyFrameSource::Fallback;
-            if (tryResolveLiveBodyWorldTransform(world, bodyId, outTransform, &source) &&
-                source == body_frame::BodyFrameSource::MotionCenterOfMass) {
-                return true;
-            }
-        }
         return tryGetGrabAuthorityBodyWorldTransform(world, bodyId, outTransform);
     }
 
@@ -3999,18 +3989,16 @@ namespace rock
             const bool hasMotionBodyWorldAtGrab =
                 tryResolveLiveBodyWorldTransform(world, objectBodyId, motionBodyWorldAtGrab, &motionBodySourceAtGrab);
             /*
-             * The custom proxy constraint stores body-B transform and pivot data
-             * in the solver frame hknp exposes for the dynamic object. This does
-             * not make COM the grip authority: the selected contact point remains
-             * the only object-side pivot, and both BODY-local and solver-local
-             * copies are frozen from that same world point. The MOTION frame is
-             * used only as the coordinate system for constraint atoms when hknp
-             * reports that as the live body frame.
+             * Custom constraint body-B data is authored in the hknp BODY frame.
+             * HIGGS does the same kind of thing on Skyrim's hkp side: it freezes
+             * pivot B from the rigid body transform and treats COM/motion as mass
+             * data, not as a local-frame owner. A runtime MOTION-frame experiment
+             * made the object settle at the wrong rotation even when the proxy
+             * target was stable, so the live motion transform remains diagnostic
+             * evidence only.
              */
-            const bool constraintUsesMotionBodyAtGrab =
-                hasMotionBodyWorldAtGrab && motionBodySourceAtGrab == body_frame::BodyFrameSource::MotionCenterOfMass;
-            const RE::NiTransform constraintBodyWorldAtGrab =
-                constraintUsesMotionBodyAtGrab ? motionBodyWorldAtGrab : grabBodyWorldAtGrab;
+            const bool constraintUsesMotionBodyAtGrab = false;
+            const RE::NiTransform constraintBodyWorldAtGrab = grabBodyWorldAtGrab;
             const RE::NiTransform handBodyWorldAtGrab = getLiveBodyWorldTransform(world, _handBody.getBodyId());
             proxyFrameWorldAtGrab = handBodyWorldAtGrab;
             hasPalmProxyFrameAtGrab =
@@ -4025,12 +4013,11 @@ namespace rock
             /*
              * Custom proxy authority must preserve the same visual-object to hknp
              * BODY relation that native mouse-spring target composition already
-             * depended on while also storing a solver-local relation for the
-             * custom constraint. The root-flattened palm frame owns hand movement,
-             * the visual object frame owns the captured grip relation, BODY owns
-             * visual/native/release reconstruction, and the proxy constraint owns
-             * its body-B data in hknp's active solver frame. MOTION/COM still does
-             * not choose the pivot, target grip point, or object orientation.
+             * depended on. The root-flattened palm frame owns hand movement, the
+             * visual object frame owns the captured grip relation, and the custom
+             * constraint stores body-B local data in the rigid BODY frame. MOTION
+             * and COM still do not choose the pivot, target grip point, or object
+             * orientation.
              */
             _grabFrame.bodyLocal = objectToBodyAtGrab;
             _grabFrame.constraintBodyLocal = objectToConstraintBodyAtGrab;
@@ -5733,13 +5720,16 @@ namespace rock
         std::uint32_t proxyMotionIndex = body_frame::kFreeMotionIndex;
         std::uint32_t objectMotionIndex = body_frame::kFreeMotionIndex;
         proxySource = body_frame::BodyFrameSource::BodyTransform;
-        objectSource = body_frame::BodyFrameSource::Fallback;
+        objectSource = body_frame::BodyFrameSource::BodyTransform;
         proxyMotionIndex = body_frame::kFreeMotionIndex;
         objectMotionIndex = body_frame::kFreeMotionIndex;
         const bool proxyOk = tryGetGrabAuthorityBodyWorldTransform(world, proxyBodyId, proxyReadback);
-        const bool objectOk = tryResolveLiveBodyWorldTransform(world, objectBodyId, objectReadback, &objectSource, &objectMotionIndex);
+        const bool objectOk = tryGetGrabAuthorityBodyWorldTransform(world, objectBodyId, objectReadback);
         if (!proxyOk) {
             proxySource = body_frame::BodyFrameSource::Fallback;
+        }
+        if (!objectOk) {
+            objectSource = body_frame::BodyFrameSource::Fallback;
         }
 
         const RE::NiTransform desiredObjectFromTarget = multiplyTransforms(targetProxyWorld, constraintHandSpace);
