@@ -783,14 +783,15 @@ namespace rock
         _driveRebuildRequested.store(true, std::memory_order_release);
         ROCK_LOG_SAMPLE_WARN(Body,
             g_rockConfig.rockLogSampleMilliseconds,
-            "Body generated collider drive result requested rebuild owner={} bodyIndex={} failures={} missingBody={} placementFailed={} nativeDriveFailed={} bodyDeltaGame={:.2f}",
+            "Body generated collider drive result requested rebuild owner={} bodyIndex={} failures={} missingBody={} placementFailed={} nativeDriveFailed={} bodyDeltaGame={:.2f} bodyRotErr={:.2f}",
             ownerName ? ownerName : "unknown",
             bodyIndex,
             failures,
             result.missingBody ? "yes" : "no",
             result.placementFailed ? "yes" : "no",
             result.nativeDriveFailed ? "yes" : "no",
-            result.hasLiveBodyTransform ? result.bodyDeltaGameUnits : -1.0f);
+            result.hasLiveBodyTransform ? result.bodyDeltaGameUnits : -1.0f,
+            result.hasLiveBodyTransform ? result.targetToBodyRotationDegrees : -1.0f);
     }
 
     void BodyBoneColliderSet::clearInstance(BodyInstance& instance, bool releaseShapeRef)

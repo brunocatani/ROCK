@@ -167,6 +167,43 @@ namespace rock
             return std::acos(cosine);
         }
 
+        float radiansToDegrees(float radians)
+        {
+            return radians * 57.29577951308232f;
+        }
+
+        RE::NiPoint3 localAxisWorld(const RE::NiMatrix3& matrix, const RE::NiPoint3& axis)
+        {
+            return transform_math::rotateLocalVectorToWorld(matrix, axis);
+        }
+
+        float directionLength(const RE::NiPoint3& value)
+        {
+            return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
+        }
+
+        RE::NiPoint3 normalizedOrZero(const RE::NiPoint3& value)
+        {
+            const float len = directionLength(value);
+            if (len <= 0.000001f || !std::isfinite(len)) {
+                return {};
+            }
+            const float inv = 1.0f / len;
+            return RE::NiPoint3{ value.x * inv, value.y * inv, value.z * inv };
+        }
+
+        float directionDot(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
+        {
+            const RE::NiPoint3 a = normalizedOrZero(lhs);
+            const RE::NiPoint3 b = normalizedOrZero(rhs);
+            return std::clamp(a.x * b.x + a.y * b.y + a.z * b.z, -1.0f, 1.0f);
+        }
+
+        float directionDeltaDegrees(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
+        {
+            return radiansToDegrees(std::acos(directionDot(lhs, rhs)));
+        }
+
         void fillRequiredVelocityTelemetry(
             const RE::NiTransform& liveTransform,
             const RE::NiTransform& target,
@@ -178,6 +215,32 @@ namespace rock
             result.requiredLinearVelocityHavok = linearGame * gameToHavokScale() / driveDelta;
             const float angle = rotationAngleRadians(liveTransform.rotate, target.rotate);
             result.requiredAngularVelocityRadians = std::isfinite(angle) ? angle / driveDelta : 0.0f;
+        }
+
+        void fillRotationReadbackTelemetry(
+            const RE::NiTransform& liveTransform,
+            const RE::NiTransform& target,
+            GeneratedKeyframedBodyDriveResult& result)
+        {
+            /*
+             * Generated-body convention tests need rotation evidence, not just
+             * position deltas. A capsule/box can be centered correctly while
+             * its basis is transposed or 90/180 degrees wrong, so record both
+             * total rotation error and local X/Y/Z axis deltas using the same
+             * Ni local-vector convention as the grab-frame overlay.
+             */
+            result.targetAxisXWorld = localAxisWorld(target.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+            result.targetAxisYWorld = localAxisWorld(target.rotate, RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+            result.targetAxisZWorld = localAxisWorld(target.rotate, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+            result.liveBodyAxisXWorld = localAxisWorld(liveTransform.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+            result.liveBodyAxisYWorld = localAxisWorld(liveTransform.rotate, RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+            result.liveBodyAxisZWorld = localAxisWorld(liveTransform.rotate, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+
+            const float rotationRadians = rotationAngleRadians(liveTransform.rotate, target.rotate);
+            result.targetToBodyRotationDegrees = std::isfinite(rotationRadians) ? radiansToDegrees(rotationRadians) : 0.0f;
+            result.targetToBodyAxisXDegrees = directionDeltaDegrees(result.targetAxisXWorld, result.liveBodyAxisXWorld);
+            result.targetToBodyAxisYDegrees = directionDeltaDegrees(result.targetAxisYWorld, result.liveBodyAxisYWorld);
+            result.targetToBodyAxisZDegrees = directionDeltaDegrees(result.targetAxisZWorld, result.liveBodyAxisZWorld);
         }
 
         void captureTargetAndBodyTelemetry(
@@ -200,6 +263,7 @@ namespace rock
                 result.motionIndex = motionIndex;
                 result.bodyDeltaGameUnits = body_frame::distance(liveTransform.translate, target.translate);
                 fillRequiredVelocityTelemetry(liveTransform, target, result.driveDeltaSeconds, result);
+                fillRotationReadbackTelemetry(liveTransform, target, result);
             }
         }
 
@@ -222,13 +286,52 @@ namespace rock
             std::uint32_t bodyIndex,
             RE::hknpBodyId bodyId)
         {
+            if (g_rockConfig.rockDebugGrabFrameLogging && result.driven && result.hasLiveBodyTransform) {
+                ROCK_LOG_SAMPLE_INFO(Physics,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Generated body frame compare owner={} bodyIndex={} bodyId={} phase={} substep={}/{} bodyDeltaGame={:.2f} bodyRotErr={:.2f} axisDeg=({:.1f},{:.1f},{:.1f}) targetX=({:.2f},{:.2f},{:.2f}) targetY=({:.2f},{:.2f},{:.2f}) targetZ=({:.2f},{:.2f},{:.2f}) bodyX=({:.2f},{:.2f},{:.2f}) bodyY=({:.2f},{:.2f},{:.2f}) bodyZ=({:.2f},{:.2f},{:.2f}) bodySource={} motion={} teleported={} hardSync={}",
+                    ownerName ? ownerName : "unknown",
+                    bodyIndex,
+                    bodyId.value,
+                    physicsStepPhaseName(timing.phase),
+                    timing.substepIndex + 1,
+                    timing.substepCount,
+                    result.bodyDeltaGameUnits,
+                    result.targetToBodyRotationDegrees,
+                    result.targetToBodyAxisXDegrees,
+                    result.targetToBodyAxisYDegrees,
+                    result.targetToBodyAxisZDegrees,
+                    result.targetAxisXWorld.x,
+                    result.targetAxisXWorld.y,
+                    result.targetAxisXWorld.z,
+                    result.targetAxisYWorld.x,
+                    result.targetAxisYWorld.y,
+                    result.targetAxisYWorld.z,
+                    result.targetAxisZWorld.x,
+                    result.targetAxisZWorld.y,
+                    result.targetAxisZWorld.z,
+                    result.liveBodyAxisXWorld.x,
+                    result.liveBodyAxisXWorld.y,
+                    result.liveBodyAxisXWorld.z,
+                    result.liveBodyAxisYWorld.x,
+                    result.liveBodyAxisYWorld.y,
+                    result.liveBodyAxisYWorld.z,
+                    result.liveBodyAxisZWorld.x,
+                    result.liveBodyAxisZWorld.y,
+                    result.liveBodyAxisZWorld.z,
+                    body_frame::bodyFrameSourceName(result.liveBodyFrameSource),
+                    result.motionIndex,
+                    result.teleported ? "yes" : "no",
+                    result.hardSynced ? "yes" : "no");
+            }
+
             if (!g_rockConfig.rockDebugVerboseLogging || !result.driven) {
                 return;
             }
 
             ROCK_LOG_SAMPLE_DEBUG(Physics,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "Generated keyframed body drive owner={} bodyIndex={} bodyId={} phase={} substep={}/{} progress={:.3f} targetGame=({:.2f},{:.2f},{:.2f}) targetHavok=({:.4f},{:.4f},{:.4f}) bodyGame=({:.2f},{:.2f},{:.2f}) bodyDeltaGame={:.2f} bodySource={} motion={} rawDt={:.6f} subDt={:.6f} simulatedDt={:.6f} driveDt={:.6f} sourceDt={:.6f} sourceAge={:.6f} predictLead={:.6f} stale={} noSourceSteps={} reqLinHavok={:.2f} reqAng={:.2f} substeps={} scaleG2H={:.8f} teleported={} hardSync={}",
+                "Generated keyframed body drive owner={} bodyIndex={} bodyId={} phase={} substep={}/{} progress={:.3f} targetGame=({:.2f},{:.2f},{:.2f}) targetHavok=({:.4f},{:.4f},{:.4f}) bodyGame=({:.2f},{:.2f},{:.2f}) bodyDeltaGame={:.2f} bodyRotErr={:.2f} axisDeg=({:.1f},{:.1f},{:.1f}) bodySource={} motion={} rawDt={:.6f} subDt={:.6f} simulatedDt={:.6f} driveDt={:.6f} sourceDt={:.6f} sourceAge={:.6f} predictLead={:.6f} stale={} noSourceSteps={} reqLinHavok={:.2f} reqAng={:.2f} substeps={} scaleG2H={:.8f} teleported={} hardSync={}",
                 ownerName ? ownerName : "unknown",
                 bodyIndex,
                 bodyId.value,
@@ -246,6 +349,10 @@ namespace rock
                 result.liveBodyGamePosition.y,
                 result.liveBodyGamePosition.z,
                 result.hasLiveBodyTransform ? result.bodyDeltaGameUnits : -1.0f,
+                result.hasLiveBodyTransform ? result.targetToBodyRotationDegrees : -1.0f,
+                result.hasLiveBodyTransform ? result.targetToBodyAxisXDegrees : -1.0f,
+                result.hasLiveBodyTransform ? result.targetToBodyAxisYDegrees : -1.0f,
+                result.hasLiveBodyTransform ? result.targetToBodyAxisZDegrees : -1.0f,
                 result.hasLiveBodyTransform ? body_frame::bodyFrameSourceName(result.liveBodyFrameSource) : "unreadable",
                 result.motionIndex,
                 timing.rawDeltaSeconds,

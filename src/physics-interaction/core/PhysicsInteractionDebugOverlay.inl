@@ -616,9 +616,11 @@
                          * These palm triads intentionally keep the generated
                          * collider frame, grab-authority frame, and live proxy
                          * readback separate. In the full-convention diagnostic
-                         * build the first two should overlap; if they do not,
-                         * the convention split is still present before the
-                         * proxy/body-A boundary.
+                         * build the first two use separate origins for visual
+                         * readability but should report near-zero rotation in
+                         * the direct-to-authority text/log delta. If that
+                         * delta is not near zero, the convention split is still
+                         * present before the proxy/body-A boundary.
                          */
                         addAxisTransform(
                             withOverlayOrigin(sample.palmAnchorTargetWorld, palmReference - palmDebugBasis.panelRight * 8.0f),

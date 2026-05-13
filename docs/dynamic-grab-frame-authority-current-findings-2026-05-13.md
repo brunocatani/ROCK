@@ -1069,12 +1069,12 @@ This preserves all generated hand/body collider placement while preventing the
 custom grab constraint from using the physical collider storage convention as
 the body-A grip authority convention.
 
-### Files In This Fix
+### Files In The Grab-Only Adapter Build
 
 - `src/physics-interaction/hand/HandColliderTypes.h`
   - owns `matrixFromAxes(...)`;
   - owns generated palm/finger collider frame construction;
-  - keeps the verified generated collider column convention;
+  - originally kept the verified generated collider column convention;
   - owns `generatedColliderFrameToGrabAuthorityFrame(...)`, the explicit
     grab-only adapter.
 - `src/physics-interaction/hand/HandGrab.cpp`
@@ -1084,14 +1084,15 @@ the body-A grip authority convention.
   - leaves raw hand fallback unadapted because it is not a generated collider
     frame.
 - `tests/HandColliderFramePolicyTests.cpp`
-  - locks `matrixFromAxes(...)` to column-stored generated collider axes;
-  - verifies the grab-only adapter converts palm and segment generated frames
-    into the local-vector convention expected by grab math.
+  - originally locked `matrixFromAxes(...)` to column-stored generated collider
+    axes;
+  - originally verified the grab-only adapter converted palm and segment
+    generated frames into the local-vector convention expected by grab math.
 - `CMakeLists.txt`
   - registers `ROCKHandColliderFramePolicyTests`;
   - includes it in the CommonLib-backed policy test target list.
 
-### What This Fix Does Not Change
+### What The Grab-Only Adapter Build Did Not Change
 
 - It does not use COM as pivot authority.
 - It does not change selected contact pivot capture.
@@ -1191,3 +1192,44 @@ part of the grab-frame mismatch.
 This remains a frame-convention diagnostic. It does not change COM, pivot
 selection, mouse-spring tuning, mass force, angular authority, or hand pose
 logic.
+
+## 2026-05-13 Clean Data Pass
+
+The full-convention build needs cleaner proof than visual impression alone.
+Two diagnostics were tightened:
+
+- Palm debug overlay wording now states the truth: generated-direct and
+  grab-authority palm triads are drawn at separate origins for readability. They
+  should match in basis, not physically overlap on screen. The numeric
+  `directToAuthority` rotation is the proof.
+- Generated keyframed body drive telemetry now records target-vs-live body
+  rotation:
+  - `bodyRotErr` = total target-to-readback rotation error;
+  - `axisDeg=(x,y,z)` = per local-axis target/readback angular mismatch;
+  - `targetX/Y/Z` and `bodyX/Y/Z` = the actual world basis vectors being
+    compared.
+
+With `bDebugGrabFrameLogging=true`, the log should now include sampled lines:
+
+```text
+Generated body frame compare owner=... bodyIndex=... bodyId=...
+  bodyDeltaGame=...
+  bodyRotErr=...
+  axisDeg=(...)
+  targetX=(...) targetY=(...) targetZ=(...)
+  bodyX=(...) bodyY=(...) bodyZ=(...)
+```
+
+Interpretation:
+
+- `directToAuthority ~= 0deg` and generated hand/body `bodyRotErr` large:
+  the shared generated frame is internally consistent, but the native generated
+  body placement/readback path is consuming rotation differently.
+- generated hand/body `bodyRotErr ~= 0deg` while in-game colliders look rotated:
+  the debug visual/reference expectations are wrong or the rendered overlay is
+  not attached to the same body being tested.
+- generated hand/body `bodyRotErr ~= 0deg` and grab proxy/readback diverges:
+  the next fault is after palm target capture, inside proxy body-A drive or
+  constraint update timing.
+- weapon `bodyRotErr` should be read separately because weapon generated hulls
+  still use their own root-local mesh path and explicit transpose policy.

@@ -197,7 +197,17 @@ namespace rock
         RE::NiPoint3 targetGamePosition{};
         RE::NiPoint3 targetHavokPosition{};
         RE::NiPoint3 liveBodyGamePosition{};
+        RE::NiPoint3 targetAxisXWorld{};
+        RE::NiPoint3 targetAxisYWorld{};
+        RE::NiPoint3 targetAxisZWorld{};
+        RE::NiPoint3 liveBodyAxisXWorld{};
+        RE::NiPoint3 liveBodyAxisYWorld{};
+        RE::NiPoint3 liveBodyAxisZWorld{};
         float bodyDeltaGameUnits = 0.0f;
+        float targetToBodyRotationDegrees = 0.0f;
+        float targetToBodyAxisXDegrees = 0.0f;
+        float targetToBodyAxisYDegrees = 0.0f;
+        float targetToBodyAxisZDegrees = 0.0f;
         std::uint32_t motionIndex = body_frame::kFreeMotionIndex;
         body_frame::BodyFrameSource liveBodyFrameSource = body_frame::BodyFrameSource::Fallback;
         float driveDeltaSeconds = havok_physics_timing::kFallbackPhysicsDeltaSeconds;
