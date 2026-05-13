@@ -1974,10 +1974,14 @@ namespace rock
         out.valid = true;
         out.isLeft = _isLeft;
         out.rawHandWorld = rawHandWorld;
+        out.nativeFlattenedHandWorld = rawHandWorld;
         out.rawHandBasis = grab_transform_telemetry::makeOrientationBasis(out.rawHandWorld);
+        out.nativeFlattenedHandBasis = out.rawHandBasis;
         out.heldFormId = _savedObjectState.refr ? _savedObjectState.refr->GetFormID() : 0;
         out.heldBodyId = _savedObjectState.bodyId.value;
         out.handBodyId = _handBody.isValid() ? _handBody.getBodyId().value : INVALID_BODY_ID;
+        out.legacyConfiguredPivotAWorld = computeGrabPivotAPositionFromHandBasis(out.nativeFlattenedHandWorld, _isLeft);
+        out.hasLegacyConfiguredPivotAWorld = true;
 
         if (_boneColliders.tryGetPalmAnchorTarget(out.palmAnchorTargetWorld)) {
             out.hasPalmAnchorTarget = true;
@@ -1988,8 +1992,16 @@ namespace rock
             out.hasPalmAnchorGrabAuthority = true;
             out.rawToPalmAnchorTarget =
                 grab_transform_telemetry::measureTransformDelta(out.rawHandWorld, out.palmAnchorTargetWorld);
+            out.nativeFlattenedHandToPalmAnchorTarget =
+                grab_transform_telemetry::measureTransformDelta(out.nativeFlattenedHandWorld, out.palmAnchorTargetWorld);
             out.palmAnchorTargetToGrabAuthority =
                 grab_transform_telemetry::measureTransformDelta(out.palmAnchorTargetWorld, out.palmAnchorGrabAuthorityWorld);
+            out.nativeFlattenedHandToGrabAuthority =
+                grab_transform_telemetry::measureTransformDelta(out.nativeFlattenedHandWorld, out.palmAnchorGrabAuthorityWorld);
+            out.legacyConfiguredPivotAToPalmAnchor =
+                grab_transform_telemetry::measurePointPair(out.legacyConfiguredPivotAWorld, out.palmAnchorTargetWorld.translate);
+            out.legacyConfiguredPivotAToGrabAuthority =
+                grab_transform_telemetry::measurePointPair(out.legacyConfiguredPivotAWorld, out.palmAnchorGrabAuthorityWorld.translate);
         }
 
         root_flattened_finger_skeleton_runtime::Snapshot fingerSnapshot{};
@@ -2042,6 +2054,10 @@ namespace rock
                     out.grabAuthorityToProxyReadback =
                         grab_transform_telemetry::measureTransformDelta(out.palmAnchorGrabAuthorityWorld, out.proxyReadbackWorld);
                 }
+                out.nativeFlattenedHandToProxyReadback =
+                    grab_transform_telemetry::measureTransformDelta(out.nativeFlattenedHandWorld, out.proxyReadbackWorld);
+                out.legacyConfiguredPivotAToProxyReadback =
+                    grab_transform_telemetry::measurePointPair(out.legacyConfiguredPivotAWorld, out.proxyReadbackWorld.translate);
             }
         }
 
@@ -2208,6 +2224,8 @@ namespace rock
             const auto pivotDelta = grab_transform_telemetry::measurePointPair(pivot.handPivotWorld, pivot.objectPivotWorld);
             out.pivotDeltaWorld = pivotDelta.delta;
             out.pivotErrorGameUnits = pivotDelta.distance;
+            out.legacyConfiguredPivotAToRuntimePivotA =
+                grab_transform_telemetry::measurePointPair(out.legacyConfiguredPivotAWorld, out.pivotAWorld);
         }
 
         if (_activeConstraint.constraintData) {

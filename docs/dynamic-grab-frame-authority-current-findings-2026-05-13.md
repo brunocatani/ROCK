@@ -1110,11 +1110,12 @@ A fresh in-game grab log and overlay should show the generated palm, converted
 grab-authority palm, and proxy/body-A readback as separate frames:
 
 ```text
-GRAB BASIS FRAMECOMPARE ...
-  palmDirect=yes
-  palmAuthority=yes
+GRAB BASIS FRAMECHAIN ...
+  generatedPalm=yes
+  grabAuthority=yes
   proxyReadback=yes
-  directToAuthority=...deg
+  nativeToPalm=...
+  palmToAuthority=...deg
   authorityToProxy=...deg
 ```
 
@@ -1314,16 +1315,30 @@ Visual overlay expectations:
 The important log families:
 
 ```text
-GRAB BASIS FRAMECOMPARE ...
+GRAB BASIS FRAMECHAIN ...
 ```
 
 Use this for:
 
-- `directToAuthority`
+- `nativeToPalm`
+- `nativeToAuthority`
+- `nativeToProxy`
+- `palmToAuthority`
 - `authorityToProxy`
 - generated palm basis
 - grab-authority palm basis
 - proxy/readback basis
+
+```text
+GRAB BASIS LEGACY_PIVOT ...
+```
+
+Use this only for contamination proof:
+
+- `legacyToRuntime`
+- `legacyToPalm`
+- `legacyToAuthority`
+- `legacyToProxy`
 
 ```text
 Generated body frame compare owner=...
@@ -1428,7 +1443,7 @@ Meaning:
 
 Effect on next work:
 
-- compare loose weapon sessions through `GRAB BASIS FRAMECOMPARE`,
+- compare loose weapon sessions through `GRAB BASIS FRAMECHAIN`,
   proxy/readback, desired object, held body/object transform, and release logs;
 - do not use `owner=weapon-collision` logs to explain loose grabbed weapon
   behavior unless a later implementation explicitly adds generated weapon
@@ -1445,3 +1460,105 @@ convention flip.
 It does not decide final grab quality, mass feel, HIGGS-style weight, or motor
 architecture. Those remain later work after the attach-time frame snap is
 resolved with clean evidence.
+
+## 2026-05-13 Checkpoint: Legacy Pivot A Is Still Active
+
+### Confirmed code path
+
+The manually configured grab pivot was not removed.
+
+- Config keys still exist:
+  - `fRightGrabPivotAHandspaceX/Y/Z`
+  - `fLeftGrabPivotAHandspaceX/Y/Z`
+- Runtime config fields still exist:
+  - `g_rockConfig.rockRightGrabPivotAHandspace`
+  - `g_rockConfig.rockLeftGrabPivotAHandspace`
+- `computeGrabPivotAHandspacePosition(bool isLeft)` returns those config
+  values.
+- `computeGrabPivotAPositionFromHandBasis(...)` transforms that configured
+  point through the live hand transform.
+- `Hand::computeGrabPivotAWorld(...)` returns that transformed configured
+  point.
+
+This means the runtime `pivotA` currently means:
+
+```text
+legacy configured handspace point
+    -> transformed by the root-flattened live hand frame
+    -> used as the hand-side grab anchor
+```
+
+It does not currently mean:
+
+```text
+bone-derived generated palm center
+```
+
+### Why this matters
+
+The generated palm collider and the root-flattened finger/palm evidence are now
+available, but they have not fully replaced the old configurable pivot as active
+grab authority. The generated palm path is currently used for contact evidence,
+debug visualization, proxy/authority diagnostics, and collider placement. The
+legacy configured pivot still feeds the main grab anchor path through
+`computeGrabPivotAWorld(...)`.
+
+That legacy point is not a trustworthy diagnostic reference because its original
+calibration basis predates the flattened bone-tree palm data. Using it as the
+expected palm would contaminate the logs. The correct use during this diagnostic
+stage is only to expose whether the old pivot is still affecting runtime and how
+far it is from the bone-derived palm/proxy chain.
+
+There is no intended production reason to keep the old INI pivot as dynamic-grab
+authority once the flattened-bone palm/grip anchor replaces it. The source map
+above already proves that it is still wired today. The runtime logs are not
+needed to prove that fact; they are only needed to measure how far the legacy
+anchor is from the bone-derived palm in the exact in-game attach pose.
+
+### New distinction diagnostics
+
+The telemetry now distinguishes these frames explicitly:
+
+- `nativeFlattenedHand`: the root-flattened hand bone transform passed into the
+  grab frame.
+- `generatedPalm`: the bone-collider palm anchor target derived from the
+  flattened bone/collider pipeline.
+- `grabAuthority`: the generated-palm frame after ROCK's grab-authority adapter.
+- `proxyReadback`: the actual hknp hidden proxy/body-A transform read back from
+  the world.
+- `legacyConfiguredPivotA`: the old INI-configured handspace pivot transformed
+  through `nativeFlattenedHand`.
+- `runtimePivotA`: the current hand-side pivot reported by the runtime grab
+  pivot snapshot.
+
+New log rows:
+
+```text
+GRAB BASIS FRAMECHAIN ...
+GRAB BASIS LEGACY_PIVOT ...
+```
+
+New overlay lines:
+
+```text
+NATIVE flat->palm ...
+AUTH palm->auth ... auth->proxy ...
+LEGACY cfg->runtime ... cfg->proxy ...
+```
+
+### How to interpret the next test
+
+If `legacyToRuntime ~= 0`, then the active runtime pivot is still the old INI
+pivot.
+
+If `legacyToPalm` is non-trivial while `legacyToRuntime ~= 0`, the grab is
+still seating around a legacy point that is different from the bone-derived
+palm. That can muddy attach-time rotation/translation results.
+
+If `nativeToPalm`, `palmToAuthority`, and `authorityToProxy` are clean but
+attach still snaps, the next suspect is not the generated palm convention. The
+next suspect becomes object-side grab-frame capture and angular target
+construction.
+
+If `authorityToProxy` is large, the hidden proxy/body-A authority is not
+actually following the generated palm frame seen by the diagnostic target.

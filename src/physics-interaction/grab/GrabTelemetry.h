@@ -74,6 +74,7 @@ namespace rock::grab_transform_telemetry
         body_frame::BodyFrameSource handBodySource{ body_frame::BodyFrameSource::Fallback };
 
         RE::NiTransform rawHandWorld{};
+        RE::NiTransform nativeFlattenedHandWorld{};
         RE::NiTransform handBodyWorld{};
         RE::NiTransform heldBodyWorld{};
         RE::NiTransform heldNativeBodyWorld{};
@@ -97,6 +98,7 @@ namespace rock::grab_transform_telemetry
         RE::NiTransform constraintReverseTargetWorld{};
 
         OrientationBasis rawHandBasis{};
+        OrientationBasis nativeFlattenedHandBasis{};
         OrientationBasis handBodyBasis{};
         OrientationBasis palmAnchorTargetBasis{};
         OrientationBasis palmAnchorGrabAuthorityBasis{};
@@ -121,9 +123,14 @@ namespace rock::grab_transform_telemetry
         RE::NiPoint3 pivotAWorld{};
         RE::NiPoint3 pivotBWorld{};
         RE::NiPoint3 pivotDeltaWorld{};
+        RE::NiPoint3 legacyConfiguredPivotAWorld{};
         RE::NiPoint3 constraintTransformBLocalGame{};
         RE::NiPoint3 desiredTransformBLocalGame{};
         PointPairDelta<RE::NiPoint3> transformBLocalDelta{};
+        PointPairDelta<RE::NiPoint3> legacyConfiguredPivotAToPalmAnchor{};
+        PointPairDelta<RE::NiPoint3> legacyConfiguredPivotAToGrabAuthority{};
+        PointPairDelta<RE::NiPoint3> legacyConfiguredPivotAToProxyReadback{};
+        PointPairDelta<RE::NiPoint3> legacyConfiguredPivotAToRuntimePivotA{};
 
         RE::NiPoint3 rootFingerBaseCenterWorld{};
         RE::NiPoint3 rootFingerTipCenterWorld{};
@@ -133,6 +140,9 @@ namespace rock::grab_transform_telemetry
 
         TransformDelta rawToHandBody{};
         TransformDelta rawToPalmAnchorTarget{};
+        TransformDelta nativeFlattenedHandToPalmAnchorTarget{};
+        TransformDelta nativeFlattenedHandToGrabAuthority{};
+        TransformDelta nativeFlattenedHandToProxyReadback{};
         TransformDelta palmAnchorTargetToGrabAuthority{};
         TransformDelta grabAuthorityToProxyReadback{};
         TransformDelta heldNativeBodyToHeldBody{};
@@ -168,6 +178,7 @@ namespace rock::grab_transform_telemetry
         bool hasPalmAnchorTarget = false;
         bool hasPalmAnchorGrabAuthority = false;
         bool hasProxyReadback = false;
+        bool hasLegacyConfiguredPivotAWorld = false;
         bool hasHeldBodyWorld = false;
         bool hasHeldNativeBodyWorld = false;
         bool hasHeldNodeWorld = false;
