@@ -231,3 +231,228 @@ Do not:
 
 The next work has to be a coherent angular authority design for FO4VR custom
 dynamic grab.
+
+## 2026-05-13 Late Research Addendum - Angular Axis Contract
+
+This addendum records the concrete evidence found after the initial note.
+
+### Source fact: ROCK local axes are stored as rows
+
+`src/physics-interaction/TransformMath.h` defines
+`rotateLocalVectorToWorld(matrix, vector)` as:
+
+```cpp
+world.x = m00 * x + m10 * y + m20 * z;
+world.y = m01 * x + m11 * y + m21 * z;
+world.z = m02 * x + m12 * y + m22 * z;
+```
+
+Therefore, for a unit local axis:
+
+- local X in world = `(m00, m01, m02)` = stored row 0;
+- local Y in world = `(m10, m11, m12)` = stored row 1;
+- local Z in world = `(m20, m21, m22)` = stored row 2.
+
+For grab-frame math, the physical local axes are rows, not columns.
+
+### Source fact: current custom grab angular velocity uses columns
+
+Two current custom grab angular paths extract axes from columns:
+
+- `HandGrab.cpp::angularVelocityFromRotationDelta(...)`
+- `GrabAuthorityProxyMotion.h::computeAngularVelocityRadiansPerSecond(...)`
+
+Both sum:
+
+```cpp
+cross(column(previous, i), column(current, i))
+```
+
+That is inconsistent with the local-axis convention used by
+`TransformMath::rotateLocalVectorToWorld`.
+
+### Why this matches the N/S/E/W symptom
+
+A small convention test with ROCK's stored-row transform model gives this
+result for the same local wrist pitch while changing player yaw:
+
+```text
+yaw 0   row-axis [ 1,  0, 0]   column-axis [-1, 0, 0]
+yaw 90  row-axis [ 0,  1, 0]   column-axis [-1, 0, 0]
+yaw 180 row-axis [-1,  0, 0]   column-axis [-1, 0, 0]
+yaw 270 row-axis [ 0, -1, 0]   column-axis [-1, 0, 0]
+```
+
+The row-derived axis rotates with the player/hand as expected. The
+column-derived axis stays pinned to a world direction. That is exactly the
+N/S/E/W failure class: a local wrist motion becomes a different held-object
+rotation depending on world/player facing.
+
+This does not prove the final implementation should simply change every column
+reader to rows. It proves the current angular contract is not coherent: at
+least one angular producer is extracting the command from the wrong storage
+shape for ROCK's grab transform math.
+
+### Ghidra fact: hknp angular velocity setter consumes a public world vector
+
+Ghidra on `Fallout4VR.exe.unpacked.exe`:
+
+- `0x141539D30` - hknp world angular velocity setter
+- `0x1415399F0` - hknp world angular velocity getter
+- `0x141539F30` - hknp world linear+angular velocity setter
+- `0x14153A6A0` - hard-keyframe velocity computer
+- `0x14153ABD0` - hard-keyframe wrapper
+- `0x141E4AA30` - native mouse-spring action update
+
+The setter at `0x141539D30`:
+
+1. finds the hknp body slot by body id;
+2. follows body `+0x68` to the motion index;
+3. reads the motion record by `motionIndex * 0x80`;
+4. reads motion orientation from offsets `+0x10..+0x1c`;
+5. compares the supplied vector against the current public angular velocity;
+6. rotates the supplied vector through the motion orientation;
+7. stores the result into motion angular velocity slots `+0x50..+0x5c`.
+
+The getter at `0x1415399F0` performs the reverse-style read path: it reads
+motion angular velocity from `+0x50..+0x5c` and transforms it through the motion
+orientation to return public angular velocity.
+
+Conclusion: `SetBodyAngularVelocity` is not a raw local-slot write. The vector
+ROCK passes must already be the correct public world-space angular vector. If
+ROCK extracts that vector from column axes while the desired transform relation
+uses row-local axes, hknp will then transform the wrong world vector through the
+motion orientation. That gives a concrete mechanism for player-facing-dependent
+rotation.
+
+### Mouse spring comparison
+
+Current and backup `NativeMouseSpringGrab.cpp` use an isolated conversion:
+
+```cpp
+makeMouseSpringTargetRotation(targetBodyWorldRotation)
+    -> transposeRotation(targetBodyWorldRotation)
+    -> niRowsToHavokColumns(...)
+    -> write target transform columns
+```
+
+That old one-hand path did not ask ROCK to compute and pass a public angular
+velocity vector every frame. It sent one target body transform to FO4VR's native
+mouse-spring action. Ghidra shows the native action calls the hard-keyframe
+velocity computer and hknp velocity setters internally, so its angular
+correction is computed inside the same native body/motion convention family
+that consumes it.
+
+This explains why the old mouse-spring era could be smoother and less
+direction-dependent even when it was not HIGGS-quality: it avoided exposing
+ROCK's row/column grab-frame mismatch at the `SetBodyAngularVelocity` boundary.
+
+### Proxy path comparison
+
+The custom proxy path now has two angular producers:
+
+1. proxy body angular velocity:
+   `GrabAuthorityProxyMotion::computeAngularVelocityRadiansPerSecond(...)`
+   computes a column-derived angular vector and passes it to generated body
+   velocity;
+2. held object angular velocity:
+   `HandGrab.cpp::applyProxyConstraintAngularVelocityDrive(...)` computes a
+   column-derived angular vector and passes it to `SetBodyAngularVelocity`.
+
+The proxy pose itself may read back close to the requested pose, and the linear
+pivot may remain stable, while the angular authority is still wrong. That is
+because translation and rotation packing can be independently correct or wrong:
+the bug is the angular vector's frame, not necessarily the point pivot.
+
+### Current high-confidence failure model
+
+The custom dynamic grab integration is mixing:
+
+- row-local ROCK grab transforms;
+- column-stored generated collider frames;
+- a transposed grab-authority adapter;
+- hknp target transform packing;
+- direct public hknp angular velocity writes;
+- hknp's internal motion-orientation conversion.
+
+The current logs showing stable `transformBLocal` and low relation pivot error
+do not clear the angular path. They only show the linear/pivot side is
+internally consistent. The N/S/E/W symptom requires proving the angular command
+axis, and the current source still has column-based angular extraction in both
+proxy and object velocity paths.
+
+### Research conclusion
+
+The next fix should be designed around an explicit angular-space contract, not
+around another blind transpose:
+
+1. Capture and recompose the desired held relation in ROCK's row-local
+   grab-frame convention.
+2. Convert live and desired rotations into the exact public hknp world angular
+   convention before calling `SetBodyAngularVelocity`, or stop using direct
+   angular velocity and express the angular target entirely in a verified
+   solver-local constraint frame.
+3. Proxy-body angular velocity and held-object angular velocity must use the
+   same conversion rule.
+4. Diagnostics must project the commanded angular vector onto:
+   - physical/root-flattened palm local axes;
+   - proxy local axes;
+   - desired held body local axes;
+   - public hknp world axes.
+5. The same wrist pitch/yaw/roll must produce the same local-object response
+   after rotating player yaw by 90 degrees.
+
+The likely missing piece is not force tuning and not COM. It is the missing
+conversion from ROCK's row-local desired rotation delta into the public hknp
+world angular velocity consumed by `SetBodyAngularVelocity`.
+
+### Ghidra fact: generated-body `setVelocity` reaches the same hknp boundary
+
+The hidden proxy path does not escape this convention requirement.
+
+Ghidra:
+
+- `0x141E082A0` - generated collision object `setVelocity(...)`
+- `0x141DF56F0` - BSWorld velocity wrapper
+- `0x141539F30` - hknp world `setBodyVelocity(...)`
+
+The generated body `setVelocity(...)` path resolves the collision object's hknp
+body id, then calls the BSWorld velocity wrapper. The wrapper either calls
+`hknpWorld::setBodyVelocity(...)` directly or queues the same command depending
+on physics-thread state.
+
+`hknpWorld::setBodyVelocity(...)` writes linear velocity directly, but angular
+velocity goes through the same motion-orientation conversion as
+`SetBodyAngularVelocity`.
+
+Conclusion: the proxy-body angular velocity produced by
+`GrabAuthorityProxyMotion::computeAngularVelocityRadiansPerSecond(...)` has the
+same public-world-vector requirement as the held object direct angular velocity.
+The proxy path and object path both need the same angular conversion contract.
+
+### Ghidra fact: native hard keyframe is an angular-vector oracle
+
+Ghidra:
+
+- `0x14153A6A0` computes linear and angular velocities from a target position,
+  target quaternion, and dt;
+- `0x14153ABD0` is a small wrapper that calls `0x14153A6A0` and then calls
+  `0x141539F30`.
+
+That proves the output angular vector from `0x14153A6A0` is in the exact public
+convention consumed by `hknpWorld::setBodyVelocity(...)`.
+
+Future design implication:
+
+- ROCK does not have to guess the public hknp angular convention from raw
+  matrix columns;
+- it can use `ComputeHardKeyFrame` as a verification oracle, or potentially as
+  the angular velocity producer, while keeping ROCK's custom finite-force,
+  contact-pivot, and mass cap policy outside that native helper;
+- if ROCK keeps a custom angular-delta function, its output must match
+  `ComputeHardKeyFrame` for the same live body, target quaternion, and dt after
+  mass/force caps are removed from the comparison.
+
+This does not make native Fallout grab the model. It uses a FO4VR-native
+low-level angular conversion function as the boundary oracle for the custom
+grab authority.
