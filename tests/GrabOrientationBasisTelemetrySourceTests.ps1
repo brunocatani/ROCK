@@ -21,12 +21,26 @@ function Require-Text {
     }
 }
 
+function Reject-Text {
+    param(
+        [string]$RelativePath,
+        [string]$Pattern,
+        [string]$Message
+    )
+
+    $path = Join-Path $Root $RelativePath
+    $text = Get-Content -Raw -LiteralPath $path
+    if ($text -match $Pattern) {
+        $failures.Add("$RelativePath`: $Message")
+    }
+}
+
 Require-Text 'src/physics-interaction/grab/GrabTelemetry.h' 'struct\s+OrientationBasis' 'Grab telemetry must carry full native X/Y/Z orientation bases, not only a single finger axis.'
 Require-Text 'src/physics-interaction/grab/GrabTelemetry.h' 'makeOrientationBasis[\s\S]*rotateLocalVectorToWorld' 'Orientation basis telemetry must use ROCK/FO4VR localVectorToWorld convention.'
 Require-Text 'src/physics-interaction/grab/GrabTelemetry.h' 'formatBasisDelta' 'Logs must include basis dot and per-axis degree deltas for visual reconstruction.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_boneColliders\.tryGetPalmAnchorTarget\(out\.palmAnchorTargetWorld\)' 'Telemetry must include the generated palm-anchor target frame from the root-flattened hand collider pipeline.'
 Require-Text 'src/physics-interaction/hand/HandColliderTypes.h' 'matrixFromAxes[\s\S]*matrix\.entry\[1\]\[0\]\s*=\s*xAxis\.y[\s\S]*matrix\.entry\[0\]\[1\]\s*=\s*yAxis\.x' 'Generated collider placement must keep the in-game verified column-stored native convention.'
-Require-Text 'src/physics-interaction/hand/HandColliderTypes.h' 'generatedColliderFrameToGrabAuthorityFrame[\s\S]*transposeStoredRotation\(colliderFrame\.rotate\)' 'Grab telemetry must compare the native generated collider frame against the explicit grab-authority adapter, not an identity full-convention test.'
+Reject-Text 'src/physics-interaction/hand/HandColliderTypes.h' 'generatedColliderFrameToGrabAuthorityFrame[\s\S]*transposeStoredRotation\(colliderFrame\.rotate\)' 'Grab telemetry must not preserve the bad transpose adapter; the proxy authority frame should match the generated palm collider frame.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'palmAnchorGrabAuthorityWorld\s*=[\s\S]*generatedColliderFrameToGrabAuthorityFrame\(out\.palmAnchorTargetWorld\)' 'Telemetry must include the grab-authority boundary interpretation of the generated palm collider frame.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'proxyReadbackWorld\s*=\s*proxyWorld' 'Telemetry must include live proxy/body-A readback for visual comparison against the palm authority frame.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'resolveLiveFingerSkeletonSnapshot\(_isLeft,\s*fingerSnapshot\)' 'Telemetry must include root-flattened finger landmark lines for the palm-to-finger direction.'

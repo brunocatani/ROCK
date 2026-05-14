@@ -2678,7 +2678,9 @@ namespace rock
          * The hidden proxy is the constraint body-A authority. Its frame must
          * follow the generated palm anchor convention sourced from FO4VR's
          * root-flattened hand bones, not the raw controller frame and not a
-         * live hknp readback. The latter two are only fallback diagnostics for
+         * live hknp readback. The generated palm/finger colliders are the
+         * in-game verified frame convention, so the proxy uses the same frame
+         * directly. The latter two paths are only fallback diagnostics for
          * startup/world-loss gaps where no sampled palm target exists yet.
          */
         if (_boneColliders.tryGetPalmAnchorTarget(outProxyWorld)) {

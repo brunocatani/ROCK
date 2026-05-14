@@ -105,6 +105,16 @@ local wrist axes as the physical controller/root-flattened palm frame?
 If not, every downstream target can become world-direction dependent even when
 positions look correct.
 
+2026-05-14 update:
+
+- proxy-only in-game visualization proved this suspect was real;
+- the generated palm/finger colliders were visually correct;
+- the hidden proxy used the same source frame but then applied the old
+  transpose adapter;
+- that adapter made body-A rotate in a different convention from the real
+  colliders;
+- body-A should use the generated palm frame directly.
+
 ### Captured Grab Relation
 
 Files:

@@ -1172,3 +1172,40 @@ It should prove one of these two branches:
 
 Until that is separated, tuning force caps or flipping rows/columns is not
 grounded.
+
+## Runtime Visual Pass: Hidden Proxy Convention Was Wrong
+
+A proxy-only visual isolation switch was added and tested in game:
+
+- all other debug visual flags were disabled in the active INI;
+- only the hidden no-contact grab authority proxy body/axes were drawn;
+- the real palm/finger colliders had already been visually verified as correct.
+
+User observation:
+
+- the hidden proxy follows the hand positionally;
+- its rotation does not behave like the working palm/finger colliders;
+- it appears to use wrong/random rotation conventions.
+
+Conclusion:
+
+- the flattened root-bone tree is not the bad layer;
+- the generated palm/finger collider frame is not the bad layer;
+- the bad layer is the explicit grab-authority adapter
+  `generatedColliderFrameToGrabAuthorityFrame`;
+- the older transpose assumption was wrong for the physical body-A proxy.
+
+Correction:
+
+- body-A/proxy now consumes the generated palm-anchor frame directly;
+- the adapter boundary remains as a named function, but it is identity for the
+  physical proxy frame;
+- any relative/inverse transform needed by grab math must live in the captured
+  object-to-proxy relation, not in a physical proxy frame transpose.
+
+Expected next runtime result:
+
+- with `bDebugDrawGrabAuthorityProxy=true`, the hidden proxy axes should rotate
+  with the same convention as the visually correct palm/finger colliders;
+- if object rotation remains wrong after that, the next suspect returns to the
+  object-side saved relationship or body-B angular authority, not body-A.

@@ -446,15 +446,15 @@ namespace rock::hand_bone_collider_geometry_math
     inline Transform generatedColliderFrameToGrabAuthorityFrame(const Transform& colliderFrame)
     {
         /*
-         * Grab-frame math composes NiTransform relationships through ROCK's
-         * local-vector convention, while generated collider placement uses the
-         * column-stored hull convention above. The palm-anchor collider remains
-         * untouched for contacts; only the frame handed to the grab proxy/body-A
-         * authority is transposed into grab math convention.
+         * The root-flattened generated collider frame is the runtime visual
+         * truth. In-game proxy isolation proved the older transpose adapter made
+         * the hidden grab authority body rotate differently from the working
+         * palm/finger colliders. Body-A must therefore consume the same physical
+         * frame that the generated collider body consumes. Any grab-space math
+         * that needs an inverse or relative transform must do that in the saved
+         * object relation, not by changing the physical proxy orientation.
          */
-        Transform result = colliderFrame;
-        result.rotate = transposeStoredRotation(colliderFrame.rotate);
-        return result;
+        return colliderFrame;
     }
 
     template <class Transform, class Vector>
