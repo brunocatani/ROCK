@@ -29,6 +29,8 @@ namespace rock::debug
         BodyLegSegment,
         BodyFootSegment,
         Weapon,
+        RightGrabAuthorityProxy,
+        LeftGrabAuthorityProxy,
         Target
     };
 

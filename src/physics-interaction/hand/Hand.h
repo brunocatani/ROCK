@@ -299,6 +299,7 @@ namespace rock
             const OtherHandSelectionContext& otherHandContext);
 
         RE::hknpBodyId getCollisionBodyId() const { return _handBody.getBodyId(); }
+        RE::hknpBodyId getGrabAuthorityProxyBodyId() const { return _grabAuthorityProxy.getBodyId(); }
         bool hasCollisionBody() const { return _handBody.isValid(); }
         BethesdaPhysicsBody& getHandBody() { return _handBody; }
         const BethesdaPhysicsBody& getHandBody() const { return _handBody; }

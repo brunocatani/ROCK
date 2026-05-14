@@ -1306,6 +1306,18 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[1] = 1.0f;
                 color[2] = 0.25f;
                 break;
+            case BodyOverlayRole::RightGrabAuthorityProxy:
+                color[0] = 0.05f;
+                color[1] = 0.95f;
+                color[2] = 1.0f;
+                color[3] = 0.92f;
+                break;
+            case BodyOverlayRole::LeftGrabAuthorityProxy:
+                color[0] = 1.0f;
+                color[1] = 0.20f;
+                color[2] = 0.95f;
+                color[3] = 0.92f;
+                break;
             case BodyOverlayRole::Target:
                 color[0] = 1.0f;
                 color[1] = 0.85f;
@@ -2266,7 +2278,9 @@ float4 main(PS_INPUT input) : SV_Target {
                             entry.role == BodyOverlayRole::RightHandSegment || entry.role == BodyOverlayRole::LeftHandSegment ||
                             entry.role == BodyOverlayRole::BodyTorsoSegment || entry.role == BodyOverlayRole::BodyArmSegment ||
                             entry.role == BodyOverlayRole::BodyLegSegment || entry.role == BodyOverlayRole::BodyFootSegment ||
-                            entry.role == BodyOverlayRole::Weapon;
+                            entry.role == BodyOverlayRole::Weapon ||
+                            entry.role == BodyOverlayRole::RightGrabAuthorityProxy ||
+                            entry.role == BodyOverlayRole::LeftGrabAuthorityProxy;
                         if ((rockRole && !frame.drawRockBodies) || (!rockRole && !frame.drawTargetBodies)) {
                             continue;
                         }

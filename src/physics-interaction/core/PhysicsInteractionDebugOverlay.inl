@@ -19,6 +19,7 @@
         const bool drawGrabContactPatch = g_rockConfig.rockDebugDrawGrabContactPatch;
         const bool drawHandBoneContacts = g_rockConfig.rockDebugDrawHandBoneContacts;
         const bool drawSoftContacts = g_rockConfig.rockDebugDrawSoftContacts;
+        const bool drawGrabAuthorityProxy = g_rockConfig.rockDebugDrawGrabAuthorityProxy;
         const bool drawGrabTransformTelemetry = g_rockConfig.rockDebugGrabTransformTelemetry;
         const bool drawGrabTransformTelemetryAxes = drawGrabTransformTelemetry && g_rockConfig.rockDebugGrabTransformTelemetryAxes;
         const bool drawGrabTransformTelemetryText = drawGrabTransformTelemetry && g_rockConfig.rockDebugGrabTransformTelemetryText;
@@ -36,7 +37,7 @@
         }
         if (!drawRockColliderBodies && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawFingerProbes &&
             !drawPalmVectors && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal && !drawGrabContactPatch && !drawHandBoneContacts &&
-            !drawSoftContacts && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay && !drawWeaponAuthorityDebug && !drawWorldOriginDiagnostics) {
+            !drawSoftContacts && !drawGrabAuthorityProxy && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay && !drawWeaponAuthorityDebug && !drawWorldOriginDiagnostics) {
             debug::ClearFrame();
             return;
         }
@@ -45,9 +46,9 @@
 
         debug::BodyOverlayFrame frame{};
         frame.world = hknp;
-        frame.drawRockBodies = drawRockColliderBodies;
+        frame.drawRockBodies = drawRockColliderBodies || drawGrabAuthorityProxy;
         frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
-        frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes;
+        frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy;
         frame.drawMarkers =
             drawGrabPivots || drawFingerProbes || drawPalmVectors || drawRootFlattenedFingerSkeleton || drawGrabPocketNormal || drawGrabContactPatch ||
             drawHandBoneContacts || drawSoftContacts || drawGrabTransformTelemetryAxes || drawWeaponAuthorityDebug || drawWorldOriginDiagnostics;
@@ -236,14 +237,18 @@
         if (frame.drawAxes) {
             if (!rightDisabled) {
                 const RE::NiTransform& rawHand = context.right.rawHandWorld;
-                addAxisTransform(rawHand, debug::AxisOverlayRole::RightHandRaw, rawHand.translate, false);
-                addAxisBody(_rightHand.getCollisionBodyId(), debug::AxisOverlayRole::RightHandBody, rawHand.translate, true);
+                if (g_rockConfig.rockDebugShowHandAxes) {
+                    addAxisTransform(rawHand, debug::AxisOverlayRole::RightHandRaw, rawHand.translate, false);
+                    addAxisBody(_rightHand.getCollisionBodyId(), debug::AxisOverlayRole::RightHandBody, rawHand.translate, true);
+                }
             }
 
             if (!leftDisabled) {
                 const RE::NiTransform& rawHand = context.left.rawHandWorld;
-                addAxisTransform(rawHand, debug::AxisOverlayRole::LeftHandRaw, rawHand.translate, false);
-                addAxisBody(_leftHand.getCollisionBodyId(), debug::AxisOverlayRole::LeftHandBody, rawHand.translate, true);
+                if (g_rockConfig.rockDebugShowHandAxes) {
+                    addAxisTransform(rawHand, debug::AxisOverlayRole::LeftHandRaw, rawHand.translate, false);
+                    addAxisBody(_leftHand.getCollisionBodyId(), debug::AxisOverlayRole::LeftHandBody, rawHand.translate, true);
+                }
             }
         }
 
@@ -1355,6 +1360,19 @@
         }
 
         if (frame.drawRockBodies) {
+            if (drawGrabAuthorityProxy) {
+                const RE::hknpBodyId rightProxy = _rightHand.getGrabAuthorityProxyBodyId();
+                const RE::hknpBodyId leftProxy = _leftHand.getGrabAuthorityProxyBodyId();
+                if (rightProxy.value != INVALID_BODY_ID) {
+                    addBody(rightProxy, debug::BodyOverlayRole::RightGrabAuthorityProxy);
+                    addAxisBody(rightProxy, debug::AxisOverlayRole::RightGrabProxyReadback, context.right.rawHandWorld.translate, true);
+                }
+                if (leftProxy.value != INVALID_BODY_ID) {
+                    addBody(leftProxy, debug::BodyOverlayRole::LeftGrabAuthorityProxy);
+                    addAxisBody(leftProxy, debug::AxisOverlayRole::LeftGrabProxyReadback, context.left.rawHandWorld.translate, true);
+                }
+            }
+
             if (debug_overlay_policy::shouldDrawHandBody(drawRockColliderBodies, g_rockConfig.rockDebugDrawHandColliders) &&
                 !g_rockConfig.rockDebugDrawHandBoneColliders) {
                 addBody(_rightHand.getCollisionBodyId(), debug::BodyOverlayRole::RightHand);
