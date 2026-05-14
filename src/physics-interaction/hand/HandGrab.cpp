@@ -209,6 +209,81 @@ namespace rock
             return scalePoint(axis, angle / deltaTime);
         }
 
+        bool computeHardKeyframeVelocityForTarget(
+            RE::hknpWorld* world,
+            RE::hknpBodyId bodyId,
+            const RE::NiTransform& targetWorld,
+            float deltaTime,
+            float outLinearVelocityHavok[4],
+            float outAngularVelocityRadians[4])
+        {
+            /*
+             * Dynamic grab owns pivot, mass budget, and finite-force policy, but
+             * hknp owns the public angular-vector convention consumed by
+             * SetBodyVelocity/SetBodyAngularVelocity. FO4VR's native hard-keyframe
+             * helper computes that vector and immediately feeds it to the same
+             * hknp setter in ApplyHardKeyFrame, so use it as the boundary instead
+             * of deriving angular axes from NiMatrix storage by hand.
+             */
+            if (outLinearVelocityHavok) {
+                outLinearVelocityHavok[0] = 0.0f;
+                outLinearVelocityHavok[1] = 0.0f;
+                outLinearVelocityHavok[2] = 0.0f;
+                outLinearVelocityHavok[3] = 0.0f;
+            }
+            if (outAngularVelocityRadians) {
+                outAngularVelocityRadians[0] = 0.0f;
+                outAngularVelocityRadians[1] = 0.0f;
+                outAngularVelocityRadians[2] = 0.0f;
+                outAngularVelocityRadians[3] = 0.0f;
+            }
+
+            if (!world || bodyId.value == INVALID_BODY_ID || !havok_physics_timing::isUsableDelta(deltaTime) ||
+                !outLinearVelocityHavok || !outAngularVelocityRadians ||
+                !havok_runtime::getBody(world, bodyId)) {
+                return false;
+            }
+
+            alignas(16) float targetPositionHavok[4]{
+                targetWorld.translate.x * gameToHavokScale(),
+                targetWorld.translate.y * gameToHavokScale(),
+                targetWorld.translate.z * gameToHavokScale(),
+                0.0f,
+            };
+            alignas(16) float targetRotationHavok[4]{};
+            transform_math::niRowsToHavokQuaternion(targetWorld.rotate, targetRotationHavok);
+
+            using ComputeHardKeyFrame_t = void (*)(RE::hknpWorld*, RE::hknpBodyId, float*, float*, float, float*, float*);
+            static REL::Relocation<ComputeHardKeyFrame_t> compute{ REL::Offset(offsets::kFunc_ComputeHardKeyFrame) };
+            compute(world, bodyId, targetPositionHavok, targetRotationHavok, deltaTime, outLinearVelocityHavok, outAngularVelocityRadians);
+
+            outLinearVelocityHavok[3] = 0.0f;
+            outAngularVelocityRadians[3] = 0.0f;
+            return havok_runtime::isFinite3(outLinearVelocityHavok) && havok_runtime::isFinite3(outAngularVelocityRadians);
+        }
+
+        bool computeHardKeyframeAngularVelocityForTarget(
+            RE::hknpWorld* world,
+            RE::hknpBodyId bodyId,
+            const RE::NiTransform& targetWorld,
+            float deltaTime,
+            RE::NiPoint3& outAngularVelocityRadians)
+        {
+            alignas(16) float linearVelocityHavok[4]{};
+            alignas(16) float angularVelocityRadians[4]{};
+            if (!computeHardKeyframeVelocityForTarget(world, bodyId, targetWorld, deltaTime, linearVelocityHavok, angularVelocityRadians)) {
+                outAngularVelocityRadians = RE::NiPoint3{};
+                return false;
+            }
+
+            outAngularVelocityRadians = RE::NiPoint3{
+                angularVelocityRadians[0],
+                angularVelocityRadians[1],
+                angularVelocityRadians[2],
+            };
+            return true;
+        }
+
         const char* nodeDebugName(const RE::NiAVObject* node)
         {
             if (!node) {
@@ -2675,13 +2750,15 @@ namespace rock
             return false;
         }
 
-        RE::NiTransform liveBodyWorld{};
-        if (!tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, liveBodyWorld)) {
+        RE::NiPoint3 rawAngularVelocity{};
+        if (!computeHardKeyframeAngularVelocityForTarget(
+                world,
+                _savedObjectState.bodyId,
+                desiredBodyWorld,
+                deltaTime,
+                rawAngularVelocity)) {
             return false;
         }
-
-        const RE::NiPoint3 rawAngularVelocity =
-            angularVelocityFromRotationDelta(liveBodyWorld.rotate, desiredBodyWorld.rotate, deltaTime);
         outRawAngularSpeedRadiansPerSecond = vectorMagnitude(rawAngularVelocity);
         if (!std::isfinite(outRawAngularSpeedRadiansPerSecond)) {
             outRawAngularSpeedRadiansPerSecond = 0.0f;
@@ -2689,11 +2766,12 @@ namespace rock
 
         /*
          * Dynamic grab rotation is a single-writer FO4VR-native velocity motor.
-         * The type-19 ragdoll angular atom is disabled because live tests showed
-         * it driving the object to the wrong frame; this path keeps the contact
-         * pivot and linear constraint intact while mapping the already-computed
-         * mass-capped angular motor budget to a bounded angular velocity. The
-         * reference value is the existing default HIGGS-style angular budget
+         * The angular vector now comes from FO4VR's hard-keyframe velocity
+         * computation so the hknp public angular convention is owned at the
+         * native boundary. ROCK still owns the finite-force budget below: the
+         * native vector gives direction, then the mass/collision motor budget
+         * limits magnitude without rotating the command axis. The reference
+         * value is the existing default HIGGS-style angular budget
          * (2000 linear / 12.5 ratio = 160), so heavy/mass-capped objects receive
          * proportionally slower rotation instead of an infinite-strength snap.
          */
@@ -5672,8 +5750,15 @@ namespace rock
             const RE::hkTransformf targetHavok = grab_authority_proxy::makeHavokTransform(pending.proxyWorld);
             float linearVelocityHavok[4]{};
             float angularVelocityHavok[4]{};
+            float nativeLinearVelocityIgnored[4]{};
             grab_authority_proxy::computeLinearVelocityHavok(previousProxyWorld, pending.proxyWorld, driveDelta, linearVelocityHavok);
-            grab_authority_proxy::computeAngularVelocityRadiansPerSecond(previousProxyWorld, pending.proxyWorld, driveDelta, angularVelocityHavok);
+            const bool proxyAngularVelocityOk = computeHardKeyframeVelocityForTarget(
+                world,
+                proxyBodyId,
+                pending.proxyWorld,
+                driveDelta,
+                nativeLinearVelocityIgnored,
+                angularVelocityHavok);
             proxyLinearVelocityHavokMagnitude = std::sqrt(
                 linearVelocityHavok[0] * linearVelocityHavok[0] + linearVelocityHavok[1] * linearVelocityHavok[1] +
                 linearVelocityHavok[2] * linearVelocityHavok[2]);
@@ -5682,7 +5767,7 @@ namespace rock
                 angularVelocityHavok[2] * angularVelocityHavok[2]);
 
             setTransformOk = _grabAuthorityProxy.setTransform(targetHavok);
-            setVelocityOk = _grabAuthorityProxy.setVelocity(linearVelocityHavok, angularVelocityHavok);
+            setVelocityOk = proxyAngularVelocityOk && _grabAuthorityProxy.setVelocity(linearVelocityHavok, angularVelocityHavok);
             if (setTransformOk) {
                 proxyReadbackSourceBetween = body_frame::BodyFrameSource::BodyTransform;
                 proxyReadbackMotionIndexBetween = body_frame::kFreeMotionIndex;
@@ -5792,7 +5877,7 @@ namespace rock
             std::uint32_t filterInfo = 0;
             const bool filterReadOk = havok_runtime::tryReadFilterInfo(world, proxyBodyId, filterInfo);
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+directAngularVelocity proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s directAngular={} rawAng={:.3f}rad/s appliedAng={:.3f}rad/s capAng={:.3f}rad/s proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+hardKeyframeAngularVelocity proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s directAngular={} rawAng={:.3f}rad/s appliedAng={:.3f}rad/s capAng={:.3f}rad/s proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -5930,7 +6015,7 @@ namespace rock
         }
 
         ROCK_LOG_DEBUG(Hand,
-            "{} PROXY GRAB AFTER_SOLVE: seq={}/{} afterSeq={} diag=bodyFrameConstraint+directAngularVelocity proxyBody={} objBody={} constraint={} substep={}/{} proxyRead={} proxySrc={} proxyMotion={} objectRead={} objectSrc={} objectMotion={} proxyTargetErr={:.3f}gu/{:.2f}deg objectTargetErr={:.2f}gu/{:.1f}deg objectLiveProxyErr={:.2f}gu/{:.1f}deg gripTargetErr={:.2f}gu gripLiveProxyErr={:.2f}gu targetProxy=({:.1f},{:.1f},{:.1f}) liveProxy=({:.1f},{:.1f},{:.1f}) targetObj=({:.1f},{:.1f},{:.1f}) liveObj=({:.1f},{:.1f},{:.1f}) desiredObjectTarget=({:.1f},{:.1f},{:.1f}) desiredObjectLiveProxy=({:.1f},{:.1f},{:.1f})",
+            "{} PROXY GRAB AFTER_SOLVE: seq={}/{} afterSeq={} diag=bodyFrameConstraint+hardKeyframeAngularVelocity proxyBody={} objBody={} constraint={} substep={}/{} proxyRead={} proxySrc={} proxyMotion={} objectRead={} objectSrc={} objectMotion={} proxyTargetErr={:.3f}gu/{:.2f}deg objectTargetErr={:.2f}gu/{:.1f}deg objectLiveProxyErr={:.2f}gu/{:.1f}deg gripTargetErr={:.2f}gu gripLiveProxyErr={:.2f}gu targetProxy=({:.1f},{:.1f},{:.1f}) liveProxy=({:.1f},{:.1f},{:.1f}) targetObj=({:.1f},{:.1f},{:.1f}) liveObj=({:.1f},{:.1f},{:.1f}) desiredObjectTarget=({:.1f},{:.1f},{:.1f}) desiredObjectLiveProxy=({:.1f},{:.1f},{:.1f})",
             handName(),
             flushSequence,
             queuedSequence,
