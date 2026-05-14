@@ -4,8 +4,11 @@
 // Use "F4VR_COMMON_FRAMEWORK_PATH" to use existing F4VRCommonFramework instead of submodule.
 // Rename the file to 'CMakeUserPresets.json' (it is in .gitignore to keep it local to you).
 // Remove this comment block.
+// Fast plugin iteration copies ROCK.dll/ROCK.pdb to COPY_PLUGIN_BASE_PATH/F4SE/Plugins
+// without building test binaries or release archives.
 // Run:
-// cmake --preset custom
+// cmake --preset custom-fast
+// cmake --build build-fast --config Release --target ROCK -- /m
 
 {
   "version": 3,
@@ -13,11 +16,38 @@
     {
       "name": "custom",
       "cacheVariables": {
-        "POST_BUILD_COPY_PLUGIN": true,
+        "POST_BUILD_COPY_PLUGIN": false,
         "COPY_PLUGIN_BASE_PATH": "[MO2 modlist folder]/mods/[my mod] OR [Fallout 4 VR game path]/Data",
-        "F4VR_COMMON_FRAMEWORK_PATH": ""
+        "F4VR_COMMON_FRAMEWORK_PATH": "",
+        "COMMON_LIB_F4VR_PATH": ""
       },
       "inherits": "default"
+    },
+    {
+      "name": "custom-fast",
+      "cacheVariables": {
+        "POST_BUILD_COPY_PLUGIN": true,
+        "COPY_PLUGIN_BASE_PATH": "[MO2 modlist folder]/mods/[my mod] OR [Fallout 4 VR game path]/Data",
+        "F4VR_COMMON_FRAMEWORK_PATH": "",
+        "COMMON_LIB_F4VR_PATH": ""
+      },
+      "inherits": "fast"
+    },
+    {
+      "name": "custom-tests",
+      "cacheVariables": {
+        "F4VR_COMMON_FRAMEWORK_PATH": "",
+        "COMMON_LIB_F4VR_PATH": ""
+      },
+      "inherits": "tests"
+    },
+    {
+      "name": "custom-release",
+      "cacheVariables": {
+        "F4VR_COMMON_FRAMEWORK_PATH": "",
+        "COMMON_LIB_F4VR_PATH": ""
+      },
+      "inherits": "release"
     }
   ]
 }

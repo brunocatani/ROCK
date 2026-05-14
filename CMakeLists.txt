@@ -154,8 +154,16 @@ target_link_options(${PROJECT_NAME}
 
 string(REPLACE "/Ob2" "/Ob3" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
 
+# ROCK separates plugin iteration, verification, and release packaging because the
+# normal development loop needs a deployable DLL/PDB without implicitly building
+# test executables or archives. Tests and release packages remain explicit paths,
+# while fast local builds can still copy the plugin into the configured mod root.
+option(POST_BUILD_COPY_PLUGIN "Copy ROCK.dll and ROCK.pdb to configured mod root after building." OFF)
+set(COPY_PLUGIN_BASE_PATH "" CACHE STRING "Semicolon-separated mod roots that contain F4SE/Plugins.")
+option(ROCK_PACKAGE_RELEASE "Package Release builds into a .7z archive after ROCK is built." ON)
+
 if(POST_BUILD_COPY_PLUGIN)
-  if(DEFINED COPY_PLUGIN_BASE_PATH)
+  if(DEFINED COPY_PLUGIN_BASE_PATH AND NOT COPY_PLUGIN_BASE_PATH STREQUAL "")
     set(COPY_PLUGIN_PATH_LIST ${COPY_PLUGIN_BASE_PATH})
 
     message(">>> Create post build command: copy targets to:")
@@ -180,21 +188,25 @@ else()
   message(">>> No post build copy")
 endif()
 
-message(">>> Create post build command: package mod on release build")
-add_custom_command(
-  TARGET ${PROJECT_NAME}
-  POST_BUILD
-  COMMAND ${CMAKE_COMMAND}
-          -DPROJECT_NAME=${PROJECT_NAME}
-          -DPROJECT_FRIENDLY_NAME=${FRIENDLY_NAME}
-          -DPROJECT_VERSION=${PROJECT_VERSION}
-          -DROOT_DIR=${ROOT_DIR}
-          -DBUILD_DIR=${BUILD_DIR}
-          -DTARGET_FILE="$<TARGET_FILE:${PROJECT_NAME}>"
-          -DTARGET_PDB_FILE="$<TARGET_PDB_FILE:${PROJECT_NAME}>"
-          -DCONFIG=$(Configuration)
-          -P "${ROOT_DIR}/cmake/package.cmake"
-)
+if(ROCK_PACKAGE_RELEASE)
+  message(">>> Create post build command: package mod on release build")
+  add_custom_command(
+    TARGET ${PROJECT_NAME}
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND}
+            -DPROJECT_NAME=${PROJECT_NAME}
+            -DPROJECT_FRIENDLY_NAME=${FRIENDLY_NAME}
+            -DPROJECT_VERSION=${PROJECT_VERSION}
+            -DROOT_DIR=${ROOT_DIR}
+            -DBUILD_DIR=${BUILD_DIR}
+            -DTARGET_FILE="$<TARGET_FILE:${PROJECT_NAME}>"
+            -DTARGET_PDB_FILE="$<TARGET_PDB_FILE:${PROJECT_NAME}>"
+            -DCONFIG=$(Configuration)
+            -P "${ROOT_DIR}/cmake/package.cmake"
+  )
+else()
+  message(">>> Release package post build command disabled")
+endif()
 
 option(BUILD_ROCK_TESTS "Build ROCK focused regression tests" OFF)
 if(BUILD_ROCK_TESTS)
@@ -202,6 +214,7 @@ if(BUILD_ROCK_TESTS)
 
   function(add_rock_test TARGET_NAME)
     add_test(NAME ${TARGET_NAME} COMMAND $<TARGET_FILE:${TARGET_NAME}>)
+    set_tests_properties(${TARGET_NAME} PROPERTIES LABELS "policy")
   endfunction()
 
   add_executable(ROCKGrabInputIntentPolicyTests
@@ -278,6 +291,7 @@ if(BUILD_ROCK_TESTS)
     ROCKShoulderStashPolicyTests
     ROCKWeaponCollisionLifecyclePolicyTests
   )
+  add_custom_target(ROCKPolicyTestBinaries DEPENDS ${ROCK_COMMONLIB_TEST_TARGETS})
   foreach(ROCK_COMMONLIB_TEST_TARGET IN LISTS ROCK_COMMONLIB_TEST_TARGETS)
     target_include_directories(${ROCK_COMMONLIB_TEST_TARGET}
       PRIVATE
@@ -315,6 +329,7 @@ if(BUILD_ROCK_TESTS)
                 -File "${ROCK_SOURCE_BOUNDARY_TEST}"
                 -Root "${ROOT_DIR}"
       )
+      set_tests_properties(${ROCK_SOURCE_BOUNDARY_TEST_NAME} PROPERTIES LABELS "source-boundary")
     endforeach()
   else()
     message(WARNING "PowerShell was not found; ROCK source-boundary .ps1 tests will not be registered in this configure.")

@@ -128,10 +128,16 @@ Prefer complete, well implemented FO4VR-native approaches. Existing reference mo
 
 - ROCK builds standalone with CMake + VS2022 + vcpkg
 - CommonLibF4VR and F4VR-CommonFramework are in `libraries_and_tools/`
-- Build command: `cd ROCK && VCPKG_ROOT="C:/vcpkg" cmake --build build --config Release`
-- Output: `ROCK/build/Release/ROCK.dll`
-- CMakeUserPresets.json points to local library paths
-- Focused tests are controlled by `BUILD_ROCK_TESTS`. C++ regression tests and PowerShell `tests/*SourceTests.ps1` source-boundary tests are registered through CTest when the required runner is available.
+- Use explicit Windows presets instead of the old shared `build/` folder for normal work.
+- Fast local plugin build and deploy: `cd ROCK && cmake --preset custom-fast && cmake --build build-fast --config Release --target ROCK -- /m`
+- Fast output: `ROCK/build-fast/Release/ROCK.dll` and `ROCK/build-fast/Release/ROCK.pdb`; `custom-fast` copies both to `D:\FO4\mods\ROCK\F4SE\Plugins` through `COPY_PLUGIN_BASE_PATH=D:/FO4/mods/ROCK`.
+- Test build: `cd ROCK && cmake --preset custom-tests && cmake --build build-tests --config Release --target ROCKPolicyTestBinaries -- /m`
+- Full test run: `cd ROCK && ctest --test-dir build-tests -C Release --output-on-failure -j %NUMBER_OF_PROCESSORS%`
+- Source-boundary-only test run: `cd ROCK && ctest --test-dir build-tests -C Release -L source-boundary --output-on-failure -j %NUMBER_OF_PROCESSORS%`
+- Release package build: `cd ROCK && cmake --preset custom-release && cmake --build build-release --config Release --target ROCK -- /m`
+- `BUILD_ROCK_TESTS` controls C++ regression tests and PowerShell `tests/*SourceTests.ps1` source-boundary tests. C++ tests are labeled `policy`; PowerShell boundary tests are labeled `source-boundary`.
+- `ROCK_PACKAGE_RELEASE` controls the `.7z` packaging post-build step. It is disabled for fast/test presets and enabled for release preset.
+- Build folders are generated and can be deleted to recover space, especially the old `build/` folder after the new preset folders are verified. Do not auto-delete active preset build folders after each build because that destroys MSVC incremental/PCH state and makes the next build slower.
 - Source-boundary tests are part of the contract. When adding a new architecture rule, add or update a focused source test instead of relying on review memory.
 - If local Linux tooling lacks CMake, Visual Studio, or PowerShell, still run source scans that prove the touched boundary, then clearly report which build/test commands could not be executed.
 
