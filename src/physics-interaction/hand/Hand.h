@@ -373,7 +373,9 @@ namespace rock
             float deltaTime,
             float& outRawAngularSpeedRadiansPerSecond,
             float& outAppliedAngularSpeedRadiansPerSecond,
-            float& outMaxAngularSpeedRadiansPerSecond);
+            float& outMaxAngularSpeedRadiansPerSecond,
+            RE::NiPoint3& outRawAngularVelocityRadiansPerSecond,
+            RE::NiPoint3& outAppliedAngularVelocityRadiansPerSecond);
         void queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
             float deltaTime,
             float forceFadeInTime,

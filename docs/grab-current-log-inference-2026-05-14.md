@@ -964,3 +964,48 @@ Current confidence:
 - not yet proven: direct body-B angular vector convention is correct. The log
   only records its magnitude (`rawAng`, `appliedAng`, `capAng`), not the vector
   basis/sign, so it cannot fully prove pitch/yaw/roll correctness.
+
+## Implementation Pass: Exact Proxy, Zero Velocity
+
+Reason for the implementation shape:
+
+- The confirmed bug is not "all transforms are wrong"; it is the hidden proxy
+  being snapped exactly to the palm authority target and then told to continue
+  rotating with nonzero angular velocity in the same solver step.
+- The generated collider path already proves the cleaner policy: either drive a
+  keyframed body with native keyframe motion, or place it exactly and zero its
+  velocity. Do not combine exact placement with velocity toward the same target.
+- This pass therefore keeps the current custom grab architecture intact and
+  changes only body-A/proxy policy: exact transform target plus zero linear and
+  angular velocity.
+- Body-B/object angular authority is left active but now logs the actual raw and
+  applied angular velocity vectors, not only magnitudes, so any remaining
+  pitch/yaw/roll/N/S/E/W issue can be isolated from the proxy bug.
+
+Code changes:
+
+- `Hand::flushPendingCustomGrabAuthority`
+  - still computes proxy target velocity for telemetry;
+  - no longer applies that velocity to the proxy;
+  - writes `setTransform(target)` followed by `setVelocity(0, 0)`;
+  - log label changed to
+    `bodyFrameConstraint+exactProxyZeroVelocity+hardKeyframeAngularVelocity`;
+  - logs `proxyDrive=exactZeroVelocity`, zero applied proxy velocity, and
+    `proxyCalcVel/proxyCalcAngVel` as diagnostics only.
+- `Hand::applyProxyConstraintAngularVelocityDrive`
+  - now returns raw and applied body-B angular velocity vectors for telemetry;
+  - direct object angular authority remains unchanged except for logging.
+
+Expected next runtime evidence:
+
+- `PROXY GRAB AUTHORITY` should show:
+  - `proxyDrive=exactZeroVelocity`;
+  - `proxyVel=0.000hk`;
+  - `proxyAngVel=0.000rad/s`;
+  - nonzero `proxyCalcAngVel` only as diagnostic.
+- `PROXY GRAB AFTER_SOLVE` should no longer show proxy angular error matching
+  `proxyCalcAngVel * dt`. If it still does, something outside the explicit
+  proxy velocity write is rotating the proxy.
+- If visible object rotation remains world-direction dependent while proxy
+  after-solve error is fixed, the next suspect is the logged `rawAngVec` /
+  `appliedAngVec` body-B direct angular path.

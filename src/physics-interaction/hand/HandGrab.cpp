@@ -2798,11 +2798,15 @@ namespace rock
         float deltaTime,
         float& outRawAngularSpeedRadiansPerSecond,
         float& outAppliedAngularSpeedRadiansPerSecond,
-        float& outMaxAngularSpeedRadiansPerSecond)
+        float& outMaxAngularSpeedRadiansPerSecond,
+        RE::NiPoint3& outRawAngularVelocityRadiansPerSecond,
+        RE::NiPoint3& outAppliedAngularVelocityRadiansPerSecond)
     {
         outRawAngularSpeedRadiansPerSecond = 0.0f;
         outAppliedAngularSpeedRadiansPerSecond = 0.0f;
         outMaxAngularSpeedRadiansPerSecond = 0.0f;
+        outRawAngularVelocityRadiansPerSecond = {};
+        outAppliedAngularVelocityRadiansPerSecond = {};
 
         if (!world || _heldDriveMode != HeldObjectDriveMode::ProxyConstraint || !_activeConstraint.isValid() ||
             !_activeConstraint.angularMotor || _savedObjectState.bodyId.value == INVALID_BODY_ID ||
@@ -2819,6 +2823,7 @@ namespace rock
                 rawAngularVelocity)) {
             return false;
         }
+        outRawAngularVelocityRadiansPerSecond = rawAngularVelocity;
         outRawAngularSpeedRadiansPerSecond = vectorMagnitude(rawAngularVelocity);
         if (!std::isfinite(outRawAngularSpeedRadiansPerSecond)) {
             outRawAngularSpeedRadiansPerSecond = 0.0f;
@@ -2861,6 +2866,7 @@ namespace rock
         outMaxAngularSpeedRadiansPerSecond = (std::max)(0.25f, configuredMaxSpeed * budgetScale);
         const RE::NiPoint3 appliedAngularVelocity =
             clampAngularVelocityVector(rawAngularVelocity, outMaxAngularSpeedRadiansPerSecond);
+        outAppliedAngularVelocityRadiansPerSecond = appliedAngularVelocity;
         outAppliedAngularSpeedRadiansPerSecond = vectorMagnitude(appliedAngularVelocity);
         if (!std::isfinite(outAppliedAngularSpeedRadiansPerSecond)) {
             outAppliedAngularSpeedRadiansPerSecond = 0.0f;
@@ -5782,6 +5788,7 @@ namespace rock
         RE::NiPoint3 activePivotBBodyLocalGame{};
         float proxyLinearVelocityHavokMagnitude = 0.0f;
         float proxyAngularVelocityRadiansPerSecond = 0.0f;
+        bool proxyVelocityTelemetryOk = false;
         RE::NiTransform proxyReadbackBetween{};
         body_frame::BodyFrameSource proxyReadbackSourceBetween = body_frame::BodyFrameSource::Fallback;
         std::uint32_t proxyReadbackMotionIndexBetween = body_frame::kFreeMotionIndex;
@@ -5791,6 +5798,8 @@ namespace rock
         float rawAngularDriveSpeedRadiansPerSecond = 0.0f;
         float appliedAngularDriveSpeedRadiansPerSecond = 0.0f;
         float maxAngularDriveSpeedRadiansPerSecond = 0.0f;
+        RE::NiPoint3 rawAngularDriveVelocityRadiansPerSecond{};
+        RE::NiPoint3 appliedAngularDriveVelocityRadiansPerSecond{};
         std::uint64_t queuedSequence = 0;
         std::uint64_t flushSequence = 0;
         {
@@ -5813,7 +5822,7 @@ namespace rock
             float angularVelocityHavok[4]{};
             float nativeLinearVelocityIgnored[4]{};
             grab_authority_proxy::computeLinearVelocityHavok(previousProxyWorld, pending.proxyWorld, driveDelta, linearVelocityHavok);
-            const bool proxyAngularVelocityOk = computeHardKeyframeVelocityForTarget(
+            proxyVelocityTelemetryOk = computeHardKeyframeVelocityForTarget(
                 world,
                 proxyBodyId,
                 pending.proxyWorld,
@@ -5827,8 +5836,19 @@ namespace rock
                 angularVelocityHavok[0] * angularVelocityHavok[0] + angularVelocityHavok[1] * angularVelocityHavok[1] +
                 angularVelocityHavok[2] * angularVelocityHavok[2]);
 
+            /*
+             * Runtime logs showed the old mixed policy was self-contradictory:
+             * the proxy was snapped exactly to the root-flattened palm target,
+             * then given nonzero velocity toward that same target. The next
+             * solve integrated that velocity and rotated the hidden body-A
+             * anchor away by roughly proxyAngVel * dt. A grab authority proxy
+             * used as an exact solver anchor must therefore be exact and
+             * velocity-free; body-B remains the only dynamic body receiving
+             * finite angular authority.
+             */
+            float zeroVelocityHavok[4]{};
             setTransformOk = _grabAuthorityProxy.setTransform(targetHavok);
-            setVelocityOk = proxyAngularVelocityOk && _grabAuthorityProxy.setVelocity(linearVelocityHavok, angularVelocityHavok);
+            setVelocityOk = _grabAuthorityProxy.setVelocity(zeroVelocityHavok, zeroVelocityHavok);
             if (setTransformOk) {
                 proxyReadbackSourceBetween = body_frame::BodyFrameSource::BodyTransform;
                 proxyReadbackMotionIndexBetween = body_frame::kFreeMotionIndex;
@@ -5873,7 +5893,9 @@ namespace rock
                         driveDelta,
                         rawAngularDriveSpeedRadiansPerSecond,
                         appliedAngularDriveSpeedRadiansPerSecond,
-                        maxAngularDriveSpeedRadiansPerSecond);
+                        maxAngularDriveSpeedRadiansPerSecond,
+                        rawAngularDriveVelocityRadiansPerSecond,
+                        appliedAngularDriveVelocityRadiansPerSecond);
                     if (!angularDriveOk) {
                         ++_grabAuthorityProxyFailedFlushes;
                         _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);
@@ -5938,7 +5960,7 @@ namespace rock
             std::uint32_t filterInfo = 0;
             const bool filterReadOk = havok_runtime::tryReadFilterInfo(world, proxyBodyId, filterInfo);
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+hardKeyframeAngularVelocity proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s directAngular={} rawAng={:.3f}rad/s appliedAng={:.3f}rad/s capAng={:.3f}rad/s proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+exactProxyZeroVelocity+hardKeyframeAngularVelocity proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=exactZeroVelocity proxyVel=0.000hk proxyAngVel=0.000rad/s proxyCalc={} proxyCalcVel={:.3f}hk proxyCalcAngVel={:.3f}rad/s directAngular={} rawAng={:.3f}rad/s rawAngVec=({:.3f},{:.3f},{:.3f}) appliedAng={:.3f}rad/s appliedAngVec=({:.3f},{:.3f},{:.3f}) capAng={:.3f}rad/s proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -5958,11 +5980,18 @@ namespace rock
                 activePivotBBodyLocalGame.z,
                 pending.grabPositionErrorGameUnits,
                 pending.grabRotationErrorDegrees,
+                proxyVelocityTelemetryOk ? "ok" : "fail",
                 proxyLinearVelocityHavokMagnitude,
                 proxyAngularVelocityRadiansPerSecond,
                 angularDriveOk ? "ok" : "fail",
                 rawAngularDriveSpeedRadiansPerSecond,
+                rawAngularDriveVelocityRadiansPerSecond.x,
+                rawAngularDriveVelocityRadiansPerSecond.y,
+                rawAngularDriveVelocityRadiansPerSecond.z,
                 appliedAngularDriveSpeedRadiansPerSecond,
+                appliedAngularDriveVelocityRadiansPerSecond.x,
+                appliedAngularDriveVelocityRadiansPerSecond.y,
+                appliedAngularDriveVelocityRadiansPerSecond.z,
                 maxAngularDriveSpeedRadiansPerSecond,
                 proxyReadbackBetweenOk ? "ok" : "fail",
                 body_frame::bodyFrameSourceCode(proxyReadbackSourceBetween),
