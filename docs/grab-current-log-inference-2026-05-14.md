@@ -1009,3 +1009,166 @@ Expected next runtime evidence:
 - If visible object rotation remains world-direction dependent while proxy
   after-solve error is fixed, the next suspect is the logged `rawAngVec` /
   `appliedAngVec` body-B direct angular path.
+
+## Runtime Pass: 19:32 Exact-Proxy Build Still Feels Wrong
+
+Fresh test artifacts:
+
+- deployed DLL: `D:\FO4\mods\ROCK\F4SE\Plugins\ROCK.dll`
+  - timestamp `2026-05-14 19:30:04`;
+- log: `C:\Users\SENECA\Documents\My Games\Fallout4VR\F4SE\ROCK.log`
+  - timestamp `2026-05-14 19:32:31`;
+- the tested DLL therefore includes the exact-proxy/zero-velocity change.
+
+### Confirmed From The Fresh Log
+
+The proxy drift bug is fixed in the fresh run:
+
+- `PROXY GRAB AUTHORITY` reports
+  `diag=bodyFrameConstraint+exactProxyZeroVelocity+hardKeyframeAngularVelocity`;
+- sampled proxy drive rows show:
+  - `proxyDrive=exactZeroVelocity`;
+  - `proxyVel=0.000hk`;
+  - `proxyAngVel=0.000rad/s`;
+  - nonzero `proxyCalcAngVel` only as diagnostic;
+- `PROXY GRAB AFTER_SOLVE` aggregate:
+  - rows: `203`;
+  - proxy position max: `0.00gu`;
+  - proxy rotation average: `0.00deg`;
+  - proxy rotation max: `0.04deg`.
+
+So the current user-visible failure is not the previous "proxy integrated its
+own angular velocity" bug.
+
+### Remaining Object Error
+
+The held object still fails to reach the desired body/grip target by large
+amounts after solve:
+
+| Hand | Rows | Proxy rot max | Object pos avg/max | Object rot avg/max | Grip avg/max |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| L | 203 | 0.04 deg | 17.13 / 31.90 gu | 6.49 / 36.40 deg | 17.00 / 31.88 gu |
+
+Largest object-rotation errors:
+
+| Seq/frame | Proxy rot | Object pos | Object rot | Grip |
+| --- | ---: | ---: | ---: | ---: |
+| `296/444` | 0.00 deg | 20.26 gu | 36.40 deg | 13.87 gu |
+| `226/339` | 0.00 deg | 27.38 gu | 28.30 deg | 29.87 gu |
+| `227/340` | 0.00 deg | 24.68 gu | 26.00 deg | 27.80 gu |
+| `224/336` | 0.00 deg | 31.12 gu | 25.20 deg | 31.66 gu |
+| `228/342` | 0.00 deg | 21.14 gu | 25.20 deg | 25.16 gu |
+
+Largest grip errors:
+
+| Seq/frame | Proxy rot | Object pos | Object rot | Grip |
+| --- | ---: | ---: | ---: | ---: |
+| `223/334` | 0.00 deg | 31.75 gu | 22.50 deg | 31.88 gu |
+| `222/333` | 0.00 deg | 31.90 gu | 20.10 deg | 31.76 gu |
+| `224/336` | 0.00 deg | 31.12 gu | 25.20 deg | 31.66 gu |
+| `221/331` | 0.00 deg | 31.29 gu | 17.30 deg | 31.29 gu |
+| `225/337` | 0.00 deg | 29.87 gu | 24.90 deg | 30.98 gu |
+
+Interpretation:
+
+- body-A/proxy is now exact;
+- body-B/object is the layer failing to track;
+- the visible hand still appears wrong because the visual hand path is
+  `heldObjectWorld * inverse(frozenObjectHandSpace)`. It follows the held
+  object relation. If the object is late or rotating wrongly, the visual hand
+  looks late/wrong too.
+
+### Direct Angular Writer Evidence
+
+Sampled `PROXY GRAB AUTHORITY` rows prove body-B direct angular velocity is
+being written, but they do not prove it is sufficient or conceptually correct:
+
+| Seq | Target rot err | Applied angular speed | Approx one-step rotation | After-solve object rot |
+| --- | ---: | ---: | ---: | ---: |
+| `106` | 69.99 deg | 10.923 rad/s | 10.43 deg | 5.60 deg |
+| `151` | 56.06 deg | 2.097 rad/s | 2.00 deg | 1.50 deg |
+| `196` | 120.35 deg | 3.777 rad/s | 3.61 deg | 0.90 deg |
+| `241` | 39.91 deg | 4.416 rad/s | 4.22 deg | 1.90 deg |
+| `286` | 41.27 deg | 1.722 rad/s | 1.64 deg | 1.40 deg |
+
+This suggests:
+
+- the direct angular writer is active;
+- the object often moves less than the requested one-step angular correction;
+- the remaining failure is not "the object receives no angular command";
+- the remaining failure is likely that direct body velocity is an inadequate
+  replacement for a real angular solver constraint, or that the target frame
+  given to the hard-keyframe helper still does not represent the body-B frame
+  the solver actually integrates.
+
+### Visual Hand Relationship
+
+Relevant source path:
+
+- `Hand::updateHeldGrabbedObject`
+  - computes `targetVisualHandWorld =
+    buildHeldObjectRelativeHandWorld(heldVisualNodeWorld,
+    _grabFrame.rawHandSpace)`;
+- `buildHeldObjectRelativeHandWorld`
+  - returns `heldObjectWorld * inverse(frozenObjectHandSpace)`;
+- `applyGrabExternalHandWorldTransform`
+  - applies that visual-only external hand target.
+
+That means the visual hand is intentionally a passenger of the held object
+relation during `TouchHeld`.
+
+Fresh log examples:
+
+- `GRAB VISUAL HAND` rows show low translation deviation, but only translation
+  is logged there;
+- `GRAB FRAME HOLD` rows show huge visual/body relation errors in the same
+  run, including:
+  - owner/root/held errors around `174deg` at one sampled point;
+  - `HELD dynamic` object rotation errors around `170deg` in the same window.
+
+So the visual hand symptom is downstream of object/body frame error; current
+logs do not prove a separate visual-hand authority bug.
+
+### Legacy INI Pivot Status
+
+Fresh telemetry still reports:
+
+- `legacyPresent=yes`;
+- `legacyActive=no`;
+- `activeSource=rootFlattenedPalmAnchorTarget`.
+
+The old INI pivot is still read and logged, but this run does not show it as
+the active runtime pivot. It is not the current primary suspect.
+
+The INI comments are stale, though: the active config still says ordinary
+one-hand grabs use the native mouse spring, while the live log says
+`drive=proxyConstraint`. That stale comment can confuse future debugging and
+should be cleaned once the behavior is stable.
+
+### Current Honest Inference
+
+The exact-proxy fix was real but insufficient.
+
+The remaining issue is in the object authority layer:
+
+1. body-A/proxy reaches the root-flattened palm target exactly;
+2. body-B/object remains far from the desired target after solve;
+3. the visual hand follows body-B/object, so it looks wrong when body-B is
+   wrong;
+4. direct `SetBodyAngularVelocity` is active, but it is not giving the solver
+   HIGGS-quality angular authority.
+
+The next investigation should not keep changing axis conventions blindly.
+It should prove one of these two branches:
+
+- **Branch A:** the direct body-B target frame is still wrong. Evidence needed:
+  every physics step should log current body axes, desired body axes, raw
+  angular vector, applied angular vector, and actual next-frame body rotation
+  delta in the same basis.
+- **Branch B:** the target frame is correct, but velocity writes are not a
+  strong/stable enough angular authority. Evidence needed: direct velocity
+  command vs actual post-solve delta shows consistent under-response even when
+  the axis is correct.
+
+Until that is separated, tuning force caps or flipping rows/columns is not
+grounded.
