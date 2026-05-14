@@ -311,3 +311,166 @@ body frame used by the custom constraint.
 The logs do not yet show enough to safely choose the replacement transform
 formula. Another code fix without candidate frame-chain telemetry would still be
 guessing.
+
+## Fresh Right/Left Frame-Chain Log Read - 2026-05-14 18:49
+
+Runtime evidence:
+
+- deployed diagnostic DLL timestamp: `2026-05-14 18:44:57`;
+- tested log timestamp: `2026-05-14 18:49:04`;
+- fresh log contains the new `GRAB FRAMECHAIN CANDIDATES`,
+  `GRAB FRAMECHAIN CANDIDATE`, and `GRAB FRAMECHAIN AXES` rows;
+- recorded candidate groups:
+  - `R, session 1`: 97 candidate frames, frame `571..667`;
+  - `L, session 2`: 395 candidate frames, frame `1..395`.
+
+Important limitation:
+
+- the right-hand session starts in this log at held frame `571`, not frame `1`;
+- therefore this log can compare right-hand held behavior, but cannot prove the
+  right-hand attach/start-frame behavior;
+- the left-hand session does include frame `1`, so it can be used for grab-start
+  evidence.
+
+### Session 2 Left Hand Start Frame
+
+At `session=2 frame=1 hand=L phase=start`:
+
+- visual node and body-derived node agree:
+  - `bodyNodeToVisual=0.000gu/0.000deg`;
+- held node and desired node agree:
+  - `heldToConDesired=1.942gu/0.000deg`;
+  - `heldNodeToConDesiredObj.max=0.00deg`;
+- current desired BODY equals native BODY orientation:
+  - `currentConBody bodyToNative=1.942gu/0.000deg`;
+- current desired BODY is 180 degrees away from `heldBody[MOTION]`:
+  - `currentConBody bodyToHeld=2.773gu/180.000deg`;
+- `bodyTargetNodeErr=0.000gu/0.000deg`, so the current code is internally
+  composing the desired node/body relation consistently.
+
+Honest interpretation:
+
+- the left-hand grab starts from a coherent visual/node relation;
+- the diagnostic does not show an immediate visual target formula error at frame
+  1;
+- the 180-degree BODY-vs-MOTION readback is present from the start, but at frame
+  1 it is not yet causing the visual node to disagree with the desired node.
+
+### Session 2 Left Hand Held Drift
+
+By `session=2 frame=190 hand=L`:
+
+- current desired BODY still equals the current constraint target by definition:
+  - `currentConBody bodyToCon=0.000gu/0.000deg`;
+  - `nodeBodyLocalToConNode=0.000gu/0.000deg`;
+- current target is no longer close to live visual node:
+  - `currentConBody nodeBodyLocalToHeld=5.922gu/33.200deg`;
+- raw-hand candidate is closer to the live visual node:
+  - `rawNode*bodyLocal nodeBodyLocalToHeld=3.115gu/9.026deg`;
+- live-visual candidate trivially reconstructs the visual node:
+  - `heldNode*bodyLocal nodeBodyLocalToHeld=0.000gu/0.000deg`;
+  - but that candidate is not safe authority because it is derived from the
+    already-moved visual node.
+
+By `session=2 frame=395 hand=L`:
+
+- current target remains internally self-consistent:
+  - `currentConBody bodyToCon=0.000gu/0.000deg`;
+  - `nodeBodyLocalToConNode=0.000gu/0.000deg`;
+- current target is still offset from live visual node:
+  - `currentConBody nodeBodyLocalToHeld=6.329gu/31.778deg`;
+- raw-hand candidate is closer to native BODY orientation:
+  - `rawNode*bodyLocal bodyToNative=6.671gu/2.358deg`;
+  - current target body-to-native is worse:
+    `currentConBody bodyToNative=6.805gu/10.718deg`;
+- live-visual candidate still reconstructs visual node exactly but does not
+  explain the intended authority chain:
+  - `heldNode*bodyLocal nodeBodyLocalToHeld=0.000gu/0.000deg`;
+  - `heldNode*bodyLocal bodyToCon=6.237gu/31.778deg`.
+
+### Session 1 Right Hand Held Behavior
+
+Right-hand candidate rows begin at `frame=571`, already in held state.
+
+At `session=1 frame=571 hand=R`:
+
+- current target is internally self-consistent:
+  - `currentConBody bodyToCon=0.000gu/0.000deg`;
+  - `nodeBodyLocalToConNode=0.000gu/0.000deg`;
+- current target is not close to live visual node:
+  - `currentConBody nodeBodyLocalToHeld=10.809gu/31.920deg`;
+- raw-hand candidate is closer to live visual node:
+  - `rawNode*bodyLocal nodeBodyLocalToHeld=8.758gu/16.994deg`;
+- live-visual candidate reconstructs visual node:
+  - `heldNode*bodyLocal nodeBodyLocalToHeld=0.000gu/0.000deg`.
+
+At `session=1 frame=667 hand=R`:
+
+- current target remains internally self-consistent:
+  - `currentConBody bodyToCon=0.000gu/0.000deg`;
+- current target is still not the live visual relation:
+  - `currentConBody nodeBodyLocalToHeld=6.258gu/23.447deg`;
+- raw-hand candidate is again closer to native BODY orientation:
+  - `rawNode*bodyLocal bodyToNative=6.936gu/1.054deg`;
+  - current target body-to-native is worse:
+    `currentConBody bodyToNative=6.184gu/16.791deg`.
+
+### Aggregate Candidate Read
+
+Average rotation deltas from the fresh log:
+
+| Hand/session | Candidate | Frames | Avg body-to-native | Avg node-to-held | Avg body-to-current-target |
+| --- | --- | ---: | ---: | ---: | ---: |
+| L/2 | `currentConBody` | 395 | 22.45 deg | 65.82 deg | 0.00 deg |
+| L/2 | `rawNode*bodyLocal` | 395 | 10.20 deg | 62.22 deg | 21.47 deg |
+| L/2 | `heldNode*bodyLocal` | 395 | 61.37 deg | 0.00 deg | 65.82 deg |
+| L/2 | `conNode*invBodyLocal` | 395 | 23.82 deg | 68.45 deg | 12.32 deg |
+| R/1 | `currentConBody` | 97 | 24.18 deg | 31.00 deg | 0.00 deg |
+| R/1 | `rawNode*bodyLocal` | 97 | 9.36 deg | 21.11 deg | 22.43 deg |
+| R/1 | `heldNode*bodyLocal` | 97 | 19.41 deg | 0.00 deg | 31.00 deg |
+| R/1 | `conNode*invBodyLocal` | 97 | 24.94 deg | 32.04 deg | 3.82 deg |
+
+What this rules out:
+
+- `conNode*bodyLocal` and `conNode*constraintBodyLocal` are not alternative
+  fixes here; they collapse to the current target in this run;
+- the inverse candidate is not the missing solution;
+- BODY-local vs `constraintBodyLocal` is not the observed split in this run
+  because they are identical for both hands;
+- the current target math is internally consistent but is not staying aligned
+  with the live visual/object relation during held motion.
+
+What this supports:
+
+- the bug is not a single obvious matrix transpose in the logged candidate set;
+- the custom authority path has a self-consistent target frame, but that frame
+  diverges from the visual hand/object relation during held motion;
+- raw-hand-derived target often tracks native BODY orientation better than the
+  authority/proxy-derived target, but it still does not solve the visual/object
+  relation by itself;
+- both hands show the same class of problem, with the left-hand session showing
+  more severe drift later in the held state.
+
+Honest uncertainty:
+
+- these logs do not prove the final replacement formula;
+- these logs do not directly show the user's exact physical controller rotation
+  delta versus object angular delta, so they cannot fully explain the perceived
+  N/S/E/W dependency by themselves;
+- the next useful diagnostic is not another candidate body formula alone, but a
+  per-frame controller/hand angular delta compared against object angular delta
+  in both controller-local and player/world bases.
+
+Concrete next diagnostic needed:
+
+- log the per-frame raw controller/hand delta rotation;
+- log the per-frame authority/proxy hand delta rotation;
+- log the per-frame desired object delta and actual visual object delta;
+- express those deltas in:
+  - hand-local basis;
+  - player/HMD-local basis;
+  - world basis;
+- include left/right separately in the row key.
+
+That would directly answer whether wrist pitch is being applied as object yaw,
+whether roll is inverted, and whether the mapping changes when the player turns.
