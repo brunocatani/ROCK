@@ -133,6 +133,7 @@ Require-Text 'src/physics-interaction/grab/GrabConstraint.h' 'struct GrabConstra
 Require-Text 'data/config/ROCK.ini' 'fGrabNativeMouseSpringLinearResponseScale\s*=\s*1\.35' 'Packaged ROCK.ini may keep native mouse-spring response tuning for diagnostics/fallback wrapper coverage.'
 Require-Text 'data/config/ROCK.ini' 'fGrabNativeMouseSpringAngularResponseScale\s*=\s*0\.75' 'Packaged ROCK.ini may keep native mouse-spring angular response tuning for diagnostics/fallback wrapper coverage.'
 Require-Text 'data/config/ROCK.ini' 'fGrabNativeMouseSpringAngularClampScale\s*=\s*0\.85' 'Packaged ROCK.ini may keep native mouse-spring angular clamp tuning for diagnostics/fallback wrapper coverage.'
+Require-Text 'data/config/ROCK.ini' 'iGrabObjectRotationReferenceMode\s*=\s*2' 'Packaged ROCK.ini must expose the custom dynamic-grab angular reference A/B switch.'
 Require-Text 'data/config/ROCK.ini' 'fGrabLooseWeaponNativeLinearResponseMultiplier\s*=\s*1\.0' 'Packaged ROCK.ini may keep neutral loose non-equipped weapon native tuning for diagnostics/fallback wrapper coverage.'
 Require-Text 'data/config/ROCK.ini' 'fGrabLooseWeaponAdaptiveLeadMultiplier\s*=\s*1\.0' 'Packaged ROCK.ini must expose neutral loose non-equipped weapon adaptive lead tuning.'
 Require-Text 'data/config/ROCK.ini' 'fGrabLooseWeaponSharedConstraintLinearTauMultiplier\s*=\s*1\.0' 'Packaged ROCK.ini must expose neutral loose non-equipped weapon shared linear tau tuning.'

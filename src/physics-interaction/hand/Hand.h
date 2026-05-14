@@ -369,6 +369,9 @@ namespace rock
             RE::NiTransform& outDesiredBodyWorld,
             RE::NiPoint3& outDesiredTargetPointWorld,
             RE::NiPoint3& outActivePivotBBodyLocalGame);
+        RE::NiTransform resolveProxyConstraintAngularDriveTargetWorld(const RE::NiTransform& proxyWorldTransform,
+            const RE::NiTransform& desiredObjectWorld,
+            const RE::NiTransform& desiredBodyWorld) const;
         bool resolveGrabAuthorityProxyFrame(RE::hknpWorld* world,
             const RE::NiTransform& rawHandWorld,
             const RE::NiTransform* fallbackPalmAnchorWorld,

@@ -262,6 +262,7 @@ namespace rock
         float rockGrabNativeMouseSpringLinearResponseScale = 1.35f;
         float rockGrabNativeMouseSpringAngularResponseScale = 0.75f;
         float rockGrabNativeMouseSpringAngularClampScale = 0.85f;
+        int rockGrabObjectRotationReferenceMode = 2;
         float rockGrabLooseWeaponNativeLinearResponseMultiplier = 1.0f;
         float rockGrabLooseWeaponNativeAngularResponseMultiplier = 1.0f;
         float rockGrabLooseWeaponNativeAngularClampMultiplier = 1.0f;

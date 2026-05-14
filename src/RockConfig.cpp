@@ -37,6 +37,7 @@ namespace
     constexpr float kDefaultGrabNativeMouseSpringLinearResponseScale = 1.35f;
     constexpr float kDefaultGrabNativeMouseSpringAngularResponseScale = 0.75f;
     constexpr float kDefaultGrabNativeMouseSpringAngularClampScale = 0.85f;
+    constexpr int kDefaultGrabObjectRotationReferenceMode = 2;
     constexpr float kDefaultGrabLooseWeaponNativeLinearResponseMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponNativeAngularResponseMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponNativeAngularClampMultiplier = 1.0f;
@@ -301,6 +302,7 @@ namespace rock
         rockGrabNativeMouseSpringLinearResponseScale = kDefaultGrabNativeMouseSpringLinearResponseScale;
         rockGrabNativeMouseSpringAngularResponseScale = kDefaultGrabNativeMouseSpringAngularResponseScale;
         rockGrabNativeMouseSpringAngularClampScale = kDefaultGrabNativeMouseSpringAngularClampScale;
+        rockGrabObjectRotationReferenceMode = kDefaultGrabObjectRotationReferenceMode;
         rockGrabLooseWeaponNativeLinearResponseMultiplier = kDefaultGrabLooseWeaponNativeLinearResponseMultiplier;
         rockGrabLooseWeaponNativeAngularResponseMultiplier = kDefaultGrabLooseWeaponNativeAngularResponseMultiplier;
         rockGrabLooseWeaponNativeAngularClampMultiplier = kDefaultGrabLooseWeaponNativeAngularClampMultiplier;
@@ -1050,6 +1052,16 @@ namespace rock
             rockGrabNativeMouseSpringAngularClampScale = kDefaultGrabNativeMouseSpringAngularClampScale;
         }
         rockGrabNativeMouseSpringAngularClampScale = std::clamp(rockGrabNativeMouseSpringAngularClampScale, 0.05f, 4.0f);
+
+        rockGrabObjectRotationReferenceMode =
+            static_cast<int>(ini.GetLongValue(SECTION, "iGrabObjectRotationReferenceMode", rockGrabObjectRotationReferenceMode));
+        if (rockGrabObjectRotationReferenceMode < 0 || rockGrabObjectRotationReferenceMode > 2) {
+            ROCK_LOG_WARN(Config,
+                "Invalid iGrabObjectRotationReferenceMode={} -- using {}",
+                rockGrabObjectRotationReferenceMode,
+                kDefaultGrabObjectRotationReferenceMode);
+            rockGrabObjectRotationReferenceMode = kDefaultGrabObjectRotationReferenceMode;
+        }
 
         rockGrabLooseWeaponNativeLinearResponseMultiplier = readClampedFloat(ini,
             SECTION,

@@ -241,3 +241,53 @@ The first implementation candidate should be a narrow angular-reference fix:
    before calling `ComputeHardKeyFrame`;
 4. keep COM out of pivot, target frame, and grip authority;
 5. update source-boundary tests that currently force BODY-as-rotation-authority.
+
+## 2026-05-14 Implementation Follow-Up
+
+Implemented the narrow angular-reference split as an A/B runtime switch. Linear
+grab authority, BODY-local pivot capture, transform-B pivot storage, generated
+palm collider movement, and proxy movement are unchanged.
+
+New config:
+
+- `iGrabObjectRotationReferenceMode = 0`: legacy BODY angular target. This is
+  the old behavior and exists only as a baseline.
+- `iGrabObjectRotationReferenceMode = 1`: converted BODY capture. The native
+  BODY readback is converted into a conventional object-frame candidate during
+  capture, cached as `constraintConventionalBodyHandSpace`, and used only for
+  angular target selection.
+- `iGrabObjectRotationReferenceMode = 2`: split visual/native-boundary angular
+  target. BODY remains the linear/pivot target, while angular velocity is
+  computed from the desired visual object frame after crossing the same
+  transpose boundary used by the old native mouse-spring target rotation path.
+
+Important implementation boundary:
+
+- `updateProxyConstraintGrabDriveTarget` still owns the BODY-space linear target
+  and selected grip pivot.
+- `resolveProxyConstraintAngularDriveTargetWorld` now selects the angular-only
+  target before `applyProxyConstraintAngularVelocityDrive`.
+- `applyProxyConstraintAngularVelocityDrive` still calls FO4VR
+  `ComputeHardKeyFrame` and applies the finite angular velocity budget. Only the
+  target rotation reference changed.
+- COM remains mass/diagnostic data only and is not used as pivot, grip frame, or
+  angular reference.
+
+Telemetry now reports:
+
+- `rotRefMode` in grab capture logs;
+- `angularRef` and `angularTarget` in proxy authority and after-solve logs;
+- `desiredConventionalBody` and `desiredObjectToDesiredConventionalBody` in
+  basis capture logs.
+
+Validation performed:
+
+- `cmake --preset custom-tests`
+- `cmake --build build-tests --config Release --target ROCKPolicyTestBinaries -- /m`
+- `ctest --test-dir build-tests -C Release -L source-boundary --output-on-failure -j %NUMBER_OF_PROCESSORS%`
+- `cmake --preset custom-fast`
+- `cmake --build build-fast --config Release --target ROCK -- /m`
+- `ctest --test-dir build-tests -C Release --output-on-failure -j %NUMBER_OF_PROCESSORS%`
+
+Build output was copied by the `custom-fast` preset to
+`D:\FO4\mods\ROCK\F4SE\Plugins`.
