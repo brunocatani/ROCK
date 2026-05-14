@@ -315,6 +315,7 @@ namespace rock
         float rockShoulderStashHmdBackRadiusGameUnits = 11.0f;
         bool rockShoulderStashSkipActivateBooks = true;
         bool rockShoulderStashSkipActivateNotes = true;
+        bool rockShoulderStashShowCollectedNotifications = true;
         float rockGrabVelocityDamping = 0.25f;
         bool rockGrabPlayerSpaceCompensation = true;
         float rockGrabPlayerSpaceWarpDistance = 35.0f;
@@ -416,9 +417,10 @@ namespace rock
         float rockHeldImpactHapticCooldownSeconds = 0.12f;
         float rockHeldImpactHapticDampedMultiplier = 0.55f;
         bool rockShoulderStashHapticsEnabled = true;
-        float rockShoulderStashCandidateHapticDurationSeconds = 0.05f;
+        float rockShoulderStashCandidateHapticDurationSeconds = 0.075f;
+        float rockShoulderStashCandidateHapticBaseIntensity = 0.20f;
         float rockShoulderStashCandidateHapticIntensity = 0.42f;
-        float rockShoulderStashCandidateHapticIntervalSeconds = 0.12f;
+        float rockShoulderStashCandidateHapticIntervalSeconds = 0.075f;
         float rockShoulderStashCommitHapticDurationSeconds = 0.12f;
         float rockShoulderStashCommitHapticIntensity = 0.85f;
 

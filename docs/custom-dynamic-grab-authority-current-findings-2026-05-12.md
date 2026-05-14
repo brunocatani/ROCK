@@ -6484,3 +6484,576 @@ Expected validation signature:
 - `targetErr(colsInv=...)` should remain near zero;
 - first-frame `bodyToConDesired`, `rotErr`, and visual `bodyNodeToVisual` should no longer jump toward the old `90/180deg` BODY-vs-MOTION delta;
 - if any object still snaps, the next log to inspect is the relation between `desiredConstraintBody`, `motionBody`, and live visual BODY reconstruction, not COM fallback or matrix row/column storage.
+
+## 2026-05-12 follow-up: post-fix runtime still snaps, previous fixes are now active variables
+
+Fresh runtime log after the deployed build at `2026-05-12 22:11:24` still shows the grab-start rotation failure.
+The current evidence must be read as **post column-block target writer** and **post BODY/MOTION solver-frame split**.
+Those fixes are not neutral historical notes anymore; they are active runtime variables and can affect every later log.
+
+Active prior changes that can affect interpretation:
+
+- `GrabConstraintMath::writeInitialGrabAngularFrame(...)` now writes `transformB.rotation` and `target_bRca` through Havok column-block storage of the inverse body-to-hand relation.
+- proxy constraint capture stores both:
+  - `bodyLocal` / `pivotBBodyLocalGame` for visual BODY/native/release reconstruction;
+  - `constraintBodyLocal` / `pivotBConstraintLocalGame` for the custom proxy constraint body-B frame.
+- `tryGetGrabDriveObjectWorldTransform(...)` chooses live MOTION/COM-frame readback for `HeldObjectDriveMode::ProxyConstraint`, and BODY-slot readback for native mouse spring.
+- proxy constraint creation/update uses `_grabFrame.constraintBodyHandSpace` and `activeProxyConstraintPivotBLocalGame()`.
+
+Fresh log facts that survived those changes:
+
+- `constraintObjectFrame=MOTION` appears in capture, so the split-frame code is active.
+- `pivotBConstraintLocal` is distinct from `pivotBBodyLocal` when MOTION and BODY differ.
+- low-level target diagnostics remain internally consistent:
+  - examples show `targetErr(colsInv=0.000deg ... colsTransformB=0.000deg)`;
+  - `transformBLocal == desiredTransformBLocal`.
+- frame 1 can start nearly correct in the active drive:
+  - session 35 frame 1 loose weapon `FF0011F1`: `rotErr=3.0deg`, `ERR=5.6gu`, `bDist=1.9gu`;
+  - same session has `targetErr(colsInv=0.000deg rowsInv=61.096deg colsForward=61.096deg)`.
+- after several solver frames the object rotates away while the stored target bytes still look stable:
+  - session 35 frame 16: `rotErr` and object/hand desired deltas begin growing, while `targetErr(colsInv=0.000deg ...)` stays unchanged;
+  - session 35 frame 46: `rotErr=62.5deg`, `bodyVsConstraint=61.34deg`, still with `targetErr(colsInv=0.000deg ...)`.
+
+Important correction to the previous conclusion:
+
+- The remaining failure is no longer proven to be only a capture-time BODY/MOTION mismatch.
+- The split-frame correction did reduce the first-frame error on at least one loose weapon session, but the solver then drives or allows the object to rotate away over time.
+- This points at one of these systems, not at COM/pivot fallback:
+  - the angular atom target/transform convention as actually consumed by FO4VR's custom constraint solver;
+  - runtime/warm-start offsets or solver-result layout for the custom atom chain;
+  - proxy body-A drive timing/pose consumption between collide and solve;
+  - a telemetry mismatch where some diagnostic comparisons still use BODY `bodyLocal` on the proxy constraint path.
+
+Diagnostic reliability after the prior fixes:
+
+- reliable:
+  - `constraintObjectFrame=MOTION|BODY` at capture;
+  - `pivotBBodyLocal` versus `pivotBConstraintLocal`;
+  - active drive mode `drive=proxyConstraint`;
+  - queued/flushed/failedFlushes proxy target counts;
+  - `targetErr(colsInv/rowsInv/colsForward/colsTransformB)` as a raw byte-storage comparison;
+  - `HELD dynamic rotErr/ERR/bDist` as high-level active-drive symptoms.
+- needs correction before being treated as decisive:
+  - any debug comparison that reconstructs proxy-path desired BODY from `_grabFrame.constraintHandSpace * _grabFrame.bodyLocal` instead of `_grabFrame.constraintBodyHandSpace`;
+  - `pivotFrame=NATIVE_BODY` labels in generic telemetry when the active drive is `proxyConstraint`;
+  - `bodyToConDesired` if it is sourced from a BODY-local reconstruction instead of the active proxy constraint relation.
+
+Immediate research implication:
+
+- Do not stack another orientation fix on top of the two active fixes until FO4VR's solver consumption of the custom atom stream is mapped.
+- The next binary/source audit must verify the custom `hkpRagdollMotorConstraintAtom` consumption path, the custom constraint runtime info, and whether the solver reads the same target convention that the current diagnostics call `colsInv`.
+
+Diagnostic cleanup applied after this finding:
+
+- `GRAB FRAME HOLD` previously reconstructed the constraint-side desired BODY through `_grabFrame.constraintHandSpace * _grabFrame.bodyLocal` even when the active drive was `ProxyConstraint`.
+- That could muddy the logs after the BODY/MOTION split because the proxy path has a separate `_grabFrame.constraintBodyHandSpace`.
+- The line now reports `constraintAnchor=proxyBody|handBody|proxyFallbackHandBody` and uses:
+  - hidden proxy body world as the anchor when the active drive is `ProxyConstraint` and the proxy is readable;
+  - `_grabFrame.constraintBodyHandSpace` for proxy desired BODY reconstruction;
+  - the old `constraintHandSpace * bodyLocal` relation only for non-proxy/native paths.
+- This is diagnostic-only. It does not change constraint atoms, target bytes, pivots, motors, release, collision filtering, or held-object motion.
+
+### Rechecked vtable slot mapping during this pass
+
+The custom vtable slot mapping was rechecked in Ghidra before any build.
+Do **not** change the current `VTABLE_SLOT_ADD_INSTANCE = 20` from this evidence.
+
+Confirmed:
+
+- ROCK copies the native ragdoll constraint vtable whose first function pointer is at `0x142E18298`.
+- Native vtable entries observed by `get_xrefs_from`:
+  - `0x142E182B8` (`+0x20`, zero-based slot `4`) -> `0x1419B2700`, native type function returning `7`;
+  - `0x142E182C0` (`+0x28`, zero-based slot `5`) -> `0x1419B27F0`, native constraint-info function;
+  - `0x142E18328` (`+0x90`, zero-based slot `18`) -> `0x1419B2900`, native runtime-info function;
+  - `0x142E18330` (`+0x98`, zero-based slot `19`) -> inherited base function returning a runtime pointer-like parameter;
+  - `0x142E18338` (`+0xA0`, zero-based slot `20`) -> inherited base function that zeroes a runtime pointer for a byte count.
+- Therefore ROCK's zero-based slot `20` maps to vtable `+0xA0`, the runtime-zeroing/add-instance-like function.
+
+Conclusion:
+
+- The prior documentation saying the slot number itself is probably correct remains valid.
+- The remaining vtable risk is signature/callsite proof, not the numeric slot.
+- No vtable slot change should be included in the next build unless a separate callsite trace disproves this.
+
+### Active grab telemetry added to keep the previous fixes from muddying the next test
+
+The next diagnostic build adds two read-only active-grab logs.
+They are intended to separate earlier behavior changes from the current failure and prove where the first bad frame enters the system.
+
+New/changed lines:
+
+- `PROXY GRAB AUTHORITY` now logs the same-step readback immediately after the hidden proxy receives `setTransform`/`setVelocity` in the between-collide-and-solve callback.
+- `PROXY GRAB AFTER_SOLVE` logs the proxy and held object after the solver step, compared against the last proxy target and the constraint-derived desired object/body frames.
+- Both lines include `diag=postColumnTarget+bodyMotionSplit` so the log is explicitly marked as being after the two earlier orientation/frame fixes.
+
+Data to compare in the next runtime log:
+
+- If `PROXY GRAB AUTHORITY proxyErr` is already large before solve, the proxy write/readback path is stale or using the wrong body frame.
+- If `PROXY GRAB AUTHORITY proxyErr` is near zero but `PROXY GRAB AFTER_SOLVE proxyTargetErr` becomes large, the solver/constraint is moving or rotating body A, or body A is not configured as the immovable authority body we intended.
+- If proxy errors stay near zero but `objectTargetErr`/`gripTargetErr` climb, the object-side custom constraint target/runtime convention remains wrong.
+- If `objectLiveProxyErr` is much smaller than `objectTargetErr`, the object is following the live proxy frame but the proxy is not following the queued palm frame.
+- If `objectTargetErr` and `objectLiveProxyErr` are both high while proxy errors are near zero, the custom atom target/motor/runtime path is the active suspect.
+
+This telemetry does not change:
+
+- grab pivot selection;
+- target matrix bytes;
+- body-B pivot or transform storage;
+- motor force/tau;
+- proxy filter/layer;
+- collision suppression;
+- release cleanup.
+
+## 2026-05-12 22:40 runtime log: proxy is stable, object-side solve is wrong immediately
+
+Fresh runtime log checked after the deployed diagnostic build:
+
+- deployed `ROCK.dll`: `2026-05-12 22:38:03`;
+- runtime log: `2026-05-12 22:40:52`;
+- diagnostic marker count for `diag=postColumnTarget+bodyMotionSplit` and related grab lines: `988`;
+- the build being tested includes the post-column-target diagnostics and the BODY/MOTION split diagnostics.
+
+This pass confirms the user-visible snap is **not** caused by the hidden proxy drifting away from the root-flattened palm target.
+The proxy readback is correct before solve, and stays near the target after solve.
+The held object is already rotated incorrectly on the first after-solve frame.
+
+First after-solve evidence:
+
+| Log line | Hand | Object body | Proxy target error | Object target error | Grip target error |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1515 | Right | 1112 | `0.400gu / 1.32deg` | `6.94gu / 179.7deg` | `20.32gu` |
+| 1951 | Left | 1145 | `0.000gu / 0.00deg` | `1.88gu / 125.5deg` | `9.94gu` |
+| 2793 | Right | 1157 | `0.000gu / 0.00deg` | `5.95gu / 121.6deg` | `18.39gu` |
+| 3241 | Right | 1112 | `0.000gu / 0.00deg` | `4.26gu / 123.3deg` | `10.06gu` |
+| 3923 | Left | 1157 | `0.000gu / 0.00deg` | `1.64gu / 89.0deg` | `8.82gu` |
+| 4527 | Left | 1145 | `0.000gu / 0.00deg` | `3.02gu / 117.6deg` | `7.52gu` |
+| 5142 | Left | 1112 | `0.000gu / 0.00deg` | `2.99gu / 96.0deg` | `15.92gu` |
+
+Session/frame-1 target-byte diagnostics still report the current writer as internally consistent:
+
+| Log line | Session | Hand | `transformBLocal` | `colsInv` | `rowsInv` / `colsForward` | Mass |
+| --- | ---: | --- | --- | ---: | ---: | ---: |
+| 1504 | 1 | R | `(14.50, 4.94, -0.85)` | `0.000deg` | `100.278deg` | `9.990` |
+| 1949 | 2 | L | `(-0.57, -2.11, 5.03)` | `0.048deg` | `32.732deg` | `29.898` |
+| 2791 | 3 | R | `(3.88, -1.63, -5.76)` | `0.040deg` | `16.664deg` | `19.980` |
+| 3239 | 4 | R | `(-0.21, 7.67, 3.15)` | `0.000deg` | `38.441deg` | `9.990` |
+| 3921 | 5 | L | `(5.72, 3.15, 3.16)` | `0.069deg` | `132.010deg` | `19.980` |
+| 4522 | 6 | L | `(-1.52, 2.68, -3.24)` | `0.000deg` | `10.480deg` | `29.898` |
+| 5140 | 7 | L | `(1.96, 5.39, 11.78)` | `0.000deg` | `161.508deg` | `9.990` |
+
+Pivot/contact findings from the same log:
+
+- Every captured grab in this test used `meshMode=rockPointToPalm`, `activePoint=rockPointToPalm`, and `palmSeatPoint=threePhasePocket`.
+- `activeUsesFingerEvidence=no` only means the active pivot used the palm-seat/contact point; finger evidence was logged separately as evidence for pose/contact, not as the active pivot.
+- There is no COM pivot fallback shown in these failing sessions.
+- Some logs include `fallback=meshSnap`; this is contact-patch/mesh-snap fallback, not COM fallback.
+
+Important split-frame finding:
+
+- Several failures have `motionDiagVsGrab=0.00deg`, so the current failure cannot be explained only by BODY versus MOTION transform split.
+- Other captures have `motionDiagVsGrab=90.00deg`, `120.00deg`, or `179.98deg`, and those still fail.
+- Therefore BODY/MOTION split remains a required diagnostic dimension, but it is not the sole cause of the immediate snap.
+
+Current conclusion:
+
+- The first bad frame enters after the custom constraint is consumed by the solver.
+- The body-A/proxy authority path is behaving correctly enough for this symptom:
+  - pre-solve same-step readback is correct;
+  - after-solve proxy target error is usually zero or tiny;
+  - the proxy no-contact filter remains active.
+- The body-B/object side of the custom constraint is wrong under FO4VR solver conventions:
+  - transform/target bytes look correct according to ROCK's current diagnostic;
+  - the solver result disagrees by `89deg` to `179.7deg` immediately;
+  - the visible hand then appears to break because it is following an object that the constraint has already rotated into the wrong relation.
+
+Do not treat these logs as a mass/COM problem.
+They prove the active failure is a constraint convention/runtime consumption problem before any new mass feel or HIGGS-weight polish can be evaluated.
+
+Next evidence needed before changing behavior:
+
+- map FO4VR's consumption of the custom `hkpSetLocalTransformsConstraintAtom` and `hkpRagdollMotorConstraintAtom` stream;
+- verify whether FO4VR expects `transformB.rotation`, `target_bRca`, or both in the opposite/inverted convention from the current writer;
+- verify whether `transformA.rotation` may remain identity when body A is a rotated hidden proxy, or whether body A's local frame must be represented explicitly like HIGGS' `setInBodySpace(transformA, transformB)`;
+- verify custom constraint runtime-info/result offsets against the actual FO4VR solver path, not only against raw byte storage diagnostics.
+
+## 2026-05-12 late pass: FO4VR/HIGGS angular target convention audit
+
+This pass was done because the fresh runtime log proved the hidden body-A proxy stayed on the root-flattened palm target while the body-B object rotated wrong on the first solver-consumed frame. The research question was narrowed to the atom/target convention, not pivot selection, COM, force tuning, or proxy drift.
+
+### Confirmed HIGGS source convention
+
+HIGGS dynamic grab creation in `E:\fo4dev\skirymvr_mods\source_codes\higgs\src\hand.cpp`:
+
+- `ptPos` starts from the selected contact/closest point, in world/game units.
+- `desiredNodeTransform = adjustedTransform`.
+- `desiredNodeTransform.pos += palmPos - ptPos`.
+- `desiredNodeTransformHandSpace = inverseHand * desiredNodeTransform`.
+- `hkPivotA` is the palm point; `hkPivotB` is the selected object/contact point.
+- `pivotA` is transformed inverse by body A's current transform.
+- `pivotB` is transformed inverse by body B's current transform.
+- `handTransformHandSpace` is identity rotation with local pivot-A translation.
+- `desiredHavokTransformHandSpace = desiredNodeTransformHandSpace * GetRigidBodyTLocalTransform(selectedObject.rigidBody)`.
+- `handTransformObjSpace = InverseTransform(desiredHavokTransformHandSpace)`.
+- `handTransformObjSpace.pos = pivotB`.
+- `CreateGrabConstraint(bodyA, bodyB, handTransformHandSpace, handTransformObjSpace)` receives transform A as hand/local pivot and transform B as hand-in-object/body space.
+
+HIGGS constraint creation in `E:\fo4dev\skirymvr_mods\source_codes\higgs\src\RE\havok.cpp`:
+
+- calls `constraintData->setInBodySpace(transformA, transformB)`;
+- then calls `constraintData->setTargetRelativeOrientationOfBodies(NiTransformTohkTransform(transformB, false).m_rotation)`;
+- then activates motors.
+
+HIGGS custom constraint code in `E:\fo4dev\skirymvr_mods\source_codes\higgs\src\constraint.cpp`:
+
+- `setInBodySpace(transformA, transformB)` copies both transforms directly into the `hkpSetLocalTransformsConstraintAtom`.
+- `setTarget(target_cbRca)` writes `target_bRca = transformB.rotation * target_cbRca`.
+- `setTargetRelativeOrientationOfBodies(bRa)` writes `target_bRca = bRa * transformA.rotation`.
+- Runtime has 6 solver results, then angular state, then linear state; external runtime is `sizeof(Runtime) * 2`.
+
+HIGGS held update in `hand.cpp`:
+
+- visual hand is derived from the actual held object: `m_adjustedHandTransform = heldTransform * InverseTransform(desiredNodeTransformHandSpace)`.
+- the hand is lerped into that adjusted transform only during the start-grab visual blend.
+- if the visual/physical hand deviation becomes too large, HIGGS drops the object rather than forcing an infinite-strength hand.
+- `desiredTransformHandSpace = desiredNodeTransformHandSpace * GetRigidBodyTLocalTransform(selectedObject.rigidBody)`.
+- `desiredHandTransformHavokObjSpace = InverseTransform(desiredTransformHandSpace)`.
+- angular target is refreshed with `setTargetRelativeOrientationOfBodies(desiredHandTransformHavokObjSpace.rot)`.
+- transform-B translation is refreshed as `(desiredHandTransformHavokObjSpace * palmPosHandspace) * objectScale * havokWorldScale`.
+
+Important confirmed meaning:
+
+- HIGGS does **not** write the same arbitrary inverse matrix into both transform-B rotation and target as independent fields.
+- HIGGS treats transform-B rotation as the object/body-space representation of the hand frame.
+- HIGGS treats `setTargetRelativeOrientationOfBodies(bRa)` as the authoritative target update function, and that function composes with transform-A rotation.
+- In the ordinary HIGGS creation path transform A is identity rotation, so the creation-time target happens to equal transform-B rotation. That equality is a consequence of transform A being identity, not a general rule that target and transform-B are always the same concept.
+
+### Confirmed FO4VR native binary convention
+
+Ghidra witnesses in the FO4VR binary:
+
+- Native `hkpRagdollConstraintData::setTargetRelativeOrientationOfBodies` at `0x1419B26C0` decompiles to:
+  - `FUN_1417cf420(this + 0xD0, bRa, this + 0x30)`.
+  - `this + 0xD0` is the ragdoll motor target matrix.
+  - `this + 0x30` is transform-A rotation.
+  - `FUN_1417CF420` is matrix multiply in Havok column storage.
+  - Therefore FO4VR native code writes `target_bRca = bRa * transformA.rotation`.
+- Native `FUN_1417CF420` reads three 16-byte column vectors from the left/right matrices and writes three 16-byte column vectors to the output.
+- Native `hkpRagdollConstraintData::setInBodySpace` at `0x1419B21D0`:
+  - normalizes/writes transform-A rotation at `+0x30/+0x40/+0x50`;
+  - writes transform-A translation at `+0x60`;
+  - normalizes/writes transform-B rotation at `+0x70/+0x80/+0x90`;
+  - writes transform-B translation at `+0xA0`;
+  - copies transform-B rotation to `target_bRca` at `+0xD0/+0xE0/+0xF0` as its initial target.
+- Native ragdoll atom constructor helper at `0x1419B2910`:
+  - atom stream starts with type `2` at atom offset `0x00`;
+  - setup stabilization atom type `0x17` at atom offset `0x90`;
+  - ragdoll motor atom type `0x13` at atom offset `0xA0`;
+  - native ragdoll runtime offsets for the type-`0x13` atom are initialized/previous-angle `0x90/0x94` because full native ragdoll has 18 solver results.
+- FO4VR atom interpreter `0x141A55550`:
+  - type-2 set-local-transforms case at `0x141A556DA` consumes transform atom rotations as Havok column vectors and multiplies them by body A/B solver transforms.
+  - the interpreter reads body/motion arrays through its input structure and emits solver rows from the atom stream in the live hknp solver path.
+
+### Current ROCK writer compared to confirmed convention
+
+Current ROCK writer in `src/physics-interaction/grab/GrabConstraintMath.h`:
+
+- computes `bodyToHandRotation = transpose(desiredBodyTransformHandSpace.rotate)`;
+- writes `bodyToHandRotation` to transform-B rotation;
+- writes `bodyToHandRotation` to `target_bRca`;
+- diagnostics then report `colsInv=0` because the target bytes match the inverse relation the diagnostic expects.
+
+Current ROCK proxy creation/update in `src/physics-interaction/hand/HandGrab.cpp`:
+
+- `_grabFrame.constraintBodyHandSpace` stores the desired body transform in proxy/hand-authority space.
+- `createConstraintGrabDrive(...)` passes that transform to `createGrabConstraint(...)`.
+- `updateProxyConstraintGrabDriveTarget(...)` rewrites both transform-B rotation and target every held update through `writeInitialGrabAngularFrame(...)`.
+- transform-A rotation is kept identity in the custom atom; transform-A translation is the palm pivot in proxy local space.
+
+Why this is now suspect:
+
+- HIGGS' `handTransformObjSpace` corresponds to `Inverse(desiredBodyTransformHandSpace)`, but HIGGS reaches the target through `setInBodySpace(...)` plus `setTargetRelativeOrientationOfBodies(...)`.
+- FO4VR native `setTargetRelativeOrientationOfBodies(...)` composes the supplied relative orientation with transform-A rotation.
+- ROCK bypasses the native setter and writes both raw fields directly. That can make the byte-level diagnostic internally consistent while still not matching the solver's intended relationship between:
+  - transform-A local frame;
+  - transform-B local frame;
+  - `target_bRca`;
+  - body A/B solver transforms.
+- The runtime symptom exactly matches this class of error: proxy body A is on target, pivot is non-COM/contact-based, but body B immediately rotates by 89-180 degrees when the solver consumes the angular rows.
+
+### Confirmed non-causes from this pass
+
+- This is not COM fallback. The failing sessions use contact/palm mesh seating.
+- This is not the hidden proxy drifting. Proxy readback is near zero error before/after solve in the failing sessions.
+- This is not only BODY/MOTION split. Some failing sessions have `motionDiagVsGrab=0deg`.
+- This is not matrix row/column byte storage by itself. Type-2 transform consumption is column-based and the current writer is already column-based.
+- Runtime solver-result count is no longer the strongest suspect. Earlier Ghidra passes showed ROCK's current custom atom stream can produce a coherent 12-result runtime layout when per-atom runtime cursors are accounted for. Runtime still needs caution, but the first-frame 90-180 degree error points first at angular target convention.
+
+### Current highest-confidence hypothesis
+
+The remaining first-frame snap is caused by ROCK writing the angular frame as if "transform-B rotation equals target_bRca equals inverse body-to-hand" were the full solver contract.
+
+The confirmed contract is narrower:
+
+- transform-B rotation is a body-B local constraint frame;
+- target is a desired relative orientation field produced by `target_bRca = bRa * transformA.rotation`;
+- HIGGS creation happens to make target equal transform-B only because transform-A rotation is identity in that path;
+- FO4VR solver consumes all of these fields in its atom interpreter, not through ROCK's diagnostic reconstruction.
+
+This needs one more focused Ghidra pass before implementation:
+
+- finish identifying the type-`0x13` ragdoll motor case inside `0x141A55550`;
+- confirm exactly whether the solver compares current `worldB * transformB.rotation` against `worldA * target_bRca`, `worldA * transformA.rotation * target`, or another equivalent arrangement;
+- then choose the ROCK writer that reproduces that exact equation for a rotated hidden proxy body A.
+
+### Implementation implication if the hypothesis survives the next pass
+
+Do not change pivot selection.
+Do not use COM.
+Do not tune force values to hide this.
+
+The likely fix would be a frame-convention correction:
+
+- keep body-A proxy as root-flattened palm authority;
+- keep transform-A translation as palm pivot in proxy local space;
+- decide whether transform-A rotation must remain identity or explicitly represent the palm local frame based on the type-`0x13` solver equation;
+- write transform-B rotation as the actual body-B local constraint frame expected by the solver;
+- write `target_bRca` through the FO4VR/HIGGS equation, not by blindly mirroring transform-B bytes;
+- update the diagnostics to compare against the solver equation rather than only against ROCK's current inverse-matrix assumption.
+
+## 2026-05-12 late pass: FO4VR solver body-frame correction
+
+This pass corrects an earlier interpretation of the custom proxy constraint object frame.
+
+### Why this correction matters
+
+The previous BODY/MOTION split work treated the live hknp motion / center-of-mass frame as the right object-side local frame for custom constraint atoms when `tryResolveLiveBodyWorldTransform(...)` returned `MotionCenterOfMass`.
+
+That is now suspect. The binary evidence from the live constraint row builders shows a different split:
+
+- constraint local transform atoms are consumed against hknp BODY array transforms;
+- motion / inertia entries are consumed separately for solver mass/effective-mass behavior;
+- therefore COM/MOTION remains weight data, not body-B transform-frame authority.
+
+This is not a COM pivot issue. The world-space grip point is still contact/palm derived. The issue is which local coordinate frame encodes that same contact point and angular frame before the solver consumes the atom stream.
+
+### Confirmed binary witnesses
+
+`0x141979EF0`:
+
+- gathers active constraint slot data before solve;
+- reads the live atom stream pointer and size from the hknp constraint slot;
+- assembles a stack input/context block;
+- calls the atom interpreter `0x141A55550(atomPtr, atomSize, context, rowWriterState)`.
+
+`0x1419799E0`:
+
+- performs the same broad job for a related constraint row build path;
+- uses the hknp world body array and hknp motion array as separate inputs;
+- also reaches the same atom interpreter path for live constraint atoms.
+
+`0x141A55550`:
+
+- is the large live hknp atom-stream interpreter;
+- type-2 set-local-transforms case consumes transform atom rotations/translations and body transforms;
+- type-2 does not consume a high-level object node transform or ROCK visual transform;
+- type-2 uses the body-slot transform inputs from the context structure assembled by the row builders.
+
+### Context layout observed before `0x141A55550`
+
+The row builder assembles separate BODY and MOTION witnesses in the context passed into the atom interpreter:
+
+- `context + 0x40` points to hknp body A slot data;
+- `context + 0x48` points to hknp body B slot data;
+- those body slot pointers are derived from the world body array using body index and the observed hknp body stride;
+- `context + 0x30` points to motion/inertia solver data for body A;
+- `context + 0x38` points to motion/inertia solver data for body B;
+- motion/inertia data is still part of constraint solving, but it is not the transform atom local-frame authority.
+
+Current conclusion:
+
+- transform A/B local frames belong in hknp BODY space;
+- solver mass, inertia, and velocity response use the MOTION data paths;
+- mixing those two roles can make the diagnostic internally coherent while still feeding the solver an object-side frame it does not expect.
+
+### Impact on current ROCK diagnostics
+
+Fresh runtime captures after the previous diagnostics show `constraintObjectFrame=MOTION` for all tested custom proxy sessions:
+
+- R / object 1112: `motionDiagVsGrab=0.00deg/0.83gu`, `constraintObjectFrame=MOTION`;
+- L / object 1145: `motionDiagVsGrab=0.00deg/5.39gu`, `constraintObjectFrame=MOTION`;
+- R / object 1157: `motionDiagVsGrab=0.00deg/8.77gu`, `constraintObjectFrame=MOTION`;
+- R / object 1112: `motionDiagVsGrab=179.98deg/0.83gu`, `constraintObjectFrame=MOTION`;
+- L / object 1157: `motionDiagVsGrab=90.00deg/8.77gu`, `constraintObjectFrame=MOTION`;
+- L / object 1145: `motionDiagVsGrab=120.00deg/5.39gu`, `constraintObjectFrame=MOTION`;
+- L / object 1112: `motionDiagVsGrab=120.00deg/0.83gu`, `constraintObjectFrame=MOTION`.
+
+The first after-solve frame still has near-zero proxy error while body B is badly rotated:
+
+- R / object 1112: proxy `0.400gu / 1.32deg`, object `6.94gu / 179.7deg`, grip `20.32gu`;
+- L / object 1145: proxy `0gu / 0deg`, object `1.88gu / 125.5deg`, grip `9.94gu`;
+- R / object 1157: proxy `0gu / 0deg`, object `5.95gu / 121.6deg`, grip `18.39gu`;
+- R / object 1112: proxy `0gu / 0deg`, object `4.26gu / 123.3deg`, grip `10.06gu`;
+- L / object 1157: proxy `0gu / 0deg`, object `1.64gu / 89.0deg`, grip `8.82gu`;
+- L / object 1145: proxy `0gu / 0deg`, object `3.02gu / 117.6deg`, grip `7.52gu`;
+- L / object 1112: proxy `0gu / 0deg`, object `2.99gu / 96.0deg`, grip `15.92gu`.
+
+That pattern is consistent with body A / proxy authority being stable while body-B atom-local transform data is encoded in the wrong local frame and/or with the wrong angular target convention.
+
+### What this does and does not overturn
+
+Overturned:
+
+- The earlier implication that the custom constraint body-B atom frame should be MOTION/COM space when `tryResolveLiveBodyWorldTransform(...)` reports `MotionCenterOfMass`.
+- The diagnostic label `postColumnTarget+bodyMotionSplit` is now incomplete because the split appears to have moved body-B atom authority in the wrong direction.
+
+Still confirmed:
+
+- COM is never pivot fallback.
+- The failing captures are using contact/palm seating, not COM grip authority.
+- Mouse spring smoothness does not prove mouse spring is the desired final model.
+- Proxy body A is not the observed source of the first-frame snap in the latest logs.
+- Column storage for matrices is confirmed and should remain respected.
+
+### Implementation implication if the next solver pass confirms this fully
+
+The custom proxy constraint path should separate frame roles cleanly:
+
+- hknp BODY frame:
+  - transform-A local frame;
+  - transform-B local frame;
+  - body-B pivot local encoding;
+  - desired body relation diagnostics;
+  - visual held-node reconstruction and release lever origin.
+- hknp MOTION / COM frame:
+  - mass and inertia;
+  - effective mass;
+  - angular/linear authority scaling;
+  - swing/release velocity calculations where COM is physically relevant.
+
+Likely source-level correction, not yet implemented:
+
+- compute `_grabFrame.constraintBodyHandSpace` from the held object's hknp BODY transform, not the live MOTION/COM transform;
+- compute `_grabFrame.pivotBConstraintLocalGame` from the hknp BODY transform;
+- make `tryGetGrabDriveObjectWorldTransform(...)` use BODY-frame readback for proxy constraint target/error comparisons;
+- keep separate MOTION/COM diagnostics for mass and inertia only;
+- rename the diagnostic phase away from `bodyMotionSplit` after the frame correction so future logs are not misread.
+
+### Still unresolved before code change
+
+- Finish mapping the type-`0x13` ragdoll motor atom case inside `0x141A55550`.
+- Confirm the exact angular solve equation for:
+  - transform-A rotation;
+  - transform-B rotation;
+  - `target_bRca`;
+  - body A and body B world rotations.
+- Confirm whether ROCK should keep transform-A rotation identity with proxy BODY rotation carrying the palm frame, or encode palm basis directly into transform-A rotation.
+- Confirm whether transform-B rotation should be frozen at grab creation, refreshed each held update, or refreshed only when the grip reference is intentionally reauthored.
+
+## 2026-05-12 late pass: atom switch-table recheck
+
+This pass prevents one specific mapping error from leaking into implementation.
+
+### Corrected live atom case map
+
+Ghidra switch table at `0x141A5A32C` in `0x141A55550` maps atom type values directly to case addresses:
+
+| Atom type | Case address | Notes |
+|---:|---:|---|
+| `0x02` | `0x141A556DA` | set-local-transforms atom |
+| `0x0B` | `0x141A57162` | linear motor atom |
+| `0x13` | `0x141A5873C` | ragdoll motor atom |
+| `0x17` | `0x141A557BB` | setup-stabilization atom |
+| `0x18` | `0x141A55A2D` | angular-looking case, but **not** the ragdoll motor atom |
+
+The native ragdoll constructor helper at `0x1419B2910` confirms the constructor writes:
+
+- type `0x02` at atom stream offset `0x00`;
+- type `0x17` at atom stream offset `0x90`;
+- type `0x13` at atom stream offset `0xA0`;
+- the type-`0x13` atom's enabled byte at `+0x02`;
+- initialized / previous-angle runtime offsets at `+0x04/+0x06`;
+- later linear/limit atoms after the ragdoll motor.
+
+Therefore:
+
+- `0x141A5873C` is the live type-`0x13` ragdoll motor case.
+- `0x141A55A2D` must not be used to infer ROCK's ragdoll motor target equation.
+- Any earlier notes that described `0x141A55A2D` as "likely ragdoll motor" are superseded by this switch-table check.
+
+### What is already confirmed for type `0x13`
+
+Existing focused disassembly notes for `0x141A5873C` remain consistent with this switch-table recheck:
+
+- atom `+0x02` is enabled;
+- atom `+0x04` is initialized runtime offset;
+- atom `+0x06` is previous-angle runtime offset;
+- atom `+0x10` begins the target rotation matrix;
+- atom `+0x40` begins the three angular motor pointer slots;
+- the case advances atom cursor by `0x60`;
+- the case advances runtime/schema cursors by `0x30`;
+- three angular axes are processed.
+
+### What is still missing
+
+The missing part is no longer "which case is type `0x13`." That is now confirmed.
+
+The missing part is the exact solve-side equation inside `0x141A5873C`:
+
+- how current body-A/body-B world rotations from the type-2 local-transform stage are composed;
+- how target matrix at atom `+0x10` is compared against the current relative orientation;
+- whether the solver-side error is equivalent to:
+  - `worldA * target_bRca` versus `worldB * transformB`;
+  - `worldA * transformA * target` versus `worldB * transformB`;
+  - or another transposed/inverted equivalent;
+- whether transform-A rotation being identity is required for the current ROCK writer to be valid.
+
+### Implementation implication
+
+Do not write a behavior patch from the `0x141A55A2D` case.
+
+The next implementation decision must be based on:
+
+- type-2 transform atom body-frame correction;
+- native setter convention `target_bRca = bRa * transformA.rotation`;
+- type-`0x13` case `0x141A5873C` field reads and final error equation;
+- HIGGS creation/update pattern, where transform-B and target are related but not conceptually the same field.
+
+## 2026-05-12 late pass: live log says the current test build is contaminated by the MOTION split
+
+Fresh deployed runtime log:
+
+- DLL timestamp: `2026-05-12 22:38:03`;
+- log timestamp: `2026-05-12 22:40:52`;
+- active diagnostic marker: `diag=postColumnTarget+bodyMotionSplit`.
+
+The live after-solve lines are not a clean test of the corrected column target because the object and proxy are still read back through `tryResolveLiveBodyWorldTransform(...)`, and capture still reports `constraintObjectFrame=MOTION`.
+
+Representative live pattern:
+
+- proxy body stays close to the queued palm target: `proxyTargetErr` around `0.0-0.4gu` and usually below `1deg`;
+- held object remains far from the target body frame: examples include `objectTargetErr=8.71gu/154.8deg`, `11.05gu/169.0deg`, and `10.68gu/167.8deg`;
+- both proxy and object readback report `proxySrc=MOTION` / `objectSrc=MOTION`.
+
+This confirms the previous diagnostic build is measuring the wrong convention for custom constraint transform atoms.
+
+### Source contamination found
+
+Current source still contains the old MOTION-frame assumption:
+
+- `tryGetGrabDriveObjectWorldTransform(...)` returns `tryResolveLiveBodyWorldTransform(...)` for `HeldObjectDriveMode::ProxyConstraint`;
+- capture computes `constraintBodyWorldAtGrab` from `motionBodyWorldAtGrab` when the resolver reports `MotionCenterOfMass`;
+- `_grabFrame.pivotBConstraintLocalGame` and `_grabFrame.constraintBodyHandSpace` are therefore stored in MOTION/COM local space for proxy constraints;
+- the proxy before-solve and after-solve diagnostics also use `tryResolveLiveBodyWorldTransform(...)`, so the log labels BODY/MOTION effects as if they were solver-frame truth.
+
+### Correction to apply before more gameplay testing
+
+The next build must remove the MOTION split from custom constraint transform authority:
+
+- `tryGetGrabDriveObjectWorldTransform(...)` must use the hknp BODY slot for proxy constraints;
+- capture must set `constraintBodyWorldAtGrab = grabBodyWorldAtGrab`;
+- `_grabFrame.pivotBConstraintLocalGame` must be computed from BODY space;
+- `_grabFrame.constraintBodyHandSpace` must be computed from the desired BODY frame;
+- proxy/object readback in the custom authority diagnostics must use BODY readback and label the diagnostic accordingly;
+- MOTION/COM readback may remain only as separate mass/inertia/diagnostic evidence, not as the frame used for constraint atom local data.
+
+This is not a COM pivot change. The pivot remains the captured contact/palm point. The correction is only which hknp local frame encodes that point and the desired body relation for the custom constraint atom chain.

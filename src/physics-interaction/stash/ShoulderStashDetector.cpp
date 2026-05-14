@@ -92,6 +92,11 @@ namespace rock::shoulder_stash
             }
         }
 
+        [[nodiscard]] const Probe& hmdKinematicProbe(const DetectorInput& input) noexcept
+        {
+            return input.config.useHmdBackVolume && input.hasHmdProbe && finitePoint(input.hmdProbe.pointGame) ? input.hmdProbe : input.probe;
+        }
+
         [[nodiscard]] bool tryBuildShoulderCapsule(
             const DetectorInput& input,
             std::uint32_t shoulderBodyId,
@@ -342,6 +347,11 @@ namespace rock::shoulder_stash
                 return best;
             }
 
+            const Probe& hmdProbe = hmdKinematicProbe(input);
+            if (!finitePoint(hmdProbe.pointGame)) {
+                return best;
+            }
+
             const RE::NiPoint3 forward = normalizeOr(input.hmdForwardWorld, kWorldForward);
             RE::NiPoint3 right = normalizeOr(cross(forward, kWorldUp), RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
             if (lengthSquared(right) <= 0.000001f) {
@@ -357,7 +367,7 @@ namespace rock::shoulder_stash
                 const bool continuing = runtime.candidate && runtime.zone == zone && runtime.source == EvidenceSource::HmdBackVolume;
                 const float padding = continuing ? input.config.exitPaddingGameUnits : input.config.enterPaddingGameUnits;
                 const float threshold = radius + (std::max)(0.0f, padding);
-                const float distance = length(sub(input.probe.pointGame, center));
+                const float distance = length(sub(hmdProbe.pointGame, center));
                 if (!std::isfinite(distance) || distance > threshold) {
                     return;
                 }
@@ -381,13 +391,14 @@ namespace rock::shoulder_stash
 
         [[nodiscard]] float resolvedProbeSpeed(const DetectorInput& input, const RuntimeState& runtime) noexcept
         {
-            if (input.probe.hasVelocity) {
-                return probeSpeed(input.probe);
+            const Probe& probe = hmdKinematicProbe(input);
+            if (probe.hasVelocity) {
+                return probeSpeed(probe);
             }
             if (!runtime.hasLastProbePoint || input.deltaSeconds <= 0.000001f) {
                 return 0.0f;
             }
-            return length(sub(input.probe.pointGame, runtime.lastProbePointGame)) / input.deltaSeconds;
+            return length(sub(probe.pointGame, runtime.lastProbePointGame)) / input.deltaSeconds;
         }
     }
 
@@ -403,8 +414,9 @@ namespace rock::shoulder_stash
         decision.speedGameUnitsPerSecond = speed;
 
         auto updateProbeHistory = [&]() {
-            runtime.lastProbePointGame = input.probe.pointGame;
-            runtime.hasLastProbePoint = finitePoint(input.probe.pointGame);
+            const Probe& probe = hmdKinematicProbe(input);
+            runtime.lastProbePointGame = probe.pointGame;
+            runtime.hasLastProbePoint = finitePoint(probe.pointGame);
         };
 
         if (!input.config.enabled || !finitePoint(input.probe.pointGame)) {

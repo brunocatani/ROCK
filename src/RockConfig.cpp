@@ -354,6 +354,7 @@ namespace rock
         rockShoulderStashHmdBackRadiusGameUnits = 11.0f;
         rockShoulderStashSkipActivateBooks = true;
         rockShoulderStashSkipActivateNotes = true;
+        rockShoulderStashShowCollectedNotifications = true;
         rockGrabVelocityDamping = 0.25f;
         rockGrabPlayerSpaceCompensation = true;
         rockGrabPlayerSpaceWarpDistance = 35.0f;
@@ -455,9 +456,10 @@ namespace rock
         rockHeldImpactHapticCooldownSeconds = 0.12f;
         rockHeldImpactHapticDampedMultiplier = 0.55f;
         rockShoulderStashHapticsEnabled = true;
-        rockShoulderStashCandidateHapticDurationSeconds = 0.05f;
+        rockShoulderStashCandidateHapticDurationSeconds = 0.075f;
+        rockShoulderStashCandidateHapticBaseIntensity = 0.20f;
         rockShoulderStashCandidateHapticIntensity = 0.42f;
-        rockShoulderStashCandidateHapticIntervalSeconds = 0.12f;
+        rockShoulderStashCandidateHapticIntervalSeconds = 0.075f;
         rockShoulderStashCommitHapticDurationSeconds = 0.12f;
         rockShoulderStashCommitHapticIntensity = 0.85f;
 
@@ -1492,6 +1494,8 @@ namespace rock
             ini.GetBoolValue(SECTION, "bShoulderStashSkipActivateBooks", rockShoulderStashSkipActivateBooks);
         rockShoulderStashSkipActivateNotes =
             ini.GetBoolValue(SECTION, "bShoulderStashSkipActivateNotes", rockShoulderStashSkipActivateNotes);
+        rockShoulderStashShowCollectedNotifications =
+            ini.GetBoolValue(SECTION, "bShoulderStashShowCollectedNotifications", rockShoulderStashShowCollectedNotifications);
 
         rockGrabHapticsEnabled = ini.GetBoolValue(SECTION, "bGrabHapticsEnabled", rockGrabHapticsEnabled);
         readClampedFloat("fGrabHapticDurationSeconds", rockGrabHapticDurationSeconds, 0.055f, 0.0f, 0.2f);
@@ -1517,9 +1521,15 @@ namespace rock
         rockShoulderStashHapticsEnabled =
             ini.GetBoolValue(SECTION, "bShoulderStashHapticsEnabled", rockShoulderStashHapticsEnabled);
         readClampedFloat(
-            "fShoulderStashCandidateHapticDurationSeconds", rockShoulderStashCandidateHapticDurationSeconds, 0.05f, 0.0f, 0.2f);
-        readClampedFloat("fShoulderStashCandidateHapticIntensity", rockShoulderStashCandidateHapticIntensity, 0.42f, 0.0f, 1.0f);
-        readClampedFloat("fShoulderStashCandidateHapticIntervalSeconds", rockShoulderStashCandidateHapticIntervalSeconds, 0.12f, 0.0f, 2.0f);
+            "fShoulderStashCandidateHapticDurationSeconds", rockShoulderStashCandidateHapticDurationSeconds, 0.075f, 0.0f, 0.2f);
+        readClampedFloat(
+            "fShoulderStashCandidateHapticBaseIntensity", rockShoulderStashCandidateHapticBaseIntensity, 0.20f, 0.0f, 1.0f);
+        readClampedFloat("fShoulderStashCandidateHapticIntensity",
+            rockShoulderStashCandidateHapticIntensity,
+            0.42f,
+            rockShoulderStashCandidateHapticBaseIntensity,
+            1.0f);
+        readClampedFloat("fShoulderStashCandidateHapticIntervalSeconds", rockShoulderStashCandidateHapticIntervalSeconds, 0.075f, 0.0f, 2.0f);
         readClampedFloat(
             "fShoulderStashCommitHapticDurationSeconds", rockShoulderStashCommitHapticDurationSeconds, 0.12f, 0.0f, 0.2f);
         readClampedFloat("fShoulderStashCommitHapticIntensity", rockShoulderStashCommitHapticIntensity, 0.85f, 0.0f, 1.0f);

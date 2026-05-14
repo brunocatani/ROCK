@@ -29,7 +29,7 @@ namespace rock::provider
 
 #define ROCK_PROVIDER_CALL __cdecl
 
-    inline constexpr std::uint32_t ROCK_PROVIDER_API_VERSION = 7;
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_VERSION = 8;
     inline constexpr std::uint32_t ROCK_PROVIDER_FRAME_SNAPSHOT_V6_SIZE = 256;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_BODIES = 8;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EVIDENCE_NAME = 64;
@@ -54,6 +54,17 @@ namespace rock::provider
         Touching = 1u << 0,
         Holding = 1u << 1,
         PhysicsDisabled = 1u << 2,
+    };
+
+    enum class RockProviderHandFrameFlagV8 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        Left = 1u << 1,
+        Primary = 1u << 2,
+        Offhand = 1u << 3,
+        HasSceneNode = 1u << 4,
+        RootFlattenedAuthority = 1u << 5,
     };
 
     enum class RockProviderExternalBodyRole : std::uint32_t
@@ -224,6 +235,19 @@ namespace rock::provider
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
         std::uint32_t stableFrameCount{ 0 };
+    };
+
+    struct RockProviderHandFrameV8
+    {
+        std::uint32_t size{ sizeof(RockProviderHandFrameV8) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        RockProviderHand hand{ RockProviderHand::None };
+        std::uint32_t flags{ 0 };
+        std::uintptr_t node{ 0 };
+        RockProviderTransform transform{};
+        std::uint32_t bodyId{ 0x7FFF'FFFF };
+        std::uint32_t state{ 0 };
+        std::uint32_t reserved[7]{};
     };
 
     struct RockProviderWeaponContactQuery
@@ -520,6 +544,9 @@ namespace rock::provider
         bool(ROCK_PROVIDER_CALL* getDiagnosticInputSnapshotV5)(std::uint64_t ownerToken, RockProviderDiagnosticInputSnapshotV5* outSnapshot);
         bool(ROCK_PROVIDER_CALL* setDiagnosticInputSuppressionV5)(std::uint64_t ownerToken, std::uint32_t suppressionFlags);
         std::uint32_t(ROCK_PROVIDER_CALL* getBodyContactSnapshotV6)(RockProviderBodyContactV6* outContacts, std::uint32_t maxContacts);
+        RockProviderHand(ROCK_PROVIDER_CALL* getPrimaryHandV8)();
+        RockProviderHand(ROCK_PROVIDER_CALL* getOffhandHandV8)();
+        bool(ROCK_PROVIDER_CALL* getHandFrameV8)(RockProviderHand hand, RockProviderHandFrameV8* outFrame);
 
         [[nodiscard]] static int initialize(const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION)
         {
@@ -558,6 +585,10 @@ namespace rock::provider
     static_assert(sizeof(RockProviderTransform) == 52);
     static_assert(sizeof(RockProviderFrameSnapshot) == 272);
     static_assert(alignof(RockProviderFrameSnapshot) == 8);
+    static_assert(sizeof(RockProviderHandFrameV8) == 112);
+    static_assert(alignof(RockProviderHandFrameV8) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderHandFrameV8>);
+    static_assert(std::is_trivially_copyable_v<RockProviderHandFrameV8>);
     static_assert(sizeof(RockProviderExternalBodyRegistration) == 32);
     static_assert(sizeof(RockProviderExternalContact) == 40);
     static_assert(sizeof(RockProviderExternalContactV2) == 128);

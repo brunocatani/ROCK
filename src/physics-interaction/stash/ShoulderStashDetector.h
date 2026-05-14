@@ -44,6 +44,8 @@ namespace rock::shoulder_stash
         std::uint32_t contactFrame = 0;
         bool isLeftHand = false;
         Probe probe{};
+        Probe hmdProbe{};
+        bool hasHmdProbe = false;
         bool hasHmdFrame = false;
         RE::NiPoint3 hmdPositionWorld{};
         RE::NiPoint3 hmdForwardWorld{};

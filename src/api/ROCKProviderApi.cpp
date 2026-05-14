@@ -13,6 +13,7 @@
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/debug/DebugBodyOverlay.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
+#include "f4vr/F4VRUtils.h"
 
 #ifdef DrawText
 #undef DrawText
@@ -154,6 +155,68 @@ namespace
         const auto copySize = (std::min<std::size_t>)(requestedSize, sizeof(RockProviderFrameSnapshot));
         std::memcpy(outSnapshot, &s_lastSnapshot, copySize);
         outSnapshot->size = static_cast<std::uint32_t>(copySize);
+        return true;
+    }
+
+    RockProviderHand ROCK_PROVIDER_CALL apiGetPrimaryHandV8()
+    {
+        return f4vr::isLeftHandedMode() ? RockProviderHand::Left : RockProviderHand::Right;
+    }
+
+    RockProviderHand ROCK_PROVIDER_CALL apiGetOffhandHandV8()
+    {
+        return f4vr::isLeftHandedMode() ? RockProviderHand::Right : RockProviderHand::Left;
+    }
+
+    bool ROCK_PROVIDER_CALL apiGetHandFrameV8(RockProviderHand hand, RockProviderHandFrameV8* outFrame)
+    {
+        /*
+         * V8 exposes ROCK's hand authority as a value snapshot instead of a
+         * NiNode lookup. Consumers such as PAPER need the same primary/offhand
+         * mapping, body id, and root-flattened transform that ROCK drives each
+         * frame, while ROCK deliberately does not promise a live scene node for
+         * that authority surface.
+         */
+        if (!outFrame || outFrame->size != sizeof(RockProviderHandFrameV8)) {
+            return false;
+        }
+
+        if (hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
+            return false;
+        }
+
+        RockProviderFrameSnapshot snapshot{};
+        {
+            std::scoped_lock lock(s_snapshotMutex);
+            if (!s_hasSnapshot) {
+                return false;
+            }
+            snapshot = s_lastSnapshot;
+        }
+
+        if (snapshot.providerReady == 0) {
+            return false;
+        }
+
+        const bool isLeft = hand == RockProviderHand::Left;
+        RockProviderHandFrameV8 frame{};
+        frame.hand = hand;
+        frame.flags = static_cast<std::uint32_t>(RockProviderHandFrameFlagV8::Valid) |
+                      static_cast<std::uint32_t>(RockProviderHandFrameFlagV8::RootFlattenedAuthority);
+        if (isLeft) {
+            frame.flags |= static_cast<std::uint32_t>(RockProviderHandFrameFlagV8::Left);
+        }
+        if (hand == apiGetPrimaryHandV8()) {
+            frame.flags |= static_cast<std::uint32_t>(RockProviderHandFrameFlagV8::Primary);
+        }
+        if (hand == apiGetOffhandHandV8()) {
+            frame.flags |= static_cast<std::uint32_t>(RockProviderHandFrameFlagV8::Offhand);
+        }
+
+        frame.transform = isLeft ? snapshot.leftHandTransform : snapshot.rightHandTransform;
+        frame.bodyId = isLeft ? snapshot.leftHandBodyId : snapshot.rightHandBodyId;
+        frame.state = isLeft ? snapshot.leftHandState : snapshot.rightHandState;
+        *outFrame = frame;
         return true;
     }
 
@@ -450,6 +513,9 @@ namespace
         .getDiagnosticInputSnapshotV5 = &apiGetDiagnosticInputSnapshotV5,
         .setDiagnosticInputSuppressionV5 = &apiSetDiagnosticInputSuppressionV5,
         .getBodyContactSnapshotV6 = &apiGetBodyContactSnapshotV6,
+        .getPrimaryHandV8 = &apiGetPrimaryHandV8,
+        .getOffhandHandV8 = &apiGetOffhandHandV8,
+        .getHandFrameV8 = &apiGetHandFrameV8,
     };
 }
 

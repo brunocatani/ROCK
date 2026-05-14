@@ -39,6 +39,8 @@
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/stash/ShoulderStashDetector.h"
 #include "physics-interaction/stash/ShoulderStashEligibility.h"
+#include "physics-interaction/stash/ShoulderStashHapticPolicy.h"
+#include "physics-interaction/stash/ShoulderStashNotificationPolicy.h"
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/hand/HandFrame.h"
@@ -122,7 +124,7 @@ namespace rock
             return config;
         }
 
-        shoulder_stash::Probe makeShoulderStashProbe(RE::hknpWorld* world, const Hand& hand, const HandFrameInput& handInput)
+        shoulder_stash::Probe makeShoulderStashObjectProbe(RE::hknpWorld* world, const Hand& hand, const HandFrameInput& handInput)
         {
             shoulder_stash::Probe probe{};
             if (hand.tryGetHeldObjectGrabPivotWorld(world, probe.pointGame)) {
@@ -137,6 +139,34 @@ namespace rock
                 probe.pointGame = handInput.grabAnchorWorld;
             }
             return probe;
+        }
+
+        shoulder_stash::Probe makeShoulderStashHmdProbe(const HandFrameInput& handInput)
+        {
+            shoulder_stash::Probe probe{};
+            probe.pointGame = handInput.rawHandWorld.translate;
+            return probe;
+        }
+
+        std::string_view shoulderStashItemName(RE::TESBoundObject* baseForm)
+        {
+            if (!baseForm) {
+                return {};
+            }
+
+            return RE::TESFullName::GetFullName(*baseForm, false);
+        }
+
+        void showShoulderStashCollectedNotification(const shoulder_stash::TransferResult& transferResult, std::uint32_t fallbackFormID)
+        {
+            if (!g_rockConfig.rockShoulderStashShowCollectedNotifications) {
+                return;
+            }
+
+            f4vr::showNotification(shoulder_stash_notification_policy::formatCollectedNotification(
+                shoulderStashItemName(transferResult.baseForm),
+                transferResult.count,
+                transferResult.formID != 0 ? transferResult.formID : fallbackFormID));
         }
 
         grab_authority_phase0::Config makeGrabAuthorityPhase0ProbeConfig()
@@ -2233,9 +2263,16 @@ namespace rock
             return;
         case GrabEventType::StashCandidate:
             if (g_rockConfig.rockShoulderStashHapticsEnabled) {
+                const float confidence =
+                    (eventData.flags & ROCK_GRAB_EVENT_FLAG_INTENSITY_VALID) != 0 ? eventData.intensityHint : 1.0f;
                 triggerHaptic(eventData.isLeft,
                     g_rockConfig.rockShoulderStashCandidateHapticDurationSeconds,
-                    g_rockConfig.rockShoulderStashCandidateHapticIntensity);
+                    shoulder_stash_haptic_policy::computeCandidatePulseIntensity(confidence,
+                        shoulder_stash_haptic_policy::CandidatePulseConfig{
+                            .enabled = true,
+                            .baseIntensity = g_rockConfig.rockShoulderStashCandidateHapticBaseIntensity,
+                            .maxIntensity = g_rockConfig.rockShoulderStashCandidateHapticIntensity,
+                        }));
             }
             return;
         case GrabEventType::Stashed:
@@ -3306,7 +3343,9 @@ namespace rock
                             .heldBodyIds = &hand.getHeldBodyIds(),
                             .contactFrame = _handContactActivity.currentFrame(),
                             .isLeftHand = isLeft,
-                            .probe = makeShoulderStashProbe(hknp, hand, handInput),
+                            .probe = makeShoulderStashObjectProbe(hknp, hand, handInput),
+                            .hmdProbe = makeShoulderStashHmdProbe(handInput),
+                            .hasHmdProbe = true,
                             .hasHmdFrame = frame.hasHmdFrame,
                             .hmdPositionWorld = frame.hmdPositionWorld,
                             .hmdForwardWorld = frame.hmdForwardWorld,
@@ -3374,6 +3413,7 @@ namespace rock
                         dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, postTransferRef, heldFormID, 0);
                         if (transferResult.success) {
                             dispatchShoulderStashEvent(GrabEventType::Stashed, nullptr, heldFormID, primaryBodyId, stashDecision);
+                            showShoulderStashCollectedNotification(transferResult, heldFormID);
                         } else {
                             hand.applyReleaseVelocitySnapshot(hknp, releaseOutcome.velocity);
                             dispatchHeldObjectEventByFormID(GrabEventType::Released, postTransferRef, heldFormID, primaryBodyId);

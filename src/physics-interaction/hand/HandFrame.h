@@ -10,10 +10,10 @@
 namespace rock::handspace_convention
 {
     /*
-     * FO4/FRIK hand nodes use the active ROCK authored handspace convention:
+     * ROCK root-flattened game hand frames use the active authored handspace convention:
      * authored X = fingers, authored Y = cross-palm, authored Z = palm thickness.
-     * Runtime FRIK transforms already carry handedness, so left/right conversion
-     * uses the same X/-Z/Y basis and does not apply an additional manual mirror.
+     * The resolved game bone transform already carries handedness, so left/right
+     * conversion uses the same X/-Z/Y basis and does not apply an extra mirror.
      */
     template <class Vector>
     inline Vector makeVector(float x, float y, float z)
@@ -130,8 +130,8 @@ namespace rock
         /*
          * Close selection uses the same palm-face convention proven by the working
          * far ray: authored Z is the collider's palm-thickness normal. The live
-         * FO4/FRIK hand node already carries left/right handedness, so applying a
-         * separate authored Y mirror sends close detection across the palm.
+         * ROCK root-flattened game hand frame already carries left/right handedness,
+         * so applying a separate authored Y mirror sends close detection across the palm.
          */
         const RE::NiPoint3 authoredNormal = g_rockConfig.rockPalmNormalHandspace;
         RE::NiPoint3 normal = transformHandspaceDirection(handTransform, authoredNormal, isLeft);

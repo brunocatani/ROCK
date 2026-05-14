@@ -190,10 +190,11 @@ namespace rock
 // ---- RootFlattenedFingerSkeletonRuntime.h ----
 
 /*
- * ROCK's runtime hand geometry is sourced from the live FO4/FRIK skeleton, not
- * authored INI landmark tables. This helper resolves the rendered finger chains
- * and palm-facing normal into a compact world-space snapshot for collider,
- * pose, and debug systems while leaving final pose publication to the FRIK API.
+ * ROCK's runtime hand geometry is sourced from the live root-flattened FO4VR
+ * skeleton snapshot, not authored INI landmark tables. This helper resolves the
+ * rendered finger chains and palm-facing normal into a compact world-space
+ * snapshot for collider, pose, and debug systems while leaving final pose
+ * publication to the FRIK API.
  */
 
 #include "RE/NetImmerse/NiPoint.h"

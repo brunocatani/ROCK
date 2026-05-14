@@ -13,7 +13,7 @@ namespace rock
      * nodes, and derived hand vectors from multiple subsystems. Building this
      * bundle once at the top of the frame keeps those reads coherent and makes
      * later state-machine and Havok-runtime work pass explicit frame data
-     * instead of re-querying global FRIK/FO4VR state in each substep.
+     * instead of re-querying global skeleton and FO4VR state in each substep.
      */
     struct HandFrameInput
     {

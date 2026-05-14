@@ -1,5 +1,8 @@
 #include "physics-interaction/stash/ShoulderStashMath.h"
+#include "physics-interaction/stash/ShoulderStashHapticPolicy.h"
+#include "physics-interaction/stash/ShoulderStashNotificationPolicy.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -34,12 +37,25 @@ namespace
         std::printf("%s expected %s got %s\n", label, expected, actual);
         return false;
     }
+
+    bool expectNear(const char* label, float actual, float expected, float epsilon)
+    {
+        const float delta = std::fabs(actual - expected);
+        if (delta <= epsilon) {
+            return true;
+        }
+
+        std::printf("%s expected %.4f got %.4f\n", label, expected, actual);
+        return false;
+    }
 }
 
 int main()
 {
     using namespace rock::shoulder_stash;
     using rock::body_zone::BodyZoneKind;
+    namespace haptics = rock::shoulder_stash_haptic_policy;
+    namespace notifications = rock::shoulder_stash_notification_policy;
 
     bool ok = true;
 
@@ -87,6 +103,38 @@ int main()
             BodyZoneKind::RightShoulder,
             EvidenceSource::BodyZoneCollider,
             43));
+
+    haptics::CandidatePulseConfig haptic{};
+    haptic.baseIntensity = 0.20f;
+    haptic.maxIntensity = 0.42f;
+    ok &= expectNear("candidate haptic starts at base intensity",
+        haptics::computeCandidatePulseIntensity(0.0f, haptic),
+        0.20f,
+        0.001f);
+    ok &= expectNear("candidate haptic scales by confidence",
+        haptics::computeCandidatePulseIntensity(0.5f, haptic),
+        0.31f,
+        0.001f);
+    ok &= expectNear("candidate haptic clamps to max",
+        haptics::computeCandidatePulseIntensity(2.0f, haptic),
+        0.42f,
+        0.001f);
+
+    haptic.enabled = false;
+    ok &= expectNear("disabled candidate haptic suppresses pulse",
+        haptics::computeCandidatePulseIntensity(1.0f, haptic),
+        0.0f,
+        0.001f);
+
+    const auto namedNotification = notifications::formatCollectedNotification("Abraxo Cleaner", 3, 0x000ABCDEu);
+    ok &= expectString("collected notification includes item count",
+        namedNotification.c_str(),
+        "[ROCK] Collected Abraxo Cleaner x3");
+
+    const auto fallbackNotification = notifications::formatCollectedNotification({}, 1, 0x000ABCDEu);
+    ok &= expectString("collected notification falls back to form id",
+        fallbackNotification.c_str(),
+        "[ROCK] Collected item 000ABCDE");
 
     return ok ? 0 : 1;
 }
