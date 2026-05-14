@@ -614,13 +614,6 @@ namespace rock
 
     bool HandBoneColliderSet::tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const
     {
-        /*
-         * Dynamic grab authority needs the same root-flattened palm convention
-         * as the generated hand collider, but it must not read back the hknp
-         * body as transform authority. This exposes the latest sampled target
-         * from the skeleton update phase so a hidden no-contact proxy can use
-         * the correct body-A frame without coupling to collider contacts.
-         */
         if (!_hasLatestPalmAnchorTarget) {
             return false;
         }

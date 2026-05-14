@@ -14,6 +14,7 @@
 #include "physics-interaction/TransformMath.h"
 #include "RockUtils.h"
 #include "api/FRIKApi.h"
+#include "RE/Havok/hknpMotion.h"
 
 namespace rock
 {
@@ -905,28 +906,53 @@ namespace rock
         }
     }
 
+    bool Hand::tryResolveLivePalmAnchorReference(RE::hknpWorld* world, LivePalmAnchorReference& outReference) const
+    {
+        outReference = {};
+        outReference.world = transform_math::makeIdentityTransform<RE::NiTransform>();
+
+        if (!world || !_handBody.isValid() || _handBody.getBodyId().value == INVALID_BODY_ID) {
+            return false;
+        }
+
+        body_frame::BodyFrameSource source = body_frame::BodyFrameSource::Fallback;
+        std::uint32_t motionIndex = body_frame::kFreeMotionIndex;
+        RE::NiTransform livePalmWorld{};
+        if (!tryResolveLiveBodyWorldTransform(world, _handBody.getBodyId(), livePalmWorld, &source, &motionIndex)) {
+            return false;
+        }
+
+        outReference.valid = true;
+        outReference.world = livePalmWorld;
+        outReference.source = source;
+        outReference.motionIndex = motionIndex;
+
+        const auto snapshot = havok_runtime::snapshotBody(world, _handBody.getBodyId());
+        if (snapshot.valid && snapshot.motion) {
+            outReference.linearVelocityHavok = RE::NiPoint3{
+                snapshot.motion->linearVelocity.x,
+                snapshot.motion->linearVelocity.y,
+                snapshot.motion->linearVelocity.z,
+            };
+            outReference.angularVelocityRadiansPerSecond = RE::NiPoint3{
+                snapshot.motion->angularVelocity.x,
+                snapshot.motion->angularVelocity.y,
+                snapshot.motion->angularVelocity.z,
+            };
+            outReference.hasMotionVelocity = true;
+        }
+
+        return true;
+    }
+
     RE::NiPoint3 Hand::computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const
     {
-        (void)world;
-        /*
-         * Dynamic grab pivot A must be owned by the root-flattened palm produced
-         * from the live hand bone tree. The old INI-configured handspace point is
-         * still logged as a legacy comparison, but it is no longer allowed to be
-         * active grab authority because it can silently offset every candidate
-         * frame and hide the real hand/object relation.
-         *
-         * Use the latest generated palm target, not a live hknp body readback:
-         * the target is authored from the current skeleton sample, while the
-         * physics body may be one drive boundary behind. If generated palm data is
-         * unavailable during startup/world rebuild, fall back to the tracked hand
-         * origin rather than the retired INI pivot.
-         */
-        RE::NiTransform generatedPalmWorld{};
-        if (_boneColliders.tryGetPalmAnchorTarget(generatedPalmWorld) &&
-            std::isfinite(generatedPalmWorld.translate.x) &&
-            std::isfinite(generatedPalmWorld.translate.y) &&
-            std::isfinite(generatedPalmWorld.translate.z)) {
-            return generatedPalmWorld.translate;
+        LivePalmAnchorReference palmReference{};
+        if (tryResolveLivePalmAnchorReference(world, palmReference) &&
+            std::isfinite(palmReference.world.translate.x) &&
+            std::isfinite(palmReference.world.translate.y) &&
+            std::isfinite(palmReference.world.translate.z)) {
+            return palmReference.world.translate;
         }
 
         return fallbackHandWorldTransform.translate;

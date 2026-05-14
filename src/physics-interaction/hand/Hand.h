@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
+#include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
@@ -298,11 +299,23 @@ namespace rock
             const RE::NiPoint3& pointingDirection, const FarSelectionHmdConeGate& farHmdConeGate, float nearRange, float farRange, float deltaTime,
             const OtherHandSelectionContext& otherHandContext);
 
+        struct LivePalmAnchorReference
+        {
+            bool valid = false;
+            RE::NiTransform world{};
+            body_frame::BodyFrameSource source{ body_frame::BodyFrameSource::Fallback };
+            std::uint32_t motionIndex{ body_frame::kFreeMotionIndex };
+            bool hasMotionVelocity = false;
+            RE::NiPoint3 linearVelocityHavok{};
+            RE::NiPoint3 angularVelocityRadiansPerSecond{};
+        };
+
         RE::hknpBodyId getCollisionBodyId() const { return _handBody.getBodyId(); }
         RE::hknpBodyId getGrabAuthorityProxyBodyId() const { return _grabAuthorityProxy.getBodyId(); }
         bool hasCollisionBody() const { return _handBody.isValid(); }
         BethesdaPhysicsBody& getHandBody() { return _handBody; }
         const BethesdaPhysicsBody& getHandBody() const { return _handBody; }
+        bool tryResolveLivePalmAnchorReference(RE::hknpWorld* world, LivePalmAnchorReference& outReference) const;
         RE::NiPoint3 computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const;
         std::uint32_t getHandColliderBodyCount() const { return _boneColliders.getBodyCount(); }
         std::uint32_t getHandColliderBodyIdAtomic(std::size_t index) const { return _boneColliders.getBodyIdAtomic(index); }
@@ -535,6 +548,7 @@ namespace rock
         GrabAuthorityProxyPendingTarget _grabAuthorityPendingTarget{};
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
         bool _hasLastAppliedGrabAuthorityProxyWorld = false;
+        GeneratedKeyframedBodyDriveState _grabAuthorityProxyDriveState{};
         std::uint64_t _grabAuthorityProxyQueuedSequence = 0;
         std::uint64_t _grabAuthorityProxyFlushSequence = 0;
         std::uint64_t _grabAuthorityProxyFailedFlushes = 0;

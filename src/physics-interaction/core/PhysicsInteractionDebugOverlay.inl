@@ -1361,6 +1361,17 @@
 
         if (frame.drawRockBodies) {
             if (drawGrabAuthorityProxy) {
+                const RE::hknpBodyId rightPalm = _rightHand.getCollisionBodyId();
+                const RE::hknpBodyId leftPalm = _leftHand.getCollisionBodyId();
+                if (rightPalm.value != INVALID_BODY_ID) {
+                    addBody(rightPalm, debug::BodyOverlayRole::RightHand);
+                    addAxisBody(rightPalm, debug::AxisOverlayRole::RightGrabPalmAuthorityFrame, context.right.rawHandWorld.translate, true);
+                }
+                if (leftPalm.value != INVALID_BODY_ID) {
+                    addBody(leftPalm, debug::BodyOverlayRole::LeftHand);
+                    addAxisBody(leftPalm, debug::AxisOverlayRole::LeftGrabPalmAuthorityFrame, context.left.rawHandWorld.translate, true);
+                }
+
                 const RE::hknpBodyId rightProxy = _rightHand.getGrabAuthorityProxyBodyId();
                 const RE::hknpBodyId leftProxy = _leftHand.getGrabAuthorityProxyBodyId();
                 if (rightProxy.value != INVALID_BODY_ID) {

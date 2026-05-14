@@ -61,7 +61,7 @@ Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'kData_M
 Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.h' 'mutable std::mutex _mutex' 'Native mouse-spring action state must be synchronized across frame target queueing and Havok-step flushing.'
 Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'std::scoped_lock lock\(_mutex\)' 'Native mouse-spring create, queue, flush, destroy, and debug snapshots must lock the action state.'
 
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'resolveGrabAuthorityProxyFrame\(world,\s*handWorldTransform,\s*&handBodyWorldAtGrab,\s*proxyFrameWorldAtGrab' 'Close dynamic grab must resolve the hidden proxy frame from the generated root-flattened palm authority before creating the custom finite-force constraint.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'resolveGrabAuthorityProxyFrame\(world,\s*handWorldTransform,\s*&handBodyWorldAtGrab,\s*proxyFrameWorldAtGrab' 'Close dynamic grab must resolve the hidden proxy frame from the live palm-anchor authority before creating the custom finite-force constraint.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'createProxyConstraintGrabDrive\(\s*bhkWorld,\s*world,\s*objectBodyId,\s*proxyFrameWorldAtGrab,\s*grabPivotAWorld' 'Close dynamic grab must create the hidden proxy plus custom finite-force constraint from the resolved palm-authority proxy frame.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '_nativeGrab\.create\(\s*world,\s*objectBodyId' 'Ordinary dynamic close grab must not create native mouse-spring as its production authority.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'RE::NiTransform nativeTargetBodyWorld = desiredBodyWorld' 'Held-object adaptive response must start from the body-composed ROCK target frame.'
@@ -139,7 +139,7 @@ Require-Text 'data/config/ROCK.ini' 'fGrabLooseWeaponSharedConstraintLinearTauMu
 Require-Text 'data/config/ROCK.ini' 'fGrabLooseWeaponSharedConstraintAngularForceMultiplier\s*=\s*1\.0' 'Packaged ROCK.ini must expose neutral loose non-equipped weapon shared angular force tuning.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_nativeGrabReleasePending\.store\(true' 'Native mouse-spring flush failure must queue a deterministic held-object release instead of only logging.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'native mouse-spring flush failure marked grab invalid' 'Held-object update must consume native flush failures and release the stale grab state.'
-Require-Text 'src/physics-interaction/hand/Hand.cpp' 'latest generated palm target[\s\S]*not a live hknp body readback' 'Grab pivot authority must document why generated palm target is used while generated hknp readback is not used for grab capture.'
+Require-Text 'src/physics-interaction/hand/Hand.cpp' 'tryResolveLivePalmAnchorReference[\s\S]*tryResolveLiveBodyWorldTransform' 'Grab pivot authority must resolve from the live palm-anchor body frame.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_rightHand\.flushPendingHeldNativeGrab\(world,\s*timing\)' 'Right held-object native action must flush from the physics-step coordinator.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_leftHand\.flushPendingHeldNativeGrab\(world,\s*timing\)' 'Left held-object native action must flush from the physics-step coordinator.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_rightHand\.flushPendingCustomGrabAuthority\(world,\s*timing\)' 'Right custom grab proxy authority must flush from the between-collide-and-solve coordinator.'
@@ -196,11 +196,14 @@ $handText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interact
 $pivotStart = $handText.IndexOf('RE::NiPoint3 Hand::computeGrabPivotAWorld')
 $pivotEnd = if ($pivotStart -ge 0) { $handText.IndexOf('void Hand::recordSemanticContact', $pivotStart) } else { -1 }
 if ($pivotStart -lt 0 -or $pivotEnd -lt 0) {
-    $failures.Add('Hand::computeGrabPivotAWorld boundary could not be located for stale-readback guard.')
+    $failures.Add('Hand::computeGrabPivotAWorld boundary could not be located for palm-anchor authority guard.')
 } else {
     $pivotText = $handText.Substring($pivotStart, $pivotEnd - $pivotStart)
-    if ($pivotText -match 'tryResolveLiveBodyWorldTransform|_handBody\.getBodyId|bodyWorld') {
-        $failures.Add('Grab pivot capture must not read live hknp palm-anchor body state; generated colliders are evidence, not grab transform authority.')
+    if ($pivotText -notmatch 'tryResolveLivePalmAnchorReference\(world,\s*palmReference\)') {
+        $failures.Add('Grab pivot capture must read the actual live palm-anchor body reference.')
+    }
+    if ($pivotText -match '_boneColliders\.tryGetPalmAnchorTarget') {
+        $failures.Add('Grab pivot capture must not return to the sampled palm target as active authority.')
     }
 }
 
