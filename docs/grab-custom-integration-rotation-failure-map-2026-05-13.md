@@ -456,3 +456,32 @@ Future design implication:
 This does not make native Fallout grab the model. It uses a FO4VR-native
 low-level angular conversion function as the boundary oracle for the custom
 grab authority.
+
+### Transform packing distinction: not the same as angular-vector extraction
+
+`HavokRuntime::bodyArrayWorldTransform(...)` reads body transform floats with
+`havokColumnsToNiRows(...)`. The generic generated-body packer writes target
+transforms with `niRowsToHavokColumns(...)`.
+
+That round trip is internally symmetrical for ordinary generated keyframed body
+placement. It also explains why generated hand/body colliders can move and
+rotate visually correctly while the custom grab angular response is still
+wrong: collider placement is a transform packing/readback problem, but held
+rotation response is a public angular-vector problem.
+
+Mouse spring has its own target-transform boundary:
+
+```cpp
+transposeRotation(targetBodyWorldRotation)
+niRowsToHavokColumns(...)
+```
+
+The important research conclusion is not "copy mouse spring's transpose
+everywhere." The important distinction is:
+
+- target transform packing can be correct and still not prove angular velocity
+  extraction is correct;
+- generated collider/body transform correctness does not prove
+  `angularVelocityFromRotationDelta(...)` is correct;
+- the N/S/E/W bug matches the angular-vector extraction path more directly than
+  the collider transform placement path.
