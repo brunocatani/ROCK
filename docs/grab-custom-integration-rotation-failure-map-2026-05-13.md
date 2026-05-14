@@ -485,3 +485,133 @@ everywhere." The important distinction is:
   `angularVelocityFromRotationDelta(...)` is correct;
 - the N/S/E/W bug matches the angular-vector extraction path more directly than
   the collider transform placement path.
+
+### Backup/source comparison: what the mouse-spring era avoided
+
+Backups checked under `E:\fo4dev\Backups`:
+
+- `closest one yet`
+- `before motor change`
+
+Relevant result:
+
+- one-hand dynamic grab in the mouse-spring-era backup queues a single
+  `desiredBodyWorld` target into `_nativeGrab.queueTarget(...)`;
+- the wrapper writes target transform through the isolated mouse-spring
+  transform boundary;
+- it does not compute a held-object public angular velocity vector from ROCK
+  matrix rows or columns for the one-hand authority path;
+- the current custom path does compute public angular velocity vectors in two
+  places: proxy body and held object.
+
+This is the meaningful behavioral difference. The old path was not magically
+correct because it used native Fallout grab as a design model. It avoided this
+specific boundary bug because ROCK did not have to manufacture the angular
+velocity vector consumed by hknp.
+
+### Existing unused address: ComputeHardKeyFrame is already available
+
+Current `src/physics-interaction/native/HavokOffsets.h` already contains:
+
+```cpp
+constexpr std::uintptr_t kFunc_ComputeHardKeyFrame = 0x153a6a0;
+```
+
+The current active grab path does not use it. That makes it a high-value
+implementation candidate or validation oracle because Ghidra confirms:
+
+```text
+ComputeHardKeyFrame(body, targetPos, targetQuat, dt, linOut, angOut)
+ApplyHardKeyFrame(body, targetPos, targetQuat, dt)
+    -> ComputeHardKeyFrame(...)
+    -> SetBodyVelocity(body, linOut, angOut)
+```
+
+So the `angOut` vector is already in the exact convention expected by
+`SetBodyVelocity` and `SetBodyAngularVelocity`.
+
+### Coherent solution direction from the data
+
+Do not solve this by changing COM, pivot, collider conventions, force values,
+or random transposes.
+
+The coherent solution is to make hknp angular-vector production a single
+boundary-owned operation.
+
+Recommended design direction:
+
+1. Keep ROCK's existing dynamic grab capture model:
+   - contact/palm pivot;
+   - BODY-space object-side pivot;
+   - root-flattened palm/proxy authority frame;
+   - visual object relation preserved at grab start.
+2. Keep the existing finite-force/mass/collision policy outside the low-level
+   angular conversion:
+   - mass and inertia decide cap/lag/authority;
+   - COM remains weight data only;
+   - pivot stays contact/palm/BODY, not COM.
+3. Replace both custom column-cross angular velocity producers with a single
+   verified angular conversion boundary:
+   - proxy body angular velocity should come from the same convention as hknp
+     hard-keyframe velocity;
+   - held object angular velocity should come from the same convention as hknp
+     hard-keyframe velocity;
+   - if ROCK computes it manually, the manual output must match
+     `ComputeHardKeyFrame` with caps disabled.
+4. Use `ComputeHardKeyFrame` as the first validation oracle:
+   - feed live body id, target position, target quaternion, and dt;
+   - compare its angular output to current column-cross output;
+   - project both vectors onto palm/proxy/body axes;
+   - rotate player 90 degrees and repeat.
+5. If `ComputeHardKeyFrame` output is stable across N/S/E/W while the current
+   column-cross output is not, use it directly or implement a matching
+   quaternion delta converter.
+6. Only after the angular vector is proven correct should finite-force caps be
+   layered back on:
+   - cap angular speed by current mass/authority budget;
+   - preserve collision tau/deviation behavior;
+   - do not let the cap change axis direction.
+
+### Why the earlier attempted fixes kept failing
+
+The earlier attempts changed parts adjacent to the bug:
+
+- BODY vs MOTION target frame;
+- transform-B and target_bRca writes;
+- generated collider frame transpose;
+- ragdoll angular atom vs direct angular velocity;
+- force and damping values.
+
+Those can change the appearance of the bug, but none of them establishes the
+missing angular-vector contract. The object can still receive a public hknp
+angular vector whose axis was derived from the wrong ROCK matrix storage
+orientation.
+
+The start-grab snap and the N/S/E/W held-rotation bug can therefore be two
+different layers:
+
+- start snap: target frame/constraint atom/initial relation bug;
+- held N/S/E/W: public angular velocity vector convention bug.
+
+Fixing one can reveal the other.
+
+### Validation gates before implementation is accepted
+
+The next code change should be judged against data, not feel alone:
+
+1. Log or test the current column-cross angular vector and the
+   `ComputeHardKeyFrame` angular vector for the same live body, target, and dt.
+2. Project both vectors onto:
+   - root-flattened palm X/Y/Z;
+   - proxy X/Y/Z;
+   - desired body X/Y/Z;
+   - world X/Y/Z.
+3. Run isolated wrist pitch/yaw/roll at two player facings 90 degrees apart.
+4. The accepted vector producer must keep local-object response invariant across
+   player facing.
+5. Proxy angular velocity and held-object angular velocity must be produced by
+   the same convention path.
+6. After axis correctness is proven, re-enable mass/finite-force caps and prove
+   the caps reduce magnitude without rotating the command axis.
+
+Until these gates pass, the custom dynamic grab angular authority is not proven.
