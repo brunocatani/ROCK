@@ -528,3 +528,175 @@ Purpose:
 - show whether the mapping changes when the player rotates;
 - separate raw controller motion from authority/proxy motion and from actual
   object motion.
+
+## Fresh Runtime Read: 2026-05-14 19:10 Grabs
+
+Source log:
+
+- `C:\Users\SENECA\Documents\My Games\Fallout4VR\F4SE\ROCK.log`
+- deployed DLL timestamp checked against the run: `2026-05-14 19:03:18`
+- log timestamp after user test: `2026-05-14 19:10:07`
+
+Sessions observed:
+
+| Hand/session | Angular rows | First frame | Last frame |
+| --- | ---: | ---: | ---: |
+| R/6 | 227 | 16 | 242 |
+| L/7 | 158 | 1 | 158 |
+
+### Confirmed: INI Pivot Is Not Runtime Authority
+
+`GRAB BASIS LEGACY_PIVOT` rows:
+
+| Hand/session | Rows | `legacyPresent` | `legacyActive` | `activeSource` |
+| --- | ---: | --- | --- | --- |
+| R/6 | 227 | yes | no | `rootFlattenedPalmAnchorTarget` |
+| L/7 | 158 | yes | no | `rootFlattenedPalmAnchorTarget` |
+
+No `legacyActive=yes` rows were found in this run.
+
+Conclusion:
+
+- the old configured INI pivot still exists as a logged comparison point;
+- it is not driving dynamic grab pivot A in these sessions;
+- the observed rotation bug is not explained by old INI pivot authority.
+
+### Confirmed: Raw Hand And Generated Authority Move Together
+
+Aggregate angular delta:
+
+| Hand/session | Raw avg | Raw max | Proxy avg | Proxy max | Constraint desired avg | Constraint desired max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| R/6 | 2.60 deg | 10.86 deg | 27.93 deg | 76.37 deg | 29.20 deg | 79.77 deg |
+| L/7 | 1.46 deg | 2.31 deg | 12.43 deg | 47.89 deg | 12.33 deg | 46.30 deg |
+
+In every sampled bad row, raw and generated-authority deltas are nearly
+identical. Examples:
+
+- R/6 frame 49: `raw=1.164`, `authority=1.165`,
+  `proxy=65.823`, `conDesired=72.226`;
+- R/6 frame 50: `raw=0.865`, `authority=0.865`,
+  `proxy=64.543`, `conDesired=70.517`;
+- L/7 frame 156: `raw=0.329`, `authority=0.327`,
+  `proxy=46.341`, `conDesired=43.433`;
+- L/7 frame 157: `raw=0.468`, `authority=0.467`,
+  `proxy=45.557`, `conDesired=42.523`.
+
+Conclusion:
+
+- the root-flattened palm authority frame is not showing the huge rotation;
+- the huge rotation appears after the proxy/constraint authority frame;
+- `conDesired` follows the proxy jump, not the raw hand delta.
+
+### Confirmed: Grab Start Can Be Clean, Then Held Loop Corrupts
+
+Left session 7 frame 1:
+
+- phase: `start`;
+- `objectAtGrabToDesiredAtGrab.max=0.00`;
+- `heldNodeToConDesiredObj.max=0.00`;
+- `rawHandToHeldRelativeHand.max=0.00`;
+- `proxyReadback` equals `grabAuthority`;
+- `authorityToProxy=0.000gu/0.000deg`;
+- `legacyActive=no`;
+- `targetErr(colsInv=0.000deg ... colsTransformB=0.000deg)`.
+
+Conclusion:
+
+- the attach/start frame in this left-hand grab preserved the desired object
+  rotation;
+- the corruption is not proven at initial pivot capture in this session;
+- the corruption grows after held update/solve starts using the live proxy path.
+
+Right session 6 does not contain frame 1 in the angular-delta rows. Its first
+angular-delta row is frame 16, so this log cannot prove the right-hand attach
+frame itself. It does prove the right-hand held loop has the same proxy-driven
+rotation amplification.
+
+### Confirmed: Proxy Is Exact Before Solve But Wrong After Solve
+
+Sparse `PROXY GRAB AUTHORITY` rows show the proxy on target before solve:
+
+| Side | Rows | Max pre-solve proxy angular error |
+| --- | ---: | ---: |
+| Left | 17 | 0.03 deg |
+| Right | 10 | 0.00 deg |
+
+`PROXY GRAB AFTER_SOLVE` rows show large post-solve proxy angular error:
+
+| Side | Rows | Avg post-solve proxy angular error | Max post-solve proxy angular error |
+| --- | ---: | ---: | ---: |
+| Left | 105 | 9.71 deg | 24.45 deg |
+| Right | 152 | 22.22 deg | 40.90 deg |
+
+Examples:
+
+- R frame 45: `proxyTargetErr=0.991gu/40.90deg`;
+- R frame 42: `proxyTargetErr=1.609gu/40.31deg`;
+- L frame 152: `proxyTargetErr=0.732gu/24.45deg`;
+- L frame 155: `proxyTargetErr=0.528gu/23.72deg`.
+
+Conclusion:
+
+- the pre-solve write/readback path can place the proxy exactly on target;
+- after solve, the live proxy orientation is often tens of degrees away;
+- the held desired frame then uses or reflects that corrupted proxy orientation;
+- this is strong evidence that the bug lives in the proxy body-A authority /
+  constraint solve integration, not in the raw controller/palm frame.
+
+### Confirmed: Alternating/Stale Proxy Pattern
+
+The angular rows frequently alternate between:
+
+- a large proxy/conDesired angular delta;
+- then a zero proxy/conDesired angular delta;
+- then another large proxy/conDesired angular delta.
+
+Examples:
+
+- R frames 40, 41, 42, 43, 44, 45:
+  - proxy: `64.30`, `46.55`, `0.00`, `76.37`, `56.25`, `0.00`;
+  - conDesired: `63.06`, `45.36`, `0.00`, `74.88`, `55.04`, `0.00`.
+- L frames 153, 154, 155, 156, 157, 158:
+  - proxy: `47.70`, `45.45`, `0.00`, `46.34`, `45.56`, `0.00`;
+  - conDesired: `44.66`, `43.05`, `0.00`, `43.43`, `42.52`, `0.00`.
+
+Conclusion:
+
+- the proxy readback/desired frame is not a smooth per-frame copy of the
+  root-flattened palm authority;
+- the pattern is consistent with stepwise physics update cadence, stale
+  readback, or solve-side rotation being fed back into the next desired frame;
+- it is not consistent with a continuous raw controller axis mapping bug alone.
+
+### Current Inference
+
+What the fresh log proves:
+
+- legacy INI pivot is not active;
+- raw hand and generated root-flattened authority agree closely;
+- initial left attach can preserve object rotation exactly;
+- proxy readback diverges after solve;
+- the constraint desired object frame follows the proxy divergence;
+- both hands are affected.
+
+What the fresh log does not prove:
+
+- the final production formula for replacing the proxy path;
+- whether the proxy is being rotated by constraint feedback, stale body
+  readback, wrong motion/body write target, or hard-keyframe velocity
+  integration order;
+- the exact controller-axis semantic mapping from the user's physical hand,
+  because the logs do not include a named physical action marker like
+  "user pitched wrist up now".
+
+Most likely next code investigation target:
+
+- inspect the body-A/proxy authority update path and remove the feedback
+  dependency where held-target computation uses live proxy readback as the
+  conceptual hand frame;
+- the desired object frame should be computed from the root-flattened palm
+  authority target and the captured contact/palm relationship, while the proxy
+  should only be a solver body that is driven toward that target;
+- if the proxy remains, after-solve proxy orientation must not become the next
+  frame's hand/object reference authority.
