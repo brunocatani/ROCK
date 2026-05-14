@@ -2101,8 +2101,10 @@ namespace rock
         out.handBodyId = _handBody.isValid() ? _handBody.getBodyId().value : INVALID_BODY_ID;
         out.legacyConfiguredPivotAWorld = computeGrabPivotAPositionFromHandBasis(out.nativeFlattenedHandWorld, _isLeft);
         out.hasLegacyConfiguredPivotAWorld = true;
+        out.runtimePivotSource = "rawHandOriginFallback";
 
         if (_boneColliders.tryGetPalmAnchorTarget(out.palmAnchorTargetWorld)) {
+            out.runtimePivotSource = "rootFlattenedPalmAnchorTarget";
             out.hasPalmAnchorTarget = true;
             out.palmAnchorTargetBasis = grab_transform_telemetry::makeOrientationBasis(out.palmAnchorTargetWorld);
             out.palmAnchorGrabAuthorityWorld =
@@ -4353,9 +4355,10 @@ namespace rock
              * root-flattened hand convention.
              */
             {
-                auto pocket = grab_three_phase::buildGrabPocketFrame(
+                auto pocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
                     handWorldTransform,
                     _isLeft,
+                    grabPivotAWorld,
                     g_rockConfig.rockGrabPocketDepthGameUnits,
                     g_rockConfig.rockGrabPocketRadiusGameUnits);
                 auto gripArea = grab_three_phase::buildObjectGripArea(grab_three_phase::GripAreaInput{
@@ -4580,7 +4583,7 @@ namespace rock
 
             if (g_rockConfig.rockDebugGrabFrameLogging) {
                 const RE::NiTransform& constraintGrabHandSpace = _grabFrame.constraintHandSpace;
-                const RE::NiPoint3 grabPivotAHandspace = computeGrabPivotAHandspacePosition(_isLeft);
+                const RE::NiPoint3 legacyGrabPivotAHandspace = computeGrabPivotAHandspacePosition(_isLeft);
                 auto* vrScaleSetting = f4vr::getIniSetting("fVrScale:VR");
                 const float vrScale = vrScaleSetting ? vrScaleSetting->GetFloat() : -1.0f;
 
@@ -4600,7 +4603,7 @@ namespace rock
 
                 ROCK_LOG_DEBUG(Hand,
                     "{} GRAB FRAME SUMMARY: vrScale={:.3f} handScale={:.3f} bodyScale={:.3f} objectScale={:.3f} "
-                    "pivotHS=({:.2f},{:.2f},{:.2f}) pocketW=({:.1f},{:.1f},{:.1f}) gripW=({:.1f},{:.1f},{:.1f}) "
+                    "legacyPivotHS=({:.2f},{:.2f},{:.2f}) pocketW=({:.1f},{:.1f},{:.1f}) gripW=({:.1f},{:.1f},{:.1f}) "
                     "pivotBBodyLocal=({:.2f},{:.2f},{:.2f}) pivotBConstraintLocal=({:.2f},{:.2f},{:.2f}) "
                     "rawConstraintDelta={:.2f}deg/{:.2f}gu motionDiagVsGrab={:.2f}deg/{:.2f}gu constraintObjectFrame={} proxyFrame={} rootPalm={} pivotALocal=({:.2f},{:.2f},{:.2f}) meshMode={} meshTris={} "
                     "pocketGrip={:.1f}gu selectionGripEvidence={:.1f}gu "
@@ -4610,7 +4613,7 @@ namespace rock
                     "poseTargets={} motorFade={} motorFadeReason={} bodyReason={} "
                     "fingerPoseAim={} fingerPoseAimReason={}",
                     handName(), vrScale, handWorldTransform.scale, handBodyWorldAtGrab.scale, collidableNode ? collidableNode->world.scale : -1.0f,
-                    grabPivotAHandspace.x, grabPivotAHandspace.y, grabPivotAHandspace.z, grabPivotAWorld.x, grabPivotAWorld.y, grabPivotAWorld.z, grabGripPoint.x,
+                    legacyGrabPivotAHandspace.x, legacyGrabPivotAHandspace.y, legacyGrabPivotAHandspace.z, grabPivotAWorld.x, grabPivotAWorld.y, grabPivotAWorld.z, grabGripPoint.x,
                     grabGripPoint.y, grabGripPoint.z, _grabFrame.pivotBBodyLocalGame.x, _grabFrame.pivotBBodyLocalGame.y, _grabFrame.pivotBBodyLocalGame.z,
                     _grabFrame.pivotBConstraintLocalGame.x, _grabFrame.pivotBConstraintLocalGame.y, _grabFrame.pivotBConstraintLocalGame.z,
                     rawVsConstraintRot, rawVsConstraintPos, motionVsGrabRot, motionVsGrabPos,
@@ -4769,7 +4772,7 @@ namespace rock
         }
 
         {
-            RE::NiPoint3 palmPos = computePalmPositionFromHandBasis(handWorldTransform, _isLeft);
+            RE::NiPoint3 legacyPalmPos = computePalmPositionFromHandBasis(handWorldTransform, _isLeft);
             RE::NiPoint3 grabPivotAWorld =
                 _grabFrame.hasTelemetryCapture ? _grabFrame.grabPivotWorldAtGrab : computeGrabPivotAWorld(world, handWorldTransform);
             const float gameToHkScale = gameToHavokScale();
@@ -4792,26 +4795,26 @@ namespace rock
                 float pivotAToGrab = std::sqrt(
                     (pivotAHk[0] - gripWorldHk[0]) * (pivotAHk[0] - gripWorldHk[0]) + (pivotAHk[1] - gripWorldHk[1]) * (pivotAHk[1] - gripWorldHk[1]) +
                     (pivotAHk[2] - gripWorldHk[2]) * (pivotAHk[2] - gripWorldHk[2]));
-                float palmToHandOrigin = std::sqrt((palmPos.x - handWorldTransform.translate.x) * (palmPos.x - handWorldTransform.translate.x) +
-                    (palmPos.y - handWorldTransform.translate.y) * (palmPos.y - handWorldTransform.translate.y) +
-                    (palmPos.z - handWorldTransform.translate.z) * (palmPos.z - handWorldTransform.translate.z));
+                float legacyPalmToHandOrigin = std::sqrt((legacyPalmPos.x - handWorldTransform.translate.x) * (legacyPalmPos.x - handWorldTransform.translate.x) +
+                    (legacyPalmPos.y - handWorldTransform.translate.y) * (legacyPalmPos.y - handWorldTransform.translate.y) +
+                    (legacyPalmPos.z - handWorldTransform.translate.z) * (legacyPalmPos.z - handWorldTransform.translate.z));
                 float pivotAToHandOrigin = std::sqrt((grabPivotAWorld.x - handWorldTransform.translate.x) * (grabPivotAWorld.x - handWorldTransform.translate.x) +
                     (grabPivotAWorld.y - handWorldTransform.translate.y) * (grabPivotAWorld.y - handWorldTransform.translate.y) +
                     (grabPivotAWorld.z - handWorldTransform.translate.z) * (grabPivotAWorld.z - handWorldTransform.translate.z));
                 ROCK_LOG_DEBUG(Hand,
-                    "GRAB DIAG {}: palmPos=({:.1f},{:.1f},{:.1f}) handPos=({:.1f},{:.1f},{:.1f}) "
+                    "GRAB DIAG {}: legacyPalmPos=({:.1f},{:.1f},{:.1f}) handPos=({:.1f},{:.1f},{:.1f}) "
                     "pocket=({:.1f},{:.1f},{:.1f}) grip=({:.1f},{:.1f},{:.1f}) meshGrab={} grabPointMode={} fallbackReason={} "
                     "frozenPivotB=({:.2f},{:.2f},{:.2f}) contactPatch={} patchHits={} multiFinger={} mfGroups={} mfSpread={:.2f} "
                     "activePoint={} activeUsesFingerEvidence={} palmSeatPoint={} fingerEvidencePoint={} "
-                    "pivotAToGrab_hk={:.4f} ({:.1f} game units) palmToHandOrigin={:.1f} pivotAToHandOrigin={:.1f} game units "
+                    "pivotAToGrab_hk={:.4f} ({:.1f} game units) legacyPalmToHandOrigin={:.1f} pivotAToHandOrigin={:.1f} game units "
                     "selectionToGripEvidence={:.1f} fingerPoseAim={} fingerPoseAimReason={}",
-                    handName(), palmPos.x, palmPos.y, palmPos.z, handWorldTransform.translate.x, handWorldTransform.translate.y, handWorldTransform.translate.z, grabPivotAWorld.x,
+                    handName(), legacyPalmPos.x, legacyPalmPos.y, legacyPalmPos.z, handWorldTransform.translate.x, handWorldTransform.translate.y, handWorldTransform.translate.z, grabPivotAWorld.x,
                     grabPivotAWorld.y, grabPivotAWorld.z, grabGripPoint.x, grabGripPoint.y, grabGripPoint.z, meshGrabFound, grabPointMode, grabFallbackReason,
                     _grabFrame.pivotBBodyLocalGame.x, _grabFrame.pivotBBodyLocalGame.y, _grabFrame.pivotBBodyLocalGame.z, _grabFrame.hasContactPatch ? "yes" : "no",
                     _grabFrame.contactPatchSampleCount, _grabFrame.hasMultiFingerContactPatch ? "yes" : "no", _grabFrame.multiFingerContactGroupCount,
                     _grabFrame.multiFingerContactSpreadGameUnits, _grabFrame.activeGrabPointMode, _grabFrame.activeGrabPointUsesMultiFingerEvidence ? "yes" : "no",
                     _grabFrame.palmSeatPointMode, _grabFrame.fingerEvidencePointMode, pivotAToGrab,
-                    pivotAToGrab * havokToGameScale(), palmToHandOrigin, pivotAToHandOrigin, _grabFrame.selectionToGripEvidenceDistanceGameUnits,
+                    pivotAToGrab * havokToGameScale(), legacyPalmToHandOrigin, pivotAToHandOrigin, _grabFrame.selectionToGripEvidenceDistanceGameUnits,
                     _grabFrame.fingerPoseAimValid ? "yes" : "no", _grabFrame.fingerPoseAimReason);
             }
 

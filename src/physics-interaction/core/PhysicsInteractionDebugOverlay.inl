@@ -570,12 +570,117 @@
         }
 
         if (drawGrabTransformTelemetry) {
+            struct GrabAngularDeltaLogValue
+            {
+                bool valid = false;
+                float angleDegrees = 0.0f;
+                RE::NiPoint3 worldDegrees{};
+                RE::NiPoint3 handLocalDegrees{};
+                RE::NiPoint3 hmdLocalDegrees{};
+            };
+
+            auto vectorDot = [](const RE::NiPoint3& a, const RE::NiPoint3& b) {
+                return a.x * b.x + a.y * b.y + a.z * b.z;
+            };
+            auto vectorCross = [](const RE::NiPoint3& a, const RE::NiPoint3& b) {
+                return RE::NiPoint3{
+                    a.y * b.z - a.z * b.y,
+                    a.z * b.x - a.x * b.z,
+                    a.x * b.y - a.y * b.x,
+                };
+            };
+            auto vectorLength = [&](const RE::NiPoint3& value) {
+                return std::sqrt((std::max)(0.0f, vectorDot(value, value)));
+            };
+            auto normalizeOr = [&](const RE::NiPoint3& value, const RE::NiPoint3& fallback) {
+                const float length = vectorLength(value);
+                if (!std::isfinite(length) || length <= 0.000001f) {
+                    return fallback;
+                }
+                const float inverseLength = 1.0f / length;
+                return RE::NiPoint3{ value.x * inverseLength, value.y * inverseLength, value.z * inverseLength };
+            };
+            auto projectToBasis = [&](const RE::NiPoint3& worldVector, const grab_transform_telemetry::OrientationBasis& basis) {
+                return RE::NiPoint3{
+                    vectorDot(worldVector, basis.x),
+                    vectorDot(worldVector, basis.y),
+                    vectorDot(worldVector, basis.z),
+                };
+            };
+            auto makePlanarHmdBasis = [&]() {
+                grab_transform_telemetry::OrientationBasis basis{};
+                const RE::NiPoint3 worldUp{ 0.0f, 0.0f, 1.0f };
+                RE::NiPoint3 forward = context.hasHmdFrame ? context.hmdForwardWorld : RE::NiPoint3{ 0.0f, 1.0f, 0.0f };
+                forward.z = 0.0f;
+                forward = normalizeOr(forward, RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+                const RE::NiPoint3 right = normalizeOr(vectorCross(forward, worldUp), RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+                basis.x = right;
+                basis.y = forward;
+                basis.z = worldUp;
+                return basis;
+            };
+            auto computeAngularDeltaLogValue = [&](const RE::NiTransform& previous,
+                                                   const RE::NiTransform& current,
+                                                   const grab_transform_telemetry::OrientationBasis& currentHandBasis,
+                                                   const grab_transform_telemetry::OrientationBasis& hmdBasis,
+                                                   bool enabled) {
+                GrabAngularDeltaLogValue result{};
+                if (!enabled) {
+                    return result;
+                }
+
+                const auto previousBasis = grab_transform_telemetry::makeOrientationBasis(previous);
+                const auto currentBasis = grab_transform_telemetry::makeOrientationBasis(current);
+                const float angleDegrees = grab_transform_telemetry::orientationBasisMaxDeltaDegrees(previousBasis, currentBasis);
+                if (!std::isfinite(angleDegrees) || angleDegrees <= 0.0001f) {
+                    result.valid = true;
+                    return result;
+                }
+
+                RE::NiPoint3 axisSum{};
+                axisSum = axisSum + vectorCross(previousBasis.x, currentBasis.x);
+                axisSum = axisSum + vectorCross(previousBasis.y, currentBasis.y);
+                axisSum = axisSum + vectorCross(previousBasis.z, currentBasis.z);
+                const RE::NiPoint3 axis = normalizeOr(axisSum, RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
+                if (vectorLength(axis) <= 0.000001f) {
+                    return result;
+                }
+
+                result.valid = true;
+                result.angleDegrees = angleDegrees;
+                result.worldDegrees = RE::NiPoint3{
+                    axis.x * angleDegrees,
+                    axis.y * angleDegrees,
+                    axis.z * angleDegrees,
+                };
+                result.handLocalDegrees = projectToBasis(result.worldDegrees, currentHandBasis);
+                result.hmdLocalDegrees = projectToBasis(result.worldDegrees, hmdBasis);
+                return result;
+            };
+            auto storePreviousAngularDeltaSample = [](GrabTransformTelemetryState& telemetryState, const grab_transform_telemetry::RuntimeSample& sample) {
+                telemetryState.previousRawHandWorld = sample.rawHandWorld;
+                telemetryState.previousPalmAnchorGrabAuthorityWorld = sample.palmAnchorGrabAuthorityWorld;
+                telemetryState.previousProxyReadbackWorld = sample.proxyReadbackWorld;
+                telemetryState.previousRawDesiredObjectWorld = sample.currentRawDesiredObjectWorld;
+                telemetryState.previousConstraintDesiredObjectWorld = sample.currentConstraintDesiredObjectWorld;
+                telemetryState.previousHeldNodeWorld = sample.heldNodeWorld;
+                telemetryState.previousHeldBodyWorld = sample.heldBodyWorld;
+                telemetryState.previousNativeBodyWorld = sample.heldNativeBodyWorld;
+                telemetryState.previousHasPalmAnchorGrabAuthority = sample.hasPalmAnchorGrabAuthority;
+                telemetryState.previousHasProxyReadback = sample.hasProxyReadback;
+                telemetryState.previousHasHeldNodeWorld = sample.hasHeldNodeWorld;
+                telemetryState.previousHasHeldBodyWorld = sample.hasHeldBodyWorld;
+                telemetryState.previousHasHeldNativeBodyWorld = sample.hasHeldNativeBodyWorld;
+                telemetryState.hasPreviousAngularDeltaSample = true;
+            };
+
             auto publishGrabTelemetry = [&](Hand& hand, bool isLeft) {
                 auto& telemetryState = _grabTransformTelemetryStates[isLeft ? 1 : 0];
                 if (!hand.isHolding()) {
                     telemetryState.active = false;
                     telemetryState.frame = 0;
                     telemetryState.logFrameCounter = 0;
+                    telemetryState.hasPreviousAngularDeltaSample = false;
                     return;
                 }
 
@@ -584,6 +689,7 @@
                     telemetryState.session = _grabTransformTelemetryNextSession++;
                     telemetryState.frame = 0;
                     telemetryState.logFrameCounter = 0;
+                    telemetryState.hasPreviousAngularDeltaSample = false;
                 }
 
                 ++telemetryState.frame;
@@ -601,6 +707,69 @@
                         sample)) {
                     return;
                 }
+
+                const auto hmdBasis = makePlanarHmdBasis();
+                const bool hasPreviousAngularDeltaSample = telemetryState.hasPreviousAngularDeltaSample;
+                const auto rawHandAngularDelta = computeAngularDeltaLogValue(
+                    telemetryState.previousRawHandWorld,
+                    sample.rawHandWorld,
+                    sample.rawHandBasis,
+                    hmdBasis,
+                    hasPreviousAngularDeltaSample);
+                const auto palmAuthorityAngularDelta = computeAngularDeltaLogValue(
+                    telemetryState.previousPalmAnchorGrabAuthorityWorld,
+                    sample.palmAnchorGrabAuthorityWorld,
+                    sample.rawHandBasis,
+                    hmdBasis,
+                    hasPreviousAngularDeltaSample &&
+                        telemetryState.previousHasPalmAnchorGrabAuthority &&
+                        sample.hasPalmAnchorGrabAuthority);
+                const auto proxyAngularDelta = computeAngularDeltaLogValue(
+                    telemetryState.previousProxyReadbackWorld,
+                    sample.proxyReadbackWorld,
+                    sample.rawHandBasis,
+                    hmdBasis,
+                    hasPreviousAngularDeltaSample &&
+                        telemetryState.previousHasProxyReadback &&
+                        sample.hasProxyReadback);
+                const auto rawDesiredObjectAngularDelta = computeAngularDeltaLogValue(
+                    telemetryState.previousRawDesiredObjectWorld,
+                    sample.currentRawDesiredObjectWorld,
+                    sample.rawHandBasis,
+                    hmdBasis,
+                    hasPreviousAngularDeltaSample &&
+                        sample.hasGrabStartFrames);
+                const auto constraintDesiredObjectAngularDelta = computeAngularDeltaLogValue(
+                    telemetryState.previousConstraintDesiredObjectWorld,
+                    sample.currentConstraintDesiredObjectWorld,
+                    sample.rawHandBasis,
+                    hmdBasis,
+                    hasPreviousAngularDeltaSample &&
+                        sample.hasGrabStartFrames);
+                const auto heldNodeAngularDelta = computeAngularDeltaLogValue(
+                    telemetryState.previousHeldNodeWorld,
+                    sample.heldNodeWorld,
+                    sample.rawHandBasis,
+                    hmdBasis,
+                    hasPreviousAngularDeltaSample &&
+                        telemetryState.previousHasHeldNodeWorld &&
+                        sample.hasHeldNodeWorld);
+                const auto heldBodyAngularDelta = computeAngularDeltaLogValue(
+                    telemetryState.previousHeldBodyWorld,
+                    sample.heldBodyWorld,
+                    sample.rawHandBasis,
+                    hmdBasis,
+                    hasPreviousAngularDeltaSample &&
+                        telemetryState.previousHasHeldBodyWorld &&
+                        sample.hasHeldBodyWorld);
+                const auto nativeBodyAngularDelta = computeAngularDeltaLogValue(
+                    telemetryState.previousNativeBodyWorld,
+                    sample.heldNativeBodyWorld,
+                    sample.rawHandBasis,
+                    hmdBasis,
+                    hasPreviousAngularDeltaSample &&
+                        telemetryState.previousHasHeldNativeBodyWorld &&
+                        sample.hasHeldNativeBodyWorld);
 
                 if (drawGrabTransformTelemetryAxes) {
                     const auto palmDebugBasis = grab_transform_telemetry_overlay::buildHandAttachedTextBasis(sample.rawHandWorld, isLeft);
@@ -998,11 +1167,12 @@
                         grab_transform_telemetry::formatBasis("grabAuthority", sample.palmAnchorGrabAuthorityBasis),
                         grab_transform_telemetry::formatBasis("proxyReadback", sample.proxyReadbackBasis));
                     ROCK_LOG_INFO(Hand,
-                        "GRAB BASIS LEGACY_PIVOT {} {} side={} legacyActive={} activeSource=iniConfiguredHandspace legacyPivotA={} runtimePivotA={} generatedPalm={} grabAuthority={} proxyReadback={} legacyToRuntime={:.3f}gu legacyToPalm={:.3f}gu legacyToAuthority={:.3f}gu legacyToProxy={:.3f}gu",
+                        "GRAB BASIS LEGACY_PIVOT {} {} side={} legacyPresent={} legacyActive=no activeSource={} legacyPivotA={} runtimePivotA={} generatedPalm={} grabAuthority={} proxyReadback={} legacyToRuntime={:.3f}gu legacyToPalm={:.3f}gu legacyToAuthority={:.3f}gu legacyToProxy={:.3f}gu",
                         prefix,
                         phaseLabel,
                         sideLabel,
                         sample.hasLegacyConfiguredPivotAWorld ? "yes" : "no",
+                        sample.runtimePivotSource,
                         grab_transform_telemetry::formatVector3(sample.legacyConfiguredPivotAWorld),
                         grab_transform_telemetry::formatVector3(sample.pivotAWorld),
                         sample.hasPalmAnchorTarget ? "yes" : "no",
@@ -1012,6 +1182,45 @@
                         sample.legacyConfiguredPivotAToPalmAnchor.distance,
                         sample.legacyConfiguredPivotAToGrabAuthority.distance,
                         sample.legacyConfiguredPivotAToProxyReadback.distance);
+                    ROCK_LOG_INFO(Hand,
+                        "GRAB ANGULAR_DELTA {} {} side={} prev={} hmd={} raw={:.3f}deg world={} hand={} hmdLocal={} authority={:.3f}deg world={} hand={} hmdLocal={} proxy={:.3f}deg world={} hand={} hmdLocal={} rawDesired={:.3f}deg world={} hand={} hmdLocal={} conDesired={:.3f}deg world={} hand={} hmdLocal={} heldNode={:.3f}deg world={} hand={} hmdLocal={} heldBody={:.3f}deg world={} hand={} hmdLocal={} nativeBody={:.3f}deg world={} hand={} hmdLocal={}",
+                        prefix,
+                        phaseLabel,
+                        sideLabel,
+                        hasPreviousAngularDeltaSample ? "yes" : "no",
+                        context.hasHmdFrame ? "yes" : "no",
+                        rawHandAngularDelta.valid ? rawHandAngularDelta.angleDegrees : -1.0f,
+                        grab_transform_telemetry::formatVector3(rawHandAngularDelta.worldDegrees),
+                        grab_transform_telemetry::formatVector3(rawHandAngularDelta.handLocalDegrees),
+                        grab_transform_telemetry::formatVector3(rawHandAngularDelta.hmdLocalDegrees),
+                        palmAuthorityAngularDelta.valid ? palmAuthorityAngularDelta.angleDegrees : -1.0f,
+                        grab_transform_telemetry::formatVector3(palmAuthorityAngularDelta.worldDegrees),
+                        grab_transform_telemetry::formatVector3(palmAuthorityAngularDelta.handLocalDegrees),
+                        grab_transform_telemetry::formatVector3(palmAuthorityAngularDelta.hmdLocalDegrees),
+                        proxyAngularDelta.valid ? proxyAngularDelta.angleDegrees : -1.0f,
+                        grab_transform_telemetry::formatVector3(proxyAngularDelta.worldDegrees),
+                        grab_transform_telemetry::formatVector3(proxyAngularDelta.handLocalDegrees),
+                        grab_transform_telemetry::formatVector3(proxyAngularDelta.hmdLocalDegrees),
+                        rawDesiredObjectAngularDelta.valid ? rawDesiredObjectAngularDelta.angleDegrees : -1.0f,
+                        grab_transform_telemetry::formatVector3(rawDesiredObjectAngularDelta.worldDegrees),
+                        grab_transform_telemetry::formatVector3(rawDesiredObjectAngularDelta.handLocalDegrees),
+                        grab_transform_telemetry::formatVector3(rawDesiredObjectAngularDelta.hmdLocalDegrees),
+                        constraintDesiredObjectAngularDelta.valid ? constraintDesiredObjectAngularDelta.angleDegrees : -1.0f,
+                        grab_transform_telemetry::formatVector3(constraintDesiredObjectAngularDelta.worldDegrees),
+                        grab_transform_telemetry::formatVector3(constraintDesiredObjectAngularDelta.handLocalDegrees),
+                        grab_transform_telemetry::formatVector3(constraintDesiredObjectAngularDelta.hmdLocalDegrees),
+                        heldNodeAngularDelta.valid ? heldNodeAngularDelta.angleDegrees : -1.0f,
+                        grab_transform_telemetry::formatVector3(heldNodeAngularDelta.worldDegrees),
+                        grab_transform_telemetry::formatVector3(heldNodeAngularDelta.handLocalDegrees),
+                        grab_transform_telemetry::formatVector3(heldNodeAngularDelta.hmdLocalDegrees),
+                        heldBodyAngularDelta.valid ? heldBodyAngularDelta.angleDegrees : -1.0f,
+                        grab_transform_telemetry::formatVector3(heldBodyAngularDelta.worldDegrees),
+                        grab_transform_telemetry::formatVector3(heldBodyAngularDelta.handLocalDegrees),
+                        grab_transform_telemetry::formatVector3(heldBodyAngularDelta.hmdLocalDegrees),
+                        nativeBodyAngularDelta.valid ? nativeBodyAngularDelta.angleDegrees : -1.0f,
+                        grab_transform_telemetry::formatVector3(nativeBodyAngularDelta.worldDegrees),
+                        grab_transform_telemetry::formatVector3(nativeBodyAngularDelta.handLocalDegrees),
+                        grab_transform_telemetry::formatVector3(nativeBodyAngularDelta.hmdLocalDegrees));
                     ROCK_LOG_INFO(Hand,
                         "GRAB BASIS {} {} side={} objectFrames {} {} {} {} {} {}",
                         prefix,
@@ -1132,6 +1341,7 @@
                             sample.heldBodyMass);
                     }
                 }
+                storePreviousAngularDeltaSample(telemetryState, sample);
             };
 
             publishGrabTelemetry(_rightHand, false);

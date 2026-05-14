@@ -909,16 +909,27 @@ namespace rock
     {
         (void)world;
         /*
-         * ROCK computes grab authority from the real tracked hand transform and
-         * lets Havok follow that source. The generated hknp palm anchor is a
-         * driven follower flushed on the physics-step boundary; reading it back
-         * during game-frame grab setup can capture a one-step-old collider pose
-         * and feed that error into grab-frame capture. Pivot A therefore stays
-         * tied to the verified raw tracked hand frame. The generated hknp palm
-         * anchor remains contact evidence and debug geometry, not grab-frame
-         * transform authority.
+         * Dynamic grab pivot A must be owned by the root-flattened palm produced
+         * from the live hand bone tree. The old INI-configured handspace point is
+         * still logged as a legacy comparison, but it is no longer allowed to be
+         * active grab authority because it can silently offset every candidate
+         * frame and hide the real hand/object relation.
+         *
+         * Use the latest generated palm target, not a live hknp body readback:
+         * the target is authored from the current skeleton sample, while the
+         * physics body may be one drive boundary behind. If generated palm data is
+         * unavailable during startup/world rebuild, fall back to the tracked hand
+         * origin rather than the retired INI pivot.
          */
-        return computeGrabPivotAPositionFromHandBasis(fallbackHandWorldTransform, _isLeft);
+        RE::NiTransform generatedPalmWorld{};
+        if (_boneColliders.tryGetPalmAnchorTarget(generatedPalmWorld) &&
+            std::isfinite(generatedPalmWorld.translate.x) &&
+            std::isfinite(generatedPalmWorld.translate.y) &&
+            std::isfinite(generatedPalmWorld.translate.z)) {
+            return generatedPalmWorld.translate;
+        }
+
+        return fallbackHandWorldTransform.translate;
     }
 
     void Hand::recordSemanticContact(const HandColliderBodyMetadata& metadata, std::uint32_t otherBodyId)

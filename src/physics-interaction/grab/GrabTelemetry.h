@@ -145,6 +145,7 @@ namespace rock::grab_transform_telemetry
         OrientationBasis heldRelativeHandTargetBasis{};
         OrientationBasis constraintReverseTargetBasis{};
         std::array<FrameChainCandidate, kFrameChainCandidateCapacity> frameChainCandidates{};
+        const char* runtimePivotSource = "unknown";
 
         RE::NiPoint3 pivotAWorld{};
         RE::NiPoint3 pivotBWorld{};

@@ -346,6 +346,20 @@ namespace rock
             std::uint32_t session = 0;
             std::uint64_t frame = 0;
             std::uint64_t logFrameCounter = 0;
+            bool hasPreviousAngularDeltaSample = false;
+            RE::NiTransform previousRawHandWorld{};
+            RE::NiTransform previousPalmAnchorGrabAuthorityWorld{};
+            RE::NiTransform previousProxyReadbackWorld{};
+            RE::NiTransform previousRawDesiredObjectWorld{};
+            RE::NiTransform previousConstraintDesiredObjectWorld{};
+            RE::NiTransform previousHeldNodeWorld{};
+            RE::NiTransform previousHeldBodyWorld{};
+            RE::NiTransform previousNativeBodyWorld{};
+            bool previousHasPalmAnchorGrabAuthority = false;
+            bool previousHasProxyReadback = false;
+            bool previousHasHeldNodeWorld = false;
+            bool previousHasHeldBodyWorld = false;
+            bool previousHasHeldNativeBodyWorld = false;
         };
 
         std::array<GrabTransformTelemetryState, 2> _grabTransformTelemetryStates{};

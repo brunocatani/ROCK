@@ -474,3 +474,57 @@ Concrete next diagnostic needed:
 
 That would directly answer whether wrist pitch is being applied as object yaw,
 whether roll is inverted, and whether the mapping changes when the player turns.
+
+## Follow-Up Change: Remove INI Pivot From Dynamic Authority
+
+The next diagnostic build removes the old configured INI pivot from dynamic
+grab authority:
+
+- `Hand::computeGrabPivotAWorld` now resolves pivot A from the latest
+  root-flattened generated palm target when available;
+- if that generated palm target is unavailable during startup or world rebuild,
+  the fallback is the raw tracked hand origin, not the INI-configured handspace
+  offset;
+- `GrabThreePhase` now has `buildGrabPocketFrameWithPalmCenter`, and dynamic
+  grab capture passes the already-resolved generated palm pivot into the pocket
+  frame;
+- the old INI pivot remains logged as `legacyPivotA` only, with
+  `legacyActive=no`;
+- equipped weapon and two-hand weapon palm helpers still use their existing
+  paths and are not part of this dynamic-loose-grab diagnostic change.
+
+Reason:
+
+- leaving the INI pivot as runtime authority made every later log ambiguous:
+  the diagnostics could not prove whether the frame-chain error came from
+  dynamic grab math or from an old manually tuned offset;
+- removing it from dynamic authority gives cleaner data without changing object
+  pivot B, COM policy, collision layers, or equipped weapon behavior.
+
+## Follow-Up Telemetry: Angular Delta Mapping
+
+The next diagnostic build adds `GRAB ANGULAR_DELTA` rows. These compare the
+per-frame angular delta of:
+
+- raw tracked hand;
+- generated palm grab-authority frame;
+- live proxy readback;
+- raw desired object;
+- constraint desired object;
+- live held visual node;
+- held hknp body;
+- native BODY readback.
+
+Each delta is logged as:
+
+- world-axis degree vector;
+- current hand-local degree vector;
+- HMD/player-planar degree vector.
+
+Purpose:
+
+- show directly whether wrist pitch, yaw, or roll is being applied to the wrong
+  object axis;
+- show whether the mapping changes when the player rotates;
+- separate raw controller motion from authority/proxy motion and from actual
+  object motion.
