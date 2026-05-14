@@ -2238,6 +2238,7 @@ namespace rock
             out.constraintHandSpace = _grabFrame.constraintHandSpace;
             out.handBodyToRawHandAtGrab = _grabFrame.handBodyToRawHandAtGrab;
             out.bodyLocal = _grabFrame.bodyLocal;
+            out.constraintBodyLocal = _grabFrame.constraintBodyLocal;
             out.liveHandWorldAtGrabBasis = grab_transform_telemetry::makeOrientationBasis(out.liveHandWorldAtGrab);
             out.handBodyWorldAtGrabBasis = grab_transform_telemetry::makeOrientationBasis(out.handBodyWorldAtGrab);
             out.objectNodeWorldAtGrabBasis = grab_transform_telemetry::makeOrientationBasis(out.objectNodeWorldAtGrab);
@@ -2245,6 +2246,7 @@ namespace rock
             out.rawHandSpaceBasis = grab_transform_telemetry::makeOrientationBasis(out.rawHandSpace);
             out.constraintHandSpaceBasis = grab_transform_telemetry::makeOrientationBasis(out.constraintHandSpace);
             out.bodyLocalBasis = grab_transform_telemetry::makeOrientationBasis(out.bodyLocal);
+            out.constraintBodyLocalBasis = grab_transform_telemetry::makeOrientationBasis(out.constraintBodyLocal);
             out.currentRawDesiredObjectWorld =
                 grab_transform_telemetry::computeCurrentDesiredObjectFromFrame(out.rawHandWorld, _grabFrame.rawHandSpace);
             out.currentRawDesiredObjectWorldBasis = grab_transform_telemetry::makeOrientationBasis(out.currentRawDesiredObjectWorld);
@@ -2383,6 +2385,62 @@ namespace rock
                 out.linearMotorMaxForce = (std::max)(std::fabs(_activeConstraint.linearMotor->minForce), std::fabs(_activeConstraint.linearMotor->maxForce));
             }
             out.hasConstraintAngularTelemetry = true;
+        }
+
+        if (_grabFrame.hasTelemetryCapture && (out.hasHandBodyWorld || out.hasProxyReadback)) {
+            /*
+             * Diagnostic-only frame-chain candidates. These deliberately do not
+             * feed the active drive. The current bug is a visual/node frame that
+             * starts correct while the body-authority target is already about
+             * 90 degrees away. Logging all plausible body targets from the same
+             * captured relation lets us identify the correct chain before any
+             * behavior change.
+             */
+            auto addFrameChainCandidate = [&](const char* label, const RE::NiTransform& bodyWorld) {
+                if (out.frameChainCandidateCount >= grab_transform_telemetry::kFrameChainCandidateCapacity) {
+                    return;
+                }
+
+                auto& candidate = out.frameChainCandidates[out.frameChainCandidateCount++];
+                candidate.label = label ? label : "unnamed";
+                candidate.bodyWorld = bodyWorld;
+                candidate.bodyBasis = grab_transform_telemetry::makeOrientationBasis(bodyWorld);
+                candidate.nodeFromBodyLocalWorld = deriveNodeWorldFromBodyWorld(bodyWorld, _grabFrame.bodyLocal);
+                candidate.nodeFromConstraintBodyLocalWorld = deriveNodeWorldFromBodyWorld(bodyWorld, _grabFrame.constraintBodyLocal);
+                candidate.nodeFromBodyLocalBasis = grab_transform_telemetry::makeOrientationBasis(candidate.nodeFromBodyLocalWorld);
+                candidate.nodeFromConstraintBodyLocalBasis = grab_transform_telemetry::makeOrientationBasis(candidate.nodeFromConstraintBodyLocalWorld);
+                if (out.hasHeldNativeBodyWorld) {
+                    candidate.bodyToNativeBody = grab_transform_telemetry::measureTransformDelta(bodyWorld, out.heldNativeBodyWorld);
+                }
+                if (out.hasHeldBodyWorld) {
+                    candidate.bodyToHeldBody = grab_transform_telemetry::measureTransformDelta(bodyWorld, out.heldBodyWorld);
+                }
+                candidate.bodyToConstraintDesiredBody =
+                    grab_transform_telemetry::measureTransformDelta(bodyWorld, out.currentConstraintDesiredBodyWorld);
+                if (out.hasHeldNodeWorld) {
+                    candidate.nodeBodyLocalToHeldNode =
+                        grab_transform_telemetry::measureTransformDelta(candidate.nodeFromBodyLocalWorld, out.heldNodeWorld);
+                    candidate.nodeConstraintLocalToHeldNode =
+                        grab_transform_telemetry::measureTransformDelta(candidate.nodeFromConstraintBodyLocalWorld, out.heldNodeWorld);
+                }
+                candidate.nodeBodyLocalToConstraintDesiredNode =
+                    grab_transform_telemetry::measureTransformDelta(candidate.nodeFromBodyLocalWorld, out.currentConstraintDesiredObjectWorld);
+                candidate.nodeConstraintLocalToConstraintDesiredNode =
+                    grab_transform_telemetry::measureTransformDelta(candidate.nodeFromConstraintBodyLocalWorld, out.currentConstraintDesiredObjectWorld);
+                candidate.valid = true;
+            };
+
+            addFrameChainCandidate("currentConBody", out.currentConstraintDesiredBodyWorld);
+            addFrameChainCandidate("conNode*bodyLocal", multiplyTransforms(out.currentConstraintDesiredObjectWorld, _grabFrame.bodyLocal));
+            addFrameChainCandidate("conNode*constraintBodyLocal", multiplyTransforms(out.currentConstraintDesiredObjectWorld, _grabFrame.constraintBodyLocal));
+            addFrameChainCandidate("rawNode*bodyLocal", multiplyTransforms(out.currentRawDesiredObjectWorld, _grabFrame.bodyLocal));
+            addFrameChainCandidate("rawNode*constraintBodyLocal", multiplyTransforms(out.currentRawDesiredObjectWorld, _grabFrame.constraintBodyLocal));
+            if (out.hasHeldNodeWorld) {
+                addFrameChainCandidate("heldNode*bodyLocal", multiplyTransforms(out.heldNodeWorld, _grabFrame.bodyLocal));
+                addFrameChainCandidate("heldNode*constraintBodyLocal", multiplyTransforms(out.heldNodeWorld, _grabFrame.constraintBodyLocal));
+            }
+            addFrameChainCandidate("conNode*invBodyLocal", multiplyTransforms(out.currentConstraintDesiredObjectWorld, invertTransform(_grabFrame.bodyLocal)));
+            out.hasFrameChainCandidates = out.frameChainCandidateCount > 0;
         }
 
         return true;

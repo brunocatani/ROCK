@@ -1047,6 +1047,66 @@
                         grab_transform_telemetry::formatBasisDelta("heldBodyToConDesiredBody", sample.heldBodyBasis, sample.currentConstraintDesiredBodyWorldBasis),
                         grab_transform_telemetry::formatBasisDelta("nativeBodyToHeldBody", sample.heldNativeBodyBasis, sample.heldBodyBasis),
                         grab_transform_telemetry::formatBasisDelta("rawHandToHeldRelativeHand", sample.rawHandBasis, sample.heldRelativeHandTargetBasis));
+                    if (sample.hasFrameChainCandidates) {
+                        ROCK_LOG_INFO(Hand,
+                            "GRAB FRAMECHAIN CANDIDATES {} {} side={} count={} hmd={} hmdForward={} heldNative={} heldBody={} heldNode={} conBody={} conNode={} bodyLocal={} constraintBodyLocal={}",
+                            prefix,
+                            phaseLabel,
+                            sideLabel,
+                            sample.frameChainCandidateCount,
+                            context.hasHmdFrame ? "yes" : "no",
+                            grab_transform_telemetry::formatVector3(context.hmdForwardWorld),
+                            sample.hasHeldNativeBodyWorld ? "yes" : "no",
+                            sample.hasHeldBodyWorld ? "yes" : "no",
+                            sample.hasHeldNodeWorld ? "yes" : "no",
+                            grab_transform_telemetry::formatBasis("conBody", sample.currentConstraintDesiredBodyWorldBasis),
+                            grab_transform_telemetry::formatBasis("conNode", sample.currentConstraintDesiredObjectWorldBasis),
+                            grab_transform_telemetry::formatBasis("bodyLocal", sample.bodyLocalBasis),
+                            grab_transform_telemetry::formatBasis("constraintBodyLocal", sample.constraintBodyLocalBasis));
+                        const auto candidateCount = (std::min)(
+                            static_cast<std::size_t>(sample.frameChainCandidateCount),
+                            grab_transform_telemetry::kFrameChainCandidateCapacity);
+                        for (std::size_t candidateIndex = 0; candidateIndex < candidateCount; ++candidateIndex) {
+                            const auto& candidate = sample.frameChainCandidates[candidateIndex];
+                            if (!candidate.valid) {
+                                continue;
+                            }
+                            ROCK_LOG_INFO(Hand,
+                                "GRAB FRAMECHAIN CANDIDATE {} {} side={} index={} label={} body={} bodyToNative={:.3f}gu/{:.3f}deg bodyToHeld={:.3f}gu/{:.3f}deg bodyToCon={:.3f}gu/{:.3f}deg nodeBodyLocalToHeld={:.3f}gu/{:.3f}deg nodeBodyLocalToConNode={:.3f}gu/{:.3f}deg nodeConstraintLocalToHeld={:.3f}gu/{:.3f}deg nodeConstraintLocalToConNode={:.3f}gu/{:.3f}deg",
+                                prefix,
+                                phaseLabel,
+                                sideLabel,
+                                candidateIndex,
+                                candidate.label,
+                                grab_transform_telemetry::formatVector3(candidate.bodyWorld.translate),
+                                candidate.bodyToNativeBody.positionGameUnits,
+                                candidate.bodyToNativeBody.rotationDegrees,
+                                candidate.bodyToHeldBody.positionGameUnits,
+                                candidate.bodyToHeldBody.rotationDegrees,
+                                candidate.bodyToConstraintDesiredBody.positionGameUnits,
+                                candidate.bodyToConstraintDesiredBody.rotationDegrees,
+                                candidate.nodeBodyLocalToHeldNode.positionGameUnits,
+                                candidate.nodeBodyLocalToHeldNode.rotationDegrees,
+                                candidate.nodeBodyLocalToConstraintDesiredNode.positionGameUnits,
+                                candidate.nodeBodyLocalToConstraintDesiredNode.rotationDegrees,
+                                candidate.nodeConstraintLocalToHeldNode.positionGameUnits,
+                                candidate.nodeConstraintLocalToHeldNode.rotationDegrees,
+                                candidate.nodeConstraintLocalToConstraintDesiredNode.positionGameUnits,
+                                candidate.nodeConstraintLocalToConstraintDesiredNode.rotationDegrees);
+                            ROCK_LOG_INFO(Hand,
+                                "GRAB FRAMECHAIN AXES {} {} side={} index={} label={} {} {} {} {} {}",
+                                prefix,
+                                phaseLabel,
+                                sideLabel,
+                                candidateIndex,
+                                candidate.label,
+                                grab_transform_telemetry::formatBasisDelta("bodyToConBody", candidate.bodyBasis, sample.currentConstraintDesiredBodyWorldBasis),
+                                grab_transform_telemetry::formatBasisDelta("bodyToNativeBody", candidate.bodyBasis, sample.heldNativeBodyBasis),
+                                grab_transform_telemetry::formatBasisDelta("bodyToHeldBody", candidate.bodyBasis, sample.heldBodyBasis),
+                                grab_transform_telemetry::formatBasisDelta("nodeBodyLocalToHeldNode", candidate.nodeFromBodyLocalBasis, sample.heldNodeBasis),
+                                grab_transform_telemetry::formatBasisDelta("nodeConstraintLocalToHeldNode", candidate.nodeFromConstraintBodyLocalBasis, sample.heldNodeBasis));
+                        }
+                    }
                     if (sample.hasConstraintAngularTelemetry) {
                         ROCK_LOG_INFO(Hand,
                             "GRAB TELEMETRY {} {} transformBLocal=({:.2f},{:.2f},{:.2f}) desiredTransformBLocal=({:.2f},{:.2f},{:.2f}) transformBErr={:.3f}gu targetErr(colsInv={:.3f}deg rowsInv={:.3f}deg colsForward={:.3f}deg colsTransformB={:.3f}deg) ragEnabled={} angTau={:.3f} angDamping={:.3f} angForce={:.1f} linTau={:.3f} linForce={:.1f} mass={:.3f}",

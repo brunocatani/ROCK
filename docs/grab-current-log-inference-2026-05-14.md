@@ -255,6 +255,53 @@ The correct chain should be the one that is near zero against the intended
 visual/node relation while preserving the same body frame consumed by the
 constraint.
 
+## Diagnostic Added After This Finding
+
+Implementation-only note, no behavior change:
+
+- added `GRAB FRAMECHAIN CANDIDATES` and `GRAB FRAMECHAIN CANDIDATE` log rows;
+- the active grab drive still uses the same current target path;
+- no candidate is fed back into motor, constraint, pivot, proxy, or hand pose
+  authority.
+
+The diagnostic logs these candidate body targets from the same frame:
+
+- `currentConBody`: the current body target used by the custom authority path;
+- `conNode*bodyLocal`: current desired visual/node target composed with the
+  captured BODY-local relation;
+- `conNode*constraintBodyLocal`: current desired visual/node target composed
+  with the captured constraint-body-local relation;
+- `rawNode*bodyLocal`: raw hand desired node target composed with BODY-local;
+- `rawNode*constraintBodyLocal`: raw hand desired node target composed with
+  constraint-body-local;
+- `heldNode*bodyLocal`: live visual node composed with BODY-local;
+- `heldNode*constraintBodyLocal`: live visual node composed with
+  constraint-body-local;
+- `conNode*invBodyLocal`: intentionally suspicious inverse candidate, included
+  only to prove or disprove an inverse/order error.
+
+Each candidate logs:
+
+- body delta to native BODY readback;
+- body delta to held/MOTION readback;
+- body delta to current constraint desired body;
+- node-from-BODY-local delta to live visual node;
+- node-from-BODY-local delta to current desired node;
+- node-from-constraint-body-local delta to live visual node;
+- node-from-constraint-body-local delta to current desired node;
+- per-axis basis deltas for candidate body and derived node frames.
+
+Expected interpretation:
+
+- If `heldNode*bodyLocal` or `conNode*bodyLocal` is near zero against the visual
+  node but far from `currentConBody`, the current body target formula is wrong.
+- If `conNode*constraintBodyLocal` is near zero and `conNode*bodyLocal` is not,
+  the wrong local body relation is being used.
+- If candidate correctness changes when the player turns, the bug is in
+  world/local composition or player-space compensation.
+- If every candidate is wrong, the captured source relation is incomplete and we
+  need one deeper FO4VR body readback point before changing behavior.
+
 ## Current Honest Conclusion
 
 The logs show enough to say the current fix is insufficient and the root issue
