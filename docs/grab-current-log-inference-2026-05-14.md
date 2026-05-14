@@ -700,3 +700,267 @@ Most likely next code investigation target:
   should only be a solver body that is driven toward that target;
 - if the proxy remains, after-solve proxy orientation must not become the next
   frame's hand/object reference authority.
+
+## Source Pass After 19:10 Log
+
+This section supersedes the broad "transform convention" suspicion for the
+current runtime symptom. The collider convention was restored and the fresh log
+still shows the dynamic grab problem. The active evidence now points at the
+custom grab authority/rotation writers, not at old INI pivot authority or the
+general generated-collider transform convention.
+
+### Runtime Writer Order In Current Source
+
+Relevant source paths:
+
+- `src/physics-interaction/hand/HandGrab.cpp`
+  - `Hand::resolveGrabAuthorityProxyFrame`
+  - `Hand::createProxyConstraintGrabDrive`
+  - `Hand::updateProxyConstraintGrabDriveTarget`
+  - `Hand::applyProxyConstraintAngularVelocityDrive`
+  - `Hand::flushPendingCustomGrabAuthority`
+- `src/physics-interaction/core/PhysicsInteraction.cpp`
+  - `PhysicsInteraction::applyHeldPlayerSpaceVelocity`
+  - `PhysicsInteraction::driveGrabAuthorityPhase0ProbeFromBetweenStep`
+- `src/physics-interaction/grab/HeldPlayerSpaceRegistry.cpp`
+  - `held_player_space_registry::applyCentralPlayerSpaceVelocity`
+- `src/physics-interaction/native/GeneratedKeyframedBodyDrive.cpp`
+  - `driveGeneratedKeyframedBody`
+  - `placeGeneratedKeyframedBodyImmediately`
+
+Current flow:
+
+1. Held update resolves the root-flattened palm authority frame with
+   `resolveGrabAuthorityProxyFrame`.
+2. For proxy-constraint grab, held update computes:
+   - `desiredObjectWorld = proxyAuthorityWorld * constraintHandSpace`;
+   - `desiredBodyWorld = proxyAuthorityWorld * constraintBodyHandSpace`;
+   - `activePivotBBodyLocalGame = activeProxyConstraintPivotBLocalGame()`.
+3. Held update queues only the proxy authority target through
+   `queueProxyGrabAuthorityTarget`.
+4. Between collide and solve, `flushPendingCustomGrabAuthority`:
+   - copies the queued target;
+   - computes linear velocity from previous proxy target to current proxy
+     target;
+   - computes angular velocity with FO4VR's hard-keyframe helper;
+   - calls `_grabAuthorityProxy.setTransform(targetHavok)`;
+   - immediately calls `_grabAuthorityProxy.setVelocity(linearVelocity,
+     angularVelocity)`;
+   - updates linear constraint target data;
+   - applies object angular velocity directly through
+     `world->SetBodyAngularVelocity`.
+
+This means the active custom grab currently has two separate movement
+authorities:
+
+- body-A/proxy linear constraint authority;
+- direct body-B angular velocity authority.
+
+The ragdoll angular atom is disabled in `createGrabConstraint`:
+
+- `setGrabMotorAtomsActive(header, true, false)`;
+- log label: `directAngularDrive=yes ragdollAtom=disabled`.
+
+So object rotation is not coming from a hkp/HIGGS-style angular constraint
+solver. It is coming from ROCK's direct FO4VR hknp angular-velocity write.
+
+### Player-Space Compensation Is Not The Primary 19:10 Cause
+
+Fresh log rows:
+
+- `Held player-space: ... warp=no distWarp=no rotWarp=no rotDelta=0.00deg
+  delta=(0.00,0.00,0.00) velHk=(0.000,0.000,0.000)`;
+- `Held player-space central writer: ... runtimeWarp=no distWarp=no
+  rotWarp=no bodies=2 registered=1 motionsWritten=1 transformsWarped=0`.
+
+Conclusion:
+
+- player-space compensation is active as a velocity writer, but in this run it
+  is not applying transform warps and is not producing rotation deltas;
+- it remains worth keeping in the map because it can preserve/damp angular
+  velocity, but it does not explain the immediate proxy post-solve rotation
+  error seen in this log.
+
+### Confirmed: Proxy Post-Solve Rotation Equals Proxy Angular Velocity Integration
+
+The strongest concrete finding from this pass:
+
+- before solve, `PROXY GRAB AUTHORITY` reports `proxyErr=0.000gu/0.00deg`
+  or near zero;
+- after solve, `PROXY GRAB AFTER_SOLVE` reports a proxy angular error that
+  closely equals `proxyAngVel * dt`.
+
+Examples:
+
+| Hand | Seq | `proxyAngVel` | `dt` | Expected integrated angle | Logged after-solve proxy angle |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| R | 61 | 29.575 rad/s | 0.016667 | 28.24 deg | 27.69 deg |
+| R | 106 | 28.453 rad/s | 0.016667 | 27.17 deg | 26.68 deg |
+| R | 151 | 20.511 rad/s | 0.016667 | 19.59 deg | 19.40 deg |
+| R | 16 | 10.536 rad/s | 0.016667 | 10.06 deg | 10.04 deg |
+| L | 61 | 7.964 rad/s | 0.016667 | 7.60 deg | 7.59 deg |
+
+Conclusion:
+
+- the hidden proxy is being put exactly at the target and then told to keep
+  spinning during the same solver step;
+- the post-solve proxy rotation error is not random and not primarily an INI
+  pivot issue;
+- this is a direct consequence of exact `setTransform(target)` plus nonzero
+  angular `setVelocity(...)` on the proxy.
+
+This is different from the generated hand/body collider drive:
+
+- generated colliders use `DriveToKeyFrame(target, dt)` for normal drive;
+- when generated colliders are placed exactly, `placeGeneratedKeyframedBodyImmediately`
+  also zeroes velocity immediately;
+- generated colliders do not normally use exact transform placement plus
+  nonzero angular velocity on the same body in the same mode.
+
+That distinction explains how the generated colliders can be visually correct
+while the grab proxy, which uses a different drive policy, rotates away after
+solve.
+
+### Telemetry Nuance: `conDesired` Is A Live-Proxy Diagnostic, Not Always The Command
+
+`getGrabTransformTelemetrySnapshot` uses the live proxy readback as
+`constraintAnchorWorld` when the proxy exists. It then derives:
+
+- `currentConstraintDesiredObjectWorld =
+  constraintAnchorWorld * constraintHandSpace`;
+- `currentConstraintDesiredBodyWorld =
+  constraintAnchorWorld * constraintBodyHandSpace`.
+
+But the actual between-step command in `flushPendingCustomGrabAuthority` uses
+the queued `pending.proxyWorld`, not the after-solve live proxy readback.
+
+Conclusion:
+
+- the large `conDesired` jumps prove the live proxy readback is corrupted after
+  solve;
+- they do not by themselves prove the queued command target is corrupted;
+- however, the solver does see the proxy body during the step, so letting the
+  proxy integrate angular velocity is still a real physics problem, not only a
+  log problem.
+
+### Current High-Confidence Cause
+
+The custom proxy drive violates a clean keyframed-body policy:
+
+- it sets the proxy transform to the authority target;
+- then it sets a nonzero angular velocity computed as if the proxy still needed
+  to travel toward that target;
+- after solve, the proxy has rotated away by approximately that angular
+  velocity times the physics delta.
+
+That can affect grab quality in two ways:
+
+- the linear constraint body-A is not a stable palm anchor during solve;
+- telemetry and any future code using live proxy readback can inherit the
+  after-solve proxy rotation instead of the root-flattened authority frame.
+
+The active object rotation still has a second unresolved branch:
+
+- direct `SetBodyAngularVelocity` on body B may still have an axis-convention or
+  target-frame issue;
+- the 19:10 log proves the proxy body-A error, but it does not fully prove the
+  direct body-B angular vector maps every physical wrist axis correctly.
+
+### What Is Still Uncertain
+
+Still not proven from the current log alone:
+
+- whether removing proxy angular velocity is sufficient to fix the visible
+  N/S/E/W object-axis issue;
+- whether the direct body-B angular velocity vector from FO4VR's
+  hard-keyframe helper has the correct sign/basis for all hand/controller
+  rotations;
+- whether a pure linear constraint plus direct angular body write is the final
+  correct architecture, or whether a FO4VR-native angular constraint/motor path
+  must be reintroduced after proper binary mapping;
+- whether the held visual hand path is following the object error, the proxy
+  error, or both during the user's specific physical wrist actions.
+
+### Investigation Direction Before Any Behavior Patch
+
+The next useful investigation should isolate two questions:
+
+1. Body-A/proxy policy:
+   - should the proxy be an exact hidden body with zero velocity every
+     between-step;
+   - or should it be driven only by velocity without exact transform snapping;
+   - current mixed policy is internally inconsistent and confirmed by logs.
+2. Body-B angular authority:
+   - compare the requested object angular velocity vector, the target-frame
+     rotation delta, and the actual next-frame body delta in world, hand-local,
+     and HMD-local coordinates;
+   - determine whether the direct `SetBodyAngularVelocity` vector is correct
+     but fighting the proxy, or whether it is independently world-axis bound.
+
+No implementation conclusion should ignore both branches. The proxy bug is
+confirmed; the direct angular writer remains a separate suspect for the
+world-direction/N/S/E/W symptom.
+
+### Angular-Delta Object Motion Evidence
+
+Aggregate `GRAB ANGULAR_DELTA` rows from the same run:
+
+| Hand/session | Rows | Raw avg/max | Proxy avg/max | Held node avg/max | Held body avg/max |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| R/6 | 227 | 2.60 / 10.86 deg | 27.93 / 76.37 deg | 5.05 / 15.84 deg | 2.81 / 15.13 deg |
+| L/7 | 156 | 1.47 / 2.31 deg | 12.59 / 47.89 deg | 4.57 / 24.93 deg | 2.16 / 12.50 deg |
+
+This separates two facts:
+
+- the live proxy is much more wrong than the object body on average;
+- the held object and visible node still rotate more than the raw hand in many
+  rows, so the user-visible symptom is real and not only bad proxy telemetry.
+
+Representative rows where raw hand motion is small but object/proxy motion is
+larger:
+
+- R/6 frame 235:
+  - raw `0.447 deg`;
+  - proxy `36.138 deg`;
+  - held node `10.725 deg`;
+  - held body `3.913 deg`.
+- R/6 frame 238:
+  - raw `1.368 deg`;
+  - proxy `37.641 deg`;
+  - held node `8.403 deg`;
+  - held body `3.287 deg`.
+- L/7 frame 111:
+  - raw `1.979 deg`;
+  - proxy `19.356 deg`;
+  - held node `15.769 deg`;
+  - held body `5.836 deg`.
+- L/7 frame 69:
+  - raw `1.845 deg`;
+  - proxy `19.950 deg`;
+  - held node `8.046 deg`;
+  - held body `6.157 deg`.
+
+Interpretation:
+
+- the proxy angular-velocity integration bug is proven;
+- the object/visual hand are not simply copying the full proxy error, but they
+  are being disturbed while the proxy is wrong;
+- because the angular atom is disabled, any remaining object-axis/N/S/E/W issue
+  must be in one of these places:
+  - the direct body-B angular velocity vector passed to
+    `SetBodyAngularVelocity`;
+  - the target body frame passed into the FO4VR hard-keyframe helper;
+  - body-A proxy velocity feeding the linear constraint with a moving/rotating
+    anchor during solve;
+  - visual hand/object relation being reconstructed from a live frame that is
+    already solver-disturbed.
+
+Current confidence:
+
+- high confidence: exact proxy transform plus nonzero proxy angular velocity is
+  wrong and must be removed or redesigned;
+- medium confidence: this explains a large part of stutter/axis confusion
+  because body A is not a stable palm anchor during solve;
+- not yet proven: direct body-B angular vector convention is correct. The log
+  only records its magnitude (`rawAng`, `appliedAng`, `capAng`), not the vector
+  basis/sign, so it cannot fully prove pitch/yaw/roll correctness.
