@@ -181,8 +181,8 @@ namespace rock
     }
 
     ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
-        const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
-        const RE::NiTransform& desiredBodyTransformHandSpace, const GrabConstraintMotorTuning& tuning)
+        const RE::NiTransform& handBodyWorld, const RE::NiTransform& angularAuthorityWorld, const RE::NiPoint3& palmWorldGame,
+        const float* pivotBBodyLocalHk, const RE::NiTransform& desiredBodyTransformAuthoritySpace, const GrabConstraintMotorTuning& tuning)
     {
         ActiveConstraint result;
         if (!world) {
@@ -261,22 +261,18 @@ namespace rock
 
         {
             auto* tA_col0 = reinterpret_cast<float*>(header + offsets::kTransformA_Col0);
-            auto* tA_col1 = reinterpret_cast<float*>(header + offsets::kTransformA_Col1);
-            auto* tA_col2 = reinterpret_cast<float*>(header + offsets::kTransformA_Col2);
             auto* tA_pos = reinterpret_cast<float*>(header + offsets::kTransformA_Pos);
 
-            tA_col0[0] = 1.0f;
-            tA_col0[1] = 0.0f;
-            tA_col0[2] = 0.0f;
-            tA_col0[3] = 0.0f;
-            tA_col1[0] = 0.0f;
-            tA_col1[1] = 1.0f;
-            tA_col1[2] = 0.0f;
-            tA_col1[3] = 0.0f;
-            tA_col2[0] = 0.0f;
-            tA_col2[1] = 0.0f;
-            tA_col2[2] = 1.0f;
-            tA_col2[3] = 0.0f;
+            /*
+             * Body A is the generated palm/proxy collider. Its translation is
+             * the correct linear anchor, but its axes are collider geometry.
+             * The angular constraint frame must be the raw controller /
+             * flattened-root hand frame, represented as a body-A-local
+             * transform-A rotation before the constraint is inserted.
+             */
+            const RE::NiTransform transformAFrameLocal =
+                transform_math::composeTransforms(transform_math::invertTransform(handBodyWorld), angularAuthorityWorld);
+            grab_constraint_math::writeGrabTransformARotation(tA_col0, transformAFrameLocal.rotate);
 
             grab_constraint_math::writeConstraintPivotLocalTranslation(tA_pos, handBodyWorld, palmWorldGame, gameToHavokScale());
 
@@ -284,7 +280,8 @@ namespace rock
             auto* tB_pos = reinterpret_cast<float*>(header + offsets::kTransformB_Pos);
             auto* targetBRca = reinterpret_cast<float*>(header + ATOM_RAGDOLL_MOT + 0x10);
 
-            grab_constraint_math::writeInitialGrabAngularFrame(tB_col0, targetBRca, desiredBodyTransformHandSpace);
+            grab_constraint_math::writeInitialGrabTransformBRotation(tB_col0, desiredBodyTransformAuthoritySpace);
+            grab_constraint_math::writeGrabRagdollAngularTarget(targetBRca, desiredBodyTransformAuthoritySpace, transformAFrameLocal.rotate);
 
             tB_pos[0] = pivotBBodyLocalHk[0];
             tB_pos[1] = pivotBBodyLocalHk[1];
@@ -294,10 +291,10 @@ namespace rock
             ROCK_LOG_TRACE(GrabConstraint,
                 "setInBodySpace: pivotA=({:.3f},{:.3f},{:.3f}) [palm] "
                 "pivotB=({:.3f},{:.3f},{:.3f}) [active-pivot-b] "
-                "tB_inverse_col0=({:.3f},{:.3f},{:.3f})",
-                tA_pos[0], tA_pos[1], tA_pos[2], tB_pos[0], tB_pos[1], tB_pos[2], tB_col0[0], tB_col0[1], tB_col0[2]);
+                "tA_col0=({:.3f},{:.3f},{:.3f}) tB_inverse_col0=({:.3f},{:.3f},{:.3f})",
+                tA_pos[0], tA_pos[1], tA_pos[2], tB_pos[0], tB_pos[1], tB_pos[2], tA_col0[0], tA_col0[1], tA_col0[2], tB_col0[0], tB_col0[1], tB_col0[2]);
 
-            ROCK_LOG_TRACE(GrabConstraint, "target_bRca initial inverse: col0=[{:.3f},{:.3f},{:.3f}] col1=[{:.3f},{:.3f},{:.3f}]", targetBRca[0], targetBRca[1],
+            ROCK_LOG_TRACE(GrabConstraint, "target_bRca initial composed: col0=[{:.3f},{:.3f},{:.3f}] col1=[{:.3f},{:.3f},{:.3f}]", targetBRca[0], targetBRca[1],
                 targetBRca[2], targetBRca[4], targetBRca[5], targetBRca[6]);
         }
 
@@ -353,19 +350,16 @@ namespace rock
         }
 
         /*
-         * FO4VR's type-19 ragdoll angular atom is not used as dynamic grab
-         * rotation authority. Runtime logs showed the proxy and linear pivot
-         * tracking correctly while the object stayed 90-180 degrees off, and
-         * Ghidra shows the hknp-era atom composes target_bRca through body B in
-         * a solver path that is not proven equivalent to HIGGS' Skyrim hkp
-         * equation. The linear atoms stay enabled for the selected contact
-         * pivot; angular authority is applied once per physics step through the
-         * verified FO4VR hknp angular-velocity API using the same finite motor
-         * budget stored in angularMotor below.
+         * The custom grab has one production angular authority: the type-19
+         * ragdoll motor atom. Ghidra confirms FO4VR updates this atom by
+         * composing target_bRca with transform-A rotation. ROCK writes transform
+         * A from the proxy-to-raw-hand frame and leaves the direct held-body
+         * angular velocity path out of the held flush so the solver has one
+         * coherent finite-force angular target.
          */
-        setGrabMotorAtomsActive(header, true, false);
+        setGrabMotorAtomsActive(header, true, true);
 
-        ROCK_LOG_DEBUG(GrabConstraint, "Motors attached before CreateConstraint: angularBudget={:.0f} directAngularDrive=yes ragdollAtom=disabled linear={:.0f}", angularMaxForce, linearMaxForce);
+        ROCK_LOG_DEBUG(GrabConstraint, "Motors attached before CreateConstraint: angularBudget={:.0f} angularAuthority=ragdollAtom linear={:.0f}", angularMaxForce, linearMaxForce);
 
         RE::hknpConstraintCinfo cinfo{};
         cinfo.constraintData = reinterpret_cast<RE::hkpConstraintData*>(cd);
@@ -401,8 +395,9 @@ namespace rock
     }
 
     ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
-        const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
-        const RE::NiTransform& desiredBodyTransformHandSpace, float tau, float damping, float maxForce, float proportionalRecovery, float constantRecovery)
+        const RE::NiTransform& handBodyWorld, const RE::NiTransform& angularAuthorityWorld, const RE::NiPoint3& palmWorldGame,
+        const float* pivotBBodyLocalHk, const RE::NiTransform& desiredBodyTransformAuthoritySpace, float tau, float damping, float maxForce,
+        float proportionalRecovery, float constantRecovery)
     {
         const float angularForceRatio = safePositiveMotorValue(g_rockConfig.rockGrabAngularToLinearForceRatio, 12.5f);
         const float linearMaxForce = (std::max)(0.0f, std::isfinite(maxForce) ? maxForce : 0.0f);
@@ -411,9 +406,10 @@ namespace rock
             handBodyId,
             objectBodyId,
             handBodyWorld,
+            angularAuthorityWorld,
             palmWorldGame,
             pivotBBodyLocalHk,
-            desiredBodyTransformHandSpace,
+            desiredBodyTransformAuthoritySpace,
             GrabConstraintMotorTuning{
                 .linearTau = tau,
                 .linearDamping = damping,

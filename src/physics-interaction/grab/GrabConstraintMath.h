@@ -8,14 +8,13 @@
 namespace rock::grab_constraint_math
 {
     /*
-     * ROCK creates grab angular constraints in the object-to-hand frame and
-     * refreshes the object-space transform-B pivot from that same frame during
-     * every held update. Transform A comes from the live physics hand, so a
-     * frozen transform-B pivot makes the linear and angular goals disagree: the
-     * pivot can be visually locked while the held body cannot rotate into the
-     * desired frame. Keeping both target_bRca and transformB.translation
-     * conversions here makes constraint creation and per-frame writes use one
-     * verified convention.
+     * Dynamic grab uses the proxy/palm collider as body-A linear anchor, but
+     * raw controller / flattened-root hand rotation as angular authority.
+     * FO4VR's native ragdoll target updater composes target_bRca with
+     * transform-A rotation, so the transform-A, transform-B, and target writes
+     * stay split here. That prevents the held object from being driven by the
+     * proxy collider's geometry axes while preserving the selected contact
+     * pivot as the linear grip authority.
      */
 
     /*
@@ -70,20 +69,47 @@ namespace rock::grab_constraint_math
         target[11] = 0.0f;
     }
 
+    template <class Matrix>
+    inline void writeGrabTransformARotation(float* transformARotation, const Matrix& transformALocalRotation)
+    {
+        writeHavokRotationColumns(transformARotation, transformALocalRotation);
+    }
+
     template <class Transform>
-    inline void writeInitialGrabAngularFrame(float* transformBRotation, float* targetBRca, const Transform& desiredBodyTransformHandSpace)
+    inline void writeInitialGrabTransformBRotation(float* transformBRotation, const Transform& desiredBodyTransformAuthoritySpace)
+    {
+        const auto bodyToAuthorityRotation = desiredBodyToHandRotation(desiredBodyTransformAuthoritySpace.rotate);
+        writeHavokRotationColumns(transformBRotation, bodyToAuthorityRotation);
+    }
+
+    template <class Matrix>
+    inline Matrix composeRagdollAngularTargetRotation(const Matrix& bodyToAuthorityRotation, const Matrix& transformALocalRotation)
     {
         /*
-         * Dynamic grab must keep HIGGS' angular convention while writing raw
-         * FO4VR hknp bytes directly. HIGGS stores transform-B rotation and
-         * target_bRca as the inverse body-in-hand relation in hkMatrix column
-         * blocks. The row writer made ROCK telemetry's row-reader look correct,
-         * but the hknp solver consumed the bytes as columns and saw the forward
-         * relation instead, causing the grab-start object/hand rotation snap.
+         * Ghidra-confirmed FO4VR updater:
+         *   0x1419B26C0 -> 0x1417CF420(target_bRca, bRa, transformA.rotation)
+         *
+         * This mirrors HIGGS' symbolic hkp call:
+         *   target_bRca = bRa * transformA.rotation
+         *
+         * ROCK keeps this as a matrix helper instead of rewriting the raw bytes
+         * by hand at each call site.
          */
-        const auto bodyToHandRotation = desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
-        writeHavokRotationColumns(transformBRotation, bodyToHandRotation);
-        writeHavokRotationColumns(targetBRca, bodyToHandRotation);
+        return transform_math::multiplyStoredRotations(bodyToAuthorityRotation, transformALocalRotation);
+    }
+
+    template <class Transform, class Matrix>
+    inline void writeGrabRagdollAngularTarget(float* targetBRca,
+        const Transform& desiredBodyTransformAuthoritySpace,
+        const Matrix& transformALocalRotation)
+    {
+        if (!targetBRca) {
+            return;
+        }
+
+        const auto bodyToAuthorityRotation = desiredBodyToHandRotation(desiredBodyTransformAuthoritySpace.rotate);
+        const auto targetRotation = composeRagdollAngularTargetRotation(bodyToAuthorityRotation, transformALocalRotation);
+        writeHavokRotationColumns(targetBRca, targetRotation);
     }
 
     template <class Transform, class Vector>
