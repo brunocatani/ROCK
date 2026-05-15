@@ -256,7 +256,6 @@ namespace rock
         }
         _activeConstraint.clear();
         abandonGrabAuthorityProxy();
-        _heldDriveMode = HeldObjectDriveMode::ProxyConstraint;
         _savedObjectState.clear();
         _activeGrabLifecycle.clear();
         _grabStartTime = 0.0f;
@@ -353,7 +352,6 @@ namespace rock
         _savedObjectState.clear();
         _activeGrabLifecycle.clear();
         _heldBodyIds.clear();
-        _heldDriveMode = HeldObjectDriveMode::ProxyConstraint;
         clearPullRuntimeState();
         clearPullCatchIntent("worldLoss");
         clearActorEquipmentDropHandoff("worldLoss");

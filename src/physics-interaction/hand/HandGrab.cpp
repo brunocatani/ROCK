@@ -450,14 +450,7 @@ namespace rock
             return selectedBase && selectedBase->Is(RE::ENUM_FORM_ID::kWEAP);
         }
 
-        const char* heldObjectDriveModeName(HeldObjectDriveMode mode)
-        {
-            switch (mode) {
-            case HeldObjectDriveMode::ProxyConstraint:
-            default:
-                return "proxyConstraint";
-            }
-        }
+        constexpr const char* kHeldObjectDriveName = "proxyConstraint";
 
         RE::NiPoint3 constraintDrivePivotBBodyLocalGame(const CanonicalGrabFrame& frame)
         {
@@ -1910,7 +1903,7 @@ namespace rock
 
     RE::NiPoint3 Hand::activeProxyConstraintPivotBLocalGame() const
     {
-        if (_heldDriveMode == HeldObjectDriveMode::ProxyConstraint && _grabAuthorityProxyFrameValid) {
+        if (_grabAuthorityProxyFrameValid) {
             return _grabAuthorityPivotBConstraintLocalGame;
         }
         return _grabFrame.pivotBConstraintLocalGame;
@@ -2329,8 +2322,7 @@ namespace rock
             auto* transformBRotation = reinterpret_cast<const float*>(constraintData + offsets::kTransformB_Col0);
             auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + offsets::kTransformB_Pos);
 
-            const RE::NiTransform desiredBodyTransformHandSpace =
-                _heldDriveMode == HeldObjectDriveMode::ProxyConstraint ? _grabFrame.constraintBodyHandSpace : multiplyTransforms(_grabFrame.constraintHandSpace, _grabFrame.bodyLocal);
+            const RE::NiTransform desiredBodyTransformHandSpace = _grabFrame.constraintBodyHandSpace;
             const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
             const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
             const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
@@ -2579,7 +2571,6 @@ namespace rock
             _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
         }
 
-        _heldDriveMode = HeldObjectDriveMode::ProxyConstraint;
         ROCK_LOG_DEBUG(Hand,
             "{} hand proxy constraint grab drive: constraint={} looseWeapon={} proxyBody={} objBody={} filter=0x{:08X} pivotAProxy=({:.2f},{:.2f},{:.2f}) pivotBConstraint=({:.2f},{:.2f},{:.2f}) pivotBBody=({:.2f},{:.2f},{:.2f}) linearTau={:.3f} angularTau={:.3f} linearForce={:.0f} angularForce={:.0f} forceBudget={:.2f} reason={}",
             handName(),
@@ -2789,7 +2780,7 @@ namespace rock
         outRawAngularVelocityRadiansPerSecond = {};
         outAppliedAngularVelocityRadiansPerSecond = {};
 
-        if (!world || _heldDriveMode != HeldObjectDriveMode::ProxyConstraint || !_activeConstraint.isValid() ||
+        if (!world || !_activeConstraint.isValid() ||
             !_activeConstraint.angularMotor || _savedObjectState.bodyId.value == INVALID_BODY_ID ||
             !havok_physics_timing::isUsableDelta(deltaTime)) {
             return false;
@@ -2874,7 +2865,7 @@ namespace rock
         bool heldBodyColliding)
     {
         std::scoped_lock lock(_grabAuthorityProxyMutex);
-        if (_heldDriveMode != HeldObjectDriveMode::ProxyConstraint || !_grabAuthorityProxy.isValid()) {
+        if (!_grabAuthorityProxy.isValid()) {
             return;
         }
 
@@ -2919,7 +2910,7 @@ namespace rock
         (void)proportionalRecovery;
         (void)constantRecovery;
 
-        if (_heldDriveMode == HeldObjectDriveMode::ProxyConstraint) {
+        if (_activeConstraint.isValid() && _grabAuthorityProxy.isValid()) {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
             _grabAuthorityPendingTarget.authorityForceScale = sharedGrabAuthorityForceScale(true);
             ROCK_LOG_DEBUG(Hand,
@@ -2929,7 +2920,7 @@ namespace rock
                 _savedObjectState.bodyId.value,
                 _grabAuthorityPendingTarget.authorityForceScale,
                 reason ? reason : "peer-joined-held-object");
-            return _activeConstraint.isValid();
+            return true;
         }
 
         ROCK_LOG_WARN(Hand,
@@ -4828,7 +4819,7 @@ namespace rock
             }
         }
 
-        const bool driveCreated = _heldDriveMode == HeldObjectDriveMode::ProxyConstraint && _activeConstraint.isValid() && _grabAuthorityProxy.isValid();
+        const bool driveCreated = _activeConstraint.isValid() && _grabAuthorityProxy.isValid();
         if (!driveCreated) {
             ROCK_LOG_ERROR(Hand, "{} hand GRAB FAILED: proxy-constraint dynamic grab creation failed", handName());
             destroyGrabAuthorityProxy(bhkWorld);
@@ -4854,7 +4845,7 @@ namespace rock
         ROCK_LOG_DEBUG(Hand,
             "{} hand dynamic grab created: driveMode={} looseWeapon={} constraint={} proxyBody={} handBody={} objBody={} heldBodies={} linearTau={:.3f} angularTau={:.3f} linearDamping={:.2f} angularDamping={:.2f} linearForce={:.0f} angularForce={:.0f} propRecov={:.1f} constRecov={:.1f} rotRef={}",
             handName(),
-            heldObjectDriveModeName(_heldDriveMode),
+            kHeldObjectDriveName,
             _heldObjectIsLooseWeapon ? "yes" : "no",
             _activeConstraint.constraintId,
             _grabAuthorityProxy.isValid() ? _grabAuthorityProxy.getBodyId().value : INVALID_BODY_ID,
@@ -5059,8 +5050,7 @@ namespace rock
     {
         if (!isHolding() || !world)
             return;
-        if (_heldDriveMode == HeldObjectDriveMode::ProxyConstraint &&
-            (_grabAuthorityProxyReleasePending.load(std::memory_order_acquire) || !_activeConstraint.isValid() || !_grabAuthorityProxy.isValid())) {
+        if (_grabAuthorityProxyReleasePending.load(std::memory_order_acquire) || !_activeConstraint.isValid() || !_grabAuthorityProxy.isValid()) {
             ROCK_LOG_WARN(Hand, "{} hand release: proxy constraint authority marked grab invalid", handName());
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
             return;
@@ -5376,7 +5366,7 @@ namespace rock
                 ROCK_LOG_DEBUG(Hand,
                     "{} hand: HeldInit -> HeldBody ({} dynamic grab fade complete, {:.2f}s)",
                     handName(),
-                    heldObjectDriveModeName(_heldDriveMode),
+                    kHeldObjectDriveName,
                     _grabStartTime);
             }
         }
@@ -5433,7 +5423,7 @@ namespace rock
                 RE::NiTransform constraintAnchorWorld = liveHandBodyWorld;
                 const char* constraintAnchorSource = "handBody";
                 bool hasConstraintAnchor = hasLiveHandBody;
-                if (_heldDriveMode == HeldObjectDriveMode::ProxyConstraint && _grabAuthorityProxy.isValid() &&
+                if (_grabAuthorityProxy.isValid() &&
                     _grabAuthorityProxy.getBodyId().value != INVALID_BODY_ID) {
                     RE::NiTransform proxyWorld{};
                     if (tryGetGrabAuthorityBodyWorldTransform(world, _grabAuthorityProxy.getBodyId(), proxyWorld)) {
@@ -5448,9 +5438,7 @@ namespace rock
                     hasConstraintAnchor ? multiplyTransforms(constraintAnchorWorld, _grabFrame.constraintHandSpace) : desiredNodeWorldRaw;
                 const RE::NiTransform desiredBodyTransformHandSpaceRaw = multiplyTransforms(_grabFrame.rawHandSpace, _grabFrame.bodyLocal);
                 const RE::NiTransform desiredBodyWorldRaw = multiplyTransforms(handWorldTransform, desiredBodyTransformHandSpaceRaw);
-                const RE::NiTransform desiredBodyTransformConstraintSpace =
-                    _heldDriveMode == HeldObjectDriveMode::ProxyConstraint ? _grabFrame.constraintBodyHandSpace :
-                                                                              multiplyTransforms(_grabFrame.constraintHandSpace, _grabFrame.bodyLocal);
+                const RE::NiTransform desiredBodyTransformConstraintSpace = _grabFrame.constraintBodyHandSpace;
                 const RE::NiTransform desiredBodyWorldConstraint =
                     hasConstraintAnchor ? multiplyTransforms(constraintAnchorWorld, desiredBodyTransformConstraintSpace) : desiredBodyWorldRaw;
                 const RE::NiTransform grabAuthorityBodyWorld = hasGrabObjectBody ? grabObjectBodyWorld : getGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId);
@@ -5570,7 +5558,7 @@ namespace rock
                     grabFadeFactor,
                     _grabFrame.fadeInGrabConstraint ? "yes" : "no",
                     _grabFrame.motorFadeReason,
-                    heldObjectDriveModeName(_heldDriveMode),
+                    kHeldObjectDriveName,
                     _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
                     driveQueuedTargets,
                     driveFlushedTargets,
@@ -5604,7 +5592,7 @@ namespace rock
                 "paW=({:.1f},{:.1f},{:.1f}) pbW=({:.1f},{:.1f},{:.1f}) "
                 "targetBody=({:.1f},{:.1f},{:.1f}) objW=({:.1f},{:.1f},{:.1f})",
                 handName(),
-                heldObjectDriveModeName(_heldDriveMode),
+                kHeldObjectDriveName,
                 _heldObjectIsLooseWeapon ? "yes" : "no",
                 heldFormId,
                 _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
@@ -5685,8 +5673,7 @@ namespace rock
         std::uint64_t flushSequence = 0;
         {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
-            const bool hasAuthority = _heldDriveMode == HeldObjectDriveMode::ProxyConstraint &&
-                                      _grabAuthorityProxy.isValid() &&
+            const bool hasAuthority = _grabAuthorityProxy.isValid() &&
                                       _grabAuthorityProxyHknpWorld == world &&
                                       _grabAuthorityPendingTarget.valid;
             if (!hasAuthority) {
@@ -5929,8 +5916,7 @@ namespace rock
         std::uint32_t constraintId = 0x7FFF'FFFFu;
         {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
-            const bool hasAuthority = _heldDriveMode == HeldObjectDriveMode::ProxyConstraint &&
-                                      _grabAuthorityProxy.isValid() &&
+            const bool hasAuthority = _grabAuthorityProxy.isValid() &&
                                       _grabAuthorityProxyHknpWorld == world &&
                                       _hasLastAppliedGrabAuthorityProxyWorld;
             if (!hasAuthority) {
@@ -6279,7 +6265,6 @@ namespace rock
         _activeGrabLifecycle.clear();
         _activeConstraint.clear();
         clearGrabAuthorityProxyRuntime();
-        _heldDriveMode = HeldObjectDriveMode::ProxyConstraint;
         _heldBodyIds.clear();
         _grabFrame.clear();
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;

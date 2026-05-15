@@ -134,11 +134,6 @@ namespace rock
         VelocitySnapshot velocity{};
     };
 
-    enum class HeldObjectDriveMode : std::uint8_t
-    {
-        ProxyConstraint
-    };
-
     class Hand
     {
     public:
@@ -526,7 +521,6 @@ namespace rock
         void recordHeldObjectVelocitySample(RE::hknpWorld* world, const HeldObjectPlayerSpaceFrame& playerSpaceFrame);
 
         ActiveConstraint _activeConstraint;
-        HeldObjectDriveMode _heldDriveMode = HeldObjectDriveMode::ProxyConstraint;
         BethesdaPhysicsBody _grabAuthorityProxy;
         RE::bhkWorld* _grabAuthorityProxyBhkWorld = nullptr;
         RE::hknpWorld* _grabAuthorityProxyHknpWorld = nullptr;

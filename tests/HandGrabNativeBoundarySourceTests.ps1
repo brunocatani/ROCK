@@ -56,6 +56,7 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'resolveGrabAuthorityPr
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'createProxyConstraintGrabDrive\(\s*bhkWorld,\s*world,\s*objectBodyId,\s*proxyFrameWorldAtGrab,\s*handWorldTransform,\s*grabPivotAWorld' 'Close dynamic grab must create the hidden proxy plus custom finite-force constraint from the resolved palm-authority proxy frame while preserving raw hand rotation authority.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '_nativeGrab\.create\(\s*world,\s*objectBodyId' 'Ordinary dynamic close grab must not create native mouse-spring as its production authority.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'solveAdaptiveHeldLead|nativeTargetBodyWorld|_nativeGrab\.queueTarget' 'Held-object updates must not keep removed native mouse-spring adaptive target logic.'
+Reject-Text 'src/physics-interaction/grab/GrabHeldObject.h' 'AdaptiveHeldLead|solveAdaptiveHeldLead|responseFactor' 'Removed native/adaptive target-leading helpers must not remain as unused grab authority scaffolding.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'makeRawRotationPalmTranslationFrame\(handWorldTransform,\s*proxyAuthorityWorld\)' 'Held-object targets must use the root-flattened raw hand rotation and live palm/proxy translation.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'activePivotBBodyLocalGame\s*=\s*activeProxyConstraintPivotBLocalGame\(\)' 'Held-object updates must refresh the active proxy body-local pivot before composing target points.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'localPointToWorld\(desiredBodyWorld,\s*activePivotBBodyLocalGame\)' 'Held-object proxy target point must derive from the same active body-local pivot.'
@@ -71,7 +72,7 @@ if ($grabDriveStart -lt 0 -or $grabDriveEnd -lt 0) {
     $failures.Add('Grab drive object-frame helper boundary could not be located.')
 } else {
     $grabDriveHelperText = $grabDriveTextForBoundary.Substring($grabDriveStart, $grabDriveEnd - $grabDriveStart)
-    if ($grabDriveHelperText -match 'tryResolveLiveBodyWorldTransform|MotionCenterOfMass|HeldObjectDriveMode::ProxyConstraint') {
+    if ($grabDriveHelperText -match 'tryResolveLiveBodyWorldTransform|MotionCenterOfMass|HeldObjectDriveMode') {
         $failures.Add('Proxy-constraint runtime reads must not switch body-B to the live MOTION/COM frame.')
     }
 }
@@ -188,7 +189,8 @@ if ($pivotStart -lt 0 -or $pivotEnd -lt 0) {
 
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'typedef void func_t\(void\*,\s*int\)' 'Native VR drop wrapper must not leave R8 uninitialized by using the old two-argument signature.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'func\(playerChar,\s*handIndex\)' 'Native VR drop wrapper must not call the native function without the verified third argument.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'HeldObjectDriveMode::ProxyConstraint[\s\S]*createProxyConstraintGrabDrive' 'Ordinary dynamic close grabs must use the custom proxy constraint authority.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'createProxyConstraintGrabDrive\(\s*bhkWorld,\s*world,\s*objectBodyId' 'Ordinary dynamic close grabs must use the custom proxy constraint authority.'
+Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'HeldObjectDriveMode|_heldDriveMode|heldObjectDriveModeName' 'Runtime HandGrab must not retain removed drive-mode scaffolding.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'joiningPeerHeldObject[\s\S]*createProxyConstraintGrabDrive' 'Peer-held loose-object joins must use the same proxy constraint authority instead of a second native-only translation drive.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'createProxyConstraintGrabDrive[\s\S]*createGrabConstraint\(world' 'Proxy dynamic grab creation must be isolated behind the explicit custom authority helper.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'setBodyKeyframed' 'Held object grab must remain dynamic and must not switch the held object to keyframed motion.'
