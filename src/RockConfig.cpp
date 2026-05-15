@@ -39,7 +39,7 @@ namespace
     constexpr float kDefaultGrabLooseWeaponSharedConstraintCollisionTauMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearDampingMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularDampingMultiplier = 1.0f;
-    constexpr float kDefaultGrabLooseWeaponSharedConstraintMaxForceMultiplier = 1.0f;
+    constexpr float kDefaultGrabLooseWeaponSharedConstraintMaxForceMultiplier = 4.5f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularForceMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = 1.0f;
@@ -1039,7 +1039,7 @@ namespace rock
             rockGrabLooseWeaponSharedConstraintMaxForceMultiplier,
             kDefaultGrabLooseWeaponSharedConstraintMaxForceMultiplier,
             0.05f,
-            4.0f);
+            8.0f);
         rockGrabLooseWeaponSharedConstraintAngularForceMultiplier = readClampedFloat(ini,
             SECTION,
             "fGrabLooseWeaponSharedConstraintAngularForceMultiplier",

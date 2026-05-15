@@ -62,40 +62,40 @@ No web. No Ghidra for this pass unless separately approved.
 
 ### Current ROCK
 
-- [ ] Detection and selected contact evidence.
-- [ ] Object-side pivot capture and palm seating.
-- [ ] Proxy creation, filtering, activation, and lifecycle.
-- [ ] Constraint creation and transform A/B updates.
-- [ ] Linear motor mass/force/tau policy.
-- [ ] Direct angular velocity authority and force budget.
-- [ ] Multibody active prep, body activation, lifecycle restore, and collision
+- [x] Detection and selected contact evidence.
+- [x] Object-side pivot capture and palm seating.
+- [x] Proxy creation, filtering, activation, and lifecycle.
+- [x] Constraint creation and transform A/B updates.
+- [x] Linear motor mass/force/tau policy.
+- [x] Direct angular velocity authority and force budget.
+- [x] Multibody active prep, body activation, lifecycle restore, and collision
       state restore.
-- [ ] Loose weapon identification and tuning surfaces.
-- [ ] Long-object or lever-arm handling.
-- [ ] Finger pose solve, local-transform correction, and held reapply.
-- [ ] Release velocity and COM-relative tangential swing.
+- [x] Loose weapon identification and tuning surfaces.
+- [x] Long-object or lever-arm handling.
+- [x] Finger pose solve, local-transform correction, and held reapply.
+- [x] Release velocity and COM-relative tangential swing.
 
 ### Legacy Spring-Era Backup
 
-- [ ] What it did for one-hand loose dynamic grab that felt acceptable.
-- [ ] Multibody/weapon activation behavior that later regressed.
-- [ ] Any body-set scan, activation, flag lease, or collision restore behavior
+- [x] What it did for one-hand loose dynamic grab that felt acceptable.
+- [x] Multibody/weapon activation behavior that later regressed.
+- [x] Any body-set scan, activation, flag lease, or collision restore behavior
       missing from current custom authority.
-- [ ] Finger/pivot behavior that can be ported without native mouse spring.
-- [ ] Anything explicitly rejected because it depends on native mouse spring.
+- [x] Finger/pivot behavior that can be ported without native mouse spring.
+- [x] Anything explicitly rejected because it depends on native mouse spring.
 
 ### HIGGS Dynamic Grab
 
-- [ ] Dynamic detection pipeline.
-- [ ] Dynamic held transition.
-- [ ] Constraint/motor creation and per-frame target update.
-- [ ] Mass registration and force scaling.
-- [ ] Inertia normalization/clamping/restoration.
-- [ ] Collision response/tau changes while held.
-- [ ] Hand deviation/lag behavior.
-- [ ] Long-object/lever-arm behavior.
-- [ ] Finger pose and mesh/contact-driven placement.
-- [ ] Loose weapon differences from generic objects.
+- [x] Dynamic detection pipeline.
+- [x] Dynamic held transition.
+- [x] Constraint/motor creation and per-frame target update.
+- [x] Mass registration and force scaling.
+- [x] Inertia normalization/clamping/restoration.
+- [x] Collision response/tau changes while held.
+- [x] Hand deviation/lag behavior.
+- [x] Long-object/lever-arm behavior.
+- [x] Finger pose and mesh/contact-driven placement.
+- [x] Loose weapon differences from generic objects.
 
 ## Implementation Slices To Decide After Mapping
 
@@ -199,9 +199,10 @@ Current ordinary one-hand loose dynamic grab path:
   - current custom authority has loose weapon multipliers for linear tau,
     angular tau, collision tau, linear/angular damping, max force, angular force
     ratio, and recovery speeds;
-  - defaults are neutral (`1.0`) in code and INI, so loose weapons currently
-    receive the same base motor policy as generic loose objects unless the INI
-    changes them.
+  - fixed: loose weapons now use a `4.5` max-force multiplier, preserving the
+    HIGGS dynamic ratio of `9000` weapon base linear force versus `2000`
+    generic-object base linear force before mass capping;
+  - equipped weapon and two-hand weapon behavior remain separate and unchanged.
 - long objects:
   - fixed: the old unused bounds-axis helper was replaced with
     `computeLocalMeshMaxDistanceFromPoint(...)`;
@@ -360,9 +361,13 @@ Confirmed gaps and fixes:
    - Effect:
      - loose weapons currently have no out-of-box specialization beyond being
        marked `looseWeapon=yes`.
-   - Status:
-     - after aggregate mass is fixed, tune or add custom loose-weapon policy
-       using custom constraint variables only.
+   - Fix:
+     - keep tau, damping, angular-ratio, and recovery multipliers neutral;
+     - set `fGrabLooseWeaponSharedConstraintMaxForceMultiplier = 4.5`;
+     - raise that key's clamp ceiling to allow the HIGGS dynamic ratio;
+     - keep mass cap and long-object angular cap active, so this is not
+       infinite weapon authority;
+     - update the active production INI in place.
 
 4. **Primary-only direct angular velocity writer**
    - Evidence:
@@ -411,6 +416,13 @@ Confirmed gaps and fixes:
   - changed it to write the accepted held-body set with unique-motion dedupe;
   - added proxy authority telemetry for the number of angular bodies written;
   - added a source-boundary guard for the multipart angular-authority rule.
+- 2026-05-15 loose-weapon specialization slice:
+  - ported HIGGS' confirmed loose-weapon dynamic distinction into the custom
+    authority path as a `4.5` max-force multiplier;
+  - kept the same mass cap, angular-to-linear ratio, long-object angular cap,
+    and non-equipped loose-object classification;
+  - updated packaged and active production INIs in place;
+  - added source-boundary guards for the loose-weapon max-force multiplier.
 
 ## Verification Log
 

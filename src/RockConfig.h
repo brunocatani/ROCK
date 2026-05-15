@@ -264,7 +264,7 @@ namespace rock
         float rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintLinearDampingMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintAngularDampingMultiplier = 1.0f;
-        float rockGrabLooseWeaponSharedConstraintMaxForceMultiplier = 1.0f;
+        float rockGrabLooseWeaponSharedConstraintMaxForceMultiplier = 4.5f;
         float rockGrabLooseWeaponSharedConstraintAngularForceMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = 1.0f;
