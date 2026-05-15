@@ -1906,6 +1906,59 @@ namespace rock
         func(playerChar, handIndex, 0);
     }
 
+    void Hand::clearPullPrepTracking()
+    {
+        _pullActiveLifecycle.clear();
+        _pullPrepHknpWorld = nullptr;
+        _pullPrepRootNode = nullptr;
+        _pullPrepRefr = nullptr;
+        _pullPrepOriginalMotionPropsId = 1;
+        _pullPrepRestoreArmed = false;
+    }
+
+    void Hand::restorePullPrepIfActive(const char* context)
+    {
+        if (!_pullPrepRestoreArmed) {
+            return;
+        }
+
+        const std::uint32_t primaryBodyId =
+            _pulledPrimaryBodyId != INVALID_BODY_ID ? _pulledPrimaryBodyId : active_grab_body_lifecycle::kInvalidBodyId;
+
+        restoreActiveGrabLifecycle(_pullPrepHknpWorld,
+            _pullActiveLifecycle,
+            _pullActiveLifecycle.restorePlanForFailure(),
+            primaryBodyId,
+            handName(),
+            context ? context : "pull-prep-abandoned");
+        if (_pullActiveLifecycle.hasIncompleteNativeScan()) {
+            restoreIncompleteActivePrepRoot(
+                _pullPrepRootNode,
+                _pullPrepOriginalMotionPropsId,
+                handName(),
+                context ? context : "pull-prep-abandoned-incomplete-scan");
+        }
+
+        clearPullPrepTracking();
+    }
+
+    bool Hand::consumePullPrepLifecycleForActiveGrab(RE::TESObjectREFR* refr, active_grab_body_lifecycle::BodyLifecycleSnapshot& outLifecycle)
+    {
+        if (!_pullPrepRestoreArmed || !refr || refr != _pullPrepRefr) {
+            return false;
+        }
+
+        outLifecycle = _pullActiveLifecycle;
+        ROCK_LOG_DEBUG(Hand,
+            "{} hand consumed pull prep lifecycle for held grab: formID={:08X} bodies={} incompleteScan={}",
+            handName(),
+            refr->GetFormID(),
+            outLifecycle.size(),
+            outLifecycle.hasIncompleteNativeScan() ? "yes" : "no");
+        clearPullPrepTracking();
+        return true;
+    }
+
     void Hand::clearGrabHandCollisionSuppressionState()
     {
         hand_collision_suppression_math::clear(_grabHandCollisionSuppression);
@@ -2863,6 +2916,7 @@ namespace rock
             .tauLerpSpeed = g_rockConfig.rockGrabTauLerpSpeed,
             .deltaTime = deltaTime,
             .baseMaxForce = sharedBaseMaxForce,
+            .massResponsiveMaxForce = (std::max)(g_rockConfig.rockGrabConstraintMaxForce, g_rockConfig.rockGrabMassResponsiveMaxForce),
             .maxForceMultiplier = g_rockConfig.rockGrabAdaptiveMaxForceMultiplier,
             .authorityForceScale = authorityForceScale,
             .mass = massSummary.motorMass(),
@@ -3109,6 +3163,8 @@ namespace rock
             return false;
         }
 
+        restorePullPrepIfActive("new-pull");
+
         auto* ownerCell = selectedRef->GetParentCell();
         auto* bhkWorld = ownerCell ? ownerCell->GetbhkWorld() : nullptr;
         if (!bhkWorld) {
@@ -3146,11 +3202,21 @@ namespace rock
         scanOptions.maxDepth = g_rockConfig.rockObjectPhysicsTreeMaxDepth;
 
         const auto beforePrepBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, selectedRef, scanOptions);
+        active_grab_body_lifecycle::BodyLifecycleSnapshot pullLifecycle;
+        pullLifecycle.captureBeforeActivePrep(beforePrepBodySet);
         const bool motionConverted =
             physics_recursive_wrappers::setMotionRecursive(rootNode, physics_recursive_wrappers::MotionPreset::Dynamic, true, true, true);
         const bool collisionEnabled = physics_recursive_wrappers::enableCollisionRecursive(rootNode, true, true, true);
         auto restoreFailedPullPrep = [&]() {
-            if (active_object_prep_policy::shouldRestoreMotionAfterFailedActivePrep(motionConverted, selectedOriginalMotionPropsId)) {
+            restoreActiveGrabLifecycle(world,
+                pullLifecycle,
+                pullLifecycle.restorePlanForFailure(),
+                _pulledPrimaryBodyId != INVALID_BODY_ID ? _pulledPrimaryBodyId : _currentSelection.bodyId.value,
+                handName(),
+                "failed-pull-setup");
+            if (pullLifecycle.hasIncompleteNativeScan()) {
+                restoreIncompleteActivePrepRoot(rootNode, selectedOriginalMotionPropsId, handName(), "failed-pull-setup-incomplete-scan");
+            } else if (active_object_prep_policy::shouldRestoreMotionAfterFailedActivePrep(motionConverted, selectedOriginalMotionPropsId)) {
                 physics_recursive_wrappers::setMotionRecursive(
                     rootNode,
                     motionPresetFromMotionType(selectedOriginalMotionType, selectedOriginalMotionPropsId),
@@ -3160,6 +3226,7 @@ namespace rock
             }
         };
         const auto preparedBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, selectedRef, scanOptions);
+        pullLifecycle.markPreparedBodies(preparedBodySet);
         ROCK_LOG_DEBUG(Hand,
             "{} hand PULL scan: type={} weapon={} name='{}' formID={:08X} seedBody={} beforeBodies={} afterBodies={} accepted={} rejected={} "
             "seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} collisionObjects={} visitedNodes={}",
@@ -3211,7 +3278,7 @@ namespace rock
         }
 
         _pulledPrimaryBodyId = primaryChoice.bodyId;
-        _pulledBodyIds = preparedBodySet.uniqueAcceptedMotionBodyIds();
+        _pulledBodyIds = preparedBodySet.acceptedBodyIds();
         if (_pulledBodyIds.empty()) {
             _pulledBodyIds.push_back(_pulledPrimaryBodyId);
         }
@@ -3279,11 +3346,17 @@ namespace rock
         _pullHasTarget = false;
         const auto transition = applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::BeginPull });
         if (!transition.accepted) {
-            clearPullRuntimeState();
+            clearPullRuntimeState(false, "begin-pull-rejected");
             clearPullCatchIntent("beginPullRejected");
             restoreFailedPullPrep();
             return false;
         }
+        _pullActiveLifecycle = pullLifecycle;
+        _pullPrepHknpWorld = world;
+        _pullPrepRootNode = rootNode;
+        _pullPrepRefr = selectedRef;
+        _pullPrepOriginalMotionPropsId = selectedOriginalMotionPropsId;
+        _pullPrepRestoreArmed = true;
         stopSelectionHighlight();
 
         ROCK_LOG_INFO(Hand,
@@ -3353,7 +3426,10 @@ namespace rock
             };
             _currentSelection.hasHitPoint = true;
             markPullCatchIntentArrived();
-            clearPullRuntimeState();
+            _pullTargetHavok = {};
+            _pullElapsedSeconds = 0.0f;
+            _pullDurationSeconds = 0.0f;
+            _pullHasTarget = false;
             applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::PullArrivedClose });
             ROCK_LOG_DEBUG(Hand,
                 "{} hand PULL arrived -> close grab window dist={:.1f} arrival={:.1f} configuredAuto={:.1f} near={:.1f} pocketBand={:.1f}",
@@ -3563,9 +3639,13 @@ namespace rock
         scanOptions.heldBySameHand = &_heldBodyIds;
         scanOptions.maxDepth = g_rockConfig.rockObjectPhysicsTreeMaxDepth;
 
-        const auto beforePrepBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, sel.refr, scanOptions);
         active_grab_body_lifecycle::BodyLifecycleSnapshot activeLifecycle;
-        activeLifecycle.captureBeforeActivePrep(beforePrepBodySet);
+        const bool consumedPullPrepLifecycle =
+            !joiningPeerHeldObject && grabbedFromPullCatch && consumePullPrepLifecycleForActiveGrab(sel.refr, activeLifecycle);
+        const auto beforePrepBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, sel.refr, scanOptions);
+        if (!joiningPeerHeldObject && !consumedPullPrepLifecycle) {
+            activeLifecycle.captureBeforeActivePrep(beforePrepBodySet);
+        }
 
         const bool motionConverted = joiningPeerHeldObject ? true :
                                                                physics_recursive_wrappers::setMotionRecursive(

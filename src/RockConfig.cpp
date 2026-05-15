@@ -283,6 +283,7 @@ namespace rock
         rockGrabAngularConstantRecovery = 1.0f;
 
         rockGrabConstraintMaxForce = 2000.0f;
+        rockGrabMassResponsiveMaxForce = 9000.0f;
         rockGrabAngularToLinearForceRatio = 12.5f;
         rockGrabMaxForceToMassRatio = 500.0f;
         rockGrabFadeInStartAngularRatio = 100.0f;
@@ -993,6 +994,7 @@ namespace rock
         rockGrabAngularConstantRecovery = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularConstantRecovery", rockGrabAngularConstantRecovery));
 
         rockGrabConstraintMaxForce = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabConstraintMaxForce", rockGrabConstraintMaxForce));
+        rockGrabMassResponsiveMaxForce = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMassResponsiveMaxForce", rockGrabMassResponsiveMaxForce));
         rockGrabAngularToLinearForceRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularToLinearForceRatio", rockGrabAngularToLinearForceRatio));
         rockGrabMaxForceToMassRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxForceToMassRatio", rockGrabMaxForceToMassRatio));
         rockGrabFadeInStartAngularRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFadeInStartAngularRatio", rockGrabFadeInStartAngularRatio));

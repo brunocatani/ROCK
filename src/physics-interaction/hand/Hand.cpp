@@ -262,7 +262,7 @@ namespace rock
         _heldLogCounter = 0;
         _notifCounter = 0;
         _heldBodyIds.clear();
-        clearPullRuntimeState();
+        clearPullRuntimeState(false, "reset");
         clearPullCatchIntent("reset");
         clearActorEquipmentDropHandoff("reset");
         if (_nearbyGrabDamping.active || !_nearbyGrabDamping.motions.empty()) {
@@ -352,7 +352,7 @@ namespace rock
         _savedObjectState.clear();
         _activeGrabLifecycle.clear();
         _heldBodyIds.clear();
-        clearPullRuntimeState();
+        clearPullRuntimeState(false, "worldLoss");
         clearPullCatchIntent("worldLoss");
         clearActorEquipmentDropHandoff("worldLoss");
         _heldBodyIdsCount.store(0, std::memory_order_release);
@@ -445,8 +445,13 @@ namespace rock
         return applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::CancelGameplayCandidate }).accepted;
     }
 
-    void Hand::clearPullRuntimeState()
+    void Hand::clearPullRuntimeState(bool restorePreparedObject, const char* context)
     {
+        if (restorePreparedObject) {
+            restorePullPrepIfActive(context);
+        } else {
+            clearPullPrepTracking();
+        }
         _pulledBodyIds.clear();
         _pulledPrimaryBodyId = INVALID_BODY_ID;
         _pullPointOffsetHavok = {};
@@ -1218,7 +1223,7 @@ namespace rock
         }
         _currentSelection.clear();
         _cachedFarCandidate.clear();
-        clearPullRuntimeState();
+        clearPullRuntimeState(true, rememberDeselect ? "selection-cleared-remembered" : "selection-cleared");
         clearPullCatchIntent(rememberDeselect ? "selectionClearedRemembered" : "selectionCleared");
         clearActorEquipmentDropHandoff(rememberDeselect ? "selectionClearedRemembered" : "selectionCleared");
         _lastSelectedCloseOrigin = {};

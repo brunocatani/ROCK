@@ -164,7 +164,10 @@ namespace rock
         void suppressHandCollisionForGrab(RE::hknpWorld* world);
         void restoreHandCollisionAfterGrab(RE::hknpWorld* world);
         void clearGrabHandCollisionSuppressionState();
-        void clearPullRuntimeState();
+        void clearPullRuntimeState(bool restorePreparedObject = true, const char* context = "clear-pull-runtime");
+        void clearPullPrepTracking();
+        void restorePullPrepIfActive(const char* context);
+        bool consumePullPrepLifecycleForActiveGrab(RE::TESObjectREFR* refr, active_grab_body_lifecycle::BodyLifecycleSnapshot& outLifecycle);
         void updateSelectedCloseFingerPose();
         void clearSelectedCloseFingerPose();
     public:
@@ -615,6 +618,12 @@ namespace rock
 
         std::vector<std::uint32_t> _heldBodyIds;
         std::vector<std::uint32_t> _pulledBodyIds;
+        active_grab_body_lifecycle::BodyLifecycleSnapshot _pullActiveLifecycle;
+        RE::hknpWorld* _pullPrepHknpWorld = nullptr;
+        RE::NiAVObject* _pullPrepRootNode = nullptr;
+        RE::TESObjectREFR* _pullPrepRefr = nullptr;
+        std::uint16_t _pullPrepOriginalMotionPropsId = 1;
+        bool _pullPrepRestoreArmed = false;
         std::uint32_t _pulledPrimaryBodyId = INVALID_BODY_ID;
         RE::NiPoint3 _pullPointOffsetHavok{};
         RE::NiPoint3 _pullTargetHavok{};

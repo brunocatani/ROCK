@@ -41,6 +41,28 @@ int main()
     ok &= expectNear("two hands share mass-capped linear authority", twoHand.linearMaxForce, 500.0f, 0.001f);
     ok &= expectNear("two hands share angular authority", twoHand.angularMaxForce, 40.0f, 0.001f);
 
+    MotorInput mediumMass = singleHand;
+    mediumMass.mass = 10.0f;
+    mediumMass.massResponsiveMaxForce = 9000.0f;
+    const auto mediumMassOutput = solveMotorTargets(mediumMass);
+    ok &= expectNear("medium generic object rises to mass-scaled force", mediumMassOutput.linearMaxForce, 5000.0f, 0.001f);
+    ok &= expectNear("medium generic object angular force follows linear force", mediumMassOutput.angularMaxForce, 400.0f, 0.001f);
+
+    MotorInput heavyMass = singleHand;
+    heavyMass.mass = 50.0f;
+    heavyMass.massResponsiveMaxForce = 9000.0f;
+    const auto heavyMassOutput = solveMotorTargets(heavyMass);
+    ok &= expectNear("heavy generic object reaches mass-responsive ceiling", heavyMassOutput.linearMaxForce, 9000.0f, 0.001f);
+    ok &= expectNear("heavy generic object angular force follows ceiling", heavyMassOutput.angularMaxForce, 720.0f, 0.001f);
+
+    MotorInput looseWeapon = singleHand;
+    looseWeapon.baseMaxForce = 9000.0f;
+    looseWeapon.mass = 1000.0f;
+    looseWeapon.massResponsiveMaxForce = 9000.0f;
+    const auto looseWeaponOutput = solveMotorTargets(looseWeapon);
+    ok &= expectNear("loose weapon base force is not double-boosted", looseWeaponOutput.linearMaxForce, 9000.0f, 0.001f);
+    ok &= expectNear("loose weapon angular force follows existing weapon ceiling", looseWeaponOutput.angularMaxForce, 720.0f, 0.001f);
+
     MotorInput adaptive = singleHand;
     adaptive.enabled = true;
     adaptive.positionErrorGameUnits = 20.0f;

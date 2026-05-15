@@ -82,6 +82,21 @@ if ($pullStart -lt 0 -or $pullEnd -lt 0) {
     if ($pullText -notmatch 'unresolvedAccepted') {
         $failures.Add('Dynamic pull logs must expose unresolved ownership fallback counts.')
     }
+    if ($pullText -notmatch '_pulledBodyIds\s*=\s*preparedBodySet\.acceptedBodyIds\(\)') {
+        $failures.Add('Dynamic pull must retain all accepted object bodies for activation/ownership, not collapse multipart weapons to one motion body.')
+    }
+    if ($pullText -match '_pulledBodyIds\s*=\s*preparedBodySet\.uniqueAcceptedMotionBodyIds\(\)') {
+        $failures.Add('Dynamic pull must not use the unique-motion body list as the ownership body set.')
+    }
+    if ($pullText -notmatch 'pullLifecycle\.captureBeforeActivePrep\(beforePrepBodySet\)' -or
+        $pullText -notmatch 'pullLifecycle\.markPreparedBodies\(preparedBodySet\)' -or
+        $pullText -notmatch '_pullActiveLifecycle\s*=\s*pullLifecycle' -or
+        $pullText -notmatch '_pullPrepRestoreArmed\s*=\s*true') {
+        $failures.Add('Dynamic pull must arm a lifecycle snapshot so abandoned pull prep can restore motion/filter state.')
+    }
+    if ($pullText -match 'markPullCatchIntentArrived\(\);\s*clearPullRuntimeState\(') {
+        $failures.Add('Pull arrival must keep the pull prep lifecycle armed until pull-catch grab consumes it or selection cleanup restores it.')
+    }
 }
 
 $grabStart = $handGrabText.IndexOf('bool Hand::grabSelectedObject')
@@ -105,7 +120,14 @@ if ($grabStart -lt 0 -or $grabEnd -lt 0) {
     if ($grabText -notmatch 'restoreIncompleteActivePrepRoot\(rootNode,\s*selectedOriginalMotionPropsId') {
         $failures.Add('Failed grab setup must restore the root when body scanning was incomplete.')
     }
+    if ($grabText -notmatch 'consumePullPrepLifecycleForActiveGrab\(sel\.refr,\s*activeLifecycle\)') {
+        $failures.Add('Pull-catch grab must consume the pull lifecycle snapshot instead of recapturing post-pull state.')
+    }
 }
+
+Require-Text 'src/physics-interaction/hand/Hand.cpp' 'restorePullPrepIfActive\(context\)' 'Clearing pull runtime state must restore abandoned pull prep when the world is still valid.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'restorePullPrepIfActive' 'Pull prep lifecycle restore helper must be implemented in the grab runtime.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'clearPullPrepTracking' 'Pull prep tracking must have an explicit abandon/consume cleanup path.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Dynamic pull weapon scan boundary failed:'

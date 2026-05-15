@@ -32,6 +32,7 @@ namespace rock::grab_motion_controller
         float deltaTime = 1.0f / 90.0f;
 
         float baseMaxForce = 2000.0f;
+        float massResponsiveMaxForce = 2000.0f;
         float maxForceMultiplier = 4.0f;
         float authorityForceScale = 1.0f;
         float mass = 0.0f;
@@ -168,7 +169,12 @@ namespace rock::grab_motion_controller
 
         const float maxMultiplier = (std::max)(1.0f, safePositive(input.maxForceMultiplier, 1.0f));
         const float baseForce = (std::max)(0.0f, finiteOr(input.baseMaxForce, 0.0f));
-        const float targetForce = baseForce * (1.0f + (maxMultiplier - 1.0f) * out.errorFactor);
+        float targetForce = baseForce * (1.0f + (maxMultiplier - 1.0f) * out.errorFactor);
+        const float massResponsiveCeiling = (std::max)(baseForce, finiteOr(input.massResponsiveMaxForce, baseForce));
+        if (massResponsiveCeiling > baseForce && std::isfinite(input.mass) && input.mass > 0.0f && std::isfinite(input.forceToMassRatio) &&
+            input.forceToMassRatio > 0.0f) {
+            targetForce = (std::max)(targetForce, (std::min)(massResponsiveCeiling, input.mass * input.forceToMassRatio));
+        }
         const float authorityForceScale = std::clamp(safePositive(input.authorityForceScale, 1.0f), 0.05f, 1.0f);
         out.fadeFactor = input.fadeInEnabled ? computeFadeFactor(input.fadeElapsed, input.fadeDuration) : 1.0f;
         out.linearMaxForce = capForceByMass(targetForce * out.fadeFactor, input.mass, input.forceToMassRatio) * authorityForceScale;
