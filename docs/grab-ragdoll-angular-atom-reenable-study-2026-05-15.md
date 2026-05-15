@@ -417,3 +417,66 @@ instead of accepting a capped velocity command.
   some FO4VR objects expose disconnected motions that need a separate future
   body-set strategy.
 
+## Completion Audit - 2026-05-15
+
+Objective being audited:
+
+- re-enable the ragdoll angular atom disabled in `db1a996`;
+- use the now-correct linear/rotation split:
+  - generated palm collider/proxy for linear pivot;
+  - raw controller/root-flattened hand frame for angular rotation;
+- study how to do this correctly before code;
+- push anything not yet pushed.
+
+Checklist:
+
+- source study written:
+  - complete;
+  - evidence: this file maps `db1a996`, `32ebeae`, `716fcb1`, current ROCK
+    dynamic grab authority, HIGGS angular constraint flow, long-object behavior,
+    and re-enable gates.
+- commit markers identified:
+  - complete;
+  - evidence: commit marker section records `db1a996` as the disable commit and
+    `716fcb1` as the main rotation-reference fix.
+- HIGGS long-object comparison answered:
+  - complete;
+  - evidence: sections "How HIGGS Handles Long Objects", "What ROCK Has For
+    Long Objects Now", and "Why ROCK Does Not Yet Have HIGGS Long-Object Feel".
+- pushed existing unpushed work:
+  - complete as of this audit;
+  - evidence: branch `feature/ghidra-grab-motor-mapping` was pushed after commit
+    `e8ced64 docs/grab: study ragdoll angular atom reenable`.
+- actual ragdoll angular atom re-enabled in code:
+  - not complete;
+  - evidence: `src/physics-interaction/grab/GrabConstraint.cpp` still calls
+    `setGrabMotorAtomsActive(header, true, false)` and logs
+    `ragdollAtom=disabled`.
+- direct angular velocity removed as production held authority:
+  - not complete;
+  - evidence: `src/physics-interaction/hand/HandGrab.cpp` still defines and
+    calls `applyProxyConstraintAngularVelocityDrive(...)`.
+- tests updated for solver-owned angular authority:
+  - not complete;
+  - evidence: `tests/GrabAuthorityProxyFrameSourceTests.ps1` still requires the
+    direct angular velocity path and FO4VR hard-keyframe angular-vector boundary
+    as held-object angular authority.
+- FO4VR hknp type-19 target equation verified before code:
+  - not complete;
+  - evidence: no new Ghidra pass was performed in this study because the current
+    project instructions require explicit approval before every Ghidra
+    operation.
+
+Audit conclusion:
+
+- The research and push portions are complete.
+- The actual re-enable implementation is not complete.
+- The next required gate before code is Ghidra verification of the FO4VR hknp
+  type-19 ragdoll motor equation, especially how it composes transform A,
+  transform B, and `target_bRca`.
+- Do not mark the overall re-enable objective complete until:
+  - Ghidra verifies the atom equation;
+  - code re-enables the angular atom with the current split reference model;
+  - production direct angular velocity is removed or fully bypassed;
+  - source-boundary tests are updated to reject the old direct-angular authority;
+  - local build/tests pass or failures are explicitly scoped.
