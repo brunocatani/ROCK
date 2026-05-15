@@ -2396,15 +2396,15 @@ namespace rock
             auto* transformBRotation = reinterpret_cast<const float*>(constraintData + offsets::kTransformB_Col0);
             auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + offsets::kTransformB_Pos);
 
-            const RE::NiTransform desiredBodyTransformAuthoritySpace = _grabFrame.rawRotationProxyBodyHandSpace;
-            const RE::NiMatrix3 bodyToAuthorityRotation =
-                grab_constraint_math::desiredBodyToHandRotation(desiredBodyTransformAuthoritySpace.rotate);
+            const RE::NiTransform desiredBodyTransformBodyASpace = _grabFrame.constraintBodyHandSpace;
+            const RE::NiMatrix3 bodyToBodyARotation =
+                grab_constraint_math::desiredBodyToBodyARotation(desiredBodyTransformBodyASpace.rotate);
             const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
             const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
             const RE::NiMatrix3 transformAAsHkColumns = matrixFromHkColumns(transformARotation);
             const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
             const RE::NiMatrix3 expectedRagdollTarget =
-                grab_constraint_math::composeRagdollAngularTargetRotation(bodyToAuthorityRotation, transformAAsHkColumns);
+                grab_constraint_math::composeRagdollAngularTargetRotation(bodyToBodyARotation, transformAAsHkColumns);
 
             out.constraintTransformBLocalGame = RE::NiPoint3{
                 transformBTranslation[0] * havokToGameScale(),
@@ -2415,7 +2415,7 @@ namespace rock
             out.transformBLocalDelta = grab_transform_telemetry::measurePointPair(out.constraintTransformBLocalGame, out.desiredTransformBLocalGame);
             out.targetColumnsToRagdollExpectedDegrees = rotationDeltaDegrees(targetAsHkColumns, expectedRagdollTarget);
             out.targetRowsToRagdollExpectedDegrees = rotationDeltaDegrees(targetAsHkRows, expectedRagdollTarget);
-            out.transformBColumnsToBodyAuthorityDegrees = rotationDeltaDegrees(transformBAsHkColumns, bodyToAuthorityRotation);
+            out.transformBColumnsToBodyADegrees = rotationDeltaDegrees(transformBAsHkColumns, bodyToBodyARotation);
             out.targetColumnsToTransformBDegrees = rotationDeltaDegrees(targetAsHkColumns, transformBAsHkColumns);
             out.ragdollMotorEnabled = *(constraintData + ATOM_RAGDOLL_MOT + 0x02) != 0;
             if (_activeConstraint.angularMotor) {
@@ -2583,7 +2583,7 @@ namespace rock
         const RE::NiPoint3 pivotAProxyLocalGame = transform_math::worldPointToLocal(proxyWorldTransform, grabPivotAWorld);
         const RE::NiTransform angularAuthorityWorld =
             makeRawRotationPalmTranslationFrame(rawHandWorldTransform, proxyWorldTransform);
-        const RE::NiTransform desiredBodyTransformAuthoritySpace = _grabFrame.rawRotationProxyBodyHandSpace;
+        const RE::NiTransform desiredBodyTransformBodyASpace = _grabFrame.constraintBodyHandSpace;
         const RE::NiPoint3 activePivotBConstraintLocalGame = activeProxyConstraintPivotBLocalGame();
 
         const float gameToHkScale = gameToHavokScale();
@@ -2615,7 +2615,7 @@ namespace rock
             angularAuthorityWorld,
             grabPivotAWorld,
             pivotBBodyLocalHk,
-            desiredBodyTransformAuthoritySpace,
+            desiredBodyTransformBodyASpace,
             motorTuning);
         if (!_activeConstraint.isValid()) {
             ROCK_LOG_ERROR(Hand,
@@ -2695,6 +2695,7 @@ namespace rock
         const RE::NiTransform authorityFrame =
             makeRawRotationPalmTranslationFrame(rawHandWorldTransform, proxyWorldTransform);
         const RE::NiTransform desiredBodyTransformAuthoritySpace = _grabFrame.rawRotationProxyBodyHandSpace;
+        const RE::NiTransform desiredBodyTransformBodyASpace = _grabFrame.constraintBodyHandSpace;
         outDesiredObjectWorld = multiplyTransforms(authorityFrame, _grabFrame.rawRotationProxyHandSpace);
         outDesiredBodyWorld = multiplyTransforms(authorityFrame, desiredBodyTransformAuthoritySpace);
         outActivePivotBBodyLocalGame = activeProxyConstraintPivotBLocalGame();
@@ -2719,7 +2720,7 @@ namespace rock
 
         auto* transformBTranslation = reinterpret_cast<float*>(constraintData + offsets::kTransformB_Pos);
         auto* targetBRca = reinterpret_cast<float*>(constraintData + ATOM_RAGDOLL_MOT + 0x10);
-        grab_constraint_math::writeGrabRagdollAngularTarget(targetBRca, desiredBodyTransformAuthoritySpace, transformAFrameLocal.rotate);
+        grab_constraint_math::writeGrabRagdollAngularTarget(targetBRca, desiredBodyTransformBodyASpace, transformAFrameLocal.rotate);
         transformBTranslation[0] = outActivePivotBBodyLocalGame.x * gameToHkScale;
         transformBTranslation[1] = outActivePivotBBodyLocalGame.y * gameToHkScale;
         transformBTranslation[2] = outActivePivotBBodyLocalGame.z * gameToHkScale;

@@ -42,9 +42,9 @@ namespace rock::grab_constraint_math
     }
 
     template <class Matrix>
-    inline Matrix desiredBodyToHandRotation(const Matrix& desiredBodyTransformHandSpaceRotation)
+    inline Matrix desiredBodyToBodyARotation(const Matrix& desiredBodyTransformBodyASpaceRotation)
     {
-        return transform_math::transposeRotation(desiredBodyTransformHandSpaceRotation);
+        return transform_math::transposeRotation(desiredBodyTransformBodyASpaceRotation);
     }
 
     template <class Matrix>
@@ -77,29 +77,29 @@ namespace rock::grab_constraint_math
     }
 
     template <class Transform>
-    inline void writeInitialGrabTransformBRotation(float* transformBRotation, const Transform& desiredBodyTransformAuthoritySpace)
+    inline void writeInitialGrabTransformBRotation(float* transformBRotation, const Transform& desiredBodyTransformBodyASpace)
     {
-        const auto bodyToAuthorityRotation = desiredBodyToHandRotation(desiredBodyTransformAuthoritySpace.rotate);
-        writeHavokRotationColumns(transformBRotation, bodyToAuthorityRotation);
+        const auto bodyToBodyARotation = desiredBodyToBodyARotation(desiredBodyTransformBodyASpace.rotate);
+        writeHavokRotationColumns(transformBRotation, bodyToBodyARotation);
     }
 
     template <class Matrix>
-    inline Matrix composeRagdollAngularTargetRotation(const Matrix& bodyToAuthorityRotation, const Matrix& transformALocalRotation)
+    inline Matrix composeRagdollAngularTargetRotation(const Matrix& bodyToBodyARotation, const Matrix& transformALocalRotation)
     {
-        return transform_math::multiplyStoredRotations(bodyToAuthorityRotation, transformALocalRotation);
+        return transform_math::multiplyStoredRotations(bodyToBodyARotation, transformALocalRotation);
     }
 
     template <class Transform, class Matrix>
     inline void writeGrabRagdollAngularTarget(float* targetBRca,
-        const Transform& desiredBodyTransformAuthoritySpace,
+        const Transform& desiredBodyTransformBodyASpace,
         const Matrix& transformALocalRotation)
     {
         if (!targetBRca) {
             return;
         }
 
-        const auto bodyToAuthorityRotation = desiredBodyToHandRotation(desiredBodyTransformAuthoritySpace.rotate);
-        const auto targetRotation = composeRagdollAngularTargetRotation(bodyToAuthorityRotation, transformALocalRotation);
+        const auto bodyToBodyARotation = desiredBodyToBodyARotation(desiredBodyTransformBodyASpace.rotate);
+        const auto targetRotation = composeRagdollAngularTargetRotation(bodyToBodyARotation, transformALocalRotation);
         writeHavokRotationColumns(targetBRca, targetRotation);
     }
 

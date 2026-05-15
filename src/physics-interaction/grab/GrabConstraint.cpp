@@ -182,7 +182,7 @@ namespace rock
 
     ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
         const RE::NiTransform& handBodyWorld, const RE::NiTransform& angularAuthorityWorld, const RE::NiPoint3& palmWorldGame,
-        const float* pivotBBodyLocalHk, const RE::NiTransform& desiredBodyTransformAuthoritySpace, const GrabConstraintMotorTuning& tuning)
+        const float* pivotBBodyLocalHk, const RE::NiTransform& desiredBodyTransformBodyASpace, const GrabConstraintMotorTuning& tuning)
     {
         ActiveConstraint result;
         if (!world) {
@@ -273,8 +273,8 @@ namespace rock
             auto* tB_pos = reinterpret_cast<float*>(header + offsets::kTransformB_Pos);
             auto* targetBRca = reinterpret_cast<float*>(header + ATOM_RAGDOLL_MOT + 0x10);
 
-            grab_constraint_math::writeInitialGrabTransformBRotation(tB_col0, desiredBodyTransformAuthoritySpace);
-            grab_constraint_math::writeGrabRagdollAngularTarget(targetBRca, desiredBodyTransformAuthoritySpace, transformAFrameLocal.rotate);
+            grab_constraint_math::writeInitialGrabTransformBRotation(tB_col0, desiredBodyTransformBodyASpace);
+            grab_constraint_math::writeGrabRagdollAngularTarget(targetBRca, desiredBodyTransformBodyASpace, transformAFrameLocal.rotate);
 
             tB_pos[0] = pivotBBodyLocalHk[0];
             tB_pos[1] = pivotBBodyLocalHk[1];
@@ -344,10 +344,11 @@ namespace rock
 
         /*
          * The proxy owns the linear pivot, but the generated collider axes are
-         * not object-rotation authority. Enable the ragdoll angular atom with a
-         * transform-A frame derived from raw root-flattened hand rotation and a
-         * frozen transform-B body basis from grab capture, matching FO4VR's
-         * native target_bRca composition while keeping one angular writer.
+         * not object-rotation authority. FO4VR's ragdoll target composes the
+         * body-pair relation with transform A, so transform B stores object to
+         * proxy/body-A while transform A carries proxy/body-A to raw hand
+         * authority. This keeps one angular writer without double-applying the
+         * raw hand frame.
          */
         setGrabMotorAtomsActive(header, true, true);
 
@@ -388,7 +389,7 @@ namespace rock
 
     ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
         const RE::NiTransform& handBodyWorld, const RE::NiTransform& angularAuthorityWorld, const RE::NiPoint3& palmWorldGame,
-        const float* pivotBBodyLocalHk, const RE::NiTransform& desiredBodyTransformAuthoritySpace, float tau, float damping,
+        const float* pivotBBodyLocalHk, const RE::NiTransform& desiredBodyTransformBodyASpace, float tau, float damping,
         float maxForce, float proportionalRecovery, float constantRecovery)
     {
         const float angularForceRatio = safePositiveMotorValue(g_rockConfig.rockGrabAngularToLinearForceRatio, 12.5f);
@@ -401,7 +402,7 @@ namespace rock
             angularAuthorityWorld,
             palmWorldGame,
             pivotBBodyLocalHk,
-            desiredBodyTransformAuthoritySpace,
+            desiredBodyTransformBodyASpace,
             GrabConstraintMotorTuning{
                 .linearTau = tau,
                 .linearDamping = damping,

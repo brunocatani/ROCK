@@ -191,7 +191,7 @@ namespace rock::grab_transform_telemetry
         float rotationPreservedDeg = 0.0f;
         float targetColumnsToRagdollExpectedDegrees = 0.0f;
         float targetRowsToRagdollExpectedDegrees = 0.0f;
-        float transformBColumnsToBodyAuthorityDegrees = 0.0f;
+        float transformBColumnsToBodyADegrees = 0.0f;
         float targetColumnsToTransformBDegrees = 0.0f;
         float angularMotorTau = 0.0f;
         float angularMotorDamping = 0.0f;

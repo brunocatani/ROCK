@@ -947,10 +947,10 @@
                         sample.transformBLocalDelta.distance);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 10),
                         color,
-                        "ANGT EXP %.2f REXP %.2f BAUTH %.2f TB %.2f EN%d",
+                        "ANGT EXP %.2f REXP %.2f BA %.2f TB %.2f EN%d",
                         sample.targetColumnsToRagdollExpectedDegrees,
                         sample.targetRowsToRagdollExpectedDegrees,
-                        sample.transformBColumnsToBodyAuthorityDegrees,
+                        sample.transformBColumnsToBodyADegrees,
                         sample.targetColumnsToTransformBDegrees,
                         sample.ragdollMotorEnabled ? 1 : 0);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 11),
@@ -1335,7 +1335,7 @@
                             sample.transformBLocalDelta.distance,
                             sample.targetColumnsToRagdollExpectedDegrees,
                             sample.targetRowsToRagdollExpectedDegrees,
-                            sample.transformBColumnsToBodyAuthorityDegrees,
+                            sample.transformBColumnsToBodyADegrees,
                             sample.targetColumnsToTransformBDegrees,
                             sample.ragdollMotorEnabled ? "yes" : "no",
                             sample.angularMotorTau,
