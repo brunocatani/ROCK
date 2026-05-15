@@ -79,8 +79,4 @@ namespace rock::grab_authority_proxy
         grab_authority_proxy_motion::computeLinearVelocityHavok(previous, current, deltaSeconds, gameToHavokScale(), outVelocity);
     }
 
-    inline void computeAngularVelocityRadiansPerSecond(const RE::NiTransform& previous, const RE::NiTransform& current, float deltaSeconds, float outVelocity[4])
-    {
-        grab_authority_proxy_motion::computeAngularVelocityRadiansPerSecond(previous, current, deltaSeconds, outVelocity);
-    }
 }

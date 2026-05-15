@@ -120,41 +120,29 @@ int main()
     {
         RE::NiTransform previous = identityTransform();
         RE::NiTransform current = identityTransform();
-        current.rotate = rotationAroundZ(kPi * 0.5f);
+        current.translate = RE::NiPoint3{ 7.0f, -14.0f, 21.0f };
 
-        float angularVelocity[4]{};
-        rock::grab_authority_proxy_motion::computeAngularVelocityRadiansPerSecond(previous, current, 0.1f, angularVelocity);
+        float linearVelocity[4]{};
+        rock::grab_authority_proxy_motion::computeLinearVelocityHavok(previous, current, 0.1f, 0.1f, linearVelocity);
 
-        ok &= expectNear("zero x for z rotation", angularVelocity[0], 0.0f, 0.001f);
-        ok &= expectNear("zero y for z rotation", angularVelocity[1], 0.0f, 0.001f);
-        ok &= expectNear("positive z angular velocity", angularVelocity[2], 5.0f * kPi, 0.001f);
-        ok &= expectNear("zero w angular velocity", angularVelocity[3], 0.0f, 0.001f);
+        ok &= expectNear("linear x uses game-to-havok scale", linearVelocity[0], 7.0f, 0.001f);
+        ok &= expectNear("linear y uses game-to-havok scale", linearVelocity[1], -14.0f, 0.001f);
+        ok &= expectNear("linear z uses game-to-havok scale", linearVelocity[2], 21.0f, 0.001f);
+        ok &= expectNear("linear w remains zero", linearVelocity[3], 0.0f, 0.001f);
     }
 
     {
         RE::NiTransform previous = identityTransform();
         RE::NiTransform current = identityTransform();
-        current.rotate = rotationAroundX(-kPi * 0.5f);
+        current.translate = RE::NiPoint3{ 7.0f, -14.0f, 21.0f };
 
-        float angularVelocity[4]{};
-        rock::grab_authority_proxy_motion::computeAngularVelocityRadiansPerSecond(previous, current, 0.1f, angularVelocity);
+        float linearVelocity[4]{ 9.0f, 9.0f, 9.0f, 9.0f };
+        rock::grab_authority_proxy_motion::computeLinearVelocityHavok(previous, current, 0.0f, 0.1f, linearVelocity);
 
-        ok &= expectNear("negative x angular velocity", angularVelocity[0], -5.0f * kPi, 0.001f);
-        ok &= expectNear("zero y for x rotation", angularVelocity[1], 0.0f, 0.001f);
-        ok &= expectNear("zero z for x rotation", angularVelocity[2], 0.0f, 0.001f);
-    }
-
-    {
-        RE::NiTransform previous = identityTransform();
-        RE::NiTransform current = previous;
-
-        float angularVelocity[4]{ 9.0f, 9.0f, 9.0f, 9.0f };
-        rock::grab_authority_proxy_motion::computeAngularVelocityRadiansPerSecond(previous, current, 0.0f, angularVelocity);
-
-        ok &= expectNear("invalid dt clears x", angularVelocity[0], 0.0f, 0.001f);
-        ok &= expectNear("invalid dt clears y", angularVelocity[1], 0.0f, 0.001f);
-        ok &= expectNear("invalid dt clears z", angularVelocity[2], 0.0f, 0.001f);
-        ok &= expectNear("invalid dt clears w", angularVelocity[3], 0.0f, 0.001f);
+        ok &= expectNear("invalid dt clears linear x", linearVelocity[0], 0.0f, 0.001f);
+        ok &= expectNear("invalid dt clears linear y", linearVelocity[1], 0.0f, 0.001f);
+        ok &= expectNear("invalid dt clears linear z", linearVelocity[2], 0.0f, 0.001f);
+        ok &= expectNear("invalid dt clears linear w", linearVelocity[3], 0.0f, 0.001f);
     }
 
     {
