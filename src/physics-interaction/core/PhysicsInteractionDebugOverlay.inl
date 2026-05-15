@@ -947,10 +947,10 @@
                         sample.transformBLocalDelta.distance);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 10),
                         color,
-                        "ANGT AUTH %.2f ROW %.2f BODY %.2f TB %.2f EN%d",
-                        sample.targetColumnsToAuthorityDegrees,
-                        sample.targetRowsToAuthorityDegrees,
-                        sample.targetColumnsToBodyAuthorityDegrees,
+                        "ANGT CI %.2f RI %.2f CF %.2f TB %.2f EN%d",
+                        sample.targetColumnsToConstraintInverseDegrees,
+                        sample.targetRowsToConstraintInverseDegrees,
+                        sample.targetColumnsToConstraintForwardDegrees,
                         sample.targetColumnsToTransformBDegrees,
                         sample.ragdollMotorEnabled ? 1 : 0);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 11),
@@ -1323,7 +1323,7 @@
                     }
                     if (sample.hasConstraintAngularTelemetry) {
                         ROCK_LOG_INFO(Hand,
-                            "GRAB TELEMETRY {} {} transformBLocal=({:.2f},{:.2f},{:.2f}) desiredTransformBLocal=({:.2f},{:.2f},{:.2f}) transformBErr={:.3f}gu targetErr(colsAuthority={:.3f}deg rowsAuthority={:.3f}deg colsBodyAuthority={:.3f}deg colsTransformB={:.3f}deg) ragEnabled={} angTau={:.3f} angDamping={:.3f} angForce={:.1f} linTau={:.3f} linForce={:.1f} mass={:.3f}",
+                            "GRAB TELEMETRY {} {} transformBLocal=({:.2f},{:.2f},{:.2f}) desiredTransformBLocal=({:.2f},{:.2f},{:.2f}) transformBErr={:.3f}gu targetErr(colsInv={:.3f}deg rowsInv={:.3f}deg colsForward={:.3f}deg colsTransformB={:.3f}deg) ragEnabled={} angTau={:.3f} angDamping={:.3f} angForce={:.1f} linTau={:.3f} linForce={:.1f} mass={:.3f}",
                             prefix,
                             phaseLabel,
                             sample.constraintTransformBLocalGame.x,
@@ -1333,9 +1333,9 @@
                             sample.desiredTransformBLocalGame.y,
                             sample.desiredTransformBLocalGame.z,
                             sample.transformBLocalDelta.distance,
-                            sample.targetColumnsToAuthorityDegrees,
-                            sample.targetRowsToAuthorityDegrees,
-                            sample.targetColumnsToBodyAuthorityDegrees,
+                            sample.targetColumnsToConstraintInverseDegrees,
+                            sample.targetRowsToConstraintInverseDegrees,
+                            sample.targetColumnsToConstraintForwardDegrees,
                             sample.targetColumnsToTransformBDegrees,
                             sample.ragdollMotorEnabled ? "yes" : "no",
                             sample.angularMotorTau,

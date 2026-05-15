@@ -436,6 +436,20 @@ namespace rock
 
         constexpr const char* kHeldObjectDriveName = "proxyConstraint";
 
+        RE::NiPoint3 constraintDrivePivotBBodyLocalGame(const CanonicalGrabFrame& frame)
+        {
+            /*
+             * ROCK writes the constraint's object-space transform-B pivot from
+             * the same captured hand/body frame used for angular drive. The
+             * original surface pivot remains telemetry and release context, but
+             * proxy constraint grabs must measure and solve against this active
+             * pivot so linear and angular authority do not disagree.
+             */
+            const RE::NiTransform desiredBodyTransformHandSpace =
+                grab_frame_math::desiredBodyInHandBodySpace(frame.constraintHandSpace, frame.bodyLocal);
+            return grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformHandSpace, frame.pivotAHandBodyLocalGame);
+        }
+
         std::uintptr_t heldBodyFlagLeaseOwner(const Hand* hand)
         {
             return reinterpret_cast<std::uintptr_t>(hand) ^ 0x524F434B48454C44ull;
@@ -2295,17 +2309,10 @@ namespace rock
                         constraintAnchorWorld = proxyWorld;
                     }
                 }
-                /*
-                 * This telemetry mirrors production proxy authority: the proxy
-                 * frame supplies body-A translation while raw hand rotation
-                 * supplies angular intent through transform A.
-                 */
-                const RE::NiTransform authorityFrame =
-                    makeRawRotationPalmTranslationFrame(out.rawHandWorld, constraintAnchorWorld);
                 out.currentConstraintDesiredObjectWorld =
-                    multiplyTransforms(authorityFrame, _grabFrame.rawRotationProxyHandSpace);
+                    grab_transform_telemetry::computeCurrentDesiredObjectFromFrame(constraintAnchorWorld, _grabFrame.constraintHandSpace);
                 out.currentConstraintDesiredBodyWorld =
-                    multiplyTransforms(authorityFrame, _grabFrame.rawRotationProxyBodyHandSpace);
+                    multiplyTransforms(constraintAnchorWorld, _grabFrame.constraintBodyHandSpace);
                 out.currentConstraintDesiredObjectWorldBasis = grab_transform_telemetry::makeOrientationBasis(out.currentConstraintDesiredObjectWorld);
                 out.currentConstraintDesiredBodyWorldBasis = grab_transform_telemetry::makeOrientationBasis(out.currentConstraintDesiredBodyWorld);
                 if (out.hasHeldNodeWorld) {
@@ -2353,31 +2360,27 @@ namespace rock
 
         if (_activeConstraint.constraintData) {
             auto* constraintData = static_cast<const char*>(_activeConstraint.constraintData);
-            auto* transformARotation = reinterpret_cast<const float*>(constraintData + offsets::kTransformA_Col0);
             auto* targetBRca = reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + 0x10);
             auto* transformBRotation = reinterpret_cast<const float*>(constraintData + offsets::kTransformB_Col0);
             auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + offsets::kTransformB_Pos);
 
-            const RE::NiTransform desiredBodyTransformAuthoritySpace = _grabFrame.rawRotationProxyBodyHandSpace;
-            const RE::NiTransform desiredBodyToAuthoritySpace = invertTransform(desiredBodyTransformAuthoritySpace);
-            const RE::NiMatrix3 transformAAsHkColumns = matrixFromHkColumns(transformARotation);
+            const RE::NiTransform desiredBodyTransformHandSpace = _grabFrame.constraintBodyHandSpace;
+            const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
             const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
             const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
             const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
-            const RE::NiMatrix3 expectedAuthorityTarget = grab_constraint_math::composeRagdollAngularTargetRotation(
-                desiredBodyToAuthoritySpace.rotate,
-                transformAAsHkColumns);
 
             out.constraintTransformBLocalGame = RE::NiPoint3{
                 transformBTranslation[0] * havokToGameScale(),
                 transformBTranslation[1] * havokToGameScale(),
                 transformBTranslation[2] * havokToGameScale(),
             };
-            out.desiredTransformBLocalGame = activeProxyConstraintPivotBLocalGame();
+            out.desiredTransformBLocalGame =
+                grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformHandSpace, _grabFrame.pivotAHandBodyLocalGame);
             out.transformBLocalDelta = grab_transform_telemetry::measurePointPair(out.constraintTransformBLocalGame, out.desiredTransformBLocalGame);
-            out.targetColumnsToAuthorityDegrees = rotationDeltaDegrees(targetAsHkColumns, expectedAuthorityTarget);
-            out.targetRowsToAuthorityDegrees = rotationDeltaDegrees(targetAsHkRows, expectedAuthorityTarget);
-            out.targetColumnsToBodyAuthorityDegrees = rotationDeltaDegrees(targetAsHkColumns, desiredBodyToAuthoritySpace.rotate);
+            out.targetColumnsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkColumns, desiredBodyToHandSpace.rotate);
+            out.targetRowsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkRows, desiredBodyToHandSpace.rotate);
+            out.targetColumnsToConstraintForwardDegrees = rotationDeltaDegrees(targetAsHkColumns, desiredBodyTransformHandSpace.rotate);
             out.targetColumnsToTransformBDegrees = rotationDeltaDegrees(targetAsHkColumns, transformBAsHkColumns);
             out.ragdollMotorEnabled = *(constraintData + ATOM_RAGDOLL_MOT + 0x02) != 0;
             if (_activeConstraint.angularMotor) {
@@ -5703,9 +5706,8 @@ namespace rock
                 proxyDriveOk = proxyDriveResult.driven;
             }
             if (proxyDriveOk) {
-                proxyReadbackBetweenOk = tryGetBodyArrayWorldTransform(world, proxyBodyId, proxyReadbackBetween);
-                proxyReadbackSourceBetween = proxyReadbackBetweenOk ? body_frame::BodyFrameSource::BodyTransform : body_frame::BodyFrameSource::Fallback;
-                proxyReadbackMotionIndexBetween = body_frame::kFreeMotionIndex;
+                proxyReadbackBetweenOk =
+                    tryResolveLiveBodyWorldTransform(world, proxyBodyId, proxyReadbackBetween, &proxyReadbackSourceBetween, &proxyReadbackMotionIndexBetween);
                 if (proxyReadbackBetweenOk) {
                     proxyReadbackBetweenPositionErrorGameUnits =
                         pointDistanceGameUnits(proxyReadbackBetween.translate, pending.proxyWorld.translate);
