@@ -186,9 +186,13 @@ Current ordinary one-hand loose dynamic grab path:
     bodies with unique-motion dedupe;
   - `setHeldVelocity(...)` and release velocity also operate on the whole
     `_heldBodyIds` set with unique-motion dedupe;
-  - confirmed gap: `updateConstraintGrabDriveMotors(...)`,
-    `captureGrabTelemetry(...)`, and angular probe telemetry still read only
-    `_savedObjectState.bodyId` through `readBodyMass(...)`.
+  - fixed: `updateConstraintGrabDriveMotors(...)`, grab telemetry, and angular
+    probe telemetry now use `readHeldBodyMassSummary(...)`, so multipart held
+    objects are budgeted from the accepted body set instead of only the selected
+    primary body;
+  - fixed: direct angular velocity authority now writes each unique accepted
+    motion through `setHeldAngularVelocity(...)` instead of writing only
+    `_savedObjectState.bodyId`.
 - loose weapons:
   - loose non-equipped weapons are detected with
     `isLooseWeaponGrabTarget(...)`;
@@ -199,10 +203,13 @@ Current ordinary one-hand loose dynamic grab path:
     receive the same base motor policy as generic loose objects unless the INI
     changes them.
 - long objects:
-  - `computeLocalBoundsLongAxis(...)` exists but is not wired into motor force,
-    angular speed, release, or telemetry;
-  - no confirmed live policy currently scales angular authority by held lever
-    length, local bounds, or pivot-to-extents distance.
+  - fixed: the old unused bounds-axis helper was replaced with
+    `computeLocalMeshMaxDistanceFromPoint(...)`;
+  - the canonical grab frame stores `longObjectLeverGameUnits`, measured from
+    the selected grip point to cached local mesh extents;
+  - `applyProxyConstraintAngularVelocityDrive(...)` applies
+    `computeLongObjectAngularSpeedScale(...)` to the held angular speed cap so
+    long objects do not get the same tip-sweep authority as compact objects.
 - hand/finger pose:
   - runtime mesh/contact target set is stored in the grab frame in object local
     space;
@@ -212,6 +219,27 @@ Current ordinary one-hand loose dynamic grab path:
   - pose is delayed during converge/pull and published once touch-held is
     reached, then re-applied on the configured interval with smoothing and local
     transform correction.
+
+### Finger/Palm Seating Review - 2026-05-15
+
+Code review found no new finger-placement bug to patch in this pass:
+
+- HIGGS dynamic grab shifts finger probe starts by `palmToPoint = ptPos -
+  palmPos` before curve intersection, so the hand solves as if the selected
+  object point has already seated into the palm.
+- ROCK reproduces that behavior in
+  `solveGrabFingerPoseFromTriangles(...)`: `palmSeatProbeShift =
+  poseTargets.seatPointWorld - grabAnchorWorld`, then `baseWorld =
+  live.base + palmSeatProbeShift`.
+- ROCK uses live root-flattened finger landmarks as the base transform source,
+  not authored mesh markers, and only uses mesh/contact evidence to choose the
+  seated surface and optional surface aim targets.
+- ROCK captures `_grabFingerPose` at grab commit and re-applies that captured
+  pose while held instead of recomputing from a moving physics body each frame.
+
+Conclusion: precision finger placement already has the required HIGGS-style
+math plus FO4VR root-flattened hand data. No code change was made for fingers
+because the review found coverage, not a confirmed defect.
 
 ## Legacy Backup Map
 
@@ -292,10 +320,10 @@ Dynamic-only HIGGS findings from approved source:
 Confirmed gaps and fixes:
 
 1. **Primary-only mass budget for multipart held objects**
-   - Evidence:
+   - Evidence before fix:
      - `_heldBodyIds` is the canonical whole-object body set.
      - inertia normalization and release velocity already use `_heldBodyIds`.
-     - motor force and mass telemetry still read only `_savedObjectState.bodyId`.
+     - motor force and mass telemetry read only `_savedObjectState.bodyId`.
    - Effect:
      - multipart loose weapons can be budgeted as if only the selected piece
        exists, while the rest of the runtime treats the connected object as a
@@ -308,8 +336,8 @@ Confirmed gaps and fixes:
      - log aggregate mass, sampled body count, and unique motion count.
 
 2. **Long-object lever policy not wired**
-   - Evidence:
-     - `computeLocalBoundsLongAxis(...)` exists but no live call uses it for
+   - Evidence before fix:
+     - `computeLocalBoundsLongAxis(...)` existed but no live call used it for
        force/rotation.
    - Effect:
      - there is no explicit policy for long-object angular authority beyond
@@ -336,6 +364,24 @@ Confirmed gaps and fixes:
      - after aggregate mass is fixed, tune or add custom loose-weapon policy
        using custom constraint variables only.
 
+4. **Primary-only direct angular velocity writer**
+   - Evidence:
+     - aggregate mass, inertia normalization, release velocity, nearby damping,
+       activation, and collision cleanup all use `_heldBodyIds`;
+     - `applyProxyConstraintAngularVelocityDrive(...)` still wrote the direct
+       hard-keyframe angular command only to `_savedObjectState.bodyId`.
+   - Effect:
+     - multipart loose weapons/objects could receive whole-object mass budgeting
+       but one-body angular velocity authority, leaving connected parts to fight
+       the primary body under fast wrist rotation.
+   - Fix:
+     - add `setHeldAngularVelocity(...)` with unique-motion dedupe over the
+       primary body plus `_heldBodyIds`;
+     - write the clamped angular velocity to every accepted unique motion;
+     - log `angBodies` in proxy authority telemetry;
+     - add source-boundary guards rejecting a return to primary-only angular
+       writes.
+
 ## Implementation Log
 
 - 2026-05-15 review cleanup: removed obsolete proxy matrix-column angular
@@ -343,7 +389,7 @@ Confirmed gaps and fixes:
   path; it removes dead convention code now superseded by
   `computeHardKeyframeVelocityForTarget(...)`.
 - 2026-05-15 mapping: current ROCK, spring-era backup, and HIGGS dynamic-only
-  pass confirm the first safe code fix is the primary-body-only mass budget.
+  pass confirmed the first safe code fix was the primary-body-only mass budget.
 - 2026-05-15 mass-budget slice:
   - added `HeldBodyMassSummary` with unique-motion dedupe over the primary body
     plus `_heldBodyIds`;
@@ -360,6 +406,11 @@ Confirmed gaps and fixes:
     receive the same tip sweep authority as compact objects;
   - added config keys and source/unit tests for the long-object scale policy;
   - updated the active production INI in place with the new keys.
+- 2026-05-15 full review follow-up:
+  - found the direct angular hard-keyframe writer was still primary-body-only;
+  - changed it to write the accepted held-body set with unique-motion dedupe;
+  - added proxy authority telemetry for the number of angular bodies written;
+  - added a source-boundary guard for the multipart angular-authority rule.
 
 ## Verification Log
 

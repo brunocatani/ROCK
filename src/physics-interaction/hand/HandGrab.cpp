@@ -1530,6 +1530,69 @@ namespace rock
             setHeldVelocity(world, primaryBodyId, heldBodyIds, linearVelocity, RE::NiPoint3{}, false, angularVelocityKeep);
         }
 
+        std::uint32_t setHeldAngularVelocity(RE::hknpWorld* world,
+            RE::hknpBodyId primaryBodyId,
+            const std::vector<std::uint32_t>& heldBodyIds,
+            const RE::NiPoint3& angularVelocity)
+        {
+            /*
+             * Dynamic grab's angular command must address the same accepted
+             * held-object body set as mass, inertia, activation, and release.
+             * Writing only the selected primary body makes multipart loose
+             * weapons receive one-body rotation authority while the rest of the
+             * runtime treats the object as a connected set.
+             */
+            if (!world ||
+                !std::isfinite(angularVelocity.x) ||
+                !std::isfinite(angularVelocity.y) ||
+                !std::isfinite(angularVelocity.z)) {
+                return 0;
+            }
+
+            constexpr std::size_t kMaxAngularMotionSlots = 96;
+            std::array<std::uint32_t, kMaxAngularMotionSlots> updatedMotionSlots{};
+            std::size_t updatedMotionSlotCount = 0;
+
+            auto motionAlreadyUpdated = [&updatedMotionSlots, &updatedMotionSlotCount](std::uint32_t motionIndex) {
+                for (std::size_t i = 0; i < updatedMotionSlotCount; ++i) {
+                    if (updatedMotionSlots[i] == motionIndex) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            auto setBody = [&](std::uint32_t rawBodyId) {
+                if (rawBodyId == INVALID_BODY_ID) {
+                    return;
+                }
+
+                auto* body = havok_runtime::getBody(world, RE::hknpBodyId{ rawBodyId });
+                if (!body || !body_frame::hasUsableMotionIndex(body->motionIndex) || motionAlreadyUpdated(body->motionIndex)) {
+                    return;
+                }
+                if (updatedMotionSlotCount >= updatedMotionSlots.size()) {
+                    return;
+                }
+
+                updatedMotionSlots[updatedMotionSlotCount++] = body->motionIndex;
+                RE::hkVector4f angularVelocityHavok{
+                    angularVelocity.x,
+                    angularVelocity.y,
+                    angularVelocity.z,
+                    0.0f,
+                };
+                world->SetBodyAngularVelocity(RE::hknpBodyId{ rawBodyId }, angularVelocityHavok);
+            };
+
+            setBody(primaryBodyId.value);
+            for (const auto bodyId : heldBodyIds) {
+                setBody(bodyId);
+            }
+
+            return static_cast<std::uint32_t>(updatedMotionSlotCount);
+        }
+
         float readBodyMass(RE::hknpWorld* world, RE::hknpBodyId bodyId)
         {
             if (!world || bodyId.value == INVALID_BODY_ID) {
@@ -2846,6 +2909,7 @@ namespace rock
         float& outAppliedAngularSpeedRadiansPerSecond,
         float& outMaxAngularSpeedRadiansPerSecond,
         float& outLongObjectAngularScale,
+        std::uint32_t& outAppliedAngularBodyCount,
         RE::NiPoint3& outRawAngularVelocityRadiansPerSecond,
         RE::NiPoint3& outAppliedAngularVelocityRadiansPerSecond)
     {
@@ -2853,6 +2917,7 @@ namespace rock
         outAppliedAngularSpeedRadiansPerSecond = 0.0f;
         outMaxAngularSpeedRadiansPerSecond = 0.0f;
         outLongObjectAngularScale = 1.0f;
+        outAppliedAngularBodyCount = 0;
         outRawAngularVelocityRadiansPerSecond = {};
         outAppliedAngularVelocityRadiansPerSecond = {};
 
@@ -2925,14 +2990,9 @@ namespace rock
             outAppliedAngularSpeedRadiansPerSecond = 0.0f;
         }
 
-        RE::hkVector4f angularVelocity{
-            appliedAngularVelocity.x,
-            appliedAngularVelocity.y,
-            appliedAngularVelocity.z,
-            0.0f,
-        };
-        world->SetBodyAngularVelocity(_savedObjectState.bodyId, angularVelocity);
-        return true;
+        outAppliedAngularBodyCount =
+            setHeldAngularVelocity(world, _savedObjectState.bodyId, _heldBodyIds, appliedAngularVelocity);
+        return outAppliedAngularBodyCount > 0;
     }
 
     void Hand::queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
@@ -5764,6 +5824,7 @@ namespace rock
         float appliedAngularDriveSpeedRadiansPerSecond = 0.0f;
         float maxAngularDriveSpeedRadiansPerSecond = 0.0f;
         float longObjectAngularScale = 1.0f;
+        std::uint32_t angularDriveBodyCount = 0;
         RE::NiPoint3 rawAngularDriveVelocityRadiansPerSecond{};
         RE::NiPoint3 appliedAngularDriveVelocityRadiansPerSecond{};
         std::uint64_t queuedSequence = 0;
@@ -5873,6 +5934,7 @@ namespace rock
                         appliedAngularDriveSpeedRadiansPerSecond,
                         maxAngularDriveSpeedRadiansPerSecond,
                         longObjectAngularScale,
+                        angularDriveBodyCount,
                         rawAngularDriveVelocityRadiansPerSecond,
                         appliedAngularDriveVelocityRadiansPerSecond);
                     if (!angularDriveOk) {
@@ -5942,7 +6004,7 @@ namespace rock
             std::uint32_t filterInfo = 0;
             const bool filterReadOk = havok_runtime::tryReadFilterInfo(world, proxyBodyId, filterInfo);
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+livePalmMirror+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularRef={} angularTarget=({:.1f},{:.1f},{:.1f}) pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s directAngular={} rawAng={:.3f}rad/s rawAngVec=({:.3f},{:.3f},{:.3f}) appliedAng={:.3f}rad/s appliedAngVec=({:.3f},{:.3f},{:.3f}) capAng={:.3f}rad/s longLever={:.1f}gu longScale={:.2f} proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+livePalmMirror+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularRef={} angularTarget=({:.1f},{:.1f},{:.1f}) pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s directAngular={} angBodies={} rawAng={:.3f}rad/s rawAngVec=({:.3f},{:.3f},{:.3f}) appliedAng={:.3f}rad/s appliedAngVec=({:.3f},{:.3f},{:.3f}) capAng={:.3f}rad/s longLever={:.1f}gu longScale={:.2f} proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -5973,6 +6035,7 @@ namespace rock
                 proxyLinearVelocityHavokMagnitude,
                 proxyAngularVelocityRadiansPerSecond,
                 angularDriveOk ? "ok" : "fail",
+                angularDriveBodyCount,
                 rawAngularDriveSpeedRadiansPerSecond,
                 rawAngularDriveVelocityRadiansPerSecond.x,
                 rawAngularDriveVelocityRadiansPerSecond.y,
