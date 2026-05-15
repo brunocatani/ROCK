@@ -189,9 +189,9 @@ namespace rock::grab_transform_telemetry
         float pivotErrorGameUnits = 0.0f;
         float relationPivotErr = 0.0f;
         float rotationPreservedDeg = 0.0f;
-        float targetColumnsToConstraintInverseDegrees = 0.0f;
-        float targetRowsToConstraintInverseDegrees = 0.0f;
-        float targetColumnsToConstraintForwardDegrees = 0.0f;
+        float targetColumnsToAuthorityDegrees = 0.0f;
+        float targetRowsToAuthorityDegrees = 0.0f;
+        float targetColumnsToBodyAuthorityDegrees = 0.0f;
         float targetColumnsToTransformBDegrees = 0.0f;
         float angularMotorTau = 0.0f;
         float angularMotorDamping = 0.0f;
