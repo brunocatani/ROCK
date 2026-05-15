@@ -168,12 +168,10 @@ namespace rock
 
         void updateBodyBoneCollisions(const PhysicsFrameContext& frame);
 
-        void driveNativeGrabFromPhysicsStep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void driveGeneratedCollidersFromPhysicsSubstep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void driveGrabAuthorityPhase0ProbeFromBetweenStep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void observeGrabAuthorityPhase0ProbeAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
 
-        static void onNativeGrabPhysicsStep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         static void onGeneratedColliderPhysicsSubstep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         static void onGrabAuthorityPhase0BetweenStep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         static void onGrabAuthorityPhase0AfterSolve(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);

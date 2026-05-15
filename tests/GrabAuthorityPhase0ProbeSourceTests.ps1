@@ -72,8 +72,8 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'onGrabAuthor
     'PhysicsInteraction must wire the Phase 0 probe into the between-collide-and-solve callback.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'onGrabAuthorityPhase0AfterSolve' `
     'PhysicsInteraction must wire the Phase 0 probe into the after-solve callback.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'flushPendingHeldNativeGrab' `
-    'Current native mouse-spring held-object flush must remain intact during Phase 0.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'flushPendingHeldNativeGrab' `
+    'Native mouse-spring held-object flush must remain removed after proxy authority became production.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'GrabAuthorityPhase0|Phase0' `
     'Phase 0 diagnostics must not change active HandGrab behavior.'
 

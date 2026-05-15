@@ -34,14 +34,6 @@ namespace
     constexpr float kDefaultSoftContactWeaponHandMaxCorrectionGameUnits = 3.0f;
     constexpr float kDefaultSoftContactWeaponHandCorrectionScale = 0.35f;
     constexpr float kDefaultSoftContactWeaponHandHardStopPenetrationGameUnits = 4.0f;
-    constexpr float kDefaultGrabNativeMouseSpringLinearResponseScale = 1.35f;
-    constexpr float kDefaultGrabNativeMouseSpringAngularResponseScale = 0.75f;
-    constexpr float kDefaultGrabNativeMouseSpringAngularClampScale = 0.85f;
-    constexpr int kDefaultGrabObjectRotationReferenceMode = 3;
-    constexpr float kDefaultGrabLooseWeaponNativeLinearResponseMultiplier = 1.0f;
-    constexpr float kDefaultGrabLooseWeaponNativeAngularResponseMultiplier = 1.0f;
-    constexpr float kDefaultGrabLooseWeaponNativeAngularClampMultiplier = 1.0f;
-    constexpr float kDefaultGrabLooseWeaponAdaptiveLeadMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearTauMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularTauMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintCollisionTauMultiplier = 1.0f;
@@ -51,11 +43,6 @@ namespace
     constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularForceMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = 1.0f;
-    constexpr float kDefaultGrabAdaptiveHeldLeadTimeMax = 0.035f;
-    constexpr float kDefaultGrabAdaptiveHeldMaxLeadDistanceGameUnits = 8.0f;
-    constexpr float kDefaultGrabAdaptiveHeldMaxAngularLeadDegrees = 18.0f;
-    constexpr float kDefaultGrabAdaptiveHeldFullErrorGameUnits = 20.0f;
-    constexpr float kDefaultGrabAdaptiveHeldCollisionLeadScale = 0.25f;
     constexpr float kDefaultGrabThrowObjectVelocityBlend = 0.35f;
     constexpr float kDefaultGrabThrowTangentialVelocityScale = 1.0f;
     constexpr float kDefaultGrabThrowMaxVelocityHavok = 12.0f;
@@ -299,14 +286,6 @@ namespace rock
         rockGrabFadeInStartAngularRatio = 100.0f;
 
         rockGrabForceFadeInTime = 0.1f;
-        rockGrabNativeMouseSpringLinearResponseScale = kDefaultGrabNativeMouseSpringLinearResponseScale;
-        rockGrabNativeMouseSpringAngularResponseScale = kDefaultGrabNativeMouseSpringAngularResponseScale;
-        rockGrabNativeMouseSpringAngularClampScale = kDefaultGrabNativeMouseSpringAngularClampScale;
-        rockGrabObjectRotationReferenceMode = kDefaultGrabObjectRotationReferenceMode;
-        rockGrabLooseWeaponNativeLinearResponseMultiplier = kDefaultGrabLooseWeaponNativeLinearResponseMultiplier;
-        rockGrabLooseWeaponNativeAngularResponseMultiplier = kDefaultGrabLooseWeaponNativeAngularResponseMultiplier;
-        rockGrabLooseWeaponNativeAngularClampMultiplier = kDefaultGrabLooseWeaponNativeAngularClampMultiplier;
-        rockGrabLooseWeaponAdaptiveLeadMultiplier = kDefaultGrabLooseWeaponAdaptiveLeadMultiplier;
         rockGrabLooseWeaponSharedConstraintLinearTauMultiplier = kDefaultGrabLooseWeaponSharedConstraintLinearTauMultiplier;
         rockGrabLooseWeaponSharedConstraintAngularTauMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularTauMultiplier;
         rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier = kDefaultGrabLooseWeaponSharedConstraintCollisionTauMultiplier;
@@ -316,12 +295,6 @@ namespace rock
         rockGrabLooseWeaponSharedConstraintAngularForceMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularForceMultiplier;
         rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = kDefaultGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier;
         rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier;
-        rockGrabAdaptiveHeldResponseEnabled = true;
-        rockGrabAdaptiveHeldLeadTimeMax = kDefaultGrabAdaptiveHeldLeadTimeMax;
-        rockGrabAdaptiveHeldMaxLeadDistanceGameUnits = kDefaultGrabAdaptiveHeldMaxLeadDistanceGameUnits;
-        rockGrabAdaptiveHeldMaxAngularLeadDegrees = kDefaultGrabAdaptiveHeldMaxAngularLeadDegrees;
-        rockGrabAdaptiveHeldFullErrorGameUnits = kDefaultGrabAdaptiveHeldFullErrorGameUnits;
-        rockGrabAdaptiveHeldCollisionLeadScale = kDefaultGrabAdaptiveHeldCollisionLeadScale;
         rockGrabTauMin = 0.01f;
         rockGrabTauMax = 0.8f;
         rockGrabTauLerpSpeed = 0.5f;
@@ -1020,77 +993,6 @@ namespace rock
         rockGrabFadeInStartAngularRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFadeInStartAngularRatio", rockGrabFadeInStartAngularRatio));
 
         rockGrabForceFadeInTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabForceFadeInTime", rockGrabForceFadeInTime));
-        rockGrabNativeMouseSpringLinearResponseScale =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNativeMouseSpringLinearResponseScale", rockGrabNativeMouseSpringLinearResponseScale));
-        if (!std::isfinite(rockGrabNativeMouseSpringLinearResponseScale)) {
-            ROCK_LOG_WARN(Config,
-                "Invalid fGrabNativeMouseSpringLinearResponseScale={} -- using {:.2f}",
-                rockGrabNativeMouseSpringLinearResponseScale,
-                kDefaultGrabNativeMouseSpringLinearResponseScale);
-            rockGrabNativeMouseSpringLinearResponseScale = kDefaultGrabNativeMouseSpringLinearResponseScale;
-        }
-        rockGrabNativeMouseSpringLinearResponseScale = std::clamp(rockGrabNativeMouseSpringLinearResponseScale, 0.05f, 4.0f);
-
-        rockGrabNativeMouseSpringAngularResponseScale =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNativeMouseSpringAngularResponseScale", rockGrabNativeMouseSpringAngularResponseScale));
-        if (!std::isfinite(rockGrabNativeMouseSpringAngularResponseScale)) {
-            ROCK_LOG_WARN(Config,
-                "Invalid fGrabNativeMouseSpringAngularResponseScale={} -- using {:.2f}",
-                rockGrabNativeMouseSpringAngularResponseScale,
-                kDefaultGrabNativeMouseSpringAngularResponseScale);
-            rockGrabNativeMouseSpringAngularResponseScale = kDefaultGrabNativeMouseSpringAngularResponseScale;
-        }
-        rockGrabNativeMouseSpringAngularResponseScale = std::clamp(rockGrabNativeMouseSpringAngularResponseScale, 0.05f, 4.0f);
-
-        rockGrabNativeMouseSpringAngularClampScale =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNativeMouseSpringAngularClampScale", rockGrabNativeMouseSpringAngularClampScale));
-        if (!std::isfinite(rockGrabNativeMouseSpringAngularClampScale)) {
-            ROCK_LOG_WARN(Config,
-                "Invalid fGrabNativeMouseSpringAngularClampScale={} -- using {:.2f}",
-                rockGrabNativeMouseSpringAngularClampScale,
-                kDefaultGrabNativeMouseSpringAngularClampScale);
-            rockGrabNativeMouseSpringAngularClampScale = kDefaultGrabNativeMouseSpringAngularClampScale;
-        }
-        rockGrabNativeMouseSpringAngularClampScale = std::clamp(rockGrabNativeMouseSpringAngularClampScale, 0.05f, 4.0f);
-
-        rockGrabObjectRotationReferenceMode =
-            static_cast<int>(ini.GetLongValue(SECTION, "iGrabObjectRotationReferenceMode", rockGrabObjectRotationReferenceMode));
-        if (rockGrabObjectRotationReferenceMode < 0 || rockGrabObjectRotationReferenceMode > 3) {
-            ROCK_LOG_WARN(Config,
-                "Invalid iGrabObjectRotationReferenceMode={} -- using {}",
-                rockGrabObjectRotationReferenceMode,
-                kDefaultGrabObjectRotationReferenceMode);
-            rockGrabObjectRotationReferenceMode = kDefaultGrabObjectRotationReferenceMode;
-        }
-
-        rockGrabLooseWeaponNativeLinearResponseMultiplier = readClampedFloat(ini,
-            SECTION,
-            "fGrabLooseWeaponNativeLinearResponseMultiplier",
-            rockGrabLooseWeaponNativeLinearResponseMultiplier,
-            kDefaultGrabLooseWeaponNativeLinearResponseMultiplier,
-            0.05f,
-            4.0f);
-        rockGrabLooseWeaponNativeAngularResponseMultiplier = readClampedFloat(ini,
-            SECTION,
-            "fGrabLooseWeaponNativeAngularResponseMultiplier",
-            rockGrabLooseWeaponNativeAngularResponseMultiplier,
-            kDefaultGrabLooseWeaponNativeAngularResponseMultiplier,
-            0.05f,
-            4.0f);
-        rockGrabLooseWeaponNativeAngularClampMultiplier = readClampedFloat(ini,
-            SECTION,
-            "fGrabLooseWeaponNativeAngularClampMultiplier",
-            rockGrabLooseWeaponNativeAngularClampMultiplier,
-            kDefaultGrabLooseWeaponNativeAngularClampMultiplier,
-            0.05f,
-            4.0f);
-        rockGrabLooseWeaponAdaptiveLeadMultiplier = readClampedFloat(ini,
-            SECTION,
-            "fGrabLooseWeaponAdaptiveLeadMultiplier",
-            rockGrabLooseWeaponAdaptiveLeadMultiplier,
-            kDefaultGrabLooseWeaponAdaptiveLeadMultiplier,
-            0.0f,
-            4.0f);
         rockGrabLooseWeaponSharedConstraintLinearTauMultiplier = readClampedFloat(ini,
             SECTION,
             "fGrabLooseWeaponSharedConstraintLinearTauMultiplier",
@@ -1154,38 +1056,6 @@ namespace rock
             kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier,
             0.05f,
             4.0f);
-
-        rockGrabAdaptiveHeldResponseEnabled = ini.GetBoolValue(SECTION, "bGrabAdaptiveHeldResponseEnabled", rockGrabAdaptiveHeldResponseEnabled);
-        rockGrabAdaptiveHeldLeadTimeMax =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAdaptiveHeldLeadTimeMax", rockGrabAdaptiveHeldLeadTimeMax));
-        rockGrabAdaptiveHeldLeadTimeMax = std::clamp(
-            std::isfinite(rockGrabAdaptiveHeldLeadTimeMax) ? rockGrabAdaptiveHeldLeadTimeMax : kDefaultGrabAdaptiveHeldLeadTimeMax,
-            0.0f,
-            0.12f);
-        rockGrabAdaptiveHeldMaxLeadDistanceGameUnits = static_cast<float>(
-            ini.GetDoubleValue(SECTION, "fGrabAdaptiveHeldMaxLeadDistanceGameUnits", rockGrabAdaptiveHeldMaxLeadDistanceGameUnits));
-        rockGrabAdaptiveHeldMaxLeadDistanceGameUnits = std::clamp(
-            std::isfinite(rockGrabAdaptiveHeldMaxLeadDistanceGameUnits) ? rockGrabAdaptiveHeldMaxLeadDistanceGameUnits : kDefaultGrabAdaptiveHeldMaxLeadDistanceGameUnits,
-            0.0f,
-            40.0f);
-        rockGrabAdaptiveHeldMaxAngularLeadDegrees =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAdaptiveHeldMaxAngularLeadDegrees", rockGrabAdaptiveHeldMaxAngularLeadDegrees));
-        rockGrabAdaptiveHeldMaxAngularLeadDegrees = std::clamp(
-            std::isfinite(rockGrabAdaptiveHeldMaxAngularLeadDegrees) ? rockGrabAdaptiveHeldMaxAngularLeadDegrees : kDefaultGrabAdaptiveHeldMaxAngularLeadDegrees,
-            0.0f,
-            90.0f);
-        rockGrabAdaptiveHeldFullErrorGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAdaptiveHeldFullErrorGameUnits", rockGrabAdaptiveHeldFullErrorGameUnits));
-        rockGrabAdaptiveHeldFullErrorGameUnits = std::clamp(
-            std::isfinite(rockGrabAdaptiveHeldFullErrorGameUnits) ? rockGrabAdaptiveHeldFullErrorGameUnits : kDefaultGrabAdaptiveHeldFullErrorGameUnits,
-            1.0f,
-            120.0f);
-        rockGrabAdaptiveHeldCollisionLeadScale =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAdaptiveHeldCollisionLeadScale", rockGrabAdaptiveHeldCollisionLeadScale));
-        rockGrabAdaptiveHeldCollisionLeadScale = std::clamp(
-            std::isfinite(rockGrabAdaptiveHeldCollisionLeadScale) ? rockGrabAdaptiveHeldCollisionLeadScale : kDefaultGrabAdaptiveHeldCollisionLeadScale,
-            0.0f,
-            1.0f);
 
         rockGrabTauMin = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauMin", rockGrabTauMin));
         rockGrabTauMax = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauMax", rockGrabTauMax));

@@ -429,11 +429,8 @@ namespace rock
         RE::NiTransform constraintHandSpace{};
         RE::NiTransform rawRotationProxyHandSpace{};
         RE::NiTransform constraintBodyHandSpace{};
-        RE::NiTransform constraintConventionalBodyHandSpace{};
         RE::NiTransform rawRotationProxyBodyHandSpace{};
-        RE::NiTransform rawRotationProxyConventionalBodyHandSpace{};
         RE::NiTransform constraintBodyLocal{};
-        RE::NiTransform conventionalBodyLocal{};
         RE::NiTransform handBodyToRawHandAtGrab{};
         RE::NiTransform bodyLocal{};
         RE::NiTransform rootBodyLocal{};
@@ -443,7 +440,6 @@ namespace rock
         RE::NiTransform objectNodeWorldAtGrab{};
         RE::NiTransform desiredObjectWorldAtGrab{};
         RE::NiTransform desiredBodyWorldAtGrab{};
-        RE::NiTransform desiredConventionalBodyWorldAtGrab{};
         RE::NiPoint3 pivotAHandBodyLocalGame{};
         RE::NiPoint3 grabPivotWorldAtGrab{};
         RE::NiPoint3 gripPointWorldAtGrab{};
@@ -509,11 +505,8 @@ namespace rock
             constraintHandSpace = RE::NiTransform();
             rawRotationProxyHandSpace = RE::NiTransform();
             constraintBodyHandSpace = RE::NiTransform();
-            constraintConventionalBodyHandSpace = RE::NiTransform();
             rawRotationProxyBodyHandSpace = RE::NiTransform();
-            rawRotationProxyConventionalBodyHandSpace = RE::NiTransform();
             constraintBodyLocal = RE::NiTransform();
-            conventionalBodyLocal = RE::NiTransform();
             handBodyToRawHandAtGrab = RE::NiTransform();
             bodyLocal = RE::NiTransform();
             rootBodyLocal = RE::NiTransform();
@@ -523,7 +516,6 @@ namespace rock
             objectNodeWorldAtGrab = RE::NiTransform();
             desiredObjectWorldAtGrab = RE::NiTransform();
             desiredBodyWorldAtGrab = RE::NiTransform();
-            desiredConventionalBodyWorldAtGrab = RE::NiTransform();
             pivotAHandBodyLocalGame = {};
             grabPivotWorldAtGrab = {};
             gripPointWorldAtGrab = {};

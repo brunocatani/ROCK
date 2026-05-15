@@ -259,14 +259,6 @@ namespace rock
         float rockGrabFadeInStartAngularRatio = 100.0f;
 
         float rockGrabForceFadeInTime = 0.1f;
-        float rockGrabNativeMouseSpringLinearResponseScale = 1.35f;
-        float rockGrabNativeMouseSpringAngularResponseScale = 0.75f;
-        float rockGrabNativeMouseSpringAngularClampScale = 0.85f;
-        int rockGrabObjectRotationReferenceMode = 3;
-        float rockGrabLooseWeaponNativeLinearResponseMultiplier = 1.0f;
-        float rockGrabLooseWeaponNativeAngularResponseMultiplier = 1.0f;
-        float rockGrabLooseWeaponNativeAngularClampMultiplier = 1.0f;
-        float rockGrabLooseWeaponAdaptiveLeadMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintLinearTauMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintAngularTauMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier = 1.0f;
@@ -276,12 +268,6 @@ namespace rock
         float rockGrabLooseWeaponSharedConstraintAngularForceMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = 1.0f;
-        bool rockGrabAdaptiveHeldResponseEnabled = true;
-        float rockGrabAdaptiveHeldLeadTimeMax = 0.035f;
-        float rockGrabAdaptiveHeldMaxLeadDistanceGameUnits = 8.0f;
-        float rockGrabAdaptiveHeldMaxAngularLeadDegrees = 18.0f;
-        float rockGrabAdaptiveHeldFullErrorGameUnits = 20.0f;
-        float rockGrabAdaptiveHeldCollisionLeadScale = 0.25f;
         float rockGrabTauMin = 0.01f;
         float rockGrabTauMax = 0.8f;
         float rockGrabTauLerpSpeed = 0.5f;

@@ -11,7 +11,6 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/hand/HandInteractionStateMachine.h"
 #include "physics-interaction/grab/NearbyGrabDamping.h"
-#include "physics-interaction/native/NativeMouseSpringGrab.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
@@ -137,7 +136,6 @@ namespace rock
 
     enum class HeldObjectDriveMode : std::uint8_t
     {
-        NativeMouseSpring,
         ProxyConstraint
     };
 
@@ -208,7 +206,6 @@ namespace rock
         bool isHolding() const { return isHoldingState(_state); }
         RE::TESObjectREFR* getHeldRef() const { return _savedObjectState.refr; }
         const ActiveConstraint& getActiveConstraint() const { return _activeConstraint; }
-        const NativeMouseSpringGrab& getNativeGrab() const { return _nativeGrab; }
         const SavedObjectState& getSavedObjectState() const { return _savedObjectState; }
         const active_grab_body_lifecycle::BodyLifecycleSnapshot& getActiveGrabLifecycle() const { return _activeGrabLifecycle; }
         bool tryGetHeldObjectGrabPivotWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const;
@@ -341,7 +338,6 @@ namespace rock
         void updateCollisionTransform(RE::hknpWorld* world, float deltaTime);
 
         void flushPendingCollisionPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
-        void flushPendingHeldNativeGrab(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void flushPendingCustomGrabAuthority(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         bool beginStashCandidate();
@@ -411,7 +407,6 @@ namespace rock
         void abandonGrabAuthorityProxyLocked();
         void clearGrabAuthorityProxyRuntimeLocked();
         bool tryGetGrabDriveObjectWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform) const;
-        RE::NiPoint3 activeGrabDrivePivotBBodyLocalGame() const;
         RE::NiPoint3 activeProxyConstraintPivotBLocalGame() const;
 
         /*
@@ -531,8 +526,7 @@ namespace rock
         void recordHeldObjectVelocitySample(RE::hknpWorld* world, const HeldObjectPlayerSpaceFrame& playerSpaceFrame);
 
         ActiveConstraint _activeConstraint;
-        NativeMouseSpringGrab _nativeGrab;
-        HeldObjectDriveMode _heldDriveMode = HeldObjectDriveMode::NativeMouseSpring;
+        HeldObjectDriveMode _heldDriveMode = HeldObjectDriveMode::ProxyConstraint;
         BethesdaPhysicsBody _grabAuthorityProxy;
         RE::bhkWorld* _grabAuthorityProxyBhkWorld = nullptr;
         RE::hknpWorld* _grabAuthorityProxyHknpWorld = nullptr;
@@ -589,7 +583,6 @@ namespace rock
         std::array<float, 5> _grabVisualDeviationHistory{};
         std::size_t _grabVisualDeviationHistoryCount = 0;
         std::size_t _grabVisualDeviationHistoryNext = 0;
-        std::atomic<bool> _nativeGrabReleasePending{ false };
         std::array<RE::NiPoint3, 5> _grabFingerProbeStart{};
         std::array<RE::NiPoint3, 5> _grabFingerProbeEnd{};
         bool _hasGrabFingerProbeDebug = false;

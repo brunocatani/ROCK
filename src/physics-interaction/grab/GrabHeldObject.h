@@ -360,11 +360,10 @@ namespace rock::held_object_physics_math
 namespace rock::grab_held_response
 {
     /*
-     * ROCK dynamic grab authority now uses proxy-backed finite motors for
-     * ordinary loose-object holds. Native mouse-spring helpers remain as a
-     * diagnostic/fallback boundary, while these helpers derive bounded target
-     * leading and release velocity from controller motion, held-body lag, player
-     * motion, and COM-relative angular swing without making COM a grip pivot.
+     * ROCK dynamic grab authority uses proxy-backed finite motors for ordinary
+     * loose-object holds. These helpers derive bounded release velocity from
+     * controller motion, held-body lag, player motion, and COM-relative angular
+     * swing without making COM a grip pivot or keeping a second drive authority.
      */
     inline float finiteOr(float value, float fallback)
     {

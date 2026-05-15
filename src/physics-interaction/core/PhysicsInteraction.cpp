@@ -839,7 +839,7 @@ namespace rock
         _skeletonGenerationAtomic.store(_lifecycleState.skeletonGeneration, std::memory_order_release);
         _providerGenerationAtomic.store(_lifecycleState.providerGeneration, std::memory_order_release);
         _generatedBodyStepDrive.setDriveCallbacks(
-            &PhysicsInteraction::onNativeGrabPhysicsStep,
+            nullptr,
             &PhysicsInteraction::onGeneratedColliderPhysicsSubstep,
             &PhysicsInteraction::onGrabAuthorityPhase0BetweenStep,
             &PhysicsInteraction::onGrabAuthorityPhase0AfterSolve,
@@ -2698,16 +2698,6 @@ namespace rock
         _bodyBoneColliders.update(frame.hknpWorld, frame.deltaSeconds);
     }
 
-    void PhysicsInteraction::onNativeGrabPhysicsStep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
-    {
-        auto* self = static_cast<PhysicsInteraction*>(userData);
-        if (!self) {
-            return;
-        }
-
-        self->driveNativeGrabFromPhysicsStep(world, timing);
-    }
-
     void PhysicsInteraction::onGeneratedColliderPhysicsSubstep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
         auto* self = static_cast<PhysicsInteraction*>(userData);
@@ -2736,16 +2726,6 @@ namespace rock
         }
 
         self->observeGrabAuthorityPhase0ProbeAfterSolve(world, timing);
-    }
-
-    void PhysicsInteraction::driveNativeGrabFromPhysicsStep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
-    {
-        if (!world || !_initialized.load(std::memory_order_acquire) || !physicsWritesAllowedForWorld(world)) {
-            return;
-        }
-
-        _rightHand.flushPendingHeldNativeGrab(world, timing);
-        _leftHand.flushPendingHeldNativeGrab(world, timing);
     }
 
     void PhysicsInteraction::driveGeneratedCollidersFromPhysicsSubstep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)

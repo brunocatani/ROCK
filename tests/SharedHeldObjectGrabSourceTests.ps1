@@ -44,7 +44,8 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'acquirePeerH
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'promoteHeldObjectToConstraintDrive' 'When the second hand joins, the peer hand must already have or promote to custom constraint authority.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'claimOwnerForHand' 'ROCK-owned object tracking must use per-hand owner masks so pull-to-grab promotion cannot leave stale claims.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'ownerMask\s*\|=\s*claimOwnerBit\(owner\)' 'ROCK-owned object tracking must claim each owner idempotently instead of incrementing duplicate same-hand claims.'
-Require-Text 'src/physics-interaction/hand/Hand.h' 'enum class HeldObjectDriveMode[\s\S]*NativeMouseSpring[\s\S]*ProxyConstraint' 'Held objects must explicitly track native diagnostic/fallback and proxy custom constraint drive modes.'
+Require-Text 'src/physics-interaction/hand/Hand.h' 'enum class HeldObjectDriveMode[\s\S]*ProxyConstraint' 'Held objects must explicitly track the production proxy custom constraint drive mode.'
+Reject-Text 'src/physics-interaction/hand/Hand.h' 'NativeMouseSpring' 'Held-object drive modes must not retain the removed native mouse-spring fallback.'
 Reject-Text 'src/physics-interaction/hand/Hand.h' 'SharedConstraint' 'Held-object drive modes must not retain the removed semantic hand-body shared constraint fallback.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'peer-held close selection acquired' 'Delayed shared grabs must log the narrow peer-held close acquisition path.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'copyPeerInertiaSnapshot' 'The second hand must inherit original inertia snapshots instead of saving already-normalized values.'
@@ -70,7 +71,7 @@ Require-Text 'src/physics-interaction/hand/Hand.cpp' 'const auto transition = ap
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'refreshedPeerHeldSelection' 'A delayed second-hand press must refresh the peer-held close candidate before grab commit.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'clearSelectionState\(false\)' 'Stale peer-held close selections must be cleared when the refreshed reach check fails.'
 Require-Text 'src/physics-interaction/native/HavokRuntime.cpp' 'acquireBodyFlagLease' 'Shared held-object body flags must be leased across hands instead of raw enabled/disabled per release.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'releaseBodyFlagLease' 'Native mouse-spring body flags must remain enabled while the peer hand still holds the object.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'releaseBodyFlagLease' 'Held-object body flags must remain leased while the peer hand still holds the object.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Shared held-object grab source test failed:'

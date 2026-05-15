@@ -33,55 +33,40 @@ function Reject-Text {
     }
 }
 
+function Reject-Path {
+    param(
+        [string]$Path,
+        [string]$Message
+    )
+
+    if (Test-Path -LiteralPath (Join-Path $Root $Path)) {
+        $failures.Add($Message)
+    }
+}
+
 Require-Text 'src/physics-interaction/native/HavokOffsets.h' 'kFunc_NativeVRGrabDrop\s*=\s*0xF1AB90' 'Native VR drop offset must remain explicit at the verified address.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'typedef void func_t\(void\*,\s*int,\s*std::uint64_t\)' 'Native VR drop wrapper must expose the verified third flag argument.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'func\(playerChar,\s*handIndex,\s*0\)' 'Native VR drop wrapper must pass the game-observed third flag value 0.'
 
-Require-Text 'src/physics-interaction/native/HavokOffsets.h' 'kFunc_MouseSpringAction_Ctor\s*=\s*0x1E4A850' 'Native mouse-spring action constructor offset must remain explicit at the verified FO4VR VR address.'
-Require-Text 'src/physics-interaction/native/HavokOffsets.h' 'kFunc_MouseSpringAction_Update\s*=\s*0x1E4A940' 'Native mouse-spring action update offset must remain explicit at the verified FO4VR VR address.'
-Require-Text 'src/physics-interaction/native/HavokOffsets.h' 'kFunc_MouseSpringAction_SetTargetPosition\s*=\s*0x1E4A960' 'Native mouse-spring target-position setter offset must remain explicit.'
-Require-Text 'src/physics-interaction/native/HavokOffsets.h' 'kFunc_MouseSpringAction_SetTargetTransform\s*=\s*0x1E4A980' 'Native mouse-spring target-transform setter offset must remain explicit.'
-Require-Text 'src/physics-interaction/native/HavokOffsets.h' 'kData_MouseSpringLinearResponseBase\s*=\s*0x3754370' 'Native mouse-spring cinfo tuning must read FO4VR native constants instead of invented stiffness.'
-Require-Text 'src/physics-interaction/native/HavokOffsets.h' 'kData_MouseSpringAngularResponseBase\s*=\s*0x3754358' 'Native mouse-spring angular response tuning must read the verified FO4VR native constant.'
-
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'kMouseSpringActionSize\s*=\s*0xE0' 'Native mouse-spring wrapper must allocate the verified hknpBSMouseSpringAction size.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'kMouseSpringCinfoSize\s*=\s*0xB0' 'Native mouse-spring wrapper must build the verified cinfo size.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'getBodyMotion\(world,\s*bodyId\)' 'Native mouse-spring grab must validate that the held object remains a dynamic body with a readable motion.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'gameToHavokScale\(\)' 'Native mouse-spring target and local pivot must convert game units to Havok units.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'niRowsToHavokColumns' 'Native mouse-spring target orientation must use the shared verified Ni-to-Havok rotation convention.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'makeMouseSpringTargetRotation' 'Native mouse-spring orientation must isolate its native action boundary convention from generated-body rotation conversion.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'transposeRotation\(targetBodyWorldRotation\)' 'Native mouse-spring orientation must preserve the working backup native boundary conversion.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'computeTargetPointWorldGame' 'Native mouse-spring target point must be derived from the held-body target frame and frozen body-local pivot.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'MouseSpringSetTargetPosition_t' 'Native mouse-spring wrapper must update target position through the verified native setter.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'MouseSpringSetTargetTransform_t' 'Native mouse-spring wrapper must update target orientation through the verified native setter.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'MouseSpringUpdate_t' 'Native mouse-spring wrapper must flush Bethesda smoothing through the verified native update function.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.h' 'composeTuningScale\(float baseScale,\s*float multiplier\)' 'Native mouse-spring tuning must compose final applied scale through one shared helper before logging or cinfo handoff.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'kData_MouseSpringLinearResponseBase[\s\S]*sanitizeTuningScale\(tuning\.linearResponseScale\)' 'Native mouse-spring linear response scale must tune the FO4VR native cinfo value, not the shared constraint tau.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'kData_MouseSpringAngularResponseBase[\s\S]*sanitizeTuningScale\(tuning\.angularResponseScale\)' 'Native mouse-spring angular response scale must tune the FO4VR native cinfo value, not the shared constraint tau.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.h' 'mutable std::mutex _mutex' 'Native mouse-spring action state must be synchronized across frame target queueing and Havok-step flushing.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'std::scoped_lock lock\(_mutex\)' 'Native mouse-spring create, queue, flush, destroy, and debug snapshots must lock the action state.'
+Reject-Text 'src/physics-interaction/native/HavokOffsets.h' 'MouseSpring' 'Mouse-spring offsets and tuning constants must not remain available to production grab code.'
+Reject-Path 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'Native mouse-spring wrapper implementation must be removed.'
+Reject-Path 'src/physics-interaction/native/NativeMouseSpringGrab.h' 'Native mouse-spring wrapper header must be removed.'
 
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'resolveGrabAuthorityProxyFrame\(world,\s*handWorldTransform,\s*&handBodyWorldAtGrab,\s*proxyFrameWorldAtGrab' 'Close dynamic grab must resolve the hidden proxy frame from the live palm-anchor authority before creating the custom finite-force constraint.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'createProxyConstraintGrabDrive\(\s*bhkWorld,\s*world,\s*objectBodyId,\s*proxyFrameWorldAtGrab,\s*handWorldTransform,\s*grabPivotAWorld' 'Close dynamic grab must create the hidden proxy plus custom finite-force constraint from the resolved palm-authority proxy frame while preserving raw hand rotation authority.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '_nativeGrab\.create\(\s*world,\s*objectBodyId' 'Ordinary dynamic close grab must not create native mouse-spring as its production authority.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'RE::NiTransform nativeTargetBodyWorld = desiredBodyWorld' 'Held-object adaptive response must start from the body-composed ROCK target frame.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'solveAdaptiveHeldLead' 'Ordinary native held-object updates must apply the bounded adaptive held-response policy before queueing the native target.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_nativeGrab\.queueTarget\(nativeTargetBodyWorld\)' 'Held-object updates must queue the body-composed/adapted ROCK target frame, not the visual node frame.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'multiplyTransforms\(handWorldTransform,\s*desiredBodyTransformRawHandSpace\)' 'Held-object native targets must use the root-flattened raw hand frame, not the generated hand body frame.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'activePivotBBodyLocalGame\s*=\s*activeGrabDrivePivotBBodyLocalGame\(\)' 'Held-object updates must refresh the active body-local pivot before composing native or proxy target points.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'computeTargetPointWorldGame\(desiredBodyWorld,\s*activePivotBBodyLocalGame\)' 'Held-object native linear target point must derive from the active body-local pivot.'
+Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'solveAdaptiveHeldLead|nativeTargetBodyWorld|_nativeGrab\.queueTarget' 'Held-object updates must not keep removed native mouse-spring adaptive target logic.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'makeRawRotationPalmTranslationFrame\(handWorldTransform,\s*proxyAuthorityWorld\)' 'Held-object targets must use the root-flattened raw hand rotation and live palm/proxy translation.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'activePivotBBodyLocalGame\s*=\s*activeProxyConstraintPivotBLocalGame\(\)' 'Held-object updates must refresh the active proxy body-local pivot before composing target points.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'localPointToWorld\(desiredBodyWorld,\s*activePivotBBodyLocalGame\)' 'Held-object proxy target point must derive from the same active body-local pivot.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.h' 'targetBodyWorldGame' 'Native mouse-spring debug state must expose the body-composed target frame.'
-Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'computeTargetPointWorldGame\(initialTargetBodyWorldGame,\s*localGrabPointBodyGame\)' 'Native mouse-spring creation must derive its target point from the same body-composed target frame.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'tryGetNativeMouseSpringBodyWorldTransform[\s\S]*tryGetBodyArrayWorldTransform' 'Native body-array readback must remain available as diagnostics.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'tryGetGrabAuthorityBodyWorldTransform[\s\S]*tryGetNativeMouseSpringBodyWorldTransform' 'Native mouse-spring object-side authority must keep using the BODY frame.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'tryGetGrabAuthorityBodyWorldTransform[\s\S]*tryGetBodyArrayWorldTransform' 'Proxy-constraint object-side authority must keep using the BODY frame.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'tryGetGrabDriveObjectWorldTransform[\s\S]*return\s+tryGetGrabAuthorityBodyWorldTransform\(world,\s*bodyId,\s*outTransform\)' 'Proxy-constraint and native object-side reads must use the rigid BODY grab-authority frame.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'constraintUsesMotionBodyAtGrab\s*=\s*false' 'Proxy-constraint grab capture must keep body-B constraint data in the rigid BODY frame.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'constraintBodyWorldAtGrab\s*=\s*grabBodyWorldAtGrab' 'Proxy-constraint grab capture must encode body-B pivots and desired targets in the rigid BODY frame.'
 
 $grabDriveTextForBoundary = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/hand/HandGrab.cpp')
 $grabDriveStart = $grabDriveTextForBoundary.IndexOf('bool Hand::tryGetGrabDriveObjectWorldTransform')
-$grabDriveEnd = if ($grabDriveStart -ge 0) { $grabDriveTextForBoundary.IndexOf('RE::NiPoint3 Hand::activeGrabDrivePivotBBodyLocalGame', $grabDriveStart) } else { -1 }
+$grabDriveEnd = if ($grabDriveStart -ge 0) { $grabDriveTextForBoundary.IndexOf('RE::NiPoint3 Hand::activeProxyConstraintPivotBLocalGame', $grabDriveStart) } else { -1 }
 if ($grabDriveStart -lt 0 -or $grabDriveEnd -lt 0) {
     $failures.Add('Grab drive object-frame helper boundary could not be located.')
 } else {
@@ -117,7 +102,7 @@ Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'kMotion_MaxLinearVeloci
 Require-Text 'src/physics-interaction/hand/Hand.h' 'SolvedGrabFingerPose\s+_grabFingerPose' 'Grab finger pose must be stored at commit instead of re-solving from the live dynamic body every update.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFingerPose\s*=\s*fingerPose' 'Grab commit must capture the mesh-solved finger pose in the canonical grab state.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'applyRockGrabHandPose\(_isLeft,\s*_grabFingerPose' 'Held-object updates must reapply the captured finger pose rather than recomputing from a moving physics body.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'void Hand::flushPendingHeldNativeGrab' 'Native action fallback/diagnostic updates must still be flushed from the Havok step boundary when that mode is active.'
+Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'void Hand::flushPendingHeldNativeGrab' 'Native action fallback/diagnostic flush must remain removed.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'void Hand::flushPendingCustomGrabAuthority' 'Proxy constraint dynamic grab authority must flush from the between-collide-and-solve boundary.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'updateProxyConstraintGrabDriveTarget' 'Proxy constraint dynamic grab must refresh constraint transforms and angular target from the captured palm-authority hand relation.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'queueProxyGrabAuthorityTarget' 'Game-frame held updates must queue proxy targets instead of writing solver authority directly.'
@@ -126,23 +111,16 @@ Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'driveMode=nativeMouseSp
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'isLooseWeaponGrabTarget[\s\S]*grab_target::canUseRockActiveGrab[\s\S]*RE::ENUM_FORM_ID::kWEAP' 'Loose weapon detection must be limited to normal active grab refs, not equipped weapon support or actor equipment.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_heldObjectIsLooseWeapon\s*=\s*looseWeaponGrab' 'Held state must remember non-equipped dynamic weapon refs for runtime telemetry and neutral multipliers.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'rockGrabLooseWeaponSharedConstraintLinearTauMultiplier' 'Loose non-equipped weapon proxy-constraint tuning must have an explicit neutral linear tau multiplier surface.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'rockGrabLooseWeaponAdaptiveLeadMultiplier' 'Loose non-equipped weapon adaptive lead tuning remains available to any native fallback mode.'
+Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'rockGrabLooseWeaponAdaptiveLeadMultiplier' 'Loose non-equipped weapon native/adaptive lead tuning must be removed with mouse-spring authority.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'rockGrabLooseWeaponSharedConstraintLinearTauMultiplier' 'Loose non-equipped weapon shared-constraint tuning must have an explicit neutral linear tau multiplier surface.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'rockGrabLooseWeaponSharedConstraintAngularForceMultiplier' 'Loose non-equipped weapon shared-constraint tuning must have an explicit neutral angular force multiplier surface.'
 Require-Text 'src/physics-interaction/grab/GrabConstraint.h' 'struct GrabConstraintMotorTuning' 'Shared constraint creation must accept a full linear/angular motor tuning profile.'
-Require-Text 'data/config/ROCK.ini' 'fGrabNativeMouseSpringLinearResponseScale\s*=\s*1\.35' 'Packaged ROCK.ini may keep native mouse-spring response tuning for diagnostics/fallback wrapper coverage.'
-Require-Text 'data/config/ROCK.ini' 'fGrabNativeMouseSpringAngularResponseScale\s*=\s*0\.75' 'Packaged ROCK.ini may keep native mouse-spring angular response tuning for diagnostics/fallback wrapper coverage.'
-Require-Text 'data/config/ROCK.ini' 'fGrabNativeMouseSpringAngularClampScale\s*=\s*0\.85' 'Packaged ROCK.ini may keep native mouse-spring angular clamp tuning for diagnostics/fallback wrapper coverage.'
-Require-Text 'data/config/ROCK.ini' 'iGrabObjectRotationReferenceMode\s*=\s*3' 'Packaged ROCK.ini must expose the custom dynamic-grab angular reference A/B switch.'
-Require-Text 'data/config/ROCK.ini' 'fGrabLooseWeaponNativeLinearResponseMultiplier\s*=\s*1\.0' 'Packaged ROCK.ini may keep neutral loose non-equipped weapon native tuning for diagnostics/fallback wrapper coverage.'
-Require-Text 'data/config/ROCK.ini' 'fGrabLooseWeaponAdaptiveLeadMultiplier\s*=\s*1\.0' 'Packaged ROCK.ini must expose neutral loose non-equipped weapon adaptive lead tuning.'
+Reject-Text 'data/config/ROCK.ini' 'MouseSpring|iGrabObjectRotationReferenceMode|fGrabLooseWeaponNative|fGrabLooseWeaponAdaptiveLeadMultiplier' 'Packaged ROCK.ini must not expose removed mouse-spring, native loose-weapon, adaptive-lead, or rotation-mode switches.'
 Require-Text 'data/config/ROCK.ini' 'fGrabLooseWeaponSharedConstraintLinearTauMultiplier\s*=\s*1\.0' 'Packaged ROCK.ini must expose neutral loose non-equipped weapon shared linear tau tuning.'
 Require-Text 'data/config/ROCK.ini' 'fGrabLooseWeaponSharedConstraintAngularForceMultiplier\s*=\s*1\.0' 'Packaged ROCK.ini must expose neutral loose non-equipped weapon shared angular force tuning.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_nativeGrabReleasePending\.store\(true' 'Native mouse-spring flush failure must queue a deterministic held-object release instead of only logging.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'native mouse-spring flush failure marked grab invalid' 'Held-object update must consume native flush failures and release the stale grab state.'
+Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '_nativeGrabReleasePending|native mouse-spring flush failure' 'Native mouse-spring release/failure state must be removed.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'tryResolveLivePalmAnchorReference[\s\S]*tryResolveLiveBodyWorldTransform' 'Grab pivot authority must resolve from the live palm-anchor body frame.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_rightHand\.flushPendingHeldNativeGrab\(world,\s*timing\)' 'Right held-object native action must flush from the physics-step coordinator.'
-Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_leftHand\.flushPendingHeldNativeGrab\(world,\s*timing\)' 'Left held-object native action must flush from the physics-step coordinator.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'flushPendingHeldNativeGrab' 'Physics step coordinator must not flush removed native mouse-spring authority.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_rightHand\.flushPendingCustomGrabAuthority\(world,\s*timing\)' 'Right custom grab proxy authority must flush from the between-collide-and-solve coordinator.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_leftHand\.flushPendingCustomGrabAuthority\(world,\s*timing\)' 'Left custom grab proxy authority must flush from the between-collide-and-solve coordinator.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_rightHand\.abandonHavokStateAfterWorldLoss\(\)' 'Right hand must abandon stale native grab state before reset when the hknp world is lost.'
@@ -163,7 +141,7 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'PULL holding owner aft
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'motionResult\.expired\s*\|\|\s*!motionResult\.applyVelocity' 'Dynamic pull owner expiry must stay separate from the short velocity application window.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'hand\.captureHeldReleaseMotion\(hknp,\s*handInput\.rawHandWorld,\s*_heldObjectPlayerSpaceFrame,\s*frame\.deltaSeconds\);[\s\S]*hand\.releaseGrabbedObject' 'Normal grip release must capture the current-frame controller/body velocity sample before release velocity is composed.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'composeControllerReleaseAngularVelocity' 'Controller-derived release angular velocity must use the pure capped policy instead of raw hand angular velocity.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'gamePointToHavokPoint\(transform_math::localPointToWorld\(releaseBodyWorld,\s*activeGrabDrivePivotBBodyLocalGame\(\)\)\)' 'Tangential throw velocity must use the active held-object grab pivot lever arm when the body frame is readable.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'gamePointToHavokPoint\(transform_math::localPointToWorld\(releaseBodyWorld,\s*activeProxyConstraintPivotBLocalGame\(\)\)\)' 'Tangential throw velocity must use the active proxy-constraint grab pivot lever arm when the body frame is readable.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'Letting normal near/far queries refresh this selection can orphan' 'Selection refresh must be frozen while an arrived pull-catch owns the ref/body.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' '_state == HandState::SelectedClose[\s\S]*!_currentSelection\.isFarSelection[\s\S]*_currentSelection\.bodyId\.value == _pullCatchIntent\.primaryBodyId' 'Pending pull-catch commit must require the original close body and must not match a far selection refresh.'
 Require-Text 'src/physics-interaction/hand/Hand.h' 'struct PullCatchIntent' 'Far-pull catch state must be explicit hand lifecycle state, not inferred from a stale input edge.'
@@ -226,8 +204,6 @@ Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '_nativeGrab\.queueTarge
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'initialNativeTargetObjectWorld' 'Close grab creation must not feed visual object/node rotation directly to the native mouse-spring action.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'grabPivotAWorld\s*=\s*pocket\.pocketCenterWorld' 'Runtime grab pivot must not use the depth-offset pocket center as motor authority.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'preferredInsetGameUnits\s*=\s*g_rockConfig\.rockGrabGripInsetGameUnits' 'Runtime grab motor pivot must not inset the selected grip point into a guessed object interior.'
-Reject-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'SetBodyKeyframed|setBodyKeyframed|kFunc_SetBodyKeyframed' 'Native mouse-spring grab must drive a dynamic body by velocity, not keyframe the held object.'
-Reject-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'return\s+targetBodyWorldRotation;' 'Native mouse-spring orientation must not bypass the working backup boundary conversion.'
 Reject-Text 'src/physics-interaction/grab/GrabCore.h' 'visualAuthorityContactValid|visualAuthorityContactReason|wholeHandVisualAuthority|visualTranslationAuthority|visualRotationAuthority|GrabMotorPivot|motorPivot|hasSurfaceFrame|surfaceFrameLocal|orientationModeUsed|surfaceAlignmentDecision|hasOppositionFrame|oppositionFrameReason|oppositionThumb|oppositionOpposing|surfacePointWorldAtGrab|surfacePointLocal|surfaceHitLocal|surfaceNormalLocal|surfacePointBodyLocalGame|surfacePivotToSurfaceDistanceGameUnits|surfaceSelectionToMeshDistanceGameUnits|surfaceTriangleIndex|surfaceShapeKey|surfaceShapeCollisionFilterInfo|surfaceHitFraction|hasSurfaceHit' 'Grab frame state must not keep legacy visual-authority, surface-frame, opposition-frame, motor-pivot, or surface-named canonical grip state.'
 Reject-Text 'src/RockConfig.h' 'rockGrabUseBoneDerivedPalmPivot' 'Grab pivot capture must not keep a dead live hknp palm-anchor readback config switch.'
 Reject-Text 'data/config/ROCK.ini' 'bGrabUseBoneDerivedPalmPivot' 'ROCK.ini must not expose a dead live hknp palm-anchor readback toggle.'

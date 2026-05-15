@@ -17,11 +17,10 @@ namespace RE
 namespace rock::grab_authority_phase0
 {
     /*
-     * Phase 0 exists to validate the future custom dynamic grab authority
-     * surface without changing active gameplay grabs. It owns isolated hidden
-     * no-contact test bodies, records the actual physics-step setter behavior,
-     * and can be deleted without touching HandGrab or the current native
-     * mouse-spring held-object path.
+     * Phase 0 validated the custom dynamic grab authority surface before the
+     * proxy-constraint path became production. It owns isolated hidden
+     * no-contact test bodies and records the actual physics-step setter behavior
+     * without changing active HandGrab state.
      */
     enum class ProxyFilterPolicy : int
     {

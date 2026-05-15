@@ -196,13 +196,12 @@ namespace rock
     {
         const bool suppressionActive = hand_collision_suppression_math::hasActive(_grabHandCollisionSuppression);
         const bool cleanupRequired = hand_lifecycle_policy::requiresHavokCleanupBeforeReset(
-            _activeConstraint.isValid() || _nativeGrab.isValid() || _grabAuthorityProxy.isValid(), suppressionActive, _heldBodyIds.size(), _savedObjectState.isValid(), hasCollisionBody());
+            _activeConstraint.isValid() || _grabAuthorityProxy.isValid(), suppressionActive, _heldBodyIds.size(), _savedObjectState.isValid(), hasCollisionBody());
         if (cleanupRequired) {
             ROCK_LOG_ERROR(Hand,
-                "{} hand reset blocked: native Havok state still needs cleanup (constraint={} nativeGrab={} proxy={} suppression={} heldBodies={} savedState={} handBody={})",
+                "{} hand reset blocked: Havok state still needs cleanup (constraint={} proxy={} suppression={} heldBodies={} savedState={} handBody={})",
                 handName(),
                 _activeConstraint.isValid() ? "yes" : "no",
-                _nativeGrab.isValid() ? "yes" : "no",
                 _grabAuthorityProxy.isValid() ? "yes" : "no",
                 suppressionActive ? "yes" : "no",
                 _heldBodyIds.size(),
@@ -256,9 +255,8 @@ namespace rock
             }
         }
         _activeConstraint.clear();
-        _nativeGrab.clear();
         abandonGrabAuthorityProxy();
-        _heldDriveMode = HeldObjectDriveMode::NativeMouseSpring;
+        _heldDriveMode = HeldObjectDriveMode::ProxyConstraint;
         _savedObjectState.clear();
         _activeGrabLifecycle.clear();
         _grabStartTime = 0.0f;
@@ -285,7 +283,6 @@ namespace rock
         _grabVisualHandTransform = {};
         _hasGrabVisualHandTransform = false;
         _grabVisualDeviationExceededSeconds = 0.0f;
-        _nativeGrabReleasePending.store(false, std::memory_order_release);
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};
@@ -330,7 +327,6 @@ namespace rock
          * ROCK-owned handles so module shutdown/reset can complete after the
          * game has already replaced or destroyed the physics world.
          */
-        const bool hadNativeGrab = _nativeGrab.isValid();
         const bool hadConstraint = _activeConstraint.isValid();
         const bool hadProxy = _grabAuthorityProxy.isValid();
         const bool hadSuppression = hand_collision_suppression_math::hasActive(_grabHandCollisionSuppression);
@@ -338,14 +334,13 @@ namespace rock
         const bool hadSavedState = _savedObjectState.isValid();
         const bool hadHandBody = hasCollisionBody();
 
-        if (!hadNativeGrab && !hadConstraint && !hadProxy && !hadSuppression && heldBodyCount == 0 && !hadSavedState && !hadHandBody) {
+        if (!hadConstraint && !hadProxy && !hadSuppression && heldBodyCount == 0 && !hadSavedState && !hadHandBody) {
             return;
         }
 
         ROCK_LOG_WARN(Hand,
-            "{} hand abandoning Havok state after world loss: nativeGrab={} constraint={} proxy={} suppression={} heldBodies={} savedState={} handBody={}",
+            "{} hand abandoning Havok state after world loss: constraint={} proxy={} suppression={} heldBodies={} savedState={} handBody={}",
             handName(),
-            hadNativeGrab ? "yes" : "no",
             hadConstraint ? "yes" : "no",
             hadProxy ? "yes" : "no",
             hadSuppression ? "yes" : "no",
@@ -355,15 +350,10 @@ namespace rock
 
         _activeConstraint.clear();
         abandonGrabAuthorityProxy();
-        if (hadNativeGrab) {
-            _nativeGrab.destroy(nullptr);
-        } else {
-            _nativeGrab.clear();
-        }
         _savedObjectState.clear();
         _activeGrabLifecycle.clear();
         _heldBodyIds.clear();
-        _heldDriveMode = HeldObjectDriveMode::NativeMouseSpring;
+        _heldDriveMode = HeldObjectDriveMode::ProxyConstraint;
         clearPullRuntimeState();
         clearPullCatchIntent("worldLoss");
         clearActorEquipmentDropHandoff("worldLoss");
@@ -381,7 +371,6 @@ namespace rock
         clearGrabHandCollisionSuppressionState();
         _boneColliders.reset();
         _handBody.reset();
-        _nativeGrabReleasePending.store(false, std::memory_order_release);
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
         clearGrabHandPose(_isLeft);
         clearGrabExternalHandWorldTransform(_isLeft);
@@ -1508,8 +1497,8 @@ namespace rock
     {
         /*
          * ROCK lets the second hand close-grab the dynamic body already held by
-         * the peer hand. Normal swept selection can miss after the native
-         * mouse-spring body flag is active, so a grip press gets this narrow
+         * the peer hand. Normal swept selection can miss after ROCK prepares
+         * the held body's dynamic collision state, so a grip press gets this narrow
          * peer-held fallback: it only considers the peer's current held ref and
          * only promotes it when one of that ref's active held bodies is inside
          * close reach. Far pulls and unrelated selections remain exclusive.
