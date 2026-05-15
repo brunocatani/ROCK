@@ -289,6 +289,8 @@ namespace rock
         rockGrabFadeInStartAngularRatio = 100.0f;
 
         rockGrabForceFadeInTime = 0.1f;
+        rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);
+        rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);
         rockGrabLooseWeaponSharedConstraintLinearTauMultiplier = kDefaultGrabLooseWeaponSharedConstraintLinearTauMultiplier;
         rockGrabLooseWeaponSharedConstraintAngularTauMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularTauMultiplier;
         rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier = kDefaultGrabLooseWeaponSharedConstraintCollisionTauMultiplier;
@@ -1000,6 +1002,18 @@ namespace rock
         rockGrabFadeInStartAngularRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFadeInStartAngularRatio", rockGrabFadeInStartAngularRatio));
 
         rockGrabForceFadeInTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabForceFadeInTime", rockGrabForceFadeInTime));
+        rockRightGrabAuthorityProxyOffsetGameUnits.x =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fRightGrabAuthorityProxyOffsetXGameUnits", rockRightGrabAuthorityProxyOffsetGameUnits.x));
+        rockRightGrabAuthorityProxyOffsetGameUnits.y =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fRightGrabAuthorityProxyOffsetYGameUnits", rockRightGrabAuthorityProxyOffsetGameUnits.y));
+        rockRightGrabAuthorityProxyOffsetGameUnits.z =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fRightGrabAuthorityProxyOffsetZGameUnits", rockRightGrabAuthorityProxyOffsetGameUnits.z));
+        rockLeftGrabAuthorityProxyOffsetGameUnits.x =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fLeftGrabAuthorityProxyOffsetXGameUnits", rockLeftGrabAuthorityProxyOffsetGameUnits.x));
+        rockLeftGrabAuthorityProxyOffsetGameUnits.y =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fLeftGrabAuthorityProxyOffsetYGameUnits", rockLeftGrabAuthorityProxyOffsetGameUnits.y));
+        rockLeftGrabAuthorityProxyOffsetGameUnits.z =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fLeftGrabAuthorityProxyOffsetZGameUnits", rockLeftGrabAuthorityProxyOffsetGameUnits.z));
         rockGrabLooseWeaponSharedConstraintLinearTauMultiplier = readClampedFloat(ini,
             SECTION,
             "fGrabLooseWeaponSharedConstraintLinearTauMultiplier",

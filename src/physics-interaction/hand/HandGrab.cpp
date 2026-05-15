@@ -2289,8 +2289,9 @@ namespace rock
             out.handMotionIndex = palmReference.motionIndex;
             out.hasHandBodyWorld = true;
             out.rawToHandBody = grab_transform_telemetry::measureTransformDelta(out.rawHandWorld, out.handBodyWorld);
-            out.palmAnchorGrabAuthorityWorld =
+            const RE::NiTransform palmAnchorGrabAuthorityBase =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(out.handBodyWorld);
+            out.palmAnchorGrabAuthorityWorld = applyGrabAuthorityProxyLocalOffsetToFrame(palmAnchorGrabAuthorityBase, _isLeft);
             out.palmAnchorGrabAuthorityBasis = grab_transform_telemetry::makeOrientationBasis(out.palmAnchorGrabAuthorityWorld);
             out.hasPalmAnchorGrabAuthority = true;
             out.nativeFlattenedHandToGrabAuthority =
@@ -2846,7 +2847,9 @@ namespace rock
 
         LivePalmAnchorReference palmReference{};
         if (tryResolveLivePalmAnchorReference(world, palmReference)) {
-            outProxyWorld = hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
+            const RE::NiTransform proxyBaseWorld =
+                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
+            outProxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft);
             switch (palmReference.source) {
             case body_frame::BodyFrameSource::MotionCenterOfMass:
                 outSource = "livePalmAnchorMotionGrabFrame";
@@ -5924,7 +5927,9 @@ namespace rock
                 ++_grabAuthorityProxyFailedFlushes;
                 _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);
             } else {
-                pending.proxyWorld = hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(livePalmReference.world);
+                const RE::NiTransform proxyBaseWorld =
+                    hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(livePalmReference.world);
+                pending.proxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft);
             }
             previousProxyWorld = _hasLastAppliedGrabAuthorityProxyWorld ? _lastAppliedGrabAuthorityProxyWorld : pending.proxyWorld;
             proxyBodyId = _grabAuthorityProxy.getBodyId();

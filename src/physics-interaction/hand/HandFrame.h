@@ -68,6 +68,7 @@ namespace rock::pointing_direction_math
 #include <cmath>
 
 #include "RockConfig.h"
+#include "physics-interaction/TransformMath.h"
 
 namespace rock
 {
@@ -152,5 +153,26 @@ namespace rock
     inline RE::NiPoint3 computeGrabPivotAPositionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
         return transformHandspacePosition(handTransform, computeGrabPivotAHandspacePosition(isLeft), isLeft);
+    }
+
+    inline RE::NiPoint3 computeGrabAuthorityProxyOffsetLocalGame(bool isLeft)
+    {
+        return isLeft ? g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits : g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits;
+    }
+
+    inline RE::NiTransform applyGrabAuthorityProxyLocalOffsetToFrame(const RE::NiTransform& proxyFrameWorld, bool isLeft)
+    {
+        /*
+         * This moves only the hidden grab authority proxy/seat point. The real
+         * generated palm/finger colliders remain bound to the flattened bone tree
+         * so contact evidence and collision behavior are not retuned by visual
+         * hand placement experiments.
+         */
+        RE::NiTransform result = proxyFrameWorld;
+        const RE::NiPoint3 localOffset = computeGrabAuthorityProxyOffsetLocalGame(isLeft);
+        if (std::isfinite(localOffset.x) && std::isfinite(localOffset.y) && std::isfinite(localOffset.z)) {
+            result.translate = result.translate + transform_math::localVectorToWorld(proxyFrameWorld, localOffset);
+        }
+        return result;
     }
 }

@@ -944,7 +944,9 @@ namespace rock
             std::isfinite(palmReference.world.translate.x) &&
             std::isfinite(palmReference.world.translate.y) &&
             std::isfinite(palmReference.world.translate.z)) {
-            return palmReference.world.translate;
+            const RE::NiTransform proxyBaseWorld =
+                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
+            return applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft).translate;
         }
 
         return fallbackHandWorldTransform.translate;
