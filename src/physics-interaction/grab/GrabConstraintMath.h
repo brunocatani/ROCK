@@ -8,14 +8,14 @@
 namespace rock::grab_constraint_math
 {
     /*
-     * ROCK creates grab angular constraints in the object-to-hand frame and
-     * refreshes the object-space transform-B pivot from that same frame during
-     * every held update. Transform A comes from the live physics hand, so a
-     * frozen transform-B pivot makes the linear and angular goals disagree: the
-     * pivot can be visually locked while the held body cannot rotate into the
-     * desired frame. Keeping both target_bRca and transformB.translation
-     * conversions here makes constraint creation and per-frame writes use one
-     * verified convention.
+     * Dynamic grab splits the authority frame deliberately: the generated
+     * palm/proxy collider owns the linear pivot, while raw root-flattened hand
+     * rotation owns angular intent. FO4VR's ragdoll target updater composes the
+     * incoming body-to-authority target through transform-A rotation before
+     * writing target_bRca, so ROCK keeps transform-A, transform-B, and target
+     * writes separate. That prevents the hidden collider's geometry axes from
+     * becoming object rotation authority while preserving the selected contact
+     * pivot as the linear grip point.
      */
 
     /*
@@ -70,20 +70,37 @@ namespace rock::grab_constraint_math
         target[11] = 0.0f;
     }
 
-    template <class Transform>
-    inline void writeInitialGrabAngularFrame(float* transformBRotation, float* targetBRca, const Transform& desiredBodyTransformHandSpace)
+    template <class Matrix>
+    inline void writeGrabTransformARotation(float* transformARotation, const Matrix& transformALocalRotation)
     {
-        /*
-         * Dynamic grab must keep HIGGS' angular convention while writing raw
-         * FO4VR hknp bytes directly. HIGGS stores transform-B rotation and
-         * target_bRca as the inverse body-in-hand relation in hkMatrix column
-         * blocks. The row writer made ROCK telemetry's row-reader look correct,
-         * but the hknp solver consumed the bytes as columns and saw the forward
-         * relation instead, causing the grab-start object/hand rotation snap.
-         */
-        const auto bodyToHandRotation = desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
-        writeHavokRotationColumns(transformBRotation, bodyToHandRotation);
-        writeHavokRotationColumns(targetBRca, bodyToHandRotation);
+        writeHavokRotationColumns(transformARotation, transformALocalRotation);
+    }
+
+    template <class Transform>
+    inline void writeInitialGrabTransformBRotation(float* transformBRotation, const Transform& desiredBodyTransformAuthoritySpace)
+    {
+        const auto bodyToAuthorityRotation = desiredBodyToHandRotation(desiredBodyTransformAuthoritySpace.rotate);
+        writeHavokRotationColumns(transformBRotation, bodyToAuthorityRotation);
+    }
+
+    template <class Matrix>
+    inline Matrix composeRagdollAngularTargetRotation(const Matrix& bodyToAuthorityRotation, const Matrix& transformALocalRotation)
+    {
+        return transform_math::multiplyStoredRotations(bodyToAuthorityRotation, transformALocalRotation);
+    }
+
+    template <class Transform, class Matrix>
+    inline void writeGrabRagdollAngularTarget(float* targetBRca,
+        const Transform& desiredBodyTransformAuthoritySpace,
+        const Matrix& transformALocalRotation)
+    {
+        if (!targetBRca) {
+            return;
+        }
+
+        const auto bodyToAuthorityRotation = desiredBodyToHandRotation(desiredBodyTransformAuthoritySpace.rotate);
+        const auto targetRotation = composeRagdollAngularTargetRotation(bodyToAuthorityRotation, transformALocalRotation);
+        writeHavokRotationColumns(targetBRca, targetRotation);
     }
 
     template <class Transform, class Vector>

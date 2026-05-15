@@ -403,6 +403,7 @@ namespace rock::grab_authority_phase0
                 _proxyBody.getBodyId(),
                 _receiverBody.getBodyId(),
                 initialTarget,
+                initialTarget,
                 initialTarget.translate,
                 pivotB,
                 desiredBodyInProxy,
