@@ -374,6 +374,7 @@ namespace rock
         bool _hasHeldPlayerSpaceTransform = false;
         RE::NiPoint3 _lastCentralHeldPlayerSpaceVelocityHavok{};
         int _heldPlayerSpaceLogCounter = 0;
+        std::uint64_t _heldPlayerSpaceDebugFrameCounter = 0;
 
         int _wpnNodeLogCounter = 0;
     };

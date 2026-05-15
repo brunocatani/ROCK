@@ -1279,8 +1279,10 @@ namespace rock
 
         _hasPrevPositions = false;
         _hasHeldPlayerSpacePosition = false;
+        _hasHeldPlayerSpaceTransform = false;
         _heldObjectPlayerSpaceFrame = {};
         _heldPlayerSpaceLogCounter = 0;
+        _heldPlayerSpaceDebugFrameCounter = 0;
         _deltaLogCounter = 0;
         _contactLogCounter = 0;
         _softContactRuntime.reset();
@@ -2161,8 +2163,10 @@ namespace rock
         observeLifecycleFrame(nullptr, nullptr, reason);
         _hasPrevPositions = false;
         _hasHeldPlayerSpacePosition = false;
+        _hasHeldPlayerSpaceTransform = false;
         _heldObjectPlayerSpaceFrame = {};
         _heldPlayerSpaceLogCounter = 0;
+        _heldPlayerSpaceDebugFrameCounter = 0;
         _handBoneCache.reset();
         _handCacheResolveLogCounter = 0;
         _paritySummaryCounter = 0;
@@ -2909,17 +2913,27 @@ namespace rock
         _hasHeldPlayerSpacePosition = true;
         _hasHeldPlayerSpaceTransform = true;
 
-        if (g_rockConfig.rockDebugGrabFrameLogging && (_rightHand.isHolding() || _leftHand.isHolding())) {
+        const bool anyHandHolding = _rightHand.isHolding() || _leftHand.isHolding();
+        if (g_rockConfig.rockDebugGrabFrameLogging && anyHandHolding) {
+            ++_heldPlayerSpaceDebugFrameCounter;
+            const int grabHighDetailFrames = std::max(0, g_rockConfig.rockDebugGrabHighDetailFrames);
+            const bool highDetailPlayerSpace =
+                grabHighDetailFrames > 0 &&
+                _heldPlayerSpaceDebugFrameCounter <= static_cast<std::uint64_t>(grabHighDetailFrames);
             ++_heldPlayerSpaceLogCounter;
-            if (_heldPlayerSpaceLogCounter >= 45 || frame.warp) {
+            const bool periodicPlayerSpace = _heldPlayerSpaceLogCounter >= 45;
+            if (highDetailPlayerSpace || periodicPlayerSpace || frame.warp) {
                 _heldPlayerSpaceLogCounter = 0;
                 ROCK_LOG_DEBUG(Hand,
-                    "Held player-space: source={} enabled={} beforeHeld=yes warp={} distWarp={} rotWarp={} rotDelta={:.2f}deg "
+                    "Held player-space: frame={} source={} enabled={} beforeHeld=yes warp={} distWarp={} rotWarp={} rotDelta={:.2f}deg "
                     "delta=({:.2f},{:.2f},{:.2f}) velHk=({:.3f},{:.3f},{:.3f})",
-                    frame.source, frame.enabled ? "yes" : "no", frame.warp ? "yes" : "no", frame.warpByDistance ? "yes" : "no",
+                    _heldPlayerSpaceDebugFrameCounter, frame.source, frame.enabled ? "yes" : "no", frame.warp ? "yes" : "no", frame.warpByDistance ? "yes" : "no",
                     frame.warpByRotation ? "yes" : "no", frame.rotationDeltaDegrees, frame.deltaGameUnits.x, frame.deltaGameUnits.y, frame.deltaGameUnits.z,
                     frame.velocityHavok.x, frame.velocityHavok.y, frame.velocityHavok.z);
             }
+        } else {
+            _heldPlayerSpaceDebugFrameCounter = 0;
+            _heldPlayerSpaceLogCounter = 0;
         }
 
         return frame;
@@ -2989,19 +3003,40 @@ namespace rock
         }
 
         if (g_rockConfig.rockDebugGrabFrameLogging && !bodyIds.empty()) {
-            ROCK_LOG_SAMPLE_DEBUG(Hand,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "Held player-space central writer: beforeHeld=yes diagWarp={} runtimeWarp={} distWarp={} rotWarp={} bodies={} registered={} motionsWritten={} transformsWarped={} duplicateMotions={} writerMask=0x{:02X}",
-                _heldObjectPlayerSpaceFrame.warp ? "yes" : "no",
-                runtimeTransformWarp ? "yes" : "no",
-                _heldObjectPlayerSpaceFrame.warpByDistance ? "yes" : "no",
-                _heldObjectPlayerSpaceFrame.warpByRotation ? "yes" : "no",
-                bodyIds.size(),
-                result.registeredBodies,
-                result.motionsWritten,
-                result.transformsWarped,
-                result.duplicateMotionSkips,
-                result.writerMask);
+            const int grabHighDetailFrames = std::max(0, g_rockConfig.rockDebugGrabHighDetailFrames);
+            const bool highDetailPlayerSpace =
+                grabHighDetailFrames > 0 &&
+                _heldPlayerSpaceDebugFrameCounter > 0 &&
+                _heldPlayerSpaceDebugFrameCounter <= static_cast<std::uint64_t>(grabHighDetailFrames);
+            if (highDetailPlayerSpace) {
+                ROCK_LOG_DEBUG(Hand,
+                    "Held player-space central writer: frame={} beforeHeld=yes diagWarp={} runtimeWarp={} distWarp={} rotWarp={} bodies={} registered={} motionsWritten={} transformsWarped={} duplicateMotions={} writerMask=0x{:02X}",
+                    _heldPlayerSpaceDebugFrameCounter,
+                    _heldObjectPlayerSpaceFrame.warp ? "yes" : "no",
+                    runtimeTransformWarp ? "yes" : "no",
+                    _heldObjectPlayerSpaceFrame.warpByDistance ? "yes" : "no",
+                    _heldObjectPlayerSpaceFrame.warpByRotation ? "yes" : "no",
+                    bodyIds.size(),
+                    result.registeredBodies,
+                    result.motionsWritten,
+                    result.transformsWarped,
+                    result.duplicateMotionSkips,
+                    result.writerMask);
+            } else {
+                ROCK_LOG_SAMPLE_DEBUG(Hand,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Held player-space central writer: beforeHeld=yes diagWarp={} runtimeWarp={} distWarp={} rotWarp={} bodies={} registered={} motionsWritten={} transformsWarped={} duplicateMotions={} writerMask=0x{:02X}",
+                    _heldObjectPlayerSpaceFrame.warp ? "yes" : "no",
+                    runtimeTransformWarp ? "yes" : "no",
+                    _heldObjectPlayerSpaceFrame.warpByDistance ? "yes" : "no",
+                    _heldObjectPlayerSpaceFrame.warpByRotation ? "yes" : "no",
+                    bodyIds.size(),
+                    result.registeredBodies,
+                    result.motionsWritten,
+                    result.transformsWarped,
+                    result.duplicateMotionSkips,
+                    result.writerMask);
+            }
         }
     }
 

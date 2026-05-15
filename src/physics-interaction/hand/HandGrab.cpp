@@ -4203,6 +4203,8 @@ namespace rock
         }
 
         _grabStartTime = 0.0f;
+        _heldLogCounter = 0;
+        _grabHeldDebugFrameCounter = 0;
         _grabConvergeStableInsidePocketFrames = 0;
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
 
@@ -5432,9 +5434,18 @@ namespace rock
             }
         }
 
-        _heldLogCounter++;
-        if (_heldLogCounter >= 45) {
-            _heldLogCounter = 0;
+        ++_grabHeldDebugFrameCounter;
+        const int grabHighDetailFrames = std::max(0, g_rockConfig.rockDebugGrabHighDetailFrames);
+        const bool highDetailHeldFrame =
+            g_rockConfig.rockDebugGrabFrameLogging &&
+            grabHighDetailFrames > 0 &&
+            _grabHeldDebugFrameCounter <= static_cast<std::uint64_t>(grabHighDetailFrames);
+        ++_heldLogCounter;
+        const bool periodicHeldFrame = _heldLogCounter >= 45;
+        if (highDetailHeldFrame || periodicHeldFrame) {
+            if (periodicHeldFrame) {
+                _heldLogCounter = 0;
+            }
 
             std::uint64_t driveQueuedTargets = 0;
             std::uint64_t driveFlushedTargets = 0;
@@ -5541,27 +5552,27 @@ namespace rock
                     axisDeltaDegrees(getMatrixColumn(grabAuthorityBodyWorld.rotate, 2), getMatrixColumn(desiredBodyWorldRaw.rotate, 2)));
 
                 ROCK_LOG_DEBUG(Hand,
-                    "{} GRAB FRAME HOLD: constraintAnchor={} rawVsConstraintWorld={:.2f}deg rawVsConstraintTarget={:.2f}deg "
+                    "{} GRAB FRAME HOLD: frame={} constraintAnchor={} rawVsConstraintWorld={:.2f}deg rawVsConstraintTarget={:.2f}deg "
                     "bodyVsRaw={:.2f}deg bodyVsConstraint={:.2f}deg "
                     "ownerErr={:.2f}deg/{:.2f}gu hitErr={:.2f}deg/{:.2f}gu "
                     "heldErr={:.2f}deg/{:.2f}gu rootErr={:.2f}deg/{:.2f}gu "
                     "worldPosDelta=({:.2f},{:.2f},{:.2f}) "
                     "rawFinger=({:.3f},{:.3f},{:.3f}) constraintFinger=({:.3f},{:.3f},{:.3f})",
-                    handName(), constraintAnchorSource, rotationDeltaDegrees(desiredNodeWorldRaw.rotate, desiredNodeWorldConstraint.rotate),
+                    handName(), _grabHeldDebugFrameCounter, constraintAnchorSource, rotationDeltaDegrees(desiredNodeWorldRaw.rotate, desiredNodeWorldConstraint.rotate),
                     rotationDeltaDegrees(desiredBodyWorldRaw.rotate, desiredBodyWorldConstraint.rotate),
                     rotationDeltaDegrees(grabAuthorityBodyWorld.rotate, desiredBodyWorldRaw.rotate), rotationDeltaDegrees(grabAuthorityBodyWorld.rotate, desiredBodyWorldConstraint.rotate),
                     ownerMetrics.rotErrDeg, ownerMetrics.posErrGameUnits, hitMetrics.rotErrDeg, hitMetrics.posErrGameUnits, heldMetrics.rotErrDeg, heldMetrics.posErrGameUnits,
                     rootMetrics.rotErrDeg, rootMetrics.posErrGameUnits, worldPosDelta.x, worldPosDelta.y, worldPosDelta.z, rawFinger.x, rawFinger.y, rawFinger.z,
                     constraintFinger.x, constraintFinger.y, constraintFinger.z);
 
-                ROCK_LOG_TRACE(Hand,
-                    "{} GRAB FRAME NODES: bodyColl={:p} "
+                ROCK_LOG_DEBUG(Hand,
+                    "{} GRAB FRAME NODES: frame={} bodyColl={:p} "
                     "owner='{}'({:p}) hasCol={} ownsBodyCol={} "
                     "hit='{}'({:p}) hasCol={} ownsBodyCol={} "
                     "held='{}'({:p}) hasCol={} ownsBodyCol={} "
                     "root='{}'({:p}) hasCol={} ownsBodyCol={} "
                     "sameOwnerHeld={} sameHitHeld={} sameRootHeld={}",
-                    handName(), static_cast<const void*>(bodyCollisionObject), nodeDebugName(ownerMetrics.node), static_cast<const void*>(ownerMetrics.node),
+                    handName(), _grabHeldDebugFrameCounter, static_cast<const void*>(bodyCollisionObject), nodeDebugName(ownerMetrics.node), static_cast<const void*>(ownerMetrics.node),
                     ownerMetrics.hasCollisionObject ? "yes" : "no", ownerMetrics.ownsBodyCollisionObject ? "yes" : "no", nodeDebugName(hitMetrics.node),
                     static_cast<const void*>(hitMetrics.node), hitMetrics.hasCollisionObject ? "yes" : "no", hitMetrics.ownsBodyCollisionObject ? "yes" : "no",
                     nodeDebugName(heldMetrics.node), static_cast<const void*>(heldMetrics.node), heldMetrics.hasCollisionObject ? "yes" : "no",
@@ -5569,14 +5580,14 @@ namespace rock
                     rootMetrics.hasCollisionObject ? "yes" : "no", rootMetrics.ownsBodyCollisionObject ? "yes" : "no", ownerMetrics.node == heldMetrics.node ? "yes" : "no",
                     hitMetrics.node == heldMetrics.node ? "yes" : "no", rootMetrics.node == heldMetrics.node ? "yes" : "no");
 
-                ROCK_LOG_TRACE(Hand,
-                    "{} GRAB FRAME VISUALS: desiredRawFinger=({:.3f},{:.3f},{:.3f}) desiredConstraintFinger=({:.3f},{:.3f},{:.3f}) "
+                ROCK_LOG_DEBUG(Hand,
+                    "{} GRAB FRAME VISUALS: frame={} desiredRawFinger=({:.3f},{:.3f},{:.3f}) desiredConstraintFinger=({:.3f},{:.3f},{:.3f}) "
                     "bodyFinger=({:.3f},{:.3f},{:.3f}) "
                     "ownerFinger=({:.3f},{:.3f},{:.3f}) ownerExpectedFinger=({:.3f},{:.3f},{:.3f}) "
                     "hitFinger=({:.3f},{:.3f},{:.3f}) hitExpectedFinger=({:.3f},{:.3f},{:.3f}) "
                     "heldFinger=({:.3f},{:.3f},{:.3f}) heldExpectedFinger=({:.3f},{:.3f},{:.3f}) "
                     "rootFinger=({:.3f},{:.3f},{:.3f}) rootExpectedFinger=({:.3f},{:.3f},{:.3f})",
-                    handName(), desiredRawFinger.x, desiredRawFinger.y, desiredRawFinger.z, desiredConstraintFinger.x, desiredConstraintFinger.y, desiredConstraintFinger.z,
+                    handName(), _grabHeldDebugFrameCounter, desiredRawFinger.x, desiredRawFinger.y, desiredRawFinger.z, desiredConstraintFinger.x, desiredConstraintFinger.y, desiredConstraintFinger.z,
                     bodyFinger.x, bodyFinger.y, bodyFinger.z, ownerMetrics.finger.x, ownerMetrics.finger.y, ownerMetrics.finger.z, ownerMetrics.expectedFinger.x,
                     ownerMetrics.expectedFinger.y, ownerMetrics.expectedFinger.z, hitMetrics.finger.x, hitMetrics.finger.y, hitMetrics.finger.z, hitMetrics.expectedFinger.x,
                     hitMetrics.expectedFinger.y, hitMetrics.expectedFinger.z, heldMetrics.finger.x, heldMetrics.finger.y, heldMetrics.finger.z, heldMetrics.expectedFinger.x,
@@ -5584,10 +5595,11 @@ namespace rock
                     rootMetrics.expectedFinger.y, rootMetrics.expectedFinger.z);
 
                 const auto massSummary = readHeldBodyMassSummary(world, _savedObjectState.bodyId, _heldBodyIds);
-                ROCK_LOG_TRACE(Hand,
-                    "{} GRAB ANGULAR PROBE: rawAxisErr(rowMax={:.2f} colMax={:.2f}) driveErr=({:.2f}gu,{:.2f}deg) mass={:.2f} primaryMass={:.2f} massBodies={} motions={} "
+                ROCK_LOG_DEBUG(Hand,
+                    "{} GRAB ANGULAR PROBE: frame={} rawAxisErr(rowMax={:.2f} colMax={:.2f}) driveErr=({:.2f}gu,{:.2f}deg) mass={:.2f} primaryMass={:.2f} massBodies={} motions={} "
                     "motionDiagVsGrab={:.2f}deg/{:.2f}gu fade={:.2f} fadeEnabled={} fadeReason={} drive={} constraint={} queued={} flushed={} failedFlushes={} lastDt={:.6f}",
                     handName(),
+                    _grabHeldDebugFrameCounter,
                     rawRowMax,
                     rawColMax,
                     grabPositionErrorGameUnits,
@@ -5630,11 +5642,12 @@ namespace rock
             const std::uint32_t heldFormId = _savedObjectState.refr ? _savedObjectState.refr->GetFormID() : 0;
 
             ROCK_LOG_DEBUG(Hand,
-                "{} HELD dynamic: drive={} looseWeapon={} formID={:08X} constraint={} queued={} flushed={} failedFlushes={} lastDt={:.6f} proxyFrame={}/{} "
+                "{} HELD dynamic: frame={} drive={} looseWeapon={} formID={:08X} constraint={} queued={} flushed={} failedFlushes={} lastDt={:.6f} proxyFrame={}/{} "
                 "phase={} posePublished={} fade={:.2f}/{} reason={} colliding={} forceBudget={:.2f} longLever={:.1f}gu ERR={:.1f}gu avgErr={:.1f}gu rotErr={:.1f}deg bDist={:.1f}gu objVel={:.3f} "
                 "paW=({:.1f},{:.1f},{:.1f}) pbW=({:.1f},{:.1f},{:.1f}) "
                 "targetBody=({:.1f},{:.1f},{:.1f}) objW=({:.1f},{:.1f},{:.1f})",
                 handName(),
+                _grabHeldDebugFrameCounter,
                 kHeldObjectDriveName,
                 _heldObjectIsLooseWeapon ? "yes" : "no",
                 heldFormId,
@@ -5828,7 +5841,10 @@ namespace rock
                     flushSequence = _grabAuthorityProxyFlushSequence;
                     queuedSequence = _grabAuthorityProxyQueuedSequence;
                     ++_grabAuthorityProxyLogCounter;
-                    if (flushSequence <= 16 || _grabAuthorityProxyLogCounter >= 45 ||
+                    const int grabHighDetailFrames = std::max(0, g_rockConfig.rockDebugGrabHighDetailFrames);
+                    const bool highDetailProxyFlush =
+                        grabHighDetailFrames > 0 && flushSequence <= static_cast<std::uint64_t>(grabHighDetailFrames);
+                    if (highDetailProxyFlush || flushSequence <= 16 || _grabAuthorityProxyLogCounter >= 45 ||
                         !proxyReadbackBetweenOk ||
                         !angularDriveOk ||
                         proxyReadbackBetweenPositionErrorGameUnits > 1.0f ||
@@ -5881,11 +5897,15 @@ namespace rock
         if (shouldLog && g_rockConfig.rockDebugGrabFrameLogging) {
             std::uint32_t filterInfo = 0;
             const bool filterReadOk = havok_runtime::tryReadFilterInfo(world, proxyBodyId, filterInfo);
+            const float rawProxyPositionDeltaGameUnits = pointDistanceGameUnits(pending.rawHandWorld.translate, pending.proxyWorld.translate);
+            const float rawProxyRotationDeltaDegrees = rotationDeltaDegrees(pending.rawHandWorld.rotate, pending.proxyWorld.rotate);
+            const std::uint64_t queuedLag = queuedSequence >= flushSequence ? queuedSequence - flushSequence : 0u;
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+livePalmMirror+generatedKeyframedProxy+ragdollAngularAtom proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularRef={} atomAngular={} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu longScale={:.2f} proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: seq={}/{} queueLag={} diag=bodyFrameConstraint+livePalmMirror+generatedKeyframedProxy+ragdollAngularAtom proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) rawProxy={:.2f}deg/{:.2f}gu angularRef={} atomAngular={} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu longScale={:.2f} proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
                 flushSequence,
                 queuedSequence,
+                queuedLag,
                 proxyBodyId.value,
                 _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
                 timing.substepIndex,
@@ -5897,6 +5917,8 @@ namespace rock
                 desiredBodyWorld.translate.x,
                 desiredBodyWorld.translate.y,
                 desiredBodyWorld.translate.z,
+                rawProxyRotationDeltaDegrees,
+                rawProxyPositionDeltaGameUnits,
                 kGrabObjectRotationReferenceName,
                 angularDriveOk ? "ok" : "fail",
                 activePivotBBodyLocalGame.x,
@@ -6018,7 +6040,10 @@ namespace rock
             gripLiveProxyErrorGameUnits = pointDistanceGameUnits(liveGripWorld, liveProxyGripWorld);
         }
 
-        const bool shouldLogSequence = afterSolveSequence <= 16 || (afterSolveSequence % 45u) == 0u;
+        const int grabHighDetailFrames = std::max(0, g_rockConfig.rockDebugGrabHighDetailFrames);
+        const bool shouldLogHighDetail =
+            grabHighDetailFrames > 0 && afterSolveSequence <= static_cast<std::uint64_t>(grabHighDetailFrames);
+        const bool shouldLogSequence = shouldLogHighDetail || afterSolveSequence <= 16 || (afterSolveSequence % 45u) == 0u;
         const bool shouldLogAnomaly =
             !proxyOk ||
             !objectOk ||
@@ -6292,6 +6317,8 @@ namespace rock
         _grabFrame.clear();
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         _grabObjectGripAtGrab = {};
+        _heldLogCounter = 0;
+        _grabHeldDebugFrameCounter = 0;
         _heldObjectIsLooseWeapon = false;
         _grabFingerPosePublished = false;
         _grabConvergeStableInsidePocketFrames = 0;

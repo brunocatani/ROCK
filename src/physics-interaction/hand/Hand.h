@@ -549,6 +549,7 @@ namespace rock
         active_grab_body_lifecycle::BodyLifecycleSnapshot _activeGrabLifecycle;
         float _grabStartTime = 0.0f;
         int _heldLogCounter = 0;
+        std::uint64_t _grabHeldDebugFrameCounter = 0;
         int _notifCounter = 0;
 
         CanonicalGrabFrame _grabFrame;
