@@ -62,7 +62,7 @@ Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.h' 'mutable s
 Require-Text 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'std::scoped_lock lock\(_mutex\)' 'Native mouse-spring create, queue, flush, destroy, and debug snapshots must lock the action state.'
 
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'resolveGrabAuthorityProxyFrame\(world,\s*handWorldTransform,\s*&handBodyWorldAtGrab,\s*proxyFrameWorldAtGrab' 'Close dynamic grab must resolve the hidden proxy frame from the live palm-anchor authority before creating the custom finite-force constraint.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'createProxyConstraintGrabDrive\(\s*bhkWorld,\s*world,\s*objectBodyId,\s*proxyFrameWorldAtGrab,\s*grabPivotAWorld' 'Close dynamic grab must create the hidden proxy plus custom finite-force constraint from the resolved palm-authority proxy frame.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'createProxyConstraintGrabDrive\(\s*bhkWorld,\s*world,\s*objectBodyId,\s*proxyFrameWorldAtGrab,\s*handWorldTransform,\s*grabPivotAWorld' 'Close dynamic grab must create the hidden proxy plus custom finite-force constraint from the resolved palm-authority proxy frame while preserving raw hand rotation authority.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '_nativeGrab\.create\(\s*world,\s*objectBodyId' 'Ordinary dynamic close grab must not create native mouse-spring as its production authority.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'RE::NiTransform nativeTargetBodyWorld = desiredBodyWorld' 'Held-object adaptive response must start from the body-composed ROCK target frame.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'solveAdaptiveHeldLead' 'Ordinary native held-object updates must apply the bounded adaptive held-response policy before queueing the native target.'
@@ -133,7 +133,7 @@ Require-Text 'src/physics-interaction/grab/GrabConstraint.h' 'struct GrabConstra
 Require-Text 'data/config/ROCK.ini' 'fGrabNativeMouseSpringLinearResponseScale\s*=\s*1\.35' 'Packaged ROCK.ini may keep native mouse-spring response tuning for diagnostics/fallback wrapper coverage.'
 Require-Text 'data/config/ROCK.ini' 'fGrabNativeMouseSpringAngularResponseScale\s*=\s*0\.75' 'Packaged ROCK.ini may keep native mouse-spring angular response tuning for diagnostics/fallback wrapper coverage.'
 Require-Text 'data/config/ROCK.ini' 'fGrabNativeMouseSpringAngularClampScale\s*=\s*0\.85' 'Packaged ROCK.ini may keep native mouse-spring angular clamp tuning for diagnostics/fallback wrapper coverage.'
-Require-Text 'data/config/ROCK.ini' 'iGrabObjectRotationReferenceMode\s*=\s*2' 'Packaged ROCK.ini must expose the custom dynamic-grab angular reference A/B switch.'
+Require-Text 'data/config/ROCK.ini' 'iGrabObjectRotationReferenceMode\s*=\s*3' 'Packaged ROCK.ini must expose the custom dynamic-grab angular reference A/B switch.'
 Require-Text 'data/config/ROCK.ini' 'fGrabLooseWeaponNativeLinearResponseMultiplier\s*=\s*1\.0' 'Packaged ROCK.ini may keep neutral loose non-equipped weapon native tuning for diagnostics/fallback wrapper coverage.'
 Require-Text 'data/config/ROCK.ini' 'fGrabLooseWeaponAdaptiveLeadMultiplier\s*=\s*1\.0' 'Packaged ROCK.ini must expose neutral loose non-equipped weapon adaptive lead tuning.'
 Require-Text 'data/config/ROCK.ini' 'fGrabLooseWeaponSharedConstraintLinearTauMultiplier\s*=\s*1\.0' 'Packaged ROCK.ini must expose neutral loose non-equipped weapon shared linear tau tuning.'

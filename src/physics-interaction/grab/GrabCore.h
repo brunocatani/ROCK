@@ -427,8 +427,11 @@ namespace rock
     {
         RE::NiTransform rawHandSpace{};
         RE::NiTransform constraintHandSpace{};
+        RE::NiTransform rawRotationProxyHandSpace{};
         RE::NiTransform constraintBodyHandSpace{};
         RE::NiTransform constraintConventionalBodyHandSpace{};
+        RE::NiTransform rawRotationProxyBodyHandSpace{};
+        RE::NiTransform rawRotationProxyConventionalBodyHandSpace{};
         RE::NiTransform constraintBodyLocal{};
         RE::NiTransform conventionalBodyLocal{};
         RE::NiTransform handBodyToRawHandAtGrab{};
@@ -504,8 +507,11 @@ namespace rock
         {
             rawHandSpace = RE::NiTransform();
             constraintHandSpace = RE::NiTransform();
+            rawRotationProxyHandSpace = RE::NiTransform();
             constraintBodyHandSpace = RE::NiTransform();
             constraintConventionalBodyHandSpace = RE::NiTransform();
+            rawRotationProxyBodyHandSpace = RE::NiTransform();
+            rawRotationProxyConventionalBodyHandSpace = RE::NiTransform();
             constraintBodyLocal = RE::NiTransform();
             conventionalBodyLocal = RE::NiTransform();
             handBodyToRawHandAtGrab = RE::NiTransform();

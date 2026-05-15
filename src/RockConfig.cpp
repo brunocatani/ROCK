@@ -37,7 +37,7 @@ namespace
     constexpr float kDefaultGrabNativeMouseSpringLinearResponseScale = 1.35f;
     constexpr float kDefaultGrabNativeMouseSpringAngularResponseScale = 0.75f;
     constexpr float kDefaultGrabNativeMouseSpringAngularClampScale = 0.85f;
-    constexpr int kDefaultGrabObjectRotationReferenceMode = 2;
+    constexpr int kDefaultGrabObjectRotationReferenceMode = 3;
     constexpr float kDefaultGrabLooseWeaponNativeLinearResponseMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponNativeAngularResponseMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponNativeAngularClampMultiplier = 1.0f;
@@ -1055,7 +1055,7 @@ namespace rock
 
         rockGrabObjectRotationReferenceMode =
             static_cast<int>(ini.GetLongValue(SECTION, "iGrabObjectRotationReferenceMode", rockGrabObjectRotationReferenceMode));
-        if (rockGrabObjectRotationReferenceMode < 0 || rockGrabObjectRotationReferenceMode > 2) {
+        if (rockGrabObjectRotationReferenceMode < 0 || rockGrabObjectRotationReferenceMode > 3) {
             ROCK_LOG_WARN(Config,
                 "Invalid iGrabObjectRotationReferenceMode={} -- using {}",
                 rockGrabObjectRotationReferenceMode,

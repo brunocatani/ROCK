@@ -354,6 +354,7 @@ namespace rock
             RE::hknpWorld* world,
             RE::hknpBodyId objectBodyId,
             const RE::NiTransform& proxyWorldTransform,
+            const RE::NiTransform& rawHandWorldTransform,
             const RE::NiPoint3& grabPivotAWorld,
             float tau,
             float damping,
@@ -365,6 +366,7 @@ namespace rock
             const char* reason);
         bool updateProxyConstraintGrabDriveTarget(RE::hknpWorld* world,
             const RE::NiTransform& proxyWorldTransform,
+            const RE::NiTransform& rawHandWorldTransform,
             RE::NiTransform& outDesiredObjectWorld,
             RE::NiTransform& outDesiredBodyWorld,
             RE::NiPoint3& outDesiredTargetPointWorld,
@@ -394,6 +396,7 @@ namespace rock
             RE::NiPoint3& outRawAngularVelocityRadiansPerSecond,
             RE::NiPoint3& outAppliedAngularVelocityRadiansPerSecond);
         void queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
+            const RE::NiTransform& rawHandWorldTransform,
             float deltaTime,
             float forceFadeInTime,
             float tauMin,
@@ -539,6 +542,7 @@ namespace rock
         struct GrabAuthorityProxyPendingTarget
         {
             RE::NiTransform proxyWorld{};
+            RE::NiTransform rawHandWorld{};
             float deltaTime = 0.0f;
             float forceFadeInTime = 0.0f;
             float tauMin = 0.0f;
@@ -550,6 +554,7 @@ namespace rock
         };
         GrabAuthorityProxyPendingTarget _grabAuthorityPendingTarget{};
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
+        RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
         bool _hasLastAppliedGrabAuthorityProxyWorld = false;
         GeneratedKeyframedBodyDriveState _grabAuthorityProxyDriveState{};
         std::uint64_t _grabAuthorityProxyQueuedSequence = 0;

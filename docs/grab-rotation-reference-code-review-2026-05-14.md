@@ -291,3 +291,48 @@ Validation performed:
 
 Build output was copied by the `custom-fast` preset to
 `D:\FO4\mods\ROCK\F4SE\Plugins`.
+
+## 2026-05-14 Mode 1/2 Test Result And Mode 3 Follow-Up
+
+Runtime testing showed that modes 1 and 2 were not enough. The mode switch was
+being read correctly, and telemetry showed the angular reference changing, but
+the visible behavior stayed wrong. That means the remaining bug was not only
+the final BODY/native angular boundary variant.
+
+The useful log pattern was:
+
+- `rawToConRev` stayed large, often around 150 degrees;
+- the object followed the `conDesired`/proxy relation rather than the raw
+  controller/root-hand relation;
+- `proxyTargetErr` was effectively zero while object target/rotation error
+  still grew during wrist motion.
+
+Inference from that evidence:
+
+- the generated palm/proxy frame is a good physical anchor for translation and
+  pivot seating;
+- its axes are not a safe object-rotation owner for dynamic grab;
+- the held object angular relation must use the root-flattened raw
+  hand/controller rotation, while the linear pivot continues to use the
+  palm/proxy translation.
+
+Implemented mode 3:
+
+- `iGrabObjectRotationReferenceMode = 3`;
+- capture stores `rawRotationProxyHandSpace` and
+  `rawRotationProxyBodyHandSpace`;
+- per-frame proxy authority builds a hybrid frame:
+  palm/proxy translation plus raw hand/controller rotation;
+- mode 3 keeps the existing native angular-boundary conversion used by mode 2;
+- generated palm/body collider conventions are unchanged;
+- COM remains excluded from pivot, target frame, and grip authority.
+
+Validation after the mode 3 change:
+
+- all 21 CTest tests passed;
+- `git diff --check` passed;
+- `cmake --build build-fast --config Release --target ROCK -- /m` compiled
+  `ROCK.dll`;
+- the deploy copy step reported the deployed DLL was locked by the running
+  game, but the build output and deployed DLL hashes matched exactly, so the
+  deployed runtime is already the fresh mode 3 build.
