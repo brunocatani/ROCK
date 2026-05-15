@@ -637,3 +637,33 @@ Low confidence / needs runtime or Ghidra evidence before implementation:
 - whether held-object motion-property leases improve weight feel without
   causing cap/snap side effects.
 
+## Objective Completion Audit - 2026-05-15
+
+Objective being audited:
+
+- Write a Markdown goal/context document first.
+- Populate and enrich the mapping while research continues.
+- Finish the research.
+- Keep the work mapping-only, with no code implementation.
+
+Prompt-to-artifact checklist:
+
+| Requirement | Evidence | Status |
+| --- | --- | --- |
+| Markdown goal/context document | `docs/dynamic-grab-quality-plan-2026-05-15.md` contains current authority baseline, requested work, approved local sources, non-negotiable design constraints, research checklist, implementation slices, and verification log. | Satisfied. |
+| Mapping was populated and enriched | Tracked docs now include the dynamic quality plan, activation review, rotation failure maps, log inference, angular tracker, and this gap map. This file maps backup research against current source and records remaining confidence levels. | Satisfied for durable tracked docs. |
+| Use local approved sources | The tracked plan and this gap map cite current ROCK, local backup research, HIGGS source, and local tests/source. No web was used. | Satisfied. |
+| Mapping covers requested dynamic-grab systems | The tracked plan/gap map cover proxy authority, custom finite-force constraint, body A/body B roles, pivot authority, hand pose, three-phase acquisition, multibody loose objects, loose non-equipped weapons, long-object handling, mass/inertia, release, collision softening, and player-space timing. | Satisfied as mapping. |
+| Research fully finished | This gap map still records low-confidence questions around proxy drive primitive behavior, same-step transform/velocity visibility, and possible motion-property leases. They are mapped, but not proven with runtime or deeper binary evidence. | Not fully closed if "full research" means every low-confidence point must be proven. |
+| Mapping-only, no code | The latest mapping commits are docs-only. The current branch as a whole is not mapping-only: `git diff develop...HEAD --name-status` includes substantial source, config, CMake, and test changes from implementation work. | Not satisfied at branch level. |
+
+Audit conclusion:
+
+- The mapping artifacts exist and are materially complete for the documented dynamic loose-object scope.
+- The branch is no longer a pure mapping-only branch because implementation commits are present.
+- The remaining low-confidence items are explicitly mapped rather than silently closed.
+- Therefore, this objective should not be marked complete as a strict branch-level
+  "mapping only, no code, full research closed" goal unless the user explicitly
+  treats the later implementation commits as outside this mapping objective and
+  accepts the recorded low-confidence items as implementation-time evidence
+  gates rather than unfinished mapping.
