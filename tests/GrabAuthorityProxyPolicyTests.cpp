@@ -153,9 +153,10 @@ int main()
 
         float transformBRotation[12]{};
         float targetBRca[12]{};
-        const RE::NiMatrix3 identityTransformARotation = rock::transform_math::makeIdentityRotation<RE::NiMatrix3>();
-        rock::grab_constraint_math::writeInitialGrabTransformBRotation(transformBRotation, desiredBodyTransformHandSpace);
-        rock::grab_constraint_math::writeGrabRagdollAngularTarget(targetBRca, desiredBodyTransformHandSpace, identityTransformARotation);
+        rock::grab_constraint_math::writeInitialGrabAngularFrame(
+            transformBRotation,
+            targetBRca,
+            desiredBodyTransformHandSpace);
 
         ok &= expectNear(
             "transformB columns carry body-to-hand rotation",
@@ -171,25 +172,6 @@ int main()
             std::printf("target_bRca row interpretation unexpectedly matches the Havok column convention\n");
             ok = false;
         }
-
-        const RE::NiMatrix3 transformARotation = rotationAroundX(kPi * 0.5f);
-        const RE::NiMatrix3 expectedComposedTarget =
-            rock::grab_constraint_math::composeRagdollAngularTargetRotation(expectedBodyToHand, transformARotation);
-        float transformARotationRaw[12]{};
-        float composedTargetBRca[12]{};
-        rock::grab_constraint_math::writeGrabTransformARotation(transformARotationRaw, transformARotation);
-        rock::grab_constraint_math::writeGrabRagdollAngularTarget(composedTargetBRca, desiredBodyTransformHandSpace, transformARotation);
-
-        ok &= expectNear(
-            "transformA columns carry proxy-to-raw authority rotation",
-            rotationDeltaDegrees(matrixFromRawColumns(transformARotationRaw), transformARotation),
-            0.0f,
-            0.01f);
-        ok &= expectNear(
-            "target columns compose body-to-hand with transformA rotation",
-            rotationDeltaDegrees(matrixFromRawColumns(composedTargetBRca), expectedComposedTarget),
-            0.0f,
-            0.01f);
     }
 
     {

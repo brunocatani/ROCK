@@ -128,14 +128,13 @@ namespace rock::grab_motion_controller
         return linearForce / ratio;
     }
 
-    inline float computeLongObjectAngularAuthorityScale(bool enabled, float leverGameUnits, float referenceLeverGameUnits, float minScale)
+    inline float computeLongObjectAngularSpeedScale(bool enabled, float leverGameUnits, float referenceLeverGameUnits, float minScale)
     {
         /*
          * Long-object handling should reduce angular authority, not move the
          * grip. A long rifle held near one end can keep the same contact pivot
-         * and hand/object relation while the solver receives less angular motor
-         * force for the same hand motion. The scale is therefore an angular
-         * authority multiplier only.
+         * and hand/object relation while its far end receives less sweep speed.
+         * The scale is therefore a cap multiplier only.
          */
         if (!enabled) {
             return 1.0f;
