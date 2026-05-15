@@ -430,3 +430,80 @@ Confirmed gaps and fixes:
   --output-on-failure -j $env:NUMBER_OF_PROCESSORS` passed 21/21.
 - 2026-05-15 after cleanup: policy test binaries rebuilt and full CTest passed
   21/21.
+- 2026-05-15 final quality pass: `cmake --build build-fast --config Release
+  --target ROCK -- /m` succeeded and deployed `ROCK.dll` / `ROCK.pdb` to
+  `D:\FO4\mods\ROCK\F4SE\Plugins`.
+- 2026-05-15 final quality pass: `ctest --test-dir build-tests -C Release
+  --output-on-failure -j $env:NUMBER_OF_PROCESSORS` passed 21/21.
+
+## Completion Audit - 2026-05-15
+
+Prompt-to-artifact checklist:
+
+- **Markdown plan and regular tracking**
+  - Evidence: this document maps current ROCK, the spring-era backup, HIGGS
+    dynamic grab, gaps, implementation slices, and verification.
+  - Status: complete.
+- **Use approved sources**
+  - Evidence: sections above cite current ROCK, `E:\fo4dev\Backups\before motor
+    change\PROJECT_ROCK_V2`, HIGGS source, and the 2026-05-12 research note.
+  - Status: complete.
+- **Multibody object grab, especially loose weapons**
+  - Evidence: `_heldBodyIds = preparedBodySet.acceptedBodyIds()` is canonical;
+    inertia normalization, release velocity, lifecycle, activation, mass
+    budget, and direct angular authority now use the accepted held body set.
+  - Status: complete for dynamic loose objects/weapons in this scope.
+- **Long-object grab quality**
+  - Evidence: `longObjectLeverGameUnits` is captured from selected grip point to
+    cached mesh extents; `computeLongObjectAngularSpeedScale(...)` gates the
+    held angular speed cap; config keys are present in packaged and production
+    INIs.
+  - Status: complete.
+- **Mass-relative grab**
+  - Evidence: `readHeldBodyMassSummary(...)` aggregates unique accepted
+    motions; `GrabMotionController` receives `massSummary.motorMass()`; mass cap
+    and angular-to-linear ratio remain active.
+  - Status: complete.
+- **Object mass/inertia affecting swing and authority**
+  - Evidence: aggregate mass budgets force, long-object lever scales angular
+    speed, inertia normalization/restoration still operate on accepted bodies,
+    and release velocity uses controller-derived linear/angular policy.
+  - Status: complete.
+- **Precision finger placement**
+  - Evidence: ROCK uses live root-flattened finger landmarks and HIGGS-style
+    `palmSeatProbeShift` / `palmToPoint` solving, then captures and reapplies
+    `_grabFingerPose` while held.
+  - Status: complete; review found no code defect to patch.
+- **Pivot and palm seating retune**
+  - Evidence: dynamic pivot A resolves from the live generated palm anchor;
+    fallback is raw hand origin, not the retired INI pivot; three-phase capture
+    seats selected contact/authored grip to `pocket.palmCenterWorld` and freezes
+    pivot B in BODY local space.
+  - Status: complete for this code pass.
+- **Legacy spring-era behavior that can be ported without mouse spring**
+  - Evidence: body-set scan/prep, accepted-body lifecycle, collision restore,
+    inertia, damping, finger solve, and loose-weapon distinction were mapped and
+    retained/ported; native mouse-spring response/adaptive-lead knobs remain
+    rejected.
+  - Status: complete.
+- **HIGGS dynamic behaviors that apply to ROCK FO4VR proxy motors**
+  - Evidence: contact/palm pivot, preserved object rotation, finite
+    linear/angular motor policy, mass cap, collision tau, startup angular fade,
+    loose-weapon force ratio, inertia handling, hand deviation, and finger pose
+    were mapped; implemented slices are documented above.
+  - Status: complete within dynamic loose-object scope.
+- **Commit every feature slice**
+  - Evidence:
+    - `c6de8ee fix/grab: remove stale proxy angular helper`
+    - `b265372 fix/grab: use held body set mass for motor budget`
+    - `1185d43 feature/grab: scale held angular cap for long objects`
+    - `9adf5e8 fix/grab: apply angular authority to held body set`
+    - `2918fcb feature/grab: specialize loose weapon motor force`
+    - `c287cbb docs/grab: mark quality audit fixes complete`
+  - Status: complete; final audit section added after `c287cbb`.
+
+Residual risk:
+
+- Runtime feel still needs user playtesting because finite-force tuning is
+  perceptual and object-specific, but there is no uncovered prompt requirement
+  or known code gap left in this scoped pass.
