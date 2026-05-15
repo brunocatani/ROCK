@@ -480,3 +480,294 @@ Audit conclusion:
   - production direct angular velocity is removed or fully bypassed;
   - source-boundary tests are updated to reject the old direct-angular authority;
   - local build/tests pass or failures are explicitly scoped.
+
+## Pre-Ghidra Source Implementation Map
+
+This section is source-only. It does not replace the required Ghidra check of
+the FO4VR hknp type-19 ragdoll motor equation.
+
+### Current production angular writer surfaces
+
+Current direct-angular production path:
+
+- `src/physics-interaction/hand/Hand.h`
+  - declares `applyProxyConstraintAngularVelocityDrive(...)`.
+- `src/physics-interaction/hand/HandGrab.cpp`
+  - defines `computeHardKeyframeAngularVelocityForTarget(...)`;
+  - defines `applyProxyConstraintAngularVelocityDrive(...)`;
+  - calls `applyProxyConstraintAngularVelocityDrive(...)` from
+    `flushPendingCustomGrabAuthority(...)`;
+  - logs `directAngular`, `rawAng`, `appliedAng`, `capAng`, `longLever`, and
+    `longScale`.
+- `src/physics-interaction/hand/HandGrab.cpp`
+  - `setHeldAngularVelocity(...)` writes hknp angular velocity to the accepted
+    held body set.
+
+If the ragdoll angular atom becomes production angular authority, the above
+held-object angular velocity path must not remain active as a second writer.
+
+### Current ragdoll atom surfaces
+
+Current constraint data path:
+
+- `src/physics-interaction/grab/GrabConstraint.cpp`
+  - creates the ragdoll atom at `ATOM_RAGDOLL_MOT`;
+  - allocates and attaches the angular `HkPositionMotor`;
+  - writes `target_bRca` at `ATOM_RAGDOLL_MOT + 0x10`;
+  - currently calls `setGrabMotorAtomsActive(header, true, false)`;
+  - currently logs `ragdollAtom=disabled`.
+- `src/physics-interaction/grab/GrabConstraintMath.h`
+  - `writeInitialGrabAngularFrame(...)` writes both transform-B rotation and
+    `target_bRca` using Havok column blocks.
+- `src/physics-interaction/hand/HandGrab.cpp`
+  - `updateProxyConstraintGrabDriveTarget(...)` currently rewrites transform-B
+    rotation and `target_bRca` together every target update.
+
+The re-enable work must split these responsibilities because HIGGS creates
+transform-B rotation once but updates angular target every held frame.
+
+### Tests that currently encode the old direct-angular decision
+
+Current tests requiring direct-angular authority:
+
+- `tests/GrabAuthorityProxyFrameSourceTests.ps1`
+  - requires `applyProxyConstraintAngularVelocityDrive(world,
+    desiredAngularTargetWorld, ...)`;
+  - requires `ComputeHardKeyFrame_t` as the proxy/held-object angular velocity
+    boundary;
+  - rejects the old manual matrix-column angular helper.
+- `tests/HandGrabNativeBoundarySourceTests.ps1`
+  - requires `setHeldAngularVelocity(world, _savedObjectState.bodyId,
+    _heldBodyIds, appliedAngularVelocity)`;
+  - only rejects writing angular velocity to the primary body directly.
+
+After the atom is re-enabled, these tests need to change from:
+
+- "direct angular velocity must use the right target/body set"
+
+to:
+
+- "production held angular authority must be the ragdoll angular atom";
+- "direct angular velocity must not run during held proxy constraint authority";
+- "raw hand/controller rotation must feed the ragdoll target";
+- "proxy/palm collider frame remains linear pivot authority only";
+- "COM remains mass/inertia/release data only".
+
+### Likely code shape after Ghidra verification
+
+Expected helper split:
+
+- `writeInitialGrabAngularFrame(...)`
+  - creation-only setup for transform-B rotation if FO4VR requires it.
+- new `writeGrabRagdollAngularTarget(...)`
+  - per-frame `target_bRca` update;
+  - source relation must be the raw hand/controller angular frame, not the proxy
+    collider rotation alone.
+- new or existing transform-B translation writer
+  - per-frame pivot B translation update from the selected BODY-local grip
+    point.
+
+Expected held flush shape:
+
+1. Drive body A proxy from live palm collider motion as today.
+2. Compute `authorityFrame =
+   makeRawRotationPalmTranslationFrame(rawHandWorld, proxyWorld)`.
+3. Compose desired visual/object and desired solver body from:
+   - `_grabFrame.rawRotationProxyHandSpace`;
+   - `_grabFrame.rawRotationProxyBodyHandSpace`.
+4. Update constraint transform A/B and ragdoll angular target.
+5. Update motor forces/tau/damping through `updateConstraintGrabDriveMotors(...)`.
+6. Do not call `applyProxyConstraintAngularVelocityDrive(...)` for production
+   held rotation.
+
+Expected creation shape:
+
+1. Create proxy as now.
+2. Create custom constraint as now.
+3. Enable linear and angular atoms only after the angular frame/target equation
+   is verified.
+4. Keep angular and linear motors using existing `GrabConstraintMotorTuning`.
+
+### Ghidra questions narrowed from source map
+
+The exact binary questions now are:
+
+1. For FO4VR hknp type-19 ragdoll motor, what is the consumed equation for:
+   - body A rotation;
+   - body B rotation;
+   - transform A rotation;
+   - transform B rotation;
+   - `target_bRca`?
+2. Does transform-A rotation participate exactly as HIGGS source expects?
+   - HIGGS: `target_bRca = bRa * transformA.rotation`.
+3. Is the solver target relation inverse-body-in-hand, forward-body-in-hand, or
+   another hknp-specific relation?
+4. Does rewriting transform-B rotation while the constraint is active reset
+   runtime state, invalidate previous target angles, or otherwise destabilize
+   the motor?
+5. Does enabling the angular atom before `CreateConstraint(...)` remain correct
+   for FO4VR hknp, or is there a post-insertion enable path that clears runtime
+   safely?
+
+These five questions are the minimum binary check before implementation.
+
+## Ghidra Ragdoll Angular Atom Findings
+
+This section is based on fresh FO4VR Ghidra inspection after the source map
+above. It supersedes the older assumption that the FO4VR type-19 ragdoll atom
+could not be trusted. The atom still must be used with the correct frame split:
+the palm/proxy collider frame is linear anchor authority, while raw
+controller/flattened-root hand rotation is angular target authority.
+
+### Confirmed functions and addresses
+
+- `0x1419B1D50`
+  - Native `hkpRagdollConstraintData` constructor.
+  - Confirms vtable `0x142E18298`, matching ROCK's copied ragdoll vtable.
+  - Calls `0x1419B2910` to initialize the atom chain.
+  - Initializes transform A at `+0x30..+0x60`, transform B at
+    `+0x70..+0xA0`, target at `+0xD0..+0x100`, and motor pointers at
+    `+0x100/+0x108/+0x110`.
+- `0x1419B2910`
+  - Native atom-chain initializer.
+  - Writes:
+    - set-local-transforms atom type `2` at data `+0x20`;
+    - setup-stabilization atom type `0x17` at data `+0x68`;
+    - ragdoll-motor atom type `0x13` at data `+0x70` relative to the
+      constructor's atom pointer, which maps to constraint-data `+0xC0`;
+    - additional native limit/friction atoms that ROCK does not use in the
+      custom grab chain.
+  - Confirms ROCK's ragdoll motor atom offset `ATOM_RAGDOLL_MOT = 0xC0`.
+- `0x1419B21D0`
+  - Native body-space setup helper for ragdoll data.
+  - Normalizes two basis axes for transform A, computes the third by cross
+    product, writes transform-A translation.
+  - Does the same for transform B.
+  - Copies transform-B rotation into `target_bRca` during creation.
+  - This matches HIGGS' creation-time behavior: transform-B rotation and target
+    start aligned.
+- `0x1419B26C0`
+  - Native ragdoll target updater.
+  - Calls `0x1417CF420(target_bRca, inputMatrix, transformA.rotation)`.
+  - Does not rewrite transform-B rotation or transform-B translation.
+- `0x1417CF420`
+  - Matrix composition helper used by the native ragdoll target updater.
+  - With identity transform-A rotation, output equals the input target matrix.
+  - With non-identity transform-A rotation, output is the input target composed
+    through transform A in FO4VR's matrix-block convention.
+  - The key implementation result is not the naming of the multiplication order;
+    it is that transform A participates in `target_bRca`, and ROCK must not
+    ignore it when body A's physical proxy rotation differs from raw hand
+    rotation.
+- `0x1419B2640`
+  - Native ragdoll motor enable/disable helper.
+  - Writes enable byte at `constraintData + 0xC2`.
+  - Writes an additional native atom flag at `+0x122`.
+  - If passed a runtime pointer, zeros twelve qwords of runtime state.
+  - Confirms that toggling while active is a runtime-state event. ROCK should
+    avoid per-frame enable/disable and should enable the angular atom before
+    insertion unless a runtime pointer is deliberately available.
+- `0x141842470`
+  - Native constraint-data motor utility.
+  - For type `7` ragdoll constraints, sets all three angular motor pointers
+    through `0x1419B25C0`, `0x1419B25E0`, `0x1419B2610`, then calls
+    `0x1419B2640`.
+  - Confirms type-7 ragdoll constraints use one motor per angular axis and the
+    ragdoll enable helper above.
+- `0x141AF6FD0..0x141AF724E`
+  - Native `hknpRagdollMotorController::vfunction5`.
+  - For active type-7 ragdoll constraints, converts controller quaternions to a
+    matrix using `0x1417213A0`, then calls `0x1419B26C0`.
+  - Confirms native FO4VR updates ragdoll angular target every controller tick
+    by changing `target_bRca`, not by rewriting transform-B rotation.
+- `0x141AF7260`
+  - Native ragdoll motor controller enable/weight pass.
+  - Enables/disables type-7 ragdoll motors via `0x1419B2640`.
+  - When enabling, calls `0x1419B26C0` with identity target data.
+
+### Answers to the five binary questions
+
+1. **Does transform A participate?**
+
+   Yes. `0x1419B26C0` always composes the incoming angular target with
+   transform-A rotation through `0x1417CF420` before writing `target_bRca`.
+
+2. **Is `target_bRca` a raw target matrix?**
+
+   No. It is a solver target matrix after transform-A participation. If
+   transform A is identity, it looks like a raw matrix copy, which explains why
+   this could be missed in source-only review.
+
+3. **Should ROCK rewrite transform-B rotation every held frame?**
+
+   No evidence supports that. Native creation initializes transform-B rotation
+   and target together, but native runtime target updates call `0x1419B26C0`
+   and do not rewrite transform-B rotation. Rewriting transform-B rotation while
+   active changes the body-B local constraint frame instead of only changing the
+   desired angular target.
+
+4. **Should ROCK toggle angular enable state per frame?**
+
+   No. Native `0x1419B2640` clears runtime memory when a runtime pointer is
+   supplied. ROCK should enable the angular atom before `CreateConstraint(...)`
+   and leave it enabled for the constraint lifetime. Per-frame toggling would be
+   a solver-history reset risk.
+
+5. **Is the previous direct-angular velocity path still valid as production
+   authority after the atom is re-enabled?**
+
+   No. It would be a second writer on held-object angular motion. Production
+   held rotation should be driven by the ragdoll angular atom, with direct
+   angular velocity either removed from the held flush or confined to
+   diagnostics outside active custom constraint authority.
+
+### Implementation implications from Ghidra
+
+The correct re-enable shape is not "turn the disabled bool back on" by itself.
+The atom can be re-enabled only with a matching frame update split:
+
+1. Keep body-A/proxy collider translation as the linear pivot authority.
+2. Feed transform-A rotation with the raw hand/controller angular frame relative
+   to the physical proxy body-A frame, so the constraint's body-A frame becomes
+   the angular authority frame the player actually controls.
+3. Keep transform-B rotation as creation-time body-B local angular basis unless
+   a new grab is captured.
+4. Update `target_bRca` every held flush through a helper equivalent to native
+   `0x1419B26C0`.
+5. Update transform-B translation from the selected grip/contact pivot.
+6. Keep motor force/tau updates in `updateConstraintGrabDriveMotors(...)`.
+7. Remove or bypass `applyProxyConstraintAngularVelocityDrive(...)` in the
+   production held flush so it cannot fight the atom.
+
+This preserves the fixed ROCK convention:
+
+- generated palm/proxy collider movement is linear anchor authority;
+- raw controller/flattened-root hand rotation is angular authority;
+- COM remains only mass/inertia/release data;
+- grip pivot remains selected contact/body-local data, never COM fallback.
+
+### Source corrections required by the Ghidra findings
+
+- `GrabConstraintMath.h`
+  - split `writeInitialGrabAngularFrame(...)` into:
+    - creation-time transform-B rotation write;
+    - per-frame transform-A rotation write;
+    - per-frame ragdoll target write equivalent to `0x1419B26C0`;
+    - per-frame transform-B translation write.
+- `GrabConstraint.cpp`
+  - enable angular and linear atoms before create once the frame split is in
+    place;
+  - update the comments/logging that currently describe the atom as disabled
+    and untrusted.
+- `HandGrab.cpp`
+  - make `updateProxyConstraintGrabDriveTarget(...)` update transform A,
+    transform-B translation, and `target_bRca`;
+  - stop rewriting transform-B rotation every held flush;
+  - stop calling `applyProxyConstraintAngularVelocityDrive(...)` during normal
+    active custom grab authority.
+- `Hand.h`
+  - remove the direct-angular held-drive declaration if no diagnostic path keeps
+    it.
+- Tests
+  - source-boundary tests must reject the direct-angular held writer and require
+    ragdoll atom target updates through the raw hand/controller angular frame.
