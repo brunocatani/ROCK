@@ -336,7 +336,7 @@ Confirmed gaps and fixes:
        masses;
      - log aggregate mass, sampled body count, and unique motion count.
 
-2. **Long-object lever policy not wired**
+2. **Long-object lever policy wired**
    - Evidence before fix:
      - `computeLocalBoundsLongAxis(...)` existed but no live call used it for
        force/rotation.
@@ -353,13 +353,13 @@ Confirmed gaps and fixes:
        `fGrabLongObjectReferenceLeverGameUnits`, and
        `fGrabLongObjectMinAngularScale`.
 
-3. **Loose-weapon custom policy surface is neutral**
-   - Evidence:
+3. **Loose-weapon custom policy specialized**
+   - Evidence before fix:
      - custom loose-weapon multipliers exist but default to `1.0`;
      - spring-era native loose weapon response knobs were removed with native
        authority.
-   - Effect:
-     - loose weapons currently have no out-of-box specialization beyond being
+   - Effect before fix:
+     - loose weapons had no out-of-box specialization beyond being
        marked `looseWeapon=yes`.
    - Fix:
      - keep tau, damping, angular-ratio, and recovery multipliers neutral;
