@@ -1314,36 +1314,26 @@ namespace rock
             return result;
         }
 
-        RE::NiPoint3 computeLocalBoundsLongAxis(const std::vector<GrabLocalTriangle>& localTriangles)
+        float computeLocalMeshMaxDistanceFromPoint(const std::vector<GrabLocalTriangle>& localTriangles, const RE::NiPoint3& originLocal)
         {
             if (localTriangles.empty()) {
-                return RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+                return 0.0f;
             }
 
-            RE::NiPoint3 minPoint{ (std::numeric_limits<float>::max)(), (std::numeric_limits<float>::max)(), (std::numeric_limits<float>::max)() };
-            RE::NiPoint3 maxPoint{ (std::numeric_limits<float>::lowest)(), (std::numeric_limits<float>::lowest)(), (std::numeric_limits<float>::lowest)() };
+            float maxDistanceSquared = 0.0f;
             auto visit = [&](const RE::NiPoint3& point) {
-                minPoint.x = (std::min)(minPoint.x, point.x);
-                minPoint.y = (std::min)(minPoint.y, point.y);
-                minPoint.z = (std::min)(minPoint.z, point.z);
-                maxPoint.x = (std::max)(maxPoint.x, point.x);
-                maxPoint.y = (std::max)(maxPoint.y, point.y);
-                maxPoint.z = (std::max)(maxPoint.z, point.z);
+                const RE::NiPoint3 delta = point - originLocal;
+                const float distanceSquared = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
+                if (std::isfinite(distanceSquared)) {
+                    maxDistanceSquared = (std::max)(maxDistanceSquared, distanceSquared);
+                }
             };
             for (const auto& triangle : localTriangles) {
                 visit(triangle.v0);
                 visit(triangle.v1);
                 visit(triangle.v2);
             }
-
-            const RE::NiPoint3 extent = maxPoint - minPoint;
-            if (extent.y >= extent.x && extent.y >= extent.z) {
-                return RE::NiPoint3{ 0.0f, 1.0f, 0.0f };
-            }
-            if (extent.z >= extent.x && extent.z >= extent.y) {
-                return RE::NiPoint3{ 0.0f, 0.0f, 1.0f };
-            }
-            return RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+            return maxDistanceSquared > 0.0f ? std::sqrt(maxDistanceSquared) : 0.0f;
         }
 
         void logGrabNodeInfo(const char* handName,
@@ -2855,12 +2845,14 @@ namespace rock
         float& outRawAngularSpeedRadiansPerSecond,
         float& outAppliedAngularSpeedRadiansPerSecond,
         float& outMaxAngularSpeedRadiansPerSecond,
+        float& outLongObjectAngularScale,
         RE::NiPoint3& outRawAngularVelocityRadiansPerSecond,
         RE::NiPoint3& outAppliedAngularVelocityRadiansPerSecond)
     {
         outRawAngularSpeedRadiansPerSecond = 0.0f;
         outAppliedAngularSpeedRadiansPerSecond = 0.0f;
         outMaxAngularSpeedRadiansPerSecond = 0.0f;
+        outLongObjectAngularScale = 1.0f;
         outRawAngularVelocityRadiansPerSecond = {};
         outAppliedAngularVelocityRadiansPerSecond = {};
 
@@ -2919,7 +2911,12 @@ namespace rock
             }
         }
 
-        outMaxAngularSpeedRadiansPerSecond = (std::max)(0.25f, configuredMaxSpeed * budgetScale);
+        outLongObjectAngularScale = grab_motion_controller::computeLongObjectAngularSpeedScale(
+            g_rockConfig.rockGrabLongObjectAngularScalingEnabled,
+            _grabFrame.longObjectLeverGameUnits,
+            g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits,
+            g_rockConfig.rockGrabLongObjectMinAngularScale);
+        outMaxAngularSpeedRadiansPerSecond = (std::max)(0.25f, configuredMaxSpeed * budgetScale * outLongObjectAngularScale);
         const RE::NiPoint3 appliedAngularVelocity =
             clampAngularVelocityVector(rawAngularVelocity, outMaxAngularSpeedRadiansPerSecond);
         outAppliedAngularVelocityRadiansPerSecond = appliedAngularVelocity;
@@ -4589,6 +4586,10 @@ namespace rock
             _grabFrame.constraintBodyHandSpace = grab_frame_math::objectInFrameSpace(proxyFrameWorldAtGrab, desiredConstraintBodyWorld);
             _grabFrame.rawRotationProxyBodyHandSpace =
                 grab_frame_math::objectInFrameSpace(rawRotationProxyFrameWorldAtGrab, desiredConstraintBodyWorld);
+            const float objectScaleForLever =
+                std::isfinite(objectWorldTransform.scale) && objectWorldTransform.scale > 0.0f ? objectWorldTransform.scale : 1.0f;
+            _grabFrame.longObjectLeverGameUnits =
+                computeLocalMeshMaxDistanceFromPoint(_grabFrame.localMeshTriangles, _grabFrame.gripPointLocal) * objectScaleForLever;
             _grabFrame.handBodyToRawHandAtGrab = splitGrabFrame.handBodyToRawHandAtGrab;
             _grabFrame.pivotAHandBodyLocalGame = splitGrabFrame.pivotAHandBodyLocal;
             _grabFrame.liveHandWorldAtGrab = handWorldTransform;
@@ -4928,7 +4929,7 @@ namespace rock
             (std::max)(std::fabs(_activeConstraint.angularMotor->minForce), std::fabs(_activeConstraint.angularMotor->maxForce)) :
             0.0f;
         ROCK_LOG_DEBUG(Hand,
-            "{} hand dynamic grab created: driveMode={} looseWeapon={} constraint={} proxyBody={} handBody={} objBody={} heldBodies={} mass={:.2f} primaryMass={:.2f} massBodies={} motions={} linearTau={:.3f} angularTau={:.3f} linearDamping={:.2f} angularDamping={:.2f} linearForce={:.0f} angularForce={:.0f} propRecov={:.1f} constRecov={:.1f} rotRef={}",
+            "{} hand dynamic grab created: driveMode={} looseWeapon={} constraint={} proxyBody={} handBody={} objBody={} heldBodies={} mass={:.2f} primaryMass={:.2f} massBodies={} motions={} longLever={:.1f}gu linearTau={:.3f} angularTau={:.3f} linearDamping={:.2f} angularDamping={:.2f} linearForce={:.0f} angularForce={:.0f} propRecov={:.1f} constRecov={:.1f} rotRef={}",
             handName(),
             kHeldObjectDriveName,
             _heldObjectIsLooseWeapon ? "yes" : "no",
@@ -4941,6 +4942,7 @@ namespace rock
             massSummaryAtGrab.primaryMass,
             massSummaryAtGrab.sampledBodies,
             massSummaryAtGrab.uniqueMotions,
+            _grabFrame.longObjectLeverGameUnits,
             _activeConstraint.linearMotor ? _activeConstraint.linearMotor->tau : tau,
             _activeConstraint.angularMotor ? _activeConstraint.angularMotor->tau : g_rockConfig.rockGrabAngularTau,
             _activeConstraint.linearMotor ? _activeConstraint.linearMotor->damping : damping,
@@ -5681,7 +5683,7 @@ namespace rock
 
             ROCK_LOG_DEBUG(Hand,
                 "{} HELD dynamic: drive={} looseWeapon={} formID={:08X} constraint={} queued={} flushed={} failedFlushes={} lastDt={:.6f} proxyFrame={}/{} "
-                "phase={} posePublished={} fade={:.2f}/{} reason={} colliding={} forceBudget={:.2f} ERR={:.1f}gu avgErr={:.1f}gu rotErr={:.1f}deg bDist={:.1f}gu objVel={:.3f} "
+                "phase={} posePublished={} fade={:.2f}/{} reason={} colliding={} forceBudget={:.2f} longLever={:.1f}gu ERR={:.1f}gu avgErr={:.1f}gu rotErr={:.1f}deg bDist={:.1f}gu objVel={:.3f} "
                 "paW=({:.1f},{:.1f},{:.1f}) pbW=({:.1f},{:.1f},{:.1f}) "
                 "targetBody=({:.1f},{:.1f},{:.1f}) objW=({:.1f},{:.1f},{:.1f})",
                 handName(),
@@ -5702,6 +5704,7 @@ namespace rock
                 _grabFrame.motorFadeReason,
                 heldBodyColliding ? "yes" : "no",
                 authorityForceScale,
+                _grabFrame.longObjectLeverGameUnits,
                 pivotErrGame,
                 averageGrabDeviationGameUnits,
                 grabRotationErrorDegrees,
@@ -5760,6 +5763,7 @@ namespace rock
         float rawAngularDriveSpeedRadiansPerSecond = 0.0f;
         float appliedAngularDriveSpeedRadiansPerSecond = 0.0f;
         float maxAngularDriveSpeedRadiansPerSecond = 0.0f;
+        float longObjectAngularScale = 1.0f;
         RE::NiPoint3 rawAngularDriveVelocityRadiansPerSecond{};
         RE::NiPoint3 appliedAngularDriveVelocityRadiansPerSecond{};
         std::uint64_t queuedSequence = 0;
@@ -5868,6 +5872,7 @@ namespace rock
                         rawAngularDriveSpeedRadiansPerSecond,
                         appliedAngularDriveSpeedRadiansPerSecond,
                         maxAngularDriveSpeedRadiansPerSecond,
+                        longObjectAngularScale,
                         rawAngularDriveVelocityRadiansPerSecond,
                         appliedAngularDriveVelocityRadiansPerSecond);
                     if (!angularDriveOk) {
@@ -5937,7 +5942,7 @@ namespace rock
             std::uint32_t filterInfo = 0;
             const bool filterReadOk = havok_runtime::tryReadFilterInfo(world, proxyBodyId, filterInfo);
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+livePalmMirror+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularRef={} angularTarget=({:.1f},{:.1f},{:.1f}) pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s directAngular={} rawAng={:.3f}rad/s rawAngVec=({:.3f},{:.3f},{:.3f}) appliedAng={:.3f}rad/s appliedAngVec=({:.3f},{:.3f},{:.3f}) capAng={:.3f}rad/s proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+livePalmMirror+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularRef={} angularTarget=({:.1f},{:.1f},{:.1f}) pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s directAngular={} rawAng={:.3f}rad/s rawAngVec=({:.3f},{:.3f},{:.3f}) appliedAng={:.3f}rad/s appliedAngVec=({:.3f},{:.3f},{:.3f}) capAng={:.3f}rad/s longLever={:.1f}gu longScale={:.2f} proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -5977,6 +5982,8 @@ namespace rock
                 appliedAngularDriveVelocityRadiansPerSecond.y,
                 appliedAngularDriveVelocityRadiansPerSecond.z,
                 maxAngularDriveSpeedRadiansPerSecond,
+                _grabFrame.longObjectLeverGameUnits,
+                longObjectAngularScale,
                 proxyReadbackBetweenOk ? "ok" : "fail",
                 body_frame::bodyFrameSourceCode(proxyReadbackSourceBetween),
                 proxyReadbackMotionIndexBetween,

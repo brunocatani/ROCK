@@ -314,10 +314,15 @@ Confirmed gaps and fixes:
    - Effect:
      - there is no explicit policy for long-object angular authority beyond
        mass/inertia and the hard-keyframe angular velocity cap.
-   - Status:
-     - documented as a next implementation slice. Not patched in the mass-budget
-       slice because changing angular lever policy without telemetry would mix
-       two behaviors.
+   - Fix:
+     - replace the unused bounds-axis helper with selected-grip-to-mesh-extents
+       lever measurement;
+     - store `longObjectLeverGameUnits` in the canonical grab frame;
+     - scale the direct angular speed cap by configurable
+       `referenceLever / actualLever`, clamped to a configured floor;
+     - expose `bGrabLongObjectAngularScalingEnabled`,
+       `fGrabLongObjectReferenceLeverGameUnits`, and
+       `fGrabLongObjectMinAngularScale`.
 
 3. **Loose-weapon custom policy surface is neutral**
    - Evidence:
@@ -347,6 +352,14 @@ Confirmed gaps and fixes:
     mass, primary mass, sampled bodies, and unique motions;
   - added a source-boundary guard preventing the motor mass input from returning
     to `_savedObjectState.bodyId` only.
+- 2026-05-15 long-object angular slice:
+  - removed the unused local-bounds-axis helper and replaced it with
+    grip-to-extents lever measurement from cached local mesh triangles;
+  - stored the lever in the canonical grab frame;
+  - scaled the held angular velocity cap by lever length so long objects do not
+    receive the same tip sweep authority as compact objects;
+  - added config keys and source/unit tests for the long-object scale policy;
+  - updated the active production INI in place with the new keys.
 
 ## Verification Log
 

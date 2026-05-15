@@ -51,5 +51,22 @@ int main()
     const auto adaptiveShared = solveMotorTargets(adaptive);
     ok &= expectNear("two hands share adaptive boosted authority", adaptiveShared.linearMaxForce, 4000.0f, 0.001f);
 
+    ok &= expectNear("long object disabled angular scale",
+        computeLongObjectAngularSpeedScale(false, 96.0f, 24.0f, 0.35f),
+        1.0f,
+        0.001f);
+    ok &= expectNear("short object angular scale",
+        computeLongObjectAngularSpeedScale(true, 12.0f, 24.0f, 0.35f),
+        1.0f,
+        0.001f);
+    ok &= expectNear("long object angular scale",
+        computeLongObjectAngularSpeedScale(true, 48.0f, 24.0f, 0.35f),
+        0.5f,
+        0.001f);
+    ok &= expectNear("very long object angular scale floor",
+        computeLongObjectAngularSpeedScale(true, 200.0f, 24.0f, 0.35f),
+        0.35f,
+        0.001f);
+
     return ok ? 0 : 1;
 }

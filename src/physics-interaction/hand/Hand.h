@@ -384,6 +384,7 @@ namespace rock
             float& outRawAngularSpeedRadiansPerSecond,
             float& outAppliedAngularSpeedRadiansPerSecond,
             float& outMaxAngularSpeedRadiansPerSecond,
+            float& outLongObjectAngularScale,
             RE::NiPoint3& outRawAngularVelocityRadiansPerSecond,
             RE::NiPoint3& outAppliedAngularVelocityRadiansPerSecond);
         void queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,

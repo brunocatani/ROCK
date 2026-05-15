@@ -275,6 +275,9 @@ namespace rock
         float rockGrabAdaptivePositionFullError = 20.0f;
         float rockGrabAdaptiveRotationFullError = 60.0f;
         float rockGrabAdaptiveMaxForceMultiplier = 1.0f;
+        bool rockGrabLongObjectAngularScalingEnabled = true;
+        float rockGrabLongObjectReferenceLeverGameUnits = 24.0f;
+        float rockGrabLongObjectMinAngularScale = 0.35f;
 
         float rockGrabMaxInertiaRatio = 10.0f;
 

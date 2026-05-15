@@ -470,6 +470,7 @@ namespace rock
         float selectionToGripEvidenceDistanceGameUnits = 0.0f;
         float contactPatchMeshSnapDeltaGameUnits = 0.0f;
         float multiFingerContactSpreadGameUnits = 0.0f;
+        float longObjectLeverGameUnits = 0.0f;
         float handScaleAtGrab = 1.0f;
         const char* bodyResolutionReason = "none";
         const char* multiFingerContactReason = "none";
@@ -546,6 +547,7 @@ namespace rock
             selectionToGripEvidenceDistanceGameUnits = 0.0f;
             contactPatchMeshSnapDeltaGameUnits = 0.0f;
             multiFingerContactSpreadGameUnits = 0.0f;
+            longObjectLeverGameUnits = 0.0f;
             handScaleAtGrab = 1.0f;
             bodyResolutionReason = "none";
             multiFingerContactReason = "none";

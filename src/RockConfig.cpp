@@ -48,6 +48,8 @@ namespace
     constexpr float kDefaultGrabThrowMaxVelocityHavok = 12.0f;
     constexpr float kDefaultGrabThrowAngularVelocityScale = 1.0f;
     constexpr float kDefaultGrabThrowMaxAngularVelocityRadiansPerSecond = 18.0f;
+    constexpr float kDefaultGrabLongObjectReferenceLeverGameUnits = 24.0f;
+    constexpr float kDefaultGrabLongObjectMinAngularScale = 0.35f;
     constexpr float kDefaultGrabThumbSurfaceSafetyMarginGameUnits = 1.0f;
     const RE::NiPoint3 kDefaultPalmNormalHandspace{ 0.0f, 0.0f, 1.0f };
     constexpr bool kDefaultSeeThroughScopesRightEyeDominant = true;
@@ -302,6 +304,9 @@ namespace rock
         rockGrabAdaptivePositionFullError = 20.0f;
         rockGrabAdaptiveRotationFullError = 60.0f;
         rockGrabAdaptiveMaxForceMultiplier = 1.0f;
+        rockGrabLongObjectAngularScalingEnabled = true;
+        rockGrabLongObjectReferenceLeverGameUnits = kDefaultGrabLongObjectReferenceLeverGameUnits;
+        rockGrabLongObjectMinAngularScale = kDefaultGrabLongObjectMinAngularScale;
 
         rockGrabMaxInertiaRatio = 10.0f;
 
@@ -1064,6 +1069,19 @@ namespace rock
         rockGrabAdaptivePositionFullError = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAdaptivePositionFullError", rockGrabAdaptivePositionFullError));
         rockGrabAdaptiveRotationFullError = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAdaptiveRotationFullError", rockGrabAdaptiveRotationFullError));
         rockGrabAdaptiveMaxForceMultiplier = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAdaptiveMaxForceMultiplier", rockGrabAdaptiveMaxForceMultiplier));
+        rockGrabLongObjectAngularScalingEnabled = ini.GetBoolValue(SECTION, "bGrabLongObjectAngularScalingEnabled", rockGrabLongObjectAngularScalingEnabled);
+        rockGrabLongObjectReferenceLeverGameUnits = static_cast<float>(
+            ini.GetDoubleValue(SECTION, "fGrabLongObjectReferenceLeverGameUnits", rockGrabLongObjectReferenceLeverGameUnits));
+        rockGrabLongObjectReferenceLeverGameUnits =
+            std::clamp(std::isfinite(rockGrabLongObjectReferenceLeverGameUnits) ? rockGrabLongObjectReferenceLeverGameUnits : kDefaultGrabLongObjectReferenceLeverGameUnits,
+                1.0f,
+                240.0f);
+        rockGrabLongObjectMinAngularScale = static_cast<float>(
+            ini.GetDoubleValue(SECTION, "fGrabLongObjectMinAngularScale", rockGrabLongObjectMinAngularScale));
+        rockGrabLongObjectMinAngularScale =
+            std::clamp(std::isfinite(rockGrabLongObjectMinAngularScale) ? rockGrabLongObjectMinAngularScale : kDefaultGrabLongObjectMinAngularScale,
+                0.05f,
+                1.0f);
 
         rockGrabMaxInertiaRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxInertiaRatio", rockGrabMaxInertiaRatio));
 

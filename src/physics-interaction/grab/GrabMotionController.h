@@ -128,6 +128,27 @@ namespace rock::grab_motion_controller
         return linearForce / ratio;
     }
 
+    inline float computeLongObjectAngularSpeedScale(bool enabled, float leverGameUnits, float referenceLeverGameUnits, float minScale)
+    {
+        /*
+         * Long-object handling should reduce angular authority, not move the
+         * grip. A long rifle held near one end can keep the same contact pivot
+         * and hand/object relation while its far end receives less sweep speed.
+         * The scale is therefore a cap multiplier only.
+         */
+        if (!enabled) {
+            return 1.0f;
+        }
+
+        const float lever = finiteOr(leverGameUnits, 0.0f);
+        const float reference = safePositive(referenceLeverGameUnits, 24.0f);
+        const float floor = std::clamp(safePositive(minScale, 0.35f), 0.05f, 1.0f);
+        if (lever <= reference) {
+            return 1.0f;
+        }
+        return std::clamp(reference / lever, floor, 1.0f);
+    }
+
     inline MotorOutput solveMotorTargets(const MotorInput& input)
     {
         MotorOutput out{};
