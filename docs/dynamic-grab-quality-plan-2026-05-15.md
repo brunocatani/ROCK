@@ -142,17 +142,194 @@ Fix applied in this review:
 - kept and expanded coverage for the remaining proxy linear velocity helper;
 - added a source-boundary guard so the manual angular helper stays removed.
 
+### Dynamic Pipeline Map - 2026-05-15
+
+Current ordinary one-hand loose dynamic grab path:
+
+- selection/body prep:
+  - `Hand::grabSelectedObject` scans the selected reference with
+    `object_physics_body_set::scanObjectPhysicsBodySet(...)` in
+    `InteractionMode::ActiveGrab`;
+  - scan options include the selected seed body, selected hit node,
+    same-reference requirement, weapon-reference expansion, current held body
+    set, and `rockObjectPhysicsTreeMaxDepth`;
+  - active prep captures lifecycle state before recursive motion/collision prep
+    and restores it on failed grab/release;
+  - `_heldBodyIds = preparedBodySet.acceptedBodyIds()` is the canonical
+    accepted body list used by lifecycle restore, nearby damping, collision
+    suppression, inertia normalization, velocity release, and debug snapshots.
+- pivot/reference frame:
+  - selected mesh/authored/contact evidence chooses `grabGripPoint`;
+  - three-phase pocket logic seats that point to the palm pocket and preserves
+    object rotation unless an authored grab node exists;
+  - pivot B is frozen in BODY space:
+    `_grabFrame.pivotBBodyLocalGame` and `_grabFrame.pivotBConstraintLocalGame`;
+  - `constraintUsesMotionBodyAtGrab` is intentionally false after the verified
+    runtime fix. MOTION/COM stays diagnostic/weight/release data only.
+- proxy/custom authority:
+  - `createProxyConstraintGrabDrive(...)` creates a hidden no-contact
+    keyframed proxy body;
+  - proxy translation is driven from the live generated palm anchor after
+    conversion through
+    `hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame`;
+  - object rotation relation is captured from
+    `rawRotationPalmTranslation`;
+  - `updateProxyConstraintGrabDriveTarget(...)` writes transform A/B and the
+    ragdoll angular target into the custom constraint each physics between
+    phase;
+  - `applyProxyConstraintAngularVelocityDrive(...)` gets the FO4VR-native hard
+    keyframe angular vector, then clamps magnitude from the finite angular motor
+    budget. This is the only production angular-velocity writer for dynamic
+    grab.
+- mass/inertia:
+  - `normalizeGrabbedInertiaForBodies(...)` already operates on all accepted
+    bodies with unique-motion dedupe;
+  - `setHeldVelocity(...)` and release velocity also operate on the whole
+    `_heldBodyIds` set with unique-motion dedupe;
+  - confirmed gap: `updateConstraintGrabDriveMotors(...)`,
+    `captureGrabTelemetry(...)`, and angular probe telemetry still read only
+    `_savedObjectState.bodyId` through `readBodyMass(...)`.
+- loose weapons:
+  - loose non-equipped weapons are detected with
+    `isLooseWeaponGrabTarget(...)`;
+  - current custom authority has loose weapon multipliers for linear tau,
+    angular tau, collision tau, linear/angular damping, max force, angular force
+    ratio, and recovery speeds;
+  - defaults are neutral (`1.0`) in code and INI, so loose weapons currently
+    receive the same base motor policy as generic loose objects unless the INI
+    changes them.
+- long objects:
+  - `computeLocalBoundsLongAxis(...)` exists but is not wired into motor force,
+    angular speed, release, or telemetry;
+  - no confirmed live policy currently scales angular authority by held lever
+    length, local bounds, or pivot-to-extents distance.
+- hand/finger pose:
+  - runtime mesh/contact target set is stored in the grab frame in object local
+    space;
+  - `solveGrabFingerPoseFromTriangles(...)` is called at grab using current
+    triangles, live flattened finger skeleton snapshot, saved pose targets,
+    backside rejection, and surface-plane tolerance;
+  - pose is delayed during converge/pull and published once touch-held is
+    reached, then re-applied on the configured interval with smoothing and local
+    transform correction.
+
 ## Legacy Backup Map
 
-Pending.
+Spring-era backup findings:
+
+- one-hand loose object grab used native mouse spring as authority:
+  `_heldDriveMode = NativeMouseSpring` and `_nativeGrab.create(...)`;
+- shared/two-hand loose-object grab used the shared custom constraint path;
+- the backup already contained most of the current non-authority quality
+  scaffolding:
+  - active object-tree scan/prep;
+  - `_heldBodyIds = preparedBodySet.acceptedBodyIds()`;
+  - recursive motion/collision enable;
+  - inertia normalization for accepted bodies;
+  - nearby damping;
+  - mesh/contact/finger pose solve;
+  - release velocity over the held body set.
+- backup one-hand loose weapon handling had native-specific response knobs:
+  - `fGrabLooseWeaponNativeLinearResponseMultiplier`;
+  - `fGrabLooseWeaponNativeAngularResponseMultiplier`;
+  - `fGrabLooseWeaponNativeAngularClampMultiplier`;
+  - `fGrabLooseWeaponAdaptiveLeadMultiplier`.
+- those native knobs are intentionally not portable as authority because the
+  current design removed native mouse spring. The useful lesson is separate:
+  loose weapons need their own weight/response policy surface in the custom
+  authority path, not a native action fallback.
 
 ## HIGGS Dynamic Grab Map
 
-Pending.
+Dynamic-only HIGGS findings from approved source:
+
+- `Hand::TransitionHeld(...)`:
+  - chooses `ptPos` from closest mesh/contact geometry when available;
+  - computes `desiredNodeTransform = adjustedTransform` then translates it by
+    `palmPos - ptPos`;
+  - freezes `desiredNodeTransformHandSpace = inverseHand *
+    desiredNodeTransform`;
+  - creates pivot A from palm position in hand-body space and pivot B from
+    `ptPos` in object rigid-body space;
+  - creates a custom constraint through `CreateGrabConstraint(...)`;
+  - collects all grabbed rigid bodies and saves contact callback delay and
+    inverse inertia for each connected body;
+  - clamps each connected body's inverse inertia by
+    `grabbedObjectMaxInertiaRatio` and `grabbedObjectMinInertia`.
+- `GrabConstraintData`:
+  - uses transform atoms, ragdoll angular motors, and three linear motor atoms;
+  - angular max force is derived from linear force through
+    `grabConstraintAngularToLinearForceRatio`;
+  - `setTargetRelativeOrientationOfBodies(...)` updates the angular target from
+    the desired hand/object relation.
+- held update in `State::HeldBody`:
+  - updates visual hand from held object using
+    `heldTransform * inverse(desiredNodeTransformHandSpace)`;
+  - records hand deviation and releases if average hand distance exceeds the
+    configured limit after the ignore window;
+  - refreshes transform B from
+    `desiredHandTransformHavokObjSpace * palmPosHandspace`, not from COM;
+  - adjusts motor tau when colliding;
+  - gives loose weapons a higher base linear force
+    (`grabConstraintLinearMaxForceWeapon`);
+  - caps final linear force by mass through
+    `grabConstraintMaxForceToMassRatio`;
+  - derives angular force from the linear force and angular-to-linear ratio;
+  - registers connected bodies via `RegisterObjectMass(...)` and
+    `RegisterPlayerSpaceBody(...)`.
+- `RegisterObjectMass(...)`:
+  - dedupes bodies per frame and accumulates held object mass for player speed
+    reduction / global mass effect;
+  - this is separate from pivot selection and never moves the grip to COM.
+- finger pose:
+  - HIGGS computes finger starts/normals/zero-angle vectors in hand/world space,
+    shifts the finger starts by `palmToPoint`, checks curve intersections
+    against nearby triangles, uses an alternate thumb curve if needed, clamps
+    minimum curl to `0.2`, and blends with the finger animator.
 
 ## Gap Matrix
 
-Pending.
+Confirmed gaps and fixes:
+
+1. **Primary-only mass budget for multipart held objects**
+   - Evidence:
+     - `_heldBodyIds` is the canonical whole-object body set.
+     - inertia normalization and release velocity already use `_heldBodyIds`.
+     - motor force and mass telemetry still read only `_savedObjectState.bodyId`.
+   - Effect:
+     - multipart loose weapons can be budgeted as if only the selected piece
+       exists, while the rest of the runtime treats the connected object as a
+       set.
+   - Fix:
+     - add a unique-motion held body mass summary helper;
+     - pass aggregate held mass to `GrabMotionController`;
+     - keep primary mass as fallback only when the accepted set has no readable
+       masses;
+     - log aggregate mass, sampled body count, and unique motion count.
+
+2. **Long-object lever policy not wired**
+   - Evidence:
+     - `computeLocalBoundsLongAxis(...)` exists but no live call uses it for
+       force/rotation.
+   - Effect:
+     - there is no explicit policy for long-object angular authority beyond
+       mass/inertia and the hard-keyframe angular velocity cap.
+   - Status:
+     - documented as a next implementation slice. Not patched in the mass-budget
+       slice because changing angular lever policy without telemetry would mix
+       two behaviors.
+
+3. **Loose-weapon custom policy surface is neutral**
+   - Evidence:
+     - custom loose-weapon multipliers exist but default to `1.0`;
+     - spring-era native loose weapon response knobs were removed with native
+       authority.
+   - Effect:
+     - loose weapons currently have no out-of-box specialization beyond being
+       marked `looseWeapon=yes`.
+   - Status:
+     - after aggregate mass is fixed, tune or add custom loose-weapon policy
+       using custom constraint variables only.
 
 ## Implementation Log
 
@@ -160,6 +337,16 @@ Pending.
   velocity helper. This does not change the validated runtime grab rotation
   path; it removes dead convention code now superseded by
   `computeHardKeyframeVelocityForTarget(...)`.
+- 2026-05-15 mapping: current ROCK, spring-era backup, and HIGGS dynamic-only
+  pass confirm the first safe code fix is the primary-body-only mass budget.
+- 2026-05-15 mass-budget slice:
+  - added `HeldBodyMassSummary` with unique-motion dedupe over the primary body
+    plus `_heldBodyIds`;
+  - changed motor target solving to use aggregate held-object mass;
+  - changed grab telemetry and angular probe mass reporting to show aggregate
+    mass, primary mass, sampled bodies, and unique motions;
+  - added a source-boundary guard preventing the motor mass input from returning
+    to `_savedObjectState.bodyId` only.
 
 ## Verification Log
 

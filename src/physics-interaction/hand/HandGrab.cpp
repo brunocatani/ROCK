@@ -1565,6 +1565,89 @@ namespace rock
             return 1.0f / invMass;
         }
 
+        struct HeldBodyMassSummary
+        {
+            float primaryMass = 0.0f;
+            float aggregateMass = 0.0f;
+            std::uint32_t sampledBodies = 0;
+            std::uint32_t uniqueMotions = 0;
+
+            [[nodiscard]] float motorMass() const noexcept
+            {
+                if (std::isfinite(aggregateMass) && aggregateMass > 0.0f) {
+                    return aggregateMass;
+                }
+                return (std::isfinite(primaryMass) && primaryMass > 0.0f) ? primaryMass : 0.0f;
+            }
+        };
+
+        HeldBodyMassSummary readHeldBodyMassSummary(RE::hknpWorld* world,
+            RE::hknpBodyId primaryBodyId,
+            const std::vector<std::uint32_t>& heldBodyIds)
+        {
+            /*
+             * Dynamic grab owns one held object even when FO4VR exposes that
+             * object as several hknp bodies. Lifecycle, inertia normalization,
+             * release velocity, and nearby damping already operate on the whole
+             * accepted body set. The motor mass budget must use the same object
+             * scope, with unique-motion dedupe, so multipart loose weapons are
+             * not budgeted from whichever child body happened to be selected.
+             */
+            HeldBodyMassSummary summary{};
+            summary.primaryMass = readBodyMass(world, primaryBodyId);
+            if (!world) {
+                summary.aggregateMass = summary.primaryMass;
+                return summary;
+            }
+
+            constexpr std::size_t kMaxMassMotionSlots = 96;
+            std::array<std::uint32_t, kMaxMassMotionSlots> sampledMotionSlots{};
+            std::size_t sampledMotionSlotCount = 0;
+
+            auto motionAlreadySampled = [&sampledMotionSlots, &sampledMotionSlotCount](std::uint32_t motionIndex) {
+                for (std::size_t i = 0; i < sampledMotionSlotCount; ++i) {
+                    if (sampledMotionSlots[i] == motionIndex) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            auto sampleBody = [&](std::uint32_t rawBodyId) {
+                if (rawBodyId == INVALID_BODY_ID) {
+                    return;
+                }
+
+                auto* body = havok_runtime::getBody(world, RE::hknpBodyId{ rawBodyId });
+                if (!body || !body_frame::hasUsableMotionIndex(body->motionIndex) || motionAlreadySampled(body->motionIndex)) {
+                    return;
+                }
+                if (sampledMotionSlotCount >= sampledMotionSlots.size()) {
+                    return;
+                }
+
+                const float mass = readBodyMass(world, RE::hknpBodyId{ rawBodyId });
+                if (!std::isfinite(mass) || mass <= 0.0f) {
+                    return;
+                }
+
+                sampledMotionSlots[sampledMotionSlotCount++] = body->motionIndex;
+                summary.aggregateMass += mass;
+                ++summary.sampledBodies;
+                summary.uniqueMotions = static_cast<std::uint32_t>(sampledMotionSlotCount);
+            };
+
+            sampleBody(primaryBodyId.value);
+            for (const auto bodyId : heldBodyIds) {
+                sampleBody(bodyId);
+            }
+
+            if (!(std::isfinite(summary.aggregateMass) && summary.aggregateMass > 0.0f)) {
+                summary.aggregateMass = summary.primaryMass;
+            }
+            return summary;
+        }
+
         void applyRockGrabHandPose(bool isLeft,
             const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose,
             std::array<float, 15>& currentJointPose,
@@ -2176,7 +2259,7 @@ namespace rock
         out.heldBodySource = heldBodyFrame.source;
         out.heldMotionIndex = heldBodyFrame.motionIndex;
         out.hasHeldBodyWorld = heldBodyFrame.valid;
-        out.heldBodyMass = readBodyMass(world, _savedObjectState.bodyId);
+        out.heldBodyMass = readHeldBodyMassSummary(world, _savedObjectState.bodyId, _heldBodyIds).motorMass();
 
         RE::NiTransform heldNativeBodyWorld{};
         if (tryGetBodyArrayWorldTransform(world, _savedObjectState.bodyId, heldNativeBodyWorld)) {
@@ -2710,6 +2793,7 @@ namespace rock
             looseWeaponMultiplier(_heldObjectIsLooseWeapon, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier);
         const float sharedBaseMaxForce = scaleDriveValue(g_rockConfig.rockGrabConstraintMaxForce, looseMaxForceMultiplier);
 
+        const auto massSummary = readHeldBodyMassSummary(world, _savedObjectState.bodyId, _heldBodyIds);
         const auto output = grab_motion_controller::solveMotorTargets(grab_motion_controller::MotorInput{
             .enabled = g_rockConfig.rockGrabAdaptiveMotorEnabled,
             .heldBodyColliding = heldBodyColliding,
@@ -2728,7 +2812,7 @@ namespace rock
             .baseMaxForce = sharedBaseMaxForce,
             .maxForceMultiplier = g_rockConfig.rockGrabAdaptiveMaxForceMultiplier,
             .authorityForceScale = authorityForceScale,
-            .mass = readBodyMass(world, _savedObjectState.bodyId),
+            .mass = massSummary.motorMass(),
             .forceToMassRatio = g_rockConfig.rockGrabMaxForceToMassRatio,
             .angularToLinearForceRatio =
                 angularForceRatioForMultiplier(g_rockConfig.rockGrabAngularToLinearForceRatio, looseAngularForceMultiplier),
@@ -4836,6 +4920,7 @@ namespace rock
         }
 
         _heldObjectIsLooseWeapon = looseWeaponGrab;
+        const auto massSummaryAtGrab = readHeldBodyMassSummary(world, _savedObjectState.bodyId, _heldBodyIds);
         const float sharedLinearForce = _activeConstraint.linearMotor ?
             (std::max)(std::fabs(_activeConstraint.linearMotor->minForce), std::fabs(_activeConstraint.linearMotor->maxForce)) :
             maxForce;
@@ -4843,7 +4928,7 @@ namespace rock
             (std::max)(std::fabs(_activeConstraint.angularMotor->minForce), std::fabs(_activeConstraint.angularMotor->maxForce)) :
             0.0f;
         ROCK_LOG_DEBUG(Hand,
-            "{} hand dynamic grab created: driveMode={} looseWeapon={} constraint={} proxyBody={} handBody={} objBody={} heldBodies={} linearTau={:.3f} angularTau={:.3f} linearDamping={:.2f} angularDamping={:.2f} linearForce={:.0f} angularForce={:.0f} propRecov={:.1f} constRecov={:.1f} rotRef={}",
+            "{} hand dynamic grab created: driveMode={} looseWeapon={} constraint={} proxyBody={} handBody={} objBody={} heldBodies={} mass={:.2f} primaryMass={:.2f} massBodies={} motions={} linearTau={:.3f} angularTau={:.3f} linearDamping={:.2f} angularDamping={:.2f} linearForce={:.0f} angularForce={:.0f} propRecov={:.1f} constRecov={:.1f} rotRef={}",
             handName(),
             kHeldObjectDriveName,
             _heldObjectIsLooseWeapon ? "yes" : "no",
@@ -4852,6 +4937,10 @@ namespace rock
             _handBody.getBodyId().value,
             objectBodyId.value,
             _heldBodyIds.size(),
+            massSummaryAtGrab.motorMass(),
+            massSummaryAtGrab.primaryMass,
+            massSummaryAtGrab.sampledBodies,
+            massSummaryAtGrab.uniqueMotions,
             _activeConstraint.linearMotor ? _activeConstraint.linearMotor->tau : tau,
             _activeConstraint.angularMotor ? _activeConstraint.angularMotor->tau : g_rockConfig.rockGrabAngularTau,
             _activeConstraint.linearMotor ? _activeConstraint.linearMotor->damping : damping,
@@ -5544,15 +5633,19 @@ namespace rock
                     heldMetrics.expectedFinger.y, heldMetrics.expectedFinger.z, rootMetrics.finger.x, rootMetrics.finger.y, rootMetrics.finger.z, rootMetrics.expectedFinger.x,
                     rootMetrics.expectedFinger.y, rootMetrics.expectedFinger.z);
 
+                const auto massSummary = readHeldBodyMassSummary(world, _savedObjectState.bodyId, _heldBodyIds);
                 ROCK_LOG_TRACE(Hand,
-                    "{} GRAB ANGULAR PROBE: rawAxisErr(rowMax={:.2f} colMax={:.2f}) driveErr=({:.2f}gu,{:.2f}deg) mass={:.2f} "
+                    "{} GRAB ANGULAR PROBE: rawAxisErr(rowMax={:.2f} colMax={:.2f}) driveErr=({:.2f}gu,{:.2f}deg) mass={:.2f} primaryMass={:.2f} massBodies={} motions={} "
                     "motionDiagVsGrab={:.2f}deg/{:.2f}gu fade={:.2f} fadeEnabled={} fadeReason={} drive={} constraint={} queued={} flushed={} failedFlushes={} lastDt={:.6f}",
                     handName(),
                     rawRowMax,
                     rawColMax,
                     grabPositionErrorGameUnits,
                     grabRotationErrorDegrees,
-                    readBodyMass(world, _savedObjectState.bodyId),
+                    massSummary.motorMass(),
+                    massSummary.primaryMass,
+                    massSummary.sampledBodies,
+                    massSummary.uniqueMotions,
                     motionDiagVsGrabRot,
                     motionDiagVsGrabPos,
                     grabFadeFactor,
