@@ -451,6 +451,10 @@ namespace rock
         }
 
         constexpr const char* kHeldObjectDriveName = "proxyConstraint";
+        constexpr std::uint32_t kHeldCollisionParticipationFlags = 0x80u;
+        constexpr std::uint32_t kHeldCollisionParticipationFlagMode = 0u;
+        constexpr std::uint32_t kHeldAuthorityBodyFlags = 0x08000000u;
+        constexpr std::uint32_t kHeldAuthorityBodyFlagMode = 1u;
 
         RE::NiPoint3 constraintDrivePivotBBodyLocalGame(const CanonicalGrabFrame& frame)
         {
@@ -469,6 +473,131 @@ namespace rock
         std::uintptr_t heldBodyFlagLeaseOwner(const Hand* hand)
         {
             return reinterpret_cast<std::uintptr_t>(hand) ^ 0x524F434B48454C44ull;
+        }
+
+        struct HeldBodyActivationSummary
+        {
+            std::uint32_t bodyCount = 0;
+            std::uint32_t activatedCount = 0;
+            std::uint32_t failedActivationCount = 0;
+        };
+
+        struct HeldBodyFlagLeaseSummary
+        {
+            std::uint32_t bodyCount = 0;
+            std::uint32_t collisionLeaseCount = 0;
+            std::uint32_t authorityLeaseCount = 0;
+            std::uint32_t failedLeaseCount = 0;
+        };
+
+        HeldBodyActivationSummary activateHeldObjectBodySet(
+            RE::hknpWorld* world,
+            std::uint32_t primaryBodyId,
+            const std::vector<std::uint32_t>& heldBodyIds)
+        {
+            HeldBodyActivationSummary summary{};
+            if (!world) {
+                return summary;
+            }
+
+            const auto bodyIds = held_object_body_set_policy::makePrimaryFirstUniqueBodyList(primaryBodyId, heldBodyIds);
+            summary.bodyCount = static_cast<std::uint32_t>(bodyIds.size());
+            for (const auto bodyId : bodyIds) {
+                if (physics_recursive_wrappers::activateBody(world, bodyId)) {
+                    ++summary.activatedCount;
+                } else {
+                    ++summary.failedActivationCount;
+                }
+            }
+            return summary;
+        }
+
+        HeldBodyFlagLeaseSummary acquireHeldObjectBodyFlagLeases(
+            RE::hknpWorld* world,
+            std::uint32_t primaryBodyId,
+            const std::vector<std::uint32_t>& heldBodyIds,
+            std::uintptr_t ownerToken)
+        {
+            /*
+             * Proxy-constraint grab replaced the native held-object action, but
+             * the old action also owned body-flag participation while the object
+             * was held. Keep those leases on the accepted primary-first body set
+             * so multipart weapons get the same wake/collision-support contract
+             * as the rest of the custom motor pipeline.
+             */
+            HeldBodyFlagLeaseSummary summary{};
+            if (!world || ownerToken == 0) {
+                return summary;
+            }
+
+            const auto bodyIds = held_object_body_set_policy::makePrimaryFirstUniqueBodyList(primaryBodyId, heldBodyIds);
+            summary.bodyCount = static_cast<std::uint32_t>(bodyIds.size());
+            for (const auto bodyId : bodyIds) {
+                if (havok_runtime::acquireBodyFlagLease(
+                        world,
+                        bodyId,
+                        kHeldCollisionParticipationFlags,
+                        kHeldCollisionParticipationFlagMode,
+                        ownerToken)) {
+                    ++summary.collisionLeaseCount;
+                } else {
+                    ++summary.failedLeaseCount;
+                }
+
+                if (havok_runtime::acquireBodyFlagLease(
+                        world,
+                        bodyId,
+                        kHeldAuthorityBodyFlags,
+                        kHeldAuthorityBodyFlagMode,
+                        ownerToken)) {
+                    ++summary.authorityLeaseCount;
+                } else {
+                    ++summary.failedLeaseCount;
+                }
+            }
+            return summary;
+        }
+
+        HeldBodyFlagLeaseSummary releaseHeldObjectBodyFlagLeases(
+            RE::hknpWorld* world,
+            std::uint32_t primaryBodyId,
+            const std::vector<std::uint32_t>& heldBodyIds,
+            std::uintptr_t ownerToken,
+            bool restoreOnFinalLease)
+        {
+            HeldBodyFlagLeaseSummary summary{};
+            if (!world || ownerToken == 0) {
+                return summary;
+            }
+
+            const auto bodyIds = held_object_body_set_policy::makePrimaryFirstUniqueBodyList(primaryBodyId, heldBodyIds);
+            summary.bodyCount = static_cast<std::uint32_t>(bodyIds.size());
+            for (const auto bodyId : bodyIds) {
+                if (havok_runtime::releaseBodyFlagLease(
+                        world,
+                        bodyId,
+                        kHeldCollisionParticipationFlags,
+                        kHeldCollisionParticipationFlagMode,
+                        ownerToken,
+                        restoreOnFinalLease)) {
+                    ++summary.collisionLeaseCount;
+                } else {
+                    ++summary.failedLeaseCount;
+                }
+
+                if (havok_runtime::releaseBodyFlagLease(
+                        world,
+                        bodyId,
+                        kHeldAuthorityBodyFlags,
+                        kHeldAuthorityBodyFlagMode,
+                        ownerToken,
+                        restoreOnFinalLease)) {
+                    ++summary.authorityLeaseCount;
+                } else {
+                    ++summary.failedLeaseCount;
+                }
+            }
+            return summary;
         }
 
         void copyPeerInertiaSnapshot(SavedObjectState& target, const SavedObjectState& peer)
@@ -4956,6 +5085,17 @@ namespace rock
             }
         }
 
+        const auto grabActivation = activateHeldObjectBodySet(world, objectBodyId.value, _heldBodyIds);
+        if (grabActivation.failedActivationCount > 0) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand GRAB activation incomplete: primaryBody={} bodies={} activated={} failed={}",
+                handName(),
+                objectBodyId.value,
+                grabActivation.bodyCount,
+                grabActivation.activatedCount,
+                grabActivation.failedActivationCount);
+        }
+
         suppressHandCollisionForGrab(world);
 
         if (joiningPeerHeldObject && sharedContext.peerSavedObjectState) {
@@ -5096,8 +5236,25 @@ namespace rock
             _activeConstraint.linearMotor ? _activeConstraint.linearMotor->constantRecoveryVelocity : constantRecovery,
             kGrabObjectRotationReferenceName);
 
-        for (auto bid : _heldBodyIds) {
-            havok_runtime::acquireBodyFlagLease(world, bid, 0x80, 0, heldBodyFlagLeaseOwner(this));
+        const auto heldFlagLeases =
+            acquireHeldObjectBodyFlagLeases(world, _savedObjectState.bodyId.value, _heldBodyIds, heldBodyFlagLeaseOwner(this));
+        if (heldFlagLeases.failedLeaseCount > 0) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand GRAB held body flag lease incomplete: primaryBody={} bodies={} collision={} authority={} failed={}",
+                handName(),
+                _savedObjectState.bodyId.value,
+                heldFlagLeases.bodyCount,
+                heldFlagLeases.collisionLeaseCount,
+                heldFlagLeases.authorityLeaseCount,
+                heldFlagLeases.failedLeaseCount);
+        } else {
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand GRAB held body flag leases acquired: primaryBody={} bodies={} collision={} authority={}",
+                handName(),
+                _savedObjectState.bodyId.value,
+                heldFlagLeases.bodyCount,
+                heldFlagLeases.collisionLeaseCount,
+                heldFlagLeases.authorityLeaseCount);
         }
         _heldBodyContactFrame.store(100, std::memory_order_release);
         _activeGrabLifecycle = std::move(activeLifecycle);
@@ -6477,8 +6634,44 @@ namespace rock
         _heldBodyContactFrame.store(100, std::memory_order_release);
 
         if (world) {
-            for (auto bid : _heldBodyIds) {
-                havok_runtime::releaseBodyFlagLease(world, bid, 0x80, 0, heldBodyFlagLeaseOwner(this), releaseContext.finalObjectRelease);
+            const auto heldFlagReleases = releaseHeldObjectBodyFlagLeases(
+                world,
+                _savedObjectState.bodyId.value,
+                _heldBodyIds,
+                heldBodyFlagLeaseOwner(this),
+                releaseContext.finalObjectRelease);
+            if (heldFlagReleases.failedLeaseCount > 0) {
+                ROCK_LOG_WARN(Hand,
+                    "{} hand RELEASE held body flag release incomplete: primaryBody={} bodies={} collision={} authority={} failed={} finalObjectRelease={}",
+                    handName(),
+                    _savedObjectState.bodyId.value,
+                    heldFlagReleases.bodyCount,
+                    heldFlagReleases.collisionLeaseCount,
+                    heldFlagReleases.authorityLeaseCount,
+                    heldFlagReleases.failedLeaseCount,
+                    releaseContext.finalObjectRelease ? "yes" : "no");
+            } else {
+                ROCK_LOG_DEBUG(Hand,
+                    "{} hand RELEASE held body flag leases released: primaryBody={} bodies={} collision={} authority={} finalObjectRelease={}",
+                    handName(),
+                    _savedObjectState.bodyId.value,
+                    heldFlagReleases.bodyCount,
+                    heldFlagReleases.collisionLeaseCount,
+                    heldFlagReleases.authorityLeaseCount,
+                    releaseContext.finalObjectRelease ? "yes" : "no");
+            }
+
+            if (releaseContext.finalObjectRelease && releaseContext.disposition == GrabReleaseDisposition::PhysicalDrop) {
+                const auto releaseActivation = activateHeldObjectBodySet(world, _savedObjectState.bodyId.value, _heldBodyIds);
+                if (releaseActivation.failedActivationCount > 0) {
+                    ROCK_LOG_WARN(Hand,
+                        "{} hand RELEASE activation incomplete: primaryBody={} bodies={} activated={} failed={}",
+                        handName(),
+                        _savedObjectState.bodyId.value,
+                        releaseActivation.bodyCount,
+                        releaseActivation.activatedCount,
+                        releaseActivation.failedActivationCount);
+                }
             }
         }
 
