@@ -162,8 +162,10 @@ Current ordinary one-hand loose dynamic grab path:
   - selected mesh/authored/contact evidence chooses `grabGripPoint`;
   - three-phase pocket logic seats that point to the palm pocket and preserves
     object rotation unless an authored grab node exists;
-  - pivot B is frozen in BODY space:
-    `_grabFrame.pivotBBodyLocalGame` and `_grabFrame.pivotBConstraintLocalGame`;
+  - visual/contact Pivot B is frozen in BODY space as
+    `_grabFrame.pivotBBodyLocalGame`;
+  - active constraint Pivot B is BODY-space data computed from the same
+    body-A palm/body-B relation as the constraint target, not from COM/MOTION;
   - `constraintUsesMotionBodyAtGrab` is intentionally false after the verified
     runtime fix. MOTION/COM stays diagnostic/weight/release data only.
 - proxy/custom authority:

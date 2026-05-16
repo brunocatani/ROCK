@@ -38,17 +38,14 @@ point in the same object-side frame the constraint solver consumes.
 ## Implementation Shape
 
 - Keep `tryGetGrabAuthorityBodyWorldTransform` as the native BODY/visual helper.
-- Change the active drive object frame to `tryResolveLiveBodyWorldTransform`,
-  which prefers MOTION when FO4VR exposes it.
+- Superseded: do not change the active drive object frame to
+  `tryResolveLiveBodyWorldTransform` for PivotB authority.
 - At grab capture:
   - visual relation and object/node local data stay BODY-authored;
-  - constraint relation uses MOTION when available;
-  - pivot B is still the selected contact point, frozen into the constraint
-    frame.
-- At held update and release, any use of `pivotBConstraintLocalGame` must read
-  the live drive object frame, not the BODY visual frame.
-- After-solve telemetry must report both native BODY and drive/MOTION so future
-  logs cannot hide this mismatch again.
+  - constraint PivotB remains BODY-authored;
+  - active transformB is computed from the paired body-A palm/body-B relation.
+- After-solve telemetry still reports both BODY and MOTION so future logs cannot
+  hide the diagnostic split again, but MOTION is not pivot authority.
 
 ## Expected Runtime Result
 

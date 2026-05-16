@@ -18,8 +18,10 @@ diagnostics, but not for the grab pivot.
 - `tryGetGrabDriveObjectWorldTransform` returns the BODY helper again.
 - Grab capture forces `constraintUsesMotionBodyAtGrab = false`.
 - `constraintBodyWorldAtGrab` is the BODY readback.
-- `pivotBConstraintLocalGame` is therefore the selected contact point expressed
-  in BODY space.
+- The visual/contact copy of Pivot B remains the selected contact point in BODY
+  space.
+- The active constraint `transformB` copy is computed in BODY space from the
+  paired body-A palm/body-B relation, matching the HIGGS held-update formula.
 - After-solve telemetry still reads MOTION separately as `motionObjectRead` and
   logs `motionToDrive`, so BODY/MOTION drift remains visible without becoming
   authority.
