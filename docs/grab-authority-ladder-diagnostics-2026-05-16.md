@@ -9,20 +9,23 @@ feeding pivot B and the angular target from the same saved body-B relation. ROCK
 now needs a diagnostic that proves, frame by frame, whether our proxy authority
 chain does the same thing.
 
-This file started as a telemetry pass, but the same review exposed one safe
-simplification: the hidden proxy body and the angular authority frame were two
-names for the same runtime frame after raw-hand rotation is applied. The current
-change removes that duplicate frame adapter while keeping the same palm-derived
-position and raw flattened-hand rotation inputs.
+This file started as a telemetry pass, but the same review exposed two frame
+simplifications. First, the hidden proxy body and the angular authority frame
+were two names for the same runtime frame after raw-hand rotation was applied.
+Second, the generated palm collider was still being allowed to provide the
+authority position. HIGGS does not insert that collider-derived semantic frame:
+it reads the hand bone transform, applies a handspace palm offset, and feeds
+that directly into the grab relation. ROCK now mirrors that shape with the
+root-flattened hand frame.
 
 ## Frame ladder to prove
 
 Names:
 
 - `H`: raw root-flattened hand/controller frame.
-- `P`: generated palm/proxy placement frame.
-- `A`: active authority frame, built as palm/proxy translation plus raw hand
-  rotation.
+- `P`: handspace palm point derived directly from the raw hand frame.
+- `A`: active authority frame, built from raw hand rotation plus that handspace
+  palm point.
 - `D`: desired object node frame.
 - `DB`: desired dynamic body-B frame.
 - `R`: saved body-B relation in authority-frame space.
@@ -30,7 +33,7 @@ Names:
 Required relationships:
 
 ```text
-A = raw-hand rotation + palm/proxy position
+A = root-flattened hand rotation + handspace palm position
 DB = A * R
 pivotA_world = A * pivotA_local
 pivotB_world = DB * pivotB_local
@@ -97,25 +100,30 @@ the other.
 
 ## Simplification applied with the diagnostic
 
-The active path should now treat the hidden proxy body as the authority body, not
-as a palm-only frame:
+The active path should now treat the hidden proxy body as the authority body, and
+that authority body is fed from the root-flattened hand frame rather than from a
+generated palm-collider frame:
 
 ```text
-authorityWorld = raw-hand rotation + generated palm/proxy position
+authorityWorld = root-flattened hand rotation + configured handspace palm point
 proxy body is driven to authorityWorld
 transform A local rotation is identity
 desired body = authorityWorld * saved body-in-authority relation
 pivot B = inverse(saved body-in-authority relation) * pivot A
 ```
 
-That removes the old double-wrap shape:
+That removes the old collider-authority shape:
 
 ```text
-palm proxy -> authority proxy -> authority frame
+generated palm collider -> converted proxy frame -> authority frame
 ```
 
 and replaces it with:
 
 ```text
-palm proxy + raw hand = authority frame
+root-flattened hand frame + handspace palm offset = authority frame
 ```
+
+The generated palm/finger colliders remain useful for collision, contact
+evidence, and visual debug comparison. They are no longer the source of the
+dynamic grab authority frame.

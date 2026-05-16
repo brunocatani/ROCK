@@ -52,12 +52,12 @@ Reject-Text 'src/physics-interaction/native/HavokOffsets.h' 'MouseSpring' 'Mouse
 Reject-Path 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'Native mouse-spring wrapper implementation must be removed.'
 Reject-Path 'src/physics-interaction/native/NativeMouseSpringGrab.h' 'Native mouse-spring wrapper header must be removed.'
 
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'resolveGrabAuthorityProxyFrame\(world,\s*handWorldTransform,\s*&handBodyWorldAtGrab,\s*proxyFrameWorldAtGrab' 'Close dynamic grab must resolve the hidden proxy frame from the live palm-anchor authority before creating the custom finite-force constraint.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'createProxyConstraintGrabDrive\(\s*bhkWorld,\s*world,\s*objectBodyId,\s*proxyFrameWorldAtGrab,\s*handWorldTransform,\s*grabPivotAWorld' 'Close dynamic grab must create the hidden proxy plus custom finite-force constraint from the resolved palm-authority proxy frame while preserving raw hand rotation authority.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'resolveGrabAuthorityProxyFrame\(world,\s*handWorldTransform,\s*&handBodyWorldAtGrab,\s*proxyFrameWorldAtGrab' 'Close dynamic grab must resolve the hidden proxy frame from root-flattened hand authority before creating the custom finite-force constraint.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'createProxyConstraintGrabDrive\(\s*bhkWorld,\s*world,\s*objectBodyId,\s*proxyFrameWorldAtGrab,\s*handWorldTransform,\s*grabPivotAWorld' 'Close dynamic grab must create the hidden proxy plus custom finite-force constraint from the resolved hand-bone authority frame while preserving raw hand rotation authority.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '_nativeGrab\.create\(\s*world,\s*objectBodyId' 'Ordinary dynamic close grab must not create native mouse-spring as its production authority.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'solveAdaptiveHeldLead|nativeTargetBodyWorld|_nativeGrab\.queueTarget' 'Held-object updates must not keep removed native mouse-spring adaptive target logic.'
 Reject-Text 'src/physics-interaction/grab/GrabHeldObject.h' 'AdaptiveHeldLead|solveAdaptiveHeldLead|responseFactor' 'Removed native/adaptive target-leading helpers must not remain as unused grab authority scaffolding.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'authorityWorld\s*=\s*[\s\S]*makeRawRotationPalmTranslationFrame\(handWorldTransform,\s*proxyPalmWorld\)' 'Held-object targets must use the root-flattened raw hand rotation and live palm/proxy translation.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'authorityWorld\s*=\s*[\s\S]*computeGrabAuthorityFrameFromHandBasis\(handWorldTransform,\s*_isLeft\)' 'Held-object targets must use the root-flattened hand rotation and handspace palm translation.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'activePivotBBodyLocalGame\s*=\s*activeProxyConstraintPivotBLocalGame\(\)' 'Held-object updates must refresh the active proxy body-local pivot before composing target points.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'desiredLinearBodyWorld\s*=\s*[\s\S]*_grabFrame\.rawRotationProxyBodyHandSpace' 'Held-object linear target must use the same raw-rotation proxy body relation that owns transform-B.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'localPointToWorld\(desiredLinearBodyWorld,\s*activePivotBBodyLocalGame\)' 'Held-object proxy target point must derive from the paired active body-local pivot and raw proxy body relation.'
@@ -156,7 +156,7 @@ Require-Text 'data/config/ROCK.ini' 'fGrabLooseWeaponSharedConstraintAngularForc
 Require-Text 'src/RockConfig.cpp' 'kDefaultGrabLooseWeaponSharedConstraintMaxForceMultiplier\s*=\s*4\.5f' 'Loose non-equipped weapon custom authority must preserve the HIGGS-style 9000-vs-2000 base linear force ratio.'
 Require-Text 'data/config/ROCK.ini' 'fGrabLooseWeaponSharedConstraintMaxForceMultiplier\s*=\s*4\.5' 'Packaged ROCK.ini must use the loose weapon base linear force multiplier before mass capping.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '_nativeGrabReleasePending|native mouse-spring flush failure' 'Native mouse-spring release/failure state must be removed.'
-Require-Text 'src/physics-interaction/hand/Hand.cpp' 'tryResolveLivePalmAnchorReference[\s\S]*tryResolveLiveBodyWorldTransform' 'Grab pivot authority must resolve from the live palm-anchor body frame.'
+Require-Text 'src/physics-interaction/hand/HandFrame.h' 'computeGrabAuthorityFrameFromHandBasis[\s\S]*computeGrabPivotAPositionFromHandBasis\(handTransform,\s*isLeft\)' 'Grab pivot authority must resolve from the root-flattened hand frame and handspace palm point.'
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'flushPendingHeldNativeGrab' 'Physics step coordinator must not flush removed native mouse-spring authority.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_rightHand\.flushPendingCustomGrabAuthority\(world,\s*timing\)' 'Right custom grab proxy authority must flush from the between-collide-and-solve coordinator.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_leftHand\.flushPendingCustomGrabAuthority\(world,\s*timing\)' 'Left custom grab proxy authority must flush from the between-collide-and-solve coordinator.'
@@ -215,8 +215,8 @@ if ($pivotStart -lt 0 -or $pivotEnd -lt 0) {
     $failures.Add('Hand::computeGrabPivotAWorld boundary could not be located for palm-anchor authority guard.')
 } else {
     $pivotText = $handText.Substring($pivotStart, $pivotEnd - $pivotStart)
-    if ($pivotText -notmatch 'tryResolveLivePalmAnchorReference\(world,\s*palmReference\)') {
-        $failures.Add('Grab pivot capture must read the actual live palm-anchor body reference.')
+    if ($pivotText -notmatch 'computeGrabAuthorityFrameFromHandBasis\(fallbackHandWorldTransform,\s*_isLeft\)') {
+        $failures.Add('Grab pivot capture must read the root-flattened hand authority frame.')
     }
     if ($pivotText -match '_boneColliders\.tryGetPalmAnchorTarget') {
         $failures.Add('Grab pivot capture must not return to the sampled palm target as active authority.')
