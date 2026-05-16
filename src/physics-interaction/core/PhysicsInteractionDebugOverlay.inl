@@ -700,14 +700,14 @@
             };
             auto storePreviousAngularDeltaSample = [](GrabTransformTelemetryState& telemetryState, const grab_transform_telemetry::RuntimeSample& sample) {
                 telemetryState.previousRawHandWorld = sample.rawHandWorld;
-                telemetryState.previousPalmAnchorGrabAuthorityWorld = sample.palmAnchorGrabAuthorityWorld;
+                telemetryState.previousHandBoneGrabAuthorityWorld = sample.handBoneGrabAuthorityWorld;
                 telemetryState.previousProxyReadbackWorld = sample.proxyReadbackWorld;
                 telemetryState.previousRawDesiredObjectWorld = sample.currentRawDesiredObjectWorld;
                 telemetryState.previousConstraintDesiredObjectWorld = sample.currentConstraintDesiredObjectWorld;
                 telemetryState.previousHeldNodeWorld = sample.heldNodeWorld;
                 telemetryState.previousHeldBodyWorld = sample.heldBodyWorld;
                 telemetryState.previousNativeBodyWorld = sample.heldNativeBodyWorld;
-                telemetryState.previousHasPalmAnchorGrabAuthority = sample.hasPalmAnchorGrabAuthority;
+                telemetryState.previousHasHandBoneGrabAuthority = sample.hasHandBoneGrabAuthority;
                 telemetryState.previousHasProxyReadback = sample.hasProxyReadback;
                 telemetryState.previousHasHeldNodeWorld = sample.hasHeldNodeWorld;
                 telemetryState.previousHasHeldBodyWorld = sample.hasHeldBodyWorld;
@@ -758,13 +758,13 @@
                     hmdBasis,
                     hasPreviousAngularDeltaSample);
                 const auto palmAuthorityAngularDelta = computeAngularDeltaLogValue(
-                    telemetryState.previousPalmAnchorGrabAuthorityWorld,
-                    sample.palmAnchorGrabAuthorityWorld,
+                    telemetryState.previousHandBoneGrabAuthorityWorld,
+                    sample.handBoneGrabAuthorityWorld,
                     sample.rawHandBasis,
                     hmdBasis,
                     hasPreviousAngularDeltaSample &&
-                        telemetryState.previousHasPalmAnchorGrabAuthority &&
-                        sample.hasPalmAnchorGrabAuthority);
+                        telemetryState.previousHasHandBoneGrabAuthority &&
+                        sample.hasHandBoneGrabAuthority);
                 const auto proxyAngularDelta = computeAngularDeltaLogValue(
                     telemetryState.previousProxyReadbackWorld,
                     sample.proxyReadbackWorld,
@@ -836,9 +836,9 @@
                             palmReference,
                             true);
                     }
-                    if (sample.hasPalmAnchorGrabAuthority) {
+                    if (sample.hasHandBoneGrabAuthority) {
                         addAxisTransform(
-                            withOverlayOrigin(sample.palmAnchorGrabAuthorityWorld, palmReference),
+                            withOverlayOrigin(sample.handBoneGrabAuthorityWorld, palmReference),
                             isLeft ? debug::AxisOverlayRole::LeftGrabPalmAuthorityFrame : debug::AxisOverlayRole::RightGrabPalmAuthorityFrame,
                             palmReference,
                             false);
@@ -1192,7 +1192,7 @@
                         phaseLabel,
                         sideLabel,
                         sample.hasPalmAnchorTarget ? "yes" : "no",
-                        sample.hasPalmAnchorGrabAuthority ? "yes" : "no",
+                        sample.hasHandBoneGrabAuthority ? "yes" : "no",
                         sample.hasProxyReadback ? "yes" : "no",
                         sample.nativeFlattenedHandToPalmAnchorTarget.positionGameUnits,
                         sample.nativeFlattenedHandToPalmAnchorTarget.rotationDegrees,
@@ -1205,7 +1205,7 @@
                         sample.grabAuthorityToProxyReadback.positionGameUnits,
                         sample.grabAuthorityToProxyReadback.rotationDegrees,
                         grab_transform_telemetry::formatBasis("generatedPalm", sample.palmAnchorTargetBasis),
-                        grab_transform_telemetry::formatBasis("grabAuthority", sample.palmAnchorGrabAuthorityBasis),
+                        grab_transform_telemetry::formatBasis("handBoneAuthority", sample.handBoneGrabAuthorityBasis),
                         grab_transform_telemetry::formatBasis("proxyReadback", sample.proxyReadbackBasis));
                     ROCK_LOG_INFO(Hand,
                         "GRAB BASIS LEGACY_PIVOT {} {} side={} legacyPresent={} legacyActive=no activeSource={} legacyPivotA={} runtimePivotA={} generatedPalm={} grabAuthority={} proxyReadback={} legacyToRuntime={:.3f}gu legacyToPalm={:.3f}gu legacyToAuthority={:.3f}gu legacyToProxy={:.3f}gu",
@@ -1217,7 +1217,7 @@
                         grab_transform_telemetry::formatVector3(sample.legacyConfiguredPivotAWorld),
                         grab_transform_telemetry::formatVector3(sample.pivotAWorld),
                         sample.hasPalmAnchorTarget ? "yes" : "no",
-                        sample.hasPalmAnchorGrabAuthority ? "yes" : "no",
+                        sample.hasHandBoneGrabAuthority ? "yes" : "no",
                         sample.hasProxyReadback ? "yes" : "no",
                         sample.legacyConfiguredPivotAToRuntimePivotA.distance,
                         sample.legacyConfiguredPivotAToPalmAnchor.distance,

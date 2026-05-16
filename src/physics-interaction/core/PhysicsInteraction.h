@@ -346,14 +346,14 @@ namespace rock
             std::uint64_t logFrameCounter = 0;
             bool hasPreviousAngularDeltaSample = false;
             RE::NiTransform previousRawHandWorld{};
-            RE::NiTransform previousPalmAnchorGrabAuthorityWorld{};
+            RE::NiTransform previousHandBoneGrabAuthorityWorld{};
             RE::NiTransform previousProxyReadbackWorld{};
             RE::NiTransform previousRawDesiredObjectWorld{};
             RE::NiTransform previousConstraintDesiredObjectWorld{};
             RE::NiTransform previousHeldNodeWorld{};
             RE::NiTransform previousHeldBodyWorld{};
             RE::NiTransform previousNativeBodyWorld{};
-            bool previousHasPalmAnchorGrabAuthority = false;
+            bool previousHasHandBoneGrabAuthority = false;
             bool previousHasProxyReadback = false;
             bool previousHasHeldNodeWorld = false;
             bool previousHasHeldBodyWorld = false;

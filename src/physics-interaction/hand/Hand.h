@@ -356,7 +356,6 @@ namespace rock
             RE::hknpWorld* world,
             RE::hknpBodyId objectBodyId,
             const RE::NiTransform& authorityWorldTransform,
-            const RE::NiTransform& rawHandWorldTransform,
             const RE::NiPoint3& grabPivotAWorld,
             float tau,
             float damping,
@@ -372,9 +371,7 @@ namespace rock
             RE::NiTransform& outDesiredBodyWorld,
             RE::NiPoint3& outDesiredTargetPointWorld,
             RE::NiPoint3& outActivePivotBBodyLocalGame);
-        bool resolveGrabAuthorityProxyFrame(RE::hknpWorld* world,
-            const RE::NiTransform& rawHandWorld,
-            const RE::NiTransform* fallbackPalmAnchorWorld,
+        bool resolveGrabAuthorityProxyFrame(const RE::NiTransform& rawHandWorld,
             RE::NiTransform& outProxyWorld,
             const char*& outSource) const;
         void updateConstraintGrabDriveMotors(RE::hknpWorld* world,

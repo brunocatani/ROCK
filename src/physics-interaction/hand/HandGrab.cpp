@@ -2192,13 +2192,13 @@ namespace rock
         out.legacyConfiguredPivotAWorld = computeGrabPivotAPositionFromHandBasis(out.nativeFlattenedHandWorld, _isLeft);
         out.hasLegacyConfiguredPivotAWorld = true;
         out.runtimePivotSource = "rootFlattenedHandBoneAuthority";
-        out.palmAnchorGrabAuthorityWorld = computeGrabAuthorityFrameFromHandBasis(out.nativeFlattenedHandWorld, _isLeft);
-        out.palmAnchorGrabAuthorityBasis = grab_transform_telemetry::makeOrientationBasis(out.palmAnchorGrabAuthorityWorld);
-        out.hasPalmAnchorGrabAuthority = true;
+        out.handBoneGrabAuthorityWorld = computeGrabAuthorityFrameFromHandBasis(out.nativeFlattenedHandWorld, _isLeft);
+        out.handBoneGrabAuthorityBasis = grab_transform_telemetry::makeOrientationBasis(out.handBoneGrabAuthorityWorld);
+        out.hasHandBoneGrabAuthority = true;
         out.nativeFlattenedHandToGrabAuthority =
-            grab_transform_telemetry::measureTransformDelta(out.nativeFlattenedHandWorld, out.palmAnchorGrabAuthorityWorld);
+            grab_transform_telemetry::measureTransformDelta(out.nativeFlattenedHandWorld, out.handBoneGrabAuthorityWorld);
         out.legacyConfiguredPivotAToGrabAuthority =
-            grab_transform_telemetry::measurePointPair(out.legacyConfiguredPivotAWorld, out.palmAnchorGrabAuthorityWorld.translate);
+            grab_transform_telemetry::measurePointPair(out.legacyConfiguredPivotAWorld, out.handBoneGrabAuthorityWorld.translate);
 
         LivePalmAnchorReference palmReference{};
         if (tryResolveLivePalmAnchorReference(world, palmReference)) {
@@ -2219,9 +2219,9 @@ namespace rock
                 grab_transform_telemetry::measureTransformDelta(out.nativeFlattenedHandWorld, out.palmAnchorTargetWorld);
             out.legacyConfiguredPivotAToPalmAnchor =
                 grab_transform_telemetry::measurePointPair(out.legacyConfiguredPivotAWorld, out.palmAnchorTargetWorld.translate);
-            if (out.hasPalmAnchorGrabAuthority) {
+            if (out.hasHandBoneGrabAuthority) {
                 out.palmAnchorTargetToGrabAuthority =
-                    grab_transform_telemetry::measureTransformDelta(out.palmAnchorTargetWorld, out.palmAnchorGrabAuthorityWorld);
+                    grab_transform_telemetry::measureTransformDelta(out.palmAnchorTargetWorld, out.handBoneGrabAuthorityWorld);
             }
         }
 
@@ -2259,9 +2259,9 @@ namespace rock
                 out.proxyReadbackWorld = proxyWorld;
                 out.proxyReadbackBasis = grab_transform_telemetry::makeOrientationBasis(out.proxyReadbackWorld);
                 out.hasProxyReadback = true;
-                if (out.hasPalmAnchorGrabAuthority) {
+                if (out.hasHandBoneGrabAuthority) {
                     out.grabAuthorityToProxyReadback =
-                        grab_transform_telemetry::measureTransformDelta(out.palmAnchorGrabAuthorityWorld, out.proxyReadbackWorld);
+                        grab_transform_telemetry::measureTransformDelta(out.handBoneGrabAuthorityWorld, out.proxyReadbackWorld);
                 }
                 out.nativeFlattenedHandToProxyReadback =
                     grab_transform_telemetry::measureTransformDelta(out.nativeFlattenedHandWorld, out.proxyReadbackWorld);
@@ -2520,7 +2520,6 @@ namespace rock
         RE::hknpWorld* world,
         RE::hknpBodyId objectBodyId,
         const RE::NiTransform& authorityWorldTransform,
-        const RE::NiTransform& rawHandWorldTransform,
         const RE::NiPoint3& grabPivotAWorld,
         float tau,
         float damping,
@@ -2677,7 +2676,7 @@ namespace rock
             _grabAuthorityProxyFrameValid = true;
             _grabAuthorityPendingTarget = GrabAuthorityProxyPendingTarget{
                 .authorityWorld = proxyBodyWorld,
-                .rawHandWorld = rawHandWorldTransform,
+                .rawHandWorld = authorityWorldTransform,
                 .deltaTime = 1.0f / 90.0f,
                 .forceFadeInTime = g_rockConfig.rockGrabForceFadeInTime,
                 .tauMin = g_rockConfig.rockGrabTauMin,
@@ -2688,7 +2687,7 @@ namespace rock
                 .valid = true,
             };
             _lastAppliedGrabAuthorityWorld = proxyBodyWorld;
-            _lastAppliedGrabAuthorityRawHandWorld = rawHandWorldTransform;
+            _lastAppliedGrabAuthorityRawHandWorld = authorityWorldTransform;
             _hasLastAppliedGrabAuthorityWorld = true;
             _grabAuthorityProxyQueuedSequence = 1;
             _grabAuthorityProxyFlushSequence = 0;
@@ -2773,19 +2772,13 @@ namespace rock
         return true;
     }
 
-    bool Hand::resolveGrabAuthorityProxyFrame(RE::hknpWorld* world,
-        const RE::NiTransform& rawHandWorld,
-        const RE::NiTransform* fallbackPalmAnchorWorld,
+    bool Hand::resolveGrabAuthorityProxyFrame(const RE::NiTransform& rawHandWorld,
         RE::NiTransform& outProxyWorld,
         const char*& outSource) const
     {
-        (void)world;
-        (void)fallbackPalmAnchorWorld;
-
-        if (std::isfinite(rawHandWorld.translate.x) &&
-            std::isfinite(rawHandWorld.translate.y) &&
-            std::isfinite(rawHandWorld.translate.z)) {
-            outProxyWorld = computeGrabAuthorityFrameFromHandBasis(rawHandWorld, _isLeft);
+        const RE::NiTransform authorityWorld = computeGrabAuthorityFrameFromHandBasis(rawHandWorld, _isLeft);
+        if (isFiniteGrabAuthorityTransform(authorityWorld)) {
+            outProxyWorld = authorityWorld;
             outSource = "rootFlattenedHandBoneAuthority";
             return true;
         }
@@ -4280,13 +4273,12 @@ namespace rock
                 hasMotionBodyWorldAtGrab && motionBodySourceAtGrab == body_frame::BodyFrameSource::MotionCenterOfMass;
             const RE::NiTransform constraintBodyWorldAtGrab =
                 constraintUsesMotionBodyAtGrab ? motionBodyWorldAtGrab : grabBodyWorldAtGrab;
-            const RE::NiTransform handBodyWorldAtGrab = getLiveBodyWorldTransform(world, _handBody.getBodyId());
-            proxyFrameWorldAtGrab = handBodyWorldAtGrab;
+            proxyFrameWorldAtGrab = transform_math::makeIdentityTransform<RE::NiTransform>();
             hasPalmProxyFrameAtGrab =
-                resolveGrabAuthorityProxyFrame(world, handWorldTransform, &handBodyWorldAtGrab, proxyFrameWorldAtGrab, proxyFrameSourceAtGrab);
+                resolveGrabAuthorityProxyFrame(handWorldTransform, proxyFrameWorldAtGrab, proxyFrameSourceAtGrab);
             if (!hasPalmProxyFrameAtGrab) {
                 ROCK_LOG_ERROR(Hand,
-                    "{} hand GRAB FAILED: live palm anchor frame unavailable bodyId={} handBody={} source={} formID={:08X}",
+                    "{} hand GRAB FAILED: root-flattened grab authority frame unavailable bodyId={} handBody={} source={} formID={:08X}",
                     handName(),
                     objectBodyId.value,
                     _handBody.isValid() ? _handBody.getBodyId().value : INVALID_BODY_ID,
@@ -4643,7 +4635,7 @@ namespace rock
                 const float motionVsGrabPos = hasMotionBodyWorldAtGrab ? translationDeltaGameUnits(motionBodyWorldAtGrab, grabBodyWorldAtGrab) : -1.0f;
 
                 ROCK_LOG_DEBUG(Hand,
-                    "{} GRAB FRAME SUMMARY: vrScale={:.3f} handScale={:.3f} bodyScale={:.3f} objectScale={:.3f} "
+                    "{} GRAB FRAME SUMMARY: vrScale={:.3f} handScale={:.3f} authorityScale={:.3f} objectScale={:.3f} "
                     "legacyPivotHS=({:.2f},{:.2f},{:.2f}) pocketW=({:.1f},{:.1f},{:.1f}) gripW=({:.1f},{:.1f},{:.1f}) "
                     "pivotBBodyLocal=({:.2f},{:.2f},{:.2f}) pivotBConstraintLocal=({:.2f},{:.2f},{:.2f}) "
                     "rawConstraintDelta={:.2f}deg/{:.2f}gu motionDiagVsGrab={:.2f}deg/{:.2f}gu constraintObjectFrame={} rotRef={} proxyFrame={} rootPalm={} pivotALocal=({:.2f},{:.2f},{:.2f}) meshMode={} meshTris={} "
@@ -4653,7 +4645,7 @@ namespace rock
                     "activePoint={} activeUsesFingerEvidence={} palmSeatPoint={} fingerEvidencePoint={} "
                     "poseTargets={} motorFade={} motorFadeReason={} bodyReason={} "
                     "fingerPoseAim={} fingerPoseAimReason={}",
-                    handName(), vrScale, handWorldTransform.scale, handBodyWorldAtGrab.scale, collidableNode ? collidableNode->world.scale : -1.0f,
+                    handName(), vrScale, handWorldTransform.scale, proxyFrameWorldAtGrab.scale, collidableNode ? collidableNode->world.scale : -1.0f,
                     legacyGrabPivotAHandspace.x, legacyGrabPivotAHandspace.y, legacyGrabPivotAHandspace.z, grabPivotAWorld.x, grabPivotAWorld.y, grabPivotAWorld.z, grabGripPoint.x,
                     grabGripPoint.y, grabGripPoint.z, _grabFrame.pivotBBodyLocalGame.x, _grabFrame.pivotBBodyLocalGame.y, _grabFrame.pivotBBodyLocalGame.z,
                     _grabFrame.pivotBConstraintLocalGame.x, _grabFrame.pivotBConstraintLocalGame.y, _grabFrame.pivotBConstraintLocalGame.z,
@@ -4867,7 +4859,6 @@ namespace rock
                     world,
                     objectBodyId,
                     proxyFrameWorldAtGrab,
-                    handWorldTransform,
                     grabPivotAWorld,
                     tau,
                     damping,
@@ -5157,9 +5148,7 @@ namespace rock
          */
         const RE::NiTransform authorityWorld =
             computeGrabAuthorityFrameFromHandBasis(handWorldTransform, _isLeft);
-        if (!std::isfinite(authorityWorld.translate.x) ||
-            !std::isfinite(authorityWorld.translate.y) ||
-            !std::isfinite(authorityWorld.translate.z)) {
+        if (!isFiniteGrabAuthorityTransform(authorityWorld)) {
             ROCK_LOG_WARN(Hand,
                 "{} hand release: root-flattened grab authority frame unavailable while held",
                 handName());
@@ -5776,9 +5765,8 @@ namespace rock
             pending = _grabAuthorityPendingTarget;
             livePalmReferenceOk = tryResolveLivePalmAnchorReference(world, livePalmReference);
             pending.authorityWorld = computeGrabAuthorityFrameFromHandBasis(pending.rawHandWorld, _isLeft);
-            if (!std::isfinite(pending.authorityWorld.translate.x) ||
-                !std::isfinite(pending.authorityWorld.translate.y) ||
-                !std::isfinite(pending.authorityWorld.translate.z)) {
+            const bool authorityTransformOk = isFiniteGrabAuthorityTransform(pending.authorityWorld);
+            if (!authorityTransformOk) {
                 ++_grabAuthorityProxyFailedFlushes;
                 _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);
             }
@@ -5789,9 +5777,7 @@ namespace rock
             float linearVelocityHavok[4]{};
             float angularVelocityHavok[4]{};
             float nativeLinearVelocityIgnored[4]{};
-            if (std::isfinite(pending.authorityWorld.translate.x) &&
-                std::isfinite(pending.authorityWorld.translate.y) &&
-                std::isfinite(pending.authorityWorld.translate.z)) {
+            if (authorityTransformOk) {
                 grab_authority_proxy::computeLinearVelocityHavok(previousAuthorityWorld, pending.authorityWorld, driveDelta, linearVelocityHavok);
                 proxyVelocityTelemetryOk = computeHardKeyframeVelocityForTarget(
                     world,
@@ -5808,9 +5794,7 @@ namespace rock
                 angularVelocityHavok[0] * angularVelocityHavok[0] + angularVelocityHavok[1] * angularVelocityHavok[1] +
                 angularVelocityHavok[2] * angularVelocityHavok[2]);
 
-            if (std::isfinite(pending.authorityWorld.translate.x) &&
-                std::isfinite(pending.authorityWorld.translate.y) &&
-                std::isfinite(pending.authorityWorld.translate.z)) {
+            if (authorityTransformOk) {
                 queueGeneratedKeyframedBodyTarget(_grabAuthorityProxyDriveState, pending.authorityWorld, driveDelta, 1000.0f);
                 proxyDriveResult = driveGeneratedKeyframedBody(
                     world,

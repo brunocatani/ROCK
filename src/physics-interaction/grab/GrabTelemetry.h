@@ -106,7 +106,7 @@ namespace rock::grab_transform_telemetry
         RE::NiTransform liveHandWorldAtGrab{};
         RE::NiTransform handBodyWorldAtGrab{};
         RE::NiTransform palmAnchorTargetWorld{};
-        RE::NiTransform palmAnchorGrabAuthorityWorld{};
+        RE::NiTransform handBoneGrabAuthorityWorld{};
         RE::NiTransform proxyReadbackWorld{};
         RE::NiTransform objectNodeWorldAtGrab{};
         RE::NiTransform desiredObjectWorldAtGrab{};
@@ -125,7 +125,7 @@ namespace rock::grab_transform_telemetry
         OrientationBasis nativeFlattenedHandBasis{};
         OrientationBasis handBodyBasis{};
         OrientationBasis palmAnchorTargetBasis{};
-        OrientationBasis palmAnchorGrabAuthorityBasis{};
+        OrientationBasis handBoneGrabAuthorityBasis{};
         OrientationBasis proxyReadbackBasis{};
         OrientationBasis heldBodyBasis{};
         OrientationBasis heldNativeBodyBasis{};
@@ -204,7 +204,7 @@ namespace rock::grab_transform_telemetry
         bool isLeft = false;
         bool hasHandBodyWorld = false;
         bool hasPalmAnchorTarget = false;
-        bool hasPalmAnchorGrabAuthority = false;
+        bool hasHandBoneGrabAuthority = false;
         bool hasProxyReadback = false;
         bool hasLegacyConfiguredPivotAWorld = false;
         bool hasHeldBodyWorld = false;

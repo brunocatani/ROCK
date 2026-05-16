@@ -118,6 +118,12 @@ namespace rock
 
     inline RE::NiPoint3 computeGrabPivotAHandspacePosition(bool isLeft)
     {
+        /*
+         * Legacy configured handspace pivot. This remains available to
+         * non-dynamic callers such as API/equipped two-hand weapon helpers.
+         * Ordinary dynamic loose-object grab authority is sourced directly
+         * from the root-flattened hand bone frame below.
+         */
         return isLeft ? g_rockConfig.rockLeftGrabPivotAHandspace : g_rockConfig.rockRightGrabPivotAHandspace;
     }
 
@@ -187,5 +193,26 @@ namespace rock
          */
         (void)isLeft;
         return handTransform;
+    }
+
+    inline bool isFiniteGrabAuthorityTransform(const RE::NiTransform& transform)
+    {
+        if (!std::isfinite(transform.translate.x) ||
+            !std::isfinite(transform.translate.y) ||
+            !std::isfinite(transform.translate.z) ||
+            !std::isfinite(transform.scale) ||
+            transform.scale <= 0.0f) {
+            return false;
+        }
+
+        for (std::size_t row = 0; row < 3; ++row) {
+            for (std::size_t column = 0; column < 3; ++column) {
+                if (!std::isfinite(transform.rotate.entry[row][column])) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 }
