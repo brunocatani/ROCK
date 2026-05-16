@@ -146,30 +146,29 @@ int main()
     }
 
     {
-        RE::NiTransform desiredBodyTransformBodyASpace = identityTransform();
-        desiredBodyTransformBodyASpace.rotate = rotationAroundZ(kPi * 0.5f);
-        const RE::NiMatrix3 transformALocalRotation = rotationAroundX(kPi * 0.5f);
-        const RE::NiMatrix3 expectedBodyToBodyA =
-            rock::grab_constraint_math::desiredBodyToBodyARotation(desiredBodyTransformBodyASpace.rotate);
-        const RE::NiMatrix3 expectedTarget =
-            rock::grab_constraint_math::composeRagdollAngularTargetRotation(expectedBodyToBodyA, transformALocalRotation);
+        RE::NiTransform desiredBodyTransformHandSpace = identityTransform();
+        desiredBodyTransformHandSpace.rotate = rotationAroundZ(kPi * 0.5f);
+        const RE::NiMatrix3 expectedBodyToHand =
+            rock::grab_constraint_math::desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
 
         float transformBRotation[12]{};
         float targetBRca[12]{};
-        rock::grab_constraint_math::writeInitialGrabTransformBRotation(transformBRotation, desiredBodyTransformBodyASpace);
-        rock::grab_constraint_math::writeGrabRagdollAngularTarget(targetBRca, desiredBodyTransformBodyASpace, transformALocalRotation);
+        rock::grab_constraint_math::writeInitialGrabAngularFrame(
+            transformBRotation,
+            targetBRca,
+            desiredBodyTransformHandSpace);
 
         ok &= expectNear(
-            "transformB columns carry body-to-body-A rotation",
-            rotationDeltaDegrees(matrixFromRawColumns(transformBRotation), expectedBodyToBodyA),
+            "transformB columns carry body-to-hand rotation",
+            rotationDeltaDegrees(matrixFromRawColumns(transformBRotation), expectedBodyToHand),
             0.0f,
             0.01f);
         ok &= expectNear(
-            "target columns carry body-to-body-A times transform-A rotation",
-            rotationDeltaDegrees(matrixFromRawColumns(targetBRca), expectedTarget),
+            "target columns carry body-to-hand rotation",
+            rotationDeltaDegrees(matrixFromRawColumns(targetBRca), expectedBodyToHand),
             0.0f,
             0.01f);
-        if (rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedTarget) <= 1.0f) {
+        if (rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedBodyToHand) <= 1.0f) {
             std::printf("target_bRca row interpretation unexpectedly matches the Havok column convention\n");
             ok = false;
         }

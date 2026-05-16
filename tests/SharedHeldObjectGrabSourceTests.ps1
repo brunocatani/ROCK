@@ -60,7 +60,7 @@ Require-Text 'src/physics-interaction/grab/GrabMotionController.h' 'authorityFor
 Require-Text 'src/RockConfig.cpp' 'rockGrabAdaptiveMaxForceMultiplier\s*=\s*1\.0f' 'Default dynamic grab force must stay finite instead of applying a HIGGS-incompatible 4x lag force boost.'
 Require-Text 'src/RockConfig.h' 'rockGrabAdaptiveMaxForceMultiplier\s*=\s*1\.0f' 'Header default dynamic grab force must match the finite source default.'
 Require-Text 'data/config/ROCK.ini' 'fGrabAdaptiveMaxForceMultiplier\s*=\s*1\.0' 'Packaged ROCK.ini must keep adaptive max-force amplification neutral by default.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'constraintDrivePivotBBodyLocalGame' 'Constraint grabs must create and measure against the explicit active transform-B pivot used by the custom solver.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'constraintDrivePivotBBodyLocalGame' 'Constraint grabs must create and measure against the active transform-B pivot, not the native frozen surface pivot.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'activePivotBBodyLocalGame' 'Held-object error, convergence, and debug logging must use the active constraint pivot for shared grabs.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'updateConstraintGrabDriveMotors' 'Custom held-object updates must drive both angular and linear motors while held.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'releaseContext\.finalObjectRelease' 'Held object restoration must be gated on final shared-object release.'

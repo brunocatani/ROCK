@@ -150,17 +150,6 @@ namespace rock::grab_motion_controller
         return std::clamp(reference / lever, floor, 1.0f);
     }
 
-    inline float computeLongObjectAngularAuthorityScale(bool enabled, float leverGameUnits, float referenceLeverGameUnits, float minScale)
-    {
-        /*
-         * Ragdoll angular atoms receive a force budget rather than an explicit
-         * speed cap. Use the same lever policy as the direct-speed diagnostic
-         * path so long loose objects lose angular authority without moving the
-         * selected grip pivot or changing the hand/object reference frame.
-         */
-        return computeLongObjectAngularSpeedScale(enabled, leverGameUnits, referenceLeverGameUnits, minScale);
-    }
-
     inline MotorOutput solveMotorTargets(const MotorInput& input)
     {
         MotorOutput out{};

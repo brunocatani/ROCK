@@ -346,14 +346,14 @@ namespace rock
             std::uint64_t logFrameCounter = 0;
             bool hasPreviousAngularDeltaSample = false;
             RE::NiTransform previousRawHandWorld{};
-            RE::NiTransform previousHandBoneGrabAuthorityWorld{};
+            RE::NiTransform previousPalmAnchorGrabAuthorityWorld{};
             RE::NiTransform previousProxyReadbackWorld{};
             RE::NiTransform previousRawDesiredObjectWorld{};
             RE::NiTransform previousConstraintDesiredObjectWorld{};
             RE::NiTransform previousHeldNodeWorld{};
             RE::NiTransform previousHeldBodyWorld{};
             RE::NiTransform previousNativeBodyWorld{};
-            bool previousHasHandBoneGrabAuthority = false;
+            bool previousHasPalmAnchorGrabAuthority = false;
             bool previousHasProxyReadback = false;
             bool previousHasHeldNodeWorld = false;
             bool previousHasHeldBodyWorld = false;
@@ -374,7 +374,6 @@ namespace rock
         bool _hasHeldPlayerSpaceTransform = false;
         RE::NiPoint3 _lastCentralHeldPlayerSpaceVelocityHavok{};
         int _heldPlayerSpaceLogCounter = 0;
-        std::uint64_t _heldPlayerSpaceDebugFrameCounter = 0;
 
         int _wpnNodeLogCounter = 0;
     };

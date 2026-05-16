@@ -106,7 +106,7 @@ namespace rock::grab_transform_telemetry
         RE::NiTransform liveHandWorldAtGrab{};
         RE::NiTransform handBodyWorldAtGrab{};
         RE::NiTransform palmAnchorTargetWorld{};
-        RE::NiTransform handBoneGrabAuthorityWorld{};
+        RE::NiTransform palmAnchorGrabAuthorityWorld{};
         RE::NiTransform proxyReadbackWorld{};
         RE::NiTransform objectNodeWorldAtGrab{};
         RE::NiTransform desiredObjectWorldAtGrab{};
@@ -125,7 +125,7 @@ namespace rock::grab_transform_telemetry
         OrientationBasis nativeFlattenedHandBasis{};
         OrientationBasis handBodyBasis{};
         OrientationBasis palmAnchorTargetBasis{};
-        OrientationBasis handBoneGrabAuthorityBasis{};
+        OrientationBasis palmAnchorGrabAuthorityBasis{};
         OrientationBasis proxyReadbackBasis{};
         OrientationBasis heldBodyBasis{};
         OrientationBasis heldNativeBodyBasis{};
@@ -189,9 +189,9 @@ namespace rock::grab_transform_telemetry
         float pivotErrorGameUnits = 0.0f;
         float relationPivotErr = 0.0f;
         float rotationPreservedDeg = 0.0f;
-        float targetColumnsToRagdollExpectedDegrees = 0.0f;
-        float targetRowsToRagdollExpectedDegrees = 0.0f;
-        float transformBColumnsToBodyADegrees = 0.0f;
+        float targetColumnsToConstraintInverseDegrees = 0.0f;
+        float targetRowsToConstraintInverseDegrees = 0.0f;
+        float targetColumnsToConstraintForwardDegrees = 0.0f;
         float targetColumnsToTransformBDegrees = 0.0f;
         float angularMotorTau = 0.0f;
         float angularMotorDamping = 0.0f;
@@ -204,7 +204,7 @@ namespace rock::grab_transform_telemetry
         bool isLeft = false;
         bool hasHandBodyWorld = false;
         bool hasPalmAnchorTarget = false;
-        bool hasHandBoneGrabAuthority = false;
+        bool hasPalmAnchorGrabAuthority = false;
         bool hasProxyReadback = false;
         bool hasLegacyConfiguredPivotAWorld = false;
         bool hasHeldBodyWorld = false;

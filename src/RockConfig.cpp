@@ -167,7 +167,6 @@ namespace rock
         rockDebugShowTargetColliders = false;
         rockDebugShowHandAxes = false;
         rockDebugShowGrabPivots = false;
-        rockDebugShowGrabPivotFrameSplit = false;
         rockDebugShowGrabPocketNormal = false;
         rockDebugDrawGrabContactPatch = false;
         rockDebugShowGrabFingerProbes = false;
@@ -192,7 +191,6 @@ namespace rock
         rockDebugGrabTransformTelemetryText = false;
         rockDebugGrabTransformTelemetryAxes = false;
         rockDebugGrabTransformTelemetryLogIntervalFrames = 1;
-        rockDebugGrabHighDetailFrames = 2000;
         rockDebugGrabTransformTelemetryTextMode = 0;
         rockDebugGrabAuthorityPhase0ProbeEnabled = false;
         rockDebugGrabAuthorityPhase0SolverProbeEnabled = true;
@@ -743,7 +741,6 @@ namespace rock
         rockDebugShowTargetColliders = ini.GetBoolValue(SECTION, "bDebugShowTargetColliders", rockDebugShowTargetColliders);
         rockDebugShowHandAxes = ini.GetBoolValue(SECTION, "bDebugShowHandAxes", rockDebugShowHandAxes);
         rockDebugShowGrabPivots = ini.GetBoolValue(SECTION, "bDebugShowGrabPivots", rockDebugShowGrabPivots);
-        rockDebugShowGrabPivotFrameSplit = ini.GetBoolValue(SECTION, "bDebugShowGrabPivotFrameSplit", rockDebugShowGrabPivotFrameSplit);
         rockDebugShowGrabPocketNormal = ini.GetBoolValue(SECTION, "bDebugShowGrabPocketNormal", rockDebugShowGrabPocketNormal);
         rockDebugDrawGrabContactPatch = ini.GetBoolValue(SECTION, "bDebugDrawGrabContactPatch", rockDebugDrawGrabContactPatch);
         rockDebugShowGrabFingerProbes = ini.GetBoolValue(SECTION, "bDebugShowGrabFingerProbes", rockDebugShowGrabFingerProbes);
@@ -783,12 +780,6 @@ namespace rock
             static_cast<int>(ini.GetLongValue(SECTION, "iDebugGrabTransformTelemetryLogIntervalFrames", rockDebugGrabTransformTelemetryLogIntervalFrames));
         if (rockDebugGrabTransformTelemetryLogIntervalFrames < 1) {
             rockDebugGrabTransformTelemetryLogIntervalFrames = 1;
-        }
-        rockDebugGrabHighDetailFrames = static_cast<int>(ini.GetLongValue(SECTION, "iDebugGrabHighDetailFrames", rockDebugGrabHighDetailFrames));
-        if (rockDebugGrabHighDetailFrames < 0) {
-            rockDebugGrabHighDetailFrames = 0;
-        } else if (rockDebugGrabHighDetailFrames > 10000) {
-            rockDebugGrabHighDetailFrames = 10000;
         }
         rockDebugGrabTransformTelemetryTextMode =
             static_cast<int>(ini.GetLongValue(SECTION, "iDebugGrabTransformTelemetryTextMode", rockDebugGrabTransformTelemetryTextMode));

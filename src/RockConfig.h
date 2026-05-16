@@ -138,7 +138,6 @@ namespace rock
         bool rockDebugShowTargetColliders = false;
         bool rockDebugShowHandAxes = false;
         bool rockDebugShowGrabPivots = false;
-        bool rockDebugShowGrabPivotFrameSplit = false;
         bool rockDebugShowGrabPocketNormal = false;
         bool rockDebugDrawGrabContactPatch = false;
         bool rockDebugShowGrabFingerProbes = false;
@@ -163,7 +162,6 @@ namespace rock
         bool rockDebugGrabTransformTelemetryText = false;
         bool rockDebugGrabTransformTelemetryAxes = false;
         int rockDebugGrabTransformTelemetryLogIntervalFrames = 1;
-        int rockDebugGrabHighDetailFrames = 2000;
         int rockDebugGrabTransformTelemetryTextMode = 0;
         bool rockDebugGrabAuthorityPhase0ProbeEnabled = false;
         bool rockDebugGrabAuthorityPhase0SolverProbeEnabled = true;

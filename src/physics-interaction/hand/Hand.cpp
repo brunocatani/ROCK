@@ -260,7 +260,6 @@ namespace rock
         _activeGrabLifecycle.clear();
         _grabStartTime = 0.0f;
         _heldLogCounter = 0;
-        _grabHeldDebugFrameCounter = 0;
         _notifCounter = 0;
         _heldBodyIds.clear();
         clearPullRuntimeState(false, "reset");
@@ -940,8 +939,17 @@ namespace rock
 
     RE::NiPoint3 Hand::computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const
     {
-        (void)world;
-        return computeGrabAuthorityFrameFromHandBasis(fallbackHandWorldTransform, _isLeft).translate;
+        LivePalmAnchorReference palmReference{};
+        if (tryResolveLivePalmAnchorReference(world, palmReference) &&
+            std::isfinite(palmReference.world.translate.x) &&
+            std::isfinite(palmReference.world.translate.y) &&
+            std::isfinite(palmReference.world.translate.z)) {
+            const RE::NiTransform proxyBaseWorld =
+                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
+            return applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft).translate;
+        }
+
+        return fallbackHandWorldTransform.translate;
     }
 
     void Hand::recordSemanticContact(const HandColliderBodyMetadata& metadata, std::uint32_t otherBodyId)

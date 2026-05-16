@@ -45,17 +45,9 @@ namespace rock
     {
         RE::NiPoint3 handPivotWorld{};
         RE::NiPoint3 objectPivotWorld{};
-        RE::NiPoint3 visualObjectPivotWorld{};
-        RE::NiPoint3 solverObjectPivotWorld{};
-        RE::NiPoint3 visualToSolverDeltaWorld{};
         RE::NiPoint3 handBodyWorld{};
         RE::NiPoint3 objectBodyWorld{};
-        RE::NiPoint3 visualObjectBodyWorld{};
         float pivotErrorGameUnits = 0.0f;
-        float visualPivotErrorGameUnits = 0.0f;
-        float visualToSolverDistanceGameUnits = 0.0f;
-        bool hasVisualObjectPivot = false;
-        bool hasSolverObjectPivot = false;
     };
 
     struct GrabPocketNormalDebugSnapshot
@@ -355,7 +347,8 @@ namespace rock
         bool createProxyConstraintGrabDrive(RE::bhkWorld* bhkWorld,
             RE::hknpWorld* world,
             RE::hknpBodyId objectBodyId,
-            const RE::NiTransform& authorityWorldTransform,
+            const RE::NiTransform& proxyWorldTransform,
+            const RE::NiTransform& rawHandWorldTransform,
             const RE::NiPoint3& grabPivotAWorld,
             float tau,
             float damping,
@@ -366,12 +359,18 @@ namespace rock
             bool looseWeaponGrab,
             const char* reason);
         bool updateProxyConstraintGrabDriveTarget(RE::hknpWorld* world,
-            const RE::NiTransform& authorityWorldTransform,
+            const RE::NiTransform& proxyWorldTransform,
+            const RE::NiTransform& rawHandWorldTransform,
             RE::NiTransform& outDesiredObjectWorld,
             RE::NiTransform& outDesiredBodyWorld,
             RE::NiPoint3& outDesiredTargetPointWorld,
             RE::NiPoint3& outActivePivotBBodyLocalGame);
-        bool resolveGrabAuthorityProxyFrame(const RE::NiTransform& rawHandWorld,
+        RE::NiTransform resolveProxyConstraintAngularDriveTargetWorld(const RE::NiTransform& proxyWorldTransform,
+            const RE::NiTransform& desiredObjectWorld,
+            const RE::NiTransform& desiredBodyWorld) const;
+        bool resolveGrabAuthorityProxyFrame(RE::hknpWorld* world,
+            const RE::NiTransform& rawHandWorld,
+            const RE::NiTransform* fallbackPalmAnchorWorld,
             RE::NiTransform& outProxyWorld,
             const char*& outSource) const;
         void updateConstraintGrabDriveMotors(RE::hknpWorld* world,
@@ -382,7 +381,17 @@ namespace rock
             float grabRotationErrorDegrees,
             float authorityForceScale,
             bool heldBodyColliding);
-        void queueProxyGrabAuthorityTarget(const RE::NiTransform& authorityWorldTransform,
+        bool applyProxyConstraintAngularVelocityDrive(RE::hknpWorld* world,
+            const RE::NiTransform& desiredBodyWorld,
+            float deltaTime,
+            float& outRawAngularSpeedRadiansPerSecond,
+            float& outAppliedAngularSpeedRadiansPerSecond,
+            float& outMaxAngularSpeedRadiansPerSecond,
+            float& outLongObjectAngularScale,
+            std::uint32_t& outAppliedAngularBodyCount,
+            RE::NiPoint3& outRawAngularVelocityRadiansPerSecond,
+            RE::NiPoint3& outAppliedAngularVelocityRadiansPerSecond);
+        void queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
             const RE::NiTransform& rawHandWorldTransform,
             float deltaTime,
             float forceFadeInTime,
@@ -397,11 +406,7 @@ namespace rock
         void destroyGrabAuthorityProxyLocked(RE::bhkWorld* bhkWorld);
         void abandonGrabAuthorityProxyLocked();
         void clearGrabAuthorityProxyRuntimeLocked();
-        bool tryGetGrabDriveObjectWorldTransform(RE::hknpWorld* world,
-            RE::hknpBodyId bodyId,
-            RE::NiTransform& outTransform,
-            body_frame::BodyFrameSource* outSource = nullptr,
-            std::uint32_t* outMotionIndex = nullptr) const;
+        bool tryGetGrabDriveObjectWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform) const;
         RE::NiPoint3 activeProxyConstraintPivotBLocalGame() const;
 
         /*
@@ -529,7 +534,7 @@ namespace rock
         bool _grabAuthorityProxyFrameValid = false;
         struct GrabAuthorityProxyPendingTarget
         {
-            RE::NiTransform authorityWorld{};
+            RE::NiTransform proxyWorld{};
             RE::NiTransform rawHandWorld{};
             float deltaTime = 0.0f;
             float forceFadeInTime = 0.0f;
@@ -541,9 +546,9 @@ namespace rock
             bool valid = false;
         };
         GrabAuthorityProxyPendingTarget _grabAuthorityPendingTarget{};
-        RE::NiTransform _lastAppliedGrabAuthorityWorld{};
+        RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
         RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
-        bool _hasLastAppliedGrabAuthorityWorld = false;
+        bool _hasLastAppliedGrabAuthorityProxyWorld = false;
         GeneratedKeyframedBodyDriveState _grabAuthorityProxyDriveState{};
         std::uint64_t _grabAuthorityProxyQueuedSequence = 0;
         std::uint64_t _grabAuthorityProxyFlushSequence = 0;
@@ -557,7 +562,6 @@ namespace rock
         active_grab_body_lifecycle::BodyLifecycleSnapshot _activeGrabLifecycle;
         float _grabStartTime = 0.0f;
         int _heldLogCounter = 0;
-        std::uint64_t _grabHeldDebugFrameCounter = 0;
         int _notifCounter = 0;
 
         CanonicalGrabFrame _grabFrame;

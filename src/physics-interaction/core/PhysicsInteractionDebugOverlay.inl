@@ -8,7 +8,6 @@
         auto* hknp = context.hknpWorld;
         const bool drawRockColliderBodies = g_rockConfig.rockDebugShowColliders;
         const bool drawGrabPivots = g_rockConfig.rockDebugShowGrabPivots;
-        const bool drawGrabPivotFrameSplit = g_rockConfig.rockDebugShowGrabPivotFrameSplit;
         const bool drawFingerProbes = g_rockConfig.rockDebugShowGrabFingerProbes;
         const bool drawPalmVectors = g_rockConfig.rockDebugShowPalmVectors;
         const bool drawRootFlattenedFingerSkeleton = g_rockConfig.rockDebugShowRootFlattenedFingerSkeletonMarkers;
@@ -36,7 +35,7 @@
         } else if (!drawWorldOriginDiagnostics) {
             s_worldOriginDiagnosticsEnabledLogged = false;
         }
-        if (!drawRockColliderBodies && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawGrabPivotFrameSplit && !drawFingerProbes &&
+        if (!drawRockColliderBodies && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawFingerProbes &&
             !drawPalmVectors && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal && !drawGrabContactPatch && !drawHandBoneContacts &&
             !drawSoftContacts && !drawGrabAuthorityProxy && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay && !drawWeaponAuthorityDebug && !drawWorldOriginDiagnostics) {
             debug::ClearFrame();
@@ -51,7 +50,7 @@
         frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
         frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy;
         frame.drawMarkers =
-            drawGrabPivots || drawGrabPivotFrameSplit || drawFingerProbes || drawPalmVectors || drawRootFlattenedFingerSkeleton || drawGrabPocketNormal || drawGrabContactPatch ||
+            drawGrabPivots || drawFingerProbes || drawPalmVectors || drawRootFlattenedFingerSkeleton || drawGrabPocketNormal || drawGrabContactPatch ||
             drawHandBoneContacts || drawSoftContacts || drawGrabTransformTelemetryAxes || drawWeaponAuthorityDebug || drawWorldOriginDiagnostics;
         frame.drawSkeleton = drawSkeletonBones;
         frame.drawText = drawGrabTransformTelemetryText || drawPerformanceProfilerOverlay;
@@ -431,41 +430,6 @@
             addGrabPivotDebug(_leftHand);
         }
 
-        if (drawGrabPivotFrameSplit) {
-            auto addGrabPivotFrameSplitDebug = [&](const Hand& hand) {
-                if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
-                    return;
-                }
-
-                GrabPivotDebugSnapshot snapshot{};
-                if (!hand.getGrabPivotDebugSnapshot(hknp, snapshot)) {
-                    return;
-                }
-
-                const bool isLeft = hand.isLeft();
-                addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabPivotA : debug::MarkerOverlayRole::RightGrabPivotA, snapshot.handPivotWorld, 3.4f);
-                if (snapshot.hasVisualObjectPivot) {
-                    addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabVisualPivotB : debug::MarkerOverlayRole::RightGrabVisualPivotB,
-                        snapshot.visualObjectPivotWorld,
-                        3.2f);
-                    addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabPivotFrameSplit : debug::MarkerOverlayRole::RightGrabPivotFrameSplit,
-                        snapshot.visualObjectPivotWorld,
-                        snapshot.solverObjectPivotWorld);
-                }
-                if (snapshot.hasSolverObjectPivot) {
-                    addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabSolverPivotB : debug::MarkerOverlayRole::RightGrabSolverPivotB,
-                        snapshot.solverObjectPivotWorld,
-                        3.8f);
-                    addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabPivotError : debug::MarkerOverlayRole::RightGrabPivotError,
-                        snapshot.handPivotWorld,
-                        snapshot.solverObjectPivotWorld);
-                }
-            };
-
-            addGrabPivotFrameSplitDebug(_rightHand);
-            addGrabPivotFrameSplitDebug(_leftHand);
-        }
-
         if (drawGrabPocketNormal || drawGrabContactPatch) {
             auto addGrabPocketNormalDebug = [&](const Hand& hand) {
                 if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
@@ -700,14 +664,14 @@
             };
             auto storePreviousAngularDeltaSample = [](GrabTransformTelemetryState& telemetryState, const grab_transform_telemetry::RuntimeSample& sample) {
                 telemetryState.previousRawHandWorld = sample.rawHandWorld;
-                telemetryState.previousHandBoneGrabAuthorityWorld = sample.handBoneGrabAuthorityWorld;
+                telemetryState.previousPalmAnchorGrabAuthorityWorld = sample.palmAnchorGrabAuthorityWorld;
                 telemetryState.previousProxyReadbackWorld = sample.proxyReadbackWorld;
                 telemetryState.previousRawDesiredObjectWorld = sample.currentRawDesiredObjectWorld;
                 telemetryState.previousConstraintDesiredObjectWorld = sample.currentConstraintDesiredObjectWorld;
                 telemetryState.previousHeldNodeWorld = sample.heldNodeWorld;
                 telemetryState.previousHeldBodyWorld = sample.heldBodyWorld;
                 telemetryState.previousNativeBodyWorld = sample.heldNativeBodyWorld;
-                telemetryState.previousHasHandBoneGrabAuthority = sample.hasHandBoneGrabAuthority;
+                telemetryState.previousHasPalmAnchorGrabAuthority = sample.hasPalmAnchorGrabAuthority;
                 telemetryState.previousHasProxyReadback = sample.hasProxyReadback;
                 telemetryState.previousHasHeldNodeWorld = sample.hasHeldNodeWorld;
                 telemetryState.previousHasHeldBodyWorld = sample.hasHeldBodyWorld;
@@ -758,13 +722,13 @@
                     hmdBasis,
                     hasPreviousAngularDeltaSample);
                 const auto palmAuthorityAngularDelta = computeAngularDeltaLogValue(
-                    telemetryState.previousHandBoneGrabAuthorityWorld,
-                    sample.handBoneGrabAuthorityWorld,
+                    telemetryState.previousPalmAnchorGrabAuthorityWorld,
+                    sample.palmAnchorGrabAuthorityWorld,
                     sample.rawHandBasis,
                     hmdBasis,
                     hasPreviousAngularDeltaSample &&
-                        telemetryState.previousHasHandBoneGrabAuthority &&
-                        sample.hasHandBoneGrabAuthority);
+                        telemetryState.previousHasPalmAnchorGrabAuthority &&
+                        sample.hasPalmAnchorGrabAuthority);
                 const auto proxyAngularDelta = computeAngularDeltaLogValue(
                     telemetryState.previousProxyReadbackWorld,
                     sample.proxyReadbackWorld,
@@ -836,9 +800,9 @@
                             palmReference,
                             true);
                     }
-                    if (sample.hasHandBoneGrabAuthority) {
+                    if (sample.hasPalmAnchorGrabAuthority) {
                         addAxisTransform(
-                            withOverlayOrigin(sample.handBoneGrabAuthorityWorld, palmReference),
+                            withOverlayOrigin(sample.palmAnchorGrabAuthorityWorld, palmReference),
                             isLeft ? debug::AxisOverlayRole::LeftGrabPalmAuthorityFrame : debug::AxisOverlayRole::RightGrabPalmAuthorityFrame,
                             palmReference,
                             false);
@@ -983,10 +947,10 @@
                         sample.transformBLocalDelta.distance);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 10),
                         color,
-                        "ANGT EXP %.2f REXP %.2f BA %.2f TB %.2f EN%d",
-                        sample.targetColumnsToRagdollExpectedDegrees,
-                        sample.targetRowsToRagdollExpectedDegrees,
-                        sample.transformBColumnsToBodyADegrees,
+                        "ANGT CI %.2f RI %.2f CF %.2f TB %.2f EN%d",
+                        sample.targetColumnsToConstraintInverseDegrees,
+                        sample.targetRowsToConstraintInverseDegrees,
+                        sample.targetColumnsToConstraintForwardDegrees,
                         sample.targetColumnsToTransformBDegrees,
                         sample.ragdollMotorEnabled ? 1 : 0);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 11),
@@ -1036,7 +1000,7 @@
                     const auto prefix = grab_transform_telemetry::formatStampPrefix(stamp, isLeft, telemetryState.frame == 1 ? "start" : "held");
                     const char* phaseLabel = telemetryState.frame == 1 ? "START" : "HELD";
                     ROCK_LOG_INFO(Hand,
-                        "GRAB TELEMETRY {} {} formID={:08X} heldBody={} handBody={} heldSource={} handSource={} heldMotion={} handMotion={} pivotFrame=VISIBLE_BODY pivotA=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) pivotErr={:.3f}",
+                        "GRAB TELEMETRY {} {} formID={:08X} heldBody={} handBody={} heldSource={} handSource={} heldMotion={} handMotion={} pivotFrame=NATIVE_BODY pivotA=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) pivotErr={:.3f}",
                         prefix,
                         phaseLabel,
                         sample.heldFormId,
@@ -1192,7 +1156,7 @@
                         phaseLabel,
                         sideLabel,
                         sample.hasPalmAnchorTarget ? "yes" : "no",
-                        sample.hasHandBoneGrabAuthority ? "yes" : "no",
+                        sample.hasPalmAnchorGrabAuthority ? "yes" : "no",
                         sample.hasProxyReadback ? "yes" : "no",
                         sample.nativeFlattenedHandToPalmAnchorTarget.positionGameUnits,
                         sample.nativeFlattenedHandToPalmAnchorTarget.rotationDegrees,
@@ -1205,7 +1169,7 @@
                         sample.grabAuthorityToProxyReadback.positionGameUnits,
                         sample.grabAuthorityToProxyReadback.rotationDegrees,
                         grab_transform_telemetry::formatBasis("generatedPalm", sample.palmAnchorTargetBasis),
-                        grab_transform_telemetry::formatBasis("handBoneAuthority", sample.handBoneGrabAuthorityBasis),
+                        grab_transform_telemetry::formatBasis("grabAuthority", sample.palmAnchorGrabAuthorityBasis),
                         grab_transform_telemetry::formatBasis("proxyReadback", sample.proxyReadbackBasis));
                     ROCK_LOG_INFO(Hand,
                         "GRAB BASIS LEGACY_PIVOT {} {} side={} legacyPresent={} legacyActive=no activeSource={} legacyPivotA={} runtimePivotA={} generatedPalm={} grabAuthority={} proxyReadback={} legacyToRuntime={:.3f}gu legacyToPalm={:.3f}gu legacyToAuthority={:.3f}gu legacyToProxy={:.3f}gu",
@@ -1217,7 +1181,7 @@
                         grab_transform_telemetry::formatVector3(sample.legacyConfiguredPivotAWorld),
                         grab_transform_telemetry::formatVector3(sample.pivotAWorld),
                         sample.hasPalmAnchorTarget ? "yes" : "no",
-                        sample.hasHandBoneGrabAuthority ? "yes" : "no",
+                        sample.hasPalmAnchorGrabAuthority ? "yes" : "no",
                         sample.hasProxyReadback ? "yes" : "no",
                         sample.legacyConfiguredPivotAToRuntimePivotA.distance,
                         sample.legacyConfiguredPivotAToPalmAnchor.distance,
@@ -1359,7 +1323,7 @@
                     }
                     if (sample.hasConstraintAngularTelemetry) {
                         ROCK_LOG_INFO(Hand,
-                            "GRAB TELEMETRY {} {} transformBLocal=({:.2f},{:.2f},{:.2f}) desiredTransformBLocal=({:.2f},{:.2f},{:.2f}) transformBErr={:.3f}gu targetErr(colsExpected={:.3f}deg rowsExpected={:.3f}deg transformBAuth={:.3f}deg targetVsTransformB={:.3f}deg) ragEnabled={} angTau={:.3f} angDamping={:.3f} angForce={:.1f} linTau={:.3f} linForce={:.1f} mass={:.3f}",
+                            "GRAB TELEMETRY {} {} transformBLocal=({:.2f},{:.2f},{:.2f}) desiredTransformBLocal=({:.2f},{:.2f},{:.2f}) transformBErr={:.3f}gu targetErr(colsInv={:.3f}deg rowsInv={:.3f}deg colsForward={:.3f}deg colsTransformB={:.3f}deg) ragEnabled={} angTau={:.3f} angDamping={:.3f} angForce={:.1f} linTau={:.3f} linForce={:.1f} mass={:.3f}",
                             prefix,
                             phaseLabel,
                             sample.constraintTransformBLocalGame.x,
@@ -1369,9 +1333,9 @@
                             sample.desiredTransformBLocalGame.y,
                             sample.desiredTransformBLocalGame.z,
                             sample.transformBLocalDelta.distance,
-                            sample.targetColumnsToRagdollExpectedDegrees,
-                            sample.targetRowsToRagdollExpectedDegrees,
-                            sample.transformBColumnsToBodyADegrees,
+                            sample.targetColumnsToConstraintInverseDegrees,
+                            sample.targetRowsToConstraintInverseDegrees,
+                            sample.targetColumnsToConstraintForwardDegrees,
                             sample.targetColumnsToTransformBDegrees,
                             sample.ragdollMotorEnabled ? "yes" : "no",
                             sample.angularMotorTau,
