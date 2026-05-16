@@ -8,6 +8,7 @@
 #include "RE/Havok/hknpConstraintCinfo.h"
 #include "RE/Havok/hknpWorld.h"
 
+#include <cstdint>
 #include <vector>
 
 namespace rock
@@ -34,16 +35,33 @@ namespace rock
 
     inline constexpr std::uintptr_t MOTOR_VTABLE_POSITION = 0x142e95fe8;
 
-    inline constexpr std::size_t GRAB_CONSTRAINT_SIZE = 0x168;
+    /*
+     * ROCK's grab constraint is a custom FO4VR hknp/hkp atom contract, not a
+     * stock hkpRagdollConstraintData instance. The atom block intentionally
+     * starts at the stock FO4VR ragdoll data offset so any inherited ragdoll
+     * virtual that is still reached observes the same base layout, while our
+     * owned getConstraintInfo callback still reports the exact atom pointer to
+     * hknpWorld::CreateConstraint.
+     */
+    inline constexpr std::size_t GRAB_CONSTRAINT_SIZE = 0x160;
 
-    inline constexpr int ATOMS_START = 0x20;
-    inline constexpr int ATOM_TRANSFORMS = 0x20;
-    inline constexpr int ATOM_STABILIZE = 0xB0;
-    inline constexpr int ATOM_RAGDOLL_MOT = 0xC0;
-    inline constexpr int ATOM_LIN_MOTOR_0 = 0x120;
-    inline constexpr int ATOM_LIN_MOTOR_1 = 0x138;
-    inline constexpr int ATOM_LIN_MOTOR_2 = 0x150;
+    inline constexpr int ATOMS_START = 0x18;
+    inline constexpr int ATOM_TRANSFORMS = ATOMS_START;
+    inline constexpr int ATOM_STABILIZE = ATOM_TRANSFORMS + 0x90;
+    inline constexpr int ATOM_RAGDOLL_MOT = ATOM_STABILIZE + 0x10;
+    inline constexpr int ATOM_LIN_MOTOR_0 = ATOM_RAGDOLL_MOT + 0x60;
+    inline constexpr int ATOM_LIN_MOTOR_1 = ATOM_LIN_MOTOR_0 + 0x18;
+    inline constexpr int ATOM_LIN_MOTOR_2 = ATOM_LIN_MOTOR_1 + 0x18;
     inline constexpr int ATOMS_SIZE = 0x148;
+
+    inline constexpr int GRAB_TRANSFORM_A_COL0 = ATOM_TRANSFORMS + 0x10;
+    inline constexpr int GRAB_TRANSFORM_A_COL1 = ATOM_TRANSFORMS + 0x20;
+    inline constexpr int GRAB_TRANSFORM_A_COL2 = ATOM_TRANSFORMS + 0x30;
+    inline constexpr int GRAB_TRANSFORM_A_POS = ATOM_TRANSFORMS + 0x40;
+    inline constexpr int GRAB_TRANSFORM_B_COL0 = ATOM_TRANSFORMS + 0x50;
+    inline constexpr int GRAB_TRANSFORM_B_COL1 = ATOM_TRANSFORMS + 0x60;
+    inline constexpr int GRAB_TRANSFORM_B_COL2 = ATOM_TRANSFORMS + 0x70;
+    inline constexpr int GRAB_TRANSFORM_B_POS = ATOM_TRANSFORMS + 0x80;
 
     inline constexpr std::uint16_t ATOM_TYPE_SET_LOCAL_TRANSFORMS = 2;
     inline constexpr std::uint16_t ATOM_TYPE_SETUP_STABILIZATION = 23;
@@ -64,17 +82,41 @@ namespace rock
 
     inline constexpr std::uintptr_t RAGDOLL_VTABLE = 0x142e18298;
 
+    enum class GrabAngularAuthority : std::uint8_t
+    {
+        NativeHardKeyframeVelocity = 0,
+        HknpRagdollMotorAtom = 1,
+    };
+
+    inline GrabAngularAuthority grabAngularAuthorityFromConfig(int value) noexcept
+    {
+        return value == 1 ? GrabAngularAuthority::HknpRagdollMotorAtom : GrabAngularAuthority::NativeHardKeyframeVelocity;
+    }
+
+    inline const char* grabAngularAuthorityName(GrabAngularAuthority authority) noexcept
+    {
+        switch (authority) {
+        case GrabAngularAuthority::HknpRagdollMotorAtom:
+            return "hknpRagdollMotorAtom";
+        case GrabAngularAuthority::NativeHardKeyframeVelocity:
+        default:
+            return "nativeHardKeyframeVelocity";
+        }
+    }
+
     struct ActiveConstraint
     {
         std::uint32_t constraintId = 0x7FFF'FFFF;
         void* constraintData = nullptr;
         HkPositionMotor* angularMotor = nullptr;
         HkPositionMotor* linearMotor = nullptr;
+        GrabAngularAuthority angularAuthority = GrabAngularAuthority::NativeHardKeyframeVelocity;
         float currentTau = 0.0f;
         float currentMaxForce = 0.0f;
         float targetMaxForce = 0.0f;
 
         bool isValid() const { return constraintId != 0x7FFF'FFFF && constraintData != nullptr; }
+        bool usesRagdollAngularMotorAtom() const { return angularAuthority == GrabAngularAuthority::HknpRagdollMotorAtom; }
 
         void clear()
         {
@@ -82,6 +124,7 @@ namespace rock
             constraintData = nullptr;
             angularMotor = nullptr;
             linearMotor = nullptr;
+            angularAuthority = GrabAngularAuthority::NativeHardKeyframeVelocity;
             currentTau = 0.0f;
             currentMaxForce = 0.0f;
             targetMaxForce = 0.0f;
@@ -101,6 +144,7 @@ namespace rock
         float angularProportionalRecovery = 2.0f;
         float angularConstantRecovery = 1.0f;
         float angularMaxForce = 160.0f;
+        GrabAngularAuthority angularAuthority = GrabAngularAuthority::NativeHardKeyframeVelocity;
     };
 
     inline constexpr int MOTION_PACKED_INERTIA_OFFSET = 0x20;

@@ -254,16 +254,20 @@ namespace rock
             }
         }
 
-        ROCK_LOG_DEBUG(GrabConstraint, "Custom constraint data at {:p} ({:#x} bytes, 6 atoms, {} solver results, runtime {:#x})", cd, GRAB_CONSTRAINT_SIZE, RUNTIME_SOLVER_RESULTS,
+        ROCK_LOG_DEBUG(GrabConstraint, "Custom constraint data at {:p} ({:#x} bytes, atomBase={:#x}, 6 atoms, {} solver results, runtime {:#x})",
+            cd,
+            GRAB_CONSTRAINT_SIZE,
+            ATOMS_START,
+            RUNTIME_SOLVER_RESULTS,
             RUNTIME_REPORTED_SIZE);
         ROCK_LOG_TRACE(GrabConstraint, "RagdollMotor offsets: init={:#x} prevAng={:#x} (relative to ptr at 0x00)", RT_RAGDOLL_INIT_OFFSET, RT_RAGDOLL_PREV_ANG_OFFSET);
         ROCK_LOG_TRACE(GrabConstraint, "LinMotor offsets: [0x40,0x44] [0x31,0x38] [0x22,0x2C] (relative to per-atom ptrs at 0x30,0x40,0x50)");
 
         {
-            auto* tA_col0 = reinterpret_cast<float*>(header + offsets::kTransformA_Col0);
-            auto* tA_col1 = reinterpret_cast<float*>(header + offsets::kTransformA_Col1);
-            auto* tA_col2 = reinterpret_cast<float*>(header + offsets::kTransformA_Col2);
-            auto* tA_pos = reinterpret_cast<float*>(header + offsets::kTransformA_Pos);
+            auto* tA_col0 = reinterpret_cast<float*>(header + GRAB_TRANSFORM_A_COL0);
+            auto* tA_col1 = reinterpret_cast<float*>(header + GRAB_TRANSFORM_A_COL1);
+            auto* tA_col2 = reinterpret_cast<float*>(header + GRAB_TRANSFORM_A_COL2);
+            auto* tA_pos = reinterpret_cast<float*>(header + GRAB_TRANSFORM_A_POS);
 
             tA_col0[0] = 1.0f;
             tA_col0[1] = 0.0f;
@@ -280,8 +284,8 @@ namespace rock
 
             grab_constraint_math::writeConstraintPivotLocalTranslation(tA_pos, handBodyWorld, palmWorldGame, gameToHavokScale());
 
-            auto* tB_col0 = reinterpret_cast<float*>(header + offsets::kTransformB_Col0);
-            auto* tB_pos = reinterpret_cast<float*>(header + offsets::kTransformB_Pos);
+            auto* tB_col0 = reinterpret_cast<float*>(header + GRAB_TRANSFORM_B_COL0);
+            auto* tB_pos = reinterpret_cast<float*>(header + GRAB_TRANSFORM_B_POS);
             auto* targetBRca = reinterpret_cast<float*>(header + ATOM_RAGDOLL_MOT + 0x10);
 
             grab_constraint_math::writeInitialGrabAngularFrame(tB_col0, targetBRca, desiredBodyTransformHandSpace);
@@ -353,19 +357,22 @@ namespace rock
         }
 
         /*
-         * FO4VR's type-19 ragdoll angular atom is not used as dynamic grab
-         * rotation authority. Runtime logs showed the proxy and linear pivot
-         * tracking correctly while the object stayed 90-180 degrees off, and
-         * Ghidra shows the hknp-era atom composes target_bRca through body B in
-         * a solver path that is not proven equivalent to HIGGS' Skyrim hkp
-         * equation. The linear atoms stay enabled for the selected contact
-         * pivot; angular authority is applied once per physics step through the
-         * verified FO4VR hknp angular-velocity API using the same finite motor
-         * budget stored in angularMotor below.
+         * Dynamic grab has one angular authority at a time. The stable ROCK path
+         * keeps the ragdoll atom disabled and writes FO4VR-native angular
+         * velocity after the proxy target is driven. The study path enables the
+         * type-19 ragdoll motor atom and requires the held-update path to skip
+         * direct angular velocity so the solver is the only angular writer.
          */
-        setGrabMotorAtomsActive(header, true, false);
+        const bool enableRagdollAngularMotorAtom = tuning.angularAuthority == GrabAngularAuthority::HknpRagdollMotorAtom;
+        setGrabMotorAtomsActive(header, true, enableRagdollAngularMotorAtom);
 
-        ROCK_LOG_DEBUG(GrabConstraint, "Motors attached before CreateConstraint: angularBudget={:.0f} directAngularDrive=yes ragdollAtom=disabled linear={:.0f}", angularMaxForce, linearMaxForce);
+        ROCK_LOG_DEBUG(GrabConstraint,
+            "Motors attached before CreateConstraint: angularBudget={:.0f} authority={} directAngularDrive={} ragdollAtom={} linear={:.0f}",
+            angularMaxForce,
+            grabAngularAuthorityName(tuning.angularAuthority),
+            enableRagdollAngularMotorAtom ? "no" : "yes",
+            enableRagdollAngularMotorAtom ? "enabled" : "disabled",
+            linearMaxForce);
 
         RE::hknpConstraintCinfo cinfo{};
         cinfo.constraintData = reinterpret_cast<RE::hkpConstraintData*>(cd);
@@ -393,6 +400,7 @@ namespace rock
         result.constraintData = cd;
         result.angularMotor = angMotor;
         result.linearMotor = linMotor;
+        result.angularAuthority = tuning.angularAuthority;
         result.currentTau = linearTau;
         result.currentMaxForce = linearMaxForce;
         result.targetMaxForce = linearMaxForce;
@@ -425,6 +433,7 @@ namespace rock
                 .angularProportionalRecovery = g_rockConfig.rockGrabAngularProportionalRecovery,
                 .angularConstantRecovery = g_rockConfig.rockGrabAngularConstantRecovery,
                 .angularMaxForce = linearMaxForce / angularForceRatio,
+                .angularAuthority = grabAngularAuthorityFromConfig(g_rockConfig.rockGrabAngularAuthorityMode),
             });
     }
 
