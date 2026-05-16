@@ -27,7 +27,9 @@ point is wrong or the solver-local pivot is wrong.
 ## How To Read It
 
 - Visual Pivot B correct, solver Pivot B wrong:
-  BODY-to-solver/MOTION constraint frame conversion is wrong.
+  the object-side constraint frame is wrong. The 2026-05-15 tray screenshots
+  confirmed that using MOTION/COM for `transformB` creates this exact split;
+  corrected production logic keeps Pivot B in BODY space.
 - Visual Pivot B wrong:
   contact/pivot capture is wrong before the solver gets involved.
 - Visual and solver Pivot B overlap, but the held object still rotates wrong:

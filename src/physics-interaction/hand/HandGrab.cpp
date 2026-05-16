@@ -1963,13 +1963,13 @@ namespace rock
     bool Hand::tryGetGrabDriveObjectWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform) const
     {
         /*
-         * Active constraint reads must use the same live object-side frame the
-         * hknp solver consumes. This does not make COM the grab pivot: pivot B is
-         * still the selected contact point, frozen into whichever body-B frame is
-         * active for the constraint. BODY readback remains the scene/visual helper.
+         * Constraint transform-B is BODY-local in FO4VR's hknp grab constraint.
+         * The split pivot overlay proved that expressing Pivot B in MOTION space
+         * separates it from the visible material point on the object. Keep MOTION
+         * for mass/COM/diagnostics, not for the object-side constraint pivot.
          */
         outTransform = makeIdentityTransform();
-        return tryResolveLiveBodyWorldTransform(world, bodyId, outTransform);
+        return tryGetGrabAuthorityBodyWorldTransform(world, bodyId, outTransform);
     }
 
     RE::NiPoint3 Hand::activeProxyConstraintPivotBLocalGame() const
@@ -4252,15 +4252,13 @@ namespace rock
             const bool hasMotionBodyWorldAtGrab =
                 tryResolveLiveBodyWorldTransform(world, objectBodyId, motionBodyWorldAtGrab, &motionBodySourceAtGrab);
             /*
-             * Constraint body-B data is authored in the live solver frame when
-             * FO4VR exposes one. That frame can be motion-backed, but it is only a
-             * coordinate frame for transform-B/target math. The grip authority is
-             * still the selected contact point, frozen below into that frame.
+             * Constraint body-B transform data is authored in the hknp BODY frame.
+             * Runtime visual-vs-solver pivot debug showed that MOTION-local
+             * transform-B points do not stay on the visible material grip point.
+             * COM/MOTION remains valid for mass, inertia, and diagnostics only.
              */
-            const bool constraintUsesMotionBodyAtGrab =
-                hasMotionBodyWorldAtGrab && motionBodySourceAtGrab == body_frame::BodyFrameSource::MotionCenterOfMass;
-            const RE::NiTransform constraintBodyWorldAtGrab =
-                constraintUsesMotionBodyAtGrab ? motionBodyWorldAtGrab : grabBodyWorldAtGrab;
+            const bool constraintUsesMotionBodyAtGrab = false;
+            const RE::NiTransform constraintBodyWorldAtGrab = grabBodyWorldAtGrab;
             const RE::NiTransform handBodyWorldAtGrab = getLiveBodyWorldTransform(world, _handBody.getBodyId());
             proxyFrameWorldAtGrab = handBodyWorldAtGrab;
             hasPalmProxyFrameAtGrab =
@@ -4290,8 +4288,8 @@ namespace rock
              * ROCK dynamic grab has one production authority convention:
              * palm/proxy translation seats the selected contact grip point,
              * while root-flattened raw hand/controller rotation owns the object
-             * angular relation. Visual/object-node data stays in BODY space, while
-             * custom constraint body-B data is stored in the live solver frame.
+             * angular relation. Visual/object-node and transform-B data stay in
+             * BODY space so the constraint pivot remains the visible grip point.
              */
             _grabFrame.bodyLocal = objectToBodyAtGrab;
             _grabFrame.constraintBodyLocal = objectToConstraintBodyAtGrab;
@@ -5918,7 +5916,7 @@ namespace rock
             const float rawProxyRotationDeltaDegrees = rotationDeltaDegrees(pending.rawHandWorld.rotate, pending.proxyWorld.rotate);
             const std::uint64_t queuedLag = queuedSequence >= flushSequence ? queuedSequence - flushSequence : 0u;
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: seq={}/{} queueLag={} diag=liveSolverFrameConstraint+livePalmMirror+generatedKeyframedProxy+ragdollAngularAtom proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) rawProxy={:.2f}deg/{:.2f}gu angularRef={} atomAngular={} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu longScale={:.2f} proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: seq={}/{} queueLag={} diag=bodyFrameConstraint+livePalmMirror+generatedKeyframedProxy+ragdollAngularAtom proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) rawProxy={:.2f}deg/{:.2f}gu angularRef={} atomAngular={} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu longScale={:.2f} proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -6018,14 +6016,17 @@ namespace rock
 
         RE::NiTransform proxyReadback = makeIdentityTransform();
         RE::NiTransform objectReadback = makeIdentityTransform();
-        RE::NiTransform nativeObjectReadback = makeIdentityTransform();
+        RE::NiTransform motionObjectReadback = makeIdentityTransform();
         body_frame::BodyFrameSource proxySource = body_frame::BodyFrameSource::Fallback;
-        body_frame::BodyFrameSource objectSource = body_frame::BodyFrameSource::Fallback;
+        body_frame::BodyFrameSource objectSource = body_frame::BodyFrameSource::BodyTransform;
+        body_frame::BodyFrameSource motionObjectSource = body_frame::BodyFrameSource::Fallback;
         std::uint32_t proxyMotionIndex = body_frame::kFreeMotionIndex;
         std::uint32_t objectMotionIndex = body_frame::kFreeMotionIndex;
+        std::uint32_t motionObjectMotionIndex = body_frame::kFreeMotionIndex;
         const bool proxyOk = tryResolveLiveBodyWorldTransform(world, proxyBodyId, proxyReadback, &proxySource, &proxyMotionIndex);
-        const bool objectOk = tryResolveLiveBodyWorldTransform(world, objectBodyId, objectReadback, &objectSource, &objectMotionIndex);
-        const bool nativeObjectOk = tryGetGrabAuthorityBodyWorldTransform(world, objectBodyId, nativeObjectReadback);
+        const bool objectOk = tryGetGrabDriveObjectWorldTransform(world, objectBodyId, objectReadback);
+        const bool motionObjectOk =
+            tryResolveLiveBodyWorldTransform(world, objectBodyId, motionObjectReadback, &motionObjectSource, &motionObjectMotionIndex);
         if (!proxyOk) {
             proxySource = body_frame::BodyFrameSource::Fallback;
         }
@@ -6059,10 +6060,10 @@ namespace rock
             objectOk ? pointDistanceGameUnits(objectReadback.translate, desiredBodyFromLiveProxy.translate) : -1.0f;
         const float objectLiveProxyRotationErrorDegrees =
             objectOk ? rotationDeltaDegrees(objectReadback.rotate, desiredBodyFromLiveProxy.rotate) : -1.0f;
-        const float nativeObjectToDrivePositionGameUnits =
-            nativeObjectOk && objectOk ? pointDistanceGameUnits(nativeObjectReadback.translate, objectReadback.translate) : -1.0f;
-        const float nativeObjectToDriveRotationDegrees =
-            nativeObjectOk && objectOk ? rotationDeltaDegrees(nativeObjectReadback.rotate, objectReadback.rotate) : -1.0f;
+        const float motionObjectToDrivePositionGameUnits =
+            motionObjectOk && objectOk ? pointDistanceGameUnits(motionObjectReadback.translate, objectReadback.translate) : -1.0f;
+        const float motionObjectToDriveRotationDegrees =
+            motionObjectOk && objectOk ? rotationDeltaDegrees(motionObjectReadback.rotate, objectReadback.rotate) : -1.0f;
 
         float gripTargetErrorGameUnits = -1.0f;
         float gripLiveProxyErrorGameUnits = -1.0f;
@@ -6163,7 +6164,7 @@ namespace rock
         }
 
         ROCK_LOG_DEBUG(Hand,
-            "{} PROXY GRAB AFTER_SOLVE: seq={}/{} afterSeq={} diag=liveSolverFrameConstraint+ragdollAngularAtom proxyBody={} objBody={} constraint={} substep={}/{} proxyRead={} proxySrc={} proxyMotion={} objectRead={} objectSrc={} objectMotion={} nativeObjectRead={} nativeToDrive={:.2f}gu/{:.1f}deg proxyTargetErr={:.3f}gu/{:.2f}deg objectTargetErr={:.2f}gu/{:.1f}deg objectLiveProxyErr={:.2f}gu/{:.1f}deg gripTargetErr={:.2f}gu gripLiveProxyErr={:.2f}gu angularRef={} targetProxy=({:.1f},{:.1f},{:.1f}) liveProxy=({:.1f},{:.1f},{:.1f}) targetObj=({:.1f},{:.1f},{:.1f}) liveObj=({:.1f},{:.1f},{:.1f}) nativeObj=({:.1f},{:.1f},{:.1f}) desiredObjectTarget=({:.1f},{:.1f},{:.1f}) desiredObjectLiveProxy=({:.1f},{:.1f},{:.1f})",
+            "{} PROXY GRAB AFTER_SOLVE: seq={}/{} afterSeq={} diag=bodyFrameConstraint+ragdollAngularAtom proxyBody={} objBody={} constraint={} substep={}/{} proxyRead={} proxySrc={} proxyMotion={} objectRead={} objectSrc={} objectMotion={} motionObjectRead={} motionSrc={} motionIndex={} motionToDrive={:.2f}gu/{:.1f}deg proxyTargetErr={:.3f}gu/{:.2f}deg objectTargetErr={:.2f}gu/{:.1f}deg objectLiveProxyErr={:.2f}gu/{:.1f}deg gripTargetErr={:.2f}gu gripLiveProxyErr={:.2f}gu angularRef={} targetProxy=({:.1f},{:.1f},{:.1f}) liveProxy=({:.1f},{:.1f},{:.1f}) targetObj=({:.1f},{:.1f},{:.1f}) liveObj=({:.1f},{:.1f},{:.1f}) motionObj=({:.1f},{:.1f},{:.1f}) desiredObjectTarget=({:.1f},{:.1f},{:.1f}) desiredObjectLiveProxy=({:.1f},{:.1f},{:.1f})",
             handName(),
             flushSequence,
             queuedSequence,
@@ -6179,9 +6180,11 @@ namespace rock
             objectOk ? "ok" : "fail",
             body_frame::bodyFrameSourceCode(objectSource),
             objectMotionIndex,
-            nativeObjectOk ? "ok" : "fail",
-            nativeObjectToDrivePositionGameUnits,
-            nativeObjectToDriveRotationDegrees,
+            motionObjectOk ? "ok" : "fail",
+            body_frame::bodyFrameSourceCode(motionObjectSource),
+            motionObjectMotionIndex,
+            motionObjectToDrivePositionGameUnits,
+            motionObjectToDriveRotationDegrees,
             proxyTargetPositionErrorGameUnits,
             proxyTargetRotationErrorDegrees,
             objectTargetPositionErrorGameUnits,
@@ -6203,9 +6206,9 @@ namespace rock
             objectReadback.translate.x,
             objectReadback.translate.y,
             objectReadback.translate.z,
-            nativeObjectReadback.translate.x,
-            nativeObjectReadback.translate.y,
-            nativeObjectReadback.translate.z,
+            motionObjectReadback.translate.x,
+            motionObjectReadback.translate.y,
+            motionObjectReadback.translate.z,
             desiredObjectFromTarget.translate.x,
             desiredObjectFromTarget.translate.y,
             desiredObjectFromTarget.translate.z,

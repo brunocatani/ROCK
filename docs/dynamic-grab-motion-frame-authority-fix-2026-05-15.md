@@ -1,5 +1,15 @@
 # Dynamic Grab Motion-Frame Authority Fix - 2026-05-15
 
+## Superseded
+
+This note is superseded by
+`docs/grab-pivot-b-body-frame-correction-2026-05-15.md`.
+
+The pivot frame split overlay proved that using MOTION as the plain
+`transformB`/Pivot-B frame separates the solver pivot from the visible object
+contact point. The corrected rule is BODY for object-side constraint Pivot B;
+MOTION remains mass/COM/diagnostic data.
+
 ## Why This Change Exists
 
 The relation sweep showed that the hidden palm/proxy frame tracks correctly, but
@@ -44,7 +54,7 @@ point in the same object-side frame the constraint solver consumes.
 
 - `nativeBody[BODY]` and `heldBody[MOTION]` may still differ by about 90 degrees.
   That is allowed as a diagnostic, not a failure by itself.
-- The object target error measured against the drive/MOTION frame should drop.
+- The object target error measured against the drive/BODY frame should drop.
 - The contact pivot should remain non-COM because pivot B is still frozen from
   the selected contact point.
 - Wrist/object rotation should stop inheriting the BODY/MOTION basis mismatch.
@@ -52,14 +62,16 @@ point in the same object-side frame the constraint solver consumes.
 ## Implementation Notes
 
 - `tryGetGrabAuthorityBodyWorldTransform` remains the BODY/visual helper.
-- `tryGetGrabDriveObjectWorldTransform` now reads `tryResolveLiveBodyWorldTransform`
-  so runtime pivot/error/release math uses the same body-B frame as the solver.
-- Grab capture chooses `constraintBodyWorldAtGrab` from the live MOTION-backed
-  solver frame when available, otherwise BODY. The selected world contact point
-  is then frozen into that chosen frame.
+- `tryGetGrabDriveObjectWorldTransform` now reads the BODY helper again because
+  the split pivot overlay proved that `transformB`/Pivot B belongs to the
+  visible object BODY frame in this constraint path.
+- Grab capture forces `constraintBodyWorldAtGrab` to the BODY readback. The
+  selected world contact point is frozen into BODY space so solver Pivot B and
+  visual Pivot B remain the same material point.
 - Debug/proxy readback paths now use live proxy readback for constraint anchors.
-- After-solve telemetry now reports both solver object readback and native BODY
-  readback with `nativeToDrive`, so future tests can see the split directly.
+- After-solve telemetry still reports MOTION readback separately as
+  `motionObjectRead`/`motionToDrive`, so future tests can see BODY/MOTION drift
+  without allowing MOTION to become pivot authority.
 
 ## Non-Goals
 
