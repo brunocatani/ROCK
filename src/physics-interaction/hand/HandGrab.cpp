@@ -519,11 +519,13 @@ namespace rock
             std::uintptr_t ownerToken)
         {
             /*
-             * Proxy-constraint grab replaced the native held-object action, but
-             * the old action also owned body-flag participation while the object
-             * was held. Keep those leases on the accepted primary-first body set
-             * so multipart weapons get the same wake/collision-support contract
-             * as the rest of the custom motor pipeline.
+             * Proxy-constraint grab replaced the native held-object action, but the
+             * old path owned two different flag contracts: 0x80 was leased across
+             * the accepted held body set by ROCK, while the native action leased
+             * 0x08000000 only on its selected primary body. Keeping that split is
+             * important for multipart weapons because secondary collision bodies
+             * should participate in the hold without all becoming grab-authority
+             * bodies.
              */
             HeldBodyFlagLeaseSummary summary{};
             if (!world || ownerToken == 0) {
@@ -543,10 +545,12 @@ namespace rock
                 } else {
                     ++summary.failedLeaseCount;
                 }
+            }
 
+            if (primaryBodyId != INVALID_BODY_ID) {
                 if (havok_runtime::acquireBodyFlagLease(
                         world,
-                        bodyId,
+                        primaryBodyId,
                         kHeldAuthorityBodyFlags,
                         kHeldAuthorityBodyFlagMode,
                         ownerToken)) {
@@ -584,10 +588,12 @@ namespace rock
                 } else {
                     ++summary.failedLeaseCount;
                 }
+            }
 
+            if (primaryBodyId != INVALID_BODY_ID) {
                 if (havok_runtime::releaseBodyFlagLease(
                         world,
-                        bodyId,
+                        primaryBodyId,
                         kHeldAuthorityBodyFlags,
                         kHeldAuthorityBodyFlagMode,
                         ownerToken,
@@ -607,6 +613,31 @@ namespace rock
             target.savedPackedInertia[2] = peer.savedPackedInertia[2];
             target.inertiaModified = peer.inertiaModified;
             target.motionInertiaStates = peer.motionInertiaStates;
+        }
+
+        std::vector<std::uint32_t> buildCommittedHeldBodyIds(
+            std::uint32_t primaryBodyId,
+            const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
+            const GrabSharedObjectContext& sharedContext,
+            bool& adoptedPeerHeldBodyIds)
+        {
+            /*
+             * The second hand has its own selected primary body for drive-frame
+             * capture, but the object body set is already owned by the first hand.
+             * Reusing the peer's committed body list keeps multipart activation,
+             * flag leases, release velocity, and final restoration on the same
+             * bodies instead of depending on a second close-selection rescan.
+             */
+            adoptedPeerHeldBodyIds = false;
+            std::vector<std::uint32_t> sourceBodyIds;
+            if (sharedContext.hasPeerState() && sharedContext.peerHeldBodyIds && !sharedContext.peerHeldBodyIds->empty()) {
+                sourceBodyIds = *sharedContext.peerHeldBodyIds;
+                adoptedPeerHeldBodyIds = true;
+            } else {
+                sourceBodyIds = preparedBodySet.acceptedBodyIds();
+            }
+
+            return held_object_body_set_policy::makePrimaryFirstUniqueBodyList(primaryBodyId, sourceBodyIds);
         }
 
         GrabSurfaceHit makeCollisionQueryGrabSurfaceHit(const SelectedObject& selection, RE::NiAVObject* fallbackOwnerNode)
@@ -4513,9 +4544,19 @@ namespace rock
             f4vr::showNotification(msg);
         }
 
-        _heldBodyIds = preparedBodySet.acceptedBodyIds();
+        bool adoptedPeerHeldBodySet = false;
+        _heldBodyIds = buildCommittedHeldBodyIds(objectBodyId.value, preparedBodySet, sharedContext, adoptedPeerHeldBodySet);
         if (_heldBodyIds.empty()) {
             _heldBodyIds.push_back(objectBodyId.value);
+        }
+        if (adoptedPeerHeldBodySet) {
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand SHARED held body set adopted: primaryBody={} peerBodies={} committedBodies={} scanAccepted={}",
+                handName(),
+                objectBodyId.value,
+                sharedContext.peerHeldBodyIds ? sharedContext.peerHeldBodyIds->size() : 0,
+                _heldBodyIds.size(),
+                preparedBodySet.acceptedCount());
         }
 
         {

@@ -123,8 +123,37 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'setHeldAngularVelocity
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'world->SetBodyAngularVelocity\(_savedObjectState\.bodyId' 'Dynamic grab direct angular authority must not write only the primary selected body.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'kHeldCollisionParticipationFlags\s*=\s*0x80u' 'Proxy dynamic grab must retain the held collision-participation body flag lease by name.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'kHeldAuthorityBodyFlags\s*=\s*0x08000000u' 'Proxy dynamic grab must own the held authority body flag lease formerly provided by the native action side effect.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'acquireHeldObjectBodyFlagLeases\(world,\s*_savedObjectState\.bodyId\.value,\s*_heldBodyIds' 'Grab commit must acquire held-body flag leases for the accepted primary-first body set.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'acquireHeldObjectBodyFlagLeases\(world,\s*_savedObjectState\.bodyId\.value,\s*_heldBodyIds' 'Grab commit must acquire held-body flag leases from the accepted primary-first body set.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'releaseHeldObjectBodyFlagLeases\(\s*world,\s*_savedObjectState\.bodyId\.value,\s*_heldBodyIds' 'Release must restore held-body flag leases through the same accepted primary-first body set.'
+$handGrabFlagLeaseText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/hand/HandGrab.cpp')
+$acquireFlagLeaseStart = $handGrabFlagLeaseText.IndexOf('HeldBodyFlagLeaseSummary acquireHeldObjectBodyFlagLeases')
+$releaseFlagLeaseStart = $handGrabFlagLeaseText.IndexOf('HeldBodyFlagLeaseSummary releaseHeldObjectBodyFlagLeases')
+$nextHelperAfterRelease = $handGrabFlagLeaseText.IndexOf('void copyPeerInertiaSnapshot', $releaseFlagLeaseStart)
+if ($acquireFlagLeaseStart -lt 0 -or $releaseFlagLeaseStart -lt 0 -or $nextHelperAfterRelease -lt 0) {
+    $failures.Add('Held body flag lease helper boundaries could not be located.')
+} else {
+    $acquireFlagLeaseText = $handGrabFlagLeaseText.Substring($acquireFlagLeaseStart, $releaseFlagLeaseStart - $acquireFlagLeaseStart)
+    $releaseFlagLeaseText = $handGrabFlagLeaseText.Substring($releaseFlagLeaseStart, $nextHelperAfterRelease - $releaseFlagLeaseStart)
+    $acquireCollisionLoopStart = $acquireFlagLeaseText.IndexOf('for (const auto bodyId : bodyIds)')
+    $acquireAuthorityStart = $acquireFlagLeaseText.IndexOf('if (primaryBodyId != INVALID_BODY_ID)', $acquireCollisionLoopStart)
+    $releaseCollisionLoopStart = $releaseFlagLeaseText.IndexOf('for (const auto bodyId : bodyIds)')
+    $releaseAuthorityStart = $releaseFlagLeaseText.IndexOf('if (primaryBodyId != INVALID_BODY_ID)', $releaseCollisionLoopStart)
+    if ($acquireCollisionLoopStart -lt 0 -or $acquireAuthorityStart -lt 0 -or $releaseCollisionLoopStart -lt 0 -or $releaseAuthorityStart -lt 0) {
+        $failures.Add('Held body flag lease helpers must split set-wide collision flags from primary-only authority flags.')
+    } else {
+        $acquireCollisionLoopText = $acquireFlagLeaseText.Substring($acquireCollisionLoopStart, $acquireAuthorityStart - $acquireCollisionLoopStart)
+        $releaseCollisionLoopText = $releaseFlagLeaseText.Substring($releaseCollisionLoopStart, $releaseAuthorityStart - $releaseCollisionLoopStart)
+        if ($acquireCollisionLoopText -notmatch 'kHeldCollisionParticipationFlags' -or $releaseCollisionLoopText -notmatch 'kHeldCollisionParticipationFlags') {
+            $failures.Add('Held collision-participation flag leases must remain set-wide for multipart objects.')
+        }
+        if ($acquireCollisionLoopText -match 'kHeldAuthorityBodyFlags' -or $releaseCollisionLoopText -match 'kHeldAuthorityBodyFlags') {
+            $failures.Add('Held authority body flags must not be leased across every multipart child body.')
+        }
+        if ($acquireFlagLeaseText -notmatch 'primaryBodyId,\s*kHeldAuthorityBodyFlags' -or $releaseFlagLeaseText -notmatch 'primaryBodyId,\s*kHeldAuthorityBodyFlags') {
+            $failures.Add('Held authority body flags must stay primary-body-only to match the former native grab action.')
+        }
+    }
+}
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'activateHeldObjectBodySet\(world,\s*objectBodyId\.value,\s*_heldBodyIds\)' 'Close grab commit must explicitly wake the accepted held-object body set after zeroing velocities.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'computeLocalMeshMaxDistanceFromPoint\(_grabFrame\.localMeshTriangles,\s*_grabFrame\.gripPointLocal\)' 'Dynamic grab must capture long-object lever length from the selected grip point and cached local mesh.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'computeLongObjectAngularSpeedScale\([\s\S]*rockGrabLongObjectAngularScalingEnabled' 'Dynamic grab angular speed cap must apply the configured long-object lever scale.'
