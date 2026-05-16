@@ -334,6 +334,14 @@ namespace rock::active_grab_body_lifecycle
 
         BodyRestorePlan makeRestorePlan(BodyRestoreReason reason, BodyRestorePolicy policy) const
         {
+            /*
+             * Release restore must keep one coherent body contract. If ROCK keeps
+             * a loose object dynamic after a physical drop, restoring its pre-grab
+             * collision filter can leave it dynamic but non-colliding. Failure and
+             * explicit restore-all paths still put every captured filter back;
+             * protected release restores filters only for system-owned non-dynamic
+             * bodies whose motion ownership is also returned to the engine.
+             */
             BodyRestorePlan plan{};
             plan.reason = reason;
             plan.policy = policy;
@@ -342,7 +350,6 @@ namespace rock::active_grab_body_lifecycle
             for (const auto& record : _records) {
                 BodyRestorePlanEntry entry{};
                 entry.record = record;
-                entry.restoreFilter = record.originalStateKnown;
 
                 if (reason == BodyRestoreReason::FailedGrabSetup) {
                     entry.restoreMotion = record.originalStateKnown && record.motionChangedByRock;
@@ -351,6 +358,12 @@ namespace rock::active_grab_body_lifecycle
                 } else {
                     entry.restoreMotion =
                         record.originalStateKnown && record.motionChangedByRock && record.motionRole == MotionRole::SystemOwnedNonDynamic;
+                }
+
+                if (reason == BodyRestoreReason::FailedGrabSetup || policy == BodyRestorePolicy::RestoreAllChanged) {
+                    entry.restoreFilter = record.originalStateKnown;
+                } else {
+                    entry.restoreFilter = record.originalStateKnown && record.motionRole == MotionRole::SystemOwnedNonDynamic;
                 }
 
                 if (entry.restoreMotion) {
