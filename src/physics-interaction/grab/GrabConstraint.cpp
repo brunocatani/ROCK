@@ -31,8 +31,8 @@ namespace rock
 
         auto baseAddr = REL::Module::get().base();
         motor->vtable = reinterpret_cast<void*>(baseAddr + (MOTOR_VTABLE_POSITION - 0x140000000));
-        motor->memSizeAndFlags = 0x0001;
-        motor->referenceCount = -1;
+        motor->referenceCount = static_cast<std::int16_t>(HK_REFERENCED_OBJECT_INITIAL_REFCOUNT);
+        motor->memSizeAndFlags = HK_REFERENCED_OBJECT_DEFAULT_MEM_FLAGS;
         motor->pad0C = 0;
         motor->type = 1;
         std::memset(motor->pad11, 0, sizeof(motor->pad11));
@@ -82,6 +82,52 @@ namespace rock
         }
     }
 
+    static void* __cdecl destructorCallback(void* thisPtr, std::uint32_t flags)
+    {
+        (void)flags;
+        return thisPtr;
+    }
+
+    static void __cdecl noOpIntCallback(void* thisPtr, int value)
+    {
+        (void)thisPtr;
+        (void)value;
+    }
+
+    static float __cdecl returnZeroFloatCallback(void* thisPtr)
+    {
+        (void)thisPtr;
+        return 0.0f;
+    }
+
+    static std::uint8_t __cdecl returnZeroByteCallback(void* thisPtr)
+    {
+        (void)thisPtr;
+        return 0;
+    }
+
+    static void* __cdecl outStatusFloatCallback(void* thisPtr, void* statusOut, float value)
+    {
+        (void)thisPtr;
+        (void)value;
+        if (statusOut) {
+            *static_cast<std::uint32_t*>(statusOut) = 0;
+        }
+        return statusOut;
+    }
+
+    static void* __cdecl outStatusValueCallback(void* thisPtr, void* statusOut, void* valueOut)
+    {
+        (void)thisPtr;
+        if (statusOut) {
+            *static_cast<std::uint32_t*>(statusOut) = 0;
+        }
+        if (valueOut) {
+            *static_cast<std::uint32_t*>(valueOut) = 0;
+        }
+        return statusOut;
+    }
+
     static void* s_customVtable[64] = { nullptr };
     static bool s_vtableBuilt = false;
 
@@ -101,8 +147,28 @@ namespace rock
         auto baseAddr = REL::Module::get().base();
         auto* ragdollVtable = reinterpret_cast<void**>(baseAddr + (RAGDOLL_VTABLE - 0x140000000));
         for (int i = 0; i < 64; i++) {
+            s_customVtable[i] = reinterpret_cast<void*>(&returnZeroByteCallback);
+        }
+        constexpr int kFo4VrRagdollFunctionSlots = 24;
+        for (int i = 0; i < kFo4VrRagdollFunctionSlots; i++) {
             s_customVtable[i] = ragdollVtable[i];
         }
+
+        /*
+         * FO4VR's stock hkpRagdollConstraintData vtable contains several
+         * methods that read/write stock-only fields at this+0x190..0x198 or
+         * release motors from this+0x100..0x110 in the destructor. ROCK owns a
+         * smaller custom atom contract, so those slots must not fall through to
+         * stock code.
+         */
+        s_customVtable[VTABLE_SLOT_DESTRUCTOR] = reinterpret_cast<void*>(&destructorCallback);
+        s_customVtable[VTABLE_SLOT_SET_SOLVING_METHOD] = reinterpret_cast<void*>(&noOpIntCallback);
+        s_customVtable[VTABLE_SLOT_GET_INERTIA_STABILIZATION] = reinterpret_cast<void*>(&returnZeroFloatCallback);
+        s_customVtable[VTABLE_SLOT_SET_DISPLAY_FLAGS] = reinterpret_cast<void*>(&noOpIntCallback);
+        s_customVtable[VTABLE_SLOT_GET_DISPLAY_FLAGS] = reinterpret_cast<void*>(&returnZeroByteCallback);
+        s_customVtable[VTABLE_SLOT_SET_MOTOR_MODE] = reinterpret_cast<void*>(&noOpIntCallback);
+        s_customVtable[VTABLE_SLOT_SET_MAX_FRICTION] = reinterpret_cast<void*>(&outStatusFloatCallback);
+        s_customVtable[VTABLE_SLOT_GET_MAX_FRICTION] = reinterpret_cast<void*>(&outStatusValueCallback);
 
         auto allocShellcode = [](std::size_t size) -> std::uint8_t* {
             auto* code = static_cast<std::uint8_t*>(VirtualAlloc(nullptr, size, kVirtualMemoryCommitReserve, kPageExecuteReadWrite));
@@ -145,14 +211,6 @@ namespace rock
 
         s_customVtable[VTABLE_SLOT_ADD_INSTANCE] = reinterpret_cast<void*>(&addInstanceCallback);
 
-        {
-            auto* code = allocShellcode(16);
-            if (code) {
-                code[0] = 0xC3;
-                s_customVtable[15] = code;
-            }
-        }
-
         s_vtableBuilt = true;
 
         DWORD oldProtect;
@@ -162,7 +220,7 @@ namespace rock
             }
         }
 
-        ROCK_LOG_DEBUG(GrabConstraint, "Custom vtable built at {:p} (6 overrides: getType/isValid/getConstraintInfo/setSolvingMethod/getRuntimeInfo/addInstance)",
+        ROCK_LOG_DEBUG(GrabConstraint, "Custom vtable built at {:p} (FO4VR custom grab contract overrides active)",
             (void*)s_customVtable);
     }
 
@@ -202,8 +260,7 @@ namespace rock
         *reinterpret_cast<void**>(cd) = s_customVtable;
         auto* header = static_cast<char*>(cd);
 
-        *reinterpret_cast<std::int16_t*>(header + 0x08) = -1;
-        *reinterpret_cast<std::uint16_t*>(header + 0x0A) = 0x0001;
+        *reinterpret_cast<std::uint32_t*>(header + 0x08) = HK_REFERENCED_OBJECT_HEADER_DWORD;
 
         *reinterpret_cast<std::uint16_t*>(header + ATOM_TRANSFORMS) = ATOM_TYPE_SET_LOCAL_TRANSFORMS;
         *reinterpret_cast<std::uint16_t*>(header + ATOM_STABILIZE) = ATOM_TYPE_SETUP_STABILIZATION;
@@ -220,7 +277,7 @@ namespace rock
             *reinterpret_cast<std::int16_t*>(ragAtom + 0x04) = static_cast<std::int16_t>(RT_RAGDOLL_INIT_OFFSET);
             *reinterpret_cast<std::int16_t*>(ragAtom + 0x06) = static_cast<std::int16_t>(RT_RAGDOLL_PREV_ANG_OFFSET);
 
-            auto* target = reinterpret_cast<float*>(ragAtom + 0x10);
+            auto* target = reinterpret_cast<float*>(ragAtom + RAGDOLL_MOTOR_TARGET_BRCA);
             target[0] = 1.0f;
             target[1] = 0.0f;
             target[2] = 0.0f;
@@ -286,7 +343,7 @@ namespace rock
 
             auto* tB_col0 = reinterpret_cast<float*>(header + GRAB_TRANSFORM_B_COL0);
             auto* tB_pos = reinterpret_cast<float*>(header + GRAB_TRANSFORM_B_POS);
-            auto* targetBRca = reinterpret_cast<float*>(header + ATOM_RAGDOLL_MOT + 0x10);
+            auto* targetBRca = reinterpret_cast<float*>(header + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
 
             grab_constraint_math::writeInitialGrabAngularFrame(tB_col0, targetBRca, desiredBodyTransformHandSpace);
 
@@ -346,7 +403,7 @@ namespace rock
         {
             auto* ragAtom = header + ATOM_RAGDOLL_MOT;
             for (int i = 0; i < 3; i++) {
-                *reinterpret_cast<void**>(ragAtom + 0x40 + i * 8) = angMotor;
+                *reinterpret_cast<void**>(ragAtom + RAGDOLL_MOTOR_MOTORS + i * 8) = angMotor;
             }
         }
         {

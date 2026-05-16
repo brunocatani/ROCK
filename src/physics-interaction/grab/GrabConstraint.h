@@ -34,18 +34,22 @@ namespace rock
     constexpr std::size_t HK_POSITION_MOTOR_SIZE = 0x30;
 
     inline constexpr std::uintptr_t MOTOR_VTABLE_POSITION = 0x142e95fe8;
+    inline constexpr std::uint16_t HK_REFERENCED_OBJECT_INITIAL_REFCOUNT = 1;
+    inline constexpr std::uint16_t HK_REFERENCED_OBJECT_DEFAULT_MEM_FLAGS = 0xffff;
+    inline constexpr std::uint32_t HK_REFERENCED_OBJECT_HEADER_DWORD = 0xffff0001u;
 
     /*
      * ROCK's grab constraint is a custom FO4VR hknp/hkp atom contract, not a
-     * stock hkpRagdollConstraintData instance. The atom block intentionally
-     * starts at the stock FO4VR ragdoll data offset so any inherited ragdoll
-     * virtual that is still reached observes the same base layout, while our
-     * owned getConstraintInfo callback still reports the exact atom pointer to
-     * hknpWorld::CreateConstraint.
+     * stock hkpRagdollConstraintData instance. Ghidra disassembly of FO4VR's
+     * stock ragdoll constructor and getConstraintInfo virtual shows the atom
+     * block starts at this+0x20 (`ADD RCX, 0x20`), even though the decompiler's
+     * synthetic field labels misleadingly call it offset_0x18. Keeping the
+     * object/atom boundary identical to FO4VR reduces the number of inherited
+     * vtable paths that can observe an impossible layout.
      */
-    inline constexpr std::size_t GRAB_CONSTRAINT_SIZE = 0x160;
+    inline constexpr std::size_t GRAB_CONSTRAINT_SIZE = 0x168;
 
-    inline constexpr int ATOMS_START = 0x18;
+    inline constexpr int ATOMS_START = 0x20;
     inline constexpr int ATOM_TRANSFORMS = ATOMS_START;
     inline constexpr int ATOM_STABILIZE = ATOM_TRANSFORMS + 0x90;
     inline constexpr int ATOM_RAGDOLL_MOT = ATOM_STABILIZE + 0x10;
@@ -68,15 +72,26 @@ namespace rock
     inline constexpr std::uint16_t ATOM_TYPE_RAGDOLL_MOTOR = 19;
     inline constexpr std::uint16_t ATOM_TYPE_LIN_MOTOR = 11;
 
+    inline constexpr int RAGDOLL_MOTOR_TARGET_BRCA = 0x10;
+    inline constexpr int RAGDOLL_MOTOR_MOTORS = 0x40;
+
     inline constexpr int RUNTIME_SOLVER_RESULTS = 12;
     inline constexpr int RUNTIME_REPORTED_SIZE = 0x100;
 
     inline constexpr int RT_RAGDOLL_INIT_OFFSET = 0x60;
     inline constexpr int RT_RAGDOLL_PREV_ANG_OFFSET = 0x64;
 
+    inline constexpr int VTABLE_SLOT_DESTRUCTOR = 0;
     inline constexpr int VTABLE_SLOT_GET_TYPE = 4;
     inline constexpr int VTABLE_SLOT_GET_CONSTRAINT_INFO = 5;
     inline constexpr int VTABLE_SLOT_IS_VALID = 6;
+    inline constexpr int VTABLE_SLOT_SET_SOLVING_METHOD = 9;
+    inline constexpr int VTABLE_SLOT_GET_INERTIA_STABILIZATION = 12;
+    inline constexpr int VTABLE_SLOT_SET_DISPLAY_FLAGS = 13;
+    inline constexpr int VTABLE_SLOT_GET_DISPLAY_FLAGS = 14;
+    inline constexpr int VTABLE_SLOT_SET_MOTOR_MODE = 15;
+    inline constexpr int VTABLE_SLOT_SET_MAX_FRICTION = 16;
+    inline constexpr int VTABLE_SLOT_GET_MAX_FRICTION = 17;
     inline constexpr int VTABLE_SLOT_GET_RUNTIME_INFO = 18;
     inline constexpr int VTABLE_SLOT_ADD_INSTANCE = 20;
 
