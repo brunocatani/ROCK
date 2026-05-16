@@ -367,8 +367,7 @@ namespace rock
             bool looseWeaponGrab,
             const char* reason);
         bool updateProxyConstraintGrabDriveTarget(RE::hknpWorld* world,
-            const RE::NiTransform& proxyWorldTransform,
-            const RE::NiTransform& rawHandWorldTransform,
+            const RE::NiTransform& authorityWorldTransform,
             RE::NiTransform& outDesiredObjectWorld,
             RE::NiTransform& outDesiredBodyWorld,
             RE::NiPoint3& outDesiredTargetPointWorld,
@@ -386,7 +385,7 @@ namespace rock
             float grabRotationErrorDegrees,
             float authorityForceScale,
             bool heldBodyColliding);
-        void queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
+        void queueProxyGrabAuthorityTarget(const RE::NiTransform& authorityWorldTransform,
             const RE::NiTransform& rawHandWorldTransform,
             float deltaTime,
             float forceFadeInTime,
@@ -533,7 +532,7 @@ namespace rock
         bool _grabAuthorityProxyFrameValid = false;
         struct GrabAuthorityProxyPendingTarget
         {
-            RE::NiTransform proxyWorld{};
+            RE::NiTransform authorityWorld{};
             RE::NiTransform rawHandWorld{};
             float deltaTime = 0.0f;
             float forceFadeInTime = 0.0f;
@@ -545,9 +544,9 @@ namespace rock
             bool valid = false;
         };
         GrabAuthorityProxyPendingTarget _grabAuthorityPendingTarget{};
-        RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
+        RE::NiTransform _lastAppliedGrabAuthorityWorld{};
         RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
-        bool _hasLastAppliedGrabAuthorityProxyWorld = false;
+        bool _hasLastAppliedGrabAuthorityWorld = false;
         GeneratedKeyframedBodyDriveState _grabAuthorityProxyDriveState{};
         std::uint64_t _grabAuthorityProxyQueuedSequence = 0;
         std::uint64_t _grabAuthorityProxyFlushSequence = 0;
