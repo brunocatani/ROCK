@@ -5960,11 +5960,16 @@ namespace rock
         RE::NiTransform targetRawHandWorld{};
         RE::NiTransform rawRotationProxyHandSpace{};
         RE::NiTransform rawRotationProxyBodyHandSpace{};
+        RE::NiTransform constraintBodyHandSpace{};
         RE::NiPoint3 pivotBConstraintLocalGame{};
+        std::array<float, 12> transformABytes{};
+        std::array<float, 12> transformBBytes{};
+        std::array<float, 12> targetBRcaBytes{};
         std::uint64_t queuedSequence = 0;
         std::uint64_t flushSequence = 0;
         std::uint64_t afterSolveSequence = 0;
         std::uint32_t constraintId = 0x7FFF'FFFFu;
+        bool hasConstraintAngularBytes = false;
         {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
             const bool hasAuthority = _grabAuthorityProxy.isValid() &&
@@ -5980,11 +5985,19 @@ namespace rock
             targetRawHandWorld = _lastAppliedGrabAuthorityRawHandWorld;
             rawRotationProxyHandSpace = _grabFrame.rawRotationProxyHandSpace;
             rawRotationProxyBodyHandSpace = _grabFrame.rawRotationProxyBodyHandSpace;
+            constraintBodyHandSpace = _grabFrame.constraintBodyHandSpace;
             pivotBConstraintLocalGame = activeProxyConstraintPivotBLocalGame();
             queuedSequence = _grabAuthorityProxyQueuedSequence;
             flushSequence = _grabAuthorityProxyFlushSequence;
             afterSolveSequence = ++_grabAuthorityProxyAfterSolveLogCounter;
             constraintId = _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu;
+            if (_activeConstraint.constraintData) {
+                const auto* constraintData = static_cast<const char*>(_activeConstraint.constraintData);
+                std::memcpy(transformABytes.data(), constraintData + offsets::kTransformA_Col0, sizeof(float) * transformABytes.size());
+                std::memcpy(transformBBytes.data(), constraintData + offsets::kTransformB_Col0, sizeof(float) * transformBBytes.size());
+                std::memcpy(targetBRcaBytes.data(), constraintData + ATOM_RAGDOLL_MOT + 0x10, sizeof(float) * targetBRcaBytes.size());
+                hasConstraintAngularBytes = true;
+            }
         }
 
         RE::NiTransform proxyReadback{};
@@ -6057,6 +6070,78 @@ namespace rock
             return;
         }
 
+        float liveProxyCapturedDegrees = -1.0f;
+        float liveAuthorityCapturedDegrees = -1.0f;
+        float relCurrentProxyDegrees = -1.0f;
+        float relCurrentAuthorityDegrees = -1.0f;
+        float relPreProxyDegrees = -1.0f;
+        float relPreAuthorityDegrees = -1.0f;
+        float relNoAProxyDegrees = -1.0f;
+        float relNoAAuthorityDegrees = -1.0f;
+        float relInvProxyDegrees = -1.0f;
+        float relInvAuthorityDegrees = -1.0f;
+        float relRowsCurrentProxyDegrees = -1.0f;
+        float relRowsCurrentAuthorityDegrees = -1.0f;
+        float relTransformBProxyDegrees = -1.0f;
+        float relTransformBAuthorityDegrees = -1.0f;
+        float relCapturedRawProxyDegrees = -1.0f;
+        float relCapturedRawAuthorityDegrees = -1.0f;
+        const char* bestProxyLabel = "none";
+        const char* bestAuthorityLabel = "none";
+        float bestProxyDegrees = -1.0f;
+        float bestAuthorityDegrees = -1.0f;
+        RE::NiMatrix3 transformACols{};
+        RE::NiMatrix3 transformBCols{};
+        RE::NiMatrix3 targetCols{};
+        RE::NiMatrix3 targetRows{};
+        if (hasConstraintAngularBytes && proxyOk && objectOk) {
+            transformACols = matrixFromHkColumns(transformABytes.data());
+            transformBCols = matrixFromHkColumns(transformBBytes.data());
+            targetCols = matrixFromHkColumns(targetBRcaBytes.data());
+            targetRows = matrixFromHkRows(targetBRcaBytes.data());
+
+            const RE::NiTransform liveBodyInProxy = multiplyTransforms(invertTransform(proxyReadback), objectReadback);
+            const RE::NiTransform liveBodyInAuthority = multiplyTransforms(invertTransform(liveAuthorityFrame), objectReadback);
+            const RE::NiMatrix3 liveBodyToProxy = transform_math::transposeRotation(liveBodyInProxy.rotate);
+            const RE::NiMatrix3 liveBodyToAuthority = transform_math::transposeRotation(liveBodyInAuthority.rotate);
+            const RE::NiMatrix3 inverseTransformA = transform_math::transposeRotation(transformACols);
+            const RE::NiMatrix3 capturedBodyToProxy =
+                grab_constraint_math::desiredBodyToBodyARotation(constraintBodyHandSpace.rotate);
+            const RE::NiMatrix3 capturedRawBodyToProxy =
+                grab_constraint_math::desiredBodyToBodyARotation(rawRotationProxyBodyHandSpace.rotate);
+
+            const RE::NiMatrix3 currentUndoTransformA =
+                transform_math::multiplyStoredRotations(targetCols, inverseTransformA);
+            const RE::NiMatrix3 preUndoTransformA =
+                transform_math::multiplyStoredRotations(inverseTransformA, targetCols);
+            const RE::NiMatrix3 inverseTarget = transform_math::transposeRotation(targetCols);
+            const RE::NiMatrix3 rowsCurrentUndoTransformA =
+                transform_math::multiplyStoredRotations(targetRows, inverseTransformA);
+
+            const auto measureCandidate = [&](const char* label, const RE::NiMatrix3& candidateBodyToFrame, float& outProxy, float& outAuthority) {
+                outProxy = rotationDeltaDegrees(candidateBodyToFrame, liveBodyToProxy);
+                outAuthority = rotationDeltaDegrees(candidateBodyToFrame, liveBodyToAuthority);
+                if (bestProxyDegrees < 0.0f || outProxy < bestProxyDegrees) {
+                    bestProxyDegrees = outProxy;
+                    bestProxyLabel = label;
+                }
+                if (bestAuthorityDegrees < 0.0f || outAuthority < bestAuthorityDegrees) {
+                    bestAuthorityDegrees = outAuthority;
+                    bestAuthorityLabel = label;
+                }
+            };
+
+            liveProxyCapturedDegrees = rotationDeltaDegrees(capturedBodyToProxy, liveBodyToProxy);
+            liveAuthorityCapturedDegrees = rotationDeltaDegrees(capturedBodyToProxy, liveBodyToAuthority);
+            measureCandidate("currentUndoA", currentUndoTransformA, relCurrentProxyDegrees, relCurrentAuthorityDegrees);
+            measureCandidate("preUndoA", preUndoTransformA, relPreProxyDegrees, relPreAuthorityDegrees);
+            measureCandidate("targetNoA", targetCols, relNoAProxyDegrees, relNoAAuthorityDegrees);
+            measureCandidate("targetInv", inverseTarget, relInvProxyDegrees, relInvAuthorityDegrees);
+            measureCandidate("rowsUndoA", rowsCurrentUndoTransformA, relRowsCurrentProxyDegrees, relRowsCurrentAuthorityDegrees);
+            measureCandidate("transformB", transformBCols, relTransformBProxyDegrees, relTransformBAuthorityDegrees);
+            measureCandidate("capturedRaw", capturedRawBodyToProxy, relCapturedRawProxyDegrees, relCapturedRawAuthorityDegrees);
+        }
+
         ROCK_LOG_DEBUG(Hand,
             "{} PROXY GRAB AFTER_SOLVE: seq={}/{} afterSeq={} diag=bodyFrameConstraint+ragdollAngularAtom proxyBody={} objBody={} constraint={} substep={}/{} proxyRead={} proxySrc={} proxyMotion={} objectRead={} objectSrc={} objectMotion={} proxyTargetErr={:.3f}gu/{:.2f}deg objectTargetErr={:.2f}gu/{:.1f}deg objectLiveProxyErr={:.2f}gu/{:.1f}deg gripTargetErr={:.2f}gu gripLiveProxyErr={:.2f}gu angularRef={} targetProxy=({:.1f},{:.1f},{:.1f}) liveProxy=({:.1f},{:.1f},{:.1f}) targetObj=({:.1f},{:.1f},{:.1f}) liveObj=({:.1f},{:.1f},{:.1f}) desiredObjectTarget=({:.1f},{:.1f},{:.1f}) desiredObjectLiveProxy=({:.1f},{:.1f},{:.1f})",
             handName(),
@@ -6101,6 +6186,51 @@ namespace rock
             desiredObjectFromLiveProxy.translate.x,
             desiredObjectFromLiveProxy.translate.y,
             desiredObjectFromLiveProxy.translate.z);
+
+        if (hasConstraintAngularBytes && proxyOk && objectOk) {
+            ROCK_LOG_DEBUG(Hand,
+                "{} GRAB ANGULAR RELSWEEP: seq={}/{} afterSeq={} constraint={} bestProxy={}/{:.2f}deg bestAuthority={}/{:.2f}deg liveCaptured(proxy={:.2f}deg authority={:.2f}deg) "
+                "proxyErr(currentUndoA={:.2f} preUndoA={:.2f} targetNoA={:.2f} targetInv={:.2f} rowsUndoA={:.2f} transformB={:.2f} capturedRaw={:.2f}) "
+                "authorityErr(currentUndoA={:.2f} preUndoA={:.2f} targetNoA={:.2f} targetInv={:.2f} rowsUndoA={:.2f} transformB={:.2f} capturedRaw={:.2f}) "
+                "tA0=({:.3f},{:.3f},{:.3f}) tA1=({:.3f},{:.3f},{:.3f}) target0=({:.3f},{:.3f},{:.3f}) target1=({:.3f},{:.3f},{:.3f})",
+                handName(),
+                flushSequence,
+                queuedSequence,
+                afterSolveSequence,
+                constraintId,
+                bestProxyLabel,
+                bestProxyDegrees,
+                bestAuthorityLabel,
+                bestAuthorityDegrees,
+                liveProxyCapturedDegrees,
+                liveAuthorityCapturedDegrees,
+                relCurrentProxyDegrees,
+                relPreProxyDegrees,
+                relNoAProxyDegrees,
+                relInvProxyDegrees,
+                relRowsCurrentProxyDegrees,
+                relTransformBProxyDegrees,
+                relCapturedRawProxyDegrees,
+                relCurrentAuthorityDegrees,
+                relPreAuthorityDegrees,
+                relNoAAuthorityDegrees,
+                relInvAuthorityDegrees,
+                relRowsCurrentAuthorityDegrees,
+                relTransformBAuthorityDegrees,
+                relCapturedRawAuthorityDegrees,
+                transformACols.entry[0][0],
+                transformACols.entry[1][0],
+                transformACols.entry[2][0],
+                transformACols.entry[0][1],
+                transformACols.entry[1][1],
+                transformACols.entry[2][1],
+                targetCols.entry[0][0],
+                targetCols.entry[1][0],
+                targetCols.entry[2][0],
+                targetCols.entry[0][1],
+                targetCols.entry[1][1],
+                targetCols.entry[2][1]);
+        }
     }
 
     GrabReleaseOutcome Hand::releaseGrabbedObject(
