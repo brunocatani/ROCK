@@ -355,7 +355,7 @@ namespace rock
         bool createProxyConstraintGrabDrive(RE::bhkWorld* bhkWorld,
             RE::hknpWorld* world,
             RE::hknpBodyId objectBodyId,
-            const RE::NiTransform& proxyWorldTransform,
+            const RE::NiTransform& palmProxyWorldTransform,
             const RE::NiTransform& rawHandWorldTransform,
             const RE::NiPoint3& grabPivotAWorld,
             float tau,

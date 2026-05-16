@@ -77,6 +77,23 @@ if ($grabDriveStart -lt 0 -or $grabDriveEnd -lt 0) {
         $failures.Add('Proxy-constraint runtime reads must prefer the solver-facing live body frame.')
     }
 }
+
+$heldPivotStart = $grabDriveTextForBoundary.IndexOf('bool Hand::tryGetHeldObjectGrabPivotWorld')
+$heldPivotEnd = if ($heldPivotStart -ge 0) { $grabDriveTextForBoundary.IndexOf('bool Hand::getGrabPivotDebugSnapshot', $heldPivotStart) } else { -1 }
+if ($heldPivotStart -lt 0 -or $heldPivotEnd -lt 0) {
+    $failures.Add('Held-object visible grab pivot helper boundary could not be located.')
+} else {
+    $heldPivotText = $grabDriveTextForBoundary.Substring($heldPivotStart, $heldPivotEnd - $heldPivotStart)
+    if ($heldPivotText -notmatch 'tryGetGrabAuthorityBodyWorldTransform\(world,\s*_savedObjectState\.bodyId') {
+        $failures.Add('Held-object public grab pivot must read the visible BODY frame, not the solver/MOTION frame.')
+    }
+    if ($heldPivotText -notmatch '_grabFrame\.pivotBBodyLocalGame') {
+        $failures.Add('Held-object public grab pivot must use the visible BODY-local selected grip point.')
+    }
+    if ($heldPivotText -match 'tryGetGrabDriveObjectWorldTransform') {
+        $failures.Add('Held-object public grab pivot must not leak solver/MOTION frame data into external callers.')
+    }
+}
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'objectToBodyAtGrab\s*=\s*computeRuntimeBodyLocalTransform\(objectWorldTransform,\s*grabBodyWorldAtGrab\)' 'Dynamic grab must capture the visible object to BODY relation from FO4VR BODY readback.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFrame\.bodyLocal\s*=\s*objectToBodyAtGrab' 'Dynamic grab must preserve visual object rotation by composing desired BODY targets through the captured visual-to-BODY relation.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'freezePivotBBodyLocal\(grabBodyWorldAtGrab,\s*grabGripPoint\)' 'Grab pivotB must keep a BODY-local copy for visual/native/release handling.'
@@ -97,12 +114,13 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'buildHeldObjectRelativ
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'applyGrabExternalHandWorldTransform\(_isLeft,\s*_grabVisualHandTransform\)' 'Held visual hand/arm pose must be published as an external FRIK transform.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'visual held-object hand target exceeded max deviation' 'Visual hand/arm target must release instead of pulling the rendered hand away indefinitely.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'relationPivotErr=.*rotationPreservedDeg=.*bodyTargetNodeErr=.*normalAuthority=.*authoredRotation' 'Grab telemetry must log the relation invariants needed to verify the plan in screenshots/logs.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'pivotFrame=VISIBLE_BODY' 'Simple grab pivot telemetry must label the legacy pivot field as visible BODY data.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'tryGetGrabDriveObjectWorldTransform\(world,\s*_savedObjectState\.bodyId' 'Held-object convergence and active-drive pivot telemetry must use the drive-specific object frame.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'motionDiagVsGrab' 'Grab telemetry must expose MOTION/COM diagnostic drift from native BODY grab authority.'
 Require-Text 'src/RockConfig.h' 'rockDebugShowGrabPivotFrameSplit' 'Debug config must expose the clean visual-vs-solver grab pivot overlay.'
 Require-Text 'data/config/ROCK.ini' 'bDebugShowGrabPivotFrameSplit\s*=\s*false' 'Packaged ROCK.ini must expose the clean visual-vs-solver grab pivot overlay disabled by default.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'drawGrabPivotFrameSplit[\s\S]*LeftGrabVisualPivotB[\s\S]*RightGrabVisualPivotB[\s\S]*LeftGrabSolverPivotB[\s\S]*RightGrabSolverPivotB' 'Clean pivot split overlay must draw visual BODY pivot B separately from solver pivot B.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'tryGetGrabAuthorityBodyWorldTransform\(world,\s*_savedObjectState\.bodyId[\s\S]*visualObjectPivotWorld' 'Pivot debug snapshot must compute visual pivot B from native BODY readback.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'tryGetGrabAuthorityBodyWorldTransform\(world,\s*_savedObjectState\.bodyId[\s\S]*visualObjectPivotWorld[\s\S]*objectPivotWorld\s*=\s*out\.visualObjectPivotWorld' 'Pivot debug snapshot must expose the visible BODY pivot through the legacy objectPivotWorld field.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'tryGetGrabDriveObjectWorldTransform\(world,\s*_savedObjectState\.bodyId[\s\S]*solverObjectPivotWorld' 'Pivot debug snapshot must compute solver pivot B from the active grab drive frame.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'havok_runtime::tryReadMotionVelocityCaps' 'Hand grab motion diagnostics must read hknp velocity caps through the native runtime boundary.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'havok_runtime::snapshotMotionPropertiesLibrary' 'Hand grab motion-property library diagnostics must read hknp library layout through the native runtime boundary.'

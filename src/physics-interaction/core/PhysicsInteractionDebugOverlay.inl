@@ -1036,7 +1036,7 @@
                     const auto prefix = grab_transform_telemetry::formatStampPrefix(stamp, isLeft, telemetryState.frame == 1 ? "start" : "held");
                     const char* phaseLabel = telemetryState.frame == 1 ? "START" : "HELD";
                     ROCK_LOG_INFO(Hand,
-                        "GRAB TELEMETRY {} {} formID={:08X} heldBody={} handBody={} heldSource={} handSource={} heldMotion={} handMotion={} pivotFrame=NATIVE_BODY pivotA=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) pivotErr={:.3f}",
+                        "GRAB TELEMETRY {} {} formID={:08X} heldBody={} handBody={} heldSource={} handSource={} heldMotion={} handMotion={} pivotFrame=VISIBLE_BODY pivotA=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) pivotErr={:.3f}",
                         prefix,
                         phaseLabel,
                         sample.heldFormId,

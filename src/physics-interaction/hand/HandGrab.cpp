@@ -2073,13 +2073,12 @@ namespace rock
             return false;
         }
 
-        RE::NiTransform objectBodyWorld{};
-        if (!tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, objectBodyWorld)) {
+        RE::NiTransform visualObjectBodyWorld{};
+        if (!tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, visualObjectBodyWorld)) {
             return false;
         }
 
-        const RE::NiPoint3 pivotBLocal = activeProxyConstraintPivotBLocalGame();
-        outPivotWorld = transform_math::localPointToWorld(objectBodyWorld, pivotBLocal);
+        outPivotWorld = transform_math::localPointToWorld(visualObjectBodyWorld, _grabFrame.pivotBBodyLocalGame);
         return std::isfinite(outPivotWorld.x) && std::isfinite(outPivotWorld.y) && std::isfinite(outPivotWorld.z);
     }
 
@@ -2088,11 +2087,6 @@ namespace rock
         out = {};
 
         if (!world || !isHolding() || _savedObjectState.bodyId.value == INVALID_BODY_ID) {
-            return false;
-        }
-
-        RE::NiTransform objectBodyWorld{};
-        if (!tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, objectBodyWorld)) {
             return false;
         }
 
@@ -2112,11 +2106,7 @@ namespace rock
         const RE::NiPoint3 pivotALocalGame{ pivotALocal[0] * havokToGameScale(), pivotALocal[1] * havokToGameScale(), pivotALocal[2] * havokToGameScale() };
         const RE::NiPoint3 pivotBLocalGame{ pivotBLocal[0] * havokToGameScale(), pivotBLocal[1] * havokToGameScale(), pivotBLocal[2] * havokToGameScale() };
         out.handPivotWorld = transform_math::localPointToWorld(anchorBodyWorld, pivotALocalGame);
-        out.solverObjectPivotWorld = transform_math::localPointToWorld(objectBodyWorld, pivotBLocalGame);
-        out.objectPivotWorld = out.solverObjectPivotWorld;
         out.handBodyWorld = anchorBodyWorld.translate;
-        out.objectBodyWorld = objectBodyWorld.translate;
-        out.hasSolverObjectPivot = true;
 
         RE::NiTransform visualObjectBodyWorld{};
         if (tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, visualObjectBodyWorld)) {
@@ -2124,17 +2114,34 @@ namespace rock
                 transform_math::localPointToWorld(visualObjectBodyWorld, _grabFrame.pivotBBodyLocalGame);
             out.visualObjectBodyWorld = visualObjectBodyWorld.translate;
             out.hasVisualObjectPivot = true;
+            out.objectPivotWorld = out.visualObjectPivotWorld;
+            out.objectBodyWorld = out.visualObjectBodyWorld;
             const RE::NiPoint3 visualError = out.handPivotWorld - out.visualObjectPivotWorld;
             out.visualPivotErrorGameUnits =
                 std::sqrt(visualError.x * visualError.x + visualError.y * visualError.y + visualError.z * visualError.z);
-            out.visualToSolverDeltaWorld = out.solverObjectPivotWorld - out.visualObjectPivotWorld;
-            out.visualToSolverDistanceGameUnits = std::sqrt(
-                out.visualToSolverDeltaWorld.x * out.visualToSolverDeltaWorld.x +
-                out.visualToSolverDeltaWorld.y * out.visualToSolverDeltaWorld.y +
-                out.visualToSolverDeltaWorld.z * out.visualToSolverDeltaWorld.z);
         }
 
-        const RE::NiPoint3 error = out.handPivotWorld - out.solverObjectPivotWorld;
+        RE::NiTransform solverObjectBodyWorld{};
+        if (tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, solverObjectBodyWorld)) {
+            out.solverObjectPivotWorld = transform_math::localPointToWorld(solverObjectBodyWorld, pivotBLocalGame);
+            out.hasSolverObjectPivot = true;
+            if (!out.hasVisualObjectPivot) {
+                out.objectPivotWorld = out.solverObjectPivotWorld;
+                out.objectBodyWorld = solverObjectBodyWorld.translate;
+            } else {
+                out.visualToSolverDeltaWorld = out.solverObjectPivotWorld - out.visualObjectPivotWorld;
+                out.visualToSolverDistanceGameUnits = std::sqrt(
+                    out.visualToSolverDeltaWorld.x * out.visualToSolverDeltaWorld.x +
+                    out.visualToSolverDeltaWorld.y * out.visualToSolverDeltaWorld.y +
+                    out.visualToSolverDeltaWorld.z * out.visualToSolverDeltaWorld.z);
+            }
+        }
+
+        if (!out.hasVisualObjectPivot && !out.hasSolverObjectPivot) {
+            return false;
+        }
+
+        const RE::NiPoint3 error = out.handPivotWorld - out.objectPivotWorld;
         out.pivotErrorGameUnits = std::sqrt(error.x * error.x + error.y * error.y + error.z * error.z);
         return true;
     }
@@ -2539,7 +2546,7 @@ namespace rock
     bool Hand::createProxyConstraintGrabDrive(RE::bhkWorld* bhkWorld,
         RE::hknpWorld* world,
         RE::hknpBodyId objectBodyId,
-        const RE::NiTransform& proxyWorldTransform,
+        const RE::NiTransform& palmProxyWorldTransform,
         const RE::NiTransform& rawHandWorldTransform,
         const RE::NiPoint3& grabPivotAWorld,
         float tau,
@@ -2595,8 +2602,16 @@ namespace rock
         }
         havok_ref_count::release(proxyShape);
 
+        /*
+         * The resolved palm proxy carries the collider-derived placement. The
+         * actual body-A frame consumed by the constraint is the hybrid raw-hand
+         * rotation plus palm/proxy translation frame. Every body-A local value
+         * below must be expressed in this same frame, not in the collider-rotation
+         * frame, otherwise the held object sees a rotating anchor when the player
+         * changes world heading or wrist orientation.
+         */
         const RE::NiTransform proxyBodyWorld =
-            makeRawRotationPalmTranslationFrame(rawHandWorldTransform, proxyWorldTransform);
+            makeRawRotationPalmTranslationFrame(rawHandWorldTransform, palmProxyWorldTransform);
         const RE::hkTransformf initialProxyHavok = grab_authority_proxy::makeHavokTransform(proxyBodyWorld);
         float zeroVelocity[4]{};
         const bool setTransformOk = _grabAuthorityProxy.setTransform(initialProxyHavok);
