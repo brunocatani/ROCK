@@ -416,12 +416,13 @@ namespace rock
         RE::NiPoint3 constraintDrivePivotBBodyLocalGame(const CanonicalGrabFrame& frame)
         {
             /*
-             * The active proxy body uses palm/collider translation and raw
-             * root-flattened hand rotation. Match HIGGS by deriving transform-B
-             * from that same body-A/body-B relation and PivotA. COM stays weight
-             * data and never becomes the grip fallback.
+             * Active solver PivotB is the selected contact/grip point frozen in
+             * the solver-facing body-B frame. The angular motor still uses the
+             * saved hand/body relation, but linear PivotB must not be regenerated
+             * from that relation every frame or it becomes a second moving target.
+             * COM stays weight data and never becomes the grip fallback.
              */
-            return grab_constraint_math::computeDynamicTransformBTranslationGame(frame.rawRotationProxyBodyHandSpace, frame.pivotAHandBodyLocalGame);
+            return frame.pivotBConstraintLocalGame;
         }
 
         std::uintptr_t heldBodyFlagLeaseOwner(const Hand* hand)
@@ -2616,14 +2617,12 @@ namespace rock
         const RE::NiPoint3 pivotAProxyLocalGame = transform_math::worldPointToLocal(proxyBodyWorld, grabPivotAWorld);
         const RE::NiTransform desiredBodyTransformBodyASpace = _grabFrame.rawRotationProxyBodyHandSpace;
         /*
-         * Match HIGGS' held-update convention: transformB is not an unrelated
-         * fallback point. It is the body-B local point that makes body-A's palm
-         * pivot land on the selected grip relation. COM remains weight data.
+         * Keep transformB pinned to the selected contact point in solver body-B
+         * local space. Angular target and linear PivotB now share one captured
+         * grab relation instead of letting transformB drift from a recomputed
+         * hand/object inverse.
          */
-        const RE::NiPoint3 activePivotBConstraintLocalGame =
-            grab_constraint_math::computeDynamicTransformBTranslationGame(
-                desiredBodyTransformBodyASpace,
-                pivotAProxyLocalGame);
+        const RE::NiPoint3 activePivotBConstraintLocalGame = constraintDrivePivotBBodyLocalGame(_grabFrame);
 
         const float gameToHkScale = gameToHavokScale();
         float pivotBBodyLocalHk[4]{
@@ -2735,10 +2734,7 @@ namespace rock
         const RE::NiTransform desiredBodyTransformBodyASpace = _grabFrame.rawRotationProxyBodyHandSpace;
         outDesiredObjectWorld = multiplyTransforms(authorityFrame, _grabFrame.rawRotationProxyHandSpace);
         outDesiredBodyWorld = multiplyTransforms(authorityFrame, desiredBodyTransformAuthoritySpace);
-        outActivePivotBBodyLocalGame =
-            grab_constraint_math::computeDynamicTransformBTranslationGame(
-                desiredBodyTransformBodyASpace,
-                _grabAuthorityPivotAProxyLocalGame);
+        outActivePivotBBodyLocalGame = _grabAuthorityPivotBConstraintLocalGame;
         const RE::NiTransform desiredLinearBodyWorld =
             multiplyTransforms(authorityFrame, desiredBodyTransformBodyASpace);
         outDesiredTargetPointWorld = transform_math::localPointToWorld(desiredLinearBodyWorld, outActivePivotBBodyLocalGame);
