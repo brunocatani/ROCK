@@ -45,9 +45,17 @@ namespace rock
     {
         RE::NiPoint3 handPivotWorld{};
         RE::NiPoint3 objectPivotWorld{};
+        RE::NiPoint3 visualObjectPivotWorld{};
+        RE::NiPoint3 solverObjectPivotWorld{};
+        RE::NiPoint3 visualToSolverDeltaWorld{};
         RE::NiPoint3 handBodyWorld{};
         RE::NiPoint3 objectBodyWorld{};
+        RE::NiPoint3 visualObjectBodyWorld{};
         float pivotErrorGameUnits = 0.0f;
+        float visualPivotErrorGameUnits = 0.0f;
+        float visualToSolverDistanceGameUnits = 0.0f;
+        bool hasVisualObjectPivot = false;
+        bool hasSolverObjectPivot = false;
     };
 
     struct GrabPocketNormalDebugSnapshot

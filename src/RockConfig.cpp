@@ -167,6 +167,7 @@ namespace rock
         rockDebugShowTargetColliders = false;
         rockDebugShowHandAxes = false;
         rockDebugShowGrabPivots = false;
+        rockDebugShowGrabPivotFrameSplit = false;
         rockDebugShowGrabPocketNormal = false;
         rockDebugDrawGrabContactPatch = false;
         rockDebugShowGrabFingerProbes = false;
@@ -742,6 +743,7 @@ namespace rock
         rockDebugShowTargetColliders = ini.GetBoolValue(SECTION, "bDebugShowTargetColliders", rockDebugShowTargetColliders);
         rockDebugShowHandAxes = ini.GetBoolValue(SECTION, "bDebugShowHandAxes", rockDebugShowHandAxes);
         rockDebugShowGrabPivots = ini.GetBoolValue(SECTION, "bDebugShowGrabPivots", rockDebugShowGrabPivots);
+        rockDebugShowGrabPivotFrameSplit = ini.GetBoolValue(SECTION, "bDebugShowGrabPivotFrameSplit", rockDebugShowGrabPivotFrameSplit);
         rockDebugShowGrabPocketNormal = ini.GetBoolValue(SECTION, "bDebugShowGrabPocketNormal", rockDebugShowGrabPocketNormal);
         rockDebugDrawGrabContactPatch = ini.GetBoolValue(SECTION, "bDebugDrawGrabContactPatch", rockDebugDrawGrabContactPatch);
         rockDebugShowGrabFingerProbes = ini.GetBoolValue(SECTION, "bDebugShowGrabFingerProbes", rockDebugShowGrabFingerProbes);

@@ -2082,11 +2082,29 @@ namespace rock
         const RE::NiPoint3 pivotALocalGame{ pivotALocal[0] * havokToGameScale(), pivotALocal[1] * havokToGameScale(), pivotALocal[2] * havokToGameScale() };
         const RE::NiPoint3 pivotBLocalGame{ pivotBLocal[0] * havokToGameScale(), pivotBLocal[1] * havokToGameScale(), pivotBLocal[2] * havokToGameScale() };
         out.handPivotWorld = transform_math::localPointToWorld(anchorBodyWorld, pivotALocalGame);
-        out.objectPivotWorld = transform_math::localPointToWorld(objectBodyWorld, pivotBLocalGame);
+        out.solverObjectPivotWorld = transform_math::localPointToWorld(objectBodyWorld, pivotBLocalGame);
+        out.objectPivotWorld = out.solverObjectPivotWorld;
         out.handBodyWorld = anchorBodyWorld.translate;
         out.objectBodyWorld = objectBodyWorld.translate;
+        out.hasSolverObjectPivot = true;
 
-        const RE::NiPoint3 error = out.handPivotWorld - out.objectPivotWorld;
+        RE::NiTransform visualObjectBodyWorld{};
+        if (tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, visualObjectBodyWorld)) {
+            out.visualObjectPivotWorld =
+                transform_math::localPointToWorld(visualObjectBodyWorld, _grabFrame.pivotBBodyLocalGame);
+            out.visualObjectBodyWorld = visualObjectBodyWorld.translate;
+            out.hasVisualObjectPivot = true;
+            const RE::NiPoint3 visualError = out.handPivotWorld - out.visualObjectPivotWorld;
+            out.visualPivotErrorGameUnits =
+                std::sqrt(visualError.x * visualError.x + visualError.y * visualError.y + visualError.z * visualError.z);
+            out.visualToSolverDeltaWorld = out.solverObjectPivotWorld - out.visualObjectPivotWorld;
+            out.visualToSolverDistanceGameUnits = std::sqrt(
+                out.visualToSolverDeltaWorld.x * out.visualToSolverDeltaWorld.x +
+                out.visualToSolverDeltaWorld.y * out.visualToSolverDeltaWorld.y +
+                out.visualToSolverDeltaWorld.z * out.visualToSolverDeltaWorld.z);
+        }
+
+        const RE::NiPoint3 error = out.handPivotWorld - out.solverObjectPivotWorld;
         out.pivotErrorGameUnits = std::sqrt(error.x * error.x + error.y * error.y + error.z * error.z);
         return true;
     }

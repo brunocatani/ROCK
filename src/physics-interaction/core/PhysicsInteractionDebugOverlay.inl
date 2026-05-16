@@ -8,6 +8,7 @@
         auto* hknp = context.hknpWorld;
         const bool drawRockColliderBodies = g_rockConfig.rockDebugShowColliders;
         const bool drawGrabPivots = g_rockConfig.rockDebugShowGrabPivots;
+        const bool drawGrabPivotFrameSplit = g_rockConfig.rockDebugShowGrabPivotFrameSplit;
         const bool drawFingerProbes = g_rockConfig.rockDebugShowGrabFingerProbes;
         const bool drawPalmVectors = g_rockConfig.rockDebugShowPalmVectors;
         const bool drawRootFlattenedFingerSkeleton = g_rockConfig.rockDebugShowRootFlattenedFingerSkeletonMarkers;
@@ -35,7 +36,7 @@
         } else if (!drawWorldOriginDiagnostics) {
             s_worldOriginDiagnosticsEnabledLogged = false;
         }
-        if (!drawRockColliderBodies && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawFingerProbes &&
+        if (!drawRockColliderBodies && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawGrabPivotFrameSplit && !drawFingerProbes &&
             !drawPalmVectors && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal && !drawGrabContactPatch && !drawHandBoneContacts &&
             !drawSoftContacts && !drawGrabAuthorityProxy && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay && !drawWeaponAuthorityDebug && !drawWorldOriginDiagnostics) {
             debug::ClearFrame();
@@ -50,7 +51,7 @@
         frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
         frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy;
         frame.drawMarkers =
-            drawGrabPivots || drawFingerProbes || drawPalmVectors || drawRootFlattenedFingerSkeleton || drawGrabPocketNormal || drawGrabContactPatch ||
+            drawGrabPivots || drawGrabPivotFrameSplit || drawFingerProbes || drawPalmVectors || drawRootFlattenedFingerSkeleton || drawGrabPocketNormal || drawGrabContactPatch ||
             drawHandBoneContacts || drawSoftContacts || drawGrabTransformTelemetryAxes || drawWeaponAuthorityDebug || drawWorldOriginDiagnostics;
         frame.drawSkeleton = drawSkeletonBones;
         frame.drawText = drawGrabTransformTelemetryText || drawPerformanceProfilerOverlay;
@@ -428,6 +429,41 @@
 
             addGrabPivotDebug(_rightHand);
             addGrabPivotDebug(_leftHand);
+        }
+
+        if (drawGrabPivotFrameSplit) {
+            auto addGrabPivotFrameSplitDebug = [&](const Hand& hand) {
+                if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
+                    return;
+                }
+
+                GrabPivotDebugSnapshot snapshot{};
+                if (!hand.getGrabPivotDebugSnapshot(hknp, snapshot)) {
+                    return;
+                }
+
+                const bool isLeft = hand.isLeft();
+                addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabPivotA : debug::MarkerOverlayRole::RightGrabPivotA, snapshot.handPivotWorld, 3.4f);
+                if (snapshot.hasVisualObjectPivot) {
+                    addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabVisualPivotB : debug::MarkerOverlayRole::RightGrabVisualPivotB,
+                        snapshot.visualObjectPivotWorld,
+                        3.2f);
+                    addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabPivotFrameSplit : debug::MarkerOverlayRole::RightGrabPivotFrameSplit,
+                        snapshot.visualObjectPivotWorld,
+                        snapshot.solverObjectPivotWorld);
+                }
+                if (snapshot.hasSolverObjectPivot) {
+                    addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabSolverPivotB : debug::MarkerOverlayRole::RightGrabSolverPivotB,
+                        snapshot.solverObjectPivotWorld,
+                        3.8f);
+                    addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabPivotError : debug::MarkerOverlayRole::RightGrabPivotError,
+                        snapshot.handPivotWorld,
+                        snapshot.solverObjectPivotWorld);
+                }
+            };
+
+            addGrabPivotFrameSplitDebug(_rightHand);
+            addGrabPivotFrameSplitDebug(_leftHand);
         }
 
         if (drawGrabPocketNormal || drawGrabContactPatch) {
