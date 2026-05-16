@@ -12,9 +12,9 @@ namespace rock::body_frame
      * ROCK keeps the hknp body/shape frame separate from the motion center-of-mass
      * frame because FO4VR exposes both and they are not interchangeable. Generic
      * live-body diagnostics prefer the motion-backed center-of-mass frame when it
-     * is readable. ROCK dynamic grab is the exception: the production
-     * proxy-constraint path freezes the grip pivot and visual relation in the
-     * body-array BODY frame, while MOTION stays COM/weight diagnostics only.
+     * is readable. Dynamic grab uses both deliberately: visual/object relations
+     * stay in BODY space, while custom constraint body-B math uses the live solver
+     * frame and freezes the selected contact point into that frame.
      */
     inline constexpr std::uint32_t kFreeMotionIndex = 0x7FFF'FFFF;
     inline constexpr std::uint32_t kMaxUsableMotionIndex = 4096;
@@ -67,10 +67,9 @@ namespace rock::body_frame
     inline BodyFrameSource chooseLiveBodyFrameSource(bool hasBodyTransform, bool hasMotionTransform)
     {
         /*
-         * General live-body diagnostics share the motion-backed frame when it is
-         * readable. Production dynamic grab does not call this chooser for grip
-         * authority; it uses a dedicated BODY helper so COM/MOTION cannot become
-         * pivot or orientation authority.
+         * Generic live body reads prefer the motion-backed solver frame when it is
+         * readable. Callers that need the scene collision-object/visual frame must
+         * use the BODY-specific helper instead.
          */
         if (hasMotionTransform) {
             return BodyFrameSource::MotionCenterOfMass;
