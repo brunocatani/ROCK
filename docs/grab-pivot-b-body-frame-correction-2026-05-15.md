@@ -8,20 +8,33 @@ The pivot frame split overlay showed the important fact directly:
 - solver/MOTION Pivot B appeared far away on the tray;
 - the orange split line between them was large.
 
-That means the previous live-MOTION `transformB` assumption was wrong for the
-object-side constraint pivot. `transformB` must be treated as BODY-local in this
-FO4VR hknp constraint path. COM/MOTION remains useful for mass, inertia, and
-diagnostics, but not for the grab pivot.
+That showed the previous live-MOTION `transformB` attempt was wrong because it
+let the solver frame become the visible grip authority. The later logs showed
+the opposite failure: BODY-only constraint data keeps the visible point sane,
+but leaves the hknp angular rows with a persistent 90-degree BODY/MOTION split.
+
+The current rule is split authority:
+
+- BODY remains the visual/contact frame and owns the selected material grip
+  point.
+- MOTION is used only as the solver-facing body-B frame when FO4VR exposes it.
+- The same selected contact point is re-expressed in the solver frame for
+  constraint bytes.
+- COM is still not a fallback grip point and not a visual pivot.
 
 ## Correction
 
-- `tryGetGrabDriveObjectWorldTransform` returns the BODY helper again.
-- Grab capture forces `constraintUsesMotionBodyAtGrab = false`.
-- `constraintBodyWorldAtGrab` is the BODY readback.
+- `tryGetGrabDriveObjectWorldTransform` reads the solver-facing live body frame
+  and falls back to BODY only if MOTION is unavailable.
+- Grab capture sets `constraintUsesMotionBodyAtGrab` from whether
+  `tryResolveLiveBodyWorldTransform` returned `MotionCenterOfMass`.
+- `constraintBodyWorldAtGrab` is the MOTION readback for solver rows and the
+  BODY readback otherwise.
 - The visual/contact copy of Pivot B remains the selected contact point in BODY
   space.
-- The active constraint `transformB` copy is computed in BODY space from the
-  paired body-A palm/body-B relation, matching the HIGGS held-update formula.
+- The active constraint `transformB` copy is computed in the solver body-B frame
+  from the paired body-A palm/body-B relation, matching the HIGGS held-update
+  formula without moving the visual pivot to COM.
 - After-solve telemetry still reads MOTION separately as `motionObjectRead` and
   logs `motionToDrive`, so BODY/MOTION drift remains visible without becoming
   authority.

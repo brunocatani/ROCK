@@ -31,12 +31,14 @@ directly.
 
 ## Implementation Rule For This Pass
 
-- Keep BODY as the object-side frame. Do not reintroduce MOTION/COM as PivotB
-  authority.
+- Keep BODY as the visual object-side frame. Re-express the same contact pivot
+  in the solver body-B frame when FO4VR exposes MOTION; do not let MOTION/COM
+  select or move the visual grip point.
 - Compute active constraint PivotB from:
   `computeDynamicTransformBTranslationGame(desiredBodyTransformBodyASpace,
   pivotAProxyLocalGame)`.
-- Use that computed PivotB at create and per-frame update.
+- Use that computed PivotB at create and per-frame update in the active solver
+  frame.
 - Keep visual/contact PivotB separately as `_grabFrame.pivotBBodyLocalGame` so
   debug can still show the selected material point.
 - Keep COM/mass available for force, inertia, lever length, and release only.

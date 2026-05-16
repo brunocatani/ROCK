@@ -62,9 +62,9 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'activePivotBBodyLocalG
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'desiredLinearBodyWorld\s*=\s*[\s\S]*_grabFrame\.rawRotationProxyBodyHandSpace' 'Held-object linear target must use the same raw-rotation proxy body relation that owns transform-B.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'localPointToWorld\(desiredLinearBodyWorld,\s*activePivotBBodyLocalGame\)' 'Held-object proxy target point must derive from the paired active body-local pivot and raw proxy body relation.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'tryGetGrabAuthorityBodyWorldTransform[\s\S]*tryGetBodyArrayWorldTransform' 'Dynamic grab must keep a BODY helper for scene/visual object relations.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'tryGetGrabDriveObjectWorldTransform[\s\S]*return\s+tryGetGrabAuthorityBodyWorldTransform\(world,\s*bodyId,\s*outTransform\)' 'Proxy-constraint runtime reads must use the BODY frame that owns transform-B.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'constraintUsesMotionBodyAtGrab\s*=\s*false' 'Proxy-constraint grab capture must keep body-B transform data in the visible BODY frame.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'constraintBodyWorldAtGrab\s*=\s*grabBodyWorldAtGrab' 'Proxy-constraint grab capture must encode body-B pivots and desired targets in the BODY frame.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'tryGetGrabDriveObjectWorldTransform[\s\S]*tryResolveLiveBodyWorldTransform\(world,\s*bodyId,\s*outTransform,\s*&source,\s*&motionIndex\)' 'Proxy-constraint runtime reads must use the solver-facing live frame when MOTION is available.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'constraintUsesMotionBodyAtGrab\s*=\s*[\s\S]*motionBodySourceAtGrab\s*==\s*body_frame::BodyFrameSource::MotionCenterOfMass' 'Proxy-constraint grab capture must choose the FO4VR solver body-B frame separately from the visible BODY grip frame.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'constraintBodyWorldAtGrab\s*=\s*[\s\S]*constraintUsesMotionBodyAtGrab\s*\?\s*motionBodyWorldAtGrab\s*:\s*grabBodyWorldAtGrab' 'Proxy-constraint grab capture must encode body-B constraint bytes against the solver frame while BODY remains visual grip authority.'
 
 $grabDriveTextForBoundary = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/hand/HandGrab.cpp')
 $grabDriveStart = $grabDriveTextForBoundary.IndexOf('bool Hand::tryGetGrabDriveObjectWorldTransform')
@@ -73,14 +73,14 @@ if ($grabDriveStart -lt 0 -or $grabDriveEnd -lt 0) {
     $failures.Add('Grab drive object-frame helper boundary could not be located.')
 } else {
     $grabDriveHelperText = $grabDriveTextForBoundary.Substring($grabDriveStart, $grabDriveEnd - $grabDriveStart)
-    if ($grabDriveHelperText -match 'tryResolveLiveBodyWorldTransform|MotionCenterOfMass|HeldObjectDriveMode') {
-        $failures.Add('Proxy-constraint runtime reads must not route transform-B through MOTION/COM.')
+    if ($grabDriveHelperText -notmatch 'tryResolveLiveBodyWorldTransform') {
+        $failures.Add('Proxy-constraint runtime reads must prefer the solver-facing live body frame.')
     }
 }
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'objectToBodyAtGrab\s*=\s*computeRuntimeBodyLocalTransform\(objectWorldTransform,\s*grabBodyWorldAtGrab\)' 'Dynamic grab must capture the visible object to BODY relation from FO4VR BODY readback.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFrame\.bodyLocal\s*=\s*objectToBodyAtGrab' 'Dynamic grab must preserve visual object rotation by composing desired BODY targets through the captured visual-to-BODY relation.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'freezePivotBBodyLocal\(grabBodyWorldAtGrab,\s*grabGripPoint\)' 'Grab pivotB must keep a BODY-local copy for visual/native/release handling.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'freezePivotBBodyLocal\(constraintBodyWorldAtGrab,\s*grabGripPoint\)' 'Grab capture must keep the selected contact point in BODY space for visual and release diagnostics.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'freezePivotBBodyLocal\(constraintBodyWorldAtGrab,\s*grabGripPoint\)' 'Grab capture must re-express the selected contact point into the solver body-B frame for constraint bytes.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFrame\.pivotBConstraintLocalGame\s*=\s*constraintDrivePivotBBodyLocalGame\(_grabFrame\)' 'Proxy constraint transform-B must be paired from PivotA and the captured body-A/body-B relation after the split frame is known.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '\.objectBodyWorld\s*=\s*grabBodyWorldAtGrab' 'Three-phase grip area must capture body-local grip data in the native BODY grab authority frame.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'relationMode\s*=\s*useAuthoredGrabFrame\s*\?\s*"authoredGrabNodeFrame"\s*:\s*"rockPointToPalm"' 'Grab commit must use ROCK point-to-palm for generic grabs and reserve rotation override for authored grab nodes only.'
@@ -213,7 +213,7 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'joiningPeerHeldObject[
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'createProxyConstraintGrabDrive[\s\S]*createGrabConstraint\(world' 'Proxy dynamic grab creation must be isolated behind the explicit custom authority helper.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'setBodyKeyframed' 'Held object grab must remain dynamic and must not switch the held object to keyframed motion.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'rebuildTrianglesInWorldSpace' 'Held-object finger pose must not be re-solved from live body-derived mesh triangles while the dynamic object is settling.'
-Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'constraintBodyWorldAtGrab\s*=\s*constraintUsesMotionBodyAtGrab\s*\?\s*motionBodyWorldAtGrab\s*:\s*grabBodyWorldAtGrab' 'Proxy-constraint grab capture must not encode transform-B through MOTION/COM.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFrame\.pivotBBodyLocalGame\s*=\s*_grabFrame\.gripPointBodyLocalGame' 'Dynamic grab must keep a separate visible BODY-local grip pivot copy.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'freezePivotBBodyLocal\(motionBodyWorldAtGrab' 'Grab pivotB must not be frozen from motion data directly; it must stay on the visible BODY contact point.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFrame\.bodyLocal\s*=\s*makeIdentityTransform\(\)' 'Dynamic grab must not collapse BODY and the visible object into the same frame; logs show that causes instant angular correction.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '\.objectBodyWorld\s*=\s*motionBodyWorldAtGrab' 'Three-phase grip area must not use MOTION/COM diagnostics as authority.'

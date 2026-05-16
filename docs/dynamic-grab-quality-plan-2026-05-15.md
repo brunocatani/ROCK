@@ -164,10 +164,12 @@ Current ordinary one-hand loose dynamic grab path:
     object rotation unless an authored grab node exists;
   - visual/contact Pivot B is frozen in BODY space as
     `_grabFrame.pivotBBodyLocalGame`;
-  - active constraint Pivot B is BODY-space data computed from the same
-    body-A palm/body-B relation as the constraint target, not from COM/MOTION;
-  - `constraintUsesMotionBodyAtGrab` is intentionally false after the verified
-    runtime fix. MOTION/COM stays diagnostic/weight/release data only.
+  - active constraint Pivot B is the same selected contact point re-expressed in
+    the solver body-B frame and computed from the same body-A palm/body-B
+    relation as the constraint target;
+  - `constraintUsesMotionBodyAtGrab` is true only when FO4VR exposes a live
+    MOTION frame; this is solver row authority, not grip selection. COM remains
+    diagnostic/weight/release data only.
 - proxy/custom authority:
   - `createProxyConstraintGrabDrive(...)` creates a hidden no-contact
     keyframed proxy body;

@@ -1957,16 +1957,49 @@ namespace rock
         restoreHandCollisionAfterGrab(world);
     }
 
-    bool Hand::tryGetGrabDriveObjectWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform) const
+    bool Hand::tryGetGrabDriveObjectWorldTransform(RE::hknpWorld* world,
+        RE::hknpBodyId bodyId,
+        RE::NiTransform& outTransform,
+        body_frame::BodyFrameSource* outSource,
+        std::uint32_t* outMotionIndex) const
     {
         /*
-         * Constraint transform-B is BODY-local in FO4VR's hknp grab constraint.
-         * The split pivot overlay proved that expressing Pivot B in MOTION space
-         * separates it from the visible material point on the object. Keep MOTION
-         * for mass/COM/diagnostics, not for the object-side constraint pivot.
+         * Visual grab evidence and debug PivotB remain in native BODY space, but
+         * the custom constraint drive must read the same body-B frame the hknp
+         * solver integrates. Current logs show BODY and MOTION separated by a
+         * fixed 90-degree basis on dynamic props; using BODY for the solver-side
+         * error path makes the angular motor chase the wrong frame while the
+         * proxy itself is exact. This helper is therefore solver-facing only.
+         * It does not select the grip point and it does not make COM a pivot.
          */
         outTransform = makeIdentityTransform();
-        return tryGetGrabAuthorityBodyWorldTransform(world, bodyId, outTransform);
+        body_frame::BodyFrameSource source = body_frame::BodyFrameSource::Fallback;
+        std::uint32_t motionIndex = body_frame::kFreeMotionIndex;
+        if (tryResolveLiveBodyWorldTransform(world, bodyId, outTransform, &source, &motionIndex)) {
+            if (outSource) {
+                *outSource = source;
+            }
+            if (outMotionIndex) {
+                *outMotionIndex = motionIndex;
+            }
+            return true;
+        }
+        if (tryGetGrabAuthorityBodyWorldTransform(world, bodyId, outTransform)) {
+            if (outSource) {
+                *outSource = body_frame::BodyFrameSource::BodyTransform;
+            }
+            if (outMotionIndex) {
+                *outMotionIndex = body_frame::kFreeMotionIndex;
+            }
+            return true;
+        }
+        if (outSource) {
+            *outSource = body_frame::BodyFrameSource::Fallback;
+        }
+        if (outMotionIndex) {
+            *outMotionIndex = body_frame::kFreeMotionIndex;
+        }
+        return false;
     }
 
     RE::NiPoint3 Hand::activeProxyConstraintPivotBLocalGame() const
@@ -4263,13 +4296,18 @@ namespace rock
             const bool hasMotionBodyWorldAtGrab =
                 tryResolveLiveBodyWorldTransform(world, objectBodyId, motionBodyWorldAtGrab, &motionBodySourceAtGrab);
             /*
-             * Constraint body-B transform data is authored in the hknp BODY frame.
-             * Runtime visual-vs-solver pivot debug showed that MOTION-local
-             * transform-B points do not stay on the visible material grip point.
-             * COM/MOTION remains valid for mass, inertia, and diagnostics only.
+             * Keep two body-B roles separate. BODY is the visible collision/object
+             * frame used to choose and display the contact grip point. MOTION is
+             * the dynamic solver frame when FO4VR exposes one, and the ragdoll
+             * atom/linear rows must use that frame to avoid the persistent 90deg
+             * BODY-vs-MOTION angular split seen in runtime logs. The contact
+             * point is still selected from BODY/mesh evidence; it is only
+             * re-expressed in the solver frame for constraint-local bytes.
              */
-            const bool constraintUsesMotionBodyAtGrab = false;
-            const RE::NiTransform constraintBodyWorldAtGrab = grabBodyWorldAtGrab;
+            const bool constraintUsesMotionBodyAtGrab =
+                hasMotionBodyWorldAtGrab && motionBodySourceAtGrab == body_frame::BodyFrameSource::MotionCenterOfMass;
+            const RE::NiTransform constraintBodyWorldAtGrab =
+                constraintUsesMotionBodyAtGrab ? motionBodyWorldAtGrab : grabBodyWorldAtGrab;
             const RE::NiTransform handBodyWorldAtGrab = getLiveBodyWorldTransform(world, _handBody.getBodyId());
             proxyFrameWorldAtGrab = handBodyWorldAtGrab;
             hasPalmProxyFrameAtGrab =
@@ -5934,7 +5972,7 @@ namespace rock
             const float rawProxyRotationDeltaDegrees = rotationDeltaDegrees(pending.rawHandWorld.rotate, pending.proxyWorld.rotate);
             const std::uint64_t queuedLag = queuedSequence >= flushSequence ? queuedSequence - flushSequence : 0u;
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: seq={}/{} queueLag={} diag=bodyFrameConstraint+livePalmMirror+generatedKeyframedProxy+ragdollAngularAtom proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) rawProxy={:.2f}deg/{:.2f}gu angularRef={} atomAngular={} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu longScale={:.2f} proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: seq={}/{} queueLag={} diag=solverFrameConstraint+livePalmMirror+generatedKeyframedProxy+ragdollAngularAtom proxyBody={} constraint={} substep={}/{} dt={:.6f} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) rawProxy={:.2f}deg/{:.2f}gu angularRef={} atomAngular={} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu longScale={:.2f} proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -6036,20 +6074,17 @@ namespace rock
         RE::NiTransform objectReadback = makeIdentityTransform();
         RE::NiTransform motionObjectReadback = makeIdentityTransform();
         body_frame::BodyFrameSource proxySource = body_frame::BodyFrameSource::Fallback;
-        body_frame::BodyFrameSource objectSource = body_frame::BodyFrameSource::BodyTransform;
+            body_frame::BodyFrameSource objectSource = body_frame::BodyFrameSource::Fallback;
         body_frame::BodyFrameSource motionObjectSource = body_frame::BodyFrameSource::Fallback;
         std::uint32_t proxyMotionIndex = body_frame::kFreeMotionIndex;
         std::uint32_t objectMotionIndex = body_frame::kFreeMotionIndex;
         std::uint32_t motionObjectMotionIndex = body_frame::kFreeMotionIndex;
         const bool proxyOk = tryResolveLiveBodyWorldTransform(world, proxyBodyId, proxyReadback, &proxySource, &proxyMotionIndex);
-        const bool objectOk = tryGetGrabDriveObjectWorldTransform(world, objectBodyId, objectReadback);
+            const bool objectOk = tryGetGrabDriveObjectWorldTransform(world, objectBodyId, objectReadback, &objectSource, &objectMotionIndex);
         const bool motionObjectOk =
             tryResolveLiveBodyWorldTransform(world, objectBodyId, motionObjectReadback, &motionObjectSource, &motionObjectMotionIndex);
         if (!proxyOk) {
             proxySource = body_frame::BodyFrameSource::Fallback;
-        }
-        if (!objectOk) {
-            objectSource = body_frame::BodyFrameSource::Fallback;
         }
 
         const RE::NiTransform targetAuthorityFrame =
@@ -6186,7 +6221,7 @@ namespace rock
         }
 
         ROCK_LOG_DEBUG(Hand,
-            "{} PROXY GRAB AFTER_SOLVE: seq={}/{} afterSeq={} diag=bodyFrameConstraint+ragdollAngularAtom proxyBody={} objBody={} constraint={} substep={}/{} proxyRead={} proxySrc={} proxyMotion={} objectRead={} objectSrc={} objectMotion={} motionObjectRead={} motionSrc={} motionIndex={} motionToDrive={:.2f}gu/{:.1f}deg proxyTargetErr={:.3f}gu/{:.2f}deg objectTargetErr={:.2f}gu/{:.1f}deg objectLiveProxyErr={:.2f}gu/{:.1f}deg gripTargetErr={:.2f}gu gripLiveProxyErr={:.2f}gu angularRef={} targetProxy=({:.1f},{:.1f},{:.1f}) liveProxy=({:.1f},{:.1f},{:.1f}) targetObj=({:.1f},{:.1f},{:.1f}) liveObj=({:.1f},{:.1f},{:.1f}) motionObj=({:.1f},{:.1f},{:.1f}) desiredObjectTarget=({:.1f},{:.1f},{:.1f}) desiredObjectLiveProxy=({:.1f},{:.1f},{:.1f})",
+            "{} PROXY GRAB AFTER_SOLVE: seq={}/{} afterSeq={} diag=solverFrameConstraint+ragdollAngularAtom proxyBody={} objBody={} constraint={} substep={}/{} proxyRead={} proxySrc={} proxyMotion={} objectRead={} objectSrc={} objectMotion={} motionObjectRead={} motionSrc={} motionIndex={} motionToDrive={:.2f}gu/{:.1f}deg proxyTargetErr={:.3f}gu/{:.2f}deg objectTargetErr={:.2f}gu/{:.1f}deg objectLiveProxyErr={:.2f}gu/{:.1f}deg gripTargetErr={:.2f}gu gripLiveProxyErr={:.2f}gu angularRef={} targetProxy=({:.1f},{:.1f},{:.1f}) liveProxy=({:.1f},{:.1f},{:.1f}) targetObj=({:.1f},{:.1f},{:.1f}) liveObj=({:.1f},{:.1f},{:.1f}) motionObj=({:.1f},{:.1f},{:.1f}) desiredObjectTarget=({:.1f},{:.1f},{:.1f}) desiredObjectLiveProxy=({:.1f},{:.1f},{:.1f})",
             handName(),
             flushSequence,
             queuedSequence,

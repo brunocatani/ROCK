@@ -401,7 +401,11 @@ namespace rock
         void destroyGrabAuthorityProxyLocked(RE::bhkWorld* bhkWorld);
         void abandonGrabAuthorityProxyLocked();
         void clearGrabAuthorityProxyRuntimeLocked();
-        bool tryGetGrabDriveObjectWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform) const;
+        bool tryGetGrabDriveObjectWorldTransform(RE::hknpWorld* world,
+            RE::hknpBodyId bodyId,
+            RE::NiTransform& outTransform,
+            body_frame::BodyFrameSource* outSource = nullptr,
+            std::uint32_t* outMotionIndex = nullptr) const;
         RE::NiPoint3 activeProxyConstraintPivotBLocalGame() const;
 
         /*
