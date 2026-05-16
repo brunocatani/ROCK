@@ -12,20 +12,17 @@ chain does the same thing.
 This file started as a telemetry pass, but the same review exposed two frame
 simplifications. First, the hidden proxy body and the angular authority frame
 were two names for the same runtime frame after raw-hand rotation was applied.
-Second, the generated palm collider was still being allowed to provide the
-authority position. HIGGS does not insert that collider-derived semantic frame:
-it reads the hand bone transform, applies a handspace palm offset, and feeds
-that directly into the grab relation. ROCK now mirrors that shape with the
-root-flattened hand frame.
+Second, the generated palm collider and the old manual handspace PivotA were
+still being allowed to provide the authority position. The current diagnostic
+pass removes both from dynamic grab authority: ROCK now feeds the grab relation
+from the root-flattened hand frame itself.
 
 ## Frame ladder to prove
 
 Names:
 
 - `H`: raw root-flattened hand/controller frame.
-- `P`: handspace palm point derived directly from the raw hand frame.
-- `A`: active authority frame, built from raw hand rotation plus that handspace
-  palm point.
+- `A`: active authority frame, equal to `H`.
 - `D`: desired object node frame.
 - `DB`: desired dynamic body-B frame.
 - `R`: saved body-B relation in authority-frame space.
@@ -33,7 +30,7 @@ Names:
 Required relationships:
 
 ```text
-A = root-flattened hand rotation + handspace palm position
+A = H
 DB = A * R
 pivotA_world = A * pivotA_local
 pivotB_world = DB * pivotB_local
@@ -102,28 +99,25 @@ the other.
 
 The active path should now treat the hidden proxy body as the authority body, and
 that authority body is fed from the root-flattened hand frame rather than from a
-generated palm-collider frame:
+generated palm-collider frame or the old configured handspace PivotA:
 
 ```text
-authorityWorld = root-flattened hand rotation + configured handspace palm point
+authorityWorld = root-flattened hand bone transform
 proxy body is driven to authorityWorld
 transform A local rotation is identity
 desired body = authorityWorld * saved body-in-authority relation
 pivot B = inverse(saved body-in-authority relation) * pivot A
 ```
 
-That removes the old collider-authority shape:
+That removes the old collider/INI-authority shapes:
 
 ```text
 generated palm collider -> converted proxy frame -> authority frame
+root-flattened hand frame + configured handspace point = authority frame
+configured fGrabPivotAHandspace point -> authority position
+root-flattened hand frame = authority frame
 ```
 
-and replaces it with:
-
-```text
-root-flattened hand frame + handspace palm offset = authority frame
-```
-
-The generated palm/finger colliders remain useful for collision, contact
-evidence, and visual debug comparison. They are no longer the source of the
-dynamic grab authority frame.
+The generated palm/finger colliders and `fGrabPivotAHandspace*` values remain
+useful for comparison telemetry and non-dynamic callers. They are no longer the
+source of the dynamic grab authority frame.

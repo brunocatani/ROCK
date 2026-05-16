@@ -179,14 +179,13 @@ namespace rock
     inline RE::NiTransform computeGrabAuthorityFrameFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
         /*
-         * HIGGS-style dynamic grab authority comes from the live hand bone frame:
-         * the hand rotation owns angular intent, and a handspace palm point owns
-         * the hand-side pivot. Generated palm/finger colliders remain collision
-         * evidence; they do not get to reinterpret the grab frame orientation or
-         * move the authority point through a collider-derived basis.
+         * Dynamic grab authority is the root-flattened hand bone transform.
+         * Generated palm/finger colliders are collision evidence only, and the
+         * old INI handspace PivotA is diagnostic/non-authority data. Keeping the
+         * authority frame equal to the sampled hand bone frame gives position and
+         * rotation the same source of truth.
          */
-        RE::NiTransform authority = handTransform;
-        authority.translate = computeGrabPivotAPositionFromHandBasis(handTransform, isLeft);
-        return applyGrabAuthorityProxyLocalOffsetToFrame(authority, isLeft);
+        (void)isLeft;
+        return handTransform;
     }
 }

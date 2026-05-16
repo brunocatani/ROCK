@@ -1234,7 +1234,7 @@ namespace rock
             return multiplyTransforms(invertTransform(nodeWorld), bodyWorld);
         }
 
-        constexpr const char* kGrabObjectRotationReferenceName = "rootFlattenedHandPalmAuthority";
+        constexpr const char* kGrabObjectRotationReferenceName = "rootFlattenedHandBoneAuthority";
 
         float computeLocalMeshMaxDistanceFromPoint(const std::vector<GrabLocalTriangle>& localTriangles, const RE::NiPoint3& originLocal)
         {
@@ -2191,7 +2191,7 @@ namespace rock
         out.handBodyId = _handBody.isValid() ? _handBody.getBodyId().value : INVALID_BODY_ID;
         out.legacyConfiguredPivotAWorld = computeGrabPivotAPositionFromHandBasis(out.nativeFlattenedHandWorld, _isLeft);
         out.hasLegacyConfiguredPivotAWorld = true;
-        out.runtimePivotSource = "rootFlattenedHandPalmAuthority";
+        out.runtimePivotSource = "rootFlattenedHandBoneAuthority";
         out.palmAnchorGrabAuthorityWorld = computeGrabAuthorityFrameFromHandBasis(out.nativeFlattenedHandWorld, _isLeft);
         out.palmAnchorGrabAuthorityBasis = grab_transform_telemetry::makeOrientationBasis(out.palmAnchorGrabAuthorityWorld);
         out.hasPalmAnchorGrabAuthority = true;
@@ -2576,11 +2576,10 @@ namespace rock
         havok_ref_count::release(proxyShape);
 
         /*
-         * Body A is the already-resolved grab authority frame: raw flattened
-         * hand rotation plus the handspace palm pivot. Every body-A local value
-         * below must be expressed in this same frame, not in a generated collider
-         * frame, otherwise the held object sees a moving/rotating anchor that is
-         * not the hand bone relation the player is controlling.
+         * Body A is the already-resolved grab authority frame: the sampled
+         * root-flattened hand bone transform. Every body-A local value below
+         * must be expressed in this same frame, not in a generated collider frame
+         * or the old configured handspace pivot.
          */
         const RE::NiTransform proxyBodyWorld = authorityWorldTransform;
         const RE::hkTransformf initialProxyHavok = grab_authority_proxy::makeHavokTransform(proxyBodyWorld);
@@ -2787,7 +2786,7 @@ namespace rock
             std::isfinite(rawHandWorld.translate.y) &&
             std::isfinite(rawHandWorld.translate.z)) {
             outProxyWorld = computeGrabAuthorityFrameFromHandBasis(rawHandWorld, _isLeft);
-            outSource = "rootFlattenedHandPalmAuthority";
+            outSource = "rootFlattenedHandBoneAuthority";
             return true;
         }
 
@@ -4248,7 +4247,7 @@ namespace rock
         bool hasPalmProxyFrameAtGrab = false;
 
         {
-            const RE::NiPoint3 palmPos = computePalmPositionFromHandBasis(handWorldTransform, _isLeft);
+            const RE::NiPoint3 rawHandAuthorityPos = handWorldTransform.translate;
             const RE::NiPoint3 palmPocketPivotWorld = computeGrabPivotAWorld(world, handWorldTransform);
             RE::NiPoint3 grabPivotAWorld = palmPocketPivotWorld;
             RE::NiTransform grabBodyWorldAtGrab{};
@@ -4749,8 +4748,8 @@ namespace rock
 
             ROCK_LOG_DEBUG(Hand,
                 "{} GRAB HAND SPACE: pos=({:.1f},{:.1f},{:.1f}) "
-                "palmPos=({:.1f},{:.1f},{:.1f}) pivotA=({:.1f},{:.1f},{:.1f}) grabPt=({:.1f},{:.1f},{:.1f})",
-                handName(), _grabFrame.rawHandSpace.translate.x, _grabFrame.rawHandSpace.translate.y, _grabFrame.rawHandSpace.translate.z, palmPos.x, palmPos.y, palmPos.z, grabPivotAWorld.x,
+                "rawHandPos=({:.1f},{:.1f},{:.1f}) pivotA=({:.1f},{:.1f},{:.1f}) grabPt=({:.1f},{:.1f},{:.1f})",
+                handName(), _grabFrame.rawHandSpace.translate.x, _grabFrame.rawHandSpace.translate.y, _grabFrame.rawHandSpace.translate.z, rawHandAuthorityPos.x, rawHandAuthorityPos.y, rawHandAuthorityPos.z, grabPivotAWorld.x,
                 grabPivotAWorld.y, grabPivotAWorld.z, grabGripPoint.x, grabGripPoint.y, grabGripPoint.z);
             ROCK_LOG_DEBUG(Hand, "{} BODY LOCAL: pos=({:.2f},{:.2f},{:.2f}) scale={:.3f}", handName(), _grabFrame.bodyLocal.translate.x, _grabFrame.bodyLocal.translate.y,
                 _grabFrame.bodyLocal.translate.z, _grabFrame.bodyLocal.scale);
