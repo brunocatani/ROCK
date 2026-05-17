@@ -511,6 +511,20 @@
                 addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabForceTorqueLivePivot : debug::MarkerOverlayRole::RightGrabForceTorqueLivePivot,
                     snapshot.livePivotWorld,
                     3.2f);
+                addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabActivePivotBDesiredBody : debug::MarkerOverlayRole::RightGrabActivePivotBDesiredBody,
+                    snapshot.activePivotBDesiredBodyWorld,
+                    4.4f);
+                addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabActivePivotBLiveBody : debug::MarkerOverlayRole::RightGrabActivePivotBLiveBody,
+                    snapshot.activePivotBLiveBodyWorld,
+                    4.4f);
+                if (snapshot.hasActivePivotBVisualNode) {
+                    addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabActivePivotBVisualNode : debug::MarkerOverlayRole::RightGrabActivePivotBVisualNode,
+                        snapshot.activePivotBVisualNodeWorld,
+                        4.0f);
+                    addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabActivePivotBVisualLock : debug::MarkerOverlayRole::RightGrabActivePivotBVisualLock,
+                        snapshot.activePivotBLiveBodyWorld,
+                        snapshot.activePivotBVisualNodeWorld);
+                }
                 addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabForceTorqueCorrection : debug::MarkerOverlayRole::RightGrabForceTorqueCorrection,
                     snapshot.livePivotWorld,
                     snapshot.correctionEndWorld);
@@ -585,11 +599,11 @@
                         snapshot.leverLengthGameUnits);
                     addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -3.5f },
                         detailColor,
-                        "phase %s src %s body %u lock %.1f mut %.1f rq %u",
+                        "phase %s src %s body %u pbLock %.1f mut %.1f rq %u",
                         snapshot.acquisitionPhase,
                         snapshot.pivotAuthoritySource,
                         snapshot.pivotSourceBodyId.value,
-                        snapshot.bodyVisualMeshLockErrorGameUnits,
+                        snapshot.activePivotBVisualLockErrorGameUnits,
                         snapshot.captureGripLocalDeltaGameUnits,
                         snapshot.seatedPivotReacquireCount);
                 }

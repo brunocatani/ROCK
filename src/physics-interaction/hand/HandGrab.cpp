@@ -2859,6 +2859,8 @@ namespace rock
         out.desiredBodyWorld = desiredBodyWorld;
         out.livePivotWorld = livePivotWorld;
         out.targetPivotWorld = targetPivotWorld;
+        out.activePivotBLiveBodyWorld = livePivotWorld;
+        out.activePivotBDesiredBodyWorld = targetPivotWorld;
         out.correctionEndWorld = targetPivotWorld;
         out.leverArmEndWorld = livePivotWorld;
         out.pivotErrorGameUnits = correctionLength;
@@ -2893,6 +2895,21 @@ namespace rock
         }
 
         const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(liveBodyWorld, _grabFrame.bodyLocal);
+        /*
+         * Active pivot-B markers answer a different question than mesh evidence:
+         * mesh points show what ROCK selected visually, while this converts the
+         * exact BODY-local pivot consumed by the constraint back through the
+         * rendered node. If this visual equivalent separates from the live BODY
+         * pivot, the solver and rendered mesh disagree even when the blue mesh
+         * selection point itself looks correct.
+         */
+        if (_grabFrame.heldNode) {
+            const RE::NiPoint3 activePivotBNodeLocal = transform_math::worldPointToLocal(currentNodeWorld, livePivotWorld);
+            out.activePivotBVisualNodeWorld = transform_math::localPointToWorld(_grabFrame.heldNode->world, activePivotBNodeLocal);
+            out.activePivotBVisualLockErrorGameUnits = pointDistanceGameUnits(livePivotWorld, out.activePivotBVisualNodeWorld);
+            out.hasActivePivotBVisualNode = true;
+        }
+
         if (_grabFrame.hasGripPoint) {
             out.meshGripPointWorld = transform_math::localPointToWorld(currentNodeWorld, _grabFrame.gripPointLocal);
             out.hasMeshGripPoint = true;

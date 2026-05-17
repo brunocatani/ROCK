@@ -71,6 +71,9 @@ namespace rock
         RE::NiTransform desiredBodyWorld{};
         RE::NiPoint3 targetPivotWorld{};
         RE::NiPoint3 livePivotWorld{};
+        RE::NiPoint3 activePivotBLiveBodyWorld{};
+        RE::NiPoint3 activePivotBDesiredBodyWorld{};
+        RE::NiPoint3 activePivotBVisualNodeWorld{};
         RE::NiPoint3 correctionEndWorld{};
         RE::NiPoint3 leverArmEndWorld{};
         RE::NiPoint3 torqueAxisEndWorld{};
@@ -82,6 +85,7 @@ namespace rock
         float pivotErrorGameUnits = 0.0f;
         float pivotTrackingErrorGameUnits = 0.0f;
         float bodyVisualMeshLockErrorGameUnits = 0.0f;
+        float activePivotBVisualLockErrorGameUnits = 0.0f;
         float captureGripLocalDeltaGameUnits = 0.0f;
         float rotationErrorDegrees = 0.0f;
         float leverLengthGameUnits = 0.0f;
@@ -104,6 +108,7 @@ namespace rock
         bool hasPivotTriangle = false;
         bool hasMeshGripPoint = false;
         bool hasVisualMeshGripPoint = false;
+        bool hasActivePivotBVisualNode = false;
         bool hasCaptureMeshGripPoint = false;
         bool gripPointMutatedAfterCapture = false;
         bool hasContactPatchPoint = false;

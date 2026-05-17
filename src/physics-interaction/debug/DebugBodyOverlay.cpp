@@ -1558,6 +1558,34 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[2] = 0.95f;
                 color[3] = 0.96f;
                 break;
+            case MarkerOverlayRole::RightGrabActivePivotBLiveBody:
+            case MarkerOverlayRole::LeftGrabActivePivotBLiveBody:
+                color[0] = 1.0f;
+                color[1] = 0.72f;
+                color[2] = 0.05f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::RightGrabActivePivotBDesiredBody:
+            case MarkerOverlayRole::LeftGrabActivePivotBDesiredBody:
+                color[0] = 0.05f;
+                color[1] = 1.0f;
+                color[2] = 0.95f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::RightGrabActivePivotBVisualNode:
+            case MarkerOverlayRole::LeftGrabActivePivotBVisualNode:
+                color[0] = 0.25f;
+                color[1] = 0.45f;
+                color[2] = 1.0f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::RightGrabActivePivotBVisualLock:
+            case MarkerOverlayRole::LeftGrabActivePivotBVisualLock:
+                color[0] = 1.0f;
+                color[1] = 0.18f;
+                color[2] = 0.02f;
+                color[3] = 0.96f;
+                break;
             case MarkerOverlayRole::RightGrabPivotSourceTriangle:
             case MarkerOverlayRole::LeftGrabPivotSourceTriangle:
                 color[0] = 0.30f;
