@@ -2862,6 +2862,7 @@ namespace rock
         out.correctionEndWorld = targetPivotWorld;
         out.leverArmEndWorld = livePivotWorld;
         out.pivotErrorGameUnits = correctionLength;
+        out.pivotTrackingErrorGameUnits = correctionLength;
         out.correctionLengthGameUnits = correctionLength;
         out.leverLengthGameUnits = leverLength;
         out.torqueWitnessGameUnitsSquared = torqueWitnessLength;
@@ -2873,6 +2874,14 @@ namespace rock
         out.pivotAuthoritySource = _grabFrame.pivotAuthoritySource ? _grabFrame.pivotAuthoritySource : "none";
         out.activeGrabPointMode = _grabFrame.activeGrabPointMode ? _grabFrame.activeGrabPointMode : "none";
         out.authorityFrameSource = proxySource ? proxySource : "none";
+        out.acquisitionPhase = grab_three_phase::phaseName(_grabAcquisitionPhase);
+        out.capturePivotAuthoritySource =
+            _grabFrame.captureTelemetry.pivotAuthoritySource ? _grabFrame.captureTelemetry.pivotAuthoritySource : "none";
+        out.captureGrabPointMode =
+            _grabFrame.captureTelemetry.activeGrabPointMode ? _grabFrame.captureTelemetry.activeGrabPointMode : "none";
+        out.lastSeatedPivotReacquireReason =
+            _grabFrame.lastSeatedPivotReacquireReason ? _grabFrame.lastSeatedPivotReacquireReason : "none";
+        out.seatedPivotReacquireCount = _grabFrame.seatedPivotReacquireCount;
         out.positionOnlyPivot = _grabFrame.pivotAuthorityPositionOnly;
         out.normalTrusted = _grabFrame.pivotAuthorityNormalTrusted;
 
@@ -2887,6 +2896,29 @@ namespace rock
         if (_grabFrame.hasGripPoint) {
             out.meshGripPointWorld = transform_math::localPointToWorld(currentNodeWorld, _grabFrame.gripPointLocal);
             out.hasMeshGripPoint = true;
+            if (_grabFrame.heldNode) {
+                out.visualMeshGripPointWorld = transform_math::localPointToWorld(_grabFrame.heldNode->world, _grabFrame.gripPointLocal);
+                out.hasVisualMeshGripPoint = true;
+                out.bodyVisualMeshLockErrorGameUnits = pointDistanceGameUnits(out.meshGripPointWorld, out.visualMeshGripPointWorld);
+            }
+        }
+
+        if (_grabFrame.captureTelemetry.valid && _grabFrame.captureTelemetry.hasGripPoint) {
+            const auto& capture = _grabFrame.captureTelemetry;
+            const RE::NiTransform captureNodeWorld = deriveNodeWorldFromBodyWorld(liveBodyWorld, capture.bodyLocal);
+            out.captureMeshGripPointBodyWorld = transform_math::localPointToWorld(captureNodeWorld, capture.gripPointLocal);
+            out.hasCaptureMeshGripPoint = true;
+            if (_grabFrame.heldNode) {
+                out.captureMeshGripPointVisualWorld = transform_math::localPointToWorld(_grabFrame.heldNode->world, capture.gripPointLocal);
+            } else {
+                out.captureMeshGripPointVisualWorld = out.captureMeshGripPointBodyWorld;
+            }
+
+            const RE::NiPoint3 localDelta = _grabFrame.gripPointLocal - capture.gripPointLocal;
+            const float scale =
+                std::isfinite(currentNodeWorld.scale) && currentNodeWorld.scale > 0.0f ? currentNodeWorld.scale : 1.0f;
+            out.captureGripLocalDeltaGameUnits = vectorMagnitude(localDelta) * scale;
+            out.gripPointMutatedAfterCapture = out.captureGripLocalDeltaGameUnits > 0.001f;
         }
 
         if (_grabFrame.gripEvidenceTriangleIndex < _grabFrame.localMeshTriangles.size()) {
@@ -5796,6 +5828,7 @@ namespace rock
             _grabFrame.grabPivotWorldAtGrab = grabPivotAWorld;
             _grabFrame.gripPointWorldAtGrab = grabGripPoint;
             _grabFrame.handScaleAtGrab = handWorldTransform.scale;
+            _grabFrame.freezeCaptureTelemetry(objectBodyId.value);
             clearGrabExternalHandWorldTransform(_isLeft);
             _grabVisualHandTransform = handWorldTransform;
             _hasGrabVisualHandTransform = false;
@@ -6414,21 +6447,30 @@ namespace rock
         RE::NiTransform desiredBodyWorld = multiplyTransforms(authorityFrame, _grabFrame.rawRotationProxyBodyHandSpace);
         const RE::NiPoint3 activePivotBBodyLocalGame = activeProxyConstraintPivotBLocalGame();
         const RE::NiPoint3 desiredTargetPointWorld = transform_math::localPointToWorld(desiredBodyWorld, activePivotBBodyLocalGame);
-        float grabPositionErrorGameUnits = 0.0f;
+        float pivotTrackingErrorGameUnits = 0.0f;
         float grabRotationErrorDegrees = 0.0f;
-        bool hasGrabPositionError = false;
+        bool hasPivotTrackingError = false;
         {
             RE::NiTransform grabBodyWorld{};
             if (tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, grabBodyWorld)) {
                 const RE::NiPoint3 liveGripWorld = transform_math::localPointToWorld(grabBodyWorld, activePivotBBodyLocalGame);
-                grabPositionErrorGameUnits = pointDistanceGameUnits(liveGripWorld, desiredTargetPointWorld);
-                hasGrabPositionError = true;
+                pivotTrackingErrorGameUnits = pointDistanceGameUnits(liveGripWorld, desiredTargetPointWorld);
+                hasPivotTrackingError = true;
                 if (_grabFrame.heldNode) {
                     grabRotationErrorDegrees = rotationDeltaDegrees(_grabFrame.heldNode->world.rotate, desiredObjectWorld.rotate);
                 } else {
                     grabRotationErrorDegrees = rotationDeltaDegrees(grabBodyWorld.rotate, desiredBodyWorld.rotate);
                 }
             }
+        }
+        if (!hasPivotTrackingError) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand release: held object drive body readback failed before queuing grab authority bodyId={} phase={}",
+                handName(),
+                _savedObjectState.bodyId.value,
+                grab_three_phase::phaseName(_grabAcquisitionPhase));
+            releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+            return;
         }
 
         const bool heldBodyColliding = isHeldBodyColliding();
@@ -6439,7 +6481,7 @@ namespace rock
             deltaTime,
             forceFadeInTime,
             tauMin,
-            grabPositionErrorGameUnits,
+            pivotTrackingErrorGameUnits,
             grabRotationErrorDegrees,
             authorityForceScale,
             heldBodyColliding);
@@ -6448,7 +6490,7 @@ namespace rock
             _grabDeviationHistory,
             _grabDeviationHistoryCount,
             _grabDeviationHistoryNext,
-            grabPositionErrorGameUnits);
+            pivotTrackingErrorGameUnits);
         _grabDeviationExceededSeconds = held_object_physics_math::advanceDeviationSeconds(
             _grabDeviationExceededSeconds, averageGrabDeviationGameUnits, g_rockConfig.rockGrabMaxDeviation, deltaTime);
         if (held_object_physics_math::deviationExceeded(_grabDeviationExceededSeconds, g_rockConfig.rockGrabMaxDeviationTime)) {
@@ -6465,7 +6507,8 @@ namespace rock
         tickHeldBodyContact();
         const bool convergingAcquisitionPhase =
             _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::NearConverging ||
-            _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::GravityPulling;
+            _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::GravityPulling ||
+            _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::SeatedPivotReacquire;
         const float acquisitionVisualEnvelope =
             grab_three_phase::computeAcquisitionVisualEnvelopeGameUnits(
                 g_rockConfig.rockGrabTouchAcquireDistanceGameUnits,
@@ -6477,9 +6520,9 @@ namespace rock
                 (std::max)(g_rockConfig.rockGrabTouchAcquireDistanceGameUnits, g_rockConfig.rockGrabPocketRadiusGameUnits));
         const bool acquisitionVisualEligible =
             convergingAcquisitionPhase &&
-            hasGrabPositionError &&
+            hasPivotTrackingError &&
             _grabObjectGripAtGrab.valid &&
-            grabPositionErrorGameUnits <= acquisitionVisualAttachEnvelope;
+            pivotTrackingErrorGameUnits <= acquisitionVisualAttachEnvelope;
         if (_grabFrame.hasTelemetryCapture &&
             (_grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld || acquisitionVisualEligible)) {
             RE::NiTransform heldVisualNodeWorld{};
@@ -6657,7 +6700,11 @@ namespace rock
                 (_grabFrame.pivotAuthorityPositionOnly ||
                     std::strcmp(_grabFrame.pivotAuthoritySource, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::PalmRayMeshPoint)) == 0);
             bool timeoutReacquiredSeatedPivot = false;
-            const char* timeoutReacquireReason = pivotNeedsSeatedReacquire ? "notAttempted" : "notNeeded";
+            const char* timeoutReacquireReason = pivotNeedsSeatedReacquire ? (hasGrabBody ? "notAttempted" : "missingGrabBody") : "notNeeded";
+            if (pivotNeedsSeatedReacquire) {
+                _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::SeatedPivotReacquire;
+                _grabFrame.lastSeatedPivotReacquirePhase = grab_three_phase::phaseName(previousAcquisitionPhase);
+            }
             if (pivotNeedsSeatedReacquire && hasGrabBody) {
                 const RE::NiPoint3 livePivotAWorld = proxyAuthorityWorld.translate;
                 const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
@@ -6674,6 +6721,11 @@ namespace rock
                     g_rockConfig.rockGrabContactPatchMaxNormalAngleDegrees);
                 timeoutReacquireReason = seatedPivot.reason;
                 if (seatedPivot.valid) {
+                    const RE::NiPoint3 previousGripPointLocal = _grabFrame.gripPointLocal;
+                    const RE::NiPoint3 previousGripLocalDelta = seatedPivot.pointNodeLocal - previousGripPointLocal;
+                    const float nodeScale =
+                        std::isfinite(currentNodeWorld.scale) && currentNodeWorld.scale > 0.0f ? currentNodeWorld.scale : 1.0f;
+                    const float reacquireLocalDeltaGameUnits = vectorMagnitude(previousGripLocalDelta) * nodeScale;
                     const RE::NiTransform desiredObjectWorldAtSeat =
                         grab_frame_math::shiftObjectToAlignGripWithPocket(currentNodeWorld, livePivotAWorld, seatedPivot.pointWorld);
                     const RE::NiTransform desiredBodyWorldAtSeat = multiplyTransforms(desiredObjectWorldAtSeat, _grabFrame.bodyLocal);
@@ -6722,6 +6774,10 @@ namespace rock
                     _grabFrame.desiredObjectWorldAtGrab = desiredObjectWorldAtSeat;
                     _grabFrame.desiredBodyWorldAtGrab = desiredBodyWorldAtSeat;
                     _grabFrame.longObjectLeverGameUnits = seatedPivot.longLeverGameUnits;
+                    _grabFrame.hasSeatedPivotReacquire = true;
+                    _grabFrame.lastSeatedPivotReacquireLocalDeltaGameUnits = reacquireLocalDeltaGameUnits;
+                    _grabFrame.lastSeatedPivotReacquireReason = seatedPivot.reason ? seatedPivot.reason : "none";
+                    ++_grabFrame.seatedPivotReacquireCount;
 
                     _grabObjectGripAtGrab.objectBodyWorldAtCapture = grabBodyWorld;
                     _grabObjectGripAtGrab.contactSeedWorld = seatedPivot.pointWorld;
@@ -6744,7 +6800,7 @@ namespace rock
                     timeoutReacquiredSeatedPivot = true;
                     ROCK_LOG_DEBUG(Hand,
                         "{} THREE-PHASE GRAB SEATED PIVOT REACQUIRE: phase={} source={} reason={} point=({:.1f},{:.1f},{:.1f}) "
-                        "pivotB=({:.2f},{:.2f},{:.2f}) pocketDistance={:.2f}gu meshDistance={:.2f}gu normalTrusted={} longLever={:.1f}gu",
+                        "pivotB=({:.2f},{:.2f},{:.2f}) pocketDistance={:.2f}gu meshDistance={:.2f}gu localDelta={:.2f}gu normalTrusted={} longLever={:.1f}gu count={}",
                         handName(),
                         grab_three_phase::phaseName(previousAcquisitionPhase),
                         _grabFrame.pivotAuthoritySource,
@@ -6757,9 +6813,17 @@ namespace rock
                         seatedPivot.pointBodyLocalGame.z,
                         seatedPivot.pocketDistanceGameUnits,
                         seatedPivot.meshDistanceGameUnits,
+                        reacquireLocalDeltaGameUnits,
                         seatedPivot.normalTrusted ? "yes" : "no",
-                        seatedPivot.longLeverGameUnits);
+                        seatedPivot.longLeverGameUnits,
+                        _grabFrame.seatedPivotReacquireCount);
                 }
+                if (!timeoutReacquiredSeatedPivot) {
+                    _grabFrame.lastSeatedPivotReacquireReason = timeoutReacquireReason ? timeoutReacquireReason : "none";
+                }
+            }
+            if (pivotNeedsSeatedReacquire && !hasGrabBody) {
+                _grabFrame.lastSeatedPivotReacquireReason = timeoutReacquireReason;
             }
 
             const bool timeoutMayPromote =
@@ -7006,7 +7070,7 @@ namespace rock
                     handName(),
                     rawRowMax,
                     rawColMax,
-                    grabPositionErrorGameUnits,
+                    pivotTrackingErrorGameUnits,
                     grabRotationErrorDegrees,
                     massSummary.motorMass(),
                     massSummary.primaryMass,
@@ -7047,7 +7111,7 @@ namespace rock
 
             ROCK_LOG_DEBUG(Hand,
                 "{} HELD dynamic: drive={} looseWeapon={} formID={:08X} constraint={} queued={} flushed={} failedFlushes={} lastDt={:.6f} proxyFrame={}/{} "
-                "phase={} posePublished={} fade={:.2f}/{} reason={} colliding={} forceBudget={:.2f} longLever={:.1f}gu ERR={:.1f}gu avgErr={:.1f}gu rotErr={:.1f}deg bDist={:.1f}gu objVel={:.3f} "
+                "phase={} posePublished={} fade={:.2f}/{} reason={} colliding={} forceBudget={:.2f} longLever={:.1f}gu pivotTrack={:.1f}gu avgTrack={:.1f}gu rotErr={:.1f}deg bDist={:.1f}gu objVel={:.3f} "
                 "paW=({:.1f},{:.1f},{:.1f}) pbW=({:.1f},{:.1f},{:.1f}) "
                 "targetBody=({:.1f},{:.1f},{:.1f}) objW=({:.1f},{:.1f},{:.1f})",
                 handName(),
@@ -7086,7 +7150,7 @@ namespace rock
                 const float paToHand = std::sqrt(pivotAToHand.x * pivotAToHand.x + pivotAToHand.y * pivotAToHand.y + pivotAToHand.z * pivotAToHand.z);
                 const float pbToObj = std::sqrt(pivotBToObject.x * pivotBToObject.x + pivotBToObject.y * pivotBToObject.y + pivotBToObject.z * pivotBToObject.z);
                 f4vr::showNotification(
-                    std::format("[ROCK] err={:.1f}gu vel={:.2f} flush={} paOff={:.1f} pbOff={:.1f}", pivotErrGame, objVelMag, driveFlushedTargets, paToHand, pbToObj));
+                    std::format("[ROCK] track={:.1f}gu vel={:.2f} flush={} paOff={:.1f} pbOff={:.1f}", pivotErrGame, objVelMag, driveFlushedTargets, paToHand, pbToObj));
             }
         }
 

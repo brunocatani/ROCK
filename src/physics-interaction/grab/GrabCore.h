@@ -436,6 +436,55 @@ namespace rock
         RE::NiPoint3 v2{};
     };
 
+    struct ImmutableGrabCaptureTelemetry
+    {
+        /*
+         * Capture telemetry is intentionally separate from the live grab frame.
+         * The live frame may be rewritten by acquisition/reacquire logic because
+         * it feeds the active constraint, but the capture record is the original
+         * evidence trail used by debug overlays to answer "what did this grab
+         * select?" without being contaminated by later solver authority changes.
+         */
+        RE::NiTransform liveHandWorld{};
+        RE::NiTransform handBodyWorld{};
+        RE::NiTransform objectNodeWorld{};
+        RE::NiTransform desiredObjectWorld{};
+        RE::NiTransform desiredBodyWorld{};
+        RE::NiTransform bodyLocal{};
+        RE::NiTransform constraintBodyLocal{};
+        RE::NiPoint3 pivotAHandBodyLocalGame{};
+        RE::NiPoint3 grabPivotWorld{};
+        RE::NiPoint3 gripPointWorld{};
+        RE::NiPoint3 gripPointLocal{};
+        RE::NiPoint3 gripEvidenceLocal{};
+        RE::NiPoint3 gripNormalLocal{};
+        RE::NiPoint3 gripPointBodyLocalGame{};
+        RE::NiPoint3 pivotBBodyLocalGame{};
+        RE::NiPoint3 pivotBConstraintLocalGame{};
+        std::uint32_t sourceBodyId = 0x7FFF'FFFF;
+        std::uint32_t gripEvidenceTriangleIndex = 0xFFFF'FFFF;
+        std::uint32_t gripEvidenceShapeKey = 0xFFFF'FFFF;
+        float pocketToGripDistanceGameUnits = 0.0f;
+        float selectionToGripEvidenceDistanceGameUnits = 0.0f;
+        float longObjectLeverGameUnits = 0.0f;
+        float pivotAuthorityPositionConfidence = 0.0f;
+        const char* activeGrabPointMode = "none";
+        const char* pivotAuthoritySource = "none";
+        const char* palmSeatPointMode = "none";
+        const char* fingerEvidencePointMode = "none";
+        bool valid = false;
+        bool hasGripPoint = false;
+        bool hasFrozenPivotB = false;
+        bool hasMeshPoseData = false;
+        bool positionOnlyPivot = false;
+        bool normalTrusted = false;
+
+        void clear()
+        {
+            *this = ImmutableGrabCaptureTelemetry{};
+        }
+    };
+
     struct CanonicalGrabFrame
     {
         RE::NiTransform rawHandSpace{};
@@ -486,6 +535,8 @@ namespace rock
         float longObjectLeverGameUnits = 0.0f;
         float pivotAuthorityPositionConfidence = 0.0f;
         float handScaleAtGrab = 1.0f;
+        float lastSeatedPivotReacquireLocalDeltaGameUnits = 0.0f;
+        std::uint32_t seatedPivotReacquireCount = 0;
         const char* bodyResolutionReason = "none";
         const char* multiFingerContactReason = "none";
         const char* activeGrabPointMode = "none";
@@ -493,6 +544,8 @@ namespace rock
         const char* palmSeatPointMode = "none";
         const char* fingerEvidencePointMode = "none";
         const char* fingerPoseAimReason = "none";
+        const char* lastSeatedPivotReacquireReason = "none";
+        const char* lastSeatedPivotReacquirePhase = "none";
         /*
          * ROCK only fades the dynamic grab when the object must be synced from
          * an initial/custom alignment. The canonical frame stores that decision
@@ -500,6 +553,7 @@ namespace rock
          * softness is part of this grab.
          */
         const char* motorFadeReason = "none";
+        ImmutableGrabCaptureTelemetry captureTelemetry{};
         std::vector<GrabLocalTriangle> localMeshTriangles;
         RE::NiAVObject* heldNode = nullptr;
         bool hasMeshPoseData = false;
@@ -516,8 +570,46 @@ namespace rock
         bool pivotAuthorityPositionOnly = false;
         bool pivotAuthorityNormalTrusted = false;
         bool hasTelemetryCapture = false;
+        bool hasSeatedPivotReacquire = false;
         bool fingerPoseAimValid = false;
         bool fadeInGrabConstraint = false;
+
+        void freezeCaptureTelemetry(std::uint32_t sourceBodyId)
+        {
+            captureTelemetry.liveHandWorld = liveHandWorldAtGrab;
+            captureTelemetry.handBodyWorld = handBodyWorldAtGrab;
+            captureTelemetry.objectNodeWorld = objectNodeWorldAtGrab;
+            captureTelemetry.desiredObjectWorld = desiredObjectWorldAtGrab;
+            captureTelemetry.desiredBodyWorld = desiredBodyWorldAtGrab;
+            captureTelemetry.bodyLocal = bodyLocal;
+            captureTelemetry.constraintBodyLocal = constraintBodyLocal;
+            captureTelemetry.pivotAHandBodyLocalGame = pivotAHandBodyLocalGame;
+            captureTelemetry.grabPivotWorld = grabPivotWorldAtGrab;
+            captureTelemetry.gripPointWorld = gripPointWorldAtGrab;
+            captureTelemetry.gripPointLocal = gripPointLocal;
+            captureTelemetry.gripEvidenceLocal = gripEvidenceLocal;
+            captureTelemetry.gripNormalLocal = gripNormalLocal;
+            captureTelemetry.gripPointBodyLocalGame = gripPointBodyLocalGame;
+            captureTelemetry.pivotBBodyLocalGame = pivotBBodyLocalGame;
+            captureTelemetry.pivotBConstraintLocalGame = pivotBConstraintLocalGame;
+            captureTelemetry.sourceBodyId = sourceBodyId;
+            captureTelemetry.gripEvidenceTriangleIndex = gripEvidenceTriangleIndex;
+            captureTelemetry.gripEvidenceShapeKey = gripEvidenceShapeKey;
+            captureTelemetry.pocketToGripDistanceGameUnits = pocketToGripDistanceGameUnits;
+            captureTelemetry.selectionToGripEvidenceDistanceGameUnits = selectionToGripEvidenceDistanceGameUnits;
+            captureTelemetry.longObjectLeverGameUnits = longObjectLeverGameUnits;
+            captureTelemetry.pivotAuthorityPositionConfidence = pivotAuthorityPositionConfidence;
+            captureTelemetry.activeGrabPointMode = activeGrabPointMode;
+            captureTelemetry.pivotAuthoritySource = pivotAuthoritySource;
+            captureTelemetry.palmSeatPointMode = palmSeatPointMode;
+            captureTelemetry.fingerEvidencePointMode = fingerEvidencePointMode;
+            captureTelemetry.hasGripPoint = hasGripPoint;
+            captureTelemetry.hasFrozenPivotB = hasFrozenPivotB;
+            captureTelemetry.hasMeshPoseData = hasMeshPoseData;
+            captureTelemetry.positionOnlyPivot = pivotAuthorityPositionOnly;
+            captureTelemetry.normalTrusted = pivotAuthorityNormalTrusted;
+            captureTelemetry.valid = hasTelemetryCapture;
+        }
 
         void clear()
         {
@@ -569,6 +661,8 @@ namespace rock
             longObjectLeverGameUnits = 0.0f;
             pivotAuthorityPositionConfidence = 0.0f;
             handScaleAtGrab = 1.0f;
+            lastSeatedPivotReacquireLocalDeltaGameUnits = 0.0f;
+            seatedPivotReacquireCount = 0;
             bodyResolutionReason = "none";
             multiFingerContactReason = "none";
             activeGrabPointMode = "none";
@@ -576,7 +670,10 @@ namespace rock
             palmSeatPointMode = "none";
             fingerEvidencePointMode = "none";
             fingerPoseAimReason = "none";
+            lastSeatedPivotReacquireReason = "none";
+            lastSeatedPivotReacquirePhase = "none";
             motorFadeReason = "none";
+            captureTelemetry.clear();
             localMeshTriangles.clear();
             heldNode = nullptr;
             hasMeshPoseData = false;
@@ -593,6 +690,7 @@ namespace rock
             pivotAuthorityPositionOnly = false;
             pivotAuthorityNormalTrusted = false;
             hasTelemetryCapture = false;
+            hasSeatedPivotReacquire = false;
             fingerPoseAimValid = false;
             fadeInGrabConstraint = false;
         }

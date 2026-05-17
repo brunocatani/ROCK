@@ -1572,6 +1572,34 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[2] = 0.45f;
                 color[3] = 0.98f;
                 break;
+            case MarkerOverlayRole::RightGrabPivotSourceVisualMeshPoint:
+            case MarkerOverlayRole::LeftGrabPivotSourceVisualMeshPoint:
+                color[0] = 0.20f;
+                color[1] = 0.55f;
+                color[2] = 1.0f;
+                color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::RightGrabPivotSourceCapturePoint:
+            case MarkerOverlayRole::LeftGrabPivotSourceCapturePoint:
+                color[0] = 0.98f;
+                color[1] = 0.98f;
+                color[2] = 0.98f;
+                color[3] = 0.92f;
+                break;
+            case MarkerOverlayRole::RightGrabPivotSourceBodyVisualLock:
+            case MarkerOverlayRole::LeftGrabPivotSourceBodyVisualLock:
+                color[0] = 1.0f;
+                color[1] = 0.38f;
+                color[2] = 0.05f;
+                color[3] = 0.92f;
+                break;
+            case MarkerOverlayRole::RightGrabPivotSourceCaptureMutation:
+            case MarkerOverlayRole::LeftGrabPivotSourceCaptureMutation:
+                color[0] = 0.75f;
+                color[1] = 0.35f;
+                color[2] = 1.0f;
+                color[3] = 0.88f;
+                break;
             case MarkerOverlayRole::RightGrabPivotSourceContactPoint:
             case MarkerOverlayRole::LeftGrabPivotSourceContactPoint:
                 color[0] = 1.0f;

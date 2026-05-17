@@ -538,6 +538,30 @@
                             snapshot.meshGripPointWorld,
                             2.4f);
                     }
+                    if (snapshot.hasVisualMeshGripPoint) {
+                        addMarkerPoint(
+                            isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceVisualMeshPoint : debug::MarkerOverlayRole::RightGrabPivotSourceVisualMeshPoint,
+                            snapshot.visualMeshGripPointWorld,
+                            2.2f);
+                        if (snapshot.hasMeshGripPoint) {
+                            addMarkerLine(
+                                isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceBodyVisualLock : debug::MarkerOverlayRole::RightGrabPivotSourceBodyVisualLock,
+                                snapshot.meshGripPointWorld,
+                                snapshot.visualMeshGripPointWorld);
+                        }
+                    }
+                    if (snapshot.hasCaptureMeshGripPoint) {
+                        addMarkerPoint(
+                            isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceCapturePoint : debug::MarkerOverlayRole::RightGrabPivotSourceCapturePoint,
+                            snapshot.captureMeshGripPointBodyWorld,
+                            2.8f);
+                        if (snapshot.hasMeshGripPoint && snapshot.gripPointMutatedAfterCapture) {
+                            addMarkerLine(
+                                isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceCaptureMutation : debug::MarkerOverlayRole::RightGrabPivotSourceCaptureMutation,
+                                snapshot.captureMeshGripPointBodyWorld,
+                                snapshot.meshGripPointWorld);
+                        }
+                    }
                     if (snapshot.hasContactPatchPoint) {
                         const auto contactRole =
                             isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceContactPoint : debug::MarkerOverlayRole::RightGrabPivotSourceContactPoint;
@@ -555,17 +579,19 @@
                     const RE::NiPoint3 labelAnchor = snapshot.targetPivotWorld + RE::NiPoint3{ 0.0f, 0.0f, 5.0f };
                     addTextLine(labelAnchor,
                         headerColor,
-                        "GRAB err %.1f rot %.1f lever %.1f",
-                        snapshot.pivotErrorGameUnits,
+                        "GRAB track %.1f rot %.1f lever %.1f",
+                        snapshot.pivotTrackingErrorGameUnits,
                         snapshot.rotationErrorDegrees,
                         snapshot.leverLengthGameUnits);
                     addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -3.5f },
                         detailColor,
-                        "src %s body %u tri %s patch %u",
+                        "phase %s src %s body %u lock %.1f mut %.1f rq %u",
+                        snapshot.acquisitionPhase,
                         snapshot.pivotAuthoritySource,
                         snapshot.pivotSourceBodyId.value,
-                        snapshot.hasPivotTriangle ? "yes" : "no",
-                        snapshot.contactSampleCount);
+                        snapshot.bodyVisualMeshLockErrorGameUnits,
+                        snapshot.captureGripLocalDeltaGameUnits,
+                        snapshot.seatedPivotReacquireCount);
                 }
             };
 
