@@ -3966,7 +3966,7 @@ namespace rock
         RE::NiPoint3 fingerEvidencePointWorld{};
         GrabSurfaceHit palmSeatSurfaceHit{};
         GrabSurfaceHit fingerEvidenceSurfaceHit{};
-        bool contactPatchUsed = false;
+        bool contactPatchEvidenceAvailable = false;
         bool multiFingerGripUsed = false;
         bool palmSeatPointValid = false;
         bool fingerEvidencePointValid = false;
@@ -4164,16 +4164,7 @@ namespace rock
         const bool hybridFingerProbeEvidenceEnabled =
             multiFingerEvidenceEnabled &&
             grabContactQualityMode == grab_contact_evidence_policy::GrabContactQualityMode::HybridEvidence;
-        const bool strictMultiFingerGripRequired =
-            multiFingerEvidenceEnabled &&
-            grabContactQualityMode == grab_contact_evidence_policy::GrabContactQualityMode::StrictMultiFinger;
-        const bool deferMissingMeshContactToPatch =
-            contactSourcePolicy.failWithoutMesh &&
-            !authoredGrabNode &&
-            !grabSurfaceTriangles.empty() &&
-            (strictMultiFingerGripRequired ||
-                (contactSourcePolicy.allowContactPatchPivot && g_rockConfig.rockGrabContactPatchEnabled));
-        if (contactSourcePolicy.failWithoutMesh && !deferMissingMeshContactToPatch) {
+        if (contactSourcePolicy.failWithoutMesh) {
             ROCK_LOG_WARN(Hand,
                 "{} hand GRAB failed: mesh contact required for '{}' formID={:08X}; collision point was not used as pivot "
                 "meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} totalTris={} reason={}",
@@ -4262,6 +4253,22 @@ namespace rock
             return false;
         }
 
+        /*
+         * Dynamic grab pivot authority is intentionally simpler than the contact
+         * evidence stack: authored nodes and the closest rendered mesh surface
+         * choose the body-B point that gets frozen. Contact patches may refine
+         * that point only when their mesh-snap lands back on the same visual
+         * authority, and finger contacts remain grip evidence/finger-pose input.
+         * This prevents failed patch normals from handing pivot B to a different
+         * contact center during the first solver frame.
+         */
+        const bool collisionFallbackPivotAllowed =
+            !meshContactOnly && meshGrabFound && grabSurfaceHit.valid && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery;
+        const bool visualMeshPivotAvailable = authoredGrabNode != nullptr || hasMeshSurfaceContact;
+        const bool canonicalPivotAvailable = visualMeshPivotAvailable || collisionFallbackPivotAllowed;
+        const RE::NiPoint3 canonicalPivotPointWorld = grabGripPoint;
+        const char* canonicalPivotMode = grabPointMode;
+
         objectBodyId = RE::hknpBodyId{ primaryChoice.bodyId };
         auto* preparedBody = havok_runtime::getBody(world, objectBodyId);
         if (!preparedBody) {
@@ -4312,8 +4319,22 @@ namespace rock
                 contactSourcePolicy,
                 contactPatchRuntime.patch.valid,
                 contactPatchRuntime.meshSnapped);
-            if (contactPatchAcceptedForPivot) {
-                contactPatchUsed = true;
+            contactPatchEvidenceAvailable = contactPatchRuntime.patch.valid && contactPatchRuntime.meshSnapped;
+            const bool contactPatchProducedMeshPivot =
+                contactPatchRuntime.pivotDecision.valid &&
+                contactPatchRuntime.pivotDecision.source == grab_contact_patch_math::GrabContactPatchPivotSource::MeshSnap;
+            const float contactPatchAuthorityDeltaGameUnits =
+                canonicalPivotAvailable && contactPatchRuntime.pivotDecision.valid ?
+                    pointDistanceGameUnits(contactPatchRuntime.pivotDecision.point, canonicalPivotPointWorld) :
+                    std::numeric_limits<float>::max();
+            const float contactPatchRefineMaxDeltaGameUnits =
+                (std::max)(1.0f, g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits);
+            const bool contactPatchRefinesMeshAuthority =
+                contactPatchAcceptedForPivot &&
+                contactPatchProducedMeshPivot &&
+                visualMeshPivotAvailable &&
+                contactPatchAuthorityDeltaGameUnits <= contactPatchRefineMaxDeltaGameUnits;
+            if (contactPatchRefinesMeshAuthority) {
                 grabGripPoint = contactPatchRuntime.pivotDecision.point;
                 grabSurfaceHit.position = contactPatchRuntime.pivotDecision.point;
                 grabSurfaceHit.normal = contactPatchRuntime.patch.normal;
@@ -4345,7 +4366,7 @@ namespace rock
                     "exactSamples={} meshRecovered={} rejectedBodies={} "
                     "pivot=({:.1f},{:.1f},{:.1f}) pivotSource={} replaceSelected={} selectionDelta={:.2f} "
                     "fitPoint=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) tangent=({:.3f},{:.3f},{:.3f}) "
-                    "confidence={:.2f} reliable={} meshSnap={} snapDelta={:.2f} fallback={}",
+                    "confidence={:.2f} reliable={} meshSnap={} snapDelta={:.2f} authorityDelta={:.2f}/{:.2f} fallback={}",
                     handName(),
                     objectBodyId.value,
                     contactPatchRuntime.pointMode,
@@ -4376,16 +4397,24 @@ namespace rock
                     contactPatchRuntime.patch.orientationReliable ? "yes" : "no",
                     contactPatchRuntime.meshSnapped ? "yes" : "no",
                     contactPatchRuntime.patch.meshSnapDeltaGameUnits,
+                    contactPatchAuthorityDeltaGameUnits,
+                    contactPatchRefineMaxDeltaGameUnits,
                     grabFallbackReason);
             } else if (contactPatchRuntime.patch.valid && g_rockConfig.rockDebugGrabFrameLogging) {
                 ROCK_LOG_DEBUG(Hand,
-                    "{} hand CONTACT PATCH rejected for pivot: body={} mode={} meshSnap={} requireMeshSnap={} fallback={}",
+                    "{} hand CONTACT PATCH evidence-only: body={} mode={} meshSnap={} requireMeshSnap={} pivotSource={} "
+                    "authorityDelta={:.2f}/{:.2f} canonical={} fallback={}",
                     handName(),
                     objectBodyId.value,
                     contactPatchRuntime.pointMode,
                     contactPatchRuntime.meshSnapped ? "yes" : "no",
                     contactSourcePolicy.requireContactPatchMeshSnap ? "yes" : "no",
-                    contactSourcePolicy.requireContactPatchMeshSnap ? "meshSnapRequired" : "contactPatchRejected");
+                    grab_contact_patch_math::pivotSourceName(contactPatchRuntime.pivotDecision.source),
+                    contactPatchAuthorityDeltaGameUnits,
+                    contactPatchRefineMaxDeltaGameUnits,
+                    canonicalPivotMode,
+                    contactPatchRuntime.patch.fallbackReason ? contactPatchRuntime.patch.fallbackReason :
+                        (contactPatchProducedMeshPivot ? "meshAuthorityDelta" : "nonMeshPivot"));
             } else if (g_rockConfig.rockDebugGrabFrameLogging) {
                 ROCK_LOG_DEBUG(Hand,
                     "{} hand CONTACT PATCH failed: body={} samples={} castsHits={} rejectBody={} rejectNormal={} "
@@ -4422,7 +4451,7 @@ namespace rock
         palmSeatSurfaceHit = grabSurfaceHit;
         palmSeatPointMode = grabPointMode;
         palmSeatFallbackReason = grabFallbackReason;
-        palmSeatPointValid = meshGrabFound || sel.hasHitPoint || authoredGrabNode != nullptr;
+        palmSeatPointValid = canonicalPivotAvailable;
 
         if (multiFingerEvidenceEnabled) {
             multiFingerGripRuntime = buildRuntimeMultiFingerGripContact(world,
@@ -4516,10 +4545,11 @@ namespace rock
             grab_contact_evidence_policy::GrabContactEvidenceInput evidenceInput{};
             evidenceInput.qualityMode = static_cast<int>(grabContactQualityMode);
             evidenceInput.multiFingerValidationEnabled = g_rockConfig.rockGrabMultiFingerContactValidationEnabled;
-            evidenceInput.contactPatchAccepted = contactPatchUsed;
+            evidenceInput.contactPatchAccepted = contactPatchEvidenceAvailable;
             evidenceInput.contactPatchMeshSnapped = contactPatchRuntime.meshSnapped;
             evidenceInput.contactPatchReliable = contactPatchRuntime.patch.orientationReliable;
             evidenceInput.contactPatchConfidence = contactPatchRuntime.patch.confidence;
+            evidenceInput.meshSurfacePivotAccepted = visualMeshPivotAvailable;
             evidenceInput.multiFingerGripValid = multiFingerGripRuntime.gripSet.valid;
             evidenceInput.semanticFingerGroups = multiFingerGripRuntime.semanticGroupCount;
             evidenceInput.probeFingerGroups = multiFingerGripRuntime.liveProbeGroupCount;
@@ -4536,7 +4566,7 @@ namespace rock
                 contactEvidenceDecision.accept ? "yes" : "no",
                 grab_contact_evidence_policy::contactEvidenceLevelName(contactEvidenceDecision.level),
                 contactEvidenceDecision.reason,
-                contactPatchUsed ? "yes" : "no",
+                contactPatchEvidenceAvailable ? "yes" : "no",
                 contactPatchRuntime.meshSnapped ? "yes" : "no",
                 contactPatchRuntime.patch.orientationReliable ? "yes" : "no",
                 contactPatchRuntime.patch.confidence,
@@ -4572,48 +4602,13 @@ namespace rock
             return false;
         }
 
-        if (deferMissingMeshContactToPatch && !strictMultiFingerGripRequired && !contactPatchUsed && !multiFingerGripUsed) {
-            ROCK_LOG_WARN(Hand,
-                "{} hand GRAB failed: mesh contact required for '{}' formID={:08X}; contact patch did not mesh-snap to a validated pivot "
-                "meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} totalTris={} patchMode={} patchFallback={}",
-                handName(),
-                objName,
-                sel.refr->GetFormID(),
-                nodeDebugName(meshSourceNode),
-                nodeDebugName(collidableNode),
-                nodeDebugName(rootNode),
-                meshStats.visitedShapes,
-                meshStats.totalTriangles(),
-                contactPatchRuntime.pointMode,
-                contactPatchRuntime.patch.fallbackReason ? contactPatchRuntime.patch.fallbackReason : "unknown");
-            restoreFailedGrabPrep();
-            clearGrabExternalHandWorldTransform(_isLeft);
-            _savedObjectState.clear();
-            return false;
-        }
-
-        /*
-         * A failed contact patch must not leave the startup frame on the weaker
-         * single-point palm seat when the same grab has a validated multi-finger
-         * mesh contact center. Keep the reliable contact-patch path authoritative,
-         * and use finger evidence only as the no-patch safety authority.
-         */
-        if (!contactPatchUsed && multiFingerGripUsed && contactEvidenceDecision.useMultiFingerPivot && fingerEvidencePointValid) {
-            grabSurfaceHit = fingerEvidenceSurfaceHit;
-            grabGripPoint = fingerEvidencePointWorld;
-            grabPointMode = fingerEvidencePointMode;
-            grabFallbackReason = fingerEvidenceFallbackReason;
-            selectionToMeshDistanceGameUnits =
-                fingerEvidenceSurfaceHit.valid ? fingerEvidenceSurfaceHit.selectionToMeshDistanceGameUnits : selectionToMeshDistanceGameUnits;
-            activeGrabPointUsesMultiFingerEvidence = true;
-        } else {
-            grabSurfaceHit = palmSeatSurfaceHit;
-            grabGripPoint = palmSeatPointWorld;
-            grabPointMode = palmSeatPointMode;
-            grabFallbackReason = palmSeatFallbackReason;
-            selectionToMeshDistanceGameUnits =
-                palmSeatSurfaceHit.valid ? palmSeatSurfaceHit.selectionToMeshDistanceGameUnits : selectionToMeshDistanceGameUnits;
-        }
+        grabSurfaceHit = palmSeatSurfaceHit;
+        grabGripPoint = palmSeatPointWorld;
+        grabPointMode = palmSeatPointMode;
+        grabFallbackReason = palmSeatFallbackReason;
+        selectionToMeshDistanceGameUnits =
+            palmSeatSurfaceHit.valid ? palmSeatSurfaceHit.selectionToMeshDistanceGameUnits : selectionToMeshDistanceGameUnits;
+        activeGrabPointUsesMultiFingerEvidence = false;
 
         ROCK_LOG_DEBUG(Hand,
             "{} hand GRAB POINT EVIDENCE: handPocket=palmSeat activeMode={} activeUsesFingerEvidence={} "
@@ -4757,7 +4752,7 @@ namespace rock
             _grabFrame.hasGripEvidenceShapeKey = grabSurfaceHit.valid && grabSurfaceHit.hasShapeKey;
             _grabFrame.contactPatchSamples = {};
             _grabFrame.contactPatchSampleCount = 0;
-            _grabFrame.hasContactPatch = contactPatchUsed;
+            _grabFrame.hasContactPatch = contactPatchEvidenceAvailable;
             _grabFrame.contactPatchMeshSnapDeltaGameUnits = contactPatchRuntime.patch.meshSnapDeltaGameUnits;
             _grabFrame.hasMultiFingerContactPatch = multiFingerGripUsed;
             _grabFrame.multiFingerContactGroupCount = multiFingerGripRuntime.gripSet.groupCount;
@@ -4774,7 +4769,7 @@ namespace rock
             _grabFrame.activeGrabPointMode = grabPointMode;
             _grabFrame.palmSeatPointMode = palmSeatPointMode;
             _grabFrame.fingerEvidencePointMode = fingerEvidencePointMode;
-            if (contactPatchUsed) {
+            if (contactPatchEvidenceAvailable) {
                 const std::uint32_t copyCount = (std::min)(contactPatchRuntime.sampleCount, static_cast<std::uint32_t>(_grabFrame.contactPatchSamples.size()));
                 for (std::uint32_t i = 0; i < copyCount; ++i) {
                     auto sample = contactPatchRuntime.samples[i];
@@ -4804,9 +4799,10 @@ namespace rock
             /*
              * Runtime grab authority is intentionally single-source. Mesh hits,
              * authored nodes, semantic contacts, contact patches, and multi-finger
-             * contacts are evidence; only the no-contact-patch multi-finger safety
-             * path may replace the active point, and it still does not rotate the
-             * object, move the visible hand, or select a second grip owner.
+             * contacts are evidence. Only authored nodes or the rendered mesh
+             * surface may freeze pivot B; contact patches can refine that point
+             * only when they mesh-snap back near the same authority, and
+             * multi-finger contacts never replace it.
              * This keeps one dynamic-grab authority and avoids the old ROCK fallback
              * where surface frames and object-driven hand solving competed with the
              * root-flattened hand convention.

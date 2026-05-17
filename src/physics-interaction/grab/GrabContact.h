@@ -105,6 +105,7 @@ namespace rock::grab_contact_evidence_policy
     {
         Rejected,
         LegacyPermissive,
+        BaselineMeshSurface,
         BaselinePatch,
         EnhancedFingerPatch,
         HighConfidenceFingerGrip
@@ -118,6 +119,7 @@ namespace rock::grab_contact_evidence_policy
         bool contactPatchMeshSnapped = false;
         bool contactPatchReliable = false;
         float contactPatchConfidence = 0.0f;
+        bool meshSurfacePivotAccepted = false;
         bool multiFingerGripValid = false;
         std::uint32_t semanticFingerGroups = 0;
         std::uint32_t probeFingerGroups = 0;
@@ -179,6 +181,8 @@ namespace rock::grab_contact_evidence_policy
             return "rejected";
         case GrabContactEvidenceLevel::LegacyPermissive:
             return "permissiveFallback";
+        case GrabContactEvidenceLevel::BaselineMeshSurface:
+            return "baselineMeshSurface";
         case GrabContactEvidenceLevel::BaselinePatch:
             return "baselinePatch";
         case GrabContactEvidenceLevel::EnhancedFingerPatch:
@@ -208,7 +212,6 @@ namespace rock::grab_contact_evidence_policy
             decision.strictMultiFingerRequired = true;
             if (input.multiFingerGripValid && totalFingerGroups >= minimumFingerGroups) {
                 decision.accept = true;
-                decision.useMultiFingerPivot = true;
                 decision.level = GrabContactEvidenceLevel::HighConfidenceFingerGrip;
                 decision.reason = "strictMultiFingerSatisfied";
             } else {
@@ -217,11 +220,19 @@ namespace rock::grab_contact_evidence_policy
             return decision;
         }
 
-        if (input.multiFingerGripValid && totalFingerGroups >= minimumFingerGroups) {
+        if (input.meshSurfacePivotAccepted) {
             decision.accept = true;
-            decision.useMultiFingerPivot = true;
-            decision.level = GrabContactEvidenceLevel::HighConfidenceFingerGrip;
-            decision.reason = "highConfidenceFingerGrip";
+            if (input.multiFingerGripValid && totalFingerGroups >= minimumFingerGroups) {
+                decision.level = GrabContactEvidenceLevel::HighConfidenceFingerGrip;
+                decision.reason = "meshSurfaceFingerGrip";
+            } else if (input.contactPatchAccepted && input.contactPatchMeshSnapped &&
+                       (input.contactPatchReliable || input.contactPatchConfidence >= 0.70f)) {
+                decision.level = GrabContactEvidenceLevel::BaselinePatch;
+                decision.reason = "meshSurfaceContactPatch";
+            } else {
+                decision.level = GrabContactEvidenceLevel::BaselineMeshSurface;
+                decision.reason = "meshSurfacePivot";
+            }
             return decision;
         }
 
