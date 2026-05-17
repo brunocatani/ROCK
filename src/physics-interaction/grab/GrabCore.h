@@ -505,6 +505,8 @@ namespace rock
         bool hasGripEvidenceShapeKey = false;
         bool hasFrozenPivotB = false;
         bool hasContactPatch = false;
+        bool hasContactPatchEvidence = false;
+        bool contactPatchUsedAsPivot = false;
         bool hasMultiFingerContactPatch = false;
         bool hasPalmSeatPoint = false;
         bool hasFingerEvidencePoint = false;
@@ -576,6 +578,8 @@ namespace rock
             hasGripEvidenceShapeKey = false;
             hasFrozenPivotB = false;
             hasContactPatch = false;
+            hasContactPatchEvidence = false;
+            contactPatchUsedAsPivot = false;
             hasMultiFingerContactPatch = false;
             hasPalmSeatPoint = false;
             hasFingerEvidencePoint = false;

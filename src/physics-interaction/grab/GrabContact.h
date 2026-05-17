@@ -210,7 +210,11 @@ namespace rock::grab_contact_evidence_policy
 
         if (mode == GrabContactQualityMode::StrictMultiFinger) {
             decision.strictMultiFingerRequired = true;
-            if (input.multiFingerGripValid && totalFingerGroups >= minimumFingerGroups) {
+            const bool hasObjectPivotAuthority =
+                input.meshSurfacePivotAccepted || (input.contactPatchAccepted && input.contactPatchMeshSnapped);
+            if (!hasObjectPivotAuthority) {
+                decision.reason = "strictObjectPivotAuthorityRequired";
+            } else if (input.multiFingerGripValid && totalFingerGroups >= minimumFingerGroups) {
                 decision.accept = true;
                 decision.level = GrabContactEvidenceLevel::HighConfidenceFingerGrip;
                 decision.reason = "strictMultiFingerSatisfied";
