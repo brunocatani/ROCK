@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <string>
 #include <string_view>
 #include <xmmintrin.h>
 
@@ -672,15 +673,53 @@ namespace rock
         {
             grab_contact_patch_math::GrabContactPatchResult<RE::NiPoint3> patch{};
             std::array<grab_contact_patch_math::GrabContactPatchSample<RE::NiPoint3>, kMaxGrabContactPatchSamples> samples{};
+            std::array<std::uint32_t, 8> rejectedBodyIds{};
             std::uint32_t sampleCount = 0;
+            std::uint32_t rejectedBodyIdCount = 0;
             int castHitCount = 0;
             int rejectedBodyHits = 0;
             int rejectedInvalidNormals = 0;
+            int exactBodySamples = 0;
+            int meshRecoveredSamples = 0;
             bool meshSnapped = false;
             GrabSurfaceHit meshSnapHit{};
             grab_contact_patch_math::GrabContactPatchPivotDecision<RE::NiPoint3> pivotDecision{};
             const char* pointMode = "contactPatchUnavailable";
         };
+
+        void rememberRejectedContactPatchBody(RuntimeGrabContactPatch& result, std::uint32_t bodyId)
+        {
+            if (bodyId == INVALID_BODY_ID || bodyId == 0x7FFF'FFFF) {
+                return;
+            }
+            for (std::uint32_t index = 0; index < result.rejectedBodyIdCount; ++index) {
+                if (result.rejectedBodyIds[index] == bodyId) {
+                    return;
+                }
+            }
+            if (result.rejectedBodyIdCount < result.rejectedBodyIds.size()) {
+                result.rejectedBodyIds[result.rejectedBodyIdCount++] = bodyId;
+            }
+        }
+
+        std::string formatContactPatchRejectedBodies(const RuntimeGrabContactPatch& result)
+        {
+            if (result.rejectedBodyIdCount == 0) {
+                return "-";
+            }
+
+            std::string out;
+            for (std::uint32_t index = 0; index < result.rejectedBodyIdCount; ++index) {
+                if (!out.empty()) {
+                    out += ",";
+                }
+                out += std::format("{}", result.rejectedBodyIds[index]);
+            }
+            if (result.rejectedBodyHits > static_cast<int>(result.rejectedBodyIdCount)) {
+                out += "+";
+            }
+            return out;
+        }
 
         struct RuntimeMultiFingerGripContact
         {
@@ -1005,16 +1044,42 @@ namespace rock
                 float bestFraction = (std::numeric_limits<float>::max)();
                 grab_contact_patch_math::GrabContactPatchSample<RE::NiPoint3> bestSample{};
                 bool foundProbeHit = false;
+                bool bestProbeWasMeshRecovered = false;
                 for (int hitIndex = 0; hitIndex < hitCount; ++hitIndex) {
                     const auto& hit = hits[hitIndex];
-                    if (hit.hitBodyInfo.m_bodyId.value != resolvedBodyId) {
-                        ++result.rejectedBodyHits;
-                        continue;
-                    }
-
                     const RE::NiPoint3 normal = normalizeOrZero(RE::NiPoint3{ hit.normal.x, hit.normal.y, hit.normal.z });
                     if (normal.x == 0.0f && normal.y == 0.0f && normal.z == 0.0f) {
                         ++result.rejectedInvalidNormals;
+                        continue;
+                    }
+
+                    const RE::NiPoint3 hitPoint = hkVectorToNiPoint(hit.position);
+                    const bool exactBodyHit = hit.hitBodyInfo.m_bodyId.value == resolvedBodyId;
+                    GrabSurfaceHit recoveredMeshHit{};
+                    bool meshRecoveredHit = false;
+                    /*
+                     * Contact patch authority must follow the same rendered-object surface
+                     * contract as mesh grab. Exact hknp body id is still the fast path, but
+                     * FO4VR near-palm casts can first touch hand/proxy/world collision while
+                     * still lying on the selected object's visible surface. In that case the
+                     * mesh snap validates the sample against the resolved object body.
+                     */
+                    if (!exactBodyHit && !surfaceTriangles.empty() && g_rockConfig.rockGrabContactPatchMeshSnapMaxDistanceGameUnits > 0.0f) {
+                        if (findClosestGrabSurfaceHitToPoint(surfaceTriangles,
+                                hitPoint,
+                                normal,
+                                g_rockConfig.rockGrabContactPatchMeshSnapMaxDistanceGameUnits,
+                                g_rockConfig.rockGrabContactPatchMaxNormalAngleDegrees,
+                                recoveredMeshHit)) {
+                            const auto* recoveredOwnerRecord =
+                                recoveredMeshHit.sourceNode ? bodySet.findAcceptedRecordByOwnerNode(recoveredMeshHit.sourceNode) : nullptr;
+                            meshRecoveredHit = recoveredOwnerRecord && recoveredOwnerRecord->bodyId == resolvedBodyId;
+                        }
+                    }
+
+                    if (!exactBodyHit && !meshRecoveredHit) {
+                        ++result.rejectedBodyHits;
+                        rememberRejectedContactPatchBody(result, hit.hitBodyInfo.m_bodyId.value);
                         continue;
                     }
 
@@ -1024,16 +1089,22 @@ namespace rock
                     }
 
                     bestFraction = fraction;
-                    bestSample.bodyId = hit.hitBodyInfo.m_bodyId.value;
-                    bestSample.point = hkVectorToNiPoint(hit.position);
-                    bestSample.normal = normal;
+                    bestSample.bodyId = exactBodyHit ? hit.hitBodyInfo.m_bodyId.value : resolvedBodyId;
+                    bestSample.point = meshRecoveredHit ? recoveredMeshHit.position : hitPoint;
+                    bestSample.normal = meshRecoveredHit ? normalizeOrZero(recoveredMeshHit.normal) : normal;
                     bestSample.fraction = fraction;
                     bestSample.accepted = true;
-                    bestSample.rejectionReason = "none";
+                    bestSample.rejectionReason = meshRecoveredHit ? "meshRecoveredBody" : "none";
                     foundProbeHit = true;
+                    bestProbeWasMeshRecovered = meshRecoveredHit;
                 }
 
                 if (foundProbeHit) {
+                    if (bestProbeWasMeshRecovered) {
+                        ++result.meshRecoveredSamples;
+                    } else {
+                        ++result.exactBodySamples;
+                    }
                     fitSamples.push_back(bestSample);
                     if (result.sampleCount < result.samples.size()) {
                         result.samples[result.sampleCount++] = bestSample;
@@ -3899,6 +3970,7 @@ namespace rock
         bool multiFingerGripUsed = false;
         bool palmSeatPointValid = false;
         bool fingerEvidencePointValid = false;
+        bool activeGrabPointUsesMultiFingerEvidence = false;
         RE::NiAVObject* surfaceOwnerNode = nullptr;
         RE::NiAVObject* authoredGrabNode = nullptr;
         const bool meshContactOnly = g_rockConfig.rockGrabMeshContactOnly;
@@ -4270,6 +4342,7 @@ namespace rock
                     (contactPatchRuntime.patch.fallbackReason ? contactPatchRuntime.patch.fallbackReason : "none");
                 ROCK_LOG_DEBUG(Hand,
                     "{} hand CONTACT PATCH: body={} mode={} samples={}/{} castsHits={} rejectBody={} rejectNormal={} "
+                    "exactSamples={} meshRecovered={} rejectedBodies={} "
                     "pivot=({:.1f},{:.1f},{:.1f}) pivotSource={} replaceSelected={} selectionDelta={:.2f} "
                     "fitPoint=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) tangent=({:.3f},{:.3f},{:.3f}) "
                     "confidence={:.2f} reliable={} meshSnap={} snapDelta={:.2f} fallback={}",
@@ -4281,6 +4354,9 @@ namespace rock
                     contactPatchRuntime.castHitCount,
                     contactPatchRuntime.rejectedBodyHits,
                     contactPatchRuntime.rejectedInvalidNormals,
+                    contactPatchRuntime.exactBodySamples,
+                    contactPatchRuntime.meshRecoveredSamples,
+                    formatContactPatchRejectedBodies(contactPatchRuntime),
                     grabGripPoint.x,
                     grabGripPoint.y,
                     grabGripPoint.z,
@@ -4312,13 +4388,17 @@ namespace rock
                     contactSourcePolicy.requireContactPatchMeshSnap ? "meshSnapRequired" : "contactPatchRejected");
             } else if (g_rockConfig.rockDebugGrabFrameLogging) {
                 ROCK_LOG_DEBUG(Hand,
-                    "{} hand CONTACT PATCH failed: body={} samples={} castsHits={} rejectBody={} rejectNormal={} fallback={}",
+                    "{} hand CONTACT PATCH failed: body={} samples={} castsHits={} rejectBody={} rejectNormal={} "
+                    "exactSamples={} meshRecovered={} rejectedBodies={} fallback={}",
                     handName(),
                     objectBodyId.value,
                     contactPatchRuntime.sampleCount,
                     contactPatchRuntime.castHitCount,
                     contactPatchRuntime.rejectedBodyHits,
                     contactPatchRuntime.rejectedInvalidNormals,
+                    contactPatchRuntime.exactBodySamples,
+                    contactPatchRuntime.meshRecoveredSamples,
+                    formatContactPatchRejectedBodies(contactPatchRuntime),
                     contactPatchRuntime.patch.fallbackReason ? contactPatchRuntime.patch.fallbackReason : "unknown");
             }
         }
@@ -4512,19 +4592,36 @@ namespace rock
             return false;
         }
 
-        grabSurfaceHit = palmSeatSurfaceHit;
-        grabGripPoint = palmSeatPointWorld;
-        grabPointMode = palmSeatPointMode;
-        grabFallbackReason = palmSeatFallbackReason;
-        selectionToMeshDistanceGameUnits =
-            palmSeatSurfaceHit.valid ? palmSeatSurfaceHit.selectionToMeshDistanceGameUnits : selectionToMeshDistanceGameUnits;
+        /*
+         * A failed contact patch must not leave the startup frame on the weaker
+         * single-point palm seat when the same grab has a validated multi-finger
+         * mesh contact center. Keep the reliable contact-patch path authoritative,
+         * and use finger evidence only as the no-patch safety authority.
+         */
+        if (!contactPatchUsed && multiFingerGripUsed && contactEvidenceDecision.useMultiFingerPivot && fingerEvidencePointValid) {
+            grabSurfaceHit = fingerEvidenceSurfaceHit;
+            grabGripPoint = fingerEvidencePointWorld;
+            grabPointMode = fingerEvidencePointMode;
+            grabFallbackReason = fingerEvidenceFallbackReason;
+            selectionToMeshDistanceGameUnits =
+                fingerEvidenceSurfaceHit.valid ? fingerEvidenceSurfaceHit.selectionToMeshDistanceGameUnits : selectionToMeshDistanceGameUnits;
+            activeGrabPointUsesMultiFingerEvidence = true;
+        } else {
+            grabSurfaceHit = palmSeatSurfaceHit;
+            grabGripPoint = palmSeatPointWorld;
+            grabPointMode = palmSeatPointMode;
+            grabFallbackReason = palmSeatFallbackReason;
+            selectionToMeshDistanceGameUnits =
+                palmSeatSurfaceHit.valid ? palmSeatSurfaceHit.selectionToMeshDistanceGameUnits : selectionToMeshDistanceGameUnits;
+        }
 
         ROCK_LOG_DEBUG(Hand,
-            "{} hand GRAB POINT EVIDENCE: handPocket=palmSeat activeMode={} activeUsesFingerEvidence=no "
+            "{} hand GRAB POINT EVIDENCE: handPocket=palmSeat activeMode={} activeUsesFingerEvidence={} "
             "palmSeatValid={} palmSeatMode={} palmSeat=({:.1f},{:.1f},{:.1f}) "
             "fingerEvidenceValid={} fingerEvidenceMode={} fingerEvidence=({:.1f},{:.1f},{:.1f})",
             handName(),
             grabPointMode,
+            activeGrabPointUsesMultiFingerEvidence ? "yes" : "no",
             palmSeatPointValid ? "yes" : "no",
             palmSeatPointMode,
             palmSeatPointWorld.x,
@@ -4673,7 +4770,7 @@ namespace rock
             _grabFrame.fingerEvidencePointWorldAtGrab = fingerEvidencePointWorld;
             _grabFrame.hasPalmSeatPoint = palmSeatPointValid;
             _grabFrame.hasFingerEvidencePoint = fingerEvidencePointValid;
-            _grabFrame.activeGrabPointUsesMultiFingerEvidence = false;
+            _grabFrame.activeGrabPointUsesMultiFingerEvidence = activeGrabPointUsesMultiFingerEvidence;
             _grabFrame.activeGrabPointMode = grabPointMode;
             _grabFrame.palmSeatPointMode = palmSeatPointMode;
             _grabFrame.fingerEvidencePointMode = fingerEvidencePointMode;
@@ -4707,8 +4804,9 @@ namespace rock
             /*
              * Runtime grab authority is intentionally single-source. Mesh hits,
              * authored nodes, semantic contacts, contact patches, and multi-finger
-             * contacts are evidence; they no longer rotate the object, move the
-             * visible hand, select a second grip owner, or replace the hand pocket.
+             * contacts are evidence; only the no-contact-patch multi-finger safety
+             * path may replace the active point, and it still does not rotate the
+             * object, move the visible hand, or select a second grip owner.
              * This keeps one dynamic-grab authority and avoids the old ROCK fallback
              * where surface frames and object-driven hand solving competed with the
              * root-flattened hand convention.
