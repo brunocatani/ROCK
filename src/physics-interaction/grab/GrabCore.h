@@ -484,10 +484,12 @@ namespace rock
         float contactPatchMeshSnapDeltaGameUnits = 0.0f;
         float multiFingerContactSpreadGameUnits = 0.0f;
         float longObjectLeverGameUnits = 0.0f;
+        float pivotAuthorityPositionConfidence = 0.0f;
         float handScaleAtGrab = 1.0f;
         const char* bodyResolutionReason = "none";
         const char* multiFingerContactReason = "none";
         const char* activeGrabPointMode = "none";
+        const char* pivotAuthoritySource = "none";
         const char* palmSeatPointMode = "none";
         const char* fingerEvidencePointMode = "none";
         const char* fingerPoseAimReason = "none";
@@ -511,6 +513,8 @@ namespace rock
         bool hasPalmSeatPoint = false;
         bool hasFingerEvidencePoint = false;
         bool activeGrabPointUsesMultiFingerEvidence = false;
+        bool pivotAuthorityPositionOnly = false;
+        bool pivotAuthorityNormalTrusted = false;
         bool hasTelemetryCapture = false;
         bool fingerPoseAimValid = false;
         bool fadeInGrabConstraint = false;
@@ -563,10 +567,12 @@ namespace rock
             contactPatchMeshSnapDeltaGameUnits = 0.0f;
             multiFingerContactSpreadGameUnits = 0.0f;
             longObjectLeverGameUnits = 0.0f;
+            pivotAuthorityPositionConfidence = 0.0f;
             handScaleAtGrab = 1.0f;
             bodyResolutionReason = "none";
             multiFingerContactReason = "none";
             activeGrabPointMode = "none";
+            pivotAuthoritySource = "none";
             palmSeatPointMode = "none";
             fingerEvidencePointMode = "none";
             fingerPoseAimReason = "none";
@@ -584,6 +590,8 @@ namespace rock
             hasPalmSeatPoint = false;
             hasFingerEvidencePoint = false;
             activeGrabPointUsesMultiFingerEvidence = false;
+            pivotAuthorityPositionOnly = false;
+            pivotAuthorityNormalTrusted = false;
             hasTelemetryCapture = false;
             fingerPoseAimValid = false;
             fadeInGrabConstraint = false;
