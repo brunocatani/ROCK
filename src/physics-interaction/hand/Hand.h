@@ -62,6 +62,41 @@ namespace rock
         std::uint32_t sampleCount = 0;
     };
 
+    struct GrabForceTorqueDebugSnapshot
+    {
+        std::array<RE::NiPoint3, kMaxGrabContactPatchSamples> contactSamplePointsWorld{};
+        std::array<RE::NiPoint3, 3> pivotTriangleWorld{};
+        RE::hknpBodyId pivotSourceBodyId{ INVALID_BODY_ID };
+        RE::NiTransform liveBodyWorld{};
+        RE::NiTransform desiredBodyWorld{};
+        RE::NiPoint3 targetPivotWorld{};
+        RE::NiPoint3 livePivotWorld{};
+        RE::NiPoint3 correctionEndWorld{};
+        RE::NiPoint3 leverArmEndWorld{};
+        RE::NiPoint3 torqueAxisEndWorld{};
+        RE::NiPoint3 meshGripPointWorld{};
+        RE::NiPoint3 contactPatchPointWorld{};
+        float pivotErrorGameUnits = 0.0f;
+        float rotationErrorDegrees = 0.0f;
+        float leverLengthGameUnits = 0.0f;
+        float correctionLengthGameUnits = 0.0f;
+        float torqueWitnessGameUnitsSquared = 0.0f;
+        float pocketDistanceGameUnits = 0.0f;
+        float selectionDistanceGameUnits = 0.0f;
+        float longLeverGameUnits = 0.0f;
+        float positionConfidence = 0.0f;
+        const char* pivotAuthoritySource = "none";
+        const char* activeGrabPointMode = "none";
+        const char* authorityFrameSource = "none";
+        std::uint32_t contactSampleCount = 0;
+        bool hasTorqueAxis = false;
+        bool hasPivotTriangle = false;
+        bool hasMeshGripPoint = false;
+        bool hasContactPatchPoint = false;
+        bool positionOnlyPivot = false;
+        bool normalTrusted = false;
+    };
+
     struct HeldObjectPlayerSpaceFrame
     {
         RE::NiPoint3 deltaGameUnits{};
@@ -210,6 +245,7 @@ namespace rock
         bool getGrabPivotDebugSnapshot(RE::hknpWorld* world, GrabPivotDebugSnapshot& out) const;
         bool getGrabPocketNormalDebugSnapshot(RE::hknpWorld* world, GrabPocketNormalDebugSnapshot& out) const;
         bool getGrabContactPatchDebugSnapshot(RE::hknpWorld* world, GrabContactPatchDebugSnapshot& out) const;
+        bool getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabForceTorqueDebugSnapshot& out) const;
         bool getGrabTransformTelemetrySnapshot(RE::hknpWorld* world,
             const RE::NiTransform& rawHandWorld,
             grab_transform_telemetry::RuntimeSample& out) const;

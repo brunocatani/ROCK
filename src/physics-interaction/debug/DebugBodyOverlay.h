@@ -31,6 +31,8 @@ namespace rock::debug
         Weapon,
         RightGrabAuthorityProxy,
         LeftGrabAuthorityProxy,
+        RightGrabPivotSourceCollider,
+        LeftGrabPivotSourceCollider,
         Target
     };
 
@@ -61,7 +63,11 @@ namespace rock::debug
         RightGrabPalmAuthorityFrame,
         LeftGrabPalmAuthorityFrame,
         RightGrabProxyReadback,
-        LeftGrabProxyReadback
+        LeftGrabProxyReadback,
+        RightGrabForceTorqueLiveBody,
+        LeftGrabForceTorqueLiveBody,
+        RightGrabForceTorqueDesiredBody,
+        LeftGrabForceTorqueDesiredBody
     };
 
     enum class AxisOverlaySource : std::uint8_t
@@ -90,6 +96,22 @@ namespace rock::debug
         LeftGrabSurfaceNormal,
         RightGrabContactPatchSample,
         LeftGrabContactPatchSample,
+        RightGrabForceTorqueTargetPivot,
+        LeftGrabForceTorqueTargetPivot,
+        RightGrabForceTorqueLivePivot,
+        LeftGrabForceTorqueLivePivot,
+        RightGrabForceTorqueCorrection,
+        LeftGrabForceTorqueCorrection,
+        RightGrabForceTorqueLever,
+        LeftGrabForceTorqueLever,
+        RightGrabForceTorqueAxis,
+        LeftGrabForceTorqueAxis,
+        RightGrabPivotSourceTriangle,
+        LeftGrabPivotSourceTriangle,
+        RightGrabPivotSourceMeshPoint,
+        LeftGrabPivotSourceMeshPoint,
+        RightGrabPivotSourceContactPoint,
+        LeftGrabPivotSourceContactPoint,
         RightGrabFingerProbe,
         LeftGrabFingerProbe,
         RightHandBoneContact,

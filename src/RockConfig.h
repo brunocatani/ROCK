@@ -140,6 +140,10 @@ namespace rock
         bool rockDebugShowGrabPivots = false;
         bool rockDebugShowGrabPocketNormal = false;
         bool rockDebugDrawGrabContactPatch = false;
+        bool rockDebugDrawGrabForceTorque = false;
+        bool rockDebugDrawGrabForceTorqueText = false;
+        bool rockDebugDrawGrabPivotSourceCollider = false;
+        bool rockDebugDrawGrabPivotSourceEvidence = false;
         bool rockDebugShowGrabFingerProbes = false;
         bool rockDebugShowPalmVectors = false;
         bool rockDebugDrawHandColliders = false;

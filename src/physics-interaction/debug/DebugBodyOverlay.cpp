@@ -1318,6 +1318,18 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[2] = 0.95f;
                 color[3] = 0.92f;
                 break;
+            case BodyOverlayRole::RightGrabPivotSourceCollider:
+                color[0] = 0.05f;
+                color[1] = 0.95f;
+                color[2] = 1.0f;
+                color[3] = 0.42f;
+                break;
+            case BodyOverlayRole::LeftGrabPivotSourceCollider:
+                color[0] = 1.0f;
+                color[1] = 0.25f;
+                color[2] = 0.95f;
+                color[3] = 0.42f;
+                break;
             case BodyOverlayRole::Target:
                 color[0] = 1.0f;
                 color[1] = 0.85f;
@@ -1374,6 +1386,11 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::RightGrabProxyReadback:
             case AxisOverlayRole::LeftGrabProxyReadback:
                 return 15.0f;
+            case AxisOverlayRole::RightGrabForceTorqueLiveBody:
+            case AxisOverlayRole::LeftGrabForceTorqueLiveBody:
+            case AxisOverlayRole::RightGrabForceTorqueDesiredBody:
+            case AxisOverlayRole::LeftGrabForceTorqueDesiredBody:
+                return 10.0f;
             case AxisOverlayRole::TargetBody:
                 return kTargetAxisLength;
             }
@@ -1411,6 +1428,12 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::RightGrabProxyReadback:
             case AxisOverlayRole::LeftGrabProxyReadback:
                 return 0.72f;
+            case AxisOverlayRole::RightGrabForceTorqueLiveBody:
+            case AxisOverlayRole::LeftGrabForceTorqueLiveBody:
+                return 0.88f;
+            case AxisOverlayRole::RightGrabForceTorqueDesiredBody:
+            case AxisOverlayRole::LeftGrabForceTorqueDesiredBody:
+                return 0.52f;
             default:
                 return 1.0f;
             }
@@ -1499,6 +1522,62 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[1] = 0.20f;
                 color[2] = 0.90f;
                 color[3] = 0.80f;
+                break;
+            case MarkerOverlayRole::RightGrabForceTorqueTargetPivot:
+            case MarkerOverlayRole::LeftGrabForceTorqueTargetPivot:
+                color[0] = 0.05f;
+                color[1] = 1.0f;
+                color[2] = 0.95f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::RightGrabForceTorqueLivePivot:
+            case MarkerOverlayRole::LeftGrabForceTorqueLivePivot:
+                color[0] = 1.0f;
+                color[1] = 0.92f;
+                color[2] = 0.05f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::RightGrabForceTorqueCorrection:
+            case MarkerOverlayRole::LeftGrabForceTorqueCorrection:
+                color[0] = 1.0f;
+                color[1] = 0.08f;
+                color[2] = 0.04f;
+                color[3] = 0.96f;
+                break;
+            case MarkerOverlayRole::RightGrabForceTorqueLever:
+            case MarkerOverlayRole::LeftGrabForceTorqueLever:
+                color[0] = 0.92f;
+                color[1] = 0.92f;
+                color[2] = 0.92f;
+                color[3] = 0.78f;
+                break;
+            case MarkerOverlayRole::RightGrabForceTorqueAxis:
+            case MarkerOverlayRole::LeftGrabForceTorqueAxis:
+                color[0] = 1.0f;
+                color[1] = 0.15f;
+                color[2] = 0.95f;
+                color[3] = 0.96f;
+                break;
+            case MarkerOverlayRole::RightGrabPivotSourceTriangle:
+            case MarkerOverlayRole::LeftGrabPivotSourceTriangle:
+                color[0] = 0.30f;
+                color[1] = 0.90f;
+                color[2] = 1.0f;
+                color[3] = 0.78f;
+                break;
+            case MarkerOverlayRole::RightGrabPivotSourceMeshPoint:
+            case MarkerOverlayRole::LeftGrabPivotSourceMeshPoint:
+                color[0] = 0.12f;
+                color[1] = 1.0f;
+                color[2] = 0.45f;
+                color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::RightGrabPivotSourceContactPoint:
+            case MarkerOverlayRole::LeftGrabPivotSourceContactPoint:
+                color[0] = 1.0f;
+                color[1] = 0.55f;
+                color[2] = 0.08f;
+                color[3] = 0.95f;
                 break;
             case MarkerOverlayRole::RightGrabFingerProbe:
                 color[0] = 0.45f;
@@ -2280,7 +2359,9 @@ float4 main(PS_INPUT input) : SV_Target {
                             entry.role == BodyOverlayRole::BodyLegSegment || entry.role == BodyOverlayRole::BodyFootSegment ||
                             entry.role == BodyOverlayRole::Weapon ||
                             entry.role == BodyOverlayRole::RightGrabAuthorityProxy ||
-                            entry.role == BodyOverlayRole::LeftGrabAuthorityProxy;
+                            entry.role == BodyOverlayRole::LeftGrabAuthorityProxy ||
+                            entry.role == BodyOverlayRole::RightGrabPivotSourceCollider ||
+                            entry.role == BodyOverlayRole::LeftGrabPivotSourceCollider;
                         if ((rockRole && !frame.drawRockBodies) || (!rockRole && !frame.drawTargetBodies)) {
                             continue;
                         }

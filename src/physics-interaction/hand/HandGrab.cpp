@@ -2807,6 +2807,113 @@ namespace rock
         return count > 0;
     }
 
+    bool Hand::getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabForceTorqueDebugSnapshot& out) const
+    {
+        /*
+         * This view is intentionally built from the same BODY-local pivot and
+         * raw-rotation proxy frame used by the active ragdoll-motor grab. Its
+         * job is to show whether the solver is being asked to pull an off-center
+         * frozen pivot toward the hand, which can rotate a body even when the
+         * selected mesh/contact point looked reasonable at acquisition time.
+         */
+        out = {};
+
+        if (!world || !isHolding() || _savedObjectState.bodyId.value == INVALID_BODY_ID || !_grabFrame.hasFrozenPivotB) {
+            return false;
+        }
+
+        RE::NiTransform liveBodyWorld{};
+        if (!tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, liveBodyWorld)) {
+            return false;
+        }
+
+        RE::NiTransform proxyWorld{};
+        const char* proxySource = "none";
+        bool proxyFrameOk = resolveGrabAuthorityProxyFrame(world, rawHandWorld, nullptr, proxyWorld, proxySource);
+        if (!proxyFrameOk && _grabAuthorityProxy.isValid() && _grabAuthorityProxy.getBodyId().value != INVALID_BODY_ID) {
+            proxyFrameOk = tryGetGrabAuthorityBodyWorldTransform(world, _grabAuthorityProxy.getBodyId(), proxyWorld);
+            proxySource = proxyFrameOk ? "proxyReadbackFallback" : "none";
+        }
+        if (!proxyFrameOk) {
+            return false;
+        }
+
+        const RE::NiTransform authorityFrame = makeRawRotationPalmTranslationFrame(rawHandWorld, proxyWorld);
+        const RE::NiTransform desiredBodyWorld = multiplyTransforms(authorityFrame, _grabFrame.rawRotationProxyBodyHandSpace);
+        const RE::NiPoint3 pivotBLocalGame = activeProxyConstraintPivotBLocalGame();
+        const RE::NiPoint3 livePivotWorld = transform_math::localPointToWorld(liveBodyWorld, pivotBLocalGame);
+        const RE::NiPoint3 targetPivotWorld = transform_math::localPointToWorld(desiredBodyWorld, pivotBLocalGame);
+        const RE::NiPoint3 correction = targetPivotWorld - livePivotWorld;
+        const RE::NiPoint3 lever = livePivotWorld - liveBodyWorld.translate;
+        const RE::NiPoint3 torqueWitness = crossProduct(lever, correction);
+        const float correctionLength = vectorMagnitude(correction);
+        const float leverLength = vectorMagnitude(lever);
+        const float torqueWitnessLength = vectorMagnitude(torqueWitness);
+
+        if (!std::isfinite(correctionLength) || !std::isfinite(leverLength) || !std::isfinite(torqueWitnessLength)) {
+            return false;
+        }
+
+        out.pivotSourceBodyId = _savedObjectState.bodyId;
+        out.liveBodyWorld = liveBodyWorld;
+        out.desiredBodyWorld = desiredBodyWorld;
+        out.livePivotWorld = livePivotWorld;
+        out.targetPivotWorld = targetPivotWorld;
+        out.correctionEndWorld = targetPivotWorld;
+        out.leverArmEndWorld = livePivotWorld;
+        out.pivotErrorGameUnits = correctionLength;
+        out.correctionLengthGameUnits = correctionLength;
+        out.leverLengthGameUnits = leverLength;
+        out.torqueWitnessGameUnitsSquared = torqueWitnessLength;
+        out.rotationErrorDegrees = rotationDeltaDegrees(liveBodyWorld.rotate, desiredBodyWorld.rotate);
+        out.pocketDistanceGameUnits = _grabFrame.pocketToGripDistanceGameUnits;
+        out.selectionDistanceGameUnits = _grabFrame.selectionToGripEvidenceDistanceGameUnits;
+        out.longLeverGameUnits = _grabFrame.longObjectLeverGameUnits;
+        out.positionConfidence = _grabFrame.pivotAuthorityPositionConfidence;
+        out.pivotAuthoritySource = _grabFrame.pivotAuthoritySource ? _grabFrame.pivotAuthoritySource : "none";
+        out.activeGrabPointMode = _grabFrame.activeGrabPointMode ? _grabFrame.activeGrabPointMode : "none";
+        out.authorityFrameSource = proxySource ? proxySource : "none";
+        out.positionOnlyPivot = _grabFrame.pivotAuthorityPositionOnly;
+        out.normalTrusted = _grabFrame.pivotAuthorityNormalTrusted;
+
+        if (torqueWitnessLength > 0.001f) {
+            const RE::NiPoint3 torqueAxis = torqueWitness * (1.0f / torqueWitnessLength);
+            const float torqueAxisLength = std::clamp(std::sqrt(torqueWitnessLength), 6.0f, 28.0f);
+            out.torqueAxisEndWorld = liveBodyWorld.translate + torqueAxis * torqueAxisLength;
+            out.hasTorqueAxis = true;
+        }
+
+        const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(liveBodyWorld, _grabFrame.bodyLocal);
+        if (_grabFrame.hasGripPoint) {
+            out.meshGripPointWorld = transform_math::localPointToWorld(currentNodeWorld, _grabFrame.gripPointLocal);
+            out.hasMeshGripPoint = true;
+        }
+
+        if (_grabFrame.gripEvidenceTriangleIndex < _grabFrame.localMeshTriangles.size()) {
+            const auto& triangle = _grabFrame.localMeshTriangles[_grabFrame.gripEvidenceTriangleIndex];
+            out.pivotTriangleWorld[0] = transform_math::localPointToWorld(currentNodeWorld, triangle.v0);
+            out.pivotTriangleWorld[1] = transform_math::localPointToWorld(currentNodeWorld, triangle.v1);
+            out.pivotTriangleWorld[2] = transform_math::localPointToWorld(currentNodeWorld, triangle.v2);
+            out.hasPivotTriangle = true;
+        }
+
+        if (_grabFrame.hasContactPatch && _grabFrame.contactPatchSampleCount > 0) {
+            const std::uint32_t count = (std::min)(_grabFrame.contactPatchSampleCount, static_cast<std::uint32_t>(out.contactSamplePointsWorld.size()));
+            RE::NiPoint3 average{};
+            for (std::uint32_t i = 0; i < count; ++i) {
+                out.contactSamplePointsWorld[i] = transform_math::localPointToWorld(liveBodyWorld, _grabFrame.contactPatchSamples[i].point);
+                average = average + out.contactSamplePointsWorld[i];
+            }
+            out.contactSampleCount = count;
+            if (count > 0) {
+                out.contactPatchPointWorld = average * (1.0f / static_cast<float>(count));
+                out.hasContactPatchPoint = true;
+            }
+        }
+
+        return true;
+    }
+
     bool Hand::getGrabTransformTelemetrySnapshot(RE::hknpWorld* world,
         const RE::NiTransform& rawHandWorld,
         grab_transform_telemetry::RuntimeSample& out) const

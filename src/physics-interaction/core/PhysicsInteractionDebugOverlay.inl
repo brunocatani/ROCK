@@ -17,6 +17,10 @@
             g_rockConfig.rockDebugShowSkeletonBoneVisualizer && skeletonBoneMode != skeleton_bone_debug_math::DebugSkeletonBoneMode::Off;
         const bool drawGrabPocketNormal = g_rockConfig.rockDebugShowGrabPocketNormal;
         const bool drawGrabContactPatch = g_rockConfig.rockDebugDrawGrabContactPatch;
+        const bool drawGrabForceTorque = g_rockConfig.rockDebugDrawGrabForceTorque;
+        const bool drawGrabForceTorqueText = drawGrabForceTorque && g_rockConfig.rockDebugDrawGrabForceTorqueText;
+        const bool drawGrabPivotSourceCollider = drawGrabForceTorque && g_rockConfig.rockDebugDrawGrabPivotSourceCollider;
+        const bool drawGrabPivotSourceEvidence = drawGrabForceTorque && g_rockConfig.rockDebugDrawGrabPivotSourceEvidence;
         const bool drawHandBoneContacts = g_rockConfig.rockDebugDrawHandBoneContacts;
         const bool drawSoftContacts = g_rockConfig.rockDebugDrawSoftContacts;
         const bool drawGrabAuthorityProxy = g_rockConfig.rockDebugDrawGrabAuthorityProxy;
@@ -37,7 +41,8 @@
         }
         if (!drawRockColliderBodies && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawFingerProbes &&
             !drawPalmVectors && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal && !drawGrabContactPatch && !drawHandBoneContacts &&
-            !drawSoftContacts && !drawGrabAuthorityProxy && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay && !drawWeaponAuthorityDebug && !drawWorldOriginDiagnostics) {
+            !drawSoftContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay && !drawWeaponAuthorityDebug &&
+            !drawWorldOriginDiagnostics) {
             debug::ClearFrame();
             return;
         }
@@ -46,14 +51,14 @@
 
         debug::BodyOverlayFrame frame{};
         frame.world = hknp;
-        frame.drawRockBodies = drawRockColliderBodies || drawGrabAuthorityProxy;
+        frame.drawRockBodies = drawRockColliderBodies || drawGrabAuthorityProxy || drawGrabPivotSourceCollider;
         frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
-        frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy;
+        frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabForceTorque;
         frame.drawMarkers =
             drawGrabPivots || drawFingerProbes || drawPalmVectors || drawRootFlattenedFingerSkeleton || drawGrabPocketNormal || drawGrabContactPatch ||
-            drawHandBoneContacts || drawSoftContacts || drawGrabTransformTelemetryAxes || drawWeaponAuthorityDebug || drawWorldOriginDiagnostics;
+            drawGrabForceTorque || drawHandBoneContacts || drawSoftContacts || drawGrabTransformTelemetryAxes || drawWeaponAuthorityDebug || drawWorldOriginDiagnostics;
         frame.drawSkeleton = drawSkeletonBones;
-        frame.drawText = drawGrabTransformTelemetryText || drawPerformanceProfilerOverlay;
+        frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawPerformanceProfilerOverlay;
         RE::bhkWorld* originDiagnosticBhk = drawWorldOriginDiagnostics ? context.bhkWorld : nullptr;
         const bool rightDisabled = context.right.disabled;
         const bool leftDisabled = context.left.disabled;
@@ -471,6 +476,101 @@
 
             addGrabContactPatchDebug(_rightHand);
             addGrabContactPatchDebug(_leftHand);
+        }
+
+        if (drawGrabForceTorque) {
+            auto addGrabForceTorqueDebug = [&](const Hand& hand) {
+                if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
+                    return;
+                }
+
+                const bool isLeft = hand.isLeft();
+                const RE::NiTransform& rawHandWorld = isLeft ? context.left.rawHandWorld : context.right.rawHandWorld;
+                GrabForceTorqueDebugSnapshot snapshot{};
+                if (!hand.getGrabForceTorqueDebugSnapshot(hknp, rawHandWorld, snapshot)) {
+                    return;
+                }
+
+                if (drawGrabPivotSourceCollider) {
+                    addBody(snapshot.pivotSourceBodyId,
+                        isLeft ? debug::BodyOverlayRole::LeftGrabPivotSourceCollider : debug::BodyOverlayRole::RightGrabPivotSourceCollider);
+                }
+
+                addAxisTransform(snapshot.liveBodyWorld,
+                    isLeft ? debug::AxisOverlayRole::LeftGrabForceTorqueLiveBody : debug::AxisOverlayRole::RightGrabForceTorqueLiveBody,
+                    snapshot.livePivotWorld,
+                    true);
+                addAxisTransform(snapshot.desiredBodyWorld,
+                    isLeft ? debug::AxisOverlayRole::LeftGrabForceTorqueDesiredBody : debug::AxisOverlayRole::RightGrabForceTorqueDesiredBody,
+                    snapshot.targetPivotWorld,
+                    true);
+
+                addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabForceTorqueTargetPivot : debug::MarkerOverlayRole::RightGrabForceTorqueTargetPivot,
+                    snapshot.targetPivotWorld,
+                    3.2f);
+                addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabForceTorqueLivePivot : debug::MarkerOverlayRole::RightGrabForceTorqueLivePivot,
+                    snapshot.livePivotWorld,
+                    3.2f);
+                addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabForceTorqueCorrection : debug::MarkerOverlayRole::RightGrabForceTorqueCorrection,
+                    snapshot.livePivotWorld,
+                    snapshot.correctionEndWorld);
+                addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabForceTorqueLever : debug::MarkerOverlayRole::RightGrabForceTorqueLever,
+                    snapshot.liveBodyWorld.translate,
+                    snapshot.leverArmEndWorld);
+                if (snapshot.hasTorqueAxis) {
+                    addMarkerRay(isLeft ? debug::MarkerOverlayRole::LeftGrabForceTorqueAxis : debug::MarkerOverlayRole::RightGrabForceTorqueAxis,
+                        snapshot.liveBodyWorld.translate,
+                        snapshot.torqueAxisEndWorld,
+                        1.4f);
+                }
+
+                if (drawGrabPivotSourceEvidence) {
+                    const auto triangleRole =
+                        isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceTriangle : debug::MarkerOverlayRole::RightGrabPivotSourceTriangle;
+                    if (snapshot.hasPivotTriangle) {
+                        addMarkerLine(triangleRole, snapshot.pivotTriangleWorld[0], snapshot.pivotTriangleWorld[1]);
+                        addMarkerLine(triangleRole, snapshot.pivotTriangleWorld[1], snapshot.pivotTriangleWorld[2]);
+                        addMarkerLine(triangleRole, snapshot.pivotTriangleWorld[2], snapshot.pivotTriangleWorld[0]);
+                    }
+                    if (snapshot.hasMeshGripPoint) {
+                        addMarkerPoint(
+                            isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceMeshPoint : debug::MarkerOverlayRole::RightGrabPivotSourceMeshPoint,
+                            snapshot.meshGripPointWorld,
+                            2.4f);
+                    }
+                    if (snapshot.hasContactPatchPoint) {
+                        const auto contactRole =
+                            isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceContactPoint : debug::MarkerOverlayRole::RightGrabPivotSourceContactPoint;
+                        addMarkerPoint(contactRole, snapshot.contactPatchPointWorld, 2.5f);
+                        for (std::uint32_t i = 0; i < snapshot.contactSampleCount; ++i) {
+                            addMarkerLine(contactRole, snapshot.contactPatchPointWorld, snapshot.contactSamplePointsWorld[i]);
+                            addMarkerPoint(contactRole, snapshot.contactSamplePointsWorld[i], 1.4f);
+                        }
+                    }
+                }
+
+                if (drawGrabForceTorqueText) {
+                    const float headerColor[4]{ 0.90f, 1.0f, 0.95f, 0.94f };
+                    const float detailColor[4]{ 0.95f, 0.92f, 0.22f, 0.92f };
+                    const RE::NiPoint3 labelAnchor = snapshot.targetPivotWorld + RE::NiPoint3{ 0.0f, 0.0f, 5.0f };
+                    addTextLine(labelAnchor,
+                        headerColor,
+                        "GRAB err %.1f rot %.1f lever %.1f",
+                        snapshot.pivotErrorGameUnits,
+                        snapshot.rotationErrorDegrees,
+                        snapshot.leverLengthGameUnits);
+                    addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -3.5f },
+                        detailColor,
+                        "src %s body %u tri %s patch %u",
+                        snapshot.pivotAuthoritySource,
+                        snapshot.pivotSourceBodyId.value,
+                        snapshot.hasPivotTriangle ? "yes" : "no",
+                        snapshot.contactSampleCount);
+                }
+            };
+
+            addGrabForceTorqueDebug(_rightHand);
+            addGrabForceTorqueDebug(_leftHand);
         }
 
         if (drawFingerProbes) {
