@@ -1827,6 +1827,110 @@ namespace rock
             return result;
         }
 
+        struct SeatedGrabPivotReacquireCandidate
+        {
+            RE::NiPoint3 pointWorld{};
+            RE::NiPoint3 pointNodeLocal{};
+            RE::NiPoint3 pointBodyLocalGame{};
+            RE::NiPoint3 normalWorld{};
+            RE::NiPoint3 normalNodeLocal{};
+            float pocketDistanceGameUnits = std::numeric_limits<float>::max();
+            float meshDistanceGameUnits = std::numeric_limits<float>::max();
+            float longLeverGameUnits = 0.0f;
+            const char* reason = "notEvaluated";
+            bool normalTrusted = false;
+            bool valid = false;
+        };
+
+        SeatedGrabPivotReacquireCandidate findSeatedGrabPivotNearPalmPocket(
+            const std::vector<GrabLocalTriangle>& localTriangles,
+            const RE::NiTransform& currentNodeWorld,
+            const RE::NiTransform& currentBodyWorld,
+            const RE::NiPoint3& palmPocketWorld,
+            const RE::NiPoint3& palmNormalWorld,
+            float maxPocketDistanceGameUnits,
+            float maxNormalAngleDegrees)
+        {
+            /*
+             * Pull/converge promotion must not reuse a weak startup pivot just
+             * because the object has reached the hand. Once the object is inside
+             * the palm pocket, reacquire the closest live mesh point to the
+             * actual palm/proxy anchor and freeze that same point for visual and
+             * constraint authority. This keeps the rendered hand relation and
+             * pivot-B solver point on the same corner of the object.
+             */
+            SeatedGrabPivotReacquireCandidate result{};
+            if (localTriangles.empty() ||
+                !grab_three_phase::isFinite(currentNodeWorld) ||
+                !grab_three_phase::isFinite(currentBodyWorld) ||
+                !grab_three_phase::isFinite(palmPocketWorld)) {
+                result.reason = "missingMeshOrFrame";
+                return result;
+            }
+
+            const RE::NiPoint3 pocketNodeLocal = transform_math::worldPointToLocal(currentNodeWorld, palmPocketWorld);
+            float bestDistanceSquared = std::numeric_limits<float>::max();
+            GrabLocalTriangle bestTriangle{};
+            RE::NiPoint3 bestPointNodeLocal{};
+            bool found = false;
+            for (const auto& localTriangle : localTriangles) {
+                TriangleData triangle{ localTriangle.v0, localTriangle.v1, localTriangle.v2 };
+                float distanceSquared = 0.0f;
+                const RE::NiPoint3 candidate = closestPointOnTriangleToPoint(pocketNodeLocal, triangle, distanceSquared);
+                if (!std::isfinite(distanceSquared) || distanceSquared >= bestDistanceSquared) {
+                    continue;
+                }
+
+                bestDistanceSquared = distanceSquared;
+                bestTriangle = localTriangle;
+                bestPointNodeLocal = candidate;
+                found = true;
+            }
+
+            if (!found) {
+                result.reason = "noLocalTriangleCandidate";
+                return result;
+            }
+
+            const RE::NiPoint3 bestPointWorld = transform_math::localPointToWorld(currentNodeWorld, bestPointNodeLocal);
+            const float pocketDistance = pointDistanceGameUnits(bestPointWorld, palmPocketWorld);
+            const float maxPocketDistance =
+                std::isfinite(maxPocketDistanceGameUnits) && maxPocketDistanceGameUnits > 0.0f ? maxPocketDistanceGameUnits : 0.0f;
+            if (maxPocketDistance > 0.0f && pocketDistance > maxPocketDistance) {
+                result.reason = "meshPointOutsidePocketEnvelope";
+                result.pocketDistanceGameUnits = pocketDistance;
+                result.meshDistanceGameUnits = std::sqrt((std::max)(0.0f, bestDistanceSquared));
+                return result;
+            }
+
+            const RE::NiPoint3 localEdge0 = bestTriangle.v1 - bestTriangle.v0;
+            const RE::NiPoint3 localEdge1 = bestTriangle.v2 - bestTriangle.v0;
+            const RE::NiPoint3 normalNodeLocal = normalizeOrZero(crossProduct(localEdge0, localEdge1));
+            RE::NiPoint3 normalWorld = normalizeOrZero(transform_math::localVectorToWorld(currentNodeWorld, normalNodeLocal));
+            const RE::NiPoint3 palmNormal = normalizeOrZero(palmNormalWorld);
+            if (dotProduct(normalWorld, palmNormal) > 0.0f) {
+                normalWorld = RE::NiPoint3{ -normalWorld.x, -normalWorld.y, -normalWorld.z };
+            }
+
+            const float minNormalDot =
+                std::cos(std::clamp(maxNormalAngleDegrees, 0.0f, 179.0f) * 3.14159265358979323846f / 180.0f);
+            const float normalFacing = std::fabs(dotProduct(normalizeOrZero(normalWorld), palmNormal));
+
+            result.pointWorld = bestPointWorld;
+            result.pointNodeLocal = bestPointNodeLocal;
+            result.pointBodyLocalGame = transform_math::worldPointToLocal(currentBodyWorld, bestPointWorld);
+            result.normalWorld = normalWorld;
+            result.normalNodeLocal = normalNodeLocal;
+            result.pocketDistanceGameUnits = pocketDistance;
+            result.meshDistanceGameUnits = std::sqrt((std::max)(0.0f, bestDistanceSquared));
+            result.longLeverGameUnits = computeLocalMeshMaxDistanceFromPoint(localTriangles, bestPointNodeLocal) *
+                                        finitePositiveOr(currentNodeWorld.scale, 1.0f);
+            result.normalTrusted = normalFacing >= minNormalDot;
+            result.reason = result.normalTrusted ? "seatedMeshPivotReacquired" : "seatedMeshPivotPositionOnly";
+            result.valid = true;
+            return result;
+        }
+
         void logGrabNodeInfo(const char* handName,
             bool isLeft,
             const RE::NiAVObject* parentNode,
@@ -4904,14 +5008,28 @@ namespace rock
                 meshGrabFound = true;
                 grabPointMode = "palmPocketMeshSurface";
                 grabFallbackReason = "palmPocketMeshPointImprovesSeat";
-                pivotAuthoritySource = grabPivotAuthoritySourceName(GrabPivotAuthoritySource::PalmPocketMeshPoint);
-                pivotAuthorityNormalTrusted = true;
-                pivotAuthorityPositionOnly = false;
-                pivotAuthorityPositionConfidence = 0.85f;
-                pivotAuthorityPocketDistanceGameUnits = palmPocketDistance;
-                pivotAuthoritySelectionDeltaGameUnits = palmPocketSurfaceHit.selectionToMeshDistanceGameUnits;
+                const auto palmPocketFallbackAuthority = assessGrabPivotAuthorityCandidate(
+                    grabPointMode,
+                    grabGripPoint,
+                    grabSurfaceHit.normal,
+                    true,
+                    false,
+                    0.85f,
+                    acquisitionPocket,
+                    sel,
+                    canonicalPivotPointWorld,
+                    canonicalPivotAvailable,
+                    objectWorldTransform,
+                    grabLocalMeshTriangles);
+                pivotAuthoritySource = grabPivotAuthoritySourceName(palmPocketFallbackAuthority.source);
+                pivotAuthorityNormalTrusted = palmPocketFallbackAuthority.normalTrusted;
+                pivotAuthorityPositionOnly = palmPocketFallbackAuthority.positionOnlyPatch;
+                pivotAuthorityPositionConfidence = palmPocketFallbackAuthority.positionConfidence;
+                pivotAuthorityPocketDistanceGameUnits = palmPocketFallbackAuthority.pivotToPocketGameUnits;
+                pivotAuthoritySelectionDeltaGameUnits = palmPocketFallbackAuthority.selectionDeltaGameUnits;
+                pivotAuthorityLongLeverGameUnits = palmPocketFallbackAuthority.longLeverGameUnits;
                 ROCK_LOG_DEBUG(Hand,
-                    "{} hand PIVOT AUTHORITY: source={} mode={} point=({:.1f},{:.1f},{:.1f}) pocketDistance={:.2f}gu selectionDelta={:.2f}gu reason={} canonical=meshSurface canonicalPocket={:.2f}gu",
+                    "{} hand PIVOT AUTHORITY: source={} mode={} point=({:.1f},{:.1f},{:.1f}) pocketDistance={:.2f}gu selectionDelta={:.2f}gu longLever={:.2f}gu reason={} canonical=meshSurface canonicalPocket={:.2f}gu",
                     handName(),
                     pivotAuthoritySource,
                     grabPointMode,
@@ -4920,6 +5038,7 @@ namespace rock
                     grabGripPoint.z,
                     pivotAuthorityPocketDistanceGameUnits,
                     pivotAuthoritySelectionDeltaGameUnits,
+                    pivotAuthorityLongLeverGameUnits,
                     grabFallbackReason,
                     canonicalPocketDistance);
             }
@@ -5051,8 +5170,11 @@ namespace rock
             evidenceInput.multiFingerValidationEnabled = g_rockConfig.rockGrabMultiFingerContactValidationEnabled;
             evidenceInput.contactPatchAccepted = contactPatchEvidenceAvailable;
             evidenceInput.contactPatchMeshSnapped = contactPatchRuntime.meshSnapped;
-            evidenceInput.contactPatchReliable = contactPatchRuntime.patch.orientationReliable;
-            evidenceInput.contactPatchConfidence = contactPatchRuntime.patch.confidence;
+            evidenceInput.contactPatchReliable = contactPatchRuntime.normalTrusted;
+            evidenceInput.contactPatchNormalTrusted = contactPatchRuntime.normalTrusted;
+            evidenceInput.contactPatchPositionOnly = contactPatchRuntime.positionOnly;
+            evidenceInput.contactPatchConfidence =
+                contactPatchRuntime.positionOnly ? 0.0f : contactPatchRuntime.patch.confidence;
             evidenceInput.meshSurfacePivotAccepted = visualMeshPivotAvailable;
             evidenceInput.multiFingerGripValid = multiFingerGripRuntime.gripSet.valid;
             evidenceInput.semanticFingerGroups = multiFingerGripRuntime.semanticGroupCount;
@@ -5063,7 +5185,7 @@ namespace rock
             contactEvidenceDecision = grab_contact_evidence_policy::evaluateGrabContactEvidence(evidenceInput);
 
             ROCK_LOG_DEBUG(Hand,
-                "{} hand CONTACT EVIDENCE: mode={} accept={} level={} reason={} patch={} meshSnap={} reliable={} normalTrusted={} positionOnly={} confidence={:.2f} "
+                "{} hand CONTACT EVIDENCE: mode={} accept={} level={} reason={} patch={} meshSnap={} reliable={} normalTrusted={} positionOnly={} confidence={:.2f}/{:.2f} "
                 "multiFingerValid={} semanticGroups={} probeGroups={} combinedGroups={} minGroups={} useMultiFingerPivot={}",
                 handName(),
                 grab_contact_evidence_policy::contactQualityModeName(grabContactQualityMode),
@@ -5076,6 +5198,7 @@ namespace rock
                 contactPatchRuntime.normalTrusted ? "yes" : "no",
                 contactPatchRuntime.positionOnly ? "yes" : "no",
                 contactPatchRuntime.patch.confidence,
+                evidenceInput.contactPatchConfidence,
                 multiFingerGripRuntime.gripSet.valid ? "yes" : "no",
                 multiFingerGripRuntime.semanticGroupCount,
                 multiFingerGripRuntime.liveProbeGroupCount,
@@ -6391,17 +6514,129 @@ namespace rock
                     false);
             }
 
+            const bool promotionRequested = reachedTouchRange || convergenceTimedOutInsidePocket;
+            const bool pivotNeedsSeatedReacquire =
+                promotionRequested &&
+                (_grabFrame.pivotAuthorityPositionOnly ||
+                    std::strcmp(_grabFrame.pivotAuthoritySource, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::PalmRayMeshPoint)) == 0);
+            bool timeoutReacquiredSeatedPivot = false;
+            const char* timeoutReacquireReason = pivotNeedsSeatedReacquire ? "notAttempted" : "notNeeded";
+            if (pivotNeedsSeatedReacquire && hasGrabBody) {
+                const RE::NiPoint3 livePivotAWorld = proxyAuthorityWorld.translate;
+                const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
+                const float seatedEnvelope =
+                    (std::max)(touchDistance, g_rockConfig.rockGrabPocketRadiusGameUnits) +
+                    (std::max)(1.0f, finitePositiveOr(g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits, 3.0f));
+                const auto seatedPivot = findSeatedGrabPivotNearPalmPocket(
+                    _grabFrame.localMeshTriangles,
+                    currentNodeWorld,
+                    grabBodyWorld,
+                    livePivotAWorld,
+                    computePalmNormalFromHandBasis(handWorldTransform, _isLeft),
+                    seatedEnvelope,
+                    g_rockConfig.rockGrabContactPatchMaxNormalAngleDegrees);
+                timeoutReacquireReason = seatedPivot.reason;
+                if (seatedPivot.valid) {
+                    const RE::NiTransform desiredObjectWorldAtSeat =
+                        grab_frame_math::shiftObjectToAlignGripWithPocket(currentNodeWorld, livePivotAWorld, seatedPivot.pointWorld);
+                    const RE::NiTransform desiredBodyWorldAtSeat = multiplyTransforms(desiredObjectWorldAtSeat, _grabFrame.bodyLocal);
+                    const auto splitGrabFrame = grab_frame_math::buildSplitGrabFrameFromDesiredObject(
+                        handWorldTransform,
+                        proxyAuthorityWorld,
+                        desiredObjectWorldAtSeat,
+                        _grabFrame.bodyLocal,
+                        livePivotAWorld);
+                    const RE::NiTransform rawRotationProxyFrameWorld =
+                        makeRawRotationPalmTranslationFrame(handWorldTransform, proxyAuthorityWorld);
+
+                    _grabFrame.rawHandSpace = splitGrabFrame.rawHandSpace;
+                    _grabFrame.constraintHandSpace = splitGrabFrame.constraintHandSpace;
+                    _grabFrame.rawRotationProxyHandSpace =
+                        grab_frame_math::objectInFrameSpace(rawRotationProxyFrameWorld, desiredObjectWorldAtSeat);
+                    _grabFrame.constraintBodyHandSpace =
+                        grab_frame_math::objectInFrameSpace(proxyAuthorityWorld, desiredBodyWorldAtSeat);
+                    _grabFrame.rawRotationProxyBodyHandSpace =
+                        grab_frame_math::objectInFrameSpace(rawRotationProxyFrameWorld, desiredBodyWorldAtSeat);
+                    _grabFrame.pivotAHandBodyLocalGame = splitGrabFrame.pivotAHandBodyLocal;
+                    _grabFrame.gripPointLocal = seatedPivot.pointNodeLocal;
+                    _grabFrame.gripEvidenceLocal = seatedPivot.pointNodeLocal;
+                    _grabFrame.gripNormalLocal = seatedPivot.normalNodeLocal;
+                    _grabFrame.gripPointBodyLocalGame = seatedPivot.pointBodyLocalGame;
+                    _grabFrame.pivotBBodyLocalGame = seatedPivot.pointBodyLocalGame;
+                    _grabFrame.pivotBConstraintLocalGame = seatedPivot.pointBodyLocalGame;
+                    _grabFrame.hasFrozenPivotB = true;
+                    _grabFrame.hasGripPoint = true;
+                    _grabFrame.pocketToGripDistanceGameUnits = seatedPivot.pocketDistanceGameUnits;
+                    _grabFrame.selectionToGripEvidenceDistanceGameUnits = seatedPivot.pocketDistanceGameUnits;
+                    _grabFrame.grabPivotWorldAtGrab = livePivotAWorld;
+                    _grabFrame.gripPointWorldAtGrab = seatedPivot.pointWorld;
+                    _grabFrame.palmSeatPointWorldAtGrab = seatedPivot.pointWorld;
+                    _grabFrame.hasPalmSeatPoint = true;
+                    _grabFrame.activeGrabPointUsesMultiFingerEvidence = false;
+                    _grabFrame.activeGrabPointMode = "seatedPivotReacquire";
+                    _grabFrame.palmSeatPointMode = "seatedPivotReacquire";
+                    _grabFrame.pivotAuthoritySource = grabPivotAuthoritySourceName(GrabPivotAuthoritySource::PalmPocketMeshPoint);
+                    _grabFrame.pivotAuthorityPositionOnly = !seatedPivot.normalTrusted;
+                    _grabFrame.pivotAuthorityNormalTrusted = seatedPivot.normalTrusted;
+                    _grabFrame.pivotAuthorityPositionConfidence = 0.90f;
+                    _grabFrame.fingerPoseAimValid = seatedPivot.normalTrusted;
+                    _grabFrame.fingerPoseAimReason = seatedPivot.normalTrusted ? "seatedPivotReacquire" : "seatedPivotPositionOnly";
+                    _grabFrame.objectNodeWorldAtGrab = currentNodeWorld;
+                    _grabFrame.desiredObjectWorldAtGrab = desiredObjectWorldAtSeat;
+                    _grabFrame.desiredBodyWorldAtGrab = desiredBodyWorldAtSeat;
+                    _grabFrame.longObjectLeverGameUnits = seatedPivot.longLeverGameUnits;
+
+                    _grabObjectGripAtGrab.objectBodyWorldAtCapture = grabBodyWorld;
+                    _grabObjectGripAtGrab.contactSeedWorld = seatedPivot.pointWorld;
+                    _grabObjectGripAtGrab.contactSeedBodyLocal = seatedPivot.pointBodyLocalGame;
+                    _grabObjectGripAtGrab.gripCenterWorld = seatedPivot.pointWorld;
+                    _grabObjectGripAtGrab.gripCenterBodyLocal = seatedPivot.pointBodyLocalGame;
+                    _grabObjectGripAtGrab.source = "seatedPivotReacquire";
+                    _grabObjectGripAtGrab.fallbackReason = seatedPivot.reason;
+                    _grabObjectGripAtGrab.confidence = 0.90f;
+                    _grabObjectGripAtGrab.valid = true;
+
+                    {
+                        std::scoped_lock lock(_grabAuthorityProxyMutex);
+                        if (_grabAuthorityProxyFrameValid) {
+                            _grabAuthorityPivotAProxyLocalGame = transform_math::worldPointToLocal(proxyAuthorityWorld, livePivotAWorld);
+                            _grabAuthorityPivotBConstraintLocalGame = seatedPivot.pointBodyLocalGame;
+                        }
+                    }
+
+                    timeoutReacquiredSeatedPivot = true;
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} THREE-PHASE GRAB SEATED PIVOT REACQUIRE: phase={} source={} reason={} point=({:.1f},{:.1f},{:.1f}) "
+                        "pivotB=({:.2f},{:.2f},{:.2f}) pocketDistance={:.2f}gu meshDistance={:.2f}gu normalTrusted={} longLever={:.1f}gu",
+                        handName(),
+                        grab_three_phase::phaseName(previousAcquisitionPhase),
+                        _grabFrame.pivotAuthoritySource,
+                        seatedPivot.reason,
+                        seatedPivot.pointWorld.x,
+                        seatedPivot.pointWorld.y,
+                        seatedPivot.pointWorld.z,
+                        seatedPivot.pointBodyLocalGame.x,
+                        seatedPivot.pointBodyLocalGame.y,
+                        seatedPivot.pointBodyLocalGame.z,
+                        seatedPivot.pocketDistanceGameUnits,
+                        seatedPivot.meshDistanceGameUnits,
+                        seatedPivot.normalTrusted ? "yes" : "no",
+                        seatedPivot.longLeverGameUnits);
+                }
+            }
+
             const bool timeoutMayPromote =
                 !convergenceTimedOutInsidePocket ||
-                (!_grabFrame.pivotAuthorityPositionOnly &&
-                    std::strcmp(_grabFrame.pivotAuthoritySource, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::PalmRayMeshPoint)) != 0);
+                !pivotNeedsSeatedReacquire ||
+                timeoutReacquiredSeatedPivot;
 
             if (convergenceTimedOutInsidePocket && !timeoutMayPromote) {
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} THREE-PHASE GRAB CONVERGE PROMOTION HELD: phase={} reason=awaitingSeatedPivot pivotAuthoritySource={} positionOnlyPatch={} gripErr={:.2f}gu elapsed={:.3f}s colliding={}",
+                    "{} THREE-PHASE GRAB CONVERGE PROMOTION HELD: phase={} reason=awaitingSeatedPivot reacquire={} pivotAuthoritySource={} positionOnlyPatch={} gripErr={:.2f}gu elapsed={:.3f}s colliding={}",
                     handName(),
                     grab_three_phase::phaseName(previousAcquisitionPhase),
+                    timeoutReacquireReason,
                     _grabFrame.pivotAuthoritySource,
                     _grabFrame.pivotAuthorityPositionOnly ? "yes" : "no",
                     gripErrorGameUnits,
@@ -6411,7 +6646,8 @@ namespace rock
 
             if (reachedTouchRange || (convergenceTimedOutInsidePocket && timeoutMayPromote)) {
                 const char* promotionReason =
-                    reachedTouchRange ? "threePhaseTouchReachedFrozenRelation" : "threePhaseTimeoutInsidePocket";
+                    timeoutReacquiredSeatedPivot ? "threePhaseReacquiredSeatedPivot" :
+                    (reachedTouchRange ? "threePhaseTouchReachedFrozenRelation" : "threePhaseTimeoutInsidePocket");
                 _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::TouchHeld;
                 _grabFrame.fadeInGrabConstraint = false;
                 _grabFrame.motorFadeReason = promotionReason;

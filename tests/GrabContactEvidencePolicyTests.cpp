@@ -76,5 +76,32 @@ int main()
     ok &= expectTrue("hybrid mode still accepts baseline mesh surface authority", decision.accept);
     ok &= expectReason("hybrid mesh baseline reason", decision.reason, "meshSurfacePivot");
 
+    auto hybridTrustedPatch = hybridMesh;
+    hybridTrustedPatch.contactPatchAccepted = true;
+    hybridTrustedPatch.contactPatchMeshSnapped = true;
+    hybridTrustedPatch.contactPatchNormalTrusted = true;
+    hybridTrustedPatch.contactPatchConfidence = 0.80f;
+    decision = evaluateGrabContactEvidence(hybridTrustedPatch);
+    ok &= expectTrue("hybrid mesh accepts trusted patch orientation", decision.accept);
+    ok &= expectReason("hybrid trusted patch reason", decision.reason, "meshSurfaceContactPatch");
+
+    auto hybridPositionOnlyPatch = hybridTrustedPatch;
+    hybridPositionOnlyPatch.contactPatchNormalTrusted = false;
+    hybridPositionOnlyPatch.contactPatchPositionOnly = true;
+    decision = evaluateGrabContactEvidence(hybridPositionOnlyPatch);
+    ok &= expectTrue("hybrid mesh keeps position-only patch as mesh baseline", decision.accept);
+    ok &= expectReason("hybrid position-only patch does not become orientation evidence", decision.reason, "meshSurfacePivot");
+
+    GrabContactEvidenceInput patchOnlyPositionOnly{};
+    patchOnlyPositionOnly.qualityMode = static_cast<int>(GrabContactQualityMode::HybridEvidence);
+    patchOnlyPositionOnly.multiFingerValidationEnabled = true;
+    patchOnlyPositionOnly.contactPatchAccepted = true;
+    patchOnlyPositionOnly.contactPatchMeshSnapped = true;
+    patchOnlyPositionOnly.contactPatchPositionOnly = true;
+    patchOnlyPositionOnly.contactPatchConfidence = 1.0f;
+    decision = evaluateGrabContactEvidence(patchOnlyPositionOnly);
+    ok &= expectFalse("position-only patch alone is not reliable orientation evidence", decision.accept);
+    ok &= expectReason("position-only patch alone reason", decision.reason, "positionOnlyPatchNeedsFingerOrSeat");
+
     return ok ? 0 : 1;
 }

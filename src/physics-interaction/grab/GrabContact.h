@@ -118,6 +118,8 @@ namespace rock::grab_contact_evidence_policy
         bool contactPatchAccepted = false;
         bool contactPatchMeshSnapped = false;
         bool contactPatchReliable = false;
+        bool contactPatchNormalTrusted = false;
+        bool contactPatchPositionOnly = false;
         float contactPatchConfidence = 0.0f;
         bool meshSurfacePivotAccepted = false;
         bool multiFingerGripValid = false;
@@ -225,12 +227,23 @@ namespace rock::grab_contact_evidence_policy
         }
 
         if (input.meshSurfacePivotAccepted) {
+            /*
+             * Patch position and patch orientation are different contracts.
+             * A position-only patch can keep the grip point out of a palm-ray
+             * fallback, but it must not promote itself as reliable normal
+             * evidence for pose/held authority.
+             */
+            const bool patchHasTrustedOrientation =
+                input.contactPatchReliable ||
+                (!input.contactPatchPositionOnly &&
+                    input.contactPatchNormalTrusted &&
+                    input.contactPatchConfidence >= 0.70f);
             decision.accept = true;
             if (input.multiFingerGripValid && totalFingerGroups >= minimumFingerGroups) {
                 decision.level = GrabContactEvidenceLevel::HighConfidenceFingerGrip;
                 decision.reason = "meshSurfaceFingerGrip";
             } else if (input.contactPatchAccepted && input.contactPatchMeshSnapped &&
-                       (input.contactPatchReliable || input.contactPatchConfidence >= 0.70f)) {
+                       patchHasTrustedOrientation) {
                 decision.level = GrabContactEvidenceLevel::BaselinePatch;
                 decision.reason = "meshSurfaceContactPatch";
             } else {
@@ -241,10 +254,18 @@ namespace rock::grab_contact_evidence_policy
         }
 
         if (input.contactPatchAccepted && input.contactPatchMeshSnapped) {
-            decision.accept = input.contactPatchReliable || input.contactPatchConfidence >= 0.70f || totalFingerGroups > 0;
+            const bool patchHasTrustedOrientation =
+                input.contactPatchReliable ||
+                (!input.contactPatchPositionOnly &&
+                    input.contactPatchNormalTrusted &&
+                    input.contactPatchConfidence >= 0.70f);
+            const bool patchHasFingerSupport = totalFingerGroups > 0;
+            decision.accept = patchHasTrustedOrientation || patchHasFingerSupport;
             if (decision.accept) {
                 decision.level = totalFingerGroups > 0 ? GrabContactEvidenceLevel::EnhancedFingerPatch : GrabContactEvidenceLevel::BaselinePatch;
                 decision.reason = totalFingerGroups > 0 ? "fingerEnhancedContactPatch" : "reliableContactPatch";
+            } else if (input.contactPatchPositionOnly) {
+                decision.reason = "positionOnlyPatchNeedsFingerOrSeat";
             } else {
                 decision.reason = "weakPatchWithoutFingerEvidence";
             }
