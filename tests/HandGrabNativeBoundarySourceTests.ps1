@@ -199,6 +199,19 @@ Require-Text 'src/physics-interaction/hand/Hand.cpp' 'void clearGrabHandPose\(bo
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'void Hand::reset\(\)[\s\S]*clearGrabHandPose\(_isLeft\)[\s\S]*clearGrabExternalHandWorldTransform\(_isLeft\)' 'Hand reset must clear both ROCK_Grab pose and ROCK_GrabVisual external transform tags.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'void Hand::abandonHavokStateAfterWorldLoss\(\)[\s\S]*clearGrabHandPose\(_isLeft\)[\s\S]*clearGrabExternalHandWorldTransform\(_isLeft\)' 'World-loss abandon must clear both ROCK_Grab pose and ROCK_GrabVisual external transform tags.'
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'if\s*\(!node \|\| !node->IsTriShape\(\)\)\s*\{[\s\S]*return false;[\s\S]*blacklistedShapes' 'Grab mesh extraction blacklist must skip matching geometry only, not marker parent subtrees.'
+Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'findClosestGrabSurfaceHitToPointPositionOnly' 'Grab mesh lookup must provide a position-only palm-pocket query so bad normals do not discard usable close-grab pivot evidence.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'closePalmPocketMeshAuthority' 'Close seated grabs must publish palm-pocket mesh authority before generic mesh fallback.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'Contact\s+patches\s+and\s+multi-finger[\s\S]*must\s+not\s+replace\s+pivot\s+B' 'Grab pivot authority must document contact patches as evidence-only for close grabs.'
+Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'usePatchPivot\s*=\s*true' 'Contact patch authority must not be able to replace the frozen close-grab pivot B.'
+
+$meshAuthorityText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/hand/HandGrab.cpp')
+$closePocketStart = $meshAuthorityText.IndexOf('Close seated grabs need one position authority')
+$selectionSnapAfterClose = if ($closePocketStart -ge 0) { $meshAuthorityText.IndexOf('grabPointMode = "selectionHitMeshSnap"', $closePocketStart) } else { -1 }
+if ($closePocketStart -lt 0 -or $selectionSnapAfterClose -lt 0) {
+    $failures.Add('Palm-pocket mesh authority and selection-hit mesh snap blocks must both be locatable.')
+} elseif ($closePocketStart -ge $selectionSnapAfterClose) {
+    $failures.Add('Close seated palm-pocket mesh authority must run before selection-hit mesh snap.')
+}
 
 $handGrabText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/hand/HandGrab.cpp')
 $genericPoseStart = $handGrabText.IndexOf('publishLocalTransformPose("ROCK_Grab"')

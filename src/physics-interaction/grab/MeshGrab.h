@@ -1327,4 +1327,79 @@ namespace rock
         outResult.valid = true;
         return true;
     }
+
+    inline bool findClosestGrabSurfaceHitToPointPositionOnly(const std::vector<GrabSurfaceTriangleData>& triangles,
+        const RE::NiPoint3& point,
+        const RE::NiPoint3& preferredNormal,
+        float maxDistanceGameUnits,
+        GrabSurfaceHit& outResult)
+    {
+        if (maxDistanceGameUnits < 0.0f || !std::isfinite(maxDistanceGameUnits)) {
+            return false;
+        }
+
+        const RE::NiPoint3 preferred = normalize(preferredNormal);
+        const bool hasPreferredNormal = dot(preferred, preferred) > 0.0f;
+        const float maxDistSq = maxDistanceGameUnits * maxDistanceGameUnits;
+        float bestDistSq = (std::numeric_limits<float>::max)();
+        int bestIdx = -1;
+        RE::NiPoint3 bestPoint{};
+        RE::NiPoint3 bestNormal{};
+        float bestSignedAlong = 0.0f;
+        float bestLateral = 0.0f;
+
+        for (int i = 0; i < static_cast<int>(triangles.size()); ++i) {
+            const auto& surfaceTriangle = triangles[i];
+            const auto& tri = surfaceTriangle.triangle;
+            RE::NiPoint3 triNormal = normalize(cross(sub(tri.v1, tri.v0), sub(tri.v2, tri.v0)));
+            if (dot(triNormal, triNormal) <= 0.0f) {
+                continue;
+            }
+            if (hasPreferredNormal && dot(triNormal, preferred) < 0.0f) {
+                triNormal = RE::NiPoint3{ -triNormal.x, -triNormal.y, -triNormal.z };
+            }
+
+            float distSq = 0.0f;
+            const RE::NiPoint3 candidate = closestPointOnTriangleToPoint(point, tri, distSq);
+            if (distSq > maxDistSq || distSq >= bestDistSq) {
+                continue;
+            }
+
+            float signedAlong = 0.0f;
+            float lateral = std::sqrt(distSq);
+            if (hasPreferredNormal) {
+                const RE::NiPoint3 toCandidate = sub(candidate, point);
+                signedAlong = dot(toCandidate, preferred);
+                const RE::NiPoint3 alongVec{ preferred.x * signedAlong, preferred.y * signedAlong, preferred.z * signedAlong };
+                const RE::NiPoint3 lateralVec = sub(toCandidate, alongVec);
+                lateral = std::sqrt((std::max)(0.0f, dot(lateralVec, lateralVec)));
+            }
+
+            bestDistSq = distSq;
+            bestIdx = i;
+            bestPoint = candidate;
+            bestNormal = triNormal;
+            bestSignedAlong = signedAlong;
+            bestLateral = lateral;
+        }
+
+        if (bestIdx < 0) {
+            return false;
+        }
+
+        const auto& surfaceTriangle = triangles[bestIdx];
+        outResult.position = bestPoint;
+        outResult.normal = bestNormal;
+        outResult.triangleIndex = bestIdx;
+        outResult.distance = bestDistSq;
+        outResult.sourceNode = resolveDominantSurfaceOwnerNode(surfaceTriangle, bestPoint);
+        outResult.sourceShape = surfaceTriangle.sourceShape;
+        outResult.triangle = surfaceTriangle.triangle;
+        outResult.sourceKind = surfaceTriangle.sourceKind;
+        outResult.hasTriangle = true;
+        outResult.signedAlongPalmDistanceGameUnits = bestSignedAlong;
+        outResult.lateralPalmDistanceGameUnits = bestLateral;
+        outResult.valid = true;
+        return true;
+    }
 }
