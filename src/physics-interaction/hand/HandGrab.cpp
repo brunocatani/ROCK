@@ -3265,7 +3265,11 @@ namespace rock
             auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
             auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
 
-            const RE::NiTransform desiredBodyTransformHandSpace = _grabFrame.constraintBodyHandSpace;
+            // The ragdoll motor's active angular target is seeded and updated from
+            // the raw-rotation proxy BODY relation. Comparing readback against the
+            // older constraint-space relation makes good grabs look like 90-180 deg
+            // failures and hides the real first-frame angular contract.
+            const RE::NiTransform desiredBodyTransformHandSpace = _grabFrame.rawRotationProxyBodyHandSpace;
             const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
             const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
             const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
@@ -3447,7 +3451,11 @@ namespace rock
         }
 
         const RE::NiPoint3 pivotAProxyLocalGame = transform_math::worldPointToLocal(proxyWorldTransform, grabPivotAWorld);
-        const RE::NiTransform desiredBodyTransformProxySpace = _grabFrame.constraintBodyHandSpace;
+        // Constraint creation must seed the ragdoll motor with the same angular
+        // BODY relation that held updates keep writing. Using the older
+        // constraint-space relation here lets some grabs start with a correct
+        // pivot but a nearly flipped BODY target, which presents as an on-grab snap.
+        const RE::NiTransform desiredBodyTransformProxySpace = _grabFrame.rawRotationProxyBodyHandSpace;
         const RE::NiPoint3 activePivotBConstraintLocalGame = activeProxyConstraintPivotBLocalGame();
 
         const float gameToHkScale = gameToHavokScale();
