@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -116,6 +117,16 @@ namespace
     {
         return RE::NiPoint3{ matrix.entry[0][column], matrix.entry[1][column], matrix.entry[2][column] };
     }
+
+    float maxAbsAxis(const std::vector<RE::NiPoint3>& points, char axis)
+    {
+        float result = 0.0f;
+        for (const auto& point : points) {
+            const float value = axis == 'x' ? point.x : axis == 'y' ? point.y : point.z;
+            result = std::max(result, std::fabs(value));
+        }
+        return result;
+    }
 }
 
 int main()
@@ -153,15 +164,17 @@ int main()
             RE::NiPoint3{ 18.0f, -1.0f, 2.0f },
             RE::NiPoint3{ 16.0f, 1.0f, 2.0f },
         };
-        const RE::NiPoint3 backDirection{ 0.0f, 0.0f, 1.0f };
+        const RE::NiPoint3 crossPalmDirection{ 0.0f, 0.0f, 1.0f };
 
         const auto palm =
-            rock::hand_bone_collider_geometry_math::buildPalmAnchorFrame(hand, fingerBases, backDirection, 0.75f);
+            rock::hand_bone_collider_geometry_math::buildPalmAnchorFrame(hand, fingerBases, crossPalmDirection, 0.75f);
         if (!palm.valid) {
             std::printf("palm anchor frame was not valid\n");
             ok = false;
         } else {
             ok &= expectUnitAxes("palm anchor", palm.xAxis, palm.yAxis, palm.zAxis);
+            ok &= expectVectorNear("palm depth axis is local Y", palm.palmDepthAxis, palm.yAxis);
+            ok &= expectVectorNear("cross-palm axis is local Z", palm.crossPalmAxis, palm.zAxis);
             ok &= expectVectorNear("palm collider column X", matrixColumn(palm.transform.rotate, 0), palm.xAxis);
             ok &= expectVectorNear("palm collider column Y", matrixColumn(palm.transform.rotate, 1), palm.yAxis);
             ok &= expectVectorNear("palm collider column Z", matrixColumn(palm.transform.rotate, 2), palm.zAxis);
@@ -172,6 +185,13 @@ int main()
             ok &= expectVectorNear("palm grab column Y", matrixColumn(grabPalm.rotate, 1), palm.yAxis);
             ok &= expectVectorNear("palm grab column Z", matrixColumn(grabPalm.rotate, 2), palm.zAxis);
         }
+    }
+
+    {
+        const auto palmBox = rock::hand_bone_collider_geometry_math::makePalmBoxHullPoints<RE::NiPoint3>(10.0f, 2.0f, 6.0f);
+        ok &= expectNear("palm box half X length", maxAbsAxis(palmBox, 'x'), 5.0f);
+        ok &= expectNear("palm box half Y depth", maxAbsAxis(palmBox, 'y'), 1.0f);
+        ok &= expectNear("palm box half Z cross-palm width", maxAbsAxis(palmBox, 'z'), 3.0f);
     }
 
     {

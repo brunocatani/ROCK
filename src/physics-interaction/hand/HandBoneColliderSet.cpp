@@ -166,7 +166,7 @@ namespace rock
         }
 
         outLookup.hasForearm3 = findSnapshotBone(bonesByName, isLeft ? "LArm_ForeArm3" : "RArm_ForeArm3", outLookup.forearm3);
-        outLookup.backDirection = normalizeOr(
+        outLookup.crossPalmDirection = normalizeOr(
             debug_axis_math::rotateNiLocalToWorld(outLookup.hand.rotate, RE::NiPoint3(0.0f, 0.0f, 1.0f)),
             RE::NiPoint3(0.0f, 0.0f, 1.0f));
 
@@ -206,7 +206,7 @@ namespace rock
         }
 
         if (role == HandColliderRole::PalmAnchor || role == HandColliderRole::PalmFace || role == HandColliderRole::PalmBack) {
-            const auto palm = hand_bone_collider_geometry_math::buildPalmAnchorFrame(lookup.hand, lookup.fingerBases, lookup.backDirection, 0.75f);
+            const auto palm = hand_bone_collider_geometry_math::buildPalmAnchorFrame(lookup.hand, lookup.fingerBases, lookup.crossPalmDirection, 0.75f);
             if (!palm.valid) {
                 return false;
             }
@@ -216,10 +216,10 @@ namespace rock
             outFrame.radius = roleRadius(role, _lastCapturedPowerArmor);
             outFrame.convexRadius = roleConvexRadius(role, _lastCapturedPowerArmor);
             if (role == HandColliderRole::PalmFace) {
-                outFrame.transform.translate = outFrame.transform.translate - lookup.backDirection * 0.55f;
+                outFrame.transform.translate = outFrame.transform.translate - palm.palmDepthAxis * 0.55f;
                 outFrame.radius *= 0.85f;
             } else if (role == HandColliderRole::PalmBack) {
-                outFrame.transform.translate = outFrame.transform.translate + lookup.backDirection * 0.75f;
+                outFrame.transform.translate = outFrame.transform.translate + palm.palmDepthAxis * 0.75f;
                 outFrame.radius *= 0.95f;
             }
             if (!handRoleFrameDimensionsValid(outFrame, role, _lastCapturedPowerArmor)) {
@@ -314,12 +314,12 @@ namespace rock
         if (hand_collider_semantics::isPalmRole(role)) {
             length = (std::max)(2.5f, frame.length);
             radius = (std::max)(0.8f, frame.radius);
-            const float width = radius * 2.25f;
-            const float thickness = role == HandColliderRole::PalmFace ? radius * 0.55f :
+            const float crossPalmWidth = radius * 2.25f;
+            const float palmDepth = role == HandColliderRole::PalmFace ? radius * 0.55f :
                                     role == HandColliderRole::PalmBack ? radius * 0.70f :
                                     role == HandColliderRole::ThumbPad ? radius * 0.80f :
                                     radius * 0.95f;
-            const auto gamePoints = hand_bone_collider_geometry_math::makeRoundedBoxHullPoints<RE::NiPoint3>(length, width, thickness);
+            const auto gamePoints = hand_bone_collider_geometry_math::makePalmBoxHullPoints<RE::NiPoint3>(length, palmDepth, crossPalmWidth);
             return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(toHavokPointCloud(gamePoints), frame.convexRadius * gameToHavokScale());
         }
 
