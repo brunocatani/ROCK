@@ -36,10 +36,14 @@
 
 namespace rock
 {
+    class BodyBoneColliderSet;
 
     constexpr std::uint32_t ROCK_HAND_LAYER = 43;
 
     constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
+    inline constexpr std::size_t kGrabCollisionSuppressionArmBodyCountPerHand = 3;
+    inline constexpr std::size_t kGrabCollisionSuppressionBodyCountPerHand =
+        hand_collider_semantics::kHandColliderBodyCountPerHand + kGrabCollisionSuppressionArmBodyCountPerHand;
 
     struct GrabPivotDebugSnapshot
     {
@@ -224,7 +228,7 @@ namespace rock
 
     private:
         void collectBodyIdsRecursive(RE::NiAVObject* node, int maxDepth = 10);
-        void suppressHandCollisionForGrab(RE::hknpWorld* world);
+        void suppressHandCollisionForGrab(RE::hknpWorld* world, const BodyBoneColliderSet* bodyBoneColliders);
         void restoreHandCollisionAfterGrab(RE::hknpWorld* world);
         void clearGrabHandCollisionSuppressionState();
         void clearPullRuntimeState(bool restorePreparedObject = true, const char* context = "clear-pull-runtime");
@@ -288,8 +292,15 @@ namespace rock
             return true;
         }
 
-        bool grabSelectedObject(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float tau, float damping, float maxForce, float proportionalRecovery,
-            float constantRecovery, const GrabSharedObjectContext& sharedContext = {});
+        bool grabSelectedObject(RE::hknpWorld* world,
+            const RE::NiTransform& handWorldTransform,
+            float tau,
+            float damping,
+            float maxForce,
+            float proportionalRecovery,
+            float constantRecovery,
+            const BodyBoneColliderSet* bodyBoneColliders,
+            const GrabSharedObjectContext& sharedContext = {});
 
         bool acquirePeerHeldCloseSelection(RE::bhkWorld* bhkWorld,
             RE::hknpWorld* hknpWorld,
@@ -309,8 +320,14 @@ namespace rock
             float constantRecovery,
             const char* reason);
 
-        void updateHeldObject(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, const HeldObjectPlayerSpaceFrame& playerSpaceFrame, float deltaTime,
-            float forceFadeInTime, float tauMin, const GrabReleaseContext& releaseContext = {});
+        void updateHeldObject(RE::hknpWorld* world,
+            const RE::NiTransform& handWorldTransform,
+            const HeldObjectPlayerSpaceFrame& playerSpaceFrame,
+            float deltaTime,
+            float forceFadeInTime,
+            float tauMin,
+            const BodyBoneColliderSet* bodyBoneColliders,
+            const GrabReleaseContext& releaseContext = {});
         void captureHeldReleaseMotion(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, const HeldObjectPlayerSpaceFrame& playerSpaceFrame, float deltaTime);
         void applyReleaseVelocitySnapshot(RE::hknpWorld* world, const GrabReleaseOutcome::VelocitySnapshot& snapshot) const;
 
@@ -545,7 +562,7 @@ namespace rock
 
         std::atomic<int> _heldBodyContactFrame{ 100 };
 
-        hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _grabHandCollisionSuppression{};
+        hand_collision_suppression_math::SuppressionSet<kGrabCollisionSuppressionBodyCountPerHand> _grabHandCollisionSuppression{};
         hand_collision_suppression_math::DelayedRestoreState _grabHandCollisionDelayedRestore{};
         std::atomic<std::uint32_t> _semanticContactFrameCounter{ 0 };
         std::atomic<std::uint32_t> _semanticContactValid{ 0 };

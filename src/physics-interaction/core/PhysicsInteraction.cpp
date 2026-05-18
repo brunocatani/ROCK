@@ -3230,6 +3230,7 @@ namespace rock
                     g_rockConfig.rockGrabConstraintMaxForce,
                     g_rockConfig.rockGrabLinearProportionalRecovery,
                     g_rockConfig.rockGrabLinearConstantRecovery,
+                    &_bodyBoneColliders,
                     sharedContext);
 
                 if (grabbed) {
@@ -3428,6 +3429,7 @@ namespace rock
                         frame.deltaSeconds,
                         g_rockConfig.rockGrabForceFadeInTime,
                         g_rockConfig.rockGrabTauMin,
+                        &_bodyBoneColliders,
                         makeGrabReleaseContext(hand, isLeft));
                     if (heldRef && !hand.isHolding()) {
                         releaseObject(heldRef, claimOwnerForHand(isLeft));
