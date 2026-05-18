@@ -127,9 +127,59 @@ namespace rock::transform_math
         return result;
     }
 
-    // FO4VR hknp consumes hkTransformf rotation as Havok column blocks, while
-    // CommonLib NiMatrix3 math is written in row form. Keep this conversion
-    // explicit so hand, grab, and weapon bodies all use one verified convention.
+    /*
+     * FO4VR hknp BODY slots store the three local axes as 4-float blocks:
+     * [0,1,2], [4,5,6], [8,9,10]. ROCK's grab-space NiTransform helpers also
+     * store local axes as rows, because localVectorToWorld applies x*row0 +
+     * y*row1 + z*row2. BODY readback and deferred BODY writes must therefore
+     * copy those axis blocks directly. The older column transpose helpers below
+     * remain available for native helpers that intentionally build a column-axis
+     * NiMatrix before passing it across the hkTransform boundary.
+     */
+    template <class Matrix>
+    inline Matrix hknpBodyColumnsToNiStoredAxes(const float* bodyFloats)
+    {
+        Matrix result{};
+        result.entry[0][0] = bodyFloats[0];
+        result.entry[0][1] = bodyFloats[1];
+        result.entry[0][2] = bodyFloats[2];
+        result.entry[0][3] = 0.0f;
+
+        result.entry[1][0] = bodyFloats[4];
+        result.entry[1][1] = bodyFloats[5];
+        result.entry[1][2] = bodyFloats[6];
+        result.entry[1][3] = 0.0f;
+
+        result.entry[2][0] = bodyFloats[8];
+        result.entry[2][1] = bodyFloats[9];
+        result.entry[2][2] = bodyFloats[10];
+        result.entry[2][3] = 0.0f;
+        return result;
+    }
+
+    template <class Matrix>
+    inline Matrix niStoredAxesToHknpBodyColumns(const Matrix& matrix)
+    {
+        Matrix result{};
+        result.entry[0][0] = matrix.entry[0][0];
+        result.entry[0][1] = matrix.entry[0][1];
+        result.entry[0][2] = matrix.entry[0][2];
+        result.entry[0][3] = 0.0f;
+
+        result.entry[1][0] = matrix.entry[1][0];
+        result.entry[1][1] = matrix.entry[1][1];
+        result.entry[1][2] = matrix.entry[1][2];
+        result.entry[1][3] = 0.0f;
+
+        result.entry[2][0] = matrix.entry[2][0];
+        result.entry[2][1] = matrix.entry[2][1];
+        result.entry[2][2] = matrix.entry[2][2];
+        result.entry[2][3] = 0.0f;
+        return result;
+    }
+
+    // Transpose between ROCK stored rows and native helpers that deliberately
+    // use NiMatrix columns as physical axes before building an hkTransformf.
     template <class Matrix>
     inline Matrix niRowsToHavokColumns(const Matrix& matrix)
     {
