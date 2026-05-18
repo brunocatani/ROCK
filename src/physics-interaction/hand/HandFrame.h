@@ -160,6 +160,25 @@ namespace rock
         return isLeft ? g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits : g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits;
     }
 
+    inline RE::NiTransform makeGrabAuthorityProxyBaseFrame(
+        const RE::NiTransform& rawHandWorld,
+        const RE::NiTransform& palmAnchorWorld)
+    {
+        /*
+         * Dynamic grab needs one hybrid hand authority. The generated palm
+         * anchor gives the seated physical translation, but its BODY/collider
+         * rotation is not the controller angular authority and can appear
+         * world-locked when visualized with a local offset. Use raw hand
+         * rotation before applying the local proxy offset so pivot A, the idle
+         * debug marker, the hidden proxy body, and ragdoll angular setup all
+         * agree from the first frame.
+         */
+        RE::NiTransform result = palmAnchorWorld;
+        result.rotate = rawHandWorld.rotate;
+        result.scale = rawHandWorld.scale;
+        return result;
+    }
+
     inline RE::NiTransform applyGrabAuthorityProxyLocalOffsetToFrame(const RE::NiTransform& proxyFrameWorld, bool isLeft)
     {
         /*
