@@ -221,6 +221,11 @@ Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'findClosestGrabSurfaceHi
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'closePalmPocketMeshAuthority' 'Close seated grabs must publish palm-pocket mesh authority before generic mesh fallback.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'Contact\s+patches\s+and\s+multi-finger[\s\S]*must\s+not\s+replace\s+pivot\s+B' 'Grab pivot authority must document contact patches as evidence-only for close grabs.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'usePatchPivot\s*=\s*true' 'Contact patch authority must not be able to replace the frozen close-grab pivot B.'
+Require-Text 'src/physics-interaction/grab/GrabCore.h' 'gripPointSourceNodeLocal' 'Grab frame must preserve mesh evidence in source-node local space instead of treating collidable-node local coordinates as universal mesh authority.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'Mesh triangles choose a world-space position only[\s\S]*source-node evidence[\s\S]*BODY-local pivot B' 'Mesh-backed grabs must document that triangles provide position evidence only and cannot inject object-native axes into hand/object authority.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'storeGripSourceEvidence\(_grabFrame,[\s\S]*grabSurfaceHit\.sourceNode\s*\?\s*grabSurfaceHit\.sourceNode\s*:\s*collidableNode[\s\S]*grabGripPoint' 'Grab commit must store source-node visual evidence separately from the BODY-local solver pivot.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'currentRawDesiredBodyWorld[\s\S]*activeProxyConstraintPivotBLocalGame\(\)' 'Relation telemetry must compare the active BODY-local solver pivot, not the mesh-source local evidence point.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'rebuildFingerPoseTargetsFromGrabFrame[\s\S]*gripEvidencePointWorld\(frame,\s*currentNodeWorld\)' 'Finger pose rebuild must read mesh evidence through the explicit source-node evidence path when available.'
 
 $meshAuthorityText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/hand/HandGrab.cpp')
 $closePocketStart = $meshAuthorityText.IndexOf('Close seated grabs need one position authority')

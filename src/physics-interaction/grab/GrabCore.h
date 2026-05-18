@@ -458,6 +458,9 @@ namespace rock
         RE::NiPoint3 gripPointLocal{};
         RE::NiPoint3 gripEvidenceLocal{};
         RE::NiPoint3 gripNormalLocal{};
+        RE::NiTransform gripSourceNodeWorld{};
+        RE::NiPoint3 gripPointSourceNodeLocal{};
+        RE::NiPoint3 gripNormalSourceNodeLocal{};
         RE::NiPoint3 gripPointBodyLocalGame{};
         RE::NiPoint3 pivotBBodyLocalGame{};
         RE::NiPoint3 pivotBConstraintLocalGame{};
@@ -472,8 +475,11 @@ namespace rock
         const char* pivotAuthoritySource = "none";
         const char* palmSeatPointMode = "none";
         const char* fingerEvidencePointMode = "none";
+        RE::NiAVObject* gripSourceNode = nullptr;
         bool valid = false;
         bool hasGripPoint = false;
+        bool hasGripSourceNodePoint = false;
+        bool hasGripSourceNodeNormal = false;
         bool hasFrozenPivotB = false;
         bool hasMeshPoseData = false;
         bool positionOnlyPivot = false;
@@ -510,6 +516,9 @@ namespace rock
         RE::NiPoint3 gripPointLocal{};
         RE::NiPoint3 gripEvidenceLocal{};
         RE::NiPoint3 gripNormalLocal{};
+        RE::NiTransform gripSourceNodeWorldAtGrab{};
+        RE::NiPoint3 gripPointSourceNodeLocal{};
+        RE::NiPoint3 gripNormalSourceNodeLocal{};
         RE::NiPoint3 multiFingerGripCenterWorldAtGrab{};
         RE::NiPoint3 multiFingerHandCenterWorldAtGrab{};
         RE::NiPoint3 multiFingerAverageNormalWorldAtGrab{};
@@ -556,8 +565,11 @@ namespace rock
         ImmutableGrabCaptureTelemetry captureTelemetry{};
         std::vector<GrabLocalTriangle> localMeshTriangles;
         RE::NiAVObject* heldNode = nullptr;
+        RE::NiAVObject* gripSourceNode = nullptr;
         bool hasMeshPoseData = false;
         bool hasGripPoint = false;
+        bool hasGripSourceNodePoint = false;
+        bool hasGripSourceNodeNormal = false;
         bool hasGripEvidenceShapeKey = false;
         bool hasFrozenPivotB = false;
         bool hasContactPatch = false;
@@ -589,6 +601,10 @@ namespace rock
             captureTelemetry.gripPointLocal = gripPointLocal;
             captureTelemetry.gripEvidenceLocal = gripEvidenceLocal;
             captureTelemetry.gripNormalLocal = gripNormalLocal;
+            captureTelemetry.gripSourceNodeWorld = gripSourceNodeWorldAtGrab;
+            captureTelemetry.gripPointSourceNodeLocal = gripPointSourceNodeLocal;
+            captureTelemetry.gripNormalSourceNodeLocal = gripNormalSourceNodeLocal;
+            captureTelemetry.gripSourceNode = gripSourceNode;
             captureTelemetry.gripPointBodyLocalGame = gripPointBodyLocalGame;
             captureTelemetry.pivotBBodyLocalGame = pivotBBodyLocalGame;
             captureTelemetry.pivotBConstraintLocalGame = pivotBConstraintLocalGame;
@@ -604,6 +620,8 @@ namespace rock
             captureTelemetry.palmSeatPointMode = palmSeatPointMode;
             captureTelemetry.fingerEvidencePointMode = fingerEvidencePointMode;
             captureTelemetry.hasGripPoint = hasGripPoint;
+            captureTelemetry.hasGripSourceNodePoint = hasGripSourceNodePoint;
+            captureTelemetry.hasGripSourceNodeNormal = hasGripSourceNodeNormal;
             captureTelemetry.hasFrozenPivotB = hasFrozenPivotB;
             captureTelemetry.hasMeshPoseData = hasMeshPoseData;
             captureTelemetry.positionOnlyPivot = pivotAuthorityPositionOnly;
@@ -636,6 +654,9 @@ namespace rock
             gripPointLocal = {};
             gripEvidenceLocal = {};
             gripNormalLocal = {};
+            gripSourceNodeWorldAtGrab = RE::NiTransform();
+            gripPointSourceNodeLocal = {};
+            gripNormalSourceNodeLocal = {};
             multiFingerGripCenterWorldAtGrab = {};
             multiFingerHandCenterWorldAtGrab = {};
             multiFingerAverageNormalWorldAtGrab = {};
@@ -676,8 +697,11 @@ namespace rock
             captureTelemetry.clear();
             localMeshTriangles.clear();
             heldNode = nullptr;
+            gripSourceNode = nullptr;
             hasMeshPoseData = false;
             hasGripPoint = false;
+            hasGripSourceNodePoint = false;
+            hasGripSourceNodeNormal = false;
             hasGripEvidenceShapeKey = false;
             hasFrozenPivotB = false;
             hasContactPatch = false;
