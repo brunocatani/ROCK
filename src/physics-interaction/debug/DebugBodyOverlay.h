@@ -78,6 +78,18 @@ namespace rock::debug
         Body
     };
 
+    enum class AxisOverlayBasis : std::uint8_t
+    {
+        /*
+         * Palm/proxy seating diagnostics need to distinguish the normal Ni
+         * local-vector view from the generated collider axes authored into
+         * matrix columns. Runtime behavior is not selected here; this only
+         * tells the debug tripod which basis it is exposing.
+         */
+        NiLocalVectorToWorld,
+        StoredColumns
+    };
+
     enum class MarkerOverlayRole : std::uint8_t
     {
         RightGrabAnchor,
@@ -195,6 +207,7 @@ namespace rock::debug
         RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
         RE::NiTransform transform{};
         RE::NiPoint3 translationStart{};
+        AxisOverlayBasis basis{ AxisOverlayBasis::NiLocalVectorToWorld };
         bool drawTranslationLine{ false };
     };
 
@@ -240,7 +253,7 @@ namespace rock::debug
                 (hand_collider_semantics::kHandColliderBodyCountPerHand * 2) +
                 skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size() + 8>
             entries{};
-        std::array<AxisOverlayEntry, 40> axisEntries{};
+        std::array<AxisOverlayEntry, 56> axisEntries{};
         std::array<MarkerOverlayEntry, 192> markerEntries{};
         std::array<SkeletonOverlayEntry, skeleton_bone_debug_math::skeletonOverlayBudget()> skeletonEntries{};
         std::array<TextOverlayEntry, 40> textEntries{};

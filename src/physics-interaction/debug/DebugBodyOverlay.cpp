@@ -441,6 +441,15 @@ float4 main(PS_INPUT input) : SV_Target {
             return RE::NiPoint3(value.x / length, value.y / length, value.z / length);
         }
 
+        RE::NiPoint3 storedColumnAxis(const RE::NiMatrix3& matrix, std::uint32_t column)
+        {
+            if (column > 2) {
+                return RE::NiPoint3(0.0f, 0.0f, 1.0f);
+            }
+
+            return RE::NiPoint3(matrix.entry[0][column], matrix.entry[1][column], matrix.entry[2][column]);
+        }
+
         MeshData generateBoundsBox(const std::vector<Vertex>& vertices)
         {
             MeshData mesh;
@@ -1976,9 +1985,18 @@ float4 main(PS_INPUT input) : SV_Target {
         {
             const float length = axisLengthForRole(entry.role);
             const RE::NiPoint3 origin = entry.transform.translate;
-            const RE::NiPoint3 xAxis = normalizedNi(debug_axis_math::rotateNiLocalToWorld(entry.transform.rotate, RE::NiPoint3(1.0f, 0.0f, 0.0f)));
-            const RE::NiPoint3 yAxis = normalizedNi(debug_axis_math::rotateNiLocalToWorld(entry.transform.rotate, RE::NiPoint3(0.0f, 1.0f, 0.0f)));
-            const RE::NiPoint3 zAxis = normalizedNi(debug_axis_math::rotateNiLocalToWorld(entry.transform.rotate, RE::NiPoint3(0.0f, 0.0f, 1.0f)));
+            RE::NiPoint3 xAxis{};
+            RE::NiPoint3 yAxis{};
+            RE::NiPoint3 zAxis{};
+            if (entry.basis == AxisOverlayBasis::StoredColumns) {
+                xAxis = normalizedNi(storedColumnAxis(entry.transform.rotate, 0));
+                yAxis = normalizedNi(storedColumnAxis(entry.transform.rotate, 1));
+                zAxis = normalizedNi(storedColumnAxis(entry.transform.rotate, 2));
+            } else {
+                xAxis = normalizedNi(debug_axis_math::rotateNiLocalToWorld(entry.transform.rotate, RE::NiPoint3(1.0f, 0.0f, 0.0f)));
+                yAxis = normalizedNi(debug_axis_math::rotateNiLocalToWorld(entry.transform.rotate, RE::NiPoint3(0.0f, 1.0f, 0.0f)));
+                zAxis = normalizedNi(debug_axis_math::rotateNiLocalToWorld(entry.transform.rotate, RE::NiPoint3(0.0f, 0.0f, 1.0f)));
+            }
 
             appendAxisTripod(batch, toVertex(origin), toVertex(origin + xAxis * length), toVertex(origin + yAxis * length), toVertex(origin + zAxis * length), entry.role);
 

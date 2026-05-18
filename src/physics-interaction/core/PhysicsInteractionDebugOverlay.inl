@@ -78,7 +78,11 @@
             frame.entries[frame.count++] = debug::BodyOverlayEntry{ bodyId, role };
         };
 
-        auto addAxisTransform = [&](const RE::NiTransform& transform, debug::AxisOverlayRole role, const RE::NiPoint3& translationStart, bool drawTranslationLine) {
+        auto addAxisTransformWithBasis = [&](const RE::NiTransform& transform,
+                                            debug::AxisOverlayRole role,
+                                            const RE::NiPoint3& translationStart,
+                                            bool drawTranslationLine,
+                                            debug::AxisOverlayBasis basis) {
             if (!frame.drawAxes || frame.axisCount >= frame.axisEntries.size()) {
                 return;
             }
@@ -88,8 +92,18 @@
             entry.role = role;
             entry.transform = transform;
             entry.translationStart = translationStart;
+            entry.basis = basis;
             entry.drawTranslationLine = drawTranslationLine;
         };
+
+        auto addAxisTransform = [&](const RE::NiTransform& transform, debug::AxisOverlayRole role, const RE::NiPoint3& translationStart, bool drawTranslationLine) {
+            addAxisTransformWithBasis(transform, role, translationStart, drawTranslationLine, debug::AxisOverlayBasis::NiLocalVectorToWorld);
+        };
+
+        auto addStoredColumnAxisTransform =
+            [&](const RE::NiTransform& transform, debug::AxisOverlayRole role, const RE::NiPoint3& translationStart, bool drawTranslationLine) {
+                addAxisTransformWithBasis(transform, role, translationStart, drawTranslationLine, debug::AxisOverlayBasis::StoredColumns);
+            };
 
         auto addAxisBody = [&](RE::hknpBodyId bodyId, debug::AxisOverlayRole role, const RE::NiPoint3& translationStart, bool drawTranslationLine) {
             if (!frame.drawAxes || bodyId.value == INVALID_BODY_ID || frame.axisCount >= frame.axisEntries.size()) {
@@ -935,7 +949,7 @@
                          * grab-authority frame is the explicit adapter handed
                          * to proxy/body-A grab math.
                          */
-                        addAxisTransform(
+                        addStoredColumnAxisTransform(
                             withOverlayOrigin(sample.palmAnchorTargetWorld, palmReference - palmDebugBasis.panelRight * 8.0f),
                             isLeft ? debug::AxisOverlayRole::LeftGrabPalmGeneratedDirect : debug::AxisOverlayRole::RightGrabPalmGeneratedDirect,
                             palmReference,
@@ -1502,6 +1516,26 @@
 
         if (frame.drawRockBodies) {
             if (drawGrabAuthorityProxy) {
+                auto addGrabAuthorityAxisReference = [&](const Hand& hand, const RE::NiTransform& rawHandWorld) {
+                    if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
+                        return;
+                    }
+
+                    const bool isLeft = hand.isLeft();
+                    if (!g_rockConfig.rockDebugShowHandAxes) {
+                        addAxisTransform(rawHandWorld, isLeft ? debug::AxisOverlayRole::LeftHandRaw : debug::AxisOverlayRole::RightHandRaw, rawHandWorld.translate, false);
+                    }
+
+                    RE::NiTransform palmAnchorTarget{};
+                    if (hand.tryGetPalmAnchorTarget(palmAnchorTarget)) {
+                        addStoredColumnAxisTransform(
+                            palmAnchorTarget,
+                            isLeft ? debug::AxisOverlayRole::LeftGrabPalmGeneratedDirect : debug::AxisOverlayRole::RightGrabPalmGeneratedDirect,
+                            rawHandWorld.translate,
+                            true);
+                    }
+                };
+
                 auto addGrabAuthorityProxyTarget = [&](const Hand& hand, const RE::NiTransform& rawHandWorld) {
                     if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
                         return;
@@ -1527,6 +1561,9 @@
                         snapshot.proxyTargetWorld.translate);
 
                 };
+
+                addGrabAuthorityAxisReference(_rightHand, context.right.rawHandWorld);
+                addGrabAuthorityAxisReference(_leftHand, context.left.rawHandWorld);
 
                 const RE::hknpBodyId rightPalm = _rightHand.getCollisionBodyId();
                 const RE::hknpBodyId leftPalm = _leftHand.getCollisionBodyId();
