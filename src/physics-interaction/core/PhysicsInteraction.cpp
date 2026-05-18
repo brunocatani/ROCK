@@ -880,27 +880,6 @@ namespace rock
         return true;
     }
 
-    bool PhysicsInteraction::tryGetGrabAuthorityAnchorWorld(bool isLeft, RE::NiPoint3& outAnchorWorld) const
-    {
-        outAnchorWorld = {};
-
-        RE::NiTransform rawHandWorld{};
-        if (!tryGetRootFlattenedHandTransform(isLeft, rawHandWorld)) {
-            return false;
-        }
-
-        const auto& hand = isLeft ? _leftHand : _rightHand;
-        RE::hknpWorld* world = _cachedHknpWorld;
-        if (!world) {
-            world = _lifecycleHknpWorldAtomic.load(std::memory_order_acquire);
-        }
-
-        outAnchorWorld = hand.computeGrabPivotAWorld(world, rawHandWorld);
-        return std::isfinite(outAnchorWorld.x) &&
-               std::isfinite(outAnchorWorld.y) &&
-               std::isfinite(outAnchorWorld.z);
-    }
-
     void PhysicsInteraction::noteSkeletonLifecycle(std::uint32_t skeletonGeneration, ::rock::provider::RockProviderLifecycleReason reason)
     {
         physics_lifecycle::noteSkeletonGeneration(_lifecycleState, skeletonGeneration, reason);
@@ -1156,8 +1135,8 @@ namespace rock
             const auto localTransform = _handBoneCache.getWorldTransform(isLeft);
             const auto apiTransform = frik::api::FRIKApi::inst->getHandWorldTransform(handEnum);
             const auto delta = measureTransformDelta(localTransform, apiTransform);
-            const auto localProxySeatPosition = computeFallbackGrabAuthorityProxySeatWorld(localTransform, isLeft);
-            const auto apiProxySeatPosition = computeFallbackGrabAuthorityProxySeatWorld(apiTransform, isLeft);
+            const auto localPalmPosition = computePalmPositionFromHandBasis(localTransform, isLeft);
+            const auto apiPalmPosition = computePalmPositionFromHandBasis(apiTransform, isLeft);
             const auto localPalmNormal = computePalmNormalFromHandBasis(localTransform, isLeft);
             const auto apiPalmNormal = computePalmNormalFromHandBasis(apiTransform, isLeft);
             const auto localPointing = computePointingVectorFromHandBasis(localTransform, isLeft);
@@ -1200,8 +1179,8 @@ namespace rock
 
             if (emitSummary) {
                 const char* summaryHandLabel = isLeft ? "L" : "R";
-                ROCK_LOG_DEBUG(Hand, "{} parity: raw(pos={:.3f}, rot={:.3f}deg) basis(proxySeat={:.3f}, palmNormal={:.3f}deg, pointing={:.3f}deg)", summaryHandLabel,
-                    delta.position, delta.rotationDegrees, measurePointDelta(localProxySeatPosition, apiProxySeatPosition), measureDirectionDeltaDegrees(localPalmNormal, apiPalmNormal),
+                ROCK_LOG_DEBUG(Hand, "{} parity: raw(pos={:.3f}, rot={:.3f}deg) basis(palmPos={:.3f}, palmNormal={:.3f}deg, pointing={:.3f}deg)", summaryHandLabel,
+                    delta.position, delta.rotationDegrees, measurePointDelta(localPalmPosition, apiPalmPosition), measureDirectionDeltaDegrees(localPalmNormal, apiPalmNormal),
                     measureDirectionDeltaDegrees(localPointing, apiPointing));
             }
         };
@@ -1701,17 +1680,12 @@ namespace rock
 
             const bool leftHandHoldingObject = _leftHand.isHolding();
             const auto supportAuthorityMode = resolveEquippedWeaponSupportAuthorityMode(weaponNode);
-            const TwoHandedGripHandAnchors weaponHandAnchors{
-                frame.right.grabAnchorWorld,
-                frame.left.grabAnchorWorld
-            };
 
             _twoHandedGrip.update(
                 weaponNode,
                 leftWeaponContact,
                 gripPressed,
                 leftHandHoldingObject,
-                weaponHandAnchors,
                 frame.deltaSeconds,
                 currentWeaponGenerationKey,
                 providerInteractionState,

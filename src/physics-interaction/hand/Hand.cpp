@@ -949,7 +949,7 @@ namespace rock
             return applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft).translate;
         }
 
-        return computeFallbackGrabAuthorityProxySeatWorld(fallbackHandWorldTransform, _isLeft);
+        return fallbackHandWorldTransform.translate;
     }
 
     RE::NiPoint3 Hand::computeGrabStartupCapturePivotAWorld(RE::hknpWorld* world, const RE::NiTransform& rawHandWorldTransform) const
@@ -961,7 +961,9 @@ namespace rock
             std::isfinite(palmReference.world.translate.z)) {
             const RE::NiTransform palmAuthorityBaseWorld =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-            return applyGrabAuthorityProxyLocalOffsetToFrame(palmAuthorityBaseWorld, _isLeft).translate;
+            const RE::NiTransform startupCaptureFrameWorld =
+                makeGrabStartupCaptureAuthorityFrame(rawHandWorldTransform, palmAuthorityBaseWorld);
+            return applyGrabAuthorityProxyLocalOffsetToFrame(startupCaptureFrameWorld, _isLeft).translate;
         }
 
         return applyGrabAuthorityProxyLocalOffsetToFrame(rawHandWorldTransform, _isLeft).translate;
@@ -970,49 +972,30 @@ namespace rock
     bool Hand::getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const
     {
         /*
-         * Offset tuning needs the corrected proxy-local seat point before a
-         * grab creates the real no-contact proxy body. The generated palm frame
-         * is adapted at the grab-authority boundary first, so the marker shows
-         * local -Y as the palm-face direction instead of the old raw-rotation
-         * startup workaround. When live palm readback is unavailable, the same
-         * raw-hand proxy-seat fallback used by runtime/API stays visible so the
-         * overlay still shows the active seat authority.
+         * Offset tuning needs the startup capture seat point before a grab
+         * creates the real no-contact proxy body. This marker intentionally
+         * shows the raw-rotation capture offset, while active proxy readback
+         * remains the separate runtime held-authority frame.
          */
         out = {};
-        out.localOffsetGameUnits = computeGrabAuthorityProxyOffsetLocalGame(_isLeft);
 
         LivePalmAnchorReference palmReference{};
-        if (tryResolveLivePalmAnchorReference(world, palmReference) &&
-            std::isfinite(palmReference.world.translate.x) &&
-            std::isfinite(palmReference.world.translate.y) &&
-            std::isfinite(palmReference.world.translate.z)) {
-            const RE::NiTransform palmAuthorityBaseWorld =
-                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-            out.palmAuthorityBaseWorld = palmAuthorityBaseWorld;
-            out.proxyTargetWorld = applyGrabAuthorityProxyLocalOffsetToFrame(palmAuthorityBaseWorld, _isLeft);
-            out.palmSource = palmReference.source;
-            out.palmMotionIndex = palmReference.motionIndex;
-            return true;
-        }
-
-        bool rawHandWorldValid = std::isfinite(rawHandWorld.scale) &&
-                                 std::isfinite(rawHandWorld.translate.x) &&
-                                 std::isfinite(rawHandWorld.translate.y) &&
-                                 std::isfinite(rawHandWorld.translate.z);
-        for (int row = 0; row < 3 && rawHandWorldValid; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                if (!std::isfinite(rawHandWorld.rotate.entry[row][column])) {
-                    rawHandWorldValid = false;
-                    break;
-                }
-            }
-        }
-        if (!rawHandWorldValid) {
+        if (!tryResolveLivePalmAnchorReference(world, palmReference) ||
+            !std::isfinite(palmReference.world.translate.x) ||
+            !std::isfinite(palmReference.world.translate.y) ||
+            !std::isfinite(palmReference.world.translate.z)) {
             return false;
         }
 
-        out.palmAuthorityBaseWorld = rawHandWorld;
-        out.proxyTargetWorld = applyGrabAuthorityProxyLocalOffsetToFrame(rawHandWorld, _isLeft);
+        const RE::NiTransform palmAuthorityBaseWorld =
+            hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
+        out.palmAuthorityBaseWorld = palmAuthorityBaseWorld;
+        const RE::NiTransform startupCaptureFrameWorld =
+            makeGrabStartupCaptureAuthorityFrame(rawHandWorld, palmAuthorityBaseWorld);
+        out.proxyTargetWorld = applyGrabAuthorityProxyLocalOffsetToFrame(startupCaptureFrameWorld, _isLeft);
+        out.localOffsetGameUnits = computeGrabAuthorityProxyOffsetLocalGame(_isLeft);
+        out.palmSource = palmReference.source;
+        out.palmMotionIndex = palmReference.motionIndex;
         return true;
     }
 

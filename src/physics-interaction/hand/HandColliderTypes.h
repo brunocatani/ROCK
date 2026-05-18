@@ -414,10 +414,8 @@ namespace rock::hand_bone_collider_geometry_math
          * Generated body/hand colliders use the convention verified in game for
          * physical hull placement: each generated axis is stored as a column of
          * the Ni matrix. Do not change this to match grab-frame math. The
-         * collider convention is a native-body placement convention. Dynamic
-         * grab adapts it at the explicit grab-authority boundary below so the
-         * hidden proxy consumes local vectors through ROCK's row/local-vector
-         * transform convention instead of the collider placement convention.
+         * collider convention is a native-body placement convention; dynamic
+         * grab adapts it at the explicit grab-authority boundary below.
          */
         Matrix matrix{};
         matrix.entry[0][0] = xAxis.x;
@@ -448,17 +446,15 @@ namespace rock::hand_bone_collider_geometry_math
     inline Transform generatedColliderFrameToGrabAuthorityFrame(const Transform& colliderFrame)
     {
         /*
-         * 2026-05-18 correction: the generated palm collider and the grab
-         * proxy are not consumed by the same matrix convention. The collider
-         * target must keep the native column-stored frame that seats hknp
-         * shapes correctly, but the hidden proxy/frozen grab point is moved
-         * with TransformMath local vectors. Transposing at this boundary makes
-         * proxy local X=fingers, local +Y=back of hand, local -Y=palm face, and
-         * local Z=cross-palm without retuning the physical collider placement.
+         * The root-flattened generated collider frame is the runtime visual
+         * truth. In-game proxy isolation proved the older transpose adapter made
+         * the hidden grab authority body rotate differently from the working
+         * palm/finger colliders. Body-A must therefore consume the same physical
+         * frame that the generated collider body consumes. Any grab-space math
+         * that needs an inverse or relative transform must do that in the saved
+         * object relation, not by changing the physical proxy orientation.
          */
-        Transform result = colliderFrame;
-        result.rotate = transposeStoredRotation(colliderFrame.rotate);
-        return result;
+        return colliderFrame;
     }
 
     template <class Transform, class Vector>
@@ -480,35 +476,12 @@ namespace rock::hand_bone_collider_geometry_math
         Vector xAxis{};
         Vector yAxis{};
         Vector zAxis{};
-        Vector palmDepthAxis{};
-        Vector crossPalmAxis{};
+        Vector backAxis{};
         float length = 0.0f;
         float radius = 0.0f;
         float convexRadius = 0.0f;
         bool valid = false;
     };
-
-    template <class Transform, class Vector>
-    inline bool resolveSegmentColliderEndpoints(const BoneColliderFrameInput<Transform, Vector>& input, Vector& outStart, Vector& outEnd)
-    {
-        outStart = input.start.translate;
-        outEnd = input.end.translate;
-        if (!finiteVector(outStart) || !finiteVector(outEnd)) {
-            return false;
-        }
-        if (input.extrapolateFromPrevious) {
-            if (!finiteVector(input.previous.translate)) {
-                return false;
-            }
-            const Vector parentToTip = sub(input.start.translate, input.previous.translate);
-            const float parentLength = length(parentToTip);
-            if (!std::isfinite(parentLength) || parentLength <= 1.0e-5f || !std::isfinite(input.extrapolatedLengthScale)) {
-                return false;
-            }
-            outEnd = add(input.start.translate, mul(parentToTip, input.extrapolatedLengthScale));
-        }
-        return true;
-    }
 
     template <class Transform, class Vector>
     inline BoneColliderFrameResult<Transform, Vector> buildSegmentColliderFrame(const BoneColliderFrameInput<Transform, Vector>& input)
@@ -517,10 +490,21 @@ namespace rock::hand_bone_collider_geometry_math
         result.radius = (std::max)(0.01f, input.radius);
         result.convexRadius = (std::max)(0.0f, input.convexRadius);
 
-        Vector start{};
-        Vector end{};
-        if (!resolveSegmentColliderEndpoints(input, start, end)) {
+        Vector start = input.start.translate;
+        Vector end = input.end.translate;
+        if (!finiteVector(start) || !finiteVector(end)) {
             return result;
+        }
+        if (input.extrapolateFromPrevious) {
+            if (!finiteVector(input.previous.translate)) {
+                return result;
+            }
+            const Vector parentToTip = sub(input.start.translate, input.previous.translate);
+            const float parentLength = length(parentToTip);
+            if (!std::isfinite(parentLength) || parentLength <= 1.0e-5f || !std::isfinite(input.extrapolatedLengthScale)) {
+                return result;
+            }
+            end = add(input.start.translate, mul(parentToTip, input.extrapolatedLengthScale));
         }
 
         const Vector segment = sub(end, start);
@@ -540,57 +524,6 @@ namespace rock::hand_bone_collider_geometry_math
         result.zAxis = normalizeOr(cross(result.xAxis, result.yAxis), fallbackZ);
         result.yAxis = normalizeOr(cross(result.zAxis, result.xAxis), fallbackY);
 
-        result.transform = input.start;
-        result.transform.translate = add(start, mul(segment, 0.5f));
-        result.transform.rotate = matrixFromAxes<decltype(result.transform.rotate)>(result.xAxis, result.yAxis, result.zAxis);
-        result.transform.scale = 1.0f;
-        result.valid = true;
-        return result;
-    }
-
-    template <class Transform, class Vector>
-    inline BoneColliderFrameResult<Transform, Vector> buildPalmDepthAlignedSegmentFrame(
-        const BoneColliderFrameInput<Transform, Vector>& input,
-        const Vector& palmDepthAxisHint)
-    {
-        /*
-         * Palm-adjacent boxes such as PalmHeel and ThumbPad use anatomical
-         * start/end points for placement, but their box thickness still belongs
-         * to the corrected palm convention. Force local Y to palm depth so the
-         * shape expands thin through palm face/back and wide in the in-plane
-         * local Z direction instead of inheriting a stale segment roll.
-         */
-        BoneColliderFrameResult<Transform, Vector> result{};
-        result.radius = (std::max)(0.01f, input.radius);
-        result.convexRadius = (std::max)(0.0f, input.convexRadius);
-
-        Vector start{};
-        Vector end{};
-        if (!resolveSegmentColliderEndpoints(input, start, end) || !finiteVector(palmDepthAxisHint)) {
-            return result;
-        }
-
-        const Vector segment = sub(end, start);
-        result.length = length(segment);
-        if (!std::isfinite(result.length) || result.length <= 1.0e-5f) {
-            return result;
-        }
-
-        const Vector fallbackX = makeVector<Vector>(1.0f, 0.0f, 0.0f);
-        const Vector fallbackY = makeVector<Vector>(0.0f, 1.0f, 0.0f);
-        const Vector fallbackZ = makeVector<Vector>(0.0f, 0.0f, 1.0f);
-        result.xAxis = normalizeOr(segment, fallbackX);
-
-        Vector palmDepthHint = projectOntoPlane(palmDepthAxisHint, result.xAxis);
-        if (length(palmDepthHint) <= 1.0e-5f) {
-            palmDepthHint = projectOntoPlane(debug_axis_math::rotateNiLocalToWorld(input.start.rotate, fallbackY), result.xAxis);
-        }
-        result.yAxis = normalizeOr(palmDepthHint, std::fabs(dot(result.xAxis, fallbackY)) < 0.9f ? fallbackY : fallbackZ);
-        result.zAxis = normalizeOr(cross(result.xAxis, result.yAxis), fallbackZ);
-        result.yAxis = normalizeOr(cross(result.zAxis, result.xAxis), fallbackY);
-
-        result.palmDepthAxis = result.yAxis;
-        result.crossPalmAxis = result.zAxis;
         result.transform = input.start;
         result.transform.translate = add(start, mul(segment, 0.5f));
         result.transform.rotate = matrixFromAxes<decltype(result.transform.rotate)>(result.xAxis, result.yAxis, result.zAxis);
@@ -645,28 +578,15 @@ namespace rock::hand_bone_collider_geometry_math
         return points;
     }
 
-    template <class Vector>
-    inline std::vector<Vector> makePalmBoxHullPoints(float lengthValue, float palmDepthValue, float crossPalmWidthValue)
-    {
-        /*
-         * Palm roles use the corrected runtime proxy convention:
-         * local X follows the fingers, local Y is palm depth (+Y back,
-         * -Y palm face), and local Z is cross-palm width. The generic rounded
-         * box helper still accepts (X length, Y size, Z size), so keep this
-         * named wrapper at the call site to prevent another silent Y/Z swap.
-         */
-        return makeRoundedBoxHullPoints<Vector>(lengthValue, palmDepthValue, crossPalmWidthValue);
-    }
-
     template <class Transform, class Vector>
     inline BoneColliderFrameResult<Transform, Vector> buildPalmAnchorFrame(
         const Transform& hand,
         const std::array<Vector, 5>& fingerBases,
-        const Vector& crossPalmDirection,
+        const Vector& backOfHandDirection,
         float palmDepth)
     {
         BoneColliderFrameResult<Transform, Vector> result{};
-        if (!finiteVector(hand.translate) || !finiteVector(crossPalmDirection)) {
+        if (!finiteVector(hand.translate) || !finiteVector(backOfHandDirection)) {
             return result;
         }
         const Vector fallbackX = makeVector<Vector>(1.0f, 0.0f, 0.0f);
@@ -688,12 +608,10 @@ namespace rock::hand_bone_collider_geometry_math
         palmCenter = mul(palmCenter, 1.0f / static_cast<float>(fingerBases.size() + 1));
 
         result.xAxis = normalizeOr(sub(fingerCenter, hand.translate), fallbackX);
-        result.crossPalmAxis = normalizeOr(projectOntoPlane(crossPalmDirection, result.xAxis), fallbackZ);
-        result.palmDepthAxis = normalizeOr(cross(result.crossPalmAxis, result.xAxis), fallbackY);
-        result.crossPalmAxis = normalizeOr(cross(result.xAxis, result.palmDepthAxis), fallbackZ);
-        result.xAxis = normalizeOr(cross(result.palmDepthAxis, result.crossPalmAxis), fallbackX);
-        result.yAxis = result.palmDepthAxis;
-        result.zAxis = result.crossPalmAxis;
+        result.backAxis = normalizeOr(backOfHandDirection, fallbackZ);
+        result.yAxis = normalizeOr(cross(result.backAxis, result.xAxis), fallbackY);
+        result.xAxis = normalizeOr(cross(result.yAxis, result.backAxis), fallbackX);
+        result.zAxis = result.backAxis;
         const float palmLength = length(sub(fingerCenter, hand.translate));
         if (!std::isfinite(palmLength)) {
             return result;
@@ -703,9 +621,9 @@ namespace rock::hand_bone_collider_geometry_math
         result.convexRadius = 0.1f;
 
         result.transform = hand;
-        const float currentPalmDepthOffset = dot(sub(palmCenter, hand.translate), result.palmDepthAxis);
-        palmCenter = sub(palmCenter, mul(result.palmDepthAxis, currentPalmDepthOffset));
-        result.transform.translate = add(palmCenter, mul(result.palmDepthAxis, -std::fabs(palmDepth) / 3.0f));
+        const float currentBackOffset = dot(sub(palmCenter, hand.translate), result.backAxis);
+        palmCenter = sub(palmCenter, mul(result.backAxis, currentBackOffset));
+        result.transform.translate = add(palmCenter, mul(result.backAxis, -std::fabs(palmDepth) / 3.0f));
         result.transform.rotate = matrixFromAxes<decltype(result.transform.rotate)>(result.xAxis, result.yAxis, result.zAxis);
         result.transform.scale = 1.0f;
         result.valid = true;

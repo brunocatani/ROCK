@@ -50,7 +50,7 @@ namespace rock
         void suppressNextFileWatchReload() { _ignoreNextIniFileChange.store(true); }
 
         [[nodiscard]] bool persistPhysicsBool(const char* key, bool value);
-        [[nodiscard]] bool persistGrabAuthorityProxyOffset(bool isLeft, const RE::NiPoint3& value);
+        [[nodiscard]] bool persistGrabPivotAHandspace(bool isLeft, const RE::NiPoint3& value);
 
         bool rockEnabled = true;
 
@@ -265,8 +265,8 @@ namespace rock
         float rockGrabFadeInStartAngularRatio = 100.0f;
 
         float rockGrabForceFadeInTime = 0.1f;
-        RE::NiPoint3 rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
-        RE::NiPoint3 rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
+        RE::NiPoint3 rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);
+        RE::NiPoint3 rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);
         float rockGrabLooseWeaponSharedConstraintLinearTauMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintAngularTauMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier = 1.0f;
@@ -386,6 +386,9 @@ namespace rock
         float rockSelectedCloseFingerAnimValue = 0.9f;
         float rockPulledAngularDamping = 8.0f;
         float rockPulledGrabHandAdjustDistanceGameUnits = 10.5f;
+
+        RE::NiPoint3 rockRightGrabPivotAHandspace = RE::NiPoint3(6.0f, 0.2f, -2.0f);
+        RE::NiPoint3 rockLeftGrabPivotAHandspace = RE::NiPoint3(6.0f, -0.2f, -2.0f);
 
         float rockGrabLerpSpeed = 300.0f;
         float rockGrabLerpAngularSpeed = 360.0f;

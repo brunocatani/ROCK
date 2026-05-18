@@ -69,7 +69,7 @@ namespace rock
             std::array<std::array<RE::NiTransform, 3>, hand_collider_semantics::kHandFingerCount> fingers{};
             std::array<bool, hand_collider_semantics::kHandFingerCount> fingerValid{};
             std::array<RE::NiPoint3, hand_collider_semantics::kHandFingerCount> fingerBases{};
-            RE::NiPoint3 crossPalmDirection{};
+            RE::NiPoint3 backDirection{};
             bool hasForearm3 = false;
         };
 

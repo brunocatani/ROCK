@@ -216,7 +216,7 @@ namespace rock::root_flattened_finger_skeleton_runtime
     struct Snapshot
     {
         std::array<FingerChain, 5> fingers{};
-        RE::NiPoint3 palmNormalWorld{ 0.0f, -1.0f, 0.0f };
+        RE::NiPoint3 palmNormalWorld{ 0.0f, 0.0f, -1.0f };
         bool palmNormalValid = false;
         bool valid = false;
     };
@@ -232,7 +232,7 @@ namespace rock::root_flattened_finger_skeleton_runtime
     struct LandmarkSet
     {
         std::array<FingerLandmark, 5> fingers{};
-        RE::NiPoint3 palmNormalWorld{ 0.0f, -1.0f, 0.0f };
+        RE::NiPoint3 palmNormalWorld{ 0.0f, 0.0f, -1.0f };
         bool valid = false;
     };
 
@@ -330,7 +330,7 @@ namespace rock::root_flattened_finger_skeleton_runtime
     {
         LandmarkSet set{};
         bool allValid = snapshot.valid && snapshot.palmNormalValid;
-        set.palmNormalWorld = normalizedOrFallback(snapshot.palmNormalWorld, RE::NiPoint3(0.0f, -1.0f, 0.0f));
+        set.palmNormalWorld = normalizedOrFallback(snapshot.palmNormalWorld, RE::NiPoint3(0.0f, 0.0f, -1.0f));
         for (std::size_t finger = 0; finger < set.fingers.size(); ++finger) {
             set.fingers[finger] = buildFingerLandmark(snapshot.fingers[finger]);
             allValid = allValid && set.fingers[finger].valid;

@@ -166,7 +166,7 @@ namespace rock
         }
 
         outLookup.hasForearm3 = findSnapshotBone(bonesByName, isLeft ? "LArm_ForeArm3" : "RArm_ForeArm3", outLookup.forearm3);
-        outLookup.crossPalmDirection = normalizeOr(
+        outLookup.backDirection = normalizeOr(
             debug_axis_math::rotateNiLocalToWorld(outLookup.hand.rotate, RE::NiPoint3(0.0f, 0.0f, 1.0f)),
             RE::NiPoint3(0.0f, 0.0f, 1.0f));
 
@@ -205,26 +205,21 @@ namespace rock
             return false;
         }
 
-        hand_bone_collider_geometry_math::BoneColliderFrameResult<RE::NiTransform, RE::NiPoint3> palm{};
-        const bool palmBoxRole = hand_collider_semantics::isPalmRole(role);
-        if (palmBoxRole) {
-            palm = hand_bone_collider_geometry_math::buildPalmAnchorFrame(lookup.hand, lookup.fingerBases, lookup.crossPalmDirection, 0.75f);
+        if (role == HandColliderRole::PalmAnchor || role == HandColliderRole::PalmFace || role == HandColliderRole::PalmBack) {
+            const auto palm = hand_bone_collider_geometry_math::buildPalmAnchorFrame(lookup.hand, lookup.fingerBases, lookup.backDirection, 0.75f);
             if (!palm.valid) {
                 return false;
             }
-        }
-
-        if (role == HandColliderRole::PalmAnchor || role == HandColliderRole::PalmFace || role == HandColliderRole::PalmBack) {
             outFrame.valid = true;
             outFrame.transform = palm.transform;
             outFrame.length = (std::max)(3.0f, palm.length * 1.15f);
             outFrame.radius = roleRadius(role, _lastCapturedPowerArmor);
             outFrame.convexRadius = roleConvexRadius(role, _lastCapturedPowerArmor);
             if (role == HandColliderRole::PalmFace) {
-                outFrame.transform.translate = outFrame.transform.translate - palm.palmDepthAxis * 0.55f;
+                outFrame.transform.translate = outFrame.transform.translate - lookup.backDirection * 0.55f;
                 outFrame.radius *= 0.85f;
             } else if (role == HandColliderRole::PalmBack) {
-                outFrame.transform.translate = outFrame.transform.translate + palm.palmDepthAxis * 0.75f;
+                outFrame.transform.translate = outFrame.transform.translate + lookup.backDirection * 0.75f;
                 outFrame.radius *= 0.95f;
             }
             if (!handRoleFrameDimensionsValid(outFrame, role, _lastCapturedPowerArmor)) {
@@ -284,10 +279,7 @@ namespace rock
             return false;
         }
 
-        const auto frame =
-            (role == HandColliderRole::PalmHeel || role == HandColliderRole::ThumbPad) ?
-                hand_bone_collider_geometry_math::buildPalmDepthAlignedSegmentFrame(input, palm.palmDepthAxis) :
-                hand_bone_collider_geometry_math::buildSegmentColliderFrame(input);
+        const auto frame = hand_bone_collider_geometry_math::buildSegmentColliderFrame(input);
         if (!frame.valid) {
             return false;
         }
@@ -322,12 +314,12 @@ namespace rock
         if (hand_collider_semantics::isPalmRole(role)) {
             length = (std::max)(2.5f, frame.length);
             radius = (std::max)(0.8f, frame.radius);
-            const float crossPalmWidth = radius * 2.25f;
-            const float palmDepth = role == HandColliderRole::PalmFace ? radius * 0.55f :
+            const float width = radius * 2.25f;
+            const float thickness = role == HandColliderRole::PalmFace ? radius * 0.55f :
                                     role == HandColliderRole::PalmBack ? radius * 0.70f :
                                     role == HandColliderRole::ThumbPad ? radius * 0.80f :
                                     radius * 0.95f;
-            const auto gamePoints = hand_bone_collider_geometry_math::makePalmBoxHullPoints<RE::NiPoint3>(length, palmDepth, crossPalmWidth);
+            const auto gamePoints = hand_bone_collider_geometry_math::makeRoundedBoxHullPoints<RE::NiPoint3>(length, width, thickness);
             return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(toHavokPointCloud(gamePoints), frame.convexRadius * gameToHavokScale());
         }
 

@@ -495,9 +495,9 @@ namespace rock
     {
         RE::NiTransform rawHandSpace{};
         RE::NiTransform constraintHandSpace{};
-        RE::NiTransform proxyHandSpace{};
+        RE::NiTransform rawRotationProxyHandSpace{};
         RE::NiTransform constraintBodyHandSpace{};
-        RE::NiTransform proxyBodyHandSpace{};
+        RE::NiTransform rawRotationProxyBodyHandSpace{};
         RE::NiTransform constraintBodyLocal{};
         RE::NiTransform handBodyToRawHandAtGrab{};
         RE::NiTransform bodyLocal{};
@@ -633,9 +633,9 @@ namespace rock
         {
             rawHandSpace = RE::NiTransform();
             constraintHandSpace = RE::NiTransform();
-            proxyHandSpace = RE::NiTransform();
+            rawRotationProxyHandSpace = RE::NiTransform();
             constraintBodyHandSpace = RE::NiTransform();
-            proxyBodyHandSpace = RE::NiTransform();
+            rawRotationProxyBodyHandSpace = RE::NiTransform();
             constraintBodyLocal = RE::NiTransform();
             handBodyToRawHandAtGrab = RE::NiTransform();
             bodyLocal = RE::NiTransform();
@@ -792,11 +792,11 @@ namespace rock::grab_interaction_policy
 // ---- GrabFrameMath.h ----
 
 /*
- * ROCK's dynamic grab authority is captured in corrected proxy-palm space, while
- * fallback callers use the same hidden proxy-seat offset instead of a separate
- * authored handspace point. ROCK keeps one coherent palm-to-object relation
- * while preserving separate visual and collision frames. These helpers keep
- * that split explicit so pivot A, pivot B, captured object frames, and debug
+ * ROCK's calibrated grab pivot is authored in semantic handspace, but the live
+ * grab has two different consumers: the root-flattened hand frame and the
+ * generated physics hand body. ROCK keeps one coherent palm-to-object relation
+ * while preserving separate visual and collision frames. These helpers keep that
+ * split explicit so pivot A, pivot B, captured object frames, and debug
  * measurements cannot silently drift onto different conventions.
  */
 

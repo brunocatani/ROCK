@@ -9,10 +9,10 @@ namespace rock::debug_controller_policy
     /*
      * ROCK's debug pad is deliberately modeled as a small command surface over
      * existing runtime config fields. The PS3 pad arrives through SCP Toolkit as
-     * XInput, while the values it controls are ROCK grab proxy offsets and
-     * overlay settings. Keeping button edges, stick deadzones, and vector tuning
-     * here makes the runtime wrapper a thin polling/persistence layer instead
-     * of mixing hardware details into grab or overlay ownership.
+     * XInput, while the values it controls are ROCK hand-space and overlay
+     * settings. Keeping button edges, stick deadzones, and pivot math here makes
+     * the runtime wrapper a thin polling/persistence layer instead of mixing
+     * hardware details into grab or overlay ownership.
      */
     namespace xinput_button
     {
@@ -26,8 +26,8 @@ namespace rock::debug_controller_policy
     {
         ToggleHandColliders,
         ToggleWeaponColliders,
-        ToggleProxyOffsetTuning,
-        SelectProxyOffsetHand
+        TogglePivotTuning,
+        SelectPivotHand
     };
 
     struct ButtonEdges
@@ -46,14 +46,14 @@ namespace rock::debug_controller_policy
         float rightY{ 0.0f };
     };
 
-    struct TunedVector
+    struct PivotVector
     {
         float x{ 0.0f };
         float y{ 0.0f };
         float z{ 0.0f };
     };
 
-    struct VectorTuneSettings
+    struct PivotTuneSettings
     {
         float deadzone{ 0.22f };
         float speedGameUnitsPerSecond{ 8.0f };
@@ -68,9 +68,9 @@ namespace rock::debug_controller_policy
             return xinput_button::A;
         case Command::ToggleWeaponColliders:
             return xinput_button::B;
-        case Command::ToggleProxyOffsetTuning:
+        case Command::TogglePivotTuning:
             return xinput_button::X;
-        case Command::SelectProxyOffsetHand:
+        case Command::SelectPivotHand:
             return xinput_button::Y;
         }
 
@@ -118,7 +118,7 @@ namespace rock::debug_controller_policy
         return std::copysign(normalized, clamped);
     }
 
-    [[nodiscard]] inline TunedVector applyVectorTuning(TunedVector current, const AnalogSample& sample, float deltaSeconds, const VectorTuneSettings& settings = {})
+    [[nodiscard]] inline PivotVector applyPivotTuning(PivotVector current, const AnalogSample& sample, float deltaSeconds, const PivotTuneSettings& settings = {})
     {
         const float dt = std::isfinite(deltaSeconds) ? std::clamp(deltaSeconds, 0.0f, 0.1f) : 0.0f;
         const float speed = std::isfinite(settings.speedGameUnitsPerSecond) ? std::max(settings.speedGameUnitsPerSecond, 0.0f) : 0.0f;
@@ -138,7 +138,7 @@ namespace rock::debug_controller_policy
         return current;
     }
 
-    [[nodiscard]] inline bool vectorChanged(const TunedVector& before, const TunedVector& after, float epsilon = 0.0001f)
+    [[nodiscard]] inline bool pivotChanged(const PivotVector& before, const PivotVector& after, float epsilon = 0.0001f)
     {
         return std::fabs(before.x - after.x) > epsilon || std::fabs(before.y - after.y) > epsilon || std::fabs(before.z - after.z) > epsilon;
     }

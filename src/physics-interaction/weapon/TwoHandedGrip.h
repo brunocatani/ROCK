@@ -37,12 +37,6 @@ namespace rock
         RE::NiPoint3 leftGripWorld{};
     };
 
-    struct TwoHandedGripHandAnchors
-    {
-        RE::NiPoint3 rightGrabAuthorityProxySeatWorld{};
-        RE::NiPoint3 leftGrabAuthorityProxySeatWorld{};
-    };
-
     class TwoHandedGrip
     {
     public:
@@ -51,7 +45,6 @@ namespace rock
             const WeaponInteractionContact& leftWeaponContact,
             bool leftGripPressed,
             bool supportHandHoldingObject,
-            const TwoHandedGripHandAnchors& handAnchors,
             float dt,
             std::uint64_t currentWeaponGenerationKey,
             const WeaponInteractionRuntimeState& runtimeState,
@@ -78,13 +71,12 @@ namespace rock
         void transitionToGripping(
             RE::NiNode* weaponNode,
             const WeaponInteractionDecision& decision,
-            weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
-            const TwoHandedGripHandAnchors& handAnchors);
+            weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode);
         void transitionToInactive(bool publishRestoredWeaponTransform);
 
-        void updateGripping(RE::NiNode* weaponNode, const TwoHandedGripHandAnchors& handAnchors, float dt);
+        void updateGripping(RE::NiNode* weaponNode, float dt);
 
-        void updateFullWeaponAuthorityGrip(RE::NiNode* weaponNode, const TwoHandedGripHandAnchors& handAnchors, float dt);
+        void updateFullWeaponAuthorityGrip(RE::NiNode* weaponNode, float dt);
 
         void updateVisualOnlySupportGrip(RE::NiNode* weaponNode);
 

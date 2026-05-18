@@ -59,8 +59,8 @@ namespace rock::root_flattened_finger_skeleton_runtime
         }
 
         outSnapshot.palmNormalWorld = normalizedOrFallback(
-            debug_axis_math::rotateNiLocalToWorld(handNode->world.rotate, RE::NiPoint3(0.0f, -1.0f, 0.0f)),
-            RE::NiPoint3(0.0f, -1.0f, 0.0f));
+            debug_axis_math::rotateNiLocalToWorld(handNode->world.rotate, RE::NiPoint3(0.0f, 0.0f, -1.0f)),
+            RE::NiPoint3(0.0f, 0.0f, -1.0f));
         outSnapshot.palmNormalValid = true;
 
         for (std::size_t finger = 0; finger < outSnapshot.fingers.size(); ++finger) {

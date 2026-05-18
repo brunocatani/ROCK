@@ -12,10 +12,6 @@ namespace rock::handspace_convention
     /*
      * ROCK root-flattened game hand frames use the active authored handspace convention:
      * authored X = fingers, authored Y = cross-palm, authored Z = palm thickness.
-     * Authored Z maps to raw/proxy local Y, so runtime proxy local -Y is the
-     * palm-face direction after bReversePalmNormal and local +Y is the back of
-     * the hand. Keep this bridge explicit; treating runtime Z as palm depth was
-     * the Y/Z swap that made frozen grab points depend on object orientation.
      * The resolved game bone transform already carries handedness, so left/right
      * conversion uses the same X/-Z/Y basis and does not apply an extra mirror.
      */
@@ -100,29 +96,6 @@ namespace rock
         return value;
     }
 
-    inline RE::NiPoint3 normalizeDirectionOrFallback(RE::NiPoint3 value, RE::NiPoint3 fallback)
-    {
-        const float lengthSquared = value.x * value.x + value.y * value.y + value.z * value.z;
-        if (lengthSquared > 1.0e-8f && std::isfinite(lengthSquared)) {
-            const float inverseLength = 1.0f / std::sqrt(lengthSquared);
-            value.x *= inverseLength;
-            value.y *= inverseLength;
-            value.z *= inverseLength;
-            return value;
-        }
-
-        const float fallbackLengthSquared = fallback.x * fallback.x + fallback.y * fallback.y + fallback.z * fallback.z;
-        if (fallbackLengthSquared <= 1.0e-8f || !std::isfinite(fallbackLengthSquared)) {
-            return RE::NiPoint3(0.0f, -1.0f, 0.0f);
-        }
-
-        const float inverseFallbackLength = 1.0f / std::sqrt(fallbackLengthSquared);
-        fallback.x *= inverseFallbackLength;
-        fallback.y *= inverseFallbackLength;
-        fallback.z *= inverseFallbackLength;
-        return fallback;
-    }
-
     inline RE::NiPoint3 transformHandspaceLocalToWorld(const RE::NiTransform& handTransform, const RE::NiPoint3& localVector)
     {
         // FO4VR binary verification: NiAVObject world updates call the Bethesda transform
@@ -143,6 +116,16 @@ namespace rock
         return normalizeDirection(transformHandspaceLocalToWorld(handTransform, authoredHandspaceToRawHandspaceForHand(localDirection, isLeft)));
     }
 
+    inline RE::NiPoint3 computeGrabPivotAHandspacePosition(bool isLeft)
+    {
+        return isLeft ? g_rockConfig.rockLeftGrabPivotAHandspace : g_rockConfig.rockRightGrabPivotAHandspace;
+    }
+
+    inline RE::NiPoint3 computePalmPositionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
+    {
+        return transformHandspacePosition(handTransform, computeGrabPivotAHandspacePosition(isLeft), isLeft);
+    }
+
     inline RE::NiPoint3 computePalmNormalFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
         /*
@@ -152,16 +135,13 @@ namespace rock
          * so applying a separate authored Y mirror sends close detection across the palm.
          */
         const RE::NiPoint3 authoredNormal = g_rockConfig.rockPalmNormalHandspace;
-        const RE::NiPoint3 rawNormal = authoredHandspaceToRawHandspaceForHand(authoredNormal, isLeft);
-        RE::NiPoint3 normal = transformHandspaceLocalToWorld(handTransform, rawNormal);
+        RE::NiPoint3 normal = transformHandspaceDirection(handTransform, authoredNormal, isLeft);
         if (g_rockConfig.rockReversePalmNormal) {
             normal.x *= -1.0f;
             normal.y *= -1.0f;
             normal.z *= -1.0f;
         }
-        const RE::NiPoint3 fallbackPalmFace =
-            normalizeDirectionOrFallback(transformHandspaceLocalToWorld(handTransform, RE::NiPoint3(0.0f, -1.0f, 0.0f)), RE::NiPoint3(0.0f, -1.0f, 0.0f));
-        return normalizeDirectionOrFallback(normal, fallbackPalmFace);
+        return normal;
     }
 
     inline RE::NiPoint3 computePointingVectorFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
@@ -170,18 +150,38 @@ namespace rock
             transformHandspaceDirection(handTransform, g_rockConfig.rockPointingVectorHandspace, isLeft), g_rockConfig.rockReverseFarGrabNormal);
     }
 
+    inline RE::NiPoint3 computeGrabPivotAPositionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
+    {
+        return transformHandspacePosition(handTransform, computeGrabPivotAHandspacePosition(isLeft), isLeft);
+    }
+
     inline RE::NiPoint3 computeGrabAuthorityProxyOffsetLocalGame(bool isLeft)
     {
         return isLeft ? g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits : g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits;
     }
 
+    inline RE::NiTransform makeGrabStartupCaptureAuthorityFrame(const RE::NiTransform& rawHandWorld, const RE::NiTransform& palmAnchorWorld)
+    {
+        /*
+         * Grab startup has a narrower problem than runtime held motion: the
+         * configured proxy-local seat offset must be interpreted in controller
+         * space when choosing and freezing the first pivot point. The actual
+         * hidden proxy body still follows the existing generated palm frame
+         * after the grab is live, so do not use this helper for held updates.
+         */
+        RE::NiTransform result = palmAnchorWorld;
+        result.rotate = rawHandWorld.rotate;
+        result.scale = rawHandWorld.scale;
+        return result;
+    }
+
     inline RE::NiTransform applyGrabAuthorityProxyLocalOffsetToFrame(const RE::NiTransform& proxyFrameWorld, bool isLeft)
     {
         /*
-         * This moves only the hidden grab authority proxy/seat point. The
-         * generated palm/finger colliders remain bound to the flattened bone
-         * tree, while the explicit grab-authority adapter supplies a proxy frame
-         * where local -Y is the palm-face seat direction.
+         * This moves only the hidden grab authority proxy/seat point. The real
+         * generated palm/finger colliders remain bound to the flattened bone tree
+         * so contact evidence and collision behavior are not retuned by visual
+         * hand placement experiments.
          */
         RE::NiTransform result = proxyFrameWorld;
         const RE::NiPoint3 localOffset = computeGrabAuthorityProxyOffsetLocalGame(isLeft);
@@ -189,16 +189,5 @@ namespace rock
             result.translate = result.translate + transform_math::localVectorToWorld(proxyFrameWorld, localOffset);
         }
         return result;
-    }
-
-    inline RE::NiPoint3 computeFallbackGrabAuthorityProxySeatWorld(const RE::NiTransform& rawHandWorld, bool isLeft)
-    {
-        /*
-         * When the live generated palm body is unavailable, callers still use the
-         * active proxy-seat offset rather than resurrecting the retired authored
-         * hand-space pivot. This keeps fallback diagnostics and API consumers on
-         * the same local -Y palm-seat convention as the real hidden proxy.
-         */
-        return applyGrabAuthorityProxyLocalOffsetToFrame(rawHandWorld, isLeft).translate;
     }
 }

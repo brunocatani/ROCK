@@ -68,9 +68,9 @@ namespace rock::debug_controller_runtime
         {
             bool hadPreviousButtons{ false };
             std::uint16_t previousButtons{ 0 };
-            bool proxyOffsetTuningActive{ false };
+            bool pivotTuningActive{ false };
             bool selectedLeft{ false };
-            std::array<bool, 2> proxyOffsetDirty{};
+            std::array<bool, 2> pivotDirty{};
             TuningVisualState tuningVisualState{};
             float notificationElapsedSeconds{ kNotificationIntervalSeconds };
         };
@@ -164,24 +164,24 @@ namespace rock::debug_controller_runtime
             return sample;
         }
 
-        [[nodiscard]] debug_controller_policy::TunedVector toPolicyVector(const RE::NiPoint3& value)
+        [[nodiscard]] debug_controller_policy::PivotVector toPolicyVector(const RE::NiPoint3& value)
         {
-            return debug_controller_policy::TunedVector{ .x = value.x, .y = value.y, .z = value.z };
+            return debug_controller_policy::PivotVector{ .x = value.x, .y = value.y, .z = value.z };
         }
 
-        [[nodiscard]] RE::NiPoint3 toNiPoint(const debug_controller_policy::TunedVector& value)
+        [[nodiscard]] RE::NiPoint3 toNiPoint(const debug_controller_policy::PivotVector& value)
         {
             return RE::NiPoint3(value.x, value.y, value.z);
         }
 
-        [[nodiscard]] RE::NiPoint3& selectedProxyOffset()
+        [[nodiscard]] RE::NiPoint3& selectedPivot()
         {
-            return s_state.selectedLeft ? g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits : g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits;
+            return s_state.selectedLeft ? g_rockConfig.rockLeftGrabPivotAHandspace : g_rockConfig.rockRightGrabPivotAHandspace;
         }
 
-        [[nodiscard]] const RE::NiPoint3& selectedProxyOffsetConst()
+        [[nodiscard]] const RE::NiPoint3& selectedPivotConst()
         {
-            return s_state.selectedLeft ? g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits : g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits;
+            return s_state.selectedLeft ? g_rockConfig.rockLeftGrabPivotAHandspace : g_rockConfig.rockRightGrabPivotAHandspace;
         }
 
         [[nodiscard]] const char* selectedHandName()
@@ -195,10 +195,10 @@ namespace rock::debug_controller_runtime
             f4vr::showNotification(std::format("[ROCK] {}", message));
         }
 
-        void notifyProxyOffset()
+        void notifyPivot()
         {
-            const auto& offset = selectedProxyOffsetConst();
-            notify(std::format("{} grab proxy offset X={:.2f} Y={:.2f} Z={:.2f}", selectedHandName(), offset.x, offset.y, offset.z));
+            const auto& pivot = selectedPivotConst();
+            notify(std::format("{} grab pivot A X={:.2f} Y={:.2f} Z={:.2f}", selectedHandName(), pivot.x, pivot.y, pivot.z));
         }
 
         void persistColliderState(const char* key, bool value)
@@ -260,64 +260,64 @@ namespace rock::debug_controller_runtime
             s_state.tuningVisualState = {};
         }
 
-        void persistDirtyProxyOffsets()
+        void persistDirtyPivots()
         {
-            if (s_state.proxyOffsetDirty[0]) {
-                if (!g_rockConfig.persistGrabAuthorityProxyOffset(false, g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits)) {
-                    ROCK_LOG_WARN(Input, "Debug controller failed to persist right grab authority proxy offset");
+            if (s_state.pivotDirty[0]) {
+                if (!g_rockConfig.persistGrabPivotAHandspace(false, g_rockConfig.rockRightGrabPivotAHandspace)) {
+                    ROCK_LOG_WARN(Input, "Debug controller failed to persist right grab pivot");
                 }
             }
-            if (s_state.proxyOffsetDirty[1]) {
-                if (!g_rockConfig.persistGrabAuthorityProxyOffset(true, g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits)) {
-                    ROCK_LOG_WARN(Input, "Debug controller failed to persist left grab authority proxy offset");
+            if (s_state.pivotDirty[1]) {
+                if (!g_rockConfig.persistGrabPivotAHandspace(true, g_rockConfig.rockLeftGrabPivotAHandspace)) {
+                    ROCK_LOG_WARN(Input, "Debug controller failed to persist left grab pivot");
                 }
             }
-            s_state.proxyOffsetDirty = {};
+            s_state.pivotDirty = {};
         }
 
-        void toggleProxyOffsetTuning()
+        void togglePivotTuning()
         {
-            s_state.proxyOffsetTuningActive = !s_state.proxyOffsetTuningActive;
-            if (s_state.proxyOffsetTuningActive) {
+            s_state.pivotTuningActive = !s_state.pivotTuningActive;
+            if (s_state.pivotTuningActive) {
                 captureTuningVisualState();
                 g_rockConfig.rockDebugShowGrabPivots = true;
                 g_rockConfig.rockDebugShowPalmVectors = true;
                 s_state.notificationElapsedSeconds = kNotificationIntervalSeconds;
-                notifyProxyOffset();
+                notifyPivot();
                 return;
             }
 
-            persistDirtyProxyOffsets();
+            persistDirtyPivots();
             restoreTuningVisualState();
-            notify(std::format("{} grab proxy offset tuning saved", selectedHandName()));
+            notify(std::format("{} grab pivot tuning saved", selectedHandName()));
         }
 
-        void selectNextProxyOffsetHand()
+        void selectNextPivotHand()
         {
             s_state.selectedLeft = !s_state.selectedLeft;
-            notifyProxyOffset();
+            notifyPivot();
         }
 
-        void applyProxyOffsetTuningInput(const debug_controller_policy::AnalogSample& analog, float deltaSeconds)
+        void applyPivotTuningInput(const debug_controller_policy::AnalogSample& analog, float deltaSeconds)
         {
             using namespace debug_controller_policy;
 
-            if (!s_state.proxyOffsetTuningActive) {
+            if (!s_state.pivotTuningActive) {
                 return;
             }
 
-            auto before = toPolicyVector(selectedProxyOffsetConst());
-            auto after = applyVectorTuning(before, analog, deltaSeconds);
-            if (!vectorChanged(before, after)) {
+            auto before = toPolicyVector(selectedPivotConst());
+            auto after = applyPivotTuning(before, analog, deltaSeconds);
+            if (!pivotChanged(before, after)) {
                 return;
             }
 
-            selectedProxyOffset() = toNiPoint(after);
-            s_state.proxyOffsetDirty[s_state.selectedLeft ? 1u : 0u] = true;
+            selectedPivot() = toNiPoint(after);
+            s_state.pivotDirty[s_state.selectedLeft ? 1u : 0u] = true;
             s_state.notificationElapsedSeconds += deltaSeconds;
             if (s_state.notificationElapsedSeconds >= kNotificationIntervalSeconds) {
                 s_state.notificationElapsedSeconds = 0.0f;
-                notifyProxyOffset();
+                notifyPivot();
             }
         }
 
@@ -331,11 +331,11 @@ namespace rock::debug_controller_runtime
             if (debug_controller_policy::commandPressed(edges, Command::ToggleWeaponColliders)) {
                 toggleWeaponColliders();
             }
-            if (debug_controller_policy::commandPressed(edges, Command::SelectProxyOffsetHand)) {
-                selectNextProxyOffsetHand();
+            if (debug_controller_policy::commandPressed(edges, Command::SelectPivotHand)) {
+                selectNextPivotHand();
             }
-            if (debug_controller_policy::commandPressed(edges, Command::ToggleProxyOffsetTuning)) {
-                toggleProxyOffsetTuning();
+            if (debug_controller_policy::commandPressed(edges, Command::TogglePivotTuning)) {
+                togglePivotTuning();
             }
         }
     }
@@ -360,15 +360,15 @@ namespace rock::debug_controller_runtime
         }
 
         processCommands(edges);
-        applyProxyOffsetTuningInput(sample.analog, dt);
+        applyPivotTuningInput(sample.analog, dt);
     }
 
-    bool isProxyOffsetTuningActive()
+    bool isPivotTuningActive()
     {
-        return s_state.proxyOffsetTuningActive;
+        return s_state.pivotTuningActive;
     }
 
-    bool isSelectedProxyOffsetHandLeft()
+    bool isSelectedPivotHandLeft()
     {
         return s_state.selectedLeft;
     }
