@@ -952,14 +952,30 @@ namespace rock
         return fallbackHandWorldTransform.translate;
     }
 
-    bool Hand::getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, GrabAuthorityProxyDebugSnapshot& out) const
+    RE::NiPoint3 Hand::computeGrabStartupCapturePivotAWorld(RE::hknpWorld* world, const RE::NiTransform& rawHandWorldTransform) const
+    {
+        LivePalmAnchorReference palmReference{};
+        if (tryResolveLivePalmAnchorReference(world, palmReference) &&
+            std::isfinite(palmReference.world.translate.x) &&
+            std::isfinite(palmReference.world.translate.y) &&
+            std::isfinite(palmReference.world.translate.z)) {
+            const RE::NiTransform palmAuthorityBaseWorld =
+                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
+            const RE::NiTransform startupCaptureFrameWorld =
+                makeGrabStartupCaptureAuthorityFrame(rawHandWorldTransform, palmAuthorityBaseWorld);
+            return applyGrabAuthorityProxyLocalOffsetToFrame(startupCaptureFrameWorld, _isLeft).translate;
+        }
+
+        return applyGrabAuthorityProxyLocalOffsetToFrame(rawHandWorldTransform, _isLeft).translate;
+    }
+
+    bool Hand::getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const
     {
         /*
-         * Offset tuning needs the same hidden grab-authority frame that dynamic
-         * grabs consume, but it must be visible before a grab creates the real
-         * proxy body. Publishing the computed target separately keeps idle
-         * tuning honest without moving the physical hand colliders or confusing
-         * it with active proxy readback.
+         * Offset tuning needs the startup capture seat point before a grab
+         * creates the real no-contact proxy body. This marker intentionally
+         * shows the raw-rotation capture offset, while active proxy readback
+         * remains the separate runtime held-authority frame.
          */
         out = {};
 
@@ -971,9 +987,12 @@ namespace rock
             return false;
         }
 
-        out.palmAuthorityBaseWorld =
+        const RE::NiTransform palmAuthorityBaseWorld =
             hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-        out.proxyTargetWorld = applyGrabAuthorityProxyLocalOffsetToFrame(out.palmAuthorityBaseWorld, _isLeft);
+        out.palmAuthorityBaseWorld = palmAuthorityBaseWorld;
+        const RE::NiTransform startupCaptureFrameWorld =
+            makeGrabStartupCaptureAuthorityFrame(rawHandWorld, palmAuthorityBaseWorld);
+        out.proxyTargetWorld = applyGrabAuthorityProxyLocalOffsetToFrame(startupCaptureFrameWorld, _isLeft);
         out.localOffsetGameUnits = computeGrabAuthorityProxyOffsetLocalGame(_isLeft);
         out.palmSource = palmReference.source;
         out.palmMotionIndex = palmReference.motionIndex;

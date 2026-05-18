@@ -4427,7 +4427,7 @@ namespace rock
         } else if (sharedContext.peerActiveGrabLifecycle) {
             activeLifecycle = *sharedContext.peerActiveGrabLifecycle;
         }
-        const RE::NiPoint3 grabPivotAForPrimaryChoice = computeGrabPivotAWorld(world, handWorldTransform);
+        const RE::NiPoint3 grabPivotAForPrimaryChoice = computeGrabStartupCapturePivotAWorld(world, handWorldTransform);
 
         auto restoreFailedGrabPrep = [&]() {
             if (!joiningPeerHeldObject) {
@@ -4651,7 +4651,7 @@ namespace rock
                  * so collision selection, contact patches, and finger evidence do
                  * not fight over different corners of the same object.
                  */
-                const RE::NiPoint3 grabPivotAWorld = computeGrabPivotAWorld(world, handWorldTransform);
+                const RE::NiPoint3 grabPivotAWorld = computeGrabStartupCapturePivotAWorld(world, handWorldTransform);
                 const RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
                 const auto closePocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
                     handWorldTransform,
@@ -4715,7 +4715,7 @@ namespace rock
             }
 
             if (!meshGrabFound && !grabSurfaceTriangles.empty() && sel.hasHitPoint) {
-                RE::NiPoint3 grabPivotAWorld = computeGrabPivotAWorld(world, handWorldTransform);
+                RE::NiPoint3 grabPivotAWorld = computeGrabStartupCapturePivotAWorld(world, handWorldTransform);
                 RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
                 const RE::NiPoint3 expectedNormal =
                     sel.hasHitNormal && lengthSquared(sel.hitNormalWorld) > 0.0f ? sel.hitNormalWorld : palmDir;
@@ -4759,7 +4759,7 @@ namespace rock
             }
 
             if (!meshGrabFound && !grabSurfaceTriangles.empty()) {
-                RE::NiPoint3 grabPivotAWorld = computeGrabPivotAWorld(world, handWorldTransform);
+                RE::NiPoint3 grabPivotAWorld = computeGrabStartupCapturePivotAWorld(world, handWorldTransform);
                 RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
 
                 int rejectedBehindSurface = 0;
@@ -4961,7 +4961,7 @@ namespace rock
         const auto semanticContacts = collectFreshSemanticContactsForBody(
             objectBodyId.value,
             static_cast<std::uint32_t>(g_rockConfig.rockGrabOppositionContactMaxAgeFrames));
-        const RE::NiPoint3 acquisitionGrabPivotAWorld = computeGrabPivotAWorld(world, handWorldTransform);
+        const RE::NiPoint3 acquisitionGrabPivotAWorld = computeGrabStartupCapturePivotAWorld(world, handWorldTransform);
         const auto acquisitionPocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
             handWorldTransform,
             _isLeft,
@@ -5368,7 +5368,7 @@ namespace rock
                 fingerEvidenceSurfaceHit.hasSelectionHit = sel.hasHitPoint;
                 fingerEvidenceSurfaceHit.selectionToMeshDistanceGameUnits =
                     sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, fingerEvidencePointWorld) : std::numeric_limits<float>::max();
-                fingerEvidenceSurfaceHit.pivotToSurfaceDistanceGameUnits = pointDistanceGameUnits(computeGrabPivotAWorld(world, handWorldTransform), fingerEvidencePointWorld);
+                fingerEvidenceSurfaceHit.pivotToSurfaceDistanceGameUnits = pointDistanceGameUnits(computeGrabStartupCapturePivotAWorld(world, handWorldTransform), fingerEvidencePointWorld);
                 fingerEvidenceSurfaceHit.resolvedOwnerMatchesBody = true;
                 fingerEvidenceSurfaceHit.valid = true;
                 fingerEvidencePointMode = "multiFingerContactPatch";
@@ -5568,7 +5568,7 @@ namespace rock
 
         {
             const RE::NiPoint3 palmPos = computePalmPositionFromHandBasis(handWorldTransform, _isLeft);
-            const RE::NiPoint3 palmPocketPivotWorld = computeGrabPivotAWorld(world, handWorldTransform);
+            const RE::NiPoint3 palmPocketPivotWorld = computeGrabStartupCapturePivotAWorld(world, handWorldTransform);
             RE::NiPoint3 grabPivotAWorld = palmPocketPivotWorld;
             RE::NiTransform grabBodyWorldAtGrab{};
             if (!tryGetGrabAuthorityBodyWorldTransform(world, objectBodyId, grabBodyWorldAtGrab)) {
