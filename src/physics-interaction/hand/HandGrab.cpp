@@ -1,6 +1,5 @@
 #include "physics-interaction/hand/Hand.h"
 
-#include "physics-interaction/body/BodyBoneColliderSet.h"
 #include "physics-interaction/native/HavokOffsets.h"
 
 #include "physics-interaction/native/BodyCollisionControl.h"
@@ -750,11 +749,6 @@ namespace rock
             const RE::NiPoint3& seatPointWorld,
             const RE::NiPoint3& seatNormalWorld)
         {
-            /*
-             * The shared seat point is palm/object relation evidence only. Loose
-             * grabs now let the targetless whole-mesh solver publish each visual
-             * finger's actual curve/ray hit as its local-transform aim target.
-             */
             auto targets = grab_finger_pose_runtime::makeSharedGripPoseTarget(seatPointWorld, seatNormalWorld);
             targets.useSeatPointForMissingTargets = false;
             targets.useWholeMeshForMissingTargets = true;
@@ -2437,10 +2431,10 @@ namespace rock
                 syncLocalTransformState();
                 if (g_rockConfig.rockDebugGrabFrameLogging) {
                     ROCK_LOG_DEBUG(Hand,
-                        "{} hand FINGER JOINT POSE: thumb=({:.2f},{:.2f},{:.2f}) index=({:.2f},{:.2f},{:.2f}) hits={} surfaceAimTargets={} candidateTris={} altThumb={} localTransforms={} mask=0x{:04X}",
+                        "{} hand FINGER JOINT POSE: thumb=({:.2f},{:.2f},{:.2f}) index=({:.2f},{:.2f},{:.2f}) hits={} candidateTris={} altThumb={} localTransforms={} mask=0x{:04X}",
                         isLeft ? "Left" : "Right", currentJointPose[0], currentJointPose[1], currentJointPose[2], currentJointPose[3], currentJointPose[4],
-                        currentJointPose[5], fingerPose.hitCount, fingerPose.surfaceAimTargetCount, fingerPose.candidateTriangleCount,
-                        fingerPose.usedAlternateThumbCurve ? "yes" : "no", publishedLocalTransforms ? "yes" : "no", currentLocalTransformMask);
+                        currentJointPose[5], fingerPose.hitCount, fingerPose.candidateTriangleCount, fingerPose.usedAlternateThumbCurve ? "yes" : "no",
+                        publishedLocalTransforms ? "yes" : "no", currentLocalTransformMask);
                 }
                 return;
             }
@@ -2453,9 +2447,9 @@ namespace rock
                     fingerPose.values[4], 100);
                 if (g_rockConfig.rockDebugGrabFrameLogging) {
                     ROCK_LOG_DEBUG(Hand,
-                        "{} hand FINGER POSE: mesh values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} surfaceAimTargets={} candidateTris={} altThumb={}",
+                        "{} hand FINGER POSE: mesh values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} candidateTris={} altThumb={}",
                         isLeft ? "Left" : "Right", fingerPose.values[0], fingerPose.values[1], fingerPose.values[2], fingerPose.values[3], fingerPose.values[4],
-                        fingerPose.hitCount, fingerPose.surfaceAimTargetCount, fingerPose.candidateTriangleCount, fingerPose.usedAlternateThumbCurve ? "yes" : "no");
+                        fingerPose.hitCount, fingerPose.candidateTriangleCount, fingerPose.usedAlternateThumbCurve ? "yes" : "no");
                 }
                 return;
             }
@@ -2633,22 +2627,14 @@ namespace rock
         hand_collision_suppression_math::clear(_grabHandCollisionDelayedRestore);
     }
 
-    void Hand::suppressHandCollisionForGrab(RE::hknpWorld* world, const BodyBoneColliderSet* bodyBoneColliders)
+    void Hand::suppressHandCollisionForGrab(RE::hknpWorld* world)
     {
-        /*
-         * Normal held-object grabs suppress every generated body owned by the
-         * grabbing hand's immediate collision authority: the palm/finger suite
-         * plus the same-side forearm/wrist chain from body colliders. This keeps
-         * held objects from solving against the arm that is currently driving the
-         * grab, while leaving the separate two-handed equipped-weapon suppression
-         * path fully independent.
-         */
         hand_collision_suppression_math::clear(_grabHandCollisionDelayedRestore);
 
         if (!world || !hasCollisionBody())
             return;
 
-        auto suppressBody = [&](std::uint32_t bodyId, const char* context) {
+        auto suppressBody = [&](std::uint32_t bodyId) {
             if (bodyId == INVALID_BODY_ID) {
                 return;
             }
@@ -2668,14 +2654,13 @@ namespace rock
                 world,
                 bodyId,
                 collision_suppression_registry::CollisionSuppressionOwner::Grab,
-                context);
+                "held-grab-hand");
 
             if (registryResult.valid && (registryResult.filterChanged || registryResult.firstLeaseForBody)) {
                 ROCK_LOG_DEBUG(Hand,
-                    "{} hand: grab collision lease acquired bodyId={} context={} filter=0x{:08X}->0x{:08X} wasDisabledBeforeGrab={} leases={}",
+                    "{} hand: grab hand collision lease acquired bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBeforeGrab={} leases={}",
                     handName(),
                     bodyId,
-                    context ? context : "unknown",
                     registryResult.filterBefore,
                     registryResult.filterAfter,
                     registryResult.wasNoCollideBeforeSuppression ? "yes" : "no",
@@ -2686,19 +2671,10 @@ namespace rock
         const std::uint32_t colliderCount = _boneColliders.getBodyCount();
         if (colliderCount > 0) {
             for (std::uint32_t i = 0; i < colliderCount; ++i) {
-                suppressBody(_boneColliders.getBodyIdAtomic(i), "held-grab-hand-suite");
+                suppressBody(_boneColliders.getBodyIdAtomic(i));
             }
         } else {
-            suppressBody(_handBody.getBodyId().value, "held-grab-hand-anchor");
-        }
-
-        if (bodyBoneColliders) {
-            std::array<std::uint32_t, kGrabCollisionSuppressionArmBodyCountPerHand> armBodyIds{};
-            const auto armBodyCount =
-                bodyBoneColliders->copyGrabSuppressionArmBodyIdsAtomic(_isLeft, armBodyIds.data(), armBodyIds.size());
-            for (std::uint32_t i = 0; i < armBodyCount && i < armBodyIds.size(); ++i) {
-                suppressBody(armBodyIds[i], "held-grab-arm-chain");
-            }
+            suppressBody(_handBody.getBodyId().value);
         }
     }
 
@@ -4366,15 +4342,8 @@ namespace rock
         return false;
     }
 
-    bool Hand::grabSelectedObject(RE::hknpWorld* world,
-        const RE::NiTransform& handWorldTransform,
-        float tau,
-        float damping,
-        float maxForce,
-        float proportionalRecovery,
-        float constantRecovery,
-        const BodyBoneColliderSet* bodyBoneColliders,
-        const GrabSharedObjectContext& sharedContext)
+    bool Hand::grabSelectedObject(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float tau, float damping, float maxForce, float proportionalRecovery,
+        float constantRecovery, const GrabSharedObjectContext& sharedContext)
     {
         if (!hasSelection() || !world)
             return false;
@@ -6266,7 +6235,7 @@ namespace rock
                 grabActivation.failedActivationCount);
         }
 
-        suppressHandCollisionForGrab(world, bodyBoneColliders);
+        suppressHandCollisionForGrab(world);
 
         if (joiningPeerHeldObject && sharedContext.peerSavedObjectState) {
             copyPeerInertiaSnapshot(_savedObjectState, *sharedContext.peerSavedObjectState);
@@ -6475,8 +6444,7 @@ namespace rock
                 fingerPosePivotWorld, initialFingerPoseTargets,
                 g_rockConfig.rockGrabFingerMinValue, g_rockConfig.rockGrabMaxTriangleDistance, true, liveFingerSnapshotAtGrabPtr,
                 g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
-                _grabFrame.fingerPoseAimValid,
-                true) :
+                _grabFrame.fingerPoseAimValid) :
             grab_finger_pose_runtime::SolvedGrabFingerPose{};
         _grabFingerPose = fingerPose;
         _hasGrabFingerPose = g_rockConfig.rockGrabMeshFingerPoseEnabled;
@@ -6609,7 +6577,6 @@ namespace rock
         float deltaTime,
         float forceFadeInTime,
         float tauMin,
-        const BodyBoneColliderSet* bodyBoneColliders,
         const GrabReleaseContext& releaseContext)
     {
         if (!isHolding() || !world)
@@ -6627,7 +6594,7 @@ namespace rock
 
         nearby_grab_damping::tickNearbyGrabDamping(world, _nearbyGrabDamping, deltaTime);
 
-        suppressHandCollisionForGrab(world, bodyBoneColliders);
+        suppressHandCollisionForGrab(world);
 
         _grabStartTime += deltaTime;
 

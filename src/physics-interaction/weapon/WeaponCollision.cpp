@@ -41,7 +41,6 @@
 #include <unordered_set>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 namespace rock
@@ -80,13 +79,7 @@ namespace rock
         struct WeaponMeshRootCandidate
         {
             RE::NiAVObject* root = nullptr;
-            std::string label;
-        };
-
-        struct EquippedWeaponSlotNodeMatchInput
-        {
-            const RE::TESForm* weaponForm = nullptr;
-            const RE::TBO_InstanceData* instanceData = nullptr;
+            const char* label = "";
         };
 
         struct PointCloudBounds
@@ -811,7 +804,7 @@ namespace rock
             };
         }
 
-        void addUniqueWeaponMeshRootCandidate(std::vector<WeaponMeshRootCandidate>& candidates, RE::NiAVObject* root, std::string label)
+        void addUniqueWeaponMeshRootCandidate(std::vector<WeaponMeshRootCandidate>& candidates, RE::NiAVObject* root, const char* label)
         {
             if (!root) {
                 return;
@@ -821,78 +814,7 @@ namespace rock
                     return;
                 }
             }
-            candidates.push_back(WeaponMeshRootCandidate{ root, std::move(label) });
-        }
-
-        void appendEquippedWeaponSlotNodeCandidates(
-            std::vector<WeaponMeshRootCandidate>& candidates,
-            const F4SEVR::ActorEquipData* equipData,
-            const RE::TESForm* weaponForm,
-            const RE::TBO_InstanceData* instanceData,
-            const char* sourceLabel)
-        {
-            if (!equipData || !weaponForm || !sourceLabel) {
-                return;
-            }
-
-            for (std::uint32_t slotIndex = 0; slotIndex < F4SEVR::ActorEquipData::kMaxSlots; ++slotIndex) {
-                const auto& slot = equipData->slots[slotIndex];
-                if (slot.item != weaponForm) {
-                    continue;
-                }
-                if (instanceData && slot.instanceData && slot.instanceData != instanceData) {
-                    continue;
-                }
-                if (!slot.node) {
-                    continue;
-                }
-
-                std::string label{ sourceLabel };
-                label += std::to_string(slotIndex);
-                label += "].node";
-                addUniqueWeaponMeshRootCandidate(candidates, slot.node, std::move(label));
-            }
-        }
-
-        EquippedWeaponSlotNodeMatchInput readEquippedWeaponSlotNodeMatchInput(const F4SEVR::PlayerCharacter* player)
-        {
-            weapon_generation_identity_policy::EquippedWeaponGenerationIdentity authoritativeIdentity{};
-            if (weapon_instance_witness_runtime::tryGetAuthoritativeEquippedWeaponIdentity(authoritativeIdentity) &&
-                authoritativeIdentity.hasEquippedWeapon &&
-                authoritativeIdentity.formAddress != 0) {
-                return {
-                    reinterpret_cast<const RE::TESForm*>(authoritativeIdentity.formAddress),
-                    reinterpret_cast<const RE::TBO_InstanceData*>(authoritativeIdentity.instanceDataAddress)
-                };
-            }
-
-            auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
-            auto* currentEquipData = processData ? processData->equipData : nullptr;
-            auto* weaponForm = currentEquipData ? currentEquipData->item : nullptr;
-            if (!weaponForm || weaponForm->formType != static_cast<std::uint8_t>(RE::ENUM_FORM_ID::kWEAP)) {
-                return {};
-            }
-
-            return {
-                reinterpret_cast<const RE::TESForm*>(weaponForm),
-                currentEquipData ? currentEquipData->instanceData : nullptr
-            };
-        }
-
-        void appendEquippedWeaponSlotNodeCandidates(std::vector<WeaponMeshRootCandidate>& candidates)
-        {
-            auto* player = f4vr::getPlayer();
-            if (!player) {
-                return;
-            }
-
-            const auto matchInput = readEquippedWeaponSlotNodeMatchInput(player);
-            if (!matchInput.weaponForm) {
-                return;
-            }
-
-            appendEquippedWeaponSlotNodeCandidates(candidates, player->playerEquipData, matchInput.weaponForm, matchInput.instanceData, "PlayerEquipData.slot[");
-            appendEquippedWeaponSlotNodeCandidates(candidates, player->equipData, matchInput.weaponForm, matchInput.instanceData, "ActorEquipData.slot[");
+            candidates.push_back(WeaponMeshRootCandidate{ root, label });
         }
 
         std::vector<WeaponMeshRootCandidate> makeGeneratedWeaponMeshRootCandidates(RE::NiAVObject* updateWeaponNode)
@@ -902,16 +824,11 @@ namespace rock
              * the native collision attachment tree. ROCK scans several possible
              * visual roots, but every generated candidate must prove itself by
              * producing visible triangles before it is used for Havok body creation.
-             * Equip-slot nodes are read-only native visual package roots. They are
-             * included because FO4VR can reuse the first-person "Weapon" branch
-             * while the fully assembled modded package is still only published
-             * through the equipped slot record.
              */
             std::vector<WeaponMeshRootCandidate> candidates;
-            candidates.reserve(12);
+            candidates.reserve(6);
 
             addUniqueWeaponMeshRootCandidate(candidates, f4vr::getWeaponNode(), "firstPersonSkeleton:Weapon");
-            appendEquippedWeaponSlotNodeCandidates(candidates);
 
             if (auto* playerNodes = f4vr::getPlayerNodes()) {
                 addUniqueWeaponMeshRootCandidate(candidates, playerNodes->primaryWeapontoWeaponNode, "PlayerNodes.primaryWeapontoWeaponNode");
@@ -940,15 +857,6 @@ namespace rock
             }
             const char* name = node->name.c_str();
             return name ? name : "(null)";
-        }
-
-        std::uint32_t directChildCount(RE::NiAVObject* node)
-        {
-            const auto* niNode = node ? node->IsNode() : nullptr;
-            if (!niNode) {
-                return 0;
-            }
-            return static_cast<std::uint32_t>(niNode->GetRuntimeData().children.size());
         }
 
         bool weaponVisualNodeVisible(const RE::NiAVObject* node)
@@ -3033,7 +2941,7 @@ namespace rock
                 }
 
                 ++stats.rootCount;
-                mixWeaponVisualString(visualKey, candidate.label.c_str());
+                mixWeaponVisualString(visualKey, candidate.label);
                 mixWeaponVisualKey(visualKey, reinterpret_cast<std::uintptr_t>(candidate.root));
                 accumulateWeaponVisualKey(candidate.root, nullptr, 0, 0, visualKey, stats);
             }
@@ -3056,12 +2964,12 @@ namespace rock
             ROCK_LOG_DEBUG(Weapon, "Generated weapon mesh source scan: no weapon drive root");
             return 0;
         }
+
         const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode);
         if (candidates.empty()) {
             ROCK_LOG_DEBUG(Weapon, "Generated weapon mesh source scan: no weapon root candidates");
             return 0;
         }
-        RE::NiAVObject* packageDriveRoot = weaponNode;
 
         /*
          * Generated weapon collision is now geometry-first: candidate roots are
@@ -3070,6 +2978,7 @@ namespace rock
          * every candidate are converted into the update weapon root's local
          * frame, and duplicate TriShapes are accepted once by source pointer.
          */
+        RE::NiAVObject* packageDriveRoot = weaponNode;
         const RE::NiTransform packageDriveRootTransform = packageDriveRoot->world;
         std::unordered_set<std::uintptr_t> claimedSourceGroups;
         claimedSourceGroups.reserve(256);
@@ -3094,15 +3003,11 @@ namespace rock
                 claimedSourceGroups,
                 candidateExtractedSourceGroups);
 
-            auto* candidateParent = candidate.root ? candidate.root->parent : nullptr;
             ROCK_LOG_DEBUG(Weapon,
-                "Generated weapon mesh candidate: label='{}' root='{}' addr={:x} parent='{}' parentAddr={:x} directChildren={} packageRoot='{}' grouping={} acceptedShapes={} visitedShapes={} triangles={} hulls={}",
+                "Generated weapon mesh candidate: label='{}' root='{}' addr={:x} packageRoot='{}' grouping={} acceptedShapes={} visitedShapes={} triangles={} hulls={}",
                 candidate.label,
                 safeNodeName(candidate.root),
                 reinterpret_cast<std::uintptr_t>(candidate.root),
-                safeNodeName(candidateParent),
-                reinterpret_cast<std::uintptr_t>(candidateParent),
-                directChildCount(candidate.root),
                 safeNodeName(packageDriveRoot),
                 weapon_collision_grouping_policy::weaponCollisionGroupingModeName(groupingMode),
                 candidateExtractedSourceGroups.size(),

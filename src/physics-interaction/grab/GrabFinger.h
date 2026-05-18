@@ -782,7 +782,6 @@ namespace rock::grab_finger_pose_runtime
         std::array<std::uint8_t, 5> surfaceAimNormalValid{};
         std::array<grab_finger_pose_math::FingerCurlValue::HitKind, 5> hitKind{};
         int hitCount = 0;
-        int surfaceAimTargetCount = 0;
         int candidateTriangleCount = 0;
         int poseTargetCount = 0;
         bool solved = false;
@@ -949,7 +948,7 @@ namespace rock::grab_finger_pose_runtime
     inline SolvedGrabFingerPose solveGrabFingerPoseFromTriangles(const std::vector<TriangleData>& triangles, const RE::NiTransform& handTransform, bool isLeft,
         const RE::NiPoint3& grabAnchorWorld, const GrabFingerPoseTargetSet& poseTargets, float minValue, float maxTriangleDistanceSquared = 100.0f, bool useCurveSolver = true,
         const root_flattened_finger_skeleton_runtime::Snapshot* liveFingerSnapshot = nullptr, bool rejectBacksideHits = true, float surfacePlaneToleranceGameUnits = 1.5f,
-        bool allowSurfaceAimTargets = true, bool publishWholeMeshSurfaceAimTargets = false)
+        bool allowSurfaceAimTargets = true)
     {
         SolvedGrabFingerPose result{};
         const float clampedMin = std::clamp(minValue, 0.0f, 1.0f);
@@ -1091,20 +1090,7 @@ namespace rock::grab_finger_pose_runtime
             }
             result.values[finger] = solved.value;
             result.hitKind[finger] = solved.hitKind;
-            /*
-             * Loose-object visual grabs often run targetless whole-mesh solving:
-             * the palm seat chooses the object relation, while each live visual
-             * finger discovers its own mesh stop through the curve/ray solver.
-             * Publishing those discovered hit points is opt-in so weapon support
-             * grips and other callers that rely on the older shared-target
-             * behavior stay unchanged.
-             */
-            const bool publishWholeMeshSurfaceAim =
-                publishWholeMeshSurfaceAimTargets &&
-                !useTarget &&
-                poseTargets.useWholeMeshForMissingTargets;
-            if (allowSurfaceAimTargets && (useTarget || publishWholeMeshSurfaceAim) &&
-                solved.hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::FrontValid) {
+            if (allowSurfaceAimTargets && useTarget && solved.hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::FrontValid) {
                 if (result.surfaceAimTargetValid[finger] == 0) {
                     if (solved.hasHitPoint) {
                         result.surfaceAimTarget[finger] = RE::NiPoint3{ solved.hitPointX, solved.hitPointY, solved.hitPointZ };
@@ -1128,11 +1114,6 @@ namespace rock::grab_finger_pose_runtime
             }
         }
 
-        for (const auto valid : result.surfaceAimTargetValid) {
-            if (valid != 0) {
-                ++result.surfaceAimTargetCount;
-            }
-        }
         result.solved = result.candidateTriangleCount > 0 && result.usedLiveRootFlattenedFingerBones;
         result.jointValues = grab_finger_pose_math::expandFingerCurlsToJointValues(result.values);
         result.hasJointValues = result.solved;
@@ -1142,7 +1123,7 @@ namespace rock::grab_finger_pose_runtime
     inline SolvedGrabFingerPose solveGrabFingerPoseFromTriangles(const std::vector<TriangleData>& triangles, const RE::NiTransform& handTransform, bool isLeft,
         const RE::NiPoint3& grabAnchorWorld, const RE::NiPoint3& grabGripPoint, float minValue, float maxTriangleDistanceSquared = 100.0f, bool useCurveSolver = true,
         const root_flattened_finger_skeleton_runtime::Snapshot* liveFingerSnapshot = nullptr, bool rejectBacksideHits = true, float surfacePlaneToleranceGameUnits = 1.5f,
-        bool allowSurfaceAimTargets = true, bool publishWholeMeshSurfaceAimTargets = false)
+        bool allowSurfaceAimTargets = true)
     {
         return solveGrabFingerPoseFromTriangles(triangles,
             handTransform,
@@ -1155,8 +1136,7 @@ namespace rock::grab_finger_pose_runtime
             liveFingerSnapshot,
             rejectBacksideHits,
             surfacePlaneToleranceGameUnits,
-            allowSurfaceAimTargets,
-            publishWholeMeshSurfaceAimTargets);
+            allowSurfaceAimTargets);
     }
 }
 
