@@ -3569,6 +3569,104 @@ namespace rock
             return false;
         }
 
+        if (g_rockConfig.rockDebugGrabFrameLogging && _activeConstraint.constraintData) {
+            /*
+             * Snap investigation contract: this is the first byte-level view of
+             * the hknp constraint. It records the body-A proxy frame, the
+             * raw-rotation angular relation, and the atom matrices exactly as
+             * written so top/side grabs can be compared without changing drive
+             * behavior.
+             */
+            auto* constraintData = static_cast<const char*>(_activeConstraint.constraintData);
+            auto* transformAPos = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_A_POS);
+            auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
+            auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
+            auto* targetBRca = reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
+
+            const float hkToGame = havokToGameScale();
+            const RE::NiPoint3 atomPivotALocalGame{
+                transformAPos[0] * hkToGame,
+                transformAPos[1] * hkToGame,
+                transformAPos[2] * hkToGame,
+            };
+            const RE::NiPoint3 atomPivotBLocalGame{
+                transformBTranslation[0] * hkToGame,
+                transformBTranslation[1] * hkToGame,
+                transformBTranslation[2] * hkToGame,
+            };
+            const RE::NiTransform authorityFrame =
+                makeRawRotationPalmTranslationFrame(rawHandWorldTransform, proxyWorldTransform);
+            const RE::NiTransform rawDesiredBodyWorld = multiplyTransforms(authorityFrame, desiredBodyTransformProxySpace);
+            const RE::NiPoint3 atomPivotAWorld = transform_math::localPointToWorld(proxyWorldTransform, atomPivotALocalGame);
+            const RE::NiPoint3 atomPivotBWorldOnRawTarget = transform_math::localPointToWorld(rawDesiredBodyWorld, atomPivotBLocalGame);
+            const RE::NiPoint3 rawPivotALocalGame = transform_math::worldPointToLocal(authorityFrame, grabPivotAWorld);
+            const RE::NiPoint3 dynamicTransformBFromProxyPivot =
+                grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformProxySpace, pivotAProxyLocalGame);
+            const RE::NiPoint3 dynamicTransformBFromRawPivot =
+                grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformProxySpace, rawPivotALocalGame);
+            const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
+            const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
+            const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
+            const RE::NiTransform rawBodyToProxySpace = invertTransform(desiredBodyTransformProxySpace);
+            const RE::NiTransform generatedBodyToProxySpace = invertTransform(_grabFrame.constraintBodyHandSpace);
+            const float targetColsToRawInverse = rotationDeltaDegrees(targetAsHkColumns, rawBodyToProxySpace.rotate);
+            const float targetRowsToRawInverse = rotationDeltaDegrees(targetAsHkRows, rawBodyToProxySpace.rotate);
+            const float targetColsToGeneratedInverse = rotationDeltaDegrees(targetAsHkColumns, generatedBodyToProxySpace.rotate);
+            const float targetColsToRawForward = rotationDeltaDegrees(targetAsHkColumns, desiredBodyTransformProxySpace.rotate);
+            const float transformBColsToRawInverse = rotationDeltaDegrees(transformBAsHkColumns, rawBodyToProxySpace.rotate);
+            const float targetColsToTransformBCols = rotationDeltaDegrees(targetAsHkColumns, transformBAsHkColumns);
+            const float proxyVsAuthorityRot = rotationDeltaDegrees(proxyWorldTransform.rotate, authorityFrame.rotate);
+            const float proxyVsAuthorityPos = translationDeltaGameUnits(proxyWorldTransform, authorityFrame);
+            const float atomLinearSeedError = pointDistanceGameUnits(atomPivotAWorld, atomPivotBWorldOnRawTarget);
+            const float atomPivotAToRequested = pointDistanceGameUnits(atomPivotAWorld, grabPivotAWorld);
+            const float atomPivotBToRequestedOnRawTarget = pointDistanceGameUnits(atomPivotBWorldOnRawTarget, grabPivotAWorld);
+            const float atomFrozenVsDynamicProxyPivot =
+                pointDistanceGameUnits(atomPivotBLocalGame, dynamicTransformBFromProxyPivot);
+            const float atomFrozenVsDynamicRawPivot =
+                pointDistanceGameUnits(atomPivotBLocalGame, dynamicTransformBFromRawPivot);
+
+            ROCK_LOG_DEBUG(Hand,
+                "{} GRAB SNAP CONTRACT ATOM: constraint={} bodyA=proxy angularRef={} proxyVsAngular={:.2f}deg/{:.2f}gu "
+                "pivotAAtom=({:.2f},{:.2f},{:.2f}) pivotAProxy=({:.2f},{:.2f},{:.2f}) pivotARaw=({:.2f},{:.2f},{:.2f}) "
+                "pivotBAtom=({:.2f},{:.2f},{:.2f}) dynBProxyA=({:.2f},{:.2f},{:.2f}) dynBRawA=({:.2f},{:.2f},{:.2f}) "
+                "linearSeedErr={:.3f}gu atomAErr={:.3f}gu atomBRawTargetErr={:.3f}gu frozenVsDynamic(proxyA={:.3f}gu rawA={:.3f}gu) "
+                "targetColsVs(rawInv={:.2f}deg generatedInv={:.2f}deg rawForward={:.2f}deg tBCols={:.2f}deg) targetRowsVsRawInv={:.2f}deg tBColsVsRawInv={:.2f}deg",
+                handName(),
+                _activeConstraint.constraintId,
+                kGrabObjectRotationReferenceName,
+                proxyVsAuthorityRot,
+                proxyVsAuthorityPos,
+                atomPivotALocalGame.x,
+                atomPivotALocalGame.y,
+                atomPivotALocalGame.z,
+                pivotAProxyLocalGame.x,
+                pivotAProxyLocalGame.y,
+                pivotAProxyLocalGame.z,
+                rawPivotALocalGame.x,
+                rawPivotALocalGame.y,
+                rawPivotALocalGame.z,
+                atomPivotBLocalGame.x,
+                atomPivotBLocalGame.y,
+                atomPivotBLocalGame.z,
+                dynamicTransformBFromProxyPivot.x,
+                dynamicTransformBFromProxyPivot.y,
+                dynamicTransformBFromProxyPivot.z,
+                dynamicTransformBFromRawPivot.x,
+                dynamicTransformBFromRawPivot.y,
+                dynamicTransformBFromRawPivot.z,
+                atomLinearSeedError,
+                atomPivotAToRequested,
+                atomPivotBToRequestedOnRawTarget,
+                atomFrozenVsDynamicProxyPivot,
+                atomFrozenVsDynamicRawPivot,
+                targetColsToRawInverse,
+                targetColsToGeneratedInverse,
+                targetColsToRawForward,
+                targetColsToTransformBCols,
+                targetRowsToRawInverse,
+                transformBColsToRawInverse);
+        }
+
         {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
             _grabAuthorityProxyBhkWorld = bhkWorld;
@@ -6142,6 +6240,122 @@ namespace rock
                     grab_transform_telemetry::formatBasisDelta("desiredObjectToDesiredConstraintBody", desiredObjectBasis, desiredConstraintBodyBasis),
                     grab_transform_telemetry::formatBasisDelta("grabBodyToDesiredBody", grabBodyBasis, desiredBodyBasis),
                     grab_transform_telemetry::formatBasisDelta("motionBodyToGrabBody", motionBodyBasis, grabBodyBasis));
+
+                /*
+                 * Snap investigation contract: do not change authority here.
+                 * These values separate a bad capture from a bad hknp write by
+                 * replaying the frozen object/body relation through each frame
+                 * candidate before the solver can move the held body.
+                 */
+                const RE::NiTransform rawObjectFromCapturedRelation =
+                    multiplyTransforms(rawRotationProxyFrameWorldAtGrab, _grabFrame.rawRotationProxyHandSpace);
+                const RE::NiTransform generatedProxyObjectFromRawRelation =
+                    multiplyTransforms(proxyFrameWorldAtGrab, _grabFrame.rawRotationProxyHandSpace);
+                const RE::NiTransform generatedProxyObjectFromProxyRelation =
+                    multiplyTransforms(proxyFrameWorldAtGrab, _grabFrame.constraintHandSpace);
+                const RE::NiTransform rawBodyFromCapturedRelation =
+                    multiplyTransforms(rawRotationProxyFrameWorldAtGrab, _grabFrame.rawRotationProxyBodyHandSpace);
+                const RE::NiTransform generatedProxyBodyFromRawRelation =
+                    multiplyTransforms(proxyFrameWorldAtGrab, _grabFrame.rawRotationProxyBodyHandSpace);
+                const RE::NiTransform generatedProxyBodyFromProxyRelation =
+                    multiplyTransforms(proxyFrameWorldAtGrab, _grabFrame.constraintBodyHandSpace);
+
+                const auto rawObjectErr =
+                    grab_transform_telemetry::measureTransformDelta(rawObjectFromCapturedRelation, desiredObjectWorld);
+                const auto proxyObjectRawErr =
+                    grab_transform_telemetry::measureTransformDelta(generatedProxyObjectFromRawRelation, desiredObjectWorld);
+                const auto proxyObjectProxyErr =
+                    grab_transform_telemetry::measureTransformDelta(generatedProxyObjectFromProxyRelation, desiredObjectWorld);
+                const auto rawBodyErr =
+                    grab_transform_telemetry::measureTransformDelta(rawBodyFromCapturedRelation, desiredConstraintBodyWorld);
+                const auto proxyBodyRawErr =
+                    grab_transform_telemetry::measureTransformDelta(generatedProxyBodyFromRawRelation, desiredConstraintBodyWorld);
+                const auto proxyBodyProxyErr =
+                    grab_transform_telemetry::measureTransformDelta(generatedProxyBodyFromProxyRelation, desiredConstraintBodyWorld);
+
+                const RE::NiPoint3 rawPivotALocal =
+                    transform_math::worldPointToLocal(rawRotationProxyFrameWorldAtGrab, grabPivotAWorld);
+                const RE::NiPoint3 proxyPivotALocal =
+                    transform_math::worldPointToLocal(proxyFrameWorldAtGrab, grabPivotAWorld);
+                const RE::NiPoint3 dynamicTransformBFromRawRelationProxyPivot =
+                    grab_constraint_math::computeDynamicTransformBTranslationGame(_grabFrame.rawRotationProxyBodyHandSpace, proxyPivotALocal);
+                const RE::NiPoint3 dynamicTransformBFromRawRelationRawPivot =
+                    grab_constraint_math::computeDynamicTransformBTranslationGame(_grabFrame.rawRotationProxyBodyHandSpace, rawPivotALocal);
+                const RE::NiPoint3 dynamicTransformBFromProxyRelationProxyPivot =
+                    grab_constraint_math::computeDynamicTransformBTranslationGame(_grabFrame.constraintBodyHandSpace, proxyPivotALocal);
+                const float frozenPivotOnRawBodyErr = pointDistanceGameUnits(
+                    transform_math::localPointToWorld(rawBodyFromCapturedRelation, _grabFrame.pivotBConstraintLocalGame),
+                    grabPivotAWorld);
+                const float frozenPivotOnProxyRawBodyErr = pointDistanceGameUnits(
+                    transform_math::localPointToWorld(generatedProxyBodyFromRawRelation, _grabFrame.pivotBConstraintLocalGame),
+                    grabPivotAWorld);
+                const float frozenVsDynamicRawProxyPivot =
+                    pointDistanceGameUnits(_grabFrame.pivotBConstraintLocalGame, dynamicTransformBFromRawRelationProxyPivot);
+                const float frozenVsDynamicRawRawPivot =
+                    pointDistanceGameUnits(_grabFrame.pivotBConstraintLocalGame, dynamicTransformBFromRawRelationRawPivot);
+                const float frozenVsDynamicProxyProxyPivot =
+                    pointDistanceGameUnits(_grabFrame.pivotBConstraintLocalGame, dynamicTransformBFromProxyRelationProxyPivot);
+                const RE::NiPoint3 palmNormalAtCapture = normalizeOrZero(computePalmNormalFromHandBasis(handWorldTransform, _isLeft));
+                const RE::NiPoint3 surfaceNormalAtCapture =
+                    grabSurfaceHit.valid ? normalizeOrZero(grabSurfaceHit.normal) : RE::NiPoint3{};
+                const bool hasSurfaceNormalAtCapture = lengthSquared(surfaceNormalAtCapture) > 0.000001f;
+                const float surfacePalmDot =
+                    hasSurfaceNormalAtCapture ? dotProduct(surfaceNormalAtCapture, palmNormalAtCapture) : 0.0f;
+                const float surfacePalmDegrees =
+                    hasSurfaceNormalAtCapture ? axisDeltaDegrees(surfaceNormalAtCapture, palmNormalAtCapture) : -1.0f;
+
+                ROCK_LOG_DEBUG(Hand,
+                    "{} GRAB SNAP CONTRACT CAPTURE: mode={} pivotAuthority={} farSelection={} rawProxyFrame={:.2f}deg/{:.2f}gu "
+                    "surfaceNormal={} surfacePalmDot={:.3f} surfacePalmDeg={:.2f} "
+                    "objectErr(raw={:.3f}gu/{:.2f}deg proxyWithRaw={:.3f}gu/{:.2f}deg proxyWithProxy={:.3f}gu/{:.2f}deg) "
+                    "bodyErr(raw={:.3f}gu/{:.2f}deg proxyWithRaw={:.3f}gu/{:.2f}deg proxyWithProxy={:.3f}gu/{:.2f}deg) "
+                    "pivotALocal(proxy=({:.2f},{:.2f},{:.2f}) raw=({:.2f},{:.2f},{:.2f})) "
+                    "pivotBLocal(frozen=({:.2f},{:.2f},{:.2f}) dynRawProxyA=({:.2f},{:.2f},{:.2f}) dynRawRawA=({:.2f},{:.2f},{:.2f}) dynProxyProxyA=({:.2f},{:.2f},{:.2f})) "
+                    "linearSeedErr(rawBody={:.3f}gu proxyWithRawBody={:.3f}gu) frozenVsDynamic(rawProxyA={:.3f}gu rawRawA={:.3f}gu proxyProxyA={:.3f}gu)",
+                    handName(),
+                    grabPointMode,
+                    _grabFrame.pivotAuthoritySource,
+                    sel.isFarSelection ? "yes" : "no",
+                    rawVsConstraintRot,
+                    rawVsConstraintPos,
+                    hasSurfaceNormalAtCapture ? "yes" : "no",
+                    surfacePalmDot,
+                    surfacePalmDegrees,
+                    rawObjectErr.positionGameUnits,
+                    rawObjectErr.rotationDegrees,
+                    proxyObjectRawErr.positionGameUnits,
+                    proxyObjectRawErr.rotationDegrees,
+                    proxyObjectProxyErr.positionGameUnits,
+                    proxyObjectProxyErr.rotationDegrees,
+                    rawBodyErr.positionGameUnits,
+                    rawBodyErr.rotationDegrees,
+                    proxyBodyRawErr.positionGameUnits,
+                    proxyBodyRawErr.rotationDegrees,
+                    proxyBodyProxyErr.positionGameUnits,
+                    proxyBodyProxyErr.rotationDegrees,
+                    proxyPivotALocal.x,
+                    proxyPivotALocal.y,
+                    proxyPivotALocal.z,
+                    rawPivotALocal.x,
+                    rawPivotALocal.y,
+                    rawPivotALocal.z,
+                    _grabFrame.pivotBConstraintLocalGame.x,
+                    _grabFrame.pivotBConstraintLocalGame.y,
+                    _grabFrame.pivotBConstraintLocalGame.z,
+                    dynamicTransformBFromRawRelationProxyPivot.x,
+                    dynamicTransformBFromRawRelationProxyPivot.y,
+                    dynamicTransformBFromRawRelationProxyPivot.z,
+                    dynamicTransformBFromRawRelationRawPivot.x,
+                    dynamicTransformBFromRawRelationRawPivot.y,
+                    dynamicTransformBFromRawRelationRawPivot.z,
+                    dynamicTransformBFromProxyRelationProxyPivot.x,
+                    dynamicTransformBFromProxyRelationProxyPivot.y,
+                    dynamicTransformBFromProxyRelationProxyPivot.z,
+                    frozenPivotOnRawBodyErr,
+                    frozenPivotOnProxyRawBodyErr,
+                    frozenVsDynamicRawProxyPivot,
+                    frozenVsDynamicRawRawPivot,
+                    frozenVsDynamicProxyProxyPivot);
 
                 ROCK_LOG_DEBUG(Hand,
                     "{} GRAB FRAME TARGETS: grabHSRaw.pos=({:.2f},{:.2f},{:.2f}) grabHSConstraint.pos=({:.2f},{:.2f},{:.2f}) "
