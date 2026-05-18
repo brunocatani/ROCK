@@ -1654,22 +1654,6 @@ namespace rock
             return result;
         }
 
-        RE::NiTransform makeActualProxyLocalDesiredBodyTransform(
-            const RE::NiTransform& actualProxyWorld,
-            const RE::NiTransform& desiredBodyWorld)
-        {
-            /*
-             * ROCK's player-facing held-object target intentionally uses raw
-             * hand rotation with live palm/proxy translation. The hknp ragdoll
-             * atom, however, consumes body-B relative to the actual hidden
-             * proxy body-A frame. Convert the desired BODY target back through
-             * the real proxy frame at the native boundary so random raw/proxy
-             * axis disagreement cannot be interpreted as a grab-start rotation
-             * command.
-             */
-            return grab_frame_math::objectInFrameSpace(actualProxyWorld, desiredBodyWorld);
-        }
-
         RE::NiTransform makeNativeAngularBoundaryTargetFromVisualTarget(
             const RE::NiTransform& visualTargetWorld,
             const RE::NiTransform& bodyLinearTargetWorld)
@@ -3358,31 +3342,11 @@ namespace rock
             auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
             auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
 
-            // The ragdoll motor's active angular target is written in actual
-            // proxy-body local space, even though the desired BODY target is
-            // still composed from ROCK's raw-rotation/palm-translation authority.
-            // Comparing readback against the stored raw relation directly hides
-            // the frame conversion that prevents grab-start angular snaps.
-            RE::NiTransform constraintAngularFrameWorld = out.rawHandWorld;
-            bool hasConstraintAngularFrame = false;
-            if (out.hasProxyReadback) {
-                constraintAngularFrameWorld = out.proxyReadbackWorld;
-                hasConstraintAngularFrame = true;
-            } else if (out.hasPalmAnchorGrabAuthority) {
-                constraintAngularFrameWorld = out.palmAnchorGrabAuthorityWorld;
-                hasConstraintAngularFrame = true;
-            } else if (out.hasHandBodyWorld) {
-                constraintAngularFrameWorld = out.handBodyWorld;
-                hasConstraintAngularFrame = true;
-            }
-
-            const RE::NiTransform desiredBodyTransformHandSpace = hasConstraintAngularFrame ?
-                makeActualProxyLocalDesiredBodyTransform(
-                    constraintAngularFrameWorld,
-                    multiplyTransforms(
-                        makeRawRotationPalmTranslationFrame(out.rawHandWorld, constraintAngularFrameWorld),
-                        _grabFrame.rawRotationProxyBodyHandSpace)) :
-                _grabFrame.rawRotationProxyBodyHandSpace;
+            // The ragdoll motor's active angular target is seeded and updated from
+            // the raw-rotation proxy BODY relation. Comparing readback against the
+            // older constraint-space relation makes good grabs look like 90-180 deg
+            // failures and hides the real first-frame angular contract.
+            const RE::NiTransform desiredBodyTransformHandSpace = _grabFrame.rawRotationProxyBodyHandSpace;
             const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
             const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
             const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
@@ -3564,12 +3528,11 @@ namespace rock
         }
 
         const RE::NiPoint3 pivotAProxyLocalGame = transform_math::worldPointToLocal(proxyWorldTransform, grabPivotAWorld);
-        const RE::NiTransform authorityFrame =
-            makeRawRotationPalmTranslationFrame(rawHandWorldTransform, proxyWorldTransform);
-        const RE::NiTransform desiredBodyWorld =
-            multiplyTransforms(authorityFrame, _grabFrame.rawRotationProxyBodyHandSpace);
-        const RE::NiTransform desiredBodyTransformProxySpace =
-            makeActualProxyLocalDesiredBodyTransform(proxyWorldTransform, desiredBodyWorld);
+        // Constraint creation must seed the ragdoll motor with the same angular
+        // BODY relation that held updates keep writing. Using the older
+        // constraint-space relation here lets some grabs start with a correct
+        // pivot but a nearly flipped BODY target, which presents as an on-grab snap.
+        const RE::NiTransform desiredBodyTransformProxySpace = _grabFrame.rawRotationProxyBodyHandSpace;
         const RE::NiPoint3 activePivotBConstraintLocalGame = activeProxyConstraintPivotBLocalGame();
 
         const float gameToHkScale = gameToHavokScale();
@@ -3672,10 +3635,9 @@ namespace rock
     {
         const RE::NiTransform authorityFrame =
             makeRawRotationPalmTranslationFrame(rawHandWorldTransform, proxyWorldTransform);
+        const RE::NiTransform desiredBodyTransformProxySpace = _grabFrame.rawRotationProxyBodyHandSpace;
         outDesiredObjectWorld = multiplyTransforms(authorityFrame, _grabFrame.rawRotationProxyHandSpace);
-        outDesiredBodyWorld = multiplyTransforms(authorityFrame, _grabFrame.rawRotationProxyBodyHandSpace);
-        const RE::NiTransform desiredBodyTransformProxySpace =
-            makeActualProxyLocalDesiredBodyTransform(proxyWorldTransform, outDesiredBodyWorld);
+        outDesiredBodyWorld = multiplyTransforms(authorityFrame, desiredBodyTransformProxySpace);
         outActivePivotBBodyLocalGame = activeProxyConstraintPivotBLocalGame();
         outDesiredTargetPointWorld = transform_math::localPointToWorld(outDesiredBodyWorld, outActivePivotBBodyLocalGame);
 
