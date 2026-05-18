@@ -5750,26 +5750,9 @@ namespace rock
                     _grabObjectGripAtGrab = gripArea;
                     _grabAcquisitionPhase = phaseDecision.phase;
                     const bool useAuthoredGrabFrame = authoredGrabNode != nullptr;
-                    const bool fullHeldAuthorityAtCapture =
-                        _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld;
-                    /*
-                     * Near convergence is not a seated grab yet. Forcing the
-                     * selected mesh point to the palm pivot during that phase
-                     * creates an off-center linear correction; on bottles and
-                     * other long/thin objects that correction becomes visible
-                     * torque. Freeze the current object-to-hand relation for
-                     * that acquisition so promotion cannot reintroduce the same
-                     * point-to-palm startup correction under a different phase.
-                     */
-                    const bool freezeNearConvergeRelation =
-                        !useAuthoredGrabFrame &&
-                        _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::NearConverging;
-                    const char* relationMode = useAuthoredGrabFrame ? "authoredGrabNodeFrame" :
-                                                (freezeNearConvergeRelation ? "rockPointFrozenRelation" : "rockPointToPalm");
-                    const RE::NiPoint3 palmSeatWorld = pocket.palmCenterWorld;
-                    const float palmSeatToGripDistanceGameUnits = pointDistanceGameUnits(palmSeatWorld, gripArea.contactSeedWorld);
+                    const char* relationMode = useAuthoredGrabFrame ? "authoredGrabNodeFrame" : "rockPointToPalm";
 
-                    grabPivotAWorld = freezeNearConvergeRelation ? gripArea.contactSeedWorld : palmSeatWorld;
+                    grabPivotAWorld = pocket.palmCenterWorld;
                     grabGripPoint = gripArea.contactSeedWorld;
                     grabPointMode = relationMode;
                     grabFallbackReason = phaseDecision.reason;
@@ -5782,13 +5765,11 @@ namespace rock
                     _grabFrame.pivotBConstraintLocalGame = grab_contact_patch_math::freezePivotBBodyLocal(constraintBodyWorldAtGrab, grabGripPoint);
                     _grabFrame.hasFrozenPivotB = true;
                     _grabFrame.hasGripPoint = true;
-                    _grabFrame.pocketToGripDistanceGameUnits = palmSeatToGripDistanceGameUnits;
+                    _grabFrame.pocketToGripDistanceGameUnits = pointDistanceGameUnits(grabPivotAWorld, grabGripPoint);
                     _grabFrame.selectionToGripEvidenceDistanceGameUnits =
                         sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, gripArea.contactSeedWorld) : std::numeric_limits<float>::max();
                     _grabFrame.grabPivotWorldAtGrab = grabPivotAWorld;
                     _grabFrame.gripPointWorldAtGrab = grabGripPoint;
-                    _grabFrame.palmSeatPointWorldAtGrab = palmSeatWorld;
-                    _grabFrame.hasPalmSeatPoint = true;
                     _grabFrame.activeGrabPointMode = grabPointMode;
                     _grabFrame.palmSeatPointMode = "threePhasePocket";
                     _grabFrame.fingerEvidencePointMode = "evidenceOnly";
@@ -5800,12 +5781,13 @@ namespace rock
                         _grabFrame.fingerPoseAimValid = false;
                         _grabFrame.fingerPoseAimReason = "nearConvergePendingTouch";
                     }
-                    desiredObjectWorld = freezeNearConvergeRelation ?
-                        objectWorldTransform :
-                        grab_frame_math::shiftObjectToAlignGripWithPocket(
-                            objectWorldTransform,
-                            grabPivotAWorld,
-                            grabGripPoint);
+                    const bool fullHeldAuthorityAtCapture =
+                        _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld;
+
+                    desiredObjectWorld = grab_frame_math::shiftObjectToAlignGripWithPocket(
+                        objectWorldTransform,
+                        grabPivotAWorld,
+                        grabGripPoint);
                     if (useAuthoredGrabFrame) {
                         desiredObjectWorld = grab_node_info_math::buildDesiredObjectWorldFromAuthoredGrabNode(
                             objectWorldTransform,
@@ -5814,7 +5796,7 @@ namespace rock
                             grabPivotAWorld);
                     }
                     const float pulledGrabAdjust =
-                        (grabbedFromPullCatch && !useAuthoredGrabFrame && !freezeNearConvergeRelation) ?
+                        (grabbedFromPullCatch && !useAuthoredGrabFrame) ?
                             (std::max)(0.0f, g_rockConfig.rockPulledGrabHandAdjustDistanceGameUnits) :
                             0.0f;
                     if (pulledGrabAdjust > 0.0f) {
@@ -5831,11 +5813,11 @@ namespace rock
                     ROCK_LOG_DEBUG(Hand,
                         "{} THREE-PHASE GRAB CAPTURE: relation={} rotation={} phase={} reason={} touchContact={} stableTouch={} pocket=({:.1f},{:.1f},{:.1f}) "
                         "palm=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) seed=({:.1f},{:.1f},{:.1f}) "
-                        "grip=({:.1f},{:.1f},{:.1f}) pivotA=({:.1f},{:.1f},{:.1f}) gripLocal=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) dist={:.1f} signedPalm={:.1f} "
+                        "grip=({:.1f},{:.1f},{:.1f}) gripLocal=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) dist={:.1f} signedPalm={:.1f} "
                         "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} pulledAdjust={:.1f} inset={:.2f} insetSource={}",
                         handName(),
                         relationMode,
-                        useAuthoredGrabFrame ? "authoredNode" : (freezeNearConvergeRelation ? "freezeCurrentRelation" : "preserve"),
+                        useAuthoredGrabFrame ? "authoredNode" : "preserve",
                         grab_three_phase::phaseName(_grabAcquisitionPhase),
                         phaseDecision.reason,
                         semanticContacts.count > 0 ? "yes" : "no",
@@ -5855,9 +5837,6 @@ namespace rock
                         grabGripPoint.x,
                         grabGripPoint.y,
                         grabGripPoint.z,
-                        grabPivotAWorld.x,
-                        grabPivotAWorld.y,
-                        grabPivotAWorld.z,
                         _grabFrame.gripPointLocal.x,
                         _grabFrame.gripPointLocal.y,
                         _grabFrame.gripPointLocal.z,
