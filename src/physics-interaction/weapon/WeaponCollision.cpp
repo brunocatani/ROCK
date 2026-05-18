@@ -922,44 +922,6 @@ namespace rock
             return candidates;
         }
 
-        bool isEquippedSlotWeaponMeshRootCandidate(const WeaponMeshRootCandidate& candidate)
-        {
-            const std::string_view label{ candidate.label };
-            return label.substr(0, std::string_view{ "PlayerEquipData.slot[" }.size()) == "PlayerEquipData.slot[" ||
-                   label.substr(0, std::string_view{ "ActorEquipData.slot[" }.size()) == "ActorEquipData.slot[";
-        }
-
-        RE::NiAVObject* selectGeneratedWeaponPackageDriveRoot(
-            const std::vector<WeaponMeshRootCandidate>& candidates,
-            RE::NiAVObject* preferredDriveRoot)
-        {
-            if (preferredDriveRoot) {
-                return preferredDriveRoot;
-            }
-            for (const auto& candidate : candidates) {
-                if (candidate.root && isEquippedSlotWeaponMeshRootCandidate(candidate)) {
-                    return candidate.root;
-                }
-            }
-            for (const auto& candidate : candidates) {
-                if (candidate.root) {
-                    return candidate.root;
-                }
-            }
-            return nullptr;
-        }
-
-        WeaponMeshRootCandidate selectMissingWeaponVisualDriveRootCandidate()
-        {
-            const auto candidates = makeGeneratedWeaponMeshRootCandidates(nullptr);
-            for (const auto& candidate : candidates) {
-                if (candidate.root && isEquippedSlotWeaponMeshRootCandidate(candidate)) {
-                    return candidate;
-                }
-            }
-            return {};
-        }
-
         std::vector<RE::NiPoint3> makeCenteredHavokPointCloud(const std::vector<RE::NiPoint3>& localPointsGame, const RE::NiPoint3& localCenterGame)
         {
             std::vector<RE::NiPoint3> result;
@@ -1820,7 +1782,7 @@ namespace rock
         WeaponInteractionContact& outContact) const
     {
         outContact = {};
-        if (_weaponBodiesDisabledForMissingVisual || getCurrentWeaponGenerationKey() == 0 || probeRadiusGame <= 0.0f) {
+        if (!weaponNode || _weaponBodiesDisabledForMissingVisual || getCurrentWeaponGenerationKey() == 0 || probeRadiusGame <= 0.0f) {
             return false;
         }
 
@@ -1883,7 +1845,8 @@ namespace rock
         WeaponSoftContactResult& outContact) const
     {
         outContact = {};
-        if (_weaponBodiesDisabledForMissingVisual ||
+        if (!weaponNode ||
+            _weaponBodiesDisabledForMissingVisual ||
             getCurrentWeaponGenerationKey() == 0 ||
             !soft_contact_math::isFinite(capsuleStartWorld) ||
             !soft_contact_math::isFinite(capsuleEndWorld) ||
@@ -2107,20 +2070,6 @@ namespace rock
             _driveFailureCount.store(0, std::memory_order_release);
             _cachedWorld = world;
             resetWeaponCollisionSettingsCache();
-        }
-
-        if (!weaponNode) {
-            const auto missingVisualDriveRoot = selectMissingWeaponVisualDriveRootCandidate();
-            if (missingVisualDriveRoot.root) {
-                ROCK_LOG_SAMPLE_WARN(Weapon,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "First-person weapon visual node absent - using equip-slot visual package root label='{}' root='{}' addr={:x} directChildren={} for generated weapon collision",
-                    missingVisualDriveRoot.label,
-                    safeNodeName(missingVisualDriveRoot.root),
-                    reinterpret_cast<std::uintptr_t>(missingVisualDriveRoot.root),
-                    directChildCount(missingVisualDriveRoot.root));
-                weaponNode = missingVisualDriveRoot.root;
-            }
         }
 
         if (!weaponNode) {
@@ -3075,7 +3024,7 @@ namespace rock
             *outInstanceWitness = weapon_generation_identity_policy::makeEquippedWeaponInstanceWitness(identity);
         }
         std::uint64_t visualKey = 0;
-        if (weaponNode || identity.hasEquippedWeapon) {
+        if (weaponNode) {
             visualKey = weapon_visual_composition_policy::kWeaponVisualCompositionOffset;
             const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode);
             for (const auto& candidate : candidates) {
@@ -3090,7 +3039,7 @@ namespace rock
             }
 
             if (visualKey == weapon_visual_composition_policy::kWeaponVisualCompositionOffset) {
-                visualKey = reinterpret_cast<std::uint64_t>(selectGeneratedWeaponPackageDriveRoot(candidates, weaponNode));
+                visualKey = reinterpret_cast<std::uint64_t>(weaponNode);
             }
         }
         if (outVisualKey) {
@@ -3103,25 +3052,23 @@ namespace rock
     std::size_t WeaponCollision::findGeneratedWeaponShapeSources(RE::NiAVObject* weaponNode, std::vector<GeneratedHullSource>& outSources)
     {
         outSources.clear();
+        if (!weaponNode) {
+            ROCK_LOG_DEBUG(Weapon, "Generated weapon mesh source scan: no weapon drive root");
+            return 0;
+        }
         const auto candidates = makeGeneratedWeaponMeshRootCandidates(weaponNode);
         if (candidates.empty()) {
             ROCK_LOG_DEBUG(Weapon, "Generated weapon mesh source scan: no weapon root candidates");
             return 0;
         }
-        RE::NiAVObject* packageDriveRoot = selectGeneratedWeaponPackageDriveRoot(candidates, weaponNode);
-        if (!packageDriveRoot) {
-            ROCK_LOG_DEBUG(Weapon, "Generated weapon mesh source scan: no weapon package drive root");
-            return 0;
-        }
+        RE::NiAVObject* packageDriveRoot = weaponNode;
 
         /*
          * Generated weapon collision is now geometry-first: candidate roots are
          * discovery witnesses for the same equipped package, not a competition
          * where one root can hide valid geometry from the others. Sources from
-         * every candidate are converted into one package drive root's local
+         * every candidate are converted into the update weapon root's local
          * frame, and duplicate TriShapes are accepted once by source pointer.
-         * When the first-person "Weapon" branch is absent, a matching equip-slot
-         * package root can be that drive root instead of blocking source scans.
          */
         const RE::NiTransform packageDriveRootTransform = packageDriveRoot->world;
         std::unordered_set<std::uintptr_t> claimedSourceGroups;

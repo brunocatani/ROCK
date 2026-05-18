@@ -479,7 +479,7 @@ namespace rock
             float radiusPadding)
         {
             Candidate best{};
-            if (!movableShape.capsule.valid || !weaponCollision.hasWeaponBody()) {
+            if (!weaponNode || !movableShape.capsule.valid || !weaponCollision.hasWeaponBody()) {
                 return best;
             }
 

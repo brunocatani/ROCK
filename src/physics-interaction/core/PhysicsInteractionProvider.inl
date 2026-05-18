@@ -51,7 +51,7 @@
     {
         outResult = {};
         auto* weaponNode = resolveEquippedWeaponInteractionNode();
-        if (!weaponNode && !_weaponCollision.hasWeaponBody()) {
+        if (!weaponNode) {
             return false;
         }
 

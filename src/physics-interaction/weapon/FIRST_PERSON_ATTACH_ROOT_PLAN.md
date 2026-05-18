@@ -4,10 +4,11 @@ This plan exists because the current generated weapon collider path treats the f
 
 ## Implementation Status
 
+- 2026-05-18 correction: The equip-slot package root is not a safe transform authority. It can expose useful read-only source geometry, but using it as the generated collision drive root when `firstPersonSkeleton:Weapon` is absent creates duplicate collider sets, wrong orientation, and stale colliders after unequip because it bypasses the real first-person weapon attachment lifecycle. The production fix restores the real `Weapon` node as the only drive root and keeps equip-slot roots as source witnesses only after that drive root exists.
 - 2026-05-18: Stage 1, Stage 3, and Stage 4 are implemented in `WeaponCollision.cpp`. Generated weapon candidate discovery now includes matching first-person and actor `ActorEquipData::SlotData::node` roots, prefers the bounded authoritative equipped-instance witness when matching those slots, deduplicates them by node pointer, folds them into the visual key, and logs parent pointer/name plus direct child counts for every candidate.
-- 2026-05-18: AMCAR/Thanatos test logs showed `firstPersonSkeleton:Weapon` can be absent entirely while the equipped identity is valid. The collision path now uses a matching equip-slot package root as the generated collision drive root when the `Weapon` label is absent, so source scanning no longer stops before barrel/handguard geometry can be discovered.
+- 2026-05-18: AMCAR/Thanatos test logs showed `firstPersonSkeleton:Weapon` can be absent entirely while the equipped identity is valid. The follow-up in-game test proved that substituting a matching equip-slot package root as the generated collision drive root is invalid. Missing `Weapon` remains an attach/drive-root publication bug to diagnose, not a condition where ROCK should create or drive weapon colliders from another root.
 - Stage 2 remains diagnostic-only and is not implemented in production code. No native lookup or native refresh path was added by this change.
-- Stage 5 remains dependent on in-game logs from an affected weapon. The next decision point is whether the missing barrel/handguard appears under the equip-slot package root, or whether the native package itself is incomplete.
+- Stage 5 remains dependent on in-game logs from an affected weapon with a valid first-person `Weapon` drive root. The next decision point is whether the missing barrel/handguard appears under the equip-slot package root while the drive root exists, or whether the native package itself is incomplete.
 
 ## Current Evidence
 
@@ -19,7 +20,7 @@ This plan exists because the current generated weapon collider path treats the f
   - `PlayerNodes.primaryWeaponOffsetNode`
   - `updateWeaponNode`
 - The native attach path stores the generated weapon package root at `ActorEquipData::SlotData::node`, matching offset `equipData + 0x10 + slotIndex * 0x58 + 0x30`.
-- The package root is a visual source candidate, not necessarily the same node as the `Weapon` attach parent.
+- The package root is a visual source candidate, not the generated collision transform authority.
 
 ## Implementation Stages
 
