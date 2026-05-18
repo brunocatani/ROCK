@@ -245,6 +245,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGrabContactEvidencePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabContactEvidencePolicyTests)
 
+  add_executable(ROCKGrabContactPatchClusterPolicyTests
+    "${ROOT_DIR}/tests/GrabContactPatchClusterPolicyTests.cpp"
+  )
+  target_compile_features(ROCKGrabContactPatchClusterPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKGrabContactPatchClusterPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKGrabContactPatchClusterPolicyTests)
+
   add_executable(ROCKGrabMotionControllerPolicyTests
     "${ROOT_DIR}/tests/GrabMotionControllerPolicyTests.cpp"
   )
@@ -306,6 +313,7 @@ if(BUILD_ROCK_TESTS)
     ROCKGrabFingerLocalTransformPolicyTests
     ROCKGrabHapticPolicyTests
     ROCKGrabContactEvidencePolicyTests
+    ROCKGrabContactPatchClusterPolicyTests
     ROCKGrabMotionControllerPolicyTests
     ROCKGrabAuthorityProxyPolicyTests
     ROCKHandColliderFramePolicyTests

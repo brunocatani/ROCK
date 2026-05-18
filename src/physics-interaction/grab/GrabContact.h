@@ -345,6 +345,19 @@ namespace rock::grab_contact_patch_math
     };
 
     template <class Vector>
+    struct GrabContactPatchSameSurfaceClusterResult
+    {
+        std::vector<GrabContactPatchSample<Vector>> samples;
+        std::size_t rawAcceptedCount = 0;
+        std::size_t anchorRejectedCount = 0;
+        std::size_t clusterRejectedCount = 0;
+        float maxDepthSpreadGameUnits = 0.0f;
+        float maxLateralDistanceGameUnits = 0.0f;
+        bool valid = false;
+        const char* reason = "uninitialized";
+    };
+
+    template <class Vector>
     inline Vector add(const Vector& lhs, const Vector& rhs)
     {
         return Vector{ lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z };
@@ -384,6 +397,12 @@ namespace rock::grab_contact_patch_math
     inline float length(const Vector& value)
     {
         return std::sqrt(lengthSquared(value));
+    }
+
+    template <class Vector>
+    inline bool finiteVector(const Vector& value)
+    {
+        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
     }
 
     template <class Vector>
@@ -508,6 +527,154 @@ namespace rock::grab_contact_patch_math
         const float clampedT = std::clamp(dot(delta, tangent), minT, maxT);
         const float clampedB = std::clamp(dot(delta, bitangent), minB, maxB);
         return add(centroid, add(mul(tangent, clampedT), mul(bitangent, clampedB)));
+    }
+
+    template <class Vector>
+    inline GrabContactPatchSameSurfaceClusterResult<Vector> filterContactPatchSameSurfaceCluster(
+        const std::vector<GrabContactPatchSample<Vector>>& samples,
+        const Vector& anchorPoint,
+        const Vector& palmNormal,
+        float maxAnchorDepthGameUnits,
+        float maxClusterDepthSpreadGameUnits,
+        float maxAnchorLateralGameUnits,
+        float maxNormalAngleDegrees)
+    {
+        /*
+         * Contact patch samples are palm probes, not independent pivot
+         * authorities. Anchor the patch to the already selected seated point and
+         * keep only one same-surface cluster; otherwise a probe that wraps around
+         * a tray corner can stretch the patch across two faces and manufacture a
+         * rotation that the user's hand never asked for.
+         */
+        GrabContactPatchSameSurfaceClusterResult<Vector> result{};
+        result.reason = "noAcceptedHits";
+
+        const Vector palm = normalizeOrZero(palmNormal);
+        if (!finiteVector(anchorPoint) || lengthSquared(palm) <= 0.0f) {
+            result.reason = "invalidAnchorFrame";
+            return result;
+        }
+
+        const float anchorDepthLimit = (std::max)(0.0f, std::isfinite(maxAnchorDepthGameUnits) ? maxAnchorDepthGameUnits : 0.0f);
+        const float clusterDepthLimit = (std::max)(0.0f, std::isfinite(maxClusterDepthSpreadGameUnits) ? maxClusterDepthSpreadGameUnits : 0.0f);
+        const float lateralLimit = (std::max)(0.0f, std::isfinite(maxAnchorLateralGameUnits) ? maxAnchorLateralGameUnits : 0.0f);
+        const float clampedAngle = std::clamp(maxNormalAngleDegrees, 0.0f, 179.0f);
+        const float minNormalDot = std::cos(clampedAngle * 3.14159265358979323846f / 180.0f);
+
+        struct Candidate
+        {
+            GrabContactPatchSample<Vector> sample{};
+            Vector normal{};
+            float depth = 0.0f;
+            float lateral = 0.0f;
+            float score = 0.0f;
+            std::size_t inputIndex = 0;
+        };
+
+        std::vector<Candidate> candidates;
+        candidates.reserve(samples.size());
+        for (std::size_t i = 0; i < samples.size(); ++i) {
+            const auto& sample = samples[i];
+            if (!sample.accepted) {
+                continue;
+            }
+            ++result.rawAcceptedCount;
+            if (!finiteVector(sample.point)) {
+                ++result.anchorRejectedCount;
+                continue;
+            }
+
+            const Vector delta = sub(sample.point, anchorPoint);
+            const float depth = dot(delta, palm);
+            const Vector lateralVector = projectOntoPlane(delta, palm);
+            const float lateral = length(lateralVector);
+            if (!std::isfinite(depth) || !std::isfinite(lateral) ||
+                std::fabs(depth) > anchorDepthLimit ||
+                lateral > lateralLimit) {
+                ++result.anchorRejectedCount;
+                continue;
+            }
+
+            Vector normal = orientNormalTowardPalm(sample.normal, palm);
+            if (lengthSquared(normal) <= 0.0f) {
+                normal = palm;
+            }
+
+            Candidate candidate{};
+            candidate.sample = sample;
+            candidate.normal = normal;
+            candidate.depth = depth;
+            candidate.lateral = lateral;
+            candidate.score = std::fabs(depth) + lateral * 0.25f;
+            candidate.inputIndex = i;
+            candidates.push_back(candidate);
+        }
+
+        if (candidates.empty()) {
+            result.reason = result.rawAcceptedCount > 0 ? "anchorGateRejectedAll" : "noAcceptedHits";
+            return result;
+        }
+
+        std::vector<std::size_t> bestCluster;
+        float bestClusterScore = (std::numeric_limits<float>::max)();
+        for (std::size_t seed = 0; seed < candidates.size(); ++seed) {
+            std::vector<std::size_t> cluster;
+            float clusterScore = 0.0f;
+            for (std::size_t index = 0; index < candidates.size(); ++index) {
+                const auto& candidate = candidates[index];
+                const auto& seedCandidate = candidates[seed];
+                if (std::fabs(candidate.depth - seedCandidate.depth) > clusterDepthLimit) {
+                    continue;
+                }
+                if (lengthSquared(candidate.normal) > 0.0f && lengthSquared(seedCandidate.normal) > 0.0f &&
+                    dot(candidate.normal, seedCandidate.normal) < minNormalDot) {
+                    continue;
+                }
+
+                cluster.push_back(index);
+                clusterScore += candidate.score;
+            }
+
+            if (cluster.empty()) {
+                continue;
+            }
+            const bool betterByCount = cluster.size() > bestCluster.size();
+            const bool betterByScore = cluster.size() == bestCluster.size() && clusterScore < bestClusterScore;
+            if (betterByCount || betterByScore) {
+                bestCluster = std::move(cluster);
+                bestClusterScore = clusterScore;
+            }
+        }
+
+        if (bestCluster.empty()) {
+            result.reason = "noSameSurfaceCluster";
+            return result;
+        }
+
+        std::vector<bool> selected(candidates.size(), false);
+        for (const auto index : bestCluster) {
+            if (index < selected.size()) {
+                selected[index] = true;
+            }
+        }
+
+        float minDepth = (std::numeric_limits<float>::max)();
+        float maxDepth = -(std::numeric_limits<float>::max)();
+        for (std::size_t i = 0; i < candidates.size(); ++i) {
+            if (!selected[i]) {
+                continue;
+            }
+            result.samples.push_back(candidates[i].sample);
+            minDepth = (std::min)(minDepth, candidates[i].depth);
+            maxDepth = (std::max)(maxDepth, candidates[i].depth);
+            result.maxLateralDistanceGameUnits = (std::max)(result.maxLateralDistanceGameUnits, candidates[i].lateral);
+        }
+
+        result.clusterRejectedCount = (candidates.size() - result.samples.size()) + result.anchorRejectedCount;
+        result.maxDepthSpreadGameUnits = result.samples.size() > 1 ? maxDepth - minDepth : 0.0f;
+        result.valid = !result.samples.empty();
+        result.reason = result.clusterRejectedCount > 0 ? "sameSurfaceClusterRejectedOutliers" : "sameSurfaceCluster";
+        return result;
     }
 
     template <class Vector>

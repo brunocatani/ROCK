@@ -681,6 +681,11 @@ namespace rock
             int rejectedInvalidNormals = 0;
             int exactBodySamples = 0;
             int meshRecoveredSamples = 0;
+            std::uint32_t rawAcceptedSampleCount = 0;
+            std::uint32_t clusterRejectedSampleCount = 0;
+            float clusterDepthSpreadGameUnits = 0.0f;
+            float clusterMaxLateralGameUnits = 0.0f;
+            const char* clusterReason = "notEvaluated";
             bool meshSnapped = false;
             GrabSurfaceHit meshSnapHit{};
             grab_contact_patch_math::GrabContactPatchPivotDecision<RE::NiPoint3> pivotDecision{};
@@ -980,6 +985,8 @@ namespace rock
             std::uint32_t resolvedBodyId,
             const SelectedObject& selection,
             const RE::NiPoint3& grabPivotAWorld,
+            const RE::NiPoint3& seatedPivotAnchorWorld,
+            bool hasSeatedPivotAnchor,
             const RE::NiPoint3& palmNormalWorld,
             const RE::NiPoint3& palmTangentWorld,
             const RE::NiPoint3& palmBitangentWorld,
@@ -1114,8 +1121,47 @@ namespace rock
                 }
             }
 
+            const RE::NiPoint3 patchAnchor = hasSeatedPivotAnchor ? seatedPivotAnchorWorld : grabPivotAWorld;
+            const float anchorDepthLimit = (std::max)(1.0f, radius + spacing * 0.50f);
+            const float clusterDepthLimit = (std::max)(0.75f, radius + spacing * 0.35f);
+            const float anchorLateralLimit = (std::max)(
+                radius * 2.0f,
+                (std::max)(
+                    spacing * 2.0f + radius,
+                    g_rockConfig.rockGrabContactPatchMeshSnapMaxDistanceGameUnits + spacing));
+            const auto surfaceCluster = grab_contact_patch_math::filterContactPatchSameSurfaceCluster(fitSamples,
+                patchAnchor,
+                palmNormal,
+                anchorDepthLimit,
+                clusterDepthLimit,
+                anchorLateralLimit,
+                g_rockConfig.rockGrabContactPatchMaxNormalAngleDegrees);
+            result.rawAcceptedSampleCount = static_cast<std::uint32_t>((std::min)(surfaceCluster.rawAcceptedCount,
+                static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())));
+            result.clusterRejectedSampleCount = static_cast<std::uint32_t>((std::min)(surfaceCluster.clusterRejectedCount,
+                static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())));
+            result.clusterDepthSpreadGameUnits = surfaceCluster.maxDepthSpreadGameUnits;
+            result.clusterMaxLateralGameUnits = surfaceCluster.maxLateralDistanceGameUnits;
+            result.clusterReason = surfaceCluster.reason;
+            if (!surfaceCluster.valid) {
+                result.samples = {};
+                result.sampleCount = 0;
+                result.patch.fallbackReason = surfaceCluster.reason ? surfaceCluster.reason : "contactPatchClusterFailed";
+                result.pointMode = "contactPatchClusterFailed";
+                return result;
+            }
+
+            fitSamples = surfaceCluster.samples;
+            result.samples = {};
+            result.sampleCount = 0;
+            for (const auto& sample : fitSamples) {
+                if (result.sampleCount < result.samples.size()) {
+                    result.samples[result.sampleCount++] = sample;
+                }
+            }
+
             result.patch = grab_contact_patch_math::fitContactPatch(fitSamples,
-                grabPivotAWorld,
+                patchAnchor,
                 palmNormal,
                 palmTangent,
                 g_rockConfig.rockGrabContactPatchMaxNormalAngleDegrees);
@@ -4952,6 +4998,8 @@ namespace rock
                 objectBodyId.value,
                 sel,
                 acquisitionGrabPivotAWorld,
+                canonicalPivotPointWorld,
+                canonicalPivotAvailable,
                 palmNormalWorld,
                 palmTangentWorld,
                 palmBitangentWorld,
@@ -5060,7 +5108,7 @@ namespace rock
                     (contactPatchRuntime.patch.fallbackReason ? contactPatchRuntime.patch.fallbackReason : "none");
                 ROCK_LOG_DEBUG(Hand,
                     "{} hand CONTACT PATCH: body={} mode={} samples={}/{} castsHits={} rejectBody={} rejectNormal={} "
-                    "exactSamples={} meshRecovered={} rejectedBodies={} "
+                    "exactSamples={} meshRecovered={} clusterRaw={} clusterRejected={} clusterDepth={:.2f} clusterLat={:.2f} clusterReason={} rejectedBodies={} "
                     "pivot=({:.1f},{:.1f},{:.1f}) pivotSource={} replaceSelected={} selectionDelta={:.2f} "
                     "fitPoint=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) tangent=({:.3f},{:.3f},{:.3f}) "
                     "confidence={:.2f} reliable={} normalTrusted={} positionOnly={} meshSnap={} snapDelta={:.2f} authorityDelta={:.2f}/{:.2f}/{:.2f} "
@@ -5075,6 +5123,11 @@ namespace rock
                     contactPatchRuntime.rejectedInvalidNormals,
                     contactPatchRuntime.exactBodySamples,
                     contactPatchRuntime.meshRecoveredSamples,
+                    contactPatchRuntime.rawAcceptedSampleCount,
+                    contactPatchRuntime.clusterRejectedSampleCount,
+                    contactPatchRuntime.clusterDepthSpreadGameUnits,
+                    contactPatchRuntime.clusterMaxLateralGameUnits,
+                    contactPatchRuntime.clusterReason,
                     formatContactPatchRejectedBodies(contactPatchRuntime),
                     grabGripPoint.x,
                     grabGripPoint.y,
@@ -5135,6 +5188,7 @@ namespace rock
             } else if (contactPatchRuntime.patch.valid && g_rockConfig.rockDebugGrabFrameLogging) {
                 ROCK_LOG_DEBUG(Hand,
                     "{} hand CONTACT PATCH evidence-only: body={} mode={} meshSnap={} requireMeshSnap={} pivotSource={} normalTrusted={} positionOnly={} authoritySource={} "
+                    "clusterRaw={} clusterRejected={} clusterDepth={:.2f} clusterLat={:.2f} clusterReason={} "
                     "authorityDelta={:.2f}/{:.2f}/{:.2f} canonical={} meshPocket={:.2f} patchPocket={:.2f} "
                     "pocketImprove={:.2f} meshScore={:.2f} patchScore={:.2f} scoreImprove={:.2f} authorityReason={} fallback={}",
                     handName(),
@@ -5146,6 +5200,11 @@ namespace rock
                     contactPatchRuntime.normalTrusted ? "yes" : "no",
                     contactPatchRuntime.positionOnly ? "yes" : "no",
                     pivotAuthoritySource,
+                    contactPatchRuntime.rawAcceptedSampleCount,
+                    contactPatchRuntime.clusterRejectedSampleCount,
+                    contactPatchRuntime.clusterDepthSpreadGameUnits,
+                    contactPatchRuntime.clusterMaxLateralGameUnits,
+                    contactPatchRuntime.clusterReason,
                     contactPatchPivotCandidate.authorityDeltaGameUnits,
                     contactPatchAuthorityResolution.baseAuthorityDeltaGameUnits,
                     contactPatchAuthorityResolution.extendedAuthorityDeltaGameUnits,
@@ -5162,7 +5221,7 @@ namespace rock
             } else if (g_rockConfig.rockDebugGrabFrameLogging) {
                 ROCK_LOG_DEBUG(Hand,
                     "{} hand CONTACT PATCH failed: body={} samples={} castsHits={} rejectBody={} rejectNormal={} "
-                    "exactSamples={} meshRecovered={} rejectedBodies={} fallback={}",
+                    "exactSamples={} meshRecovered={} clusterRaw={} clusterRejected={} clusterDepth={:.2f} clusterLat={:.2f} clusterReason={} rejectedBodies={} fallback={}",
                     handName(),
                     objectBodyId.value,
                     contactPatchRuntime.sampleCount,
@@ -5171,6 +5230,11 @@ namespace rock
                     contactPatchRuntime.rejectedInvalidNormals,
                     contactPatchRuntime.exactBodySamples,
                     contactPatchRuntime.meshRecoveredSamples,
+                    contactPatchRuntime.rawAcceptedSampleCount,
+                    contactPatchRuntime.clusterRejectedSampleCount,
+                    contactPatchRuntime.clusterDepthSpreadGameUnits,
+                    contactPatchRuntime.clusterMaxLateralGameUnits,
+                    contactPatchRuntime.clusterReason,
                     formatContactPatchRejectedBodies(contactPatchRuntime),
                     contactPatchRuntime.patch.fallbackReason ? contactPatchRuntime.patch.fallbackReason : "unknown");
             }
