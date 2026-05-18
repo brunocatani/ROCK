@@ -944,24 +944,22 @@ namespace rock
             std::isfinite(palmReference.world.translate.x) &&
             std::isfinite(palmReference.world.translate.y) &&
             std::isfinite(palmReference.world.translate.z)) {
-            const RE::NiTransform palmAuthorityBaseWorld =
-                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
             const RE::NiTransform proxyBaseWorld =
-                makeGrabAuthorityProxyBaseFrame(fallbackHandWorldTransform, palmAuthorityBaseWorld);
+                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
             return applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft).translate;
         }
 
         return fallbackHandWorldTransform.translate;
     }
 
-    bool Hand::getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const
+    bool Hand::getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, GrabAuthorityProxyDebugSnapshot& out) const
     {
         /*
          * Offset tuning needs the same hidden grab-authority frame that dynamic
          * grabs consume, but it must be visible before a grab creates the real
-         * proxy body. Publishing the raw-rotation/palm-translation target
-         * separately keeps idle tuning honest without moving the physical hand
-         * colliders or confusing it with active proxy readback.
+         * proxy body. Publishing the computed target separately keeps idle
+         * tuning honest without moving the physical hand colliders or confusing
+         * it with active proxy readback.
          */
         out = {};
 
@@ -973,9 +971,8 @@ namespace rock
             return false;
         }
 
-        const RE::NiTransform palmAuthorityBaseWorld =
+        out.palmAuthorityBaseWorld =
             hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-        out.palmAuthorityBaseWorld = makeGrabAuthorityProxyBaseFrame(rawHandWorld, palmAuthorityBaseWorld);
         out.proxyTargetWorld = applyGrabAuthorityProxyLocalOffsetToFrame(out.palmAuthorityBaseWorld, _isLeft);
         out.localOffsetGameUnits = computeGrabAuthorityProxyOffsetLocalGame(_isLeft);
         out.palmSource = palmReference.source;

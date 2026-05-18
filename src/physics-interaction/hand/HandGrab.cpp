@@ -1572,17 +1572,21 @@ namespace rock
             const RE::NiTransform& palmProxyWorld)
         {
             /*
-             * The generated palm collider is the correct physical anchor for
-             * translation, but its BODY/collider axes are not controller
-             * angular authority. Held object rotation and the proxy-local
-             * offset both follow the root-flattened raw hand/controller basis.
+             * The generated palm collider is the correct physical anchor
+             * position, but its local axes describe collider geometry. Held
+             * object rotation must follow the root-flattened hand/controller
+             * rotation. This hybrid frame keeps the palm/proxy translation for
+             * the linear grip point and the raw hand basis for angular intent.
              *
              * This is the only production ROCK dynamic-grab rotation reference.
              * The older BODY/conventional/debug-selectable modes were removed
              * after in-game validation proved this convention fixed the wrist
              * axis and N/S/E/W world-direction dependency.
              */
-            return makeGrabAuthorityProxyBaseFrame(rawHandWorld, palmProxyWorld);
+            RE::NiTransform result = palmProxyWorld;
+            result.rotate = rawHandWorld.rotate;
+            result.scale = rawHandWorld.scale;
+            return result;
         }
 
         RE::NiTransform makeNativeAngularBoundaryTargetFromVisualTarget(
@@ -3040,9 +3044,7 @@ namespace rock
             out.rawToHandBody = grab_transform_telemetry::measureTransformDelta(out.rawHandWorld, out.handBodyWorld);
             const RE::NiTransform palmAnchorGrabAuthorityBase =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(out.handBodyWorld);
-            const RE::NiTransform rawRotationPalmAuthorityBase =
-                makeGrabAuthorityProxyBaseFrame(out.rawHandWorld, palmAnchorGrabAuthorityBase);
-            out.palmAnchorGrabAuthorityWorld = applyGrabAuthorityProxyLocalOffsetToFrame(rawRotationPalmAuthorityBase, _isLeft);
+            out.palmAnchorGrabAuthorityWorld = applyGrabAuthorityProxyLocalOffsetToFrame(palmAnchorGrabAuthorityBase, _isLeft);
             out.palmAnchorGrabAuthorityBasis = grab_transform_telemetry::makeOrientationBasis(out.palmAnchorGrabAuthorityWorld);
             out.hasPalmAnchorGrabAuthority = true;
             out.nativeFlattenedHandToGrabAuthority =
@@ -3601,24 +3603,23 @@ namespace rock
         RE::NiTransform& outProxyWorld,
         const char*& outSource) const
     {
+        (void)rawHandWorld;
         (void)fallbackPalmAnchorWorld;
 
         LivePalmAnchorReference palmReference{};
         if (tryResolveLivePalmAnchorReference(world, palmReference)) {
-            const RE::NiTransform palmAuthorityBaseWorld =
-                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
             const RE::NiTransform proxyBaseWorld =
-                makeGrabAuthorityProxyBaseFrame(rawHandWorld, palmAuthorityBaseWorld);
+                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
             outProxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft);
             switch (palmReference.source) {
             case body_frame::BodyFrameSource::MotionCenterOfMass:
-                outSource = "livePalmAnchorMotionGrabFrameRawRotation";
+                outSource = "livePalmAnchorMotionGrabFrame";
                 break;
             case body_frame::BodyFrameSource::BodyTransform:
-                outSource = "livePalmAnchorBodyGrabFrameRawRotation";
+                outSource = "livePalmAnchorBodyGrabFrame";
                 break;
             default:
-                outSource = "livePalmAnchorResolvedGrabFrameRawRotation";
+                outSource = "livePalmAnchorResolvedGrabFrame";
                 break;
             }
             return true;
@@ -7301,10 +7302,8 @@ namespace rock
                 ++_grabAuthorityProxyFailedFlushes;
                 _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);
             } else {
-                const RE::NiTransform palmAuthorityBaseWorld =
-                    hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(livePalmReference.world);
                 const RE::NiTransform proxyBaseWorld =
-                    makeGrabAuthorityProxyBaseFrame(pending.rawHandWorld, palmAuthorityBaseWorld);
+                    hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(livePalmReference.world);
                 pending.proxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft);
             }
             previousProxyWorld = _hasLastAppliedGrabAuthorityProxyWorld ? _lastAppliedGrabAuthorityProxyWorld : pending.proxyWorld;

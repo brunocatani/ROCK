@@ -1502,13 +1502,13 @@
 
         if (frame.drawRockBodies) {
             if (drawGrabAuthorityProxy) {
-                auto addGrabAuthorityProxyTarget = [&](const Hand& hand, const RE::NiTransform& rawHandWorld) {
+                auto addGrabAuthorityProxyTarget = [&](const Hand& hand) {
                     if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
                         return;
                     }
 
                     GrabAuthorityProxyDebugSnapshot snapshot{};
-                    if (!hand.getGrabAuthorityProxyDebugSnapshot(hknp, rawHandWorld, snapshot)) {
+                    if (!hand.getGrabAuthorityProxyDebugSnapshot(hknp, snapshot)) {
                         return;
                     }
 
@@ -1550,8 +1550,8 @@
                     addAxisBody(leftProxy, debug::AxisOverlayRole::LeftGrabProxyReadback, context.left.rawHandWorld.translate, true);
                 }
 
-                addGrabAuthorityProxyTarget(_rightHand, context.right.rawHandWorld);
-                addGrabAuthorityProxyTarget(_leftHand, context.left.rawHandWorld);
+                addGrabAuthorityProxyTarget(_rightHand);
+                addGrabAuthorityProxyTarget(_leftHand);
             }
 
             if (debug_overlay_policy::shouldDrawHandBody(drawRockColliderBodies, g_rockConfig.rockDebugDrawHandColliders) &&
