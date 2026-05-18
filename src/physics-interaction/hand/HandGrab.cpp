@@ -3342,10 +3342,10 @@ namespace rock
             auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
             auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
 
-            // The ragdoll motor's active angular target is seeded and updated from
-            // the raw-rotation proxy BODY relation. Comparing readback against the
-            // older constraint-space relation makes good grabs look like 90-180 deg
-            // failures and hides the real first-frame angular contract.
+            // The ragdoll motor target is seeded and updated from the raw-rotation
+            // proxy BODY relation. Transform-B uses hk-column storage, but
+            // target_bRca is also logged through the solver-row view because top
+            // grab telemetry proved that is the view hknp converges toward.
             const RE::NiTransform desiredBodyTransformHandSpace = _grabFrame.rawRotationProxyBodyHandSpace;
             const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
             const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
