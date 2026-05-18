@@ -1383,6 +1383,9 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::RightGrabPalmAuthorityFrame:
             case AxisOverlayRole::LeftGrabPalmAuthorityFrame:
                 return 11.0f;
+            case AxisOverlayRole::RightGrabAuthorityProxyTarget:
+            case AxisOverlayRole::LeftGrabAuthorityProxyTarget:
+                return 13.0f;
             case AxisOverlayRole::RightGrabProxyReadback:
             case AxisOverlayRole::LeftGrabProxyReadback:
                 return 15.0f;
@@ -1425,6 +1428,9 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::RightGrabPalmAuthorityFrame:
             case AxisOverlayRole::LeftGrabPalmAuthorityFrame:
                 return 0.98f;
+            case AxisOverlayRole::RightGrabAuthorityProxyTarget:
+            case AxisOverlayRole::LeftGrabAuthorityProxyTarget:
+                return 0.88f;
             case AxisOverlayRole::RightGrabProxyReadback:
             case AxisOverlayRole::LeftGrabProxyReadback:
                 return 0.72f;
@@ -1585,6 +1591,25 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[1] = 0.18f;
                 color[2] = 0.02f;
                 color[3] = 0.96f;
+                break;
+            case MarkerOverlayRole::RightGrabAuthorityProxyTarget:
+                color[0] = 0.10f;
+                color[1] = 0.95f;
+                color[2] = 1.0f;
+                color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::LeftGrabAuthorityProxyTarget:
+                color[0] = 1.0f;
+                color[1] = 0.20f;
+                color[2] = 0.95f;
+                color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::RightGrabAuthorityProxyOffset:
+            case MarkerOverlayRole::LeftGrabAuthorityProxyOffset:
+                color[0] = 1.0f;
+                color[1] = 0.92f;
+                color[2] = 0.10f;
+                color[3] = 0.90f;
                 break;
             case MarkerOverlayRole::RightGrabPivotSourceTriangle:
             case MarkerOverlayRole::LeftGrabPivotSourceTriangle:

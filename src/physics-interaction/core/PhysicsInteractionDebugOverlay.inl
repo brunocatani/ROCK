@@ -56,7 +56,8 @@
         frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabForceTorque;
         frame.drawMarkers =
             drawGrabPivots || drawFingerProbes || drawPalmVectors || drawRootFlattenedFingerSkeleton || drawGrabPocketNormal || drawGrabContactPatch ||
-            drawGrabForceTorque || drawHandBoneContacts || drawSoftContacts || drawGrabTransformTelemetryAxes || drawWeaponAuthorityDebug || drawWorldOriginDiagnostics;
+            drawGrabForceTorque || drawHandBoneContacts || drawSoftContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes || drawWeaponAuthorityDebug ||
+            drawWorldOriginDiagnostics;
         frame.drawSkeleton = drawSkeletonBones;
         frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawPerformanceProfilerOverlay;
         RE::bhkWorld* originDiagnosticBhk = drawWorldOriginDiagnostics ? context.bhkWorld : nullptr;
@@ -1501,6 +1502,32 @@
 
         if (frame.drawRockBodies) {
             if (drawGrabAuthorityProxy) {
+                auto addGrabAuthorityProxyTarget = [&](const Hand& hand) {
+                    if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
+                        return;
+                    }
+
+                    GrabAuthorityProxyDebugSnapshot snapshot{};
+                    if (!hand.getGrabAuthorityProxyDebugSnapshot(hknp, snapshot)) {
+                        return;
+                    }
+
+                    const bool isLeft = hand.isLeft();
+                    addAxisTransform(snapshot.proxyTargetWorld,
+                        isLeft ? debug::AxisOverlayRole::LeftGrabAuthorityProxyTarget : debug::AxisOverlayRole::RightGrabAuthorityProxyTarget,
+                        snapshot.palmAuthorityBaseWorld.translate,
+                        true);
+                    addMarkerPoint(
+                        isLeft ? debug::MarkerOverlayRole::LeftGrabAuthorityProxyTarget : debug::MarkerOverlayRole::RightGrabAuthorityProxyTarget,
+                        snapshot.proxyTargetWorld.translate,
+                        3.4f);
+                    addMarkerLine(
+                        isLeft ? debug::MarkerOverlayRole::LeftGrabAuthorityProxyOffset : debug::MarkerOverlayRole::RightGrabAuthorityProxyOffset,
+                        snapshot.palmAuthorityBaseWorld.translate,
+                        snapshot.proxyTargetWorld.translate);
+
+                };
+
                 const RE::hknpBodyId rightPalm = _rightHand.getCollisionBodyId();
                 const RE::hknpBodyId leftPalm = _leftHand.getCollisionBodyId();
                 if (rightPalm.value != INVALID_BODY_ID) {
@@ -1522,6 +1549,9 @@
                     addBody(leftProxy, debug::BodyOverlayRole::LeftGrabAuthorityProxy);
                     addAxisBody(leftProxy, debug::AxisOverlayRole::LeftGrabProxyReadback, context.left.rawHandWorld.translate, true);
                 }
+
+                addGrabAuthorityProxyTarget(_rightHand);
+                addGrabAuthorityProxyTarget(_leftHand);
             }
 
             if (debug_overlay_policy::shouldDrawHandBody(drawRockColliderBodies, g_rockConfig.rockDebugDrawHandColliders) &&

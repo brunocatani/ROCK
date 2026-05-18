@@ -56,6 +56,15 @@ namespace rock
         RE::NiPoint3 normalEndWorld{};
     };
 
+    struct GrabAuthorityProxyDebugSnapshot
+    {
+        RE::NiTransform palmAuthorityBaseWorld{};
+        RE::NiTransform proxyTargetWorld{};
+        RE::NiPoint3 localOffsetGameUnits{};
+        body_frame::BodyFrameSource palmSource{ body_frame::BodyFrameSource::Fallback };
+        std::uint32_t palmMotionIndex{ body_frame::kFreeMotionIndex };
+    };
+
     struct GrabContactPatchDebugSnapshot
     {
         std::array<RE::NiPoint3, kMaxGrabContactPatchSamples> samplePointsWorld{};
@@ -263,6 +272,7 @@ namespace rock
         bool tryGetHeldObjectGrabPivotWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const;
         bool getGrabPivotDebugSnapshot(RE::hknpWorld* world, GrabPivotDebugSnapshot& out) const;
         bool getGrabPocketNormalDebugSnapshot(RE::hknpWorld* world, GrabPocketNormalDebugSnapshot& out) const;
+        bool getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, GrabAuthorityProxyDebugSnapshot& out) const;
         bool getGrabContactPatchDebugSnapshot(RE::hknpWorld* world, GrabContactPatchDebugSnapshot& out) const;
         bool getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabForceTorqueDebugSnapshot& out) const;
         bool getGrabTransformTelemetrySnapshot(RE::hknpWorld* world,

@@ -952,6 +952,34 @@ namespace rock
         return fallbackHandWorldTransform.translate;
     }
 
+    bool Hand::getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, GrabAuthorityProxyDebugSnapshot& out) const
+    {
+        /*
+         * Offset tuning needs the same hidden grab-authority frame that dynamic
+         * grabs consume, but it must be visible before a grab creates the real
+         * proxy body. Publishing the computed target separately keeps idle
+         * tuning honest without moving the physical hand colliders or confusing
+         * it with active proxy readback.
+         */
+        out = {};
+
+        LivePalmAnchorReference palmReference{};
+        if (!tryResolveLivePalmAnchorReference(world, palmReference) ||
+            !std::isfinite(palmReference.world.translate.x) ||
+            !std::isfinite(palmReference.world.translate.y) ||
+            !std::isfinite(palmReference.world.translate.z)) {
+            return false;
+        }
+
+        out.palmAuthorityBaseWorld =
+            hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
+        out.proxyTargetWorld = applyGrabAuthorityProxyLocalOffsetToFrame(out.palmAuthorityBaseWorld, _isLeft);
+        out.localOffsetGameUnits = computeGrabAuthorityProxyOffsetLocalGame(_isLeft);
+        out.palmSource = palmReference.source;
+        out.palmMotionIndex = palmReference.motionIndex;
+        return true;
+    }
+
     void Hand::recordSemanticContact(const HandColliderBodyMetadata& metadata, std::uint32_t otherBodyId)
     {
         if (!metadata.valid || metadata.bodyId == hand_semantic_contact_state::kInvalidBodyId || otherBodyId == hand_semantic_contact_state::kInvalidBodyId) {
