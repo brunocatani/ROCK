@@ -1575,7 +1575,7 @@ namespace rock
         }
 
         RE::NiNode* weaponNode = resolveEquippedWeaponInteractionNode();
-        const bool rightHandWeaponEquipped = weaponNode != nullptr;
+        const bool rightHandWeaponEquipped = weaponNode != nullptr || _weaponCollision.hasWeaponBody();
         bool leftSupportGripActive = false;
         if (rightHandWeaponEquipped) {
             suppressRightHandCollisionForDominantWeapon(hknp);
@@ -1633,7 +1633,7 @@ namespace rock
                     leftWeaponContact.sequence = _leftWeaponContactSequence.load(std::memory_order_acquire);
                     leftWeaponContactSource = weapon_debug_notification_policy::WeaponContactSource::Contact;
                 }
-            } else if (weaponNode) {
+            } else if (weaponNode || _weaponCollision.hasWeaponBody()) {
                 const RE::NiPoint3 leftProbePoint = frame.left.grabAnchorWorld;
                 if (_weaponCollision.tryFindInteractionContactNearPoint(weaponNode, leftProbePoint, g_rockConfig.rockWeaponInteractionProbeRadius, leftWeaponContact)) {
                     publishLeftWeaponProbeContact(leftWeaponContact);
@@ -1727,7 +1727,7 @@ namespace rock
                 restoreLeftHandCollisionAfterWeaponSupport(hknp);
             }
 
-            if (weaponNode) {
+            if (weaponNode || _weaponCollision.hasWeaponBody()) {
                 performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponCollision);
                 _weaponCollision.updateBodiesFromCurrentSourceTransforms(hknp, weaponNode, frame.deltaSeconds);
             }

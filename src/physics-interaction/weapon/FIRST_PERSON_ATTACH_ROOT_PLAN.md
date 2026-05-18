@@ -5,8 +5,9 @@ This plan exists because the current generated weapon collider path treats the f
 ## Implementation Status
 
 - 2026-05-18: Stage 1, Stage 3, and Stage 4 are implemented in `WeaponCollision.cpp`. Generated weapon candidate discovery now includes matching first-person and actor `ActorEquipData::SlotData::node` roots, prefers the bounded authoritative equipped-instance witness when matching those slots, deduplicates them by node pointer, folds them into the visual key, and logs parent pointer/name plus direct child counts for every candidate.
+- 2026-05-18: AMCAR/Thanatos test logs showed `firstPersonSkeleton:Weapon` can be absent entirely while the equipped identity is valid. The collision path now uses a matching equip-slot package root as the generated collision drive root when the `Weapon` label is absent, so source scanning no longer stops before barrel/handguard geometry can be discovered.
 - Stage 2 remains diagnostic-only and is not implemented in production code. No native lookup or native refresh path was added by this change.
-- Stage 5 remains dependent on in-game logs from an affected weapon. The next decision point is whether the missing part appears under the equip-slot package root during the stale `Weapon` branch case.
+- Stage 5 remains dependent on in-game logs from an affected weapon. The next decision point is whether the missing barrel/handguard appears under the equip-slot package root, or whether the native package itself is incomplete.
 
 ## Current Evidence
 
