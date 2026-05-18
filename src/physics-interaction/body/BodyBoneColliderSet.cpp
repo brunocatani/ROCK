@@ -857,6 +857,43 @@ namespace rock
         return _bodyIdsAtomic[index].load(std::memory_order_acquire);
     }
 
+    std::uint32_t BodyBoneColliderSet::copyGrabSuppressionArmBodyIdsAtomic(bool isLeft, std::uint32_t* outBodyIds, std::size_t maxBodyIds) const
+    {
+        /*
+         * A normal object grab owns the collision pocket around the driving hand.
+         * The generated hand colliders cover palm/fingers; body colliders own the
+         * adjacent root-flattened forearm and wrist/hand chain. Returning this
+         * side-local arm chain lets held-object grabs suppress self-collision at
+         * the wrist without changing the separate two-handed weapon suppression path.
+         */
+        if (!outBodyIds || maxBodyIds == 0) {
+            return 0;
+        }
+
+        const auto wantedSide = isLeft ? body_zone::BodyZoneSide::Left : body_zone::BodyZoneSide::Right;
+        std::uint32_t written = 0;
+        const std::uint32_t count = _bodyCountAtomic.load(std::memory_order_acquire);
+        for (std::uint32_t i = 0; i < count && i < _bodyIdsAtomic.size() && written < maxBodyIds; ++i) {
+            const auto bodyId = _bodyIdsAtomic[i].load(std::memory_order_acquire);
+            if (bodyId == kInvalidBodyBoneColliderBodyId) {
+                continue;
+            }
+
+            const auto side = static_cast<body_zone::BodyZoneSide>(_sidesAtomic[i].load(std::memory_order_acquire));
+            if (side != wantedSide) {
+                continue;
+            }
+
+            const auto role = static_cast<BoneColliderRole>(_rolesAtomic[i].load(std::memory_order_acquire));
+            if (role != BoneColliderRole::ForearmSegment && role != BoneColliderRole::HandSegment) {
+                continue;
+            }
+
+            outBodyIds[written++] = bodyId;
+        }
+        return written;
+    }
+
     bool BodyBoneColliderSet::isColliderBodyIdAtomic(std::uint32_t bodyId) const
     {
         BodyBoneColliderMetadata metadata{};

@@ -22,6 +22,7 @@ namespace rock
 {
     inline constexpr std::size_t kBodyBoneColliderBodyCount = skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size();
     inline constexpr std::uint32_t kInvalidBodyBoneColliderBodyId = 0x7FFF'FFFFu;
+    inline constexpr std::size_t kBodyBoneGrabSuppressionArmBodyCountPerSide = 3;
 
     struct BodyBoneColliderMetadata
     {
@@ -59,6 +60,7 @@ namespace rock
         bool hasBodies() const { return _created; }
         std::uint32_t getBodyCount() const { return _bodyCountAtomic.load(std::memory_order_acquire); }
         std::uint32_t getBodyIdAtomic(std::size_t index) const;
+        std::uint32_t copyGrabSuppressionArmBodyIdsAtomic(bool isLeft, std::uint32_t* outBodyIds, std::size_t maxBodyIds) const;
         bool isColliderBodyIdAtomic(std::uint32_t bodyId) const;
         bool tryGetBodyMetadataAtomic(std::uint32_t bodyId, BodyBoneColliderMetadata& outMetadata) const;
         bool tryGetBodyRoleAtomic(std::uint32_t bodyId, skeleton_bone_debug_math::BoneColliderRole& outRole) const;

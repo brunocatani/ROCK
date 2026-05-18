@@ -1,5 +1,6 @@
 #include "physics-interaction/hand/Hand.h"
 
+#include "physics-interaction/body/BodyBoneColliderSet.h"
 #include "physics-interaction/native/HavokOffsets.h"
 
 #include "physics-interaction/native/BodyCollisionControl.h"
@@ -52,6 +53,9 @@ namespace rock
 {
     namespace
     {
+        static_assert(kGrabCollisionSuppressionArmBodyCountPerHand == kBodyBoneGrabSuppressionArmBodyCountPerSide,
+            "Normal grab arm-collider suppression capacity must match the body collider arm-chain query.");
+
         const char* releaseDispositionName(GrabReleaseDisposition disposition) noexcept
         {
             switch (disposition) {
@@ -2627,14 +2631,22 @@ namespace rock
         hand_collision_suppression_math::clear(_grabHandCollisionDelayedRestore);
     }
 
-    void Hand::suppressHandCollisionForGrab(RE::hknpWorld* world)
+    void Hand::suppressHandCollisionForGrab(RE::hknpWorld* world, const BodyBoneColliderSet* bodyBoneColliders)
     {
+        /*
+         * Normal held-object grabs suppress the grabbing hand's immediate collision
+         * authority while the object is constrained to that hand. The generated
+         * hand suite covers palm/fingers, and BodyBoneColliderSet owns the adjacent
+         * same-side forearm/wrist chain. Leasing both sets prevents held objects
+         * from solving against their own driving arm without touching the separate
+         * two-handed equipped-weapon suppression path.
+         */
         hand_collision_suppression_math::clear(_grabHandCollisionDelayedRestore);
 
         if (!world || !hasCollisionBody())
             return;
 
-        auto suppressBody = [&](std::uint32_t bodyId) {
+        auto suppressBody = [&](std::uint32_t bodyId, const char* context) {
             if (bodyId == INVALID_BODY_ID) {
                 return;
             }
@@ -2646,7 +2658,11 @@ namespace rock
 
             const auto suppression = hand_collision_suppression_math::beginSuppression(_grabHandCollisionSuppression, bodyId, currentFilter);
             if (!suppression.stored) {
-                ROCK_LOG_WARN(Hand, "{} hand: grab hand collision suppression set full; bodyId={} left active", handName(), bodyId);
+                ROCK_LOG_WARN(Hand,
+                    "{} hand: grab collision suppression set full; bodyId={} context={} left active",
+                    handName(),
+                    bodyId,
+                    context ? context : "unknown");
                 return;
             }
 
@@ -2654,13 +2670,14 @@ namespace rock
                 world,
                 bodyId,
                 collision_suppression_registry::CollisionSuppressionOwner::Grab,
-                "held-grab-hand");
+                context);
 
             if (registryResult.valid && (registryResult.filterChanged || registryResult.firstLeaseForBody)) {
                 ROCK_LOG_DEBUG(Hand,
-                    "{} hand: grab hand collision lease acquired bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBeforeGrab={} leases={}",
+                    "{} hand: grab collision lease acquired bodyId={} context={} filter=0x{:08X}->0x{:08X} wasDisabledBeforeGrab={} leases={}",
                     handName(),
                     bodyId,
+                    context ? context : "unknown",
                     registryResult.filterBefore,
                     registryResult.filterAfter,
                     registryResult.wasNoCollideBeforeSuppression ? "yes" : "no",
@@ -2671,10 +2688,19 @@ namespace rock
         const std::uint32_t colliderCount = _boneColliders.getBodyCount();
         if (colliderCount > 0) {
             for (std::uint32_t i = 0; i < colliderCount; ++i) {
-                suppressBody(_boneColliders.getBodyIdAtomic(i));
+                suppressBody(_boneColliders.getBodyIdAtomic(i), "held-grab-hand-suite");
             }
         } else {
-            suppressBody(_handBody.getBodyId().value);
+            suppressBody(_handBody.getBodyId().value, "held-grab-hand-anchor");
+        }
+
+        if (bodyBoneColliders) {
+            std::array<std::uint32_t, kGrabCollisionSuppressionArmBodyCountPerHand> armBodyIds{};
+            const auto armBodyCount =
+                bodyBoneColliders->copyGrabSuppressionArmBodyIdsAtomic(_isLeft, armBodyIds.data(), armBodyIds.size());
+            for (std::uint32_t i = 0; i < armBodyCount && i < armBodyIds.size(); ++i) {
+                suppressBody(armBodyIds[i], "held-grab-arm-chain");
+            }
         }
     }
 
@@ -4342,8 +4368,15 @@ namespace rock
         return false;
     }
 
-    bool Hand::grabSelectedObject(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float tau, float damping, float maxForce, float proportionalRecovery,
-        float constantRecovery, const GrabSharedObjectContext& sharedContext)
+    bool Hand::grabSelectedObject(RE::hknpWorld* world,
+        const RE::NiTransform& handWorldTransform,
+        float tau,
+        float damping,
+        float maxForce,
+        float proportionalRecovery,
+        float constantRecovery,
+        const BodyBoneColliderSet* bodyBoneColliders,
+        const GrabSharedObjectContext& sharedContext)
     {
         if (!hasSelection() || !world)
             return false;
@@ -6235,7 +6268,7 @@ namespace rock
                 grabActivation.failedActivationCount);
         }
 
-        suppressHandCollisionForGrab(world);
+        suppressHandCollisionForGrab(world, bodyBoneColliders);
 
         if (joiningPeerHeldObject && sharedContext.peerSavedObjectState) {
             copyPeerInertiaSnapshot(_savedObjectState, *sharedContext.peerSavedObjectState);
@@ -6577,6 +6610,7 @@ namespace rock
         float deltaTime,
         float forceFadeInTime,
         float tauMin,
+        const BodyBoneColliderSet* bodyBoneColliders,
         const GrabReleaseContext& releaseContext)
     {
         if (!isHolding() || !world)
@@ -6594,7 +6628,7 @@ namespace rock
 
         nearby_grab_damping::tickNearbyGrabDamping(world, _nearbyGrabDamping, deltaTime);
 
-        suppressHandCollisionForGrab(world);
+        suppressHandCollisionForGrab(world, bodyBoneColliders);
 
         _grabStartTime += deltaTime;
 
