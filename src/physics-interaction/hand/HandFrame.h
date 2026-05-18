@@ -12,6 +12,10 @@ namespace rock::handspace_convention
     /*
      * ROCK root-flattened game hand frames use the active authored handspace convention:
      * authored X = fingers, authored Y = cross-palm, authored Z = palm thickness.
+     * Authored Z maps to raw/proxy local Y, so runtime proxy local -Y is the
+     * palm-face direction after bReversePalmNormal and local +Y is the back of
+     * the hand. Keep this bridge explicit; treating runtime Z as palm depth was
+     * the Y/Z swap that made frozen grab points depend on object orientation.
      * The resolved game bone transform already carries handedness, so left/right
      * conversion uses the same X/-Z/Y basis and does not apply an extra mirror.
      */
@@ -160,28 +164,13 @@ namespace rock
         return isLeft ? g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits : g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits;
     }
 
-    inline RE::NiTransform makeGrabStartupCaptureAuthorityFrame(const RE::NiTransform& rawHandWorld, const RE::NiTransform& palmAnchorWorld)
-    {
-        /*
-         * Grab startup has a narrower problem than runtime held motion: the
-         * configured proxy-local seat offset must be interpreted in controller
-         * space when choosing and freezing the first pivot point. The actual
-         * hidden proxy body still follows the existing generated palm frame
-         * after the grab is live, so do not use this helper for held updates.
-         */
-        RE::NiTransform result = palmAnchorWorld;
-        result.rotate = rawHandWorld.rotate;
-        result.scale = rawHandWorld.scale;
-        return result;
-    }
-
     inline RE::NiTransform applyGrabAuthorityProxyLocalOffsetToFrame(const RE::NiTransform& proxyFrameWorld, bool isLeft)
     {
         /*
-         * This moves only the hidden grab authority proxy/seat point. The real
-         * generated palm/finger colliders remain bound to the flattened bone tree
-         * so contact evidence and collision behavior are not retuned by visual
-         * hand placement experiments.
+         * This moves only the hidden grab authority proxy/seat point. The
+         * generated palm/finger colliders remain bound to the flattened bone
+         * tree, while the explicit grab-authority adapter supplies a proxy frame
+         * where local -Y is the palm-face seat direction.
          */
         RE::NiTransform result = proxyFrameWorld;
         const RE::NiPoint3 localOffset = computeGrabAuthorityProxyOffsetLocalGame(isLeft);

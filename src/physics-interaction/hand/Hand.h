@@ -427,7 +427,6 @@ namespace rock
             const char* reason);
         bool updateProxyConstraintGrabDriveTarget(RE::hknpWorld* world,
             const RE::NiTransform& proxyWorldTransform,
-            const RE::NiTransform& rawHandWorldTransform,
             RE::NiTransform& outDesiredObjectWorld,
             RE::NiTransform& outDesiredBodyWorld,
             RE::NiPoint3& outDesiredTargetPointWorld,
@@ -614,7 +613,6 @@ namespace rock
         };
         GrabAuthorityProxyPendingTarget _grabAuthorityPendingTarget{};
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
-        RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
         bool _hasLastAppliedGrabAuthorityProxyWorld = false;
         GeneratedKeyframedBodyDriveState _grabAuthorityProxyDriveState{};
         std::uint64_t _grabAuthorityProxyQueuedSequence = 0;

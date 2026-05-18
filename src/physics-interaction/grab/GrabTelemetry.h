@@ -163,7 +163,7 @@ namespace rock::grab_transform_telemetry
         RE::NiPoint3 rootFingerTipCenterWorld{};
         RE::NiPoint3 rootFingerBaseLineWorld{ 1.0f, 0.0f, 0.0f };
         RE::NiPoint3 rootFingerOpenLineWorld{ 1.0f, 0.0f, 0.0f };
-        RE::NiPoint3 rootPalmNormalWorld{ 0.0f, 0.0f, -1.0f };
+        RE::NiPoint3 rootPalmNormalWorld{ 0.0f, -1.0f, 0.0f };
 
         TransformDelta rawToHandBody{};
         TransformDelta rawToPalmAnchorTarget{};
