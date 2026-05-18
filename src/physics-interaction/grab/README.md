@@ -4,7 +4,7 @@ This module owns object grab preparation, constraint math, contact patch selecti
 
 ## Proxy-Constraint Dynamic Held Objects
 
-One-hand and two-hand loose dynamic grabs use ROCK's proxy-backed angular+linear motor constraint as the only production authority. The physical palm/finger colliders follow the generated palm frames, but the hidden no-contact constraint proxy uses a hybrid solver frame: translation comes from the live palm/proxy anchor, while rotation comes from the root-flattened raw hand/controller frame. The held object remains the dynamic body and captures its BODY-B relation in that same hybrid frame, so hknp body-A and body-B do not reinterpret a top-grab relation through different axes. When the peer hand close-grabs the same held reference, both hands use the same proxy authority convention and share one finite force budget across their constraints.
+One-hand and two-hand loose dynamic grabs use ROCK's proxy-backed angular+linear motor constraint as the only production authority. The hidden no-contact proxy follows the root-flattened palm frame in the physics between phase; the held object remains the dynamic body. Translation comes from the live palm/proxy anchor, while rotation comes from the root-flattened raw hand/controller frame. When the peer hand close-grabs the same held reference, both hands use the same proxy authority convention and share one finite force budget across their constraints.
 
 Delayed second-hand joins do not rely only on the ordinary swept selection cache. On a grip press, ROCK can synthesize a close selection from the peer hand's current held body set, but only for that exact peer-held reference and only inside close reach. Far pulls and unrelated close selections remain exclusive.
 
