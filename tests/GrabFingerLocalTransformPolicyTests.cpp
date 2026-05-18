@@ -40,6 +40,15 @@ namespace
         return true;
     }
 
+    bool expectInt(const char* name, int actual, int expected)
+    {
+        if (actual != expected) {
+            std::printf("%s expected %d got %d\n", name, expected, actual);
+            return false;
+        }
+        return true;
+    }
+
     bool expectVectorClose(const char* name, const TestVector& actual, const TestVector& expected)
     {
         if (std::fabs(actual.x - expected.x) > 0.001f ||
@@ -155,6 +164,77 @@ int main()
             true,
             false),
         false);
+
+    {
+        using namespace rock::grab_finger_pose_runtime;
+        rock::root_flattened_finger_skeleton_runtime::Snapshot snapshot{};
+        snapshot.valid = true;
+        snapshot.palmNormalValid = true;
+        snapshot.palmNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f };
+        for (std::size_t finger = 0; finger < snapshot.fingers.size(); ++finger) {
+            const float y = -2.0f + static_cast<float>(finger);
+            auto& chain = snapshot.fingers[finger];
+            chain.valid = true;
+            chain.points[0] = RE::NiPoint3{ 0.0f, y, 0.0f };
+            chain.points[1] = RE::NiPoint3{ 2.0f, y, 0.0f };
+            chain.points[2] = RE::NiPoint3{ 5.0f, y, 0.0f };
+        }
+
+        RE::NiTransform handWorld{};
+        handWorld.rotate.entry[0][0] = 1.0f;
+        handWorld.rotate.entry[1][1] = 1.0f;
+        handWorld.rotate.entry[2][2] = 1.0f;
+        handWorld.scale = 1.0f;
+
+        std::vector<rock::TriangleData> triangles;
+        triangles.push_back(rock::TriangleData{
+            RE::NiPoint3{ 4.0f, -3.0f, 0.0f },
+            RE::NiPoint3{ 4.0f, 3.0f, 0.0f },
+            RE::NiPoint3{ 6.0f, 0.0f, 0.0f },
+        });
+
+        auto targets = makeSharedGripPoseTarget(RE::NiPoint3{ 0.0f, 0.0f, 0.0f }, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+        targets.useSeatPointForMissingTargets = false;
+        targets.useWholeMeshForMissingTargets = true;
+
+        const auto defaultPose = solveGrabFingerPoseFromTriangles(
+            triangles,
+            handWorld,
+            false,
+            RE::NiPoint3{ 0.0f, 0.0f, 0.0f },
+            targets,
+            0.2f,
+            100.0f,
+            true,
+            &snapshot,
+            false,
+            1.5f,
+            true);
+        ok &= expectBool("whole-mesh solve finds visual finger mesh hits",
+            defaultPose.hitCount > 0,
+            true);
+        ok &= expectInt("whole-mesh surface aim stays disabled by default",
+            defaultPose.surfaceAimTargetCount,
+            0);
+
+        const auto optInPose = solveGrabFingerPoseFromTriangles(
+            triangles,
+            handWorld,
+            false,
+            RE::NiPoint3{ 0.0f, 0.0f, 0.0f },
+            targets,
+            0.2f,
+            100.0f,
+            true,
+            &snapshot,
+            false,
+            1.5f,
+            true,
+            true);
+        ok &= expectInt("loose-grab opt-in publishes per-finger whole-mesh surface aim",
+            optInPose.surfaceAimTargetCount,
+            optInPose.hitCount);
+    }
 
     return ok ? 0 : 1;
 }

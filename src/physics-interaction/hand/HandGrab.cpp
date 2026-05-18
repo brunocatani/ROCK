@@ -749,6 +749,11 @@ namespace rock
             const RE::NiPoint3& seatPointWorld,
             const RE::NiPoint3& seatNormalWorld)
         {
+            /*
+             * The shared seat point is palm/object relation evidence only. Loose
+             * grabs now let the targetless whole-mesh solver publish each visual
+             * finger's actual curve/ray hit as its local-transform aim target.
+             */
             auto targets = grab_finger_pose_runtime::makeSharedGripPoseTarget(seatPointWorld, seatNormalWorld);
             targets.useSeatPointForMissingTargets = false;
             targets.useWholeMeshForMissingTargets = true;
@@ -2431,10 +2436,10 @@ namespace rock
                 syncLocalTransformState();
                 if (g_rockConfig.rockDebugGrabFrameLogging) {
                     ROCK_LOG_DEBUG(Hand,
-                        "{} hand FINGER JOINT POSE: thumb=({:.2f},{:.2f},{:.2f}) index=({:.2f},{:.2f},{:.2f}) hits={} candidateTris={} altThumb={} localTransforms={} mask=0x{:04X}",
+                        "{} hand FINGER JOINT POSE: thumb=({:.2f},{:.2f},{:.2f}) index=({:.2f},{:.2f},{:.2f}) hits={} surfaceAimTargets={} candidateTris={} altThumb={} localTransforms={} mask=0x{:04X}",
                         isLeft ? "Left" : "Right", currentJointPose[0], currentJointPose[1], currentJointPose[2], currentJointPose[3], currentJointPose[4],
-                        currentJointPose[5], fingerPose.hitCount, fingerPose.candidateTriangleCount, fingerPose.usedAlternateThumbCurve ? "yes" : "no",
-                        publishedLocalTransforms ? "yes" : "no", currentLocalTransformMask);
+                        currentJointPose[5], fingerPose.hitCount, fingerPose.surfaceAimTargetCount, fingerPose.candidateTriangleCount,
+                        fingerPose.usedAlternateThumbCurve ? "yes" : "no", publishedLocalTransforms ? "yes" : "no", currentLocalTransformMask);
                 }
                 return;
             }
@@ -2447,9 +2452,9 @@ namespace rock
                     fingerPose.values[4], 100);
                 if (g_rockConfig.rockDebugGrabFrameLogging) {
                     ROCK_LOG_DEBUG(Hand,
-                        "{} hand FINGER POSE: mesh values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} candidateTris={} altThumb={}",
+                        "{} hand FINGER POSE: mesh values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} surfaceAimTargets={} candidateTris={} altThumb={}",
                         isLeft ? "Left" : "Right", fingerPose.values[0], fingerPose.values[1], fingerPose.values[2], fingerPose.values[3], fingerPose.values[4],
-                        fingerPose.hitCount, fingerPose.candidateTriangleCount, fingerPose.usedAlternateThumbCurve ? "yes" : "no");
+                        fingerPose.hitCount, fingerPose.surfaceAimTargetCount, fingerPose.candidateTriangleCount, fingerPose.usedAlternateThumbCurve ? "yes" : "no");
                 }
                 return;
             }
@@ -6444,7 +6449,8 @@ namespace rock
                 fingerPosePivotWorld, initialFingerPoseTargets,
                 g_rockConfig.rockGrabFingerMinValue, g_rockConfig.rockGrabMaxTriangleDistance, true, liveFingerSnapshotAtGrabPtr,
                 g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
-                _grabFrame.fingerPoseAimValid) :
+                _grabFrame.fingerPoseAimValid,
+                true) :
             grab_finger_pose_runtime::SolvedGrabFingerPose{};
         _grabFingerPose = fingerPose;
         _hasGrabFingerPose = g_rockConfig.rockGrabMeshFingerPoseEnabled;
