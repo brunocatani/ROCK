@@ -792,9 +792,9 @@ namespace rock::grab_interaction_policy
 // ---- GrabFrameMath.h ----
 
 /*
- * ROCK's calibrated grab pivot is authored in semantic handspace, but the live
- * grab has two different consumers: the root-flattened hand frame and the
- * generated physics hand body. ROCK keeps one coherent palm-to-object relation
+ * ROCK's dynamic grab authority is captured in corrected proxy-palm space, while
+ * legacy authored handspace pivots remain only for callers that have not moved
+ * to the hidden proxy seat yet. ROCK keeps one coherent palm-to-object relation
  * while preserving separate visual and collision frames. These helpers keep that
  * split explicit so pivot A, pivot B, captured object frames, and debug
  * measurements cannot silently drift onto different conventions.

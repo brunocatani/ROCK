@@ -100,6 +100,29 @@ namespace rock
         return value;
     }
 
+    inline RE::NiPoint3 normalizeDirectionOrFallback(RE::NiPoint3 value, RE::NiPoint3 fallback)
+    {
+        const float lengthSquared = value.x * value.x + value.y * value.y + value.z * value.z;
+        if (lengthSquared > 1.0e-8f && std::isfinite(lengthSquared)) {
+            const float inverseLength = 1.0f / std::sqrt(lengthSquared);
+            value.x *= inverseLength;
+            value.y *= inverseLength;
+            value.z *= inverseLength;
+            return value;
+        }
+
+        const float fallbackLengthSquared = fallback.x * fallback.x + fallback.y * fallback.y + fallback.z * fallback.z;
+        if (fallbackLengthSquared <= 1.0e-8f || !std::isfinite(fallbackLengthSquared)) {
+            return RE::NiPoint3(0.0f, -1.0f, 0.0f);
+        }
+
+        const float inverseFallbackLength = 1.0f / std::sqrt(fallbackLengthSquared);
+        fallback.x *= inverseFallbackLength;
+        fallback.y *= inverseFallbackLength;
+        fallback.z *= inverseFallbackLength;
+        return fallback;
+    }
+
     inline RE::NiPoint3 transformHandspaceLocalToWorld(const RE::NiTransform& handTransform, const RE::NiPoint3& localVector)
     {
         // FO4VR binary verification: NiAVObject world updates call the Bethesda transform
@@ -139,13 +162,16 @@ namespace rock
          * so applying a separate authored Y mirror sends close detection across the palm.
          */
         const RE::NiPoint3 authoredNormal = g_rockConfig.rockPalmNormalHandspace;
-        RE::NiPoint3 normal = transformHandspaceDirection(handTransform, authoredNormal, isLeft);
+        const RE::NiPoint3 rawNormal = authoredHandspaceToRawHandspaceForHand(authoredNormal, isLeft);
+        RE::NiPoint3 normal = transformHandspaceLocalToWorld(handTransform, rawNormal);
         if (g_rockConfig.rockReversePalmNormal) {
             normal.x *= -1.0f;
             normal.y *= -1.0f;
             normal.z *= -1.0f;
         }
-        return normal;
+        const RE::NiPoint3 fallbackPalmFace =
+            normalizeDirectionOrFallback(transformHandspaceLocalToWorld(handTransform, RE::NiPoint3(0.0f, -1.0f, 0.0f)), RE::NiPoint3(0.0f, -1.0f, 0.0f));
+        return normalizeDirectionOrFallback(normal, fallbackPalmFace);
     }
 
     inline RE::NiPoint3 computePointingVectorFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)

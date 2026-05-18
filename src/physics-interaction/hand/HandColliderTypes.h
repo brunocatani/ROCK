@@ -489,27 +489,38 @@ namespace rock::hand_bone_collider_geometry_math
     };
 
     template <class Transform, class Vector>
+    inline bool resolveSegmentColliderEndpoints(const BoneColliderFrameInput<Transform, Vector>& input, Vector& outStart, Vector& outEnd)
+    {
+        outStart = input.start.translate;
+        outEnd = input.end.translate;
+        if (!finiteVector(outStart) || !finiteVector(outEnd)) {
+            return false;
+        }
+        if (input.extrapolateFromPrevious) {
+            if (!finiteVector(input.previous.translate)) {
+                return false;
+            }
+            const Vector parentToTip = sub(input.start.translate, input.previous.translate);
+            const float parentLength = length(parentToTip);
+            if (!std::isfinite(parentLength) || parentLength <= 1.0e-5f || !std::isfinite(input.extrapolatedLengthScale)) {
+                return false;
+            }
+            outEnd = add(input.start.translate, mul(parentToTip, input.extrapolatedLengthScale));
+        }
+        return true;
+    }
+
+    template <class Transform, class Vector>
     inline BoneColliderFrameResult<Transform, Vector> buildSegmentColliderFrame(const BoneColliderFrameInput<Transform, Vector>& input)
     {
         BoneColliderFrameResult<Transform, Vector> result{};
         result.radius = (std::max)(0.01f, input.radius);
         result.convexRadius = (std::max)(0.0f, input.convexRadius);
 
-        Vector start = input.start.translate;
-        Vector end = input.end.translate;
-        if (!finiteVector(start) || !finiteVector(end)) {
+        Vector start{};
+        Vector end{};
+        if (!resolveSegmentColliderEndpoints(input, start, end)) {
             return result;
-        }
-        if (input.extrapolateFromPrevious) {
-            if (!finiteVector(input.previous.translate)) {
-                return result;
-            }
-            const Vector parentToTip = sub(input.start.translate, input.previous.translate);
-            const float parentLength = length(parentToTip);
-            if (!std::isfinite(parentLength) || parentLength <= 1.0e-5f || !std::isfinite(input.extrapolatedLengthScale)) {
-                return result;
-            }
-            end = add(input.start.translate, mul(parentToTip, input.extrapolatedLengthScale));
         }
 
         const Vector segment = sub(end, start);
@@ -529,6 +540,57 @@ namespace rock::hand_bone_collider_geometry_math
         result.zAxis = normalizeOr(cross(result.xAxis, result.yAxis), fallbackZ);
         result.yAxis = normalizeOr(cross(result.zAxis, result.xAxis), fallbackY);
 
+        result.transform = input.start;
+        result.transform.translate = add(start, mul(segment, 0.5f));
+        result.transform.rotate = matrixFromAxes<decltype(result.transform.rotate)>(result.xAxis, result.yAxis, result.zAxis);
+        result.transform.scale = 1.0f;
+        result.valid = true;
+        return result;
+    }
+
+    template <class Transform, class Vector>
+    inline BoneColliderFrameResult<Transform, Vector> buildPalmDepthAlignedSegmentFrame(
+        const BoneColliderFrameInput<Transform, Vector>& input,
+        const Vector& palmDepthAxisHint)
+    {
+        /*
+         * Palm-adjacent boxes such as PalmHeel and ThumbPad use anatomical
+         * start/end points for placement, but their box thickness still belongs
+         * to the corrected palm convention. Force local Y to palm depth so the
+         * shape expands thin through palm face/back and wide in the in-plane
+         * local Z direction instead of inheriting a stale segment roll.
+         */
+        BoneColliderFrameResult<Transform, Vector> result{};
+        result.radius = (std::max)(0.01f, input.radius);
+        result.convexRadius = (std::max)(0.0f, input.convexRadius);
+
+        Vector start{};
+        Vector end{};
+        if (!resolveSegmentColliderEndpoints(input, start, end) || !finiteVector(palmDepthAxisHint)) {
+            return result;
+        }
+
+        const Vector segment = sub(end, start);
+        result.length = length(segment);
+        if (!std::isfinite(result.length) || result.length <= 1.0e-5f) {
+            return result;
+        }
+
+        const Vector fallbackX = makeVector<Vector>(1.0f, 0.0f, 0.0f);
+        const Vector fallbackY = makeVector<Vector>(0.0f, 1.0f, 0.0f);
+        const Vector fallbackZ = makeVector<Vector>(0.0f, 0.0f, 1.0f);
+        result.xAxis = normalizeOr(segment, fallbackX);
+
+        Vector palmDepthHint = projectOntoPlane(palmDepthAxisHint, result.xAxis);
+        if (length(palmDepthHint) <= 1.0e-5f) {
+            palmDepthHint = projectOntoPlane(debug_axis_math::rotateNiLocalToWorld(input.start.rotate, fallbackY), result.xAxis);
+        }
+        result.yAxis = normalizeOr(palmDepthHint, std::fabs(dot(result.xAxis, fallbackY)) < 0.9f ? fallbackY : fallbackZ);
+        result.zAxis = normalizeOr(cross(result.xAxis, result.yAxis), fallbackZ);
+        result.yAxis = normalizeOr(cross(result.zAxis, result.xAxis), fallbackY);
+
+        result.palmDepthAxis = result.yAxis;
+        result.crossPalmAxis = result.zAxis;
         result.transform = input.start;
         result.transform.translate = add(start, mul(segment, 0.5f));
         result.transform.rotate = matrixFromAxes<decltype(result.transform.rotate)>(result.xAxis, result.yAxis, result.zAxis);

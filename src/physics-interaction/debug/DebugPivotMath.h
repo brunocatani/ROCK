@@ -5,7 +5,7 @@ namespace rock::debug_pivot_math
     // Grab pivots live in hknp constraint atom local space, while the visualizer
     // draws game-space world coordinates. Keep this conversion isolated because
     // a row/column swap here would make the overlay disagree with the real
-    // constraint and send pivot tuning in the wrong direction.
+    // constraint and send proxy-offset/debug interpretation in the wrong direction.
     template <class Vector>
     inline Vector bodyLocalPointToWorldGamePoint(const float* bodyFloats, const float* localPoint, float havokToGameScale)
     {

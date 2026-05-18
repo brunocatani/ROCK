@@ -202,6 +202,41 @@ int main()
     {
         RE::NiTransform start = identityTransform();
         RE::NiTransform end = identityTransform();
+        start.translate = RE::NiPoint3{ 0.0f, 0.0f, 0.0f };
+        end.translate = RE::NiPoint3{ 4.0f, 0.0f, 0.0f };
+        start.rotate = rock::hand_bone_collider_geometry_math::matrixFromAxes<RE::NiMatrix3>(
+            RE::NiPoint3{ 1.0f, 0.0f, 0.0f },
+            RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
+            RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
+
+        rock::hand_bone_collider_geometry_math::BoneColliderFrameInput<RE::NiTransform, RE::NiPoint3> input{};
+        input.start = start;
+        input.end = end;
+        input.radius = 0.5f;
+        input.convexRadius = 0.1f;
+
+        const auto palmSegment =
+            rock::hand_bone_collider_geometry_math::buildPalmDepthAlignedSegmentFrame(input, RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+        if (!palmSegment.valid) {
+            std::printf("palm-depth-aligned segment frame was not valid\n");
+            ok = false;
+        } else {
+            ok &= expectVectorNear("palm segment local X follows segment", palmSegment.xAxis, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+            ok &= expectVectorNear("palm segment local Y forced to palm depth", palmSegment.yAxis, RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+            ok &= expectVectorNear("palm segment local Z remains in-plane width", palmSegment.zAxis, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+
+            const RE::NiTransform grabPalmSegment =
+                rock::hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmSegment.transform);
+            ok &= expectVectorNear(
+                "palm segment grab local minus Y is palm face",
+                rotateLocal(grabPalmSegment.rotate, RE::NiPoint3{ 0.0f, -1.0f, 0.0f }),
+                RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
+        }
+    }
+
+    {
+        RE::NiTransform start = identityTransform();
+        RE::NiTransform end = identityTransform();
         start.translate = RE::NiPoint3{ -1.0f, 2.0f, 3.0f };
         end.translate = RE::NiPoint3{ 7.0f, 2.0f, 3.0f };
 

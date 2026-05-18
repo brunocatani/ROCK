@@ -205,11 +205,16 @@ namespace rock
             return false;
         }
 
-        if (role == HandColliderRole::PalmAnchor || role == HandColliderRole::PalmFace || role == HandColliderRole::PalmBack) {
-            const auto palm = hand_bone_collider_geometry_math::buildPalmAnchorFrame(lookup.hand, lookup.fingerBases, lookup.crossPalmDirection, 0.75f);
+        hand_bone_collider_geometry_math::BoneColliderFrameResult<RE::NiTransform, RE::NiPoint3> palm{};
+        const bool palmBoxRole = hand_collider_semantics::isPalmRole(role);
+        if (palmBoxRole) {
+            palm = hand_bone_collider_geometry_math::buildPalmAnchorFrame(lookup.hand, lookup.fingerBases, lookup.crossPalmDirection, 0.75f);
             if (!palm.valid) {
                 return false;
             }
+        }
+
+        if (role == HandColliderRole::PalmAnchor || role == HandColliderRole::PalmFace || role == HandColliderRole::PalmBack) {
             outFrame.valid = true;
             outFrame.transform = palm.transform;
             outFrame.length = (std::max)(3.0f, palm.length * 1.15f);
@@ -279,7 +284,10 @@ namespace rock
             return false;
         }
 
-        const auto frame = hand_bone_collider_geometry_math::buildSegmentColliderFrame(input);
+        const auto frame =
+            (role == HandColliderRole::PalmHeel || role == HandColliderRole::ThumbPad) ?
+                hand_bone_collider_geometry_math::buildPalmDepthAlignedSegmentFrame(input, palm.palmDepthAxis) :
+                hand_bone_collider_geometry_math::buildSegmentColliderFrame(input);
         if (!frame.valid) {
             return false;
         }

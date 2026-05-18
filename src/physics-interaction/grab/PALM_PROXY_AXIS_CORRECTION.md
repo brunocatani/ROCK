@@ -61,3 +61,14 @@ Once runtime `-Y` was confirmed as palm-face, the hybrid frame became a compensa
 - `cmake --build build-tests --config Release --target ROCKPolicyTestBinaries -- /m`
 - `ctest --test-dir build-tests -C Release --output-on-failure -j %NUMBER_OF_PROCESSORS%`
 
+## Follow-Up Review Remediation
+
+Date: 2026-05-18
+
+The first correction fixed the central proxy authority, but a follow-up review found a second class of risk: code around the fixed authority still carried old assumptions or tooling paths that could make the same bug return during tuning. The remediation below keeps the runtime architecture single-source instead of preserving old compensations.
+
+- `PalmHeel` and `ThumbPad` keep their anatomical segment placement, but their box frames must force local `Y` to the corrected palm-depth axis. They are palm box colliders, so their thin axis must be palm face/back even when their local `X` follows a wrist or thumb-pad segment.
+- Grab debug logs must report semantic axes through `makeOrientationBasis()` / local-vector-to-world convention. Matrix columns remain useful only for explicit stored-column diagnostics; they must not be logged as finger/back/cross axes in normal grab summaries.
+- The controller tuning path must edit the active `f*GrabAuthorityProxyOffset*GameUnits` values. Editing the legacy `f*GrabPivotAHandspace*` point does not move dynamic-grab authority and can mislead in-game validation.
+- Stale comments that describe the killed raw-rotation hybrid model must be rewritten so future work does not treat the old workaround as design authority.
+- Fallback normals that are only safety defaults may remain world-safe fallbacks, but runtime authority and diagnostics must use computed palm/proxy frames whenever they are available.

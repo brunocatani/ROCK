@@ -51,6 +51,7 @@ namespace rock
 
         [[nodiscard]] bool persistPhysicsBool(const char* key, bool value);
         [[nodiscard]] bool persistGrabPivotAHandspace(bool isLeft, const RE::NiPoint3& value);
+        [[nodiscard]] bool persistGrabAuthorityProxyOffset(bool isLeft, const RE::NiPoint3& value);
 
         bool rockEnabled = true;
 

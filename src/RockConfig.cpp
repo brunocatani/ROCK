@@ -1611,6 +1611,32 @@ namespace rock
         return saveRuntimeIni(ini, isLeft ? "left grab pivot" : "right grab pivot");
     }
 
+    bool RockConfig::persistGrabAuthorityProxyOffset(bool isLeft, const RE::NiPoint3& value)
+    {
+        const std::string path = _iniFilePath.empty() ? resolveIniPath() : _iniFilePath;
+        CSimpleIniA ini;
+        ini.SetUnicode(false);
+        const SI_Error loadRc = ini.LoadFile(path.c_str());
+        if (loadRc < 0) {
+            ROCK_LOG_WARN(Config, "Cannot persist ROCK.ini {} grab authority proxy offset: load failed with code {}", isLeft ? "left" : "right", static_cast<int>(loadRc));
+            return false;
+        }
+
+        const char* keyX = isLeft ? "fLeftGrabAuthorityProxyOffsetXGameUnits" : "fRightGrabAuthorityProxyOffsetXGameUnits";
+        const char* keyY = isLeft ? "fLeftGrabAuthorityProxyOffsetYGameUnits" : "fRightGrabAuthorityProxyOffsetYGameUnits";
+        const char* keyZ = isLeft ? "fLeftGrabAuthorityProxyOffsetZGameUnits" : "fRightGrabAuthorityProxyOffsetZGameUnits";
+        bool ok = true;
+        ok &= ini.SetDoubleValue(SECTION, keyX, value.x, nullptr, true) >= 0;
+        ok &= ini.SetDoubleValue(SECTION, keyY, value.y, nullptr, true) >= 0;
+        ok &= ini.SetDoubleValue(SECTION, keyZ, value.z, nullptr, true) >= 0;
+        if (!ok) {
+            ROCK_LOG_WARN(Config, "Cannot persist ROCK.ini {} grab authority proxy offset: set failed", isLeft ? "left" : "right");
+            return false;
+        }
+
+        return saveRuntimeIni(ini, isLeft ? "left grab authority proxy offset" : "right grab authority proxy offset");
+    }
+
     void RockConfig::processPendingConfigReload()
     {
         if (!_reloadPending.exchange(false, std::memory_order_acq_rel)) {

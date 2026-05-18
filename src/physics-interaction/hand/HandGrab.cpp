@@ -3430,12 +3430,12 @@ namespace rock
         const char* reason)
     {
         /*
-         * The proxy path keeps the working ROCK contact/palm relation but moves
-         * the solver anchor off the semantic hand collider. Body A is a hidden
-         * keyframed no-contact proxy driven from the root-flattened hand frame
-         * in the physics between phase; body B remains the dynamic held object.
-         * This preserves the non-COM pivot while letting finite motors express
-         * mass, collision, angular lag, and loose-weapon weight.
+         * The proxy path keeps one corrected palm/proxy authority for both the
+         * frozen pivot and angular relation. Body A is a hidden keyframed
+         * no-contact proxy derived from the live generated palm frame; body B
+         * remains the dynamic held object. This preserves the non-COM pivot
+         * while letting finite motors express mass, collision, angular lag, and
+         * loose-weapon weight.
          */
         if (!bhkWorld || !world || objectBodyId.value == INVALID_BODY_ID) {
             return false;
@@ -5675,11 +5675,11 @@ namespace rock
             const RE::NiTransform objectToBodyAtGrab = computeRuntimeBodyLocalTransform(objectWorldTransform, grabBodyWorldAtGrab);
             const RE::NiTransform objectToConstraintBodyAtGrab = computeRuntimeBodyLocalTransform(objectWorldTransform, constraintBodyWorldAtGrab);
             /*
-             * ROCK dynamic grab has one production authority convention:
-             * palm/proxy translation seats the selected BODY-local grip point,
-             * while root-flattened raw hand/controller rotation owns the object
-             * angular relation. The custom constraint stores body-B local data in
-             * the rigid BODY frame. MOTION and COM are mass/diagnostic data only.
+             * ROCK dynamic grab has one production authority convention: the
+             * corrected palm/proxy frame seats the selected BODY-local grip
+             * point and owns the object angular relation. The custom constraint
+             * stores body-B local data in the rigid BODY frame. MOTION and COM
+             * are mass/diagnostic data only.
              */
             _grabFrame.bodyLocal = objectToBodyAtGrab;
             _grabFrame.constraintBodyLocal = objectToConstraintBodyAtGrab;
@@ -6019,14 +6019,13 @@ namespace rock
                 auto* vrScaleSetting = f4vr::getIniSetting("fVrScale:VR");
                 const float vrScale = vrScaleSetting ? vrScaleSetting->GetFloat() : -1.0f;
 
-                const RE::NiPoint3 rawLateral = getMatrixColumn(handWorldTransform.rotate, 0);
-                const RE::NiPoint3 rawFinger = getMatrixColumn(handWorldTransform.rotate, 2);
-                const RE::NiPoint3 rawBack = getMatrixColumn(handWorldTransform.rotate, 1);
-                const RE::NiPoint3 constraintFinger = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 2);
-                const RE::NiPoint3 constraintBack = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 1);
-                const RE::NiPoint3 constraintLateral = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 0);
-                const RE::NiPoint3 grabSpaceRawFinger = getMatrixColumn(_grabFrame.rawHandSpace.rotate, 0);
-                const RE::NiPoint3 grabSpaceConstraintFinger = getMatrixColumn(constraintGrabHandSpace.rotate, 0);
+                const auto rawHandBasis = grab_transform_telemetry::makeOrientationBasis(handWorldTransform);
+                const auto proxyPalmBasis = grab_transform_telemetry::makeOrientationBasis(proxyFrameWorldAtGrab);
+                const auto rawGrabSpaceBasis = grab_transform_telemetry::makeOrientationBasis(_grabFrame.rawHandSpace);
+                const auto constraintGrabSpaceBasis = grab_transform_telemetry::makeOrientationBasis(constraintGrabHandSpace);
+                const auto bodyLocalBasis = grab_transform_telemetry::makeOrientationBasis(_grabFrame.bodyLocal);
+                const auto rootBodyLocalBasis = grab_transform_telemetry::makeOrientationBasis(_grabFrame.rootBodyLocal);
+                const auto ownerBodyLocalBasis = grab_transform_telemetry::makeOrientationBasis(_grabFrame.ownerBodyLocal);
                 const RE::NiPoint3 grabPosDelta = constraintGrabHandSpace.translate - _grabFrame.rawHandSpace.translate;
                 const float rawVsConstraintRot = rotationDeltaDegrees(_grabFrame.rawHandSpace.rotate, constraintGrabHandSpace.rotate);
                 const float rawVsConstraintPos = std::sqrt(grabPosDelta.x * grabPosDelta.x + grabPosDelta.y * grabPosDelta.y + grabPosDelta.z * grabPosDelta.z);
@@ -6072,14 +6071,13 @@ namespace rock
 
                 ROCK_LOG_DEBUG(Hand,
                     "{} GRAB FRAME SNAPSHOT: rawVsConstraint rotDelta={:.2f}deg posDelta=({:.2f},{:.2f},{:.2f}) "
-                    "rawFinger=({:.3f},{:.3f},{:.3f}) rawBack=({:.3f},{:.3f},{:.3f}) rawLat=({:.3f},{:.3f},{:.3f}) "
-                    "constraintFinger=({:.3f},{:.3f},{:.3f}) constraintBack=({:.3f},{:.3f},{:.3f}) constraintLat=({:.3f},{:.3f},{:.3f})",
-                    handName(), rawVsConstraintRot, grabPosDelta.x, grabPosDelta.y, grabPosDelta.z, rawFinger.x,
-                    rawFinger.y, rawFinger.z, rawBack.x, rawBack.y, rawBack.z, rawLateral.x, rawLateral.y, rawLateral.z, constraintFinger.x, constraintFinger.y, constraintFinger.z,
-                    constraintBack.x, constraintBack.y, constraintBack.z, constraintLateral.x, constraintLateral.y, constraintLateral.z);
+                    "rawFingerX=({:.3f},{:.3f},{:.3f}) rawBackY=({:.3f},{:.3f},{:.3f}) rawCrossZ=({:.3f},{:.3f},{:.3f}) "
+                    "proxyFingerX=({:.3f},{:.3f},{:.3f}) proxyBackY=({:.3f},{:.3f},{:.3f}) proxyCrossZ=({:.3f},{:.3f},{:.3f})",
+                    handName(), rawVsConstraintRot, grabPosDelta.x, grabPosDelta.y, grabPosDelta.z, rawHandBasis.x.x,
+                    rawHandBasis.x.y, rawHandBasis.x.z, rawHandBasis.y.x, rawHandBasis.y.y, rawHandBasis.y.z, rawHandBasis.z.x, rawHandBasis.z.y, rawHandBasis.z.z,
+                    proxyPalmBasis.x.x, proxyPalmBasis.x.y, proxyPalmBasis.x.z, proxyPalmBasis.y.x, proxyPalmBasis.y.y, proxyPalmBasis.y.z, proxyPalmBasis.z.x, proxyPalmBasis.z.y,
+                    proxyPalmBasis.z.z);
 
-                const auto rawHandBasis = grab_transform_telemetry::makeOrientationBasis(handWorldTransform);
-                const auto proxyPalmBasis = grab_transform_telemetry::makeOrientationBasis(proxyFrameWorldAtGrab);
                 const auto objectAtGrabBasis = grab_transform_telemetry::makeOrientationBasis(objectWorldTransform);
                 const auto desiredObjectBasis = grab_transform_telemetry::makeOrientationBasis(desiredObjectWorld);
                 const auto desiredBodyBasis = grab_transform_telemetry::makeOrientationBasis(desiredBodyWorld);
@@ -6120,13 +6118,10 @@ namespace rock
                     "grabHSRawFinger=({:.3f},{:.3f},{:.3f}) grabHSConstraintFinger=({:.3f},{:.3f},{:.3f}) "
                     "bodyLocal.pos=({:.2f},{:.2f},{:.2f}) bodyLocalFinger=({:.3f},{:.3f},{:.3f})",
                     handName(), _grabFrame.rawHandSpace.translate.x, _grabFrame.rawHandSpace.translate.y, _grabFrame.rawHandSpace.translate.z, constraintGrabHandSpace.translate.x,
-                    constraintGrabHandSpace.translate.y, constraintGrabHandSpace.translate.z, grabSpaceRawFinger.x, grabSpaceRawFinger.y, grabSpaceRawFinger.z,
-                    grabSpaceConstraintFinger.x, grabSpaceConstraintFinger.y, grabSpaceConstraintFinger.z, _grabFrame.bodyLocal.translate.x, _grabFrame.bodyLocal.translate.y,
-                    _grabFrame.bodyLocal.translate.z, _grabFrame.bodyLocal.rotate.entry[0][0], _grabFrame.bodyLocal.rotate.entry[1][0],
-                    _grabFrame.bodyLocal.rotate.entry[2][0]);
+                    constraintGrabHandSpace.translate.y, constraintGrabHandSpace.translate.z, rawGrabSpaceBasis.x.x, rawGrabSpaceBasis.x.y, rawGrabSpaceBasis.x.z,
+                    constraintGrabSpaceBasis.x.x, constraintGrabSpaceBasis.x.y, constraintGrabSpaceBasis.x.z, _grabFrame.bodyLocal.translate.x, _grabFrame.bodyLocal.translate.y,
+                    _grabFrame.bodyLocal.translate.z, bodyLocalBasis.x.x, bodyLocalBasis.x.y, bodyLocalBasis.x.z);
 
-                const RE::NiPoint3 rootBodyLocalFinger = getMatrixColumn(_grabFrame.rootBodyLocal.rotate, 0);
-                const RE::NiPoint3 ownerBodyLocalFinger = getMatrixColumn(_grabFrame.ownerBodyLocal.rotate, 0);
                 ROCK_LOG_DEBUG(Hand,
                     "{} GRAB NODE FRAMES: owner='{}'({:p}) hasCol={} ownsBodyCol={} "
                     "root='{}'({:p}) held='{}'({:p}) mesh='{}'({:p}) sameOwnerHeld={} sameRootHeld={} "
@@ -6137,9 +6132,9 @@ namespace rock
                     (ownerNodeAtGrab && ownerNodeAtGrab->collisionObject.get() == bodyCollisionObjectAtGrab) ? "yes" : "no", nodeDebugName(rootNode),
                     static_cast<const void*>(rootNode), nodeDebugName(collidableNode), static_cast<const void*>(collidableNode), nodeDebugName(meshSourceNode),
                     static_cast<const void*>(meshSourceNode), ownerNodeAtGrab == collidableNode ? "yes" : "no", rootNode == collidableNode ? "yes" : "no",
-                    _grabFrame.ownerBodyLocal.translate.x, _grabFrame.ownerBodyLocal.translate.y, _grabFrame.ownerBodyLocal.translate.z, ownerBodyLocalFinger.x,
-                    ownerBodyLocalFinger.y, ownerBodyLocalFinger.z, _grabFrame.rootBodyLocal.translate.x, _grabFrame.rootBodyLocal.translate.y,
-                    _grabFrame.rootBodyLocal.translate.z, rootBodyLocalFinger.x, rootBodyLocalFinger.y, rootBodyLocalFinger.z);
+                    _grabFrame.ownerBodyLocal.translate.x, _grabFrame.ownerBodyLocal.translate.y, _grabFrame.ownerBodyLocal.translate.z, ownerBodyLocalBasis.x.x,
+                    ownerBodyLocalBasis.x.y, ownerBodyLocalBasis.x.z, _grabFrame.rootBodyLocal.translate.x, _grabFrame.rootBodyLocal.translate.y,
+                    _grabFrame.rootBodyLocal.translate.z, rootBodyLocalBasis.x.x, rootBodyLocalBasis.x.y, rootBodyLocalBasis.x.z);
             }
 
             ROCK_LOG_DEBUG(Hand,
@@ -6574,11 +6569,10 @@ namespace rock
         (void)handMotion;
 
         /*
-         * ROCK freezes the visible object/node relation in the root-flattened
-         * hand frame, then composes it with the rigid-body local transform for
-         * the driven body target. The custom proxy constraint consumes the same
-         * raw relation in the physics between phase; BODY remains object-space
-         * authority and MOTION remains COM/weight/diagnostic data only.
+         * ROCK freezes the visible object/node relation in corrected proxy-palm
+         * space, then composes it with the rigid BODY relation for the driven
+         * target. BODY remains object-space authority and MOTION remains
+         * COM/weight/diagnostic data only.
          */
         RE::NiTransform proxyAuthorityWorld = handWorldTransform;
         const char* proxyAuthoritySource = "notProxy";
@@ -7137,8 +7131,8 @@ namespace rock
                     metrics.node = node;
                     metrics.world = node ? node->world : grabAuthorityBodyWorld;
                     metrics.expectedWorld = node ? deriveNodeWorldFromBodyWorld(grabAuthorityBodyWorld, bodyLocalTransform) : grabAuthorityBodyWorld;
-                    metrics.finger = getMatrixColumn(metrics.world.rotate, 0);
-                    metrics.expectedFinger = getMatrixColumn(metrics.expectedWorld.rotate, 0);
+                    metrics.finger = grab_transform_telemetry::makeOrientationBasis(metrics.world).x;
+                    metrics.expectedFinger = grab_transform_telemetry::makeOrientationBasis(metrics.expectedWorld).x;
                     if (node) {
                         metrics.rotErrDeg = rotationDeltaDegrees(metrics.world.rotate, metrics.expectedWorld.rotate);
                         metrics.posErrGameUnits = translationDeltaGameUnits(metrics.world, metrics.expectedWorld);
@@ -7155,11 +7149,11 @@ namespace rock
                 const NodeFrameMetrics rootMetrics = captureNodeMetrics(rootNode, _grabFrame.rootBodyLocal);
 
                 const RE::NiPoint3 worldPosDelta = desiredNodeWorldConstraint.translate - desiredNodeWorldRaw.translate;
-                const RE::NiPoint3 rawFinger = getMatrixColumn(handWorldTransform.rotate, 2);
-                const RE::NiPoint3 constraintFinger = getMatrixColumn(constraintAnchorWorld.rotate, 2);
-                const RE::NiPoint3 desiredRawFinger = getMatrixColumn(desiredBodyWorldRaw.rotate, 0);
-                const RE::NiPoint3 desiredConstraintFinger = getMatrixColumn(desiredBodyWorldConstraint.rotate, 0);
-                const RE::NiPoint3 bodyFinger = getMatrixColumn(grabAuthorityBodyWorld.rotate, 0);
+                const RE::NiPoint3 rawFinger = grab_transform_telemetry::makeOrientationBasis(handWorldTransform).x;
+                const RE::NiPoint3 constraintFinger = grab_transform_telemetry::makeOrientationBasis(constraintAnchorWorld).x;
+                const RE::NiPoint3 desiredRawFinger = grab_transform_telemetry::makeOrientationBasis(desiredBodyWorldRaw).x;
+                const RE::NiPoint3 desiredConstraintFinger = grab_transform_telemetry::makeOrientationBasis(desiredBodyWorldConstraint).x;
+                const RE::NiPoint3 bodyFinger = grab_transform_telemetry::makeOrientationBasis(grabAuthorityBodyWorld).x;
                 const float motionDiagVsGrabRot =
                     (hasMotionObjectBody && hasGrabObjectBody) ? rotationDeltaDegrees(motionObjectBodyWorld.rotate, grabObjectBodyWorld.rotate) : -1.0f;
                 const float motionDiagVsGrabPos =
