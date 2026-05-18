@@ -2,6 +2,12 @@
 
 This plan exists because the current generated weapon collider path treats the first `Weapon` node under `firstPersonSkeleton` as both the transform drive root and the visual source root. Ghidra verification against `Fallout4VR.exe.unpacked.exe` shows that FO4VR native attach builds a generated weapon package separately and stores its root in `ActorEquipData::SlotData::node` before/while attaching it under `Weapon` or `WeaponLeft`. The correct fix is to keep the stable `Weapon` node as the collider drive root, but add native equip-slot package roots as visual source witnesses and log enough per-root evidence to distinguish a stale parent tree from an unbuilt native package.
 
+## Implementation Status
+
+- 2026-05-18: Stage 1, Stage 3, and Stage 4 are implemented in `WeaponCollision.cpp`. Generated weapon candidate discovery now includes matching first-person and actor `ActorEquipData::SlotData::node` roots, prefers the bounded authoritative equipped-instance witness when matching those slots, deduplicates them by node pointer, folds them into the visual key, and logs parent pointer/name plus direct child counts for every candidate.
+- Stage 2 remains diagnostic-only and is not implemented in production code. No native lookup or native refresh path was added by this change.
+- Stage 5 remains dependent on in-game logs from an affected weapon. The next decision point is whether the missing part appears under the equip-slot package root during the stale `Weapon` branch case.
+
 ## Current Evidence
 
 - `f4vr::getWeaponNode()` is a F4VR-CommonFramework helper that only returns `findNode(getPlayer()->firstPersonSkeleton, "Weapon")`.
