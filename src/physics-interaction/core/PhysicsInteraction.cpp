@@ -880,6 +880,27 @@ namespace rock
         return true;
     }
 
+    bool PhysicsInteraction::tryGetGrabAuthorityAnchorWorld(bool isLeft, RE::NiPoint3& outAnchorWorld) const
+    {
+        outAnchorWorld = {};
+
+        RE::NiTransform rawHandWorld{};
+        if (!tryGetRootFlattenedHandTransform(isLeft, rawHandWorld)) {
+            return false;
+        }
+
+        const auto& hand = isLeft ? _leftHand : _rightHand;
+        RE::hknpWorld* world = _cachedHknpWorld;
+        if (!world) {
+            world = _lifecycleHknpWorldAtomic.load(std::memory_order_acquire);
+        }
+
+        outAnchorWorld = hand.computeGrabPivotAWorld(world, rawHandWorld);
+        return std::isfinite(outAnchorWorld.x) &&
+               std::isfinite(outAnchorWorld.y) &&
+               std::isfinite(outAnchorWorld.z);
+    }
+
     void PhysicsInteraction::noteSkeletonLifecycle(std::uint32_t skeletonGeneration, ::rock::provider::RockProviderLifecycleReason reason)
     {
         physics_lifecycle::noteSkeletonGeneration(_lifecycleState, skeletonGeneration, reason);

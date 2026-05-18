@@ -129,6 +129,13 @@ namespace rock
             ::rock::provider::RockProviderBodyContactV6* outContacts,
             std::uint32_t maxContacts) const;
 
+        /*
+         * External readers need the same grab-authority seat that runtime
+         * dynamic grab uses, otherwise API/debug callers silently drift onto the
+         * raw-hand-only fallback path and hide live palm/proxy regressions.
+         */
+        bool tryGetGrabAuthorityAnchorWorld(bool isLeft, RE::NiPoint3& outAnchorWorld) const;
+
     private:
         bool validateCriticalOffsets() const;
 

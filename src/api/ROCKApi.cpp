@@ -168,12 +168,12 @@ namespace
         if (!pi || !pi->isInitialized())
             return RE::NiPoint3{};
 
-        bool isLeft = getIsLeftForHandEnum(hand);
-        RE::NiTransform transform{};
-        if (!pi->tryGetRootFlattenedHandTransform(isLeft, transform))
+        const bool isLeft = getIsLeftForHandEnum(hand);
+        RE::NiPoint3 palmPosition{};
+        if (!pi->tryGetGrabAuthorityAnchorWorld(isLeft, palmPosition))
             return RE::NiPoint3{};
 
-        return computeFallbackGrabAuthorityProxySeatWorld(transform, isLeft);
+        return palmPosition;
     }
 
     RE::NiPoint3 ROCK_CALL apiGetPalmForward(const ROCKApi::Hand hand)

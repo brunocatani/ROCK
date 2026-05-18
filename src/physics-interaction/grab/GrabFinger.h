@@ -826,12 +826,46 @@ namespace rock::grab_finger_pose_runtime
         return RE::NiPoint3(value.x * inv, value.y * inv, value.z * inv);
     }
 
-    inline RE::NiPoint3 liveThumbAlternateCurlNormalWorld(const RE::NiPoint3& openVectorWorld, const RE::NiPoint3& primaryNormalWorld,
-        const RE::NiPoint3& baseWorld, const RE::NiPoint3& grabAnchorWorld, bool isLeft)
+    inline RE::NiPoint3 stablePerpendicularDirection(const RE::NiPoint3& direction)
     {
-        RE::NiPoint3 alternateNormal = normalizedOrFallback(crossPoint(openVectorWorld, primaryNormalWorld), RE::NiPoint3(0.0f, isLeft ? -1.0f : 1.0f, 0.0f));
-        const RE::NiPoint3 towardPalm = normalizedOrFallback(grabAnchorWorld - baseWorld, RE::NiPoint3(0.0f, isLeft ? 1.0f : -1.0f, 0.0f));
-        if (dotPoint(alternateNormal, crossPoint(openVectorWorld, towardPalm)) < 0.0f) {
+        const RE::NiPoint3 unitDirection = normalizedOrFallback(direction, RE::NiPoint3(1.0f, 0.0f, 0.0f));
+        const std::array<RE::NiPoint3, 3> candidateAxes{
+            RE::NiPoint3(0.0f, 0.0f, 1.0f),
+            RE::NiPoint3(0.0f, 1.0f, 0.0f),
+            RE::NiPoint3(1.0f, 0.0f, 0.0f)
+        };
+
+        RE::NiPoint3 best = crossPoint(unitDirection, candidateAxes[0]);
+        float bestLengthSquared = dotPoint(best, best);
+        for (std::size_t index = 1; index < candidateAxes.size(); ++index) {
+            const RE::NiPoint3 candidate = crossPoint(unitDirection, candidateAxes[index]);
+            const float candidateLengthSquared = dotPoint(candidate, candidate);
+            if (candidateLengthSquared > bestLengthSquared) {
+                best = candidate;
+                bestLengthSquared = candidateLengthSquared;
+            }
+        }
+
+        return normalizedOrFallback(best, RE::NiPoint3(0.0f, 0.0f, 1.0f));
+    }
+
+    inline RE::NiPoint3 liveThumbAlternateCurlNormalWorld(const RE::NiPoint3& openVectorWorld, const RE::NiPoint3& primaryNormalWorld,
+        const RE::NiPoint3& baseWorld, const RE::NiPoint3& grabAnchorWorld)
+    {
+        /*
+         * The alternate thumb curl plane must stay derived from the same live
+         * open-direction and palm-seat geometry as the corrected proxy/palm
+         * convention. Handed +/-Y world defaults only looked stable until the
+         * Y/Z swap was fixed; now the safety path stays geometric and uses a
+         * neutral perpendicular only when both live cross products collapse.
+         */
+        const RE::NiPoint3 towardPalm = normalizedOrFallback(grabAnchorWorld - baseWorld, primaryNormalWorld);
+        const RE::NiPoint3 towardPalmAlternate = crossPoint(openVectorWorld, towardPalm);
+        const RE::NiPoint3 primaryAlternate = crossPoint(openVectorWorld, primaryNormalWorld);
+        RE::NiPoint3 alternateNormal =
+            normalizedOrFallback(primaryAlternate,
+                normalizedOrFallback(towardPalmAlternate, stablePerpendicularDirection(openVectorWorld)));
+        if (dotPoint(alternateNormal, towardPalmAlternate) < 0.0f) {
             alternateNormal.x *= -1.0f;
             alternateNormal.y *= -1.0f;
             alternateNormal.z *= -1.0f;
@@ -1000,7 +1034,7 @@ namespace rock::grab_finger_pose_runtime
             const RE::NiPoint3 fingerTargetNormalWorld = hasFingerTargetNormal ? poseTargets.targetNormals[finger] : poseTargets.seatNormalWorld;
             const RE::NiPoint3 openDirectionWorld = live.openDirection;
             const float fingerOpenLengthWorld = live.length;
-            const RE::NiPoint3 thumbAlternateCurlNormalWorld = liveThumbAlternateCurlNormalWorld(openDirectionWorld, curlNormalWorld, baseWorld, grabAnchorWorld, isLeft);
+            const RE::NiPoint3 thumbAlternateCurlNormalWorld = liveThumbAlternateCurlNormalWorld(openDirectionWorld, curlNormalWorld, baseWorld, grabAnchorWorld);
             const RE::NiPoint3 toContact = useTarget ? fingerTargetWorld - baseWorld : openDirectionWorld;
             const float distanceToContact = useTarget ? std::sqrt(distanceSquared(fingerTargetWorld, baseWorld)) : fingerOpenLengthWorld;
             const float probeDistance = std::clamp(distanceToContact + kFingerReachPadding, kMinFingerProbeDistance, kMaxFingerProbeDistance);

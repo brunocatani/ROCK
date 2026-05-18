@@ -81,6 +81,6 @@ The old `f*GrabPivotAHandspace*` values and `compute*GrabPivotA*Handspace` helpe
 
 - Dynamic close/far grab selection already receives `PhysicsInteractionFrame::*grabAnchorWorld`, sourced from `Hand::computeGrabPivotAWorld(...)`.
 - Two-handed weapon support grip now receives the same frame-level grab authority proxy seats for its primary/support targets instead of recomputing the retired configured point.
-- `apiGetPalmPosition()` now returns the corrected fallback proxy seat from the current root-flattened hand transform. That preserves API shape while keeping external consumers aligned with active proxy offset tuning.
+- `apiGetPalmPosition()` now returns the same live-or-fallback grab authority seat that runtime dynamic grab uses. Live generated palm authority wins when available; the corrected raw-hand proxy seat remains the fallback.
 - Grab telemetry no longer compares against the old INI pivot. It reports the raw-hand fallback proxy seat only as a fallback/proxy diagnostic, while live authority remains generated palm -> grab authority proxy -> proxy readback.
 - The packaged and active production INIs now expose only `f*GrabAuthorityProxyOffset*GameUnits` for palm-seat tuning.
