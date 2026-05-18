@@ -98,6 +98,16 @@ namespace rock
             return value.x * value.x + value.y * value.y + value.z * value.z;
         }
 
+        bool isFinitePoint(const RE::NiPoint3& value)
+        {
+            return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+        }
+
+        RE::NiPoint3 resolveGrabAuthorityProxySeatOrFallback(const RE::NiPoint3& seatWorld, const RE::NiTransform& handTransform, bool isLeft)
+        {
+            return isFinitePoint(seatWorld) ? seatWorld : computeFallbackGrabAuthorityProxySeatWorld(handTransform, isLeft);
+        }
+
         RE::NiPoint3 normalizeOrFallback(const RE::NiPoint3& value, const RE::NiPoint3& fallback)
         {
             const float valueLengthSquared = lengthSquared(value);
@@ -366,6 +376,7 @@ namespace rock
         const WeaponInteractionContact& leftWeaponContact,
         bool leftGripPressed,
         bool supportHandHoldingObject,
+        const TwoHandedGripHandAnchors& handAnchors,
         float dt,
         std::uint64_t currentWeaponGenerationKey,
         const WeaponInteractionRuntimeState& runtimeState,
@@ -406,7 +417,7 @@ namespace rock
                 }
             }
             if (weapon_two_handed_grip_math::canStartSupportGrip(leftTouchingSupport, leftGripPressed, supportHandHoldingObject)) {
-                transitionToGripping(interactionWeaponNode, decision, supportAuthorityMode);
+                transitionToGripping(interactionWeaponNode, decision, supportAuthorityMode, handAnchors);
             }
             break;
 
@@ -423,7 +434,7 @@ namespace rock
             } else if (!weapon_two_handed_grip_math::shouldContinueSupportGrip(leftGripPressed, supportHandHoldingObject)) {
                 transitionToInactive(ownsWeaponTransform());
             } else {
-                updateGripping(_activeWeaponNode, dt);
+                updateGripping(_activeWeaponNode, handAnchors, dt);
             }
             break;
         }
@@ -519,7 +530,8 @@ namespace rock
     void TwoHandedGrip::transitionToGripping(
         RE::NiNode* weaponNode,
         const WeaponInteractionDecision& decision,
-        weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode)
+        weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
+        const TwoHandedGripHandAnchors& handAnchors)
     {
         if (!weaponNode) {
             transitionToInactive(false);
@@ -557,13 +569,15 @@ namespace rock
             return;
         }
 
-        const RE::NiPoint3 primaryPalmPos = computeGrabPivotAPositionFromHandBasis(primaryTransform, primaryHandIsLeft);
-        _primaryGripLocal = worldToWeaponLocal(primaryPalmPos, sourceRoot);
+        const RE::NiPoint3 primaryProxySeatWorld =
+            resolveGrabAuthorityProxySeatOrFallback(handAnchors.rightGrabAuthorityProxySeatWorld, primaryTransform, primaryHandIsLeft);
+        _primaryGripLocal = worldToWeaponLocal(primaryProxySeatWorld, sourceRoot);
         _primaryGripConfidence = 1.0f;
-        const RE::NiPoint3 primaryGripWorldPoint = primaryPalmPos;
+        const RE::NiPoint3 primaryGripWorldPoint = primaryProxySeatWorld;
         const RE::NiTransform adjustedPrimaryTransform = primaryTransform;
 
-        RE::NiPoint3 palmPos = computeGrabPivotAPositionFromHandBasis(supportTransform, supportHandIsLeft);
+        RE::NiPoint3 supportProxySeatWorld =
+            resolveGrabAuthorityProxySeatOrFallback(handAnchors.leftGrabAuthorityProxySeatWorld, supportTransform, supportHandIsLeft);
         RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(supportTransform, supportHandIsLeft);
 
         std::vector<TriangleData> triangles;
@@ -573,7 +587,7 @@ namespace rock
         bool meshFound = false;
         if (!triangles.empty()) {
             meshFound = findClosestGrabPoint(triangles,
-                palmPos,
+                supportProxySeatWorld,
                 palmDir,
                 g_rockConfig.rockGrabLateralWeight,
                 g_rockConfig.rockGrabDirectionalWeight,
@@ -585,12 +599,12 @@ namespace rock
             _offhandGripLocal = worldToWeaponLocal(grabPoint.position, sourceRoot);
             _grabNormal = grabPoint.normal;
         } else {
-            _offhandGripLocal = worldToWeaponLocal(palmPos, sourceRoot);
+            _offhandGripLocal = worldToWeaponLocal(supportProxySeatWorld, sourceRoot);
             _grabNormal = palmDir;
         }
-        const RE::NiPoint3 supportGripWorldPoint = meshFound ? grabPoint.position : palmPos;
+        const RE::NiPoint3 supportGripWorldPoint = meshFound ? grabPoint.position : supportProxySeatWorld;
         const RE::NiTransform adjustedSupportTransform =
-            weapon_two_handed_grip_math::alignHandFrameToGripPoint(supportTransform, palmPos, supportGripWorldPoint);
+            weapon_two_handed_grip_math::alignHandFrameToGripPoint(supportTransform, supportProxySeatWorld, supportGripWorldPoint);
         _primaryHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(sourceRoot->world), adjustedPrimaryTransform);
         _supportHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(sourceRoot->world), adjustedSupportTransform);
         _hasHandWeaponLocalFrames = true;
@@ -601,7 +615,7 @@ namespace rock
         grab_finger_pose_runtime::SolvedGrabFingerPose meshFingerPose{};
         const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPosePtr = nullptr;
         if (g_rockConfig.rockGrabMeshFingerPoseEnabled) {
-            const RE::NiPoint3 gripWorldPoint = meshFound ? grabPoint.position : palmPos;
+            const RE::NiPoint3 gripWorldPoint = meshFound ? grabPoint.position : supportProxySeatWorld;
             auto supportFingerPoseTargets = grab_finger_pose_runtime::makeSharedGripPoseTarget(gripWorldPoint, _grabNormal);
             supportFingerPoseTargets.useSeatPointForMissingTargets = false;
             supportFingerPoseTargets.useWholeMeshForMissingTargets = true;
@@ -609,7 +623,7 @@ namespace rock
             const auto* liveFingerSnapshotPtr =
                 root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(supportHandIsLeft, liveFingerSnapshot) ? &liveFingerSnapshot : nullptr;
             const auto solvedFingerPose = grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(
-                triangles, supportTransform, supportHandIsLeft, palmPos, supportFingerPoseTargets, g_rockConfig.rockGrabFingerMinValue,
+                triangles, supportTransform, supportHandIsLeft, supportProxySeatWorld, supportFingerPoseTargets, g_rockConfig.rockGrabFingerMinValue,
                 g_rockConfig.rockGrabMaxTriangleDistance, true, liveFingerSnapshotPtr,
                 g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits);
             if (solvedFingerPose.solved) {
@@ -646,7 +660,7 @@ namespace rock
                 if (canPublishAlternateThumb) {
                     std::array<RE::NiTransform, 15> localTransforms{};
                     std::uint16_t localTransformMask = 0;
-                    if (buildAlternateThumbLocalTransforms(supportHandIsLeft, palmPos, gripWorldPoint, meshFingerPose.values[0], localTransforms, localTransformMask)) {
+                    if (buildAlternateThumbLocalTransforms(supportHandIsLeft, supportProxySeatWorld, gripWorldPoint, meshFingerPose.values[0], localTransforms, localTransformMask)) {
                         _supportFingerLocalTransforms = localTransforms;
                         _supportFingerLocalTransformMask = localTransformMask;
                         _hasSupportFingerLocalTransforms = true;
@@ -741,17 +755,17 @@ namespace rock
         ROCK_LOG_INFO(Weapon, "TwoHandedGrip: grip released");
     }
 
-    void TwoHandedGrip::updateGripping(RE::NiNode* weaponNode, float dt)
+    void TwoHandedGrip::updateGripping(RE::NiNode* weaponNode, const TwoHandedGripHandAnchors& handAnchors, float dt)
     {
         if (_authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport) {
             updateVisualOnlySupportGrip(weaponNode);
             return;
         }
 
-        updateFullWeaponAuthorityGrip(weaponNode, dt);
+        updateFullWeaponAuthorityGrip(weaponNode, handAnchors, dt);
     }
 
-    void TwoHandedGrip::updateFullWeaponAuthorityGrip(RE::NiNode* weaponNode, float dt)
+    void TwoHandedGrip::updateFullWeaponAuthorityGrip(RE::NiNode* weaponNode, const TwoHandedGripHandAnchors& handAnchors, float dt)
     {
         constexpr bool supportHandIsLeft = true;
         constexpr bool primaryHandIsLeft = false;
@@ -767,8 +781,10 @@ namespace rock
             return;
         }
 
-        RE::NiPoint3 primaryController = computeGrabPivotAPositionFromHandBasis(primaryTransform, primaryHandIsLeft);
-        RE::NiPoint3 supportController = computeGrabPivotAPositionFromHandBasis(supportTransform, supportHandIsLeft);
+        RE::NiPoint3 primaryController =
+            resolveGrabAuthorityProxySeatOrFallback(handAnchors.rightGrabAuthorityProxySeatWorld, primaryTransform, primaryHandIsLeft);
+        RE::NiPoint3 supportController =
+            resolveGrabAuthorityProxySeatOrFallback(handAnchors.leftGrabAuthorityProxySeatWorld, supportTransform, supportHandIsLeft);
 
         const RE::NiPoint3 currentSupportWorld = weaponLocalToWorld(_offhandGripLocal, weaponNode);
         const RE::NiPoint3 lockedSupportControllerTarget = makeLockedSupportGripTarget(

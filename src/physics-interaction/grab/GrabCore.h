@@ -793,10 +793,10 @@ namespace rock::grab_interaction_policy
 
 /*
  * ROCK's dynamic grab authority is captured in corrected proxy-palm space, while
- * legacy authored handspace pivots remain only for callers that have not moved
- * to the hidden proxy seat yet. ROCK keeps one coherent palm-to-object relation
- * while preserving separate visual and collision frames. These helpers keep that
- * split explicit so pivot A, pivot B, captured object frames, and debug
+ * fallback callers use the same hidden proxy-seat offset instead of a separate
+ * authored handspace point. ROCK keeps one coherent palm-to-object relation
+ * while preserving separate visual and collision frames. These helpers keep
+ * that split explicit so pivot A, pivot B, captured object frames, and debug
  * measurements cannot silently drift onto different conventions.
  */
 

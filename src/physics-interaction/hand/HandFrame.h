@@ -143,16 +143,6 @@ namespace rock
         return normalizeDirection(transformHandspaceLocalToWorld(handTransform, authoredHandspaceToRawHandspaceForHand(localDirection, isLeft)));
     }
 
-    inline RE::NiPoint3 computeGrabPivotAHandspacePosition(bool isLeft)
-    {
-        return isLeft ? g_rockConfig.rockLeftGrabPivotAHandspace : g_rockConfig.rockRightGrabPivotAHandspace;
-    }
-
-    inline RE::NiPoint3 computePalmPositionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
-    {
-        return transformHandspacePosition(handTransform, computeGrabPivotAHandspacePosition(isLeft), isLeft);
-    }
-
     inline RE::NiPoint3 computePalmNormalFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
         /*
@@ -180,11 +170,6 @@ namespace rock
             transformHandspaceDirection(handTransform, g_rockConfig.rockPointingVectorHandspace, isLeft), g_rockConfig.rockReverseFarGrabNormal);
     }
 
-    inline RE::NiPoint3 computeGrabPivotAPositionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
-    {
-        return transformHandspacePosition(handTransform, computeGrabPivotAHandspacePosition(isLeft), isLeft);
-    }
-
     inline RE::NiPoint3 computeGrabAuthorityProxyOffsetLocalGame(bool isLeft)
     {
         return isLeft ? g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits : g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits;
@@ -204,5 +189,16 @@ namespace rock
             result.translate = result.translate + transform_math::localVectorToWorld(proxyFrameWorld, localOffset);
         }
         return result;
+    }
+
+    inline RE::NiPoint3 computeFallbackGrabAuthorityProxySeatWorld(const RE::NiTransform& rawHandWorld, bool isLeft)
+    {
+        /*
+         * When the live generated palm body is unavailable, callers still use the
+         * active proxy-seat offset rather than resurrecting the retired authored
+         * hand-space pivot. This keeps fallback diagnostics and API consumers on
+         * the same local -Y palm-seat convention as the real hidden proxy.
+         */
+        return applyGrabAuthorityProxyLocalOffsetToFrame(rawHandWorld, isLeft).translate;
     }
 }

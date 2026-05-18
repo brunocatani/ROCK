@@ -150,14 +150,14 @@ namespace rock::grab_transform_telemetry
         RE::NiPoint3 pivotAWorld{};
         RE::NiPoint3 pivotBWorld{};
         RE::NiPoint3 pivotDeltaWorld{};
-        RE::NiPoint3 legacyConfiguredPivotAWorld{};
+        RE::NiPoint3 rawFallbackProxySeatWorld{};
         RE::NiPoint3 constraintTransformBLocalGame{};
         RE::NiPoint3 desiredTransformBLocalGame{};
         PointPairDelta<RE::NiPoint3> transformBLocalDelta{};
-        PointPairDelta<RE::NiPoint3> legacyConfiguredPivotAToPalmAnchor{};
-        PointPairDelta<RE::NiPoint3> legacyConfiguredPivotAToGrabAuthority{};
-        PointPairDelta<RE::NiPoint3> legacyConfiguredPivotAToProxyReadback{};
-        PointPairDelta<RE::NiPoint3> legacyConfiguredPivotAToRuntimePivotA{};
+        PointPairDelta<RE::NiPoint3> rawFallbackProxySeatToPalmAnchor{};
+        PointPairDelta<RE::NiPoint3> rawFallbackProxySeatToGrabAuthority{};
+        PointPairDelta<RE::NiPoint3> rawFallbackProxySeatToProxyReadback{};
+        PointPairDelta<RE::NiPoint3> rawFallbackProxySeatToRuntimePivotA{};
 
         RE::NiPoint3 rootFingerBaseCenterWorld{};
         RE::NiPoint3 rootFingerTipCenterWorld{};
@@ -206,7 +206,7 @@ namespace rock::grab_transform_telemetry
         bool hasPalmAnchorTarget = false;
         bool hasPalmAnchorGrabAuthority = false;
         bool hasProxyReadback = false;
-        bool hasLegacyConfiguredPivotAWorld = false;
+        bool hasRawFallbackProxySeatWorld = false;
         bool hasHeldBodyWorld = false;
         bool hasHeldNativeBodyWorld = false;
         bool hasHeldNodeWorld = false;

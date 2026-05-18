@@ -3079,9 +3079,9 @@ namespace rock
         out.heldFormId = _savedObjectState.refr ? _savedObjectState.refr->GetFormID() : 0;
         out.heldBodyId = _savedObjectState.bodyId.value;
         out.handBodyId = _handBody.isValid() ? _handBody.getBodyId().value : INVALID_BODY_ID;
-        out.legacyConfiguredPivotAWorld = computeGrabPivotAPositionFromHandBasis(out.nativeFlattenedHandWorld, _isLeft);
-        out.hasLegacyConfiguredPivotAWorld = true;
-        out.runtimePivotSource = "rawHandOriginFallback";
+        out.rawFallbackProxySeatWorld = computeFallbackGrabAuthorityProxySeatWorld(out.nativeFlattenedHandWorld, _isLeft);
+        out.hasRawFallbackProxySeatWorld = true;
+        out.runtimePivotSource = "rawHandProxySeatFallback";
 
         LivePalmAnchorReference palmReference{};
         if (tryResolveLivePalmAnchorReference(world, palmReference)) {
@@ -3101,8 +3101,8 @@ namespace rock
             out.hasPalmAnchorGrabAuthority = true;
             out.nativeFlattenedHandToGrabAuthority =
                 grab_transform_telemetry::measureTransformDelta(out.nativeFlattenedHandWorld, out.palmAnchorGrabAuthorityWorld);
-            out.legacyConfiguredPivotAToGrabAuthority =
-                grab_transform_telemetry::measurePointPair(out.legacyConfiguredPivotAWorld, out.palmAnchorGrabAuthorityWorld.translate);
+            out.rawFallbackProxySeatToGrabAuthority =
+                grab_transform_telemetry::measurePointPair(out.rawFallbackProxySeatWorld, out.palmAnchorGrabAuthorityWorld.translate);
         }
 
         if (_boneColliders.tryGetPalmAnchorTarget(out.palmAnchorTargetWorld)) {
@@ -3112,8 +3112,8 @@ namespace rock
                 grab_transform_telemetry::measureTransformDelta(out.rawHandWorld, out.palmAnchorTargetWorld);
             out.nativeFlattenedHandToPalmAnchorTarget =
                 grab_transform_telemetry::measureTransformDelta(out.nativeFlattenedHandWorld, out.palmAnchorTargetWorld);
-            out.legacyConfiguredPivotAToPalmAnchor =
-                grab_transform_telemetry::measurePointPair(out.legacyConfiguredPivotAWorld, out.palmAnchorTargetWorld.translate);
+            out.rawFallbackProxySeatToPalmAnchor =
+                grab_transform_telemetry::measurePointPair(out.rawFallbackProxySeatWorld, out.palmAnchorTargetWorld.translate);
             if (out.hasPalmAnchorGrabAuthority) {
                 out.palmAnchorTargetToGrabAuthority =
                     grab_transform_telemetry::measureTransformDelta(out.palmAnchorTargetWorld, out.palmAnchorGrabAuthorityWorld);
@@ -3162,8 +3162,8 @@ namespace rock
                 }
                 out.nativeFlattenedHandToProxyReadback =
                     grab_transform_telemetry::measureTransformDelta(out.nativeFlattenedHandWorld, out.proxyReadbackWorld);
-                out.legacyConfiguredPivotAToProxyReadback =
-                    grab_transform_telemetry::measurePointPair(out.legacyConfiguredPivotAWorld, out.proxyReadbackWorld.translate);
+                out.rawFallbackProxySeatToProxyReadback =
+                    grab_transform_telemetry::measurePointPair(out.rawFallbackProxySeatWorld, out.proxyReadbackWorld.translate);
             }
         }
 
@@ -3311,8 +3311,8 @@ namespace rock
             const auto pivotDelta = grab_transform_telemetry::measurePointPair(pivot.handPivotWorld, pivot.objectPivotWorld);
             out.pivotDeltaWorld = pivotDelta.delta;
             out.pivotErrorGameUnits = pivotDelta.distance;
-            out.legacyConfiguredPivotAToRuntimePivotA =
-                grab_transform_telemetry::measurePointPair(out.legacyConfiguredPivotAWorld, out.pivotAWorld);
+            out.rawFallbackProxySeatToRuntimePivotA =
+                grab_transform_telemetry::measurePointPair(out.rawFallbackProxySeatWorld, out.pivotAWorld);
         }
 
         if (_activeConstraint.constraintData) {
@@ -5618,7 +5618,7 @@ namespace rock
         bool hasPalmProxyFrameAtGrab = false;
 
         {
-            const RE::NiPoint3 palmPos = computePalmPositionFromHandBasis(handWorldTransform, _isLeft);
+            const RE::NiPoint3 fallbackProxySeatWorld = computeFallbackGrabAuthorityProxySeatWorld(handWorldTransform, _isLeft);
             const RE::NiPoint3 palmPocketPivotWorld = computeGrabStartupCapturePivotAWorld(world, handWorldTransform);
             RE::NiPoint3 grabPivotAWorld = palmPocketPivotWorld;
             RE::NiTransform grabBodyWorldAtGrab{};
@@ -6015,7 +6015,7 @@ namespace rock
 
             if (g_rockConfig.rockDebugGrabFrameLogging) {
                 const RE::NiTransform& constraintGrabHandSpace = _grabFrame.constraintHandSpace;
-                const RE::NiPoint3 legacyGrabPivotAHandspace = computeGrabPivotAHandspacePosition(_isLeft);
+                const RE::NiPoint3 proxyOffsetLocalGame = computeGrabAuthorityProxyOffsetLocalGame(_isLeft);
                 auto* vrScaleSetting = f4vr::getIniSetting("fVrScale:VR");
                 const float vrScale = vrScaleSetting ? vrScaleSetting->GetFloat() : -1.0f;
 
@@ -6034,7 +6034,7 @@ namespace rock
 
                 ROCK_LOG_DEBUG(Hand,
                     "{} GRAB FRAME SUMMARY: vrScale={:.3f} handScale={:.3f} bodyScale={:.3f} objectScale={:.3f} "
-                    "legacyPivotHS=({:.2f},{:.2f},{:.2f}) pocketW=({:.1f},{:.1f},{:.1f}) gripW=({:.1f},{:.1f},{:.1f}) "
+                    "proxyOffsetLocal=({:.2f},{:.2f},{:.2f}) fallbackSeatW=({:.1f},{:.1f},{:.1f}) pocketW=({:.1f},{:.1f},{:.1f}) gripW=({:.1f},{:.1f},{:.1f}) "
                     "pivotBBodyLocal=({:.2f},{:.2f},{:.2f}) pivotBConstraintLocal=({:.2f},{:.2f},{:.2f}) "
                     "rawConstraintDelta={:.2f}deg/{:.2f}gu motionDiagVsGrab={:.2f}deg/{:.2f}gu constraintObjectFrame={} rotRef={} proxyFrame={} rootPalm={} pivotALocal=({:.2f},{:.2f},{:.2f}) meshMode={} meshTris={} "
                     "pocketGrip={:.1f}gu selectionGripEvidence={:.1f}gu "
@@ -6044,8 +6044,10 @@ namespace rock
                     "poseTargets={} motorFade={} motorFadeReason={} bodyReason={} "
                     "fingerPoseAim={} fingerPoseAimReason={}",
                     handName(), vrScale, handWorldTransform.scale, handBodyWorldAtGrab.scale, collidableNode ? collidableNode->world.scale : -1.0f,
-                    legacyGrabPivotAHandspace.x, legacyGrabPivotAHandspace.y, legacyGrabPivotAHandspace.z, grabPivotAWorld.x, grabPivotAWorld.y, grabPivotAWorld.z, grabGripPoint.x,
-                    grabGripPoint.y, grabGripPoint.z, _grabFrame.pivotBBodyLocalGame.x, _grabFrame.pivotBBodyLocalGame.y, _grabFrame.pivotBBodyLocalGame.z,
+                    proxyOffsetLocalGame.x, proxyOffsetLocalGame.y, proxyOffsetLocalGame.z,
+                    fallbackProxySeatWorld.x, fallbackProxySeatWorld.y, fallbackProxySeatWorld.z,
+                    grabPivotAWorld.x, grabPivotAWorld.y, grabPivotAWorld.z, grabGripPoint.x, grabGripPoint.y, grabGripPoint.z,
+                    _grabFrame.pivotBBodyLocalGame.x, _grabFrame.pivotBBodyLocalGame.y, _grabFrame.pivotBBodyLocalGame.z,
                     _grabFrame.pivotBConstraintLocalGame.x, _grabFrame.pivotBConstraintLocalGame.y, _grabFrame.pivotBConstraintLocalGame.z,
                     rawVsConstraintRot, rawVsConstraintPos, motionVsGrabRot, motionVsGrabPos,
                     constraintUsesMotionBodyAtGrab ? "MOTION" : "BODY",
@@ -6139,8 +6141,9 @@ namespace rock
 
             ROCK_LOG_DEBUG(Hand,
                 "{} GRAB HAND SPACE: pos=({:.1f},{:.1f},{:.1f}) "
-                "palmPos=({:.1f},{:.1f},{:.1f}) pivotA=({:.1f},{:.1f},{:.1f}) grabPt=({:.1f},{:.1f},{:.1f})",
-                handName(), _grabFrame.rawHandSpace.translate.x, _grabFrame.rawHandSpace.translate.y, _grabFrame.rawHandSpace.translate.z, palmPos.x, palmPos.y, palmPos.z, grabPivotAWorld.x,
+                "fallbackProxySeat=({:.1f},{:.1f},{:.1f}) pivotA=({:.1f},{:.1f},{:.1f}) grabPt=({:.1f},{:.1f},{:.1f})",
+                handName(), _grabFrame.rawHandSpace.translate.x, _grabFrame.rawHandSpace.translate.y, _grabFrame.rawHandSpace.translate.z,
+                fallbackProxySeatWorld.x, fallbackProxySeatWorld.y, fallbackProxySeatWorld.z, grabPivotAWorld.x,
                 grabPivotAWorld.y, grabPivotAWorld.z, grabGripPoint.x, grabGripPoint.y, grabGripPoint.z);
             ROCK_LOG_DEBUG(Hand, "{} BODY LOCAL: pos=({:.2f},{:.2f},{:.2f}) scale={:.3f}", handName(), _grabFrame.bodyLocal.translate.x, _grabFrame.bodyLocal.translate.y,
                 _grabFrame.bodyLocal.translate.z, _grabFrame.bodyLocal.scale);
@@ -6217,7 +6220,7 @@ namespace rock
         }
 
         {
-            RE::NiPoint3 legacyPalmPos = computePalmPositionFromHandBasis(handWorldTransform, _isLeft);
+            const RE::NiPoint3 fallbackProxySeatWorld = computeFallbackGrabAuthorityProxySeatWorld(handWorldTransform, _isLeft);
             RE::NiPoint3 grabPivotAWorld =
                 _grabFrame.hasTelemetryCapture ? _grabFrame.grabPivotWorldAtGrab : computeGrabPivotAWorld(world, handWorldTransform);
             const float gameToHkScale = gameToHavokScale();
@@ -6240,27 +6243,27 @@ namespace rock
                 float pivotAToGrab = std::sqrt(
                     (pivotAHk[0] - gripWorldHk[0]) * (pivotAHk[0] - gripWorldHk[0]) + (pivotAHk[1] - gripWorldHk[1]) * (pivotAHk[1] - gripWorldHk[1]) +
                     (pivotAHk[2] - gripWorldHk[2]) * (pivotAHk[2] - gripWorldHk[2]));
-                float legacyPalmToHandOrigin = std::sqrt((legacyPalmPos.x - handWorldTransform.translate.x) * (legacyPalmPos.x - handWorldTransform.translate.x) +
-                    (legacyPalmPos.y - handWorldTransform.translate.y) * (legacyPalmPos.y - handWorldTransform.translate.y) +
-                    (legacyPalmPos.z - handWorldTransform.translate.z) * (legacyPalmPos.z - handWorldTransform.translate.z));
+                float fallbackSeatToHandOrigin = std::sqrt((fallbackProxySeatWorld.x - handWorldTransform.translate.x) * (fallbackProxySeatWorld.x - handWorldTransform.translate.x) +
+                    (fallbackProxySeatWorld.y - handWorldTransform.translate.y) * (fallbackProxySeatWorld.y - handWorldTransform.translate.y) +
+                    (fallbackProxySeatWorld.z - handWorldTransform.translate.z) * (fallbackProxySeatWorld.z - handWorldTransform.translate.z));
                 float pivotAToHandOrigin = std::sqrt((grabPivotAWorld.x - handWorldTransform.translate.x) * (grabPivotAWorld.x - handWorldTransform.translate.x) +
                     (grabPivotAWorld.y - handWorldTransform.translate.y) * (grabPivotAWorld.y - handWorldTransform.translate.y) +
                     (grabPivotAWorld.z - handWorldTransform.translate.z) * (grabPivotAWorld.z - handWorldTransform.translate.z));
                 ROCK_LOG_DEBUG(Hand,
-                    "GRAB DIAG {}: legacyPalmPos=({:.1f},{:.1f},{:.1f}) handPos=({:.1f},{:.1f},{:.1f}) "
+                    "GRAB DIAG {}: fallbackProxySeat=({:.1f},{:.1f},{:.1f}) handPos=({:.1f},{:.1f},{:.1f}) "
                     "pocket=({:.1f},{:.1f},{:.1f}) grip=({:.1f},{:.1f},{:.1f}) meshGrab={} grabPointMode={} fallbackReason={} "
                     "frozenPivotB=({:.2f},{:.2f},{:.2f}) contactPatchEvidence={} contactPatchPivot={} patchHits={} multiFinger={} mfGroups={} mfSpread={:.2f} "
                     "activePoint={} activeUsesFingerEvidence={} palmSeatPoint={} fingerEvidencePoint={} "
-                    "pivotAToGrab_hk={:.4f} ({:.1f} game units) legacyPalmToHandOrigin={:.1f} pivotAToHandOrigin={:.1f} game units "
+                    "pivotAToGrab_hk={:.4f} ({:.1f} game units) fallbackSeatToHandOrigin={:.1f} pivotAToHandOrigin={:.1f} game units "
                     "selectionToGripEvidence={:.1f} fingerPoseAim={} fingerPoseAimReason={}",
-                    handName(), legacyPalmPos.x, legacyPalmPos.y, legacyPalmPos.z, handWorldTransform.translate.x, handWorldTransform.translate.y, handWorldTransform.translate.z, grabPivotAWorld.x,
+                    handName(), fallbackProxySeatWorld.x, fallbackProxySeatWorld.y, fallbackProxySeatWorld.z, handWorldTransform.translate.x, handWorldTransform.translate.y, handWorldTransform.translate.z, grabPivotAWorld.x,
                     grabPivotAWorld.y, grabPivotAWorld.z, grabGripPoint.x, grabGripPoint.y, grabGripPoint.z, meshGrabFound, grabPointMode, grabFallbackReason,
                     _grabFrame.pivotBBodyLocalGame.x, _grabFrame.pivotBBodyLocalGame.y, _grabFrame.pivotBBodyLocalGame.z,
                     _grabFrame.hasContactPatchEvidence ? "yes" : "no", _grabFrame.contactPatchUsedAsPivot ? "yes" : "no",
                     _grabFrame.contactPatchSampleCount, _grabFrame.hasMultiFingerContactPatch ? "yes" : "no", _grabFrame.multiFingerContactGroupCount,
                     _grabFrame.multiFingerContactSpreadGameUnits, _grabFrame.activeGrabPointMode, _grabFrame.activeGrabPointUsesMultiFingerEvidence ? "yes" : "no",
                     _grabFrame.palmSeatPointMode, _grabFrame.fingerEvidencePointMode, pivotAToGrab,
-                    pivotAToGrab * havokToGameScale(), legacyPalmToHandOrigin, pivotAToHandOrigin, _grabFrame.selectionToGripEvidenceDistanceGameUnits,
+                    pivotAToGrab * havokToGameScale(), fallbackSeatToHandOrigin, pivotAToHandOrigin, _grabFrame.selectionToGripEvidenceDistanceGameUnits,
                     _grabFrame.fingerPoseAimValid ? "yes" : "no", _grabFrame.fingerPoseAimReason);
             }
 

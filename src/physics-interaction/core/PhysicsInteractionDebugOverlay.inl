@@ -1128,10 +1128,10 @@
                         sample.rawToConstraintReverseAxes.z);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 13),
                         color,
-                        "NATIVE flat->palm %.2fgu %.2fdeg legacy->palm %.2f",
+                        "NATIVE flat->palm %.2fgu %.2fdeg rawSeat->palm %.2f",
                         sample.nativeFlattenedHandToPalmAnchorTarget.positionGameUnits,
                         sample.nativeFlattenedHandToPalmAnchorTarget.rotationDegrees,
-                        sample.legacyConfiguredPivotAToPalmAnchor.distance);
+                        sample.rawFallbackProxySeatToPalmAnchor.distance);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 14),
                         color,
                         "AUTH palm->auth %.2fgu %.2fdeg auth->proxy %.2fgu %.2fdeg",
@@ -1141,9 +1141,9 @@
                         sample.grabAuthorityToProxyReadback.rotationDegrees);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 15),
                         color,
-                        "LEGACY cfg->runtime %.2f cfg->proxy %.2f proxy%d",
-                        sample.legacyConfiguredPivotAToRuntimePivotA.distance,
-                        sample.legacyConfiguredPivotAToProxyReadback.distance,
+                        "RAWSEAT raw->runtime %.2f raw->proxy %.2f proxy%d",
+                        sample.rawFallbackProxySeatToRuntimePivotA.distance,
+                        sample.rawFallbackProxySeatToProxyReadback.distance,
                         sample.hasProxyReadback ? 1 : 0);
                 }
 
@@ -1327,21 +1327,21 @@
                         grab_transform_telemetry::formatBasis("grabAuthority", sample.palmAnchorGrabAuthorityBasis),
                         grab_transform_telemetry::formatBasis("proxyReadback", sample.proxyReadbackBasis));
                     ROCK_LOG_INFO(Hand,
-                        "GRAB BASIS LEGACY_PIVOT {} {} side={} legacyPresent={} legacyActive=no activeSource={} legacyPivotA={} runtimePivotA={} generatedPalm={} grabAuthority={} proxyReadback={} legacyToRuntime={:.3f}gu legacyToPalm={:.3f}gu legacyToAuthority={:.3f}gu legacyToProxy={:.3f}gu",
+                        "GRAB BASIS RAW_FALLBACK_PROXY_SEAT {} {} side={} rawSeatPresent={} activeSource={} rawFallbackSeat={} runtimePivotA={} generatedPalm={} grabAuthority={} proxyReadback={} rawSeatToRuntime={:.3f}gu rawSeatToPalm={:.3f}gu rawSeatToAuthority={:.3f}gu rawSeatToProxy={:.3f}gu",
                         prefix,
                         phaseLabel,
                         sideLabel,
-                        sample.hasLegacyConfiguredPivotAWorld ? "yes" : "no",
+                        sample.hasRawFallbackProxySeatWorld ? "yes" : "no",
                         sample.runtimePivotSource,
-                        grab_transform_telemetry::formatVector3(sample.legacyConfiguredPivotAWorld),
+                        grab_transform_telemetry::formatVector3(sample.rawFallbackProxySeatWorld),
                         grab_transform_telemetry::formatVector3(sample.pivotAWorld),
                         sample.hasPalmAnchorTarget ? "yes" : "no",
                         sample.hasPalmAnchorGrabAuthority ? "yes" : "no",
                         sample.hasProxyReadback ? "yes" : "no",
-                        sample.legacyConfiguredPivotAToRuntimePivotA.distance,
-                        sample.legacyConfiguredPivotAToPalmAnchor.distance,
-                        sample.legacyConfiguredPivotAToGrabAuthority.distance,
-                        sample.legacyConfiguredPivotAToProxyReadback.distance);
+                        sample.rawFallbackProxySeatToRuntimePivotA.distance,
+                        sample.rawFallbackProxySeatToPalmAnchor.distance,
+                        sample.rawFallbackProxySeatToGrabAuthority.distance,
+                        sample.rawFallbackProxySeatToProxyReadback.distance);
                     ROCK_LOG_INFO(Hand,
                         "GRAB ANGULAR_DELTA {} {} side={} prev={} hmd={} raw={:.3f}deg world={} hand={} hmdLocal={} authority={:.3f}deg world={} hand={} hmdLocal={} proxy={:.3f}deg world={} hand={} hmdLocal={} rawDesired={:.3f}deg world={} hand={} hmdLocal={} conDesired={:.3f}deg world={} hand={} hmdLocal={} heldNode={:.3f}deg world={} hand={} hmdLocal={} heldBody={:.3f}deg world={} hand={} hmdLocal={} nativeBody={:.3f}deg world={} hand={} hmdLocal={}",
                         prefix,

@@ -69,6 +69,18 @@ The first correction fixed the central proxy authority, but a follow-up review f
 
 - `PalmHeel` and `ThumbPad` keep their anatomical segment placement, but their box frames must force local `Y` to the corrected palm-depth axis. They are palm box colliders, so their thin axis must be palm face/back even when their local `X` follows a wrist or thumb-pad segment.
 - Grab debug logs must report semantic axes through `makeOrientationBasis()` / local-vector-to-world convention. Matrix columns remain useful only for explicit stored-column diagnostics; they must not be logged as finger/back/cross axes in normal grab summaries.
-- The controller tuning path must edit the active `f*GrabAuthorityProxyOffset*GameUnits` values. Editing the legacy `f*GrabPivotAHandspace*` point does not move dynamic-grab authority and can mislead in-game validation.
+- The controller tuning path must edit the active `f*GrabAuthorityProxyOffset*GameUnits` values. The legacy `f*GrabPivotAHandspace*` point has been removed so tuning cannot target an inactive authority path.
 - Stale comments that describe the killed raw-rotation hybrid model must be rewritten so future work does not treat the old workaround as design authority.
 - Fallback normals that are only safety defaults may remain world-safe fallbacks, but runtime authority and diagnostics must use computed palm/proxy frames whenever they are available.
+
+## Legacy Hand-Space Pivot Removal
+
+Date: 2026-05-18
+
+The old `f*GrabPivotAHandspace*` values and `compute*GrabPivotA*Handspace` helpers have been removed. They described an authored palm point in the pre-correction axis model, not the actual hidden proxy seat. Keeping them after the `-Y` proxy-seat fix made future tuning ambiguous because there were two named "pivot A" concepts in source: one active and one obsolete.
+
+- Dynamic close/far grab selection already receives `PhysicsInteractionFrame::*grabAnchorWorld`, sourced from `Hand::computeGrabPivotAWorld(...)`.
+- Two-handed weapon support grip now receives the same frame-level grab authority proxy seats for its primary/support targets instead of recomputing the retired configured point.
+- `apiGetPalmPosition()` now returns the corrected fallback proxy seat from the current root-flattened hand transform. That preserves API shape while keeping external consumers aligned with active proxy offset tuning.
+- Grab telemetry no longer compares against the old INI pivot. It reports the raw-hand fallback proxy seat only as a fallback/proxy diagnostic, while live authority remains generated palm -> grab authority proxy -> proxy readback.
+- The packaged and active production INIs now expose only `f*GrabAuthorityProxyOffset*GameUnits` for palm-seat tuning.

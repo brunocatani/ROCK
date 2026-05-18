@@ -949,7 +949,7 @@ namespace rock
             return applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft).translate;
         }
 
-        return fallbackHandWorldTransform.translate;
+        return computeFallbackGrabAuthorityProxySeatWorld(fallbackHandWorldTransform, _isLeft);
     }
 
     RE::NiPoint3 Hand::computeGrabStartupCapturePivotAWorld(RE::hknpWorld* world, const RE::NiTransform& rawHandWorldTransform) const
