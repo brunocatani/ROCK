@@ -6,7 +6,6 @@
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/object/ObjectDetection.h"
-#include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/native/CharacterControllerRuntime.h"
@@ -848,35 +847,19 @@ namespace rock
         return cell ? cell->GetbhkWorld() : nullptr;
     }
 
-    physics_body_classifier::BodyMotionType resolveBodyMotionType(RE::hknpWorld* world, RE::hknpBodyId bodyId)
-    {
-        auto* body = havok_runtime::getBody(world, bodyId);
-        if (!body) {
-            return physics_body_classifier::BodyMotionType::Unknown;
-        }
-
-        auto motionType = physics_body_classifier::motionTypeFromBodyFlags(body->flags);
-        if (motionType == physics_body_classifier::BodyMotionType::Unknown) {
-            motionType = physics_body_classifier::motionTypeFromMotionPropertiesId(static_cast<std::uint16_t>(body->motionPropertiesId));
-        }
-        return motionType;
-    }
-
-    bool isDynamicMovableStaticPlayerContactTarget(RE::bhkWorld* bhkWorld, RE::hknpWorld* world, RE::hknpBodyId bodyId, std::uint32_t layer)
+    bool isMovableStaticPlayerContactTarget(RE::bhkWorld* bhkWorld, RE::hknpWorld* world, RE::hknpBodyId bodyId, std::uint32_t layer)
     {
         if (!bhkWorld || !world || !collision_layer_policy::isPlayerCharacterControllerSupportLayer(layer)) {
             return false;
         }
 
         /*
-         * Most preserved player-controller contacts are static world support.
-         * Resolve the expensive scene reference only after runtime body state
-         * proves this support-layer body is actually dynamic.
+         * MSTT bodies commonly sit on support layers that the player controller
+         * must preserve for world geometry. For movable statics, form identity is
+         * the safer discriminator than hknp motion flags: those flags can report
+         * static/keyframed while the native controller still generates push
+         * constraints against the movable object.
          */
-        if (resolveBodyMotionType(world, bodyId) != physics_body_classifier::BodyMotionType::Dynamic) {
-            return false;
-        }
-
         auto* ref = resolveBodyToRef(bhkWorld, world, bodyId);
         auto* baseForm = ref ? ref->GetObjectReference() : nullptr;
         return baseForm && baseForm->Is(RE::ENUM_FORM_ID::kMSTT);
@@ -904,7 +887,7 @@ namespace rock
                 .playerController = true,
                 .targetLayerKnown = true,
                 .targetLayer = layer,
-                .targetIsDynamicMovableStatic = isDynamicMovableStaticPlayerContactTarget(bhkWorld, world, bodyId, layer),
+                .targetIsMovableStatic = isMovableStaticPlayerContactTarget(bhkWorld, world, bodyId, layer),
             });
     }
 
@@ -1196,7 +1179,7 @@ namespace rock
             int removedHeldPairs = 0;
             int removedPlayerObjectPairs = 0;
             int removedPlayerNonSupportPairs = 0;
-            int removedPlayerDynamicMovableStaticPairs = 0;
+            int removedPlayerMovableStaticPairs = 0;
             int preservedPlayerSupportPairs = 0;
             int preservedUnknownTargetPairs = 0;
             const auto filterResult = held_grab_cc_policy::filterGeneratedContactBuffers(contactBuffers, [&](std::uint32_t bodyId) {
@@ -1218,8 +1201,8 @@ namespace rock
                     const auto decision = evaluatePlayerControllerTargetBody(playerBhkWorld, playerHknpWorld, bodyId);
                     if (decision.suppress) {
                         ++removedPlayerObjectPairs;
-                        if (std::string_view(decision.reason) == "dynamicMovableStaticSupportLayer") {
-                            ++removedPlayerDynamicMovableStaticPairs;
+                        if (std::string_view(decision.reason) == "movableStaticSupportLayer") {
+                            ++removedPlayerMovableStaticPairs;
                         } else {
                             ++removedPlayerNonSupportPairs;
                         }
@@ -1238,14 +1221,14 @@ namespace rock
                 if (filterResult.removedPairCount > 0) {
                     ROCK_LOG_SAMPLE_DEBUG(CC,
                         g_rockConfig.rockLogSampleMilliseconds,
-                        "Filtered {} character-controller contacts before original listener kept={} originalPairs={} heldRemoved={} playerObjectRemoved={} playerNonSupportRemoved={} playerDynamicMovableStaticRemoved={} playerSupportPreserved={} playerUnknownPreserved={}",
+                        "Filtered {} character-controller contacts before original listener kept={} originalPairs={} heldRemoved={} playerObjectRemoved={} playerNonSupportRemoved={} playerMovableStaticRemoved={} playerSupportPreserved={} playerUnknownPreserved={}",
                         filterResult.removedPairCount,
                         filterResult.keptPairCount,
                         filterResult.originalPairCount,
                         removedHeldPairs,
                         removedPlayerObjectPairs,
                         removedPlayerNonSupportPairs,
-                        removedPlayerDynamicMovableStaticPairs,
+                        removedPlayerMovableStaticPairs,
                         preservedPlayerSupportPairs,
                         preservedUnknownTargetPairs);
                 } else if (g_rockConfig.rockDebugVerboseLogging) {

@@ -167,6 +167,12 @@ namespace rock
 
         void updateBodyBoneCollisions(const PhysicsFrameContext& frame);
 
+        void updateNativePlayerCollisionSuppression(RE::bhkWorld* bhk, RE::hknpWorld* hknp);
+
+        void restoreNativePlayerCollisionSuppression(RE::hknpWorld* hknp, const char* reason);
+
+        bool shouldSuppressNativePlayerCollisionBody(RE::bhkWorld* bhk, RE::hknpWorld* hknp, std::uint32_t bodyId) const;
+
         void driveGeneratedCollidersFromPhysicsSubstep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void driveCustomGrabAuthorityFromBetweenStep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
@@ -318,6 +324,11 @@ namespace rock
         hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _rightDominantWeaponCollisionSuppression{};
         hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _leftWeaponSupportCollisionSuppression{};
         weapon_debug_notification_policy::WeaponNotificationState _weaponDebugNotificationState{};
+        static constexpr std::size_t kNativePlayerCollisionSuppressionBodyCapacity = 64;
+        std::array<std::uint32_t, kNativePlayerCollisionSuppressionBodyCapacity> _nativePlayerCollisionSuppressedBodyIds{};
+        std::uint32_t _nativePlayerCollisionSuppressedBodyCount = 0;
+        std::uint32_t _nativePlayerCollisionSuppressionRefreshFrames = 0;
+        bool _nativePlayerCollisionSuppressionOverflowLogged = false;
 
         int _handCacheResolveLogCounter = 0;
 

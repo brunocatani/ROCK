@@ -26,6 +26,8 @@ namespace rock::collision_suppression_registry
                 return "WeaponDominantHand";
             case CollisionSuppressionOwner::WeaponSupportHand:
                 return "WeaponSupportHand";
+            case CollisionSuppressionOwner::NativePlayerBody:
+                return "NativePlayerBody";
             }
             return "Unknown";
         }

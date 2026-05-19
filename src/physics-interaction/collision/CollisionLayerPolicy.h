@@ -121,7 +121,7 @@ namespace rock::collision_layer_policy
         bool playerController = false;
         bool targetLayerKnown = false;
         std::uint32_t targetLayer = FO4_LAYER_UNIDENTIFIED;
-        bool targetIsDynamicMovableStatic = false;
+        bool targetIsMovableStatic = false;
     };
 
     struct PlayerCharacterControllerContactPolicyDecision
@@ -151,6 +151,13 @@ namespace rock::collision_layer_policy
         }
     }
 
+    inline constexpr bool isNativePlayerCollisionSuppressionLayer(std::uint32_t layer)
+    {
+        return !isRockOwnedReusableLayer(layer) &&
+               layer != FO4_LAYER_CHARCONTROLLER &&
+               isActorOrBipedLayer(layer);
+    }
+
     inline constexpr PlayerCharacterControllerContactPolicyDecision evaluatePlayerCharacterControllerContact(
         const PlayerCharacterControllerContactPolicyInput& input)
     {
@@ -163,8 +170,8 @@ namespace rock::collision_layer_policy
         if (!input.targetLayerKnown) {
             return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "unknownTargetLayer" };
         }
-        if (input.targetIsDynamicMovableStatic && isPlayerCharacterControllerSupportLayer(input.targetLayer)) {
-            return PlayerCharacterControllerContactPolicyDecision{ .suppress = true, .reason = "dynamicMovableStaticSupportLayer" };
+        if (input.targetIsMovableStatic && isPlayerCharacterControllerSupportLayer(input.targetLayer)) {
+            return PlayerCharacterControllerContactPolicyDecision{ .suppress = true, .reason = "movableStaticSupportLayer" };
         }
         if (isPlayerCharacterControllerSupportLayer(input.targetLayer)) {
             return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "supportLayer" };

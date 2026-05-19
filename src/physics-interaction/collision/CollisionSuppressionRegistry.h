@@ -29,6 +29,7 @@ namespace rock::collision_suppression_registry
         Grab = 0,
         WeaponDominantHand = 1,
         WeaponSupportHand = 2,
+        NativePlayerBody = 3,
     };
 
     inline constexpr std::uint32_t ownerBit(CollisionSuppressionOwner owner) { return 1u << static_cast<std::uint32_t>(owner); }

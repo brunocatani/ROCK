@@ -36,6 +36,7 @@
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/input/GrabInputIntentPolicy.h"
+#include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/stash/ShoulderStashDetector.h"
 #include "physics-interaction/stash/ShoulderStashPolicy.h"
@@ -1463,6 +1464,8 @@ namespace rock
             hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
             _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
             _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
+            restoreNativePlayerCollisionSuppression(hknp, "scale-change");
+            _nativePlayerCollisionSuppressionRefreshFrames = 0;
             collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         }
 
@@ -1570,6 +1573,7 @@ namespace rock
 
         updateHandCollisions(frame);
         updateBodyBoneCollisions(frame);
+        updateNativePlayerCollisionSuppression(bhk, hknp);
 
         {
             performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponCollision);
@@ -2084,6 +2088,7 @@ namespace rock
         if (worldValid) {
             auto* hknp = getHknpWorld(_cachedBhkWorld);
             unsubscribeContactEvents(hknp);
+            restoreNativePlayerCollisionSuppression(hknp, "shutdown");
             restoreRightHandCollisionAfterDominantWeapon(hknp);
             restoreLeftHandCollisionAfterWeaponSupport(hknp);
             if (_rightHand.isHolding()) {
@@ -2111,6 +2116,9 @@ namespace rock
             _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
             hand_collision_suppression_math::clear(_rightDominantWeaponCollisionSuppression);
             hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
+            _nativePlayerCollisionSuppressedBodyCount = 0;
+            _nativePlayerCollisionSuppressionRefreshFrames = 0;
+            _nativePlayerCollisionSuppressionOverflowLogged = false;
             collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         }
 
@@ -2171,6 +2179,9 @@ namespace rock
         hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
         _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
         _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
+        _nativePlayerCollisionSuppressedBodyCount = 0;
+        _nativePlayerCollisionSuppressionRefreshFrames = 0;
+        _nativePlayerCollisionSuppressionOverflowLogged = false;
 
         cleanupGrabConstraintVtable();
 
@@ -2677,6 +2688,220 @@ namespace rock
         }
 
         _bodyBoneColliders.update(frame.hknpWorld, frame.deltaSeconds);
+    }
+
+    bool PhysicsInteraction::shouldSuppressNativePlayerCollisionBody(RE::bhkWorld* bhk, RE::hknpWorld* hknp, std::uint32_t bodyId) const
+    {
+        if (!bhk || !hknp || !contact_pipeline_policy::isValidBodyId(bodyId)) {
+            return false;
+        }
+
+        if (bodyId == _rightHand.getCollisionBodyId().value ||
+            bodyId == _leftHand.getCollisionBodyId().value ||
+            _rightHand.isHandColliderBodyId(bodyId) ||
+            _leftHand.isHandColliderBodyId(bodyId) ||
+            _rightHand.isHeldBodyId(bodyId) ||
+            _leftHand.isHeldBodyId(bodyId) ||
+            _weaponCollision.isWeaponBodyIdAtomic(bodyId) ||
+            _bodyBoneColliders.isColliderBodyIdAtomic(bodyId) ||
+            ::rock::provider::isExternalBodyId(bodyId)) {
+            return false;
+        }
+
+        std::uint32_t filterInfo = 0;
+        if (!body_collision::tryReadFilterInfo(hknp, RE::hknpBodyId{ bodyId }, filterInfo)) {
+            return false;
+        }
+
+        const std::uint32_t layer = filterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+        if (!collision_layer_policy::isNativePlayerCollisionSuppressionLayer(layer)) {
+            return false;
+        }
+
+        auto* resolvedRef = resolveBodyToRef(bhk, hknp, RE::hknpBodyId{ bodyId });
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        return !resolvedRef || resolvedRef == player;
+    }
+
+    void PhysicsInteraction::restoreNativePlayerCollisionSuppression(RE::hknpWorld* hknp, const char* reason)
+    {
+        if (_nativePlayerCollisionSuppressedBodyCount == 0) {
+            _nativePlayerCollisionSuppressionRefreshFrames = 0;
+            return;
+        }
+
+        std::array<std::uint32_t, kNativePlayerCollisionSuppressionBodyCapacity> pending{};
+        std::uint32_t pendingCount = 0;
+
+        auto keepPending = [&](std::uint32_t bodyId) {
+            if (pendingCount < pending.size()) {
+                pending[pendingCount++] = bodyId;
+            }
+        };
+
+        for (std::uint32_t i = 0; i < _nativePlayerCollisionSuppressedBodyCount && i < _nativePlayerCollisionSuppressedBodyIds.size(); ++i) {
+            const auto bodyId = _nativePlayerCollisionSuppressedBodyIds[i];
+            if (!contact_pipeline_policy::isValidBodyId(bodyId)) {
+                continue;
+            }
+
+            const auto releaseResult = collision_suppression_registry::globalCollisionSuppressionRegistry().release(
+                hknp,
+                bodyId,
+                collision_suppression_registry::CollisionSuppressionOwner::NativePlayerBody,
+                reason ? reason : "native-player-body");
+            if (releaseResult.readFailed) {
+                keepPending(bodyId);
+            }
+        }
+
+        _nativePlayerCollisionSuppressedBodyIds = pending;
+        _nativePlayerCollisionSuppressedBodyCount = pendingCount;
+        _nativePlayerCollisionSuppressionRefreshFrames = pendingCount == 0 ? 0 : 30;
+    }
+
+    void PhysicsInteraction::updateNativePlayerCollisionSuppression(RE::bhkWorld* bhk, RE::hknpWorld* hknp)
+    {
+        if (!g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled) {
+            restoreNativePlayerCollisionSuppression(hknp, "native-player-filter-disabled");
+            return;
+        }
+
+        if (!bhk || !hknp) {
+            return;
+        }
+
+        if (_nativePlayerCollisionSuppressionRefreshFrames > 0) {
+            --_nativePlayerCollisionSuppressionRefreshFrames;
+            return;
+        }
+        _nativePlayerCollisionSuppressionRefreshFrames = 30;
+
+        struct NativePlayerBodyScanContext
+        {
+            PhysicsInteraction* self = nullptr;
+            RE::bhkWorld* bhk = nullptr;
+            RE::hknpWorld* hknp = nullptr;
+            std::array<std::uint32_t, PhysicsInteraction::kNativePlayerCollisionSuppressionBodyCapacity> bodyIds{};
+            std::uint32_t bodyCount = 0;
+            bool overflow = false;
+
+            bool contains(std::uint32_t bodyId) const
+            {
+                for (std::uint32_t i = 0; i < bodyCount && i < bodyIds.size(); ++i) {
+                    if (bodyIds[i] == bodyId) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            void append(std::uint32_t bodyId)
+            {
+                if (!self || !self->shouldSuppressNativePlayerCollisionBody(bhk, hknp, bodyId) || contains(bodyId)) {
+                    return;
+                }
+                if (bodyCount >= bodyIds.size()) {
+                    overflow = true;
+                    return;
+                }
+                bodyIds[bodyCount++] = bodyId;
+            }
+        } scanContext{ this, bhk, hknp };
+
+        auto visitBody = [](std::uint32_t bodyId, void* userData) {
+            auto* context = static_cast<NativePlayerBodyScanContext*>(userData);
+            if (!context) {
+                return false;
+            }
+            context->append(bodyId);
+            return true;
+        };
+
+        auto scanCollisionObject = [&](RE::NiCollisionObject* collisionObject) {
+            havok_runtime::forEachPhysicsSystemBodyIdDetailed(collisionObject, hknp, 256, visitBody, &scanContext);
+        };
+
+        auto scanNode = [&](auto&& self, RE::NiAVObject* node, int depth) -> void {
+            if (!node || depth <= 0) {
+                return;
+            }
+
+            scanCollisionObject(node->collisionObject.get());
+            if (auto* niNode = node->IsNode()) {
+                auto& children = niNode->GetRuntimeData().children;
+                for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
+                    if (auto* child = children[i].get()) {
+                        self(self, child, depth - 1);
+                    }
+                }
+            }
+        };
+
+        if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+            if (player->currentProcess && player->currentProcess->middleHigh && player->currentProcess->middleHigh->poseBound) {
+                scanCollisionObject(player->currentProcess->middleHigh->poseBound.get());
+            }
+        }
+        scanNode(scanNode, f4cf::f4vr::getFirstPersonSkeleton(), 64);
+        scanNode(scanNode, f4cf::f4vr::getRootNode(), 64);
+
+        if (scanContext.overflow && !_nativePlayerCollisionSuppressionOverflowLogged) {
+            _nativePlayerCollisionSuppressionOverflowLogged = true;
+            ROCK_LOG_WARN(Hand,
+                "Native player collision suppression body capacity exceeded; keeping first {} bodies",
+                kNativePlayerCollisionSuppressionBodyCapacity);
+        } else if (!scanContext.overflow) {
+            _nativePlayerCollisionSuppressionOverflowLogged = false;
+        }
+
+        std::array<std::uint32_t, kNativePlayerCollisionSuppressionBodyCapacity> next{};
+        std::uint32_t nextCount = 0;
+        auto nextContains = [&](std::uint32_t bodyId) {
+            for (std::uint32_t i = 0; i < nextCount && i < next.size(); ++i) {
+                if (next[i] == bodyId) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        auto appendNext = [&](std::uint32_t bodyId) {
+            if (!contact_pipeline_policy::isValidBodyId(bodyId) || nextContains(bodyId) || nextCount >= next.size()) {
+                return;
+            }
+            next[nextCount++] = bodyId;
+        };
+
+        for (std::uint32_t i = 0; i < scanContext.bodyCount && i < scanContext.bodyIds.size(); ++i) {
+            const auto bodyId = scanContext.bodyIds[i];
+            const auto acquireResult = collision_suppression_registry::globalCollisionSuppressionRegistry().acquire(
+                hknp,
+                bodyId,
+                collision_suppression_registry::CollisionSuppressionOwner::NativePlayerBody,
+                "native-player-body");
+            if (acquireResult.valid) {
+                appendNext(bodyId);
+            }
+        }
+
+        for (std::uint32_t i = 0; i < _nativePlayerCollisionSuppressedBodyCount && i < _nativePlayerCollisionSuppressedBodyIds.size(); ++i) {
+            const auto bodyId = _nativePlayerCollisionSuppressedBodyIds[i];
+            if (scanContext.contains(bodyId)) {
+                continue;
+            }
+
+            const auto releaseResult = collision_suppression_registry::globalCollisionSuppressionRegistry().release(
+                hknp,
+                bodyId,
+                collision_suppression_registry::CollisionSuppressionOwner::NativePlayerBody,
+                "native-player-body-stale");
+            if (releaseResult.readFailed) {
+                appendNext(bodyId);
+            }
+        }
+
+        _nativePlayerCollisionSuppressedBodyIds = next;
+        _nativePlayerCollisionSuppressedBodyCount = nextCount;
     }
 
     void PhysicsInteraction::onGeneratedColliderPhysicsSubstep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)

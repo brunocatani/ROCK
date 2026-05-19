@@ -184,10 +184,10 @@ int main()
             .playerController = true,
             .targetLayerKnown = true,
             .targetLayer = collision_layer_policy::FO4_LAYER_STATIC,
-            .targetIsDynamicMovableStatic = true,
+            .targetIsMovableStatic = true,
         }),
         true,
-        "dynamicMovableStaticSupportLayer");
+        "movableStaticSupportLayer");
 
     ok &= expectPlayerControllerDecision("dynamic movable static on animstatic support layer is suppressed",
         collision_layer_policy::evaluatePlayerCharacterControllerContact(collision_layer_policy::PlayerCharacterControllerContactPolicyInput{
@@ -195,10 +195,10 @@ int main()
             .playerController = true,
             .targetLayerKnown = true,
             .targetLayer = collision_layer_policy::FO4_LAYER_ANIMSTATIC,
-            .targetIsDynamicMovableStatic = true,
+            .targetIsMovableStatic = true,
         }),
         true,
-        "dynamicMovableStaticSupportLayer");
+        "movableStaticSupportLayer");
 
     ok &= expectPlayerControllerDecision("dynamic movable static flag does not suppress non-player controllers",
         collision_layer_policy::evaluatePlayerCharacterControllerContact(collision_layer_policy::PlayerCharacterControllerContactPolicyInput{
@@ -206,7 +206,7 @@ int main()
             .playerController = false,
             .targetLayerKnown = true,
             .targetLayer = collision_layer_policy::FO4_LAYER_STATIC,
-            .targetIsDynamicMovableStatic = true,
+            .targetIsMovableStatic = true,
         }),
         false,
         "nonPlayerController");
