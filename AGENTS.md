@@ -5,8 +5,8 @@
 This is the project folder for ROCK, a physics-based hand interaction system for Fallout 4 VR. ROCK began as a port of HIGGS (Skyrim VR) concepts, functionality, and interaction logic into FO4VR, but it has evolved into its own FO4VR-native system with FRIK as the body/skeleton provider and several systems that now exceed HIGGS behavior.
 
 # FRIK Source Authority
-- Active FRIK source for ROCK integration is `E:\fo4dev\PROJECT_ROCK_V2\hFRIK`. This is our maintained FRIK fork/version and the provider source ROCK should use for API, skeleton, deployment, and behavior checks.
-- Upstream/original FRIK source is `E:\fo4dev\PROJECT_ROCK_V2\Fallout-4-VR-Body`. This checkout is for upstream parity review and PR preparation only.
+- Active FRIK source for ROCK integration is `F:\fo4dev\PROJECT_ROCK_V2\hFRIK`. This is our maintained FRIK fork/version and the provider source ROCK should use for API, skeleton, deployment, and behavior checks.
+- Upstream/original FRIK source is `F:\fo4dev\PROJECT_ROCK_V2\Fallout-4-VR-Body`. This checkout is for upstream parity review and PR preparation only.
 - Do not use `Fallout-4-VR-Body` as the active ROCK provider baseline, implementation reference, or deployed-source assumption unless the user explicitly asks for upstream parity or PR comparison work.
 - When both trees contain similar files or APIs, prefer `hFRIK` for current ROCK correctness. Treat differences from `Fallout-4-VR-Body` as parity findings to document, not as automatic regressions to copy back into ROCK.
 
