@@ -1,4 +1,5 @@
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
+#include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 
 #include <cstdio>
 #include <string_view>
@@ -128,6 +129,44 @@ int main()
     ok &= expectTrue("detached gore requires hand pocket", grab_target::requiresHandPocketGrab(grab_target::Kind::DetachedGore));
     ok &= expectTrue("dead actor bodies require hand pocket", grab_target::requiresHandPocketGrab(grab_target::Kind::DeadActorBody));
     ok &= expectFalse("ordinary loose objects may use normal grab evidence", grab_target::requiresHandPocketGrab(grab_target::Kind::LooseObject));
+    ok &= expectFalse("dynamic movable statics cannot be far selected", grab_target::canUseFarSelection(grab_target::Kind::DynamicMovableStatic));
+    ok &= expectFalse("detached gore cannot be far selected", grab_target::canUseFarSelection(grab_target::Kind::DetachedGore));
+    ok &= expectFalse("dead actor bodies cannot be far selected", grab_target::canUseFarSelection(grab_target::Kind::DeadActorBody));
+    ok &= expectTrue("ordinary loose objects may use far selection", grab_target::canUseFarSelection(grab_target::Kind::LooseObject));
+    ok &= expectFalse("dynamic movable statics cannot use dynamic pull", grab_target::canUseRockDynamicPull(grab_target::Kind::DynamicMovableStatic));
+    ok &= expectFalse("detached gore cannot use dynamic pull", grab_target::canUseRockDynamicPull(grab_target::Kind::DetachedGore));
+    ok &= expectFalse("dead actor bodies cannot use dynamic pull", grab_target::canUseRockDynamicPull(grab_target::Kind::DeadActorBody));
+    ok &= expectTrue("ordinary loose objects may use dynamic pull", grab_target::canUseRockDynamicPull(grab_target::Kind::LooseObject));
+    ok &= expectTrue("far blacklist blocks reference form id",
+        far_selection_blacklist_policy::evaluateFarSelectionBlacklist(far_selection_blacklist_policy::FarSelectionBlacklistInput{
+            .isFarSelection = true,
+            .referenceFormId = 0x00056FB4,
+            .blockedReferenceFormIds = "00056FB4",
+        }).blocked);
+    ok &= expectTrue("far blacklist blocks base form id",
+        far_selection_blacklist_policy::evaluateFarSelectionBlacklist(far_selection_blacklist_policy::FarSelectionBlacklistInput{
+            .isFarSelection = true,
+            .baseFormId = 0x000AA001,
+            .blockedBaseFormIds = "0x000AA001",
+        }).blocked);
+    ok &= expectTrue("far blacklist blocks form type case-insensitively",
+        far_selection_blacklist_policy::evaluateFarSelectionBlacklist(far_selection_blacklist_policy::FarSelectionBlacklistInput{
+            .isFarSelection = true,
+            .formType = "ACTI",
+            .blockedFormTypes = "door, acti",
+        }).blocked);
+    ok &= expectTrue("far blacklist blocks animstatic layer by name",
+        far_selection_blacklist_policy::evaluateFarSelectionBlacklist(far_selection_blacklist_policy::FarSelectionBlacklistInput{
+            .isFarSelection = true,
+            .collisionLayer = collision_layer_policy::FO4_LAYER_ANIMSTATIC,
+            .blockedLayers = "ANIMSTATIC",
+        }).blocked);
+    ok &= expectFalse("far blacklist ignores close selections",
+        far_selection_blacklist_policy::evaluateFarSelectionBlacklist(far_selection_blacklist_policy::FarSelectionBlacklistInput{
+            .isFarSelection = false,
+            .referenceFormId = 0x00056FB4,
+            .blockedReferenceFormIds = "00056FB4",
+        }).blocked);
 
     ok &= expectPlayerControllerDecision("static support layer remains preserved for player controller",
         collision_layer_policy::evaluatePlayerCharacterControllerContact(collision_layer_policy::PlayerCharacterControllerContactPolicyInput{

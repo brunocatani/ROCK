@@ -75,9 +75,14 @@ namespace rock::grab_target
         return acquisitionMode(kind) == GrabAcquisitionMode::HandPocketOnly;
     }
 
+    [[nodiscard]] inline constexpr bool canUseFarSelection(Kind kind) noexcept
+    {
+        return kind == Kind::ActorEquipment || (isPhysicalRockObject(kind) && !requiresHandPocketGrab(kind));
+    }
+
     [[nodiscard]] inline constexpr bool canUseRockDynamicPull(Kind kind) noexcept
     {
-        return isPhysicalRockObject(kind);
+        return isPhysicalRockObject(kind) && !requiresHandPocketGrab(kind);
     }
 
     [[nodiscard]] inline constexpr bool canUseRockActiveGrab(Kind kind) noexcept

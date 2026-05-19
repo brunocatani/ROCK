@@ -30,10 +30,16 @@ Require-Text 'src/physics-interaction/object/GrabTargetKind.h' 'requiresHandPock
     'Grab target kind policy must expose the hand-pocket-only target set.'
 Require-Text 'src/physics-interaction/object/GrabTargetKind.h' 'Kind::DynamicMovableStatic[\s\S]*Kind::DetachedGore[\s\S]*Kind::DeadActorBody' `
     'Dynamic MSTT, detached gore/deadbip, and dead actor bodies must all be hand-pocket-only targets.'
+Require-Text 'src/physics-interaction/object/GrabTargetKind.h' 'canUseFarSelection[\s\S]*!requiresHandPocketGrab' `
+    'Hand-pocket-only targets must not enter far selection/highlight.'
+Require-Text 'src/physics-interaction/object/GrabTargetKind.h' 'canUseRockDynamicPull[\s\S]*!requiresHandPocketGrab' `
+    'Hand-pocket-only targets must not enter pull-to-grab/gravity-glove dynamic pull.'
 Require-Text 'src/physics-interaction/object/ObjectDetection.cpp' 'Kind::DeadActorBody' `
     'Dead actor bodies must classify separately from detached gore and blocked whole actor bodies.'
 Require-Text 'src/physics-interaction/object/ObjectDetection.cpp' 'dead-actor-body-dynamic' `
     'Dead actor body classification needs a stable diagnostic reason.'
+Require-Text 'src/physics-interaction/object/ObjectDetection.cpp' 'if \(isFarSelection && !grab_target::canUseFarSelection\(classification\.kind\)\)' `
+    'Far selection must reject hand-pocket-only targets before highlighting or pull.'
 
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'handPocketOnlyGrab\s*=\s*grab_target::requiresHandPocketGrab\(sel\.targetKind\)' `
     'Hand grab must derive a per-selection hand-pocket-only policy.'

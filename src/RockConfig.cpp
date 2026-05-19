@@ -249,6 +249,10 @@ namespace rock
         rockFarCastRadiusGameUnits = 21.0f;
         rockFarSelectionHmdConeEnabled = true;
         rockFarSelectionHmdConeHalfAngleDegrees = selection_query_policy::kDefaultFarSelectionHmdConeHalfAngleDegrees;
+        rockFarSelectionBlockedReferenceFormIds.clear();
+        rockFarSelectionBlockedBaseFormIds.clear();
+        rockFarSelectionBlockedFormTypes.clear();
+        rockFarSelectionBlockedLayers.clear();
         rockCloseSelectionBehindPalmToleranceGameUnits = 2.0f;
         rockSelectionShapeCastFilterInfo = selection_query_policy::kDefaultShapeCastFilterInfo;
         rockFarClipRayFilterInfo = selection_query_policy::kDefaultFarClipRayFilterInfo;
@@ -913,6 +917,11 @@ namespace rock
         rockFarSelectionHmdConeEnabled = ini.GetBoolValue(SECTION, "bFarSelectionHmdConeEnabled", rockFarSelectionHmdConeEnabled);
         rockFarSelectionHmdConeHalfAngleDegrees =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fFarSelectionHmdConeHalfAngleDegrees", rockFarSelectionHmdConeHalfAngleDegrees));
+        rockFarSelectionBlockedReferenceFormIds =
+            ini.GetValue(SECTION, "sFarSelectionBlockedReferenceFormIDs", rockFarSelectionBlockedReferenceFormIds.c_str());
+        rockFarSelectionBlockedBaseFormIds = ini.GetValue(SECTION, "sFarSelectionBlockedBaseFormIDs", rockFarSelectionBlockedBaseFormIds.c_str());
+        rockFarSelectionBlockedFormTypes = ini.GetValue(SECTION, "sFarSelectionBlockedFormTypes", rockFarSelectionBlockedFormTypes.c_str());
+        rockFarSelectionBlockedLayers = ini.GetValue(SECTION, "sFarSelectionBlockedLayers", rockFarSelectionBlockedLayers.c_str());
         const float sanitizedFarSelectionHmdConeHalfAngleDegrees =
             selection_query_policy::sanitizeFarSelectionHmdConeHalfAngleDegrees(rockFarSelectionHmdConeHalfAngleDegrees);
         if (sanitizedFarSelectionHmdConeHalfAngleDegrees != rockFarSelectionHmdConeHalfAngleDegrees) {

@@ -1,4 +1,5 @@
 #include "physics-interaction/object/ObjectDetection.h"
+#include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/hand/HandFrame.h"
@@ -503,6 +504,7 @@ namespace rock
                 const RE::NiPoint3 hitPoint = hkVectorToNiPoint(hit.position);
                 auto* collObj = RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId);
                 auto* hitNode = collObj ? collObj->sceneObject : nullptr;
+                auto* baseForm = ref->GetObjectReference();
                 const auto classification = classifySelectionGrabTarget(ref, hknpWorld, hitBodyId, otherHandContext, isFarSelection, hitNode, hitPoint, true);
                 if (!classification.grabbable) {
                     ++outRejectedNotGrabbable;
@@ -511,6 +513,67 @@ namespace rock
                             loggedRejectTelemetry);
                     }
                     continue;
+                }
+
+                if (isFarSelection && !grab_target::canUseFarSelection(classification.kind)) {
+                    ++outRejectedNotGrabbable;
+                    if (logRejectTelemetry) {
+                        const GrabTargetClassification rejectedClassification{
+                            .kind = classification.kind,
+                            .reason = "far-target-kind",
+                            .grabbable = false,
+                            .actorEquipment = classification.actorEquipment,
+                        };
+                        logSelectionRejectTelemetry(queryName, "far-target-kind", i, ref, hitNode, hknpWorld, hitBodyId, &rejectedClassification, "far-target-kind", isFarSelection, 0.0f, 0.0f,
+                            -1.0f, loggedRejectTelemetry);
+                    }
+                    continue;
+                }
+
+                const bool farBlacklistConfigured =
+                    isFarSelection &&
+                    (!g_rockConfig.rockFarSelectionBlockedReferenceFormIds.empty() || !g_rockConfig.rockFarSelectionBlockedBaseFormIds.empty() ||
+                        !g_rockConfig.rockFarSelectionBlockedFormTypes.empty() || !g_rockConfig.rockFarSelectionBlockedLayers.empty());
+                if (farBlacklistConfigured) {
+                    const auto farRejectTelemetry = makeSelectionRejectTelemetry(ref, hitNode, hknpWorld, hitBodyId);
+                    const auto farBlacklistDecision =
+                        far_selection_blacklist_policy::evaluateFarSelectionBlacklist(far_selection_blacklist_policy::FarSelectionBlacklistInput{
+                            .isFarSelection = isFarSelection,
+                            .referenceFormId = ref ? ref->GetFormID() : 0,
+                            .baseFormId = baseForm ? baseForm->formID : 0,
+                            .collisionLayer = farRejectTelemetry.layer,
+                            .formType = baseForm && baseForm->GetFormTypeString() ? baseForm->GetFormTypeString() : "",
+                            .blockedReferenceFormIds = g_rockConfig.rockFarSelectionBlockedReferenceFormIds,
+                            .blockedBaseFormIds = g_rockConfig.rockFarSelectionBlockedBaseFormIds,
+                            .blockedFormTypes = g_rockConfig.rockFarSelectionBlockedFormTypes,
+                            .blockedLayers = g_rockConfig.rockFarSelectionBlockedLayers,
+                        });
+                    if (farBlacklistDecision.blocked) {
+                        ++outRejectedNotGrabbable;
+                        if (logRejectTelemetry) {
+                            const GrabTargetClassification rejectedClassification{
+                                .kind = classification.kind,
+                                .reason = farBlacklistDecision.reason,
+                                .grabbable = false,
+                                .actorEquipment = classification.actorEquipment,
+                            };
+                            logSelectionRejectTelemetry(queryName,
+                                "far-blacklist",
+                                i,
+                                ref,
+                                hitNode,
+                                hknpWorld,
+                                hitBodyId,
+                                &rejectedClassification,
+                                farBlacklistDecision.reason,
+                                isFarSelection,
+                                0.0f,
+                                0.0f,
+                                -1.0f,
+                                loggedRejectTelemetry);
+                        }
+                        continue;
+                    }
                 }
 
                 ++outCandidates;

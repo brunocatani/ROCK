@@ -220,6 +220,10 @@ namespace rock
         float rockFarCastRadiusGameUnits = 21.0f;
         bool rockFarSelectionHmdConeEnabled = true;
         float rockFarSelectionHmdConeHalfAngleDegrees = selection_query_policy::kDefaultFarSelectionHmdConeHalfAngleDegrees;
+        std::string rockFarSelectionBlockedReferenceFormIds = "";
+        std::string rockFarSelectionBlockedBaseFormIds = "";
+        std::string rockFarSelectionBlockedFormTypes = "";
+        std::string rockFarSelectionBlockedLayers = "";
         float rockCloseSelectionBehindPalmToleranceGameUnits = 2.0f;
         std::uint32_t rockSelectionShapeCastFilterInfo = selection_query_policy::kDefaultShapeCastFilterInfo;
         std::uint32_t rockFarClipRayFilterInfo = selection_query_policy::kDefaultFarClipRayFilterInfo;
