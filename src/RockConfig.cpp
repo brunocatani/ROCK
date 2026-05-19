@@ -333,8 +333,8 @@ namespace rock
         rockShoulderStashMaxSpeedGameUnitsPerSecond = 140.0f;
         rockShoulderStashRecentContactFrames = 4;
         rockShoulderStashSustainedContactMissFrames = 18;
-        rockShoulderStashHmdBackRightOffsetGameUnits = RE::NiPoint3(17.5f, -5.0f, -6.85f);
-        rockShoulderStashHmdBackLeftOffsetGameUnits = RE::NiPoint3(-17.5f, -5.0f, -6.85f);
+        rockShoulderStashHmdBackRightOffsetGameUnits = RE::NiPoint3(14.0f, -12.0f, -6.85f);
+        rockShoulderStashHmdBackLeftOffsetGameUnits = RE::NiPoint3(-14.0f, -12.0f, -6.85f);
         rockShoulderStashHmdBackRadiusGameUnits = 11.0f;
         rockShoulderStashSkipActivateBooks = true;
         rockShoulderStashSkipActivateNotes = true;

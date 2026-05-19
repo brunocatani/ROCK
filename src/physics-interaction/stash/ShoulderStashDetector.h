@@ -30,8 +30,8 @@ namespace rock::shoulder_stash
         float maxSpeedGameUnitsPerSecond = 140.0f;
         int recentContactFrames = 4;
         int sustainedContactMissFrames = 18;
-        RE::NiPoint3 hmdBackRightOffsetGameUnits{ 17.5f, -5.0f, -6.85f };
-        RE::NiPoint3 hmdBackLeftOffsetGameUnits{ -17.5f, -5.0f, -6.85f };
+        RE::NiPoint3 hmdBackRightOffsetGameUnits{ 14.0f, -12.0f, -6.85f };
+        RE::NiPoint3 hmdBackLeftOffsetGameUnits{ -14.0f, -12.0f, -6.85f };
         float hmdBackRadiusGameUnits = 11.0f;
     };
 
