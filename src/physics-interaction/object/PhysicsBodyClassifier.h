@@ -176,7 +176,10 @@ namespace rock::physics_body_classifier
             mode == InteractionMode::ActiveGrab &&
             input.targetKind == grab_target::Kind::DetachedGore &&
             grab_target::isDetachedGoreLayer(input.layer);
-        if (mode != InteractionMode::PassivePush && collision_layer_policy::isActorOrBipedLayer(input.layer) && !activeDetachedGoreLayer) {
+        const bool activeDynamicMovableStatic =
+            mode == InteractionMode::ActiveGrab &&
+            input.targetKind == grab_target::Kind::DynamicMovableStatic;
+        if (mode != InteractionMode::PassivePush && collision_layer_policy::isActorOrBipedLayer(input.layer) && !activeDetachedGoreLayer && !activeDynamicMovableStatic) {
             return reject(BodyRejectReason::ActorLayer);
         }
         if (input.layer == collision_layer_policy::FO4_LAYER_NONCOLLIDABLE) {
@@ -184,7 +187,7 @@ namespace rock::physics_body_classifier
         }
         const bool interactionLayer =
             mode == InteractionMode::PassivePush ? collision_layer_policy::isPassivePushInteractionLayer(input.layer) :
-                                                   (collision_layer_policy::isDynamicPropInteractionLayer(input.layer) || activeDetachedGoreLayer);
+                                                   (collision_layer_policy::isDynamicPropInteractionLayer(input.layer) || activeDetachedGoreLayer || activeDynamicMovableStatic);
         if (!interactionLayer) {
             return reject(BodyRejectReason::UnsupportedLayer);
         }

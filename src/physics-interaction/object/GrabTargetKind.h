@@ -19,6 +19,7 @@ namespace rock::grab_target
         LooseObject,
         ActorEquipment,
         DetachedGore,
+        DynamicMovableStatic,
         LiveActorScissors,
         BlockedWholeActorBody,
     };
@@ -32,6 +33,8 @@ namespace rock::grab_target
             return "actor-equipment";
         case Kind::DetachedGore:
             return "detached-gore";
+        case Kind::DynamicMovableStatic:
+            return "dynamic-movable-static";
         case Kind::LiveActorScissors:
             return "live-actor-scissors";
         case Kind::BlockedWholeActorBody:
@@ -43,7 +46,7 @@ namespace rock::grab_target
 
     [[nodiscard]] inline constexpr bool isPhysicalRockObject(Kind kind) noexcept
     {
-        return kind == Kind::LooseObject || kind == Kind::DetachedGore;
+        return kind == Kind::LooseObject || kind == Kind::DetachedGore || kind == Kind::DynamicMovableStatic;
     }
 
     [[nodiscard]] inline constexpr bool canUseRockDynamicPull(Kind kind) noexcept
