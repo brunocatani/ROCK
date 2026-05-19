@@ -1,4 +1,4 @@
-#include "physics-interaction/grab/GrabHapticPolicy.h"
+#include "physics-interaction/feedback/HapticPolicy.h"
 
 #include <cstdio>
 

@@ -1,7 +1,26 @@
 #pragma once
 
+/*
+ * Small haptic feel policies live together so grab and shoulder-stash feedback
+ * share intensity sanitization without scattering near-identical math across
+ * interaction subsystems. The runtime owners still decide when pulses happen.
+ */
+
 #include <algorithm>
 #include <cmath>
+
+namespace rock::haptic_policy_detail
+{
+    [[nodiscard]] inline float finiteOr(float value, float fallback) noexcept
+    {
+        return std::isfinite(value) ? value : fallback;
+    }
+
+    [[nodiscard]] inline float sanitizeIntensity(float value, float fallback) noexcept
+    {
+        return std::clamp(finiteOr(value, fallback), 0.0f, 1.0f);
+    }
+}
 
 namespace rock::grab_haptic_policy
 {
@@ -26,14 +45,14 @@ namespace rock::grab_haptic_policy
         float dampedMultiplier = 0.55f;
     };
 
-    [[nodiscard]] inline float finiteOr(float value, float fallback)
+    [[nodiscard]] inline float finiteOr(float value, float fallback) noexcept
     {
-        return std::isfinite(value) ? value : fallback;
+        return haptic_policy_detail::finiteOr(value, fallback);
     }
 
-    [[nodiscard]] inline float sanitizeIntensity(float value, float fallback)
+    [[nodiscard]] inline float sanitizeIntensity(float value, float fallback) noexcept
     {
-        return std::clamp(finiteOr(value, fallback), 0.0f, 1.0f);
+        return haptic_policy_detail::sanitizeIntensity(value, fallback);
     }
 
     [[nodiscard]] inline float computeMassPulseIntensity(float mass, const MassPulseConfig& config)
@@ -76,5 +95,37 @@ namespace rock::grab_haptic_policy
             intensity = std::clamp(intensity * multiplier, base, maxIntensity);
         }
         return intensity;
+    }
+}
+
+namespace rock::shoulder_stash_haptic_policy
+{
+    struct CandidatePulseConfig
+    {
+        bool enabled = true;
+        float baseIntensity = 0.20f;
+        float maxIntensity = 0.42f;
+    };
+
+    [[nodiscard]] inline float finiteOr(float value, float fallback) noexcept
+    {
+        return haptic_policy_detail::finiteOr(value, fallback);
+    }
+
+    [[nodiscard]] inline float sanitizeIntensity(float value, float fallback) noexcept
+    {
+        return haptic_policy_detail::sanitizeIntensity(value, fallback);
+    }
+
+    [[nodiscard]] inline float computeCandidatePulseIntensity(float confidence, const CandidatePulseConfig& config) noexcept
+    {
+        if (!config.enabled) {
+            return 0.0f;
+        }
+
+        const float base = sanitizeIntensity(config.baseIntensity, 0.20f);
+        const float maxIntensity = std::clamp(sanitizeIntensity(config.maxIntensity, 0.42f), base, 1.0f);
+        const float normalizedConfidence = std::clamp(finiteOr(confidence, 0.0f), 0.0f, 1.0f);
+        return std::clamp(base + (maxIntensity - base) * normalizedConfidence, base, maxIntensity);
     }
 }

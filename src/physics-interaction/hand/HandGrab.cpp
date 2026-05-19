@@ -6,7 +6,7 @@
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
-#include "physics-interaction/debug/DebugPivotMath.h"
+#include "physics-interaction/debug/DebugMath.h"
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/grab/GrabConstraintMath.h"

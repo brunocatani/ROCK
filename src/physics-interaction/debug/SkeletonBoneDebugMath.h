@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "physics-interaction/body/BodyZone.h"
-#include "physics-interaction/debug/DebugAxisMath.h"
+#include "physics-interaction/debug/DebugMath.h"
 
 namespace rock::skeleton_bone_debug_math
 {

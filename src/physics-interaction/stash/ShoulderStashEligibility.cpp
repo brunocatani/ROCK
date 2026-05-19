@@ -1,5 +1,6 @@
-#include "physics-interaction/stash/ShoulderStashEligibility.h"
+#include "physics-interaction/stash/ShoulderStashPolicy.h"
 
+#include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/object/GrabTargetKind.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"

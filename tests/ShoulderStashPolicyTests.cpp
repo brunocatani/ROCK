@@ -1,6 +1,5 @@
 #include "physics-interaction/stash/ShoulderStashMath.h"
-#include "physics-interaction/stash/ShoulderStashHapticPolicy.h"
-#include "physics-interaction/stash/ShoulderStashNotificationPolicy.h"
+#include "physics-interaction/stash/ShoulderStashPolicy.h"
 
 #include <cmath>
 #include <cstdio>

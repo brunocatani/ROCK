@@ -272,7 +272,7 @@ namespace rock::hand_collider_semantics
 
 // ---- HandBoneColliderGeometryMath.h ----
 
-#include "physics-interaction/debug/DebugAxisMath.h"
+#include "physics-interaction/debug/DebugMath.h"
 #include "physics-interaction/TransformMath.h"
 
 #include <algorithm>

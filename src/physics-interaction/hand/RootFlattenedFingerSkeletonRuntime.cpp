@@ -8,7 +8,7 @@
  * pose solver and debug overlay.
  */
 
-#include "physics-interaction/debug/DebugAxisMath.h"
+#include "physics-interaction/debug/DebugMath.h"
 
 #include <string_view>
 

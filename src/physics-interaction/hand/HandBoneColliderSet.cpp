@@ -1,7 +1,7 @@
 #include "physics-interaction/hand/HandBoneColliderSet.h"
 
 #include "physics-interaction/hand/Hand.h"
-#include "physics-interaction/debug/DebugAxisMath.h"
+#include "physics-interaction/debug/DebugMath.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/HavokMaterialRegistry.h"

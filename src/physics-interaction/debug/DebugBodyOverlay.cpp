@@ -35,7 +35,7 @@
 #include <vrcf/VRControllersManager.h>
 #include <windows.h>
 
-#include "physics-interaction/debug/DebugAxisMath.h"
+#include "physics-interaction/debug/DebugMath.h"
 
 namespace rock::debug
 {
