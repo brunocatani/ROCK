@@ -213,6 +213,29 @@ namespace rock
             return motionType == physics_body_classifier::BodyMotionType::Dynamic;
         }
 
+        bool hasDynamicActorBodyEvidence(RE::hknpWorld* hknpWorld, RE::hknpBodyId bodyId)
+        {
+            if (!hknpWorld || bodyId.value == kInvalidBodyId) {
+                return false;
+            }
+
+            auto* body = havok_runtime::getBody(hknpWorld, bodyId);
+            if (!body) {
+                return false;
+            }
+
+            const auto layer = body->collisionFilterInfo & 0x7F;
+            if (!collision_layer_policy::isActorOrBipedLayer(layer)) {
+                return false;
+            }
+
+            auto motionType = physics_body_classifier::motionTypeFromBodyFlags(body->flags);
+            if (motionType == physics_body_classifier::BodyMotionType::Unknown) {
+                motionType = physics_body_classifier::motionTypeFromMotionPropertiesId(static_cast<std::uint16_t>(body->motionPropertiesId));
+            }
+            return motionType == physics_body_classifier::BodyMotionType::Dynamic;
+        }
+
         bool hasDetachedGoreEvidence(RE::TESObjectREFR* ref, RE::NiAVObject* hitNode, RE::hknpWorld* hknpWorld, RE::hknpBodyId bodyId)
         {
             if (!hasDynamicDeadBipedBodyEvidence(hknpWorld, bodyId)) {
@@ -284,6 +307,10 @@ namespace rock
 
             if (hasDetachedGoreEvidence(ref, hitNode, hknpWorld, bodyId)) {
                 return { .kind = grab_target::Kind::DetachedGore, .reason = "detached-deadbip-gore", .grabbable = true };
+            }
+
+            if (hasDynamicActorBodyEvidence(hknpWorld, bodyId)) {
+                return { .kind = grab_target::Kind::DeadActorBody, .reason = "dead-actor-body-dynamic", .grabbable = true };
             }
 
             return { .kind = grab_target::Kind::BlockedWholeActorBody, .reason = isFarSelection ? "far-dead-actor-no-equipment" : "close-dead-actor-body", .grabbable = false };

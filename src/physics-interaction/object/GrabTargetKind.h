@@ -20,8 +20,15 @@ namespace rock::grab_target
         ActorEquipment,
         DetachedGore,
         DynamicMovableStatic,
+        DeadActorBody,
         LiveActorScissors,
         BlockedWholeActorBody,
+    };
+
+    enum class GrabAcquisitionMode : std::uint8_t
+    {
+        Default,
+        HandPocketOnly,
     };
 
     [[nodiscard]] inline constexpr const char* name(Kind kind) noexcept
@@ -35,6 +42,8 @@ namespace rock::grab_target
             return "detached-gore";
         case Kind::DynamicMovableStatic:
             return "dynamic-movable-static";
+        case Kind::DeadActorBody:
+            return "dead-actor-body";
         case Kind::LiveActorScissors:
             return "live-actor-scissors";
         case Kind::BlockedWholeActorBody:
@@ -46,7 +55,24 @@ namespace rock::grab_target
 
     [[nodiscard]] inline constexpr bool isPhysicalRockObject(Kind kind) noexcept
     {
-        return kind == Kind::LooseObject || kind == Kind::DetachedGore || kind == Kind::DynamicMovableStatic;
+        return kind == Kind::LooseObject || kind == Kind::DetachedGore || kind == Kind::DynamicMovableStatic || kind == Kind::DeadActorBody;
+    }
+
+    [[nodiscard]] inline constexpr GrabAcquisitionMode acquisitionMode(Kind kind) noexcept
+    {
+        switch (kind) {
+        case Kind::DynamicMovableStatic:
+        case Kind::DetachedGore:
+        case Kind::DeadActorBody:
+            return GrabAcquisitionMode::HandPocketOnly;
+        default:
+            return GrabAcquisitionMode::Default;
+        }
+    }
+
+    [[nodiscard]] inline constexpr bool requiresHandPocketGrab(Kind kind) noexcept
+    {
+        return acquisitionMode(kind) == GrabAcquisitionMode::HandPocketOnly;
     }
 
     [[nodiscard]] inline constexpr bool canUseRockDynamicPull(Kind kind) noexcept

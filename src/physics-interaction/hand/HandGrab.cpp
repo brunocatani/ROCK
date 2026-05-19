@@ -4400,6 +4400,7 @@ namespace rock
         const bool joiningPeerHeldObject = sharedContextMatchesSelection(sharedContext, sel);
         const bool grabbedFromPullCatch = pullCatchIntentMatchesSelection();
         const bool looseWeaponGrab = isLooseWeaponGrabTarget(sel);
+        const bool handPocketOnlyGrab = grab_target::requiresHandPocketGrab(sel.targetKind);
 
         auto objectBodyId = sel.bodyId;
         auto* rootNode = sel.refr->Get3D();
@@ -4627,6 +4628,23 @@ namespace rock
         const char* palmSeatFallbackReason = grabFallbackReason;
         const char* fingerEvidencePointMode = "none";
         const char* fingerEvidenceFallbackReason = "none";
+        auto failHandPocketOnlyGrab = [&]() {
+            ROCK_LOG_WARN(Hand,
+                "{} hand GRAB failed: hand-pocket-only target requires palm pocket mesh authority for '{}' formID={:08X}; targetKind={} meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} totalTris={} reason={}",
+                handName(),
+                objName,
+                sel.refr->GetFormID(),
+                grab_target::name(sel.targetKind),
+                nodeDebugName(meshSourceNode),
+                nodeDebugName(collidableNode),
+                nodeDebugName(rootNode),
+                meshStats.visitedShapes,
+                meshStats.totalTriangles(),
+                grabFallbackReason);
+            restoreFailedGrabPrep();
+            clearGrabExternalHandWorldTransform(_isLeft);
+            return false;
+        };
 
         /*
          * hknp selection identifies the object/body. In mesh-authoritative mode
@@ -4636,7 +4654,7 @@ namespace rock
         if (sel.hasHitPoint && sel.hasHitNormal) {
             const auto collisionSurfaceHit = makeCollisionQueryGrabSurfaceHit(sel, collidableNode);
             if (collisionSurfaceHit.valid) {
-                if (!meshContactOnly) {
+                if (!meshContactOnly && !handPocketOnlyGrab) {
                     grabSurfaceHit = collisionSurfaceHit;
                     grabGripPoint = grabSurfaceHit.position;
                     surfaceOwnerNode = grabSurfaceHit.sourceNode;
@@ -4720,7 +4738,7 @@ namespace rock
                 }
             }
 
-            if (g_rockConfig.rockGrabNodeAnchorsEnabled) {
+            if (!handPocketOnlyGrab && g_rockConfig.rockGrabNodeAnchorsEnabled) {
                 const std::string_view primaryNodeName = _isLeft ? std::string_view(g_rockConfig.rockGrabNodeNameLeft) : std::string_view(g_rockConfig.rockGrabNodeNameRight);
                 const std::string_view fallbackNodeName = grab_node_name_policy::defaultGrabNodeName(_isLeft);
                 RE::NiAVObject* grabNode = findAuthoredGrabNodeRecursive(
@@ -4749,9 +4767,10 @@ namespace rock
 
             const bool closeGrabNeedsPalmPocketMeshAuthority =
                 !authoredGrabNode &&
-                !sel.isFarSelection &&
                 !grabSurfaceTriangles.empty() &&
-                (!meshGrabFound || grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery);
+                (handPocketOnlyGrab ||
+                    (!sel.isFarSelection &&
+                        (!meshGrabFound || grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery)));
             if (closeGrabNeedsPalmPocketMeshAuthority) {
                 /*
                  * Close seated grabs need one position authority before visual
@@ -4820,6 +4839,10 @@ namespace rock
                         grabSurfaceHit.signedAlongPalmDistanceGameUnits,
                         grabSurfaceHit.lateralPalmDistanceGameUnits);
                 }
+            }
+
+            if (handPocketOnlyGrab && (!meshGrabFound || std::strcmp(grabPointMode, "palmPocketMeshSurface") != 0)) {
+                return failHandPocketOnlyGrab();
             }
 
             if (!meshGrabFound && !grabSurfaceTriangles.empty() && sel.hasHitPoint) {
@@ -4903,6 +4926,9 @@ namespace rock
                 grabFallbackReason = "noTriangles";
             }
         }
+        if (handPocketOnlyGrab && (!meshGrabFound || std::strcmp(grabPointMode, "palmPocketMeshSurface") != 0)) {
+            return failHandPocketOnlyGrab();
+        }
         if (!meshGrabFound) {
             ROCK_LOG_WARN(Hand,
                 "{} hand GRAB POINT FALLBACK: mode={} reason={} meshNode='{}' ownerNode='{}' rootNode='{}' "
@@ -4925,6 +4951,7 @@ namespace rock
             g_rockConfig.rockGrabMultiFingerContactValidationEnabled &&
             grabContactQualityMode != grab_contact_evidence_policy::GrabContactQualityMode::LegacyPermissive &&
             !authoredGrabNode &&
+            !handPocketOnlyGrab &&
             meshContactOnly &&
             g_rockConfig.rockGrabRequireMeshContact;
         const bool hybridFingerProbeEvidenceEnabled =
@@ -5105,7 +5132,7 @@ namespace rock
             }
         }
 
-        if (contactSourcePolicy.allowContactPatchPivot && g_rockConfig.rockGrabContactPatchEnabled && !authoredGrabNode && !sel.isFarSelection) {
+        if (!handPocketOnlyGrab && contactSourcePolicy.allowContactPatchPivot && g_rockConfig.rockGrabContactPatchEnabled && !authoredGrabNode && !sel.isFarSelection) {
             const RE::NiPoint3 palmNormalWorld = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
             const RE::NiPoint3 palmTangentWorld = transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, _isLeft);
             const RE::NiPoint3 palmBitangentWorld = transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, _isLeft);
