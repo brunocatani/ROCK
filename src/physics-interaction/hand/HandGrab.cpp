@@ -317,6 +317,62 @@ namespace rock
             }
         }
 
+        bool shouldLogObjectBodySetRecordDetails(const object_physics_body_set::ObjectPhysicsBodySet& bodySet)
+        {
+            /*
+             * Multipart refs are the cases where aggregate counts are not
+             * enough: a weapon or Giddyup can present several selected-tree
+             * collision objects while ROCK accepts only one dynamic body. This
+             * gate keeps the heavy record dump tied to failed/incomplete body
+             * ownership evidence, not to every normal one-body grab.
+             */
+            return bodySet.diagnostics.ownerNodeFallbackBodiesAdded > 0 ||
+                   bodySet.diagnostics.scanFailures > 0 ||
+                   bodySet.diagnostics.invalidPhysicsSystems > 0 ||
+                   (bodySet.diagnostics.collisionObjects > 1 && bodySet.acceptedCount() <= 1);
+        }
+
+        std::string summarizeObjectBodySetRecords(const object_physics_body_set::ObjectPhysicsBodySet& bodySet)
+        {
+            constexpr std::size_t kMaxRecords = 12;
+            std::string summary;
+            const std::size_t recordCount = bodySet.records.size();
+            for (std::size_t i = 0; i < recordCount && i < kMaxRecords; ++i) {
+                const auto& record = bodySet.records[i];
+                if (!summary.empty()) {
+                    summary += " | ";
+                }
+
+                summary += std::format(
+                    "#{:02} body={} motion={} layer={} filter={:08X} mp={} flags={:08X} type={} accepted={} reason={} seeded={} ref={:08X} refKnown={} owner='{}'",
+                    i,
+                    record.bodyId,
+                    record.motionId,
+                    record.collisionLayer,
+                    record.filterInfo,
+                    record.motionPropertiesId,
+                    record.bodyFlags,
+                    physics_body_classifier::motionTypeName(record.motionType),
+                    record.accepted ? "yes" : "no",
+                    physics_body_classifier::rejectReasonName(record.rejectReason),
+                    record.seeded ? "yes" : "no",
+                    record.resolvedRef ? record.resolvedRef->GetFormID() : 0,
+                    record.refResolutionKnown ? "yes" : "no",
+                    nodeDebugName(record.owningNode));
+            }
+
+            if (recordCount > kMaxRecords) {
+                if (!summary.empty()) {
+                    summary += " | ";
+                }
+                summary += std::format("... {} more", recordCount - kMaxRecords);
+            }
+            if (summary.empty()) {
+                return "(no records)";
+            }
+            return summary;
+        }
+
         float pointDistanceGameUnits(const RE::NiPoint3& a, const RE::NiPoint3& b)
         {
             const RE::NiPoint3 delta = a - b;
@@ -4123,6 +4179,17 @@ namespace rock
             preparedBodySet.diagnostics.ownerNodeFallbackDuplicateSkips,
             preparedBodySet.diagnostics.collisionObjects,
             preparedBodySet.diagnostics.visitedNodes);
+        if (shouldLogObjectBodySetRecordDetails(preparedBodySet)) {
+            ROCK_LOG_SAMPLE_WARN(Hand,
+                1500,
+                "{} hand PULL body-set records: formID={:08X} elapsed={:.3f}ms fallback={:.3f}ms highWater={} records={}",
+                handName(),
+                selectedRef->GetFormID(),
+                preparedBodySet.diagnostics.elapsedMilliseconds,
+                preparedBodySet.diagnostics.ownerNodeFallbackElapsedMilliseconds,
+                preparedBodySet.diagnostics.ownerNodeFallbackHighWaterMark,
+                summarizeObjectBodySetRecords(preparedBodySet));
+        }
         const RE::NiPoint3 grabPivotAForPrimaryChoice = computeGrabPivotAWorld(world, handWorldTransform);
         const RE::NiPoint3 primaryChoiceTarget = _currentSelection.hasHitPoint ? _currentSelection.hitPointWorld : grabPivotAForPrimaryChoice;
         const auto primaryChoice = preparedBodySet.choosePrimaryBody(_currentSelection.bodyId.value, object_physics_body_set::PurePoint3{ primaryChoiceTarget });
@@ -4595,6 +4662,18 @@ namespace rock
             motionConverted ? "ok" : "failed",
             collisionEnabled ? "ok" : "failed",
             joiningPeerHeldObject ? "yes" : "no");
+        if (shouldLogObjectBodySetRecordDetails(preparedBodySet)) {
+            ROCK_LOG_SAMPLE_WARN(Hand,
+                1500,
+                "{} hand active-grab body-set records: ref='{}' formID={:08X} elapsed={:.3f}ms fallback={:.3f}ms highWater={} records={}",
+                handName(),
+                objName,
+                sel.refr->GetFormID(),
+                preparedBodySet.diagnostics.elapsedMilliseconds,
+                preparedBodySet.diagnostics.ownerNodeFallbackElapsedMilliseconds,
+                preparedBodySet.diagnostics.ownerNodeFallbackHighWaterMark,
+                summarizeObjectBodySetRecords(preparedBodySet));
+        }
 
         auto* collidableNode = sel.hitNode ? sel.hitNode : rootNode;
         auto* meshSourceNode = sel.visualNode ? sel.visualNode : rootNode;

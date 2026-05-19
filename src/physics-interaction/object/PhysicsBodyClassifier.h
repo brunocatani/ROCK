@@ -105,6 +105,23 @@ namespace rock::physics_body_classifier
         return "unknown";
     }
 
+    inline constexpr const char* motionTypeName(BodyMotionType type)
+    {
+        switch (type) {
+        case BodyMotionType::Unknown:
+            return "unknown";
+        case BodyMotionType::Static:
+            return "static";
+        case BodyMotionType::Dynamic:
+            return "dynamic";
+        case BodyMotionType::Keyframed:
+            return "keyframed";
+        case BodyMotionType::Other:
+            return "other";
+        }
+        return "unknown";
+    }
+
     inline constexpr BodyClassificationResult reject(BodyRejectReason reason) { return BodyClassificationResult{ .accepted = false, .reason = reason }; }
 
     inline constexpr BodyClassificationResult accept() { return BodyClassificationResult{ .accepted = true, .reason = BodyRejectReason::None }; }

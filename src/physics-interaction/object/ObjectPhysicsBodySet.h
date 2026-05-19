@@ -248,6 +248,9 @@ namespace rock::object_physics_body_set
         std::uint32_t unresolvedRefBodiesAccepted = 0;
         std::uint32_t unresolvedRefBodySkips = 0;
         std::uint32_t weaponExpansionSkips = 0;
+        double elapsedMilliseconds = 0.0;
+        double ownerNodeFallbackElapsedMilliseconds = 0.0;
+        std::uint32_t ownerNodeFallbackHighWaterMark = 0;
         std::uint32_t ownerNodeFallbackSlotsScanned = 0;
         std::uint32_t ownerNodeFallbackCandidates = 0;
         std::uint32_t ownerNodeFallbackBodiesAdded = 0;
