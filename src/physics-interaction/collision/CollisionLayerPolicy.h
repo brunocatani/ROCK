@@ -121,6 +121,7 @@ namespace rock::collision_layer_policy
         bool playerController = false;
         bool targetLayerKnown = false;
         std::uint32_t targetLayer = FO4_LAYER_UNIDENTIFIED;
+        bool targetIsDynamicMovableStatic = false;
     };
 
     struct PlayerCharacterControllerContactPolicyDecision
@@ -161,6 +162,9 @@ namespace rock::collision_layer_policy
         }
         if (!input.targetLayerKnown) {
             return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "unknownTargetLayer" };
+        }
+        if (input.targetIsDynamicMovableStatic && isPlayerCharacterControllerSupportLayer(input.targetLayer)) {
+            return PlayerCharacterControllerContactPolicyDecision{ .suppress = true, .reason = "dynamicMovableStaticSupportLayer" };
         }
         if (isPlayerCharacterControllerSupportLayer(input.targetLayer)) {
             return PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "supportLayer" };

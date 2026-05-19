@@ -5,6 +5,8 @@
 #include "physics-interaction/NativeMeleeSuppressionPolicy.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/object/ObjectDetection.h"
+#include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/native/CharacterControllerRuntime.h"
@@ -839,22 +841,59 @@ namespace rock
         return controller && playerController && controller == playerController;
     }
 
-    RE::hknpWorld* resolvePlayerHknpWorld()
+    RE::bhkWorld* resolvePlayerBhkWorld()
     {
         auto* player = RE::PlayerCharacter::GetSingleton();
         auto* cell = player ? player->GetParentCell() : nullptr;
-        auto* bhkWorld = cell ? cell->GetbhkWorld() : nullptr;
-        return havok_runtime::getHknpWorldFromBhk(bhkWorld);
+        return cell ? cell->GetbhkWorld() : nullptr;
     }
 
-    collision_layer_policy::PlayerCharacterControllerContactPolicyDecision evaluatePlayerControllerTargetBody(RE::hknpWorld* world, std::uint32_t rawBodyId)
+    physics_body_classifier::BodyMotionType resolveBodyMotionType(RE::hknpWorld* world, RE::hknpBodyId bodyId)
+    {
+        auto* body = havok_runtime::getBody(world, bodyId);
+        if (!body) {
+            return physics_body_classifier::BodyMotionType::Unknown;
+        }
+
+        auto motionType = physics_body_classifier::motionTypeFromBodyFlags(body->flags);
+        if (motionType == physics_body_classifier::BodyMotionType::Unknown) {
+            motionType = physics_body_classifier::motionTypeFromMotionPropertiesId(static_cast<std::uint16_t>(body->motionPropertiesId));
+        }
+        return motionType;
+    }
+
+    bool isDynamicMovableStaticPlayerContactTarget(RE::bhkWorld* bhkWorld, RE::hknpWorld* world, RE::hknpBodyId bodyId, std::uint32_t layer)
+    {
+        if (!bhkWorld || !world || !collision_layer_policy::isPlayerCharacterControllerSupportLayer(layer)) {
+            return false;
+        }
+
+        /*
+         * Most preserved player-controller contacts are static world support.
+         * Resolve the expensive scene reference only after runtime body state
+         * proves this support-layer body is actually dynamic.
+         */
+        if (resolveBodyMotionType(world, bodyId) != physics_body_classifier::BodyMotionType::Dynamic) {
+            return false;
+        }
+
+        auto* ref = resolveBodyToRef(bhkWorld, world, bodyId);
+        auto* baseForm = ref ? ref->GetObjectReference() : nullptr;
+        return baseForm && baseForm->Is(RE::ENUM_FORM_ID::kMSTT);
+    }
+
+    collision_layer_policy::PlayerCharacterControllerContactPolicyDecision evaluatePlayerControllerTargetBody(
+        RE::bhkWorld* bhkWorld,
+        RE::hknpWorld* world,
+        std::uint32_t rawBodyId)
     {
         if (!world || rawBodyId == body_frame::kInvalidBodyId) {
             return collision_layer_policy::PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "unknownTargetLayer" };
         }
 
+        const RE::hknpBodyId bodyId{ rawBodyId };
         std::uint32_t filterInfo = 0;
-        if (!body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ rawBodyId }, filterInfo)) {
+        if (!body_collision::tryReadFilterInfo(world, bodyId, filterInfo)) {
             return collision_layer_policy::PlayerCharacterControllerContactPolicyDecision{ .suppress = false, .reason = "unknownTargetLayer" };
         }
 
@@ -865,6 +904,7 @@ namespace rock
                 .playerController = true,
                 .targetLayerKnown = true,
                 .targetLayer = layer,
+                .targetIsDynamicMovableStatic = isDynamicMovableStaticPlayerContactTarget(bhkWorld, world, bodyId, layer),
             });
     }
 
@@ -1110,7 +1150,8 @@ namespace rock
         __try {
             const bool playerControllerFilterEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
             const bool playerController = playerControllerFilterEnabled && isPlayerCharacterController(controller);
-            RE::hknpWorld* playerHknpWorld = playerController ? resolvePlayerHknpWorld() : nullptr;
+            RE::bhkWorld* playerBhkWorld = playerController ? resolvePlayerBhkWorld() : nullptr;
+            RE::hknpWorld* playerHknpWorld = playerBhkWorld ? havok_runtime::getHknpWorldFromBhk(playerBhkWorld) : nullptr;
             const bool playerControllerFilterActive = playerController && playerHknpWorld;
 
             auto* pi = PhysicsInteraction::s_instance.load(std::memory_order_acquire);
@@ -1154,6 +1195,8 @@ namespace rock
 
             int removedHeldPairs = 0;
             int removedPlayerObjectPairs = 0;
+            int removedPlayerNonSupportPairs = 0;
+            int removedPlayerDynamicMovableStaticPairs = 0;
             int preservedPlayerSupportPairs = 0;
             int preservedUnknownTargetPairs = 0;
             const auto filterResult = held_grab_cc_policy::filterGeneratedContactBuffers(contactBuffers, [&](std::uint32_t bodyId) {
@@ -1172,9 +1215,14 @@ namespace rock
                 }
 
                 if (playerControllerFilterActive) {
-                    const auto decision = evaluatePlayerControllerTargetBody(playerHknpWorld, bodyId);
+                    const auto decision = evaluatePlayerControllerTargetBody(playerBhkWorld, playerHknpWorld, bodyId);
                     if (decision.suppress) {
                         ++removedPlayerObjectPairs;
+                        if (std::string_view(decision.reason) == "dynamicMovableStaticSupportLayer") {
+                            ++removedPlayerDynamicMovableStaticPairs;
+                        } else {
+                            ++removedPlayerNonSupportPairs;
+                        }
                         return true;
                     }
                     if (std::string_view(decision.reason) == "supportLayer") {
@@ -1190,12 +1238,14 @@ namespace rock
                 if (filterResult.removedPairCount > 0) {
                     ROCK_LOG_SAMPLE_DEBUG(CC,
                         g_rockConfig.rockLogSampleMilliseconds,
-                        "Filtered {} character-controller contacts before original listener kept={} originalPairs={} heldRemoved={} playerNonSupportRemoved={} playerSupportPreserved={} playerUnknownPreserved={}",
+                        "Filtered {} character-controller contacts before original listener kept={} originalPairs={} heldRemoved={} playerObjectRemoved={} playerNonSupportRemoved={} playerDynamicMovableStaticRemoved={} playerSupportPreserved={} playerUnknownPreserved={}",
                         filterResult.removedPairCount,
                         filterResult.keptPairCount,
                         filterResult.originalPairCount,
                         removedHeldPairs,
                         removedPlayerObjectPairs,
+                        removedPlayerNonSupportPairs,
+                        removedPlayerDynamicMovableStaticPairs,
                         preservedPlayerSupportPairs,
                         preservedUnknownTargetPairs);
                 } else if (g_rockConfig.rockDebugVerboseLogging) {

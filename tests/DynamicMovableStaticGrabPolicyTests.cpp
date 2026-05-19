@@ -1,6 +1,7 @@
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
 
 #include <cstdio>
+#include <string_view>
 
 namespace
 {
@@ -60,6 +61,25 @@ namespace
         std::printf("%s expected false\n", label);
         return false;
     }
+
+    bool expectPlayerControllerDecision(
+        const char* label,
+        const rock::collision_layer_policy::PlayerCharacterControllerContactPolicyDecision& decision,
+        bool suppress,
+        std::string_view reason)
+    {
+        if (decision.suppress == suppress && std::string_view(decision.reason) == reason) {
+            return true;
+        }
+        std::printf("%s expected suppress=%s reason=%.*s, got suppress=%s reason=%s\n",
+            label,
+            suppress ? "true" : "false",
+            static_cast<int>(reason.size()),
+            reason.data(),
+            decision.suppress ? "true" : "false",
+            decision.reason);
+        return false;
+    }
 }
 
 int main()
@@ -108,6 +128,49 @@ int main()
     ok &= expectTrue("detached gore requires hand pocket", grab_target::requiresHandPocketGrab(grab_target::Kind::DetachedGore));
     ok &= expectTrue("dead actor bodies require hand pocket", grab_target::requiresHandPocketGrab(grab_target::Kind::DeadActorBody));
     ok &= expectFalse("ordinary loose objects may use normal grab evidence", grab_target::requiresHandPocketGrab(grab_target::Kind::LooseObject));
+
+    ok &= expectPlayerControllerDecision("static support layer remains preserved for player controller",
+        collision_layer_policy::evaluatePlayerCharacterControllerContact(collision_layer_policy::PlayerCharacterControllerContactPolicyInput{
+            .filterEnabled = true,
+            .playerController = true,
+            .targetLayerKnown = true,
+            .targetLayer = collision_layer_policy::FO4_LAYER_STATIC,
+        }),
+        false,
+        "supportLayer");
+
+    ok &= expectPlayerControllerDecision("dynamic movable static on static support layer is suppressed",
+        collision_layer_policy::evaluatePlayerCharacterControllerContact(collision_layer_policy::PlayerCharacterControllerContactPolicyInput{
+            .filterEnabled = true,
+            .playerController = true,
+            .targetLayerKnown = true,
+            .targetLayer = collision_layer_policy::FO4_LAYER_STATIC,
+            .targetIsDynamicMovableStatic = true,
+        }),
+        true,
+        "dynamicMovableStaticSupportLayer");
+
+    ok &= expectPlayerControllerDecision("dynamic movable static on animstatic support layer is suppressed",
+        collision_layer_policy::evaluatePlayerCharacterControllerContact(collision_layer_policy::PlayerCharacterControllerContactPolicyInput{
+            .filterEnabled = true,
+            .playerController = true,
+            .targetLayerKnown = true,
+            .targetLayer = collision_layer_policy::FO4_LAYER_ANIMSTATIC,
+            .targetIsDynamicMovableStatic = true,
+        }),
+        true,
+        "dynamicMovableStaticSupportLayer");
+
+    ok &= expectPlayerControllerDecision("dynamic movable static flag does not suppress non-player controllers",
+        collision_layer_policy::evaluatePlayerCharacterControllerContact(collision_layer_policy::PlayerCharacterControllerContactPolicyInput{
+            .filterEnabled = true,
+            .playerController = false,
+            .targetLayerKnown = true,
+            .targetLayer = collision_layer_policy::FO4_LAYER_STATIC,
+            .targetIsDynamicMovableStatic = true,
+        }),
+        false,
+        "nonPlayerController");
 
     return ok ? 0 : 1;
 }
