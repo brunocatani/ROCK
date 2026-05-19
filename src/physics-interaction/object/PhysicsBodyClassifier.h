@@ -57,7 +57,6 @@ namespace rock::physics_body_classifier
         bool isRockWeaponSourceBody = false;
         bool isHeldBySameHand = false;
         bool isPlayerBody = false;
-        bool isSelectedObjectTreeActiveGrabBody = false;
     };
 
     struct BodyClassificationResult
@@ -101,23 +100,6 @@ namespace rock::physics_body_classifier
             return "keyframed-passive";
         case BodyRejectReason::NotDynamicAfterActivePrep:
             return "not-dynamic-after-active-prep";
-        }
-        return "unknown";
-    }
-
-    inline constexpr const char* motionTypeName(BodyMotionType type)
-    {
-        switch (type) {
-        case BodyMotionType::Unknown:
-            return "unknown";
-        case BodyMotionType::Static:
-            return "static";
-        case BodyMotionType::Dynamic:
-            return "dynamic";
-        case BodyMotionType::Keyframed:
-            return "keyframed";
-        case BodyMotionType::Other:
-            return "other";
         }
         return "unknown";
     }
@@ -202,9 +184,7 @@ namespace rock::physics_body_classifier
         }
         const bool interactionLayer =
             mode == InteractionMode::PassivePush ? collision_layer_policy::isPassivePushInteractionLayer(input.layer) :
-                                                   (collision_layer_policy::isDynamicPropInteractionLayer(input.layer) || activeDetachedGoreLayer ||
-                                                       (input.isSelectedObjectTreeActiveGrabBody &&
-                                                           collision_layer_policy::isSelectedObjectSupplementalActiveGrabLayer(input.layer)));
+                                                   (collision_layer_policy::isDynamicPropInteractionLayer(input.layer) || activeDetachedGoreLayer);
         if (!interactionLayer) {
             return reject(BodyRejectReason::UnsupportedLayer);
         }

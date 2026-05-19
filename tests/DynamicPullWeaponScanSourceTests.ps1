@@ -47,28 +47,22 @@ Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.h' 'refResolut
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.h' 'invalidPhysicsSystems' 'Object-body diagnostics must count invalid native physics systems.'
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.h' 'benignScanSkips' 'Benign native scan skips must not be mixed with severe scan failures.'
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.h' 'unresolvedRefBodiesAccepted' 'Object-body diagnostics must expose unresolved ownership fallback bodies.'
-Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.h' 'allowOwnerNodeWorldFallbackScan' 'Active object scans must be able to recover selected-tree bodies missing from native physics-system arrays.'
-Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.h' 'allowSelectedObjectTreeActiveGrabLayers' 'Active object scans must distinguish selected-ref supplemental layers from general push policy.'
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.cpp' 'appendBodyRecord\(seedContext,\s*options\.seedBodyId,\s*true\)' 'The selected hit body must be recorded before subtree expansion.'
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.cpp' 'forEachPhysicsSystemBodyIdDetailed' 'Subtree expansion must use the guarded detailed native scanner.'
-Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.cpp' 'scanOwnerNodeWorldFallback' 'Multipart active grabs must recover hknp bodies by selected-tree owner node when native body arrays omit them.'
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.cpp' 'foreignRefBodySkips' 'Seeded scans must preserve the selected-ref ownership boundary.'
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.cpp' 'record\.refResolutionKnown\s*=\s*true' 'Resolved bodies must be marked as verified ownership, not implicit root ownership.'
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.cpp' 'unresolvedRefBodiesAccepted' 'Unresolved selected-tree bodies must be accepted only through an explicit diagnostic path.'
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.cpp' 'Object body scan skipped invalid physics system' 'Invalid weapon/tree physics systems must be logged as skipped nodes instead of crashing.'
 Reject-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.cpp' 'havok_runtime::forEachPhysicsSystemBodyId\(collisionObject' 'Object-body expansion must not use the old boolean-only scanner directly.'
-Require-Text 'src/physics-interaction/collision/CollisionLayerPolicy.h' 'isSelectedObjectSupplementalActiveGrabLayer[\s\S]*FO4_LAYER_PROPS' 'Selected-object active grab must explicitly admit PROPS as supplemental multipart bodies without broadening passive push.'
-Require-Text 'src/physics-interaction/object/PhysicsBodyClassifier.h' 'isSelectedObjectTreeActiveGrabBody[\s\S]*isSelectedObjectSupplementalActiveGrabLayer' 'Supplemental selected-tree layers must remain gated by active-grab ownership context.'
 
 Require-Text 'src/physics-interaction/grab/GrabCore.h' 'capturedAfterPrep' 'Lifecycle records must identify bodies discovered only after recursive active prep.'
 Require-Text 'src/physics-interaction/grab/GrabCore.h' 'originalStateKnown' 'Lifecycle restore plans must not restore manufactured original state for late bodies.'
 Require-Text 'src/physics-interaction/grab/GrabCore.h' 'latePreparedBodyCount' 'Lifecycle diagnostics must count bodies that appeared only after active prep.'
 Require-Text 'src/physics-interaction/grab/GrabCore.h' 'hasIncompleteNativeScan' 'Lifecycle snapshots must expose incomplete native scans to runtime cleanup.'
 Require-Text 'src/physics-interaction/grab/GrabCore.h' 'reason == BodyRestoreReason::FailedGrabSetup \|\| policy == BodyRestorePolicy::RestoreAllChanged[\s\S]*entry\.restoreFilter\s*=\s*record\.originalStateKnown' 'Failure and explicit restore-all paths must restore captured filters.'
-Require-Text 'src/physics-interaction/grab/GrabCore.h' 'shouldTreatAsEngineOwnedOnRelease' 'Physical release must distinguish held loose dynamics from rejected selected-tree bodies touched by recursive prep.'
+Require-Text 'src/physics-interaction/grab/GrabCore.h' 'entry\.restoreFilter\s*=\s*record\.originalStateKnown && record\.motionRole == MotionRole::SystemOwnedNonDynamic' 'Physical release must not restore inactive filters onto loose dynamic objects that ROCK leaves dynamic.'
 Require-Text 'tests/ActiveGrabBodyLifecyclePolicyTests.cpp' 'loose dynamic release should keep active collision filter' 'Compiled lifecycle policy tests must cover loose dynamic release collision ownership.'
 Require-Text 'tests/ActiveGrabBodyLifecyclePolicyTests.cpp' 'system-owned release should restore filter' 'Compiled lifecycle policy tests must cover system-owned release restoration.'
-Require-Text 'tests/ActiveGrabBodyLifecyclePolicyTests.cpp' 'rejected selected-tree static release should restore motion' 'Compiled lifecycle policy tests must cover rejected multipart child bodies converted by recursive prep.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'restoreIncompleteActivePrepRoot' 'Incomplete object scans must have an explicit recursive root restore fallback.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'release-incomplete-scan' 'Release cleanup must invoke the incomplete-scan root restore path.'
 
@@ -84,10 +78,6 @@ if ($pullStart -lt 0 -or $pullEnd -lt 0) {
     }
     if ($pullText -notmatch 'scanOptions\.requireSameResolvedRef\s*=\s*true') {
         $failures.Add('Dynamic pull scans must keep expanded bodies owned by the selected ref.')
-    }
-    if ($pullText -notmatch 'scanOptions\.allowOwnerNodeWorldFallbackScan\s*=\s*true' -or
-        $pullText -notmatch 'scanOptions\.allowSelectedObjectTreeActiveGrabLayers\s*=\s*true') {
-        $failures.Add('Dynamic pull must use selected-tree fallback and supplemental layer policy for multipart refs.')
     }
     if ($pullText -notmatch 'PULL scan:') {
         $failures.Add('Dynamic pull must log seeded scan diagnostics.')
@@ -124,15 +114,8 @@ if ($grabStart -lt 0 -or $grabEnd -lt 0) {
     if ($grabText -notmatch 'scanOptions\.requireSameResolvedRef\s*=\s*true') {
         $failures.Add('Close/pull-catch grab scans must keep expanded bodies owned by the selected ref.')
     }
-    if ($grabText -notmatch 'scanOptions\.allowOwnerNodeWorldFallbackScan\s*=\s*true' -or
-        $grabText -notmatch 'scanOptions\.allowSelectedObjectTreeActiveGrabLayers\s*=\s*true') {
-        $failures.Add('Close/pull-catch grab must use selected-tree fallback and supplemental layer policy for multipart refs.')
-    }
     if ($grabText -notmatch 'invalidSystems') {
         $failures.Add('Grab object-tree prep logs must include invalid native physics-system diagnostics.')
-    }
-    if ($grabText -notmatch 'fallbackAdded') {
-        $failures.Add('Grab object-tree prep logs must include selected-tree owner-node fallback diagnostics.')
     }
     if ($grabText -notmatch 'latePrepared') {
         $failures.Add('Grab object-tree prep logs must include late body lifecycle diagnostics.')

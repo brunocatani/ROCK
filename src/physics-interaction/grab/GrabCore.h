@@ -168,18 +168,10 @@ namespace rock::active_grab_body_lifecycle
         case BodyRejectReason::StaticMotion:
         case BodyRejectReason::KeyframedPassive:
         case BodyRejectReason::NotDynamicAfterActivePrep:
-        case BodyRejectReason::ActorLayer:
-        case BodyRejectReason::NonCollidableLayer:
-        case BodyRejectReason::UnsupportedLayer:
             return true;
         default:
             return false;
         }
-    }
-
-    inline bool shouldTreatAsEngineOwnedOnRelease(const BodyLifecycleRecord& record)
-    {
-        return record.motionRole == MotionRole::SystemOwnedNonDynamic || !record.acceptedBeforePrep;
     }
 
     class BodyLifecycleSnapshot
@@ -250,15 +242,11 @@ namespace rock::active_grab_body_lifecycle
         {
             observeScanDiagnostics(preparedBodySet);
             for (const auto& record : preparedBodySet.records) {
-                if (auto* captured = find(record.bodyId)) {
-                    const bool motionStateChanged =
-                        record.motionType != captured->originalMotionType || record.motionPropertiesId != captured->motionPropertiesId;
-                    captured->motionChangedByRock = captured->motionChangedByRock || record.accepted || motionStateChanged;
-                    captured->filterChangedByRock = captured->filterChangedByRock || record.filterInfo != captured->filterInfo;
+                if (!record.accepted) {
                     continue;
                 }
-
-                if (!record.accepted) {
+                if (auto* captured = find(record.bodyId)) {
+                    captured->motionChangedByRock = true;
                     continue;
                 }
 
@@ -369,13 +357,13 @@ namespace rock::active_grab_body_lifecycle
                     entry.restoreMotion = record.originalStateKnown && record.motionChangedByRock;
                 } else {
                     entry.restoreMotion =
-                        record.originalStateKnown && record.motionChangedByRock && shouldTreatAsEngineOwnedOnRelease(record);
+                        record.originalStateKnown && record.motionChangedByRock && record.motionRole == MotionRole::SystemOwnedNonDynamic;
                 }
 
                 if (reason == BodyRestoreReason::FailedGrabSetup || policy == BodyRestorePolicy::RestoreAllChanged) {
                     entry.restoreFilter = record.originalStateKnown;
                 } else {
-                    entry.restoreFilter = record.originalStateKnown && shouldTreatAsEngineOwnedOnRelease(record);
+                    entry.restoreFilter = record.originalStateKnown && record.motionRole == MotionRole::SystemOwnedNonDynamic;
                 }
 
                 if (entry.restoreMotion) {

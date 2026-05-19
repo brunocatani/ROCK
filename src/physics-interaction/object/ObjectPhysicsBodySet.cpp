@@ -1,17 +1,13 @@
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <limits>
 #include <unordered_map>
-#include <utility>
 
 #include "physics-interaction/native/HavokRuntime.h"
-#include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 
 #include "RE/Bethesda/BSHavok.h"
@@ -51,17 +47,10 @@ namespace rock::object_physics_body_set
             if (!ancestor || !node) {
                 return false;
             }
-            constexpr int kMaxParentWalkDepth = 128;
-            int depth = 0;
-            for (auto* current = node; current && depth < kMaxParentWalkDepth; ++depth) {
+            for (auto* current = node; current; current = current->parent) {
                 if (current == ancestor) {
                     return true;
                 }
-                RE::NiNode* parent = nullptr;
-                if (!native_memory::tryReadValue(&current->parent, parent)) {
-                    return false;
-                }
-                current = parent;
             }
             return false;
         }
@@ -91,11 +80,6 @@ namespace rock::object_physics_body_set
             return status == PhysicsSystemBodyScanStatus::InvalidBodyCount ||
                    status == PhysicsSystemBodyScanStatus::UnreadableBodyIds ||
                    status == PhysicsSystemBodyScanStatus::MissingBodyIds;
-        }
-
-        double elapsedMilliseconds(std::chrono::steady_clock::time_point start, std::chrono::steady_clock::time_point end)
-        {
-            return std::chrono::duration<double, std::milli>(end - start).count();
         }
 
         struct ScanBodyContext
@@ -193,10 +177,6 @@ namespace rock::object_physics_body_set
             input.isRockWeaponSourceBody = rawBodyId == options.sourceWeaponBodyId || rawBodyId == options.sourceBodyId;
             input.isHeldBySameHand = containsBodyId(options.heldBySameHand, rawBodyId);
             input.isPlayerBody = record.resolvedRef == RE::PlayerCharacter::GetSingleton();
-            input.isSelectedObjectTreeActiveGrabBody =
-                options.allowSelectedObjectTreeActiveGrabLayers &&
-                options.mode == physics_body_classifier::InteractionMode::ActiveGrab &&
-                (seeded || nodeIsOrContains(out.rootNode, context.node) || record.resolvedRef == context.rootRef);
 
             const auto classification = physics_body_classifier::classifyBody(input, options.mode);
             record.accepted = classification.accepted;
@@ -274,73 +254,6 @@ namespace rock::object_physics_body_set
                     scanNode(bhkWorld, hknpWorld, rootRef, child, depth - 1, options, out, seenBodyIds);
                 }
             }
-        }
-
-        void scanOwnerNodeWorldFallback(RE::bhkWorld* bhkWorld,
-            RE::hknpWorld* hknpWorld,
-            RE::TESObjectREFR* rootRef,
-            RE::NiAVObject* rootNode,
-            const BodySetScanOptions& options,
-            ObjectPhysicsBodySet& out,
-            std::unordered_set<std::uint32_t>& seenBodyIds)
-        {
-            /*
-             * Active grab prep uses FO4VR's recursive NiAVObject wrappers, so
-             * the native operation may touch selected-tree bodies whose owning
-             * collision object has a stale or unreadable physics-system body-id
-             * array. The fallback walks the hknp body array once and admits only
-             * bodies whose native back-pointer resolves to a node under the
-             * selected ref root; it does not broaden passive push or foreign-ref
-             * ownership.
-             */
-            if (!options.allowOwnerNodeWorldFallbackScan || !hknpWorld || !rootRef || !rootNode) {
-                return;
-            }
-
-            std::uint32_t highWaterMark = 0;
-            if (!havok_runtime::tryReadBodyHighWaterMark(hknpWorld, highWaterMark)) {
-                return;
-            }
-            out.diagnostics.ownerNodeFallbackHighWaterMark = highWaterMark;
-
-            auto* bodyArray = havok_runtime::getBodyArray(hknpWorld);
-            if (!bodyArray) {
-                return;
-            }
-
-            const auto fallbackStart = std::chrono::steady_clock::now();
-            for (std::uint32_t rawBodyId = 0; rawBodyId <= highWaterMark; ++rawBodyId) {
-                if (!havok_runtime::bodySlotCanBeRead(rawBodyId, highWaterMark)) {
-                    continue;
-                }
-
-                ++out.diagnostics.ownerNodeFallbackSlotsScanned;
-                const auto& body = bodyArray[rawBodyId];
-                if (body.bodyId.value != rawBodyId || body.motionIndex == body_frame::kFreeMotionIndex) {
-                    continue;
-                }
-
-                auto* ownerNode = havok_runtime::getOwnerNodeFromBody(&body);
-                if (!nodeIsOrContains(rootNode, ownerNode)) {
-                    continue;
-                }
-
-                ++out.diagnostics.ownerNodeFallbackCandidates;
-                if (seenBodyIds.find(rawBodyId) != seenBodyIds.end()) {
-                    ++out.diagnostics.ownerNodeFallbackDuplicateSkips;
-                    continue;
-                }
-
-                auto* collisionObject = havok_runtime::getCollisionObjectFromBody(&body);
-                ScanBodyContext fallbackContext{ bhkWorld, hknpWorld, rootRef, ownerNode, collisionObject, &options, &out, &seenBodyIds };
-                const auto beforeCount = out.records.size();
-                appendBodyRecord(fallbackContext, rawBodyId, false);
-                if (out.records.size() > beforeCount) {
-                    ++out.diagnostics.ownerNodeFallbackBodiesAdded;
-                }
-            }
-            out.diagnostics.ownerNodeFallbackElapsedMilliseconds =
-                elapsedMilliseconds(fallbackStart, std::chrono::steady_clock::now());
         }
     }
 
@@ -508,44 +421,15 @@ namespace rock::object_physics_body_set
 
     ObjectPhysicsBodySet scanObjectPhysicsBodySet(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::TESObjectREFR* ref, const BodySetScanOptions& options)
     {
-        const auto scanStart = std::chrono::steady_clock::now();
         ObjectPhysicsBodySet result;
         result.rootRef = ref;
-        auto finish = [&]() {
-            result.diagnostics.elapsedMilliseconds = elapsedMilliseconds(scanStart, std::chrono::steady_clock::now());
-            if (result.diagnostics.elapsedMilliseconds >= 8.0 ||
-                result.diagnostics.ownerNodeFallbackSlotsScanned >= 8192 ||
-                result.diagnostics.ownerNodeFallbackBodiesAdded > 0) {
-                ROCK_LOG_SAMPLE_WARN(Hand,
-                    1000,
-                    "Object body scan diagnostic: formID={:08X} elapsed={:.3f}ms fallback={:.3f}ms highWater={} slots={} candidates={} added={} records={} accepted={} rejected={} collisions={} visited={} seed={} scanFailures={} invalidSystems={} benignSkips={}",
-                    result.rootRef ? result.rootRef->GetFormID() : 0,
-                    result.diagnostics.elapsedMilliseconds,
-                    result.diagnostics.ownerNodeFallbackElapsedMilliseconds,
-                    result.diagnostics.ownerNodeFallbackHighWaterMark,
-                    result.diagnostics.ownerNodeFallbackSlotsScanned,
-                    result.diagnostics.ownerNodeFallbackCandidates,
-                    result.diagnostics.ownerNodeFallbackBodiesAdded,
-                    result.records.size(),
-                    result.acceptedCount(),
-                    result.rejectedCount(),
-                    result.diagnostics.collisionObjects,
-                    result.diagnostics.visitedNodes,
-                    options.seedBodyId,
-                    result.diagnostics.scanFailures,
-                    result.diagnostics.invalidPhysicsSystems,
-                    result.diagnostics.benignScanSkips);
-            }
-            return std::move(result);
-        };
-
         if (!bhkWorld || !hknpWorld || !ref || ref->IsDeleted() || ref->IsDisabled()) {
-            return finish();
+            return result;
         }
 
         result.rootNode = ref->Get3D();
         if (!result.rootNode) {
-            return finish();
+            return result;
         }
 
         std::unordered_set<std::uint32_t> seenBodyIds;
@@ -559,7 +443,6 @@ namespace rock::object_physics_body_set
         } else {
             ++result.diagnostics.weaponExpansionSkips;
         }
-        scanOwnerNodeWorldFallback(bhkWorld, hknpWorld, ref, result.rootNode, options, result, seenBodyIds);
-        return finish();
+        return result;
     }
 }

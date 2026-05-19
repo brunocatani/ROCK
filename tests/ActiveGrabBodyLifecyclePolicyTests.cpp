@@ -77,28 +77,5 @@ int main()
     ok &= expectTrue("system-owned release should restore filter", keyframedRelease.entries.front().restoreFilter);
     ok &= expectTrue("system-owned release should restore motion", keyframedRelease.entries.front().restoreMotion);
 
-    ObjectPhysicsBodySet unsupportedDynamicBefore{};
-    unsupportedDynamicBefore.records.push_back(makeRecord(303u, BodyMotionType::Dynamic, BodyRejectReason::UnsupportedLayer, false));
-    ObjectPhysicsBodySet unsupportedDynamicPrepared{};
-    unsupportedDynamicPrepared.records.push_back(makeRecord(303u, BodyMotionType::Dynamic, BodyRejectReason::UnsupportedLayer, false));
-    BodyLifecycleSnapshot unsupportedDynamicSnapshot{};
-    unsupportedDynamicSnapshot.captureBeforeActivePrep(unsupportedDynamicBefore);
-    unsupportedDynamicSnapshot.markPreparedBodies(unsupportedDynamicPrepared);
-    const auto unsupportedDynamicRelease =
-        unsupportedDynamicSnapshot.restorePlanForRelease(BodyRestorePolicy::ProtectComplexSystemOwned);
-    ok &= expectTrue("rejected selected-tree dynamic release should restore filter", unsupportedDynamicRelease.entries.front().restoreFilter);
-    ok &= expectFalse("rejected selected-tree dynamic release should not manufacture motion restore", unsupportedDynamicRelease.entries.front().restoreMotion);
-
-    ObjectPhysicsBodySet unsupportedStaticBefore{};
-    unsupportedStaticBefore.records.push_back(makeRecord(404u, BodyMotionType::Static, BodyRejectReason::UnsupportedLayer, false));
-    ObjectPhysicsBodySet unsupportedStaticPrepared{};
-    unsupportedStaticPrepared.records.push_back(makeRecord(404u, BodyMotionType::Dynamic, BodyRejectReason::UnsupportedLayer, false));
-    BodyLifecycleSnapshot unsupportedStaticSnapshot{};
-    unsupportedStaticSnapshot.captureBeforeActivePrep(unsupportedStaticBefore);
-    unsupportedStaticSnapshot.markPreparedBodies(unsupportedStaticPrepared);
-    const auto unsupportedStaticRelease = unsupportedStaticSnapshot.restorePlanForRelease(BodyRestorePolicy::ProtectComplexSystemOwned);
-    ok &= expectTrue("rejected selected-tree static release should restore filter", unsupportedStaticRelease.entries.front().restoreFilter);
-    ok &= expectTrue("rejected selected-tree static release should restore motion", unsupportedStaticRelease.entries.front().restoreMotion);
-
     return ok ? 0 : 1;
 }
