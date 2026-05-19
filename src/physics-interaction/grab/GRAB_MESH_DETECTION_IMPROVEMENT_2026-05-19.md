@@ -4,7 +4,7 @@ Date: 2026-05-19
 Project: ROCK
 Branch: feature/ghidra-grab-motor-mapping
 Source authority: current local ROCK source, tests, and local git history only
-Confidence: working findings; implementation design not approved yet
+Confidence: implemented findings; dynamic skinned path still needs runtime confirmation on live dead-body/gore assets
 
 ## Goal
 
@@ -17,7 +17,8 @@ The user clarified that a previous mesh simplification was made while investigat
 - Object selection still starts from hknp selection evidence. Collision identifies the reference/body and supplies a hit point/normal/shape key when available.
 - Visual mesh extraction happens in `src/physics-interaction/grab/MeshGrab.h` and is consumed in `src/physics-interaction/hand/HandGrab.cpp`.
 - `MeshGrab.h` extracts static, dynamic, and skinned `BSTriShape` triangles. It skips hidden nodes, skips blacklisted geometry shapes only, guards native memory reads, and has a very high `kMaxMeshExtractionTriangles = 1'000'000`.
-- Dynamic skinned tri-shapes are intentionally skipped because that combined path is not verified.
+- Dynamic skinned tri-shapes now lock the live dynamic vertex stream for current surface positions, while keeping guarded static skin weights and guarded bone-node ownership as skinned surface evidence.
+- Non-dynamic skinned tri-shapes still use the existing skin-to-bone transform path because their render positions are reconstructed from static bind vertices and current bone transforms.
 - The active grab path calls `extractAllSurfaceTriangles(meshSourceNode, ..., maxDepth = 10, ...)`.
 - Close grabs currently prefer palm-pocket position-only mesh authority before generic selection-hit mesh snap or palm-ray mesh fallback.
 - Contact patches and multi-finger contact are mostly validation/pose evidence. They are deliberately restricted from replacing pivot B except through tightly gated mesh-backed paths, after prior inversion debugging.

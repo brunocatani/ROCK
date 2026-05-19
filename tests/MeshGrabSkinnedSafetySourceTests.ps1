@@ -53,9 +53,14 @@ Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'guardedCopyFromMemory\(s
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'worldVertexValid' 'Skinned mesh extraction must track vertex validity instead of emitting zeroed vertices.'
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'skippedInvalidVertexTriangles' 'Skinned mesh extraction must skip triangles whose skinned vertices cannot be trusted.'
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'invalidBoneNodePointers' 'Skinned mesh extraction must log invalid bone pointer skips for crash diagnosis.'
+Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'DynamicTriShapeVertexLock\s+dynamicVertexLock\(dynamicSkinned \? triShape : nullptr\)' 'Dynamic skinned extraction must lock live dynamic vertices instead of rejecting the shape.'
+Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'readDynamicVertexPosition\(dynamicVerts \+ vi \* dynamicStride\)' 'Dynamic skinned extraction must use the locked dynamic vertex positions for palm-pocket surface authority.'
+Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'vertexInfluences\[vi\]\[k\]\s*=\s*GrabSurfaceVertexInfluence\{\s*boneNodesByIndex\[bIdx\],\s*w\s*\}' 'Dynamic skinned extraction must preserve guarded bone influence ownership for body matching.'
+Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'GrabSurfaceSourceKind::Skinned' 'Dynamic skinned triangles must remain skinned surface evidence, not generic collision fallback.'
 
 Reject-Text 'src/physics-interaction/grab/MeshGrab.h' 'auto\*\s+boneNode\s*=\s*boneNodes\[b\]' 'Skinned mesh extraction must not directly dereference boneNodes[b].'
 Reject-Text 'src/physics-interaction/grab/MeshGrab.h' 'GrabSurfaceVertexInfluence\{\s*boneNodes\[bIdx\]' 'Skinned surface influence capture must not reread boneNodes[bIdx] directly.'
+Reject-Text 'src/physics-interaction/grab/MeshGrab.h' 'Skipping skinned BSDynamicTriShape' 'Skinned BSDynamicTriShape must no longer be hard-skipped from grab mesh authority.'
 
 if ($failures.Count -gt 0) {
     Write-Error ($failures -join [Environment]::NewLine)

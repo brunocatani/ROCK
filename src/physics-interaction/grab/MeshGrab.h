@@ -42,32 +42,30 @@ namespace rock
 
     constexpr std::uint32_t kMaxMeshExtractionTriangles = 1'000'000;
 
+    inline RE::NiPoint3 transformPoint(const RE::NiTransform& t, const RE::NiPoint3& p)
+    {
+        /*
+         * Mesh extraction must match FO4VR's native NiTransform compose
+         * convention. Ghidra verification of the engine compose path showed
+         * child-local vectors are applied through the parent column basis.
+         */
+        RE::NiPoint3 scaled(p.x * t.scale, p.y * t.scale, p.z * t.scale);
+        RE::NiPoint3 rotated;
+        rotated.x = t.rotate.entry[0][0] * scaled.x + t.rotate.entry[1][0] * scaled.y + t.rotate.entry[2][0] * scaled.z;
+        rotated.y = t.rotate.entry[0][1] * scaled.x + t.rotate.entry[1][1] * scaled.y + t.rotate.entry[2][1] * scaled.z;
+        rotated.z = t.rotate.entry[0][2] * scaled.x + t.rotate.entry[1][2] * scaled.y + t.rotate.entry[2][2] * scaled.z;
+        return RE::NiPoint3(rotated.x + t.translate.x, rotated.y + t.translate.y, rotated.z + t.translate.z);
+    }
+
     struct TriangleData
     {
         RE::NiPoint3 v0, v1, v2;
 
         void applyTransform(const RE::NiTransform& t)
         {
-            auto xform = [&](const RE::NiPoint3& p) -> RE::NiPoint3 {
-                /*
-                 * Mesh extraction must match FO4VR's native NiTransform compose
-                 * convention. Ghidra verification of the engine compose path
-                 * showed child-local vectors are applied through the parent
-                 * column basis. Weapon hulls are baked from these world
-                 * triangles once at creation; using the opposite basis makes the
-                 * baked hull depend on how tilted the weapon was when the
-                 * collision was created.
-                 */
-                RE::NiPoint3 scaled(p.x * t.scale, p.y * t.scale, p.z * t.scale);
-                RE::NiPoint3 rotated;
-                rotated.x = t.rotate.entry[0][0] * scaled.x + t.rotate.entry[1][0] * scaled.y + t.rotate.entry[2][0] * scaled.z;
-                rotated.y = t.rotate.entry[0][1] * scaled.x + t.rotate.entry[1][1] * scaled.y + t.rotate.entry[2][1] * scaled.z;
-                rotated.z = t.rotate.entry[0][2] * scaled.x + t.rotate.entry[1][2] * scaled.y + t.rotate.entry[2][2] * scaled.z;
-                return RE::NiPoint3(rotated.x + t.translate.x, rotated.y + t.translate.y, rotated.z + t.translate.z);
-            };
-            v0 = xform(v0);
-            v1 = xform(v1);
-            v2 = xform(v2);
+            v0 = transformPoint(t, v0);
+            v1 = transformPoint(t, v1);
+            v2 = transformPoint(t, v2);
         }
     };
 
@@ -511,11 +509,7 @@ namespace rock
         std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr)
     {
         [[maybe_unused]] const char* shapeName = triShape->name.c_str() ? triShape->name.c_str() : "(null)";
-
-        if (isDynamicTriShape(triShape)) {
-            ROCK_LOG_DEBUG(MeshGrab, "Skipping skinned BSDynamicTriShape '{}' (dynamic+skinned extraction not yet verified)", shapeName);
-            return 0;
-        }
+        const bool dynamicSkinned = isDynamicTriShape(triShape);
 
         void* rendererData = nullptr;
         if (!native_memory::tryReadField(triShape, VROffset::rendererData, rendererData)) {
@@ -545,10 +539,19 @@ namespace rock
 
         std::uint32_t minPosSize = fullPrecision ? (posOffset + 12) : (posOffset + 6);
         std::uint32_t minSkinEnd = skinOffset + 12;
-        std::uint32_t minStride = (std::max)(minPosSize, minSkinEnd);
+        std::uint32_t minStride = dynamicSkinned ? minSkinEnd : (std::max)(minPosSize, minSkinEnd);
         if (numTris == 0 || numTris > kMaxMeshExtractionTriangles || numVerts == 0 || vtxStride < minStride) {
             ROCK_LOG_WARN(MeshGrab, "Skinned '{}': bad geometry (tris={}, verts={}, stride={}, minNeeded={})", shapeName, numTris, numVerts, vtxStride, minStride);
             return 0;
+        }
+
+        std::uint32_t dynamicStride = 0;
+        if (dynamicSkinned) {
+            dynamicStride = static_cast<std::uint32_t>((vtxDescRaw >> 2) & 0x3C);
+            if (dynamicStride < 6) {
+                ROCK_LOG_WARN(MeshGrab, "Skinned '{}': bad dynamic stride {}", shapeName, dynamicStride);
+                return 0;
+            }
         }
 
         void* vertexDataPtr = nullptr;
@@ -575,6 +578,34 @@ namespace rock
         if (!vertexBufferRangeLooksReadable(verts, numVerts, vtxStride) ||
             !native_memory::pointerRangeLooksReadable(tris, static_cast<std::size_t>(numTris) * 3u * sizeof(std::uint16_t))) {
             ROCK_LOG_WARN(MeshGrab, "Skinned '{}': unreadable CPU buffers (tris={}, verts={}, stride={})", shapeName, numTris, numVerts, vtxStride);
+            return 0;
+        }
+
+        std::uint32_t dynamicDataSize = 0;
+        if (dynamicSkinned && !native_memory::tryReadField(triShape, VROffset::dynamicDataSize, dynamicDataSize)) {
+            ROCK_LOG_WARN(MeshGrab, "Skinned '{}': unreadable dynamic data size", shapeName);
+            return 0;
+        }
+        const std::uint64_t requiredDynamicBytes = static_cast<std::uint64_t>(dynamicStride) * numVerts;
+        if (dynamicSkinned && dynamicDataSize < requiredDynamicBytes) {
+            ROCK_LOG_WARN(MeshGrab,
+                "Skinned '{}': dynamic vertex buffer too small (size={}, required={}, verts={}, stride={})",
+                shapeName,
+                dynamicDataSize,
+                requiredDynamicBytes,
+                numVerts,
+                dynamicStride);
+            return 0;
+        }
+
+        DynamicTriShapeVertexLock dynamicVertexLock(dynamicSkinned ? triShape : nullptr);
+        const std::uint8_t* dynamicVerts = dynamicVertexLock.vertices();
+        if (dynamicSkinned && !dynamicVerts) {
+            ROCK_LOG_WARN(MeshGrab, "Skinned '{}': null dynamic vertex buffer", shapeName);
+            return 0;
+        }
+        if (dynamicSkinned && !vertexBufferRangeLooksReadable(dynamicVerts, numVerts, dynamicStride)) {
+            ROCK_LOG_WARN(MeshGrab, "Skinned '{}': unreadable dynamic vertex buffer (verts={}, stride={})", shapeName, numVerts, dynamicStride);
             return 0;
         }
 
@@ -609,20 +640,20 @@ namespace rock
         }
 
         char* boneData = nullptr;
-        if (!native_memory::tryReadField(skinInst, 0x40, boneData)) {
+        if (!dynamicSkinned && !native_memory::tryReadField(skinInst, 0x40, boneData)) {
             ROCK_LOG_WARN(MeshGrab, "Skinned '{}': unreadable BSSkin::BoneData pointer", shapeName);
             return 0;
         }
-        if (!boneData) {
+        if (!dynamicSkinned && !boneData) {
             ROCK_LOG_WARN(MeshGrab, "Skinned '{}': null BSSkin::BoneData", shapeName);
             return 0;
         }
         char* skinToBoneArray = nullptr;
-        if (!native_memory::tryReadField(boneData, 0x10, skinToBoneArray)) {
+        if (!dynamicSkinned && !native_memory::tryReadField(boneData, 0x10, skinToBoneArray)) {
             ROCK_LOG_WARN(MeshGrab, "Skinned '{}': unreadable skinToBone transform array pointer", shapeName);
             return 0;
         }
-        if (!skinToBoneArray) {
+        if (!dynamicSkinned && !skinToBoneArray) {
             ROCK_LOG_WARN(MeshGrab, "Skinned '{}': null skinToBone transform array", shapeName);
             return 0;
         }
@@ -631,9 +662,10 @@ namespace rock
         {
             float m[12];
             RE::NiNode* node = nullptr;
-            bool valid;
+            bool valid = false;
         };
         std::vector<BoneCombined> boneTransforms(boneCount);
+        std::vector<RE::NiNode*> boneNodesByIndex(boneCount, nullptr);
         std::uint32_t invalidBoneNodePointers = 0;
         std::uint32_t invalidBoneTransforms = 0;
 
@@ -645,6 +677,11 @@ namespace rock
             if (!native_memory::tryReadValue(boneNodes + b, boneNode) || !boneNode ||
                 !native_memory::pointerRangeLooksReadable(reinterpret_cast<const char*>(boneNode) + 0x70, 0x40)) {
                 ++invalidBoneNodePointers;
+                continue;
+            }
+
+            boneNodesByIndex[b] = boneNode;
+            if (dynamicSkinned) {
                 continue;
             }
 
@@ -695,8 +732,8 @@ namespace rock
             boneTransforms[b].valid = true;
         }
 
-        ROCK_LOG_DEBUG(MeshGrab, "Skinned '{}': extracting {} tris, {} verts, {} bones (stride={}, skinOff={}, fullPrec={})", shapeName, numTris, numVerts, boneCount, vtxStride,
-            skinOffset, fullPrecision ? 1 : 0);
+        ROCK_LOG_DEBUG(MeshGrab, "Skinned '{}': extracting {} tris, {} verts, {} bones (stride={}, skinOff={}, fullPrec={}, dynamic={})", shapeName, numTris, numVerts,
+            boneCount, vtxStride, skinOffset, fullPrecision ? 1 : 0, dynamicSkinned ? 1 : 0);
 
         std::vector<RE::NiPoint3> worldVerts(numVerts);
         std::vector<std::uint8_t> worldVertexValid(numVerts, 0);
@@ -705,7 +742,10 @@ namespace rock
         for (std::uint16_t vi = 0; vi < numVerts; vi++) {
             const std::uint8_t* vtx = verts + vi * vtxStride;
 
-            RE::NiPoint3 bindPos = readVertexPosition(vtx, posOffset, fullPrecision);
+            RE::NiPoint3 bindPos;
+            if (!dynamicSkinned) {
+                bindPos = readVertexPosition(vtx, posOffset, fullPrecision);
+            }
 
             const std::uint16_t* weightPtr = reinterpret_cast<const std::uint16_t*>(vtx + skinOffset);
             float w0 = halfToFloat(weightPtr[0]);
@@ -731,30 +771,46 @@ namespace rock
                     continue;
 
                 std::uint8_t bIdx = indices[k];
-                if (bIdx >= boneCount || !boneTransforms[bIdx].valid) {
+                if (bIdx >= boneCount || !boneNodesByIndex[bIdx] || (!dynamicSkinned && !boneTransforms[bIdx].valid)) {
                     missingWeightedBone = true;
                     continue;
                 }
 
-                const float* m = boneTransforms[bIdx].m;
+                if (!dynamicSkinned) {
+                    const float* m = boneTransforms[bIdx].m;
 
-                float rx = m[0] * bindPos.x + m[1] * bindPos.y + m[2] * bindPos.z + m[3];
-                float ry = m[4] * bindPos.x + m[5] * bindPos.y + m[6] * bindPos.z + m[7];
-                float rz = m[8] * bindPos.x + m[9] * bindPos.y + m[10] * bindPos.z + m[11];
+                    float rx = m[0] * bindPos.x + m[1] * bindPos.y + m[2] * bindPos.z + m[3];
+                    float ry = m[4] * bindPos.x + m[5] * bindPos.y + m[6] * bindPos.z + m[7];
+                    float rz = m[8] * bindPos.x + m[9] * bindPos.y + m[10] * bindPos.z + m[11];
 
-                wx += w * rx;
-                wy += w * ry;
-                wz += w * rz;
+                    wx += w * rx;
+                    wy += w * ry;
+                    wz += w * rz;
+                }
                 validWeight += w;
-                vertexInfluences[vi][k] = GrabSurfaceVertexInfluence{ boneTransforms[bIdx].node, w };
+                vertexInfluences[vi][k] = GrabSurfaceVertexInfluence{ boneNodesByIndex[bIdx], w };
             }
 
-            if (missingWeightedBone || validWeight <= 0.00001f || !std::isfinite(wx) || !std::isfinite(wy) || !std::isfinite(wz)) {
+            if (missingWeightedBone || validWeight <= 0.00001f) {
                 ++invalidSkinnedVertices;
                 continue;
             }
 
-            worldVerts[vi] = RE::NiPoint3(wx, wy, wz);
+            if (dynamicSkinned) {
+                const RE::NiPoint3 dynamicLocal = readDynamicVertexPosition(dynamicVerts + vi * dynamicStride);
+                const RE::NiPoint3 dynamicWorld = transformPoint(triShape->world, dynamicLocal);
+                if (!std::isfinite(dynamicWorld.x) || !std::isfinite(dynamicWorld.y) || !std::isfinite(dynamicWorld.z)) {
+                    ++invalidSkinnedVertices;
+                    continue;
+                }
+                worldVerts[vi] = dynamicWorld;
+            } else {
+                if (!std::isfinite(wx) || !std::isfinite(wy) || !std::isfinite(wz)) {
+                    ++invalidSkinnedVertices;
+                    continue;
+                }
+                worldVerts[vi] = RE::NiPoint3(wx, wy, wz);
+            }
             worldVertexValid[vi] = 1;
         }
 
@@ -825,14 +881,16 @@ namespace rock
             const bool skinned = isSkinned(triShape);
 
             if (skinned) {
-                if (dynamic && stats) {
-                    stats->dynamicSkinnedSkipped++;
-                } else if (stats) {
+                if (stats) {
                     stats->skinnedShapes++;
                 }
                 extractTrianglesFromSkinnedTriShape(triShape, outTriangles);
-                if (stats && !dynamic) {
-                    stats->skinnedTriangles += static_cast<std::uint32_t>(outTriangles.size() - before);
+                const auto added = static_cast<std::uint32_t>(outTriangles.size() - before);
+                if (stats) {
+                    stats->skinnedTriangles += added;
+                    if (dynamic && added == 0) {
+                        stats->dynamicSkinnedSkipped++;
+                    }
                 }
             } else if (dynamic) {
                 if (stats) {
@@ -896,14 +954,16 @@ namespace rock
             const bool skinned = isSkinned(triShape);
 
             if (skinned) {
-                if (dynamic && stats) {
-                    stats->dynamicSkinnedSkipped++;
-                } else if (stats) {
+                if (stats) {
                     stats->skinnedShapes++;
                 }
                 extractTrianglesFromSkinnedTriShape(triShape, outTriangles, &outSurfaceTriangles);
-                if (stats && !dynamic) {
-                    stats->skinnedTriangles += static_cast<std::uint32_t>(outTriangles.size() - before);
+                const auto added = static_cast<std::uint32_t>(outTriangles.size() - before);
+                if (stats) {
+                    stats->skinnedTriangles += added;
+                    if (dynamic && added == 0) {
+                        stats->dynamicSkinnedSkipped++;
+                    }
                 }
             } else if (dynamic) {
                 if (stats) {
