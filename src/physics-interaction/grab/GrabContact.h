@@ -290,6 +290,7 @@ namespace rock::grab_contact_evidence_policy
 #include "physics-interaction/TransformMath.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -298,6 +299,8 @@ namespace rock::grab_contact_evidence_policy
 
 namespace rock::grab_contact_patch_math
 {
+    inline constexpr std::size_t kContactPatchProbePatternSampleCount = 9;
+
     template <class Vector>
     struct GrabContactPatchSample
     {
@@ -463,6 +466,47 @@ namespace rock::grab_contact_patch_math
         default:
             return "none";
         }
+    }
+
+    template <class Vector, std::size_t Count>
+    inline std::size_t buildContactPatchProbeOffsets(std::array<Vector, Count>& offsets, const Vector& palmTangent, const Vector& palmBitangent, float spacingGameUnits)
+    {
+        offsets = {};
+
+        std::size_t count = 0;
+        auto append = [&](const Vector& offset) {
+            if (count < offsets.size()) {
+                offsets[count++] = offset;
+            }
+        };
+
+        append(Vector{});
+        if constexpr (Count == 0) {
+            return count;
+        }
+
+        const float spacing = std::isfinite(spacingGameUnits) && spacingGameUnits > 0.0f ? spacingGameUnits : 0.0f;
+        const Vector tangent = mul(normalizeOrZero(palmTangent), spacing);
+        const Vector bitangent = mul(normalizeOrZero(palmBitangent), spacing);
+        const bool hasTangent = lengthSquared(tangent) > 0.0f;
+        const bool hasBitangent = lengthSquared(bitangent) > 0.0f;
+
+        if (hasTangent) {
+            append(tangent);
+            append(negate(tangent));
+        }
+        if (hasBitangent) {
+            append(bitangent);
+            append(negate(bitangent));
+        }
+        if (hasTangent && hasBitangent) {
+            append(add(tangent, bitangent));
+            append(sub(tangent, bitangent));
+            append(add(negate(tangent), bitangent));
+            append(negate(add(tangent, bitangent)));
+        }
+
+        return count;
     }
 
     template <class Vector>

@@ -393,7 +393,7 @@ namespace rock
         rockGrabMeshContactOnly = true;
         rockGrabRequireMeshContact = true;
         rockGrabContactPatchEnabled = true;
-        rockGrabContactPatchProbeCount = 5;
+        rockGrabContactPatchProbeCount = 9;
         rockGrabContactPatchProbeSpacingGameUnits = 3.0f;
         rockGrabContactPatchProbeRadiusGameUnits = 2.0f;
         rockGrabContactPatchMeshSnapMaxDistanceGameUnits = 6.0f;
@@ -1309,7 +1309,7 @@ namespace rock
         rockGrabRequireMeshContact = ini.GetBoolValue(SECTION, "bGrabRequireMeshContact", rockGrabRequireMeshContact);
         rockGrabContactPatchEnabled = ini.GetBoolValue(SECTION, "bGrabContactPatchEnabled", rockGrabContactPatchEnabled);
         rockGrabContactPatchProbeCount = static_cast<int>(ini.GetLongValue(SECTION, "iGrabContactPatchProbeCount", rockGrabContactPatchProbeCount));
-        rockGrabContactPatchProbeCount = std::clamp(rockGrabContactPatchProbeCount, 1, 5);
+        rockGrabContactPatchProbeCount = std::clamp(rockGrabContactPatchProbeCount, 1, 9);
         rockGrabContactPatchProbeSpacingGameUnits =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabContactPatchProbeSpacingGameUnits", rockGrabContactPatchProbeSpacingGameUnits));
         if (!std::isfinite(rockGrabContactPatchProbeSpacingGameUnits) || rockGrabContactPatchProbeSpacingGameUnits < 0.0f) {

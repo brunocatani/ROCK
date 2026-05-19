@@ -364,7 +364,7 @@ namespace rock
         bool rockGrabMeshContactOnly = true;
         bool rockGrabRequireMeshContact = true;
         bool rockGrabContactPatchEnabled = true;
-        int rockGrabContactPatchProbeCount = 5;
+        int rockGrabContactPatchProbeCount = 9;
         float rockGrabContactPatchProbeSpacingGameUnits = 3.0f;
         float rockGrabContactPatchProbeRadiusGameUnits = 2.0f;
         float rockGrabContactPatchMeshSnapMaxDistanceGameUnits = 6.0f;

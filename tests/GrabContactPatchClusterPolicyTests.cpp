@@ -1,5 +1,6 @@
 #include "physics-interaction/grab/GrabContact.h"
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -86,6 +87,25 @@ int main()
      * stretch the fitted patch into a false rotation request.
      */
     bool ok = true;
+
+    {
+        std::array<Vec3, rock::grab_contact_patch_math::kContactPatchProbePatternSampleCount> offsets{};
+        const auto count = rock::grab_contact_patch_math::buildContactPatchProbeOffsets(offsets,
+            Vec3{ 1.0f, 0.0f, 0.0f },
+            Vec3{ 0.0f, 1.0f, 0.0f },
+            3.0f);
+
+        ok &= expectEqual("expanded probe pattern count", count, 9);
+        ok &= expectPointNear("expanded probe center", offsets[0], Vec3{ 0.0f, 0.0f, 0.0f });
+        ok &= expectPointNear("expanded probe tangent positive", offsets[1], Vec3{ 3.0f, 0.0f, 0.0f });
+        ok &= expectPointNear("expanded probe tangent negative", offsets[2], Vec3{ -3.0f, 0.0f, 0.0f });
+        ok &= expectPointNear("expanded probe bitangent positive", offsets[3], Vec3{ 0.0f, 3.0f, 0.0f });
+        ok &= expectPointNear("expanded probe bitangent negative", offsets[4], Vec3{ 0.0f, -3.0f, 0.0f });
+        ok &= expectPointNear("expanded probe diagonal positive positive", offsets[5], Vec3{ 3.0f, 3.0f, 0.0f });
+        ok &= expectPointNear("expanded probe diagonal positive negative", offsets[6], Vec3{ 3.0f, -3.0f, 0.0f });
+        ok &= expectPointNear("expanded probe diagonal negative positive", offsets[7], Vec3{ -3.0f, 3.0f, 0.0f });
+        ok &= expectPointNear("expanded probe diagonal negative negative", offsets[8], Vec3{ -3.0f, -3.0f, 0.0f });
+    }
 
     {
         const auto result = cluster({

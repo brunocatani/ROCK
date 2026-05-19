@@ -427,7 +427,7 @@ namespace RE
 
 namespace rock
 {
-    inline constexpr std::size_t kMaxGrabContactPatchSamples = 5;
+    inline constexpr std::size_t kMaxGrabContactPatchSamples = grab_contact_patch_math::kContactPatchProbePatternSampleCount;
 
     struct GrabLocalTriangle
     {

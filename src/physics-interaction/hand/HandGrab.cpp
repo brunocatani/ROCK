@@ -1079,16 +1079,14 @@ namespace rock
                 return result;
             }
 
-            const int probeCount = std::clamp(g_rockConfig.rockGrabContactPatchProbeCount, 1, static_cast<int>(kMaxGrabContactPatchSamples));
             const float spacing = (std::max)(0.0f, g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits);
             const float radius = (std::max)(0.1f, g_rockConfig.rockGrabContactPatchProbeRadiusGameUnits);
-            std::array<RE::NiPoint3, kMaxGrabContactPatchSamples> offsets{
-                RE::NiPoint3{},
-                palmTangent * spacing,
-                palmTangent * -spacing,
-                palmBitangent * spacing,
-                palmBitangent * -spacing,
-            };
+            std::array<RE::NiPoint3, kMaxGrabContactPatchSamples> offsets{};
+            const auto probePatternCount =
+                grab_contact_patch_math::buildContactPatchProbeOffsets(offsets, palmTangent, palmBitangent, spacing);
+            const int probeCount = (std::min)(
+                std::clamp(g_rockConfig.rockGrabContactPatchProbeCount, 1, static_cast<int>(kMaxGrabContactPatchSamples)),
+                static_cast<int>(probePatternCount));
 
             const float configuredNearDistance =
                 g_rockConfig.rockNearCastDistanceGameUnits > 0.0f ? g_rockConfig.rockNearCastDistanceGameUnits : g_rockConfig.rockNearDetectionRange;
