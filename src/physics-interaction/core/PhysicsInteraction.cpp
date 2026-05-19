@@ -169,17 +169,6 @@ namespace rock
                 transferResult.formID != 0 ? transferResult.formID : fallbackFormID));
         }
 
-        grab_authority_phase0::Config makeGrabAuthorityPhase0ProbeConfig()
-        {
-            return grab_authority_phase0::Config{
-                .enabled = g_rockConfig.rockDebugGrabAuthorityPhase0ProbeEnabled,
-                .solverProbeEnabled = g_rockConfig.rockDebugGrabAuthorityPhase0SolverProbeEnabled,
-                .proxyFilterPolicy = g_rockConfig.rockDebugGrabAuthorityPhase0ProxyFilterPolicy,
-                .logIntervalFrames = g_rockConfig.rockDebugGrabAuthorityPhase0LogIntervalFrames,
-                .motionAmplitudeGameUnits = g_rockConfig.rockDebugGrabAuthorityPhase0MotionAmplitudeGameUnits,
-            };
-        }
-
         std::uint32_t claimOwnerCount(std::uint32_t ownerMask)
         {
             std::uint32_t count = 0;
@@ -841,8 +830,8 @@ namespace rock
         _generatedBodyStepDrive.setDriveCallbacks(
             nullptr,
             &PhysicsInteraction::onGeneratedColliderPhysicsSubstep,
-            &PhysicsInteraction::onGrabAuthorityPhase0BetweenStep,
-            &PhysicsInteraction::onGrabAuthorityPhase0AfterSolve,
+            &PhysicsInteraction::onCustomGrabAuthorityBetweenStep,
+            &PhysicsInteraction::onCustomGrabAuthorityAfterSolve,
             this);
 
         installBumpHook();
@@ -955,7 +944,6 @@ namespace rock
         _lifecycleFlagsAtomic.store(_lifecycleState.flags, std::memory_order_release);
         _stableFrameCountAtomic.store(_lifecycleState.stableFrameCount, std::memory_order_release);
         _lifecycleHknpWorldAtomic.store(nullptr, std::memory_order_release);
-        _grabAuthorityPhase0Probe.shutdown(_cachedBhkWorld);
         _generatedBodyStepDrive.reset();
         _shoulderStashStates = {};
     }
@@ -1506,7 +1494,6 @@ namespace rock
         }
 
         if (!physicsWritesAllowedForWorld(hknp)) {
-            _grabAuthorityPhase0Probe.shutdown(bhk);
             ROCK_LOG_SAMPLE_DEBUG(Update,
                 g_rockConfig.rockLogSampleMilliseconds,
                 "ROCK lifecycle gate closed frame: flags=0x{:08X} reason={} worldGen={} skeletonGen={} providerGen={} stableFrames={}",
@@ -1602,8 +1589,6 @@ namespace rock
             }
             _weaponCollision.update(hknp, weaponNode, dominantHandBodyId, frame.deltaSeconds);
         }
-
-        _grabAuthorityPhase0Probe.updateGameFrame(bhk, hknp, makeGrabAuthorityPhase0ProbeConfig());
 
         _generatedBodyStepDrive.registerForNextStep(bhk, hknp);
 
@@ -2116,7 +2101,6 @@ namespace rock
                     releaseObject(r, PhysicsObjectClaimOwner::LeftHand);
             }
             _weaponCollision.destroyWeaponBody(hknp);
-            _grabAuthorityPhase0Probe.shutdown(_cachedBhkWorld);
             destroyBodyBoneCollisions(_cachedBhkWorld);
             destroyHandCollisions(_cachedBhkWorld);
         } else {
@@ -2124,7 +2108,6 @@ namespace rock
             ROCK_LOG_INFO(Init, "World stale or null — skipping Havok body destruction");
             _rightHand.abandonHavokStateAfterWorldLoss();
             _leftHand.abandonHavokStateAfterWorldLoss();
-            _grabAuthorityPhase0Probe.abandon();
             _bodyBoneColliders.reset();
             _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
             _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
@@ -2708,24 +2691,24 @@ namespace rock
         self->driveGeneratedCollidersFromPhysicsSubstep(world, timing);
     }
 
-    void PhysicsInteraction::onGrabAuthorityPhase0BetweenStep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
+    void PhysicsInteraction::onCustomGrabAuthorityBetweenStep(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
         auto* self = static_cast<PhysicsInteraction*>(userData);
         if (!self) {
             return;
         }
 
-        self->driveGrabAuthorityPhase0ProbeFromBetweenStep(world, timing);
+        self->driveCustomGrabAuthorityFromBetweenStep(world, timing);
     }
 
-    void PhysicsInteraction::onGrabAuthorityPhase0AfterSolve(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
+    void PhysicsInteraction::onCustomGrabAuthorityAfterSolve(void* userData, RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
         auto* self = static_cast<PhysicsInteraction*>(userData);
         if (!self) {
             return;
         }
 
-        self->observeGrabAuthorityPhase0ProbeAfterSolve(world, timing);
+        self->observeCustomGrabAuthorityAfterSolve(world, timing);
     }
 
     void PhysicsInteraction::driveGeneratedCollidersFromPhysicsSubstep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
@@ -2742,7 +2725,7 @@ namespace rock
         _weaponCollision.flushPendingPhysicsDrive(world, timing);
     }
 
-    void PhysicsInteraction::driveGrabAuthorityPhase0ProbeFromBetweenStep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
+    void PhysicsInteraction::driveCustomGrabAuthorityFromBetweenStep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
         if (!world || !_initialized.load(std::memory_order_acquire) || !physicsWritesAllowedForWorld(world)) {
             return;
@@ -2750,27 +2733,16 @@ namespace rock
 
         _rightHand.flushPendingCustomGrabAuthority(world, timing);
         _leftHand.flushPendingCustomGrabAuthority(world, timing);
-
-        _grabAuthorityPhase0Probe.noteSemanticContactBodyIds(
-            _lastContactBodyRight.load(std::memory_order_acquire),
-            _lastContactBodyLeft.load(std::memory_order_acquire),
-            _lastContactBodyWeapon.load(std::memory_order_acquire));
-        _grabAuthorityPhase0Probe.driveBetweenCollideAndSolve(world, timing, makeGrabAuthorityPhase0ProbeConfig());
     }
 
-    void PhysicsInteraction::observeGrabAuthorityPhase0ProbeAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
+    void PhysicsInteraction::observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
         if (!world || !_initialized.load(std::memory_order_acquire) || !physicsWritesAllowedForWorld(world)) {
             return;
         }
 
-        _grabAuthorityPhase0Probe.noteSemanticContactBodyIds(
-            _lastContactBodyRight.load(std::memory_order_acquire),
-            _lastContactBodyLeft.load(std::memory_order_acquire),
-            _lastContactBodyWeapon.load(std::memory_order_acquire));
         _rightHand.observeCustomGrabAuthorityAfterSolve(world, timing);
         _leftHand.observeCustomGrabAuthorityAfterSolve(world, timing);
-        _grabAuthorityPhase0Probe.observeAfterAny(world, timing, makeGrabAuthorityPhase0ProbeConfig());
     }
 
 #include "physics-interaction/core/PhysicsInteractionDebugOverlay.inl"

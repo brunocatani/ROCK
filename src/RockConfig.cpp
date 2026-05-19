@@ -196,11 +196,6 @@ namespace rock
         rockDebugGrabTransformTelemetryAxes = false;
         rockDebugGrabTransformTelemetryLogIntervalFrames = 1;
         rockDebugGrabTransformTelemetryTextMode = 0;
-        rockDebugGrabAuthorityPhase0ProbeEnabled = false;
-        rockDebugGrabAuthorityPhase0SolverProbeEnabled = true;
-        rockDebugGrabAuthorityPhase0ProxyFilterPolicy = 0;
-        rockDebugGrabAuthorityPhase0LogIntervalFrames = 30;
-        rockDebugGrabAuthorityPhase0MotionAmplitudeGameUnits = 8.0f;
         rockDebugShowGrabNotifications = false;
         rockDebugShowWeaponNotifications = false;
         rockDebugHandTransformParity = false;
@@ -797,26 +792,6 @@ namespace rock
         if (rockDebugGrabTransformTelemetryTextMode < 0 || rockDebugGrabTransformTelemetryTextMode > 1) {
             rockDebugGrabTransformTelemetryTextMode = 0;
         }
-        rockDebugGrabAuthorityPhase0ProbeEnabled =
-            ini.GetBoolValue(SECTION, "bDebugGrabAuthorityPhase0ProbeEnabled", rockDebugGrabAuthorityPhase0ProbeEnabled);
-        rockDebugGrabAuthorityPhase0SolverProbeEnabled =
-            ini.GetBoolValue(SECTION, "bDebugGrabAuthorityPhase0SolverProbeEnabled", rockDebugGrabAuthorityPhase0SolverProbeEnabled);
-        rockDebugGrabAuthorityPhase0ProxyFilterPolicy =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugGrabAuthorityPhase0ProxyFilterPolicy", rockDebugGrabAuthorityPhase0ProxyFilterPolicy));
-        rockDebugGrabAuthorityPhase0ProxyFilterPolicy = std::clamp(rockDebugGrabAuthorityPhase0ProxyFilterPolicy, 0, 2);
-        rockDebugGrabAuthorityPhase0LogIntervalFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iDebugGrabAuthorityPhase0LogIntervalFrames", rockDebugGrabAuthorityPhase0LogIntervalFrames));
-        if (rockDebugGrabAuthorityPhase0LogIntervalFrames < 1) {
-            rockDebugGrabAuthorityPhase0LogIntervalFrames = 1;
-        }
-        rockDebugGrabAuthorityPhase0MotionAmplitudeGameUnits = readClampedFloat(
-            ini,
-            SECTION,
-            "fDebugGrabAuthorityPhase0MotionAmplitudeGameUnits",
-            rockDebugGrabAuthorityPhase0MotionAmplitudeGameUnits,
-            8.0f,
-            0.25f,
-            64.0f);
         rockDebugShowGrabNotifications = ini.GetBoolValue(SECTION, "bDebugShowGrabNotifications", rockDebugShowGrabNotifications);
         rockDebugShowWeaponNotifications = ini.GetBoolValue(SECTION, "bDebugShowWeaponNotifications", rockDebugShowWeaponNotifications);
         rockDebugHandTransformParity = ini.GetBoolValue(SECTION, "bDebugHandTransformParity", rockDebugHandTransformParity);

@@ -167,11 +167,6 @@ namespace rock
         bool rockDebugGrabTransformTelemetryAxes = false;
         int rockDebugGrabTransformTelemetryLogIntervalFrames = 1;
         int rockDebugGrabTransformTelemetryTextMode = 0;
-        bool rockDebugGrabAuthorityPhase0ProbeEnabled = false;
-        bool rockDebugGrabAuthorityPhase0SolverProbeEnabled = true;
-        int rockDebugGrabAuthorityPhase0ProxyFilterPolicy = 0;
-        int rockDebugGrabAuthorityPhase0LogIntervalFrames = 30;
-        float rockDebugGrabAuthorityPhase0MotionAmplitudeGameUnits = 8.0f;
         bool rockDebugShowGrabNotifications = false;
         bool rockDebugShowWeaponNotifications = false;
         bool rockDebugHandTransformParity = false;
