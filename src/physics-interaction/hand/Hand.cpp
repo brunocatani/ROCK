@@ -762,6 +762,8 @@ namespace rock
         scanOptions.requireSameResolvedRef = true;
         scanOptions.allowUnresolvedRefBodies = true;
         scanOptions.allowWeaponRefExpansion = true;
+        scanOptions.allowSelectedObjectTreeActiveGrabLayers = true;
+        scanOptions.allowOwnerNodeWorldFallbackScan = true;
         scanOptions.heldBySameHand = &_heldBodyIds;
         scanOptions.maxDepth = g_rockConfig.rockObjectPhysicsTreeMaxDepth;
 

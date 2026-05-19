@@ -57,6 +57,7 @@ namespace rock::physics_body_classifier
         bool isRockWeaponSourceBody = false;
         bool isHeldBySameHand = false;
         bool isPlayerBody = false;
+        bool isSelectedObjectTreeActiveGrabBody = false;
     };
 
     struct BodyClassificationResult
@@ -184,7 +185,9 @@ namespace rock::physics_body_classifier
         }
         const bool interactionLayer =
             mode == InteractionMode::PassivePush ? collision_layer_policy::isPassivePushInteractionLayer(input.layer) :
-                                                   (collision_layer_policy::isDynamicPropInteractionLayer(input.layer) || activeDetachedGoreLayer);
+                                                   (collision_layer_policy::isDynamicPropInteractionLayer(input.layer) || activeDetachedGoreLayer ||
+                                                       (input.isSelectedObjectTreeActiveGrabBody &&
+                                                           collision_layer_policy::isSelectedObjectSupplementalActiveGrabLayer(input.layer)));
         if (!interactionLayer) {
             return reject(BodyRejectReason::UnsupportedLayer);
         }

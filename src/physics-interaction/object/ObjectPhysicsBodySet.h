@@ -209,6 +209,8 @@ namespace rock::object_physics_body_set
         bool requireSameResolvedRef = false;
         bool allowUnresolvedRefBodies = true;
         bool allowWeaponRefExpansion = true;
+        bool allowSelectedObjectTreeActiveGrabLayers = false;
+        bool allowOwnerNodeWorldFallbackScan = false;
         const std::vector<std::uint32_t>* heldBySameHand = nullptr;
         int maxDepth = 10;
     };
@@ -246,6 +248,10 @@ namespace rock::object_physics_body_set
         std::uint32_t unresolvedRefBodiesAccepted = 0;
         std::uint32_t unresolvedRefBodySkips = 0;
         std::uint32_t weaponExpansionSkips = 0;
+        std::uint32_t ownerNodeFallbackSlotsScanned = 0;
+        std::uint32_t ownerNodeFallbackCandidates = 0;
+        std::uint32_t ownerNodeFallbackBodiesAdded = 0;
+        std::uint32_t ownerNodeFallbackDuplicateSkips = 0;
         std::array<std::uint32_t, 32> rejectCounts{};
     };
 

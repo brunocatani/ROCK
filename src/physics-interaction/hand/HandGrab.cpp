@@ -4065,6 +4065,8 @@ namespace rock
         scanOptions.seedHitNode = _currentSelection.hitNode;
         scanOptions.requireSameResolvedRef = true;
         scanOptions.allowWeaponRefExpansion = true;
+        scanOptions.allowSelectedObjectTreeActiveGrabLayers = true;
+        scanOptions.allowOwnerNodeWorldFallbackScan = true;
         scanOptions.heldBySameHand = &_heldBodyIds;
         scanOptions.maxDepth = g_rockConfig.rockObjectPhysicsTreeMaxDepth;
 
@@ -4096,7 +4098,8 @@ namespace rock
         pullLifecycle.markPreparedBodies(preparedBodySet);
         ROCK_LOG_DEBUG(Hand,
             "{} hand PULL scan: type={} weapon={} name='{}' formID={:08X} seedBody={} beforeBodies={} afterBodies={} accepted={} rejected={} "
-            "seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} collisionObjects={} visitedNodes={}",
+            "seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} "
+            "fallbackSlots={} fallbackCandidates={} fallbackAdded={} fallbackDupes={} collisionObjects={} visitedNodes={}",
             handName(),
             selectedType ? selectedType : "???",
             selectedIsWeapon ? "yes" : "no",
@@ -4114,6 +4117,10 @@ namespace rock
             preparedBodySet.diagnostics.foreignRefBodySkips,
             preparedBodySet.diagnostics.unresolvedRefBodiesAccepted,
             preparedBodySet.diagnostics.unresolvedRefBodySkips,
+            preparedBodySet.diagnostics.ownerNodeFallbackSlotsScanned,
+            preparedBodySet.diagnostics.ownerNodeFallbackCandidates,
+            preparedBodySet.diagnostics.ownerNodeFallbackBodiesAdded,
+            preparedBodySet.diagnostics.ownerNodeFallbackDuplicateSkips,
             preparedBodySet.diagnostics.collisionObjects,
             preparedBodySet.diagnostics.visitedNodes);
         const RE::NiPoint3 grabPivotAForPrimaryChoice = computeGrabPivotAWorld(world, handWorldTransform);
@@ -4123,7 +4130,8 @@ namespace rock
         if (primaryChoice.bodyId == INVALID_BODY_ID) {
             ROCK_LOG_WARN(Hand,
                 "{} hand PULL failed: no accepted dynamic body after recursive prep formID={:08X} beforeBodies={} afterBodies={} accepted={} rejected={} "
-                "seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} setMotion={} enableCollision={}",
+                "seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} "
+                "fallbackAdded={} setMotion={} enableCollision={}",
                 handName(),
                 selectedRef->GetFormID(),
                 beforePrepBodySet.records.size(),
@@ -4137,6 +4145,7 @@ namespace rock
                 preparedBodySet.diagnostics.foreignRefBodySkips,
                 preparedBodySet.diagnostics.unresolvedRefBodiesAccepted,
                 preparedBodySet.diagnostics.unresolvedRefBodySkips,
+                preparedBodySet.diagnostics.ownerNodeFallbackBodiesAdded,
                 motionConverted ? "ok" : "failed",
                 collisionEnabled ? "ok" : "failed");
             restoreFailedPullPrep();
@@ -4510,6 +4519,8 @@ namespace rock
         scanOptions.seedHitNode = sel.hitNode;
         scanOptions.requireSameResolvedRef = true;
         scanOptions.allowWeaponRefExpansion = true;
+        scanOptions.allowSelectedObjectTreeActiveGrabLayers = true;
+        scanOptions.allowOwnerNodeWorldFallbackScan = true;
         scanOptions.heldBySameHand = &_heldBodyIds;
         scanOptions.maxDepth = g_rockConfig.rockObjectPhysicsTreeMaxDepth;
 
@@ -4556,7 +4567,8 @@ namespace rock
         ROCK_LOG_DEBUG(Hand,
             "{} hand object-tree prep: ref='{}' formID={:08X} beforeBodies={} afterBodies={} accepted={} rejected={} "
             "seedBody={} seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} "
-            "latePrepared={} incompleteScan={} collisionObjects={} visitedNodes={} setMotion={} enableCollision={} sharedPeer={}",
+            "fallbackSlots={} fallbackCandidates={} fallbackAdded={} fallbackDupes={} latePrepared={} incompleteScan={} "
+            "collisionObjects={} visitedNodes={} setMotion={} enableCollision={} sharedPeer={}",
             handName(),
             objName,
             sel.refr->GetFormID(),
@@ -4572,6 +4584,10 @@ namespace rock
             preparedBodySet.diagnostics.foreignRefBodySkips,
             preparedBodySet.diagnostics.unresolvedRefBodiesAccepted,
             preparedBodySet.diagnostics.unresolvedRefBodySkips,
+            preparedBodySet.diagnostics.ownerNodeFallbackSlotsScanned,
+            preparedBodySet.diagnostics.ownerNodeFallbackCandidates,
+            preparedBodySet.diagnostics.ownerNodeFallbackBodiesAdded,
+            preparedBodySet.diagnostics.ownerNodeFallbackDuplicateSkips,
             activeLifecycle.latePreparedBodyCount(),
             activeLifecycle.hasIncompleteNativeScan() ? "yes" : "no",
             preparedBodySet.diagnostics.collisionObjects,
@@ -4978,7 +4994,7 @@ namespace rock
 
         if (primaryChoice.bodyId == INVALID_BODY_ID) {
             ROCK_LOG_WARN(Hand,
-                "{} hand GRAB failed: no accepted dynamic body after recursive prep for '{}' formID={:08X} visitedNodes={} collisionObjects={} seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} latePrepared={} incompleteScan={}",
+                "{} hand GRAB failed: no accepted dynamic body after recursive prep for '{}' formID={:08X} visitedNodes={} collisionObjects={} seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} fallbackAdded={} latePrepared={} incompleteScan={}",
                 handName(),
                 objName,
                 sel.refr->GetFormID(),
@@ -4991,6 +5007,7 @@ namespace rock
                 preparedBodySet.diagnostics.foreignRefBodySkips,
                 preparedBodySet.diagnostics.unresolvedRefBodiesAccepted,
                 preparedBodySet.diagnostics.unresolvedRefBodySkips,
+                preparedBodySet.diagnostics.ownerNodeFallbackBodiesAdded,
                 activeLifecycle.latePreparedBodyCount(),
                 activeLifecycle.hasIncompleteNativeScan() ? "yes" : "no");
             restoreFailedGrabPrep();

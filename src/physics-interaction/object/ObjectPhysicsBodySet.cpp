@@ -6,8 +6,10 @@
 #include <unordered_map>
 
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 
 #include "RE/Bethesda/BSHavok.h"
@@ -47,10 +49,17 @@ namespace rock::object_physics_body_set
             if (!ancestor || !node) {
                 return false;
             }
-            for (auto* current = node; current; current = current->parent) {
+            constexpr int kMaxParentWalkDepth = 128;
+            int depth = 0;
+            for (auto* current = node; current && depth < kMaxParentWalkDepth; ++depth) {
                 if (current == ancestor) {
                     return true;
                 }
+                RE::NiNode* parent = nullptr;
+                if (!native_memory::tryReadValue(&current->parent, parent)) {
+                    return false;
+                }
+                current = parent;
             }
             return false;
         }
@@ -177,6 +186,10 @@ namespace rock::object_physics_body_set
             input.isRockWeaponSourceBody = rawBodyId == options.sourceWeaponBodyId || rawBodyId == options.sourceBodyId;
             input.isHeldBySameHand = containsBodyId(options.heldBySameHand, rawBodyId);
             input.isPlayerBody = record.resolvedRef == RE::PlayerCharacter::GetSingleton();
+            input.isSelectedObjectTreeActiveGrabBody =
+                options.allowSelectedObjectTreeActiveGrabLayers &&
+                options.mode == physics_body_classifier::InteractionMode::ActiveGrab &&
+                (seeded || nodeIsOrContains(out.rootNode, context.node) || record.resolvedRef == context.rootRef);
 
             const auto classification = physics_body_classifier::classifyBody(input, options.mode);
             record.accepted = classification.accepted;
@@ -252,6 +265,69 @@ namespace rock::object_physics_body_set
                 auto* child = children[i].get();
                 if (child) {
                     scanNode(bhkWorld, hknpWorld, rootRef, child, depth - 1, options, out, seenBodyIds);
+                }
+            }
+        }
+
+        void scanOwnerNodeWorldFallback(RE::bhkWorld* bhkWorld,
+            RE::hknpWorld* hknpWorld,
+            RE::TESObjectREFR* rootRef,
+            RE::NiAVObject* rootNode,
+            const BodySetScanOptions& options,
+            ObjectPhysicsBodySet& out,
+            std::unordered_set<std::uint32_t>& seenBodyIds)
+        {
+            /*
+             * Active grab prep uses FO4VR's recursive NiAVObject wrappers, so
+             * the native operation may touch selected-tree bodies whose owning
+             * collision object has a stale or unreadable physics-system body-id
+             * array. The fallback walks the hknp body array once and admits only
+             * bodies whose native back-pointer resolves to a node under the
+             * selected ref root; it does not broaden passive push or foreign-ref
+             * ownership.
+             */
+            if (!options.allowOwnerNodeWorldFallbackScan || !hknpWorld || !rootRef || !rootNode) {
+                return;
+            }
+
+            std::uint32_t highWaterMark = 0;
+            if (!havok_runtime::tryReadBodyHighWaterMark(hknpWorld, highWaterMark)) {
+                return;
+            }
+
+            auto* bodyArray = havok_runtime::getBodyArray(hknpWorld);
+            if (!bodyArray) {
+                return;
+            }
+
+            for (std::uint32_t rawBodyId = 0; rawBodyId <= highWaterMark; ++rawBodyId) {
+                if (!havok_runtime::bodySlotCanBeRead(rawBodyId, highWaterMark)) {
+                    continue;
+                }
+
+                ++out.diagnostics.ownerNodeFallbackSlotsScanned;
+                const auto& body = bodyArray[rawBodyId];
+                if (body.bodyId.value != rawBodyId || body.motionIndex == body_frame::kFreeMotionIndex) {
+                    continue;
+                }
+
+                auto* ownerNode = havok_runtime::getOwnerNodeFromBody(&body);
+                if (!nodeIsOrContains(rootNode, ownerNode)) {
+                    continue;
+                }
+
+                ++out.diagnostics.ownerNodeFallbackCandidates;
+                if (seenBodyIds.find(rawBodyId) != seenBodyIds.end()) {
+                    ++out.diagnostics.ownerNodeFallbackDuplicateSkips;
+                    continue;
+                }
+
+                auto* collisionObject = havok_runtime::getCollisionObjectFromBody(&body);
+                ScanBodyContext fallbackContext{ bhkWorld, hknpWorld, rootRef, ownerNode, collisionObject, &options, &out, &seenBodyIds };
+                const auto beforeCount = out.records.size();
+                appendBodyRecord(fallbackContext, rawBodyId, false);
+                if (out.records.size() > beforeCount) {
+                    ++out.diagnostics.ownerNodeFallbackBodiesAdded;
                 }
             }
         }
@@ -443,6 +519,7 @@ namespace rock::object_physics_body_set
         } else {
             ++result.diagnostics.weaponExpansionSkips;
         }
+        scanOwnerNodeWorldFallback(bhkWorld, hknpWorld, ref, result.rootNode, options, result, seenBodyIds);
         return result;
     }
 }

@@ -97,6 +97,18 @@ namespace rock::collision_layer_policy
         }
     }
 
+    inline constexpr bool isSelectedObjectSupplementalActiveGrabLayer(std::uint32_t layer)
+    {
+        /*
+         * Some FO4VR multipart loose objects keep secondary collision bodies on
+         * PROPS even though the selected reference is an inventory-like object.
+         * These bodies are not general push targets, but active grab already
+         * owns the selected ref tree through recursive prep, so they must travel
+         * with the committed held set instead of being left half-prepared.
+         */
+        return layer == FO4_LAYER_PROPS;
+    }
+
     inline constexpr bool isActorOrBipedLayer(std::uint32_t layer)
     {
         return layer == FO4_LAYER_BIPED || layer == FO4_LAYER_DEADBIP || layer == FO4_LAYER_BIPED_NO_CC;
