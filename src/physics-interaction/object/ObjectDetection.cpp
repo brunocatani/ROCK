@@ -22,6 +22,140 @@ namespace rock
     namespace
     {
         constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFF;
+        constexpr int kMaxSelectionRejectTelemetryPerQuery = 8;
+
+        const char* motionTypeName(physics_body_classifier::BodyMotionType motionType)
+        {
+            using physics_body_classifier::BodyMotionType;
+            switch (motionType) {
+            case BodyMotionType::Static:
+                return "static";
+            case BodyMotionType::Dynamic:
+                return "dynamic";
+            case BodyMotionType::Keyframed:
+                return "keyframed";
+            case BodyMotionType::Other:
+                return "other";
+            case BodyMotionType::Unknown:
+            default:
+                return "unknown";
+            }
+        }
+
+        const char* nodeName(RE::NiAVObject* node)
+        {
+            return node && node->name.c_str() ? node->name.c_str() : "(none)";
+        }
+
+        const char* formTypeName(RE::TESObjectREFR* ref)
+        {
+            auto* baseForm = ref ? ref->GetObjectReference() : nullptr;
+            const char* formType = baseForm ? baseForm->GetFormTypeString() : nullptr;
+            return formType ? formType : "???";
+        }
+
+        struct SelectionRejectTelemetry
+        {
+            std::uint32_t layer = 0;
+            std::uint32_t filterInfo = 0;
+            std::uint32_t motionId = 0;
+            std::uint16_t motionPropertiesId = 0;
+            std::uint32_t bodyFlags = 0;
+            physics_body_classifier::BodyMotionType motionType = physics_body_classifier::BodyMotionType::Unknown;
+            bool hasBody = false;
+            bool hitNodeInsideActorRoot = false;
+        };
+
+        SelectionRejectTelemetry makeSelectionRejectTelemetry(
+            RE::TESObjectREFR* ref,
+            RE::NiAVObject* hitNode,
+            RE::hknpWorld* hknpWorld,
+            RE::hknpBodyId bodyId)
+        {
+            SelectionRejectTelemetry telemetry{};
+
+            if (ref && hitNode) {
+                if (auto* root3D = ref->Get3D()) {
+                    telemetry.hitNodeInsideActorRoot = actor_equipment_grab::nodeContainsNode(root3D, hitNode, 64);
+                }
+            }
+
+            if (!hknpWorld || bodyId.value == kInvalidBodyId) {
+                return telemetry;
+            }
+
+            auto* body = havok_runtime::getBody(hknpWorld, bodyId);
+            if (!body) {
+                return telemetry;
+            }
+
+            telemetry.hasBody = true;
+            telemetry.filterInfo = body->collisionFilterInfo;
+            telemetry.layer = body->collisionFilterInfo & 0x7F;
+            telemetry.motionId = body->motionIndex;
+            telemetry.bodyFlags = body->flags;
+            telemetry.motionPropertiesId = static_cast<std::uint16_t>(body->motionPropertiesId);
+            std::uint16_t resolvedMotionPropertiesId = 0;
+            if (havok_runtime::tryReadBodyMotionPropertiesId(hknpWorld, bodyId, resolvedMotionPropertiesId)) {
+                telemetry.motionPropertiesId = resolvedMotionPropertiesId;
+            }
+            telemetry.motionType = physics_body_classifier::motionTypeFromBodyFlags(telemetry.bodyFlags);
+            if (telemetry.motionType == physics_body_classifier::BodyMotionType::Unknown) {
+                telemetry.motionType = physics_body_classifier::motionTypeFromMotionPropertiesId(telemetry.motionPropertiesId);
+            }
+            return telemetry;
+        }
+
+        void logSelectionRejectTelemetry(
+            const char* queryName,
+            const char* rejectStage,
+            int hitIndex,
+            RE::TESObjectREFR* ref,
+            RE::NiAVObject* hitNode,
+            RE::hknpWorld* hknpWorld,
+            RE::hknpBodyId bodyId,
+            const GrabTargetClassification* classification,
+            const char* fallbackReason,
+            bool isFarSelection,
+            float signedAlongDistance,
+            float lateralDistance,
+            float hmdConeDot,
+            int& loggedCount)
+        {
+            if (!g_rockConfig.rockDebugVerboseLogging || loggedCount >= kMaxSelectionRejectTelemetryPerQuery) {
+                return;
+            }
+
+            ++loggedCount;
+            const auto telemetry = makeSelectionRejectTelemetry(ref, hitNode, hknpWorld, bodyId);
+            const auto targetKind = classification ? classification->kind : grab_target::Kind::None;
+            const char* reason = classification && classification->reason ? classification->reason : fallbackReason;
+            ROCK_LOG_DEBUG(Hand,
+                "Selection reject: query={} reject-stage={} hit={} reason={} targetKind={} formType={} formID={:08X} body={} "
+                "layer={} filter=0x{:08X} motionId={} motionProps={} motionType={} bodyFlags=0x{:08X} hasBody={} "
+                "hitNode='{}' hitNodeInsideActorRoot={} far={} signedAlong={:.2f} lateral={:.2f} hmdDot={:.3f}",
+                queryName ? queryName : "unknown",
+                rejectStage ? rejectStage : "unknown",
+                hitIndex,
+                reason ? reason : "unknown",
+                grab_target::name(targetKind),
+                formTypeName(ref),
+                ref ? ref->GetFormID() : 0,
+                bodyId.value,
+                telemetry.layer,
+                telemetry.filterInfo,
+                telemetry.motionId,
+                telemetry.motionPropertiesId,
+                motionTypeName(telemetry.motionType),
+                telemetry.bodyFlags,
+                telemetry.hasBody ? "yes" : "no",
+                nodeName(hitNode),
+                telemetry.hitNodeInsideActorRoot ? "yes" : "no",
+                isFarSelection ? "yes" : "no",
+                signedAlongDistance,
+                lateralDistance,
+                hmdConeDot);
+        }
 
         bool isLooseGrabbableBaseType(RE::TESBoundObject* baseForm)
         {
@@ -259,11 +393,14 @@ namespace rock
             int& outRejectedHmdCone,
             const FarSelectionHmdConeGate* farHmdConeGate,
             float nearPromotionDistance,
-            int& outDuplicateBodies)
+            int& outDuplicateBodies,
+            bool logRejectTelemetry)
         {
             SelectedObject result;
             float bestLateralDistance = FLT_MAX;
             float bestAlongDistance = FLT_MAX;
+            int loggedRejectTelemetry = 0;
+            const char* queryName = isFarSelection ? "far" : "near";
             std::unordered_set<std::uint32_t> seenBodyIds;
             std::unordered_map<std::uint32_t, RE::TESObjectREFR*> refByBodyId;
 
@@ -274,6 +411,10 @@ namespace rock
                 auto hitBodyId = hit.hitBodyInfo.m_bodyId;
                 if (hitBodyId.value == 0x7FFF'FFFF) {
                     ++outRejectedInvalidBody;
+                    if (logRejectTelemetry) {
+                        logSelectionRejectTelemetry(queryName, "invalid-body", i, nullptr, nullptr, hknpWorld, hitBodyId, nullptr, "invalid-body", isFarSelection, 0.0f, 0.0f, -1.0f,
+                            loggedRejectTelemetry);
+                    }
                     continue;
                 }
 
@@ -290,11 +431,23 @@ namespace rock
                 }
                 if (!ref) {
                     ++outRejectedNoRef;
+                    if (logRejectTelemetry) {
+                        auto* collObj = RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId);
+                        auto* hitNode = collObj ? collObj->sceneObject : nullptr;
+                        logSelectionRejectTelemetry(queryName, "no-ref", i, nullptr, hitNode, hknpWorld, hitBodyId, nullptr, "no-ref", isFarSelection, 0.0f, 0.0f, -1.0f,
+                            loggedRejectTelemetry);
+                    }
                     continue;
                 }
 
                 if (isFarSelection && otherHandContext.allowsSharedHeldReference(ref)) {
                     ++outRejectedNotGrabbable;
+                    if (logRejectTelemetry) {
+                        auto* collObj = RE::bhkNPCollisionObject::Getbhk(bhkWorld, hitBodyId);
+                        auto* hitNode = collObj ? collObj->sceneObject : nullptr;
+                        logSelectionRejectTelemetry(queryName, "shared-held-far", i, ref, hitNode, hknpWorld, hitBodyId, nullptr, "shared-held-far", isFarSelection, 0.0f, 0.0f, -1.0f,
+                            loggedRejectTelemetry);
+                    }
                     continue;
                 }
 
@@ -304,6 +457,10 @@ namespace rock
                 const auto classification = classifySelectionGrabTarget(ref, hknpWorld, hitBodyId, otherHandContext, isFarSelection, hitNode, hitPoint, true);
                 if (!classification.grabbable) {
                     ++outRejectedNotGrabbable;
+                    if (logRejectTelemetry) {
+                        logSelectionRejectTelemetry(queryName, "classification", i, ref, hitNode, hknpWorld, hitBodyId, &classification, "classification", isFarSelection, 0.0f, 0.0f, -1.0f,
+                            loggedRejectTelemetry);
+                    }
                     continue;
                 }
 
@@ -312,6 +469,10 @@ namespace rock
                 const float signedAlongDistance = signedAlongDistanceOnRay(start, directionUnit, hitPoint);
                 if (selection_query_policy::shouldRejectBehindPalmHit(isFarSelection, signedAlongDistance, g_rockConfig.rockCloseSelectionBehindPalmToleranceGameUnits)) {
                     ++outRejectedBehindPalm;
+                    if (logRejectTelemetry) {
+                        logSelectionRejectTelemetry(queryName, "behind-palm", i, ref, hitNode, hknpWorld, hitBodyId, &classification, "behind-palm", isFarSelection, signedAlongDistance,
+                            lateralDistance, -1.0f, loggedRejectTelemetry);
+                    }
                     continue;
                 }
                 const bool promotesToCloseSelection = isFarSelection && promotesFarHitToCloseSelection(classification, start, hitPoint, nearPromotionDistance);
@@ -321,6 +482,10 @@ namespace rock
                     hasHmdConeDot = farHmdConeGate->enabled;
                     if (!farHmdConeGate->acceptsHitPoint(hitPoint, &hmdConeDot)) {
                         ++outRejectedHmdCone;
+                        if (logRejectTelemetry) {
+                            logSelectionRejectTelemetry(queryName, "hmd-cone", i, ref, hitNode, hknpWorld, hitBodyId, &classification, "hmd-cone", isFarSelection, signedAlongDistance,
+                                lateralDistance, hmdConeDot, loggedRejectTelemetry);
+                        }
                         continue;
                     }
                 }
@@ -412,7 +577,7 @@ namespace rock
         int rejectedHmdCone = 0;
         int duplicateBodies = 0;
         result = chooseShapeCastSelection(bhkWorld, hknpWorld, palmPos, direction, collector, false, otherHandContext, candidatesChecked, rejectedInvalidBody, rejectedNoRef,
-            rejectedNotGrabbable, rejectedBehindPalm, rejectedHmdCone, nullptr, 0.0f, duplicateBodies);
+            rejectedNotGrabbable, rejectedBehindPalm, rejectedHmdCone, nullptr, 0.0f, duplicateBodies, logNearMetric);
 
         if (logNearMetric) {
             ROCK_LOG_DEBUG(Hand,
@@ -476,8 +641,16 @@ namespace rock
         int rejectedHmdCone = 0;
         int duplicateBodies = 0;
         const float configuredNearReach = configuredNearReachDistance();
+        bool logFarMetric = false;
+        if (g_rockConfig.rockDebugVerboseLogging) {
+            static int farDiagCounter = 0;
+            if (++farDiagCounter >= 270) {
+                farDiagCounter = 0;
+                logFarMetric = true;
+            }
+        }
         result = chooseShapeCastSelection(bhkWorld, hknpWorld, handPos, direction, collector, true, otherHandContext, candidatesChecked, rejectedInvalidBody, rejectedNoRef,
-            rejectedNotGrabbable, rejectedBehindPalm, rejectedHmdCone, &hmdConeGate, configuredNearReach, duplicateBodies);
+            rejectedNotGrabbable, rejectedBehindPalm, rejectedHmdCone, &hmdConeGate, configuredNearReach, duplicateBodies, logFarMetric);
 
         // Near reach remains collision-query based even when the directional close cast misses.
         // Released objects can rest beside or partly behind the palm, where the far sphere cast
@@ -491,10 +664,7 @@ namespace rock
             }
         }
 
-        if (g_rockConfig.rockDebugVerboseLogging) {
-            static int farDiagCounter = 0;
-            if (++farDiagCounter >= 270) {
-                farDiagCounter = 0;
+        if (logFarMetric) {
                 ROCK_LOG_DEBUG(Hand,
                     "Far shape cast: start=({:.1f},{:.1f},{:.1f}) dir=({:.2f},{:.2f},{:.2f}) radius={:.1f} distance={:.1f}/{:.1f} "
                     "filter=0x{:08X} hits={} candidates={} dup={} rejectInvalid={} rejectNoRef={} rejectNotGrab={} rejectBehind={} rejectHmdCone={} hmdGate={} hmdDot={:.3f} selected={} formID={:08X} dist={:.1f} signedAlong={:.1f} lateral={:.1f} "
@@ -506,7 +676,6 @@ namespace rock
                     result.isValid() ? "yes" : "no", result.refr ? result.refr->GetFormID() : 0, result.isValid() ? result.distance : -1.0f,
                     result.isValid() ? result.signedAlongDistance : 0.0f, result.isValid() ? result.lateralDistance : 0.0f, result.hitNormalWorld.x, result.hitNormalWorld.y,
                     result.hitNormalWorld.z, result.hitShapeKey);
-            }
         }
 
         return result;

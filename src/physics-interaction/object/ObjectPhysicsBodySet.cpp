@@ -9,6 +9,7 @@
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
+#include "RockConfig.h"
 
 #include "RE/Bethesda/BSHavok.h"
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -80,6 +81,24 @@ namespace rock::object_physics_body_set
             return status == PhysicsSystemBodyScanStatus::InvalidBodyCount ||
                    status == PhysicsSystemBodyScanStatus::UnreadableBodyIds ||
                    status == PhysicsSystemBodyScanStatus::MissingBodyIds;
+        }
+
+        const char* bodyMotionTypeName(physics_body_classifier::BodyMotionType motionType)
+        {
+            using physics_body_classifier::BodyMotionType;
+            switch (motionType) {
+            case BodyMotionType::Static:
+                return "static";
+            case BodyMotionType::Dynamic:
+                return "dynamic";
+            case BodyMotionType::Keyframed:
+                return "keyframed";
+            case BodyMotionType::Other:
+                return "other";
+            case BodyMotionType::Unknown:
+            default:
+                return "unknown";
+            }
         }
 
         struct ScanBodyContext
@@ -183,6 +202,27 @@ namespace rock::object_physics_body_set
             record.rejectReason = classification.reason;
             if (!record.accepted) {
                 recordReject(out.diagnostics, record.rejectReason);
+                if (g_rockConfig.rockDebugVerboseLogging) {
+                    ROCK_LOG_SAMPLE_DEBUG(Hand,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "BODY reject: formID={:08X} resolvedFormID={:08X} body={} reason={} targetKind={} layer={} filter=0x{:08X} "
+                        "motionId={} motionProps={} motionType={} bodyFlags=0x{:08X} refKnown={} seeded={} ownerNode='{}' mode={}",
+                        context.rootRef ? context.rootRef->GetFormID() : 0,
+                        record.resolvedRef ? record.resolvedRef->GetFormID() : 0,
+                        record.bodyId,
+                        physics_body_classifier::rejectReasonName(record.rejectReason),
+                        grab_target::name(options.targetKind),
+                        record.collisionLayer,
+                        record.filterInfo,
+                        record.motionId,
+                        record.motionPropertiesId,
+                        bodyMotionTypeName(record.motionType),
+                        record.bodyFlags,
+                        record.refResolutionKnown ? "yes" : "no",
+                        record.seeded ? "yes" : "no",
+                        nodeName(record.owningNode),
+                        options.mode == physics_body_classifier::InteractionMode::ActiveGrab ? "active-grab" : "passive-push");
+                }
             }
 
             out.records.push_back(record);
