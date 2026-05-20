@@ -1,6 +1,9 @@
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
+#include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 
+#include <array>
+#include <cstdint>
 #include <cstdio>
 #include <string_view>
 
@@ -60,6 +63,35 @@ namespace
             return true;
         }
         std::printf("%s expected false\n", label);
+        return false;
+    }
+
+    using CollisionMatrix = std::array<std::uint64_t, rock::collision_layer_policy::FO4_LAYER_MATRIX_ADDRESSABLE_COUNT>;
+
+    CollisionMatrix makeFullyEnabledMatrix()
+    {
+        CollisionMatrix matrix{};
+        matrix.fill(rock::collision_layer_policy::allMatrixAddressableLayerBits());
+        return matrix;
+    }
+
+    bool expectLayerPair(
+        const char* label,
+        const CollisionMatrix& matrix,
+        std::uint32_t layerA,
+        std::uint32_t layerB,
+        bool expectedEnabled)
+    {
+        const bool matches =
+            rock::collision_layer_policy::layerPairSymmetricMatches(matrix.data(), layerA, layerB, expectedEnabled);
+        if (matches) {
+            return true;
+        }
+        std::printf("%s expected layer pair %u<->%u enabled=%s\n",
+            label,
+            layerA,
+            layerB,
+            expectedEnabled ? "true" : "false");
         return false;
     }
 
@@ -210,6 +242,39 @@ int main()
         }),
         false,
         "nonPlayerController");
+
+    auto matrix = makeFullyEnabledMatrix();
+    const auto originalControllerMask = matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER];
+    collision_layer_policy::applyNativeCharacterControllerObjectSuppressionPolicy(matrix.data(), true, originalControllerMask);
+    const auto expectedSuppressedControllerMask =
+        collision_layer_policy::nativeCharacterControllerExpectedMask(originalControllerMask, true);
+
+    ok &= expectLayerPair("native controller no longer hits clutter", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_CLUTTER, false);
+    ok &= expectLayerPair("native controller no longer hits weapon objects", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_WEAPON, false);
+    ok &= expectLayerPair("native controller no longer hits small debris", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_DEBRIS_SMALL, false);
+    ok &= expectLayerPair("native controller no longer hits large debris", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_DEBRIS_LARGE, false);
+    ok &= expectLayerPair("native controller no longer hits shell casings", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_SHELLCASING, false);
+    ok &= expectLayerPair("native controller no longer hits large clutter", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_CLUTTER_LARGE, false);
+    ok &= expectLayerPair("native controller preserves static support", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_STATIC, true);
+    ok &= expectLayerPair("native controller preserves animstatic support", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_ANIMSTATIC, true);
+    ok &= expectLayerPair("native controller preserves terrain support", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_TERRAIN, true);
+    ok &= expectLayerPair("native controller preserves ground support", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_GROUND, true);
+    ok &= expectTrue("native controller suppression matrix matches expected object pairs",
+        collision_layer_policy::nativeCharacterControllerObjectPairsMatch(matrix.data(), expectedSuppressedControllerMask));
+    ok &= expectFalse("native controller object suppression does not manage ROCK hand layer",
+        collision_layer_policy::isNativeCharacterControllerObjectSuppressionLayer(collision_layer_policy::ROCK_LAYER_HAND));
+    ok &= expectFalse("native controller object suppression does not manage ROCK weapon layer",
+        collision_layer_policy::isNativeCharacterControllerObjectSuppressionLayer(collision_layer_policy::ROCK_LAYER_WEAPON));
+    ok &= expectFalse("native controller object suppression does not manage ROCK body layer",
+        collision_layer_policy::isNativeCharacterControllerObjectSuppressionLayer(collision_layer_policy::ROCK_LAYER_BODY));
+
+    collision_layer_policy::applyNativeCharacterControllerObjectSuppressionPolicy(matrix.data(), false, originalControllerMask);
+    ok &= expectLayerPair("disabled native controller policy restores clutter", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_CLUTTER, true);
+    ok &= expectLayerPair("disabled native controller policy restores weapon objects", matrix, collision_layer_policy::FO4_LAYER_CHARCONTROLLER, collision_layer_policy::FO4_LAYER_WEAPON, true);
+    ok &= expectTrue("disabled native controller policy matches original object pairs",
+        collision_layer_policy::nativeCharacterControllerObjectPairsMatch(
+            matrix.data(),
+            collision_layer_policy::nativeCharacterControllerExpectedMask(originalControllerMask, false)));
 
     return ok ? 0 : 1;
 }

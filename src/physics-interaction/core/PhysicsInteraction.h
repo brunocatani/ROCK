@@ -171,6 +171,8 @@ namespace rock
 
         void restoreNativePlayerCollisionSuppression(RE::hknpWorld* hknp, const char* reason);
 
+        void refreshNativePlayerCollisionSuppression(RE::hknpWorld* hknp, const char* context);
+
         bool shouldSuppressNativePlayerCollisionBody(RE::bhkWorld* bhk, RE::hknpWorld* hknp, std::uint32_t bodyId) const;
 
         void driveGeneratedCollidersFromPhysicsSubstep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
@@ -247,6 +249,10 @@ namespace rock
         std::uint64_t _expectedWeaponLayerMask = 0;
         std::uint64_t _expectedReloadLayerMask = 0;
         std::uint64_t _expectedBodyLayerMask = 0;
+        std::uint64_t _originalNativeCharacterControllerLayerMask = 0;
+        std::uint64_t _expectedNativeCharacterControllerLayerMask = 0;
+        bool _nativeCharacterControllerLayerPolicyCaptured = false;
+        bool _nativeCharacterControllerLayerPolicyEnabled = false;
         HandBoneCache _handBoneCache;
         HandFrameResolver _handFrameResolver;
 

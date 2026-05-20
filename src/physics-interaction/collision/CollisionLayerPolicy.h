@@ -292,6 +292,26 @@ namespace rock::collision_layer_policy
         return bit != 0 && (mask & bit) != 0;
     }
 
+    inline constexpr std::uint64_t nativeCharacterControllerObjectSuppressionLayerMask()
+    {
+        return layerBitOrZero(FO4_LAYER_CLUTTER) |
+               layerBitOrZero(FO4_LAYER_WEAPON) |
+               layerBitOrZero(FO4_LAYER_DEBRIS_SMALL) |
+               layerBitOrZero(FO4_LAYER_DEBRIS_LARGE) |
+               layerBitOrZero(FO4_LAYER_SHELLCASING) |
+               layerBitOrZero(FO4_LAYER_CLUTTER_LARGE);
+    }
+
+    inline constexpr bool isNativeCharacterControllerObjectSuppressionLayer(std::uint32_t layer)
+    {
+        return maskEnablesLayer(nativeCharacterControllerObjectSuppressionLayerMask(), layer);
+    }
+
+    inline constexpr std::uint64_t nativeCharacterControllerExpectedMask(std::uint64_t originalMask, bool suppressDynamicObjects)
+    {
+        return suppressDynamicObjects ? (originalMask & ~nativeCharacterControllerObjectSuppressionLayerMask()) : originalMask;
+    }
+
     inline constexpr std::uint64_t buildRockHandExpectedMask(bool includeWeaponLayer, bool includeStaticWorld = true)
     {
         /*
@@ -402,6 +422,24 @@ namespace rock::collision_layer_policy
                layerPairEnabledFromRow(matrix, layerB, layerA) == expectedEnabled;
     }
 
+    inline constexpr bool nativeCharacterControllerObjectPairsMatch(const std::uint64_t* matrix, std::uint64_t expectedCharacterControllerMask)
+    {
+        if (!matrix) {
+            return false;
+        }
+
+        const auto managedMask = nativeCharacterControllerObjectSuppressionLayerMask();
+        for (std::uint32_t other = 0; other < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++other) {
+            if (!maskEnablesLayer(managedMask, other)) {
+                continue;
+            }
+            if (!layerPairSymmetricMatches(matrix, FO4_LAYER_CHARCONTROLLER, other, maskEnablesLayer(expectedCharacterControllerMask, other))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     inline constexpr bool rockToolActorPairsMatch(
         const std::uint64_t* matrix,
         std::uint64_t expectedHandMask,
@@ -484,6 +522,21 @@ namespace rock::collision_layer_policy
     inline void applyRockBodyLayerPolicy(std::uint64_t* matrix, bool includeStaticWorld = true)
     {
         applyLayerExpectedMask(matrix, ROCK_LAYER_BODY, buildRockBodyExpectedMask(includeStaticWorld));
+    }
+
+    inline void applyNativeCharacterControllerObjectSuppressionPolicy(std::uint64_t* matrix, bool suppressDynamicObjects, std::uint64_t originalCharacterControllerMask)
+    {
+        if (!matrix) {
+            return;
+        }
+
+        const auto managedMask = nativeCharacterControllerObjectSuppressionLayerMask();
+        const auto expectedMask = nativeCharacterControllerExpectedMask(originalCharacterControllerMask, suppressDynamicObjects);
+        for (std::uint32_t other = 0; other < FO4_LAYER_MATRIX_ADDRESSABLE_COUNT; ++other) {
+            if (maskEnablesLayer(managedMask, other)) {
+                setPair(matrix, FO4_LAYER_CHARCONTROLLER, other, maskEnablesLayer(expectedMask, other));
+            }
+        }
     }
 
     inline void applyRockGeneratedLayerPolicies(

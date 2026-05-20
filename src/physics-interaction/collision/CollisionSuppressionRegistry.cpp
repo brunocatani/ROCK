@@ -68,19 +68,35 @@ namespace rock::collision_suppression_registry
         const std::uint32_t ownerMask = ownerBit(owner);
         auto* entry = find(bodyId);
         if (entry && (entry->ownerMask & ownerMask) != 0) {
+            std::uint32_t currentFilter = 0;
+            if (!body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ bodyId }, currentFilter)) {
+                result.readFailed = true;
+                ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Collision suppression refresh failed: owner={} bodyId={} context={} cannot read filter",
+                    ownerName(owner),
+                    bodyId,
+                    context ? context : "");
+                return result;
+            }
+
+            const std::uint32_t refreshedFilter = currentFilter | kSuppressionNoCollideBit;
+            if (refreshedFilter != currentFilter) {
+                body_collision::setFilterInfo(world, RE::hknpBodyId{ bodyId }, refreshedFilter);
+            }
+
             result.valid = true;
             result.ownerAlreadyHeld = true;
             result.wasNoCollideBeforeSuppression = entry->wasNoCollideBeforeSuppression;
             result.activeLeaseCount = leaseCount(entry->ownerMask);
-            result.filterBefore = entry->originalFilter;
-            result.filterAfter = entry->originalFilter;
+            result.filterBefore = currentFilter;
+            result.filterAfter = refreshedFilter;
+            result.filterChanged = refreshedFilter != currentFilter;
             return result;
         }
 
         std::uint32_t currentFilter = 0;
         if (!body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ bodyId }, currentFilter)) {
             result.readFailed = true;
-            ROCK_LOG_WARN(Hand, "Collision suppression acquire failed: owner={} bodyId={} context={} cannot read filter",
+            ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Collision suppression acquire failed: owner={} bodyId={} context={} cannot read filter",
                 ownerName(owner),
                 bodyId,
                 context ? context : "");

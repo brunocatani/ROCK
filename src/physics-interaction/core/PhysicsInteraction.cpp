@@ -1509,7 +1509,9 @@ namespace rock
             return;
         }
 
-        if (_collisionLayerRegistered && (_expectedHandLayerMask != 0 || _expectedWeaponLayerMask != 0 || _expectedReloadLayerMask != 0 || _expectedBodyLayerMask != 0)) {
+        if (_collisionLayerRegistered &&
+            (_expectedHandLayerMask != 0 || _expectedWeaponLayerMask != 0 || _expectedReloadLayerMask != 0 || _expectedBodyLayerMask != 0 ||
+                _nativeCharacterControllerLayerPolicyCaptured)) {
             const auto desiredHandMask = collision_layer_policy::buildRockHandExpectedMask(true, g_rockConfig.rockHandCollisionStaticWorldEnabled);
             const auto desiredWeaponMask = collision_layer_policy::buildRockWeaponExpectedMask(
                 g_rockConfig.rockWeaponCollisionBlocksProjectiles,
@@ -1521,10 +1523,15 @@ namespace rock
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
                 g_rockConfig.rockHandCollisionStaticWorldEnabled);
             const auto desiredBodyMask = collision_layer_policy::buildRockBodyExpectedMask(g_rockConfig.rockBodyBoneCollisionStaticWorldEnabled);
+            const bool desiredNativeControllerPolicyEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
+            const bool nativeControllerPolicyModeChanged =
+                _nativeCharacterControllerLayerPolicyCaptured &&
+                _nativeCharacterControllerLayerPolicyEnabled != desiredNativeControllerPolicyEnabled;
             if (!collision_layer_policy::matrixLayerMaskMatches(_expectedHandLayerMask, desiredHandMask) ||
                 !collision_layer_policy::matrixLayerMaskMatches(_expectedWeaponLayerMask, desiredWeaponMask) ||
                 !collision_layer_policy::matrixLayerMaskMatches(_expectedReloadLayerMask, desiredReloadMask) ||
-                !collision_layer_policy::matrixLayerMaskMatches(_expectedBodyLayerMask, desiredBodyMask)) {
+                !collision_layer_policy::matrixLayerMaskMatches(_expectedBodyLayerMask, desiredBodyMask) ||
+                nativeControllerPolicyModeChanged) {
                 ROCK_LOG_INFO(Config, "ROCK collision layer config changed; re-registering matrix policy");
                 _collisionLayerRegistered = false;
                 registerCollisionLayer(hknp);
@@ -1543,9 +1550,15 @@ namespace rock
                     _expectedHandLayerMask != 0 && _expectedWeaponLayerMask != 0 &&
                     !collision_layer_policy::rockToolActorPairsMatch(matrix, _expectedHandLayerMask, _expectedWeaponLayerMask);
                 const bool bodyPairsDrifted = _expectedBodyLayerMask != 0 && !collision_layer_policy::rockBodyManagedPairsMatch(matrix, _expectedBodyLayerMask);
-                if (handMaskDrifted || weaponMaskDrifted || reloadMaskDrifted || bodyMaskDrifted || actorToolPairsDrifted || bodyPairsDrifted) {
+                const bool nativeControllerObjectPairsDrifted =
+                    _nativeCharacterControllerLayerPolicyCaptured &&
+                    !collision_layer_policy::nativeCharacterControllerObjectPairsMatch(matrix, _expectedNativeCharacterControllerLayerMask);
+                if (handMaskDrifted || weaponMaskDrifted || reloadMaskDrifted || bodyMaskDrifted || actorToolPairsDrifted || bodyPairsDrifted ||
+                    nativeControllerObjectPairsDrifted) {
+                    const auto currentNativeCharacterControllerMask =
+                        _nativeCharacterControllerLayerPolicyCaptured ? matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER] : 0;
                     ROCK_LOG_WARN(Config,
-                        "ROCK configured layer mask drift detected; hand expected=0x{:016X} current=0x{:016X}, weapon expected=0x{:016X} current=0x{:016X}, reload expected=0x{:016X} current=0x{:016X}, body expected=0x{:016X} current=0x{:016X}, actorToolPairs={}, bodyManagedPairs={}; re-registering",
+                        "ROCK configured layer mask drift detected; hand expected=0x{:016X} current=0x{:016X}, weapon expected=0x{:016X} current=0x{:016X}, reload expected=0x{:016X} current=0x{:016X}, body expected=0x{:016X} current=0x{:016X}, nativeController expected=0x{:016X} current=0x{:016X}, actorToolPairs={}, bodyManagedPairs={}, nativeControllerObjects={}; re-registering",
                         collision_layer_policy::matrixAddressableMask(_expectedHandLayerMask),
                         collision_layer_policy::matrixAddressableMask(currentHandMask),
                         collision_layer_policy::matrixAddressableMask(_expectedWeaponLayerMask),
@@ -1554,8 +1567,11 @@ namespace rock
                         collision_layer_policy::matrixAddressableMask(currentReloadMask),
                         collision_layer_policy::matrixAddressableMask(_expectedBodyLayerMask),
                         collision_layer_policy::matrixAddressableMask(currentBodyMask),
+                        collision_layer_policy::matrixAddressableMask(_expectedNativeCharacterControllerLayerMask),
+                        collision_layer_policy::matrixAddressableMask(currentNativeCharacterControllerMask),
                         actorToolPairsDrifted ? "drifted" : "ok",
-                        bodyPairsDrifted ? "drifted" : "ok");
+                        bodyPairsDrifted ? "drifted" : "ok",
+                        nativeControllerObjectPairsDrifted ? "drifted" : "ok");
                     _collisionLayerRegistered = false;
                     registerCollisionLayer(hknp);
                 }
@@ -2146,6 +2162,10 @@ namespace rock
         _expectedWeaponLayerMask = 0;
         _expectedReloadLayerMask = 0;
         _expectedBodyLayerMask = 0;
+        _originalNativeCharacterControllerLayerMask = 0;
+        _expectedNativeCharacterControllerLayerMask = 0;
+        _nativeCharacterControllerLayerPolicyCaptured = false;
+        _nativeCharacterControllerLayerPolicyEnabled = false;
         _initialized = false;
         observeLifecycleFrame(nullptr, nullptr, reason);
         _hasPrevPositions = false;
@@ -2435,6 +2455,12 @@ namespace rock
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_WEAPON, matrix[collision_layer_policy::ROCK_LAYER_WEAPON]);
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_RELOAD, matrix[collision_layer_policy::ROCK_LAYER_RELOAD]);
         ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::ROCK_LAYER_BODY, matrix[collision_layer_policy::ROCK_LAYER_BODY]);
+        ROCK_LOG_DEBUG(Config, "Layer {} pre-set mask=0x{:016X}", collision_layer_policy::FO4_LAYER_CHARCONTROLLER, matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER]);
+
+        if (!_nativeCharacterControllerLayerPolicyCaptured) {
+            _originalNativeCharacterControllerLayerMask = matrix[collision_layer_policy::FO4_LAYER_CHARCONTROLLER];
+            _nativeCharacterControllerLayerPolicyCaptured = true;
+        }
 
         collision_layer_policy::applyRockGeneratedLayerPolicies(
             matrix,
@@ -2443,6 +2469,10 @@ namespace rock
             g_rockConfig.rockBodyBoneCollisionStaticWorldEnabled,
             g_rockConfig.rockWeaponCollisionBlocksProjectiles,
             g_rockConfig.rockWeaponCollisionBlocksSpells);
+        collision_layer_policy::applyNativeCharacterControllerObjectSuppressionPolicy(
+            matrix,
+            g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled,
+            _originalNativeCharacterControllerLayerMask);
 
         _expectedHandLayerMask = collision_layer_policy::buildRockHandExpectedMask(true, g_rockConfig.rockHandCollisionStaticWorldEnabled);
         _expectedWeaponLayerMask =
@@ -2457,10 +2487,22 @@ namespace rock
                 g_rockConfig.rockWeaponCollisionBlocksSpells,
                 g_rockConfig.rockHandCollisionStaticWorldEnabled);
         _expectedBodyLayerMask = collision_layer_policy::buildRockBodyExpectedMask(g_rockConfig.rockBodyBoneCollisionStaticWorldEnabled);
+        _expectedNativeCharacterControllerLayerMask =
+            collision_layer_policy::nativeCharacterControllerExpectedMask(
+                _originalNativeCharacterControllerLayerMask,
+                g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled);
+        _nativeCharacterControllerLayerPolicyEnabled = g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled;
         _collisionLayerRegistered = true;
 
+        const bool nativeControllerObjectPairsMatch =
+            collision_layer_policy::nativeCharacterControllerObjectPairsMatch(matrix, _expectedNativeCharacterControllerLayerMask);
+        const char* nativeControllerObjectStatus =
+            _nativeCharacterControllerLayerPolicyEnabled ?
+                (nativeControllerObjectPairsMatch ? "blocked" : "bad") :
+                (nativeControllerObjectPairsMatch ? "restored" : "bad");
+
         ROCK_LOG_INFO(Config,
-            "Registered ROCK collision layers: hand={} mask=0x{:016X}, weapon={} mask=0x{:016X}, reload={} mask=0x{:016X}, body={} mask=0x{:016X}, actorPairs(biped={},deadbip={},bipedNoCC={}), bodyPairs(hand={},weapon={},self={},static={},animstatic={},clutter={},query={},charController={}), handStaticWorld={}, weaponStaticWorld={}, bodyStaticWorld={}, projectiles={}, spells={}",
+            "Registered ROCK collision layers: hand={} mask=0x{:016X}, weapon={} mask=0x{:016X}, reload={} mask=0x{:016X}, body={} mask=0x{:016X}, actorPairs(biped={},deadbip={},bipedNoCC={}), bodyPairs(hand={},weapon={},self={},static={},animstatic={},clutter={},query={},charController={}), handStaticWorld={}, weaponStaticWorld={}, bodyStaticWorld={}, projectiles={}, spells={}, nativeBubbleObjects={}",
             collision_layer_policy::ROCK_LAYER_HAND,
             matrix[collision_layer_policy::ROCK_LAYER_HAND],
             collision_layer_policy::ROCK_LAYER_WEAPON,
@@ -2547,7 +2589,8 @@ namespace rock
             g_rockConfig.rockWeaponCollisionStaticWorldEnabled ? "enabled" : "disabled",
             g_rockConfig.rockBodyBoneCollisionStaticWorldEnabled ? "enabled" : "disabled",
             g_rockConfig.rockWeaponCollisionBlocksProjectiles ? "enabled" : "disabled",
-            g_rockConfig.rockWeaponCollisionBlocksSpells ? "enabled" : "disabled");
+            g_rockConfig.rockWeaponCollisionBlocksSpells ? "enabled" : "disabled",
+            nativeControllerObjectStatus);
     }
 
     bool PhysicsInteraction::createHandCollisions(RE::hknpWorld* world, void* bhkWorld)
@@ -2760,6 +2803,26 @@ namespace rock
         _nativePlayerCollisionSuppressionRefreshFrames = pendingCount == 0 ? 0 : 30;
     }
 
+    void PhysicsInteraction::refreshNativePlayerCollisionSuppression(RE::hknpWorld* hknp, const char* context)
+    {
+        if (!g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled || !hknp || _nativePlayerCollisionSuppressedBodyCount == 0) {
+            return;
+        }
+
+        for (std::uint32_t i = 0; i < _nativePlayerCollisionSuppressedBodyCount && i < _nativePlayerCollisionSuppressedBodyIds.size(); ++i) {
+            const auto bodyId = _nativePlayerCollisionSuppressedBodyIds[i];
+            if (!contact_pipeline_policy::isValidBodyId(bodyId)) {
+                continue;
+            }
+
+            collision_suppression_registry::globalCollisionSuppressionRegistry().acquire(
+                hknp,
+                bodyId,
+                collision_suppression_registry::CollisionSuppressionOwner::NativePlayerBody,
+                context ? context : "native-player-body-refresh");
+        }
+    }
+
     void PhysicsInteraction::updateNativePlayerCollisionSuppression(RE::bhkWorld* bhk, RE::hknpWorld* hknp)
     {
         if (!g_rockConfig.rockNativeCharacterControllerObjectContactFilterEnabled) {
@@ -2770,6 +2833,8 @@ namespace rock
         if (!bhk || !hknp) {
             return;
         }
+
+        refreshNativePlayerCollisionSuppression(hknp, "native-player-body-frame-refresh");
 
         if (_nativePlayerCollisionSuppressionRefreshFrames > 0) {
             --_nativePlayerCollisionSuppressionRefreshFrames;
@@ -2845,6 +2910,7 @@ namespace rock
         }
         scanNode(scanNode, f4cf::f4vr::getFirstPersonSkeleton(), 64);
         scanNode(scanNode, f4cf::f4vr::getRootNode(), 64);
+        scanNode(scanNode, f4cf::f4vr::getWorldRootNode(), 64);
 
         if (scanContext.overflow && !_nativePlayerCollisionSuppressionOverflowLogged) {
             _nativePlayerCollisionSuppressionOverflowLogged = true;
@@ -2911,6 +2977,7 @@ namespace rock
             return;
         }
 
+        self->refreshNativePlayerCollisionSuppression(world, "native-player-body-pre-collide");
         self->driveGeneratedCollidersFromPhysicsSubstep(world, timing);
     }
 
