@@ -1892,29 +1892,23 @@ namespace rock
             const GrabPivotAuthorityCandidate& patchCandidate,
             const GrabPivotAuthorityCandidate& palmPocketCandidate,
             bool patchComparable,
+            bool patchMeshSnapped,
             bool palmPocketEligible,
             float probeSpacingGameUnits,
             float meshSnapMaxDistanceGameUnits,
             float alignmentMaxSelectionDeltaGameUnits)
         {
             /*
-             * Position and normal confidence are intentionally separate. Contact
-             * patches can prove that the hand is touching the right body even when
-             * their fitted normal is poor, but close grabs now keep a single
-             * mesh-backed position authority. Patch/finger evidence may validate
-             * the grab and drive pose diagnostics; it must not replace pivot B.
+             * Position and normal confidence are intentionally separate. The
+             * only contact-patch path that may replace pivot B is the guarded
+             * mesh-backed, owner-coherent, position-only gate below. Patch/finger
+             * normals stay validation and pose evidence; they do not become
+             * object orientation authority here.
              */
             GrabPivotAuthorityResolution result{};
-            const float baseDelta = (std::max)(1.0f, finitePositiveOr(probeSpacingGameUnits, 3.0f));
-            const float configuredExtendedDelta = (std::max)(
-                baseDelta,
-                (std::max)(
-                    finitePositiveOr(meshSnapMaxDistanceGameUnits, baseDelta) + baseDelta,
-                    finitePositiveOr(alignmentMaxSelectionDeltaGameUnits, baseDelta)));
-            result.baseAuthorityDeltaGameUnits = baseDelta;
-            result.extendedAuthorityDeltaGameUnits = (std::min)(configuredExtendedDelta, baseDelta * 4.0f);
             result.selected = meshCandidate;
 
+            const float baseDelta = (std::max)(1.0f, finitePositiveOr(probeSpacingGameUnits, 3.0f));
             const float meaningfulImprovement = (std::max)(1.0f, baseDelta * 0.5f);
 
             auto preferCandidate = [&](const GrabPivotAuthorityCandidate& candidate) {
@@ -1925,7 +1919,7 @@ namespace rock
                 meshCandidate.source == GrabPivotAuthoritySource::PalmRayMeshPoint) {
                 const float pocketImprovement = meshCandidate.pivotToPocketGameUnits - palmPocketCandidate.pivotToPocketGameUnits;
                 const bool selectionStillCoherent =
-                    !std::isfinite(palmPocketCandidate.selectionDeltaGameUnits) ||
+                    std::isfinite(palmPocketCandidate.selectionDeltaGameUnits) &&
                     palmPocketCandidate.selectionDeltaGameUnits <= finitePositiveOr(alignmentMaxSelectionDeltaGameUnits, baseDelta) + baseDelta;
                 if (selectionStillCoherent && (pocketImprovement >= meaningfulImprovement || palmPocketCandidate.score < meshCandidate.score)) {
                     result.reason = "palmPocketMeshPointImprovesSeat";
@@ -1939,8 +1933,42 @@ namespace rock
                     result.selected.pivotToPocketGameUnits - patchCandidate.pivotToPocketGameUnits;
                 result.scoreImprovement = result.selected.score - patchCandidate.score;
             }
+            const float patchDeltaFromSelectedAuthority =
+                patchCandidate.valid && result.selected.valid ?
+                    pointDistanceGameUnits(result.selected.point, patchCandidate.point) :
+                    patchCandidate.authorityDeltaGameUnits;
+            const auto patchAuthorityDecision = grab_pivot_authority_policy::chooseMeshBackedPatchPivotAuthority(
+                grab_pivot_authority_policy::MeshBackedPatchPivotAuthorityInput{
+                    .baselineValid = result.selected.valid,
+                    .patchComparable = patchComparable,
+                    .patchValid = patchCandidate.valid,
+                    .patchMeshSnapped = patchMeshSnapped,
+                    .selectedPivotToPocketGameUnits = result.selected.pivotToPocketGameUnits,
+                    .patchPivotToPocketGameUnits = patchCandidate.pivotToPocketGameUnits,
+                    .selectedScore = result.selected.score,
+                    .patchScore = patchCandidate.score,
+                    .patchAuthorityDeltaGameUnits = patchDeltaFromSelectedAuthority,
+                    .patchSelectionDeltaGameUnits = patchCandidate.selectionDeltaGameUnits,
+                    .probeSpacingGameUnits = probeSpacingGameUnits,
+                    .meshSnapMaxDistanceGameUnits = meshSnapMaxDistanceGameUnits,
+                    .alignmentMaxSelectionDeltaGameUnits = alignmentMaxSelectionDeltaGameUnits });
+            result.baseAuthorityDeltaGameUnits = patchAuthorityDecision.baseAuthorityDeltaGameUnits;
+            result.extendedAuthorityDeltaGameUnits = patchAuthorityDecision.extendedAuthorityDeltaGameUnits;
+            result.pocketImprovementGameUnits = patchAuthorityDecision.pocketImprovementGameUnits;
+            result.scoreImprovement = patchAuthorityDecision.scoreImprovement;
+            if (patchAuthorityDecision.acceptPatchPivot) {
+                GrabPivotAuthorityCandidate positionOnlyPatch = patchCandidate;
+                positionOnlyPatch.positionOnlyPatch = true;
+                positionOnlyPatch.normalTrusted = false;
+                positionOnlyPatch.source = GrabPivotAuthoritySource::ContactPatchPositionOnly;
+                result.reason = patchAuthorityDecision.reason;
+                result.usePatchPivot = patchAuthorityDecision.acceptPatchPivot;
+                result.usePalmPocketPivot = false;
+                preferCandidate(positionOnlyPatch);
+                return result;
+            }
             if (std::strcmp(result.reason, "notEvaluated") == 0) {
-                result.reason = patchCandidate.valid ? (patchComparable ? "contactPatchEvidenceOnly" : "patchNotEligible") : "invalidPatchCandidate";
+                result.reason = patchAuthorityDecision.reason;
             }
             return result;
         }
@@ -5143,10 +5171,10 @@ namespace rock
         /*
          * Dynamic grab pivot authority is one coherent position source. Authored
          * nodes still win, and close grabs prefer the palm-pocket mesh point that
-         * was selected before body resolution. Contact patches and multi-finger
-         * contacts remain validation/pose evidence; they must not replace pivot B
-         * after visual relation capture because that is what makes the solver and
-         * rendered hand fight over different corners of the object.
+         * was selected before body resolution. A mesh-snapped contact patch can
+         * replace pivot B only through the named position-only authority policy
+         * after owner, selection, palm-pocket, and score gates all pass. Contact
+         * patch normals and multi-finger contacts remain validation/pose evidence.
          */
         const bool collisionFallbackPivotAllowed =
             !meshContactOnly && meshGrabFound && grabSurfaceHit.valid && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery;
@@ -5275,7 +5303,7 @@ namespace rock
                 contactPatchRuntime.normalTrusted ? contactPatchRuntime.patch.normal :
                     (contactPatchRuntime.meshSnapped ? contactPatchRuntime.meshSnapHit.normal : canonicalPivotNormalWorld),
                 contactPatchRuntime.normalTrusted,
-                contactPatchRuntime.positionOnly,
+                true,
                 contactPatchRuntime.meshSnapped ? 1.0f : contactPatchRuntime.patch.confidence,
                 acquisitionPocket,
                 sel,
@@ -5296,7 +5324,7 @@ namespace rock
                 canonicalPivotAvailable,
                 objectWorldTransform,
                 grabLocalMeshTriangles);
-            const bool contactPatchComparableForEvidence =
+            const bool contactPatchComparableForAuthority =
                 contactPatchAcceptedForPivot &&
                 contactPatchProducedMeshPivot &&
                 visualMeshPivotAvailable;
@@ -5304,7 +5332,8 @@ namespace rock
                 canonicalPivotCandidate,
                 contactPatchPivotCandidate,
                 palmPocketPivotCandidate,
-                contactPatchComparableForEvidence,
+                contactPatchComparableForAuthority,
+                contactPatchRuntime.meshSnapped,
                 palmPocketMeshAvailable,
                 g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits,
                 g_rockConfig.rockGrabContactPatchMeshSnapMaxDistanceGameUnits,
@@ -5324,8 +5353,7 @@ namespace rock
             if (contactPatchUsedAsPivot) {
                 grabGripPoint = contactPatchRuntime.pivotDecision.point;
                 grabSurfaceHit.position = contactPatchRuntime.pivotDecision.point;
-                grabSurfaceHit.normal = contactPatchRuntime.normalTrusted ? contactPatchRuntime.patch.normal :
-                    (contactPatchRuntime.meshSnapped ? contactPatchRuntime.meshSnapHit.normal : canonicalPivotNormalWorld);
+                grabSurfaceHit.normal = canonicalPivotNormalWorld;
                 grabSurfaceHit.triangleIndex = contactPatchRuntime.meshSnapped ? contactPatchRuntime.meshSnapHit.triangleIndex : -1;
                 grabSurfaceHit.distance = 0.0f;
                 grabSurfaceHit.sourceNode = contactPatchRuntime.meshSnapped ? contactPatchRuntime.meshSnapHit.sourceNode : collidableNode;

@@ -91,6 +91,7 @@ namespace rock::grab_contact_source_policy
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 
 namespace rock::grab_contact_evidence_policy
 {
@@ -273,6 +274,120 @@ namespace rock::grab_contact_evidence_policy
         }
 
         decision.reason = input.contactPatchAccepted ? "contactPatchNotMeshSnapped" : "noAcceptedContactPatch";
+        return decision;
+    }
+}
+
+// ---- GrabPivotAuthorityPolicy.h ----
+
+/*
+ * Contact-patch pivot authority is narrower than contact-patch evidence.
+ * The patch may move the BODY-local pivot point only when it is mesh-snapped
+ * to the resolved object, still coherent with selection, close to the palm
+ * pocket, and materially better than the currently selected mesh pivot. It is
+ * position-only authority; normals remain pose/evidence data unless another
+ * policy explicitly promotes them.
+ */
+
+namespace rock::grab_pivot_authority_policy
+{
+    struct MeshBackedPatchPivotAuthorityInput
+    {
+        bool baselineValid = false;
+        bool patchComparable = false;
+        bool patchValid = false;
+        bool patchMeshSnapped = false;
+        float selectedPivotToPocketGameUnits = (std::numeric_limits<float>::max)();
+        float patchPivotToPocketGameUnits = (std::numeric_limits<float>::max)();
+        float selectedScore = (std::numeric_limits<float>::max)();
+        float patchScore = (std::numeric_limits<float>::max)();
+        float patchAuthorityDeltaGameUnits = (std::numeric_limits<float>::max)();
+        float patchSelectionDeltaGameUnits = 0.0f;
+        float probeSpacingGameUnits = 3.0f;
+        float meshSnapMaxDistanceGameUnits = 6.0f;
+        float alignmentMaxSelectionDeltaGameUnits = 8.0f;
+    };
+
+    struct MeshBackedPatchPivotAuthorityDecision
+    {
+        const char* reason = "notEvaluated";
+        float baseAuthorityDeltaGameUnits = 0.0f;
+        float extendedAuthorityDeltaGameUnits = 0.0f;
+        float pocketImprovementGameUnits = 0.0f;
+        float scoreImprovement = 0.0f;
+        bool acceptPatchPivot = false;
+        bool positionOnlyAuthority = true;
+    };
+
+    inline float finitePositiveOr(float value, float fallback)
+    {
+        return std::isfinite(value) && value > 0.0f ? value : fallback;
+    }
+
+    inline MeshBackedPatchPivotAuthorityDecision chooseMeshBackedPatchPivotAuthority(
+        const MeshBackedPatchPivotAuthorityInput& input)
+    {
+        MeshBackedPatchPivotAuthorityDecision decision{};
+        const float baseDelta = (std::max)(1.0f, finitePositiveOr(input.probeSpacingGameUnits, 3.0f));
+        const float configuredExtendedDelta = (std::max)(
+            baseDelta,
+            (std::max)(
+                finitePositiveOr(input.meshSnapMaxDistanceGameUnits, baseDelta) + baseDelta,
+                finitePositiveOr(input.alignmentMaxSelectionDeltaGameUnits, baseDelta)));
+        decision.baseAuthorityDeltaGameUnits = baseDelta;
+        decision.extendedAuthorityDeltaGameUnits = (std::min)(configuredExtendedDelta, baseDelta * 4.0f);
+
+        if (input.baselineValid && input.patchValid) {
+            decision.pocketImprovementGameUnits =
+                input.selectedPivotToPocketGameUnits - input.patchPivotToPocketGameUnits;
+            decision.scoreImprovement = input.selectedScore - input.patchScore;
+        }
+
+        if (!input.baselineValid) {
+            decision.reason = "invalidBaselinePivot";
+            return decision;
+        }
+        if (!input.patchComparable || !input.patchValid) {
+            decision.reason = input.patchValid ? "patchNotEligible" : "invalidPatchCandidate";
+            return decision;
+        }
+        if (!input.patchMeshSnapped) {
+            decision.reason = "patchNotMeshSnappedForAuthority";
+            return decision;
+        }
+        if (!std::isfinite(input.patchAuthorityDeltaGameUnits) ||
+            input.patchAuthorityDeltaGameUnits > decision.extendedAuthorityDeltaGameUnits) {
+            decision.reason = "patchTooFarFromSelectedAuthority";
+            return decision;
+        }
+
+        const float selectionDeltaLimit = finitePositiveOr(input.alignmentMaxSelectionDeltaGameUnits, baseDelta) + baseDelta;
+        if (!std::isfinite(input.patchSelectionDeltaGameUnits) ||
+            input.patchSelectionDeltaGameUnits > selectionDeltaLimit) {
+            decision.reason = "patchSelectionNotCoherent";
+            return decision;
+        }
+
+        const float maxPatchPocketDistance = decision.extendedAuthorityDeltaGameUnits + baseDelta;
+        if (!std::isfinite(input.patchPivotToPocketGameUnits) ||
+            input.patchPivotToPocketGameUnits > maxPatchPocketDistance) {
+            decision.reason = "patchOutsidePalmPocket";
+            return decision;
+        }
+
+        const float meaningfulImprovement = (std::max)(1.0f, baseDelta * 0.5f);
+        if (decision.pocketImprovementGameUnits < meaningfulImprovement) {
+            decision.reason = "patchSeatImprovementTooSmall";
+            return decision;
+        }
+        if (decision.scoreImprovement < meaningfulImprovement) {
+            decision.reason = "patchScoreImprovementTooSmall";
+            return decision;
+        }
+
+        decision.acceptPatchPivot = true;
+        decision.positionOnlyAuthority = true;
+        decision.reason = "meshBackedPatchPivotPositionOnly";
         return decision;
     }
 }
