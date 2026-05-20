@@ -55,6 +55,10 @@ Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'skippedInvalidVertexTria
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'invalidBoneNodePointers' 'Skinned mesh extraction must log invalid bone pointer skips for crash diagnosis.'
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'DynamicTriShapeVertexLock\s+dynamicVertexLock\(dynamicSkinned \? triShape : nullptr\)' 'Dynamic skinned extraction must lock live dynamic vertices instead of rejecting the shape.'
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'readDynamicVertexPosition\(dynamicVerts \+ vi \* dynamicStride\)' 'Dynamic skinned extraction must use the locked dynamic vertex positions for palm-pocket surface authority.'
+Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'BSDynamicTriShape already exposes live vertex positions' 'Dynamic skinned surface authority must not depend on readable bone owners.'
+Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'allowPositionOnlySkinnedSurface' 'Close hand-pocket grabs must be able to request position-only skinned fallback evidence.'
+Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'hasSkinInfluences = hasAnySkinInfluence' 'Skinned surface influence metadata must be marked present only when a real guarded bone owner was captured.'
+Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'triangleHasSkinInfluences \? &skinInfluences : nullptr' 'Position-only skinned triangles must not pretend to have bone owner influence data.'
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'vertexInfluences\[vi\]\[k\]\s*=\s*GrabSurfaceVertexInfluence\{\s*boneNodesByIndex\[bIdx\],\s*w\s*\}' 'Dynamic skinned extraction must preserve guarded bone influence ownership for body matching.'
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'GrabSurfaceSourceKind::Skinned' 'Dynamic skinned triangles must remain skinned surface evidence, not generic collision fallback.'
 

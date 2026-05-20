@@ -116,6 +116,7 @@ namespace rock
         bool hasSelectionHit = false;
         bool resolvedOwnerMatchesBody = false;
         bool hasTriangle = false;
+        bool hasSkinInfluences = false;
         bool hasShapeKey = false;
         bool valid = false;
     };
@@ -139,6 +140,18 @@ namespace rock
         }
     }
 
+    inline bool hasAnySkinInfluence(const std::array<std::array<GrabSurfaceVertexInfluence, 4>, 3>& skinInfluences)
+    {
+        for (const auto& vertexInfluences : skinInfluences) {
+            for (const auto& influence : vertexInfluences) {
+                if (influence.bone && influence.weight > 0.0f) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     inline void appendSurfaceTriangle(std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles,
         const TriangleData& triangle,
         RE::BSTriShape* sourceShape,
@@ -158,7 +171,7 @@ namespace rock
         surfaceTriangle.sourceKind = sourceKind;
         if (skinInfluences) {
             surfaceTriangle.skinInfluences = *skinInfluences;
-            surfaceTriangle.hasSkinInfluences = true;
+            surfaceTriangle.hasSkinInfluences = hasAnySkinInfluence(*skinInfluences);
         }
         outSurfaceTriangles->push_back(surfaceTriangle);
     }
@@ -506,7 +519,8 @@ namespace rock
     inline int extractTrianglesFromSkinnedTriShape(
         RE::BSTriShape* triShape,
         std::vector<TriangleData>& outTriangles,
-        std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr)
+        std::vector<GrabSurfaceTriangleData>* outSurfaceTriangles = nullptr,
+        bool allowPositionOnlySkinnedSurface = false)
     {
         [[maybe_unused]] const char* shapeName = triShape->name.c_str() ? triShape->name.c_str() : "(null)";
         const bool dynamicSkinned = isDynamicTriShape(triShape);
@@ -737,12 +751,14 @@ namespace rock
 
         std::vector<RE::NiPoint3> worldVerts(numVerts);
         std::vector<std::uint8_t> worldVertexValid(numVerts, 0);
+        std::vector<std::uint8_t> vertexSkinInfluencesValid(numVerts, 0);
         std::vector<std::array<GrabSurfaceVertexInfluence, 4>> vertexInfluences(numVerts);
         std::uint32_t invalidSkinnedVertices = 0;
+        std::uint32_t positionOnlySkinnedVertices = 0;
         for (std::uint16_t vi = 0; vi < numVerts; vi++) {
             const std::uint8_t* vtx = verts + vi * vtxStride;
 
-            RE::NiPoint3 bindPos;
+            RE::NiPoint3 bindPos{};
             if (!dynamicSkinned) {
                 bindPos = readVertexPosition(vtx, posOffset, fullPrecision);
             }
@@ -765,13 +781,29 @@ namespace rock
             float wx = 0.0f, wy = 0.0f, wz = 0.0f;
             float validWeight = 0.0f;
             bool missingWeightedBone = false;
+            bool hasWeightedBoneInfluence = false;
             for (int k = 0; k < 4; k++) {
                 float w = weights[k];
                 if (!std::isfinite(w) || w <= 0.00001f)
                     continue;
 
                 std::uint8_t bIdx = indices[k];
-                if (bIdx >= boneCount || !boneNodesByIndex[bIdx] || (!dynamicSkinned && !boneTransforms[bIdx].valid)) {
+                if (bIdx >= boneCount) {
+                    missingWeightedBone = true;
+                    continue;
+                }
+                if (!boneNodesByIndex[bIdx]) {
+                    /*
+                     * BSDynamicTriShape already exposes live vertex positions.
+                     * Missing bone owners only reduce body-matching metadata,
+                     * not surface-position authority for close hand grabs.
+                     */
+                    if (!dynamicSkinned) {
+                        missingWeightedBone = true;
+                    }
+                    continue;
+                }
+                if (!dynamicSkinned && !boneTransforms[bIdx].valid) {
                     missingWeightedBone = true;
                     continue;
                 }
@@ -788,12 +820,8 @@ namespace rock
                     wz += w * rz;
                 }
                 validWeight += w;
+                hasWeightedBoneInfluence = true;
                 vertexInfluences[vi][k] = GrabSurfaceVertexInfluence{ boneNodesByIndex[bIdx], w };
-            }
-
-            if (missingWeightedBone || validWeight <= 0.00001f) {
-                ++invalidSkinnedVertices;
-                continue;
             }
 
             if (dynamicSkinned) {
@@ -805,11 +833,25 @@ namespace rock
                 }
                 worldVerts[vi] = dynamicWorld;
             } else {
-                if (!std::isfinite(wx) || !std::isfinite(wy) || !std::isfinite(wz)) {
+                if (!missingWeightedBone && validWeight > 0.00001f && std::isfinite(wx) && std::isfinite(wy) && std::isfinite(wz)) {
+                    worldVerts[vi] = RE::NiPoint3(wx, wy, wz);
+                } else if (allowPositionOnlySkinnedSurface) {
+                    const RE::NiPoint3 bindWorld = transformPoint(triShape->world, bindPos);
+                    if (!std::isfinite(bindWorld.x) || !std::isfinite(bindWorld.y) || !std::isfinite(bindWorld.z)) {
+                        ++invalidSkinnedVertices;
+                        continue;
+                    }
+                    worldVerts[vi] = bindWorld;
+                    ++positionOnlySkinnedVertices;
+                } else {
                     ++invalidSkinnedVertices;
                     continue;
                 }
-                worldVerts[vi] = RE::NiPoint3(wx, wy, wz);
+            }
+            if (!missingWeightedBone && hasWeightedBoneInfluence && validWeight > 0.00001f) {
+                vertexSkinInfluencesValid[vi] = 1;
+            } else if (dynamicSkinned) {
+                ++positionOnlySkinnedVertices;
             }
             worldVertexValid[vi] = 1;
         }
@@ -838,7 +880,9 @@ namespace rock
             skinInfluences[0] = vertexInfluences[i0];
             skinInfluences[1] = vertexInfluences[i1];
             skinInfluences[2] = vertexInfluences[i2];
-            appendSurfaceTriangle(outSurfaceTriangles, tri, triShape, i, GrabSurfaceSourceKind::Skinned, &skinInfluences);
+            const bool triangleHasSkinInfluences =
+                vertexSkinInfluencesValid[i0] && vertexSkinInfluencesValid[i1] && vertexSkinInfluencesValid[i2] && hasAnySkinInfluence(skinInfluences);
+            appendSurfaceTriangle(outSurfaceTriangles, tri, triShape, i, GrabSurfaceSourceKind::Skinned, triangleHasSkinInfluences ? &skinInfluences : nullptr);
             added++;
         }
 
@@ -851,7 +895,7 @@ namespace rock
                 invalidSkinnedVertices,
                 skippedInvalidVertexTriangles);
         }
-        ROCK_LOG_DEBUG(MeshGrab, "Skinned '{}': extracted {} triangles", shapeName, added);
+        ROCK_LOG_DEBUG(MeshGrab, "Skinned '{}': extracted {} triangles (positionOnlyVertices={})", shapeName, added, positionOnlySkinnedVertices);
         return added;
     }
 
@@ -932,7 +976,8 @@ namespace rock
         std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles,
         int maxDepth = 10,
         MeshExtractionStats* stats = nullptr,
-        std::string_view grabNodeNameBlacklist = {})
+        std::string_view grabNodeNameBlacklist = {},
+        bool allowPositionOnlySkinnedSurface = false)
     {
         if (!root || maxDepth <= 0)
             return;
@@ -957,7 +1002,7 @@ namespace rock
                 if (stats) {
                     stats->skinnedShapes++;
                 }
-                extractTrianglesFromSkinnedTriShape(triShape, outTriangles, &outSurfaceTriangles);
+                extractTrianglesFromSkinnedTriShape(triShape, outTriangles, &outSurfaceTriangles, allowPositionOnlySkinnedSurface);
                 const auto added = static_cast<std::uint32_t>(outTriangles.size() - before);
                 if (stats) {
                     stats->skinnedTriangles += added;
@@ -995,7 +1040,7 @@ namespace rock
             for (auto i = decltype(kids.size()){ 0 }; i < kids.size(); i++) {
                 auto* kid = kids[i].get();
                 if (kid)
-                    extractAllSurfaceTriangles(kid, outTriangles, outSurfaceTriangles, maxDepth - 1, stats, grabNodeNameBlacklist);
+                    extractAllSurfaceTriangles(kid, outTriangles, outSurfaceTriangles, maxDepth - 1, stats, grabNodeNameBlacklist, allowPositionOnlySkinnedSurface);
             }
         }
     }
@@ -1316,6 +1361,7 @@ namespace rock
             outResult.sourceShape = surfaceTriangle.sourceShape;
             outResult.triangle = tri;
             outResult.sourceKind = surfaceTriangle.sourceKind;
+            outResult.hasSkinInfluences = surfaceTriangle.hasSkinInfluences;
             outResult.hasTriangle = true;
             outResult.signedAlongPalmDistanceGameUnits = bestSignedAlong;
             outResult.lateralPalmDistanceGameUnits = bestLateral;
@@ -1383,6 +1429,7 @@ namespace rock
         outResult.sourceShape = surfaceTriangle.sourceShape;
         outResult.triangle = surfaceTriangle.triangle;
         outResult.sourceKind = surfaceTriangle.sourceKind;
+        outResult.hasSkinInfluences = surfaceTriangle.hasSkinInfluences;
         outResult.hasTriangle = true;
         outResult.valid = true;
         return true;
@@ -1456,6 +1503,7 @@ namespace rock
         outResult.sourceShape = surfaceTriangle.sourceShape;
         outResult.triangle = surfaceTriangle.triangle;
         outResult.sourceKind = surfaceTriangle.sourceKind;
+        outResult.hasSkinInfluences = surfaceTriangle.hasSkinInfluences;
         outResult.hasTriangle = true;
         outResult.signedAlongPalmDistanceGameUnits = bestSignedAlong;
         outResult.lateralPalmDistanceGameUnits = bestLateral;

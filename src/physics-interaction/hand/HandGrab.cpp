@@ -4710,7 +4710,13 @@ namespace rock
         }
 
         if (meshSourceNode) {
-            extractAllSurfaceTriangles(meshSourceNode, grabMeshTriangles, grabSurfaceTriangles, 10, &meshStats, g_rockConfig.rockGrabNodeNameBlacklist);
+            extractAllSurfaceTriangles(meshSourceNode,
+                grabMeshTriangles,
+                grabSurfaceTriangles,
+                10,
+                &meshStats,
+                g_rockConfig.rockGrabNodeNameBlacklist,
+                handPocketOnlyGrab);
 
             ROCK_LOG_DEBUG(Hand,
                 "{} hand mesh extraction: meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} "
@@ -5008,8 +5014,13 @@ namespace rock
             preparedBodySet.choosePrimaryBodyWithSurfaceOwner(sel.bodyId.value, surfaceOwnerNode, object_physics_body_set::PurePoint3{ primaryChoiceTarget });
         bool surfaceOwnerMatchesResolvedBody = true;
         if (grabSurfaceHit.valid) {
+            const bool handPocketPositionOnlySkinnedSurface =
+                handPocketOnlyGrab && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::Skinned && !grabSurfaceHit.hasSkinInfluences;
             if (grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery) {
                 surfaceOwnerMatchesResolvedBody = primaryChoice.bodyId == sel.bodyId.value;
+            } else if (handPocketPositionOnlySkinnedSurface) {
+                surfaceOwnerMatchesResolvedBody =
+                    primaryChoice.bodyId == sel.bodyId.value && preparedBodySet.containsAcceptedBody(sel.bodyId.value);
             } else {
                 const auto* surfaceOwnerRecord = preparedBodySet.findAcceptedRecordByOwnerNode(surfaceOwnerNode);
                 surfaceOwnerMatchesResolvedBody = surfaceOwnerRecord && surfaceOwnerRecord->bodyId == primaryChoice.bodyId;

@@ -45,8 +45,12 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'handPocketOnlyGrab\s*=
     'Hand grab must derive a per-selection hand-pocket-only policy.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'closeGrabNeedsPalmPocketMeshAuthority[\s\S]*handPocketOnlyGrab' `
     'Hand-pocket-only targets must force palm-pocket mesh authority even outside ordinary close-grab fallback.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'extractAllSurfaceTriangles[\s\S]*handPocketOnlyGrab' `
+    'Hand-pocket-only grabs must request position-only skinned surface evidence when bone owners are unavailable.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'hand-pocket-only target requires palm pocket mesh authority' `
     'Hand-pocket-only targets must fail instead of falling back to selection-hit, palm-ray, contact-patch, or collision pivots.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'handPocketPositionOnlySkinnedSurface[\s\S]*!grabSurfaceHit\.hasSkinInfluences' `
+    'Hand-pocket-only skinned surfaces without bone owners must be accepted only through the selected accepted body.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'if \(!handPocketOnlyGrab && contactSourcePolicy\.allowContactPatchPivot' `
     'Hand-pocket-only targets must not run contact-patch pivot selection.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'multiFingerEvidenceEnabled[\s\S]*!handPocketOnlyGrab' `
