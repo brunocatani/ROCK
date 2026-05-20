@@ -188,15 +188,20 @@ namespace
         s_state.legacyDllWarningLogged = true;
     }
 
-    [[nodiscard]] std::optional<std::string> matchLoadedFile(const RE::TESFile* file)
+    [[nodiscard]] bool fileIsSeeThroughScopesPlugin(const RE::TESFile* file)
     {
         if (!file) {
-            return std::nullopt;
+            return false;
         }
 
         const auto filename = file->GetFilename();
-        if (rock::see_through_scopes_policy::isSeeThroughScopesPluginFilename(filename)) {
-            return std::string{ filename };
+        return rock::see_through_scopes_policy::isSeeThroughScopesPluginFilename(filename);
+    }
+
+    [[nodiscard]] std::optional<std::string> matchLoadedFile(const RE::TESFile* file)
+    {
+        if (fileIsSeeThroughScopesPlugin(file)) {
+            return std::string{ file->GetFilename() };
         }
 
         return std::nullopt;
@@ -246,6 +251,28 @@ namespace
         return attachmentMod.GetBuffer<PropertyMod>(rock::see_through_scopes_policy::kBgsModPropertyBlockId);
     }
 
+    [[nodiscard]] bool formHasSeeThroughScopesSourceFile(const RE::TESForm& form)
+    {
+        /*
+         * Mixed scope setups need vanilla/non-STS scopes to keep Fallout VR's
+         * native overlay. STS OMODs may be new forms or overrides of vanilla
+         * OMODs, so source-file participation is the local authority for
+         * whether ROCK may suppress target 48 on this attachment mod.
+         */
+        const auto* sourceFiles = form.sourceFiles.array;
+        if (!sourceFiles) {
+            return false;
+        }
+
+        for (const auto* file : *sourceFiles) {
+            if (fileIsSeeThroughScopesPlugin(file)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     void restoreOverlayPatch()
     {
         if (!s_state.overlayPatchApplied) {
@@ -283,6 +310,10 @@ namespace
                 continue;
             }
 
+            if (!formHasSeeThroughScopesSourceFile(*omod)) {
+                continue;
+            }
+
             bool patchedThisMod = false;
             for (auto& property : propertyModsFor(*omod)) {
                 if (property.target != rock::see_through_scopes_policy::kNativeScopeOverlayTarget) {
@@ -306,7 +337,7 @@ namespace
         s_state.overlayPatchApplied = true;
         ROCK_LOG_INFO(
             Scope,
-            "Patched {} native scope overlay properties across {} OMOD records.",
+            "Patched {} native scope overlay properties across {} See-Through Scopes OMOD records.",
             s_state.overlayPatchRecords.size(),
             patchedMods);
     }
