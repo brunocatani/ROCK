@@ -456,6 +456,43 @@ namespace rock
             return selectedBase && selectedBase->Is(RE::ENUM_FORM_ID::kWEAP);
         }
 
+        bool nodeIsOrDescendsFrom(const RE::NiAVObject* root, const RE::NiAVObject* node)
+        {
+            if (!root || !node) {
+                return false;
+            }
+
+            for (auto* current = node; current; current = current->parent) {
+                if (current == root) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        bool acceptsSelectedMultibodyOwnerlessVisualMesh(const SelectedObject& selection,
+            const object_physics_body_set::ObjectPhysicsBodySet& bodySet,
+            std::uint32_t resolvedBodyId,
+            RE::NiAVObject* surfaceOwnerNode,
+            const object_physics_body_set::ObjectPhysicsBodyRecord* surfaceOwnerRecord)
+        {
+            /*
+             * Multipart refs can expose visible geometry and hknp collision
+             * owners as sibling nodes under the same selected reference. When
+             * the visible mesh has no accepted collision owner record, the
+             * selected body remains the acquisition authority; a concrete
+             * mismatched owner record still fails closed.
+             */
+            return selection.refr == bodySet.rootRef &&
+                   bodySet.acceptedCount() > 1 &&
+                   resolvedBodyId != object_physics_body_set::INVALID_BODY_ID &&
+                   resolvedBodyId == selection.bodyId.value &&
+                   bodySet.containsAcceptedBody(selection.bodyId.value) &&
+                   surfaceOwnerNode &&
+                   !surfaceOwnerRecord &&
+                   nodeIsOrDescendsFrom(bodySet.rootNode, surfaceOwnerNode);
+        }
+
         constexpr const char* kHeldObjectDriveName = "proxyConstraint";
         constexpr std::uint32_t kHeldCollisionParticipationFlags = 0x80u;
         constexpr std::uint32_t kHeldCollisionParticipationFlagMode = 0u;
@@ -1149,7 +1186,13 @@ namespace rock
                                 recoveredMeshHit)) {
                             const auto* recoveredOwnerRecord =
                                 recoveredMeshHit.sourceNode ? bodySet.findAcceptedRecordByOwnerNode(recoveredMeshHit.sourceNode) : nullptr;
-                            meshRecoveredHit = recoveredOwnerRecord && recoveredOwnerRecord->bodyId == resolvedBodyId;
+                            meshRecoveredHit =
+                                (recoveredOwnerRecord && recoveredOwnerRecord->bodyId == resolvedBodyId) ||
+                                acceptsSelectedMultibodyOwnerlessVisualMesh(selection,
+                                    bodySet,
+                                    resolvedBodyId,
+                                    recoveredMeshHit.sourceNode,
+                                    recoveredOwnerRecord);
                         }
                     }
 
@@ -1250,7 +1293,13 @@ namespace rock
                     bool ownerMatches = true;
                     if (snapHit.sourceNode) {
                         const auto* snapOwnerRecord = bodySet.findAcceptedRecordByOwnerNode(snapHit.sourceNode);
-                        ownerMatches = snapOwnerRecord && snapOwnerRecord->bodyId == resolvedBodyId;
+                        ownerMatches =
+                            (snapOwnerRecord && snapOwnerRecord->bodyId == resolvedBodyId) ||
+                            acceptsSelectedMultibodyOwnerlessVisualMesh(selection,
+                                bodySet,
+                                resolvedBodyId,
+                                snapHit.sourceNode,
+                                snapOwnerRecord);
                     }
 
                     if (ownerMatches) {
@@ -5023,7 +5072,13 @@ namespace rock
                     primaryChoice.bodyId == sel.bodyId.value && preparedBodySet.containsAcceptedBody(sel.bodyId.value);
             } else {
                 const auto* surfaceOwnerRecord = preparedBodySet.findAcceptedRecordByOwnerNode(surfaceOwnerNode);
-                surfaceOwnerMatchesResolvedBody = surfaceOwnerRecord && surfaceOwnerRecord->bodyId == primaryChoice.bodyId;
+                surfaceOwnerMatchesResolvedBody =
+                    (surfaceOwnerRecord && surfaceOwnerRecord->bodyId == primaryChoice.bodyId) ||
+                    acceptsSelectedMultibodyOwnerlessVisualMesh(sel,
+                        preparedBodySet,
+                        primaryChoice.bodyId,
+                        surfaceOwnerNode,
+                        surfaceOwnerRecord);
             }
             grabSurfaceHit.resolvedOwnerMatchesBody = surfaceOwnerMatchesResolvedBody;
         }
@@ -5158,7 +5213,13 @@ namespace rock
                 bool ownerMatches = true;
                 if (palmPocketSurfaceHit.sourceNode) {
                     const auto* ownerRecord = preparedBodySet.findAcceptedRecordByOwnerNode(palmPocketSurfaceHit.sourceNode);
-                    ownerMatches = ownerRecord && ownerRecord->bodyId == objectBodyId.value;
+                    ownerMatches =
+                        (ownerRecord && ownerRecord->bodyId == objectBodyId.value) ||
+                        acceptsSelectedMultibodyOwnerlessVisualMesh(sel,
+                            preparedBodySet,
+                            objectBodyId.value,
+                            palmPocketSurfaceHit.sourceNode,
+                            ownerRecord);
                 }
                 if (ownerMatches) {
                     palmPocketSurfaceHit.hasSelectionHit = sel.hasHitPoint;
