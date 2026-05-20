@@ -4536,7 +4536,6 @@ namespace rock
         } else if (sharedContext.peerActiveGrabLifecycle) {
             activeLifecycle = *sharedContext.peerActiveGrabLifecycle;
         }
-        const RE::NiPoint3 grabPivotAForPrimaryChoice = computeGrabStartupCapturePivotAWorld(world, handWorldTransform);
 
         auto restoreFailedGrabPrep = [&]() {
             if (!joiningPeerHeldObject) {
@@ -4551,6 +4550,35 @@ namespace rock
                 }
             }
         };
+
+        const RE::NiTransform handBodyWorldAtGrab = getLiveBodyWorldTransform(world, _handBody.getBodyId());
+        RE::NiTransform proxyFrameWorldAtGrab = handBodyWorldAtGrab;
+        const char* proxyFrameSourceAtGrab = "unresolved";
+        const bool hasPalmProxyFrameAtGrab =
+            resolveGrabAuthorityProxyFrame(world, handWorldTransform, &handBodyWorldAtGrab, proxyFrameWorldAtGrab, proxyFrameSourceAtGrab);
+        if (!hasPalmProxyFrameAtGrab) {
+            ROCK_LOG_ERROR(Hand,
+                "{} hand GRAB FAILED: live palm anchor frame unavailable before grab evidence capture bodyId={} handBody={} source={} formID={:08X}",
+                handName(),
+                objectBodyId.value,
+                _handBody.isValid() ? _handBody.getBodyId().value : INVALID_BODY_ID,
+                proxyFrameSourceAtGrab,
+                sel.refr ? sel.refr->GetFormID() : 0);
+            _grabFrame.clear();
+            _heldBodyIds.clear();
+            _heldBodyIdsCount.store(0, std::memory_order_release);
+            restoreFailedGrabPrep();
+            clearGrabExternalHandWorldTransform(_isLeft);
+            return false;
+        }
+        /*
+         * Grab commit has one body-A position authority. Mesh/contact evidence
+         * and the final custom constraint both seat against the resolved proxy
+         * origin so mirrored hands cannot select evidence from one frame and
+         * solve against another.
+         */
+        const RE::NiPoint3 grabAuthorityPivotAWorld = proxyFrameWorldAtGrab.translate;
+        const RE::NiPoint3 grabPivotAForPrimaryChoice = grabAuthorityPivotAWorld;
 
         ROCK_LOG_DEBUG(Hand,
             "{} hand object-tree prep: ref='{}' formID={:08X} beforeBodies={} afterBodies={} accepted={} rejected={} "
@@ -4778,7 +4806,7 @@ namespace rock
                  * so collision selection, contact patches, and finger evidence do
                  * not fight over different corners of the same object.
                  */
-                const RE::NiPoint3 grabPivotAWorld = computeGrabStartupCapturePivotAWorld(world, handWorldTransform);
+                const RE::NiPoint3 grabPivotAWorld = grabAuthorityPivotAWorld;
                 const RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
                 const auto closePocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
                     handWorldTransform,
@@ -4846,7 +4874,7 @@ namespace rock
             }
 
             if (!meshGrabFound && !grabSurfaceTriangles.empty() && sel.hasHitPoint) {
-                RE::NiPoint3 grabPivotAWorld = computeGrabStartupCapturePivotAWorld(world, handWorldTransform);
+                const RE::NiPoint3 grabPivotAWorld = grabAuthorityPivotAWorld;
                 RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
                 const RE::NiPoint3 expectedNormal =
                     sel.hasHitNormal && lengthSquared(sel.hitNormalWorld) > 0.0f ? sel.hitNormalWorld : palmDir;
@@ -4890,7 +4918,7 @@ namespace rock
             }
 
             if (!meshGrabFound && !grabSurfaceTriangles.empty()) {
-                RE::NiPoint3 grabPivotAWorld = computeGrabStartupCapturePivotAWorld(world, handWorldTransform);
+                const RE::NiPoint3 grabPivotAWorld = grabAuthorityPivotAWorld;
                 RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
 
                 int rejectedBehindSurface = 0;
@@ -5096,7 +5124,7 @@ namespace rock
         const auto semanticContacts = collectFreshSemanticContactsForBody(
             objectBodyId.value,
             static_cast<std::uint32_t>(g_rockConfig.rockGrabOppositionContactMaxAgeFrames));
-        const RE::NiPoint3 acquisitionGrabPivotAWorld = computeGrabStartupCapturePivotAWorld(world, handWorldTransform);
+        const RE::NiPoint3 acquisitionGrabPivotAWorld = grabAuthorityPivotAWorld;
         const auto acquisitionPocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
             handWorldTransform,
             _isLeft,
@@ -5503,7 +5531,7 @@ namespace rock
                 fingerEvidenceSurfaceHit.hasSelectionHit = sel.hasHitPoint;
                 fingerEvidenceSurfaceHit.selectionToMeshDistanceGameUnits =
                     sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, fingerEvidencePointWorld) : std::numeric_limits<float>::max();
-                fingerEvidenceSurfaceHit.pivotToSurfaceDistanceGameUnits = pointDistanceGameUnits(computeGrabStartupCapturePivotAWorld(world, handWorldTransform), fingerEvidencePointWorld);
+                fingerEvidenceSurfaceHit.pivotToSurfaceDistanceGameUnits = pointDistanceGameUnits(grabAuthorityPivotAWorld, fingerEvidencePointWorld);
                 fingerEvidenceSurfaceHit.resolvedOwnerMatchesBody = true;
                 fingerEvidenceSurfaceHit.valid = true;
                 fingerEvidencePointMode = "multiFingerContactPatch";
@@ -5697,14 +5725,8 @@ namespace rock
         _grabConvergeStableInsidePocketFrames = 0;
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
 
-        RE::NiTransform proxyFrameWorldAtGrab{};
-        const char* proxyFrameSourceAtGrab = "unresolved";
-        bool hasPalmProxyFrameAtGrab = false;
-
         {
             const RE::NiPoint3 palmPos = computePalmPositionFromHandBasis(handWorldTransform, _isLeft);
-            const RE::NiPoint3 palmPocketPivotWorld = computeGrabStartupCapturePivotAWorld(world, handWorldTransform);
-            RE::NiPoint3 grabPivotAWorld = palmPocketPivotWorld;
             RE::NiTransform grabBodyWorldAtGrab{};
             if (!tryGetGrabAuthorityBodyWorldTransform(world, objectBodyId, grabBodyWorldAtGrab)) {
                 ROCK_LOG_ERROR(Hand,
@@ -5733,24 +5755,12 @@ namespace rock
              */
             const bool constraintUsesMotionBodyAtGrab = false;
             const RE::NiTransform constraintBodyWorldAtGrab = grabBodyWorldAtGrab;
-            const RE::NiTransform handBodyWorldAtGrab = getLiveBodyWorldTransform(world, _handBody.getBodyId());
-            proxyFrameWorldAtGrab = handBodyWorldAtGrab;
-            hasPalmProxyFrameAtGrab =
-                resolveGrabAuthorityProxyFrame(world, handWorldTransform, &handBodyWorldAtGrab, proxyFrameWorldAtGrab, proxyFrameSourceAtGrab);
-            if (!hasPalmProxyFrameAtGrab) {
-                ROCK_LOG_ERROR(Hand,
-                    "{} hand GRAB FAILED: live palm anchor frame unavailable bodyId={} handBody={} source={} formID={:08X}",
-                    handName(),
-                    objectBodyId.value,
-                    _handBody.isValid() ? _handBody.getBodyId().value : INVALID_BODY_ID,
-                    proxyFrameSourceAtGrab,
-                    sel.refr ? sel.refr->GetFormID() : 0);
-                _grabFrame.clear();
-                _heldBodyIds.clear();
-                _heldBodyIdsCount.store(0, std::memory_order_release);
-                restoreFailedGrabPrep();
-                return false;
-            }
+            /*
+             * The hidden proxy is body A for dynamic grab. Keep its constraint
+             * pivot at the proxy origin so body-A rotation cannot sweep an
+             * offset grab point around the palm, especially on mirrored hands.
+             */
+            RE::NiPoint3 grabPivotAWorld = grabAuthorityPivotAWorld;
             auto* ownerCellAtGrab = sel.refr ? sel.refr->GetParentCell() : nullptr;
             auto* bhkWorldAtGrab = ownerCellAtGrab ? ownerCellAtGrab->GetbhkWorld() : nullptr;
             auto* bodyCollisionObjectAtGrab = bhkWorldAtGrab ? RE::bhkNPCollisionObject::Getbhk(bhkWorldAtGrab, objectBodyId) : nullptr;
