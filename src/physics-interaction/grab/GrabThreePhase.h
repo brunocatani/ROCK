@@ -234,6 +234,8 @@ namespace rock::grab_three_phase
         RE::NiPoint3 gripSeedWorld{};
         bool hasFreshTouchContact = false;
         bool isFarSelection = false;
+        bool requireEvidenceForTouchHeld = false;
+        bool hasTouchHeldAuthorityEvidence = false;
         float touchAcquireDistanceGameUnits = 4.0f;
         float touchContactMaxDistanceGameUnits = 0.0f;
         float nearConvergeDistanceGameUnits = 28.0f;
@@ -280,9 +282,16 @@ namespace rock::grab_three_phase
 
         result.accepted = true;
         const bool freshTouchWithinPocketEnvelope = input.hasFreshTouchContact && result.gripToPocketDistanceGameUnits <= touchContactMaxDistance;
-        if (freshTouchWithinPocketEnvelope || result.gripToPocketDistanceGameUnits <= touchDistance) {
+        const bool insideTouchEnvelope = result.gripToPocketDistanceGameUnits <= touchDistance;
+        const bool hasTouchHeldAuthority = !input.requireEvidenceForTouchHeld || input.hasTouchHeldAuthorityEvidence;
+        if ((freshTouchWithinPocketEnvelope || insideTouchEnvelope) && hasTouchHeldAuthority) {
             result.phase = AcquisitionPhase::TouchHeld;
             result.reason = freshTouchWithinPocketEnvelope ? "freshTouchContactInPocketEnvelope" : "insideTouchEnvelope";
+            return result;
+        }
+        if ((freshTouchWithinPocketEnvelope || insideTouchEnvelope) && input.requireEvidenceForTouchHeld && !hasTouchHeldAuthority) {
+            result.phase = AcquisitionPhase::NearConverging;
+            result.reason = "touchEnvelopeAwaitingAuthorityEvidence";
             return result;
         }
 

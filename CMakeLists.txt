@@ -266,6 +266,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGrabMotionControllerPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabMotionControllerPolicyTests)
 
+  add_executable(ROCKGrabThreePhasePolicyTests
+    "${ROOT_DIR}/tests/GrabThreePhasePolicyTests.cpp"
+  )
+  target_compile_features(ROCKGrabThreePhasePolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKGrabThreePhasePolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKGrabThreePhasePolicyTests)
+
   add_executable(ROCKGeneratedKeyframedBodyDrivePolicyTests
     "${ROOT_DIR}/tests/GeneratedKeyframedBodyDrivePolicyTests.cpp"
   )
@@ -358,6 +365,7 @@ if(BUILD_ROCK_TESTS)
     ROCKGrabContactPatchClusterPolicyTests
     ROCKGrabPivotAuthorityPolicyTests
     ROCKGrabMotionControllerPolicyTests
+    ROCKGrabThreePhasePolicyTests
     ROCKGeneratedKeyframedBodyDrivePolicyTests
     ROCKHeldObjectStutterGuardPolicyTests
     ROCKGrabAuthorityProxyPolicyTests

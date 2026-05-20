@@ -6194,11 +6194,21 @@ namespace rock
                 const float stableTouchEnvelope = (std::max)(g_rockConfig.rockGrabTouchAcquireDistanceGameUnits, pocket.pocketRadiusGameUnits);
                 const bool hasStablePocketTouchContact =
                     oppositionContacts.valid && gripToPocketDistance <= stableTouchEnvelope;
+                const bool meshSurfaceAuthorityEvidence =
+                    grabSurfaceHit.valid && grabSurfaceHit.sourceKind != GrabSurfaceSourceKind::CollisionQuery;
+                const bool pullArrivalTouchHeldAuthorityEvidence =
+                    hasStablePocketTouchContact ||
+                    meshSurfaceAuthorityEvidence ||
+                    contactPatchEvidenceAvailable ||
+                    multiFingerGripUsed ||
+                    authoredGrabNode != nullptr;
                 const auto phaseDecision = grab_three_phase::classifyAcquisitionPhase(grab_three_phase::PhaseClassificationInput{
                     .pocket = pocket,
                     .gripSeedWorld = phaseGripSeed,
                     .hasFreshTouchContact = hasStablePocketTouchContact,
                     .isFarSelection = sel.isFarSelection,
+                    .requireEvidenceForTouchHeld = grabbedFromPullCatch,
+                    .hasTouchHeldAuthorityEvidence = pullArrivalTouchHeldAuthorityEvidence,
                     .touchAcquireDistanceGameUnits = g_rockConfig.rockGrabTouchAcquireDistanceGameUnits,
                     .touchContactMaxDistanceGameUnits = stableTouchEnvelope,
                     .nearConvergeDistanceGameUnits = g_rockConfig.rockGrabNearConvergeDistanceGameUnits,
@@ -7131,8 +7141,24 @@ namespace rock
             hasPivotTrackingError &&
             _grabObjectGripAtGrab.valid &&
             pivotTrackingErrorGameUnits <= acquisitionVisualAttachEnvelope;
+        const auto heldAngularAuthority = grab_motion_controller::computeAngularAuthorityScale(makeAngularAuthorityInput(_grabFrame));
+        const auto visualPublishDecision = grab_motion_controller::evaluateVisualHandPublishGate(
+            grab_motion_controller::VisualHandPublishInput{
+                .hasTelemetryCapture = _grabFrame.hasTelemetryCapture,
+                .touchHeldPhase = _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld,
+                .acquisitionVisualEligible = acquisitionVisualEligible,
+                .hasPivotTrackingError = hasPivotTrackingError,
+                .motorContactSoftening = heldMotorContactSoftening,
+                .pivotAuthorityPositionOnly = _grabFrame.pivotAuthorityPositionOnly,
+                .pivotAuthorityNormalTrusted = _grabFrame.pivotAuthorityNormalTrusted,
+                .hasSeatedPivotReacquire = _grabFrame.hasSeatedPivotReacquire,
+                .multiFingerContactGroupCount = _grabFrame.multiFingerContactGroupCount,
+                .contactPatchSampleCount = _grabFrame.contactPatchSampleCount,
+                .angularAuthorityScale = heldAngularAuthority.authorityScale,
+                .contactSupportShape = heldAngularAuthority.contactSupportShape,
+            });
         if (_grabFrame.hasTelemetryCapture &&
-            (_grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld || acquisitionVisualEligible)) {
+            visualPublishDecision.apply) {
             RE::NiTransform heldVisualNodeWorld{};
             bool hasHeldVisualNodeWorld = false;
             if (_grabFrame.heldNode) {
@@ -7215,9 +7241,12 @@ namespace rock
 
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} GRAB VISUAL HAND: relation=heldRelative phase={} visualOnly=yes target=({:.1f},{:.1f},{:.1f}) applied=({:.1f},{:.1f},{:.1f}) live=({:.1f},{:.1f},{:.1f}) deviation={:.2f}gu avgDeviation={:.2f}gu normalAuthority=false",
+                    "{} GRAB VISUAL HAND: relation=heldRelative phase={} visualOnly=yes authority={} shape={} scale={:.2f} target=({:.1f},{:.1f},{:.1f}) applied=({:.1f},{:.1f},{:.1f}) live=({:.1f},{:.1f},{:.1f}) deviation={:.2f}gu avgDeviation={:.2f}gu normalAuthority=false",
                     handName(),
                     grab_three_phase::phaseName(_grabAcquisitionPhase),
+                    visualPublishDecision.reason,
+                    grab_motion_controller::contactSupportShapeName(heldAngularAuthority.contactSupportShape),
+                    heldAngularAuthority.authorityScale,
                     targetVisualHandWorld.translate.x,
                     targetVisualHandWorld.translate.y,
                     targetVisualHandWorld.translate.z,
@@ -7240,6 +7269,21 @@ namespace rock
                 }
             }
         } else {
+            if (_grabFrame.hasTelemetryCapture && g_rockConfig.rockDebugGrabFrameLogging &&
+                (_grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld || acquisitionVisualEligible)) {
+                ROCK_LOG_SAMPLE_DEBUG(Hand,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "{} GRAB VISUAL HAND HELD: phase={} authority={} shape={} scale={:.2f} positionOnly={} normalTrusted={} seated={} contactSoftening={}",
+                    handName(),
+                    grab_three_phase::phaseName(_grabAcquisitionPhase),
+                    visualPublishDecision.reason,
+                    grab_motion_controller::contactSupportShapeName(heldAngularAuthority.contactSupportShape),
+                    heldAngularAuthority.authorityScale,
+                    _grabFrame.pivotAuthorityPositionOnly ? "yes" : "no",
+                    _grabFrame.pivotAuthorityNormalTrusted ? "yes" : "no",
+                    _grabFrame.hasSeatedPivotReacquire ? "yes" : "no",
+                    heldMotorContactSoftening ? "yes" : "no");
+            }
             _grabVisualDeviationExceededSeconds = 0.0f;
             _grabVisualDeviationHistory = {};
             _grabVisualDeviationHistoryCount = 0;

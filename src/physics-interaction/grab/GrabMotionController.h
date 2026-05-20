@@ -430,6 +430,29 @@ namespace rock::grab_motion_controller
         AngularAuthorityOutput angular{};
     };
 
+    struct VisualHandPublishInput
+    {
+        bool hasTelemetryCapture = false;
+        bool touchHeldPhase = false;
+        bool acquisitionVisualEligible = false;
+        bool hasPivotTrackingError = false;
+        bool motorContactSoftening = false;
+        bool pivotAuthorityPositionOnly = false;
+        bool pivotAuthorityNormalTrusted = false;
+        bool hasSeatedPivotReacquire = false;
+        std::uint32_t multiFingerContactGroupCount = 0;
+        std::uint32_t contactPatchSampleCount = 0;
+        float angularAuthorityScale = 1.0f;
+        ContactSupportShape contactSupportShape = ContactSupportShape::Unknown;
+    };
+
+    struct VisualHandPublishDecision
+    {
+        bool apply = false;
+        bool acquisition = false;
+        const char* reason = "notEvaluated";
+    };
+
     inline HeldAuthorityState evaluateHeldAuthority(const HeldAuthorityInput& input)
     {
         HeldAuthorityState state{};
@@ -438,6 +461,68 @@ namespace rock::grab_motion_controller
         state.softenForContact = input.heldBodyColliding;
         state.angular = computeAngularAuthorityScale(input.angular);
         return state;
+    }
+
+    inline VisualHandPublishDecision evaluateVisualHandPublishGate(const VisualHandPublishInput& input)
+    {
+        VisualHandPublishDecision decision{};
+        if (!input.hasTelemetryCapture) {
+            decision.reason = "missingTelemetryCapture";
+            return decision;
+        }
+        if (!input.hasPivotTrackingError) {
+            decision.reason = "missingPivotTracking";
+            return decision;
+        }
+        if (!input.touchHeldPhase && !input.acquisitionVisualEligible) {
+            decision.reason = "phaseNotVisualEligible";
+            return decision;
+        }
+
+        const float authorityScale = std::clamp(std::isfinite(input.angularAuthorityScale) ? input.angularAuthorityScale : 0.0f, 0.0f, 1.0f);
+        const bool strongSupport =
+            input.pivotAuthorityNormalTrusted ||
+            input.hasSeatedPivotReacquire ||
+            input.multiFingerContactGroupCount >= 2 ||
+            input.contactSupportShape == ContactSupportShape::Surface ||
+            input.contactSupportShape == ContactSupportShape::Wrap;
+        const bool weakPointLikeSupport =
+            input.contactSupportShape == ContactSupportShape::Point ||
+            input.contactSupportShape == ContactSupportShape::SphereLike ||
+            input.contactSupportShape == ContactSupportShape::ThinEdge;
+        const bool weakNormalSupport = !input.pivotAuthorityNormalTrusted;
+        const bool weakLeverSupport =
+            input.contactSupportShape == ContactSupportShape::LongHandle &&
+            input.multiFingerContactGroupCount < 2 &&
+            !input.hasSeatedPivotReacquire;
+
+        if (input.acquisitionVisualEligible && !input.touchHeldPhase) {
+            decision.acquisition = true;
+            if (input.motorContactSoftening) {
+                decision.reason = "acquisitionPushingIntoContact";
+                return decision;
+            }
+            if (authorityScale < 0.55f) {
+                decision.reason = "acquisitionLowAngularAuthority";
+                return decision;
+            }
+            if ((weakNormalSupport || weakPointLikeSupport || weakLeverSupport || input.pivotAuthorityPositionOnly) && !strongSupport) {
+                decision.reason = "acquisitionAwaitingAuthorityEvidence";
+                return decision;
+            }
+            decision.apply = true;
+            decision.reason = "acquisitionAuthorityAccepted";
+            return decision;
+        }
+
+        if ((weakNormalSupport || input.pivotAuthorityPositionOnly || weakPointLikeSupport || weakLeverSupport) && !strongSupport) {
+            decision.reason = "touchHeldWeakVisualAuthority";
+            return decision;
+        }
+
+        decision.apply = true;
+        decision.reason = "touchHeldAuthorityAccepted";
+        return decision;
     }
 
     template <class Vector>

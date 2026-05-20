@@ -24,6 +24,15 @@ namespace
         return false;
     }
 
+    bool expectFalse(const char* label, bool value)
+    {
+        if (!value) {
+            return true;
+        }
+        std::printf("%s expected false\n", label);
+        return false;
+    }
+
     struct Vec3
     {
         float x = 0.0f;
@@ -193,6 +202,114 @@ int main()
     ok &= expectNear("axis authority scales contact-normal spin x", axisLimited.x, 2.5f, 0.001f);
     ok &= expectNear("axis authority preserves tangent spin y", axisLimited.y, 6.0f, 0.001f);
     ok &= expectNear("axis authority scales pivot twist z", axisLimited.z, 2.0f, 0.001f);
+
+    const auto touchHeldSurfaceVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
+        .hasTelemetryCapture = true,
+        .touchHeldPhase = true,
+        .acquisitionVisualEligible = false,
+        .hasPivotTrackingError = true,
+        .pivotAuthorityNormalTrusted = true,
+        .angularAuthorityScale = 1.0f,
+        .contactSupportShape = ContactSupportShape::Surface,
+    });
+    ok &= expectTrue("touch-held surface support may publish visual hand", touchHeldSurfaceVisual.apply);
+    ok &= expectFalse("touch-held visual publish is not acquisition", touchHeldSurfaceVisual.acquisition);
+
+    const auto weakPointTouchVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
+        .hasTelemetryCapture = true,
+        .touchHeldPhase = true,
+        .acquisitionVisualEligible = false,
+        .hasPivotTrackingError = true,
+        .pivotAuthorityPositionOnly = true,
+        .pivotAuthorityNormalTrusted = false,
+        .angularAuthorityScale = 0.75f,
+        .contactSupportShape = ContactSupportShape::Point,
+    });
+    ok &= expectFalse("touch-held weak point support does not publish visual hand", weakPointTouchVisual.apply);
+
+    const auto weakNormalTouchVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
+        .hasTelemetryCapture = true,
+        .touchHeldPhase = true,
+        .acquisitionVisualEligible = false,
+        .hasPivotTrackingError = true,
+        .pivotAuthorityPositionOnly = false,
+        .pivotAuthorityNormalTrusted = false,
+        .angularAuthorityScale = 0.75f,
+        .contactSupportShape = ContactSupportShape::Unknown,
+    });
+    ok &= expectFalse("touch-held untrusted normal support does not publish visual hand", weakNormalTouchVisual.apply);
+
+    const auto seatedPointTouchVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
+        .hasTelemetryCapture = true,
+        .touchHeldPhase = true,
+        .acquisitionVisualEligible = false,
+        .hasPivotTrackingError = true,
+        .pivotAuthorityPositionOnly = true,
+        .pivotAuthorityNormalTrusted = false,
+        .hasSeatedPivotReacquire = true,
+        .angularAuthorityScale = 0.35f,
+        .contactSupportShape = ContactSupportShape::Point,
+    });
+    ok &= expectTrue("seated point support may publish visual hand", seatedPointTouchVisual.apply);
+
+    const auto acquisitionSurfaceVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
+        .hasTelemetryCapture = true,
+        .touchHeldPhase = false,
+        .acquisitionVisualEligible = true,
+        .hasPivotTrackingError = true,
+        .pivotAuthorityNormalTrusted = true,
+        .angularAuthorityScale = 0.75f,
+        .contactSupportShape = ContactSupportShape::Surface,
+    });
+    ok &= expectTrue("strong acquisition support may publish visual hand", acquisitionSurfaceVisual.apply);
+    ok &= expectTrue("strong acquisition visual publish is marked acquisition", acquisitionSurfaceVisual.acquisition);
+
+    const auto acquisitionLowAuthorityVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
+        .hasTelemetryCapture = true,
+        .touchHeldPhase = false,
+        .acquisitionVisualEligible = true,
+        .hasPivotTrackingError = true,
+        .pivotAuthorityNormalTrusted = true,
+        .angularAuthorityScale = 0.54f,
+        .contactSupportShape = ContactSupportShape::Surface,
+    });
+    ok &= expectFalse("low angular authority blocks acquisition visual hand", acquisitionLowAuthorityVisual.apply);
+
+    const auto acquisitionContactSoftenedVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
+        .hasTelemetryCapture = true,
+        .touchHeldPhase = false,
+        .acquisitionVisualEligible = true,
+        .hasPivotTrackingError = true,
+        .motorContactSoftening = true,
+        .pivotAuthorityNormalTrusted = true,
+        .angularAuthorityScale = 0.75f,
+        .contactSupportShape = ContactSupportShape::Surface,
+    });
+    ok &= expectFalse("push-into-contact blocks acquisition visual hand", acquisitionContactSoftenedVisual.apply);
+
+    const auto acquisitionWeakPointVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
+        .hasTelemetryCapture = true,
+        .touchHeldPhase = false,
+        .acquisitionVisualEligible = true,
+        .hasPivotTrackingError = true,
+        .pivotAuthorityPositionOnly = true,
+        .pivotAuthorityNormalTrusted = false,
+        .angularAuthorityScale = 0.75f,
+        .contactSupportShape = ContactSupportShape::Point,
+    });
+    ok &= expectFalse("weak point support blocks acquisition visual hand", acquisitionWeakPointVisual.apply);
+
+    const auto acquisitionWeakNormalVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
+        .hasTelemetryCapture = true,
+        .touchHeldPhase = false,
+        .acquisitionVisualEligible = true,
+        .hasPivotTrackingError = true,
+        .pivotAuthorityPositionOnly = false,
+        .pivotAuthorityNormalTrusted = false,
+        .angularAuthorityScale = 0.75f,
+        .contactSupportShape = ContactSupportShape::Unknown,
+    });
+    ok &= expectFalse("untrusted normal support blocks acquisition visual hand", acquisitionWeakNormalVisual.apply);
 
     const auto ratioClamp = rock::grab_inertia_policy::normalizeInverseInertiaAxesForGrab(1.0f, 100.0f, 4.0f, 10.0f, 0.05f);
     ok &= expectTrue("inertia ratio clamp modifies axis", ratioClamp.modified);
