@@ -36,6 +36,7 @@ namespace rock
         float signedAlongDistance = FLT_MAX;
         float lateralDistance = FLT_MAX;
         float hitFraction = 1.0f;
+        float selectionScore = FLT_MAX;
         std::uint32_t hitShapeKey = 0xFFFF'FFFF;
         std::uint32_t hitShapeCollisionFilterInfo = 0;
         float hmdConeDot = -1.0f;
@@ -44,6 +45,7 @@ namespace rock
         bool hasHitPoint = false;
         bool hasHitNormal = false;
         bool hasHitShapeKey = false;
+        bool hasSelectionScore = false;
         bool hasHmdConeDot = false;
         actor_equipment_grab::ActorEquipmentSelection actorEquipment{};
 
@@ -59,6 +61,7 @@ namespace rock
             signedAlongDistance = FLT_MAX;
             lateralDistance = FLT_MAX;
             hitFraction = 1.0f;
+            selectionScore = FLT_MAX;
             hitShapeKey = 0xFFFF'FFFF;
             hitShapeCollisionFilterInfo = 0;
             hmdConeDot = -1.0f;
@@ -67,6 +70,7 @@ namespace rock
             hasHitPoint = false;
             hasHitNormal = false;
             hasHitShapeKey = false;
+            hasSelectionScore = false;
             hasHmdConeDot = false;
             actorEquipment = {};
         }

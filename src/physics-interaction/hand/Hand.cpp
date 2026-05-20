@@ -1373,9 +1373,9 @@ namespace rock
         SelectedObject best = nearCandidate.isValid() ? nearCandidate : farCandidate;
 
         if (best.isValid() && _currentSelection.isValid() && best.refr != _currentSelection.refr && !best.isFarSelection && !_currentSelection.isFarSelection) {
-            float stickyThreshold = _currentSelection.distance * 0.7f;
-            if (best.distance > stickyThreshold) {
-                _currentSelection.distance = _currentSelection.distance;
+            const float currentScore = _currentSelection.hasSelectionScore ? _currentSelection.selectionScore : (std::numeric_limits<float>::infinity)();
+            const float candidateScore = best.hasSelectionScore ? best.selectionScore : (std::numeric_limits<float>::infinity)();
+            if (selection_query_policy::shouldKeepCurrentCloseSelectionAgainstCandidate(currentScore, candidateScore, _currentSelection.distance, best.distance)) {
                 _selectionHoldFrames++;
                 refreshSelectionHighlight(_currentSelection);
                 return;

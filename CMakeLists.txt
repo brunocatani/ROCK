@@ -322,6 +322,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKDynamicMovableStaticGrabPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKDynamicMovableStaticGrabPolicyTests)
 
+  add_executable(ROCKSelectionPrecisionPolicyTests
+    "${ROOT_DIR}/tests/SelectionPrecisionPolicyTests.cpp"
+  )
+  target_compile_features(ROCKSelectionPrecisionPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKSelectionPrecisionPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKSelectionPrecisionPolicyTests)
+
   add_executable(ROCKNativePlayerCollisionSuppressionPolicyTests
     "${ROOT_DIR}/tests/NativePlayerCollisionSuppressionPolicyTests.cpp"
   )
@@ -345,6 +352,7 @@ if(BUILD_ROCK_TESTS)
     ROCKWeaponCollisionLifecyclePolicyTests
     ROCKActiveGrabBodyLifecyclePolicyTests
     ROCKDynamicMovableStaticGrabPolicyTests
+    ROCKSelectionPrecisionPolicyTests
     ROCKNativePlayerCollisionSuppressionPolicyTests
   )
   add_custom_target(ROCKPolicyTestBinaries DEPENDS ${ROCK_COMMONLIB_TEST_TARGETS})

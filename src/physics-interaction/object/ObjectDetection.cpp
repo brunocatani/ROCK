@@ -13,7 +13,9 @@
 #include "RE/Bethesda/bhkCharacterController.h"
 
 #include <algorithm>
+#include <array>
 #include <cfloat>
+#include <cstddef>
 #include <cmath>
 #include <unordered_map>
 #include <unordered_set>
@@ -53,6 +55,48 @@ namespace rock
             auto* baseForm = ref ? ref->GetObjectReference() : nullptr;
             const char* formType = baseForm ? baseForm->GetFormTypeString() : nullptr;
             return formType ? formType : "???";
+        }
+
+        struct RankedSelectionCandidate
+        {
+            SelectedObject selection{};
+            selection_query_policy::ShapeCastCandidateScore score{};
+        };
+
+        void insertRankedSelectionCandidate(
+            std::array<RankedSelectionCandidate, selection_query_policy::kMaxShapeCastPrecisionCandidates>& rankedCandidates,
+            std::size_t& rankedCandidateCount,
+            const SelectedObject& selection,
+            const selection_query_policy::ShapeCastCandidateScore& score)
+        {
+            if (!selection.isValid() || !score.valid) {
+                return;
+            }
+
+            std::size_t insertAt = rankedCandidateCount;
+            for (std::size_t i = 0; i < rankedCandidateCount; ++i) {
+                if (selection_query_policy::isBetterShapeCastCandidateScore(score, rankedCandidates[i].score)) {
+                    insertAt = i;
+                    break;
+                }
+            }
+
+            if (insertAt >= rankedCandidates.size() && rankedCandidateCount >= rankedCandidates.size()) {
+                return;
+            }
+
+            if (rankedCandidateCount < rankedCandidates.size()) {
+                ++rankedCandidateCount;
+            }
+
+            for (std::size_t i = rankedCandidateCount - 1; i > insertAt; --i) {
+                rankedCandidates[i] = rankedCandidates[i - 1];
+            }
+
+            rankedCandidates[insertAt] = RankedSelectionCandidate{
+                .selection = selection,
+                .score = score,
+            };
         }
 
         struct SelectionRejectTelemetry
@@ -447,8 +491,8 @@ namespace rock
             bool logRejectTelemetry)
         {
             SelectedObject result;
-            float bestLateralDistance = FLT_MAX;
-            float bestAlongDistance = FLT_MAX;
+            std::array<RankedSelectionCandidate, selection_query_policy::kMaxShapeCastPrecisionCandidates> rankedCandidates{};
+            std::size_t rankedCandidateCount = 0;
             int loggedRejectTelemetry = 0;
             const char* queryName = isFarSelection ? "far" : "near";
             std::unordered_set<std::uint32_t> seenBodyIds;
@@ -602,39 +646,55 @@ namespace rock
                     }
                 }
                 const float alongDistance = alongDistanceOnRay(start, directionUnit, hitPoint);
-                if (!selection_query_policy::isBetterShapeCastCandidate(isFarSelection, lateralDistance, alongDistance, bestLateralDistance, bestAlongDistance)) {
-                    continue;
-                }
-
                 RE::NiPoint3 hitNormal{};
                 const bool hasHitNormal = normalizeGameDirection(hkDirectionToNiPoint(hit.normal), hitNormal);
                 const std::uint32_t shapeKey = hit.hitBodyInfo.m_shapeKey.storage;
+                const float normalDotDirection = hasHitNormal ? hitNormal.x * directionUnit.x + hitNormal.y * directionUnit.y + hitNormal.z * directionUnit.z : 0.0f;
+                const float lateralScoreScale = isFarSelection ? g_rockConfig.rockFarCastRadiusGameUnits : g_rockConfig.rockNearCastRadiusGameUnits;
+                const float alongScoreScale = isFarSelection ? g_rockConfig.rockFarDetectionRange : configuredNearReachDistance();
+                const auto candidateScore = selection_query_policy::scoreShapeCastCandidate(selection_query_policy::ShapeCastCandidateScoringInput{
+                    .isFarSelection = isFarSelection,
+                    .lateralDistance = lateralDistance,
+                    .alongDistance = alongDistance,
+                    .lateralScale = lateralScoreScale,
+                    .alongScale = alongScoreScale,
+                    .normalDotDirection = normalDotDirection,
+                    .hasHitNormal = hasHitNormal,
+                });
+                if (!candidateScore.valid) {
+                    continue;
+                }
 
-                bestLateralDistance = lateralDistance;
-                bestAlongDistance = alongDistance;
-                result.refr = ref;
-                result.bodyId = hitBodyId;
-                result.hitPointWorld = hitPoint;
-                result.hitNormalWorld = hitNormal;
-                result.distance = alongDistance;
-                result.signedAlongDistance = signedAlongDistance;
-                result.lateralDistance = lateralDistance;
-                result.hitFraction = hit.fraction.storage;
-                result.hitShapeKey = shapeKey;
-                result.hitShapeCollisionFilterInfo = hit.hitBodyInfo.m_shapeCollisionFilterInfo.storage;
-                result.hmdConeDot = hmdConeDot;
-                result.targetKind = classification.kind;
-                result.isFarSelection = isFarSelection;
-                result.hasHitPoint = true;
-                result.hasHitNormal = hasHitNormal;
-                result.hasHitShapeKey = shapeKey != 0xFFFF'FFFF;
-                result.hasHmdConeDot = hasHmdConeDot;
-                result.actorEquipment = classification.actorEquipment;
+                SelectedObject candidate;
+                candidate.refr = ref;
+                candidate.bodyId = hitBodyId;
+                candidate.hitPointWorld = hitPoint;
+                candidate.hitNormalWorld = hitNormal;
+                candidate.distance = alongDistance;
+                candidate.signedAlongDistance = signedAlongDistance;
+                candidate.lateralDistance = lateralDistance;
+                candidate.hitFraction = hit.fraction.storage;
+                candidate.selectionScore = candidateScore.score;
+                candidate.hitShapeKey = shapeKey;
+                candidate.hitShapeCollisionFilterInfo = hit.hitBodyInfo.m_shapeCollisionFilterInfo.storage;
+                candidate.hmdConeDot = hmdConeDot;
+                candidate.targetKind = classification.kind;
+                candidate.isFarSelection = isFarSelection;
+                candidate.hasHitPoint = true;
+                candidate.hasHitNormal = hasHitNormal;
+                candidate.hasHitShapeKey = shapeKey != 0xFFFF'FFFF;
+                candidate.hasSelectionScore = true;
+                candidate.hasHmdConeDot = hasHmdConeDot;
+                candidate.actorEquipment = classification.actorEquipment;
 
-                result.hitNode = hitNode;
-                result.visualNode = classification.actorEquipment.visualNode ? classification.actorEquipment.visualNode : ref->Get3D();
+                candidate.hitNode = hitNode;
+                candidate.visualNode = classification.actorEquipment.visualNode ? classification.actorEquipment.visualNode : ref->Get3D();
+                insertRankedSelectionCandidate(rankedCandidates, rankedCandidateCount, candidate, candidateScore);
             }
 
+            if (rankedCandidateCount > 0) {
+                result = rankedCandidates[0].selection;
+            }
             return result;
         }
     }
@@ -695,11 +755,11 @@ namespace rock
             ROCK_LOG_DEBUG(Hand,
                 "Near shape cast [{}]: start=({:.1f},{:.1f},{:.1f}) dir=({:.2f},{:.2f},{:.2f}) radius={:.1f} distance={:.1f} "
                 "filter=0x{:08X} hits={} candidates={} dup={} rejectInvalid={} rejectNoRef={} rejectNotGrab={} rejectBehind={} selected={} formID={:08X} dist={:.2f} signedAlong={:.2f} lateral={:.2f} "
-                "normal=({:.2f},{:.2f},{:.2f}) shapeKey=0x{:08X}",
+                "score={:.4f} normal=({:.2f},{:.2f},{:.2f}) shapeKey=0x{:08X}",
                 isLeft ? "L" : "R", palmPos.x, palmPos.y, palmPos.z, direction.x, direction.y, direction.z, castRadius, castDistance, diagnostics.collisionFilterInfo,
                 diagnostics.hitCount, candidatesChecked, duplicateBodies, rejectedInvalidBody, rejectedNoRef, rejectedNotGrabbable, rejectedBehindPalm, result.isValid() ? "yes" : "no",
                 result.refr ? result.refr->GetFormID() : 0, result.isValid() ? result.distance : -1.0f, result.isValid() ? result.signedAlongDistance : 0.0f,
-                result.isValid() ? result.lateralDistance : 0.0f, result.hitNormalWorld.x, result.hitNormalWorld.y,
+                result.isValid() ? result.lateralDistance : 0.0f, result.hasSelectionScore ? result.selectionScore : -1.0f, result.hitNormalWorld.x, result.hitNormalWorld.y,
                 result.hitNormalWorld.z, result.hitShapeKey);
         }
 
@@ -773,6 +833,19 @@ namespace rock
             if (selection_query_policy::shouldPromoteFarHitToClose(hitDistance, configuredNearReach)) {
                 result.isFarSelection = false;
                 result.distance = hitDistance;
+                const float normalDotDirection =
+                    result.hasHitNormal ? result.hitNormalWorld.x * direction.x + result.hitNormalWorld.y * direction.y + result.hitNormalWorld.z * direction.z : 0.0f;
+                const auto promotedCloseScore = selection_query_policy::scoreShapeCastCandidate(selection_query_policy::ShapeCastCandidateScoringInput{
+                    .isFarSelection = false,
+                    .lateralDistance = result.lateralDistance,
+                    .alongDistance = hitDistance,
+                    .lateralScale = g_rockConfig.rockNearCastRadiusGameUnits,
+                    .alongScale = configuredNearReach,
+                    .normalDotDirection = normalDotDirection,
+                    .hasHitNormal = result.hasHitNormal,
+                });
+                result.hasSelectionScore = promotedCloseScore.valid;
+                result.selectionScore = promotedCloseScore.valid ? promotedCloseScore.score : FLT_MAX;
             }
         }
 
@@ -780,13 +853,14 @@ namespace rock
                 ROCK_LOG_DEBUG(Hand,
                     "Far shape cast: start=({:.1f},{:.1f},{:.1f}) dir=({:.2f},{:.2f},{:.2f}) radius={:.1f} distance={:.1f}/{:.1f} "
                     "filter=0x{:08X} hits={} candidates={} dup={} rejectInvalid={} rejectNoRef={} rejectNotGrab={} rejectBehind={} rejectHmdCone={} hmdGate={} hmdDot={:.3f} selected={} formID={:08X} dist={:.1f} signedAlong={:.1f} lateral={:.1f} "
-                    "normal=({:.2f},{:.2f},{:.2f}) shapeKey=0x{:08X}",
+                    "score={:.4f} normal=({:.2f},{:.2f},{:.2f}) shapeKey=0x{:08X}",
                     handPos.x, handPos.y, handPos.z, direction.x, direction.y, direction.z, g_rockConfig.rockFarCastRadiusGameUnits, clippedFarRange, farRange,
                     diagnostics.collisionFilterInfo, diagnostics.hitCount, candidatesChecked, duplicateBodies, rejectedInvalidBody, rejectedNoRef, rejectedNotGrabbable,
                     rejectedBehindPalm, rejectedHmdCone, hmdConeGate.enabled ? (hmdConeGate.hasHmdFrame ? "ready" : "missing") : "off",
                     result.hasHmdConeDot ? result.hmdConeDot : -1.0f,
                     result.isValid() ? "yes" : "no", result.refr ? result.refr->GetFormID() : 0, result.isValid() ? result.distance : -1.0f,
-                    result.isValid() ? result.signedAlongDistance : 0.0f, result.isValid() ? result.lateralDistance : 0.0f, result.hitNormalWorld.x, result.hitNormalWorld.y,
+                    result.isValid() ? result.signedAlongDistance : 0.0f, result.isValid() ? result.lateralDistance : 0.0f, result.hasSelectionScore ? result.selectionScore : -1.0f,
+                    result.hitNormalWorld.x, result.hitNormalWorld.y,
                     result.hitNormalWorld.z, result.hitShapeKey);
         }
 

@@ -9,7 +9,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #include "RE/NetImmerse/NiPoint.h"
 
@@ -21,6 +23,29 @@ namespace rock::selection_query_policy
     constexpr float kMinFarSelectionHmdConeHalfAngleDegrees = 1.0f;
     constexpr float kMaxFarSelectionHmdConeHalfAngleDegrees = 89.0f;
     constexpr float kDegreesToRadians = 0.017453292519943295769f;
+    constexpr std::size_t kMaxShapeCastPrecisionCandidates = 4;
+    constexpr float kShapeCastCandidateScoreTieEpsilon = 0.0001f;
+    constexpr float kCloseSelectionCandidateSwitchScoreRatio = 0.70f;
+
+    struct ShapeCastCandidateScoringInput
+    {
+        bool isFarSelection = false;
+        float lateralDistance = (std::numeric_limits<float>::max)();
+        float alongDistance = (std::numeric_limits<float>::max)();
+        float lateralScale = 1.0f;
+        float alongScale = 1.0f;
+        float normalDotDirection = 0.0f;
+        bool hasHitNormal = false;
+    };
+
+    struct ShapeCastCandidateScore
+    {
+        float score = (std::numeric_limits<float>::max)();
+        float lateralComponent = 0.0f;
+        float alongComponent = 0.0f;
+        float surfaceComponent = 0.0f;
+        bool valid = false;
+    };
 
     inline std::uint32_t sanitizeFilterInfo(std::uint32_t configuredValue, std::uint32_t fallback)
     {
@@ -50,6 +75,78 @@ namespace rock::selection_query_policy
             return false;
         }
         return isFarSelection && alongDistance < bestAlongDistance;
+    }
+
+    inline float sanitizeSelectionScoreScale(float value, float fallback)
+    {
+        if (!std::isfinite(value) || value <= 0.0f) {
+            return fallback;
+        }
+        return value;
+    }
+
+    inline float normalizedSquaredSelectionDistance(float value, float scale)
+    {
+        const float normalized = value / sanitizeSelectionScoreScale(scale, 1.0f);
+        return normalized * normalized;
+    }
+
+    inline ShapeCastCandidateScore scoreShapeCastCandidate(const ShapeCastCandidateScoringInput& input)
+    {
+        ShapeCastCandidateScore result{};
+        if (!std::isfinite(input.lateralDistance) || !std::isfinite(input.alongDistance) || input.lateralDistance < 0.0f || input.alongDistance < 0.0f) {
+            return result;
+        }
+
+        const float lateralWeight = input.isFarSelection ? 0.80f : 0.70f;
+        const float alongWeight = input.isFarSelection ? 0.12f : 0.22f;
+        result.lateralComponent = normalizedSquaredSelectionDistance(input.lateralDistance, input.lateralScale) * lateralWeight;
+        result.alongComponent = normalizedSquaredSelectionDistance(input.alongDistance, input.alongScale) * alongWeight;
+
+        /*
+         * Normal evidence is intentionally a small tie breaker. It prefers
+         * front-facing surface evidence when several bodies are tightly packed,
+         * but it cannot override clear palm/ray alignment.
+         */
+        if (input.hasHitNormal && std::isfinite(input.normalDotDirection)) {
+            const float clampedDot = std::clamp(input.normalDotDirection, -1.0f, 1.0f);
+            result.surfaceComponent = (clampedDot + 1.0f) * 0.04f;
+        } else {
+            result.surfaceComponent = 0.04f;
+        }
+
+        result.score = result.lateralComponent + result.alongComponent + result.surfaceComponent;
+        result.valid = std::isfinite(result.score);
+        return result;
+    }
+
+    inline bool isBetterShapeCastCandidateScore(const ShapeCastCandidateScore& candidate, const ShapeCastCandidateScore& best)
+    {
+        if (!candidate.valid) {
+            return false;
+        }
+        if (!best.valid) {
+            return true;
+        }
+        return candidate.score < best.score - kShapeCastCandidateScoreTieEpsilon;
+    }
+
+    inline bool isUsableShapeCastCandidateScore(float score)
+    {
+        return std::isfinite(score) && score >= 0.0f && score < (std::numeric_limits<float>::max)() * 0.5f;
+    }
+
+    inline bool shouldKeepCurrentCloseSelectionAgainstCandidate(float currentScore, float candidateScore, float currentDistance, float candidateDistance)
+    {
+        if (isUsableShapeCastCandidateScore(currentScore) && isUsableShapeCastCandidateScore(candidateScore)) {
+            return candidateScore >= currentScore * kCloseSelectionCandidateSwitchScoreRatio;
+        }
+
+        if (!std::isfinite(currentDistance) || !std::isfinite(candidateDistance)) {
+            return true;
+        }
+
+        return candidateDistance > currentDistance * kCloseSelectionCandidateSwitchScoreRatio;
     }
 
     inline float sanitizeBehindPalmTolerance(float toleranceGameUnits, float fallbackGameUnits)
