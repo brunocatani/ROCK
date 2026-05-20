@@ -6,6 +6,44 @@
 
 namespace rock::grab_motion_controller
 {
+    enum class ContactSupportShape : std::uint8_t
+    {
+        Unknown,
+        Point,
+        Line,
+        Surface,
+        Wrap,
+        SphereLike,
+        ThinFace,
+        ThinEdge,
+        LongHandle
+    };
+
+    inline const char* contactSupportShapeName(ContactSupportShape shape)
+    {
+        switch (shape) {
+        case ContactSupportShape::Unknown:
+            return "unknown";
+        case ContactSupportShape::Point:
+            return "point";
+        case ContactSupportShape::Line:
+            return "line";
+        case ContactSupportShape::Surface:
+            return "surface";
+        case ContactSupportShape::Wrap:
+            return "wrap";
+        case ContactSupportShape::SphereLike:
+            return "sphereLike";
+        case ContactSupportShape::ThinFace:
+            return "thinFace";
+        case ContactSupportShape::ThinEdge:
+            return "thinEdge";
+        case ContactSupportShape::LongHandle:
+            return "longHandle";
+        }
+        return "unknown";
+    }
+
     /*
      * ROCK's grabbed-object feel comes from a motor controller, not from a
      * single static force value. The verified FO4VR hknp constraint remains the
@@ -61,6 +99,8 @@ namespace rock::grab_motion_controller
         float minAngularAuthorityScale = 0.30f;
         float weakNormalAngularDampingMultiplier = 1.75f;
         float weakPivotTwistScale = 0.35f;
+        ContactSupportShape contactSupportShape = ContactSupportShape::Unknown;
+        float longObjectReferenceLeverGameUnits = 24.0f;
     };
 
     struct MotorOutput
@@ -95,6 +135,8 @@ namespace rock::grab_motion_controller
         float minAngularAuthorityScale = 0.30f;
         float weakNormalAngularDampingMultiplier = 1.75f;
         float weakPivotTwistScale = 0.35f;
+        ContactSupportShape contactSupportShape = ContactSupportShape::Unknown;
+        float longObjectReferenceLeverGameUnits = 24.0f;
     };
 
     struct AngularAuthorityOutput
@@ -105,9 +147,14 @@ namespace rock::grab_motion_controller
         float pivotQualityScale = 1.0f;
         float contactSupportScale = 1.0f;
         float smallObjectScale = 1.0f;
+        float swingScale = 1.0f;
+        float twistScale = 1.0f;
+        float contactNormalScale = 1.0f;
+        ContactSupportShape contactSupportShape = ContactSupportShape::Unknown;
         bool weakPivot = false;
         bool lowContactSupport = false;
         bool smallObject = false;
+        bool axisLimited = false;
     };
 
     inline float finiteOr(float value, float fallback)
@@ -217,6 +264,56 @@ namespace rock::grab_motion_controller
         return std::clamp(reference / lever, floor, 1.0f);
     }
 
+    inline ContactSupportShape classifyContactSupportShape(ContactSupportShape explicitShape,
+        bool normalTrusted,
+        bool contactPatchUsedAsPivot,
+        std::uint32_t contactPatchSampleCount,
+        std::uint32_t multiFingerContactGroupCount,
+        float multiFingerContactSpreadGameUnits,
+        float longObjectLeverGameUnits,
+        float smallObjectReferenceLeverGameUnits,
+        float longObjectReferenceLeverGameUnits)
+    {
+        if (explicitShape != ContactSupportShape::Unknown) {
+            return explicitShape;
+        }
+
+        const float lever = finiteOr(longObjectLeverGameUnits, 0.0f);
+        const float smallReference = safePositive(smallObjectReferenceLeverGameUnits, 12.0f);
+        const float longReference = safePositive(longObjectReferenceLeverGameUnits, 24.0f);
+        const float spread = finiteOr(multiFingerContactSpreadGameUnits, 0.0f);
+        const bool smallObject = lever > 0.0f && lever <= smallReference;
+        const bool longObject = lever >= longReference * 1.35f;
+        const bool patchPivot = contactPatchUsedAsPivot && contactPatchSampleCount > 0;
+        const bool multiFingerWrap = multiFingerContactGroupCount >= 3 && spread >= 4.0f;
+
+        if (longObject && (!patchPivot || contactPatchSampleCount <= 2 || multiFingerContactGroupCount < 2)) {
+            return ContactSupportShape::LongHandle;
+        }
+        if (smallObject && multiFingerWrap) {
+            return ContactSupportShape::SphereLike;
+        }
+        if (multiFingerWrap) {
+            return ContactSupportShape::Wrap;
+        }
+        if (!patchPivot) {
+            return multiFingerContactGroupCount >= 2 ? ContactSupportShape::Wrap : ContactSupportShape::Unknown;
+        }
+        if (contactPatchSampleCount <= 1) {
+            return smallObject ? ContactSupportShape::SphereLike : ContactSupportShape::Point;
+        }
+        if (contactPatchSampleCount == 2) {
+            return longObject ? ContactSupportShape::LongHandle : (smallObject ? ContactSupportShape::ThinEdge : ContactSupportShape::Line);
+        }
+        if (smallObject) {
+            return ContactSupportShape::SphereLike;
+        }
+        if (!normalTrusted) {
+            return ContactSupportShape::ThinFace;
+        }
+        return ContactSupportShape::Surface;
+    }
+
     inline AngularAuthorityOutput computeAngularAuthorityScale(const AngularAuthorityInput& input)
     {
         AngularAuthorityOutput output{};
@@ -228,12 +325,14 @@ namespace rock::grab_motion_controller
         const float positionOnlyScale = std::clamp(safePositive(input.positionOnlyAngularScale, 0.55f), floor, 1.0f);
         const float lowContactScale = std::clamp(safePositive(input.lowContactSupportAngularScale, 0.75f), floor, 1.0f);
         const float smallObjectScale = std::clamp(safePositive(input.smallObjectAngularScale, 0.65f), floor, 1.0f);
+        const float configuredWeakPivotTwistScale =
+            std::clamp(std::isfinite(input.weakPivotTwistScale) ? input.weakPivotTwistScale : 0.35f, 0.0f, 1.0f);
 
         output.weakPivot = input.positionOnlyPivot || !input.normalTrusted;
         if (output.weakPivot) {
             output.pivotQualityScale = positionOnlyScale;
             output.dampingMultiplier = (std::max)(1.0f, safePositive(input.weakNormalAngularDampingMultiplier, 1.75f));
-            output.weakPivotTwistScale = std::clamp(std::isfinite(input.weakPivotTwistScale) ? input.weakPivotTwistScale : 0.35f, 0.0f, 1.0f);
+            output.weakPivotTwistScale = configuredWeakPivotTwistScale;
         }
 
         const bool patchSupportsPivot = input.contactPatchUsedAsPivot && input.contactPatchSampleCount > 0;
@@ -254,11 +353,91 @@ namespace rock::grab_motion_controller
             output.smallObjectScale = smallObjectScale;
         }
 
+        output.contactSupportShape = classifyContactSupportShape(
+            input.contactSupportShape,
+            input.normalTrusted,
+            input.contactPatchUsedAsPivot,
+            input.contactPatchSampleCount,
+            input.multiFingerContactGroupCount,
+            input.multiFingerContactSpreadGameUnits,
+            input.longObjectLeverGameUnits,
+            input.smallObjectReferenceLeverGameUnits,
+            input.longObjectReferenceLeverGameUnits);
+
+        switch (output.contactSupportShape) {
+        case ContactSupportShape::Point:
+            output.lowContactSupport = true;
+            output.contactSupportScale = (std::min)(output.contactSupportScale, lowContactScale);
+            output.twistScale = (std::min)(output.twistScale, configuredWeakPivotTwistScale);
+            output.contactNormalScale = (std::min)(output.contactNormalScale, positionOnlyScale);
+            output.axisLimited = true;
+            break;
+        case ContactSupportShape::Line:
+            output.contactNormalScale = (std::min)(output.contactNormalScale, lowContactScale);
+            output.twistScale = (std::min)(output.twistScale, (std::max)(floor, 0.65f));
+            output.axisLimited = true;
+            break;
+        case ContactSupportShape::ThinEdge:
+            output.contactSupportScale = (std::min)(output.contactSupportScale, lowContactScale);
+            output.twistScale = (std::min)(output.twistScale, (std::max)(floor, 0.50f));
+            output.contactNormalScale = (std::min)(output.contactNormalScale, (std::max)(floor, 0.55f));
+            output.axisLimited = true;
+            break;
+        case ContactSupportShape::ThinFace:
+            output.contactNormalScale = (std::min)(output.contactNormalScale, (std::max)(floor, 0.60f));
+            output.axisLimited = true;
+            break;
+        case ContactSupportShape::SphereLike:
+            output.contactSupportScale = (std::min)(output.contactSupportScale, output.smallObject ? smallObjectScale : lowContactScale);
+            output.twistScale = (std::min)(output.twistScale, (std::max)(floor, 0.45f));
+            output.contactNormalScale = (std::min)(output.contactNormalScale, floor);
+            output.axisLimited = true;
+            break;
+        case ContactSupportShape::LongHandle:
+            output.contactSupportScale = (std::min)(output.contactSupportScale, lowContactScale);
+            output.twistScale = (std::min)(output.twistScale, (std::max)(floor, 0.55f));
+            output.swingScale = (std::min)(output.swingScale, (std::max)(floor, 0.85f));
+            output.axisLimited = true;
+            break;
+        case ContactSupportShape::Wrap:
+        case ContactSupportShape::Surface:
+        case ContactSupportShape::Unknown:
+            break;
+        }
+
         output.authorityScale = std::clamp(
             output.pivotQualityScale * output.contactSupportScale * output.smallObjectScale,
             floor,
             1.0f);
         return output;
+    }
+
+    struct HeldAuthorityInput
+    {
+        AngularAuthorityInput angular{};
+        bool heldBodyColliding = false;
+        float positionErrorGameUnits = 0.0f;
+        float rotationErrorDegrees = 0.0f;
+        float fullPositionErrorGameUnits = 20.0f;
+        float fullRotationErrorDegrees = 60.0f;
+    };
+
+    struct HeldAuthorityState
+    {
+        float positionErrorFactor = 0.0f;
+        float rotationErrorFactor = 0.0f;
+        bool softenForContact = false;
+        AngularAuthorityOutput angular{};
+    };
+
+    inline HeldAuthorityState evaluateHeldAuthority(const HeldAuthorityInput& input)
+    {
+        HeldAuthorityState state{};
+        state.positionErrorFactor = computePositionErrorFactor(input.positionErrorGameUnits, input.fullPositionErrorGameUnits);
+        state.rotationErrorFactor = computeRotationErrorFactor(input.rotationErrorDegrees, input.fullRotationErrorDegrees);
+        state.softenForContact = input.heldBodyColliding;
+        state.angular = computeAngularAuthorityScale(input.angular);
+        return state;
     }
 
     template <class Vector>
@@ -314,6 +493,59 @@ namespace rock::grab_motion_controller
         };
     }
 
+    template <class Vector>
+    inline Vector scaleAngularVelocityComponentAroundAxis(const Vector& angularVelocity, const Vector& axisRaw, float scale)
+    {
+        const float axisLengthSquared = vectorLengthSquared(axisRaw);
+        if (!std::isfinite(axisLengthSquared) || axisLengthSquared <= 1.0e-6f) {
+            return angularVelocity;
+        }
+
+        const float sanitizedScale = std::clamp(std::isfinite(scale) ? scale : 1.0f, 0.0f, 1.0f);
+        if (sanitizedScale >= 0.999f) {
+            return angularVelocity;
+        }
+
+        const float invAxisLength = 1.0f / std::sqrt(axisLengthSquared);
+        const Vector axis{
+            axisRaw.x * invAxisLength,
+            axisRaw.y * invAxisLength,
+            axisRaw.z * invAxisLength,
+        };
+        const float componentMagnitude = vectorDot(angularVelocity, axis);
+        const Vector component{
+            axis.x * componentMagnitude,
+            axis.y * componentMagnitude,
+            axis.z * componentMagnitude,
+        };
+        const Vector remainder{
+            angularVelocity.x - component.x,
+            angularVelocity.y - component.y,
+            angularVelocity.z - component.z,
+        };
+        return Vector{
+            remainder.x + component.x * sanitizedScale,
+            remainder.y + component.y * sanitizedScale,
+            remainder.z + component.z * sanitizedScale,
+        };
+    }
+
+    template <class Vector>
+    inline Vector scaleAngularVelocityByHeldAuthorityAxes(
+        const Vector& angularVelocity,
+        const Vector& pivotToCenterOfMass,
+        const Vector& contactNormal,
+        const AngularAuthorityOutput& authority)
+    {
+        Vector result = angularVelocity;
+        if (authority.swingScale < 0.999f) {
+            result = Vector{ result.x * authority.swingScale, result.y * authority.swingScale, result.z * authority.swingScale };
+        }
+        result = scaleAngularVelocityComponentAroundAxis(result, contactNormal, authority.contactNormalScale);
+        result = scaleAngularVelocityComponentAroundAxis(result, pivotToCenterOfMass, authority.twistScale);
+        return result;
+    }
+
     inline MotorOutput solveMotorTargets(const MotorInput& input)
     {
         MotorOutput out{};
@@ -329,8 +561,35 @@ namespace rock::grab_motion_controller
             out.errorFactor = (std::max)(out.linearErrorFactor, out.angularErrorFactor);
         }
 
-        const float linearTauTarget = input.heldBodyColliding ? collisionTau : baseLinearTau + (maxTau - baseLinearTau) * out.linearErrorFactor;
-        const float angularTauTarget = input.heldBodyColliding ? collisionTau : baseAngularTau + (maxAngularTau - baseAngularTau) * out.angularErrorFactor;
+        const auto heldAuthority = evaluateHeldAuthority(HeldAuthorityInput{
+            .angular = AngularAuthorityInput{
+                .enabled = input.pivotQualityAngularScalingEnabled,
+                .positionOnlyPivot = input.pivotAuthorityPositionOnly,
+                .normalTrusted = input.pivotAuthorityNormalTrusted,
+                .contactPatchUsedAsPivot = input.contactPatchUsedAsPivot,
+                .contactPatchSampleCount = input.contactPatchSampleCount,
+                .multiFingerContactGroupCount = input.multiFingerContactGroupCount,
+                .multiFingerContactSpreadGameUnits = input.multiFingerContactSpreadGameUnits,
+                .longObjectLeverGameUnits = input.longObjectLeverGameUnits,
+                .smallObjectReferenceLeverGameUnits = input.smallObjectReferenceLeverGameUnits,
+                .positionOnlyAngularScale = input.positionOnlyAngularScale,
+                .smallObjectAngularScale = input.smallObjectAngularScale,
+                .lowContactSupportAngularScale = input.lowContactSupportAngularScale,
+                .minAngularAuthorityScale = input.minAngularAuthorityScale,
+                .weakNormalAngularDampingMultiplier = input.weakNormalAngularDampingMultiplier,
+                .weakPivotTwistScale = input.weakPivotTwistScale,
+                .contactSupportShape = input.contactSupportShape,
+                .longObjectReferenceLeverGameUnits = input.longObjectReferenceLeverGameUnits,
+            },
+            .heldBodyColliding = input.heldBodyColliding,
+            .positionErrorGameUnits = input.positionErrorGameUnits,
+            .rotationErrorDegrees = input.rotationErrorDegrees,
+            .fullPositionErrorGameUnits = input.fullPositionErrorGameUnits,
+            .fullRotationErrorDegrees = input.fullRotationErrorDegrees,
+        });
+
+        const float linearTauTarget = heldAuthority.softenForContact ? collisionTau : baseLinearTau + (maxTau - baseLinearTau) * out.linearErrorFactor;
+        const float angularTauTarget = heldAuthority.softenForContact ? collisionTau : baseAngularTau + (maxAngularTau - baseAngularTau) * out.angularErrorFactor;
         out.linearTau = advanceToward(input.currentLinearTau, linearTauTarget, input.tauLerpSpeed, input.deltaTime);
         out.angularTau = advanceToward(input.currentAngularTau, angularTauTarget, input.tauLerpSpeed, input.deltaTime);
 
@@ -349,23 +608,7 @@ namespace rock::grab_motion_controller
         const float angularFadeRatio =
             safePositive(input.fadeStartAngularRatio, input.angularToLinearForceRatio) +
             (safePositive(input.angularToLinearForceRatio, 12.5f) - safePositive(input.fadeStartAngularRatio, input.angularToLinearForceRatio)) * out.fadeFactor;
-        const auto angularAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
-            .enabled = input.pivotQualityAngularScalingEnabled,
-            .positionOnlyPivot = input.pivotAuthorityPositionOnly,
-            .normalTrusted = input.pivotAuthorityNormalTrusted,
-            .contactPatchUsedAsPivot = input.contactPatchUsedAsPivot,
-            .contactPatchSampleCount = input.contactPatchSampleCount,
-            .multiFingerContactGroupCount = input.multiFingerContactGroupCount,
-            .multiFingerContactSpreadGameUnits = input.multiFingerContactSpreadGameUnits,
-            .longObjectLeverGameUnits = input.longObjectLeverGameUnits,
-            .smallObjectReferenceLeverGameUnits = input.smallObjectReferenceLeverGameUnits,
-            .positionOnlyAngularScale = input.positionOnlyAngularScale,
-            .smallObjectAngularScale = input.smallObjectAngularScale,
-            .lowContactSupportAngularScale = input.lowContactSupportAngularScale,
-            .minAngularAuthorityScale = input.minAngularAuthorityScale,
-            .weakNormalAngularDampingMultiplier = input.weakNormalAngularDampingMultiplier,
-            .weakPivotTwistScale = input.weakPivotTwistScale,
-        });
+        const auto& angularAuthority = heldAuthority.angular;
         out.angularAuthorityScale = angularAuthority.authorityScale;
         out.angularDampingMultiplier = angularAuthority.dampingMultiplier;
         out.weakPivotTwistScale = angularAuthority.weakPivotTwistScale;

@@ -213,7 +213,7 @@ namespace rock
         stopSelectionHighlight();
         _isHoldingFlag.store(false, std::memory_order_release);
         _heldBodyIdsCount.store(0, std::memory_order_release);
-        _heldBodyContactFrame.store(100, std::memory_order_release);
+        clearHeldBodyContactSnapshot();
         _state = HandState::Idle;
         _prevState = HandState::Idle;
         _stateAtomic.store(HandState::Idle, std::memory_order_release);
@@ -356,7 +356,7 @@ namespace rock
         clearPullCatchIntent("worldLoss");
         clearActorEquipmentDropHandoff("worldLoss");
         _heldBodyIdsCount.store(0, std::memory_order_release);
-        _heldBodyContactFrame.store(100, std::memory_order_release);
+        clearHeldBodyContactSnapshot();
         _isHoldingFlag.store(false, std::memory_order_release);
         _nearbyGrabDamping.clear();
         _grabFrame.clear();

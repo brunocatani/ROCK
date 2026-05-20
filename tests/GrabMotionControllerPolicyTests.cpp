@@ -124,7 +124,9 @@ int main()
         .contactPatchSampleCount = 4,
         .longObjectLeverGameUnits = 8.0f,
     });
-    ok &= expectNear("trusted normal with support keeps angular authority", trustedAuthority.authorityScale, 1.0f, 0.001f);
+    ok &= expectNear("trusted small sphere-like support softens orientation authority", trustedAuthority.authorityScale, 0.65f, 0.001f);
+    ok &= expectTrue("trusted small support classifies as sphere-like", trustedAuthority.contactSupportShape == ContactSupportShape::SphereLike);
+    ok &= expectNear("sphere-like support limits contact-normal spin", trustedAuthority.contactNormalScale, 0.30f, 0.001f);
 
     const auto lowSupportAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
         .enabled = true,
@@ -134,8 +136,9 @@ int main()
         .contactPatchSampleCount = 1,
         .longObjectLeverGameUnits = 8.0f,
     });
-    ok &= expectNear("small low-support contact softens angular authority", lowSupportAuthority.authorityScale, 0.4875f, 0.001f);
+    ok &= expectNear("small low-support contact softens angular authority", lowSupportAuthority.authorityScale, 0.4225f, 0.001f);
     ok &= expectNear("trusted low-support contact does not raise damping", lowSupportAuthority.dampingMultiplier, 1.0f, 0.001f);
+    ok &= expectTrue("single-hit small support is sphere-like not surface-authoritative", lowSupportAuthority.contactSupportShape == ContactSupportShape::SphereLike);
 
     const auto rejectedPatchAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
         .enabled = true,
@@ -147,10 +150,49 @@ int main()
     });
     ok &= expectNear("trusted non-patch pivot ignores rejected patch support", rejectedPatchAuthority.authorityScale, 1.0f, 0.001f);
 
+    const auto trustedPointAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
+        .enabled = true,
+        .positionOnlyPivot = false,
+        .normalTrusted = true,
+        .contactPatchUsedAsPivot = true,
+        .contactPatchSampleCount = 1,
+        .longObjectLeverGameUnits = 20.0f,
+    });
+    ok &= expectTrue("trusted single-point support classifies as point", trustedPointAuthority.contactSupportShape == ContactSupportShape::Point);
+    ok &= expectNear("trusted point limits twist around grab point", trustedPointAuthority.twistScale, 0.35f, 0.001f);
+
     const Vec3 twistLimited = scaleWeakPivotTwistAngularVelocity(Vec3{ 1.0f, 2.0f, 3.0f }, Vec3{ 0.0f, 0.0f, 2.0f }, true, 0.25f);
     ok &= expectNear("weak pivot twist preserves swing x", twistLimited.x, 1.0f, 0.001f);
     ok &= expectNear("weak pivot twist preserves swing y", twistLimited.y, 2.0f, 0.001f);
     ok &= expectNear("weak pivot twist scales twist z", twistLimited.z, 0.75f, 0.001f);
+
+    const auto longHandleAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
+        .enabled = true,
+        .positionOnlyPivot = false,
+        .normalTrusted = true,
+        .contactPatchUsedAsPivot = true,
+        .contactPatchSampleCount = 2,
+        .longObjectLeverGameUnits = 72.0f,
+        .longObjectReferenceLeverGameUnits = 24.0f,
+    });
+    ok &= expectTrue("two-hit long object classifies as long handle", longHandleAuthority.contactSupportShape == ContactSupportShape::LongHandle);
+    ok &= expectNear("long handle applies line-support authority", longHandleAuthority.authorityScale, 0.75f, 0.001f);
+    ok &= expectNear("long handle limits twist axis", longHandleAuthority.twistScale, 0.55f, 0.001f);
+
+    const Vec3 axisLimited = scaleAngularVelocityByHeldAuthorityAxes(
+        Vec3{ 10.0f, 6.0f, 4.0f },
+        Vec3{ 0.0f, 0.0f, 1.0f },
+        Vec3{ 1.0f, 0.0f, 0.0f },
+        AngularAuthorityOutput{
+            .authorityScale = 1.0f,
+            .swingScale = 1.0f,
+            .twistScale = 0.50f,
+            .contactNormalScale = 0.25f,
+            .axisLimited = true,
+        });
+    ok &= expectNear("axis authority scales contact-normal spin x", axisLimited.x, 2.5f, 0.001f);
+    ok &= expectNear("axis authority preserves tangent spin y", axisLimited.y, 6.0f, 0.001f);
+    ok &= expectNear("axis authority scales pivot twist z", axisLimited.z, 2.0f, 0.001f);
 
     const auto ratioClamp = rock::grab_inertia_policy::normalizeInverseInertiaAxesForGrab(1.0f, 100.0f, 4.0f, 10.0f, 0.05f);
     ok &= expectTrue("inertia ratio clamp modifies axis", ratioClamp.modified);

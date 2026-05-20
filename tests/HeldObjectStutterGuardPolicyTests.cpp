@@ -6,6 +6,13 @@
 
 namespace
 {
+    struct Vec3
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+    };
+
     bool expectNear(const char* label, float actual, float expected, float epsilon)
     {
         const float delta = std::fabs(actual - expected);
@@ -60,6 +67,63 @@ int main()
     ok &= expectFalse("sustained deviation still requires configured time", deviationExceeded(firstExceededFrame, 2.0f));
     const float accumulatedExceeded = advanceDeviationSeconds(1.99f, 60.0f, 50.0f, 1.0f / 90.0f);
     ok &= expectTrue("sustained deviation releases after configured time", deviationExceeded(accumulatedExceeded, 2.0f));
+
+    {
+        using namespace rock::held_object_contact_policy;
+
+        const auto pushIntoFixed = evaluateHeldContactMotorSoftening(HeldContactMotorSofteningInput<Vec3>{
+            .recentContact = true,
+            .hasCorrectionVector = true,
+            .hasHeldToOtherVector = true,
+            .otherMotion = HeldContactOtherMotion::FixedOrStatic,
+            .correctionTowardTarget = Vec3{ 1.0f, 0.0f, 0.0f },
+            .heldToOther = Vec3{ 1.0f, 0.0f, 0.0f },
+        });
+        ok &= expectTrue("held contact softens when correction pushes into fixed body", pushIntoFixed.soften);
+        ok &= expectTrue("held contact push decision is directional", pushIntoFixed.directional);
+
+        const auto pullAway = evaluateHeldContactMotorSoftening(HeldContactMotorSofteningInput<Vec3>{
+            .recentContact = true,
+            .hasCorrectionVector = true,
+            .hasHeldToOtherVector = true,
+            .otherMotion = HeldContactOtherMotion::FixedOrStatic,
+            .correctionTowardTarget = Vec3{ -1.0f, 0.0f, 0.0f },
+            .heldToOther = Vec3{ 1.0f, 0.0f, 0.0f },
+        });
+        ok &= expectFalse("held contact preserves motor when pulling away", pullAway.soften);
+
+        const auto tangent = evaluateHeldContactMotorSoftening(HeldContactMotorSofteningInput<Vec3>{
+            .recentContact = true,
+            .hasCorrectionVector = true,
+            .hasHeldToOtherVector = true,
+            .otherMotion = HeldContactOtherMotion::FixedOrStatic,
+            .correctionTowardTarget = Vec3{ 0.0f, 1.0f, 0.0f },
+            .heldToOther = Vec3{ 1.0f, 0.0f, 0.0f },
+        });
+        ok &= expectFalse("held contact preserves tangent correction", tangent.soften);
+
+        const auto dynamicOther = evaluateHeldContactMotorSoftening(HeldContactMotorSofteningInput<Vec3>{
+            .recentContact = true,
+            .hasCorrectionVector = true,
+            .hasHeldToOtherVector = true,
+            .otherMotion = HeldContactOtherMotion::Dynamic,
+            .correctionTowardTarget = Vec3{ 1.0f, 0.0f, 0.0f },
+            .heldToOther = Vec3{ 1.0f, 0.0f, 0.0f },
+        });
+        ok &= expectFalse("held contact does not soften against dynamic body", dynamicOther.soften);
+
+        const auto flippedNormal = evaluateHeldContactMotorSoftening(HeldContactMotorSofteningInput<Vec3>{
+            .recentContact = true,
+            .hasCorrectionVector = true,
+            .hasHeldToOtherVector = true,
+            .hasContactNormal = true,
+            .otherMotion = HeldContactOtherMotion::FixedOrStatic,
+            .correctionTowardTarget = Vec3{ 1.0f, 0.0f, 0.0f },
+            .heldToOther = Vec3{ 1.0f, 0.0f, 0.0f },
+            .contactNormal = Vec3{ -1.0f, 0.0f, 0.0f },
+        });
+        ok &= expectTrue("held contact orients raw normal before push test", flippedNormal.soften);
+    }
 
     return ok ? 0 : 1;
 }

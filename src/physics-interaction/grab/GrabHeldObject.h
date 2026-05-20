@@ -7,6 +7,8 @@
 
 // ---- HeldObjectBodySetPolicy.h ----
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <unordered_set>
 #include <vector>
@@ -114,6 +116,124 @@ namespace rock::held_object_contact_policy
         return HeldExternalContactDecision{
             .notify = true,
             .reason = "external-held-impact",
+        };
+    }
+
+    enum class HeldContactOtherMotion : std::uint8_t
+    {
+        Unknown,
+        FixedOrStatic,
+        Dynamic
+    };
+
+    template <class Vec3>
+    struct HeldContactMotorSofteningInput
+    {
+        bool recentContact = false;
+        bool hasCorrectionVector = false;
+        bool hasHeldToOtherVector = false;
+        bool hasContactNormal = false;
+        HeldContactOtherMotion otherMotion = HeldContactOtherMotion::Unknown;
+        Vec3 correctionTowardTarget{};
+        Vec3 heldToOther{};
+        Vec3 contactNormal{};
+        float pushDotThreshold = 0.15f;
+    };
+
+    struct HeldContactMotorSofteningDecision
+    {
+        bool soften = false;
+        bool directional = false;
+        const char* reason = "no-recent-contact";
+    };
+
+    template <class Vec3>
+    inline float dot(const Vec3& lhs, const Vec3& rhs)
+    {
+        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+    }
+
+    template <class Vec3>
+    inline float lengthSquared(const Vec3& value)
+    {
+        return dot(value, value);
+    }
+
+    template <class Vec3>
+    inline Vec3 normalizeOrZero(const Vec3& value)
+    {
+        const float lenSq = lengthSquared(value);
+        if (!std::isfinite(lenSq) || lenSq <= 1.0e-8f) {
+            return Vec3{};
+        }
+        const float invLen = 1.0f / std::sqrt(lenSq);
+        return Vec3{ value.x * invLen, value.y * invLen, value.z * invLen };
+    }
+
+    template <class Vec3>
+    inline Vec3 negate(const Vec3& value)
+    {
+        return Vec3{ -value.x, -value.y, -value.z };
+    }
+
+    template <class Vec3>
+    inline HeldContactMotorSofteningDecision evaluateHeldContactMotorSoftening(
+        const HeldContactMotorSofteningInput<Vec3>& input)
+    {
+        /*
+         * A held contact should weaken the grab motor only when the requested
+         * correction is pushing the held object deeper into a fixed/static
+         * obstacle. Sliding along the contact or pulling away should keep
+         * authority; otherwise balls, watches, and long handles feel sticky.
+         */
+        if (!input.recentContact) {
+            return {};
+        }
+        if (input.otherMotion == HeldContactOtherMotion::Dynamic) {
+            return HeldContactMotorSofteningDecision{ .reason = "dynamic-other-body" };
+        }
+        if (!input.hasCorrectionVector) {
+            return HeldContactMotorSofteningDecision{ .soften = true, .reason = "contact-no-correction-vector" };
+        }
+
+        const Vec3 correction = normalizeOrZero(input.correctionTowardTarget);
+        if (lengthSquared(correction) <= 0.0f) {
+            return HeldContactMotorSofteningDecision{ .reason = "zero-correction" };
+        }
+
+        Vec3 outward{};
+        if (input.hasHeldToOtherVector) {
+            outward = normalizeOrZero(input.heldToOther);
+        }
+        if (lengthSquared(outward) <= 0.0f && input.hasContactNormal) {
+            outward = normalizeOrZero(input.contactNormal);
+        }
+        if (lengthSquared(outward) <= 0.0f) {
+            return HeldContactMotorSofteningDecision{ .soften = true, .reason = "contact-no-direction" };
+        }
+
+        if (input.hasContactNormal) {
+            Vec3 normal = normalizeOrZero(input.contactNormal);
+            if (lengthSquared(normal) > 0.0f && dot(normal, outward) < 0.0f) {
+                normal = negate(normal);
+            }
+            if (lengthSquared(normal) > 0.0f) {
+                outward = normal;
+            }
+        }
+
+        const float threshold = std::clamp(std::isfinite(input.pushDotThreshold) ? input.pushDotThreshold : 0.15f, -1.0f, 1.0f);
+        const float pushDot = dot(correction, outward);
+        if (pushDot > threshold) {
+            return HeldContactMotorSofteningDecision{
+                .soften = true,
+                .directional = true,
+                .reason = input.otherMotion == HeldContactOtherMotion::FixedOrStatic ? "pushing-into-fixed-contact" : "pushing-into-unknown-contact",
+            };
+        }
+        return HeldContactMotorSofteningDecision{
+            .directional = true,
+            .reason = pushDot < -threshold ? "pulling-away-from-contact" : "tangent-contact-correction",
         };
     }
 }

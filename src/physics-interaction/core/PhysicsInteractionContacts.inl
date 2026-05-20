@@ -901,7 +901,29 @@
                 return;
             }
 
-            hand.notifyHeldBodyContact();
+            RE::NiPoint3 contactPointHavok{};
+            RE::NiPoint3 contactNormalHavok{};
+            bool hasContactNormal = false;
+            if (ensureRawContactPoint()) {
+                contactPointHavok = RE::NiPoint3{
+                    rawContactPoint.contactPointHavok[0],
+                    rawContactPoint.contactPointHavok[1],
+                    rawContactPoint.contactPointHavok[2],
+                };
+                contactNormalHavok = RE::NiPoint3{
+                    rawContactPoint.contactNormalHavok[0],
+                    rawContactPoint.contactNormalHavok[1],
+                    rawContactPoint.contactNormalHavok[2],
+                };
+                const float normalLengthSq =
+                    contactNormalHavok.x * contactNormalHavok.x +
+                    contactNormalHavok.y * contactNormalHavok.y +
+                    contactNormalHavok.z * contactNormalHavok.z;
+                hasContactNormal = std::isfinite(normalLengthSq) && normalLengthSq > 1.0e-6f;
+            }
+
+            const std::uint32_t otherLayer = bodyAIsHeld ? bodyBLayer : bodyALayer;
+            hand.notifyHeldBodyContact(heldId, other, otherLayer, contactPointHavok, contactNormalHavok, hasContactNormal);
             impactPair.store(packHeldImpactPair(heldId, other), std::memory_order_release);
         };
 

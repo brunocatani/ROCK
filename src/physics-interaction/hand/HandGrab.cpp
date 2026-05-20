@@ -356,6 +356,121 @@ namespace rock
             return RE::NiPoint3{ value.x * scale, value.y * scale, value.z * scale };
         }
 
+        grab_motion_controller::ContactSupportShape classifyContactSupportShapeFromGrabFrame(const CanonicalGrabFrame& frame)
+        {
+            const auto fallback = grab_motion_controller::classifyContactSupportShape(
+                grab_motion_controller::ContactSupportShape::Unknown,
+                frame.pivotAuthorityNormalTrusted,
+                frame.contactPatchUsedAsPivot,
+                frame.contactPatchSampleCount,
+                frame.multiFingerContactGroupCount,
+                frame.multiFingerContactSpreadGameUnits,
+                frame.longObjectLeverGameUnits,
+                g_rockConfig.rockGrabSmallObjectReferenceLeverGameUnits,
+                g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits);
+
+            const std::uint32_t sampleCount = (std::min)(frame.contactPatchSampleCount, static_cast<std::uint32_t>(frame.contactPatchSamples.size()));
+            if (!frame.contactPatchUsedAsPivot || sampleCount < 2) {
+                return fallback;
+            }
+
+            std::array<RE::NiPoint3, kMaxGrabContactPatchSamples> points{};
+            std::uint32_t acceptedCount = 0;
+            RE::NiPoint3 normalSum{};
+            for (std::uint32_t i = 0; i < sampleCount; ++i) {
+                const auto& sample = frame.contactPatchSamples[i];
+                if (!sample.accepted) {
+                    continue;
+                }
+                points[acceptedCount++] = sample.point;
+                normalSum = normalSum + sample.normal;
+            }
+            if (acceptedCount < 2) {
+                return fallback;
+            }
+
+            RE::NiPoint3 centroid{};
+            for (std::uint32_t i = 0; i < acceptedCount; ++i) {
+                centroid = centroid + points[i];
+            }
+            centroid = scalePoint(centroid, 1.0f / static_cast<float>(acceptedCount));
+
+            RE::NiPoint3 normal = normalizeOrZero(frame.gripNormalLocal);
+            if (lengthSquared(normal) <= 0.000001f) {
+                normal = normalizeOrZero(normalSum);
+            }
+            if (lengthSquared(normal) <= 0.000001f) {
+                return fallback;
+            }
+
+            RE::NiPoint3 tangent{};
+            float tangentLengthSq = 0.0f;
+            for (std::uint32_t i = 1; i < acceptedCount; ++i) {
+                const RE::NiPoint3 candidate = points[i] - points[0];
+                const RE::NiPoint3 projected = candidate - scalePoint(normal, dotProduct(candidate, normal));
+                const float candidateLengthSq = lengthSquared(projected);
+                if (candidateLengthSq > tangentLengthSq) {
+                    tangent = projected;
+                    tangentLengthSq = candidateLengthSq;
+                }
+            }
+            tangent = normalizeOrZero(tangent);
+            if (lengthSquared(tangent) <= 0.000001f) {
+                return fallback;
+            }
+            const RE::NiPoint3 bitangent = normalizeOrZero(crossProduct(normal, tangent));
+            if (lengthSquared(bitangent) <= 0.000001f) {
+                return fallback;
+            }
+
+            float minT = (std::numeric_limits<float>::max)();
+            float maxT = -(std::numeric_limits<float>::max)();
+            float minB = (std::numeric_limits<float>::max)();
+            float maxB = -(std::numeric_limits<float>::max)();
+            float minDepth = (std::numeric_limits<float>::max)();
+            float maxDepth = -(std::numeric_limits<float>::max)();
+            for (std::uint32_t i = 0; i < acceptedCount; ++i) {
+                const RE::NiPoint3 delta = points[i] - centroid;
+                const float t = dotProduct(delta, tangent);
+                const float b = dotProduct(delta, bitangent);
+                const float depth = dotProduct(delta, normal);
+                minT = (std::min)(minT, t);
+                maxT = (std::max)(maxT, t);
+                minB = (std::min)(minB, b);
+                maxB = (std::max)(maxB, b);
+                minDepth = (std::min)(minDepth, depth);
+                maxDepth = (std::max)(maxDepth, depth);
+            }
+
+            const float spanT = maxT - minT;
+            const float spanB = maxB - minB;
+            const float majorSpan = (std::max)(spanT, spanB);
+            const float minorSpan = (std::min)(spanT, spanB);
+            const float depthSpan = maxDepth - minDepth;
+            const float smallReference = (std::max)(1.0f, g_rockConfig.rockGrabSmallObjectReferenceLeverGameUnits);
+            const float longReference = (std::max)(smallReference, g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits);
+            const bool smallObject = frame.longObjectLeverGameUnits > 0.0f && frame.longObjectLeverGameUnits <= smallReference;
+            const bool longObject = frame.longObjectLeverGameUnits >= longReference * 1.35f;
+            const bool thinLine = majorSpan > 0.75f && minorSpan <= (std::max)(0.75f, majorSpan * 0.20f);
+            const bool flatSurface = majorSpan > 0.75f && minorSpan > 0.75f && depthSpan <= (std::max)(0.75f, majorSpan * 0.20f);
+
+            if (smallObject && acceptedCount >= 3) {
+                return grab_motion_controller::ContactSupportShape::SphereLike;
+            }
+            if (longObject && (thinLine || acceptedCount <= 2)) {
+                return grab_motion_controller::ContactSupportShape::LongHandle;
+            }
+            if (thinLine) {
+                return grab_motion_controller::ContactSupportShape::ThinEdge;
+            }
+            if (flatSurface) {
+                return frame.pivotAuthorityNormalTrusted ?
+                    grab_motion_controller::ContactSupportShape::Surface :
+                    grab_motion_controller::ContactSupportShape::ThinFace;
+            }
+            return fallback;
+        }
+
         grab_motion_controller::AngularAuthorityInput makeAngularAuthorityInput(const CanonicalGrabFrame& frame)
         {
             return grab_motion_controller::AngularAuthorityInput{
@@ -374,6 +489,8 @@ namespace rock
                 .minAngularAuthorityScale = g_rockConfig.rockGrabMinAngularAuthorityScale,
                 .weakNormalAngularDampingMultiplier = g_rockConfig.rockGrabWeakNormalAngularDampingMultiplier,
                 .weakPivotTwistScale = g_rockConfig.rockGrabWeakPivotTwistScale,
+                .contactSupportShape = classifyContactSupportShapeFromGrabFrame(frame),
+                .longObjectReferenceLeverGameUnits = g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits,
             };
         }
 
@@ -2463,6 +2580,23 @@ namespace rock
             return summary;
         }
 
+        held_object_contact_policy::HeldContactOtherMotion classifyHeldContactOtherMotion(RE::hknpWorld* world, std::uint32_t bodyId)
+        {
+            if (!world || bodyId == INVALID_BODY_ID) {
+                return held_object_contact_policy::HeldContactOtherMotion::Unknown;
+            }
+
+            auto* motion = havok_runtime::getBodyMotion(world, RE::hknpBodyId{ bodyId });
+            if (!motion) {
+                return held_object_contact_policy::HeldContactOtherMotion::Unknown;
+            }
+
+            const float mass = readBodyMass(world, RE::hknpBodyId{ bodyId });
+            return mass > 0.0f ?
+                held_object_contact_policy::HeldContactOtherMotion::Dynamic :
+                held_object_contact_policy::HeldContactOtherMotion::FixedOrStatic;
+        }
+
         void applyRockGrabHandPose(bool isLeft,
             const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose,
             std::array<float, 15>& currentJointPose,
@@ -3907,6 +4041,8 @@ namespace rock
             .minAngularAuthorityScale = g_rockConfig.rockGrabMinAngularAuthorityScale,
             .weakNormalAngularDampingMultiplier = g_rockConfig.rockGrabWeakNormalAngularDampingMultiplier,
             .weakPivotTwistScale = g_rockConfig.rockGrabWeakPivotTwistScale,
+            .contactSupportShape = classifyContactSupportShapeFromGrabFrame(_grabFrame),
+            .longObjectReferenceLeverGameUnits = g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits,
         });
 
         _activeConstraint.linearMotor->tau = output.linearTau;
@@ -4018,26 +4154,37 @@ namespace rock
         outMaxAngularSpeedRadiansPerSecond = (std::max)(0.25f, configuredMaxSpeed * budgetScale * outLongObjectAngularScale);
         const auto angularAuthority = grab_motion_controller::computeAngularAuthorityScale(makeAngularAuthorityInput(_grabFrame));
         RE::NiPoint3 authorityAngularVelocity = rawAngularVelocity;
-        if (angularAuthority.weakPivotTwistScale < 0.999f) {
+        if (angularAuthority.axisLimited || angularAuthority.weakPivotTwistScale < 0.999f) {
             RE::NiTransform liveBodyWorld{};
-            float comX = 0.0f;
-            float comY = 0.0f;
-            float comZ = 0.0f;
-            if (tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, liveBodyWorld) &&
-                havok_runtime::getBodyCOMWorld(world, _savedObjectState.bodyId, comX, comY, comZ)) {
-                const RE::NiPoint3 pivotWorldHavok =
-                    gamePointToHavokPoint(transform_math::localPointToWorld(liveBodyWorld, activeProxyConstraintPivotBLocalGame()));
-                const RE::NiPoint3 pivotToCenterOfMassHavok{
-                    comX - pivotWorldHavok.x,
-                    comY - pivotWorldHavok.y,
-                    comZ - pivotWorldHavok.z,
-                };
-                authorityAngularVelocity = grab_motion_controller::scaleWeakPivotTwistAngularVelocity(
-                    rawAngularVelocity,
-                    pivotToCenterOfMassHavok,
-                    true,
-                    angularAuthority.weakPivotTwistScale);
+            RE::NiPoint3 pivotToCenterOfMassHavok{};
+            RE::NiPoint3 contactNormalWorld{};
+            bool hasLiveBodyWorld = tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, liveBodyWorld);
+            if (hasLiveBodyWorld) {
+                float comX = 0.0f;
+                float comY = 0.0f;
+                float comZ = 0.0f;
+                if (havok_runtime::getBodyCOMWorld(world, _savedObjectState.bodyId, comX, comY, comZ)) {
+                    const RE::NiPoint3 pivotWorldHavok =
+                        gamePointToHavokPoint(transform_math::localPointToWorld(liveBodyWorld, activeProxyConstraintPivotBLocalGame()));
+                    pivotToCenterOfMassHavok = RE::NiPoint3{
+                        comX - pivotWorldHavok.x,
+                        comY - pivotWorldHavok.y,
+                        comZ - pivotWorldHavok.z,
+                    };
+                }
+
+                if (_grabFrame.pivotAuthorityNormalTrusted) {
+                    const RE::NiTransform liveNodeWorld =
+                        _grabFrame.heldNode ? _grabFrame.heldNode->world : deriveNodeWorldFromBodyWorld(liveBodyWorld, _grabFrame.bodyLocal);
+                    contactNormalWorld = gripEvidenceNormalWorld(_grabFrame, liveNodeWorld);
+                }
             }
+
+            authorityAngularVelocity = grab_motion_controller::scaleAngularVelocityByHeldAuthorityAxes(
+                rawAngularVelocity,
+                pivotToCenterOfMassHavok,
+                contactNormalWorld,
+                angularAuthority);
         }
         const RE::NiPoint3 appliedAngularVelocity =
             clampAngularVelocityVector(authorityAngularVelocity, outMaxAngularSpeedRadiansPerSecond);
@@ -6625,7 +6772,7 @@ namespace rock
                 heldFlagLeases.collisionLeaseCount,
                 heldFlagLeases.authorityLeaseCount);
         }
-        _heldBodyContactFrame.store(100, std::memory_order_release);
+        clearHeldBodyContactSnapshot();
         _activeGrabLifecycle = std::move(activeLifecycle);
 
         {
@@ -6858,10 +7005,12 @@ namespace rock
         float pivotTrackingErrorGameUnits = 0.0f;
         float grabRotationErrorDegrees = 0.0f;
         bool hasPivotTrackingError = false;
+        RE::NiPoint3 liveGripWorldForAuthority{};
         {
             RE::NiTransform grabBodyWorld{};
             if (tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, grabBodyWorld)) {
                 const RE::NiPoint3 liveGripWorld = transform_math::localPointToWorld(grabBodyWorld, activePivotBBodyLocalGame);
+                liveGripWorldForAuthority = liveGripWorld;
                 pivotTrackingErrorGameUnits = pointDistanceGameUnits(liveGripWorld, desiredTargetPointWorld);
                 hasPivotTrackingError = true;
                 if (_grabFrame.heldNode) {
@@ -6891,6 +7040,39 @@ namespace rock
         }
 
         const bool heldBodyColliding = isHeldBodyColliding();
+        const auto heldContactSnapshot = readHeldBodyContactSnapshot();
+        bool heldMotorContactSoftening = heldBodyColliding;
+        const char* heldMotorContactReason = heldBodyColliding ? "legacy-recent-contact" : "no-recent-contact";
+        if (heldContactSnapshot.recent) {
+            const RE::NiPoint3 correctionGame = desiredTargetPointWorld - liveGripWorldForAuthority;
+            const RE::NiPoint3 correctionHavok = gamePointToHavokPoint(correctionGame);
+            RE::NiTransform heldContactBodyWorld{};
+            RE::NiTransform otherContactBodyWorld{};
+            const bool hasHeldContactBody =
+                heldContactSnapshot.heldBodyId != INVALID_BODY_ID &&
+                tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ heldContactSnapshot.heldBodyId }, heldContactBodyWorld);
+            const bool hasOtherContactBody =
+                heldContactSnapshot.otherBodyId != INVALID_BODY_ID &&
+                tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ heldContactSnapshot.otherBodyId }, otherContactBodyWorld);
+            const RE::NiPoint3 heldToOtherHavok =
+                (hasHeldContactBody && hasOtherContactBody) ?
+                    gamePointToHavokPoint(otherContactBodyWorld.translate - heldContactBodyWorld.translate) :
+                    RE::NiPoint3{};
+            const auto contactSoftening =
+                held_object_contact_policy::evaluateHeldContactMotorSoftening(
+                    held_object_contact_policy::HeldContactMotorSofteningInput<RE::NiPoint3>{
+                        .recentContact = true,
+                        .hasCorrectionVector = hasPivotTrackingError,
+                        .hasHeldToOtherVector = hasHeldContactBody && hasOtherContactBody,
+                        .hasContactNormal = heldContactSnapshot.hasNormal,
+                        .otherMotion = classifyHeldContactOtherMotion(world, heldContactSnapshot.otherBodyId),
+                        .correctionTowardTarget = correctionHavok,
+                        .heldToOther = heldToOtherHavok,
+                        .contactNormal = heldContactSnapshot.contactNormalHavok,
+                    });
+            heldMotorContactSoftening = contactSoftening.soften;
+            heldMotorContactReason = contactSoftening.reason;
+        }
         const float authorityForceScale = sharedGrabAuthorityForceScale(releaseContext.peerHandStillHolding);
         if (held_object_physics_math::shouldQueueGrabAuthorityTargetForDelta(deltaTime)) {
             queueProxyGrabAuthorityTarget(
@@ -6902,7 +7084,7 @@ namespace rock
                 pivotTrackingErrorGameUnits,
                 grabRotationErrorDegrees,
                 authorityForceScale,
-                heldBodyColliding);
+                heldMotorContactSoftening);
         } else {
             ROCK_LOG_SAMPLE_WARN(Hand,
                 500,
@@ -7553,7 +7735,7 @@ namespace rock
 
             ROCK_LOG_DEBUG(Hand,
                 "{} HELD dynamic: drive={} looseWeapon={} formID={:08X} constraint={} queued={} flushed={} failedFlushes={} lastDt={:.6f} proxyFrame={}/{} "
-                "phase={} posePublished={} fade={:.2f}/{} reason={} colliding={} forceBudget={:.2f} longLever={:.1f}gu pivotTrack={:.1f}gu avgTrack={:.1f}gu rotErr={:.1f}deg bDist={:.1f}gu objVel={:.3f} "
+                "phase={} posePublished={} fade={:.2f}/{} reason={} colliding={} motorContact={} contactReason={} forceBudget={:.2f} longLever={:.1f}gu pivotTrack={:.1f}gu avgTrack={:.1f}gu rotErr={:.1f}deg bDist={:.1f}gu objVel={:.3f} "
                 "paW=({:.1f},{:.1f},{:.1f}) pbW=({:.1f},{:.1f},{:.1f}) "
                 "targetBody=({:.1f},{:.1f},{:.1f}) objW=({:.1f},{:.1f},{:.1f})",
                 handName(),
@@ -7573,6 +7755,8 @@ namespace rock
                 _grabFrame.fadeInGrabConstraint ? "on" : "off",
                 _grabFrame.motorFadeReason,
                 heldBodyColliding ? "yes" : "no",
+                heldMotorContactSoftening ? "soften" : "preserve",
+                heldMotorContactReason,
                 authorityForceScale,
                 _grabFrame.longObjectLeverGameUnits,
                 pivotErrGame,
@@ -8110,7 +8294,9 @@ namespace rock
             RE::NiPoint3 releaseCenterOfMassHavok{};
             bool hasReleaseCenterOfMass = false;
             RE::NiTransform releaseBodyWorld{};
+            bool hasReleaseBodyWorld = false;
             if (tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, releaseBodyWorld)) {
+                hasReleaseBodyWorld = true;
                 releaseLeverOriginHavok =
                     gamePointToHavokPoint(transform_math::localPointToWorld(releaseBodyWorld, activeProxyConstraintPivotBLocalGame()));
                 hasReleaseLeverOrigin = true;
@@ -8155,7 +8341,7 @@ namespace rock
                 });
             RE::NiPoint3 releaseAngularVelocity = rawReleaseAngularVelocity;
             const auto angularAuthority = grab_motion_controller::computeAngularAuthorityScale(makeAngularAuthorityInput(_grabFrame));
-            if (angularAuthority.weakPivotTwistScale < 0.999f && hasReleaseLeverOrigin) {
+            if ((angularAuthority.axisLimited || angularAuthority.weakPivotTwistScale < 0.999f) && hasReleaseLeverOrigin) {
                 if (!hasReleaseCenterOfMass) {
                     float comX = 0.0f;
                     float comY = 0.0f;
@@ -8166,11 +8352,17 @@ namespace rock
                     }
                 }
                 if (hasReleaseCenterOfMass) {
-                    releaseAngularVelocity = grab_motion_controller::scaleWeakPivotTwistAngularVelocity(
+                    RE::NiPoint3 releaseContactNormalWorld{};
+                    if (_grabFrame.pivotAuthorityNormalTrusted && hasReleaseBodyWorld) {
+                        const RE::NiTransform releaseNodeWorld =
+                            _grabFrame.heldNode ? _grabFrame.heldNode->world : deriveNodeWorldFromBodyWorld(releaseBodyWorld, _grabFrame.bodyLocal);
+                        releaseContactNormalWorld = gripEvidenceNormalWorld(_grabFrame, releaseNodeWorld);
+                    }
+                    releaseAngularVelocity = grab_motion_controller::scaleAngularVelocityByHeldAuthorityAxes(
                         rawReleaseAngularVelocity,
                         releaseCenterOfMassHavok - releaseLeverOriginHavok,
-                        true,
-                        angularAuthority.weakPivotTwistScale);
+                        releaseContactNormalWorld,
+                        angularAuthority);
                 }
             }
             const bool overrideAngularVelocity =
@@ -8243,7 +8435,7 @@ namespace rock
 
         _isHoldingFlag.store(false, std::memory_order_release);
         _heldBodyIdsCount.store(0, std::memory_order_release);
-        _heldBodyContactFrame.store(100, std::memory_order_release);
+        clearHeldBodyContactSnapshot();
 
         if (world) {
             const auto heldFlagReleases = releaseHeldObjectBodyFlagLeases(

@@ -562,6 +562,16 @@ namespace rock
         int _touchActiveFrames = 100;
 
         std::atomic<int> _heldBodyContactFrame{ 100 };
+        std::atomic<std::uint32_t> _heldContactHeldBodyId{ INVALID_BODY_ID };
+        std::atomic<std::uint32_t> _heldContactOtherBodyId{ INVALID_BODY_ID };
+        std::atomic<std::uint32_t> _heldContactOtherLayer{ 0xFFFF'FFFFu };
+        std::atomic<std::uint32_t> _heldContactHasNormal{ 0 };
+        std::atomic<float> _heldContactPointHavokX{ 0.0f };
+        std::atomic<float> _heldContactPointHavokY{ 0.0f };
+        std::atomic<float> _heldContactPointHavokZ{ 0.0f };
+        std::atomic<float> _heldContactNormalHavokX{ 0.0f };
+        std::atomic<float> _heldContactNormalHavokY{ 0.0f };
+        std::atomic<float> _heldContactNormalHavokZ{ 0.0f };
 
         hand_collision_suppression_math::SuppressionSet<kGrabCollisionSuppressionBodyCountPerHand> _grabHandCollisionSuppression{};
         hand_collision_suppression_math::DelayedRestoreState _grabHandCollisionDelayedRestore{};
@@ -587,7 +597,78 @@ namespace rock
     public:
         bool isHeldBodyColliding() const { return _heldBodyContactFrame.load(std::memory_order_acquire) < 5; }
 
-        void notifyHeldBodyContact() { _heldBodyContactFrame.store(0, std::memory_order_release); }
+        struct HeldBodyContactSnapshot
+        {
+            RE::NiPoint3 contactPointHavok{};
+            RE::NiPoint3 contactNormalHavok{};
+            std::uint32_t heldBodyId = INVALID_BODY_ID;
+            std::uint32_t otherBodyId = INVALID_BODY_ID;
+            std::uint32_t otherLayer = 0xFFFF'FFFFu;
+            bool recent = false;
+            bool hasNormal = false;
+        };
+
+        void clearHeldBodyContactSnapshot()
+        {
+            _heldBodyContactFrame.store(100, std::memory_order_release);
+            _heldContactHeldBodyId.store(INVALID_BODY_ID, std::memory_order_release);
+            _heldContactOtherBodyId.store(INVALID_BODY_ID, std::memory_order_release);
+            _heldContactOtherLayer.store(0xFFFF'FFFFu, std::memory_order_release);
+            _heldContactHasNormal.store(0, std::memory_order_release);
+        }
+
+        void notifyHeldBodyContact()
+        {
+            _heldContactHeldBodyId.store(INVALID_BODY_ID, std::memory_order_relaxed);
+            _heldContactOtherBodyId.store(INVALID_BODY_ID, std::memory_order_relaxed);
+            _heldContactOtherLayer.store(0xFFFF'FFFFu, std::memory_order_relaxed);
+            _heldContactHasNormal.store(0, std::memory_order_relaxed);
+            _heldBodyContactFrame.store(0, std::memory_order_release);
+        }
+
+        void notifyHeldBodyContact(std::uint32_t heldBodyId,
+            std::uint32_t otherBodyId,
+            std::uint32_t otherLayer,
+            const RE::NiPoint3& contactPointHavok,
+            const RE::NiPoint3& contactNormalHavok,
+            bool hasNormal)
+        {
+            _heldContactHeldBodyId.store(heldBodyId, std::memory_order_relaxed);
+            _heldContactOtherBodyId.store(otherBodyId, std::memory_order_relaxed);
+            _heldContactOtherLayer.store(otherLayer, std::memory_order_relaxed);
+            _heldContactPointHavokX.store(contactPointHavok.x, std::memory_order_relaxed);
+            _heldContactPointHavokY.store(contactPointHavok.y, std::memory_order_relaxed);
+            _heldContactPointHavokZ.store(contactPointHavok.z, std::memory_order_relaxed);
+            _heldContactNormalHavokX.store(contactNormalHavok.x, std::memory_order_relaxed);
+            _heldContactNormalHavokY.store(contactNormalHavok.y, std::memory_order_relaxed);
+            _heldContactNormalHavokZ.store(contactNormalHavok.z, std::memory_order_relaxed);
+            _heldContactHasNormal.store(hasNormal ? 1u : 0u, std::memory_order_relaxed);
+            _heldBodyContactFrame.store(0, std::memory_order_release);
+        }
+
+        HeldBodyContactSnapshot readHeldBodyContactSnapshot() const
+        {
+            HeldBodyContactSnapshot snapshot{};
+            snapshot.recent = isHeldBodyColliding();
+            if (!snapshot.recent) {
+                return snapshot;
+            }
+            snapshot.heldBodyId = _heldContactHeldBodyId.load(std::memory_order_acquire);
+            snapshot.otherBodyId = _heldContactOtherBodyId.load(std::memory_order_acquire);
+            snapshot.otherLayer = _heldContactOtherLayer.load(std::memory_order_acquire);
+            snapshot.hasNormal = _heldContactHasNormal.load(std::memory_order_acquire) != 0;
+            snapshot.contactPointHavok = RE::NiPoint3{
+                _heldContactPointHavokX.load(std::memory_order_acquire),
+                _heldContactPointHavokY.load(std::memory_order_acquire),
+                _heldContactPointHavokZ.load(std::memory_order_acquire),
+            };
+            snapshot.contactNormalHavok = RE::NiPoint3{
+                _heldContactNormalHavokX.load(std::memory_order_acquire),
+                _heldContactNormalHavokY.load(std::memory_order_acquire),
+                _heldContactNormalHavokZ.load(std::memory_order_acquire),
+            };
+            return snapshot;
+        }
 
         void tickHeldBodyContact()
         {

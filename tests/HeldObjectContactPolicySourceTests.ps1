@@ -30,7 +30,7 @@ $requiredContactPatterns = @(
     "held_object_contact_policy::evaluateHeldExternalContact",
     "decision.sameHeldObject",
     "held self-contact suppressed",
-    "hand.notifyHeldBodyContact()",
+    "hand.notifyHeldBodyContact(heldId, other",
     "packHeldImpactPair(heldId, other)"
 )
 
@@ -41,7 +41,7 @@ foreach ($pattern in $requiredContactPatterns) {
 }
 
 $selfSuppressIndex = $contacts.IndexOf("decision.sameHeldObject")
-$notifyIndex = $contacts.IndexOf("hand.notifyHeldBodyContact()")
+$notifyIndex = $contacts.IndexOf("hand.notifyHeldBodyContact(heldId, other")
 if ($selfSuppressIndex -lt 0 -or $notifyIndex -lt 0 -or $selfSuppressIndex -gt $notifyIndex) {
     throw "Same-held-object suppression must be evaluated before notifyHeldBodyContact."
 }
