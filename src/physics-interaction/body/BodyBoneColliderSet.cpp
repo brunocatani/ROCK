@@ -749,7 +749,9 @@ namespace rock
                     instance.driveState,
                     timing,
                     "body-bone-collider",
-                    static_cast<std::uint32_t>(i)),
+                    static_cast<std::uint32_t>(i),
+                    g_rockConfig.rockHandBoneColliderMaxLinearVelocity,
+                    g_rockConfig.rockHandBoneColliderMaxAngularVelocity),
                 "body-bone-collider",
                 static_cast<std::uint32_t>(i));
         }

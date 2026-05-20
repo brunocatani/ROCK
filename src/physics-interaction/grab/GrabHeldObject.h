@@ -166,6 +166,8 @@ namespace rock::held_object_damping_math
 
 namespace rock::held_object_physics_math
 {
+    inline constexpr float kMaxGrabAuthorityTargetDeltaSeconds = 0.05f;
+
     /*
      * Held-object motion needs to preserve player-space movement separately from
      * solver residuals. ROCK adds the room/player velocity to carried bodies and
@@ -198,6 +200,30 @@ namespace rock::held_object_physics_math
     inline float safeDeltaTime(float deltaTime)
     {
         return (std::isfinite(deltaTime) && deltaTime > 0.00001f) ? deltaTime : (1.0f / 90.0f);
+    }
+
+    inline float finitePositiveOrZero(float value)
+    {
+        return std::isfinite(value) && value > 0.0f ? value : 0.0f;
+    }
+
+    inline bool shouldQueueGrabAuthorityTargetForDelta(float deltaTime)
+    {
+        return std::isfinite(deltaTime) && deltaTime > 0.0f && deltaTime <= kMaxGrabAuthorityTargetDeltaSeconds;
+    }
+
+    inline float instantDeviationReleaseThreshold(float maxDeviationGameUnits)
+    {
+        const float configuredThreshold = (std::isfinite(maxDeviationGameUnits) && maxDeviationGameUnits > 0.0f) ? maxDeviationGameUnits * 2.0f : 0.0f;
+        return (std::max)(configuredThreshold, 100.0f);
+    }
+
+    inline bool instantDeviationExceeded(float deviationGameUnits, float maxDeviationGameUnits)
+    {
+        if (!std::isfinite(deviationGameUnits)) {
+            return true;
+        }
+        return deviationGameUnits > instantDeviationReleaseThreshold(maxDeviationGameUnits);
     }
 
     template <class Vec3>

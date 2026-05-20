@@ -3,10 +3,12 @@
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
+#include "physics-interaction/native/PhysicsScale.h"
+#include "physics-interaction/TransformMath.h"
 
-#include "RE/Havok/hknpWorld.h"
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
+#include "RE/Havok/hknpWorld.h"
 
 #include <algorithm>
 #include <cmath>
@@ -23,6 +25,8 @@ namespace rock
         inline constexpr float kMaxPredictionSeconds = 1.0f / 30.0f;
         inline constexpr float kMaxPredictionSourceFrames = 2.0f;
         inline constexpr float kMaxStaleSeconds = 0.10f;
+        inline constexpr float kTinyDistanceGameUnits = 0.0001f;
+        inline constexpr float kTinyRotationRadians = 0.000001f;
 
         inline float sanitizeSourceDeltaSeconds(float value)
         {
@@ -98,6 +102,220 @@ namespace rock
                 return true;
             }
             return timing.substepIndex + 1 >= timing.substepCount || timing.substepProgress >= 0.999f;
+        }
+
+        template <class Point>
+        inline float pointDistance(const Point& lhs, const Point& rhs)
+        {
+            const float dx = rhs.x - lhs.x;
+            const float dy = rhs.y - lhs.y;
+            const float dz = rhs.z - lhs.z;
+            const float squared = dx * dx + dy * dy + dz * dz;
+            return std::isfinite(squared) && squared >= 0.0f ? std::sqrt(squared) : (std::numeric_limits<float>::infinity)();
+        }
+
+        template <class Point>
+        inline Point lerpPoint(const Point& from, const Point& to, float alpha)
+        {
+            return Point{
+                from.x + (to.x - from.x) * alpha,
+                from.y + (to.y - from.y) * alpha,
+                from.z + (to.z - from.z) * alpha,
+            };
+        }
+
+        struct Quaternion
+        {
+            float x = 0.0f;
+            float y = 0.0f;
+            float z = 0.0f;
+            float w = 1.0f;
+        };
+
+        inline Quaternion normalize(Quaternion q)
+        {
+            const float length = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+            if (length <= 0.000001f || !std::isfinite(length)) {
+                return {};
+            }
+
+            const float invLength = 1.0f / length;
+            q.x *= invLength;
+            q.y *= invLength;
+            q.z *= invLength;
+            q.w *= invLength;
+            return q;
+        }
+
+        inline float dot(const Quaternion& lhs, const Quaternion& rhs)
+        {
+            return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z + lhs.w * rhs.w;
+        }
+
+        inline Quaternion matrixToQuaternion(const RE::NiMatrix3& matrix)
+        {
+            float values[4]{};
+            transform_math::niRowsToHavokQuaternion(matrix, values);
+            return normalize(Quaternion{ values[0], values[1], values[2], values[3] });
+        }
+
+        inline RE::NiMatrix3 quaternionToMatrix(const Quaternion& q)
+        {
+            const Quaternion n = normalize(q);
+            const float values[4] = { n.x, n.y, n.z, n.w };
+            return transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(values);
+        }
+
+        inline Quaternion slerp(Quaternion from, Quaternion to, float alpha)
+        {
+            alpha = std::clamp(std::isfinite(alpha) ? alpha : 1.0f, 0.0f, 1.0f);
+            from = normalize(from);
+            to = normalize(to);
+
+            float cosine = dot(from, to);
+            if (cosine < 0.0f) {
+                to.x = -to.x;
+                to.y = -to.y;
+                to.z = -to.z;
+                to.w = -to.w;
+                cosine = -cosine;
+            }
+
+            if (cosine > 0.9995f) {
+                return normalize(Quaternion{
+                    from.x + (to.x - from.x) * alpha,
+                    from.y + (to.y - from.y) * alpha,
+                    from.z + (to.z - from.z) * alpha,
+                    from.w + (to.w - from.w) * alpha,
+                });
+            }
+
+            cosine = std::clamp(cosine, -1.0f, 1.0f);
+            const float theta = std::acos(cosine);
+            const float sinTheta = std::sin(theta);
+            if (std::abs(sinTheta) <= 0.000001f) {
+                return from;
+            }
+
+            const float fromScale = std::sin((1.0f - alpha) * theta) / sinTheta;
+            const float toScale = std::sin(alpha * theta) / sinTheta;
+            return normalize(Quaternion{
+                from.x * fromScale + to.x * toScale,
+                from.y * fromScale + to.y * toScale,
+                from.z * fromScale + to.z * toScale,
+                from.w * fromScale + to.w * toScale,
+            });
+        }
+
+        inline RE::NiTransform interpolateTargetTransform(const RE::NiTransform& from, const RE::NiTransform& to, float alpha)
+        {
+            RE::NiTransform result = to;
+            alpha = std::clamp(std::isfinite(alpha) ? alpha : 1.0f, 0.0f, 1.0f);
+            result.translate = lerpPoint(from.translate, to.translate, alpha);
+            result.rotate = quaternionToMatrix(slerp(matrixToQuaternion(from.rotate), matrixToQuaternion(to.rotate), alpha));
+            result.scale = from.scale + (to.scale - from.scale) * alpha;
+            return result;
+        }
+
+        inline float matrixDot(const RE::NiMatrix3& a, const RE::NiMatrix3& b)
+        {
+            return a.entry[0][0] * b.entry[0][0] + a.entry[0][1] * b.entry[0][1] + a.entry[0][2] * b.entry[0][2] +
+                   a.entry[1][0] * b.entry[1][0] + a.entry[1][1] * b.entry[1][1] + a.entry[1][2] * b.entry[1][2] +
+                   a.entry[2][0] * b.entry[2][0] + a.entry[2][1] * b.entry[2][1] + a.entry[2][2] * b.entry[2][2];
+        }
+
+        inline float rotationAngleRadians(const RE::NiMatrix3& previous, const RE::NiMatrix3& current)
+        {
+            const float trace = matrixDot(previous, current);
+            const float cosine = std::clamp((trace - 1.0f) * 0.5f, -1.0f, 1.0f);
+            return std::acos(cosine);
+        }
+
+        struct TargetVelocityLimit
+        {
+            float alpha = 1.0f;
+            bool linearLimitExceeded = false;
+            bool angularLimitExceeded = false;
+        };
+
+        inline TargetVelocityLimit computeTargetVelocityLimit(
+            float linearDistanceGameUnits,
+            float angularDistanceRadians,
+            float driveDeltaSeconds,
+            float gameToHavokScale,
+            float maxLinearVelocityHavok,
+            float maxAngularVelocityRadians)
+        {
+            TargetVelocityLimit limit{};
+            const float driveDelta = havok_physics_timing::isUsableDelta(driveDeltaSeconds) ? driveDeltaSeconds : havok_physics_timing::kFallbackPhysicsDeltaSeconds;
+            const float scale = physics_scale::isUsableScale(gameToHavokScale) ? gameToHavokScale : physics_scale::kFallbackGameToHavok;
+
+            if (std::isfinite(maxLinearVelocityHavok) && maxLinearVelocityHavok > 0.0f &&
+                std::isfinite(linearDistanceGameUnits) && linearDistanceGameUnits > kTinyDistanceGameUnits) {
+                const float requiredLinearVelocityHavok = linearDistanceGameUnits * scale / driveDelta;
+                if (std::isfinite(requiredLinearVelocityHavok) && requiredLinearVelocityHavok > maxLinearVelocityHavok) {
+                    limit.linearLimitExceeded = true;
+                    limit.alpha = (std::min)(limit.alpha, maxLinearVelocityHavok / requiredLinearVelocityHavok);
+                }
+            }
+
+            if (std::isfinite(maxAngularVelocityRadians) && maxAngularVelocityRadians > 0.0f &&
+                std::isfinite(angularDistanceRadians) && angularDistanceRadians > kTinyRotationRadians) {
+                const float requiredAngularVelocityRadians = angularDistanceRadians / driveDelta;
+                if (std::isfinite(requiredAngularVelocityRadians) && requiredAngularVelocityRadians > maxAngularVelocityRadians) {
+                    limit.angularLimitExceeded = true;
+                    limit.alpha = (std::min)(limit.alpha, maxAngularVelocityRadians / requiredAngularVelocityRadians);
+                }
+            }
+
+            limit.alpha = std::clamp(std::isfinite(limit.alpha) ? limit.alpha : 1.0f, 0.0f, 1.0f);
+            return limit;
+        }
+
+        inline TargetVelocityLimit computeTargetVelocityLimit(
+            const RE::NiTransform& from,
+            const RE::NiTransform& requestedTarget,
+            float driveDeltaSeconds,
+            float gameToHavokScale,
+            float maxLinearVelocityHavok,
+            float maxAngularVelocityRadians)
+        {
+            return computeTargetVelocityLimit(
+                pointDistance(from.translate, requestedTarget.translate),
+                rotationAngleRadians(from.rotate, requestedTarget.rotate),
+                driveDeltaSeconds,
+                gameToHavokScale,
+                maxLinearVelocityHavok,
+                maxAngularVelocityRadians);
+        }
+
+        struct LimitedTarget
+        {
+            RE::NiTransform target{};
+            TargetVelocityLimit limit{};
+        };
+
+        inline LimitedTarget limitGeneratedDriveTarget(
+            const RE::NiTransform& from,
+            const RE::NiTransform& requestedTarget,
+            float driveDeltaSeconds,
+            float gameToHavokScale,
+            float maxLinearVelocityHavok,
+            float maxAngularVelocityRadians)
+        {
+            LimitedTarget limited{};
+            limited.limit = computeTargetVelocityLimit(
+                from,
+                requestedTarget,
+                driveDeltaSeconds,
+                gameToHavokScale,
+                maxLinearVelocityHavok,
+                maxAngularVelocityRadians);
+            limited.target =
+                (limited.limit.linearLimitExceeded || limited.limit.angularLimitExceeded) ?
+                    interpolateTargetTransform(from, requestedTarget, limited.limit.alpha) :
+                    requestedTarget;
+            return limited;
         }
     }
 
@@ -216,6 +434,9 @@ namespace rock
         float predictionLeadSeconds = 0.0f;
         float requiredLinearVelocityHavok = 0.0f;
         float requiredAngularVelocityRadians = 0.0f;
+        float uncappedRequiredLinearVelocityHavok = 0.0f;
+        float uncappedRequiredAngularVelocityRadians = 0.0f;
+        float targetLimitAlpha = 1.0f;
         std::uint32_t stepsWithoutSource = 0;
 
         [[nodiscard]] bool shouldRequestRebuild() const

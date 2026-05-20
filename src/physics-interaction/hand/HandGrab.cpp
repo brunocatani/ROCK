@@ -6826,7 +6826,7 @@ namespace rock
 
         suppressHandCollisionForGrab(world, bodyBoneColliders);
 
-        _grabStartTime += deltaTime;
+        _grabStartTime += held_object_physics_math::finitePositiveOrZero(deltaTime);
 
         const HeldHandMotionSample handMotion = recordHeldControllerMotionSample(handWorldTransform, playerSpaceFrame, deltaTime);
         (void)handMotion;
@@ -6880,19 +6880,37 @@ namespace rock
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
             return;
         }
+        if (held_object_physics_math::instantDeviationExceeded(pivotTrackingErrorGameUnits, g_rockConfig.rockGrabMaxDeviation)) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand release: held object instant pivot deviation exceeded ({:.1f}gu > {:.1f}gu)",
+                handName(),
+                pivotTrackingErrorGameUnits,
+                held_object_physics_math::instantDeviationReleaseThreshold(g_rockConfig.rockGrabMaxDeviation));
+            releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
+            return;
+        }
 
         const bool heldBodyColliding = isHeldBodyColliding();
         const float authorityForceScale = sharedGrabAuthorityForceScale(releaseContext.peerHandStillHolding);
-        queueProxyGrabAuthorityTarget(
-            proxyAuthorityWorld,
-            handWorldTransform,
-            deltaTime,
-            forceFadeInTime,
-            tauMin,
-            pivotTrackingErrorGameUnits,
-            grabRotationErrorDegrees,
-            authorityForceScale,
-            heldBodyColliding);
+        if (held_object_physics_math::shouldQueueGrabAuthorityTargetForDelta(deltaTime)) {
+            queueProxyGrabAuthorityTarget(
+                proxyAuthorityWorld,
+                handWorldTransform,
+                deltaTime,
+                forceFadeInTime,
+                tauMin,
+                pivotTrackingErrorGameUnits,
+                grabRotationErrorDegrees,
+                authorityForceScale,
+                heldBodyColliding);
+        } else {
+            ROCK_LOG_SAMPLE_WARN(Hand,
+                500,
+                "{} hand skipped grab authority target after stutter delta dt={:.6f}s threshold={:.3f}s; holding last proxy target",
+                handName(),
+                std::isfinite(deltaTime) ? deltaTime : -1.0f,
+                held_object_physics_math::kMaxGrabAuthorityTargetDeltaSeconds);
+        }
 
         const float averageGrabDeviationGameUnits = recordDeviationAverage(
             _grabDeviationHistory,
@@ -6978,6 +6996,16 @@ namespace rock
 
                 const float visualHandDeviationGameUnits =
                     pointDistanceGameUnits(nextVisualHandWorld.translate, handWorldTransform.translate);
+                if (held_object_physics_math::instantDeviationExceeded(visualHandDeviationGameUnits, g_rockConfig.rockGrabMaxDeviation)) {
+                    ROCK_LOG_WARN(Hand,
+                        "{} hand release: visual held-object hand target instant deviation exceeded ({:.1f}gu > {:.1f}gu)",
+                        handName(),
+                        visualHandDeviationGameUnits,
+                        held_object_physics_math::instantDeviationReleaseThreshold(g_rockConfig.rockGrabMaxDeviation));
+                    clearGrabExternalHandWorldTransform(_isLeft);
+                    releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Delayed, releaseContext);
+                    return;
+                }
                 const float averageVisualHandDeviationGameUnits = recordDeviationAverage(
                     _grabVisualDeviationHistory,
                     _grabVisualDeviationHistoryCount,
@@ -7672,7 +7700,9 @@ namespace rock
                     _grabAuthorityProxyDriveState,
                     timing,
                     "grab-authority-proxy",
-                    0);
+                    0,
+                    g_rockConfig.rockHandBoneColliderMaxLinearVelocity,
+                    g_rockConfig.rockHandBoneColliderMaxAngularVelocity);
                 proxyDriveOk = proxyDriveResult.driven;
             }
             if (proxyDriveOk) {

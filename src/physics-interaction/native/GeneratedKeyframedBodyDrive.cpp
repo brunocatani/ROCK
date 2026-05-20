@@ -46,125 +46,9 @@ namespace rock
             return RE::NiPoint3{ to.x - from.x, to.y - from.y, to.z - from.z };
         }
 
-        RE::NiPoint3 lerpPoint(const RE::NiPoint3& from, const RE::NiPoint3& to, float alpha)
-        {
-            return RE::NiPoint3{
-                from.x + (to.x - from.x) * alpha,
-                from.y + (to.y - from.y) * alpha,
-                from.z + (to.z - from.z) * alpha,
-            };
-        }
-
         float pointLength(const RE::NiPoint3& value)
         {
             return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
-        }
-
-        struct Quaternion
-        {
-            float x = 0.0f;
-            float y = 0.0f;
-            float z = 0.0f;
-            float w = 1.0f;
-        };
-
-        Quaternion normalize(Quaternion q)
-        {
-            const float length = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
-            if (length <= 0.000001f || !std::isfinite(length)) {
-                return {};
-            }
-
-            const float invLength = 1.0f / length;
-            q.x *= invLength;
-            q.y *= invLength;
-            q.z *= invLength;
-            q.w *= invLength;
-            return q;
-        }
-
-        float dot(const Quaternion& lhs, const Quaternion& rhs)
-        {
-            return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z + lhs.w * rhs.w;
-        }
-
-        Quaternion matrixToQuaternion(const RE::NiMatrix3& matrix)
-        {
-            float values[4]{};
-            transform_math::niRowsToHavokQuaternion(matrix, values);
-            return normalize(Quaternion{ values[0], values[1], values[2], values[3] });
-        }
-
-        RE::NiMatrix3 quaternionToMatrix(const Quaternion& q)
-        {
-            const Quaternion n = normalize(q);
-            const float values[4] = { n.x, n.y, n.z, n.w };
-            return transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(values);
-        }
-
-        Quaternion slerp(Quaternion from, Quaternion to, float alpha)
-        {
-            alpha = std::clamp(alpha, 0.0f, 1.0f);
-            from = normalize(from);
-            to = normalize(to);
-
-            float cosine = dot(from, to);
-            if (cosine < 0.0f) {
-                to.x = -to.x;
-                to.y = -to.y;
-                to.z = -to.z;
-                to.w = -to.w;
-                cosine = -cosine;
-            }
-
-            if (cosine > 0.9995f) {
-                return normalize(Quaternion{
-                    from.x + (to.x - from.x) * alpha,
-                    from.y + (to.y - from.y) * alpha,
-                    from.z + (to.z - from.z) * alpha,
-                    from.w + (to.w - from.w) * alpha,
-                });
-            }
-
-            cosine = std::clamp(cosine, -1.0f, 1.0f);
-            const float theta = std::acos(cosine);
-            const float sinTheta = std::sin(theta);
-            if (std::abs(sinTheta) <= 0.000001f) {
-                return from;
-            }
-
-            const float fromScale = std::sin((1.0f - alpha) * theta) / sinTheta;
-            const float toScale = std::sin(alpha * theta) / sinTheta;
-            return normalize(Quaternion{
-                from.x * fromScale + to.x * toScale,
-                from.y * fromScale + to.y * toScale,
-                from.z * fromScale + to.z * toScale,
-                from.w * fromScale + to.w * toScale,
-            });
-        }
-
-        RE::NiTransform interpolateTargetTransform(const RE::NiTransform& from, const RE::NiTransform& to, float alpha)
-        {
-            RE::NiTransform result = to;
-            alpha = std::clamp(std::isfinite(alpha) ? alpha : 1.0f, 0.0f, 1.0f);
-            result.translate = lerpPoint(from.translate, to.translate, alpha);
-            result.rotate = quaternionToMatrix(slerp(matrixToQuaternion(from.rotate), matrixToQuaternion(to.rotate), alpha));
-            result.scale = from.scale + (to.scale - from.scale) * alpha;
-            return result;
-        }
-
-        float matrixDot(const RE::NiMatrix3& a, const RE::NiMatrix3& b)
-        {
-            return a.entry[0][0] * b.entry[0][0] + a.entry[0][1] * b.entry[0][1] + a.entry[0][2] * b.entry[0][2] +
-                   a.entry[1][0] * b.entry[1][0] + a.entry[1][1] * b.entry[1][1] + a.entry[1][2] * b.entry[1][2] +
-                   a.entry[2][0] * b.entry[2][0] + a.entry[2][1] * b.entry[2][1] + a.entry[2][2] * b.entry[2][2];
-        }
-
-        float rotationAngleRadians(const RE::NiMatrix3& previous, const RE::NiMatrix3& current)
-        {
-            const float trace = matrixDot(previous, current);
-            const float cosine = std::clamp((trace - 1.0f) * 0.5f, -1.0f, 1.0f);
-            return std::acos(cosine);
         }
 
         float radiansToDegrees(float radians)
@@ -213,7 +97,7 @@ namespace rock
             const float driveDelta = havok_physics_timing::isUsableDelta(driveDeltaSeconds) ? driveDeltaSeconds : havok_physics_timing::kFallbackPhysicsDeltaSeconds;
             const float linearGame = pointLength(pointDelta(liveTransform.translate, target.translate));
             result.requiredLinearVelocityHavok = linearGame * gameToHavokScale() / driveDelta;
-            const float angle = rotationAngleRadians(liveTransform.rotate, target.rotate);
+            const float angle = generated_keyframed_body_drive_math::rotationAngleRadians(liveTransform.rotate, target.rotate);
             result.requiredAngularVelocityRadians = std::isfinite(angle) ? angle / driveDelta : 0.0f;
         }
 
@@ -236,11 +120,36 @@ namespace rock
             result.liveBodyAxisYWorld = localAxisWorld(liveTransform.rotate, RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
             result.liveBodyAxisZWorld = localAxisWorld(liveTransform.rotate, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
 
-            const float rotationRadians = rotationAngleRadians(liveTransform.rotate, target.rotate);
+            const float rotationRadians = generated_keyframed_body_drive_math::rotationAngleRadians(liveTransform.rotate, target.rotate);
             result.targetToBodyRotationDegrees = std::isfinite(rotationRadians) ? radiansToDegrees(rotationRadians) : 0.0f;
             result.targetToBodyAxisXDegrees = directionDeltaDegrees(result.targetAxisXWorld, result.liveBodyAxisXWorld);
             result.targetToBodyAxisYDegrees = directionDeltaDegrees(result.targetAxisYWorld, result.liveBodyAxisYWorld);
             result.targetToBodyAxisZDegrees = directionDeltaDegrees(result.targetAxisZWorld, result.liveBodyAxisZWorld);
+        }
+
+        void fillTargetTelemetry(
+            const RE::NiTransform& target,
+            const RE::hkTransformf& targetHavok,
+            GeneratedKeyframedBodyDriveResult& result)
+        {
+            result.targetGamePosition = target.translate;
+            result.targetHavokPosition = havokTranslationToGamePoint(targetHavok);
+        }
+
+        void fillLiveBodyTelemetry(
+            const RE::NiTransform& liveTransform,
+            body_frame::BodyFrameSource frameSource,
+            std::uint32_t motionIndex,
+            const RE::NiTransform& target,
+            GeneratedKeyframedBodyDriveResult& result)
+        {
+            result.hasLiveBodyTransform = true;
+            result.liveBodyGamePosition = liveTransform.translate;
+            result.liveBodyFrameSource = frameSource;
+            result.motionIndex = motionIndex;
+            result.bodyDeltaGameUnits = body_frame::distance(liveTransform.translate, target.translate);
+            fillRequiredVelocityTelemetry(liveTransform, target, result.driveDeltaSeconds, result);
+            fillRotationReadbackTelemetry(liveTransform, target, result);
         }
 
         void captureTargetAndBodyTelemetry(
@@ -248,22 +157,18 @@ namespace rock
             BethesdaPhysicsBody& body,
             const RE::NiTransform& target,
             const RE::hkTransformf& targetHavok,
-            GeneratedKeyframedBodyDriveResult& result)
+            GeneratedKeyframedBodyDriveResult& result,
+            RE::NiTransform* outLiveTransform = nullptr)
         {
-            result.targetGamePosition = target.translate;
-            result.targetHavokPosition = havokTranslationToGamePoint(targetHavok);
-
+            fillTargetTelemetry(target, targetHavok, result);
             body_frame::BodyFrameSource frameSource = body_frame::BodyFrameSource::Fallback;
             std::uint32_t motionIndex = body_frame::kFreeMotionIndex;
             RE::NiTransform liveTransform{};
             if (tryResolveLiveBodyWorldTransform(world, body.getBodyId(), liveTransform, &frameSource, &motionIndex)) {
-                result.hasLiveBodyTransform = true;
-                result.liveBodyGamePosition = liveTransform.translate;
-                result.liveBodyFrameSource = frameSource;
-                result.motionIndex = motionIndex;
-                result.bodyDeltaGameUnits = body_frame::distance(liveTransform.translate, target.translate);
-                fillRequiredVelocityTelemetry(liveTransform, target, result.driveDeltaSeconds, result);
-                fillRotationReadbackTelemetry(liveTransform, target, result);
+                if (outLiveTransform) {
+                    *outLiveTransform = liveTransform;
+                }
+                fillLiveBodyTelemetry(liveTransform, frameSource, motionIndex, target, result);
             }
         }
 
@@ -289,7 +194,7 @@ namespace rock
             if (g_rockConfig.rockDebugGrabFrameLogging && result.driven && result.hasLiveBodyTransform) {
                 ROCK_LOG_SAMPLE_INFO(Physics,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "Generated body frame compare owner={} bodyIndex={} bodyId={} phase={} substep={}/{} bodyDeltaGame={:.2f} bodyRotErr={:.2f} axisDeg=({:.1f},{:.1f},{:.1f}) targetX=({:.2f},{:.2f},{:.2f}) targetY=({:.2f},{:.2f},{:.2f}) targetZ=({:.2f},{:.2f},{:.2f}) bodyX=({:.2f},{:.2f},{:.2f}) bodyY=({:.2f},{:.2f},{:.2f}) bodyZ=({:.2f},{:.2f},{:.2f}) bodySource={} motion={} teleported={} hardSync={}",
+                    "Generated body frame compare owner={} bodyIndex={} bodyId={} phase={} substep={}/{} bodyDeltaGame={:.2f} bodyRotErr={:.2f} axisDeg=({:.1f},{:.1f},{:.1f}) targetX=({:.2f},{:.2f},{:.2f}) targetY=({:.2f},{:.2f},{:.2f}) targetZ=({:.2f},{:.2f},{:.2f}) bodyX=({:.2f},{:.2f},{:.2f}) bodyY=({:.2f},{:.2f},{:.2f}) bodyZ=({:.2f},{:.2f},{:.2f}) bodySource={} motion={} teleported={} hardSync={} linCap={} angCap={} capAlpha={:.3f}",
                     ownerName ? ownerName : "unknown",
                     bodyIndex,
                     bodyId.value,
@@ -322,7 +227,10 @@ namespace rock
                     body_frame::bodyFrameSourceName(result.liveBodyFrameSource),
                     result.motionIndex,
                     result.teleported ? "yes" : "no",
-                    result.hardSynced ? "yes" : "no");
+                    result.hardSynced ? "yes" : "no",
+                    result.linearLimitExceeded ? "yes" : "no",
+                    result.angularLimitExceeded ? "yes" : "no",
+                    result.targetLimitAlpha);
             }
 
             if (!g_rockConfig.rockDebugVerboseLogging || !result.driven) {
@@ -331,7 +239,7 @@ namespace rock
 
             ROCK_LOG_SAMPLE_DEBUG(Physics,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "Generated keyframed body drive owner={} bodyIndex={} bodyId={} phase={} substep={}/{} progress={:.3f} targetGame=({:.2f},{:.2f},{:.2f}) targetHavok=({:.4f},{:.4f},{:.4f}) bodyGame=({:.2f},{:.2f},{:.2f}) bodyDeltaGame={:.2f} bodyRotErr={:.2f} axisDeg=({:.1f},{:.1f},{:.1f}) bodySource={} motion={} rawDt={:.6f} subDt={:.6f} simulatedDt={:.6f} driveDt={:.6f} sourceDt={:.6f} sourceAge={:.6f} predictLead={:.6f} stale={} noSourceSteps={} reqLinHavok={:.2f} reqAng={:.2f} substeps={} scaleG2H={:.8f} teleported={} hardSync={}",
+                "Generated keyframed body drive owner={} bodyIndex={} bodyId={} phase={} substep={}/{} progress={:.3f} targetGame=({:.2f},{:.2f},{:.2f}) targetHavok=({:.4f},{:.4f},{:.4f}) bodyGame=({:.2f},{:.2f},{:.2f}) bodyDeltaGame={:.2f} bodyRotErr={:.2f} axisDeg=({:.1f},{:.1f},{:.1f}) bodySource={} motion={} rawDt={:.6f} subDt={:.6f} simulatedDt={:.6f} driveDt={:.6f} sourceDt={:.6f} sourceAge={:.6f} predictLead={:.6f} stale={} noSourceSteps={} reqLinHavok={:.2f} reqAng={:.2f} uncappedReqLinHavok={:.2f} uncappedReqAng={:.2f} linCap={} angCap={} capAlpha={:.3f} substeps={} scaleG2H={:.8f} teleported={} hardSync={}",
                 ownerName ? ownerName : "unknown",
                 bodyIndex,
                 bodyId.value,
@@ -366,6 +274,11 @@ namespace rock
                 result.stepsWithoutSource,
                 result.requiredLinearVelocityHavok,
                 result.requiredAngularVelocityRadians,
+                result.uncappedRequiredLinearVelocityHavok,
+                result.uncappedRequiredAngularVelocityRadians,
+                result.linearLimitExceeded ? "yes" : "no",
+                result.angularLimitExceeded ? "yes" : "no",
+                result.targetLimitAlpha,
                 timing.substepCount,
                 gameToHavokScale(),
                 result.teleported ? "yes" : "no",
@@ -379,7 +292,7 @@ namespace rock
                     state.hasPendingTarget,
                     state.hasPreviousTarget,
                     false)) {
-                return interpolateTargetTransform(state.previousTarget, state.pendingTarget, timing.substepProgress);
+                return generated_keyframed_body_drive_math::interpolateTargetTransform(state.previousTarget, state.pendingTarget, timing.substepProgress);
             }
 
             return state.hasPendingTarget ? state.pendingTarget : state.previousTarget;
@@ -502,8 +415,6 @@ namespace rock
         float maxLinearVelocityHavok,
         float maxAngularVelocityRadians)
     {
-        (void)maxLinearVelocityHavok;
-        (void)maxAngularVelocityRadians;
         GeneratedKeyframedBodyDriveResult result{};
         result.driveDeltaSeconds = havok_physics_timing::driveDeltaSeconds(timing);
 
@@ -541,12 +452,37 @@ namespace rock
         result.predicted = false;
         const bool hardSyncForVelocity = false;
         const bool immediatePlacement = state.pendingTeleport || hardSyncForVelocity;
-        const RE::NiTransform target = immediatePlacement ? selectGeneratedImmediatePlacementTarget(state) : selectGeneratedDriveTarget(state, timing);
-        const RE::hkTransformf targetHavok = makeHavokTransform(target);
-        captureTargetAndBodyTelemetry(world, body, target, targetHavok, result);
+        const RE::NiTransform requestedTarget = immediatePlacement ? selectGeneratedImmediatePlacementTarget(state) : selectGeneratedDriveTarget(state, timing);
+        RE::NiTransform target = requestedTarget;
+        RE::hkTransformf targetHavok = makeHavokTransform(target);
+        RE::NiTransform liveTransform{};
+        captureTargetAndBodyTelemetry(world, body, target, targetHavok, result, &liveTransform);
+        result.uncappedRequiredLinearVelocityHavok = result.requiredLinearVelocityHavok;
+        result.uncappedRequiredAngularVelocityRadians = result.requiredAngularVelocityRadians;
 
         result.linearLimitExceeded = false;
         result.angularLimitExceeded = false;
+        result.targetLimitAlpha = 1.0f;
+
+        if (!immediatePlacement && result.hasLiveBodyTransform) {
+            const auto limitedTarget = generated_keyframed_body_drive_math::limitGeneratedDriveTarget(
+                liveTransform,
+                requestedTarget,
+                result.driveDeltaSeconds,
+                gameToHavokScale(),
+                maxLinearVelocityHavok,
+                maxAngularVelocityRadians);
+            result.linearLimitExceeded = limitedTarget.limit.linearLimitExceeded;
+            result.angularLimitExceeded = limitedTarget.limit.angularLimitExceeded;
+            result.targetLimitAlpha = limitedTarget.limit.alpha;
+
+            if (result.linearLimitExceeded || result.angularLimitExceeded) {
+                target = limitedTarget.target;
+                targetHavok = makeHavokTransform(target);
+                fillTargetTelemetry(target, targetHavok, result);
+                fillLiveBodyTelemetry(liveTransform, result.liveBodyFrameSource, result.motionIndex, target, result);
+            }
+        }
 
         if (immediatePlacement) {
             result.hardSynced = hardSyncForVelocity;

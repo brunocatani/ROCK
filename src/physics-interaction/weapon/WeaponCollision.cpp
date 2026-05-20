@@ -3769,7 +3769,9 @@ namespace rock
                     instance.driveState,
                     timing,
                     "weapon-collision",
-                    bodyIndex),
+                    bodyIndex,
+                    g_rockConfig.rockWeaponCollisionMaxLinearVelocity,
+                    g_rockConfig.rockWeaponCollisionMaxAngularVelocity),
                 "weapon-collision",
                 bodyIndex);
         }
