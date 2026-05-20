@@ -44,4 +44,8 @@ The added logic therefore does not port HIGGS 1:1. It applies HIGGS's stability 
 
 Objects with trusted normals and strong contact support retain normal authority. Position-only pivots, untrusted normals, single-point/low-support contact patches, and small compact weak-contact objects get softer angular authority, which should reduce spin around the grab point without making translation feel sluggish.
 
+Review correction:
+
+- Low-contact angular attenuation is only applied when the contact patch actually owns/supports the active pivot. Rejected/incidental patch samples are still recorded for diagnostics and reacquisition, but they no longer weaken trusted mesh or palm-pocket pivots.
+
 No production INI was edited by this note. The packaged defaults in `data/config/ROCK.ini` document the new tunables.

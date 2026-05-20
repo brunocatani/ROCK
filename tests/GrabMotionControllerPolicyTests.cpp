@@ -107,6 +107,7 @@ int main()
     positionOnlyPivot.pivotQualityAngularScalingEnabled = true;
     positionOnlyPivot.pivotAuthorityPositionOnly = true;
     positionOnlyPivot.pivotAuthorityNormalTrusted = false;
+    positionOnlyPivot.contactPatchUsedAsPivot = true;
     positionOnlyPivot.contactPatchSampleCount = 1;
     positionOnlyPivot.longObjectLeverGameUnits = 8.0f;
     const auto positionOnlyOutput = solveMotorTargets(positionOnlyPivot);
@@ -119,6 +120,7 @@ int main()
         .enabled = true,
         .positionOnlyPivot = false,
         .normalTrusted = true,
+        .contactPatchUsedAsPivot = true,
         .contactPatchSampleCount = 4,
         .longObjectLeverGameUnits = 8.0f,
     });
@@ -128,11 +130,22 @@ int main()
         .enabled = true,
         .positionOnlyPivot = false,
         .normalTrusted = true,
+        .contactPatchUsedAsPivot = true,
         .contactPatchSampleCount = 1,
         .longObjectLeverGameUnits = 8.0f,
     });
     ok &= expectNear("small low-support contact softens angular authority", lowSupportAuthority.authorityScale, 0.4875f, 0.001f);
     ok &= expectNear("trusted low-support contact does not raise damping", lowSupportAuthority.dampingMultiplier, 1.0f, 0.001f);
+
+    const auto rejectedPatchAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
+        .enabled = true,
+        .positionOnlyPivot = false,
+        .normalTrusted = true,
+        .contactPatchUsedAsPivot = false,
+        .contactPatchSampleCount = 1,
+        .longObjectLeverGameUnits = 8.0f,
+    });
+    ok &= expectNear("trusted non-patch pivot ignores rejected patch support", rejectedPatchAuthority.authorityScale, 1.0f, 0.001f);
 
     const Vec3 twistLimited = scaleWeakPivotTwistAngularVelocity(Vec3{ 1.0f, 2.0f, 3.0f }, Vec3{ 0.0f, 0.0f, 2.0f }, true, 0.25f);
     ok &= expectNear("weak pivot twist preserves swing x", twistLimited.x, 1.0f, 0.001f);

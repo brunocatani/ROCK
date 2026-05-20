@@ -49,6 +49,7 @@ namespace rock::grab_motion_controller
         bool pivotQualityAngularScalingEnabled = false;
         bool pivotAuthorityPositionOnly = false;
         bool pivotAuthorityNormalTrusted = true;
+        bool contactPatchUsedAsPivot = false;
         std::uint32_t contactPatchSampleCount = 0;
         std::uint32_t multiFingerContactGroupCount = 0;
         float multiFingerContactSpreadGameUnits = 0.0f;
@@ -82,6 +83,7 @@ namespace rock::grab_motion_controller
         bool enabled = true;
         bool positionOnlyPivot = false;
         bool normalTrusted = true;
+        bool contactPatchUsedAsPivot = false;
         std::uint32_t contactPatchSampleCount = 0;
         std::uint32_t multiFingerContactGroupCount = 0;
         float multiFingerContactSpreadGameUnits = 0.0f;
@@ -234,10 +236,11 @@ namespace rock::grab_motion_controller
             output.weakPivotTwistScale = std::clamp(std::isfinite(input.weakPivotTwistScale) ? input.weakPivotTwistScale : 0.35f, 0.0f, 1.0f);
         }
 
-        const bool hasContactSupport = input.contactPatchSampleCount > 0 || input.multiFingerContactGroupCount > 0;
+        const bool patchSupportsPivot = input.contactPatchUsedAsPivot && input.contactPatchSampleCount > 0;
+        const bool hasContactSupport = patchSupportsPivot || input.multiFingerContactGroupCount > 0;
         const bool strongContactSupport =
             input.multiFingerContactGroupCount >= 2 ||
-            input.contactPatchSampleCount >= 3 ||
+            (input.contactPatchUsedAsPivot && input.contactPatchSampleCount >= 3) ||
             (std::isfinite(input.multiFingerContactSpreadGameUnits) && input.multiFingerContactSpreadGameUnits >= 4.0f);
         output.lowContactSupport = hasContactSupport && !strongContactSupport;
         if (output.lowContactSupport) {
@@ -350,6 +353,7 @@ namespace rock::grab_motion_controller
             .enabled = input.pivotQualityAngularScalingEnabled,
             .positionOnlyPivot = input.pivotAuthorityPositionOnly,
             .normalTrusted = input.pivotAuthorityNormalTrusted,
+            .contactPatchUsedAsPivot = input.contactPatchUsedAsPivot,
             .contactPatchSampleCount = input.contactPatchSampleCount,
             .multiFingerContactGroupCount = input.multiFingerContactGroupCount,
             .multiFingerContactSpreadGameUnits = input.multiFingerContactSpreadGameUnits,
