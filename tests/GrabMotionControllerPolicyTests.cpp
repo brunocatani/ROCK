@@ -1,4 +1,5 @@
 #include "physics-interaction/grab/GrabMotionController.h"
+#include "physics-interaction/grab/GrabInertiaPolicy.h"
 
 #include <cstdio>
 
@@ -13,6 +14,22 @@ namespace
         std::printf("%s expected %.4f got %.4f\n", label, expected, actual);
         return false;
     }
+
+    bool expectTrue(const char* label, bool value)
+    {
+        if (value) {
+            return true;
+        }
+        std::printf("%s expected true\n", label);
+        return false;
+    }
+
+    struct Vec3
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+    };
 }
 
 int main()
@@ -72,6 +89,68 @@ int main()
     adaptive.authorityForceScale = 0.5f;
     const auto adaptiveShared = solveMotorTargets(adaptive);
     ok &= expectNear("two hands share adaptive boosted authority", adaptiveShared.linearMaxForce, 4000.0f, 0.001f);
+
+    MotorInput rotationOnly = singleHand;
+    rotationOnly.enabled = true;
+    rotationOnly.rotationErrorDegrees = 60.0f;
+    rotationOnly.fullRotationErrorDegrees = 60.0f;
+    rotationOnly.maxForceMultiplier = 4.0f;
+    rotationOnly.mass = 100.0f;
+    rotationOnly.deltaTime = 1.0f;
+    rotationOnly.tauLerpSpeed = 1.0f;
+    rotationOnly.maxAngularTau = 0.35f;
+    const auto rotationOnlyOutput = solveMotorTargets(rotationOnly);
+    ok &= expectNear("rotation error does not boost linear force", rotationOnlyOutput.linearMaxForce, 2000.0f, 0.001f);
+    ok &= expectNear("rotation error drives angular tau only", rotationOnlyOutput.angularTau, 0.35f, 0.001f);
+
+    MotorInput positionOnlyPivot = singleHand;
+    positionOnlyPivot.pivotQualityAngularScalingEnabled = true;
+    positionOnlyPivot.pivotAuthorityPositionOnly = true;
+    positionOnlyPivot.pivotAuthorityNormalTrusted = false;
+    positionOnlyPivot.contactPatchSampleCount = 1;
+    positionOnlyPivot.longObjectLeverGameUnits = 8.0f;
+    const auto positionOnlyOutput = solveMotorTargets(positionOnlyPivot);
+    ok &= expectNear("position-only small weak pivot clamps angular authority", positionOnlyOutput.angularAuthorityScale, 0.30f, 0.001f);
+    ok &= expectNear("position-only small weak pivot reduces angular force", positionOnlyOutput.angularMaxForce, 24.0f, 0.001f);
+    ok &= expectNear("weak pivot raises angular damping multiplier", positionOnlyOutput.angularDampingMultiplier, 1.75f, 0.001f);
+    ok &= expectNear("weak pivot twist scale propagates", positionOnlyOutput.weakPivotTwistScale, 0.35f, 0.001f);
+
+    const auto trustedAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
+        .enabled = true,
+        .positionOnlyPivot = false,
+        .normalTrusted = true,
+        .contactPatchSampleCount = 4,
+        .longObjectLeverGameUnits = 8.0f,
+    });
+    ok &= expectNear("trusted normal with support keeps angular authority", trustedAuthority.authorityScale, 1.0f, 0.001f);
+
+    const auto lowSupportAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
+        .enabled = true,
+        .positionOnlyPivot = false,
+        .normalTrusted = true,
+        .contactPatchSampleCount = 1,
+        .longObjectLeverGameUnits = 8.0f,
+    });
+    ok &= expectNear("small low-support contact softens angular authority", lowSupportAuthority.authorityScale, 0.4875f, 0.001f);
+    ok &= expectNear("trusted low-support contact does not raise damping", lowSupportAuthority.dampingMultiplier, 1.0f, 0.001f);
+
+    const Vec3 twistLimited = scaleWeakPivotTwistAngularVelocity(Vec3{ 1.0f, 2.0f, 3.0f }, Vec3{ 0.0f, 0.0f, 2.0f }, true, 0.25f);
+    ok &= expectNear("weak pivot twist preserves swing x", twistLimited.x, 1.0f, 0.001f);
+    ok &= expectNear("weak pivot twist preserves swing y", twistLimited.y, 2.0f, 0.001f);
+    ok &= expectNear("weak pivot twist scales twist z", twistLimited.z, 0.75f, 0.001f);
+
+    const auto ratioClamp = rock::grab_inertia_policy::normalizeInverseInertiaAxesForGrab(1.0f, 100.0f, 4.0f, 10.0f, 0.05f);
+    ok &= expectTrue("inertia ratio clamp modifies axis", ratioClamp.modified);
+    ok &= expectNear("inertia ratio clamp x", ratioClamp.normalized[0], 1.0f, 0.001f);
+    ok &= expectNear("inertia ratio clamp y", ratioClamp.normalized[1], 10.0f, 0.001f);
+    ok &= expectNear("inertia ratio clamp z", ratioClamp.normalized[2], 4.0f, 0.001f);
+    ok &= expectNear("inertia ratio clamp output ratio", ratioClamp.normalizedRatio, 10.0f, 0.001f);
+
+    const auto minInertiaClamp = rock::grab_inertia_policy::normalizeInverseInertiaAxesForGrab(50.0f, 80.0f, 60.0f, 10.0f, 0.02f);
+    ok &= expectTrue("minimum inertia clamp modifies axes", minInertiaClamp.modified);
+    ok &= expectNear("minimum inertia clamp x", minInertiaClamp.normalized[0], 50.0f, 0.001f);
+    ok &= expectNear("minimum inertia clamp y", minInertiaClamp.normalized[1], 50.0f, 0.001f);
+    ok &= expectNear("minimum inertia clamp z", minInertiaClamp.normalized[2], 50.0f, 0.001f);
 
     ok &= expectNear("long object disabled angular scale",
         computeLongObjectAngularSpeedScale(false, 96.0f, 24.0f, 0.35f),

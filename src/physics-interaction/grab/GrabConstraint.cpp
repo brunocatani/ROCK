@@ -1,5 +1,6 @@
 #include "physics-interaction/grab/GrabConstraint.h"
 
+#include "physics-interaction/grab/GrabInertiaPolicy.h"
 #include "physics-interaction/grab/GrabConstraintMath.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
@@ -559,31 +560,48 @@ namespace rock
                 return false;
             }
 
-            float minI = (std::min)({ invI[0], invI[1], invI[2] });
-            float maxI = (std::max)({ invI[0], invI[1], invI[2] });
+            const auto normalizedInertia = grab_inertia_policy::normalizeInverseInertiaAxesForGrab(
+                invI[0],
+                invI[1],
+                invI[2],
+                g_rockConfig.rockGrabMaxInertiaRatio,
+                g_rockConfig.rockGrabMinInertia);
+            if (!normalizedInertia.valid) {
+                ROCK_LOG_WARN(GrabConstraint, "Skipping inertia normalization: invalid unpacked values");
+                return false;
+            }
 
-            float MAX_INERTIA_RATIO = g_rockConfig.rockGrabMaxInertiaRatio;
-            float ratio = maxI / minI;
-
-            if (ratio > MAX_INERTIA_RATIO) {
-                float maxAllowed = minI * MAX_INERTIA_RATIO;
-                for (int i = 0; i < 3; i++) {
-                    if (invI[i] > maxAllowed) {
-                        invI[i] = maxAllowed;
-                    }
-                }
+            if (normalizedInertia.modified) {
+                invI[0] = normalizedInertia.normalized[0];
+                invI[1] = normalizedInertia.normalized[1];
+                invI[2] = normalizedInertia.normalized[2];
 
                 packed[0] = repackBfloat16(invI[0]);
                 packed[1] = repackBfloat16(invI[1]);
                 packed[2] = repackBfloat16(invI[2]);
 
                 ROCK_LOG_DEBUG(GrabConstraint,
-                    "Inertia ratio clamped: {:.1f}x -> {:.1f}x "
+                    "Inertia clamped: ratio {:.1f}x -> {:.1f}x limit={:.1f} minInertiaMaxInv={:.6e} "
                     "packed [{},{},{}] -> [{},{},{}] float [{:.6e},{:.6e},{:.6e}]",
-                    ratio, MAX_INERTIA_RATIO, savedMotionState.savedPackedInertia[0], savedMotionState.savedPackedInertia[1], savedMotionState.savedPackedInertia[2], packed[0],
-                    packed[1], packed[2], invI[0], invI[1], invI[2]);
+                    normalizedInertia.originalRatio,
+                    normalizedInertia.normalizedRatio,
+                    normalizedInertia.ratioLimit,
+                    normalizedInertia.maxInverseInertiaFromMinimum,
+                    savedMotionState.savedPackedInertia[0],
+                    savedMotionState.savedPackedInertia[1],
+                    savedMotionState.savedPackedInertia[2],
+                    packed[0],
+                    packed[1],
+                    packed[2],
+                    invI[0],
+                    invI[1],
+                    invI[2]);
             } else {
-                ROCK_LOG_DEBUG(GrabConstraint, "Inertia ratio OK ({:.1f}x), no clamping needed", ratio);
+                ROCK_LOG_DEBUG(GrabConstraint,
+                    "Inertia OK: ratio {:.1f}x limit={:.1f} minInertiaMaxInv={:.6e}, no clamping needed",
+                    normalizedInertia.originalRatio,
+                    normalizedInertia.ratioLimit,
+                    normalizedInertia.maxInverseInertiaFromMinimum);
             }
 
             savedMotionState.inertiaModified = true;

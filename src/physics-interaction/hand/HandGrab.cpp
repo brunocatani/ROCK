@@ -356,6 +356,26 @@ namespace rock
             return RE::NiPoint3{ value.x * scale, value.y * scale, value.z * scale };
         }
 
+        grab_motion_controller::AngularAuthorityInput makeAngularAuthorityInput(const CanonicalGrabFrame& frame)
+        {
+            return grab_motion_controller::AngularAuthorityInput{
+                .enabled = g_rockConfig.rockGrabPivotQualityAngularScalingEnabled,
+                .positionOnlyPivot = frame.pivotAuthorityPositionOnly,
+                .normalTrusted = frame.pivotAuthorityNormalTrusted,
+                .contactPatchSampleCount = frame.contactPatchSampleCount,
+                .multiFingerContactGroupCount = frame.multiFingerContactGroupCount,
+                .multiFingerContactSpreadGameUnits = frame.multiFingerContactSpreadGameUnits,
+                .longObjectLeverGameUnits = frame.longObjectLeverGameUnits,
+                .smallObjectReferenceLeverGameUnits = g_rockConfig.rockGrabSmallObjectReferenceLeverGameUnits,
+                .positionOnlyAngularScale = g_rockConfig.rockGrabPositionOnlyAngularScale,
+                .smallObjectAngularScale = g_rockConfig.rockGrabSmallObjectAngularScale,
+                .lowContactSupportAngularScale = g_rockConfig.rockGrabLowContactSupportAngularScale,
+                .minAngularAuthorityScale = g_rockConfig.rockGrabMinAngularAuthorityScale,
+                .weakNormalAngularDampingMultiplier = g_rockConfig.rockGrabWeakNormalAngularDampingMultiplier,
+                .weakPivotTwistScale = g_rockConfig.rockGrabWeakPivotTwistScale,
+            };
+        }
+
         float sharedGrabAuthorityForceScale(bool peerHandStillHolding)
         {
             /*
@@ -3853,6 +3873,7 @@ namespace rock
             .baseAngularTau = scaleDriveValue(g_rockConfig.rockGrabAngularTau, looseAngularTauMultiplier),
             .collisionTau = scaleDriveValue(tauMin, looseCollisionTauMultiplier),
             .maxTau = g_rockConfig.rockGrabTauMax,
+            .maxAngularTau = g_rockConfig.rockGrabAngularTauMax,
             .currentLinearTau = _activeConstraint.linearMotor->tau,
             .currentAngularTau = _activeConstraint.angularMotor->tau,
             .tauLerpSpeed = g_rockConfig.rockGrabTauLerpSpeed,
@@ -3870,6 +3891,20 @@ namespace rock
             .fadeDuration = forceFadeInTime,
             .fadeStartAngularRatio =
                 angularForceRatioForMultiplier(g_rockConfig.rockGrabFadeInStartAngularRatio, looseAngularForceMultiplier),
+            .pivotQualityAngularScalingEnabled = g_rockConfig.rockGrabPivotQualityAngularScalingEnabled,
+            .pivotAuthorityPositionOnly = _grabFrame.pivotAuthorityPositionOnly,
+            .pivotAuthorityNormalTrusted = _grabFrame.pivotAuthorityNormalTrusted,
+            .contactPatchSampleCount = _grabFrame.contactPatchSampleCount,
+            .multiFingerContactGroupCount = _grabFrame.multiFingerContactGroupCount,
+            .multiFingerContactSpreadGameUnits = _grabFrame.multiFingerContactSpreadGameUnits,
+            .longObjectLeverGameUnits = _grabFrame.longObjectLeverGameUnits,
+            .smallObjectReferenceLeverGameUnits = g_rockConfig.rockGrabSmallObjectReferenceLeverGameUnits,
+            .positionOnlyAngularScale = g_rockConfig.rockGrabPositionOnlyAngularScale,
+            .smallObjectAngularScale = g_rockConfig.rockGrabSmallObjectAngularScale,
+            .lowContactSupportAngularScale = g_rockConfig.rockGrabLowContactSupportAngularScale,
+            .minAngularAuthorityScale = g_rockConfig.rockGrabMinAngularAuthorityScale,
+            .weakNormalAngularDampingMultiplier = g_rockConfig.rockGrabWeakNormalAngularDampingMultiplier,
+            .weakPivotTwistScale = g_rockConfig.rockGrabWeakPivotTwistScale,
         });
 
         _activeConstraint.linearMotor->tau = output.linearTau;
@@ -3882,7 +3917,8 @@ namespace rock
         _activeConstraint.linearMotor->maxForce = output.linearMaxForce;
 
         _activeConstraint.angularMotor->tau = output.angularTau;
-        _activeConstraint.angularMotor->damping = scaleDriveValue(g_rockConfig.rockGrabAngularDamping, looseAngularDampingMultiplier);
+        _activeConstraint.angularMotor->damping =
+            scaleDriveValue(g_rockConfig.rockGrabAngularDamping, looseAngularDampingMultiplier * output.angularDampingMultiplier);
         _activeConstraint.angularMotor->proportionalRecoveryVelocity =
             scaleDriveValue(g_rockConfig.rockGrabAngularProportionalRecovery, looseAngularRecoveryMultiplier);
         _activeConstraint.angularMotor->constantRecoveryVelocity =
@@ -3978,8 +4014,31 @@ namespace rock
             g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits,
             g_rockConfig.rockGrabLongObjectMinAngularScale);
         outMaxAngularSpeedRadiansPerSecond = (std::max)(0.25f, configuredMaxSpeed * budgetScale * outLongObjectAngularScale);
+        const auto angularAuthority = grab_motion_controller::computeAngularAuthorityScale(makeAngularAuthorityInput(_grabFrame));
+        RE::NiPoint3 authorityAngularVelocity = rawAngularVelocity;
+        if (angularAuthority.weakPivotTwistScale < 0.999f) {
+            RE::NiTransform liveBodyWorld{};
+            float comX = 0.0f;
+            float comY = 0.0f;
+            float comZ = 0.0f;
+            if (tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, liveBodyWorld) &&
+                havok_runtime::getBodyCOMWorld(world, _savedObjectState.bodyId, comX, comY, comZ)) {
+                const RE::NiPoint3 pivotWorldHavok =
+                    gamePointToHavokPoint(transform_math::localPointToWorld(liveBodyWorld, activeProxyConstraintPivotBLocalGame()));
+                const RE::NiPoint3 pivotToCenterOfMassHavok{
+                    comX - pivotWorldHavok.x,
+                    comY - pivotWorldHavok.y,
+                    comZ - pivotWorldHavok.z,
+                };
+                authorityAngularVelocity = grab_motion_controller::scaleWeakPivotTwistAngularVelocity(
+                    rawAngularVelocity,
+                    pivotToCenterOfMassHavok,
+                    true,
+                    angularAuthority.weakPivotTwistScale);
+            }
+        }
         const RE::NiPoint3 appliedAngularVelocity =
-            clampAngularVelocityVector(rawAngularVelocity, outMaxAngularSpeedRadiansPerSecond);
+            clampAngularVelocityVector(authorityAngularVelocity, outMaxAngularSpeedRadiansPerSecond);
         outAppliedAngularVelocityRadiansPerSecond = appliedAngularVelocity;
         outAppliedAngularSpeedRadiansPerSecond = vectorMagnitude(appliedAngularVelocity);
         if (!std::isfinite(outAppliedAngularSpeedRadiansPerSecond)) {
@@ -8016,6 +8075,8 @@ namespace rock
             bool hasTangentialVelocity = false;
             RE::NiPoint3 releaseLeverOriginHavok = _lastHeldHandPositionHavok;
             bool hasReleaseLeverOrigin = _hasLastHeldHandPositionHavok;
+            RE::NiPoint3 releaseCenterOfMassHavok{};
+            bool hasReleaseCenterOfMass = false;
             RE::NiTransform releaseBodyWorld{};
             if (tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, releaseBodyWorld)) {
                 releaseLeverOriginHavok =
@@ -8027,10 +8088,12 @@ namespace rock
                 float comY = 0.0f;
                 float comZ = 0.0f;
                 if (havok_runtime::getBodyCOMWorld(world, _savedObjectState.bodyId, comX, comY, comZ)) {
+                    releaseCenterOfMassHavok = RE::NiPoint3{ comX, comY, comZ };
+                    hasReleaseCenterOfMass = true;
                     tangentialVelocityHavok = grab_held_response::computeTangentialVelocityFromAngularSwing(
                         handAngularVelocity,
                         releaseLeverOriginHavok,
-                        RE::NiPoint3{ comX, comY, comZ });
+                        releaseCenterOfMassHavok);
                     hasTangentialVelocity = lengthSquared(tangentialVelocityHavok) > 0.000001f;
                 }
             }
@@ -8050,7 +8113,7 @@ namespace rock
                     .throwMultiplier = g_rockConfig.rockThrowVelocityMultiplier,
                     .maxVelocityHavok = g_rockConfig.rockGrabThrowMaxVelocityHavok,
                 });
-            const RE::NiPoint3 releaseAngularVelocity =
+            const RE::NiPoint3 rawReleaseAngularVelocity =
                 grab_held_response::composeControllerReleaseAngularVelocity(grab_held_response::ReleaseAngularVelocityInput<RE::NiPoint3>{
                     .controllerDerivedEnabled = g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled,
                     .hasHandAngularVelocity = _heldHandVelocityHistoryCount > 0,
@@ -8058,6 +8121,26 @@ namespace rock
                     .angularVelocityScale = g_rockConfig.rockGrabThrowAngularVelocityScale,
                     .maxAngularVelocityRadiansPerSecond = g_rockConfig.rockGrabThrowMaxAngularVelocityRadiansPerSecond,
                 });
+            RE::NiPoint3 releaseAngularVelocity = rawReleaseAngularVelocity;
+            const auto angularAuthority = grab_motion_controller::computeAngularAuthorityScale(makeAngularAuthorityInput(_grabFrame));
+            if (angularAuthority.weakPivotTwistScale < 0.999f && hasReleaseLeverOrigin) {
+                if (!hasReleaseCenterOfMass) {
+                    float comX = 0.0f;
+                    float comY = 0.0f;
+                    float comZ = 0.0f;
+                    if (havok_runtime::getBodyCOMWorld(world, _savedObjectState.bodyId, comX, comY, comZ)) {
+                        releaseCenterOfMassHavok = RE::NiPoint3{ comX, comY, comZ };
+                        hasReleaseCenterOfMass = true;
+                    }
+                }
+                if (hasReleaseCenterOfMass) {
+                    releaseAngularVelocity = grab_motion_controller::scaleWeakPivotTwistAngularVelocity(
+                        rawReleaseAngularVelocity,
+                        releaseCenterOfMassHavok - releaseLeverOriginHavok,
+                        true,
+                        angularAuthority.weakPivotTwistScale);
+                }
+            }
             const bool overrideAngularVelocity =
                 g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled && lengthSquared(releaseAngularVelocity) > 0.000001f;
             outcome.velocity.available = true;

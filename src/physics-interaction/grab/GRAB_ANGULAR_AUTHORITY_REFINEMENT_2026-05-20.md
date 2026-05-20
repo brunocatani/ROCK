@@ -1,0 +1,47 @@
+# Grab Angular Authority Refinement - 2026-05-20
+
+Project: ROCK
+Confidence: medium-high
+Verification method: local ROCK source inspection, local HIGGS source comparison, policy tests, and local build/test validation.
+
+## Problem
+
+Long objects and compact objects such as balls or pocket watches could still rotate too freely around the grab point, especially when contact patch acquisition produced only position authority or an untrusted normal.
+
+The previous contact-patch pivot authority change correctly prevented poor patch normals from becoming orientation authority, but the grab motor still treated the direct FO4VR angular velocity command as if the pivot had full angular support.
+
+## HIGGS Reference Checked
+
+Local source only:
+
+- `F:\fo4dev\skirymvr_mods\source_codes\higgs\include\config.h`
+- `F:\fo4dev\skirymvr_mods\source_codes\higgs\src\hand.cpp`
+- `F:\fo4dev\skirymvr_mods\source_codes\higgs\src\constraint.cpp`
+
+Relevant HIGGS behavior:
+
+- dynamic grabs use finite linear/angular motor force, not infinite keyframe rotation;
+- angular force follows linear force through `grabConstraintAngularToLinearForceRatio`;
+- colliding objects lerp toward lower tau values;
+- grabbed object inverse inertia is clamped by max axis ratio and by `grabbedObjectMinInertia`;
+- pulled objects use high angular damping to prevent uncontrolled spin.
+
+## ROCK Decision
+
+ROCK keeps its FO4VR-native hard-keyframe angular velocity writer as the stable runtime angular path. HIGGS updates a ragdoll motor target directly, but ROCK's current verified boundary computes FO4VR's native hard-keyframe angular vector and limits it with the finite grab motor budget.
+
+The added logic therefore does not port HIGGS 1:1. It applies HIGGS's stability principles at ROCK's authority layer:
+
+- linear position error drives linear tau and linear force;
+- angular rotation error drives angular tau separately;
+- weak pivot/contact evidence scales angular motor force and angular damping;
+- compact weak-contact objects receive extra angular softness;
+- weak pivots reduce twist around the pivot-to-COM axis while preserving swing;
+- release angular velocity uses the same weak-pivot twist limiter;
+- grabbed inertia normalization now also applies HIGGS's minimum inertia clamp.
+
+## Runtime Implication
+
+Objects with trusted normals and strong contact support retain normal authority. Position-only pivots, untrusted normals, single-point/low-support contact patches, and small compact weak-contact objects get softer angular authority, which should reduce spin around the grab point without making translation feel sluggish.
+
+No production INI was edited by this note. The packaged defaults in `data/config/ROCK.ini` document the new tunables.

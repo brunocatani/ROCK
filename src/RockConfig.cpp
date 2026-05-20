@@ -50,6 +50,15 @@ namespace
     constexpr float kDefaultGrabThrowMaxAngularVelocityRadiansPerSecond = 18.0f;
     constexpr float kDefaultGrabLongObjectReferenceLeverGameUnits = 24.0f;
     constexpr float kDefaultGrabLongObjectMinAngularScale = 0.35f;
+    constexpr float kDefaultGrabAngularTauMax = 0.35f;
+    constexpr float kDefaultGrabPositionOnlyAngularScale = 0.55f;
+    constexpr float kDefaultGrabSmallObjectReferenceLeverGameUnits = 12.0f;
+    constexpr float kDefaultGrabSmallObjectAngularScale = 0.65f;
+    constexpr float kDefaultGrabLowContactSupportAngularScale = 0.75f;
+    constexpr float kDefaultGrabMinAngularAuthorityScale = 0.30f;
+    constexpr float kDefaultGrabWeakNormalAngularDampingMultiplier = 1.75f;
+    constexpr float kDefaultGrabWeakPivotTwistScale = 0.35f;
+    constexpr float kDefaultGrabMinInertia = 0.01f;
     constexpr float kDefaultGrabThumbSurfaceSafetyMarginGameUnits = 1.0f;
     const RE::NiPoint3 kDefaultPalmNormalHandspace{ 0.0f, 0.0f, 1.0f };
     constexpr bool kDefaultSeeThroughScopesRightEyeDominant = true;
@@ -306,6 +315,7 @@ namespace rock
         rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier;
         rockGrabTauMin = 0.01f;
         rockGrabTauMax = 0.8f;
+        rockGrabAngularTauMax = kDefaultGrabAngularTauMax;
         rockGrabTauLerpSpeed = 0.5f;
         rockGrabAdaptiveMotorEnabled = true;
         rockGrabAdaptivePositionFullError = 20.0f;
@@ -314,8 +324,17 @@ namespace rock
         rockGrabLongObjectAngularScalingEnabled = true;
         rockGrabLongObjectReferenceLeverGameUnits = kDefaultGrabLongObjectReferenceLeverGameUnits;
         rockGrabLongObjectMinAngularScale = kDefaultGrabLongObjectMinAngularScale;
+        rockGrabPivotQualityAngularScalingEnabled = true;
+        rockGrabPositionOnlyAngularScale = kDefaultGrabPositionOnlyAngularScale;
+        rockGrabSmallObjectReferenceLeverGameUnits = kDefaultGrabSmallObjectReferenceLeverGameUnits;
+        rockGrabSmallObjectAngularScale = kDefaultGrabSmallObjectAngularScale;
+        rockGrabLowContactSupportAngularScale = kDefaultGrabLowContactSupportAngularScale;
+        rockGrabMinAngularAuthorityScale = kDefaultGrabMinAngularAuthorityScale;
+        rockGrabWeakNormalAngularDampingMultiplier = kDefaultGrabWeakNormalAngularDampingMultiplier;
+        rockGrabWeakPivotTwistScale = kDefaultGrabWeakPivotTwistScale;
 
         rockGrabMaxInertiaRatio = 10.0f;
+        rockGrabMinInertia = kDefaultGrabMinInertia;
 
         rockGrabMaxDeviation = 50.0f;
         rockGrabMaxDeviationTime = 2.0f;
@@ -1082,6 +1101,13 @@ namespace rock
 
         rockGrabTauMin = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauMin", rockGrabTauMin));
         rockGrabTauMax = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauMax", rockGrabTauMax));
+        rockGrabAngularTauMax = readClampedFloat(ini,
+            SECTION,
+            "fGrabAngularTauMax",
+            rockGrabAngularTauMax,
+            kDefaultGrabAngularTauMax,
+            0.01f,
+            0.8f);
         rockGrabTauLerpSpeed = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauLerpSpeed", rockGrabTauLerpSpeed));
         rockGrabAdaptiveMotorEnabled = ini.GetBoolValue(SECTION, "bGrabAdaptiveMotorEnabled", rockGrabAdaptiveMotorEnabled);
         rockGrabAdaptivePositionFullError = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAdaptivePositionFullError", rockGrabAdaptivePositionFullError));
@@ -1100,8 +1126,66 @@ namespace rock
             std::clamp(std::isfinite(rockGrabLongObjectMinAngularScale) ? rockGrabLongObjectMinAngularScale : kDefaultGrabLongObjectMinAngularScale,
                 0.05f,
                 1.0f);
+        rockGrabPivotQualityAngularScalingEnabled =
+            ini.GetBoolValue(SECTION, "bGrabPivotQualityAngularScalingEnabled", rockGrabPivotQualityAngularScalingEnabled);
+        rockGrabPositionOnlyAngularScale = readClampedFloat(ini,
+            SECTION,
+            "fGrabPositionOnlyAngularScale",
+            rockGrabPositionOnlyAngularScale,
+            kDefaultGrabPositionOnlyAngularScale,
+            0.05f,
+            1.0f);
+        rockGrabSmallObjectReferenceLeverGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fGrabSmallObjectReferenceLeverGameUnits",
+            rockGrabSmallObjectReferenceLeverGameUnits,
+            kDefaultGrabSmallObjectReferenceLeverGameUnits,
+            1.0f,
+            120.0f);
+        rockGrabSmallObjectAngularScale = readClampedFloat(ini,
+            SECTION,
+            "fGrabSmallObjectAngularScale",
+            rockGrabSmallObjectAngularScale,
+            kDefaultGrabSmallObjectAngularScale,
+            0.05f,
+            1.0f);
+        rockGrabLowContactSupportAngularScale = readClampedFloat(ini,
+            SECTION,
+            "fGrabLowContactSupportAngularScale",
+            rockGrabLowContactSupportAngularScale,
+            kDefaultGrabLowContactSupportAngularScale,
+            0.05f,
+            1.0f);
+        rockGrabMinAngularAuthorityScale = readClampedFloat(ini,
+            SECTION,
+            "fGrabMinAngularAuthorityScale",
+            rockGrabMinAngularAuthorityScale,
+            kDefaultGrabMinAngularAuthorityScale,
+            0.05f,
+            1.0f);
+        rockGrabWeakNormalAngularDampingMultiplier = readClampedFloat(ini,
+            SECTION,
+            "fGrabWeakNormalAngularDampingMultiplier",
+            rockGrabWeakNormalAngularDampingMultiplier,
+            kDefaultGrabWeakNormalAngularDampingMultiplier,
+            1.0f,
+            8.0f);
+        rockGrabWeakPivotTwistScale = readClampedFloat(ini,
+            SECTION,
+            "fGrabWeakPivotTwistScale",
+            rockGrabWeakPivotTwistScale,
+            kDefaultGrabWeakPivotTwistScale,
+            0.0f,
+            1.0f);
 
         rockGrabMaxInertiaRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxInertiaRatio", rockGrabMaxInertiaRatio));
+        rockGrabMinInertia = readClampedFloat(ini,
+            SECTION,
+            "fGrabMinInertia",
+            rockGrabMinInertia,
+            kDefaultGrabMinInertia,
+            0.0001f,
+            100.0f);
 
         rockGrabMaxDeviation = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxDeviation", rockGrabMaxDeviation));
         rockGrabMaxDeviationTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxDeviationTime", rockGrabMaxDeviationTime));
