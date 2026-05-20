@@ -721,6 +721,9 @@ namespace rock::held_grab_cc_policy
         if (!manifoldEntries) {
             return GeneratedContactBufferView{
                 .valid = false,
+                .constraintEntries = constraintEntries,
+                .manifoldCountPtr = manifoldCountPtr,
+                .constraintCountPtr = constraintCountPtr,
                 .manifoldCount = manifoldCount,
                 .constraintCount = constraintCount,
                 .reason = "missingManifoldEntries",
@@ -760,6 +763,31 @@ namespace rock::held_grab_cc_policy
             .constraintCount = constraintCount,
             .pairCount = manifoldCount < constraintCount ? manifoldCount : constraintCount,
             .reason = "ok",
+        };
+    }
+
+    inline GeneratedContactFilterResult clearGeneratedConstraintOnlyContacts(const GeneratedContactBufferView& view)
+    {
+        if (view.manifoldEntries || !view.constraintEntries || !view.constraintCountPtr || view.constraintCount <= 0) {
+            return GeneratedContactFilterResult{
+                .valid = false,
+                .originalPairCount = view.constraintCount,
+                .reason = "notConstraintOnlyContacts",
+            };
+        }
+
+        const int originalCount = view.constraintCount;
+        if (view.manifoldCountPtr) {
+            *view.manifoldCountPtr = 0;
+        }
+        *view.constraintCountPtr = 0;
+
+        return GeneratedContactFilterResult{
+            .valid = true,
+            .originalPairCount = originalCount,
+            .keptPairCount = 0,
+            .removedPairCount = originalCount,
+            .reason = "clearedConstraintOnlyContacts",
         };
     }
 

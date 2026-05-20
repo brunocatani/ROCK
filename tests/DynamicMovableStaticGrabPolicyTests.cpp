@@ -1,6 +1,7 @@
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
+#include "physics-interaction/grab/GrabHeldObject.h"
 
 #include <array>
 #include <cstdint>
@@ -275,6 +276,25 @@ int main()
         collision_layer_policy::nativeCharacterControllerObjectPairsMatch(
             matrix.data(),
             collision_layer_policy::nativeCharacterControllerExpectedMask(originalControllerMask, false)));
+
+    {
+        alignas(void*) char manifold[sizeof(char*) + sizeof(int)]{};
+        alignas(void*) char simplex[held_grab_cc_policy::kGeneratedConstraintCountOffset + sizeof(int)]{};
+        alignas(void*) char constraintRows[held_grab_cc_policy::kGeneratedContactStride * 2]{};
+
+        *reinterpret_cast<char**>(manifold) = nullptr;
+        *reinterpret_cast<int*>(manifold + sizeof(char*)) = 0;
+        *reinterpret_cast<char**>(simplex + held_grab_cc_policy::kGeneratedConstraintRowsOffset) = constraintRows;
+        *reinterpret_cast<int*>(simplex + held_grab_cc_policy::kGeneratedConstraintCountOffset) = 2;
+
+        const auto view = held_grab_cc_policy::makeGeneratedContactBufferView(manifold, simplex);
+        ok &= expectFalse("constraint-only player controller view is not body-identifiable", view.valid);
+        const auto cleared = held_grab_cc_policy::clearGeneratedConstraintOnlyContacts(view);
+        ok &= expectTrue("constraint-only player controller contacts can be cleared fail-closed", cleared.valid);
+        ok &= expectTrue("constraint-only player controller contacts remove every unidentified row", cleared.removedPairCount == 2);
+        ok &= expectTrue("constraint-only player controller clear zeros native constraint count",
+            *reinterpret_cast<int*>(simplex + held_grab_cc_policy::kGeneratedConstraintCountOffset) == 0);
+    }
 
     return ok ? 0 : 1;
 }

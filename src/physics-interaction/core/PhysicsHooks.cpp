@@ -1159,6 +1159,18 @@ namespace rock
 
             const auto contactBuffers = held_grab_cc_policy::makeGeneratedContactBufferView(manifold, simplexInput);
             if (!contactBuffers.valid) {
+                if (playerControllerFilterActive && std::string_view(contactBuffers.reason) == "missingManifoldEntries") {
+                    const auto clearResult = held_grab_cc_policy::clearGeneratedConstraintOnlyContacts(contactBuffers);
+                    if (clearResult.valid) {
+                        ROCK_LOG_SAMPLE_DEBUG(CC,
+                            g_rockConfig.rockLogSampleMilliseconds,
+                            "Cleared {} player character-controller constraint-only contacts before original listener reason={} heldFilter={} playerObjectFilter={}",
+                            clearResult.removedPairCount,
+                            clearResult.reason,
+                            heldFilterActive ? "on" : "off",
+                            playerControllerFilterActive ? "on" : "off");
+                    }
+                }
                 if (g_rockConfig.rockDebugVerboseLogging) {
                     ROCK_LOG_SAMPLE_DEBUG(CC,
                         g_rockConfig.rockLogSampleMilliseconds,

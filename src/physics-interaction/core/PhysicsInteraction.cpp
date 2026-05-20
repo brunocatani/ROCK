@@ -2815,11 +2815,20 @@ namespace rock
                 continue;
             }
 
-            collision_suppression_registry::globalCollisionSuppressionRegistry().acquire(
-                hknp,
-                bodyId,
-                collision_suppression_registry::CollisionSuppressionOwner::NativePlayerBody,
-                context ? context : "native-player-body-refresh");
+            std::uint32_t currentFilter = 0;
+            if (!body_collision::tryReadFilterInfo(hknp, RE::hknpBodyId{ bodyId }, currentFilter)) {
+                ROCK_LOG_SAMPLE_WARN(Hand,
+                    1000,
+                    "Native player collision suppression refresh skipped: bodyId={} context={} cannot read filter",
+                    bodyId,
+                    context ? context : "");
+                continue;
+            }
+
+            const std::uint32_t refreshedFilter = currentFilter | collision_suppression_registry::kSuppressionNoCollideBit;
+            if (refreshedFilter != currentFilter) {
+                body_collision::setFilterInfo(hknp, RE::hknpBodyId{ bodyId }, refreshedFilter);
+            }
         }
     }
 
@@ -2910,7 +2919,9 @@ namespace rock
         }
         scanNode(scanNode, f4cf::f4vr::getFirstPersonSkeleton(), 64);
         scanNode(scanNode, f4cf::f4vr::getRootNode(), 64);
-        scanNode(scanNode, f4cf::f4vr::getWorldRootNode(), 64);
+        if (auto* player = f4cf::f4vr::getPlayer(); player && player->unkF0) {
+            scanNode(scanNode, player->unkF0->rootNode, 64);
+        }
 
         if (scanContext.overflow && !_nativePlayerCollisionSuppressionOverflowLogged) {
             _nativePlayerCollisionSuppressionOverflowLogged = true;
@@ -2977,6 +2988,11 @@ namespace rock
             return;
         }
 
+        /*
+         * This pre-collide callback runs inside the same native Havok step path
+         * used for generated body writes. It only reasserts bit 14 on cached
+         * native player bodies; registry ownership is not changed from here.
+         */
         self->refreshNativePlayerCollisionSuppression(world, "native-player-body-pre-collide");
         self->driveGeneratedCollidersFromPhysicsSubstep(world, timing);
     }
