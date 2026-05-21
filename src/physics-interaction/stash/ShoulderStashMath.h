@@ -131,6 +131,19 @@ namespace rock::shoulder_stash
         return source == EvidenceSource::HmdBackVolume;
     }
 
+    [[nodiscard]] inline bool hmdBackBehindGateAllows(float hmdForwardOffsetGameUnits, float minBehindGameUnits) noexcept
+    {
+        if (!std::isfinite(hmdForwardOffsetGameUnits)) {
+            return false;
+        }
+
+        if (!std::isfinite(minBehindGameUnits) || minBehindGameUnits <= 0.0f) {
+            return true;
+        }
+
+        return hmdForwardOffsetGameUnits <= -minBehindGameUnits;
+    }
+
     [[nodiscard]] inline bool shoulderStashDwellIdentityMatches(
         body_zone::BodyZoneKind previousZone,
         EvidenceSource previousSource,

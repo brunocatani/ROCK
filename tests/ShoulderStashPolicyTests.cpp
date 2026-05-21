@@ -66,6 +66,14 @@ int main()
         isHmdBackVolumeEvidenceSource(EvidenceSource::HmdBackVolume));
     ok &= expectFalse("body source is not HMD back",
         isHmdBackVolumeEvidenceSource(EvidenceSource::BodyZoneCollider));
+    ok &= expectTrue("HMD back gate allows a probe behind the headset",
+        hmdBackBehindGateAllows(-18.0f, 4.0f));
+    ok &= expectFalse("HMD back gate rejects the old forward-leaking sphere edge",
+        hmdBackBehindGateAllows(1.0f, 4.0f));
+    ok &= expectFalse("HMD back gate rejects probes short of the rear threshold",
+        hmdBackBehindGateAllows(-3.9f, 4.0f));
+    ok &= expectTrue("HMD back gate can be disabled for compatibility",
+        hmdBackBehindGateAllows(1.0f, 0.0f));
 
     ok &= expectTrue("HMD primary to collider backup preserves dwell on same zone",
         shoulderStashDwellIdentityMatches(

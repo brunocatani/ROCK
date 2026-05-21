@@ -358,6 +358,11 @@ namespace rock::shoulder_stash
                 right = RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
             }
 
+            const float hmdForwardOffset = dot(sub(hmdProbe.pointGame, input.hmdPositionWorld), forward);
+            if (!hmdBackBehindGateAllows(hmdForwardOffset, input.config.hmdBackMinBehindGameUnits)) {
+                return best;
+            }
+
             auto considerHmdBackSide = [&](bool leftSide) {
                 const auto offset = leftSide ? input.config.hmdBackLeftOffsetGameUnits : input.config.hmdBackRightOffsetGameUnits;
                 const auto center =
@@ -365,7 +370,7 @@ namespace rock::shoulder_stash
                 const float radius = (std::max)(input.config.hmdBackRadiusGameUnits, 0.1f);
                 const body_zone::BodyZoneKind zone = leftSide ? body_zone::BodyZoneKind::LeftShoulder : body_zone::BodyZoneKind::RightShoulder;
                 const bool continuing = runtime.candidate && runtime.zone == zone && runtime.source == EvidenceSource::HmdBackVolume;
-                const float padding = continuing ? input.config.exitPaddingGameUnits : input.config.enterPaddingGameUnits;
+                const float padding = continuing ? input.config.hmdBackExitPaddingGameUnits : input.config.hmdBackEnterPaddingGameUnits;
                 const float threshold = radius + (std::max)(0.0f, padding);
                 const float distance = length(sub(hmdProbe.pointGame, center));
                 if (!std::isfinite(distance) || distance > threshold) {

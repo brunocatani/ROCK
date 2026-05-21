@@ -346,9 +346,12 @@ namespace rock
         rockShoulderStashMaxSpeedGameUnitsPerSecond = 140.0f;
         rockShoulderStashRecentContactFrames = 4;
         rockShoulderStashSustainedContactMissFrames = 18;
-        rockShoulderStashHmdBackRightOffsetGameUnits = RE::NiPoint3(14.0f, -12.0f, -6.85f);
-        rockShoulderStashHmdBackLeftOffsetGameUnits = RE::NiPoint3(-14.0f, -12.0f, -6.85f);
+        rockShoulderStashHmdBackRightOffsetGameUnits = RE::NiPoint3(14.0f, -18.0f, -6.85f);
+        rockShoulderStashHmdBackLeftOffsetGameUnits = RE::NiPoint3(-14.0f, -18.0f, -6.85f);
         rockShoulderStashHmdBackRadiusGameUnits = 11.0f;
+        rockShoulderStashHmdBackEnterPaddingGameUnits = 0.0f;
+        rockShoulderStashHmdBackExitPaddingGameUnits = 2.0f;
+        rockShoulderStashHmdBackMinBehindGameUnits = 4.0f;
         rockShoulderStashSkipActivateBooks = true;
         rockShoulderStashSkipActivateNotes = true;
         rockShoulderStashShowCollectedNotifications = true;
@@ -1504,6 +1507,12 @@ namespace rock
             "fShoulderStashHmdBackLeftOffsetZGameUnits",
             rockShoulderStashHmdBackLeftOffsetGameUnits);
         readClampedFloat("fShoulderStashHmdBackRadiusGameUnits", rockShoulderStashHmdBackRadiusGameUnits, 11.0f, 1.0f, 80.0f);
+        readClampedFloat(
+            "fShoulderStashHmdBackEnterPaddingGameUnits", rockShoulderStashHmdBackEnterPaddingGameUnits, 0.0f, 0.0f, 40.0f);
+        readClampedFloat(
+            "fShoulderStashHmdBackExitPaddingGameUnits", rockShoulderStashHmdBackExitPaddingGameUnits, 2.0f, 0.0f, 60.0f);
+        readClampedFloat(
+            "fShoulderStashHmdBackMinBehindGameUnits", rockShoulderStashHmdBackMinBehindGameUnits, 4.0f, 0.0f, 40.0f);
         rockShoulderStashSkipActivateBooks =
             ini.GetBoolValue(SECTION, "bShoulderStashSkipActivateBooks", rockShoulderStashSkipActivateBooks);
         rockShoulderStashSkipActivateNotes =
