@@ -72,9 +72,9 @@ namespace rock
         bool rockPerformanceProfilerOverlayText = false;
 
         RE::NiPoint3 rockPalmNormalHandspace = RE::NiPoint3(0.0f, 0.0f, 1.0f);
-        RE::NiPoint3 rockPointingVectorHandspace = RE::NiPoint3(0.0f, 0.0f, 1.0f);
+        RE::NiPoint3 rockPointingVectorHandspace = RE::NiPoint3(0.0f, -1.0f, 0.0f);
         bool rockReversePalmNormal = true;
-        bool rockReverseFarGrabNormal = true;
+        bool rockReverseFarGrabNormal = false;
 
         bool rockWeaponCollisionEnabled = true;
         bool rockWeaponCollisionBlocksProjectiles = false;

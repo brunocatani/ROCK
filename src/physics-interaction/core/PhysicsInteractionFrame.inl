@@ -35,9 +35,7 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
         input.rawHandWorld = getInteractionHandTransform(isLeft);
         input.handNode = getInteractionHandNode(isLeft);
         root_flattened_finger_skeleton_runtime::SemanticHandFrame semanticHandFrame{};
-        const bool hasSemanticHandFrame =
-            root_flattened_finger_skeleton_runtime::resolveLiveSemanticHandFrame(isLeft, semanticHandFrame);
-        if (!hasSemanticHandFrame) {
+        if (!_handBoneCache.getSemanticHandFrame(isLeft, semanticHandFrame)) {
             input.disabled = true;
             return input;
         }
@@ -49,7 +47,11 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
         }
         input.palmNormalWorld =
             input.hasGrabAuthorityWorld ? computeGrabAuthorityPalmFaceWorld(input.grabAuthorityWorld) : semanticHandFrame.palmFaceWorld;
-        input.pointingWorld = computePointingVectorFromHandBasis(input.rawHandWorld, isLeft);
+        input.pointingWorld = pointing_direction_math::applyFarGrabNormalReversal(
+            root_flattened_finger_skeleton_runtime::transformSemanticHandFrameDirection(
+                semanticHandFrame,
+                g_rockConfig.rockPointingVectorHandspace),
+            g_rockConfig.rockReverseFarGrabNormal);
         input.pinchDirectionWorld =
             input.hasGrabAuthorityWorld ? transformGrabAuthorityTuningDirection(input.grabAuthorityWorld, g_rockConfig.rockGrabPinchDetectionDirectionHandspace) :
                                           root_flattened_finger_skeleton_runtime::transformSemanticHandFrameDirection(

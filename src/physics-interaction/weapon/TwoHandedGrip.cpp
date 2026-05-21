@@ -343,6 +343,21 @@ namespace rock
 
     }
 
+    /*
+     * TWO-HANDED WEAPON HANDSPACE WARNING
+     *
+     * TwoHandedGrip is a quarantined support-grip subsystem, not a source of
+     * truth for generic hand axes, dynamic object grab, palm pocket, pinch
+     * pocket, soft contact, or public palm API behavior. Its weapon-specific
+     * grip solver still has historical assumptions and is intentionally left as
+     * a separate compatibility island until it is replaced.
+     *
+     * Do not copy hand-space logic from this file into new hand interaction
+     * code. Shared runtime hand authority must come from HandBoneCache's cached
+     * root-flattened SemanticHandFrame. Legacy authored handspace in
+     * HandFrame.h exists only for old diagnostics and this isolated weapon path
+     * if it ever needs restoration work.
+     */
     static bool tryGetSemanticHandFrame(bool isLeft, root_flattened_finger_skeleton_runtime::SemanticHandFrame& outFrame)
     {
         return root_flattened_finger_skeleton_runtime::resolveLiveSemanticHandFrame(isLeft, outFrame);

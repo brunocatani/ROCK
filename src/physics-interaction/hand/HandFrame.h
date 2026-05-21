@@ -1,7 +1,24 @@
 #pragma once
 
 /*
- * Hand frame helpers are grouped here because handspace convention, palm transform, and pointing direction define the same coordinate authority.
+ * LEGACY HANDSPACE WARNING
+ *
+ * This file contains the old authored handspace conversion where authored
+ * X=fingers, authored Y=cross-palm, and authored Z=palm thickness. That is NOT
+ * the production grab/palm/pinch/finger-pose authority anymore.
+ *
+ * New runtime hand code must use the unified root-flattened skeleton convention
+ * from HandSkeleton.h / SemanticHandFrame:
+ *   X  = fingers
+ *   Y  = palm depth/back
+ *   -Y = palm face
+ *   Z  = across palm
+ *
+ * Do not use these legacy helpers for dynamic grab, palm pocket, pinch pocket,
+ * finger curl planes, public palm API output, soft-contact palm normals, or any
+ * new hand-space feature. They remain only as a quarantined compatibility
+ * surface for old authored handspace diagnostics and the known two-handed
+ * weapon handspace exception if that path ever needs to be restored or replaced.
  */
 
 
@@ -10,6 +27,14 @@
 namespace rock::handspace_convention
 {
     /*
+     * LEGACY CONVERSION ONLY.
+     *
+     * This authored Y/Z swap is intentionally not the unified flatroot skeleton
+     * convention. Treat any new caller as suspicious unless it is explicitly
+     * maintaining the old two-handed weapon handspace exception or legacy
+     * telemetry comparing old configured offsets against the real generated
+     * palm/proxy frame.
+     *
      * Legacy root-flattened handspace callers use this authored convention:
      * authored X = fingers, authored Y = cross-palm, authored Z = palm thickness.
      * The resolved game bone transform already carries handedness, so left/right

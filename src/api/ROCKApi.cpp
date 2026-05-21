@@ -170,7 +170,7 @@ namespace
 
         bool isLeft = getIsLeftForHandEnum(hand);
         root_flattened_finger_skeleton_runtime::SemanticHandFrame frame{};
-        if (!root_flattened_finger_skeleton_runtime::resolveLiveSemanticHandFrame(isLeft, frame))
+        if (!pi->tryGetRootFlattenedSemanticHandFrame(isLeft, frame))
             return RE::NiPoint3{};
 
         return frame.palmAnchorWorld.translate;
@@ -184,7 +184,7 @@ namespace
 
         bool isLeft = getIsLeftForHandEnum(hand);
         root_flattened_finger_skeleton_runtime::SemanticHandFrame frame{};
-        if (!root_flattened_finger_skeleton_runtime::resolveLiveSemanticHandFrame(isLeft, frame))
+        if (!pi->tryGetRootFlattenedSemanticHandFrame(isLeft, frame))
             return RE::NiPoint3{};
 
         return frame.palmFaceWorld;

@@ -15,6 +15,11 @@
 
 #include "RE/NetImmerse/NiTransform.h"
 
+namespace rock::root_flattened_finger_skeleton_runtime
+{
+    struct SemanticHandFrame;
+}
+
 namespace rock
 {
     struct DirectSkeletonBoneEntry
@@ -92,6 +97,19 @@ namespace rock
 {
     void logHandBoneCacheResolved(const void* skeleton, const void* boneTree, bool inPowerArmor);
 
+    struct CachedSemanticHandFrameData
+    {
+        RE::NiTransform rawHandWorld{};
+        RE::NiTransform palmAnchorWorld{};
+        RE::NiPoint3 fingerBaseCenterWorld{};
+        RE::NiPoint3 fingerForwardWorld{ 1.0f, 0.0f, 0.0f };
+        RE::NiPoint3 palmDepthWorld{ 0.0f, 1.0f, 0.0f };
+        RE::NiPoint3 palmFaceWorld{ 0.0f, -1.0f, 0.0f };
+        RE::NiPoint3 acrossPalmWorld{ 0.0f, 0.0f, 1.0f };
+        float palmLength = 0.0f;
+        bool valid = false;
+    };
+
     class HandBoneCache
     {
     public:
@@ -101,42 +119,7 @@ namespace rock
          * copied transforms, not scene-node pointers, so it must be refreshed
          * once per frame before grab, selection, and held-object math run.
          */
-        bool resolve()
-        {
-            DirectSkeletonBoneSnapshot snapshot{};
-            if (!_reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
-                    skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                    snapshot)) {
-                clearResolvedState();
-                return false;
-            }
-
-            RE::NiTransform rightHand{};
-            RE::NiTransform leftHand{};
-            if (!findBone(snapshot, "RArm_Hand", rightHand) || !findBone(snapshot, "LArm_Hand", leftHand)) {
-                clearResolvedState();
-                return false;
-            }
-
-            const bool changed =
-                !_ready ||
-                snapshot.skeleton != _skeleton ||
-                snapshot.boneTree != _boneTree ||
-                snapshot.inPowerArmor != _inPowerArmor;
-
-            _skeleton = snapshot.skeleton;
-            _boneTree = snapshot.boneTree;
-            _inPowerArmor = snapshot.inPowerArmor;
-            _rightHandWorld = rightHand;
-            _leftHandWorld = leftHand;
-            _ready = true;
-
-            if (changed) {
-                logHandBoneCacheResolved(_skeleton, _boneTree, _inPowerArmor);
-            }
-
-            return true;
-        }
+        bool resolve();
 
         void reset()
         {
@@ -144,12 +127,17 @@ namespace rock
             _reader.resetCache();
         }
 
-        [[nodiscard]] bool isReady() const { return _ready && _skeleton && _boneTree; }
+        [[nodiscard]] bool isReady() const
+        {
+            return _ready && _skeleton && _boneTree && _rightSemanticHandFrame.valid && _leftSemanticHandFrame.valid;
+        }
 
         [[nodiscard]] RE::NiTransform getWorldTransform(bool isLeft) const
         {
             return isLeft ? _leftHandWorld : _rightHandWorld;
         }
+
+        [[nodiscard]] bool getSemanticHandFrame(bool isLeft, root_flattened_finger_skeleton_runtime::SemanticHandFrame& outFrame) const;
 
         [[nodiscard]] const void* getSkeleton() const { return _skeleton; }
         [[nodiscard]] const void* getBoneTree() const { return _boneTree; }
@@ -163,6 +151,8 @@ namespace rock
             _inPowerArmor = false;
             _rightHandWorld = {};
             _leftHandWorld = {};
+            _rightSemanticHandFrame = {};
+            _leftSemanticHandFrame = {};
             _ready = false;
         }
 
@@ -183,6 +173,8 @@ namespace rock
         bool _inPowerArmor = false;
         RE::NiTransform _rightHandWorld{};
         RE::NiTransform _leftHandWorld{};
+        CachedSemanticHandFrameData _rightSemanticHandFrame{};
+        CachedSemanticHandFrameData _leftSemanticHandFrame{};
         bool _ready = false;
     };
 }
@@ -513,6 +505,95 @@ namespace rock::root_flattened_finger_skeleton_runtime
 
     bool resolveLiveSemanticHandFrame(bool isLeft, SemanticHandFrame& outFrame, std::string* outMissingBoneName = nullptr);
     bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName = nullptr);
+}
+
+namespace rock
+{
+    inline CachedSemanticHandFrameData cacheSemanticHandFrameData(const root_flattened_finger_skeleton_runtime::SemanticHandFrame& frame)
+    {
+        return CachedSemanticHandFrameData{
+            .rawHandWorld = frame.rawHandWorld,
+            .palmAnchorWorld = frame.palmAnchorWorld,
+            .fingerBaseCenterWorld = frame.fingerBaseCenterWorld,
+            .fingerForwardWorld = frame.fingerForwardWorld,
+            .palmDepthWorld = frame.palmDepthWorld,
+            .palmFaceWorld = frame.palmFaceWorld,
+            .acrossPalmWorld = frame.acrossPalmWorld,
+            .palmLength = frame.palmLength,
+            .valid = frame.valid,
+        };
+    }
+
+    inline bool HandBoneCache::resolve()
+    {
+        DirectSkeletonBoneSnapshot snapshot{};
+        if (!_reader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+                skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                snapshot)) {
+            clearResolvedState();
+            return false;
+        }
+
+        RE::NiTransform rightHand{};
+        RE::NiTransform leftHand{};
+        if (!findBone(snapshot, "RArm_Hand", rightHand) || !findBone(snapshot, "LArm_Hand", leftHand)) {
+            clearResolvedState();
+            return false;
+        }
+
+        root_flattened_finger_skeleton_runtime::SemanticHandFrame rightSemanticFrame{};
+        root_flattened_finger_skeleton_runtime::SemanticHandFrame leftSemanticFrame{};
+        if (!root_flattened_finger_skeleton_runtime::buildSemanticHandFrameFromSnapshot(snapshot, false, rightSemanticFrame) ||
+            !root_flattened_finger_skeleton_runtime::buildSemanticHandFrameFromSnapshot(snapshot, true, leftSemanticFrame)) {
+            clearResolvedState();
+            return false;
+        }
+
+        const bool changed =
+            !_ready ||
+            snapshot.skeleton != _skeleton ||
+            snapshot.boneTree != _boneTree ||
+            snapshot.inPowerArmor != _inPowerArmor;
+
+        _skeleton = snapshot.skeleton;
+        _boneTree = snapshot.boneTree;
+        _inPowerArmor = snapshot.inPowerArmor;
+        _rightHandWorld = rightHand;
+        _leftHandWorld = leftHand;
+        _rightSemanticHandFrame = cacheSemanticHandFrameData(rightSemanticFrame);
+        _leftSemanticHandFrame = cacheSemanticHandFrameData(leftSemanticFrame);
+        _ready = true;
+
+        if (changed) {
+            logHandBoneCacheResolved(_skeleton, _boneTree, _inPowerArmor);
+        }
+
+        return true;
+    }
+
+    inline bool HandBoneCache::getSemanticHandFrame(bool isLeft, root_flattened_finger_skeleton_runtime::SemanticHandFrame& outFrame) const
+    {
+        outFrame = {};
+        if (!isReady()) {
+            return false;
+        }
+
+        const CachedSemanticHandFrameData& cached = isLeft ? _leftSemanticHandFrame : _rightSemanticHandFrame;
+        if (!cached.valid) {
+            return false;
+        }
+
+        outFrame.rawHandWorld = cached.rawHandWorld;
+        outFrame.palmAnchorWorld = cached.palmAnchorWorld;
+        outFrame.fingerBaseCenterWorld = cached.fingerBaseCenterWorld;
+        outFrame.fingerForwardWorld = cached.fingerForwardWorld;
+        outFrame.palmDepthWorld = cached.palmDepthWorld;
+        outFrame.palmFaceWorld = cached.palmFaceWorld;
+        outFrame.acrossPalmWorld = cached.acrossPalmWorld;
+        outFrame.palmLength = cached.palmLength;
+        outFrame.valid = true;
+        return true;
+    }
 }
 
 // ---- HandFrameResolver.h ----
