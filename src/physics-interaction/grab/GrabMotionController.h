@@ -114,6 +114,7 @@ namespace rock::grab_motion_controller
         float linearMaxForce = 0.0f;
         float angularMaxForce = 0.0f;
         float angularAuthorityScale = 1.0f;
+        float angularTauAuthorityScale = 1.0f;
         float angularDampingMultiplier = 1.0f;
         float weakPivotTwistScale = 1.0f;
         float fadeFactor = 1.0f;
@@ -151,6 +152,7 @@ namespace rock::grab_motion_controller
         float swingScale = 1.0f;
         float twistScale = 1.0f;
         float contactNormalScale = 1.0f;
+        float angularTauScale = 1.0f;
         ContactSupportShape contactSupportShape = ContactSupportShape::Unknown;
         bool weakPivot = false;
         bool lowContactSupport = false;
@@ -410,6 +412,14 @@ namespace rock::grab_motion_controller
             output.pivotQualityScale * output.contactSupportScale * output.smallObjectScale,
             floor,
             1.0f);
+        output.angularTauScale = output.authorityScale;
+        if (output.weakPivot || output.axisLimited || output.weakPivotTwistScale < 0.999f) {
+            output.angularTauScale = (std::min)(output.angularTauScale, output.swingScale);
+            output.angularTauScale = (std::min)(output.angularTauScale, output.twistScale);
+            output.angularTauScale = (std::min)(output.angularTauScale, output.contactNormalScale);
+            output.angularTauScale = (std::min)(output.angularTauScale, output.weakPivotTwistScale);
+        }
+        output.angularTauScale = std::clamp(output.angularTauScale, floor, 1.0f);
         return output;
     }
 
@@ -807,8 +817,16 @@ namespace rock::grab_motion_controller
             out.errorFactor = (std::max)(out.linearErrorFactor, out.angularErrorFactor);
         }
 
+        const auto& angularAuthority = heldAuthority.angular;
+        out.angularAuthorityScale = angularAuthority.authorityScale;
+        out.angularTauAuthorityScale = angularAuthority.angularTauScale;
+        out.angularDampingMultiplier = angularAuthority.dampingMultiplier;
+        out.weakPivotTwistScale = angularAuthority.weakPivotTwistScale;
+
         const float linearTauTarget = heldAuthority.softenForContact ? collisionTau : baseLinearTau + (maxTau - baseLinearTau) * out.linearErrorFactor;
-        const float angularTauTarget = heldAuthority.softenForContact ? collisionTau : baseAngularTau + (maxAngularTau - baseAngularTau) * out.angularErrorFactor;
+        const float angularTauTarget = heldAuthority.softenForContact ?
+            collisionTau :
+            baseAngularTau + (maxAngularTau - baseAngularTau) * out.angularErrorFactor * out.angularTauAuthorityScale;
         out.linearTau = advanceToward(input.currentLinearTau, linearTauTarget, input.tauLerpSpeed, input.deltaTime);
         out.angularTau = advanceToward(input.currentAngularTau, angularTauTarget, input.tauLerpSpeed, input.deltaTime);
 
@@ -827,10 +845,6 @@ namespace rock::grab_motion_controller
         const float angularFadeRatio =
             safePositive(input.fadeStartAngularRatio, input.angularToLinearForceRatio) +
             (safePositive(input.angularToLinearForceRatio, 12.5f) - safePositive(input.fadeStartAngularRatio, input.angularToLinearForceRatio)) * out.fadeFactor;
-        const auto& angularAuthority = heldAuthority.angular;
-        out.angularAuthorityScale = angularAuthority.authorityScale;
-        out.angularDampingMultiplier = angularAuthority.dampingMultiplier;
-        out.weakPivotTwistScale = angularAuthority.weakPivotTwistScale;
         out.angularMaxForce = angularForceFromRatio(out.linearMaxForce, angularFadeRatio) * out.angularAuthorityScale;
         return out;
     }
