@@ -948,7 +948,7 @@ namespace rock
             std::isfinite(palmReference.world.translate.z)) {
             const RE::NiTransform proxyBaseWorld =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-            return applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft).translate;
+            return applyRuntimeGrabAuthorityProxyOffsetToFrame(proxyBaseWorld, fallbackHandWorldTransform, _isLeft).translate;
         }
 
         return fallbackHandWorldTransform.translate;

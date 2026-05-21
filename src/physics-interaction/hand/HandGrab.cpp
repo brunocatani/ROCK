@@ -4235,7 +4235,8 @@ namespace rock
             out.rawToHandBody = grab_transform_telemetry::measureTransformDelta(out.rawHandWorld, out.handBodyWorld);
             const RE::NiTransform palmAnchorGrabAuthorityBase =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(out.handBodyWorld);
-            out.palmAnchorGrabAuthorityWorld = applyGrabAuthorityProxyLocalOffsetToFrame(palmAnchorGrabAuthorityBase, _isLeft);
+            out.palmAnchorGrabAuthorityWorld =
+                applyRuntimeGrabAuthorityProxyOffsetToFrame(palmAnchorGrabAuthorityBase, out.rawHandWorld, _isLeft);
             out.palmAnchorGrabAuthorityBasis = grab_transform_telemetry::makeOrientationBasis(out.palmAnchorGrabAuthorityWorld);
             out.hasPalmAnchorGrabAuthority = true;
             out.nativeFlattenedHandToGrabAuthority =
@@ -4834,7 +4835,7 @@ namespace rock
         if (tryResolveLivePalmAnchorReference(world, palmReference)) {
             const RE::NiTransform proxyBaseWorld =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-            outProxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft);
+            outProxyWorld = applyRuntimeGrabAuthorityProxyOffsetToFrame(proxyBaseWorld, rawHandWorld, _isLeft);
             switch (palmReference.source) {
             case body_frame::BodyFrameSource::MotionCenterOfMass:
                 outSource = "livePalmAnchorMotionGrabFrame";
