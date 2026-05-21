@@ -234,7 +234,8 @@ namespace rock
         {
             previousReduction = held_mass_movement::sanitizeReduction(previousReduction);
             targetReduction = held_mass_movement::sanitizeReduction(targetReduction);
-            if (std::fabs(previousReduction - targetReduction) <= 0.001f) {
+            if (std::fabs(previousReduction - targetReduction) <= 0.001f &&
+                (targetReduction > 0.0f || previousReduction <= 0.0f)) {
                 return true;
             }
 
@@ -3430,7 +3431,8 @@ namespace rock
             _heldMassMovementFadeElapsedSeconds = 0.0f;
         }
 
-        if (std::fabs(targetReduction - _heldMassMovementSpeedReduction) <= 0.001f) {
+        if (std::fabs(targetReduction - _heldMassMovementSpeedReduction) <= 0.001f &&
+            (targetReduction > 0.0f || _heldMassMovementSpeedReduction <= 0.0f)) {
             return;
         }
 

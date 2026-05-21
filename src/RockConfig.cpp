@@ -60,7 +60,6 @@ namespace
     constexpr float kDefaultGrabThumbSurfaceSafetyMarginGameUnits = 1.0f;
     constexpr float kDefaultNearCastRadiusGameUnits = 3.5f;
     constexpr float kDefaultNearCastDistanceGameUnits = 7.0f;
-    constexpr float kDefaultNearbyGrabDampingRadiusGameUnits = 7.0f;
     const RE::NiPoint3 kDefaultPalmNormalHandspace{ 0.0f, 0.0f, 1.0f };
     constexpr bool kDefaultSeeThroughScopesRightEyeDominant = true;
 
@@ -360,7 +359,7 @@ namespace rock
         rockGrabPlayerSpaceTransformWarpEnabled = true;
         rockGrabResidualVelocityDamping = true;
         rockGrabNearbyDampingEnabled = true;
-        rockGrabNearbyDampingRadius = kDefaultNearbyGrabDampingRadiusGameUnits;
+        rockGrabNearbyDampingRadius = 90.0f;
         rockGrabNearbyDampingSeconds = 0.35f;
         rockGrabNearbyLinearDamping = 3.0f;
         rockGrabNearbyAngularDamping = 5.5f;
@@ -1217,13 +1216,8 @@ namespace rock
         rockGrabPlayerSpaceTransformWarpEnabled = ini.GetBoolValue(SECTION, "bGrabPlayerSpaceTransformWarpEnabled", rockGrabPlayerSpaceTransformWarpEnabled);
         rockGrabResidualVelocityDamping = ini.GetBoolValue(SECTION, "bGrabResidualVelocityDamping", rockGrabResidualVelocityDamping);
         rockGrabNearbyDampingEnabled = ini.GetBoolValue(SECTION, "bGrabNearbyDampingEnabled", rockGrabNearbyDampingEnabled);
-        rockGrabNearbyDampingRadius = readClampedFloat(ini,
-            SECTION,
-            "fGrabNearbyDampingRadius",
-            rockGrabNearbyDampingRadius,
-            kDefaultNearbyGrabDampingRadiusGameUnits,
-            0.0f,
-            kDefaultNearbyGrabDampingRadiusGameUnits);
+        rockGrabNearbyDampingRadius =
+            nearby_grab_damping::sanitizeRadius(static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNearbyDampingRadius", rockGrabNearbyDampingRadius)));
         rockGrabNearbyDampingSeconds =
             nearby_grab_damping::sanitizeDuration(static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNearbyDampingSeconds", rockGrabNearbyDampingSeconds)));
         rockGrabNearbyLinearDamping =

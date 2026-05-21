@@ -321,7 +321,7 @@ namespace rock
         bool rockGrabPlayerSpaceTransformWarpEnabled = true;
         bool rockGrabResidualVelocityDamping = true;
         bool rockGrabNearbyDampingEnabled = true;
-        float rockGrabNearbyDampingRadius = 7.0f;
+        float rockGrabNearbyDampingRadius = 90.0f;
         float rockGrabNearbyDampingSeconds = 0.35f;
         float rockGrabNearbyLinearDamping = 3.0f;
         float rockGrabNearbyAngularDamping = 5.5f;
