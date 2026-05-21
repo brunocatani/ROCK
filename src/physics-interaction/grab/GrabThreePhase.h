@@ -99,6 +99,25 @@ namespace rock::grab_three_phase
         return RE::NiPoint3{ value.x * invLen, value.y * invLen, value.z * invLen };
     }
 
+    inline RE::NiPoint3 cross(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
+    {
+        return RE::NiPoint3{
+            lhs.y * rhs.z - lhs.z * rhs.y,
+            lhs.z * rhs.x - lhs.x * rhs.z,
+            lhs.x * rhs.y - lhs.y * rhs.x,
+        };
+    }
+
+    inline RE::NiPoint3 rejectFromAxis(const RE::NiPoint3& value, const RE::NiPoint3& axis)
+    {
+        return value - axis * dot(value, axis);
+    }
+
+    inline RE::NiPoint3 orientToward(const RE::NiPoint3& value, const RE::NiPoint3& reference)
+    {
+        return dot(value, reference) < 0.0f ? RE::NiPoint3{ -value.x, -value.y, -value.z } : value;
+    }
+
     struct GrabPocketFrame
     {
         RE::NiTransform handWorld{};
@@ -124,8 +143,21 @@ namespace rock::grab_three_phase
         frame.handWorld = handWorld;
         frame.palmCenterWorld = palmCenterWorld;
         frame.palmNormalWorld = normalizeOrFallback(computePalmNormalFromHandBasis(handWorld, isLeft), RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
-        frame.fingerForwardWorld = normalizeOrFallback(transformHandspaceDirection(handWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, isLeft), frame.palmNormalWorld);
-        frame.thumbSideWorld = normalizeOrFallback(transformHandspaceDirection(handWorld, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, isLeft), RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+        const RE::NiPoint3 rawFingerForwardWorld =
+            normalizeOrFallback(transformHandspaceDirection(handWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, isLeft), RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+        const RE::NiPoint3 rawThumbSideWorld =
+            normalizeOrFallback(transformHandspaceDirection(handWorld, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, isLeft), RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+
+        const RE::NiPoint3 fallbackFingerForwardWorld =
+            orientToward(normalizeOrFallback(cross(rawThumbSideWorld, frame.palmNormalWorld), rawFingerForwardWorld), rawFingerForwardWorld);
+        frame.fingerForwardWorld =
+            orientToward(normalizeOrFallback(rejectFromAxis(rawFingerForwardWorld, frame.palmNormalWorld), fallbackFingerForwardWorld), rawFingerForwardWorld);
+
+        RE::NiPoint3 thumbSideCandidate = rejectFromAxis(rawThumbSideWorld, frame.palmNormalWorld);
+        thumbSideCandidate = rejectFromAxis(thumbSideCandidate, frame.fingerForwardWorld);
+        const RE::NiPoint3 fallbackThumbSideWorld =
+            orientToward(normalizeOrFallback(cross(frame.palmNormalWorld, frame.fingerForwardWorld), rawThumbSideWorld), rawThumbSideWorld);
+        frame.thumbSideWorld = orientToward(normalizeOrFallback(thumbSideCandidate, fallbackThumbSideWorld), rawThumbSideWorld);
         frame.fingerSideWorld = RE::NiPoint3{ -frame.thumbSideWorld.x, -frame.thumbSideWorld.y, -frame.thumbSideWorld.z };
         frame.pocketDepthGameUnits = (std::max)(0.0f, std::isfinite(pocketDepthGameUnits) ? pocketDepthGameUnits : 0.0f);
         frame.pocketRadiusGameUnits = (std::max)(0.1f, std::isfinite(pocketRadiusGameUnits) ? pocketRadiusGameUnits : 9.0f);
@@ -139,8 +171,8 @@ namespace rock::grab_three_phase
         /*
          * Legacy helper for non-dynamic-grab callers that still consume the old
          * authored handspace palm position. Dynamic grab must use
-         * buildGrabPocketFrameWithPalmCenter and pass Hand::computeGrabPivotAWorld
-         * so the INI pivot cannot become runtime authority.
+         * buildGrabPocketFrameWithPalmCenter and pass an already-resolved palm
+         * authority point so the old INI pivot cannot become runtime authority.
          */
         return buildGrabPocketFrameWithPalmCenter(
             handWorld,

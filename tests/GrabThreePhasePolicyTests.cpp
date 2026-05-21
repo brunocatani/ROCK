@@ -1,5 +1,6 @@
 #include "physics-interaction/grab/GrabThreePhase.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -51,6 +52,21 @@ namespace
         return false;
     }
 
+    bool expectNear(const char* label, float actual, float expected, float tolerance)
+    {
+        if (std::fabs(actual - expected) <= tolerance) {
+            return true;
+        }
+
+        std::printf("%s expected %.4f got %.4f\n", label, expected, actual);
+        return false;
+    }
+
+    float pointDot(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
+    {
+        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+    }
+
     rock::grab_three_phase::GrabPocketFrame makePocket()
     {
         rock::grab_three_phase::GrabPocketFrame pocket{};
@@ -69,6 +85,21 @@ int main()
     using namespace rock::grab_three_phase;
 
     bool ok = true;
+
+    const RE::NiTransform identityHand = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+    const auto identityPocket = buildGrabPocketFrameWithPalmCenter(
+        identityHand,
+        false,
+        RE::NiPoint3{ 10.0f, 20.0f, 30.0f },
+        7.0f,
+        9.0f);
+    ok &= expectTrue("raw-roll pocket frame valid", identityPocket.valid);
+    ok &= expectNear("raw-roll pocket keeps reversed palm normal X", identityPocket.palmNormalWorld.x, 0.0f, 0.001f);
+    ok &= expectNear("raw-roll pocket keeps reversed palm normal Y", identityPocket.palmNormalWorld.y, -1.0f, 0.001f);
+    ok &= expectNear("raw-roll pocket keeps reversed palm normal Z", identityPocket.palmNormalWorld.z, 0.0f, 0.001f);
+    ok &= expectNear("raw-roll pocket projects finger off palm normal", pointDot(identityPocket.fingerForwardWorld, identityPocket.palmNormalWorld), 0.0f, 0.001f);
+    ok &= expectNear("raw-roll pocket projects thumb side off palm normal", pointDot(identityPocket.thumbSideWorld, identityPocket.palmNormalWorld), 0.0f, 0.001f);
+    ok &= expectNear("raw-roll pocket keeps tangent and bitangent orthogonal", pointDot(identityPocket.fingerForwardWorld, identityPocket.thumbSideWorld), 0.0f, 0.001f);
 
     const auto closeSelection = classifyAcquisitionPhase(PhaseClassificationInput{
         .pocket = makePocket(),

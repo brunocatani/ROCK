@@ -5259,18 +5259,21 @@ namespace rock
             return false;
         }
         /*
-         * Grab commit has one body-A position authority. Mesh/contact evidence
-         * and the final custom constraint both seat against the resolved proxy
-         * origin so mirrored hands cannot select evidence from one frame and
-         * solve against another.
+         * Live proxy motion still resolves from the generated palm body, but
+         * close-grab pocket acquisition applies the configured seat offset
+         * through raw hand roll. That keeps the pocket/pivot marker locked to
+         * the palm without moving the generated collision body path.
          */
         const RE::NiPoint3 grabAuthorityPivotAWorld = proxyFrameWorldAtGrab.translate;
-        const RE::NiPoint3 grabPivotAForPrimaryChoice = grabAuthorityPivotAWorld;
+        const RE::NiPoint3 palmPocketPivotAWorld = computeGrabStartupCapturePivotAWorld(world, handWorldTransform);
+        const float palmPocketToProxyDeltaGameUnits = pointDistanceGameUnits(grabAuthorityPivotAWorld, palmPocketPivotAWorld);
+        const RE::NiPoint3 grabPivotAForPrimaryChoice = palmPocketPivotAWorld;
 
         ROCK_LOG_DEBUG(Hand,
             "{} hand object-tree prep: ref='{}' formID={:08X} beforeBodies={} afterBodies={} accepted={} rejected={} "
             "seedBody={} seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} "
-            "latePrepared={} incompleteScan={} collisionObjects={} visitedNodes={} setMotion={} enableCollision={} sharedPeer={}",
+            "latePrepared={} incompleteScan={} collisionObjects={} visitedNodes={} setMotion={} enableCollision={} sharedPeer={} "
+            "proxyPivot=({:.1f},{:.1f},{:.1f}) palmPocketPivot=({:.1f},{:.1f},{:.1f}) pocketProxyDelta={:.2f}",
             handName(),
             objName,
             sel.refr->GetFormID(),
@@ -5292,7 +5295,14 @@ namespace rock
             preparedBodySet.diagnostics.visitedNodes,
             motionConverted ? "ok" : "failed",
             collisionEnabled ? "ok" : "failed",
-            joiningPeerHeldObject ? "yes" : "no");
+            joiningPeerHeldObject ? "yes" : "no",
+            grabAuthorityPivotAWorld.x,
+            grabAuthorityPivotAWorld.y,
+            grabAuthorityPivotAWorld.z,
+            palmPocketPivotAWorld.x,
+            palmPocketPivotAWorld.y,
+            palmPocketPivotAWorld.z,
+            palmPocketToProxyDeltaGameUnits);
 
         auto* collidableNode = sel.hitNode ? sel.hitNode : rootNode;
         auto* meshSourceNode = sel.visualNode ? sel.visualNode : rootNode;
@@ -5499,7 +5509,7 @@ namespace rock
                  * so collision selection, contact patches, and finger evidence do
                  * not fight over different corners of the same object.
                  */
-                const RE::NiPoint3 grabPivotAWorld = grabAuthorityPivotAWorld;
+                const RE::NiPoint3 grabPivotAWorld = palmPocketPivotAWorld;
                 const RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
                 const auto closePocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
                     handWorldTransform,
@@ -5567,7 +5577,7 @@ namespace rock
             }
 
             if (!meshGrabFound && !grabSurfaceTriangles.empty() && sel.hasHitPoint) {
-                const RE::NiPoint3 grabPivotAWorld = grabAuthorityPivotAWorld;
+                const RE::NiPoint3 grabPivotAWorld = palmPocketPivotAWorld;
                 RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
                 const RE::NiPoint3 expectedNormal =
                     sel.hasHitNormal && lengthSquared(sel.hitNormalWorld) > 0.0f ? sel.hitNormalWorld : palmDir;
@@ -5611,7 +5621,7 @@ namespace rock
             }
 
             if (!meshGrabFound && !grabSurfaceTriangles.empty()) {
-                const RE::NiPoint3 grabPivotAWorld = grabAuthorityPivotAWorld;
+                const RE::NiPoint3 grabPivotAWorld = palmPocketPivotAWorld;
                 RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
 
                 int rejectedBehindSurface = 0;
@@ -5827,7 +5837,7 @@ namespace rock
         const auto semanticContacts = collectFreshSemanticContactsForBody(
             objectBodyId.value,
             static_cast<std::uint32_t>(g_rockConfig.rockGrabOppositionContactMaxAgeFrames));
-        const RE::NiPoint3 acquisitionGrabPivotAWorld = grabAuthorityPivotAWorld;
+        const RE::NiPoint3 acquisitionGrabPivotAWorld = palmPocketPivotAWorld;
         const auto acquisitionPocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
             handWorldTransform,
             _isLeft,
@@ -5870,9 +5880,9 @@ namespace rock
         }
 
         if (!handPocketOnlyGrab && contactSourcePolicy.allowContactPatchPivot && g_rockConfig.rockGrabContactPatchEnabled && !authoredGrabNode && !sel.isFarSelection) {
-            const RE::NiPoint3 palmNormalWorld = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
-            const RE::NiPoint3 palmTangentWorld = transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, _isLeft);
-            const RE::NiPoint3 palmBitangentWorld = transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, _isLeft);
+            const RE::NiPoint3 palmNormalWorld = acquisitionPocket.palmNormalWorld;
+            const RE::NiPoint3 palmTangentWorld = acquisitionPocket.fingerForwardWorld;
+            const RE::NiPoint3 palmBitangentWorld = acquisitionPocket.thumbSideWorld;
             float contactPatchObjectLeverEstimateGameUnits = 0.0f;
             if (!grabLocalMeshTriangles.empty() && grab_three_phase::isFinite(objectWorldTransform) && grab_three_phase::isFinite(canonicalPivotPointWorld)) {
                 const RE::NiPoint3 canonicalPivotLocal = transform_math::worldPointToLocal(objectWorldTransform, canonicalPivotPointWorld);
@@ -6320,7 +6330,7 @@ namespace rock
                 fingerEvidenceSurfaceHit.hasSelectionHit = sel.hasHitPoint;
                 fingerEvidenceSurfaceHit.selectionToMeshDistanceGameUnits =
                     sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, fingerEvidencePointWorld) : std::numeric_limits<float>::max();
-                fingerEvidenceSurfaceHit.pivotToSurfaceDistanceGameUnits = pointDistanceGameUnits(grabAuthorityPivotAWorld, fingerEvidencePointWorld);
+                fingerEvidenceSurfaceHit.pivotToSurfaceDistanceGameUnits = pointDistanceGameUnits(palmPocketPivotAWorld, fingerEvidencePointWorld);
                 fingerEvidenceSurfaceHit.resolvedOwnerMatchesBody = true;
                 fingerEvidenceSurfaceHit.valid = true;
                 fingerEvidencePointMode = "multiFingerContactPatch";
@@ -6549,11 +6559,12 @@ namespace rock
             const bool constraintUsesMotionBodyAtGrab = false;
             const RE::NiTransform constraintBodyWorldAtGrab = grabBodyWorldAtGrab;
             /*
-             * The hidden proxy is body A for dynamic grab. Keep its constraint
-             * pivot at the proxy origin so body-A rotation cannot sweep an
-             * offset grab point around the palm, especially on mirrored hands.
+             * The hidden proxy is body A for dynamic grab. The close-grab
+             * pocket pivot is captured through raw hand roll, then encoded as a
+             * proxy-local constraint point so held updates can keep the existing
+             * generated proxy body path.
              */
-            RE::NiPoint3 grabPivotAWorld = grabAuthorityPivotAWorld;
+            RE::NiPoint3 grabPivotAWorld = palmPocketPivotAWorld;
             auto* ownerCellAtGrab = sel.refr ? sel.refr->GetParentCell() : nullptr;
             auto* bhkWorldAtGrab = ownerCellAtGrab ? ownerCellAtGrab->GetbhkWorld() : nullptr;
             auto* bodyCollisionObjectAtGrab = bhkWorldAtGrab ? RE::bhkNPCollisionObject::Getbhk(bhkWorldAtGrab, objectBodyId) : nullptr;
