@@ -563,6 +563,9 @@ namespace rock
         float contactPatchMeshSnapDeltaGameUnits = 0.0f;
         float multiFingerContactSpreadGameUnits = 0.0f;
         float longObjectLeverGameUnits = 0.0f;
+        float gripSupportConfidence = 0.0f;
+        float gripSupportSpanGameUnits = 0.0f;
+        float gripSupportPivotShiftGameUnits = 0.0f;
         float pivotAuthorityPositionConfidence = 0.0f;
         float handScaleAtGrab = 1.0f;
         float lastSeatedPivotReacquireLocalDeltaGameUnits = 0.0f;
@@ -576,10 +579,12 @@ namespace rock
         const char* palmSeatPointMode = "none";
         const char* fingerEvidencePointMode = "none";
         const char* fingerPoseAimReason = "none";
+        const char* gripSupportReason = "none";
         const char* lastSeatedPivotReacquireReason = "none";
         const char* lastSeatedPivotReacquirePhase = "none";
         const char* lastHeldSupportRefreshReason = "none";
         GrabSeatMode seatMode = GrabSeatMode::None;
+        grab_support_model_math::GripSupportKind gripSupportKind = grab_support_model_math::GripSupportKind::None;
         /*
          * ROCK only fades the dynamic grab when the object must be synced from
          * an initial/custom alignment. The canonical frame stores that decision
@@ -605,6 +610,8 @@ namespace rock
         bool hasPinchPocket = false;
         bool hasFingerEvidencePoint = false;
         bool activeGrabPointUsesMultiFingerEvidence = false;
+        bool hasGripSupportModel = false;
+        bool gripSupportAuthoredPivot = false;
         bool pivotAuthorityPositionOnly = false;
         bool pivotAuthorityNormalTrusted = false;
         bool requiresSettledVisualHandRelation = false;
@@ -710,6 +717,9 @@ namespace rock
             contactPatchMeshSnapDeltaGameUnits = 0.0f;
             multiFingerContactSpreadGameUnits = 0.0f;
             longObjectLeverGameUnits = 0.0f;
+            gripSupportConfidence = 0.0f;
+            gripSupportSpanGameUnits = 0.0f;
+            gripSupportPivotShiftGameUnits = 0.0f;
             pivotAuthorityPositionConfidence = 0.0f;
             handScaleAtGrab = 1.0f;
             lastSeatedPivotReacquireLocalDeltaGameUnits = 0.0f;
@@ -723,10 +733,12 @@ namespace rock
             palmSeatPointMode = "none";
             fingerEvidencePointMode = "none";
             fingerPoseAimReason = "none";
+            gripSupportReason = "none";
             lastSeatedPivotReacquireReason = "none";
             lastSeatedPivotReacquirePhase = "none";
             lastHeldSupportRefreshReason = "none";
             seatMode = GrabSeatMode::None;
+            gripSupportKind = grab_support_model_math::GripSupportKind::None;
             motorFadeReason = "none";
             captureTelemetry.clear();
             localMeshTriangles.clear();
@@ -746,6 +758,8 @@ namespace rock
             hasPinchPocket = false;
             hasFingerEvidencePoint = false;
             activeGrabPointUsesMultiFingerEvidence = false;
+            hasGripSupportModel = false;
+            gripSupportAuthoredPivot = false;
             pivotAuthorityPositionOnly = false;
             pivotAuthorityNormalTrusted = false;
             requiresSettledVisualHandRelation = false;

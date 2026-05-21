@@ -1145,6 +1145,399 @@ namespace rock::grab_contact_patch_math
     }
 }
 
+// ---- GrabSupportModelMath.h ----
+
+/*
+ * Contact patch fitting answers "which surface point did the hand touch?".
+ * The support model answers the separate question "does this touch have enough
+ * opposed or axial evidence to freeze a better solver pivot?". Keeping this as
+ * a second stage prevents a one-triangle corner or a thin same-face patch from
+ * masquerading as roll authority, while still allowing coherent thumb/index,
+ * palm-wrap, or long-handle support to move pivot B toward the grip center.
+ */
+
+namespace rock::grab_support_model_math
+{
+    enum class GripSupportKind : std::uint8_t
+    {
+        None,
+        SinglePoint,
+        SameSurface,
+        OpposedPinch,
+        LongHandleAxis,
+        PalmWrap
+    };
+
+    enum class GripSupportRole : std::uint8_t
+    {
+        Main,
+        ContactPatch,
+        AcrossPositive,
+        AcrossNegative,
+        FingerForward,
+        FingerBack,
+        ThumbPad,
+        IndexPad
+    };
+
+    template <class Vector>
+    struct GripSupportSample
+    {
+        Vector point{};
+        Vector normal{};
+        GripSupportRole role = GripSupportRole::Main;
+        bool valid = false;
+    };
+
+    template <class Vector>
+    struct GripSupportModelInput
+    {
+        Vector anchorPoint{};
+        Vector anchorNormal{};
+        Vector palmNormal{};
+        Vector acrossPalmAxis{};
+        Vector fingerAxis{};
+        Vector pinchAxis{};
+        Vector objectLongAxis{};
+        const GripSupportSample<Vector>* samples = nullptr;
+        std::size_t sampleCount = 0;
+        float longObjectLeverGameUnits = 0.0f;
+        float objectLongAxisSpanGameUnits = 0.0f;
+        float smallObjectReferenceLeverGameUnits = 12.0f;
+        float longObjectReferenceLeverGameUnits = 24.0f;
+        float maxPivotShiftGameUnits = 6.0f;
+        float minOpposedSpanGameUnits = 1.0f;
+        bool pinchSeat = false;
+    };
+
+    template <class Vector>
+    struct GripSupportModel
+    {
+        Vector pivotPoint{};
+        Vector supportAxis{};
+        Vector supportNormal{};
+        GripSupportKind kind = GripSupportKind::None;
+        float confidence = 0.0f;
+        float supportSpanGameUnits = 0.0f;
+        float pivotShiftGameUnits = 0.0f;
+        std::size_t acceptedSampleCount = 0;
+        bool valid = false;
+        bool canAuthorPivot = false;
+        const char* reason = "notEvaluated";
+    };
+
+    inline const char* gripSupportKindName(GripSupportKind kind)
+    {
+        switch (kind) {
+        case GripSupportKind::SinglePoint:
+            return "singlePoint";
+        case GripSupportKind::SameSurface:
+            return "sameSurface";
+        case GripSupportKind::OpposedPinch:
+            return "opposedPinch";
+        case GripSupportKind::LongHandleAxis:
+            return "longHandleAxis";
+        case GripSupportKind::PalmWrap:
+            return "palmWrap";
+        default:
+            return "none";
+        }
+    }
+
+    inline const char* gripSupportRoleName(GripSupportRole role)
+    {
+        switch (role) {
+        case GripSupportRole::ContactPatch:
+            return "contactPatch";
+        case GripSupportRole::AcrossPositive:
+            return "acrossPositive";
+        case GripSupportRole::AcrossNegative:
+            return "acrossNegative";
+        case GripSupportRole::FingerForward:
+            return "fingerForward";
+        case GripSupportRole::FingerBack:
+            return "fingerBack";
+        case GripSupportRole::ThumbPad:
+            return "thumbPad";
+        case GripSupportRole::IndexPad:
+            return "indexPad";
+        case GripSupportRole::Main:
+        default:
+            return "main";
+        }
+    }
+
+    inline bool rolesAreOpposed(GripSupportRole lhs, GripSupportRole rhs)
+    {
+        return (lhs == GripSupportRole::AcrossPositive && rhs == GripSupportRole::AcrossNegative) ||
+               (lhs == GripSupportRole::AcrossNegative && rhs == GripSupportRole::AcrossPositive) ||
+               (lhs == GripSupportRole::FingerForward && rhs == GripSupportRole::FingerBack) ||
+               (lhs == GripSupportRole::FingerBack && rhs == GripSupportRole::FingerForward) ||
+               (lhs == GripSupportRole::ThumbPad && rhs == GripSupportRole::IndexPad) ||
+               (lhs == GripSupportRole::IndexPad && rhs == GripSupportRole::ThumbPad);
+    }
+
+    template <class Vector>
+    inline Vector normalizedOrFallback(const Vector& value, const Vector& fallback)
+    {
+        Vector normalized = grab_contact_patch_math::normalizeOrZero(value);
+        if (grab_contact_patch_math::lengthSquared(normalized) > 0.0f) {
+            return normalized;
+        }
+        return grab_contact_patch_math::normalizeOrZero(fallback);
+    }
+
+    template <class Vector>
+    inline float sanitizedPositive(float value, float fallback)
+    {
+        return std::isfinite(value) && value > 0.0f ? value : fallback;
+    }
+
+    template <class Vector>
+    inline bool axisAlignsWithAnyGripAxis(const Vector& axis,
+        const Vector& acrossPalmAxis,
+        const Vector& fingerAxis,
+        const Vector& pinchAxis)
+    {
+        const Vector normalized = grab_contact_patch_math::normalizeOrZero(axis);
+        if (grab_contact_patch_math::lengthSquared(normalized) <= 0.0f) {
+            return false;
+        }
+
+        const Vector axes[] = {
+            grab_contact_patch_math::normalizeOrZero(acrossPalmAxis),
+            grab_contact_patch_math::normalizeOrZero(fingerAxis),
+            grab_contact_patch_math::normalizeOrZero(pinchAxis),
+        };
+        for (const auto& candidateAxis : axes) {
+            if (grab_contact_patch_math::lengthSquared(candidateAxis) <= 0.0f) {
+                continue;
+            }
+            if (std::fabs(grab_contact_patch_math::dot(normalized, candidateAxis)) >= 0.60f) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    template <class Vector>
+    inline GripSupportModel<Vector> buildGripSupportModel(const GripSupportModelInput<Vector>& input)
+    {
+        GripSupportModel<Vector> result{};
+        result.pivotPoint = input.anchorPoint;
+        result.supportNormal = normalizedOrFallback(input.anchorNormal, input.palmNormal);
+        result.supportAxis = grab_contact_patch_math::stablePerpendicular(
+            grab_contact_patch_math::lengthSquared(result.supportNormal) > 0.0f ?
+                result.supportNormal :
+                Vector{ 0.0f, 0.0f, 1.0f });
+
+        if (!grab_contact_patch_math::finiteVector(input.anchorPoint)) {
+            result.reason = "invalidAnchor";
+            return result;
+        }
+
+        const float smallReference = (std::max)(1.0f, sanitizedPositive<Vector>(input.smallObjectReferenceLeverGameUnits, 12.0f));
+        const float longReference = (std::max)(smallReference, sanitizedPositive<Vector>(input.longObjectReferenceLeverGameUnits, 24.0f));
+        const float maxPivotShift = (std::max)(0.0f, sanitizedPositive<Vector>(input.maxPivotShiftGameUnits, 6.0f));
+        const float minOpposedSpan = (std::max)(0.25f, sanitizedPositive<Vector>(input.minOpposedSpanGameUnits, 1.0f));
+        const bool smallObject = input.longObjectLeverGameUnits > 0.0f && input.longObjectLeverGameUnits <= smallReference;
+        const bool longObject =
+            input.longObjectLeverGameUnits >= longReference * 1.35f ||
+            input.objectLongAxisSpanGameUnits >= longReference * 1.35f;
+
+        std::vector<GripSupportSample<Vector>> accepted;
+        accepted.reserve(input.sampleCount + 1);
+        accepted.push_back(GripSupportSample<Vector>{
+            .point = input.anchorPoint,
+            .normal = result.supportNormal,
+            .role = GripSupportRole::Main,
+            .valid = true,
+        });
+        if (input.samples) {
+            for (std::size_t i = 0; i < input.sampleCount; ++i) {
+                const auto& sample = input.samples[i];
+                if (!sample.valid || !grab_contact_patch_math::finiteVector(sample.point)) {
+                    continue;
+                }
+                accepted.push_back(sample);
+            }
+        }
+        result.acceptedSampleCount = accepted.size();
+
+        if (accepted.size() <= 1) {
+            result.kind = GripSupportKind::SinglePoint;
+            result.valid = true;
+            result.confidence = 0.25f;
+            result.reason = "singleAnchorPoint";
+            return result;
+        }
+
+        struct Pair
+        {
+            std::size_t a = 0;
+            std::size_t b = 0;
+            Vector axis{};
+            Vector midpoint{};
+            float span = 0.0f;
+            float pivotShift = 0.0f;
+            bool valid = false;
+        };
+
+        Pair majorPair{};
+        Pair opposedPair{};
+        Vector centroid{};
+        for (const auto& sample : accepted) {
+            centroid = grab_contact_patch_math::add(centroid, sample.point);
+        }
+        centroid = grab_contact_patch_math::mul(centroid, 1.0f / static_cast<float>(accepted.size()));
+
+        for (std::size_t a = 0; a < accepted.size(); ++a) {
+            for (std::size_t b = a + 1; b < accepted.size(); ++b) {
+                const Vector delta = grab_contact_patch_math::sub(accepted[b].point, accepted[a].point);
+                const float span = grab_contact_patch_math::length(delta);
+                if (!std::isfinite(span) || span <= 0.0001f) {
+                    continue;
+                }
+
+                Pair pair{};
+                pair.a = a;
+                pair.b = b;
+                pair.axis = grab_contact_patch_math::mul(delta, 1.0f / span);
+                pair.midpoint = grab_contact_patch_math::mul(grab_contact_patch_math::add(accepted[a].point, accepted[b].point), 0.5f);
+                pair.span = span;
+                pair.pivotShift = grab_contact_patch_math::length(grab_contact_patch_math::sub(pair.midpoint, input.anchorPoint));
+                pair.valid = true;
+
+                if (!majorPair.valid || pair.span > majorPair.span) {
+                    majorPair = pair;
+                }
+
+                const bool explicitOpposedRoles = rolesAreOpposed(accepted[a].role, accepted[b].role);
+                const bool patchOnlyPair =
+                    (accepted[a].role == GripSupportRole::Main || accepted[a].role == GripSupportRole::ContactPatch) &&
+                    (accepted[b].role == GripSupportRole::Main || accepted[b].role == GripSupportRole::ContactPatch);
+                const Vector normalA = grab_contact_patch_math::normalizeOrZero(accepted[a].normal);
+                const Vector normalB = grab_contact_patch_math::normalizeOrZero(accepted[b].normal);
+                const bool normalsOpposed =
+                    grab_contact_patch_math::lengthSquared(normalA) > 0.0f &&
+                    grab_contact_patch_math::lengthSquared(normalB) > 0.0f &&
+                    grab_contact_patch_math::dot(normalA, normalB) <= -0.25f;
+                const bool axisAligned = axisAlignsWithAnyGripAxis(pair.axis, input.acrossPalmAxis, input.fingerAxis, input.pinchAxis);
+                if (pair.span >= minOpposedSpan &&
+                    normalsOpposed &&
+                    (explicitOpposedRoles || (!patchOnlyPair && axisAligned)) &&
+                    pair.pivotShift <= maxPivotShift) {
+                    if (!opposedPair.valid ||
+                        (explicitOpposedRoles && !rolesAreOpposed(accepted[opposedPair.a].role, accepted[opposedPair.b].role)) ||
+                        pair.span > opposedPair.span) {
+                        opposedPair = pair;
+                    }
+                }
+            }
+        }
+
+        if ((input.pinchSeat || smallObject) && opposedPair.valid) {
+            result.kind = GripSupportKind::OpposedPinch;
+            result.pivotPoint = opposedPair.midpoint;
+            result.supportAxis = opposedPair.axis;
+            result.supportSpanGameUnits = opposedPair.span;
+            result.pivotShiftGameUnits = opposedPair.pivotShift;
+            result.confidence = input.pinchSeat ? 0.95f : 0.85f;
+            result.valid = true;
+            result.canAuthorPivot = true;
+            result.reason = input.pinchSeat ? "pinchOpposedSupport" : "smallObjectOpposedSupport";
+            return result;
+        }
+
+        if (longObject && majorPair.valid) {
+            const Vector objectLongAxis = normalizedOrFallback(input.objectLongAxis, majorPair.axis);
+            result.kind = GripSupportKind::LongHandleAxis;
+            result.supportAxis = objectLongAxis;
+            result.supportSpanGameUnits = (std::max)(majorPair.span, std::isfinite(input.objectLongAxisSpanGameUnits) ? input.objectLongAxisSpanGameUnits : 0.0f);
+            result.pivotShiftGameUnits = majorPair.pivotShift;
+            result.valid = true;
+            result.confidence = opposedPair.valid ? 0.85f : 0.65f;
+            result.reason = opposedPair.valid ? "longHandleOpposedCenterline" : "longHandleAxisOnly";
+            if (opposedPair.valid) {
+                result.pivotPoint = opposedPair.midpoint;
+                result.supportAxis = objectLongAxis;
+                result.supportSpanGameUnits = (std::max)(result.supportSpanGameUnits, opposedPair.span);
+                result.pivotShiftGameUnits = opposedPair.pivotShift;
+                result.canAuthorPivot = true;
+            }
+            return result;
+        }
+
+        const Vector acrossAxis = grab_contact_patch_math::normalizeOrZero(input.acrossPalmAxis);
+        const Vector fingerAxis = grab_contact_patch_math::normalizeOrZero(input.fingerAxis);
+        float minAcross = (std::numeric_limits<float>::max)();
+        float maxAcross = -(std::numeric_limits<float>::max)();
+        float minFinger = (std::numeric_limits<float>::max)();
+        float maxFinger = -(std::numeric_limits<float>::max)();
+        bool hasDiverseSupportNormals = false;
+        for (std::size_t a = 0; a < accepted.size(); ++a) {
+            if (accepted[a].role == GripSupportRole::Main) {
+                continue;
+            }
+            for (std::size_t b = a + 1; b < accepted.size(); ++b) {
+                if (accepted[b].role == GripSupportRole::Main) {
+                    continue;
+                }
+                const Vector normalA = grab_contact_patch_math::normalizeOrZero(accepted[a].normal);
+                const Vector normalB = grab_contact_patch_math::normalizeOrZero(accepted[b].normal);
+                if (grab_contact_patch_math::lengthSquared(normalA) > 0.0f &&
+                    grab_contact_patch_math::lengthSquared(normalB) > 0.0f &&
+                    grab_contact_patch_math::dot(normalA, normalB) <= 0.55f) {
+                    hasDiverseSupportNormals = true;
+                }
+            }
+        }
+        for (const auto& sample : accepted) {
+            const Vector delta = grab_contact_patch_math::sub(sample.point, input.anchorPoint);
+            if (grab_contact_patch_math::lengthSquared(acrossAxis) > 0.0f) {
+                const float value = grab_contact_patch_math::dot(delta, acrossAxis);
+                minAcross = (std::min)(minAcross, value);
+                maxAcross = (std::max)(maxAcross, value);
+            }
+            if (grab_contact_patch_math::lengthSquared(fingerAxis) > 0.0f) {
+                const float value = grab_contact_patch_math::dot(delta, fingerAxis);
+                minFinger = (std::min)(minFinger, value);
+                maxFinger = (std::max)(maxFinger, value);
+            }
+        }
+
+        const float acrossSpan = maxAcross > minAcross ? maxAcross - minAcross : 0.0f;
+        const float fingerSpan = maxFinger > minFinger ? maxFinger - minFinger : 0.0f;
+        const float centroidShift = grab_contact_patch_math::length(grab_contact_patch_math::sub(centroid, input.anchorPoint));
+        if (accepted.size() >= 4 &&
+            (opposedPair.valid || hasDiverseSupportNormals) &&
+            acrossSpan >= minOpposedSpan &&
+            fingerSpan >= minOpposedSpan &&
+            centroidShift <= maxPivotShift) {
+            result.kind = GripSupportKind::PalmWrap;
+            result.pivotPoint = centroid;
+            result.supportAxis = majorPair.valid ? majorPair.axis : result.supportAxis;
+            result.supportSpanGameUnits = majorPair.valid ? majorPair.span : (std::max)(acrossSpan, fingerSpan);
+            result.pivotShiftGameUnits = centroidShift;
+            result.confidence = 0.80f;
+            result.valid = true;
+            result.canAuthorPivot = true;
+            result.reason = "palmWrapSupport";
+            return result;
+        }
+
+        result.kind = accepted.size() >= 2 ? GripSupportKind::SameSurface : GripSupportKind::SinglePoint;
+        result.supportAxis = majorPair.valid ? majorPair.axis : result.supportAxis;
+        result.supportSpanGameUnits = majorPair.valid ? majorPair.span : 0.0f;
+        result.pivotShiftGameUnits = 0.0f;
+        result.confidence = accepted.size() >= 2 ? 0.55f : 0.25f;
+        result.valid = true;
+        result.canAuthorPivot = false;
+        result.reason = accepted.size() >= 2 ? "sameSurfaceEvidenceOnly" : "singlePointEvidenceOnly";
+        return result;
+    }
+}
+
 // ---- GrabMultiFingerContactMath.h ----
 
 /*
