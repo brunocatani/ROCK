@@ -223,19 +223,26 @@ namespace rock
         return transformGrabAuthorityLocalDirection(proxyFrameWorld, localDirection);
     }
 
-    inline RE::NiTransform makeGrabStartupCaptureAuthorityFrame(const RE::NiTransform& rawHandWorld, const RE::NiTransform& palmAnchorWorld)
+    inline RE::NiTransform makeRawRotationPalmTranslationFrame(const RE::NiTransform& rawHandWorld, const RE::NiTransform& palmAnchorWorld)
     {
         /*
-         * Grab startup has a narrower problem than runtime held motion: the
-         * configured proxy-local seat offset must be interpreted in controller
-         * space when choosing and freezing the first pivot point. The actual
-         * hidden proxy body still follows the existing generated palm frame
-         * after the grab is live, so do not use this helper for held updates.
+         * The generated palm collider/body is ROCK's live physical palm anchor
+         * and contact source, but its rotation can diverge from the raw
+         * root-flattened hand basis. Dynamic grab authority keeps the generated
+         * palm/proxy translation and always takes rotation/scale from the raw
+         * hand. Apply any proxy-local seat offset after building this frame so
+         * the configured local axes follow the same raw-hand rotation used by
+         * held-object angular intent.
          */
         RE::NiTransform result = palmAnchorWorld;
         result.rotate = rawHandWorld.rotate;
         result.scale = rawHandWorld.scale;
         return result;
+    }
+
+    inline RE::NiTransform makeGrabStartupCaptureAuthorityFrame(const RE::NiTransform& rawHandWorld, const RE::NiTransform& palmAnchorWorld)
+    {
+        return makeRawRotationPalmTranslationFrame(rawHandWorld, palmAnchorWorld);
     }
 
     inline RE::NiTransform applyGrabAuthorityProxyLocalOffsetToFrame(const RE::NiTransform& proxyFrameWorld, bool isLeft)

@@ -2034,28 +2034,6 @@ namespace rock
 
         constexpr const char* kGrabObjectRotationReferenceName = "rawRotationPalmTranslation";
 
-        RE::NiTransform makeRawRotationPalmTranslationFrame(
-            const RE::NiTransform& rawHandWorld,
-            const RE::NiTransform& palmProxyWorld)
-        {
-            /*
-             * The generated palm collider is the correct physical anchor
-             * position, but its local axes describe collider geometry. Held
-             * object rotation must follow the root-flattened hand/controller
-             * rotation. This hybrid frame keeps the palm/proxy translation for
-             * the linear grip point and the raw hand basis for angular intent.
-             *
-             * This is the only production ROCK dynamic-grab rotation reference.
-             * The older BODY/conventional/debug-selectable modes were removed
-             * after in-game validation proved this convention fixed the wrist
-             * axis and N/S/E/W world-direction dependency.
-             */
-            RE::NiTransform result = palmProxyWorld;
-            result.rotate = rawHandWorld.rotate;
-            result.scale = rawHandWorld.scale;
-            return result;
-        }
-
         float computeLocalMeshMaxDistanceFromPoint(const std::vector<GrabLocalTriangle>& localTriangles, const RE::NiPoint3& originLocal)
         {
             if (localTriangles.empty()) {
@@ -3895,7 +3873,9 @@ namespace rock
             out.rawToHandBody = grab_transform_telemetry::measureTransformDelta(out.rawHandWorld, out.handBodyWorld);
             const RE::NiTransform palmAnchorGrabAuthorityBase =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(out.handBodyWorld);
-            out.palmAnchorGrabAuthorityWorld = applyGrabAuthorityProxyLocalOffsetToFrame(palmAnchorGrabAuthorityBase, _isLeft);
+            const RE::NiTransform palmAnchorGrabAuthorityFrame =
+                makeRawRotationPalmTranslationFrame(out.nativeFlattenedHandWorld, palmAnchorGrabAuthorityBase);
+            out.palmAnchorGrabAuthorityWorld = applyGrabAuthorityProxyLocalOffsetToFrame(palmAnchorGrabAuthorityFrame, _isLeft);
             out.palmAnchorGrabAuthorityBasis = grab_transform_telemetry::makeOrientationBasis(out.palmAnchorGrabAuthorityWorld);
             out.hasPalmAnchorGrabAuthority = true;
             out.nativeFlattenedHandToGrabAuthority =
@@ -4466,14 +4446,15 @@ namespace rock
         RE::NiTransform& outProxyWorld,
         const char*& outSource) const
     {
-        (void)rawHandWorld;
         (void)fallbackPalmAnchorWorld;
 
         LivePalmAnchorReference palmReference{};
         if (tryResolveLivePalmAnchorReference(world, palmReference)) {
             const RE::NiTransform proxyBaseWorld =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-            outProxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft);
+            const RE::NiTransform authorityWorld =
+                makeRawRotationPalmTranslationFrame(rawHandWorld, proxyBaseWorld);
+            outProxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(authorityWorld, _isLeft);
             switch (palmReference.source) {
             case body_frame::BodyFrameSource::MotionCenterOfMass:
                 outSource = "livePalmAnchorMotionGrabFrame";
@@ -8702,7 +8683,9 @@ namespace rock
             } else {
                 const RE::NiTransform proxyBaseWorld =
                     hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(livePalmReference.world);
-                pending.proxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft);
+                const RE::NiTransform authorityWorld =
+                    makeRawRotationPalmTranslationFrame(pending.rawHandWorld, proxyBaseWorld);
+                pending.proxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(authorityWorld, _isLeft);
             }
             previousProxyWorld = _hasLastAppliedGrabAuthorityProxyWorld ? _lastAppliedGrabAuthorityProxyWorld : pending.proxyWorld;
             proxyBodyId = _grabAuthorityProxy.getBodyId();

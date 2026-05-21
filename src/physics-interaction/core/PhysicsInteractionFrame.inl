@@ -40,22 +40,21 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
             return input;
         }
 
-        input.grabAnchorWorld = semanticHandFrame.palmAnchorWorld.translate;
+        const RE::NiTransform rawRotationPalmWorld =
+            makeRawRotationPalmTranslationFrame(input.rawHandWorld, semanticHandFrame.palmAnchorWorld);
+        input.grabAnchorWorld = rawRotationPalmWorld.translate;
         if (frame.worldReady) {
-            input.hasGrabAuthorityWorld = hand.tryComputeGrabAuthorityProxyFrameWorld(hknp, input.grabAuthorityWorld);
-            input.grabAnchorWorld = input.hasGrabAuthorityWorld ? input.grabAuthorityWorld.translate : semanticHandFrame.palmAnchorWorld.translate;
+            input.hasGrabAuthorityWorld = hand.tryComputeGrabAuthorityProxyFrameWorld(hknp, input.rawHandWorld, input.grabAuthorityWorld);
+            input.grabAnchorWorld = input.hasGrabAuthorityWorld ? input.grabAuthorityWorld.translate : rawRotationPalmWorld.translate;
         }
-        input.palmNormalWorld =
-            input.hasGrabAuthorityWorld ? computeGrabAuthorityPalmFaceWorld(input.grabAuthorityWorld) : semanticHandFrame.palmFaceWorld;
+        const RE::NiTransform& directionAuthorityWorld =
+            input.hasGrabAuthorityWorld ? input.grabAuthorityWorld : rawRotationPalmWorld;
+        input.palmNormalWorld = computeGrabAuthorityPalmFaceWorld(directionAuthorityWorld);
         input.pointingWorld = pointing_direction_math::applyFarGrabNormalReversal(
-            root_flattened_finger_skeleton_runtime::transformSemanticHandFrameDirection(
-                semanticHandFrame,
-                g_rockConfig.rockPointingVectorHandspace),
+            transformGrabAuthorityTuningDirection(directionAuthorityWorld, g_rockConfig.rockPointingVectorHandspace),
             g_rockConfig.rockReverseFarGrabNormal);
         input.pinchDirectionWorld =
-            input.hasGrabAuthorityWorld ? transformGrabAuthorityTuningDirection(input.grabAuthorityWorld, g_rockConfig.rockGrabPinchDetectionDirectionHandspace) :
-                                          root_flattened_finger_skeleton_runtime::transformSemanticHandFrameDirection(
-                                              semanticHandFrame, g_rockConfig.rockGrabPinchDetectionDirectionHandspace);
+            transformGrabAuthorityTuningDirection(directionAuthorityWorld, g_rockConfig.rockGrabPinchDetectionDirectionHandspace);
         if (g_rockConfig.rockDebugDrawGrabPockets) {
             root_flattened_finger_skeleton_runtime::Snapshot fingerSnapshot{};
             if (root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(isLeft, fingerSnapshot) &&

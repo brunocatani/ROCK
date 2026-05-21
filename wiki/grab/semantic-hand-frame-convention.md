@@ -278,7 +278,17 @@ src/physics-interaction/grab/GrabFinger.h
 src/api/ROCKApi.cpp
 ```
 
-When a generated grab authority proxy exists, some grab logic uses the proxy frame for final held-object authority. That proxy follows the same semantic convention:
+When a generated grab authority proxy exists, grab logic uses a hybrid authority frame for pocket, pointing, pinch, and held-object rotation:
+
+```text
+translation = generated palm/proxy anchor
+rotation    = raw root-flattened hand rotation
+scale       = raw root-flattened hand scale
+```
+
+The generated palm body remains the source of physical palm translation and contact evidence. Its rotation is diagnostic comparison only for dynamic grab authority, because live testing showed it can diverge from the raw hand basis and leave pocket axes world-fixed or mirrored.
+
+The authority-local axes are therefore the raw hand axes interpreted with the current semantic grab convention:
 
 ```text
 X  = fingers
@@ -286,6 +296,8 @@ Y  = palm depth / back
 -Y = palm face
 Z  = across palm
 ```
+
+Proxy local offsets are applied after this hybrid frame is built. This is why `fRightGrabAuthorityProxyOffsetYGameUnits = -2.0` and `fLeftGrabAuthorityProxyOffsetYGameUnits = -2.0` use the same sign convention.
 
 ## Finger Snapshot Data
 
@@ -348,7 +360,7 @@ This is intentional. A missing or incoherent semantic frame is worse than no gra
 
 ## Config Values Interpreted In This Convention
 
-These values are interpreted in semantic/generated palm space:
+These values are interpreted in raw-rotation grab authority local space:
 
 ```text
 fPointingVectorHandspaceX/Y/Z
@@ -394,6 +406,8 @@ palm vector / normal should point out of the palm face
 far ray should point along semantic -Y when configured as (0, -1, 0)
 palm pocket and authority proxy should agree on front/back
 left and right hands should use the same semantic signs
+rotating the character body should rotate the pocket/proxy axes with each palm
+large native/raw-to-generated-palm rotation deltas are diagnostic only; native/raw-to-authority rotation should stay small
 ```
 
 ## Tests That Guard The Convention
@@ -410,10 +424,9 @@ tests/GrabOrientationBasisTelemetrySourceTests.ps1
 The key protected invariants are:
 
 ```text
-semantic X matches generated palm X
-semantic Y matches generated palm depth/back Y
+semantic X/Y/Z are produced from root-flattened skeleton source points
 semantic palm face is negative generated Y
-semantic Z matches generated across-palm Z
+dynamic grab authority uses generated palm/proxy translation plus raw hand rotation
 frame input uses HandBoneCache semantic data, not legacy HandFrame pointing
 public palm API reads cached SemanticHandFrame
 legacy HandFrame.h carries a warning against new grab use
@@ -421,7 +434,7 @@ legacy HandFrame.h carries a warning against new grab use
 
 ## Rule For Future Developers
 
-If code needs palm-space meaning for grab, start from `SemanticHandFrame` or the generated grab authority proxy frame. Do not start from raw hand bone axes, old authored handspace, or two-handed weapon support-grip code.
+If code needs palm-space meaning for grab, start from `SemanticHandFrame` for source points or from the raw-rotation grab authority frame for runtime pocket/proxy/direction logic. Do not start from generated palm rotation, old authored handspace, or two-handed weapon support-grip code.
 
 If a new feature needs another semantic direction, define it in this coordinate system:
 
@@ -432,4 +445,4 @@ Y  = back/depth
 Z  = across palm
 ```
 
-Then transform it through `transformSemanticHandFrameDirection(...)` or the equivalent generated proxy transform.
+Then transform it through `transformSemanticHandFrameDirection(...)` for pure semantic cached-frame consumers, or through `transformGrabAuthorityTuningDirection(...)` for runtime grab consumers that need the raw-rotation/palm-translation authority frame.

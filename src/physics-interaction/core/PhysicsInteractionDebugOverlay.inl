@@ -1001,9 +1001,10 @@
                          * These palm triads intentionally keep the generated
                          * collider frame, grab-authority frame, and live proxy
                          * readback separate. The generated collider frame uses
-                         * the in-game verified native placement convention; the
-                         * grab-authority frame is the explicit adapter handed
-                         * to proxy/body-A grab math.
+                         * the in-game verified native placement convention.
+                         * The grab-authority frame keeps that translation but
+                         * replaces rotation with the raw hand basis before
+                         * proxy/body-A grab math consumes it.
                          */
                         addStoredColumnAxisTransform(
                             withOverlayOrigin(sample.palmAnchorTargetWorld, palmReference - palmDebugBasis.panelRight * 8.0f),
@@ -1362,7 +1363,7 @@
                         sample.nativeFlattenedHandToPalmAnchorTarget.positionGameUnits,
                         sample.nativeFlattenedHandToPalmAnchorTarget.rotationDegrees);
                     ROCK_LOG_INFO(Hand,
-                        "GRAB BASIS FRAMECHAIN {} {} side={} generatedPalm={} grabAuthority={} proxyReadback={} nativeToPalm={:.3f}gu/{:.3f}deg nativeToAuthority={:.3f}gu/{:.3f}deg nativeToProxy={:.3f}gu/{:.3f}deg palmToAuthority={:.3f}gu/{:.3f}deg authorityToProxy={:.3f}gu/{:.3f}deg {} {} {}",
+                        "GRAB BASIS FRAMECHAIN {} {} side={} authorityRule=rawRotationPalmTranslation generatedPalm={} grabAuthority={} proxyReadback={} nativeToPalm={:.3f}gu/{:.3f}deg nativeToAuthority={:.3f}gu/{:.3f}deg nativeToProxy={:.3f}gu/{:.3f}deg palmToAuthority={:.3f}gu/{:.3f}deg authorityToProxy={:.3f}gu/{:.3f}deg {} {} {}",
                         prefix,
                         phaseLabel,
                         sideLabel,

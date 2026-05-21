@@ -395,7 +395,7 @@ namespace rock
         BethesdaPhysicsBody& getHandBody() { return _handBody; }
         const BethesdaPhysicsBody& getHandBody() const { return _handBody; }
         bool tryResolveLivePalmAnchorReference(RE::hknpWorld* world, LivePalmAnchorReference& outReference) const;
-        bool tryComputeGrabAuthorityProxyFrameWorld(RE::hknpWorld* world, RE::NiTransform& outProxyWorld) const;
+        bool tryComputeGrabAuthorityProxyFrameWorld(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, RE::NiTransform& outProxyWorld) const;
         RE::NiPoint3 computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const;
         RE::NiPoint3 computeGrabStartupCapturePivotAWorld(RE::hknpWorld* world, const RE::NiTransform& rawHandWorldTransform) const;
         std::uint32_t getHandColliderBodyCount() const { return _boneColliders.getBodyCount(); }

@@ -41,8 +41,8 @@ Require-Text 'src/physics-interaction/hand/HandSkeleton.h' 'getSemanticHandFrame
     'HandBoneCache must expose copied per-frame semantic hand-frame data instead of forcing hot-path recaptures.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionFrame.inl' '_handBoneCache\.getSemanticHandFrame\(isLeft,\s*semanticHandFrame\)' `
     'Frame input must consume the cached semantic frame from HandBoneCache.'
-Require-Text 'src/physics-interaction/core/PhysicsInteractionFrame.inl' 'transformSemanticHandFrameDirection\([\s\S]*semanticHandFrame[\s\S]*rockPointingVectorHandspace[\s\S]*rockReverseFarGrabNormal' `
-    'Pointing direction must be interpreted in the unified root-flattened semantic frame, not legacy authored handspace.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionFrame.inl' 'makeRawRotationPalmTranslationFrame\(input\.rawHandWorld,\s*semanticHandFrame\.palmAnchorWorld\)[\s\S]*directionAuthorityWorld[\s\S]*transformGrabAuthorityTuningDirection\(directionAuthorityWorld,\s*g_rockConfig\.rockPointingVectorHandspace\)[\s\S]*rockReverseFarGrabNormal' `
+    'Pointing direction must be interpreted in the raw-rotation grab authority frame seeded by cached semantic palm translation, not legacy authored handspace.'
 Reject-Text 'src/physics-interaction/core/PhysicsInteractionFrame.inl' 'computePointingVectorFromHandBasis|resolveLiveSemanticHandFrame' `
     'Frame input must not call legacy pointing conversion or recapture semantic hand frames in the hot path.'
 Require-Text 'data/config/ROCK.ini' 'fPointingVectorHandspaceX\s*=\s*0\.0[\s\S]*fPointingVectorHandspaceY\s*=\s*-1\.0[\s\S]*fPointingVectorHandspaceZ\s*=\s*0\.0[\s\S]*bReverseFarGrabNormal\s*=\s*false' `
