@@ -780,12 +780,17 @@ namespace rock::grab_finger_pose_runtime
         std::array<RE::NiPoint3, 5> surfaceAimNormal{};
         std::array<std::uint8_t, 5> surfaceAimTargetValid{};
         std::array<std::uint8_t, 5> surfaceAimNormalValid{};
+        std::array<RE::NiPoint3, 5> surfaceAimTargetObjectLocal{};
+        std::array<RE::NiPoint3, 5> surfaceAimNormalObjectLocal{};
+        std::array<std::uint8_t, 5> surfaceAimTargetObjectLocalValid{};
+        std::array<std::uint8_t, 5> surfaceAimNormalObjectLocalValid{};
         std::array<grab_finger_pose_math::FingerCurlValue::HitKind, 5> hitKind{};
         int hitCount = 0;
         int candidateTriangleCount = 0;
         int poseTargetCount = 0;
         bool solved = false;
         bool hasJointValues = false;
+        bool hasObjectLocalSurfaceAim = false;
         bool usedAlternateThumbCurve = false;
         bool usedAlternateThumbSurfaceHit = false;
         bool usedLiveRootFlattenedFingerBones = false;
@@ -798,6 +803,76 @@ namespace rock::grab_finger_pose_runtime
         grab_finger_pose_math::FingerCurlValue thumbPrimaryCurve{};
         grab_finger_pose_math::FingerCurlValue thumbAlternateCurve{};
     };
+
+    inline void captureSurfaceAimObjectLocal(SolvedGrabFingerPose& pose, const RE::NiTransform& objectWorldTransform)
+    {
+        pose.surfaceAimTargetObjectLocal = {};
+        pose.surfaceAimNormalObjectLocal = {};
+        pose.surfaceAimTargetObjectLocalValid = {};
+        pose.surfaceAimNormalObjectLocalValid = {};
+        pose.hasObjectLocalSurfaceAim = false;
+
+        if (!std::isfinite(objectWorldTransform.scale) || std::abs(objectWorldTransform.scale) <= 0.000001f) {
+            return;
+        }
+
+        for (std::size_t finger = 0; finger < pose.surfaceAimTarget.size(); ++finger) {
+            if (pose.surfaceAimTargetValid[finger]) {
+                pose.surfaceAimTargetObjectLocal[finger] =
+                    transform_math::worldPointToLocal(objectWorldTransform, pose.surfaceAimTarget[finger]);
+                pose.surfaceAimTargetObjectLocalValid[finger] = 1;
+                pose.hasObjectLocalSurfaceAim = true;
+            }
+            if (pose.surfaceAimNormalValid[finger]) {
+                pose.surfaceAimNormalObjectLocal[finger] =
+                    transform_math::worldVectorToLocal(objectWorldTransform, pose.surfaceAimNormal[finger]);
+                pose.surfaceAimNormalObjectLocalValid[finger] = 1;
+                pose.hasObjectLocalSurfaceAim = true;
+            }
+        }
+    }
+
+    [[nodiscard]] inline SolvedGrabFingerPose resolveSurfaceAimObjectLocal(
+        const SolvedGrabFingerPose& pose,
+        const RE::NiTransform& objectWorldTransform)
+    {
+        if (!pose.hasObjectLocalSurfaceAim ||
+            !std::isfinite(objectWorldTransform.scale) ||
+            std::abs(objectWorldTransform.scale) <= 0.000001f) {
+            return pose;
+        }
+
+        auto resolved = pose;
+        for (std::size_t finger = 0; finger < resolved.surfaceAimTarget.size(); ++finger) {
+            if (pose.surfaceAimTargetObjectLocalValid[finger]) {
+                resolved.surfaceAimTarget[finger] =
+                    transform_math::localPointToWorld(objectWorldTransform, pose.surfaceAimTargetObjectLocal[finger]);
+                resolved.surfaceAimTargetValid[finger] = 1;
+            }
+            if (pose.surfaceAimNormalObjectLocalValid[finger]) {
+                const RE::NiPoint3 normalWorld =
+                    transform_math::localVectorToWorld(objectWorldTransform, pose.surfaceAimNormalObjectLocal[finger]);
+                if ((normalWorld.x * normalWorld.x + normalWorld.y * normalWorld.y + normalWorld.z * normalWorld.z) > 0.000001f) {
+                    resolved.surfaceAimNormal[finger] = normalizeDirection(normalWorld);
+                    resolved.surfaceAimNormalValid[finger] = 1;
+                }
+            }
+        }
+        return resolved;
+    }
+
+    [[nodiscard]] inline float missedFingerCurlFallbackValue(
+        bool hasExplicitFingerTarget,
+        grab_finger_pose_math::FingerCurlValue::HitKind hitKind,
+        float minValue)
+    {
+        if (!hasExplicitFingerTarget ||
+            hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::BackSurface ||
+            hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::Rejected) {
+            return 1.0f;
+        }
+        return std::clamp(minValue, 0.0f, 1.0f);
+    }
 
     inline const std::array<float, 5>& fingerMaxAnglesRadians()
     {
@@ -1087,6 +1162,18 @@ namespace rock::grab_finger_pose_runtime
                     surfacePlaneToleranceGameUnits,
                     &fallbackHitPoint);
                 fallbackHitPointValid = solved.hit && solved.hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::FrontValid;
+            }
+            /*
+             * Generic grab poses often use whole-mesh probing instead of
+             * explicit per-finger targets. A miss in that mode means "no
+             * surface on this finger path", not "close through the object".
+             */
+            if (!solved.hit &&
+                (!useTarget ||
+                    solved.hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::BackSurface ||
+                    solved.hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::Rejected)) {
+                solved.value = missedFingerCurlFallbackValue(useTarget, solved.hitKind, clampedMin);
+                solved.rawCurveValue = solved.value;
             }
             result.values[finger] = solved.value;
             result.hitKind[finger] = solved.hitKind;

@@ -7069,7 +7069,7 @@ namespace rock
         const RE::NiPoint3 fingerPosePivotWorld =
             _grabFrame.hasTelemetryCapture ? _grabFrame.grabPivotWorldAtGrab : computeGrabPivotAWorld(world, initialFingerHandTransform);
         const auto initialFingerPoseTargets = rebuildFingerPoseTargetsFromGrabFrame(_grabFrame, objectWorldTransform);
-        const auto fingerPose = g_rockConfig.rockGrabMeshFingerPoseEnabled ?
+        auto fingerPose = g_rockConfig.rockGrabMeshFingerPoseEnabled ?
             grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(
                 grabMeshTriangles, initialFingerHandTransform, _isLeft,
                 fingerPosePivotWorld, initialFingerPoseTargets,
@@ -7077,6 +7077,7 @@ namespace rock
                 g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
                 _grabFrame.fingerPoseAimValid) :
             grab_finger_pose_runtime::SolvedGrabFingerPose{};
+        grab_finger_pose_runtime::captureSurfaceAimObjectLocal(fingerPose, objectWorldTransform);
         _grabFingerPose = fingerPose;
         _hasGrabFingerPose = g_rockConfig.rockGrabMeshFingerPoseEnabled;
         _grabFingerProbeStart = fingerPose.probeStart;
@@ -7086,8 +7087,10 @@ namespace rock
             _grabAcquisitionPhase != grab_three_phase::AcquisitionPhase::NearConverging &&
             _grabAcquisitionPhase != grab_three_phase::AcquisitionPhase::GravityPulling;
         if (_grabFingerPosePublished) {
+            const auto publishFingerPose =
+                grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, objectWorldTransform);
             applyRockGrabHandPose(_isLeft,
-                fingerPose,
+                publishFingerPose,
                 _grabFingerJointPose,
                 _hasGrabFingerJointPose,
                 _grabFingerLocalTransforms,
@@ -7600,7 +7603,10 @@ namespace rock
                 const float nearDistance = (std::max)(touchDistance, g_rockConfig.rockGrabNearConvergeDistanceGameUnits);
                 const float progressDenominator = (std::max)(0.001f, nearDistance - touchDistance);
                 const float acquisitionProgress = 1.0f - std::clamp((gripErrorGameUnits - touchDistance) / progressDenominator, 0.0f, 1.0f);
-                const auto acquisitionFingerPose = buildAcquisitionFingerPose(_grabFingerPose, acquisitionProgress);
+                const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
+                const auto resolvedGrabFingerPose =
+                    grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, currentNodeWorld);
+                const auto acquisitionFingerPose = buildAcquisitionFingerPose(resolvedGrabFingerPose, acquisitionProgress);
                 applyRockGrabHandPose(_isLeft,
                     acquisitionFingerPose,
                     _grabFingerJointPose,
@@ -7878,6 +7884,7 @@ namespace rock
                             g_rockConfig.rockGrabFingerRejectBacksideHits,
                             g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
                             _grabFrame.fingerPoseAimValid);
+                        grab_finger_pose_runtime::captureSurfaceAimObjectLocal(_grabFingerPose, currentNodeWorld);
                         _grabFingerProbeStart = _grabFingerPose.probeStart;
                         _grabFingerProbeEnd = _grabFingerPose.probeEnd;
                         _hasGrabFingerProbeDebug = _grabFingerPose.candidateTriangleCount > 0;
@@ -7983,8 +7990,11 @@ namespace rock
                     _grabFingerPosePublished ? "yes" : "no");
 
                 if (g_rockConfig.rockGrabMeshFingerPoseEnabled && _hasGrabFingerPose && !_grabFingerPosePublished) {
+                    const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
+                    const auto publishFingerPose =
+                        grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, currentNodeWorld);
                     applyRockGrabHandPose(_isLeft,
-                        _grabFingerPose,
+                        publishFingerPose,
                         _grabFingerJointPose,
                         _hasGrabFingerJointPose,
                         _grabFingerLocalTransforms,
@@ -8021,8 +8031,14 @@ namespace rock
                 const float sanitizedDeltaTime = std::isfinite(deltaTime) ? (std::max)(0.0f, deltaTime) : 0.0f;
                 const float fingerPoseDeltaTime = _grabFingerPoseAccumulatedDeltaTime > 0.0f ? _grabFingerPoseAccumulatedDeltaTime : sanitizedDeltaTime;
                 _grabFingerPoseAccumulatedDeltaTime = 0.0f;
+                auto publishFingerPose = _grabFingerPose;
+                RE::NiTransform currentGrabBodyWorld{};
+                if (tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, currentGrabBodyWorld)) {
+                    const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(currentGrabBodyWorld, _grabFrame.bodyLocal);
+                    publishFingerPose = grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, currentNodeWorld);
+                }
                 applyRockGrabHandPose(_isLeft,
-                    _grabFingerPose,
+                    publishFingerPose,
                     _grabFingerJointPose,
                     _hasGrabFingerJointPose,
                     _grabFingerLocalTransforms,

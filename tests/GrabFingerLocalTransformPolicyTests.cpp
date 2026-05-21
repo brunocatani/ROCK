@@ -1,4 +1,5 @@
 #include "physics-interaction/grab/GrabFinger.h"
+#include "physics-interaction/TransformMath.h"
 
 #include <cmath>
 #include <cstdio>
@@ -57,12 +58,31 @@ namespace
         }
         return true;
     }
+
+    bool expectPointClose(const char* name, const RE::NiPoint3& actual, const RE::NiPoint3& expected)
+    {
+        if (std::fabs(actual.x - expected.x) > 0.001f ||
+            std::fabs(actual.y - expected.y) > 0.001f ||
+            std::fabs(actual.z - expected.z) > 0.001f) {
+            std::printf("%s expected (%.4f, %.4f, %.4f) got (%.4f, %.4f, %.4f)\n",
+                name,
+                expected.x,
+                expected.y,
+                expected.z,
+                actual.x,
+                actual.y,
+                actual.z);
+            return false;
+        }
+        return true;
+    }
 }
 
 int main()
 {
     bool ok = true;
     using namespace rock::grab_finger_local_transform_math;
+    using namespace rock::grab_finger_pose_runtime;
 
     ok &= expectBool("full 15-bone mask is sanitized",
         sanitizeFingerLocalTransformMask(0xFFFF) == kFullFingerLocalTransformMask, true);
@@ -155,6 +175,36 @@ int main()
             true,
             false),
         false);
+
+    ok &= expectFloat("missed generic mesh finger opens instead of closing through object",
+        missedFingerCurlFallbackValue(false, rock::grab_finger_pose_math::FingerCurlValue::HitKind::Miss, 0.2f),
+        1.0f);
+    ok &= expectFloat("explicit target miss keeps configured minimum",
+        missedFingerCurlFallbackValue(true, rock::grab_finger_pose_math::FingerCurlValue::HitKind::Miss, 0.2f),
+        0.2f);
+    ok &= expectFloat("back-surface miss opens to avoid penetration",
+        missedFingerCurlFallbackValue(true, rock::grab_finger_pose_math::FingerCurlValue::HitKind::BackSurface, 0.2f),
+        1.0f);
+
+    SolvedGrabFingerPose pose{};
+    pose.surfaceAimTarget[0] = RE::NiPoint3{ 11.0f, 2.0f, 3.0f };
+    pose.surfaceAimNormal[0] = RE::NiPoint3{ 0.0f, 1.0f, 0.0f };
+    pose.surfaceAimTargetValid[0] = 1;
+    pose.surfaceAimNormalValid[0] = 1;
+    RE::NiTransform objectAtGrab = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+    objectAtGrab.translate = RE::NiPoint3{ 10.0f, 0.0f, 0.0f };
+    captureSurfaceAimObjectLocal(pose, objectAtGrab);
+
+    RE::NiTransform movedObject = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+    movedObject.translate = RE::NiPoint3{ 20.0f, 0.0f, 0.0f };
+    const auto resolvedPose = resolveSurfaceAimObjectLocal(pose, movedObject);
+    ok &= expectBool("surface aim is captured object-local", pose.hasObjectLocalSurfaceAim, true);
+    ok &= expectPointClose("surface aim follows moved object",
+        resolvedPose.surfaceAimTarget[0],
+        RE::NiPoint3{ 21.0f, 2.0f, 3.0f });
+    ok &= expectPointClose("surface normal follows moved object",
+        resolvedPose.surfaceAimNormal[0],
+        RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
 
     return ok ? 0 : 1;
 }
