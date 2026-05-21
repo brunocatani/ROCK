@@ -909,6 +909,10 @@ namespace rock
             std::uint32_t clusterRejectedSampleCount = 0;
             float clusterDepthSpreadGameUnits = 0.0f;
             float clusterMaxLateralGameUnits = 0.0f;
+            float probeSpacingGameUnits = 0.0f;
+            float probeRadiusGameUnits = 0.0f;
+            float probeScale = 1.0f;
+            const char* probeScaleReason = "configured";
             const char* clusterReason = "notEvaluated";
             bool meshSnapped = false;
             GrabSurfaceHit meshSnapHit{};
@@ -1279,6 +1283,7 @@ namespace rock
             const RE::NiPoint3& palmNormalWorld,
             const RE::NiPoint3& palmTangentWorld,
             const RE::NiPoint3& palmBitangentWorld,
+            float objectLeverEstimateGameUnits,
             const std::vector<GrabSurfaceTriangleData>& surfaceTriangles)
         {
             RuntimeGrabContactPatch result{};
@@ -1299,8 +1304,18 @@ namespace rock
                 return result;
             }
 
-            const float spacing = (std::max)(0.0f, g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits);
-            const float radius = (std::max)(0.1f, g_rockConfig.rockGrabContactPatchProbeRadiusGameUnits);
+            const auto probeGeometry = grab_contact_patch_math::computeContactPatchProbeGeometry(
+                g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits,
+                g_rockConfig.rockGrabContactPatchProbeRadiusGameUnits,
+                objectLeverEstimateGameUnits,
+                g_rockConfig.rockGrabSmallObjectReferenceLeverGameUnits,
+                g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits);
+            const float spacing = probeGeometry.spacingGameUnits;
+            const float radius = probeGeometry.radiusGameUnits;
+            result.probeSpacingGameUnits = spacing;
+            result.probeRadiusGameUnits = radius;
+            result.probeScale = probeGeometry.scale;
+            result.probeScaleReason = probeGeometry.reason;
             std::array<RE::NiPoint3, kMaxGrabContactPatchSamples> offsets{};
             const auto probePatternCount =
                 grab_contact_patch_math::buildContactPatchProbeOffsets(offsets, palmTangent, palmBitangent, spacing);
@@ -5678,6 +5693,13 @@ namespace rock
             const RE::NiPoint3 palmNormalWorld = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
             const RE::NiPoint3 palmTangentWorld = transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, _isLeft);
             const RE::NiPoint3 palmBitangentWorld = transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, _isLeft);
+            float contactPatchObjectLeverEstimateGameUnits = 0.0f;
+            if (!grabLocalMeshTriangles.empty() && grab_three_phase::isFinite(objectWorldTransform) && grab_three_phase::isFinite(canonicalPivotPointWorld)) {
+                const RE::NiPoint3 canonicalPivotLocal = transform_math::worldPointToLocal(objectWorldTransform, canonicalPivotPointWorld);
+                contactPatchObjectLeverEstimateGameUnits =
+                    computeLocalMeshMaxDistanceFromPoint(grabLocalMeshTriangles, canonicalPivotLocal) *
+                    finitePositiveOr(objectWorldTransform.scale, 1.0f);
+            }
             contactPatchRuntime = buildRuntimeGrabContactPatch(world,
                 preparedBodySet,
                 objectBodyId.value,
@@ -5688,6 +5710,7 @@ namespace rock
                 palmNormalWorld,
                 palmTangentWorld,
                 palmBitangentWorld,
+                contactPatchObjectLeverEstimateGameUnits,
                 grabSurfaceTriangles);
 
             const bool contactPatchAcceptedForPivot = grab_contact_source_policy::shouldAcceptContactPatchPivot(
@@ -5792,7 +5815,7 @@ namespace rock
                 grabFallbackReason = contactPatchRuntime.pivotDecision.reason ? contactPatchRuntime.pivotDecision.reason :
                     (contactPatchRuntime.patch.fallbackReason ? contactPatchRuntime.patch.fallbackReason : "none");
                 ROCK_LOG_DEBUG(Hand,
-                    "{} hand CONTACT PATCH: body={} mode={} samples={}/{} castsHits={} rejectBody={} rejectNormal={} "
+                    "{} hand CONTACT PATCH: body={} mode={} samples={}/{} probe={:.2f}/{:.2f} scale={:.2f}:{} castsHits={} rejectBody={} rejectNormal={} "
                     "exactSamples={} meshRecovered={} clusterRaw={} clusterRejected={} clusterDepth={:.2f} clusterLat={:.2f} clusterReason={} rejectedBodies={} "
                     "pivot=({:.1f},{:.1f},{:.1f}) pivotSource={} replaceSelected={} selectionDelta={:.2f} "
                     "fitPoint=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) tangent=({:.3f},{:.3f},{:.3f}) "
@@ -5803,6 +5826,10 @@ namespace rock
                     contactPatchRuntime.pointMode,
                     contactPatchRuntime.patch.hitCount,
                     contactPatchRuntime.sampleCount,
+                    contactPatchRuntime.probeSpacingGameUnits,
+                    contactPatchRuntime.probeRadiusGameUnits,
+                    contactPatchRuntime.probeScale,
+                    contactPatchRuntime.probeScaleReason,
                     contactPatchRuntime.castHitCount,
                     contactPatchRuntime.rejectedBodyHits,
                     contactPatchRuntime.rejectedInvalidNormals,
@@ -5872,13 +5899,17 @@ namespace rock
                     selectedPivotAuthority.score);
             } else if (contactPatchRuntime.patch.valid && g_rockConfig.rockDebugGrabFrameLogging) {
                 ROCK_LOG_DEBUG(Hand,
-                    "{} hand CONTACT PATCH evidence-only: body={} mode={} meshSnap={} requireMeshSnap={} pivotSource={} normalTrusted={} positionOnly={} authoritySource={} "
+                    "{} hand CONTACT PATCH evidence-only: body={} mode={} probe={:.2f}/{:.2f} scale={:.2f}:{} meshSnap={} requireMeshSnap={} pivotSource={} normalTrusted={} positionOnly={} authoritySource={} "
                     "clusterRaw={} clusterRejected={} clusterDepth={:.2f} clusterLat={:.2f} clusterReason={} "
                     "authorityDelta={:.2f}/{:.2f}/{:.2f} canonical={} meshPocket={:.2f} patchPocket={:.2f} "
                     "pocketImprove={:.2f} meshScore={:.2f} patchScore={:.2f} scoreImprove={:.2f} authorityReason={} fallback={}",
                     handName(),
                     objectBodyId.value,
                     contactPatchRuntime.pointMode,
+                    contactPatchRuntime.probeSpacingGameUnits,
+                    contactPatchRuntime.probeRadiusGameUnits,
+                    contactPatchRuntime.probeScale,
+                    contactPatchRuntime.probeScaleReason,
                     contactPatchRuntime.meshSnapped ? "yes" : "no",
                     contactSourcePolicy.requireContactPatchMeshSnap ? "yes" : "no",
                     grab_contact_patch_math::pivotSourceName(contactPatchRuntime.pivotDecision.source),
@@ -5905,11 +5936,15 @@ namespace rock
                         (contactPatchProducedMeshPivot ? contactPatchPivotAuthorityReason : "nonMeshPivot"));
             } else if (g_rockConfig.rockDebugGrabFrameLogging) {
                 ROCK_LOG_DEBUG(Hand,
-                    "{} hand CONTACT PATCH failed: body={} samples={} castsHits={} rejectBody={} rejectNormal={} "
+                    "{} hand CONTACT PATCH failed: body={} samples={} probe={:.2f}/{:.2f} scale={:.2f}:{} castsHits={} rejectBody={} rejectNormal={} "
                     "exactSamples={} meshRecovered={} clusterRaw={} clusterRejected={} clusterDepth={:.2f} clusterLat={:.2f} clusterReason={} rejectedBodies={} fallback={}",
                     handName(),
                     objectBodyId.value,
                     contactPatchRuntime.sampleCount,
+                    contactPatchRuntime.probeSpacingGameUnits,
+                    contactPatchRuntime.probeRadiusGameUnits,
+                    contactPatchRuntime.probeScale,
+                    contactPatchRuntime.probeScaleReason,
                     contactPatchRuntime.castHitCount,
                     contactPatchRuntime.rejectedBodyHits,
                     contactPatchRuntime.rejectedInvalidNormals,

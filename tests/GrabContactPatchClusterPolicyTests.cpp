@@ -108,6 +108,20 @@ int main()
     }
 
     {
+        const auto defaultProbe = rock::grab_contact_patch_math::computeContactPatchProbeGeometry(3.0f, 2.0f, 0.0f, 12.0f, 24.0f);
+        ok &= expectNear("default probe spacing remains configured", defaultProbe.spacingGameUnits, 3.0f);
+        ok &= expectNear("default probe radius remains configured", defaultProbe.radiusGameUnits, 2.0f);
+
+        const auto smallProbe = rock::grab_contact_patch_math::computeContactPatchProbeGeometry(3.0f, 2.0f, 6.0f, 12.0f, 24.0f);
+        ok &= expectNear("small-object probe spacing scales down", smallProbe.spacingGameUnits, 1.5f);
+        ok &= expectNear("small-object probe radius keeps enough cast thickness", smallProbe.radiusGameUnits, 1.2f);
+
+        const auto longProbe = rock::grab_contact_patch_math::computeContactPatchProbeGeometry(3.0f, 2.0f, 72.0f, 12.0f, 24.0f);
+        ok &= expectNear("long-object probe spacing scales down", longProbe.spacingGameUnits, 1.65f);
+        ok &= expectNear("long-object probe radius keeps enough cast thickness", longProbe.radiusGameUnits, 1.2f);
+    }
+
+    {
         const auto result = cluster({
             sample(Vec3{ 0.0f, 0.0f, 0.0f }),
             sample(Vec3{ 1.5f, 0.0f, 0.2f }),

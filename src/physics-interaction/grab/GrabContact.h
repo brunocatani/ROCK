@@ -416,6 +416,50 @@ namespace rock::grab_contact_patch_math
 {
     inline constexpr std::size_t kContactPatchProbePatternSampleCount = 9;
 
+    struct ContactPatchProbeGeometry
+    {
+        float spacingGameUnits = 0.0f;
+        float radiusGameUnits = 0.1f;
+        float scale = 1.0f;
+        const char* reason = "configured";
+    };
+
+    inline ContactPatchProbeGeometry computeContactPatchProbeGeometry(
+        float configuredSpacingGameUnits,
+        float configuredRadiusGameUnits,
+        float objectLeverGameUnits,
+        float smallObjectReferenceLeverGameUnits,
+        float longObjectReferenceLeverGameUnits)
+    {
+        ContactPatchProbeGeometry result{};
+        const float configuredSpacing = std::isfinite(configuredSpacingGameUnits) && configuredSpacingGameUnits > 0.0f ?
+            configuredSpacingGameUnits :
+            0.0f;
+        const float configuredRadius = std::isfinite(configuredRadiusGameUnits) && configuredRadiusGameUnits > 0.0f ?
+            configuredRadiusGameUnits :
+            0.1f;
+        const float smallReference = std::isfinite(smallObjectReferenceLeverGameUnits) && smallObjectReferenceLeverGameUnits > 1.0f ?
+            smallObjectReferenceLeverGameUnits :
+            12.0f;
+        const float longReference = std::isfinite(longObjectReferenceLeverGameUnits) && longObjectReferenceLeverGameUnits > smallReference ?
+            longObjectReferenceLeverGameUnits :
+            smallReference * 2.0f;
+        const float lever = std::isfinite(objectLeverGameUnits) && objectLeverGameUnits > 0.0f ? objectLeverGameUnits : 0.0f;
+
+        if (lever > 0.0f && lever <= smallReference) {
+            result.scale = std::clamp(lever / smallReference, 0.45f, 1.0f);
+            result.reason = "smallObjectLever";
+        } else if (lever >= longReference * 1.35f) {
+            result.scale = std::clamp(longReference / lever, 0.55f, 0.85f);
+            result.reason = "longObjectLever";
+        }
+
+        result.spacingGameUnits = configuredSpacing > 0.0f ? configuredSpacing * result.scale : 0.0f;
+        const float radiusScale = std::clamp(result.scale, 0.60f, 1.0f);
+        result.radiusGameUnits = (std::max)(0.1f, configuredRadius * radiusScale);
+        return result;
+    }
+
     template <class Vector>
     struct GrabContactPatchSample
     {
