@@ -545,7 +545,9 @@ namespace rock
         float pivotAuthorityPositionConfidence = 0.0f;
         float handScaleAtGrab = 1.0f;
         float lastSeatedPivotReacquireLocalDeltaGameUnits = 0.0f;
+        float lastHeldSupportRefreshLocalDeltaGameUnits = 0.0f;
         std::uint32_t seatedPivotReacquireCount = 0;
+        std::uint32_t heldSupportRefreshCount = 0;
         const char* bodyResolutionReason = "none";
         const char* multiFingerContactReason = "none";
         const char* activeGrabPointMode = "none";
@@ -555,6 +557,7 @@ namespace rock
         const char* fingerPoseAimReason = "none";
         const char* lastSeatedPivotReacquireReason = "none";
         const char* lastSeatedPivotReacquirePhase = "none";
+        const char* lastHeldSupportRefreshReason = "none";
         /*
          * ROCK only fades the dynamic grab when the object must be synced from
          * an initial/custom alignment. The canonical frame stores that decision
@@ -583,6 +586,7 @@ namespace rock
         bool pivotAuthorityNormalTrusted = false;
         bool hasTelemetryCapture = false;
         bool hasSeatedPivotReacquire = false;
+        bool hasHeldSupportRefresh = false;
         bool fingerPoseAimValid = false;
         bool fadeInGrabConstraint = false;
 
@@ -683,7 +687,9 @@ namespace rock
             pivotAuthorityPositionConfidence = 0.0f;
             handScaleAtGrab = 1.0f;
             lastSeatedPivotReacquireLocalDeltaGameUnits = 0.0f;
+            lastHeldSupportRefreshLocalDeltaGameUnits = 0.0f;
             seatedPivotReacquireCount = 0;
+            heldSupportRefreshCount = 0;
             bodyResolutionReason = "none";
             multiFingerContactReason = "none";
             activeGrabPointMode = "none";
@@ -693,6 +699,7 @@ namespace rock
             fingerPoseAimReason = "none";
             lastSeatedPivotReacquireReason = "none";
             lastSeatedPivotReacquirePhase = "none";
+            lastHeldSupportRefreshReason = "none";
             motorFadeReason = "none";
             captureTelemetry.clear();
             localMeshTriangles.clear();
@@ -715,6 +722,7 @@ namespace rock
             pivotAuthorityNormalTrusted = false;
             hasTelemetryCapture = false;
             hasSeatedPivotReacquire = false;
+            hasHeldSupportRefresh = false;
             fingerPoseAimValid = false;
             fadeInGrabConstraint = false;
         }

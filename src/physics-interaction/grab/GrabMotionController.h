@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 
 namespace rock::grab_motion_controller
 {
@@ -432,6 +433,109 @@ namespace rock::grab_motion_controller
         float releaseAngularVelocityScale = 1.0f;
         const char* reason = "full-authority";
     };
+
+    struct HeldSupportRefreshInput
+    {
+        bool enabled = true;
+        bool hasLiveCandidate = false;
+        bool liveCandidateNormalTrusted = false;
+        bool currentPositionOnly = false;
+        bool currentNormalTrusted = false;
+        bool currentHasSeatedPivotReacquire = false;
+        bool currentContactPatchUsedAsPivot = false;
+        std::uint32_t currentContactPatchSampleCount = 0;
+        std::uint32_t currentMultiFingerContactGroupCount = 0;
+        float currentLongObjectLeverGameUnits = 0.0f;
+        float liveCandidateLocalDeltaGameUnits = 0.0f;
+        float maxLiveCandidateLocalDeltaGameUnits = 4.0f;
+        float liveCandidateLongObjectLeverGameUnits = 0.0f;
+    };
+
+    struct HeldSupportRefreshDecision
+    {
+        bool refresh = false;
+        bool keepFrozenPivot = true;
+        bool useLiveCandidateNormal = false;
+        bool useLiveCandidateContactSample = false;
+        bool pivotAuthorityPositionOnly = false;
+        bool pivotAuthorityNormalTrusted = false;
+        bool contactPatchUsedAsPivot = false;
+        std::uint32_t contactPatchSampleCount = 0;
+        float longObjectLeverGameUnits = 0.0f;
+        const char* reason = "notEvaluated";
+    };
+
+    inline HeldSupportRefreshDecision evaluateHeldSupportRefresh(const HeldSupportRefreshInput& input)
+    {
+        HeldSupportRefreshDecision decision{};
+        decision.pivotAuthorityPositionOnly = input.currentPositionOnly;
+        decision.pivotAuthorityNormalTrusted = input.currentNormalTrusted;
+        decision.contactPatchUsedAsPivot = input.currentContactPatchUsedAsPivot;
+        decision.contactPatchSampleCount = input.currentContactPatchSampleCount;
+        decision.longObjectLeverGameUnits = finiteOr(input.currentLongObjectLeverGameUnits, 0.0f);
+
+        if (!input.enabled) {
+            decision.reason = "heldSupportRefreshDisabled";
+            return decision;
+        }
+        if (!input.hasLiveCandidate) {
+            decision.reason = "heldSupportRefreshMissingLiveCandidate";
+            return decision;
+        }
+
+        const float liveDelta = finiteOr(input.liveCandidateLocalDeltaGameUnits, std::numeric_limits<float>::infinity());
+        const float maxLiveDelta = safePositive(input.maxLiveCandidateLocalDeltaGameUnits, 4.0f);
+        if (!std::isfinite(liveDelta) || liveDelta > maxLiveDelta) {
+            decision.reason = "heldSupportRefreshCandidateMovedPivot";
+            return decision;
+        }
+
+        const bool currentHasPatchSupport = input.currentContactPatchUsedAsPivot && input.currentContactPatchSampleCount > 0;
+        const bool currentLowSupport = input.currentContactPatchSampleCount <= 1 && input.currentMultiFingerContactGroupCount < 2;
+        const bool candidateHasLever =
+            std::isfinite(input.liveCandidateLongObjectLeverGameUnits) && input.liveCandidateLongObjectLeverGameUnits > 0.0f;
+        const float currentLever = finiteOr(input.currentLongObjectLeverGameUnits, 0.0f);
+        const float liveLever = candidateHasLever ? input.liveCandidateLongObjectLeverGameUnits : currentLever;
+        const float leverDelta = std::fabs(liveLever - currentLever);
+        const bool leverChanged = candidateHasLever && leverDelta > (std::max)(1.0f, currentLever * 0.10f);
+        const bool normalUpgrade = input.liveCandidateNormalTrusted && (!input.currentNormalTrusted || input.currentPositionOnly);
+        const bool weakNormalDowngrade =
+            !input.liveCandidateNormalTrusted &&
+            input.currentNormalTrusted &&
+            currentLowSupport &&
+            !input.currentHasSeatedPivotReacquire;
+        const bool addSupport = !currentHasPatchSupport;
+
+        if (!normalUpgrade && !weakNormalDowngrade && !addSupport && !leverChanged) {
+            decision.reason = "heldSupportRefreshNoBetterEvidence";
+            return decision;
+        }
+
+        decision.refresh = true;
+        decision.contactPatchUsedAsPivot = true;
+        decision.contactPatchSampleCount = (std::max<std::uint32_t>)(input.currentContactPatchSampleCount, 1u);
+        decision.longObjectLeverGameUnits = liveLever;
+        if (input.liveCandidateNormalTrusted) {
+            decision.pivotAuthorityPositionOnly = false;
+            decision.pivotAuthorityNormalTrusted = true;
+            decision.useLiveCandidateNormal = true;
+            decision.useLiveCandidateContactSample = true;
+            decision.reason = normalUpgrade ? "heldSupportRefreshNormalUpgrade" : "heldSupportRefreshLiveSupport";
+        } else if (weakNormalDowngrade || !input.currentNormalTrusted || input.currentPositionOnly) {
+            decision.pivotAuthorityPositionOnly = true;
+            decision.pivotAuthorityNormalTrusted = false;
+            decision.useLiveCandidateNormal = true;
+            decision.useLiveCandidateContactSample = true;
+            decision.reason = weakNormalDowngrade ? "heldSupportRefreshWeakNormalDowngrade" : "heldSupportRefreshPositionOnly";
+        } else {
+            decision.pivotAuthorityPositionOnly = input.currentPositionOnly;
+            decision.pivotAuthorityNormalTrusted = input.currentNormalTrusted;
+            decision.useLiveCandidateNormal = false;
+            decision.useLiveCandidateContactSample = addSupport;
+            decision.reason = leverChanged ? "heldSupportRefreshLeverUpdate" : "heldSupportRefreshSupportOnly";
+        }
+        return decision;
+    }
 
     struct VisualHandPublishInput
     {

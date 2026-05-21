@@ -3080,6 +3080,114 @@ namespace rock
         return _grabFrame.pivotBConstraintLocalGame;
     }
 
+    bool Hand::refreshHeldAuthoritySupport(RE::hknpWorld* world,
+        const RE::NiTransform& handWorldTransform,
+        const RE::NiTransform& proxyAuthorityWorld,
+        const RE::NiPoint3& activePivotBBodyLocalGame)
+    {
+        /*
+         * Held support refresh is intentionally narrower than seated pivot
+         * reacquire. It can revise live normal/support authority from the same
+         * body-local mesh evidence, but it must not move the frozen solver pivot
+         * or rebuild the captured hand/object relation while the constraint is
+         * already active.
+         */
+        if (!world || _savedObjectState.bodyId.value == INVALID_BODY_ID || _grabFrame.localMeshTriangles.empty()) {
+            return false;
+        }
+
+        RE::NiTransform grabBodyWorld{};
+        if (!tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, grabBodyWorld)) {
+            return false;
+        }
+
+        const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
+        const float supportEnvelope =
+            (std::max)(g_rockConfig.rockGrabTouchAcquireDistanceGameUnits, g_rockConfig.rockGrabPocketRadiusGameUnits) +
+            (std::max)(1.0f, finitePositiveOr(g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits, 3.0f));
+        const auto supportCandidate = findSeatedGrabPivotNearPalmPocket(
+            _grabFrame.localMeshTriangles,
+            currentNodeWorld,
+            grabBodyWorld,
+            proxyAuthorityWorld.translate,
+            computePalmNormalFromHandBasis(handWorldTransform, _isLeft),
+            supportEnvelope,
+            g_rockConfig.rockGrabContactPatchMaxNormalAngleDegrees);
+
+        float candidateLocalDeltaGameUnits = std::numeric_limits<float>::infinity();
+        if (supportCandidate.valid) {
+            const RE::NiPoint3 localDelta = supportCandidate.pointBodyLocalGame - activePivotBBodyLocalGame;
+            candidateLocalDeltaGameUnits = vectorMagnitude(localDelta);
+        }
+
+        const float maxRefreshLocalDelta =
+            (std::max)(2.0f,
+                finitePositiveOr(g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits, 3.0f) +
+                    finitePositiveOr(g_rockConfig.rockGrabContactPatchProbeRadiusGameUnits, 2.0f));
+        const auto refreshDecision = grab_motion_controller::evaluateHeldSupportRefresh(
+            grab_motion_controller::HeldSupportRefreshInput{
+                .enabled = g_rockConfig.rockGrabPivotQualityAngularScalingEnabled,
+                .hasLiveCandidate = supportCandidate.valid,
+                .liveCandidateNormalTrusted = supportCandidate.normalTrusted,
+                .currentPositionOnly = _grabFrame.pivotAuthorityPositionOnly,
+                .currentNormalTrusted = _grabFrame.pivotAuthorityNormalTrusted,
+                .currentHasSeatedPivotReacquire = _grabFrame.hasSeatedPivotReacquire,
+                .currentContactPatchUsedAsPivot = _grabFrame.contactPatchUsedAsPivot,
+                .currentContactPatchSampleCount = _grabFrame.contactPatchSampleCount,
+                .currentMultiFingerContactGroupCount = _grabFrame.multiFingerContactGroupCount,
+                .currentLongObjectLeverGameUnits = _grabFrame.longObjectLeverGameUnits,
+                .liveCandidateLocalDeltaGameUnits = candidateLocalDeltaGameUnits,
+                .maxLiveCandidateLocalDeltaGameUnits = maxRefreshLocalDelta,
+                .liveCandidateLongObjectLeverGameUnits = supportCandidate.longLeverGameUnits,
+            });
+        if (!refreshDecision.refresh) {
+            return false;
+        }
+
+        _grabFrame.pivotAuthorityPositionOnly = refreshDecision.pivotAuthorityPositionOnly;
+        _grabFrame.pivotAuthorityNormalTrusted = refreshDecision.pivotAuthorityNormalTrusted;
+        _grabFrame.pivotAuthorityPositionConfidence =
+            (std::max)(_grabFrame.pivotAuthorityPositionConfidence, refreshDecision.pivotAuthorityNormalTrusted ? 0.85f : 0.65f);
+        _grabFrame.contactPatchUsedAsPivot = refreshDecision.contactPatchUsedAsPivot;
+        _grabFrame.contactPatchSampleCount =
+            (std::min)(refreshDecision.contactPatchSampleCount, static_cast<std::uint32_t>(_grabFrame.contactPatchSamples.size()));
+        _grabFrame.hasContactPatch = _grabFrame.contactPatchSampleCount > 0;
+        _grabFrame.longObjectLeverGameUnits = refreshDecision.longObjectLeverGameUnits;
+        if (refreshDecision.useLiveCandidateNormal) {
+            _grabFrame.gripNormalLocal = supportCandidate.normalNodeLocal;
+        }
+        if (_grabFrame.contactPatchSampleCount > 0 && refreshDecision.useLiveCandidateContactSample) {
+            const RE::NiPoint3 sampleNormalWorld = refreshDecision.useLiveCandidateNormal ?
+                supportCandidate.normalWorld :
+                gripEvidenceNormalWorld(_grabFrame, currentNodeWorld);
+            auto& sample = _grabFrame.contactPatchSamples[0];
+            sample.bodyId = _savedObjectState.bodyId.value;
+            sample.point = supportCandidate.pointBodyLocalGame;
+            sample.normal = transform_math::worldVectorToLocal(grabBodyWorld, sampleNormalWorld);
+            sample.fraction = 0.0f;
+            sample.accepted = true;
+            sample.rejectionReason = "heldSupportRefresh";
+        }
+
+        _grabFrame.hasHeldSupportRefresh = true;
+        _grabFrame.lastHeldSupportRefreshLocalDeltaGameUnits = candidateLocalDeltaGameUnits;
+        _grabFrame.lastHeldSupportRefreshReason = refreshDecision.reason ? refreshDecision.reason : "none";
+        ++_grabFrame.heldSupportRefreshCount;
+
+        ROCK_LOG_SAMPLE_DEBUG(Hand,
+            g_rockConfig.rockLogSampleMilliseconds,
+            "{} HELD SUPPORT REFRESH: reason={} normalTrusted={} positionOnly={} samples={} localDelta={:.2f}gu longLever={:.1f}gu count={} keepFrozenPivot=yes",
+            handName(),
+            _grabFrame.lastHeldSupportRefreshReason,
+            _grabFrame.pivotAuthorityNormalTrusted ? "yes" : "no",
+            _grabFrame.pivotAuthorityPositionOnly ? "yes" : "no",
+            _grabFrame.contactPatchSampleCount,
+            candidateLocalDeltaGameUnits,
+            _grabFrame.longObjectLeverGameUnits,
+            _grabFrame.heldSupportRefreshCount);
+        return true;
+    }
+
     void Hand::clearGrabAuthorityProxyRuntimeLocked()
     {
         _grabAuthorityProxyBhkWorld = nullptr;
@@ -7262,6 +7370,7 @@ namespace rock
             hasPivotTrackingError &&
             _grabObjectGripAtGrab.valid &&
             pivotTrackingErrorGameUnits <= acquisitionVisualAttachEnvelope;
+        (void)refreshHeldAuthoritySupport(world, handWorldTransform, proxyAuthorityWorld, activePivotBBodyLocalGame);
         const auto heldAuthority = evaluateRuntimeHeldAuthority(
             _grabFrame,
             heldMotorContactSoftening,

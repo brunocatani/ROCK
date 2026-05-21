@@ -154,6 +154,8 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '\.mass\s*=\s*massSumma
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '\.mass\s*=\s*readBodyMass\(world,\s*_savedObjectState\.bodyId\)' 'Dynamic grab motor target solving must not return to primary-body-only mass.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'pendingHeldAuthority\s*=\s*evaluateRuntimeHeldAuthority\([\s\S]*updateConstraintGrabDriveMotors\([\s\S]*pendingHeldAuthority[\s\S]*applyProxyConstraintAngularVelocityDrive\([\s\S]*pendingHeldAuthority' 'Proxy authority flush must compute one runtime held-authority state and share it between motor tuning and direct angular assist.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'releaseAuthority\s*=\s*evaluateRuntimeHeldAuthority\([\s\S]*releaseAngularVelocityCap\s*=\s*grab_motion_controller::computeAuthorityScaledAngularVelocityCap[\s\S]*releaseAngularVelocity\s*=\s*clampAngularVelocityVector\(releaseAngularVelocity,\s*releaseAngularVelocityCap\)' 'Release angular velocity must reuse held authority for the final angular cap.'
+Require-Text 'src/physics-interaction/hand/Hand.h' 'refreshHeldAuthoritySupport' 'Held-time support refresh must be an explicit hand method, not an implicit pivot-reacquire side effect.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'refreshHeldAuthoritySupport\(world,\s*handWorldTransform,\s*proxyAuthorityWorld,\s*activePivotBBodyLocalGame\)[\s\S]*heldAuthority\s*=\s*evaluateRuntimeHeldAuthority' 'Held support refresh must update authority metadata before runtime held authority is evaluated.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'setHeldAngularVelocity\(\s*world,\s*_savedObjectState\.bodyId,\s*_heldBodyIds,\s*appliedAngularVelocity,\s*_heldDriveDecision\.includeConnectedAngularVelocity\)' 'Dynamic grab direct angular authority must route accepted held-body angular writes through body-set drive scope.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'world->SetBodyAngularVelocity\(_savedObjectState\.bodyId' 'Dynamic grab direct angular authority must not write only the primary selected body.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'kHeldCollisionParticipationFlags\s*=\s*0x80u' 'Proxy dynamic grab must retain the held collision-participation body flag lease by name.'
@@ -187,6 +189,21 @@ if ($acquireFlagLeaseStart -lt 0 -or $releaseFlagLeaseStart -lt 0 -or $nextHelpe
         if ($acquireFlagLeaseText -notmatch 'primaryBodyId,\s*kHeldAuthorityBodyFlags' -or $releaseFlagLeaseText -notmatch 'primaryBodyId,\s*kHeldAuthorityBodyFlags') {
             $failures.Add('Held authority body flags must stay primary-body-only to match the former native grab action.')
         }
+    }
+}
+
+$heldSupportRefreshText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/hand/HandGrab.cpp')
+$heldSupportRefreshStart = $heldSupportRefreshText.IndexOf('bool Hand::refreshHeldAuthoritySupport')
+$heldSupportRefreshEnd = if ($heldSupportRefreshStart -ge 0) { $heldSupportRefreshText.IndexOf('void Hand::clearGrabAuthorityProxyRuntimeLocked', $heldSupportRefreshStart) } else { -1 }
+if ($heldSupportRefreshStart -lt 0 -or $heldSupportRefreshEnd -lt 0) {
+    $failures.Add('Held support refresh helper boundary could not be located.')
+} else {
+    $heldSupportRefreshBody = $heldSupportRefreshText.Substring($heldSupportRefreshStart, $heldSupportRefreshEnd - $heldSupportRefreshStart)
+    if ($heldSupportRefreshBody -match '_grabFrame\.(pivotBBodyLocalGame|pivotBConstraintLocalGame|rawHandSpace|constraintHandSpace|constraintBodyHandSpace|rawRotationProxyHandSpace|rawRotationProxyBodyHandSpace|gripPointLocal|gripPointBodyLocalGame)\s*=') {
+        $failures.Add('Held support refresh must not move the solver pivot or rewrite captured hand/object transforms.')
+    }
+    if ($heldSupportRefreshBody -notmatch 'evaluateHeldSupportRefresh' -or $heldSupportRefreshBody -notmatch 'keepFrozenPivot=yes') {
+        $failures.Add('Held support refresh must route decisions through the pure metadata-only policy and log the frozen-pivot invariant.')
     }
 }
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'activateHeldObjectBodySet\(world,\s*objectBodyId\.value,\s*_heldBodyIds\)' 'Close grab commit must explicitly wake the accepted held-object body set after zeroing velocities.'

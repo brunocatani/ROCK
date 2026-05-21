@@ -496,6 +496,10 @@ namespace rock
         void clearGrabAuthorityProxyRuntimeLocked();
         bool tryGetGrabDriveObjectWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform) const;
         RE::NiPoint3 activeProxyConstraintPivotBLocalGame() const;
+        bool refreshHeldAuthoritySupport(RE::hknpWorld* world,
+            const RE::NiTransform& handWorldTransform,
+            const RE::NiTransform& proxyAuthorityWorld,
+            const RE::NiPoint3& activePivotBBodyLocalGame);
 
         /*
          * Far-pull arrival needs explicit ownership separate from button edges.

@@ -241,6 +241,102 @@ int main()
     const float authorityCap = computeAuthorityScaledAngularVelocityCap(18.0f, 0.30f, 0.50f);
     ok &= expectNear("authority angular cap composes support and long-object scale", authorityCap, 2.70f, 0.001f);
 
+    const auto supportRefreshUpgrade = evaluateHeldSupportRefresh(HeldSupportRefreshInput{
+        .enabled = true,
+        .hasLiveCandidate = true,
+        .liveCandidateNormalTrusted = true,
+        .currentPositionOnly = true,
+        .currentNormalTrusted = false,
+        .currentContactPatchUsedAsPivot = false,
+        .currentContactPatchSampleCount = 0,
+        .liveCandidateLocalDeltaGameUnits = 1.0f,
+        .maxLiveCandidateLocalDeltaGameUnits = 4.0f,
+        .liveCandidateLongObjectLeverGameUnits = 20.0f,
+    });
+    ok &= expectTrue("held support refresh upgrades trusted live normal", supportRefreshUpgrade.refresh);
+    ok &= expectTrue("held support refresh never moves frozen pivot", supportRefreshUpgrade.keepFrozenPivot);
+    ok &= expectTrue("held support refresh marks normal trusted", supportRefreshUpgrade.pivotAuthorityNormalTrusted);
+    ok &= expectFalse("held support refresh clears position-only after normal upgrade", supportRefreshUpgrade.pivotAuthorityPositionOnly);
+    ok &= expectTrue("held support refresh contributes conservative point support", supportRefreshUpgrade.contactPatchUsedAsPivot);
+    ok &= expectTrue("held support refresh seeds one support sample", supportRefreshUpgrade.contactPatchSampleCount == 1);
+    ok &= expectTrue("held support refresh applies trusted live normal", supportRefreshUpgrade.useLiveCandidateNormal);
+
+    const auto supportRefreshFarCandidate = evaluateHeldSupportRefresh(HeldSupportRefreshInput{
+        .enabled = true,
+        .hasLiveCandidate = true,
+        .liveCandidateNormalTrusted = true,
+        .currentPositionOnly = true,
+        .currentNormalTrusted = false,
+        .liveCandidateLocalDeltaGameUnits = 9.0f,
+        .maxLiveCandidateLocalDeltaGameUnits = 4.0f,
+    });
+    ok &= expectFalse("held support refresh rejects candidates that would move pivot", supportRefreshFarCandidate.refresh);
+
+    const auto weakNormalDowngrade = evaluateHeldSupportRefresh(HeldSupportRefreshInput{
+        .enabled = true,
+        .hasLiveCandidate = true,
+        .liveCandidateNormalTrusted = false,
+        .currentPositionOnly = false,
+        .currentNormalTrusted = true,
+        .currentHasSeatedPivotReacquire = false,
+        .currentContactPatchUsedAsPivot = true,
+        .currentContactPatchSampleCount = 1,
+        .currentMultiFingerContactGroupCount = 0,
+        .liveCandidateLocalDeltaGameUnits = 1.0f,
+        .maxLiveCandidateLocalDeltaGameUnits = 4.0f,
+    });
+    ok &= expectTrue("held support refresh can downgrade stale single-point normal", weakNormalDowngrade.refresh);
+    ok &= expectFalse("held support refresh weak downgrade clears normal trust", weakNormalDowngrade.pivotAuthorityNormalTrusted);
+    ok &= expectTrue("held support refresh weak downgrade becomes position-only", weakNormalDowngrade.pivotAuthorityPositionOnly);
+
+    const auto seatedNormalPreserved = evaluateHeldSupportRefresh(HeldSupportRefreshInput{
+        .enabled = true,
+        .hasLiveCandidate = true,
+        .liveCandidateNormalTrusted = false,
+        .currentPositionOnly = false,
+        .currentNormalTrusted = true,
+        .currentHasSeatedPivotReacquire = true,
+        .currentContactPatchUsedAsPivot = true,
+        .currentContactPatchSampleCount = 1,
+        .liveCandidateLocalDeltaGameUnits = 1.0f,
+        .maxLiveCandidateLocalDeltaGameUnits = 4.0f,
+    });
+    ok &= expectFalse("held support refresh does not downgrade explicit seated normal from one weak sample", seatedNormalPreserved.refresh);
+
+    const auto leverRefresh = evaluateHeldSupportRefresh(HeldSupportRefreshInput{
+        .enabled = true,
+        .hasLiveCandidate = true,
+        .liveCandidateNormalTrusted = true,
+        .currentPositionOnly = false,
+        .currentNormalTrusted = true,
+        .currentContactPatchUsedAsPivot = true,
+        .currentContactPatchSampleCount = 2,
+        .currentLongObjectLeverGameUnits = 24.0f,
+        .liveCandidateLocalDeltaGameUnits = 1.0f,
+        .maxLiveCandidateLocalDeltaGameUnits = 4.0f,
+        .liveCandidateLongObjectLeverGameUnits = 72.0f,
+    });
+    ok &= expectTrue("held support refresh updates materially changed long lever", leverRefresh.refresh);
+    ok &= expectNear("held support refresh publishes live long lever", leverRefresh.longObjectLeverGameUnits, 72.0f, 0.001f);
+
+    const auto leverOnlyRefreshKeepsTrustedNormal = evaluateHeldSupportRefresh(HeldSupportRefreshInput{
+        .enabled = true,
+        .hasLiveCandidate = true,
+        .liveCandidateNormalTrusted = false,
+        .currentPositionOnly = false,
+        .currentNormalTrusted = true,
+        .currentContactPatchUsedAsPivot = true,
+        .currentContactPatchSampleCount = 2,
+        .currentLongObjectLeverGameUnits = 24.0f,
+        .liveCandidateLocalDeltaGameUnits = 1.0f,
+        .maxLiveCandidateLocalDeltaGameUnits = 4.0f,
+        .liveCandidateLongObjectLeverGameUnits = 72.0f,
+    });
+    ok &= expectTrue("held support refresh allows untrusted lever-only evidence", leverOnlyRefreshKeepsTrustedNormal.refresh);
+    ok &= expectTrue("held support refresh preserves existing trusted normal on lever-only update", leverOnlyRefreshKeepsTrustedNormal.pivotAuthorityNormalTrusted);
+    ok &= expectFalse("held support refresh does not replace trusted normal with untrusted lever-only evidence", leverOnlyRefreshKeepsTrustedNormal.useLiveCandidateNormal);
+    ok &= expectFalse("held support refresh does not rewrite support sample for untrusted lever-only evidence", leverOnlyRefreshKeepsTrustedNormal.useLiveCandidateContactSample);
+
     const auto touchHeldSurfaceVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
         .hasTelemetryCapture = true,
         .touchHeldPhase = true,
