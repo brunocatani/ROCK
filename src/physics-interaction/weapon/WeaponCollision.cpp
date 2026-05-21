@@ -11,8 +11,6 @@
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
-#include "physics-interaction/weapon/WeaponInstanceWitnessRuntime.h"
-#include "physics-interaction/weapon/WeaponVisualRemapRuntime.h"
 
 #include <intrin.h>
 
@@ -49,11 +47,6 @@ namespace rock
     {
         constexpr std::size_t MAX_CONVEX_HULL_POINTS = 0xFC;
         constexpr float MIN_HULL_DIAGONAL_GAME_UNITS = 0.5f;
-        constexpr float EQUIPPED_VISUAL_MISSING_GRACE_SECONDS = 0.75f;
-        constexpr std::uint32_t GENERATED_WEAPON_PENDING_REBUILD_INTERVAL_FRAMES = 30;
-        constexpr std::uint32_t GENERATED_SOURCE_COMPLETENESS_INITIAL_PROBE_FRAMES = 450;
-        constexpr std::uint32_t GENERATED_SOURCE_COMPLETENESS_INITIAL_PROBE_INTERVAL_FRAMES = 45;
-        constexpr std::uint32_t GENERATED_SOURCE_COMPLETENESS_LONG_PROBE_INTERVAL_FRAMES = 300;
         constexpr std::size_t MAX_GENERATED_CHILD_CONVEXES_PER_SOURCE = 16;
 
         struct QuantizedPointKey
@@ -188,73 +181,6 @@ namespace rock
                 result += generatedWeaponPartKindName(static_cast<WeaponPartKind>(i));
             }
             return result.empty() ? std::string("none") : result;
-        }
-
-        weapon_visual_remap_runtime::RequestOutcome requestNativeVisualRemapForWitness(
-            const weapon_generation_identity_policy::EquippedWeaponInstanceWitness& witness,
-            const char* reason)
-        {
-            const char* eligibilityReason = "";
-            if (!weapon_instance_witness_runtime::nativeVisualRemapAllowedForWitness(
-                    witness.signature,
-                    eligibilityReason)) {
-                return weapon_visual_remap_runtime::RequestOutcome{
-                    .result = weapon_visual_remap_runtime::RequestResult::Disabled,
-                    .pendingInstanceSignature = witness.signature,
-                    .weaponFormID = witness.formID,
-                    .weaponFormAddress = witness.formAddress,
-                    .instanceDataAddress = witness.instanceDataAddress,
-                    .objectInstanceExtraAddress = witness.objectInstanceExtraAddress,
-                    .detail = eligibilityReason,
-                };
-            }
-
-            return weapon_visual_remap_runtime::requestCurrentFirstPersonWeaponVisualRemap(
-                weapon_visual_remap_runtime::RequestInput{
-                    .enabled = g_rockConfig.rockWeaponCollisionNativeVisualRemapEnabled,
-                    .pendingInstanceSignature = witness.signature,
-                    .expectedWeaponFormID = witness.formID,
-                    .expectedWeaponFormAddress = witness.formAddress,
-                    .expectedInstanceDataAddress = witness.instanceDataAddress,
-                    .expectedObjectInstanceExtraAddress = witness.objectInstanceExtraAddress,
-                    .reason = reason,
-                });
-        }
-
-        void recordNativeVisualRemapOutcome(
-            weapon_native_visual_remap_policy::NativeVisualRemapAttemptState& state,
-            std::uint64_t& lastRequestedInstanceSignature,
-            const weapon_visual_remap_runtime::RequestOutcome& outcome,
-            std::uint64_t pendingInstanceSignature)
-        {
-            if (outcome.queued()) {
-                state = weapon_native_visual_remap_policy::recordNativeVisualRemapQueued(
-                    state,
-                    pendingInstanceSignature);
-                lastRequestedInstanceSignature = pendingInstanceSignature;
-                return;
-            }
-
-            if (outcome.result == weapon_visual_remap_runtime::RequestResult::Disabled) {
-                return;
-            }
-
-            state = weapon_native_visual_remap_policy::recordNativeVisualRemapAcquireFailed(
-                state,
-                pendingInstanceSignature);
-        }
-
-        void clearAuthoritativeWitnessForSettledInstance(
-            const weapon_generation_identity_policy::EquippedWeaponInstanceWitness& witness,
-            const char* reason)
-        {
-            if (witness.signature == 0) {
-                return;
-            }
-
-            weapon_instance_witness_runtime::clearAuthoritativeEquippedWeaponWitness(
-                witness.signature,
-                reason);
         }
 
         float matrixDeterminant(const RE::NiMatrix3& matrix)
@@ -642,26 +568,6 @@ namespace rock
         weapon_generation_identity_policy::EquippedWeaponGenerationIdentity readEquippedWeaponGenerationIdentity()
         {
             weapon_generation_identity_policy::EquippedWeaponGenerationIdentity identity{};
-            weapon_instance_witness_runtime::AuthoritativeEquippedWeaponWitness authoritativeWitness{};
-            if (weapon_instance_witness_runtime::tryGetAuthoritativeEquippedWeaponIdentity(identity, &authoritativeWitness)) {
-                ROCK_LOG_SAMPLE_DEBUG(Weapon,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "Using authoritative equipped weapon instance witness source={} sequence={} signature={:016X} form={:08X}/{:x} instance={:x} keyword={:x} extra={:x} mods={}/{} stack={} uniqueID={} name={}",
-                    weapon_instance_witness_runtime::sourceName(authoritativeWitness.source),
-                    authoritativeWitness.sequence,
-                    authoritativeWitness.signature,
-                    authoritativeWitness.weaponFormID,
-                    authoritativeWitness.weaponFormAddress,
-                    authoritativeWitness.instanceDataAddress,
-                    authoritativeWitness.instanceKeywordDataAddress,
-                    authoritativeWitness.objectInstanceExtraAddress,
-                    authoritativeWitness.activeModCount,
-                    authoritativeWitness.objectIndexDataCount,
-                    authoritativeWitness.stackIndex,
-                    authoritativeWitness.uniqueID,
-                    authoritativeWitness.displayName);
-                return identity;
-            }
 
             auto* player = f4vr::getPlayer();
             auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
@@ -1161,31 +1067,9 @@ namespace rock
         return withDerivedPackageCoverage(summary);
     }
 
-    void WeaponCollision::resetGeneratedSourceCompletenessTracking()
+    void WeaponCollision::clearGeneratedSourceCompletenessTracking()
     {
-        _generatedSourceSettleState = {};
         _cachedGeneratedSourceCompleteness = {};
-        _cachedGeneratedWeaponVisualWitness = {};
-        _pendingGeneratedWeaponVisualWitness = {};
-        _generatedSourceCompletenessProbeFramesRemaining = 0;
-        _generatedSourceCompletenessProbeCounter = 0;
-        _generatedSourceCompletenessProbeRequested = false;
-        resetStaleWeaponVisualTracking();
-    }
-
-    void WeaponCollision::resetEquippedWeaponWitnessTracking()
-    {
-        _cachedEquippedWeaponInstanceWitness = {};
-        _pendingEquippedWeaponInstanceWitness = {};
-        weapon_instance_witness_runtime::clearAuthoritativeEquippedWeaponWitness(0, "weaponCollisionWitnessTrackingReset");
-        resetStaleWeaponVisualTracking();
-    }
-
-    void WeaponCollision::resetStaleWeaponVisualTracking()
-    {
-        _staleVisualPendingObservationCount = 0;
-        _lastNativeVisualRemapRequestedInstanceSignature = 0;
-        _nativeVisualRemapAttemptState = {};
     }
 
     void WeaponCollision::resetWeaponCollisionSettingsCache()
@@ -1213,179 +1097,6 @@ namespace rock
             _cachedWeaponKey,
             sourceCompleteness,
             _weaponBodySetEpoch);
-    }
-
-    void WeaponCollision::armGeneratedSourceCompletenessProbe()
-    {
-        _generatedSourceCompletenessProbeFramesRemaining = GENERATED_SOURCE_COMPLETENESS_INITIAL_PROBE_FRAMES;
-        _generatedSourceCompletenessProbeCounter = 0;
-        _generatedSourceCompletenessProbeRequested = false;
-    }
-
-    void WeaponCollision::requestGeneratedSourceCompletenessProbeNextFrame()
-    {
-        _generatedSourceCompletenessProbeRequested = true;
-    }
-
-    void WeaponCollision::requestPendingGeneratedRebuildAttemptNextFrame()
-    {
-        _pendingGeneratedRebuildAttemptRequested = true;
-    }
-
-    weapon_generation_identity_policy::GeneratedWeaponVisualWitness WeaponCollision::makeGeneratedWeaponVisualWitness(
-        std::uint64_t visualKey,
-        const WeaponVisualKeyStats& stats,
-        const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& generatedSummary,
-        bool hasBuildableSource)
-    {
-        return weapon_generation_identity_policy::GeneratedWeaponVisualWitness{
-            .visualKey = visualKey,
-            .generatedSourceSignature = generatedSummary.signature,
-            .generatedGeometryHash = generatedSummary.geometryHash,
-            .generatedBoundsExtentScore = generatedSummary.boundsExtentScore,
-            .sourceCount = generatedSummary.sourceCount,
-            .pointCount = generatedSummary.pointCount,
-            .childClusterCount = generatedSummary.childClusterCount,
-            .semanticPartMask = generatedSummary.semanticPartMask,
-            .visualRootCount = stats.rootCount,
-            .visualNodeCount = stats.nodeCount,
-            .visualTriShapeCount = stats.triShapeCount,
-            .visibleTriShapeCount = stats.visibleTriShapeCount,
-            .missingGeometryCount = stats.missingRendererCount + stats.emptyGeometryCount,
-            .invisibleNodeCount = stats.invisibleNodeCount,
-            .hasBuildableSource = hasBuildableSource,
-        };
-    }
-
-    void WeaponCollision::tryEnrichGeneratedWeaponBodiesFromLateSources(RE::hknpWorld* world, RE::NiAVObject* weaponNode)
-    {
-        if (!world || !weaponNode || _weaponBodyPending || !hasWeaponBody() || _weaponBodiesDisabledForMissingVisual) {
-            return;
-        }
-
-        const bool inInitialProbeWindow = _generatedSourceCompletenessProbeFramesRemaining > 0;
-        if (inInitialProbeWindow) {
-            --_generatedSourceCompletenessProbeFramesRemaining;
-        }
-        ++_generatedSourceCompletenessProbeCounter;
-        const bool immediateProbeRequested = _generatedSourceCompletenessProbeRequested;
-        _generatedSourceCompletenessProbeRequested = false;
-        const std::uint32_t probeInterval =
-            inInitialProbeWindow ? GENERATED_SOURCE_COMPLETENESS_INITIAL_PROBE_INTERVAL_FRAMES : GENERATED_SOURCE_COMPLETENESS_LONG_PROBE_INTERVAL_FRAMES;
-        if (!immediateProbeRequested && _generatedSourceCompletenessProbeCounter < probeInterval) {
-            return;
-        }
-        _generatedSourceCompletenessProbeCounter = 0;
-
-        std::vector<GeneratedHullSource> observedSources;
-        findGeneratedWeaponShapeSources(weaponNode, observedSources);
-        const bool hasBuildableSource = std::any_of(observedSources.begin(), observedSources.end(), [](const GeneratedHullSource& source) {
-            return pointCloudCanBuildHull(source.localPointsGame);
-        });
-        if (!hasBuildableSource) {
-            _generatedSourceSettleState = {};
-            return;
-        }
-
-        const auto observedSummary = summarizeGeneratedSources(observedSources);
-        if (!weapon_generated_source_completeness_policy::sourceSetImproved(_cachedGeneratedSourceCompleteness, observedSummary)) {
-            return;
-        }
-        const auto sourceReplacementDecision = weapon_generated_source_completeness_policy::evaluateGeneratedSourceReplacement(
-            weapon_generated_source_completeness_policy::GeneratedSourceReplacementInput{
-                .hasExistingBodies = true,
-                .ownerIdentityChanged = false,
-                .settingsChanged = false,
-                .expected = _cachedGeneratedSourceCompleteness,
-                .cached = _cachedGeneratedSourceCompleteness,
-                .observed = observedSummary,
-            });
-        if (!sourceReplacementDecision.allowed || sourceReplacementDecision.adoptExistingBodies) {
-            if (sourceReplacementDecision.adoptExistingBodies) {
-                _cachedGeneratedSourceCompleteness = observedSummary;
-                publishWeaponBodySetGeneration(observedSummary);
-                publishAtomicBodyIds(activeWeaponBodies());
-                armGeneratedSourceCompletenessProbe();
-            }
-            ROCK_LOG_SAMPLE_DEBUG(Weapon,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "Generated weapon late source replacement skipped cachedSources={} observedSources={} cachedPoints={} observedPoints={} reason={}",
-                _cachedGeneratedSourceCompleteness.sourceCount,
-                observedSummary.sourceCount,
-                _cachedGeneratedSourceCompleteness.pointCount,
-                observedSummary.pointCount,
-                sourceReplacementDecision.reason);
-            return;
-        }
-
-        const std::uint64_t sourceSettleKey = weapon_generated_source_completeness_policy::makeGeneratedSourceReplacementSettleKey(
-            _cachedGeneratedSourceCompleteness,
-            observedSummary);
-        const auto sourceSettle = weapon_generated_source_completeness_policy::advanceGeneratedSourceSettle(_generatedSourceSettleState, sourceSettleKey);
-        if (!sourceSettle.settled) {
-            ROCK_LOG_DEBUG(Weapon,
-                "Generated weapon source set improved but is still settling: stableFrames={}/{} cachedSources={} observedSources={} cachedPoints={} observedPoints={} cachedMask=0x{:08X} observedMask=0x{:08X}",
-                sourceSettle.stableFrames,
-                weapon_generated_source_completeness_policy::kRequiredStableGeneratedSourceFrames,
-                _cachedGeneratedSourceCompleteness.sourceCount,
-                observedSummary.sourceCount,
-                _cachedGeneratedSourceCompleteness.pointCount,
-                observedSummary.pointCount,
-                _cachedGeneratedSourceCompleteness.semanticPartMask,
-                observedSummary.semanticPartMask);
-            if (observedSummary.signature != _cachedGeneratedSourceCompleteness.signature) {
-                requestGeneratedSourceCompletenessProbeNextFrame();
-            }
-            return;
-        }
-
-        auto& replacementBank = inactiveWeaponBodies();
-        destroyWeaponBodyBank(replacementBank, true);
-        const auto activeBodyCount = bankWeaponBodyCount(activeWeaponBodies());
-        const auto replacementCount = createGeneratedWeaponBodiesInBank(
-            world,
-            observedSources,
-            replacementBank,
-            GeneratedWeaponBodyCreateOptions{
-                .collisionEnabledOnCreate = false,
-            });
-        if (replacementCount == 0) {
-            destroyWeaponBodyBank(replacementBank, true);
-            ROCK_LOG_WARN(Weapon,
-                "Generated weapon source set improved but replacement creation failed cachedSources={} observedSources={} cachedPoints={} observedPoints={}",
-                _cachedGeneratedSourceCompleteness.sourceCount,
-                observedSummary.sourceCount,
-                _cachedGeneratedSourceCompleteness.pointCount,
-                observedSummary.pointCount);
-            return;
-        }
-
-        ROCK_LOG_INFO(Weapon,
-            "Generated weapon mesh collision enriched from late source set cachedSources={} observedSources={} cachedPoints={} observedPoints={} cachedChildren={} observedChildren={} cachedMask=0x{:08X} observedMask=0x{:08X} activeBodies={} replacementBodies={}",
-            _cachedGeneratedSourceCompleteness.sourceCount,
-            observedSummary.sourceCount,
-            _cachedGeneratedSourceCompleteness.pointCount,
-            observedSummary.pointCount,
-            _cachedGeneratedSourceCompleteness.childClusterCount,
-            observedSummary.childClusterCount,
-            _cachedGeneratedSourceCompleteness.semanticPartMask,
-            observedSummary.semanticPartMask,
-            activeBodyCount,
-            replacementCount);
-
-        if (_dominantHandDisabled && world) {
-            enableDominantHandCollision(world);
-        }
-        clearAtomicBodyIds();
-        destroyWeaponBodyBank(activeWeaponBodies(), true);
-        _usingReplacementWeaponBodies = !_usingReplacementWeaponBodies;
-        _cachedGeneratedSourceCompleteness = observedSummary;
-        _generatedSourceSettleState = {};
-        publishWeaponBodySetGeneration(observedSummary);
-        publishAtomicBodyIds(activeWeaponBodies());
-        setWeaponBodyBankCollisionEnabled(world, activeWeaponBodies(), true);
-        _weaponBodiesDisabledForMissingVisual = false;
-        armGeneratedSourceCompletenessProbe();
     }
 
     bool WeaponCollision::hasWeaponBody() const
@@ -1690,7 +1401,7 @@ namespace rock
         WeaponInteractionContact& outContact) const
     {
         outContact = {};
-        if (!weaponNode || _weaponBodiesDisabledForMissingVisual || getCurrentWeaponGenerationKey() == 0 || probeRadiusGame <= 0.0f) {
+        if (!weaponNode || getCurrentWeaponGenerationKey() == 0 || probeRadiusGame <= 0.0f) {
             return false;
         }
 
@@ -1754,7 +1465,6 @@ namespace rock
     {
         outContact = {};
         if (!weaponNode ||
-            _weaponBodiesDisabledForMissingVisual ||
             getCurrentWeaponGenerationKey() == 0 ||
             !soft_contact_math::isFinite(capsuleStartWorld) ||
             !soft_contact_math::isFinite(capsuleEndWorld) ||
@@ -1863,22 +1573,12 @@ namespace rock
         _cachedWorld = world;
         _cachedBhkWorld = bhkWorld;
         _cachedWeaponKey = 0;
-        _pendingWeaponKey = 0;
-        _cachedEquippedWeaponOwnerKey = 0;
-        _pendingEquippedWeaponOwnerKey = 0;
-        resetEquippedWeaponWitnessTracking();
         resetWeaponBodySetGeneration();
         _weaponBodySetEpoch = 0;
-        _visualSettleState = {};
-        resetGeneratedSourceCompletenessTracking();
-        _weaponBodyPending = false;
-        _equippedVisualMissingSeconds = 0.0f;
-        _weaponBodiesDisabledForMissingVisual = false;
+        clearGeneratedSourceCompletenessTracking();
         _usingReplacementWeaponBodies = false;
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
-        _retryCounter = 0;
-        _pendingGeneratedRebuildAttemptRequested = false;
         resetWeaponCollisionSettingsCache();
         clearAtomicBodyIds();
 
@@ -1900,24 +1600,14 @@ namespace rock
         }
 
         _cachedWeaponKey = 0;
-        _pendingWeaponKey = 0;
-        _cachedEquippedWeaponOwnerKey = 0;
-        _pendingEquippedWeaponOwnerKey = 0;
-        resetEquippedWeaponWitnessTracking();
         resetWeaponBodySetGeneration();
         _weaponBodySetEpoch = 0;
-        _visualSettleState = {};
-        resetGeneratedSourceCompletenessTracking();
+        clearGeneratedSourceCompletenessTracking();
         _cachedWorld = nullptr;
         _cachedBhkWorld = nullptr;
-        _weaponBodyPending = false;
-        _equippedVisualMissingSeconds = 0.0f;
-        _weaponBodiesDisabledForMissingVisual = false;
         _usingReplacementWeaponBodies = false;
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
-        _retryCounter = 0;
-        _pendingGeneratedRebuildAttemptRequested = false;
         resetWeaponCollisionSettingsCache();
         _dominantHandDisabled = false;
         _disabledHandBodyId.value = INVALID_BODY_ID;
@@ -1925,1012 +1615,197 @@ namespace rock
         ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown");
     }
 
+
     void WeaponCollision::update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, RE::hknpBodyId dominantHandBodyId, float dt)
     {
-        if (!g_rockConfig.rockWeaponCollisionEnabled) {
-            if (hasWeaponBody() && world) {
-                ROCK_LOG_INFO(Weapon, "WeaponCollision disabled via hot reload — destroying generated weapon bodies");
-                destroyWeaponBody(world);
-            }
-            if (_dominantHandDisabled && world) {
-                enableDominantHandCollision(world);
-            }
+        (void)dt;
+
+        auto clearCurrentWeaponState = [&]() {
             _cachedWeaponKey = 0;
-            _pendingWeaponKey = 0;
-            _cachedEquippedWeaponOwnerKey = 0;
-            _pendingEquippedWeaponOwnerKey = 0;
-            resetEquippedWeaponWitnessTracking();
+            clearGeneratedSourceCompletenessTracking();
             resetWeaponBodySetGeneration();
-            _visualSettleState = {};
-            resetGeneratedSourceCompletenessTracking();
-            _weaponBodyPending = false;
-            _equippedVisualMissingSeconds = 0.0f;
-            _weaponBodiesDisabledForMissingVisual = false;
+            resetWeaponCollisionSettingsCache();
             _driveRebuildRequested.store(false, std::memory_order_release);
             _driveFailureCount.store(0, std::memory_order_release);
-            _retryCounter = 0;
-            _pendingGeneratedRebuildAttemptRequested = false;
-            resetWeaponCollisionSettingsCache();
+        };
+
+        if (!g_rockConfig.rockWeaponCollisionEnabled) {
+            if (hasWeaponBody() && world) {
+                ROCK_LOG_INFO(Weapon, "WeaponCollision disabled via hot reload - destroying generated weapon bodies");
+                destroyWeaponBody(world);
+            } else if (_dominantHandDisabled && world) {
+                enableDominantHandCollision(world);
+            }
+            clearCurrentWeaponState();
             return;
         }
-        if (!world)
+
+        if (!world) {
             return;
+        }
 
         if (world != _cachedWorld) {
-            ROCK_LOG_INFO(Weapon, "hknpWorld changed — resetting weapon collision state");
+            ROCK_LOG_INFO(Weapon, "hknpWorld changed - resetting weapon collision state");
             if (hasWeaponBody()) {
                 destroyWeaponBody(_cachedWorld ? _cachedWorld : world);
             } else {
                 clearAtomicBodyIds();
             }
-            _cachedWeaponKey = 0;
-            _pendingWeaponKey = 0;
-            _cachedEquippedWeaponOwnerKey = 0;
-            _pendingEquippedWeaponOwnerKey = 0;
-            resetEquippedWeaponWitnessTracking();
-            resetWeaponBodySetGeneration();
-            _visualSettleState = {};
-            resetGeneratedSourceCompletenessTracking();
-            _weaponBodyPending = false;
-            _equippedVisualMissingSeconds = 0.0f;
-            _weaponBodiesDisabledForMissingVisual = false;
-            _driveRebuildRequested.store(false, std::memory_order_release);
-            _driveFailureCount.store(0, std::memory_order_release);
             _cachedWorld = world;
-            resetWeaponCollisionSettingsCache();
+            clearCurrentWeaponState();
         }
 
         if (!weaponNode) {
-            WeaponVisualKeyStats missingVisualStats{};
-            std::uint64_t equippedOnlyOwnerKey = 0;
-            weapon_generation_identity_policy::EquippedWeaponInstanceWitness equippedOnlyInstanceWitness{};
-            const std::uint64_t equippedOnlyKey = getEquippedWeaponKey(
-                nullptr,
-                missingVisualStats,
-                &equippedOnlyOwnerKey,
-                &equippedOnlyInstanceWitness);
-            if (equippedOnlyKey != 0) {
-                const float safeDt = std::isfinite(dt) && dt > 0.0f ? dt : (1.0f / 90.0f);
-                _equippedVisualMissingSeconds += safeDt;
-            }
-
-            const auto missingDecision = weapon_authority_lifecycle_policy::evaluateEquippedVisualMissing(
-                weapon_authority_lifecycle_policy::EquippedVisualMissingInput{
-                    .hasEquippedIdentity = equippedOnlyKey != 0,
-                    .hasExistingBodies = hasWeaponBody(),
-                    .missingSeconds = _equippedVisualMissingSeconds,
-                    .graceSeconds = EQUIPPED_VISUAL_MISSING_GRACE_SECONDS,
-                });
-
-            if (missingDecision.keepPending) {
-                if (missingDecision.disableExistingBodies && !_weaponBodiesDisabledForMissingVisual) {
-                    const auto cachedBodyCount = bankWeaponBodyCount(activeWeaponBodies());
-                    disableWeaponBodiesForMissingVisual(world);
-                    ROCK_LOG_INFO(Weapon,
-                        "Equipped weapon identity present but visual node is absent - disabling and unpublishing generated bodies while cached state remains pendingKey={:016X} elapsed={:.2f}s cachedBodies={}",
-                        equippedOnlyKey,
-                        _equippedVisualMissingSeconds,
-                        cachedBodyCount);
-                }
-                _pendingWeaponKey = equippedOnlyKey;
-                _pendingEquippedWeaponOwnerKey = equippedOnlyOwnerKey;
-                _pendingEquippedWeaponInstanceWitness = equippedOnlyInstanceWitness;
-                _weaponBodyPending = true;
-                _visualSettleState = {};
-                _generatedSourceSettleState = {};
-                _generatedSourceCompletenessProbeFramesRemaining = 0;
-                _generatedSourceCompletenessProbeCounter = 0;
-                _generatedSourceCompletenessProbeRequested = false;
-                _driveRebuildRequested.store(false, std::memory_order_release);
-                _driveFailureCount.store(0, std::memory_order_release);
-
-                /*
-                 * A missing first-person weapon root is an equip/draw attach transition,
-                 * not the AMCAR stale-visible-source case. Native remap is only safe after
-                 * ROCK can observe a visible weapon tree that remains stale; queueing it
-                 * while the root is absent can preserve the broken attach state after Pip-Boy
-                 * weapon swaps.
-                 */
-                const bool missingVisualChangedCachedWitness =
-                    equippedOnlyInstanceWitness.signature != 0 &&
-                    _cachedEquippedWeaponInstanceWitness.signature != 0 &&
-                    equippedOnlyInstanceWitness.signature != _cachedEquippedWeaponInstanceWitness.signature;
-                if (missingVisualChangedCachedWitness) {
-                    if (_nativeVisualRemapAttemptState.pendingInstanceSignature != 0 &&
-                        _nativeVisualRemapAttemptState.pendingInstanceSignature != equippedOnlyInstanceWitness.signature) {
-                        _nativeVisualRemapAttemptState = {};
-                    }
-                    if (_lastNativeVisualRemapRequestedInstanceSignature != 0 &&
-                        _lastNativeVisualRemapRequestedInstanceSignature != equippedOnlyInstanceWitness.signature) {
-                        _lastNativeVisualRemapRequestedInstanceSignature = 0;
-                    }
-                }
-
-                const char* nativeVisualRemapResult = "blocked";
-                const char* nativeVisualRemapDetail = missingVisualChangedCachedWitness ?
-                                                          "missingVisualAwaitingNativeAttach" :
-                                                          "missingVisualNoNativeRemap";
-                std::uint32_t nativeVisualRemapFormID = equippedOnlyInstanceWitness.formID;
-                std::uintptr_t nativeVisualRemapFormAddress = equippedOnlyInstanceWitness.formAddress;
-                std::uintptr_t nativeVisualRemapInstanceDataAddress = equippedOnlyInstanceWitness.instanceDataAddress;
-                std::uintptr_t nativeVisualRemapObjectInstanceExtraAddress = equippedOnlyInstanceWitness.objectInstanceExtraAddress;
-                std::uint32_t nativeVisualRemapEquipIndex = 0;
-                std::uint32_t nativeVisualRemapSourceSlotIndex = 0;
-                const char* nativeVisualRemapSource = "missingVisualBlocked";
-                if (missingDecision.warnPastGrace) {
-                    ROCK_LOG_SAMPLE_WARN(Weapon,
-                        g_rockConfig.rockLogSampleMilliseconds,
-                        "Equipped weapon visual node still absent after grace - keeping generated collision pending elapsed={:.2f}/{:.2f}s cachedKey={:016X} pendingKey={:016X} bodies={} nativeRemap={} nativeDetail={} nativeForm={:08X}/{:x} nativeInstance={:x} nativeExtra={:x} nativeEquipIndex={} nativeSource={} nativeSlot={} reason={}",
-                        _equippedVisualMissingSeconds,
-                        EQUIPPED_VISUAL_MISSING_GRACE_SECONDS,
-                        _cachedWeaponKey,
-                        _pendingWeaponKey,
-                        bankWeaponBodyCount(activeWeaponBodies()),
-                        nativeVisualRemapResult,
-                        nativeVisualRemapDetail,
-                        nativeVisualRemapFormID,
-                        nativeVisualRemapFormAddress,
-                        nativeVisualRemapInstanceDataAddress,
-                        nativeVisualRemapObjectInstanceExtraAddress,
-                        nativeVisualRemapEquipIndex,
-                        nativeVisualRemapSource,
-                        nativeVisualRemapSourceSlotIndex,
-                        missingDecision.reason);
-                } else {
-                    ROCK_LOG_SAMPLE_DEBUG(Weapon,
-                        g_rockConfig.rockLogSampleMilliseconds,
-                        "Equipped weapon visual node absent - keeping generated collision pending elapsed={:.2f}/{:.2f}s cachedKey={:016X} pendingKey={:016X} bodies={} nativeRemap={} nativeDetail={} nativeForm={:08X}/{:x} nativeInstance={:x} nativeExtra={:x} nativeEquipIndex={} nativeSource={} nativeSlot={} reason={}",
-                        _equippedVisualMissingSeconds,
-                        EQUIPPED_VISUAL_MISSING_GRACE_SECONDS,
-                        _cachedWeaponKey,
-                        _pendingWeaponKey,
-                        bankWeaponBodyCount(activeWeaponBodies()),
-                        nativeVisualRemapResult,
-                        nativeVisualRemapDetail,
-                        nativeVisualRemapFormID,
-                        nativeVisualRemapFormAddress,
-                        nativeVisualRemapInstanceDataAddress,
-                        nativeVisualRemapObjectInstanceExtraAddress,
-                        nativeVisualRemapEquipIndex,
-                        nativeVisualRemapSource,
-                        nativeVisualRemapSourceSlotIndex,
-                        missingDecision.reason);
-                }
-                return;
-            }
-
-            if (missingDecision.destroyExistingBodies) {
-                ROCK_LOG_INFO(Weapon,
-                    "Weapon node gone without equipped identity - destroying weapon bodies equippedKey={:016X} elapsed={:.2f}s",
-                    equippedOnlyKey,
-                    _equippedVisualMissingSeconds);
+            if (hasWeaponBody()) {
+                ROCK_LOG_INFO(Weapon, "Weapon visual node absent - destroying generated weapon bodies");
                 destroyWeaponBody(world);
-            }
-            if (_dominantHandDisabled) {
+            } else if (_dominantHandDisabled) {
                 enableDominantHandCollision(world);
             }
-            _cachedWeaponKey = 0;
-            _pendingWeaponKey = 0;
-            _cachedEquippedWeaponOwnerKey = 0;
-            _pendingEquippedWeaponOwnerKey = 0;
-            resetEquippedWeaponWitnessTracking();
-            resetWeaponBodySetGeneration();
-            _visualSettleState = {};
-            resetGeneratedSourceCompletenessTracking();
-            _weaponBodyPending = false;
-            _equippedVisualMissingSeconds = 0.0f;
-            _weaponBodiesDisabledForMissingVisual = false;
-            _driveRebuildRequested.store(false, std::memory_order_release);
-            _driveFailureCount.store(0, std::memory_order_release);
-            _retryCounter = 0;
-            _pendingGeneratedRebuildAttemptRequested = false;
-            resetWeaponCollisionSettingsCache();
+            clearCurrentWeaponState();
             return;
         }
 
-        _equippedVisualMissingSeconds = 0.0f;
-
         WeaponVisualKeyStats visualKeyStats{};
-        std::uint64_t observedOwnerKey = 0;
-        std::uint64_t observedVisualKey = 0;
-        weapon_generation_identity_policy::EquippedWeaponInstanceWitness observedInstanceWitness{};
-        const std::uint64_t observedKey = getEquippedWeaponKey(
-            weaponNode,
-            visualKeyStats,
-            &observedOwnerKey,
-            &observedInstanceWitness,
-            &observedVisualKey);
-        const auto visualSettle = weapon_visual_composition_policy::advanceVisualSettle(_visualSettleState, observedKey);
-        std::uint64_t currentKey = visualSettle.settled ? observedKey : _cachedWeaponKey;
-        std::uint64_t currentOwnerKey = visualSettle.settled ? observedOwnerKey : _cachedEquippedWeaponOwnerKey;
+        const std::uint64_t observedKey = getEquippedWeaponKey(weaponNode, visualKeyStats);
+        const bool settingsChanged = weaponCollisionSettingsChanged();
+        const bool driveRequestedRebuild = _driveRebuildRequested.exchange(false, std::memory_order_acq_rel);
+        const bool keyChanged = observedKey != 0 && observedKey != _cachedWeaponKey;
+        const bool missingBodies = observedKey != 0 && !hasWeaponBody();
+        const bool rebuildRequired = driveRequestedRebuild || settingsChanged || keyChanged || missingBodies;
 
-        if (_driveRebuildRequested.exchange(false, std::memory_order_acq_rel)) {
+        if (driveRequestedRebuild) {
             ROCK_LOG_WARN(Weapon,
                 "Generated weapon collision drive failure requested rebuild cachedKey={:016X} observedKey={:016X}",
                 _cachedWeaponKey,
                 observedKey);
+        }
+
+        if (observedKey == 0) {
             if (hasWeaponBody()) {
+                ROCK_LOG_INFO(Weapon, "Weapon identity unavailable - destroying generated weapon bodies");
                 destroyWeaponBody(world);
+            } else if (_dominantHandDisabled) {
+                enableDominantHandCollision(world);
             }
-            _cachedWeaponKey = 0;
-            _cachedEquippedWeaponOwnerKey = 0;
-            _cachedEquippedWeaponInstanceWitness = {};
-            resetWeaponBodySetGeneration();
-            _pendingWeaponKey = observedKey;
-            _pendingEquippedWeaponOwnerKey = observedOwnerKey;
-            _pendingEquippedWeaponInstanceWitness = observedInstanceWitness;
-            _weaponBodyPending = (observedKey != 0);
-            _generatedSourceSettleState = {};
-            _generatedSourceCompletenessProbeFramesRemaining = 0;
-            _generatedSourceCompletenessProbeCounter = 0;
-            _generatedSourceCompletenessProbeRequested = false;
-            _retryCounter = 0;
-            _driveFailureCount.store(0, std::memory_order_release);
-            currentKey = visualSettle.settled ? observedKey : 0;
-            currentOwnerKey = visualSettle.settled ? observedOwnerKey : 0;
-            _pendingGeneratedRebuildAttemptRequested = false;
+            clearCurrentWeaponState();
+            return;
         }
 
-        if (!visualSettle.settled) {
-            if (visualSettle.keyChanged) {
-                ROCK_LOG_INFO(Weapon,
-                    "Weapon visual composition changed: cached={:016X} observed={:016X} visualRoots={} visualNodes={} visualTriShapes={} visibleTriShapes={} missingGeometry={} invisibleNodes={} — waiting for stable geometry",
-                    _cachedWeaponKey,
-                    observedKey,
-                    visualKeyStats.rootCount,
-                    visualKeyStats.nodeCount,
-                    visualKeyStats.triShapeCount,
-                    visualKeyStats.visibleTriShapeCount,
-                    visualKeyStats.missingRendererCount + visualKeyStats.emptyGeometryCount,
-                    visualKeyStats.invisibleNodeCount);
-            } else {
-                ROCK_LOG_DEBUG(Weapon,
-                    "Weapon visual composition settling: observed={:016X} stableFrames={}/{} visualRoots={} visualNodes={} visibleTriShapes={} missingGeometry={}",
-                    observedKey,
-                    visualSettle.stableFrames,
-                    weapon_visual_composition_policy::kRequiredStableVisualFrames,
-                    visualKeyStats.rootCount,
-                    visualKeyStats.nodeCount,
-                    visualKeyStats.visibleTriShapeCount,
-                    visualKeyStats.missingRendererCount + visualKeyStats.emptyGeometryCount);
-            }
-        } else {
-            if (visualSettle.keyChanged || observedKey != _cachedWeaponKey) {
-                ROCK_LOG_DEBUG(Weapon,
-                    "Weapon visual composition settled: cached={:016X} observed={:016X} stableFrames={} visualRoots={} visualNodes={} visualTriShapes={} visibleTriShapes={} missingGeometry={} invisibleNodes={}",
-                    _cachedWeaponKey,
-                    observedKey,
-                    visualSettle.stableFrames,
-                    visualKeyStats.rootCount,
-                    visualKeyStats.nodeCount,
-                    visualKeyStats.triShapeCount,
-                    visualKeyStats.visibleTriShapeCount,
-                    visualKeyStats.missingRendererCount + visualKeyStats.emptyGeometryCount,
-                    visualKeyStats.invisibleNodeCount);
-            }
+        if (rebuildRequired) {
+            std::vector<GeneratedHullSource> generatedSources;
+            const std::size_t generatedCount = findGeneratedWeaponShapeSources(weaponNode, generatedSources);
+            const bool hasBuildableSource = std::any_of(generatedSources.begin(), generatedSources.end(), [](const GeneratedHullSource& source) {
+                return pointCloudCanBuildHull(source.localPointsGame);
+            });
+            const auto generatedSummary = summarizeGeneratedSources(generatedSources);
 
-            if (currentKey != _cachedWeaponKey) {
+            if (!hasBuildableSource || generatedCount == 0 || generatedSummary.signature == 0) {
+                ROCK_LOG_SAMPLE_WARN(Weapon,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Generated weapon mesh collision unavailable from current visible geometry - destroying stale bodies cachedKey={:016X} observedKey={:016X} visualRoots={} visualNodes={} visibleTriShapes={} sources={} missingGeometry={} invisibleNodes={}",
+                    _cachedWeaponKey,
+                    observedKey,
+                    visualKeyStats.rootCount,
+                    visualKeyStats.nodeCount,
+                    visualKeyStats.visibleTriShapeCount,
+                    generatedCount,
+                    visualKeyStats.missingRendererCount + visualKeyStats.emptyGeometryCount,
+                    visualKeyStats.invisibleNodeCount);
                 if (hasWeaponBody()) {
-                    const auto pendingTransition = weapon_authority_lifecycle_policy::evaluateGeneratedCollisionPendingTransition(
-                        weapon_authority_lifecycle_policy::GeneratedCollisionPendingTransitionInput{
-                            .wasPending = _weaponBodyPending,
-                            .previousPendingKey = _pendingWeaponKey,
-                            .nextPendingKey = currentKey,
-                            .forceReset = false,
-                        });
-                    if (pendingTransition.startedNewPendingKey) {
-                        ROCK_LOG_INFO(Weapon,
-                            "Weapon visual composition changed while generated bodies are valid: cached={:016X} pending={:016X} visualRoots={} visualNodes={} visualTriShapes={} visibleTriShapes={} — keeping old bodies until replacement mesh is ready",
-                            _cachedWeaponKey,
-                            currentKey,
-                            visualKeyStats.rootCount,
-                            visualKeyStats.nodeCount,
-                            visualKeyStats.triShapeCount,
-                            visualKeyStats.visibleTriShapeCount);
-                    }
-                    _pendingWeaponKey = pendingTransition.pendingKey;
-                    _pendingEquippedWeaponOwnerKey = pendingTransition.pending ? currentOwnerKey : 0;
-                    _pendingEquippedWeaponInstanceWitness = pendingTransition.pending ? observedInstanceWitness : weapon_generation_identity_policy::EquippedWeaponInstanceWitness{};
-                    _weaponBodyPending = pendingTransition.pending;
-                    if (pendingTransition.resetSourceSettle) {
-                        _generatedSourceSettleState = {};
-                    }
-                    if (pendingTransition.resetProbeCounters) {
-                        _generatedSourceCompletenessProbeFramesRemaining = 0;
-                        _generatedSourceCompletenessProbeCounter = 0;
-                        _generatedSourceCompletenessProbeRequested = false;
-                    }
-                    if (pendingTransition.resetRetryCounter) {
-                        _retryCounter = 0;
-                        _pendingGeneratedRebuildAttemptRequested = false;
-                    }
+                    destroyWeaponBody(world);
                 } else {
-                    ROCK_LOG_INFO(Weapon,
-                        "Weapon changed: {:016X} -> {:016X} visualRoots={} visualNodes={} visualTriShapes={} visibleTriShapes={} missingGeometry={} invisibleNodes={}",
-                        _cachedWeaponKey,
-                        currentKey,
-                        visualKeyStats.rootCount,
-                        visualKeyStats.nodeCount,
-                        visualKeyStats.triShapeCount,
-                        visualKeyStats.visibleTriShapeCount,
-                        visualKeyStats.missingRendererCount + visualKeyStats.emptyGeometryCount,
-                        visualKeyStats.invisibleNodeCount);
-                    _cachedWeaponKey = currentKey;
-                    _cachedEquippedWeaponOwnerKey = currentOwnerKey;
-                    _cachedEquippedWeaponInstanceWitness = observedInstanceWitness;
-                    _pendingWeaponKey = currentKey;
-                    _pendingEquippedWeaponOwnerKey = currentOwnerKey;
-                    _pendingEquippedWeaponInstanceWitness = observedInstanceWitness;
-                    _weaponBodyPending = (currentKey != 0);
-                    resetGeneratedSourceCompletenessTracking();
-                    resetWeaponCollisionSettingsCache();
+                    clearAtomicBodyIds();
+                    resetWeaponBodySetGeneration();
                 }
+                _cachedWeaponKey = 0;
+                clearGeneratedSourceCompletenessTracking();
+                return;
             }
 
-            const bool settingsChanged = weaponCollisionSettingsChanged();
-            const bool settingsRebuildAlreadyPending =
-                _weaponBodyPending &&
-                _pendingWeaponKey != 0 &&
-                _pendingWeaponKey == currentKey;
-            if (_weaponBodyPending &&
-                hasWeaponBody() &&
-                currentKey != 0 &&
-                currentKey == _cachedWeaponKey &&
-                _pendingWeaponKey != 0 &&
-                _pendingWeaponKey != currentKey) {
-                const auto returnedCachedPendingDecision =
-                    weapon_authority_lifecycle_policy::evaluateReturnedCachedVisualPending(
-                        weapon_authority_lifecycle_policy::ReturnedCachedVisualPendingInput{
-                            .hasExistingBodies = hasWeaponBody(),
-                            .settingsChanged = settingsChanged,
-                            .cachedKey = _cachedWeaponKey,
-                            .currentKey = currentKey,
-                            .pendingKey = _pendingWeaponKey,
-                            .cachedInstanceSignature = _cachedEquippedWeaponInstanceWitness.signature,
-                            .pendingInstanceSignature = _pendingEquippedWeaponInstanceWitness.signature,
-                            .cachedFormID = _cachedEquippedWeaponInstanceWitness.formID,
-                            .pendingFormID = _pendingEquippedWeaponInstanceWitness.formID,
-                            .cachedInstanceDataAddress = _cachedEquippedWeaponInstanceWitness.instanceDataAddress,
-                            .pendingInstanceDataAddress = _pendingEquippedWeaponInstanceWitness.instanceDataAddress,
-                            .cachedInstanceKeywordDataAddress = _cachedEquippedWeaponInstanceWitness.instanceKeywordDataAddress,
-                            .pendingInstanceKeywordDataAddress = _pendingEquippedWeaponInstanceWitness.instanceKeywordDataAddress,
-                            .cachedObjectInstanceExtraAddress = _cachedEquippedWeaponInstanceWitness.objectInstanceExtraAddress,
-                            .pendingObjectInstanceExtraAddress = _pendingEquippedWeaponInstanceWitness.objectInstanceExtraAddress,
-                        });
-                if (returnedCachedPendingDecision.keepPendingForStaleVisibleCheck) {
-                    ROCK_LOG_INFO(Weapon,
-                        "Weapon visual composition returned to cached key with same-form pending equipped instance - keeping pending witness for stale visible remap cached={:016X} pending={:016X} cachedInstance={:016X} pendingInstance={:016X} cachedForm={:08X} pendingForm={:08X} cachedInstanceData={:x} pendingInstanceData={:x} cachedKeywordData={:x} pendingKeywordData={:x} cachedExtra={:x} pendingExtra={:x} reason={}",
+            const bool replacingExisting = hasWeaponBody();
+            auto& targetBank = replacingExisting ? inactiveWeaponBodies() : activeWeaponBodies();
+            if (replacingExisting) {
+                destroyWeaponBodyBank(targetBank, true);
+            }
+
+            const auto createdCount = createGeneratedWeaponBodiesInBank(
+                world,
+                generatedSources,
+                targetBank,
+                GeneratedWeaponBodyCreateOptions{
+                    .collisionEnabledOnCreate = false,
+                });
+
+            if (createdCount == 0) {
+                if (replacingExisting) {
+                    destroyWeaponBodyBank(targetBank, true);
+                    ROCK_LOG_WARN(Weapon,
+                        "Generated weapon replacement creation failed - destroying stale active bodies cachedKey={:016X} observedKey={:016X} sources={}",
                         _cachedWeaponKey,
-                        _pendingWeaponKey,
-                        _cachedEquippedWeaponInstanceWitness.signature,
-                        _pendingEquippedWeaponInstanceWitness.signature,
-                        _cachedEquippedWeaponInstanceWitness.formID,
-                        _pendingEquippedWeaponInstanceWitness.formID,
-                        _cachedEquippedWeaponInstanceWitness.instanceDataAddress,
-                        _pendingEquippedWeaponInstanceWitness.instanceDataAddress,
-                        _cachedEquippedWeaponInstanceWitness.instanceKeywordDataAddress,
-                        _pendingEquippedWeaponInstanceWitness.instanceKeywordDataAddress,
-                        _cachedEquippedWeaponInstanceWitness.objectInstanceExtraAddress,
-                        _pendingEquippedWeaponInstanceWitness.objectInstanceExtraAddress,
-                        returnedCachedPendingDecision.reason);
-                    requestPendingGeneratedRebuildAttemptNextFrame();
-                } else if (returnedCachedPendingDecision.cancelPending) {
-                    ROCK_LOG_INFO(Weapon,
-                        "Weapon visual composition returned to cached key - cancelling transient pending replacement cached={:016X} stalePending={:016X} cachedInstance={:016X} pendingInstance={:016X} cachedForm={:08X} pendingForm={:08X} cachedInstanceData={:x} pendingInstanceData={:x} cachedKeywordData={:x} pendingKeywordData={:x} cachedExtra={:x} pendingExtra={:x} reason={}",
-                        _cachedWeaponKey,
-                        _pendingWeaponKey,
-                        _cachedEquippedWeaponInstanceWitness.signature,
-                        _pendingEquippedWeaponInstanceWitness.signature,
-                        _cachedEquippedWeaponInstanceWitness.formID,
-                        _pendingEquippedWeaponInstanceWitness.formID,
-                        _cachedEquippedWeaponInstanceWitness.instanceDataAddress,
-                        _pendingEquippedWeaponInstanceWitness.instanceDataAddress,
-                        _cachedEquippedWeaponInstanceWitness.instanceKeywordDataAddress,
-                        _pendingEquippedWeaponInstanceWitness.instanceKeywordDataAddress,
-                        _cachedEquippedWeaponInstanceWitness.objectInstanceExtraAddress,
-                        _pendingEquippedWeaponInstanceWitness.objectInstanceExtraAddress,
-                        returnedCachedPendingDecision.reason);
-                    _weaponBodyPending = false;
-                    _pendingWeaponKey = 0;
-                    _pendingEquippedWeaponOwnerKey = 0;
-                    clearAuthoritativeWitnessForSettledInstance(
-                        _pendingEquippedWeaponInstanceWitness,
-                        "returnedCachedVisualCancelledPending");
-                    _pendingEquippedWeaponInstanceWitness = {};
-                    _pendingGeneratedWeaponVisualWitness = {};
-                    resetStaleWeaponVisualTracking();
-                    _generatedSourceSettleState = {};
-                    _retryCounter = 0;
-                    _pendingGeneratedRebuildAttemptRequested = false;
+                        observedKey,
+                        generatedCount);
+                    destroyWeaponBody(world);
+                } else {
+                    clearAtomicBodyIds();
+                    resetWeaponBodySetGeneration();
                 }
+                _cachedWeaponKey = 0;
+                clearGeneratedSourceCompletenessTracking();
+                return;
             }
-            if (hasWeaponBody() && settingsChanged && !settingsRebuildAlreadyPending) {
-                ROCK_LOG_INFO(Weapon, "Generated weapon collision settings changed — keeping current bodies while replacement is pending");
-                _pendingWeaponKey = currentKey;
-                _pendingEquippedWeaponOwnerKey = currentOwnerKey;
-                _pendingEquippedWeaponInstanceWitness = observedInstanceWitness;
-                _weaponBodyPending = (currentKey != 0);
-                _generatedSourceSettleState = {};
-                _generatedSourceCompletenessProbeFramesRemaining = 0;
-                _generatedSourceCompletenessProbeCounter = 0;
-                _generatedSourceCompletenessProbeRequested = false;
-                _retryCounter = 0;
-                _pendingGeneratedRebuildAttemptRequested = false;
-            }
-            if (_weaponBodiesDisabledForMissingVisual &&
-                _weaponBodyPending &&
-                !settingsChanged &&
-                hasWeaponBody() &&
-                currentKey != 0 &&
-                currentKey == _cachedWeaponKey) {
-                _weaponBodyPending = false;
-                _pendingWeaponKey = 0;
-                _pendingEquippedWeaponOwnerKey = 0;
-                clearAuthoritativeWitnessForSettledInstance(
-                    _pendingEquippedWeaponInstanceWitness,
-                    "returnedUnchangedVisualCancelledPending");
-                _pendingEquippedWeaponInstanceWitness = {};
-                _pendingGeneratedWeaponVisualWitness = {};
-                resetStaleWeaponVisualTracking();
-                _retryCounter = 0;
-                _pendingGeneratedRebuildAttemptRequested = false;
+
+            if (replacingExisting) {
                 ROCK_LOG_INFO(Weapon,
-                    "Weapon visual node returned with unchanged settled key - cancelling pending rebuild and waiting to re-enable cached bodies key={:016X}",
-                    currentKey);
-            }
-            if (_weaponBodyPending && _pendingWeaponKey == 0) {
-                ROCK_LOG_SAMPLE_WARN(Weapon,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "Generated weapon lifecycle invariant repaired: pending state had zero pending key cached={:016X} current={:016X}",
+                    "Replacing generated weapon collision bodies cachedKey={:016X} observedKey={:016X} sources={} replacementBodies={} settingsChanged={} driveRebuild={}",
                     _cachedWeaponKey,
-                    currentKey);
-                _weaponBodyPending = false;
-                _pendingEquippedWeaponOwnerKey = 0;
-                clearAuthoritativeWitnessForSettledInstance(
-                    _pendingEquippedWeaponInstanceWitness,
-                    "pendingInvariantZeroKeyRepaired");
-                _pendingEquippedWeaponInstanceWitness = {};
-                _pendingGeneratedWeaponVisualWitness = {};
-                resetStaleWeaponVisualTracking();
-                _retryCounter = 0;
-                _pendingGeneratedRebuildAttemptRequested = false;
-            }
-            if (_weaponBodiesDisabledForMissingVisual &&
-                hasWeaponBody() &&
-                visualSettle.settled &&
-                currentKey != 0 &&
-                currentKey != _cachedWeaponKey &&
-                !_weaponBodyPending) {
-                ROCK_LOG_SAMPLE_WARN(Weapon,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "Generated weapon lifecycle invariant repaired: disabled cached bodies need pending replacement cached={:016X} current={:016X}",
-                    _cachedWeaponKey,
-                    currentKey);
-                const auto pendingTransition = weapon_authority_lifecycle_policy::evaluateGeneratedCollisionPendingTransition(
-                    weapon_authority_lifecycle_policy::GeneratedCollisionPendingTransitionInput{
-                        .wasPending = _weaponBodyPending,
-                        .previousPendingKey = _pendingWeaponKey,
-                        .nextPendingKey = currentKey,
-                        .forceReset = true,
-                    });
-                _pendingWeaponKey = pendingTransition.pendingKey;
-                _pendingEquippedWeaponOwnerKey = pendingTransition.pending ? currentOwnerKey : 0;
-                _pendingEquippedWeaponInstanceWitness = pendingTransition.pending ? observedInstanceWitness : weapon_generation_identity_policy::EquippedWeaponInstanceWitness{};
-                _weaponBodyPending = pendingTransition.pending;
-                _generatedSourceSettleState = {};
-                _generatedSourceCompletenessProbeFramesRemaining = 0;
-                _generatedSourceCompletenessProbeCounter = 0;
-                _generatedSourceCompletenessProbeRequested = false;
-                _retryCounter = 0;
-                _pendingGeneratedRebuildAttemptRequested = false;
-            }
-
-            if (_weaponBodyPending) {
-                ++_retryCounter;
-                const bool immediateRebuildAttemptRequested = _pendingGeneratedRebuildAttemptRequested;
-                _pendingGeneratedRebuildAttemptRequested = false;
-                const bool intervalDue = _retryCounter >= static_cast<int>(GENERATED_WEAPON_PENDING_REBUILD_INTERVAL_FRAMES);
-                const bool firstPendingAttempt = _retryCounter == 1;
-                const bool shouldAttemptCreate = immediateRebuildAttemptRequested || intervalDue || firstPendingAttempt;
-                if (shouldAttemptCreate) {
-                    if (immediateRebuildAttemptRequested || intervalDue) {
-                        _retryCounter = 0;
-                    }
-
-                    const std::uint64_t replacementKey = (_pendingWeaponKey != 0) ? _pendingWeaponKey : currentKey;
-                    const std::uint64_t replacementOwnerKey = (_pendingEquippedWeaponOwnerKey != 0) ? _pendingEquippedWeaponOwnerKey : currentOwnerKey;
-                    const auto replacementInstanceWitness =
-                        _pendingEquippedWeaponInstanceWitness.signature != 0 ? _pendingEquippedWeaponInstanceWitness : observedInstanceWitness;
-                    /*
-                     * Generated weapon collision is now geometry-first. The engine
-                     * first-person refresh path only reapplies transforms to nodes the
-                     * game already attached; it does not repair a stale mod attach set.
-                     * Scan the settled weapon candidate trees once per pending attempt and
-                     * generate every buildable visible mesh source after dedupe.
-                     */
-                    std::vector<GeneratedHullSource> generatedSources;
-                    const std::size_t generatedCount = findGeneratedWeaponShapeSources(weaponNode, generatedSources);
-                    const bool hasBuildableSource = std::any_of(generatedSources.begin(), generatedSources.end(), [](const GeneratedHullSource& source) {
-                        return pointCloudCanBuildHull(source.localPointsGame);
-                    });
-                    const auto generatedSummary = summarizeGeneratedSources(generatedSources);
-                    const auto observedGeneratedVisualWitness = makeGeneratedWeaponVisualWitness(
-                        observedVisualKey,
-                        visualKeyStats,
-                        generatedSummary,
-                        hasBuildableSource);
-                    _pendingGeneratedWeaponVisualWitness = observedGeneratedVisualWitness;
-                    const bool ownerIdentityChanged =
-                        _cachedEquippedWeaponOwnerKey != 0 &&
-                        replacementOwnerKey != 0 &&
-                        replacementOwnerKey != _cachedEquippedWeaponOwnerKey;
-                    const bool settingsChangedForRebuild = weaponCollisionSettingsChanged();
-                    const std::uint64_t sourceSettleKey = hasBuildableSource ?
-                        weapon_generated_source_completeness_policy::makeGeneratedSourcePendingSettleKey(
-                            _cachedGeneratedSourceCompleteness,
-                            generatedSummary,
-                            ownerIdentityChanged,
-                            settingsChangedForRebuild) :
-                        0;
-                    const auto sourceSettle = weapon_generated_source_completeness_policy::advanceGeneratedSourceSettle(_generatedSourceSettleState, sourceSettleKey);
-                    const bool sourceSetSettling = hasBuildableSource && !sourceSettle.settled;
-                    if (sourceSetSettling) {
-                        ROCK_LOG_DEBUG(Weapon,
-                            "Generated weapon source set settling: signature={:016X} settleKey={:016X} stableFrames={}/{} sources={} points={} children={} semanticMask=0x{:08X}",
-                            generatedSummary.signature,
-                            sourceSettleKey,
-                            sourceSettle.stableFrames,
-                            weapon_generated_source_completeness_policy::kRequiredStableGeneratedSourceFrames,
-                            generatedSummary.sourceCount,
-                            generatedSummary.pointCount,
-                            generatedSummary.childClusterCount,
-                            generatedSummary.semanticPartMask);
-                        _weaponBodyPending = true;
-                        _pendingEquippedWeaponInstanceWitness = replacementInstanceWitness;
-                        _pendingGeneratedWeaponVisualWitness = observedGeneratedVisualWitness;
-                        const bool smallSourceSet =
-                            generatedSummary.sourceCount <= 8 &&
-                            generatedSummary.pointCount <= 512 &&
-                            generatedSummary.childClusterCount <= 16;
-                        if (smallSourceSet && !sourceSettle.keyChanged) {
-                            requestPendingGeneratedRebuildAttemptNextFrame();
-                        }
-                    } else {
-                        const bool equippedInstanceChanged =
-                            _cachedEquippedWeaponInstanceWitness.signature != 0 &&
-                            replacementInstanceWitness.signature != 0 &&
-                            replacementInstanceWitness.signature != _cachedEquippedWeaponInstanceWitness.signature;
-                        const bool equippedRemapWitnessChanged =
-                            weapon_authority_lifecycle_policy::sameFormEquippedInstanceRemapWitnessChanged(
-                                weapon_authority_lifecycle_policy::EquippedInstanceRemapWitnessInput{
-                                    .cachedInstanceSignature = _cachedEquippedWeaponInstanceWitness.signature,
-                                    .pendingInstanceSignature = replacementInstanceWitness.signature,
-                                    .cachedFormID = _cachedEquippedWeaponInstanceWitness.formID,
-                                    .pendingFormID = replacementInstanceWitness.formID,
-                                    .cachedInstanceDataAddress = _cachedEquippedWeaponInstanceWitness.instanceDataAddress,
-                                    .pendingInstanceDataAddress = replacementInstanceWitness.instanceDataAddress,
-                                    .cachedInstanceKeywordDataAddress = _cachedEquippedWeaponInstanceWitness.instanceKeywordDataAddress,
-                                    .pendingInstanceKeywordDataAddress = replacementInstanceWitness.instanceKeywordDataAddress,
-                                    .cachedObjectInstanceExtraAddress = _cachedEquippedWeaponInstanceWitness.objectInstanceExtraAddress,
-                                    .pendingObjectInstanceExtraAddress = replacementInstanceWitness.objectInstanceExtraAddress,
-                                });
-                        const bool staleVisibleEquipWitnessChanged =
-                            equippedInstanceChanged || equippedRemapWitnessChanged || ownerIdentityChanged;
-                        const auto staleVisualDecision = weapon_instance_visual_witness_policy::evaluateInstanceVisualSync(
-                            weapon_instance_visual_witness_policy::InstanceVisualSyncInput{
-                                .hasExistingBodies = hasWeaponBody(),
-                                .equippedInstanceChanged = staleVisibleEquipWitnessChanged,
-                                .settingsChanged = settingsChangedForRebuild,
-                                .hasBuildableSource = hasBuildableSource,
-                                .cachedSource = _cachedGeneratedSourceCompleteness,
-                                .observedSource = generatedSummary,
-                            });
-                        if (staleVisualDecision.staleVisualSource) {
-                            ++_staleVisualPendingObservationCount;
-                            _pendingWeaponKey = replacementKey;
-                            _pendingEquippedWeaponOwnerKey = replacementOwnerKey;
-                            _pendingEquippedWeaponInstanceWitness = replacementInstanceWitness;
-                            _pendingGeneratedWeaponVisualWitness = observedGeneratedVisualWitness;
-                            _weaponBodyPending = staleVisualDecision.pending;
-                            if (_weaponBodiesDisabledForMissingVisual && hasWeaponBody()) {
-                                publishAtomicBodyIds(activeWeaponBodies());
-                                setWeaponBodyBankCollisionEnabled(world, activeWeaponBodies(), true);
-                                _weaponBodiesDisabledForMissingVisual = false;
-                            }
-                            _nativeVisualRemapAttemptState = weapon_native_visual_remap_policy::observeNativeVisualRemapStillStale(
-                                _nativeVisualRemapAttemptState,
-                                replacementInstanceWitness.signature);
-                            const char* nativeVisualRemapEligibilityReason = "";
-                            const bool nativeVisualRemapAuthorized =
-                                weapon_instance_witness_runtime::nativeVisualRemapAllowedForWitness(
-                                    replacementInstanceWitness.signature,
-                                    nativeVisualRemapEligibilityReason);
-                            const auto nativeVisualRemapDecision = weapon_native_visual_remap_policy::evaluateNativeVisualRemap(
-                                weapon_native_visual_remap_policy::NativeVisualRemapInput{
-                                    .enabled = g_rockConfig.rockWeaponCollisionNativeVisualRemapEnabled,
-                                    .authorizedWitness = nativeVisualRemapAuthorized,
-                                    .staleVisualSource = staleVisualDecision.staleVisualSource,
-                                    .equippedInstanceChanged = staleVisibleEquipWitnessChanged,
-                                    .pendingInstanceSignature = replacementInstanceWitness.signature,
-                                    .lastRequestedInstanceSignature = _lastNativeVisualRemapRequestedInstanceSignature,
-                                    .attemptState = _nativeVisualRemapAttemptState,
-                                });
-                            const char* nativeVisualRemapResult = "notRequested";
-                            const char* nativeVisualRemapDetail = nativeVisualRemapAuthorized ?
-                                nativeVisualRemapDecision.reason :
-                                nativeVisualRemapEligibilityReason;
-                            std::uint32_t nativeVisualRemapFormID = replacementInstanceWitness.formID;
-                            std::uintptr_t nativeVisualRemapFormAddress = 0;
-                            std::uintptr_t nativeVisualRemapInstanceDataAddress = 0;
-                            std::uintptr_t nativeVisualRemapObjectInstanceExtraAddress = 0;
-                            std::uint32_t nativeVisualRemapEquipIndex = 0;
-                            std::uint32_t nativeVisualRemapSourceSlotIndex = 0;
-                            const char* nativeVisualRemapSource = "";
-                            if (nativeVisualRemapDecision.requestRemap) {
-                                const auto nativeVisualRemapOutcome = requestNativeVisualRemapForWitness(
-                                    replacementInstanceWitness,
-                                    staleVisualDecision.reason);
-                                nativeVisualRemapResult = weapon_visual_remap_runtime::resultName(nativeVisualRemapOutcome.result);
-                                nativeVisualRemapDetail = nativeVisualRemapOutcome.detail;
-                                nativeVisualRemapFormID = nativeVisualRemapOutcome.weaponFormID;
-                                nativeVisualRemapFormAddress = nativeVisualRemapOutcome.weaponFormAddress;
-                                nativeVisualRemapInstanceDataAddress = nativeVisualRemapOutcome.instanceDataAddress;
-                                nativeVisualRemapObjectInstanceExtraAddress = nativeVisualRemapOutcome.objectInstanceExtraAddress;
-                                nativeVisualRemapEquipIndex = nativeVisualRemapOutcome.equipIndex;
-                                nativeVisualRemapSourceSlotIndex = nativeVisualRemapOutcome.sourceSlotIndex;
-                                nativeVisualRemapSource = nativeVisualRemapOutcome.source;
-                                recordNativeVisualRemapOutcome(
-                                    _nativeVisualRemapAttemptState,
-                                    _lastNativeVisualRemapRequestedInstanceSignature,
-                                    nativeVisualRemapOutcome,
-                                    replacementInstanceWitness.signature);
-                                if (nativeVisualRemapOutcome.queued()) {
-                                    requestPendingGeneratedRebuildAttemptNextFrame();
-                                    ROCK_LOG_INFO(Weapon,
-                                        "Queued native weapon visual remap for stale generated source pendingInstance={:016X} expectedForm={:08X}/{:x} actualForm={:08X}/{:x} expectedInstance={:x} actualInstance={:x} expectedExtra={:x} actualExtra={:x} equipIndex={} source={} slot={} reason={}",
-                                        replacementInstanceWitness.signature,
-                                        replacementInstanceWitness.formID,
-                                        replacementInstanceWitness.formAddress,
-                                        nativeVisualRemapOutcome.weaponFormID,
-                                        nativeVisualRemapOutcome.weaponFormAddress,
-                                        replacementInstanceWitness.instanceDataAddress,
-                                        nativeVisualRemapOutcome.instanceDataAddress,
-                                        replacementInstanceWitness.objectInstanceExtraAddress,
-                                        nativeVisualRemapOutcome.objectInstanceExtraAddress,
-                                        nativeVisualRemapOutcome.equipIndex,
-                                        nativeVisualRemapOutcome.source,
-                                        nativeVisualRemapOutcome.sourceSlotIndex,
-                                        staleVisualDecision.reason);
-                                } else {
-                                    ROCK_LOG_SAMPLE_WARN(Weapon,
-                                        g_rockConfig.rockLogSampleMilliseconds,
-                                        "Native weapon visual remap request failed result={} detail={} pendingInstance={:016X} expectedForm={:08X}/{:x} actualForm={:08X}/{:x} expectedInstance={:x} actualInstance={:x} expectedExtra={:x} actualExtra={:x} equipIndex={} source={} slot={} reason={}",
-                                        nativeVisualRemapResult,
-                                        nativeVisualRemapDetail,
-                                        replacementInstanceWitness.signature,
-                                        replacementInstanceWitness.formID,
-                                        replacementInstanceWitness.formAddress,
-                                        nativeVisualRemapOutcome.weaponFormID,
-                                        nativeVisualRemapOutcome.weaponFormAddress,
-                                        replacementInstanceWitness.instanceDataAddress,
-                                        nativeVisualRemapOutcome.instanceDataAddress,
-                                        replacementInstanceWitness.objectInstanceExtraAddress,
-                                        nativeVisualRemapOutcome.objectInstanceExtraAddress,
-                                        nativeVisualRemapOutcome.equipIndex,
-                                        nativeVisualRemapOutcome.source,
-                                        nativeVisualRemapOutcome.sourceSlotIndex,
-                                        staleVisualDecision.reason);
-                                }
-                            }
-                            if (staleVisualDecision.requestNextObservation) {
-                                requestPendingGeneratedRebuildAttemptNextFrame();
-                            }
-                            ROCK_LOG_SAMPLE_WARN(Weapon,
-                                g_rockConfig.rockLogSampleMilliseconds,
-                                "Equipped weapon instance changed but generated visual source is stale - keeping cached bodies active cachedKey={:016X} pendingKey={:016X} cachedOwner={:016X} pendingOwner={:016X} cachedInstance={:016X} pendingInstance={:016X} remapWitnessChanged={} cachedInstanceData={:x} pendingInstanceData={:x} cachedKeywordData={:x} pendingKeywordData={:x} cachedMods={} pendingMods={} cachedExtra={:x} pendingExtra={:x} visualKey={:016X} roots={} nodes={} visibleTriShapes={} cachedSources={} observedSources={} cachedPoints={} observedPoints={} cachedMask=0x{:08X} observedMask=0x{:08X} observations={} nativeRemap={} nativeDetail={} nativeForm={:08X}/{:x} nativeInstance={:x} nativeExtra={:x} nativeEquipIndex={} nativeSource={} nativeSlot={} reason={}",
-                                _cachedWeaponKey,
-                                replacementKey,
-                                _cachedEquippedWeaponOwnerKey,
-                                replacementOwnerKey,
-                                _cachedEquippedWeaponInstanceWitness.signature,
-                                replacementInstanceWitness.signature,
-                                equippedRemapWitnessChanged,
-                                _cachedEquippedWeaponInstanceWitness.instanceDataAddress,
-                                replacementInstanceWitness.instanceDataAddress,
-                                _cachedEquippedWeaponInstanceWitness.instanceKeywordDataAddress,
-                                replacementInstanceWitness.instanceKeywordDataAddress,
-                                _cachedEquippedWeaponInstanceWitness.activeModCount,
-                                replacementInstanceWitness.activeModCount,
-                                _cachedEquippedWeaponInstanceWitness.objectInstanceExtraAddress,
-                                replacementInstanceWitness.objectInstanceExtraAddress,
-                                observedGeneratedVisualWitness.visualKey,
-                                observedGeneratedVisualWitness.visualRootCount,
-                                observedGeneratedVisualWitness.visualNodeCount,
-                                observedGeneratedVisualWitness.visibleTriShapeCount,
-                                _cachedGeneratedSourceCompleteness.sourceCount,
-                                generatedSummary.sourceCount,
-                                _cachedGeneratedSourceCompleteness.pointCount,
-                                generatedSummary.pointCount,
-                                _cachedGeneratedSourceCompleteness.semanticPartMask,
-                                generatedSummary.semanticPartMask,
-                                _staleVisualPendingObservationCount,
-                                nativeVisualRemapResult,
-                                nativeVisualRemapDetail,
-                                nativeVisualRemapFormID,
-                                nativeVisualRemapFormAddress,
-                                nativeVisualRemapInstanceDataAddress,
-                                nativeVisualRemapObjectInstanceExtraAddress,
-                                nativeVisualRemapEquipIndex,
-                                nativeVisualRemapSource,
-                                nativeVisualRemapSourceSlotIndex,
-                                staleVisualDecision.reason);
-                        } else {
-                        const auto expectedSourceCompleteness =
-                            _cachedEquippedWeaponOwnerKey != 0 && replacementOwnerKey == _cachedEquippedWeaponOwnerKey ?
-                                _cachedGeneratedSourceCompleteness :
-                                weapon_generated_source_completeness_policy::GeneratedSourceCompleteness{};
-                        const auto sourceReplacementDecision = weapon_generated_source_completeness_policy::evaluateGeneratedSourceReplacement(
-                            weapon_generated_source_completeness_policy::GeneratedSourceReplacementInput{
-                                .hasExistingBodies = hasWeaponBody(),
-                                .ownerIdentityChanged = ownerIdentityChanged,
-                                .settingsChanged = settingsChangedForRebuild,
-                                .expected = expectedSourceCompleteness,
-                                .cached = _cachedGeneratedSourceCompleteness,
-                                .observed = generatedSummary,
-                            });
-
-                        if (!sourceReplacementDecision.allowed) {
-                            if (sourceReplacementDecision.adoptExistingBodies && hasWeaponBody()) {
-                                ROCK_LOG_INFO(Weapon,
-                                    "Generated weapon source replacement adopted existing bodies cachedKey={:016X} adoptedKey={:016X} cachedOwner={:016X} adoptedOwner={:016X} sources={} critical={} mask=0x{:08X} reason={}",
-                                    _cachedWeaponKey,
-                                    replacementKey,
-                                    _cachedEquippedWeaponOwnerKey,
-                                    replacementOwnerKey,
-                                    _cachedGeneratedSourceCompleteness.sourceCount,
-                                    _cachedGeneratedSourceCompleteness.gameplayCriticalCount,
-                                    _cachedGeneratedSourceCompleteness.semanticPartMask,
-                                    sourceReplacementDecision.reason);
-                                _cachedWeaponKey = replacementKey;
-                                _cachedEquippedWeaponOwnerKey = replacementOwnerKey;
-                                _cachedEquippedWeaponInstanceWitness = replacementInstanceWitness;
-                                _cachedGeneratedWeaponVisualWitness = observedGeneratedVisualWitness;
-                                _pendingWeaponKey = 0;
-                                _pendingEquippedWeaponOwnerKey = 0;
-                                clearAuthoritativeWitnessForSettledInstance(
-                                    replacementInstanceWitness,
-                                    "sourceReplacementAdoptedExistingBodies");
-                                _pendingEquippedWeaponInstanceWitness = {};
-                                _pendingGeneratedWeaponVisualWitness = {};
-                                _weaponBodyPending = false;
-                                resetStaleWeaponVisualTracking();
-                                _generatedSourceSettleState = {};
-                                _retryCounter = 0;
-                                _pendingGeneratedRebuildAttemptRequested = false;
-                                publishWeaponBodySetGeneration(_cachedGeneratedSourceCompleteness);
-                                publishAtomicBodyIds(activeWeaponBodies());
-                                if (_weaponBodiesDisabledForMissingVisual) {
-                                    setWeaponBodyBankCollisionEnabled(world, activeWeaponBodies(), true);
-                                    _weaponBodiesDisabledForMissingVisual = false;
-                                }
-                                armGeneratedSourceCompletenessProbe();
-                            } else {
-                                if (sourceReplacementDecision.keepExistingBodies && hasWeaponBody()) {
-                                    publishWeaponBodySetGeneration(_cachedGeneratedSourceCompleteness);
-                                    publishAtomicBodyIds(activeWeaponBodies());
-                                    setWeaponBodyBankCollisionEnabled(world, activeWeaponBodies(), true);
-                                    _weaponBodiesDisabledForMissingVisual = false;
-                                    ROCK_LOG_SAMPLE_INFO(Weapon,
-                                        g_rockConfig.rockLogSampleMilliseconds,
-                                        "Generated weapon source replacement kept existing bodies active cachedKey={:016X} pendingKey={:016X} cachedOwner={:016X} pendingOwner={:016X} reason={} observedSources={} observedMask=0x{:08X} front={} rear={} firearmLike={}",
-                                        _cachedWeaponKey,
-                                        replacementKey,
-                                        _cachedEquippedWeaponOwnerKey,
-                                        replacementOwnerKey,
-                                        sourceReplacementDecision.reason,
-                                        generatedSummary.sourceCount,
-                                        generatedSummary.semanticPartMask,
-                                        generatedSummary.hasRequiredFrontCoverage ? "yes" : "no",
-                                        generatedSummary.hasRequiredRearCoverage ? "yes" : "no",
-                                        generatedSummary.firearmLikePackage ? "yes" : "no");
-                                }
-                                ROCK_LOG_SAMPLE_WARN(Weapon,
-                                    g_rockConfig.rockLogSampleMilliseconds,
-                                    "Generated weapon source replacement held cachedKey={:016X} pendingKey={:016X} cachedOwner={:016X} pendingOwner={:016X} cachedSources={} observedSources={} cachedCritical={} observedCritical={} cachedMask=0x{:08X} observedMask=0x{:08X} reason={}",
-                                    _cachedWeaponKey,
-                                    replacementKey,
-                                    _cachedEquippedWeaponOwnerKey,
-                                    replacementOwnerKey,
-                                    _cachedGeneratedSourceCompleteness.sourceCount,
-                                    generatedSummary.sourceCount,
-                                    _cachedGeneratedSourceCompleteness.gameplayCriticalCount,
-                                    generatedSummary.gameplayCriticalCount,
-                                    _cachedGeneratedSourceCompleteness.semanticPartMask,
-                                    generatedSummary.semanticPartMask,
-                                    sourceReplacementDecision.reason);
-                                _pendingWeaponKey = replacementKey;
-                                _pendingEquippedWeaponOwnerKey = replacementOwnerKey;
-                                _pendingEquippedWeaponInstanceWitness = replacementInstanceWitness;
-                                _pendingGeneratedWeaponVisualWitness = observedGeneratedVisualWitness;
-                                _weaponBodyPending = true;
-                            }
-                        } else {
-                            const bool sourceReplacementRequired =
-                                hasWeaponBody() &&
-                                !sourceReplacementDecision.adoptExistingBodies &&
-                                !settingsChangedForRebuild &&
-                                replacementKey == _cachedWeaponKey;
-                            const auto rebuildDecision = weapon_authority_lifecycle_policy::evaluateGeneratedCollisionRebuild(
-                                weapon_authority_lifecycle_policy::GeneratedCollisionRebuildInput{
-                                    .hasExistingBodies = hasWeaponBody(),
-                                    .cachedKey = _cachedWeaponKey,
-                                    .currentKey = replacementKey,
-                                    .settingsChanged = settingsChangedForRebuild,
-                                    .sourceReplacementRequired = sourceReplacementRequired,
-                                    .generatedSourceCount = generatedCount,
-                                    .hasBuildableSource = hasBuildableSource,
-                                });
-
-                            bool created = false;
-                            if (rebuildDecision.action == weapon_authority_lifecycle_policy::GeneratedCollisionRebuildAction::CreateInitial) {
-                                _cachedWeaponKey = replacementKey;
-                                _cachedEquippedWeaponOwnerKey = replacementOwnerKey;
-                                _cachedEquippedWeaponInstanceWitness = replacementInstanceWitness;
-                                created = createGeneratedWeaponBodiesInBank(
-                                    world,
-                                    generatedSources,
-                                    activeWeaponBodies(),
-                                    GeneratedWeaponBodyCreateOptions{
-                                        .collisionEnabledOnCreate = false,
-                                    }) > 0;
-                            } else if (rebuildDecision.action == weapon_authority_lifecycle_policy::GeneratedCollisionRebuildAction::ReplaceExisting) {
-                                auto& replacementBank = inactiveWeaponBodies();
-                                destroyWeaponBodyBank(replacementBank, true);
-                                const auto replacementCount = createGeneratedWeaponBodiesInBank(
-                                    world,
-                                    generatedSources,
-                                    replacementBank,
-                                    GeneratedWeaponBodyCreateOptions{
-                                        .collisionEnabledOnCreate = false,
-                                    });
-                                if (replacementCount > 0) {
-                                    ROCK_LOG_INFO(Weapon,
-                                        "Replacing generated weapon collision bodies cachedKey={:016X} pendingKey={:016X} cachedOwner={:016X} pendingOwner={:016X} sourceCount={} replacementBodies={} reason={} sourceReason={}",
-                                        _cachedWeaponKey,
-                                        replacementKey,
-                                        _cachedEquippedWeaponOwnerKey,
-                                        replacementOwnerKey,
-                                        generatedCount,
-                                        replacementCount,
-                                        rebuildDecision.reason,
-                                        sourceReplacementDecision.reason);
-                                    if (_dominantHandDisabled && world) {
-                                        enableDominantHandCollision(world);
-                                    }
-                                    clearAtomicBodyIds();
-                                    destroyWeaponBodyBank(activeWeaponBodies(), true);
-                                    _usingReplacementWeaponBodies = !_usingReplacementWeaponBodies;
-                                    _cachedWeaponKey = replacementKey;
-                                    _cachedEquippedWeaponOwnerKey = replacementOwnerKey;
-                                    _cachedEquippedWeaponInstanceWitness = replacementInstanceWitness;
-                                    created = true;
-                                } else {
-                                    destroyWeaponBodyBank(replacementBank, true);
-                                    created = false;
-                                }
-                            } else {
-                                created = hasWeaponBody() && rebuildDecision.keepExistingBodies;
-                            }
-
-                            if (created && !rebuildDecision.pending) {
-                                _weaponBodyPending = false;
-                                _pendingWeaponKey = 0;
-                                _pendingEquippedWeaponOwnerKey = 0;
-                                clearAuthoritativeWitnessForSettledInstance(
-                                    replacementInstanceWitness,
-                                    "generatedCollisionReplacementSettled");
-                                _pendingEquippedWeaponInstanceWitness = {};
-                                _pendingGeneratedWeaponVisualWitness = {};
-                                resetStaleWeaponVisualTracking();
-                                _retryCounter = 0;
-                                _pendingGeneratedRebuildAttemptRequested = false;
-                                if (hasBuildableSource) {
-                                    _cachedGeneratedSourceCompleteness = generatedSummary;
-                                    _cachedGeneratedWeaponVisualWitness = observedGeneratedVisualWitness;
-                                    _generatedSourceSettleState = {};
-                                    publishWeaponBodySetGeneration(generatedSummary);
-                                    publishAtomicBodyIds(activeWeaponBodies());
-                                    setWeaponBodyBankCollisionEnabled(world, activeWeaponBodies(), true);
-                                    _weaponBodiesDisabledForMissingVisual = false;
-                                    armGeneratedSourceCompletenessProbe();
-                                }
-                                _cachedConvexRadius = g_rockConfig.rockWeaponCollisionConvexRadius;
-                                _cachedPointDedupGrid = g_rockConfig.rockWeaponCollisionPointDedupGrid;
-                                _cachedSupportFitTargetPoints = g_rockConfig.rockWeaponCollisionSupportFitTargetPoints;
-                                _cachedSupportFitMaxErrorGameUnits = g_rockConfig.rockWeaponCollisionSupportFitMaxErrorGameUnits;
-                            } else {
-                                ROCK_LOG_SAMPLE_WARN(Weapon,
-                                    g_rockConfig.rockLogSampleMilliseconds,
-                                    "Generated weapon mesh collision unavailable — keeping weapon pending for retry cachedKey={:016X} pendingKey={:016X} sources={} reason={}",
-                                    _cachedWeaponKey,
-                                    _pendingWeaponKey,
-                                    generatedCount,
-                                    rebuildDecision.reason);
-                                _weaponBodyPending = true;
-                                _pendingEquippedWeaponInstanceWitness = replacementInstanceWitness;
-                                _pendingGeneratedWeaponVisualWitness = observedGeneratedVisualWitness;
-                            }
-                        }
-                        }
-                    }
+                    observedKey,
+                    generatedCount,
+                    createdCount,
+                    settingsChanged,
+                    driveRequestedRebuild);
+                if (_dominantHandDisabled) {
+                    enableDominantHandCollision(world);
                 }
+                clearAtomicBodyIds();
+                destroyWeaponBodyBank(activeWeaponBodies(), true);
+                _usingReplacementWeaponBodies = !_usingReplacementWeaponBodies;
+            } else {
+                ROCK_LOG_INFO(Weapon,
+                    "Created generated weapon collision bodies key={:016X} sources={} bodies={} visualRoots={} visibleTriShapes={}",
+                    observedKey,
+                    generatedCount,
+                    createdCount,
+                    visualKeyStats.rootCount,
+                    visualKeyStats.visibleTriShapeCount);
             }
-        }
 
-        if (_weaponBodiesDisabledForMissingVisual && !hasWeaponBody()) {
-            _weaponBodiesDisabledForMissingVisual = false;
-        }
-        if (shouldReenableCachedBodiesForReturnedVisual(currentKey, visualSettle.settled)) {
+            _cachedWeaponKey = observedKey;
+            _cachedGeneratedSourceCompleteness = generatedSummary;
+            publishWeaponBodySetGeneration(generatedSummary);
             publishAtomicBodyIds(activeWeaponBodies());
             setWeaponBodyBankCollisionEnabled(world, activeWeaponBodies(), true);
-            _weaponBodiesDisabledForMissingVisual = false;
-            armGeneratedSourceCompletenessProbe();
-            ROCK_LOG_INFO(Weapon,
-                "Weapon visual node returned with matching settled key - re-enabled generated weapon bodies key={:016X} bodies={}",
-                currentKey,
-                getWeaponBodyCount());
-        } else if (_weaponBodiesDisabledForMissingVisual && visualSettle.settled && currentKey != _cachedWeaponKey) {
-            ROCK_LOG_SAMPLE_DEBUG(Weapon,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "Weapon visual node returned with changed key - keeping old generated bodies disabled until replacement publishes cached={:016X} observed={:016X}",
-                _cachedWeaponKey,
-                currentKey);
+            _cachedConvexRadius = g_rockConfig.rockWeaponCollisionConvexRadius;
+            _cachedPointDedupGrid = g_rockConfig.rockWeaponCollisionPointDedupGrid;
+            _cachedSupportFitTargetPoints = g_rockConfig.rockWeaponCollisionSupportFitTargetPoints;
+            _cachedSupportFitMaxErrorGameUnits = g_rockConfig.rockWeaponCollisionSupportFitMaxErrorGameUnits;
         }
 
-        if (visualSettle.settled && !_weaponBodyPending) {
-            tryEnrichGeneratedWeaponBodiesFromLateSources(world, weaponNode);
-        }
-
-        const bool hasActiveWeaponCollision =
-            hasWeaponBody() &&
-            !_weaponBodiesDisabledForMissingVisual &&
-            getCurrentWeaponGenerationKey() != 0;
+        const bool hasActiveWeaponCollision = hasWeaponBody() && getCurrentWeaponGenerationKey() != 0;
         if (hasActiveWeaponCollision && !_dominantHandDisabled && dominantHandBodyId.value != INVALID_BODY_ID) {
             disableDominantHandCollision(world, dominantHandBodyId);
         } else if (!hasActiveWeaponCollision && _dominantHandDisabled) {
             enableDominantHandCollision(world);
         }
-
-        /*
-         * Per-frame body transforms are synchronized after weapon visual authority
-         * settles in PhysicsInteraction. Generated Havok bodies move from ROCK's
-         * single package root instead of mixing FRIK/current state with ROCK
-         * two-handed authority.
-         */
     }
+
 
     std::uint64_t WeaponCollision::getEquippedWeaponKey(
         RE::NiAVObject* weaponNode,
         WeaponVisualKeyStats& stats,
-        std::uint64_t* outOwnerKey,
-        weapon_generation_identity_policy::EquippedWeaponInstanceWitness* outInstanceWitness,
         std::uint64_t* outVisualKey) const
     {
-        /*
-         * The equipped weapon key has two witnesses: the visual tree that
-         * preserves firearm mesh fidelity, and the equipped instance identity
-         * that catches FO4VR/FRIK root reuse during mod swaps. Visual absence
-         * can still produce a non-zero equipped-instance key so update() can
-         * keep the weapon pending instead of clearing the last modded weapon as
-         * if it were a true holster.
-         */
         const auto identity = readEquippedWeaponGenerationIdentity();
-        if (outOwnerKey) {
-            *outOwnerKey = weapon_generation_identity_policy::makeEquippedWeaponOwnerKey(identity);
-        }
-        if (outInstanceWitness) {
-            *outInstanceWitness = weapon_generation_identity_policy::makeEquippedWeaponInstanceWitness(identity);
-        }
         std::uint64_t visualKey = 0;
         if (weaponNode) {
             visualKey = weapon_visual_composition_policy::kWeaponVisualCompositionOffset;
@@ -3451,9 +2326,7 @@ namespace rock
         destroyWeaponBodyBank(activeWeaponBodies(), true);
         destroyWeaponBodyBank(inactiveWeaponBodies(), true);
         _usingReplacementWeaponBodies = false;
-        _equippedVisualMissingSeconds = 0.0f;
-        _weaponBodiesDisabledForMissingVisual = false;
-        resetGeneratedSourceCompletenessTracking();
+        clearGeneratedSourceCompletenessTracking();
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
 
@@ -3462,12 +2335,9 @@ namespace rock
 
     void WeaponCollision::invalidateForScaleChange(RE::hknpWorld* world)
     {
-        const auto decision = weapon_authority_lifecycle_policy::evaluateGeneratedCollisionScaleInvalidation(hasWeaponBody(), _cachedWeaponKey, _pendingWeaponKey);
-        const std::uint64_t pendingOwnerKey =
-            _pendingEquippedWeaponOwnerKey != 0 ? _pendingEquippedWeaponOwnerKey : _cachedEquippedWeaponOwnerKey;
-
-        if (decision.destroyExistingBodies) {
-            ROCK_LOG_INFO(Weapon, "Generated weapon collision invalidated by physics scale change — pendingKey={:016X} reason={}", decision.pendingKey, decision.reason);
+        const bool hadWeaponBody = hasWeaponBody();
+        if (hadWeaponBody) {
+            ROCK_LOG_INFO(Weapon, "Generated weapon collision invalidated by physics scale change");
             destroyWeaponBody(world);
         } else {
             clearAtomicBodyIds();
@@ -3475,32 +2345,14 @@ namespace rock
             if (_dominantHandDisabled && world) {
                 enableDominantHandCollision(world);
             }
-            ROCK_LOG_DEBUG(Weapon, "Generated weapon collision scale invalidation had no active bodies — pendingKey={:016X} reason={}", decision.pendingKey, decision.reason);
+            ROCK_LOG_DEBUG(Weapon, "Generated weapon collision scale invalidation had no active bodies");
         }
 
-        if (decision.resetCachedIdentity) {
-            _cachedWeaponKey = 0;
-            _cachedEquippedWeaponOwnerKey = 0;
-            _cachedEquippedWeaponInstanceWitness = {};
-            resetWeaponBodySetGeneration();
-            _pendingWeaponKey = decision.pendingKey;
-            _pendingEquippedWeaponOwnerKey = decision.pending ? pendingOwnerKey : 0;
-            weapon_instance_witness_runtime::clearAuthoritativeEquippedWeaponWitness(0, "generatedCollisionScaleInvalidatedIdentity");
-            _pendingEquippedWeaponInstanceWitness = {};
-            _visualSettleState = {};
-            resetGeneratedSourceCompletenessTracking();
-            _weaponBodyPending = decision.pending;
-        }
-        if (decision.resetCachedSettings) {
-            resetWeaponCollisionSettingsCache();
-        }
-        _equippedVisualMissingSeconds = 0.0f;
-        _weaponBodiesDisabledForMissingVisual = false;
-        if (decision.destroyExistingBodies || decision.resetCachedIdentity) {
-            resetGeneratedSourceCompletenessTracking();
-        }
-        _retryCounter = 0;
-        _pendingGeneratedRebuildAttemptRequested = false;
+        _cachedWeaponKey = 0;
+        clearGeneratedSourceCompletenessTracking();
+        resetWeaponCollisionSettingsCache();
+        _driveRebuildRequested.store(false, std::memory_order_release);
+        _driveFailureCount.store(0, std::memory_order_release);
     }
 
     void WeaponCollision::destroyWeaponBodyBank(WeaponBodyBank& bank, bool releaseShapeRef)
@@ -3656,24 +2508,6 @@ namespace rock
         endWeaponBodyPublication();
     }
 
-    void WeaponCollision::disableWeaponBodiesForMissingVisual(RE::hknpWorld* world)
-    {
-        setWeaponBodyBankCollisionEnabled(world, activeWeaponBodies(), false);
-        setWeaponBodyBankCollisionEnabled(world, inactiveWeaponBodies(), false);
-        unpublishAtomicBodyIds();
-        _weaponBodiesDisabledForMissingVisual = true;
-    }
-
-    bool WeaponCollision::shouldReenableCachedBodiesForReturnedVisual(std::uint64_t currentKey, bool visualSettled) const
-    {
-        return _weaponBodiesDisabledForMissingVisual &&
-               visualSettled &&
-               currentKey != 0 &&
-               currentKey == _cachedWeaponKey &&
-               !_weaponBodyPending &&
-               hasWeaponBody();
-    }
-
     void WeaponCollision::publishSampledVelocityAtomic(std::uint32_t bodyId, const GeneratedKeyframedBodyDriveState& driveState)
     {
         if (bodyId == INVALID_BODY_ID) {
@@ -3706,7 +2540,7 @@ namespace rock
 
     void WeaponCollision::updateBodiesFromCurrentSourceTransforms(RE::hknpWorld* world, RE::NiAVObject* fallbackWeaponNode, float sourceDeltaSeconds)
     {
-        if (!world || !hasWeaponBody() || _weaponBodiesDisabledForMissingVisual) {
+        if (!world || !hasWeaponBody()) {
             return;
         }
 

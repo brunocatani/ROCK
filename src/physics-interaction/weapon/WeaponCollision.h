@@ -194,11 +194,7 @@ namespace rock
         void beginWeaponBodyPublication();
         void endWeaponBodyPublication();
         std::vector<WeaponCollisionProfileEvidenceDescriptor> buildProfileEvidenceSnapshot(const WeaponBodyBank& bank) const;
-        void disableWeaponBodiesForMissingVisual(RE::hknpWorld* world);
-        bool shouldReenableCachedBodiesForReturnedVisual(std::uint64_t currentKey, bool visualSettled) const;
         void publishSampledVelocityAtomic(std::uint32_t bodyId, const GeneratedKeyframedBodyDriveState& driveState);
-        void requestGeneratedSourceCompletenessProbeNextFrame();
-        void requestPendingGeneratedRebuildAttemptNextFrame();
 
         std::size_t findGeneratedWeaponShapeSources(RE::NiAVObject* weaponNode, std::vector<GeneratedHullSource>& outSources);
 
@@ -212,24 +208,12 @@ namespace rock
         RE::NiTransform makeGeneratedBodyWorldTransform(const RE::NiTransform& weaponRootTransform, const RE::NiPoint3& localCenterGame) const;
         bool weaponCollisionSettingsChanged() const;
         void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);
-        void resetGeneratedSourceCompletenessTracking();
+        void clearGeneratedSourceCompletenessTracking();
         void resetWeaponCollisionSettingsCache();
-        void armGeneratedSourceCompletenessProbe();
-        void resetEquippedWeaponWitnessTracking();
-        void resetStaleWeaponVisualTracking();
-        void tryEnrichGeneratedWeaponBodiesFromLateSources(RE::hknpWorld* world, RE::NiAVObject* weaponNode);
-
-        static weapon_generation_identity_policy::GeneratedWeaponVisualWitness makeGeneratedWeaponVisualWitness(
-            std::uint64_t visualKey,
-            const WeaponVisualKeyStats& stats,
-            const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& generatedSummary,
-            bool hasBuildableSource);
 
         std::uint64_t getEquippedWeaponKey(
             RE::NiAVObject* weaponNode,
             WeaponVisualKeyStats& stats,
-            std::uint64_t* outOwnerKey = nullptr,
-            weapon_generation_identity_policy::EquippedWeaponInstanceWitness* outInstanceWitness = nullptr,
             std::uint64_t* outVisualKey = nullptr) const;
 
         void queueBodyTarget(WeaponBodyInstance& instance, const RE::NiTransform& weaponTransform, float sourceDeltaSeconds);
@@ -238,23 +222,11 @@ namespace rock
         WeaponBodyBank _weaponReplacementBodies{};
         bool _usingReplacementWeaponBodies{ false };
         std::uint64_t _cachedWeaponKey{ 0 };
-        std::uint64_t _pendingWeaponKey{ 0 };
-        std::uint64_t _cachedEquippedWeaponOwnerKey{ 0 };
-        std::uint64_t _pendingEquippedWeaponOwnerKey{ 0 };
-        weapon_generation_identity_policy::EquippedWeaponInstanceWitness _cachedEquippedWeaponInstanceWitness{};
-        weapon_generation_identity_policy::EquippedWeaponInstanceWitness _pendingEquippedWeaponInstanceWitness{};
-        weapon_generation_identity_policy::GeneratedWeaponVisualWitness _cachedGeneratedWeaponVisualWitness{};
-        weapon_generation_identity_policy::GeneratedWeaponVisualWitness _pendingGeneratedWeaponVisualWitness{};
         std::uint64_t _cachedWeaponBodySetKey{ 0 };
         std::uint64_t _weaponBodySetEpoch{ 0 };
-        weapon_visual_composition_policy::VisualSettleState _visualSettleState{};
-        weapon_generated_source_completeness_policy::GeneratedSourceSettleState _generatedSourceSettleState{};
         weapon_generated_source_completeness_policy::GeneratedSourceCompleteness _cachedGeneratedSourceCompleteness{};
         RE::hknpWorld* _cachedWorld{ nullptr };
         void* _cachedBhkWorld{ nullptr };
-        bool _weaponBodyPending{ false };
-        float _equippedVisualMissingSeconds{ 0.0f };
-        bool _weaponBodiesDisabledForMissingVisual{ false };
         std::atomic<bool> _driveRebuildRequested{ false };
         std::atomic<std::uint32_t> _driveFailureCount{ 0 };
 
@@ -277,15 +249,6 @@ namespace rock
         std::atomic<std::uint64_t> _weaponBodyPublicationVersion{ 0 };
         mutable std::mutex _profileEvidenceSnapshotMutex;
         std::vector<WeaponCollisionProfileEvidenceDescriptor> _profileEvidenceSnapshot;
-
-        int _retryCounter{ 0 };
-        bool _pendingGeneratedRebuildAttemptRequested{ false };
-        std::uint32_t _generatedSourceCompletenessProbeFramesRemaining{ 0 };
-        std::uint32_t _generatedSourceCompletenessProbeCounter{ 0 };
-        bool _generatedSourceCompletenessProbeRequested{ false };
-        std::uint32_t _staleVisualPendingObservationCount{ 0 };
-        std::uint64_t _lastNativeVisualRemapRequestedInstanceSignature{ 0 };
-        weapon_native_visual_remap_policy::NativeVisualRemapAttemptState _nativeVisualRemapAttemptState{};
 
         int _posLogCounter{ 0 };
 
