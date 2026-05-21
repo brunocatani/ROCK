@@ -33,6 +33,26 @@ namespace rock::root_flattened_finger_skeleton_runtime
         }
     }
 
+    bool resolveLiveSemanticHandFrame(bool isLeft, SemanticHandFrame& outFrame, std::string* outMissingBoneName)
+    {
+        outFrame = {};
+        if (outMissingBoneName) {
+            outMissingBoneName->clear();
+        }
+
+        DirectSkeletonBoneSnapshot snapshot{};
+        if (!rootFlattenedFingerReader().capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+                skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                snapshot)) {
+            if (outMissingBoneName) {
+                *outMissingBoneName = "rootFlattenedBoneTree";
+            }
+            return false;
+        }
+
+        return buildSemanticHandFrameFromSnapshot(snapshot, isLeft, outFrame, outMissingBoneName);
+    }
+
     bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName)
     {
         outSnapshot = Snapshot{};
@@ -58,9 +78,13 @@ namespace rock::root_flattened_finger_skeleton_runtime
             return false;
         }
 
-        outSnapshot.palmNormalWorld = normalizedOrFallback(
-            debug_axis_math::rotateNiLocalToWorld(handNode->world.rotate, RE::NiPoint3(0.0f, 0.0f, -1.0f)),
-            RE::NiPoint3(0.0f, 0.0f, -1.0f));
+        SemanticHandFrame semanticFrame{};
+        if (!buildSemanticHandFrameFromSnapshot(snapshot, isLeft, semanticFrame, outMissingBoneName)) {
+            outSnapshot = Snapshot{};
+            return false;
+        }
+
+        outSnapshot.palmNormalWorld = normalizedOrFallback(semanticFrame.palmFaceWorld, RE::NiPoint3(0.0f, -1.0f, 0.0f));
         outSnapshot.palmNormalValid = true;
 
         for (std::size_t finger = 0; finger < outSnapshot.fingers.size(); ++finger) {

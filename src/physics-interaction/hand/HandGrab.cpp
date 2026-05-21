@@ -6999,12 +6999,12 @@ namespace rock
                 auto* vrScaleSetting = f4vr::getIniSetting("fVrScale:VR");
                 const float vrScale = vrScaleSetting ? vrScaleSetting->GetFloat() : -1.0f;
 
-                const RE::NiPoint3 rawLateral = getMatrixColumn(handWorldTransform.rotate, 0);
-                const RE::NiPoint3 rawFinger = getMatrixColumn(handWorldTransform.rotate, 2);
-                const RE::NiPoint3 rawBack = getMatrixColumn(handWorldTransform.rotate, 1);
-                const RE::NiPoint3 constraintFinger = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 2);
-                const RE::NiPoint3 constraintBack = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 1);
-                const RE::NiPoint3 constraintLateral = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 0);
+                const RE::NiPoint3 rawColumn0 = getMatrixColumn(handWorldTransform.rotate, 0);
+                const RE::NiPoint3 rawColumn1 = getMatrixColumn(handWorldTransform.rotate, 1);
+                const RE::NiPoint3 rawColumn2 = getMatrixColumn(handWorldTransform.rotate, 2);
+                const RE::NiPoint3 proxyFinger = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 0);
+                const RE::NiPoint3 proxyPalmDepth = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 1);
+                const RE::NiPoint3 proxyAcrossPalm = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 2);
                 const RE::NiPoint3 grabSpaceRawFinger = getMatrixColumn(_grabFrame.rawHandSpace.rotate, 0);
                 const RE::NiPoint3 grabSpaceConstraintFinger = getMatrixColumn(constraintGrabHandSpace.rotate, 0);
                 const RE::NiPoint3 grabPosDelta = constraintGrabHandSpace.translate - _grabFrame.rawHandSpace.translate;
@@ -7052,11 +7052,11 @@ namespace rock
 
                 ROCK_LOG_DEBUG(Hand,
                     "{} GRAB FRAME SNAPSHOT: rawVsConstraint rotDelta={:.2f}deg posDelta=({:.2f},{:.2f},{:.2f}) "
-                    "rawFinger=({:.3f},{:.3f},{:.3f}) rawBack=({:.3f},{:.3f},{:.3f}) rawLat=({:.3f},{:.3f},{:.3f}) "
-                    "constraintFinger=({:.3f},{:.3f},{:.3f}) constraintBack=({:.3f},{:.3f},{:.3f}) constraintLat=({:.3f},{:.3f},{:.3f})",
-                    handName(), rawVsConstraintRot, grabPosDelta.x, grabPosDelta.y, grabPosDelta.z, rawFinger.x,
-                    rawFinger.y, rawFinger.z, rawBack.x, rawBack.y, rawBack.z, rawLateral.x, rawLateral.y, rawLateral.z, constraintFinger.x, constraintFinger.y, constraintFinger.z,
-                    constraintBack.x, constraintBack.y, constraintBack.z, constraintLateral.x, constraintLateral.y, constraintLateral.z);
+                    "rawCol0=({:.3f},{:.3f},{:.3f}) rawCol1=({:.3f},{:.3f},{:.3f}) rawCol2=({:.3f},{:.3f},{:.3f}) "
+                    "proxyFingerX=({:.3f},{:.3f},{:.3f}) proxyPalmDepthY=({:.3f},{:.3f},{:.3f}) proxyAcrossPalmZ=({:.3f},{:.3f},{:.3f})",
+                    handName(), rawVsConstraintRot, grabPosDelta.x, grabPosDelta.y, grabPosDelta.z, rawColumn0.x,
+                    rawColumn0.y, rawColumn0.z, rawColumn1.x, rawColumn1.y, rawColumn1.z, rawColumn2.x, rawColumn2.y, rawColumn2.z, proxyFinger.x, proxyFinger.y, proxyFinger.z,
+                    proxyPalmDepth.x, proxyPalmDepth.y, proxyPalmDepth.z, proxyAcrossPalm.x, proxyAcrossPalm.y, proxyAcrossPalm.z);
 
                 const auto rawHandBasis = grab_transform_telemetry::makeOrientationBasis(handWorldTransform);
                 const auto proxyPalmBasis = grab_transform_telemetry::makeOrientationBasis(proxyFrameWorldAtGrab);
@@ -8488,8 +8488,8 @@ namespace rock
                 const NodeFrameMetrics rootMetrics = captureNodeMetrics(rootNode, _grabFrame.rootBodyLocal);
 
                 const RE::NiPoint3 worldPosDelta = desiredNodeWorldConstraint.translate - desiredNodeWorldRaw.translate;
-                const RE::NiPoint3 rawFinger = getMatrixColumn(handWorldTransform.rotate, 2);
-                const RE::NiPoint3 constraintFinger = getMatrixColumn(constraintAnchorWorld.rotate, 2);
+                const RE::NiPoint3 rawColumn2 = getMatrixColumn(handWorldTransform.rotate, 2);
+                const RE::NiPoint3 constraintColumn2 = getMatrixColumn(constraintAnchorWorld.rotate, 2);
                 const RE::NiPoint3 desiredRawFinger = getMatrixColumn(desiredBodyWorldRaw.rotate, 0);
                 const RE::NiPoint3 desiredConstraintFinger = getMatrixColumn(desiredBodyWorldConstraint.rotate, 0);
                 const RE::NiPoint3 bodyFinger = getMatrixColumn(grabAuthorityBodyWorld.rotate, 0);
@@ -8510,13 +8510,13 @@ namespace rock
                     "ownerErr={:.2f}deg/{:.2f}gu hitErr={:.2f}deg/{:.2f}gu "
                     "heldErr={:.2f}deg/{:.2f}gu rootErr={:.2f}deg/{:.2f}gu "
                     "worldPosDelta=({:.2f},{:.2f},{:.2f}) "
-                    "rawFinger=({:.3f},{:.3f},{:.3f}) constraintFinger=({:.3f},{:.3f},{:.3f})",
+                    "rawCol2=({:.3f},{:.3f},{:.3f}) constraintCol2=({:.3f},{:.3f},{:.3f})",
                     handName(), constraintAnchorSource, rotationDeltaDegrees(desiredNodeWorldRaw.rotate, desiredNodeWorldConstraint.rotate),
                     rotationDeltaDegrees(desiredBodyWorldRaw.rotate, desiredBodyWorldConstraint.rotate),
                     rotationDeltaDegrees(grabAuthorityBodyWorld.rotate, desiredBodyWorldRaw.rotate), rotationDeltaDegrees(grabAuthorityBodyWorld.rotate, desiredBodyWorldConstraint.rotate),
                     ownerMetrics.rotErrDeg, ownerMetrics.posErrGameUnits, hitMetrics.rotErrDeg, hitMetrics.posErrGameUnits, heldMetrics.rotErrDeg, heldMetrics.posErrGameUnits,
-                    rootMetrics.rotErrDeg, rootMetrics.posErrGameUnits, worldPosDelta.x, worldPosDelta.y, worldPosDelta.z, rawFinger.x, rawFinger.y, rawFinger.z,
-                    constraintFinger.x, constraintFinger.y, constraintFinger.z);
+                    rootMetrics.rotErrDeg, rootMetrics.posErrGameUnits, worldPosDelta.x, worldPosDelta.y, worldPosDelta.z, rawColumn2.x, rawColumn2.y, rawColumn2.z,
+                    constraintColumn2.x, constraintColumn2.y, constraintColumn2.z);
 
                 ROCK_LOG_TRACE(Hand,
                     "{} GRAB FRAME NODES: bodyColl={:p} "

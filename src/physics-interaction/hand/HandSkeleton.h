@@ -216,7 +216,7 @@ namespace rock::root_flattened_finger_skeleton_runtime
     struct Snapshot
     {
         std::array<FingerChain, 5> fingers{};
-        RE::NiPoint3 palmNormalWorld{ 0.0f, 0.0f, -1.0f };
+        RE::NiPoint3 palmNormalWorld{ 0.0f, -1.0f, 0.0f };
         bool palmNormalValid = false;
         bool valid = false;
     };
@@ -232,7 +232,20 @@ namespace rock::root_flattened_finger_skeleton_runtime
     struct LandmarkSet
     {
         std::array<FingerLandmark, 5> fingers{};
-        RE::NiPoint3 palmNormalWorld{ 0.0f, 0.0f, -1.0f };
+        RE::NiPoint3 palmNormalWorld{ 0.0f, -1.0f, 0.0f };
+        bool valid = false;
+    };
+
+    struct SemanticHandFrame
+    {
+        RE::NiTransform rawHandWorld{};
+        RE::NiTransform palmAnchorWorld{};
+        RE::NiPoint3 fingerBaseCenterWorld{};
+        RE::NiPoint3 fingerForwardWorld{ 1.0f, 0.0f, 0.0f };
+        RE::NiPoint3 palmDepthWorld{ 0.0f, 1.0f, 0.0f };
+        RE::NiPoint3 palmFaceWorld{ 0.0f, -1.0f, 0.0f };
+        RE::NiPoint3 acrossPalmWorld{ 0.0f, 0.0f, 1.0f };
+        float palmLength = 0.0f;
         bool valid = false;
     };
 
@@ -305,6 +318,165 @@ namespace rock::root_flattened_finger_skeleton_runtime
         return RE::NiPoint3(value.x * inv, value.y * inv, value.z * inv);
     }
 
+    inline float dot(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
+    {
+        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+    }
+
+    inline RE::NiPoint3 cross(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
+    {
+        return RE::NiPoint3{
+            lhs.y * rhs.z - lhs.z * rhs.y,
+            lhs.z * rhs.x - lhs.x * rhs.z,
+            lhs.x * rhs.y - lhs.y * rhs.x,
+        };
+    }
+
+    inline RE::NiPoint3 projectOntoPlane(const RE::NiPoint3& value, const RE::NiPoint3& normal)
+    {
+        return value - normal * dot(value, normal);
+    }
+
+    inline RE::NiPoint3 rotateLocalVectorToWorld(const RE::NiMatrix3& matrix, const RE::NiPoint3& localVector)
+    {
+        return RE::NiPoint3{
+            matrix.entry[0][0] * localVector.x + matrix.entry[1][0] * localVector.y + matrix.entry[2][0] * localVector.z,
+            matrix.entry[0][1] * localVector.x + matrix.entry[1][1] * localVector.y + matrix.entry[2][1] * localVector.z,
+            matrix.entry[0][2] * localVector.x + matrix.entry[1][2] * localVector.y + matrix.entry[2][2] * localVector.z,
+        };
+    }
+
+    inline RE::NiMatrix3 semanticPalmMatrixFromAxes(const RE::NiPoint3& fingerForwardWorld, const RE::NiPoint3& palmDepthWorld, const RE::NiPoint3& acrossPalmWorld)
+    {
+        /*
+         * Match generated hand-collider storage: local X=fingers, local Y=palm
+         * depth/back, local Z=across palm stored as matrix columns.
+         */
+        RE::NiMatrix3 matrix{};
+        matrix.entry[0][0] = fingerForwardWorld.x;
+        matrix.entry[1][0] = fingerForwardWorld.y;
+        matrix.entry[2][0] = fingerForwardWorld.z;
+        matrix.entry[0][1] = palmDepthWorld.x;
+        matrix.entry[1][1] = palmDepthWorld.y;
+        matrix.entry[2][1] = palmDepthWorld.z;
+        matrix.entry[0][2] = acrossPalmWorld.x;
+        matrix.entry[1][2] = acrossPalmWorld.y;
+        matrix.entry[2][2] = acrossPalmWorld.z;
+        return matrix;
+    }
+
+    inline SemanticHandFrame buildSemanticHandFrame(
+        const RE::NiTransform& hand,
+        const std::array<RE::NiPoint3, 5>& fingerBases,
+        const RE::NiPoint3& crossPalmDirection,
+        float palmDepth = 0.75f)
+    {
+        SemanticHandFrame frame{};
+        frame.rawHandWorld = hand;
+
+        RE::NiPoint3 fingerCenter{};
+        RE::NiPoint3 palmCenter = hand.translate;
+        for (const auto& point : fingerBases) {
+            if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) {
+                return frame;
+            }
+            fingerCenter = fingerCenter + point;
+            palmCenter = palmCenter + point;
+        }
+        fingerCenter = fingerCenter * (1.0f / static_cast<float>(fingerBases.size()));
+        palmCenter = palmCenter * (1.0f / static_cast<float>(fingerBases.size() + 1));
+
+        const RE::NiPoint3 fallbackX{ 1.0f, 0.0f, 0.0f };
+        const RE::NiPoint3 fallbackY{ 0.0f, 1.0f, 0.0f };
+        const RE::NiPoint3 fallbackZ{ 0.0f, 0.0f, 1.0f };
+        frame.fingerForwardWorld = normalizedOrFallback(fingerCenter - hand.translate, fallbackX);
+        frame.acrossPalmWorld = normalizedOrFallback(projectOntoPlane(crossPalmDirection, frame.fingerForwardWorld), fallbackZ);
+        frame.palmDepthWorld = normalizedOrFallback(cross(frame.acrossPalmWorld, frame.fingerForwardWorld), fallbackY);
+        frame.acrossPalmWorld = normalizedOrFallback(cross(frame.fingerForwardWorld, frame.palmDepthWorld), fallbackZ);
+        frame.fingerForwardWorld = normalizedOrFallback(cross(frame.palmDepthWorld, frame.acrossPalmWorld), fallbackX);
+        frame.palmFaceWorld = RE::NiPoint3{ -frame.palmDepthWorld.x, -frame.palmDepthWorld.y, -frame.palmDepthWorld.z };
+        frame.fingerBaseCenterWorld = fingerCenter;
+        frame.palmLength = distance(fingerCenter, hand.translate);
+        if (!std::isfinite(frame.palmLength)) {
+            frame = {};
+            return frame;
+        }
+
+        const float currentPalmDepthOffset = dot(palmCenter - hand.translate, frame.palmDepthWorld);
+        palmCenter = palmCenter - frame.palmDepthWorld * currentPalmDepthOffset;
+        frame.palmAnchorWorld = hand;
+        frame.palmAnchorWorld.translate = palmCenter + frame.palmDepthWorld * (-std::fabs(palmDepth) / 3.0f);
+        frame.palmAnchorWorld.rotate =
+            semanticPalmMatrixFromAxes(frame.fingerForwardWorld, frame.palmDepthWorld, frame.acrossPalmWorld);
+        frame.palmAnchorWorld.scale = 1.0f;
+        frame.valid = true;
+        return frame;
+    }
+
+    inline RE::NiPoint3 transformSemanticHandFrameDirection(const SemanticHandFrame& frame, const RE::NiPoint3& localDirection)
+    {
+        if (!frame.valid) {
+            return normalizedOrFallback(localDirection, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+        }
+
+        return normalizedOrFallback(
+            frame.fingerForwardWorld * localDirection.x +
+                frame.palmDepthWorld * localDirection.y +
+                frame.acrossPalmWorld * localDirection.z,
+            frame.fingerForwardWorld);
+    }
+
+    inline bool buildSemanticHandFrameFromSnapshot(
+        const DirectSkeletonBoneSnapshot& snapshot,
+        bool isLeft,
+        SemanticHandFrame& outFrame,
+        std::string* outMissingBoneName = nullptr)
+    {
+        outFrame = {};
+        if (outMissingBoneName) {
+            outMissingBoneName->clear();
+        }
+
+        const DirectSkeletonBoneEntry* handNode = nullptr;
+        std::array<RE::NiPoint3, 5> fingerBases{};
+        for (const auto& bone : snapshot.bones) {
+            if (bone.name == (isLeft ? "LArm_Hand" : "RArm_Hand")) {
+                handNode = &bone;
+                break;
+            }
+        }
+        if (!handNode) {
+            if (outMissingBoneName) {
+                *outMissingBoneName = isLeft ? "LArm_Hand" : "RArm_Hand";
+            }
+            return false;
+        }
+
+        for (std::size_t finger = 0; finger < fingerBases.size(); ++finger) {
+            const char* name = fingerBoneName(isLeft, finger, 0);
+            const DirectSkeletonBoneEntry* fingerNode = nullptr;
+            for (const auto& bone : snapshot.bones) {
+                if (name && bone.name == name) {
+                    fingerNode = &bone;
+                    break;
+                }
+            }
+            if (!fingerNode) {
+                if (outMissingBoneName) {
+                    *outMissingBoneName = name ? name : "invalidFingerBone";
+                }
+                return false;
+            }
+            fingerBases[finger] = fingerNode->world.translate;
+        }
+
+        const RE::NiPoint3 crossPalmDirection = normalizedOrFallback(
+            rotateLocalVectorToWorld(handNode->world.rotate, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }),
+            RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+        outFrame = buildSemanticHandFrame(handNode->world, fingerBases, crossPalmDirection);
+        return outFrame.valid;
+    }
+
     inline FingerLandmark buildFingerLandmark(const FingerChain& chain)
     {
         FingerLandmark landmark{};
@@ -330,7 +502,7 @@ namespace rock::root_flattened_finger_skeleton_runtime
     {
         LandmarkSet set{};
         bool allValid = snapshot.valid && snapshot.palmNormalValid;
-        set.palmNormalWorld = normalizedOrFallback(snapshot.palmNormalWorld, RE::NiPoint3(0.0f, 0.0f, -1.0f));
+        set.palmNormalWorld = normalizedOrFallback(snapshot.palmNormalWorld, RE::NiPoint3(0.0f, -1.0f, 0.0f));
         for (std::size_t finger = 0; finger < set.fingers.size(); ++finger) {
             set.fingers[finger] = buildFingerLandmark(snapshot.fingers[finger]);
             allValid = allValid && set.fingers[finger].valid;
@@ -339,6 +511,7 @@ namespace rock::root_flattened_finger_skeleton_runtime
         return set;
     }
 
+    bool resolveLiveSemanticHandFrame(bool isLeft, SemanticHandFrame& outFrame, std::string* outMissingBoneName = nullptr);
     bool resolveLiveFingerSkeletonSnapshot(bool isLeft, Snapshot& outSnapshot, std::string* outMissingBoneName = nullptr);
 }
 

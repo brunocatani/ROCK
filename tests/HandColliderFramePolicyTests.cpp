@@ -1,4 +1,5 @@
 #include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/TransformMath.h"
 
 #include "RE/NetImmerse/NiMatrix3.h"
@@ -184,6 +185,21 @@ int main()
             ok &= expectVectorNear("palm grab column X", matrixColumn(grabPalm.rotate, 0), palm.xAxis);
             ok &= expectVectorNear("palm grab column Y", matrixColumn(grabPalm.rotate, 1), palm.yAxis);
             ok &= expectVectorNear("palm grab column Z", matrixColumn(grabPalm.rotate, 2), palm.zAxis);
+
+            const auto semanticPalm =
+                rock::root_flattened_finger_skeleton_runtime::buildSemanticHandFrame(hand, fingerBases, crossPalmDirection, 0.75f);
+            if (!semanticPalm.valid) {
+                std::printf("semantic palm frame was not valid\n");
+                ok = false;
+            } else {
+                ok &= expectTransformNear("semantic palm matches generated palm", semanticPalm.palmAnchorWorld, palm.transform);
+                ok &= expectVectorNear("semantic finger forward is generated X", semanticPalm.fingerForwardWorld, palm.xAxis);
+                ok &= expectVectorNear("semantic palm depth is generated Y", semanticPalm.palmDepthWorld, palm.yAxis);
+                ok &= expectVectorNear("semantic palm face is negative generated Y",
+                    semanticPalm.palmFaceWorld,
+                    RE::NiPoint3{ -palm.yAxis.x, -palm.yAxis.y, -palm.yAxis.z });
+                ok &= expectVectorNear("semantic across palm is generated Z", semanticPalm.acrossPalmWorld, palm.zAxis);
+            }
         }
     }
 

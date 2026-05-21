@@ -113,27 +113,6 @@ namespace rock::grab_three_phase
         bool valid = false;
     };
 
-    inline GrabPocketFrame buildGrabPocketFrameWithPalmCenter(
-        const RE::NiTransform& handWorld,
-        bool isLeft,
-        const RE::NiPoint3& palmCenterWorld,
-        float pocketDepthGameUnits,
-        float pocketRadiusGameUnits)
-    {
-        GrabPocketFrame frame{};
-        frame.handWorld = handWorld;
-        frame.palmCenterWorld = palmCenterWorld;
-        frame.palmNormalWorld = normalizeOrFallback(computePalmNormalFromHandBasis(handWorld, isLeft), RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
-        frame.fingerForwardWorld = normalizeOrFallback(transformHandspaceDirection(handWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, isLeft), frame.palmNormalWorld);
-        frame.thumbSideWorld = normalizeOrFallback(transformHandspaceDirection(handWorld, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, isLeft), RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
-        frame.fingerSideWorld = RE::NiPoint3{ -frame.thumbSideWorld.x, -frame.thumbSideWorld.y, -frame.thumbSideWorld.z };
-        frame.pocketDepthGameUnits = (std::max)(0.0f, std::isfinite(pocketDepthGameUnits) ? pocketDepthGameUnits : 0.0f);
-        frame.pocketRadiusGameUnits = (std::max)(0.1f, std::isfinite(pocketRadiusGameUnits) ? pocketRadiusGameUnits : 9.0f);
-        frame.pocketCenterWorld = frame.palmCenterWorld + frame.palmNormalWorld * frame.pocketDepthGameUnits;
-        frame.valid = isFinite(handWorld) && isFinite(frame.palmCenterWorld) && isFinite(frame.pocketCenterWorld) && lengthSquared(frame.palmNormalWorld) > 0.000001f;
-        return frame;
-    }
-
     inline GrabPocketFrame buildGrabPocketFrameFromAuthorityFrame(
         const RE::NiTransform& authorityWorld,
         const RE::NiPoint3& palmCenterWorld,
@@ -152,22 +131,6 @@ namespace rock::grab_three_phase
         frame.pocketCenterWorld = frame.palmCenterWorld + frame.palmNormalWorld * frame.pocketDepthGameUnits;
         frame.valid = isFinite(authorityWorld) && isFinite(frame.palmCenterWorld) && isFinite(frame.pocketCenterWorld) && lengthSquared(frame.palmNormalWorld) > 0.000001f;
         return frame;
-    }
-
-    inline GrabPocketFrame buildGrabPocketFrame(const RE::NiTransform& handWorld, bool isLeft, float pocketDepthGameUnits, float pocketRadiusGameUnits)
-    {
-        /*
-         * Legacy helper for non-dynamic-grab callers that still consume the old
-         * authored handspace palm position. Dynamic grab must use
-         * buildGrabPocketFrameWithPalmCenter and pass Hand::computeGrabPivotAWorld
-         * so the INI pivot cannot become runtime authority.
-         */
-        return buildGrabPocketFrameWithPalmCenter(
-            handWorld,
-            isLeft,
-            computeGrabPivotAPositionFromHandBasis(handWorld, isLeft),
-            pocketDepthGameUnits,
-            pocketRadiusGameUnits);
     }
 
     struct ObjectGripArea

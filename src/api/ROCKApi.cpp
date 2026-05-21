@@ -8,7 +8,7 @@
 
 #include "FRIKApi.h"
 #include "physics-interaction/grab/GrabEvent.h"
-#include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
 
 static_assert(sizeof(rock::PhysicsEventData) == sizeof(rock::api::ROCKApi::PhysicsEventData), "Internal and API PhysicsEventData must have identical size");
@@ -169,11 +169,11 @@ namespace
             return RE::NiPoint3{};
 
         bool isLeft = getIsLeftForHandEnum(hand);
-        RE::NiTransform transform{};
-        if (!pi->tryGetRootFlattenedHandTransform(isLeft, transform))
+        root_flattened_finger_skeleton_runtime::SemanticHandFrame frame{};
+        if (!root_flattened_finger_skeleton_runtime::resolveLiveSemanticHandFrame(isLeft, frame))
             return RE::NiPoint3{};
 
-        return computePalmPositionFromHandBasis(transform, isLeft);
+        return frame.palmAnchorWorld.translate;
     }
 
     RE::NiPoint3 ROCK_CALL apiGetPalmForward(const ROCKApi::Hand hand)
@@ -183,11 +183,11 @@ namespace
             return RE::NiPoint3{};
 
         bool isLeft = getIsLeftForHandEnum(hand);
-        RE::NiTransform transform{};
-        if (!pi->tryGetRootFlattenedHandTransform(isLeft, transform))
+        root_flattened_finger_skeleton_runtime::SemanticHandFrame frame{};
+        if (!root_flattened_finger_skeleton_runtime::resolveLiveSemanticHandFrame(isLeft, frame))
             return RE::NiPoint3{};
 
-        return computePalmNormalFromHandBasis(transform, isLeft);
+        return frame.palmFaceWorld;
     }
 
     bool ROCK_CALL apiIsHandTouching(const ROCKApi::Hand hand)
