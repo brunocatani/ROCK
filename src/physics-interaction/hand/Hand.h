@@ -460,6 +460,9 @@ namespace rock
             const RE::NiTransform* fallbackPalmAnchorWorld,
             RE::NiTransform& outProxyWorld,
             const char*& outSource) const;
+        bool resolveActiveGrabAuthorityPivotAWorld(RE::hknpWorld* world,
+            const RE::NiTransform& rawHandWorldTransform,
+            RE::NiPoint3& outPivotWorld) const;
         void updateConstraintGrabDriveMotors(RE::hknpWorld* world,
             float deltaTime,
             float forceFadeInTime,

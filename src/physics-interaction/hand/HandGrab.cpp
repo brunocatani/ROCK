@@ -2056,6 +2056,15 @@ namespace rock
             return result;
         }
 
+        RE::NiTransform makeProxyFrameWithPivotOrigin(
+            const RE::NiTransform& proxyWorld,
+            const RE::NiPoint3& pivotWorld)
+        {
+            RE::NiTransform result = proxyWorld;
+            result.translate = pivotWorld;
+            return result;
+        }
+
         float computeLocalMeshMaxDistanceFromPoint(const std::vector<GrabLocalTriangle>& localTriangles, const RE::NiPoint3& originLocal)
         {
             if (localTriangles.empty()) {
@@ -4319,7 +4328,28 @@ namespace rock
             return false;
         }
 
-        const RE::NiPoint3 pivotAProxyLocalGame = transform_math::worldPointToLocal(proxyWorldTransform, grabPivotAWorld);
+        const float pivotAProxyOriginDeltaGameUnits = pointDistanceGameUnits(proxyWorldTransform.translate, grabPivotAWorld);
+        if (pivotAProxyOriginDeltaGameUnits > 0.05f) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand proxy constraint grab drive received non-origin pivotA: proxyOrigin=({:.2f},{:.2f},{:.2f}) requestedPivot=({:.2f},{:.2f},{:.2f}) delta={:.2f}gu reason={}",
+                handName(),
+                proxyWorldTransform.translate.x,
+                proxyWorldTransform.translate.y,
+                proxyWorldTransform.translate.z,
+                grabPivotAWorld.x,
+                grabPivotAWorld.y,
+                grabPivotAWorld.z,
+                pivotAProxyOriginDeltaGameUnits,
+                reason ? reason : "unknown");
+        }
+        /*
+         * Body A is a dedicated no-contact proxy. Its world translation is the
+         * grab/pocket point, so the constraint pivot on A must stay at local
+         * zero. A nonzero local pivot here rotates around the proxy origin and
+         * recreates the palm-pocket orbit bug on the actual solver anchor.
+         */
+        const RE::NiPoint3 pivotAProxyLocalGame{};
+        const RE::NiPoint3 constraintPivotAWorld = proxyWorldTransform.translate;
         // Constraint creation must seed the ragdoll motor with the same angular
         // BODY relation that held updates keep writing. Using the older
         // constraint-space relation here lets some grabs start with a correct
@@ -4359,7 +4389,7 @@ namespace rock
             _grabAuthorityProxy.getBodyId(),
             objectBodyId,
             proxyWorldTransform,
-            grabPivotAWorld,
+            constraintPivotAWorld,
             pivotBBodyLocalHk,
             desiredBodyTransformProxySpace,
             motorTuning);
@@ -4503,6 +4533,35 @@ namespace rock
         outProxyWorld = transform_math::makeIdentityTransform<RE::NiTransform>();
         outSource = "livePalmAnchorUnavailable";
         return false;
+    }
+
+    bool Hand::resolveActiveGrabAuthorityPivotAWorld(
+        RE::hknpWorld* world,
+        const RE::NiTransform& rawHandWorldTransform,
+        RE::NiPoint3& outPivotWorld) const
+    {
+        outPivotWorld = {};
+
+        if (_grabFrame.seatMode == GrabSeatMode::PinchPocket) {
+            /*
+             * Pinch capture is frozen at grab commit. Recomputing the pocket
+             * from animated thumb/index colliders would feed the published pose
+             * back into the grab pivot, so held updates replay the captured
+             * raw-hand local pinch offset instead.
+             */
+            if (!_grabFrame.hasPinchPocket || !_grabFrame.hasTelemetryCapture) {
+                return false;
+            }
+
+            const RE::NiPoint3 pinchPivotRawHandLocal =
+                transform_math::worldPointToLocal(_grabFrame.liveHandWorldAtGrab, _grabFrame.pinchPocketWorldAtGrab);
+            outPivotWorld = transform_math::localPointToWorld(rawHandWorldTransform, pinchPivotRawHandLocal);
+            return std::isfinite(outPivotWorld.x) &&
+                   std::isfinite(outPivotWorld.y) &&
+                   std::isfinite(outPivotWorld.z);
+        }
+
+        return tryComputeGrabRawRollPalmPocketPivotAWorld(world, rawHandWorldTransform, outPivotWorld);
     }
 
     void Hand::updateConstraintGrabDriveMotors(RE::hknpWorld* world,
@@ -6573,9 +6632,10 @@ namespace rock
             const RE::NiTransform constraintBodyWorldAtGrab = grabBodyWorldAtGrab;
             /*
              * The hidden proxy is body A for dynamic grab. The close-grab
-             * pocket pivot is captured through raw hand roll, then encoded as a
-             * proxy-local constraint point so held updates can keep the existing
-             * generated proxy body path.
+             * pocket pivot is captured through raw hand roll. The proxy body is
+             * placed at that pivot so constraint transform A remains local zero;
+             * putting the offset in pivot A makes the solver anchor orbit the
+             * proxy origin when the hand rotates.
              */
             RE::NiPoint3 grabPivotAWorld = palmPocketPivotAWorld;
             auto* ownerCellAtGrab = sel.refr ? sel.refr->GetParentCell() : nullptr;
@@ -6953,6 +7013,8 @@ namespace rock
                 handWorldTransform,
                 grabPivotAWorld,
                 grabPointMode);
+
+            proxyFrameWorldAtGrab = makeProxyFrameWithPivotOrigin(proxyFrameWorldAtGrab, grabPivotAWorld);
 
             const auto splitGrabFrame = grab_frame_math::buildSplitGrabFrameFromDesiredObject(
                 handWorldTransform,
@@ -7627,6 +7689,17 @@ namespace rock
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
             return;
         }
+        RE::NiPoint3 activeProxyPivotAWorld{};
+        if (!resolveActiveGrabAuthorityPivotAWorld(world, handWorldTransform, activeProxyPivotAWorld)) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand release: active grab authority pivot unavailable while held source={} seat={}",
+                handName(),
+                proxyAuthoritySource,
+                grabSeatModeName(_grabFrame.seatMode));
+            releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+            return;
+        }
+        proxyAuthorityWorld = makeProxyFrameWithPivotOrigin(proxyAuthorityWorld, activeProxyPivotAWorld);
         const RE::NiTransform authorityFrame =
             makeRawRotationPalmTranslationFrame(handWorldTransform, proxyAuthorityWorld);
         RE::NiTransform desiredObjectWorld = multiplyTransforms(authorityFrame, _grabFrame.rawRotationProxyHandSpace);
@@ -8290,7 +8363,7 @@ namespace rock
                     {
                         std::scoped_lock lock(_grabAuthorityProxyMutex);
                         if (_grabAuthorityProxyFrameValid) {
-                            _grabAuthorityPivotAProxyLocalGame = transform_math::worldPointToLocal(proxyAuthorityWorld, livePivotAWorld);
+                            _grabAuthorityPivotAProxyLocalGame = {};
                             _grabAuthorityPivotBConstraintLocalGame = promotedPointBodyLocalGame;
                         }
                     }
@@ -8741,7 +8814,18 @@ namespace rock
             } else {
                 const RE::NiTransform proxyBaseWorld =
                     hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(livePalmReference.world);
-                pending.proxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft);
+                const RE::NiTransform generatedProxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft);
+                pending.proxyWorld.rotate = generatedProxyWorld.rotate;
+                pending.proxyWorld.scale = generatedProxyWorld.scale;
+
+                RE::NiPoint3 activeProxyPivotAWorld{};
+                if (resolveActiveGrabAuthorityPivotAWorld(world, pending.rawHandWorld, activeProxyPivotAWorld)) {
+                    pending.proxyWorld.translate = activeProxyPivotAWorld;
+                } else {
+                    ++_grabAuthorityProxyFailedFlushes;
+                    _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);
+                    livePalmReferenceOk = false;
+                }
             }
             previousProxyWorld = _hasLastAppliedGrabAuthorityProxyWorld ? _lastAppliedGrabAuthorityProxyWorld : pending.proxyWorld;
             proxyBodyId = _grabAuthorityProxy.getBodyId();
@@ -8751,16 +8835,13 @@ namespace rock
             float linearVelocityHavok[4]{};
             float angularVelocityHavok[4]{};
             float nativeLinearVelocityIgnored[4]{};
+            grab_authority_proxy::computeLinearVelocityHavok(previousProxyWorld, pending.proxyWorld, driveDelta, linearVelocityHavok);
             if (livePalmReference.hasMotionVelocity) {
-                linearVelocityHavok[0] = livePalmReference.linearVelocityHavok.x;
-                linearVelocityHavok[1] = livePalmReference.linearVelocityHavok.y;
-                linearVelocityHavok[2] = livePalmReference.linearVelocityHavok.z;
                 angularVelocityHavok[0] = livePalmReference.angularVelocityRadiansPerSecond.x;
                 angularVelocityHavok[1] = livePalmReference.angularVelocityRadiansPerSecond.y;
                 angularVelocityHavok[2] = livePalmReference.angularVelocityRadiansPerSecond.z;
                 proxyVelocityTelemetryOk = true;
             } else if (livePalmReferenceOk) {
-                grab_authority_proxy::computeLinearVelocityHavok(previousProxyWorld, pending.proxyWorld, driveDelta, linearVelocityHavok);
                 proxyVelocityTelemetryOk = computeHardKeyframeVelocityForTarget(
                     world,
                     proxyBodyId,
