@@ -47,6 +47,7 @@ namespace rock
         bool hasHitShapeKey = false;
         bool hasSelectionScore = false;
         bool hasHmdConeDot = false;
+        bool pinchCloseSelectionFallback = false;
         actor_equipment_grab::ActorEquipmentSelection actorEquipment{};
 
         void clear()
@@ -72,6 +73,7 @@ namespace rock
             hasHitShapeKey = false;
             hasSelectionScore = false;
             hasHmdConeDot = false;
+            pinchCloseSelectionFallback = false;
             actorEquipment = {};
         }
 
@@ -184,7 +186,7 @@ namespace rock
     RE::TESObjectREFR* resolveBodyToRef(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::hknpBodyId bodyId);
 
     SelectedObject findCloseObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& palmPos, const RE::NiPoint3& palmForward, float nearRange, bool isLeft,
-        const OtherHandSelectionContext& otherHandContext = {});
+        const OtherHandSelectionContext& otherHandContext = {}, const char* debugQueryName = nullptr);
 
     SelectedObject findFarObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& handPos, const RE::NiPoint3& pointingDir, float farRange,
         const FarSelectionHmdConeGate& hmdConeGate,

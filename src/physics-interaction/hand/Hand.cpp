@@ -8,6 +8,7 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
@@ -1288,8 +1289,8 @@ namespace rock
     }
 
     void Hand::updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& palmNormal,
-        const RE::NiPoint3& pointingDirection, const FarSelectionHmdConeGate& farHmdConeGate, float nearRange, float farRange, float deltaTime,
-        const OtherHandSelectionContext& otherHandContext)
+        const RE::NiPoint3& pointingDirection, const RE::NiPoint3& pinchOrigin, const RE::NiPoint3& pinchDirection, bool hasPinchOrigin,
+        const FarSelectionHmdConeGate& farHmdConeGate, float nearRange, float farRange, float deltaTime, const OtherHandSelectionContext& otherHandContext)
     {
         if (!selection_state_policy::canUpdateSelectionFromState(_state))
             return;
@@ -1323,7 +1324,51 @@ namespace rock
             return;
         }
 
+        RE::NiPoint3 resolvedPinchOrigin = pinchOrigin;
+        bool resolvedHasPinchOrigin = hasPinchOrigin;
+        auto resolvePinchOriginIfNeeded = [&]() {
+            if (resolvedHasPinchOrigin) {
+                return true;
+            }
+
+            root_flattened_finger_skeleton_runtime::Snapshot fingerSnapshot{};
+            if (!root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, fingerSnapshot) ||
+                !fingerSnapshot.valid ||
+                !fingerSnapshot.fingers[0].valid ||
+                !fingerSnapshot.fingers[1].valid) {
+                return false;
+            }
+
+            const RE::NiPoint3 thumbPad = (fingerSnapshot.fingers[0].points[1] + fingerSnapshot.fingers[0].points[2]) * 0.5f;
+            const RE::NiPoint3 indexPad = (fingerSnapshot.fingers[1].points[1] + fingerSnapshot.fingers[1].points[2]) * 0.5f;
+            resolvedPinchOrigin = (thumbPad + indexPad) * 0.5f;
+            resolvedHasPinchOrigin = true;
+            return true;
+        };
+
         auto nearCandidate = findCloseObject(bhkWorld, hknpWorld, selectionOrigin, palmNormal, nearRange, _isLeft, otherHandContext);
+        if (!nearCandidate.isValid() &&
+            g_rockConfig.rockGrabPinchPocketEnabled &&
+            g_rockConfig.rockGrabPinchCloseSelectionEnabled &&
+            resolvePinchOriginIfNeeded()) {
+            nearCandidate = findCloseObject(bhkWorld,
+                hknpWorld,
+                resolvedPinchOrigin,
+                pinchDirection,
+                nearRange,
+                _isLeft,
+                otherHandContext,
+                _isLeft ? "pinch-near-L" : "pinch-near-R");
+            if (nearCandidate.isValid()) {
+                nearCandidate.pinchCloseSelectionFallback = true;
+            }
+        }
+        if (_currentSelection.pinchCloseSelectionFallback) {
+            (void)resolvePinchOriginIfNeeded();
+        }
+        auto currentCloseSelectionOrigin = [&]() -> const RE::NiPoint3& {
+            return _currentSelection.pinchCloseSelectionFallback && resolvedHasPinchOrigin ? resolvedPinchOrigin : selectionOrigin;
+        };
 
         const bool farSelectionQueryReady = !farHmdConeGate.enabled || farHmdConeGate.hasHmdFrame;
         if (!farSelectionQueryReady) {
@@ -1483,9 +1528,9 @@ namespace rock
                     ownerNodePosition,
                     hasMotionCenterOfMass,
                     motionCenterOfMass,
-                    selectionOrigin);
+                    currentCloseSelectionOrigin());
                 if (anchor.source != body_frame::BodyFrameSource::Fallback) {
-                    _currentSelection.distance = body_frame::distance(anchor.position, selectionOrigin);
+                    _currentSelection.distance = body_frame::distance(anchor.position, currentCloseSelectionOrigin());
                 } else {
                     stopSelectionHighlight();
                     _currentSelection.clear();
@@ -1519,17 +1564,18 @@ namespace rock
         }
 
         if (_state == HandState::SelectedClose && _currentSelection.isValid()) {
+            const RE::NiPoint3& selectedCloseOrigin = currentCloseSelectionOrigin();
             if (_hasLastSelectedCloseOrigin) {
-                const float dx = selectionOrigin.x - _lastSelectedCloseOrigin.x;
-                const float dy = selectionOrigin.y - _lastSelectedCloseOrigin.y;
-                const float dz = selectionOrigin.z - _lastSelectedCloseOrigin.z;
+                const float dx = selectedCloseOrigin.x - _lastSelectedCloseOrigin.x;
+                const float dy = selectedCloseOrigin.y - _lastSelectedCloseOrigin.y;
+                const float dz = selectedCloseOrigin.z - _lastSelectedCloseOrigin.z;
                 const float distanceGameUnits = std::sqrt(dx * dx + dy * dy + dz * dz);
                 _selectedCloseHandSpeedMetersPerSecond =
                     selected_close_finger_policy::estimateHandSpeedMetersPerSecond(distanceGameUnits, deltaTime, havokToGameScale());
             } else {
                 _selectedCloseHandSpeedMetersPerSecond = 0.0f;
             }
-            _lastSelectedCloseOrigin = selectionOrigin;
+            _lastSelectedCloseOrigin = selectedCloseOrigin;
             _hasLastSelectedCloseOrigin = true;
         } else {
             _lastSelectedCloseOrigin = {};

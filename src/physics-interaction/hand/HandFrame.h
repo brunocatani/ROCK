@@ -150,6 +150,11 @@ namespace rock
             transformHandspaceDirection(handTransform, g_rockConfig.rockPointingVectorHandspace, isLeft), g_rockConfig.rockReverseFarGrabNormal);
     }
 
+    inline RE::NiPoint3 computePinchDetectionDirectionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
+    {
+        return transformHandspaceDirection(handTransform, g_rockConfig.rockGrabPinchDetectionDirectionHandspace, isLeft);
+    }
+
     inline RE::NiPoint3 computeGrabPivotAPositionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
         return transformHandspacePosition(handTransform, computeGrabPivotAHandspacePosition(isLeft), isLeft);

@@ -1,5 +1,6 @@
 #include "physics-interaction/grab/GrabPinchPocket.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -29,6 +30,15 @@ namespace
             return true;
         }
         std::printf("%s expected %s got %s\n", label, expected, actual ? actual : "(null)");
+        return false;
+    }
+
+    bool expectNear(const char* label, float actual, float expected, float epsilon = 0.0001f)
+    {
+        if (std::fabs(actual - expected) <= epsilon) {
+            return true;
+        }
+        std::printf("%s expected %.4f got %.4f\n", label, expected, actual);
         return false;
     }
 
@@ -136,6 +146,22 @@ int main()
     decision = evaluateObject(noMesh);
     ok &= expectFalse("missing mesh rejected", decision.accept);
     ok &= expectReason("missing mesh reason", decision.reason, "noMeshExtents");
+
+    Config detectionConfig{};
+    detectionConfig.detectionDirectionHandspace = RE::NiPoint3{ 0.0f, 3.0f, 4.0f };
+    detectionConfig.detectionAxisBlend = 2.0f;
+    auto sanitized = sanitizeConfig(detectionConfig);
+    ok &= expectNear("pinch detection direction x", sanitized.detectionDirectionHandspace.x, 0.0f);
+    ok &= expectNear("pinch detection direction y", sanitized.detectionDirectionHandspace.y, 0.6f);
+    ok &= expectNear("pinch detection direction z", sanitized.detectionDirectionHandspace.z, 0.8f);
+    ok &= expectNear("pinch detection axis blend clamped", sanitized.detectionAxisBlend, 1.0f);
+
+    detectionConfig = Config{};
+    detectionConfig.detectionDirectionHandspace = RE::NiPoint3{ 0.0f, 0.0f, 0.0f };
+    sanitized = sanitizeConfig(detectionConfig);
+    ok &= expectNear("pinch detection fallback x", sanitized.detectionDirectionHandspace.x, kDefaultDetectionDirectionHandspaceX);
+    ok &= expectNear("pinch detection fallback y", sanitized.detectionDirectionHandspace.y, kDefaultDetectionDirectionHandspaceY);
+    ok &= expectNear("pinch detection fallback z", sanitized.detectionDirectionHandspace.z, kDefaultDetectionDirectionHandspaceZ);
 
     return ok ? 0 : 1;
 }

@@ -143,6 +143,7 @@ namespace rock
         bool rockDebugDrawGrabForceTorqueText = false;
         bool rockDebugDrawGrabPivotSourceCollider = false;
         bool rockDebugDrawGrabPivotSourceEvidence = false;
+        bool rockDebugDrawGrabPockets = false;
         bool rockDebugShowGrabFingerProbes = false;
         bool rockDebugShowPalmVectors = false;
         bool rockDebugDrawHandColliders = false;
@@ -351,6 +352,7 @@ namespace rock
         float rockGrabSurfaceBehindPalmToleranceGameUnits = 1.5f;
         int rockGrabOppositionContactMaxAgeFrames = 5;
         bool rockGrabPinchPocketEnabled = true;
+        bool rockGrabPinchCloseSelectionEnabled = true;
         float rockGrabPinchCompactMaxExtentGameUnits = 10.0f;
         float rockGrabPinchThinRodMaxLengthGameUnits = 18.0f;
         float rockGrabPinchThinRodMaxCrossSectionGameUnits = 4.0f;
@@ -360,6 +362,8 @@ namespace rock
         float rockGrabPinchThumbIndexMaxOpenValue = 0.45f;
         float rockGrabPinchOtherFingerCurlValue = 0.20f;
         float rockGrabPinchSurfaceInsetGameUnits = 0.5f;
+        RE::NiPoint3 rockGrabPinchDetectionDirectionHandspace = RE::NiPoint3(1.0f, 0.0f, 0.0f);
+        float rockGrabPinchDetectionAxisBlend = 0.65f;
         bool rockGrabHandLerpEnabled = true;
         float rockGrabHandLerpTimeMin = 0.10f;
         float rockGrabHandLerpTimeMax = 0.20f;

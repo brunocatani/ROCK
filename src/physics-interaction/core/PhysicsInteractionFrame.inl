@@ -39,6 +39,19 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
         }
         input.palmNormalWorld = computePalmNormalFromHandBasis(input.rawHandWorld, isLeft);
         input.pointingWorld = computePointingVectorFromHandBasis(input.rawHandWorld, isLeft);
+        input.pinchDirectionWorld = computePinchDetectionDirectionFromHandBasis(input.rawHandWorld, isLeft);
+        if (g_rockConfig.rockDebugDrawGrabPockets) {
+            root_flattened_finger_skeleton_runtime::Snapshot fingerSnapshot{};
+            if (root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(isLeft, fingerSnapshot) &&
+                fingerSnapshot.valid &&
+                fingerSnapshot.fingers[0].valid &&
+                fingerSnapshot.fingers[1].valid) {
+                input.thumbPadWorld = (fingerSnapshot.fingers[0].points[1] + fingerSnapshot.fingers[0].points[2]) * 0.5f;
+                input.indexPadWorld = (fingerSnapshot.fingers[1].points[1] + fingerSnapshot.fingers[1].points[2]) * 0.5f;
+                input.pinchPocketWorld = (input.thumbPadWorld + input.indexPadWorld) * 0.5f;
+                input.hasPinchPocketWorld = true;
+            }
+        }
         return input;
     };
 

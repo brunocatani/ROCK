@@ -30,6 +30,8 @@
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
+#include "physics-interaction/grab/GrabPinchPocket.h"
+#include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/grab/HeldMassMovement.h"
 #include "physics-interaction/grab/HeldPlayerSpaceRegistry.h"
 #include "physics-interaction/hand/HandLifecycle.h"
@@ -3122,6 +3124,9 @@ namespace rock
                 frame.right.grabAnchorWorld,
                 frame.right.palmNormalWorld,
                 frame.right.pointingWorld,
+                frame.right.pinchPocketWorld,
+                frame.right.pinchDirectionWorld,
+                frame.right.hasPinchPocketWorld,
                 farHmdConeGate,
                 g_rockConfig.rockNearDetectionRange,
                 g_rockConfig.rockFarDetectionRange,
@@ -3135,6 +3140,9 @@ namespace rock
                 frame.left.grabAnchorWorld,
                 frame.left.palmNormalWorld,
                 frame.left.pointingWorld,
+                frame.left.pinchPocketWorld,
+                frame.left.pinchDirectionWorld,
+                frame.left.hasPinchPocketWorld,
                 farHmdConeGate,
                 g_rockConfig.rockNearDetectionRange,
                 g_rockConfig.rockFarDetectionRange,

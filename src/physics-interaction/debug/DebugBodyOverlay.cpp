@@ -1485,6 +1485,46 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[2] = 1.0f;
                 color[3] = 0.85f;
                 break;
+            case MarkerOverlayRole::RightPalmPocketCenter:
+            case MarkerOverlayRole::LeftPalmPocketCenter:
+                color[0] = 1.0f;
+                color[1] = 0.86f;
+                color[2] = 0.08f;
+                color[3] = 0.95f;
+                break;
+            case MarkerOverlayRole::RightPalmPocketRadius:
+            case MarkerOverlayRole::LeftPalmPocketRadius:
+                color[0] = 1.0f;
+                color[1] = 0.72f;
+                color[2] = 0.05f;
+                color[3] = 0.72f;
+                break;
+            case MarkerOverlayRole::RightPinchPocketCenter:
+                color[0] = 0.10f;
+                color[1] = 1.0f;
+                color[2] = 0.68f;
+                color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::LeftPinchPocketCenter:
+                color[0] = 1.0f;
+                color[1] = 0.28f;
+                color[2] = 0.75f;
+                color[3] = 0.98f;
+                break;
+            case MarkerOverlayRole::RightPinchPocketAxis:
+            case MarkerOverlayRole::LeftPinchPocketAxis:
+                color[0] = 0.95f;
+                color[1] = 0.95f;
+                color[2] = 0.95f;
+                color[3] = 0.82f;
+                break;
+            case MarkerOverlayRole::RightPinchDetectionDirection:
+            case MarkerOverlayRole::LeftPinchDetectionDirection:
+                color[0] = 0.25f;
+                color[1] = 1.0f;
+                color[2] = 0.18f;
+                color[3] = 0.92f;
+                break;
             case MarkerOverlayRole::RightGrabPivotA:
                 color[0] = 0.0f;
                 color[1] = 1.0f;

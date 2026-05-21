@@ -19,11 +19,17 @@ Very small compact objects and short thin objects need a distinct close-grab sea
 - The held object remains dynamic. The frozen value is the BODY-local object point plus the hand/proxy-local relation.
 - Pinch disables seated palm-pocket reacquire and held support refresh for the lifetime of that grab.
 - Thumb/index finger targets are stored object-local; middle/ring/pinky are closed by policy.
+- Palm close selection remains first priority. Pinch close selection is a fallback cast from the live thumb-index pocket only when the palm close cast misses.
+- A pinch-direction fallback selection must qualify for pinch pocket at grab commit; it does not fall through to palm-pocket authority.
+- Pinch-direction selection hysteresis and selected-close speed tracking use the live pinch origin rather than the palm origin.
+- Runtime pinch selection resolves the thumb-index pocket lazily after the palm close cast misses; the per-frame frame-context capture is used only for pocket debug drawing.
+- Pinch mesh search uses a configurable authored hand-space direction blended with the live thumb-index axis.
 
 ## Planned Files
 
 - `src/physics-interaction/grab/GrabPinchPocket.h`: classifier/math policy for compact and short-thin objects.
 - `src/physics-interaction/grab/GrabCore.h`: seat-mode storage on the canonical grab frame.
+- `src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl`: per-hand palm/pinch pocket visual markers.
 - `src/physics-interaction/hand/HandGrab.cpp`: commit-time arbitration and pinch pose publication.
 - `src/RockConfig.h`, `src/RockConfig.cpp`, `data/config/ROCK.ini`: tuning defaults.
 - `tests/GrabPinchPocketPolicyTests.cpp` and source-boundary tests: classifier and no-feedback guarantees.
@@ -37,6 +43,8 @@ Very small compact objects and short thin objects need a distinct close-grab sea
 - Thumb/index gap: 1 to 12 game units.
 - Thumb/index max-open curl: 0.45.
 - Other finger curl: 0.20.
+- Pinch detection direction: hand-space X/finger-forward.
+- Pinch detection axis blend: 0.65 live thumb-index axis, 0.35 authored pinch direction.
 
 ## Current Status
 
@@ -46,6 +54,10 @@ Very small compact objects and short thin objects need a distinct close-grab sea
 - Pinch captures the thumb/index distal-pad pocket from the root-flattened finger snapshot at grab commit, then stores object-local thumb/index pose targets.
 - Pinch bypasses held palm-pocket support refresh and seated palm-pocket reacquire for the lifetime of the grab.
 - Pinch bypasses the generic thumb curve solver and post-processes thumb/index plus middle/ring/pinky finger values from config.
+- Added a per-hand debug overlay toggle for palm pocket center/radius/depth and pinch center/thumb-index axis/detection direction.
+- Added fallback pinch close selection from the live thumb-index pocket using the pinch direction only after palm close selection fails.
+- Tagged pinch-direction close selections so non-pinchable hits fail closed instead of becoming accidental palm grabs.
+- Kept pinch fallback selection distance and selected-close speed tied to the pinch origin.
 - Added INI-backed tuning defaults and tests.
 
 ## Validation

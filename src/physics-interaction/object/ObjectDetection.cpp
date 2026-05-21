@@ -700,7 +700,7 @@ namespace rock
     }
 
     SelectedObject findCloseObject(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& palmPos, const RE::NiPoint3& palmForward, float nearRange, bool isLeft,
-        const OtherHandSelectionContext& otherHandContext)
+        const OtherHandSelectionContext& otherHandContext, const char* debugQueryName)
     {
         SelectedObject result;
 
@@ -756,7 +756,7 @@ namespace rock
                 "Near shape cast [{}]: start=({:.1f},{:.1f},{:.1f}) dir=({:.2f},{:.2f},{:.2f}) radius={:.1f} distance={:.1f} "
                 "filter=0x{:08X} hits={} candidates={} dup={} rejectInvalid={} rejectNoRef={} rejectNotGrab={} rejectBehind={} selected={} formID={:08X} dist={:.2f} signedAlong={:.2f} lateral={:.2f} "
                 "score={:.4f} normal=({:.2f},{:.2f},{:.2f}) shapeKey=0x{:08X}",
-                isLeft ? "L" : "R", palmPos.x, palmPos.y, palmPos.z, direction.x, direction.y, direction.z, castRadius, castDistance, diagnostics.collisionFilterInfo,
+                debugQueryName ? debugQueryName : (isLeft ? "near-L" : "near-R"), palmPos.x, palmPos.y, palmPos.z, direction.x, direction.y, direction.z, castRadius, castDistance, diagnostics.collisionFilterInfo,
                 diagnostics.hitCount, candidatesChecked, duplicateBodies, rejectedInvalidBody, rejectedNoRef, rejectedNotGrabbable, rejectedBehindPalm, result.isValid() ? "yes" : "no",
                 result.refr ? result.refr->GetFormID() : 0, result.isValid() ? result.distance : -1.0f, result.isValid() ? result.signedAlongDistance : 0.0f,
                 result.isValid() ? result.lateralDistance : 0.0f, result.hasSelectionScore ? result.selectionScore : -1.0f, result.hitNormalWorld.x, result.hitNormalWorld.y,

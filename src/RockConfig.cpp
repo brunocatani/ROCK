@@ -182,6 +182,7 @@ namespace rock
         rockDebugDrawGrabForceTorqueText = false;
         rockDebugDrawGrabPivotSourceCollider = false;
         rockDebugDrawGrabPivotSourceEvidence = false;
+        rockDebugDrawGrabPockets = false;
         rockDebugShowGrabFingerProbes = false;
         rockDebugShowPalmVectors = false;
         rockDebugDrawHandColliders = false;
@@ -390,6 +391,7 @@ namespace rock
         rockGrabSurfaceBehindPalmToleranceGameUnits = 1.5f;
         rockGrabOppositionContactMaxAgeFrames = 5;
         rockGrabPinchPocketEnabled = true;
+        rockGrabPinchCloseSelectionEnabled = true;
         rockGrabPinchCompactMaxExtentGameUnits = grab_pinch_pocket_policy::kDefaultCompactMaxExtentGameUnits;
         rockGrabPinchThinRodMaxLengthGameUnits = grab_pinch_pocket_policy::kDefaultThinRodMaxLengthGameUnits;
         rockGrabPinchThinRodMaxCrossSectionGameUnits = grab_pinch_pocket_policy::kDefaultThinRodMaxCrossSectionGameUnits;
@@ -399,6 +401,10 @@ namespace rock
         rockGrabPinchThumbIndexMaxOpenValue = grab_pinch_pocket_policy::kDefaultThumbIndexMaxOpenValue;
         rockGrabPinchOtherFingerCurlValue = grab_pinch_pocket_policy::kDefaultOtherFingerCurlValue;
         rockGrabPinchSurfaceInsetGameUnits = grab_pinch_pocket_policy::kDefaultSurfaceInsetGameUnits;
+        rockGrabPinchDetectionDirectionHandspace = RE::NiPoint3(grab_pinch_pocket_policy::kDefaultDetectionDirectionHandspaceX,
+            grab_pinch_pocket_policy::kDefaultDetectionDirectionHandspaceY,
+            grab_pinch_pocket_policy::kDefaultDetectionDirectionHandspaceZ);
+        rockGrabPinchDetectionAxisBlend = grab_pinch_pocket_policy::kDefaultDetectionAxisBlend;
         rockGrabHandLerpEnabled = true;
         rockGrabHandLerpTimeMin = 0.10f;
         rockGrabHandLerpTimeMax = 0.20f;
@@ -780,6 +786,7 @@ namespace rock
             ini.GetBoolValue(SECTION, "bDebugDrawGrabPivotSourceCollider", rockDebugDrawGrabPivotSourceCollider);
         rockDebugDrawGrabPivotSourceEvidence =
             ini.GetBoolValue(SECTION, "bDebugDrawGrabPivotSourceEvidence", rockDebugDrawGrabPivotSourceEvidence);
+        rockDebugDrawGrabPockets = ini.GetBoolValue(SECTION, "bDebugDrawGrabPockets", rockDebugDrawGrabPockets);
         rockDebugShowGrabFingerProbes = ini.GetBoolValue(SECTION, "bDebugShowGrabFingerProbes", rockDebugShowGrabFingerProbes);
         rockDebugShowPalmVectors = ini.GetBoolValue(SECTION, "bDebugShowPalmVectors", rockDebugShowPalmVectors);
         rockDebugDrawHandColliders = ini.GetBoolValue(SECTION, "bDebugDrawHandColliders", rockDebugDrawHandColliders);
@@ -1366,6 +1373,7 @@ namespace rock
             static_cast<int>(ini.GetLongValue(SECTION, "iGrabOppositionContactMaxAgeFrames", rockGrabOppositionContactMaxAgeFrames));
         rockGrabOppositionContactMaxAgeFrames = std::clamp(rockGrabOppositionContactMaxAgeFrames, 0, 60);
         rockGrabPinchPocketEnabled = ini.GetBoolValue(SECTION, "bGrabPinchPocketEnabled", rockGrabPinchPocketEnabled);
+        rockGrabPinchCloseSelectionEnabled = ini.GetBoolValue(SECTION, "bGrabPinchCloseSelectionEnabled", rockGrabPinchCloseSelectionEnabled);
         rockGrabPinchCompactMaxExtentGameUnits = readClampedFloat(ini,
             SECTION,
             "fGrabPinchCompactMaxExtentGameUnits",
@@ -1432,6 +1440,25 @@ namespace rock
             grab_pinch_pocket_policy::kDefaultSurfaceInsetGameUnits,
             0.0f,
             8.0f);
+        readVec3("fGrabPinchDetectionDirectionHandspaceX",
+            "fGrabPinchDetectionDirectionHandspaceY",
+            "fGrabPinchDetectionDirectionHandspaceZ",
+            rockGrabPinchDetectionDirectionHandspace);
+        rockGrabPinchDetectionAxisBlend = readClampedFloat(ini,
+            SECTION,
+            "fGrabPinchDetectionAxisBlend",
+            rockGrabPinchDetectionAxisBlend,
+            grab_pinch_pocket_policy::kDefaultDetectionAxisBlend,
+            0.0f,
+            1.0f);
+        {
+            auto pinchDetectionConfig = grab_pinch_pocket_policy::Config{};
+            pinchDetectionConfig.detectionDirectionHandspace = rockGrabPinchDetectionDirectionHandspace;
+            pinchDetectionConfig.detectionAxisBlend = rockGrabPinchDetectionAxisBlend;
+            const auto sanitizedPinchDetectionConfig = grab_pinch_pocket_policy::sanitizeConfig(pinchDetectionConfig);
+            rockGrabPinchDetectionDirectionHandspace = sanitizedPinchDetectionConfig.detectionDirectionHandspace;
+            rockGrabPinchDetectionAxisBlend = sanitizedPinchDetectionConfig.detectionAxisBlend;
+        }
         rockGrabHandLerpEnabled = ini.GetBoolValue(SECTION, "bGrabHandLerpEnabled", rockGrabHandLerpEnabled);
         rockGrabHandLerpTimeMin = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabHandLerpTimeMin", rockGrabHandLerpTimeMin));
         rockGrabHandLerpTimeMax = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabHandLerpTimeMax", rockGrabHandLerpTimeMax));

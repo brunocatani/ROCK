@@ -10,6 +10,7 @@
         const bool drawGrabPivots = g_rockConfig.rockDebugShowGrabPivots;
         const bool drawFingerProbes = g_rockConfig.rockDebugShowGrabFingerProbes;
         const bool drawPalmVectors = g_rockConfig.rockDebugShowPalmVectors;
+        const bool drawGrabPockets = g_rockConfig.rockDebugDrawGrabPockets;
         const bool drawRootFlattenedFingerSkeleton = g_rockConfig.rockDebugShowRootFlattenedFingerSkeletonMarkers;
         const auto skeletonBoneMode = skeleton_bone_debug_math::sanitizeDebugSkeletonBoneMode(g_rockConfig.rockDebugSkeletonBoneMode);
         const auto skeletonBoneSource = skeleton_bone_debug_math::sanitizeDebugSkeletonBoneSource(g_rockConfig.rockDebugSkeletonBoneSource);
@@ -40,7 +41,7 @@
             s_worldOriginDiagnosticsEnabledLogged = false;
         }
         if (!drawRockColliderBodies && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawFingerProbes &&
-            !drawPalmVectors && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal && !drawGrabContactPatch && !drawHandBoneContacts &&
+            !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal && !drawGrabContactPatch && !drawHandBoneContacts &&
             !drawSoftContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay && !drawWeaponAuthorityDebug &&
             !drawWorldOriginDiagnostics) {
             debug::ClearFrame();
@@ -55,7 +56,7 @@
         frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
         frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabForceTorque;
         frame.drawMarkers =
-            drawGrabPivots || drawFingerProbes || drawPalmVectors || drawRootFlattenedFingerSkeleton || drawGrabPocketNormal || drawGrabContactPatch ||
+            drawGrabPivots || drawFingerProbes || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton || drawGrabPocketNormal || drawGrabContactPatch ||
             drawGrabForceTorque || drawHandBoneContacts || drawSoftContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes || drawWeaponAuthorityDebug ||
             drawWorldOriginDiagnostics;
         frame.drawSkeleton = drawSkeletonBones;
@@ -294,6 +295,58 @@
 
             addPalmVectorDebug(false);
             addPalmVectorDebug(true);
+        }
+
+        if (drawGrabPockets) {
+            auto addGrabPocketDebug = [&](bool isLeft) {
+                if ((isLeft && leftDisabled) || (!isLeft && rightDisabled)) {
+                    return;
+                }
+
+                const auto& handInput = isLeft ? context.left : context.right;
+                const auto palmPocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(handInput.rawHandWorld,
+                    isLeft,
+                    handInput.grabAnchorWorld,
+                    g_rockConfig.rockGrabPocketDepthGameUnits,
+                    g_rockConfig.rockGrabPocketRadiusGameUnits);
+                if (palmPocket.valid) {
+                    const auto palmCenterRole =
+                        isLeft ? debug::MarkerOverlayRole::LeftPalmPocketCenter : debug::MarkerOverlayRole::RightPalmPocketCenter;
+                    const auto palmRadiusRole =
+                        isLeft ? debug::MarkerOverlayRole::LeftPalmPocketRadius : debug::MarkerOverlayRole::RightPalmPocketRadius;
+                    addMarkerPoint(palmCenterRole, palmPocket.palmCenterWorld, 2.4f);
+                    addMarkerLine(palmRadiusRole, palmPocket.palmCenterWorld, palmPocket.pocketCenterWorld);
+                    addMarkerLine(palmRadiusRole,
+                        palmPocket.pocketCenterWorld - palmPocket.fingerForwardWorld * palmPocket.pocketRadiusGameUnits,
+                        palmPocket.pocketCenterWorld + palmPocket.fingerForwardWorld * palmPocket.pocketRadiusGameUnits);
+                    addMarkerLine(palmRadiusRole,
+                        palmPocket.pocketCenterWorld - palmPocket.thumbSideWorld * palmPocket.pocketRadiusGameUnits,
+                        palmPocket.pocketCenterWorld + palmPocket.thumbSideWorld * palmPocket.pocketRadiusGameUnits);
+                }
+
+                if (!handInput.hasPinchPocketWorld) {
+                    return;
+                }
+
+                const RE::NiPoint3 pinchAxis =
+                    grab_pinch_pocket_policy::normalizeOrFallback(handInput.indexPadWorld - handInput.thumbPadWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+                const float axisBlend =
+                    std::clamp(g_rockConfig.rockGrabPinchDetectionAxisBlend, 0.0f, 1.0f);
+                const RE::NiPoint3 pinchDetection =
+                    grab_pinch_pocket_policy::normalizeOrFallback(pinchAxis * axisBlend + handInput.pinchDirectionWorld * (1.0f - axisBlend), pinchAxis);
+                const float directionLength =
+                    (std::max)(g_rockConfig.rockGrabPinchMaxPocketDistanceGameUnits, g_rockConfig.rockNearCastDistanceGameUnits);
+
+                addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftPinchPocketCenter : debug::MarkerOverlayRole::RightPinchPocketCenter, handInput.pinchPocketWorld, 2.2f);
+                addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftPinchPocketAxis : debug::MarkerOverlayRole::RightPinchPocketAxis, handInput.thumbPadWorld, handInput.indexPadWorld);
+                addMarkerRay(isLeft ? debug::MarkerOverlayRole::LeftPinchDetectionDirection : debug::MarkerOverlayRole::RightPinchDetectionDirection,
+                    handInput.pinchPocketWorld,
+                    handInput.pinchPocketWorld + pinchDetection * directionLength,
+                    1.4f);
+            };
+
+            addGrabPocketDebug(false);
+            addGrabPocketDebug(true);
         }
 
         if (drawSkeletonBones) {

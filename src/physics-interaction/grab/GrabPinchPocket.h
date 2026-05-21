@@ -19,6 +19,10 @@ namespace rock::grab_pinch_pocket_policy
     inline constexpr float kDefaultThumbIndexMaxOpenValue = 0.45f;
     inline constexpr float kDefaultOtherFingerCurlValue = 0.20f;
     inline constexpr float kDefaultSurfaceInsetGameUnits = 0.5f;
+    inline constexpr float kDefaultDetectionDirectionHandspaceX = 1.0f;
+    inline constexpr float kDefaultDetectionDirectionHandspaceY = 0.0f;
+    inline constexpr float kDefaultDetectionDirectionHandspaceZ = 0.0f;
+    inline constexpr float kDefaultDetectionAxisBlend = 0.65f;
 
     struct Config
     {
@@ -32,6 +36,12 @@ namespace rock::grab_pinch_pocket_policy
         float thumbIndexMaxOpenValue = kDefaultThumbIndexMaxOpenValue;
         float otherFingerCurlValue = kDefaultOtherFingerCurlValue;
         float surfaceInsetGameUnits = kDefaultSurfaceInsetGameUnits;
+        RE::NiPoint3 detectionDirectionHandspace{
+            kDefaultDetectionDirectionHandspaceX,
+            kDefaultDetectionDirectionHandspaceY,
+            kDefaultDetectionDirectionHandspaceZ
+        };
+        float detectionAxisBlend = kDefaultDetectionAxisBlend;
     };
 
     struct MeshExtentMetrics
@@ -87,6 +97,25 @@ namespace rock::grab_pinch_pocket_policy
         config.thumbIndexMaxOpenValue = std::clamp(finiteOr(config.thumbIndexMaxOpenValue, kDefaultThumbIndexMaxOpenValue), 0.0f, 1.0f);
         config.otherFingerCurlValue = std::clamp(finiteOr(config.otherFingerCurlValue, kDefaultOtherFingerCurlValue), 0.0f, 1.0f);
         config.surfaceInsetGameUnits = std::clamp(finiteOr(config.surfaceInsetGameUnits, kDefaultSurfaceInsetGameUnits), 0.0f, 8.0f);
+        const float directionLenSq =
+            config.detectionDirectionHandspace.x * config.detectionDirectionHandspace.x +
+            config.detectionDirectionHandspace.y * config.detectionDirectionHandspace.y +
+            config.detectionDirectionHandspace.z * config.detectionDirectionHandspace.z;
+        if (!std::isfinite(directionLenSq) || directionLenSq <= 0.000001f) {
+            config.detectionDirectionHandspace = RE::NiPoint3{
+                kDefaultDetectionDirectionHandspaceX,
+                kDefaultDetectionDirectionHandspaceY,
+                kDefaultDetectionDirectionHandspaceZ
+            };
+        } else {
+            const float invDirectionLen = 1.0f / std::sqrt(directionLenSq);
+            config.detectionDirectionHandspace = RE::NiPoint3{
+                config.detectionDirectionHandspace.x * invDirectionLen,
+                config.detectionDirectionHandspace.y * invDirectionLen,
+                config.detectionDirectionHandspace.z * invDirectionLen
+            };
+        }
+        config.detectionAxisBlend = std::clamp(finiteOr(config.detectionAxisBlend, kDefaultDetectionAxisBlend), 0.0f, 1.0f);
         return config;
     }
 
