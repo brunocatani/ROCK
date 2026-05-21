@@ -101,7 +101,6 @@ namespace rock::held_object_drive_policy
     struct HeldBodySetDriveDecision
     {
         HeldBodySetDriveMode mode = HeldBodySetDriveMode::SingleDynamic;
-        float motorAuthorityScale = 1.0f;
         bool includeConnectedLinearVelocity = true;
         bool includeConnectedAngularVelocity = true;
         bool includeConnectedMass = true;
@@ -120,7 +119,6 @@ namespace rock::held_object_drive_policy
         if (acceptedBodies == 0 || input.incompleteNativeScan || input.scanFailureCount > 0 || input.invalidPhysicsSystemCount > 0) {
             return HeldBodySetDriveDecision{
                 .mode = HeldBodySetDriveMode::IncompleteNativeScan,
-                .motorAuthorityScale = 0.55f,
                 .includeConnectedLinearVelocity = false,
                 .includeConnectedAngularVelocity = false,
                 .includeConnectedMass = false,
@@ -131,7 +129,6 @@ namespace rock::held_object_drive_policy
         if (input.rejectedFixedOrNonDynamicCount > 0) {
             return HeldBodySetDriveDecision{
                 .mode = HeldBodySetDriveMode::FixedAttached,
-                .motorAuthorityScale = 0.65f,
                 .includeConnectedLinearVelocity = false,
                 .includeConnectedAngularVelocity = false,
                 .includeConnectedMass = false,
@@ -150,7 +147,6 @@ namespace rock::held_object_drive_policy
 
         return HeldBodySetDriveDecision{
             .mode = HeldBodySetDriveMode::ComplexArticulated,
-            .motorAuthorityScale = 0.80f,
             .includeConnectedLinearVelocity = true,
             .includeConnectedAngularVelocity = false,
             .includeConnectedMass = true,
@@ -158,11 +154,9 @@ namespace rock::held_object_drive_policy
         };
     }
 
-    inline float combineMotorAuthorityScale(float baseScale, const HeldBodySetDriveDecision& decision)
+    inline float sanitizeMotorAuthorityScale(float baseScale)
     {
-        const float base = std::clamp(std::isfinite(baseScale) && baseScale > 0.0f ? baseScale : 1.0f, 0.05f, 1.0f);
-        const float drive = std::clamp(std::isfinite(decision.motorAuthorityScale) && decision.motorAuthorityScale > 0.0f ? decision.motorAuthorityScale : 1.0f, 0.05f, 1.0f);
-        return std::clamp(base * drive, 0.05f, 1.0f);
+        return std::clamp(std::isfinite(baseScale) && baseScale > 0.0f ? baseScale : 1.0f, 0.05f, 1.0f);
     }
 }
 
@@ -594,16 +588,6 @@ namespace rock::held_object_physics_math
         return (std::min)(force, mass * forceToMassRatio);
     }
 
-    inline float angularForceFromRatio(float linearForce, float angularToLinearRatio)
-    {
-        if (!std::isfinite(linearForce) || linearForce <= 0.0f) {
-            return 0.0f;
-        }
-        if (!std::isfinite(angularToLinearRatio) || angularToLinearRatio <= 0.001f) {
-            return linearForce;
-        }
-        return linearForce / angularToLinearRatio;
-    }
 }
 
 // ---- GrabHeldResponse.h ----

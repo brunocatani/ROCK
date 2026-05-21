@@ -257,11 +257,9 @@ namespace rock
         float rockGrabAngularConstantRecovery = 1.0f;
 
         float rockGrabConstraintMaxForce = 2000.0f;
-        float rockGrabAngularToLinearForceRatio = 12.5f;
         float rockGrabMaxForceToMassRatio = 500.0f;
         bool rockGrabEffectiveMotorMassFloorEnabled = true;
         float rockGrabEffectiveMotorMassFloor = 2.0f;
-        float rockGrabFadeInStartAngularRatio = 100.0f;
 
         float rockGrabForceFadeInTime = 0.1f;
         RE::NiPoint3 rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);
@@ -272,7 +270,6 @@ namespace rock
         float rockGrabLooseWeaponSharedConstraintLinearDampingMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintAngularDampingMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintMaxForceMultiplier = 4.5f;
-        float rockGrabLooseWeaponSharedConstraintAngularForceMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = 1.0f;
         float rockGrabTauMin = 0.01f;

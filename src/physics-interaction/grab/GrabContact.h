@@ -385,9 +385,16 @@ namespace rock::grab_pivot_authority_policy
             return decision;
         }
 
-        decision.acceptPatchPivot = true;
+        /*
+         * Contact patches are high-value evidence, but they are no longer a
+         * standalone pivot authority. Small patches and corner clusters can be
+         * geometrically real while still producing a poor frozen BODY-local grab
+         * point, so runtime pivot ownership stays with authored/mesh/palm-pocket
+         * evidence and uses the patch only for validation/pose/release context.
+         */
+        decision.acceptPatchPivot = false;
         decision.positionOnlyAuthority = true;
-        decision.reason = "meshBackedPatchPivotPositionOnly";
+        decision.reason = "contactPatchPivotEvidenceOnly";
         return decision;
     }
 }

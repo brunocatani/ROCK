@@ -465,7 +465,6 @@ namespace rock
         const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
         const RE::NiTransform& desiredBodyTransformHandSpace, float tau, float damping, float maxForce, float proportionalRecovery, float constantRecovery)
     {
-        const float angularForceRatio = safePositiveMotorValue(g_rockConfig.rockGrabAngularToLinearForceRatio, 12.5f);
         const float linearMaxForce = (std::max)(0.0f, std::isfinite(maxForce) ? maxForce : 0.0f);
         return createGrabConstraint(
             world,
@@ -485,7 +484,7 @@ namespace rock
                 .angularDamping = g_rockConfig.rockGrabAngularDamping,
                 .angularProportionalRecovery = g_rockConfig.rockGrabAngularProportionalRecovery,
                 .angularConstantRecovery = g_rockConfig.rockGrabAngularConstantRecovery,
-                .angularMaxForce = linearMaxForce / angularForceRatio,
+                .angularMaxForce = linearMaxForce,
             });
     }
 

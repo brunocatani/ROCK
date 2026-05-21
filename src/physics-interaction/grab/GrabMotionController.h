@@ -70,12 +70,10 @@ namespace rock::grab_motion_controller
         float forceToMassRatio = 500.0f;
         bool effectiveMotorMassFloorEnabled = true;
         float effectiveMotorMassFloor = 2.0f;
-        float angularToLinearForceRatio = 12.5f;
 
         bool fadeInEnabled = true;
         float fadeElapsed = 1.0f;
         float fadeDuration = 0.1f;
-        float fadeStartAngularRatio = 100.0f;
 
         bool pivotQualityAngularScalingEnabled = false;
         bool pivotAuthorityPositionOnly = false;
@@ -204,17 +202,6 @@ namespace rock::grab_motion_controller
 
         const float sanitizedFloor = (std::isfinite(massFloor) && massFloor > 0.0f) ? massFloor : 0.0f;
         return (std::max)(sanitizedMass, sanitizedFloor);
-    }
-
-    inline float angularForceFromRatio(float linearForce, float ratio)
-    {
-        if (!std::isfinite(linearForce) || linearForce <= 0.0f) {
-            return 0.0f;
-        }
-        if (!std::isfinite(ratio) || ratio <= 0.001f) {
-            return linearForce;
-        }
-        return linearForce / ratio;
     }
 
     inline float computeLongObjectAngularSpeedScale(bool enabled, float leverGameUnits, float referenceLeverGameUnits, float minScale)
@@ -822,10 +809,10 @@ namespace rock::grab_motion_controller
         const float collisionTau = safePositive(input.collisionTau, baseLinearTau);
 
         /*
-         * HIGGS-style dynamic grabs keep normal held motors on fixed base tau.
-         * Patch/contact/lever quality remains available to release safety, but
-         * it is not live motor authority. Tiny or one-point patches must not
-         * make the held object too weak to follow the hand.
+         * ROCK dynamic grabs keep normal held motors on fixed base tau and one
+         * shared force budget. Patch/contact/lever quality remains available to release safety,
+         * not live motor authority. Tiny or one-point patches must not make the
+         * held object too weak to follow the hand.
          */
         const float linearTauTarget = heldAuthority.softenForContact ? collisionTau : baseLinearTau;
         const float angularTauTarget = heldAuthority.softenForContact ? collisionTau : baseAngularTau;
@@ -840,11 +827,7 @@ namespace rock::grab_motion_controller
             input.effectiveMotorMassFloorEnabled,
             input.effectiveMotorMassFloor);
         out.linearMaxForce = capForceByMass(baseForce * out.fadeFactor, motorMass, input.forceToMassRatio) * authorityForceScale;
-
-        const float angularFadeRatio =
-            safePositive(input.fadeStartAngularRatio, input.angularToLinearForceRatio) +
-            (safePositive(input.angularToLinearForceRatio, 12.5f) - safePositive(input.fadeStartAngularRatio, input.angularToLinearForceRatio)) * out.fadeFactor;
-        out.angularMaxForce = angularForceFromRatio(out.linearMaxForce, angularFadeRatio);
+        out.angularMaxForce = out.linearMaxForce;
         return out;
     }
 

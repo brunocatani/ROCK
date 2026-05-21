@@ -151,7 +151,7 @@ namespace rock
         float angularDamping = 0.8f;
         float angularProportionalRecovery = 2.0f;
         float angularConstantRecovery = 1.0f;
-        float angularMaxForce = 160.0f;
+        float angularMaxForce = 2000.0f;
         GrabAngularAuthority angularAuthority = GrabAngularAuthority::HknpRagdollMotorAtom;
     };
 

@@ -541,13 +541,6 @@ namespace rock
             }
         }
 
-        float angularForceRatioForMultiplier(float ratio, float angularForceMultiplier)
-        {
-            const float sanitizedRatio = (std::isfinite(ratio) && ratio > 0.001f) ? ratio : 12.5f;
-            const float sanitizedMultiplier = (std::isfinite(angularForceMultiplier) && angularForceMultiplier > 0.001f) ? angularForceMultiplier : 1.0f;
-            return (std::max)(0.001f, sanitizedRatio / sanitizedMultiplier);
-        }
-
         float effectiveGrabMotorMass(float mass)
         {
             return grab_motion_controller::effectiveMotorMass(
@@ -577,8 +570,6 @@ namespace rock
                 looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularDampingMultiplier);
             const float maxForceMultiplier =
                 looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintMaxForceMultiplier);
-            const float angularForceMultiplier =
-                looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularForceMultiplier);
             const float linearRecoveryMultiplier =
                 looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier);
             const float angularRecoveryMultiplier =
@@ -589,8 +580,6 @@ namespace rock
                 std::clamp(std::isfinite(authorityForceScale) && authorityForceScale > 0.0f ? authorityForceScale : 1.0f, 0.05f, 1.0f);
             const float linearMaxForce =
                 grab_motion_controller::capForceByMass(linearBudget, mass, forceToMassRatio) * sanitizedAuthorityForceScale;
-            const float angularForceRatio =
-                angularForceRatioForMultiplier(g_rockConfig.rockGrabAngularToLinearForceRatio, angularForceMultiplier);
 
             return GrabConstraintMotorTuning{
                 .linearTau = scaleDriveValue(tau, linearTauMultiplier),
@@ -604,7 +593,7 @@ namespace rock
                     scaleDriveValue(g_rockConfig.rockGrabAngularProportionalRecovery, angularRecoveryMultiplier),
                 .angularConstantRecovery =
                     scaleDriveValue(g_rockConfig.rockGrabAngularConstantRecovery, angularRecoveryMultiplier),
-                .angularMaxForce = grab_motion_controller::angularForceFromRatio(linearMaxForce, angularForceRatio),
+                .angularMaxForce = linearMaxForce,
             };
         }
 
@@ -2169,6 +2158,24 @@ namespace rock
                    std::strcmp(source, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::CollisionFallback)) == 0;
         }
 
+        bool pivotAuthoritySourceCanYieldToPalmPocket(GrabPivotAuthoritySource source)
+        {
+            switch (source) {
+            case GrabPivotAuthoritySource::SelectionHitMeshSnap:
+            case GrabPivotAuthoritySource::PalmRayMeshPoint:
+            case GrabPivotAuthoritySource::ContactPatchMeshSnap:
+            case GrabPivotAuthoritySource::ContactPatchPositionOnly:
+            case GrabPivotAuthoritySource::CollisionFallback:
+            case GrabPivotAuthoritySource::None:
+                return true;
+            case GrabPivotAuthoritySource::AuthoredGrabNode:
+            case GrabPivotAuthoritySource::PalmPocketMeshPoint:
+            case GrabPivotAuthoritySource::PinchPocketMeshPoint:
+                return false;
+            }
+            return false;
+        }
+
         bool pivotAuthorityRequiresSettledVisualRelation(
             const char* source,
             bool positionOnly,
@@ -2203,7 +2210,6 @@ namespace rock
             float extendedAuthorityDeltaGameUnits = 0.0f;
             float pocketImprovementGameUnits = 0.0f;
             float scoreImprovement = 0.0f;
-            bool usePatchPivot = false;
             bool usePalmPocketPivot = false;
         };
 
@@ -2291,7 +2297,7 @@ namespace rock
             };
 
             if (palmPocketEligible && palmPocketCandidate.valid && meshCandidate.valid &&
-                meshCandidate.source == GrabPivotAuthoritySource::PalmRayMeshPoint) {
+                pivotAuthoritySourceCanYieldToPalmPocket(meshCandidate.source)) {
                 const float pocketImprovement = meshCandidate.pivotToPocketGameUnits - palmPocketCandidate.pivotToPocketGameUnits;
                 const bool selectionStillCoherent =
                     std::isfinite(palmPocketCandidate.selectionDeltaGameUnits) &&
@@ -2331,17 +2337,6 @@ namespace rock
             result.extendedAuthorityDeltaGameUnits = patchAuthorityDecision.extendedAuthorityDeltaGameUnits;
             result.pocketImprovementGameUnits = patchAuthorityDecision.pocketImprovementGameUnits;
             result.scoreImprovement = patchAuthorityDecision.scoreImprovement;
-            if (patchAuthorityDecision.acceptPatchPivot) {
-                GrabPivotAuthorityCandidate positionOnlyPatch = patchCandidate;
-                positionOnlyPatch.positionOnlyPatch = true;
-                positionOnlyPatch.normalTrusted = false;
-                positionOnlyPatch.source = GrabPivotAuthoritySource::ContactPatchPositionOnly;
-                result.reason = patchAuthorityDecision.reason;
-                result.usePatchPivot = patchAuthorityDecision.acceptPatchPivot;
-                result.usePalmPocketPivot = false;
-                preferCandidate(positionOnlyPatch);
-                return result;
-            }
             if (std::strcmp(result.reason, "notEvaluated") == 0) {
                 result.reason = patchAuthorityDecision.reason;
             }
@@ -4521,8 +4516,6 @@ namespace rock
             looseWeaponMultiplier(_heldObjectIsLooseWeapon, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularDampingMultiplier);
         const float looseMaxForceMultiplier =
             looseWeaponMultiplier(_heldObjectIsLooseWeapon, g_rockConfig.rockGrabLooseWeaponSharedConstraintMaxForceMultiplier);
-        const float looseAngularForceMultiplier =
-            looseWeaponMultiplier(_heldObjectIsLooseWeapon, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularForceMultiplier);
         const float looseLinearRecoveryMultiplier =
             looseWeaponMultiplier(_heldObjectIsLooseWeapon, g_rockConfig.rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier);
         const float looseAngularRecoveryMultiplier =
@@ -4549,13 +4542,9 @@ namespace rock
             .forceToMassRatio = g_rockConfig.rockGrabMaxForceToMassRatio,
             .effectiveMotorMassFloorEnabled = g_rockConfig.rockGrabEffectiveMotorMassFloorEnabled,
             .effectiveMotorMassFloor = g_rockConfig.rockGrabEffectiveMotorMassFloor,
-            .angularToLinearForceRatio =
-                angularForceRatioForMultiplier(g_rockConfig.rockGrabAngularToLinearForceRatio, looseAngularForceMultiplier),
             .fadeInEnabled = _grabFrame.fadeInGrabConstraint,
             .fadeElapsed = _grabStartTime,
             .fadeDuration = forceFadeInTime,
-            .fadeStartAngularRatio =
-                angularForceRatioForMultiplier(g_rockConfig.rockGrabFadeInStartAngularRatio, looseAngularForceMultiplier),
             .pivotQualityAngularScalingEnabled = g_rockConfig.rockGrabPivotQualityAngularScalingEnabled,
             .pivotAuthorityPositionOnly = _grabFrame.pivotAuthorityPositionOnly,
             .pivotAuthorityNormalTrusted = _grabFrame.pivotAuthorityNormalTrusted,
@@ -4658,7 +4647,7 @@ namespace rock
         if (_activeConstraint.isValid() && _grabAuthorityProxy.isValid()) {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
             _grabAuthorityPendingTarget.authorityForceScale =
-                held_object_drive_policy::combineMotorAuthorityScale(sharedGrabAuthorityForceScale(true), _heldDriveDecision);
+                held_object_drive_policy::sanitizeMotorAuthorityScale(sharedGrabAuthorityForceScale(true));
             ROCK_LOG_DEBUG(Hand,
                 "{} hand peer promotion kept existing proxy constraint drive: formID={:08X} body={} forceBudget={:.2f} driveMode={} reason={}",
                 handName(),
@@ -4919,7 +4908,7 @@ namespace rock
         stopSelectionHighlight();
 
         ROCK_LOG_INFO(Hand,
-            "{} hand PULL start: type={} weapon={} formID={:08X} primaryBody={} bodyCount={} driveMode={} forceScale={:.2f} linearScope={} angularScope={} seeded={} scanFailures={} invalidSystems={} benignSkips={} unresolvedAccepted={} distanceHk={:.3f} duration={:.3f}s setMotion={} enableCollision={}",
+            "{} hand PULL start: type={} weapon={} formID={:08X} primaryBody={} bodyCount={} driveMode={} linearScope={} angularScope={} seeded={} scanFailures={} invalidSystems={} benignSkips={} unresolvedAccepted={} distanceHk={:.3f} duration={:.3f}s setMotion={} enableCollision={}",
             handName(),
             selectedType ? selectedType : "???",
             selectedIsWeapon ? "yes" : "no",
@@ -4927,7 +4916,6 @@ namespace rock
             _pulledPrimaryBodyId,
             _pulledBodyIds.size(),
             held_object_drive_policy::modeName(_pullDriveDecision.mode),
-            _pullDriveDecision.motorAuthorityScale,
             _pullDriveDecision.includeConnectedLinearVelocity ? "bodySet" : "primaryOnly",
             _pullDriveDecision.includeConnectedAngularVelocity ? "bodySet" : "primaryOnly",
             preparedBodySet.diagnostics.seedBodiesAdded,
@@ -5792,11 +5780,10 @@ namespace rock
 
         /*
          * Dynamic grab pivot authority is one coherent position source. Authored
-         * nodes still win, and close grabs prefer the palm-pocket mesh point that
-         * was selected before body resolution. A mesh-snapped contact patch can
-         * replace pivot B only through the named position-only authority policy
-         * after owner, selection, palm-pocket, and score gates all pass. Contact
-         * patch normals and multi-finger contacts remain validation/pose evidence.
+         * nodes still win, and weak close-grab mesh starts can yield to the
+         * palm-pocket mesh point that was selected before body resolution.
+         * Contact patches stay validation/pose evidence; small or corner patches
+         * must not replace the frozen BODY-local pivot by themselves.
          */
         const bool collisionFallbackPivotAllowed =
             !meshContactOnly && meshGrabFound && grabSurfaceHit.valid && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery;
@@ -5968,7 +5955,6 @@ namespace rock
                 g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits,
                 g_rockConfig.rockGrabContactPatchMeshSnapMaxDistanceGameUnits,
                 g_rockConfig.rockGrabAlignmentMaxSelectionToMeshDistance);
-            contactPatchUsedAsPivot = contactPatchAuthorityResolution.usePatchPivot;
             contactPatchPivotAuthorityReason = contactPatchAuthorityResolution.reason;
             const auto& selectedPivotAuthority = contactPatchAuthorityResolution.selected.valid ?
                 contactPatchAuthorityResolution.selected :
@@ -6152,7 +6138,9 @@ namespace rock
                     contactPatchRuntime.patch.fallbackReason ? contactPatchRuntime.patch.fallbackReason : "unknown");
             }
         }
-        if (!contactPatchUsedAsPivot && palmPocketMeshAvailable && std::strcmp(grabPointMode, "meshSurface") == 0) {
+        if (!contactPatchUsedAsPivot &&
+            palmPocketMeshAvailable &&
+            pivotAuthoritySourceCanYieldToPalmPocket(inferGrabPivotAuthoritySource(grabPointMode, pivotAuthorityPositionOnly))) {
             const float canonicalPocketDistance =
                 acquisitionPocket.valid ? pointDistanceGameUnits(canonicalPivotPointWorld, acquisitionPocket.palmCenterWorld) : std::numeric_limits<float>::max();
             const float palmPocketDistance =
@@ -6192,7 +6180,7 @@ namespace rock
                 pivotAuthoritySelectionDeltaGameUnits = palmPocketFallbackAuthority.selectionDeltaGameUnits;
                 pivotAuthorityLongLeverGameUnits = palmPocketFallbackAuthority.longLeverGameUnits;
                 ROCK_LOG_DEBUG(Hand,
-                    "{} hand PIVOT AUTHORITY: source={} mode={} point=({:.1f},{:.1f},{:.1f}) pocketDistance={:.2f}gu selectionDelta={:.2f}gu longLever={:.2f}gu reason={} canonical=meshSurface canonicalPocket={:.2f}gu",
+                    "{} hand PIVOT AUTHORITY: source={} mode={} point=({:.1f},{:.1f},{:.1f}) pocketDistance={:.2f}gu selectionDelta={:.2f}gu longLever={:.2f}gu reason={} canonical={} canonicalPocket={:.2f}gu",
                     handName(),
                     pivotAuthoritySource,
                     grabPointMode,
@@ -6203,6 +6191,7 @@ namespace rock
                     pivotAuthoritySelectionDeltaGameUnits,
                     pivotAuthorityLongLeverGameUnits,
                     grabFallbackReason,
+                    canonicalPivotMode,
                     canonicalPocketDistance);
             }
         }
@@ -6658,10 +6647,9 @@ namespace rock
             /*
              * Runtime grab authority is intentionally single-source. Mesh hits,
              * authored nodes, semantic contacts, contact patches, and multi-finger
-             * contacts are evidence until the ranked pivot resolver chooses one
-             * BODY-local point to freeze. Contact patches can now own position
-             * even when their normals are untrusted; normals remain pose evidence
-             * only after a separate confidence check.
+             * contacts are evidence until the pivot resolver chooses one BODY-local
+             * point to freeze. Contact patches may enrich pose/release evidence, but
+             * the palm-pocket or authored/mesh point owns the dynamic pivot.
              */
             {
                 auto pocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
@@ -7274,7 +7262,7 @@ namespace rock
                     tau,
                     damping,
                     maxForce,
-                    held_object_drive_policy::combineMotorAuthorityScale(sharedGrabAuthorityForceScale(joiningPeerHeldObject), _heldDriveDecision),
+                    held_object_drive_policy::sanitizeMotorAuthorityScale(sharedGrabAuthorityForceScale(joiningPeerHeldObject)),
                     proportionalRecovery,
                     constantRecovery,
                     looseWeaponGrab,
@@ -7324,12 +7312,12 @@ namespace rock
             (std::max)(std::fabs(_activeConstraint.angularMotor->minForce), std::fabs(_activeConstraint.angularMotor->maxForce)) :
             0.0f;
         ROCK_LOG_DEBUG(Hand,
-            "{} hand dynamic grab created: drive={} bodyDriveMode={} driveReason={} forceScale={:.2f} linearScope={} angularScope={} massScope={} looseWeapon={} constraint={} proxyBody={} handBody={} objBody={} heldBodies={} mass={:.2f} effectiveMotorMass={:.2f} primaryMass={:.2f} massBodies={} motions={} longLever={:.1f}gu linearTau={:.3f} angularTau={:.3f} linearDamping={:.2f} angularDamping={:.2f} linearForce={:.0f} angularForce={:.0f} propRecov={:.1f} constRecov={:.1f} rotRef={}",
+            "{} hand dynamic grab created: drive={} bodyDriveMode={} driveReason={} forceShare={:.2f} linearScope={} angularScope={} massScope={} looseWeapon={} constraint={} proxyBody={} handBody={} objBody={} heldBodies={} mass={:.2f} effectiveMotorMass={:.2f} primaryMass={:.2f} massBodies={} motions={} longLever={:.1f}gu linearTau={:.3f} angularTau={:.3f} linearDamping={:.2f} angularDamping={:.2f} linearForce={:.0f} angularForce={:.0f} propRecov={:.1f} constRecov={:.1f} rotRef={}",
             handName(),
             kHeldObjectDriveName,
             held_object_drive_policy::modeName(_heldDriveDecision.mode),
             _heldDriveDecision.reason,
-            _heldDriveDecision.motorAuthorityScale,
+            sharedGrabAuthorityForceScale(joiningPeerHeldObject),
             _heldDriveDecision.includeConnectedLinearVelocity ? "bodySet" : "primaryOnly",
             _heldDriveDecision.includeConnectedAngularVelocity ? "bodySet" : "primaryOnly",
             _heldDriveDecision.includeConnectedMass ? "bodySet" : "primaryOnly",
@@ -7693,7 +7681,7 @@ namespace rock
             heldMotorContactReason = contactSoftening.reason;
         }
         const float authorityForceScale =
-            held_object_drive_policy::combineMotorAuthorityScale(sharedGrabAuthorityForceScale(releaseContext.peerHandStillHolding), _heldDriveDecision);
+            held_object_drive_policy::sanitizeMotorAuthorityScale(sharedGrabAuthorityForceScale(releaseContext.peerHandStillHolding));
         if (held_object_physics_math::shouldQueueGrabAuthorityTargetForDelta(deltaTime)) {
             queueProxyGrabAuthorityTarget(
                 proxyAuthorityWorld,

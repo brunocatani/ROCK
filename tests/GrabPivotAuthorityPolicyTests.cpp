@@ -65,9 +65,9 @@ int main()
 
     {
         const auto decision = chooseMeshBackedPatchPivotAuthority(validInput());
-        ok &= expectTrue("mesh-snapped patch can win narrow position authority", decision.acceptPatchPivot);
-        ok &= expectTrue("accepted patch authority is position-only", decision.positionOnlyAuthority);
-        ok &= expectReason("accepted reason", decision.reason, "meshBackedPatchPivotPositionOnly");
+        ok &= expectFalse("mesh-snapped patch remains evidence-only", decision.acceptPatchPivot);
+        ok &= expectTrue("evidence-only patch keeps position-only classification", decision.positionOnlyAuthority);
+        ok &= expectReason("accepted reason", decision.reason, "contactPatchPivotEvidenceOnly");
     }
 
     {

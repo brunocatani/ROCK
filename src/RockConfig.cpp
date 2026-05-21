@@ -41,7 +41,6 @@ namespace
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearDampingMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularDampingMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintMaxForceMultiplier = 4.5f;
-    constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularForceMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = 1.0f;
     constexpr float kDefaultGrabThrowObjectVelocityBlend = 0.35f;
@@ -297,11 +296,9 @@ namespace rock
         rockGrabAngularConstantRecovery = 1.0f;
 
         rockGrabConstraintMaxForce = 2000.0f;
-        rockGrabAngularToLinearForceRatio = 12.5f;
         rockGrabMaxForceToMassRatio = 500.0f;
         rockGrabEffectiveMotorMassFloorEnabled = true;
         rockGrabEffectiveMotorMassFloor = kDefaultGrabEffectiveMotorMassFloor;
-        rockGrabFadeInStartAngularRatio = 100.0f;
 
         rockGrabForceFadeInTime = 0.1f;
         rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
@@ -312,7 +309,6 @@ namespace rock
         rockGrabLooseWeaponSharedConstraintLinearDampingMultiplier = kDefaultGrabLooseWeaponSharedConstraintLinearDampingMultiplier;
         rockGrabLooseWeaponSharedConstraintAngularDampingMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularDampingMultiplier;
         rockGrabLooseWeaponSharedConstraintMaxForceMultiplier = kDefaultGrabLooseWeaponSharedConstraintMaxForceMultiplier;
-        rockGrabLooseWeaponSharedConstraintAngularForceMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularForceMultiplier;
         rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = kDefaultGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier;
         rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier;
         rockGrabTauMin = 0.01f;
@@ -1040,7 +1036,6 @@ namespace rock
         rockGrabAngularConstantRecovery = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularConstantRecovery", rockGrabAngularConstantRecovery));
 
         rockGrabConstraintMaxForce = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabConstraintMaxForce", rockGrabConstraintMaxForce));
-        rockGrabAngularToLinearForceRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularToLinearForceRatio", rockGrabAngularToLinearForceRatio));
         rockGrabMaxForceToMassRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxForceToMassRatio", rockGrabMaxForceToMassRatio));
         rockGrabEffectiveMotorMassFloorEnabled =
             ini.GetBoolValue(SECTION, "bGrabEffectiveMotorMassFloorEnabled", rockGrabEffectiveMotorMassFloorEnabled);
@@ -1051,7 +1046,6 @@ namespace rock
             kDefaultGrabEffectiveMotorMassFloor,
             0.0f,
             100.0f);
-        rockGrabFadeInStartAngularRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFadeInStartAngularRatio", rockGrabFadeInStartAngularRatio));
 
         rockGrabForceFadeInTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabForceFadeInTime", rockGrabForceFadeInTime));
         rockRightGrabAuthorityProxyOffsetGameUnits.x =
@@ -1108,13 +1102,6 @@ namespace rock
             kDefaultGrabLooseWeaponSharedConstraintMaxForceMultiplier,
             0.05f,
             8.0f);
-        rockGrabLooseWeaponSharedConstraintAngularForceMultiplier = readClampedFloat(ini,
-            SECTION,
-            "fGrabLooseWeaponSharedConstraintAngularForceMultiplier",
-            rockGrabLooseWeaponSharedConstraintAngularForceMultiplier,
-            kDefaultGrabLooseWeaponSharedConstraintAngularForceMultiplier,
-            0.05f,
-            4.0f);
         rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = readClampedFloat(ini,
             SECTION,
             "fGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier",
