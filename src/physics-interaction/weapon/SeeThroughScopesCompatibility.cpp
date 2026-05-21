@@ -9,15 +9,19 @@
 #include <span>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "common/CommonUtils.h"
+#include "RE/Bethesda/BSExtraData.h"
 #include "RE/Bethesda/BGSMod.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESDataHandler.h"
 #include "RE/Bethesda/TESFile.h"
+#include "RE/Bethesda/TESForms.h"
 #include "RE/NetImmerse/NiAVObject.h"
 #include "RE/NetImmerse/NiNode.h"
+#include "f4vr/F4VRUtils.h"
 #include "f4vr/PlayerNodes.h"
 #include "physics-interaction/native/NativeMemory.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -27,6 +31,7 @@
 namespace
 {
     using PropertyMod = RE::BGSMod::Property::Mod;
+    using EquippedScopeRoute = rock::see_through_scopes_policy::EquippedScopeRoute;
 
     constexpr std::uintptr_t kLateCullingHookCallSite = 0xD84EE4;
     constexpr std::uint64_t kNodeHiddenFlag = 0x1;
@@ -41,17 +46,36 @@ namespace
         std::array<std::byte, sizeof(PropertyMod::DATATYPE)> originalData{};
     };
 
+    struct EquippedScopeRouteSnapshot
+    {
+        EquippedScopeRoute route = EquippedScopeRoute::None;
+        std::uint32_t weaponFormID = 0;
+        std::uint32_t activeStsScopeMods = 0;
+        std::uint32_t activeNativeScopeMods = 0;
+        std::uint32_t unresolvedActiveMods = 0;
+        bool weaponDrawn = false;
+    };
+
     struct RuntimeState
     {
         bool initialized = false;
         bool detected = false;
         std::string detectedPlugin;
+        std::vector<const RE::TESFile*> detectedFiles;
         bool legacyDllWarningLogged = false;
         bool overlayPatchApplied = false;
         std::vector<OverlayPatchRecord> overlayPatchRecords;
         RE::NiPointer<RE::NiNode> reticleNode;
         RE::NiPoint3 reticleBaselineLocal = RE::NiPoint3::ZERO;
         bool reticleBaselineValid = false;
+        RE::NiPointer<RE::NiAVObject> scopeNormalNode;
+        RE::NiPointer<RE::NiAVObject> scopeAimingNode;
+        std::uint64_t scopeNormalBaselineFlags = 0;
+        std::uint64_t scopeAimingBaselineFlags = 0;
+        bool scopeVisibilityBaselineValid = false;
+        EquippedScopeRouteSnapshot scopeRoute;
+        EquippedScopeRouteSnapshot loggedScopeRoute;
+        bool hasLoggedScopeRoute = false;
     };
 
     RuntimeState s_state;
@@ -207,32 +231,44 @@ namespace
         return std::nullopt;
     }
 
-    [[nodiscard]] std::optional<std::string> findLoadedSeeThroughScopesPlugin()
+    [[nodiscard]] std::vector<const RE::TESFile*> collectLoadedSeeThroughScopesFiles()
     {
+        std::vector<const RE::TESFile*> result;
         auto* dataHandler = RE::TESDataHandler::GetSingleton();
         if (!dataHandler) {
-            return std::nullopt;
+            return result;
         }
+
+        auto addFile = [&](const RE::TESFile* file) {
+            if (fileIsSeeThroughScopesPlugin(file)) {
+                result.push_back(file);
+            }
+        };
 
         if (const auto* compiledFiles = dataHandler->GetCompiledFileCollection()) {
             for (const auto* file : compiledFiles->files) {
-                if (auto matched = matchLoadedFile(file)) {
-                    return matched;
-                }
+                addFile(file);
             }
 
             for (const auto* file : compiledFiles->smallFiles) {
-                if (auto matched = matchLoadedFile(file)) {
-                    return matched;
-                }
+                addFile(file);
             }
         }
 
         if (const auto* vrMods = dataHandler->GetVRModData()) {
             for (std::uint32_t i = 0; i < vrMods->loadedModCount; ++i) {
-                if (auto matched = matchLoadedFile(vrMods->loadedMods[i])) {
-                    return matched;
-                }
+                addFile(vrMods->loadedMods[i]);
+            }
+        }
+
+        return result;
+    }
+
+    [[nodiscard]] std::optional<std::string> firstLoadedSeeThroughScopesPlugin(const std::vector<const RE::TESFile*>& files)
+    {
+        for (const auto* file : files) {
+            if (auto matched = matchLoadedFile(file)) {
+                return matched;
             }
         }
 
@@ -266,6 +302,38 @@ namespace
 
         for (const auto* file : *sourceFiles) {
             if (fileIsSeeThroughScopesPlugin(file)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    [[nodiscard]] bool formOwnedByLoadedSeeThroughScopesPlugin(const RE::TESForm& form)
+    {
+        /*
+         * Some STS records are easier to identify by loaded-file ownership than
+         * by sourceFiles participation after overrides. This is still local
+         * plugin metadata, not an external reference.
+         */
+        for (const auto* file : s_state.detectedFiles) {
+            if (file && file->IsFormInMod(form.formID)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    [[nodiscard]] bool formIsSeeThroughScopesAttachmentMod(const RE::TESForm& form)
+    {
+        return formHasSeeThroughScopesSourceFile(form) || formOwnedByLoadedSeeThroughScopesPlugin(form);
+    }
+
+    [[nodiscard]] bool attachmentModHasNativeScopeOverlayTarget(RE::BGSMod::Attachment::Mod& omod)
+    {
+        for (const auto& property : propertyModsFor(omod)) {
+            if (property.target == rock::see_through_scopes_policy::kNativeScopeOverlayTarget) {
                 return true;
             }
         }
@@ -310,7 +378,7 @@ namespace
                 continue;
             }
 
-            if (!formHasSeeThroughScopesSourceFile(*omod)) {
+            if (!formIsSeeThroughScopesAttachmentMod(*omod)) {
                 continue;
             }
 
@@ -425,9 +493,156 @@ namespace
         return player && player->GetWeaponMagicDrawn();
     }
 
-    void keepScopeMeshVisible()
+    [[nodiscard]] const RE::BGSObjectInstanceExtra* findEquippedWeaponObjectInstanceExtra(
+        const F4SEVR::PlayerCharacter* player,
+        const F4SEVR::TESForm* weaponForm,
+        const RE::TBO_InstanceData* instanceData)
     {
-        if (!isPlayerWeaponDrawn()) {
+        if (!player || !weaponForm) {
+            return nullptr;
+        }
+
+        const auto* reWeaponForm = reinterpret_cast<const RE::TESForm*>(weaponForm);
+        auto scanEquipData = [&](const auto* equipData) -> const RE::BGSObjectInstanceExtra* {
+            if (!equipData) {
+                return nullptr;
+            }
+            for (std::uint32_t slotIndex = 0; slotIndex < F4SEVR::ActorEquipData::kMaxSlots; ++slotIndex) {
+                const auto& slot = equipData->slots[slotIndex];
+                if (slot.item != reWeaponForm) {
+                    continue;
+                }
+                if (instanceData && slot.instanceData && slot.instanceData != instanceData) {
+                    continue;
+                }
+                if (slot.extraData) {
+                    return slot.extraData;
+                }
+            }
+            return nullptr;
+        };
+
+        if (const auto* firstPersonExtra = scanEquipData(player->playerEquipData)) {
+            return firstPersonExtra;
+        }
+        return scanEquipData(player->equipData);
+    }
+
+    [[nodiscard]] EquippedScopeRouteSnapshot resolveEquippedScopeRoute()
+    {
+        EquippedScopeRouteSnapshot snapshot{};
+        snapshot.weaponDrawn = isPlayerWeaponDrawn();
+        if (!snapshot.weaponDrawn) {
+            return snapshot;
+        }
+
+        auto* player = f4vr::getPlayer();
+        auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
+        auto* equipData = processData ? processData->equipData : nullptr;
+        auto* weaponForm = equipData ? equipData->item : nullptr;
+        if (!weaponForm || weaponForm->formType != static_cast<std::uint8_t>(RE::ENUM_FORM_ID::kWEAP)) {
+            return snapshot;
+        }
+
+        snapshot.weaponFormID = weaponForm->formID;
+
+        const auto* objectInstanceExtra = findEquippedWeaponObjectInstanceExtra(player, weaponForm, equipData->instanceData);
+        if (!objectInstanceExtra || !objectInstanceExtra->values) {
+            return snapshot;
+        }
+
+        for (const auto& modIndex : objectInstanceExtra->GetIndexData()) {
+            if (modIndex.disabled) {
+                continue;
+            }
+
+            auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(modIndex.objectID);
+            if (!omod) {
+                ++snapshot.unresolvedActiveMods;
+                continue;
+            }
+
+            if (!attachmentModHasNativeScopeOverlayTarget(*omod)) {
+                continue;
+            }
+
+            if (formIsSeeThroughScopesAttachmentMod(*omod)) {
+                ++snapshot.activeStsScopeMods;
+            } else {
+                ++snapshot.activeNativeScopeMods;
+            }
+        }
+
+        snapshot.route = rock::see_through_scopes_policy::chooseEquippedScopeRoute({
+            .activeStsScopeMods = snapshot.activeStsScopeMods,
+            .activeNativeScopeMods = snapshot.activeNativeScopeMods,
+        });
+        return snapshot;
+    }
+
+    [[nodiscard]] bool sameScopeRouteForLogging(const EquippedScopeRouteSnapshot& left, const EquippedScopeRouteSnapshot& right)
+    {
+        return left.route == right.route &&
+               left.weaponFormID == right.weaponFormID &&
+               left.activeStsScopeMods == right.activeStsScopeMods &&
+               left.activeNativeScopeMods == right.activeNativeScopeMods &&
+               left.unresolvedActiveMods == right.unresolvedActiveMods &&
+               left.weaponDrawn == right.weaponDrawn;
+    }
+
+    void logScopeRouteIfChanged(const EquippedScopeRouteSnapshot& snapshot)
+    {
+        if (s_state.hasLoggedScopeRoute && sameScopeRouteForLogging(s_state.loggedScopeRoute, snapshot)) {
+            return;
+        }
+
+        ROCK_LOG_INFO(
+            Scope,
+            "Scope route weapon={:08X} route={} stsMods={} nativeMods={} unresolvedMods={} drawn={}",
+            snapshot.weaponFormID,
+            rock::see_through_scopes_policy::equippedScopeRouteName(snapshot.route),
+            snapshot.activeStsScopeMods,
+            snapshot.activeNativeScopeMods,
+            snapshot.unresolvedActiveMods,
+            snapshot.weaponDrawn ? "yes" : "no");
+
+        s_state.loggedScopeRoute = snapshot;
+        s_state.hasLoggedScopeRoute = true;
+    }
+
+    void clearScopeMeshBaseline()
+    {
+        s_state.scopeNormalNode.reset();
+        s_state.scopeAimingNode.reset();
+        s_state.scopeNormalBaselineFlags = 0;
+        s_state.scopeAimingBaselineFlags = 0;
+        s_state.scopeVisibilityBaselineValid = false;
+    }
+
+    void restoreScopeMeshBaselineIfPresent()
+    {
+        if (!s_state.scopeVisibilityBaselineValid || !s_state.scopeNormalNode || !s_state.scopeAimingNode) {
+            clearScopeMeshBaseline();
+            return;
+        }
+
+        auto* scopeNormal = s_state.scopeNormalNode.get();
+        auto* scopeAiming = s_state.scopeAimingNode.get();
+        if (!writeNodeFlags(scopeNormal, s_state.scopeNormalBaselineFlags, "ScopeNormal visibility baseline restore") ||
+            !writeNodeFlags(scopeAiming, s_state.scopeAimingBaselineFlags, "ScopeAiming visibility baseline restore")) {
+            clearScopeMeshBaseline();
+            return;
+        }
+
+        f4cf::f4vr::updateDown(scopeNormal, true);
+        f4cf::f4vr::updateDown(scopeAiming, true);
+        clearScopeMeshBaseline();
+    }
+
+    void keepScopeMeshVisible(const EquippedScopeRouteSnapshot& equippedScope)
+    {
+        if (equippedScope.route != EquippedScopeRoute::StsPreferred || !equippedScope.weaponDrawn) {
+            restoreScopeMeshBaselineIfPresent();
             return;
         }
 
@@ -452,6 +667,17 @@ namespace
             return;
         }
 
+        if (!s_state.scopeVisibilityBaselineValid ||
+            s_state.scopeNormalNode.get() != scopeNormal ||
+            s_state.scopeAimingNode.get() != scopeAiming) {
+            restoreScopeMeshBaselineIfPresent();
+            s_state.scopeNormalNode.reset(scopeNormal);
+            s_state.scopeAimingNode.reset(scopeAiming);
+            s_state.scopeNormalBaselineFlags = scopeNormalFlags;
+            s_state.scopeAimingBaselineFlags = scopeAimingFlags;
+            s_state.scopeVisibilityBaselineValid = true;
+        }
+
         scopeNormalFlags |= kNodeHiddenFlag;
         scopeAimingFlags &= ~kNodeHiddenFlag;
 
@@ -461,9 +687,11 @@ namespace
         }
     }
 
-    void alignReticle()
+    void alignReticle(const EquippedScopeRouteSnapshot& equippedScope)
     {
-        if (!reticleAlignmentConfigEnabled() || !isPlayerWeaponDrawn()) {
+        if (!reticleAlignmentConfigEnabled() ||
+            equippedScope.route != EquippedScopeRoute::StsPreferred ||
+            !equippedScope.weaponDrawn) {
             restoreReticleBaselineIfPresent();
             return;
         }
@@ -613,8 +841,9 @@ namespace rock::see_through_scopes
     {
         warnIfLegacyBetterScopesDllLoaded();
 
-        const auto matchedPlugin = findLoadedSeeThroughScopesPlugin();
-        const bool detected = matchedPlugin.has_value();
+        auto detectedFiles = collectLoadedSeeThroughScopesFiles();
+        const auto matchedPlugin = firstLoadedSeeThroughScopesPlugin(detectedFiles);
+        const bool detected = !detectedFiles.empty();
         const bool changed = !s_state.initialized ||
             detected != s_state.detected ||
             (detected && s_state.detectedPlugin != *matchedPlugin);
@@ -622,6 +851,7 @@ namespace rock::see_through_scopes
         s_state.initialized = true;
         s_state.detected = detected;
         s_state.detectedPlugin = matchedPlugin.value_or(std::string{});
+        s_state.detectedFiles = std::move(detectedFiles);
 
         if (changed) {
             if (s_state.detected) {
@@ -636,6 +866,8 @@ namespace rock::see_through_scopes
         } else {
             restoreOverlayPatch();
             restoreReticleBaselineIfPresent();
+            restoreScopeMeshBaselineIfPresent();
+            s_state.scopeRoute = {};
         }
     }
 
@@ -643,9 +875,14 @@ namespace rock::see_through_scopes
     {
         restoreOverlayPatch();
         restoreReticleBaselineIfPresent();
+        restoreScopeMeshBaselineIfPresent();
         s_state.initialized = false;
         s_state.detected = false;
         s_state.detectedPlugin.clear();
+        s_state.detectedFiles.clear();
+        s_state.scopeRoute = {};
+        s_state.loggedScopeRoute = {};
+        s_state.hasLoggedScopeRoute = false;
     }
 
     void updateFrame()
@@ -657,19 +894,24 @@ namespace rock::see_through_scopes
         if (!runtimeActive()) {
             restoreOverlayPatch();
             restoreReticleBaselineIfPresent();
+            restoreScopeMeshBaselineIfPresent();
+            s_state.scopeRoute = {};
             return;
         }
 
         applyOverlayPatch();
-        alignReticle();
+        s_state.scopeRoute = resolveEquippedScopeRoute();
+        logScopeRouteIfChanged(s_state.scopeRoute);
+        alignReticle(s_state.scopeRoute);
     }
 
     void updateLateCulling()
     {
         if (!runtimeActive()) {
+            restoreScopeMeshBaselineIfPresent();
             return;
         }
 
-        keepScopeMeshVisible();
+        keepScopeMeshVisible(s_state.scopeRoute);
     }
 }

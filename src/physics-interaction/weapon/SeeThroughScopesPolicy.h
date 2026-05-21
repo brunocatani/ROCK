@@ -26,6 +26,44 @@ namespace rock::see_through_scopes_policy
     constexpr float kDefaultReticleLookDotThreshold = 0.98f;
     constexpr float kDefaultReticleDistanceThresholdGameUnits = 20.0f;
 
+    enum class EquippedScopeRoute : std::uint8_t
+    {
+        None = 0,
+        NativeFallback,
+        StsPreferred,
+    };
+
+    struct EquippedScopeRouteInput
+    {
+        std::uint32_t activeStsScopeMods = 0;
+        std::uint32_t activeNativeScopeMods = 0;
+    };
+
+    [[nodiscard]] constexpr EquippedScopeRoute chooseEquippedScopeRoute(EquippedScopeRouteInput input) noexcept
+    {
+        if (input.activeStsScopeMods > 0) {
+            return EquippedScopeRoute::StsPreferred;
+        }
+
+        if (input.activeNativeScopeMods > 0) {
+            return EquippedScopeRoute::NativeFallback;
+        }
+
+        return EquippedScopeRoute::None;
+    }
+
+    [[nodiscard]] constexpr const char* equippedScopeRouteName(EquippedScopeRoute route) noexcept
+    {
+        switch (route) {
+        case EquippedScopeRoute::StsPreferred:
+            return "sts-preferred";
+        case EquippedScopeRoute::NativeFallback:
+            return "native-fallback";
+        default:
+            return "none";
+        }
+    }
+
     [[nodiscard]] constexpr char asciiLower(char c) noexcept
     {
         return c >= 'A' && c <= 'Z' ? static_cast<char>(c + ('a' - 'A')) : c;

@@ -38,8 +38,38 @@ Require-Text `
 
 Require-Text `
     'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
-    'if\s*\(\s*!formHasSeeThroughScopesSourceFile\(\*omod\)\s*\)\s*\{\s*continue;\s*\}' `
+    'formOwnedByLoadedSeeThroughScopesPlugin[\s\S]*IsFormInMod' `
+    'STS OMOD classification must fall back to loaded 3dscopes file ownership when sourceFiles are incomplete.'
+
+Require-Text `
+    'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
+    'if\s*\(\s*!formIsSeeThroughScopesAttachmentMod\(\*omod\)\s*\)\s*\{\s*continue;\s*\}' `
     'The OMOD overlay patch loop must skip records that were not sourced from a 3dscopes plugin.'
+
+Require-Text `
+    'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
+    'resolveEquippedScopeRoute[\s\S]*GetIndexData\(\)[\s\S]*TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>' `
+    'Runtime STS routing must inspect active equipped-weapon OMOD index data.'
+
+Require-Text `
+    'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
+    'chooseEquippedScopeRoute\(\s*\{[\s\S]*activeStsScopeMods[\s\S]*activeNativeScopeMods' `
+    'Equipped scope routing must use the STS-first/native-fallback policy.'
+
+Require-Text `
+    'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
+    'alignReticle\(\s*const\s+EquippedScopeRouteSnapshot&\s+equippedScope\s*\)[\s\S]*equippedScope\.route\s*!=\s*EquippedScopeRoute::StsPreferred' `
+    'STS reticle alignment must be gated by the equipped STS-preferred route.'
+
+Require-Text `
+    'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
+    'keepScopeMeshVisible\(\s*const\s+EquippedScopeRouteSnapshot&\s+equippedScope\s*\)[\s\S]*equippedScope\.route\s*!=\s*EquippedScopeRoute::StsPreferred' `
+    'STS scope mesh visibility must be gated by the equipped STS-preferred route.'
+
+Require-Text `
+    'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
+    'restoreScopeMeshBaselineIfPresent' `
+    'Native fallback must restore ROCK-forced STS scope mesh visibility before yielding to native scope behavior.'
 
 Require-Text `
     'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
@@ -48,8 +78,18 @@ Require-Text `
 
 Require-Text `
     'data/config/ROCK.ini' `
-    'Native scope overlays stay enabled for OMODs that are not sourced from those plugins\.' `
-    'ROCK.ini must document mixed native/STS scope overlay behavior.'
+    'Active equipped STS scopes are preferred; native scope overlays stay enabled for non-STS scopes\.' `
+    'ROCK.ini must document STS-preferred/native-fallback scope behavior.'
+
+Require-Text `
+    'src/physics-interaction/weapon/SeeThroughScopesPolicy.h' `
+    'enum\s+class\s+EquippedScopeRoute[\s\S]*NativeFallback[\s\S]*StsPreferred[\s\S]*chooseEquippedScopeRoute' `
+    'Pure STS scope policy must expose STS-preferred/native-fallback routing.'
+
+Require-Text `
+    'CMakeLists.txt' `
+    'ROCKSeeThroughScopesPolicyTests' `
+    'STS route policy tests must be part of the policy test build.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'See-through scopes compatibility source boundary failed:' -ForegroundColor Red
