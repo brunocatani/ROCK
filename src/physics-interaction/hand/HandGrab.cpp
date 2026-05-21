@@ -1128,14 +1128,13 @@ namespace rock
             pose.values = stablePose.values;
             pose.usedAlternateThumbCurve = false;
             pose.usedAlternateThumbSurfaceHit = false;
-            pose.usedPinchThumbOpposition = true;
             pose.poseTargetCount = (std::max)(pose.poseTargetCount, static_cast<int>(frame.fingerPoseTargetCount));
 
             for (std::size_t finger = 0; finger < 2 && finger < pose.surfaceAimTargetValid.size(); ++finger) {
                 pose.surfaceAimTargetValid[finger] = 0;
                 pose.surfaceAimNormalValid[finger] = 0;
             }
-            for (std::size_t finger = 0; finger < 2 && finger < frame.fingerPoseTargetLocal.size(); ++finger) {
+            for (std::size_t finger = 1; finger < 2 && finger < frame.fingerPoseTargetLocal.size(); ++finger) {
                 if (!frame.fingerPoseTargetValid[finger]) {
                     continue;
                 }
@@ -3132,7 +3131,7 @@ namespace rock
                 pose.values[finger] = precloseValue + (closingTarget - precloseValue) * t;
             }
 
-            if (targetPose.usedPinchThumbOpposition && targetPose.hasJointValues) {
+            if (targetPose.solved && targetPose.hasJointValues) {
                 std::array<float, 5> precloseValues{ precloseValue, precloseValue, precloseValue, precloseValue, precloseValue };
                 const auto precloseJoints = grab_finger_pose_math::expandFingerCurlsToJointValues(precloseValues);
                 for (std::size_t joint = 0; joint < pose.jointValues.size(); ++joint) {
@@ -7431,6 +7430,9 @@ namespace rock
         if (pinchFingerPose && g_rockConfig.rockGrabMeshFingerPoseEnabled) {
             applyPinchFingerPosePolicy(fingerPose, _grabFrame, objectWorldTransform, g_rockConfig.rockGrabFingerMinValue);
         }
+        if (g_rockConfig.rockGrabMeshFingerPoseEnabled) {
+            grab_finger_pose_runtime::useThumbCurveOnlyPose(fingerPose);
+        }
         grab_finger_pose_runtime::captureSurfaceAimObjectLocal(fingerPose, objectWorldTransform);
         _grabFingerPose = fingerPose;
         _hasGrabFingerPose = g_rockConfig.rockGrabMeshFingerPoseEnabled;
@@ -8244,6 +8246,7 @@ namespace rock
                             g_rockConfig.rockGrabFingerRejectBacksideHits,
                             g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
                             _grabFrame.fingerPoseAimValid);
+                        grab_finger_pose_runtime::useThumbCurveOnlyPose(_grabFingerPose);
                         grab_finger_pose_runtime::captureSurfaceAimObjectLocal(_grabFingerPose, currentNodeWorld);
                         _grabFingerProbeStart = _grabFingerPose.probeStart;
                         _grabFingerProbeEnd = _grabFingerPose.probeEnd;

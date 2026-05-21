@@ -793,7 +793,7 @@ namespace rock::grab_finger_pose_runtime
         bool hasObjectLocalSurfaceAim = false;
         bool usedAlternateThumbCurve = false;
         bool usedAlternateThumbSurfaceHit = false;
-        bool usedPinchThumbOpposition = false;
+        bool thumbSurfaceFollowAllowed = true;
         bool usedLiveRootFlattenedFingerBones = false;
         bool hasThumbAlternateCurveFrame = false;
         RE::NiPoint3 thumbAlternateCurveBaseWorld{};
@@ -829,6 +829,27 @@ namespace rock::grab_finger_pose_runtime
                     transform_math::worldVectorToLocal(objectWorldTransform, pose.surfaceAimNormal[finger]);
                 pose.surfaceAimNormalObjectLocalValid[finger] = 1;
                 pose.hasObjectLocalSurfaceAim = true;
+            }
+        }
+    }
+
+    inline void useThumbCurveOnlyPose(SolvedGrabFingerPose& pose)
+    {
+        pose.thumbSurfaceFollowAllowed = false;
+        pose.usedAlternateThumbSurfaceHit = false;
+        pose.surfaceAimTargetValid[0] = 0;
+        pose.surfaceAimNormalValid[0] = 0;
+        pose.surfaceAimTargetObjectLocalValid[0] = 0;
+        pose.surfaceAimNormalObjectLocalValid[0] = 0;
+        pose.surfaceAimTarget[0] = {};
+        pose.surfaceAimNormal[0] = {};
+        pose.surfaceAimTargetObjectLocal[0] = {};
+        pose.surfaceAimNormalObjectLocal[0] = {};
+        pose.hasObjectLocalSurfaceAim = false;
+        for (std::size_t finger = 1; finger < pose.surfaceAimTargetObjectLocalValid.size(); ++finger) {
+            if (pose.surfaceAimTargetObjectLocalValid[finger] || pose.surfaceAimNormalObjectLocalValid[finger]) {
+                pose.hasObjectLocalSurfaceAim = true;
+                break;
             }
         }
     }
@@ -1303,9 +1324,9 @@ namespace rock::grab_finger_local_transform_math
     [[nodiscard]] inline bool shouldApplySurfaceAimCorrection(
         std::size_t fingerIndex,
         bool alternateThumbPlaneCorrection,
-        bool pinchThumbOppositionCorrection = false)
+        bool thumbSurfaceFollowAllowed = true)
     {
-        return !(fingerIndex == 0 && (alternateThumbPlaneCorrection || pinchThumbOppositionCorrection));
+        return fingerIndex != 0 || (thumbSurfaceFollowAllowed && !alternateThumbPlaneCorrection);
     }
 
     [[nodiscard]] inline bool shouldApplyAlternateThumbLocalCorrection(bool usedAlternateThumbCurve, bool usedAlternateThumbSurfaceHit)
@@ -1320,20 +1341,6 @@ namespace rock::grab_finger_local_transform_math
             return 0.0f;
         }
         return sanitizeUnitStrength(strength, kDefaultThumbAlternateCurveStrength) * kSegmentWeights[segment];
-    }
-
-    [[nodiscard]] inline bool shouldApplyPinchThumbLocalCorrection(bool usedPinchThumbOpposition, bool hasThumbSurfaceTarget)
-    {
-        return usedPinchThumbOpposition && hasThumbSurfaceTarget;
-    }
-
-    [[nodiscard]] inline float pinchThumbSegmentCorrectionStrength(std::size_t segment, float strength)
-    {
-        static constexpr float kSegmentWeights[3]{ 0.65f, 0.45f, 0.18f };
-        if (segment >= 3) {
-            return 0.0f;
-        }
-        return sanitizeUnitStrength(strength, kDefaultThumbOppositionStrength) * kSegmentWeights[segment];
     }
 
     template <class Vector>
@@ -1735,70 +1742,6 @@ namespace rock::grab_finger_local_transform_runtime
         return applied;
     }
 
-    [[nodiscard]] inline bool applyPinchThumbOppositionCorrection(
-        const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose,
-        const std::array<LiveFingerTransform, 15>& liveNodes,
-        float maxCorrectionRadians,
-        float strength,
-        frik::api::FRIKApi::FingerLocalTransformOverride& transforms)
-    {
-        const bool hasThumbSurfaceTarget = fingerPose.surfaceAimTargetValid[0] != 0;
-        if (!grab_finger_local_transform_math::shouldApplyPinchThumbLocalCorrection(
-                fingerPose.usedPinchThumbOpposition,
-                hasThumbSurfaceTarget) ||
-            !std::isfinite(maxCorrectionRadians) || maxCorrectionRadians <= 0.0f) {
-            return false;
-        }
-
-        bool applied = false;
-        for (std::size_t segment = 0; segment < 3; ++segment) {
-            const std::uint16_t bit = static_cast<std::uint16_t>(1U << segment);
-            const auto& node = liveNodes[segment];
-            if ((transforms.enabledMask & bit) == 0 || !node.valid) {
-                continue;
-            }
-
-            const float segmentStrength = grab_finger_local_transform_math::pinchThumbSegmentCorrectionStrength(segment, strength);
-            if (segmentStrength <= 0.0f) {
-                continue;
-            }
-
-            const RE::NiPoint3 currentAxisWorld = normalizeOrFallback(
-                transform_math::rotateLocalVectorToWorld(node.world.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }),
-                RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
-            const RE::NiPoint3 toSurface = fingerPose.surfaceAimTarget[0] - node.world.translate;
-            if (lengthSquared(toSurface) <= 0.000001f) {
-                continue;
-            }
-
-            const RE::NiPoint3 targetAxisWorld = normalizeOrFallback(toSurface, currentAxisWorld);
-            const float dotToTarget = std::clamp(dot(currentAxisWorld, targetAxisWorld), -1.0f, 1.0f);
-            float angle = std::acos(dotToTarget);
-            if (!std::isfinite(angle) || angle <= 0.0001f) {
-                continue;
-            }
-            angle = std::min(angle, maxCorrectionRadians) * segmentStrength;
-
-            RE::NiPoint3 axis = cross(currentAxisWorld, targetAxisWorld);
-            if (lengthSquared(axis) <= 0.000001f) {
-                axis = orthogonalAxis(currentAxisWorld);
-            }
-
-            const RE::NiMatrix3 rotationDelta = axisAngleStored(axis, angle);
-            const RE::NiMatrix3 targetWorldRotation = applyWorldRotationToStoredBasis(rotationDelta, node.world.rotate);
-            RE::NiTransform localTransform = transforms.localTransforms[segment];
-            localTransform.rotate = transform_math::multiplyStoredRotations(targetWorldRotation, transform_math::transposeRotation(node.parentWorld.rotate));
-            if (!isFiniteTransform(localTransform)) {
-                continue;
-            }
-
-            transforms.localTransforms[segment] = localTransform;
-            applied = true;
-        }
-
-        return applied;
-    }
-
     [[nodiscard]] inline DirectSkeletonBoneReader& rootFlattenedFingerReader()
     {
         static DirectSkeletonBoneReader reader;
@@ -1890,19 +1833,15 @@ namespace rock::grab_finger_local_transform_runtime
 
         const bool wantsSurfaceCorrection =
             options.maxCorrectionDegrees > 0.0f &&
-            (options.surfaceAimStrength > 0.0f || options.thumbOppositionStrength > 0.0f);
+            (options.surfaceAimStrength > 0.0f ||
+                (fingerPose.thumbSurfaceFollowAllowed && options.thumbOppositionStrength > 0.0f));
         const bool wantsAlternateThumbPlaneCorrection =
+            fingerPose.thumbSurfaceFollowAllowed &&
             grab_finger_local_transform_math::shouldApplyAlternateThumbLocalCorrection(
                 fingerPose.usedAlternateThumbCurve,
                 fingerPose.usedAlternateThumbSurfaceHit) &&
             options.maxCorrectionDegrees > 0.0f &&
             options.thumbAlternateCurveStrength > 0.0f;
-        const bool wantsPinchThumbOppositionCorrection =
-            grab_finger_local_transform_math::shouldApplyPinchThumbLocalCorrection(
-                fingerPose.usedPinchThumbOpposition,
-                fingerPose.surfaceAimTargetValid[0] != 0) &&
-            options.maxCorrectionDegrees > 0.0f &&
-            options.thumbOppositionStrength > 0.0f;
         if (wantsAlternateThumbPlaneCorrection && !fingerPose.hasThumbAlternateCurveFrame) {
             if (outFailureReason) {
                 *outFailureReason = "alternate-thumb-frame";
@@ -1911,7 +1850,7 @@ namespace rock::grab_finger_local_transform_runtime
         }
 
         std::array<LiveFingerTransform, 15> liveNodes{};
-        const bool needsLiveNodes = wantsSurfaceCorrection || wantsAlternateThumbPlaneCorrection || wantsPinchThumbOppositionCorrection;
+        const bool needsLiveNodes = wantsSurfaceCorrection || wantsAlternateThumbPlaneCorrection;
         if (needsLiveNodes && !resolveLiveFingerTransforms(isLeft, liveNodes)) {
             if (outFailureReason) {
                 *outFailureReason = "live-root-finger-transforms";
@@ -1933,7 +1872,7 @@ namespace rock::grab_finger_local_transform_runtime
                 if (!grab_finger_local_transform_math::shouldApplySurfaceAimCorrection(
                         finger,
                         wantsAlternateThumbPlaneCorrection,
-                        wantsPinchThumbOppositionCorrection)) {
+                        fingerPose.thumbSurfaceFollowAllowed)) {
                     continue;
                 }
 
@@ -1977,13 +1916,6 @@ namespace rock::grab_finger_local_transform_runtime
             }
         }
 
-        const bool appliedPinchThumbOpposition = wantsPinchThumbOppositionCorrection && applyPinchThumbOppositionCorrection(
-            fingerPose,
-            liveNodes,
-            maxCorrectionRadians,
-            options.thumbOppositionStrength,
-            outTransforms);
-
         const bool appliedAlternateThumbCurve = wantsAlternateThumbPlaneCorrection && applyAlternateThumbPlaneCorrection(
             fingerPose,
             liveNodes,
@@ -2001,16 +1933,14 @@ namespace rock::grab_finger_local_transform_runtime
         }
 
         if (!anyCorrected &&
-            !appliedPinchThumbOpposition &&
             !appliedAlternateThumbCurve &&
-            (wantsSurfaceCorrection || wantsAlternateThumbPlaneCorrection || wantsPinchThumbOppositionCorrection) &&
+            (wantsSurfaceCorrection || wantsAlternateThumbPlaneCorrection) &&
             outFailureReason) {
             *outFailureReason = "no-surface-correction";
         }
         return anyCorrected ||
-            appliedPinchThumbOpposition ||
             appliedAlternateThumbCurve ||
-            (!wantsSurfaceCorrection && !wantsAlternateThumbPlaneCorrection && !wantsPinchThumbOppositionCorrection);
+            (!wantsSurfaceCorrection && !wantsAlternateThumbPlaneCorrection);
     }
 
     [[nodiscard]] inline frik::api::FRIKApi::FingerLocalTransformOverride smoothLocalTransforms(

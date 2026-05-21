@@ -26,6 +26,19 @@ function Require-Text {
     }
 }
 
+function Reject-Text {
+    param(
+        [string]$RelativePath,
+        [string]$Pattern,
+        [string]$Message
+    )
+
+    $text = Read-Source $RelativePath
+    if ($text -match $Pattern) {
+        $failures.Add("$RelativePath`: $Message")
+    }
+}
+
 Require-Text 'src/physics-interaction/grab/GrabPinchPocket.h' 'evaluateObject' `
     'Pinch-pocket classification must remain isolated in a pure policy helper.'
 Require-Text 'src/physics-interaction/grab/GrabCore.h' 'enum class GrabSeatMode[\s\S]*PinchPocket' `
@@ -64,12 +77,16 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'applyPinchFingerPosePo
     'Pinch finger pose must be post-processed into explicit thumb/index targets and closed other fingers.'
 Require-Text 'src/physics-interaction/grab/GrabPinchPocket.h' 'buildStablePinchFingerPose[\s\S]*jointValues\[0\][\s\S]*jointValues\[2\]' `
     'Pinch finger pose must publish a stable whole-thumb joint shape instead of raw mesh-solver curl.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'buildStablePinchFingerPose[\s\S]*usedPinchThumbOpposition = true' `
-    'Pinch grabs must mark thumb opposition so generic thumb surface aim does not own the chain.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'usedPinchThumbOpposition = true[\s\S]*surfaceAimTargetValid\[finger\] = 0[\s\S]*frame\.fingerPoseTargetValid' `
-    'Pinch pose must clear raw mesh-solver thumb/index aim before installing frozen object-local targets.'
-Require-Text 'src/physics-interaction/grab/GrabFinger.h' 'usedPinchThumbOpposition[\s\S]*shouldApplySurfaceAimCorrection[\s\S]*pinchThumbOppositionCorrection' `
-    'Pinch thumb opposition must be isolated from generic per-finger surface aim correction.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'buildStablePinchFingerPose[\s\S]*surfaceAimTargetValid\[finger\] = 0[\s\S]*frame\.fingerPoseTargetValid' `
+    'Pinch pose must clear raw mesh-solver thumb/index aim before installing frozen object-local index targets.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'useThumbCurveOnlyPose\(fingerPose\)[\s\S]*captureSurfaceAimObjectLocal\(fingerPose, objectWorldTransform\)' `
+    'Object grabs must disable thumb mesh-follow before capturing object-local surface aim.'
+Require-Text 'src/physics-interaction/grab/GrabFinger.h' 'thumbSurfaceFollowAllowed[\s\S]*shouldApplySurfaceAimCorrection' `
+    'Thumb mesh-follow authority must be explicit so ROCK object grabs can use a fixed thumb curve.'
+Reject-Text 'src/physics-interaction/grab/GrabFinger.h' 'usedPinchThumbOpposition|applyPinchThumbOppositionCorrection|shouldApplyPinchThumbLocalCorrection|pinchThumbSegmentCorrectionStrength' `
+    'Pinch thumb must not keep a separate mesh-follow/opposition correction path.'
+Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'usedPinchThumbOpposition|applyPinchThumbOppositionCorrection|shouldApplyPinchThumbLocalCorrection|pinchThumbSegmentCorrectionStrength' `
+    'Hand grab must not re-enable the old pinch thumb mesh-follow path.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'drawGrabPockets[\s\S]*LeftPalmPocketCenter[\s\S]*LeftPinchPocketCenter[\s\S]*LeftPinchDetectionDirection' `
     'Debug overlay must expose per-hand palm and pinch pocket markers.'
 Require-Text 'data/config/ROCK.ini' 'bDebugDrawGrabPockets[\s\S]*bGrabPinchCloseSelectionEnabled[\s\S]*fGrabPinchDetectionDirectionHandspaceX[\s\S]*fGrabPinchDetectionAxisBlend' `

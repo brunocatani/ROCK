@@ -111,10 +111,10 @@ int main()
         shouldApplySurfaceAimCorrection(0, true), false);
     ok &= expectBool("primary thumb keeps shared surface aim",
         shouldApplySurfaceAimCorrection(0, false), true);
-    ok &= expectBool("pinch thumb skips shared surface aim",
-        shouldApplySurfaceAimCorrection(0, false, true), false);
+    ok &= expectBool("curve-only thumb skips shared surface aim",
+        shouldApplySurfaceAimCorrection(0, false, false), false);
     ok &= expectBool("alternate thumb does not disable non-thumb aim",
-        shouldApplySurfaceAimCorrection(2, true), true);
+        shouldApplySurfaceAimCorrection(2, true, false), true);
     ok &= expectBool("alternate thumb local correction needs a surface hit",
         shouldApplyAlternateThumbLocalCorrection(true, false), false);
     ok &= expectBool("alternate thumb local correction accepts real surface hit",
@@ -125,14 +125,6 @@ int main()
         alternateThumbSegmentCorrectionStrength(2, 1.0f), 0.85f);
     ok &= expectFloat("alternate thumb segment strength clamps",
         alternateThumbSegmentCorrectionStrength(2, 4.0f), 0.85f);
-    ok &= expectBool("pinch thumb local correction needs captured thumb target",
-        shouldApplyPinchThumbLocalCorrection(true, false), false);
-    ok &= expectBool("pinch thumb local correction accepts captured thumb target",
-        shouldApplyPinchThumbLocalCorrection(true, true), true);
-    ok &= expectFloat("pinch thumb proximal correction leads the chain",
-        pinchThumbSegmentCorrectionStrength(0, 1.0f), 0.65f);
-    ok &= expectFloat("pinch thumb distal correction is limited",
-        pinchThumbSegmentCorrectionStrength(2, 1.0f), 0.18f);
     ok &= expectFloat("zero smoothing speed snaps to target",
         exponentialSmoothingAlpha(0.0f, 1.0f / 90.0f), 1.0f);
 
@@ -215,6 +207,24 @@ int main()
     ok &= expectPointClose("surface normal follows moved object",
         resolvedPose.surfaceAimNormal[0],
         RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+
+    SolvedGrabFingerPose thumbCurveOnly{};
+    thumbCurveOnly.usedAlternateThumbSurfaceHit = true;
+    thumbCurveOnly.surfaceAimTargetValid[0] = 1;
+    thumbCurveOnly.surfaceAimNormalValid[0] = 1;
+    thumbCurveOnly.surfaceAimTargetObjectLocalValid[0] = 1;
+    thumbCurveOnly.surfaceAimNormalObjectLocalValid[0] = 1;
+    thumbCurveOnly.surfaceAimTargetObjectLocalValid[1] = 1;
+    thumbCurveOnly.hasObjectLocalSurfaceAim = true;
+    useThumbCurveOnlyPose(thumbCurveOnly);
+    ok &= expectBool("curve-only thumb disables thumb surface follow",
+        thumbCurveOnly.thumbSurfaceFollowAllowed, false);
+    ok &= expectBool("curve-only thumb clears raw surface target",
+        thumbCurveOnly.surfaceAimTargetValid[0] == 0, true);
+    ok &= expectBool("curve-only thumb clears object-local target",
+        thumbCurveOnly.surfaceAimTargetObjectLocalValid[0] == 0, true);
+    ok &= expectBool("curve-only thumb preserves non-thumb object-local aim state",
+        thumbCurveOnly.hasObjectLocalSurfaceAim, true);
 
     return ok ? 0 : 1;
 }
