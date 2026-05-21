@@ -491,6 +491,25 @@ namespace rock
         }
     };
 
+    enum class GrabSeatMode : std::uint8_t
+    {
+        None,
+        PalmPocket,
+        PinchPocket,
+    };
+
+    inline const char* grabSeatModeName(GrabSeatMode mode)
+    {
+        switch (mode) {
+        case GrabSeatMode::PalmPocket:
+            return "palmPocket";
+        case GrabSeatMode::PinchPocket:
+            return "pinchPocket";
+        default:
+            return "none";
+        }
+    }
+
     struct CanonicalGrabFrame
     {
         RE::NiTransform rawHandSpace{};
@@ -512,6 +531,8 @@ namespace rock
         RE::NiPoint3 grabPivotWorldAtGrab{};
         RE::NiPoint3 gripPointWorldAtGrab{};
         RE::NiPoint3 palmSeatPointWorldAtGrab{};
+        RE::NiPoint3 pinchPocketWorldAtGrab{};
+        RE::NiPoint3 pinchAxisWorldAtGrab{ 1.0f, 0.0f, 0.0f };
         RE::NiPoint3 fingerEvidencePointWorldAtGrab{};
         RE::NiPoint3 gripPointLocal{};
         RE::NiPoint3 gripEvidenceLocal{};
@@ -558,6 +579,7 @@ namespace rock
         const char* lastSeatedPivotReacquireReason = "none";
         const char* lastSeatedPivotReacquirePhase = "none";
         const char* lastHeldSupportRefreshReason = "none";
+        GrabSeatMode seatMode = GrabSeatMode::None;
         /*
          * ROCK only fades the dynamic grab when the object must be synced from
          * an initial/custom alignment. The canonical frame stores that decision
@@ -580,6 +602,7 @@ namespace rock
         bool contactPatchUsedAsPivot = false;
         bool hasMultiFingerContactPatch = false;
         bool hasPalmSeatPoint = false;
+        bool hasPinchPocket = false;
         bool hasFingerEvidencePoint = false;
         bool activeGrabPointUsesMultiFingerEvidence = false;
         bool pivotAuthorityPositionOnly = false;
@@ -655,6 +678,8 @@ namespace rock
             grabPivotWorldAtGrab = {};
             gripPointWorldAtGrab = {};
             palmSeatPointWorldAtGrab = {};
+            pinchPocketWorldAtGrab = {};
+            pinchAxisWorldAtGrab = { 1.0f, 0.0f, 0.0f };
             fingerEvidencePointWorldAtGrab = {};
             gripPointLocal = {};
             gripEvidenceLocal = {};
@@ -701,6 +726,7 @@ namespace rock
             lastSeatedPivotReacquireReason = "none";
             lastSeatedPivotReacquirePhase = "none";
             lastHeldSupportRefreshReason = "none";
+            seatMode = GrabSeatMode::None;
             motorFadeReason = "none";
             captureTelemetry.clear();
             localMeshTriangles.clear();
@@ -717,6 +743,7 @@ namespace rock
             contactPatchUsedAsPivot = false;
             hasMultiFingerContactPatch = false;
             hasPalmSeatPoint = false;
+            hasPinchPocket = false;
             hasFingerEvidencePoint = false;
             activeGrabPointUsesMultiFingerEvidence = false;
             pivotAuthorityPositionOnly = false;

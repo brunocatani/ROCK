@@ -350,6 +350,16 @@ namespace rock
         float rockGrabFingerContactMeshSnapMaxDistanceGameUnits = 10.0f;
         float rockGrabSurfaceBehindPalmToleranceGameUnits = 1.5f;
         int rockGrabOppositionContactMaxAgeFrames = 5;
+        bool rockGrabPinchPocketEnabled = true;
+        float rockGrabPinchCompactMaxExtentGameUnits = 10.0f;
+        float rockGrabPinchThinRodMaxLengthGameUnits = 18.0f;
+        float rockGrabPinchThinRodMaxCrossSectionGameUnits = 4.0f;
+        float rockGrabPinchMaxPocketDistanceGameUnits = 8.0f;
+        float rockGrabPinchMinFingerGapGameUnits = 1.0f;
+        float rockGrabPinchMaxFingerGapGameUnits = 12.0f;
+        float rockGrabPinchThumbIndexMaxOpenValue = 0.45f;
+        float rockGrabPinchOtherFingerCurlValue = 0.20f;
+        float rockGrabPinchSurfaceInsetGameUnits = 0.5f;
         bool rockGrabHandLerpEnabled = true;
         float rockGrabHandLerpTimeMin = 0.10f;
         float rockGrabHandLerpTimeMax = 0.20f;

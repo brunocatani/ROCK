@@ -12,6 +12,7 @@
 
 #include "common/CommonUtils.h"
 #include "physics-interaction/grab/GrabNodeNamePolicy.h"
+#include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/input/InputRemapPolicy.h"
@@ -388,6 +389,16 @@ namespace rock
         rockGrabFingerContactMeshSnapMaxDistanceGameUnits = 10.0f;
         rockGrabSurfaceBehindPalmToleranceGameUnits = 1.5f;
         rockGrabOppositionContactMaxAgeFrames = 5;
+        rockGrabPinchPocketEnabled = true;
+        rockGrabPinchCompactMaxExtentGameUnits = grab_pinch_pocket_policy::kDefaultCompactMaxExtentGameUnits;
+        rockGrabPinchThinRodMaxLengthGameUnits = grab_pinch_pocket_policy::kDefaultThinRodMaxLengthGameUnits;
+        rockGrabPinchThinRodMaxCrossSectionGameUnits = grab_pinch_pocket_policy::kDefaultThinRodMaxCrossSectionGameUnits;
+        rockGrabPinchMaxPocketDistanceGameUnits = grab_pinch_pocket_policy::kDefaultMaxPocketDistanceGameUnits;
+        rockGrabPinchMinFingerGapGameUnits = grab_pinch_pocket_policy::kDefaultMinFingerGapGameUnits;
+        rockGrabPinchMaxFingerGapGameUnits = grab_pinch_pocket_policy::kDefaultMaxFingerGapGameUnits;
+        rockGrabPinchThumbIndexMaxOpenValue = grab_pinch_pocket_policy::kDefaultThumbIndexMaxOpenValue;
+        rockGrabPinchOtherFingerCurlValue = grab_pinch_pocket_policy::kDefaultOtherFingerCurlValue;
+        rockGrabPinchSurfaceInsetGameUnits = grab_pinch_pocket_policy::kDefaultSurfaceInsetGameUnits;
         rockGrabHandLerpEnabled = true;
         rockGrabHandLerpTimeMin = 0.10f;
         rockGrabHandLerpTimeMax = 0.20f;
@@ -1354,6 +1365,73 @@ namespace rock
         rockGrabOppositionContactMaxAgeFrames =
             static_cast<int>(ini.GetLongValue(SECTION, "iGrabOppositionContactMaxAgeFrames", rockGrabOppositionContactMaxAgeFrames));
         rockGrabOppositionContactMaxAgeFrames = std::clamp(rockGrabOppositionContactMaxAgeFrames, 0, 60);
+        rockGrabPinchPocketEnabled = ini.GetBoolValue(SECTION, "bGrabPinchPocketEnabled", rockGrabPinchPocketEnabled);
+        rockGrabPinchCompactMaxExtentGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fGrabPinchCompactMaxExtentGameUnits",
+            rockGrabPinchCompactMaxExtentGameUnits,
+            grab_pinch_pocket_policy::kDefaultCompactMaxExtentGameUnits,
+            1.0f,
+            80.0f);
+        rockGrabPinchThinRodMaxLengthGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fGrabPinchThinRodMaxLengthGameUnits",
+            rockGrabPinchThinRodMaxLengthGameUnits,
+            grab_pinch_pocket_policy::kDefaultThinRodMaxLengthGameUnits,
+            1.0f,
+            120.0f);
+        rockGrabPinchThinRodMaxCrossSectionGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fGrabPinchThinRodMaxCrossSectionGameUnits",
+            rockGrabPinchThinRodMaxCrossSectionGameUnits,
+            grab_pinch_pocket_policy::kDefaultThinRodMaxCrossSectionGameUnits,
+            0.1f,
+            40.0f);
+        rockGrabPinchMaxPocketDistanceGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fGrabPinchMaxPocketDistanceGameUnits",
+            rockGrabPinchMaxPocketDistanceGameUnits,
+            grab_pinch_pocket_policy::kDefaultMaxPocketDistanceGameUnits,
+            0.1f,
+            80.0f);
+        rockGrabPinchMinFingerGapGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fGrabPinchMinFingerGapGameUnits",
+            rockGrabPinchMinFingerGapGameUnits,
+            grab_pinch_pocket_policy::kDefaultMinFingerGapGameUnits,
+            0.0f,
+            40.0f);
+        rockGrabPinchMaxFingerGapGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fGrabPinchMaxFingerGapGameUnits",
+            rockGrabPinchMaxFingerGapGameUnits,
+            grab_pinch_pocket_policy::kDefaultMaxFingerGapGameUnits,
+            0.1f,
+            80.0f);
+        if (rockGrabPinchMaxFingerGapGameUnits < rockGrabPinchMinFingerGapGameUnits) {
+            rockGrabPinchMaxFingerGapGameUnits = rockGrabPinchMinFingerGapGameUnits;
+        }
+        rockGrabPinchThumbIndexMaxOpenValue = readClampedFloat(ini,
+            SECTION,
+            "fGrabPinchThumbIndexMaxOpenValue",
+            rockGrabPinchThumbIndexMaxOpenValue,
+            grab_pinch_pocket_policy::kDefaultThumbIndexMaxOpenValue,
+            0.0f,
+            1.0f);
+        rockGrabPinchOtherFingerCurlValue = readClampedFloat(ini,
+            SECTION,
+            "fGrabPinchOtherFingerCurlValue",
+            rockGrabPinchOtherFingerCurlValue,
+            grab_pinch_pocket_policy::kDefaultOtherFingerCurlValue,
+            0.0f,
+            1.0f);
+        rockGrabPinchSurfaceInsetGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fGrabPinchSurfaceInsetGameUnits",
+            rockGrabPinchSurfaceInsetGameUnits,
+            grab_pinch_pocket_policy::kDefaultSurfaceInsetGameUnits,
+            0.0f,
+            8.0f);
         rockGrabHandLerpEnabled = ini.GetBoolValue(SECTION, "bGrabHandLerpEnabled", rockGrabHandLerpEnabled);
         rockGrabHandLerpTimeMin = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabHandLerpTimeMin", rockGrabHandLerpTimeMin));
         rockGrabHandLerpTimeMax = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabHandLerpTimeMax", rockGrabHandLerpTimeMax));

@@ -273,6 +273,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGrabThreePhasePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabThreePhasePolicyTests)
 
+  add_executable(ROCKGrabPinchPocketPolicyTests
+    "${ROOT_DIR}/tests/GrabPinchPocketPolicyTests.cpp"
+  )
+  target_compile_features(ROCKGrabPinchPocketPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKGrabPinchPocketPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKGrabPinchPocketPolicyTests)
+
   add_executable(ROCKGeneratedKeyframedBodyDrivePolicyTests
     "${ROOT_DIR}/tests/GeneratedKeyframedBodyDrivePolicyTests.cpp"
   )
@@ -373,6 +380,7 @@ if(BUILD_ROCK_TESTS)
     ROCKGrabPivotAuthorityPolicyTests
     ROCKGrabMotionControllerPolicyTests
     ROCKGrabThreePhasePolicyTests
+    ROCKGrabPinchPocketPolicyTests
     ROCKGeneratedKeyframedBodyDrivePolicyTests
     ROCKHeldObjectStutterGuardPolicyTests
     ROCKHeldBodySetDrivePolicyTests
