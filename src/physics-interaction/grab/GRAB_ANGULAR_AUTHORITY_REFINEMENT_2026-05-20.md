@@ -28,9 +28,9 @@ Relevant HIGGS behavior:
 
 ## ROCK Decision
 
-ROCK keeps its FO4VR-native hard-keyframe angular velocity writer as the stable runtime angular path. HIGGS updates a ragdoll motor target directly, but ROCK's current verified boundary computes FO4VR's native hard-keyframe angular vector and limits it with the finite grab motor budget.
+ROCK now keeps held-object angular correction solver-owned through the custom constraint's ragdoll motor atom. The earlier FO4VR-native hard-keyframe angular velocity writer was removed as a production authority path so it cannot compete with the constraint target or be selected by config.
 
-The added logic therefore does not port HIGGS 1:1. It applies HIGGS's stability principles at ROCK's authority layer:
+The added logic therefore does not port HIGGS 1:1. It applies HIGGS's stability principles at ROCK's solver authority layer:
 
 - linear position error drives linear tau and linear force;
 - angular rotation error drives angular tau separately;

@@ -246,7 +246,6 @@ int main()
     });
     ok &= expectNear("held authority records position error factor", weakHeldAuthority.positionErrorFactor, 1.0f, 0.001f);
     ok &= expectNear("held authority records rotation error factor", weakHeldAuthority.rotationErrorFactor, 1.0f, 0.001f);
-    ok &= expectNear("weak held authority gates direct angular assist", weakHeldAuthority.angularVelocityAssistScale, 0.30f, 0.001f);
     ok &= expectNear("weak held authority gates release angular velocity", weakHeldAuthority.releaseAngularVelocityScale, 0.30f, 0.001f);
 
     const auto contactHeldAuthority = evaluateHeldAuthority(HeldAuthorityInput{
@@ -261,11 +260,10 @@ int main()
         .heldBodyColliding = true,
     });
     ok &= expectTrue("contact held authority marks softening", contactHeldAuthority.softenForContact);
-    ok &= expectNear("contact held authority caps angular assist scale", contactHeldAuthority.angularVelocityAssistScale, 0.75f, 0.001f);
     ok &= expectNear("contact held authority caps release angular scale", contactHeldAuthority.releaseAngularVelocityScale, 0.75f, 0.001f);
 
     const float authorityCap = computeAuthorityScaledAngularVelocityCap(18.0f, 0.30f, 0.50f);
-    ok &= expectNear("authority angular cap composes support and long-object scale", authorityCap, 2.70f, 0.001f);
+    ok &= expectNear("release angular cap composes support and long-object scale", authorityCap, 2.70f, 0.001f);
 
     const auto supportRefreshUpgrade = evaluateHeldSupportRefresh(HeldSupportRefreshInput{
         .enabled = true,
@@ -522,19 +520,19 @@ int main()
     ok &= expectNear("minimum inertia clamp y", minInertiaClamp.normalized[1], 50.0f, 0.001f);
     ok &= expectNear("minimum inertia clamp z", minInertiaClamp.normalized[2], 50.0f, 0.001f);
 
-    ok &= expectNear("long object disabled angular scale",
+    ok &= expectNear("long object disabled release angular scale",
         computeLongObjectAngularSpeedScale(false, 96.0f, 24.0f, 0.35f),
         1.0f,
         0.001f);
-    ok &= expectNear("short object angular scale",
+    ok &= expectNear("short object release angular scale",
         computeLongObjectAngularSpeedScale(true, 12.0f, 24.0f, 0.35f),
         1.0f,
         0.001f);
-    ok &= expectNear("long object angular scale",
+    ok &= expectNear("long object release angular scale",
         computeLongObjectAngularSpeedScale(true, 48.0f, 24.0f, 0.35f),
         0.5f,
         0.001f);
-    ok &= expectNear("very long object angular scale floor",
+    ok &= expectNear("very long object release angular scale floor",
         computeLongObjectAngularSpeedScale(true, 200.0f, 24.0f, 0.35f),
         0.35f,
         0.001f);

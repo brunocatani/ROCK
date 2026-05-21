@@ -254,7 +254,6 @@ namespace rock
         float rockGrabAngularDamping = 0.8f;
         float rockGrabAngularProportionalRecovery = 2.0f;
         float rockGrabAngularConstantRecovery = 1.0f;
-        int rockGrabAngularAuthorityMode = 0;
 
         float rockGrabConstraintMaxForce = 2000.0f;
         float rockGrabMassResponsiveMaxForce = 9000.0f;

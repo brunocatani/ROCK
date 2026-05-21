@@ -415,21 +415,16 @@ namespace rock
         }
 
         /*
-         * Dynamic grab has one angular authority at a time. The stable ROCK path
-         * keeps the ragdoll atom disabled and writes FO4VR-native angular
-         * velocity after the proxy target is driven. The study path enables the
-         * type-19 ragdoll motor atom and requires the held-update path to skip
-         * direct angular velocity so the solver is the only angular writer.
+         * Dynamic grab rotation is solver-owned. The type-19 ragdoll motor atom
+         * is always active so there is no alternate direct angular velocity
+         * writer competing with the constraint target.
          */
-        const bool enableRagdollAngularMotorAtom = tuning.angularAuthority == GrabAngularAuthority::HknpRagdollMotorAtom;
-        setGrabMotorAtomsActive(header, true, enableRagdollAngularMotorAtom);
+        setGrabMotorAtomsActive(header, true, true);
 
         ROCK_LOG_DEBUG(GrabConstraint,
-            "Motors attached before CreateConstraint: angularBudget={:.0f} authority={} directAngularDrive={} ragdollAtom={} linear={:.0f}",
+            "Motors attached before CreateConstraint: angularBudget={:.0f} authority={} ragdollAtom=enabled linear={:.0f}",
             angularMaxForce,
             grabAngularAuthorityName(tuning.angularAuthority),
-            enableRagdollAngularMotorAtom ? "no" : "yes",
-            enableRagdollAngularMotorAtom ? "enabled" : "disabled",
             linearMaxForce);
 
         RE::hknpConstraintCinfo cinfo{};
@@ -491,7 +486,6 @@ namespace rock
                 .angularProportionalRecovery = g_rockConfig.rockGrabAngularProportionalRecovery,
                 .angularConstantRecovery = g_rockConfig.rockGrabAngularConstantRecovery,
                 .angularMaxForce = linearMaxForce / angularForceRatio,
-                .angularAuthority = grabAngularAuthorityFromConfig(g_rockConfig.rockGrabAngularAuthorityMode),
             });
     }
 

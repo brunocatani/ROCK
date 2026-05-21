@@ -100,23 +100,15 @@ namespace rock
 
     enum class GrabAngularAuthority : std::uint8_t
     {
-        NativeHardKeyframeVelocity = 0,
         HknpRagdollMotorAtom = 1,
     };
-
-    inline GrabAngularAuthority grabAngularAuthorityFromConfig(int value) noexcept
-    {
-        return value == 1 ? GrabAngularAuthority::HknpRagdollMotorAtom : GrabAngularAuthority::NativeHardKeyframeVelocity;
-    }
 
     inline const char* grabAngularAuthorityName(GrabAngularAuthority authority) noexcept
     {
         switch (authority) {
         case GrabAngularAuthority::HknpRagdollMotorAtom:
-            return "hknpRagdollMotorAtom";
-        case GrabAngularAuthority::NativeHardKeyframeVelocity:
         default:
-            return "nativeHardKeyframeVelocity";
+            return "hknpRagdollMotorAtom";
         }
     }
 
@@ -126,7 +118,7 @@ namespace rock
         void* constraintData = nullptr;
         HkPositionMotor* angularMotor = nullptr;
         HkPositionMotor* linearMotor = nullptr;
-        GrabAngularAuthority angularAuthority = GrabAngularAuthority::NativeHardKeyframeVelocity;
+        GrabAngularAuthority angularAuthority = GrabAngularAuthority::HknpRagdollMotorAtom;
         float currentTau = 0.0f;
         float currentMaxForce = 0.0f;
         float targetMaxForce = 0.0f;
@@ -140,7 +132,7 @@ namespace rock
             constraintData = nullptr;
             angularMotor = nullptr;
             linearMotor = nullptr;
-            angularAuthority = GrabAngularAuthority::NativeHardKeyframeVelocity;
+            angularAuthority = GrabAngularAuthority::HknpRagdollMotorAtom;
             currentTau = 0.0f;
             currentMaxForce = 0.0f;
             targetMaxForce = 0.0f;
@@ -160,7 +152,7 @@ namespace rock
         float angularProportionalRecovery = 2.0f;
         float angularConstantRecovery = 1.0f;
         float angularMaxForce = 160.0f;
-        GrabAngularAuthority angularAuthority = GrabAngularAuthority::NativeHardKeyframeVelocity;
+        GrabAngularAuthority angularAuthority = GrabAngularAuthority::HknpRagdollMotorAtom;
     };
 
     inline constexpr int MOTION_PACKED_INERTIA_OFFSET = 0x20;

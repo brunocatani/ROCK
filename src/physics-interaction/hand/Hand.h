@@ -451,9 +451,6 @@ namespace rock
             RE::NiTransform& outDesiredBodyWorld,
             RE::NiPoint3& outDesiredTargetPointWorld,
             RE::NiPoint3& outActivePivotBBodyLocalGame);
-        RE::NiTransform resolveProxyConstraintAngularDriveTargetWorld(const RE::NiTransform& proxyWorldTransform,
-            const RE::NiTransform& desiredObjectWorld,
-            const RE::NiTransform& desiredBodyWorld) const;
         bool resolveGrabAuthorityProxyFrame(RE::hknpWorld* world,
             const RE::NiTransform& rawHandWorld,
             const RE::NiTransform* fallbackPalmAnchorWorld,
@@ -468,17 +465,6 @@ namespace rock
             float authorityForceScale,
             bool heldBodyColliding,
             const grab_motion_controller::HeldAuthorityState& heldAuthority);
-        bool applyProxyConstraintAngularVelocityDrive(RE::hknpWorld* world,
-            const RE::NiTransform& desiredBodyWorld,
-            float deltaTime,
-            const grab_motion_controller::HeldAuthorityState& heldAuthority,
-            float& outRawAngularSpeedRadiansPerSecond,
-            float& outAppliedAngularSpeedRadiansPerSecond,
-            float& outMaxAngularSpeedRadiansPerSecond,
-            float& outLongObjectAngularScale,
-            std::uint32_t& outAppliedAngularBodyCount,
-            RE::NiPoint3& outRawAngularVelocityRadiansPerSecond,
-            RE::NiPoint3& outAppliedAngularVelocityRadiansPerSecond);
         void queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
             const RE::NiTransform& rawHandWorldTransform,
             float deltaTime,

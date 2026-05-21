@@ -292,7 +292,6 @@ namespace rock
         rockGrabAngularDamping = 0.8f;
         rockGrabAngularProportionalRecovery = 2.0f;
         rockGrabAngularConstantRecovery = 1.0f;
-        rockGrabAngularAuthorityMode = 0;
 
         rockGrabConstraintMaxForce = 2000.0f;
         rockGrabMassResponsiveMaxForce = 9000.0f;
@@ -1006,13 +1005,6 @@ namespace rock
         rockGrabAngularDamping = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularDamping", rockGrabAngularDamping));
         rockGrabAngularProportionalRecovery = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularProportionalRecovery", rockGrabAngularProportionalRecovery));
         rockGrabAngularConstantRecovery = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularConstantRecovery", rockGrabAngularConstantRecovery));
-        {
-            const int rawMode = static_cast<int>(ini.GetLongValue(SECTION, "iGrabAngularAuthorityMode", rockGrabAngularAuthorityMode));
-            rockGrabAngularAuthorityMode = std::clamp(rawMode, 0, 1);
-            if (rawMode != rockGrabAngularAuthorityMode) {
-                ROCK_LOG_WARN(Config, "Invalid iGrabAngularAuthorityMode={} -- using {}", rawMode, rockGrabAngularAuthorityMode);
-            }
-        }
 
         rockGrabConstraintMaxForce = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabConstraintMaxForce", rockGrabConstraintMaxForce));
         rockGrabMassResponsiveMaxForce = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMassResponsiveMaxForce", rockGrabMassResponsiveMaxForce));

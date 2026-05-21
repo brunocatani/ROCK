@@ -249,10 +249,9 @@ namespace rock::grab_motion_controller
     inline float computeLongObjectAngularSpeedScale(bool enabled, float leverGameUnits, float referenceLeverGameUnits, float minScale)
     {
         /*
-         * Long-object handling should reduce angular authority, not move the
-         * grip. A long rifle held near one end can keep the same contact pivot
-         * and hand/object relation while its far end receives less sweep speed.
-         * The scale is therefore a cap multiplier only.
+         * Long-object release handling should reduce angular throw velocity,
+         * not move the grip. Held rotation is owned by the constraint motor;
+         * this scale only limits release angular velocity after the grab ends.
          */
         if (!enabled) {
             return 1.0f;
@@ -439,7 +438,6 @@ namespace rock::grab_motion_controller
         float rotationErrorFactor = 0.0f;
         bool softenForContact = false;
         AngularAuthorityOutput angular{};
-        float angularVelocityAssistScale = 1.0f;
         float releaseAngularVelocityScale = 1.0f;
         const char* reason = "full-authority";
     };
@@ -578,10 +576,8 @@ namespace rock::grab_motion_controller
         state.rotationErrorFactor = computeRotationErrorFactor(input.rotationErrorDegrees, input.fullRotationErrorDegrees);
         state.softenForContact = input.heldBodyColliding;
         state.angular = computeAngularAuthorityScale(input.angular);
-        state.angularVelocityAssistScale = state.angular.authorityScale;
         state.releaseAngularVelocityScale = state.angular.authorityScale;
         if (state.softenForContact) {
-            state.angularVelocityAssistScale = (std::min)(state.angularVelocityAssistScale, 0.75f);
             state.releaseAngularVelocityScale = (std::min)(state.releaseAngularVelocityScale, 0.75f);
             state.reason = "contact-softened-authority";
         } else if (state.angular.weakPivot) {
