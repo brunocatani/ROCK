@@ -557,6 +557,7 @@ namespace rock::grab_motion_controller
         bool pivotAuthorityPositionOnly = false;
         bool pivotAuthorityNormalTrusted = false;
         bool hasSeatedPivotReacquire = false;
+        bool requiresSettledVisualRelation = false;
         std::uint32_t multiFingerContactGroupCount = 0;
         std::uint32_t contactPatchSampleCount = 0;
         float angularAuthorityScale = 1.0f;
@@ -617,6 +618,10 @@ namespace rock::grab_motion_controller
         }
         if (!input.touchHeldPhase && !input.acquisitionVisualEligible) {
             decision.reason = "phaseNotVisualEligible";
+            return decision;
+        }
+        if (input.requiresSettledVisualRelation && !input.hasSeatedPivotReacquire) {
+            decision.reason = "awaitingSettledVisualRelation";
             return decision;
         }
 

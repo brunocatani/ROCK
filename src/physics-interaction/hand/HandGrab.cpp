@@ -2001,6 +2001,28 @@ namespace rock
             return GrabPivotAuthoritySource::None;
         }
 
+        bool pivotAuthoritySourceShouldReacquireAtSeat(const char* source, bool positionOnly)
+        {
+            if (positionOnly) {
+                return true;
+            }
+            if (!source) {
+                return false;
+            }
+            return std::strcmp(source, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::SelectionHitMeshSnap)) == 0 ||
+                   std::strcmp(source, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::PalmRayMeshPoint)) == 0 ||
+                   std::strcmp(source, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::CollisionFallback)) == 0;
+        }
+
+        bool pivotAuthorityRequiresSettledVisualRelation(
+            const char* source,
+            bool positionOnly,
+            grab_three_phase::AcquisitionPhase acquisitionPhase)
+        {
+            return acquisitionPhase != grab_three_phase::AcquisitionPhase::TouchHeld &&
+                   pivotAuthoritySourceShouldReacquireAtSeat(source, positionOnly);
+        }
+
         struct GrabPivotAuthorityCandidate
         {
             const char* mode = "none";
@@ -6494,6 +6516,10 @@ namespace rock
                     _grabFrame.palmSeatPointMode = "threePhasePocket";
                     _grabFrame.fingerEvidencePointMode = "evidenceOnly";
                     _grabFrame.activeGrabPointUsesMultiFingerEvidence = false;
+                    _grabFrame.requiresSettledVisualHandRelation = pivotAuthorityRequiresSettledVisualRelation(
+                        _grabFrame.pivotAuthoritySource,
+                        _grabFrame.pivotAuthorityPositionOnly,
+                        _grabAcquisitionPhase);
                     _grabFrame.fingerPoseAimValid = true;
                     _grabFrame.fingerPoseAimReason = "rockPointToPalmEvidence";
                     if (_grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::NearConverging ||
@@ -6534,7 +6560,7 @@ namespace rock
                         "{} THREE-PHASE GRAB CAPTURE: relation={} rotation={} phase={} reason={} touchContact={} stableTouch={} pocket=({:.1f},{:.1f},{:.1f}) "
                         "palm=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) seed=({:.1f},{:.1f},{:.1f}) "
                         "grip=({:.1f},{:.1f},{:.1f}) gripLocal=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) dist={:.1f} signedPalm={:.1f} "
-                        "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} pulledAdjust={:.1f} inset={:.2f} insetSource={}",
+                        "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} settledVisualRequired={} pulledAdjust={:.1f} inset={:.2f} insetSource={}",
                         handName(),
                         relationMode,
                         useAuthoredGrabFrame ? "authoredNode" : "preserve",
@@ -6569,6 +6595,7 @@ namespace rock
                         _grabFrame.pivotAuthoritySource,
                         _grabFrame.pivotAuthorityPositionOnly ? "yes" : "no",
                         _grabFrame.pivotAuthorityNormalTrusted ? "yes" : "no",
+                        _grabFrame.requiresSettledVisualHandRelation ? "yes" : "no",
                         pulledGrabAdjust,
                         gripArea.seedInsetGameUnits,
                         gripArea.fallbackReason);
@@ -7422,6 +7449,7 @@ namespace rock
                 .pivotAuthorityPositionOnly = _grabFrame.pivotAuthorityPositionOnly,
                 .pivotAuthorityNormalTrusted = _grabFrame.pivotAuthorityNormalTrusted,
                 .hasSeatedPivotReacquire = _grabFrame.hasSeatedPivotReacquire,
+                .requiresSettledVisualRelation = _grabFrame.requiresSettledVisualHandRelation,
                 .multiFingerContactGroupCount = _grabFrame.multiFingerContactGroupCount,
                 .contactPatchSampleCount = _grabFrame.contactPatchSampleCount,
                 .angularAuthorityScale = heldAngularAuthority.authorityScale,
@@ -7629,8 +7657,8 @@ namespace rock
             const bool promotionRequested = reachedTouchRange || convergenceTimedOutInsidePocket;
             const bool pivotNeedsSeatedReacquire =
                 promotionRequested &&
-                (_grabFrame.pivotAuthorityPositionOnly ||
-                    std::strcmp(_grabFrame.pivotAuthoritySource, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::PalmRayMeshPoint)) == 0);
+                (_grabFrame.requiresSettledVisualHandRelation ||
+                    pivotAuthoritySourceShouldReacquireAtSeat(_grabFrame.pivotAuthoritySource, _grabFrame.pivotAuthorityPositionOnly));
             bool timeoutReacquiredSeatedPivot = false;
             const char* timeoutReacquireReason = pivotNeedsSeatedReacquire ? (hasGrabBody ? "notAttempted" : "missingGrabBody") : "notNeeded";
             if (pivotNeedsSeatedReacquire) {
@@ -7706,6 +7734,7 @@ namespace rock
                     _grabFrame.pivotAuthorityPositionOnly = !seatedPivot.normalTrusted;
                     _grabFrame.pivotAuthorityNormalTrusted = seatedPivot.normalTrusted;
                     _grabFrame.pivotAuthorityPositionConfidence = 0.90f;
+                    _grabFrame.requiresSettledVisualHandRelation = false;
                     _grabFrame.fingerPoseAimValid = seatedPivot.normalTrusted;
                     _grabFrame.fingerPoseAimReason = seatedPivot.normalTrusted ? "seatedPivotReacquire" : "seatedPivotPositionOnly";
                     _grabFrame.objectNodeWorldAtGrab = currentNodeWorld;
@@ -7736,6 +7765,13 @@ namespace rock
                     }
 
                     timeoutReacquiredSeatedPivot = true;
+                    clearGrabExternalHandWorldTransform(_isLeft);
+                    _grabVisualHandTransform = handWorldTransform;
+                    _hasGrabVisualHandTransform = false;
+                    _grabVisualDeviationExceededSeconds = 0.0f;
+                    _grabVisualDeviationHistory = {};
+                    _grabVisualDeviationHistoryCount = 0;
+                    _grabVisualDeviationHistoryNext = 0;
                     ROCK_LOG_DEBUG(Hand,
                         "{} THREE-PHASE GRAB SEATED PIVOT REACQUIRE: phase={} source={} reason={} point=({:.1f},{:.1f},{:.1f}) "
                         "pivotB=({:.2f},{:.2f},{:.2f}) pocketDistance={:.2f}gu meshDistance={:.2f}gu localDelta={:.2f}gu normalTrusted={} longLever={:.1f}gu count={}",
@@ -7764,29 +7800,29 @@ namespace rock
                 _grabFrame.lastSeatedPivotReacquireReason = timeoutReacquireReason;
             }
 
-            const bool timeoutMayPromote =
-                !convergenceTimedOutInsidePocket ||
-                !pivotNeedsSeatedReacquire ||
-                timeoutReacquiredSeatedPivot;
+            const bool seatedReacquireSatisfied = !pivotNeedsSeatedReacquire || timeoutReacquiredSeatedPivot;
+            const bool reachedTouchMayPromote = reachedTouchRange && seatedReacquireSatisfied;
+            const bool timeoutMayPromote = convergenceTimedOutInsidePocket && seatedReacquireSatisfied;
 
-            if (convergenceTimedOutInsidePocket && !timeoutMayPromote) {
+            if (promotionRequested && !seatedReacquireSatisfied) {
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} THREE-PHASE GRAB CONVERGE PROMOTION HELD: phase={} reason=awaitingSeatedPivot reacquire={} pivotAuthoritySource={} positionOnlyPatch={} gripErr={:.2f}gu elapsed={:.3f}s colliding={}",
+                    "{} THREE-PHASE GRAB CONVERGE PROMOTION HELD: phase={} reason=awaitingSeatedPivot reacquire={} pivotAuthoritySource={} positionOnlyPatch={} settledVisualRequired={} gripErr={:.2f}gu elapsed={:.3f}s colliding={}",
                     handName(),
                     grab_three_phase::phaseName(previousAcquisitionPhase),
                     timeoutReacquireReason,
                     _grabFrame.pivotAuthoritySource,
                     _grabFrame.pivotAuthorityPositionOnly ? "yes" : "no",
+                    _grabFrame.requiresSettledVisualHandRelation ? "yes" : "no",
                     gripErrorGameUnits,
                     _grabStartTime,
                     heldBodyColliding ? "yes" : "no");
             }
 
-            if (reachedTouchRange || (convergenceTimedOutInsidePocket && timeoutMayPromote)) {
+            if (reachedTouchMayPromote || timeoutMayPromote) {
                 const char* promotionReason =
                     timeoutReacquiredSeatedPivot ? "threePhaseReacquiredSeatedPivot" :
-                    (reachedTouchRange ? "threePhaseTouchReachedFrozenRelation" : "threePhaseTimeoutInsidePocket");
+                    (reachedTouchMayPromote ? "threePhaseTouchReachedFrozenRelation" : "threePhaseTimeoutInsidePocket");
                 _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::TouchHeld;
                 _grabFrame.fadeInGrabConstraint = false;
                 _grabFrame.motorFadeReason = promotionReason;

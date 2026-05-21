@@ -584,6 +584,7 @@ namespace rock
         bool activeGrabPointUsesMultiFingerEvidence = false;
         bool pivotAuthorityPositionOnly = false;
         bool pivotAuthorityNormalTrusted = false;
+        bool requiresSettledVisualHandRelation = false;
         bool hasTelemetryCapture = false;
         bool hasSeatedPivotReacquire = false;
         bool hasHeldSupportRefresh = false;
@@ -720,6 +721,7 @@ namespace rock
             activeGrabPointUsesMultiFingerEvidence = false;
             pivotAuthorityPositionOnly = false;
             pivotAuthorityNormalTrusted = false;
+            requiresSettledVisualHandRelation = false;
             hasTelemetryCapture = false;
             hasSeatedPivotReacquire = false;
             hasHeldSupportRefresh = false;

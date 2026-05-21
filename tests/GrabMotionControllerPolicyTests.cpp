@@ -2,6 +2,7 @@
 #include "physics-interaction/grab/GrabInertiaPolicy.h"
 
 #include <cstdio>
+#include <cstring>
 
 namespace
 {
@@ -30,6 +31,15 @@ namespace
             return true;
         }
         std::printf("%s expected false\n", label);
+        return false;
+    }
+
+    bool expectReason(const char* label, const char* actual, const char* expected)
+    {
+        if (actual && std::strcmp(actual, expected) == 0) {
+            return true;
+        }
+        std::printf("%s expected %s got %s\n", label, expected, actual ? actual : "null");
         return false;
     }
 
@@ -413,6 +423,44 @@ int main()
     });
     ok &= expectTrue("strong acquisition support may publish visual hand", acquisitionSurfaceVisual.apply);
     ok &= expectTrue("strong acquisition visual publish is marked acquisition", acquisitionSurfaceVisual.acquisition);
+
+    const auto acquisitionAwaitingSettledRelation = evaluateVisualHandPublishGate(VisualHandPublishInput{
+        .hasTelemetryCapture = true,
+        .touchHeldPhase = false,
+        .acquisitionVisualEligible = true,
+        .hasPivotTrackingError = true,
+        .pivotAuthorityNormalTrusted = true,
+        .requiresSettledVisualRelation = true,
+        .angularAuthorityScale = 1.0f,
+        .contactSupportShape = ContactSupportShape::Surface,
+    });
+    ok &= expectFalse("acquisition visual hand waits for settled relation", acquisitionAwaitingSettledRelation.apply);
+    ok &= expectReason("acquisition visual hand settled wait reason", acquisitionAwaitingSettledRelation.reason, "awaitingSettledVisualRelation");
+
+    const auto touchHeldAwaitingSettledRelation = evaluateVisualHandPublishGate(VisualHandPublishInput{
+        .hasTelemetryCapture = true,
+        .touchHeldPhase = true,
+        .acquisitionVisualEligible = false,
+        .hasPivotTrackingError = true,
+        .pivotAuthorityNormalTrusted = true,
+        .requiresSettledVisualRelation = true,
+        .angularAuthorityScale = 1.0f,
+        .contactSupportShape = ContactSupportShape::Surface,
+    });
+    ok &= expectFalse("touch-held visual hand waits for settled relation", touchHeldAwaitingSettledRelation.apply);
+
+    const auto seatedSettledRelationVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
+        .hasTelemetryCapture = true,
+        .touchHeldPhase = true,
+        .acquisitionVisualEligible = false,
+        .hasPivotTrackingError = true,
+        .pivotAuthorityNormalTrusted = true,
+        .hasSeatedPivotReacquire = true,
+        .requiresSettledVisualRelation = true,
+        .angularAuthorityScale = 1.0f,
+        .contactSupportShape = ContactSupportShape::Surface,
+    });
+    ok &= expectTrue("seated settled relation may publish visual hand", seatedSettledRelationVisual.apply);
 
     const auto acquisitionLowAuthorityVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
         .hasTelemetryCapture = true,
