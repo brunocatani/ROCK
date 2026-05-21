@@ -134,6 +134,26 @@ namespace rock::grab_three_phase
         return frame;
     }
 
+    inline GrabPocketFrame buildGrabPocketFrameFromAuthorityFrame(
+        const RE::NiTransform& authorityWorld,
+        const RE::NiPoint3& palmCenterWorld,
+        float pocketDepthGameUnits,
+        float pocketRadiusGameUnits)
+    {
+        GrabPocketFrame frame{};
+        frame.handWorld = authorityWorld;
+        frame.palmCenterWorld = palmCenterWorld;
+        frame.palmNormalWorld = normalizeOrFallback(computeGrabAuthorityPalmFaceWorld(authorityWorld), RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+        frame.fingerForwardWorld = normalizeOrFallback(computeGrabAuthorityFingerForwardWorld(authorityWorld), frame.palmNormalWorld);
+        frame.thumbSideWorld = normalizeOrFallback(computeGrabAuthorityAcrossPalmWorld(authorityWorld), RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+        frame.fingerSideWorld = RE::NiPoint3{ -frame.thumbSideWorld.x, -frame.thumbSideWorld.y, -frame.thumbSideWorld.z };
+        frame.pocketDepthGameUnits = (std::max)(0.0f, std::isfinite(pocketDepthGameUnits) ? pocketDepthGameUnits : 0.0f);
+        frame.pocketRadiusGameUnits = (std::max)(0.1f, std::isfinite(pocketRadiusGameUnits) ? pocketRadiusGameUnits : 9.0f);
+        frame.pocketCenterWorld = frame.palmCenterWorld + frame.palmNormalWorld * frame.pocketDepthGameUnits;
+        frame.valid = isFinite(authorityWorld) && isFinite(frame.palmCenterWorld) && isFinite(frame.pocketCenterWorld) && lengthSquared(frame.palmNormalWorld) > 0.000001f;
+        return frame;
+    }
+
     inline GrabPocketFrame buildGrabPocketFrame(const RE::NiTransform& handWorld, bool isLeft, float pocketDepthGameUnits, float pocketRadiusGameUnits)
     {
         /*

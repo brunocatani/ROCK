@@ -1002,7 +1002,7 @@ namespace rock
             const std::vector<GrabSurfaceTriangleData>& surfaceTriangles,
             const std::vector<GrabLocalTriangle>& localMeshTriangles,
             const RE::NiPoint3& currentObjectPointWorld,
-            const RE::NiTransform& handWorldTransform,
+            const RE::NiTransform& grabAuthorityFrameWorld,
             bool isLeft,
             bool closeGrab,
             bool handPocketOnlyGrab,
@@ -1034,7 +1034,7 @@ namespace rock
                 candidate.pinchPocketWorld =
                     grab_pinch_pocket_policy::closestPointOnSegment(candidate.thumbPadWorld, candidate.indexPadWorld, currentObjectPointWorld);
                 const RE::NiPoint3 configuredDetectionWorld =
-                    transformHandspaceDirection(handWorldTransform, config.detectionDirectionHandspace, isLeft);
+                    transformGrabAuthorityTuningDirection(grabAuthorityFrameWorld, config.detectionDirectionHandspace);
                 const RE::NiPoint3 configuredDetectionNormal =
                     grab_pinch_pocket_policy::normalizeOrFallback(configuredDetectionWorld, candidate.pinchAxisWorld);
                 candidate.pinchDetectionDirectionWorld =
@@ -3422,6 +3422,7 @@ namespace rock
         const RE::NiTransform& proxyAuthorityWorld,
         const RE::NiPoint3& activePivotBBodyLocalGame)
     {
+        (void)handWorldTransform;
         /*
          * Held support refresh is intentionally narrower than seated pivot
          * reacquire. It can revise live normal/support authority from the same
@@ -3450,7 +3451,7 @@ namespace rock
             currentNodeWorld,
             grabBodyWorld,
             proxyAuthorityWorld.translate,
-            computePalmNormalFromHandBasis(handWorldTransform, _isLeft),
+            computeGrabAuthorityPalmFaceWorld(proxyAuthorityWorld),
             supportEnvelope,
             g_rockConfig.rockGrabContactPatchMaxNormalAngleDegrees);
 
@@ -5500,10 +5501,9 @@ namespace rock
                  * not fight over different corners of the same object.
                  */
                 const RE::NiPoint3 grabPivotAWorld = grabAuthorityPivotAWorld;
-                const RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
-                const auto closePocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
-                    handWorldTransform,
-                    _isLeft,
+                const RE::NiPoint3 palmDir = computeGrabAuthorityPalmFaceWorld(proxyFrameWorldAtGrab);
+                const auto closePocket = grab_three_phase::buildGrabPocketFrameFromAuthorityFrame(
+                    proxyFrameWorldAtGrab,
                     grabPivotAWorld,
                     g_rockConfig.rockGrabPocketDepthGameUnits,
                     g_rockConfig.rockGrabPocketRadiusGameUnits);
@@ -5568,7 +5568,7 @@ namespace rock
 
             if (!meshGrabFound && !grabSurfaceTriangles.empty() && sel.hasHitPoint) {
                 const RE::NiPoint3 grabPivotAWorld = grabAuthorityPivotAWorld;
-                RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
+                RE::NiPoint3 palmDir = computeGrabAuthorityPalmFaceWorld(proxyFrameWorldAtGrab);
                 const RE::NiPoint3 expectedNormal =
                     sel.hasHitNormal && lengthSquared(sel.hitNormalWorld) > 0.0f ? sel.hitNormalWorld : palmDir;
 
@@ -5612,7 +5612,7 @@ namespace rock
 
             if (!meshGrabFound && !grabSurfaceTriangles.empty()) {
                 const RE::NiPoint3 grabPivotAWorld = grabAuthorityPivotAWorld;
-                RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
+                RE::NiPoint3 palmDir = computeGrabAuthorityPalmFaceWorld(proxyFrameWorldAtGrab);
 
                 int rejectedBehindSurface = 0;
                 if (findClosestGrabSurfaceHit(grabSurfaceTriangles,
@@ -5828,9 +5828,8 @@ namespace rock
             objectBodyId.value,
             static_cast<std::uint32_t>(g_rockConfig.rockGrabOppositionContactMaxAgeFrames));
         const RE::NiPoint3 acquisitionGrabPivotAWorld = grabAuthorityPivotAWorld;
-        const auto acquisitionPocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
-            handWorldTransform,
-            _isLeft,
+        const auto acquisitionPocket = grab_three_phase::buildGrabPocketFrameFromAuthorityFrame(
+            proxyFrameWorldAtGrab,
             acquisitionGrabPivotAWorld,
             g_rockConfig.rockGrabPocketDepthGameUnits,
             g_rockConfig.rockGrabPocketRadiusGameUnits);
@@ -5870,9 +5869,9 @@ namespace rock
         }
 
         if (!handPocketOnlyGrab && contactSourcePolicy.allowContactPatchPivot && g_rockConfig.rockGrabContactPatchEnabled && !authoredGrabNode && !sel.isFarSelection) {
-            const RE::NiPoint3 palmNormalWorld = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
-            const RE::NiPoint3 palmTangentWorld = transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, _isLeft);
-            const RE::NiPoint3 palmBitangentWorld = transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, _isLeft);
+            const RE::NiPoint3 palmNormalWorld = computeGrabAuthorityPalmFaceWorld(proxyFrameWorldAtGrab);
+            const RE::NiPoint3 palmTangentWorld = computeGrabAuthorityFingerForwardWorld(proxyFrameWorldAtGrab);
+            const RE::NiPoint3 palmBitangentWorld = computeGrabAuthorityAcrossPalmWorld(proxyFrameWorldAtGrab);
             float contactPatchObjectLeverEstimateGameUnits = 0.0f;
             if (!grabLocalMeshTriangles.empty() && grab_three_phase::isFinite(objectWorldTransform) && grab_three_phase::isFinite(canonicalPivotPointWorld)) {
                 const RE::NiPoint3 canonicalPivotLocal = transform_math::worldPointToLocal(objectWorldTransform, canonicalPivotPointWorld);
@@ -6230,7 +6229,7 @@ namespace rock
             grabSurfaceTriangles,
             grabLocalMeshTriangles,
             grabGripPoint,
-            handWorldTransform,
+            proxyFrameWorldAtGrab,
             _isLeft,
             !sel.isFarSelection && !grabbedFromPullCatch,
             handPocketOnlyGrab,
@@ -6650,11 +6649,10 @@ namespace rock
              * contacts are evidence until the pivot resolver chooses one BODY-local
              * point to freeze. Contact patches may enrich pose/release evidence, but
              * the palm-pocket or authored/mesh point owns the dynamic pivot.
-             */
+            */
             {
-                auto pocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
-                    handWorldTransform,
-                    _isLeft,
+                auto pocket = grab_three_phase::buildGrabPocketFrameFromAuthorityFrame(
+                    proxyFrameWorldAtGrab,
                     grabPivotAWorld,
                     g_rockConfig.rockGrabPocketDepthGameUnits,
                     g_rockConfig.rockGrabPocketRadiusGameUnits);
@@ -7984,9 +7982,9 @@ namespace rock
                 const float seatedEnvelope =
                     (std::max)(touchDistance, g_rockConfig.rockGrabPocketRadiusGameUnits) +
                     (std::max)(1.0f, finitePositiveOr(g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits, 3.0f));
-                const RE::NiPoint3 palmNormalWorld = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
-                const RE::NiPoint3 palmTangentWorld = transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, _isLeft);
-                const RE::NiPoint3 palmBitangentWorld = transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, _isLeft);
+                const RE::NiPoint3 palmNormalWorld = computeGrabAuthorityPalmFaceWorld(proxyAuthorityWorld);
+                const RE::NiPoint3 palmTangentWorld = computeGrabAuthorityFingerForwardWorld(proxyAuthorityWorld);
+                const RE::NiPoint3 palmBitangentWorld = computeGrabAuthorityAcrossPalmWorld(proxyAuthorityWorld);
                 const auto seatedPivot = findSeatedGrabPivotNearPalmPocket(
                     _grabFrame.localMeshTriangles,
                     currentNodeWorld,

@@ -24,7 +24,7 @@ Very small compact objects and short thin objects need a distinct close-grab sea
 - A pinch-direction fallback selection must qualify for pinch pocket at grab commit; it does not fall through to palm-pocket authority.
 - Pinch-direction selection hysteresis and selected-close speed tracking use the live pinch origin rather than the palm origin.
 - Runtime pinch selection resolves the thumb-index pocket lazily after the palm close cast misses; the per-frame frame-context capture is used only for pocket debug drawing.
-- Pinch mesh search uses a configurable authored hand-space direction blended with the live thumb-index axis.
+- Pinch mesh search uses a configurable generated grab proxy-space direction blended with the live thumb-index axis.
 
 ## Planned Files
 
@@ -44,7 +44,7 @@ Very small compact objects and short thin objects need a distinct close-grab sea
 - Thumb/index gap: 1 to 12 game units.
 - Thumb/index max-open curl: 0.45.
 - Other finger curl: 0.20.
-- Pinch detection direction: hand-space X/finger-forward.
+- Pinch detection direction: generated grab proxy-space X/finger-forward.
 - Pinch detection axis blend: 0.65 live thumb-index axis, 0.35 authored pinch direction.
 
 ## Current Status

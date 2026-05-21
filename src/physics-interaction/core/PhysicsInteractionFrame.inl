@@ -35,11 +35,15 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
         input.rawHandWorld = getInteractionHandTransform(isLeft);
         input.handNode = getInteractionHandNode(isLeft);
         if (frame.worldReady) {
-            input.grabAnchorWorld = hand.computeGrabPivotAWorld(hknp, input.rawHandWorld);
+            input.hasGrabAuthorityWorld = hand.tryComputeGrabAuthorityProxyFrameWorld(hknp, input.grabAuthorityWorld);
+            input.grabAnchorWorld = input.hasGrabAuthorityWorld ? input.grabAuthorityWorld.translate : hand.computeGrabPivotAWorld(hknp, input.rawHandWorld);
         }
-        input.palmNormalWorld = computePalmNormalFromHandBasis(input.rawHandWorld, isLeft);
+        input.palmNormalWorld =
+            input.hasGrabAuthorityWorld ? computeGrabAuthorityPalmFaceWorld(input.grabAuthorityWorld) : computePalmNormalFromHandBasis(input.rawHandWorld, isLeft);
         input.pointingWorld = computePointingVectorFromHandBasis(input.rawHandWorld, isLeft);
-        input.pinchDirectionWorld = computePinchDetectionDirectionFromHandBasis(input.rawHandWorld, isLeft);
+        input.pinchDirectionWorld =
+            input.hasGrabAuthorityWorld ? transformGrabAuthorityTuningDirection(input.grabAuthorityWorld, g_rockConfig.rockGrabPinchDetectionDirectionHandspace) :
+                                          computePinchDetectionDirectionFromHandBasis(input.rawHandWorld, isLeft);
         if (g_rockConfig.rockDebugDrawGrabPockets) {
             root_flattened_finger_skeleton_runtime::Snapshot fingerSnapshot{};
             if (root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(isLeft, fingerSnapshot) &&

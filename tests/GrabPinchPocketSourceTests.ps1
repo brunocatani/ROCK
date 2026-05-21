@@ -47,6 +47,8 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'buildRuntimePinchPocke
     'Pinch pocket must be captured from the root-flattened finger snapshot at grab commit.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'pinchDetectionDirectionWorld[\s\S]*findClosestGrabSurfaceHitToPointPositionOnly' `
     'Pinch mesh surface search must use the explicit pinch detection direction, not the palm normal.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'transformGrabAuthorityTuningDirection\(grabAuthorityFrameWorld,\s*config\.detectionDirectionHandspace\)' `
+    'Pinch detection direction must be resolved through the same grab authority proxy basis as the palm pocket.'
 Require-Text 'src/physics-interaction/core/PhysicsFrameContext.h' 'pinchPocketWorld[\s\S]*hasPinchPocketWorld' `
     'Frame context must carry the live thumb-index pinch pocket.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionFrame.inl' 'resolveLiveFingerSkeletonSnapshot[\s\S]*pinchPocketWorld' `

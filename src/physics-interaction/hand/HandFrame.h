@@ -10,10 +10,13 @@
 namespace rock::handspace_convention
 {
     /*
-     * ROCK root-flattened game hand frames use the active authored handspace convention:
+     * Legacy root-flattened handspace callers use this authored convention:
      * authored X = fingers, authored Y = cross-palm, authored Z = palm thickness.
      * The resolved game bone transform already carries handedness, so left/right
      * conversion uses the same X/-Z/Y basis and does not apply an extra mirror.
+     *
+     * Dynamic grab authority does not use this authored Y/Z swap. It consumes
+     * generated palm proxy space directly: X=fingers, Y=palm depth, Z=across palm.
      */
     template <class Vector>
     inline Vector makeVector(float x, float y, float z)
@@ -163,6 +166,36 @@ namespace rock
     inline RE::NiPoint3 computeGrabAuthorityProxyOffsetLocalGame(bool isLeft)
     {
         return isLeft ? g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits : g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits;
+    }
+
+    inline RE::NiPoint3 transformGrabAuthorityLocalDirection(const RE::NiTransform& proxyFrameWorld, const RE::NiPoint3& localDirection)
+    {
+        return normalizeDirection(transform_math::localVectorToWorld(proxyFrameWorld, localDirection));
+    }
+
+    inline RE::NiPoint3 computeGrabAuthorityFingerForwardWorld(const RE::NiTransform& proxyFrameWorld)
+    {
+        return transformGrabAuthorityLocalDirection(proxyFrameWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+    }
+
+    inline RE::NiPoint3 computeGrabAuthorityPalmFaceWorld(const RE::NiTransform& proxyFrameWorld)
+    {
+        /*
+         * Generated palm authority frames use local Y as palm depth. In the
+         * working pivot tuning, -Y is palm-face for both hands; keep pocket and
+         * pinch math on that same axis instead of the legacy authored Y/Z swap.
+         */
+        return transformGrabAuthorityLocalDirection(proxyFrameWorld, RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
+    }
+
+    inline RE::NiPoint3 computeGrabAuthorityAcrossPalmWorld(const RE::NiTransform& proxyFrameWorld)
+    {
+        return transformGrabAuthorityLocalDirection(proxyFrameWorld, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+    }
+
+    inline RE::NiPoint3 transformGrabAuthorityTuningDirection(const RE::NiTransform& proxyFrameWorld, const RE::NiPoint3& localDirection)
+    {
+        return transformGrabAuthorityLocalDirection(proxyFrameWorld, localDirection);
     }
 
     inline RE::NiTransform makeGrabStartupCaptureAuthorityFrame(const RE::NiTransform& rawHandWorld, const RE::NiTransform& palmAnchorWorld)

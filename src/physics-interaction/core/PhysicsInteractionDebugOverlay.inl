@@ -304,8 +304,11 @@
                 }
 
                 const auto& handInput = isLeft ? context.left : context.right;
-                const auto palmPocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(handInput.rawHandWorld,
-                    isLeft,
+                if (!handInput.hasGrabAuthorityWorld) {
+                    return;
+                }
+
+                const auto palmPocket = grab_three_phase::buildGrabPocketFrameFromAuthorityFrame(handInput.grabAuthorityWorld,
                     handInput.grabAnchorWorld,
                     g_rockConfig.rockGrabPocketDepthGameUnits,
                     g_rockConfig.rockGrabPocketRadiusGameUnits);

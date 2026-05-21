@@ -939,16 +939,31 @@ namespace rock
         return true;
     }
 
+    bool Hand::tryComputeGrabAuthorityProxyFrameWorld(RE::hknpWorld* world, RE::NiTransform& outProxyWorld) const
+    {
+        outProxyWorld = transform_math::makeIdentityTransform<RE::NiTransform>();
+
+        LivePalmAnchorReference palmReference{};
+        if (!tryResolveLivePalmAnchorReference(world, palmReference) ||
+            !std::isfinite(palmReference.world.translate.x) ||
+            !std::isfinite(palmReference.world.translate.y) ||
+            !std::isfinite(palmReference.world.translate.z)) {
+            return false;
+        }
+
+        const RE::NiTransform proxyBaseWorld =
+            hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
+        outProxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft);
+        return std::isfinite(outProxyWorld.translate.x) &&
+               std::isfinite(outProxyWorld.translate.y) &&
+               std::isfinite(outProxyWorld.translate.z);
+    }
+
     RE::NiPoint3 Hand::computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const
     {
-        LivePalmAnchorReference palmReference{};
-        if (tryResolveLivePalmAnchorReference(world, palmReference) &&
-            std::isfinite(palmReference.world.translate.x) &&
-            std::isfinite(palmReference.world.translate.y) &&
-            std::isfinite(palmReference.world.translate.z)) {
-            const RE::NiTransform proxyBaseWorld =
-                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-            return applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft).translate;
+        RE::NiTransform proxyWorld{};
+        if (tryComputeGrabAuthorityProxyFrameWorld(world, proxyWorld)) {
+            return proxyWorld.translate;
         }
 
         return fallbackHandWorldTransform.translate;
