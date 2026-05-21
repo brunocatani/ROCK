@@ -265,6 +265,22 @@ int main()
     ok &= expectTrue("held support refresh seeds one support sample", supportRefreshUpgrade.contactPatchSampleCount == 1);
     ok &= expectTrue("held support refresh applies trusted live normal", supportRefreshUpgrade.useLiveCandidateNormal);
 
+    const auto staleEvidenceRefresh = evaluateHeldSupportRefresh(HeldSupportRefreshInput{
+        .enabled = true,
+        .hasLiveCandidate = true,
+        .liveCandidateNormalTrusted = true,
+        .currentPositionOnly = true,
+        .currentNormalTrusted = false,
+        .currentContactPatchUsedAsPivot = false,
+        .currentContactPatchSampleCount = 5,
+        .liveCandidateLocalDeltaGameUnits = 1.0f,
+        .maxLiveCandidateLocalDeltaGameUnits = 4.0f,
+        .liveCandidateLongObjectLeverGameUnits = 20.0f,
+    });
+    ok &= expectTrue("held support refresh upgrades stale evidence-only samples", staleEvidenceRefresh.refresh);
+    ok &= expectTrue("held support refresh does not promote stale evidence-only sample count", staleEvidenceRefresh.contactPatchSampleCount == 1);
+    ok &= expectTrue("held support refresh reseeds evidence-only support from the live candidate", staleEvidenceRefresh.useLiveCandidateContactSample);
+
     const auto supportRefreshFarCandidate = evaluateHeldSupportRefresh(HeldSupportRefreshInput{
         .enabled = true,
         .hasLiveCandidate = true,
@@ -340,6 +356,8 @@ int main()
     ok &= expectTrue("held support refresh preserves existing trusted normal on lever-only update", leverOnlyRefreshKeepsTrustedNormal.pivotAuthorityNormalTrusted);
     ok &= expectFalse("held support refresh does not replace trusted normal with untrusted lever-only evidence", leverOnlyRefreshKeepsTrustedNormal.useLiveCandidateNormal);
     ok &= expectFalse("held support refresh does not rewrite support sample for untrusted lever-only evidence", leverOnlyRefreshKeepsTrustedNormal.useLiveCandidateContactSample);
+    ok &= expectTrue("held support refresh preserves pivot-owned support sample count on lever-only update",
+        leverOnlyRefreshKeepsTrustedNormal.contactPatchSampleCount == 2);
 
     const auto seatedImmediatePromotion = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
         .weakMeshStart = true,

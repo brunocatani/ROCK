@@ -556,7 +556,9 @@ namespace rock::grab_motion_controller
 
         decision.refresh = true;
         decision.contactPatchUsedAsPivot = true;
-        decision.contactPatchSampleCount = (std::max<std::uint32_t>)(input.currentContactPatchSampleCount, 1u);
+        decision.contactPatchSampleCount = input.currentContactPatchUsedAsPivot ?
+            (std::max<std::uint32_t>)(input.currentContactPatchSampleCount, 1u) :
+            1u;
         decision.longObjectLeverGameUnits = liveLever;
         if (input.liveCandidateNormalTrusted) {
             decision.pivotAuthorityPositionOnly = false;

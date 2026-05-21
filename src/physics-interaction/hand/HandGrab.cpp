@@ -2274,43 +2274,6 @@ namespace rock
             bool normalTrusted = false;
         };
 
-        struct SemanticFingerContactGroupSnapshot
-        {
-            std::uint32_t groupCount = 0;
-            const char* reason = "notEvaluated";
-        };
-
-        SemanticFingerContactGroupSnapshot countFreshSemanticFingerContactGroups(
-            const hand_semantic_contact_state::SemanticContactCollection& contacts)
-        {
-            SemanticFingerContactGroupSnapshot result{};
-            std::array<bool, grab_multi_finger_contact_math::kMaxFingerGroups> groups{};
-            for (std::size_t i = 0; i < contacts.count && i < contacts.records.size(); ++i) {
-                const auto& contact = contacts.records[i];
-                if (!contact.valid || contact.handBodyId == hand_semantic_contact_state::kInvalidBodyId) {
-                    continue;
-                }
-
-                auto finger = contact.finger;
-                if (finger == hand_collider_semantics::HandFinger::None) {
-                    finger = hand_collider_semantics::fingerForRole(contact.role);
-                }
-
-                const int fingerIndex = grab_multi_finger_contact_math::fingerIndex(finger);
-                if (fingerIndex >= 0 && static_cast<std::size_t>(fingerIndex) < groups.size()) {
-                    groups[static_cast<std::size_t>(fingerIndex)] = true;
-                }
-            }
-
-            for (bool group : groups) {
-                if (group) {
-                    ++result.groupCount;
-                }
-            }
-            result.reason = result.groupCount > 0 ? "seatedPalmPocketSemanticContacts" : "noFreshFingerContacts";
-            return result;
-        }
-
         SeatedPalmPocketSupportPatch buildSeatedPalmPocketSupportPatch(
             const std::vector<GrabLocalTriangle>& localTriangles,
             std::uint32_t bodyId,
@@ -3319,6 +3282,8 @@ namespace rock
             return false;
         }
 
+        const bool previousContactPatchUsedAsPivot = _grabFrame.contactPatchUsedAsPivot;
+
         _grabFrame.pivotAuthorityPositionOnly = refreshDecision.pivotAuthorityPositionOnly;
         _grabFrame.pivotAuthorityNormalTrusted = refreshDecision.pivotAuthorityNormalTrusted;
         _grabFrame.pivotAuthorityPositionConfidence =
@@ -3327,11 +3292,16 @@ namespace rock
         _grabFrame.contactPatchSampleCount =
             (std::min)(refreshDecision.contactPatchSampleCount, static_cast<std::uint32_t>(_grabFrame.contactPatchSamples.size()));
         _grabFrame.hasContactPatch = _grabFrame.contactPatchSampleCount > 0;
+        _grabFrame.hasContactPatchEvidence = _grabFrame.hasContactPatchEvidence || _grabFrame.hasContactPatch;
         _grabFrame.longObjectLeverGameUnits = refreshDecision.longObjectLeverGameUnits;
         if (refreshDecision.useLiveCandidateNormal) {
             _grabFrame.gripNormalLocal = supportCandidate.normalNodeLocal;
         }
         if (_grabFrame.contactPatchSampleCount > 0 && refreshDecision.useLiveCandidateContactSample) {
+            if (!previousContactPatchUsedAsPivot) {
+                _grabFrame.contactPatchSamples = {};
+                _grabFrame.contactPatchSampleCount = 1;
+            }
             const RE::NiPoint3 sampleNormalWorld = refreshDecision.useLiveCandidateNormal ?
                 supportCandidate.normalWorld :
                 gripEvidenceNormalWorld(_grabFrame, currentNodeWorld);
@@ -7677,20 +7647,6 @@ namespace rock
                     const float nodeScale =
                         std::isfinite(currentNodeWorld.scale) && currentNodeWorld.scale > 0.0f ? currentNodeWorld.scale : 1.0f;
                     const float reacquireLocalDeltaGameUnits = vectorMagnitude(previousGripLocalDelta) * nodeScale;
-                    const auto seatedSupportPatch = buildSeatedPalmPocketSupportPatch(
-                        _grabFrame.localMeshTriangles,
-                        _savedObjectState.bodyId.value,
-                        currentNodeWorld,
-                        livePivotAWorld,
-                        seatedPivot.pointWorld,
-                        palmNormalWorld,
-                        palmTangentWorld,
-                        palmBitangentWorld,
-                        seatedPivot.longLeverGameUnits);
-                    const auto seatedSemanticContacts = collectFreshSemanticContactsForBody(
-                        _savedObjectState.bodyId.value,
-                        static_cast<std::uint32_t>((std::max)(0, g_rockConfig.rockGrabOppositionContactMaxAgeFrames)));
-                    const auto seatedFingerGroups = countFreshSemanticFingerContactGroups(seatedSemanticContacts);
                     const float immediateLocalDelta =
                         (std::max)(2.0f,
                             finitePositiveOr(g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits, 3.0f) +
@@ -7698,6 +7654,26 @@ namespace rock
                     const float lerpLocalDelta =
                         (std::max)(immediateLocalDelta * 3.0f,
                             (std::max)(g_rockConfig.rockGrabPocketRadiusGameUnits, g_rockConfig.rockGrabNearConvergeDistanceGameUnits * 0.50f));
+                    const bool seatedSupportMayBecomeAuthority =
+                        !(heldMotorContactSoftening && !reachedTouchRange) &&
+                        std::isfinite(reacquireLocalDeltaGameUnits) &&
+                        reacquireLocalDeltaGameUnits <= lerpLocalDelta;
+                    SeatedPalmPocketSupportPatch seatedSupportPatch{};
+                    if (seatedSupportMayBecomeAuthority) {
+                        seatedSupportPatch = buildSeatedPalmPocketSupportPatch(
+                            _grabFrame.localMeshTriangles,
+                            _savedObjectState.bodyId.value,
+                            currentNodeWorld,
+                            livePivotAWorld,
+                            seatedPivot.pointWorld,
+                            palmNormalWorld,
+                            palmTangentWorld,
+                            palmBitangentWorld,
+                            seatedPivot.longLeverGameUnits);
+                    } else {
+                        seatedSupportPatch.reason = "seatedSupportSkippedUntilPivotCanSettle";
+                        seatedSupportPatch.patch.fallbackReason = seatedSupportPatch.reason;
+                    }
                     const auto promotionDecision = grab_motion_controller::evaluateSeatedPalmPocketPromotion(
                         grab_motion_controller::SeatedPalmPocketPromotionInput{
                             .enabled = true,
@@ -7713,16 +7689,24 @@ namespace rock
                             .currentContactPatchSampleCount = _grabFrame.contactPatchSampleCount,
                             .supportPatchSampleCount = seatedSupportPatch.sampleCount,
                             .currentMultiFingerContactGroupCount = _grabFrame.multiFingerContactGroupCount,
-                            .liveMultiFingerContactGroupCount = seatedFingerGroups.groupCount,
+                            .liveMultiFingerContactGroupCount = _grabFrame.multiFingerContactGroupCount,
                             .candidateLocalDeltaGameUnits = reacquireLocalDeltaGameUnits,
                             .immediateMaxLocalDeltaGameUnits = immediateLocalDelta,
                             .lerpMaxLocalDeltaGameUnits = lerpLocalDelta,
                         });
                     timeoutReacquireReason = promotionDecision.reason;
 
-                    auto copySeatedSupportToGrabFrame = [&](bool supportOwnsPivot,
-                                                           const RE::NiPoint3& fallbackPointBodyLocal,
-                                                           const RE::NiPoint3& fallbackNormalWorld) {
+                    auto clearUnsettledSeatedContactPatchAuthority = [&]() {
+                        _grabFrame.contactPatchSamples = {};
+                        _grabFrame.contactPatchSampleCount = 0;
+                        _grabFrame.hasContactPatch = false;
+                        _grabFrame.hasContactPatchEvidence = false;
+                        _grabFrame.contactPatchUsedAsPivot = false;
+                        _grabFrame.contactPatchMeshSnapDeltaGameUnits = 0.0f;
+                    };
+
+                    auto copyCompletedSeatedPivotSupportToGrabFrame = [&](const RE::NiPoint3& fallbackPointBodyLocal,
+                                                                          const RE::NiPoint3& fallbackNormalWorld) {
                         if (seatedSupportPatch.valid && seatedSupportPatch.sampleCount > 0) {
                             _grabFrame.contactPatchSamples = {};
                             _grabFrame.contactPatchSampleCount = 0;
@@ -7738,9 +7722,9 @@ namespace rock
                             _grabFrame.contactPatchSampleCount = copyCount;
                             _grabFrame.hasContactPatch = _grabFrame.contactPatchSampleCount > 0;
                             _grabFrame.hasContactPatchEvidence = _grabFrame.contactPatchSampleCount > 0;
-                            _grabFrame.contactPatchUsedAsPivot = supportOwnsPivot && _grabFrame.contactPatchSampleCount > 0;
+                            _grabFrame.contactPatchUsedAsPivot = _grabFrame.contactPatchSampleCount > 0;
                             _grabFrame.contactPatchMeshSnapDeltaGameUnits = 0.0f;
-                        } else if (supportOwnsPivot) {
+                        } else {
                             _grabFrame.contactPatchSamples = {};
                             _grabFrame.contactPatchSampleCount = 0;
                             auto& sample = _grabFrame.contactPatchSamples[0];
@@ -7756,16 +7740,9 @@ namespace rock
                             _grabFrame.contactPatchUsedAsPivot = true;
                             _grabFrame.contactPatchMeshSnapDeltaGameUnits = 0.0f;
                         }
-
-                        if (seatedFingerGroups.groupCount > _grabFrame.multiFingerContactGroupCount) {
-                            _grabFrame.multiFingerContactGroupCount = seatedFingerGroups.groupCount;
-                            _grabFrame.multiFingerContactReason = seatedFingerGroups.reason;
-                        }
-                        _grabFrame.hasMultiFingerContactPatch = _grabFrame.multiFingerContactGroupCount > 0;
                     };
 
                     if (!promotionDecision.promotePivot && promotionDecision.enrichSupport) {
-                        copySeatedSupportToGrabFrame(false, seatedPivot.pointBodyLocalGame, seatedPivot.normalWorld);
                         _grabFrame.hasHeldSupportRefresh = true;
                         _grabFrame.lastHeldSupportRefreshLocalDeltaGameUnits = reacquireLocalDeltaGameUnits;
                         _grabFrame.lastHeldSupportRefreshReason = promotionDecision.reason ? promotionDecision.reason : "none";
@@ -7777,7 +7754,7 @@ namespace rock
                             grab_three_phase::phaseName(previousAcquisitionPhase),
                             promotionDecision.reason,
                             reacquireLocalDeltaGameUnits,
-                            _grabFrame.contactPatchSampleCount,
+                            seatedSupportPatch.sampleCount,
                             seatedSupportPatch.reason,
                             seatedSupportPatch.normalTrusted ? "yes" : "no",
                             _grabFrame.multiFingerContactGroupCount);
@@ -7863,7 +7840,11 @@ namespace rock
                     _grabFrame.lastSeatedPivotReacquireLocalDeltaGameUnits = reacquireLocalDeltaGameUnits;
                     _grabFrame.lastSeatedPivotReacquireReason = promotionDecision.reason ? promotionDecision.reason : "none";
                     ++_grabFrame.seatedPivotReacquireCount;
-                    copySeatedSupportToGrabFrame(promotionDecision.completeSeatedRelation, promotedPointBodyLocalGame, promotedNormalWorld);
+                    if (promotionDecision.completeSeatedRelation) {
+                        copyCompletedSeatedPivotSupportToGrabFrame(promotedPointBodyLocalGame, promotedNormalWorld);
+                    } else {
+                        clearUnsettledSeatedContactPatchAuthority();
+                    }
                     const auto seatedPoseTargets = buildRuntimeFingerPoseTargets(promotedPointWorld, promotedNormalWorld);
                     storeFingerPoseTargetsInGrabFrame(_grabFrame, seatedPoseTargets, currentNodeWorld);
 

@@ -22,9 +22,12 @@ Implementation:
 - Promotion is limited to weak mesh starts that have reached touch range or timed out inside the pocket.
 - If local pivot delta is small, ROCK promotes directly to palm-pocket mesh authority.
 - If local delta is medium, ROCK advances the pivot by a bounded blend and keeps `requiresSettledVisualHandRelation` true until the relation completes.
-- If local delta is large, or contact softening is active without touch-range arrival, ROCK does not move the pivot and only enriches support evidence when better samples or finger groups are available.
+- If local delta is large, or contact softening is active without touch-range arrival, ROCK does not move the pivot and does not publish seated samples or raw finger counts into motor authority.
 - Runtime promotion now rebuilds bounded palm-plane mesh support samples through the same nine-point probe policy used by contact patches.
 - Completed promotion rewrites the active frame support samples, pivot B, grip point, grip normal, finger pose targets, and visual-hand relation state together.
+- Partial retarget clears active contact-patch authority until the seated visual relation is complete, so stale startup samples cannot describe a pivot they no longer own.
+- Held support refresh collapses non-pivot evidence samples back to one live candidate sample before publishing them as pivot support.
+- Raw semantic finger contacts are not used as seated promotion authority; finger support still needs the validated multi-finger contact path.
 
 Implication:
 
