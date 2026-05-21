@@ -341,6 +341,80 @@ int main()
     ok &= expectFalse("held support refresh does not replace trusted normal with untrusted lever-only evidence", leverOnlyRefreshKeepsTrustedNormal.useLiveCandidateNormal);
     ok &= expectFalse("held support refresh does not rewrite support sample for untrusted lever-only evidence", leverOnlyRefreshKeepsTrustedNormal.useLiveCandidateContactSample);
 
+    const auto seatedImmediatePromotion = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
+        .weakMeshStart = true,
+        .hasSeatedCandidate = true,
+        .reachedTouchRange = true,
+        .candidateNormalTrusted = true,
+        .supportPatchValid = true,
+        .supportPatchNormalTrusted = true,
+        .currentContactPatchSampleCount = 1,
+        .supportPatchSampleCount = 5,
+        .candidateLocalDeltaGameUnits = 2.0f,
+        .immediateMaxLocalDeltaGameUnits = 4.0f,
+        .lerpMaxLocalDeltaGameUnits = 12.0f,
+    });
+    ok &= expectTrue("seated palm pocket promotion replaces small weak mesh delta", seatedImmediatePromotion.promotePivot);
+    ok &= expectTrue("seated palm pocket promotion completes small delta", seatedImmediatePromotion.completeSeatedRelation);
+    ok &= expectTrue("seated palm pocket promotion enriches support", seatedImmediatePromotion.enrichSupport);
+    ok &= expectNear("seated palm pocket immediate blend", seatedImmediatePromotion.pivotBlend, 1.0f, 0.001f);
+
+    const auto seatedLerpPromotion = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
+        .weakMeshStart = true,
+        .hasSeatedCandidate = true,
+        .reachedTouchRange = true,
+        .supportPatchValid = true,
+        .currentContactPatchSampleCount = 1,
+        .supportPatchSampleCount = 4,
+        .candidateLocalDeltaGameUnits = 8.0f,
+        .immediateMaxLocalDeltaGameUnits = 4.0f,
+        .lerpMaxLocalDeltaGameUnits = 12.0f,
+    });
+    ok &= expectTrue("seated palm pocket promotion advances medium delta", seatedLerpPromotion.promotePivot);
+    ok &= expectFalse("seated palm pocket medium delta does not complete relation", seatedLerpPromotion.completeSeatedRelation);
+    ok &= expectNear("seated palm pocket medium blend", seatedLerpPromotion.pivotBlend, 0.5f, 0.001f);
+
+    const auto seatedContactSupportOnly = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
+        .weakMeshStart = true,
+        .hasSeatedCandidate = true,
+        .timedOutInsidePocket = true,
+        .motorContactSoftening = true,
+        .supportPatchValid = true,
+        .currentContactPatchSampleCount = 1,
+        .supportPatchSampleCount = 4,
+        .candidateLocalDeltaGameUnits = 6.0f,
+        .immediateMaxLocalDeltaGameUnits = 4.0f,
+        .lerpMaxLocalDeltaGameUnits = 12.0f,
+    });
+    ok &= expectFalse("seated palm pocket contact softening blocks pivot move", seatedContactSupportOnly.promotePivot);
+    ok &= expectTrue("seated palm pocket contact softening can still enrich support", seatedContactSupportOnly.enrichSupport);
+    ok &= expectReason("seated palm pocket contact softening reason",
+        seatedContactSupportOnly.reason,
+        "seatedPalmPocketPromotionContactSofteningSupportOnly");
+
+    const auto seatedLargeDeltaSupportOnly = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
+        .weakMeshStart = true,
+        .hasSeatedCandidate = true,
+        .reachedTouchRange = true,
+        .supportPatchValid = true,
+        .currentContactPatchSampleCount = 1,
+        .supportPatchSampleCount = 5,
+        .candidateLocalDeltaGameUnits = 20.0f,
+        .immediateMaxLocalDeltaGameUnits = 4.0f,
+        .lerpMaxLocalDeltaGameUnits = 12.0f,
+    });
+    ok &= expectFalse("seated palm pocket large delta keeps current pivot", seatedLargeDeltaSupportOnly.promotePivot);
+    ok &= expectTrue("seated palm pocket large delta preserves support evidence", seatedLargeDeltaSupportOnly.enrichSupport);
+
+    const auto seatedNotWeak = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
+        .weakMeshStart = false,
+        .hasSeatedCandidate = true,
+        .reachedTouchRange = true,
+        .candidateLocalDeltaGameUnits = 2.0f,
+    });
+    ok &= expectFalse("seated palm pocket promotion ignores non-weak authority", seatedNotWeak.promotePivot);
+    ok &= expectReason("seated palm pocket non-weak reason", seatedNotWeak.reason, "seatedPalmPocketPromotionNotWeakMesh");
+
     const auto touchHeldSurfaceVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
         .hasTelemetryCapture = true,
         .touchHeldPhase = true,

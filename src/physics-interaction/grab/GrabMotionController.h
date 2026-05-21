@@ -415,6 +415,99 @@ namespace rock::grab_motion_controller
         const char* reason = "notEvaluated";
     };
 
+    struct SeatedPalmPocketPromotionInput
+    {
+        bool enabled = true;
+        bool weakMeshStart = false;
+        bool hasSeatedCandidate = false;
+        bool reachedTouchRange = false;
+        bool timedOutInsidePocket = false;
+        bool motorContactSoftening = false;
+        bool candidateNormalTrusted = false;
+        bool supportPatchValid = false;
+        bool supportPatchNormalTrusted = false;
+        std::uint32_t currentContactPatchSampleCount = 0;
+        std::uint32_t supportPatchSampleCount = 0;
+        std::uint32_t currentMultiFingerContactGroupCount = 0;
+        std::uint32_t liveMultiFingerContactGroupCount = 0;
+        float candidateLocalDeltaGameUnits = std::numeric_limits<float>::infinity();
+        float immediateMaxLocalDeltaGameUnits = 4.0f;
+        float lerpMaxLocalDeltaGameUnits = 12.0f;
+    };
+
+    struct SeatedPalmPocketPromotionDecision
+    {
+        bool promotePivot = false;
+        bool completeSeatedRelation = false;
+        bool enrichSupport = false;
+        float pivotBlend = 0.0f;
+        const char* reason = "notEvaluated";
+    };
+
+    inline SeatedPalmPocketPromotionDecision evaluateSeatedPalmPocketPromotion(const SeatedPalmPocketPromotionInput& input)
+    {
+        SeatedPalmPocketPromotionDecision decision{};
+        if (!input.enabled) {
+            decision.reason = "seatedPalmPocketPromotionDisabled";
+            return decision;
+        }
+        if (!input.weakMeshStart) {
+            decision.reason = "seatedPalmPocketPromotionNotWeakMesh";
+            return decision;
+        }
+        if (!input.hasSeatedCandidate) {
+            decision.reason = "seatedPalmPocketPromotionMissingCandidate";
+            return decision;
+        }
+        if (!input.reachedTouchRange && !input.timedOutInsidePocket) {
+            decision.reason = "seatedPalmPocketPromotionAwaitingPocket";
+            return decision;
+        }
+
+        const bool betterPatchSupport =
+            input.supportPatchValid &&
+            input.supportPatchSampleCount > input.currentContactPatchSampleCount;
+        const bool betterFingerSupport =
+            input.liveMultiFingerContactGroupCount > input.currentMultiFingerContactGroupCount;
+        const bool betterNormal =
+            (input.supportPatchNormalTrusted || input.candidateNormalTrusted) &&
+            (input.supportPatchSampleCount > 0 || input.supportPatchValid);
+        const bool betterSupport = betterPatchSupport || betterFingerSupport || betterNormal;
+
+        if (input.motorContactSoftening && !input.reachedTouchRange) {
+            decision.enrichSupport = betterSupport;
+            decision.reason = betterSupport ? "seatedPalmPocketPromotionContactSofteningSupportOnly" :
+                                              "seatedPalmPocketPromotionContactSoftening";
+            return decision;
+        }
+
+        const float localDelta = finiteOr(input.candidateLocalDeltaGameUnits, std::numeric_limits<float>::infinity());
+        const float immediateMax = safePositive(input.immediateMaxLocalDeltaGameUnits, 4.0f);
+        const float lerpMax = (std::max)(immediateMax, safePositive(input.lerpMaxLocalDeltaGameUnits, immediateMax * 3.0f));
+        if (std::isfinite(localDelta) && localDelta <= immediateMax) {
+            decision.promotePivot = true;
+            decision.completeSeatedRelation = true;
+            decision.enrichSupport = true;
+            decision.pivotBlend = 1.0f;
+            decision.reason = "seatedPalmPocketPromotionImmediate";
+            return decision;
+        }
+
+        if (std::isfinite(localDelta) && localDelta <= lerpMax) {
+            decision.promotePivot = true;
+            decision.completeSeatedRelation = false;
+            decision.enrichSupport = true;
+            decision.pivotBlend = std::clamp(immediateMax / (std::max)(localDelta, immediateMax), 0.25f, 0.75f);
+            decision.reason = "seatedPalmPocketPromotionLerp";
+            return decision;
+        }
+
+        decision.enrichSupport = betterSupport;
+        decision.reason = betterSupport ? "seatedPalmPocketPromotionSupportOnlyLargeDelta" :
+                                          "seatedPalmPocketPromotionCandidateTooFar";
+        return decision;
+    }
+
     inline HeldSupportRefreshDecision evaluateHeldSupportRefresh(const HeldSupportRefreshInput& input)
     {
         HeldSupportRefreshDecision decision{};
