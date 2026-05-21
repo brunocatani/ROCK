@@ -21,6 +21,7 @@ ROCK now treats held object size/contact shape as evidence and release safety da
 - generic heavy props no longer climb to loose-weapon force;
 - weak, small, point-like, and long-handle support no longer reduces live angular motor force or damping;
 - long-handle/weak support no longer blocks visual-hand publishing once the existing settled-relation gate is satisfied;
+- held visual hand smoothing is acquisition-only; once the grab is `TouchHeld`, the published external hand transform follows the live held-object-relative transform immediately so fast object rotation does not outrun the rendered hand;
 - close selection is clamped to HIGGS-scale FO4VR game-unit values;
 - nearby grab damping keeps ROCK's broader production radius because live testing found it improved clutter stability;
 - held Havok mass can slow player movement through a reversible temporary SpeedMult modifier.

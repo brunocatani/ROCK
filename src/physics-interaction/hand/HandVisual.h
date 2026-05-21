@@ -174,6 +174,11 @@ namespace rock::hand_visual_lerp_math
         return transform_math::composeTransforms(heldObjectWorld, transform_math::invertTransform(frozenObjectHandSpace));
     }
 
+    inline bool shouldSmoothHeldObjectRelativeHand(bool lerpEnabled, bool touchHeldPhase, bool acquisitionVisual)
+    {
+        return lerpEnabled && acquisitionVisual && !touchHeldPhase;
+    }
+
     template <class Transform>
     inline AdvanceResult<Transform> advanceTransform(const Transform& current, const Transform& target, float positionSpeed, float angularSpeedDegrees, float deltaTime)
     {

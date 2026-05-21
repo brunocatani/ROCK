@@ -1,6 +1,7 @@
 #include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/grab/GrabInertiaPolicy.h"
 #include "physics-interaction/grab/HeldMassMovement.h"
+#include "physics-interaction/hand/HandVisual.h"
 
 #include <cstdio>
 #include <cstring>
@@ -556,6 +557,13 @@ int main()
         .contactSupportShape = ContactSupportShape::Unknown,
     });
     ok &= expectTrue("untrusted normal support does not block acquisition visual hand", acquisitionWeakNormalVisual.apply);
+
+    ok &= expectTrue("acquisition visual hand may smooth into object-relative pose",
+        rock::hand_visual_lerp_math::shouldSmoothHeldObjectRelativeHand(true, false, true));
+    ok &= expectFalse("touch-held visual hand tracks object-relative pose immediately",
+        rock::hand_visual_lerp_math::shouldSmoothHeldObjectRelativeHand(true, true, false));
+    ok &= expectFalse("disabled visual hand lerp tracks object-relative pose immediately",
+        rock::hand_visual_lerp_math::shouldSmoothHeldObjectRelativeHand(false, false, true));
 
     const auto ratioClamp = rock::grab_inertia_policy::normalizeInverseInertiaAxesForGrab(1.0f, 100.0f, 4.0f, 10.0f, 0.05f);
     ok &= expectTrue("inertia ratio clamp modifies axis", ratioClamp.modified);

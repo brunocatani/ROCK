@@ -7805,7 +7805,11 @@ namespace rock
                 }
 
                 RE::NiTransform nextVisualHandWorld = targetVisualHandWorld;
-                if (g_rockConfig.rockGrabHandLerpEnabled) {
+                const bool smoothVisualHand = hand_visual_lerp_math::shouldSmoothHeldObjectRelativeHand(
+                    g_rockConfig.rockGrabHandLerpEnabled,
+                    _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld,
+                    visualPublishDecision.acquisition);
+                if (smoothVisualHand) {
                     const auto advancedVisual = hand_visual_lerp_math::advanceTransform(
                         _grabVisualHandTransform,
                         targetVisualHandWorld,
@@ -7854,11 +7858,12 @@ namespace rock
 
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} GRAB VISUAL HAND: relation=heldRelative phase={} visualOnly=yes authority={} shape={} scale={:.2f} target=({:.1f},{:.1f},{:.1f}) applied=({:.1f},{:.1f},{:.1f}) live=({:.1f},{:.1f},{:.1f}) deviation={:.2f}gu avgDeviation={:.2f}gu normalAuthority=false",
+                    "{} GRAB VISUAL HAND: relation=heldRelative phase={} visualOnly=yes authority={} shape={} follow={} scale={:.2f} target=({:.1f},{:.1f},{:.1f}) applied=({:.1f},{:.1f},{:.1f}) live=({:.1f},{:.1f},{:.1f}) deviation={:.2f}gu avgDeviation={:.2f}gu normalAuthority=false",
                     handName(),
                     grab_three_phase::phaseName(_grabAcquisitionPhase),
                     visualPublishDecision.reason,
                     grab_motion_controller::contactSupportShapeName(heldAngularAuthority.contactSupportShape),
+                    smoothVisualHand ? "smoothedAcquisition" : "immediateHeldObject",
                     heldAngularAuthority.authorityScale,
                     targetVisualHandWorld.translate.x,
                     targetVisualHandWorld.translate.y,
