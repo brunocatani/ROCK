@@ -453,6 +453,7 @@ namespace rock
             clearPullPrepTracking();
         }
         _pulledBodyIds.clear();
+        _pullDriveDecision = {};
         _pulledPrimaryBodyId = INVALID_BODY_ID;
         _pullPointOffsetHavok = {};
         _pullTargetHavok = {};

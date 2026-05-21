@@ -7,6 +7,7 @@
 #include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/grab/GrabConstraint.h"
+#include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/hand/HandBoneColliderSet.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/hand/HandInteractionStateMachine.h"
@@ -732,6 +733,8 @@ namespace rock
         CanonicalGrabFrame _grabFrame;
         grab_three_phase::AcquisitionPhase _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         grab_three_phase::ObjectGripArea _grabObjectGripAtGrab{};
+        held_object_drive_policy::HeldBodySetDriveDecision _heldDriveDecision{};
+        held_object_drive_policy::HeldBodySetDriveDecision _pullDriveDecision{};
         bool _heldObjectIsLooseWeapon = false;
         bool _grabFingerPosePublished = false;
         int _grabConvergeStableInsidePocketFrames = 0;

@@ -58,6 +58,114 @@ namespace rock::held_object_body_set_policy
     }
 }
 
+// ---- HeldObjectDrivePolicy.h ----
+
+namespace rock::held_object_drive_policy
+{
+    enum class HeldBodySetDriveMode : std::uint8_t
+    {
+        SingleDynamic,
+        ConnectedDynamic,
+        FixedAttached,
+        ComplexArticulated,
+        IncompleteNativeScan,
+    };
+
+    inline const char* modeName(HeldBodySetDriveMode mode)
+    {
+        switch (mode) {
+        case HeldBodySetDriveMode::SingleDynamic:
+            return "singleDynamic";
+        case HeldBodySetDriveMode::ConnectedDynamic:
+            return "connectedDynamic";
+        case HeldBodySetDriveMode::FixedAttached:
+            return "fixedAttached";
+        case HeldBodySetDriveMode::ComplexArticulated:
+            return "complexArticulated";
+        case HeldBodySetDriveMode::IncompleteNativeScan:
+            return "incompleteNativeScan";
+        }
+        return "unknown";
+    }
+
+    struct HeldBodySetDriveInput
+    {
+        std::uint32_t acceptedBodyCount = 0;
+        std::uint32_t uniqueMotionCount = 0;
+        std::uint32_t rejectedFixedOrNonDynamicCount = 0;
+        std::uint32_t scanFailureCount = 0;
+        std::uint32_t invalidPhysicsSystemCount = 0;
+        bool incompleteNativeScan = false;
+    };
+
+    struct HeldBodySetDriveDecision
+    {
+        HeldBodySetDriveMode mode = HeldBodySetDriveMode::SingleDynamic;
+        float motorAuthorityScale = 1.0f;
+        bool includeConnectedLinearVelocity = true;
+        bool includeConnectedAngularVelocity = true;
+        bool includeConnectedMass = true;
+        const char* reason = "single-dynamic";
+    };
+
+    inline HeldBodySetDriveDecision evaluateHeldBodySetDrive(const HeldBodySetDriveInput& input)
+    {
+        /*
+         * The held body list is the ownership/cleanup scope. Drive scope is
+         * narrower: fixed-attached and incomplete scans should not receive broad
+         * velocity writes that can energize unknown or anchored object parts.
+         */
+        const std::uint32_t acceptedBodies = input.acceptedBodyCount;
+        const std::uint32_t uniqueMotions = input.uniqueMotionCount > 0 ? input.uniqueMotionCount : (acceptedBodies > 0 ? 1u : 0u);
+        if (acceptedBodies == 0 || input.incompleteNativeScan || input.scanFailureCount > 0 || input.invalidPhysicsSystemCount > 0) {
+            return HeldBodySetDriveDecision{
+                .mode = HeldBodySetDriveMode::IncompleteNativeScan,
+                .motorAuthorityScale = 0.55f,
+                .includeConnectedLinearVelocity = false,
+                .includeConnectedAngularVelocity = false,
+                .includeConnectedMass = false,
+                .reason = acceptedBodies == 0 ? "no-accepted-dynamic-body" : "incomplete-native-scan",
+            };
+        }
+
+        if (input.rejectedFixedOrNonDynamicCount > 0) {
+            return HeldBodySetDriveDecision{
+                .mode = HeldBodySetDriveMode::FixedAttached,
+                .motorAuthorityScale = 0.65f,
+                .includeConnectedLinearVelocity = false,
+                .includeConnectedAngularVelocity = false,
+                .includeConnectedMass = false,
+                .reason = "fixed-or-nondynamic-body",
+            };
+        }
+
+        if (acceptedBodies <= 1 || uniqueMotions <= 1) {
+            return acceptedBodies <= 1 ?
+                       HeldBodySetDriveDecision{} :
+                       HeldBodySetDriveDecision{
+                           .mode = HeldBodySetDriveMode::ConnectedDynamic,
+                           .reason = "connected-rigid-dynamic",
+                       };
+        }
+
+        return HeldBodySetDriveDecision{
+            .mode = HeldBodySetDriveMode::ComplexArticulated,
+            .motorAuthorityScale = 0.80f,
+            .includeConnectedLinearVelocity = true,
+            .includeConnectedAngularVelocity = false,
+            .includeConnectedMass = true,
+            .reason = "multiple-independent-motions",
+        };
+    }
+
+    inline float combineMotorAuthorityScale(float baseScale, const HeldBodySetDriveDecision& decision)
+    {
+        const float base = std::clamp(std::isfinite(baseScale) && baseScale > 0.0f ? baseScale : 1.0f, 0.05f, 1.0f);
+        const float drive = std::clamp(std::isfinite(decision.motorAuthorityScale) && decision.motorAuthorityScale > 0.0f ? decision.motorAuthorityScale : 1.0f, 0.05f, 1.0f);
+        return std::clamp(base * drive, 0.05f, 1.0f);
+    }
+}
+
 // ---- HeldObjectContactPolicy.h ----
 
 namespace rock::held_object_contact_policy

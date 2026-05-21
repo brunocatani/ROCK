@@ -505,6 +505,35 @@ namespace rock
             return peerHandStillHolding ? 0.5f : 1.0f;
         }
 
+        std::uint32_t bodySetRejectCount(
+            const object_physics_body_set::ObjectPhysicsBodySet& bodySet,
+            physics_body_classifier::BodyRejectReason reason)
+        {
+            const auto index = static_cast<std::size_t>(reason);
+            if (index >= bodySet.diagnostics.rejectCounts.size()) {
+                return 0;
+            }
+            return bodySet.diagnostics.rejectCounts[index];
+        }
+
+        held_object_drive_policy::HeldBodySetDriveDecision classifyHeldBodySetDrive(
+            const object_physics_body_set::ObjectPhysicsBodySet& beforePrepBodySet,
+            const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
+            bool incompleteNativeScan)
+        {
+            const auto uniqueMotionRecords = preparedBodySet.uniqueAcceptedMotionRecords();
+            return held_object_drive_policy::evaluateHeldBodySetDrive(held_object_drive_policy::HeldBodySetDriveInput{
+                .acceptedBodyCount = static_cast<std::uint32_t>(preparedBodySet.acceptedCount()),
+                .uniqueMotionCount = static_cast<std::uint32_t>(uniqueMotionRecords.size()),
+                .rejectedFixedOrNonDynamicCount =
+                    bodySetRejectCount(preparedBodySet, physics_body_classifier::BodyRejectReason::StaticMotion) +
+                    bodySetRejectCount(preparedBodySet, physics_body_classifier::BodyRejectReason::NotDynamicAfterActivePrep),
+                .scanFailureCount = beforePrepBodySet.diagnostics.scanFailures + preparedBodySet.diagnostics.scanFailures,
+                .invalidPhysicsSystemCount = beforePrepBodySet.diagnostics.invalidPhysicsSystems + preparedBodySet.diagnostics.invalidPhysicsSystems,
+                .incompleteNativeScan = incompleteNativeScan,
+            });
+        }
+
         template <std::size_t N>
         float recordDeviationAverage(std::array<float, N>& history, std::size_t& count, std::size_t& next, float sample)
         {
@@ -2264,7 +2293,8 @@ namespace rock
             RE::hknpBodyId primaryBodyId,
             const std::vector<std::uint32_t>& heldBodyIds,
             const HeldObjectPlayerSpaceFrame& playerSpaceFrame,
-            const RE::NiPoint3& previousPlayerSpaceVelocityHavok)
+            const RE::NiPoint3& previousPlayerSpaceVelocityHavok,
+            bool includeConnectedBodies = true)
         {
             HeldMotionCompensationResult result{};
             if (!world) {
@@ -2327,8 +2357,10 @@ namespace rock
             };
 
             sampleBody(primaryBodyId.value);
-            for (const auto bodyId : heldBodyIds) {
-                sampleBody(bodyId);
+            if (includeConnectedBodies) {
+                for (const auto bodyId : heldBodyIds) {
+                    sampleBody(bodyId);
+                }
             }
 
             return result;
@@ -2340,7 +2372,9 @@ namespace rock
             const RE::NiPoint3& linearVelocity,
             const RE::NiPoint3& angularVelocity,
             bool overrideAngularVelocity,
-            float angularVelocityKeep = 1.0f)
+            float angularVelocityKeep = 1.0f,
+            bool includeConnectedLinearVelocity = true,
+            bool includeConnectedAngularVelocity = true)
         {
             if (!world) {
                 return;
@@ -2359,7 +2393,7 @@ namespace rock
                 return false;
             };
 
-            auto setBody = [&](std::uint32_t bodyId) {
+            auto setBody = [&](std::uint32_t bodyId, bool primaryBody) {
                 if (bodyId == INVALID_BODY_ID) {
                     return;
                 }
@@ -2384,19 +2418,26 @@ namespace rock
                 }
 
                 updatedMotionSlots[updatedMotionSlotCount++] = motionIndex;
+                const bool applyLinearForBody = primaryBody || includeConnectedLinearVelocity;
                 const float angularKeep = std::clamp(std::isfinite(angularVelocityKeep) ? angularVelocityKeep : 1.0f, 0.0f, 1.0f);
-                const RE::hkVector4f angularHavok = overrideAngularVelocity ?
+                const bool overrideAngularForBody = overrideAngularVelocity && (primaryBody || includeConnectedAngularVelocity);
+                const RE::hkVector4f linearHavok = applyLinearForBody ?
+                    RE::hkVector4f{ linearVelocity.x, linearVelocity.y, linearVelocity.z, 0.0f } :
+                    RE::hkVector4f{ motion->linearVelocity.x, motion->linearVelocity.y, motion->linearVelocity.z, 0.0f };
+                const RE::hkVector4f angularHavok = overrideAngularForBody ?
                     RE::hkVector4f{ angularVelocity.x, angularVelocity.y, angularVelocity.z, 0.0f } :
                     RE::hkVector4f{ motion->angularVelocity.x * angularKeep, motion->angularVelocity.y * angularKeep, motion->angularVelocity.z * angularKeep, 0.0f };
                 havok_runtime::setBodyVelocityDeferred(world,
                     bodyId,
-                    RE::hkVector4f{ linearVelocity.x, linearVelocity.y, linearVelocity.z, 0.0f },
+                    linearHavok,
                     angularHavok);
             };
 
-            setBody(primaryBodyId.value);
-            for (const auto bodyId : heldBodyIds) {
-                setBody(bodyId);
+            setBody(primaryBodyId.value, true);
+            if (includeConnectedLinearVelocity || includeConnectedAngularVelocity) {
+                for (const auto bodyId : heldBodyIds) {
+                    setBody(bodyId, false);
+                }
             }
         }
 
@@ -2404,15 +2445,17 @@ namespace rock
             RE::hknpBodyId primaryBodyId,
             const std::vector<std::uint32_t>& heldBodyIds,
             const RE::NiPoint3& linearVelocity,
-            float angularVelocityKeep = 1.0f)
+            float angularVelocityKeep = 1.0f,
+            bool includeConnectedBodies = true)
         {
-            setHeldVelocity(world, primaryBodyId, heldBodyIds, linearVelocity, RE::NiPoint3{}, false, angularVelocityKeep);
+            setHeldVelocity(world, primaryBodyId, heldBodyIds, linearVelocity, RE::NiPoint3{}, false, angularVelocityKeep, includeConnectedBodies, false);
         }
 
         std::uint32_t setHeldAngularVelocity(RE::hknpWorld* world,
             RE::hknpBodyId primaryBodyId,
             const std::vector<std::uint32_t>& heldBodyIds,
-            const RE::NiPoint3& angularVelocity)
+            const RE::NiPoint3& angularVelocity,
+            bool includeConnectedBodies = true)
         {
             /*
              * Dynamic grab's angular command must address the same accepted
@@ -2465,8 +2508,10 @@ namespace rock
             };
 
             setBody(primaryBodyId.value);
-            for (const auto bodyId : heldBodyIds) {
-                setBody(bodyId);
+            if (includeConnectedBodies) {
+                for (const auto bodyId : heldBodyIds) {
+                    setBody(bodyId);
+                }
             }
 
             return static_cast<std::uint32_t>(updatedMotionSlotCount);
@@ -2515,7 +2560,8 @@ namespace rock
 
         HeldBodyMassSummary readHeldBodyMassSummary(RE::hknpWorld* world,
             RE::hknpBodyId primaryBodyId,
-            const std::vector<std::uint32_t>& heldBodyIds)
+            const std::vector<std::uint32_t>& heldBodyIds,
+            bool includeConnectedBodies = true)
         {
             /*
              * Dynamic grab owns one held object even when FO4VR exposes that
@@ -2570,8 +2616,10 @@ namespace rock
             };
 
             sampleBody(primaryBodyId.value);
-            for (const auto bodyId : heldBodyIds) {
-                sampleBody(bodyId);
+            if (includeConnectedBodies) {
+                for (const auto bodyId : heldBodyIds) {
+                    sampleBody(bodyId);
+                }
             }
 
             if (!(std::isfinite(summary.aggregateMass) && summary.aggregateMass > 0.0f)) {
@@ -3450,7 +3498,11 @@ namespace rock
         out.heldBodySource = heldBodyFrame.source;
         out.heldMotionIndex = heldBodyFrame.motionIndex;
         out.hasHeldBodyWorld = heldBodyFrame.valid;
-        out.heldBodyMass = readHeldBodyMassSummary(world, _savedObjectState.bodyId, _heldBodyIds).motorMass();
+        out.heldBodyMass = readHeldBodyMassSummary(
+            world,
+            _savedObjectState.bodyId,
+            _heldBodyIds,
+            _heldDriveDecision.includeConnectedMass).motorMass();
 
         RE::NiTransform heldNativeBodyWorld{};
         if (tryGetBodyArrayWorldTransform(world, _savedObjectState.bodyId, heldNativeBodyWorld)) {
@@ -3996,7 +4048,11 @@ namespace rock
             looseWeaponMultiplier(_heldObjectIsLooseWeapon, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier);
         const float sharedBaseMaxForce = scaleDriveValue(g_rockConfig.rockGrabConstraintMaxForce, looseMaxForceMultiplier);
 
-        const auto massSummary = readHeldBodyMassSummary(world, _savedObjectState.bodyId, _heldBodyIds);
+        const auto massSummary = readHeldBodyMassSummary(
+            world,
+            _savedObjectState.bodyId,
+            _heldBodyIds,
+            _heldDriveDecision.includeConnectedMass);
         const auto output = grab_motion_controller::solveMotorTargets(grab_motion_controller::MotorInput{
             .enabled = g_rockConfig.rockGrabAdaptiveMotorEnabled,
             .heldBodyColliding = heldBodyColliding,
@@ -4195,7 +4251,12 @@ namespace rock
         }
 
         outAppliedAngularBodyCount =
-            setHeldAngularVelocity(world, _savedObjectState.bodyId, _heldBodyIds, appliedAngularVelocity);
+            setHeldAngularVelocity(
+                world,
+                _savedObjectState.bodyId,
+                _heldBodyIds,
+                appliedAngularVelocity,
+                _heldDriveDecision.includeConnectedAngularVelocity);
         return outAppliedAngularBodyCount > 0;
     }
 
@@ -4257,13 +4318,15 @@ namespace rock
 
         if (_activeConstraint.isValid() && _grabAuthorityProxy.isValid()) {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
-            _grabAuthorityPendingTarget.authorityForceScale = sharedGrabAuthorityForceScale(true);
+            _grabAuthorityPendingTarget.authorityForceScale =
+                held_object_drive_policy::combineMotorAuthorityScale(sharedGrabAuthorityForceScale(true), _heldDriveDecision);
             ROCK_LOG_DEBUG(Hand,
-                "{} hand peer promotion kept existing proxy constraint drive: formID={:08X} body={} forceBudget={:.2f} reason={}",
+                "{} hand peer promotion kept existing proxy constraint drive: formID={:08X} body={} forceBudget={:.2f} driveMode={} reason={}",
                 handName(),
                 _savedObjectState.refr ? _savedObjectState.refr->GetFormID() : 0,
                 _savedObjectState.bodyId.value,
                 _grabAuthorityPendingTarget.authorityForceScale,
+                held_object_drive_policy::modeName(_heldDriveDecision.mode),
                 reason ? reason : "peer-joined-held-object");
             return true;
         }
@@ -4289,6 +4352,7 @@ namespace rock
         if (!world || _state != HandState::SelectionLocked || !_currentSelection.isValid() || !_currentSelection.isFarSelection) {
             return false;
         }
+        _pullDriveDecision = {};
 
         auto* selectedRef = _currentSelection.refr;
         if (!selectedRef || selectedRef->IsDeleted() || selectedRef->IsDisabled()) {
@@ -4377,9 +4441,10 @@ namespace rock
         };
         const auto preparedBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, selectedRef, scanOptions);
         pullLifecycle.markPreparedBodies(preparedBodySet);
+        _pullDriveDecision = classifyHeldBodySetDrive(beforePrepBodySet, preparedBodySet, pullLifecycle.hasIncompleteNativeScan());
         ROCK_LOG_DEBUG(Hand,
             "{} hand PULL scan: type={} weapon={} name='{}' formID={:08X} seedBody={} beforeBodies={} afterBodies={} accepted={} rejected={} "
-            "seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} collisionObjects={} visitedNodes={}",
+            "seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} collisionObjects={} visitedNodes={} driveMode={} driveReason={} linearScope={} angularScope={}",
             handName(),
             selectedType ? selectedType : "???",
             selectedIsWeapon ? "yes" : "no",
@@ -4398,7 +4463,11 @@ namespace rock
             preparedBodySet.diagnostics.unresolvedRefBodiesAccepted,
             preparedBodySet.diagnostics.unresolvedRefBodySkips,
             preparedBodySet.diagnostics.collisionObjects,
-            preparedBodySet.diagnostics.visitedNodes);
+            preparedBodySet.diagnostics.visitedNodes,
+            held_object_drive_policy::modeName(_pullDriveDecision.mode),
+            _pullDriveDecision.reason,
+            _pullDriveDecision.includeConnectedLinearVelocity ? "bodySet" : "primaryOnly",
+            _pullDriveDecision.includeConnectedAngularVelocity ? "bodySet" : "primaryOnly");
         const RE::NiPoint3 grabPivotAForPrimaryChoice = computeGrabPivotAWorld(world, handWorldTransform);
         const RE::NiPoint3 primaryChoiceTarget = _currentSelection.hasHitPoint ? _currentSelection.hitPointWorld : grabPivotAForPrimaryChoice;
         const auto primaryChoice = preparedBodySet.choosePrimaryBody(_currentSelection.bodyId.value, object_physics_body_set::PurePoint3{ primaryChoiceTarget });
@@ -4424,6 +4493,7 @@ namespace rock
                 collisionEnabled ? "ok" : "failed");
             restoreFailedPullPrep();
             clearSelectionState(true);
+            _pullDriveDecision = {};
             return false;
         }
 
@@ -4510,13 +4580,17 @@ namespace rock
         stopSelectionHighlight();
 
         ROCK_LOG_INFO(Hand,
-            "{} hand PULL start: type={} weapon={} formID={:08X} primaryBody={} bodyCount={} seeded={} scanFailures={} invalidSystems={} benignSkips={} unresolvedAccepted={} distanceHk={:.3f} duration={:.3f}s setMotion={} enableCollision={}",
+            "{} hand PULL start: type={} weapon={} formID={:08X} primaryBody={} bodyCount={} driveMode={} forceScale={:.2f} linearScope={} angularScope={} seeded={} scanFailures={} invalidSystems={} benignSkips={} unresolvedAccepted={} distanceHk={:.3f} duration={:.3f}s setMotion={} enableCollision={}",
             handName(),
             selectedType ? selectedType : "???",
             selectedIsWeapon ? "yes" : "no",
             selectedRef->GetFormID(),
             _pulledPrimaryBodyId,
             _pulledBodyIds.size(),
+            held_object_drive_policy::modeName(_pullDriveDecision.mode),
+            _pullDriveDecision.motorAuthorityScale,
+            _pullDriveDecision.includeConnectedLinearVelocity ? "bodySet" : "primaryOnly",
+            _pullDriveDecision.includeConnectedAngularVelocity ? "bodySet" : "primaryOnly",
             preparedBodySet.diagnostics.seedBodiesAdded,
             preparedBodySet.diagnostics.scanFailures,
             preparedBodySet.diagnostics.invalidPhysicsSystems,
@@ -4643,7 +4717,8 @@ namespace rock
         }
 
         setHeldLinearVelocity(world, RE::hknpBodyId{ _pulledPrimaryBodyId }, _pulledBodyIds, motionResult.velocityHavok,
-            pull_motion_math::angularVelocityKeepForDamping(g_rockConfig.rockPulledAngularDamping, deltaTime));
+            pull_motion_math::angularVelocityKeepForDamping(g_rockConfig.rockPulledAngularDamping, deltaTime),
+            _pullDriveDecision.includeConnectedLinearVelocity);
         for (const auto bodyId : _pulledBodyIds) {
             physics_recursive_wrappers::activateBody(world, bodyId);
         }
@@ -6011,14 +6086,17 @@ namespace rock
         if (_heldBodyIds.empty()) {
             _heldBodyIds.push_back(objectBodyId.value);
         }
+        _heldDriveDecision = classifyHeldBodySetDrive(beforePrepBodySet, preparedBodySet, activeLifecycle.hasIncompleteNativeScan());
         if (adoptedPeerHeldBodySet) {
             ROCK_LOG_DEBUG(Hand,
-                "{} hand SHARED held body set adopted: primaryBody={} peerBodies={} committedBodies={} scanAccepted={}",
+                "{} hand SHARED held body set adopted: primaryBody={} peerBodies={} committedBodies={} scanAccepted={} driveMode={} driveReason={}",
                 handName(),
                 objectBodyId.value,
                 sharedContext.peerHeldBodyIds ? sharedContext.peerHeldBodyIds->size() : 0,
                 _heldBodyIds.size(),
-                preparedBodySet.acceptedCount());
+                preparedBodySet.acceptedCount(),
+                held_object_drive_policy::modeName(_heldDriveDecision.mode),
+                _heldDriveDecision.reason);
         }
 
         {
@@ -6044,6 +6122,7 @@ namespace rock
                     sel.refr ? sel.refr->GetFormID() : 0);
                 _grabFrame.clear();
                 _heldBodyIds.clear();
+                _heldDriveDecision = {};
                 _heldBodyIdsCount.store(0, std::memory_order_release);
                 restoreFailedGrabPrep();
                 return false;
@@ -6333,6 +6412,7 @@ namespace rock
                     _heldObjectIsLooseWeapon = false;
                     _grabFrame.clear();
                     _heldBodyIds.clear();
+                    _heldDriveDecision = {};
                     _heldBodyIdsCount.store(0, std::memory_order_release);
                     _grabFingerPosePublished = false;
                     if (frik::api::FRIKApi::inst && frik::api::FRIKApi::inst->clearHandPose) {
@@ -6694,7 +6774,7 @@ namespace rock
                     tau,
                     damping,
                     maxForce,
-                    sharedGrabAuthorityForceScale(joiningPeerHeldObject),
+                    held_object_drive_policy::combineMotorAuthorityScale(sharedGrabAuthorityForceScale(joiningPeerHeldObject), _heldDriveDecision),
                     proportionalRecovery,
                     constantRecovery,
                     looseWeaponGrab,
@@ -6725,12 +6805,17 @@ namespace rock
             restoreHandCollisionAfterGrab(world);
             _savedObjectState.clear();
             _heldBodyIds.clear();
+            _heldDriveDecision = {};
             _heldObjectIsLooseWeapon = false;
             return false;
         }
 
         _heldObjectIsLooseWeapon = looseWeaponGrab;
-        const auto massSummaryAtGrab = readHeldBodyMassSummary(world, _savedObjectState.bodyId, _heldBodyIds);
+        const auto massSummaryAtGrab = readHeldBodyMassSummary(
+            world,
+            _savedObjectState.bodyId,
+            _heldBodyIds,
+            _heldDriveDecision.includeConnectedMass);
         const float sharedLinearForce = _activeConstraint.linearMotor ?
             (std::max)(std::fabs(_activeConstraint.linearMotor->minForce), std::fabs(_activeConstraint.linearMotor->maxForce)) :
             maxForce;
@@ -6738,9 +6823,15 @@ namespace rock
             (std::max)(std::fabs(_activeConstraint.angularMotor->minForce), std::fabs(_activeConstraint.angularMotor->maxForce)) :
             0.0f;
         ROCK_LOG_DEBUG(Hand,
-            "{} hand dynamic grab created: driveMode={} looseWeapon={} constraint={} proxyBody={} handBody={} objBody={} heldBodies={} mass={:.2f} primaryMass={:.2f} massBodies={} motions={} longLever={:.1f}gu linearTau={:.3f} angularTau={:.3f} linearDamping={:.2f} angularDamping={:.2f} linearForce={:.0f} angularForce={:.0f} propRecov={:.1f} constRecov={:.1f} rotRef={}",
+            "{} hand dynamic grab created: drive={} bodyDriveMode={} driveReason={} forceScale={:.2f} linearScope={} angularScope={} massScope={} looseWeapon={} constraint={} proxyBody={} handBody={} objBody={} heldBodies={} mass={:.2f} primaryMass={:.2f} massBodies={} motions={} longLever={:.1f}gu linearTau={:.3f} angularTau={:.3f} linearDamping={:.2f} angularDamping={:.2f} linearForce={:.0f} angularForce={:.0f} propRecov={:.1f} constRecov={:.1f} rotRef={}",
             handName(),
             kHeldObjectDriveName,
+            held_object_drive_policy::modeName(_heldDriveDecision.mode),
+            _heldDriveDecision.reason,
+            _heldDriveDecision.motorAuthorityScale,
+            _heldDriveDecision.includeConnectedLinearVelocity ? "bodySet" : "primaryOnly",
+            _heldDriveDecision.includeConnectedAngularVelocity ? "bodySet" : "primaryOnly",
+            _heldDriveDecision.includeConnectedMass ? "bodySet" : "primaryOnly",
             _heldObjectIsLooseWeapon ? "yes" : "no",
             _activeConstraint.constraintId,
             _grabAuthorityProxy.isValid() ? _grabAuthorityProxy.getBodyId().value : INVALID_BODY_ID,
@@ -6909,7 +7000,13 @@ namespace rock
 
     void Hand::recordHeldObjectVelocitySample(RE::hknpWorld* world, const HeldObjectPlayerSpaceFrame& playerSpaceFrame)
     {
-        const auto compensationResult = applyHeldMotionCompensation(world, _savedObjectState.bodyId, _heldBodyIds, playerSpaceFrame, _lastPlayerSpaceVelocityHavok);
+        const auto compensationResult = applyHeldMotionCompensation(
+            world,
+            _savedObjectState.bodyId,
+            _heldBodyIds,
+            playerSpaceFrame,
+            _lastPlayerSpaceVelocityHavok,
+            _heldDriveDecision.includeConnectedLinearVelocity);
         if (compensationResult.hasPrimaryVelocity) {
             _heldLocalLinearVelocityHistory[_heldLocalLinearVelocityHistoryNext] = compensationResult.primaryLocalLinearVelocity;
             _heldLocalLinearVelocityHistoryNext = (_heldLocalLinearVelocityHistoryNext + 1) % _heldLocalLinearVelocityHistory.size();
@@ -7083,7 +7180,8 @@ namespace rock
             heldMotorContactSoftening = contactSoftening.soften;
             heldMotorContactReason = contactSoftening.reason;
         }
-        const float authorityForceScale = sharedGrabAuthorityForceScale(releaseContext.peerHandStillHolding);
+        const float authorityForceScale =
+            held_object_drive_policy::combineMotorAuthorityScale(sharedGrabAuthorityForceScale(releaseContext.peerHandStillHolding), _heldDriveDecision);
         if (held_object_physics_math::shouldQueueGrabAuthorityTargetForDelta(deltaTime)) {
             queueProxyGrabAuthorityTarget(
                 proxyAuthorityWorld,
@@ -7731,7 +7829,11 @@ namespace rock
                     heldMetrics.expectedFinger.y, heldMetrics.expectedFinger.z, rootMetrics.finger.x, rootMetrics.finger.y, rootMetrics.finger.z, rootMetrics.expectedFinger.x,
                     rootMetrics.expectedFinger.y, rootMetrics.expectedFinger.z);
 
-                const auto massSummary = readHeldBodyMassSummary(world, _savedObjectState.bodyId, _heldBodyIds);
+                const auto massSummary = readHeldBodyMassSummary(
+                    world,
+                    _savedObjectState.bodyId,
+                    _heldBodyIds,
+                    _heldDriveDecision.includeConnectedMass);
                 ROCK_LOG_TRACE(Hand,
                     "{} GRAB ANGULAR PROBE: rawAxisErr(rowMax={:.2f} colMax={:.2f}) driveErr=({:.2f}gu,{:.2f}deg) mass={:.2f} primaryMass={:.2f} massBodies={} motions={} "
                     "motionDiagVsGrab={:.2f}deg/{:.2f}gu fade={:.2f} fadeEnabled={} fadeReason={} drive={} constraint={} queued={} flushed={} failedFlushes={} lastDt={:.6f}",
@@ -7778,12 +7880,16 @@ namespace rock
             const std::uint32_t heldFormId = _savedObjectState.refr ? _savedObjectState.refr->GetFormID() : 0;
 
             ROCK_LOG_DEBUG(Hand,
-                "{} HELD dynamic: drive={} looseWeapon={} formID={:08X} constraint={} queued={} flushed={} failedFlushes={} lastDt={:.6f} proxyFrame={}/{} "
+                "{} HELD dynamic: drive={} bodyDriveMode={} linearScope={} angularScope={} massScope={} looseWeapon={} formID={:08X} constraint={} queued={} flushed={} failedFlushes={} lastDt={:.6f} proxyFrame={}/{} "
                 "phase={} posePublished={} fade={:.2f}/{} reason={} colliding={} motorContact={} contactReason={} forceBudget={:.2f} longLever={:.1f}gu pivotTrack={:.1f}gu avgTrack={:.1f}gu rotErr={:.1f}deg bDist={:.1f}gu objVel={:.3f} "
                 "paW=({:.1f},{:.1f},{:.1f}) pbW=({:.1f},{:.1f},{:.1f}) "
                 "targetBody=({:.1f},{:.1f},{:.1f}) objW=({:.1f},{:.1f},{:.1f})",
                 handName(),
                 kHeldObjectDriveName,
+                held_object_drive_policy::modeName(_heldDriveDecision.mode),
+                _heldDriveDecision.includeConnectedLinearVelocity ? "bodySet" : "primaryOnly",
+                _heldDriveDecision.includeConnectedAngularVelocity ? "bodySet" : "primaryOnly",
+                _heldDriveDecision.includeConnectedMass ? "bodySet" : "primaryOnly",
                 _heldObjectIsLooseWeapon ? "yes" : "no",
                 heldFormId,
                 _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
@@ -8416,21 +8522,35 @@ namespace rock
             outcome.velocity.linearVelocityHavok = releaseVelocity;
             outcome.velocity.angularVelocityRadiansPerSecond = releaseAngularVelocity;
             outcome.velocity.overrideAngularVelocity = overrideAngularVelocity;
-            for (const auto bodyId : _heldBodyIds) {
-                if (outcome.velocity.bodyCount >= outcome.velocity.bodyIds.size()) {
-                    break;
+            if (_heldDriveDecision.includeConnectedLinearVelocity || _heldDriveDecision.includeConnectedAngularVelocity) {
+                for (const auto bodyId : _heldBodyIds) {
+                    if (outcome.velocity.bodyCount >= outcome.velocity.bodyIds.size()) {
+                        break;
+                    }
+                    outcome.velocity.bodyIds[outcome.velocity.bodyCount++] = bodyId;
                 }
-                outcome.velocity.bodyIds[outcome.velocity.bodyCount++] = bodyId;
             }
 
             const bool applyReleaseVelocity = releaseContext.disposition == GrabReleaseDisposition::PhysicalDrop;
             if (applyReleaseVelocity) {
-                setHeldVelocity(world, _savedObjectState.bodyId, _heldBodyIds, releaseVelocity, releaseAngularVelocity, overrideAngularVelocity);
+                setHeldVelocity(
+                    world,
+                    _savedObjectState.bodyId,
+                    _heldBodyIds,
+                    releaseVelocity,
+                    releaseAngularVelocity,
+                    overrideAngularVelocity,
+                    1.0f,
+                    _heldDriveDecision.includeConnectedLinearVelocity,
+                    _heldDriveDecision.includeConnectedAngularVelocity);
             }
             ROCK_LOG_DEBUG(Hand,
-                "{} hand RELEASE VELOCITY: applied={} handLocal=({:.3f},{:.3f},{:.3f}) objectLocal=({:.3f},{:.3f},{:.3f}) tangent=({:.3f},{:.3f},{:.3f}) angularRaw=({:.3f},{:.3f},{:.3f}) angularFinal=({:.3f},{:.3f},{:.3f}) player=({:.3f},{:.3f},{:.3f}) final=({:.3f},{:.3f},{:.3f}) lever=({:.3f},{:.3f},{:.3f}) objectHistory={} handHistory={} multiplier={:.2f}",
+                "{} hand RELEASE VELOCITY: applied={} driveMode={} linearScope={} angularScope={} handLocal=({:.3f},{:.3f},{:.3f}) objectLocal=({:.3f},{:.3f},{:.3f}) tangent=({:.3f},{:.3f},{:.3f}) angularRaw=({:.3f},{:.3f},{:.3f}) angularFinal=({:.3f},{:.3f},{:.3f}) player=({:.3f},{:.3f},{:.3f}) final=({:.3f},{:.3f},{:.3f}) lever=({:.3f},{:.3f},{:.3f}) objectHistory={} handHistory={} multiplier={:.2f}",
                 handName(),
                 applyReleaseVelocity ? "yes" : "no",
+                held_object_drive_policy::modeName(_heldDriveDecision.mode),
+                _heldDriveDecision.includeConnectedLinearVelocity ? "bodySet" : "primaryOnly",
+                _heldDriveDecision.includeConnectedAngularVelocity ? "bodySet" : "primaryOnly",
                 handLocalReleaseVelocity.x,
                 handLocalReleaseVelocity.y,
                 handLocalReleaseVelocity.z,
@@ -8558,6 +8678,7 @@ namespace rock
         _grabFrame.clear();
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         _grabObjectGripAtGrab = {};
+        _heldDriveDecision = {};
         _heldObjectIsLooseWeapon = false;
         _grabFingerPosePublished = false;
         _grabConvergeStableInsidePocketFrames = 0;
