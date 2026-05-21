@@ -23,6 +23,8 @@ Relevant HIGGS behavior:
 - dynamic grabs use finite linear/angular motor force, not infinite keyframe rotation;
 - angular force follows linear force through `grabConstraintAngularToLinearForceRatio`;
 - colliding objects lerp toward lower tau values;
+- non-actor dynamic grabs keep normal angular tau fixed instead of raising angular
+  tau from hand/object rotation error;
 - grabbed object inverse inertia is clamped by max axis ratio and by `grabbedObjectMinInertia`;
 - pulled objects use high angular damping to prevent uncontrolled spin.
 
@@ -33,12 +35,19 @@ ROCK now keeps held-object angular correction solver-owned through the custom co
 The added logic therefore does not port HIGGS 1:1. It applies HIGGS's stability principles at ROCK's solver authority layer:
 
 - linear position error drives linear tau and linear force;
-- angular rotation error drives angular tau separately;
+- angular tau stays at the configured base value except while contact softening is
+  active, preventing delayed snap-rotation gain changes;
 - weak pivot/contact evidence scales angular motor force and angular damping;
 - compact weak-contact objects receive extra angular softness;
 - weak pivots reduce twist around the pivot-to-COM axis while preserving swing;
 - release angular velocity uses the same weak-pivot twist limiter;
 - grabbed inertia normalization now also applies HIGGS's minimum inertia clamp.
+
+Long-handle classification remains useful as contact-shape telemetry and for
+low-support force authority, but it no longer applies twist/swing axis damping by
+itself. Long-object held feel should come from the selected grip point, mass,
+finite angular force, and normalized inertia tensor rather than a separate
+length-based motor mode.
 
 ## Runtime Implication
 

@@ -58,15 +58,12 @@ namespace rock::grab_motion_controller
         bool heldBodyColliding = false;
 
         float positionErrorGameUnits = 0.0f;
-        float rotationErrorDegrees = 0.0f;
         float fullPositionErrorGameUnits = 20.0f;
-        float fullRotationErrorDegrees = 60.0f;
 
         float baseLinearTau = 0.03f;
         float baseAngularTau = 0.03f;
         float collisionTau = 0.01f;
         float maxTau = 0.8f;
-        float maxAngularTau = 0.35f;
         float currentLinearTau = 0.03f;
         float currentAngularTau = 0.03f;
         float tauLerpSpeed = 0.5f;
@@ -106,15 +103,12 @@ namespace rock::grab_motion_controller
 
     struct MotorOutput
     {
-        float errorFactor = 0.0f;
         float linearErrorFactor = 0.0f;
-        float angularErrorFactor = 0.0f;
         float linearTau = 0.03f;
         float angularTau = 0.03f;
         float linearMaxForce = 0.0f;
         float angularMaxForce = 0.0f;
         float angularAuthorityScale = 1.0f;
-        float angularTauAuthorityScale = 1.0f;
         float angularDampingMultiplier = 1.0f;
         float weakPivotTwistScale = 1.0f;
         float fadeFactor = 1.0f;
@@ -152,7 +146,6 @@ namespace rock::grab_motion_controller
         float swingScale = 1.0f;
         float twistScale = 1.0f;
         float contactNormalScale = 1.0f;
-        float angularTauScale = 1.0f;
         ContactSupportShape contactSupportShape = ContactSupportShape::Unknown;
         bool weakPivot = false;
         bool lowContactSupport = false;
@@ -195,25 +188,10 @@ namespace rock::grab_motion_controller
         return current + (delta > 0.0f ? step : -step);
     }
 
-    inline float computeErrorFactor(float positionErrorGameUnits, float rotationErrorDegrees, float fullPositionErrorGameUnits, float fullRotationErrorDegrees)
-    {
-        const float positionFull = safePositive(fullPositionErrorGameUnits, 20.0f);
-        const float rotationFull = safePositive(fullRotationErrorDegrees, 60.0f);
-        const float positionFactor = clamp01(std::abs(finiteOr(positionErrorGameUnits, 0.0f)) / positionFull);
-        const float rotationFactor = clamp01(std::abs(finiteOr(rotationErrorDegrees, 0.0f)) / rotationFull);
-        return (std::max)(positionFactor, rotationFactor);
-    }
-
     inline float computePositionErrorFactor(float positionErrorGameUnits, float fullPositionErrorGameUnits)
     {
         const float positionFull = safePositive(fullPositionErrorGameUnits, 20.0f);
         return clamp01(std::abs(finiteOr(positionErrorGameUnits, 0.0f)) / positionFull);
-    }
-
-    inline float computeRotationErrorFactor(float rotationErrorDegrees, float fullRotationErrorDegrees)
-    {
-        const float rotationFull = safePositive(fullRotationErrorDegrees, 60.0f);
-        return clamp01(std::abs(finiteOr(rotationErrorDegrees, 0.0f)) / rotationFull);
     }
 
     inline float computeFadeFactor(float elapsed, float duration)
@@ -396,10 +374,7 @@ namespace rock::grab_motion_controller
             output.axisLimited = true;
             break;
         case ContactSupportShape::LongHandle:
-            output.contactSupportScale = (std::min)(output.contactSupportScale, lowContactScale);
-            output.twistScale = (std::min)(output.twistScale, (std::max)(floor, 0.55f));
-            output.swingScale = (std::min)(output.swingScale, (std::max)(floor, 0.85f));
-            output.axisLimited = true;
+            // Length is telemetry here; actual low-support contact is handled before shape-specific rules.
             break;
         case ContactSupportShape::Wrap:
         case ContactSupportShape::Surface:
@@ -411,14 +386,6 @@ namespace rock::grab_motion_controller
             output.pivotQualityScale * output.contactSupportScale * output.smallObjectScale,
             floor,
             1.0f);
-        output.angularTauScale = output.authorityScale;
-        if (output.weakPivot || output.axisLimited || output.weakPivotTwistScale < 0.999f) {
-            output.angularTauScale = (std::min)(output.angularTauScale, output.swingScale);
-            output.angularTauScale = (std::min)(output.angularTauScale, output.twistScale);
-            output.angularTauScale = (std::min)(output.angularTauScale, output.contactNormalScale);
-            output.angularTauScale = (std::min)(output.angularTauScale, output.weakPivotTwistScale);
-        }
-        output.angularTauScale = std::clamp(output.angularTauScale, floor, 1.0f);
         return output;
     }
 
@@ -426,16 +393,10 @@ namespace rock::grab_motion_controller
     {
         AngularAuthorityInput angular{};
         bool heldBodyColliding = false;
-        float positionErrorGameUnits = 0.0f;
-        float rotationErrorDegrees = 0.0f;
-        float fullPositionErrorGameUnits = 20.0f;
-        float fullRotationErrorDegrees = 60.0f;
     };
 
     struct HeldAuthorityState
     {
-        float positionErrorFactor = 0.0f;
-        float rotationErrorFactor = 0.0f;
         bool softenForContact = false;
         AngularAuthorityOutput angular{};
         float releaseAngularVelocityScale = 1.0f;
@@ -572,8 +533,6 @@ namespace rock::grab_motion_controller
     inline HeldAuthorityState evaluateHeldAuthority(const HeldAuthorityInput& input)
     {
         HeldAuthorityState state{};
-        state.positionErrorFactor = computePositionErrorFactor(input.positionErrorGameUnits, input.fullPositionErrorGameUnits);
-        state.rotationErrorFactor = computeRotationErrorFactor(input.rotationErrorDegrees, input.fullRotationErrorDegrees);
         state.softenForContact = input.heldBodyColliding;
         state.angular = computeAngularAuthorityScale(input.angular);
         state.releaseAngularVelocityScale = state.angular.authorityScale;
@@ -796,10 +755,6 @@ namespace rock::grab_motion_controller
                 .longObjectReferenceLeverGameUnits = input.longObjectReferenceLeverGameUnits,
             },
             .heldBodyColliding = input.heldBodyColliding,
-            .positionErrorGameUnits = input.positionErrorGameUnits,
-            .rotationErrorDegrees = input.rotationErrorDegrees,
-            .fullPositionErrorGameUnits = input.fullPositionErrorGameUnits,
-            .fullRotationErrorDegrees = input.fullRotationErrorDegrees,
         };
     }
 
@@ -810,24 +765,24 @@ namespace rock::grab_motion_controller
         const float baseLinearTau = safePositive(input.baseLinearTau, 0.03f);
         const float baseAngularTau = safePositive(input.baseAngularTau, baseLinearTau);
         const float maxTau = (std::max)(baseLinearTau, safePositive(input.maxTau, baseLinearTau));
-        const float maxAngularTau = (std::max)(baseAngularTau, safePositive(input.maxAngularTau, baseAngularTau));
         const float collisionTau = safePositive(input.collisionTau, baseLinearTau);
         if (input.enabled) {
             out.linearErrorFactor = computePositionErrorFactor(input.positionErrorGameUnits, input.fullPositionErrorGameUnits);
-            out.angularErrorFactor = computeRotationErrorFactor(input.rotationErrorDegrees, input.fullRotationErrorDegrees);
-            out.errorFactor = (std::max)(out.linearErrorFactor, out.angularErrorFactor);
         }
 
         const auto& angularAuthority = heldAuthority.angular;
         out.angularAuthorityScale = angularAuthority.authorityScale;
-        out.angularTauAuthorityScale = angularAuthority.angularTauScale;
         out.angularDampingMultiplier = angularAuthority.dampingMultiplier;
         out.weakPivotTwistScale = angularAuthority.weakPivotTwistScale;
 
         const float linearTauTarget = heldAuthority.softenForContact ? collisionTau : baseLinearTau + (maxTau - baseLinearTau) * out.linearErrorFactor;
-        const float angularTauTarget = heldAuthority.softenForContact ?
-            collisionTau :
-            baseAngularTau + (maxAngularTau - baseAngularTau) * out.angularErrorFactor * out.angularTauAuthorityScale;
+        /*
+         * HIGGS-style dynamic grabs do not add a second angular-gain mode when
+         * the hand snaps ahead. Keep angular response on the solver's base tau;
+         * mass-capped angular force and the body's inertia tensor decide how
+         * hard long objects can follow.
+         */
+        const float angularTauTarget = heldAuthority.softenForContact ? collisionTau : baseAngularTau;
         out.linearTau = advanceToward(input.currentLinearTau, linearTauTarget, input.tauLerpSpeed, input.deltaTime);
         out.angularTau = advanceToward(input.currentAngularTau, angularTauTarget, input.tauLerpSpeed, input.deltaTime);
 

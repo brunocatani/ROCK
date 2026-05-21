@@ -275,11 +275,9 @@ namespace rock
         float rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = 1.0f;
         float rockGrabTauMin = 0.01f;
         float rockGrabTauMax = 0.8f;
-        float rockGrabAngularTauMax = 0.35f;
         float rockGrabTauLerpSpeed = 0.5f;
         bool rockGrabAdaptiveMotorEnabled = true;
         float rockGrabAdaptivePositionFullError = 20.0f;
-        float rockGrabAdaptiveRotationFullError = 60.0f;
         float rockGrabAdaptiveMaxForceMultiplier = 1.0f;
         bool rockGrabLongObjectAngularScalingEnabled = true;
         float rockGrabLongObjectReferenceLeverGameUnits = 24.0f;

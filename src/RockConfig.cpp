@@ -50,7 +50,6 @@ namespace
     constexpr float kDefaultGrabThrowMaxAngularVelocityRadiansPerSecond = 18.0f;
     constexpr float kDefaultGrabLongObjectReferenceLeverGameUnits = 24.0f;
     constexpr float kDefaultGrabLongObjectMinAngularScale = 0.35f;
-    constexpr float kDefaultGrabAngularTauMax = 0.35f;
     constexpr float kDefaultGrabPositionOnlyAngularScale = 0.55f;
     constexpr float kDefaultGrabSmallObjectReferenceLeverGameUnits = 12.0f;
     constexpr float kDefaultGrabSmallObjectAngularScale = 0.65f;
@@ -313,11 +312,9 @@ namespace rock
         rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier;
         rockGrabTauMin = 0.01f;
         rockGrabTauMax = 0.8f;
-        rockGrabAngularTauMax = kDefaultGrabAngularTauMax;
         rockGrabTauLerpSpeed = 0.5f;
         rockGrabAdaptiveMotorEnabled = true;
         rockGrabAdaptivePositionFullError = 20.0f;
-        rockGrabAdaptiveRotationFullError = 60.0f;
         rockGrabAdaptiveMaxForceMultiplier = 1.0f;
         rockGrabLongObjectAngularScalingEnabled = true;
         rockGrabLongObjectReferenceLeverGameUnits = kDefaultGrabLongObjectReferenceLeverGameUnits;
@@ -1091,17 +1088,9 @@ namespace rock
 
         rockGrabTauMin = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauMin", rockGrabTauMin));
         rockGrabTauMax = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauMax", rockGrabTauMax));
-        rockGrabAngularTauMax = readClampedFloat(ini,
-            SECTION,
-            "fGrabAngularTauMax",
-            rockGrabAngularTauMax,
-            kDefaultGrabAngularTauMax,
-            0.01f,
-            0.8f);
         rockGrabTauLerpSpeed = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauLerpSpeed", rockGrabTauLerpSpeed));
         rockGrabAdaptiveMotorEnabled = ini.GetBoolValue(SECTION, "bGrabAdaptiveMotorEnabled", rockGrabAdaptiveMotorEnabled);
         rockGrabAdaptivePositionFullError = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAdaptivePositionFullError", rockGrabAdaptivePositionFullError));
-        rockGrabAdaptiveRotationFullError = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAdaptiveRotationFullError", rockGrabAdaptiveRotationFullError));
         rockGrabAdaptiveMaxForceMultiplier = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAdaptiveMaxForceMultiplier", rockGrabAdaptiveMaxForceMultiplier));
         rockGrabLongObjectAngularScalingEnabled = ini.GetBoolValue(SECTION, "bGrabLongObjectAngularScalingEnabled", rockGrabLongObjectAngularScalingEnabled);
         rockGrabLongObjectReferenceLeverGameUnits = static_cast<float>(

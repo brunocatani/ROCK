@@ -109,19 +109,16 @@ int main()
     const auto adaptiveShared = solveMotorTargets(adaptive);
     ok &= expectNear("two hands share adaptive boosted authority", adaptiveShared.linearMaxForce, 4000.0f, 0.001f);
 
-    MotorInput rotationOnly = singleHand;
-    rotationOnly.enabled = true;
-    rotationOnly.rotationErrorDegrees = 60.0f;
-    rotationOnly.fullRotationErrorDegrees = 60.0f;
-    rotationOnly.maxForceMultiplier = 4.0f;
-    rotationOnly.mass = 100.0f;
-    rotationOnly.deltaTime = 1.0f;
-    rotationOnly.tauLerpSpeed = 1.0f;
-    rotationOnly.maxAngularTau = 0.35f;
-    const auto rotationOnlyOutput = solveMotorTargets(rotationOnly);
-    ok &= expectNear("rotation error does not boost linear force", rotationOnlyOutput.linearMaxForce, 2000.0f, 0.001f);
-    ok &= expectNear("rotation error drives angular tau only", rotationOnlyOutput.angularTau, 0.35f, 0.001f);
-    ok &= expectNear("full support leaves angular tau authority uncapped", rotationOnlyOutput.angularTauAuthorityScale, 1.0f, 0.001f);
+    MotorInput angularFixedTau = singleHand;
+    angularFixedTau.enabled = true;
+    angularFixedTau.maxForceMultiplier = 4.0f;
+    angularFixedTau.mass = 100.0f;
+    angularFixedTau.deltaTime = 1.0f;
+    angularFixedTau.tauLerpSpeed = 1.0f;
+    const auto angularFixedTauOutput = solveMotorTargets(angularFixedTau);
+    ok &= expectNear("angular follow does not boost linear force", angularFixedTauOutput.linearMaxForce, 2000.0f, 0.001f);
+    ok &= expectNear("angular follow keeps HIGGS-style tau fixed", angularFixedTauOutput.angularTau, 0.03f, 0.001f);
+    ok &= expectNear("full support leaves angular force authority uncapped", angularFixedTauOutput.angularAuthorityScale, 1.0f, 0.001f);
 
     MotorInput positionOnlyPivot = singleHand;
     positionOnlyPivot.pivotQualityAngularScalingEnabled = true;
@@ -132,20 +129,16 @@ int main()
     positionOnlyPivot.longObjectLeverGameUnits = 8.0f;
     const auto positionOnlyOutput = solveMotorTargets(positionOnlyPivot);
     ok &= expectNear("position-only small weak pivot clamps angular authority", positionOnlyOutput.angularAuthorityScale, 0.30f, 0.001f);
-    ok &= expectNear("position-only small weak pivot caps angular tau growth", positionOnlyOutput.angularTauAuthorityScale, 0.30f, 0.001f);
     ok &= expectNear("position-only small weak pivot reduces angular force", positionOnlyOutput.angularMaxForce, 24.0f, 0.001f);
     ok &= expectNear("weak pivot raises angular damping multiplier", positionOnlyOutput.angularDampingMultiplier, 1.75f, 0.001f);
     ok &= expectNear("weak pivot twist scale propagates", positionOnlyOutput.weakPivotTwistScale, 0.35f, 0.001f);
 
-    MotorInput weakRotationOnly = positionOnlyPivot;
-    weakRotationOnly.enabled = true;
-    weakRotationOnly.rotationErrorDegrees = 60.0f;
-    weakRotationOnly.fullRotationErrorDegrees = 60.0f;
-    weakRotationOnly.deltaTime = 1.0f;
-    weakRotationOnly.tauLerpSpeed = 1.0f;
-    weakRotationOnly.maxAngularTau = 0.35f;
-    const auto weakRotationOnlyOutput = solveMotorTargets(weakRotationOnly);
-    ok &= expectNear("weak support caps adaptive angular tau growth", weakRotationOnlyOutput.angularTau, 0.126f, 0.001f);
+    MotorInput weakAngularFixedTau = positionOnlyPivot;
+    weakAngularFixedTau.enabled = true;
+    weakAngularFixedTau.deltaTime = 1.0f;
+    weakAngularFixedTau.tauLerpSpeed = 1.0f;
+    const auto weakAngularFixedTauOutput = solveMotorTargets(weakAngularFixedTau);
+    ok &= expectNear("weak support still leaves angular tau fixed", weakAngularFixedTauOutput.angularTau, 0.03f, 0.001f);
 
     const auto trustedAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
         .enabled = true,
@@ -158,7 +151,6 @@ int main()
     ok &= expectNear("trusted small sphere-like support softens orientation authority", trustedAuthority.authorityScale, 0.65f, 0.001f);
     ok &= expectTrue("trusted small support classifies as sphere-like", trustedAuthority.contactSupportShape == ContactSupportShape::SphereLike);
     ok &= expectNear("sphere-like support limits contact-normal spin", trustedAuthority.contactNormalScale, 0.30f, 0.001f);
-    ok &= expectNear("sphere-like support caps angular tau to contact-normal authority", trustedAuthority.angularTauScale, 0.30f, 0.001f);
 
     const auto lowSupportAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
         .enabled = true,
@@ -171,7 +163,6 @@ int main()
     ok &= expectNear("small low-support contact softens angular authority", lowSupportAuthority.authorityScale, 0.4225f, 0.001f);
     ok &= expectNear("trusted low-support contact does not raise damping", lowSupportAuthority.dampingMultiplier, 1.0f, 0.001f);
     ok &= expectTrue("single-hit small support is sphere-like not surface-authoritative", lowSupportAuthority.contactSupportShape == ContactSupportShape::SphereLike);
-    ok &= expectNear("single-hit small support still caps angular tau", lowSupportAuthority.angularTauScale, 0.30f, 0.001f);
 
     const auto rejectedPatchAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
         .enabled = true,
@@ -193,7 +184,6 @@ int main()
     });
     ok &= expectTrue("trusted single-point support classifies as point", trustedPointAuthority.contactSupportShape == ContactSupportShape::Point);
     ok &= expectNear("trusted point limits twist around grab point", trustedPointAuthority.twistScale, 0.35f, 0.001f);
-    ok &= expectNear("trusted point caps angular tau to pivot twist authority", trustedPointAuthority.angularTauScale, 0.35f, 0.001f);
 
     const Vec3 twistLimited = scaleWeakPivotTwistAngularVelocity(Vec3{ 1.0f, 2.0f, 3.0f }, Vec3{ 0.0f, 0.0f, 2.0f }, true, 0.25f);
     ok &= expectNear("weak pivot twist preserves swing x", twistLimited.x, 1.0f, 0.001f);
@@ -211,8 +201,20 @@ int main()
     });
     ok &= expectTrue("two-hit long object classifies as long handle", longHandleAuthority.contactSupportShape == ContactSupportShape::LongHandle);
     ok &= expectNear("long handle applies line-support authority", longHandleAuthority.authorityScale, 0.75f, 0.001f);
-    ok &= expectNear("long handle limits twist axis", longHandleAuthority.twistScale, 0.55f, 0.001f);
-    ok &= expectNear("long handle caps angular tau to handle twist authority", longHandleAuthority.angularTauScale, 0.55f, 0.001f);
+    ok &= expectNear("long handle does not fake twist damping", longHandleAuthority.twistScale, 1.0f, 0.001f);
+    ok &= expectFalse("long handle alone is not axis-limited", longHandleAuthority.axisLimited);
+
+    const auto unsupportedLongHandleAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
+        .enabled = true,
+        .positionOnlyPivot = false,
+        .normalTrusted = true,
+        .contactPatchUsedAsPivot = false,
+        .contactPatchSampleCount = 0,
+        .longObjectLeverGameUnits = 72.0f,
+        .longObjectReferenceLeverGameUnits = 24.0f,
+    });
+    ok &= expectTrue("unsupported long object still reports long handle shape", unsupportedLongHandleAuthority.contactSupportShape == ContactSupportShape::LongHandle);
+    ok &= expectNear("long object length alone does not reduce authority", unsupportedLongHandleAuthority.authorityScale, 1.0f, 0.001f);
 
     const Vec3 axisLimited = scaleAngularVelocityByHeldAuthorityAxes(
         Vec3{ 10.0f, 6.0f, 4.0f },
@@ -239,13 +241,7 @@ int main()
             .longObjectLeverGameUnits = 8.0f,
         },
         .heldBodyColliding = false,
-        .positionErrorGameUnits = 20.0f,
-        .rotationErrorDegrees = 60.0f,
-        .fullPositionErrorGameUnits = 20.0f,
-        .fullRotationErrorDegrees = 60.0f,
     });
-    ok &= expectNear("held authority records position error factor", weakHeldAuthority.positionErrorFactor, 1.0f, 0.001f);
-    ok &= expectNear("held authority records rotation error factor", weakHeldAuthority.rotationErrorFactor, 1.0f, 0.001f);
     ok &= expectNear("weak held authority gates release angular velocity", weakHeldAuthority.releaseAngularVelocityScale, 0.30f, 0.001f);
 
     const auto contactHeldAuthority = evaluateHeldAuthority(HeldAuthorityInput{

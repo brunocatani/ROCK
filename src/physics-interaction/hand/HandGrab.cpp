@@ -472,17 +472,11 @@ namespace rock
 
         grab_motion_controller::HeldAuthorityState evaluateRuntimeHeldAuthority(
             const CanonicalGrabFrame& frame,
-            bool heldBodyContactSoftening,
-            float positionErrorGameUnits,
-            float rotationErrorDegrees)
+            bool heldBodyContactSoftening)
         {
             return grab_motion_controller::evaluateHeldAuthority(grab_motion_controller::HeldAuthorityInput{
                 .angular = makeAngularAuthorityInput(frame),
                 .heldBodyColliding = heldBodyContactSoftening,
-                .positionErrorGameUnits = positionErrorGameUnits,
-                .rotationErrorDegrees = rotationErrorDegrees,
-                .fullPositionErrorGameUnits = g_rockConfig.rockGrabAdaptivePositionFullError,
-                .fullRotationErrorDegrees = g_rockConfig.rockGrabAdaptiveRotationFullError,
             });
         }
 
@@ -4067,7 +4061,6 @@ namespace rock
         float forceFadeInTime,
         float tauMin,
         float grabPositionErrorGameUnits,
-        float grabRotationErrorDegrees,
         float authorityForceScale,
         bool heldBodyColliding,
         const grab_motion_controller::HeldAuthorityState& heldAuthority)
@@ -4105,14 +4098,11 @@ namespace rock
             .enabled = g_rockConfig.rockGrabAdaptiveMotorEnabled,
             .heldBodyColliding = heldBodyColliding,
             .positionErrorGameUnits = grabPositionErrorGameUnits,
-            .rotationErrorDegrees = grabRotationErrorDegrees,
             .fullPositionErrorGameUnits = g_rockConfig.rockGrabAdaptivePositionFullError,
-            .fullRotationErrorDegrees = g_rockConfig.rockGrabAdaptiveRotationFullError,
             .baseLinearTau = scaleDriveValue(g_rockConfig.rockGrabLinearTau, looseLinearTauMultiplier),
             .baseAngularTau = scaleDriveValue(g_rockConfig.rockGrabAngularTau, looseAngularTauMultiplier),
             .collisionTau = scaleDriveValue(tauMin, looseCollisionTauMultiplier),
             .maxTau = g_rockConfig.rockGrabTauMax,
-            .maxAngularTau = g_rockConfig.rockGrabAngularTauMax,
             .currentLinearTau = _activeConstraint.linearMotor->tau,
             .currentAngularTau = _activeConstraint.angularMotor->tau,
             .tauLerpSpeed = g_rockConfig.rockGrabTauLerpSpeed,
@@ -7184,9 +7174,7 @@ namespace rock
         (void)refreshHeldAuthoritySupport(world, handWorldTransform, proxyAuthorityWorld, activePivotBBodyLocalGame);
         const auto heldAuthority = evaluateRuntimeHeldAuthority(
             _grabFrame,
-            heldMotorContactSoftening,
-            pivotTrackingErrorGameUnits,
-            grabRotationErrorDegrees);
+            heldMotorContactSoftening);
         const auto& heldAngularAuthority = heldAuthority.angular;
         const auto visualPublishDecision = grab_motion_controller::evaluateVisualHandPublishGate(
             grab_motion_controller::VisualHandPublishInput{
@@ -8017,16 +8005,13 @@ namespace rock
                 } else {
                     const auto pendingHeldAuthority = evaluateRuntimeHeldAuthority(
                         _grabFrame,
-                        pending.heldBodyColliding,
-                        pending.grabPositionErrorGameUnits,
-                        pending.grabRotationErrorDegrees);
+                        pending.heldBodyColliding);
                     updateConstraintGrabDriveMotors(
                         world,
                         driveDelta,
                         pending.forceFadeInTime,
                         pending.tauMin,
                         pending.grabPositionErrorGameUnits,
-                        pending.grabRotationErrorDegrees,
                         pending.authorityForceScale,
                         pending.heldBodyColliding,
                         pendingHeldAuthority);
@@ -8423,9 +8408,7 @@ namespace rock
                 classifyHeldContactOtherMotion(world, releaseContactSnapshot.otherBodyId) != held_object_contact_policy::HeldContactOtherMotion::Dynamic;
             const auto releaseAuthority = evaluateRuntimeHeldAuthority(
                 _grabFrame,
-                releaseContactSoftening,
-                0.0f,
-                0.0f);
+                releaseContactSoftening);
             const auto& angularAuthority = releaseAuthority.angular;
             const float releaseLongObjectAngularScale = grab_motion_controller::computeLongObjectAngularSpeedScale(
                 g_rockConfig.rockGrabLongObjectAngularScalingEnabled,
