@@ -912,7 +912,9 @@ namespace rock
         body_frame::BodyFrameSource source = body_frame::BodyFrameSource::Fallback;
         std::uint32_t motionIndex = body_frame::kFreeMotionIndex;
         RE::NiTransform livePalmWorld{};
-        if (!tryResolveLiveBodyWorldTransform(world, _handBody.getBodyId(), livePalmWorld, &source, &motionIndex)) {
+        if (havok_runtime::tryGetBodyArrayWorldTransform(world, _handBody.getBodyId(), livePalmWorld)) {
+            source = body_frame::BodyFrameSource::BodyTransform;
+        } else if (!tryResolveLiveBodyWorldTransform(world, _handBody.getBodyId(), livePalmWorld, &source, &motionIndex)) {
             return false;
         }
 
@@ -941,14 +943,9 @@ namespace rock
 
     RE::NiPoint3 Hand::computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const
     {
-        LivePalmAnchorReference palmReference{};
-        if (tryResolveLivePalmAnchorReference(world, palmReference) &&
-            std::isfinite(palmReference.world.translate.x) &&
-            std::isfinite(palmReference.world.translate.y) &&
-            std::isfinite(palmReference.world.translate.z)) {
-            const RE::NiTransform proxyBaseWorld =
-                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-            return applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft).translate;
+        RE::NiPoint3 rawSemanticPalmPocketPivotWorld{};
+        if (tryComputeGrabRawRollPalmPocketPivotAWorld(world, fallbackHandWorldTransform, rawSemanticPalmPocketPivotWorld)) {
+            return rawSemanticPalmPocketPivotWorld;
         }
 
         return fallbackHandWorldTransform.translate;
@@ -965,11 +962,11 @@ namespace rock
             std::isfinite(palmReference.world.translate.x) &&
             std::isfinite(palmReference.world.translate.y) &&
             std::isfinite(palmReference.world.translate.z)) {
-            const RE::NiTransform palmAuthorityBaseWorld =
-                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-            const RE::NiTransform startupCaptureFrameWorld =
-                makeGrabStartupCaptureAuthorityFrame(rawHandWorldTransform, palmAuthorityBaseWorld);
-            outPivotWorld = applyGrabAuthorityProxyLocalOffsetToFrame(startupCaptureFrameWorld, _isLeft).translate;
+            const RE::NiTransform proxyFrameWorld = makeGrabAuthorityProxyFrameFromSemanticPalmPocket(
+                rawHandWorldTransform,
+                palmReference.world.translate,
+                _isLeft);
+            outPivotWorld = proxyFrameWorld.translate;
             return std::isfinite(outPivotWorld.x) && std::isfinite(outPivotWorld.y) && std::isfinite(outPivotWorld.z);
         }
 
@@ -983,7 +980,7 @@ namespace rock
             return rawRollPalmPocketPivotWorld;
         }
 
-        return applyGrabAuthorityProxyLocalOffsetToFrame(rawHandWorldTransform, _isLeft).translate;
+        return rawHandWorldTransform.translate;
     }
 
     bool Hand::getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const
@@ -1004,12 +1001,8 @@ namespace rock
             return false;
         }
 
-        const RE::NiTransform palmAuthorityBaseWorld =
-            hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-        out.palmAuthorityBaseWorld = palmAuthorityBaseWorld;
-        const RE::NiTransform startupCaptureFrameWorld =
-            makeGrabStartupCaptureAuthorityFrame(rawHandWorld, palmAuthorityBaseWorld);
-        out.proxyTargetWorld = applyGrabAuthorityProxyLocalOffsetToFrame(startupCaptureFrameWorld, _isLeft);
+        out.palmAuthorityBaseWorld = makeGrabAuthoritySemanticPalmBaseFrame(rawHandWorld, palmReference.world.translate, _isLeft);
+        out.proxyTargetWorld = makeGrabAuthorityProxyFrameFromSemanticPalmPocket(rawHandWorld, palmReference.world.translate, _isLeft);
         out.localOffsetGameUnits = computeGrabAuthorityProxyOffsetLocalGame(_isLeft);
         out.palmSource = palmReference.source;
         out.palmMotionIndex = palmReference.motionIndex;

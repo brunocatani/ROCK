@@ -165,22 +165,127 @@ namespace rock
         return isLeft ? g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits : g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits;
     }
 
-    inline RE::NiTransform makeGrabStartupCaptureAuthorityFrame(const RE::NiTransform& rawHandWorld, const RE::NiTransform& palmAnchorWorld)
+    inline float grabAuthorityFrameLengthSquared(const RE::NiPoint3& value)
     {
-        /*
-         * Grab startup has a narrower problem than runtime held motion: the
-         * configured proxy-local seat offset must be interpreted in controller
-         * space when choosing and freezing the first pivot point. The actual
-         * hidden proxy body still follows the existing generated palm frame
-         * after the grab is live, so do not use this helper for held updates.
-         */
-        RE::NiTransform result = palmAnchorWorld;
-        result.rotate = rawHandWorld.rotate;
-        result.scale = rawHandWorld.scale;
-        return result;
+        return value.x * value.x + value.y * value.y + value.z * value.z;
     }
 
-    inline RE::NiTransform applyGrabAuthorityProxyLocalOffsetToFrame(const RE::NiTransform& proxyFrameWorld, bool isLeft)
+    inline float grabAuthorityFrameDot(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
+    {
+        return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
+    }
+
+    inline RE::NiPoint3 grabAuthorityFrameCross(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
+    {
+        return RE::NiPoint3{
+            lhs.y * rhs.z - lhs.z * rhs.y,
+            lhs.z * rhs.x - lhs.x * rhs.z,
+            lhs.x * rhs.y - lhs.y * rhs.x,
+        };
+    }
+
+    inline RE::NiPoint3 grabAuthorityFrameNormalizeOrFallback(const RE::NiPoint3& value, const RE::NiPoint3& fallback)
+    {
+        const float lengthSquared = grabAuthorityFrameLengthSquared(value);
+        if (std::isfinite(lengthSquared) && lengthSquared > 1.0e-6f) {
+            const float inverseLength = 1.0f / std::sqrt(lengthSquared);
+            return RE::NiPoint3{ value.x * inverseLength, value.y * inverseLength, value.z * inverseLength };
+        }
+
+        const float fallbackLengthSquared = grabAuthorityFrameLengthSquared(fallback);
+        if (std::isfinite(fallbackLengthSquared) && fallbackLengthSquared > 1.0e-6f) {
+            const float inverseLength = 1.0f / std::sqrt(fallbackLengthSquared);
+            return RE::NiPoint3{ fallback.x * inverseLength, fallback.y * inverseLength, fallback.z * inverseLength };
+        }
+
+        return RE::NiPoint3{ 0.0f, 0.0f, 1.0f };
+    }
+
+    inline RE::NiPoint3 grabAuthorityFrameRejectFromAxis(const RE::NiPoint3& value, const RE::NiPoint3& axis)
+    {
+        return value - axis * grabAuthorityFrameDot(value, axis);
+    }
+
+    inline RE::NiPoint3 grabAuthorityFrameOrientToward(const RE::NiPoint3& value, const RE::NiPoint3& reference)
+    {
+        return grabAuthorityFrameDot(value, reference) < 0.0f ? RE::NiPoint3{ -value.x, -value.y, -value.z } : value;
+    }
+
+    struct GrabAuthoritySemanticPalmFrame
+    {
+        RE::NiTransform rawRotationPalmTranslationWorld{};
+        RE::NiPoint3 palmFaceWorld{};
+        RE::NiPoint3 fingerForwardWorld{};
+        RE::NiPoint3 acrossPalmWorld{};
+        bool valid = false;
+    };
+
+    inline bool isFiniteGrabAuthorityPoint(const RE::NiPoint3& value)
+    {
+        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+    }
+
+    inline GrabAuthoritySemanticPalmFrame buildGrabAuthoritySemanticPalmFrame(
+        const RE::NiTransform& rawHandWorld,
+        const RE::NiPoint3& palmAnchorWorld,
+        bool isLeft)
+    {
+        /*
+         * Hidden grab authority uses the generated palm anchor only as a
+         * translation source. Rotation and authored offset semantics come from
+         * the root-flattened raw hand frame, using the same projected palm frame
+         * as palm-pocket acquisition: X=fingers, Y=palm depth, Z=across palm.
+         */
+        GrabAuthoritySemanticPalmFrame frame{};
+        frame.rawRotationPalmTranslationWorld = rawHandWorld;
+        frame.rawRotationPalmTranslationWorld.translate = palmAnchorWorld;
+
+        frame.palmFaceWorld =
+            grabAuthorityFrameNormalizeOrFallback(computePalmNormalFromHandBasis(rawHandWorld, isLeft), RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+        const RE::NiPoint3 rawFingerForwardWorld =
+            grabAuthorityFrameNormalizeOrFallback(transformHandspaceDirection(rawHandWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, isLeft), RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+        const RE::NiPoint3 rawAcrossPalmWorld =
+            grabAuthorityFrameNormalizeOrFallback(transformHandspaceDirection(rawHandWorld, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, isLeft), RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+
+        const RE::NiPoint3 fallbackFingerForwardWorld =
+            grabAuthorityFrameOrientToward(
+                grabAuthorityFrameNormalizeOrFallback(grabAuthorityFrameCross(rawAcrossPalmWorld, frame.palmFaceWorld), rawFingerForwardWorld),
+                rawFingerForwardWorld);
+        frame.fingerForwardWorld =
+            grabAuthorityFrameOrientToward(
+                grabAuthorityFrameNormalizeOrFallback(grabAuthorityFrameRejectFromAxis(rawFingerForwardWorld, frame.palmFaceWorld), fallbackFingerForwardWorld),
+                rawFingerForwardWorld);
+
+        RE::NiPoint3 acrossCandidate = grabAuthorityFrameRejectFromAxis(rawAcrossPalmWorld, frame.palmFaceWorld);
+        acrossCandidate = grabAuthorityFrameRejectFromAxis(acrossCandidate, frame.fingerForwardWorld);
+        const RE::NiPoint3 fallbackAcrossPalmWorld =
+            grabAuthorityFrameOrientToward(
+                grabAuthorityFrameNormalizeOrFallback(grabAuthorityFrameCross(frame.palmFaceWorld, frame.fingerForwardWorld), rawAcrossPalmWorld),
+                rawAcrossPalmWorld);
+        frame.acrossPalmWorld =
+            grabAuthorityFrameOrientToward(grabAuthorityFrameNormalizeOrFallback(acrossCandidate, fallbackAcrossPalmWorld), rawAcrossPalmWorld);
+
+        frame.valid =
+            isFiniteGrabAuthorityPoint(frame.rawRotationPalmTranslationWorld.translate) &&
+            isFiniteGrabAuthorityPoint(frame.palmFaceWorld) &&
+            isFiniteGrabAuthorityPoint(frame.fingerForwardWorld) &&
+            isFiniteGrabAuthorityPoint(frame.acrossPalmWorld) &&
+            std::isfinite(frame.rawRotationPalmTranslationWorld.scale);
+        return frame;
+    }
+
+    inline RE::NiTransform makeGrabAuthoritySemanticPalmBaseFrame(
+        const RE::NiTransform& rawHandWorld,
+        const RE::NiPoint3& palmAnchorWorld,
+        bool isLeft)
+    {
+        return buildGrabAuthoritySemanticPalmFrame(rawHandWorld, palmAnchorWorld, isLeft).rawRotationPalmTranslationWorld;
+    }
+
+    inline RE::NiTransform makeGrabAuthorityProxyFrameFromSemanticPalmPocket(
+        const RE::NiTransform& rawHandWorld,
+        const RE::NiPoint3& palmAnchorWorld,
+        bool isLeft)
     {
         /*
          * This moves only the hidden grab authority proxy/seat point. The real
@@ -188,10 +293,19 @@ namespace rock
          * so contact evidence and collision behavior are not retuned by visual
          * hand placement experiments.
          */
-        RE::NiTransform result = proxyFrameWorld;
+        const GrabAuthoritySemanticPalmFrame frame = buildGrabAuthoritySemanticPalmFrame(rawHandWorld, palmAnchorWorld, isLeft);
+        RE::NiTransform result = frame.rawRotationPalmTranslationWorld;
         const RE::NiPoint3 localOffset = computeGrabAuthorityProxyOffsetLocalGame(isLeft);
-        if (std::isfinite(localOffset.x) && std::isfinite(localOffset.y) && std::isfinite(localOffset.z)) {
-            result.translate = result.translate + transform_math::localVectorToWorld(proxyFrameWorld, localOffset);
+        if (frame.valid && std::isfinite(localOffset.x) && std::isfinite(localOffset.y) && std::isfinite(localOffset.z)) {
+            const float scale = std::isfinite(rawHandWorld.scale) ? rawHandWorld.scale : 1.0f;
+            const RE::NiPoint3 palmDepthWorld{
+                -frame.palmFaceWorld.x,
+                -frame.palmFaceWorld.y,
+                -frame.palmFaceWorld.z,
+            };
+            const RE::NiPoint3 offsetWorld =
+                (frame.fingerForwardWorld * localOffset.x + palmDepthWorld * localOffset.y + frame.acrossPalmWorld * localOffset.z) * scale;
+            result.translate = result.translate + offsetWorld;
         }
         return result;
     }

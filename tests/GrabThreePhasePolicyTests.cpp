@@ -101,6 +101,46 @@ int main()
     ok &= expectNear("raw-roll pocket projects thumb side off palm normal", pointDot(identityPocket.thumbSideWorld, identityPocket.palmNormalWorld), 0.0f, 0.001f);
     ok &= expectNear("raw-roll pocket keeps tangent and bitangent orthogonal", pointDot(identityPocket.fingerForwardWorld, identityPocket.thumbSideWorld), 0.0f, 0.001f);
 
+    const RE::NiPoint3 savedRightProxyOffset = rock::g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits;
+    const RE::NiPoint3 savedLeftProxyOffset = rock::g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits;
+    rock::g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3{ 0.0f, -2.0f, 0.0f };
+    rock::g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3{ 0.0f, -2.0f, 0.0f };
+    const auto rightSemanticProxy = rock::makeGrabAuthorityProxyFrameFromSemanticPalmPocket(
+        identityHand,
+        RE::NiPoint3{ 10.0f, 20.0f, 30.0f },
+        false);
+    const auto leftSemanticProxy = rock::makeGrabAuthorityProxyFrameFromSemanticPalmPocket(
+        identityHand,
+        RE::NiPoint3{ 10.0f, 20.0f, 30.0f },
+        true);
+    ok &= expectNear("right semantic proxy Y=-2 moves palm-side X", rightSemanticProxy.translate.x, 10.0f, 0.001f);
+    ok &= expectNear("right semantic proxy Y=-2 moves palm-side Y", rightSemanticProxy.translate.y, 18.0f, 0.001f);
+    ok &= expectNear("right semantic proxy Y=-2 moves palm-side Z", rightSemanticProxy.translate.z, 30.0f, 0.001f);
+    ok &= expectNear("left semantic proxy Y=-2 matches right palm-side X", leftSemanticProxy.translate.x, rightSemanticProxy.translate.x, 0.001f);
+    ok &= expectNear("left semantic proxy Y=-2 matches right palm-side Y", leftSemanticProxy.translate.y, rightSemanticProxy.translate.y, 0.001f);
+    ok &= expectNear("left semantic proxy Y=-2 matches right palm-side Z", leftSemanticProxy.translate.z, rightSemanticProxy.translate.z, 0.001f);
+
+    RE::NiTransform rotatedHand = identityHand;
+    rotatedHand.rotate.entry[0][0] = 0.0f;
+    rotatedHand.rotate.entry[0][1] = 1.0f;
+    rotatedHand.rotate.entry[0][2] = 0.0f;
+    rotatedHand.rotate.entry[1][0] = -1.0f;
+    rotatedHand.rotate.entry[1][1] = 0.0f;
+    rotatedHand.rotate.entry[1][2] = 0.0f;
+    rotatedHand.rotate.entry[2][0] = 0.0f;
+    rotatedHand.rotate.entry[2][1] = 0.0f;
+    rotatedHand.rotate.entry[2][2] = 1.0f;
+    const auto rotatedSemanticProxy = rock::makeGrabAuthorityProxyFrameFromSemanticPalmPocket(
+        rotatedHand,
+        RE::NiPoint3{ 10.0f, 20.0f, 30.0f },
+        true);
+    ok &= expectNear("semantic proxy preserves raw rotation 00", rotatedSemanticProxy.rotate.entry[0][0], rotatedHand.rotate.entry[0][0], 0.001f);
+    ok &= expectNear("semantic proxy preserves raw rotation 01", rotatedSemanticProxy.rotate.entry[0][1], rotatedHand.rotate.entry[0][1], 0.001f);
+    ok &= expectNear("semantic proxy preserves raw rotation 10", rotatedSemanticProxy.rotate.entry[1][0], rotatedHand.rotate.entry[1][0], 0.001f);
+    ok &= expectNear("semantic proxy preserves raw rotation 11", rotatedSemanticProxy.rotate.entry[1][1], rotatedHand.rotate.entry[1][1], 0.001f);
+    rock::g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits = savedRightProxyOffset;
+    rock::g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits = savedLeftProxyOffset;
+
     const auto closeSelection = classifyAcquisitionPhase(PhaseClassificationInput{
         .pocket = makePocket(),
         .gripSeedWorld = RE::NiPoint3{ 1.0f, 0.0f, 1.0f },
