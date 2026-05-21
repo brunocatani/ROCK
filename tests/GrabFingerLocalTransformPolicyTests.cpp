@@ -208,23 +208,31 @@ int main()
         resolvedPose.surfaceAimNormal[0],
         RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
 
-    SolvedGrabFingerPose thumbCurveOnly{};
-    thumbCurveOnly.usedAlternateThumbSurfaceHit = true;
-    thumbCurveOnly.surfaceAimTargetValid[0] = 1;
-    thumbCurveOnly.surfaceAimNormalValid[0] = 1;
-    thumbCurveOnly.surfaceAimTargetObjectLocalValid[0] = 1;
-    thumbCurveOnly.surfaceAimNormalObjectLocalValid[0] = 1;
-    thumbCurveOnly.surfaceAimTargetObjectLocalValid[1] = 1;
-    thumbCurveOnly.hasObjectLocalSurfaceAim = true;
-    useThumbCurveOnlyPose(thumbCurveOnly);
-    ok &= expectBool("curve-only thumb disables thumb surface follow",
-        thumbCurveOnly.thumbSurfaceFollowAllowed, false);
-    ok &= expectBool("curve-only thumb clears raw surface target",
-        thumbCurveOnly.surfaceAimTargetValid[0] == 0, true);
-    ok &= expectBool("curve-only thumb clears object-local target",
-        thumbCurveOnly.surfaceAimTargetObjectLocalValid[0] == 0, true);
-    ok &= expectBool("curve-only thumb preserves non-thumb object-local aim state",
-        thumbCurveOnly.hasObjectLocalSurfaceAim, true);
+    SolvedGrabFingerPose thumbIndexCurveOnly{};
+    thumbIndexCurveOnly.usedAlternateThumbSurfaceHit = true;
+    thumbIndexCurveOnly.surfaceAimTargetValid[0] = 1;
+    thumbIndexCurveOnly.surfaceAimNormalValid[0] = 1;
+    thumbIndexCurveOnly.surfaceAimTargetValid[1] = 1;
+    thumbIndexCurveOnly.surfaceAimNormalValid[1] = 1;
+    thumbIndexCurveOnly.surfaceAimTargetObjectLocalValid[0] = 1;
+    thumbIndexCurveOnly.surfaceAimNormalObjectLocalValid[0] = 1;
+    thumbIndexCurveOnly.surfaceAimTargetObjectLocalValid[1] = 1;
+    thumbIndexCurveOnly.surfaceAimNormalObjectLocalValid[1] = 1;
+    thumbIndexCurveOnly.surfaceAimTargetObjectLocalValid[2] = 1;
+    thumbIndexCurveOnly.hasObjectLocalSurfaceAim = true;
+    useThumbIndexCurveOnlyPose(thumbIndexCurveOnly);
+    ok &= expectBool("curve-only thumb-index disables thumb surface follow",
+        thumbIndexCurveOnly.thumbSurfaceFollowAllowed, false);
+    ok &= expectBool("curve-only thumb-index clears thumb raw surface target",
+        thumbIndexCurveOnly.surfaceAimTargetValid[0] == 0, true);
+    ok &= expectBool("curve-only thumb-index clears index raw surface target",
+        thumbIndexCurveOnly.surfaceAimTargetValid[1] == 0, true);
+    ok &= expectBool("curve-only thumb-index clears thumb object-local target",
+        thumbIndexCurveOnly.surfaceAimTargetObjectLocalValid[0] == 0, true);
+    ok &= expectBool("curve-only thumb-index clears index object-local target",
+        thumbIndexCurveOnly.surfaceAimTargetObjectLocalValid[1] == 0, true);
+    ok &= expectBool("curve-only thumb-index preserves other object-local aim state",
+        thumbIndexCurveOnly.hasObjectLocalSurfaceAim, true);
 
     return ok ? 0 : 1;
 }

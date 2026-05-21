@@ -833,20 +833,22 @@ namespace rock::grab_finger_pose_runtime
         }
     }
 
-    inline void useThumbCurveOnlyPose(SolvedGrabFingerPose& pose)
+    inline void useThumbIndexCurveOnlyPose(SolvedGrabFingerPose& pose)
     {
         pose.thumbSurfaceFollowAllowed = false;
         pose.usedAlternateThumbSurfaceHit = false;
-        pose.surfaceAimTargetValid[0] = 0;
-        pose.surfaceAimNormalValid[0] = 0;
-        pose.surfaceAimTargetObjectLocalValid[0] = 0;
-        pose.surfaceAimNormalObjectLocalValid[0] = 0;
-        pose.surfaceAimTarget[0] = {};
-        pose.surfaceAimNormal[0] = {};
-        pose.surfaceAimTargetObjectLocal[0] = {};
-        pose.surfaceAimNormalObjectLocal[0] = {};
+        for (std::size_t finger = 0; finger < 2 && finger < pose.surfaceAimTargetValid.size(); ++finger) {
+            pose.surfaceAimTargetValid[finger] = 0;
+            pose.surfaceAimNormalValid[finger] = 0;
+            pose.surfaceAimTargetObjectLocalValid[finger] = 0;
+            pose.surfaceAimNormalObjectLocalValid[finger] = 0;
+            pose.surfaceAimTarget[finger] = {};
+            pose.surfaceAimNormal[finger] = {};
+            pose.surfaceAimTargetObjectLocal[finger] = {};
+            pose.surfaceAimNormalObjectLocal[finger] = {};
+        }
         pose.hasObjectLocalSurfaceAim = false;
-        for (std::size_t finger = 1; finger < pose.surfaceAimTargetObjectLocalValid.size(); ++finger) {
+        for (std::size_t finger = 2; finger < pose.surfaceAimTargetObjectLocalValid.size(); ++finger) {
             if (pose.surfaceAimTargetObjectLocalValid[finger] || pose.surfaceAimNormalObjectLocalValid[finger]) {
                 pose.hasObjectLocalSurfaceAim = true;
                 break;

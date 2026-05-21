@@ -1119,7 +1119,6 @@ namespace rock
         void applyPinchFingerPosePolicy(
             grab_finger_pose_runtime::SolvedGrabFingerPose& pose,
             const CanonicalGrabFrame& frame,
-            const RE::NiTransform& objectWorldTransform,
             float minFingerValue)
         {
             const auto config = currentPinchPocketConfig();
@@ -1133,19 +1132,6 @@ namespace rock
             for (std::size_t finger = 0; finger < 2 && finger < pose.surfaceAimTargetValid.size(); ++finger) {
                 pose.surfaceAimTargetValid[finger] = 0;
                 pose.surfaceAimNormalValid[finger] = 0;
-            }
-            for (std::size_t finger = 1; finger < 2 && finger < frame.fingerPoseTargetLocal.size(); ++finger) {
-                if (!frame.fingerPoseTargetValid[finger]) {
-                    continue;
-                }
-                pose.surfaceAimTarget[finger] =
-                    transform_math::localPointToWorld(objectWorldTransform, frame.fingerPoseTargetLocal[finger]);
-                pose.surfaceAimTargetValid[finger] = 1;
-                if (frame.fingerPoseTargetNormalValid[finger]) {
-                    pose.surfaceAimNormal[finger] = normalizeOrZero(
-                        transform_math::localVectorToWorld(objectWorldTransform, frame.fingerPoseTargetNormalLocal[finger]));
-                    pose.surfaceAimNormalValid[finger] = lengthSquared(pose.surfaceAimNormal[finger]) > 0.000001f ? 1 : 0;
-                }
             }
 
             pose.solved = true;
@@ -7428,10 +7414,10 @@ namespace rock
                 _grabFrame.fingerPoseAimValid) :
             grab_finger_pose_runtime::SolvedGrabFingerPose{};
         if (pinchFingerPose && g_rockConfig.rockGrabMeshFingerPoseEnabled) {
-            applyPinchFingerPosePolicy(fingerPose, _grabFrame, objectWorldTransform, g_rockConfig.rockGrabFingerMinValue);
+            applyPinchFingerPosePolicy(fingerPose, _grabFrame, g_rockConfig.rockGrabFingerMinValue);
         }
         if (g_rockConfig.rockGrabMeshFingerPoseEnabled) {
-            grab_finger_pose_runtime::useThumbCurveOnlyPose(fingerPose);
+            grab_finger_pose_runtime::useThumbIndexCurveOnlyPose(fingerPose);
         }
         grab_finger_pose_runtime::captureSurfaceAimObjectLocal(fingerPose, objectWorldTransform);
         _grabFingerPose = fingerPose;
@@ -8246,7 +8232,7 @@ namespace rock
                             g_rockConfig.rockGrabFingerRejectBacksideHits,
                             g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
                             _grabFrame.fingerPoseAimValid);
-                        grab_finger_pose_runtime::useThumbCurveOnlyPose(_grabFingerPose);
+                        grab_finger_pose_runtime::useThumbIndexCurveOnlyPose(_grabFingerPose);
                         grab_finger_pose_runtime::captureSurfaceAimObjectLocal(_grabFingerPose, currentNodeWorld);
                         _grabFingerProbeStart = _grabFingerPose.probeStart;
                         _grabFingerProbeEnd = _grabFingerPose.probeEnd;

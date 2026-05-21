@@ -18,8 +18,8 @@ Very small compact objects and short thin objects need a distinct close-grab sea
 - Held updates must not recompute the pinch pocket from animated finger colliders or live finger bones.
 - The held object remains dynamic. The frozen value is the BODY-local object point plus the hand/proxy-local relation.
 - Pinch disables seated palm-pocket reacquire and held support refresh for the lifetime of that grab.
-- Pinch keeps the captured thumb/index targets on the grab frame, but only the index target is published as object-local surface aim. The thumb uses the fixed curve/joint pose; middle/ring/pinky are closed by policy.
-- Thumb pose for ROCK object grabs must be curve-only once captured. Generic thumb surface-aim/local-transform correction must not own the thumb chain for pinch or palm-pocket object grabs because the mesh evidence is not reliable enough for natural thumb orientation.
+- Pinch keeps the captured thumb/index targets on the grab frame as evidence, but thumb/index are not published as object-local surface aim. Thumb/index use fixed curve/joint poses; middle/ring/pinky are closed by policy.
+- Thumb/index pose for ROCK object grabs must be curve-only once captured. Generic surface-aim/local-transform correction must not own those chains for pinch or palm-pocket object grabs because the mesh evidence is not reliable enough for natural orientation.
 - Palm close selection remains first priority. Pinch close selection is a fallback cast from the live thumb-index pocket only when the palm close cast misses.
 - A pinch-direction fallback selection must qualify for pinch pocket at grab commit; it does not fall through to palm-pocket authority.
 - Pinch-direction selection hysteresis and selected-close speed tracking use the live pinch origin rather than the palm origin.
@@ -52,11 +52,11 @@ Very small compact objects and short thin objects need a distinct close-grab sea
 - Implemented close-grab pinch-pocket arbitration as a commit-time seat mode.
 - Added `GrabPinchPocket.h` classifier/math policy for compact and short thin objects.
 - Added canonical grab-frame seat state so palm pocket and pinch pocket are mutually exclusive.
-- Pinch captures the thumb/index distal-pad pocket from the root-flattened finger snapshot at grab commit, then stores object-local thumb/index pose targets.
+- Pinch captures the thumb/index distal-pad pocket from the root-flattened finger snapshot at grab commit, then stores object-local thumb/index pose targets as grab-frame evidence.
 - Pinch bypasses held palm-pocket support refresh and seated palm-pocket reacquire for the lifetime of the grab.
 - Pinch bypasses the generic thumb curve solver and post-processes thumb/index plus middle/ring/pinky finger values from config.
 - Pinch now publishes a deterministic per-joint thumb/index pose instead of trusting the mesh solver's raw thumb curl.
-- ROCK object grabs now disable thumb mesh-follow before object-local surface targets are captured; non-thumb fingers can still use object-local surface aim, while the thumb keeps only the settled curve/joint pose.
+- ROCK object grabs now disable thumb/index mesh-follow before object-local surface targets are captured; middle/ring/pinky can still use object-local surface aim, while thumb/index keep only the settled curve/joint pose.
 - Added a per-hand debug overlay toggle for palm pocket center/radius/depth and pinch center/thumb-index axis/detection direction.
 - Added fallback pinch close selection from the live thumb-index pocket using the pinch direction only after palm close selection fails.
 - Tagged pinch-direction close selections so non-pinchable hits fail closed instead of becoming accidental palm grabs.
