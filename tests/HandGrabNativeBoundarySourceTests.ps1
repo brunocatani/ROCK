@@ -55,6 +55,9 @@ Reject-Path 'src/physics-interaction/native/NativeMouseSpringGrab.h' 'Native mou
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'resolveGrabAuthorityProxyFrame\(world,\s*handWorldTransform,\s*&handBodyWorldAtGrab,\s*proxyFrameWorldAtGrab[\s\S]*grabAuthorityPivotAWorld\s*=\s*proxyFrameWorldAtGrab\.translate[\s\S]*palmPocketPivotAWorld\s*=\s*computeGrabStartupCapturePivotAWorld\(world,\s*handWorldTransform\)[\s\S]*grabPivotAForPrimaryChoice\s*=\s*palmPocketPivotAWorld' 'Close dynamic grab must resolve the hidden proxy frame before raw-roll palm-pocket mesh/contact acquisition.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'The hidden proxy is body A[\s\S]*RE::NiPoint3\s+grabPivotAWorld\s*=\s*palmPocketPivotAWorld[\s\S]*buildSplitGrabFrameFromDesiredObject\(\s*handWorldTransform,\s*proxyFrameWorldAtGrab[\s\S]*createProxyConstraintGrabDrive\(\s*bhkWorld,\s*world,\s*objectBodyId,\s*proxyFrameWorldAtGrab,\s*handWorldTransform,\s*grabPivotAWorld' 'Close dynamic grab must commit the raw-roll palm-pocket point while keeping the generated proxy frame for live body-A authority.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'palmPocketPivotAWorld\s*=\s*computeGrabStartupCapturePivotAWorld\(world,\s*handWorldTransform\)' 'Close dynamic grab post-prep authority must use the startup raw-rotation capture pivot only for the palm-pocket point.'
+Require-Text 'src/physics-interaction/hand/Hand.h' 'tryComputeGrabRawRollPalmPocketPivotAWorld' 'Held-time palm-pocket support must share an explicit raw-roll pivot helper.'
+Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'livePivotAWorld\s*=\s*proxyAuthorityWorld\.translate' 'Seated palm-pocket promotion must not use the generated proxy origin as the pocket pivot.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'tryComputeGrabRawRollPalmPocketPivotAWorld\(world,\s*handWorldTransform,\s*livePivotAWorld\)[\s\S]*_grabAuthorityPivotAProxyLocalGame\s*=\s*transform_math::worldPointToLocal\(proxyAuthorityWorld,\s*livePivotAWorld\)' 'Seated palm-pocket promotion must encode the raw-roll pocket point into proxy-local pivot A.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'createProxyConstraintGrabDrive\(\s*bhkWorld,\s*world,\s*objectBodyId,\s*proxyFrameWorldAtGrab,\s*handWorldTransform,\s*grabPivotAWorld' 'Close dynamic grab must create the hidden proxy plus custom finite-force constraint from the resolved palm-authority proxy frame while preserving raw hand rotation authority.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '_nativeGrab\.create\(\s*world,\s*objectBodyId' 'Ordinary dynamic close grab must not create native mouse-spring as its production authority.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'solveAdaptiveHeldLead|nativeTargetBodyWorld|_nativeGrab\.queueTarget' 'Held-object updates must not keep removed native mouse-spring adaptive target logic.'
@@ -205,6 +208,13 @@ if ($heldSupportRefreshStart -lt 0 -or $heldSupportRefreshEnd -lt 0) {
     $heldSupportRefreshBody = $heldSupportRefreshText.Substring($heldSupportRefreshStart, $heldSupportRefreshEnd - $heldSupportRefreshStart)
     if ($heldSupportRefreshBody -match '_grabFrame\.(pivotBBodyLocalGame|pivotBConstraintLocalGame|rawHandSpace|constraintHandSpace|constraintBodyHandSpace|rawRotationProxyHandSpace|rawRotationProxyBodyHandSpace|gripPointLocal|gripPointBodyLocalGame)\s*=') {
         $failures.Add('Held support refresh must not move the solver pivot or rewrite captured hand/object transforms.')
+    }
+    if ($heldSupportRefreshBody -match 'proxyAuthorityWorld\.translate') {
+        $failures.Add('Held support refresh must not use generated proxy translation as palm-pocket support origin.')
+    }
+    if ($heldSupportRefreshBody -notmatch 'tryComputeGrabRawRollPalmPocketPivotAWorld\(world,\s*handWorldTransform,\s*supportPivotAWorld\)' -or
+        $heldSupportRefreshBody -notmatch 'findSeatedGrabPivotNearPalmPocket\([\s\S]*supportPivotAWorld') {
+        $failures.Add('Held support refresh must search from the current raw-roll palm-pocket pivot.')
     }
     if ($heldSupportRefreshBody -notmatch 'evaluateHeldSupportRefresh' -or $heldSupportRefreshBody -notmatch 'keepFrozenPivot=yes') {
         $failures.Add('Held support refresh must route decisions through the pure metadata-only policy and log the frozen-pivot invariant.')

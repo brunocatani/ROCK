@@ -3429,6 +3429,7 @@ namespace rock
          * or rebuild the captured hand/object relation while the constraint is
          * already active.
          */
+        (void)proxyAuthorityWorld;
         if (!world || _savedObjectState.bodyId.value == INVALID_BODY_ID || _grabFrame.localMeshTriangles.empty()) {
             return false;
         }
@@ -3445,12 +3446,24 @@ namespace rock
         const float supportEnvelope =
             (std::max)(g_rockConfig.rockGrabTouchAcquireDistanceGameUnits, g_rockConfig.rockGrabPocketRadiusGameUnits) +
             (std::max)(1.0f, finitePositiveOr(g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits, 3.0f));
+        RE::NiPoint3 supportPivotAWorld{};
+        if (!tryComputeGrabRawRollPalmPocketPivotAWorld(world, handWorldTransform, supportPivotAWorld)) {
+            return false;
+        }
+        const auto supportPocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
+            handWorldTransform,
+            _isLeft,
+            supportPivotAWorld,
+            g_rockConfig.rockGrabPocketDepthGameUnits,
+            g_rockConfig.rockGrabPocketRadiusGameUnits);
+        const RE::NiPoint3 supportPalmNormalWorld =
+            supportPocket.valid ? supportPocket.palmNormalWorld : computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
         const auto supportCandidate = findSeatedGrabPivotNearPalmPocket(
             _grabFrame.localMeshTriangles,
             currentNodeWorld,
             grabBodyWorld,
-            proxyAuthorityWorld.translate,
-            computePalmNormalFromHandBasis(handWorldTransform, _isLeft),
+            supportPivotAWorld,
+            supportPalmNormalWorld,
             supportEnvelope,
             g_rockConfig.rockGrabContactPatchMaxNormalAngleDegrees);
 
@@ -7990,14 +8003,26 @@ namespace rock
                 _grabFrame.lastSeatedPivotReacquirePhase = grab_three_phase::phaseName(previousAcquisitionPhase);
             }
             if (pivotNeedsSeatedReacquire && hasGrabBody) {
-                const RE::NiPoint3 livePivotAWorld = proxyAuthorityWorld.translate;
+                RE::NiPoint3 livePivotAWorld{};
+                if (!tryComputeGrabRawRollPalmPocketPivotAWorld(world, handWorldTransform, livePivotAWorld)) {
+                    timeoutReacquireReason = "missingRawRollPalmPocketPivot";
+                } else {
                 const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
                 const float seatedEnvelope =
                     (std::max)(touchDistance, g_rockConfig.rockGrabPocketRadiusGameUnits) +
                     (std::max)(1.0f, finitePositiveOr(g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits, 3.0f));
-                const RE::NiPoint3 palmNormalWorld = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
-                const RE::NiPoint3 palmTangentWorld = transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, _isLeft);
-                const RE::NiPoint3 palmBitangentWorld = transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, _isLeft);
+                const auto seatedPocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
+                    handWorldTransform,
+                    _isLeft,
+                    livePivotAWorld,
+                    g_rockConfig.rockGrabPocketDepthGameUnits,
+                    g_rockConfig.rockGrabPocketRadiusGameUnits);
+                const RE::NiPoint3 palmNormalWorld =
+                    seatedPocket.valid ? seatedPocket.palmNormalWorld : computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
+                const RE::NiPoint3 palmTangentWorld =
+                    seatedPocket.valid ? seatedPocket.fingerForwardWorld : transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, _isLeft);
+                const RE::NiPoint3 palmBitangentWorld =
+                    seatedPocket.valid ? seatedPocket.thumbSideWorld : transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, _isLeft);
                 const auto seatedPivot = findSeatedGrabPivotNearPalmPocket(
                     _grabFrame.localMeshTriangles,
                     currentNodeWorld,
@@ -8305,6 +8330,7 @@ namespace rock
                     } else if (!promotionDecision.enrichSupport) {
                         _grabFrame.lastSeatedPivotReacquireReason = promotionDecision.reason ? promotionDecision.reason : "none";
                     }
+                }
                 }
                 if (!timeoutReacquiredSeatedPivot) {
                     _grabFrame.lastSeatedPivotReacquireReason = timeoutReacquireReason ? timeoutReacquireReason : "none";

@@ -954,8 +954,12 @@ namespace rock
         return fallbackHandWorldTransform.translate;
     }
 
-    RE::NiPoint3 Hand::computeGrabStartupCapturePivotAWorld(RE::hknpWorld* world, const RE::NiTransform& rawHandWorldTransform) const
+    bool Hand::tryComputeGrabRawRollPalmPocketPivotAWorld(
+        RE::hknpWorld* world,
+        const RE::NiTransform& rawHandWorldTransform,
+        RE::NiPoint3& outPivotWorld) const
     {
+        outPivotWorld = {};
         LivePalmAnchorReference palmReference{};
         if (tryResolveLivePalmAnchorReference(world, palmReference) &&
             std::isfinite(palmReference.world.translate.x) &&
@@ -965,7 +969,18 @@ namespace rock
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
             const RE::NiTransform startupCaptureFrameWorld =
                 makeGrabStartupCaptureAuthorityFrame(rawHandWorldTransform, palmAuthorityBaseWorld);
-            return applyGrabAuthorityProxyLocalOffsetToFrame(startupCaptureFrameWorld, _isLeft).translate;
+            outPivotWorld = applyGrabAuthorityProxyLocalOffsetToFrame(startupCaptureFrameWorld, _isLeft).translate;
+            return std::isfinite(outPivotWorld.x) && std::isfinite(outPivotWorld.y) && std::isfinite(outPivotWorld.z);
+        }
+
+        return false;
+    }
+
+    RE::NiPoint3 Hand::computeGrabStartupCapturePivotAWorld(RE::hknpWorld* world, const RE::NiTransform& rawHandWorldTransform) const
+    {
+        RE::NiPoint3 rawRollPalmPocketPivotWorld{};
+        if (tryComputeGrabRawRollPalmPocketPivotAWorld(world, rawHandWorldTransform, rawRollPalmPocketPivotWorld)) {
+            return rawRollPalmPocketPivotWorld;
         }
 
         return applyGrabAuthorityProxyLocalOffsetToFrame(rawHandWorldTransform, _isLeft).translate;
