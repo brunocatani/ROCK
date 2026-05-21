@@ -55,10 +55,12 @@ namespace
     constexpr float kDefaultGrabSmallObjectAngularScale = 0.65f;
     constexpr float kDefaultGrabLowContactSupportAngularScale = 0.75f;
     constexpr float kDefaultGrabMinAngularAuthorityScale = 0.30f;
-    constexpr float kDefaultGrabWeakNormalAngularDampingMultiplier = 1.75f;
     constexpr float kDefaultGrabWeakPivotTwistScale = 0.35f;
     constexpr float kDefaultGrabMinInertia = 0.01f;
     constexpr float kDefaultGrabThumbSurfaceSafetyMarginGameUnits = 1.0f;
+    constexpr float kDefaultNearCastRadiusGameUnits = 3.5f;
+    constexpr float kDefaultNearCastDistanceGameUnits = 7.0f;
+    constexpr float kDefaultNearbyGrabDampingRadiusGameUnits = 7.0f;
     const RE::NiPoint3 kDefaultPalmNormalHandspace{ 0.0f, 0.0f, 1.0f };
     constexpr bool kDefaultSeeThroughScopesRightEyeDominant = true;
 
@@ -251,8 +253,8 @@ namespace rock
 
         rockNearDetectionRange = 25.0f;
         rockFarDetectionRange = 350.0f;
-        rockNearCastRadiusGameUnits = 6.0f;
-        rockNearCastDistanceGameUnits = 25.0f;
+        rockNearCastRadiusGameUnits = kDefaultNearCastRadiusGameUnits;
+        rockNearCastDistanceGameUnits = kDefaultNearCastDistanceGameUnits;
         rockFarCastRadiusGameUnits = 21.0f;
         rockFarSelectionHmdConeEnabled = true;
         rockFarSelectionHmdConeHalfAngleDegrees = selection_query_policy::kDefaultFarSelectionHmdConeHalfAngleDegrees;
@@ -293,7 +295,6 @@ namespace rock
         rockGrabAngularConstantRecovery = 1.0f;
 
         rockGrabConstraintMaxForce = 2000.0f;
-        rockGrabMassResponsiveMaxForce = 9000.0f;
         rockGrabAngularToLinearForceRatio = 12.5f;
         rockGrabMaxForceToMassRatio = 500.0f;
         rockGrabFadeInStartAngularRatio = 100.0f;
@@ -311,11 +312,7 @@ namespace rock
         rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = kDefaultGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier;
         rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier;
         rockGrabTauMin = 0.01f;
-        rockGrabTauMax = 0.8f;
         rockGrabTauLerpSpeed = 0.5f;
-        rockGrabAdaptiveMotorEnabled = true;
-        rockGrabAdaptivePositionFullError = 20.0f;
-        rockGrabAdaptiveMaxForceMultiplier = 1.0f;
         rockGrabLongObjectAngularScalingEnabled = true;
         rockGrabLongObjectReferenceLeverGameUnits = kDefaultGrabLongObjectReferenceLeverGameUnits;
         rockGrabLongObjectMinAngularScale = kDefaultGrabLongObjectMinAngularScale;
@@ -325,7 +322,6 @@ namespace rock
         rockGrabSmallObjectAngularScale = kDefaultGrabSmallObjectAngularScale;
         rockGrabLowContactSupportAngularScale = kDefaultGrabLowContactSupportAngularScale;
         rockGrabMinAngularAuthorityScale = kDefaultGrabMinAngularAuthorityScale;
-        rockGrabWeakNormalAngularDampingMultiplier = kDefaultGrabWeakNormalAngularDampingMultiplier;
         rockGrabWeakPivotTwistScale = kDefaultGrabWeakPivotTwistScale;
 
         rockGrabMaxInertiaRatio = 10.0f;
@@ -364,10 +360,15 @@ namespace rock
         rockGrabPlayerSpaceTransformWarpEnabled = true;
         rockGrabResidualVelocityDamping = true;
         rockGrabNearbyDampingEnabled = true;
-        rockGrabNearbyDampingRadius = 90.0f;
+        rockGrabNearbyDampingRadius = kDefaultNearbyGrabDampingRadiusGameUnits;
         rockGrabNearbyDampingSeconds = 0.35f;
         rockGrabNearbyLinearDamping = 3.0f;
         rockGrabNearbyAngularDamping = 5.5f;
+        rockGrabHeldMassMovementSlowdownEnabled = true;
+        rockGrabHeldMassMovementMassProportion = 0.675f;
+        rockGrabHeldMassMovementMassExponent = 1.0f;
+        rockGrabHeldMassMovementMaxReduction = 75.0f;
+        rockGrabHeldMassMovementFadeOutSeconds = 5.0f;
         rockGrabTouchAcquireDistanceGameUnits = 4.0f;
         rockGrabNearConvergeDistanceGameUnits = 28.0f;
         rockGrabPocketDepthGameUnits = 7.0f;
@@ -924,8 +925,20 @@ namespace rock
 
         rockNearDetectionRange = static_cast<float>(ini.GetDoubleValue(SECTION, "fNearDetectionRange", rockNearDetectionRange));
         rockFarDetectionRange = static_cast<float>(ini.GetDoubleValue(SECTION, "fFarDetectionRange", rockFarDetectionRange));
-        rockNearCastRadiusGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fNearCastRadiusGameUnits", rockNearCastRadiusGameUnits));
-        rockNearCastDistanceGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fNearCastDistanceGameUnits", rockNearCastDistanceGameUnits));
+        rockNearCastRadiusGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fNearCastRadiusGameUnits",
+            rockNearCastRadiusGameUnits,
+            kDefaultNearCastRadiusGameUnits,
+            0.0f,
+            kDefaultNearCastRadiusGameUnits);
+        rockNearCastDistanceGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fNearCastDistanceGameUnits",
+            rockNearCastDistanceGameUnits,
+            kDefaultNearCastDistanceGameUnits,
+            0.1f,
+            kDefaultNearCastDistanceGameUnits);
         rockFarCastRadiusGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fFarCastRadiusGameUnits", rockFarCastRadiusGameUnits));
         rockFarSelectionHmdConeEnabled = ini.GetBoolValue(SECTION, "bFarSelectionHmdConeEnabled", rockFarSelectionHmdConeEnabled);
         rockFarSelectionHmdConeHalfAngleDegrees =
@@ -1004,7 +1017,6 @@ namespace rock
         rockGrabAngularConstantRecovery = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularConstantRecovery", rockGrabAngularConstantRecovery));
 
         rockGrabConstraintMaxForce = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabConstraintMaxForce", rockGrabConstraintMaxForce));
-        rockGrabMassResponsiveMaxForce = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMassResponsiveMaxForce", rockGrabMassResponsiveMaxForce));
         rockGrabAngularToLinearForceRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularToLinearForceRatio", rockGrabAngularToLinearForceRatio));
         rockGrabMaxForceToMassRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxForceToMassRatio", rockGrabMaxForceToMassRatio));
         rockGrabFadeInStartAngularRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFadeInStartAngularRatio", rockGrabFadeInStartAngularRatio));
@@ -1087,11 +1099,7 @@ namespace rock
             4.0f);
 
         rockGrabTauMin = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauMin", rockGrabTauMin));
-        rockGrabTauMax = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauMax", rockGrabTauMax));
         rockGrabTauLerpSpeed = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTauLerpSpeed", rockGrabTauLerpSpeed));
-        rockGrabAdaptiveMotorEnabled = ini.GetBoolValue(SECTION, "bGrabAdaptiveMotorEnabled", rockGrabAdaptiveMotorEnabled);
-        rockGrabAdaptivePositionFullError = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAdaptivePositionFullError", rockGrabAdaptivePositionFullError));
-        rockGrabAdaptiveMaxForceMultiplier = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAdaptiveMaxForceMultiplier", rockGrabAdaptiveMaxForceMultiplier));
         rockGrabLongObjectAngularScalingEnabled = ini.GetBoolValue(SECTION, "bGrabLongObjectAngularScalingEnabled", rockGrabLongObjectAngularScalingEnabled);
         rockGrabLongObjectReferenceLeverGameUnits = static_cast<float>(
             ini.GetDoubleValue(SECTION, "fGrabLongObjectReferenceLeverGameUnits", rockGrabLongObjectReferenceLeverGameUnits));
@@ -1142,13 +1150,6 @@ namespace rock
             kDefaultGrabMinAngularAuthorityScale,
             0.05f,
             1.0f);
-        rockGrabWeakNormalAngularDampingMultiplier = readClampedFloat(ini,
-            SECTION,
-            "fGrabWeakNormalAngularDampingMultiplier",
-            rockGrabWeakNormalAngularDampingMultiplier,
-            kDefaultGrabWeakNormalAngularDampingMultiplier,
-            1.0f,
-            8.0f);
         rockGrabWeakPivotTwistScale = readClampedFloat(ini,
             SECTION,
             "fGrabWeakPivotTwistScale",
@@ -1216,13 +1217,49 @@ namespace rock
         rockGrabPlayerSpaceTransformWarpEnabled = ini.GetBoolValue(SECTION, "bGrabPlayerSpaceTransformWarpEnabled", rockGrabPlayerSpaceTransformWarpEnabled);
         rockGrabResidualVelocityDamping = ini.GetBoolValue(SECTION, "bGrabResidualVelocityDamping", rockGrabResidualVelocityDamping);
         rockGrabNearbyDampingEnabled = ini.GetBoolValue(SECTION, "bGrabNearbyDampingEnabled", rockGrabNearbyDampingEnabled);
-        rockGrabNearbyDampingRadius = nearby_grab_damping::sanitizeRadius(static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNearbyDampingRadius", rockGrabNearbyDampingRadius)));
+        rockGrabNearbyDampingRadius = readClampedFloat(ini,
+            SECTION,
+            "fGrabNearbyDampingRadius",
+            rockGrabNearbyDampingRadius,
+            kDefaultNearbyGrabDampingRadiusGameUnits,
+            0.0f,
+            kDefaultNearbyGrabDampingRadiusGameUnits);
         rockGrabNearbyDampingSeconds =
             nearby_grab_damping::sanitizeDuration(static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNearbyDampingSeconds", rockGrabNearbyDampingSeconds)));
         rockGrabNearbyLinearDamping =
             nearby_grab_damping::sanitizeHknpDampingCoefficient(static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNearbyLinearDamping", rockGrabNearbyLinearDamping)));
         rockGrabNearbyAngularDamping =
             nearby_grab_damping::sanitizeHknpDampingCoefficient(static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabNearbyAngularDamping", rockGrabNearbyAngularDamping)));
+        rockGrabHeldMassMovementSlowdownEnabled =
+            ini.GetBoolValue(SECTION, "bGrabHeldMassMovementSlowdownEnabled", rockGrabHeldMassMovementSlowdownEnabled);
+        rockGrabHeldMassMovementMassProportion = readClampedFloat(ini,
+            SECTION,
+            "fGrabHeldMassMovementMassProportion",
+            rockGrabHeldMassMovementMassProportion,
+            0.675f,
+            0.0f,
+            10.0f);
+        rockGrabHeldMassMovementMassExponent = readClampedFloat(ini,
+            SECTION,
+            "fGrabHeldMassMovementMassExponent",
+            rockGrabHeldMassMovementMassExponent,
+            1.0f,
+            0.0f,
+            4.0f);
+        rockGrabHeldMassMovementMaxReduction = readClampedFloat(ini,
+            SECTION,
+            "fGrabHeldMassMovementMaxReduction",
+            rockGrabHeldMassMovementMaxReduction,
+            75.0f,
+            0.0f,
+            99.0f);
+        rockGrabHeldMassMovementFadeOutSeconds = readClampedFloat(ini,
+            SECTION,
+            "fGrabHeldMassMovementFadeOutSeconds",
+            rockGrabHeldMassMovementFadeOutSeconds,
+            5.0f,
+            0.0f,
+            60.0f);
         rockGrabTouchAcquireDistanceGameUnits =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabTouchAcquireDistanceGameUnits", rockGrabTouchAcquireDistanceGameUnits));
         if (!std::isfinite(rockGrabTouchAcquireDistanceGameUnits) || rockGrabTouchAcquireDistanceGameUnits <= 0.0f) {

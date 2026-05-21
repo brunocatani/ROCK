@@ -463,7 +463,6 @@ namespace rock
                 .smallObjectAngularScale = g_rockConfig.rockGrabSmallObjectAngularScale,
                 .lowContactSupportAngularScale = g_rockConfig.rockGrabLowContactSupportAngularScale,
                 .minAngularAuthorityScale = g_rockConfig.rockGrabMinAngularAuthorityScale,
-                .weakNormalAngularDampingMultiplier = g_rockConfig.rockGrabWeakNormalAngularDampingMultiplier,
                 .weakPivotTwistScale = g_rockConfig.rockGrabWeakPivotTwistScale,
                 .contactSupportShape = classifyContactSupportShapeFromGrabFrame(frame),
                 .longObjectReferenceLeverGameUnits = g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits,
@@ -552,9 +551,12 @@ namespace rock
             float tau,
             float damping,
             float maxForce,
+            float authorityForceScale,
             float proportionalRecovery,
             float constantRecovery,
-            bool looseWeaponGrab)
+            bool looseWeaponGrab,
+            float mass,
+            float forceToMassRatio)
         {
             const float linearTauMultiplier =
                 looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintLinearTauMultiplier);
@@ -573,7 +575,11 @@ namespace rock
             const float angularRecoveryMultiplier =
                 looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier);
 
-            const float linearMaxForce = (std::max)(0.0f, scaleDriveValue(maxForce, maxForceMultiplier));
+            const float linearBudget = (std::max)(0.0f, scaleDriveValue(maxForce, maxForceMultiplier));
+            const float sanitizedAuthorityForceScale =
+                std::clamp(std::isfinite(authorityForceScale) && authorityForceScale > 0.0f ? authorityForceScale : 1.0f, 0.05f, 1.0f);
+            const float linearMaxForce =
+                grab_motion_controller::capForceByMass(linearBudget, mass, forceToMassRatio) * sanitizedAuthorityForceScale;
             const float angularForceRatio =
                 angularForceRatioForMultiplier(g_rockConfig.rockGrabAngularToLinearForceRatio, angularForceMultiplier);
 
@@ -3904,8 +3910,20 @@ namespace rock
             std::isfinite(authorityForceScale) && authorityForceScale > 0.0f ? authorityForceScale : 1.0f,
             0.05f,
             1.0f);
-        const GrabConstraintMotorTuning motorTuning =
-            buildProxyConstraintMotorTuning(tau, damping, maxForce * sanitizedAuthorityForceScale, proportionalRecovery, constantRecovery, looseWeaponGrab);
+        const auto massSummaryAtCreation = readHeldBodyMassSummary(
+            world,
+            objectBodyId,
+            _heldBodyIds,
+            _heldDriveDecision.includeConnectedMass);
+        const GrabConstraintMotorTuning motorTuning = buildProxyConstraintMotorTuning(tau,
+            damping,
+            maxForce,
+            sanitizedAuthorityForceScale,
+            proportionalRecovery,
+            constantRecovery,
+            looseWeaponGrab,
+            massSummaryAtCreation.motorMass(),
+            g_rockConfig.rockGrabMaxForceToMassRatio);
 
         _activeConstraint = createGrabConstraint(world,
             _grabAuthorityProxy.getBodyId(),
@@ -3957,7 +3975,7 @@ namespace rock
         }
 
         ROCK_LOG_DEBUG(Hand,
-            "{} hand proxy constraint grab drive: constraint={} looseWeapon={} proxyBody={} objBody={} filter=0x{:08X} pivotAProxy=({:.2f},{:.2f},{:.2f}) pivotBConstraint=({:.2f},{:.2f},{:.2f}) pivotBBody=({:.2f},{:.2f},{:.2f}) linearTau={:.3f} angularTau={:.3f} linearForce={:.0f} angularForce={:.0f} forceBudget={:.2f} reason={}",
+            "{} hand proxy constraint grab drive: constraint={} looseWeapon={} proxyBody={} objBody={} filter=0x{:08X} pivotAProxy=({:.2f},{:.2f},{:.2f}) pivotBConstraint=({:.2f},{:.2f},{:.2f}) pivotBBody=({:.2f},{:.2f},{:.2f}) linearTau={:.3f} angularTau={:.3f} linearForce={:.0f} angularForce={:.0f} motorMass={:.3f} forceBudget={:.2f} reason={}",
             handName(),
             _activeConstraint.constraintId,
             looseWeaponGrab ? "yes" : "no",
@@ -3977,6 +3995,7 @@ namespace rock
             motorTuning.angularTau,
             motorTuning.linearMaxForce,
             motorTuning.angularMaxForce,
+            massSummaryAtCreation.motorMass(),
             sanitizedAuthorityForceScale,
             reason ? reason : "unknown");
         return true;
@@ -4060,7 +4079,6 @@ namespace rock
         float deltaTime,
         float forceFadeInTime,
         float tauMin,
-        float grabPositionErrorGameUnits,
         float authorityForceScale,
         bool heldBodyColliding,
         const grab_motion_controller::HeldAuthorityState& heldAuthority)
@@ -4095,21 +4113,15 @@ namespace rock
             _heldBodyIds,
             _heldDriveDecision.includeConnectedMass);
         const auto motorInput = grab_motion_controller::MotorInput{
-            .enabled = g_rockConfig.rockGrabAdaptiveMotorEnabled,
             .heldBodyColliding = heldBodyColliding,
-            .positionErrorGameUnits = grabPositionErrorGameUnits,
-            .fullPositionErrorGameUnits = g_rockConfig.rockGrabAdaptivePositionFullError,
             .baseLinearTau = scaleDriveValue(g_rockConfig.rockGrabLinearTau, looseLinearTauMultiplier),
             .baseAngularTau = scaleDriveValue(g_rockConfig.rockGrabAngularTau, looseAngularTauMultiplier),
             .collisionTau = scaleDriveValue(tauMin, looseCollisionTauMultiplier),
-            .maxTau = g_rockConfig.rockGrabTauMax,
             .currentLinearTau = _activeConstraint.linearMotor->tau,
             .currentAngularTau = _activeConstraint.angularMotor->tau,
             .tauLerpSpeed = g_rockConfig.rockGrabTauLerpSpeed,
             .deltaTime = deltaTime,
             .baseMaxForce = sharedBaseMaxForce,
-            .massResponsiveMaxForce = (std::max)(g_rockConfig.rockGrabConstraintMaxForce, g_rockConfig.rockGrabMassResponsiveMaxForce),
-            .maxForceMultiplier = g_rockConfig.rockGrabAdaptiveMaxForceMultiplier,
             .authorityForceScale = authorityForceScale,
             .mass = massSummary.motorMass(),
             .forceToMassRatio = g_rockConfig.rockGrabMaxForceToMassRatio,
@@ -4133,7 +4145,6 @@ namespace rock
             .smallObjectAngularScale = g_rockConfig.rockGrabSmallObjectAngularScale,
             .lowContactSupportAngularScale = g_rockConfig.rockGrabLowContactSupportAngularScale,
             .minAngularAuthorityScale = g_rockConfig.rockGrabMinAngularAuthorityScale,
-            .weakNormalAngularDampingMultiplier = g_rockConfig.rockGrabWeakNormalAngularDampingMultiplier,
             .weakPivotTwistScale = g_rockConfig.rockGrabWeakPivotTwistScale,
             .contactSupportShape = classifyContactSupportShapeFromGrabFrame(_grabFrame),
             .longObjectReferenceLeverGameUnits = g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits,
@@ -4151,7 +4162,7 @@ namespace rock
 
         _activeConstraint.angularMotor->tau = output.angularTau;
         _activeConstraint.angularMotor->damping =
-            scaleDriveValue(g_rockConfig.rockGrabAngularDamping, looseAngularDampingMultiplier * output.angularDampingMultiplier);
+            scaleDriveValue(g_rockConfig.rockGrabAngularDamping, looseAngularDampingMultiplier);
         _activeConstraint.angularMotor->proportionalRecoveryVelocity =
             scaleDriveValue(g_rockConfig.rockGrabAngularProportionalRecovery, looseAngularRecoveryMultiplier);
         _activeConstraint.angularMotor->constantRecoveryVelocity =
@@ -4161,10 +4172,7 @@ namespace rock
 
         _activeConstraint.currentTau = output.linearTau;
         _activeConstraint.currentMaxForce = output.linearMaxForce;
-        _activeConstraint.targetMaxForce = sharedBaseMaxForce * std::clamp(
-            std::isfinite(authorityForceScale) && authorityForceScale > 0.0f ? authorityForceScale : 1.0f,
-            0.05f,
-            1.0f);
+        _activeConstraint.targetMaxForce = output.linearMaxForce;
     }
 
     void Hand::queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
@@ -7189,7 +7197,6 @@ namespace rock
                 .requiresSettledVisualRelation = _grabFrame.requiresSettledVisualHandRelation,
                 .multiFingerContactGroupCount = _grabFrame.multiFingerContactGroupCount,
                 .contactPatchSampleCount = _grabFrame.contactPatchSampleCount,
-                .angularAuthorityScale = heldAngularAuthority.authorityScale,
                 .contactSupportShape = heldAngularAuthority.contactSupportShape,
             });
         if (_grabFrame.hasTelemetryCapture &&
@@ -8011,7 +8018,6 @@ namespace rock
                         driveDelta,
                         pending.forceFadeInTime,
                         pending.tauMin,
-                        pending.grabPositionErrorGameUnits,
                         pending.authorityForceScale,
                         pending.heldBodyColliding,
                         pendingHeldAuthority);

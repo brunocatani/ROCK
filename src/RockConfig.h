@@ -214,8 +214,8 @@ namespace rock
 
         float rockNearDetectionRange = 25.0f;
         float rockFarDetectionRange = 350.0f;
-        float rockNearCastRadiusGameUnits = 6.0f;
-        float rockNearCastDistanceGameUnits = 25.0f;
+        float rockNearCastRadiusGameUnits = 3.5f;
+        float rockNearCastDistanceGameUnits = 7.0f;
         float rockFarCastRadiusGameUnits = 21.0f;
         bool rockFarSelectionHmdConeEnabled = true;
         float rockFarSelectionHmdConeHalfAngleDegrees = selection_query_policy::kDefaultFarSelectionHmdConeHalfAngleDegrees;
@@ -256,7 +256,6 @@ namespace rock
         float rockGrabAngularConstantRecovery = 1.0f;
 
         float rockGrabConstraintMaxForce = 2000.0f;
-        float rockGrabMassResponsiveMaxForce = 9000.0f;
         float rockGrabAngularToLinearForceRatio = 12.5f;
         float rockGrabMaxForceToMassRatio = 500.0f;
         float rockGrabFadeInStartAngularRatio = 100.0f;
@@ -274,11 +273,7 @@ namespace rock
         float rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = 1.0f;
         float rockGrabTauMin = 0.01f;
-        float rockGrabTauMax = 0.8f;
         float rockGrabTauLerpSpeed = 0.5f;
-        bool rockGrabAdaptiveMotorEnabled = true;
-        float rockGrabAdaptivePositionFullError = 20.0f;
-        float rockGrabAdaptiveMaxForceMultiplier = 1.0f;
         bool rockGrabLongObjectAngularScalingEnabled = true;
         float rockGrabLongObjectReferenceLeverGameUnits = 24.0f;
         float rockGrabLongObjectMinAngularScale = 0.35f;
@@ -288,7 +283,6 @@ namespace rock
         float rockGrabSmallObjectAngularScale = 0.65f;
         float rockGrabLowContactSupportAngularScale = 0.75f;
         float rockGrabMinAngularAuthorityScale = 0.30f;
-        float rockGrabWeakNormalAngularDampingMultiplier = 1.75f;
         float rockGrabWeakPivotTwistScale = 0.35f;
 
         float rockGrabMaxInertiaRatio = 10.0f;
@@ -327,10 +321,15 @@ namespace rock
         bool rockGrabPlayerSpaceTransformWarpEnabled = true;
         bool rockGrabResidualVelocityDamping = true;
         bool rockGrabNearbyDampingEnabled = true;
-        float rockGrabNearbyDampingRadius = 90.0f;
+        float rockGrabNearbyDampingRadius = 7.0f;
         float rockGrabNearbyDampingSeconds = 0.35f;
         float rockGrabNearbyLinearDamping = 3.0f;
         float rockGrabNearbyAngularDamping = 5.5f;
+        bool rockGrabHeldMassMovementSlowdownEnabled = true;
+        float rockGrabHeldMassMovementMassProportion = 0.675f;
+        float rockGrabHeldMassMovementMassExponent = 1.0f;
+        float rockGrabHeldMassMovementMaxReduction = 75.0f;
+        float rockGrabHeldMassMovementFadeOutSeconds = 5.0f;
         float rockGrabTouchAcquireDistanceGameUnits = 4.0f;
         float rockGrabNearConvergeDistanceGameUnits = 28.0f;
         float rockGrabPocketDepthGameUnits = 7.0f;

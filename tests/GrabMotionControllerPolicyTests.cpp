@@ -1,5 +1,6 @@
 #include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/grab/GrabInertiaPolicy.h"
+#include "physics-interaction/grab/HeldMassMovement.h"
 
 #include <cstdio>
 #include <cstring>
@@ -58,9 +59,7 @@ int main()
     bool ok = true;
 
     MotorInput singleHand{};
-    singleHand.enabled = false;
     singleHand.baseMaxForce = 2000.0f;
-    singleHand.maxForceMultiplier = 1.0f;
     singleHand.mass = 2.0f;
     singleHand.forceToMassRatio = 500.0f;
     singleHand.angularToLinearForceRatio = 12.5f;
@@ -79,44 +78,32 @@ int main()
 
     MotorInput mediumMass = singleHand;
     mediumMass.mass = 10.0f;
-    mediumMass.massResponsiveMaxForce = 9000.0f;
     const auto mediumMassOutput = solveMotorTargets(mediumMass);
-    ok &= expectNear("medium generic object rises to mass-scaled force", mediumMassOutput.linearMaxForce, 5000.0f, 0.001f);
-    ok &= expectNear("medium generic object angular force follows linear force", mediumMassOutput.angularMaxForce, 400.0f, 0.001f);
+    ok &= expectNear("medium generic object keeps fixed HIGGS-style force", mediumMassOutput.linearMaxForce, 2000.0f, 0.001f);
+    ok &= expectNear("medium generic object angular force follows fixed force", mediumMassOutput.angularMaxForce, 160.0f, 0.001f);
 
     MotorInput heavyMass = singleHand;
     heavyMass.mass = 50.0f;
-    heavyMass.massResponsiveMaxForce = 9000.0f;
     const auto heavyMassOutput = solveMotorTargets(heavyMass);
-    ok &= expectNear("heavy generic object reaches mass-responsive ceiling", heavyMassOutput.linearMaxForce, 9000.0f, 0.001f);
-    ok &= expectNear("heavy generic object angular force follows ceiling", heavyMassOutput.angularMaxForce, 720.0f, 0.001f);
+    ok &= expectNear("heavy generic object does not receive loose-weapon force", heavyMassOutput.linearMaxForce, 2000.0f, 0.001f);
+    ok &= expectNear("heavy generic object angular force follows generic force", heavyMassOutput.angularMaxForce, 160.0f, 0.001f);
 
     MotorInput looseWeapon = singleHand;
     looseWeapon.baseMaxForce = 9000.0f;
     looseWeapon.mass = 1000.0f;
-    looseWeapon.massResponsiveMaxForce = 9000.0f;
     const auto looseWeaponOutput = solveMotorTargets(looseWeapon);
     ok &= expectNear("loose weapon base force is not double-boosted", looseWeaponOutput.linearMaxForce, 9000.0f, 0.001f);
     ok &= expectNear("loose weapon angular force follows existing weapon ceiling", looseWeaponOutput.angularMaxForce, 720.0f, 0.001f);
 
-    MotorInput adaptive = singleHand;
-    adaptive.enabled = true;
-    adaptive.positionErrorGameUnits = 20.0f;
-    adaptive.fullPositionErrorGameUnits = 20.0f;
-    adaptive.maxForceMultiplier = 4.0f;
-    adaptive.mass = 100.0f;
-    adaptive.authorityForceScale = 0.5f;
-    const auto adaptiveShared = solveMotorTargets(adaptive);
-    ok &= expectNear("two hands share adaptive boosted authority", adaptiveShared.linearMaxForce, 4000.0f, 0.001f);
-
     MotorInput angularFixedTau = singleHand;
-    angularFixedTau.enabled = true;
-    angularFixedTau.maxForceMultiplier = 4.0f;
     angularFixedTau.mass = 100.0f;
+    angularFixedTau.currentLinearTau = 0.8f;
+    angularFixedTau.currentAngularTau = 0.8f;
     angularFixedTau.deltaTime = 1.0f;
     angularFixedTau.tauLerpSpeed = 1.0f;
     const auto angularFixedTauOutput = solveMotorTargets(angularFixedTau);
     ok &= expectNear("angular follow does not boost linear force", angularFixedTauOutput.linearMaxForce, 2000.0f, 0.001f);
+    ok &= expectNear("linear follow keeps HIGGS-style tau fixed", angularFixedTauOutput.linearTau, 0.03f, 0.001f);
     ok &= expectNear("angular follow keeps HIGGS-style tau fixed", angularFixedTauOutput.angularTau, 0.03f, 0.001f);
     ok &= expectNear("full support leaves angular force authority uncapped", angularFixedTauOutput.angularAuthorityScale, 1.0f, 0.001f);
 
@@ -129,12 +116,10 @@ int main()
     positionOnlyPivot.longObjectLeverGameUnits = 8.0f;
     const auto positionOnlyOutput = solveMotorTargets(positionOnlyPivot);
     ok &= expectNear("position-only small weak pivot clamps angular authority", positionOnlyOutput.angularAuthorityScale, 0.30f, 0.001f);
-    ok &= expectNear("position-only small weak pivot reduces angular force", positionOnlyOutput.angularMaxForce, 24.0f, 0.001f);
-    ok &= expectNear("weak pivot raises angular damping multiplier", positionOnlyOutput.angularDampingMultiplier, 1.75f, 0.001f);
+    ok &= expectNear("position-only small weak pivot does not reduce held angular force", positionOnlyOutput.angularMaxForce, 80.0f, 0.001f);
     ok &= expectNear("weak pivot twist scale propagates", positionOnlyOutput.weakPivotTwistScale, 0.35f, 0.001f);
 
     MotorInput weakAngularFixedTau = positionOnlyPivot;
-    weakAngularFixedTau.enabled = true;
     weakAngularFixedTau.deltaTime = 1.0f;
     weakAngularFixedTau.tauLerpSpeed = 1.0f;
     const auto weakAngularFixedTauOutput = solveMotorTargets(weakAngularFixedTau);
@@ -161,7 +146,6 @@ int main()
         .longObjectLeverGameUnits = 8.0f,
     });
     ok &= expectNear("small low-support contact softens angular authority", lowSupportAuthority.authorityScale, 0.4225f, 0.001f);
-    ok &= expectNear("trusted low-support contact does not raise damping", lowSupportAuthority.dampingMultiplier, 1.0f, 0.001f);
     ok &= expectTrue("single-hit small support is sphere-like not surface-authoritative", lowSupportAuthority.contactSupportShape == ContactSupportShape::SphereLike);
 
     const auto rejectedPatchAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
@@ -363,7 +347,6 @@ int main()
         .acquisitionVisualEligible = false,
         .hasPivotTrackingError = true,
         .pivotAuthorityNormalTrusted = true,
-        .angularAuthorityScale = 1.0f,
         .contactSupportShape = ContactSupportShape::Surface,
     });
     ok &= expectTrue("touch-held surface support may publish visual hand", touchHeldSurfaceVisual.apply);
@@ -376,10 +359,9 @@ int main()
         .hasPivotTrackingError = true,
         .pivotAuthorityPositionOnly = true,
         .pivotAuthorityNormalTrusted = false,
-        .angularAuthorityScale = 0.75f,
         .contactSupportShape = ContactSupportShape::Point,
     });
-    ok &= expectFalse("touch-held weak point support does not publish visual hand", weakPointTouchVisual.apply);
+    ok &= expectTrue("touch-held weak point support may publish visual hand after seated relation", weakPointTouchVisual.apply);
 
     const auto weakNormalTouchVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
         .hasTelemetryCapture = true,
@@ -388,10 +370,9 @@ int main()
         .hasPivotTrackingError = true,
         .pivotAuthorityPositionOnly = false,
         .pivotAuthorityNormalTrusted = false,
-        .angularAuthorityScale = 0.75f,
         .contactSupportShape = ContactSupportShape::Unknown,
     });
-    ok &= expectFalse("touch-held untrusted normal support does not publish visual hand", weakNormalTouchVisual.apply);
+    ok &= expectTrue("touch-held untrusted normal support may publish visual hand after seated relation", weakNormalTouchVisual.apply);
 
     const auto seatedPointTouchVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
         .hasTelemetryCapture = true,
@@ -401,7 +382,6 @@ int main()
         .pivotAuthorityPositionOnly = true,
         .pivotAuthorityNormalTrusted = false,
         .hasSeatedPivotReacquire = true,
-        .angularAuthorityScale = 0.35f,
         .contactSupportShape = ContactSupportShape::Point,
     });
     ok &= expectTrue("seated point support may publish visual hand", seatedPointTouchVisual.apply);
@@ -412,7 +392,6 @@ int main()
         .acquisitionVisualEligible = true,
         .hasPivotTrackingError = true,
         .pivotAuthorityNormalTrusted = true,
-        .angularAuthorityScale = 0.75f,
         .contactSupportShape = ContactSupportShape::Surface,
     });
     ok &= expectTrue("strong acquisition support may publish visual hand", acquisitionSurfaceVisual.apply);
@@ -425,7 +404,6 @@ int main()
         .hasPivotTrackingError = true,
         .pivotAuthorityNormalTrusted = true,
         .requiresSettledVisualRelation = true,
-        .angularAuthorityScale = 1.0f,
         .contactSupportShape = ContactSupportShape::Surface,
     });
     ok &= expectFalse("acquisition visual hand waits for settled relation", acquisitionAwaitingSettledRelation.apply);
@@ -438,7 +416,6 @@ int main()
         .hasPivotTrackingError = true,
         .pivotAuthorityNormalTrusted = true,
         .requiresSettledVisualRelation = true,
-        .angularAuthorityScale = 1.0f,
         .contactSupportShape = ContactSupportShape::Surface,
     });
     ok &= expectFalse("touch-held visual hand waits for settled relation", touchHeldAwaitingSettledRelation.apply);
@@ -451,21 +428,9 @@ int main()
         .pivotAuthorityNormalTrusted = true,
         .hasSeatedPivotReacquire = true,
         .requiresSettledVisualRelation = true,
-        .angularAuthorityScale = 1.0f,
         .contactSupportShape = ContactSupportShape::Surface,
     });
     ok &= expectTrue("seated settled relation may publish visual hand", seatedSettledRelationVisual.apply);
-
-    const auto acquisitionLowAuthorityVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
-        .hasTelemetryCapture = true,
-        .touchHeldPhase = false,
-        .acquisitionVisualEligible = true,
-        .hasPivotTrackingError = true,
-        .pivotAuthorityNormalTrusted = true,
-        .angularAuthorityScale = 0.54f,
-        .contactSupportShape = ContactSupportShape::Surface,
-    });
-    ok &= expectFalse("low angular authority blocks acquisition visual hand", acquisitionLowAuthorityVisual.apply);
 
     const auto acquisitionContactSoftenedVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
         .hasTelemetryCapture = true,
@@ -474,7 +439,6 @@ int main()
         .hasPivotTrackingError = true,
         .motorContactSoftening = true,
         .pivotAuthorityNormalTrusted = true,
-        .angularAuthorityScale = 0.75f,
         .contactSupportShape = ContactSupportShape::Surface,
     });
     ok &= expectFalse("push-into-contact blocks acquisition visual hand", acquisitionContactSoftenedVisual.apply);
@@ -486,10 +450,9 @@ int main()
         .hasPivotTrackingError = true,
         .pivotAuthorityPositionOnly = true,
         .pivotAuthorityNormalTrusted = false,
-        .angularAuthorityScale = 0.75f,
         .contactSupportShape = ContactSupportShape::Point,
     });
-    ok &= expectFalse("weak point support blocks acquisition visual hand", acquisitionWeakPointVisual.apply);
+    ok &= expectTrue("weak point support does not block acquisition visual hand", acquisitionWeakPointVisual.apply);
 
     const auto acquisitionWeakNormalVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
         .hasTelemetryCapture = true,
@@ -498,10 +461,9 @@ int main()
         .hasPivotTrackingError = true,
         .pivotAuthorityPositionOnly = false,
         .pivotAuthorityNormalTrusted = false,
-        .angularAuthorityScale = 0.75f,
         .contactSupportShape = ContactSupportShape::Unknown,
     });
-    ok &= expectFalse("untrusted normal support blocks acquisition visual hand", acquisitionWeakNormalVisual.apply);
+    ok &= expectTrue("untrusted normal support does not block acquisition visual hand", acquisitionWeakNormalVisual.apply);
 
     const auto ratioClamp = rock::grab_inertia_policy::normalizeInverseInertiaAxesForGrab(1.0f, 100.0f, 4.0f, 10.0f, 0.05f);
     ok &= expectTrue("inertia ratio clamp modifies axis", ratioClamp.modified);
@@ -531,6 +493,24 @@ int main()
     ok &= expectNear("very long object release angular scale floor",
         computeLongObjectAngularSpeedScale(true, 200.0f, 24.0f, 0.35f),
         0.35f,
+        0.001f);
+
+    const rock::held_mass_movement::Config movementConfig{};
+    ok &= expectNear("held mass movement scales by mass",
+        rock::held_mass_movement::computeHeldMassReduction(10.0f, movementConfig),
+        6.75f,
+        0.001f);
+    ok &= expectNear("held mass movement caps max reduction",
+        rock::held_mass_movement::computeHeldMassReduction(200.0f, movementConfig),
+        75.0f,
+        0.001f);
+    ok &= expectNear("held mass movement fades linearly toward zero",
+        rock::held_mass_movement::computeFadeOutReduction(50.0f, 1.0f, 5.0f),
+        40.0f,
+        0.001f);
+    ok &= expectNear("held mass movement fade reaches zero at configured duration",
+        rock::held_mass_movement::computeFadeOutReduction(50.0f, 5.0f, 5.0f),
+        0.0f,
         0.001f);
 
     return ok ? 0 : 1;

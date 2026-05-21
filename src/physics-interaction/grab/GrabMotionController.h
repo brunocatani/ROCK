@@ -54,24 +54,17 @@ namespace rock::grab_motion_controller
      */
     struct MotorInput
     {
-        bool enabled = true;
         bool heldBodyColliding = false;
-
-        float positionErrorGameUnits = 0.0f;
-        float fullPositionErrorGameUnits = 20.0f;
 
         float baseLinearTau = 0.03f;
         float baseAngularTau = 0.03f;
         float collisionTau = 0.01f;
-        float maxTau = 0.8f;
         float currentLinearTau = 0.03f;
         float currentAngularTau = 0.03f;
         float tauLerpSpeed = 0.5f;
         float deltaTime = 1.0f / 90.0f;
 
         float baseMaxForce = 2000.0f;
-        float massResponsiveMaxForce = 2000.0f;
-        float maxForceMultiplier = 4.0f;
         float authorityForceScale = 1.0f;
         float mass = 0.0f;
         float forceToMassRatio = 500.0f;
@@ -95,7 +88,6 @@ namespace rock::grab_motion_controller
         float smallObjectAngularScale = 0.65f;
         float lowContactSupportAngularScale = 0.75f;
         float minAngularAuthorityScale = 0.30f;
-        float weakNormalAngularDampingMultiplier = 1.75f;
         float weakPivotTwistScale = 0.35f;
         ContactSupportShape contactSupportShape = ContactSupportShape::Unknown;
         float longObjectReferenceLeverGameUnits = 24.0f;
@@ -103,13 +95,11 @@ namespace rock::grab_motion_controller
 
     struct MotorOutput
     {
-        float linearErrorFactor = 0.0f;
         float linearTau = 0.03f;
         float angularTau = 0.03f;
         float linearMaxForce = 0.0f;
         float angularMaxForce = 0.0f;
         float angularAuthorityScale = 1.0f;
-        float angularDampingMultiplier = 1.0f;
         float weakPivotTwistScale = 1.0f;
         float fadeFactor = 1.0f;
     };
@@ -129,7 +119,6 @@ namespace rock::grab_motion_controller
         float smallObjectAngularScale = 0.65f;
         float lowContactSupportAngularScale = 0.75f;
         float minAngularAuthorityScale = 0.30f;
-        float weakNormalAngularDampingMultiplier = 1.75f;
         float weakPivotTwistScale = 0.35f;
         ContactSupportShape contactSupportShape = ContactSupportShape::Unknown;
         float longObjectReferenceLeverGameUnits = 24.0f;
@@ -138,7 +127,6 @@ namespace rock::grab_motion_controller
     struct AngularAuthorityOutput
     {
         float authorityScale = 1.0f;
-        float dampingMultiplier = 1.0f;
         float weakPivotTwistScale = 1.0f;
         float pivotQualityScale = 1.0f;
         float contactSupportScale = 1.0f;
@@ -186,12 +174,6 @@ namespace rock::grab_motion_controller
             return target;
         }
         return current + (delta > 0.0f ? step : -step);
-    }
-
-    inline float computePositionErrorFactor(float positionErrorGameUnits, float fullPositionErrorGameUnits)
-    {
-        const float positionFull = safePositive(fullPositionErrorGameUnits, 20.0f);
-        return clamp01(std::abs(finiteOr(positionErrorGameUnits, 0.0f)) / positionFull);
     }
 
     inline float computeFadeFactor(float elapsed, float duration)
@@ -311,7 +293,6 @@ namespace rock::grab_motion_controller
         output.weakPivot = input.positionOnlyPivot || !input.normalTrusted;
         if (output.weakPivot) {
             output.pivotQualityScale = positionOnlyScale;
-            output.dampingMultiplier = (std::max)(1.0f, safePositive(input.weakNormalAngularDampingMultiplier, 1.75f));
             output.weakPivotTwistScale = configuredWeakPivotTwistScale;
         }
 
@@ -519,7 +500,6 @@ namespace rock::grab_motion_controller
         bool requiresSettledVisualRelation = false;
         std::uint32_t multiFingerContactGroupCount = 0;
         std::uint32_t contactPatchSampleCount = 0;
-        float angularAuthorityScale = 1.0f;
         ContactSupportShape contactSupportShape = ContactSupportShape::Unknown;
     };
 
@@ -580,44 +560,14 @@ namespace rock::grab_motion_controller
             return decision;
         }
 
-        const float authorityScale = std::clamp(std::isfinite(input.angularAuthorityScale) ? input.angularAuthorityScale : 0.0f, 0.0f, 1.0f);
-        const bool strongSupport =
-            input.pivotAuthorityNormalTrusted ||
-            input.hasSeatedPivotReacquire ||
-            input.multiFingerContactGroupCount >= 2 ||
-            input.contactSupportShape == ContactSupportShape::Surface ||
-            input.contactSupportShape == ContactSupportShape::Wrap;
-        const bool weakPointLikeSupport =
-            input.contactSupportShape == ContactSupportShape::Point ||
-            input.contactSupportShape == ContactSupportShape::SphereLike ||
-            input.contactSupportShape == ContactSupportShape::ThinEdge;
-        const bool weakNormalSupport = !input.pivotAuthorityNormalTrusted;
-        const bool weakLeverSupport =
-            input.contactSupportShape == ContactSupportShape::LongHandle &&
-            input.multiFingerContactGroupCount < 2 &&
-            !input.hasSeatedPivotReacquire;
-
         if (input.acquisitionVisualEligible && !input.touchHeldPhase) {
             decision.acquisition = true;
             if (input.motorContactSoftening) {
                 decision.reason = "acquisitionPushingIntoContact";
                 return decision;
             }
-            if (authorityScale < 0.55f) {
-                decision.reason = "acquisitionLowAngularAuthority";
-                return decision;
-            }
-            if ((weakNormalSupport || weakPointLikeSupport || weakLeverSupport || input.pivotAuthorityPositionOnly) && !strongSupport) {
-                decision.reason = "acquisitionAwaitingAuthorityEvidence";
-                return decision;
-            }
             decision.apply = true;
             decision.reason = "acquisitionAuthorityAccepted";
-            return decision;
-        }
-
-        if ((weakNormalSupport || input.pivotAuthorityPositionOnly || weakPointLikeSupport || weakLeverSupport) && !strongSupport) {
-            decision.reason = "touchHeldWeakVisualAuthority";
             return decision;
         }
 
@@ -749,7 +699,6 @@ namespace rock::grab_motion_controller
                 .smallObjectAngularScale = input.smallObjectAngularScale,
                 .lowContactSupportAngularScale = input.lowContactSupportAngularScale,
                 .minAngularAuthorityScale = input.minAngularAuthorityScale,
-                .weakNormalAngularDampingMultiplier = input.weakNormalAngularDampingMultiplier,
                 .weakPivotTwistScale = input.weakPivotTwistScale,
                 .contactSupportShape = input.contactSupportShape,
                 .longObjectReferenceLeverGameUnits = input.longObjectReferenceLeverGameUnits,
@@ -764,44 +713,31 @@ namespace rock::grab_motion_controller
 
         const float baseLinearTau = safePositive(input.baseLinearTau, 0.03f);
         const float baseAngularTau = safePositive(input.baseAngularTau, baseLinearTau);
-        const float maxTau = (std::max)(baseLinearTau, safePositive(input.maxTau, baseLinearTau));
         const float collisionTau = safePositive(input.collisionTau, baseLinearTau);
-        if (input.enabled) {
-            out.linearErrorFactor = computePositionErrorFactor(input.positionErrorGameUnits, input.fullPositionErrorGameUnits);
-        }
 
         const auto& angularAuthority = heldAuthority.angular;
         out.angularAuthorityScale = angularAuthority.authorityScale;
-        out.angularDampingMultiplier = angularAuthority.dampingMultiplier;
         out.weakPivotTwistScale = angularAuthority.weakPivotTwistScale;
 
-        const float linearTauTarget = heldAuthority.softenForContact ? collisionTau : baseLinearTau + (maxTau - baseLinearTau) * out.linearErrorFactor;
         /*
-         * HIGGS-style dynamic grabs do not add a second angular-gain mode when
-         * the hand snaps ahead. Keep angular response on the solver's base tau;
-         * mass-capped angular force and the body's inertia tensor decide how
-         * hard long objects can follow.
+         * HIGGS-style dynamic grabs keep normal held motors on fixed base tau.
+         * Tracking error is telemetry and release safety input, not a second
+         * live gain mode that steps in after the object lags behind.
          */
+        const float linearTauTarget = heldAuthority.softenForContact ? collisionTau : baseLinearTau;
         const float angularTauTarget = heldAuthority.softenForContact ? collisionTau : baseAngularTau;
         out.linearTau = advanceToward(input.currentLinearTau, linearTauTarget, input.tauLerpSpeed, input.deltaTime);
         out.angularTau = advanceToward(input.currentAngularTau, angularTauTarget, input.tauLerpSpeed, input.deltaTime);
 
-        const float maxMultiplier = (std::max)(1.0f, safePositive(input.maxForceMultiplier, 1.0f));
         const float baseForce = (std::max)(0.0f, finiteOr(input.baseMaxForce, 0.0f));
-        float targetForce = baseForce * (1.0f + (maxMultiplier - 1.0f) * out.linearErrorFactor);
-        const float massResponsiveCeiling = (std::max)(baseForce, finiteOr(input.massResponsiveMaxForce, baseForce));
-        if (massResponsiveCeiling > baseForce && std::isfinite(input.mass) && input.mass > 0.0f && std::isfinite(input.forceToMassRatio) &&
-            input.forceToMassRatio > 0.0f) {
-            targetForce = (std::max)(targetForce, (std::min)(massResponsiveCeiling, input.mass * input.forceToMassRatio));
-        }
         const float authorityForceScale = std::clamp(safePositive(input.authorityForceScale, 1.0f), 0.05f, 1.0f);
         out.fadeFactor = input.fadeInEnabled ? computeFadeFactor(input.fadeElapsed, input.fadeDuration) : 1.0f;
-        out.linearMaxForce = capForceByMass(targetForce * out.fadeFactor, input.mass, input.forceToMassRatio) * authorityForceScale;
+        out.linearMaxForce = capForceByMass(baseForce * out.fadeFactor, input.mass, input.forceToMassRatio) * authorityForceScale;
 
         const float angularFadeRatio =
             safePositive(input.fadeStartAngularRatio, input.angularToLinearForceRatio) +
             (safePositive(input.angularToLinearForceRatio, 12.5f) - safePositive(input.fadeStartAngularRatio, input.angularToLinearForceRatio)) * out.fadeFactor;
-        out.angularMaxForce = angularForceFromRatio(out.linearMaxForce, angularFadeRatio) * out.angularAuthorityScale;
+        out.angularMaxForce = angularForceFromRatio(out.linearMaxForce, angularFadeRatio);
         return out;
     }
 

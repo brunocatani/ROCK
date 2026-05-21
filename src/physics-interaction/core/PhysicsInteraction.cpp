@@ -30,6 +30,7 @@
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
+#include "physics-interaction/grab/HeldMassMovement.h"
 #include "physics-interaction/grab/HeldPlayerSpaceRegistry.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/native/HavokRuntime.h"
@@ -53,7 +54,9 @@
 #include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/PhysicsBodyFrame.h"
 
+#include "RE/Bethesda/ActorValueInfo.h"
 #include "RE/Bethesda/BSHavok.h"
 #include "RE/Bethesda/FormComponents.h"
 #include "RE/Bethesda/TESBoundObjects.h"
@@ -225,6 +228,32 @@ namespace rock
                 return 0.0f;
             }
             return 1.0f / inverseMass;
+        }
+
+        bool applyPlayerSpeedReduction(float previousReduction, float targetReduction)
+        {
+            previousReduction = held_mass_movement::sanitizeReduction(previousReduction);
+            targetReduction = held_mass_movement::sanitizeReduction(targetReduction);
+            if (std::fabs(previousReduction - targetReduction) <= 0.001f) {
+                return true;
+            }
+
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            auto* actorValues = RE::ActorValue::GetSingleton();
+            if (!player || !actorValues || !actorValues->speedMult || !actorValues->carryWeight) {
+                return false;
+            }
+
+            if (previousReduction > 0.0f) {
+                player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, *actorValues->speedMult, previousReduction);
+            }
+            if (targetReduction > 0.0f) {
+                player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, *actorValues->speedMult, -targetReduction);
+            }
+
+            player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, *actorValues->carryWeight, 0.1f);
+            player->ModActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, *actorValues->carryWeight, -0.1f);
+            return true;
         }
 
         std::uint32_t fillGrabEventBodyKinematics(RE::hknpWorld* world, std::uint32_t bodyId, GrabEventData& eventData)
@@ -1304,6 +1333,7 @@ namespace rock
     void PhysicsInteraction::update()
     {
         if (!frik::api::FRIKApi::inst) {
+            restoreHeldMassMovementSlowdown("frik-unavailable");
             return;
         }
 
@@ -1375,6 +1405,7 @@ namespace rock
             auto* snapshotBhk = getPlayerBhkWorld();
             auto* snapshotHknp = snapshotBhk ? getHknpWorld(snapshotBhk) : nullptr;
             observeLifecycleFrame(snapshotBhk, snapshotHknp, ::rock::provider::RockProviderLifecycleReason::MenuBlocked);
+            restoreHeldMassMovementSlowdown("menu-blocked");
             ::rock::provider::dispatchFrameCallbacks(*this);
             return;
         }
@@ -1421,6 +1452,7 @@ namespace rock
             _softContactRuntime.reset();
             _nativeContactEvidence.reset();
             debug::ClearFrame();
+            restoreHeldMassMovementSlowdown("world-unavailable");
             ::rock::provider::dispatchFrameCallbacks(*this);
             return;
         }
@@ -1752,6 +1784,7 @@ namespace rock
         applyHeldPlayerSpaceVelocity(hknp);
 
         updateGrabInput(frame);
+        updateHeldMassMovementSlowdown(hknp, frame.deltaSeconds);
         synchronizeContactEvidenceOwnership(rightHandWeaponEquipped, leftSupportGripActive);
 
         /*
@@ -2097,6 +2130,7 @@ namespace rock
         dispatchPhysicsMessage(kPhysMsg_OnPhysicsShutdown, false);
 
         ROCK_LOG_INFO(Init, "Shutting down ROCK physics module...");
+        restoreHeldMassMovementSlowdown("shutdown");
 
         auto* currentBhk = getPlayerBhkWorld();
         const bool worldValid = _cachedBhkWorld && currentBhk == _cachedBhkWorld;
@@ -2172,6 +2206,7 @@ namespace rock
         _hasHeldPlayerSpacePosition = false;
         _heldObjectPlayerSpaceFrame = {};
         _heldPlayerSpaceLogCounter = 0;
+        _heldMassMovementLogCounter = 0;
         _handBoneCache.reset();
         _handCacheResolveLogCounter = 0;
         _paritySummaryCounter = 0;
@@ -3280,6 +3315,151 @@ namespace rock
                 result.transformsWarped,
                 result.duplicateMotionSkips,
                 result.writerMask);
+        }
+    }
+
+    void PhysicsInteraction::restoreHeldMassMovementSlowdown(const char* reason)
+    {
+        if (_heldMassMovementSpeedReduction <= 0.0f) {
+            return;
+        }
+
+        const float previousReduction = _heldMassMovementSpeedReduction;
+        if (applyPlayerSpeedReduction(previousReduction, 0.0f)) {
+            _heldMassMovementSpeedReduction = 0.0f;
+            _heldMassMovementFadeStartReduction = 0.0f;
+            _heldMassMovementFadeElapsedSeconds = 0.0f;
+            _heldMassMovementLogCounter = 0;
+            ROCK_LOG_DEBUG(Hand,
+                "Held mass movement slowdown restored: previousReduction={:.2f} reason={}",
+                previousReduction,
+                reason ? reason : "restore");
+        } else {
+            ROCK_LOG_SAMPLE_WARN(Hand,
+                300,
+                "Held mass movement slowdown restore delayed: previousReduction={:.2f} reason={}",
+                previousReduction,
+                reason ? reason : "restore");
+        }
+    }
+
+    void PhysicsInteraction::updateHeldMassMovementSlowdown(RE::hknpWorld* hknp, float deltaSeconds)
+    {
+        if (!g_rockConfig.rockGrabHeldMassMovementSlowdownEnabled) {
+            restoreHeldMassMovementSlowdown("disabled");
+            return;
+        }
+
+        float heldMass = 0.0f;
+        if (hknp) {
+            constexpr std::size_t kMaxMovementMassMotionSlots = 160;
+            std::array<std::uint32_t, kMaxMovementMassMotionSlots> sampledMotionSlots{};
+            std::size_t sampledMotionSlotCount = 0;
+
+            auto motionAlreadySampled = [&](std::uint32_t motionIndex) {
+                for (std::size_t i = 0; i < sampledMotionSlotCount; ++i) {
+                    if (sampledMotionSlots[i] == motionIndex) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            auto sampleBody = [&](std::uint32_t bodyId) {
+                if (isInvalidGrabBodyId(bodyId)) {
+                    return;
+                }
+
+                auto* body = havok_runtime::getBody(hknp, RE::hknpBodyId{ bodyId });
+                if (!body || !body_frame::hasUsableMotionIndex(body->motionIndex) || motionAlreadySampled(body->motionIndex)) {
+                    return;
+                }
+                if (sampledMotionSlotCount >= sampledMotionSlots.size()) {
+                    return;
+                }
+
+                const float mass = readGrabEventBodyMass(hknp, bodyId);
+                if (!std::isfinite(mass) || mass <= 0.0f) {
+                    return;
+                }
+
+                sampledMotionSlots[sampledMotionSlotCount++] = body->motionIndex;
+                heldMass += mass;
+            };
+
+            auto sampleHand = [&](const Hand& hand) {
+                if (!hand.isHolding()) {
+                    return;
+                }
+
+                const auto& savedState = hand.getSavedObjectState();
+                sampleBody(savedState.bodyId.value);
+                for (const auto bodyId : hand.getHeldBodyIds()) {
+                    sampleBody(bodyId);
+                }
+            };
+
+            sampleHand(_rightHand);
+            sampleHand(_leftHand);
+        }
+
+        const held_mass_movement::Config movementConfig{
+            .enabled = g_rockConfig.rockGrabHeldMassMovementSlowdownEnabled,
+            .massProportion = g_rockConfig.rockGrabHeldMassMovementMassProportion,
+            .massExponent = g_rockConfig.rockGrabHeldMassMovementMassExponent,
+            .maxReduction = g_rockConfig.rockGrabHeldMassMovementMaxReduction,
+            .fadeOutSeconds = g_rockConfig.rockGrabHeldMassMovementFadeOutSeconds,
+        };
+        const float heldMassReduction = held_mass_movement::computeHeldMassReduction(heldMass, movementConfig);
+        float targetReduction = heldMassReduction;
+        if (heldMassReduction > 0.0f) {
+            _heldMassMovementFadeStartReduction = heldMassReduction;
+            _heldMassMovementFadeElapsedSeconds = 0.0f;
+        } else if (_heldMassMovementSpeedReduction > 0.0f) {
+            if (_heldMassMovementFadeStartReduction <= 0.0f) {
+                _heldMassMovementFadeStartReduction = _heldMassMovementSpeedReduction;
+                _heldMassMovementFadeElapsedSeconds = 0.0f;
+            }
+            _heldMassMovementFadeElapsedSeconds += std::isfinite(deltaSeconds) ? (std::max)(0.0f, deltaSeconds) : 0.0f;
+            targetReduction = held_mass_movement::computeFadeOutReduction(
+                _heldMassMovementFadeStartReduction,
+                _heldMassMovementFadeElapsedSeconds,
+                movementConfig.fadeOutSeconds);
+        } else {
+            _heldMassMovementFadeStartReduction = 0.0f;
+            _heldMassMovementFadeElapsedSeconds = 0.0f;
+        }
+
+        if (std::fabs(targetReduction - _heldMassMovementSpeedReduction) <= 0.001f) {
+            return;
+        }
+
+        const float previousReduction = _heldMassMovementSpeedReduction;
+        if (!applyPlayerSpeedReduction(previousReduction, targetReduction)) {
+            ROCK_LOG_SAMPLE_WARN(Hand,
+                300,
+                "Held mass movement slowdown skipped: heldMass={:.3f} previousReduction={:.2f} targetReduction={:.2f}",
+                heldMass,
+                previousReduction,
+                targetReduction);
+            return;
+        }
+
+        _heldMassMovementSpeedReduction = targetReduction;
+        if (targetReduction <= 0.0f) {
+            _heldMassMovementFadeStartReduction = 0.0f;
+            _heldMassMovementFadeElapsedSeconds = 0.0f;
+        }
+        if (g_rockConfig.rockDebugGrabFrameLogging) {
+            ++_heldMassMovementLogCounter;
+            if (_heldMassMovementLogCounter >= 90 || heldMass <= 0.0f || previousReduction <= 0.0f) {
+                _heldMassMovementLogCounter = 0;
+                ROCK_LOG_DEBUG(Hand,
+                    "Held mass movement slowdown: heldMass={:.3f} previousReduction={:.2f} targetReduction={:.2f}",
+                    heldMass,
+                    previousReduction,
+                    targetReduction);
+            }
         }
     }
 

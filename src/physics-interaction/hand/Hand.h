@@ -460,7 +460,6 @@ namespace rock
             float deltaTime,
             float forceFadeInTime,
             float tauMin,
-            float grabPositionErrorGameUnits,
             float authorityForceScale,
             bool heldBodyColliding,
             const grab_motion_controller::HeldAuthorityState& heldAuthority);

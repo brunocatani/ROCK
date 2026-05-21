@@ -192,6 +192,8 @@ namespace rock
         HeldObjectPlayerSpaceFrame sampleHeldObjectPlayerSpaceFrame(float deltaSeconds);
 
         void applyHeldPlayerSpaceVelocity(RE::hknpWorld* hknp);
+        void updateHeldMassMovementSlowdown(RE::hknpWorld* hknp, float deltaSeconds);
+        void restoreHeldMassMovementSlowdown(const char* reason);
 
         void resolveContacts(const PhysicsFrameContext& frame);
 
@@ -389,6 +391,10 @@ namespace rock
         bool _hasHeldPlayerSpaceTransform = false;
         RE::NiPoint3 _lastCentralHeldPlayerSpaceVelocityHavok{};
         int _heldPlayerSpaceLogCounter = 0;
+        float _heldMassMovementSpeedReduction = 0.0f;
+        float _heldMassMovementFadeStartReduction = 0.0f;
+        float _heldMassMovementFadeElapsedSeconds = 0.0f;
+        int _heldMassMovementLogCounter = 0;
 
         int _wpnNodeLogCounter = 0;
     };

@@ -34,10 +34,10 @@ ROCK now keeps held-object angular correction solver-owned through the custom co
 
 The added logic therefore does not port HIGGS 1:1. It applies HIGGS's stability principles at ROCK's solver authority layer:
 
-- linear position error drives linear tau and linear force;
-- angular tau stays at the configured base value except while contact softening is
-  active, preventing delayed snap-rotation gain changes;
-- weak pivot/contact evidence scales angular motor force and angular damping;
+- linear and angular tau stay at the configured base values except while contact
+  softening is active, preventing delayed snap-rotation gain changes;
+- weak pivot/contact evidence is retained for release angular velocity safety,
+  not live held motor force or damping;
 - compact weak-contact objects receive extra angular softness;
 - weak pivots reduce twist around the pivot-to-COM axis while preserving swing;
 - release angular velocity uses the same weak-pivot twist limiter;
@@ -51,7 +51,7 @@ length-based motor mode.
 
 ## Runtime Implication
 
-Objects with trusted normals and strong contact support retain normal authority. Position-only pivots, untrusted normals, single-point/low-support contact patches, and small compact weak-contact objects get softer angular authority, which should reduce spin around the grab point without making translation feel sluggish.
+Objects with trusted normals and strong contact support retain normal release authority. Position-only pivots, untrusted normals, single-point/low-support contact patches, and small compact weak-contact objects get softer release angular velocity caps, while live held motor force remains fixed and mass-capped.
 
 Review correction:
 
