@@ -51,6 +51,7 @@ namespace
     constexpr float kDefaultGrabThrowMaxAngularVelocityRadiansPerSecond = 18.0f;
     constexpr float kDefaultGrabLongObjectReferenceLeverGameUnits = 24.0f;
     constexpr float kDefaultGrabLongObjectMinAngularScale = 0.35f;
+    constexpr float kDefaultGrabEffectiveMotorMassFloor = 2.0f;
     constexpr float kDefaultGrabPositionOnlyAngularScale = 0.55f;
     constexpr float kDefaultGrabSmallObjectReferenceLeverGameUnits = 12.0f;
     constexpr float kDefaultGrabSmallObjectAngularScale = 0.65f;
@@ -298,6 +299,8 @@ namespace rock
         rockGrabConstraintMaxForce = 2000.0f;
         rockGrabAngularToLinearForceRatio = 12.5f;
         rockGrabMaxForceToMassRatio = 500.0f;
+        rockGrabEffectiveMotorMassFloorEnabled = true;
+        rockGrabEffectiveMotorMassFloor = kDefaultGrabEffectiveMotorMassFloor;
         rockGrabFadeInStartAngularRatio = 100.0f;
 
         rockGrabForceFadeInTime = 0.1f;
@@ -1039,6 +1042,15 @@ namespace rock
         rockGrabConstraintMaxForce = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabConstraintMaxForce", rockGrabConstraintMaxForce));
         rockGrabAngularToLinearForceRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularToLinearForceRatio", rockGrabAngularToLinearForceRatio));
         rockGrabMaxForceToMassRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxForceToMassRatio", rockGrabMaxForceToMassRatio));
+        rockGrabEffectiveMotorMassFloorEnabled =
+            ini.GetBoolValue(SECTION, "bGrabEffectiveMotorMassFloorEnabled", rockGrabEffectiveMotorMassFloorEnabled);
+        rockGrabEffectiveMotorMassFloor = readClampedFloat(ini,
+            SECTION,
+            "fGrabEffectiveMotorMassFloor",
+            rockGrabEffectiveMotorMassFloor,
+            kDefaultGrabEffectiveMotorMassFloor,
+            0.0f,
+            100.0f);
         rockGrabFadeInStartAngularRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabFadeInStartAngularRatio", rockGrabFadeInStartAngularRatio));
 
         rockGrabForceFadeInTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabForceFadeInTime", rockGrabForceFadeInTime));

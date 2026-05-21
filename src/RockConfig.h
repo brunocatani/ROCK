@@ -259,6 +259,8 @@ namespace rock
         float rockGrabConstraintMaxForce = 2000.0f;
         float rockGrabAngularToLinearForceRatio = 12.5f;
         float rockGrabMaxForceToMassRatio = 500.0f;
+        bool rockGrabEffectiveMotorMassFloorEnabled = true;
+        float rockGrabEffectiveMotorMassFloor = 2.0f;
         float rockGrabFadeInStartAngularRatio = 100.0f;
 
         float rockGrabForceFadeInTime = 0.1f;

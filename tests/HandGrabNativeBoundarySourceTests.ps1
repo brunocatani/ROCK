@@ -365,6 +365,13 @@ Reject-Text 'src/RockConfig.h' 'rockGrabThreePhaseEnabled|rockGrabObjectVisualHa
 Reject-Text 'data/config/ROCK.ini' 'bGrabThreePhaseEnabled|bGrabObjectVisualHandAuthorityEnabled|iGrabOrientationMode|bGrabSmallObjectPinchPivotEnabled|bGrabUseSemanticFingerContactPivot|bGrabOppositionFrameEnabled|bGrabThreePhasePreserveRotationDuringConverge|bGrabThreePhaseDelayFingerPoseUntilTouch|bGrabThreePhaseDisableVisualHandAuthority' 'Packaged ROCK.ini must not expose legacy grab authority toggles.'
 Reject-Text 'src/RockConfig.h' 'rockDebugShowGrabSurfaceFrame' 'Debug config must use pocket-normal naming, not stale surface-frame naming.'
 Reject-Text 'data/config/ROCK.ini' 'bDebugShowGrabSurfaceFrame' 'Packaged ROCK.ini must use pocket-normal naming, not stale surface-frame naming.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'effectiveGrabMotorMass\(massSummaryAtCreation\.motorMass\(\)\)' 'Proxy constraint creation must seed motor force caps from the effective motor mass floor.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '\.mass\s*=\s*massSummary\.motorMass\(\)' 'Dynamic held updates must pass raw Havok aggregate mass into the grab motor policy.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '\.effectiveMotorMassFloorEnabled\s*=\s*g_rockConfig\.rockGrabEffectiveMotorMassFloorEnabled' 'Dynamic held updates must pass the effective motor mass floor toggle into the grab motor policy.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '\.effectiveMotorMassFloor\s*=\s*g_rockConfig\.rockGrabEffectiveMotorMassFloor' 'Dynamic held updates must pass the effective motor mass floor value into the grab motor policy.'
+Require-Text 'src/physics-interaction/grab/GrabMotionController.h' 'Patch/contact/lever quality remains available to release safety[\s\S]*not live motor authority' 'Grab motor policy must document that patch quality cannot weaken live held motor force.'
+Require-Text 'data/config/ROCK.ini' 'bGrabEffectiveMotorMassFloorEnabled\s*=\s*true' 'Packaged ROCK.ini must expose the effective motor mass floor toggle for tiny loose objects.'
+Require-Text 'data/config/ROCK.ini' 'fGrabEffectiveMotorMassFloor\s*=\s*2\.0' 'Packaged ROCK.ini must expose the effective motor mass floor value for tiny loose objects.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Hand grab native boundary failed:'

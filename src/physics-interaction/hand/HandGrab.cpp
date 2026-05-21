@@ -548,6 +548,14 @@ namespace rock
             return (std::max)(0.001f, sanitizedRatio / sanitizedMultiplier);
         }
 
+        float effectiveGrabMotorMass(float mass)
+        {
+            return grab_motion_controller::effectiveMotorMass(
+                mass,
+                g_rockConfig.rockGrabEffectiveMotorMassFloorEnabled,
+                g_rockConfig.rockGrabEffectiveMotorMassFloor);
+        }
+
         GrabConstraintMotorTuning buildProxyConstraintMotorTuning(
             float tau,
             float damping,
@@ -4328,6 +4336,7 @@ namespace rock
             objectBodyId,
             _heldBodyIds,
             _heldDriveDecision.includeConnectedMass);
+        const float effectiveMassAtCreation = effectiveGrabMotorMass(massSummaryAtCreation.motorMass());
         const GrabConstraintMotorTuning motorTuning = buildProxyConstraintMotorTuning(tau,
             damping,
             maxForce,
@@ -4335,7 +4344,7 @@ namespace rock
             proportionalRecovery,
             constantRecovery,
             looseWeaponGrab,
-            massSummaryAtCreation.motorMass(),
+            effectiveMassAtCreation,
             g_rockConfig.rockGrabMaxForceToMassRatio);
 
         _activeConstraint = createGrabConstraint(world,
@@ -4538,6 +4547,8 @@ namespace rock
             .authorityForceScale = authorityForceScale,
             .mass = massSummary.motorMass(),
             .forceToMassRatio = g_rockConfig.rockGrabMaxForceToMassRatio,
+            .effectiveMotorMassFloorEnabled = g_rockConfig.rockGrabEffectiveMotorMassFloorEnabled,
+            .effectiveMotorMassFloor = g_rockConfig.rockGrabEffectiveMotorMassFloor,
             .angularToLinearForceRatio =
                 angularForceRatioForMultiplier(g_rockConfig.rockGrabAngularToLinearForceRatio, looseAngularForceMultiplier),
             .fadeInEnabled = _grabFrame.fadeInGrabConstraint,
@@ -7305,6 +7316,7 @@ namespace rock
             _savedObjectState.bodyId,
             _heldBodyIds,
             _heldDriveDecision.includeConnectedMass);
+        const float effectiveMassAtGrab = effectiveGrabMotorMass(massSummaryAtGrab.motorMass());
         const float sharedLinearForce = _activeConstraint.linearMotor ?
             (std::max)(std::fabs(_activeConstraint.linearMotor->minForce), std::fabs(_activeConstraint.linearMotor->maxForce)) :
             maxForce;
@@ -7312,7 +7324,7 @@ namespace rock
             (std::max)(std::fabs(_activeConstraint.angularMotor->minForce), std::fabs(_activeConstraint.angularMotor->maxForce)) :
             0.0f;
         ROCK_LOG_DEBUG(Hand,
-            "{} hand dynamic grab created: drive={} bodyDriveMode={} driveReason={} forceScale={:.2f} linearScope={} angularScope={} massScope={} looseWeapon={} constraint={} proxyBody={} handBody={} objBody={} heldBodies={} mass={:.2f} primaryMass={:.2f} massBodies={} motions={} longLever={:.1f}gu linearTau={:.3f} angularTau={:.3f} linearDamping={:.2f} angularDamping={:.2f} linearForce={:.0f} angularForce={:.0f} propRecov={:.1f} constRecov={:.1f} rotRef={}",
+            "{} hand dynamic grab created: drive={} bodyDriveMode={} driveReason={} forceScale={:.2f} linearScope={} angularScope={} massScope={} looseWeapon={} constraint={} proxyBody={} handBody={} objBody={} heldBodies={} mass={:.2f} effectiveMotorMass={:.2f} primaryMass={:.2f} massBodies={} motions={} longLever={:.1f}gu linearTau={:.3f} angularTau={:.3f} linearDamping={:.2f} angularDamping={:.2f} linearForce={:.0f} angularForce={:.0f} propRecov={:.1f} constRecov={:.1f} rotRef={}",
             handName(),
             kHeldObjectDriveName,
             held_object_drive_policy::modeName(_heldDriveDecision.mode),
@@ -7328,6 +7340,7 @@ namespace rock
             objectBodyId.value,
             _heldBodyIds.size(),
             massSummaryAtGrab.motorMass(),
+            effectiveMassAtGrab,
             massSummaryAtGrab.primaryMass,
             massSummaryAtGrab.sampledBodies,
             massSummaryAtGrab.uniqueMotions,

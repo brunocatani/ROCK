@@ -68,6 +68,8 @@ namespace rock::grab_motion_controller
         float authorityForceScale = 1.0f;
         float mass = 0.0f;
         float forceToMassRatio = 500.0f;
+        bool effectiveMotorMassFloorEnabled = true;
+        float effectiveMotorMassFloor = 2.0f;
         float angularToLinearForceRatio = 12.5f;
 
         bool fadeInEnabled = true;
@@ -99,8 +101,6 @@ namespace rock::grab_motion_controller
         float angularTau = 0.03f;
         float linearMaxForce = 0.0f;
         float angularMaxForce = 0.0f;
-        float angularAuthorityScale = 1.0f;
-        float weakPivotTwistScale = 1.0f;
         float fadeFactor = 1.0f;
     };
 
@@ -193,6 +193,17 @@ namespace rock::grab_motion_controller
             return force;
         }
         return (std::min)(force, mass * forceToMassRatio);
+    }
+
+    inline float effectiveMotorMass(float mass, bool floorEnabled, float massFloor)
+    {
+        const float sanitizedMass = (std::isfinite(mass) && mass > 0.0f) ? mass : 0.0f;
+        if (!floorEnabled) {
+            return sanitizedMass;
+        }
+
+        const float sanitizedFloor = (std::isfinite(massFloor) && massFloor > 0.0f) ? massFloor : 0.0f;
+        return (std::max)(sanitizedMass, sanitizedFloor);
     }
 
     inline float angularForceFromRatio(float linearForce, float ratio)
@@ -810,14 +821,11 @@ namespace rock::grab_motion_controller
         const float baseAngularTau = safePositive(input.baseAngularTau, baseLinearTau);
         const float collisionTau = safePositive(input.collisionTau, baseLinearTau);
 
-        const auto& angularAuthority = heldAuthority.angular;
-        out.angularAuthorityScale = angularAuthority.authorityScale;
-        out.weakPivotTwistScale = angularAuthority.weakPivotTwistScale;
-
         /*
          * HIGGS-style dynamic grabs keep normal held motors on fixed base tau.
-         * Tracking error is telemetry and release safety input, not a second
-         * live gain mode that steps in after the object lags behind.
+         * Patch/contact/lever quality remains available to release safety, but
+         * it is not live motor authority. Tiny or one-point patches must not
+         * make the held object too weak to follow the hand.
          */
         const float linearTauTarget = heldAuthority.softenForContact ? collisionTau : baseLinearTau;
         const float angularTauTarget = heldAuthority.softenForContact ? collisionTau : baseAngularTau;
@@ -827,7 +835,11 @@ namespace rock::grab_motion_controller
         const float baseForce = (std::max)(0.0f, finiteOr(input.baseMaxForce, 0.0f));
         const float authorityForceScale = std::clamp(safePositive(input.authorityForceScale, 1.0f), 0.05f, 1.0f);
         out.fadeFactor = input.fadeInEnabled ? computeFadeFactor(input.fadeElapsed, input.fadeDuration) : 1.0f;
-        out.linearMaxForce = capForceByMass(baseForce * out.fadeFactor, input.mass, input.forceToMassRatio) * authorityForceScale;
+        const float motorMass = effectiveMotorMass(
+            input.mass,
+            input.effectiveMotorMassFloorEnabled,
+            input.effectiveMotorMassFloor);
+        out.linearMaxForce = capForceByMass(baseForce * out.fadeFactor, motorMass, input.forceToMassRatio) * authorityForceScale;
 
         const float angularFadeRatio =
             safePositive(input.fadeStartAngularRatio, input.angularToLinearForceRatio) +
