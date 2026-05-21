@@ -34,27 +34,12 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
 
         input.rawHandWorld = getInteractionHandTransform(isLeft);
         input.handNode = getInteractionHandNode(isLeft);
-        root_flattened_finger_skeleton_runtime::SemanticHandFrame semanticHandFrame{};
-        if (!_handBoneCache.getSemanticHandFrame(isLeft, semanticHandFrame)) {
-            input.disabled = true;
-            return input;
-        }
-
-        const RE::NiTransform rawRotationPalmWorld =
-            makeRawRotationPalmTranslationFrame(input.rawHandWorld, semanticHandFrame.palmAnchorWorld);
-        input.grabAnchorWorld = rawRotationPalmWorld.translate;
         if (frame.worldReady) {
-            input.hasGrabAuthorityWorld = hand.tryComputeGrabAuthorityProxyFrameWorld(hknp, input.rawHandWorld, input.grabAuthorityWorld);
-            input.grabAnchorWorld = input.hasGrabAuthorityWorld ? input.grabAuthorityWorld.translate : rawRotationPalmWorld.translate;
+            input.grabAnchorWorld = hand.computeGrabPivotAWorld(hknp, input.rawHandWorld);
         }
-        const RE::NiTransform& directionAuthorityWorld =
-            input.hasGrabAuthorityWorld ? input.grabAuthorityWorld : rawRotationPalmWorld;
-        input.palmNormalWorld = computeGrabAuthorityPalmFaceWorld(directionAuthorityWorld);
-        input.pointingWorld = pointing_direction_math::applyFarGrabNormalReversal(
-            transformGrabAuthorityTuningDirection(directionAuthorityWorld, g_rockConfig.rockPointingVectorHandspace),
-            g_rockConfig.rockReverseFarGrabNormal);
-        input.pinchDirectionWorld =
-            transformGrabAuthorityTuningDirection(directionAuthorityWorld, g_rockConfig.rockGrabPinchDetectionDirectionHandspace);
+        input.palmNormalWorld = computePalmNormalFromHandBasis(input.rawHandWorld, isLeft);
+        input.pointingWorld = computePointingVectorFromHandBasis(input.rawHandWorld, isLeft);
+        input.pinchDirectionWorld = computePinchDetectionDirectionFromHandBasis(input.rawHandWorld, isLeft);
         if (g_rockConfig.rockDebugDrawGrabPockets) {
             root_flattened_finger_skeleton_runtime::Snapshot fingerSnapshot{};
             if (root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(isLeft, fingerSnapshot) &&

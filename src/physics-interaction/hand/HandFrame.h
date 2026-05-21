@@ -1,24 +1,7 @@
 #pragma once
 
 /*
- * LEGACY HANDSPACE WARNING
- *
- * This file contains the old authored handspace conversion where authored
- * X=fingers, authored Y=cross-palm, and authored Z=palm thickness. That is NOT
- * the production grab/palm/pinch/finger-pose authority anymore.
- *
- * New runtime hand code must use the unified root-flattened skeleton convention
- * from HandSkeleton.h / SemanticHandFrame:
- *   X  = fingers
- *   Y  = palm depth/back
- *   -Y = palm face
- *   Z  = across palm
- *
- * Do not use these legacy helpers for dynamic grab, palm pocket, pinch pocket,
- * finger curl planes, public palm API output, soft-contact palm normals, or any
- * new hand-space feature. They remain only as a quarantined compatibility
- * surface for old authored handspace diagnostics and the known two-handed
- * weapon handspace exception if that path ever needs to be restored or replaced.
+ * Hand frame helpers are grouped here because handspace convention, palm transform, and pointing direction define the same coordinate authority.
  */
 
 
@@ -27,21 +10,10 @@
 namespace rock::handspace_convention
 {
     /*
-     * LEGACY CONVERSION ONLY.
-     *
-     * This authored Y/Z swap is intentionally not the unified flatroot skeleton
-     * convention. Treat any new caller as suspicious unless it is explicitly
-     * maintaining the old two-handed weapon handspace exception or legacy
-     * telemetry comparing old configured offsets against the real generated
-     * palm/proxy frame.
-     *
-     * Legacy root-flattened handspace callers use this authored convention:
+     * ROCK root-flattened game hand frames use the active authored handspace convention:
      * authored X = fingers, authored Y = cross-palm, authored Z = palm thickness.
      * The resolved game bone transform already carries handedness, so left/right
      * conversion uses the same X/-Z/Y basis and does not apply an extra mirror.
-     *
-     * Dynamic grab authority does not use this authored Y/Z swap. It consumes
-     * generated palm proxy space directly: X=fingers, Y=palm depth, Z=across palm.
      */
     template <class Vector>
     inline Vector makeVector(float x, float y, float z)
@@ -193,56 +165,19 @@ namespace rock
         return isLeft ? g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits : g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits;
     }
 
-    inline RE::NiPoint3 transformGrabAuthorityLocalDirection(const RE::NiTransform& proxyFrameWorld, const RE::NiPoint3& localDirection)
-    {
-        return normalizeDirection(transform_math::localVectorToWorld(proxyFrameWorld, localDirection));
-    }
-
-    inline RE::NiPoint3 computeGrabAuthorityFingerForwardWorld(const RE::NiTransform& proxyFrameWorld)
-    {
-        return transformGrabAuthorityLocalDirection(proxyFrameWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
-    }
-
-    inline RE::NiPoint3 computeGrabAuthorityPalmFaceWorld(const RE::NiTransform& proxyFrameWorld)
+    inline RE::NiTransform makeGrabStartupCaptureAuthorityFrame(const RE::NiTransform& rawHandWorld, const RE::NiTransform& palmAnchorWorld)
     {
         /*
-         * Generated palm authority frames use local Y as palm depth. In the
-         * working pivot tuning, -Y is palm-face for both hands; keep pocket and
-         * pinch math on that same axis instead of the legacy authored Y/Z swap.
-         */
-        return transformGrabAuthorityLocalDirection(proxyFrameWorld, RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
-    }
-
-    inline RE::NiPoint3 computeGrabAuthorityAcrossPalmWorld(const RE::NiTransform& proxyFrameWorld)
-    {
-        return transformGrabAuthorityLocalDirection(proxyFrameWorld, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
-    }
-
-    inline RE::NiPoint3 transformGrabAuthorityTuningDirection(const RE::NiTransform& proxyFrameWorld, const RE::NiPoint3& localDirection)
-    {
-        return transformGrabAuthorityLocalDirection(proxyFrameWorld, localDirection);
-    }
-
-    inline RE::NiTransform makeRawRotationPalmTranslationFrame(const RE::NiTransform& rawHandWorld, const RE::NiTransform& palmAnchorWorld)
-    {
-        /*
-         * The generated palm collider/body is ROCK's live physical palm anchor
-         * and contact source, but its rotation can diverge from the raw
-         * root-flattened hand basis. Dynamic grab authority keeps the generated
-         * palm/proxy translation and always takes rotation/scale from the raw
-         * hand. Apply any proxy-local seat offset after building this frame so
-         * the configured local axes follow the same raw-hand rotation used by
-         * held-object angular intent.
+         * Grab startup has a narrower problem than runtime held motion: the
+         * configured proxy-local seat offset must be interpreted in controller
+         * space when choosing and freezing the first pivot point. The actual
+         * hidden proxy body still follows the existing generated palm frame
+         * after the grab is live, so do not use this helper for held updates.
          */
         RE::NiTransform result = palmAnchorWorld;
         result.rotate = rawHandWorld.rotate;
         result.scale = rawHandWorld.scale;
         return result;
-    }
-
-    inline RE::NiTransform makeGrabStartupCaptureAuthorityFrame(const RE::NiTransform& rawHandWorld, const RE::NiTransform& palmAnchorWorld)
-    {
-        return makeRawRotationPalmTranslationFrame(rawHandWorld, palmAnchorWorld);
     }
 
     inline RE::NiTransform applyGrabAuthorityProxyLocalOffsetToFrame(const RE::NiTransform& proxyFrameWorld, bool isLeft)

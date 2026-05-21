@@ -903,11 +903,6 @@ namespace rock
         return true;
     }
 
-    bool PhysicsInteraction::tryGetRootFlattenedSemanticHandFrame(bool isLeft, root_flattened_finger_skeleton_runtime::SemanticHandFrame& outFrame) const
-    {
-        return _handBoneCache.getSemanticHandFrame(isLeft, outFrame);
-    }
-
     void PhysicsInteraction::noteSkeletonLifecycle(std::uint32_t skeletonGeneration, ::rock::provider::RockProviderLifecycleReason reason)
     {
         physics_lifecycle::noteSkeletonGeneration(_lifecycleState, skeletonGeneration, reason);

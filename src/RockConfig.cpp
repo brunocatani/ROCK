@@ -111,9 +111,9 @@ namespace rock
         rockPerformanceProfilerOverlayText = false;
 
         rockPalmNormalHandspace = kDefaultPalmNormalHandspace;
-        rockPointingVectorHandspace = RE::NiPoint3(0.0f, -1.0f, 0.0f);
+        rockPointingVectorHandspace = RE::NiPoint3(0.0f, 0.0f, 1.0f);
         rockReversePalmNormal = true;
-        rockReverseFarGrabNormal = false;
+        rockReverseFarGrabNormal = true;
 
         rockWeaponCollisionEnabled = true;
         rockWeaponCollisionBlocksProjectiles = false;

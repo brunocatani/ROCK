@@ -82,7 +82,6 @@ int main()
 {
     bool ok = true;
     using namespace rock::grab_finger_local_transform_math;
-    using namespace rock::grab_finger_local_transform_runtime;
     using namespace rock::grab_finger_pose_runtime;
 
     ok &= expectBool("full 15-bone mask is sanitized",
@@ -136,20 +135,6 @@ int main()
     hiddenScaleTransform.scale = 0.00001f;
     ok &= expectBool("hidden FRIK node scale still has usable rotation",
         sceneTransformHasUsableBasis(hiddenScaleTransform), true);
-
-    std::array<rock::grab_finger_local_transform_runtime::LiveFingerTransform, 15> liveFingerNodes{};
-    liveFingerNodes[0].valid = true;
-    liveFingerNodes[1].valid = true;
-    liveFingerNodes[2].valid = true;
-    liveFingerNodes[0].world.translate = RE::NiPoint3{ 0.0f, 0.0f, 0.0f };
-    liveFingerNodes[1].world.translate = RE::NiPoint3{ 0.0f, 2.0f, 0.0f };
-    liveFingerNodes[2].world.translate = RE::NiPoint3{ 0.0f, 5.0f, 0.0f };
-    ok &= expectPointClose("finger segment forward uses adjacent root-flattened joints",
-        liveFingerSegmentForwardWorld(liveFingerNodes, 0, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }),
-        RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
-    ok &= expectPointClose("finger tip forward uses previous root-flattened joint",
-        liveFingerSegmentForwardWorld(liveFingerNodes, 2, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }),
-        RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
 
     const TestVector openDirection{ 1.0f, 0.0f, 0.0f };
     const TestVector alternateNormal{ 0.0f, 0.0f, 1.0f };

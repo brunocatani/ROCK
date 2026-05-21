@@ -2,6 +2,7 @@
 
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/grab/GrabFinger.h"
+#include "physics-interaction/hand/HandFrame.h"
 #include "RockConfig.h"
 #include "RockUtils.h"
 #include "physics-interaction/TransformMath.h"
@@ -186,23 +187,6 @@ namespace rock
             return true;
         }
 
-        RE::NiPoint3 liveThumbSegmentForwardWorld(
-            const std::array<LiveThumbTransform, 3>& thumbNodes,
-            std::size_t segment,
-            const RE::NiPoint3& fallback)
-        {
-            if (segment >= thumbNodes.size() || !thumbNodes[segment].valid) {
-                return normalizeOrFallback(fallback, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
-            }
-            if (segment + 1 < thumbNodes.size() && thumbNodes[segment + 1].valid) {
-                return normalizeOrFallback(thumbNodes[segment + 1].world.translate - thumbNodes[segment].world.translate, fallback);
-            }
-            if (segment > 0 && thumbNodes[segment - 1].valid) {
-                return normalizeOrFallback(thumbNodes[segment].world.translate - thumbNodes[segment - 1].world.translate, fallback);
-            }
-            return normalizeOrFallback(fallback, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
-        }
-
         bool buildAlternateThumbLocalTransforms(
             bool isLeft,
             const RE::NiPoint3& supportGripPivotWorldPoint,
@@ -235,9 +219,8 @@ namespace rock
                     return false;
                 }
 
-                const RE::NiPoint3 currentAxisWorld = liveThumbSegmentForwardWorld(
-                    thumbNodes,
-                    segment,
+                const RE::NiPoint3 currentAxisWorld = normalizeOrFallback(
+                    transform_math::rotateLocalVectorToWorld(node.world.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }),
                     RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
                 const RE::NiPoint3 toGrip = weapon_support_thumb_pose_policy::vectorToGripFromPredictedThumbNode(
                     node.world.translate,
@@ -343,24 +326,23 @@ namespace rock
 
     }
 
-    /*
-     * TWO-HANDED WEAPON HANDSPACE WARNING
-     *
-     * TwoHandedGrip is a quarantined support-grip subsystem, not a source of
-     * truth for generic hand axes, dynamic object grab, palm pocket, pinch
-     * pocket, soft contact, or public palm API behavior. Its weapon-specific
-     * grip solver still has historical assumptions and is intentionally left as
-     * a separate compatibility island until it is replaced.
-     *
-     * Do not copy hand-space logic from this file into new hand interaction
-     * code. Shared runtime hand authority must come from HandBoneCache's cached
-     * root-flattened SemanticHandFrame. Legacy authored handspace in
-     * HandFrame.h exists only for old diagnostics and this isolated weapon path
-     * if it ever needs restoration work.
-     */
-    static bool tryGetSemanticHandFrame(bool isLeft, root_flattened_finger_skeleton_runtime::SemanticHandFrame& outFrame)
+    static bool tryGetHandBoneTransform(bool isLeft, RE::NiTransform& outTransform)
     {
-        return root_flattened_finger_skeleton_runtime::resolveLiveSemanticHandFrame(isLeft, outFrame);
+        outTransform = {};
+        DirectSkeletonBoneSnapshot snapshot{};
+        if (!rootFlattenedTwoHandedReader().capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
+                skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
+                snapshot)) {
+            return false;
+        }
+
+        const auto* handBone = findSnapshotBone(snapshot, isLeft ? "LArm_Hand" : "RArm_Hand");
+        if (!handBone || !isFiniteTransform(handBone->world)) {
+            return false;
+        }
+
+        outTransform = handBone->world;
+        return true;
     }
 
     RE::NiPoint3 TwoHandedGrip::worldToWeaponLocal(const RE::NiPoint3& worldPos, const RE::NiAVObject* weaponNode)
@@ -567,24 +549,22 @@ namespace rock
 
         killFrikOffhandGrip();
 
-        root_flattened_finger_skeleton_runtime::SemanticHandFrame primaryFrame{};
-        root_flattened_finger_skeleton_runtime::SemanticHandFrame supportFrame{};
-        if (!tryGetSemanticHandFrame(primaryHandIsLeft, primaryFrame) || !tryGetSemanticHandFrame(supportHandIsLeft, supportFrame)) {
-            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: support grip start skipped because semantic root-flattened hand frames are unavailable");
+        RE::NiTransform primaryTransform{};
+        RE::NiTransform supportTransform{};
+        if (!tryGetHandBoneTransform(primaryHandIsLeft, primaryTransform) || !tryGetHandBoneTransform(supportHandIsLeft, supportTransform)) {
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: support grip start skipped because root flattened hand transforms are unavailable");
             restoreFrikOffhandGrip();
             return;
         }
 
-        const RE::NiTransform primaryTransform = primaryFrame.rawHandWorld;
-        const RE::NiTransform supportTransform = supportFrame.rawHandWorld;
-        const RE::NiPoint3 primaryPalmPos = primaryFrame.palmAnchorWorld.translate;
+        const RE::NiPoint3 primaryPalmPos = computeGrabPivotAPositionFromHandBasis(primaryTransform, primaryHandIsLeft);
         _primaryGripLocal = worldToWeaponLocal(primaryPalmPos, sourceRoot);
         _primaryGripConfidence = 1.0f;
         const RE::NiPoint3 primaryGripWorldPoint = primaryPalmPos;
         const RE::NiTransform adjustedPrimaryTransform = primaryTransform;
 
-        RE::NiPoint3 palmPos = supportFrame.palmAnchorWorld.translate;
-        RE::NiPoint3 palmDir = supportFrame.palmFaceWorld;
+        RE::NiPoint3 palmPos = computeGrabPivotAPositionFromHandBasis(supportTransform, supportHandIsLeft);
+        RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(supportTransform, supportHandIsLeft);
 
         std::vector<TriangleData> triangles;
         extractAllTriangles(sourceRoot, triangles);
@@ -778,18 +758,17 @@ namespace rock
 
         _rotationBlend = (std::min)(1.0f, _rotationBlend + dt * ROTATION_BLEND_SPEED);
 
-        root_flattened_finger_skeleton_runtime::SemanticHandFrame primaryFrame{};
-        root_flattened_finger_skeleton_runtime::SemanticHandFrame supportFrame{};
-        if (!tryGetSemanticHandFrame(primaryHandIsLeft, primaryFrame) || !tryGetSemanticHandFrame(supportHandIsLeft, supportFrame)) {
+        RE::NiTransform primaryTransform{};
+        RE::NiTransform supportTransform{};
+        if (!tryGetHandBoneTransform(primaryHandIsLeft, primaryTransform) || !tryGetHandBoneTransform(supportHandIsLeft, supportTransform)) {
             _hasSolvedWeaponTransform = false;
-            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing support grip because semantic root-flattened hand frames are unavailable");
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing support grip because root flattened hand transforms are unavailable");
             transitionToInactive(false);
             return;
         }
 
-        const RE::NiTransform supportTransform = supportFrame.rawHandWorld;
-        RE::NiPoint3 primaryController = primaryFrame.palmAnchorWorld.translate;
-        RE::NiPoint3 supportController = supportFrame.palmAnchorWorld.translate;
+        RE::NiPoint3 primaryController = computeGrabPivotAPositionFromHandBasis(primaryTransform, primaryHandIsLeft);
+        RE::NiPoint3 supportController = computeGrabPivotAPositionFromHandBasis(supportTransform, supportHandIsLeft);
 
         const RE::NiPoint3 currentSupportWorld = weaponLocalToWorld(_offhandGripLocal, weaponNode);
         const RE::NiPoint3 lockedSupportControllerTarget = makeLockedSupportGripTarget(
@@ -807,7 +786,7 @@ namespace rock
         solverInput.primaryTargetWorld = primaryController;
         solverInput.supportTargetWorld = blendedSupportTarget;
         solverInput.supportNormalLocal = _supportNormalLocal;
-        solverInput.supportNormalTargetWorld = supportFrame.palmFaceWorld;
+        solverInput.supportNormalTargetWorld = computePalmNormalFromHandBasis(supportTransform, supportHandIsLeft);
         solverInput.useSupportNormalTwist = true;
         solverInput.supportNormalTwistFactor = SUPPORT_NORMAL_TWIST_FACTOR;
 

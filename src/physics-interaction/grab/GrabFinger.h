@@ -1662,11 +1662,6 @@ namespace rock::grab_finger_local_transform_runtime
         return result;
     }
 
-    [[nodiscard]] inline RE::NiPoint3 liveFingerSegmentForwardWorld(
-        const std::array<LiveFingerTransform, 15>& liveNodes,
-        std::size_t index,
-        const RE::NiPoint3& fallback);
-
     [[nodiscard]] inline bool applyAlternateThumbPlaneCorrection(
         const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose,
         const std::array<LiveFingerTransform, 15>& liveNodes,
@@ -1719,9 +1714,8 @@ namespace rock::grab_finger_local_transform_runtime
                 continue;
             }
 
-            const RE::NiPoint3 currentAxisWorld = liveFingerSegmentForwardWorld(
-                liveNodes,
-                segment,
+            const RE::NiPoint3 currentAxisWorld = normalizeOrFallback(
+                transform_math::rotateLocalVectorToWorld(node.world.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }),
                 fingerPose.thumbAlternateCurveOpenDirectionWorld);
             const float dotToTarget = std::clamp(dot(currentAxisWorld, targetAxisWorld), -1.0f, 1.0f);
             float angle = std::acos(dotToTarget);
@@ -1810,32 +1804,6 @@ namespace rock::grab_finger_local_transform_runtime
         return true;
     }
 
-    [[nodiscard]] inline RE::NiPoint3 liveFingerSegmentForwardWorld(
-        const std::array<LiveFingerTransform, 15>& liveNodes,
-        std::size_t index,
-        const RE::NiPoint3& fallback)
-    {
-        if (index >= liveNodes.size() || !liveNodes[index].valid) {
-            return normalizeOrFallback(fallback, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
-        }
-
-        const std::size_t finger = index / 3;
-        const std::size_t segment = index % 3;
-        const std::size_t next = finger * 3 + segment + 1;
-        if (segment < 2 && next < liveNodes.size() && liveNodes[next].valid) {
-            return normalizeOrFallback(liveNodes[next].world.translate - liveNodes[index].world.translate, fallback);
-        }
-
-        if (segment > 0) {
-            const std::size_t previous = finger * 3 + segment - 1;
-            if (previous < liveNodes.size() && liveNodes[previous].valid) {
-                return normalizeOrFallback(liveNodes[index].world.translate - liveNodes[previous].world.translate, fallback);
-            }
-        }
-
-        return normalizeOrFallback(fallback, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
-    }
-
     [[nodiscard]] inline bool buildSurfaceCorrectedLocalTransforms(
         bool isLeft,
         const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose,
@@ -1916,9 +1884,8 @@ namespace rock::grab_finger_local_transform_runtime
                     continue;
                 }
 
-                const RE::NiPoint3 currentAxisWorld = liveFingerSegmentForwardWorld(
-                    liveNodes,
-                    index,
+                const RE::NiPoint3 currentAxisWorld = normalizeOrFallback(
+                    transform_math::rotateLocalVectorToWorld(node.world.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }),
                     RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
                 const RE::NiPoint3 toSurface = fingerPose.surfaceAimTarget[finger] - node.world.translate;
                 if (lengthSquared(toSurface) <= 0.000001f) {

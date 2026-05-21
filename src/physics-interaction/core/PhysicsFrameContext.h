@@ -20,7 +20,6 @@ namespace rock
         bool isLeft = false;
         RE::NiTransform rawHandWorld{};
         RE::NiNode* handNode = nullptr;
-        RE::NiTransform grabAuthorityWorld{};
         RE::NiPoint3 grabAnchorWorld{};
         RE::NiPoint3 palmNormalWorld{};
         RE::NiPoint3 pointingWorld{};
@@ -28,7 +27,6 @@ namespace rock
         RE::NiPoint3 thumbPadWorld{};
         RE::NiPoint3 indexPadWorld{};
         RE::NiPoint3 pinchPocketWorld{};
-        bool hasGrabAuthorityWorld = false;
         bool hasPinchPocketWorld = false;
         bool disabled = false;
     };

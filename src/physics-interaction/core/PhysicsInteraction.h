@@ -108,7 +108,6 @@ namespace rock
             return _leftWeaponContactPartKind.load(std::memory_order_acquire);
         }
         bool tryGetRootFlattenedHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
-        bool tryGetRootFlattenedSemanticHandFrame(bool isLeft, root_flattened_finger_skeleton_runtime::SemanticHandFrame& outFrame) const;
         void fillProviderFrameSnapshot(::rock::provider::RockProviderFrameSnapshot& outSnapshot) const;
         bool queryProviderWeaponContactAtPoint(
             const ::rock::provider::RockProviderWeaponContactQuery& query,

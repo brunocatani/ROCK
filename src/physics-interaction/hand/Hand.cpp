@@ -939,33 +939,16 @@ namespace rock
         return true;
     }
 
-    bool Hand::tryComputeGrabAuthorityProxyFrameWorld(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, RE::NiTransform& outProxyWorld) const
-    {
-        outProxyWorld = transform_math::makeIdentityTransform<RE::NiTransform>();
-
-        LivePalmAnchorReference palmReference{};
-        if (!tryResolveLivePalmAnchorReference(world, palmReference) ||
-            !std::isfinite(palmReference.world.translate.x) ||
-            !std::isfinite(palmReference.world.translate.y) ||
-            !std::isfinite(palmReference.world.translate.z)) {
-            return false;
-        }
-
-        const RE::NiTransform proxyBaseWorld =
-            hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-        const RE::NiTransform authorityWorld =
-            makeRawRotationPalmTranslationFrame(rawHandWorld, proxyBaseWorld);
-        outProxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(authorityWorld, _isLeft);
-        return std::isfinite(outProxyWorld.translate.x) &&
-               std::isfinite(outProxyWorld.translate.y) &&
-               std::isfinite(outProxyWorld.translate.z);
-    }
-
     RE::NiPoint3 Hand::computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const
     {
-        RE::NiTransform proxyWorld{};
-        if (tryComputeGrabAuthorityProxyFrameWorld(world, fallbackHandWorldTransform, proxyWorld)) {
-            return proxyWorld.translate;
+        LivePalmAnchorReference palmReference{};
+        if (tryResolveLivePalmAnchorReference(world, palmReference) &&
+            std::isfinite(palmReference.world.translate.x) &&
+            std::isfinite(palmReference.world.translate.y) &&
+            std::isfinite(palmReference.world.translate.z)) {
+            const RE::NiTransform proxyBaseWorld =
+                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
+            return applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft).translate;
         }
 
         return fallbackHandWorldTransform.translate;
@@ -991,10 +974,10 @@ namespace rock
     bool Hand::getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const
     {
         /*
-         * Offset tuning needs the same raw-rotation/palm-translation authority
-         * frame used by runtime grab, even before a grab creates the real
-         * no-contact proxy body. Generated palm rotation is kept only as
-         * comparison telemetry.
+         * Offset tuning needs the startup capture seat point before a grab
+         * creates the real no-contact proxy body. This marker intentionally
+         * shows the raw-rotation capture offset, while active proxy readback
+         * remains the separate runtime held-authority frame.
          */
         out = {};
 
@@ -1009,9 +992,9 @@ namespace rock
         const RE::NiTransform palmAuthorityBaseWorld =
             hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
         out.palmAuthorityBaseWorld = palmAuthorityBaseWorld;
-        const RE::NiTransform authorityWorld =
-            makeRawRotationPalmTranslationFrame(rawHandWorld, palmAuthorityBaseWorld);
-        out.proxyTargetWorld = applyGrabAuthorityProxyLocalOffsetToFrame(authorityWorld, _isLeft);
+        const RE::NiTransform startupCaptureFrameWorld =
+            makeGrabStartupCaptureAuthorityFrame(rawHandWorld, palmAuthorityBaseWorld);
+        out.proxyTargetWorld = applyGrabAuthorityProxyLocalOffsetToFrame(startupCaptureFrameWorld, _isLeft);
         out.localOffsetGameUnits = computeGrabAuthorityProxyOffsetLocalGame(_isLeft);
         out.palmSource = palmReference.source;
         out.palmMotionIndex = palmReference.motionIndex;

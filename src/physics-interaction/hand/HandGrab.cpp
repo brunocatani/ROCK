@@ -1002,7 +1002,7 @@ namespace rock
             const std::vector<GrabSurfaceTriangleData>& surfaceTriangles,
             const std::vector<GrabLocalTriangle>& localMeshTriangles,
             const RE::NiPoint3& currentObjectPointWorld,
-            const RE::NiTransform& grabAuthorityFrameWorld,
+            const RE::NiTransform& handWorldTransform,
             bool isLeft,
             bool closeGrab,
             bool handPocketOnlyGrab,
@@ -1034,7 +1034,7 @@ namespace rock
                 candidate.pinchPocketWorld =
                     grab_pinch_pocket_policy::closestPointOnSegment(candidate.thumbPadWorld, candidate.indexPadWorld, currentObjectPointWorld);
                 const RE::NiPoint3 configuredDetectionWorld =
-                    transformGrabAuthorityTuningDirection(grabAuthorityFrameWorld, config.detectionDirectionHandspace);
+                    transformHandspaceDirection(handWorldTransform, config.detectionDirectionHandspace, isLeft);
                 const RE::NiPoint3 configuredDetectionNormal =
                     grab_pinch_pocket_policy::normalizeOrFallback(configuredDetectionWorld, candidate.pinchAxisWorld);
                 candidate.pinchDetectionDirectionWorld =
@@ -2033,6 +2033,28 @@ namespace rock
         }
 
         constexpr const char* kGrabObjectRotationReferenceName = "rawRotationPalmTranslation";
+
+        RE::NiTransform makeRawRotationPalmTranslationFrame(
+            const RE::NiTransform& rawHandWorld,
+            const RE::NiTransform& palmProxyWorld)
+        {
+            /*
+             * The generated palm collider is the correct physical anchor
+             * position, but its local axes describe collider geometry. Held
+             * object rotation must follow the root-flattened hand/controller
+             * rotation. This hybrid frame keeps the palm/proxy translation for
+             * the linear grip point and the raw hand basis for angular intent.
+             *
+             * This is the only production ROCK dynamic-grab rotation reference.
+             * The older BODY/conventional/debug-selectable modes were removed
+             * after in-game validation proved this convention fixed the wrist
+             * axis and N/S/E/W world-direction dependency.
+             */
+            RE::NiTransform result = palmProxyWorld;
+            result.rotate = rawHandWorld.rotate;
+            result.scale = rawHandWorld.scale;
+            return result;
+        }
 
         float computeLocalMeshMaxDistanceFromPoint(const std::vector<GrabLocalTriangle>& localTriangles, const RE::NiPoint3& originLocal)
         {
@@ -3400,7 +3422,6 @@ namespace rock
         const RE::NiTransform& proxyAuthorityWorld,
         const RE::NiPoint3& activePivotBBodyLocalGame)
     {
-        (void)handWorldTransform;
         /*
          * Held support refresh is intentionally narrower than seated pivot
          * reacquire. It can revise live normal/support authority from the same
@@ -3429,7 +3450,7 @@ namespace rock
             currentNodeWorld,
             grabBodyWorld,
             proxyAuthorityWorld.translate,
-            computeGrabAuthorityPalmFaceWorld(proxyAuthorityWorld),
+            computePalmNormalFromHandBasis(handWorldTransform, _isLeft),
             supportEnvelope,
             g_rockConfig.rockGrabContactPatchMaxNormalAngleDegrees);
 
@@ -3873,9 +3894,7 @@ namespace rock
             out.rawToHandBody = grab_transform_telemetry::measureTransformDelta(out.rawHandWorld, out.handBodyWorld);
             const RE::NiTransform palmAnchorGrabAuthorityBase =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(out.handBodyWorld);
-            const RE::NiTransform palmAnchorGrabAuthorityFrame =
-                makeRawRotationPalmTranslationFrame(out.nativeFlattenedHandWorld, palmAnchorGrabAuthorityBase);
-            out.palmAnchorGrabAuthorityWorld = applyGrabAuthorityProxyLocalOffsetToFrame(palmAnchorGrabAuthorityFrame, _isLeft);
+            out.palmAnchorGrabAuthorityWorld = applyGrabAuthorityProxyLocalOffsetToFrame(palmAnchorGrabAuthorityBase, _isLeft);
             out.palmAnchorGrabAuthorityBasis = grab_transform_telemetry::makeOrientationBasis(out.palmAnchorGrabAuthorityWorld);
             out.hasPalmAnchorGrabAuthority = true;
             out.nativeFlattenedHandToGrabAuthority =
@@ -4446,15 +4465,14 @@ namespace rock
         RE::NiTransform& outProxyWorld,
         const char*& outSource) const
     {
+        (void)rawHandWorld;
         (void)fallbackPalmAnchorWorld;
 
         LivePalmAnchorReference palmReference{};
         if (tryResolveLivePalmAnchorReference(world, palmReference)) {
             const RE::NiTransform proxyBaseWorld =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-            const RE::NiTransform authorityWorld =
-                makeRawRotationPalmTranslationFrame(rawHandWorld, proxyBaseWorld);
-            outProxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(authorityWorld, _isLeft);
+            outProxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft);
             switch (palmReference.source) {
             case body_frame::BodyFrameSource::MotionCenterOfMass:
                 outSource = "livePalmAnchorMotionGrabFrame";
@@ -5482,9 +5500,10 @@ namespace rock
                  * not fight over different corners of the same object.
                  */
                 const RE::NiPoint3 grabPivotAWorld = grabAuthorityPivotAWorld;
-                const RE::NiPoint3 palmDir = computeGrabAuthorityPalmFaceWorld(proxyFrameWorldAtGrab);
-                const auto closePocket = grab_three_phase::buildGrabPocketFrameFromAuthorityFrame(
-                    proxyFrameWorldAtGrab,
+                const RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
+                const auto closePocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
+                    handWorldTransform,
+                    _isLeft,
                     grabPivotAWorld,
                     g_rockConfig.rockGrabPocketDepthGameUnits,
                     g_rockConfig.rockGrabPocketRadiusGameUnits);
@@ -5549,7 +5568,7 @@ namespace rock
 
             if (!meshGrabFound && !grabSurfaceTriangles.empty() && sel.hasHitPoint) {
                 const RE::NiPoint3 grabPivotAWorld = grabAuthorityPivotAWorld;
-                RE::NiPoint3 palmDir = computeGrabAuthorityPalmFaceWorld(proxyFrameWorldAtGrab);
+                RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
                 const RE::NiPoint3 expectedNormal =
                     sel.hasHitNormal && lengthSquared(sel.hitNormalWorld) > 0.0f ? sel.hitNormalWorld : palmDir;
 
@@ -5593,7 +5612,7 @@ namespace rock
 
             if (!meshGrabFound && !grabSurfaceTriangles.empty()) {
                 const RE::NiPoint3 grabPivotAWorld = grabAuthorityPivotAWorld;
-                RE::NiPoint3 palmDir = computeGrabAuthorityPalmFaceWorld(proxyFrameWorldAtGrab);
+                RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
 
                 int rejectedBehindSurface = 0;
                 if (findClosestGrabSurfaceHit(grabSurfaceTriangles,
@@ -5809,8 +5828,9 @@ namespace rock
             objectBodyId.value,
             static_cast<std::uint32_t>(g_rockConfig.rockGrabOppositionContactMaxAgeFrames));
         const RE::NiPoint3 acquisitionGrabPivotAWorld = grabAuthorityPivotAWorld;
-        const auto acquisitionPocket = grab_three_phase::buildGrabPocketFrameFromAuthorityFrame(
-            proxyFrameWorldAtGrab,
+        const auto acquisitionPocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
+            handWorldTransform,
+            _isLeft,
             acquisitionGrabPivotAWorld,
             g_rockConfig.rockGrabPocketDepthGameUnits,
             g_rockConfig.rockGrabPocketRadiusGameUnits);
@@ -5850,9 +5870,9 @@ namespace rock
         }
 
         if (!handPocketOnlyGrab && contactSourcePolicy.allowContactPatchPivot && g_rockConfig.rockGrabContactPatchEnabled && !authoredGrabNode && !sel.isFarSelection) {
-            const RE::NiPoint3 palmNormalWorld = computeGrabAuthorityPalmFaceWorld(proxyFrameWorldAtGrab);
-            const RE::NiPoint3 palmTangentWorld = computeGrabAuthorityFingerForwardWorld(proxyFrameWorldAtGrab);
-            const RE::NiPoint3 palmBitangentWorld = computeGrabAuthorityAcrossPalmWorld(proxyFrameWorldAtGrab);
+            const RE::NiPoint3 palmNormalWorld = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
+            const RE::NiPoint3 palmTangentWorld = transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, _isLeft);
+            const RE::NiPoint3 palmBitangentWorld = transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, _isLeft);
             float contactPatchObjectLeverEstimateGameUnits = 0.0f;
             if (!grabLocalMeshTriangles.empty() && grab_three_phase::isFinite(objectWorldTransform) && grab_three_phase::isFinite(canonicalPivotPointWorld)) {
                 const RE::NiPoint3 canonicalPivotLocal = transform_math::worldPointToLocal(objectWorldTransform, canonicalPivotPointWorld);
@@ -6210,7 +6230,7 @@ namespace rock
             grabSurfaceTriangles,
             grabLocalMeshTriangles,
             grabGripPoint,
-            proxyFrameWorldAtGrab,
+            handWorldTransform,
             _isLeft,
             !sel.isFarSelection && !grabbedFromPullCatch,
             handPocketOnlyGrab,
@@ -6630,10 +6650,11 @@ namespace rock
              * contacts are evidence until the pivot resolver chooses one BODY-local
              * point to freeze. Contact patches may enrich pose/release evidence, but
              * the palm-pocket or authored/mesh point owns the dynamic pivot.
-            */
+             */
             {
-                auto pocket = grab_three_phase::buildGrabPocketFrameFromAuthorityFrame(
-                    proxyFrameWorldAtGrab,
+                auto pocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
+                    handWorldTransform,
+                    _isLeft,
                     grabPivotAWorld,
                     g_rockConfig.rockGrabPocketDepthGameUnits,
                     g_rockConfig.rockGrabPocketRadiusGameUnits);
@@ -6980,12 +7001,12 @@ namespace rock
                 auto* vrScaleSetting = f4vr::getIniSetting("fVrScale:VR");
                 const float vrScale = vrScaleSetting ? vrScaleSetting->GetFloat() : -1.0f;
 
-                const RE::NiPoint3 rawColumn0 = getMatrixColumn(handWorldTransform.rotate, 0);
-                const RE::NiPoint3 rawColumn1 = getMatrixColumn(handWorldTransform.rotate, 1);
-                const RE::NiPoint3 rawColumn2 = getMatrixColumn(handWorldTransform.rotate, 2);
-                const RE::NiPoint3 proxyFinger = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 0);
-                const RE::NiPoint3 proxyPalmDepth = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 1);
-                const RE::NiPoint3 proxyAcrossPalm = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 2);
+                const RE::NiPoint3 rawLateral = getMatrixColumn(handWorldTransform.rotate, 0);
+                const RE::NiPoint3 rawFinger = getMatrixColumn(handWorldTransform.rotate, 2);
+                const RE::NiPoint3 rawBack = getMatrixColumn(handWorldTransform.rotate, 1);
+                const RE::NiPoint3 constraintFinger = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 2);
+                const RE::NiPoint3 constraintBack = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 1);
+                const RE::NiPoint3 constraintLateral = getMatrixColumn(proxyFrameWorldAtGrab.rotate, 0);
                 const RE::NiPoint3 grabSpaceRawFinger = getMatrixColumn(_grabFrame.rawHandSpace.rotate, 0);
                 const RE::NiPoint3 grabSpaceConstraintFinger = getMatrixColumn(constraintGrabHandSpace.rotate, 0);
                 const RE::NiPoint3 grabPosDelta = constraintGrabHandSpace.translate - _grabFrame.rawHandSpace.translate;
@@ -7033,11 +7054,11 @@ namespace rock
 
                 ROCK_LOG_DEBUG(Hand,
                     "{} GRAB FRAME SNAPSHOT: rawVsConstraint rotDelta={:.2f}deg posDelta=({:.2f},{:.2f},{:.2f}) "
-                    "rawCol0=({:.3f},{:.3f},{:.3f}) rawCol1=({:.3f},{:.3f},{:.3f}) rawCol2=({:.3f},{:.3f},{:.3f}) "
-                    "proxyFingerX=({:.3f},{:.3f},{:.3f}) proxyPalmDepthY=({:.3f},{:.3f},{:.3f}) proxyAcrossPalmZ=({:.3f},{:.3f},{:.3f})",
-                    handName(), rawVsConstraintRot, grabPosDelta.x, grabPosDelta.y, grabPosDelta.z, rawColumn0.x,
-                    rawColumn0.y, rawColumn0.z, rawColumn1.x, rawColumn1.y, rawColumn1.z, rawColumn2.x, rawColumn2.y, rawColumn2.z, proxyFinger.x, proxyFinger.y, proxyFinger.z,
-                    proxyPalmDepth.x, proxyPalmDepth.y, proxyPalmDepth.z, proxyAcrossPalm.x, proxyAcrossPalm.y, proxyAcrossPalm.z);
+                    "rawFinger=({:.3f},{:.3f},{:.3f}) rawBack=({:.3f},{:.3f},{:.3f}) rawLat=({:.3f},{:.3f},{:.3f}) "
+                    "constraintFinger=({:.3f},{:.3f},{:.3f}) constraintBack=({:.3f},{:.3f},{:.3f}) constraintLat=({:.3f},{:.3f},{:.3f})",
+                    handName(), rawVsConstraintRot, grabPosDelta.x, grabPosDelta.y, grabPosDelta.z, rawFinger.x,
+                    rawFinger.y, rawFinger.z, rawBack.x, rawBack.y, rawBack.z, rawLateral.x, rawLateral.y, rawLateral.z, constraintFinger.x, constraintFinger.y, constraintFinger.z,
+                    constraintBack.x, constraintBack.y, constraintBack.z, constraintLateral.x, constraintLateral.y, constraintLateral.z);
 
                 const auto rawHandBasis = grab_transform_telemetry::makeOrientationBasis(handWorldTransform);
                 const auto proxyPalmBasis = grab_transform_telemetry::makeOrientationBasis(proxyFrameWorldAtGrab);
@@ -7963,9 +7984,9 @@ namespace rock
                 const float seatedEnvelope =
                     (std::max)(touchDistance, g_rockConfig.rockGrabPocketRadiusGameUnits) +
                     (std::max)(1.0f, finitePositiveOr(g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits, 3.0f));
-                const RE::NiPoint3 palmNormalWorld = computeGrabAuthorityPalmFaceWorld(proxyAuthorityWorld);
-                const RE::NiPoint3 palmTangentWorld = computeGrabAuthorityFingerForwardWorld(proxyAuthorityWorld);
-                const RE::NiPoint3 palmBitangentWorld = computeGrabAuthorityAcrossPalmWorld(proxyAuthorityWorld);
+                const RE::NiPoint3 palmNormalWorld = computePalmNormalFromHandBasis(handWorldTransform, _isLeft);
+                const RE::NiPoint3 palmTangentWorld = transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, _isLeft);
+                const RE::NiPoint3 palmBitangentWorld = transformHandspaceDirection(handWorldTransform, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, _isLeft);
                 const auto seatedPivot = findSeatedGrabPivotNearPalmPocket(
                     _grabFrame.localMeshTriangles,
                     currentNodeWorld,
@@ -8469,8 +8490,8 @@ namespace rock
                 const NodeFrameMetrics rootMetrics = captureNodeMetrics(rootNode, _grabFrame.rootBodyLocal);
 
                 const RE::NiPoint3 worldPosDelta = desiredNodeWorldConstraint.translate - desiredNodeWorldRaw.translate;
-                const RE::NiPoint3 rawColumn2 = getMatrixColumn(handWorldTransform.rotate, 2);
-                const RE::NiPoint3 constraintColumn2 = getMatrixColumn(constraintAnchorWorld.rotate, 2);
+                const RE::NiPoint3 rawFinger = getMatrixColumn(handWorldTransform.rotate, 2);
+                const RE::NiPoint3 constraintFinger = getMatrixColumn(constraintAnchorWorld.rotate, 2);
                 const RE::NiPoint3 desiredRawFinger = getMatrixColumn(desiredBodyWorldRaw.rotate, 0);
                 const RE::NiPoint3 desiredConstraintFinger = getMatrixColumn(desiredBodyWorldConstraint.rotate, 0);
                 const RE::NiPoint3 bodyFinger = getMatrixColumn(grabAuthorityBodyWorld.rotate, 0);
@@ -8491,13 +8512,13 @@ namespace rock
                     "ownerErr={:.2f}deg/{:.2f}gu hitErr={:.2f}deg/{:.2f}gu "
                     "heldErr={:.2f}deg/{:.2f}gu rootErr={:.2f}deg/{:.2f}gu "
                     "worldPosDelta=({:.2f},{:.2f},{:.2f}) "
-                    "rawCol2=({:.3f},{:.3f},{:.3f}) constraintCol2=({:.3f},{:.3f},{:.3f})",
+                    "rawFinger=({:.3f},{:.3f},{:.3f}) constraintFinger=({:.3f},{:.3f},{:.3f})",
                     handName(), constraintAnchorSource, rotationDeltaDegrees(desiredNodeWorldRaw.rotate, desiredNodeWorldConstraint.rotate),
                     rotationDeltaDegrees(desiredBodyWorldRaw.rotate, desiredBodyWorldConstraint.rotate),
                     rotationDeltaDegrees(grabAuthorityBodyWorld.rotate, desiredBodyWorldRaw.rotate), rotationDeltaDegrees(grabAuthorityBodyWorld.rotate, desiredBodyWorldConstraint.rotate),
                     ownerMetrics.rotErrDeg, ownerMetrics.posErrGameUnits, hitMetrics.rotErrDeg, hitMetrics.posErrGameUnits, heldMetrics.rotErrDeg, heldMetrics.posErrGameUnits,
-                    rootMetrics.rotErrDeg, rootMetrics.posErrGameUnits, worldPosDelta.x, worldPosDelta.y, worldPosDelta.z, rawColumn2.x, rawColumn2.y, rawColumn2.z,
-                    constraintColumn2.x, constraintColumn2.y, constraintColumn2.z);
+                    rootMetrics.rotErrDeg, rootMetrics.posErrGameUnits, worldPosDelta.x, worldPosDelta.y, worldPosDelta.z, rawFinger.x, rawFinger.y, rawFinger.z,
+                    constraintFinger.x, constraintFinger.y, constraintFinger.z);
 
                 ROCK_LOG_TRACE(Hand,
                     "{} GRAB FRAME NODES: bodyColl={:p} "
@@ -8683,9 +8704,7 @@ namespace rock
             } else {
                 const RE::NiTransform proxyBaseWorld =
                     hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(livePalmReference.world);
-                const RE::NiTransform authorityWorld =
-                    makeRawRotationPalmTranslationFrame(pending.rawHandWorld, proxyBaseWorld);
-                pending.proxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(authorityWorld, _isLeft);
+                pending.proxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft);
             }
             previousProxyWorld = _hasLastAppliedGrabAuthorityProxyWorld ? _lastAppliedGrabAuthorityProxyWorld : pending.proxyWorld;
             proxyBodyId = _grabAuthorityProxy.getBodyId();
