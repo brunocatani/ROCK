@@ -494,6 +494,22 @@ namespace rock
             };
         }
 
+        grab_motion_controller::HeldAuthorityState evaluateRuntimeHeldAuthority(
+            const CanonicalGrabFrame& frame,
+            bool heldBodyContactSoftening,
+            float positionErrorGameUnits,
+            float rotationErrorDegrees)
+        {
+            return grab_motion_controller::evaluateHeldAuthority(grab_motion_controller::HeldAuthorityInput{
+                .angular = makeAngularAuthorityInput(frame),
+                .heldBodyColliding = heldBodyContactSoftening,
+                .positionErrorGameUnits = positionErrorGameUnits,
+                .rotationErrorDegrees = rotationErrorDegrees,
+                .fullPositionErrorGameUnits = g_rockConfig.rockGrabAdaptivePositionFullError,
+                .fullRotationErrorDegrees = g_rockConfig.rockGrabAdaptiveRotationFullError,
+            });
+        }
+
         float sharedGrabAuthorityForceScale(bool peerHandStillHolding)
         {
             /*
@@ -4022,7 +4038,8 @@ namespace rock
         float grabPositionErrorGameUnits,
         float grabRotationErrorDegrees,
         float authorityForceScale,
-        bool heldBodyColliding)
+        bool heldBodyColliding,
+        const grab_motion_controller::HeldAuthorityState& heldAuthority)
     {
         if (!_activeConstraint.isValid() || !_activeConstraint.linearMotor || !_activeConstraint.angularMotor) {
             return;
@@ -4053,7 +4070,7 @@ namespace rock
             _savedObjectState.bodyId,
             _heldBodyIds,
             _heldDriveDecision.includeConnectedMass);
-        const auto output = grab_motion_controller::solveMotorTargets(grab_motion_controller::MotorInput{
+        const auto motorInput = grab_motion_controller::MotorInput{
             .enabled = g_rockConfig.rockGrabAdaptiveMotorEnabled,
             .heldBodyColliding = heldBodyColliding,
             .positionErrorGameUnits = grabPositionErrorGameUnits,
@@ -4099,7 +4116,8 @@ namespace rock
             .weakPivotTwistScale = g_rockConfig.rockGrabWeakPivotTwistScale,
             .contactSupportShape = classifyContactSupportShapeFromGrabFrame(_grabFrame),
             .longObjectReferenceLeverGameUnits = g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits,
-        });
+        };
+        const auto output = grab_motion_controller::solveMotorTargetsWithAuthority(motorInput, heldAuthority);
 
         _activeConstraint.linearMotor->tau = output.linearTau;
         _activeConstraint.linearMotor->damping = scaleDriveValue(g_rockConfig.rockGrabLinearDamping, looseLinearDampingMultiplier);
@@ -4131,6 +4149,7 @@ namespace rock
     bool Hand::applyProxyConstraintAngularVelocityDrive(RE::hknpWorld* world,
         const RE::NiTransform& desiredBodyWorld,
         float deltaTime,
+        const grab_motion_controller::HeldAuthorityState& heldAuthority,
         float& outRawAngularSpeedRadiansPerSecond,
         float& outAppliedAngularSpeedRadiansPerSecond,
         float& outMaxAngularSpeedRadiansPerSecond,
@@ -4207,8 +4226,12 @@ namespace rock
             _grabFrame.longObjectLeverGameUnits,
             g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits,
             g_rockConfig.rockGrabLongObjectMinAngularScale);
-        outMaxAngularSpeedRadiansPerSecond = (std::max)(0.25f, configuredMaxSpeed * budgetScale * outLongObjectAngularScale);
-        const auto angularAuthority = grab_motion_controller::computeAngularAuthorityScale(makeAngularAuthorityInput(_grabFrame));
+        const float authorityCapScale = (std::min)(budgetScale, heldAuthority.angularVelocityAssistScale);
+        outMaxAngularSpeedRadiansPerSecond = grab_motion_controller::computeAuthorityScaledAngularVelocityCap(
+            configuredMaxSpeed,
+            authorityCapScale,
+            outLongObjectAngularScale);
+        const auto& angularAuthority = heldAuthority.angular;
         RE::NiPoint3 authorityAngularVelocity = rawAngularVelocity;
         if (angularAuthority.axisLimited || angularAuthority.weakPivotTwistScale < 0.999f) {
             RE::NiTransform liveBodyWorld{};
@@ -7239,7 +7262,12 @@ namespace rock
             hasPivotTrackingError &&
             _grabObjectGripAtGrab.valid &&
             pivotTrackingErrorGameUnits <= acquisitionVisualAttachEnvelope;
-        const auto heldAngularAuthority = grab_motion_controller::computeAngularAuthorityScale(makeAngularAuthorityInput(_grabFrame));
+        const auto heldAuthority = evaluateRuntimeHeldAuthority(
+            _grabFrame,
+            heldMotorContactSoftening,
+            pivotTrackingErrorGameUnits,
+            grabRotationErrorDegrees);
+        const auto& heldAngularAuthority = heldAuthority.angular;
         const auto visualPublishDecision = grab_motion_controller::evaluateVisualHandPublishGate(
             grab_motion_controller::VisualHandPublishInput{
                 .hasTelemetryCapture = _grabFrame.hasTelemetryCapture,
@@ -8067,6 +8095,11 @@ namespace rock
                 } else {
                     desiredAngularTargetWorld =
                         resolveProxyConstraintAngularDriveTargetWorld(pending.proxyWorld, desiredObjectWorld, desiredBodyWorld);
+                    const auto pendingHeldAuthority = evaluateRuntimeHeldAuthority(
+                        _grabFrame,
+                        pending.heldBodyColliding,
+                        pending.grabPositionErrorGameUnits,
+                        pending.grabRotationErrorDegrees);
                     updateConstraintGrabDriveMotors(
                         world,
                         driveDelta,
@@ -8075,7 +8108,8 @@ namespace rock
                         pending.grabPositionErrorGameUnits,
                         pending.grabRotationErrorDegrees,
                         pending.authorityForceScale,
-                        pending.heldBodyColliding);
+                        pending.heldBodyColliding,
+                        pendingHeldAuthority);
                     if (angularAuthority == GrabAngularAuthority::HknpRagdollMotorAtom) {
                         angularDriveOk = true;
                         angularDriveBodyCount = 0;
@@ -8089,6 +8123,7 @@ namespace rock
                             world,
                             desiredAngularTargetWorld,
                             driveDelta,
+                            pendingHeldAuthority,
                             rawAngularDriveSpeedRadiansPerSecond,
                             appliedAngularDriveSpeedRadiansPerSecond,
                             maxAngularDriveSpeedRadiansPerSecond,
@@ -8490,7 +8525,25 @@ namespace rock
                     .maxAngularVelocityRadiansPerSecond = g_rockConfig.rockGrabThrowMaxAngularVelocityRadiansPerSecond,
                 });
             RE::NiPoint3 releaseAngularVelocity = rawReleaseAngularVelocity;
-            const auto angularAuthority = grab_motion_controller::computeAngularAuthorityScale(makeAngularAuthorityInput(_grabFrame));
+            const auto releaseContactSnapshot = readHeldBodyContactSnapshot();
+            const bool releaseContactSoftening =
+                releaseContactSnapshot.recent &&
+                classifyHeldContactOtherMotion(world, releaseContactSnapshot.otherBodyId) != held_object_contact_policy::HeldContactOtherMotion::Dynamic;
+            const auto releaseAuthority = evaluateRuntimeHeldAuthority(
+                _grabFrame,
+                releaseContactSoftening,
+                0.0f,
+                0.0f);
+            const auto& angularAuthority = releaseAuthority.angular;
+            const float releaseLongObjectAngularScale = grab_motion_controller::computeLongObjectAngularSpeedScale(
+                g_rockConfig.rockGrabLongObjectAngularScalingEnabled,
+                _grabFrame.longObjectLeverGameUnits,
+                g_rockConfig.rockGrabLongObjectReferenceLeverGameUnits,
+                g_rockConfig.rockGrabLongObjectMinAngularScale);
+            const float releaseAngularVelocityCap = grab_motion_controller::computeAuthorityScaledAngularVelocityCap(
+                g_rockConfig.rockGrabThrowMaxAngularVelocityRadiansPerSecond,
+                releaseAuthority.releaseAngularVelocityScale,
+                releaseLongObjectAngularScale);
             if ((angularAuthority.axisLimited || angularAuthority.weakPivotTwistScale < 0.999f) && hasReleaseLeverOrigin) {
                 if (!hasReleaseCenterOfMass) {
                     float comX = 0.0f;
@@ -8515,6 +8568,7 @@ namespace rock
                         angularAuthority);
                 }
             }
+            releaseAngularVelocity = clampAngularVelocityVector(releaseAngularVelocity, releaseAngularVelocityCap);
             const bool overrideAngularVelocity =
                 g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled && lengthSquared(releaseAngularVelocity) > 0.000001f;
             outcome.velocity.available = true;
@@ -8545,12 +8599,17 @@ namespace rock
                     _heldDriveDecision.includeConnectedAngularVelocity);
             }
             ROCK_LOG_DEBUG(Hand,
-                "{} hand RELEASE VELOCITY: applied={} driveMode={} linearScope={} angularScope={} handLocal=({:.3f},{:.3f},{:.3f}) objectLocal=({:.3f},{:.3f},{:.3f}) tangent=({:.3f},{:.3f},{:.3f}) angularRaw=({:.3f},{:.3f},{:.3f}) angularFinal=({:.3f},{:.3f},{:.3f}) player=({:.3f},{:.3f},{:.3f}) final=({:.3f},{:.3f},{:.3f}) lever=({:.3f},{:.3f},{:.3f}) objectHistory={} handHistory={} multiplier={:.2f}",
+                "{} hand RELEASE VELOCITY: applied={} driveMode={} linearScope={} angularScope={} authority={} shape={} angularScale={:.2f} angularCap={:.3f} longScale={:.2f} handLocal=({:.3f},{:.3f},{:.3f}) objectLocal=({:.3f},{:.3f},{:.3f}) tangent=({:.3f},{:.3f},{:.3f}) angularRaw=({:.3f},{:.3f},{:.3f}) angularFinal=({:.3f},{:.3f},{:.3f}) player=({:.3f},{:.3f},{:.3f}) final=({:.3f},{:.3f},{:.3f}) lever=({:.3f},{:.3f},{:.3f}) objectHistory={} handHistory={} multiplier={:.2f}",
                 handName(),
                 applyReleaseVelocity ? "yes" : "no",
                 held_object_drive_policy::modeName(_heldDriveDecision.mode),
                 _heldDriveDecision.includeConnectedLinearVelocity ? "bodySet" : "primaryOnly",
                 _heldDriveDecision.includeConnectedAngularVelocity ? "bodySet" : "primaryOnly",
+                releaseAuthority.reason,
+                grab_motion_controller::contactSupportShapeName(angularAuthority.contactSupportShape),
+                releaseAuthority.releaseAngularVelocityScale,
+                releaseAngularVelocityCap,
+                releaseLongObjectAngularScale,
                 handLocalReleaseVelocity.x,
                 handLocalReleaseVelocity.y,
                 handLocalReleaseVelocity.z,

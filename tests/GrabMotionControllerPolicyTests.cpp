@@ -203,6 +203,44 @@ int main()
     ok &= expectNear("axis authority preserves tangent spin y", axisLimited.y, 6.0f, 0.001f);
     ok &= expectNear("axis authority scales pivot twist z", axisLimited.z, 2.0f, 0.001f);
 
+    const auto weakHeldAuthority = evaluateHeldAuthority(HeldAuthorityInput{
+        .angular = AngularAuthorityInput{
+            .enabled = true,
+            .positionOnlyPivot = true,
+            .normalTrusted = false,
+            .contactPatchUsedAsPivot = true,
+            .contactPatchSampleCount = 1,
+            .longObjectLeverGameUnits = 8.0f,
+        },
+        .heldBodyColliding = false,
+        .positionErrorGameUnits = 20.0f,
+        .rotationErrorDegrees = 60.0f,
+        .fullPositionErrorGameUnits = 20.0f,
+        .fullRotationErrorDegrees = 60.0f,
+    });
+    ok &= expectNear("held authority records position error factor", weakHeldAuthority.positionErrorFactor, 1.0f, 0.001f);
+    ok &= expectNear("held authority records rotation error factor", weakHeldAuthority.rotationErrorFactor, 1.0f, 0.001f);
+    ok &= expectNear("weak held authority gates direct angular assist", weakHeldAuthority.angularVelocityAssistScale, 0.30f, 0.001f);
+    ok &= expectNear("weak held authority gates release angular velocity", weakHeldAuthority.releaseAngularVelocityScale, 0.30f, 0.001f);
+
+    const auto contactHeldAuthority = evaluateHeldAuthority(HeldAuthorityInput{
+        .angular = AngularAuthorityInput{
+            .enabled = true,
+            .positionOnlyPivot = false,
+            .normalTrusted = true,
+            .contactPatchUsedAsPivot = true,
+            .contactPatchSampleCount = 4,
+            .contactSupportShape = ContactSupportShape::Surface,
+        },
+        .heldBodyColliding = true,
+    });
+    ok &= expectTrue("contact held authority marks softening", contactHeldAuthority.softenForContact);
+    ok &= expectNear("contact held authority caps angular assist scale", contactHeldAuthority.angularVelocityAssistScale, 0.75f, 0.001f);
+    ok &= expectNear("contact held authority caps release angular scale", contactHeldAuthority.releaseAngularVelocityScale, 0.75f, 0.001f);
+
+    const float authorityCap = computeAuthorityScaledAngularVelocityCap(18.0f, 0.30f, 0.50f);
+    ok &= expectNear("authority angular cap composes support and long-object scale", authorityCap, 2.70f, 0.001f);
+
     const auto touchHeldSurfaceVisual = evaluateVisualHandPublishGate(VisualHandPublishInput{
         .hasTelemetryCapture = true,
         .touchHeldPhase = true,

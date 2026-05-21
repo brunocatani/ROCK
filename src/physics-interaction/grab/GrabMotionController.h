@@ -428,6 +428,9 @@ namespace rock::grab_motion_controller
         float rotationErrorFactor = 0.0f;
         bool softenForContact = false;
         AngularAuthorityOutput angular{};
+        float angularVelocityAssistScale = 1.0f;
+        float releaseAngularVelocityScale = 1.0f;
+        const char* reason = "full-authority";
     };
 
     struct VisualHandPublishInput
@@ -460,7 +463,31 @@ namespace rock::grab_motion_controller
         state.rotationErrorFactor = computeRotationErrorFactor(input.rotationErrorDegrees, input.fullRotationErrorDegrees);
         state.softenForContact = input.heldBodyColliding;
         state.angular = computeAngularAuthorityScale(input.angular);
+        state.angularVelocityAssistScale = state.angular.authorityScale;
+        state.releaseAngularVelocityScale = state.angular.authorityScale;
+        if (state.softenForContact) {
+            state.angularVelocityAssistScale = (std::min)(state.angularVelocityAssistScale, 0.75f);
+            state.releaseAngularVelocityScale = (std::min)(state.releaseAngularVelocityScale, 0.75f);
+            state.reason = "contact-softened-authority";
+        } else if (state.angular.weakPivot) {
+            state.reason = "weak-pivot-authority";
+        } else if (state.angular.lowContactSupport) {
+            state.reason = "low-contact-authority";
+        } else if (state.angular.smallObject) {
+            state.reason = "small-object-authority";
+        }
         return state;
+    }
+
+    inline float computeAuthorityScaledAngularVelocityCap(float configuredMaxSpeedRadiansPerSecond, float authorityScale, float longObjectAngularScale)
+    {
+        const float configuredMax = std::clamp(
+            std::isfinite(configuredMaxSpeedRadiansPerSecond) ? configuredMaxSpeedRadiansPerSecond : 18.0f,
+            0.25f,
+            64.0f);
+        const float authority = std::clamp(std::isfinite(authorityScale) && authorityScale > 0.0f ? authorityScale : 1.0f, 0.05f, 1.0f);
+        const float longObject = std::clamp(std::isfinite(longObjectAngularScale) && longObjectAngularScale > 0.0f ? longObjectAngularScale : 1.0f, 0.05f, 1.0f);
+        return (std::max)(0.25f, configuredMax * authority * longObject);
     }
 
     inline VisualHandPublishDecision evaluateVisualHandPublishGate(const VisualHandPublishInput& input)
@@ -631,22 +658,9 @@ namespace rock::grab_motion_controller
         return result;
     }
 
-    inline MotorOutput solveMotorTargets(const MotorInput& input)
+    inline HeldAuthorityInput makeHeldAuthorityInput(const MotorInput& input)
     {
-        MotorOutput out{};
-
-        const float baseLinearTau = safePositive(input.baseLinearTau, 0.03f);
-        const float baseAngularTau = safePositive(input.baseAngularTau, baseLinearTau);
-        const float maxTau = (std::max)(baseLinearTau, safePositive(input.maxTau, baseLinearTau));
-        const float maxAngularTau = (std::max)(baseAngularTau, safePositive(input.maxAngularTau, baseAngularTau));
-        const float collisionTau = safePositive(input.collisionTau, baseLinearTau);
-        if (input.enabled) {
-            out.linearErrorFactor = computePositionErrorFactor(input.positionErrorGameUnits, input.fullPositionErrorGameUnits);
-            out.angularErrorFactor = computeRotationErrorFactor(input.rotationErrorDegrees, input.fullRotationErrorDegrees);
-            out.errorFactor = (std::max)(out.linearErrorFactor, out.angularErrorFactor);
-        }
-
-        const auto heldAuthority = evaluateHeldAuthority(HeldAuthorityInput{
+        return HeldAuthorityInput{
             .angular = AngularAuthorityInput{
                 .enabled = input.pivotQualityAngularScalingEnabled,
                 .positionOnlyPivot = input.pivotAuthorityPositionOnly,
@@ -671,7 +685,23 @@ namespace rock::grab_motion_controller
             .rotationErrorDegrees = input.rotationErrorDegrees,
             .fullPositionErrorGameUnits = input.fullPositionErrorGameUnits,
             .fullRotationErrorDegrees = input.fullRotationErrorDegrees,
-        });
+        };
+    }
+
+    inline MotorOutput solveMotorTargetsWithAuthority(const MotorInput& input, const HeldAuthorityState& heldAuthority)
+    {
+        MotorOutput out{};
+
+        const float baseLinearTau = safePositive(input.baseLinearTau, 0.03f);
+        const float baseAngularTau = safePositive(input.baseAngularTau, baseLinearTau);
+        const float maxTau = (std::max)(baseLinearTau, safePositive(input.maxTau, baseLinearTau));
+        const float maxAngularTau = (std::max)(baseAngularTau, safePositive(input.maxAngularTau, baseAngularTau));
+        const float collisionTau = safePositive(input.collisionTau, baseLinearTau);
+        if (input.enabled) {
+            out.linearErrorFactor = computePositionErrorFactor(input.positionErrorGameUnits, input.fullPositionErrorGameUnits);
+            out.angularErrorFactor = computeRotationErrorFactor(input.rotationErrorDegrees, input.fullRotationErrorDegrees);
+            out.errorFactor = (std::max)(out.linearErrorFactor, out.angularErrorFactor);
+        }
 
         const float linearTauTarget = heldAuthority.softenForContact ? collisionTau : baseLinearTau + (maxTau - baseLinearTau) * out.linearErrorFactor;
         const float angularTauTarget = heldAuthority.softenForContact ? collisionTau : baseAngularTau + (maxAngularTau - baseAngularTau) * out.angularErrorFactor;
@@ -699,5 +729,10 @@ namespace rock::grab_motion_controller
         out.weakPivotTwistScale = angularAuthority.weakPivotTwistScale;
         out.angularMaxForce = angularForceFromRatio(out.linearMaxForce, angularFadeRatio) * out.angularAuthorityScale;
         return out;
+    }
+
+    inline MotorOutput solveMotorTargets(const MotorInput& input)
+    {
+        return solveMotorTargetsWithAuthority(input, evaluateHeldAuthority(makeHeldAuthorityInput(input)));
     }
 }

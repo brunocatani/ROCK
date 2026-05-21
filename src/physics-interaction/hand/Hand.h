@@ -8,6 +8,7 @@
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
+#include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/hand/HandBoneColliderSet.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/hand/HandInteractionStateMachine.h"
@@ -465,10 +466,12 @@ namespace rock
             float grabPositionErrorGameUnits,
             float grabRotationErrorDegrees,
             float authorityForceScale,
-            bool heldBodyColliding);
+            bool heldBodyColliding,
+            const grab_motion_controller::HeldAuthorityState& heldAuthority);
         bool applyProxyConstraintAngularVelocityDrive(RE::hknpWorld* world,
             const RE::NiTransform& desiredBodyWorld,
             float deltaTime,
+            const grab_motion_controller::HeldAuthorityState& heldAuthority,
             float& outRawAngularSpeedRadiansPerSecond,
             float& outAppliedAngularSpeedRadiansPerSecond,
             float& outMaxAngularSpeedRadiansPerSecond,
