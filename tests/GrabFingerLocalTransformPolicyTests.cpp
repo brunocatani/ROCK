@@ -111,6 +111,8 @@ int main()
         shouldApplySurfaceAimCorrection(0, true), false);
     ok &= expectBool("primary thumb keeps shared surface aim",
         shouldApplySurfaceAimCorrection(0, false), true);
+    ok &= expectBool("pinch thumb skips shared surface aim",
+        shouldApplySurfaceAimCorrection(0, false, true), false);
     ok &= expectBool("alternate thumb does not disable non-thumb aim",
         shouldApplySurfaceAimCorrection(2, true), true);
     ok &= expectBool("alternate thumb local correction needs a surface hit",
@@ -123,6 +125,14 @@ int main()
         alternateThumbSegmentCorrectionStrength(2, 1.0f), 0.85f);
     ok &= expectFloat("alternate thumb segment strength clamps",
         alternateThumbSegmentCorrectionStrength(2, 4.0f), 0.85f);
+    ok &= expectBool("pinch thumb local correction needs captured thumb target",
+        shouldApplyPinchThumbLocalCorrection(true, false), false);
+    ok &= expectBool("pinch thumb local correction accepts captured thumb target",
+        shouldApplyPinchThumbLocalCorrection(true, true), true);
+    ok &= expectFloat("pinch thumb proximal correction leads the chain",
+        pinchThumbSegmentCorrectionStrength(0, 1.0f), 0.65f);
+    ok &= expectFloat("pinch thumb distal correction is limited",
+        pinchThumbSegmentCorrectionStrength(2, 1.0f), 0.18f);
     ok &= expectFloat("zero smoothing speed snaps to target",
         exponentialSmoothingAlpha(0.0f, 1.0f / 90.0f), 1.0f);
 

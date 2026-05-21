@@ -1123,20 +1123,18 @@ namespace rock
             float minFingerValue)
         {
             const auto config = currentPinchPocketConfig();
-            const float minValue = std::clamp(std::isfinite(minFingerValue) ? minFingerValue : 0.2f, 0.0f, 1.0f);
-            const float thumbIndexValue = std::clamp((std::min)(pose.values[0], config.thumbIndexMaxOpenValue), minValue, 1.0f);
-            const float indexValue = std::clamp((std::min)(pose.values[1], config.thumbIndexMaxOpenValue), minValue, 1.0f);
-            const float otherValue = std::clamp(config.otherFingerCurlValue, 0.0f, 1.0f);
+            const auto stablePose = grab_pinch_pocket_policy::buildStablePinchFingerPose(config, minFingerValue);
 
-            pose.values[0] = thumbIndexValue;
-            pose.values[1] = indexValue;
-            pose.values[2] = otherValue;
-            pose.values[3] = otherValue;
-            pose.values[4] = otherValue;
+            pose.values = stablePose.values;
             pose.usedAlternateThumbCurve = false;
             pose.usedAlternateThumbSurfaceHit = false;
+            pose.usedPinchThumbOpposition = true;
             pose.poseTargetCount = (std::max)(pose.poseTargetCount, static_cast<int>(frame.fingerPoseTargetCount));
 
+            for (std::size_t finger = 0; finger < 2 && finger < pose.surfaceAimTargetValid.size(); ++finger) {
+                pose.surfaceAimTargetValid[finger] = 0;
+                pose.surfaceAimNormalValid[finger] = 0;
+            }
             for (std::size_t finger = 0; finger < 2 && finger < frame.fingerPoseTargetLocal.size(); ++finger) {
                 if (!frame.fingerPoseTargetValid[finger]) {
                     continue;
@@ -1153,7 +1151,7 @@ namespace rock
 
             pose.solved = true;
             pose.hasJointValues = true;
-            pose.jointValues = grab_finger_pose_math::expandFingerCurlsToJointValues(pose.values);
+            pose.jointValues = stablePose.jointValues;
         }
 
         void storeFingerPoseTargetsInGrabFrame(CanonicalGrabFrame& frame,
@@ -3134,7 +3132,16 @@ namespace rock
                 pose.values[finger] = precloseValue + (closingTarget - precloseValue) * t;
             }
 
-            pose.jointValues = grab_finger_pose_math::expandFingerCurlsToJointValues(pose.values);
+            if (targetPose.usedPinchThumbOpposition && targetPose.hasJointValues) {
+                std::array<float, 5> precloseValues{ precloseValue, precloseValue, precloseValue, precloseValue, precloseValue };
+                const auto precloseJoints = grab_finger_pose_math::expandFingerCurlsToJointValues(precloseValues);
+                for (std::size_t joint = 0; joint < pose.jointValues.size(); ++joint) {
+                    const float targetJoint = std::clamp(targetPose.jointValues[joint], 0.0f, 1.0f);
+                    pose.jointValues[joint] = precloseJoints[joint] + (targetJoint - precloseJoints[joint]) * t;
+                }
+            } else {
+                pose.jointValues = grab_finger_pose_math::expandFingerCurlsToJointValues(pose.values);
+            }
             pose.solved = true;
             pose.hasJointValues = true;
             return pose;

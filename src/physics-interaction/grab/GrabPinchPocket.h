@@ -78,6 +78,12 @@ namespace rock::grab_pinch_pocket_policy
         bool thinRod = false;
     };
 
+    struct StablePinchFingerPose
+    {
+        std::array<float, 5> values{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+        std::array<float, 15> jointValues{};
+    };
+
     [[nodiscard]] inline float finiteOr(float value, float fallback)
     {
         return std::isfinite(value) ? value : fallback;
@@ -308,5 +314,35 @@ namespace rock::grab_pinch_pocket_policy
     {
         const float thinHalfWidth = std::clamp(finiteOr(metrics.middleExtentGameUnits, 0.0f) * 0.5f, 0.35f, 2.5f);
         return (std::max)(thinHalfWidth, std::clamp(finiteOr(configuredSurfaceInsetGameUnits, kDefaultSurfaceInsetGameUnits), 0.0f, 8.0f));
+    }
+
+    [[nodiscard]] inline StablePinchFingerPose buildStablePinchFingerPose(Config rawConfig, float minFingerValue)
+    {
+        const Config config = sanitizeConfig(rawConfig);
+        const float minValue = std::clamp(finiteOr(minFingerValue, 0.2f), 0.0f, 1.0f);
+        const float pinchValue = std::clamp(config.thumbIndexMaxOpenValue, minValue, 1.0f);
+        const float otherValue = std::clamp(config.otherFingerCurlValue, 0.0f, 1.0f);
+
+        StablePinchFingerPose pose{};
+        pose.values = { pinchValue, pinchValue, otherValue, otherValue, otherValue };
+
+        const float pinchClosed = 1.0f - pinchValue;
+        pose.jointValues[0] = std::clamp(pinchValue + pinchClosed * 0.30f, minValue, 1.0f);
+        pose.jointValues[1] = std::clamp(pinchValue + pinchClosed * 0.12f, minValue, 1.0f);
+        pose.jointValues[2] = std::clamp(pinchValue, minValue, 1.0f);
+
+        pose.jointValues[3] = std::clamp(pinchValue + pinchClosed * 0.20f, minValue, 1.0f);
+        pose.jointValues[4] = std::clamp(pinchValue, minValue, 1.0f);
+        pose.jointValues[5] = std::clamp(pinchValue - pinchClosed * 0.08f, minValue, 1.0f);
+
+        const float otherClosed = 1.0f - otherValue;
+        for (std::size_t finger = 2; finger < pose.values.size(); ++finger) {
+            const std::size_t base = finger * 3;
+            pose.jointValues[base + 0] = std::clamp(otherValue + otherClosed * 0.25f, 0.0f, 1.0f);
+            pose.jointValues[base + 1] = std::clamp(otherValue, 0.0f, 1.0f);
+            pose.jointValues[base + 2] = std::clamp(otherValue - otherClosed * 0.15f, 0.0f, 1.0f);
+        }
+
+        return pose;
     }
 }

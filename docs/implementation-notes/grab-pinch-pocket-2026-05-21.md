@@ -19,6 +19,7 @@ Very small compact objects and short thin objects need a distinct close-grab sea
 - The held object remains dynamic. The frozen value is the BODY-local object point plus the hand/proxy-local relation.
 - Pinch disables seated palm-pocket reacquire and held support refresh for the lifetime of that grab.
 - Thumb/index finger targets are stored object-local; middle/ring/pinky are closed by policy.
+- Pinch thumb pose must be a stable whole-chain opposition pose. Generic thumb surface-aim correction must not own the pinch thumb chain.
 - Palm close selection remains first priority. Pinch close selection is a fallback cast from the live thumb-index pocket only when the palm close cast misses.
 - A pinch-direction fallback selection must qualify for pinch pocket at grab commit; it does not fall through to palm-pocket authority.
 - Pinch-direction selection hysteresis and selected-close speed tracking use the live pinch origin rather than the palm origin.
@@ -54,6 +55,7 @@ Very small compact objects and short thin objects need a distinct close-grab sea
 - Pinch captures the thumb/index distal-pad pocket from the root-flattened finger snapshot at grab commit, then stores object-local thumb/index pose targets.
 - Pinch bypasses held palm-pocket support refresh and seated palm-pocket reacquire for the lifetime of the grab.
 - Pinch bypasses the generic thumb curve solver and post-processes thumb/index plus middle/ring/pinky finger values from config.
+- Pinch now publishes a deterministic per-joint thumb/index pose instead of trusting the mesh solver's raw thumb curl, and marks thumb opposition so the local-transform layer skips generic thumb surface aim.
 - Added a per-hand debug overlay toggle for palm pocket center/radius/depth and pinch center/thumb-index axis/detection direction.
 - Added fallback pinch close selection from the live thumb-index pocket using the pinch direction only after palm close selection fails.
 - Tagged pinch-direction close selections so non-pinchable hits fail closed instead of becoming accidental palm grabs.

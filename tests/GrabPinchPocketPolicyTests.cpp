@@ -163,5 +163,21 @@ int main()
     ok &= expectNear("pinch detection fallback y", sanitized.detectionDirectionHandspace.y, kDefaultDetectionDirectionHandspaceY);
     ok &= expectNear("pinch detection fallback z", sanitized.detectionDirectionHandspace.z, kDefaultDetectionDirectionHandspaceZ);
 
+    Config poseConfig{};
+    poseConfig.thumbIndexMaxOpenValue = 0.45f;
+    poseConfig.otherFingerCurlValue = 0.20f;
+    const auto pinchPose = buildStablePinchFingerPose(poseConfig, 0.20f);
+    ok &= expectNear("pinch thumb scalar uses configured stable value", pinchPose.values[0], 0.45f);
+    ok &= expectNear("pinch index scalar uses configured stable value", pinchPose.values[1], 0.45f);
+    ok &= expectNear("pinch other fingers close", pinchPose.values[2], 0.20f);
+    ok &= expectTrue("pinch thumb proximal is engaged", pinchPose.jointValues[0] < 0.70f);
+    ok &= expectTrue("pinch thumb distal does not over-chase", pinchPose.jointValues[2] >= 0.45f);
+    ok &= expectTrue("pinch thumb curls as a chain", pinchPose.jointValues[0] > pinchPose.jointValues[1] && pinchPose.jointValues[1] > pinchPose.jointValues[2]);
+
+    poseConfig.thumbIndexMaxOpenValue = 0.05f;
+    const auto clampedPinchPose = buildStablePinchFingerPose(poseConfig, 0.30f);
+    ok &= expectNear("pinch pose respects minimum thumb/index value", clampedPinchPose.values[0], 0.30f);
+    ok &= expectNear("pinch thumb distal respects minimum", clampedPinchPose.jointValues[2], 0.30f);
+
     return ok ? 0 : 1;
 }
