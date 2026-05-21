@@ -46,6 +46,14 @@ namespace
         std::array<std::byte, sizeof(PropertyMod::DATATYPE)> originalData{};
     };
 
+    struct ScopeMeshNodes
+    {
+        RE::NiAVObject* scopeNormal = nullptr;
+        RE::NiAVObject* scopeAiming = nullptr;
+        std::uint64_t scopeNormalFlags = 0;
+        std::uint64_t scopeAimingFlags = 0;
+    };
+
     struct EquippedScopeRouteSnapshot
     {
         EquippedScopeRoute route = EquippedScopeRoute::None;
@@ -54,6 +62,7 @@ namespace
         std::uint32_t activeNativeScopeMods = 0;
         std::uint32_t unresolvedActiveMods = 0;
         bool weaponDrawn = false;
+        bool stsScopeMeshRenderable = false;
     };
 
     struct RuntimeState
@@ -493,6 +502,38 @@ namespace
         return player && player->GetWeaponMagicDrawn();
     }
 
+    [[nodiscard]] std::optional<ScopeMeshNodes> readStsScopeMeshNodes(const char* context)
+    {
+        auto* skeleton = f4cf::f4vr::getFirstPersonSkeleton();
+        if (!skeleton || !nativeNodeStorageWritable(skeleton, context)) {
+            return std::nullopt;
+        }
+
+        static const RE::BSFixedString scopeNormalName{ "ScopeNormal" };
+        static const RE::BSFixedString scopeAimingName{ "ScopeAiming" };
+
+        auto* scopeNormal = skeleton->GetObjectByName(scopeNormalName);
+        auto* scopeAiming = skeleton->GetObjectByName(scopeAimingName);
+        if (!scopeNormal || !scopeAiming) {
+            return std::nullopt;
+        }
+
+        ScopeMeshNodes nodes{};
+        nodes.scopeNormal = scopeNormal;
+        nodes.scopeAiming = scopeAiming;
+        if (!readNodeFlags(scopeNormal, nodes.scopeNormalFlags, "ScopeNormal visibility") ||
+            !readNodeFlags(scopeAiming, nodes.scopeAimingFlags, "ScopeAiming visibility")) {
+            return std::nullopt;
+        }
+
+        return nodes;
+    }
+
+    [[nodiscard]] bool stsScopeMeshRenderable()
+    {
+        return readStsScopeMeshNodes("scope route mesh validation").has_value();
+    }
+
     [[nodiscard]] const RE::BGSObjectInstanceExtra* findEquippedWeaponObjectInstanceExtra(
         const F4SEVR::PlayerCharacter* player,
         const F4SEVR::TESForm* weaponForm,
@@ -573,9 +614,14 @@ namespace
             }
         }
 
+        if (snapshot.activeStsScopeMods > 0) {
+            snapshot.stsScopeMeshRenderable = stsScopeMeshRenderable();
+        }
+
         snapshot.route = rock::see_through_scopes_policy::chooseEquippedScopeRoute({
             .activeStsScopeMods = snapshot.activeStsScopeMods,
             .activeNativeScopeMods = snapshot.activeNativeScopeMods,
+            .stsScopeMeshRenderable = snapshot.stsScopeMeshRenderable,
         });
         return snapshot;
     }
@@ -587,7 +633,8 @@ namespace
                left.activeStsScopeMods == right.activeStsScopeMods &&
                left.activeNativeScopeMods == right.activeNativeScopeMods &&
                left.unresolvedActiveMods == right.unresolvedActiveMods &&
-               left.weaponDrawn == right.weaponDrawn;
+               left.weaponDrawn == right.weaponDrawn &&
+               left.stsScopeMeshRenderable == right.stsScopeMeshRenderable;
     }
 
     void logScopeRouteIfChanged(const EquippedScopeRouteSnapshot& snapshot)
@@ -598,13 +645,14 @@ namespace
 
         ROCK_LOG_INFO(
             Scope,
-            "Scope route weapon={:08X} route={} stsMods={} nativeMods={} unresolvedMods={} drawn={}",
+            "Scope route weapon={:08X} route={} stsMods={} nativeMods={} unresolvedMods={} drawn={} stsMesh={}",
             snapshot.weaponFormID,
             rock::see_through_scopes_policy::equippedScopeRouteName(snapshot.route),
             snapshot.activeStsScopeMods,
             snapshot.activeNativeScopeMods,
             snapshot.unresolvedActiveMods,
-            snapshot.weaponDrawn ? "yes" : "no");
+            snapshot.weaponDrawn ? "yes" : "no",
+            snapshot.stsScopeMeshRenderable ? "yes" : "no");
 
         s_state.loggedScopeRoute = snapshot;
         s_state.hasLoggedScopeRoute = true;
@@ -619,24 +667,37 @@ namespace
         s_state.scopeVisibilityBaselineValid = false;
     }
 
-    void restoreScopeMeshBaselineIfPresent()
+    bool restoreScopeMeshBaselineIfPresent()
     {
         if (!s_state.scopeVisibilityBaselineValid || !s_state.scopeNormalNode || !s_state.scopeAimingNode) {
             clearScopeMeshBaseline();
-            return;
+            return true;
         }
 
         auto* scopeNormal = s_state.scopeNormalNode.get();
         auto* scopeAiming = s_state.scopeAimingNode.get();
-        if (!writeNodeFlags(scopeNormal, s_state.scopeNormalBaselineFlags, "ScopeNormal visibility baseline restore") ||
-            !writeNodeFlags(scopeAiming, s_state.scopeAimingBaselineFlags, "ScopeAiming visibility baseline restore")) {
-            clearScopeMeshBaseline();
-            return;
+        const bool normalRestored = writeNodeFlags(scopeNormal, s_state.scopeNormalBaselineFlags, "ScopeNormal visibility baseline restore");
+        const bool aimingRestored = writeNodeFlags(scopeAiming, s_state.scopeAimingBaselineFlags, "ScopeAiming visibility baseline restore");
+
+        if (normalRestored) {
+            f4cf::f4vr::updateDown(scopeNormal, true);
+        }
+        if (aimingRestored) {
+            f4cf::f4vr::updateDown(scopeAiming, true);
         }
 
-        f4cf::f4vr::updateDown(scopeNormal, true);
-        f4cf::f4vr::updateDown(scopeAiming, true);
-        clearScopeMeshBaseline();
+        if (normalRestored && aimingRestored) {
+            clearScopeMeshBaseline();
+            return true;
+        }
+
+        ROCK_LOG_SAMPLE_WARN(
+            Scope,
+            rock::g_rockConfig.rockLogSampleMilliseconds,
+            "See-Through Scopes scope mesh baseline restore incomplete: ScopeNormal={} ScopeAiming={}",
+            normalRestored ? "restored" : "failed",
+            aimingRestored ? "restored" : "failed");
+        return false;
     }
 
     void keepScopeMeshVisible(const EquippedScopeRouteSnapshot& equippedScope)
@@ -646,31 +707,23 @@ namespace
             return;
         }
 
-        auto* skeleton = f4cf::f4vr::getFirstPersonSkeleton();
-        if (!skeleton || !nativeNodeStorageWritable(skeleton, "scope visibility skeleton lookup")) {
+        const auto scopeMesh = readStsScopeMeshNodes("scope visibility skeleton lookup");
+        if (!scopeMesh) {
+            restoreScopeMeshBaselineIfPresent();
             return;
         }
 
-        static const RE::BSFixedString scopeNormalName{ "ScopeNormal" };
-        static const RE::BSFixedString scopeAimingName{ "ScopeAiming" };
-
-        auto* scopeNormal = skeleton->GetObjectByName(scopeNormalName);
-        auto* scopeAiming = skeleton->GetObjectByName(scopeAimingName);
-        if (!scopeNormal || !scopeAiming) {
-            return;
-        }
-
-        std::uint64_t scopeNormalFlags = 0;
-        std::uint64_t scopeAimingFlags = 0;
-        if (!readNodeFlags(scopeNormal, scopeNormalFlags, "ScopeNormal visibility") ||
-            !readNodeFlags(scopeAiming, scopeAimingFlags, "ScopeAiming visibility")) {
-            return;
-        }
+        auto* scopeNormal = scopeMesh->scopeNormal;
+        auto* scopeAiming = scopeMesh->scopeAiming;
+        auto scopeNormalFlags = scopeMesh->scopeNormalFlags;
+        auto scopeAimingFlags = scopeMesh->scopeAimingFlags;
 
         if (!s_state.scopeVisibilityBaselineValid ||
             s_state.scopeNormalNode.get() != scopeNormal ||
             s_state.scopeAimingNode.get() != scopeAiming) {
-            restoreScopeMeshBaselineIfPresent();
+            if (!restoreScopeMeshBaselineIfPresent()) {
+                return;
+            }
             s_state.scopeNormalNode.reset(scopeNormal);
             s_state.scopeAimingNode.reset(scopeAiming);
             s_state.scopeNormalBaselineFlags = scopeNormalFlags;
@@ -861,9 +914,7 @@ namespace rock::see_through_scopes
             }
         }
 
-        if (runtimeActive()) {
-            applyOverlayPatch();
-        } else {
+        if (!runtimeActive()) {
             restoreOverlayPatch();
             restoreReticleBaselineIfPresent();
             restoreScopeMeshBaselineIfPresent();
@@ -899,9 +950,13 @@ namespace rock::see_through_scopes
             return;
         }
 
-        applyOverlayPatch();
         s_state.scopeRoute = resolveEquippedScopeRoute();
         logScopeRouteIfChanged(s_state.scopeRoute);
+        if (s_state.scopeRoute.route == EquippedScopeRoute::StsPreferred) {
+            applyOverlayPatch();
+        } else {
+            restoreOverlayPatch();
+        }
         alignReticle(s_state.scopeRoute);
     }
 
@@ -912,6 +967,13 @@ namespace rock::see_through_scopes
             return;
         }
 
-        keepScopeMeshVisible(s_state.scopeRoute);
+        /*
+         * The late-culling hook is the last chance to write scope visibility
+         * for this frame. Resolve a local route instead of trusting the main
+         * frame snapshot so equip swaps between hooks cannot force stale STS
+         * visibility.
+         */
+        const auto lateScopeRoute = resolveEquippedScopeRoute();
+        keepScopeMeshVisible(lateScopeRoute);
     }
 }

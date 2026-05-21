@@ -37,12 +37,13 @@ namespace rock::see_through_scopes_policy
     {
         std::uint32_t activeStsScopeMods = 0;
         std::uint32_t activeNativeScopeMods = 0;
+        bool stsScopeMeshRenderable = true;
     };
 
     [[nodiscard]] constexpr EquippedScopeRoute chooseEquippedScopeRoute(EquippedScopeRouteInput input) noexcept
     {
         if (input.activeStsScopeMods > 0) {
-            return EquippedScopeRoute::StsPreferred;
+            return input.stsScopeMeshRenderable ? EquippedScopeRoute::StsPreferred : EquippedScopeRoute::NativeFallback;
         }
 
         if (input.activeNativeScopeMods > 0) {

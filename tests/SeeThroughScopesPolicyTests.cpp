@@ -42,8 +42,25 @@ int main()
         chooseEquippedScopeRoute(EquippedScopeRouteInput{
             .activeStsScopeMods = 1,
             .activeNativeScopeMods = 1,
+            .stsScopeMeshRenderable = true,
         }),
         EquippedScopeRoute::StsPreferred);
+
+    ok &= expectRoute("STS degrades to native fallback when the STS scope mesh is unavailable",
+        chooseEquippedScopeRoute(EquippedScopeRouteInput{
+            .activeStsScopeMods = 1,
+            .activeNativeScopeMods = 0,
+            .stsScopeMeshRenderable = false,
+        }),
+        EquippedScopeRoute::NativeFallback);
+
+    ok &= expectRoute("native fallback still wins when STS metadata exists without renderable STS mesh",
+        chooseEquippedScopeRoute(EquippedScopeRouteInput{
+            .activeStsScopeMods = 1,
+            .activeNativeScopeMods = 1,
+            .stsScopeMeshRenderable = false,
+        }),
+        EquippedScopeRoute::NativeFallback);
 
     ok &= expectRoute("native is used when no STS scope is active",
         chooseEquippedScopeRoute(EquippedScopeRouteInput{

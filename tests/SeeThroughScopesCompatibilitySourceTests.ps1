@@ -58,6 +58,16 @@ Require-Text `
 
 Require-Text `
     'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
+    'chooseEquippedScopeRoute\(\s*\{[\s\S]*stsScopeMeshRenderable\s*=\s*snapshot\.stsScopeMeshRenderable' `
+    'Equipped STS routing must prove the current STS scope mesh is renderable before preferring STS.'
+
+Require-Text `
+    'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
+    's_state\.scopeRoute\s*=\s*resolveEquippedScopeRoute\(\);[\s\S]*if\s*\(\s*s_state\.scopeRoute\.route\s*==\s*EquippedScopeRoute::StsPreferred\s*\)\s*\{[\s\S]*applyOverlayPatch\(\);[\s\S]*\}\s*else\s*\{[\s\S]*restoreOverlayPatch\(\);' `
+    'Native scope overlay suppression must be route-driven so missing STS meshes can fall back to native scope behavior.'
+
+Require-Text `
+    'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
     'alignReticle\(\s*const\s+EquippedScopeRouteSnapshot&\s+equippedScope\s*\)[\s\S]*equippedScope\.route\s*!=\s*EquippedScopeRoute::StsPreferred' `
     'STS reticle alignment must be gated by the equipped STS-preferred route.'
 
@@ -73,18 +83,28 @@ Require-Text `
 
 Require-Text `
     'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
+    'const\s+bool\s+normalRestored\s*=[\s\S]*const\s+bool\s+aimingRestored\s*=[\s\S]*normalRestored\s*&&\s*aimingRestored' `
+    'Scope mesh baseline restore must attempt ScopeNormal and ScopeAiming independently before clearing baseline state.'
+
+Require-Text `
+    'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
+    'const\s+auto\s+lateScopeRoute\s*=\s*resolveEquippedScopeRoute\(\);[\s\S]*keepScopeMeshVisible\(lateScopeRoute\)' `
+    'Late culling must resolve a fresh route so stale frame state cannot force the wrong scope mesh visibility.'
+
+Require-Text `
+    'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
     'See-Through Scopes OMOD records' `
     'The overlay patch log should identify that only STS-sourced OMOD records are patched.'
 
 Require-Text `
     'data/config/ROCK.ini' `
-    'Active equipped STS scopes are preferred; native scope overlays stay enabled for non-STS scopes\.' `
-    'ROCK.ini must document STS-preferred/native-fallback scope behavior.'
+    'Active renderable equipped STS scopes are preferred; native scope overlays stay enabled when STS mesh is unavailable or the scope is non-STS\.' `
+    'ROCK.ini must document renderable STS-preferred/native-fallback scope behavior.'
 
 Require-Text `
     'src/physics-interaction/weapon/SeeThroughScopesPolicy.h' `
-    'enum\s+class\s+EquippedScopeRoute[\s\S]*NativeFallback[\s\S]*StsPreferred[\s\S]*chooseEquippedScopeRoute' `
-    'Pure STS scope policy must expose STS-preferred/native-fallback routing.'
+    'enum\s+class\s+EquippedScopeRoute[\s\S]*NativeFallback[\s\S]*StsPreferred[\s\S]*stsScopeMeshRenderable[\s\S]*chooseEquippedScopeRoute' `
+    'Pure STS scope policy must expose renderable STS-preferred/native-fallback routing.'
 
 Require-Text `
     'CMakeLists.txt' `
