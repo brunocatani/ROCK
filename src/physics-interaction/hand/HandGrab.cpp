@@ -5799,10 +5799,11 @@ namespace rock
         }
 
         if (meshSourceNode) {
+            const int meshExtractionDepth = (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth);
             extractAllSurfaceTriangles(meshSourceNode,
                 grabMeshTriangles,
                 grabSurfaceTriangles,
-                10,
+                meshExtractionDepth,
                 &meshStats,
                 g_rockConfig.rockGrabNodeNameBlacklist,
                 handPocketOnlyGrab);

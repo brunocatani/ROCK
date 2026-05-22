@@ -40,7 +40,23 @@ namespace rock
         constexpr std::uintptr_t kFuncDynamicTriShapeUnlockVertices = 0x1C43BD0;
     }
 
+    namespace BSSkinOffset
+    {
+        /*
+         * Mesh grab reads BSSkin::Instance through guarded native-memory copies.
+         * Keep these offsets aligned with the local FO4VR BSSkin layout in
+         * CommonLibF4VR so non-dynamic skinned bodies keep their live bone
+         * ownership path instead of collapsing to ownerless/no-triangle meshes.
+         */
+        constexpr int bonesData = 0x10;
+        constexpr int bonesCount = 0x18;
+        constexpr int boneData = 0x40;
+        constexpr int transformArrayData = 0x10;
+    }
+
     constexpr std::uint32_t kMaxMeshExtractionTriangles = 1'000'000;
+    static_assert(sizeof(RE::BSSkin::Instance) == 0xC0);
+    static_assert(sizeof(RE::BSSkin::BoneData::BoneTransform) == 0x50);
 
     inline RE::NiPoint3 transformPoint(const RE::NiTransform& t, const RE::NiPoint3& p)
     {
@@ -623,7 +639,7 @@ namespace rock
             return 0;
         }
 
-        char* skinInst = nullptr;
+        RE::BSSkin::Instance* skinInst = nullptr;
         if (!native_memory::tryReadField(triShape, VROffset::skinInstance, skinInst)) {
             ROCK_LOG_WARN(MeshGrab, "Skinned '{}': unreadable skinInstance field", shapeName);
             return 0;
@@ -634,7 +650,7 @@ namespace rock
         }
 
         std::uint32_t boneCount = 0;
-        if (!native_memory::tryReadField(skinInst, 0x38, boneCount)) {
+        if (!native_memory::tryReadField(skinInst, BSSkinOffset::bonesCount, boneCount)) {
             ROCK_LOG_WARN(MeshGrab, "Skinned '{}': unreadable boneCount", shapeName);
             return 0;
         }
@@ -644,7 +660,7 @@ namespace rock
         }
 
         RE::NiNode** boneNodes = nullptr;
-        if (!native_memory::tryReadField(skinInst, 0x18, boneNodes)) {
+        if (!native_memory::tryReadField(skinInst, BSSkinOffset::bonesData, boneNodes)) {
             ROCK_LOG_WARN(MeshGrab, "Skinned '{}': unreadable bone node array pointer", shapeName);
             return 0;
         }
@@ -653,8 +669,8 @@ namespace rock
             return 0;
         }
 
-        char* boneData = nullptr;
-        if (!dynamicSkinned && !native_memory::tryReadField(skinInst, 0x40, boneData)) {
+        RE::BSSkin::BoneData* boneData = nullptr;
+        if (!dynamicSkinned && !native_memory::tryReadField(skinInst, BSSkinOffset::boneData, boneData)) {
             ROCK_LOG_WARN(MeshGrab, "Skinned '{}': unreadable BSSkin::BoneData pointer", shapeName);
             return 0;
         }
@@ -662,11 +678,12 @@ namespace rock
             ROCK_LOG_WARN(MeshGrab, "Skinned '{}': null BSSkin::BoneData", shapeName);
             return 0;
         }
-        char* skinToBoneArray = nullptr;
-        if (!dynamicSkinned && !native_memory::tryReadField(boneData, 0x10, skinToBoneArray)) {
+        std::uintptr_t skinToBoneArrayAddress = 0;
+        if (!dynamicSkinned && !native_memory::tryReadField(boneData, BSSkinOffset::transformArrayData, skinToBoneArrayAddress)) {
             ROCK_LOG_WARN(MeshGrab, "Skinned '{}': unreadable skinToBone transform array pointer", shapeName);
             return 0;
         }
+        const char* skinToBoneArray = reinterpret_cast<const char*>(skinToBoneArrayAddress);
         if (!dynamicSkinned && !skinToBoneArray) {
             ROCK_LOG_WARN(MeshGrab, "Skinned '{}': null skinToBone transform array", shapeName);
             return 0;

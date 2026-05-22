@@ -47,7 +47,14 @@ function Reject-Text {
 Require-Text 'src/physics-interaction/native/NativeMemory.cpp' 'VirtualQuery' 'Native memory helper must use page readability checks before pointer reads.'
 Require-Text 'src/physics-interaction/native/NativeMemory.cpp' '__try' 'Native memory helper must protect final native memory copies with SEH on MSVC.'
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'physics-interaction/native/NativeMemory.h' 'Mesh grab extraction must use the shared native memory helper.'
+Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'static_assert\(sizeof\(RE::BSSkin::Instance\) == 0xC0\)' 'Skinned mesh extraction must bind itself to the verified FO4VR BSSkin::Instance size.'
+Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'constexpr int bonesData = 0x10' 'Skinned mesh extraction must read the FO4VR BSSkin bone-node array from the verified +0x10 field.'
+Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'constexpr int bonesCount = 0x18' 'Skinned mesh extraction must read the FO4VR BSSkin bone count from the verified +0x18 field.'
+Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'constexpr int boneData = 0x40' 'Skinned mesh extraction must read the FO4VR BSSkin bone-data pointer from the verified +0x40 field.'
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'tryReadValue\(boneNodes \+ b, boneNode\)' 'Skinned mesh extraction must read bone node array entries through guarded reads.'
+Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'tryReadField\(skinInst, BSSkinOffset::bonesData, boneNodes\)' 'Skinned mesh extraction must read the verified BSSkin bone node array field.'
+Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'tryReadField\(skinInst, BSSkinOffset::bonesCount, boneCount\)' 'Skinned mesh extraction must read the verified BSSkin bone count field.'
+Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'tryReadField\(skinInst, BSSkinOffset::boneData, boneData\)' 'Skinned mesh extraction must read the verified BSSkin bone data field.'
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'pointerRangeLooksReadable\(reinterpret_cast<const char\*>\(boneNode\) \+ 0x70, 0x40\)' 'Skinned mesh extraction must reject unreadable bone world transforms before dereferencing.'
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'guardedCopyFromMemory\(skinToBoneArray \+ b \* 0x50 \+ 0x10' 'Skinned mesh extraction must guard skin-to-bone transform copies.'
 Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'worldVertexValid' 'Skinned mesh extraction must track vertex validity instead of emitting zeroed vertices.'
@@ -64,7 +71,11 @@ Require-Text 'src/physics-interaction/grab/MeshGrab.h' 'GrabSurfaceSourceKind::S
 
 Reject-Text 'src/physics-interaction/grab/MeshGrab.h' 'auto\*\s+boneNode\s*=\s*boneNodes\[b\]' 'Skinned mesh extraction must not directly dereference boneNodes[b].'
 Reject-Text 'src/physics-interaction/grab/MeshGrab.h' 'GrabSurfaceVertexInfluence\{\s*boneNodes\[bIdx\]' 'Skinned surface influence capture must not reread boneNodes[bIdx] directly.'
+Reject-Text 'src/physics-interaction/grab/MeshGrab.h' 'tryReadField\(skinInst,\s*0x18,\s*boneNodes\)' 'Skinned mesh extraction must not use the old incorrect +0x18 bone-node pointer read.'
+Reject-Text 'src/physics-interaction/grab/MeshGrab.h' 'tryReadField\(skinInst,\s*0x38,\s*boneCount\)' 'Skinned mesh extraction must not use the old incorrect +0x38 bone-count read.'
 Reject-Text 'src/physics-interaction/grab/MeshGrab.h' 'Skipping skinned BSDynamicTriShape' 'Skinned BSDynamicTriShape must no longer be hard-skipped from grab mesh authority.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'const int meshExtractionDepth = \(std::max\)\(1,\s*g_rockConfig\.rockObjectPhysicsTreeMaxDepth\)' 'Mesh extraction must honor the configured object tree depth instead of a hardcoded recursion cap.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'extractAllSurfaceTriangles\(meshSourceNode,[\s\S]*meshExtractionDepth' 'Hand grab must pass the configured mesh extraction depth into surface traversal.'
 
 if ($failures.Count -gt 0) {
     Write-Error ($failures -join [Environment]::NewLine)
