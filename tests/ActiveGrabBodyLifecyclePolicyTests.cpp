@@ -61,10 +61,18 @@ int main()
     const auto dynamicRelease = dynamicSnapshot.restorePlanForRelease(BodyRestorePolicy::ProtectComplexSystemOwned);
     ok &= expectFalse("loose dynamic release should keep active collision filter", dynamicRelease.entries.front().restoreFilter);
     ok &= expectFalse("loose dynamic release should keep dynamic motion", dynamicRelease.entries.front().restoreMotion);
+    ok &= expectTrue("loose object release should use protected restore policy",
+        releaseRestorePolicyForTargetKind(grab_target::Kind::LooseObject) == BodyRestorePolicy::ProtectComplexSystemOwned);
 
     const auto dynamicFailure = dynamicSnapshot.restorePlanForFailure();
     ok &= expectTrue("failed dynamic prep should restore captured filter", dynamicFailure.entries.front().restoreFilter);
     ok &= expectTrue("failed dynamic prep should restore captured motion", dynamicFailure.entries.front().restoreMotion);
+
+    const auto deadActorRelease = dynamicSnapshot.restorePlanForRelease(releaseRestorePolicyForTargetKind(grab_target::Kind::DeadActorBody));
+    ok &= expectTrue("dead actor release should restore captured dynamic filter", deadActorRelease.entries.front().restoreFilter);
+    ok &= expectTrue("dead actor release should restore touched dynamic motion", deadActorRelease.entries.front().restoreMotion);
+    ok &= expectTrue("dead actor release should use restore-all policy",
+        releaseRestorePolicyForTargetKind(grab_target::Kind::DeadActorBody) == BodyRestorePolicy::RestoreAllChanged);
 
     ObjectPhysicsBodySet keyframedBefore{};
     keyframedBefore.records.push_back(makeRecord(202u, BodyMotionType::Keyframed, BodyRejectReason::KeyframedPassive, false));

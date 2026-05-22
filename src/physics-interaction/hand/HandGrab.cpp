@@ -9801,9 +9801,11 @@ namespace rock
         }
 
         if (releaseContext.finalObjectRelease && world && _activeGrabLifecycle.size() > 0) {
+            const auto releaseRestorePolicy =
+                active_grab_body_lifecycle::releaseRestorePolicyForTargetKind(_savedObjectState.targetKind);
             restoreActiveGrabLifecycle(world,
                 _activeGrabLifecycle,
-                _activeGrabLifecycle.restorePlanForRelease(active_grab_body_lifecycle::BodyRestorePolicy::ProtectComplexSystemOwned),
+                _activeGrabLifecycle.restorePlanForRelease(releaseRestorePolicy),
                 _savedObjectState.bodyId.value,
                 handName(),
                 "release");

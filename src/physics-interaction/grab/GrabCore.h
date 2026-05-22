@@ -71,6 +71,17 @@ namespace rock::active_grab_body_lifecycle
         Release,
     };
 
+    inline constexpr BodyRestorePolicy releaseRestorePolicyForTargetKind(grab_target::Kind targetKind) noexcept
+    {
+        /*
+         * Whole actor ragdolls are Fallout-owned physics systems even when the
+         * selected body is already dynamic. Return every touched actor body and
+         * filter to its captured state before the engine later detaches the cell.
+         */
+        return targetKind == grab_target::Kind::DeadActorBody ? BodyRestorePolicy::RestoreAllChanged :
+                                                               BodyRestorePolicy::ProtectComplexSystemOwned;
+    }
+
     struct BodyLifecycleRecord
     {
         std::uint32_t bodyId = kInvalidBodyId;
