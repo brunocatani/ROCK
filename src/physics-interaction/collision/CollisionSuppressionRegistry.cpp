@@ -1,6 +1,7 @@
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 
 #include "physics-interaction/native/BodyCollisionControl.h"
+#include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/PhysicsLog.h"
 
 namespace rock::collision_suppression_registry
@@ -33,27 +34,53 @@ namespace rock::collision_suppression_registry
         }
     }
 
-    CollisionSuppressionRegistry::RuntimeEntry* CollisionSuppressionRegistry::find(std::uint32_t bodyId)
+    CollisionSuppressionRegistry::RuntimeEntry* CollisionSuppressionRegistry::find(RE::hknpWorld* world, std::uint32_t bodyId)
     {
         const auto it = std::find_if(_entries.begin(), _entries.end(), [&](const RuntimeEntry& entry) {
-            return entry.bodyId == bodyId;
+            return entry.world == world && entry.bodyId == bodyId;
         });
         return it != _entries.end() ? &*it : nullptr;
     }
 
-    const CollisionSuppressionRegistry::RuntimeEntry* CollisionSuppressionRegistry::find(std::uint32_t bodyId) const
+    const CollisionSuppressionRegistry::RuntimeEntry* CollisionSuppressionRegistry::find(RE::hknpWorld* world, std::uint32_t bodyId) const
     {
         const auto it = std::find_if(_entries.begin(), _entries.end(), [&](const RuntimeEntry& entry) {
-            return entry.bodyId == bodyId;
+            return entry.world == world && entry.bodyId == bodyId;
         });
         return it != _entries.end() ? &*it : nullptr;
     }
 
-    void CollisionSuppressionRegistry::erase(std::uint32_t bodyId)
+    void CollisionSuppressionRegistry::erase(RE::hknpWorld* world, std::uint32_t bodyId)
     {
         _entries.erase(std::remove_if(_entries.begin(), _entries.end(), [&](const RuntimeEntry& entry) {
-            return entry.bodyId == bodyId;
+            return entry.world == world && entry.bodyId == bodyId;
         }), _entries.end());
+    }
+
+    bool CollisionSuppressionRegistry::bodyIdentityMatches(
+        const RuntimeEntry& entry,
+        std::uint32_t motionIndex,
+        RE::NiCollisionObject* collisionObject,
+        RE::NiAVObject* ownerNode)
+    {
+        return entry.motionIndex == motionIndex &&
+               entry.collisionObject == collisionObject &&
+               entry.ownerNode == ownerNode;
+    }
+
+    void CollisionSuppressionRegistry::captureBodyIdentity(
+        RuntimeEntry& entry,
+        RE::hknpWorld* world,
+        std::uint32_t bodyId,
+        std::uint32_t motionIndex,
+        RE::NiCollisionObject* collisionObject,
+        RE::NiAVObject* ownerNode)
+    {
+        entry.world = world;
+        entry.bodyId = bodyId;
+        entry.motionIndex = motionIndex;
+        entry.collisionObject = collisionObject;
+        entry.ownerNode = ownerNode;
     }
 
     RuntimeSuppressionResult CollisionSuppressionRegistry::acquire(RE::hknpWorld* world, std::uint32_t bodyId, CollisionSuppressionOwner owner, const char* context)
@@ -66,7 +93,33 @@ namespace rock::collision_suppression_registry
         }
 
         const std::uint32_t ownerMask = ownerBit(owner);
-        auto* entry = find(bodyId);
+        const auto snapshot = havok_runtime::snapshotBody(world, RE::hknpBodyId{ bodyId });
+        if (!snapshot.valid) {
+            result.readFailed = true;
+            ROCK_LOG_SAMPLE_WARN(Hand, 1000, "Collision suppression acquire failed: owner={} bodyId={} context={} cannot snapshot body",
+                ownerName(owner),
+                bodyId,
+                context ? context : "");
+            return result;
+        }
+
+        auto* entry = find(world, bodyId);
+        if (entry && !bodyIdentityMatches(*entry, snapshot.motionIndex, snapshot.collisionObject, snapshot.ownerNode)) {
+            ROCK_LOG_WARN(Hand,
+                "Collision suppression stale lease discarded before acquire: owner={} bodyId={} context={} oldMotion={} newMotion={} oldOwner={} newOwner={} oldCollision={} newCollision={}",
+                ownerName(owner),
+                bodyId,
+                context ? context : "",
+                entry->motionIndex,
+                snapshot.motionIndex,
+                static_cast<const void*>(entry->ownerNode),
+                static_cast<const void*>(snapshot.ownerNode),
+                static_cast<const void*>(entry->collisionObject),
+                static_cast<const void*>(snapshot.collisionObject));
+            erase(world, bodyId);
+            entry = nullptr;
+        }
+
         if (entry && (entry->ownerMask & ownerMask) != 0) {
             std::uint32_t currentFilter = 0;
             if (!body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ bodyId }, currentFilter)) {
@@ -105,7 +158,7 @@ namespace rock::collision_suppression_registry
 
         if (!entry) {
             RuntimeEntry newEntry{};
-            newEntry.bodyId = bodyId;
+            captureBodyIdentity(newEntry, world, bodyId, snapshot.motionIndex, snapshot.collisionObject, snapshot.ownerNode);
             newEntry.originalFilter = currentFilter;
             newEntry.wasNoCollideBeforeSuppression = (currentFilter & kSuppressionNoCollideBit) != 0;
             newEntry.ownerMask = ownerMask;
@@ -147,13 +200,57 @@ namespace rock::collision_suppression_registry
     {
         RuntimeSuppressionResult result{};
         result.bodyId = bodyId;
-        auto* entry = find(bodyId);
+        if (!world) {
+            result.readFailed = hasLease(bodyId, owner);
+            return result;
+        }
+
+        auto* entry = find(world, bodyId);
         if (!entry) {
             return result;
         }
 
-        if (!world) {
-            result.readFailed = true;
+        const auto snapshot = havok_runtime::snapshotBody(world, RE::hknpBodyId{ bodyId });
+        if (!snapshot.valid) {
+            const auto originalOwnerMask = entry->ownerMask;
+            result.valid = true;
+            result.staleLeaseDiscarded = true;
+            result.bodyFullyReleased = true;
+            result.wasNoCollideBeforeSuppression = entry->wasNoCollideBeforeSuppression;
+            result.activeLeaseCount = 0;
+            ROCK_LOG_WARN(Hand,
+                "Collision suppression stale lease discarded on unreadable release: owner={} bodyId={} context={} ownerMask=0x{:08X}",
+                ownerName(owner),
+                bodyId,
+                context ? context : "",
+                originalOwnerMask);
+            erase(world, bodyId);
+            return result;
+        }
+
+        if (!bodyIdentityMatches(*entry, snapshot.motionIndex, snapshot.collisionObject, snapshot.ownerNode)) {
+            const auto oldMotionIndex = entry->motionIndex;
+            auto* oldOwnerNode = entry->ownerNode;
+            auto* oldCollisionObject = entry->collisionObject;
+            const auto originalOwnerMask = entry->ownerMask;
+            result.valid = true;
+            result.staleLeaseDiscarded = true;
+            result.bodyFullyReleased = true;
+            result.wasNoCollideBeforeSuppression = entry->wasNoCollideBeforeSuppression;
+            result.activeLeaseCount = 0;
+            ROCK_LOG_WARN(Hand,
+                "Collision suppression stale lease discarded on identity mismatch: owner={} bodyId={} context={} ownerMask=0x{:08X} oldMotion={} newMotion={} oldOwner={} newOwner={} oldCollision={} newCollision={}",
+                ownerName(owner),
+                bodyId,
+                context ? context : "",
+                originalOwnerMask,
+                oldMotionIndex,
+                snapshot.motionIndex,
+                static_cast<const void*>(oldOwnerNode),
+                static_cast<const void*>(snapshot.ownerNode),
+                static_cast<const void*>(oldCollisionObject),
+                static_cast<const void*>(snapshot.collisionObject));
+            erase(world, bodyId);
             return result;
         }
 
@@ -210,7 +307,7 @@ namespace rock::collision_suppression_registry
             restoredFilter,
             entry->wasNoCollideBeforeSuppression ? "yes" : "no");
 
-        erase(bodyId);
+        erase(world, bodyId);
         return result;
     }
 
@@ -231,8 +328,10 @@ namespace rock::collision_suppression_registry
 
     bool CollisionSuppressionRegistry::hasLease(std::uint32_t bodyId, CollisionSuppressionOwner owner) const
     {
-        const auto* entry = find(bodyId);
-        return entry && (entry->ownerMask & ownerBit(owner)) != 0;
+        const auto it = std::find_if(_entries.begin(), _entries.end(), [&](const RuntimeEntry& entry) {
+            return entry.bodyId == bodyId && (entry.ownerMask & ownerBit(owner)) != 0;
+        });
+        return it != _entries.end();
     }
 
     void CollisionSuppressionRegistry::clear() { _entries.clear(); }

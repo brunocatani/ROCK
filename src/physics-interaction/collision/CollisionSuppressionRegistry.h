@@ -17,6 +17,8 @@
 namespace RE
 {
     class hknpWorld;
+    class NiAVObject;
+    class NiCollisionObject;
 }
 
 namespace rock::collision_suppression_registry
@@ -177,6 +179,7 @@ namespace rock::collision_suppression_registry
     struct RuntimeSuppressionResult : SuppressionLeaseResult
     {
         bool readFailed = false;
+        bool staleLeaseDiscarded = false;
     };
 
     class CollisionSuppressionRegistry
@@ -191,15 +194,29 @@ namespace rock::collision_suppression_registry
     private:
         struct RuntimeEntry
         {
+            RE::hknpWorld* world = nullptr;
             std::uint32_t bodyId = kInvalidBodyId;
             std::uint32_t originalFilter = 0;
             std::uint32_t ownerMask = 0;
+            std::uint32_t motionIndex = 0;
+            RE::NiCollisionObject* collisionObject = nullptr;
+            RE::NiAVObject* ownerNode = nullptr;
             bool wasNoCollideBeforeSuppression = false;
         };
 
-        RuntimeEntry* find(std::uint32_t bodyId);
-        const RuntimeEntry* find(std::uint32_t bodyId) const;
-        void erase(std::uint32_t bodyId);
+        RuntimeEntry* find(RE::hknpWorld* world, std::uint32_t bodyId);
+        const RuntimeEntry* find(RE::hknpWorld* world, std::uint32_t bodyId) const;
+        void erase(RE::hknpWorld* world, std::uint32_t bodyId);
+        static bool bodyIdentityMatches(const RuntimeEntry& entry,
+            std::uint32_t motionIndex,
+            RE::NiCollisionObject* collisionObject,
+            RE::NiAVObject* ownerNode);
+        static void captureBodyIdentity(RuntimeEntry& entry,
+            RE::hknpWorld* world,
+            std::uint32_t bodyId,
+            std::uint32_t motionIndex,
+            RE::NiCollisionObject* collisionObject,
+            RE::NiAVObject* ownerNode);
 
         std::vector<RuntimeEntry> _entries;
     };

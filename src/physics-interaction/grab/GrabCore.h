@@ -338,7 +338,9 @@ namespace rock::active_grab_body_lifecycle
     private:
         void observeScanDiagnostics(const object_physics_body_set::ObjectPhysicsBodySet& bodySet)
         {
-            if (bodySet.diagnostics.scanFailures > 0 || bodySet.diagnostics.invalidPhysicsSystems > 0) {
+            if (bodySet.diagnostics.scanFailures > 0 ||
+                bodySet.diagnostics.invalidPhysicsSystems > 0 ||
+                bodySet.diagnostics.depthLimitSkips > 0) {
                 _incompleteNativeScan = true;
             }
         }

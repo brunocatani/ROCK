@@ -68,6 +68,12 @@ int main()
     ok &= expectTrue("failed dynamic prep should restore captured filter", dynamicFailure.entries.front().restoreFilter);
     ok &= expectTrue("failed dynamic prep should restore captured motion", dynamicFailure.entries.front().restoreMotion);
 
+    ObjectPhysicsBodySet truncatedScan{};
+    truncatedScan.diagnostics.depthLimitSkips = 1;
+    BodyLifecycleSnapshot truncatedSnapshot{};
+    truncatedSnapshot.captureBeforeActivePrep(truncatedScan);
+    ok &= expectTrue("depth-truncated scans should force incomplete restore fallback", truncatedSnapshot.hasIncompleteNativeScan());
+
     const auto deadActorRelease = dynamicSnapshot.restorePlanForRelease(releaseRestorePolicyForTargetKind(grab_target::Kind::DeadActorBody));
     ok &= expectTrue("dead actor release should restore captured dynamic filter", deadActorRelease.entries.front().restoreFilter);
     ok &= expectTrue("dead actor release should restore touched dynamic motion", deadActorRelease.entries.front().restoreMotion);

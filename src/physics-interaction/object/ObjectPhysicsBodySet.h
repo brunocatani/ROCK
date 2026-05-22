@@ -246,6 +246,7 @@ namespace rock::object_physics_body_set
         std::uint32_t unresolvedRefBodiesAccepted = 0;
         std::uint32_t unresolvedRefBodySkips = 0;
         std::uint32_t weaponExpansionSkips = 0;
+        std::uint32_t depthLimitSkips = 0;
         std::array<std::uint32_t, 32> rejectCounts{};
     };
 

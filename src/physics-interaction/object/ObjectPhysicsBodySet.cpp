@@ -241,7 +241,11 @@ namespace rock::object_physics_body_set
             ObjectPhysicsBodySet& out,
             std::unordered_set<std::uint32_t>& seenBodyIds)
         {
-            if (!node || depth < 0) {
+            if (!node) {
+                return;
+            }
+            if (depth < 0) {
+                ++out.diagnostics.depthLimitSkips;
                 return;
             }
 

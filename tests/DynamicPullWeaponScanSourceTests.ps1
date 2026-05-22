@@ -47,6 +47,7 @@ Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.h' 'refResolut
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.h' 'invalidPhysicsSystems' 'Object-body diagnostics must count invalid native physics systems.'
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.h' 'benignScanSkips' 'Benign native scan skips must not be mixed with severe scan failures.'
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.h' 'unresolvedRefBodiesAccepted' 'Object-body diagnostics must expose unresolved ownership fallback bodies.'
+Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.h' 'depthLimitSkips' 'Object-body diagnostics must expose depth-truncated scans.'
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.cpp' 'appendBodyRecord\(seedContext,\s*options\.seedBodyId,\s*true\)' 'The selected hit body must be recorded before subtree expansion.'
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.cpp' 'forEachPhysicsSystemBodyIdDetailed' 'Subtree expansion must use the guarded detailed native scanner.'
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.cpp' 'foreignRefBodySkips' 'Seeded scans must preserve the selected-ref ownership boundary.'
@@ -59,12 +60,15 @@ Require-Text 'src/physics-interaction/grab/GrabCore.h' 'capturedAfterPrep' 'Life
 Require-Text 'src/physics-interaction/grab/GrabCore.h' 'originalStateKnown' 'Lifecycle restore plans must not restore manufactured original state for late bodies.'
 Require-Text 'src/physics-interaction/grab/GrabCore.h' 'latePreparedBodyCount' 'Lifecycle diagnostics must count bodies that appeared only after active prep.'
 Require-Text 'src/physics-interaction/grab/GrabCore.h' 'hasIncompleteNativeScan' 'Lifecycle snapshots must expose incomplete native scans to runtime cleanup.'
+Require-Text 'src/physics-interaction/grab/GrabCore.h' 'depthLimitSkips\s*>\s*0' 'Lifecycle snapshots must mark depth-truncated scans incomplete.'
 Require-Text 'src/physics-interaction/grab/GrabCore.h' 'reason == BodyRestoreReason::FailedGrabSetup \|\| policy == BodyRestorePolicy::RestoreAllChanged[\s\S]*entry\.restoreFilter\s*=\s*record\.originalStateKnown' 'Failure and explicit restore-all paths must restore captured filters.'
 Require-Text 'src/physics-interaction/grab/GrabCore.h' 'entry\.restoreFilter\s*=\s*record\.originalStateKnown && record\.motionRole == MotionRole::SystemOwnedNonDynamic' 'Physical release must not restore inactive filters onto loose dynamic objects that ROCK leaves dynamic.'
 Require-Text 'tests/ActiveGrabBodyLifecyclePolicyTests.cpp' 'loose dynamic release should keep active collision filter' 'Compiled lifecycle policy tests must cover loose dynamic release collision ownership.'
 Require-Text 'tests/ActiveGrabBodyLifecyclePolicyTests.cpp' 'system-owned release should restore filter' 'Compiled lifecycle policy tests must cover system-owned release restoration.'
+Require-Text 'tests/ActiveGrabBodyLifecyclePolicyTests.cpp' 'depth-truncated scans should force incomplete restore fallback' 'Compiled lifecycle policy tests must cover depth-truncated scan fallback.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'restoreIncompleteActivePrepRoot' 'Incomplete object scans must have an explicit recursive root restore fallback.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'release-incomplete-scan' 'Release cleanup must invoke the incomplete-scan root restore path.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'releaseRestorePolicyForTargetKind\(_savedObjectState\.targetKind\)' 'Release cleanup must choose target-aware lifecycle restore policy from the saved target kind.'
 
 $handGrabText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/hand/HandGrab.cpp')
 $pullStart = $handGrabText.IndexOf('bool Hand::startDynamicPull')
