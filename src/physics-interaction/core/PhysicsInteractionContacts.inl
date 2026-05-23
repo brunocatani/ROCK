@@ -296,8 +296,8 @@
             return;
         }
 
-        auto* currentWorld = _contactEventWorld.load(std::memory_order_acquire);
-        auto* currentSignal = _contactEventSignal.load(std::memory_order_acquire);
+        auto* currentWorld = s_contactEventBridge.world.load(std::memory_order_acquire);
+        auto* currentSignal = s_contactEventBridge.signal.load(std::memory_order_acquire);
         const auto currentSnapshot = contact_signal_subscription_policy::ContactSignalSubscriptionSnapshot{
             .world = reinterpret_cast<std::uintptr_t>(currentWorld),
             .signal = reinterpret_cast<std::uintptr_t>(currentSignal),
@@ -314,16 +314,18 @@
         }
 
         if (plan.action == contact_signal_subscription_policy::ContactSignalSubscriptionAction::AlreadySubscribed) {
-            ROCK_LOG_DEBUG(Init, "Contact event signal already subscribed for current world");
+            _contactEventSignal.store(signal, std::memory_order_release);
+            _contactEventWorld.store(world, std::memory_order_release);
+            s_contactEventBridge.instance.store(this, std::memory_order_release);
+            ROCK_LOG_DEBUG(Init, "Contact event signal already subscribed for current world; reusing native bridge slot");
             return;
         }
 
-        if (plan.unsubscribeExistingSignal) {
-            unsubscribeContactEvents(world);
-        } else if (plan.clearExistingWithoutUnsubscribe) {
-            _contactEventWorld.store(nullptr, std::memory_order_release);
-            _contactEventSignal.store(nullptr, std::memory_order_release);
-            ROCK_LOG_INFO(Init, "Cleared stale contact event subscription state before subscribing new world");
+        if (plan.replaceExistingRuntimeStateWithoutUnsubscribe) {
+            ROCK_LOG_INFO(
+                Init,
+                "Replacing contact event bridge state without native unsubscribe (action={})",
+                static_cast<std::uint32_t>(plan.action));
         }
 
         ContactEventCallbackInfo cbInfo{};
@@ -332,45 +334,78 @@
 
         typedef void subscribe_ext_t(void* signal, void* userData, void* callbackInfo);
         static REL::Relocation<subscribe_ext_t> subscribeExt{ REL::Offset(offsets::kFunc_SubscribeContactEvent) };
-        subscribeExt(signal, static_cast<void*>(this), &cbInfo);
+        subscribeExt(signal, static_cast<void*>(&s_contactEventBridge), &cbInfo);
 
         _contactEventSignal.store(signal, std::memory_order_release);
         _contactEventWorld.store(world, std::memory_order_release);
-        ROCK_LOG_INFO(Init, "Subscribed to contact events");
+        s_contactEventBridge.signal.store(signal, std::memory_order_release);
+        s_contactEventBridge.world.store(world, std::memory_order_release);
+        s_contactEventBridge.instance.store(this, std::memory_order_release);
+        const auto epoch = s_contactEventBridge.subscriptionEpoch.fetch_add(1, std::memory_order_acq_rel) + 1;
+        ROCK_LOG_INFO(
+            Init,
+            "Subscribed contact event bridge slot (epoch={}, action={})",
+            epoch,
+            static_cast<std::uint32_t>(plan.action));
     }
 
     void PhysicsInteraction::unsubscribeContactEvents(RE::hknpWorld* liveWorld)
     {
-        const auto world = _contactEventWorld.load(std::memory_order_acquire);
-        const auto signal = _contactEventSignal.load(std::memory_order_acquire);
-        const auto snapshot = contact_signal_subscription_policy::ContactSignalSubscriptionSnapshot{
-            .world = reinterpret_cast<std::uintptr_t>(world),
-            .signal = reinterpret_cast<std::uintptr_t>(signal),
-            .active = world != nullptr && signal != nullptr,
+        auto* localWorld = _contactEventWorld.exchange(nullptr, std::memory_order_acq_rel);
+        void* localSignal = _contactEventSignal.exchange(nullptr, std::memory_order_acq_rel);
+
+        auto* expectedInstance = this;
+        const bool deactivatedCurrentInstance = s_contactEventBridge.instance.compare_exchange_strong(
+            expectedInstance,
+            nullptr,
+            std::memory_order_acq_rel,
+            std::memory_order_acquire);
+
+        auto* bridgeWorld = s_contactEventBridge.world.load(std::memory_order_acquire);
+        void* bridgeSignal = s_contactEventBridge.signal.load(std::memory_order_acquire);
+        const auto bridgeSnapshot = contact_signal_subscription_policy::ContactSignalSubscriptionSnapshot{
+            .world = reinterpret_cast<std::uintptr_t>(bridgeWorld),
+            .signal = reinterpret_cast<std::uintptr_t>(bridgeSignal),
+            .active = bridgeWorld != nullptr && bridgeSignal != nullptr,
         };
 
-        if (!contact_signal_subscription_policy::isActiveSubscription(snapshot)) {
+        if (!contact_signal_subscription_policy::isActiveSubscription(bridgeSnapshot)) {
             return;
         }
 
-        _contactEventWorld.store(nullptr, std::memory_order_release);
-        _contactEventSignal.store(nullptr, std::memory_order_release);
-
-        if (!contact_signal_subscription_policy::canUnsubscribeFromWorld(snapshot, reinterpret_cast<std::uintptr_t>(liveWorld))) {
-            ROCK_LOG_INFO(Init, "Cleared contact event subscription state without native unsubscribe because the subscribed world is stale");
+        const bool retainNativeSlot = contact_signal_subscription_policy::shouldRetainNativeSlotAfterDeactivation(
+            bridgeSnapshot,
+            reinterpret_cast<std::uintptr_t>(liveWorld));
+        if (retainNativeSlot) {
+            ROCK_LOG_INFO(
+                Init,
+                "Deactivated contact event bridge; native slot retained for live hknpWorld cleanup (instanceCleared={}, world={}, signal={})",
+                deactivatedCurrentInstance ? "yes" : "no",
+                static_cast<const void*>(bridgeWorld),
+                bridgeSignal);
             return;
         }
 
-        ContactEventCallbackInfo cbInfo{};
-        cbInfo.fn = reinterpret_cast<void*>(&PhysicsInteraction::onContactCallback);
-        cbInfo.ctx = 0;
+        auto* expectedWorld = bridgeWorld;
+        s_contactEventBridge.world.compare_exchange_strong(
+            expectedWorld,
+            nullptr,
+            std::memory_order_acq_rel,
+            std::memory_order_acquire);
+        void* expectedSignal = bridgeSignal;
+        s_contactEventBridge.signal.compare_exchange_strong(
+            expectedSignal,
+            nullptr,
+            std::memory_order_acq_rel,
+            std::memory_order_acquire);
 
-        std::uint8_t removed = 0;
-        typedef void* unsubscribe_ext_t(void* signal, std::uint8_t* outRemoved, void* userData, void* callbackInfo, std::uint64_t callbackInfoSize);
-        static REL::Relocation<unsubscribe_ext_t> unsubscribeExt{ REL::Offset(offsets::kFunc_UnsubscribeSignalCallback) };
-        unsubscribeExt(signal, &removed, static_cast<void*>(this), &cbInfo, sizeof(cbInfo));
-
-        ROCK_LOG_INFO(Init, "Unsubscribed from contact events (removed={})", removed != 0 ? "yes" : "no");
+        ROCK_LOG_INFO(
+            Init,
+            "Deactivated contact event bridge without native unsubscribe; cleared stale world state (instanceCleared={}, localWorld={}, localSignal={}, liveWorld={})",
+            deactivatedCurrentInstance ? "yes" : "no",
+            static_cast<const void*>(localWorld),
+            localSignal,
+            static_cast<const void*>(liveWorld));
     }
 
     void PhysicsInteraction::onContactCallback(void* userData, void** worldPtrHolder, void* contactEventData)
@@ -392,18 +427,20 @@
     {
         if (!s_hooksEnabled.load(std::memory_order_acquire))
             return;
-        auto* self = s_instance.load(std::memory_order_acquire);
+        if (userData != static_cast<void*>(&s_contactEventBridge)) {
+            return;
+        }
+
+        auto* bridge = static_cast<ContactEventSubscriptionBridge*>(userData);
+        auto* self = bridge->instance.load(std::memory_order_acquire);
         if (self && self->_initialized.load(std::memory_order_acquire)) {
-            auto* subscribedWorld = self->_contactEventWorld.load(std::memory_order_acquire);
-            auto* subscribedSignal = self->_contactEventSignal.load(std::memory_order_acquire);
+            auto* subscribedWorld = bridge->world.load(std::memory_order_acquire);
+            auto* subscribedSignal = bridge->signal.load(std::memory_order_acquire);
             const auto snapshot = contact_signal_subscription_policy::ContactSignalSubscriptionSnapshot{
                 .world = reinterpret_cast<std::uintptr_t>(subscribedWorld),
                 .signal = reinterpret_cast<std::uintptr_t>(subscribedSignal),
                 .active = subscribedWorld != nullptr && subscribedSignal != nullptr,
             };
-            if (userData != static_cast<void*>(self)) {
-                return;
-            }
 
             std::uintptr_t callbackWorld = 0;
             if (worldPtrHolder) {

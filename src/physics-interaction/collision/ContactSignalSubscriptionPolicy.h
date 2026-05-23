@@ -7,9 +7,9 @@ namespace rock::contact_signal_subscription_policy
     /*
      * FO4VR exposes contact notifications through an hkSignal slot on the hknp
      * world. The subscription decision is kept as a pure policy so runtime code
-     * can avoid duplicate slots, reject callbacks from stale worlds, and only
-     * call the Ghidra-verified removal function when the stored signal belongs
-     * to the same live world.
+     * can avoid duplicate slots, reject callbacks from stale worlds, and avoid
+     * mutating the native hkSignal slot list while Havok may be dispatching
+     * contact events on worker threads.
      */
 
     enum class ContactSignalSubscriptionAction : std::uint32_t
@@ -32,8 +32,8 @@ namespace rock::contact_signal_subscription_policy
     {
         ContactSignalSubscriptionAction action = ContactSignalSubscriptionAction::IgnoreNullSignal;
         bool subscribeRequestedSignal = false;
-        bool unsubscribeExistingSignal = false;
-        bool clearExistingWithoutUnsubscribe = false;
+        bool reuseExistingNativeSlot = false;
+        bool replaceExistingRuntimeStateWithoutUnsubscribe = false;
     };
 
     struct ContactCallbackAcceptance
@@ -68,22 +68,24 @@ namespace rock::contact_signal_subscription_policy
         }
 
         if (current.world == requestedWorld && current.signal == requestedSignal) {
-            return { .action = ContactSignalSubscriptionAction::AlreadySubscribed };
+            return {
+                .action = ContactSignalSubscriptionAction::AlreadySubscribed,
+                .reuseExistingNativeSlot = true,
+            };
         }
 
         if (current.world == requestedWorld) {
             return {
                 .action = ContactSignalSubscriptionAction::ReplaceSameWorldSignal,
                 .subscribeRequestedSignal = true,
-                .unsubscribeExistingSignal = true,
+                .replaceExistingRuntimeStateWithoutUnsubscribe = true,
             };
         }
 
         return {
             .action = ContactSignalSubscriptionAction::ReplaceDifferentWorldSignal,
             .subscribeRequestedSignal = true,
-            .unsubscribeExistingSignal = false,
-            .clearExistingWithoutUnsubscribe = true,
+            .replaceExistingRuntimeStateWithoutUnsubscribe = true,
         };
     }
 
@@ -103,9 +105,7 @@ namespace rock::contact_signal_subscription_policy
 
         if (callbackWorld == 0) {
             return {
-                .accept = true,
-                .effectiveWorld = current.world,
-                .usedSubscribedWorldFallback = true,
+                .accept = false,
                 .callbackWorldMissing = true,
             };
         }
@@ -121,8 +121,8 @@ namespace rock::contact_signal_subscription_policy
         return evaluateCallbackAcceptance(current, callbackWorld).accept;
     }
 
-    inline constexpr bool canUnsubscribeFromWorld(const ContactSignalSubscriptionSnapshot& current, std::uintptr_t currentWorld)
+    inline constexpr bool shouldRetainNativeSlotAfterDeactivation(const ContactSignalSubscriptionSnapshot& current, std::uintptr_t liveWorld)
     {
-        return isActiveSubscription(current) && currentWorld != 0 && current.world == currentWorld;
+        return isActiveSubscription(current) && liveWorld != 0 && current.world == liveWorld;
     }
 }

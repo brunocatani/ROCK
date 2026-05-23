@@ -314,6 +314,16 @@ namespace rock
             std::uint64_t ctx = 0;
         };
 
+        struct ContactEventSubscriptionBridge
+        {
+            std::atomic<PhysicsInteraction*> instance{ nullptr };
+            std::atomic<RE::hknpWorld*> world{ nullptr };
+            std::atomic<void*> signal{ nullptr };
+            std::atomic<std::uint32_t> subscriptionEpoch{ 0 };
+        };
+
+        ContactEventSubscriptionBridge s_contactEventBridge;
+
         struct GrabButtonState
         {
             bool held{ false };
