@@ -316,10 +316,65 @@ namespace rock
 
         struct ContactEventSubscriptionBridge
         {
+            struct NativeSlot
+            {
+                RE::hknpWorld* world = nullptr;
+                void* signal = nullptr;
+                std::uint32_t epoch = 0;
+            };
+
+            static constexpr std::size_t kMaxRetainedNativeSlots = 64;
+
             std::atomic<PhysicsInteraction*> instance{ nullptr };
             std::atomic<RE::hknpWorld*> world{ nullptr };
             std::atomic<void*> signal{ nullptr };
             std::atomic<std::uint32_t> subscriptionEpoch{ 0 };
+            std::mutex retainedSlotMutex;
+            std::array<NativeSlot, kMaxRetainedNativeSlots> retainedSlots{};
+            std::size_t retainedSlotCount = 0;
+
+            [[nodiscard]] bool hasRetainedNativeSlot(RE::hknpWorld* requestedWorld, void* requestedSignal)
+            {
+                if (!requestedWorld || !requestedSignal) {
+                    return false;
+                }
+
+                std::scoped_lock lock(retainedSlotMutex);
+                for (std::size_t i = 0; i < retainedSlotCount; ++i) {
+                    const auto& slot = retainedSlots[i];
+                    if (slot.world == requestedWorld && slot.signal == requestedSignal) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            bool rememberRetainedNativeSlot(RE::hknpWorld* subscribedWorld, void* subscribedSignal, std::uint32_t epoch)
+            {
+                if (!subscribedWorld || !subscribedSignal) {
+                    return false;
+                }
+
+                std::scoped_lock lock(retainedSlotMutex);
+                for (std::size_t i = 0; i < retainedSlotCount; ++i) {
+                    auto& slot = retainedSlots[i];
+                    if (slot.world == subscribedWorld && slot.signal == subscribedSignal) {
+                        slot.epoch = epoch;
+                        return true;
+                    }
+                }
+
+                if (retainedSlotCount >= retainedSlots.size()) {
+                    return false;
+                }
+
+                retainedSlots[retainedSlotCount++] = NativeSlot{
+                    .world = subscribedWorld,
+                    .signal = subscribedSignal,
+                    .epoch = epoch,
+                };
+                return true;
+            }
         };
 
         ContactEventSubscriptionBridge s_contactEventBridge;
@@ -1041,7 +1096,7 @@ namespace rock
         inputs.providerGeneration = _lifecycleState.providerGeneration;
         inputs.providerReady = _initialized.load(std::memory_order_acquire);
         inputs.skeletonReady = api && api->isSkeletonReady();
-        inputs.menuBlocking = api && api->isAnyMenuOpen();
+        inputs.menuBlocking = (api && api->isAnyMenuOpen()) || input_remap_runtime::isMenuInputActive();
         inputs.configBlocking = api && (api->isConfigOpen() || api->isWristPipboyOpen());
         inputs.generatedBodiesValid = generatedBodiesExistForConfig();
         inputs.generatedBodiesWorldGeneration = _generatedBodiesWorldGeneration;
@@ -1381,8 +1436,9 @@ namespace rock
             return;
         }
 
+        const bool menuBlocking = frik::api::FRIKApi::inst->isAnyMenuOpen() || input_remap_runtime::isMenuInputActive();
         if (weapon_authority_lifecycle_policy::shouldClearWeaponAuthorityForUpdateInterruption(
-                frik::api::FRIKApi::inst->isAnyMenuOpen(),
+                menuBlocking,
                 false,
                 false)) {
             if (_initialized) {

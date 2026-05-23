@@ -54,10 +54,18 @@ namespace rock::contact_signal_subscription_policy
     inline constexpr ContactSignalSubscriptionPlan planSubscription(
         const ContactSignalSubscriptionSnapshot& current,
         std::uintptr_t requestedWorld,
-        std::uintptr_t requestedSignal)
+        std::uintptr_t requestedSignal,
+        bool requestedNativeSlotRetained = false)
     {
         if (requestedWorld == 0 || requestedSignal == 0) {
             return {};
+        }
+
+        if (requestedNativeSlotRetained) {
+            return {
+                .action = ContactSignalSubscriptionAction::AlreadySubscribed,
+                .reuseExistingNativeSlot = true,
+            };
         }
 
         if (!isActiveSubscription(current)) {
@@ -121,8 +129,8 @@ namespace rock::contact_signal_subscription_policy
         return evaluateCallbackAcceptance(current, callbackWorld).accept;
     }
 
-    inline constexpr bool shouldRetainNativeSlotAfterDeactivation(const ContactSignalSubscriptionSnapshot& current, std::uintptr_t liveWorld)
+    inline constexpr bool shouldRetainNativeSlotAfterDeactivation(const ContactSignalSubscriptionSnapshot& current)
     {
-        return isActiveSubscription(current) && liveWorld != 0 && current.world == liveWorld;
+        return isActiveSubscription(current);
     }
 }

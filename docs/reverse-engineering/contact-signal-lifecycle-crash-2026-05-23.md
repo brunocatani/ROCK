@@ -34,8 +34,8 @@ The contact callback registration is now treated as a native slot owned by the h
 On shutdown:
 
 - clear the active ROCK instance from the bridge;
-- keep the native slot if the same hknp world is still live, so the next same-world skeleton rebuild reuses it;
-- clear only ROCK's bridge world state when the world is stale or missing;
+- remember every subscribed world/signal pair so later reinitialization can reuse retained native slots instead of creating duplicates;
+- keep bridge world/signal identity even when ROCK cannot prove the world is live, because the native slot may still exist and cannot be safely removed;
 - rely on hknp world cleanup for native slot destruction.
 
 On callback:
@@ -44,6 +44,17 @@ On callback:
 - require an initialized active `PhysicsInteraction`;
 - require the callback's hknp world to match the bridge's current world;
 - reject missing or mismatched world data. Do not fall back to the subscribed world.
+
+## ROCK Creation Gate
+
+ROCK must not create Havok bodies directly from FRIK's synchronous `kSkeletonReady` callback. The callback only requests creation. The ROCK frame loop owns the actual create/recreate decision after:
+
+- at least one ROCK frame has elapsed since the ready event;
+- ROCK's local menu/input gate is clear, including loading-menu tracking;
+- FRIK's skeleton API still reports ready;
+- the current player bhk/hknp world pair has remained stable for consecutive frames.
+
+This keeps ROCK independent of FRIK's incomplete menu aggregate and prevents same-callstack destroy/ready transitions from immediately touching hknp state.
 
 ## hFRIK Interaction
 

@@ -259,6 +259,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKContactSignalSubscriptionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKContactSignalSubscriptionPolicyTests)
 
+  add_executable(ROCKPhysicsCreationGatePolicyTests
+    "${ROOT_DIR}/tests/PhysicsCreationGatePolicyTests.cpp"
+  )
+  target_compile_features(ROCKPhysicsCreationGatePolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKPhysicsCreationGatePolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKPhysicsCreationGatePolicyTests)
+
   add_executable(ROCKGrabPivotAuthorityPolicyTests
     "${ROOT_DIR}/tests/GrabPivotAuthorityPolicyTests.cpp"
   )
@@ -392,6 +399,7 @@ if(BUILD_ROCK_TESTS)
     ROCKGrabContactEvidencePolicyTests
     ROCKGrabContactPatchClusterPolicyTests
     ROCKContactSignalSubscriptionPolicyTests
+    ROCKPhysicsCreationGatePolicyTests
     ROCKGrabPivotAuthorityPolicyTests
     ROCKGrabMotionControllerPolicyTests
     ROCKGrabThreePhasePolicyTests

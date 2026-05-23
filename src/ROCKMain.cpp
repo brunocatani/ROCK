@@ -8,12 +8,18 @@
 #include "api/ROCKApi.h"
 #include "api/ROCKProviderApi.h"
 #include "physics-interaction/debug/DebugBodyOverlay.h"
+#include "physics-interaction/core/PhysicsCreationGatePolicy.h"
 #include "physics-interaction/native/HavokOffsets.h"
+#include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/input/DebugControllerRuntime.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/weapon/SeeThroughScopesCompatibility.h"
+
+#include "RE/Bethesda/PlayerCharacter.h"
+#include "RE/Bethesda/TESForms.h"
+#include "RE/Bethesda/TESObjectREFRs.h"
 
 namespace
 {
@@ -29,6 +35,79 @@ namespace
     bool s_pluginLoaded = false;
     std::atomic<std::uint32_t> s_providerGeneration{ 1 };
     std::atomic<std::uint32_t> s_skeletonGeneration{ 1 };
+    std::atomic<bool> s_physicsCreationRequested{ false };
+    std::atomic<std::uint32_t> s_physicsCreationReadyDeferralFrames{ 0 };
+    physics_creation_gate_policy::WorldStabilityState s_physicsCreationWorldStability{};
+    std::uint32_t s_physicsCreationGateLogCounter = 0;
+
+    struct PlayerPhysicsWorlds
+    {
+        RE::bhkWorld* bhk = nullptr;
+        RE::hknpWorld* hknp = nullptr;
+    };
+
+    const char* physicsCreationBlockReasonName(physics_creation_gate_policy::CreationBlockReason reason)
+    {
+        using Reason = physics_creation_gate_policy::CreationBlockReason;
+        switch (reason) {
+        case Reason::None:
+            return "none";
+        case Reason::RockDisabled:
+            return "rock-disabled";
+        case Reason::ProviderUnavailable:
+            return "provider-unavailable";
+        case Reason::SkeletonNotReady:
+            return "skeleton-not-ready";
+        case Reason::ReadyEventDeferred:
+            return "ready-event-deferred";
+        case Reason::MenuBlocked:
+            return "menu-blocked";
+        case Reason::WorldUnavailable:
+            return "world-unavailable";
+        case Reason::WorldUnstable:
+            return "world-unstable";
+        default:
+            return "unknown";
+        }
+    }
+
+    void resetPhysicsCreationGate()
+    {
+        physics_creation_gate_policy::resetWorldStability(s_physicsCreationWorldStability);
+        s_physicsCreationGateLogCounter = 0;
+    }
+
+    void requestDeferredPhysicsCreation()
+    {
+        s_physicsCreationRequested.store(true, std::memory_order_release);
+        s_physicsCreationReadyDeferralFrames.store(
+            physics_creation_gate_policy::kSkeletonReadyCreateDeferralFrames,
+            std::memory_order_release);
+        resetPhysicsCreationGate();
+    }
+
+    PlayerPhysicsWorlds samplePlayerPhysicsWorlds()
+    {
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!player) {
+            return {};
+        }
+
+        auto* cell = player->GetParentCell();
+        if (!cell) {
+            return {};
+        }
+
+        auto* bhk = cell->GetbhkWorld();
+        if (!bhk) {
+            return {};
+        }
+
+        return {
+            .bhk = bhk,
+            .hknp = havok_runtime::getHknpWorldFromBhk(bhk),
+        };
+    }
 
     std::uint32_t bumpGeneration(std::atomic<std::uint32_t>& generation)
     {
@@ -64,7 +143,9 @@ namespace
         }
     }
 
-    void ensurePhysicsInteractionForReadySkeleton()
+    void destroyPhysicsInteraction(rock::provider::RockProviderLifecycleReason reason);
+
+    void ensurePhysicsInteractionForReadySkeleton(bool rockMenuInputBlocking)
     {
         /*
          * ROCK creation is event-driven when FRIK first announces skeleton
@@ -74,16 +155,67 @@ namespace
          * this narrow recovery path instead of forcing users to reload a save
          * to receive a second skeleton-ready message.
          */
-        if (s_physicsInteraction || !g_rockConfig.rockEnabled) {
+        auto* frikApi = frik::api::FRIKApi::inst;
+        if (!s_physicsCreationRequested.load(std::memory_order_acquire) &&
+            !s_physicsInteraction &&
+            g_rockConfig.rockEnabled &&
+            frikApi &&
+            frikApi->isSkeletonReady()) {
+            s_physicsCreationRequested.store(true, std::memory_order_release);
+            s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
+        }
+
+        if (!s_physicsCreationRequested.load(std::memory_order_acquire)) {
             return;
         }
 
-        auto* frikApi = frik::api::FRIKApi::inst;
-        if (!frikApi || !frikApi->isSkeletonReady()) {
+        const auto worlds = samplePlayerPhysicsWorlds();
+        const auto readyDeferralFrames = s_physicsCreationReadyDeferralFrames.load(std::memory_order_acquire);
+        const physics_creation_gate_policy::CreationGateInput gateInput{
+            .rockEnabled = g_rockConfig.rockEnabled,
+            .providerAvailable = s_frikAvailable && frikApi != nullptr,
+            .skeletonReady = frikApi && frikApi->isSkeletonReady(),
+            .frikMenuBlocking = frikApi && frikApi->isAnyMenuOpen(),
+            .frikConfigBlocking = frikApi && (frikApi->isConfigOpen() || frikApi->isWristPipboyOpen()),
+            .rockMenuInputBlocking = rockMenuInputBlocking,
+            .bhkWorld = reinterpret_cast<std::uintptr_t>(worlds.bhk),
+            .hknpWorld = reinterpret_cast<std::uintptr_t>(worlds.hknp),
+            .readyDeferralFrames = readyDeferralFrames,
+        };
+        const auto decision = physics_creation_gate_policy::evaluateCreationGate(s_physicsCreationWorldStability, gateInput);
+        if (readyDeferralFrames > 0) {
+            s_physicsCreationReadyDeferralFrames.fetch_sub(1, std::memory_order_acq_rel);
+        }
+
+        if (!decision.keepRequestPending) {
+            s_physicsCreationRequested.store(false, std::memory_order_release);
+        }
+
+        if (!decision.canCreate) {
+            if ((s_physicsCreationGateLogCounter++ % 90u) == 0u) {
+                logger::debug(
+                    "ROCK: Physics creation deferred reason={} stableFrames={} bhk={} hknp={} localMenu={} frikMenu={} frikConfig={} readyDeferral={}",
+                    physicsCreationBlockReasonName(decision.blockReason),
+                    decision.stableWorldFrames,
+                    static_cast<const void*>(worlds.bhk),
+                    static_cast<const void*>(worlds.hknp),
+                    rockMenuInputBlocking ? "yes" : "no",
+                    gateInput.frikMenuBlocking ? "yes" : "no",
+                    gateInput.frikConfigBlocking ? "yes" : "no",
+                    readyDeferralFrames);
+            }
             return;
+        }
+
+        if (s_physicsInteraction) {
+            logger::info("ROCK: Recreating PhysicsInteraction after deferred skeleton-ready gate.");
+            destroyPhysicsInteraction(rock::provider::RockProviderLifecycleReason::SkeletonReady);
         }
 
         createPhysicsInteraction();
+        s_physicsCreationRequested.store(false, std::memory_order_release);
+        s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
+        resetPhysicsCreationGate();
     }
 
     void destroyPhysicsInteraction(
@@ -143,13 +275,16 @@ namespace
         debug_controller_runtime::update(gameplayInputAllowed, frikApi ? frikApi->getFrameTime() : (1.0f / 90.0f));
 
         if (!g_rockConfig.rockEnabled) {
+            s_physicsCreationRequested.store(false, std::memory_order_release);
+            s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
+            resetPhysicsCreationGate();
             if (s_physicsInteraction) {
                 destroyPhysicsInteraction();
             }
             return;
         }
 
-        ensurePhysicsInteractionForReadySkeleton();
+        ensurePhysicsInteractionForReadySkeleton(menuInputActive);
 
         if (s_physicsInteraction) {
             s_physicsInteraction->update();
@@ -207,15 +342,17 @@ namespace
                 break;
             }
             if (s_physicsInteraction) {
-                logger::warn("ROCK: PhysicsInteraction already exists on kSkeletonReady! Destroying first.");
-                destroyPhysicsInteraction();
+                logger::warn("ROCK: PhysicsInteraction already exists on kSkeletonReady; deferring recreation to ROCK frame gate.");
             }
-            createPhysicsInteraction();
+            requestDeferredPhysicsCreation();
             break;
 
         case LE::kSkeletonDestroying:
             logger::info("ROCK: Received kSkeletonDestroying from FRIK.");
             bumpGeneration(s_skeletonGeneration);
+            s_physicsCreationRequested.store(false, std::memory_order_release);
+            s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
+            resetPhysicsCreationGate();
             if (s_physicsInteraction) {
                 s_physicsInteraction->noteSkeletonLifecycle(
                     s_skeletonGeneration.load(std::memory_order_acquire),
@@ -303,6 +440,9 @@ namespace
         if (msg->type == F4SE::MessagingInterface::kPostLoadGame || msg->type == F4SE::MessagingInterface::kNewGame) {
             logger::info("ROCK: New game session -- resetting PhysicsInteraction...");
             const auto providerGeneration = bumpGeneration(s_providerGeneration);
+            s_physicsCreationRequested.store(false, std::memory_order_release);
+            s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
+            resetPhysicsCreationGate();
             if (s_physicsInteraction) {
                 s_physicsInteraction->noteProviderLifecycle(
                     providerGeneration,

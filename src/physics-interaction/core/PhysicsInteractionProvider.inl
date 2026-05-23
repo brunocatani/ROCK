@@ -6,7 +6,7 @@
         auto* api = frik::api::FRIKApi::inst;
         outSnapshot.providerReady = _initialized.load(std::memory_order_acquire) ? 1u : 0u;
         outSnapshot.frikSkeletonReady = api && api->isSkeletonReady() ? 1u : 0u;
-        outSnapshot.menuBlocking = api && api->isAnyMenuOpen() ? 1u : 0u;
+        outSnapshot.menuBlocking = ((api && api->isAnyMenuOpen()) || input_remap_runtime::isMenuInputActive()) ? 1u : 0u;
         outSnapshot.configBlocking = api && (api->isConfigOpen() || api->isWristPipboyOpen()) ? 1u : 0u;
         outSnapshot.bhkWorld = reinterpret_cast<std::uintptr_t>(_cachedBhkWorld);
         outSnapshot.hknpWorld = reinterpret_cast<std::uintptr_t>(_cachedHknpWorld);

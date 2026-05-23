@@ -11,7 +11,7 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
     frame.hknpWorld = hknp;
     frame.deltaSeconds = (deltaSeconds > 0.0f && deltaSeconds <= 0.1f) ? deltaSeconds : (1.0f / 90.0f);
     frame.worldReady = bhk && hknp;
-    frame.menuBlocked = frik::api::FRIKApi::inst && frik::api::FRIKApi::inst->isAnyMenuOpen();
+    frame.menuBlocked = (frik::api::FRIKApi::inst && frik::api::FRIKApi::inst->isAnyMenuOpen()) || input_remap_runtime::isMenuInputActive();
     frame.reloadBoundaryActive = false;
 
     if (auto* player = RE::PlayerCharacter::GetSingleton()) {

@@ -306,7 +306,8 @@
         const auto plan = contact_signal_subscription_policy::planSubscription(
             currentSnapshot,
             reinterpret_cast<std::uintptr_t>(world),
-            reinterpret_cast<std::uintptr_t>(signal));
+            reinterpret_cast<std::uintptr_t>(signal),
+            s_contactEventBridge.hasRetainedNativeSlot(world, signal));
 
         if (plan.action == contact_signal_subscription_policy::ContactSignalSubscriptionAction::IgnoreNullSignal) {
             ROCK_LOG_ERROR(Init, "Contact event subscription skipped because world or signal is null");
@@ -316,7 +317,13 @@
         if (plan.action == contact_signal_subscription_policy::ContactSignalSubscriptionAction::AlreadySubscribed) {
             _contactEventSignal.store(signal, std::memory_order_release);
             _contactEventWorld.store(world, std::memory_order_release);
+            s_contactEventBridge.signal.store(signal, std::memory_order_release);
+            s_contactEventBridge.world.store(world, std::memory_order_release);
             s_contactEventBridge.instance.store(this, std::memory_order_release);
+            const auto epoch = s_contactEventBridge.subscriptionEpoch.load(std::memory_order_acquire);
+            if (!s_contactEventBridge.rememberRetainedNativeSlot(world, signal, epoch)) {
+                ROCK_LOG_WARN(Init, "Contact event retained-slot table full while reusing bridge slot; future duplicate suppression may be degraded");
+            }
             ROCK_LOG_DEBUG(Init, "Contact event signal already subscribed for current world; reusing native bridge slot");
             return;
         }
@@ -342,6 +349,9 @@
         s_contactEventBridge.world.store(world, std::memory_order_release);
         s_contactEventBridge.instance.store(this, std::memory_order_release);
         const auto epoch = s_contactEventBridge.subscriptionEpoch.fetch_add(1, std::memory_order_acq_rel) + 1;
+        if (!s_contactEventBridge.rememberRetainedNativeSlot(world, signal, epoch)) {
+            ROCK_LOG_WARN(Init, "Contact event retained-slot table full after native subscription; future duplicate suppression may be degraded");
+        }
         ROCK_LOG_INFO(
             Init,
             "Subscribed contact event bridge slot (epoch={}, action={})",
@@ -374,34 +384,21 @@
         }
 
         const bool retainNativeSlot = contact_signal_subscription_policy::shouldRetainNativeSlotAfterDeactivation(
-            bridgeSnapshot,
-            reinterpret_cast<std::uintptr_t>(liveWorld));
+            bridgeSnapshot);
         if (retainNativeSlot) {
             ROCK_LOG_INFO(
                 Init,
-                "Deactivated contact event bridge; native slot retained for live hknpWorld cleanup (instanceCleared={}, world={}, signal={})",
+                "Deactivated contact event bridge; native slots retained for hknpWorld cleanup (instanceCleared={}, world={}, signal={}, liveWorld={})",
                 deactivatedCurrentInstance ? "yes" : "no",
                 static_cast<const void*>(bridgeWorld),
-                bridgeSignal);
+                bridgeSignal,
+                static_cast<const void*>(liveWorld));
             return;
         }
 
-        auto* expectedWorld = bridgeWorld;
-        s_contactEventBridge.world.compare_exchange_strong(
-            expectedWorld,
-            nullptr,
-            std::memory_order_acq_rel,
-            std::memory_order_acquire);
-        void* expectedSignal = bridgeSignal;
-        s_contactEventBridge.signal.compare_exchange_strong(
-            expectedSignal,
-            nullptr,
-            std::memory_order_acq_rel,
-            std::memory_order_acquire);
-
         ROCK_LOG_INFO(
             Init,
-            "Deactivated contact event bridge without native unsubscribe; cleared stale world state (instanceCleared={}, localWorld={}, localSignal={}, liveWorld={})",
+            "Deactivated contact event bridge with no active native slot (instanceCleared={}, localWorld={}, localSignal={}, liveWorld={})",
             deactivatedCurrentInstance ? "yes" : "no",
             static_cast<const void*>(localWorld),
             localSignal,
