@@ -1377,8 +1377,6 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::LeftFrikAppliedHand:
             case AxisOverlayRole::RightGrabHeldRelativeHandTarget:
             case AxisOverlayRole::LeftGrabHeldRelativeHandTarget:
-            case AxisOverlayRole::RightGrabConstraintReverse:
-            case AxisOverlayRole::LeftGrabConstraintReverse:
             case AxisOverlayRole::RightGrabRockVisualTarget:
             case AxisOverlayRole::LeftGrabRockVisualTarget:
             case AxisOverlayRole::RightGrabDesiredObject:
@@ -1422,8 +1420,6 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::LeftFrikAppliedHand:
             case AxisOverlayRole::RightGrabHeldRelativeHandTarget:
             case AxisOverlayRole::LeftGrabHeldRelativeHandTarget:
-            case AxisOverlayRole::RightGrabConstraintReverse:
-            case AxisOverlayRole::LeftGrabConstraintReverse:
             case AxisOverlayRole::RightGrabRockVisualTarget:
             case AxisOverlayRole::LeftGrabRockVisualTarget:
             case AxisOverlayRole::RightGrabDesiredObject:
@@ -1802,13 +1798,6 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[0] = 0.15f;
                 color[1] = 1.0f;
                 color[2] = 0.25f;
-                color[3] = 0.95f;
-                break;
-            case MarkerOverlayRole::RightGrabConstraintReverseError:
-            case MarkerOverlayRole::LeftGrabConstraintReverseError:
-                color[0] = 0.20f;
-                color[1] = 0.55f;
-                color[2] = 1.0f;
                 color[3] = 0.95f;
                 break;
             case MarkerOverlayRole::RightGrabRockVisualError:

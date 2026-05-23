@@ -366,7 +366,6 @@ namespace rock
             RE::NiTransform previousPalmAnchorGrabAuthorityWorld{};
             RE::NiTransform previousProxyReadbackWorld{};
             RE::NiTransform previousRawDesiredObjectWorld{};
-            RE::NiTransform previousConstraintDesiredObjectWorld{};
             RE::NiTransform previousHeldNodeWorld{};
             RE::NiTransform previousHeldBodyWorld{};
             RE::NiTransform previousNativeBodyWorld{};

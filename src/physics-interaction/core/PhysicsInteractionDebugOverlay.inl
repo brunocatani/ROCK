@@ -875,7 +875,6 @@
                 telemetryState.previousPalmAnchorGrabAuthorityWorld = sample.palmAnchorGrabAuthorityWorld;
                 telemetryState.previousProxyReadbackWorld = sample.proxyReadbackWorld;
                 telemetryState.previousRawDesiredObjectWorld = sample.currentRawDesiredObjectWorld;
-                telemetryState.previousConstraintDesiredObjectWorld = sample.currentConstraintDesiredObjectWorld;
                 telemetryState.previousHeldNodeWorld = sample.heldNodeWorld;
                 telemetryState.previousHeldBodyWorld = sample.heldBodyWorld;
                 telemetryState.previousNativeBodyWorld = sample.heldNativeBodyWorld;
@@ -952,13 +951,6 @@
                     hmdBasis,
                     hasPreviousAngularDeltaSample &&
                         sample.hasGrabStartFrames);
-                const auto constraintDesiredObjectAngularDelta = computeAngularDeltaLogValue(
-                    telemetryState.previousConstraintDesiredObjectWorld,
-                    sample.currentConstraintDesiredObjectWorld,
-                    sample.rawHandBasis,
-                    hmdBasis,
-                    hasPreviousAngularDeltaSample &&
-                        sample.hasGrabStartFrames);
                 const auto heldNodeAngularDelta = computeAngularDeltaLogValue(
                     telemetryState.previousHeldNodeWorld,
                     sample.heldNodeWorld,
@@ -1023,7 +1015,7 @@
                             true);
                     }
                     if (sample.hasGrabStartFrames) {
-                        addAxisTransform(sample.currentConstraintDesiredObjectWorld,
+                        addAxisTransform(sample.currentRawDesiredObjectWorld,
                             isLeft ? debug::AxisOverlayRole::LeftGrabDesiredObject : debug::AxisOverlayRole::RightGrabDesiredObject,
                             sample.rawHandWorld.translate,
                             true);
@@ -1032,7 +1024,7 @@
                             sample.rawHandWorld.translate,
                             true);
                         addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabHeldDesiredError : debug::MarkerOverlayRole::RightGrabHeldDesiredError,
-                            sample.currentConstraintDesiredObjectWorld.translate,
+                            sample.currentRawDesiredObjectWorld.translate,
                             sample.heldNodeWorld.translate);
                     }
                     if (sample.hasHeldRelativeHandTarget) {
@@ -1043,15 +1035,6 @@
                         addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabHeldRelativeHandTargetError : debug::MarkerOverlayRole::RightGrabHeldRelativeHandTargetError,
                             sample.rawHandWorld.translate,
                             sample.heldRelativeHandTargetWorld.translate);
-                    }
-                    if (sample.hasConstraintReverseTarget) {
-                        addAxisTransform(sample.constraintReverseTargetWorld,
-                            isLeft ? debug::AxisOverlayRole::LeftGrabConstraintReverse : debug::AxisOverlayRole::RightGrabConstraintReverse,
-                            sample.rawHandWorld.translate,
-                            true);
-                        addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabConstraintReverseError : debug::MarkerOverlayRole::RightGrabConstraintReverseError,
-                            sample.handBodyWorld.translate,
-                            sample.constraintReverseTargetWorld.translate);
                     }
                     addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabPivotA : debug::MarkerOverlayRole::RightGrabPivotA, sample.pivotAWorld, 3.0f);
                     addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabPivotB : debug::MarkerOverlayRole::RightGrabPivotB, sample.pivotBWorld, 3.0f);
@@ -1112,20 +1095,20 @@
                         sample.pivotBWorld.z);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 5),
                         color,
-                        "CON_DESN %.1f %.1f %.1f D %.2f %.2f",
-                        sample.currentConstraintDesiredObjectWorld.translate.x,
-                        sample.currentConstraintDesiredObjectWorld.translate.y,
-                        sample.currentConstraintDesiredObjectWorld.translate.z,
-                        sample.heldNodeToConstraintDesiredObject.positionGameUnits,
-                        sample.heldNodeToConstraintDesiredObject.rotationDegrees);
+                        "RAW_DESN %.1f %.1f %.1f D %.2f %.2f",
+                        sample.currentRawDesiredObjectWorld.translate.x,
+                        sample.currentRawDesiredObjectWorld.translate.y,
+                        sample.currentRawDesiredObjectWorld.translate.z,
+                        sample.heldNodeToRawDesiredObject.positionGameUnits,
+                        sample.heldNodeToRawDesiredObject.rotationDegrees);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 6),
                         color,
-                        "CON_DESB %.1f %.1f %.1f D %.2f %.2f",
-                        sample.currentConstraintDesiredBodyWorld.translate.x,
-                        sample.currentConstraintDesiredBodyWorld.translate.y,
-                        sample.currentConstraintDesiredBodyWorld.translate.z,
-                        sample.heldBodyToConstraintDesiredBody.positionGameUnits,
-                        sample.heldBodyToConstraintDesiredBody.rotationDegrees);
+                        "RAW_DESB %.1f %.1f %.1f D %.2f %.2f",
+                        sample.currentRawDesiredBodyWorld.translate.x,
+                        sample.currentRawDesiredBodyWorld.translate.y,
+                        sample.currentRawDesiredBodyWorld.translate.z,
+                        sample.heldBodyToRawDesiredBody.positionGameUnits,
+                        sample.heldBodyToRawDesiredBody.rotationDegrees);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 7),
                         color,
                         "RAWHS_REV %.1f %.1f %.1f D %.2f %.2f",
@@ -1136,13 +1119,10 @@
                         sample.rawToHeldRelativeHandTarget.rotationDegrees);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 8),
                         color,
-                        "CONHS_REV %.1f %.1f %.1f D %.2f %.2f C %.2f",
-                        sample.constraintReverseTargetWorld.translate.x,
-                        sample.constraintReverseTargetWorld.translate.y,
-                        sample.constraintReverseTargetWorld.translate.z,
-                        sample.handBodyToConstraintReverse.positionGameUnits,
-                        sample.handBodyToConstraintReverse.rotationDegrees,
-                        sample.heldRelativeToConstraintReverse.rotationDegrees);
+                        "BODY_ERR %.2f %.2f REL %.2f",
+                        sample.bodyTargetNodeErr.positionGameUnits,
+                        sample.bodyTargetNodeErr.rotationDegrees,
+                        sample.relationPivotErr);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 9),
                         color,
                         "TBLOC %.1f %.1f %.1f DES %.1f %.1f %.1f E %.2f",
@@ -1172,13 +1152,10 @@
                         sample.heldBodyMass);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 12),
                         color,
-                        "AXIS RAW %.2f %.2f %.2f CON %.2f %.2f %.2f",
+                        "AXIS RAW %.2f %.2f %.2f",
                         sample.rawToHeldRelativeHandTargetAxes.x,
                         sample.rawToHeldRelativeHandTargetAxes.y,
-                        sample.rawToHeldRelativeHandTargetAxes.z,
-                        sample.rawToConstraintReverseAxes.x,
-                        sample.rawToConstraintReverseAxes.y,
-                        sample.rawToConstraintReverseAxes.z);
+                        sample.rawToHeldRelativeHandTargetAxes.z);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 13),
                         color,
                         "NATIVE flat->palm %.2fgu %.2fdeg legacy->palm %.2f",
@@ -1256,7 +1233,7 @@
                         sample.rawToHandBody.positionGameUnits,
                         sample.rawToHandBody.rotationDegrees);
                     ROCK_LOG_INFO(Hand,
-                        "GRAB TELEMETRY {} {} startLive=({:.2f},{:.2f},{:.2f}) startHandBody=({:.2f},{:.2f},{:.2f}) objectAtGrab=({:.2f},{:.2f},{:.2f}) desiredAtGrab=({:.2f},{:.2f},{:.2f}) startDrift={:.3f}gu/{:.3f}deg rawHS=({:.2f},{:.2f},{:.2f}) conHS=({:.2f},{:.2f},{:.2f}) bodyRaw=({:.2f},{:.2f},{:.2f}) bodyLocal=({:.2f},{:.2f},{:.2f})",
+                        "GRAB TELEMETRY {} {} startLive=({:.2f},{:.2f},{:.2f}) startHandBody=({:.2f},{:.2f},{:.2f}) objectAtGrab=({:.2f},{:.2f},{:.2f}) desiredAtGrab=({:.2f},{:.2f},{:.2f}) startDrift={:.3f}gu/{:.3f}deg rawHS=({:.2f},{:.2f},{:.2f}) bodyRaw=({:.2f},{:.2f},{:.2f}) bodyLocal=({:.2f},{:.2f},{:.2f})",
                         prefix,
                         phaseLabel,
                         sample.liveHandWorldAtGrab.translate.x,
@@ -1276,9 +1253,6 @@
                         sample.rawHandSpace.translate.x,
                         sample.rawHandSpace.translate.y,
                         sample.rawHandSpace.translate.z,
-                        sample.constraintHandSpace.translate.x,
-                        sample.constraintHandSpace.translate.y,
-                        sample.constraintHandSpace.translate.z,
                         sample.handBodyToRawHandAtGrab.translate.x,
                         sample.handBodyToRawHandAtGrab.translate.y,
                         sample.handBodyToRawHandAtGrab.translate.z,
@@ -1286,7 +1260,7 @@
                         sample.bodyLocal.translate.y,
                         sample.bodyLocal.translate.z);
                     ROCK_LOG_INFO(Hand,
-                        "GRAB TELEMETRY {} {} rawDesired=({:.2f},{:.2f},{:.2f}) heldToRawDesired={:.3f}gu/{:.3f}deg conDesiredNode=({:.2f},{:.2f},{:.2f}) heldToConDesired={:.3f}gu/{:.3f}deg conDesiredBody=({:.2f},{:.2f},{:.2f}) bodyToConDesired={:.3f}gu/{:.3f}deg",
+                        "GRAB TELEMETRY {} {} rawDesiredNode=({:.2f},{:.2f},{:.2f}) heldToRawDesiredNode={:.3f}gu/{:.3f}deg rawDesiredBody=({:.2f},{:.2f},{:.2f}) heldToRawDesiredBody={:.3f}gu/{:.3f}deg",
                         prefix,
                         phaseLabel,
                         sample.currentRawDesiredObjectWorld.translate.x,
@@ -1294,16 +1268,11 @@
                         sample.currentRawDesiredObjectWorld.translate.z,
                         sample.heldNodeToRawDesiredObject.positionGameUnits,
                         sample.heldNodeToRawDesiredObject.rotationDegrees,
-                        sample.currentConstraintDesiredObjectWorld.translate.x,
-                        sample.currentConstraintDesiredObjectWorld.translate.y,
-                        sample.currentConstraintDesiredObjectWorld.translate.z,
-                        sample.heldNodeToConstraintDesiredObject.positionGameUnits,
-                        sample.heldNodeToConstraintDesiredObject.rotationDegrees,
-                        sample.currentConstraintDesiredBodyWorld.translate.x,
-                        sample.currentConstraintDesiredBodyWorld.translate.y,
-                        sample.currentConstraintDesiredBodyWorld.translate.z,
-                        sample.heldBodyToConstraintDesiredBody.positionGameUnits,
-                        sample.heldBodyToConstraintDesiredBody.rotationDegrees);
+                        sample.currentRawDesiredBodyWorld.translate.x,
+                        sample.currentRawDesiredBodyWorld.translate.y,
+                        sample.currentRawDesiredBodyWorld.translate.z,
+                        sample.heldBodyToRawDesiredBody.positionGameUnits,
+                        sample.heldBodyToRawDesiredBody.rotationDegrees);
                     ROCK_LOG_INFO(Hand,
                         "GRAB TELEMETRY {} {} invariants relationPivotErr={:.3f}gu rotationPreservedDeg={:.3f} bodyTargetNodeErr={:.3f}gu/{:.3f}deg normalAuthority={} authoredRotation={}",
                         prefix,
@@ -1315,31 +1284,21 @@
                         sample.normalAuthority ? "true" : "false",
                         sample.authoredRotationAuthority ? "true" : "false");
                     ROCK_LOG_INFO(Hand,
-                        "GRAB TELEMETRY {} {} rawHSRev=({:.2f},{:.2f},{:.2f}) liveToRawHSRev={:.3f}gu/{:.3f}deg conHSRev=({:.2f},{:.2f},{:.2f}) handBodyToConHSRev={:.3f}gu/{:.3f}deg rawToConRev={:.3f}gu/{:.3f}deg",
+                        "GRAB TELEMETRY {} {} rawHSRev=({:.2f},{:.2f},{:.2f}) liveToRawHSRev={:.3f}gu/{:.3f}deg",
                         prefix,
                         phaseLabel,
                         sample.heldRelativeHandTargetWorld.translate.x,
                         sample.heldRelativeHandTargetWorld.translate.y,
                         sample.heldRelativeHandTargetWorld.translate.z,
                         sample.rawToHeldRelativeHandTarget.positionGameUnits,
-                        sample.rawToHeldRelativeHandTarget.rotationDegrees,
-                        sample.constraintReverseTargetWorld.translate.x,
-                        sample.constraintReverseTargetWorld.translate.y,
-                        sample.constraintReverseTargetWorld.translate.z,
-                        sample.handBodyToConstraintReverse.positionGameUnits,
-                        sample.handBodyToConstraintReverse.rotationDegrees,
-                        sample.heldRelativeToConstraintReverse.positionGameUnits,
-                        sample.heldRelativeToConstraintReverse.rotationDegrees);
+                        sample.rawToHeldRelativeHandTarget.rotationDegrees);
                     ROCK_LOG_INFO(Hand,
-                        "GRAB TELEMETRY {} {} axisDots rawHSRev=({:.3f},{:.3f},{:.3f}) conHSRev=({:.3f},{:.3f},{:.3f})",
+                        "GRAB TELEMETRY {} {} axisDots rawHSRev=({:.3f},{:.3f},{:.3f})",
                         prefix,
                         phaseLabel,
                         sample.rawToHeldRelativeHandTargetAxes.x,
                         sample.rawToHeldRelativeHandTargetAxes.y,
-                        sample.rawToHeldRelativeHandTargetAxes.z,
-                        sample.rawToConstraintReverseAxes.x,
-                        sample.rawToConstraintReverseAxes.y,
-                        sample.rawToConstraintReverseAxes.z);
+                        sample.rawToHeldRelativeHandTargetAxes.z);
                     const char* sideLabel = isLeft ? "left" : "right";
                     ROCK_LOG_INFO(Hand,
                         "GRAB BASIS {} {} side={} convention=niLocalVectorToWorld nativeFlattenedHand={} generatedPalm={} rootFinger={} {} {} rootBase={} rootTip={} rootPalmLine={} rootOpenLine={} rootPalmNormal={} nativeToPalm={:.3f}gu/{:.3f}deg",
@@ -1396,7 +1355,7 @@
                         sample.legacyConfiguredPivotAToGrabAuthority.distance,
                         sample.legacyConfiguredPivotAToProxyReadback.distance);
                     ROCK_LOG_INFO(Hand,
-                        "GRAB ANGULAR_DELTA {} {} side={} prev={} hmd={} raw={:.3f}deg world={} hand={} hmdLocal={} authority={:.3f}deg world={} hand={} hmdLocal={} proxy={:.3f}deg world={} hand={} hmdLocal={} rawDesired={:.3f}deg world={} hand={} hmdLocal={} conDesired={:.3f}deg world={} hand={} hmdLocal={} heldNode={:.3f}deg world={} hand={} hmdLocal={} heldBody={:.3f}deg world={} hand={} hmdLocal={} nativeBody={:.3f}deg world={} hand={} hmdLocal={}",
+                        "GRAB ANGULAR_DELTA {} {} side={} prev={} hmd={} raw={:.3f}deg world={} hand={} hmdLocal={} authority={:.3f}deg world={} hand={} hmdLocal={} proxy={:.3f}deg world={} hand={} hmdLocal={} rawDesired={:.3f}deg world={} hand={} hmdLocal={} heldNode={:.3f}deg world={} hand={} hmdLocal={} heldBody={:.3f}deg world={} hand={} hmdLocal={} nativeBody={:.3f}deg world={} hand={} hmdLocal={}",
                         prefix,
                         phaseLabel,
                         sideLabel,
@@ -1418,10 +1377,6 @@
                         grab_transform_telemetry::formatVector3(rawDesiredObjectAngularDelta.worldDegrees),
                         grab_transform_telemetry::formatVector3(rawDesiredObjectAngularDelta.handLocalDegrees),
                         grab_transform_telemetry::formatVector3(rawDesiredObjectAngularDelta.hmdLocalDegrees),
-                        constraintDesiredObjectAngularDelta.valid ? constraintDesiredObjectAngularDelta.angleDegrees : -1.0f,
-                        grab_transform_telemetry::formatVector3(constraintDesiredObjectAngularDelta.worldDegrees),
-                        grab_transform_telemetry::formatVector3(constraintDesiredObjectAngularDelta.handLocalDegrees),
-                        grab_transform_telemetry::formatVector3(constraintDesiredObjectAngularDelta.hmdLocalDegrees),
                         heldNodeAngularDelta.valid ? heldNodeAngularDelta.angleDegrees : -1.0f,
                         grab_transform_telemetry::formatVector3(heldNodeAngularDelta.worldDegrees),
                         grab_transform_telemetry::formatVector3(heldNodeAngularDelta.handLocalDegrees),
@@ -1446,17 +1401,15 @@
                         grab_transform_telemetry::formatBasis("heldBody", sample.heldBodyBasis),
                         grab_transform_telemetry::formatBasis("nativeBody", sample.heldNativeBodyBasis));
                     ROCK_LOG_INFO(Hand,
-                        "GRAB BASIS {} {} side={} desiredFrames {} {} {} {} {}",
+                        "GRAB BASIS {} {} side={} desiredFrames {} {} {}",
                         prefix,
                         phaseLabel,
                         sideLabel,
                         grab_transform_telemetry::formatBasis("rawDesiredObj", sample.currentRawDesiredObjectWorldBasis),
-                        grab_transform_telemetry::formatBasis("conDesiredObj", sample.currentConstraintDesiredObjectWorldBasis),
-                        grab_transform_telemetry::formatBasis("conDesiredBody", sample.currentConstraintDesiredBodyWorldBasis),
-                        grab_transform_telemetry::formatBasis("rawHSReverseHand", sample.heldRelativeHandTargetBasis),
-                        grab_transform_telemetry::formatBasis("conHSReverseHand", sample.constraintReverseTargetBasis));
+                        grab_transform_telemetry::formatBasis("rawDesiredBody", sample.currentRawDesiredBodyWorldBasis),
+                        grab_transform_telemetry::formatBasis("rawHSReverseHand", sample.heldRelativeHandTargetBasis));
                     ROCK_LOG_INFO(Hand,
-                        "GRAB BASIS DELTA {} {} side={} {} {} {} {} {} {} {} {} {}",
+                        "GRAB BASIS DELTA {} {} side={} {} {} {} {} {} {} {} {}",
                         prefix,
                         phaseLabel,
                         sideLabel,
@@ -1465,70 +1418,9 @@
                         grab_transform_telemetry::formatBasisDelta("objectAtGrabToDesiredAtGrab", sample.objectNodeWorldAtGrabBasis, sample.desiredObjectWorldAtGrabBasis),
                         grab_transform_telemetry::formatBasisDelta("heldNodeToObjectAtGrab", sample.heldNodeBasis, sample.objectNodeWorldAtGrabBasis),
                         grab_transform_telemetry::formatBasisDelta("heldNodeToRawDesired", sample.heldNodeBasis, sample.currentRawDesiredObjectWorldBasis),
-                        grab_transform_telemetry::formatBasisDelta("heldNodeToConDesiredObj", sample.heldNodeBasis, sample.currentConstraintDesiredObjectWorldBasis),
-                        grab_transform_telemetry::formatBasisDelta("heldBodyToConDesiredBody", sample.heldBodyBasis, sample.currentConstraintDesiredBodyWorldBasis),
+                        grab_transform_telemetry::formatBasisDelta("heldBodyToRawDesiredBody", sample.heldBodyBasis, sample.currentRawDesiredBodyWorldBasis),
                         grab_transform_telemetry::formatBasisDelta("nativeBodyToHeldBody", sample.heldNativeBodyBasis, sample.heldBodyBasis),
                         grab_transform_telemetry::formatBasisDelta("rawHandToHeldRelativeHand", sample.rawHandBasis, sample.heldRelativeHandTargetBasis));
-                    if (sample.hasFrameChainCandidates) {
-                        ROCK_LOG_INFO(Hand,
-                            "GRAB FRAMECHAIN CANDIDATES {} {} side={} count={} hmd={} hmdForward={} heldNative={} heldBody={} heldNode={} conBody={} conNode={} bodyLocal={} constraintBodyLocal={}",
-                            prefix,
-                            phaseLabel,
-                            sideLabel,
-                            sample.frameChainCandidateCount,
-                            context.hasHmdFrame ? "yes" : "no",
-                            grab_transform_telemetry::formatVector3(context.hmdForwardWorld),
-                            sample.hasHeldNativeBodyWorld ? "yes" : "no",
-                            sample.hasHeldBodyWorld ? "yes" : "no",
-                            sample.hasHeldNodeWorld ? "yes" : "no",
-                            grab_transform_telemetry::formatBasis("conBody", sample.currentConstraintDesiredBodyWorldBasis),
-                            grab_transform_telemetry::formatBasis("conNode", sample.currentConstraintDesiredObjectWorldBasis),
-                            grab_transform_telemetry::formatBasis("bodyLocal", sample.bodyLocalBasis),
-                            grab_transform_telemetry::formatBasis("constraintBodyLocal", sample.constraintBodyLocalBasis));
-                        const auto candidateCount = (std::min)(
-                            static_cast<std::size_t>(sample.frameChainCandidateCount),
-                            grab_transform_telemetry::kFrameChainCandidateCapacity);
-                        for (std::size_t candidateIndex = 0; candidateIndex < candidateCount; ++candidateIndex) {
-                            const auto& candidate = sample.frameChainCandidates[candidateIndex];
-                            if (!candidate.valid) {
-                                continue;
-                            }
-                            ROCK_LOG_INFO(Hand,
-                                "GRAB FRAMECHAIN CANDIDATE {} {} side={} index={} label={} body={} bodyToNative={:.3f}gu/{:.3f}deg bodyToHeld={:.3f}gu/{:.3f}deg bodyToCon={:.3f}gu/{:.3f}deg nodeBodyLocalToHeld={:.3f}gu/{:.3f}deg nodeBodyLocalToConNode={:.3f}gu/{:.3f}deg nodeConstraintLocalToHeld={:.3f}gu/{:.3f}deg nodeConstraintLocalToConNode={:.3f}gu/{:.3f}deg",
-                                prefix,
-                                phaseLabel,
-                                sideLabel,
-                                candidateIndex,
-                                candidate.label,
-                                grab_transform_telemetry::formatVector3(candidate.bodyWorld.translate),
-                                candidate.bodyToNativeBody.positionGameUnits,
-                                candidate.bodyToNativeBody.rotationDegrees,
-                                candidate.bodyToHeldBody.positionGameUnits,
-                                candidate.bodyToHeldBody.rotationDegrees,
-                                candidate.bodyToConstraintDesiredBody.positionGameUnits,
-                                candidate.bodyToConstraintDesiredBody.rotationDegrees,
-                                candidate.nodeBodyLocalToHeldNode.positionGameUnits,
-                                candidate.nodeBodyLocalToHeldNode.rotationDegrees,
-                                candidate.nodeBodyLocalToConstraintDesiredNode.positionGameUnits,
-                                candidate.nodeBodyLocalToConstraintDesiredNode.rotationDegrees,
-                                candidate.nodeConstraintLocalToHeldNode.positionGameUnits,
-                                candidate.nodeConstraintLocalToHeldNode.rotationDegrees,
-                                candidate.nodeConstraintLocalToConstraintDesiredNode.positionGameUnits,
-                                candidate.nodeConstraintLocalToConstraintDesiredNode.rotationDegrees);
-                            ROCK_LOG_INFO(Hand,
-                                "GRAB FRAMECHAIN AXES {} {} side={} index={} label={} {} {} {} {} {}",
-                                prefix,
-                                phaseLabel,
-                                sideLabel,
-                                candidateIndex,
-                                candidate.label,
-                                grab_transform_telemetry::formatBasisDelta("bodyToConBody", candidate.bodyBasis, sample.currentConstraintDesiredBodyWorldBasis),
-                                grab_transform_telemetry::formatBasisDelta("bodyToNativeBody", candidate.bodyBasis, sample.heldNativeBodyBasis),
-                                grab_transform_telemetry::formatBasisDelta("bodyToHeldBody", candidate.bodyBasis, sample.heldBodyBasis),
-                                grab_transform_telemetry::formatBasisDelta("nodeBodyLocalToHeldNode", candidate.nodeFromBodyLocalBasis, sample.heldNodeBasis),
-                                grab_transform_telemetry::formatBasisDelta("nodeConstraintLocalToHeldNode", candidate.nodeFromConstraintBodyLocalBasis, sample.heldNodeBasis));
-                        }
-                    }
                     if (sample.hasConstraintAngularTelemetry) {
                         ROCK_LOG_INFO(Hand,
                             "GRAB TELEMETRY {} {} transformBLocal=({:.2f},{:.2f},{:.2f}) desiredTransformBLocal=({:.2f},{:.2f},{:.2f}) transformBErr={:.3f}gu targetErr(colsInv={:.3f}deg rowsInv={:.3f}deg colsForward={:.3f}deg colsTransformB={:.3f}deg) ragEnabled={} angTau={:.3f} angDamping={:.3f} angForce={:.1f} linTau={:.3f} linForce={:.1f} mass={:.3f}",

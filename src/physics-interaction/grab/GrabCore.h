@@ -464,7 +464,6 @@ namespace rock
         RE::NiTransform desiredObjectWorld{};
         RE::NiTransform desiredBodyWorld{};
         RE::NiTransform bodyLocal{};
-        RE::NiTransform constraintBodyLocal{};
         RE::NiPoint3 pivotAHandBodyLocalGame{};
         RE::NiPoint3 grabPivotWorld{};
         RE::NiPoint3 gripPointWorld{};
@@ -526,11 +525,8 @@ namespace rock
     struct CanonicalGrabFrame
     {
         RE::NiTransform rawHandSpace{};
-        RE::NiTransform constraintHandSpace{};
         RE::NiTransform rawRotationProxyHandSpace{};
-        RE::NiTransform constraintBodyHandSpace{};
         RE::NiTransform rawRotationProxyBodyHandSpace{};
-        RE::NiTransform constraintBodyLocal{};
         RE::NiTransform handBodyToRawHandAtGrab{};
         RE::NiTransform bodyLocal{};
         RE::NiTransform rootBodyLocal{};
@@ -642,7 +638,6 @@ namespace rock
             captureTelemetry.desiredObjectWorld = desiredObjectWorldAtGrab;
             captureTelemetry.desiredBodyWorld = desiredBodyWorldAtGrab;
             captureTelemetry.bodyLocal = bodyLocal;
-            captureTelemetry.constraintBodyLocal = constraintBodyLocal;
             captureTelemetry.pivotAHandBodyLocalGame = pivotAHandBodyLocalGame;
             captureTelemetry.grabPivotWorld = grabPivotWorldAtGrab;
             captureTelemetry.gripPointWorld = gripPointWorldAtGrab;
@@ -680,11 +675,8 @@ namespace rock
         void clear()
         {
             rawHandSpace = RE::NiTransform();
-            constraintHandSpace = RE::NiTransform();
             rawRotationProxyHandSpace = RE::NiTransform();
-            constraintBodyHandSpace = RE::NiTransform();
             rawRotationProxyBodyHandSpace = RE::NiTransform();
-            constraintBodyLocal = RE::NiTransform();
             handBodyToRawHandAtGrab = RE::NiTransform();
             bodyLocal = RE::NiTransform();
             rootBodyLocal = RE::NiTransform();
@@ -877,11 +869,8 @@ namespace rock::grab_frame_math
 
         Transform shiftedObjectWorld{};
         Transform rawHandSpace{};
-        Transform constraintHandSpace{};
         Transform handBodyToRawHandAtGrab{};
-        Transform desiredBodyHandBodySpace{};
         Vector pivotAHandBodyLocal{};
-        Vector pivotBBodyLocal{};
     };
 
     template <class Transform, class Vector>
@@ -899,22 +888,10 @@ namespace rock::grab_frame_math
         return transform_math::composeTransforms(transform_math::invertTransform(frameWorld), objectWorld);
     }
 
-    template <class Transform>
-    inline Transform desiredBodyInHandBodySpace(const Transform& constraintHandSpace, const Transform& bodyLocal)
-    {
-        return transform_math::composeTransforms(constraintHandSpace, bodyLocal);
-    }
-
     template <class Transform, class Vector>
     inline Vector computePivotAHandBodyLocal(const Transform& handBodyWorld, const Vector& grabPivotWorld)
     {
         return transform_math::worldPointToLocal(handBodyWorld, grabPivotWorld);
-    }
-
-    template <class Transform, class Vector>
-    inline Vector computePivotBBodyLocal(const Transform& desiredBodyTransformHandBodySpace, const Vector& pivotAHandBodyLocal)
-    {
-        return transform_math::localPointToWorld(transform_math::invertTransform(desiredBodyTransformHandBodySpace), pivotAHandBodyLocal);
     }
 
     template <class Transform>
@@ -924,39 +901,16 @@ namespace rock::grab_frame_math
     }
 
     template <class Transform, class Vector>
-    inline SplitGrabFrame<Transform> buildSplitGrabFrame(const Transform& rawHandWorld,
-        const Transform& handBodyWorld,
-        const Transform& objectNodeWorld,
-        const Transform& bodyLocal,
-        const Vector& grabPivotWorld,
-        const Vector& gripPointWorld)
-    {
-        SplitGrabFrame<Transform> result{};
-        result.shiftedObjectWorld = shiftObjectToAlignGripWithPocket(objectNodeWorld, grabPivotWorld, gripPointWorld);
-        result.rawHandSpace = objectInFrameSpace(rawHandWorld, result.shiftedObjectWorld);
-        result.constraintHandSpace = objectInFrameSpace(handBodyWorld, result.shiftedObjectWorld);
-        result.handBodyToRawHandAtGrab = objectInFrameSpace(handBodyWorld, rawHandWorld);
-        result.desiredBodyHandBodySpace = desiredBodyInHandBodySpace(result.constraintHandSpace, bodyLocal);
-        result.pivotAHandBodyLocal = computePivotAHandBodyLocal(handBodyWorld, grabPivotWorld);
-        result.pivotBBodyLocal = computePivotBBodyLocal(result.desiredBodyHandBodySpace, result.pivotAHandBodyLocal);
-        return result;
-    }
-
-    template <class Transform, class Vector>
     inline SplitGrabFrame<Transform> buildSplitGrabFrameFromDesiredObject(const Transform& rawHandWorld,
         const Transform& handBodyWorld,
         const Transform& desiredObjectWorld,
-        const Transform& bodyLocal,
         const Vector& grabPivotWorld)
     {
         SplitGrabFrame<Transform> result{};
         result.shiftedObjectWorld = desiredObjectWorld;
         result.rawHandSpace = objectInFrameSpace(rawHandWorld, desiredObjectWorld);
-        result.constraintHandSpace = objectInFrameSpace(handBodyWorld, desiredObjectWorld);
         result.handBodyToRawHandAtGrab = objectInFrameSpace(handBodyWorld, rawHandWorld);
-        result.desiredBodyHandBodySpace = desiredBodyInHandBodySpace(result.constraintHandSpace, bodyLocal);
         result.pivotAHandBodyLocal = computePivotAHandBodyLocal(handBodyWorld, grabPivotWorld);
-        result.pivotBBodyLocal = computePivotBBodyLocal(result.desiredBodyHandBodySpace, result.pivotAHandBodyLocal);
         return result;
     }
 }

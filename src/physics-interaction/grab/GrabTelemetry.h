@@ -58,27 +58,6 @@ namespace rock::grab_transform_telemetry
         RE::NiPoint3 z{ 0.0f, 0.0f, 1.0f };
     };
 
-    inline constexpr std::size_t kFrameChainCandidateCapacity = 8;
-
-    struct FrameChainCandidate
-    {
-        const char* label = "none";
-        RE::NiTransform bodyWorld{};
-        RE::NiTransform nodeFromBodyLocalWorld{};
-        RE::NiTransform nodeFromConstraintBodyLocalWorld{};
-        OrientationBasis bodyBasis{};
-        OrientationBasis nodeFromBodyLocalBasis{};
-        OrientationBasis nodeFromConstraintBodyLocalBasis{};
-        TransformDelta bodyToNativeBody{};
-        TransformDelta bodyToHeldBody{};
-        TransformDelta bodyToConstraintDesiredBody{};
-        TransformDelta nodeBodyLocalToHeldNode{};
-        TransformDelta nodeBodyLocalToConstraintDesiredNode{};
-        TransformDelta nodeConstraintLocalToHeldNode{};
-        TransformDelta nodeConstraintLocalToConstraintDesiredNode{};
-        bool valid = false;
-    };
-
     template <class Vector>
     struct PointPairDelta
     {
@@ -111,15 +90,11 @@ namespace rock::grab_transform_telemetry
         RE::NiTransform objectNodeWorldAtGrab{};
         RE::NiTransform desiredObjectWorldAtGrab{};
         RE::NiTransform currentRawDesiredObjectWorld{};
-        RE::NiTransform currentConstraintDesiredObjectWorld{};
-        RE::NiTransform currentConstraintDesiredBodyWorld{};
+        RE::NiTransform currentRawDesiredBodyWorld{};
         RE::NiTransform rawHandSpace{};
-        RE::NiTransform constraintHandSpace{};
         RE::NiTransform handBodyToRawHandAtGrab{};
         RE::NiTransform bodyLocal{};
-        RE::NiTransform constraintBodyLocal{};
         RE::NiTransform heldRelativeHandTargetWorld{};
-        RE::NiTransform constraintReverseTargetWorld{};
 
         OrientationBasis rawHandBasis{};
         OrientationBasis nativeFlattenedHandBasis{};
@@ -136,15 +111,10 @@ namespace rock::grab_transform_telemetry
         OrientationBasis objectNodeWorldAtGrabBasis{};
         OrientationBasis desiredObjectWorldAtGrabBasis{};
         OrientationBasis currentRawDesiredObjectWorldBasis{};
-        OrientationBasis currentConstraintDesiredObjectWorldBasis{};
-        OrientationBasis currentConstraintDesiredBodyWorldBasis{};
+        OrientationBasis currentRawDesiredBodyWorldBasis{};
         OrientationBasis rawHandSpaceBasis{};
-        OrientationBasis constraintHandSpaceBasis{};
         OrientationBasis bodyLocalBasis{};
-        OrientationBasis constraintBodyLocalBasis{};
         OrientationBasis heldRelativeHandTargetBasis{};
-        OrientationBasis constraintReverseTargetBasis{};
-        std::array<FrameChainCandidate, kFrameChainCandidateCapacity> frameChainCandidates{};
         const char* runtimePivotSource = "unknown";
 
         RE::NiPoint3 pivotAWorld{};
@@ -175,16 +145,11 @@ namespace rock::grab_transform_telemetry
         TransformDelta heldNativeBodyToHeldBody{};
         TransformDelta heldNodeToDesiredObjectAtGrab{};
         TransformDelta heldNodeToRawDesiredObject{};
-        TransformDelta heldNodeToConstraintDesiredObject{};
+        TransformDelta heldBodyToRawDesiredBody{};
         TransformDelta bodyDerivedNodeToHeldNode{};
-        TransformDelta heldBodyToConstraintDesiredBody{};
         TransformDelta bodyTargetNodeErr{};
         TransformDelta rawToHeldRelativeHandTarget{};
-        TransformDelta rawToConstraintReverse{};
-        TransformDelta handBodyToConstraintReverse{};
-        TransformDelta heldRelativeToConstraintReverse{};
         AxisAlignmentDots rawToHeldRelativeHandTargetAxes{};
-        AxisAlignmentDots rawToConstraintReverseAxes{};
 
         float pivotErrorGameUnits = 0.0f;
         float relationPivotErr = 0.0f;
@@ -199,7 +164,6 @@ namespace rock::grab_transform_telemetry
         float linearMotorTau = 0.0f;
         float linearMotorMaxForce = 0.0f;
         float heldBodyMass = 0.0f;
-        std::uint32_t frameChainCandidateCount = 0;
         bool valid = false;
         bool isLeft = false;
         bool hasHandBodyWorld = false;
@@ -214,13 +178,11 @@ namespace rock::grab_transform_telemetry
         bool hasGrabStartFrames = false;
         bool hasRootFingerLandmarks = false;
         bool hasHeldRelativeHandTarget = false;
-        bool hasConstraintReverseTarget = false;
         bool hasConstraintAngularTelemetry = false;
         bool hasGrabRelationInvariants = false;
         bool normalAuthority = false;
         bool authoredRotationAuthority = false;
         bool ragdollMotorEnabled = false;
-        bool hasFrameChainCandidates = false;
     };
 
     template <class Vector>
@@ -287,12 +249,6 @@ namespace rock::grab_transform_telemetry
     }
 
     template <class Transform>
-    inline Transform computeCurrentDesiredBodyFromHandBody(const Transform& handBodyWorld, const Transform& constraintHandSpace, const Transform& bodyLocal)
-    {
-        return transform_math::composeTransforms(handBodyWorld, grab_frame_math::desiredBodyInHandBodySpace(constraintHandSpace, bodyLocal));
-    }
-
-    template <class Transform>
     inline Transform computeReverseTargetFromCapturedSpace(const Transform& heldNodeWorld, const Transform& capturedObjectHandSpace)
     {
         return grab_frame_math::computeFrameFromCapturedObject(heldNodeWorld, capturedObjectHandSpace);
@@ -302,12 +258,6 @@ namespace rock::grab_transform_telemetry
     inline Transform computeHeldRelativeHandTarget(const Transform& heldNodeWorld, const Transform& rawHandSpace)
     {
         return computeReverseTargetFromCapturedSpace(heldNodeWorld, rawHandSpace);
-    }
-
-    template <class Transform>
-    inline Transform computeConstraintReverseTarget(const Transform& heldNodeWorld, const Transform& constraintHandSpace)
-    {
-        return computeReverseTargetFromCapturedSpace(heldNodeWorld, constraintHandSpace);
     }
 
     template <class Matrix, class Vector>

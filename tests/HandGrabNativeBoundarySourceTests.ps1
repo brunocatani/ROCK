@@ -206,7 +206,7 @@ if ($heldSupportRefreshStart -lt 0 -or $heldSupportRefreshEnd -lt 0) {
     $failures.Add('Held support refresh helper boundary could not be located.')
 } else {
     $heldSupportRefreshBody = $heldSupportRefreshText.Substring($heldSupportRefreshStart, $heldSupportRefreshEnd - $heldSupportRefreshStart)
-    if ($heldSupportRefreshBody -match '_grabFrame\.(pivotBBodyLocalGame|pivotBConstraintLocalGame|rawHandSpace|constraintHandSpace|constraintBodyHandSpace|rawRotationProxyHandSpace|rawRotationProxyBodyHandSpace|gripPointLocal|gripPointBodyLocalGame)\s*=') {
+    if ($heldSupportRefreshBody -match '_grabFrame\.(pivotBBodyLocalGame|pivotBConstraintLocalGame|rawHandSpace|rawRotationProxyHandSpace|rawRotationProxyBodyHandSpace|gripPointLocal|gripPointBodyLocalGame)\s*=') {
         $failures.Add('Held support refresh must not move the solver pivot or rewrite captured hand/object transforms.')
     }
     if ($heldSupportRefreshBody -match 'proxyAuthorityWorld\.translate') {
