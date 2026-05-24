@@ -997,9 +997,7 @@ namespace rock
 
     bool PhysicsInteraction::generatedBodiesExistForConfig() const
     {
-        const bool handBodiesValid = _rightHand.hasCollisionBody() && _leftHand.hasCollisionBody();
-        const bool bodyBodiesValid = !g_rockConfig.rockBodyBoneCollidersEnabled || _bodyBoneColliders.hasBodies();
-        return handBodiesValid && bodyBodiesValid;
+        return _rightHand.hasCollisionBody() && _leftHand.hasCollisionBody();
     }
 
     bool PhysicsInteraction::generatedBodiesMatchLifecycle(RE::bhkWorld* bhk, RE::hknpWorld* hknp) const
@@ -1072,10 +1070,8 @@ namespace rock
         }
 
         if (g_rockConfig.rockBodyBoneCollidersEnabled && !createBodyBoneCollisions(hknp, bhk)) {
-            ROCK_LOG_WARN(Init, "Generated body lifecycle rebuild deferred while creating body bone colliders");
-            markGeneratedBodiesInvalidated();
+            ROCK_LOG_WARN(Init, "Generated body lifecycle rebuild continuing without body bone colliders; runtime update will retry");
             _bodyBoneColliderCreateRetryFrames = 120;
-            return false;
         }
 
         _rightHand.updateCollisionTransform(hknp, 0.011f);

@@ -83,3 +83,9 @@ Direct skeleton bone cache missing required bones:
 The root cause was local ROCK code, not FRIK API readiness. `kRequiredCoreBoneNames` declared 32 entries but only provided 31 names, so the table contained one empty required `std::string_view`. That made local skeleton readiness fail on a non-existent empty bone.
 
 The readiness gate now samples the root-flattened hands/fingers path for global skeleton readiness and leaves body-collider coverage to `BodyBoneColliderSet`, which already samples `AllFlattenedBones` and can skip missing body descriptors. Required skeleton-name tables have compile-time non-empty assertions and a focused policy test so this exact failure cannot silently return.
+
+## Body Collider Lifecycle Isolation
+
+Follow-up source review found one remaining over-coupling after the readiness fix: `generatedBodiesExistForConfig()` still treated body bone colliders as part of the core generated-body lifecycle when `bBodyBoneCollidersEnabled=true`, and lifecycle rebuild returned failure if body collider creation failed.
+
+That meant a partial or unavailable body skeleton could still close ROCK's physics-write gate even when both hand collision bodies were valid. The core lifecycle now tracks hand-generated bodies only. Body bone colliders remain enabled, but creation failures only schedule the body retry path and do not invalidate hand physics.
