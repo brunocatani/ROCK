@@ -153,6 +153,18 @@ namespace rock
             std::string name;
         };
 
+        struct WeaponAnimObjectTraceSample
+        {
+            bool present{ false };
+            int index{ -1 };
+            int parentIndex{ -1 };
+            short childPosition{ -1 };
+            std::uint32_t unk8c{ 0 };
+            std::uint64_t unk98{ 0 };
+            RE::NiNode* refNode{ nullptr };
+            const f4vr::BSFlattenedBoneTree::BoneTransforms* transform{ nullptr };
+        };
+
         constexpr std::array<const char*, 11> WEAPON_ANIM_NODE_DUMP_TARGETS{
             "Weapon",
             "WeaponLeft",
@@ -167,12 +179,36 @@ namespace rock
             "AnimObjectB",
         };
 
+        constexpr std::array<const char*, 8> WEAPON_ANIM_OBJECT_TRACE_TARGETS{
+            "AnimObjectR1",
+            "AnimObjectR2",
+            "AnimObjectR3",
+            "AnimObjectL1",
+            "AnimObjectL2",
+            "AnimObjectL3",
+            "AnimObjectA",
+            "AnimObjectB",
+        };
+
+        constexpr std::array<const char*, 2> WEAPON_ANIM_OBJECT_TRACE_ROOT_LABELS{
+            "firstPersonBoneTree.transforms",
+            "gameFlattenedBoneTree.transforms",
+        };
+
         constexpr int WEAPON_ANIM_NODE_DUMP_MAX_DEPTH = 32;
         constexpr std::size_t WEAPON_ANIM_NODE_DUMP_MAX_MATCHES_PER_NAME = 32;
         constexpr std::size_t WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES = 4096;
         constexpr std::size_t WEAPON_ANIM_NODE_DUMP_MAX_CHILD_NAMES = 16;
         constexpr std::size_t WEAPON_ANIM_NODE_DUMP_MAX_SUBTREE_NODES = 4096;
         constexpr int WEAPON_ANIM_NODE_DUMP_MAX_FLATTENED_TRANSFORMS = 768;
+        constexpr float WEAPON_ANIM_OBJECT_TRACE_LOCAL_TRANSLATE_EPSILON = 0.01f;
+        constexpr float WEAPON_ANIM_OBJECT_TRACE_LOCAL_SCALE_EPSILON = 0.001f;
+        constexpr float WEAPON_ANIM_OBJECT_TRACE_LOCAL_ROTATE_EPSILON = 0.001f;
+        constexpr float WEAPON_ANIM_OBJECT_TRACE_WORLD_TRANSLATE_EPSILON = 24.0f;
+        constexpr float WEAPON_ANIM_OBJECT_TRACE_WORLD_SCALE_EPSILON = 0.001f;
+        constexpr float WEAPON_ANIM_OBJECT_TRACE_WORLD_ROTATE_EPSILON = 0.001f;
+
+        static_assert(WEAPON_ANIM_OBJECT_TRACE_ROOT_LABELS.size() * WEAPON_ANIM_OBJECT_TRACE_TARGETS.size() <= WEAPON_ANIM_OBJECT_TRACE_STATE_COUNT);
 
         bool weaponVisualNodeVisible(const RE::NiAVObject* node);
         const char* safeNodeName(RE::NiAVObject* node);
@@ -429,6 +465,130 @@ namespace rock
             }
 
             return weaponAnimFlattenedTransformName(tree->transforms[parentIndex]);
+        }
+
+        std::size_t weaponAnimObjectTraceStateIndex(std::size_t rootIndex, std::size_t targetIndex)
+        {
+            return rootIndex * WEAPON_ANIM_OBJECT_TRACE_TARGETS.size() + targetIndex;
+        }
+
+        WeaponAnimObjectTraceSample findWeaponAnimObjectTraceSample(
+            f4vr::BSFlattenedBoneTree* tree,
+            const char* targetName)
+        {
+            WeaponAnimObjectTraceSample sample{};
+            if (!weaponAnimFlattenedTreeValid(tree) || !targetName) {
+                return sample;
+            }
+
+            for (int index = 0; index < tree->numTransforms; ++index) {
+                const auto& transform = tree->transforms[index];
+                if (!weaponAnimFlattenedTransformNameMatches(transform, targetName)) {
+                    continue;
+                }
+
+                sample.present = true;
+                sample.index = index;
+                sample.parentIndex = transform.parPos;
+                sample.childPosition = transform.childPos;
+                sample.unk8c = transform.unk8c;
+                sample.unk98 = transform.unk98;
+                sample.refNode = transform.refNode;
+                sample.transform = &transform;
+                return sample;
+            }
+
+            return sample;
+        }
+
+        void copyWeaponAnimTraceVector(const RE::NiPoint3& value, std::array<float, 3>& out)
+        {
+            out[0] = value.x;
+            out[1] = value.y;
+            out[2] = value.z;
+        }
+
+        void copyWeaponAnimTraceMatrix(const RE::NiMatrix3& value, std::array<float, 9>& out)
+        {
+            std::size_t index = 0;
+            for (std::size_t row = 0; row < 3; ++row) {
+                for (std::size_t col = 0; col < 3; ++col) {
+                    out[index++] = value.entry[row][col];
+                }
+            }
+        }
+
+        float weaponAnimTraceVectorDeltaSquared(const RE::NiPoint3& value, const std::array<float, 3>& previous)
+        {
+            const float dx = value.x - previous[0];
+            const float dy = value.y - previous[1];
+            const float dz = value.z - previous[2];
+            return dx * dx + dy * dy + dz * dz;
+        }
+
+        float weaponAnimTraceMatrixMaxDelta(const RE::NiMatrix3& value, const std::array<float, 9>& previous)
+        {
+            float maxDelta = 0.0f;
+            std::size_t index = 0;
+            for (std::size_t row = 0; row < 3; ++row) {
+                for (std::size_t col = 0; col < 3; ++col) {
+                    maxDelta = (std::max)(maxDelta, std::abs(value.entry[row][col] - previous[index++]));
+                }
+            }
+            return maxDelta;
+        }
+
+        bool weaponAnimTraceTransformChanged(
+            const RE::NiTransform& transform,
+            const WeaponAnimObjectTraceSlotState& state,
+            bool local,
+            float* outTranslateDelta,
+            float* outRotateDelta,
+            float* outScaleDelta)
+        {
+            const auto& previousTranslate = local ? state.localTranslate : state.worldTranslate;
+            const auto& previousRotate = local ? state.localRotate : state.worldRotate;
+            const float previousScale = local ? state.localScale : state.worldScale;
+            const float translateEpsilon = local ? WEAPON_ANIM_OBJECT_TRACE_LOCAL_TRANSLATE_EPSILON : WEAPON_ANIM_OBJECT_TRACE_WORLD_TRANSLATE_EPSILON;
+            const float rotateEpsilon = local ? WEAPON_ANIM_OBJECT_TRACE_LOCAL_ROTATE_EPSILON : WEAPON_ANIM_OBJECT_TRACE_WORLD_ROTATE_EPSILON;
+            const float scaleEpsilon = local ? WEAPON_ANIM_OBJECT_TRACE_LOCAL_SCALE_EPSILON : WEAPON_ANIM_OBJECT_TRACE_WORLD_SCALE_EPSILON;
+
+            const float translateDeltaSquared = weaponAnimTraceVectorDeltaSquared(transform.translate, previousTranslate);
+            const float translateDelta = std::sqrt(translateDeltaSquared);
+            const float rotateDelta = weaponAnimTraceMatrixMaxDelta(transform.rotate, previousRotate);
+            const float scaleDelta = std::abs(transform.scale - previousScale);
+            if (outTranslateDelta) {
+                *outTranslateDelta = translateDelta;
+            }
+            if (outRotateDelta) {
+                *outRotateDelta = rotateDelta;
+            }
+            if (outScaleDelta) {
+                *outScaleDelta = scaleDelta;
+            }
+
+            return translateDelta > translateEpsilon || rotateDelta > rotateEpsilon || scaleDelta > scaleEpsilon;
+        }
+
+        void storeWeaponAnimTraceTransform(
+            const RE::NiTransform& local,
+            const RE::NiTransform& world,
+            WeaponAnimObjectTraceSlotState& state)
+        {
+            copyWeaponAnimTraceVector(local.translate, state.localTranslate);
+            copyWeaponAnimTraceMatrix(local.rotate, state.localRotate);
+            state.localScale = local.scale;
+            copyWeaponAnimTraceVector(world.translate, state.worldTranslate);
+            copyWeaponAnimTraceMatrix(world.rotate, state.worldRotate);
+            state.worldScale = world.scale;
+        }
+
+        void appendWeaponAnimTraceReason(std::string& reason, const char* value)
+        {
+            if (!reason.empty()) {
+                reason += "|";
+            }
+            reason += value;
         }
 
         void logWeaponAnimNodeMapRoot(const WeaponAnimNodeDumpRoot& dumpRoot)
@@ -2016,6 +2176,7 @@ namespace rock
         resetWeaponCollisionSettingsCache();
         _weaponAnimNodeDumpFrameCounter = 0;
         _lastWeaponAnimNodeDumpKey = 0;
+        resetWeaponAnimObjectTraceState();
         clearAtomicBodyIds();
 
         if (!g_rockConfig.rockWeaponCollisionEnabled) {
@@ -2048,6 +2209,7 @@ namespace rock
         resetWeaponCollisionSettingsCache();
         _weaponAnimNodeDumpFrameCounter = 0;
         _lastWeaponAnimNodeDumpKey = 0;
+        resetWeaponAnimObjectTraceState();
         _dominantHandDisabled = false;
         _disabledHandBodyId.value = INVALID_BODY_ID;
 
@@ -2309,13 +2471,193 @@ namespace rock
     }
 
 
+    void WeaponCollision::resetWeaponAnimObjectTraceState()
+    {
+        for (auto& state : _weaponAnimObjectTraceStates) {
+            state = WeaponAnimObjectTraceSlotState{};
+        }
+    }
+
+    void WeaponCollision::traceWeaponAnimObjectSlots(void* firstPersonBoneTree, void* gameFlattenedBoneTree, std::uint64_t observedKey)
+    {
+        const std::array<f4vr::BSFlattenedBoneTree*, 2> roots{ {
+            static_cast<f4vr::BSFlattenedBoneTree*>(firstPersonBoneTree),
+            static_cast<f4vr::BSFlattenedBoneTree*>(gameFlattenedBoneTree),
+        } };
+
+        for (std::size_t rootIndex = 0; rootIndex < roots.size(); ++rootIndex) {
+            auto* tree = roots[rootIndex];
+            if (!weaponAnimFlattenedTreeValid(tree)) {
+                continue;
+            }
+
+            for (std::size_t targetIndex = 0; targetIndex < WEAPON_ANIM_OBJECT_TRACE_TARGETS.size(); ++targetIndex) {
+                const auto stateIndex = weaponAnimObjectTraceStateIndex(rootIndex, targetIndex);
+                if (stateIndex >= _weaponAnimObjectTraceStates.size()) {
+                    continue;
+                }
+
+                auto& state = _weaponAnimObjectTraceStates[stateIndex];
+                const char* targetName = WEAPON_ANIM_OBJECT_TRACE_TARGETS[targetIndex];
+                const auto sample = findWeaponAnimObjectTraceSample(tree, targetName);
+                if (!state.initialized && !sample.present) {
+                    state.initialized = true;
+                    state.present = false;
+                    continue;
+                }
+
+                std::string reason;
+                float localTranslateDelta = 0.0f;
+                float localRotateDelta = 0.0f;
+                float localScaleDelta = 0.0f;
+                float worldTranslateDelta = 0.0f;
+                float worldRotateDelta = 0.0f;
+                float worldScaleDelta = 0.0f;
+
+                if (!state.initialized) {
+                    appendWeaponAnimTraceReason(reason, "initial");
+                } else if (state.present != sample.present) {
+                    appendWeaponAnimTraceReason(reason, sample.present ? "found" : "lost");
+                }
+
+                if (state.initialized && state.observedKey != observedKey) {
+                    appendWeaponAnimTraceReason(reason, "weapon-key");
+                }
+
+                if (sample.present && sample.transform) {
+                    auto* refNode = sample.refNode;
+                    const auto refAddress = reinterpret_cast<std::uintptr_t>(refNode);
+                    const auto refFlags = static_cast<std::uint32_t>(refNode ? refNode->flags.flags : 0);
+                    if (state.initialized && state.present) {
+                        if (state.index != sample.index) {
+                            appendWeaponAnimTraceReason(reason, "index");
+                        }
+                        if (state.parentIndex != sample.parentIndex) {
+                            appendWeaponAnimTraceReason(reason, "parent");
+                        }
+                        if (state.childPosition != sample.childPosition) {
+                            appendWeaponAnimTraceReason(reason, "child-pos");
+                        }
+                        if (state.refNode != refAddress) {
+                            appendWeaponAnimTraceReason(reason, "ref-node");
+                        }
+                        if (state.refFlags != refFlags) {
+                            appendWeaponAnimTraceReason(reason, "ref-flags");
+                        }
+                        if (state.unk8c != sample.unk8c) {
+                            appendWeaponAnimTraceReason(reason, "unk8c");
+                        }
+                        if (state.unk98 != sample.unk98) {
+                            appendWeaponAnimTraceReason(reason, "unk98");
+                        }
+                        if (weaponAnimTraceTransformChanged(sample.transform->local, state, true, &localTranslateDelta, &localRotateDelta, &localScaleDelta)) {
+                            appendWeaponAnimTraceReason(reason, "local");
+                        }
+                        if (weaponAnimTraceTransformChanged(sample.transform->world, state, false, &worldTranslateDelta, &worldRotateDelta, &worldScaleDelta)) {
+                            appendWeaponAnimTraceReason(reason, "world-jump");
+                        }
+                    }
+
+                    if (!reason.empty()) {
+                        ROCK_LOG_INFO(Weapon,
+                            "WeaponAnimObjectTrace source='{}' target='{}' reason='{}' key={:016X} index={} parentIndex={} parentName='{}' childPos={} refNode='{}'/0x{:X} refFlags=0x{:X} refAppCulled={} refVisible={} localDelta=({:.3f},{:.4f},{:.4f}) worldDelta=({:.3f},{:.4f},{:.4f}) localT=({:.3f},{:.3f},{:.3f}) localScale={:.3f} localR=[{:.3f},{:.3f},{:.3f};{:.3f},{:.3f},{:.3f};{:.3f},{:.3f},{:.3f}] worldT=({:.3f},{:.3f},{:.3f}) worldScale={:.3f} worldR=[{:.3f},{:.3f},{:.3f};{:.3f},{:.3f},{:.3f};{:.3f},{:.3f},{:.3f}] unk8c=0x{:X} unk98=0x{:X}",
+                            WEAPON_ANIM_OBJECT_TRACE_ROOT_LABELS[rootIndex],
+                            targetName,
+                            reason,
+                            observedKey,
+                            sample.index,
+                            sample.parentIndex,
+                            weaponAnimFlattenedParentName(tree, sample.parentIndex),
+                            sample.childPosition,
+                            safeNodeName(refNode),
+                            refAddress,
+                            refFlags,
+                            refNode && refNode->GetAppCulled() ? "yes" : "no",
+                            refNode && weaponVisualNodeVisible(refNode) ? "yes" : "no",
+                            localTranslateDelta,
+                            localRotateDelta,
+                            localScaleDelta,
+                            worldTranslateDelta,
+                            worldRotateDelta,
+                            worldScaleDelta,
+                            sample.transform->local.translate.x,
+                            sample.transform->local.translate.y,
+                            sample.transform->local.translate.z,
+                            sample.transform->local.scale,
+                            sample.transform->local.rotate.entry[0][0],
+                            sample.transform->local.rotate.entry[0][1],
+                            sample.transform->local.rotate.entry[0][2],
+                            sample.transform->local.rotate.entry[1][0],
+                            sample.transform->local.rotate.entry[1][1],
+                            sample.transform->local.rotate.entry[1][2],
+                            sample.transform->local.rotate.entry[2][0],
+                            sample.transform->local.rotate.entry[2][1],
+                            sample.transform->local.rotate.entry[2][2],
+                            sample.transform->world.translate.x,
+                            sample.transform->world.translate.y,
+                            sample.transform->world.translate.z,
+                            sample.transform->world.scale,
+                            sample.transform->world.rotate.entry[0][0],
+                            sample.transform->world.rotate.entry[0][1],
+                            sample.transform->world.rotate.entry[0][2],
+                            sample.transform->world.rotate.entry[1][0],
+                            sample.transform->world.rotate.entry[1][1],
+                            sample.transform->world.rotate.entry[1][2],
+                            sample.transform->world.rotate.entry[2][0],
+                            sample.transform->world.rotate.entry[2][1],
+                            sample.transform->world.rotate.entry[2][2],
+                            sample.unk8c,
+                            sample.unk98);
+                    }
+
+                    state.index = sample.index;
+                    state.parentIndex = sample.parentIndex;
+                    state.childPosition = sample.childPosition;
+                    state.refNode = refAddress;
+                    state.refFlags = refFlags;
+                    state.unk8c = sample.unk8c;
+                    state.unk98 = sample.unk98;
+                    storeWeaponAnimTraceTransform(sample.transform->local, sample.transform->world, state);
+                } else if (!reason.empty()) {
+                    ROCK_LOG_INFO(Weapon,
+                        "WeaponAnimObjectTrace source='{}' target='{}' reason='{}' key={:016X} present=no previousIndex={} previousParentIndex={} previousRefNode=0x{:X}",
+                        WEAPON_ANIM_OBJECT_TRACE_ROOT_LABELS[rootIndex],
+                        targetName,
+                        reason,
+                        observedKey,
+                        state.index,
+                        state.parentIndex,
+                        state.refNode);
+
+                    state.index = -1;
+                    state.parentIndex = -1;
+                    state.childPosition = -1;
+                    state.refNode = 0;
+                    state.refFlags = 0;
+                    state.unk8c = 0;
+                    state.unk98 = 0;
+                }
+
+                state.initialized = true;
+                state.present = sample.present;
+                state.observedKey = observedKey;
+            }
+        }
+    }
+
+
     void WeaponCollision::maybeDumpWeaponAnimNodeDiagnostics(RE::NiAVObject* updateWeaponNode, std::uint64_t observedKey)
     {
         if (!g_rockConfig.rockDebugDumpWeaponAnimNodes) {
             _weaponAnimNodeDumpFrameCounter = 0;
             _lastWeaponAnimNodeDumpKey = 0;
+            resetWeaponAnimObjectTraceState();
             return;
         }
+
+        auto* firstPersonBoneTree = f4vr::getFirstPersonBoneTree();
+        auto* gameFlattenedBoneTree = f4vr::getFlattenedBoneTree();
+        traceWeaponAnimObjectSlots(firstPersonBoneTree, gameFlattenedBoneTree, observedKey);
 
         const bool generationChanged = observedKey != _lastWeaponAnimNodeDumpKey;
         const int intervalFrames = (std::max)(1, g_rockConfig.rockDebugWeaponAnimNodeDumpIntervalFrames);
@@ -2328,9 +2670,7 @@ namespace rock
         _lastWeaponAnimNodeDumpKey = observedKey;
 
         auto* firstPersonSkeleton = f4vr::getFirstPersonSkeleton();
-        auto* firstPersonBoneTree = f4vr::getFirstPersonBoneTree();
         auto* gameRootNode = f4vr::getRootNode();
-        auto* gameFlattenedBoneTree = f4vr::getFlattenedBoneTree();
         auto* weaponNode = f4vr::getWeaponNode();
         auto* player = f4vr::getPlayer();
         auto* playerNodes = player ? f4vr::getPlayerNodes() : nullptr;
