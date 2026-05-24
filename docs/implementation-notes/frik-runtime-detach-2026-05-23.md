@@ -70,3 +70,16 @@ EXCEPTION_ACCESS_VIOLATION at ROCK.dll f4cf::f4vr::getWorldRootNode
 ```
 
 The runtime sampler now treats missing player/root graph as a closed skeleton-readiness state and does not call unsafe F4VR player-node helpers until the required root graph exists. `DirectSkeletonBoneReader` also resolves the root flattened tree through guarded local checks, and the native player collision scan no longer calls the unsafe `getRootNode()` helper directly.
+
+## Startup Readiness Follow-Up
+
+2026-05-23 runtime logs showed ROCK loading successfully but never creating physics after `kSkeletonReady`:
+
+```text
+Direct skeleton bone cache rebuilt: ... required=61/62 mode=CoreBodyAndFingers
+Direct skeleton bone cache missing required bones:
+```
+
+The root cause was local ROCK code, not FRIK API readiness. `kRequiredCoreBoneNames` declared 32 entries but only provided 31 names, so the table contained one empty required `std::string_view`. That made local skeleton readiness fail on a non-existent empty bone.
+
+The readiness gate now samples the root-flattened hands/fingers path for global skeleton readiness and leaves body-collider coverage to `BodyBoneColliderSet`, which already samples `AllFlattenedBones` and can skip missing body descriptors. Required skeleton-name tables have compile-time non-empty assertions and a focused policy test so this exact failure cannot silently return.

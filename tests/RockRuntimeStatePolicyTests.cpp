@@ -1,6 +1,8 @@
+#include <cstddef>
 #include <cstdio>
 
 #include "physics-interaction/core/RockRuntimeStatePolicy.h"
+#include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 
 namespace
 {
@@ -39,6 +41,7 @@ namespace
 int main()
 {
     using namespace rock::runtime_state_policy;
+    namespace skeleton_debug = rock::skeleton_bone_debug_math;
 
     bool ok = true;
 
@@ -72,6 +75,17 @@ int main()
     ok &= expectFalse("invalid player-space sample clears validity", decision.valid);
     ok &= expectFalse("invalid player-space sample clears tracker", tracker.hasPrevious);
 
+    for (const auto name : skeleton_debug::requiredCoreBoneNames()) {
+        ok &= expectFalse("required core bone table has no empty entries", name.empty());
+    }
+    for (const auto name : skeleton_debug::requiredFingerBoneNames()) {
+        ok &= expectFalse("required finger bone table has no empty entries", name.empty());
+    }
+    for (const auto name : skeleton_debug::handsAndForearmsBoneNames()) {
+        ok &= expectFalse("hands/forearms bone table has no empty entries", name.empty());
+    }
+    ok &= expectEqual("core+finger required bone count", skeleton_debug::estimatedCoreBodyAndFingerBoneCount(), static_cast<std::size_t>(61));
+
     ok &= expectTrue("complete local skeleton readiness passes", evaluateSkeletonReadiness(SkeletonReadinessInput{
                                                                .playerAvailable = true,
                                                                .rootNodeAvailable = true,
@@ -99,15 +113,6 @@ int main()
                                                                             .rootParentAttached = true,
                                                                             .flattenedTreeValid = true,
                                                                             .requiredHandBonesResolved = false,
-                                                                        }));
-    ok &= expectFalse("required body bones block local skeleton readiness", evaluateSkeletonReadiness(SkeletonReadinessInput{
-                                                                            .playerAvailable = true,
-                                                                            .rootNodeAvailable = true,
-                                                                            .rootParentAttached = true,
-                                                                            .flattenedTreeValid = true,
-                                                                            .requiredHandBonesResolved = true,
-                                                                            .bodyBonesRequired = true,
-                                                                            .requiredBodyBonesResolved = false,
                                                                         }));
 
     return ok ? 0 : 1;

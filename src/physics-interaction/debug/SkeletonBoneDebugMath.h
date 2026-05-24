@@ -103,7 +103,7 @@ namespace rock::skeleton_bone_debug_math
         "RArm_Finger51", "RArm_Finger52", "RArm_Finger53"
     };
 
-    inline constexpr std::array<std::string_view, 32> kRequiredCoreBoneNames{
+    inline constexpr std::array<std::string_view, 31> kRequiredCoreBoneNames{
         "COM", "Pelvis", "SPINE1", "SPINE2", "Chest", "Neck", "Head",
         "LArm_Collarbone", "LArm_UpperArm", "LArm_ForeArm1", "LArm_ForeArm2", "LArm_ForeArm3", "LArm_Hand",
         "RArm_Collarbone", "RArm_UpperArm", "RArm_ForeArm1", "RArm_ForeArm2", "RArm_ForeArm3", "RArm_Hand",
@@ -184,8 +184,24 @@ namespace rock::skeleton_bone_debug_math
         BoneColliderDescriptor{ BoneColliderRole::FootSegment, body_zone::BodyZoneKind::RightFoot, body_zone::BodyZoneSide::Right, "RLeg_Foot", "RLeg_Toe1", 3.5f, 0.35f }
     };
 
+    template <std::size_t Count>
+    inline constexpr bool allBoneNamesNonEmpty(const std::array<std::string_view, Count>& names)
+    {
+        for (const auto name : names) {
+            if (name.empty()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static_assert(allBoneNamesNonEmpty(kRequiredFingerBoneNames), "Required finger bone table contains an empty name.");
+    static_assert(allBoneNamesNonEmpty(kRequiredCoreBoneNames), "Required core bone table contains an empty name.");
+    static_assert(allBoneNamesNonEmpty(kHandsAndForearmsBoneNames), "Hands/forearms bone table contains an empty name.");
+
     inline constexpr const std::array<std::string_view, 30>& requiredFingerBoneNames() { return kRequiredFingerBoneNames; }
-    inline constexpr const std::array<std::string_view, 32>& requiredCoreBoneNames() { return kRequiredCoreBoneNames; }
+    inline constexpr const std::array<std::string_view, 31>& requiredCoreBoneNames() { return kRequiredCoreBoneNames; }
+    inline constexpr const std::array<std::string_view, 16>& handsAndForearmsBoneNames() { return kHandsAndForearmsBoneNames; }
     inline constexpr std::size_t estimatedCoreBodyAndFingerBoneCount() { return kRequiredCoreBoneNames.size() + kRequiredFingerBoneNames.size(); }
     inline constexpr std::size_t skeletonOverlayBudget() { return 768; }
 

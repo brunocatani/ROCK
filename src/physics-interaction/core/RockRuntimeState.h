@@ -40,7 +40,6 @@ namespace rock::runtime_state
         bool localSkeletonReady = false;
         bool localSkeletonRootAttached = false;
         bool localSkeletonRequiredHandBonesReady = false;
-        bool localSkeletonRequiredBodyBonesReady = false;
         PlayerSpaceFrame playerSpace{};
     };
 

@@ -39,13 +39,8 @@ namespace rock
                 const auto& core = skeleton_bone_debug_math::requiredCoreBoneNames();
                 names.insert(names.end(), core.begin(), core.end());
             } else if (mode == DebugSkeletonBoneMode::HandsAndForearmsOnly) {
-                for (std::string_view name : std::array<std::string_view, 16>{
-                         "LArm_ForeArm1", "LArm_ForeArm2", "LArm_ForeArm3", "LArm_Hand",
-                         "RArm_ForeArm1", "RArm_ForeArm2", "RArm_ForeArm3", "RArm_Hand",
-                         "LArm_UpperArm", "RArm_UpperArm", "LArm_Collarbone", "RArm_Collarbone",
-                         "LArm_UpperTwist1", "LArm_UpperTwist2", "RArm_UpperTwist1", "RArm_UpperTwist2" }) {
-                    names.push_back(name);
-                }
+                const auto& handsAndForearms = skeleton_bone_debug_math::handsAndForearmsBoneNames();
+                names.insert(names.end(), handsAndForearms.begin(), handsAndForearms.end());
             }
 
             const auto& fingers = skeleton_bone_debug_math::requiredFingerBoneNames();
@@ -259,9 +254,18 @@ namespace rock
                 if (!missing.empty()) {
                     missing += ",";
                 }
-                missing += name;
+                missing += "'";
+                if (name.empty()) {
+                    missing += "<empty>";
+                } else {
+                    missing += name;
+                }
+                missing += "'";
             }
-            ROCK_LOG_WARN(Hand, "Direct skeleton bone cache missing required bones: {}", missing);
+            ROCK_LOG_WARN(Hand,
+                "Direct skeleton bone cache missing required bones count={}: {}",
+                _cachedMissingRequiredBones.size(),
+                missing);
         }
 
         return !_cachedBones.empty();

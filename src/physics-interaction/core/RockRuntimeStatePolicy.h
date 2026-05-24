@@ -84,8 +84,6 @@ namespace rock::runtime_state_policy
         bool rootParentAttached = false;
         bool flattenedTreeValid = false;
         bool requiredHandBonesResolved = false;
-        bool bodyBonesRequired = false;
-        bool requiredBodyBonesResolved = false;
     };
 
     [[nodiscard]] inline bool evaluateSkeletonReadiness(const SkeletonReadinessInput& input)
@@ -94,7 +92,6 @@ namespace rock::runtime_state_policy
             input.rootNodeAvailable &&
             input.rootParentAttached &&
             input.flattenedTreeValid &&
-            input.requiredHandBonesResolved &&
-            (!input.bodyBonesRequired || input.requiredBodyBonesResolved);
+            input.requiredHandBonesResolved;
     }
 }

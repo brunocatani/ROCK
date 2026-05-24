@@ -104,6 +104,17 @@ namespace rock::runtime_state
             return false;
         }
 
+        [[nodiscard]] bool snapshotHasRequiredFingerBones(const DirectSkeletonBoneSnapshot& snapshot)
+        {
+            for (const auto name : skeleton_bone_debug_math::requiredFingerBoneNames()) {
+                if (!snapshotHasBone(snapshot, name)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         [[nodiscard]] PlayerSpaceFrame samplePlayerSpace()
         {
             PlayerSpaceFrame frame{};
@@ -135,10 +146,8 @@ namespace rock::runtime_state
 
         [[nodiscard]] bool sampleLocalSkeletonReady(RuntimeFrameSnapshot& snapshot)
         {
-            const bool bodyBonesRequired = g_rockConfig.rockBodyBoneCollidersEnabled;
             auto readinessInput = runtime_state_policy::SkeletonReadinessInput{
                 .playerAvailable = snapshot.playerAvailable,
-                .bodyBonesRequired = bodyBonesRequired,
             };
 
             if (!snapshot.playerAvailable) {
@@ -161,24 +170,18 @@ namespace rock::runtime_state
             }
 
             DirectSkeletonBoneSnapshot boneSnapshot{};
-            const auto mode = bodyBonesRequired ?
-                skeleton_bone_debug_math::DebugSkeletonBoneMode::CoreBodyAndFingers :
-                skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly;
             const bool captured = s_skeletonReader.capture(
-                mode,
+                skeleton_bone_debug_math::DebugSkeletonBoneMode::HandsAndForearmsOnly,
                 skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
                 boneSnapshot);
 
             const bool hasHands = captured && snapshotHasBone(boneSnapshot, "RArm_Hand") && snapshotHasBone(boneSnapshot, "LArm_Hand");
             const bool handBonesReady =
                 hasHands &&
-                (!g_rockConfig.rockHandBoneCollidersRequireAllFingerBones || boneSnapshot.missingRequiredBones.empty());
-            const bool bodyBonesReady = !bodyBonesRequired || (captured && boneSnapshot.missingRequiredBones.empty());
+                (!g_rockConfig.rockHandBoneCollidersRequireAllFingerBones || snapshotHasRequiredFingerBones(boneSnapshot));
 
             snapshot.localSkeletonRequiredHandBonesReady = handBonesReady;
-            snapshot.localSkeletonRequiredBodyBonesReady = bodyBonesReady;
             readinessInput.requiredHandBonesResolved = handBonesReady;
-            readinessInput.requiredBodyBonesResolved = bodyBonesReady;
 
             return runtime_state_policy::evaluateSkeletonReadiness(readinessInput);
         }
