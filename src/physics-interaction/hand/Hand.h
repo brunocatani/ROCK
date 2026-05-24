@@ -730,6 +730,7 @@ namespace rock
         held_object_drive_policy::HeldBodySetDriveDecision _heldDriveDecision{};
         held_object_drive_policy::HeldBodySetDriveDecision _pullDriveDecision{};
         bool _heldObjectIsLooseWeapon = false;
+        bool _grabPendingInitialTouchHeldFinalFreeze = false;
         bool _grabFingerPosePublished = false;
         int _grabConvergeStableInsidePocketFrames = 0;
         float _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
