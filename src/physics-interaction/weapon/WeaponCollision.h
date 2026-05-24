@@ -140,6 +140,8 @@ namespace rock
 
         void invalidateForScaleChange(RE::hknpWorld* world);
 
+        void invalidateForVisualGraphRefresh(RE::hknpWorld* world, const char* reason);
+
         void updateBodiesFromCurrentSourceTransforms(RE::hknpWorld* world, RE::NiAVObject* fallbackWeaponNode, float sourceDeltaSeconds);
 
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);

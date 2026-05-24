@@ -1433,10 +1433,21 @@ namespace rock
         }
 
         const bool menuBlocking = runtime.localMenuBlocking;
+        auto updateWeaponVisualGraphRefresh = [&](bool graphMenuBlocking, RE::NiAVObject* weaponNode) {
+            return _weaponVisualGraphRefresh.update(WeaponVisualGraphRefreshCoordinator::UpdateInput{
+                .enabled = g_rockConfig.rockEnabled && g_rockConfig.rockWeaponCollisionEnabled,
+                .visualAuthorityAvailable = runtime.visualAuthorityAvailable,
+                .skeletonReady = runtime.localSkeletonReady,
+                .menuBlocking = graphMenuBlocking,
+                .weaponDrawn = runtime.weaponDrawn,
+                .weaponNode = weaponNode,
+            });
+        };
         if (weapon_authority_lifecycle_policy::shouldClearWeaponAuthorityForUpdateInterruption(
                 menuBlocking,
                 false,
                 false)) {
+            updateWeaponVisualGraphRefresh(true, nullptr);
             if (_initialized) {
                 _twoHandedGrip.reset();
                 auto* bhkMenu = getPlayerBhkWorld();
@@ -1482,6 +1493,7 @@ namespace rock
                 false,
                 !g_rockConfig.rockEnabled,
                 false)) {
+            _weaponVisualGraphRefresh.reset();
             if (_initialized) {
                 shutdown();
             }
@@ -1679,6 +1691,14 @@ namespace rock
         }
 
         RE::NiNode* weaponNode = resolveEquippedWeaponInteractionNode();
+        const auto weaponGraphRefresh = updateWeaponVisualGraphRefresh(false, weaponNode);
+        if (weaponGraphRefresh.refreshApplied) {
+            _weaponCollision.invalidateForVisualGraphRefresh(hknp, "equipped-weapon-3d-update-flag");
+            clearLeftWeaponContact();
+        }
+        if (weaponGraphRefresh.deferWeaponCollision) {
+            weaponNode = nullptr;
+        }
         const bool rightHandWeaponEquipped = weaponNode != nullptr;
         bool leftSupportGripActive = false;
         if (rightHandWeaponEquipped) {
@@ -2247,6 +2267,7 @@ namespace rock
         _bodyContactRuntime.reset();
         _shoulderStashStates = {};
         _weaponCollision.shutdown();
+        _weaponVisualGraphRefresh.reset();
         _bodyBoneColliders.reset();
         _generatedBodyStepDrive.reset();
         markGeneratedBodiesInvalidated();

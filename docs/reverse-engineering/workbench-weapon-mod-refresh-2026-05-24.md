@@ -63,3 +63,11 @@ Candidate next verification:
 
 - Hook or instrument the post-build workbench path and the `BGSOnPlayerModArmorWeaponEvent` sink to confirm event timing relative to the first-person weapon graph.
 - Identify a safe native first-person/equipped-weapon rebuild function before attempting to force refresh. Do not call the reference `AttachModToReference` path for inventory items without a separate ownership/lifetime review.
+
+## Implemented ROCK Boundary
+
+Follow-up implementation uses the actor branch of `BGSObjectInstanceExtra::AttachModToReference` without calling the mod-attach function itself. Ghidra disassembly shows the actor branch ends in the virtual call at `+0x3B8` with argument `0x37`, which maps to `TESObjectREFR::Set3DUpdateFlag(RESET_3D_FLAGS)` with model, skin, head, scale, and skeleton bits.
+
+The earlier candidate `Actor::HandleItemEquip(false)` was rejected for this bug because live behavior showed equip/unequip does not advance the missing part registration. The observed failure is one mod change behind: a later workbench change registers the previous missing part while the newly changed part becomes the missing one.
+
+ROCK now owns a separate native graph-refresh coordinator outside generated weapon collision. It watches the equipped weapon mod-instance signature, schedules a post-change player reference 3D dirty flag, and invalidates generated weapon collision on the refresh frame so collision is rebuilt only after the native graph registration has been actively triggered.
