@@ -209,6 +209,7 @@ namespace rock
         bool weaponCollisionSettingsChanged() const;
         void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);
         void clearGeneratedSourceCompletenessTracking();
+        void clearPendingWeaponVisualRebuild();
         void resetWeaponCollisionSettingsCache();
 
         std::uint64_t getEquippedWeaponKey(
@@ -258,6 +259,10 @@ namespace rock
         float _cachedPointDedupGrid{ -1.0f };
         int _cachedSupportFitTargetPoints{ -1 };
         float _cachedSupportFitMaxErrorGameUnits{ -1.0f };
+        std::uint64_t _pendingWeaponVisualRebuildKey{ 0 };
+        std::uint64_t _pendingWeaponVisualSourceSignature{ 0 };
+        std::size_t _pendingWeaponVisualSourceCount{ 0 };
+        int _pendingWeaponVisualStableFrames{ 0 };
         int _weaponAnimNodeDumpFrameCounter{ 0 };
         std::uint64_t _lastWeaponAnimNodeDumpKey{ 0 };
 

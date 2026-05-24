@@ -30,6 +30,8 @@ namespace
     constexpr int kDefaultWeaponCollisionSupportFitTargetPoints = 96;
     constexpr int kMinWeaponCollisionSupportFitTargetPoints = 4;
     constexpr int kMaxWeaponCollisionSupportFitTargetPoints = 252;
+    constexpr int kDefaultWeaponCollisionVisualStabilizationFrames = 8;
+    constexpr int kMaxWeaponCollisionVisualStabilizationFrames = 60;
     constexpr float kDefaultWeaponCollisionSupportFitMaxErrorGameUnits = 0.5f;
     constexpr float kDefaultSoftContactWeaponHandRadiusPaddingGameUnits = 0.25f;
     constexpr float kDefaultSoftContactWeaponHandMaxCorrectionGameUnits = 3.0f;
@@ -120,6 +122,7 @@ namespace rock
         rockWeaponCollisionBlocksSpells = false;
         rockWeaponCollisionStaticWorldEnabled = true;
         rockWeaponCollisionGroupingMode = weapon_collision_grouping_policy::kDefaultWeaponCollisionGroupingMode;
+        rockWeaponCollisionVisualStabilizationFrames = kDefaultWeaponCollisionVisualStabilizationFrames;
         rockWeaponCollisionConvexRadius = 0.01f;
         rockWeaponCollisionPointDedupGrid = 0.002f;
         rockWeaponCollisionSupportFitTargetPoints = kDefaultWeaponCollisionSupportFitTargetPoints;
@@ -570,6 +573,16 @@ namespace rock
                 rockWeaponCollisionGroupingMode,
                 weapon_collision_grouping_policy::weaponCollisionGroupingModeName(sanitizedWeaponCollisionGroupingMode));
             rockWeaponCollisionGroupingMode = static_cast<int>(sanitizedWeaponCollisionGroupingMode);
+        }
+        rockWeaponCollisionVisualStabilizationFrames =
+            static_cast<int>(ini.GetLongValue(SECTION, "iWeaponCollisionVisualStabilizationFrames", rockWeaponCollisionVisualStabilizationFrames));
+        if (rockWeaponCollisionVisualStabilizationFrames < 0 ||
+            rockWeaponCollisionVisualStabilizationFrames > kMaxWeaponCollisionVisualStabilizationFrames) {
+            ROCK_LOG_WARN(Config,
+                "Invalid iWeaponCollisionVisualStabilizationFrames={} - using {}",
+                rockWeaponCollisionVisualStabilizationFrames,
+                kDefaultWeaponCollisionVisualStabilizationFrames);
+            rockWeaponCollisionVisualStabilizationFrames = kDefaultWeaponCollisionVisualStabilizationFrames;
         }
         rockWeaponCollisionConvexRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionConvexRadius", rockWeaponCollisionConvexRadius));
         rockWeaponCollisionPointDedupGrid = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionPointDedupGrid", rockWeaponCollisionPointDedupGrid));

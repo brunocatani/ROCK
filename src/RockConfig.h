@@ -81,6 +81,7 @@ namespace rock
         bool rockWeaponCollisionBlocksSpells = false;
         bool rockWeaponCollisionStaticWorldEnabled = true;
         int rockWeaponCollisionGroupingMode = weapon_collision_grouping_policy::kDefaultWeaponCollisionGroupingMode;
+        int rockWeaponCollisionVisualStabilizationFrames = 8;
         float rockWeaponCollisionConvexRadius = 0.01f;
         float rockWeaponCollisionPointDedupGrid = 0.002f;
         int rockWeaponCollisionSupportFitTargetPoints = 96;

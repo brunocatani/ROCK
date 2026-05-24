@@ -1254,6 +1254,14 @@ namespace rock
         _cachedGeneratedSourceCompleteness = {};
     }
 
+    void WeaponCollision::clearPendingWeaponVisualRebuild()
+    {
+        _pendingWeaponVisualRebuildKey = 0;
+        _pendingWeaponVisualSourceSignature = 0;
+        _pendingWeaponVisualSourceCount = 0;
+        _pendingWeaponVisualStableFrames = 0;
+    }
+
     void WeaponCollision::resetWeaponCollisionSettingsCache()
     {
         _cachedConvexRadius = -1.0f;
@@ -1758,6 +1766,7 @@ namespace rock
         resetWeaponBodySetGeneration();
         _weaponBodySetEpoch = 0;
         clearGeneratedSourceCompletenessTracking();
+        clearPendingWeaponVisualRebuild();
         _usingReplacementWeaponBodies = false;
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
@@ -1787,6 +1796,7 @@ namespace rock
         resetWeaponBodySetGeneration();
         _weaponBodySetEpoch = 0;
         clearGeneratedSourceCompletenessTracking();
+        clearPendingWeaponVisualRebuild();
         _cachedWorld = nullptr;
         _cachedBhkWorld = nullptr;
         _usingReplacementWeaponBodies = false;
@@ -1809,6 +1819,7 @@ namespace rock
         auto clearCurrentWeaponState = [&]() {
             _cachedWeaponKey = 0;
             clearGeneratedSourceCompletenessTracking();
+            clearPendingWeaponVisualRebuild();
             resetWeaponBodySetGeneration();
             resetWeaponCollisionSettingsCache();
             _driveRebuildRequested.store(false, std::memory_order_release);
@@ -1881,102 +1892,169 @@ namespace rock
         }
 
         if (rebuildRequired) {
-            std::vector<GeneratedHullSource> generatedSources;
-            const std::size_t generatedCount = findGeneratedWeaponShapeSources(weaponNode, generatedSources);
-            const bool hasBuildableSource = std::any_of(generatedSources.begin(), generatedSources.end(), [](const GeneratedHullSource& source) {
-                return pointCloudCanBuildHull(source.localPointsGame);
-            });
-            const auto generatedSummary = summarizeGeneratedSources(generatedSources);
+            const bool generationDrivenRebuild = keyChanged || missingBodies;
+            const int requiredStableFrames = (std::max)(0, g_rockConfig.rockWeaponCollisionVisualStabilizationFrames);
+            const bool stabilizeVisualRebuild = generationDrivenRebuild && requiredStableFrames > 0;
 
-            if (!hasBuildableSource || generatedCount == 0 || generatedSummary.signature == 0) {
-                ROCK_LOG_SAMPLE_WARN(Weapon,
+            if (stabilizeVisualRebuild && !weaponVisualNodeVisible(weaponNode)) {
+                /*
+                 * Weapon mod swaps can expose a transient app-culled Weapon root
+                 * while child TriShapes still look locally visible. Replacing the
+                 * active body set from that frame can lock in an incomplete hull
+                 * inventory, so keep the current bodies until the visual tree has
+                 * presented a stable, visible source signature.
+                 */
+                _pendingWeaponVisualRebuildKey = observedKey;
+                _pendingWeaponVisualSourceSignature = 0;
+                _pendingWeaponVisualSourceCount = 0;
+                _pendingWeaponVisualStableFrames = 0;
+                ROCK_LOG_SAMPLE_INFO(Weapon,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "Generated weapon mesh collision unavailable from current visible geometry - destroying stale bodies cachedKey={:016X} observedKey={:016X} visualRoots={} visualNodes={} visibleTriShapes={} sources={} missingGeometry={} invisibleNodes={}",
+                    "Generated weapon collision rebuild deferred: visual root not ready cachedKey={:016X} observedKey={:016X} root='{}' flags=0x{:X} appCulled={} visibleTriShapes={} visualNodes={} invisibleNodes={} requiredStableFrames={}",
                     _cachedWeaponKey,
                     observedKey,
-                    visualKeyStats.rootCount,
-                    visualKeyStats.nodeCount,
+                    safeNodeName(weaponNode),
+                    static_cast<std::uint32_t>(weaponNode->flags.flags),
+                    weaponNode->GetAppCulled() ? "yes" : "no",
                     visualKeyStats.visibleTriShapeCount,
-                    generatedCount,
-                    visualKeyStats.missingRendererCount + visualKeyStats.emptyGeometryCount,
-                    visualKeyStats.invisibleNodeCount);
-                if (hasWeaponBody()) {
-                    destroyWeaponBody(world);
-                } else {
-                    clearAtomicBodyIds();
-                    resetWeaponBodySetGeneration();
-                }
-                _cachedWeaponKey = 0;
-                clearGeneratedSourceCompletenessTracking();
-                return;
-            }
-
-            const bool replacingExisting = hasWeaponBody();
-            auto& targetBank = replacingExisting ? inactiveWeaponBodies() : activeWeaponBodies();
-            if (replacingExisting) {
-                destroyWeaponBodyBank(targetBank, true);
-            }
-
-            const auto createdCount = createGeneratedWeaponBodiesInBank(
-                world,
-                generatedSources,
-                targetBank,
-                GeneratedWeaponBodyCreateOptions{
-                    .collisionEnabledOnCreate = false,
+                    visualKeyStats.nodeCount,
+                    visualKeyStats.invisibleNodeCount,
+                    requiredStableFrames);
+            } else {
+                std::vector<GeneratedHullSource> generatedSources;
+                const std::size_t generatedCount = findGeneratedWeaponShapeSources(weaponNode, generatedSources);
+                const bool hasBuildableSource = std::any_of(generatedSources.begin(), generatedSources.end(), [](const GeneratedHullSource& source) {
+                    return pointCloudCanBuildHull(source.localPointsGame);
                 });
+                const auto generatedSummary = summarizeGeneratedSources(generatedSources);
 
-            if (createdCount == 0) {
-                if (replacingExisting) {
-                    destroyWeaponBodyBank(targetBank, true);
-                    ROCK_LOG_WARN(Weapon,
-                        "Generated weapon replacement creation failed - destroying stale active bodies cachedKey={:016X} observedKey={:016X} sources={}",
+                if (stabilizeVisualRebuild) {
+                    const bool samePendingSource =
+                        _pendingWeaponVisualRebuildKey == observedKey &&
+                        _pendingWeaponVisualSourceSignature == generatedSummary.signature &&
+                        _pendingWeaponVisualSourceCount == generatedCount;
+
+                    _pendingWeaponVisualRebuildKey = observedKey;
+                    _pendingWeaponVisualSourceSignature = generatedSummary.signature;
+                    _pendingWeaponVisualSourceCount = generatedCount;
+                    _pendingWeaponVisualStableFrames = samePendingSource ? _pendingWeaponVisualStableFrames + 1 : 1;
+
+                    if (_pendingWeaponVisualStableFrames < requiredStableFrames) {
+                        ROCK_LOG_SAMPLE_INFO(Weapon,
+                            g_rockConfig.rockLogSampleMilliseconds,
+                            "Generated weapon collision rebuild waiting for stable visual sources cachedKey={:016X} observedKey={:016X} stableFrames={}/{} sources={} signature={:016X} buildable={} visualRoots={} visibleTriShapes={}",
+                            _cachedWeaponKey,
+                            observedKey,
+                            _pendingWeaponVisualStableFrames,
+                            requiredStableFrames,
+                            generatedCount,
+                            generatedSummary.signature,
+                            hasBuildableSource ? "yes" : "no",
+                            visualKeyStats.rootCount,
+                            visualKeyStats.visibleTriShapeCount);
+                        const bool hasActiveWeaponCollision = hasWeaponBody() && getCurrentWeaponGenerationKey() != 0;
+                        if (hasActiveWeaponCollision && !_dominantHandDisabled && dominantHandBodyId.value != INVALID_BODY_ID) {
+                            disableDominantHandCollision(world, dominantHandBodyId);
+                        } else if (!hasActiveWeaponCollision && _dominantHandDisabled) {
+                            enableDominantHandCollision(world);
+                        }
+                        return;
+                    }
+                }
+
+                if (!hasBuildableSource || generatedCount == 0 || generatedSummary.signature == 0) {
+                    ROCK_LOG_SAMPLE_WARN(Weapon,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "Generated weapon mesh collision unavailable from current visible geometry - destroying stale bodies cachedKey={:016X} observedKey={:016X} visualRoots={} visualNodes={} visibleTriShapes={} sources={} missingGeometry={} invisibleNodes={}",
                         _cachedWeaponKey,
                         observedKey,
-                        generatedCount);
-                    destroyWeaponBody(world);
-                } else {
+                        visualKeyStats.rootCount,
+                        visualKeyStats.nodeCount,
+                        visualKeyStats.visibleTriShapeCount,
+                        generatedCount,
+                        visualKeyStats.missingRendererCount + visualKeyStats.emptyGeometryCount,
+                        visualKeyStats.invisibleNodeCount);
+                    if (hasWeaponBody()) {
+                        destroyWeaponBody(world);
+                    } else {
+                        clearAtomicBodyIds();
+                        resetWeaponBodySetGeneration();
+                    }
+                    _cachedWeaponKey = 0;
+                    clearGeneratedSourceCompletenessTracking();
+                    clearPendingWeaponVisualRebuild();
+                    return;
+                }
+
+                const bool replacingExisting = hasWeaponBody();
+                auto& targetBank = replacingExisting ? inactiveWeaponBodies() : activeWeaponBodies();
+                if (replacingExisting) {
+                    destroyWeaponBodyBank(targetBank, true);
+                }
+
+                const auto createdCount = createGeneratedWeaponBodiesInBank(
+                    world,
+                    generatedSources,
+                    targetBank,
+                    GeneratedWeaponBodyCreateOptions{
+                        .collisionEnabledOnCreate = false,
+                    });
+
+                if (createdCount == 0) {
+                    if (replacingExisting) {
+                        destroyWeaponBodyBank(targetBank, true);
+                        ROCK_LOG_WARN(Weapon,
+                            "Generated weapon replacement creation failed - destroying stale active bodies cachedKey={:016X} observedKey={:016X} sources={}",
+                            _cachedWeaponKey,
+                            observedKey,
+                            generatedCount);
+                        destroyWeaponBody(world);
+                    } else {
+                        clearAtomicBodyIds();
+                        resetWeaponBodySetGeneration();
+                    }
+                    _cachedWeaponKey = 0;
+                    clearGeneratedSourceCompletenessTracking();
+                    clearPendingWeaponVisualRebuild();
+                    return;
+                }
+
+                if (replacingExisting) {
+                    ROCK_LOG_INFO(Weapon,
+                        "Replacing generated weapon collision bodies cachedKey={:016X} observedKey={:016X} sources={} replacementBodies={} settingsChanged={} driveRebuild={}",
+                        _cachedWeaponKey,
+                        observedKey,
+                        generatedCount,
+                        createdCount,
+                        settingsChanged,
+                        driveRequestedRebuild);
+                    if (_dominantHandDisabled) {
+                        enableDominantHandCollision(world);
+                    }
                     clearAtomicBodyIds();
-                    resetWeaponBodySetGeneration();
+                    destroyWeaponBodyBank(activeWeaponBodies(), true);
+                    _usingReplacementWeaponBodies = !_usingReplacementWeaponBodies;
+                } else {
+                    ROCK_LOG_INFO(Weapon,
+                        "Created generated weapon collision bodies key={:016X} sources={} bodies={} visualRoots={} visibleTriShapes={}",
+                        observedKey,
+                        generatedCount,
+                        createdCount,
+                        visualKeyStats.rootCount,
+                        visualKeyStats.visibleTriShapeCount);
                 }
-                _cachedWeaponKey = 0;
-                clearGeneratedSourceCompletenessTracking();
-                return;
-            }
 
-            if (replacingExisting) {
-                ROCK_LOG_INFO(Weapon,
-                    "Replacing generated weapon collision bodies cachedKey={:016X} observedKey={:016X} sources={} replacementBodies={} settingsChanged={} driveRebuild={}",
-                    _cachedWeaponKey,
-                    observedKey,
-                    generatedCount,
-                    createdCount,
-                    settingsChanged,
-                    driveRequestedRebuild);
-                if (_dominantHandDisabled) {
-                    enableDominantHandCollision(world);
-                }
-                clearAtomicBodyIds();
-                destroyWeaponBodyBank(activeWeaponBodies(), true);
-                _usingReplacementWeaponBodies = !_usingReplacementWeaponBodies;
-            } else {
-                ROCK_LOG_INFO(Weapon,
-                    "Created generated weapon collision bodies key={:016X} sources={} bodies={} visualRoots={} visibleTriShapes={}",
-                    observedKey,
-                    generatedCount,
-                    createdCount,
-                    visualKeyStats.rootCount,
-                    visualKeyStats.visibleTriShapeCount);
+                _cachedWeaponKey = observedKey;
+                _cachedGeneratedSourceCompleteness = generatedSummary;
+                clearPendingWeaponVisualRebuild();
+                publishWeaponBodySetGeneration(generatedSummary);
+                publishAtomicBodyIds(activeWeaponBodies());
+                setWeaponBodyBankCollisionEnabled(world, activeWeaponBodies(), true);
+                _cachedConvexRadius = g_rockConfig.rockWeaponCollisionConvexRadius;
+                _cachedPointDedupGrid = g_rockConfig.rockWeaponCollisionPointDedupGrid;
+                _cachedSupportFitTargetPoints = g_rockConfig.rockWeaponCollisionSupportFitTargetPoints;
+                _cachedSupportFitMaxErrorGameUnits = g_rockConfig.rockWeaponCollisionSupportFitMaxErrorGameUnits;
             }
-
-            _cachedWeaponKey = observedKey;
-            _cachedGeneratedSourceCompleteness = generatedSummary;
-            publishWeaponBodySetGeneration(generatedSummary);
-            publishAtomicBodyIds(activeWeaponBodies());
-            setWeaponBodyBankCollisionEnabled(world, activeWeaponBodies(), true);
-            _cachedConvexRadius = g_rockConfig.rockWeaponCollisionConvexRadius;
-            _cachedPointDedupGrid = g_rockConfig.rockWeaponCollisionPointDedupGrid;
-            _cachedSupportFitTargetPoints = g_rockConfig.rockWeaponCollisionSupportFitTargetPoints;
-            _cachedSupportFitMaxErrorGameUnits = g_rockConfig.rockWeaponCollisionSupportFitMaxErrorGameUnits;
         }
 
         const bool hasActiveWeaponCollision = hasWeaponBody() && getCurrentWeaponGenerationKey() != 0;
@@ -2632,6 +2710,7 @@ namespace rock
         destroyWeaponBodyBank(inactiveWeaponBodies(), true);
         _usingReplacementWeaponBodies = false;
         clearGeneratedSourceCompletenessTracking();
+        clearPendingWeaponVisualRebuild();
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
 
@@ -2655,6 +2734,7 @@ namespace rock
 
         _cachedWeaponKey = 0;
         clearGeneratedSourceCompletenessTracking();
+        clearPendingWeaponVisualRebuild();
         resetWeaponCollisionSettingsCache();
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
