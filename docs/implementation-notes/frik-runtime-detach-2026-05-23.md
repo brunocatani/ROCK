@@ -89,3 +89,40 @@ The readiness gate now samples the root-flattened hands/fingers path for global 
 Follow-up source review found one remaining over-coupling after the readiness fix: `generatedBodiesExistForConfig()` still treated body bone colliders as part of the core generated-body lifecycle when `bBodyBoneCollidersEnabled=true`, and lifecycle rebuild returned failure if body collider creation failed.
 
 That meant a partial or unavailable body skeleton could still close ROCK's physics-write gate even when both hand collision bodies were valid. The core lifecycle now tracks hand-generated bodies only. Body bone colliders remain enabled, but creation failures only schedule the body retry path and do not invalidate hand physics.
+
+## Remaining FRIK Dependency Map
+
+Date: 2026-05-23
+
+Project: ROCK
+
+Source used: local ROCK source after commit `f0d0dda`.
+
+Confidence: high for source-level dependencies; runtime behavior still needs in-game cell-change and teleport validation.
+
+### Hard Runtime Dependencies
+
+- Provider load/API presence: `ROCKMain.cpp` initializes `FRIKApi` on `kGameLoaded`, stores `s_frikAvailable`, and disables ROCK if the provider API is missing or older than `FRIK_API_VERSION`.
+- Provider lifecycle events: `ROCKMain.cpp` listens to FRIK `kSkeletonReady` and `kSkeletonDestroying` messages. These events bump ROCK skeleton generation and request/destroy `PhysicsInteraction`, but local skeleton readiness now decides whether creation can proceed.
+- Visual authority availability: frame state still samples `frik_visual_authority::isAvailable()`. Physics creation and provider snapshots require the visual bridge to exist because ROCK still publishes hand/body visual authority through FRIK.
+- Hand and finger visual pose publishing: grab, selected-close, soft contact, and two-handed grip code still call FRIK hand pose APIs through `FrikVisualAuthorityBridge`.
+- External hand world transforms: grab visuals, soft contact corrections, and two-handed weapon grip locked-hand visuals still publish external hand transforms through FRIK.
+- Finger local transform baseline/publishing: mesh-driven grab fingers and support-grip fingers still query FRIK baseline local transforms and publish local transform overrides through FRIK.
+- Offhand weapon grip suppression: ROCK still calls `blockOffHandWeaponGripping` for global physics startup/shutdown and two-handed grip ownership.
+
+### Compatibility And Diagnostic Uses
+
+- FRIK skeleton readiness is sampled as `visualSkeletonReadyHint`, but it is not the authority for ROCK skeleton readiness. ROCK readiness is local root/flattened-tree/hand-bone sampling.
+- FRIK config and wrist Pip-Boy state are used as a compatibility config block in the creation gate and input gate.
+- FRIK hand world transforms are read for parity/debug overlay diagnostics, not for core physics transforms.
+- `ROCKApi.cpp` static-asserts ROCK hand enum values against FRIK hand enum values for ABI compatibility.
+- `ROCKProviderFrameSnapshot::frikSkeletonReady` remains a legacy field name, but ROCK fills it from local skeleton readiness.
+
+### Confirmed Detached From FRIK
+
+- Frame delta now comes from ROCK runtime state, not `FRIKApi::getFrameTime()`.
+- Weapon drawn state now comes from ROCK runtime state, not `FRIKApi::isWeaponDrawn()`.
+- Player-space movement now comes from ROCK local tracking, not `FRIKApi::getSmoothedPlayerPosition()` or `isPlayerMoving()`.
+- Skeleton readiness now comes from local root/flattened-tree/hand-bone checks, not FRIK API readiness.
+- Generated hand-body lifecycle validity is independent of optional body bone collider availability.
+- Body bone collider creation failures retry independently and do not close hand physics writes.
