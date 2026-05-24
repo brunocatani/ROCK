@@ -178,9 +178,9 @@ int main()
             false),
         false);
 
-    ok &= expectFloat("missed generic mesh finger opens instead of closing through object",
+    ok &= expectFloat("missed generic mesh finger uses hardcoded close fallback",
         missedFingerCurlFallbackValue(false, rock::grab_finger_pose_math::FingerCurlValue::HitKind::Miss, 0.2f),
-        1.0f);
+        0.3f);
     ok &= expectFloat("explicit target miss keeps configured minimum",
         missedFingerCurlFallbackValue(true, rock::grab_finger_pose_math::FingerCurlValue::HitKind::Miss, 0.2f),
         0.2f);

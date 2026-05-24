@@ -890,8 +890,10 @@ namespace rock::grab_finger_pose_runtime
         grab_finger_pose_math::FingerCurlValue::HitKind hitKind,
         float minValue)
     {
-        if (!hasExplicitFingerTarget ||
-            hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::BackSurface ||
+        if (!hasExplicitFingerTarget) {
+            return 0.3f;
+        }
+        if (hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::BackSurface ||
             hitKind == grab_finger_pose_math::FingerCurlValue::HitKind::Rejected) {
             return 1.0f;
         }
@@ -1189,8 +1191,9 @@ namespace rock::grab_finger_pose_runtime
             }
             /*
              * Generic grab poses often use whole-mesh probing instead of
-             * explicit per-finger targets. A miss in that mode means "no
-             * surface on this finger path", not "close through the object".
+             * explicit per-finger targets. A miss in that mode deliberately
+             * closes to 0.3 so missing targets are visible without reusing the
+             * palm seat point as fake finger evidence.
              */
             if (!solved.hit &&
                 (!useTarget ||
