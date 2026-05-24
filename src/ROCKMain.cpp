@@ -9,12 +9,14 @@
 #include "api/ROCKProviderApi.h"
 #include "physics-interaction/debug/DebugBodyOverlay.h"
 #include "physics-interaction/core/PhysicsCreationGatePolicy.h"
+#include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/input/DebugControllerRuntime.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/SeeThroughScopesCompatibility.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -145,7 +147,7 @@ namespace
 
     void destroyPhysicsInteraction(rock::provider::RockProviderLifecycleReason reason);
 
-    void ensurePhysicsInteractionForReadySkeleton(bool rockMenuInputBlocking)
+    void ensurePhysicsInteractionForReadySkeleton(const runtime_state::RuntimeFrameSnapshot& runtime)
     {
         /*
          * ROCK creation is event-driven when FRIK first announces skeleton
@@ -155,12 +157,11 @@ namespace
          * this narrow recovery path instead of forcing users to reload a save
          * to receive a second skeleton-ready message.
          */
-        auto* frikApi = frik::api::FRIKApi::inst;
         if (!s_physicsCreationRequested.load(std::memory_order_acquire) &&
             !s_physicsInteraction &&
             g_rockConfig.rockEnabled &&
-            frikApi &&
-            frikApi->isSkeletonReady()) {
+            runtime.visualAuthorityAvailable &&
+            runtime.localSkeletonReady) {
             s_physicsCreationRequested.store(true, std::memory_order_release);
             s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
         }
@@ -173,11 +174,10 @@ namespace
         const auto readyDeferralFrames = s_physicsCreationReadyDeferralFrames.load(std::memory_order_acquire);
         const physics_creation_gate_policy::CreationGateInput gateInput{
             .rockEnabled = g_rockConfig.rockEnabled,
-            .providerAvailable = s_frikAvailable && frikApi != nullptr,
-            .skeletonReady = frikApi && frikApi->isSkeletonReady(),
-            .frikMenuBlocking = frikApi && frikApi->isAnyMenuOpen(),
-            .frikConfigBlocking = frikApi && (frikApi->isConfigOpen() || frikApi->isWristPipboyOpen()),
-            .rockMenuInputBlocking = rockMenuInputBlocking,
+            .providerAvailable = s_frikAvailable && runtime.visualAuthorityAvailable,
+            .skeletonReady = runtime.localSkeletonReady,
+            .runtimeMenuBlocking = runtime.localMenuBlocking,
+            .compatibilityConfigBlocking = runtime.compatibilityConfigBlocking,
             .bhkWorld = reinterpret_cast<std::uintptr_t>(worlds.bhk),
             .hknpWorld = reinterpret_cast<std::uintptr_t>(worlds.hknp),
             .readyDeferralFrames = readyDeferralFrames,
@@ -194,14 +194,13 @@ namespace
         if (!decision.canCreate) {
             if ((s_physicsCreationGateLogCounter++ % 90u) == 0u) {
                 logger::debug(
-                    "ROCK: Physics creation deferred reason={} stableFrames={} bhk={} hknp={} localMenu={} frikMenu={} frikConfig={} readyDeferral={}",
+                    "ROCK: Physics creation deferred reason={} stableFrames={} bhk={} hknp={} localMenu={} compatibilityConfig={} readyDeferral={}",
                     physicsCreationBlockReasonName(decision.blockReason),
                     decision.stableWorldFrames,
                     static_cast<const void*>(worlds.bhk),
                     static_cast<const void*>(worlds.hknp),
-                    rockMenuInputBlocking ? "yes" : "no",
-                    gateInput.frikMenuBlocking ? "yes" : "no",
-                    gateInput.frikConfigBlocking ? "yes" : "no",
+                    runtime.localMenuBlocking ? "yes" : "no",
+                    runtime.compatibilityConfigBlocking ? "yes" : "no",
                     readyDeferralFrames);
             }
             return;
@@ -264,15 +263,23 @@ namespace
         see_through_scopes::updateFrame();
         input_remap_runtime::installInputRemapHooks();
 
-        auto* frikApi = frik::api::FRIKApi::inst;
-        const bool weaponDrawn = frikApi && frikApi->isWeaponDrawn();
         const bool menuInputActive = input_remap_runtime::isMenuInputActive();
-        const bool gameplayInputAllowed = g_rockConfig.rockEnabled && frikApi && frikApi->isSkeletonReady() && !frikApi->isAnyMenuOpen() && !frikApi->isConfigOpen() &&
-                                          !frikApi->isWristPipboyOpen() && !menuInputActive;
-        input_remap_runtime::setWeaponDrawn(weaponDrawn);
+        runtime_state::updateFrame(runtime_state::RuntimeFrameInput{
+            .menuInputBlocking = menuInputActive,
+            .visualAuthorityAvailable = frik_visual_authority::isAvailable(),
+            .visualSkeletonReadyHint = frik_visual_authority::isSkeletonReadyHint(),
+            .compatibilityConfigBlocking = frik_visual_authority::isCompatibilityConfigBlocking(),
+        });
+        const auto& runtime = runtime_state::currentFrame();
+        const bool gameplayInputAllowed =
+            g_rockConfig.rockEnabled &&
+            runtime.localSkeletonReady &&
+            !runtime.localMenuBlocking &&
+            !runtime.compatibilityConfigBlocking;
+        input_remap_runtime::setWeaponDrawn(runtime.weaponDrawn);
         input_remap_runtime::setGameplayInputAllowed(gameplayInputAllowed);
         input_remap_runtime::processPendingWeaponToggleRequests();
-        debug_controller_runtime::update(gameplayInputAllowed, frikApi ? frikApi->getFrameTime() : (1.0f / 90.0f));
+        debug_controller_runtime::update(gameplayInputAllowed, runtime.deltaSeconds);
 
         if (!g_rockConfig.rockEnabled) {
             s_physicsCreationRequested.store(false, std::memory_order_release);
@@ -284,7 +291,7 @@ namespace
             return;
         }
 
-        ensurePhysicsInteractionForReadySkeleton(menuInputActive);
+        ensurePhysicsInteractionForReadySkeleton(runtime);
 
         if (s_physicsInteraction) {
             s_physicsInteraction->update();
@@ -424,6 +431,7 @@ namespace
             logger::info("ROCK: FRIKApi v{} (API v{}) initialized successfully.", frik::api::FRIKApi::inst->getModVersion(), frik::api::FRIKApi::inst->getVersion());
 
             g_rockConfig.load();
+            runtime_state::initialize();
             see_through_scopes::refreshRuntimeState();
             logger::info("ROCK: Config loaded (rockEnabled={}).", g_rockConfig.rockEnabled);
             rock::input_remap_runtime::installInputRemapHooks();
@@ -443,6 +451,7 @@ namespace
             s_physicsCreationRequested.store(false, std::memory_order_release);
             s_physicsCreationReadyDeferralFrames.store(0, std::memory_order_release);
             resetPhysicsCreationGate();
+            runtime_state::resetTransientState();
             if (s_physicsInteraction) {
                 s_physicsInteraction->noteProviderLifecycle(
                     providerGeneration,

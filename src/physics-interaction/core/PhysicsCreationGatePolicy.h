@@ -31,9 +31,8 @@ namespace rock::physics_creation_gate_policy
         bool rockEnabled = false;
         bool providerAvailable = false;
         bool skeletonReady = false;
-        bool frikMenuBlocking = false;
-        bool frikConfigBlocking = false;
-        bool rockMenuInputBlocking = false;
+        bool runtimeMenuBlocking = false;
+        bool compatibilityConfigBlocking = false;
         std::uintptr_t bhkWorld = 0;
         std::uintptr_t hknpWorld = 0;
         std::uint32_t readyDeferralFrames = 0;
@@ -55,7 +54,7 @@ namespace rock::physics_creation_gate_policy
 
     inline constexpr bool hasMenuBlock(const CreationGateInput& input)
     {
-        return input.frikMenuBlocking || input.frikConfigBlocking || input.rockMenuInputBlocking;
+        return input.runtimeMenuBlocking || input.compatibilityConfigBlocking;
     }
 
     inline void resetWorldStability(WorldStabilityState& state)

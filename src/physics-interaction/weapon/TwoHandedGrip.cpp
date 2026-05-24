@@ -3,13 +3,13 @@
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/hand/HandFrame.h"
+#include "physics-interaction/core/RockRuntimeState.h"
 #include "RockConfig.h"
 #include "RockUtils.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
-#include "api/FRIKApi.h"
 #include "f4vr/F4VRUtils.h"
 #include "f4vr/PlayerNodes.h"
 
@@ -268,14 +268,14 @@ namespace rock
             std::array<RE::NiTransform, 15>& outLocalTransforms,
             std::uint16_t& outMask)
         {
-            auto* api = frik::api::FRIKApi::inst;
-            const bool canPublish = api &&
+            auto* api = frik_visual_authority::api();
+            const bool canPublish =
                 grab_finger_local_transform_math::shouldPublishLocalTransformPose(
                     g_rockConfig.rockGrabMeshLocalTransformPoseEnabled,
                     meshFingerPose.solved,
                     meshFingerPose.hasJointValues,
-                    api->getHandPoseLocalTransformsForJointPositions != nullptr,
-                    api->setHandPoseCustomLocalTransformsWithPriority != nullptr);
+                    api && api->getHandPoseLocalTransformsForJointPositions != nullptr,
+                    api && api->setHandPoseCustomLocalTransformsWithPriority != nullptr);
             if (!canPublish) {
                 ROCK_LOG_DEBUG(Weapon,
                     "TwoHandedGrip: full-hand local transform override skipped hand={} enabled={} api={} baselineApi={} publishApi={}",
@@ -287,13 +287,13 @@ namespace rock
                 return false;
             }
 
-            frik::api::FRIKApi::FingerLocalTransformOverride baseline{};
-            if (!api->getHandPoseLocalTransformsForJointPositions(handFromBool(isLeft), jointValues.data(), &baseline)) {
+            frik_visual_authority::FingerLocalTransformOverride baseline{};
+            if (!frik_visual_authority::getHandPoseLocalTransformsForJointPositions(handFromBool(isLeft), jointValues.data(), &baseline)) {
                 ROCK_LOG_WARN(Weapon, "TwoHandedGrip: full-hand local transform override failed hand={} reason=baseline-query", isLeft ? "left" : "right");
                 return false;
             }
 
-            frik::api::FRIKApi::FingerLocalTransformOverride corrected{};
+            frik_visual_authority::FingerLocalTransformOverride corrected{};
             const char* failureReason = "unknown";
             if (!grab_finger_local_transform_runtime::buildSurfaceCorrectedLocalTransforms(isLeft,
                     meshFingerPose,
@@ -373,7 +373,7 @@ namespace rock
     {
         _hasSolvedWeaponTransform = false;
 
-        if (!frik::api::FRIKApi::inst || !frik::api::FRIKApi::inst->isSkeletonReady() || !weaponNode) {
+        if (!runtime_state::isLocalSkeletonReady() || !weaponNode) {
             if (_state != TwoHandedState::Inactive) {
                 transitionToInactive(false);
             }
@@ -642,7 +642,7 @@ namespace rock
                     weapon_support_thumb_pose_policy::shouldPublishAlternateThumbLocalOverride(
                     solvedFingerPose.solved,
                     solvedFingerPose.usedAlternateThumbCurve,
-                    frik::api::FRIKApi::inst && frik::api::FRIKApi::inst->setHandPoseCustomLocalTransformsWithPriority);
+                    frik_visual_authority::api() && frik_visual_authority::api()->setHandPoseCustomLocalTransformsWithPriority);
                 if (canPublishAlternateThumb) {
                     std::array<RE::NiTransform, 15> localTransforms{};
                     std::uint16_t localTransformMask = 0;
@@ -892,12 +892,8 @@ namespace rock
         _supportFingerLocalTransformMask = 0;
         _hasSupportFingerLocalTransforms = false;
 
-        if (frik::api::FRIKApi::inst) {
-            frik::api::FRIKApi::inst->clearHandPose(SUPPORT_GRIP_TAG, handFromBool(isLeft));
-            if (frik::api::FRIKApi::inst->clearExternalHandWorldTransform) {
-                frik::api::FRIKApi::inst->clearExternalHandWorldTransform(SUPPORT_GRIP_TAG, handFromBool(isLeft));
-            }
-        }
+        (void)frik_visual_authority::clearHandPose(SUPPORT_GRIP_TAG, handFromBool(isLeft));
+        (void)frik_visual_authority::clearExternalHandWorldTransform(SUPPORT_GRIP_TAG, handFromBool(isLeft));
     }
 
     bool TwoHandedGrip::applyWeaponVisualAuthority(RE::NiNode* weaponNode, const RE::NiTransform& solvedWeaponWorld)
@@ -923,8 +919,7 @@ namespace rock
             return false;
         }
 
-        auto* api = frik::api::FRIKApi::inst;
-        if (!api || !api->applyExternalHandWorldTransform) {
+        if (!frik_visual_authority::isAvailable()) {
             return false;
         }
 
@@ -938,41 +933,38 @@ namespace rock
             const RE::NiTransform primaryHandWorld =
                 weapon_visual_authority_math::weaponLocalFrameToWorld(weaponNode->world, _primaryHandWeaponLocal);
             primaryApplied =
-                api->applyExternalHandWorldTransform(PRIMARY_GRIP_TAG, frik::api::FRIKApi::Hand::Right, primaryHandWorld, GRIP_HAND_POSE_PRIORITY);
+                frik_visual_authority::applyExternalHandWorldTransform(PRIMARY_GRIP_TAG, frik_visual_authority::Hand::Right, primaryHandWorld, GRIP_HAND_POSE_PRIORITY);
         }
         if (applySupportHand) {
             const RE::NiTransform supportHandWorld =
                 weapon_support_authority_policy::buildVisualOnlySupportHandWorld(weaponNode->world, _supportHandWeaponLocal);
             supportApplied =
-                api->applyExternalHandWorldTransform(SUPPORT_GRIP_TAG, frik::api::FRIKApi::Hand::Left, supportHandWorld, GRIP_HAND_POSE_PRIORITY);
+                frik_visual_authority::applyExternalHandWorldTransform(SUPPORT_GRIP_TAG, frik_visual_authority::Hand::Left, supportHandWorld, GRIP_HAND_POSE_PRIORITY);
         }
         if (primaryApplied && supportApplied) {
             return true;
         }
 
-        if (api->clearExternalHandWorldTransform) {
-            if (applyPrimaryHand && primaryApplied) {
-                api->clearExternalHandWorldTransform(PRIMARY_GRIP_TAG, frik::api::FRIKApi::Hand::Right);
-            }
-            if (applySupportHand && supportApplied) {
-                api->clearExternalHandWorldTransform(SUPPORT_GRIP_TAG, frik::api::FRIKApi::Hand::Left);
-            }
+        if (applyPrimaryHand && primaryApplied) {
+            (void)frik_visual_authority::clearExternalHandWorldTransform(PRIMARY_GRIP_TAG, frik_visual_authority::Hand::Right);
+        }
+        if (applySupportHand && supportApplied) {
+            (void)frik_visual_authority::clearExternalHandWorldTransform(SUPPORT_GRIP_TAG, frik_visual_authority::Hand::Left);
         }
         return false;
     }
 
     void TwoHandedGrip::publishGripHandPoses(bool supportHandIsLeft)
     {
-        auto* api = frik::api::FRIKApi::inst;
-        if (!api) {
+        if (!frik_visual_authority::isAvailable()) {
             return;
         }
 
         if (weapon_visual_authority_math::shouldPublishTwoHandedGripPose(weapon_visual_authority_math::LockedHandRole::Support) && _hasSupportFingerPose) {
-            if (api->setHandPoseCustomJointPositionsWithPriority) {
-                api->setHandPoseCustomJointPositionsWithPriority(SUPPORT_GRIP_TAG, handFromBool(supportHandIsLeft), _supportFingerPose.data(), GRIP_HAND_POSE_PRIORITY);
-            } else if (api->setHandPoseCustomFingerPositionsWithPriority && _hasSupportFingerValues) {
-                api->setHandPoseCustomFingerPositionsWithPriority(SUPPORT_GRIP_TAG,
+            if (!frik_visual_authority::setHandPoseCustomJointPositionsWithPriority(
+                    SUPPORT_GRIP_TAG, handFromBool(supportHandIsLeft), _supportFingerPose.data(), GRIP_HAND_POSE_PRIORITY) &&
+                _hasSupportFingerValues) {
+                (void)frik_visual_authority::setHandPoseCustomFingerPositionsWithPriority(SUPPORT_GRIP_TAG,
                     handFromBool(supportHandIsLeft),
                     _supportFingerValues[0],
                     _supportFingerValues[1],
@@ -983,40 +975,34 @@ namespace rock
             }
         }
 
-        if (_hasSupportFingerLocalTransforms && api->setHandPoseCustomLocalTransformsWithPriority) {
-            frik::api::FRIKApi::FingerLocalTransformOverride overrideData{};
+        if (_hasSupportFingerLocalTransforms) {
+            frik_visual_authority::FingerLocalTransformOverride overrideData{};
             overrideData.enabledMask = _supportFingerLocalTransformMask;
             for (std::size_t i = 0; i < _supportFingerLocalTransforms.size(); ++i) {
                 overrideData.localTransforms[i] = _supportFingerLocalTransforms[i];
             }
-            api->setHandPoseCustomLocalTransformsWithPriority(SUPPORT_GRIP_TAG, handFromBool(supportHandIsLeft), &overrideData, GRIP_HAND_POSE_PRIORITY);
+            (void)frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(SUPPORT_GRIP_TAG, handFromBool(supportHandIsLeft), &overrideData, GRIP_HAND_POSE_PRIORITY);
         }
     }
 
     void TwoHandedGrip::clearPrimaryGripPose(bool isLeft)
     {
-        if (frik::api::FRIKApi::inst) {
-            frik::api::FRIKApi::inst->clearHandPose(PRIMARY_GRIP_TAG, handFromBool(isLeft));
-            if (frik::api::FRIKApi::inst->clearExternalHandWorldTransform) {
-                frik::api::FRIKApi::inst->clearExternalHandWorldTransform(PRIMARY_GRIP_TAG, handFromBool(isLeft));
-            }
-        }
+        (void)frik_visual_authority::clearHandPose(PRIMARY_GRIP_TAG, handFromBool(isLeft));
+        (void)frik_visual_authority::clearExternalHandWorldTransform(PRIMARY_GRIP_TAG, handFromBool(isLeft));
     }
 
     void TwoHandedGrip::killFrikOffhandGrip()
     {
-        if (!frik::api::FRIKApi::inst)
-            return;
-        frik::api::FRIKApi::inst->blockOffHandWeaponGripping("ROCK_TwoHanded", true);
-        ROCK_LOG_DEBUG(Weapon, "FRIK offhand grip suppressed");
+        if (frik_visual_authority::blockOffHandWeaponGripping("ROCK_TwoHanded", true)) {
+            ROCK_LOG_DEBUG(Weapon, "FRIK offhand grip suppressed");
+        }
     }
 
     void TwoHandedGrip::restoreFrikOffhandGrip()
     {
-        if (!frik::api::FRIKApi::inst)
-            return;
-        frik::api::FRIKApi::inst->blockOffHandWeaponGripping("ROCK_TwoHanded", false);
-        ROCK_LOG_DEBUG(Weapon, "FRIK offhand grip restored");
+        if (frik_visual_authority::blockOffHandWeaponGripping("ROCK_TwoHanded", false)) {
+            ROCK_LOG_DEBUG(Weapon, "FRIK offhand grip restored");
+        }
     }
 
 }

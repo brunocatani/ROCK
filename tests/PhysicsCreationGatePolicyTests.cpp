@@ -69,24 +69,18 @@ int main()
     ok &= expectEqual("ready deferral resets stability", state.stableFrames, 0u);
 
     input.readyDeferralFrames = 0;
-    input.rockMenuInputBlocking = true;
+    input.runtimeMenuBlocking = true;
     decision = evaluateCreationGate(state, input);
-    ok &= expectFalse("ROCK menu gate blocks creation", decision.canCreate);
-    ok &= expectEqual("ROCK menu gate reports menu reason", decision.blockReason, CreationBlockReason::MenuBlocked);
+    ok &= expectFalse("runtime menu gate blocks creation", decision.canCreate);
+    ok &= expectEqual("runtime menu gate reports menu reason", decision.blockReason, CreationBlockReason::MenuBlocked);
 
-    input.rockMenuInputBlocking = false;
-    input.frikMenuBlocking = true;
+    input.runtimeMenuBlocking = false;
+    input.compatibilityConfigBlocking = true;
     decision = evaluateCreationGate(state, input);
-    ok &= expectFalse("FRIK menu gate blocks creation", decision.canCreate);
-    ok &= expectEqual("FRIK menu gate reports menu reason", decision.blockReason, CreationBlockReason::MenuBlocked);
+    ok &= expectFalse("compatibility config gate blocks creation", decision.canCreate);
+    ok &= expectEqual("compatibility config gate reports menu reason", decision.blockReason, CreationBlockReason::MenuBlocked);
 
-    input.frikMenuBlocking = false;
-    input.frikConfigBlocking = true;
-    decision = evaluateCreationGate(state, input);
-    ok &= expectFalse("FRIK config gate blocks creation", decision.canCreate);
-    ok &= expectEqual("FRIK config gate reports menu reason", decision.blockReason, CreationBlockReason::MenuBlocked);
-
-    input.frikConfigBlocking = false;
+    input.compatibilityConfigBlocking = false;
     input.bhkWorld = 0;
     decision = evaluateCreationGate(state, input);
     ok &= expectFalse("missing world blocks creation", decision.canCreate);

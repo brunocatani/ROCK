@@ -1,8 +1,8 @@
 #pragma once
 
-#include "api/FRIKApi.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 
 namespace rock
 {
-    inline frik::api::FRIKApi::Hand handFromBool(bool isLeft) { return isLeft ? frik::api::FRIKApi::Hand::Left : frik::api::FRIKApi::Hand::Right; }
+    inline frik_visual_authority::Hand handFromBool(bool isLeft) { return frik_visual_authority::handFromBool(isLeft); }
 }

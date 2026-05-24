@@ -3,11 +3,11 @@
  */
     void PhysicsInteraction::fillProviderFrameSnapshot(::rock::provider::RockProviderFrameSnapshot& outSnapshot) const
     {
-        auto* api = frik::api::FRIKApi::inst;
-        outSnapshot.providerReady = _initialized.load(std::memory_order_acquire) ? 1u : 0u;
-        outSnapshot.frikSkeletonReady = api && api->isSkeletonReady() ? 1u : 0u;
-        outSnapshot.menuBlocking = ((api && api->isAnyMenuOpen()) || input_remap_runtime::isMenuInputActive()) ? 1u : 0u;
-        outSnapshot.configBlocking = api && (api->isConfigOpen() || api->isWristPipboyOpen()) ? 1u : 0u;
+        const auto& runtime = runtime_state::currentFrame();
+        outSnapshot.providerReady = (_initialized.load(std::memory_order_acquire) && runtime.visualAuthorityAvailable) ? 1u : 0u;
+        outSnapshot.frikSkeletonReady = runtime.localSkeletonReady ? 1u : 0u;
+        outSnapshot.menuBlocking = runtime.localMenuBlocking ? 1u : 0u;
+        outSnapshot.configBlocking = runtime.compatibilityConfigBlocking ? 1u : 0u;
         outSnapshot.bhkWorld = reinterpret_cast<std::uintptr_t>(_cachedBhkWorld);
         outSnapshot.hknpWorld = reinterpret_cast<std::uintptr_t>(_cachedHknpWorld);
         outSnapshot.gameToHavokScale = physics_scale::gameToHavok();

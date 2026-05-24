@@ -395,9 +395,9 @@
                         }
                         float rightHandScale = 0.0f;
                         float leftHandScale = 0.0f;
-                        if (frik::api::FRIKApi::inst) {
-                            rightHandScale = frik::api::FRIKApi::inst->getHandWorldTransform(frik::api::FRIKApi::Hand::Right).scale;
-                            leftHandScale = frik::api::FRIKApi::inst->getHandWorldTransform(frik::api::FRIKApi::Hand::Left).scale;
+                        if (frik_visual_authority::isAvailable()) {
+                            rightHandScale = frik_visual_authority::getHandWorldTransform(frik_visual_authority::Hand::Right).scale;
+                            leftHandScale = frik_visual_authority::getHandWorldTransform(frik_visual_authority::Hand::Left).scale;
                         }
 
                         ROCK_LOG_DEBUG(Hand,
@@ -763,9 +763,9 @@
                 addMarkerPoint(debug::MarkerOverlayRole::RightWeaponPrimaryGrip, snapshot.rightGripWorld, 3.0f);
                 addMarkerPoint(debug::MarkerOverlayRole::LeftWeaponSupportGrip, snapshot.leftGripWorld, 3.0f);
 
-                if (frik::api::FRIKApi::inst) {
-                    const RE::NiTransform appliedRight = frik::api::FRIKApi::inst->getHandWorldTransform(frik::api::FRIKApi::Hand::Right);
-                    const RE::NiTransform appliedLeft = frik::api::FRIKApi::inst->getHandWorldTransform(frik::api::FRIKApi::Hand::Left);
+                if (frik_visual_authority::isAvailable()) {
+                    const RE::NiTransform appliedRight = frik_visual_authority::getHandWorldTransform(frik_visual_authority::Hand::Right);
+                    const RE::NiTransform appliedLeft = frik_visual_authority::getHandWorldTransform(frik_visual_authority::Hand::Left);
                     addAxisTransform(appliedRight, debug::AxisOverlayRole::RightFrikAppliedHand, snapshot.rightRequestedHandWorld.translate, true);
                     addAxisTransform(appliedLeft, debug::AxisOverlayRole::LeftFrikAppliedHand, snapshot.leftRequestedHandWorld.translate, true);
                     addMarkerLine(debug::MarkerOverlayRole::RightWeaponAuthorityMismatch, snapshot.rightRequestedHandWorld.translate, appliedRight.translate);

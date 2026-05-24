@@ -47,6 +47,7 @@
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/core/PhysicsHooks.h"
+#include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/native/PhysicsRecursiveWrappers.h"
 #include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/native/PhysicsUtils.h"
@@ -54,6 +55,7 @@
 #include "physics-interaction/debug/PhysicsWorldOriginDiagnostics.h"
 #include "physics-interaction/collision/PushAssist.h"
 #include "physics-interaction/hand/HandSelection.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
@@ -70,7 +72,6 @@
 #include "ROCKMain.h"
 #include "RockConfig.h"
 #include "RockUtils.h"
-#include "api/FRIKApi.h"
 #include "f4vr/MiscStructs.h"
 #include "f4vr/F4VRUtils.h"
 #include "f4vr/PlayerNodes.h"
@@ -910,8 +911,7 @@ namespace rock
              * candidate internally, so this handoff should not branch by weapon
              * type or create a separate melee-owned update path.
              */
-            auto* api = frik::api::FRIKApi::inst;
-            if (!api || !api->isWeaponDrawn()) {
+            if (!runtime_state::currentFrame().weaponDrawn) {
                 return nullptr;
             }
 
@@ -1088,16 +1088,16 @@ namespace rock
 
     void PhysicsInteraction::observeLifecycleFrame(RE::bhkWorld* bhk, RE::hknpWorld* hknp, ::rock::provider::RockProviderLifecycleReason reasonHint)
     {
-        auto* api = frik::api::FRIKApi::inst;
+        const auto& runtime = runtime_state::currentFrame();
         physics_lifecycle::FrameInputs inputs{};
         inputs.bhkWorld = reinterpret_cast<std::uintptr_t>(bhk);
         inputs.hknpWorld = reinterpret_cast<std::uintptr_t>(hknp);
         inputs.skeletonGeneration = _lifecycleState.skeletonGeneration;
         inputs.providerGeneration = _lifecycleState.providerGeneration;
-        inputs.providerReady = _initialized.load(std::memory_order_acquire);
-        inputs.skeletonReady = api && api->isSkeletonReady();
-        inputs.menuBlocking = (api && api->isAnyMenuOpen()) || input_remap_runtime::isMenuInputActive();
-        inputs.configBlocking = api && (api->isConfigOpen() || api->isWristPipboyOpen());
+        inputs.providerReady = _initialized.load(std::memory_order_acquire) && runtime.visualAuthorityAvailable;
+        inputs.skeletonReady = runtime.localSkeletonReady;
+        inputs.menuBlocking = runtime.localMenuBlocking;
+        inputs.configBlocking = runtime.compatibilityConfigBlocking;
         inputs.generatedBodiesValid = generatedBodiesExistForConfig();
         inputs.generatedBodiesWorldGeneration = _generatedBodiesWorldGeneration;
         inputs.generatedBodiesSkeletonGeneration = _generatedBodiesSkeletonGeneration;
@@ -1204,7 +1204,7 @@ namespace rock
             return;
         }
 
-        if (!frik::api::FRIKApi::inst || !_handBoneCache.isReady()) {
+        if (!frik_visual_authority::isAvailable() || !_handBoneCache.isReady()) {
             return;
         }
 
@@ -1213,14 +1213,14 @@ namespace rock
             _parityEnabledLogged = true;
         }
 
-        const bool playerMoving = frik::api::FRIKApi::inst->isPlayerMoving();
+        const bool playerMoving = runtime_state::currentFrame().playerSpace.moving;
         const bool emitSummary = (++_paritySummaryCounter >= kRawParitySummaryFrames);
 
         auto sampleHand = [&](bool isLeft) {
             auto& state = _rawHandParityStates[isLeft ? 1 : 0];
             const auto handEnum = handFromBool(isLeft);
             const auto localTransform = _handBoneCache.getWorldTransform(isLeft);
-            const auto apiTransform = frik::api::FRIKApi::inst->getHandWorldTransform(handEnum);
+            const auto apiTransform = frik_visual_authority::getHandWorldTransform(handEnum);
             const auto delta = measureTransformDelta(localTransform, apiTransform);
             const auto localPalmPosition = computePalmPositionFromHandBasis(localTransform, isLeft);
             const auto apiPalmPosition = computePalmPositionFromHandBasis(apiTransform, isLeft);
@@ -1352,8 +1352,7 @@ namespace rock
 
         _weaponCollision.init(hknp, bhk);
 
-        if (frik::api::FRIKApi::inst) {
-            frik::api::FRIKApi::inst->blockOffHandWeaponGripping("ROCK_Physics", true);
+        if (frik_visual_authority::blockOffHandWeaponGripping("ROCK_Physics", true)) {
             ROCK_LOG_INFO(Init, "FRIK offhand grip permanently suppressed");
         }
 
@@ -1403,14 +1402,15 @@ namespace rock
 
     void PhysicsInteraction::update()
     {
-        if (!frik::api::FRIKApi::inst) {
+        const auto& runtime = runtime_state::currentFrame();
+        if (!runtime.visualAuthorityAvailable) {
             restoreHeldMassMovementSlowdown("frik-unavailable");
             return;
         }
 
         vrcf::VRControllers.update(f4vr::isLeftHandedMode());
 
-        _deltaTime = frik::api::FRIKApi::inst->getFrameTime();
+        _deltaTime = runtime.deltaSeconds;
 
         if (_deltaTime <= 0.0f || _deltaTime > 0.1f) {
             _deltaTime = 1.0f / 90.0f;
@@ -1428,15 +1428,15 @@ namespace rock
             }
         }
 
-        if (!frik::api::FRIKApi::inst->isSkeletonReady()) {
+        if (!runtime.localSkeletonReady) {
             if (_initialized) {
-                ROCK_LOG_WARN(Update, "Skeleton no longer ready — shutting down");
+                ROCK_LOG_WARN(Update, "Local skeleton no longer ready — shutting down");
                 shutdown();
             }
             return;
         }
 
-        const bool menuBlocking = frik::api::FRIKApi::inst->isAnyMenuOpen() || input_remap_runtime::isMenuInputActive();
+        const bool menuBlocking = runtime.localMenuBlocking;
         if (weapon_authority_lifecycle_policy::shouldClearWeaponAuthorityForUpdateInterruption(
                 menuBlocking,
                 false,
@@ -1901,9 +1901,10 @@ namespace rock
         if (g_rockConfig.rockDebugVerboseLogging && _deltaLogCounter >= 90) {
             _deltaLogCounter = 0;
 
-            if (frik::api::FRIKApi::inst) {
-                const auto smoothPos = frik::api::FRIKApi::inst->getSmoothedPlayerPosition();
-                const bool moving = frik::api::FRIKApi::inst->isPlayerMoving();
+            const auto& playerSpace = runtime_state::currentFrame().playerSpace;
+            if (playerSpace.valid) {
+                const auto smoothPos = playerSpace.world.translate;
+                const bool moving = playerSpace.moving;
 
                 if (_hasPrevPositions && moving) {
                     const auto smoothDelta = smoothPos - _prevSmoothedPos;
@@ -2702,7 +2703,7 @@ namespace rock
 
     bool PhysicsInteraction::createHandCollisions(RE::hknpWorld* world, void* bhkWorld)
     {
-        if (!frik::api::FRIKApi::inst || !frik::api::FRIKApi::inst->isSkeletonReady()) {
+        if (!runtime_state::isLocalSkeletonReady()) {
             ROCK_LOG_ERROR(Hand, "Cannot create hand collisions — skeleton not ready");
             return false;
         }
@@ -2743,7 +2744,7 @@ namespace rock
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::HandColliderUpdate);
 
-        if (!frik::api::FRIKApi::inst || !frik::api::FRIKApi::inst->isSkeletonReady()) {
+        if (!runtime_state::isLocalSkeletonReady()) {
             return;
         }
 
@@ -2784,7 +2785,7 @@ namespace rock
             return true;
         }
 
-        if (!frik::api::FRIKApi::inst || !frik::api::FRIKApi::inst->isSkeletonReady()) {
+        if (!runtime_state::isLocalSkeletonReady()) {
             ROCK_LOG_WARN(Body, "Cannot create body bone colliders: skeleton not ready");
             return false;
         }
@@ -2812,7 +2813,7 @@ namespace rock
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::BodyColliderUpdate);
 
-        if (!frik::api::FRIKApi::inst || !frik::api::FRIKApi::inst->isSkeletonReady()) {
+        if (!runtime_state::isLocalSkeletonReady()) {
             return;
         }
 
@@ -3161,7 +3162,7 @@ namespace rock
 #include "physics-interaction/core/PhysicsInteractionDebugOverlay.inl"
     void PhysicsInteraction::updateSelection(const PhysicsFrameContext& frame)
     {
-        if (!frik::api::FRIKApi::inst || !frik::api::FRIKApi::inst->isSkeletonReady())
+        if (!runtime_state::isLocalSkeletonReady())
             return;
 
         auto selectionContextForOtherHand = [](const Hand& hand) {
@@ -3248,24 +3249,16 @@ namespace rock
     HeldObjectPlayerSpaceFrame PhysicsInteraction::sampleHeldObjectPlayerSpaceFrame(float deltaSeconds)
     {
         HeldObjectPlayerSpaceFrame frame{};
-        auto* api = frik::api::FRIKApi::inst;
-        if (!api) {
+        const auto& playerSpace = runtime_state::currentFrame().playerSpace;
+        if (!playerSpace.valid) {
             _hasHeldPlayerSpacePosition = false;
             _hasHeldPlayerSpaceTransform = false;
             return frame;
         }
 
-        const RE::NiPoint3 smoothPos = api->getSmoothedPlayerPosition();
-        RE::NiTransform playerSpaceWorld = transform_math::makeIdentityTransform<RE::NiTransform>();
-        playerSpaceWorld.translate = smoothPos;
-        const char* playerSpaceSource = "frikSmoothedPosition";
-        if (RE::PlayerCharacter::GetSingleton()) {
-            if (auto* playerNodes = f4vr::getPlayerNodes(); playerNodes && playerNodes->roomnode) {
-                playerSpaceWorld = playerNodes->roomnode->world;
-                playerSpaceWorld.translate = smoothPos;
-                playerSpaceSource = "roomNodeRotation+frikSmoothedPosition";
-            }
-        }
+        const RE::NiPoint3 smoothPos = playerSpace.world.translate;
+        const RE::NiTransform playerSpaceWorld = playerSpace.world;
+        const char* playerSpaceSource = playerSpace.source;
 
         if (!g_rockConfig.rockGrabPlayerSpaceCompensation) {
             _prevHeldPlayerSpacePosition = smoothPos;
@@ -3549,7 +3542,7 @@ namespace rock
             hand.cancelStashCandidate();
         };
 
-        if (!frik::api::FRIKApi::inst || !frik::api::FRIKApi::inst->isSkeletonReady()) {
+        if (!runtime_state::isLocalSkeletonReady()) {
             clearShoulderStashForHand(_rightHand, false);
             clearShoulderStashForHand(_leftHand, true);
             return;
@@ -4320,9 +4313,7 @@ namespace rock
             _ownedObjects.clear();
         }
 
-        if (frik::api::FRIKApi::inst) {
-            frik::api::FRIKApi::inst->blockOffHandWeaponGripping("ROCK_Physics", false);
-        }
+        (void)frik_visual_authority::blockOffHandWeaponGripping("ROCK_Physics", false);
     }
 
     void PhysicsInteraction::forceDropHeldObject(bool isLeft)

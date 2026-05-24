@@ -2,7 +2,6 @@
 
 #include "RockConfig.h"
 #include "RockUtils.h"
-#include "api/FRIKApi.h"
 #include "physics-interaction/contact/ContactTargetIdentity.h"
 #include "physics-interaction/contact/SoftContactWorldPolicy.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -1262,9 +1261,7 @@ namespace rock
     void SoftContactRuntime::clearHand(bool isLeft)
     {
         auto& handState = _hands[handIndex(isLeft)];
-        if (auto* api = frik::api::FRIKApi::inst; api && api->clearExternalHandWorldTransform) {
-            api->clearExternalHandWorldTransform(softContactTag(isLeft), handFromBool(isLeft));
-        }
+        (void)frik_visual_authority::clearExternalHandWorldTransform(softContactTag(isLeft), handFromBool(isLeft));
         handState = {};
     }
 
@@ -1410,8 +1407,7 @@ namespace rock
                         frame.deltaSeconds));
             }
 
-            auto* api = frik::api::FRIKApi::inst;
-            if (!api || !api->applyExternalHandWorldTransform || !api->clearExternalHandWorldTransform || handInput.disabled) {
+            if (!frik_visual_authority::isAvailable() || handInput.disabled) {
                 clearHand(isLeft);
                 updateWorldContactHaptics(handState, isLeft, false, 0.0f, frame.deltaSeconds);
                 return;
@@ -1440,7 +1436,7 @@ namespace rock
 
                 RE::NiTransform target = handInput.rawHandWorld;
                 target.translate = soft_contact_math::add(target.translate, handState.correction);
-                if (api->applyExternalHandWorldTransform(softContactTag(isLeft), handFromBool(isLeft), target, g_rockConfig.rockSoftContactVisualPriority)) {
+                if (frik_visual_authority::applyExternalHandWorldTransform(softContactTag(isLeft), handFromBool(isLeft), target, g_rockConfig.rockSoftContactVisualPriority)) {
                     handState.externalTransformActive = true;
                 } else {
                     ROCK_LOG_SAMPLE_WARN(Hand,

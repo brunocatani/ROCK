@@ -1496,7 +1496,7 @@ namespace rock::grab_finger_local_transform_math
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
-#include "api/FRIKApi.h"
+#include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 
 #include "RE/NetImmerse/NiTransform.h"
 
@@ -1669,7 +1669,7 @@ namespace rock::grab_finger_local_transform_runtime
         float strength,
         bool surfaceSafetyEnabled,
         float surfaceSafetyMarginGameUnits,
-        frik::api::FRIKApi::FingerLocalTransformOverride& transforms)
+        frik_visual_authority::FingerLocalTransformOverride& transforms)
     {
         const float curveStrength = grab_finger_local_transform_math::sanitizeUnitStrength(
             strength, grab_finger_local_transform_math::kDefaultThumbAlternateCurveStrength);
@@ -1807,9 +1807,9 @@ namespace rock::grab_finger_local_transform_runtime
     [[nodiscard]] inline bool buildSurfaceCorrectedLocalTransforms(
         bool isLeft,
         const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose,
-        const frik::api::FRIKApi::FingerLocalTransformOverride& baseline,
+        const frik_visual_authority::FingerLocalTransformOverride& baseline,
         Options options,
-        frik::api::FRIKApi::FingerLocalTransformOverride& outTransforms,
+        frik_visual_authority::FingerLocalTransformOverride& outTransforms,
         const char** outFailureReason = nullptr)
     {
         if (outFailureReason) {
@@ -1945,13 +1945,13 @@ namespace rock::grab_finger_local_transform_runtime
             (!wantsSurfaceCorrection && !wantsAlternateThumbPlaneCorrection);
     }
 
-    [[nodiscard]] inline frik::api::FRIKApi::FingerLocalTransformOverride smoothLocalTransforms(
-        const frik::api::FRIKApi::FingerLocalTransformOverride& target,
+    [[nodiscard]] inline frik_visual_authority::FingerLocalTransformOverride smoothLocalTransforms(
+        const frik_visual_authority::FingerLocalTransformOverride& target,
         State& state,
         float smoothingSpeed,
         float deltaTime)
     {
-        frik::api::FRIKApi::FingerLocalTransformOverride smoothed = target;
+        frik_visual_authority::FingerLocalTransformOverride smoothed = target;
         const std::uint16_t targetMask = grab_finger_local_transform_math::sanitizeFingerLocalTransformMask(target.enabledMask);
         if (!state.hasCurrentTransforms || state.currentMask != targetMask) {
             for (std::size_t i = 0; i < state.currentTransforms.size(); ++i) {
@@ -1986,22 +1986,21 @@ namespace rock::grab_finger_local_transform_runtime
         return smoothed;
     }
 
-    inline void clearLocalTransformOverride(const char* tag, frik::api::FRIKApi::Hand hand, int priority, State& state)
+    inline void clearLocalTransformOverride(const char* tag, frik_visual_authority::Hand hand, int priority, State& state)
     {
-        auto* api = frik::api::FRIKApi::inst;
-        if (!api || !api->setHandPoseCustomLocalTransformsWithPriority || !state.hasCurrentTransforms) {
+        if (!state.hasCurrentTransforms) {
             state = {};
             return;
         }
 
-        frik::api::FRIKApi::FingerLocalTransformOverride clearData{};
-        api->setHandPoseCustomLocalTransformsWithPriority(tag, hand, &clearData, priority);
+        frik_visual_authority::FingerLocalTransformOverride clearData{};
+        (void)frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(tag, hand, &clearData, priority);
         state = {};
     }
 
     [[nodiscard]] inline bool publishLocalTransformPose(
         const char* tag,
-        frik::api::FRIKApi::Hand hand,
+        frik_visual_authority::Hand hand,
         bool isLeft,
         const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose,
         const std::array<float, 15>& jointValues,
@@ -2010,26 +2009,26 @@ namespace rock::grab_finger_local_transform_runtime
         int priority,
         State& state)
     {
-        auto* api = frik::api::FRIKApi::inst;
-        const bool canPublish = api &&
+        const auto* api = frik_visual_authority::api();
+        const bool canPublish =
             grab_finger_local_transform_math::shouldPublishLocalTransformPose(
                 options.enabled,
                 fingerPose.solved,
                 fingerPose.hasJointValues,
-                api->getHandPoseLocalTransformsForJointPositions != nullptr,
-                api->setHandPoseCustomLocalTransformsWithPriority != nullptr);
+                api && api->getHandPoseLocalTransformsForJointPositions != nullptr,
+                api && api->setHandPoseCustomLocalTransformsWithPriority != nullptr);
         if (!canPublish) {
             clearLocalTransformOverride(tag, hand, priority, state);
             return false;
         }
 
-        frik::api::FRIKApi::FingerLocalTransformOverride baseline{};
-        if (!api->getHandPoseLocalTransformsForJointPositions(hand, jointValues.data(), &baseline)) {
+        frik_visual_authority::FingerLocalTransformOverride baseline{};
+        if (!frik_visual_authority::getHandPoseLocalTransformsForJointPositions(hand, jointValues.data(), &baseline)) {
             clearLocalTransformOverride(tag, hand, priority, state);
             return false;
         }
 
-        frik::api::FRIKApi::FingerLocalTransformOverride corrected{};
+        frik_visual_authority::FingerLocalTransformOverride corrected{};
         if (!buildSurfaceCorrectedLocalTransforms(isLeft, fingerPose, baseline, options, corrected)) {
             clearLocalTransformOverride(tag, hand, priority, state);
             return false;
@@ -2037,7 +2036,7 @@ namespace rock::grab_finger_local_transform_runtime
 
         const Options sanitizedOptions = sanitizeOptions(options);
         const auto smoothed = smoothLocalTransforms(corrected, state, sanitizedOptions.smoothingSpeed, deltaTime);
-        api->setHandPoseCustomLocalTransformsWithPriority(tag, hand, &smoothed, priority);
+        (void)frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(tag, hand, &smoothed, priority);
         return true;
     }
 }

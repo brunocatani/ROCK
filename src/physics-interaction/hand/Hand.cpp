@@ -14,7 +14,6 @@
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/TransformMath.h"
 #include "RockUtils.h"
-#include "api/FRIKApi.h"
 #include "RE/Havok/hknpMotion.h"
 
 namespace rock
@@ -26,22 +25,12 @@ namespace rock
 
         void clearGrabHandPose(bool isLeft)
         {
-            auto* api = frik::api::FRIKApi::inst;
-            if (!api || !api->clearHandPose) {
-                return;
-            }
-
-            api->clearHandPose(GRAB_HAND_POSE_TAG, handFromBool(isLeft));
+            (void)frik_visual_authority::clearHandPose(GRAB_HAND_POSE_TAG, handFromBool(isLeft));
         }
 
         void clearGrabExternalHandWorldTransform(bool isLeft)
         {
-            auto* api = frik::api::FRIKApi::inst;
-            if (!api || !api->clearExternalHandWorldTransform) {
-                return;
-            }
-
-            api->clearExternalHandWorldTransform(GRAB_EXTERNAL_HAND_TAG, handFromBool(isLeft));
+            (void)frik_visual_authority::clearExternalHandWorldTransform(GRAB_EXTERNAL_HAND_TAG, handFromBool(isLeft));
         }
 
         RE::NiTransform getLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
@@ -1742,22 +1731,20 @@ namespace rock
 
     void Hand::updateSelectedCloseFingerPose()
     {
-        auto* api = frik::api::FRIKApi::inst;
         const bool shouldApply = selected_close_finger_policy::shouldApplyPreCurl(
             g_rockConfig.rockSelectedCloseFingerCurlEnabled,
             _state == HandState::SelectedClose,
             _currentSelection.isValid(),
             _selectedCloseHandSpeedMetersPerSecond,
             g_rockConfig.rockSelectedCloseFingerAnimMaxHandSpeed);
-        if (!api || !shouldApply) {
+        if (!shouldApply) {
             clearSelectedCloseFingerPose();
             return;
         }
 
         const float value = std::clamp(g_rockConfig.rockSelectedCloseFingerAnimValue, 0.0f, 1.0f);
         const auto hand = handFromBool(_isLeft);
-        if (api->setHandPoseCustomFingerPositionsWithPriority) {
-            api->setHandPoseCustomFingerPositionsWithPriority(SELECTED_CLOSE_FINGER_TAG, hand, value, value, value, value, value, 10);
+        if (frik_visual_authority::setHandPoseCustomFingerPositionsWithPriority(SELECTED_CLOSE_FINGER_TAG, hand, value, value, value, value, value, 10)) {
             _selectedCloseFingerPoseActive = true;
         }
     }
@@ -1768,11 +1755,7 @@ namespace rock
             return;
         }
 
-        if (auto* api = frik::api::FRIKApi::inst) {
-            if (api->clearHandPose) {
-                api->clearHandPose(SELECTED_CLOSE_FINGER_TAG, handFromBool(_isLeft));
-            }
-        }
+        (void)frik_visual_authority::clearHandPose(SELECTED_CLOSE_FINGER_TAG, handFromBool(_isLeft));
         _selectedCloseFingerPoseActive = false;
     }
 

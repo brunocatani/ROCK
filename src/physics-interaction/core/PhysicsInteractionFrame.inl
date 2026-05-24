@@ -3,7 +3,7 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
     /*
      * Frame-context construction is separated from the main update loop so
      * lifecycle, collision, grab, weapon, and debug phases consume one coherent
-     * snapshot of FRIK/FO4VR hand state. This keeps future frame inputs from
+     * snapshot of ROCK/FO4VR hand state. This keeps future frame inputs from
      * being added as scattered global reads throughout PhysicsInteraction::update().
      */
     PhysicsFrameContext frame{};
@@ -11,7 +11,7 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
     frame.hknpWorld = hknp;
     frame.deltaSeconds = (deltaSeconds > 0.0f && deltaSeconds <= 0.1f) ? deltaSeconds : (1.0f / 90.0f);
     frame.worldReady = bhk && hknp;
-    frame.menuBlocked = (frik::api::FRIKApi::inst && frik::api::FRIKApi::inst->isAnyMenuOpen()) || input_remap_runtime::isMenuInputActive();
+    frame.menuBlocked = runtime_state::isPhysicsMenuBlocked();
     frame.reloadBoundaryActive = false;
 
     if (auto* player = RE::PlayerCharacter::GetSingleton()) {
