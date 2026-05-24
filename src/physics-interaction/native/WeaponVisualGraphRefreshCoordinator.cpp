@@ -4,9 +4,11 @@
 #include "physics-interaction/weapon/WeaponAuthority.h"
 
 #include "RE/Bethesda/BSExtraData.h"
+#include "RE/Bethesda/BSFixedString.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESForms.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
+#include "RE/Bethesda/UI.h"
 #include "RE/NetImmerse/NiAVObject.h"
 #include "RE/NetImmerse/NiNode.h"
 
@@ -193,17 +195,46 @@ namespace rock
             const char* name = node->name.c_str();
             return name ? name : "";
         }
+
+        bool weaponGraphRefreshMenuOpen()
+        {
+            auto* ui = RE::UI::GetSingleton();
+            if (!ui) {
+                return false;
+            }
+
+            static const RE::BSFixedString craftingMenu{ "Crafting Menu" };
+            static const RE::BSFixedString examineMenu{ "ExamineMenu" };
+            static const RE::BSFixedString examineConfirmMenu{ "ExamineConfirmMenu" };
+            return ui->GetMenuOpen(craftingMenu) || ui->GetMenuOpen(examineMenu) || ui->GetMenuOpen(examineConfirmMenu);
+        }
     }
 
     void WeaponVisualGraphRefreshCoordinator::reset()
     {
         _lastSignature = {};
         _pendingSignature = {};
+        _refreshWindowStartSignature = {};
+        _refreshWindowSignature = {};
         _hasLastSignature = false;
+        _hasRefreshWindowStartSignature = false;
+        _hasRefreshWindowSignature = false;
+        _refreshWindowOpenLastFrame = false;
+        _refreshWindowSignatureChanged = false;
         _pendingRefresh = false;
         _pendingReason = "unknown";
         _pendingApplyFrames = 0;
         _postRefreshCollisionHoldFrames = 0;
+    }
+
+    void WeaponVisualGraphRefreshCoordinator::clearRefreshWindowState()
+    {
+        _refreshWindowStartSignature = {};
+        _refreshWindowSignature = {};
+        _hasRefreshWindowStartSignature = false;
+        _hasRefreshWindowSignature = false;
+        _refreshWindowOpenLastFrame = false;
+        _refreshWindowSignatureChanged = false;
     }
 
     void WeaponVisualGraphRefreshCoordinator::scheduleRefresh(const EquippedWeaponModSignature& signature, const char* reason)
@@ -231,15 +262,16 @@ namespace rock
         }
 
         ++_pendingApplyFrames;
-        if (input.menuBlocking || !input.weaponDrawn) {
+        if (input.menuBlocking || !input.weaponDrawn || !input.weaponNode) {
             ROCK_LOG_SAMPLE_DEBUG(Weapon,
                 1000,
-                "Equipped weapon graph refresh pending reason={} formID={:08X} signature={:016X} menuBlocking={} weaponDrawn={} pendingFrames={}",
+                "Equipped weapon graph refresh pending reason={} formID={:08X} signature={:016X} menuBlocking={} weaponDrawn={} weaponNode={} pendingFrames={}",
                 _pendingReason,
                 _pendingSignature.formID,
                 _pendingSignature.key,
                 input.menuBlocking,
                 input.weaponDrawn,
+                input.weaponNode != nullptr,
                 _pendingApplyFrames);
             return false;
         }
@@ -291,9 +323,10 @@ namespace rock
 
         const auto signature = readEquippedWeaponModSignature();
         result.signatureKey = signature.key;
+        const bool refreshMenuOpen = weaponGraphRefreshMenuOpen();
 
         if (!signature.hasEquippedWeapon) {
-            if (_hasLastSignature || _pendingRefresh) {
+            if (_hasLastSignature || _pendingRefresh || _refreshWindowOpenLastFrame) {
                 ROCK_LOG_INFO(Weapon, "Equipped weapon graph refresh state cleared: no equipped weapon");
             }
             reset();
@@ -303,12 +336,75 @@ namespace rock
         if (!_hasLastSignature) {
             _lastSignature = signature;
             _hasLastSignature = true;
-            result.signatureChanged = true;
-            scheduleRefresh(signature, "equipped-weapon-observed");
         } else if (signature.key != _lastSignature.key) {
             _lastSignature = signature;
             result.signatureChanged = true;
-            scheduleRefresh(signature, "equipped-mod-instance-changed");
+        }
+
+        if (refreshMenuOpen) {
+            if (!_refreshWindowOpenLastFrame) {
+                _refreshWindowStartSignature = signature;
+                _refreshWindowSignature = signature;
+                _hasRefreshWindowStartSignature = true;
+                _hasRefreshWindowSignature = true;
+                _refreshWindowSignatureChanged = false;
+                ROCK_LOG_DEBUG(Weapon,
+                    "Equipped weapon graph refresh window opened formID={:08X} signature={:016X} activeMods={} disabledMods={}",
+                    signature.formID,
+                    signature.key,
+                    signature.activeModCount,
+                    signature.disabledModCount);
+            } else if (!_hasRefreshWindowSignature) {
+                _refreshWindowSignature = signature;
+                _hasRefreshWindowSignature = true;
+            } else if (signature.key != _refreshWindowSignature.key) {
+                _refreshWindowSignature = signature;
+                _refreshWindowSignatureChanged = !_hasRefreshWindowStartSignature || signature.key != _refreshWindowStartSignature.key;
+                ROCK_LOG_INFO(Weapon,
+                    "Equipped weapon mod signature changed inside workbench/menu window formID={:08X} signature={:016X} activeMods={} disabledMods={}",
+                    signature.formID,
+                    signature.key,
+                    signature.activeModCount,
+                    signature.disabledModCount);
+            }
+            _refreshWindowOpenLastFrame = true;
+            return result;
+        }
+
+        if (_refreshWindowOpenLastFrame) {
+            if (!_hasRefreshWindowSignature) {
+                _refreshWindowStartSignature = signature;
+                _refreshWindowSignature = signature;
+                _hasRefreshWindowStartSignature = true;
+                _hasRefreshWindowSignature = true;
+            } else if (signature.key != _refreshWindowSignature.key) {
+                _refreshWindowSignature = signature;
+                _refreshWindowSignatureChanged = !_hasRefreshWindowStartSignature || signature.key != _refreshWindowStartSignature.key;
+                result.signatureChanged = true;
+            }
+
+            if (_refreshWindowSignatureChanged && _hasRefreshWindowSignature) {
+                scheduleRefresh(_refreshWindowSignature, "workbench-menu-closed-mod-signature-changed");
+            } else {
+                ROCK_LOG_DEBUG(Weapon,
+                    "Equipped weapon graph refresh window closed without mod signature change formID={:08X} signature={:016X}",
+                    signature.formID,
+                    signature.key);
+            }
+            clearRefreshWindowState();
+        }
+
+        if (_pendingRefresh && signature.key != _pendingSignature.key) {
+            ROCK_LOG_WARN(Weapon,
+                "Equipped weapon graph refresh canceled: equipped signature diverged before apply pending={:016X} current={:016X} pendingFormID={:08X} currentFormID={:08X}",
+                _pendingSignature.key,
+                signature.key,
+                _pendingSignature.formID,
+                signature.formID);
+            _pendingRefresh = false;
+            _pendingSignature = {};
+            _pendingReason = "unknown";
+            _pendingApplyFrames = 0;
         }
 
         if (tryApplyRefresh(input)) {

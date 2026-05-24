@@ -70,4 +70,6 @@ Follow-up implementation uses the actor branch of `BGSObjectInstanceExtra::Attac
 
 The earlier candidate `Actor::HandleItemEquip(false)` was rejected for this bug because live behavior showed equip/unequip does not advance the missing part registration. The observed failure is one mod change behind: a later workbench change registers the previous missing part while the newly changed part becomes the missing one.
 
-ROCK now owns a separate native graph-refresh coordinator outside generated weapon collision. It watches the equipped weapon mod-instance signature, schedules a post-change player reference 3D dirty flag, and invalidates generated weapon collision on the refresh frame so collision is rebuilt only after the native graph registration has been actively triggered.
+ROCK now owns a separate native graph-refresh coordinator outside generated weapon collision. It watches the equipped weapon mod-instance signature only while the workbench/examine menu window is active, schedules a player reference 3D dirty flag only after that menu window closes with a changed signature, and invalidates generated weapon collision on the refresh frame so collision is rebuilt only after the native graph registration has been actively triggered.
+
+Do not trigger this refresh from first equipped weapon observation or ordinary equip/unholster signature changes. Runtime testing showed that broad trigger can hit the normal first-person transition and make the weapon disappear.

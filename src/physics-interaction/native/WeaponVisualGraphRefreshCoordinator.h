@@ -50,11 +50,18 @@ namespace rock
 
     private:
         void scheduleRefresh(const EquippedWeaponModSignature& signature, const char* reason);
+        void clearRefreshWindowState();
         bool tryApplyRefresh(const UpdateInput& input);
 
         EquippedWeaponModSignature _lastSignature{};
         EquippedWeaponModSignature _pendingSignature{};
+        EquippedWeaponModSignature _refreshWindowStartSignature{};
+        EquippedWeaponModSignature _refreshWindowSignature{};
         bool _hasLastSignature{ false };
+        bool _hasRefreshWindowStartSignature{ false };
+        bool _hasRefreshWindowSignature{ false };
+        bool _refreshWindowOpenLastFrame{ false };
+        bool _refreshWindowSignatureChanged{ false };
         bool _pendingRefresh{ false };
         const char* _pendingReason{ "unknown" };
         int _pendingApplyFrames{ 0 };
