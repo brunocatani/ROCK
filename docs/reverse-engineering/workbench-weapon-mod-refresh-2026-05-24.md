@@ -64,30 +64,20 @@ Candidate next verification:
 - Hook or instrument the post-build workbench path and the `BGSOnPlayerModArmorWeaponEvent` sink to confirm event timing relative to the first-person weapon graph.
 - Identify a safe native first-person/equipped-weapon rebuild function before attempting to force refresh. Do not call the reference `AttachModToReference` path for inventory items without a separate ownership/lifetime review.
 
-## Failed ROCK Boundary
+## Failed Attempts Removed
 
-The first implementation used the actor branch of `BGSObjectInstanceExtra::AttachModToReference` without calling the mod-attach function itself. Ghidra disassembly showed the actor branch ending in a virtual call at `+0x3B8` with argument `0x37`, which maps to `TESObjectREFR::Set3DUpdateFlag(RESET_3D_FLAGS)` with model, skin, head, scale, and skeleton bits.
+The following ROCK-side attempts were implemented, built, deployed, and then removed after runtime testing showed they did not solve the missing last-modded-part registration:
 
-Runtime testing on 2026-05-24 showed that this path did execute after the workbench change, but it did not fix the stale weapon-part registration. Logs showed ROCK scheduling and applying the refresh, then rebuilding generated collision from the same incomplete first-person weapon graph. The dirty-flag path was therefore removed from production code.
+- `04c24f0 fix/weapon-graph-refresh: dirty equipped weapon 3d after mod signature changes`
+  - Tried a broad equipped weapon mod-signature trigger that called the loaded-reference 3D dirty path.
+  - Runtime result: this ran too often and could hit normal equip/unholster first-person transitions, making the weapon disappear.
 
-The earlier candidate `Actor::HandleItemEquip(false)` was also rejected for this bug because live behavior showed equip/unequip does not advance the missing part registration. The observed failure is one mod change behind: a later workbench change registers the previous missing part while the newly changed part becomes the missing one.
+- `d414328 fix/weapon-graph-refresh: gate dirty refresh to workbench close`
+  - Restricted the same dirty-refresh path to a workbench/menu-close signature transition.
+  - Runtime result: logs confirmed the refresh ran with the expected `0x37` flag path, but the missing weapon part still did not become registered under the first-person/root graph.
 
-## Corrected ROCK Boundary
+- `8e607c9 fix/weapon-graph-refresh: replay workbench native refresh`
+  - Hooked the verified `ExamineMenu::BuildConfirmed` native visual-refresh callsite at module offset `0xB3AA24`, validated bytes `FF 90 20 01 00 00`, let the natural call run, then replayed the same `ExamineMenu` vtable slot `+0x120` once when the equipped mod-instance signature changed.
+  - Runtime result: the replay path was not the missing registration trigger either, so the hook and coordinator were removed.
 
-Ghidra verification identified a narrower native boundary inside `ExamineMenu::BuildConfirmed`: after the inventory mod mutation, the function calls the same menu visual-refresh virtual used by workbench preview changes.
-
-Verified callsite:
-
-- virtual call address: `0x140B3AA24`;
-- module offset used by ROCK: `0xB3AA24`;
-- instruction bytes: `FF 90 20 01 00 00`;
-- slot called: `ExamineMenu` vtable offset `+0x120`;
-- call arguments observed in disassembly: `RCX=this`, `DL=1`.
-
-ROCK hooks only that six-byte native callsite, validates the expected bytes before patching, lets the natural native refresh run first, and replays the same `ExamineMenu` visual refresh once when the equipped mod-instance signature changed relative to the last stable non-menu equipped weapon state.
-
-The hook publishes a refresh epoch only when it performs that replay. The `WeaponVisualGraphRefreshCoordinator` consumes the epoch after menu blocking clears and a live weapon node is available, then invalidates generated weapon collision with reason `workbench-native-refresh-replay` so the next scan rebuilds from the graph after the replayed native registration pass.
-
-Do not trigger this refresh from first equipped weapon observation or ordinary equip/unholster signature changes. Runtime testing showed that broad trigger can hit the normal first-person transition and make the weapon disappear.
-
-Remaining runtime risk: this still needs live validation to confirm that replaying the exact workbench native refresh closes the observed N-1 graph-registration gap.
+Conclusion for future work: do not reintroduce `Set3DUpdateFlag(0x37)` dirty refresh, broad equip/signature refresh, workbench-close dirty refresh, or `ExamineMenu::BuildConfirmed` visual-refresh replay as the fix for this stale graph bug. The useful finding is negative: the real trigger is likely elsewhere in the equipped weapon/first-person graph registration path, not in ROCK settle timing, ordinary equip refresh, player reference dirty flags, or the menu visual-refresh call itself.

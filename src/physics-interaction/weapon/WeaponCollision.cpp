@@ -3353,29 +3353,6 @@ namespace rock
         _driveFailureCount.store(0, std::memory_order_release);
     }
 
-    void WeaponCollision::invalidateForVisualGraphRefresh(RE::hknpWorld* world, const char* reason)
-    {
-        const bool hadWeaponBody = hasWeaponBody();
-        if (hadWeaponBody) {
-            ROCK_LOG_INFO(Weapon, "Generated weapon collision invalidated by equipped weapon graph refresh reason={}", reason ? reason : "unknown");
-            destroyWeaponBody(world);
-        } else {
-            clearAtomicBodyIds();
-            resetWeaponBodySetGeneration();
-            if (_dominantHandDisabled && world) {
-                enableDominantHandCollision(world);
-            }
-            ROCK_LOG_DEBUG(Weapon, "Equipped weapon graph refresh invalidation had no active generated bodies reason={}", reason ? reason : "unknown");
-        }
-
-        _cachedWeaponKey = 0;
-        clearGeneratedSourceCompletenessTracking();
-        clearPendingWeaponVisualRebuild();
-        resetWeaponCollisionSettingsCache();
-        _driveRebuildRequested.store(false, std::memory_order_release);
-        _driveFailureCount.store(0, std::memory_order_release);
-    }
-
     void WeaponCollision::destroyWeaponBodyBank(WeaponBodyBank& bank, bool releaseShapeRef)
     {
         for (auto& instance : bank) {
