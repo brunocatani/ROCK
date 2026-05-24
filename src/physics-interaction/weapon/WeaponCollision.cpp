@@ -253,7 +253,7 @@ namespace rock
                 return;
             }
 
-            auto& children = niNode->GetRuntimeData().children;
+            const auto& children = niNode->children;
             for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
                 if (auto* child = children[i].get()) {
                     collectWeaponAnimNodeMatchesRecursive(child, targetName, path, depth + 1, visited, outMatches);
@@ -303,7 +303,7 @@ namespace rock
             }
 
             ++stats.niNodeCount;
-            auto& children = niNode->GetRuntimeData().children;
+            const auto& children = niNode->children;
             for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
                 if (auto* child = children[i].get()) {
                     accumulateWeaponAnimNodeSubtreeStats(child, stats, depth + 1, visited);
@@ -327,7 +327,7 @@ namespace rock
             }
 
             std::string result;
-            auto& children = niNode->GetRuntimeData().children;
+            const auto& children = niNode->children;
             std::size_t appended = 0;
             for (auto i = decltype(children.size()){ 0 }; i < children.size() && appended < WEAPON_ANIM_NODE_DUMP_MAX_CHILD_NAMES; ++i) {
                 const auto* child = children[i].get();
@@ -2040,7 +2040,7 @@ namespace rock
                 }
 
                 auto* niNode = node->IsNode();
-                const auto childCount = niNode ? niNode->GetRuntimeData().children.size() : 0;
+                const auto childCount = niNode ? niNode->children.size() : 0;
                 const auto stats = summarizeWeaponAnimNodeSubtree(node);
                 const auto childNames = weaponAnimNodeImmediateChildNames(node);
                 auto* parent = node->parent;
