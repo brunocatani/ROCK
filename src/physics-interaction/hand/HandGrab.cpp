@@ -2328,6 +2328,10 @@ namespace rock
         }
 
         constexpr const char* kGrabObjectRotationReferenceName = "rawRotationPalmTranslation";
+        constexpr float kGrabFrameMismatchRawProxyRotationWarnDegrees = 20.0f;
+        constexpr float kGrabFrameMismatchProxyRotationWarnDegrees = 5.0f;
+        constexpr float kGrabFrameMismatchObjectRotationWarnDegrees = 25.0f;
+        constexpr float kGrabFrameMismatchGripErrorWarnGameUnits = 5.0f;
 
         RE::NiTransform makeRawRotationPalmTranslationFrame(
             const RE::NiTransform& rawHandWorld,
@@ -9172,7 +9176,7 @@ namespace rock
 
     void Hand::observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
     {
-        if (!g_rockConfig.rockDebugGrabFrameLogging || !world) {
+        if (!world) {
             return;
         }
 
@@ -9209,6 +9213,43 @@ namespace rock
             afterSolveSequence = ++_grabAuthorityProxyAfterSolveLogCounter;
             constraintId = _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu;
             angularAuthority = _activeConstraint.angularAuthority;
+        }
+
+        const bool debugGrabFrameLogging = g_rockConfig.rockDebugGrabFrameLogging;
+        const bool shouldSampleForAnomaly = afterSolveSequence <= 16u || (afterSolveSequence % 30u) == 0u;
+        if (!debugGrabFrameLogging && !shouldSampleForAnomaly) {
+            return;
+        }
+
+        bool hasConstraintFrameMetrics = false;
+        float constraintTransformBLocalDeltaGameUnits = -1.0f;
+        float targetRowsToConstraintInverseDegrees = -1.0f;
+        float targetColumnsToTransformBDegrees = -1.0f;
+        {
+            std::scoped_lock lock(_grabAuthorityProxyMutex);
+            if (_activeConstraint.constraintData) {
+                const auto* constraintData = static_cast<const char*>(_activeConstraint.constraintData);
+                const auto* targetBRca = reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
+                const auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
+                const auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
+                const RE::NiTransform desiredBodyTransformHandSpace = _grabFrame.rawRotationProxyBodyHandSpace;
+                const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
+                const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
+                const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
+                const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
+                const RE::NiPoint3 constraintTransformBLocalGame{
+                    transformBTranslation[0] * havokToGameScale(),
+                    transformBTranslation[1] * havokToGameScale(),
+                    transformBTranslation[2] * havokToGameScale(),
+                };
+                const RE::NiPoint3 desiredTransformBLocalGame =
+                    grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformHandSpace, _grabFrame.pivotAHandBodyLocalGame);
+                constraintTransformBLocalDeltaGameUnits =
+                    pointDistanceGameUnits(constraintTransformBLocalGame, desiredTransformBLocalGame);
+                targetRowsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkRows, desiredBodyToHandSpace.rotate);
+                targetColumnsToTransformBDegrees = rotationDeltaDegrees(targetAsHkColumns, transformBAsHkColumns);
+                hasConstraintFrameMetrics = true;
+            }
         }
 
         RE::NiTransform proxyReadback{};
@@ -9254,6 +9295,9 @@ namespace rock
             objectOk ? pointDistanceGameUnits(objectReadback.translate, desiredBodyFromLiveProxy.translate) : -1.0f;
         const float objectLiveProxyRotationErrorDegrees =
             objectOk ? rotationDeltaDegrees(objectReadback.rotate, desiredBodyFromLiveProxy.rotate) : -1.0f;
+        const float rawToTargetProxyRotationDegrees = rotationDeltaDegrees(targetRawHandWorld.rotate, targetProxyWorld.rotate);
+        const float rawToLiveProxyRotationDegrees =
+            proxyOk ? rotationDeltaDegrees(targetRawHandWorld.rotate, proxyReadback.rotate) : -1.0f;
 
         float gripTargetErrorGameUnits = -1.0f;
         float gripLiveProxyErrorGameUnits = -1.0f;
@@ -9265,6 +9309,40 @@ namespace rock
             gripLiveProxyErrorGameUnits = pointDistanceGameUnits(liveGripWorld, liveProxyGripWorld);
         }
 
+        const bool likelyRawProxyFrameMismatch =
+            rawToTargetProxyRotationDegrees > kGrabFrameMismatchRawProxyRotationWarnDegrees &&
+            ((proxyOk && proxyTargetRotationErrorDegrees > kGrabFrameMismatchProxyRotationWarnDegrees) ||
+                (objectOk && objectTargetRotationErrorDegrees > kGrabFrameMismatchObjectRotationWarnDegrees) ||
+                (objectOk && gripTargetErrorGameUnits > kGrabFrameMismatchGripErrorWarnGameUnits));
+        if (likelyRawProxyFrameMismatch) {
+            ROCK_LOG_SAMPLE_WARN(Hand,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "{} PROXY GRAB FRAME MISMATCH: seq={}/{} afterSeq={} substep={}/{} rawToProxyTarget={:.1f}deg rawToProxyLive={:.1f}deg proxyErr={:.2f}gu/{:.1f}deg objectErr={:.2f}gu/{:.1f}deg gripErr={:.2f}gu transformBDelta={:.2f}gu targetRowsInv={:.1f}deg targetColsToTransformB={:.1f}deg angularRef={} proxySrc={} objectSrc={} phase={} pivotB=({:.2f},{:.2f},{:.2f})",
+                handName(),
+                flushSequence,
+                queuedSequence,
+                afterSolveSequence,
+                timing.substepIndex,
+                timing.substepCount,
+                rawToTargetProxyRotationDegrees,
+                rawToLiveProxyRotationDegrees,
+                proxyTargetPositionErrorGameUnits,
+                proxyTargetRotationErrorDegrees,
+                objectTargetPositionErrorGameUnits,
+                objectTargetRotationErrorDegrees,
+                gripTargetErrorGameUnits,
+                hasConstraintFrameMetrics ? constraintTransformBLocalDeltaGameUnits : -1.0f,
+                hasConstraintFrameMetrics ? targetRowsToConstraintInverseDegrees : -1.0f,
+                hasConstraintFrameMetrics ? targetColumnsToTransformBDegrees : -1.0f,
+                kGrabObjectRotationReferenceName,
+                body_frame::bodyFrameSourceCode(proxySource),
+                body_frame::bodyFrameSourceCode(objectSource),
+                grab_three_phase::phaseName(_grabAcquisitionPhase),
+                pivotBConstraintLocalGame.x,
+                pivotBConstraintLocalGame.y,
+                pivotBConstraintLocalGame.z);
+        }
+
         const bool shouldLogSequence = afterSolveSequence <= 16 || (afterSolveSequence % 45u) == 0u;
         const bool shouldLogAnomaly =
             !proxyOk ||
@@ -9273,8 +9351,9 @@ namespace rock
             proxyTargetRotationErrorDegrees > 1.0f ||
             objectTargetPositionErrorGameUnits > 5.0f ||
             objectTargetRotationErrorDegrees > 15.0f ||
-            gripTargetErrorGameUnits > 5.0f;
-        if (!shouldLogSequence && !shouldLogAnomaly) {
+            gripTargetErrorGameUnits > 5.0f ||
+            likelyRawProxyFrameMismatch;
+        if (!debugGrabFrameLogging || (!shouldLogSequence && !shouldLogAnomaly)) {
             return;
         }
 
