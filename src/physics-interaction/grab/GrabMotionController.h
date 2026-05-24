@@ -74,23 +74,6 @@ namespace rock::grab_motion_controller
         bool fadeInEnabled = true;
         float fadeElapsed = 1.0f;
         float fadeDuration = 0.1f;
-
-        bool pivotQualityAngularScalingEnabled = false;
-        bool pivotAuthorityPositionOnly = false;
-        bool pivotAuthorityNormalTrusted = true;
-        bool contactPatchUsedAsPivot = false;
-        std::uint32_t contactPatchSampleCount = 0;
-        std::uint32_t multiFingerContactGroupCount = 0;
-        float multiFingerContactSpreadGameUnits = 0.0f;
-        float longObjectLeverGameUnits = 0.0f;
-        float smallObjectReferenceLeverGameUnits = 12.0f;
-        float positionOnlyAngularScale = 0.55f;
-        float smallObjectAngularScale = 0.65f;
-        float lowContactSupportAngularScale = 0.75f;
-        float minAngularAuthorityScale = 0.30f;
-        float weakPivotTwistScale = 0.35f;
-        ContactSupportShape contactSupportShape = ContactSupportShape::Unknown;
-        float longObjectReferenceLeverGameUnits = 24.0f;
     };
 
     struct MotorOutput
@@ -107,7 +90,7 @@ namespace rock::grab_motion_controller
         bool enabled = true;
         bool positionOnlyPivot = false;
         bool normalTrusted = true;
-        bool contactPatchUsedAsPivot = false;
+        bool contactPatchEvidence = false;
         std::uint32_t contactPatchSampleCount = 0;
         std::uint32_t multiFingerContactGroupCount = 0;
         float multiFingerContactSpreadGameUnits = 0.0f;
@@ -226,7 +209,7 @@ namespace rock::grab_motion_controller
 
     inline ContactSupportShape classifyContactSupportShape(ContactSupportShape explicitShape,
         bool normalTrusted,
-        bool contactPatchUsedAsPivot,
+        bool contactPatchEvidence,
         std::uint32_t contactPatchSampleCount,
         std::uint32_t multiFingerContactGroupCount,
         float multiFingerContactSpreadGameUnits,
@@ -244,10 +227,10 @@ namespace rock::grab_motion_controller
         const float spread = finiteOr(multiFingerContactSpreadGameUnits, 0.0f);
         const bool smallObject = lever > 0.0f && lever <= smallReference;
         const bool longObject = lever >= longReference * 1.35f;
-        const bool patchPivot = contactPatchUsedAsPivot && contactPatchSampleCount > 0;
+        const bool patchEvidence = contactPatchEvidence && contactPatchSampleCount > 0;
         const bool multiFingerWrap = multiFingerContactGroupCount >= 3 && spread >= 4.0f;
 
-        if (longObject && (!patchPivot || contactPatchSampleCount <= 2 || multiFingerContactGroupCount < 2)) {
+        if (longObject && (!patchEvidence || contactPatchSampleCount <= 2 || multiFingerContactGroupCount < 2)) {
             return ContactSupportShape::LongHandle;
         }
         if (smallObject && multiFingerWrap) {
@@ -256,7 +239,7 @@ namespace rock::grab_motion_controller
         if (multiFingerWrap) {
             return ContactSupportShape::Wrap;
         }
-        if (!patchPivot) {
+        if (!patchEvidence) {
             return multiFingerContactGroupCount >= 2 ? ContactSupportShape::Wrap : ContactSupportShape::Unknown;
         }
         if (contactPatchSampleCount <= 1) {
@@ -294,11 +277,11 @@ namespace rock::grab_motion_controller
             output.weakPivotTwistScale = configuredWeakPivotTwistScale;
         }
 
-        const bool patchSupportsPivot = input.contactPatchUsedAsPivot && input.contactPatchSampleCount > 0;
-        const bool hasContactSupport = patchSupportsPivot || input.multiFingerContactGroupCount > 0;
+        const bool patchSupportsReleaseSafety = input.contactPatchEvidence && input.contactPatchSampleCount > 0;
+        const bool hasContactSupport = patchSupportsReleaseSafety || input.multiFingerContactGroupCount > 0;
         const bool strongContactSupport =
             input.multiFingerContactGroupCount >= 2 ||
-            (input.contactPatchUsedAsPivot && input.contactPatchSampleCount >= 3) ||
+            (input.contactPatchEvidence && input.contactPatchSampleCount >= 3) ||
             (std::isfinite(input.multiFingerContactSpreadGameUnits) && input.multiFingerContactSpreadGameUnits >= 4.0f);
         output.lowContactSupport = hasContactSupport && !strongContactSupport;
         if (output.lowContactSupport) {
@@ -315,7 +298,7 @@ namespace rock::grab_motion_controller
         output.contactSupportShape = classifyContactSupportShape(
             input.contactSupportShape,
             input.normalTrusted,
-            input.contactPatchUsedAsPivot,
+            input.contactPatchEvidence,
             input.contactPatchSampleCount,
             input.multiFingerContactGroupCount,
             input.multiFingerContactSpreadGameUnits,
@@ -382,37 +365,6 @@ namespace rock::grab_motion_controller
         const char* reason = "full-authority";
     };
 
-    struct HeldSupportRefreshInput
-    {
-        bool enabled = true;
-        bool hasLiveCandidate = false;
-        bool liveCandidateNormalTrusted = false;
-        bool currentPositionOnly = false;
-        bool currentNormalTrusted = false;
-        bool currentHasSeatedPivotReacquire = false;
-        bool currentContactPatchUsedAsPivot = false;
-        std::uint32_t currentContactPatchSampleCount = 0;
-        std::uint32_t currentMultiFingerContactGroupCount = 0;
-        float currentLongObjectLeverGameUnits = 0.0f;
-        float liveCandidateLocalDeltaGameUnits = 0.0f;
-        float maxLiveCandidateLocalDeltaGameUnits = 4.0f;
-        float liveCandidateLongObjectLeverGameUnits = 0.0f;
-    };
-
-    struct HeldSupportRefreshDecision
-    {
-        bool refresh = false;
-        bool keepFrozenPivot = true;
-        bool useLiveCandidateNormal = false;
-        bool useLiveCandidateContactSample = false;
-        bool pivotAuthorityPositionOnly = false;
-        bool pivotAuthorityNormalTrusted = false;
-        bool contactPatchUsedAsPivot = false;
-        std::uint32_t contactPatchSampleCount = 0;
-        float longObjectLeverGameUnits = 0.0f;
-        const char* reason = "notEvaluated";
-    };
-
     struct SeatedPalmPocketPromotionInput
     {
         bool enabled = true;
@@ -462,121 +414,23 @@ namespace rock::grab_motion_controller
             return decision;
         }
 
-        const bool betterPatchSupport =
-            input.supportPatchValid &&
-            input.supportPatchSampleCount > input.currentContactPatchSampleCount;
-        const bool betterFingerSupport =
-            input.liveMultiFingerContactGroupCount > input.currentMultiFingerContactGroupCount;
-        const bool betterNormal =
-            (input.supportPatchNormalTrusted || input.candidateNormalTrusted) &&
-            (input.supportPatchSampleCount > 0 || input.supportPatchValid);
-        const bool betterSupport = betterPatchSupport || betterFingerSupport || betterNormal;
-
         if (input.motorContactSoftening && !input.reachedTouchRange) {
-            decision.enrichSupport = betterSupport;
-            decision.reason = betterSupport ? "seatedPalmPocketPromotionContactSofteningSupportOnly" :
-                                              "seatedPalmPocketPromotionContactSoftening";
+            decision.reason = "seatedPalmPocketPromotionContactSofteningKeepFrozen";
             return decision;
         }
 
         const float localDelta = finiteOr(input.candidateLocalDeltaGameUnits, std::numeric_limits<float>::infinity());
         const float immediateMax = safePositive(input.immediateMaxLocalDeltaGameUnits, 4.0f);
-        const float lerpMax = (std::max)(immediateMax, safePositive(input.lerpMaxLocalDeltaGameUnits, immediateMax * 3.0f));
         if (std::isfinite(localDelta) && localDelta <= immediateMax) {
             decision.promotePivot = true;
             decision.completeSeatedRelation = true;
-            decision.enrichSupport = true;
+            decision.enrichSupport = false;
             decision.pivotBlend = 1.0f;
             decision.reason = "seatedPalmPocketPromotionImmediate";
             return decision;
         }
 
-        if (std::isfinite(localDelta) && localDelta <= lerpMax) {
-            decision.promotePivot = true;
-            decision.completeSeatedRelation = false;
-            decision.enrichSupport = true;
-            decision.pivotBlend = std::clamp(immediateMax / (std::max)(localDelta, immediateMax), 0.25f, 0.75f);
-            decision.reason = "seatedPalmPocketPromotionLerp";
-            return decision;
-        }
-
-        decision.enrichSupport = betterSupport;
-        decision.reason = betterSupport ? "seatedPalmPocketPromotionSupportOnlyLargeDelta" :
-                                          "seatedPalmPocketPromotionCandidateTooFar";
-        return decision;
-    }
-
-    inline HeldSupportRefreshDecision evaluateHeldSupportRefresh(const HeldSupportRefreshInput& input)
-    {
-        HeldSupportRefreshDecision decision{};
-        decision.pivotAuthorityPositionOnly = input.currentPositionOnly;
-        decision.pivotAuthorityNormalTrusted = input.currentNormalTrusted;
-        decision.contactPatchUsedAsPivot = input.currentContactPatchUsedAsPivot;
-        decision.contactPatchSampleCount = input.currentContactPatchSampleCount;
-        decision.longObjectLeverGameUnits = finiteOr(input.currentLongObjectLeverGameUnits, 0.0f);
-
-        if (!input.enabled) {
-            decision.reason = "heldSupportRefreshDisabled";
-            return decision;
-        }
-        if (!input.hasLiveCandidate) {
-            decision.reason = "heldSupportRefreshMissingLiveCandidate";
-            return decision;
-        }
-
-        const float liveDelta = finiteOr(input.liveCandidateLocalDeltaGameUnits, std::numeric_limits<float>::infinity());
-        const float maxLiveDelta = safePositive(input.maxLiveCandidateLocalDeltaGameUnits, 4.0f);
-        if (!std::isfinite(liveDelta) || liveDelta > maxLiveDelta) {
-            decision.reason = "heldSupportRefreshCandidateMovedPivot";
-            return decision;
-        }
-
-        const bool currentHasPatchSupport = input.currentContactPatchUsedAsPivot && input.currentContactPatchSampleCount > 0;
-        const bool currentLowSupport = input.currentContactPatchSampleCount <= 1 && input.currentMultiFingerContactGroupCount < 2;
-        const bool candidateHasLever =
-            std::isfinite(input.liveCandidateLongObjectLeverGameUnits) && input.liveCandidateLongObjectLeverGameUnits > 0.0f;
-        const float currentLever = finiteOr(input.currentLongObjectLeverGameUnits, 0.0f);
-        const float liveLever = candidateHasLever ? input.liveCandidateLongObjectLeverGameUnits : currentLever;
-        const float leverDelta = std::fabs(liveLever - currentLever);
-        const bool leverChanged = candidateHasLever && leverDelta > (std::max)(1.0f, currentLever * 0.10f);
-        const bool normalUpgrade = input.liveCandidateNormalTrusted && (!input.currentNormalTrusted || input.currentPositionOnly);
-        const bool weakNormalDowngrade =
-            !input.liveCandidateNormalTrusted &&
-            input.currentNormalTrusted &&
-            currentLowSupport &&
-            !input.currentHasSeatedPivotReacquire;
-        const bool addSupport = !currentHasPatchSupport;
-
-        if (!normalUpgrade && !weakNormalDowngrade && !addSupport && !leverChanged) {
-            decision.reason = "heldSupportRefreshNoBetterEvidence";
-            return decision;
-        }
-
-        decision.refresh = true;
-        decision.contactPatchUsedAsPivot = true;
-        decision.contactPatchSampleCount = input.currentContactPatchUsedAsPivot ?
-            (std::max<std::uint32_t>)(input.currentContactPatchSampleCount, 1u) :
-            1u;
-        decision.longObjectLeverGameUnits = liveLever;
-        if (input.liveCandidateNormalTrusted) {
-            decision.pivotAuthorityPositionOnly = false;
-            decision.pivotAuthorityNormalTrusted = true;
-            decision.useLiveCandidateNormal = true;
-            decision.useLiveCandidateContactSample = true;
-            decision.reason = normalUpgrade ? "heldSupportRefreshNormalUpgrade" : "heldSupportRefreshLiveSupport";
-        } else if (weakNormalDowngrade || !input.currentNormalTrusted || input.currentPositionOnly) {
-            decision.pivotAuthorityPositionOnly = true;
-            decision.pivotAuthorityNormalTrusted = false;
-            decision.useLiveCandidateNormal = true;
-            decision.useLiveCandidateContactSample = true;
-            decision.reason = weakNormalDowngrade ? "heldSupportRefreshWeakNormalDowngrade" : "heldSupportRefreshPositionOnly";
-        } else {
-            decision.pivotAuthorityPositionOnly = input.currentPositionOnly;
-            decision.pivotAuthorityNormalTrusted = input.currentNormalTrusted;
-            decision.useLiveCandidateNormal = false;
-            decision.useLiveCandidateContactSample = addSupport;
-            decision.reason = leverChanged ? "heldSupportRefreshLeverUpdate" : "heldSupportRefreshSupportOnly";
-        }
+        decision.reason = "seatedPalmPocketPromotionCandidateTooFarKeepFrozen";
         return decision;
     }
 
@@ -775,31 +629,6 @@ namespace rock::grab_motion_controller
         return result;
     }
 
-    inline HeldAuthorityInput makeHeldAuthorityInput(const MotorInput& input)
-    {
-        return HeldAuthorityInput{
-            .angular = AngularAuthorityInput{
-                .enabled = input.pivotQualityAngularScalingEnabled,
-                .positionOnlyPivot = input.pivotAuthorityPositionOnly,
-                .normalTrusted = input.pivotAuthorityNormalTrusted,
-                .contactPatchUsedAsPivot = input.contactPatchUsedAsPivot,
-                .contactPatchSampleCount = input.contactPatchSampleCount,
-                .multiFingerContactGroupCount = input.multiFingerContactGroupCount,
-                .multiFingerContactSpreadGameUnits = input.multiFingerContactSpreadGameUnits,
-                .longObjectLeverGameUnits = input.longObjectLeverGameUnits,
-                .smallObjectReferenceLeverGameUnits = input.smallObjectReferenceLeverGameUnits,
-                .positionOnlyAngularScale = input.positionOnlyAngularScale,
-                .smallObjectAngularScale = input.smallObjectAngularScale,
-                .lowContactSupportAngularScale = input.lowContactSupportAngularScale,
-                .minAngularAuthorityScale = input.minAngularAuthorityScale,
-                .weakPivotTwistScale = input.weakPivotTwistScale,
-                .contactSupportShape = input.contactSupportShape,
-                .longObjectReferenceLeverGameUnits = input.longObjectReferenceLeverGameUnits,
-            },
-            .heldBodyColliding = input.heldBodyColliding,
-        };
-    }
-
     inline MotorOutput solveMotorTargetsWithAuthority(const MotorInput& input, const HeldAuthorityState& heldAuthority)
     {
         MotorOutput out{};
@@ -833,6 +662,9 @@ namespace rock::grab_motion_controller
 
     inline MotorOutput solveMotorTargets(const MotorInput& input)
     {
-        return solveMotorTargetsWithAuthority(input, evaluateHeldAuthority(makeHeldAuthorityInput(input)));
+        return solveMotorTargetsWithAuthority(input, HeldAuthorityState{
+            .softenForContact = input.heldBodyColliding,
+            .reason = input.heldBodyColliding ? "contact-softened-authority" : "full-authority",
+        });
     }
 }

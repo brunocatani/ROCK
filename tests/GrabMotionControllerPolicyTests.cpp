@@ -107,12 +107,6 @@ int main()
     ok &= expectNear("angular follow keeps HIGGS-style tau fixed", angularFixedTauOutput.angularTau, 0.03f, 0.001f);
 
     MotorInput positionOnlyPivot = singleHand;
-    positionOnlyPivot.pivotQualityAngularScalingEnabled = true;
-    positionOnlyPivot.pivotAuthorityPositionOnly = true;
-    positionOnlyPivot.pivotAuthorityNormalTrusted = false;
-    positionOnlyPivot.contactPatchUsedAsPivot = true;
-    positionOnlyPivot.contactPatchSampleCount = 1;
-    positionOnlyPivot.longObjectLeverGameUnits = 8.0f;
     const auto positionOnlyOutput = solveMotorTargets(positionOnlyPivot);
     ok &= expectNear("position-only small weak pivot does not reduce held linear force", positionOnlyOutput.linearMaxForce, 1000.0f, 0.001f);
     ok &= expectNear("position-only small weak pivot does not reduce held angular force", positionOnlyOutput.angularMaxForce, 1000.0f, 0.001f);
@@ -124,11 +118,6 @@ int main()
     ok &= expectNear("weak support still leaves angular tau fixed", weakAngularFixedTauOutput.angularTau, 0.03f, 0.001f);
 
     MotorInput longHandleMotor = singleHand;
-    longHandleMotor.pivotQualityAngularScalingEnabled = true;
-    longHandleMotor.contactPatchUsedAsPivot = true;
-    longHandleMotor.contactPatchSampleCount = 2;
-    longHandleMotor.longObjectLeverGameUnits = 72.0f;
-    longHandleMotor.longObjectReferenceLeverGameUnits = 24.0f;
     const auto longHandleMotorOutput = solveMotorTargets(longHandleMotor);
     ok &= expectNear("long-handle patch shape does not reduce held linear force", longHandleMotorOutput.linearMaxForce, 1000.0f, 0.001f);
     ok &= expectNear("long-handle patch shape does not reduce held angular force", longHandleMotorOutput.angularMaxForce, 1000.0f, 0.001f);
@@ -155,7 +144,7 @@ int main()
         .enabled = true,
         .positionOnlyPivot = false,
         .normalTrusted = true,
-        .contactPatchUsedAsPivot = true,
+        .contactPatchEvidence = true,
         .contactPatchSampleCount = 4,
         .longObjectLeverGameUnits = 8.0f,
     });
@@ -167,7 +156,7 @@ int main()
         .enabled = true,
         .positionOnlyPivot = false,
         .normalTrusted = true,
-        .contactPatchUsedAsPivot = true,
+        .contactPatchEvidence = true,
         .contactPatchSampleCount = 1,
         .longObjectLeverGameUnits = 8.0f,
     });
@@ -178,7 +167,7 @@ int main()
         .enabled = true,
         .positionOnlyPivot = false,
         .normalTrusted = true,
-        .contactPatchUsedAsPivot = false,
+        .contactPatchEvidence = false,
         .contactPatchSampleCount = 1,
         .longObjectLeverGameUnits = 8.0f,
     });
@@ -188,7 +177,7 @@ int main()
         .enabled = true,
         .positionOnlyPivot = false,
         .normalTrusted = true,
-        .contactPatchUsedAsPivot = true,
+        .contactPatchEvidence = true,
         .contactPatchSampleCount = 1,
         .longObjectLeverGameUnits = 20.0f,
     });
@@ -204,7 +193,7 @@ int main()
         .enabled = true,
         .positionOnlyPivot = false,
         .normalTrusted = true,
-        .contactPatchUsedAsPivot = true,
+        .contactPatchEvidence = true,
         .contactPatchSampleCount = 2,
         .longObjectLeverGameUnits = 72.0f,
         .longObjectReferenceLeverGameUnits = 24.0f,
@@ -218,7 +207,7 @@ int main()
         .enabled = true,
         .positionOnlyPivot = false,
         .normalTrusted = true,
-        .contactPatchUsedAsPivot = false,
+        .contactPatchEvidence = false,
         .contactPatchSampleCount = 0,
         .longObjectLeverGameUnits = 72.0f,
         .longObjectReferenceLeverGameUnits = 24.0f,
@@ -246,7 +235,7 @@ int main()
             .enabled = true,
             .positionOnlyPivot = true,
             .normalTrusted = false,
-            .contactPatchUsedAsPivot = true,
+            .contactPatchEvidence = true,
             .contactPatchSampleCount = 1,
             .longObjectLeverGameUnits = 8.0f,
         },
@@ -263,7 +252,7 @@ int main()
             .enabled = true,
             .positionOnlyPivot = false,
             .normalTrusted = true,
-            .contactPatchUsedAsPivot = true,
+            .contactPatchEvidence = true,
             .contactPatchSampleCount = 4,
             .contactSupportShape = ContactSupportShape::Surface,
         },
@@ -274,120 +263,6 @@ int main()
 
     const float authorityCap = computeAuthorityScaledAngularVelocityCap(18.0f, 0.30f, 0.50f);
     ok &= expectNear("release angular cap composes support and long-object scale", authorityCap, 2.70f, 0.001f);
-
-    const auto supportRefreshUpgrade = evaluateHeldSupportRefresh(HeldSupportRefreshInput{
-        .enabled = true,
-        .hasLiveCandidate = true,
-        .liveCandidateNormalTrusted = true,
-        .currentPositionOnly = true,
-        .currentNormalTrusted = false,
-        .currentContactPatchUsedAsPivot = false,
-        .currentContactPatchSampleCount = 0,
-        .liveCandidateLocalDeltaGameUnits = 1.0f,
-        .maxLiveCandidateLocalDeltaGameUnits = 4.0f,
-        .liveCandidateLongObjectLeverGameUnits = 20.0f,
-    });
-    ok &= expectTrue("held support refresh upgrades trusted live normal", supportRefreshUpgrade.refresh);
-    ok &= expectTrue("held support refresh never moves frozen pivot", supportRefreshUpgrade.keepFrozenPivot);
-    ok &= expectTrue("held support refresh marks normal trusted", supportRefreshUpgrade.pivotAuthorityNormalTrusted);
-    ok &= expectFalse("held support refresh clears position-only after normal upgrade", supportRefreshUpgrade.pivotAuthorityPositionOnly);
-    ok &= expectTrue("held support refresh contributes conservative point support", supportRefreshUpgrade.contactPatchUsedAsPivot);
-    ok &= expectTrue("held support refresh seeds one support sample", supportRefreshUpgrade.contactPatchSampleCount == 1);
-    ok &= expectTrue("held support refresh applies trusted live normal", supportRefreshUpgrade.useLiveCandidateNormal);
-
-    const auto staleEvidenceRefresh = evaluateHeldSupportRefresh(HeldSupportRefreshInput{
-        .enabled = true,
-        .hasLiveCandidate = true,
-        .liveCandidateNormalTrusted = true,
-        .currentPositionOnly = true,
-        .currentNormalTrusted = false,
-        .currentContactPatchUsedAsPivot = false,
-        .currentContactPatchSampleCount = 5,
-        .liveCandidateLocalDeltaGameUnits = 1.0f,
-        .maxLiveCandidateLocalDeltaGameUnits = 4.0f,
-        .liveCandidateLongObjectLeverGameUnits = 20.0f,
-    });
-    ok &= expectTrue("held support refresh upgrades stale evidence-only samples", staleEvidenceRefresh.refresh);
-    ok &= expectTrue("held support refresh does not promote stale evidence-only sample count", staleEvidenceRefresh.contactPatchSampleCount == 1);
-    ok &= expectTrue("held support refresh reseeds evidence-only support from the live candidate", staleEvidenceRefresh.useLiveCandidateContactSample);
-
-    const auto supportRefreshFarCandidate = evaluateHeldSupportRefresh(HeldSupportRefreshInput{
-        .enabled = true,
-        .hasLiveCandidate = true,
-        .liveCandidateNormalTrusted = true,
-        .currentPositionOnly = true,
-        .currentNormalTrusted = false,
-        .liveCandidateLocalDeltaGameUnits = 9.0f,
-        .maxLiveCandidateLocalDeltaGameUnits = 4.0f,
-    });
-    ok &= expectFalse("held support refresh rejects candidates that would move pivot", supportRefreshFarCandidate.refresh);
-
-    const auto weakNormalDowngrade = evaluateHeldSupportRefresh(HeldSupportRefreshInput{
-        .enabled = true,
-        .hasLiveCandidate = true,
-        .liveCandidateNormalTrusted = false,
-        .currentPositionOnly = false,
-        .currentNormalTrusted = true,
-        .currentHasSeatedPivotReacquire = false,
-        .currentContactPatchUsedAsPivot = true,
-        .currentContactPatchSampleCount = 1,
-        .currentMultiFingerContactGroupCount = 0,
-        .liveCandidateLocalDeltaGameUnits = 1.0f,
-        .maxLiveCandidateLocalDeltaGameUnits = 4.0f,
-    });
-    ok &= expectTrue("held support refresh can downgrade stale single-point normal", weakNormalDowngrade.refresh);
-    ok &= expectFalse("held support refresh weak downgrade clears normal trust", weakNormalDowngrade.pivotAuthorityNormalTrusted);
-    ok &= expectTrue("held support refresh weak downgrade becomes position-only", weakNormalDowngrade.pivotAuthorityPositionOnly);
-
-    const auto seatedNormalPreserved = evaluateHeldSupportRefresh(HeldSupportRefreshInput{
-        .enabled = true,
-        .hasLiveCandidate = true,
-        .liveCandidateNormalTrusted = false,
-        .currentPositionOnly = false,
-        .currentNormalTrusted = true,
-        .currentHasSeatedPivotReacquire = true,
-        .currentContactPatchUsedAsPivot = true,
-        .currentContactPatchSampleCount = 1,
-        .liveCandidateLocalDeltaGameUnits = 1.0f,
-        .maxLiveCandidateLocalDeltaGameUnits = 4.0f,
-    });
-    ok &= expectFalse("held support refresh does not downgrade explicit seated normal from one weak sample", seatedNormalPreserved.refresh);
-
-    const auto leverRefresh = evaluateHeldSupportRefresh(HeldSupportRefreshInput{
-        .enabled = true,
-        .hasLiveCandidate = true,
-        .liveCandidateNormalTrusted = true,
-        .currentPositionOnly = false,
-        .currentNormalTrusted = true,
-        .currentContactPatchUsedAsPivot = true,
-        .currentContactPatchSampleCount = 2,
-        .currentLongObjectLeverGameUnits = 24.0f,
-        .liveCandidateLocalDeltaGameUnits = 1.0f,
-        .maxLiveCandidateLocalDeltaGameUnits = 4.0f,
-        .liveCandidateLongObjectLeverGameUnits = 72.0f,
-    });
-    ok &= expectTrue("held support refresh updates materially changed long lever", leverRefresh.refresh);
-    ok &= expectNear("held support refresh publishes live long lever", leverRefresh.longObjectLeverGameUnits, 72.0f, 0.001f);
-
-    const auto leverOnlyRefreshKeepsTrustedNormal = evaluateHeldSupportRefresh(HeldSupportRefreshInput{
-        .enabled = true,
-        .hasLiveCandidate = true,
-        .liveCandidateNormalTrusted = false,
-        .currentPositionOnly = false,
-        .currentNormalTrusted = true,
-        .currentContactPatchUsedAsPivot = true,
-        .currentContactPatchSampleCount = 2,
-        .currentLongObjectLeverGameUnits = 24.0f,
-        .liveCandidateLocalDeltaGameUnits = 1.0f,
-        .maxLiveCandidateLocalDeltaGameUnits = 4.0f,
-        .liveCandidateLongObjectLeverGameUnits = 72.0f,
-    });
-    ok &= expectTrue("held support refresh allows untrusted lever-only evidence", leverOnlyRefreshKeepsTrustedNormal.refresh);
-    ok &= expectTrue("held support refresh preserves existing trusted normal on lever-only update", leverOnlyRefreshKeepsTrustedNormal.pivotAuthorityNormalTrusted);
-    ok &= expectFalse("held support refresh does not replace trusted normal with untrusted lever-only evidence", leverOnlyRefreshKeepsTrustedNormal.useLiveCandidateNormal);
-    ok &= expectFalse("held support refresh does not rewrite support sample for untrusted lever-only evidence", leverOnlyRefreshKeepsTrustedNormal.useLiveCandidateContactSample);
-    ok &= expectTrue("held support refresh preserves pivot-owned support sample count on lever-only update",
-        leverOnlyRefreshKeepsTrustedNormal.contactPatchSampleCount == 2);
 
     const auto seatedImmediatePromotion = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
         .weakMeshStart = true,
@@ -404,7 +279,7 @@ int main()
     });
     ok &= expectTrue("seated palm pocket promotion replaces small weak mesh delta", seatedImmediatePromotion.promotePivot);
     ok &= expectTrue("seated palm pocket promotion completes small delta", seatedImmediatePromotion.completeSeatedRelation);
-    ok &= expectTrue("seated palm pocket promotion enriches support", seatedImmediatePromotion.enrichSupport);
+    ok &= expectFalse("seated palm pocket promotion does not create support-only authority", seatedImmediatePromotion.enrichSupport);
     ok &= expectNear("seated palm pocket immediate blend", seatedImmediatePromotion.pivotBlend, 1.0f, 0.001f);
 
     const auto seatedLerpPromotion = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
@@ -418,9 +293,12 @@ int main()
         .immediateMaxLocalDeltaGameUnits = 4.0f,
         .lerpMaxLocalDeltaGameUnits = 12.0f,
     });
-    ok &= expectTrue("seated palm pocket promotion advances medium delta", seatedLerpPromotion.promotePivot);
+    ok &= expectFalse("seated palm pocket promotion rejects medium delta instead of blending", seatedLerpPromotion.promotePivot);
     ok &= expectFalse("seated palm pocket medium delta does not complete relation", seatedLerpPromotion.completeSeatedRelation);
-    ok &= expectNear("seated palm pocket medium blend", seatedLerpPromotion.pivotBlend, 0.5f, 0.001f);
+    ok &= expectNear("seated palm pocket medium blend is removed", seatedLerpPromotion.pivotBlend, 0.0f, 0.001f);
+    ok &= expectReason("seated palm pocket medium delta reason",
+        seatedLerpPromotion.reason,
+        "seatedPalmPocketPromotionCandidateTooFarKeepFrozen");
 
     const auto seatedContactSupportOnly = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
         .weakMeshStart = true,
@@ -435,10 +313,10 @@ int main()
         .lerpMaxLocalDeltaGameUnits = 12.0f,
     });
     ok &= expectFalse("seated palm pocket contact softening blocks pivot move", seatedContactSupportOnly.promotePivot);
-    ok &= expectTrue("seated palm pocket contact softening can still enrich support", seatedContactSupportOnly.enrichSupport);
+    ok &= expectFalse("seated palm pocket contact softening cannot enrich support authority", seatedContactSupportOnly.enrichSupport);
     ok &= expectReason("seated palm pocket contact softening reason",
         seatedContactSupportOnly.reason,
-        "seatedPalmPocketPromotionContactSofteningSupportOnly");
+        "seatedPalmPocketPromotionContactSofteningKeepFrozen");
 
     const auto seatedLargeDeltaSupportOnly = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
         .weakMeshStart = true,
@@ -452,7 +330,10 @@ int main()
         .lerpMaxLocalDeltaGameUnits = 12.0f,
     });
     ok &= expectFalse("seated palm pocket large delta keeps current pivot", seatedLargeDeltaSupportOnly.promotePivot);
-    ok &= expectTrue("seated palm pocket large delta preserves support evidence", seatedLargeDeltaSupportOnly.enrichSupport);
+    ok &= expectFalse("seated palm pocket large delta does not publish support-only authority", seatedLargeDeltaSupportOnly.enrichSupport);
+    ok &= expectReason("seated palm pocket large delta reason",
+        seatedLargeDeltaSupportOnly.reason,
+        "seatedPalmPocketPromotionCandidateTooFarKeepFrozen");
 
     const auto seatedNotWeak = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
         .weakMeshStart = false,

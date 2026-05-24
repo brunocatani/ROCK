@@ -53,7 +53,7 @@ Reject-Path 'src/physics-interaction/native/NativeMouseSpringGrab.cpp' 'Native m
 Reject-Path 'src/physics-interaction/native/NativeMouseSpringGrab.h' 'Native mouse-spring wrapper header must be removed.'
 
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'resolveGrabAuthorityProxyFrame\(world,\s*handWorldTransform,\s*&handBodyWorldAtGrab,\s*proxyFrameWorldAtGrab[\s\S]*grabAuthorityPivotAWorld\s*=\s*proxyFrameWorldAtGrab\.translate[\s\S]*palmPocketPivotAWorld\s*=\s*computeGrabStartupCapturePivotAWorld\(world,\s*handWorldTransform\)[\s\S]*grabPivotAForPrimaryChoice\s*=\s*palmPocketPivotAWorld' 'Close dynamic grab must resolve the hidden proxy frame before raw-roll palm-pocket mesh/contact acquisition.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'The hidden proxy is body A[\s\S]*RE::NiPoint3\s+grabPivotAWorld\s*=\s*palmPocketPivotAWorld[\s\S]*proxyFrameWorldAtGrab\s*=\s*makeProxyFrameWithPivotOrigin\(proxyFrameWorldAtGrab,\s*grabPivotAWorld\)[\s\S]*buildSplitGrabFrameFromDesiredObject\(\s*handWorldTransform,\s*proxyFrameWorldAtGrab[\s\S]*createProxyConstraintGrabDrive\(\s*bhkWorld,\s*world,\s*objectBodyId,\s*proxyFrameWorldAtGrab,\s*handWorldTransform,\s*grabPivotAWorld' 'Close dynamic grab must move the hidden proxy origin to the raw-roll palm-pocket point so pivot A stays local zero.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'The hidden proxy is body A[\s\S]*RE::NiPoint3\s+grabPivotAWorld\s*=\s*palmPocketPivotAWorld[\s\S]*proxyFrameWorldAtGrab\s*=\s*makeProxyFrameWithPivotOrigin\(proxyFrameWorldAtGrab,\s*grabPivotAWorld\)[\s\S]*freezeGrabAuthorityFrame<RE::NiTransform>[\s\S]*applyFrozenGrabAuthorityFrameToGrabFrame\(_grabFrame,\s*frozenAuthorityFrame\)[\s\S]*createProxyConstraintGrabDrive\(\s*bhkWorld,\s*world,\s*objectBodyId,\s*proxyFrameWorldAtGrab,\s*handWorldTransform,\s*grabPivotAWorld' 'Close dynamic grab must move the hidden proxy origin to the raw-roll palm-pocket point and freeze one coherent body-local authority frame before constraint creation.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'palmPocketPivotAWorld\s*=\s*computeGrabStartupCapturePivotAWorld\(world,\s*handWorldTransform\)' 'Close dynamic grab post-prep authority must use the startup raw-rotation capture pivot only for the palm-pocket point.'
 Require-Text 'src/physics-interaction/hand/Hand.h' 'tryComputeGrabRawRollPalmPocketPivotAWorld' 'Held-time palm-pocket support must share an explicit raw-roll pivot helper.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'livePivotAWorld\s*=\s*proxyAuthorityWorld\.translate' 'Seated palm-pocket promotion must not use the generated proxy origin as the pocket pivot.'
@@ -82,9 +82,22 @@ if ($grabDriveStart -lt 0 -or $grabDriveEnd -lt 0) {
     }
 }
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'objectToBodyAtGrab\s*=\s*computeRuntimeBodyLocalTransform\(objectWorldTransform,\s*grabBodyWorldAtGrab\)' 'Dynamic grab must capture the visible object to BODY relation from FO4VR BODY readback.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFrame\.bodyLocal\s*=\s*objectToBodyAtGrab' 'Dynamic grab must preserve visual object rotation by composing desired BODY targets through the captured visual-to-BODY relation.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'freezePivotBBodyLocal\(grabBodyWorldAtGrab,\s*grabGripPoint\)' 'Grab pivotB must keep a BODY-local copy for visual/native/release handling.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'freezePivotBBodyLocal\(constraintBodyWorldAtGrab,\s*grabGripPoint\)' 'Proxy constraint must freeze the same selected grip point in the hknp solver frame for transform-B.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'freezeGrabAuthorityFrame<RE::NiTransform>[\s\S]*\.objectWorld\s*=\s*objectWorldTransform[\s\S]*\.bodyWorld\s*=\s*grabBodyWorldAtGrab[\s\S]*applyFrozenGrabAuthorityFrameToGrabFrame\(_grabFrame,\s*frozenAuthorityFrame\)' 'Dynamic grab must preserve visual object rotation by freezing the object-to-BODY relation through the authority frame contract.'
+Require-Text 'src/physics-interaction/grab/GrabCore.h' 'pivotBBodyLocalGame\s*=\s*transform_math::worldPointToLocal\(input\.bodyWorld,\s*input\.gripPointWorld\)' 'Grab pivotB must be frozen body-local inside the single authority-frame freeze function.'
+Require-Text 'src/physics-interaction/grab/GrabCore.h' 'pivotBConstraintLocalGame\s*=\s*transform_math::worldPointToLocal\(input\.constraintBodyWorld,\s*input\.gripPointWorld\)' 'Proxy constraint pivotB must be frozen from the same selected point inside the single authority-frame freeze function.'
+
+$authorityFrameText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/hand/HandGrab.cpp')
+$applyFrozenStart = $authorityFrameText.IndexOf('void applyFrozenGrabAuthorityFrameToGrabFrame')
+$applyFrozenEnd = if ($applyFrozenStart -ge 0) { $authorityFrameText.IndexOf('GrabPivotAuthoritySource inferGrabPivotAuthoritySource', $applyFrozenStart) } else { -1 }
+if ($applyFrozenStart -lt 0 -or $applyFrozenEnd -lt 0) {
+    $failures.Add('Frozen authority frame apply helper boundary could not be located.')
+} else {
+    $outsideApplyFrozen = $authorityFrameText.Remove($applyFrozenStart, $applyFrozenEnd - $applyFrozenStart)
+    if ($outsideApplyFrozen -match '_grabFrame\.(rawHandSpace|handBodyToRawHandAtGrab|rawRotationProxyHandSpace|rawRotationProxyBodyHandSpace|bodyLocal|rootBodyLocal|ownerBodyLocal|gripPointLocal|gripPointBodyLocalGame|pivotBBodyLocalGame|pivotBConstraintLocalGame|pivotAHandBodyLocalGame|desiredObjectWorldAtGrab|desiredBodyWorldAtGrab|hasFrozenPivotB|hasGripPoint)\s*=') {
+        $failures.Add('Solver authority frame fields must only be written through applyFrozenGrabAuthorityFrameToGrabFrame.')
+    }
+}
+
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '\.objectBodyWorld\s*=\s*grabBodyWorldAtGrab' 'Three-phase grip area must capture body-local grip data in the native BODY grab authority frame.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'relationMode\s*=\s*useAuthoredGrabFrame\s*\?\s*"authoredGrabNodeFrame"\s*:\s*"rockPointToPalm"' 'Grab commit must use ROCK point-to-palm for generic grabs and reserve rotation override for authored grab nodes only.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'shiftObjectToAlignGripWithPocket\(\s*objectWorldTransform,\s*grabPivotAWorld,\s*grabGripPoint\s*\)' 'Grab commit must preserve object rotation and translate the selected grip point to the palm anchor.'
@@ -159,8 +172,8 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '\.mass\s*=\s*massSumma
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '\.mass\s*=\s*readBodyMass\(world,\s*_savedObjectState\.bodyId\)' 'Dynamic grab motor target solving must not return to primary-body-only mass.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'pendingHeldAuthority\s*=\s*evaluateRuntimeHeldAuthority\([\s\S]*updateConstraintGrabDriveMotors\([\s\S]*pendingHeldAuthority[\s\S]*angularDriveOk\s*=[\s\S]*_activeConstraint\.usesRagdollAngularMotorAtom\(\)[\s\S]*_activeConstraint\.linearMotor[\s\S]*_activeConstraint\.angularMotor' 'Proxy authority flush must compute one runtime held-authority state and apply it through the solver-owned angular motor.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'releaseAuthority\s*=\s*evaluateRuntimeHeldAuthority\([\s\S]*releaseAngularVelocityCap\s*=\s*grab_motion_controller::computeAuthorityScaledAngularVelocityCap[\s\S]*releaseAngularVelocity\s*=\s*clampAngularVelocityVector\(releaseAngularVelocity,\s*releaseAngularVelocityCap\)' 'Release angular velocity must reuse held authority for the final angular cap.'
-Require-Text 'src/physics-interaction/hand/Hand.h' 'refreshHeldAuthoritySupport' 'Held-time support refresh must be an explicit hand method, not an implicit pivot-reacquire side effect.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'refreshHeldAuthoritySupport\(world,\s*handWorldTransform,\s*proxyAuthorityWorld,\s*activePivotBBodyLocalGame\)[\s\S]*heldAuthority\s*=\s*evaluateRuntimeHeldAuthority' 'Held support refresh must update authority metadata before runtime held authority is evaluated.'
+Reject-Text 'src/physics-interaction/hand/Hand.h' 'refreshHeldAuthoritySupport' 'Held-time support refresh must not exist; TouchHeld authority is frozen and immutable.'
+Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'refreshHeldAuthoritySupport\(' 'Held-time support refresh must not mutate solver authority after capture.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'setHeldAngularVelocity|applyProxyConstraintAngularVelocityDrive|world->SetBodyAngularVelocity' 'Dynamic grab must not retain the removed direct angular velocity writer.'
 Reject-Text 'src/physics-interaction/grab/GrabConstraint.h' 'NativeHardKeyframeVelocity|grabAngularAuthorityFromConfig' 'Grab angular authority must not retain the removed mode-0 selector.'
 Reject-Text 'src/RockConfig.cpp' 'iGrabAngularAuthorityMode|rockGrabAngularAuthorityMode' 'Config loading must not expose the removed angular authority selector.'
@@ -199,27 +212,8 @@ if ($acquireFlagLeaseStart -lt 0 -or $releaseFlagLeaseStart -lt 0 -or $nextHelpe
     }
 }
 
-$heldSupportRefreshText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/hand/HandGrab.cpp')
-$heldSupportRefreshStart = $heldSupportRefreshText.IndexOf('bool Hand::refreshHeldAuthoritySupport')
-$heldSupportRefreshEnd = if ($heldSupportRefreshStart -ge 0) { $heldSupportRefreshText.IndexOf('void Hand::clearGrabAuthorityProxyRuntimeLocked', $heldSupportRefreshStart) } else { -1 }
-if ($heldSupportRefreshStart -lt 0 -or $heldSupportRefreshEnd -lt 0) {
-    $failures.Add('Held support refresh helper boundary could not be located.')
-} else {
-    $heldSupportRefreshBody = $heldSupportRefreshText.Substring($heldSupportRefreshStart, $heldSupportRefreshEnd - $heldSupportRefreshStart)
-    if ($heldSupportRefreshBody -match '_grabFrame\.(pivotBBodyLocalGame|pivotBConstraintLocalGame|rawHandSpace|rawRotationProxyHandSpace|rawRotationProxyBodyHandSpace|gripPointLocal|gripPointBodyLocalGame)\s*=') {
-        $failures.Add('Held support refresh must not move the solver pivot or rewrite captured hand/object transforms.')
-    }
-    if ($heldSupportRefreshBody -match 'proxyAuthorityWorld\.translate') {
-        $failures.Add('Held support refresh must not use generated proxy translation as palm-pocket support origin.')
-    }
-    if ($heldSupportRefreshBody -notmatch 'tryComputeGrabRawRollPalmPocketPivotAWorld\(world,\s*handWorldTransform,\s*supportPivotAWorld\)' -or
-        $heldSupportRefreshBody -notmatch 'findSeatedGrabPivotNearPalmPocket\([\s\S]*supportPivotAWorld') {
-        $failures.Add('Held support refresh must search from the current raw-roll palm-pocket pivot.')
-    }
-    if ($heldSupportRefreshBody -notmatch 'evaluateHeldSupportRefresh' -or $heldSupportRefreshBody -notmatch 'keepFrozenPivot=yes') {
-        $failures.Add('Held support refresh must route decisions through the pure metadata-only policy and log the frozen-pivot invariant.')
-    }
-}
+Reject-Text 'src/physics-interaction/grab/GrabMotionController.h' 'HeldSupportRefresh|evaluateHeldSupportRefresh' 'Held support refresh policy must stay removed; release safety may read contact evidence but cannot rewrite TouchHeld authority.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'heldAuthority\s*=\s*evaluateRuntimeHeldAuthority' 'Held updates must still evaluate runtime authority for contact softening and release safety without refreshing solver pivots.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'activateHeldObjectBodySet\(world,\s*objectBodyId\.value,\s*_heldBodyIds\)' 'Close grab commit must explicitly wake the accepted held-object body set after zeroing velocities.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'computeLocalMeshMaxDistanceFromPoint\(_grabFrame\.localMeshTriangles,\s*_grabFrame\.gripPointLocal\)' 'Dynamic grab must capture long-object lever length from the selected grip point and cached local mesh.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'releaseLongObjectAngularScale\s*=\s*grab_motion_controller::computeLongObjectAngularSpeedScale\([\s\S]*rockGrabLongObjectAngularScalingEnabled' 'Release angular velocity cap must apply the configured long-object lever scale.'
@@ -287,11 +281,11 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'reachedTouchMayPromote
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'clearGrabExternalHandWorldTransform\(_isLeft\)[\s\S]*_hasGrabVisualHandTransform\s*=\s*false[\s\S]*THREE-PHASE GRAB SEATED PALM-POCKET PROMOTION' 'Seated pivot promotion must clear any previous visual hand relation before publishing again.'
 Require-Text 'src/physics-interaction/grab/GrabMotionController.h' 'evaluateSeatedPalmPocketPromotion' 'Seated palm-pocket promotion must be a testable policy, not an ad hoc runtime branch.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'buildSeatedPalmPocketSupportPatch[\s\S]*buildContactPatchProbeOffsets' 'Seated mesh-start promotion must rebuild bounded palm-pocket support samples instead of staying at a one-point mesh refresh.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'seatedPalmPocketRetarget[\s\S]*requiresSettledVisualHandRelation\s*=\s*!promotionDecision\.completeSeatedRelation' 'Medium-distance seated palm-pocket promotion must retarget over frames without claiming the visual relation is settled early.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'copyCompletedSeatedPivotSupportToGrabFrame[\s\S]*contactPatchSamples[\s\S]*contactPatchSampleCount[\s\S]*contactPatchUsedAsPivot\s*=\s*_grabFrame\.contactPatchSampleCount\s*>\s*0' 'Completed seated palm-pocket promotion must update the active pivot support sample model.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'clearUnsettledSeatedContactPatchAuthority[\s\S]*contactPatchSampleCount\s*=\s*0[\s\S]*contactPatchUsedAsPivot\s*=\s*false' 'Partial seated palm-pocket retarget must clear active contact-patch authority until the visual relation is settled.'
+Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'seatedPalmPocketRetarget' 'Medium-distance seated palm-pocket promotion must not retarget over frames; it keeps the original frozen authority.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'frozenSeatAuthorityFrame\s*=\s*grab_authority_frame_math::freezeGrabAuthorityFrame<RE::NiTransform>[\s\S]*applyFrozenGrabAuthorityFrameToGrabFrame\(_grabFrame,\s*frozenSeatAuthorityFrame\)' 'Accepted seated palm-pocket promotion must rebuild the frozen authority frame once, not patch individual grab references.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'seatedRetargetRejectedKeepFrozen' 'Rejected seated palm-pocket candidates must explicitly keep the original frozen authority.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'countFreshSemanticFingerContactGroups' 'Seated palm-pocket promotion must not turn raw semantic finger counts into motor authority.'
-Require-Text 'src/physics-interaction/grab/GrabMotionController.h' 'decision\.contactPatchSampleCount\s*=\s*input\.currentContactPatchUsedAsPivot\s*\?[\s\S]*input\.currentContactPatchSampleCount[\s\S]*1u' 'Held support refresh must collapse non-pivot evidence samples to one live candidate sample before publishing pivot support.'
+Reject-Text 'src/physics-interaction/grab/GrabMotionController.h' 'currentContactPatchUsedAsPivot|contactPatchUsedAsPivot|decision\.contactPatchSampleCount' 'Contact patch evidence must not publish held-time pivot support or mutate active authority.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'buildRuntimeFingerPoseTargets\(promotedPointWorld,\s*promotedNormalWorld\)[\s\S]*storeFingerPoseTargetsInGrabFrame\(_grabFrame,\s*seatedPoseTargets' 'Seated palm-pocket promotion must rebuild finger pose targets around the promoted palm-pocket seat.'
 Require-Text 'src/physics-interaction/grab/GrabMotionController.h' 'awaitingSettledVisualRelation' 'Visual hand publish gate must expose the settled-relation block reason.'
 Require-Text 'src/physics-interaction/grab/GrabContact.h' 'chooseMeshBackedPatchPivotAuthority[\s\S]*contactPatchPivotEvidenceOnly' 'Grab contact patch pivot policy must keep validated patches as evidence-only instead of frozen pivot authority.'

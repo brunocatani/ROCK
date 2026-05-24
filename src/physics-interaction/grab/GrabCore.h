@@ -578,9 +578,7 @@ namespace rock
         float pivotAuthorityPositionConfidence = 0.0f;
         float handScaleAtGrab = 1.0f;
         float lastSeatedPivotReacquireLocalDeltaGameUnits = 0.0f;
-        float lastHeldSupportRefreshLocalDeltaGameUnits = 0.0f;
         std::uint32_t seatedPivotReacquireCount = 0;
-        std::uint32_t heldSupportRefreshCount = 0;
         const char* bodyResolutionReason = "none";
         const char* multiFingerContactReason = "none";
         const char* activeGrabPointMode = "none";
@@ -591,7 +589,6 @@ namespace rock
         const char* gripSupportReason = "none";
         const char* lastSeatedPivotReacquireReason = "none";
         const char* lastSeatedPivotReacquirePhase = "none";
-        const char* lastHeldSupportRefreshReason = "none";
         GrabSeatMode seatMode = GrabSeatMode::None;
         grab_support_model_math::GripSupportKind gripSupportKind = grab_support_model_math::GripSupportKind::None;
         /*
@@ -613,7 +610,6 @@ namespace rock
         bool hasFrozenPivotB = false;
         bool hasContactPatch = false;
         bool hasContactPatchEvidence = false;
-        bool contactPatchUsedAsPivot = false;
         bool hasMultiFingerContactPatch = false;
         bool hasPalmSeatPoint = false;
         bool hasPinchPocket = false;
@@ -626,7 +622,6 @@ namespace rock
         bool requiresSettledVisualHandRelation = false;
         bool hasTelemetryCapture = false;
         bool hasSeatedPivotReacquire = false;
-        bool hasHeldSupportRefresh = false;
         bool fingerPoseAimValid = false;
         bool fadeInGrabConstraint = false;
 
@@ -728,9 +723,7 @@ namespace rock
             pivotAuthorityPositionConfidence = 0.0f;
             handScaleAtGrab = 1.0f;
             lastSeatedPivotReacquireLocalDeltaGameUnits = 0.0f;
-            lastHeldSupportRefreshLocalDeltaGameUnits = 0.0f;
             seatedPivotReacquireCount = 0;
-            heldSupportRefreshCount = 0;
             bodyResolutionReason = "none";
             multiFingerContactReason = "none";
             activeGrabPointMode = "none";
@@ -741,7 +734,6 @@ namespace rock
             gripSupportReason = "none";
             lastSeatedPivotReacquireReason = "none";
             lastSeatedPivotReacquirePhase = "none";
-            lastHeldSupportRefreshReason = "none";
             seatMode = GrabSeatMode::None;
             gripSupportKind = grab_support_model_math::GripSupportKind::None;
             motorFadeReason = "none";
@@ -757,7 +749,6 @@ namespace rock
             hasFrozenPivotB = false;
             hasContactPatch = false;
             hasContactPatchEvidence = false;
-            contactPatchUsedAsPivot = false;
             hasMultiFingerContactPatch = false;
             hasPalmSeatPoint = false;
             hasPinchPocket = false;
@@ -770,7 +761,6 @@ namespace rock
             requiresSettledVisualHandRelation = false;
             hasTelemetryCapture = false;
             hasSeatedPivotReacquire = false;
-            hasHeldSupportRefresh = false;
             fingerPoseAimValid = false;
             fadeInGrabConstraint = false;
         }
@@ -858,6 +848,7 @@ namespace rock::grab_interaction_policy
 
 #include "physics-interaction/TransformMath.h"
 
+#include <span>
 #include <utility>
 
 namespace rock::grab_frame_math
@@ -912,6 +903,254 @@ namespace rock::grab_frame_math
         result.handBodyToRawHandAtGrab = objectInFrameSpace(handBodyWorld, rawHandWorld);
         result.pivotAHandBodyLocal = computePivotAHandBodyLocal(handBodyWorld, grabPivotWorld);
         return result;
+    }
+}
+
+// ---- GrabAuthorityFrameMath.h ----
+
+/*
+ * Active grab authority is one resolved point frozen through one coherent set of
+ * body/proxy relations. Evidence may choose the point, but it must not become a
+ * second live motor truth after the frame is frozen.
+ */
+
+namespace rock::grab_authority_frame_math
+{
+    inline constexpr std::uint32_t kInvalidGrabAuthorityBodyId = 0x7FFF'FFFFu;
+
+    enum class GrabAuthorityPivotSource : std::uint8_t
+    {
+        None,
+        PinchPocket,
+        GripSupportModel,
+        PalmPocketMesh,
+        SelectionMeshSnap,
+        CollisionFallback
+    };
+
+    inline const char* grabAuthorityPivotSourceName(GrabAuthorityPivotSource source)
+    {
+        switch (source) {
+        case GrabAuthorityPivotSource::PinchPocket:
+            return "pinchPocket";
+        case GrabAuthorityPivotSource::GripSupportModel:
+            return "gripSupportModel";
+        case GrabAuthorityPivotSource::PalmPocketMesh:
+            return "palmPocketMesh";
+        case GrabAuthorityPivotSource::SelectionMeshSnap:
+            return "selectionMeshSnap";
+        case GrabAuthorityPivotSource::CollisionFallback:
+            return "collisionFallback";
+        case GrabAuthorityPivotSource::None:
+        default:
+            return "none";
+        }
+    }
+
+    inline int grabAuthorityPivotSourcePriority(GrabAuthorityPivotSource source)
+    {
+        switch (source) {
+        case GrabAuthorityPivotSource::PinchPocket:
+            return 0;
+        case GrabAuthorityPivotSource::GripSupportModel:
+            return 1;
+        case GrabAuthorityPivotSource::PalmPocketMesh:
+            return 2;
+        case GrabAuthorityPivotSource::SelectionMeshSnap:
+            return 3;
+        case GrabAuthorityPivotSource::CollisionFallback:
+            return 4;
+        case GrabAuthorityPivotSource::None:
+        default:
+            return 100;
+        }
+    }
+
+    template <class Vector>
+    inline bool isFiniteVector(const Vector& value)
+    {
+        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+    }
+
+    template <class Transform>
+    inline bool isFiniteTransform(const Transform& value)
+    {
+        bool rotationFinite = true;
+        for (std::uint32_t row = 0; row < 3; ++row) {
+            for (std::uint32_t column = 0; column < 3; ++column) {
+                rotationFinite = rotationFinite && std::isfinite(value.rotate.entry[row][column]);
+            }
+        }
+        return rotationFinite && isFiniteVector(value.translate) && std::isfinite(value.scale) && value.scale > 0.0001f;
+    }
+
+    template <class Vector>
+    struct GrabAuthorityPivotCandidate
+    {
+        bool valid = false;
+        GrabAuthorityPivotSource source = GrabAuthorityPivotSource::None;
+        Vector pointWorld{};
+        Vector normalWorld{};
+        bool normalValid = false;
+        std::uint32_t bodyId = kInvalidGrabAuthorityBodyId;
+        const void* sourceNode = nullptr;
+        const char* reason = "notEvaluated";
+    };
+
+    template <class Vector>
+    using ResolvedGrabAuthorityPivot = GrabAuthorityPivotCandidate<Vector>;
+
+    template <class Vector>
+    inline ResolvedGrabAuthorityPivot<Vector> resolveGrabAuthorityPivot(
+        std::span<const GrabAuthorityPivotCandidate<Vector>> candidates,
+        bool collisionFallbackAllowed)
+    {
+        ResolvedGrabAuthorityPivot<Vector> selected{};
+        selected.reason = "noValidAuthorityPivot";
+        int selectedPriority = grabAuthorityPivotSourcePriority(GrabAuthorityPivotSource::None);
+
+        for (const auto& candidate : candidates) {
+            if (!candidate.valid ||
+                candidate.source == GrabAuthorityPivotSource::None ||
+                candidate.bodyId == kInvalidGrabAuthorityBodyId ||
+                !isFiniteVector(candidate.pointWorld)) {
+                continue;
+            }
+            if (candidate.source == GrabAuthorityPivotSource::CollisionFallback && !collisionFallbackAllowed) {
+                continue;
+            }
+
+            const int priority = grabAuthorityPivotSourcePriority(candidate.source);
+            if (!selected.valid || priority < selectedPriority) {
+                selected = candidate;
+                selectedPriority = priority;
+            }
+        }
+
+        if (selected.valid) {
+            selected.reason = selected.reason ? selected.reason : grabAuthorityPivotSourceName(selected.source);
+        }
+        return selected;
+    }
+
+    template <class Transform>
+    struct GrabAuthorityFrameFreezeInput
+    {
+        using Vector = decltype(std::declval<Transform>().translate);
+
+        Transform rawHandWorld{};
+        Transform proxyWorld{};
+        Transform rawRotationProxyFrameWorld{};
+        Transform objectWorld{};
+        Transform bodyWorld{};
+        Transform constraintBodyWorld{};
+        Transform rootBodyLocal{};
+        Transform ownerBodyLocal{};
+        Transform desiredObjectWorld{};
+        Vector pivotAWorld{};
+        Vector gripPointWorld{};
+        Vector visualNormalWorld{};
+        GrabAuthorityPivotSource source = GrabAuthorityPivotSource::None;
+        bool hasDesiredObjectWorld = false;
+        bool visualNormalValid = false;
+    };
+
+    template <class Transform>
+    struct FrozenGrabAuthorityFrame
+    {
+        using Vector = decltype(std::declval<Transform>().translate);
+
+        bool valid = false;
+        GrabAuthorityPivotSource source = GrabAuthorityPivotSource::None;
+        Vector pivotAWorld{};
+        Vector pivotBBodyLocalGame{};
+        Vector pivotBConstraintLocalGame{};
+        Transform bodyLocal{};
+        Transform rootBodyLocal{};
+        Transform ownerBodyLocal{};
+        Vector gripPointLocal{};
+        Vector grabPivotWorldAtGrab{};
+        Vector gripPointWorldAtGrab{};
+        Transform desiredObjectWorld{};
+        Transform desiredBodyWorld{};
+        Transform rawHandSpace{};
+        Transform handBodyToRawHandAtGrab{};
+        Vector pivotAHandBodyLocalGame{};
+        Transform rawRotationProxyHandSpace{};
+        Transform rawRotationProxyBodyHandSpace{};
+        Vector visualNormalWorld{};
+        bool visualNormalValid = false;
+    };
+
+    template <class Transform>
+    inline FrozenGrabAuthorityFrame<Transform> freezeGrabAuthorityFrame(
+        const GrabAuthorityFrameFreezeInput<Transform>& input)
+    {
+        FrozenGrabAuthorityFrame<Transform> frozen{};
+        frozen.source = input.source;
+        frozen.pivotAWorld = input.pivotAWorld;
+        frozen.grabPivotWorldAtGrab = input.pivotAWorld;
+        frozen.gripPointWorldAtGrab = input.gripPointWorld;
+        frozen.rootBodyLocal = input.rootBodyLocal;
+        frozen.ownerBodyLocal = input.ownerBodyLocal;
+        frozen.visualNormalWorld = input.visualNormalWorld;
+        frozen.visualNormalValid = input.visualNormalValid && isFiniteVector(input.visualNormalWorld);
+
+        if (!isFiniteTransform(input.rawHandWorld) ||
+            !isFiniteTransform(input.proxyWorld) ||
+            !isFiniteTransform(input.rawRotationProxyFrameWorld) ||
+            !isFiniteTransform(input.objectWorld) ||
+            !isFiniteTransform(input.bodyWorld) ||
+            !isFiniteTransform(input.constraintBodyWorld) ||
+            !isFiniteVector(input.pivotAWorld) ||
+            !isFiniteVector(input.gripPointWorld)) {
+            return frozen;
+        }
+
+        frozen.bodyLocal = transform_math::composeTransforms(
+            transform_math::invertTransform(input.objectWorld),
+            input.bodyWorld);
+        if (!isFiniteTransform(frozen.bodyLocal)) {
+            return frozen;
+        }
+        frozen.gripPointLocal = transform_math::worldPointToLocal(input.objectWorld, input.gripPointWorld);
+        frozen.desiredObjectWorld = input.hasDesiredObjectWorld ?
+            input.desiredObjectWorld :
+            grab_frame_math::shiftObjectToAlignGripWithPocket(
+                input.objectWorld,
+                input.pivotAWorld,
+                input.gripPointWorld);
+        if (!isFiniteTransform(frozen.desiredObjectWorld)) {
+            return frozen;
+        }
+
+        frozen.desiredBodyWorld = transform_math::composeTransforms(frozen.desiredObjectWorld, frozen.bodyLocal);
+        if (!isFiniteTransform(frozen.desiredBodyWorld)) {
+            return frozen;
+        }
+        const auto splitFrame = grab_frame_math::buildSplitGrabFrameFromDesiredObject(
+            input.rawHandWorld,
+            input.proxyWorld,
+            frozen.desiredObjectWorld,
+            input.pivotAWorld);
+        frozen.rawHandSpace = splitFrame.rawHandSpace;
+        frozen.handBodyToRawHandAtGrab = splitFrame.handBodyToRawHandAtGrab;
+        frozen.pivotAHandBodyLocalGame = splitFrame.pivotAHandBodyLocal;
+        frozen.pivotBBodyLocalGame = transform_math::worldPointToLocal(input.bodyWorld, input.gripPointWorld);
+        frozen.pivotBConstraintLocalGame = transform_math::worldPointToLocal(input.constraintBodyWorld, input.gripPointWorld);
+        frozen.rawRotationProxyHandSpace =
+            grab_frame_math::objectInFrameSpace(input.rawRotationProxyFrameWorld, frozen.desiredObjectWorld);
+        frozen.rawRotationProxyBodyHandSpace =
+            grab_frame_math::objectInFrameSpace(input.rawRotationProxyFrameWorld, frozen.desiredBodyWorld);
+        frozen.valid =
+            isFiniteVector(frozen.pivotBBodyLocalGame) &&
+            isFiniteVector(frozen.pivotBConstraintLocalGame) &&
+            isFiniteTransform(frozen.bodyLocal) &&
+            isFiniteTransform(frozen.desiredBodyWorld) &&
+            isFiniteTransform(frozen.rawHandSpace) &&
+            isFiniteTransform(frozen.rawRotationProxyHandSpace) &&
+            isFiniteTransform(frozen.rawRotationProxyBodyHandSpace);
+        return frozen;
     }
 }
 
