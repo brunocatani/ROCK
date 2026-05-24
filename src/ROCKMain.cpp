@@ -12,6 +12,7 @@
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/WeaponWorkbenchGraphRefreshHook.h"
 #include "physics-interaction/input/DebugControllerRuntime.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
@@ -527,8 +528,13 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     }
     s_messaging->RegisterListener(onF4SEMessage);
 
-    logger::info("ROCK: Allocate trampoline (1024 bytes)...");
-    F4SE::AllocTrampoline(1024);
+    logger::info("ROCK: Allocate trampoline (2048 bytes)...");
+    F4SE::AllocTrampoline(2048);
+
+    logger::info("ROCK: Install workbench weapon graph refresh hook...");
+    if (!rock::weapon_workbench_graph_refresh::installHook()) {
+        logger::critical("ROCK: Workbench weapon graph refresh hook unavailable; equipped weapon mod graph replay disabled.");
+    }
 
     logger::info("ROCK: Install main loop hook...");
     if (!hookMainLoop()) {

@@ -1693,7 +1693,7 @@ namespace rock
         RE::NiNode* weaponNode = resolveEquippedWeaponInteractionNode();
         const auto weaponGraphRefresh = updateWeaponVisualGraphRefresh(false, weaponNode);
         if (weaponGraphRefresh.refreshApplied) {
-            _weaponCollision.invalidateForVisualGraphRefresh(hknp, "equipped-weapon-3d-update-flag");
+            _weaponCollision.invalidateForVisualGraphRefresh(hknp, "workbench-native-refresh-replay");
             clearLeftWeaponContact();
         }
         if (weaponGraphRefresh.deferWeaponCollision) {

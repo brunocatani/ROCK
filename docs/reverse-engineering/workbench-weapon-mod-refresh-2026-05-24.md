@@ -64,12 +64,30 @@ Candidate next verification:
 - Hook or instrument the post-build workbench path and the `BGSOnPlayerModArmorWeaponEvent` sink to confirm event timing relative to the first-person weapon graph.
 - Identify a safe native first-person/equipped-weapon rebuild function before attempting to force refresh. Do not call the reference `AttachModToReference` path for inventory items without a separate ownership/lifetime review.
 
-## Implemented ROCK Boundary
+## Failed ROCK Boundary
 
-Follow-up implementation uses the actor branch of `BGSObjectInstanceExtra::AttachModToReference` without calling the mod-attach function itself. Ghidra disassembly shows the actor branch ends in the virtual call at `+0x3B8` with argument `0x37`, which maps to `TESObjectREFR::Set3DUpdateFlag(RESET_3D_FLAGS)` with model, skin, head, scale, and skeleton bits.
+The first implementation used the actor branch of `BGSObjectInstanceExtra::AttachModToReference` without calling the mod-attach function itself. Ghidra disassembly showed the actor branch ending in a virtual call at `+0x3B8` with argument `0x37`, which maps to `TESObjectREFR::Set3DUpdateFlag(RESET_3D_FLAGS)` with model, skin, head, scale, and skeleton bits.
 
-The earlier candidate `Actor::HandleItemEquip(false)` was rejected for this bug because live behavior showed equip/unequip does not advance the missing part registration. The observed failure is one mod change behind: a later workbench change registers the previous missing part while the newly changed part becomes the missing one.
+Runtime testing on 2026-05-24 showed that this path did execute after the workbench change, but it did not fix the stale weapon-part registration. Logs showed ROCK scheduling and applying the refresh, then rebuilding generated collision from the same incomplete first-person weapon graph. The dirty-flag path was therefore removed from production code.
 
-ROCK now owns a separate native graph-refresh coordinator outside generated weapon collision. It watches the equipped weapon mod-instance signature only while the workbench/examine menu window is active, schedules a player reference 3D dirty flag only after that menu window closes with a changed signature, and invalidates generated weapon collision on the refresh frame so collision is rebuilt only after the native graph registration has been actively triggered.
+The earlier candidate `Actor::HandleItemEquip(false)` was also rejected for this bug because live behavior showed equip/unequip does not advance the missing part registration. The observed failure is one mod change behind: a later workbench change registers the previous missing part while the newly changed part becomes the missing one.
+
+## Corrected ROCK Boundary
+
+Ghidra verification identified a narrower native boundary inside `ExamineMenu::BuildConfirmed`: after the inventory mod mutation, the function calls the same menu visual-refresh virtual used by workbench preview changes.
+
+Verified callsite:
+
+- virtual call address: `0x140B3AA24`;
+- module offset used by ROCK: `0xB3AA24`;
+- instruction bytes: `FF 90 20 01 00 00`;
+- slot called: `ExamineMenu` vtable offset `+0x120`;
+- call arguments observed in disassembly: `RCX=this`, `DL=1`.
+
+ROCK hooks only that six-byte native callsite, validates the expected bytes before patching, lets the natural native refresh run first, and replays the same `ExamineMenu` visual refresh once when the equipped mod-instance signature changed relative to the last stable non-menu equipped weapon state.
+
+The hook publishes a refresh epoch only when it performs that replay. The `WeaponVisualGraphRefreshCoordinator` consumes the epoch after menu blocking clears and a live weapon node is available, then invalidates generated weapon collision with reason `workbench-native-refresh-replay` so the next scan rebuilds from the graph after the replayed native registration pass.
 
 Do not trigger this refresh from first equipped weapon observation or ordinary equip/unholster signature changes. Runtime testing showed that broad trigger can hit the normal first-person transition and make the weapon disappear.
+
+Remaining runtime risk: this still needs live validation to confirm that replaying the exact workbench native refresh closes the observed N-1 graph-registration gap.
