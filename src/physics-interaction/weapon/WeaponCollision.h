@@ -216,6 +216,8 @@ namespace rock
             WeaponVisualKeyStats& stats,
             std::uint64_t* outVisualKey = nullptr) const;
 
+        void maybeDumpWeaponAnimNodeDiagnostics(RE::NiAVObject* updateWeaponNode, std::uint64_t observedKey);
+
         void queueBodyTarget(WeaponBodyInstance& instance, const RE::NiTransform& weaponTransform, float sourceDeltaSeconds);
 
         WeaponBodyBank _weaponBodies{};
@@ -256,6 +258,8 @@ namespace rock
         float _cachedPointDedupGrid{ -1.0f };
         int _cachedSupportFitTargetPoints{ -1 };
         float _cachedSupportFitMaxErrorGameUnits{ -1.0f };
+        int _weaponAnimNodeDumpFrameCounter{ 0 };
+        std::uint64_t _lastWeaponAnimNodeDumpKey{ 0 };
 
         bool _dominantHandDisabled{ false };
         RE::hknpBodyId _disabledHandBodyId{ INVALID_BODY_ID };

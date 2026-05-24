@@ -193,7 +193,9 @@ namespace rock
         rockDebugMaxHandBoneBodiesDrawn = 48;
         rockDebugMaxBodyBoneBodiesDrawn = 32;
         rockDebugDrawWeaponColliders = false;
+        rockDebugDumpWeaponAnimNodes = false;
         rockDebugMaxWeaponBodiesDrawn = 100;
+        rockDebugWeaponAnimNodeDumpIntervalFrames = 120;
         rockDebugMaxShapeGenerationsPerFrame = 100;
         rockDebugMaxConvexSupportVertices = 6;
         rockDebugUseBoundsForHeavyConvex = true;
@@ -806,7 +808,13 @@ namespace rock
             rockDebugMaxBodyBoneBodiesDrawn = 64;
         }
         rockDebugDrawWeaponColliders = ini.GetBoolValue(SECTION, "bDebugDrawWeaponColliders", rockDebugDrawWeaponColliders);
+        rockDebugDumpWeaponAnimNodes = ini.GetBoolValue(SECTION, "bDebugDumpWeaponAnimNodes", rockDebugDumpWeaponAnimNodes);
         rockDebugMaxWeaponBodiesDrawn = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxWeaponBodiesDrawn", rockDebugMaxWeaponBodiesDrawn));
+        rockDebugWeaponAnimNodeDumpIntervalFrames =
+            static_cast<int>(ini.GetLongValue(SECTION, "iDebugWeaponAnimNodeDumpIntervalFrames", rockDebugWeaponAnimNodeDumpIntervalFrames));
+        if (rockDebugWeaponAnimNodeDumpIntervalFrames < 1) {
+            rockDebugWeaponAnimNodeDumpIntervalFrames = 1;
+        }
         rockDebugMaxShapeGenerationsPerFrame = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxShapeGenerationsPerFrame", rockDebugMaxShapeGenerationsPerFrame));
         rockDebugMaxConvexSupportVertices = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxConvexSupportVertices", rockDebugMaxConvexSupportVertices));
         rockDebugUseBoundsForHeavyConvex = ini.GetBoolValue(SECTION, "bDebugUseBoundsForHeavyConvex", rockDebugUseBoundsForHeavyConvex);

@@ -154,7 +154,9 @@ namespace rock
         int rockDebugMaxHandBoneBodiesDrawn = 48;
         int rockDebugMaxBodyBoneBodiesDrawn = 32;
         bool rockDebugDrawWeaponColliders = false;
+        bool rockDebugDumpWeaponAnimNodes = false;
         int rockDebugMaxWeaponBodiesDrawn = 100;
+        int rockDebugWeaponAnimNodeDumpIntervalFrames = 120;
         int rockDebugMaxShapeGenerationsPerFrame = 100;
         int rockDebugMaxConvexSupportVertices = 6;
         bool rockDebugUseBoundsForHeavyConvex = true;
