@@ -60,3 +60,13 @@ Reduce ROCK's runtime dependence on hFRIK for state ROCK can own independently. 
 
 - In-game cell-change and teleport validation still needs to confirm ROCK now fails closed through skeleton/provider resets without depending on stale FRIK readiness state.
 - Current checkout also has unrelated weapon anim-node diagnostic changes in progress; keep those out of this runtime-detach commit unless deliberately reviewed as part of a separate task.
+
+## Startup Crash Follow-Up
+
+2026-05-23 startup CTD after the initial detach fix showed ROCK calling `f4cf::f4vr::getWorldRootNode()` before FO4VR had populated the player's root scene graph:
+
+```text
+EXCEPTION_ACCESS_VIOLATION at ROCK.dll f4cf::f4vr::getWorldRootNode
+```
+
+The runtime sampler now treats missing player/root graph as a closed skeleton-readiness state and does not call unsafe F4VR player-node helpers until the required root graph exists. `DirectSkeletonBoneReader` also resolves the root flattened tree through guarded local checks, and the native player collision scan no longer calls the unsafe `getRootNode()` helper directly.

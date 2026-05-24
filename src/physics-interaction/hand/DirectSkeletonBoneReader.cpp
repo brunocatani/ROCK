@@ -58,6 +58,25 @@ namespace rock
             return tree && tree->transforms && tree->numTransforms > 0 && tree->numTransforms <= kMaxFlattenedBoneTransforms;
         }
 
+        RE::NiNode* safeWorldRootNode()
+        {
+            auto* player = f4vr::getPlayer();
+            if (!player || !player->unkF0) {
+                return nullptr;
+            }
+
+            return player->unkF0->rootNode;
+        }
+
+        RE::NiNode* safeRootNode(RE::NiNode* worldRoot)
+        {
+            if (!worldRoot || worldRoot->children.empty() || !worldRoot->children[0]) {
+                return nullptr;
+            }
+
+            return worldRoot->children[0]->IsNode();
+        }
+
         std::string_view transformName(const BSFlattenedBoneTree::BoneTransforms& transform)
         {
             const char* name = transform.name.c_str();
@@ -74,9 +93,11 @@ namespace rock
                 };
             }
 
+            auto* worldRoot = safeWorldRootNode();
+            auto* rootNode = safeRootNode(worldRoot);
             return ResolvedTreeSource{
-                .tree = f4vr::getFlattenedBoneTree(),
-                .skeleton = f4vr::getRootNode(),
+                .tree = rootNode ? reinterpret_cast<BSFlattenedBoneTree*>(rootNode) : nullptr,
+                .skeleton = rootNode,
                 .source = SkeletonBoneSnapshotSource::GameRootFlattenedBoneTree,
             };
         }

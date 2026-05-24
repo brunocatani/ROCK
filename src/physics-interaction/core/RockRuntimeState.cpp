@@ -60,6 +60,25 @@ namespace rock::runtime_state
             return RE::PlayerCharacter::GetSingleton() != nullptr;
         }
 
+        [[nodiscard]] RE::NiNode* safeWorldRootNode()
+        {
+            auto* player = f4cf::f4vr::getPlayer();
+            if (!player || !player->unkF0) {
+                return nullptr;
+            }
+
+            return player->unkF0->rootNode;
+        }
+
+        [[nodiscard]] RE::NiNode* safeRootNode(RE::NiNode* worldRoot)
+        {
+            if (!worldRoot || worldRoot->children.empty() || !worldRoot->children[0]) {
+                return nullptr;
+            }
+
+            return worldRoot->children[0]->IsNode();
+        }
+
         [[nodiscard]] bool sampleWeaponDrawn()
         {
             if (!hasPlayer()) {
@@ -97,7 +116,7 @@ namespace rock::runtime_state
                 frame.valid = true;
                 frame.source = "roomNode";
                 frame.world = playerNodes->roomnode->world;
-            } else if (auto* worldRoot = f4cf::f4vr::getWorldRootNode()) {
+            } else if (auto* worldRoot = safeWorldRootNode()) {
                 frame.valid = true;
                 frame.source = "worldRoot";
                 frame.world = worldRoot->world;
@@ -116,11 +135,31 @@ namespace rock::runtime_state
 
         [[nodiscard]] bool sampleLocalSkeletonReady(RuntimeFrameSnapshot& snapshot)
         {
-            const auto* worldRoot = f4cf::f4vr::getWorldRootNode();
-            auto* rootNode = f4cf::f4vr::getRootNode();
-            auto* flattenedTree = f4cf::f4vr::getFlattenedBoneTree();
-
             const bool bodyBonesRequired = g_rockConfig.rockBodyBoneCollidersEnabled;
+            auto readinessInput = runtime_state_policy::SkeletonReadinessInput{
+                .playerAvailable = snapshot.playerAvailable,
+                .bodyBonesRequired = bodyBonesRequired,
+            };
+
+            if (!snapshot.playerAvailable) {
+                s_skeletonReader.resetCache();
+                return runtime_state_policy::evaluateSkeletonReadiness(readinessInput);
+            }
+
+            auto* worldRoot = safeWorldRootNode();
+            auto* rootNode = safeRootNode(worldRoot);
+            auto* flattenedTree = rootNode ? reinterpret_cast<f4cf::f4vr::BSFlattenedBoneTree*>(rootNode) : nullptr;
+
+            snapshot.localSkeletonRootAttached = rootNode && rootNode->parent;
+            readinessInput.rootNodeAvailable = worldRoot != nullptr && rootNode != nullptr;
+            readinessInput.rootParentAttached = snapshot.localSkeletonRootAttached;
+            readinessInput.flattenedTreeValid = flattenedTreeValid(flattenedTree);
+
+            if (!readinessInput.rootNodeAvailable || !readinessInput.rootParentAttached || !readinessInput.flattenedTreeValid) {
+                s_skeletonReader.resetCache();
+                return runtime_state_policy::evaluateSkeletonReadiness(readinessInput);
+            }
+
             DirectSkeletonBoneSnapshot boneSnapshot{};
             const auto mode = bodyBonesRequired ?
                 skeleton_bone_debug_math::DebugSkeletonBoneMode::CoreBodyAndFingers :
@@ -136,18 +175,12 @@ namespace rock::runtime_state
                 (!g_rockConfig.rockHandBoneCollidersRequireAllFingerBones || boneSnapshot.missingRequiredBones.empty());
             const bool bodyBonesReady = !bodyBonesRequired || (captured && boneSnapshot.missingRequiredBones.empty());
 
-            snapshot.localSkeletonRootAttached = rootNode && rootNode->parent;
             snapshot.localSkeletonRequiredHandBonesReady = handBonesReady;
             snapshot.localSkeletonRequiredBodyBonesReady = bodyBonesReady;
+            readinessInput.requiredHandBonesResolved = handBonesReady;
+            readinessInput.requiredBodyBonesResolved = bodyBonesReady;
 
-            return runtime_state_policy::evaluateSkeletonReadiness(runtime_state_policy::SkeletonReadinessInput{
-                .rootNodeAvailable = worldRoot != nullptr && rootNode != nullptr,
-                .rootParentAttached = snapshot.localSkeletonRootAttached,
-                .flattenedTreeValid = flattenedTreeValid(flattenedTree),
-                .requiredHandBonesResolved = handBonesReady,
-                .bodyBonesRequired = bodyBonesRequired,
-                .requiredBodyBonesResolved = bodyBonesReady,
-            });
+            return runtime_state_policy::evaluateSkeletonReadiness(readinessInput);
         }
     }
 

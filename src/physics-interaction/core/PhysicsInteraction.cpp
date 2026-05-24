@@ -3026,7 +3026,6 @@ namespace rock
             }
         }
         scanNode(scanNode, f4cf::f4vr::getFirstPersonSkeleton(), 64);
-        scanNode(scanNode, f4cf::f4vr::getRootNode(), 64);
         if (auto* player = f4cf::f4vr::getPlayer(); player && player->unkF0) {
             scanNode(scanNode, player->unkF0->rootNode, 64);
         }

@@ -73,24 +73,35 @@ int main()
     ok &= expectFalse("invalid player-space sample clears tracker", tracker.hasPrevious);
 
     ok &= expectTrue("complete local skeleton readiness passes", evaluateSkeletonReadiness(SkeletonReadinessInput{
+                                                               .playerAvailable = true,
                                                                .rootNodeAvailable = true,
                                                                .rootParentAttached = true,
                                                                .flattenedTreeValid = true,
                                                                .requiredHandBonesResolved = true,
                                                            }));
+    ok &= expectFalse("missing player blocks local skeleton readiness", evaluateSkeletonReadiness(SkeletonReadinessInput{
+                                                                         .playerAvailable = false,
+                                                                         .rootNodeAvailable = true,
+                                                                         .rootParentAttached = true,
+                                                                         .flattenedTreeValid = true,
+                                                                         .requiredHandBonesResolved = true,
+                                                                     }));
     ok &= expectFalse("detached root blocks local skeleton readiness", evaluateSkeletonReadiness(SkeletonReadinessInput{
+                                                                        .playerAvailable = true,
                                                                         .rootNodeAvailable = true,
                                                                         .rootParentAttached = false,
                                                                         .flattenedTreeValid = true,
                                                                         .requiredHandBonesResolved = true,
                                                                     }));
     ok &= expectFalse("missing hand bones block local skeleton readiness", evaluateSkeletonReadiness(SkeletonReadinessInput{
+                                                                            .playerAvailable = true,
                                                                             .rootNodeAvailable = true,
                                                                             .rootParentAttached = true,
                                                                             .flattenedTreeValid = true,
                                                                             .requiredHandBonesResolved = false,
                                                                         }));
     ok &= expectFalse("required body bones block local skeleton readiness", evaluateSkeletonReadiness(SkeletonReadinessInput{
+                                                                            .playerAvailable = true,
                                                                             .rootNodeAvailable = true,
                                                                             .rootParentAttached = true,
                                                                             .flattenedTreeValid = true,

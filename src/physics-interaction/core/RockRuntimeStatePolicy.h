@@ -79,6 +79,7 @@ namespace rock::runtime_state_policy
 
     struct SkeletonReadinessInput
     {
+        bool playerAvailable = false;
         bool rootNodeAvailable = false;
         bool rootParentAttached = false;
         bool flattenedTreeValid = false;
@@ -89,7 +90,8 @@ namespace rock::runtime_state_policy
 
     [[nodiscard]] inline bool evaluateSkeletonReadiness(const SkeletonReadinessInput& input)
     {
-        return input.rootNodeAvailable &&
+        return input.playerAvailable &&
+            input.rootNodeAvailable &&
             input.rootParentAttached &&
             input.flattenedTreeValid &&
             input.requiredHandBonesResolved &&
