@@ -132,6 +132,27 @@ namespace rock
             std::uint32_t maxDepth{ 0 };
         };
 
+        struct WeaponAnimNodeDumpRoot
+        {
+            const char* label{ "" };
+            RE::NiAVObject* root{ nullptr };
+        };
+
+        struct WeaponAnimFlattenedRoot
+        {
+            const char* label{ "" };
+            f4vr::BSFlattenedBoneTree* tree{ nullptr };
+        };
+
+        struct WeaponAnimFlattenedBoneMatch
+        {
+            int index{ -1 };
+            int parentIndex{ -1 };
+            short childPosition{ -1 };
+            RE::NiNode* refNode{ nullptr };
+            std::string name;
+        };
+
         constexpr std::array<const char*, 11> WEAPON_ANIM_NODE_DUMP_TARGETS{
             "Weapon",
             "WeaponLeft",
@@ -151,8 +172,10 @@ namespace rock
         constexpr std::size_t WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES = 4096;
         constexpr std::size_t WEAPON_ANIM_NODE_DUMP_MAX_CHILD_NAMES = 16;
         constexpr std::size_t WEAPON_ANIM_NODE_DUMP_MAX_SUBTREE_NODES = 4096;
+        constexpr int WEAPON_ANIM_NODE_DUMP_MAX_FLATTENED_TRANSFORMS = 768;
 
         bool weaponVisualNodeVisible(const RE::NiAVObject* node);
+        const char* safeNodeName(RE::NiAVObject* node);
 
         const char* generatedWeaponPartKindName(WeaponPartKind kind)
         {
@@ -347,6 +370,226 @@ namespace rock
                 result += " more";
             }
             return result;
+        }
+
+        bool weaponAnimFlattenedTreeValid(const f4vr::BSFlattenedBoneTree* tree)
+        {
+            return tree && tree->transforms && tree->numTransforms > 0 && tree->numTransforms <= WEAPON_ANIM_NODE_DUMP_MAX_FLATTENED_TRANSFORMS;
+        }
+
+        const char* weaponAnimFlattenedTransformName(const f4vr::BSFlattenedBoneTree::BoneTransforms& transform)
+        {
+            const char* name = transform.name.c_str();
+            return name && name[0] != '\0' ? name : "(unnamed)";
+        }
+
+        bool weaponAnimFlattenedTransformNameMatches(const f4vr::BSFlattenedBoneTree::BoneTransforms& transform, const char* targetName)
+        {
+            if (!targetName) {
+                return false;
+            }
+
+            const char* name = transform.name.c_str();
+            return name && _stricmp(targetName, name) == 0;
+        }
+
+        std::vector<WeaponAnimFlattenedBoneMatch> collectWeaponAnimFlattenedBoneMatches(
+            f4vr::BSFlattenedBoneTree* tree,
+            const char* targetName)
+        {
+            std::vector<WeaponAnimFlattenedBoneMatch> matches;
+            if (!weaponAnimFlattenedTreeValid(tree)) {
+                return matches;
+            }
+
+            for (int index = 0; index < tree->numTransforms &&
+                                matches.size() < WEAPON_ANIM_NODE_DUMP_MAX_MATCHES_PER_NAME;
+                 ++index) {
+                const auto& transform = tree->transforms[index];
+                if (!weaponAnimFlattenedTransformNameMatches(transform, targetName)) {
+                    continue;
+                }
+
+                matches.push_back(WeaponAnimFlattenedBoneMatch{
+                    .index = index,
+                    .parentIndex = transform.parPos,
+                    .childPosition = transform.childPos,
+                    .refNode = transform.refNode,
+                    .name = weaponAnimFlattenedTransformName(transform),
+                });
+            }
+
+            return matches;
+        }
+
+        const char* weaponAnimFlattenedParentName(const f4vr::BSFlattenedBoneTree* tree, int parentIndex)
+        {
+            if (!weaponAnimFlattenedTreeValid(tree) || parentIndex < 0 || parentIndex >= tree->numTransforms) {
+                return "(none)";
+            }
+
+            return weaponAnimFlattenedTransformName(tree->transforms[parentIndex]);
+        }
+
+        void logWeaponAnimNodeMapRoot(const WeaponAnimNodeDumpRoot& dumpRoot)
+        {
+            auto* root = dumpRoot.root;
+            auto* niNode = root ? root->IsNode() : nullptr;
+            const auto childCount = niNode ? niNode->children.size() : 0;
+            const auto childNames = weaponAnimNodeImmediateChildNames(root);
+            const auto rootStats = root ? summarizeWeaponAnimNodeSubtree(root) : WeaponAnimNodeSubtreeStats{};
+
+            ROCK_LOG_INFO(Weapon,
+                "WeaponAnimMap root='{}' kind=node addr=0x{:X} name='{}' children={} childNames='{}' flags=0x{:X} appCulled={} visible={} subtreeNodes={} niNodes={} triShapes={} visibleTriShapes={} hiddenFlags={} appCulledNodes={} subtreeMaxDepth={}",
+                dumpRoot.label,
+                reinterpret_cast<std::uintptr_t>(root),
+                safeNodeName(root),
+                static_cast<std::size_t>(childCount),
+                childNames,
+                static_cast<std::uint32_t>(root ? root->flags.flags : 0),
+                root && root->GetAppCulled() ? "yes" : "no",
+                root && weaponVisualNodeVisible(root) ? "yes" : "no",
+                rootStats.nodeCount,
+                rootStats.niNodeCount,
+                rootStats.triShapeCount,
+                rootStats.visibleTriShapeCount,
+                rootStats.hiddenFlagCount,
+                rootStats.appCulledCount,
+                rootStats.maxDepth);
+
+            for (const char* targetName : WEAPON_ANIM_NODE_DUMP_TARGETS) {
+                auto matches = collectWeaponAnimNodeMatches(root, targetName);
+                ROCK_LOG_INFO(Weapon,
+                    "WeaponAnimMap root='{}' kind=node target='{}' matches={}",
+                    dumpRoot.label,
+                    targetName,
+                    matches.size());
+
+                for (std::size_t matchIndex = 0; matchIndex < matches.size(); ++matchIndex) {
+                    auto* node = matches[matchIndex].node;
+                    if (!node) {
+                        continue;
+                    }
+
+                    auto* matchNode = node->IsNode();
+                    const auto matchChildCount = matchNode ? matchNode->children.size() : 0;
+                    const auto stats = summarizeWeaponAnimNodeSubtree(node);
+                    const auto matchChildNames = weaponAnimNodeImmediateChildNames(node);
+                    auto* parent = node->parent;
+
+                    ROCK_LOG_INFO(Weapon,
+                        "WeaponAnimMap node root='{}' target='{}' match={} path='{}' depth={} addr=0x{:X} name='{}' parent='{}'/0x{:X} children={} childNames='{}' flags=0x{:X} appCulled={} visible={} subtreeNodes={} niNodes={} triShapes={} visibleTriShapes={} hiddenFlags={} appCulledNodes={} subtreeMaxDepth={}",
+                        dumpRoot.label,
+                        targetName,
+                        matchIndex,
+                        matches[matchIndex].path,
+                        matches[matchIndex].depth,
+                        reinterpret_cast<std::uintptr_t>(node),
+                        safeNodeName(node),
+                        safeNodeName(parent),
+                        reinterpret_cast<std::uintptr_t>(parent),
+                        static_cast<std::size_t>(matchChildCount),
+                        matchChildNames,
+                        static_cast<std::uint32_t>(node->flags.flags),
+                        node->GetAppCulled() ? "yes" : "no",
+                        weaponVisualNodeVisible(node) ? "yes" : "no",
+                        stats.nodeCount,
+                        stats.niNodeCount,
+                        stats.triShapeCount,
+                        stats.visibleTriShapeCount,
+                        stats.hiddenFlagCount,
+                        stats.appCulledCount,
+                        stats.maxDepth);
+
+                    ROCK_LOG_INFO(Weapon,
+                        "WeaponAnimMap transform root='{}' target='{}' match={} localT=({:.3f},{:.3f},{:.3f}) localScale={:.3f} worldT=({:.3f},{:.3f},{:.3f}) worldScale={:.3f}",
+                        dumpRoot.label,
+                        targetName,
+                        matchIndex,
+                        node->local.translate.x,
+                        node->local.translate.y,
+                        node->local.translate.z,
+                        node->local.scale,
+                        node->world.translate.x,
+                        node->world.translate.y,
+                        node->world.translate.z,
+                        node->world.scale);
+                }
+            }
+        }
+
+        void logWeaponAnimFlattenedMapRoot(const WeaponAnimFlattenedRoot& flatRoot)
+        {
+            auto* tree = flatRoot.tree;
+            auto* treeNode = static_cast<RE::NiAVObject*>(tree);
+            auto* niNode = treeNode ? treeNode->IsNode() : nullptr;
+            const bool valid = weaponAnimFlattenedTreeValid(tree);
+            const auto childCount = niNode ? niNode->children.size() : 0;
+            const auto childNames = weaponAnimNodeImmediateChildNames(treeNode);
+
+            ROCK_LOG_INFO(Weapon,
+                "WeaponAnimMap root='{}' kind=flattened tree=0x{:X} valid={} name='{}' numTransforms={} transforms=0x{:X} bonePositions=0x{:X} children={} childNames='{}'",
+                flatRoot.label,
+                reinterpret_cast<std::uintptr_t>(tree),
+                valid ? "yes" : "no",
+                safeNodeName(treeNode),
+                tree ? tree->numTransforms : 0,
+                reinterpret_cast<std::uintptr_t>(tree ? tree->transforms : nullptr),
+                reinterpret_cast<std::uintptr_t>(tree ? tree->bonePositions : nullptr),
+                static_cast<std::size_t>(childCount),
+                childNames);
+
+            if (!valid) {
+                return;
+            }
+
+            for (const char* targetName : WEAPON_ANIM_NODE_DUMP_TARGETS) {
+                auto matches = collectWeaponAnimFlattenedBoneMatches(tree, targetName);
+                ROCK_LOG_INFO(Weapon,
+                    "WeaponAnimMap root='{}' kind=flattened target='{}' matches={}",
+                    flatRoot.label,
+                    targetName,
+                    matches.size());
+
+                for (std::size_t matchIndex = 0; matchIndex < matches.size(); ++matchIndex) {
+                    const auto& match = matches[matchIndex];
+                    if (match.index < 0 || match.index >= tree->numTransforms) {
+                        continue;
+                    }
+
+                    const auto& transform = tree->transforms[match.index];
+                    auto* refNode = match.refNode;
+                    auto* refParent = refNode ? refNode->parent : nullptr;
+
+                    ROCK_LOG_INFO(Weapon,
+                        "WeaponAnimMap flatBone root='{}' target='{}' match={} index={} name='{}' parentIndex={} parentName='{}' childPos={} refNode='{}'/0x{:X} refParent='{}'/0x{:X} refFlags=0x{:X} refAppCulled={} refVisible={} localT=({:.3f},{:.3f},{:.3f}) localScale={:.3f} worldT=({:.3f},{:.3f},{:.3f}) worldScale={:.3f} unk8c=0x{:X} unk98=0x{:X}",
+                        flatRoot.label,
+                        targetName,
+                        matchIndex,
+                        match.index,
+                        match.name,
+                        match.parentIndex,
+                        weaponAnimFlattenedParentName(tree, match.parentIndex),
+                        match.childPosition,
+                        safeNodeName(refNode),
+                        reinterpret_cast<std::uintptr_t>(refNode),
+                        safeNodeName(refParent),
+                        reinterpret_cast<std::uintptr_t>(refParent),
+                        static_cast<std::uint32_t>(refNode ? refNode->flags.flags : 0),
+                        refNode && refNode->GetAppCulled() ? "yes" : "no",
+                        refNode && weaponVisualNodeVisible(refNode) ? "yes" : "no",
+                        transform.local.translate.x,
+                        transform.local.translate.y,
+                        transform.local.translate.z,
+                        transform.local.scale,
+                        transform.world.translate.x,
+                        transform.world.translate.y,
+                        transform.world.translate.z,
+                        transform.world.scale,
+                        transform.unk8c,
+                        transform.unk98);
+                }
+            }
         }
 
         std::string generatedWeaponSemanticMaskNames(std::uint32_t mask)
@@ -2086,16 +2329,21 @@ namespace rock
 
         auto* firstPersonSkeleton = f4vr::getFirstPersonSkeleton();
         auto* firstPersonBoneTree = f4vr::getFirstPersonBoneTree();
+        auto* gameRootNode = f4vr::getRootNode();
+        auto* gameFlattenedBoneTree = f4vr::getFlattenedBoneTree();
         auto* weaponNode = f4vr::getWeaponNode();
         auto* player = f4vr::getPlayer();
         auto* playerNodes = player ? f4vr::getPlayerNodes() : nullptr;
 
         ROCK_LOG_INFO(Weapon,
-            "WeaponAnimDump begin key={:016X} reason={} firstPersonSkeleton=0x{:X} firstPersonBoneTree=0x{:X} updateWeaponNode='{}'/0x{:X} getWeaponNode='{}'/0x{:X} WeaponLeftNode='{}'/0x{:X} primaryWeapontoWeaponNode='{}'/0x{:X} primaryWeaponOffsetNode='{}'/0x{:X}",
+            "WeaponAnimDump begin key={:016X} reason={} firstPersonSkeleton=0x{:X} firstPersonBoneTree=0x{:X} gameRootNode='{}'/0x{:X} gameFlattenedBoneTree=0x{:X} updateWeaponNode='{}'/0x{:X} getWeaponNode='{}'/0x{:X} WeaponLeftNode='{}'/0x{:X} primaryWeapontoWeaponNode='{}'/0x{:X} primaryWeaponOffsetNode='{}'/0x{:X}",
             observedKey,
             generationChanged ? "generation-change" : "interval",
             reinterpret_cast<std::uintptr_t>(firstPersonSkeleton),
             reinterpret_cast<std::uintptr_t>(firstPersonBoneTree),
+            safeNodeName(gameRootNode),
+            reinterpret_cast<std::uintptr_t>(gameRootNode),
+            reinterpret_cast<std::uintptr_t>(gameFlattenedBoneTree),
             safeNodeName(updateWeaponNode),
             reinterpret_cast<std::uintptr_t>(updateWeaponNode),
             safeNodeName(weaponNode),
@@ -2177,6 +2425,31 @@ namespace rock
                     node->world.rotate.entry[2][1],
                     node->world.rotate.entry[2][2]);
             }
+        }
+
+        // Debug-only authority map: collider generation still follows updateWeaponNode,
+        // while these rows show whether the flat-root data has names the visual tree lost.
+        const std::array<WeaponAnimNodeDumpRoot, 7> nodeRoots{ {
+            { "firstPersonSkeleton", firstPersonSkeleton },
+            { "firstPersonBoneTree.nodeChildren", static_cast<RE::NiAVObject*>(firstPersonBoneTree) },
+            { "gameRootNode", gameRootNode },
+            { "gameFlattenedBoneTree.nodeChildren", static_cast<RE::NiAVObject*>(gameFlattenedBoneTree) },
+            { "PlayerNodes.primaryWeapontoWeaponNode", playerNodes ? playerNodes->primaryWeapontoWeaponNode : nullptr },
+            { "PlayerNodes.primaryWeaponOffsetNode", playerNodes ? playerNodes->primaryWeaponOffsetNOde : nullptr },
+            { "PlayerNodes.WeaponLeftNode", playerNodes ? playerNodes->WeaponLeftNode : nullptr },
+        } };
+
+        for (const auto& nodeRoot : nodeRoots) {
+            logWeaponAnimNodeMapRoot(nodeRoot);
+        }
+
+        const std::array<WeaponAnimFlattenedRoot, 2> flatRoots{ {
+            { "firstPersonBoneTree.transforms", firstPersonBoneTree },
+            { "gameFlattenedBoneTree.transforms", gameFlattenedBoneTree },
+        } };
+
+        for (const auto& flatRoot : flatRoots) {
+            logWeaponAnimFlattenedMapRoot(flatRoot);
         }
 
         ROCK_LOG_INFO(Weapon, "WeaponAnimDump end key={:016X}", observedKey);
