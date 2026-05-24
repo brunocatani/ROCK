@@ -48,28 +48,6 @@ namespace rock
         std::uint32_t invisibleNodeCount = 0;
     };
 
-    inline constexpr std::size_t WEAPON_ANIM_OBJECT_TRACE_STATE_COUNT = 32;
-
-    struct WeaponAnimObjectTraceSlotState
-    {
-        bool initialized{ false };
-        bool present{ false };
-        int index{ -1 };
-        int parentIndex{ -1 };
-        short childPosition{ -1 };
-        std::uintptr_t refNode{ 0 };
-        std::uint32_t refFlags{ 0 };
-        std::uint32_t unk8c{ 0 };
-        std::uint64_t unk98{ 0 };
-        std::uint64_t observedKey{ 0 };
-        std::array<float, 3> localTranslate{};
-        std::array<float, 9> localRotate{};
-        float localScale{ 0.0f };
-        std::array<float, 3> worldTranslate{};
-        std::array<float, 9> worldRotate{};
-        float worldScale{ 0.0f };
-    };
-
     class WeaponCollision
     {
     public:
@@ -240,8 +218,6 @@ namespace rock
             std::uint64_t* outVisualKey = nullptr) const;
 
         void maybeDumpWeaponAnimNodeDiagnostics(RE::NiAVObject* updateWeaponNode, std::uint64_t observedKey);
-        void traceWeaponAnimObjectSlots(void* firstPersonBoneTree, void* gameFlattenedBoneTree, std::uint64_t observedKey);
-        void resetWeaponAnimObjectTraceState();
 
         void queueBodyTarget(WeaponBodyInstance& instance, const RE::NiTransform& weaponTransform, float sourceDeltaSeconds);
 
@@ -289,7 +265,6 @@ namespace rock
         int _pendingWeaponVisualStableFrames{ 0 };
         int _weaponAnimNodeDumpFrameCounter{ 0 };
         std::uint64_t _lastWeaponAnimNodeDumpKey{ 0 };
-        std::array<WeaponAnimObjectTraceSlotState, WEAPON_ANIM_OBJECT_TRACE_STATE_COUNT> _weaponAnimObjectTraceStates{};
 
         bool _dominantHandDisabled{ false };
         RE::hknpBodyId _disabledHandBodyId{ INVALID_BODY_ID };
