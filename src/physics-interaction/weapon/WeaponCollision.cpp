@@ -3288,11 +3288,12 @@ namespace rock
         _driveRebuildRequested.store(true, std::memory_order_release);
         ROCK_LOG_SAMPLE_WARN(Weapon,
             g_rockConfig.rockLogSampleMilliseconds,
-            "Weapon generated collider drive result requested rebuild owner={} bodyIndex={} failures={} missingBody={} placementFailed={} nativeDriveFailed={} bodyDeltaGame={:.2f} bodyRotErr={:.2f}",
+            "Weapon generated collider drive result requested rebuild owner={} bodyIndex={} failures={} missingBody={} ownerMismatch={} placementFailed={} nativeDriveFailed={} bodyDeltaGame={:.2f} bodyRotErr={:.2f}",
             ownerName ? ownerName : "unknown",
             bodyIndex,
             failures,
             result.missingBody ? "yes" : "no",
+            result.bodyCollisionObjectMismatch ? "yes" : "no",
             result.placementFailed ? "yes" : "no",
             result.nativeDriveFailed ? "yes" : "no",
             result.hasLiveBodyTransform ? result.bodyDeltaGameUnits : -1.0f,

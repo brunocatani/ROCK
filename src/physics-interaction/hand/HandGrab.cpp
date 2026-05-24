@@ -9086,13 +9086,14 @@ namespace rock
 
         if (!proxyDriveOk) {
             ROCK_LOG_WARN(Hand,
-                "{} hand proxy dynamic grab drive failed; release queued: proxyBody={} livePalm={} driven={} stale={} missing={} substep={}/{} dt={:.6f}",
+                "{} hand proxy dynamic grab drive failed; release queued: proxyBody={} livePalm={} driven={} stale={} missing={} ownerMismatch={} substep={}/{} dt={:.6f}",
                 handName(),
                 proxyBodyId.value,
                 livePalmReferenceOk ? "ok" : "fail",
                 proxyDriveResult.driven ? "ok" : "fail",
                 proxyDriveResult.skippedStale ? "yes" : "no",
                 proxyDriveResult.missingBody ? "yes" : "no",
+                proxyDriveResult.bodyCollisionObjectMismatch ? "yes" : "no",
                 timing.substepIndex,
                 timing.substepCount,
                 havok_physics_timing::driveDeltaSeconds(timing));

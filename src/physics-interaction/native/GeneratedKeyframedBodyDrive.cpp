@@ -436,7 +436,8 @@ namespace rock
         }
 
         result.attempted = true;
-        if (!world || !body.isValid() || !havok_runtime::getBody(world, body.getBodyId())) {
+        auto* liveBody = world ? havok_runtime::getBody(world, body.getBodyId()) : nullptr;
+        if (!world || !body.isValid() || !liveBody) {
             result.missingBody = true;
             ROCK_LOG_SAMPLE_WARN(Physics,
                 1000,
@@ -445,6 +446,24 @@ namespace rock
                 bodyIndex,
                 body.getBodyId().value,
                 static_cast<void*>(world));
+            return result;
+        }
+
+        // driveToKeyFrame enters native bhk code through the wrapper collision
+        // object. The hknp body slot must still point back to that object so a
+        // recycled body id cannot drive a stale wrapper.
+        auto* expectedCollisionObject = body.getCollisionObject();
+        auto* liveCollisionObject = havok_runtime::getCollisionObjectFromBody(liveBody);
+        if (!expectedCollisionObject || liveCollisionObject != expectedCollisionObject) {
+            result.bodyCollisionObjectMismatch = true;
+            ROCK_LOG_SAMPLE_WARN(Physics,
+                1000,
+                "Generated keyframed body drive ownership mismatch owner={} bodyIndex={} bodyId={} expectedCollObj={:p} liveCollObj={:p}",
+                ownerName ? ownerName : "unknown",
+                bodyIndex,
+                body.getBodyId().value,
+                static_cast<void*>(expectedCollisionObject),
+                static_cast<void*>(liveCollisionObject));
             return result;
         }
 

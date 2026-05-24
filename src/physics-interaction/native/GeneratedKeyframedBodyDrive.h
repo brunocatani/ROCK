@@ -404,6 +404,7 @@ namespace rock
         bool teleported = false;
         bool skippedStale = false;
         bool missingBody = false;
+        bool bodyCollisionObjectMismatch = false;
         bool placementFailed = false;
         bool nativeDriveFailed = false;
         bool predicted = false;
@@ -441,7 +442,7 @@ namespace rock
 
         [[nodiscard]] bool shouldRequestRebuild() const
         {
-            return attempted && !driven && (missingBody || placementFailed || nativeDriveFailed);
+            return attempted && !driven && (missingBody || bodyCollisionObjectMismatch || placementFailed || nativeDriveFailed);
         }
     };
 
