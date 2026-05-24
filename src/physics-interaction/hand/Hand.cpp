@@ -263,7 +263,6 @@ namespace rock
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         _grabObjectGripAtGrab = {};
         _heldObjectIsLooseWeapon = false;
-        _grabPendingInitialTouchHeldFinalFreeze = false;
         _grabFingerPosePublished = false;
         _grabConvergeStableInsidePocketFrames = 0;
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
@@ -354,7 +353,6 @@ namespace rock
         _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
         _grabObjectGripAtGrab = {};
         _heldObjectIsLooseWeapon = false;
-        _grabPendingInitialTouchHeldFinalFreeze = false;
         _grabFingerPosePublished = false;
         _grabConvergeStableInsidePocketFrames = 0;
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
