@@ -2395,6 +2395,15 @@ namespace rock
             return result;
         }
 
+        RE::NiTransform computeConstraintAFrameProxySpace(
+            const RE::NiTransform& rawHandWorld,
+            const RE::NiTransform& proxyWorld)
+        {
+            return grab_constraint_math::computeConstraintATransformBodyASpace(
+                proxyWorld,
+                makeRawRotationPalmTranslationFrame(rawHandWorld, proxyWorld));
+        }
+
         RE::NiTransform makeProxyFrameWithPivotOrigin(
             const RE::NiTransform& proxyWorld,
             const RE::NiPoint3& pivotWorld)
@@ -4528,6 +4537,8 @@ namespace rock
          */
         const RE::NiPoint3 pivotAProxyLocalGame{};
         const RE::NiPoint3 constraintPivotAWorld = proxyWorldTransform.translate;
+        const RE::NiTransform constraintATransformProxySpace =
+            computeConstraintAFrameProxySpace(rawHandWorldTransform, proxyWorldTransform);
         // Constraint creation must seed the ragdoll motor with the same angular
         // BODY relation that held updates keep writing. Using the older
         // constraint-space relation here lets some grabs start with a correct
@@ -4568,6 +4579,7 @@ namespace rock
             objectBodyId,
             proxyWorldTransform,
             constraintPivotAWorld,
+            constraintATransformProxySpace,
             pivotBBodyLocalHk,
             desiredBodyTransformProxySpace,
             motorTuning);
@@ -4661,8 +4673,12 @@ namespace rock
         }
 
         auto* constraintData = static_cast<char*>(_activeConstraint.constraintData);
+        auto* transformARotation = reinterpret_cast<float*>(constraintData + GRAB_TRANSFORM_A_COL0);
         auto* transformAPos = reinterpret_cast<float*>(constraintData + GRAB_TRANSFORM_A_POS);
         const float gameToHkScale = gameToHavokScale();
+        const RE::NiTransform constraintATransformProxySpace =
+            computeConstraintAFrameProxySpace(rawHandWorldTransform, proxyWorldTransform);
+        grab_constraint_math::writeConstraintARotation(transformARotation, constraintATransformProxySpace);
         transformAPos[0] = _grabAuthorityPivotAProxyLocalGame.x * gameToHkScale;
         transformAPos[1] = _grabAuthorityPivotAProxyLocalGame.y * gameToHkScale;
         transformAPos[2] = _grabAuthorityPivotAProxyLocalGame.z * gameToHkScale;
@@ -9294,20 +9310,32 @@ namespace rock
 
         bool hasConstraintFrameMetrics = false;
         float constraintTransformBLocalDeltaGameUnits = -1.0f;
+        float transformAColumnsToRawLocalDegrees = -1.0f;
+        float solverAWorldToRawDegrees = -1.0f;
         float targetRowsToConstraintInverseDegrees = -1.0f;
         float targetColumnsToTransformBDegrees = -1.0f;
         {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
             if (_activeConstraint.constraintData) {
                 const auto* constraintData = static_cast<const char*>(_activeConstraint.constraintData);
+                const auto* transformARotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_A_COL0);
                 const auto* targetBRca = reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
                 const auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
                 const auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
                 const RE::NiTransform desiredBodyTransformHandSpace = _grabFrame.rawRotationProxyBodyHandSpace;
                 const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
+                const RE::NiMatrix3 transformAAsHkColumns = matrixFromHkColumns(transformARotation);
                 const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
                 const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
                 const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
+                const RE::NiTransform expectedConstraintATransformProxySpace =
+                    computeConstraintAFrameProxySpace(targetRawHandWorld, targetProxyWorld);
+                RE::NiTransform actualConstraintATransformProxySpace = makeIdentityTransform();
+                actualConstraintATransformProxySpace.rotate = transformAAsHkColumns;
+                const RE::NiTransform actualConstraintAWorld =
+                    multiplyTransforms(targetProxyWorld, actualConstraintATransformProxySpace);
+                const RE::NiTransform expectedConstraintAWorld =
+                    makeRawRotationPalmTranslationFrame(targetRawHandWorld, targetProxyWorld);
                 const RE::NiPoint3 constraintTransformBLocalGame{
                     transformBTranslation[0] * havokToGameScale(),
                     transformBTranslation[1] * havokToGameScale(),
@@ -9317,6 +9345,10 @@ namespace rock
                     grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformHandSpace, _grabFrame.pivotAHandBodyLocalGame);
                 constraintTransformBLocalDeltaGameUnits =
                     pointDistanceGameUnits(constraintTransformBLocalGame, desiredTransformBLocalGame);
+                transformAColumnsToRawLocalDegrees =
+                    rotationDeltaDegrees(transformAAsHkColumns, expectedConstraintATransformProxySpace.rotate);
+                solverAWorldToRawDegrees =
+                    rotationDeltaDegrees(actualConstraintAWorld.rotate, expectedConstraintAWorld.rotate);
                 targetRowsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkRows, desiredBodyToHandSpace.rotate);
                 targetColumnsToTransformBDegrees = rotationDeltaDegrees(targetAsHkColumns, transformBAsHkColumns);
                 hasConstraintFrameMetrics = true;
@@ -9391,7 +9423,7 @@ namespace rock
         if (likelyRawProxyFrameMismatch) {
             ROCK_LOG_SAMPLE_WARN(Hand,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "{} PROXY GRAB FRAME MISMATCH: seq={}/{} afterSeq={} substep={}/{} rawToProxyTarget={:.1f}deg rawToProxyLive={:.1f}deg targetAxisDeg=({:.1f},{:.1f},{:.1f}) liveAxisDeg=({:.1f},{:.1f},{:.1f}) determinantTarget=({:.3f},{:.3f}) determinantLive=({:.3f},{:.3f}) proxyErr={:.2f}gu/{:.1f}deg objectErr={:.2f}gu/{:.1f}deg gripErr={:.2f}gu transformBDelta={:.2f}gu targetRowsInv={:.1f}deg targetColsToTransformB={:.1f}deg angularRef={} proxySrc={} objectSrc={} phase={} pivotB=({:.2f},{:.2f},{:.2f})",
+                "{} PROXY GRAB FRAME MISMATCH: seq={}/{} afterSeq={} substep={}/{} rawToProxyTarget={:.1f}deg rawToProxyLive={:.1f}deg targetAxisDeg=({:.1f},{:.1f},{:.1f}) liveAxisDeg=({:.1f},{:.1f},{:.1f}) determinantTarget=({:.3f},{:.3f}) determinantLive=({:.3f},{:.3f}) proxyErr={:.2f}gu/{:.1f}deg objectErr={:.2f}gu/{:.1f}deg gripErr={:.2f}gu transformBDelta={:.2f}gu transformAColsRaw={:.1f}deg solverARaw={:.1f}deg targetRowsInv={:.1f}deg targetColsToTransformB={:.1f}deg angularRef={} proxySrc={} objectSrc={} phase={} pivotB=({:.2f},{:.2f},{:.2f})",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -9416,6 +9448,8 @@ namespace rock
                 objectTargetRotationErrorDegrees,
                 gripTargetErrorGameUnits,
                 hasConstraintFrameMetrics ? constraintTransformBLocalDeltaGameUnits : -1.0f,
+                hasConstraintFrameMetrics ? transformAColumnsToRawLocalDegrees : -1.0f,
+                hasConstraintFrameMetrics ? solverAWorldToRawDegrees : -1.0f,
                 hasConstraintFrameMetrics ? targetRowsToConstraintInverseDegrees : -1.0f,
                 hasConstraintFrameMetrics ? targetColumnsToTransformBDegrees : -1.0f,
                 kGrabObjectRotationReferenceName,

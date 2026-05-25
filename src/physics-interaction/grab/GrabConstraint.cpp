@@ -314,8 +314,12 @@ namespace rock
     }
 
     ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
-        const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
-        const RE::NiTransform& desiredBodyTransformHandSpace, const GrabConstraintMotorTuning& tuning)
+        const RE::NiTransform& handBodyWorld,
+        const RE::NiPoint3& palmWorldGame,
+        const RE::NiTransform& constraintATransformBodyASpace,
+        const float* pivotBBodyLocalHk,
+        const RE::NiTransform& desiredBodyTransformHandSpace,
+        const GrabConstraintMotorTuning& tuning)
     {
         ActiveConstraint result;
         if (!world) {
@@ -397,23 +401,9 @@ namespace rock
 
         {
             auto* tA_col0 = reinterpret_cast<float*>(header + GRAB_TRANSFORM_A_COL0);
-            auto* tA_col1 = reinterpret_cast<float*>(header + GRAB_TRANSFORM_A_COL1);
-            auto* tA_col2 = reinterpret_cast<float*>(header + GRAB_TRANSFORM_A_COL2);
             auto* tA_pos = reinterpret_cast<float*>(header + GRAB_TRANSFORM_A_POS);
 
-            tA_col0[0] = 1.0f;
-            tA_col0[1] = 0.0f;
-            tA_col0[2] = 0.0f;
-            tA_col0[3] = 0.0f;
-            tA_col1[0] = 0.0f;
-            tA_col1[1] = 1.0f;
-            tA_col1[2] = 0.0f;
-            tA_col1[3] = 0.0f;
-            tA_col2[0] = 0.0f;
-            tA_col2[1] = 0.0f;
-            tA_col2[2] = 1.0f;
-            tA_col2[3] = 0.0f;
-
+            grab_constraint_math::writeConstraintARotation(tA_col0, constraintATransformBodyASpace);
             grab_constraint_math::writeConstraintPivotLocalTranslation(tA_pos, handBodyWorld, palmWorldGame, gameToHavokScale());
 
             auto* tB_col0 = reinterpret_cast<float*>(header + GRAB_TRANSFORM_B_COL0);
@@ -430,8 +420,8 @@ namespace rock
             ROCK_LOG_TRACE(GrabConstraint,
                 "setInBodySpace: pivotA=({:.3f},{:.3f},{:.3f}) [palm] "
                 "pivotB=({:.3f},{:.3f},{:.3f}) [active-pivot-b] "
-                "tB_inverse_col0=({:.3f},{:.3f},{:.3f})",
-                tA_pos[0], tA_pos[1], tA_pos[2], tB_pos[0], tB_pos[1], tB_pos[2], tB_col0[0], tB_col0[1], tB_col0[2]);
+                "tA_col0=({:.3f},{:.3f},{:.3f}) tB_inverse_col0=({:.3f},{:.3f},{:.3f})",
+                tA_pos[0], tA_pos[1], tA_pos[2], tB_pos[0], tB_pos[1], tB_pos[2], tA_col0[0], tA_col0[1], tA_col0[2], tB_col0[0], tB_col0[1], tB_col0[2]);
 
             ROCK_LOG_TRACE(GrabConstraint, "target_bRca initial inverse solver rows: row0=[{:.3f},{:.3f},{:.3f}] row1=[{:.3f},{:.3f},{:.3f}]", targetBRca[0], targetBRca[1],
                 targetBRca[2], targetBRca[4], targetBRca[5], targetBRca[6]);
@@ -533,6 +523,22 @@ namespace rock
         result.targetMaxForce = linearMaxForce;
 
         return result;
+    }
+
+    ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
+        const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
+        const RE::NiTransform& desiredBodyTransformHandSpace, const GrabConstraintMotorTuning& tuning)
+    {
+        return createGrabConstraint(
+            world,
+            handBodyId,
+            objectBodyId,
+            handBodyWorld,
+            palmWorldGame,
+            transform_math::makeIdentityTransform<RE::NiTransform>(),
+            pivotBBodyLocalHk,
+            desiredBodyTransformHandSpace,
+            tuning);
     }
 
     ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
