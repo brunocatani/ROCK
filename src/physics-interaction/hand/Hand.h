@@ -713,7 +713,11 @@ namespace rock
         {
             RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };
             RE::NiTransform desiredBodyWorld{};
+            RE::NiTransform bodyAWorldBefore{};
             RE::NiTransform bodyWorldBefore{};
+            RE::NiMatrix3 transformARotation{};
+            RE::NiMatrix3 transformBRotation{};
+            std::array<float, 12> targetBRcaRaw{};
             RE::NiPoint3 requiredAxisWorld{};
             RE::NiPoint3 angularVelocityBeforeRadians{};
             float beforeErrorDegrees = -1.0f;
@@ -725,7 +729,12 @@ namespace rock
             float linearMotorMaxForce = 0.0f;
             float targetRowsToConstraintInverseDegrees = -1.0f;
             float targetColumnsToTransformBDegrees = -1.0f;
+            float ragdollBRcaRowsErrorDegrees = -1.0f;
+            float ragdollBRcaColumnsErrorDegrees = -1.0f;
+            float ragdollARcbRowsInverseErrorDegrees = -1.0f;
+            float ragdollARcbColumnsInverseErrorDegrees = -1.0f;
             std::uint64_t flushSequence = 0;
+            bool bodyAWorldValid = false;
             bool ragdollMotorEnabled = false;
             bool valid = false;
         };

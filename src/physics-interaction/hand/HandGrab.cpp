@@ -2176,6 +2176,20 @@ namespace rock
             return result;
         }
 
+        RE::NiTransform rotationOnlyTransform(const RE::NiMatrix3& rotation)
+        {
+            RE::NiTransform result = transform_math::makeIdentityTransform<RE::NiTransform>();
+            result.rotate = rotation;
+            return result;
+        }
+
+        RE::NiMatrix3 frameToFrameRotation(const RE::NiMatrix3& fromWorldRotation, const RE::NiMatrix3& toWorldRotation)
+        {
+            const RE::NiTransform fromWorld = rotationOnlyTransform(fromWorldRotation);
+            const RE::NiTransform toWorld = rotationOnlyTransform(toWorldRotation);
+            return transform_math::composeTransforms(transform_math::invertTransform(fromWorld), toWorld).rotate;
+        }
+
         RE::NiTransform makeIdentityTransform()
         {
             return transform_math::makeIdentityTransform<RE::NiTransform>();
@@ -9400,12 +9414,44 @@ namespace rock
                         if (tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, bodyWorldBeforeSolve)) {
                             const auto* constraintData = static_cast<const char*>(_activeConstraint.constraintData);
                             const auto* targetBRca = reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
+                            const auto* transformARotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_A_COL0);
                             const auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
                             const RE::NiTransform desiredBodyTransformHandSpace = _grabFrame.rawRotationProxyBodyHandSpace;
                             const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
                             const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
                             const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
+                            const RE::NiMatrix3 transformAAsHkColumns = matrixFromHkColumns(transformARotation);
                             const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
+                            std::array<float, 12> targetBRcaRaw{};
+                            std::memcpy(targetBRcaRaw.data(), targetBRca, sizeof(float) * targetBRcaRaw.size());
+
+                            RE::NiTransform bodyAWorldBeforeSolve{};
+                            bool bodyAWorldBeforeSolveOk = false;
+                            if (proxyReadbackBetweenOk) {
+                                bodyAWorldBeforeSolve = proxyReadbackBetween;
+                                bodyAWorldBeforeSolveOk = true;
+                            } else {
+                                bodyAWorldBeforeSolveOk = tryResolveLiveBodyWorldTransform(world, proxyBodyId, bodyAWorldBeforeSolve);
+                            }
+
+                            float ragdollBRcaRowsErrorDegrees = -1.0f;
+                            float ragdollBRcaColumnsErrorDegrees = -1.0f;
+                            float ragdollARcbRowsInverseErrorDegrees = -1.0f;
+                            float ragdollARcbColumnsInverseErrorDegrees = -1.0f;
+                            if (bodyAWorldBeforeSolveOk) {
+                                const RE::NiMatrix3 constraintAWorldRotation =
+                                    multiplyTransforms(bodyAWorldBeforeSolve, rotationOnlyTransform(transformAAsHkColumns)).rotate;
+                                const RE::NiMatrix3 constraintBWorldRotation =
+                                    multiplyTransforms(bodyWorldBeforeSolve, rotationOnlyTransform(transformBAsHkColumns)).rotate;
+                                const RE::NiMatrix3 currentBRca = frameToFrameRotation(constraintBWorldRotation, constraintAWorldRotation);
+                                const RE::NiMatrix3 currentARcb = frameToFrameRotation(constraintAWorldRotation, constraintBWorldRotation);
+                                const RE::NiMatrix3 targetRowsInverse = transform_math::transposeRotation(targetAsHkRows);
+                                const RE::NiMatrix3 targetColumnsInverse = transform_math::transposeRotation(targetAsHkColumns);
+                                ragdollBRcaRowsErrorDegrees = rotationDeltaDegrees(currentBRca, targetAsHkRows);
+                                ragdollBRcaColumnsErrorDegrees = rotationDeltaDegrees(currentBRca, targetAsHkColumns);
+                                ragdollARcbRowsInverseErrorDegrees = rotationDeltaDegrees(currentARcb, targetRowsInverse);
+                                ragdollARcbColumnsInverseErrorDegrees = rotationDeltaDegrees(currentARcb, targetColumnsInverse);
+                            }
 
                             const RE::NiPoint3 liveGripBeforeSolve =
                                 transform_math::localPointToWorld(bodyWorldBeforeSolve, activePivotBBodyLocalGame);
@@ -9426,7 +9472,11 @@ namespace rock
                             _ragdollAngularProbePreSolve = RagdollAngularProbePreSolve{
                                 .objectBodyId = _savedObjectState.bodyId,
                                 .desiredBodyWorld = desiredBodyWorld,
+                                .bodyAWorldBefore = bodyAWorldBeforeSolve,
                                 .bodyWorldBefore = bodyWorldBeforeSolve,
+                                .transformARotation = transformAAsHkColumns,
+                                .transformBRotation = transformBAsHkColumns,
+                                .targetBRcaRaw = targetBRcaRaw,
                                 .requiredAxisWorld = rotationCorrectionAxisWorld(bodyWorldBeforeSolve.rotate, desiredBodyWorld.rotate),
                                 .angularVelocityBeforeRadians = angularVelocityBeforeSolve,
                                 .beforeErrorDegrees = rotationDeltaDegrees(bodyWorldBeforeSolve.rotate, desiredBodyWorld.rotate),
@@ -9438,7 +9488,12 @@ namespace rock
                                 .linearMotorMaxForce = linearMotorBudget,
                                 .targetRowsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkRows, desiredBodyToHandSpace.rotate),
                                 .targetColumnsToTransformBDegrees = rotationDeltaDegrees(targetAsHkColumns, transformBAsHkColumns),
+                                .ragdollBRcaRowsErrorDegrees = ragdollBRcaRowsErrorDegrees,
+                                .ragdollBRcaColumnsErrorDegrees = ragdollBRcaColumnsErrorDegrees,
+                                .ragdollARcbRowsInverseErrorDegrees = ragdollARcbRowsInverseErrorDegrees,
+                                .ragdollARcbColumnsInverseErrorDegrees = ragdollARcbColumnsInverseErrorDegrees,
                                 .flushSequence = _grabAuthorityProxyFlushSequence + 1,
+                                .bodyAWorldValid = bodyAWorldBeforeSolveOk,
                                 .ragdollMotorEnabled = *(constraintData + ATOM_RAGDOLL_MOT + 0x02) != 0,
                                 .valid = true,
                             };
@@ -9767,6 +9822,81 @@ namespace rock
                     grab_three_phase::phaseName(_grabAcquisitionPhase),
                     objectBodyId.value,
                     objectMotionIndex);
+
+                ROCK_LOG_SAMPLE_WARN(Hand,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "{} RAGDOLL FRAME RAW: seq={}/{} target_bRca_raw=[({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f})] tA_rows=[({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f})] tB_rows=[({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f})]",
+                    handName(),
+                    flushSequence,
+                    queuedSequence,
+                    ragdollAngularProbePreSolve.targetBRcaRaw[0],
+                    ragdollAngularProbePreSolve.targetBRcaRaw[1],
+                    ragdollAngularProbePreSolve.targetBRcaRaw[2],
+                    ragdollAngularProbePreSolve.targetBRcaRaw[4],
+                    ragdollAngularProbePreSolve.targetBRcaRaw[5],
+                    ragdollAngularProbePreSolve.targetBRcaRaw[6],
+                    ragdollAngularProbePreSolve.targetBRcaRaw[8],
+                    ragdollAngularProbePreSolve.targetBRcaRaw[9],
+                    ragdollAngularProbePreSolve.targetBRcaRaw[10],
+                    ragdollAngularProbePreSolve.transformARotation.entry[0][0],
+                    ragdollAngularProbePreSolve.transformARotation.entry[0][1],
+                    ragdollAngularProbePreSolve.transformARotation.entry[0][2],
+                    ragdollAngularProbePreSolve.transformARotation.entry[1][0],
+                    ragdollAngularProbePreSolve.transformARotation.entry[1][1],
+                    ragdollAngularProbePreSolve.transformARotation.entry[1][2],
+                    ragdollAngularProbePreSolve.transformARotation.entry[2][0],
+                    ragdollAngularProbePreSolve.transformARotation.entry[2][1],
+                    ragdollAngularProbePreSolve.transformARotation.entry[2][2],
+                    ragdollAngularProbePreSolve.transformBRotation.entry[0][0],
+                    ragdollAngularProbePreSolve.transformBRotation.entry[0][1],
+                    ragdollAngularProbePreSolve.transformBRotation.entry[0][2],
+                    ragdollAngularProbePreSolve.transformBRotation.entry[1][0],
+                    ragdollAngularProbePreSolve.transformBRotation.entry[1][1],
+                    ragdollAngularProbePreSolve.transformBRotation.entry[1][2],
+                    ragdollAngularProbePreSolve.transformBRotation.entry[2][0],
+                    ragdollAngularProbePreSolve.transformBRotation.entry[2][1],
+                    ragdollAngularProbePreSolve.transformBRotation.entry[2][2]);
+
+                ROCK_LOG_SAMPLE_WARN(Hand,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "{} RAGDOLL FRAME LIVE: seq={}/{} liveA={} liveA_rows=[({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f})] liveB_rows=[({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f}) ({:.3f},{:.3f},{:.3f})]",
+                    handName(),
+                    flushSequence,
+                    queuedSequence,
+                    ragdollAngularProbePreSolve.bodyAWorldValid ? "ok" : "fail",
+                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[0][0],
+                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[0][1],
+                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[0][2],
+                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[1][0],
+                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[1][1],
+                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[1][2],
+                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[2][0],
+                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[2][1],
+                    ragdollAngularProbePreSolve.bodyAWorldBefore.rotate.entry[2][2],
+                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[0][0],
+                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[0][1],
+                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[0][2],
+                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[1][0],
+                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[1][1],
+                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[1][2],
+                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[2][0],
+                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[2][1],
+                    ragdollAngularProbePreSolve.bodyWorldBefore.rotate.entry[2][2]);
+
+                ROCK_LOG_SAMPLE_WARN(Hand,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "{} RAGDOLL FRAME ERROR: seq={}/{} appearsSolve=bRcaRows bRcaRowsErr={:.1f}deg bRcaColsErr={:.1f}deg aRcbRowsInvErr={:.1f}deg aRcbColsInvErr={:.1f}deg intendedBodyErr={:.1f}->{:.1f}deg targetRowsInv={:.1f}deg targetColsToB={:.1f}deg",
+                    handName(),
+                    flushSequence,
+                    queuedSequence,
+                    ragdollAngularProbePreSolve.ragdollBRcaRowsErrorDegrees,
+                    ragdollAngularProbePreSolve.ragdollBRcaColumnsErrorDegrees,
+                    ragdollAngularProbePreSolve.ragdollARcbRowsInverseErrorDegrees,
+                    ragdollAngularProbePreSolve.ragdollARcbColumnsInverseErrorDegrees,
+                    ragdollAngularProbePreSolve.beforeErrorDegrees,
+                    afterErrorDegrees,
+                    ragdollAngularProbePreSolve.targetRowsToConstraintInverseDegrees,
+                    ragdollAngularProbePreSolve.targetColumnsToTransformBDegrees);
             }
         }
 
