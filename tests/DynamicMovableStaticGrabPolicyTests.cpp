@@ -141,24 +141,32 @@ int main()
             InteractionMode::ActiveGrab),
         BodyRejectReason::StaticMotion);
 
-    ok &= expectAccepted("active-prepped loose pickup on static layer is accepted",
+    ok &= expectRejected("active-prepped loose pickup on static layer remains blocked",
         physics_body_classifier::classifyBody(
             makeInput(grab_target::Kind::LooseObject, collision_layer_policy::FO4_LAYER_STATIC, BodyMotionType::Dynamic),
-            InteractionMode::ActiveGrab));
+            InteractionMode::ActiveGrab),
+        BodyRejectReason::UnsupportedLayer);
 
-    ok &= expectAccepted("active-prepped loose pickup on animstatic layer is accepted",
+    ok &= expectRejected("active-prepped loose pickup on animstatic layer remains blocked",
         physics_body_classifier::classifyBody(
             makeInput(grab_target::Kind::LooseObject, collision_layer_policy::FO4_LAYER_ANIMSTATIC, BodyMotionType::Dynamic),
-            InteractionMode::ActiveGrab));
+            InteractionMode::ActiveGrab),
+        BodyRejectReason::UnsupportedLayer);
 
     ok &= expectAccepted("active-prepped loose pickup on props layer is accepted",
         physics_body_classifier::classifyBody(
             makeInput(grab_target::Kind::LooseObject, collision_layer_policy::FO4_LAYER_PROPS, BodyMotionType::Dynamic),
             InteractionMode::ActiveGrab));
 
-    ok &= expectRejected("static loose pickup on static layer remains blocked",
+    ok &= expectRejected("static loose pickup on static layer remains blocked at the layer gate",
         physics_body_classifier::classifyBody(
             makeInput(grab_target::Kind::LooseObject, collision_layer_policy::FO4_LAYER_STATIC, BodyMotionType::Static),
+            InteractionMode::ActiveGrab),
+        BodyRejectReason::UnsupportedLayer);
+
+    ok &= expectRejected("static loose pickup on props layer remains blocked by motion",
+        physics_body_classifier::classifyBody(
+            makeInput(grab_target::Kind::LooseObject, collision_layer_policy::FO4_LAYER_PROPS, BodyMotionType::Static),
             InteractionMode::ActiveGrab),
         BodyRejectReason::StaticMotion);
 

@@ -180,16 +180,16 @@ namespace rock::physics_body_classifier
             mode == InteractionMode::ActiveGrab &&
             input.targetKind == grab_target::Kind::DynamicMovableStatic;
         /*
-         * Some pickup refs, including consumables, keep a native support/props
-         * layer on their hknp body even after active-prep converts the body
-         * motion. The target-kind classifier has already proven this is a
-         * loose-form ref, so the layer gate allows it through and the motion
-         * checks below still fail closed unless prep produced a dynamic body.
+         * Some pickup refs, including consumables, keep the native PROPS layer
+         * on their hknp body even after active-prep converts the body motion.
+         * The target-kind classifier has already proven this is a loose-form
+         * ref, so the layer gate allows it through and the motion checks below
+         * still fail closed unless prep produced a dynamic body.
          */
         const bool activeLoosePickupLayer =
             mode == InteractionMode::ActiveGrab &&
             input.targetKind == grab_target::Kind::LooseObject &&
-            (collision_layer_policy::isWorldSurfaceLayer(input.layer) || input.layer == collision_layer_policy::FO4_LAYER_PROPS);
+            input.layer == collision_layer_policy::FO4_LAYER_PROPS;
         const bool activeDeadActorBody =
             mode == InteractionMode::ActiveGrab &&
             input.targetKind == grab_target::Kind::DeadActorBody &&

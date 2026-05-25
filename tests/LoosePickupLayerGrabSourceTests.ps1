@@ -26,16 +26,33 @@ function Require-Text {
     }
 }
 
+function Forbid-Text {
+    param(
+        [string]$RelativePath,
+        [string]$Pattern,
+        [string]$Message
+    )
+
+    $text = Read-Source $RelativePath
+    if ($text -match $Pattern) {
+        $failures.Add("$RelativePath`: $Message")
+    }
+}
+
 Require-Text 'src/physics-interaction/object/PhysicsBodyClassifier.h' `
-    'activeLoosePickupLayer[\s\S]*input\.targetKind == grab_target::Kind::LooseObject[\s\S]*collision_layer_policy::isWorldSurfaceLayer\(input\.layer\)[\s\S]*input\.layer == collision_layer_policy::FO4_LAYER_PROPS' `
-    'Active-grab body classification must allow loose pickup refs that retain STATIC/ANIMSTATIC/PROPS layers through the layer gate.'
+    'activeLoosePickupLayer[\s\S]*input\.targetKind == grab_target::Kind::LooseObject[\s\S]*input\.layer == collision_layer_policy::FO4_LAYER_PROPS' `
+    'Active-grab body classification must allow loose pickup refs that retain the PROPS layer through the layer gate.'
+
+Forbid-Text 'src/physics-interaction/object/PhysicsBodyClassifier.h' `
+    'isWorldSurfaceLayer\(input\.layer\)' `
+    'Loose pickup refs must not reopen STATIC/ANIMSTATIC support layers through the active-grab layer exception.'
 
 Require-Text 'src/physics-interaction/object/PhysicsBodyClassifier.h' `
     'activeLoosePickupLayer[\s\S]*interactionLayer[\s\S]*activeLoosePickupLayer' `
     'Loose native-layer bodies must be accepted through the normal interaction-layer decision, not a side fallback.'
 
 Require-Text 'src/physics-interaction/object/PhysicsBodyClassifier.h' `
-    'native support/props[\s\S]*checks below still fail closed unless prep produced a dynamic body' `
+    'native PROPS layer[\s\S]*checks below[\s\S]*fail closed unless prep produced a dynamic body' `
     'The loose native-layer exception must document that motion validation still owns runtime safety.'
 
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' `
