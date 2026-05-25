@@ -7,8 +7,10 @@
 #include "RockConfig.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
+#include <mutex>
 #include <unordered_set>
 #include <windows.h>
 
@@ -16,9 +18,81 @@ namespace rock
 {
     namespace
     {
+        struct RetiredGrabConstraintPayload
+        {
+            void* constraintData = nullptr;
+            HkPositionMotor* angularMotor = nullptr;
+            HkPositionMotor* linearMotor = nullptr;
+            std::uint32_t constraintId = 0x7FFF'FFFFu;
+            std::uint32_t remainingPhysicsSteps = 0;
+
+            [[nodiscard]] bool occupied() const
+            {
+                return constraintData || angularMotor || linearMotor;
+            }
+        };
+
+        inline constexpr std::uint32_t kRetiredGrabConstraintPayloadGraceSteps = 8;
+        inline constexpr std::size_t kMaxRetiredGrabConstraintPayloads = 512;
+
+        std::mutex s_retiredGrabConstraintPayloadMutex;
+        std::array<RetiredGrabConstraintPayload, kMaxRetiredGrabConstraintPayloads> s_retiredGrabConstraintPayloads{};
+        std::uint32_t s_retiredGrabConstraintPayloadCount = 0;
+
         float safePositiveMotorValue(float value, float fallback)
         {
             return (std::isfinite(value) && value > 0.0f) ? value : fallback;
+        }
+
+        void freeRetiredGrabConstraintPayload(RetiredGrabConstraintPayload& payload)
+        {
+            if (payload.angularMotor) {
+                havok_runtime::freeHavok(payload.angularMotor, HK_POSITION_MOTOR_SIZE);
+            }
+            if (payload.linearMotor && payload.linearMotor != payload.angularMotor) {
+                havok_runtime::freeHavok(payload.linearMotor, HK_POSITION_MOTOR_SIZE);
+            }
+            if (payload.constraintData) {
+                havok_runtime::freeHavok(payload.constraintData, GRAB_CONSTRAINT_SIZE);
+            }
+            payload = {};
+        }
+
+        void retireGrabConstraintPayload(ActiveConstraint& constraint)
+        {
+            RetiredGrabConstraintPayload payload{
+                .constraintData = constraint.constraintData,
+                .angularMotor = constraint.angularMotor,
+                .linearMotor = constraint.linearMotor,
+                .constraintId = constraint.constraintId,
+                .remainingPhysicsSteps = kRetiredGrabConstraintPayloadGraceSteps,
+            };
+            if (!payload.occupied()) {
+                return;
+            }
+
+            std::scoped_lock lock(s_retiredGrabConstraintPayloadMutex);
+            for (auto& retired : s_retiredGrabConstraintPayloads) {
+                if (!retired.occupied()) {
+                    retired = payload;
+                    ++s_retiredGrabConstraintPayloadCount;
+                    ROCK_LOG_SAMPLE_DEBUG(GrabConstraint,
+                        1000,
+                        "Constraint {} payload retired for {} physics steps activeRetired={}",
+                        payload.constraintId,
+                        kRetiredGrabConstraintPayloadGraceSteps,
+                        s_retiredGrabConstraintPayloadCount);
+                    return;
+                }
+            }
+
+            /*
+             * If this ever happens, leaking one retired payload is safer than
+             * freeing memory that the native solver may still read.
+             */
+            ROCK_LOG_ERROR(GrabConstraint,
+                "Retired grab constraint payload queue full; intentionally leaking constraint {} payload to avoid native use-after-free",
+                payload.constraintId);
         }
     }
 
@@ -493,23 +567,50 @@ namespace rock
         if (!constraint.isValid())
             return;
 
+        if (constraint.constraintData) {
+            setGrabMotorAtomsActive(static_cast<char*>(constraint.constraintData), false, false);
+        }
+
         if (world) {
             std::uint32_t ids[1] = { constraint.constraintId };
             world->DestroyConstraints(ids, 1);
             ROCK_LOG_DEBUG(GrabConstraint, "Constraint {} destroyed", constraint.constraintId);
+        } else {
+            ROCK_LOG_WARN(GrabConstraint, "Constraint {} destroy requested without world; payload retired but native constraint removal could not be issued",
+                constraint.constraintId);
         }
 
-        if (constraint.angularMotor) {
-            havok_runtime::freeHavok(constraint.angularMotor, HK_POSITION_MOTOR_SIZE);
-        }
-        if (constraint.linearMotor && constraint.linearMotor != constraint.angularMotor) {
-            havok_runtime::freeHavok(constraint.linearMotor, HK_POSITION_MOTOR_SIZE);
-        }
-        if (constraint.constraintData) {
-            havok_runtime::freeHavok(constraint.constraintData, GRAB_CONSTRAINT_SIZE);
-        }
-
+        retireGrabConstraintPayload(constraint);
         constraint.clear();
+    }
+
+    void serviceRetiredGrabConstraintPayloads(std::uint32_t completedPhysicsSteps)
+    {
+        if (completedPhysicsSteps == 0) {
+            return;
+        }
+
+        std::scoped_lock lock(s_retiredGrabConstraintPayloadMutex);
+        for (auto& payload : s_retiredGrabConstraintPayloads) {
+            if (!payload.occupied()) {
+                continue;
+            }
+
+            payload.remainingPhysicsSteps =
+                payload.remainingPhysicsSteps > completedPhysicsSteps ? payload.remainingPhysicsSteps - completedPhysicsSteps : 0;
+            if (payload.remainingPhysicsSteps == 0) {
+                const auto constraintId = payload.constraintId;
+                freeRetiredGrabConstraintPayload(payload);
+                if (s_retiredGrabConstraintPayloadCount > 0) {
+                    --s_retiredGrabConstraintPayloadCount;
+                }
+                ROCK_LOG_SAMPLE_DEBUG(GrabConstraint,
+                    1000,
+                    "Retired constraint {} payload reclaimed activeRetired={}",
+                    constraintId,
+                    s_retiredGrabConstraintPayloadCount);
+            }
+        }
     }
 
     namespace

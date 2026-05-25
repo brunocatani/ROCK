@@ -231,6 +231,7 @@ namespace rock
         const RE::NiTransform& desiredBodyTransformHandSpace, const GrabConstraintMotorTuning& tuning);
 
     void destroyGrabConstraint(RE::hknpWorld* world, ActiveConstraint& constraint);
+    void serviceRetiredGrabConstraintPayloads(std::uint32_t completedPhysicsSteps = 1);
 
     void cleanupGrabConstraintVtable();
 }

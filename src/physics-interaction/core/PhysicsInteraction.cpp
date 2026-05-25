@@ -27,6 +27,7 @@
 #include "physics-interaction/debug/DebugOverlayPolicy.h"
 #include "physics-interaction/feedback/HapticPolicy.h"
 #include "physics-interaction/grab/GrabCore.h"
+#include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
@@ -3152,6 +3153,7 @@ namespace rock
 
         _rightHand.observeCustomGrabAuthorityAfterSolve(world, timing);
         _leftHand.observeCustomGrabAuthorityAfterSolve(world, timing);
+        serviceRetiredGrabConstraintPayloads();
     }
 
 #include "physics-interaction/core/PhysicsInteractionDebugOverlay.inl"
