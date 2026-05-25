@@ -63,11 +63,6 @@ extern "C" __declspec(dllimport) HMODULE __stdcall GetModuleHandleA(LPCSTR lpMod
 extern "C" __declspec(dllimport) FARPROC __stdcall GetProcAddress(HMODULE hModule, LPCSTR lpProcName);
 #endif
 
-namespace RE
-{
-    class NiNode;
-}
-
 namespace frik::api
 {
 #if defined(FRIK_API_EXPORTS)
@@ -78,7 +73,7 @@ namespace frik::api
 
 #define FRIK_CALL __cdecl
 
-    inline constexpr std::uint32_t FRIK_API_VERSION = 9;
+    inline constexpr std::uint32_t FRIK_API_VERSION = 5;
 
     struct FRIKApi
     {
@@ -92,17 +87,43 @@ namespace frik::api
             Left,
         };
 
-        enum class HandPoses : std::uint8_t
+        enum class HandPoseKind : std::uint8_t
         {
 
-            Unset,
+            Unset = 0,
 
-            Custom,
-            Open,
-            Fist,
-            Pointing,
-            HoldingGun,
-            HoldingMelee,
+            Custom = 1,
+            Open = 2,
+            Pointing = 3,
+            HoldingWeapon = 4,
+            OffhandGrip = 5,
+            Attaboy = 6,
+            ThumbsUp = 7,
+
+            Fist = 8,
+            HoldingGun = 9,
+            HoldingMelee = 10,
+        };
+
+        using HandPoses = HandPoseKind;
+
+        struct FingerPoseData
+        {
+            float prox = 0.0f;
+            float mid = 0.0f;
+            float dist = 0.0f;
+            float splay = 0.0f;
+        };
+
+        struct HandPoseData
+        {
+            FingerPoseData thumb;
+            FingerPoseData index;
+            FingerPoseData middle;
+            FingerPoseData ring;
+            FingerPoseData pinky;
+            float palmPitch = 0.0f;
+            float palmYaw = 0.0f;
         };
 
         enum class HandPoseTagState : std::uint8_t
@@ -159,9 +180,9 @@ namespace frik::api
 
         HandPoseTagState(FRIK_CALL* getHandPoseSetTagState)(const char* tag, Hand hand);
 
-        HandPoses(FRIK_CALL* getCurrentHandPose)(Hand hand);
+        HandPoseKind(FRIK_CALL* getCurrentHandPose)(Hand hand);
 
-        bool(FRIK_CALL* setHandPose)(const char* tag, Hand hand, HandPoses handPose);
+        bool(FRIK_CALL* setHandPose)(const char* tag, Hand hand, HandPoseKind handPose);
 
         bool(FRIK_CALL* setHandPoseCustomFingerPositions)(const char* tag, Hand hand, float thumb, float index, float middle, float ring, float pinky);
 
@@ -175,30 +196,11 @@ namespace frik::api
 
         bool(FRIK_CALL* blockOffHandWeaponGripping)(const char* tag, bool block);
 
-        bool(FRIK_CALL* setHandPoseCustomJointPositions)(const char* tag, Hand hand, const float values[15]);
+        bool(FRIK_CALL* setHandPoseCustom)(const char* tag, Hand hand, const HandPoseData& handPose, bool forceTop);
 
-        bool(FRIK_CALL* setHandPoseWithPriority)(const char* tag, Hand hand, HandPoses handPose, int priority);
+        bool(FRIK_CALL* setHandPoseWithPriority)(const char* tag, Hand hand, HandPoseKind handPose, int priority);
 
         RE::NiTransform(FRIK_CALL* getHandWorldTransform)(Hand hand);
-
-        RE::NiNode*(FRIK_CALL* getHandNode)(Hand hand);
-
-        // Interaction-blocking menus only; optical scope aiming is not a menu blocker.
-        bool(FRIK_CALL* isAnyMenuOpen)();
-
-        RE::NiPoint3(FRIK_CALL* getSmoothedPlayerPosition)();
-
-        bool(FRIK_CALL* isPlayerMoving)();
-
-        bool(FRIK_CALL* isOffhandNearWeaponBarrel)();
-
-        bool(FRIK_CALL* isInPowerArmor)();
-
-        bool(FRIK_CALL* isWeaponDrawn)();
-
-        bool(FRIK_CALL* isMeleeWeaponDrawn)();
-
-        float(FRIK_CALL* getFrameTime)();
 
         bool(FRIK_CALL* setHandPoseCustomFingerPositionsWithPriority)(const char* tag, Hand hand, float thumb, float index, float middle, float ring, float pinky, int priority);
 
@@ -247,5 +249,5 @@ namespace frik::api
         inline static const FRIKApi* inst = nullptr;
     };
 
-    static_assert(FRIK_API_VERSION == 9, "ROCK requires FRIK API v9 baseline local finger transform support");
+    static_assert(FRIK_API_VERSION == 5, "ROCK requires FRIK API v5 upstream-compatible hand pose and visual-authority support");
 }
