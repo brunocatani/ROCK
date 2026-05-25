@@ -8,14 +8,11 @@
 namespace rock::grab_constraint_math
 {
     /*
-     * ROCK creates grab angular constraints in the object-to-hand frame and
-     * refreshes the object-space transform-B pivot from that same frame during
-     * every held update. Transform A comes from the live physics hand, so a
-     * frozen transform-B pivot makes the linear and angular goals disagree: the
-     * pivot can be visually locked while the held body cannot rotate into the
-     * desired frame. Keeping both target_bRca and transformB.translation
-     * conversions here makes constraint creation and per-frame writes use one
-     * verified convention.
+     * ROCK creates grab angular constraints from the body-B relation expressed
+     * in the actual proxy body-A frame. The frozen grab relation may be stored
+     * in a higher-level authority frame, but constraint creation and per-frame
+     * writes must hand this helper the solver-space relation already converted
+     * for the live body A frame.
      */
 
     /*
