@@ -370,8 +370,16 @@ namespace rock
         {
             const int linAtomOffsets[3] = { ATOM_LIN_MOTOR_0, ATOM_LIN_MOTOR_1, ATOM_LIN_MOTOR_2 };
 
-            const std::int16_t initOffsets[3] = { 0x40, 0x31, 0x22 };
-            const std::int16_t prevTargetOffsets[3] = { 0x44, 0x38, 0x2C };
+            const std::int16_t initOffsets[3] = {
+                static_cast<std::int16_t>(RT_LINEAR_INIT_BASE + 0),
+                static_cast<std::int16_t>(RT_LINEAR_INIT_BASE + 1),
+                static_cast<std::int16_t>(RT_LINEAR_INIT_BASE + 2),
+            };
+            const std::int16_t prevTargetOffsets[3] = {
+                static_cast<std::int16_t>(RT_LINEAR_PREV_POS_BASE + 0x00),
+                static_cast<std::int16_t>(RT_LINEAR_PREV_POS_BASE + 0x04),
+                static_cast<std::int16_t>(RT_LINEAR_PREV_POS_BASE + 0x08),
+            };
 
             for (int axis = 0; axis < 3; axis++) {
                 auto* atom = header + linAtomOffsets[axis];
@@ -392,8 +400,15 @@ namespace rock
             ATOMS_START,
             RUNTIME_SOLVER_RESULTS,
             RUNTIME_REPORTED_SIZE);
-        ROCK_LOG_TRACE(GrabConstraint, "RagdollMotor offsets: init={:#x} prevAng={:#x} (relative to ptr at 0x00)", RT_RAGDOLL_INIT_OFFSET, RT_RAGDOLL_PREV_ANG_OFFSET);
-        ROCK_LOG_TRACE(GrabConstraint, "LinMotor offsets: [0x40,0x44] [0x31,0x38] [0x22,0x2C] (relative to per-atom ptrs at 0x30,0x40,0x50)");
+        ROCK_LOG_TRACE(GrabConstraint, "RagdollMotor offsets: init={:#x} prevAng={:#x} (absolute runtime offsets)", RT_RAGDOLL_INIT_OFFSET, RT_RAGDOLL_PREV_ANG_OFFSET);
+        ROCK_LOG_TRACE(GrabConstraint,
+            "LinMotor offsets: [{:#x},{:#x}] [{:#x},{:#x}] [{:#x},{:#x}] (absolute runtime offsets)",
+            RT_LINEAR_INIT_BASE + 0,
+            RT_LINEAR_PREV_POS_BASE + 0x00,
+            RT_LINEAR_INIT_BASE + 1,
+            RT_LINEAR_PREV_POS_BASE + 0x04,
+            RT_LINEAR_INIT_BASE + 2,
+            RT_LINEAR_PREV_POS_BASE + 0x08);
 
         {
             auto* tA_col0 = reinterpret_cast<float*>(header + GRAB_TRANSFORM_A_COL0);

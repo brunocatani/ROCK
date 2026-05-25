@@ -77,10 +77,21 @@ namespace rock
     inline constexpr int RAGDOLL_MOTOR_MOTORS = 0x40;
 
     inline constexpr int RUNTIME_SOLVER_RESULTS = 12;
-    inline constexpr int RUNTIME_REPORTED_SIZE = 0x100;
+    inline constexpr int HKP_SOLVER_RESULT_SIZE = 0x08;
+    inline constexpr int RT_SOLVER_RESULTS_BYTES = RUNTIME_SOLVER_RESULTS * HKP_SOLVER_RESULT_SIZE;
 
-    inline constexpr int RT_RAGDOLL_INIT_OFFSET = 0x60;
-    inline constexpr int RT_RAGDOLL_PREV_ANG_OFFSET = 0x64;
+    /*
+     * FO4VR hknp allocates hkp external runtime as solver results first, then
+     * atom private state. Stock point-to-plane, prismatic, and linear-clearance
+     * constraints all report runtime size as numSolverResults * 8 plus their
+     * motor state. Keep all motor offsets past the 12 result slots.
+     */
+    inline constexpr int RT_RAGDOLL_INIT_OFFSET = RT_SOLVER_RESULTS_BYTES;
+    inline constexpr int RT_RAGDOLL_PREV_ANG_OFFSET = RT_RAGDOLL_INIT_OFFSET + 0x04;
+    inline constexpr int RT_LINEAR_INIT_BASE = RT_RAGDOLL_PREV_ANG_OFFSET + 0x0C;
+    inline constexpr int RT_LINEAR_PREV_POS_BASE = RT_LINEAR_INIT_BASE + 0x04;
+    inline constexpr int RT_RUNTIME_USED_SIZE = RT_LINEAR_PREV_POS_BASE + 0x0C;
+    inline constexpr int RUNTIME_REPORTED_SIZE = RT_RUNTIME_USED_SIZE * 2;
 
     inline constexpr int VTABLE_SLOT_DESTRUCTOR = 0;
     inline constexpr int VTABLE_SLOT_GET_TYPE = 4;
