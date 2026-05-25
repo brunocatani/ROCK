@@ -4230,8 +4230,10 @@ namespace rock
             out.rawToHandBody = grab_transform_telemetry::measureTransformDelta(out.rawHandWorld, out.handBodyWorld);
             const RE::NiTransform palmAnchorGrabAuthorityBase =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(out.handBodyWorld);
-            out.palmAnchorGrabAuthorityWorld =
+            const RE::NiTransform palmAnchorGrabAuthoritySeatWorld =
                 applyRuntimeGrabAuthorityProxyOffsetToFrame(palmAnchorGrabAuthorityBase, out.rawHandWorld, _isLeft);
+            out.palmAnchorGrabAuthorityWorld =
+                makeRawRotationPalmTranslationFrame(out.rawHandWorld, palmAnchorGrabAuthoritySeatWorld);
             out.palmAnchorGrabAuthorityBasis = grab_transform_telemetry::makeOrientationBasis(out.palmAnchorGrabAuthorityWorld);
             out.hasPalmAnchorGrabAuthority = true;
             out.nativeFlattenedHandToGrabAuthority =
@@ -4733,14 +4735,15 @@ namespace rock
         RE::NiTransform& outProxyWorld,
         const char*& outSource) const
     {
-        (void)rawHandWorld;
         (void)fallbackPalmAnchorWorld;
 
         LivePalmAnchorReference palmReference{};
         if (tryResolveLivePalmAnchorReference(world, palmReference)) {
             const RE::NiTransform proxyBaseWorld =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-            outProxyWorld = applyRuntimeGrabAuthorityProxyOffsetToFrame(proxyBaseWorld, rawHandWorld, _isLeft);
+            const RE::NiTransform proxySeatWorld =
+                applyRuntimeGrabAuthorityProxyOffsetToFrame(proxyBaseWorld, rawHandWorld, _isLeft);
+            outProxyWorld = makeRawRotationPalmTranslationFrame(rawHandWorld, proxySeatWorld);
             switch (palmReference.source) {
             case body_frame::BodyFrameSource::MotionCenterOfMass:
                 outSource = "livePalmAnchorMotionGrabFrame";
@@ -9277,8 +9280,10 @@ namespace rock
                 const RE::NiTransform proxyBaseWorld =
                     hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(livePalmReference.world);
                 const RE::NiTransform generatedProxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft);
-                pending.proxyWorld.rotate = generatedProxyWorld.rotate;
-                pending.proxyWorld.scale = generatedProxyWorld.scale;
+                const RE::NiTransform rawRotationProxyWorld =
+                    makeRawRotationPalmTranslationFrame(pending.rawHandWorld, generatedProxyWorld);
+                pending.proxyWorld.rotate = rawRotationProxyWorld.rotate;
+                pending.proxyWorld.scale = rawRotationProxyWorld.scale;
 
                 RE::NiPoint3 activeProxyPivotAWorld{};
                 if (resolveActiveGrabAuthorityPivotAWorld(world, pending.rawHandWorld, activeProxyPivotAWorld)) {
