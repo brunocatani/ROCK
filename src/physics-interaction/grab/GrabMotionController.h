@@ -68,6 +68,8 @@ namespace rock::grab_motion_controller
         float authorityForceScale = 1.0f;
         float mass = 0.0f;
         float forceToMassRatio = 500.0f;
+        float angularToLinearForceRatio = 12.5f;
+        float fadeInStartAngularRatio = 100.0f;
         bool effectiveMotorMassFloorEnabled = true;
         float effectiveMotorMassFloor = 2.0f;
 
@@ -174,6 +176,28 @@ namespace rock::grab_motion_controller
             return force;
         }
         return (std::min)(force, mass * forceToMassRatio);
+    }
+
+    inline float angularForceRatioForFade(float targetRatio, float startRatio, float fadeFactor, bool fadeEnabled)
+    {
+        const float safeTargetRatio = safePositive(targetRatio, 12.5f);
+        if (!fadeEnabled) {
+            return safeTargetRatio;
+        }
+
+        const float safeStartRatio = (std::max)(safeTargetRatio, safePositive(startRatio, 100.0f));
+        const float t = clamp01(fadeFactor);
+        return safeStartRatio + (safeTargetRatio - safeStartRatio) * t;
+    }
+
+    inline float angularForceFromLinear(float linearMaxForce, float angularToLinearRatio)
+    {
+        if (!std::isfinite(linearMaxForce) || linearMaxForce <= 0.0f) {
+            return 0.0f;
+        }
+
+        const float safeRatio = safePositive(angularToLinearRatio, 12.5f);
+        return linearMaxForce / safeRatio;
     }
 
     inline float effectiveMotorMass(float mass, bool floorEnabled, float massFloor)
@@ -638,10 +662,11 @@ namespace rock::grab_motion_controller
         const float collisionTau = safePositive(input.collisionTau, baseLinearTau);
 
         /*
-         * ROCK dynamic grabs keep normal held motors on fixed base tau and one
-         * shared force budget. Patch/contact/lever quality remains available to release safety,
-         * not live motor authority. Tiny or one-point patches must not make the
-         * held object too weak to follow the hand.
+         * ROCK dynamic grabs keep normal held motors on fixed base tau and
+         * HIGGS-style force separation: linear force is the mass-capped hand
+         * budget, while angular force is derived from that linear ceiling by
+         * an angular-to-linear ratio. Patch/contact/lever quality remains available to release safety,
+         * not live motor authority.
          */
         const float linearTauTarget = heldAuthority.softenForContact ? collisionTau : baseLinearTau;
         const float angularTauTarget = heldAuthority.softenForContact ? collisionTau : baseAngularTau;
@@ -655,8 +680,13 @@ namespace rock::grab_motion_controller
             input.mass,
             input.effectiveMotorMassFloorEnabled,
             input.effectiveMotorMassFloor);
-        out.linearMaxForce = capForceByMass(baseForce * out.fadeFactor, motorMass, input.forceToMassRatio) * authorityForceScale;
-        out.angularMaxForce = out.linearMaxForce;
+        out.linearMaxForce = capForceByMass(baseForce, motorMass, input.forceToMassRatio) * authorityForceScale;
+        const float angularRatio = angularForceRatioForFade(
+            input.angularToLinearForceRatio,
+            input.fadeInStartAngularRatio,
+            out.fadeFactor,
+            input.fadeInEnabled);
+        out.angularMaxForce = angularForceFromLinear(out.linearMaxForce, angularRatio);
         return out;
     }
 

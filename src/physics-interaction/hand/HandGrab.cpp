@@ -613,6 +613,7 @@ namespace rock
             float proportionalRecovery,
             float constantRecovery,
             bool looseWeaponGrab,
+            bool fadeInGrabConstraint,
             float mass,
             float forceToMassRatio)
         {
@@ -636,6 +637,13 @@ namespace rock
                 std::clamp(std::isfinite(authorityForceScale) && authorityForceScale > 0.0f ? authorityForceScale : 1.0f, 0.05f, 1.0f);
             const float linearMaxForce =
                 grab_motion_controller::capForceByMass(linearBudget, mass, forceToMassRatio) * sanitizedAuthorityForceScale;
+            const float angularRatio = grab_motion_controller::angularForceRatioForFade(
+                g_rockConfig.rockGrabAngularToLinearForceRatio,
+                g_rockConfig.rockGrabFadeInStartAngularRatio,
+                0.0f,
+                fadeInGrabConstraint);
+            const float angularMaxForce =
+                grab_motion_controller::angularForceFromLinear(linearMaxForce, angularRatio);
 
             return GrabConstraintMotorTuning{
                 .linearTau = scaleDriveValue(tau, linearTauMultiplier),
@@ -649,7 +657,7 @@ namespace rock
                     scaleDriveValue(g_rockConfig.rockGrabAngularProportionalRecovery, angularRecoveryMultiplier),
                 .angularConstantRecovery =
                     scaleDriveValue(g_rockConfig.rockGrabAngularConstantRecovery, angularRecoveryMultiplier),
-                .angularMaxForce = linearMaxForce,
+                .angularMaxForce = angularMaxForce,
             };
         }
 
@@ -4580,13 +4588,26 @@ namespace rock
         // constraint-space relation here lets some grabs start with a correct
         // pivot but a nearly flipped BODY target, which presents as an on-grab snap.
         const RE::NiTransform desiredBodyTransformProxySpace = _grabFrame.rawRotationProxyBodyHandSpace;
-        const RE::NiPoint3 activePivotBConstraintLocalGame = activeProxyConstraintPivotBLocalGame();
+        const RE::NiPoint3 solverPivotBConstraintLocalGame =
+            grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformProxySpace, _grabFrame.pivotAHandBodyLocalGame);
+        if (!std::isfinite(solverPivotBConstraintLocalGame.x) ||
+            !std::isfinite(solverPivotBConstraintLocalGame.y) ||
+            !std::isfinite(solverPivotBConstraintLocalGame.z)) {
+            ROCK_LOG_ERROR(Hand,
+                "{} hand proxy constraint grab failed: HIGGS-style transform-B pivot is invalid proxyBody={} objBody={} reason={}",
+                handName(),
+                _grabAuthorityProxy.getBodyId().value,
+                objectBodyId.value,
+                reason ? reason : "unknown");
+            destroyGrabAuthorityProxy(bhkWorld);
+            return false;
+        }
 
         const float gameToHkScale = gameToHavokScale();
         float pivotBBodyLocalHk[4]{
-            activePivotBConstraintLocalGame.x * gameToHkScale,
-            activePivotBConstraintLocalGame.y * gameToHkScale,
-            activePivotBConstraintLocalGame.z * gameToHkScale,
+            solverPivotBConstraintLocalGame.x * gameToHkScale,
+            solverPivotBConstraintLocalGame.y * gameToHkScale,
+            solverPivotBConstraintLocalGame.z * gameToHkScale,
             0.0f,
         };
 
@@ -4607,6 +4628,7 @@ namespace rock
             proportionalRecovery,
             constantRecovery,
             looseWeaponGrab,
+            _grabFrame.fadeInGrabConstraint,
             effectiveMassAtCreation,
             g_rockConfig.rockGrabMaxForceToMassRatio);
 
@@ -4634,7 +4656,9 @@ namespace rock
             _grabAuthorityProxyBhkWorld = bhkWorld;
             _grabAuthorityProxyHknpWorld = world;
             _grabAuthorityPivotAProxyLocalGame = pivotAProxyLocalGame;
-            _grabAuthorityPivotBConstraintLocalGame = activePivotBConstraintLocalGame;
+            // Keep the frozen grab evidence untouched; this is only the solver
+            // transform-B representation implied by the frozen body-in-hand relation.
+            _grabAuthorityPivotBConstraintLocalGame = solverPivotBConstraintLocalGame;
             _grabAuthorityProxyFrameValid = true;
             _grabAuthorityPendingTarget = GrabAuthorityProxyPendingTarget{
                 .proxyWorld = proxyWorldTransform,
@@ -4670,9 +4694,9 @@ namespace rock
             pivotAProxyLocalGame.x,
             pivotAProxyLocalGame.y,
             pivotAProxyLocalGame.z,
-            activePivotBConstraintLocalGame.x,
-            activePivotBConstraintLocalGame.y,
-            activePivotBConstraintLocalGame.z,
+            solverPivotBConstraintLocalGame.x,
+            solverPivotBConstraintLocalGame.y,
+            solverPivotBConstraintLocalGame.z,
             _grabFrame.pivotBBodyLocalGame.x,
             _grabFrame.pivotBBodyLocalGame.y,
             _grabFrame.pivotBBodyLocalGame.z,
@@ -4837,6 +4861,8 @@ namespace rock
             .authorityForceScale = authorityForceScale,
             .mass = massSummary.motorMass(),
             .forceToMassRatio = g_rockConfig.rockGrabMaxForceToMassRatio,
+            .angularToLinearForceRatio = g_rockConfig.rockGrabAngularToLinearForceRatio,
+            .fadeInStartAngularRatio = g_rockConfig.rockGrabFadeInStartAngularRatio,
             .effectiveMotorMassFloorEnabled = g_rockConfig.rockGrabEffectiveMotorMassFloorEnabled,
             .effectiveMotorMassFloor = g_rockConfig.rockGrabEffectiveMotorMassFloor,
             .fadeInEnabled = _grabFrame.fadeInGrabConstraint,
