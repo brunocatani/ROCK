@@ -151,6 +151,11 @@ int main()
             makeInput(grab_target::Kind::LooseObject, collision_layer_policy::FO4_LAYER_ANIMSTATIC, BodyMotionType::Dynamic),
             InteractionMode::ActiveGrab));
 
+    ok &= expectAccepted("active-prepped loose pickup on props layer is accepted",
+        physics_body_classifier::classifyBody(
+            makeInput(grab_target::Kind::LooseObject, collision_layer_policy::FO4_LAYER_PROPS, BodyMotionType::Dynamic),
+            InteractionMode::ActiveGrab));
+
     ok &= expectRejected("static loose pickup on static layer remains blocked",
         physics_body_classifier::classifyBody(
             makeInput(grab_target::Kind::LooseObject, collision_layer_policy::FO4_LAYER_STATIC, BodyMotionType::Static),
@@ -160,6 +165,12 @@ int main()
     ok &= expectRejected("passive push still treats static-layer loose pickups as support",
         physics_body_classifier::classifyBody(
             makeInput(grab_target::Kind::LooseObject, collision_layer_policy::FO4_LAYER_STATIC, BodyMotionType::Dynamic),
+            InteractionMode::PassivePush),
+        BodyRejectReason::UnsupportedLayer);
+
+    ok &= expectRejected("passive push still rejects props-layer loose pickups",
+        physics_body_classifier::classifyBody(
+            makeInput(grab_target::Kind::LooseObject, collision_layer_policy::FO4_LAYER_PROPS, BodyMotionType::Dynamic),
             InteractionMode::PassivePush),
         BodyRejectReason::UnsupportedLayer);
 
