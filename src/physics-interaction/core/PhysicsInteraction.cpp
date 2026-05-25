@@ -701,9 +701,15 @@ namespace rock
             return keywordForm && keyword && keywordForm->HasKeyword(keyword, nullptr);
         }
 
-        bool equippedWeaponHasKeyword(const RE::TESObjectWEAP* weapon, const RE::TBO_InstanceData* instanceData, const RE::BGSKeyword* keyword)
+        bool equippedWeaponHasKeyword(const RE::TESObjectWEAP* weapon, const RE::BGSKeyword* keyword)
         {
-            return weapon && keyword && weapon->HasKeyword(keyword, instanceData);
+            /*
+             * Base WEAP keyword checks must not hand modded instance data back
+             * into BGSKeywordForm::HasKeyword. FO4VR can dereference a missing
+             * instance keyword component inside the engine path; instance
+             * keywords are read separately through TBO_InstanceData::GetKeywordData.
+             */
+            return weapon && keyword && weapon->HasKeyword(keyword, nullptr);
         }
 
         bool equippedInstanceHasKeyword(const RE::TBO_InstanceData* instanceData, const RE::BGSKeyword* keyword)
@@ -714,14 +720,13 @@ namespace rock
 
         bool equippedWeaponHasAnyKeyword(
             const RE::TESObjectWEAP* weapon,
-            const RE::TBO_InstanceData* instanceData,
             const RE::BGSKeyword* keywordA,
             const RE::BGSKeyword* keywordB,
             const RE::BGSKeyword* keywordC)
         {
-            return equippedWeaponHasKeyword(weapon, instanceData, keywordA) ||
-                   equippedWeaponHasKeyword(weapon, instanceData, keywordB) ||
-                   equippedWeaponHasKeyword(weapon, instanceData, keywordC);
+            return equippedWeaponHasKeyword(weapon, keywordA) ||
+                   equippedWeaponHasKeyword(weapon, keywordB) ||
+                   equippedWeaponHasKeyword(weapon, keywordC);
         }
 
         bool equippedInstanceHasAnyKeyword(
@@ -741,11 +746,10 @@ namespace rock
             const RE::TBO_InstanceData* instanceData)
         {
             const auto& keywords = weaponSupportKeywordCache();
-            identity.hasPistolGripKeyword = equippedWeaponHasKeyword(weapon, instanceData, keywords.pistolGrip);
+            identity.hasPistolGripKeyword = equippedWeaponHasKeyword(weapon, keywords.pistolGrip);
             identity.hasInstancePistolGripKeyword = equippedInstanceHasKeyword(instanceData, keywords.pistolGrip);
             identity.hasLongGunGripKeyword = equippedWeaponHasAnyKeyword(
                 weapon,
-                instanceData,
                 keywords.rifleAssaultGrip,
                 keywords.rifleStraightGrip,
                 keywords.shoulderFiredGrip);

@@ -141,10 +141,26 @@ int main()
             InteractionMode::ActiveGrab),
         BodyRejectReason::StaticMotion);
 
-    ok &= expectRejected("ordinary loose object on static layer remains blocked",
+    ok &= expectAccepted("active-prepped loose pickup on static layer is accepted",
         physics_body_classifier::classifyBody(
             makeInput(grab_target::Kind::LooseObject, collision_layer_policy::FO4_LAYER_STATIC, BodyMotionType::Dynamic),
+            InteractionMode::ActiveGrab));
+
+    ok &= expectAccepted("active-prepped loose pickup on animstatic layer is accepted",
+        physics_body_classifier::classifyBody(
+            makeInput(grab_target::Kind::LooseObject, collision_layer_policy::FO4_LAYER_ANIMSTATIC, BodyMotionType::Dynamic),
+            InteractionMode::ActiveGrab));
+
+    ok &= expectRejected("static loose pickup on static layer remains blocked",
+        physics_body_classifier::classifyBody(
+            makeInput(grab_target::Kind::LooseObject, collision_layer_policy::FO4_LAYER_STATIC, BodyMotionType::Static),
             InteractionMode::ActiveGrab),
+        BodyRejectReason::StaticMotion);
+
+    ok &= expectRejected("passive push still treats static-layer loose pickups as support",
+        physics_body_classifier::classifyBody(
+            makeInput(grab_target::Kind::LooseObject, collision_layer_policy::FO4_LAYER_STATIC, BodyMotionType::Dynamic),
+            InteractionMode::PassivePush),
         BodyRejectReason::UnsupportedLayer);
 
     ok &= expectAccepted("dead actor body on biped layer",

@@ -17,9 +17,11 @@
  * the weapon-type enum level, while actual vanilla and modded pistol records
  * carry `AnimsGripPistol`. Long-gun grip keywords are checked before the
  * sidearm signal so rifle-like weapons keep the solver that owns weapon
- * transform authority. `BGSKeywordForm::HasKeyword(..., TBO_InstanceData*)`
- * preserves weapon-mod instance changes. Name fallback tokens only cover
- * vanilla sidearms whose records do not expose a stronger semantic signal.
+ * transform authority. Base WEAP keywords and instance keyword data are read
+ * through separate guarded paths: FO4VR can crash inside
+ * `BGSKeywordForm::HasKeyword` when a modded `TBO_InstanceData*` lacks the
+ * keyword component the engine expects. Name fallback tokens only cover vanilla
+ * sidearms whose records do not expose a stronger semantic signal.
  */
 
 #include "physics-interaction/TransformMath.h"

@@ -525,6 +525,39 @@ namespace rock
             return bodySet.diagnostics.rejectCounts[index];
         }
 
+        const char* bodyMotionTypeName(physics_body_classifier::BodyMotionType motionType)
+        {
+            using physics_body_classifier::BodyMotionType;
+            switch (motionType) {
+            case BodyMotionType::Static:
+                return "Static";
+            case BodyMotionType::Dynamic:
+                return "Dynamic";
+            case BodyMotionType::Keyframed:
+                return "Keyframed";
+            case BodyMotionType::Other:
+                return "Other";
+            case BodyMotionType::Unknown:
+            default:
+                return "Unknown";
+            }
+        }
+
+        const object_physics_body_set::ObjectPhysicsBodyRecord* diagnosticRejectedBodyRecord(
+            const object_physics_body_set::ObjectPhysicsBodySet& bodySet,
+            std::uint32_t preferredBodyId)
+        {
+            if (const auto* preferred = bodySet.findRecord(preferredBodyId); preferred && !preferred->accepted) {
+                return preferred;
+            }
+            for (const auto& record : bodySet.records) {
+                if (!record.accepted) {
+                    return &record;
+                }
+            }
+            return nullptr;
+        }
+
         held_object_drive_policy::HeldBodySetDriveDecision classifyHeldBodySetDrive(
             const object_physics_body_set::ObjectPhysicsBodySet& beforePrepBodySet,
             const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
@@ -5041,9 +5074,10 @@ namespace rock
         const auto primaryChoice = preparedBodySet.choosePrimaryBody(_currentSelection.bodyId.value, object_physics_body_set::PurePoint3{ primaryChoiceTarget });
 
         if (primaryChoice.bodyId == INVALID_BODY_ID) {
+            const auto* rejectedBody = diagnosticRejectedBodyRecord(preparedBodySet, _currentSelection.bodyId.value);
             ROCK_LOG_WARN(Hand,
                 "{} hand PULL failed: no accepted dynamic body after recursive prep formID={:08X} beforeBodies={} afterBodies={} accepted={} rejected={} "
-                "seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} setMotion={} enableCollision={}",
+                "seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} rejectReason={} rejectBody={} rejectLayer={} rejectMotion={} rejectFlags=0x{:08X} rejectMotionProps={} setMotion={} enableCollision={}",
                 handName(),
                 selectedRef->GetFormID(),
                 beforePrepBodySet.records.size(),
@@ -5057,6 +5091,12 @@ namespace rock
                 preparedBodySet.diagnostics.foreignRefBodySkips,
                 preparedBodySet.diagnostics.unresolvedRefBodiesAccepted,
                 preparedBodySet.diagnostics.unresolvedRefBodySkips,
+                rejectedBody ? physics_body_classifier::rejectReasonName(rejectedBody->rejectReason) : "none",
+                rejectedBody ? rejectedBody->bodyId : INVALID_BODY_ID,
+                rejectedBody ? rejectedBody->collisionLayer : 0,
+                rejectedBody ? bodyMotionTypeName(rejectedBody->motionType) : "none",
+                rejectedBody ? rejectedBody->bodyFlags : 0,
+                rejectedBody ? rejectedBody->motionPropertiesId : 0,
                 motionConverted ? "ok" : "failed",
                 collisionEnabled ? "ok" : "failed");
             restoreFailedPullPrep();
@@ -6072,8 +6112,9 @@ namespace rock
             primaryChoiceTarget.z);
 
         if (primaryChoice.bodyId == INVALID_BODY_ID) {
+            const auto* rejectedBody = diagnosticRejectedBodyRecord(preparedBodySet, sel.bodyId.value);
             ROCK_LOG_WARN(Hand,
-                "{} hand GRAB failed: no accepted dynamic body after recursive prep for '{}' formID={:08X} visitedNodes={} collisionObjects={} seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} latePrepared={} incompleteScan={}",
+                "{} hand GRAB failed: no accepted dynamic body after recursive prep for '{}' formID={:08X} visitedNodes={} collisionObjects={} seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} rejectReason={} rejectBody={} rejectLayer={} rejectMotion={} rejectFlags=0x{:08X} rejectMotionProps={} latePrepared={} incompleteScan={}",
                 handName(),
                 objName,
                 sel.refr->GetFormID(),
@@ -6086,6 +6127,12 @@ namespace rock
                 preparedBodySet.diagnostics.foreignRefBodySkips,
                 preparedBodySet.diagnostics.unresolvedRefBodiesAccepted,
                 preparedBodySet.diagnostics.unresolvedRefBodySkips,
+                rejectedBody ? physics_body_classifier::rejectReasonName(rejectedBody->rejectReason) : "none",
+                rejectedBody ? rejectedBody->bodyId : INVALID_BODY_ID,
+                rejectedBody ? rejectedBody->collisionLayer : 0,
+                rejectedBody ? bodyMotionTypeName(rejectedBody->motionType) : "none",
+                rejectedBody ? rejectedBody->bodyFlags : 0,
+                rejectedBody ? rejectedBody->motionPropertiesId : 0,
                 activeLifecycle.latePreparedBodyCount(),
                 activeLifecycle.hasIncompleteNativeScan() ? "yes" : "no");
             restoreFailedGrabPrep();
