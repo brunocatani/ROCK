@@ -86,8 +86,6 @@ The current resolver also has a tension for long objects. It uses long-lever dis
 
 ## Improvement Options
 
-Implementation note, 2026-05-25: ROCK now follows the guarded Option B path through a named `SurfacePatchPositionPivot` source. Option A remains useful historical context for the nine-point sampling change, but validated mesh-backed patches are no longer forced to stay evidence-only.
-
 ### Option A: Conservative Sampling-Only Pass
 
 Raise `kMaxGrabContactPatchSamples` and replace the fixed five-sample pattern with a bounded nine- or thirteen-sample pattern. Keep contact patches as validation/pose evidence only. Update config clamps and tests.

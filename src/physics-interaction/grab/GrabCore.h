@@ -479,24 +479,14 @@ namespace rock
         std::uint32_t sourceBodyId = 0x7FFF'FFFF;
         std::uint32_t gripEvidenceTriangleIndex = 0xFFFF'FFFF;
         std::uint32_t gripEvidenceShapeKey = 0xFFFF'FFFF;
-        std::uint32_t contactPatchSampleCount = 0;
-        std::uint32_t contactPatchRawAcceptedSampleCount = 0;
-        std::uint32_t contactPatchDedupedSampleCount = 0;
-        std::uint32_t contactPatchDuplicateRejectedSampleCount = 0;
-        std::uint32_t contactPatchUniqueTriangleCount = 0;
-        std::uint32_t contactPatchUniqueSurfaceCount = 0;
         float pocketToGripDistanceGameUnits = 0.0f;
         float selectionToGripEvidenceDistanceGameUnits = 0.0f;
-        float contactPatchMeshSnapDeltaGameUnits = 0.0f;
-        float contactPatchSpanGameUnits = 0.0f;
-        float contactPatchAreaTwiceGameUnitsSq = 0.0f;
         float longObjectLeverGameUnits = 0.0f;
         float pivotAuthorityPositionConfidence = 0.0f;
         const char* activeGrabPointMode = "none";
         const char* pivotAuthoritySource = "none";
         const char* palmSeatPointMode = "none";
         const char* fingerEvidencePointMode = "none";
-        grab_contact_patch_math::SurfacePatchQualityKind contactPatchQualityKind = grab_contact_patch_math::SurfacePatchQualityKind::None;
         RE::NiAVObject* gripSourceNode = nullptr;
         bool valid = false;
         bool hasGripPoint = false;
@@ -574,19 +564,12 @@ namespace rock
         std::uint32_t gripEvidenceShapeKey = 0xFFFF'FFFF;
         std::uint32_t gripEvidenceShapeCollisionFilterInfo = 0;
         std::uint32_t contactPatchSampleCount = 0;
-        std::uint32_t contactPatchRawAcceptedSampleCount = 0;
-        std::uint32_t contactPatchDedupedSampleCount = 0;
-        std::uint32_t contactPatchDuplicateRejectedSampleCount = 0;
-        std::uint32_t contactPatchUniqueTriangleCount = 0;
-        std::uint32_t contactPatchUniqueSurfaceCount = 0;
         std::uint32_t multiFingerContactGroupCount = 0;
         std::uint32_t fingerPoseTargetCount = 0;
         float gripEvidenceHitFraction = 1.0f;
         float pocketToGripDistanceGameUnits = 0.0f;
         float selectionToGripEvidenceDistanceGameUnits = 0.0f;
         float contactPatchMeshSnapDeltaGameUnits = 0.0f;
-        float contactPatchSpanGameUnits = 0.0f;
-        float contactPatchAreaTwiceGameUnitsSq = 0.0f;
         float multiFingerContactSpreadGameUnits = 0.0f;
         float longObjectLeverGameUnits = 0.0f;
         float gripSupportConfidence = 0.0f;
@@ -607,7 +590,6 @@ namespace rock
         const char* lastSeatedPivotReacquireReason = "none";
         const char* lastSeatedPivotReacquirePhase = "none";
         GrabSeatMode seatMode = GrabSeatMode::None;
-        grab_contact_patch_math::SurfacePatchQualityKind contactPatchQualityKind = grab_contact_patch_math::SurfacePatchQualityKind::None;
         grab_support_model_math::GripSupportKind gripSupportKind = grab_support_model_math::GripSupportKind::None;
         /*
          * ROCK only fades the dynamic grab when the object must be synced from
@@ -667,24 +649,14 @@ namespace rock
             captureTelemetry.sourceBodyId = sourceBodyId;
             captureTelemetry.gripEvidenceTriangleIndex = gripEvidenceTriangleIndex;
             captureTelemetry.gripEvidenceShapeKey = gripEvidenceShapeKey;
-            captureTelemetry.contactPatchSampleCount = contactPatchSampleCount;
-            captureTelemetry.contactPatchRawAcceptedSampleCount = contactPatchRawAcceptedSampleCount;
-            captureTelemetry.contactPatchDedupedSampleCount = contactPatchDedupedSampleCount;
-            captureTelemetry.contactPatchDuplicateRejectedSampleCount = contactPatchDuplicateRejectedSampleCount;
-            captureTelemetry.contactPatchUniqueTriangleCount = contactPatchUniqueTriangleCount;
-            captureTelemetry.contactPatchUniqueSurfaceCount = contactPatchUniqueSurfaceCount;
             captureTelemetry.pocketToGripDistanceGameUnits = pocketToGripDistanceGameUnits;
             captureTelemetry.selectionToGripEvidenceDistanceGameUnits = selectionToGripEvidenceDistanceGameUnits;
-            captureTelemetry.contactPatchMeshSnapDeltaGameUnits = contactPatchMeshSnapDeltaGameUnits;
-            captureTelemetry.contactPatchSpanGameUnits = contactPatchSpanGameUnits;
-            captureTelemetry.contactPatchAreaTwiceGameUnitsSq = contactPatchAreaTwiceGameUnitsSq;
             captureTelemetry.longObjectLeverGameUnits = longObjectLeverGameUnits;
             captureTelemetry.pivotAuthorityPositionConfidence = pivotAuthorityPositionConfidence;
             captureTelemetry.activeGrabPointMode = activeGrabPointMode;
             captureTelemetry.pivotAuthoritySource = pivotAuthoritySource;
             captureTelemetry.palmSeatPointMode = palmSeatPointMode;
             captureTelemetry.fingerEvidencePointMode = fingerEvidencePointMode;
-            captureTelemetry.contactPatchQualityKind = contactPatchQualityKind;
             captureTelemetry.hasGripPoint = hasGripPoint;
             captureTelemetry.hasGripSourceNodePoint = hasGripSourceNodePoint;
             captureTelemetry.hasGripSourceNodeNormal = hasGripSourceNodeNormal;
@@ -737,19 +709,12 @@ namespace rock
             gripEvidenceShapeKey = 0xFFFF'FFFF;
             gripEvidenceShapeCollisionFilterInfo = 0;
             contactPatchSampleCount = 0;
-            contactPatchRawAcceptedSampleCount = 0;
-            contactPatchDedupedSampleCount = 0;
-            contactPatchDuplicateRejectedSampleCount = 0;
-            contactPatchUniqueTriangleCount = 0;
-            contactPatchUniqueSurfaceCount = 0;
             multiFingerContactGroupCount = 0;
             fingerPoseTargetCount = 0;
             gripEvidenceHitFraction = 1.0f;
             pocketToGripDistanceGameUnits = 0.0f;
             selectionToGripEvidenceDistanceGameUnits = 0.0f;
             contactPatchMeshSnapDeltaGameUnits = 0.0f;
-            contactPatchSpanGameUnits = 0.0f;
-            contactPatchAreaTwiceGameUnitsSq = 0.0f;
             multiFingerContactSpreadGameUnits = 0.0f;
             longObjectLeverGameUnits = 0.0f;
             gripSupportConfidence = 0.0f;
@@ -770,7 +735,6 @@ namespace rock
             lastSeatedPivotReacquireReason = "none";
             lastSeatedPivotReacquirePhase = "none";
             seatMode = GrabSeatMode::None;
-            contactPatchQualityKind = grab_contact_patch_math::SurfacePatchQualityKind::None;
             gripSupportKind = grab_support_model_math::GripSupportKind::None;
             motorFadeReason = "none";
             captureTelemetry.clear();
@@ -959,7 +923,6 @@ namespace rock::grab_authority_frame_math
         None,
         PinchPocket,
         GripSupportModel,
-        SurfacePatchPositionPivot,
         PalmPocketMesh,
         SelectionMeshSnap,
         CollisionFallback
@@ -972,8 +935,6 @@ namespace rock::grab_authority_frame_math
             return "pinchPocket";
         case GrabAuthorityPivotSource::GripSupportModel:
             return "gripSupportModel";
-        case GrabAuthorityPivotSource::SurfacePatchPositionPivot:
-            return "surfacePatchPositionPivot";
         case GrabAuthorityPivotSource::PalmPocketMesh:
             return "palmPocketMesh";
         case GrabAuthorityPivotSource::SelectionMeshSnap:
@@ -993,14 +954,12 @@ namespace rock::grab_authority_frame_math
             return 0;
         case GrabAuthorityPivotSource::GripSupportModel:
             return 1;
-        case GrabAuthorityPivotSource::SurfacePatchPositionPivot:
-            return 2;
         case GrabAuthorityPivotSource::PalmPocketMesh:
-            return 3;
+            return 2;
         case GrabAuthorityPivotSource::SelectionMeshSnap:
-            return 4;
+            return 3;
         case GrabAuthorityPivotSource::CollisionFallback:
-            return 5;
+            return 4;
         case GrabAuthorityPivotSource::None:
         default:
             return 100;

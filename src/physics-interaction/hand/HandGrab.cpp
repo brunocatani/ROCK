@@ -921,21 +921,14 @@ namespace rock
             int exactBodySamples = 0;
             int meshRecoveredSamples = 0;
             std::uint32_t rawAcceptedSampleCount = 0;
-            std::uint32_t dedupedSampleCount = 0;
-            std::uint32_t duplicateRejectedSampleCount = 0;
-            std::uint32_t uniqueTriangleCount = 0;
-            std::uint32_t uniqueSurfaceCount = 0;
             std::uint32_t clusterRejectedSampleCount = 0;
             float clusterDepthSpreadGameUnits = 0.0f;
             float clusterMaxLateralGameUnits = 0.0f;
-            float patchSpanGameUnits = 0.0f;
-            float patchAreaTwiceGameUnitsSq = 0.0f;
             float probeSpacingGameUnits = 0.0f;
             float probeRadiusGameUnits = 0.0f;
             float probeScale = 1.0f;
             const char* probeScaleReason = "configured";
             const char* clusterReason = "notEvaluated";
-            grab_contact_patch_math::SurfacePatchQualityKind patchQualityKind = grab_contact_patch_math::SurfacePatchQualityKind::None;
             bool meshSnapped = false;
             GrabSurfaceHit meshSnapHit{};
             grab_contact_patch_math::GrabContactPatchPivotDecision<RE::NiPoint3> pivotDecision{};
@@ -943,29 +936,6 @@ namespace rock
             bool normalTrusted = false;
             bool positionOnly = false;
         };
-
-        std::uintptr_t surfacePatchKeyFromHit(const GrabSurfaceHit& hit)
-        {
-            if (hit.sourceShape) {
-                return reinterpret_cast<std::uintptr_t>(hit.sourceShape);
-            }
-            if (hit.sourceNode) {
-                return reinterpret_cast<std::uintptr_t>(hit.sourceNode);
-            }
-            return 0;
-        }
-
-        void applySurfacePatchIdentity(
-            grab_contact_patch_math::GrabContactPatchSample<RE::NiPoint3>& sample,
-            const GrabSurfaceHit& hit)
-        {
-            sample.surfaceKey = surfacePatchKeyFromHit(hit);
-            sample.triangleIndex = hit.hasTriangle && hit.triangleIndex >= 0 ?
-                static_cast<std::uint32_t>(hit.triangleIndex) :
-                0xFFFF'FFFFu;
-            sample.sourceKindId = static_cast<std::uint8_t>(hit.sourceKind);
-            sample.hasTriangle = hit.hasTriangle && sample.surfaceKey != 0;
-        }
 
         void rememberRejectedContactPatchBody(RuntimeGrabContactPatch& result, std::uint32_t bodyId)
         {
@@ -1884,7 +1854,6 @@ namespace rock
                     const bool exactBodyHit = hit.hitBodyInfo.m_bodyId.value == resolvedBodyId;
                     GrabSurfaceHit recoveredMeshHit{};
                     bool meshRecoveredHit = false;
-                    bool meshRecoveredOwnerlessVisualFamily = false;
                     /*
                      * Contact patch authority must follow the same rendered-object surface
                      * contract as mesh grab. Exact hknp body id is still the fast path, but
@@ -1901,7 +1870,6 @@ namespace rock
                                 recoveredMeshHit)) {
                             const auto* recoveredOwnerRecord =
                                 recoveredMeshHit.sourceNode ? bodySet.findAcceptedRecordByOwnerNode(recoveredMeshHit.sourceNode) : nullptr;
-                            meshRecoveredOwnerlessVisualFamily = !recoveredOwnerRecord;
                             meshRecoveredHit =
                                 (recoveredOwnerRecord && recoveredOwnerRecord->bodyId == resolvedBodyId) ||
                                 acceptsSelectedMultibodyOwnerlessVisualMesh(selection,
@@ -1929,13 +1897,7 @@ namespace rock
                     bestSample.normal = meshRecoveredHit ? normalizeOrZero(recoveredMeshHit.normal) : normal;
                     bestSample.fraction = fraction;
                     bestSample.accepted = true;
-                    bestSample.exactBodyHit = exactBodyHit;
-                    bestSample.meshRecovered = meshRecoveredHit;
-                    bestSample.ownerlessVisualFamily = meshRecoveredOwnerlessVisualFamily;
                     bestSample.rejectionReason = meshRecoveredHit ? "meshRecoveredBody" : "none";
-                    if (meshRecoveredHit) {
-                        applySurfacePatchIdentity(bestSample, recoveredMeshHit);
-                    }
                     foundProbeHit = true;
                     bestProbeWasMeshRecovered = meshRecoveredHit;
                 }
@@ -1953,19 +1915,6 @@ namespace rock
                 }
             }
 
-            const float dedupeEpsilon = std::clamp(radius * 0.35f, 0.50f, 1.0f);
-            const auto dedupedSamples = grab_contact_patch_math::dedupeContactPatchSamples(
-                fitSamples,
-                dedupeEpsilon,
-                0.98f);
-            result.rawAcceptedSampleCount = static_cast<std::uint32_t>((std::min)(dedupedSamples.rawAcceptedCount,
-                static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())));
-            result.duplicateRejectedSampleCount = static_cast<std::uint32_t>((std::min)(dedupedSamples.duplicateRejectedCount,
-                static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())));
-            result.dedupedSampleCount = static_cast<std::uint32_t>((std::min)(dedupedSamples.samples.size(),
-                static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())));
-            fitSamples = dedupedSamples.samples;
-
             const RE::NiPoint3 patchAnchor = hasSeatedPivotAnchor ? seatedPivotAnchorWorld : grabPivotAWorld;
             const float anchorDepthLimit = (std::max)(1.0f, radius + spacing * 0.50f);
             const float clusterDepthLimit = (std::max)(0.75f, radius + spacing * 0.35f);
@@ -1981,6 +1930,8 @@ namespace rock
                 clusterDepthLimit,
                 anchorLateralLimit,
                 g_rockConfig.rockGrabContactPatchMaxNormalAngleDegrees);
+            result.rawAcceptedSampleCount = static_cast<std::uint32_t>((std::min)(surfaceCluster.rawAcceptedCount,
+                static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())));
             result.clusterRejectedSampleCount = static_cast<std::uint32_t>((std::min)(surfaceCluster.clusterRejectedCount,
                 static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())));
             result.clusterDepthSpreadGameUnits = surfaceCluster.maxDepthSpreadGameUnits;
@@ -1995,16 +1946,6 @@ namespace rock
             }
 
             fitSamples = surfaceCluster.samples;
-            const auto patchQuality = grab_contact_patch_math::classifyContactPatchQuality(
-                fitSamples,
-                result.duplicateRejectedSampleCount);
-            result.patchQualityKind = patchQuality.kind;
-            result.uniqueTriangleCount = static_cast<std::uint32_t>((std::min)(patchQuality.uniqueTriangleCount,
-                static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())));
-            result.uniqueSurfaceCount = static_cast<std::uint32_t>((std::min)(patchQuality.uniqueSurfaceCount,
-                static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())));
-            result.patchSpanGameUnits = patchQuality.patchSpanGameUnits;
-            result.patchAreaTwiceGameUnitsSq = patchQuality.patchAreaTwiceGameUnitsSq;
             result.samples = {};
             result.sampleCount = 0;
             for (const auto& sample : fitSamples) {
@@ -2018,12 +1959,6 @@ namespace rock
                 palmNormal,
                 palmTangent,
                 g_rockConfig.rockGrabContactPatchMaxNormalAngleDegrees);
-            result.patch.qualityKind = patchQuality.kind;
-            result.patch.uniqueTriangleCount = patchQuality.uniqueTriangleCount;
-            result.patch.uniqueSurfaceCount = patchQuality.uniqueSurfaceCount;
-            result.patch.duplicateRejectedSampleCount = patchQuality.duplicateRejectedCount;
-            result.patch.patchSpanGameUnits = patchQuality.patchSpanGameUnits;
-            result.patch.patchAreaTwiceGameUnitsSq = patchQuality.patchAreaTwiceGameUnitsSq;
             if (!result.patch.valid) {
                 result.pointMode = "contactPatchFailed";
                 return result;
@@ -2541,7 +2476,8 @@ namespace rock
         {
             None,
             AuthoredGrabNode,
-            SurfacePatchPositionPivot,
+            ContactPatchMeshSnap,
+            ContactPatchPositionOnly,
             SelectionHitMeshSnap,
             PalmPocketMeshPoint,
             PinchPocketMeshPoint,
@@ -2555,8 +2491,10 @@ namespace rock
             switch (source) {
             case GrabPivotAuthoritySource::AuthoredGrabNode:
                 return "authoredGrabNode";
-            case GrabPivotAuthoritySource::SurfacePatchPositionPivot:
-                return "surfacePatchPositionPivot";
+            case GrabPivotAuthoritySource::ContactPatchMeshSnap:
+                return "contactPatchMeshSnap";
+            case GrabPivotAuthoritySource::ContactPatchPositionOnly:
+                return "contactPatchPositionOnly";
             case GrabPivotAuthoritySource::SelectionHitMeshSnap:
                 return "selectionHitMeshSnap";
             case GrabPivotAuthoritySource::PalmPocketMeshPoint:
@@ -2582,8 +2520,6 @@ namespace rock
                 return FrozenSource::PinchPocket;
             case GrabPivotAuthoritySource::GripSupportModel:
                 return FrozenSource::GripSupportModel;
-            case GrabPivotAuthoritySource::SurfacePatchPositionPivot:
-                return FrozenSource::SurfacePatchPositionPivot;
             case GrabPivotAuthoritySource::PalmPocketMeshPoint:
                 return FrozenSource::PalmPocketMesh;
             case GrabPivotAuthoritySource::SelectionHitMeshSnap:
@@ -2592,6 +2528,8 @@ namespace rock
             case GrabPivotAuthoritySource::CollisionFallback:
                 return FrozenSource::CollisionFallback;
             case GrabPivotAuthoritySource::AuthoredGrabNode:
+            case GrabPivotAuthoritySource::ContactPatchMeshSnap:
+            case GrabPivotAuthoritySource::ContactPatchPositionOnly:
             case GrabPivotAuthoritySource::None:
             default:
                 return FrozenSource::None;
@@ -2626,7 +2564,7 @@ namespace rock
             frame.hasGripPoint = true;
         }
 
-        GrabPivotAuthoritySource inferGrabPivotAuthoritySource(const char* mode)
+        GrabPivotAuthoritySource inferGrabPivotAuthoritySource(const char* mode, bool positionOnlyPatch = false)
         {
             if (!mode) {
                 return GrabPivotAuthoritySource::None;
@@ -2634,10 +2572,9 @@ namespace rock
             if (std::strcmp(mode, "grabNodeAnchor") == 0 || std::strcmp(mode, "authoredGrabNodeFrame") == 0) {
                 return GrabPivotAuthoritySource::AuthoredGrabNode;
             }
-            if (std::strcmp(mode, "surfacePatchPositionPivot") == 0 ||
-                std::strcmp(mode, "contactPatchMeshSnap") == 0 || std::strcmp(mode, "contactPatchMeshSnapPositionOnly") == 0 ||
+            if (std::strcmp(mode, "contactPatchMeshSnap") == 0 || std::strcmp(mode, "contactPatchMeshSnapPositionOnly") == 0 ||
                 std::strcmp(mode, "contactPatch") == 0 || std::strcmp(mode, "contactPatchSamplePivot") == 0) {
-                return GrabPivotAuthoritySource::SurfacePatchPositionPivot;
+                return positionOnlyPatch ? GrabPivotAuthoritySource::ContactPatchPositionOnly : GrabPivotAuthoritySource::ContactPatchMeshSnap;
             }
             if (std::strcmp(mode, "selectionHitMeshSnap") == 0 || std::strcmp(mode, "contactPatchSelectedHitPivot") == 0) {
                 return GrabPivotAuthoritySource::SelectionHitMeshSnap;
@@ -2680,11 +2617,12 @@ namespace rock
             switch (source) {
             case GrabPivotAuthoritySource::SelectionHitMeshSnap:
             case GrabPivotAuthoritySource::PalmRayMeshPoint:
+            case GrabPivotAuthoritySource::ContactPatchMeshSnap:
+            case GrabPivotAuthoritySource::ContactPatchPositionOnly:
             case GrabPivotAuthoritySource::CollisionFallback:
             case GrabPivotAuthoritySource::None:
                 return true;
             case GrabPivotAuthoritySource::AuthoredGrabNode:
-            case GrabPivotAuthoritySource::SurfacePatchPositionPivot:
             case GrabPivotAuthoritySource::PalmPocketMeshPoint:
             case GrabPivotAuthoritySource::PinchPocketMeshPoint:
             case GrabPivotAuthoritySource::GripSupportModel:
@@ -2728,7 +2666,6 @@ namespace rock
             float pocketImprovementGameUnits = 0.0f;
             float scoreImprovement = 0.0f;
             bool usePalmPocketPivot = false;
-            bool useSurfacePatchPivot = false;
         };
 
         float finitePositiveOr(float value, float fallback)
@@ -2752,7 +2689,7 @@ namespace rock
         {
             GrabPivotAuthorityCandidate candidate{};
             candidate.mode = mode ? mode : "none";
-            candidate.source = inferGrabPivotAuthoritySource(candidate.mode);
+            candidate.source = inferGrabPivotAuthoritySource(candidate.mode, positionOnlyPatch);
             candidate.point = point;
             candidate.normal = normal;
             candidate.normalTrusted = normalTrusted;
@@ -2792,12 +2729,6 @@ namespace rock
             const GrabPivotAuthorityCandidate& palmPocketCandidate,
             bool patchComparable,
             bool patchMeshSnapped,
-            bool patchBroadSurfaceSupport,
-            std::uint32_t patchUniqueSampleCount,
-            std::uint32_t patchUniqueTriangleCount,
-            std::uint32_t patchDuplicateRejectedCount,
-            float patchSpanGameUnits,
-            float patchAreaTwiceGameUnitsSq,
             bool palmPocketEligible,
             float probeSpacingGameUnits,
             float meshSnapMaxDistanceGameUnits,
@@ -2848,18 +2779,12 @@ namespace rock
                     .patchComparable = patchComparable,
                     .patchValid = patchCandidate.valid,
                     .patchMeshSnapped = patchMeshSnapped,
-                    .patchBroadSurfaceSupport = patchBroadSurfaceSupport,
-                    .patchUniqueSampleCount = patchUniqueSampleCount,
-                    .patchUniqueTriangleCount = patchUniqueTriangleCount,
-                    .patchDuplicateRejectedCount = patchDuplicateRejectedCount,
                     .selectedPivotToPocketGameUnits = result.selected.pivotToPocketGameUnits,
                     .patchPivotToPocketGameUnits = patchCandidate.pivotToPocketGameUnits,
                     .selectedScore = result.selected.score,
                     .patchScore = patchCandidate.score,
                     .patchAuthorityDeltaGameUnits = patchDeltaFromSelectedAuthority,
                     .patchSelectionDeltaGameUnits = patchCandidate.selectionDeltaGameUnits,
-                    .patchSpanGameUnits = patchSpanGameUnits,
-                    .patchAreaTwiceGameUnitsSq = patchAreaTwiceGameUnitsSq,
                     .probeSpacingGameUnits = probeSpacingGameUnits,
                     .meshSnapMaxDistanceGameUnits = meshSnapMaxDistanceGameUnits,
                     .alignmentMaxSelectionDeltaGameUnits = alignmentMaxSelectionDeltaGameUnits });
@@ -2869,11 +2794,6 @@ namespace rock
             result.scoreImprovement = patchAuthorityDecision.scoreImprovement;
             if (std::strcmp(result.reason, "notEvaluated") == 0) {
                 result.reason = patchAuthorityDecision.reason;
-            }
-            if (patchAuthorityDecision.acceptPatchPivot) {
-                result.reason = patchAuthorityDecision.reason;
-                result.useSurfacePatchPivot = true;
-                preferCandidate(patchCandidate);
             }
             return result;
         }
@@ -5735,7 +5655,6 @@ namespace rock
         bool fingerEvidencePointValid = false;
         bool activeGrabPointUsesMultiFingerEvidence = false;
         const char* contactPatchPivotAuthorityReason = "notEvaluated";
-        bool contactPatchPivotAccepted = false;
         const char* pivotAuthoritySource = "notEvaluated";
         bool pivotAuthorityNormalTrusted = false;
         bool pivotAuthorityPositionOnly = false;
@@ -6256,9 +6175,8 @@ namespace rock
          * Dynamic grab pivot authority is one coherent position source. Authored
          * nodes still win, and weak close-grab mesh starts can yield to the
          * palm-pocket mesh point that was selected before body resolution.
-         * Deduped mesh-backed contact patches can compete only through the
-         * SurfacePatchPositionPivot gate, which preserves the single frozen
-         * BODY-local pivot and never promotes patch normals to rotation authority.
+         * Contact patches stay validation/pose evidence; small or corner patches
+         * must not replace the frozen BODY-local pivot by themselves.
          */
         const bool collisionFallbackPivotAllowed =
             !meshContactOnly && meshGrabFound && grabSurfaceHit.valid && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery;
@@ -6390,10 +6308,11 @@ namespace rock
                 objectWorldTransform,
                 grabLocalMeshTriangles);
             const auto contactPatchPivotCandidate = assessGrabPivotAuthorityCandidate(
-                "surfacePatchPositionPivot",
+                contactPatchRuntime.pointMode,
                 contactPatchRuntime.pivotDecision.valid ? contactPatchRuntime.pivotDecision.point : RE::NiPoint3{},
-                contactPatchRuntime.meshSnapped ? contactPatchRuntime.meshSnapHit.normal : canonicalPivotNormalWorld,
-                false,
+                contactPatchRuntime.normalTrusted ? contactPatchRuntime.patch.normal :
+                    (contactPatchRuntime.meshSnapped ? contactPatchRuntime.meshSnapHit.normal : canonicalPivotNormalWorld),
+                contactPatchRuntime.normalTrusted,
                 true,
                 contactPatchRuntime.meshSnapped ? 1.0f : contactPatchRuntime.patch.confidence,
                 acquisitionPocket,
@@ -6418,25 +6337,18 @@ namespace rock
             const bool contactPatchComparableForAuthority =
                 contactPatchAcceptedForPivot &&
                 contactPatchProducedMeshPivot &&
-                canonicalPivotAvailable;
+                visualMeshPivotAvailable;
             const auto contactPatchAuthorityResolution = resolveMeshBackedGrabPivotAuthority(
                 canonicalPivotCandidate,
                 contactPatchPivotCandidate,
                 palmPocketPivotCandidate,
                 contactPatchComparableForAuthority,
                 contactPatchRuntime.meshSnapped,
-                contactPatchRuntime.patchQualityKind == grab_contact_patch_math::SurfacePatchQualityKind::Patch,
-                contactPatchRuntime.dedupedSampleCount,
-                contactPatchRuntime.uniqueTriangleCount,
-                contactPatchRuntime.duplicateRejectedSampleCount,
-                contactPatchRuntime.patchSpanGameUnits,
-                contactPatchRuntime.patchAreaTwiceGameUnitsSq,
                 palmPocketMeshAvailable,
                 g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits,
                 g_rockConfig.rockGrabContactPatchMeshSnapMaxDistanceGameUnits,
                 g_rockConfig.rockGrabAlignmentMaxSelectionToMeshDistance);
             contactPatchPivotAuthorityReason = contactPatchAuthorityResolution.reason;
-            contactPatchPivotAccepted = contactPatchAuthorityResolution.useSurfacePatchPivot;
             const auto& selectedPivotAuthority = contactPatchAuthorityResolution.selected.valid ?
                 contactPatchAuthorityResolution.selected :
                 canonicalPivotCandidate;
@@ -6471,46 +6383,10 @@ namespace rock
                     canonicalPivotMode,
                     canonicalPivotCandidate.pivotToPocketGameUnits,
                     selectedPivotAuthority.score);
-            } else if (contactPatchAuthorityResolution.useSurfacePatchPivot) {
-                grabGripPoint = selectedPivotAuthority.point;
-                grabSurfaceHit = contactPatchRuntime.meshSnapHit;
-                grabSurfaceHit.position = grabGripPoint;
-                grabSurfaceHit.hasSelectionHit = sel.hasHitPoint;
-                grabSurfaceHit.selectionToMeshDistanceGameUnits =
-                    sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, grabGripPoint) : std::numeric_limits<float>::max();
-                grabSurfaceHit.pivotToSurfaceDistanceGameUnits = pointDistanceGameUnits(acquisitionGrabPivotAWorld, grabGripPoint);
-                grabSurfaceHit.resolvedOwnerMatchesBody = true;
-                grabSurfaceHit.valid = contactPatchRuntime.meshSnapHit.valid;
-                surfaceOwnerNode = grabSurfaceHit.sourceNode;
-                selectionToMeshDistanceGameUnits = grabSurfaceHit.selectionToMeshDistanceGameUnits;
-                surfaceOwnerMatchesResolvedBody = true;
-                meshGrabFound = true;
-                grabPointMode = "surfacePatchPositionPivot";
-                grabFallbackReason = contactPatchPivotAuthorityReason;
-                ROCK_LOG_DEBUG(Hand,
-                    "{} hand PIVOT AUTHORITY: source={} mode={} point=({:.1f},{:.1f},{:.1f}) quality={} uniqueSamples={} uniqueTriangles={} duplicates={} "
-                    "pocketDistance={:.2f}gu selectionDelta={:.2f}gu longLever={:.2f}gu reason={} canonical={} canonicalPocket={:.2f} candidateScore={:.2f}",
-                    handName(),
-                    pivotAuthoritySource,
-                    grabPointMode,
-                    grabGripPoint.x,
-                    grabGripPoint.y,
-                    grabGripPoint.z,
-                    grab_contact_patch_math::surfacePatchQualityName(contactPatchRuntime.patchQualityKind),
-                    contactPatchRuntime.dedupedSampleCount,
-                    contactPatchRuntime.uniqueTriangleCount,
-                    contactPatchRuntime.duplicateRejectedSampleCount,
-                    pivotAuthorityPocketDistanceGameUnits,
-                    pivotAuthoritySelectionDeltaGameUnits,
-                    pivotAuthorityLongLeverGameUnits,
-                    grabFallbackReason,
-                    canonicalPivotMode,
-                    canonicalPivotCandidate.pivotToPocketGameUnits,
-                    selectedPivotAuthority.score);
             } else if (contactPatchRuntime.patch.valid && g_rockConfig.rockDebugGrabFrameLogging) {
                 ROCK_LOG_DEBUG(Hand,
                     "{} hand CONTACT PATCH evidence-only: body={} mode={} probe={:.2f}/{:.2f} scale={:.2f}:{} meshSnap={} requireMeshSnap={} pivotSource={} normalTrusted={} positionOnly={} authoritySource={} "
-                    "quality={} raw={} deduped={} duplicates={} uniqueTriangles={} uniqueSurfaces={} clusterRejected={} clusterDepth={:.2f} clusterLat={:.2f} clusterReason={} "
+                    "clusterRaw={} clusterRejected={} clusterDepth={:.2f} clusterLat={:.2f} clusterReason={} "
                     "authorityDelta={:.2f}/{:.2f}/{:.2f} canonical={} meshPocket={:.2f} patchPocket={:.2f} "
                     "pocketImprove={:.2f} meshScore={:.2f} patchScore={:.2f} scoreImprove={:.2f} authorityReason={} fallback={}",
                     handName(),
@@ -6526,12 +6402,7 @@ namespace rock
                     contactPatchRuntime.normalTrusted ? "yes" : "no",
                     contactPatchRuntime.positionOnly ? "yes" : "no",
                     pivotAuthoritySource,
-                    grab_contact_patch_math::surfacePatchQualityName(contactPatchRuntime.patchQualityKind),
                     contactPatchRuntime.rawAcceptedSampleCount,
-                    contactPatchRuntime.dedupedSampleCount,
-                    contactPatchRuntime.duplicateRejectedSampleCount,
-                    contactPatchRuntime.uniqueTriangleCount,
-                    contactPatchRuntime.uniqueSurfaceCount,
                     contactPatchRuntime.clusterRejectedSampleCount,
                     contactPatchRuntime.clusterDepthSpreadGameUnits,
                     contactPatchRuntime.clusterMaxLateralGameUnits,
@@ -6552,7 +6423,7 @@ namespace rock
             } else if (g_rockConfig.rockDebugGrabFrameLogging) {
                 ROCK_LOG_DEBUG(Hand,
                     "{} hand CONTACT PATCH failed: body={} samples={} probe={:.2f}/{:.2f} scale={:.2f}:{} castsHits={} rejectBody={} rejectNormal={} "
-                    "exactSamples={} meshRecovered={} raw={} deduped={} duplicates={} uniqueTriangles={} clusterRejected={} clusterDepth={:.2f} clusterLat={:.2f} clusterReason={} rejectedBodies={} fallback={}",
+                    "exactSamples={} meshRecovered={} clusterRaw={} clusterRejected={} clusterDepth={:.2f} clusterLat={:.2f} clusterReason={} rejectedBodies={} fallback={}",
                     handName(),
                     objectBodyId.value,
                     contactPatchRuntime.sampleCount,
@@ -6566,9 +6437,6 @@ namespace rock
                     contactPatchRuntime.exactBodySamples,
                     contactPatchRuntime.meshRecoveredSamples,
                     contactPatchRuntime.rawAcceptedSampleCount,
-                    contactPatchRuntime.dedupedSampleCount,
-                    contactPatchRuntime.duplicateRejectedSampleCount,
-                    contactPatchRuntime.uniqueTriangleCount,
                     contactPatchRuntime.clusterRejectedSampleCount,
                     contactPatchRuntime.clusterDepthSpreadGameUnits,
                     contactPatchRuntime.clusterMaxLateralGameUnits,
@@ -6578,7 +6446,7 @@ namespace rock
             }
         }
         if (palmPocketMeshAvailable &&
-            pivotAuthoritySourceCanYieldToPalmPocket(inferGrabPivotAuthoritySource(grabPointMode))) {
+            pivotAuthoritySourceCanYieldToPalmPocket(inferGrabPivotAuthoritySource(grabPointMode, pivotAuthorityPositionOnly))) {
             const float canonicalPocketDistance =
                 acquisitionPocket.valid ? pointDistanceGameUnits(canonicalPivotPointWorld, acquisitionPocket.palmCenterWorld) : std::numeric_limits<float>::max();
             const float palmPocketDistance =
@@ -6897,7 +6765,7 @@ namespace rock
             grabPointMode,
             activeGrabPointUsesMultiFingerEvidence ? "yes" : "no",
             contactPatchEvidenceAvailable ? "yes" : "no",
-            contactPatchPivotAccepted ? "yes" : "no",
+            "no",
             contactPatchPivotAuthorityReason,
             pivotAuthoritySource,
             pivotAuthorityPositionOnly ? "yes" : "no",
@@ -7031,15 +6899,7 @@ namespace rock
             _grabFrame.contactPatchSampleCount = 0;
             _grabFrame.hasContactPatch = contactPatchEvidenceAvailable;
             _grabFrame.hasContactPatchEvidence = contactPatchEvidenceAvailable;
-            _grabFrame.contactPatchRawAcceptedSampleCount = contactPatchRuntime.rawAcceptedSampleCount;
-            _grabFrame.contactPatchDedupedSampleCount = contactPatchRuntime.dedupedSampleCount;
-            _grabFrame.contactPatchDuplicateRejectedSampleCount = contactPatchRuntime.duplicateRejectedSampleCount;
-            _grabFrame.contactPatchUniqueTriangleCount = contactPatchRuntime.uniqueTriangleCount;
-            _grabFrame.contactPatchUniqueSurfaceCount = contactPatchRuntime.uniqueSurfaceCount;
             _grabFrame.contactPatchMeshSnapDeltaGameUnits = contactPatchRuntime.patch.meshSnapDeltaGameUnits;
-            _grabFrame.contactPatchSpanGameUnits = contactPatchRuntime.patchSpanGameUnits;
-            _grabFrame.contactPatchAreaTwiceGameUnitsSq = contactPatchRuntime.patchAreaTwiceGameUnitsSq;
-            _grabFrame.contactPatchQualityKind = contactPatchRuntime.patchQualityKind;
             _grabFrame.hasMultiFingerContactPatch = multiFingerGripUsed;
             _grabFrame.multiFingerContactGroupCount = multiFingerGripRuntime.gripSet.groupCount;
             _grabFrame.multiFingerContactReason = multiFingerGripRuntime.reason ? multiFingerGripRuntime.reason : "none";
@@ -7091,9 +6951,8 @@ namespace rock
              * Runtime grab authority is intentionally single-source. Mesh hits,
              * authored nodes, semantic contacts, contact patches, and multi-finger
              * contacts are evidence until the pivot resolver chooses one BODY-local
-             * point to freeze. A deduped mesh-backed contact patch may replace that
-             * point only through the bounded SurfacePatchPositionPivot gate; it is
-             * position-only and never installs patch normals as rotation authority.
+             * point to freeze. Contact patches may enrich pose/release evidence, but
+             * the palm-pocket or authored/mesh point owns the dynamic pivot.
              */
             {
                 auto pocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
@@ -7259,9 +7118,7 @@ namespace rock
 
                     if (!useAuthoredGrabFrame) {
                         using AuthorityCandidate = grab_authority_frame_math::GrabAuthorityPivotCandidate<RE::NiPoint3>;
-                        const bool surfacePatchAuthorityActive =
-                            std::strcmp(pivotAuthoritySource, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::SurfacePatchPositionPivot)) == 0;
-                        std::array<AuthorityCandidate, 6> authorityCandidates{};
+                        std::array<AuthorityCandidate, 5> authorityCandidates{};
                         authorityCandidates[0] = AuthorityCandidate{
                             .valid = pinchPocketCandidate.valid,
                             .source = grab_authority_frame_math::GrabAuthorityPivotSource::PinchPocket,
@@ -7283,16 +7140,6 @@ namespace rock
                             .reason = gripSupportRuntime.model.canAuthorPivot ? gripSupportRuntime.model.reason : "gripSupportUnavailable",
                         };
                         authorityCandidates[2] = AuthorityCandidate{
-                            .valid = surfacePatchAuthorityActive && grabSurfaceHit.valid,
-                            .source = grab_authority_frame_math::GrabAuthorityPivotSource::SurfacePatchPositionPivot,
-                            .pointWorld = surfacePatchAuthorityActive && grabSurfaceHit.valid ? grabGripPoint : RE::NiPoint3{},
-                            .normalWorld = surfacePatchAuthorityActive && grabSurfaceHit.valid ? grabSurfaceHit.normal : RE::NiPoint3{},
-                            .normalValid = false,
-                            .bodyId = objectBodyId.value,
-                            .sourceNode = surfacePatchAuthorityActive && grabSurfaceHit.valid ? grabSurfaceHit.sourceNode : nullptr,
-                            .reason = surfacePatchAuthorityActive ? grabFallbackReason : "surfacePatchUnavailable",
-                        };
-                        authorityCandidates[3] = AuthorityCandidate{
                             .valid = palmPocketMeshAvailable,
                             .source = grab_authority_frame_math::GrabAuthorityPivotSource::PalmPocketMesh,
                             .pointWorld = palmPocketMeshAvailable ? palmPocketSurfaceHit.position : RE::NiPoint3{},
@@ -7302,8 +7149,8 @@ namespace rock
                             .sourceNode = palmPocketMeshAvailable ? palmPocketSurfaceHit.sourceNode : nullptr,
                             .reason = palmPocketMeshAvailable ? "palmPocketMesh" : "palmPocketMeshUnavailable",
                         };
-                        authorityCandidates[4] = AuthorityCandidate{
-                            .valid = grabSurfaceHit.valid && grabSurfaceHit.sourceKind != GrabSurfaceSourceKind::CollisionQuery && !surfacePatchAuthorityActive,
+                        authorityCandidates[3] = AuthorityCandidate{
+                            .valid = grabSurfaceHit.valid && grabSurfaceHit.sourceKind != GrabSurfaceSourceKind::CollisionQuery,
                             .source = grab_authority_frame_math::GrabAuthorityPivotSource::SelectionMeshSnap,
                             .pointWorld = grabSurfaceHit.valid ? grabSurfaceHit.position : RE::NiPoint3{},
                             .normalWorld = grabSurfaceHit.valid ? grabSurfaceHit.normal : RE::NiPoint3{},
@@ -7312,7 +7159,7 @@ namespace rock
                             .sourceNode = grabSurfaceHit.valid ? grabSurfaceHit.sourceNode : nullptr,
                             .reason = grabSurfaceHit.valid ? grabPointMode : "selectionMeshUnavailable",
                         };
-                        authorityCandidates[5] = AuthorityCandidate{
+                        authorityCandidates[4] = AuthorityCandidate{
                             .valid = grabSurfaceHit.valid && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery,
                             .source = grab_authority_frame_math::GrabAuthorityPivotSource::CollisionFallback,
                             .pointWorld = grabSurfaceHit.valid ? grabSurfaceHit.position : RE::NiPoint3{},
@@ -7400,15 +7247,6 @@ namespace rock
                             pivotAuthoritySource = grabPivotAuthoritySourceName(GrabPivotAuthoritySource::GripSupportModel);
                             pivotAuthorityNormalTrusted = resolvedAuthorityPivot.normalValid;
                             pivotAuthorityPositionConfidence = gripSupportRuntime.model.confidence;
-                            break;
-                        case grab_authority_frame_math::GrabAuthorityPivotSource::SurfacePatchPositionPivot:
-                            grabGripPoint = resolvedAuthorityPivot.pointWorld;
-                            grabPointMode = "surfacePatchPositionPivot";
-                            grabFallbackReason = resolvedAuthorityPivot.reason;
-                            pivotAuthoritySource = grabPivotAuthoritySourceName(GrabPivotAuthoritySource::SurfacePatchPositionPivot);
-                            pivotAuthorityPositionOnly = true;
-                            pivotAuthorityNormalTrusted = false;
-                            pivotAuthorityPositionConfidence = (std::max)(pivotAuthorityPositionConfidence, 0.90f);
                             break;
                         case grab_authority_frame_math::GrabAuthorityPivotSource::PalmPocketMesh:
                             grabGripPoint = palmPocketSurfaceHit.position;
@@ -7506,17 +7344,9 @@ namespace rock
                     if (usingPinchPocket) {
                         _grabFrame.contactPatchSamples = {};
                         _grabFrame.contactPatchSampleCount = 0;
-                        _grabFrame.contactPatchRawAcceptedSampleCount = 0;
-                        _grabFrame.contactPatchDedupedSampleCount = 0;
-                        _grabFrame.contactPatchDuplicateRejectedSampleCount = 0;
-                        _grabFrame.contactPatchUniqueTriangleCount = 0;
-                        _grabFrame.contactPatchUniqueSurfaceCount = 0;
                         _grabFrame.hasContactPatch = false;
                         _grabFrame.hasContactPatchEvidence = false;
                         _grabFrame.contactPatchMeshSnapDeltaGameUnits = 0.0f;
-                        _grabFrame.contactPatchSpanGameUnits = 0.0f;
-                        _grabFrame.contactPatchAreaTwiceGameUnitsSq = 0.0f;
-                        _grabFrame.contactPatchQualityKind = grab_contact_patch_math::SurfacePatchQualityKind::None;
                         _grabFrame.hasMultiFingerContactPatch = true;
                         _grabFrame.multiFingerContactGroupCount = 2;
                         _grabFrame.multiFingerContactReason = "pinchPocketThumbIndex";
@@ -7657,7 +7487,7 @@ namespace rock
                     .pivotAWorld = grabPivotAWorld,
                     .gripPointWorld = grabGripPoint,
                     .visualNormalWorld = frozenVisualNormalWorld,
-                    .source = toFrozenGrabAuthorityPivotSource(inferGrabPivotAuthoritySource(grabPointMode)),
+                    .source = toFrozenGrabAuthorityPivotSource(inferGrabPivotAuthoritySource(grabPointMode, pivotAuthorityPositionOnly)),
                     .hasDesiredObjectWorld = true,
                     .visualNormalValid = lengthSquared(frozenVisualNormalWorld) > 0.000001f,
                 });
