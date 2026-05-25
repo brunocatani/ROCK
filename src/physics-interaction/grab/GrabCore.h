@@ -984,44 +984,6 @@ namespace rock::grab_authority_frame_math
         return rotationFinite && isFiniteVector(value.translate) && std::isfinite(value.scale) && value.scale > 0.0001f;
     }
 
-    template <class Transform>
-    inline Transform makeRawRotationProxyAuthorityWorld(const Transform& rawHandWorld, const Transform& proxyWorld)
-    {
-        Transform result = proxyWorld;
-        result.rotate = rawHandWorld.rotate;
-        result.scale = rawHandWorld.scale;
-        return result;
-    }
-
-    template <class Transform>
-    inline Transform composeDesiredBodyWorldFromRawAuthority(
-        const Transform& rawHandWorld,
-        const Transform& proxyWorld,
-        const Transform& rawRotationProxyBodyHandSpace)
-    {
-        return transform_math::composeTransforms(
-            makeRawRotationProxyAuthorityWorld(rawHandWorld, proxyWorld),
-            rawRotationProxyBodyHandSpace);
-    }
-
-    template <class Transform>
-    inline Transform computeBodyRelationForActualProxyFrame(
-        const Transform& rawHandWorld,
-        const Transform& actualProxyWorld,
-        const Transform& rawRotationProxyBodyHandSpace)
-    {
-        /*
-         * The frozen grab relation keeps user angular intent in ROCK's
-         * raw-rotation/proxy-translation authority frame. The hknp constraint,
-         * however, solves body A from the generated proxy body frame. Convert at
-         * the write boundary so pivot A/B and the frozen source relation are not
-         * refrozen or retargeted when raw and generated palm axes diverge.
-         */
-        return grab_frame_math::objectInFrameSpace(
-            actualProxyWorld,
-            composeDesiredBodyWorldFromRawAuthority(rawHandWorld, actualProxyWorld, rawRotationProxyBodyHandSpace));
-    }
-
     template <class Vector>
     struct GrabAuthorityPivotCandidate
     {

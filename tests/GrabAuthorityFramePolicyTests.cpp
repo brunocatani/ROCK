@@ -47,34 +47,6 @@ namespace
         ok &= expectNear(label, actual.z, expected.z, epsilon);
         return ok;
     }
-
-    bool expectRotationNear(const char* label, const RE::NiMatrix3& actual, const RE::NiMatrix3& expected, float epsilon)
-    {
-        bool ok = true;
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                char entryLabel[128]{};
-                std::snprintf(entryLabel, sizeof(entryLabel), "%s[%d][%d]", label, row, column);
-                ok &= expectNear(entryLabel, actual.entry[row][column], expected.entry[row][column], epsilon);
-            }
-        }
-        return ok;
-    }
-
-    RE::NiMatrix3 zRotation90()
-    {
-        RE::NiMatrix3 matrix{};
-        matrix.entry[0][0] = 0.0f;
-        matrix.entry[0][1] = 1.0f;
-        matrix.entry[0][2] = 0.0f;
-        matrix.entry[1][0] = -1.0f;
-        matrix.entry[1][1] = 0.0f;
-        matrix.entry[1][2] = 0.0f;
-        matrix.entry[2][0] = 0.0f;
-        matrix.entry[2][1] = 0.0f;
-        matrix.entry[2][2] = 1.0f;
-        return matrix;
-    }
 }
 
 int main()
@@ -211,38 +183,6 @@ int main()
             targetGripPoint,
             pivotAWorld,
             0.001f);
-    }
-
-    {
-        RE::NiTransform rawHandWorld = identityTransform();
-
-        RE::NiTransform actualProxyWorld = identityTransform();
-        actualProxyWorld.rotate = zRotation90();
-        actualProxyWorld.translate = RE::NiPoint3{ 2.0f, 3.0f, 4.0f };
-
-        RE::NiTransform rawAuthorityBodyRelation = identityTransform();
-        rawAuthorityBodyRelation.translate = RE::NiPoint3{ 5.0f, 0.0f, 0.0f };
-
-        const RE::NiTransform desiredBodyWorld =
-            authority::composeDesiredBodyWorldFromRawAuthority(rawHandWorld, actualProxyWorld, rawAuthorityBodyRelation);
-        const RE::NiTransform solverRelation =
-            authority::computeBodyRelationForActualProxyFrame(rawHandWorld, actualProxyWorld, rawAuthorityBodyRelation);
-        const RE::NiTransform recomposedSolverBody =
-            rock::transform_math::composeTransforms(actualProxyWorld, solverRelation);
-
-        ok &= expectPointNear("actual proxy conversion preserves raw-authority desired body translation",
-            recomposedSolverBody.translate,
-            desiredBodyWorld.translate,
-            0.001f);
-        ok &= expectRotationNear("actual proxy conversion preserves raw-authority desired body rotation",
-            recomposedSolverBody.rotate,
-            desiredBodyWorld.rotate,
-            0.001f);
-        const bool solverRelationDiffersFromRaw =
-            std::abs(solverRelation.rotate.entry[0][0] - rawAuthorityBodyRelation.rotate.entry[0][0]) > 0.01f ||
-            std::abs(solverRelation.rotate.entry[0][1] - rawAuthorityBodyRelation.rotate.entry[0][1]) > 0.01f;
-        ok &= expectTrue("actual proxy conversion changes only solver-space relation when proxy axes diverge",
-            solverRelationDiffersFromRaw);
     }
 
     {

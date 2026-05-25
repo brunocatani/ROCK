@@ -2389,18 +2389,10 @@ namespace rock
              * after in-game validation proved this convention fixed the wrist
              * axis and N/S/E/W world-direction dependency.
              */
-            return grab_authority_frame_math::makeRawRotationProxyAuthorityWorld(rawHandWorld, palmProxyWorld);
-        }
-
-        RE::NiTransform computeGrabConstraintBodyRelationInProxySpace(
-            const RE::NiTransform& rawHandWorld,
-            const RE::NiTransform& actualProxyWorld,
-            const RE::NiTransform& rawRotationProxyBodyHandSpace)
-        {
-            return grab_authority_frame_math::computeBodyRelationForActualProxyFrame(
-                rawHandWorld,
-                actualProxyWorld,
-                rawRotationProxyBodyHandSpace);
+            RE::NiTransform result = palmProxyWorld;
+            result.rotate = rawHandWorld.rotate;
+            result.scale = rawHandWorld.scale;
+            return result;
         }
 
         RE::NiTransform makeProxyFrameWithPivotOrigin(
@@ -4385,27 +4377,11 @@ namespace rock
             auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
             auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
 
-            // The ragdoll motor target is written in actual proxy body-A space.
-            // The raw-rotation relation stays frozen; telemetry mirrors the
-            // same conversion used by create/update before comparing atom bytes.
-            RE::NiTransform desiredBodyTransformHandSpace = _grabFrame.rawRotationProxyBodyHandSpace;
-            RE::NiTransform constraintProxyWorld{};
-            bool hasConstraintProxyWorld = false;
-            if (out.hasProxyReadback) {
-                constraintProxyWorld = out.proxyReadbackWorld;
-                hasConstraintProxyWorld = true;
-            } else if (out.hasPalmAnchorGrabAuthority) {
-                constraintProxyWorld = out.palmAnchorGrabAuthorityWorld;
-                hasConstraintProxyWorld = true;
-            }
-            RE::NiPoint3 activePivotAWorld{};
-            if (hasConstraintProxyWorld && resolveActiveGrabAuthorityPivotAWorld(world, out.rawHandWorld, activePivotAWorld)) {
-                constraintProxyWorld = makeProxyFrameWithPivotOrigin(constraintProxyWorld, activePivotAWorld);
-                desiredBodyTransformHandSpace = computeGrabConstraintBodyRelationInProxySpace(
-                    out.rawHandWorld,
-                    constraintProxyWorld,
-                    _grabFrame.rawRotationProxyBodyHandSpace);
-            }
+            // The ragdoll motor target is seeded and updated from the raw-rotation
+            // proxy BODY relation. Transform-B uses hk-column storage, but
+            // target_bRca is also logged through the solver-row view because top
+            // grab telemetry proved that is the view hknp converges toward.
+            const RE::NiTransform desiredBodyTransformHandSpace = _grabFrame.rawRotationProxyBodyHandSpace;
             const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
             const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
             const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
@@ -4416,7 +4392,8 @@ namespace rock
                 transformBTranslation[1] * havokToGameScale(),
                 transformBTranslation[2] * havokToGameScale(),
             };
-            out.desiredTransformBLocalGame = activeProxyConstraintPivotBLocalGame();
+            out.desiredTransformBLocalGame =
+                grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformHandSpace, _grabFrame.pivotAHandBodyLocalGame);
             out.transformBLocalDelta = grab_transform_telemetry::measurePointPair(out.constraintTransformBLocalGame, out.desiredTransformBLocalGame);
             out.targetColumnsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkColumns, desiredBodyToHandSpace.rotate);
             out.targetRowsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkRows, desiredBodyToHandSpace.rotate);
@@ -4551,15 +4528,11 @@ namespace rock
          */
         const RE::NiPoint3 pivotAProxyLocalGame{};
         const RE::NiPoint3 constraintPivotAWorld = proxyWorldTransform.translate;
-        // Constraint creation seeds the ragdoll motor in actual body-A space.
-        // The frozen relation remains raw-rotation/proxy-translation intent;
-        // only this write boundary converts it to the generated proxy frame
-        // that hknp solves.
-        const RE::NiTransform desiredBodyTransformProxySpace =
-            computeGrabConstraintBodyRelationInProxySpace(
-                rawHandWorldTransform,
-                proxyWorldTransform,
-                _grabFrame.rawRotationProxyBodyHandSpace);
+        // Constraint creation must seed the ragdoll motor with the same angular
+        // BODY relation that held updates keep writing. Using the older
+        // constraint-space relation here lets some grabs start with a correct
+        // pivot but a nearly flipped BODY target, which presents as an on-grab snap.
+        const RE::NiTransform desiredBodyTransformProxySpace = _grabFrame.rawRotationProxyBodyHandSpace;
         const RE::NiPoint3 activePivotBConstraintLocalGame = activeProxyConstraintPivotBLocalGame();
 
         const float gameToHkScale = gameToHavokScale();
@@ -4676,13 +4649,9 @@ namespace rock
     {
         const RE::NiTransform authorityFrame =
             makeRawRotationPalmTranslationFrame(rawHandWorldTransform, proxyWorldTransform);
+        const RE::NiTransform desiredBodyTransformProxySpace = _grabFrame.rawRotationProxyBodyHandSpace;
         outDesiredObjectWorld = multiplyTransforms(authorityFrame, _grabFrame.rawRotationProxyHandSpace);
-        outDesiredBodyWorld = multiplyTransforms(authorityFrame, _grabFrame.rawRotationProxyBodyHandSpace);
-        const RE::NiTransform desiredBodyTransformProxySpace =
-            computeGrabConstraintBodyRelationInProxySpace(
-                rawHandWorldTransform,
-                proxyWorldTransform,
-                _grabFrame.rawRotationProxyBodyHandSpace);
+        outDesiredBodyWorld = multiplyTransforms(authorityFrame, desiredBodyTransformProxySpace);
         outActivePivotBBodyLocalGame = activeProxyConstraintPivotBLocalGame();
         outDesiredTargetPointWorld = transform_math::localPointToWorld(outDesiredBodyWorld, outActivePivotBBodyLocalGame);
 
@@ -9334,11 +9303,7 @@ namespace rock
                 const auto* targetBRca = reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
                 const auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
                 const auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
-                const RE::NiTransform desiredBodyTransformHandSpace =
-                    computeGrabConstraintBodyRelationInProxySpace(
-                        targetRawHandWorld,
-                        targetProxyWorld,
-                        _grabFrame.rawRotationProxyBodyHandSpace);
+                const RE::NiTransform desiredBodyTransformHandSpace = _grabFrame.rawRotationProxyBodyHandSpace;
                 const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
                 const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
                 const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
@@ -9348,7 +9313,8 @@ namespace rock
                     transformBTranslation[1] * havokToGameScale(),
                     transformBTranslation[2] * havokToGameScale(),
                 };
-                const RE::NiPoint3 desiredTransformBLocalGame = activeProxyConstraintPivotBLocalGame();
+                const RE::NiPoint3 desiredTransformBLocalGame =
+                    grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformHandSpace, _grabFrame.pivotAHandBodyLocalGame);
                 constraintTransformBLocalDeltaGameUnits =
                     pointDistanceGameUnits(constraintTransformBLocalGame, desiredTransformBLocalGame);
                 targetRowsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkRows, desiredBodyToHandSpace.rotate);
