@@ -79,8 +79,8 @@ namespace rock
     inline constexpr int RUNTIME_SOLVER_RESULTS = 12;
     inline constexpr int RUNTIME_REPORTED_SIZE = 0x100;
 
-    inline constexpr std::uint16_t RT_RAGDOLL_INIT_OFFSET = 0xffffu;
-    inline constexpr std::uint16_t RT_RAGDOLL_PREV_ANG_OFFSET = 0xffffu;
+    inline constexpr int RT_RAGDOLL_INIT_OFFSET = 0x60;
+    inline constexpr int RT_RAGDOLL_PREV_ANG_OFFSET = 0x64;
 
     inline constexpr int VTABLE_SLOT_DESTRUCTOR = 0;
     inline constexpr int VTABLE_SLOT_GET_TYPE = 4;
