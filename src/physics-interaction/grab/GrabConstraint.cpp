@@ -349,8 +349,8 @@ namespace rock
             auto* ragAtom = header + ATOM_RAGDOLL_MOT;
             *(ragAtom + 0x02) = 0;
 
-            *reinterpret_cast<std::int16_t*>(ragAtom + 0x04) = static_cast<std::int16_t>(RT_RAGDOLL_INIT_OFFSET);
-            *reinterpret_cast<std::int16_t*>(ragAtom + 0x06) = static_cast<std::int16_t>(RT_RAGDOLL_PREV_ANG_OFFSET);
+            *reinterpret_cast<std::uint16_t*>(ragAtom + 0x04) = RT_RAGDOLL_INIT_OFFSET;
+            *reinterpret_cast<std::uint16_t*>(ragAtom + 0x06) = RT_RAGDOLL_PREV_ANG_OFFSET;
 
             auto* target = reinterpret_cast<float*>(ragAtom + RAGDOLL_MOTOR_TARGET_BRCA);
             target[0] = 1.0f;

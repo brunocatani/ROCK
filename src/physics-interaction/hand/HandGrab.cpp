@@ -56,19 +56,6 @@ namespace rock
         static_assert(kGrabCollisionSuppressionArmBodyCountPerHand == kBodyBoneGrabSuppressionArmBodyCountPerSide,
             "Normal grab arm-collider suppression capacity must match the body collider arm-chain query.");
 
-        constexpr float kRagdollAngularForceSweepMultiplier = 10.0f;
-
-        float applyRagdollAngularForceSweep(float force)
-        {
-            if (!std::isfinite(force) || force <= 0.0f) {
-                return 0.0f;
-            }
-
-            // Diagnostic build: isolate whether the hknp ragdoll angular atom is force-budget limited
-            // without changing the linear pivot motor. Remove/reset after comparing probe reduction logs.
-            return force * kRagdollAngularForceSweepMultiplier;
-        }
-
         const char* releaseDispositionName(GrabReleaseDisposition disposition) noexcept
         {
             switch (disposition) {
@@ -629,7 +616,7 @@ namespace rock
                     scaleDriveValue(g_rockConfig.rockGrabAngularProportionalRecovery, angularRecoveryMultiplier),
                 .angularConstantRecovery =
                     scaleDriveValue(g_rockConfig.rockGrabAngularConstantRecovery, angularRecoveryMultiplier),
-                .angularMaxForce = applyRagdollAngularForceSweep(linearMaxForce),
+                .angularMaxForce = linearMaxForce,
             };
         }
 
@@ -4833,9 +4820,8 @@ namespace rock
             scaleDriveValue(g_rockConfig.rockGrabAngularProportionalRecovery, looseAngularRecoveryMultiplier);
         _activeConstraint.angularMotor->constantRecoveryVelocity =
             scaleDriveValue(g_rockConfig.rockGrabAngularConstantRecovery, looseAngularRecoveryMultiplier);
-        const float angularMaxForce = applyRagdollAngularForceSweep(output.angularMaxForce);
-        _activeConstraint.angularMotor->minForce = -angularMaxForce;
-        _activeConstraint.angularMotor->maxForce = angularMaxForce;
+        _activeConstraint.angularMotor->minForce = -output.angularMaxForce;
+        _activeConstraint.angularMotor->maxForce = output.angularMaxForce;
 
         _activeConstraint.currentTau = output.linearTau;
         _activeConstraint.currentMaxForce = output.linearMaxForce;
