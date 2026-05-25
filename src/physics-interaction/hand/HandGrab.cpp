@@ -2058,6 +2058,46 @@ namespace rock
             return std::acos(cosTheta) * (180.0f / 3.14159265358979323846f);
         }
 
+        float matrixDeterminant(const RE::NiMatrix3& matrix)
+        {
+            return matrix.entry[0][0] * (matrix.entry[1][1] * matrix.entry[2][2] - matrix.entry[1][2] * matrix.entry[2][1]) -
+                   matrix.entry[0][1] * (matrix.entry[1][0] * matrix.entry[2][2] - matrix.entry[1][2] * matrix.entry[2][0]) +
+                   matrix.entry[0][2] * (matrix.entry[1][0] * matrix.entry[2][1] - matrix.entry[1][1] * matrix.entry[2][0]);
+        }
+
+        struct GrabPalmBasisDelta
+        {
+            float rotationDegrees = -1.0f;
+            float xAxisDegrees = -1.0f;
+            float yAxisDegrees = -1.0f;
+            float zAxisDegrees = -1.0f;
+            float rawDeterminant = 0.0f;
+            float proxyDeterminant = 0.0f;
+        };
+
+        RE::NiPoint3 frameAxisWorld(const RE::NiTransform& transform, const RE::NiPoint3& localAxis)
+        {
+            return normalizeOrZero(transform_math::localVectorToWorld(transform, localAxis));
+        }
+
+        GrabPalmBasisDelta computeGrabPalmBasisDelta(const RE::NiTransform& rawHandWorld, const RE::NiTransform& proxyWorld)
+        {
+            GrabPalmBasisDelta result{};
+            result.rotationDegrees = rotationDeltaDegrees(rawHandWorld.rotate, proxyWorld.rotate);
+            result.xAxisDegrees = axisDeltaDegrees(
+                frameAxisWorld(rawHandWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }),
+                frameAxisWorld(proxyWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }));
+            result.yAxisDegrees = axisDeltaDegrees(
+                frameAxisWorld(rawHandWorld, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }),
+                frameAxisWorld(proxyWorld, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }));
+            result.zAxisDegrees = axisDeltaDegrees(
+                frameAxisWorld(rawHandWorld, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }),
+                frameAxisWorld(proxyWorld, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }));
+            result.rawDeterminant = matrixDeterminant(rawHandWorld.rotate);
+            result.proxyDeterminant = matrixDeterminant(proxyWorld.rotate);
+            return result;
+        }
+
         float max3(float a, float b, float c) { return (std::max)((std::max)(a, b), c); }
 
         RE::NiMatrix3 matrixFromHkColumns(const float* hkMatrix)
@@ -5461,13 +5501,38 @@ namespace rock
         const RE::NiPoint3 grabAuthorityPivotAWorld = proxyFrameWorldAtGrab.translate;
         const RE::NiPoint3 palmPocketPivotAWorld = computeGrabStartupCapturePivotAWorld(world, handWorldTransform);
         const float palmPocketToProxyDeltaGameUnits = pointDistanceGameUnits(grabAuthorityPivotAWorld, palmPocketPivotAWorld);
+        const GrabPalmBasisDelta grabPalmBasisDelta = computeGrabPalmBasisDelta(handWorldTransform, proxyFrameWorldAtGrab);
         const RE::NiPoint3 grabPivotAForPrimaryChoice = palmPocketPivotAWorld;
+
+        if (grabPalmBasisDelta.rotationDegrees > kGrabFrameMismatchRawProxyRotationWarnDegrees) {
+            ROCK_LOG_SAMPLE_WARN(Hand,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "{} PROXY GRAB PALM BASIS MISMATCH: ref='{}' formID={:08X} source={} rawToProxy={:.1f}deg axisDeg=({:.1f},{:.1f},{:.1f}) determinant=({:.3f},{:.3f}) proxyPivot=({:.1f},{:.1f},{:.1f}) palmPocketPivot=({:.1f},{:.1f},{:.1f}) pocketProxyDelta={:.2f}gu phase={}",
+                handName(),
+                objName,
+                sel.refr ? sel.refr->GetFormID() : 0,
+                proxyFrameSourceAtGrab,
+                grabPalmBasisDelta.rotationDegrees,
+                grabPalmBasisDelta.xAxisDegrees,
+                grabPalmBasisDelta.yAxisDegrees,
+                grabPalmBasisDelta.zAxisDegrees,
+                grabPalmBasisDelta.rawDeterminant,
+                grabPalmBasisDelta.proxyDeterminant,
+                grabAuthorityPivotAWorld.x,
+                grabAuthorityPivotAWorld.y,
+                grabAuthorityPivotAWorld.z,
+                palmPocketPivotAWorld.x,
+                palmPocketPivotAWorld.y,
+                palmPocketPivotAWorld.z,
+                palmPocketToProxyDeltaGameUnits,
+                grab_three_phase::phaseName(_grabAcquisitionPhase));
+        }
 
         ROCK_LOG_DEBUG(Hand,
             "{} hand object-tree prep: ref='{}' formID={:08X} beforeBodies={} afterBodies={} accepted={} rejected={} "
             "seedBody={} seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} "
             "latePrepared={} incompleteScan={} collisionObjects={} visitedNodes={} setMotion={} enableCollision={} sharedPeer={} "
-            "proxyPivot=({:.1f},{:.1f},{:.1f}) palmPocketPivot=({:.1f},{:.1f},{:.1f}) pocketProxyDelta={:.2f}",
+            "proxyPivot=({:.1f},{:.1f},{:.1f}) palmPocketPivot=({:.1f},{:.1f},{:.1f}) pocketProxyDelta={:.2f} palmBasis={:.1f}deg axisDeg=({:.1f},{:.1f},{:.1f}) determinant=({:.3f},{:.3f})",
             handName(),
             objName,
             sel.refr->GetFormID(),
@@ -5496,7 +5561,13 @@ namespace rock
             palmPocketPivotAWorld.x,
             palmPocketPivotAWorld.y,
             palmPocketPivotAWorld.z,
-            palmPocketToProxyDeltaGameUnits);
+            palmPocketToProxyDeltaGameUnits,
+            grabPalmBasisDelta.rotationDegrees,
+            grabPalmBasisDelta.xAxisDegrees,
+            grabPalmBasisDelta.yAxisDegrees,
+            grabPalmBasisDelta.zAxisDegrees,
+            grabPalmBasisDelta.rawDeterminant,
+            grabPalmBasisDelta.proxyDeterminant);
 
         auto* collidableNode = sel.hitNode ? sel.hitNode : rootNode;
         auto* meshSourceNode = sel.visualNode ? sel.visualNode : rootNode;
@@ -9298,6 +9369,9 @@ namespace rock
         const float rawToTargetProxyRotationDegrees = rotationDeltaDegrees(targetRawHandWorld.rotate, targetProxyWorld.rotate);
         const float rawToLiveProxyRotationDegrees =
             proxyOk ? rotationDeltaDegrees(targetRawHandWorld.rotate, proxyReadback.rotate) : -1.0f;
+        const GrabPalmBasisDelta targetPalmBasisDelta = computeGrabPalmBasisDelta(targetRawHandWorld, targetProxyWorld);
+        const GrabPalmBasisDelta livePalmBasisDelta =
+            proxyOk ? computeGrabPalmBasisDelta(targetRawHandWorld, proxyReadback) : targetPalmBasisDelta;
 
         float gripTargetErrorGameUnits = -1.0f;
         float gripLiveProxyErrorGameUnits = -1.0f;
@@ -9317,7 +9391,7 @@ namespace rock
         if (likelyRawProxyFrameMismatch) {
             ROCK_LOG_SAMPLE_WARN(Hand,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "{} PROXY GRAB FRAME MISMATCH: seq={}/{} afterSeq={} substep={}/{} rawToProxyTarget={:.1f}deg rawToProxyLive={:.1f}deg proxyErr={:.2f}gu/{:.1f}deg objectErr={:.2f}gu/{:.1f}deg gripErr={:.2f}gu transformBDelta={:.2f}gu targetRowsInv={:.1f}deg targetColsToTransformB={:.1f}deg angularRef={} proxySrc={} objectSrc={} phase={} pivotB=({:.2f},{:.2f},{:.2f})",
+                "{} PROXY GRAB FRAME MISMATCH: seq={}/{} afterSeq={} substep={}/{} rawToProxyTarget={:.1f}deg rawToProxyLive={:.1f}deg targetAxisDeg=({:.1f},{:.1f},{:.1f}) liveAxisDeg=({:.1f},{:.1f},{:.1f}) determinantTarget=({:.3f},{:.3f}) determinantLive=({:.3f},{:.3f}) proxyErr={:.2f}gu/{:.1f}deg objectErr={:.2f}gu/{:.1f}deg gripErr={:.2f}gu transformBDelta={:.2f}gu targetRowsInv={:.1f}deg targetColsToTransformB={:.1f}deg angularRef={} proxySrc={} objectSrc={} phase={} pivotB=({:.2f},{:.2f},{:.2f})",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -9326,6 +9400,16 @@ namespace rock
                 timing.substepCount,
                 rawToTargetProxyRotationDegrees,
                 rawToLiveProxyRotationDegrees,
+                targetPalmBasisDelta.xAxisDegrees,
+                targetPalmBasisDelta.yAxisDegrees,
+                targetPalmBasisDelta.zAxisDegrees,
+                livePalmBasisDelta.xAxisDegrees,
+                livePalmBasisDelta.yAxisDegrees,
+                livePalmBasisDelta.zAxisDegrees,
+                targetPalmBasisDelta.rawDeterminant,
+                targetPalmBasisDelta.proxyDeterminant,
+                livePalmBasisDelta.rawDeterminant,
+                livePalmBasisDelta.proxyDeterminant,
                 proxyTargetPositionErrorGameUnits,
                 proxyTargetRotationErrorDegrees,
                 objectTargetPositionErrorGameUnits,
