@@ -2146,6 +2146,8 @@ namespace rock
                 axisDeltaDegrees(getMatrixColumn(a, 2), getMatrixColumn(b, 2)));
         }
 
+        constexpr float kMaxFrozenTransformBPredictionErrorGameUnits = 1.0f;
+
         RE::NiMatrix3 matrixFromHkColumns(const float* hkMatrix)
         {
             RE::NiMatrix3 result{};
@@ -6947,6 +6949,20 @@ namespace rock
             const auto oppositionContacts = hand_semantic_contact_state::selectThumbOppositionContacts(semanticContacts);
             auto resolvedAuthorityPivotSourceForFreeze = grab_authority_frame_math::GrabAuthorityPivotSource::None;
             const char* resolvedAuthorityPivotReasonForFreeze = "notResolved";
+            auto abortPreparedGrabCapture = [&]() -> bool {
+                _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
+                _grabObjectGripAtGrab = {};
+                _heldObjectIsLooseWeapon = false;
+                _grabFrame.clear();
+                _heldBodyIds.clear();
+                _heldDriveDecision = {};
+                _heldBodyIdsCount.store(0, std::memory_order_release);
+                _grabFingerPosePublished = false;
+                (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
+                clearGrabExternalHandWorldTransform(_isLeft);
+                restoreFailedGrabPrep();
+                return false;
+            };
             /*
              * Runtime grab authority is intentionally single-source. Mesh hits,
              * authored nodes, semantic contacts, contact patches, and multi-finger
@@ -7182,18 +7198,7 @@ namespace rock
                                 objectBodyId.value,
                                 grabPointMode,
                                 resolvedAuthorityPivot.reason ? resolvedAuthorityPivot.reason : "none");
-                            _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
-                            _grabObjectGripAtGrab = {};
-                            _heldObjectIsLooseWeapon = false;
-                            _grabFrame.clear();
-                            _heldBodyIds.clear();
-                            _heldDriveDecision = {};
-                            _heldBodyIdsCount.store(0, std::memory_order_release);
-                            _grabFingerPosePublished = false;
-                            (void)frik_visual_authority::clearHandPose("ROCK_Grab", handFromBool(_isLeft));
-                            clearGrabExternalHandWorldTransform(_isLeft);
-                            restoreFailedGrabPrep();
-                            return false;
+                            return abortPreparedGrabCapture();
                         }
                         if (g_rockConfig.rockDebugGrabFrameLogging) {
                             for (const auto& candidate : authorityCandidates) {
@@ -7228,6 +7233,28 @@ namespace rock
                                     leverDistance,
                                     grabPointMode);
                             }
+                        }
+                        const float resolvedAuthorityPocketDistanceGameUnits =
+                            pointDistanceGameUnits(grabPivotAWorld, resolvedAuthorityPivot.pointWorld);
+                        if (resolvedAuthorityPivot.source == grab_authority_frame_math::GrabAuthorityPivotSource::SelectionMeshSnap &&
+                            _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::NearConverging &&
+                            resolvedAuthorityPocketDistanceGameUnits > stableTouchEnvelope) {
+                            ROCK_LOG_WARN(Hand,
+                                "{} hand GRAB rejected: selectionMeshSnap cannot freeze large near-converging authority bodyId={} formID={:08X} "
+                                "pocketDistance={:.2f}gu touchEnvelope={:.2f}gu point=({:.2f},{:.2f},{:.2f}) pivotA=({:.2f},{:.2f},{:.2f}) reason={}",
+                                handName(),
+                                objectBodyId.value,
+                                sel.refr ? sel.refr->GetFormID() : 0,
+                                resolvedAuthorityPocketDistanceGameUnits,
+                                stableTouchEnvelope,
+                                resolvedAuthorityPivot.pointWorld.x,
+                                resolvedAuthorityPivot.pointWorld.y,
+                                resolvedAuthorityPivot.pointWorld.z,
+                                grabPivotAWorld.x,
+                                grabPivotAWorld.y,
+                                grabPivotAWorld.z,
+                                resolvedAuthorityPivot.reason ? resolvedAuthorityPivot.reason : "none");
+                            return abortPreparedGrabCapture();
                         }
 
                         switch (resolvedAuthorityPivot.source) {
@@ -7516,6 +7543,35 @@ namespace rock
                 restoreFailedGrabPrep();
                 return false;
             }
+            const RE::NiPoint3 frozenPredictedTransformBLocal =
+                grab_constraint_math::computeDynamicTransformBTranslationGame(
+                    frozenAuthorityFrame.rawRotationProxyBodyHandSpace,
+                    frozenAuthorityFrame.pivotAHandBodyLocalGame);
+            const float frozenPredictedTransformBErr =
+                pointDistanceGameUnits(frozenAuthorityFrame.pivotBConstraintLocalGame, frozenPredictedTransformBLocal);
+            if (!std::isfinite(frozenPredictedTransformBErr) ||
+                frozenPredictedTransformBErr > kMaxFrozenTransformBPredictionErrorGameUnits) {
+                ROCK_LOG_WARN(Hand,
+                    "{} GRAB FAILED: frozen authority transform-B invariant rejected formID={:08X} body={} mode={} source={} resolver={} "
+                    "err={:.3f}gu max={:.3f}gu pivotB=({:.2f},{:.2f},{:.2f}) predicted=({:.2f},{:.2f},{:.2f}) phase={} reason={}",
+                    handName(),
+                    sel.refr ? sel.refr->GetFormID() : 0,
+                    objectBodyId.value,
+                    grabPointMode,
+                    grab_authority_frame_math::grabAuthorityPivotSourceName(frozenAuthorityFrame.source),
+                    grab_authority_frame_math::grabAuthorityPivotSourceName(resolvedAuthorityPivotSourceForFreeze),
+                    frozenPredictedTransformBErr,
+                    kMaxFrozenTransformBPredictionErrorGameUnits,
+                    frozenAuthorityFrame.pivotBConstraintLocalGame.x,
+                    frozenAuthorityFrame.pivotBConstraintLocalGame.y,
+                    frozenAuthorityFrame.pivotBConstraintLocalGame.z,
+                    frozenPredictedTransformBLocal.x,
+                    frozenPredictedTransformBLocal.y,
+                    frozenPredictedTransformBLocal.z,
+                    grab_three_phase::phaseName(_grabAcquisitionPhase),
+                    resolvedAuthorityPivotReasonForFreeze ? resolvedAuthorityPivotReasonForFreeze : "none");
+                return abortPreparedGrabCapture();
+            }
             applyFrozenGrabAuthorityFrameToGrabFrame(_grabFrame, frozenAuthorityFrame);
             desiredObjectWorld = frozenAuthorityFrame.desiredObjectWorld;
             desiredBodyWorld = frozenAuthorityFrame.desiredBodyWorld;
@@ -7541,12 +7597,6 @@ namespace rock
                 const RE::NiMatrix3 freezeTargetRows = matrixFromHkRows(freezeTargetBRca.data());
                 const RE::NiMatrix3 freezeTargetColumns = matrixFromHkColumns(freezeTargetBRca.data());
                 const RE::NiMatrix3 freezeTransformBColumns = matrixFromHkColumns(freezeTransformBRotation.data());
-                const RE::NiPoint3 predictedTransformBLocal =
-                    grab_constraint_math::computeDynamicTransformBTranslationGame(
-                        frozenAuthorityFrame.rawRotationProxyBodyHandSpace,
-                        frozenAuthorityFrame.pivotAHandBodyLocalGame);
-                const float predictedTransformBErr =
-                    pointDistanceGameUnits(frozenAuthorityFrame.pivotBConstraintLocalGame, predictedTransformBLocal);
                 const float freezeRowsInvDegrees =
                     rotationDeltaDegrees(freezeTargetRows, frozenDesiredBodyToHandSpace.rotate);
                 const float freezeColsTransformBDegrees =
@@ -7601,9 +7651,9 @@ namespace rock
                     frozenAuthorityFrame.pivotBConstraintLocalGame.x,
                     frozenAuthorityFrame.pivotBConstraintLocalGame.y,
                     frozenAuthorityFrame.pivotBConstraintLocalGame.z,
-                    predictedTransformBLocal.x,
-                    predictedTransformBLocal.y,
-                    predictedTransformBLocal.z,
+                    frozenPredictedTransformBLocal.x,
+                    frozenPredictedTransformBLocal.y,
+                    frozenPredictedTransformBLocal.z,
                     pivotBLeverGameUnits,
                     _grabFrame.pocketToGripDistanceGameUnits,
                     _grabFrame.selectionToGripEvidenceDistanceGameUnits,
@@ -7613,7 +7663,7 @@ namespace rock
                     desiredBodyToGrabBodyMaxAxisDegrees,
                     freezeRowsInvDegrees,
                     freezeColsTransformBDegrees,
-                    predictedTransformBErr);
+                    frozenPredictedTransformBErr);
             }
             clearGrabExternalHandWorldTransform(_isLeft);
             _grabVisualHandTransform = handWorldTransform;
