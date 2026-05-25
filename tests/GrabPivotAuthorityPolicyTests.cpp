@@ -44,12 +44,17 @@ namespace
         input.patchComparable = true;
         input.patchValid = true;
         input.patchMeshSnapped = true;
+        input.patchBroadSurfaceSupport = true;
+        input.patchUniqueSampleCount = 3;
+        input.patchUniqueTriangleCount = 3;
         input.selectedPivotToPocketGameUnits = 9.0f;
         input.patchPivotToPocketGameUnits = 3.0f;
         input.selectedScore = 9.0f;
         input.patchScore = 2.5f;
         input.patchAuthorityDeltaGameUnits = 4.0f;
         input.patchSelectionDeltaGameUnits = 5.0f;
+        input.patchSpanGameUnits = 2.0f;
+        input.patchAreaTwiceGameUnitsSq = 4.0f;
         input.probeSpacingGameUnits = 3.0f;
         input.meshSnapMaxDistanceGameUnits = 6.0f;
         input.alignmentMaxSelectionDeltaGameUnits = 8.0f;
@@ -65,9 +70,9 @@ int main()
 
     {
         const auto decision = chooseMeshBackedPatchPivotAuthority(validInput());
-        ok &= expectFalse("mesh-snapped patch remains evidence-only", decision.acceptPatchPivot);
-        ok &= expectTrue("evidence-only patch keeps position-only classification", decision.positionOnlyAuthority);
-        ok &= expectReason("accepted reason", decision.reason, "contactPatchPivotEvidenceOnly");
+        ok &= expectTrue("mesh-snapped broad patch can own position pivot", decision.acceptPatchPivot);
+        ok &= expectTrue("accepted patch remains position-only", decision.positionOnlyAuthority);
+        ok &= expectReason("accepted reason", decision.reason, "SurfacePatchPositionPivot");
     }
 
     {
@@ -76,6 +81,24 @@ int main()
         const auto decision = chooseMeshBackedPatchPivotAuthority(input);
         ok &= expectFalse("unsnapped patch cannot own pivot", decision.acceptPatchPivot);
         ok &= expectReason("unsnapped reason", decision.reason, "patchNotMeshSnappedForAuthority");
+    }
+
+    {
+        auto input = validInput();
+        input.patchBroadSurfaceSupport = false;
+        input.patchUniqueSampleCount = 2;
+        input.patchUniqueTriangleCount = 1;
+        const auto decision = chooseMeshBackedPatchPivotAuthority(input);
+        ok &= expectFalse("weak patch support cannot own pivot", decision.acceptPatchPivot);
+        ok &= expectReason("weak support reason", decision.reason, "patchSurfaceSupportTooWeak");
+    }
+
+    {
+        auto input = validInput();
+        input.patchSpanGameUnits = 0.25f;
+        const auto decision = chooseMeshBackedPatchPivotAuthority(input);
+        ok &= expectFalse("tiny patch support cannot own pivot", decision.acceptPatchPivot);
+        ok &= expectReason("tiny support reason", decision.reason, "patchSurfaceSupportTooSmall");
     }
 
     {

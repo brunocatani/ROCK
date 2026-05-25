@@ -297,12 +297,18 @@ namespace rock::grab_pivot_authority_policy
         bool patchComparable = false;
         bool patchValid = false;
         bool patchMeshSnapped = false;
+        bool patchBroadSurfaceSupport = false;
+        std::uint32_t patchUniqueSampleCount = 0;
+        std::uint32_t patchUniqueTriangleCount = 0;
+        std::uint32_t patchDuplicateRejectedCount = 0;
         float selectedPivotToPocketGameUnits = (std::numeric_limits<float>::max)();
         float patchPivotToPocketGameUnits = (std::numeric_limits<float>::max)();
         float selectedScore = (std::numeric_limits<float>::max)();
         float patchScore = (std::numeric_limits<float>::max)();
         float patchAuthorityDeltaGameUnits = (std::numeric_limits<float>::max)();
         float patchSelectionDeltaGameUnits = 0.0f;
+        float patchSpanGameUnits = 0.0f;
+        float patchAreaTwiceGameUnitsSq = 0.0f;
         float probeSpacingGameUnits = 3.0f;
         float meshSnapMaxDistanceGameUnits = 6.0f;
         float alignmentMaxSelectionDeltaGameUnits = 8.0f;
@@ -355,6 +361,15 @@ namespace rock::grab_pivot_authority_policy
             decision.reason = "patchNotMeshSnappedForAuthority";
             return decision;
         }
+        if (input.patchUniqueSampleCount < 2 || !input.patchBroadSurfaceSupport) {
+            decision.reason = "patchSurfaceSupportTooWeak";
+            return decision;
+        }
+        const float minPatchSpanGameUnits = (std::max)(0.75f, baseDelta * 0.5f);
+        if (!std::isfinite(input.patchSpanGameUnits) || input.patchSpanGameUnits < minPatchSpanGameUnits) {
+            decision.reason = "patchSurfaceSupportTooSmall";
+            return decision;
+        }
         if (!std::isfinite(input.patchAuthorityDeltaGameUnits) ||
             input.patchAuthorityDeltaGameUnits > decision.extendedAuthorityDeltaGameUnits) {
             decision.reason = "patchTooFarFromSelectedAuthority";
@@ -386,15 +401,14 @@ namespace rock::grab_pivot_authority_policy
         }
 
         /*
-         * Contact patches are high-value evidence, but they are no longer a
-         * standalone pivot authority. Small patches and corner clusters can be
-         * geometrically real while still producing a poor frozen BODY-local grab
-         * point, so runtime pivot ownership stays with authored/mesh/palm-pocket
-         * evidence and uses the patch only for validation/pose/release context.
+         * A mesh-backed surface patch may move the frozen BODY-local pivot only
+         * as position authority. The patch has already passed ownership,
+         * selection, distance, score, and broad-support gates; normals remain
+         * pose/evidence data and do not become object rotation authority here.
          */
-        decision.acceptPatchPivot = false;
+        decision.acceptPatchPivot = true;
         decision.positionOnlyAuthority = true;
-        decision.reason = "contactPatchPivotEvidenceOnly";
+        decision.reason = "SurfacePatchPositionPivot";
         return decision;
     }
 }
@@ -417,6 +431,7 @@ namespace rock::grab_pivot_authority_policy
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <utility>
 #include <vector>
 
 namespace rock::grab_contact_patch_math
@@ -471,12 +486,42 @@ namespace rock::grab_contact_patch_math
     struct GrabContactPatchSample
     {
         std::uint32_t bodyId = 0x7FFF'FFFF;
+        std::uintptr_t surfaceKey = 0;
+        std::uint32_t triangleIndex = 0xFFFF'FFFFu;
+        std::uint8_t sourceKindId = 0;
         Vector point{};
         Vector normal{};
         float fraction = 1.0f;
         bool accepted = false;
+        bool hasTriangle = false;
+        bool exactBodyHit = false;
+        bool meshRecovered = false;
+        bool ownerlessVisualFamily = false;
         const char* rejectionReason = "none";
     };
+
+    enum class SurfacePatchQualityKind : std::uint8_t
+    {
+        None,
+        SinglePoint,
+        Line,
+        Patch
+    };
+
+    inline const char* surfacePatchQualityName(SurfacePatchQualityKind kind)
+    {
+        switch (kind) {
+        case SurfacePatchQualityKind::SinglePoint:
+            return "singlePoint";
+        case SurfacePatchQualityKind::Line:
+            return "line";
+        case SurfacePatchQualityKind::Patch:
+            return "patch";
+        case SurfacePatchQualityKind::None:
+        default:
+            return "none";
+        }
+    }
 
     template <class Vector>
     struct GrabContactPatchResult
@@ -487,8 +532,14 @@ namespace rock::grab_contact_patch_math
         Vector bitangent{};
         std::size_t hitCount = 0;
         std::size_t rejectedSampleCount = 0;
+        std::size_t uniqueTriangleCount = 0;
+        std::size_t uniqueSurfaceCount = 0;
+        std::size_t duplicateRejectedSampleCount = 0;
         float confidence = 0.0f;
         float meshSnapDeltaGameUnits = 0.0f;
+        float patchSpanGameUnits = 0.0f;
+        float patchAreaTwiceGameUnitsSq = 0.0f;
+        SurfacePatchQualityKind qualityKind = SurfacePatchQualityKind::None;
         bool valid = false;
         bool orientationReliable = false;
         const char* fallbackReason = "uninitialized";
@@ -524,6 +575,28 @@ namespace rock::grab_contact_patch_math
         float maxLateralDistanceGameUnits = 0.0f;
         bool valid = false;
         const char* reason = "uninitialized";
+    };
+
+    template <class Vector>
+    struct GrabContactPatchDedupeResult
+    {
+        std::vector<GrabContactPatchSample<Vector>> samples;
+        std::size_t rawAcceptedCount = 0;
+        std::size_t duplicateRejectedCount = 0;
+        const char* reason = "uninitialized";
+    };
+
+    template <class Vector>
+    struct GrabContactPatchQuality
+    {
+        SurfacePatchQualityKind kind = SurfacePatchQualityKind::None;
+        std::size_t sampleCount = 0;
+        std::size_t uniqueTriangleCount = 0;
+        std::size_t uniqueSurfaceCount = 0;
+        std::size_t duplicateRejectedCount = 0;
+        float patchSpanGameUnits = 0.0f;
+        float patchAreaTwiceGameUnitsSq = 0.0f;
+        bool broadSurfaceSupport = false;
     };
 
     template <class Vector>
@@ -632,6 +705,188 @@ namespace rock::grab_contact_patch_math
         default:
             return "none";
         }
+    }
+
+    template <class Vector>
+    inline float contactPatchSampleDedupeScore(const GrabContactPatchSample<Vector>& sample)
+    {
+        float score = std::isfinite(sample.fraction) ? sample.fraction : 1.0f;
+        if (!sample.exactBodyHit) {
+            score += 0.02f;
+        }
+        if (sample.meshRecovered) {
+            score += 0.05f;
+        }
+        if (sample.ownerlessVisualFamily) {
+            score += 0.10f;
+        }
+        return score;
+    }
+
+    template <class Vector>
+    inline bool contactPatchSamplesShareExactSurface(const GrabContactPatchSample<Vector>& lhs, const GrabContactPatchSample<Vector>& rhs)
+    {
+        return lhs.hasTriangle && rhs.hasTriangle &&
+               lhs.surfaceKey != 0 &&
+               lhs.surfaceKey == rhs.surfaceKey &&
+               lhs.triangleIndex == rhs.triangleIndex &&
+               lhs.sourceKindId == rhs.sourceKindId;
+    }
+
+    template <class Vector>
+    inline bool contactPatchSamplesShareFallbackSurface(const GrabContactPatchSample<Vector>& lhs,
+        const GrabContactPatchSample<Vector>& rhs,
+        float pointDistanceEpsilonGameUnits,
+        float normalDotThreshold)
+    {
+        if (lhs.bodyId != rhs.bodyId) {
+            return false;
+        }
+
+        const float epsilon = std::isfinite(pointDistanceEpsilonGameUnits) && pointDistanceEpsilonGameUnits > 0.0f ?
+            pointDistanceEpsilonGameUnits :
+            0.75f;
+        if (lengthSquared(sub(lhs.point, rhs.point)) > epsilon * epsilon) {
+            return false;
+        }
+
+        const Vector lhsNormal = normalizeOrZero(lhs.normal);
+        const Vector rhsNormal = normalizeOrZero(rhs.normal);
+        if (lengthSquared(lhsNormal) <= 0.0f || lengthSquared(rhsNormal) <= 0.0f) {
+            return true;
+        }
+
+        const float threshold = std::clamp(normalDotThreshold, -1.0f, 1.0f);
+        return dot(lhsNormal, rhsNormal) >= threshold;
+    }
+
+    template <class Vector>
+    inline GrabContactPatchDedupeResult<Vector> dedupeContactPatchSamples(
+        const std::vector<GrabContactPatchSample<Vector>>& samples,
+        float pointDistanceEpsilonGameUnits = 0.75f,
+        float normalDotThreshold = 0.98f)
+    {
+        GrabContactPatchDedupeResult<Vector> result{};
+        result.reason = "noAcceptedSamples";
+        result.samples.reserve(samples.size());
+
+        for (const auto& sample : samples) {
+            if (!sample.accepted || !finiteVector(sample.point)) {
+                continue;
+            }
+
+            ++result.rawAcceptedCount;
+            std::size_t duplicateIndex = result.samples.size();
+            for (std::size_t index = 0; index < result.samples.size(); ++index) {
+                const auto& existing = result.samples[index];
+                if (contactPatchSamplesShareExactSurface(existing, sample) ||
+                    contactPatchSamplesShareFallbackSurface(existing, sample, pointDistanceEpsilonGameUnits, normalDotThreshold)) {
+                    duplicateIndex = index;
+                    break;
+                }
+            }
+
+            if (duplicateIndex == result.samples.size()) {
+                result.samples.push_back(sample);
+                continue;
+            }
+
+            ++result.duplicateRejectedCount;
+            if (contactPatchSampleDedupeScore(sample) < contactPatchSampleDedupeScore(result.samples[duplicateIndex])) {
+                result.samples[duplicateIndex] = sample;
+            }
+        }
+
+        if (!result.samples.empty()) {
+            result.reason = result.duplicateRejectedCount > 0 ? "dedupedSurfacePatchSamples" : "uniqueSurfacePatchSamples";
+        }
+        return result;
+    }
+
+    template <class Vector>
+    inline GrabContactPatchQuality<Vector> classifyContactPatchQuality(
+        const std::vector<GrabContactPatchSample<Vector>>& samples,
+        std::size_t duplicateRejectedCount = 0)
+    {
+        GrabContactPatchQuality<Vector> quality{};
+        quality.duplicateRejectedCount = duplicateRejectedCount;
+
+        std::vector<Vector> points;
+        points.reserve(samples.size());
+        std::vector<std::pair<std::uintptr_t, std::uint32_t>> triangleKeys;
+        std::vector<std::uintptr_t> surfaceKeys;
+        for (const auto& sample : samples) {
+            if (!sample.accepted || !finiteVector(sample.point)) {
+                continue;
+            }
+
+            points.push_back(sample.point);
+            if (sample.hasTriangle && sample.surfaceKey != 0) {
+                const std::pair<std::uintptr_t, std::uint32_t> key{ sample.surfaceKey, sample.triangleIndex };
+                bool seen = false;
+                for (const auto& existing : triangleKeys) {
+                    if (existing == key) {
+                        seen = true;
+                        break;
+                    }
+                }
+                if (!seen) {
+                    triangleKeys.push_back(key);
+                }
+            }
+            if (sample.surfaceKey != 0) {
+                bool seenSurface = false;
+                for (const auto existing : surfaceKeys) {
+                    if (existing == sample.surfaceKey) {
+                        seenSurface = true;
+                        break;
+                    }
+                }
+                if (!seenSurface) {
+                    surfaceKeys.push_back(sample.surfaceKey);
+                }
+            }
+        }
+
+        quality.sampleCount = points.size();
+        quality.uniqueTriangleCount = triangleKeys.size();
+        const bool splitSurfaceIdentity = surfaceKeys.size() > 1;
+        quality.uniqueSurfaceCount = surfaceKeys.empty() ? points.size() : surfaceKeys.size();
+
+        if (points.empty()) {
+            quality.kind = SurfacePatchQualityKind::None;
+            return quality;
+        }
+        if (points.size() == 1) {
+            quality.kind = SurfacePatchQualityKind::SinglePoint;
+            return quality;
+        }
+
+        float maxSpanSq = 0.0f;
+        for (std::size_t i = 0; i < points.size(); ++i) {
+            for (std::size_t j = i + 1; j < points.size(); ++j) {
+                maxSpanSq = (std::max)(maxSpanSq, lengthSquared(sub(points[j], points[i])));
+            }
+        }
+        quality.patchSpanGameUnits = maxSpanSq > 0.0f ? std::sqrt(maxSpanSq) : 0.0f;
+
+        float maxAreaTwiceSq = 0.0f;
+        for (std::size_t i = 0; i < points.size(); ++i) {
+            for (std::size_t j = i + 1; j < points.size(); ++j) {
+                for (std::size_t k = j + 1; k < points.size(); ++k) {
+                    const Vector areaVector = cross(sub(points[j], points[i]), sub(points[k], points[i]));
+                    maxAreaTwiceSq = (std::max)(maxAreaTwiceSq, lengthSquared(areaVector));
+                }
+            }
+        }
+        quality.patchAreaTwiceGameUnitsSq = maxAreaTwiceSq;
+        if (maxAreaTwiceSq > 1.0e-4f && !splitSurfaceIdentity) {
+            quality.kind = SurfacePatchQualityKind::Patch;
+            quality.broadSurfaceSupport = true;
+        } else {
+            quality.kind = SurfacePatchQualityKind::Line;
+        }
+        return quality;
     }
 
     template <class Vector, std::size_t Count>

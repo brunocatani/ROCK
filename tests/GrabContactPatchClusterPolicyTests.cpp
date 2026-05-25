@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -63,6 +64,21 @@ namespace
         out.point = point;
         out.normal = normal;
         out.accepted = true;
+        return out;
+    }
+
+    rock::grab_contact_patch_math::GrabContactPatchSample<Vec3> surfaceSample(
+        Vec3 point,
+        std::uintptr_t surfaceKey,
+        std::uint32_t triangleIndex,
+        Vec3 normal = Vec3{ 0.0f, 0.0f, -1.0f })
+    {
+        auto out = sample(point, normal);
+        out.surfaceKey = surfaceKey;
+        out.triangleIndex = triangleIndex;
+        out.sourceKindId = 1;
+        out.hasTriangle = true;
+        out.exactBodyHit = true;
         return out;
     }
 
@@ -132,6 +148,73 @@ int main()
         const auto longProbe = rock::grab_contact_patch_math::computeContactPatchProbeGeometry(3.0f, 2.0f, 72.0f, 12.0f, 24.0f);
         ok &= expectNear("long-object probe spacing scales down", longProbe.spacingGameUnits, 1.65f);
         ok &= expectNear("long-object probe radius keeps enough cast thickness", longProbe.radiusGameUnits, 1.2f);
+    }
+
+    {
+        using namespace rock::grab_contact_patch_math;
+        const auto result = dedupeContactPatchSamples<Vec3>({
+            surfaceSample(Vec3{ 0.0f, 0.0f, 0.0f }, 100, 7),
+            surfaceSample(Vec3{ 0.2f, 0.0f, 0.0f }, 100, 7),
+            surfaceSample(Vec3{ 2.0f, 0.0f, 0.0f }, 100, 8),
+        });
+
+        ok &= expectEqual("duplicate triangle raw count", result.rawAcceptedCount, 3);
+        ok &= expectEqual("duplicate triangle deduped count", result.samples.size(), 2);
+        ok &= expectEqual("duplicate triangle rejected count", result.duplicateRejectedCount, 1);
+    }
+
+    {
+        using namespace rock::grab_contact_patch_math;
+        const auto result = dedupeContactPatchSamples<Vec3>({
+            sample(Vec3{ 0.0f, 0.0f, 0.0f }),
+            sample(Vec3{ 0.25f, 0.10f, 0.0f }),
+            sample(Vec3{ 2.0f, 0.0f, 0.0f }),
+        },
+            0.5f,
+            0.98f);
+
+        ok &= expectEqual("fallback point dedupe count", result.samples.size(), 2);
+        ok &= expectEqual("fallback point duplicate rejected", result.duplicateRejectedCount, 1);
+    }
+
+    {
+        using namespace rock::grab_contact_patch_math;
+        const std::vector samples{
+            surfaceSample(Vec3{ -1.0f, 0.0f, 0.0f }, 100, 1),
+            surfaceSample(Vec3{ 1.0f, 0.0f, 0.0f }, 100, 2),
+            surfaceSample(Vec3{ 0.0f, 1.0f, 0.0f }, 100, 3),
+        };
+        const auto quality = classifyContactPatchQuality(samples);
+
+        ok &= expectTrue("three adjacent triangles form patch", quality.kind == SurfacePatchQualityKind::Patch);
+        ok &= expectTrue("patch quality reports broad surface support", quality.broadSurfaceSupport);
+        ok &= expectEqual("patch unique triangles", quality.uniqueTriangleCount, 3);
+    }
+
+    {
+        using namespace rock::grab_contact_patch_math;
+        const std::vector samples{
+            surfaceSample(Vec3{ -1.0f, 0.0f, 0.0f }, 100, 1),
+            surfaceSample(Vec3{ 1.0f, 0.0f, 0.0f }, 100, 2),
+        };
+        const auto quality = classifyContactPatchQuality(samples);
+
+        ok &= expectTrue("two same-face samples are line quality", quality.kind == SurfacePatchQualityKind::Line);
+        ok &= expectTrue("line quality is not broad support", !quality.broadSurfaceSupport);
+    }
+
+    {
+        using namespace rock::grab_contact_patch_math;
+        const std::vector samples{
+            surfaceSample(Vec3{ -1.0f, 0.0f, 0.0f }, 100, 1),
+            surfaceSample(Vec3{ 1.0f, 0.0f, 0.0f }, 101, 2),
+            surfaceSample(Vec3{ 0.0f, 1.0f, 0.0f }, 100, 3),
+        };
+        const auto quality = classifyContactPatchQuality(samples);
+
+        ok &= expectTrue("split-surface samples are downgraded", quality.kind == SurfacePatchQualityKind::Line);
+        ok &= expectTrue("split-surface samples cannot claim broad support", !quality.broadSurfaceSupport);
+        ok &= expectEqual("split-surface unique surface count", quality.uniqueSurfaceCount, 2);
     }
 
     {

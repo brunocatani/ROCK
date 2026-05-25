@@ -8,7 +8,7 @@ Source authority: current local ROCK source, current tests, and existing local g
 
 Confidence: high for current source map, medium for runtime behavior until in-game validation is performed on bad-rotation grabs.
 
-Status: planning document only. No production behavior is changed by this note.
+Status: implementation in progress for the guarded `SurfacePatchPositionPivot` path. Runtime validation is still required on bad-rotation grabs.
 
 ## Problem Statement
 
@@ -48,7 +48,7 @@ Current behavior summary:
 - The debug overlay can draw the selected triangle, but the active solver authority is the frozen BODY-local pivot B.
 - `GrabContact.h` already defines a bounded nine-point contact patch probe pattern through `kContactPatchProbePatternSampleCount = 9`.
 - `HandGrab.cpp` already builds runtime contact patches with sphere casts, optional mesh recovery, same-surface clustering, and mesh snapping.
-- `chooseMeshBackedPatchPivotAuthority()` currently returns `acceptPatchPivot = false` even when all quality checks pass. It intentionally keeps contact patches evidence-only.
+- `chooseMeshBackedPatchPivotAuthority()` now allows `SurfacePatchPositionPivot` only after mesh snap, owner/body coherence, deduped broad surface support, selection coherence, distance bounds, and meaningful pocket/score improvement.
 - `GripSupportModel` exists as a separate stage for opposed pinch, long-handle, and palm-wrap evidence.
 
 Important current invariant:
@@ -560,7 +560,7 @@ Tests:
 
 Introduce a named `SurfacePatchPositionPivot` candidate that can compete with the current canonical pivot before freeze.
 
-Important: this phase changes behavior and must update the existing evidence-only policy deliberately.
+Important: this phase changes behavior and updates the former evidence-only policy deliberately. Weak, tiny, line-only, unsnapped, owner-mismatched, or selection-incoherent patches remain evidence only.
 
 Expected code touch points:
 
@@ -568,7 +568,7 @@ Expected code touch points:
 - `resolveMeshBackedGrabPivotAuthority()`;
 - `inferGrabPivotAuthoritySource()`;
 - `_grabFrame.pivotAuthoritySource` telemetry;
-- source-boundary tests that currently require evidence-only behavior.
+- source-boundary tests that previously required evidence-only behavior.
 
 Tests:
 

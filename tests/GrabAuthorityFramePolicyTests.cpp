@@ -57,7 +57,7 @@ int main()
 
     {
         using Candidate = authority::GrabAuthorityPivotCandidate<RE::NiPoint3>;
-        const std::array<Candidate, 5> candidates{
+        const std::array<Candidate, 6> candidates{
             Candidate{
                 .valid = true,
                 .source = authority::GrabAuthorityPivotSource::CollisionFallback,
@@ -81,6 +81,13 @@ int main()
             },
             Candidate{
                 .valid = true,
+                .source = authority::GrabAuthorityPivotSource::SurfacePatchPositionPivot,
+                .pointWorld = RE::NiPoint3{ 25.0f, 0.0f, 0.0f },
+                .bodyId = 7,
+                .reason = "surfacePatch",
+            },
+            Candidate{
+                .valid = true,
                 .source = authority::GrabAuthorityPivotSource::GripSupportModel,
                 .pointWorld = RE::NiPoint3{ 20.0f, 0.0f, 0.0f },
                 .bodyId = 7,
@@ -99,6 +106,37 @@ int main()
         ok &= expectTrue("resolver accepts best candidate", resolved.valid);
         ok &= expectTrue("pinch pocket has highest priority", resolved.source == authority::GrabAuthorityPivotSource::PinchPocket);
         ok &= expectPointNear("pinch point selected", resolved.pointWorld, RE::NiPoint3{ 10.0f, 0.0f, 0.0f }, 0.001f);
+    }
+
+    {
+        using Candidate = authority::GrabAuthorityPivotCandidate<RE::NiPoint3>;
+        const std::array<Candidate, 3> candidates{
+            Candidate{
+                .valid = true,
+                .source = authority::GrabAuthorityPivotSource::PalmPocketMesh,
+                .pointWorld = RE::NiPoint3{ 30.0f, 0.0f, 0.0f },
+                .bodyId = 7,
+                .reason = "palm",
+            },
+            Candidate{
+                .valid = true,
+                .source = authority::GrabAuthorityPivotSource::SurfacePatchPositionPivot,
+                .pointWorld = RE::NiPoint3{ 25.0f, 0.0f, 0.0f },
+                .bodyId = 7,
+                .reason = "surfacePatch",
+            },
+            Candidate{
+                .valid = true,
+                .source = authority::GrabAuthorityPivotSource::SelectionMeshSnap,
+                .pointWorld = RE::NiPoint3{ 40.0f, 0.0f, 0.0f },
+                .bodyId = 7,
+                .reason = "selection",
+            },
+        };
+
+        const auto resolved = authority::resolveGrabAuthorityPivot<RE::NiPoint3>(candidates, true);
+        ok &= expectTrue("surface patch outranks palm and selection mesh", resolved.source == authority::GrabAuthorityPivotSource::SurfacePatchPositionPivot);
+        ok &= expectPointNear("surface patch point selected", resolved.pointWorld, RE::NiPoint3{ 25.0f, 0.0f, 0.0f }, 0.001f);
     }
 
     {
