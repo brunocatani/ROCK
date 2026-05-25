@@ -45,8 +45,6 @@ namespace
     constexpr float kDefaultGrabLooseWeaponSharedConstraintMaxForceMultiplier = 4.5f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = 1.0f;
-    constexpr float kDefaultGrabAngularToLinearForceRatio = 12.5f;
-    constexpr float kDefaultGrabFadeInStartAngularRatio = 100.0f;
     constexpr float kDefaultGrabThrowObjectVelocityBlend = 0.35f;
     constexpr float kDefaultGrabThrowTangentialVelocityScale = 1.0f;
     constexpr float kDefaultGrabThrowMaxVelocityHavok = 12.0f;
@@ -304,8 +302,6 @@ namespace rock
 
         rockGrabConstraintMaxForce = 2000.0f;
         rockGrabMaxForceToMassRatio = 500.0f;
-        rockGrabAngularToLinearForceRatio = kDefaultGrabAngularToLinearForceRatio;
-        rockGrabFadeInStartAngularRatio = kDefaultGrabFadeInStartAngularRatio;
         rockGrabEffectiveMotorMassFloorEnabled = true;
         rockGrabEffectiveMotorMassFloor = kDefaultGrabEffectiveMotorMassFloor;
 
@@ -1061,20 +1057,6 @@ namespace rock
         rockGrabAngularConstantRecovery = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAngularConstantRecovery", rockGrabAngularConstantRecovery));
 
         rockGrabConstraintMaxForce = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabConstraintMaxForce", rockGrabConstraintMaxForce));
-        rockGrabAngularToLinearForceRatio = readClampedFloat(ini,
-            SECTION,
-            "fGrabAngularToLinearForceRatio",
-            rockGrabAngularToLinearForceRatio,
-            kDefaultGrabAngularToLinearForceRatio,
-            0.1f,
-            1000.0f);
-        rockGrabFadeInStartAngularRatio = readClampedFloat(ini,
-            SECTION,
-            "fGrabFadeInStartAngularRatio",
-            rockGrabFadeInStartAngularRatio,
-            kDefaultGrabFadeInStartAngularRatio,
-            0.1f,
-            1000.0f);
         rockGrabMaxForceToMassRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxForceToMassRatio", rockGrabMaxForceToMassRatio));
         rockGrabEffectiveMotorMassFloorEnabled =
             ini.GetBoolValue(SECTION, "bGrabEffectiveMotorMassFloorEnabled", rockGrabEffectiveMotorMassFloorEnabled);

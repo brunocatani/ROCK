@@ -68,32 +68,32 @@ int main()
 
     const auto single = solveMotorTargets(singleHand);
     ok &= expectNear("single hand mass cap", single.linearMaxForce, 1000.0f, 0.001f);
-    ok &= expectNear("single hand angular follows HIGGS ratio", single.angularMaxForce, 80.0f, 0.001f);
+    ok &= expectNear("single hand angular matches linear authority", single.angularMaxForce, 1000.0f, 0.001f);
 
     MotorInput shared = singleHand;
     shared.authorityForceScale = 0.5f;
     const auto twoHand = solveMotorTargets(shared);
     ok &= expectNear("two hands share mass-capped linear authority", twoHand.linearMaxForce, 500.0f, 0.001f);
-    ok &= expectNear("two hands share angular authority after ratio", twoHand.angularMaxForce, 40.0f, 0.001f);
+    ok &= expectNear("two hands share angular authority", twoHand.angularMaxForce, 500.0f, 0.001f);
 
     MotorInput mediumMass = singleHand;
     mediumMass.mass = 10.0f;
     const auto mediumMassOutput = solveMotorTargets(mediumMass);
     ok &= expectNear("medium generic object keeps fixed HIGGS-style force", mediumMassOutput.linearMaxForce, 2000.0f, 0.001f);
-    ok &= expectNear("medium generic object angular force follows HIGGS ratio", mediumMassOutput.angularMaxForce, 160.0f, 0.001f);
+    ok &= expectNear("medium generic object angular force follows full fixed force", mediumMassOutput.angularMaxForce, 2000.0f, 0.001f);
 
     MotorInput heavyMass = singleHand;
     heavyMass.mass = 50.0f;
     const auto heavyMassOutput = solveMotorTargets(heavyMass);
     ok &= expectNear("heavy generic object does not receive loose-weapon force", heavyMassOutput.linearMaxForce, 2000.0f, 0.001f);
-    ok &= expectNear("heavy generic object angular force follows HIGGS ratio", heavyMassOutput.angularMaxForce, 160.0f, 0.001f);
+    ok &= expectNear("heavy generic object angular force follows full generic force", heavyMassOutput.angularMaxForce, 2000.0f, 0.001f);
 
     MotorInput looseWeapon = singleHand;
     looseWeapon.baseMaxForce = 9000.0f;
     looseWeapon.mass = 1000.0f;
     const auto looseWeaponOutput = solveMotorTargets(looseWeapon);
     ok &= expectNear("loose weapon base force is not double-boosted", looseWeaponOutput.linearMaxForce, 9000.0f, 0.001f);
-    ok &= expectNear("loose weapon angular force follows HIGGS weapon ratio", looseWeaponOutput.angularMaxForce, 720.0f, 0.001f);
+    ok &= expectNear("loose weapon angular force follows existing weapon ceiling", looseWeaponOutput.angularMaxForce, 9000.0f, 0.001f);
 
     MotorInput angularFixedTau = singleHand;
     angularFixedTau.mass = 100.0f;
@@ -109,7 +109,7 @@ int main()
     MotorInput positionOnlyPivot = singleHand;
     const auto positionOnlyOutput = solveMotorTargets(positionOnlyPivot);
     ok &= expectNear("position-only small weak pivot does not reduce held linear force", positionOnlyOutput.linearMaxForce, 1000.0f, 0.001f);
-    ok &= expectNear("position-only small weak pivot keeps HIGGS angular ratio", positionOnlyOutput.angularMaxForce, 80.0f, 0.001f);
+    ok &= expectNear("position-only small weak pivot does not reduce held angular force", positionOnlyOutput.angularMaxForce, 1000.0f, 0.001f);
 
     MotorInput weakAngularFixedTau = positionOnlyPivot;
     weakAngularFixedTau.deltaTime = 1.0f;
@@ -120,7 +120,7 @@ int main()
     MotorInput longHandleMotor = singleHand;
     const auto longHandleMotorOutput = solveMotorTargets(longHandleMotor);
     ok &= expectNear("long-handle patch shape does not reduce held linear force", longHandleMotorOutput.linearMaxForce, 1000.0f, 0.001f);
-    ok &= expectNear("long-handle patch shape keeps HIGGS angular ratio", longHandleMotorOutput.angularMaxForce, 80.0f, 0.001f);
+    ok &= expectNear("long-handle patch shape does not reduce held angular force", longHandleMotorOutput.angularMaxForce, 1000.0f, 0.001f);
 
     MotorInput tinyMassFloor = singleHand;
     tinyMassFloor.mass = 0.02f;
@@ -128,21 +128,13 @@ int main()
     tinyMassFloor.effectiveMotorMassFloor = 2.0f;
     const auto tinyMassFloorOutput = solveMotorTargets(tinyMassFloor);
     ok &= expectNear("tiny loose object uses motor-only effective mass floor", tinyMassFloorOutput.linearMaxForce, 1000.0f, 0.001f);
-    ok &= expectNear("tiny loose object angular force follows HIGGS ratio", tinyMassFloorOutput.angularMaxForce, 80.0f, 0.001f);
+    ok &= expectNear("tiny loose object angular force follows floored linear force", tinyMassFloorOutput.angularMaxForce, 1000.0f, 0.001f);
 
     MotorInput tinyMassRaw = tinyMassFloor;
     tinyMassRaw.effectiveMotorMassFloorEnabled = false;
     const auto tinyMassRawOutput = solveMotorTargets(tinyMassRaw);
     ok &= expectNear("disabled effective mass floor preserves raw mass cap", tinyMassRawOutput.linearMaxForce, 10.0f, 0.001f);
-    ok &= expectNear("disabled effective mass floor preserves raw angular ratio", tinyMassRawOutput.angularMaxForce, 0.8f, 0.001f);
-
-    MotorInput angularStartup = singleHand;
-    angularStartup.fadeInEnabled = true;
-    angularStartup.fadeElapsed = 0.0f;
-    angularStartup.fadeDuration = 0.1f;
-    const auto angularStartupOutput = solveMotorTargets(angularStartup);
-    ok &= expectNear("HIGGS startup keeps full linear force", angularStartupOutput.linearMaxForce, 1000.0f, 0.001f);
-    ok &= expectNear("HIGGS startup softens angular force by startup ratio", angularStartupOutput.angularMaxForce, 10.0f, 0.001f);
+    ok &= expectNear("disabled effective mass floor preserves raw angular cap", tinyMassRawOutput.angularMaxForce, 10.0f, 0.001f);
 
     ok &= expectNear("effective motor mass floors tiny finite mass", effectiveMotorMass(0.25f, true, 2.0f), 2.0f, 0.001f);
     ok &= expectNear("effective motor mass leaves heavier mass untouched", effectiveMotorMass(10.0f, true, 2.0f), 10.0f, 0.001f);

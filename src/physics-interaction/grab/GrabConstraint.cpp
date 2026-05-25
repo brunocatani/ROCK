@@ -555,11 +555,6 @@ namespace rock
         const RE::NiTransform& desiredBodyTransformHandSpace, float tau, float damping, float maxForce, float proportionalRecovery, float constantRecovery)
     {
         const float linearMaxForce = (std::max)(0.0f, std::isfinite(maxForce) ? maxForce : 0.0f);
-        const float angularRatio =
-            std::isfinite(g_rockConfig.rockGrabAngularToLinearForceRatio) && g_rockConfig.rockGrabAngularToLinearForceRatio > 0.0f ?
-            g_rockConfig.rockGrabAngularToLinearForceRatio :
-            12.5f;
-        const float angularMaxForce = linearMaxForce / angularRatio;
         return createGrabConstraint(
             world,
             handBodyId,
@@ -578,7 +573,7 @@ namespace rock
                 .angularDamping = g_rockConfig.rockGrabAngularDamping,
                 .angularProportionalRecovery = g_rockConfig.rockGrabAngularProportionalRecovery,
                 .angularConstantRecovery = g_rockConfig.rockGrabAngularConstantRecovery,
-                .angularMaxForce = angularMaxForce,
+                .angularMaxForce = linearMaxForce,
             });
     }
 

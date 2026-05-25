@@ -613,7 +613,6 @@ namespace rock
             float proportionalRecovery,
             float constantRecovery,
             bool looseWeaponGrab,
-            bool fadeInGrabConstraint,
             float mass,
             float forceToMassRatio)
         {
@@ -637,13 +636,6 @@ namespace rock
                 std::clamp(std::isfinite(authorityForceScale) && authorityForceScale > 0.0f ? authorityForceScale : 1.0f, 0.05f, 1.0f);
             const float linearMaxForce =
                 grab_motion_controller::capForceByMass(linearBudget, mass, forceToMassRatio) * sanitizedAuthorityForceScale;
-            const float angularRatio = grab_motion_controller::angularForceRatioForFade(
-                g_rockConfig.rockGrabAngularToLinearForceRatio,
-                g_rockConfig.rockGrabFadeInStartAngularRatio,
-                0.0f,
-                fadeInGrabConstraint);
-            const float angularMaxForce =
-                grab_motion_controller::angularForceFromLinear(linearMaxForce, angularRatio);
 
             return GrabConstraintMotorTuning{
                 .linearTau = scaleDriveValue(tau, linearTauMultiplier),
@@ -657,7 +649,7 @@ namespace rock
                     scaleDriveValue(g_rockConfig.rockGrabAngularProportionalRecovery, angularRecoveryMultiplier),
                 .angularConstantRecovery =
                     scaleDriveValue(g_rockConfig.rockGrabAngularConstantRecovery, angularRecoveryMultiplier),
-                .angularMaxForce = angularMaxForce,
+                .angularMaxForce = linearMaxForce,
             };
         }
 
@@ -4594,7 +4586,7 @@ namespace rock
             !std::isfinite(solverPivotBConstraintLocalGame.y) ||
             !std::isfinite(solverPivotBConstraintLocalGame.z)) {
             ROCK_LOG_ERROR(Hand,
-                "{} hand proxy constraint grab failed: HIGGS-style transform-B pivot is invalid proxyBody={} objBody={} reason={}",
+                "{} hand proxy constraint grab failed: transform-B relation pivot is invalid proxyBody={} objBody={} reason={}",
                 handName(),
                 _grabAuthorityProxy.getBodyId().value,
                 objectBodyId.value,
@@ -4628,7 +4620,6 @@ namespace rock
             proportionalRecovery,
             constantRecovery,
             looseWeaponGrab,
-            _grabFrame.fadeInGrabConstraint,
             effectiveMassAtCreation,
             g_rockConfig.rockGrabMaxForceToMassRatio);
 
@@ -4861,8 +4852,6 @@ namespace rock
             .authorityForceScale = authorityForceScale,
             .mass = massSummary.motorMass(),
             .forceToMassRatio = g_rockConfig.rockGrabMaxForceToMassRatio,
-            .angularToLinearForceRatio = g_rockConfig.rockGrabAngularToLinearForceRatio,
-            .fadeInStartAngularRatio = g_rockConfig.rockGrabFadeInStartAngularRatio,
             .effectiveMotorMassFloorEnabled = g_rockConfig.rockGrabEffectiveMotorMassFloorEnabled,
             .effectiveMotorMassFloor = g_rockConfig.rockGrabEffectiveMotorMassFloor,
             .fadeInEnabled = _grabFrame.fadeInGrabConstraint,
