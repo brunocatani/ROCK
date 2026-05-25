@@ -175,37 +175,6 @@ int main()
     }
 
     {
-        RE::NiTransform proxyWorld = identityTransform();
-        proxyWorld.rotate = rotationAroundZ(kPi * 0.5f);
-        proxyWorld.translate = RE::NiPoint3{ 3.0f, -2.0f, 9.0f };
-
-        RE::NiTransform rawAuthorityWorld = identityTransform();
-        rawAuthorityWorld.rotate = rotationAroundX(kPi * 0.5f);
-        rawAuthorityWorld.translate = proxyWorld.translate;
-
-        const RE::NiTransform constraintATransform =
-            rock::grab_constraint_math::computeConstraintATransformBodyASpace(proxyWorld, rawAuthorityWorld);
-        const RE::NiTransform recomposedConstraintAWorld =
-            rock::transform_math::composeTransforms(proxyWorld, constraintATransform);
-
-        float transformARotation[12]{};
-        rock::grab_constraint_math::writeConstraintARotation(transformARotation, constraintATransform);
-
-        ok &= expectTransformClose("constraint A local frame recomposes to raw authority",
-            recomposedConstraintAWorld,
-            rawAuthorityWorld);
-        ok &= expectNear(
-            "transformA columns carry proxy-to-raw local rotation",
-            rotationDeltaDegrees(matrixFromRawColumns(transformARotation), constraintATransform.rotate),
-            0.0f,
-            0.01f);
-        if (rotationDeltaDegrees(matrixFromRawRows(transformARotation), constraintATransform.rotate) <= 1.0f) {
-            std::printf("transformA row interpretation unexpectedly matches the transform-atom column convention\n");
-            ok = false;
-        }
-    }
-
-    {
         RE::NiTransform objectWorld = identityTransform();
         objectWorld.translate = RE::NiPoint3{ 10.0f, -4.0f, 3.0f };
         objectWorld.rotate = rotationAroundZ(kPi * 0.5f);

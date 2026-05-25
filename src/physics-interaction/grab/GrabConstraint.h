@@ -227,10 +227,6 @@ namespace rock
         const RE::NiTransform& desiredBodyTransformHandSpace, float tau, float damping, float maxForce, float proportionalRecovery, float constantRecovery);
 
     ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
-        const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const RE::NiTransform& constraintATransformBodyASpace,
-        const float* pivotBBodyLocalHk, const RE::NiTransform& desiredBodyTransformHandSpace, const GrabConstraintMotorTuning& tuning);
-
-    ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
         const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
         const RE::NiTransform& desiredBodyTransformHandSpace, const GrabConstraintMotorTuning& tuning);
 

@@ -94,18 +94,6 @@ namespace rock::grab_constraint_math
     }
 
     template <class Transform>
-    inline Transform computeConstraintATransformBodyASpace(const Transform& bodyAWorld, const Transform& desiredConstraintAWorld)
-    {
-        return transform_math::composeTransforms(transform_math::invertTransform(bodyAWorld), desiredConstraintAWorld);
-    }
-
-    template <class Transform>
-    inline void writeConstraintARotation(float* transformARotation, const Transform& constraintATransformBodyASpace)
-    {
-        writeHavokRotationColumns(transformARotation, constraintATransformBodyASpace.rotate);
-    }
-
-    template <class Transform>
     inline void writeInitialGrabAngularFrame(float* transformBRotation, float* targetBRca, const Transform& desiredBodyTransformHandSpace)
     {
         /*
