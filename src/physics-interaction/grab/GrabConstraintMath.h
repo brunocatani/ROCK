@@ -110,6 +110,12 @@ namespace rock::grab_constraint_math
         writeHavokRotationRows(targetBRca, bodyToHandRotation);
     }
 
+    template <class Transform>
+    inline void writeConstraintFrameARotation(float* transformARotation, const Transform& constraintFrameABodySpace)
+    {
+        writeHavokRotationColumns(transformARotation, constraintFrameABodySpace.rotate);
+    }
+
     template <class Transform, class Vector>
     inline Vector computeConstraintPivotLocalGame(const Transform& bodyWorld, const Vector& pivotWorld)
     {

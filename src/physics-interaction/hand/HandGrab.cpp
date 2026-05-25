@@ -2441,6 +2441,22 @@ namespace rock
             return result;
         }
 
+        RE::NiTransform makeRawHandConstraintFrameInProxyBodySpace(
+            const RE::NiTransform& proxyBodyWorld,
+            const RE::NiTransform& rawHandWorld)
+        {
+            /*
+             * Body A remains the generated no-contact proxy for stable pivot
+             * translation, but the angular constraint frame must be the raw
+             * hand/controller basis. Store that raw basis as transform-A local
+             * rotation instead of rotating the proxy body itself.
+             */
+            RE::NiTransform result = multiplyTransforms(invertTransform(proxyBodyWorld), rawHandWorld);
+            result.translate = RE::NiPoint3{};
+            result.scale = 1.0f;
+            return result;
+        }
+
         RE::NiTransform makeProxyFrameWithPivotOrigin(
             const RE::NiTransform& proxyWorld,
             const RE::NiPoint3& pivotWorld)
@@ -4580,6 +4596,18 @@ namespace rock
         // constraint-space relation here lets some grabs start with a correct
         // pivot but a nearly flipped BODY target, which presents as an on-grab snap.
         const RE::NiTransform desiredBodyTransformProxySpace = _grabFrame.rawRotationProxyBodyHandSpace;
+        const RE::NiTransform constraintFrameABodySpace =
+            makeRawHandConstraintFrameInProxyBodySpace(proxyWorldTransform, rawHandWorldTransform);
+        if (!grab_authority_frame_math::isFiniteTransform(constraintFrameABodySpace)) {
+            ROCK_LOG_ERROR(Hand,
+                "{} hand proxy constraint grab failed: transform-A raw-hand adapter is invalid proxyBody={} objBody={} reason={}",
+                handName(),
+                _grabAuthorityProxy.getBodyId().value,
+                objectBodyId.value,
+                reason ? reason : "unknown");
+            destroyGrabAuthorityProxy(bhkWorld);
+            return false;
+        }
         const RE::NiPoint3 solverPivotBConstraintLocalGame =
             grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformProxySpace, _grabFrame.pivotAHandBodyLocalGame);
         if (!std::isfinite(solverPivotBConstraintLocalGame.x) ||
@@ -4627,6 +4655,7 @@ namespace rock
             _grabAuthorityProxy.getBodyId(),
             objectBodyId,
             proxyWorldTransform,
+            constraintFrameABodySpace,
             constraintPivotAWorld,
             pivotBBodyLocalHk,
             desiredBodyTransformProxySpace,
@@ -4722,9 +4751,17 @@ namespace rock
             return false;
         }
 
+        const RE::NiTransform constraintFrameABodySpace =
+            makeRawHandConstraintFrameInProxyBodySpace(proxyWorldTransform, rawHandWorldTransform);
+        if (!grab_authority_frame_math::isFiniteTransform(constraintFrameABodySpace)) {
+            return false;
+        }
+
         auto* constraintData = static_cast<char*>(_activeConstraint.constraintData);
+        auto* transformARotation = reinterpret_cast<float*>(constraintData + GRAB_TRANSFORM_A_COL0);
         auto* transformAPos = reinterpret_cast<float*>(constraintData + GRAB_TRANSFORM_A_POS);
         const float gameToHkScale = gameToHavokScale();
+        grab_constraint_math::writeConstraintFrameARotation(transformARotation, constraintFrameABodySpace);
         transformAPos[0] = _grabAuthorityPivotAProxyLocalGame.x * gameToHkScale;
         transformAPos[1] = _grabAuthorityPivotAProxyLocalGame.y * gameToHkScale;
         transformAPos[2] = _grabAuthorityPivotAProxyLocalGame.z * gameToHkScale;
