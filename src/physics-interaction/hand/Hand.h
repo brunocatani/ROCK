@@ -709,6 +709,27 @@ namespace rock
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
         RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
         bool _hasLastAppliedGrabAuthorityProxyWorld = false;
+        struct RagdollAngularProbePreSolve
+        {
+            RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };
+            RE::NiTransform desiredBodyWorld{};
+            RE::NiTransform bodyWorldBefore{};
+            RE::NiPoint3 requiredAxisWorld{};
+            RE::NiPoint3 angularVelocityBeforeRadians{};
+            float beforeErrorDegrees = -1.0f;
+            float beforeGripErrorGameUnits = -1.0f;
+            float pivotLeverGameUnits = -1.0f;
+            float angularMotorTau = 0.0f;
+            float angularMotorDamping = 0.0f;
+            float angularMotorMaxForce = 0.0f;
+            float linearMotorMaxForce = 0.0f;
+            float targetRowsToConstraintInverseDegrees = -1.0f;
+            float targetColumnsToTransformBDegrees = -1.0f;
+            std::uint64_t flushSequence = 0;
+            bool ragdollMotorEnabled = false;
+            bool valid = false;
+        };
+        RagdollAngularProbePreSolve _ragdollAngularProbePreSolve{};
         GeneratedKeyframedBodyDriveState _grabAuthorityProxyDriveState{};
         std::uint64_t _grabAuthorityProxyQueuedSequence = 0;
         std::uint64_t _grabAuthorityProxyFlushSequence = 0;

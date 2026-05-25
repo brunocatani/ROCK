@@ -214,6 +214,11 @@ namespace rock
             return scalePoint(axis, angle / deltaTime);
         }
 
+        RE::NiPoint3 rotationCorrectionAxisWorld(const RE::NiMatrix3& current, const RE::NiMatrix3& target)
+        {
+            return normalizeOrZero(angularVelocityFromRotationDelta(current, target, 1.0f));
+        }
+
         bool computeHardKeyframeVelocityForTarget(
             RE::hknpWorld* world,
             RE::hknpBodyId bodyId,
@@ -3841,6 +3846,7 @@ namespace rock
         _grabAuthorityProxyLastFlushDeltaSeconds = 0.0f;
         _grabAuthorityProxyLogCounter = 0;
         _grabAuthorityProxyAfterSolveLogCounter = 0;
+        _ragdollAngularProbePreSolve = {};
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
     }
 
@@ -9134,6 +9140,56 @@ namespace rock
                             std::fabs(_activeConstraint.angularMotor->minForce),
                             std::fabs(_activeConstraint.angularMotor->maxForce));
                     }
+                    _ragdollAngularProbePreSolve = {};
+                    if (angularDriveOk && _activeConstraint.constraintData) {
+                        RE::NiTransform bodyWorldBeforeSolve{};
+                        if (tryGetGrabAuthorityBodyWorldTransform(world, _savedObjectState.bodyId, bodyWorldBeforeSolve)) {
+                            const auto* constraintData = static_cast<const char*>(_activeConstraint.constraintData);
+                            const auto* targetBRca = reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
+                            const auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
+                            const RE::NiTransform desiredBodyTransformHandSpace = _grabFrame.rawRotationProxyBodyHandSpace;
+                            const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
+                            const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
+                            const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
+                            const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
+
+                            const RE::NiPoint3 liveGripBeforeSolve =
+                                transform_math::localPointToWorld(bodyWorldBeforeSolve, activePivotBBodyLocalGame);
+                            RE::NiPoint3 angularVelocityBeforeSolve{};
+                            if (auto* motion = havok_runtime::getBodyMotion(world, _savedObjectState.bodyId)) {
+                                angularVelocityBeforeSolve = RE::NiPoint3{
+                                    motion->angularVelocity.x,
+                                    motion->angularVelocity.y,
+                                    motion->angularVelocity.z,
+                                };
+                            }
+
+                            const float linearMotorBudget = _activeConstraint.linearMotor ?
+                                (std::max)(
+                                    std::fabs(_activeConstraint.linearMotor->minForce),
+                                    std::fabs(_activeConstraint.linearMotor->maxForce)) :
+                                0.0f;
+                            _ragdollAngularProbePreSolve = RagdollAngularProbePreSolve{
+                                .objectBodyId = _savedObjectState.bodyId,
+                                .desiredBodyWorld = desiredBodyWorld,
+                                .bodyWorldBefore = bodyWorldBeforeSolve,
+                                .requiredAxisWorld = rotationCorrectionAxisWorld(bodyWorldBeforeSolve.rotate, desiredBodyWorld.rotate),
+                                .angularVelocityBeforeRadians = angularVelocityBeforeSolve,
+                                .beforeErrorDegrees = rotationDeltaDegrees(bodyWorldBeforeSolve.rotate, desiredBodyWorld.rotate),
+                                .beforeGripErrorGameUnits = pointDistanceGameUnits(liveGripBeforeSolve, desiredTargetPointWorld),
+                                .pivotLeverGameUnits = pointDistanceGameUnits(bodyWorldBeforeSolve.translate, liveGripBeforeSolve),
+                                .angularMotorTau = _activeConstraint.angularMotor ? _activeConstraint.angularMotor->tau : 0.0f,
+                                .angularMotorDamping = _activeConstraint.angularMotor ? _activeConstraint.angularMotor->damping : 0.0f,
+                                .angularMotorMaxForce = angularMotorBudget,
+                                .linearMotorMaxForce = linearMotorBudget,
+                                .targetRowsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkRows, desiredBodyToHandSpace.rotate),
+                                .targetColumnsToTransformBDegrees = rotationDeltaDegrees(targetAsHkColumns, transformBAsHkColumns),
+                                .flushSequence = _grabAuthorityProxyFlushSequence + 1,
+                                .ragdollMotorEnabled = *(constraintData + ATOM_RAGDOLL_MOT + 0x02) != 0,
+                                .valid = true,
+                            };
+                        }
+                    }
                     if (!angularDriveOk) {
                         ++_grabAuthorityProxyFailedFlushes;
                         _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);
@@ -9263,6 +9319,7 @@ namespace rock
         std::uint64_t afterSolveSequence = 0;
         std::uint32_t constraintId = 0x7FFF'FFFFu;
         GrabAngularAuthority angularAuthority = GrabAngularAuthority::HknpRagdollMotorAtom;
+        RagdollAngularProbePreSolve ragdollAngularProbePreSolve{};
         {
             std::scoped_lock lock(_grabAuthorityProxyMutex);
             const bool hasAuthority = _grabAuthorityProxy.isValid() &&
@@ -9284,6 +9341,7 @@ namespace rock
             afterSolveSequence = ++_grabAuthorityProxyAfterSolveLogCounter;
             constraintId = _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu;
             angularAuthority = _activeConstraint.angularAuthority;
+            ragdollAngularProbePreSolve = _ragdollAngularProbePreSolve;
         }
 
         const bool debugGrabFrameLogging = g_rockConfig.rockDebugGrabFrameLogging;
@@ -9381,6 +9439,81 @@ namespace rock
             const RE::NiPoint3 liveProxyGripWorld = transform_math::localPointToWorld(desiredBodyFromLiveProxy, pivotBConstraintLocalGame);
             gripTargetErrorGameUnits = pointDistanceGameUnits(liveGripWorld, targetGripWorld);
             gripLiveProxyErrorGameUnits = pointDistanceGameUnits(liveGripWorld, liveProxyGripWorld);
+        }
+
+        const bool hasRagdollAngularProbe =
+            ragdollAngularProbePreSolve.valid &&
+            ragdollAngularProbePreSolve.objectBodyId.value == objectBodyId.value;
+        if (hasRagdollAngularProbe && objectOk) {
+            RE::NiPoint3 angularVelocityAfterSolve{};
+            if (auto* motion = havok_runtime::getBodyMotion(world, objectBodyId)) {
+                angularVelocityAfterSolve = RE::NiPoint3{
+                    motion->angularVelocity.x,
+                    motion->angularVelocity.y,
+                    motion->angularVelocity.z,
+                };
+            }
+
+            const RE::NiPoint3 velocityAxisAfterSolve = normalizeOrZero(angularVelocityAfterSolve);
+            const float axisDot = dotProduct(ragdollAngularProbePreSolve.requiredAxisWorld, velocityAxisAfterSolve);
+            const float angularSpeedBefore = vectorMagnitude(ragdollAngularProbePreSolve.angularVelocityBeforeRadians);
+            const float angularSpeedAfter = vectorMagnitude(angularVelocityAfterSolve);
+            const float afterErrorDegrees =
+                rotationDeltaDegrees(objectReadback.rotate, ragdollAngularProbePreSolve.desiredBodyWorld.rotate);
+            const float errorReductionDegrees = ragdollAngularProbePreSolve.beforeErrorDegrees - afterErrorDegrees;
+            const RE::NiPoint3 liveGripAfterSolve =
+                transform_math::localPointToWorld(objectReadback, pivotBConstraintLocalGame);
+            const RE::NiPoint3 targetGripFromProbe =
+                transform_math::localPointToWorld(ragdollAngularProbePreSolve.desiredBodyWorld, pivotBConstraintLocalGame);
+            const float afterGripErrorGameUnits = pointDistanceGameUnits(liveGripAfterSolve, targetGripFromProbe);
+            const bool staleProbe = ragdollAngularProbePreSolve.flushSequence != flushSequence;
+            const bool shouldLogRagdollProbe =
+                !staleProbe &&
+                (afterSolveSequence <= 16u ||
+                    ragdollAngularProbePreSolve.beforeErrorDegrees > 10.0f ||
+                    afterErrorDegrees > 10.0f ||
+                    errorReductionDegrees < 0.25f ||
+                    axisDot < 0.35f);
+
+            if (shouldLogRagdollProbe) {
+                ROCK_LOG_SAMPLE_WARN(Hand,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "{} RAGDOLL ANGULAR PROBE: seq={}/{} afterSeq={} probeSeq={} stale={} substep={}/{} beforeErr={:.1f}deg afterErr={:.1f}deg reduce={:.1f}deg axisDot={:.2f} reqAxis=({:.2f},{:.2f},{:.2f}) velAxis=({:.2f},{:.2f},{:.2f}) beforeAng={:.2f}rad/s afterAng={:.2f}rad/s forceA={:.0f} forceL={:.0f} tau={:.3f} damp={:.2f} ragdoll={} targetRowsInv={:.1f}deg targetColsToB={:.1f}deg gripBefore={:.2f}gu gripAfter={:.2f}gu pivotLever={:.2f}gu angularRef={} phase={} body={} motion={}",
+                    handName(),
+                    flushSequence,
+                    queuedSequence,
+                    afterSolveSequence,
+                    ragdollAngularProbePreSolve.flushSequence,
+                    staleProbe ? "yes" : "no",
+                    timing.substepIndex,
+                    timing.substepCount,
+                    ragdollAngularProbePreSolve.beforeErrorDegrees,
+                    afterErrorDegrees,
+                    errorReductionDegrees,
+                    std::isfinite(axisDot) ? axisDot : 0.0f,
+                    ragdollAngularProbePreSolve.requiredAxisWorld.x,
+                    ragdollAngularProbePreSolve.requiredAxisWorld.y,
+                    ragdollAngularProbePreSolve.requiredAxisWorld.z,
+                    velocityAxisAfterSolve.x,
+                    velocityAxisAfterSolve.y,
+                    velocityAxisAfterSolve.z,
+                    angularSpeedBefore,
+                    angularSpeedAfter,
+                    ragdollAngularProbePreSolve.angularMotorMaxForce,
+                    ragdollAngularProbePreSolve.linearMotorMaxForce,
+                    ragdollAngularProbePreSolve.angularMotorTau,
+                    ragdollAngularProbePreSolve.angularMotorDamping,
+                    ragdollAngularProbePreSolve.ragdollMotorEnabled ? "yes" : "no",
+                    ragdollAngularProbePreSolve.targetRowsToConstraintInverseDegrees,
+                    ragdollAngularProbePreSolve.targetColumnsToTransformBDegrees,
+                    ragdollAngularProbePreSolve.beforeGripErrorGameUnits,
+                    afterGripErrorGameUnits,
+                    ragdollAngularProbePreSolve.pivotLeverGameUnits,
+                    kGrabObjectRotationReferenceName,
+                    grab_three_phase::phaseName(_grabAcquisitionPhase),
+                    objectBodyId.value,
+                    objectMotionIndex);
+            }
         }
 
         const bool likelyRawProxyFrameMismatch =
