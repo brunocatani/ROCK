@@ -10,10 +10,13 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
+
+#include "RE/Bethesda/BSVisit.h"
 
 namespace rock
 {
@@ -988,7 +991,60 @@ namespace rock
         }
     }
 
-    inline void extractAllSurfaceTriangles(RE::NiAVObject* root,
+    inline void extractSurfaceTrianglesFromTriShape(RE::BSTriShape* triShape,
+        std::vector<TriangleData>& outTriangles,
+        std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles,
+        MeshExtractionStats* stats,
+        bool allowPositionOnlySkinnedSurface)
+    {
+        if (!triShape) {
+            return;
+        }
+
+        if (stats) {
+            stats->visitedShapes++;
+        }
+
+        const auto before = outTriangles.size();
+        const bool dynamic = isDynamicTriShape(triShape);
+        const bool skinned = isSkinned(triShape);
+
+        if (skinned) {
+            if (stats) {
+                stats->skinnedShapes++;
+            }
+            extractTrianglesFromSkinnedTriShape(triShape, outTriangles, &outSurfaceTriangles, allowPositionOnlySkinnedSurface);
+            const auto added = static_cast<std::uint32_t>(outTriangles.size() - before);
+            if (stats) {
+                stats->skinnedTriangles += added;
+                if (dynamic && added == 0) {
+                    stats->dynamicSkinnedSkipped++;
+                }
+            }
+        } else if (dynamic) {
+            if (stats) {
+                stats->dynamicShapes++;
+            }
+            extractTrianglesFromTriShape(triShape, outTriangles, &outSurfaceTriangles);
+            if (stats) {
+                stats->dynamicTriangles += static_cast<std::uint32_t>(outTriangles.size() - before);
+            }
+        } else {
+            if (stats) {
+                stats->staticShapes++;
+            }
+            extractTrianglesFromTriShape(triShape, outTriangles, &outSurfaceTriangles);
+            if (stats) {
+                stats->staticTriangles += static_cast<std::uint32_t>(outTriangles.size() - before);
+            }
+        }
+
+        if (stats && outTriangles.size() == before) {
+            stats->emptyShapes++;
+        }
+    }
+
+    inline void extractAllSurfaceTrianglesRecursive(RE::NiAVObject* root,
         std::vector<TriangleData>& outTriangles,
         std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles,
         int maxDepth = 10,
@@ -1007,47 +1063,7 @@ namespace rock
 
         auto* triShape = root->IsTriShape();
         if (triShape) {
-            if (stats) {
-                stats->visitedShapes++;
-            }
-
-            const auto before = outTriangles.size();
-            const bool dynamic = isDynamicTriShape(triShape);
-            const bool skinned = isSkinned(triShape);
-
-            if (skinned) {
-                if (stats) {
-                    stats->skinnedShapes++;
-                }
-                extractTrianglesFromSkinnedTriShape(triShape, outTriangles, &outSurfaceTriangles, allowPositionOnlySkinnedSurface);
-                const auto added = static_cast<std::uint32_t>(outTriangles.size() - before);
-                if (stats) {
-                    stats->skinnedTriangles += added;
-                    if (dynamic && added == 0) {
-                        stats->dynamicSkinnedSkipped++;
-                    }
-                }
-            } else if (dynamic) {
-                if (stats) {
-                    stats->dynamicShapes++;
-                }
-                extractTrianglesFromTriShape(triShape, outTriangles, &outSurfaceTriangles);
-                if (stats) {
-                    stats->dynamicTriangles += static_cast<std::uint32_t>(outTriangles.size() - before);
-                }
-            } else {
-                if (stats) {
-                    stats->staticShapes++;
-                }
-                extractTrianglesFromTriShape(triShape, outTriangles, &outSurfaceTriangles);
-                if (stats) {
-                    stats->staticTriangles += static_cast<std::uint32_t>(outTriangles.size() - before);
-                }
-            }
-
-            if (stats && outTriangles.size() == before) {
-                stats->emptyShapes++;
-            }
+            extractSurfaceTrianglesFromTriShape(triShape, outTriangles, outSurfaceTriangles, stats, allowPositionOnlySkinnedSurface);
             return;
         }
 
@@ -1057,9 +1073,66 @@ namespace rock
             for (auto i = decltype(kids.size()){ 0 }; i < kids.size(); i++) {
                 auto* kid = kids[i].get();
                 if (kid)
-                    extractAllSurfaceTriangles(kid, outTriangles, outSurfaceTriangles, maxDepth - 1, stats, grabNodeNameBlacklist, allowPositionOnlySkinnedSurface);
+                    extractAllSurfaceTrianglesRecursive(kid, outTriangles, outSurfaceTriangles, maxDepth - 1, stats, grabNodeNameBlacklist, allowPositionOnlySkinnedSurface);
             }
         }
+    }
+
+    inline void extractAllSurfaceTrianglesWithScenegraphVisitor(RE::NiAVObject* root,
+        std::vector<TriangleData>& outTriangles,
+        std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles,
+        MeshExtractionStats* stats = nullptr,
+        std::string_view grabNodeNameBlacklist = {},
+        bool allowPositionOnlySkinnedSurface = false)
+    {
+        if (!root) {
+            return;
+        }
+
+        /*
+         * Some loaded objects expose render geometry through the engine geometry
+         * visitor even when the selected root node itself is culled or otherwise
+         * not useful to the hand-rolled NiNode walk. Keep this as a zero-triangle
+         * recovery path so strict grab still requires real render geometry.
+         */
+        RE::BSVisit::TraverseScenegraphGeometries(root, [&](RE::BSGeometry* geometry) -> RE::BSVisit::BSVisitControl {
+            if (!geometry) {
+                return RE::BSVisit::BSVisitControl::kContinue;
+            }
+
+            auto* triShape = geometry->IsTriShape();
+            if (!triShape) {
+                return RE::BSVisit::BSVisitControl::kContinue;
+            }
+
+            if (triShape->flags.flags & 1) {
+                return RE::BSVisit::BSVisitControl::kContinue;
+            }
+
+            if (shouldSkipMeshExtractionNode(triShape, grabNodeNameBlacklist, stats)) {
+                return RE::BSVisit::BSVisitControl::kContinue;
+            }
+
+            extractSurfaceTrianglesFromTriShape(triShape, outTriangles, outSurfaceTriangles, stats, allowPositionOnlySkinnedSurface);
+            return RE::BSVisit::BSVisitControl::kContinue;
+        });
+    }
+
+    inline void extractAllSurfaceTriangles(RE::NiAVObject* root,
+        std::vector<TriangleData>& outTriangles,
+        std::vector<GrabSurfaceTriangleData>& outSurfaceTriangles,
+        int maxDepth = 10,
+        MeshExtractionStats* stats = nullptr,
+        std::string_view grabNodeNameBlacklist = {},
+        bool allowPositionOnlySkinnedSurface = false)
+    {
+        const auto beforeTriangles = outTriangles.size();
+        extractAllSurfaceTrianglesRecursive(root, outTriangles, outSurfaceTriangles, maxDepth, stats, grabNodeNameBlacklist, allowPositionOnlySkinnedSurface);
+        if (outTriangles.size() != beforeTriangles || !root || maxDepth <= 0) {
+            return;
+        }
+
+        extractAllSurfaceTrianglesWithScenegraphVisitor(root, outTriangles, outSurfaceTriangles, stats, grabNodeNameBlacklist, allowPositionOnlySkinnedSurface);
     }
 
     inline float dot(const RE::NiPoint3& a, const RE::NiPoint3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }

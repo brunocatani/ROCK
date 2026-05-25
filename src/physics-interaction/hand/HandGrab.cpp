@@ -5692,6 +5692,11 @@ namespace rock
 
         if (meshSourceNode) {
             const int meshExtractionDepth = (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth);
+            std::array<RE::NiAVObject*, 3> meshExtractionAttemptedRoots{};
+            std::uint32_t meshExtractionAttemptCount = 0;
+            const char* meshExtractionSource = "visual";
+            meshExtractionAttemptedRoots[meshExtractionAttemptCount++] = meshSourceNode;
+            const auto primaryBeforeTriangles = grabMeshTriangles.size();
             extractAllSurfaceTriangles(meshSourceNode,
                 grabMeshTriangles,
                 grabSurfaceTriangles,
@@ -5700,10 +5705,62 @@ namespace rock
                 g_rockConfig.rockGrabNodeNameBlacklist,
                 handPocketOnlyGrab);
 
+            const bool primaryMeshExtractionFound = grabMeshTriangles.size() != primaryBeforeTriangles;
+            auto tryExtractSurfaceTrianglesFromAlternateRoot = [&](RE::NiAVObject* candidateRoot, const char* sourceName) {
+                if (!candidateRoot) {
+                    return false;
+                }
+                for (std::uint32_t i = 0; i < meshExtractionAttemptCount; ++i) {
+                    if (meshExtractionAttemptedRoots[i] == candidateRoot) {
+                        return false;
+                    }
+                }
+                if (meshExtractionAttemptCount < meshExtractionAttemptedRoots.size()) {
+                    meshExtractionAttemptedRoots[meshExtractionAttemptCount] = candidateRoot;
+                }
+                ++meshExtractionAttemptCount;
+
+                const auto beforeTriangles = grabMeshTriangles.size();
+                extractAllSurfaceTriangles(candidateRoot,
+                    grabMeshTriangles,
+                    grabSurfaceTriangles,
+                    meshExtractionDepth,
+                    &meshStats,
+                    g_rockConfig.rockGrabNodeNameBlacklist,
+                    handPocketOnlyGrab);
+
+                if (grabMeshTriangles.size() == beforeTriangles) {
+                    return false;
+                }
+
+                if (candidateRoot != meshSourceNode) {
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} hand mesh extraction recovered from {} node: meshNode='{}' previousMeshNode='{}' ownerNode='{}' rootNode='{}' addedTris={} totalTris={}",
+                        handName(),
+                        sourceName,
+                        nodeDebugName(candidateRoot),
+                        nodeDebugName(meshSourceNode),
+                        nodeDebugName(collidableNode),
+                        nodeDebugName(rootNode),
+                        grabMeshTriangles.size() - beforeTriangles,
+                        grabMeshTriangles.size());
+                }
+                meshSourceNode = candidateRoot;
+                meshExtractionSource = sourceName;
+                return true;
+            };
+
+            if (!primaryMeshExtractionFound) {
+                if (!tryExtractSurfaceTrianglesFromAlternateRoot(collidableNode, "owner")) {
+                    (void)tryExtractSurfaceTrianglesFromAlternateRoot(rootNode, "root");
+                }
+            }
+
             ROCK_LOG_DEBUG(Hand,
                 "{} hand mesh extraction: meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} "
-                "static={}/{} dynamic={}/{} skinned={}/{} dynamicSkinnedSkipped={} emptyShapes={} blacklisted={} totalTris={}",
-                handName(), nodeDebugName(meshSourceNode), nodeDebugName(collidableNode), nodeDebugName(rootNode), meshStats.visitedShapes, meshStats.staticShapes,
+                "source={} attempts={} static={}/{} dynamic={}/{} skinned={}/{} dynamicSkinnedSkipped={} emptyShapes={} blacklisted={} totalTris={}",
+                handName(), nodeDebugName(meshSourceNode), nodeDebugName(collidableNode), nodeDebugName(rootNode), meshStats.visitedShapes, meshExtractionSource,
+                meshExtractionAttemptCount, meshStats.staticShapes,
                 meshStats.staticTriangles, meshStats.dynamicShapes, meshStats.dynamicTriangles, meshStats.skinnedShapes, meshStats.skinnedTriangles,
                 meshStats.dynamicSkinnedSkipped, meshStats.emptyShapes, meshStats.blacklistedShapes, meshStats.totalTriangles());
 
