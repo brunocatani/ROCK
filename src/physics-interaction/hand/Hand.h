@@ -719,6 +719,7 @@ namespace rock
             RE::NiMatrix3 transformBRotation{};
             std::array<float, 12> targetBRcaRaw{};
             RE::NiPoint3 requiredAxisWorld{};
+            RE::NiPoint3 requiredAxisProxyLocal{};
             RE::NiPoint3 angularVelocityBeforeRadians{};
             float beforeErrorDegrees = -1.0f;
             float beforeGripErrorGameUnits = -1.0f;

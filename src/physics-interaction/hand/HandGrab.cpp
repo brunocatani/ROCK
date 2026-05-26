@@ -219,6 +219,11 @@ namespace rock
             return normalizeOrZero(angularVelocityFromRotationDelta(current, target, 1.0f));
         }
 
+        RE::NiPoint3 rotationAxisProxyLocal(const RE::NiMatrix3& proxyWorldRotation, const RE::NiPoint3& axisWorld)
+        {
+            return normalizeOrZero(transform_math::rotateWorldVectorToLocal(proxyWorldRotation, axisWorld));
+        }
+
         bool computeHardKeyframeVelocityForTarget(
             RE::hknpWorld* world,
             RE::hknpBodyId bodyId,
@@ -9449,6 +9454,10 @@ namespace rock
                                     std::fabs(_activeConstraint.linearMotor->minForce),
                                     std::fabs(_activeConstraint.linearMotor->maxForce)) :
                                 0.0f;
+                            const RE::NiPoint3 requiredAxisWorld = rotationCorrectionAxisWorld(bodyWorldBeforeSolve.rotate, desiredBodyWorld.rotate);
+                            const RE::NiPoint3 requiredAxisProxyLocal = bodyAWorldBeforeSolveOk ?
+                                rotationAxisProxyLocal(bodyAWorldBeforeSolve.rotate, requiredAxisWorld) :
+                                RE::NiPoint3{};
                             _ragdollAngularProbePreSolve = RagdollAngularProbePreSolve{
                                 .objectBodyId = _savedObjectState.bodyId,
                                 .desiredBodyWorld = desiredBodyWorld,
@@ -9457,7 +9466,8 @@ namespace rock
                                 .transformARotation = transformAAsHkColumns,
                                 .transformBRotation = transformBAsHkColumns,
                                 .targetBRcaRaw = targetBRcaRaw,
-                                .requiredAxisWorld = rotationCorrectionAxisWorld(bodyWorldBeforeSolve.rotate, desiredBodyWorld.rotate),
+                                .requiredAxisWorld = requiredAxisWorld,
+                                .requiredAxisProxyLocal = requiredAxisProxyLocal,
                                 .angularVelocityBeforeRadians = angularVelocityBeforeSolve,
                                 .beforeErrorDegrees = rotationDeltaDegrees(bodyWorldBeforeSolve.rotate, desiredBodyWorld.rotate),
                                 .beforeGripErrorGameUnits = pointDistanceGameUnits(liveGripBeforeSolve, desiredTargetPointWorld),
@@ -9744,6 +9754,15 @@ namespace rock
             }
 
             const RE::NiPoint3 velocityAxisAfterSolve = normalizeOrZero(angularVelocityAfterSolve);
+            /*
+             * Keep the response axis in the same proxy-local basis as the required
+             * correction axis so left/right parity can be compared without a moving
+             * world-space frame hiding mirrored sign errors.
+             */
+            const RE::NiPoint3 velocityAxisProxyLocal =
+                ragdollAngularProbePreSolve.bodyAWorldValid ?
+                rotationAxisProxyLocal(ragdollAngularProbePreSolve.bodyAWorldBefore.rotate, velocityAxisAfterSolve) :
+                RE::NiPoint3{};
             const float axisDot = dotProduct(ragdollAngularProbePreSolve.requiredAxisWorld, velocityAxisAfterSolve);
             const float angularSpeedBefore = vectorMagnitude(ragdollAngularProbePreSolve.angularVelocityBeforeRadians);
             const float angularSpeedAfter = vectorMagnitude(angularVelocityAfterSolve);
@@ -9767,7 +9786,7 @@ namespace rock
             if (shouldLogRagdollProbe) {
                 ROCK_LOG_SAMPLE_WARN(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} RAGDOLL ANGULAR PROBE: seq={}/{} afterSeq={} probeSeq={} stale={} substep={}/{} beforeErr={:.1f}deg afterErr={:.1f}deg reduce={:.1f}deg axisDot={:.2f} reqAxis=({:.2f},{:.2f},{:.2f}) velAxis=({:.2f},{:.2f},{:.2f}) beforeAng={:.2f}rad/s afterAng={:.2f}rad/s forceA={:.0f} forceL={:.0f} tau={:.3f} damp={:.2f} ragdoll={} targetRowsInv={:.1f}deg targetColsToB={:.1f}deg gripBefore={:.2f}gu gripAfter={:.2f}gu pivotLever={:.2f}gu angularRef={} phase={} body={} motion={}",
+                    "{} RAGDOLL ANGULAR PROBE: seq={}/{} afterSeq={} probeSeq={} stale={} substep={}/{} beforeErr={:.1f}deg afterErr={:.1f}deg reduce={:.1f}deg axisDot={:.2f} reqAxis=({:.2f},{:.2f},{:.2f}) velAxis=({:.2f},{:.2f},{:.2f}) reqAxisProxy=({:.2f},{:.2f},{:.2f}) velAxisProxy=({:.2f},{:.2f},{:.2f}) beforeAng={:.2f}rad/s afterAng={:.2f}rad/s forceA={:.0f} forceL={:.0f} tau={:.3f} damp={:.2f} ragdoll={} targetRowsInv={:.1f}deg targetColsToB={:.1f}deg gripBefore={:.2f}gu gripAfter={:.2f}gu pivotLever={:.2f}gu angularRef={} phase={} body={} motion={}",
                     handName(),
                     flushSequence,
                     queuedSequence,
@@ -9786,6 +9805,12 @@ namespace rock
                     velocityAxisAfterSolve.x,
                     velocityAxisAfterSolve.y,
                     velocityAxisAfterSolve.z,
+                    ragdollAngularProbePreSolve.requiredAxisProxyLocal.x,
+                    ragdollAngularProbePreSolve.requiredAxisProxyLocal.y,
+                    ragdollAngularProbePreSolve.requiredAxisProxyLocal.z,
+                    velocityAxisProxyLocal.x,
+                    velocityAxisProxyLocal.y,
+                    velocityAxisProxyLocal.z,
                     angularSpeedBefore,
                     angularSpeedAfter,
                     ragdollAngularProbePreSolve.angularMotorMaxForce,
@@ -9865,7 +9890,7 @@ namespace rock
 
                 ROCK_LOG_SAMPLE_WARN(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} RAGDOLL FRAME ERROR: seq={}/{} appearsSolve=bRcaRows bRcaRowsErr={:.1f}deg bRcaColsErr={:.1f}deg aRcbRowsInvErr={:.1f}deg aRcbColsInvErr={:.1f}deg intendedBodyErr={:.1f}->{:.1f}deg targetRowsInv={:.1f}deg targetColsToB={:.1f}deg",
+                    "{} RAGDOLL FRAME ERROR: seq={}/{} appearsSolve=bRcaRows bRcaRowsErr={:.1f}deg bRcaColsErr={:.1f}deg aRcbRowsInvErr={:.1f}deg aRcbColsInvErr={:.1f}deg intendedBodyErr={:.1f}->{:.1f}deg targetRowsInv={:.1f}deg targetColsToB={:.1f}deg reqAxisProxy=({:.2f},{:.2f},{:.2f})",
                     handName(),
                     flushSequence,
                     queuedSequence,
@@ -9876,7 +9901,10 @@ namespace rock
                     ragdollAngularProbePreSolve.beforeErrorDegrees,
                     afterErrorDegrees,
                     ragdollAngularProbePreSolve.targetRowsToConstraintInverseDegrees,
-                    ragdollAngularProbePreSolve.targetColumnsToTransformBDegrees);
+                    ragdollAngularProbePreSolve.targetColumnsToTransformBDegrees,
+                    ragdollAngularProbePreSolve.requiredAxisProxyLocal.x,
+                    ragdollAngularProbePreSolve.requiredAxisProxyLocal.y,
+                    ragdollAngularProbePreSolve.requiredAxisProxyLocal.z);
             }
         }
 
@@ -9888,7 +9916,7 @@ namespace rock
         if (likelyRawProxyFrameMismatch) {
             ROCK_LOG_SAMPLE_WARN(Hand,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "{} PROXY GRAB FRAME MISMATCH: seq={}/{} afterSeq={} substep={}/{} rawToProxyTarget={:.1f}deg rawToProxyLive={:.1f}deg targetAxisDeg=({:.1f},{:.1f},{:.1f}) liveAxisDeg=({:.1f},{:.1f},{:.1f}) determinantTarget=({:.3f},{:.3f}) determinantLive=({:.3f},{:.3f}) proxyErr={:.2f}gu/{:.1f}deg objectErr={:.2f}gu/{:.1f}deg gripErr={:.2f}gu transformBDelta={:.2f}gu targetRowsInv={:.1f}deg targetColsToTransformB={:.1f}deg angularRef={} proxySrc={} objectSrc={} phase={} pivotB=({:.2f},{:.2f},{:.2f})",
+                "{} PROXY GRAB FRAME MISMATCH: seq={}/{} afterSeq={} substep={}/{} rawToProxyTarget={:.1f}deg rawToProxyLive={:.1f}deg targetAxisDeg=({:.1f},{:.1f},{:.1f}) liveAxisDeg=({:.1f},{:.1f},{:.1f}) determinantTarget=({:.3f},{:.3f}) determinantLive=({:.3f},{:.3f}) proxyErr={:.2f}gu/{:.1f}deg objectErr={:.2f}gu/{:.1f}deg gripErr={:.2f}gu transformBDelta={:.2f}gu targetRowsInv={:.1f}deg targetColsToTransformB={:.1f}deg reqAxisProxy=({:.2f},{:.2f},{:.2f}) angularRef={} proxySrc={} objectSrc={} phase={} pivotB=({:.2f},{:.2f},{:.2f})",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -9915,6 +9943,9 @@ namespace rock
                 hasConstraintFrameMetrics ? constraintTransformBLocalDeltaGameUnits : -1.0f,
                 hasConstraintFrameMetrics ? targetRowsToConstraintInverseDegrees : -1.0f,
                 hasConstraintFrameMetrics ? targetColumnsToTransformBDegrees : -1.0f,
+                ragdollAngularProbePreSolve.requiredAxisProxyLocal.x,
+                ragdollAngularProbePreSolve.requiredAxisProxyLocal.y,
+                ragdollAngularProbePreSolve.requiredAxisProxyLocal.z,
                 kGrabObjectRotationReferenceName,
                 body_frame::bodyFrameSourceCode(proxySource),
                 body_frame::bodyFrameSourceCode(objectSource),
