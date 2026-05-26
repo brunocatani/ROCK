@@ -146,32 +146,58 @@ int main()
     }
 
     {
-        RE::NiTransform desiredBodyTransformHandSpace = identityTransform();
-        desiredBodyTransformHandSpace.rotate = rotationAroundZ(kPi * 0.5f);
-        const RE::NiMatrix3 expectedBodyToHand =
-            rock::grab_constraint_math::desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
+        RE::NiTransform proxyWorld = identityTransform();
+        proxyWorld.translate = RE::NiPoint3{ 3.0f, -2.0f, 5.0f };
+        proxyWorld.rotate = rotationAroundZ(kPi * 0.25f);
 
-        float transformBRotation[12]{};
+        RE::NiTransform rawAuthorityWorld = identityTransform();
+        rawAuthorityWorld.translate = RE::NiPoint3{ 5.0f, 4.0f, -1.0f };
+        rawAuthorityWorld.rotate = rotationAroundX(kPi * 0.5f);
+
+        RE::NiTransform bodyInAuthority = identityTransform();
+        bodyInAuthority.translate = RE::NiPoint3{ -1.5f, 2.0f, 0.5f };
+        bodyInAuthority.rotate = rotationAroundZ(-kPi * 0.5f);
+        const RE::NiTransform desiredBodyWorld =
+            rock::grab_constraint_math::computeDesiredBodyWorld(rawAuthorityWorld, bodyInAuthority);
+
+        const RE::NiTransform frameA =
+            rock::grab_constraint_math::computeConstraintFrameInBodySpace(proxyWorld, rawAuthorityWorld);
+        const RE::NiTransform frameB =
+            rock::grab_constraint_math::computeConstraintFrameInBodySpace(desiredBodyWorld, rawAuthorityWorld);
+
+        ok &= expectTransformClose(
+            "constraint A reconstructs raw authority",
+            rock::transform_math::composeTransforms(proxyWorld, frameA),
+            rawAuthorityWorld);
+        ok &= expectTransformClose(
+            "constraint B reconstructs raw authority",
+            rock::transform_math::composeTransforms(desiredBodyWorld, frameB),
+            rawAuthorityWorld);
+
+        float transformARotation[12]{};
+        float transformATranslation[4]{};
+        rock::grab_constraint_math::writeConstraintLocalTransform(transformARotation, transformATranslation, frameA, 2.0f);
+        ok &= expectNear(
+            "transform A columns carry raw-authority local rotation",
+            rotationDeltaDegrees(matrixFromRawColumns(transformARotation), frameA.rotate),
+            0.0f,
+            0.01f);
+        ok &= expectNear("transform A translation x scales to Havok", transformATranslation[0], frameA.translate.x * 2.0f, 0.001f);
+        ok &= expectNear("transform A translation y scales to Havok", transformATranslation[1], frameA.translate.y * 2.0f, 0.001f);
+        ok &= expectNear("transform A translation z scales to Havok", transformATranslation[2], frameA.translate.z * 2.0f, 0.001f);
+
         float targetBRca[12]{};
-        rock::grab_constraint_math::writeInitialGrabAngularFrame(
-            transformBRotation,
-            targetBRca,
-            desiredBodyTransformHandSpace);
-
+        rock::grab_constraint_math::writeIdentityRagdollTarget(targetBRca);
         ok &= expectNear(
-            "transformB columns carry body-to-hand rotation",
-            rotationDeltaDegrees(matrixFromRawColumns(transformBRotation), expectedBodyToHand),
+            "target_bRca rows stay identity",
+            rotationDeltaDegrees(matrixFromRawRows(targetBRca), identityTransform().rotate),
             0.0f,
             0.01f);
         ok &= expectNear(
-            "target solver rows carry body-to-hand rotation",
-            rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedBodyToHand),
+            "target_bRca columns stay identity",
+            rotationDeltaDegrees(matrixFromRawColumns(targetBRca), identityTransform().rotate),
             0.0f,
             0.01f);
-        if (rotationDeltaDegrees(matrixFromRawColumns(targetBRca), expectedBodyToHand) <= 1.0f) {
-            std::printf("target_bRca column interpretation unexpectedly matches the solver-row convention\n");
-            ok = false;
-        }
     }
 
     {

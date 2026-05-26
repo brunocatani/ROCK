@@ -174,9 +174,17 @@ int main()
             RE::NiPoint3{ 2.0f, 0.0f, 0.0f },
             0.001f);
 
+        const RE::NiTransform rawAuthorityFrame =
+            authority::makeRawAuthorityFrame(rawHandWorld, pivotAWorld);
+        const RE::NiTransform recomposedDesiredObject =
+            rock::transform_math::composeTransforms(rawAuthorityFrame, frozen.rawAuthorityObjectSpace);
+        ok &= expectPointNear("frozen object relation recomposes through raw authority frame",
+            recomposedDesiredObject.translate,
+            frozen.desiredObjectWorld.translate,
+            0.001f);
         const RE::NiTransform recomposedDesiredBody =
-            rock::transform_math::composeTransforms(proxyWorld, frozen.rawRotationProxyBodyHandSpace);
-        ok &= expectPointNear("frozen body relation recomposes through proxy frame",
+            rock::transform_math::composeTransforms(rawAuthorityFrame, frozen.rawAuthorityBodySpace);
+        ok &= expectPointNear("frozen body relation recomposes through raw authority frame",
             recomposedDesiredBody.translate,
             frozen.desiredBodyWorld.translate,
             0.001f);

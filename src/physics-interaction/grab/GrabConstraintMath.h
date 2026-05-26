@@ -8,14 +8,11 @@
 namespace rock::grab_constraint_math
 {
     /*
-     * ROCK creates grab angular constraints in the object-to-hand frame and
-     * refreshes the object-space transform-B pivot from that same frame during
-     * every held update. Transform A comes from the live physics hand, so a
-     * frozen transform-B pivot makes the linear and angular goals disagree: the
-     * pivot can be visually locked while the held body cannot rotate into the
-     * desired frame. Keeping both target_bRca and transformB.translation
-     * conversions here makes constraint creation and per-frame writes use one
-     * verified convention.
+     * ROCK writes the raw hand authority frame into both constraint local frames:
+     * transform A is proxyBody^-1 * rawAuthority, transform B is desiredBody^-1 *
+     * rawAuthority, and target_bRca remains identity. That keeps Havok's live
+     * BRca and the authored target in one convention instead of feeding a
+     * mirrored hand relation directly to the ragdoll motor.
      */
 
     /*
@@ -42,12 +39,6 @@ namespace rock::grab_constraint_math
     }
 
     template <class Matrix>
-    inline Matrix desiredBodyToHandRotation(const Matrix& desiredBodyTransformHandSpaceRotation)
-    {
-        return transform_math::transposeRotation(desiredBodyTransformHandSpaceRotation);
-    }
-
-    template <class Matrix>
     inline void writeHavokRotationColumns(float* target, const Matrix& rotation)
     {
         if (!target) {
@@ -70,89 +61,58 @@ namespace rock::grab_constraint_math
         target[11] = 0.0f;
     }
 
-    template <class Matrix>
-    inline void writeHavokRotationRows(float* target, const Matrix& rotation)
+    inline void writeIdentityRagdollTarget(float* targetBRca)
     {
-        if (!target) {
+        if (!targetBRca) {
             return;
         }
 
-        target[0] = rotation.entry[0][0];
-        target[1] = rotation.entry[0][1];
-        target[2] = rotation.entry[0][2];
-        target[3] = 0.0f;
+        targetBRca[0] = 1.0f;
+        targetBRca[1] = 0.0f;
+        targetBRca[2] = 0.0f;
+        targetBRca[3] = 0.0f;
 
-        target[4] = rotation.entry[1][0];
-        target[5] = rotation.entry[1][1];
-        target[6] = rotation.entry[1][2];
-        target[7] = 0.0f;
+        targetBRca[4] = 0.0f;
+        targetBRca[5] = 1.0f;
+        targetBRca[6] = 0.0f;
+        targetBRca[7] = 0.0f;
 
-        target[8] = rotation.entry[2][0];
-        target[9] = rotation.entry[2][1];
-        target[10] = rotation.entry[2][2];
-        target[11] = 0.0f;
+        targetBRca[8] = 0.0f;
+        targetBRca[9] = 0.0f;
+        targetBRca[10] = 1.0f;
+        targetBRca[11] = 0.0f;
     }
 
     template <class Transform>
-    inline void writeInitialGrabAngularFrame(float* transformBRotation, float* targetBRca, const Transform& desiredBodyTransformHandSpace)
+    inline Transform computeConstraintFrameInBodySpace(const Transform& bodyWorld, const Transform& authorityFrameWorld)
     {
-        /*
-         * Dynamic grab writes a custom FO4VR hknp atom chain directly, and the
-         * two angular byte consumers do not use the same storage view. The
-         * set-local-transforms atom consumes transform-B as hkMatrix column
-         * blocks, while in-game snap telemetry showed the ragdoll motor target
-         * converging to the row/forward interpretation on top grabs. Keep
-         * transform-B in column storage, but write target_bRca so its solver-row
-         * view carries the inverse body-to-hand relation.
-         */
-        const auto bodyToHandRotation = desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
-        writeHavokRotationColumns(transformBRotation, bodyToHandRotation);
-        writeHavokRotationRows(targetBRca, bodyToHandRotation);
+        return transform_math::composeTransforms(transform_math::invertTransform(bodyWorld), authorityFrameWorld);
     }
 
-    template <class Transform, class Vector>
-    inline Vector computeConstraintPivotLocalGame(const Transform& bodyWorld, const Vector& pivotWorld)
+    template <class Transform>
+    inline Transform computeDesiredBodyWorld(const Transform& authorityFrameWorld, const Transform& bodyInAuthorityFrame)
     {
-        return transform_math::worldPointToLocal(bodyWorld, pivotWorld);
+        return transform_math::composeTransforms(authorityFrameWorld, bodyInAuthorityFrame);
     }
 
-    template <class Transform, class Vector>
-    inline void writeConstraintPivotLocalTranslation(float* constraintTranslation,
-        const Transform& bodyWorld,
-        const Vector& pivotWorld,
-        float gameToHavokScale)
+    template <class Transform>
+    inline Transform computeDesiredObjectWorld(const Transform& authorityFrameWorld, const Transform& objectInAuthorityFrame)
     {
-        if (!constraintTranslation) {
+        return transform_math::composeTransforms(authorityFrameWorld, objectInAuthorityFrame);
+    }
+
+    template <class Transform>
+    inline void writeConstraintLocalTransform(float* transformRotation, float* transformTranslation, const Transform& frameInBodySpace, float gameToHavokScale)
+    {
+        writeHavokRotationColumns(transformRotation, frameInBodySpace.rotate);
+        if (!transformTranslation) {
             return;
         }
 
-        const Vector pivotLocalGame = computeConstraintPivotLocalGame(bodyWorld, pivotWorld);
-        constraintTranslation[0] = pivotLocalGame.x * gameToHavokScale;
-        constraintTranslation[1] = pivotLocalGame.y * gameToHavokScale;
-        constraintTranslation[2] = pivotLocalGame.z * gameToHavokScale;
-        constraintTranslation[3] = 0.0f;
+        transformTranslation[0] = frameInBodySpace.translate.x * gameToHavokScale;
+        transformTranslation[1] = frameInBodySpace.translate.y * gameToHavokScale;
+        transformTranslation[2] = frameInBodySpace.translate.z * gameToHavokScale;
+        transformTranslation[3] = 0.0f;
     }
 
-    template <class Transform, class Vector>
-    inline Vector computeDynamicTransformBTranslationGame(const Transform& desiredBodyTransformHandSpace, const Vector& pivotAHandBodyLocalGame)
-    {
-        return transform_math::localPointToWorld(transform_math::invertTransform(desiredBodyTransformHandSpace), pivotAHandBodyLocalGame);
-    }
-
-    template <class Transform, class Vector>
-    inline void writeDynamicTransformBTranslation(float* transformBTranslation,
-        const Transform& desiredBodyTransformHandSpace,
-        const Vector& pivotAHandBodyLocalGame,
-        float gameToHavokScale)
-    {
-        if (!transformBTranslation) {
-            return;
-        }
-
-        const Vector transformBTranslationGame = computeDynamicTransformBTranslationGame(desiredBodyTransformHandSpace, pivotAHandBodyLocalGame);
-        transformBTranslation[0] = transformBTranslationGame.x * gameToHavokScale;
-        transformBTranslation[1] = transformBTranslationGame.y * gameToHavokScale;
-        transformBTranslation[2] = transformBTranslationGame.z * gameToHavokScale;
-        transformBTranslation[3] = 0.0f;
-    }
 }

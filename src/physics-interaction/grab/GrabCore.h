@@ -525,6 +525,8 @@ namespace rock
     struct CanonicalGrabFrame
     {
         RE::NiTransform rawHandSpace{};
+        RE::NiTransform rawAuthorityObjectSpace{};
+        RE::NiTransform rawAuthorityBodySpace{};
         RE::NiTransform rawRotationProxyHandSpace{};
         RE::NiTransform rawRotationProxyBodyHandSpace{};
         RE::NiTransform handBodyToRawHandAtGrab{};
@@ -670,6 +672,8 @@ namespace rock
         void clear()
         {
             rawHandSpace = RE::NiTransform();
+            rawAuthorityObjectSpace = RE::NiTransform();
+            rawAuthorityBodySpace = RE::NiTransform();
             rawRotationProxyHandSpace = RE::NiTransform();
             rawRotationProxyBodyHandSpace = RE::NiTransform();
             handBodyToRawHandAtGrab = RE::NiTransform();
@@ -1055,6 +1059,14 @@ namespace rock::grab_authority_frame_math
         bool visualNormalValid = false;
     };
 
+    template <class Transform, class Vector>
+    inline Transform makeRawAuthorityFrame(const Transform& rawHandWorld, const Vector& authorityOriginWorld)
+    {
+        Transform result = rawHandWorld;
+        result.translate = authorityOriginWorld;
+        return result;
+    }
+
     template <class Transform>
     struct FrozenGrabAuthorityFrame
     {
@@ -1076,6 +1088,8 @@ namespace rock::grab_authority_frame_math
         Transform rawHandSpace{};
         Transform handBodyToRawHandAtGrab{};
         Vector pivotAHandBodyLocalGame{};
+        Transform rawAuthorityObjectSpace{};
+        Transform rawAuthorityBodySpace{};
         Transform rawRotationProxyHandSpace{};
         Transform rawRotationProxyBodyHandSpace{};
         Vector visualNormalWorld{};
@@ -1138,6 +1152,11 @@ namespace rock::grab_authority_frame_math
         frozen.pivotAHandBodyLocalGame = splitFrame.pivotAHandBodyLocal;
         frozen.pivotBBodyLocalGame = transform_math::worldPointToLocal(input.bodyWorld, input.gripPointWorld);
         frozen.pivotBConstraintLocalGame = transform_math::worldPointToLocal(input.constraintBodyWorld, input.gripPointWorld);
+        const Transform rawAuthorityFrameWorld = makeRawAuthorityFrame(input.rawHandWorld, input.pivotAWorld);
+        frozen.rawAuthorityObjectSpace =
+            grab_frame_math::objectInFrameSpace(rawAuthorityFrameWorld, frozen.desiredObjectWorld);
+        frozen.rawAuthorityBodySpace =
+            grab_frame_math::objectInFrameSpace(rawAuthorityFrameWorld, frozen.desiredBodyWorld);
         frozen.rawRotationProxyHandSpace =
             grab_frame_math::objectInFrameSpace(input.rawRotationProxyFrameWorld, frozen.desiredObjectWorld);
         frozen.rawRotationProxyBodyHandSpace =
@@ -1148,6 +1167,8 @@ namespace rock::grab_authority_frame_math
             isFiniteTransform(frozen.bodyLocal) &&
             isFiniteTransform(frozen.desiredBodyWorld) &&
             isFiniteTransform(frozen.rawHandSpace) &&
+            isFiniteTransform(frozen.rawAuthorityObjectSpace) &&
+            isFiniteTransform(frozen.rawAuthorityBodySpace) &&
             isFiniteTransform(frozen.rawRotationProxyHandSpace) &&
             isFiniteTransform(frozen.rawRotationProxyBodyHandSpace);
         return frozen;
