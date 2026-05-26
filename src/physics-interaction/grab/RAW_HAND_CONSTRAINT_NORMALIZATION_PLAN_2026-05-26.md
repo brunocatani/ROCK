@@ -6,39 +6,11 @@ Branch at planning time: `feature/ghidra-grab-motor-mapping`
 
 ## Status
 
-Implemented in the working tree; awaiting final full-suite validation and commit.
-
-Progress log:
-
-- 2026-05-26: Runtime logs showed `feedErrProxyAngle=0.0deg` while
-  `bRcaErrProxyAngle` stayed large, proving the target write was internally
-  consistent but the live A/B solver frames were authored under a different
-  contract.
-- 2026-05-26: Authority origin locked to the active pivot A world point. The
-  authority frame uses raw hand rotation plus active pivot A translation. This
-  preserves the physical grab pivot while allowing body A and body B local
-  frames to reconstruct the same raw-authority frame.
-- 2026-05-26: Runtime conversion implemented: capture now stores
-  `rawAuthorityObjectSpace` and `rawAuthorityBodySpace`; creation and held
-  updates write `transformA = proxyBody^-1 * rawAuthorityWorld`,
-  `transformB = desiredBody^-1 * rawAuthorityWorld`.
-- 2026-05-26: Ghidra audit corrected the motor-feed assumption. FO4VR
-  `NpJacobianBuilder::buildJacobianFromRagdollMotorAtom_hkpConstraintQueryIn_`
-  at `0x141a5f3b0` calls the target-basis helper at `0x1417d05f0`, which
-  transforms `target_bRca` rows from the base body-B frame. Therefore
-  `target_bRca` must carry the same body-B-local raw-authority rotation as
-  `transformB`, written as rows. Identity is only correct when transform B has
-  identity rotation.
-- 2026-05-26: Debug/telemetry paths updated to report the target-vs-transformB
-  invariant and proxy-local signed axis decomposition from the live constraint
-  frames.
-- 2026-05-26: Validation so far: `custom-fast` Release build passed and
-  auto-deployed; `custom-tests` policy binaries built; source-boundary ctest
-  passed.
+Planning only. No code changes are part of this note.
 
 ## Goal
 
-Track the implementation of a **full raw-authority constraint-space normalization** of ROCK dynamic grab, without repeating the partial conversions that were already tried and reverted.
+Document a future implementation plan for a **full raw-authority constraint-space normalization** of ROCK dynamic grab, without repeating the partial conversions that were already tried and reverted.
 
 This plan is specifically for the "proper raw-hand conversion" contract, not for another one-off tweak to proxy rotation, transform A, or target bytes in isolation.
 
@@ -71,11 +43,11 @@ The required pieces are:
 6. `desiredBodyWorld` telemetry / drive target
 7. Pivot A / B local translations
 
-The implementation is only correct if those seven items agree on one contract.
+A future implementation is only correct if those seven items agree on one contract.
 
-## Previous production contract (baseline)
+## Current production contract (baseline)
 
-The previous production behavior was effectively the coherent **proxy-A contract**:
+Current production behavior is effectively the coherent **proxy-A contract**:
 
 - Body A physical body = hidden proxy body
 - Body A world frame = generated palm/proxy frame with runtime seat offset
@@ -87,9 +59,9 @@ The previous production behavior was effectively the coherent **proxy-A contract
 
 This is internally consistent enough to run, but it leaves a persistent raw-vs-proxy basis mismatch when the live proxy body A orientation differs from the raw angular target frame.
 
-## Implemented target contract
+## Target future contract
 
-The implemented path is the full **Option B** conversion:
+This note is for a full **Option B** conversion:
 
 - Body A physical body:
   - still the hidden proxy body
@@ -102,8 +74,7 @@ The implemented path is the full **Option B** conversion:
 - `transformB`:
   - `desiredBodyWorld^-1 * rawAuthorityFrame`
 - `target_bRca`:
-  - rows of `desiredBodyWorld^-1 * rawAuthorityFrame`
-  - same logical rotation as `transformB`, but stored in the ragdoll motor's row view
+  - identity-equivalent zero-error target in FO4VR's actual solver byte convention
 - `desiredBodyWorld`:
   - `rawAuthorityFrame * frozenBodyInRawAuthorityFrame`
 - Pivot A:
@@ -117,7 +88,7 @@ At the desired pose:
 
 - `world(transformA on body A) == rawAuthorityFrame`
 - `world(transformB on body B) == rawAuthorityFrame`
-- `target_bRca` transforms base body-B axes to the desired raw-authority axes in FO4VR's real ragdoll motor convention
+- `target_bRca` encodes zero angular error between those two frames in FO4VR's real ragdoll motor convention
 
 That is the invariant the implementation must satisfy.
 
@@ -129,13 +100,13 @@ Under Option B, the success metrics become:
 
 - constraint frame A world vs raw authority world
 - constraint frame B world vs raw authority world
-- target rows vs transform-B rotation
+- zero-error encoding in `target_bRca`
 - stable grip / pivot behavior
 - no persistent long-path angular correction on left hand
 
 ## What must not happen again
 
-This implementation must not do any of these partial states:
+The future attempt must not do any of these partial states:
 
 ### Bad partial state A
 
@@ -159,17 +130,15 @@ This moves body A world behavior without converting the solver contract.
 
 This converts B bytes without converting the capture/telemetry contract that produced them.
 
-## Locked architectural decision
+## Open architectural decision that must be locked first
 
-The **raw authority frame origin** is the active pivot A world point.
+Before touching runtime code, we must lock one explicit answer for the **raw authority frame origin**.
 
-The raw authority frame is:
+Possible origins:
 
-```text
-rawAuthorityWorld.rotate    = rawHandWorld.rotate
-rawAuthorityWorld.translate = activePivotAWorld
-rawAuthorityWorld.scale     = rawHandWorld.scale
-```
+1. proxy body origin / seat origin
+2. active pivot A world point
+3. another derived translation that stays constant across startup capture and held updates
 
 This choice matters because it determines:
 
@@ -178,43 +147,9 @@ This choice matters because it determines:
 - how `transformB.translation` must be derived
 - whether current telemetry names remain truthful
 
-The old `rawRotationProxyBodyHandSpace` field cannot be the runtime solver
-contract anymore because its origin is the proxy/seat origin. It may remain as
-legacy telemetry, but runtime constraint frames must use the new
-`rawAuthorityObjectSpace` and `rawAuthorityBodySpace` relations.
+### Rule
 
-### Runtime equations
-
-At capture:
-
-```text
-rawAuthorityAtGrab = raw hand rotation + pivotAWorld translation
-rawAuthorityObjectSpace = inverse(rawAuthorityAtGrab) * desiredObjectWorld
-rawAuthorityBodySpace   = inverse(rawAuthorityAtGrab) * desiredBodyWorld
-```
-
-At creation and held update:
-
-```text
-rawAuthorityWorld = raw hand rotation + activePivotAWorld translation
-desiredObjectWorld = rawAuthorityWorld * rawAuthorityObjectSpace
-desiredBodyWorld   = rawAuthorityWorld * rawAuthorityBodySpace
-
-transformA = inverse(proxyBodyWorld) * rawAuthorityWorld
-transformB = inverse(desiredBodyWorld) * rawAuthorityWorld
-target_bRca rows = rotation(transformB)
-```
-
-Required reconstruction invariant:
-
-```text
-proxyBodyWorld * transformA == rawAuthorityWorld
-desiredBodyWorld * transformB == rawAuthorityWorld
-```
-
-The physical proxy body remains driven from the generated palm/proxy frame. The
-constraint frame inside body A is what adapts that physical body into raw hand
-rotation space.
+Do not start implementation until the authority-frame translation policy is written down in exact terms.
 
 ## Expected impact by subsystem
 
@@ -222,7 +157,7 @@ rotation space.
 
 Relevant because it defines startup capture and runtime proxy offset helpers.
 
-Implemented role:
+Future role:
 
 - keep startup capture and runtime offset helpers explicit
 - do **not** silently blur generated proxy seat math with raw-authority constraint-frame math
@@ -236,7 +171,7 @@ Relevant because it defines:
 - `tryComputeGrabRawRollPalmPocketPivotAWorld(...)`
 - `computeGrabStartupCapturePivotAWorld(...)`
 
-Implemented role:
+Future role:
 
 - startup capture pivot logic must remain coherent with whichever translation policy is chosen for raw authority
 - do not let held-update constraint-frame math quietly diverge from startup capture pivot authority
@@ -253,7 +188,7 @@ Critical areas:
 - `resolveGrabAuthorityProxyFrame(...)`
 - after-solve telemetry / anomaly logging
 
-Implemented role:
+Future role:
 
 - separate these concepts explicitly:
   - physical proxy body world frame
@@ -267,44 +202,49 @@ Implemented role:
 
 Relevant because this is where constraint bytes are authored.
 
-Implemented role:
+Future role:
 
-- `transformA` and `transformB` must both be authored from the same raw-authority frame contract
+- `transformA` and `transformB` must both be authored from the same future frame contract
 - `target_bRca` must be derived from the same exact contract, not from a separate shortcut path
 - creation-time writes and per-frame writes must share the same math
 
 ### `src/physics-interaction/grab/GrabConstraintMath.h`
 
-This is the single source of truth for the raw-authority contract math.
+This should become the single source of truth for the future contract math.
 
-Implemented role:
+Future role:
 
 - pure helpers only
 - no ambiguous "hand space" names if the real meaning is "raw authority frame" or "solver frame"
 - add explicit helpers for:
   - frame A derivation
   - frame B derivation
-  - body-B-local `target_bRca` row encoding
+  - identity-equivalent `target_bRca` encoding
   - pivot translation derivation under the new contract
 
-## Data contract changes
+## Data contract changes likely required
 
-The frozen frame now carries explicit raw-authority relations while keeping the
-old raw-rotation proxy fields only as legacy telemetry/capture context.
+The current frozen field names are tied to the old contract. Before implementation, decide whether to keep or rename them.
 
-Legacy fields no longer driving the runtime solver:
+Most likely candidates:
 
 - `rawRotationProxyBodyHandSpace`
 - `rawRotationProxyHandSpace`
 - `pivotAHandBodyLocalGame`
 - `pivotBConstraintLocalGame`
 
-New explicit runtime fields:
+### Recommendation
 
-- `rawAuthorityObjectSpace`
-- `rawAuthorityBodySpace`
+If the chosen raw authority frame is not exactly the same frame currently implied by `makeRawRotationPalmTranslationFrame(...)`, introduce new explicit names rather than overloading the old ones.
+
+Possible examples:
+
+- `frozenBodyInRawAuthorityFrame`
+- `frozenObjectInRawAuthorityFrame`
 - `constraintAInBodyASpace`
 - `constraintBInBodyBSpace`
+
+The exact names can change, but the meaning must become explicit.
 
 ## Implementation phases
 
@@ -315,15 +255,11 @@ Before code:
 1. Define the raw authority frame origin exactly.
 2. Define whether current frozen relation fields are reusable or must be replaced.
 3. Write the intended world/local equations for A, B, target, and pivots.
-4. Decide the expected body-B-local row form of `target_bRca` for FO4VR row/column conventions.
+4. Decide the expected identity-equivalent form of `target_bRca` for FO4VR row/column conventions.
 
 Deliverable:
 
 - one short equations note committed before runtime changes
-
-Status:
-
-- Complete in this document. Authority origin is active pivot A world point.
 
 ## Phase 1 — Add pure math tests first
 
@@ -334,21 +270,14 @@ Tests must prove:
 1. Given a proxy body world frame and a raw authority world frame, computed frame A local transform reconstructs the raw authority world frame.
 2. Given a desired body world frame and the same raw authority world frame, computed frame B local transform reconstructs the raw authority world frame.
 3. At the desired pose, A and B world-space constraint frames match.
-4. `target_bRca` written from that contract matches transform-B rotation in the verified FO4VR row encoding.
+4. `target_bRca` written from that contract is the identity-equivalent zero-error target in the verified FO4VR encoding.
 5. Pivot A and pivot B translations remain consistent with the same frame contract.
 
 ### Requirement
 
 Do not wire runtime code until these tests exist and pass.
 
-Status:
-
-- Complete. `GrabAuthorityFramePolicyTests.cpp` and
-  `GrabAuthorityProxyPolicyTests.cpp` cover raw-authority recomposition, body
-  A/B local frame reconstruction, local-transform serialization, and body-B
-  local `target_bRca` row storage.
-
-## Phase 2 — Add explicit telemetry for the raw-authority invariant
+## Phase 2 — Add explicit telemetry for the future invariant
 
 Before changing production behavior, add telemetry that can evaluate the full Option B contract.
 
@@ -358,7 +287,7 @@ Needed metrics:
 - constraint A world vs raw authority world
 - body B world vs desired body world
 - constraint B world vs raw authority world
-- `target_bRca` rows vs transform-B rotation
+- `target_bRca` vs identity-equivalent zero-error target
 - pivot A local reconstruction error
 - pivot B local reconstruction error
 
@@ -366,19 +295,13 @@ Needed metrics:
 
 Existing `rawToProxy` telemetry is not sufficient for Option B, because the proxy body's own world basis may intentionally remain different from raw authority.
 
-Status:
-
-- Complete. Ragdoll probe telemetry treats `target_bRca` as identity and keeps
-  the proxy-local signed axis dumps for body correction, live BRca correction,
-  and feed mismatch.
-
 ## Phase 3 — Convert capture/freeze data model
 
 If current frozen fields are not exact matches for the chosen authority frame, update the capture model first.
 
 Tasks:
 
-1. Freeze body relation in the exact raw authority frame.
+1. Freeze body relation in the exact future raw authority frame.
 2. Freeze object relation in the same frame.
 3. Freeze pivot data in forms that can rebuild both A and B consistently.
 4. Remove or rename ambiguous old fields only when the new fields fully replace them.
@@ -386,11 +309,6 @@ Tasks:
 ### Rule
 
 Do not patch runtime writes around stale capture semantics.
-
-Status:
-
-- Complete. Freeze stores raw-authority object/BODY relations from
-  `rawHandWorld.rotate + pivotAWorld.translate`.
 
 ## Phase 4 — Convert constraint creation path
 
@@ -411,11 +329,6 @@ Creation must compute from one contract:
 
 Creation-time math must not have one-off formulas that differ from held-update math.
 
-Status:
-
-- Complete. Creation uses the same `computeConstraintFrameInBodySpace(...)`
-  and identity-target writer as held updates.
-
 ## Phase 5 — Convert held-update path
 
 Update path must recompute the same contract per frame.
@@ -431,11 +344,6 @@ That means:
 
 If creation and update do not use the same equations, the attempt is not complete.
 
-Status:
-
-- Complete. Held updates recompute raw authority, desired object/BODY, frame A,
-  frame B, active pivot B, and identity `target_bRca` from the same equations.
-
 ## Phase 6 — Convert telemetry and debug overlays to the new truth
 
 Once runtime math is converted:
@@ -443,14 +351,6 @@ Once runtime math is converted:
 - update telemetry names so they match the real contract
 - stop presenting proxy-body-world mismatch as the primary error metric for Option B
 - add explicit constraint-frame-world comparisons instead
-
-Status:
-
-- Complete for the Ghidra-corrected feed invariant. Existing overlay/log fields
-  were repointed to the target-vs-transformB invariant and raw-authority
-  desired frames. Runtime log labels now use `targetRowsTransformB` /
-  `targetColsTransformB`; field names in `GrabTelemetry.h` remain
-  backward-compatible.
 
 ## Phase 7 — Remove superseded partial-contract helpers
 
@@ -460,14 +360,7 @@ After the new contract is stable:
 - remove stale comments describing the old contract
 - remove any duplicated telemetry paths that describe the old model
 
-Status:
-
-- Complete for runtime helpers. The old body-to-hand target writer and dynamic
-  transform-B helper were removed from `GrabConstraintMath.h`. The
-  `rawRotationProxy*` frozen fields remain as legacy telemetry/capture context,
-  not solver inputs.
-
-## Validation plan
+## Validation plan for later implementation
 
 ### Local build/test
 
@@ -489,7 +382,7 @@ Source-boundary tests if needed:
 cd ROCK && ctest --test-dir build-tests -C Release -L source-boundary --output-on-failure -j %NUMBER_OF_PROCESSORS%
 ```
 
-Fast plugin build used for runtime testing/deploy:
+Fast plugin build later when runtime testing is intended:
 
 ```bat
 cd ROCK && cmake --preset custom-fast && cmake --build build-fast --config Release --target ROCK -- /m
@@ -503,7 +396,7 @@ Use one left grab and one right grab of the same object.
 
 1. `constraintAWorld -> rawAuthorityWorld` approaches zero rotational error
 2. `constraintBWorld -> rawAuthorityWorld` approaches zero rotational error at desired pose
-3. `target_bRca` rows log near zero delta to transform-B rotation in the verified solver convention
+3. `target_bRca` logs as identity-equivalent zero-error target in the verified solver convention
 4. pivot A/B reconstruction errors stay near zero
 5. persistent left-hand long-path / 360-style correction disappears
 6. `RAGDOLL FRAME ERROR` no longer shows the same steady mismatch pattern
@@ -528,34 +421,30 @@ That will invalidate A/B equality even if the rotation math looks correct.
 
 ### Risk 2 — Reusing old frozen names with new meaning
 
-This makes debugging much harder and risks carrying stale assumptions into telemetry and update code.
+This will make future debugging much harder and risks carrying stale assumptions into telemetry and update code.
 
-### Risk 3 — `target_bRca` identity assumption was wrong for rotated transform B
+### Risk 3 — `target_bRca` identity assumption may be byte-convention sensitive
 
-The conceptual target is zero angular error, but Ghidra shows the ragdoll motor
-does not interpret identity against the already-localized transform-B frame. It
-first transforms `target_bRca` rows from base body B, so the stored target must
-mirror the transform-B rotation rows.
+The conceptual target is zero angular error, but the stored bytes may need row/column / inverse handling to represent that correctly in FO4VR.
 
 ### Risk 4 — Pivot B translation is easy to fake incorrectly
 
-Old helper behavior was tied to the previous transform-B convention. This
-conversion re-derives pivot B from the new frame equality.
+Current helper behavior is tied to the old transform-B convention. A full Option B conversion must re-derive pivot B from the new frame equality, not blindly reuse the old helper.
 
 ### Risk 5 — Left-hand fix can appear solved while the contract is still wrong
 
 A partial change may reduce the visible symptom while leaving A/B contract disagreement in place. That is not acceptable.
 
-## Execution discipline used
+## Recommended execution discipline
 
-1. Locked math and authority origin in this document.
-2. Added/updated math policy tests.
-3. Converted capture model.
-4. Converted creation and held update together.
-5. Repointed telemetry and source-boundary tests.
-6. Removed superseded body-to-hand target helpers.
-7. Runtime left/right object validation remains the next in-game check after
-   deployment.
+When this work is attempted later:
+
+1. Land math tests first.
+2. Land telemetry second.
+3. Convert capture model if needed.
+4. Convert creation and held update together or in one tightly controlled sequence.
+5. Validate left and right on the same object.
+6. Remove superseded partial-contract paths immediately after success.
 
 ## Practical stop conditions
 
@@ -568,7 +457,7 @@ Stop and reassess if any of these happen:
 
 ## Final summary
 
-This work should be treated as a **single contract conversion**, not a rotation tweak.
+The future attempt should be treated as a **single contract conversion**, not a rotation tweak.
 
 The real definition of success is:
 

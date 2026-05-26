@@ -720,15 +720,7 @@ namespace rock
             std::array<float, 12> targetBRcaRaw{};
             RE::NiPoint3 requiredAxisWorld{};
             RE::NiPoint3 requiredAxisProxyLocal{};
-            RE::NiPoint3 bodyErrProxyAxis{};
-            RE::NiPoint3 bRcaErrProxyAxis{};
-            RE::NiPoint3 feedErrProxyAxis{};
             RE::NiPoint3 angularVelocityBeforeRadians{};
-            float bodyErrProxyAngle = -1.0f;
-            float bRcaErrProxyAngle = -1.0f;
-            float feedErrProxyAngle = -1.0f;
-            float bodyToBRcaAxisDot = -2.0f;
-            float feedToBRcaAxisDot = -2.0f;
             float beforeErrorDegrees = -1.0f;
             float beforeGripErrorGameUnits = -1.0f;
             float pivotLeverGameUnits = -1.0f;
