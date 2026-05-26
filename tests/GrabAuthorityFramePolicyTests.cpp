@@ -126,7 +126,7 @@ int main()
         rawHandWorld.translate = RE::NiPoint3{ 0.0f, 0.0f, 0.0f };
 
         RE::NiTransform proxyWorld = identityTransform();
-        proxyWorld.translate = RE::NiPoint3{ 5.0f, 0.0f, 0.0f };
+        proxyWorld.translate = RE::NiPoint3{ 3.0f, 0.0f, 0.0f };
 
         RE::NiTransform objectWorld = identityTransform();
         objectWorld.translate = RE::NiPoint3{ 10.0f, 0.0f, 0.0f };
@@ -168,6 +168,10 @@ int main()
         ok &= expectPointNear("desired body preserves body-local relation",
             frozen.desiredBodyWorld.translate,
             RE::NiPoint3{ 6.0f, 0.0f, 0.0f },
+            0.001f);
+        ok &= expectPointNear("pivot A is preserved as a non-origin proxy-local point",
+            frozen.pivotAHandBodyLocalGame,
+            RE::NiPoint3{ 2.0f, 0.0f, 0.0f },
             0.001f);
 
         const RE::NiTransform recomposedDesiredBody =
