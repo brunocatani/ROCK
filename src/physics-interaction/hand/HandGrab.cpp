@@ -224,6 +224,67 @@ namespace rock
             return normalizeOrZero(transform_math::rotateWorldVectorToLocal(proxyWorldRotation, axisWorld));
         }
 
+        RE::NiPoint3 rotationAxisConstraintAToProxyLocal(
+            const RE::NiMatrix3& constraintARotationInProxyLocal,
+            const RE::NiPoint3& axisConstraintALocal)
+        {
+            return normalizeOrZero(transform_math::rotateLocalVectorToWorld(constraintARotationInProxyLocal, axisConstraintALocal));
+        }
+
+        struct SignedAxisAngleSample
+        {
+            RE::NiPoint3 axis{};
+            float angleDegrees = 0.0f;
+            bool valid = false;
+        };
+
+        SignedAxisAngleSample signedAxisAngleSample(const RE::NiMatrix3& current, const RE::NiMatrix3& target)
+        {
+            SignedAxisAngleSample result{};
+            constexpr float kRadiansToDegrees = 57.29577951308232f;
+            const RE::NiPoint3 angularDeltaRadians = angularVelocityFromRotationDelta(current, target, 1.0f);
+            const float angleRadians = std::sqrt(lengthSquared(angularDeltaRadians));
+            if (!std::isfinite(angleRadians) || angleRadians <= 0.000001f) {
+                return result;
+            }
+
+            result.axis = normalizeOrZero(angularDeltaRadians);
+            result.angleDegrees = angleRadians * kRadiansToDegrees;
+            result.valid = lengthSquared(result.axis) > 0.000001f && std::isfinite(result.angleDegrees);
+            return result;
+        }
+
+        SignedAxisAngleSample signedAxisAngleWorldToProxyLocal(
+            const RE::NiMatrix3& currentWorldRotation,
+            const RE::NiMatrix3& targetWorldRotation,
+            const RE::NiMatrix3& proxyWorldRotation)
+        {
+            SignedAxisAngleSample result = signedAxisAngleSample(currentWorldRotation, targetWorldRotation);
+            if (result.valid) {
+                result.axis = rotationAxisProxyLocal(proxyWorldRotation, result.axis);
+                result.valid = lengthSquared(result.axis) > 0.000001f;
+            }
+            return result;
+        }
+
+        SignedAxisAngleSample signedAxisAngleConstraintAToProxyLocal(
+            const RE::NiMatrix3& currentConstraintARotation,
+            const RE::NiMatrix3& targetConstraintARotation,
+            const RE::NiMatrix3& constraintARotationInProxyLocal)
+        {
+            SignedAxisAngleSample result = signedAxisAngleSample(currentConstraintARotation, targetConstraintARotation);
+            if (result.valid) {
+                result.axis = rotationAxisConstraintAToProxyLocal(constraintARotationInProxyLocal, result.axis);
+                result.valid = lengthSquared(result.axis) > 0.000001f;
+            }
+            return result;
+        }
+
+        float axisAlignmentDot(const SignedAxisAngleSample& lhs, const SignedAxisAngleSample& rhs)
+        {
+            return lhs.valid && rhs.valid ? dotProduct(lhs.axis, rhs.axis) : -2.0f;
+        }
+
         bool computeHardKeyframeVelocityForTarget(
             RE::hknpWorld* world,
             RE::hknpBodyId bodyId,
@@ -9431,6 +9492,15 @@ namespace rock
                             float ragdollBRcaColumnsErrorDegrees = -1.0f;
                             float ragdollARcbRowsInverseErrorDegrees = -1.0f;
                             float ragdollARcbColumnsInverseErrorDegrees = -1.0f;
+                            SignedAxisAngleSample bodyErrProxySample{};
+                            SignedAxisAngleSample bRcaErrProxySample{};
+                            const SignedAxisAngleSample feedErrProxySample =
+                                signedAxisAngleConstraintAToProxyLocal(
+                                    desiredBodyToHandSpace.rotate,
+                                    targetAsHkRows,
+                                    transformAAsHkColumns);
+                            float bodyToBRcaAxisDot = -2.0f;
+                            float feedToBRcaAxisDot = -2.0f;
                             if (bodyAWorldBeforeSolveOk) {
                                 const RE::NiMatrix3 constraintAWorldRotation =
                                     multiplyTransforms(bodyAWorldBeforeSolve, rotationOnlyTransform(transformAAsHkColumns)).rotate;
@@ -9444,6 +9514,16 @@ namespace rock
                                 ragdollBRcaColumnsErrorDegrees = rotationDeltaDegrees(currentBRca, targetAsHkColumns);
                                 ragdollARcbRowsInverseErrorDegrees = rotationDeltaDegrees(currentARcb, targetRowsInverse);
                                 ragdollARcbColumnsInverseErrorDegrees = rotationDeltaDegrees(currentARcb, targetColumnsInverse);
+                                bodyErrProxySample = signedAxisAngleWorldToProxyLocal(
+                                    bodyWorldBeforeSolve.rotate,
+                                    desiredBodyWorld.rotate,
+                                    bodyAWorldBeforeSolve.rotate);
+                                bRcaErrProxySample = signedAxisAngleConstraintAToProxyLocal(
+                                    currentBRca,
+                                    targetAsHkRows,
+                                    transformAAsHkColumns);
+                                bodyToBRcaAxisDot = axisAlignmentDot(bodyErrProxySample, bRcaErrProxySample);
+                                feedToBRcaAxisDot = axisAlignmentDot(feedErrProxySample, bRcaErrProxySample);
                             }
 
                             const RE::NiPoint3 liveGripBeforeSolve =
@@ -9476,7 +9556,15 @@ namespace rock
                                 .targetBRcaRaw = targetBRcaRaw,
                                 .requiredAxisWorld = requiredAxisWorld,
                                 .requiredAxisProxyLocal = requiredAxisProxyLocal,
+                                .bodyErrProxyAxis = bodyErrProxySample.axis,
+                                .bRcaErrProxyAxis = bRcaErrProxySample.axis,
+                                .feedErrProxyAxis = feedErrProxySample.axis,
                                 .angularVelocityBeforeRadians = angularVelocityBeforeSolve,
+                                .bodyErrProxyAngle = bodyErrProxySample.angleDegrees,
+                                .bRcaErrProxyAngle = bRcaErrProxySample.angleDegrees,
+                                .feedErrProxyAngle = feedErrProxySample.angleDegrees,
+                                .bodyToBRcaAxisDot = bodyToBRcaAxisDot,
+                                .feedToBRcaAxisDot = feedToBRcaAxisDot,
                                 .beforeErrorDegrees = rotationDeltaDegrees(bodyWorldBeforeSolve.rotate, desiredBodyWorld.rotate),
                                 .beforeGripErrorGameUnits = pointDistanceGameUnits(liveGripBeforeSolve, desiredTargetPointWorld),
                                 .pivotLeverGameUnits = pointDistanceGameUnits(bodyWorldBeforeSolve.translate, liveGripBeforeSolve),
@@ -9794,7 +9882,7 @@ namespace rock
             if (shouldLogRagdollProbe) {
                 ROCK_LOG_SAMPLE_WARN(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} RAGDOLL ANGULAR PROBE: seq={}/{} afterSeq={} probeSeq={} stale={} substep={}/{} beforeErr={:.1f}deg afterErr={:.1f}deg reduce={:.1f}deg axisDot={:.2f} reqAxis=({:.2f},{:.2f},{:.2f}) velAxis=({:.2f},{:.2f},{:.2f}) reqAxisProxy=({:.2f},{:.2f},{:.2f}) velAxisProxy=({:.2f},{:.2f},{:.2f}) beforeAng={:.2f}rad/s afterAng={:.2f}rad/s forceA={:.0f} forceL={:.0f} tau={:.3f} damp={:.2f} ragdoll={} targetRowsInv={:.1f}deg targetColsToB={:.1f}deg gripBefore={:.2f}gu gripAfter={:.2f}gu pivotLever={:.2f}gu angularRef={} phase={} body={} motion={}",
+                    "{} RAGDOLL ANGULAR PROBE: seq={}/{} afterSeq={} probeSeq={} stale={} substep={}/{} beforeErr={:.1f}deg afterErr={:.1f}deg reduce={:.1f}deg axisDot={:.2f} reqAxis=({:.2f},{:.2f},{:.2f}) velAxis=({:.2f},{:.2f},{:.2f}) reqAxisProxy=({:.2f},{:.2f},{:.2f}) velAxisProxy=({:.2f},{:.2f},{:.2f}) bodyErrProxyAngle={:.1f}deg bodyErrProxyAxis=({:.2f},{:.2f},{:.2f}) bRcaErrProxyAngle={:.1f}deg bRcaErrProxyAxis=({:.2f},{:.2f},{:.2f}) feedErrProxyAngle={:.1f}deg feedErrProxyAxis=({:.2f},{:.2f},{:.2f}) bodyToBRcaAxisDot={:.2f} feedToBRcaAxisDot={:.2f} beforeAng={:.2f}rad/s afterAng={:.2f}rad/s forceA={:.0f} forceL={:.0f} tau={:.3f} damp={:.2f} ragdoll={} targetRowsInv={:.1f}deg targetColsToB={:.1f}deg gripBefore={:.2f}gu gripAfter={:.2f}gu pivotLever={:.2f}gu angularRef={} phase={} body={} motion={}",
                     handName(),
                     flushSequence,
                     queuedSequence,
@@ -9819,6 +9907,20 @@ namespace rock
                     velocityAxisProxyLocal.x,
                     velocityAxisProxyLocal.y,
                     velocityAxisProxyLocal.z,
+                    ragdollAngularProbePreSolve.bodyErrProxyAngle,
+                    ragdollAngularProbePreSolve.bodyErrProxyAxis.x,
+                    ragdollAngularProbePreSolve.bodyErrProxyAxis.y,
+                    ragdollAngularProbePreSolve.bodyErrProxyAxis.z,
+                    ragdollAngularProbePreSolve.bRcaErrProxyAngle,
+                    ragdollAngularProbePreSolve.bRcaErrProxyAxis.x,
+                    ragdollAngularProbePreSolve.bRcaErrProxyAxis.y,
+                    ragdollAngularProbePreSolve.bRcaErrProxyAxis.z,
+                    ragdollAngularProbePreSolve.feedErrProxyAngle,
+                    ragdollAngularProbePreSolve.feedErrProxyAxis.x,
+                    ragdollAngularProbePreSolve.feedErrProxyAxis.y,
+                    ragdollAngularProbePreSolve.feedErrProxyAxis.z,
+                    ragdollAngularProbePreSolve.bodyToBRcaAxisDot,
+                    ragdollAngularProbePreSolve.feedToBRcaAxisDot,
                     angularSpeedBefore,
                     angularSpeedAfter,
                     ragdollAngularProbePreSolve.angularMotorMaxForce,
@@ -9898,7 +10000,7 @@ namespace rock
 
                 ROCK_LOG_SAMPLE_WARN(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} RAGDOLL FRAME ERROR: seq={}/{} appearsSolve=bRcaRows bRcaRowsErr={:.1f}deg bRcaColsErr={:.1f}deg aRcbRowsInvErr={:.1f}deg aRcbColsInvErr={:.1f}deg intendedBodyErr={:.1f}->{:.1f}deg targetRowsInv={:.1f}deg targetColsToB={:.1f}deg reqAxisProxy=({:.2f},{:.2f},{:.2f})",
+                    "{} RAGDOLL FRAME ERROR: seq={}/{} appearsSolve=bRcaRows bRcaRowsErr={:.1f}deg bRcaColsErr={:.1f}deg aRcbRowsInvErr={:.1f}deg aRcbColsInvErr={:.1f}deg intendedBodyErr={:.1f}->{:.1f}deg targetRowsInv={:.1f}deg targetColsToB={:.1f}deg reqAxisProxy=({:.2f},{:.2f},{:.2f}) bodyErrProxyAngle={:.1f}deg bodyErrProxyAxis=({:.2f},{:.2f},{:.2f}) bRcaErrProxyAngle={:.1f}deg bRcaErrProxyAxis=({:.2f},{:.2f},{:.2f}) feedErrProxyAngle={:.1f}deg feedErrProxyAxis=({:.2f},{:.2f},{:.2f}) bodyToBRcaAxisDot={:.2f} feedToBRcaAxisDot={:.2f}",
                     handName(),
                     flushSequence,
                     queuedSequence,
@@ -9912,7 +10014,21 @@ namespace rock
                     ragdollAngularProbePreSolve.targetColumnsToTransformBDegrees,
                     ragdollAngularProbePreSolve.requiredAxisProxyLocal.x,
                     ragdollAngularProbePreSolve.requiredAxisProxyLocal.y,
-                    ragdollAngularProbePreSolve.requiredAxisProxyLocal.z);
+                    ragdollAngularProbePreSolve.requiredAxisProxyLocal.z,
+                    ragdollAngularProbePreSolve.bodyErrProxyAngle,
+                    ragdollAngularProbePreSolve.bodyErrProxyAxis.x,
+                    ragdollAngularProbePreSolve.bodyErrProxyAxis.y,
+                    ragdollAngularProbePreSolve.bodyErrProxyAxis.z,
+                    ragdollAngularProbePreSolve.bRcaErrProxyAngle,
+                    ragdollAngularProbePreSolve.bRcaErrProxyAxis.x,
+                    ragdollAngularProbePreSolve.bRcaErrProxyAxis.y,
+                    ragdollAngularProbePreSolve.bRcaErrProxyAxis.z,
+                    ragdollAngularProbePreSolve.feedErrProxyAngle,
+                    ragdollAngularProbePreSolve.feedErrProxyAxis.x,
+                    ragdollAngularProbePreSolve.feedErrProxyAxis.y,
+                    ragdollAngularProbePreSolve.feedErrProxyAxis.z,
+                    ragdollAngularProbePreSolve.bodyToBRcaAxisDot,
+                    ragdollAngularProbePreSolve.feedToBRcaAxisDot);
             }
         }
 
