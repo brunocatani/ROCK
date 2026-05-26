@@ -1301,7 +1301,7 @@
                         sample.rawToHeldRelativeHandTargetAxes.z);
                     const char* sideLabel = isLeft ? "left" : "right";
                     ROCK_LOG_INFO(Hand,
-                        "GRAB BASIS {} {} side={} convention=niLocalVectorToWorld nativeFlattenedHand={} generatedPalm={} rootFinger={} {} {} rootBase={} rootTip={} rootPalmLine={} rootOpenLine={} rootPalmNormal={} nativeToPalm={:.3f}gu/{:.3f}deg",
+                        "GRAB BASIS {} {} side={} convention=niLocalVectorToWorld nativeFlattenedHand={} generatedPalm={} rootFinger={} {} {} rootBase={} rootTip={} rootPalmLine={} handBodyPalmLine={} generatedPalmLine={} rootOpenLine={} rootPalmNormal={} nativeToPalm={:.3f}gu/{:.3f}deg",
                         prefix,
                         phaseLabel,
                         sideLabel,
@@ -1313,6 +1313,8 @@
                         grab_transform_telemetry::formatVector3(sample.rootFingerBaseCenterWorld),
                         grab_transform_telemetry::formatVector3(sample.rootFingerTipCenterWorld),
                         grab_transform_telemetry::formatVector3(sample.rootFingerBaseLineWorld),
+                        grab_transform_telemetry::formatVector3(sample.handBodyFingerBaseLineWorld),
+                        grab_transform_telemetry::formatVector3(sample.palmAnchorFingerBaseLineWorld),
                         grab_transform_telemetry::formatVector3(sample.rootFingerOpenLineWorld),
                         grab_transform_telemetry::formatVector3(sample.rootPalmNormalWorld),
                         sample.nativeFlattenedHandToPalmAnchorTarget.positionGameUnits,

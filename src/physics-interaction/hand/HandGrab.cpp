@@ -4285,6 +4285,14 @@ namespace rock
                 out.rootFingerTipCenterWorld = tipSum * inv;
                 out.rootFingerBaseLineWorld =
                     grab_transform_telemetry::normalizeDirectionOrFallback(out.rootFingerBaseCenterWorld - out.rawHandWorld.translate, out.rawHandBasis.x);
+                out.handBodyFingerBaseLineWorld =
+                    out.hasHandBodyWorld ?
+                    grab_transform_telemetry::normalizeDirectionOrFallback(out.rootFingerBaseCenterWorld - out.handBodyWorld.translate, out.handBodyBasis.x) :
+                    out.rootFingerBaseLineWorld;
+                out.palmAnchorFingerBaseLineWorld =
+                    out.hasPalmAnchorTarget ?
+                    grab_transform_telemetry::normalizeDirectionOrFallback(out.rootFingerBaseCenterWorld - out.palmAnchorTargetWorld.translate, out.palmAnchorTargetBasis.x) :
+                    out.rootFingerBaseLineWorld;
                 out.rootFingerOpenLineWorld =
                     grab_transform_telemetry::normalizeDirectionOrFallback(out.rootFingerTipCenterWorld - out.rootFingerBaseCenterWorld, out.rootFingerBaseLineWorld);
                 out.rootPalmNormalWorld =
