@@ -4507,13 +4507,12 @@ namespace rock
         if (_activeConstraint.constraintData) {
             auto* constraintData = static_cast<const char*>(_activeConstraint.constraintData);
             auto* targetBRca = reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
+            auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
             auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
 
-            // Raw-authority constraints carry the hand convention in transform A
-            // and transform B. The ragdoll motor target should stay identity.
-            const RE::NiMatrix3 identityRotation = transform_math::makeIdentityRotation<RE::NiMatrix3>();
             const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
             const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
+            const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
 
             out.constraintTransformBLocalGame = RE::NiPoint3{
                 transformBTranslation[0] * havokToGameScale(),
@@ -4522,10 +4521,10 @@ namespace rock
             };
             out.desiredTransformBLocalGame = activeProxyConstraintPivotBLocalGame();
             out.transformBLocalDelta = grab_transform_telemetry::measurePointPair(out.constraintTransformBLocalGame, out.desiredTransformBLocalGame);
-            out.targetColumnsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkColumns, identityRotation);
-            out.targetRowsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkRows, identityRotation);
-            out.targetColumnsToConstraintForwardDegrees = rotationDeltaDegrees(targetAsHkColumns, identityRotation);
-            out.targetColumnsToTransformBDegrees = rotationDeltaDegrees(targetAsHkColumns, identityRotation);
+            out.targetColumnsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkColumns, transformBAsHkColumns);
+            out.targetRowsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkRows, transformBAsHkColumns);
+            out.targetColumnsToConstraintForwardDegrees = rotationDeltaDegrees(targetAsHkColumns, transformBAsHkColumns);
+            out.targetColumnsToTransformBDegrees = rotationDeltaDegrees(targetAsHkColumns, transformBAsHkColumns);
             out.ragdollMotorEnabled = *(constraintData + ATOM_RAGDOLL_MOT + 0x02) != 0;
             if (_activeConstraint.angularMotor) {
                 out.angularMotorTau = _activeConstraint.angularMotor->tau;
@@ -4805,7 +4804,7 @@ namespace rock
         _grabAuthorityPivotBConstraintLocalGame = constraintBInBodyBSpace.translate;
         grab_constraint_math::writeConstraintLocalTransform(transformARotation, transformAPos, constraintAInBodyASpace, gameToHkScale);
         grab_constraint_math::writeConstraintLocalTransform(transformBRotation, transformBTranslation, constraintBInBodyBSpace, gameToHkScale);
-        grab_constraint_math::writeIdentityRagdollTarget(targetBRca);
+        grab_constraint_math::writeRagdollTargetForConstraintBFrame(targetBRca, constraintBInBodyBSpace);
         return true;
     }
 
@@ -7623,17 +7622,19 @@ namespace rock
                     nullptr,
                     freezeConstraintBInBodyBSpace,
                     gameToHavokScale());
-                grab_constraint_math::writeIdentityRagdollTarget(freezeTargetBRca.data());
+                grab_constraint_math::writeRagdollTargetForConstraintBFrame(
+                    freezeTargetBRca.data(),
+                    freezeConstraintBInBodyBSpace);
                 const RE::NiMatrix3 freezeTargetRows = matrixFromHkRows(freezeTargetBRca.data());
                 const RE::NiMatrix3 freezeTargetColumns = matrixFromHkColumns(freezeTargetBRca.data());
-                const RE::NiMatrix3 identityRotation = transform_math::makeIdentityRotation<RE::NiMatrix3>();
+                const RE::NiMatrix3 freezeTransformBColumns = matrixFromHkColumns(freezeTransformBRotation.data());
                 const RE::NiPoint3 predictedTransformBLocal = freezeConstraintBInBodyBSpace.translate;
                 const float predictedTransformBErr =
                     pointDistanceGameUnits(frozenAuthorityFrame.pivotBConstraintLocalGame, predictedTransformBLocal);
                 const float freezeRowsInvDegrees =
-                    rotationDeltaDegrees(freezeTargetRows, identityRotation);
+                    rotationDeltaDegrees(freezeTargetRows, freezeTransformBColumns);
                 const float freezeColsTransformBDegrees =
-                    rotationDeltaDegrees(freezeTargetColumns, identityRotation);
+                    rotationDeltaDegrees(freezeTargetColumns, freezeTransformBColumns);
                 const RE::NiTransform freezeConstraintAReconstructed =
                     multiplyTransforms(proxyFrameWorldAtGrab, freezeConstraintAInBodyASpace);
                 const RE::NiTransform freezeConstraintBReconstructed =
@@ -7661,7 +7662,7 @@ namespace rock
                     "pivotA=({:.2f},{:.2f},{:.2f}) grip=({:.2f},{:.2f},{:.2f}) pivotBBody=({:.2f},{:.2f},{:.2f}) "
                     "pivotBConstraint=({:.2f},{:.2f},{:.2f}) predictedTransformB=({:.2f},{:.2f},{:.2f}) "
                     "lever={:.2f}gu pocket={:.2f}gu selection={:.2f}gu rawProxy={:.2f}deg rawProxyAxisMax={:.2f}deg "
-                    "objectDesiredAxisMax={:.2f}deg desiredBodyGrabBodyAxisMax={:.2f}deg targetRowsIdentity={:.2f}deg targetColsIdentity={:.2f}deg transformBErrPred={:.3f}gu frameARecon={:.2f}deg frameBRecon={:.2f}deg",
+                    "objectDesiredAxisMax={:.2f}deg desiredBodyGrabBodyAxisMax={:.2f}deg targetRowsTransformB={:.2f}deg targetColsTransformB={:.2f}deg transformBErrPred={:.3f}gu frameARecon={:.2f}deg frameBRecon={:.2f}deg",
                     handName(),
                     sel.refr ? sel.refr->GetFormID() : 0,
                     objName,
@@ -9484,7 +9485,6 @@ namespace rock
                             const auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
                             const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
                             const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
-                            const RE::NiMatrix3 identityRotation = transform_math::makeIdentityRotation<RE::NiMatrix3>();
                             const RE::NiMatrix3 transformAAsHkColumns = matrixFromHkColumns(transformARotation);
                             const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
                             std::array<float, 12> targetBRcaRaw{};
@@ -9507,7 +9507,7 @@ namespace rock
                             SignedAxisAngleSample bRcaErrProxySample{};
                             const SignedAxisAngleSample feedErrProxySample =
                                 signedAxisAngleConstraintAToProxyLocal(
-                                    identityRotation,
+                                    transformBAsHkColumns,
                                     targetAsHkRows,
                                     transformAAsHkColumns);
                             float bodyToBRcaAxisDot = -2.0f;
@@ -9581,8 +9581,8 @@ namespace rock
                                 .angularMotorDamping = _activeConstraint.angularMotor ? _activeConstraint.angularMotor->damping : 0.0f,
                                 .angularMotorMaxForce = angularMotorBudget,
                                 .linearMotorMaxForce = linearMotorBudget,
-                                .targetRowsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkRows, identityRotation),
-                                .targetColumnsToTransformBDegrees = rotationDeltaDegrees(targetAsHkColumns, identityRotation),
+                                .targetRowsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkRows, transformBAsHkColumns),
+                                .targetColumnsToTransformBDegrees = rotationDeltaDegrees(targetAsHkColumns, transformBAsHkColumns),
                                 .ragdollBRcaRowsErrorDegrees = ragdollBRcaRowsErrorDegrees,
                                 .ragdollBRcaColumnsErrorDegrees = ragdollBRcaColumnsErrorDegrees,
                                 .ragdollARcbRowsInverseErrorDegrees = ragdollARcbRowsInverseErrorDegrees,
@@ -9768,10 +9768,11 @@ namespace rock
                 const auto* targetBRca = reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
                 const auto* transformARotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_A_COL0);
                 const auto* transformATranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_A_POS);
+                const auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
                 const auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
                 const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
                 const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
-                const RE::NiMatrix3 identityRotation = transform_math::makeIdentityRotation<RE::NiMatrix3>();
+                const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
                 constraintAInBodyASpace.rotate = matrixFromHkColumns(transformARotation);
                 constraintAInBodyASpace.translate = RE::NiPoint3{
                     transformATranslation[0] * havokToGameScale(),
@@ -9785,8 +9786,8 @@ namespace rock
                 };
                 constraintTransformBLocalDeltaGameUnits =
                     pointDistanceGameUnits(constraintTransformBLocalGame, pivotBConstraintLocalGame);
-                targetRowsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkRows, identityRotation);
-                targetColumnsToTransformBDegrees = rotationDeltaDegrees(targetAsHkColumns, identityRotation);
+                targetRowsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkRows, transformBAsHkColumns);
+                targetColumnsToTransformBDegrees = rotationDeltaDegrees(targetAsHkColumns, transformBAsHkColumns);
                 hasConstraintFrameMetrics = true;
             }
         }
@@ -9902,7 +9903,7 @@ namespace rock
             if (shouldLogRagdollProbe) {
                 ROCK_LOG_SAMPLE_WARN(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} RAGDOLL ANGULAR PROBE: seq={}/{} afterSeq={} probeSeq={} stale={} substep={}/{} beforeErr={:.1f}deg afterErr={:.1f}deg reduce={:.1f}deg axisDot={:.2f} reqAxis=({:.2f},{:.2f},{:.2f}) velAxis=({:.2f},{:.2f},{:.2f}) reqAxisProxy=({:.2f},{:.2f},{:.2f}) velAxisProxy=({:.2f},{:.2f},{:.2f}) bodyErrProxyAngle={:.1f}deg bodyErrProxyAxis=({:.2f},{:.2f},{:.2f}) bRcaErrProxyAngle={:.1f}deg bRcaErrProxyAxis=({:.2f},{:.2f},{:.2f}) feedErrProxyAngle={:.1f}deg feedErrProxyAxis=({:.2f},{:.2f},{:.2f}) bodyToBRcaAxisDot={:.2f} feedToBRcaAxisDot={:.2f} beforeAng={:.2f}rad/s afterAng={:.2f}rad/s forceA={:.0f} forceL={:.0f} tau={:.3f} damp={:.2f} ragdoll={} targetRowsIdentity={:.1f}deg targetColsIdentity={:.1f}deg gripBefore={:.2f}gu gripAfter={:.2f}gu pivotLever={:.2f}gu angularRef={} phase={} body={} motion={}",
+                    "{} RAGDOLL ANGULAR PROBE: seq={}/{} afterSeq={} probeSeq={} stale={} substep={}/{} beforeErr={:.1f}deg afterErr={:.1f}deg reduce={:.1f}deg axisDot={:.2f} reqAxis=({:.2f},{:.2f},{:.2f}) velAxis=({:.2f},{:.2f},{:.2f}) reqAxisProxy=({:.2f},{:.2f},{:.2f}) velAxisProxy=({:.2f},{:.2f},{:.2f}) bodyErrProxyAngle={:.1f}deg bodyErrProxyAxis=({:.2f},{:.2f},{:.2f}) bRcaErrProxyAngle={:.1f}deg bRcaErrProxyAxis=({:.2f},{:.2f},{:.2f}) feedErrProxyAngle={:.1f}deg feedErrProxyAxis=({:.2f},{:.2f},{:.2f}) bodyToBRcaAxisDot={:.2f} feedToBRcaAxisDot={:.2f} beforeAng={:.2f}rad/s afterAng={:.2f}rad/s forceA={:.0f} forceL={:.0f} tau={:.3f} damp={:.2f} ragdoll={} targetRowsTransformB={:.1f}deg targetColsTransformB={:.1f}deg gripBefore={:.2f}gu gripAfter={:.2f}gu pivotLever={:.2f}gu angularRef={} phase={} body={} motion={}",
                     handName(),
                     flushSequence,
                     queuedSequence,
@@ -10020,7 +10021,7 @@ namespace rock
 
                 ROCK_LOG_SAMPLE_WARN(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} RAGDOLL FRAME ERROR: seq={}/{} appearsSolve=bRcaRows bRcaRowsErr={:.1f}deg bRcaColsErr={:.1f}deg aRcbRowsErr={:.1f}deg aRcbColsErr={:.1f}deg intendedBodyErr={:.1f}->{:.1f}deg targetRowsIdentity={:.1f}deg targetColsIdentity={:.1f}deg reqAxisProxy=({:.2f},{:.2f},{:.2f}) bodyErrProxyAngle={:.1f}deg bodyErrProxyAxis=({:.2f},{:.2f},{:.2f}) bRcaErrProxyAngle={:.1f}deg bRcaErrProxyAxis=({:.2f},{:.2f},{:.2f}) feedErrProxyAngle={:.1f}deg feedErrProxyAxis=({:.2f},{:.2f},{:.2f}) bodyToBRcaAxisDot={:.2f} feedToBRcaAxisDot={:.2f}",
+                    "{} RAGDOLL FRAME ERROR: seq={}/{} appearsSolve=bRcaRows bRcaRowsErr={:.1f}deg bRcaColsErr={:.1f}deg aRcbRowsErr={:.1f}deg aRcbColsErr={:.1f}deg intendedBodyErr={:.1f}->{:.1f}deg targetRowsTransformB={:.1f}deg targetColsTransformB={:.1f}deg reqAxisProxy=({:.2f},{:.2f},{:.2f}) bodyErrProxyAngle={:.1f}deg bodyErrProxyAxis=({:.2f},{:.2f},{:.2f}) bRcaErrProxyAngle={:.1f}deg bRcaErrProxyAxis=({:.2f},{:.2f},{:.2f}) feedErrProxyAngle={:.1f}deg feedErrProxyAxis=({:.2f},{:.2f},{:.2f}) bodyToBRcaAxisDot={:.2f} feedToBRcaAxisDot={:.2f}",
                     handName(),
                     flushSequence,
                     queuedSequence,
@@ -10060,7 +10061,7 @@ namespace rock
         if (likelyRawProxyFrameMismatch) {
             ROCK_LOG_SAMPLE_WARN(Hand,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "{} PROXY GRAB FRAME MISMATCH: seq={}/{} afterSeq={} substep={}/{} rawToProxyTarget={:.1f}deg rawToProxyLive={:.1f}deg targetAxisDeg=({:.1f},{:.1f},{:.1f}) liveAxisDeg=({:.1f},{:.1f},{:.1f}) determinantTarget=({:.3f},{:.3f}) determinantLive=({:.3f},{:.3f}) proxyErr={:.2f}gu/{:.1f}deg objectErr={:.2f}gu/{:.1f}deg gripErr={:.2f}gu transformBDelta={:.2f}gu targetRowsIdentity={:.1f}deg targetColsIdentity={:.1f}deg reqAxisProxy=({:.2f},{:.2f},{:.2f}) angularRef={} proxySrc={} objectSrc={} phase={} pivotB=({:.2f},{:.2f},{:.2f})",
+                "{} PROXY GRAB FRAME MISMATCH: seq={}/{} afterSeq={} substep={}/{} rawToProxyTarget={:.1f}deg rawToProxyLive={:.1f}deg targetAxisDeg=({:.1f},{:.1f},{:.1f}) liveAxisDeg=({:.1f},{:.1f},{:.1f}) determinantTarget=({:.3f},{:.3f}) determinantLive=({:.3f},{:.3f}) proxyErr={:.2f}gu/{:.1f}deg objectErr={:.2f}gu/{:.1f}deg gripErr={:.2f}gu transformBDelta={:.2f}gu targetRowsTransformB={:.1f}deg targetColsTransformB={:.1f}deg reqAxisProxy=({:.2f},{:.2f},{:.2f}) angularRef={} proxySrc={} objectSrc={} phase={} pivotB=({:.2f},{:.2f},{:.2f})",
                 handName(),
                 flushSequence,
                 queuedSequence,

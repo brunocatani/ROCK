@@ -9,10 +9,11 @@ namespace rock::grab_constraint_math
 {
     /*
      * ROCK writes the raw hand authority frame into both constraint local frames:
-     * transform A is proxyBody^-1 * rawAuthority, transform B is desiredBody^-1 *
-     * rawAuthority, and target_bRca remains identity. That keeps Havok's live
-     * BRca and the authored target in one convention instead of feeding a
-     * mirrored hand relation directly to the ragdoll motor.
+     * transform A is proxyBody^-1 * rawAuthority and transform B is
+     * desiredBody^-1 * rawAuthority. FO4VR's ragdoll motor builder transforms
+     * target_bRca rows from the base body-B frame, not from transform B's
+     * already-localized frame, so the target rows must carry the same B-local
+     * raw-authority rotation that transform B carries as hk column blocks.
      */
 
     /*
@@ -61,26 +62,33 @@ namespace rock::grab_constraint_math
         target[11] = 0.0f;
     }
 
-    inline void writeIdentityRagdollTarget(float* targetBRca)
+    template <class Matrix>
+    inline void writeHavokRotationRows(float* target, const Matrix& rotation)
     {
-        if (!targetBRca) {
+        if (!target) {
             return;
         }
 
-        targetBRca[0] = 1.0f;
-        targetBRca[1] = 0.0f;
-        targetBRca[2] = 0.0f;
-        targetBRca[3] = 0.0f;
+        target[0] = rotation.entry[0][0];
+        target[1] = rotation.entry[0][1];
+        target[2] = rotation.entry[0][2];
+        target[3] = 0.0f;
 
-        targetBRca[4] = 0.0f;
-        targetBRca[5] = 1.0f;
-        targetBRca[6] = 0.0f;
-        targetBRca[7] = 0.0f;
+        target[4] = rotation.entry[1][0];
+        target[5] = rotation.entry[1][1];
+        target[6] = rotation.entry[1][2];
+        target[7] = 0.0f;
 
-        targetBRca[8] = 0.0f;
-        targetBRca[9] = 0.0f;
-        targetBRca[10] = 1.0f;
-        targetBRca[11] = 0.0f;
+        target[8] = rotation.entry[2][0];
+        target[9] = rotation.entry[2][1];
+        target[10] = rotation.entry[2][2];
+        target[11] = 0.0f;
+    }
+
+    template <class Transform>
+    inline void writeRagdollTargetForConstraintBFrame(float* targetBRca, const Transform& constraintBInBodyBSpace)
+    {
+        writeHavokRotationRows(targetBRca, constraintBInBodyBSpace.rotate);
     }
 
     template <class Transform>

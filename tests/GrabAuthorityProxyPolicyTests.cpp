@@ -187,15 +187,17 @@ int main()
         ok &= expectNear("transform A translation z scales to Havok", transformATranslation[2], frameA.translate.z * 2.0f, 0.001f);
 
         float targetBRca[12]{};
-        rock::grab_constraint_math::writeIdentityRagdollTarget(targetBRca);
+        rock::grab_constraint_math::writeRagdollTargetForConstraintBFrame(targetBRca, frameB);
         ok &= expectNear(
-            "target_bRca rows stay identity",
-            rotationDeltaDegrees(matrixFromRawRows(targetBRca), identityTransform().rotate),
+            "target_bRca rows carry body-B raw-authority rotation",
+            rotationDeltaDegrees(matrixFromRawRows(targetBRca), frameB.rotate),
             0.0f,
             0.01f);
         ok &= expectNear(
-            "target_bRca columns stay identity",
-            rotationDeltaDegrees(matrixFromRawColumns(targetBRca), identityTransform().rotate),
+            "target_bRca column view is row-storage transpose",
+            rotationDeltaDegrees(
+                matrixFromRawColumns(targetBRca),
+                rock::transform_math::transposeRotation(frameB.rotate)),
             0.0f,
             0.01f);
     }

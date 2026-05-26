@@ -421,7 +421,7 @@ namespace rock
             auto* targetBRca = reinterpret_cast<float*>(header + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
 
             grab_constraint_math::writeConstraintLocalTransform(tB_col0, tB_pos, constraintBInBodyBSpace, gameToHavokScale());
-            grab_constraint_math::writeIdentityRagdollTarget(targetBRca);
+            grab_constraint_math::writeRagdollTargetForConstraintBFrame(targetBRca, constraintBInBodyBSpace);
 
             ROCK_LOG_TRACE(GrabConstraint,
                 "setInBodySpace: frameA=({:.3f},{:.3f},{:.3f}) [raw-authority pivot] "
@@ -429,7 +429,7 @@ namespace rock
                 "tB_col0=({:.3f},{:.3f},{:.3f})",
                 tA_pos[0], tA_pos[1], tA_pos[2], tB_pos[0], tB_pos[1], tB_pos[2], tB_col0[0], tB_col0[1], tB_col0[2]);
 
-            ROCK_LOG_TRACE(GrabConstraint, "target_bRca initial zero-error rows: row0=[{:.3f},{:.3f},{:.3f}] row1=[{:.3f},{:.3f},{:.3f}]", targetBRca[0], targetBRca[1],
+            ROCK_LOG_TRACE(GrabConstraint, "target_bRca initial bodyB-local rows: row0=[{:.3f},{:.3f},{:.3f}] row1=[{:.3f},{:.3f},{:.3f}]", targetBRca[0], targetBRca[1],
                 targetBRca[2], targetBRca[4], targetBRca[5], targetBRca[6]);
         }
 

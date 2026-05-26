@@ -21,8 +21,15 @@ Progress log:
 - 2026-05-26: Runtime conversion implemented: capture now stores
   `rawAuthorityObjectSpace` and `rawAuthorityBodySpace`; creation and held
   updates write `transformA = proxyBody^-1 * rawAuthorityWorld`,
-  `transformB = desiredBody^-1 * rawAuthorityWorld`, and identity `target_bRca`.
-- 2026-05-26: Debug/telemetry paths updated to report the new identity-target
+  `transformB = desiredBody^-1 * rawAuthorityWorld`.
+- 2026-05-26: Ghidra audit corrected the motor-feed assumption. FO4VR
+  `NpJacobianBuilder::buildJacobianFromRagdollMotorAtom_hkpConstraintQueryIn_`
+  at `0x141a5f3b0` calls the target-basis helper at `0x1417d05f0`, which
+  transforms `target_bRca` rows from the base body-B frame. Therefore
+  `target_bRca` must carry the same body-B-local raw-authority rotation as
+  `transformB`, written as rows. Identity is only correct when transform B has
+  identity rotation.
+- 2026-05-26: Debug/telemetry paths updated to report the target-vs-transformB
   invariant and proxy-local signed axis decomposition from the live constraint
   frames.
 - 2026-05-26: Validation so far: `custom-fast` Release build passed and
@@ -95,7 +102,8 @@ The implemented path is the full **Option B** conversion:
 - `transformB`:
   - `desiredBodyWorld^-1 * rawAuthorityFrame`
 - `target_bRca`:
-  - identity-equivalent zero-error target in FO4VR's actual solver byte convention
+  - rows of `desiredBodyWorld^-1 * rawAuthorityFrame`
+  - same logical rotation as `transformB`, but stored in the ragdoll motor's row view
 - `desiredBodyWorld`:
   - `rawAuthorityFrame * frozenBodyInRawAuthorityFrame`
 - Pivot A:
@@ -109,7 +117,7 @@ At the desired pose:
 
 - `world(transformA on body A) == rawAuthorityFrame`
 - `world(transformB on body B) == rawAuthorityFrame`
-- `target_bRca` encodes zero angular error between those two frames in FO4VR's real ragdoll motor convention
+- `target_bRca` transforms base body-B axes to the desired raw-authority axes in FO4VR's real ragdoll motor convention
 
 That is the invariant the implementation must satisfy.
 
@@ -121,7 +129,7 @@ Under Option B, the success metrics become:
 
 - constraint frame A world vs raw authority world
 - constraint frame B world vs raw authority world
-- zero-error encoding in `target_bRca`
+- target rows vs transform-B rotation
 - stable grip / pivot behavior
 - no persistent long-path angular correction on left hand
 
@@ -194,7 +202,7 @@ desiredBodyWorld   = rawAuthorityWorld * rawAuthorityBodySpace
 
 transformA = inverse(proxyBodyWorld) * rawAuthorityWorld
 transformB = inverse(desiredBodyWorld) * rawAuthorityWorld
-target_bRca = identity-equivalent zero-error target
+target_bRca rows = rotation(transformB)
 ```
 
 Required reconstruction invariant:
@@ -276,7 +284,7 @@ Implemented role:
 - add explicit helpers for:
   - frame A derivation
   - frame B derivation
-  - identity-equivalent `target_bRca` encoding
+  - body-B-local `target_bRca` row encoding
   - pivot translation derivation under the new contract
 
 ## Data contract changes
@@ -307,7 +315,7 @@ Before code:
 1. Define the raw authority frame origin exactly.
 2. Define whether current frozen relation fields are reusable or must be replaced.
 3. Write the intended world/local equations for A, B, target, and pivots.
-4. Decide the expected identity-equivalent form of `target_bRca` for FO4VR row/column conventions.
+4. Decide the expected body-B-local row form of `target_bRca` for FO4VR row/column conventions.
 
 Deliverable:
 
@@ -326,7 +334,7 @@ Tests must prove:
 1. Given a proxy body world frame and a raw authority world frame, computed frame A local transform reconstructs the raw authority world frame.
 2. Given a desired body world frame and the same raw authority world frame, computed frame B local transform reconstructs the raw authority world frame.
 3. At the desired pose, A and B world-space constraint frames match.
-4. `target_bRca` written from that contract is the identity-equivalent zero-error target in the verified FO4VR encoding.
+4. `target_bRca` written from that contract matches transform-B rotation in the verified FO4VR row encoding.
 5. Pivot A and pivot B translations remain consistent with the same frame contract.
 
 ### Requirement
@@ -337,8 +345,8 @@ Status:
 
 - Complete. `GrabAuthorityFramePolicyTests.cpp` and
   `GrabAuthorityProxyPolicyTests.cpp` cover raw-authority recomposition, body
-  A/B local frame reconstruction, local-transform serialization, and identity
-  `target_bRca`.
+  A/B local frame reconstruction, local-transform serialization, and body-B
+  local `target_bRca` row storage.
 
 ## Phase 2 — Add explicit telemetry for the raw-authority invariant
 
@@ -350,7 +358,7 @@ Needed metrics:
 - constraint A world vs raw authority world
 - body B world vs desired body world
 - constraint B world vs raw authority world
-- `target_bRca` vs identity-equivalent zero-error target
+- `target_bRca` rows vs transform-B rotation
 - pivot A local reconstruction error
 - pivot B local reconstruction error
 
@@ -438,10 +446,11 @@ Once runtime math is converted:
 
 Status:
 
-- Mostly complete. Existing overlay/log fields were repointed to the identity
-  target invariant and raw-authority desired frames. Runtime log labels now use
-  `targetRowsIdentity` / `targetColsIdentity`; field names in
-  `GrabTelemetry.h` remain backward-compatible.
+- Complete for the Ghidra-corrected feed invariant. Existing overlay/log fields
+  were repointed to the target-vs-transformB invariant and raw-authority
+  desired frames. Runtime log labels now use `targetRowsTransformB` /
+  `targetColsTransformB`; field names in `GrabTelemetry.h` remain
+  backward-compatible.
 
 ## Phase 7 — Remove superseded partial-contract helpers
 
@@ -494,7 +503,7 @@ Use one left grab and one right grab of the same object.
 
 1. `constraintAWorld -> rawAuthorityWorld` approaches zero rotational error
 2. `constraintBWorld -> rawAuthorityWorld` approaches zero rotational error at desired pose
-3. `target_bRca` logs as identity-equivalent zero-error target in the verified solver convention
+3. `target_bRca` rows log near zero delta to transform-B rotation in the verified solver convention
 4. pivot A/B reconstruction errors stay near zero
 5. persistent left-hand long-path / 360-style correction disappears
 6. `RAGDOLL FRAME ERROR` no longer shows the same steady mismatch pattern
@@ -521,11 +530,12 @@ That will invalidate A/B equality even if the rotation math looks correct.
 
 This makes debugging much harder and risks carrying stale assumptions into telemetry and update code.
 
-### Risk 3 — `target_bRca` identity assumption may be byte-convention sensitive
+### Risk 3 — `target_bRca` identity assumption was wrong for rotated transform B
 
-The conceptual target is zero angular error. Identity rows and columns are the
-stored representation used by this implementation, which keeps the byte
-convention explicit and easy to verify.
+The conceptual target is zero angular error, but Ghidra shows the ragdoll motor
+does not interpret identity against the already-localized transform-B frame. It
+first transforms `target_bRca` rows from base body B, so the stored target must
+mirror the transform-B rotation rows.
 
 ### Risk 4 — Pivot B translation is easy to fake incorrectly
 
