@@ -152,6 +152,7 @@ namespace rock
         bool rockDebugDrawHandBoneContacts = false;
         bool rockDebugDrawSoftContacts = false;
         bool rockDebugDrawGrabAuthorityProxy = false;
+        bool rockDebugDrawGrabProxySemanticAxesOnly = false;
         int rockDebugMaxHandBoneBodiesDrawn = 48;
         int rockDebugMaxBodyBoneBodiesDrawn = 32;
         bool rockDebugDrawWeaponColliders = false;

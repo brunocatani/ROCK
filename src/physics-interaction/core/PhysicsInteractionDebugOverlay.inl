@@ -6,31 +6,35 @@
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::DebugOverlayPublish);
 
         auto* hknp = context.hknpWorld;
-        const bool drawRockColliderBodies = g_rockConfig.rockDebugShowColliders;
-        const bool drawGrabPivots = g_rockConfig.rockDebugShowGrabPivots;
-        const bool drawFingerProbes = g_rockConfig.rockDebugShowGrabFingerProbes;
-        const bool drawPalmVectors = g_rockConfig.rockDebugShowPalmVectors;
-        const bool drawGrabPockets = g_rockConfig.rockDebugDrawGrabPockets;
-        const bool drawRootFlattenedFingerSkeleton = g_rockConfig.rockDebugShowRootFlattenedFingerSkeletonMarkers;
+        const bool drawGrabProxySemanticAxesOnly = g_rockConfig.rockDebugDrawGrabProxySemanticAxesOnly;
+        const bool drawRockColliderBodies = !drawGrabProxySemanticAxesOnly && g_rockConfig.rockDebugShowColliders;
+        const bool drawTargetColliderBodies = !drawGrabProxySemanticAxesOnly && g_rockConfig.rockDebugShowTargetColliders;
+        const bool drawHandAxes = !drawGrabProxySemanticAxesOnly && g_rockConfig.rockDebugShowHandAxes;
+        const bool drawGrabPivots = !drawGrabProxySemanticAxesOnly && g_rockConfig.rockDebugShowGrabPivots;
+        const bool drawFingerProbes = !drawGrabProxySemanticAxesOnly && g_rockConfig.rockDebugShowGrabFingerProbes;
+        const bool drawPalmVectors = !drawGrabProxySemanticAxesOnly && g_rockConfig.rockDebugShowPalmVectors;
+        const bool drawGrabPockets = !drawGrabProxySemanticAxesOnly && g_rockConfig.rockDebugDrawGrabPockets;
+        const bool drawRootFlattenedFingerSkeleton = !drawGrabProxySemanticAxesOnly && g_rockConfig.rockDebugShowRootFlattenedFingerSkeletonMarkers;
         const auto skeletonBoneMode = skeleton_bone_debug_math::sanitizeDebugSkeletonBoneMode(g_rockConfig.rockDebugSkeletonBoneMode);
         const auto skeletonBoneSource = skeleton_bone_debug_math::sanitizeDebugSkeletonBoneSource(g_rockConfig.rockDebugSkeletonBoneSource);
         const bool drawSkeletonBones =
-            g_rockConfig.rockDebugShowSkeletonBoneVisualizer && skeletonBoneMode != skeleton_bone_debug_math::DebugSkeletonBoneMode::Off;
-        const bool drawGrabPocketNormal = g_rockConfig.rockDebugShowGrabPocketNormal;
-        const bool drawGrabContactPatch = g_rockConfig.rockDebugDrawGrabContactPatch;
-        const bool drawGrabForceTorque = g_rockConfig.rockDebugDrawGrabForceTorque;
+            !drawGrabProxySemanticAxesOnly && g_rockConfig.rockDebugShowSkeletonBoneVisualizer && skeletonBoneMode != skeleton_bone_debug_math::DebugSkeletonBoneMode::Off;
+        const bool drawGrabPocketNormal = !drawGrabProxySemanticAxesOnly && g_rockConfig.rockDebugShowGrabPocketNormal;
+        const bool drawGrabContactPatch = !drawGrabProxySemanticAxesOnly && g_rockConfig.rockDebugDrawGrabContactPatch;
+        const bool drawGrabForceTorque = !drawGrabProxySemanticAxesOnly && g_rockConfig.rockDebugDrawGrabForceTorque;
         const bool drawGrabForceTorqueText = drawGrabForceTorque && g_rockConfig.rockDebugDrawGrabForceTorqueText;
         const bool drawGrabPivotSourceCollider = drawGrabForceTorque && g_rockConfig.rockDebugDrawGrabPivotSourceCollider;
         const bool drawGrabPivotSourceEvidence = drawGrabForceTorque && g_rockConfig.rockDebugDrawGrabPivotSourceEvidence;
-        const bool drawHandBoneContacts = g_rockConfig.rockDebugDrawHandBoneContacts;
-        const bool drawSoftContacts = g_rockConfig.rockDebugDrawSoftContacts;
-        const bool drawGrabAuthorityProxy = g_rockConfig.rockDebugDrawGrabAuthorityProxy;
-        const bool drawGrabTransformTelemetry = g_rockConfig.rockDebugGrabTransformTelemetry;
+        const bool drawHandBoneContacts = !drawGrabProxySemanticAxesOnly && g_rockConfig.rockDebugDrawHandBoneContacts;
+        const bool drawSoftContacts = !drawGrabProxySemanticAxesOnly && g_rockConfig.rockDebugDrawSoftContacts;
+        const bool drawGrabAuthorityProxy = !drawGrabProxySemanticAxesOnly && g_rockConfig.rockDebugDrawGrabAuthorityProxy;
+        const bool drawGrabProxySemanticAxes = drawGrabProxySemanticAxesOnly;
+        const bool drawGrabTransformTelemetry = !drawGrabProxySemanticAxesOnly && g_rockConfig.rockDebugGrabTransformTelemetry;
         const bool drawGrabTransformTelemetryAxes = drawGrabTransformTelemetry && g_rockConfig.rockDebugGrabTransformTelemetryAxes;
         const bool drawGrabTransformTelemetryText = drawGrabTransformTelemetry && g_rockConfig.rockDebugGrabTransformTelemetryText;
-        const bool drawPerformanceProfilerOverlay = performance_profiler::overlayTextEnabled();
-        const bool drawWeaponAuthorityDebug = _twoHandedGrip.isGripping() && (g_rockConfig.rockDebugShowHandAxes || drawGrabPivots);
-        const bool drawWorldOriginDiagnostics = g_rockConfig.rockDebugWorldObjectOriginDiagnostics;
+        const bool drawPerformanceProfilerOverlay = !drawGrabProxySemanticAxesOnly && performance_profiler::overlayTextEnabled();
+        const bool drawWeaponAuthorityDebug = !drawGrabProxySemanticAxesOnly && _twoHandedGrip.isGripping() && (drawHandAxes || drawGrabPivots);
+        const bool drawWorldOriginDiagnostics = !drawGrabProxySemanticAxesOnly && g_rockConfig.rockDebugWorldObjectOriginDiagnostics;
         if (drawWorldOriginDiagnostics && !s_worldOriginDiagnosticsEnabledLogged) {
             ROCK_LOG_INFO(Hand,
                 "World object origin diagnostics enabled: intervalFrames={} warnThresholdGameUnits={:.2f} visualSourceOrder=bodyOwnerNode>hitNode>visualNode>referenceRoot",
@@ -40,9 +44,9 @@
         } else if (!drawWorldOriginDiagnostics) {
             s_worldOriginDiagnosticsEnabledLogged = false;
         }
-        if (!drawRockColliderBodies && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawFingerProbes &&
+        if (!drawRockColliderBodies && !drawTargetColliderBodies && !drawHandAxes && !drawGrabPivots && !drawFingerProbes &&
             !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal && !drawGrabContactPatch && !drawHandBoneContacts &&
-            !drawSoftContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay && !drawWeaponAuthorityDebug &&
+            !drawSoftContacts && !drawGrabAuthorityProxy && !drawGrabProxySemanticAxes && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay && !drawWeaponAuthorityDebug &&
             !drawWorldOriginDiagnostics) {
             debug::ClearFrame();
             return;
@@ -53,8 +57,8 @@
         debug::BodyOverlayFrame frame{};
         frame.world = hknp;
         frame.drawRockBodies = drawRockColliderBodies || drawGrabAuthorityProxy || drawGrabPivotSourceCollider;
-        frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
-        frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabForceTorque;
+        frame.drawTargetBodies = drawTargetColliderBodies;
+        frame.drawAxes = drawHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabProxySemanticAxes || drawGrabForceTorque;
         frame.drawMarkers =
             drawGrabPivots || drawFingerProbes || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton || drawGrabPocketNormal || drawGrabContactPatch ||
             drawGrabForceTorque || drawHandBoneContacts || drawSoftContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes || drawWeaponAuthorityDebug ||
@@ -258,7 +262,7 @@
         if (frame.drawAxes) {
             if (!rightDisabled) {
                 const RE::NiTransform& rawHand = context.right.rawHandWorld;
-                if (g_rockConfig.rockDebugShowHandAxes) {
+                if (drawHandAxes) {
                     addAxisTransform(rawHand, debug::AxisOverlayRole::RightHandRaw, rawHand.translate, false);
                     addAxisBody(_rightHand.getCollisionBodyId(), debug::AxisOverlayRole::RightHandBody, rawHand.translate, true);
                 }
@@ -266,11 +270,79 @@
 
             if (!leftDisabled) {
                 const RE::NiTransform& rawHand = context.left.rawHandWorld;
-                if (g_rockConfig.rockDebugShowHandAxes) {
+                if (drawHandAxes) {
                     addAxisTransform(rawHand, debug::AxisOverlayRole::LeftHandRaw, rawHand.translate, false);
                     addAxisBody(_leftHand.getCollisionBodyId(), debug::AxisOverlayRole::LeftHandBody, rawHand.translate, true);
                 }
             }
+        }
+
+        if (drawGrabProxySemanticAxes) {
+            auto withOverlayOrigin = [](RE::NiTransform transform, const RE::NiPoint3& origin) {
+                transform.translate = origin;
+                return transform;
+            };
+
+            auto makeSemanticGripFrame = [](const RE::NiTransform& rawHandWorld, bool isLeft, const RE::NiPoint3& origin, RE::NiTransform& outFrame) {
+                const auto semanticPocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
+                    rawHandWorld,
+                    isLeft,
+                    origin,
+                    0.0f,
+                    1.0f);
+                if (!semanticPocket.valid) {
+                    return false;
+                }
+
+                outFrame = rawHandWorld;
+                outFrame.translate = origin;
+                outFrame.scale = 1.0f;
+                outFrame.rotate = hand_bone_collider_geometry_math::matrixFromAxes<RE::NiMatrix3>(
+                    semanticPocket.fingerForwardWorld,
+                    semanticPocket.thumbSideWorld,
+                    semanticPocket.palmNormalWorld);
+                return true;
+            };
+
+            auto addProxySemanticAxes = [&](const Hand& hand, const RE::NiTransform& rawHandWorld) {
+                const bool isLeft = hand.isLeft();
+                if ((isLeft && leftDisabled) || (!isLeft && rightDisabled)) {
+                    return;
+                }
+
+                RE::NiTransform generatedPalmWorld{};
+                if (!hand.tryGetPalmAnchorTarget(generatedPalmWorld)) {
+                    return;
+                }
+
+                const RE::NiTransform generatedProxyWorld =
+                    applyRuntimeGrabAuthorityProxyOffsetToFrame(generatedPalmWorld, rawHandWorld, isLeft);
+                RE::NiTransform semanticGripWorld{};
+                if (!makeSemanticGripFrame(rawHandWorld, isLeft, generatedProxyWorld.translate, semanticGripWorld)) {
+                    return;
+                }
+
+                const auto debugBasis = grab_transform_telemetry_overlay::buildHandAttachedTextBasis(rawHandWorld, isLeft);
+                const RE::NiPoint3 origin = generatedProxyWorld.translate;
+                addStoredColumnAxisTransform(
+                    withOverlayOrigin(generatedPalmWorld, origin - debugBasis.panelRight * 8.0f),
+                    isLeft ? debug::AxisOverlayRole::LeftGrabPalmGeneratedDirect : debug::AxisOverlayRole::RightGrabPalmGeneratedDirect,
+                    origin,
+                    false);
+                addStoredColumnAxisTransform(
+                    generatedProxyWorld,
+                    isLeft ? debug::AxisOverlayRole::LeftGrabProxyReadback : debug::AxisOverlayRole::RightGrabProxyReadback,
+                    origin,
+                    false);
+                addStoredColumnAxisTransform(
+                    withOverlayOrigin(semanticGripWorld, origin + debugBasis.panelRight * 8.0f),
+                    isLeft ? debug::AxisOverlayRole::LeftGrabSemanticHandFrame : debug::AxisOverlayRole::RightGrabSemanticHandFrame,
+                    origin,
+                    false);
+            };
+
+            addProxySemanticAxes(_rightHand, context.right.rawHandWorld);
+            addProxySemanticAxes(_leftHand, context.left.rawHandWorld);
         }
 
         if (drawPalmVectors) {
@@ -1469,7 +1541,7 @@
                     }
 
                     const bool isLeft = hand.isLeft();
-                    if (!g_rockConfig.rockDebugShowHandAxes) {
+                    if (!drawHandAxes) {
                         addAxisTransform(rawHandWorld, isLeft ? debug::AxisOverlayRole::LeftHandRaw : debug::AxisOverlayRole::RightHandRaw, rawHandWorld.translate, false);
                     }
 

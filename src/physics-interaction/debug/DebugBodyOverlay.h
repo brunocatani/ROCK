@@ -58,6 +58,8 @@ namespace rock::debug
         LeftGrabHeldNode,
         RightGrabPalmGeneratedDirect,
         LeftGrabPalmGeneratedDirect,
+        RightGrabSemanticHandFrame,
+        LeftGrabSemanticHandFrame,
         RightGrabPalmAuthorityFrame,
         LeftGrabPalmAuthorityFrame,
         RightGrabAuthorityProxyTarget,
