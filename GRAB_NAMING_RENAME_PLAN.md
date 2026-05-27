@@ -7,7 +7,7 @@ Scope: Current dynamic loose-object grab path only
 
 ## Execution Tracking
 
-Status: In progress
+Status: Completed
 Last updated: 2026-05-27
 
 Phase checklist:
@@ -22,7 +22,7 @@ Phase checklist:
 - [x] Validation: source-boundary test build
 - [x] Validation: source-boundary tests
 - [x] Final grep for retired stems
-- [ ] Git commit
+- [x] Git commit
 
 Working notes:
 
@@ -31,6 +31,7 @@ Working notes:
 3. Legitimate real-hand-body/contact uses still exist and must remain untouched in semantic-contact and `_handBody` code.
 4. Runtime/overlay/source-boundary consumers also needed updates because the rename crosses telemetry structs, debug logging, and test-enforced source boundaries.
 5. Validation completed successfully with `custom-fast`, `ROCKPolicyTestBinaries`, and `ctest -L source-boundary`.
+6. Rename implementation completed and committed on this branch.
 
 ## Purpose
 
