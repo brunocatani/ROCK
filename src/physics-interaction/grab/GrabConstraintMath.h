@@ -13,9 +13,9 @@ namespace rock::grab_constraint_math
      * every held update. Transform A comes from the live physics hand, so a
      * frozen transform-B pivot makes the linear and angular goals disagree: the
      * pivot can be visually locked while the held body cannot rotate into the
-     * desired frame. Keeping both target_bRca and transformB.translation
-     * conversions here makes constraint creation and per-frame writes use one
-     * verified convention.
+     * desired frame. Transform-B carries the object-side alignment into the
+     * hand/proxy authority frame; the ragdoll motor target is the zero-error
+     * identity relation between the resulting A/B constraint frames.
      */
 
     /*
@@ -100,14 +100,16 @@ namespace rock::grab_constraint_math
          * Dynamic grab writes a custom FO4VR hknp atom chain directly, and the
          * two angular byte consumers do not use the same storage view. The
          * set-local-transforms atom consumes transform-B as hkMatrix column
-         * blocks, while in-game snap telemetry showed the ragdoll motor target
-         * converging to the row/forward interpretation on top grabs. Keep
-         * transform-B in column storage, but write target_bRca so its solver-row
-         * view carries the inverse body-to-hand relation.
+         * blocks. Since transform-B already rotates the B-side constraint frame
+         * into body-A/authority space, target_bRca must be the zero-error
+         * identity relation. Writing the same body-to-hand relation into both
+         * places double-encodes the angular offset and makes the live BRca
+         * relation chase a non-zero target at the desired pose.
          */
-        const auto bodyToHandRotation = desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
+        auto bodyToHandRotation = desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
+        auto targetIdentityRotation = transform_math::makeIdentityRotation<decltype(bodyToHandRotation)>();
         writeHavokRotationColumns(transformBRotation, bodyToHandRotation);
-        writeHavokRotationRows(targetBRca, bodyToHandRotation);
+        writeHavokRotationRows(targetBRca, targetIdentityRotation);
     }
 
     template <class Transform, class Vector>
