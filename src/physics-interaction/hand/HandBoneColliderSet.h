@@ -48,11 +48,11 @@ namespace rock
     public:
         HandBoneColliderSet();
 
-        bool create(RE::hknpWorld* world, void* bhkWorld, bool isLeft, BethesdaPhysicsBody& palmAnchorBody);
-        void destroy(void* bhkWorld, BethesdaPhysicsBody& palmAnchorBody);
+        bool create(RE::hknpWorld* world, void* bhkWorld, bool isLeft, BethesdaPhysicsBody& palmAnchorBody, BethesdaPhysicsBody& palmAnchorGrabBody);
+        void destroy(void* bhkWorld, BethesdaPhysicsBody& palmAnchorBody, BethesdaPhysicsBody& palmAnchorGrabBody);
         void reset();
-        void update(RE::hknpWorld* world, bool isLeft, BethesdaPhysicsBody& palmAnchorBody, float deltaTime);
-        void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing, BethesdaPhysicsBody& palmAnchorBody);
+        void update(RE::hknpWorld* world, bool isLeft, BethesdaPhysicsBody& palmAnchorBody, BethesdaPhysicsBody& palmAnchorGrabBody, float deltaTime);
+        void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing, BethesdaPhysicsBody& palmAnchorBody, BethesdaPhysicsBody& palmAnchorGrabBody);
 
         bool hasBodies() const { return _created; }
         std::uint32_t getBodyCount() const { return _bodyCountAtomic.load(std::memory_order_acquire); }
@@ -61,6 +61,7 @@ namespace rock
         bool tryGetBodyMetadataAtomic(std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const;
         bool tryGetBodyRoleAtomic(std::uint32_t bodyId, hand_collider_semantics::HandColliderRole& outRole) const;
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const;
+        bool tryGetPalmAnchorGrabTarget(RE::NiTransform& outTarget) const;
         bool tryGetPalmAnchorConstructionDebug(PalmAnchorConstructionDebugSnapshot& outSnapshot) const;
 
     private:
@@ -98,6 +99,7 @@ namespace rock
 
         bool captureBoneLookup(bool isLeft, BoneFrameLookup& outLookup);
         bool makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, hand_collider_semantics::HandColliderRole role, RoleFrameResult& outFrame) const;
+        bool makePalmAnchorGrabFrame(const BoneFrameLookup& lookup, bool isLeft, RoleFrameResult& outFrame) const;
         bool makePalmAnchorConstructionDebug(const BoneFrameLookup& lookup, PalmAnchorConstructionDebugSnapshot& outSnapshot) const;
         RE::hknpShape* buildShapeForRole(const RoleFrameResult& frame, hand_collider_semantics::HandColliderRole role) const;
         bool createBodyForRole(RE::hknpWorld* world, void* bhkWorld, bool isLeft, hand_collider_semantics::HandColliderRole role, const RoleFrameResult& frame, BodyInstance& instance);
@@ -113,9 +115,12 @@ namespace rock
         RE::hknpWorld* _cachedWorld = nullptr;
         void* _cachedBhkWorld = nullptr;
         GeneratedKeyframedBodyDriveState _palmAnchorDriveState{};
+        GeneratedKeyframedBodyDriveState _palmAnchorGrabDriveState{};
         RE::NiTransform _latestPalmAnchorTarget{};
+        RE::NiTransform _latestPalmAnchorGrabTarget{};
         PalmAnchorConstructionDebugSnapshot _latestPalmAnchorConstructionDebug{};
         bool _hasLatestPalmAnchorTarget = false;
+        bool _hasLatestPalmAnchorGrabTarget = false;
         bool _hasLatestPalmAnchorConstructionDebug = false;
         const void* _cachedSkeleton = nullptr;
         const void* _cachedBoneTree = nullptr;

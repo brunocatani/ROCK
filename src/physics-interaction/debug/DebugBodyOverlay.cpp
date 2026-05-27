@@ -1392,6 +1392,8 @@ float4 main(PS_INPUT input) : SV_Target {
                 return 9.0f;
             case AxisOverlayRole::RightPalmAnchorLiveBody:
             case AxisOverlayRole::LeftPalmAnchorLiveBody:
+            case AxisOverlayRole::RightPalmAnchorGrabLiveBody:
+            case AxisOverlayRole::LeftPalmAnchorGrabLiveBody:
                 return 15.0f;
             case AxisOverlayRole::RightGrabPalmAuthorityFrame:
             case AxisOverlayRole::LeftGrabPalmAuthorityFrame:
@@ -1441,6 +1443,8 @@ float4 main(PS_INPUT input) : SV_Target {
                 return 0.96f;
             case AxisOverlayRole::RightPalmAnchorLiveBody:
             case AxisOverlayRole::LeftPalmAnchorLiveBody:
+            case AxisOverlayRole::RightPalmAnchorGrabLiveBody:
+            case AxisOverlayRole::LeftPalmAnchorGrabLiveBody:
                 return 0.72f;
             case AxisOverlayRole::RightGrabPalmAuthorityFrame:
             case AxisOverlayRole::LeftGrabPalmAuthorityFrame:

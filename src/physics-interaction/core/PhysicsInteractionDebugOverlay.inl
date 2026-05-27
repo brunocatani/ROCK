@@ -340,7 +340,7 @@
                 const auto generatedRole =
                     isLeft ? debug::AxisOverlayRole::LeftGrabPalmGeneratedDirect : debug::AxisOverlayRole::RightGrabPalmGeneratedDirect;
                 const auto liveRole =
-                    isLeft ? debug::AxisOverlayRole::LeftPalmAnchorLiveBody : debug::AxisOverlayRole::RightPalmAnchorLiveBody;
+                    isLeft ? debug::AxisOverlayRole::LeftPalmAnchorGrabLiveBody : debug::AxisOverlayRole::RightPalmAnchorGrabLiveBody;
                 const auto semanticRole =
                     isLeft ? debug::AxisOverlayRole::LeftGrabSemanticHandFrame : debug::AxisOverlayRole::RightGrabSemanticHandFrame;
                 addStoredColumnAxisTransform(
@@ -349,7 +349,7 @@
                     generatedPalmWorld.translate,
                     true);
                 Hand::LivePalmAnchorReference livePalm{};
-                if (hand.tryResolveLivePalmAnchorReference(hknp, livePalm)) {
+                if (hand.tryResolveLivePalmAnchorGrabReference(hknp, livePalm)) {
                     addAxisTransform(
                         withOverlayOrigin(livePalm.world, origin),
                         liveRole,

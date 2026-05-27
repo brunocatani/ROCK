@@ -62,6 +62,8 @@ namespace rock::debug
         LeftGrabSemanticHandFrame,
         RightPalmAnchorLiveBody,
         LeftPalmAnchorLiveBody,
+        RightPalmAnchorGrabLiveBody,
+        LeftPalmAnchorGrabLiveBody,
         RightGrabPalmAuthorityFrame,
         LeftGrabPalmAuthorityFrame,
         RightGrabAuthorityProxyTarget,

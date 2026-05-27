@@ -226,7 +226,7 @@ Reject-Text 'data/config/ROCK.ini' 'fGrabLooseWeaponSharedConstraintAngularForce
 Require-Text 'src/RockConfig.cpp' 'kDefaultGrabLooseWeaponSharedConstraintMaxForceMultiplier\s*=\s*4\.5f' 'Loose non-equipped weapon custom authority must preserve the HIGGS-style 9000-vs-2000 base linear force ratio.'
 Require-Text 'data/config/ROCK.ini' 'fGrabLooseWeaponSharedConstraintMaxForceMultiplier\s*=\s*4\.5' 'Packaged ROCK.ini must use the loose weapon base linear force multiplier before mass capping.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '_nativeGrabReleasePending|native mouse-spring flush failure' 'Native mouse-spring release/failure state must be removed.'
-Require-Text 'src/physics-interaction/hand/Hand.cpp' 'tryResolveLivePalmAnchorReference[\s\S]*tryResolveLiveBodyWorldTransform' 'Grab pivot authority must resolve from the live palm-anchor body frame.'
+Require-Text 'src/physics-interaction/hand/Hand.cpp' 'tryResolveLivePalmAnchorGrabReference[\s\S]*tryResolveLiveBodyWorldTransform' 'Grab pivot authority must resolve from the live PalmAnchorGrab body frame.'
 Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'flushPendingHeldNativeGrab' 'Physics step coordinator must not flush removed native mouse-spring authority.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_rightHand\.flushPendingCustomGrabAuthority\(world,\s*timing\)' 'Right custom grab proxy authority must flush from the between-collide-and-solve coordinator.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' '_leftHand\.flushPendingCustomGrabAuthority\(world,\s*timing\)' 'Left custom grab proxy authority must flush from the between-collide-and-solve coordinator.'
@@ -332,8 +332,8 @@ if ($pivotStart -lt 0 -or $pivotEnd -lt 0) {
     $failures.Add('Hand::computeGrabPivotAWorld boundary could not be located for palm-anchor authority guard.')
 } else {
     $pivotText = $handText.Substring($pivotStart, $pivotEnd - $pivotStart)
-    if ($pivotText -notmatch 'tryResolveLivePalmAnchorReference\(world,\s*palmReference\)') {
-        $failures.Add('Grab pivot capture must read the actual live palm-anchor body reference.')
+    if ($pivotText -notmatch 'tryResolveLivePalmAnchorGrabReference\(world,\s*palmReference\)') {
+        $failures.Add('Grab pivot capture must read the actual live PalmAnchorGrab body reference.')
     }
     if ($pivotText -match '_boneColliders\.tryGetPalmAnchorTarget') {
         $failures.Add('Grab pivot capture must not return to the sampled palm target as active authority.')

@@ -6,7 +6,7 @@ Branch at planning time: `feature/ghidra-grab-motor-mapping`
 
 ## Status
 
-Planning only. No code changes are part of this note.
+Historical plan plus current contract note. The implemented production path now uses a separate grab-only palm anchor body instead of changing the regular generated palm collider.
 
 ## Goal
 
@@ -50,14 +50,16 @@ A future implementation is only correct if those seven items agree on one contra
 Current production behavior is effectively the coherent **proxy-A contract**:
 
 - Body A physical body = hidden proxy body
-- Body A world frame = generated palm/proxy seat translation with raw hand rotation and runtime seat offset
+- Regular `PalmAnchor` body = generated collision/readback body for the hand collider stack
+- `PalmAnchorGrab` body = no-contact grab reference body driven from the generated palm seat translation with raw LArm_Hand/RArm_Hand rotation
+- Body A world frame = `PalmAnchorGrab` translation/rotation with runtime seat offset
 - `transformA` rotation = identity
 - `desiredBodyWorld` = `makeRawHandPalmProxyAuthorityFrame(proxyWorld) * frozenBodyRelation`
 - `transformB` / `target_bRca` = written from the current frozen body-in-raw-rotation-proxy relation
 - Pivot A = explicit local point on proxy body A
 - Pivot B = explicit local point on body B using current solver-local convention
 
-This keeps the generated palm anchor as the physical seat source, but raw LArm_Hand/RArm_Hand rotation owns angular authority before the proxy-local offset, frozen relation, and motor feed are composed.
+This keeps the regular generated palm anchor untouched for colliders, while `PalmAnchorGrab` supplies the grab authority seat source. Raw LArm_Hand/RArm_Hand rotation owns angular authority before the proxy-local offset, frozen relation, and motor feed are composed.
 
 ## Target future contract
 

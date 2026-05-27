@@ -4213,16 +4213,16 @@ namespace rock
         out.nativeFlattenedHandBasis = out.rawHandBasis;
         out.heldFormId = _savedObjectState.refr ? _savedObjectState.refr->GetFormID() : 0;
         out.heldBodyId = _savedObjectState.bodyId.value;
-        out.handBodyId = _handBody.isValid() ? _handBody.getBodyId().value : INVALID_BODY_ID;
+        out.handBodyId = _grabPalmAnchorBody.isValid() ? _grabPalmAnchorBody.getBodyId().value : INVALID_BODY_ID;
         out.legacyConfiguredPivotAWorld = computeGrabPivotAPositionFromHandBasis(out.nativeFlattenedHandWorld, _isLeft);
         out.hasLegacyConfiguredPivotAWorld = true;
         out.runtimePivotSource = "rawHandOriginFallback";
 
         LivePalmAnchorReference palmReference{};
-        if (tryResolveLivePalmAnchorReference(world, palmReference)) {
+        if (tryResolveLivePalmAnchorGrabReference(world, palmReference)) {
             out.runtimePivotSource = palmReference.source == body_frame::BodyFrameSource::MotionCenterOfMass ?
-                                         "livePalmAnchorMotion" :
-                                         "livePalmAnchorBody";
+                                         "livePalmAnchorGrabMotion" :
+                                         "livePalmAnchorGrabBody";
             out.handBodyWorld = palmReference.world;
             out.handBodyBasis = grab_transform_telemetry::makeOrientationBasis(out.handBodyWorld);
             out.handBodySource = palmReference.source;
@@ -4772,25 +4772,25 @@ namespace rock
         (void)fallbackPalmAnchorWorld;
 
         LivePalmAnchorReference palmReference{};
-        if (tryResolveLivePalmAnchorReference(world, palmReference)) {
+        if (tryResolveLivePalmAnchorGrabReference(world, palmReference)) {
             const RE::NiTransform proxyBaseWorld = makePalmAnchorGrabAuthorityBaseFrame(palmReference.world);
             outProxyWorld = applyRuntimeGrabAuthorityProxyOffsetToFrame(proxyBaseWorld, rawHandWorld, _isLeft);
             switch (palmReference.source) {
             case body_frame::BodyFrameSource::MotionCenterOfMass:
-                outSource = "livePalmAnchorMotionGrabFrame";
+                outSource = "livePalmAnchorGrabMotionFrame";
                 break;
             case body_frame::BodyFrameSource::BodyTransform:
-                outSource = "livePalmAnchorBodyGrabFrame";
+                outSource = "livePalmAnchorGrabBodyFrame";
                 break;
             default:
-                outSource = "livePalmAnchorResolvedGrabFrame";
+                outSource = "livePalmAnchorGrabResolvedFrame";
                 break;
             }
             return true;
         }
 
         outProxyWorld = transform_math::makeIdentityTransform<RE::NiTransform>();
-        outSource = "livePalmAnchorUnavailable";
+        outSource = "livePalmAnchorGrabUnavailable";
         return false;
     }
 
@@ -9290,7 +9290,7 @@ namespace rock
             }
 
             pending = _grabAuthorityPendingTarget;
-            livePalmReferenceOk = tryResolveLivePalmAnchorReference(world, livePalmReference);
+            livePalmReferenceOk = tryResolveLivePalmAnchorGrabReference(world, livePalmReference);
             if (!livePalmReferenceOk) {
                 ++_grabAuthorityProxyFailedFlushes;
                 _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);

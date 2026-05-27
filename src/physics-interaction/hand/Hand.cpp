@@ -185,18 +185,20 @@ namespace rock
     void Hand::reset()
     {
         const bool suppressionActive = hand_collision_suppression_math::hasActive(_grabHandCollisionSuppression);
+        const bool hasAnyPalmBody = hasCollisionBody() || _grabPalmAnchorBody.isValid();
         const bool cleanupRequired = hand_lifecycle_policy::requiresHavokCleanupBeforeReset(
-            _activeConstraint.isValid() || _grabAuthorityProxy.isValid(), suppressionActive, _heldBodyIds.size(), _savedObjectState.isValid(), hasCollisionBody());
+            _activeConstraint.isValid() || _grabAuthorityProxy.isValid(), suppressionActive, _heldBodyIds.size(), _savedObjectState.isValid(), hasAnyPalmBody);
         if (cleanupRequired) {
             ROCK_LOG_ERROR(Hand,
-                "{} hand reset blocked: Havok state still needs cleanup (constraint={} proxy={} suppression={} heldBodies={} savedState={} handBody={})",
+                "{} hand reset blocked: Havok state still needs cleanup (constraint={} proxy={} suppression={} heldBodies={} savedState={} handBody={} grabAnchorBody={})",
                 handName(),
                 _activeConstraint.isValid() ? "yes" : "no",
                 _grabAuthorityProxy.isValid() ? "yes" : "no",
                 suppressionActive ? "yes" : "no",
                 _heldBodyIds.size(),
                 _savedObjectState.isValid() ? "yes" : "no",
-                hasCollisionBody() ? "yes" : "no");
+                hasCollisionBody() ? "yes" : "no",
+                _grabPalmAnchorBody.isValid() ? "yes" : "no");
             return;
         }
 
@@ -212,6 +214,7 @@ namespace rock
         _releaseRequested = false;
         _boneColliders.reset();
         _handBody.reset();
+        _grabPalmAnchorBody.reset();
         _currentSelection.clear();
         _cachedFarCandidate.clear();
         _farDetectCounter = 0;
@@ -322,20 +325,22 @@ namespace rock
         const auto heldBodyCount = _heldBodyIds.size();
         const bool hadSavedState = _savedObjectState.isValid();
         const bool hadHandBody = hasCollisionBody();
+        const bool hadGrabPalmAnchorBody = _grabPalmAnchorBody.isValid();
 
-        if (!hadConstraint && !hadProxy && !hadSuppression && heldBodyCount == 0 && !hadSavedState && !hadHandBody) {
+        if (!hadConstraint && !hadProxy && !hadSuppression && heldBodyCount == 0 && !hadSavedState && !hadHandBody && !hadGrabPalmAnchorBody) {
             return;
         }
 
         ROCK_LOG_WARN(Hand,
-            "{} hand abandoning Havok state after world loss: constraint={} proxy={} suppression={} heldBodies={} savedState={} handBody={}",
+            "{} hand abandoning Havok state after world loss: constraint={} proxy={} suppression={} heldBodies={} savedState={} handBody={} grabAnchorBody={}",
             handName(),
             hadConstraint ? "yes" : "no",
             hadProxy ? "yes" : "no",
             hadSuppression ? "yes" : "no",
             heldBodyCount,
             hadSavedState ? "yes" : "no",
-            hadHandBody ? "yes" : "no");
+            hadHandBody ? "yes" : "no",
+            hadGrabPalmAnchorBody ? "yes" : "no");
 
         _activeConstraint.clear();
         abandonGrabAuthorityProxy();
@@ -359,6 +364,7 @@ namespace rock
         clearGrabHandCollisionSuppressionState();
         _boneColliders.reset();
         _handBody.reset();
+        _grabPalmAnchorBody.reset();
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
         clearGrabHandPose(_isLeft);
         clearGrabExternalHandWorldTransform(_isLeft);
@@ -928,25 +934,60 @@ namespace rock
         return true;
     }
 
+    bool Hand::tryResolveLivePalmAnchorGrabReference(RE::hknpWorld* world, LivePalmAnchorReference& outReference) const
+    {
+        outReference = {};
+        outReference.world = transform_math::makeIdentityTransform<RE::NiTransform>();
+
+        if (!world || !_grabPalmAnchorBody.isValid() || _grabPalmAnchorBody.getBodyId().value == INVALID_BODY_ID) {
+            return false;
+        }
+
+        body_frame::BodyFrameSource source = body_frame::BodyFrameSource::Fallback;
+        std::uint32_t motionIndex = body_frame::kFreeMotionIndex;
+        RE::NiTransform livePalmWorld{};
+        if (!tryResolveLiveBodyWorldTransform(world, _grabPalmAnchorBody.getBodyId(), livePalmWorld, &source, &motionIndex)) {
+            return false;
+        }
+
+        outReference.valid = true;
+        outReference.world = livePalmWorld;
+        outReference.source = source;
+        outReference.motionIndex = motionIndex;
+
+        const auto snapshot = havok_runtime::snapshotBody(world, _grabPalmAnchorBody.getBodyId());
+        if (snapshot.valid && snapshot.motion) {
+            outReference.linearVelocityHavok = RE::NiPoint3{
+                snapshot.motion->linearVelocity.x,
+                snapshot.motion->linearVelocity.y,
+                snapshot.motion->linearVelocity.z,
+            };
+            outReference.angularVelocityRadiansPerSecond = RE::NiPoint3{
+                snapshot.motion->angularVelocity.x,
+                snapshot.motion->angularVelocity.y,
+                snapshot.motion->angularVelocity.z,
+            };
+            outReference.hasMotionVelocity = true;
+        }
+
+        return true;
+    }
+
     RE::NiTransform Hand::makePalmAnchorGrabAuthorityBaseFrame(const RE::NiTransform& livePalmWorld) const
     {
-        RE::NiTransform result =
-            hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(livePalmWorld);
+        RE::NiTransform result = livePalmWorld;
 
         /*
-         * The latest generated palm target is the direct output of
-         * buildPalmAnchorFrame, before Havok readback can obscure whether its
-         * axes are collider-native columns or runtime rows. Keep that adapted
-         * target as the generated palm base for debug/telemetry comparison;
-         * startup and runtime helpers attach raw hand rotation before applying
-         * the grab authority seat offset.
+         * PalmAnchorGrab is already driven as the grab reference frame: generated
+         * palm seat translation plus raw hand rotation. Prefer the latest queued
+         * target rotation when available so authority math is not affected by
+         * one-frame Havok readback ambiguity, but keep the live body translation
+         * as the physical seat source.
          */
-        RE::NiTransform palmTarget{};
-        if (_boneColliders.tryGetPalmAnchorTarget(palmTarget)) {
-            const RE::NiTransform targetAuthority =
-                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmTarget);
-            result.rotate = targetAuthority.rotate;
-            result.scale = targetAuthority.scale;
+        RE::NiTransform palmGrabTarget{};
+        if (_boneColliders.tryGetPalmAnchorGrabTarget(palmGrabTarget)) {
+            result.rotate = palmGrabTarget.rotate;
+            result.scale = palmGrabTarget.scale;
         }
 
         result.translate = livePalmWorld.translate;
@@ -956,7 +997,7 @@ namespace rock
     RE::NiPoint3 Hand::computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const
     {
         LivePalmAnchorReference palmReference{};
-        if (tryResolveLivePalmAnchorReference(world, palmReference) &&
+        if (tryResolveLivePalmAnchorGrabReference(world, palmReference) &&
             std::isfinite(palmReference.world.translate.x) &&
             std::isfinite(palmReference.world.translate.y) &&
             std::isfinite(palmReference.world.translate.z)) {
@@ -974,7 +1015,7 @@ namespace rock
     {
         outPivotWorld = {};
         LivePalmAnchorReference palmReference{};
-        if (tryResolveLivePalmAnchorReference(world, palmReference) &&
+        if (tryResolveLivePalmAnchorGrabReference(world, palmReference) &&
             std::isfinite(palmReference.world.translate.x) &&
             std::isfinite(palmReference.world.translate.y) &&
             std::isfinite(palmReference.world.translate.z)) {
@@ -1009,7 +1050,7 @@ namespace rock
         out = {};
 
         LivePalmAnchorReference palmReference{};
-        if (!tryResolveLivePalmAnchorReference(world, palmReference) ||
+        if (!tryResolveLivePalmAnchorGrabReference(world, palmReference) ||
             !std::isfinite(palmReference.world.translate.x) ||
             !std::isfinite(palmReference.world.translate.y) ||
             !std::isfinite(palmReference.world.translate.z)) {
@@ -1783,7 +1824,7 @@ namespace rock
 
     bool Hand::createCollision(RE::hknpWorld* world, void* bhkWorld)
     {
-        if (hasCollisionBody()) {
+        if (hasCollisionBody() || _grabPalmAnchorBody.isValid()) {
             ROCK_LOG_WARN(Hand, "{} hand already has collision body -- skipping create", handName());
             return false;
         }
@@ -1798,15 +1839,16 @@ namespace rock
             return false;
         }
 
-        if (!_boneColliders.create(world, bhkWorld, _isLeft, _handBody)) {
+        if (!_boneColliders.create(world, bhkWorld, _isLeft, _handBody, _grabPalmAnchorBody)) {
             ROCK_LOG_ERROR(Hand, "{} bone-derived hand collision create failed", handName());
             return false;
         }
 
         ROCK_LOG_INFO(Hand,
-            "{} hand collision created from live skeleton bones — palmAnchorBody={} generatedBodies={}",
+            "{} hand collision created from live skeleton bones — palmAnchorBody={} palmAnchorGrabBody={} generatedBodies={}",
             handName(),
             _handBody.getBodyId().value,
+            _grabPalmAnchorBody.getBodyId().value,
             _boneColliders.getBodyCount());
 
         return true;
@@ -1814,11 +1856,15 @@ namespace rock
 
     void Hand::destroyCollision(void* bhkWorld)
     {
-        if (!hasCollisionBody() && !_boneColliders.hasBodies())
+        if (!hasCollisionBody() && !_grabPalmAnchorBody.isValid() && !_boneColliders.hasBodies())
             return;
 
-        ROCK_LOG_DEBUG(Hand, "{} hand collision destroying — palmAnchorBody={}", handName(), _handBody.getBodyId().value);
-        _boneColliders.destroy(bhkWorld, _handBody);
+        ROCK_LOG_DEBUG(Hand,
+            "{} hand collision destroying — palmAnchorBody={} palmAnchorGrabBody={}",
+            handName(),
+            _handBody.getBodyId().value,
+            _grabPalmAnchorBody.getBodyId().value);
+        _boneColliders.destroy(bhkWorld, _handBody, _grabPalmAnchorBody);
         clearGrabHandCollisionSuppressionState();
     }
 
@@ -1827,7 +1873,7 @@ namespace rock
         if (!hasCollisionBody() || !world)
             return;
 
-        _boneColliders.update(world, _isLeft, _handBody, deltaTime);
+        _boneColliders.update(world, _isLeft, _handBody, _grabPalmAnchorBody, deltaTime);
     }
 
     void Hand::flushPendingCollisionPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
@@ -1836,7 +1882,7 @@ namespace rock
             return;
         }
 
-        _boneColliders.flushPendingPhysicsDrive(world, timing, _handBody);
+        _boneColliders.flushPendingPhysicsDrive(world, timing, _handBody, _grabPalmAnchorBody);
     }
 
 }
