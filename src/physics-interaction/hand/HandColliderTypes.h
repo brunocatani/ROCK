@@ -446,15 +446,16 @@ namespace rock::hand_bone_collider_geometry_math
     inline Transform generatedColliderFrameToGrabAuthorityFrame(const Transform& colliderFrame)
     {
         /*
-         * The root-flattened generated collider frame is the runtime visual
-         * truth. In-game proxy isolation proved the older transpose adapter made
-         * the hidden grab authority body rotate differently from the working
-         * palm/finger colliders. Body-A must therefore consume the same physical
-         * frame that the generated collider body consumes. Any grab-space math
-         * that needs an inverse or relative transform must do that in the saved
-         * object relation, not by changing the physical proxy orientation.
+         * buildPalmAnchorFrame deliberately stores generated collider axes in
+         * native collider columns. Grab authority consumes the corrected palm
+         * proxy contract through ROCK's row-basis NiTransform math instead:
+         * local X=fingers, local Y=palm depth/back, local Z=cross-palm. Keep the
+         * adapter here so collider placement stays native while the hidden
+         * proxy/seat and motor frame receive the semantic authority basis.
          */
-        return colliderFrame;
+        Transform result = colliderFrame;
+        result.rotate = transposeStoredRotation(colliderFrame.rotate);
+        return result;
     }
 
     template <class Transform, class Vector>

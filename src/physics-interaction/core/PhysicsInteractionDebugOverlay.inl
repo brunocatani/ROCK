@@ -326,8 +326,10 @@
                     return;
                 }
 
+                const RE::NiTransform generatedAuthorityBaseWorld =
+                    hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(generatedPalmWorld);
                 const RE::NiTransform generatedProxyWorld =
-                    applyRuntimeGrabAuthorityProxyOffsetToFrame(generatedPalmWorld, rawHandWorld, isLeft);
+                    applyRuntimeGrabAuthorityProxyOffsetToFrame(generatedAuthorityBaseWorld, rawHandWorld, isLeft);
                 RE::NiTransform semanticGripWorld{};
                 if (!makeSemanticGripFrame(rawHandWorld, isLeft, generatedProxyWorld.translate, semanticGripWorld)) {
                     return;

@@ -928,6 +928,31 @@ namespace rock
         return true;
     }
 
+    RE::NiTransform Hand::makePalmAnchorGrabAuthorityBaseFrame(const RE::NiTransform& livePalmWorld) const
+    {
+        RE::NiTransform result =
+            hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(livePalmWorld);
+
+        /*
+         * The latest generated palm target is the direct output of
+         * buildPalmAnchorFrame, before Havok readback can obscure whether its
+         * axes are collider-native columns or runtime rows. Keep the live palm
+         * body translation as the physical seat point, but take authority
+         * rotation from the freshly generated target adapted to corrected palm
+         * proxy space.
+         */
+        RE::NiTransform palmTarget{};
+        if (_boneColliders.tryGetPalmAnchorTarget(palmTarget)) {
+            const RE::NiTransform targetAuthority =
+                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmTarget);
+            result.rotate = targetAuthority.rotate;
+            result.scale = targetAuthority.scale;
+        }
+
+        result.translate = livePalmWorld.translate;
+        return result;
+    }
+
     RE::NiPoint3 Hand::computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const
     {
         LivePalmAnchorReference palmReference{};
@@ -935,8 +960,7 @@ namespace rock
             std::isfinite(palmReference.world.translate.x) &&
             std::isfinite(palmReference.world.translate.y) &&
             std::isfinite(palmReference.world.translate.z)) {
-            const RE::NiTransform proxyBaseWorld =
-                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
+            const RE::NiTransform proxyBaseWorld = makePalmAnchorGrabAuthorityBaseFrame(palmReference.world);
             return applyRuntimeGrabAuthorityProxyOffsetToFrame(proxyBaseWorld, fallbackHandWorldTransform, _isLeft).translate;
         }
 
@@ -954,8 +978,7 @@ namespace rock
             std::isfinite(palmReference.world.translate.x) &&
             std::isfinite(palmReference.world.translate.y) &&
             std::isfinite(palmReference.world.translate.z)) {
-            const RE::NiTransform palmAuthorityBaseWorld =
-                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
+            const RE::NiTransform palmAuthorityBaseWorld = makePalmAnchorGrabAuthorityBaseFrame(palmReference.world);
             const RE::NiTransform startupCaptureFrameWorld =
                 makeGrabStartupCaptureAuthorityFrame(rawHandWorldTransform, palmAuthorityBaseWorld);
             outPivotWorld = applyGrabAuthorityProxyLocalOffsetToFrame(startupCaptureFrameWorld, _isLeft).translate;
@@ -980,8 +1003,8 @@ namespace rock
         /*
          * Offset tuning needs the startup capture seat point before a grab
          * creates the real no-contact proxy body. This marker intentionally
-         * shows the raw-rotation capture offset, while active proxy readback
-         * remains the separate runtime held-authority frame.
+         * shows the startup capture offset, while active proxy readback remains
+         * the separate runtime held-authority frame.
          */
         out = {};
 
@@ -993,8 +1016,7 @@ namespace rock
             return false;
         }
 
-        const RE::NiTransform palmAuthorityBaseWorld =
-            hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
+        const RE::NiTransform palmAuthorityBaseWorld = makePalmAnchorGrabAuthorityBaseFrame(palmReference.world);
         out.palmAuthorityBaseWorld = palmAuthorityBaseWorld;
         const RE::NiTransform startupCaptureFrameWorld =
             makeGrabStartupCaptureAuthorityFrame(rawHandWorld, palmAuthorityBaseWorld);

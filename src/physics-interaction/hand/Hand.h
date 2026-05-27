@@ -461,6 +461,7 @@ namespace rock
             const RE::NiTransform* fallbackPalmAnchorWorld,
             RE::NiTransform& outProxyWorld,
             const char*& outSource) const;
+        RE::NiTransform makePalmAnchorGrabAuthorityBaseFrame(const RE::NiTransform& livePalmWorld) const;
         bool resolveActiveGrabAuthorityPivotAWorld(RE::hknpWorld* world,
             const RE::NiTransform& rawHandWorldTransform,
             RE::NiPoint3& outPivotWorld) const;

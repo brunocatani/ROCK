@@ -167,17 +167,15 @@ namespace rock
 
     inline RE::NiTransform makeGrabStartupCaptureAuthorityFrame(const RE::NiTransform& rawHandWorld, const RE::NiTransform& palmAnchorWorld)
     {
+        (void)rawHandWorld;
+
         /*
-         * Grab startup has a narrower problem than runtime held motion: the
-         * configured proxy-local seat offset must be interpreted in controller
-         * space when choosing and freezing the first pivot point. The actual
-         * hidden proxy body still follows the existing generated palm frame
-         * after the grab is live, so do not use this helper for held updates.
+         * Startup capture and runtime proxy drive now share the corrected palm
+         * proxy contract. The generated palm anchor still provides the seat
+         * point, but configured local offsets are interpreted through the
+         * adapted authority basis rather than raw controller rotation.
          */
-        RE::NiTransform result = palmAnchorWorld;
-        result.rotate = rawHandWorld.rotate;
-        result.scale = rawHandWorld.scale;
-        return result;
+        return palmAnchorWorld;
     }
 
     inline RE::NiTransform applyGrabAuthorityProxyLocalOffsetToFrame(const RE::NiTransform& proxyFrameWorld, bool isLeft)
@@ -201,22 +199,15 @@ namespace rock
         const RE::NiTransform& rawHandWorld,
         bool isLeft)
     {
-        if (!isLeft) {
-            return applyGrabAuthorityProxyLocalOffsetToFrame(proxyFrameWorld, false);
-        }
+        (void)rawHandWorld;
 
         /*
-         * Left-hand runtime Pivot A still uses the generated palm anchor as its
-         * base origin, but the hidden seat offset must follow the raw hand's
-         * local palm-depth direction. Applying the offset through the generated
-         * left palm frame sends Y to the back of the hand even when the raw hand
-         * and the working palm-pocket startup capture agree on the front.
+         * Runtime grab authority receives a corrected palm proxy frame from the
+         * generated-collider adapter. Apply the INI seat offset in that same
+         * local contract for both hands: X=fingers, Y=palm depth/back, and
+         * Z=cross-palm. The raw hand argument is retained only to keep existing
+         * call sites explicit about the source frame available at the boundary.
          */
-        RE::NiTransform result = proxyFrameWorld;
-        const RE::NiPoint3 localOffset = computeGrabAuthorityProxyOffsetLocalGame(true);
-        if (std::isfinite(localOffset.x) && std::isfinite(localOffset.y) && std::isfinite(localOffset.z)) {
-            result.translate = result.translate + transform_math::localVectorToWorld(rawHandWorld, localOffset);
-        }
-        return result;
+        return applyGrabAuthorityProxyLocalOffsetToFrame(proxyFrameWorld, isLeft);
     }
 }

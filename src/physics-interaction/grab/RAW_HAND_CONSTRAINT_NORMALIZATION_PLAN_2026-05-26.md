@@ -50,10 +50,10 @@ A future implementation is only correct if those seven items agree on one contra
 Current production behavior is effectively the coherent **proxy-A contract**:
 
 - Body A physical body = hidden proxy body
-- Body A world frame = generated palm/proxy frame with runtime seat offset
+- Body A world frame = corrected palm proxy authority frame with runtime seat offset
 - `transformA` rotation = identity
-- `desiredBodyWorld` = `makeRawRotationPalmTranslationFrame(rawHand, proxyWorld) * frozenBodyRelation`
-- `transformB` / `target_bRca` = written from the current frozen body-in-hybrid-frame relation
+- `desiredBodyWorld` = `makeCorrectedPalmProxyAuthorityFrame(proxyWorld) * frozenBodyRelation`
+- `transformB` / `target_bRca` = written from the current frozen body-in-corrected-proxy relation
 - Pivot A = explicit local point on proxy body A
 - Pivot B = explicit local point on body B using current solver-local convention
 
@@ -235,7 +235,7 @@ Most likely candidates:
 
 ### Recommendation
 
-If the chosen raw authority frame is not exactly the same frame currently implied by `makeRawRotationPalmTranslationFrame(...)`, introduce new explicit names rather than overloading the old ones.
+If the chosen authority frame is not exactly the same frame currently implied by `makeCorrectedPalmProxyAuthorityFrame(...)`, introduce new explicit names rather than overloading the old ones.
 
 Possible examples:
 
