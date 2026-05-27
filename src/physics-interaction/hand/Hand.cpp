@@ -928,7 +928,7 @@ namespace rock
         return true;
     }
 
-    RE::NiPoint3 Hand::computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const
+    RE::NiPoint3 Hand::computeRuntimeAuthorityPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const
     {
         LivePalmAnchorReference palmReference{};
         if (tryResolveLivePalmAnchorReference(world, palmReference) &&
@@ -965,7 +965,7 @@ namespace rock
         return false;
     }
 
-    RE::NiPoint3 Hand::computeGrabStartupCapturePivotAWorld(RE::hknpWorld* world, const RE::NiTransform& rawHandWorldTransform) const
+    RE::NiPoint3 Hand::computeStartupCaptureSeatPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& rawHandWorldTransform) const
     {
         RE::NiPoint3 rawRollPalmPocketPivotWorld{};
         if (tryComputeGrabRawRollPalmPocketPivotAWorld(world, rawHandWorldTransform, rawRollPalmPocketPivotWorld)) {

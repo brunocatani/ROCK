@@ -313,9 +313,9 @@ namespace rock
         }
     }
 
-    ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
-        const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
-        const RE::NiTransform& desiredBodyTransformHandSpace, const GrabConstraintMotorTuning& tuning)
+    ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId authorityBodyId, RE::hknpBodyId objectBodyId,
+        const RE::NiTransform& authorityBodyWorld, const RE::NiPoint3& pivotAWorldGame, const float* pivotBConstraintLocalHk,
+        const RE::NiTransform& desiredBodyTransformAuthoritySpace, const GrabConstraintMotorTuning& tuning)
     {
         ActiveConstraint result;
         if (!world) {
@@ -352,7 +352,7 @@ namespace rock
             *reinterpret_cast<std::int16_t*>(ragAtom + 0x04) = static_cast<std::int16_t>(RT_RAGDOLL_INIT_OFFSET);
             *reinterpret_cast<std::int16_t*>(ragAtom + 0x06) = static_cast<std::int16_t>(RT_RAGDOLL_PREV_ANG_OFFSET);
 
-            auto* target = reinterpret_cast<float*>(ragAtom + RAGDOLL_MOTOR_TARGET_BRCA);
+            auto* target = reinterpret_cast<float*>(ragAtom + RAGDOLL_MOTOR_TARGET_B_RELATIVE_TO_A);
             target[0] = 1.0f;
             target[1] = 0.0f;
             target[2] = 0.0f;
@@ -429,17 +429,17 @@ namespace rock
             tA_col2[2] = 1.0f;
             tA_col2[3] = 0.0f;
 
-            grab_constraint_math::writeConstraintPivotLocalTranslation(tA_pos, handBodyWorld, palmWorldGame, gameToHavokScale());
+            grab_constraint_math::writeConstraintPivotLocalTranslation(tA_pos, authorityBodyWorld, pivotAWorldGame, gameToHavokScale());
 
             auto* tB_col0 = reinterpret_cast<float*>(header + GRAB_TRANSFORM_B_COL0);
             auto* tB_pos = reinterpret_cast<float*>(header + GRAB_TRANSFORM_B_POS);
-            auto* targetBRca = reinterpret_cast<float*>(header + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
+            auto* targetBRelativeToA = reinterpret_cast<float*>(header + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_B_RELATIVE_TO_A);
 
-            grab_constraint_math::writeInitialGrabAngularFrame(tB_col0, targetBRca, desiredBodyTransformHandSpace);
+            grab_constraint_math::writeInitialGrabAngularFrame(tB_col0, targetBRelativeToA, desiredBodyTransformAuthoritySpace);
 
-            tB_pos[0] = pivotBBodyLocalHk[0];
-            tB_pos[1] = pivotBBodyLocalHk[1];
-            tB_pos[2] = pivotBBodyLocalHk[2];
+            tB_pos[0] = pivotBConstraintLocalHk[0];
+            tB_pos[1] = pivotBConstraintLocalHk[1];
+            tB_pos[2] = pivotBConstraintLocalHk[2];
             tB_pos[3] = 0.0f;
 
             ROCK_LOG_TRACE(GrabConstraint,
@@ -448,8 +448,8 @@ namespace rock
                 "tB_inverse_col0=({:.3f},{:.3f},{:.3f})",
                 tA_pos[0], tA_pos[1], tA_pos[2], tB_pos[0], tB_pos[1], tB_pos[2], tB_col0[0], tB_col0[1], tB_col0[2]);
 
-            ROCK_LOG_TRACE(GrabConstraint, "target_bRca initial inverse solver rows: row0=[{:.3f},{:.3f},{:.3f}] row1=[{:.3f},{:.3f},{:.3f}]", targetBRca[0], targetBRca[1],
-                targetBRca[2], targetBRca[4], targetBRca[5], targetBRca[6]);
+            ROCK_LOG_TRACE(GrabConstraint, "targetBRelativeToA initial inverse solver rows: row0=[{:.3f},{:.3f},{:.3f}] row1=[{:.3f},{:.3f},{:.3f}]", targetBRelativeToA[0], targetBRelativeToA[1],
+                targetBRelativeToA[2], targetBRelativeToA[4], targetBRelativeToA[5], targetBRelativeToA[6]);
         }
 
         const float linearTau = safePositiveMotorValue(tuning.linearTau, 0.03f);
@@ -518,7 +518,7 @@ namespace rock
 
         RE::hknpConstraintCinfo cinfo{};
         cinfo.constraintData = reinterpret_cast<RE::hkpConstraintData*>(cd);
-        cinfo.bodyIdA = handBodyId.value;
+        cinfo.bodyIdA = authorityBodyId.value;
         cinfo.bodyIdB = objectBodyId.value;
 
         std::uint32_t outId = 0x7FFF'FFFF;
@@ -536,7 +536,7 @@ namespace rock
             return result;
         }
 
-        ROCK_LOG_DEBUG(GrabConstraint, "Constraint created: id={}, hand={}, obj={}", outId, handBodyId.value, objectBodyId.value);
+        ROCK_LOG_DEBUG(GrabConstraint, "Constraint created: id={}, authorityBody={}, heldBody={}", outId, authorityBodyId.value, objectBodyId.value);
 
         result.constraintId = outId;
         result.constraintData = cd;
@@ -550,19 +550,19 @@ namespace rock
         return result;
     }
 
-    ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
-        const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
-        const RE::NiTransform& desiredBodyTransformHandSpace, float tau, float damping, float maxForce, float proportionalRecovery, float constantRecovery)
+    ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId authorityBodyId, RE::hknpBodyId objectBodyId,
+        const RE::NiTransform& authorityBodyWorld, const RE::NiPoint3& pivotAWorldGame, const float* pivotBConstraintLocalHk,
+        const RE::NiTransform& desiredBodyTransformAuthoritySpace, float tau, float damping, float maxForce, float proportionalRecovery, float constantRecovery)
     {
         const float linearMaxForce = (std::max)(0.0f, std::isfinite(maxForce) ? maxForce : 0.0f);
         return createGrabConstraint(
             world,
-            handBodyId,
+            authorityBodyId,
             objectBodyId,
-            handBodyWorld,
-            palmWorldGame,
-            pivotBBodyLocalHk,
-            desiredBodyTransformHandSpace,
+            authorityBodyWorld,
+            pivotAWorldGame,
+            pivotBConstraintLocalHk,
+            desiredBodyTransformAuthoritySpace,
             GrabConstraintMotorTuning{
                 .linearTau = tau,
                 .linearDamping = damping,

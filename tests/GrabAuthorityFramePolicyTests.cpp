@@ -162,7 +162,7 @@ int main()
             RE::NiPoint3{ -1.0f, 0.0f, 0.0f },
             0.001f);
         ok &= expectPointNear("desired object shifts selected point to pivot A",
-            frozen.desiredObjectWorld.translate,
+            frozen.desiredCapturedNodeWorld.translate,
             RE::NiPoint3{ 4.0f, 0.0f, 0.0f },
             0.001f);
         ok &= expectPointNear("desired body preserves body-local relation",
@@ -170,12 +170,12 @@ int main()
             RE::NiPoint3{ 6.0f, 0.0f, 0.0f },
             0.001f);
         ok &= expectPointNear("pivot A is preserved as a non-origin proxy-local point",
-            frozen.pivotAHandBodyLocalGame,
+            frozen.pivotAAuthorityBodyLocalGame,
             RE::NiPoint3{ 2.0f, 0.0f, 0.0f },
             0.001f);
 
         const RE::NiTransform recomposedDesiredBody =
-            rock::transform_math::composeTransforms(proxyWorld, frozen.rawRotationProxyBodyHandSpace);
+            rock::transform_math::composeTransforms(proxyWorld, frozen.desiredBodyInAuthorityFrameSpace);
         ok &= expectPointNear("frozen body relation recomposes through proxy frame",
             recomposedDesiredBody.translate,
             frozen.desiredBodyWorld.translate,

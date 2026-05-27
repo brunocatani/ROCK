@@ -69,86 +69,86 @@ namespace rock::grab_transform_telemetry
     {
         std::uint32_t heldFormId = 0;
         std::uint32_t heldBodyId = 0x7FFF'FFFF;
-        std::uint32_t handBodyId = 0x7FFF'FFFF;
+        std::uint32_t livePalmAnchorBodyId = 0x7FFF'FFFF;
         std::uint32_t heldMotionIndex = body_frame::kFreeMotionIndex;
-        std::uint32_t handMotionIndex = body_frame::kFreeMotionIndex;
+        std::uint32_t livePalmAnchorMotionIndex = body_frame::kFreeMotionIndex;
         body_frame::BodyFrameSource heldBodySource{ body_frame::BodyFrameSource::Fallback };
-        body_frame::BodyFrameSource handBodySource{ body_frame::BodyFrameSource::Fallback };
+        body_frame::BodyFrameSource livePalmAnchorSource{ body_frame::BodyFrameSource::Fallback };
 
         RE::NiTransform rawHandWorld{};
-        RE::NiTransform nativeFlattenedHandWorld{};
-        RE::NiTransform handBodyWorld{};
+        RE::NiTransform rawHandWorldTelemetryAlias{};
+        RE::NiTransform livePalmAnchorWorld{};
         RE::NiTransform heldBodyWorld{};
         RE::NiTransform heldNativeBodyWorld{};
-        RE::NiTransform heldNodeWorld{};
+        RE::NiTransform heldVisualNodeWorld{};
         RE::NiTransform heldBodyDerivedNodeWorld{};
-        RE::NiTransform liveHandWorldAtGrab{};
-        RE::NiTransform handBodyWorldAtGrab{};
+        RE::NiTransform rawHandWorldAtGrab{};
+        RE::NiTransform authorityBodyWorldAtGrab{};
         RE::NiTransform palmAnchorTargetWorld{};
         RE::NiTransform palmAnchorGrabAuthorityWorld{};
         RE::NiTransform proxyReadbackWorld{};
-        RE::NiTransform objectNodeWorldAtGrab{};
-        RE::NiTransform desiredObjectWorldAtGrab{};
-        RE::NiTransform currentRawDesiredObjectWorld{};
+        RE::NiTransform capturedNodeWorldAtGrab{};
+        RE::NiTransform desiredCapturedNodeWorldAtGrab{};
+        RE::NiTransform currentRawDesiredCapturedNodeWorld{};
         RE::NiTransform currentRawDesiredBodyWorld{};
-        RE::NiTransform rawHandSpace{};
-        RE::NiTransform handBodyToRawHandAtGrab{};
-        RE::NiTransform bodyLocal{};
+        RE::NiTransform desiredNodeInRawHandSpace{};
+        RE::NiTransform authorityBodyToRawHandAtGrab{};
+        RE::NiTransform bodyInCapturedNodeSpace{};
         RE::NiTransform heldRelativeHandTargetWorld{};
 
         OrientationBasis rawHandBasis{};
-        OrientationBasis nativeFlattenedHandBasis{};
-        OrientationBasis handBodyBasis{};
+        OrientationBasis rawHandTelemetryAliasBasis{};
+        OrientationBasis livePalmAnchorBasis{};
         OrientationBasis palmAnchorTargetBasis{};
         OrientationBasis palmAnchorGrabAuthorityBasis{};
         OrientationBasis proxyReadbackBasis{};
         OrientationBasis heldBodyBasis{};
         OrientationBasis heldNativeBodyBasis{};
-        OrientationBasis heldNodeBasis{};
+        OrientationBasis heldVisualNodeBasis{};
         OrientationBasis heldBodyDerivedNodeBasis{};
-        OrientationBasis liveHandWorldAtGrabBasis{};
-        OrientationBasis handBodyWorldAtGrabBasis{};
-        OrientationBasis objectNodeWorldAtGrabBasis{};
-        OrientationBasis desiredObjectWorldAtGrabBasis{};
-        OrientationBasis currentRawDesiredObjectWorldBasis{};
+        OrientationBasis rawHandWorldAtGrabBasis{};
+        OrientationBasis authorityBodyWorldAtGrabBasis{};
+        OrientationBasis capturedNodeWorldAtGrabBasis{};
+        OrientationBasis desiredCapturedNodeWorldAtGrabBasis{};
+        OrientationBasis currentRawDesiredCapturedNodeWorldBasis{};
         OrientationBasis currentRawDesiredBodyWorldBasis{};
-        OrientationBasis rawHandSpaceBasis{};
-        OrientationBasis bodyLocalBasis{};
+        OrientationBasis desiredNodeInRawHandSpaceBasis{};
+        OrientationBasis bodyInCapturedNodeSpaceBasis{};
         OrientationBasis heldRelativeHandTargetBasis{};
         const char* runtimePivotSource = "unknown";
 
         RE::NiPoint3 pivotAWorld{};
         RE::NiPoint3 pivotBWorld{};
         RE::NiPoint3 pivotDeltaWorld{};
-        RE::NiPoint3 legacyConfiguredPivotAWorld{};
+        RE::NiPoint3 legacyHandBasisPivotAWorld{};
         RE::NiPoint3 constraintTransformBLocalGame{};
         RE::NiPoint3 desiredTransformBLocalGame{};
         PointPairDelta<RE::NiPoint3> transformBLocalDelta{};
-        PointPairDelta<RE::NiPoint3> legacyConfiguredPivotAToPalmAnchor{};
-        PointPairDelta<RE::NiPoint3> legacyConfiguredPivotAToGrabAuthority{};
-        PointPairDelta<RE::NiPoint3> legacyConfiguredPivotAToProxyReadback{};
-        PointPairDelta<RE::NiPoint3> legacyConfiguredPivotAToRuntimePivotA{};
+        PointPairDelta<RE::NiPoint3> legacyHandBasisPivotAToPalmAnchor{};
+        PointPairDelta<RE::NiPoint3> legacyHandBasisPivotAToGrabAuthority{};
+        PointPairDelta<RE::NiPoint3> legacyHandBasisPivotAToProxyReadback{};
+        PointPairDelta<RE::NiPoint3> legacyHandBasisPivotAToRuntimePivotA{};
 
         RE::NiPoint3 rootFingerBaseCenterWorld{};
         RE::NiPoint3 rootFingerTipCenterWorld{};
         RE::NiPoint3 rootFingerBaseLineWorld{ 1.0f, 0.0f, 0.0f };
-        RE::NiPoint3 handBodyFingerBaseLineWorld{ 1.0f, 0.0f, 0.0f };
+        RE::NiPoint3 livePalmAnchorFingerBaseLineWorld{ 1.0f, 0.0f, 0.0f };
         RE::NiPoint3 palmAnchorFingerBaseLineWorld{ 1.0f, 0.0f, 0.0f };
         RE::NiPoint3 rootFingerOpenLineWorld{ 1.0f, 0.0f, 0.0f };
         RE::NiPoint3 rootPalmNormalWorld{ 0.0f, 0.0f, -1.0f };
 
-        TransformDelta rawToHandBody{};
+        TransformDelta rawToLivePalmAnchor{};
         TransformDelta rawToPalmAnchorTarget{};
-        TransformDelta nativeFlattenedHandToPalmAnchorTarget{};
-        TransformDelta nativeFlattenedHandToGrabAuthority{};
-        TransformDelta nativeFlattenedHandToProxyReadback{};
+        TransformDelta rawHandTelemetryAliasToPalmAnchorTarget{};
+        TransformDelta rawHandTelemetryAliasToGrabAuthority{};
+        TransformDelta rawHandTelemetryAliasToProxyReadback{};
         TransformDelta palmAnchorTargetToGrabAuthority{};
         TransformDelta grabAuthorityToProxyReadback{};
         TransformDelta heldNativeBodyToHeldBody{};
-        TransformDelta heldNodeToDesiredObjectAtGrab{};
-        TransformDelta heldNodeToRawDesiredObject{};
+        TransformDelta heldVisualNodeToDesiredCapturedNodeAtGrab{};
+        TransformDelta heldVisualNodeToRawDesiredCapturedNode{};
         TransformDelta heldBodyToRawDesiredBody{};
-        TransformDelta bodyDerivedNodeToHeldNode{};
+        TransformDelta bodyDerivedNodeToHeldVisualNode{};
         TransformDelta bodyTargetNodeErr{};
         TransformDelta rawToHeldRelativeHandTarget{};
         AxisAlignmentDots rawToHeldRelativeHandTargetAxes{};
@@ -168,14 +168,14 @@ namespace rock::grab_transform_telemetry
         float heldBodyMass = 0.0f;
         bool valid = false;
         bool isLeft = false;
-        bool hasHandBodyWorld = false;
+        bool hasLivePalmAnchorWorld = false;
         bool hasPalmAnchorTarget = false;
         bool hasPalmAnchorGrabAuthority = false;
         bool hasProxyReadback = false;
-        bool hasLegacyConfiguredPivotAWorld = false;
+        bool hasLegacyHandBasisPivotAWorld = false;
         bool hasHeldBodyWorld = false;
         bool hasHeldNativeBodyWorld = false;
-        bool hasHeldNodeWorld = false;
+        bool hasHeldVisualNodeWorld = false;
         bool hasHeldBodyDerivedNodeWorld = false;
         bool hasGrabStartFrames = false;
         bool hasRootFingerLandmarks = false;
@@ -251,15 +251,15 @@ namespace rock::grab_transform_telemetry
     }
 
     template <class Transform>
-    inline Transform computeReverseTargetFromCapturedSpace(const Transform& heldNodeWorld, const Transform& capturedObjectHandSpace)
+    inline Transform computeReverseTargetFromCapturedSpace(const Transform& capturedNodeWorld, const Transform& capturedObjectHandSpace)
     {
-        return grab_frame_math::computeFrameFromCapturedObject(heldNodeWorld, capturedObjectHandSpace);
+        return grab_frame_math::computeFrameFromCapturedObject(capturedNodeWorld, capturedObjectHandSpace);
     }
 
     template <class Transform>
-    inline Transform computeHeldRelativeHandTarget(const Transform& heldNodeWorld, const Transform& rawHandSpace)
+    inline Transform computeHeldRelativeHandTarget(const Transform& capturedNodeWorld, const Transform& desiredNodeInRawHandSpace)
     {
-        return computeReverseTargetFromCapturedSpace(heldNodeWorld, rawHandSpace);
+        return computeReverseTargetFromCapturedSpace(capturedNodeWorld, desiredNodeInRawHandSpace);
     }
 
     template <class Matrix, class Vector>
@@ -398,9 +398,9 @@ namespace rock::grab_transform_telemetry
     }
 
     template <class Transform>
-    inline TransformDelta measureHeldNodeVsDesiredObject(const Transform& heldNodeWorld, const Transform& desiredObjectWorldAtGrab)
+    inline TransformDelta measureHeldVisualNodeVsDesiredCapturedNode(const Transform& heldVisualNodeWorld, const Transform& desiredCapturedNodeWorldAtGrab)
     {
-        return measureTransformDelta(heldNodeWorld, desiredObjectWorldAtGrab);
+        return measureTransformDelta(heldVisualNodeWorld, desiredCapturedNodeWorldAtGrab);
     }
 
     inline const char* handLabel(bool isLeft)
