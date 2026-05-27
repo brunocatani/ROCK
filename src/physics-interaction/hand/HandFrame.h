@@ -202,15 +202,13 @@ namespace rock
         bool isLeft)
     {
         /*
-         * Runtime grab authority receives the generated palm/proxy translation
-         * from the collider adapter, then attaches raw hand rotation before the
-         * INI seat offset is applied. The proxy body, frozen relation, and motor
-         * feed therefore share raw LArm_Hand/RArm_Hand angular authority while
-         * retaining the generated palm as the physical seat origin.
+         * Runtime grab authority consumes the resolved grab reference frame as
+         * authored. For PalmAnchorGrab that means generated palm/proxy seat
+         * translation and the grab-reference rotation have already been chosen
+         * before the INI seat offset is applied. Do not rebind rotation here, or
+         * the visible grab reference and solver body-A frame can silently diverge.
          */
-        RE::NiTransform runtimeAuthorityFrame = proxyFrameWorld;
-        runtimeAuthorityFrame.rotate = rawHandWorld.rotate;
-        runtimeAuthorityFrame.scale = rawHandWorld.scale;
-        return applyGrabAuthorityProxyLocalOffsetToFrame(runtimeAuthorityFrame, isLeft);
+        (void)rawHandWorld;
+        return applyGrabAuthorityProxyLocalOffsetToFrame(proxyFrameWorld, isLeft);
     }
 }

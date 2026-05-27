@@ -59,7 +59,7 @@ Current production behavior is effectively the coherent **proxy-A contract**:
 - Pivot A = explicit local point on proxy body A
 - Pivot B = explicit local point on body B using current solver-local convention
 
-This keeps the regular generated palm anchor untouched for colliders, while `PalmAnchorGrab` supplies the grab authority seat source. Raw LArm_Hand/RArm_Hand rotation owns angular authority before the proxy-local offset, frozen relation, and motor feed are composed.
+This keeps the regular generated palm anchor untouched for colliders, while `PalmAnchorGrab` supplies both the grab authority seat source and the rotation consumed by the hidden proxy. The runtime offset layer must preserve `PalmAnchorGrab` rotation instead of rebinding directly to `rawHandWorld`.
 
 ## Target future contract
 

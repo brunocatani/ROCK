@@ -2441,10 +2441,9 @@ namespace rock
         RE::NiTransform makeRawHandPalmProxyAuthorityFrame(const RE::NiTransform& palmProxyWorld)
         {
             /*
-             * The generated palm collider still owns the physical seat point.
-             * Runtime proxy resolution attaches raw hand rotation before the
-             * frame reaches this helper, so do not rebind it again here. Body A,
-             * the frozen relation, and held updates must share the same resolved
+             * Runtime proxy resolution has already selected the grab reference
+             * frame before this helper. Do not rebind rotation here; body A, the
+             * frozen relation, and held updates must share that same resolved
              * proxy authority frame.
              */
             RE::NiTransform result = palmProxyWorld;

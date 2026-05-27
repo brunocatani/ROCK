@@ -326,17 +326,25 @@
                     return;
                 }
 
-                const RE::NiTransform generatedAuthorityBaseWorld =
-                    hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(generatedPalmWorld);
-                const RE::NiTransform generatedProxyWorld =
-                    applyRuntimeGrabAuthorityProxyOffsetToFrame(generatedAuthorityBaseWorld, rawHandWorld, isLeft);
+                Hand::LivePalmAnchorReference livePalm{};
+                if (!hand.tryResolveLivePalmAnchorGrabReference(hknp, livePalm)) {
+                    return;
+                }
+                RE::NiTransform palmAnchorGrabBaseWorld = livePalm.world;
+                RE::NiTransform palmAnchorGrabTargetWorld{};
+                if (hand.tryGetPalmAnchorGrabTarget(palmAnchorGrabTargetWorld)) {
+                    palmAnchorGrabBaseWorld.rotate = palmAnchorGrabTargetWorld.rotate;
+                    palmAnchorGrabBaseWorld.scale = palmAnchorGrabTargetWorld.scale;
+                }
+                const RE::NiTransform runtimeProxyWorld =
+                    applyRuntimeGrabAuthorityProxyOffsetToFrame(palmAnchorGrabBaseWorld, rawHandWorld, isLeft);
                 RE::NiTransform semanticGripWorld{};
-                if (!makeSemanticGripFrame(rawHandWorld, isLeft, generatedProxyWorld.translate, semanticGripWorld)) {
+                if (!makeSemanticGripFrame(rawHandWorld, isLeft, runtimeProxyWorld.translate, semanticGripWorld)) {
                     return;
                 }
 
                 const auto debugBasis = grab_transform_telemetry_overlay::buildHandAttachedTextBasis(rawHandWorld, isLeft);
-                const RE::NiPoint3 origin = generatedProxyWorld.translate;
+                const RE::NiPoint3 origin = runtimeProxyWorld.translate;
                 const auto generatedRole =
                     isLeft ? debug::AxisOverlayRole::LeftGrabPalmGeneratedDirect : debug::AxisOverlayRole::RightGrabPalmGeneratedDirect;
                 const auto liveRole =
@@ -348,14 +356,11 @@
                     generatedRole,
                     generatedPalmWorld.translate,
                     true);
-                Hand::LivePalmAnchorReference livePalm{};
-                if (hand.tryResolveLivePalmAnchorGrabReference(hknp, livePalm)) {
-                    addAxisTransform(
-                        withOverlayOrigin(livePalm.world, origin),
-                        liveRole,
-                        livePalm.world.translate,
-                        true);
-                }
+                addAxisTransform(
+                    withOverlayOrigin(livePalm.world, origin),
+                    liveRole,
+                    livePalm.world.translate,
+                    true);
                 addStoredColumnAxisTransform(
                     withOverlayOrigin(semanticGripWorld, origin + debugBasis.panelRight * 8.0f),
                     semanticRole,
