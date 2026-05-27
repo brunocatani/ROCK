@@ -406,6 +406,7 @@ namespace rock
         bool isHandColliderBodyId(std::uint32_t bodyId) const { return _boneColliders.isColliderBodyIdAtomic(bodyId); }
         bool tryGetHandColliderMetadata(std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const { return _boneColliders.tryGetBodyMetadataAtomic(bodyId, outMetadata); }
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const { return _boneColliders.tryGetPalmAnchorTarget(outTarget); }
+        bool tryGetPalmAnchorConstructionDebug(PalmAnchorConstructionDebugSnapshot& outSnapshot) const { return _boneColliders.tryGetPalmAnchorConstructionDebug(outSnapshot); }
         void recordSemanticContact(const HandColliderBodyMetadata& metadata, std::uint32_t otherBodyId);
         void clearSemanticContactEvidence();
         void tickSemanticContactState();

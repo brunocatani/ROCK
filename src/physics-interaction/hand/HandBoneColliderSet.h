@@ -30,6 +30,19 @@ namespace rock
         float sampledLinearVelocityHavok[4]{};
     };
 
+    struct PalmAnchorConstructionDebugSnapshot
+    {
+        bool valid = false;
+        RE::NiTransform handWorld{};
+        RE::NiTransform targetWorld{};
+        std::array<RE::NiPoint3, hand_collider_semantics::kHandFingerCount> fingerBasesWorld{};
+        RE::NiPoint3 fingerCenterWorld{};
+        RE::NiPoint3 palmCenterWorld{};
+        RE::NiPoint3 crossPalmSeedWorld{ 0.0f, 0.0f, 1.0f };
+        RE::NiPoint3 projectedCrossPalmWorld{ 0.0f, 0.0f, 1.0f };
+        RE::NiPoint3 palmDepthWorld{ 0.0f, 1.0f, 0.0f };
+    };
+
     class HandBoneColliderSet
     {
     public:
@@ -48,6 +61,7 @@ namespace rock
         bool tryGetBodyMetadataAtomic(std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const;
         bool tryGetBodyRoleAtomic(std::uint32_t bodyId, hand_collider_semantics::HandColliderRole& outRole) const;
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const;
+        bool tryGetPalmAnchorConstructionDebug(PalmAnchorConstructionDebugSnapshot& outSnapshot) const;
 
     private:
         static constexpr std::size_t MAX_SEGMENT_BODIES = hand_collider_semantics::kHandSegmentColliderBodyCountPerHand;
@@ -84,6 +98,7 @@ namespace rock
 
         bool captureBoneLookup(bool isLeft, BoneFrameLookup& outLookup);
         bool makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, hand_collider_semantics::HandColliderRole role, RoleFrameResult& outFrame) const;
+        bool makePalmAnchorConstructionDebug(const BoneFrameLookup& lookup, PalmAnchorConstructionDebugSnapshot& outSnapshot) const;
         RE::hknpShape* buildShapeForRole(const RoleFrameResult& frame, hand_collider_semantics::HandColliderRole role) const;
         bool createBodyForRole(RE::hknpWorld* world, void* bhkWorld, bool isLeft, hand_collider_semantics::HandColliderRole role, const RoleFrameResult& frame, BodyInstance& instance);
         void queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds, GeneratedKeyframedBodyDriveState& driveState);
@@ -99,7 +114,9 @@ namespace rock
         void* _cachedBhkWorld = nullptr;
         GeneratedKeyframedBodyDriveState _palmAnchorDriveState{};
         RE::NiTransform _latestPalmAnchorTarget{};
+        PalmAnchorConstructionDebugSnapshot _latestPalmAnchorConstructionDebug{};
         bool _hasLatestPalmAnchorTarget = false;
+        bool _hasLatestPalmAnchorConstructionDebug = false;
         const void* _cachedSkeleton = nullptr;
         const void* _cachedBoneTree = nullptr;
         bool _cachedPowerArmor = false;

@@ -303,6 +303,48 @@ namespace rock
         return true;
     }
 
+    bool HandBoneColliderSet::makePalmAnchorConstructionDebug(const BoneFrameLookup& lookup, PalmAnchorConstructionDebugSnapshot& outSnapshot) const
+    {
+        outSnapshot = {};
+        if (!lookup.valid) {
+            return false;
+        }
+
+        const auto palm = hand_bone_collider_geometry_math::buildPalmAnchorFrame(
+            lookup.hand,
+            lookup.fingerBases,
+            lookup.crossPalmDirection,
+            0.75f);
+        if (!palm.valid) {
+            return false;
+        }
+
+        RE::NiPoint3 fingerCenter{};
+        for (const auto& point : lookup.fingerBases) {
+            fingerCenter = fingerCenter + point;
+        }
+        fingerCenter = fingerCenter * (1.0f / static_cast<float>(lookup.fingerBases.size()));
+
+        RE::NiPoint3 palmCenter = lookup.hand.translate;
+        for (const auto& point : lookup.fingerBases) {
+            palmCenter = palmCenter + point;
+        }
+        palmCenter = palmCenter * (1.0f / static_cast<float>(lookup.fingerBases.size() + 1));
+        const float palmDepthOffset = hand_bone_collider_geometry_math::dot(palmCenter - lookup.hand.translate, palm.palmDepthAxis);
+        palmCenter = palmCenter - palm.palmDepthAxis * palmDepthOffset;
+
+        outSnapshot.valid = true;
+        outSnapshot.handWorld = lookup.hand;
+        outSnapshot.targetWorld = palm.transform;
+        outSnapshot.fingerBasesWorld = lookup.fingerBases;
+        outSnapshot.fingerCenterWorld = fingerCenter;
+        outSnapshot.palmCenterWorld = palmCenter;
+        outSnapshot.crossPalmSeedWorld = lookup.crossPalmDirection;
+        outSnapshot.projectedCrossPalmWorld = palm.crossPalmAxis;
+        outSnapshot.palmDepthWorld = palm.palmDepthAxis;
+        return true;
+    }
+
     RE::hknpShape* HandBoneColliderSet::buildShapeForRole(const RoleFrameResult& frame, HandColliderRole role) const
     {
         if (!frame.valid) {
@@ -414,6 +456,7 @@ namespace rock
         initializeGeneratedKeyframedBodyDriveState(_palmAnchorDriveState, anchorFrame.transform);
         _latestPalmAnchorTarget = anchorFrame.transform;
         _hasLatestPalmAnchorTarget = true;
+        _hasLatestPalmAnchorConstructionDebug = makePalmAnchorConstructionDebug(lookup, _latestPalmAnchorConstructionDebug);
 
         std::size_t createdCount = 0;
         for (const auto role : hand_collider_semantics::kHandNonAnchorColliderRoles) {
@@ -479,7 +522,9 @@ namespace rock
         _cachedBhkWorld = nullptr;
         clearGeneratedKeyframedBodyDriveState(_palmAnchorDriveState);
         _latestPalmAnchorTarget = {};
+        _latestPalmAnchorConstructionDebug = {};
         _hasLatestPalmAnchorTarget = false;
+        _hasLatestPalmAnchorConstructionDebug = false;
         _cachedSkeleton = nullptr;
         _cachedBoneTree = nullptr;
         _cachedPowerArmor = false;
@@ -500,7 +545,9 @@ namespace rock
         _cachedBhkWorld = nullptr;
         clearGeneratedKeyframedBodyDriveState(_palmAnchorDriveState);
         _latestPalmAnchorTarget = {};
+        _latestPalmAnchorConstructionDebug = {};
         _hasLatestPalmAnchorTarget = false;
+        _hasLatestPalmAnchorConstructionDebug = false;
         _cachedSkeleton = nullptr;
         _cachedBoneTree = nullptr;
         _cachedPowerArmor = false;
@@ -554,7 +601,13 @@ namespace rock
         if (makeRoleFrame(lookup, isLeft, HandColliderRole::PalmAnchor, anchorFrame)) {
             _latestPalmAnchorTarget = anchorFrame.transform;
             _hasLatestPalmAnchorTarget = true;
+            _hasLatestPalmAnchorConstructionDebug = makePalmAnchorConstructionDebug(lookup, _latestPalmAnchorConstructionDebug);
             queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState);
+        } else {
+            _latestPalmAnchorTarget = {};
+            _latestPalmAnchorConstructionDebug = {};
+            _hasLatestPalmAnchorTarget = false;
+            _hasLatestPalmAnchorConstructionDebug = false;
         }
 
         for (auto& instance : _bodies) {
@@ -622,6 +675,15 @@ namespace rock
             return false;
         }
         outTarget = _latestPalmAnchorTarget;
+        return true;
+    }
+
+    bool HandBoneColliderSet::tryGetPalmAnchorConstructionDebug(PalmAnchorConstructionDebugSnapshot& outSnapshot) const
+    {
+        if (!_hasLatestPalmAnchorConstructionDebug || !_latestPalmAnchorConstructionDebug.valid) {
+            return false;
+        }
+        outSnapshot = _latestPalmAnchorConstructionDebug;
         return true;
     }
 

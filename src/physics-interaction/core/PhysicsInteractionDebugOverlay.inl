@@ -62,7 +62,7 @@
         frame.drawMarkers =
             drawGrabPivots || drawFingerProbes || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton || drawGrabPocketNormal || drawGrabContactPatch ||
             drawGrabForceTorque || drawHandBoneContacts || drawSoftContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes || drawWeaponAuthorityDebug ||
-            drawWorldOriginDiagnostics;
+            drawGrabProxySemanticAxes || drawWorldOriginDiagnostics;
         frame.drawSkeleton = drawSkeletonBones;
         frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawPerformanceProfilerOverlay;
         RE::bhkWorld* originDiagnosticBhk = drawWorldOriginDiagnostics ? context.bhkWorld : nullptr;
@@ -335,21 +335,73 @@
 
                 const auto debugBasis = grab_transform_telemetry_overlay::buildHandAttachedTextBasis(rawHandWorld, isLeft);
                 const RE::NiPoint3 origin = generatedProxyWorld.translate;
+                const auto generatedRole =
+                    isLeft ? debug::AxisOverlayRole::LeftGrabPalmGeneratedDirect : debug::AxisOverlayRole::RightGrabPalmGeneratedDirect;
+                const auto liveRole =
+                    isLeft ? debug::AxisOverlayRole::LeftPalmAnchorLiveBody : debug::AxisOverlayRole::RightPalmAnchorLiveBody;
+                const auto semanticRole =
+                    isLeft ? debug::AxisOverlayRole::LeftGrabSemanticHandFrame : debug::AxisOverlayRole::RightGrabSemanticHandFrame;
                 addStoredColumnAxisTransform(
                     withOverlayOrigin(generatedPalmWorld, origin - debugBasis.panelRight * 8.0f),
-                    isLeft ? debug::AxisOverlayRole::LeftGrabPalmGeneratedDirect : debug::AxisOverlayRole::RightGrabPalmGeneratedDirect,
-                    origin,
-                    false);
-                addStoredColumnAxisTransform(
-                    generatedProxyWorld,
-                    isLeft ? debug::AxisOverlayRole::LeftGrabProxyReadback : debug::AxisOverlayRole::RightGrabProxyReadback,
-                    origin,
-                    false);
+                    generatedRole,
+                    generatedPalmWorld.translate,
+                    true);
+                Hand::LivePalmAnchorReference livePalm{};
+                if (hand.tryResolveLivePalmAnchorReference(hknp, livePalm)) {
+                    addAxisTransform(
+                        withOverlayOrigin(livePalm.world, origin),
+                        liveRole,
+                        livePalm.world.translate,
+                        true);
+                }
                 addStoredColumnAxisTransform(
                     withOverlayOrigin(semanticGripWorld, origin + debugBasis.panelRight * 8.0f),
-                    isLeft ? debug::AxisOverlayRole::LeftGrabSemanticHandFrame : debug::AxisOverlayRole::RightGrabSemanticHandFrame,
-                    origin,
-                    false);
+                    semanticRole,
+                    semanticGripWorld.translate,
+                    true);
+
+                PalmAnchorConstructionDebugSnapshot construction{};
+                if (hand.tryGetPalmAnchorConstructionDebug(construction)) {
+                    const auto handRole = isLeft ? debug::MarkerOverlayRole::LeftPalmAnchorBuildHand : debug::MarkerOverlayRole::RightPalmAnchorBuildHand;
+                    const auto fingerBaseRole =
+                        isLeft ? debug::MarkerOverlayRole::LeftPalmAnchorBuildFingerBase : debug::MarkerOverlayRole::RightPalmAnchorBuildFingerBase;
+                    const auto fingerCenterRole =
+                        isLeft ? debug::MarkerOverlayRole::LeftPalmAnchorBuildFingerCenter : debug::MarkerOverlayRole::RightPalmAnchorBuildFingerCenter;
+                    const auto fingerForwardRole =
+                        isLeft ? debug::MarkerOverlayRole::LeftPalmAnchorBuildFingerForward : debug::MarkerOverlayRole::RightPalmAnchorBuildFingerForward;
+                    const auto crossPalmSeedRole =
+                        isLeft ? debug::MarkerOverlayRole::LeftPalmAnchorBuildCrossPalmSeed : debug::MarkerOverlayRole::RightPalmAnchorBuildCrossPalmSeed;
+                    const auto projectedCrossPalmRole =
+                        isLeft ? debug::MarkerOverlayRole::LeftPalmAnchorBuildProjectedCrossPalm : debug::MarkerOverlayRole::RightPalmAnchorBuildProjectedCrossPalm;
+                    const auto palmDepthRole =
+                        isLeft ? debug::MarkerOverlayRole::LeftPalmAnchorBuildPalmDepth : debug::MarkerOverlayRole::RightPalmAnchorBuildPalmDepth;
+                    const auto targetOriginRole =
+                        isLeft ? debug::MarkerOverlayRole::LeftPalmAnchorBuildTargetOrigin : debug::MarkerOverlayRole::RightPalmAnchorBuildTargetOrigin;
+                    const float guideLength = 10.0f;
+
+                    addMarkerPoint(handRole, construction.handWorld.translate, 2.4f);
+                    for (const auto& fingerBase : construction.fingerBasesWorld) {
+                        addMarkerPoint(fingerBaseRole, fingerBase, 1.35f);
+                        addMarkerLine(fingerForwardRole, construction.handWorld.translate, fingerBase);
+                    }
+                    addMarkerPoint(fingerCenterRole, construction.fingerCenterWorld, 2.0f);
+                    addMarkerLine(fingerForwardRole, construction.handWorld.translate, construction.fingerCenterWorld);
+                    addMarkerPoint(targetOriginRole, construction.palmCenterWorld, 1.7f);
+                    addMarkerPoint(targetOriginRole, construction.targetWorld.translate, 2.2f);
+                    addMarkerLine(targetOriginRole, construction.palmCenterWorld, construction.targetWorld.translate);
+                    addMarkerRay(crossPalmSeedRole,
+                        construction.handWorld.translate,
+                        construction.handWorld.translate + construction.crossPalmSeedWorld * guideLength,
+                        1.2f);
+                    addMarkerRay(projectedCrossPalmRole,
+                        construction.targetWorld.translate,
+                        construction.targetWorld.translate + construction.projectedCrossPalmWorld * guideLength,
+                        1.2f);
+                    addMarkerRay(palmDepthRole,
+                        construction.targetWorld.translate,
+                        construction.targetWorld.translate + construction.palmDepthWorld * guideLength,
+                        1.2f);
+                }
             };
 
             addProxySemanticAxes(_rightHand, context.right.rawHandWorld);
