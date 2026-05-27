@@ -193,7 +193,6 @@ namespace rock
         rockDebugDrawHandBoneContacts = false;
         rockDebugDrawSoftContacts = false;
         rockDebugDrawGrabAuthorityProxy = false;
-        rockDebugDrawGrabProxySemanticAxesOnly = false;
         rockDebugMaxHandBoneBodiesDrawn = 48;
         rockDebugMaxBodyBoneBodiesDrawn = 32;
         rockDebugDrawWeaponColliders = false;
@@ -809,8 +808,6 @@ namespace rock
         rockDebugDrawHandBoneContacts = ini.GetBoolValue(SECTION, "bDebugDrawHandBoneContacts", rockDebugDrawHandBoneContacts);
         rockDebugDrawSoftContacts = ini.GetBoolValue(SECTION, "bDebugDrawSoftContacts", rockDebugDrawSoftContacts);
         rockDebugDrawGrabAuthorityProxy = ini.GetBoolValue(SECTION, "bDebugDrawGrabAuthorityProxy", rockDebugDrawGrabAuthorityProxy);
-        rockDebugDrawGrabProxySemanticAxesOnly =
-            ini.GetBoolValue(SECTION, "bDebugDrawGrabProxySemanticAxesOnly", rockDebugDrawGrabProxySemanticAxesOnly);
         rockDebugMaxHandBoneBodiesDrawn = static_cast<int>(ini.GetLongValue(SECTION, "iDebugMaxHandBoneBodiesDrawn", rockDebugMaxHandBoneBodiesDrawn));
         if (rockDebugMaxHandBoneBodiesDrawn < 0) {
             rockDebugMaxHandBoneBodiesDrawn = 0;

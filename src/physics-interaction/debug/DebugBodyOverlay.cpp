@@ -1387,14 +1387,6 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::RightGrabPalmGeneratedDirect:
             case AxisOverlayRole::LeftGrabPalmGeneratedDirect:
                 return 7.0f;
-            case AxisOverlayRole::RightGrabSemanticHandFrame:
-            case AxisOverlayRole::LeftGrabSemanticHandFrame:
-                return 9.0f;
-            case AxisOverlayRole::RightPalmAnchorLiveBody:
-            case AxisOverlayRole::LeftPalmAnchorLiveBody:
-            case AxisOverlayRole::RightPalmAnchorGrabLiveBody:
-            case AxisOverlayRole::LeftPalmAnchorGrabLiveBody:
-                return 15.0f;
             case AxisOverlayRole::RightGrabPalmAuthorityFrame:
             case AxisOverlayRole::LeftGrabPalmAuthorityFrame:
                 return 11.0f;
@@ -1438,14 +1430,6 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::RightGrabPalmGeneratedDirect:
             case AxisOverlayRole::LeftGrabPalmGeneratedDirect:
                 return 0.42f;
-            case AxisOverlayRole::RightGrabSemanticHandFrame:
-            case AxisOverlayRole::LeftGrabSemanticHandFrame:
-                return 0.96f;
-            case AxisOverlayRole::RightPalmAnchorLiveBody:
-            case AxisOverlayRole::LeftPalmAnchorLiveBody:
-            case AxisOverlayRole::RightPalmAnchorGrabLiveBody:
-            case AxisOverlayRole::LeftPalmAnchorGrabLiveBody:
-                return 0.72f;
             case AxisOverlayRole::RightGrabPalmAuthorityFrame:
             case AxisOverlayRole::LeftGrabPalmAuthorityFrame:
                 return 0.98f;
@@ -1835,62 +1819,6 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[0] = 0.95f;
                 color[1] = 1.0f;
                 color[2] = 0.20f;
-                color[3] = 0.95f;
-                break;
-            case MarkerOverlayRole::RightPalmAnchorBuildHand:
-            case MarkerOverlayRole::LeftPalmAnchorBuildHand:
-                color[0] = 1.0f;
-                color[1] = 1.0f;
-                color[2] = 1.0f;
-                color[3] = 0.95f;
-                break;
-            case MarkerOverlayRole::RightPalmAnchorBuildFingerBase:
-            case MarkerOverlayRole::LeftPalmAnchorBuildFingerBase:
-                color[0] = 0.20f;
-                color[1] = 0.95f;
-                color[2] = 1.0f;
-                color[3] = 0.86f;
-                break;
-            case MarkerOverlayRole::RightPalmAnchorBuildFingerCenter:
-            case MarkerOverlayRole::LeftPalmAnchorBuildFingerCenter:
-                color[0] = 1.0f;
-                color[1] = 0.95f;
-                color[2] = 0.10f;
-                color[3] = 0.95f;
-                break;
-            case MarkerOverlayRole::RightPalmAnchorBuildFingerForward:
-            case MarkerOverlayRole::LeftPalmAnchorBuildFingerForward:
-                color[0] = 1.0f;
-                color[1] = 0.10f;
-                color[2] = 0.10f;
-                color[3] = 0.92f;
-                break;
-            case MarkerOverlayRole::RightPalmAnchorBuildCrossPalmSeed:
-            case MarkerOverlayRole::LeftPalmAnchorBuildCrossPalmSeed:
-                color[0] = 0.10f;
-                color[1] = 0.35f;
-                color[2] = 1.0f;
-                color[3] = 0.72f;
-                break;
-            case MarkerOverlayRole::RightPalmAnchorBuildProjectedCrossPalm:
-            case MarkerOverlayRole::LeftPalmAnchorBuildProjectedCrossPalm:
-                color[0] = 0.10f;
-                color[1] = 0.55f;
-                color[2] = 1.0f;
-                color[3] = 0.96f;
-                break;
-            case MarkerOverlayRole::RightPalmAnchorBuildPalmDepth:
-            case MarkerOverlayRole::LeftPalmAnchorBuildPalmDepth:
-                color[0] = 0.10f;
-                color[1] = 1.0f;
-                color[2] = 0.20f;
-                color[3] = 0.96f;
-                break;
-            case MarkerOverlayRole::RightPalmAnchorBuildTargetOrigin:
-            case MarkerOverlayRole::LeftPalmAnchorBuildTargetOrigin:
-                color[0] = 1.0f;
-                color[1] = 0.45f;
-                color[2] = 0.10f;
                 color[3] = 0.95f;
                 break;
             case MarkerOverlayRole::RightSoftContact:

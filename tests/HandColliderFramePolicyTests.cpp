@@ -148,12 +148,9 @@ int main()
         colliderFrame.rotate = matrix;
         const RE::NiTransform grabFrame =
             rock::hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(colliderFrame);
-        ok &= expectVectorNear("grab frame row X", matrixRow(grabFrame.rotate, 0), xAxis);
-        ok &= expectVectorNear("grab frame row Y", matrixRow(grabFrame.rotate, 1), yAxis);
-        ok &= expectVectorNear("grab frame row Z", matrixRow(grabFrame.rotate, 2), zAxis);
-        ok &= expectVectorNear("grab frame local X", rotateLocal(grabFrame.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }), xAxis);
-        ok &= expectVectorNear("grab frame local Y", rotateLocal(grabFrame.rotate, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }), yAxis);
-        ok &= expectVectorNear("grab frame local Z", rotateLocal(grabFrame.rotate, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }), zAxis);
+        ok &= expectVectorNear("grab frame column X", matrixColumn(grabFrame.rotate, 0), xAxis);
+        ok &= expectVectorNear("grab frame column Y", matrixColumn(grabFrame.rotate, 1), yAxis);
+        ok &= expectVectorNear("grab frame column Z", matrixColumn(grabFrame.rotate, 2), zAxis);
     }
 
     {
@@ -184,16 +181,9 @@ int main()
 
             const RE::NiTransform grabPalm =
                 rock::hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palm.transform);
-            ok &= expectVectorNear("palm grab row X", matrixRow(grabPalm.rotate, 0), palm.xAxis);
-            ok &= expectVectorNear("palm grab row Y", matrixRow(grabPalm.rotate, 1), palm.yAxis);
-            ok &= expectVectorNear("palm grab row Z", matrixRow(grabPalm.rotate, 2), palm.zAxis);
-            ok &= expectVectorNear("palm grab local X", rotateLocal(grabPalm.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }), palm.xAxis);
-            ok &= expectVectorNear("palm grab local Y", rotateLocal(grabPalm.rotate, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }), palm.yAxis);
-            ok &= expectVectorNear("palm grab local Z", rotateLocal(grabPalm.rotate, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }), palm.zAxis);
-            ok &= expectVectorNear(
-                "palm grab -Y seat offset",
-                rock::transform_math::localVectorToWorld(grabPalm, RE::NiPoint3{ 0.0f, -2.0f, 0.0f }),
-                RE::NiPoint3{ -palm.yAxis.x * 2.0f, -palm.yAxis.y * 2.0f, -palm.yAxis.z * 2.0f });
+            ok &= expectVectorNear("palm grab column X", matrixColumn(grabPalm.rotate, 0), palm.xAxis);
+            ok &= expectVectorNear("palm grab column Y", matrixColumn(grabPalm.rotate, 1), palm.yAxis);
+            ok &= expectVectorNear("palm grab column Z", matrixColumn(grabPalm.rotate, 2), palm.zAxis);
         }
     }
 
@@ -227,9 +217,9 @@ int main()
 
             const RE::NiTransform grabSegment =
                 rock::hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(segment.transform);
-            ok &= expectVectorNear("segment grab row X", matrixRow(grabSegment.rotate, 0), segment.xAxis);
-            ok &= expectVectorNear("segment grab row Y", matrixRow(grabSegment.rotate, 1), segment.yAxis);
-            ok &= expectVectorNear("segment grab row Z", matrixRow(grabSegment.rotate, 2), segment.zAxis);
+            ok &= expectVectorNear("segment grab column X", matrixColumn(grabSegment.rotate, 0), segment.xAxis);
+            ok &= expectVectorNear("segment grab column Y", matrixColumn(grabSegment.rotate, 1), segment.yAxis);
+            ok &= expectVectorNear("segment grab column Z", matrixColumn(grabSegment.rotate, 2), segment.zAxis);
         }
     }
 

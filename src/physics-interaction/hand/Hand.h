@@ -390,13 +390,11 @@ namespace rock
         };
 
         RE::hknpBodyId getCollisionBodyId() const { return _handBody.getBodyId(); }
-        RE::hknpBodyId getGrabPalmAnchorBodyId() const { return _grabPalmAnchorBody.getBodyId(); }
         RE::hknpBodyId getGrabAuthorityProxyBodyId() const { return _grabAuthorityProxy.getBodyId(); }
         bool hasCollisionBody() const { return _handBody.isValid(); }
         BethesdaPhysicsBody& getHandBody() { return _handBody; }
         const BethesdaPhysicsBody& getHandBody() const { return _handBody; }
         bool tryResolveLivePalmAnchorReference(RE::hknpWorld* world, LivePalmAnchorReference& outReference) const;
-        bool tryResolveLivePalmAnchorGrabReference(RE::hknpWorld* world, LivePalmAnchorReference& outReference) const;
         RE::NiPoint3 computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const;
         bool tryComputeGrabRawRollPalmPocketPivotAWorld(
             RE::hknpWorld* world,
@@ -408,8 +406,6 @@ namespace rock
         bool isHandColliderBodyId(std::uint32_t bodyId) const { return _boneColliders.isColliderBodyIdAtomic(bodyId); }
         bool tryGetHandColliderMetadata(std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const { return _boneColliders.tryGetBodyMetadataAtomic(bodyId, outMetadata); }
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const { return _boneColliders.tryGetPalmAnchorTarget(outTarget); }
-        bool tryGetPalmAnchorGrabTarget(RE::NiTransform& outTarget) const { return _boneColliders.tryGetPalmAnchorGrabTarget(outTarget); }
-        bool tryGetPalmAnchorConstructionDebug(PalmAnchorConstructionDebugSnapshot& outSnapshot) const { return _boneColliders.tryGetPalmAnchorConstructionDebug(outSnapshot); }
         void recordSemanticContact(const HandColliderBodyMetadata& metadata, std::uint32_t otherBodyId);
         void clearSemanticContactEvidence();
         void tickSemanticContactState();
@@ -464,7 +460,6 @@ namespace rock
             const RE::NiTransform* fallbackPalmAnchorWorld,
             RE::NiTransform& outProxyWorld,
             const char*& outSource) const;
-        RE::NiTransform makePalmAnchorGrabAuthorityBaseFrame(const RE::NiTransform& livePalmWorld) const;
         bool resolveActiveGrabAuthorityPivotAWorld(RE::hknpWorld* world,
             const RE::NiTransform& rawHandWorldTransform,
             RE::NiPoint3& outPivotWorld) const;
@@ -546,7 +541,6 @@ namespace rock
         bool _releaseRequested = false;
 
         BethesdaPhysicsBody _handBody;
-        BethesdaPhysicsBody _grabPalmAnchorBody;
         HandBoneColliderSet _boneColliders;
 
         SelectedObject _currentSelection;
@@ -734,8 +728,7 @@ namespace rock
             float angularMotorDamping = 0.0f;
             float angularMotorMaxForce = 0.0f;
             float linearMotorMaxForce = 0.0f;
-            float targetRowsToIdentityDegrees = -1.0f;
-            float transformBColumnsToConstraintInverseDegrees = -1.0f;
+            float targetRowsToConstraintInverseDegrees = -1.0f;
             float targetColumnsToTransformBDegrees = -1.0f;
             float ragdollBRcaRowsErrorDegrees = -1.0f;
             float ragdollBRcaColumnsErrorDegrees = -1.0f;

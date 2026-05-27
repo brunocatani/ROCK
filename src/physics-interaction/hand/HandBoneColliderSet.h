@@ -30,29 +30,16 @@ namespace rock
         float sampledLinearVelocityHavok[4]{};
     };
 
-    struct PalmAnchorConstructionDebugSnapshot
-    {
-        bool valid = false;
-        RE::NiTransform handWorld{};
-        RE::NiTransform targetWorld{};
-        std::array<RE::NiPoint3, hand_collider_semantics::kHandFingerCount> fingerBasesWorld{};
-        RE::NiPoint3 fingerCenterWorld{};
-        RE::NiPoint3 palmCenterWorld{};
-        RE::NiPoint3 crossPalmSeedWorld{ 0.0f, 0.0f, 1.0f };
-        RE::NiPoint3 projectedCrossPalmWorld{ 0.0f, 0.0f, 1.0f };
-        RE::NiPoint3 palmDepthWorld{ 0.0f, 1.0f, 0.0f };
-    };
-
     class HandBoneColliderSet
     {
     public:
         HandBoneColliderSet();
 
-        bool create(RE::hknpWorld* world, void* bhkWorld, bool isLeft, BethesdaPhysicsBody& palmAnchorBody, BethesdaPhysicsBody& palmAnchorGrabBody);
-        void destroy(void* bhkWorld, BethesdaPhysicsBody& palmAnchorBody, BethesdaPhysicsBody& palmAnchorGrabBody);
+        bool create(RE::hknpWorld* world, void* bhkWorld, bool isLeft, BethesdaPhysicsBody& palmAnchorBody);
+        void destroy(void* bhkWorld, BethesdaPhysicsBody& palmAnchorBody);
         void reset();
-        void update(RE::hknpWorld* world, bool isLeft, BethesdaPhysicsBody& palmAnchorBody, BethesdaPhysicsBody& palmAnchorGrabBody, float deltaTime);
-        void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing, BethesdaPhysicsBody& palmAnchorBody, BethesdaPhysicsBody& palmAnchorGrabBody);
+        void update(RE::hknpWorld* world, bool isLeft, BethesdaPhysicsBody& palmAnchorBody, float deltaTime);
+        void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing, BethesdaPhysicsBody& palmAnchorBody);
 
         bool hasBodies() const { return _created; }
         std::uint32_t getBodyCount() const { return _bodyCountAtomic.load(std::memory_order_acquire); }
@@ -61,8 +48,6 @@ namespace rock
         bool tryGetBodyMetadataAtomic(std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const;
         bool tryGetBodyRoleAtomic(std::uint32_t bodyId, hand_collider_semantics::HandColliderRole& outRole) const;
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const;
-        bool tryGetPalmAnchorGrabTarget(RE::NiTransform& outTarget) const;
-        bool tryGetPalmAnchorConstructionDebug(PalmAnchorConstructionDebugSnapshot& outSnapshot) const;
 
     private:
         static constexpr std::size_t MAX_SEGMENT_BODIES = hand_collider_semantics::kHandSegmentColliderBodyCountPerHand;
@@ -99,8 +84,6 @@ namespace rock
 
         bool captureBoneLookup(bool isLeft, BoneFrameLookup& outLookup);
         bool makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, hand_collider_semantics::HandColliderRole role, RoleFrameResult& outFrame) const;
-        bool makePalmAnchorGrabFrame(const BoneFrameLookup& lookup, bool isLeft, RoleFrameResult& outFrame) const;
-        bool makePalmAnchorConstructionDebug(const BoneFrameLookup& lookup, PalmAnchorConstructionDebugSnapshot& outSnapshot) const;
         RE::hknpShape* buildShapeForRole(const RoleFrameResult& frame, hand_collider_semantics::HandColliderRole role) const;
         bool createBodyForRole(RE::hknpWorld* world, void* bhkWorld, bool isLeft, hand_collider_semantics::HandColliderRole role, const RoleFrameResult& frame, BodyInstance& instance);
         void queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds, GeneratedKeyframedBodyDriveState& driveState);
@@ -115,13 +98,8 @@ namespace rock
         RE::hknpWorld* _cachedWorld = nullptr;
         void* _cachedBhkWorld = nullptr;
         GeneratedKeyframedBodyDriveState _palmAnchorDriveState{};
-        GeneratedKeyframedBodyDriveState _palmAnchorGrabDriveState{};
         RE::NiTransform _latestPalmAnchorTarget{};
-        RE::NiTransform _latestPalmAnchorGrabTarget{};
-        PalmAnchorConstructionDebugSnapshot _latestPalmAnchorConstructionDebug{};
         bool _hasLatestPalmAnchorTarget = false;
-        bool _hasLatestPalmAnchorGrabTarget = false;
-        bool _hasLatestPalmAnchorConstructionDebug = false;
         const void* _cachedSkeleton = nullptr;
         const void* _cachedBoneTree = nullptr;
         bool _cachedPowerArmor = false;

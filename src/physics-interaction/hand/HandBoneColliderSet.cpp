@@ -2,7 +2,6 @@
 
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/debug/DebugMath.h"
-#include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
 #include "physics-interaction/native/HavokMaterialRegistry.h"
@@ -304,66 +303,6 @@ namespace rock
         return true;
     }
 
-    bool HandBoneColliderSet::makePalmAnchorGrabFrame(const BoneFrameLookup& lookup, bool isLeft, RoleFrameResult& outFrame) const
-    {
-        outFrame = {};
-        if (!makeRoleFrame(lookup, isLeft, HandColliderRole::PalmAnchor, outFrame)) {
-            return false;
-        }
-
-        /*
-         * The normal PalmAnchor remains a generated collision body using the
-         * reconstructed palm frame. PalmAnchorGrab is a separate no-contact grab
-         * reference: same palm seat translation, raw LArm_Hand/RArm_Hand
-         * rotation.
-         */
-        outFrame.transform.rotate = lookup.hand.rotate;
-        outFrame.transform.scale = lookup.hand.scale;
-        return true;
-    }
-
-    bool HandBoneColliderSet::makePalmAnchorConstructionDebug(const BoneFrameLookup& lookup, PalmAnchorConstructionDebugSnapshot& outSnapshot) const
-    {
-        outSnapshot = {};
-        if (!lookup.valid) {
-            return false;
-        }
-
-        const auto palm = hand_bone_collider_geometry_math::buildPalmAnchorFrame(
-            lookup.hand,
-            lookup.fingerBases,
-            lookup.crossPalmDirection,
-            0.75f);
-        if (!palm.valid) {
-            return false;
-        }
-
-        RE::NiPoint3 fingerCenter{};
-        for (const auto& point : lookup.fingerBases) {
-            fingerCenter = fingerCenter + point;
-        }
-        fingerCenter = fingerCenter * (1.0f / static_cast<float>(lookup.fingerBases.size()));
-
-        RE::NiPoint3 palmCenter = lookup.hand.translate;
-        for (const auto& point : lookup.fingerBases) {
-            palmCenter = palmCenter + point;
-        }
-        palmCenter = palmCenter * (1.0f / static_cast<float>(lookup.fingerBases.size() + 1));
-        const float palmDepthOffset = hand_bone_collider_geometry_math::dot(palmCenter - lookup.hand.translate, palm.palmDepthAxis);
-        palmCenter = palmCenter - palm.palmDepthAxis * palmDepthOffset;
-
-        outSnapshot.valid = true;
-        outSnapshot.handWorld = lookup.hand;
-        outSnapshot.targetWorld = palm.transform;
-        outSnapshot.fingerBasesWorld = lookup.fingerBases;
-        outSnapshot.fingerCenterWorld = fingerCenter;
-        outSnapshot.palmCenterWorld = palmCenter;
-        outSnapshot.crossPalmSeedWorld = lookup.crossPalmDirection;
-        outSnapshot.projectedCrossPalmWorld = palm.crossPalmAxis;
-        outSnapshot.palmDepthWorld = palm.palmDepthAxis;
-        return true;
-    }
-
     RE::hknpShape* HandBoneColliderSet::buildShapeForRole(const RoleFrameResult& frame, HandColliderRole role) const
     {
         if (!frame.valid) {
@@ -432,14 +371,9 @@ namespace rock
         return true;
     }
 
-    bool HandBoneColliderSet::create(
-        RE::hknpWorld* world,
-        void* bhkWorld,
-        bool isLeft,
-        BethesdaPhysicsBody& palmAnchorBody,
-        BethesdaPhysicsBody& palmAnchorGrabBody)
+    bool HandBoneColliderSet::create(RE::hknpWorld* world, void* bhkWorld, bool isLeft, BethesdaPhysicsBody& palmAnchorBody)
     {
-        destroy(bhkWorld, palmAnchorBody, palmAnchorGrabBody);
+        destroy(bhkWorld, palmAnchorBody);
         if (!world || !bhkWorld) {
             return false;
         }
@@ -474,55 +408,12 @@ namespace rock
                 "{} palm anchor initial placement failed; destroying generated anchor bodyId={}",
                 isLeft ? "Left" : "Right",
                 palmAnchorBody.getBodyId().value);
-            destroy(bhkWorld, palmAnchorBody, palmAnchorGrabBody);
+            palmAnchorBody.destroy(bhkWorld);
             return false;
         }
         initializeGeneratedKeyframedBodyDriveState(_palmAnchorDriveState, anchorFrame.transform);
         _latestPalmAnchorTarget = anchorFrame.transform;
         _hasLatestPalmAnchorTarget = true;
-        _hasLatestPalmAnchorConstructionDebug = makePalmAnchorConstructionDebug(lookup, _latestPalmAnchorConstructionDebug);
-
-        RoleFrameResult grabAnchorFrame{};
-        if (!makePalmAnchorGrabFrame(lookup, isLeft, grabAnchorFrame)) {
-            ROCK_LOG_ERROR(Hand, "{} palm anchor grab frame could not be derived; bone-derived hand creation cannot continue", isLeft ? "Left" : "Right");
-            destroy(bhkWorld, palmAnchorBody, palmAnchorGrabBody);
-            return false;
-        }
-
-        auto* grabAnchorShape = grab_authority_proxy::buildProxyShape();
-        if (!grabAnchorShape) {
-            ROCK_LOG_ERROR(Hand, "{} palm anchor grab shape build failed; bone-derived hand creation cannot continue", isLeft ? "Left" : "Right");
-            destroy(bhkWorld, palmAnchorBody, palmAnchorGrabBody);
-            return false;
-        }
-
-        const std::string grabAnchorName = std::string(isLeft ? "ROCK_Left" : "ROCK_Right") + "PalmAnchorGrab";
-        if (!palmAnchorGrabBody.create(
-                world,
-                bhkWorld,
-                grabAnchorShape,
-                grab_authority_proxy::noContactFilterInfo(),
-                havok_material_registry::registerGeneratedBodyMaterial(world),
-                BethesdaMotionType::Keyframed,
-                grabAnchorName.c_str())) {
-            shapeRemoveRef(grabAnchorShape);
-            ROCK_LOG_ERROR(Hand, "{} palm anchor grab body create failed; bone-derived hand creation cannot continue", isLeft ? "Left" : "Right");
-            destroy(bhkWorld, palmAnchorBody, palmAnchorGrabBody);
-            return false;
-        }
-        shapeRemoveRef(grabAnchorShape);
-        palmAnchorGrabBody.createNiNode(grabAnchorName.c_str());
-        if (!placeGeneratedKeyframedBodyImmediately(palmAnchorGrabBody, grabAnchorFrame.transform)) {
-            ROCK_LOG_ERROR(Hand,
-                "{} palm anchor grab initial placement failed; destroying grab anchor bodyId={}",
-                isLeft ? "Left" : "Right",
-                palmAnchorGrabBody.getBodyId().value);
-            destroy(bhkWorld, palmAnchorBody, palmAnchorGrabBody);
-            return false;
-        }
-        initializeGeneratedKeyframedBodyDriveState(_palmAnchorGrabDriveState, grabAnchorFrame.transform);
-        _latestPalmAnchorGrabTarget = grabAnchorFrame.transform;
-        _hasLatestPalmAnchorGrabTarget = true;
 
         std::size_t createdCount = 0;
         for (const auto role : hand_collider_semantics::kHandNonAnchorColliderRoles) {
@@ -530,7 +421,7 @@ namespace rock
             if (!makeRoleFrame(lookup, isLeft, role, frame)) {
                 if (g_rockConfig.rockHandBoneCollidersRequireAllFingerBones) {
                     ROCK_LOG_ERROR(Hand, "{} {} collider frame missing; destroying bone-derived hand", isLeft ? "Left" : "Right", hand_collider_semantics::roleName(role));
-                    destroy(bhkWorld, palmAnchorBody, palmAnchorGrabBody);
+                    destroy(bhkWorld, palmAnchorBody);
                     return false;
                 }
                 ROCK_LOG_WARN(Hand, "{} {} collider frame missing; continuing with partial bone-derived hand", isLeft ? "Left" : "Right", hand_collider_semantics::roleName(role));
@@ -542,7 +433,7 @@ namespace rock
             }
             if (!createBodyForRole(world, bhkWorld, isLeft, role, frame, _bodies[createdCount])) {
                 ROCK_LOG_ERROR(Hand, "{} {} collider body allocation failed; destroying bone-derived hand", isLeft ? "Left" : "Right", hand_collider_semantics::roleName(role));
-                destroy(bhkWorld, palmAnchorBody, palmAnchorGrabBody);
+                destroy(bhkWorld, palmAnchorBody);
                 return false;
             }
             ++createdCount;
@@ -559,10 +450,9 @@ namespace rock
         _created = true;
         publishAtomicBodyIds(palmAnchorBody, isLeft);
         ROCK_LOG_INFO(Hand,
-            "{} bone-derived hand colliders created: anchor={} grabAnchor={} segments={} sourceSkeleton={} tree={} powerArmor={}",
+            "{} bone-derived hand colliders created: anchor={} segments={} sourceSkeleton={} tree={} powerArmor={}",
             isLeft ? "Left" : "Right",
             palmAnchorBody.getBodyId().value,
-            palmAnchorGrabBody.getBodyId().value,
             createdCount,
             reinterpret_cast<std::uintptr_t>(_cachedSkeleton),
             reinterpret_cast<std::uintptr_t>(_cachedBoneTree),
@@ -570,7 +460,7 @@ namespace rock
         return true;
     }
 
-    void HandBoneColliderSet::destroy(void* bhkWorld, BethesdaPhysicsBody& palmAnchorBody, BethesdaPhysicsBody& palmAnchorGrabBody)
+    void HandBoneColliderSet::destroy(void* bhkWorld, BethesdaPhysicsBody& palmAnchorBody)
     {
         clearAtomicBodyIds();
         for (auto& instance : _bodies) {
@@ -583,21 +473,13 @@ namespace rock
         if (palmAnchorBody.isValid()) {
             palmAnchorBody.destroy(bhkWorld ? bhkWorld : _cachedBhkWorld);
         }
-        if (palmAnchorGrabBody.isValid()) {
-            palmAnchorGrabBody.destroy(bhkWorld ? bhkWorld : _cachedBhkWorld);
-        }
 
         _created = false;
         _cachedWorld = nullptr;
         _cachedBhkWorld = nullptr;
         clearGeneratedKeyframedBodyDriveState(_palmAnchorDriveState);
-        clearGeneratedKeyframedBodyDriveState(_palmAnchorGrabDriveState);
         _latestPalmAnchorTarget = {};
-        _latestPalmAnchorGrabTarget = {};
-        _latestPalmAnchorConstructionDebug = {};
         _hasLatestPalmAnchorTarget = false;
-        _hasLatestPalmAnchorGrabTarget = false;
-        _hasLatestPalmAnchorConstructionDebug = false;
         _cachedSkeleton = nullptr;
         _cachedBoneTree = nullptr;
         _cachedPowerArmor = false;
@@ -617,13 +499,8 @@ namespace rock
         _cachedWorld = nullptr;
         _cachedBhkWorld = nullptr;
         clearGeneratedKeyframedBodyDriveState(_palmAnchorDriveState);
-        clearGeneratedKeyframedBodyDriveState(_palmAnchorGrabDriveState);
         _latestPalmAnchorTarget = {};
-        _latestPalmAnchorGrabTarget = {};
-        _latestPalmAnchorConstructionDebug = {};
         _hasLatestPalmAnchorTarget = false;
-        _hasLatestPalmAnchorGrabTarget = false;
-        _hasLatestPalmAnchorConstructionDebug = false;
         _cachedSkeleton = nullptr;
         _cachedBoneTree = nullptr;
         _cachedPowerArmor = false;
@@ -633,14 +510,14 @@ namespace rock
         _reader.resetCache();
     }
 
-    void HandBoneColliderSet::update(RE::hknpWorld* world, bool isLeft, BethesdaPhysicsBody& palmAnchorBody, BethesdaPhysicsBody& palmAnchorGrabBody, float deltaTime)
+    void HandBoneColliderSet::update(RE::hknpWorld* world, bool isLeft, BethesdaPhysicsBody& palmAnchorBody, float deltaTime)
     {
-        if (!world || !_created || !palmAnchorBody.isValid() || !palmAnchorGrabBody.isValid()) {
+        if (!world || !_created || !palmAnchorBody.isValid()) {
             return;
         }
 
         if (_driveRebuildRequested.exchange(false, std::memory_order_acq_rel)) {
-            if (palmAnchorBody.isConstrained() || palmAnchorGrabBody.isConstrained()) {
+            if (palmAnchorBody.isConstrained()) {
                 _driveRebuildRequested.store(true, std::memory_order_release);
                 ROCK_LOG_SAMPLE_WARN(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
@@ -650,7 +527,7 @@ namespace rock
             }
 
             ROCK_LOG_WARN(Hand, "{} bone-derived hand collider drive failure requested rebuild", isLeft ? "Left" : "Right");
-            create(world, _cachedBhkWorld, isLeft, palmAnchorBody, palmAnchorGrabBody);
+            create(world, _cachedBhkWorld, isLeft, palmAnchorBody);
             return;
         }
 
@@ -660,7 +537,7 @@ namespace rock
         }
 
         if (_cachedWorld != world || _cachedSkeleton != _lastCapturedSkeleton || _cachedBoneTree != _lastCapturedBoneTree || _cachedPowerArmor != _lastCapturedPowerArmor) {
-            if (palmAnchorBody.isConstrained() || palmAnchorGrabBody.isConstrained()) {
+            if (palmAnchorBody.isConstrained()) {
                 if (++_updateLogCounter > 120) {
                     _updateLogCounter = 0;
                     ROCK_LOG_WARN(Hand, "{} bone-derived hand collider shape rebuild deferred while palm anchor is constrained; live transforms still update",
@@ -668,7 +545,7 @@ namespace rock
                 }
             } else {
                 ROCK_LOG_INFO(Hand, "{} bone-derived hand collider source changed; rebuilding", isLeft ? "Left" : "Right");
-                create(world, _cachedBhkWorld, isLeft, palmAnchorBody, palmAnchorGrabBody);
+                create(world, _cachedBhkWorld, isLeft, palmAnchorBody);
                 return;
             }
         }
@@ -677,25 +554,7 @@ namespace rock
         if (makeRoleFrame(lookup, isLeft, HandColliderRole::PalmAnchor, anchorFrame)) {
             _latestPalmAnchorTarget = anchorFrame.transform;
             _hasLatestPalmAnchorTarget = true;
-            _hasLatestPalmAnchorConstructionDebug = makePalmAnchorConstructionDebug(lookup, _latestPalmAnchorConstructionDebug);
             queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState);
-        } else {
-            _latestPalmAnchorTarget = {};
-            _latestPalmAnchorGrabTarget = {};
-            _latestPalmAnchorConstructionDebug = {};
-            _hasLatestPalmAnchorTarget = false;
-            _hasLatestPalmAnchorGrabTarget = false;
-            _hasLatestPalmAnchorConstructionDebug = false;
-        }
-
-        RoleFrameResult grabAnchorFrame{};
-        if (makePalmAnchorGrabFrame(lookup, isLeft, grabAnchorFrame)) {
-            _latestPalmAnchorGrabTarget = grabAnchorFrame.transform;
-            _hasLatestPalmAnchorGrabTarget = true;
-            queueBodyTarget(palmAnchorGrabBody, grabAnchorFrame.transform, deltaTime, _palmAnchorGrabDriveState);
-        } else {
-            _latestPalmAnchorGrabTarget = {};
-            _hasLatestPalmAnchorGrabTarget = false;
         }
 
         for (auto& instance : _bodies) {
@@ -709,9 +568,9 @@ namespace rock
         }
     }
 
-    void HandBoneColliderSet::flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing, BethesdaPhysicsBody& palmAnchorBody, BethesdaPhysicsBody& palmAnchorGrabBody)
+    void HandBoneColliderSet::flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing, BethesdaPhysicsBody& palmAnchorBody)
     {
-        if (!world || !_created || !palmAnchorBody.isValid() || !palmAnchorGrabBody.isValid()) {
+        if (!world || !_created || !palmAnchorBody.isValid()) {
             return;
         }
 
@@ -725,18 +584,6 @@ namespace rock
                 g_rockConfig.rockHandBoneColliderMaxLinearVelocity,
                 g_rockConfig.rockHandBoneColliderMaxAngularVelocity),
             "hand-palm-anchor",
-            0);
-
-        handleGeneratedBodyDriveResult(
-            driveGeneratedKeyframedBody(world,
-                palmAnchorGrabBody,
-                _palmAnchorGrabDriveState,
-                timing,
-                "hand-palm-anchor-grab",
-                0,
-                g_rockConfig.rockHandBoneColliderMaxLinearVelocity,
-                g_rockConfig.rockHandBoneColliderMaxAngularVelocity),
-            "hand-palm-anchor-grab",
             0);
 
         for (std::size_t i = 0; i < _bodies.size(); ++i) {
@@ -775,24 +622,6 @@ namespace rock
             return false;
         }
         outTarget = _latestPalmAnchorTarget;
-        return true;
-    }
-
-    bool HandBoneColliderSet::tryGetPalmAnchorGrabTarget(RE::NiTransform& outTarget) const
-    {
-        if (!_hasLatestPalmAnchorGrabTarget) {
-            return false;
-        }
-        outTarget = _latestPalmAnchorGrabTarget;
-        return true;
-    }
-
-    bool HandBoneColliderSet::tryGetPalmAnchorConstructionDebug(PalmAnchorConstructionDebugSnapshot& outSnapshot) const
-    {
-        if (!_hasLatestPalmAnchorConstructionDebug || !_latestPalmAnchorConstructionDebug.valid) {
-            return false;
-        }
-        outSnapshot = _latestPalmAnchorConstructionDebug;
         return true;
     }
 

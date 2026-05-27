@@ -168,11 +168,11 @@ namespace rock
     inline RE::NiTransform makeGrabStartupCaptureAuthorityFrame(const RE::NiTransform& rawHandWorld, const RE::NiTransform& palmAnchorWorld)
     {
         /*
-         * Startup capture uses the generated palm anchor as the physical seat
-         * point, then rebinds rotation to the root-flattened hand. That keeps
-         * the grab offset anchored to the real palm body while making angular
-         * authority follow LArm_Hand/RArm_Hand instead of reconstructed palm
-         * geometry.
+         * Grab startup has a narrower problem than runtime held motion: the
+         * configured proxy-local seat offset must be interpreted in controller
+         * space when choosing and freezing the first pivot point. The actual
+         * hidden proxy body still follows the existing generated palm frame
+         * after the grab is live, so do not use this helper for held updates.
          */
         RE::NiTransform result = palmAnchorWorld;
         result.rotate = rawHandWorld.rotate;
@@ -201,14 +201,22 @@ namespace rock
         const RE::NiTransform& rawHandWorld,
         bool isLeft)
     {
+        if (!isLeft) {
+            return applyGrabAuthorityProxyLocalOffsetToFrame(proxyFrameWorld, false);
+        }
+
         /*
-         * Runtime grab authority consumes the resolved grab reference frame as
-         * authored. For PalmAnchorGrab that means generated palm/proxy seat
-         * translation and the grab-reference rotation have already been chosen
-         * before the INI seat offset is applied. Do not rebind rotation here, or
-         * the visible grab reference and solver body-A frame can silently diverge.
+         * Left-hand runtime Pivot A still uses the generated palm anchor as its
+         * base origin, but the hidden seat offset must follow the raw hand's
+         * local palm-depth direction. Applying the offset through the generated
+         * left palm frame sends Y to the back of the hand even when the raw hand
+         * and the working palm-pocket startup capture agree on the front.
          */
-        (void)rawHandWorld;
-        return applyGrabAuthorityProxyLocalOffsetToFrame(proxyFrameWorld, isLeft);
+        RE::NiTransform result = proxyFrameWorld;
+        const RE::NiPoint3 localOffset = computeGrabAuthorityProxyOffsetLocalGame(true);
+        if (std::isfinite(localOffset.x) && std::isfinite(localOffset.y) && std::isfinite(localOffset.z)) {
+            result.translate = result.translate + transform_math::localVectorToWorld(rawHandWorld, localOffset);
+        }
+        return result;
     }
 }

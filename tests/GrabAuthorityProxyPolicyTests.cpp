@@ -150,8 +150,6 @@ int main()
         desiredBodyTransformHandSpace.rotate = rotationAroundZ(kPi * 0.5f);
         const RE::NiMatrix3 expectedBodyToHand =
             rock::grab_constraint_math::desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
-        const RE::NiMatrix3 expectedTargetBRca =
-            rock::transform_math::makeIdentityRotation<RE::NiMatrix3>();
 
         float transformBRotation[12]{};
         float targetBRca[12]{};
@@ -166,26 +164,14 @@ int main()
             0.0f,
             0.01f);
         ok &= expectNear(
-            "target solver rows carry zero-error identity",
-            rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedTargetBRca),
+            "target solver rows carry body-to-hand rotation",
+            rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedBodyToHand),
             0.0f,
             0.01f);
-        ok &= expectNear(
-            "target columns also remain zero-error identity",
-            rotationDeltaDegrees(matrixFromRawColumns(targetBRca), expectedTargetBRca),
-            0.0f,
-            0.01f);
-        if (rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedBodyToHand) <= 1.0f) {
-            std::printf("target_bRca unexpectedly duplicates transform-B body-to-hand rotation\n");
+        if (rotationDeltaDegrees(matrixFromRawColumns(targetBRca), expectedBodyToHand) <= 1.0f) {
+            std::printf("target_bRca column interpretation unexpectedly matches the solver-row convention\n");
             ok = false;
         }
-
-        RE::NiTransform bodyBAtDesiredPose = desiredBodyTransformHandSpace;
-        RE::NiTransform transformBLocal = identityTransform();
-        transformBLocal.rotate = matrixFromRawColumns(transformBRotation);
-        const RE::NiTransform constraintBWorld =
-            rock::transform_math::composeTransforms(bodyBAtDesiredPose, transformBLocal);
-        ok &= expectTransformClose("transformB reconstructs zero-error constraint frame", constraintBWorld, identityTransform());
     }
 
     {

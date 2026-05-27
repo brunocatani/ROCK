@@ -6,7 +6,7 @@ Branch at planning time: `feature/ghidra-grab-motor-mapping`
 
 ## Status
 
-Historical plan plus current contract note. The implemented production path now uses a separate grab-only palm anchor body instead of changing the regular generated palm collider.
+Planning only. No code changes are part of this note.
 
 ## Goal
 
@@ -50,16 +50,14 @@ A future implementation is only correct if those seven items agree on one contra
 Current production behavior is effectively the coherent **proxy-A contract**:
 
 - Body A physical body = hidden proxy body
-- Regular `PalmAnchor` body = generated collision/readback body for the hand collider stack
-- `PalmAnchorGrab` body = no-contact grab reference body driven from the generated palm seat translation with raw LArm_Hand/RArm_Hand rotation
-- Body A world frame = `PalmAnchorGrab` translation/rotation with runtime seat offset
+- Body A world frame = generated palm/proxy frame with runtime seat offset
 - `transformA` rotation = identity
-- `desiredBodyWorld` = `makeRawHandPalmProxyAuthorityFrame(proxyWorld) * frozenBodyRelation`
-- `transformB` / `target_bRca` = written from the current frozen body-in-raw-rotation-proxy relation
+- `desiredBodyWorld` = `makeRawRotationPalmTranslationFrame(rawHand, proxyWorld) * frozenBodyRelation`
+- `transformB` / `target_bRca` = written from the current frozen body-in-hybrid-frame relation
 - Pivot A = explicit local point on proxy body A
 - Pivot B = explicit local point on body B using current solver-local convention
 
-This keeps the regular generated palm anchor untouched for colliders, while `PalmAnchorGrab` supplies both the grab authority seat source and the rotation consumed by the hidden proxy. The runtime offset layer must preserve `PalmAnchorGrab` rotation instead of rebinding directly to `rawHandWorld`.
+This is internally consistent enough to run, but it leaves a persistent raw-vs-proxy basis mismatch when the live proxy body A orientation differs from the raw angular target frame.
 
 ## Target future contract
 
@@ -237,7 +235,7 @@ Most likely candidates:
 
 ### Recommendation
 
-If the chosen authority frame is not exactly the same frame currently implied by `makeRawHandPalmProxyAuthorityFrame(...)`, introduce new explicit names rather than overloading the old ones.
+If the chosen raw authority frame is not exactly the same frame currently implied by `makeRawRotationPalmTranslationFrame(...)`, introduce new explicit names rather than overloading the old ones.
 
 Possible examples:
 
