@@ -297,10 +297,21 @@
                 outFrame = rawHandWorld;
                 outFrame.translate = origin;
                 outFrame.scale = 1.0f;
+                // Match corrected palm proxy space: +Y is hand-back depth, +Z is cross-palm.
+                const RE::NiPoint3 semanticPalmDepthWorld{
+                    -semanticPocket.palmNormalWorld.x,
+                    -semanticPocket.palmNormalWorld.y,
+                    -semanticPocket.palmNormalWorld.z
+                };
+                const RE::NiPoint3 semanticCrossPalmWorld{
+                    -semanticPocket.thumbSideWorld.x,
+                    -semanticPocket.thumbSideWorld.y,
+                    -semanticPocket.thumbSideWorld.z
+                };
                 outFrame.rotate = hand_bone_collider_geometry_math::matrixFromAxes<RE::NiMatrix3>(
                     semanticPocket.fingerForwardWorld,
-                    semanticPocket.thumbSideWorld,
-                    semanticPocket.palmNormalWorld);
+                    semanticPalmDepthWorld,
+                    semanticCrossPalmWorld);
                 return true;
             };
 
