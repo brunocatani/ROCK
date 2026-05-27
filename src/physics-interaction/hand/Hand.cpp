@@ -936,10 +936,10 @@ namespace rock
         /*
          * The latest generated palm target is the direct output of
          * buildPalmAnchorFrame, before Havok readback can obscure whether its
-         * axes are collider-native columns or runtime rows. Keep the live palm
-         * body translation as the physical seat point, but take authority
-         * rotation from the freshly generated target adapted to corrected palm
-         * proxy space.
+         * axes are collider-native columns or runtime rows. Keep that adapted
+         * target as the generated palm base for debug/telemetry comparison;
+         * startup and runtime helpers attach raw hand rotation before applying
+         * the grab authority seat offset.
          */
         RE::NiTransform palmTarget{};
         if (_boneColliders.tryGetPalmAnchorTarget(palmTarget)) {

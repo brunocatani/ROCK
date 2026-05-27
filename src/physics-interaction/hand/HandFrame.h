@@ -167,15 +167,17 @@ namespace rock
 
     inline RE::NiTransform makeGrabStartupCaptureAuthorityFrame(const RE::NiTransform& rawHandWorld, const RE::NiTransform& palmAnchorWorld)
     {
-        (void)rawHandWorld;
-
         /*
-         * Startup capture and runtime proxy drive now share the corrected palm
-         * proxy contract. The generated palm anchor still provides the seat
-         * point, but configured local offsets are interpreted through the
-         * adapted authority basis rather than raw controller rotation.
+         * Startup capture uses the generated palm anchor as the physical seat
+         * point, then rebinds rotation to the root-flattened hand. That keeps
+         * the grab offset anchored to the real palm body while making angular
+         * authority follow LArm_Hand/RArm_Hand instead of reconstructed palm
+         * geometry.
          */
-        return palmAnchorWorld;
+        RE::NiTransform result = palmAnchorWorld;
+        result.rotate = rawHandWorld.rotate;
+        result.scale = rawHandWorld.scale;
+        return result;
     }
 
     inline RE::NiTransform applyGrabAuthorityProxyLocalOffsetToFrame(const RE::NiTransform& proxyFrameWorld, bool isLeft)
@@ -199,15 +201,16 @@ namespace rock
         const RE::NiTransform& rawHandWorld,
         bool isLeft)
     {
-        (void)rawHandWorld;
-
         /*
-         * Runtime grab authority receives a corrected palm proxy frame from the
-         * generated-collider adapter. Apply the INI seat offset in that same
-         * local contract for both hands: X=fingers, Y=palm depth/back, and
-         * Z=cross-palm. The raw hand argument is retained only to keep existing
-         * call sites explicit about the source frame available at the boundary.
+         * Runtime grab authority receives the generated palm/proxy translation
+         * from the collider adapter, then attaches raw hand rotation before the
+         * INI seat offset is applied. The proxy body, frozen relation, and motor
+         * feed therefore share raw LArm_Hand/RArm_Hand angular authority while
+         * retaining the generated palm as the physical seat origin.
          */
-        return applyGrabAuthorityProxyLocalOffsetToFrame(proxyFrameWorld, isLeft);
+        RE::NiTransform runtimeAuthorityFrame = proxyFrameWorld;
+        runtimeAuthorityFrame.rotate = rawHandWorld.rotate;
+        runtimeAuthorityFrame.scale = rawHandWorld.scale;
+        return applyGrabAuthorityProxyLocalOffsetToFrame(runtimeAuthorityFrame, isLeft);
     }
 }

@@ -2432,21 +2432,20 @@ namespace rock
             return multiplyTransforms(invertTransform(nodeWorld), bodyWorld);
         }
 
-        constexpr const char* kGrabObjectRotationReferenceName = "correctedPalmProxy";
+        constexpr const char* kGrabObjectRotationReferenceName = "rawHandPalmProxy";
         constexpr float kGrabFrameMismatchRawProxyRotationWarnDegrees = 20.0f;
         constexpr float kGrabFrameMismatchProxyRotationWarnDegrees = 5.0f;
         constexpr float kGrabFrameMismatchObjectRotationWarnDegrees = 25.0f;
         constexpr float kGrabFrameMismatchGripErrorWarnGameUnits = 5.0f;
 
-        RE::NiTransform makeCorrectedPalmProxyAuthorityFrame(const RE::NiTransform& palmProxyWorld)
+        RE::NiTransform makeRawHandPalmProxyAuthorityFrame(const RE::NiTransform& palmProxyWorld)
         {
             /*
-             * The generated palm collider still owns the physical seat point,
-             * but the grab-authority boundary adapts its collider-native axes
-             * into corrected palm proxy space before this helper sees it. Do
-             * not rebind authority rotation to the raw hand here; body A, the
-             * frozen relation, and held updates must share this same corrected
-             * proxy frame.
+             * The generated palm collider still owns the physical seat point.
+             * Runtime proxy resolution attaches raw hand rotation before the
+             * frame reaches this helper, so do not rebind it again here. Body A,
+             * the frozen relation, and held updates must share the same resolved
+             * proxy authority frame.
              */
             RE::NiTransform result = palmProxyWorld;
             return result;
@@ -4034,7 +4033,7 @@ namespace rock
     {
         /*
          * This view is intentionally built from the same BODY-local pivot and
-         * corrected palm proxy authority frame used by the active ragdoll-motor grab. Its
+         * raw-hand palm proxy authority frame used by the active ragdoll-motor grab. Its
          * job is to show whether the solver is being asked to pull an off-center
          * frozen pivot toward the hand, which can rotate a body even when the
          * selected mesh/contact point looked reasonable at acquisition time.
@@ -4061,7 +4060,7 @@ namespace rock
             return false;
         }
 
-        const RE::NiTransform authorityFrame = makeCorrectedPalmProxyAuthorityFrame(proxyWorld);
+        const RE::NiTransform authorityFrame = makeRawHandPalmProxyAuthorityFrame(proxyWorld);
         const RE::NiTransform desiredBodyWorld = multiplyTransforms(authorityFrame, _grabFrame.rawRotationProxyBodyHandSpace);
         const RE::NiPoint3 pivotBLocalGame = activeProxyConstraintPivotBLocalGame();
         const RE::NiPoint3 livePivotWorld = transform_math::localPointToWorld(liveBodyWorld, pivotBLocalGame);
@@ -4433,7 +4432,7 @@ namespace rock
             auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
             auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
 
-            // The ragdoll motor target is seeded and updated from the corrected
+            // The ragdoll motor target is seeded and updated from the raw-hand
             // palm proxy BODY relation. Transform-B uses hk-column storage, but
             // target_bRca is also logged through the solver-row view because top
             // grab telemetry proved that is the view hknp converges toward.
@@ -4718,7 +4717,7 @@ namespace rock
         RE::NiPoint3& outActivePivotBBodyLocalGame)
     {
         const RE::NiTransform authorityFrame =
-            makeCorrectedPalmProxyAuthorityFrame(proxyWorldTransform);
+            makeRawHandPalmProxyAuthorityFrame(proxyWorldTransform);
         const RE::NiTransform desiredBodyTransformProxySpace = _grabFrame.rawRotationProxyBodyHandSpace;
         outDesiredObjectWorld = multiplyTransforms(authorityFrame, _grabFrame.rawRotationProxyHandSpace);
         outDesiredBodyWorld = multiplyTransforms(authorityFrame, desiredBodyTransformProxySpace);
@@ -4770,7 +4769,6 @@ namespace rock
         RE::NiTransform& outProxyWorld,
         const char*& outSource) const
     {
-        (void)rawHandWorld;
         (void)fallbackPalmAnchorWorld;
 
         LivePalmAnchorReference palmReference{};
@@ -7504,14 +7502,14 @@ namespace rock
                 grabPivotAWorld,
                 grabPointMode);
 
-            const RE::NiTransform correctedProxyAuthorityFrameWorldAtGrab =
-                makeCorrectedPalmProxyAuthorityFrame(proxyFrameWorldAtGrab);
+            const RE::NiTransform rawHandProxyAuthorityFrameWorldAtGrab =
+                makeRawHandPalmProxyAuthorityFrame(proxyFrameWorldAtGrab);
             const RE::NiPoint3 frozenVisualNormalWorld = gripEvidenceNormalWorld(_grabFrame, objectWorldTransform);
             const auto frozenAuthorityFrame = grab_authority_frame_math::freezeGrabAuthorityFrame<RE::NiTransform>(
                 grab_authority_frame_math::GrabAuthorityFrameFreezeInput<RE::NiTransform>{
                     .rawHandWorld = handWorldTransform,
                     .proxyWorld = proxyFrameWorldAtGrab,
-                    .rawRotationProxyFrameWorld = correctedProxyAuthorityFrameWorldAtGrab,
+                    .rawRotationProxyFrameWorld = rawHandProxyAuthorityFrameWorldAtGrab,
                     .objectWorld = objectWorldTransform,
                     .bodyWorld = grabBodyWorldAtGrab,
                     .constraintBodyWorld = constraintBodyWorldAtGrab,
@@ -8288,7 +8286,7 @@ namespace rock
             return;
         }
         const RE::NiTransform authorityFrame =
-            makeCorrectedPalmProxyAuthorityFrame(proxyAuthorityWorld);
+            makeRawHandPalmProxyAuthorityFrame(proxyAuthorityWorld);
         RE::NiTransform desiredObjectWorld = multiplyTransforms(authorityFrame, _grabFrame.rawRotationProxyHandSpace);
         RE::NiTransform desiredBodyWorld = multiplyTransforms(authorityFrame, _grabFrame.rawRotationProxyBodyHandSpace);
         const RE::NiPoint3 activePivotBBodyLocalGame = activeProxyConstraintPivotBLocalGame();
@@ -8763,13 +8761,13 @@ namespace rock
                                     seatedPivot.normalNodeLocal;
                             const RE::NiTransform desiredObjectWorldAtSeat =
                                 grab_frame_math::shiftObjectToAlignGripWithPocket(currentNodeWorld, livePivotAWorld, promotedPointWorld);
-                            const RE::NiTransform correctedProxyAuthorityFrameWorld =
-                                makeCorrectedPalmProxyAuthorityFrame(proxyAuthorityWorld);
+                            const RE::NiTransform rawHandProxyAuthorityFrameWorld =
+                                makeRawHandPalmProxyAuthorityFrame(proxyAuthorityWorld);
                             const auto frozenSeatAuthorityFrame = grab_authority_frame_math::freezeGrabAuthorityFrame<RE::NiTransform>(
                                 grab_authority_frame_math::GrabAuthorityFrameFreezeInput<RE::NiTransform>{
                                     .rawHandWorld = handWorldTransform,
                                     .proxyWorld = proxyAuthorityWorld,
-                                    .rawRotationProxyFrameWorld = correctedProxyAuthorityFrameWorld,
+                                    .rawRotationProxyFrameWorld = rawHandProxyAuthorityFrameWorld,
                                     .objectWorld = currentNodeWorld,
                                     .bodyWorld = grabBodyWorld,
                                     .constraintBodyWorld = grabBodyWorld,
@@ -9695,9 +9693,9 @@ namespace rock
         }
 
         const RE::NiTransform targetAuthorityFrame =
-            makeCorrectedPalmProxyAuthorityFrame(targetProxyWorld);
+            makeRawHandPalmProxyAuthorityFrame(targetProxyWorld);
         const RE::NiTransform liveAuthorityFrame = proxyOk ?
-            makeCorrectedPalmProxyAuthorityFrame(proxyReadback) :
+            makeRawHandPalmProxyAuthorityFrame(proxyReadback) :
             targetAuthorityFrame;
         const RE::NiTransform desiredObjectFromTarget = multiplyTransforms(targetAuthorityFrame, rawRotationProxyHandSpace);
         const RE::NiTransform desiredBodyFromTarget = multiplyTransforms(targetAuthorityFrame, rawRotationProxyBodyHandSpace);
