@@ -51,8 +51,8 @@ namespace rock
     {
         RE::NiPoint3 handPivotWorld{};
         RE::NiPoint3 objectPivotWorld{};
-        RE::NiPoint3 authorityBodyWorldPosition{};
-        RE::NiPoint3 heldBodyWorldPosition{};
+        RE::NiPoint3 handBodyWorld{};
+        RE::NiPoint3 objectBodyWorld{};
         float pivotErrorGameUnits = 0.0f;
     };
 
@@ -395,12 +395,12 @@ namespace rock
         BethesdaPhysicsBody& getHandBody() { return _handBody; }
         const BethesdaPhysicsBody& getHandBody() const { return _handBody; }
         bool tryResolveLivePalmAnchorReference(RE::hknpWorld* world, LivePalmAnchorReference& outReference) const;
-        RE::NiPoint3 computeRuntimeAuthorityPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const;
+        RE::NiPoint3 computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const;
         bool tryComputeGrabRawRollPalmPocketPivotAWorld(
             RE::hknpWorld* world,
             const RE::NiTransform& rawHandWorldTransform,
             RE::NiPoint3& outPivotWorld) const;
-        RE::NiPoint3 computeStartupCaptureSeatPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& rawHandWorldTransform) const;
+        RE::NiPoint3 computeGrabStartupCapturePivotAWorld(RE::hknpWorld* world, const RE::NiTransform& rawHandWorldTransform) const;
         std::uint32_t getHandColliderBodyCount() const { return _boneColliders.getBodyCount(); }
         std::uint32_t getHandColliderBodyIdAtomic(std::size_t index) const { return _boneColliders.getBodyIdAtomic(index); }
         bool isHandColliderBodyId(std::uint32_t bodyId) const { return _boneColliders.isColliderBodyIdAtomic(bodyId); }
@@ -711,15 +711,15 @@ namespace rock
         bool _hasLastAppliedGrabAuthorityProxyWorld = false;
         struct RagdollAngularProbePreSolve
         {
-            RE::hknpBodyId heldBodyId{ INVALID_BODY_ID };
+            RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };
             RE::NiTransform desiredBodyWorld{};
-            RE::NiTransform authorityBodyWorldBeforeSolve{};
-            RE::NiTransform heldBodyWorldBeforeSolve{};
+            RE::NiTransform bodyAWorldBefore{};
+            RE::NiTransform bodyWorldBefore{};
             RE::NiMatrix3 transformARotation{};
             RE::NiMatrix3 transformBRotation{};
-            std::array<float, 12> targetBRelativeToARaw{};
+            std::array<float, 12> targetBRcaRaw{};
             RE::NiPoint3 requiredAxisWorld{};
-            RE::NiPoint3 requiredAxisAuthorityBodyLocal{};
+            RE::NiPoint3 requiredAxisProxyLocal{};
             RE::NiPoint3 angularVelocityBeforeRadians{};
             float beforeErrorDegrees = -1.0f;
             float beforeGripErrorGameUnits = -1.0f;
@@ -730,12 +730,12 @@ namespace rock
             float linearMotorMaxForce = 0.0f;
             float targetRowsToConstraintInverseDegrees = -1.0f;
             float targetColumnsToTransformBDegrees = -1.0f;
-            float ragdollBRelativeToARowsErrorDegrees = -1.0f;
-            float ragdollBRelativeToAColumnsErrorDegrees = -1.0f;
-            float ragdollARelativeToBRowsInverseErrorDegrees = -1.0f;
-            float ragdollARelativeToBColumnsInverseErrorDegrees = -1.0f;
+            float ragdollBRcaRowsErrorDegrees = -1.0f;
+            float ragdollBRcaColumnsErrorDegrees = -1.0f;
+            float ragdollARcbRowsInverseErrorDegrees = -1.0f;
+            float ragdollARcbColumnsInverseErrorDegrees = -1.0f;
             std::uint64_t flushSequence = 0;
-            bool authorityBodyWorldValid = false;
+            bool bodyAWorldValid = false;
             bool ragdollMotorEnabled = false;
             bool valid = false;
         };

@@ -35,7 +35,7 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
         input.rawHandWorld = getInteractionHandTransform(isLeft);
         input.handNode = getInteractionHandNode(isLeft);
         if (frame.worldReady) {
-            input.grabAnchorWorld = hand.computeStartupCaptureSeatPivotAWorld(hknp, input.rawHandWorld);
+            input.grabAnchorWorld = hand.computeGrabStartupCapturePivotAWorld(hknp, input.rawHandWorld);
         }
         input.palmNormalWorld = computePalmNormalFromHandBasis(input.rawHandWorld, isLeft);
         input.pointingWorld = computePointingVectorFromHandBasis(input.rawHandWorld, isLeft);

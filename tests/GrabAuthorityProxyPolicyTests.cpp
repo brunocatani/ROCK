@@ -146,30 +146,30 @@ int main()
     }
 
     {
-        RE::NiTransform desiredBodyTransformAuthoritySpace = identityTransform();
-        desiredBodyTransformAuthoritySpace.rotate = rotationAroundZ(kPi * 0.5f);
-        const RE::NiMatrix3 expectedBodyToAuthority =
-            rock::grab_constraint_math::desiredBodyToAuthorityRotation(desiredBodyTransformAuthoritySpace.rotate);
+        RE::NiTransform desiredBodyTransformHandSpace = identityTransform();
+        desiredBodyTransformHandSpace.rotate = rotationAroundZ(kPi * 0.5f);
+        const RE::NiMatrix3 expectedBodyToHand =
+            rock::grab_constraint_math::desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
 
         float transformBRotation[12]{};
-        float targetBRelativeToA[12]{};
+        float targetBRca[12]{};
         rock::grab_constraint_math::writeInitialGrabAngularFrame(
             transformBRotation,
-            targetBRelativeToA,
-            desiredBodyTransformAuthoritySpace);
+            targetBRca,
+            desiredBodyTransformHandSpace);
 
         ok &= expectNear(
-            "transformB columns carry body-to-authority rotation",
-            rotationDeltaDegrees(matrixFromRawColumns(transformBRotation), expectedBodyToAuthority),
+            "transformB columns carry body-to-hand rotation",
+            rotationDeltaDegrees(matrixFromRawColumns(transformBRotation), expectedBodyToHand),
             0.0f,
             0.01f);
         ok &= expectNear(
-            "target solver rows carry body-to-authority rotation",
-            rotationDeltaDegrees(matrixFromRawRows(targetBRelativeToA), expectedBodyToAuthority),
+            "target solver rows carry body-to-hand rotation",
+            rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedBodyToHand),
             0.0f,
             0.01f);
-        if (rotationDeltaDegrees(matrixFromRawColumns(targetBRelativeToA), expectedBodyToAuthority) <= 1.0f) {
-            std::printf("targetBRelativeToA column interpretation unexpectedly matches the solver-row convention\n");
+        if (rotationDeltaDegrees(matrixFromRawColumns(targetBRca), expectedBodyToHand) <= 1.0f) {
+            std::printf("target_bRca column interpretation unexpectedly matches the solver-row convention\n");
             ok = false;
         }
     }

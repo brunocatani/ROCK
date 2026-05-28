@@ -73,7 +73,7 @@ namespace rock
     inline constexpr std::uint16_t ATOM_TYPE_RAGDOLL_MOTOR = 19;
     inline constexpr std::uint16_t ATOM_TYPE_LIN_MOTOR = 11;
 
-    inline constexpr int RAGDOLL_MOTOR_TARGET_B_RELATIVE_TO_A = 0x10;
+    inline constexpr int RAGDOLL_MOTOR_TARGET_BRCA = 0x10;
     inline constexpr int RAGDOLL_MOTOR_MOTORS = 0x40;
 
     inline constexpr int RUNTIME_SOLVER_RESULTS = 12;
@@ -233,13 +233,13 @@ namespace rock
 
     HkPositionMotor* createPositionMotor(float tau, float damping, float proportionalRecoveryVelocity, float constantRecoveryVelocity, float minForce, float maxForce);
 
-    ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId authorityBodyId, RE::hknpBodyId objectBodyId,
-        const RE::NiTransform& authorityBodyWorld, const RE::NiPoint3& pivotAWorldGame, const float* pivotBConstraintLocalHk,
-        const RE::NiTransform& desiredBodyTransformAuthoritySpace, float tau, float damping, float maxForce, float proportionalRecovery, float constantRecovery);
+    ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
+        const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
+        const RE::NiTransform& desiredBodyTransformHandSpace, float tau, float damping, float maxForce, float proportionalRecovery, float constantRecovery);
 
-    ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId authorityBodyId, RE::hknpBodyId objectBodyId,
-        const RE::NiTransform& authorityBodyWorld, const RE::NiPoint3& pivotAWorldGame, const float* pivotBConstraintLocalHk,
-        const RE::NiTransform& desiredBodyTransformAuthoritySpace, const GrabConstraintMotorTuning& tuning);
+    ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
+        const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
+        const RE::NiTransform& desiredBodyTransformHandSpace, const GrabConstraintMotorTuning& tuning);
 
     void destroyGrabConstraint(RE::hknpWorld* world, ActiveConstraint& constraint);
     void serviceRetiredGrabConstraintPayloads(std::uint32_t completedPhysicsSteps = 1);

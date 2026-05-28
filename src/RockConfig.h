@@ -265,12 +265,6 @@ namespace rock
         float rockGrabEffectiveMotorMassFloor = 2.0f;
 
         float rockGrabForceFadeInTime = 0.1f;
-        int rockGrabAuthorityExperimentMode = 0;
-        float rockGrabAuthorityMismatchBlendStartDegrees = 15.0f;
-        float rockGrabAuthorityMismatchBlendFullDegrees = 45.0f;
-        float rockGrabAuthorityMismatchBlendMaxWeight = 1.0f;
-        float rockGrabAuthorityStartupBlendMaxSeconds = 0.35f;
-        bool rockGrabAuthorityExperimentDebugLogging = false;
         RE::NiPoint3 rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);
         RE::NiPoint3 rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);
         float rockGrabLooseWeaponSharedConstraintLinearTauMultiplier = 1.0f;
