@@ -201,19 +201,15 @@ namespace rock
         const RE::NiTransform& rawHandWorld,
         bool isLeft)
     {
-        if (!isLeft) {
-            return applyGrabAuthorityProxyLocalOffsetToFrame(proxyFrameWorld, false);
-        }
-
         /*
-         * Left-hand runtime Pivot A still uses the generated palm anchor as its
-         * base origin, but the hidden seat offset must follow the raw hand's
-         * local palm-depth direction. Applying the offset through the generated
-         * left palm frame sends Y to the back of the hand even when the raw hand
-         * and the working palm-pocket startup capture agree on the front.
+         * Runtime Pivot A still uses the generated palm anchor as its base
+         * origin, but the hidden seat offset must follow the raw hand's local
+         * palm-depth direction. Applying the offset through the generated palm
+         * frame can send Y away from the working palm-pocket startup capture
+         * when the raw hand and generated palm bases diverge.
          */
         RE::NiTransform result = proxyFrameWorld;
-        const RE::NiPoint3 localOffset = computeGrabAuthorityProxyOffsetLocalGame(true);
+        const RE::NiPoint3 localOffset = computeGrabAuthorityProxyOffsetLocalGame(isLeft);
         if (std::isfinite(localOffset.x) && std::isfinite(localOffset.y) && std::isfinite(localOffset.z)) {
             result.translate = result.translate + transform_math::localVectorToWorld(rawHandWorld, localOffset);
         }
