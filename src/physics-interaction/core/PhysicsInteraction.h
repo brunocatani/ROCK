@@ -365,13 +365,13 @@ namespace rock
             RE::NiTransform previousRawHandWorld{};
             RE::NiTransform previousPalmAnchorGrabAuthorityWorld{};
             RE::NiTransform previousProxyReadbackWorld{};
-            RE::NiTransform previousRawDesiredObjectWorld{};
-            RE::NiTransform previousHeldNodeWorld{};
+            RE::NiTransform previousRawDesiredCapturedNodeWorld{};
+            RE::NiTransform previousHeldVisualNodeWorld{};
             RE::NiTransform previousHeldBodyWorld{};
             RE::NiTransform previousNativeBodyWorld{};
             bool previousHasPalmAnchorGrabAuthority = false;
             bool previousHasProxyReadback = false;
-            bool previousHasHeldNodeWorld = false;
+            bool previousHasHeldVisualNodeWorld = false;
             bool previousHasHeldBodyWorld = false;
             bool previousHasHeldNativeBodyWorld = false;
         };

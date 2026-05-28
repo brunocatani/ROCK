@@ -615,7 +615,7 @@ namespace rock
         bool hasContactPatch = false;
         bool hasContactPatchEvidence = false;
         bool hasMultiFingerContactPatch = false;
-        bool hasPalmSeatPoint = false;
+        bool hasSeatPoint = false;
         bool hasPinchPocket = false;
         bool hasFingerEvidencePoint = false;
         bool activeGrabPointUsesMultiFingerEvidence = false;
@@ -754,7 +754,7 @@ namespace rock
             hasContactPatch = false;
             hasContactPatchEvidence = false;
             hasMultiFingerContactPatch = false;
-            hasPalmSeatPoint = false;
+            hasSeatPoint = false;
             hasPinchPocket = false;
             hasFingerEvidencePoint = false;
             activeGrabPointUsesMultiFingerEvidence = false;

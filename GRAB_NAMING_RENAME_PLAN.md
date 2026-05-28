@@ -32,6 +32,7 @@ Working notes:
 4. Runtime/overlay/source-boundary consumers also needed updates because the rename crosses telemetry structs, debug logging, and test-enforced source boundaries.
 5. Validation completed successfully with `custom-fast`, `ROCKPolicyTestBinaries`, and `ctest -L source-boundary`.
 6. Rename implementation completed and committed on this branch.
+7. Post-review consistency cleanup renamed the last low-risk leftovers: `hasPalmSeatPoint` -> `hasSeatPoint` and debug telemetry state `previous*HeldNode/Object*` -> captured/held-visual equivalents.
 
 ## Purpose
 

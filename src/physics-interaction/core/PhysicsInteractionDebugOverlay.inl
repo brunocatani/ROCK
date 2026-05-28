@@ -874,13 +874,13 @@
                 telemetryState.previousRawHandWorld = sample.rawHandWorld;
                 telemetryState.previousPalmAnchorGrabAuthorityWorld = sample.palmAnchorGrabAuthorityWorld;
                 telemetryState.previousProxyReadbackWorld = sample.proxyReadbackWorld;
-                telemetryState.previousRawDesiredObjectWorld = sample.currentRawDesiredCapturedNodeWorld;
-                telemetryState.previousHeldNodeWorld = sample.heldVisualNodeWorld;
+                telemetryState.previousRawDesiredCapturedNodeWorld = sample.currentRawDesiredCapturedNodeWorld;
+                telemetryState.previousHeldVisualNodeWorld = sample.heldVisualNodeWorld;
                 telemetryState.previousHeldBodyWorld = sample.heldBodyWorld;
                 telemetryState.previousNativeBodyWorld = sample.heldNativeBodyWorld;
                 telemetryState.previousHasPalmAnchorGrabAuthority = sample.hasPalmAnchorGrabAuthority;
                 telemetryState.previousHasProxyReadback = sample.hasProxyReadback;
-                telemetryState.previousHasHeldNodeWorld = sample.hasHeldVisualNodeWorld;
+                telemetryState.previousHasHeldVisualNodeWorld = sample.hasHeldVisualNodeWorld;
                 telemetryState.previousHasHeldBodyWorld = sample.hasHeldBodyWorld;
                 telemetryState.previousHasHeldNativeBodyWorld = sample.hasHeldNativeBodyWorld;
                 telemetryState.hasPreviousAngularDeltaSample = true;
@@ -945,19 +945,19 @@
                         telemetryState.previousHasProxyReadback &&
                         sample.hasProxyReadback);
                 const auto rawDesiredObjectAngularDelta = computeAngularDeltaLogValue(
-                    telemetryState.previousRawDesiredObjectWorld,
+                    telemetryState.previousRawDesiredCapturedNodeWorld,
                     sample.currentRawDesiredCapturedNodeWorld,
                     sample.rawHandBasis,
                     hmdBasis,
                     hasPreviousAngularDeltaSample &&
                         sample.hasGrabStartFrames);
                 const auto heldVisualNodeAngularDelta = computeAngularDeltaLogValue(
-                    telemetryState.previousHeldNodeWorld,
+                    telemetryState.previousHeldVisualNodeWorld,
                     sample.heldVisualNodeWorld,
                     sample.rawHandBasis,
                     hmdBasis,
                     hasPreviousAngularDeltaSample &&
-                        telemetryState.previousHasHeldNodeWorld &&
+                        telemetryState.previousHasHeldVisualNodeWorld &&
                         sample.hasHeldVisualNodeWorld);
                 const auto heldBodyAngularDelta = computeAngularDeltaLogValue(
                     telemetryState.previousHeldBodyWorld,

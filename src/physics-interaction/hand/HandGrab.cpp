@@ -6954,7 +6954,7 @@ namespace rock
             _grabFrame.multiFingerAverageNormalWorldAtGrab = multiFingerGripRuntime.gripSet.averageNormalWorld;
             _grabFrame.seatPointWorldAtGrab = seatPointWorld;
             _grabFrame.fingerEvidencePointWorldAtGrab = fingerEvidencePointWorld;
-            _grabFrame.hasPalmSeatPoint = seatPointValid;
+            _grabFrame.hasSeatPoint = seatPointValid;
             _grabFrame.hasFingerEvidencePoint = fingerEvidencePointValid;
             _grabFrame.activeGrabPointUsesMultiFingerEvidence = activeGrabPointUsesMultiFingerEvidence;
             _grabFrame.activeGrabPointMode = grabPointMode;
@@ -7355,7 +7355,7 @@ namespace rock
                     _grabFrame.pinchAxisWorldAtGrab = usingPinchPocket ? pinchPocketCandidate.pinchAxisWorld : RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
                     _grabFrame.seatPointWorldAtGrab = usingPinchPocket ? pinchPocketCandidate.pinchPocketWorld : pocket.palmCenterWorld;
                     _grabFrame.fingerEvidencePointWorldAtGrab = usingPinchPocket ? grabGripPoint : _grabFrame.fingerEvidencePointWorldAtGrab;
-                    _grabFrame.hasPalmSeatPoint = true;
+                    _grabFrame.hasSeatPoint = true;
                     _grabFrame.hasFingerEvidencePoint = usingPinchPocket ? true : _grabFrame.hasFingerEvidencePoint;
                     _grabFrame.seatPointMode = usingPinchPocket ? "pinchPocket" : "threePhasePocket";
                     _grabFrame.fingerEvidencePointMode = usingPinchPocket ? "pinchThumbIndex" : "evidenceOnly";
@@ -8809,7 +8809,7 @@ namespace rock
                                 _grabFrame.pocketToGripDistanceGameUnits = promotedPocketDistanceGameUnits;
                                 _grabFrame.selectionToGripEvidenceDistanceGameUnits = promotedPocketDistanceGameUnits;
                                 _grabFrame.seatPointWorldAtGrab = promotedPointWorld;
-                                _grabFrame.hasPalmSeatPoint = true;
+                                _grabFrame.hasSeatPoint = true;
                                 _grabFrame.activeGrabPointUsesMultiFingerEvidence = false;
                                 _grabFrame.activeGrabPointMode = "seatedPalmPocketPromotion";
                                 _grabFrame.seatPointMode = _grabFrame.activeGrabPointMode;
