@@ -33,6 +33,7 @@ Working notes:
 5. Validation completed successfully with `custom-fast`, `ROCKPolicyTestBinaries`, and `ctest -L source-boundary`.
 6. Rename implementation completed and committed on this branch.
 7. Post-review consistency cleanup renamed the last low-risk leftovers: `hasPalmSeatPoint` -> `hasSeatPoint` and debug telemetry state `previous*HeldNode/Object*` -> captured/held-visual equivalents.
+8. Active production INI audited in place at `C:\Users\SENECA\Documents\My Games\Fallout4VR\ROCK_Config\ROCK.ini`; no stale grab-naming terms were present, so no production INI keys or comments needed edits.
 
 ## Purpose
 
