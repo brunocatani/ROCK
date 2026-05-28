@@ -8,6 +8,7 @@
 // ---- ActiveObjectPrepPolicy.h ----
 
 #include <cstdint>
+#include <cmath>
 
 namespace rock::active_object_prep_policy
 {
@@ -427,6 +428,7 @@ namespace rock::active_grab_body_lifecycle
 
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
+#include "physics-interaction/grab/GrabAuthorityExperimentPolicy.h"
 #include "physics-interaction/grab/GrabContact.h"
 
 #include <array>
@@ -541,6 +543,7 @@ namespace rock
         RE::NiTransform desiredCapturedNodeWorldAtGrab{};
         RE::NiTransform desiredBodyWorldAtGrab{};
         RE::NiPoint3 pivotAAuthorityBodyLocalGame{};
+        RE::NiPoint3 pivotAAuthorityFrameLocalGame{};
         RE::NiPoint3 grabPivotWorldAtGrab{};
         RE::NiPoint3 gripPointWorldAtGrab{};
         RE::NiPoint3 seatPointWorldAtGrab{};
@@ -580,6 +583,8 @@ namespace rock
         float gripSupportSpanGameUnits = 0.0f;
         float gripSupportPivotShiftGameUnits = 0.0f;
         float pivotAuthorityPositionConfidence = 0.0f;
+        float authorityRawProxyMismatchDegreesAtGrab = 0.0f;
+        float authorityBlendWeightAtGrab = 0.0f;
         float handScaleAtGrab = 1.0f;
         float lastSeatedPivotReacquireLocalDeltaGameUnits = 0.0f;
         std::uint32_t seatedPivotReacquireCount = 0;
@@ -594,6 +599,7 @@ namespace rock
         const char* lastSeatedPivotReacquireReason = "none";
         const char* lastSeatedPivotReacquirePhase = "none";
         GrabSeatMode seatMode = GrabSeatMode::None;
+        grab_authority_experiment::Policy authorityPolicy{};
         grab_support_model_math::GripSupportKind gripSupportKind = grab_support_model_math::GripSupportKind::None;
         /*
          * ROCK only fades the dynamic grab when the object must be synced from
@@ -686,6 +692,7 @@ namespace rock
             desiredCapturedNodeWorldAtGrab = RE::NiTransform();
             desiredBodyWorldAtGrab = RE::NiTransform();
             pivotAAuthorityBodyLocalGame = {};
+            pivotAAuthorityFrameLocalGame = {};
             grabPivotWorldAtGrab = {};
             gripPointWorldAtGrab = {};
             seatPointWorldAtGrab = {};
@@ -725,6 +732,8 @@ namespace rock
             gripSupportSpanGameUnits = 0.0f;
             gripSupportPivotShiftGameUnits = 0.0f;
             pivotAuthorityPositionConfidence = 0.0f;
+            authorityRawProxyMismatchDegreesAtGrab = 0.0f;
+            authorityBlendWeightAtGrab = 0.0f;
             handScaleAtGrab = 1.0f;
             lastSeatedPivotReacquireLocalDeltaGameUnits = 0.0f;
             seatedPivotReacquireCount = 0;
@@ -739,6 +748,7 @@ namespace rock
             lastSeatedPivotReacquireReason = "none";
             lastSeatedPivotReacquirePhase = "none";
             seatMode = GrabSeatMode::None;
+            authorityPolicy = {};
             gripSupportKind = grab_support_model_math::GripSupportKind::None;
             motorFadeReason = "none";
             captureTelemetry.clear();
@@ -1080,6 +1090,7 @@ namespace rock::grab_authority_frame_math
         Transform desiredNodeInRawHandSpace{};
         Transform authorityBodyToRawHandAtGrab{};
         Vector pivotAAuthorityBodyLocalGame{};
+        Vector pivotAAuthorityFrameLocalGame{};
         Transform desiredNodeInAuthorityFrameSpace{};
         Transform desiredBodyInAuthorityFrameSpace{};
         Vector visualNormalWorld{};
@@ -1140,6 +1151,7 @@ namespace rock::grab_authority_frame_math
         frozen.desiredNodeInRawHandSpace = splitFrame.desiredNodeInRawHandSpace;
         frozen.authorityBodyToRawHandAtGrab = splitFrame.authorityBodyToRawHandAtGrab;
         frozen.pivotAAuthorityBodyLocalGame = splitFrame.pivotAAuthorityBodyLocal;
+        frozen.pivotAAuthorityFrameLocalGame = transform_math::worldPointToLocal(input.rawRotationProxyFrameWorld, input.pivotAWorld);
         frozen.pivotBBodyLocalGame = transform_math::worldPointToLocal(input.bodyWorld, input.gripPointWorld);
         frozen.pivotBConstraintLocalGame = transform_math::worldPointToLocal(input.constraintBodyWorld, input.gripPointWorld);
         frozen.desiredNodeInAuthorityFrameSpace =
@@ -1149,6 +1161,7 @@ namespace rock::grab_authority_frame_math
         frozen.valid =
             isFiniteVector(frozen.pivotBBodyLocalGame) &&
             isFiniteVector(frozen.pivotBConstraintLocalGame) &&
+            isFiniteVector(frozen.pivotAAuthorityFrameLocalGame) &&
             isFiniteTransform(frozen.bodyInCapturedNodeSpace) &&
             isFiniteTransform(frozen.desiredBodyWorld) &&
             isFiniteTransform(frozen.desiredNodeInRawHandSpace) &&

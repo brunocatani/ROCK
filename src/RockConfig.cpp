@@ -11,6 +11,7 @@
 #include <thread>
 
 #include "common/CommonUtils.h"
+#include "physics-interaction/grab/GrabAuthorityExperimentPolicy.h"
 #include "physics-interaction/grab/GrabNodeNamePolicy.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
@@ -53,6 +54,10 @@ namespace
     constexpr float kDefaultGrabLongObjectReferenceLeverGameUnits = 24.0f;
     constexpr float kDefaultGrabLongObjectMinAngularScale = 0.35f;
     constexpr float kDefaultGrabEffectiveMotorMassFloor = 2.0f;
+    constexpr float kDefaultGrabAuthorityMismatchBlendStartDegrees = 15.0f;
+    constexpr float kDefaultGrabAuthorityMismatchBlendFullDegrees = 45.0f;
+    constexpr float kDefaultGrabAuthorityMismatchBlendMaxWeight = 1.0f;
+    constexpr float kDefaultGrabAuthorityStartupBlendMaxSeconds = 0.35f;
     constexpr float kDefaultGrabPositionOnlyAngularScale = 0.55f;
     constexpr float kDefaultGrabSmallObjectReferenceLeverGameUnits = 12.0f;
     constexpr float kDefaultGrabSmallObjectAngularScale = 0.65f;
@@ -306,6 +311,12 @@ namespace rock
         rockGrabEffectiveMotorMassFloor = kDefaultGrabEffectiveMotorMassFloor;
 
         rockGrabForceFadeInTime = 0.1f;
+        rockGrabAuthorityExperimentMode = 0;
+        rockGrabAuthorityMismatchBlendStartDegrees = kDefaultGrabAuthorityMismatchBlendStartDegrees;
+        rockGrabAuthorityMismatchBlendFullDegrees = kDefaultGrabAuthorityMismatchBlendFullDegrees;
+        rockGrabAuthorityMismatchBlendMaxWeight = kDefaultGrabAuthorityMismatchBlendMaxWeight;
+        rockGrabAuthorityStartupBlendMaxSeconds = kDefaultGrabAuthorityStartupBlendMaxSeconds;
+        rockGrabAuthorityExperimentDebugLogging = false;
         rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
         rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
         rockGrabLooseWeaponSharedConstraintLinearTauMultiplier = kDefaultGrabLooseWeaponSharedConstraintLinearTauMultiplier;
@@ -1069,6 +1080,45 @@ namespace rock
             100.0f);
 
         rockGrabForceFadeInTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabForceFadeInTime", rockGrabForceFadeInTime));
+        rockGrabAuthorityExperimentMode =
+            static_cast<int>(ini.GetLongValue(SECTION, "iGrabAuthorityExperimentMode", rockGrabAuthorityExperimentMode));
+        if (!grab_authority_experiment::isKnownModeId(rockGrabAuthorityExperimentMode)) {
+            ROCK_LOG_WARN(Config,
+                "Unknown iGrabAuthorityExperimentMode={} -- using 0 ({})",
+                rockGrabAuthorityExperimentMode,
+                grab_authority_experiment::modeName(grab_authority_experiment::Mode::CurrentHybridBaseline));
+            rockGrabAuthorityExperimentMode = 0;
+        }
+        rockGrabAuthorityMismatchBlendStartDegrees = readClampedFloat(ini,
+            SECTION,
+            "fGrabAuthorityMismatchBlendStartDegrees",
+            rockGrabAuthorityMismatchBlendStartDegrees,
+            kDefaultGrabAuthorityMismatchBlendStartDegrees,
+            0.0f,
+            180.0f);
+        rockGrabAuthorityMismatchBlendFullDegrees = readClampedFloat(ini,
+            SECTION,
+            "fGrabAuthorityMismatchBlendFullDegrees",
+            rockGrabAuthorityMismatchBlendFullDegrees,
+            kDefaultGrabAuthorityMismatchBlendFullDegrees,
+            rockGrabAuthorityMismatchBlendStartDegrees,
+            180.0f);
+        rockGrabAuthorityMismatchBlendMaxWeight = readClampedFloat(ini,
+            SECTION,
+            "fGrabAuthorityMismatchBlendMaxWeight",
+            rockGrabAuthorityMismatchBlendMaxWeight,
+            kDefaultGrabAuthorityMismatchBlendMaxWeight,
+            0.0f,
+            1.0f);
+        rockGrabAuthorityStartupBlendMaxSeconds = readClampedFloat(ini,
+            SECTION,
+            "fGrabAuthorityStartupBlendMaxSeconds",
+            rockGrabAuthorityStartupBlendMaxSeconds,
+            kDefaultGrabAuthorityStartupBlendMaxSeconds,
+            0.0f,
+            5.0f);
+        rockGrabAuthorityExperimentDebugLogging =
+            ini.GetBoolValue(SECTION, "bGrabAuthorityExperimentDebugLogging", rockGrabAuthorityExperimentDebugLogging);
         rockRightGrabAuthorityProxyOffsetGameUnits.x =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fRightGrabAuthorityProxyOffsetXGameUnits", rockRightGrabAuthorityProxyOffsetGameUnits.x));
         rockRightGrabAuthorityProxyOffsetGameUnits.y =

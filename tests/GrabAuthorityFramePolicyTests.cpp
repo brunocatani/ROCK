@@ -1,6 +1,7 @@
 #include "physics-interaction/grab/GrabCore.h"
 
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <limits>
 
@@ -9,6 +10,14 @@ namespace
     RE::NiTransform identityTransform()
     {
         return rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+    }
+
+    RE::NiMatrix3 zRotationDegrees(float degrees)
+    {
+        const float radians = degrees * (3.14159265358979323846f / 180.0f);
+        const float halfAngle = radians * 0.5f;
+        const float quaternion[4]{ 0.0f, 0.0f, std::sin(halfAngle), std::cos(halfAngle) };
+        return rock::transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(quaternion);
     }
 
     bool expectNear(const char* label, float actual, float expected, float epsilon)
@@ -47,13 +56,76 @@ namespace
         ok &= expectNear(label, actual.z, expected.z, epsilon);
         return ok;
     }
+
+    bool expectRotationNear(const char* label, const RE::NiMatrix3& actual, const RE::NiMatrix3& expected, float epsilonDegrees)
+    {
+        return expectNear(label, rock::grab_authority_experiment::rotationDeltaDegrees(actual, expected), 0.0f, epsilonDegrees);
+    }
 }
 
 int main()
 {
     namespace authority = rock::grab_authority_frame_math;
+    namespace experiment = rock::grab_authority_experiment;
 
     bool ok = true;
+
+    {
+        ok &= expectTrue("mode 51 is accepted", experiment::isKnownModeId(51));
+        ok &= expectTrue(
+            "unknown INI mode fails closed",
+            experiment::modeFromId(99) == experiment::Mode::CurrentHybridBaseline);
+        ok &= expectTrue(
+            "unified blend mode uses body-local pivot B",
+            experiment::usesBodyLocalPivotBTruth(experiment::Mode::UnifiedAuthorityLocalAAndBodyLocalBWithBlend));
+        ok &= expectTrue(
+            "unified blend mode uses authority-local pivot A",
+            experiment::usesAuthorityLocalPivotAFreeze(experiment::Mode::UnifiedAuthorityLocalAAndBodyLocalBWithBlend));
+    }
+
+    {
+        RE::NiTransform rawHandWorld = identityTransform();
+        rawHandWorld.translate = RE::NiPoint3{ 1.0f, 2.0f, 3.0f };
+
+        RE::NiTransform proxyWorld = identityTransform();
+        proxyWorld.translate = RE::NiPoint3{ 10.0f, 20.0f, 30.0f };
+        proxyWorld.rotate = zRotationDegrees(90.0f);
+
+        auto policy = experiment::Policy{};
+        auto evaluated = experiment::makeAuthorityFrame(rawHandWorld, proxyWorld, policy, 0.0f, false);
+        ok &= expectPointNear("mode 0 keeps proxy translation", evaluated.frame.translate, proxyWorld.translate, 0.001f);
+        ok &= expectRotationNear("mode 0 keeps raw rotation", evaluated.frame.rotate, rawHandWorld.rotate, 0.01f);
+        ok &= expectNear("mode 0 has no blend", evaluated.blendWeight, 0.0f, 0.001f);
+
+        policy.mode = experiment::Mode::RawRawAuthorityFrame;
+        evaluated = experiment::makeAuthorityFrame(rawHandWorld, proxyWorld, policy, 0.0f, false);
+        ok &= expectPointNear("mode 10 uses raw translation", evaluated.frame.translate, rawHandWorld.translate, 0.001f);
+        ok &= expectRotationNear("mode 10 uses raw rotation", evaluated.frame.rotate, rawHandWorld.rotate, 0.01f);
+
+        policy.mode = experiment::Mode::ProxyProxyAuthorityFrame;
+        evaluated = experiment::makeAuthorityFrame(rawHandWorld, proxyWorld, policy, 0.0f, false);
+        ok &= expectPointNear("mode 11 uses proxy translation", evaluated.frame.translate, proxyWorld.translate, 0.001f);
+        ok &= expectRotationNear("mode 11 uses proxy rotation", evaluated.frame.rotate, proxyWorld.rotate, 0.01f);
+
+        policy.mode = experiment::Mode::HybridSmoothBlendOnMismatch;
+        policy.mismatchBlendStartDegrees = 0.0f;
+        policy.mismatchBlendFullDegrees = 90.0f;
+        policy.mismatchBlendMaxWeight = 1.0f;
+        evaluated = experiment::makeAuthorityFrame(rawHandWorld, proxyWorld, policy, 0.0f, false);
+        ok &= expectNear("mode 21 reaches full blend", evaluated.blendWeight, 1.0f, 0.001f);
+        ok &= expectRotationNear("mode 21 blends to proxy rotation", evaluated.frame.rotate, proxyWorld.rotate, 0.01f);
+
+        policy.mode = experiment::Mode::HybridStartupSmoothBlendOnMismatch;
+        policy.startupBlendMaxSeconds = 0.35f;
+        evaluated = experiment::makeAuthorityFrame(rawHandWorld, proxyWorld, policy, 0.5f, false);
+        ok &= expectNear("mode 23 stops after startup window", evaluated.blendWeight, 0.0f, 0.001f);
+        ok &= expectRotationNear("mode 23 returns to raw rotation after startup", evaluated.frame.rotate, rawHandWorld.rotate, 0.01f);
+
+        policy.mode = experiment::Mode::HybridBlendUntilTouchHeld;
+        evaluated = experiment::makeAuthorityFrame(rawHandWorld, proxyWorld, policy, 0.0f, true);
+        ok &= expectNear("mode 24 stops at TouchHeld", evaluated.blendWeight, 0.0f, 0.001f);
+        ok &= expectRotationNear("mode 24 returns to raw rotation at TouchHeld", evaluated.frame.rotate, rawHandWorld.rotate, 0.01f);
+    }
 
     {
         using Candidate = authority::GrabAuthorityPivotCandidate<RE::NiPoint3>;
@@ -187,6 +259,47 @@ int main()
             targetGripPoint,
             pivotAWorld,
             0.001f);
+    }
+
+    {
+        RE::NiTransform rawHandWorld = identityTransform();
+        RE::NiTransform proxyWorld = identityTransform();
+        proxyWorld.rotate = zRotationDegrees(90.0f);
+
+        RE::NiTransform authorityWorld = proxyWorld;
+        authorityWorld.rotate = rawHandWorld.rotate;
+
+        RE::NiTransform objectWorld = identityTransform();
+        objectWorld.translate = RE::NiPoint3{ 10.0f, 0.0f, 0.0f };
+
+        RE::NiTransform bodyWorld = identityTransform();
+        bodyWorld.translate = RE::NiPoint3{ 12.0f, 0.0f, 0.0f };
+
+        const RE::NiPoint3 pivotAWorld{ 2.0f, 0.0f, 0.0f };
+        const RE::NiPoint3 gripPointWorld{ 11.0f, 0.0f, 0.0f };
+
+        const auto frozen = authority::freezeGrabAuthorityFrame<RE::NiTransform>(
+            authority::GrabAuthorityFrameFreezeInput<RE::NiTransform>{
+                .rawHandWorld = rawHandWorld,
+                .proxyWorld = proxyWorld,
+                .rawRotationProxyFrameWorld = authorityWorld,
+                .objectWorld = objectWorld,
+                .bodyWorld = bodyWorld,
+                .constraintBodyWorld = bodyWorld,
+                .pivotAWorld = pivotAWorld,
+                .gripPointWorld = gripPointWorld,
+                .source = authority::GrabAuthorityPivotSource::PalmPocketMesh,
+            });
+
+        ok &= expectTrue("freeze keeps authority-local pivot A", frozen.valid);
+        ok &= expectPointNear(
+            "authority-local pivot A follows authority frame",
+            frozen.pivotAAuthorityFrameLocalGame,
+            RE::NiPoint3{ 2.0f, 0.0f, 0.0f },
+            0.001f);
+        ok &= expectFalse(
+            "proxy-local and authority-local pivot A differ under raw/proxy mismatch",
+            frozen.pivotAAuthorityBodyLocalGame == frozen.pivotAAuthorityFrameLocalGame);
     }
 
     {

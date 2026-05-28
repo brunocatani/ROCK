@@ -2460,6 +2460,55 @@ namespace rock
             return result;
         }
 
+        grab_authority_experiment::Policy captureGrabAuthorityExperimentPolicyFromConfig()
+        {
+            return grab_authority_experiment::sanitizePolicy(grab_authority_experiment::Policy{
+                .mode = grab_authority_experiment::modeFromId(g_rockConfig.rockGrabAuthorityExperimentMode),
+                .mismatchBlendStartDegrees = g_rockConfig.rockGrabAuthorityMismatchBlendStartDegrees,
+                .mismatchBlendFullDegrees = g_rockConfig.rockGrabAuthorityMismatchBlendFullDegrees,
+                .mismatchBlendMaxWeight = g_rockConfig.rockGrabAuthorityMismatchBlendMaxWeight,
+                .startupBlendMaxSeconds = g_rockConfig.rockGrabAuthorityStartupBlendMaxSeconds,
+            });
+        }
+
+        bool isTouchHeldPhase(grab_three_phase::AcquisitionPhase phase)
+        {
+            return phase == grab_three_phase::AcquisitionPhase::TouchHeld;
+        }
+
+        grab_authority_experiment::AuthorityFrameEvaluation<RE::NiTransform> evaluateGrabAuthorityFrame(
+            const RE::NiTransform& rawHandWorld,
+            const RE::NiTransform& proxyWorld,
+            const CanonicalGrabFrame& frame,
+            grab_three_phase::AcquisitionPhase phase,
+            float grabAgeSeconds)
+        {
+            return grab_authority_experiment::makeAuthorityFrame(
+                rawHandWorld,
+                proxyWorld,
+                frame.authorityPolicy,
+                grabAgeSeconds,
+                isTouchHeldPhase(phase));
+        }
+
+        RE::NiPoint3 pivotAFrameLocalForTransformB(const CanonicalGrabFrame& frame)
+        {
+            return grab_authority_experiment::usesAuthorityLocalPivotAFreeze(frame.authorityPolicy.mode) ?
+                frame.pivotAAuthorityFrameLocalGame :
+                frame.pivotAAuthorityBodyLocalGame;
+        }
+
+        RE::NiPoint3 solverPivotBConstraintLocalGameForFrame(const CanonicalGrabFrame& frame)
+        {
+            if (grab_authority_experiment::usesBodyLocalPivotBTruth(frame.authorityPolicy.mode)) {
+                return frame.pivotBConstraintLocalGame;
+            }
+
+            return grab_constraint_math::computeDynamicTransformBTranslationGame(
+                frame.desiredBodyInAuthorityFrameSpace,
+                pivotAFrameLocalForTransformB(frame));
+        }
+
         float computeLocalMeshMaxDistanceFromPoint(const std::vector<GrabLocalTriangle>& localTriangles, const RE::NiPoint3& originLocal)
         {
             if (localTriangles.empty()) {
@@ -2566,6 +2615,7 @@ namespace rock
             frame.pivotBBodyLocalGame = frozen.pivotBBodyLocalGame;
             frame.pivotBConstraintLocalGame = frozen.pivotBConstraintLocalGame;
             frame.pivotAAuthorityBodyLocalGame = frozen.pivotAAuthorityBodyLocalGame;
+            frame.pivotAAuthorityFrameLocalGame = frozen.pivotAAuthorityFrameLocalGame;
             frame.grabPivotWorldAtGrab = frozen.grabPivotWorldAtGrab;
             frame.gripPointWorldAtGrab = frozen.gripPointWorldAtGrab;
             frame.desiredCapturedNodeWorldAtGrab = frozen.desiredCapturedNodeWorld;
@@ -4069,7 +4119,11 @@ namespace rock
             return false;
         }
 
-        const RE::NiTransform authorityFrame = makeRawRotationPalmTranslationFrame(rawHandWorld, proxyWorld);
+        const RE::NiTransform baselineAuthorityFrame = makeRawRotationPalmTranslationFrame(rawHandWorld, proxyWorld);
+        const auto authorityFrameEval =
+            evaluateGrabAuthorityFrame(rawHandWorld, proxyWorld, _grabFrame, _grabAcquisitionPhase, _grabStartTime);
+        const RE::NiTransform authorityFrame = authorityFrameEval.frame;
+        (void)baselineAuthorityFrame;
         const RE::NiTransform desiredBodyWorld = multiplyTransforms(authorityFrame, _grabFrame.desiredBodyInAuthorityFrameSpace);
         const RE::NiPoint3 pivotBLocalGame = activeProxyConstraintPivotBLocalGame();
         const RE::NiPoint3 livePivotWorld = transform_math::localPointToWorld(liveBodyWorld, pivotBLocalGame);
@@ -4457,8 +4511,7 @@ namespace rock
                 transformBTranslation[1] * havokToGameScale(),
                 transformBTranslation[2] * havokToGameScale(),
             };
-            out.desiredTransformBLocalGame =
-                grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformAuthoritySpace, _grabFrame.pivotAAuthorityBodyLocalGame);
+            out.desiredTransformBLocalGame = solverPivotBConstraintLocalGameForFrame(_grabFrame);
             out.transformBLocalDelta = grab_transform_telemetry::measurePointPair(out.constraintTransformBLocalGame, out.desiredTransformBLocalGame);
             out.targetColumnsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkColumns, desiredBodyToAuthoritySpace.rotate);
             out.targetRowsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkRows, desiredBodyToAuthoritySpace.rotate);
@@ -4597,8 +4650,7 @@ namespace rock
         // constraint-space relation here lets some grabs start with a correct
         // pivot but a nearly flipped BODY target, which presents as an on-grab snap.
         const RE::NiTransform desiredBodyTransformAuthoritySpace = _grabFrame.desiredBodyInAuthorityFrameSpace;
-        const RE::NiPoint3 solverPivotBConstraintLocalGame =
-            grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformAuthoritySpace, _grabFrame.pivotAAuthorityBodyLocalGame);
+        const RE::NiPoint3 solverPivotBConstraintLocalGame = solverPivotBConstraintLocalGameForFrame(_grabFrame);
         if (!std::isfinite(solverPivotBConstraintLocalGame.x) ||
             !std::isfinite(solverPivotBConstraintLocalGame.y) ||
             !std::isfinite(solverPivotBConstraintLocalGame.z)) {
@@ -4726,8 +4778,12 @@ namespace rock
         RE::NiPoint3& outDesiredTargetPointWorld,
         RE::NiPoint3& outActivePivotBBodyLocalGame)
     {
-        const RE::NiTransform authorityFrame =
+        const RE::NiTransform baselineAuthorityFrame =
             makeRawRotationPalmTranslationFrame(rawHandWorldTransform, proxyWorldTransform);
+        const auto authorityFrameEval =
+            evaluateGrabAuthorityFrame(rawHandWorldTransform, proxyWorldTransform, _grabFrame, _grabAcquisitionPhase, _grabStartTime);
+        const RE::NiTransform authorityFrame = authorityFrameEval.frame;
+        (void)baselineAuthorityFrame;
         const RE::NiTransform desiredBodyTransformAuthoritySpace = _grabFrame.desiredBodyInAuthorityFrameSpace;
         outDesiredObjectWorld = multiplyTransforms(authorityFrame, _grabFrame.desiredNodeInAuthorityFrameSpace);
         outDesiredBodyWorld = multiplyTransforms(authorityFrame, desiredBodyTransformAuthoritySpace);
@@ -4812,6 +4868,25 @@ namespace rock
         RE::NiPoint3& outPivotWorld) const
     {
         outPivotWorld = {};
+
+        if (_grabFrame.hasFrozenPivotB &&
+            grab_authority_experiment::usesAuthorityLocalPivotAFreeze(_grabFrame.authorityPolicy.mode)) {
+            RE::NiTransform proxyWorld{};
+            const char* proxySource = "none";
+            if (!resolveGrabAuthorityProxyFrame(world, rawHandWorldTransform, nullptr, proxyWorld, proxySource)) {
+                return false;
+            }
+
+            const RE::NiTransform baselineAuthorityFrame =
+                makeRawRotationPalmTranslationFrame(rawHandWorldTransform, proxyWorld);
+            const auto authorityFrameEval =
+                evaluateGrabAuthorityFrame(rawHandWorldTransform, proxyWorld, _grabFrame, _grabAcquisitionPhase, _grabStartTime);
+            (void)baselineAuthorityFrame;
+            outPivotWorld = transform_math::localPointToWorld(authorityFrameEval.frame, _grabFrame.pivotAAuthorityFrameLocalGame);
+            return std::isfinite(outPivotWorld.x) &&
+                   std::isfinite(outPivotWorld.y) &&
+                   std::isfinite(outPivotWorld.z);
+        }
 
         if (_grabFrame.seatMode == GrabSeatMode::PinchPocket) {
             /*
@@ -7514,8 +7589,13 @@ namespace rock
                 grabPivotAWorld,
                 grabPointMode);
 
-            const RE::NiTransform rawRotationProxyFrameWorldAtGrab =
+            _grabFrame.authorityPolicy = captureGrabAuthorityExperimentPolicyFromConfig();
+            const RE::NiTransform baselineRawRotationProxyFrameWorldAtGrab =
                 makeRawRotationPalmTranslationFrame(handWorldTransform, proxyFrameWorldAtGrab);
+            const auto authorityFrameAtGrab =
+                evaluateGrabAuthorityFrame(handWorldTransform, proxyFrameWorldAtGrab, _grabFrame, _grabAcquisitionPhase, 0.0f);
+            const RE::NiTransform rawRotationProxyFrameWorldAtGrab = authorityFrameAtGrab.frame;
+            (void)baselineRawRotationProxyFrameWorldAtGrab;
             const RE::NiPoint3 frozenVisualNormalWorld = gripEvidenceNormalWorld(_grabFrame, objectWorldTransform);
             const auto frozenAuthorityFrame = grab_authority_frame_math::freezeGrabAuthorityFrame<RE::NiTransform>(
                 grab_authority_frame_math::GrabAuthorityFrameFreezeInput<RE::NiTransform>{
@@ -7571,8 +7651,27 @@ namespace rock
             _grabFrame.authorityBodyWorldAtGrab = proxyFrameWorldAtGrab;
             _grabFrame.capturedNodeWorldAtGrab = objectWorldTransform;
             _grabFrame.hasTelemetryCapture = true;
+            _grabFrame.authorityRawProxyMismatchDegreesAtGrab = authorityFrameAtGrab.rawProxyMismatchDegrees;
+            _grabFrame.authorityBlendWeightAtGrab = authorityFrameAtGrab.blendWeight;
             _grabFrame.handScaleAtGrab = handWorldTransform.scale;
             _grabFrame.freezeCaptureTelemetry(objectBodyId.value);
+            if (g_rockConfig.rockGrabAuthorityExperimentDebugLogging) {
+                ROCK_LOG_INFO(Hand,
+                    "{} GRAB AUTHORITY EXPERIMENT: mode={}({}) rotation={} rawProxy={:.2f}deg blend={:.3f} pivotA={} pivotB={} start={:.2f} full={:.2f} max={:.2f} startup={:.2f}s phase={}",
+                    handName(),
+                    grab_authority_experiment::modeId(_grabFrame.authorityPolicy.mode),
+                    grab_authority_experiment::modeName(_grabFrame.authorityPolicy.mode),
+                    authorityFrameAtGrab.rotationSource,
+                    authorityFrameAtGrab.rawProxyMismatchDegrees,
+                    authorityFrameAtGrab.blendWeight,
+                    grab_authority_experiment::usesAuthorityLocalPivotAFreeze(_grabFrame.authorityPolicy.mode) ? "authorityLocal" : "proxyLocal",
+                    grab_authority_experiment::usesBodyLocalPivotBTruth(_grabFrame.authorityPolicy.mode) ? "bodyLocalTruth" : "dynamicRelation",
+                    _grabFrame.authorityPolicy.mismatchBlendStartDegrees,
+                    _grabFrame.authorityPolicy.mismatchBlendFullDegrees,
+                    _grabFrame.authorityPolicy.mismatchBlendMaxWeight,
+                    _grabFrame.authorityPolicy.startupBlendMaxSeconds,
+                    grab_three_phase::phaseName(_grabAcquisitionPhase));
+            }
             if (g_rockConfig.rockDebugGrabFrameLogging) {
                 std::array<float, 12> freezeTransformBRotation{};
                 std::array<float, 12> freezeTargetBRelativeToA{};
@@ -7585,10 +7684,7 @@ namespace rock
                 const RE::NiMatrix3 freezeTargetRows = matrixFromHkRows(freezeTargetBRelativeToA.data());
                 const RE::NiMatrix3 freezeTargetColumns = matrixFromHkColumns(freezeTargetBRelativeToA.data());
                 const RE::NiMatrix3 freezeTransformBColumns = matrixFromHkColumns(freezeTransformBRotation.data());
-                const RE::NiPoint3 predictedTransformBLocal =
-                    grab_constraint_math::computeDynamicTransformBTranslationGame(
-                        frozenAuthorityFrame.desiredBodyInAuthorityFrameSpace,
-                        frozenAuthorityFrame.pivotAAuthorityBodyLocalGame);
+                const RE::NiPoint3 predictedTransformBLocal = solverPivotBConstraintLocalGameForFrame(_grabFrame);
                 const float predictedTransformBErr =
                     pointDistanceGameUnits(frozenAuthorityFrame.pivotBConstraintLocalGame, predictedTransformBLocal);
                 const float freezeRowsInvDegrees =
@@ -8297,8 +8393,12 @@ namespace rock
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
             return;
         }
-        const RE::NiTransform authorityFrame =
+        const RE::NiTransform baselineAuthorityFrame =
             makeRawRotationPalmTranslationFrame(handWorldTransform, proxyAuthorityWorld);
+        const auto authorityFrameEval =
+            evaluateGrabAuthorityFrame(handWorldTransform, proxyAuthorityWorld, _grabFrame, _grabAcquisitionPhase, _grabStartTime);
+        const RE::NiTransform authorityFrame = authorityFrameEval.frame;
+        (void)baselineAuthorityFrame;
         RE::NiTransform desiredObjectWorld = multiplyTransforms(authorityFrame, _grabFrame.desiredNodeInAuthorityFrameSpace);
         RE::NiTransform desiredBodyWorld = multiplyTransforms(authorityFrame, _grabFrame.desiredBodyInAuthorityFrameSpace);
         const RE::NiPoint3 activePivotBBodyLocalGame = activeProxyConstraintPivotBLocalGame();
@@ -8773,8 +8873,12 @@ namespace rock
                                     seatedPivot.normalNodeLocal;
                             const RE::NiTransform desiredObjectWorldAtSeat =
                                 grab_frame_math::shiftObjectToAlignGripWithPocket(currentNodeWorld, livePivotAWorld, promotedPointWorld);
-                            const RE::NiTransform rawRotationProxyFrameWorld =
+                            const RE::NiTransform baselineRawRotationProxyFrameWorld =
                                 makeRawRotationPalmTranslationFrame(handWorldTransform, proxyAuthorityWorld);
+                            const auto seatAuthorityFrameEval =
+                                evaluateGrabAuthorityFrame(handWorldTransform, proxyAuthorityWorld, _grabFrame, _grabAcquisitionPhase, _grabStartTime);
+                            const RE::NiTransform rawRotationProxyFrameWorld = seatAuthorityFrameEval.frame;
+                            (void)baselineRawRotationProxyFrameWorld;
                             const auto frozenSeatAuthorityFrame = grab_authority_frame_math::freezeGrabAuthorityFrame<RE::NiTransform>(
                                 grab_authority_frame_math::GrabAuthorityFrameFreezeInput<RE::NiTransform>{
                                     .rawHandWorld = handWorldTransform,
@@ -8823,6 +8927,8 @@ namespace rock
                                     promotionDecision.reason :
                                     "seatedPalmPocketPositionOnly";
                                 _grabFrame.capturedNodeWorldAtGrab = currentNodeWorld;
+                                _grabFrame.authorityRawProxyMismatchDegreesAtGrab = seatAuthorityFrameEval.rawProxyMismatchDegrees;
+                                _grabFrame.authorityBlendWeightAtGrab = seatAuthorityFrameEval.blendWeight;
                                 _grabFrame.longObjectLeverGameUnits = seatedPivot.longLeverGameUnits;
                                 _grabFrame.hasSeatedPivotReacquire = true;
                                 _grabFrame.lastSeatedPivotReacquireLocalDeltaGameUnits = reacquireLocalDeltaGameUnits;
@@ -8883,7 +8989,13 @@ namespace rock
                                     std::scoped_lock lock(_grabAuthorityProxyMutex);
                                     if (_grabAuthorityProxyFrameValid) {
                                         _grabAuthorityPivotAProxyLocalGame = frozenSeatAuthorityFrame.pivotAAuthorityBodyLocalGame;
-                                        _grabAuthorityPivotBConstraintLocalGame = frozenSeatAuthorityFrame.pivotBConstraintLocalGame;
+                                        if (grab_authority_experiment::usesAuthorityLocalPivotAFreeze(_grabFrame.authorityPolicy.mode)) {
+                                            const RE::NiPoint3 activePivotAWorld =
+                                                transform_math::localPointToWorld(rawRotationProxyFrameWorld, frozenSeatAuthorityFrame.pivotAAuthorityFrameLocalGame);
+                                            _grabAuthorityPivotAProxyLocalGame =
+                                                grab_constraint_math::computeConstraintPivotLocalGame(proxyAuthorityWorld, activePivotAWorld);
+                                        }
+                                        _grabAuthorityPivotBConstraintLocalGame = solverPivotBConstraintLocalGameForFrame(_grabFrame);
                                     }
                                 }
 
@@ -9678,8 +9790,7 @@ namespace rock
                     transformBTranslation[1] * havokToGameScale(),
                     transformBTranslation[2] * havokToGameScale(),
                 };
-                const RE::NiPoint3 desiredTransformBLocalGame =
-                    grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformAuthoritySpace, _grabFrame.pivotAAuthorityBodyLocalGame);
+                const RE::NiPoint3 desiredTransformBLocalGame = solverPivotBConstraintLocalGameForFrame(_grabFrame);
                 constraintTransformBLocalDeltaGameUnits =
                     pointDistanceGameUnits(constraintTransformBLocalGame, desiredTransformBLocalGame);
                 targetRowsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkRows, desiredBodyToAuthoritySpace.rotate);
@@ -9705,11 +9816,20 @@ namespace rock
             objectSource = body_frame::BodyFrameSource::Fallback;
         }
 
-        const RE::NiTransform targetAuthorityFrame =
+        const RE::NiTransform baselineTargetAuthorityFrame =
             makeRawRotationPalmTranslationFrame(targetRawHandWorld, targetProxyWorld);
-        const RE::NiTransform liveAuthorityFrame = proxyOk ?
+        const auto targetAuthorityFrameEval =
+            evaluateGrabAuthorityFrame(targetRawHandWorld, targetProxyWorld, _grabFrame, _grabAcquisitionPhase, _grabStartTime);
+        const RE::NiTransform targetAuthorityFrame = targetAuthorityFrameEval.frame;
+        const RE::NiTransform baselineLiveAuthorityFrame = proxyOk ?
             makeRawRotationPalmTranslationFrame(targetRawHandWorld, proxyReadback) :
-            targetAuthorityFrame;
+            baselineTargetAuthorityFrame;
+        const auto liveAuthorityFrameEval = proxyOk ?
+            evaluateGrabAuthorityFrame(targetRawHandWorld, proxyReadback, _grabFrame, _grabAcquisitionPhase, _grabStartTime) :
+            targetAuthorityFrameEval;
+        const RE::NiTransform liveAuthorityFrame = proxyOk ? liveAuthorityFrameEval.frame : targetAuthorityFrame;
+        (void)baselineTargetAuthorityFrame;
+        (void)baselineLiveAuthorityFrame;
         const RE::NiTransform desiredObjectFromTarget = multiplyTransforms(targetAuthorityFrame, desiredNodeInAuthorityFrameSpace);
         const RE::NiTransform desiredBodyFromTarget = multiplyTransforms(targetAuthorityFrame, desiredBodyInAuthorityFrameSpace);
         const RE::NiTransform desiredObjectFromLiveProxy = proxyOk ?
