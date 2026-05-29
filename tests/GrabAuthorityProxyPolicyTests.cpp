@@ -163,10 +163,8 @@ int main()
 
     {
         RE::NiTransform desiredBodyTransformHandSpace = identityTransform();
-        const RE::NiMatrix3 constraintRestRotation = rock::transform_math::makeIdentityRotation<RE::NiMatrix3>();
         const RE::NiMatrix3 compositeRotation =
             composeRotations(rotationAroundZ(kPi * 0.37f), composeRotations(rotationAroundX(-kPi * 0.23f), rotationAroundY(kPi * 0.41f)));
-
         const RE::NiMatrix3 cases[2]{
             rotationAroundZ(kPi * 0.5f),
             compositeRotation,
@@ -190,17 +188,12 @@ int main()
                 0.0f,
                 0.01f);
             ok &= expectNear(
-                "target solver rows carry constraint-frame rest rotation",
-                rotationDeltaDegrees(matrixFromRawRows(targetBRca), constraintRestRotation),
+                "target solver rows carry body-to-hand rotation",
+                rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedBodyToHand),
                 0.0f,
                 0.01f);
-            ok &= expectNear(
-                "target column interpretation is also rest for identity target",
-                rotationDeltaDegrees(matrixFromRawColumns(targetBRca), constraintRestRotation),
-                0.0f,
-                0.01f);
-            if (rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedBodyToHand) <= 1.0f) {
-                std::printf("target_bRca unexpectedly duplicated the body-to-hand transform-B relation\n");
+            if (rotationDeltaDegrees(matrixFromRawColumns(targetBRca), expectedBodyToHand) <= 1.0f) {
+                std::printf("target_bRca column interpretation unexpectedly matches the solver-row convention\n");
                 ok = false;
             }
         }

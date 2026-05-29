@@ -99,17 +99,16 @@ namespace rock::grab_constraint_math
     {
         /*
          * Dynamic grab writes a custom FO4VR hknp atom chain directly, and the
-         * two angular byte consumers do not use the same storage view. Transform
-         * B carries the frozen body-to-hand rotation as hkMatrix column blocks.
-         * The ragdoll motor target is then expressed between those transformed
-         * constraint frames, so its rest target is identity. Writing the same
-         * body-to-hand relation into target_bRca double-applies the capture
-         * relation and makes the angular motor chase a stale offset.
+         * two angular byte consumers do not use the same storage view. The
+         * set-local-transforms atom consumes transform-B as hkMatrix column
+         * blocks, while in-game snap telemetry showed the ragdoll motor target
+         * converging to the row/forward interpretation on top grabs. Keep
+         * transform-B in column storage, but write target_bRca so its solver-row
+         * view carries the inverse body-to-hand relation.
          */
-        auto bodyToHandRotation = desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
-        const auto targetConstraintFrameRotation = transform_math::makeIdentityRotation<decltype(bodyToHandRotation)>();
+        const auto bodyToHandRotation = desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
         writeHavokRotationColumns(transformBRotation, bodyToHandRotation);
-        writeHavokRotationRows(targetBRca, targetConstraintFrameRotation);
+        writeHavokRotationRows(targetBRca, bodyToHandRotation);
     }
 
     template <class Transform, class Vector>
