@@ -7381,16 +7381,18 @@ namespace rock
                         _grabFrame.multiFingerAverageNormalWorldAtGrab = gripNormalWorld;
                     }
 
-                    desiredObjectWorld = grab_frame_math::shiftObjectToAlignGripWithPocket(
-                        objectWorldTransform,
+                    desiredBodyWorld = grab_frame_math::shiftObjectToAlignGripWithPocket(
+                        grabBodyWorldAtGrab,
                         grabPivotAWorld,
                         grabGripPoint);
+                    desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
                     if (useAuthoredGrabFrame) {
                         desiredObjectWorld = grab_node_info_math::buildDesiredObjectWorldFromAuthoredGrabNode(
                             objectWorldTransform,
                             authoredGrabNode->world,
                             handWorldTransform,
                             grabPivotAWorld);
+                        desiredBodyWorld = multiplyTransforms(desiredObjectWorld, objectToBodyAtGrab);
                     }
                     const float pulledGrabAdjust =
                         (grabbedFromPullCatch && !useAuthoredGrabFrame && !usingPinchPocket) ?
@@ -7398,8 +7400,8 @@ namespace rock
                             0.0f;
                     if (pulledGrabAdjust > 0.0f) {
                         desiredObjectWorld.translate = desiredObjectWorld.translate + gripNormalWorld * pulledGrabAdjust;
+                        desiredBodyWorld.translate = desiredBodyWorld.translate + gripNormalWorld * pulledGrabAdjust;
                     }
-                    desiredBodyWorld = multiplyTransforms(desiredObjectWorld, objectToBodyAtGrab);
 
                     const auto captureFingerTargets = usingPinchPocket ?
                         buildRuntimePinchFingerPoseTargets(pinchPocketCandidate) :
@@ -7506,11 +7508,13 @@ namespace rock
                     .rootBodyLocal = rootBodyLocalAtGrab,
                     .ownerBodyLocal = ownerBodyLocalAtGrab,
                     .desiredObjectWorld = desiredObjectWorld,
+                    .desiredBodyWorld = desiredBodyWorld,
                     .pivotAWorld = grabPivotAWorld,
                     .gripPointWorld = grabGripPoint,
                     .visualNormalWorld = frozenVisualNormalWorld,
                     .source = toFrozenGrabAuthorityPivotSource(inferGrabPivotAuthoritySource(grabPointMode, pivotAuthorityPositionOnly)),
                     .hasDesiredObjectWorld = true,
+                    .hasDesiredBodyWorld = true,
                     .visualNormalValid = lengthSquared(frozenVisualNormalWorld) > 0.000001f,
                 });
             if (!frozenAuthorityFrame.valid) {
@@ -8747,8 +8751,10 @@ namespace rock
                                 promotedNormalTrusted && seatedSupportPatch.valid ?
                                     transform_math::worldVectorToLocal(currentNodeWorld, promotedNormalWorld) :
                                     seatedPivot.normalNodeLocal;
+                            const RE::NiTransform desiredBodyWorldAtSeat =
+                                grab_frame_math::shiftObjectToAlignGripWithPocket(grabBodyWorld, livePivotAWorld, promotedPointWorld);
                             const RE::NiTransform desiredObjectWorldAtSeat =
-                                grab_frame_math::shiftObjectToAlignGripWithPocket(currentNodeWorld, livePivotAWorld, promotedPointWorld);
+                                deriveNodeWorldFromBodyWorld(desiredBodyWorldAtSeat, _grabFrame.bodyLocal);
                             const RE::NiTransform proxyAuthorityFrameWorld =
                                 makeGeneratedProxyAuthorityRelationFrame(proxyAuthorityWorld);
                             const auto frozenSeatAuthorityFrame = grab_authority_frame_math::freezeGrabAuthorityFrame<RE::NiTransform>(
@@ -8762,11 +8768,13 @@ namespace rock
                                     .rootBodyLocal = _grabFrame.rootBodyLocal,
                                     .ownerBodyLocal = _grabFrame.ownerBodyLocal,
                                     .desiredObjectWorld = desiredObjectWorldAtSeat,
+                                    .desiredBodyWorld = desiredBodyWorldAtSeat,
                                     .pivotAWorld = livePivotAWorld,
                                     .gripPointWorld = promotedPointWorld,
                                     .visualNormalWorld = promotedNormalWorld,
                                     .source = grab_authority_frame_math::GrabAuthorityPivotSource::PalmPocketMesh,
                                     .hasDesiredObjectWorld = true,
+                                    .hasDesiredBodyWorld = true,
                                     .visualNormalValid = promotedNormalTrusted,
                                 });
                             if (!frozenSeatAuthorityFrame.valid) {

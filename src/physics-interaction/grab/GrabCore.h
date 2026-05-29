@@ -1052,11 +1052,13 @@ namespace rock::grab_authority_frame_math
         Transform rootBodyLocal{};
         Transform ownerBodyLocal{};
         Transform desiredObjectWorld{};
+        Transform desiredBodyWorld{};
         Vector pivotAWorld{};
         Vector gripPointWorld{};
         Vector visualNormalWorld{};
         GrabAuthorityPivotSource source = GrabAuthorityPivotSource::None;
         bool hasDesiredObjectWorld = false;
+        bool hasDesiredBodyWorld = false;
         bool visualNormalValid = false;
     };
 
@@ -1118,19 +1120,27 @@ namespace rock::grab_authority_frame_math
         if (!isFiniteTransform(frozen.bodyLocal)) {
             return frozen;
         }
-        frozen.gripPointLocal = transform_math::worldPointToLocal(input.objectWorld, input.gripPointWorld);
-        frozen.desiredObjectWorld = input.hasDesiredObjectWorld ?
-            input.desiredObjectWorld :
+        /*
+         * The solver target is BODY authority. Visual object space may describe
+         * mesh evidence, but it must not define body-B's frozen motor frame.
+         */
+        frozen.desiredBodyWorld = input.hasDesiredBodyWorld ?
+            input.desiredBodyWorld :
             grab_frame_math::shiftObjectToAlignGripWithPocket(
-                input.objectWorld,
+                input.bodyWorld,
                 input.pivotAWorld,
                 input.gripPointWorld);
-        if (!isFiniteTransform(frozen.desiredObjectWorld)) {
+        if (!isFiniteTransform(frozen.desiredBodyWorld)) {
             return frozen;
         }
 
-        frozen.desiredBodyWorld = transform_math::composeTransforms(frozen.desiredObjectWorld, frozen.bodyLocal);
-        if (!isFiniteTransform(frozen.desiredBodyWorld)) {
+        frozen.gripPointLocal = transform_math::worldPointToLocal(input.objectWorld, input.gripPointWorld);
+        frozen.desiredObjectWorld = input.hasDesiredObjectWorld ?
+            input.desiredObjectWorld :
+            transform_math::composeTransforms(
+                frozen.desiredBodyWorld,
+                transform_math::invertTransform(frozen.bodyLocal));
+        if (!isFiniteTransform(frozen.desiredObjectWorld)) {
             return frozen;
         }
         const auto splitFrame = grab_frame_math::buildSplitGrabFrameFromDesiredObject(
