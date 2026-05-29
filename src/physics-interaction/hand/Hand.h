@@ -724,8 +724,8 @@ namespace rock
             float angularMotorDamping = 0.0f;
             float angularMotorMaxForce = 0.0f;
             float linearMotorMaxForce = 0.0f;
-            float targetRowsToConstraintInverseDegrees = -1.0f;
-            float targetColumnsToTransformBDegrees = -1.0f;
+            float targetRowsToConstraintRestDegrees = -1.0f;
+            float transformBColumnsToConstraintInverseDegrees = -1.0f;
             float ragdollBRcaRowsErrorDegrees = -1.0f;
             float ragdollBRcaColumnsErrorDegrees = -1.0f;
             float ragdollARcbRowsInverseErrorDegrees = -1.0f;

@@ -41,6 +41,22 @@ namespace
         return rock::transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(quaternion);
     }
 
+    RE::NiMatrix3 rotationAroundY(float radians)
+    {
+        const float halfAngle = radians * 0.5f;
+        const float quaternion[4]{ 0.0f, std::sin(halfAngle), 0.0f, std::cos(halfAngle) };
+        return rock::transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(quaternion);
+    }
+
+    RE::NiMatrix3 composeRotations(const RE::NiMatrix3& parent, const RE::NiMatrix3& child)
+    {
+        RE::NiTransform parentTransform = identityTransform();
+        parentTransform.rotate = parent;
+        RE::NiTransform childTransform = identityTransform();
+        childTransform.rotate = child;
+        return rock::transform_math::composeTransforms(parentTransform, childTransform).rotate;
+    }
+
     float pointDistance(const RE::NiPoint3& a, const RE::NiPoint3& b)
     {
         const float dx = a.x - b.x;
@@ -147,30 +163,46 @@ int main()
 
     {
         RE::NiTransform desiredBodyTransformHandSpace = identityTransform();
-        desiredBodyTransformHandSpace.rotate = rotationAroundZ(kPi * 0.5f);
-        const RE::NiMatrix3 expectedBodyToHand =
-            rock::grab_constraint_math::desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
+        const RE::NiMatrix3 constraintRestRotation = rock::transform_math::makeIdentityRotation<RE::NiMatrix3>();
+        const RE::NiMatrix3 compositeRotation =
+            composeRotations(rotationAroundZ(kPi * 0.37f), composeRotations(rotationAroundX(-kPi * 0.23f), rotationAroundY(kPi * 0.41f)));
 
-        float transformBRotation[12]{};
-        float targetBRca[12]{};
-        rock::grab_constraint_math::writeInitialGrabAngularFrame(
-            transformBRotation,
-            targetBRca,
-            desiredBodyTransformHandSpace);
+        const RE::NiMatrix3 cases[2]{
+            rotationAroundZ(kPi * 0.5f),
+            compositeRotation,
+        };
 
-        ok &= expectNear(
-            "transformB columns carry body-to-hand rotation",
-            rotationDeltaDegrees(matrixFromRawColumns(transformBRotation), expectedBodyToHand),
-            0.0f,
-            0.01f);
-        ok &= expectNear(
-            "target solver rows carry body-to-hand rotation",
-            rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedBodyToHand),
-            0.0f,
-            0.01f);
-        if (rotationDeltaDegrees(matrixFromRawColumns(targetBRca), expectedBodyToHand) <= 1.0f) {
-            std::printf("target_bRca column interpretation unexpectedly matches the solver-row convention\n");
-            ok = false;
+        for (const auto& bodyInHandRotation : cases) {
+            desiredBodyTransformHandSpace.rotate = bodyInHandRotation;
+            const RE::NiMatrix3 expectedBodyToHand =
+                rock::grab_constraint_math::desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
+
+            float transformBRotation[12]{};
+            float targetBRca[12]{};
+            rock::grab_constraint_math::writeInitialGrabAngularFrame(
+                transformBRotation,
+                targetBRca,
+                desiredBodyTransformHandSpace);
+
+            ok &= expectNear(
+                "transformB columns carry body-to-hand rotation",
+                rotationDeltaDegrees(matrixFromRawColumns(transformBRotation), expectedBodyToHand),
+                0.0f,
+                0.01f);
+            ok &= expectNear(
+                "target solver rows carry constraint-frame rest rotation",
+                rotationDeltaDegrees(matrixFromRawRows(targetBRca), constraintRestRotation),
+                0.0f,
+                0.01f);
+            ok &= expectNear(
+                "target column interpretation is also rest for identity target",
+                rotationDeltaDegrees(matrixFromRawColumns(targetBRca), constraintRestRotation),
+                0.0f,
+                0.01f);
+            if (rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedBodyToHand) <= 1.0f) {
+                std::printf("target_bRca unexpectedly duplicated the body-to-hand transform-B relation\n");
+                ok = false;
+            }
         }
     }
 
