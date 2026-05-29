@@ -4428,10 +4428,9 @@ namespace rock
             auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
 
             // The ragdoll motor target is seeded and updated from the generated
-            // proxy authority BODY relation. Runtime failure telemetry showed
-            // target_bRca must stay in the same native column-block view as
-            // transform-B; the row metric remains only a stale-convention
-            // diagnostic.
+            // proxy authority BODY relation. Transform-B uses hk-column storage, but
+            // target_bRca is also logged through the solver-row view because top
+            // grab telemetry proved that is the view hknp converges toward.
             const RE::NiTransform desiredBodyTransformHandSpace = _grabFrame.proxyAuthorityBodyHandSpace;
             const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
             const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
@@ -9882,7 +9881,7 @@ namespace rock
 
                 ROCK_LOG_SAMPLE_WARN(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} RAGDOLL FRAME ERROR: seq={}/{} targetConvention=nativeColumns bRcaRowsErr={:.1f}deg bRcaColsErr={:.1f}deg aRcbRowsInvErr={:.1f}deg aRcbColsInvErr={:.1f}deg intendedBodyErr={:.1f}->{:.1f}deg targetRowsInv={:.1f}deg targetColsToB={:.1f}deg reqAxisProxy=({:.2f},{:.2f},{:.2f})",
+                    "{} RAGDOLL FRAME ERROR: seq={}/{} appearsSolve=bRcaRows bRcaRowsErr={:.1f}deg bRcaColsErr={:.1f}deg aRcbRowsInvErr={:.1f}deg aRcbColsInvErr={:.1f}deg intendedBodyErr={:.1f}->{:.1f}deg targetRowsInv={:.1f}deg targetColsToB={:.1f}deg reqAxisProxy=({:.2f},{:.2f},{:.2f})",
                     handName(),
                     flushSequence,
                     queuedSequence,
