@@ -11,9 +11,11 @@ namespace rock::handspace_convention
 {
     /*
      * ROCK root-flattened game hand frames use the active authored handspace convention:
-     * authored X = fingers, authored Y = cross-palm, authored Z = palm thickness.
+     * authored X = fingers, authored Y = palm depth, authored Z = signed cross-palm.
      * The resolved game bone transform already carries handedness, so left/right
-     * conversion uses the same X/-Z/Y basis and does not apply an extra mirror.
+     * conversion uses the same X/Y/-Z basis and does not apply an extra mirror.
+     * Authored +Z is the hand's local cross-palm axis; its anatomical direction
+     * can be thumbward on one hand and pinkyward on the other.
      */
     template <class Vector>
     inline Vector makeVector(float x, float y, float z)
@@ -28,7 +30,7 @@ namespace rock::handspace_convention
     template <class Vector>
     inline Vector authoredToRaw(Vector value)
     {
-        return makeVector<Vector>(value.x, value.z, -value.y);
+        return makeVector<Vector>(value.x, value.y, -value.z);
     }
 
     template <class Vector>
@@ -131,10 +133,10 @@ namespace rock
     inline RE::NiPoint3 computePalmNormalFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
         /*
-         * Close selection uses the same palm-face convention proven by the working
-         * far ray: authored Z is the collider's palm-thickness normal. The live
+         * Close selection uses the same palm-depth convention proven by the working
+         * far ray: authored Y is the collider's palm-depth normal. The live
          * ROCK root-flattened game hand frame already carries left/right handedness,
-         * so applying a separate authored Y mirror sends close detection across the palm.
+         * so applying a separate authored Z mirror sends close detection across the palm.
          */
         const RE::NiPoint3 authoredNormal = g_rockConfig.rockPalmNormalHandspace;
         RE::NiPoint3 normal = transformHandspaceDirection(handTransform, authoredNormal, isLeft);

@@ -6297,7 +6297,7 @@ namespace rock
         if (!handPocketOnlyGrab && contactSourcePolicy.allowContactPatchPivot && g_rockConfig.rockGrabContactPatchEnabled && !authoredGrabNode && !sel.isFarSelection) {
             const RE::NiPoint3 palmNormalWorld = acquisitionPocket.palmNormalWorld;
             const RE::NiPoint3 palmTangentWorld = acquisitionPocket.fingerForwardWorld;
-            const RE::NiPoint3 palmBitangentWorld = acquisitionPocket.thumbSideWorld;
+            const RE::NiPoint3 palmBitangentWorld = acquisitionPocket.crossPalmWorld;
             float contactPatchObjectLeverEstimateGameUnits = 0.0f;
             if (!grabLocalMeshTriangles.empty() && grab_three_phase::isFinite(objectWorldTransform) && grab_three_phase::isFinite(canonicalPivotPointWorld)) {
                 const RE::NiPoint3 canonicalPivotLocal = transform_math::worldPointToLocal(objectWorldTransform, canonicalPivotPointWorld);
@@ -7122,7 +7122,7 @@ namespace rock
                             grabPivotAWorld,
                             pocket.valid ? pocket.palmNormalWorld : gripNormalWorld,
                             pocket.valid ? pocket.fingerForwardWorld : RE::NiPoint3{},
-                            pocket.valid ? pocket.thumbSideWorld : RE::NiPoint3{},
+                            pocket.valid ? pocket.crossPalmWorld : RE::NiPoint3{},
                             supportLeverGameUnits);
                         if (gripSupportRuntime.model.canAuthorPivot) {
                             grabGripPoint = gripSupportRuntime.model.pivotPoint;
@@ -8677,7 +8677,7 @@ namespace rock
                     const RE::NiPoint3 palmTangentWorld =
                         seatedPocket.valid ? seatedPocket.fingerForwardWorld : transformHandspaceDirection(authorityFrame, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, _isLeft);
                     const RE::NiPoint3 palmBitangentWorld =
-                        seatedPocket.valid ? seatedPocket.thumbSideWorld : transformHandspaceDirection(authorityFrame, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, _isLeft);
+                        seatedPocket.valid ? seatedPocket.crossPalmWorld : transformHandspaceDirection(authorityFrame, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }, _isLeft);
                     const auto seatedPivot = findSeatedGrabPivotNearPalmPocket(
                         _grabFrame.localMeshTriangles,
                         currentNodeWorld,

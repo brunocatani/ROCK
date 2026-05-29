@@ -63,7 +63,7 @@ namespace
     constexpr float kDefaultGrabThumbSurfaceSafetyMarginGameUnits = 1.0f;
     constexpr float kDefaultNearCastRadiusGameUnits = 3.5f;
     constexpr float kDefaultNearCastDistanceGameUnits = 7.0f;
-    const RE::NiPoint3 kDefaultPalmNormalHandspace{ 0.0f, 0.0f, 1.0f };
+    const RE::NiPoint3 kDefaultPalmNormalHandspace{ 0.0f, 1.0f, 0.0f };
     constexpr bool kDefaultSeeThroughScopesRightEyeDominant = true;
 
     std::string resolveIniPath()
@@ -113,7 +113,7 @@ namespace rock
         rockPerformanceProfilerOverlayText = false;
 
         rockPalmNormalHandspace = kDefaultPalmNormalHandspace;
-        rockPointingVectorHandspace = RE::NiPoint3(0.0f, 0.0f, 1.0f);
+        rockPointingVectorHandspace = RE::NiPoint3(0.0f, 1.0f, 0.0f);
         rockReversePalmNormal = true;
         rockReverseFarGrabNormal = true;
 
@@ -456,8 +456,8 @@ namespace rock
         rockPulledAngularDamping = 8.0f;
         rockPulledGrabHandAdjustDistanceGameUnits = 10.5f;
 
-        rockRightGrabPivotAHandspace = RE::NiPoint3(6.0f, 0.2f, -2.0f);
-        rockLeftGrabPivotAHandspace = RE::NiPoint3(6.0f, -0.2f, -2.0f);
+        rockRightGrabPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
+        rockLeftGrabPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);
 
         rockGrabLerpSpeed = 300.0f;
         rockGrabLerpAngularSpeed = 360.0f;

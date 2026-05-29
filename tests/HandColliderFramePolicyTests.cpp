@@ -135,6 +135,36 @@ int main()
     bool ok = true;
 
     {
+        ok &= expectVectorNear("authored palm depth maps to raw palm depth",
+            rock::authoredHandspaceToRawHandspace(RE::NiPoint3{ 0.0f, 1.0f, 0.0f }),
+            RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+        ok &= expectVectorNear("authored signed cross-palm maps to raw signed cross-palm",
+            rock::authoredHandspaceToRawHandspace(RE::NiPoint3{ 0.0f, 0.0f, 1.0f }),
+            RE::NiPoint3{ 0.0f, 0.0f, -1.0f });
+        ok &= expectVectorNear("migrated palm normal preserves old raw direction",
+            rock::authoredHandspaceToRawHandspace(RE::NiPoint3{ 0.0f, 1.0f, 0.0f }),
+            RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+        ok &= expectVectorNear("migrated right pivot preserves old raw point",
+            rock::authoredHandspaceToRawHandspace(RE::NiPoint3{ 6.0f, -2.0f, 0.2f }),
+            RE::NiPoint3{ 6.0f, -2.0f, -0.2f });
+        ok &= expectVectorNear("migrated left pivot preserves old raw point",
+            rock::authoredHandspaceToRawHandspace(RE::NiPoint3{ 6.0f, -2.0f, -0.2f }),
+            RE::NiPoint3{ 6.0f, -2.0f, 0.2f });
+        ok &= expectVectorNear("default palm normal uses authored palm depth",
+            rock::g_rockConfig.rockPalmNormalHandspace,
+            RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+        ok &= expectVectorNear("default pointing vector uses authored palm depth",
+            rock::g_rockConfig.rockPointingVectorHandspace,
+            RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+        ok &= expectVectorNear("default right pivot uses migrated handspace",
+            rock::g_rockConfig.rockRightGrabPivotAHandspace,
+            RE::NiPoint3{ 6.0f, -2.0f, 0.2f });
+        ok &= expectVectorNear("default left pivot uses migrated handspace",
+            rock::g_rockConfig.rockLeftGrabPivotAHandspace,
+            RE::NiPoint3{ 6.0f, -2.0f, -0.2f });
+    }
+
+    {
         const RE::NiPoint3 xAxis = normalize(RE::NiPoint3{ 0.36f, -0.48f, 0.80f });
         const RE::NiPoint3 yAxis = normalize(RE::NiPoint3{ -0.80f, 0.36f, 0.48f });
         const RE::NiPoint3 zAxis = normalize(cross(xAxis, yAxis));

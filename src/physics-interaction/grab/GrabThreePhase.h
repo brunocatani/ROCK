@@ -124,8 +124,8 @@ namespace rock::grab_three_phase
         RE::NiPoint3 palmCenterWorld{};
         RE::NiPoint3 palmNormalWorld{};
         RE::NiPoint3 fingerForwardWorld{};
-        RE::NiPoint3 thumbSideWorld{};
-        RE::NiPoint3 fingerSideWorld{};
+        RE::NiPoint3 crossPalmWorld{};
+        RE::NiPoint3 oppositeCrossPalmWorld{};
         RE::NiPoint3 pocketCenterWorld{};
         float pocketRadiusGameUnits = 0.0f;
         float pocketDepthGameUnits = 0.0f;
@@ -152,20 +152,20 @@ namespace rock::grab_three_phase
         frame.palmNormalWorld = normalizeOrFallback(computePalmNormalFromHandBasis(basisWorld, isLeft), RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
         const RE::NiPoint3 basisFingerForwardWorld =
             normalizeOrFallback(transformHandspaceDirection(basisWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, isLeft), RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
-        const RE::NiPoint3 basisThumbSideWorld =
-            normalizeOrFallback(transformHandspaceDirection(basisWorld, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, isLeft), RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+        const RE::NiPoint3 basisCrossPalmWorld =
+            normalizeOrFallback(transformHandspaceDirection(basisWorld, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }, isLeft), RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
 
         const RE::NiPoint3 fallbackFingerForwardWorld =
-            orientToward(normalizeOrFallback(cross(basisThumbSideWorld, frame.palmNormalWorld), basisFingerForwardWorld), basisFingerForwardWorld);
+            orientToward(normalizeOrFallback(cross(basisCrossPalmWorld, frame.palmNormalWorld), basisFingerForwardWorld), basisFingerForwardWorld);
         frame.fingerForwardWorld =
             orientToward(normalizeOrFallback(rejectFromAxis(basisFingerForwardWorld, frame.palmNormalWorld), fallbackFingerForwardWorld), basisFingerForwardWorld);
 
-        RE::NiPoint3 thumbSideCandidate = rejectFromAxis(basisThumbSideWorld, frame.palmNormalWorld);
-        thumbSideCandidate = rejectFromAxis(thumbSideCandidate, frame.fingerForwardWorld);
-        const RE::NiPoint3 fallbackThumbSideWorld =
-            orientToward(normalizeOrFallback(cross(frame.palmNormalWorld, frame.fingerForwardWorld), basisThumbSideWorld), basisThumbSideWorld);
-        frame.thumbSideWorld = orientToward(normalizeOrFallback(thumbSideCandidate, fallbackThumbSideWorld), basisThumbSideWorld);
-        frame.fingerSideWorld = RE::NiPoint3{ -frame.thumbSideWorld.x, -frame.thumbSideWorld.y, -frame.thumbSideWorld.z };
+        RE::NiPoint3 crossPalmCandidate = rejectFromAxis(basisCrossPalmWorld, frame.palmNormalWorld);
+        crossPalmCandidate = rejectFromAxis(crossPalmCandidate, frame.fingerForwardWorld);
+        const RE::NiPoint3 fallbackCrossPalmWorld =
+            orientToward(normalizeOrFallback(cross(frame.palmNormalWorld, frame.fingerForwardWorld), basisCrossPalmWorld), basisCrossPalmWorld);
+        frame.crossPalmWorld = orientToward(normalizeOrFallback(crossPalmCandidate, fallbackCrossPalmWorld), basisCrossPalmWorld);
+        frame.oppositeCrossPalmWorld = RE::NiPoint3{ -frame.crossPalmWorld.x, -frame.crossPalmWorld.y, -frame.crossPalmWorld.z };
         frame.pocketDepthGameUnits = (std::max)(0.0f, std::isfinite(pocketDepthGameUnits) ? pocketDepthGameUnits : 0.0f);
         frame.pocketRadiusGameUnits = (std::max)(0.1f, std::isfinite(pocketRadiusGameUnits) ? pocketRadiusGameUnits : 9.0f);
         frame.pocketCenterWorld = frame.palmCenterWorld + frame.palmNormalWorld * frame.pocketDepthGameUnits;

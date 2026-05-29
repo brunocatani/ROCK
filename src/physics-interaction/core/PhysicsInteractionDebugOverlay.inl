@@ -343,8 +343,8 @@
                         palmPocket.pocketCenterWorld - palmPocket.fingerForwardWorld * palmPocket.pocketRadiusGameUnits,
                         palmPocket.pocketCenterWorld + palmPocket.fingerForwardWorld * palmPocket.pocketRadiusGameUnits);
                     addMarkerLine(palmRadiusRole,
-                        palmPocket.pocketCenterWorld - palmPocket.thumbSideWorld * palmPocket.pocketRadiusGameUnits,
-                        palmPocket.pocketCenterWorld + palmPocket.thumbSideWorld * palmPocket.pocketRadiusGameUnits);
+                        palmPocket.pocketCenterWorld - palmPocket.crossPalmWorld * palmPocket.pocketRadiusGameUnits,
+                        palmPocket.pocketCenterWorld + palmPocket.crossPalmWorld * palmPocket.pocketRadiusGameUnits);
                 }
 
                 if (!handInput.hasPinchPocketWorld) {

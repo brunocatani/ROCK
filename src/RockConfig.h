@@ -71,8 +71,8 @@ namespace rock
         int rockPerformanceProfilerWarmupFrames = 120;
         bool rockPerformanceProfilerOverlayText = false;
 
-        RE::NiPoint3 rockPalmNormalHandspace = RE::NiPoint3(0.0f, 0.0f, 1.0f);
-        RE::NiPoint3 rockPointingVectorHandspace = RE::NiPoint3(0.0f, 0.0f, 1.0f);
+        RE::NiPoint3 rockPalmNormalHandspace = RE::NiPoint3(0.0f, 1.0f, 0.0f);
+        RE::NiPoint3 rockPointingVectorHandspace = RE::NiPoint3(0.0f, 1.0f, 0.0f);
         bool rockReversePalmNormal = true;
         bool rockReverseFarGrabNormal = true;
 
@@ -413,8 +413,8 @@ namespace rock
         float rockPulledAngularDamping = 8.0f;
         float rockPulledGrabHandAdjustDistanceGameUnits = 10.5f;
 
-        RE::NiPoint3 rockRightGrabPivotAHandspace = RE::NiPoint3(6.0f, 0.2f, -2.0f);
-        RE::NiPoint3 rockLeftGrabPivotAHandspace = RE::NiPoint3(6.0f, -0.2f, -2.0f);
+        RE::NiPoint3 rockRightGrabPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
+        RE::NiPoint3 rockLeftGrabPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);
 
         float rockGrabLerpSpeed = 300.0f;
         float rockGrabLerpAngularSpeed = 360.0f;
