@@ -1038,6 +1038,24 @@ namespace rock::grab_authority_frame_math
         return selected;
     }
 
+    template <class Transform, class Vector>
+    inline bool alignLocalPointInTransformToLocalTarget(Transform& transform, const Vector& localPoint, const Vector& targetPoint)
+    {
+        if (!isFiniteTransform(transform) || !isFiniteVector(localPoint) || !isFiniteVector(targetPoint)) {
+            return false;
+        }
+
+        const Vector currentPoint = transform_math::localPointToWorld(transform, localPoint);
+        if (!isFiniteVector(currentPoint)) {
+            return false;
+        }
+
+        transform.translate.x += targetPoint.x - currentPoint.x;
+        transform.translate.y += targetPoint.y - currentPoint.y;
+        transform.translate.z += targetPoint.z - currentPoint.z;
+        return isFiniteTransform(transform);
+    }
+
     template <class Transform>
     struct GrabAuthorityFrameFreezeInput
     {
@@ -1135,14 +1153,45 @@ namespace rock::grab_authority_frame_math
         }
 
         frozen.gripPointLocal = transform_math::worldPointToLocal(input.objectWorld, input.gripPointWorld);
-        frozen.desiredObjectWorld = input.hasDesiredObjectWorld ?
-            input.desiredObjectWorld :
-            transform_math::composeTransforms(
-                frozen.desiredBodyWorld,
-                transform_math::invertTransform(frozen.bodyLocal));
+        frozen.pivotBBodyLocalGame = transform_math::worldPointToLocal(input.bodyWorld, input.gripPointWorld);
+        frozen.pivotBConstraintLocalGame = transform_math::worldPointToLocal(input.constraintBodyWorld, input.gripPointWorld);
+        frozen.pivotAHandBodyLocalGame = grab_frame_math::computePivotAHandBodyLocal(input.proxyWorld, input.pivotAWorld);
+        if (!isFiniteVector(frozen.gripPointLocal) ||
+            !isFiniteVector(frozen.pivotBBodyLocalGame) ||
+            !isFiniteVector(frozen.pivotBConstraintLocalGame) ||
+            !isFiniteVector(frozen.pivotAHandBodyLocalGame)) {
+            return frozen;
+        }
+
+        /*
+         * BODY is the solver authority. The selected BODY-local pivot B must be
+         * the point written into transform-B, so freeze the generated/proxy BODY
+         * relation around that exact point. Otherwise a relation-implied pivot can
+         * replace the selected grip point and feed Havok a coherent but wrong
+         * linear/angular frame pair.
+         */
+        frozen.proxyAuthorityBodyHandSpace =
+            grab_frame_math::objectInFrameSpace(input.proxyAuthorityFrameWorld, frozen.desiredBodyWorld);
+        if (!alignLocalPointInTransformToLocalTarget(
+                frozen.proxyAuthorityBodyHandSpace,
+                frozen.pivotBConstraintLocalGame,
+                frozen.pivotAHandBodyLocalGame)) {
+            return frozen;
+        }
+
+        frozen.desiredBodyWorld =
+            transform_math::composeTransforms(input.proxyAuthorityFrameWorld, frozen.proxyAuthorityBodyHandSpace);
+        if (!isFiniteTransform(frozen.desiredBodyWorld)) {
+            return frozen;
+        }
+
+        frozen.desiredObjectWorld = transform_math::composeTransforms(
+            frozen.desiredBodyWorld,
+            transform_math::invertTransform(frozen.bodyLocal));
         if (!isFiniteTransform(frozen.desiredObjectWorld)) {
             return frozen;
         }
+
         const auto splitFrame = grab_frame_math::buildSplitGrabFrameFromDesiredObject(
             input.rawHandWorld,
             input.proxyWorld,
@@ -1151,15 +1200,12 @@ namespace rock::grab_authority_frame_math
         frozen.rawHandSpace = splitFrame.rawHandSpace;
         frozen.handBodyToRawHandAtGrab = splitFrame.handBodyToRawHandAtGrab;
         frozen.pivotAHandBodyLocalGame = splitFrame.pivotAHandBodyLocal;
-        frozen.pivotBBodyLocalGame = transform_math::worldPointToLocal(input.bodyWorld, input.gripPointWorld);
-        frozen.pivotBConstraintLocalGame = transform_math::worldPointToLocal(input.constraintBodyWorld, input.gripPointWorld);
         frozen.proxyAuthorityHandSpace =
             grab_frame_math::objectInFrameSpace(input.proxyAuthorityFrameWorld, frozen.desiredObjectWorld);
-        frozen.proxyAuthorityBodyHandSpace =
-            grab_frame_math::objectInFrameSpace(input.proxyAuthorityFrameWorld, frozen.desiredBodyWorld);
         frozen.valid =
             isFiniteVector(frozen.pivotBBodyLocalGame) &&
             isFiniteVector(frozen.pivotBConstraintLocalGame) &&
+            isFiniteVector(frozen.pivotAHandBodyLocalGame) &&
             isFiniteTransform(frozen.bodyLocal) &&
             isFiniteTransform(frozen.desiredBodyWorld) &&
             isFiniteTransform(frozen.rawHandSpace) &&

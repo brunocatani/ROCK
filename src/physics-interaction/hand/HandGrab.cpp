@@ -4578,12 +4578,14 @@ namespace rock
             return false;
         }
         // Constraint creation must seed the ragdoll motor with the same angular
-        // BODY relation that held updates keep writing. Using the older
-        // constraint-space relation here lets some grabs start with a correct
-        // pivot but a nearly flipped BODY target, which presents as an on-grab snap.
+        // BODY relation that held updates keep writing. Transform-B stays on the
+        // selected BODY-local grip pivot captured by the authority freeze; the
+        // freeze function translates the BODY relation so this point lands on
+        // pivot A instead of silently substituting a relation-implied pivot.
         const RE::NiTransform desiredBodyTransformProxySpace = _grabFrame.proxyAuthorityBodyHandSpace;
-        const RE::NiPoint3 solverPivotBConstraintLocalGame =
+        const RE::NiPoint3 relationPivotBConstraintLocalGame =
             grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformProxySpace, _grabFrame.pivotAHandBodyLocalGame);
+        const RE::NiPoint3 solverPivotBConstraintLocalGame = _grabFrame.pivotBConstraintLocalGame;
         if (!std::isfinite(solverPivotBConstraintLocalGame.x) ||
             !std::isfinite(solverPivotBConstraintLocalGame.y) ||
             !std::isfinite(solverPivotBConstraintLocalGame.z)) {
@@ -4596,6 +4598,8 @@ namespace rock
             destroyGrabAuthorityProxy(bhkWorld);
             return false;
         }
+        const float relationPivotBDeltaGameUnits =
+            pointDistanceGameUnits(solverPivotBConstraintLocalGame, relationPivotBConstraintLocalGame);
 
         const float gameToHkScale = gameToHavokScale();
         float pivotBBodyLocalHk[4]{
@@ -4649,8 +4653,9 @@ namespace rock
             _grabAuthorityProxyBhkWorld = bhkWorld;
             _grabAuthorityProxyHknpWorld = world;
             _grabAuthorityPivotAProxyLocalGame = pivotAProxyLocalGame;
-            // Keep the frozen grab evidence untouched; this is only the solver
-            // transform-B representation implied by the frozen body-in-hand relation.
+            // Keep transform-B on the selected BODY-local pivot. Any nonzero
+            // relation delta means the frozen BODY relation failed to preserve
+            // the selected pivot invariant and should show in frame telemetry.
             _grabAuthorityPivotBConstraintLocalGame = solverPivotBConstraintLocalGame;
             _grabAuthorityProxyFrameValid = true;
             _grabAuthorityPendingTarget = GrabAuthorityProxyPendingTarget{
@@ -4677,7 +4682,7 @@ namespace rock
         }
 
         ROCK_LOG_DEBUG(Hand,
-            "{} hand proxy constraint grab drive: constraint={} looseWeapon={} proxyBody={} objBody={} filter=0x{:08X} pivotAProxy=({:.2f},{:.2f},{:.2f}) pivotBConstraint=({:.2f},{:.2f},{:.2f}) pivotBBody=({:.2f},{:.2f},{:.2f}) linearTau={:.3f} angularTau={:.3f} linearForce={:.0f} angularForce={:.0f} motorMass={:.3f} forceBudget={:.2f} reason={}",
+            "{} hand proxy constraint grab drive: constraint={} looseWeapon={} proxyBody={} objBody={} filter=0x{:08X} pivotAProxy=({:.2f},{:.2f},{:.2f}) pivotBConstraint=({:.2f},{:.2f},{:.2f}) relationPivotB=({:.2f},{:.2f},{:.2f}) relationDelta={:.3f}gu pivotBBody=({:.2f},{:.2f},{:.2f}) linearTau={:.3f} angularTau={:.3f} linearForce={:.0f} angularForce={:.0f} motorMass={:.3f} forceBudget={:.2f} reason={}",
             handName(),
             _activeConstraint.constraintId,
             looseWeaponGrab ? "yes" : "no",
@@ -4690,6 +4695,10 @@ namespace rock
             solverPivotBConstraintLocalGame.x,
             solverPivotBConstraintLocalGame.y,
             solverPivotBConstraintLocalGame.z,
+            relationPivotBConstraintLocalGame.x,
+            relationPivotBConstraintLocalGame.y,
+            relationPivotBConstraintLocalGame.z,
+            relationPivotBDeltaGameUnits,
             _grabFrame.pivotBBodyLocalGame.x,
             _grabFrame.pivotBBodyLocalGame.y,
             _grabFrame.pivotBBodyLocalGame.z,

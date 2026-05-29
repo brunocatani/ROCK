@@ -184,6 +184,12 @@ int main()
             recomposedDesiredBody.translate,
             frozen.desiredBodyWorld.translate,
             0.001f);
+        const RE::NiPoint3 relationPivotA =
+            rock::transform_math::localPointToWorld(frozen.proxyAuthorityBodyHandSpace, frozen.pivotBConstraintLocalGame);
+        ok &= expectPointNear("proxy BODY relation maps selected pivot B to pivot A local",
+            relationPivotA,
+            frozen.pivotAHandBodyLocalGame,
+            0.001f);
 
         const RE::NiPoint3 targetGripPoint =
             rock::transform_math::localPointToWorld(frozen.desiredBodyWorld, frozen.pivotBConstraintLocalGame);
@@ -234,15 +240,57 @@ int main()
             0.001f);
         const RE::NiTransform oldVisualDerivedBody =
             rock::transform_math::composeTransforms(frozen.desiredObjectWorld, frozen.bodyLocal);
-        const RE::NiPoint3 visualDerivedDelta = oldVisualDerivedBody.translate - frozen.desiredBodyWorld.translate;
-        const float visualDerivedDeltaSquared =
-            visualDerivedDelta.x * visualDerivedDelta.x +
-            visualDerivedDelta.y * visualDerivedDelta.y +
-            visualDerivedDelta.z * visualDerivedDelta.z;
-        if (visualDerivedDeltaSquared <= 0.001f * 0.001f) {
-            std::printf("visual-derived body target unexpectedly matched explicit BODY authority\n");
-            ok = false;
-        }
+        ok &= expectPointNear("visual target is derived from BODY authority",
+            oldVisualDerivedBody.translate,
+            frozen.desiredBodyWorld.translate,
+            0.001f);
+    }
+
+    {
+        RE::NiTransform rawHandWorld = identityTransform();
+        RE::NiTransform proxyWorld = identityTransform();
+        proxyWorld.translate = RE::NiPoint3{ 3.0f, 0.0f, 0.0f };
+
+        RE::NiTransform objectWorld = identityTransform();
+        objectWorld.translate = RE::NiPoint3{ 10.0f, 0.0f, 0.0f };
+
+        RE::NiTransform bodyWorld = identityTransform();
+        bodyWorld.translate = RE::NiPoint3{ 12.0f, 0.0f, 0.0f };
+
+        RE::NiTransform desiredObjectWorld = identityTransform();
+        desiredObjectWorld.translate = RE::NiPoint3{ 100.0f, 0.0f, 0.0f };
+
+        RE::NiTransform desiredBodyWorld = identityTransform();
+        desiredBodyWorld.translate = RE::NiPoint3{ 9.0f, 0.0f, 0.0f };
+
+        const auto frozen = authority::freezeGrabAuthorityFrame<RE::NiTransform>(
+            authority::GrabAuthorityFrameFreezeInput<RE::NiTransform>{
+                .rawHandWorld = rawHandWorld,
+                .proxyWorld = proxyWorld,
+                .proxyAuthorityFrameWorld = rock::makeGeneratedProxyAuthorityRelationFrame(proxyWorld),
+                .objectWorld = objectWorld,
+                .bodyWorld = bodyWorld,
+                .constraintBodyWorld = bodyWorld,
+                .desiredObjectWorld = desiredObjectWorld,
+                .desiredBodyWorld = desiredBodyWorld,
+                .pivotAWorld = RE::NiPoint3{ 5.0f, 0.0f, 0.0f },
+                .gripPointWorld = RE::NiPoint3{ 11.0f, 0.0f, 0.0f },
+                .source = authority::GrabAuthorityPivotSource::PalmPocketMesh,
+                .hasDesiredObjectWorld = true,
+                .hasDesiredBodyWorld = true,
+            });
+
+        ok &= expectTrue("misaligned explicit body authority frame is valid", frozen.valid);
+        ok &= expectPointNear("BODY target translation is canonicalized around selected pivot",
+            frozen.desiredBodyWorld.translate,
+            RE::NiPoint3{ 6.0f, 0.0f, 0.0f },
+            0.001f);
+        const RE::NiPoint3 relationPivotA =
+            rock::transform_math::localPointToWorld(frozen.proxyAuthorityBodyHandSpace, frozen.pivotBConstraintLocalGame);
+        ok &= expectPointNear("canonicalized BODY relation keeps transform-B on selected pivot",
+            relationPivotA,
+            frozen.pivotAHandBodyLocalGame,
+            0.001f);
     }
 
     {
