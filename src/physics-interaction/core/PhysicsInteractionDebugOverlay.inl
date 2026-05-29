@@ -1184,7 +1184,7 @@
                         "NATIVE flat->palm %.2fgu %.2fdeg legacy->palm %.2f",
                         sample.nativeFlattenedHandToPalmAnchorTarget.positionGameUnits,
                         sample.nativeFlattenedHandToPalmAnchorTarget.rotationDegrees,
-                        sample.legacyConfiguredPivotAToPalmAnchor.distance);
+                        sample.legacyPalmPivotAToPalmAnchor.distance);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 14),
                         color,
                         "AUTH palm->auth %.2fgu %.2fdeg auth->proxy %.2fgu %.2fdeg",
@@ -1195,8 +1195,8 @@
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 15),
                         color,
                         "LEGACY cfg->runtime %.2f cfg->proxy %.2f proxy%d",
-                        sample.legacyConfiguredPivotAToRuntimePivotA.distance,
-                        sample.legacyConfiguredPivotAToProxyReadback.distance,
+                        sample.legacyPalmPivotAToRuntimePivotA.distance,
+                        sample.legacyPalmPivotAToProxyReadback.distance,
                         sample.hasProxyReadback ? 1 : 0);
                 }
 
@@ -1368,17 +1368,17 @@
                         prefix,
                         phaseLabel,
                         sideLabel,
-                        sample.hasLegacyConfiguredPivotAWorld ? "yes" : "no",
+                        sample.hasLegacyPalmPivotAWorld ? "yes" : "no",
                         sample.runtimePivotSource,
-                        grab_transform_telemetry::formatVector3(sample.legacyConfiguredPivotAWorld),
+                        grab_transform_telemetry::formatVector3(sample.legacyPalmPivotAWorld),
                         grab_transform_telemetry::formatVector3(sample.pivotAWorld),
                         sample.hasPalmAnchorTarget ? "yes" : "no",
                         sample.hasPalmAnchorGrabAuthority ? "yes" : "no",
                         sample.hasProxyReadback ? "yes" : "no",
-                        sample.legacyConfiguredPivotAToRuntimePivotA.distance,
-                        sample.legacyConfiguredPivotAToPalmAnchor.distance,
-                        sample.legacyConfiguredPivotAToGrabAuthority.distance,
-                        sample.legacyConfiguredPivotAToProxyReadback.distance);
+                        sample.legacyPalmPivotAToRuntimePivotA.distance,
+                        sample.legacyPalmPivotAToPalmAnchor.distance,
+                        sample.legacyPalmPivotAToGrabAuthority.distance,
+                        sample.legacyPalmPivotAToProxyReadback.distance);
                     ROCK_LOG_INFO(Hand,
                         "GRAB ANGULAR_DELTA {} {} side={} prev={} hmd={} raw={:.3f}deg world={} hand={} hmdLocal={} authority={:.3f}deg world={} hand={} hmdLocal={} proxy={:.3f}deg world={} hand={} hmdLocal={} rawDesired={:.3f}deg world={} hand={} hmdLocal={} heldNode={:.3f}deg world={} hand={} hmdLocal={} heldBody={:.3f}deg world={} hand={} hmdLocal={} nativeBody={:.3f}deg world={} hand={} hmdLocal={}",
                         prefix,

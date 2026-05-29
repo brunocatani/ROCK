@@ -1224,8 +1224,8 @@ namespace rock
             const auto localTransform = _handBoneCache.getWorldTransform(isLeft);
             const auto apiTransform = frik_visual_authority::getHandWorldTransform(handEnum);
             const auto delta = measureTransformDelta(localTransform, apiTransform);
-            const auto localPalmPosition = computePalmPositionFromHandBasis(localTransform, isLeft);
-            const auto apiPalmPosition = computePalmPositionFromHandBasis(apiTransform, isLeft);
+            const auto localPalmPosition = computeGrabLegacyPalmPivotAWorldFromHandBasis(localTransform, isLeft);
+            const auto apiPalmPosition = computeGrabLegacyPalmPivotAWorldFromHandBasis(apiTransform, isLeft);
             const auto localPalmNormal = computePalmNormalFromHandBasis(localTransform, isLeft);
             const auto apiPalmNormal = computePalmNormalFromHandBasis(apiTransform, isLeft);
             const auto localPointing = computePointingVectorFromHandBasis(localTransform, isLeft);

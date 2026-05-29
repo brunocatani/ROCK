@@ -120,14 +120,19 @@ namespace rock
         return normalizeDirection(transformHandspaceLocalToWorld(handTransform, authoredHandspaceToRawHandspaceForHand(localDirection, isLeft)));
     }
 
-    inline RE::NiPoint3 computeGrabPivotAHandspacePosition(bool isLeft)
+    /*
+     * Legacy authored palm pivot retained for API palm-position compatibility,
+     * telemetry/debug tuning, two-handed grip, and non-dynamic helper paths.
+     * Dynamic object grabs use the generated hidden proxy authority frame.
+     */
+    inline RE::NiPoint3 computeGrabLegacyPalmPivotAHandspacePosition(bool isLeft)
     {
-        return isLeft ? g_rockConfig.rockLeftGrabPivotAHandspace : g_rockConfig.rockRightGrabPivotAHandspace;
+        return isLeft ? g_rockConfig.rockLeftGrabLegacyPalmPivotAHandspace : g_rockConfig.rockRightGrabLegacyPalmPivotAHandspace;
     }
 
-    inline RE::NiPoint3 computePalmPositionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
+    inline RE::NiPoint3 computeGrabLegacyPalmPivotAWorldFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
-        return transformHandspacePosition(handTransform, computeGrabPivotAHandspacePosition(isLeft), isLeft);
+        return transformHandspacePosition(handTransform, computeGrabLegacyPalmPivotAHandspacePosition(isLeft), isLeft);
     }
 
     inline RE::NiPoint3 computePalmNormalFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
@@ -157,11 +162,6 @@ namespace rock
     inline RE::NiPoint3 computePinchDetectionDirectionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
         return transformHandspaceDirection(handTransform, g_rockConfig.rockGrabPinchDetectionDirectionHandspace, isLeft);
-    }
-
-    inline RE::NiPoint3 computeGrabPivotAPositionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
-    {
-        return transformHandspacePosition(handTransform, computeGrabPivotAHandspacePosition(isLeft), isLeft);
     }
 
     inline RE::NiPoint3 computeGrabAuthorityProxyOffsetLocalGame(bool isLeft)

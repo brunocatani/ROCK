@@ -184,7 +184,7 @@ namespace rock::grab_three_phase
         return buildGrabPocketFrameWithPalmCenter(
             handWorld,
             isLeft,
-            computeGrabPivotAPositionFromHandBasis(handWorld, isLeft),
+            computeGrabLegacyPalmPivotAWorldFromHandBasis(handWorld, isLeft),
             pocketDepthGameUnits,
             pocketRadiusGameUnits);
     }

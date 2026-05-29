@@ -173,7 +173,7 @@ namespace
         if (!pi->tryGetRootFlattenedHandTransform(isLeft, transform))
             return RE::NiPoint3{};
 
-        return computePalmPositionFromHandBasis(transform, isLeft);
+        return computeGrabLegacyPalmPivotAWorldFromHandBasis(transform, isLeft);
     }
 
     RE::NiPoint3 ROCK_CALL apiGetPalmForward(const ROCKApi::Hand hand)

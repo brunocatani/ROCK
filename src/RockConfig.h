@@ -50,7 +50,7 @@ namespace rock
         void suppressNextFileWatchReload() { _ignoreNextIniFileChange.store(true); }
 
         [[nodiscard]] bool persistPhysicsBool(const char* key, bool value);
-        [[nodiscard]] bool persistGrabPivotAHandspace(bool isLeft, const RE::NiPoint3& value);
+        [[nodiscard]] bool persistGrabLegacyPalmPivotAHandspace(bool isLeft, const RE::NiPoint3& value);
 
         bool rockEnabled = true;
 
@@ -413,8 +413,8 @@ namespace rock
         float rockPulledAngularDamping = 8.0f;
         float rockPulledGrabHandAdjustDistanceGameUnits = 10.5f;
 
-        RE::NiPoint3 rockRightGrabPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
-        RE::NiPoint3 rockLeftGrabPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);
+        RE::NiPoint3 rockRightGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
+        RE::NiPoint3 rockLeftGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);
 
         float rockGrabLerpSpeed = 300.0f;
         float rockGrabLerpAngularSpeed = 360.0f;

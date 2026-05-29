@@ -176,12 +176,12 @@ namespace rock::debug_controller_runtime
 
         [[nodiscard]] RE::NiPoint3& selectedPivot()
         {
-            return s_state.selectedLeft ? g_rockConfig.rockLeftGrabPivotAHandspace : g_rockConfig.rockRightGrabPivotAHandspace;
+            return s_state.selectedLeft ? g_rockConfig.rockLeftGrabLegacyPalmPivotAHandspace : g_rockConfig.rockRightGrabLegacyPalmPivotAHandspace;
         }
 
         [[nodiscard]] const RE::NiPoint3& selectedPivotConst()
         {
-            return s_state.selectedLeft ? g_rockConfig.rockLeftGrabPivotAHandspace : g_rockConfig.rockRightGrabPivotAHandspace;
+            return s_state.selectedLeft ? g_rockConfig.rockLeftGrabLegacyPalmPivotAHandspace : g_rockConfig.rockRightGrabLegacyPalmPivotAHandspace;
         }
 
         [[nodiscard]] const char* selectedHandName()
@@ -198,7 +198,7 @@ namespace rock::debug_controller_runtime
         void notifyPivot()
         {
             const auto& pivot = selectedPivotConst();
-            notify(std::format("{} grab pivot A X={:.2f} Y={:.2f} Z={:.2f}", selectedHandName(), pivot.x, pivot.y, pivot.z));
+            notify(std::format("{} legacy palm pivot A X={:.2f} Y={:.2f} Z={:.2f}", selectedHandName(), pivot.x, pivot.y, pivot.z));
         }
 
         void persistColliderState(const char* key, bool value)
@@ -263,13 +263,13 @@ namespace rock::debug_controller_runtime
         void persistDirtyPivots()
         {
             if (s_state.pivotDirty[0]) {
-                if (!g_rockConfig.persistGrabPivotAHandspace(false, g_rockConfig.rockRightGrabPivotAHandspace)) {
-                    ROCK_LOG_WARN(Input, "Debug controller failed to persist right grab pivot");
+                if (!g_rockConfig.persistGrabLegacyPalmPivotAHandspace(false, g_rockConfig.rockRightGrabLegacyPalmPivotAHandspace)) {
+                    ROCK_LOG_WARN(Input, "Debug controller failed to persist right legacy palm pivot A");
                 }
             }
             if (s_state.pivotDirty[1]) {
-                if (!g_rockConfig.persistGrabPivotAHandspace(true, g_rockConfig.rockLeftGrabPivotAHandspace)) {
-                    ROCK_LOG_WARN(Input, "Debug controller failed to persist left grab pivot");
+                if (!g_rockConfig.persistGrabLegacyPalmPivotAHandspace(true, g_rockConfig.rockLeftGrabLegacyPalmPivotAHandspace)) {
+                    ROCK_LOG_WARN(Input, "Debug controller failed to persist left legacy palm pivot A");
                 }
             }
             s_state.pivotDirty = {};
@@ -289,7 +289,7 @@ namespace rock::debug_controller_runtime
 
             persistDirtyPivots();
             restoreTuningVisualState();
-            notify(std::format("{} grab pivot tuning saved", selectedHandName()));
+            notify(std::format("{} legacy palm pivot tuning saved", selectedHandName()));
         }
 
         void selectNextPivotHand()

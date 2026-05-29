@@ -157,10 +157,10 @@ int main()
             rock::g_rockConfig.rockPointingVectorHandspace,
             RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
         ok &= expectVectorNear("default right pivot uses migrated handspace",
-            rock::g_rockConfig.rockRightGrabPivotAHandspace,
+            rock::g_rockConfig.rockRightGrabLegacyPalmPivotAHandspace,
             RE::NiPoint3{ 6.0f, -2.0f, 0.2f });
         ok &= expectVectorNear("default left pivot uses migrated handspace",
-            rock::g_rockConfig.rockLeftGrabPivotAHandspace,
+            rock::g_rockConfig.rockLeftGrabLegacyPalmPivotAHandspace,
             RE::NiPoint3{ 6.0f, -2.0f, -0.2f });
     }
 

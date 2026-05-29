@@ -456,8 +456,8 @@ namespace rock
         rockPulledAngularDamping = 8.0f;
         rockPulledGrabHandAdjustDistanceGameUnits = 10.5f;
 
-        rockRightGrabPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
-        rockLeftGrabPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);
+        rockRightGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
+        rockLeftGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);
 
         rockGrabLerpSpeed = 300.0f;
         rockGrabLerpAngularSpeed = 360.0f;
@@ -1608,8 +1608,8 @@ namespace rock
             rockPulledGrabHandAdjustDistanceGameUnits = 10.5f;
         }
 
-        readOptionalVec3("fRightGrabPivotAHandspaceX", "fRightGrabPivotAHandspaceY", "fRightGrabPivotAHandspaceZ", rockRightGrabPivotAHandspace);
-        readOptionalVec3("fLeftGrabPivotAHandspaceX", "fLeftGrabPivotAHandspaceY", "fLeftGrabPivotAHandspaceZ", rockLeftGrabPivotAHandspace);
+        readOptionalVec3("fRightGrabLegacyPalmPivotAHandspaceX", "fRightGrabLegacyPalmPivotAHandspaceY", "fRightGrabLegacyPalmPivotAHandspaceZ", rockRightGrabLegacyPalmPivotAHandspace);
+        readOptionalVec3("fLeftGrabLegacyPalmPivotAHandspaceX", "fLeftGrabLegacyPalmPivotAHandspaceY", "fLeftGrabLegacyPalmPivotAHandspaceZ", rockLeftGrabLegacyPalmPivotAHandspace);
 
         rockGrabLerpSpeed = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLerpSpeed", rockGrabLerpSpeed));
         rockGrabLerpAngularSpeed = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLerpAngularSpeed", rockGrabLerpAngularSpeed));
@@ -1813,30 +1813,30 @@ namespace rock
         return saveRuntimeIni(ini, key);
     }
 
-    bool RockConfig::persistGrabPivotAHandspace(bool isLeft, const RE::NiPoint3& value)
+    bool RockConfig::persistGrabLegacyPalmPivotAHandspace(bool isLeft, const RE::NiPoint3& value)
     {
         const std::string path = _iniFilePath.empty() ? resolveIniPath() : _iniFilePath;
         CSimpleIniA ini;
         ini.SetUnicode(false);
         const SI_Error loadRc = ini.LoadFile(path.c_str());
         if (loadRc < 0) {
-            ROCK_LOG_WARN(Config, "Cannot persist ROCK.ini {} grab pivot: load failed with code {}", isLeft ? "left" : "right", static_cast<int>(loadRc));
+            ROCK_LOG_WARN(Config, "Cannot persist ROCK.ini {} legacy palm pivot A: load failed with code {}", isLeft ? "left" : "right", static_cast<int>(loadRc));
             return false;
         }
 
-        const char* keyX = isLeft ? "fLeftGrabPivotAHandspaceX" : "fRightGrabPivotAHandspaceX";
-        const char* keyY = isLeft ? "fLeftGrabPivotAHandspaceY" : "fRightGrabPivotAHandspaceY";
-        const char* keyZ = isLeft ? "fLeftGrabPivotAHandspaceZ" : "fRightGrabPivotAHandspaceZ";
+        const char* keyX = isLeft ? "fLeftGrabLegacyPalmPivotAHandspaceX" : "fRightGrabLegacyPalmPivotAHandspaceX";
+        const char* keyY = isLeft ? "fLeftGrabLegacyPalmPivotAHandspaceY" : "fRightGrabLegacyPalmPivotAHandspaceY";
+        const char* keyZ = isLeft ? "fLeftGrabLegacyPalmPivotAHandspaceZ" : "fRightGrabLegacyPalmPivotAHandspaceZ";
         bool ok = true;
         ok &= ini.SetDoubleValue(SECTION, keyX, value.x, nullptr, true) >= 0;
         ok &= ini.SetDoubleValue(SECTION, keyY, value.y, nullptr, true) >= 0;
         ok &= ini.SetDoubleValue(SECTION, keyZ, value.z, nullptr, true) >= 0;
         if (!ok) {
-            ROCK_LOG_WARN(Config, "Cannot persist ROCK.ini {} grab pivot: set failed", isLeft ? "left" : "right");
+            ROCK_LOG_WARN(Config, "Cannot persist ROCK.ini {} legacy palm pivot A: set failed", isLeft ? "left" : "right");
             return false;
         }
 
-        return saveRuntimeIni(ini, isLeft ? "left grab pivot" : "right grab pivot");
+        return saveRuntimeIni(ini, isLeft ? "left legacy palm pivot A" : "right legacy palm pivot A");
     }
 
     void RockConfig::processPendingConfigReload()
