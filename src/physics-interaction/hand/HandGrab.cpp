@@ -221,7 +221,9 @@ namespace rock
 
         RE::NiPoint3 rotationAxisProxyLocal(const RE::NiMatrix3& proxyWorldRotation, const RE::NiPoint3& axisWorld)
         {
-            return normalizeOrZero(transform_math::rotateWorldVectorToLocal(proxyWorldRotation, axisWorld));
+            RE::NiTransform proxyWorld = transform_math::makeIdentityTransform<RE::NiTransform>();
+            proxyWorld.rotate = proxyWorldRotation;
+            return normalizeOrZero(hand_bone_collider_geometry_math::generatedColliderWorldVectorToLocal(proxyWorld, axisWorld));
         }
 
         bool computeHardKeyframeVelocityForTarget(
@@ -2123,19 +2125,24 @@ namespace rock
             return normalizeOrZero(transform_math::localVectorToWorld(transform, localAxis));
         }
 
+        RE::NiPoint3 generatedFrameAxisWorld(const RE::NiTransform& transform, const RE::NiPoint3& localAxis)
+        {
+            return normalizeOrZero(hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(transform, localAxis));
+        }
+
         GrabPalmBasisDelta computeGrabPalmBasisDelta(const RE::NiTransform& rawHandWorld, const RE::NiTransform& proxyWorld)
         {
             GrabPalmBasisDelta result{};
             result.rotationDegrees = rotationDeltaDegrees(rawHandWorld.rotate, proxyWorld.rotate);
             result.xAxisDegrees = axisDeltaDegrees(
                 frameAxisWorld(rawHandWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }),
-                frameAxisWorld(proxyWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }));
+                generatedFrameAxisWorld(proxyWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }));
             result.yAxisDegrees = axisDeltaDegrees(
                 frameAxisWorld(rawHandWorld, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }),
-                frameAxisWorld(proxyWorld, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }));
+                generatedFrameAxisWorld(proxyWorld, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }));
             result.zAxisDegrees = axisDeltaDegrees(
                 frameAxisWorld(rawHandWorld, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }),
-                frameAxisWorld(proxyWorld, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }));
+                generatedFrameAxisWorld(proxyWorld, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }));
             result.rawDeterminant = matrixDeterminant(rawHandWorld.rotate);
             result.proxyDeterminant = matrixDeterminant(proxyWorld.rotate);
             return result;
@@ -4579,7 +4586,7 @@ namespace rock
          */
         const RE::NiPoint3 constraintPivotAWorld = grabPivotAWorld;
         const RE::NiPoint3 pivotAProxyLocalGame =
-            grab_constraint_math::computeConstraintPivotLocalGame(proxyWorldTransform, constraintPivotAWorld);
+            grab_constraint_math::computeGeneratedProxyConstraintPivotLocalGame(proxyWorldTransform, constraintPivotAWorld);
         if (!std::isfinite(pivotAProxyLocalGame.x) ||
             !std::isfinite(pivotAProxyLocalGame.y) ||
             !std::isfinite(pivotAProxyLocalGame.z)) {
@@ -4745,7 +4752,7 @@ namespace rock
         }
 
         const RE::NiPoint3 pivotAProxyLocalGame =
-            grab_constraint_math::computeConstraintPivotLocalGame(proxyWorldTransform, activePivotAWorld);
+            grab_constraint_math::computeGeneratedProxyConstraintPivotLocalGame(proxyWorldTransform, activePivotAWorld);
         if (!std::isfinite(pivotAProxyLocalGame.x) ||
             !std::isfinite(pivotAProxyLocalGame.y) ||
             !std::isfinite(pivotAProxyLocalGame.z)) {

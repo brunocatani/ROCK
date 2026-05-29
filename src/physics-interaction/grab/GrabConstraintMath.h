@@ -1,6 +1,7 @@
 #pragma once
 
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/hand/HandColliderTypes.h"
 
 #include <cstdint>
 #include <cstring>
@@ -111,13 +112,13 @@ namespace rock::grab_constraint_math
     }
 
     template <class Transform, class Vector>
-    inline Vector computeConstraintPivotLocalGame(const Transform& bodyWorld, const Vector& pivotWorld)
+    inline Vector computeGeneratedProxyConstraintPivotLocalGame(const Transform& bodyWorld, const Vector& pivotWorld)
     {
-        return transform_math::worldPointToLocal(bodyWorld, pivotWorld);
+        return hand_bone_collider_geometry_math::generatedColliderWorldPointToLocal(bodyWorld, pivotWorld);
     }
 
     template <class Transform, class Vector>
-    inline void writeConstraintPivotLocalTranslation(float* constraintTranslation,
+    inline void writeGeneratedProxyConstraintPivotLocalTranslation(float* constraintTranslation,
         const Transform& bodyWorld,
         const Vector& pivotWorld,
         float gameToHavokScale)
@@ -126,7 +127,7 @@ namespace rock::grab_constraint_math
             return;
         }
 
-        const Vector pivotLocalGame = computeConstraintPivotLocalGame(bodyWorld, pivotWorld);
+        const Vector pivotLocalGame = computeGeneratedProxyConstraintPivotLocalGame(bodyWorld, pivotWorld);
         constraintTranslation[0] = pivotLocalGame.x * gameToHavokScale;
         constraintTranslation[1] = pivotLocalGame.y * gameToHavokScale;
         constraintTranslation[2] = pivotLocalGame.z * gameToHavokScale;

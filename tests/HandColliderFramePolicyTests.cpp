@@ -206,6 +206,9 @@ int main()
         const RE::NiPoint3 generatedLocalYWorld =
             rock::hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyFrame, RE::NiPoint3{ 0.0f, -2.0f, 0.0f });
         ok &= expectVectorNear("generated collider local offset uses stored column Y", generatedLocalYWorld, RE::NiPoint3{ 0.0f, 0.0f, -2.0f });
+        ok &= expectVectorNear("generated collider world point returns stored column local Y",
+            rock::hand_bone_collider_geometry_math::generatedColliderWorldPointToLocal(proxyFrame, proxyFrame.translate + generatedLocalYWorld),
+            RE::NiPoint3{ 0.0f, -2.0f, 0.0f });
 
         rock::g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3{ 0.0f, -2.0f, 0.0f };
         const RE::NiTransform rightOffset = rock::applyGrabAuthorityProxyLocalOffsetToFrame(proxyFrame, false);

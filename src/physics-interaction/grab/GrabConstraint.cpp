@@ -429,7 +429,7 @@ namespace rock
             tA_col2[2] = 1.0f;
             tA_col2[3] = 0.0f;
 
-            grab_constraint_math::writeConstraintPivotLocalTranslation(tA_pos, handBodyWorld, palmWorldGame, gameToHavokScale());
+            grab_constraint_math::writeGeneratedProxyConstraintPivotLocalTranslation(tA_pos, handBodyWorld, palmWorldGame, gameToHavokScale());
 
             auto* tB_col0 = reinterpret_cast<float*>(header + GRAB_TRANSFORM_B_COL0);
             auto* tB_pos = reinterpret_cast<float*>(header + GRAB_TRANSFORM_B_POS);

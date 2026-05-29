@@ -847,6 +847,7 @@ namespace rock::grab_interaction_policy
  */
 
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/hand/HandColliderTypes.h"
 
 #include <span>
 #include <utility>
@@ -882,7 +883,11 @@ namespace rock::grab_frame_math
     template <class Transform, class Vector>
     inline Vector computePivotAHandBodyLocal(const Transform& handBodyWorld, const Vector& grabPivotWorld)
     {
-        return transform_math::worldPointToLocal(handBodyWorld, grabPivotWorld);
+        /*
+         * The active hand body for proxy grab authority is the generated palm
+         * proxy frame, whose physical local axes are stored as Ni columns.
+         */
+        return hand_bone_collider_geometry_math::generatedColliderWorldPointToLocal(handBodyWorld, grabPivotWorld);
     }
 
     template <class Transform>

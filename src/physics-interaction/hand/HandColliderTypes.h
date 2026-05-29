@@ -447,6 +447,28 @@ namespace rock::hand_bone_collider_geometry_math
         return makeVector<Vector>(rotated.x * frameWorld.scale, rotated.y * frameWorld.scale, rotated.z * frameWorld.scale);
     }
 
+    template <class Transform, class Vector>
+    inline Vector generatedColliderWorldVectorToLocal(const Transform& frameWorld, const Vector& worldVector)
+    {
+        const float inverseScale = (std::abs(frameWorld.scale) > 0.0001f) ? (1.0f / frameWorld.scale) : 1.0f;
+        const Vector unscaled = makeVector<Vector>(worldVector.x * inverseScale, worldVector.y * inverseScale, worldVector.z * inverseScale);
+        const auto& matrix = frameWorld.rotate;
+        return makeVector<Vector>(
+            matrix.entry[0][0] * unscaled.x + matrix.entry[1][0] * unscaled.y + matrix.entry[2][0] * unscaled.z,
+            matrix.entry[0][1] * unscaled.x + matrix.entry[1][1] * unscaled.y + matrix.entry[2][1] * unscaled.z,
+            matrix.entry[0][2] * unscaled.x + matrix.entry[1][2] * unscaled.y + matrix.entry[2][2] * unscaled.z);
+    }
+
+    template <class Transform, class Vector>
+    inline Vector generatedColliderWorldPointToLocal(const Transform& frameWorld, const Vector& worldPoint)
+    {
+        const Vector delta = makeVector<Vector>(
+            worldPoint.x - frameWorld.translate.x,
+            worldPoint.y - frameWorld.translate.y,
+            worldPoint.z - frameWorld.translate.z);
+        return generatedColliderWorldVectorToLocal(frameWorld, delta);
+    }
+
     template <class Matrix>
     inline Matrix transposeStoredRotation(const Matrix& matrix)
     {

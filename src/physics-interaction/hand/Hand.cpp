@@ -967,7 +967,7 @@ namespace rock
             return proxyLocalPalmPocketPivotWorld;
         }
 
-        return applyGrabAuthorityProxyLocalOffsetToFrame(rawHandWorldTransform, _isLeft).translate;
+        return rawHandWorldTransform.translate;
     }
 
     bool Hand::getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const

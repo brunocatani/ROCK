@@ -1,4 +1,7 @@
 #include "physics-interaction/grab/GrabCore.h"
+#include "physics-interaction/hand/HandColliderTypes.h"
+
+#include "RE/NetImmerse/NiMatrix3.h"
 
 #include <array>
 #include <cstdio>
@@ -186,6 +189,25 @@ int main()
         ok &= expectPointNear("frozen pivot B reaches pivot A through desired body",
             targetGripPoint,
             pivotAWorld,
+            0.001f);
+    }
+
+    {
+        const RE::NiPoint3 xAxis{ 0.0f, 1.0f, 0.0f };
+        const RE::NiPoint3 yAxis{ 0.0f, 0.0f, 1.0f };
+        const RE::NiPoint3 zAxis{ 1.0f, 0.0f, 0.0f };
+
+        RE::NiTransform proxyWorld = identityTransform();
+        proxyWorld.translate = RE::NiPoint3{ 10.0f, 20.0f, 30.0f };
+        proxyWorld.rotate = rock::hand_bone_collider_geometry_math::matrixFromAxes<RE::NiMatrix3>(xAxis, yAxis, zAxis);
+
+        const RE::NiPoint3 proxyLocalPivot{ 0.0f, -2.0f, 0.0f };
+        const RE::NiPoint3 pivotAWorld =
+            proxyWorld.translate + rock::hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyWorld, proxyLocalPivot);
+
+        ok &= expectPointNear("generated proxy pivot A freezes through stored column local space",
+            rock::grab_frame_math::computePivotAHandBodyLocal(proxyWorld, pivotAWorld),
+            proxyLocalPivot,
             0.001f);
     }
 
