@@ -68,7 +68,7 @@ namespace rock::pointing_direction_math
 #include <cmath>
 
 #include "RockConfig.h"
-#include "physics-interaction/TransformMath.h"
+#include "physics-interaction/hand/HandColliderTypes.h"
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
 
@@ -169,19 +169,7 @@ namespace rock
 
     inline RE::NiPoint3 generatedProxyLocalVectorToWorld(const RE::NiTransform& proxyFrameWorld, const RE::NiPoint3& localVector)
     {
-        /*
-         * Generated hand collider/proxy frames are column-authored physical
-         * placement frames. The proxy body keeps that rotation unchanged, but
-         * the seat offset must read local X/Y/Z from the stored columns instead
-         * of TransformMath's row-axis Ni helper.
-         */
-        const auto& matrix = proxyFrameWorld.rotate;
-        const RE::NiPoint3 rotated{
-            matrix.entry[0][0] * localVector.x + matrix.entry[0][1] * localVector.y + matrix.entry[0][2] * localVector.z,
-            matrix.entry[1][0] * localVector.x + matrix.entry[1][1] * localVector.y + matrix.entry[1][2] * localVector.z,
-            matrix.entry[2][0] * localVector.x + matrix.entry[2][1] * localVector.y + matrix.entry[2][2] * localVector.z,
-        };
-        return RE::NiPoint3{ rotated.x * proxyFrameWorld.scale, rotated.y * proxyFrameWorld.scale, rotated.z * proxyFrameWorld.scale };
+        return hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyFrameWorld, localVector);
     }
 
     inline RE::NiTransform applyGrabAuthorityProxyLocalOffsetToFrame(const RE::NiTransform& proxyFrameWorld, bool isLeft)

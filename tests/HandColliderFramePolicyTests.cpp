@@ -203,6 +203,10 @@ int main()
         proxyFrame.translate = RE::NiPoint3{ 10.0f, 20.0f, 30.0f };
         proxyFrame.rotate = rock::hand_bone_collider_geometry_math::matrixFromAxes<RE::NiMatrix3>(xAxis, yAxis, zAxis);
 
+        const RE::NiPoint3 generatedLocalYWorld =
+            rock::hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyFrame, RE::NiPoint3{ 0.0f, -2.0f, 0.0f });
+        ok &= expectVectorNear("generated collider local offset uses stored column Y", generatedLocalYWorld, RE::NiPoint3{ 0.0f, 0.0f, -2.0f });
+
         rock::g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3{ 0.0f, -2.0f, 0.0f };
         const RE::NiTransform rightOffset = rock::applyGrabAuthorityProxyLocalOffsetToFrame(proxyFrame, false);
         ok &= expectVectorNear("right proxy offset uses stored column Y", rightOffset.translate, RE::NiPoint3{ 10.0f, 20.0f, 28.0f });

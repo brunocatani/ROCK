@@ -2,7 +2,6 @@
 
 #include "RockConfig.h"
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/TransformMath.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/native/HavokConvexShapeBuilder.h"
@@ -431,7 +430,8 @@ namespace rock
             outFrame.valid = true;
             outFrame.transform = frame.transform;
             if (zoneOverride.valid && zoneOverride.hasLocalOffset) {
-                const auto offsetWorld = transform_math::localVectorToWorld(outFrame.transform, zoneOverride.localOffsetGame);
+                const auto offsetWorld =
+                    hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(outFrame.transform, zoneOverride.localOffsetGame);
                 outFrame.transform.translate.x += offsetWorld.x;
                 outFrame.transform.translate.y += offsetWorld.y;
                 outFrame.transform.translate.z += offsetWorld.z;

@@ -430,6 +430,23 @@ namespace rock::hand_bone_collider_geometry_math
         return matrix;
     }
 
+    template <class Transform, class Vector>
+    inline Vector generatedColliderLocalVectorToWorld(const Transform& frameWorld, const Vector& localVector)
+    {
+        /*
+         * Generated collider placement frames are column-authored native body
+         * frames. Configured local seat/tuning offsets must read local X/Y/Z
+         * from those stored columns instead of TransformMath's row-axis
+         * NiTransform convention.
+         */
+        const auto& matrix = frameWorld.rotate;
+        const Vector rotated = makeVector<Vector>(
+            matrix.entry[0][0] * localVector.x + matrix.entry[0][1] * localVector.y + matrix.entry[0][2] * localVector.z,
+            matrix.entry[1][0] * localVector.x + matrix.entry[1][1] * localVector.y + matrix.entry[1][2] * localVector.z,
+            matrix.entry[2][0] * localVector.x + matrix.entry[2][1] * localVector.y + matrix.entry[2][2] * localVector.z);
+        return makeVector<Vector>(rotated.x * frameWorld.scale, rotated.y * frameWorld.scale, rotated.z * frameWorld.scale);
+    }
+
     template <class Matrix>
     inline Matrix transposeStoredRotation(const Matrix& matrix)
     {
