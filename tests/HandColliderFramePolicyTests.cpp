@@ -210,6 +210,11 @@ int main()
             rock::hand_bone_collider_geometry_math::generatedColliderWorldPointToLocal(proxyFrame, proxyFrame.translate + generatedLocalYWorld),
             RE::NiPoint3{ 0.0f, -2.0f, 0.0f });
 
+        const RE::NiTransform relationFrame = rock::makeGeneratedProxyAuthorityRelationFrame(proxyFrame);
+        ok &= expectVectorNear("proxy relation row view preserves generated local Y",
+            rock::transform_math::localVectorToWorld(relationFrame, RE::NiPoint3{ 0.0f, -2.0f, 0.0f }),
+            generatedLocalYWorld);
+
         rock::g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3{ 0.0f, -2.0f, 0.0f };
         const RE::NiTransform rightOffset = rock::applyGrabAuthorityProxyLocalOffsetToFrame(proxyFrame, false);
         ok &= expectVectorNear("right proxy offset uses stored column Y", rightOffset.translate, RE::NiPoint3{ 10.0f, 20.0f, 28.0f });

@@ -93,13 +93,13 @@ int main()
         RE::NiPoint3{ 10.0f, 20.0f, 30.0f },
         7.0f,
         9.0f);
-    ok &= expectTrue("raw-roll pocket frame valid", identityPocket.valid);
-    ok &= expectNear("raw-roll pocket keeps reversed palm normal X", identityPocket.palmNormalWorld.x, 0.0f, 0.001f);
-    ok &= expectNear("raw-roll pocket keeps reversed palm normal Y", identityPocket.palmNormalWorld.y, -1.0f, 0.001f);
-    ok &= expectNear("raw-roll pocket keeps reversed palm normal Z", identityPocket.palmNormalWorld.z, 0.0f, 0.001f);
-    ok &= expectNear("raw-roll pocket projects finger off palm normal", pointDot(identityPocket.fingerForwardWorld, identityPocket.palmNormalWorld), 0.0f, 0.001f);
-    ok &= expectNear("raw-roll pocket projects thumb side off palm normal", pointDot(identityPocket.thumbSideWorld, identityPocket.palmNormalWorld), 0.0f, 0.001f);
-    ok &= expectNear("raw-roll pocket keeps tangent and bitangent orthogonal", pointDot(identityPocket.fingerForwardWorld, identityPocket.thumbSideWorld), 0.0f, 0.001f);
+    ok &= expectTrue("proxy-basis pocket frame valid", identityPocket.valid);
+    ok &= expectNear("proxy-basis pocket keeps reversed palm normal X", identityPocket.palmNormalWorld.x, 0.0f, 0.001f);
+    ok &= expectNear("proxy-basis pocket keeps reversed palm normal Y", identityPocket.palmNormalWorld.y, -1.0f, 0.001f);
+    ok &= expectNear("proxy-basis pocket keeps reversed palm normal Z", identityPocket.palmNormalWorld.z, 0.0f, 0.001f);
+    ok &= expectNear("proxy-basis pocket projects finger off palm normal", pointDot(identityPocket.fingerForwardWorld, identityPocket.palmNormalWorld), 0.0f, 0.001f);
+    ok &= expectNear("proxy-basis pocket projects thumb side off palm normal", pointDot(identityPocket.thumbSideWorld, identityPocket.palmNormalWorld), 0.0f, 0.001f);
+    ok &= expectNear("proxy-basis pocket keeps tangent and bitangent orthogonal", pointDot(identityPocket.fingerForwardWorld, identityPocket.thumbSideWorld), 0.0f, 0.001f);
 
     const auto closeSelection = classifyAcquisitionPhase(PhaseClassificationInput{
         .pocket = makePocket(),

@@ -320,7 +320,14 @@
                 }
 
                 const auto& handInput = isLeft ? context.left : context.right;
-                const auto palmPocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(handInput.rawHandWorld,
+                const auto& hand = isLeft ? _leftHand : _rightHand;
+                GrabAuthorityProxyDebugSnapshot snapshot{};
+                if (!hand.getGrabAuthorityProxyDebugSnapshot(hknp, handInput.rawHandWorld, snapshot)) {
+                    return;
+                }
+                const RE::NiTransform pocketBasisWorld =
+                    makeGeneratedProxyAuthorityRelationFrame(snapshot.proxyTargetWorld);
+                const auto palmPocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(pocketBasisWorld,
                     isLeft,
                     handInput.grabAnchorWorld,
                     g_rockConfig.rockGrabPocketDepthGameUnits,

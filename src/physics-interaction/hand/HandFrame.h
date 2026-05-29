@@ -172,6 +172,21 @@ namespace rock
         return hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyFrameWorld, localVector);
     }
 
+    inline RE::NiTransform makeGeneratedProxyAuthorityRelationFrame(const RE::NiTransform& proxyFrameWorld)
+    {
+        /*
+         * The hidden proxy body itself consumes the generated palm frame exactly
+         * as produced by the collider pipeline, with physical axes stored as
+         * columns. Grab relation math uses TransformMath's row-axis convention,
+         * so object/BODY relations and pocket orientation need this row-view of
+         * the same generated/proxy local space. Do not use this adapter for
+         * writing the physical proxy body transform.
+         */
+        RE::NiTransform result = proxyFrameWorld;
+        result.rotate = hand_bone_collider_geometry_math::transposeStoredRotation(proxyFrameWorld.rotate);
+        return result;
+    }
+
     inline RE::NiTransform applyGrabAuthorityProxyLocalOffsetToFrame(const RE::NiTransform& proxyFrameWorld, bool isLeft)
     {
         /*

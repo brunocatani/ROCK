@@ -4,9 +4,9 @@
  * Three-phase grab is the new generic-object authority layer. The old path let
  * surface normals, contact patches, opposition contacts, raw ray hits, visible
  * hand reverse solving, and multiple pivots all decide part of the same grab. This
- * policy keeps those signals as evidence only: the root-flattened hand builds a
- * stable pocket, object evidence builds one grip area, and the dynamic native
- * spring receives a body-local grip point plus a pocket target.
+ * policy keeps those signals as evidence only: the generated/proxy authority
+ * frame builds a stable pocket, object evidence builds one grip area, and the
+ * dynamic native spring receives a body-local grip point plus a pocket target.
  */
 
 #include "RE/NetImmerse/NiPoint.h"
@@ -120,7 +120,7 @@ namespace rock::grab_three_phase
 
     struct GrabPocketFrame
     {
-        RE::NiTransform handWorld{};
+        RE::NiTransform basisWorld{};
         RE::NiPoint3 palmCenterWorld{};
         RE::NiPoint3 palmNormalWorld{};
         RE::NiPoint3 fingerForwardWorld{};
@@ -133,36 +133,43 @@ namespace rock::grab_three_phase
     };
 
     inline GrabPocketFrame buildGrabPocketFrameWithPalmCenter(
-        const RE::NiTransform& handWorld,
+        const RE::NiTransform& basisWorld,
         bool isLeft,
         const RE::NiPoint3& palmCenterWorld,
         float pocketDepthGameUnits,
         float pocketRadiusGameUnits)
     {
+        /*
+         * Dynamic grab callers pass the generated/proxy authority relation
+         * frame here. That row-view preserves the generated collider's local
+         * axes for pocket roll without letting the raw controller hand basis
+         * pull the pocket around a separate rotation origin. Legacy callers
+         * that still need authored handspace use buildGrabPocketFrame below.
+         */
         GrabPocketFrame frame{};
-        frame.handWorld = handWorld;
+        frame.basisWorld = basisWorld;
         frame.palmCenterWorld = palmCenterWorld;
-        frame.palmNormalWorld = normalizeOrFallback(computePalmNormalFromHandBasis(handWorld, isLeft), RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
-        const RE::NiPoint3 rawFingerForwardWorld =
-            normalizeOrFallback(transformHandspaceDirection(handWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, isLeft), RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
-        const RE::NiPoint3 rawThumbSideWorld =
-            normalizeOrFallback(transformHandspaceDirection(handWorld, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, isLeft), RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+        frame.palmNormalWorld = normalizeOrFallback(computePalmNormalFromHandBasis(basisWorld, isLeft), RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+        const RE::NiPoint3 basisFingerForwardWorld =
+            normalizeOrFallback(transformHandspaceDirection(basisWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, isLeft), RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+        const RE::NiPoint3 basisThumbSideWorld =
+            normalizeOrFallback(transformHandspaceDirection(basisWorld, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, isLeft), RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
 
         const RE::NiPoint3 fallbackFingerForwardWorld =
-            orientToward(normalizeOrFallback(cross(rawThumbSideWorld, frame.palmNormalWorld), rawFingerForwardWorld), rawFingerForwardWorld);
+            orientToward(normalizeOrFallback(cross(basisThumbSideWorld, frame.palmNormalWorld), basisFingerForwardWorld), basisFingerForwardWorld);
         frame.fingerForwardWorld =
-            orientToward(normalizeOrFallback(rejectFromAxis(rawFingerForwardWorld, frame.palmNormalWorld), fallbackFingerForwardWorld), rawFingerForwardWorld);
+            orientToward(normalizeOrFallback(rejectFromAxis(basisFingerForwardWorld, frame.palmNormalWorld), fallbackFingerForwardWorld), basisFingerForwardWorld);
 
-        RE::NiPoint3 thumbSideCandidate = rejectFromAxis(rawThumbSideWorld, frame.palmNormalWorld);
+        RE::NiPoint3 thumbSideCandidate = rejectFromAxis(basisThumbSideWorld, frame.palmNormalWorld);
         thumbSideCandidate = rejectFromAxis(thumbSideCandidate, frame.fingerForwardWorld);
         const RE::NiPoint3 fallbackThumbSideWorld =
-            orientToward(normalizeOrFallback(cross(frame.palmNormalWorld, frame.fingerForwardWorld), rawThumbSideWorld), rawThumbSideWorld);
-        frame.thumbSideWorld = orientToward(normalizeOrFallback(thumbSideCandidate, fallbackThumbSideWorld), rawThumbSideWorld);
+            orientToward(normalizeOrFallback(cross(frame.palmNormalWorld, frame.fingerForwardWorld), basisThumbSideWorld), basisThumbSideWorld);
+        frame.thumbSideWorld = orientToward(normalizeOrFallback(thumbSideCandidate, fallbackThumbSideWorld), basisThumbSideWorld);
         frame.fingerSideWorld = RE::NiPoint3{ -frame.thumbSideWorld.x, -frame.thumbSideWorld.y, -frame.thumbSideWorld.z };
         frame.pocketDepthGameUnits = (std::max)(0.0f, std::isfinite(pocketDepthGameUnits) ? pocketDepthGameUnits : 0.0f);
         frame.pocketRadiusGameUnits = (std::max)(0.1f, std::isfinite(pocketRadiusGameUnits) ? pocketRadiusGameUnits : 9.0f);
         frame.pocketCenterWorld = frame.palmCenterWorld + frame.palmNormalWorld * frame.pocketDepthGameUnits;
-        frame.valid = isFinite(handWorld) && isFinite(frame.palmCenterWorld) && isFinite(frame.pocketCenterWorld) && lengthSquared(frame.palmNormalWorld) > 0.000001f;
+        frame.valid = isFinite(basisWorld) && isFinite(frame.palmCenterWorld) && isFinite(frame.pocketCenterWorld) && lengthSquared(frame.palmNormalWorld) > 0.000001f;
         return frame;
     }
 

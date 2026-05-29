@@ -1,5 +1,6 @@
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/hand/HandFrame.h"
 
 #include "RE/NetImmerse/NiMatrix3.h"
 
@@ -144,7 +145,7 @@ int main()
             authority::GrabAuthorityFrameFreezeInput<RE::NiTransform>{
                 .rawHandWorld = rawHandWorld,
                 .proxyWorld = proxyWorld,
-                .rawRotationProxyFrameWorld = proxyWorld,
+                .proxyAuthorityFrameWorld = rock::makeGeneratedProxyAuthorityRelationFrame(proxyWorld),
                 .objectWorld = objectWorld,
                 .bodyWorld = bodyWorld,
                 .constraintBodyWorld = bodyWorld,
@@ -178,7 +179,7 @@ int main()
             0.001f);
 
         const RE::NiTransform recomposedDesiredBody =
-            rock::transform_math::composeTransforms(proxyWorld, frozen.rawRotationProxyBodyHandSpace);
+            rock::transform_math::composeTransforms(rock::makeGeneratedProxyAuthorityRelationFrame(proxyWorld), frozen.proxyAuthorityBodyHandSpace);
         ok &= expectPointNear("frozen body relation recomposes through proxy frame",
             recomposedDesiredBody.translate,
             frozen.desiredBodyWorld.translate,
@@ -228,7 +229,7 @@ int main()
             authority::GrabAuthorityFrameFreezeInput<RE::NiTransform>{
                 .rawHandWorld = invalidHand,
                 .proxyWorld = frame,
-                .rawRotationProxyFrameWorld = frame,
+                .proxyAuthorityFrameWorld = rock::makeGeneratedProxyAuthorityRelationFrame(frame),
                 .objectWorld = objectWorld,
                 .bodyWorld = bodyWorld,
                 .constraintBodyWorld = bodyWorld,
