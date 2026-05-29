@@ -1,4 +1,5 @@
 #include "physics-interaction/hand/HandColliderTypes.h"
+#include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/TransformMath.h"
 
 #include "RE/NetImmerse/NiMatrix3.h"
@@ -192,6 +193,23 @@ int main()
         ok &= expectNear("palm box half X length", maxAbsAxis(palmBox, 'x'), 5.0f);
         ok &= expectNear("palm box half Y depth", maxAbsAxis(palmBox, 'y'), 1.0f);
         ok &= expectNear("palm box half Z cross-palm width", maxAbsAxis(palmBox, 'z'), 3.0f);
+    }
+
+    {
+        const RE::NiPoint3 xAxis{ 0.0f, 1.0f, 0.0f };
+        const RE::NiPoint3 yAxis{ 0.0f, 0.0f, 1.0f };
+        const RE::NiPoint3 zAxis{ 1.0f, 0.0f, 0.0f };
+        RE::NiTransform proxyFrame = identityTransform();
+        proxyFrame.translate = RE::NiPoint3{ 10.0f, 20.0f, 30.0f };
+        proxyFrame.rotate = rock::hand_bone_collider_geometry_math::matrixFromAxes<RE::NiMatrix3>(xAxis, yAxis, zAxis);
+
+        rock::g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3{ 0.0f, -2.0f, 0.0f };
+        const RE::NiTransform rightOffset = rock::applyGrabAuthorityProxyLocalOffsetToFrame(proxyFrame, false);
+        ok &= expectVectorNear("right proxy offset uses stored column Y", rightOffset.translate, RE::NiPoint3{ 10.0f, 20.0f, 28.0f });
+
+        rock::g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3{ 0.0f, -3.0f, 0.0f };
+        const RE::NiTransform leftOffset = rock::applyGrabAuthorityProxyLocalOffsetToFrame(proxyFrame, true);
+        ok &= expectVectorNear("left proxy offset uses stored column Y", leftOffset.translate, RE::NiPoint3{ 10.0f, 20.0f, 27.0f });
     }
 
     {
