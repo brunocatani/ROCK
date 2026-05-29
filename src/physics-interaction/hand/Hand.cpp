@@ -1759,7 +1759,7 @@ namespace rock
         _selectedCloseFingerPoseActive = false;
     }
 
-    bool Hand::createCollision(RE::hknpWorld* world, void* bhkWorld)
+    bool Hand::createCollision(RE::hknpWorld* world, void* bhkWorld, const RE::NiTransform& rollAuthorityWorld)
     {
         if (hasCollisionBody()) {
             ROCK_LOG_WARN(Hand, "{} hand already has collision body -- skipping create", handName());
@@ -1776,7 +1776,7 @@ namespace rock
             return false;
         }
 
-        if (!_boneColliders.create(world, bhkWorld, _isLeft, _handBody)) {
+        if (!_boneColliders.create(world, bhkWorld, _isLeft, rollAuthorityWorld, _handBody)) {
             ROCK_LOG_ERROR(Hand, "{} bone-derived hand collision create failed", handName());
             return false;
         }
@@ -1800,12 +1800,12 @@ namespace rock
         clearGrabHandCollisionSuppressionState();
     }
 
-    void Hand::updateCollisionTransform(RE::hknpWorld* world, float deltaTime)
+    void Hand::updateCollisionTransform(RE::hknpWorld* world, const RE::NiTransform& rollAuthorityWorld, float deltaTime)
     {
         if (!hasCollisionBody() || !world)
             return;
 
-        _boneColliders.update(world, _isLeft, _handBody, deltaTime);
+        _boneColliders.update(world, _isLeft, rollAuthorityWorld, _handBody, deltaTime);
     }
 
     void Hand::flushPendingCollisionPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)

@@ -419,11 +419,11 @@ namespace rock
         bool isFingerTipTouching(hand_collider_semantics::HandFinger finger) const;
         bool tryGetHandColliderMetadataForRole(hand_collider_semantics::HandColliderRole role, HandColliderBodyMetadata& outMetadata) const;
 
-        bool createCollision(RE::hknpWorld* world, void* bhkWorld);
+        bool createCollision(RE::hknpWorld* world, void* bhkWorld, const RE::NiTransform& rollAuthorityWorld);
 
         void destroyCollision(void* bhkWorld);
 
-        void updateCollisionTransform(RE::hknpWorld* world, float deltaTime);
+        void updateCollisionTransform(RE::hknpWorld* world, const RE::NiTransform& rollAuthorityWorld, float deltaTime);
 
         void flushPendingCollisionPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void flushPendingCustomGrabAuthority(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);

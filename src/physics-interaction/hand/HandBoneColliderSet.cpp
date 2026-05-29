@@ -145,7 +145,7 @@ namespace rock
         clearAtomicBodyIds();
     }
 
-    bool HandBoneColliderSet::captureBoneLookup(bool isLeft, BoneFrameLookup& outLookup)
+    bool HandBoneColliderSet::captureBoneLookup(bool isLeft, const RE::NiTransform& rollAuthorityWorld, BoneFrameLookup& outLookup)
     {
         outLookup = {};
         DirectSkeletonBoneSnapshot snapshot{};
@@ -164,6 +164,8 @@ namespace rock
             ROCK_LOG_WARN(Hand, "{} hand bone colliders disabled: missing hand bone", isLeft ? "Left" : "Right");
             return false;
         }
+
+        outLookup.rollAuthorityWorld = rollAuthorityWorld;
 
         outLookup.hasForearm3 = findSnapshotBone(bonesByName, isLeft ? "LArm_ForeArm3" : "RArm_ForeArm3", outLookup.forearm3);
         outLookup.crossPalmDirection = normalizeOr(
@@ -210,16 +212,46 @@ namespace rock
             if (!palm.valid) {
                 return false;
             }
+
+            RE::NiPoint3 palmCenter = lookup.hand.translate;
+            for (const auto& fingerBase : lookup.fingerBases) {
+                palmCenter = hand_bone_collider_geometry_math::add(palmCenter, fingerBase);
+            }
+            palmCenter = hand_bone_collider_geometry_math::mul(palmCenter, 1.0f / static_cast<float>(lookup.fingerBases.size() + 1));
+
+            const RE::NiPoint3 rawPalmDepthAxis = normalizeOr(
+                debug_axis_math::rotateNiLocalToWorld(lookup.rollAuthorityWorld.rotate, RE::NiPoint3(0.0f, 1.0f, 0.0f)),
+                RE::NiPoint3(0.0f, 1.0f, 0.0f));
+            const float depthOffset = hand_bone_collider_geometry_math::dot(
+                hand_bone_collider_geometry_math::sub(palmCenter, lookup.hand.translate),
+                rawPalmDepthAxis);
+            const RE::NiPoint3 palmPlaneCenter = hand_bone_collider_geometry_math::sub(
+                palmCenter,
+                hand_bone_collider_geometry_math::mul(rawPalmDepthAxis, depthOffset));
+
             outFrame.valid = true;
-            outFrame.transform = palm.transform;
+            outFrame.transform = lookup.hand;
+            outFrame.transform.translate = hand_bone_collider_geometry_math::add(
+                palmPlaneCenter,
+                hand_bone_collider_geometry_math::mul(rawPalmDepthAxis, -0.25f));
+            /*
+             * Palm roles now take roll from the same normal Ni frame as
+             * CustomOGA, but generated hand collider bodies still consume the
+             * legacy column-authored rotation convention before the shared
+             * Ni-to-Havok conversion. Convert only this palm target; segment
+             * colliders already build their frames through matrixFromAxes.
+             */
+            outFrame.transform.rotate =
+                hand_bone_collider_geometry_math::transposeStoredRotation(lookup.rollAuthorityWorld.rotate);
+            outFrame.transform.scale = 1.0f;
             outFrame.length = (std::max)(3.0f, palm.length * 1.15f);
             outFrame.radius = roleRadius(role, _lastCapturedPowerArmor);
             outFrame.convexRadius = roleConvexRadius(role, _lastCapturedPowerArmor);
             if (role == HandColliderRole::PalmFace) {
-                outFrame.transform.translate = outFrame.transform.translate - palm.palmDepthAxis * 0.55f;
+                outFrame.transform.translate = outFrame.transform.translate - rawPalmDepthAxis * 0.55f;
                 outFrame.radius *= 0.85f;
             } else if (role == HandColliderRole::PalmBack) {
-                outFrame.transform.translate = outFrame.transform.translate + palm.palmDepthAxis * 0.75f;
+                outFrame.transform.translate = outFrame.transform.translate + rawPalmDepthAxis * 0.75f;
                 outFrame.radius *= 0.95f;
             }
             if (!handRoleFrameDimensionsValid(outFrame, role, _lastCapturedPowerArmor)) {
@@ -371,7 +403,7 @@ namespace rock
         return true;
     }
 
-    bool HandBoneColliderSet::create(RE::hknpWorld* world, void* bhkWorld, bool isLeft, BethesdaPhysicsBody& palmAnchorBody)
+    bool HandBoneColliderSet::create(RE::hknpWorld* world, void* bhkWorld, bool isLeft, const RE::NiTransform& rollAuthorityWorld, BethesdaPhysicsBody& palmAnchorBody)
     {
         destroy(bhkWorld, palmAnchorBody);
         if (!world || !bhkWorld) {
@@ -379,7 +411,7 @@ namespace rock
         }
 
         BoneFrameLookup lookup{};
-        if (!captureBoneLookup(isLeft, lookup)) {
+        if (!captureBoneLookup(isLeft, rollAuthorityWorld, lookup)) {
             return false;
         }
 
@@ -510,7 +542,7 @@ namespace rock
         _reader.resetCache();
     }
 
-    void HandBoneColliderSet::update(RE::hknpWorld* world, bool isLeft, BethesdaPhysicsBody& palmAnchorBody, float deltaTime)
+    void HandBoneColliderSet::update(RE::hknpWorld* world, bool isLeft, const RE::NiTransform& rollAuthorityWorld, BethesdaPhysicsBody& palmAnchorBody, float deltaTime)
     {
         if (!world || !_created || !palmAnchorBody.isValid()) {
             return;
@@ -527,12 +559,12 @@ namespace rock
             }
 
             ROCK_LOG_WARN(Hand, "{} bone-derived hand collider drive failure requested rebuild", isLeft ? "Left" : "Right");
-            create(world, _cachedBhkWorld, isLeft, palmAnchorBody);
+            create(world, _cachedBhkWorld, isLeft, rollAuthorityWorld, palmAnchorBody);
             return;
         }
 
         BoneFrameLookup lookup{};
-        if (!captureBoneLookup(isLeft, lookup)) {
+        if (!captureBoneLookup(isLeft, rollAuthorityWorld, lookup)) {
             return;
         }
 
@@ -545,7 +577,7 @@ namespace rock
                 }
             } else {
                 ROCK_LOG_INFO(Hand, "{} bone-derived hand collider source changed; rebuilding", isLeft ? "Left" : "Right");
-                create(world, _cachedBhkWorld, isLeft, palmAnchorBody);
+                create(world, _cachedBhkWorld, isLeft, rollAuthorityWorld, palmAnchorBody);
                 return;
             }
         }

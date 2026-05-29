@@ -1080,8 +1080,8 @@ namespace rock
             _bodyBoneColliderCreateRetryFrames = 120;
         }
 
-        _rightHand.updateCollisionTransform(hknp, 0.011f);
-        _leftHand.updateCollisionTransform(hknp, 0.011f);
+        _rightHand.updateCollisionTransform(hknp, getInteractionHandTransform(false), 0.011f);
+        _leftHand.updateCollisionTransform(hknp, getInteractionHandTransform(true), 0.011f);
         _bodyBoneColliders.update(hknp, 0.011f);
         _bodyContactRuntime.reset();
         markGeneratedBodiesRebuilt(bhk, hknp);
@@ -1359,8 +1359,8 @@ namespace rock
         }
 
         {
-            _rightHand.updateCollisionTransform(hknp, 0.011f);
-            _leftHand.updateCollisionTransform(hknp, 0.011f);
+            _rightHand.updateCollisionTransform(hknp, getInteractionHandTransform(false), 0.011f);
+            _leftHand.updateCollisionTransform(hknp, getInteractionHandTransform(true), 0.011f);
             _bodyBoneColliders.update(hknp, 0.011f);
             ROCK_LOG_INFO(Init, "Initial bone-derived hand collider transforms updated");
         }
@@ -2710,9 +2710,12 @@ namespace rock
             return false;
         }
 
-        const bool rightOk = _rightHand.createCollision(world, bhkWorld);
+        const RE::NiTransform rightRollAuthorityWorld = getInteractionHandTransform(false);
+        const RE::NiTransform leftRollAuthorityWorld = getInteractionHandTransform(true);
 
-        const bool leftOk = _leftHand.createCollision(world, bhkWorld);
+        const bool rightOk = _rightHand.createCollision(world, bhkWorld, rightRollAuthorityWorld);
+
+        const bool leftOk = _leftHand.createCollision(world, bhkWorld, leftRollAuthorityWorld);
 
         if (!rightOk || !leftOk) {
             ROCK_LOG_ERROR(Hand, "Hand collision creation failed (rightOk={}, leftOk={})", rightOk, leftOk);
@@ -2773,10 +2776,10 @@ namespace rock
         _leftHand.updateDelayedGrabHandCollisionRestore(world, frame.deltaSeconds);
 
         if (!frame.right.disabled) {
-            _rightHand.updateCollisionTransform(world, frame.deltaSeconds);
+            _rightHand.updateCollisionTransform(world, frame.right.rawHandWorld, frame.deltaSeconds);
         }
         if (!frame.left.disabled) {
-            _leftHand.updateCollisionTransform(world, frame.deltaSeconds);
+            _leftHand.updateCollisionTransform(world, frame.left.rawHandWorld, frame.deltaSeconds);
         }
     }
 
