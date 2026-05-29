@@ -174,6 +174,11 @@ namespace rock
         return hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyFrameWorld, localVector);
     }
 
+    inline RE::NiPoint3 generatedProxyLocalPointToWorld(const RE::NiTransform& proxyFrameWorld, const RE::NiPoint3& localPoint)
+    {
+        return proxyFrameWorld.translate + generatedProxyLocalVectorToWorld(proxyFrameWorld, localPoint);
+    }
+
     inline RE::NiTransform makeGeneratedProxyAuthorityRelationFrame(const RE::NiTransform& proxyFrameWorld)
     {
         /*

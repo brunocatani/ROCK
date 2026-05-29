@@ -930,22 +930,17 @@ namespace rock
 
     RE::NiPoint3 Hand::computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const
     {
-        LivePalmAnchorReference palmReference{};
-        if (tryResolveLivePalmAnchorReference(world, palmReference) &&
-            std::isfinite(palmReference.world.translate.x) &&
-            std::isfinite(palmReference.world.translate.y) &&
-            std::isfinite(palmReference.world.translate.z)) {
-            const RE::NiTransform proxyBaseWorld =
-                hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-            return applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft).translate;
+        RE::NiTransform proxyFrameWorld{};
+        if (tryComputeGrabProxyLocalPalmPocketFrameWorld(world, proxyFrameWorld)) {
+            return proxyFrameWorld.translate;
         }
 
         return fallbackHandWorldTransform.translate;
     }
 
-    bool Hand::tryComputeGrabProxyLocalPalmPocketPivotAWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const
+    bool Hand::tryComputeGrabProxyLocalPalmPocketFrameWorld(RE::hknpWorld* world, RE::NiTransform& outFrameWorld) const
     {
-        outPivotWorld = {};
+        outFrameWorld = {};
         LivePalmAnchorReference palmReference{};
         if (tryResolveLivePalmAnchorReference(world, palmReference) &&
             std::isfinite(palmReference.world.translate.x) &&
@@ -953,21 +948,34 @@ namespace rock
             std::isfinite(palmReference.world.translate.z)) {
             const RE::NiTransform palmAuthorityBaseWorld =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-            outPivotWorld = applyGrabAuthorityProxyLocalOffsetToFrame(palmAuthorityBaseWorld, _isLeft).translate;
-            return std::isfinite(outPivotWorld.x) && std::isfinite(outPivotWorld.y) && std::isfinite(outPivotWorld.z);
+            outFrameWorld = applyGrabAuthorityProxyLocalOffsetToFrame(palmAuthorityBaseWorld, _isLeft);
+            bool rotationFinite = true;
+            for (std::uint32_t row = 0; row < 3; ++row) {
+                for (std::uint32_t column = 0; column < 3; ++column) {
+                    rotationFinite = rotationFinite && std::isfinite(outFrameWorld.rotate.entry[row][column]);
+                }
+            }
+            return rotationFinite &&
+                   std::isfinite(outFrameWorld.translate.x) &&
+                   std::isfinite(outFrameWorld.translate.y) &&
+                   std::isfinite(outFrameWorld.translate.z) &&
+                   std::isfinite(outFrameWorld.scale) &&
+                   outFrameWorld.scale > 0.0001f;
         }
 
         return false;
     }
 
-    RE::NiPoint3 Hand::computeGrabStartupCapturePivotAWorld(RE::hknpWorld* world, const RE::NiTransform& rawHandWorldTransform) const
+    bool Hand::tryComputeGrabProxyLocalPalmPocketPivotAWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const
     {
-        RE::NiPoint3 proxyLocalPalmPocketPivotWorld{};
-        if (tryComputeGrabProxyLocalPalmPocketPivotAWorld(world, proxyLocalPalmPocketPivotWorld)) {
-            return proxyLocalPalmPocketPivotWorld;
+        outPivotWorld = {};
+        RE::NiTransform proxyFrameWorld{};
+        if (!tryComputeGrabProxyLocalPalmPocketFrameWorld(world, proxyFrameWorld)) {
+            return false;
         }
 
-        return rawHandWorldTransform.translate;
+        outPivotWorld = proxyFrameWorld.translate;
+        return true;
     }
 
     bool Hand::getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const

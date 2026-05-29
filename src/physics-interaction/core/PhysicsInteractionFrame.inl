@@ -34,12 +34,18 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
 
         input.rawHandWorld = getInteractionHandTransform(isLeft);
         input.handNode = getInteractionHandNode(isLeft);
+        input.grabAnchorWorld = input.rawHandWorld.translate;
+        RE::NiTransform closeSelectionBasisWorld = input.rawHandWorld;
         if (frame.worldReady) {
-            input.grabAnchorWorld = hand.computeGrabStartupCapturePivotAWorld(hknp, input.rawHandWorld);
+            RE::NiTransform proxyFrameWorld{};
+            if (hand.tryComputeGrabProxyLocalPalmPocketFrameWorld(hknp, proxyFrameWorld)) {
+                input.grabAnchorWorld = proxyFrameWorld.translate;
+                closeSelectionBasisWorld = makeGeneratedProxyAuthorityRelationFrame(proxyFrameWorld);
+            }
         }
-        input.palmNormalWorld = computePalmNormalFromHandBasis(input.rawHandWorld, isLeft);
+        input.palmNormalWorld = computePalmNormalFromHandBasis(closeSelectionBasisWorld, isLeft);
         input.pointingWorld = computePointingVectorFromHandBasis(input.rawHandWorld, isLeft);
-        input.pinchDirectionWorld = computePinchDetectionDirectionFromHandBasis(input.rawHandWorld, isLeft);
+        input.pinchDirectionWorld = computePinchDetectionDirectionFromHandBasis(closeSelectionBasisWorld, isLeft);
         if (g_rockConfig.rockDebugDrawGrabPockets) {
             root_flattened_finger_skeleton_runtime::Snapshot fingerSnapshot{};
             if (root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(isLeft, fingerSnapshot) &&

@@ -396,8 +396,8 @@ namespace rock
         const BethesdaPhysicsBody& getHandBody() const { return _handBody; }
         bool tryResolveLivePalmAnchorReference(RE::hknpWorld* world, LivePalmAnchorReference& outReference) const;
         RE::NiPoint3 computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const;
+        bool tryComputeGrabProxyLocalPalmPocketFrameWorld(RE::hknpWorld* world, RE::NiTransform& outFrameWorld) const;
         bool tryComputeGrabProxyLocalPalmPocketPivotAWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const;
-        RE::NiPoint3 computeGrabStartupCapturePivotAWorld(RE::hknpWorld* world, const RE::NiTransform& rawHandWorldTransform) const;
         std::uint32_t getHandColliderBodyCount() const { return _boneColliders.getBodyCount(); }
         std::uint32_t getHandColliderBodyIdAtomic(std::size_t index) const { return _boneColliders.getBodyIdAtomic(index); }
         bool isHandColliderBodyId(std::uint32_t bodyId) const { return _boneColliders.isColliderBodyIdAtomic(bodyId); }
@@ -447,7 +447,6 @@ namespace rock
             const char* reason);
         bool updateProxyConstraintGrabDriveTarget(RE::hknpWorld* world,
             const RE::NiTransform& proxyWorldTransform,
-            const RE::NiTransform& rawHandWorldTransform,
             RE::NiTransform& outDesiredObjectWorld,
             RE::NiTransform& outDesiredBodyWorld,
             RE::NiPoint3& outDesiredTargetPointWorld,
@@ -457,8 +456,8 @@ namespace rock
             const RE::NiTransform* fallbackPalmAnchorWorld,
             RE::NiTransform& outProxyWorld,
             const char*& outSource) const;
-        bool resolveActiveGrabAuthorityPivotAWorld(RE::hknpWorld* world,
-            const RE::NiTransform& rawHandWorldTransform,
+        bool resolveActiveGrabAuthorityPivotAWorld(
+            const RE::NiTransform& proxyWorldTransform,
             RE::NiPoint3& outPivotWorld) const;
         void updateConstraintGrabDriveMotors(RE::hknpWorld* world,
             float deltaTime,

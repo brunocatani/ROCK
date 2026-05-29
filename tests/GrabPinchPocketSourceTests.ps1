@@ -65,8 +65,8 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'const bool usingPinchP
     'Grab commit must arbitrate pinch and palm as mutually exclusive seat choices.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFrame\.seatMode = usingPinchPocket \? GrabSeatMode::PinchPocket : GrabSeatMode::PalmPocket' `
     'Accepted capture must store the selected seat mode on the grab frame.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'if \(_grabFrame\.seatMode == GrabSeatMode::PinchPocket\)[\s\S]*return false;' `
-    'Pinch grabs must not run held palm-pocket support refresh.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'resolveActiveGrabAuthorityPivotAWorld\(\s*const RE::NiTransform& proxyWorldTransform[\s\S]*generatedProxyLocalPointToWorld\(proxyWorldTransform,\s*_grabFrame\.pivotAHandBodyLocalGame\)' `
+    'Pinch grabs must replay the frozen generated/proxy local pivot instead of running held palm-pocket support refresh.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'promotionRequested &&\s*_grabFrame\.seatMode != GrabSeatMode::PinchPocket' `
     'Pinch grabs must not enter seated palm-pocket reacquire.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'const bool pinchFingerPose = _grabFrame\.seatMode == GrabSeatMode::PinchPocket' `

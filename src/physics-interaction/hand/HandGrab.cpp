@@ -4705,7 +4705,6 @@ namespace rock
 
     bool Hand::updateProxyConstraintGrabDriveTarget(RE::hknpWorld* world,
         const RE::NiTransform& proxyWorldTransform,
-        const RE::NiTransform& rawHandWorldTransform,
         RE::NiTransform& outDesiredObjectWorld,
         RE::NiTransform& outDesiredBodyWorld,
         RE::NiPoint3& outDesiredTargetPointWorld,
@@ -4725,7 +4724,7 @@ namespace rock
         }
 
         RE::NiPoint3 activePivotAWorld{};
-        if (!resolveActiveGrabAuthorityPivotAWorld(world, rawHandWorldTransform, activePivotAWorld)) {
+        if (!resolveActiveGrabAuthorityPivotAWorld(proxyWorldTransform, activePivotAWorld)) {
             return false;
         }
 
@@ -4792,32 +4791,26 @@ namespace rock
     }
 
     bool Hand::resolveActiveGrabAuthorityPivotAWorld(
-        RE::hknpWorld* world,
-        const RE::NiTransform& rawHandWorldTransform,
+        const RE::NiTransform& proxyWorldTransform,
         RE::NiPoint3& outPivotWorld) const
     {
         outPivotWorld = {};
-
-        if (_grabFrame.seatMode == GrabSeatMode::PinchPocket) {
-            /*
-             * Pinch capture is frozen at grab commit. Recomputing the pocket
-             * from animated thumb/index colliders would feed the published pose
-             * back into the grab pivot, so held updates replay the captured
-             * raw-hand local pinch offset instead.
-             */
-            if (!_grabFrame.hasPinchPocket || !_grabFrame.hasTelemetryCapture) {
-                return false;
-            }
-
-            const RE::NiPoint3 pinchPivotRawHandLocal =
-                transform_math::worldPointToLocal(_grabFrame.liveHandWorldAtGrab, _grabFrame.pinchPocketWorldAtGrab);
-            outPivotWorld = transform_math::localPointToWorld(rawHandWorldTransform, pinchPivotRawHandLocal);
-            return std::isfinite(outPivotWorld.x) &&
-                   std::isfinite(outPivotWorld.y) &&
-                   std::isfinite(outPivotWorld.z);
+        if (!_grabFrame.hasTelemetryCapture || !_grabFrame.hasFrozenPivotB ||
+            !std::isfinite(_grabFrame.pivotAHandBodyLocalGame.x) ||
+            !std::isfinite(_grabFrame.pivotAHandBodyLocalGame.y) ||
+            !std::isfinite(_grabFrame.pivotAHandBodyLocalGame.z)) {
+            return false;
         }
 
-        return tryComputeGrabProxyLocalPalmPocketPivotAWorld(world, outPivotWorld);
+        /*
+         * Pivot A is frozen as a generated/proxy local point at grab commit.
+         * Held updates replay that local point through the current proxy body
+         * frame instead of recomputing palm or pinch seats from raw hand space.
+         */
+        outPivotWorld = generatedProxyLocalPointToWorld(proxyWorldTransform, _grabFrame.pivotAHandBodyLocalGame);
+        return std::isfinite(outPivotWorld.x) &&
+               std::isfinite(outPivotWorld.y) &&
+               std::isfinite(outPivotWorld.z);
     }
 
     void Hand::updateConstraintGrabDriveMotors(RE::hknpWorld* world,
@@ -5583,7 +5576,7 @@ namespace rock
          * collision body path and hidden proxy seat now agree at startup.
          */
         const RE::NiPoint3 grabAuthorityPivotAWorld = proxyFrameWorldAtGrab.translate;
-        const RE::NiPoint3 palmPocketPivotAWorld = computeGrabStartupCapturePivotAWorld(world, handWorldTransform);
+        const RE::NiPoint3 palmPocketPivotAWorld = proxyFrameWorldAtGrab.translate;
         const float palmPocketToProxyDeltaGameUnits = pointDistanceGameUnits(grabAuthorityPivotAWorld, palmPocketPivotAWorld);
         const GrabPalmBasisDelta grabPalmBasisDelta = computeGrabPalmBasisDelta(handWorldTransform, proxyFrameWorldAtGrab);
         const RE::NiPoint3 grabPivotAForPrimaryChoice = palmPocketPivotAWorld;
@@ -7887,8 +7880,7 @@ namespace rock
             RE::NiPoint3 grabPivotAWorld =
                 _grabFrame.hasTelemetryCapture ? _grabFrame.grabPivotWorldAtGrab : computeGrabPivotAWorld(world, handWorldTransform);
             const float gameToHkScale = gameToHavokScale();
-            const RE::NiTransform desiredBodyTransformRawHandSpace = multiplyTransforms(_grabFrame.rawHandSpace, _grabFrame.bodyLocal);
-            const RE::NiTransform initialDesiredBodyWorld = multiplyTransforms(handWorldTransform, desiredBodyTransformRawHandSpace);
+            const RE::NiTransform initialDesiredBodyWorld = _grabFrame.desiredBodyWorldAtGrab;
 
             float pivotAHk[4];
             pivotAHk[0] = grabPivotAWorld.x * gameToHkScale;
@@ -9355,7 +9347,6 @@ namespace rock
                 targetUpdateOk = updateProxyConstraintGrabDriveTarget(
                     world,
                     pending.proxyWorld,
-                    pending.rawHandWorld,
                     desiredObjectWorld,
                     desiredBodyWorld,
                     desiredTargetPointWorld,
