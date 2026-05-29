@@ -176,6 +176,7 @@ namespace rock
         bool rockDebugWorldObjectOriginDiagnostics = false;
         int rockDebugWorldObjectOriginLogIntervalFrames = 120;
         float rockDebugWorldObjectOriginMismatchWarnGameUnits = 5.0f;
+        bool rockDebugCustomCalibrationOffset = false;
         bool rockDebugShowRootFlattenedFingerSkeletonMarkers = false;
         bool rockDebugShowSkeletonBoneVisualizer = false;
         bool rockDebugDrawSkeletonBoneAxes = false;
@@ -267,6 +268,8 @@ namespace rock
         float rockGrabForceFadeInTime = 0.1f;
         RE::NiPoint3 rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);
         RE::NiPoint3 rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);
+        RE::NiPoint3 rockRightCustomOGAOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);
+        RE::NiPoint3 rockLeftCustomOGAOffsetGameUnits = RE::NiPoint3(0.0f, 0.0f, 0.0f);
         float rockGrabLooseWeaponSharedConstraintLinearTauMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintAngularTauMultiplier = 1.0f;
         float rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier = 1.0f;

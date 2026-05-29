@@ -67,7 +67,9 @@ namespace rock::debug
         RightGrabForceTorqueLiveBody,
         LeftGrabForceTorqueLiveBody,
         RightGrabForceTorqueDesiredBody,
-        LeftGrabForceTorqueDesiredBody
+        LeftGrabForceTorqueDesiredBody,
+        RightCustomCalibrationOffset,
+        LeftCustomCalibrationOffset
     };
 
     enum class AxisOverlaySource : std::uint8_t
@@ -259,7 +261,7 @@ namespace rock::debug
                 (hand_collider_semantics::kHandColliderBodyCountPerHand * 2) +
                 skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size() + 8>
             entries{};
-        std::array<AxisOverlayEntry, 56> axisEntries{};
+        std::array<AxisOverlayEntry, 58> axisEntries{};
         std::array<MarkerOverlayEntry, 192> markerEntries{};
         std::array<SkeletonOverlayEntry, skeleton_bone_debug_math::skeletonOverlayBudget()> skeletonEntries{};
         std::array<TextOverlayEntry, 40> textEntries{};

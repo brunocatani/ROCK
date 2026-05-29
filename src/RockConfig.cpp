@@ -217,6 +217,7 @@ namespace rock
         rockDebugWorldObjectOriginDiagnostics = false;
         rockDebugWorldObjectOriginLogIntervalFrames = 120;
         rockDebugWorldObjectOriginMismatchWarnGameUnits = 5.0f;
+        rockDebugCustomCalibrationOffset = false;
         rockDebugShowRootFlattenedFingerSkeletonMarkers = false;
         rockDebugShowSkeletonBoneVisualizer = false;
         rockDebugDrawSkeletonBoneAxes = false;
@@ -308,6 +309,8 @@ namespace rock
         rockGrabForceFadeInTime = 0.1f;
         rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
         rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
+        rockRightCustomOGAOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
+        rockLeftCustomOGAOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
         rockGrabLooseWeaponSharedConstraintLinearTauMultiplier = kDefaultGrabLooseWeaponSharedConstraintLinearTauMultiplier;
         rockGrabLooseWeaponSharedConstraintAngularTauMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularTauMultiplier;
         rockGrabLooseWeaponSharedConstraintCollisionTauMultiplier = kDefaultGrabLooseWeaponSharedConstraintCollisionTauMultiplier;
@@ -865,6 +868,7 @@ namespace rock
         if (!std::isfinite(rockDebugWorldObjectOriginMismatchWarnGameUnits) || rockDebugWorldObjectOriginMismatchWarnGameUnits < 0.0f) {
             rockDebugWorldObjectOriginMismatchWarnGameUnits = 0.0f;
         }
+        rockDebugCustomCalibrationOffset = ini.GetBoolValue(SECTION, "customcalibrationoffset", rockDebugCustomCalibrationOffset);
         rockDebugShowRootFlattenedFingerSkeletonMarkers =
             ini.GetBoolValue(SECTION, "bDebugShowRootFlattenedFingerSkeletonMarkers", rockDebugShowRootFlattenedFingerSkeletonMarkers);
         rockDebugShowSkeletonBoneVisualizer = ini.GetBoolValue(SECTION, "bDebugShowSkeletonBoneVisualizer", rockDebugShowSkeletonBoneVisualizer);
@@ -1081,6 +1085,18 @@ namespace rock
             static_cast<float>(ini.GetDoubleValue(SECTION, "fLeftGrabAuthorityProxyOffsetYGameUnits", rockLeftGrabAuthorityProxyOffsetGameUnits.y));
         rockLeftGrabAuthorityProxyOffsetGameUnits.z =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fLeftGrabAuthorityProxyOffsetZGameUnits", rockLeftGrabAuthorityProxyOffsetGameUnits.z));
+        rockRightCustomOGAOffsetGameUnits.x =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fRightCustomOGAOffsetXGameUnits", rockRightCustomOGAOffsetGameUnits.x));
+        rockRightCustomOGAOffsetGameUnits.y =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fRightCustomOGAOffsetYGameUnits", rockRightCustomOGAOffsetGameUnits.y));
+        rockRightCustomOGAOffsetGameUnits.z =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fRightCustomOGAOffsetZGameUnits", rockRightCustomOGAOffsetGameUnits.z));
+        rockLeftCustomOGAOffsetGameUnits.x =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fLeftCustomOGAOffsetXGameUnits", rockLeftCustomOGAOffsetGameUnits.x));
+        rockLeftCustomOGAOffsetGameUnits.y =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fLeftCustomOGAOffsetYGameUnits", rockLeftCustomOGAOffsetGameUnits.y));
+        rockLeftCustomOGAOffsetGameUnits.z =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fLeftCustomOGAOffsetZGameUnits", rockLeftCustomOGAOffsetGameUnits.z));
         rockGrabLooseWeaponSharedConstraintLinearTauMultiplier = readClampedFloat(ini,
             SECTION,
             "fGrabLooseWeaponSharedConstraintLinearTauMultiplier",

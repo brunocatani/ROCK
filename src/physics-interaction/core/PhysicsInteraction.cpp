@@ -28,6 +28,7 @@
 #include "physics-interaction/feedback/HapticPolicy.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/GrabConstraint.h"
+#include "physics-interaction/grab/CustomOGA.h"
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabHeldObject.h"

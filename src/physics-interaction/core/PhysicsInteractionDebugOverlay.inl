@@ -31,6 +31,7 @@
         const bool drawPerformanceProfilerOverlay = performance_profiler::overlayTextEnabled();
         const bool drawWeaponAuthorityDebug = _twoHandedGrip.isGripping() && (g_rockConfig.rockDebugShowHandAxes || drawGrabPivots);
         const bool drawWorldOriginDiagnostics = g_rockConfig.rockDebugWorldObjectOriginDiagnostics;
+        const bool drawCustomCalibrationOffset = g_rockConfig.rockDebugCustomCalibrationOffset;
         if (drawWorldOriginDiagnostics && !s_worldOriginDiagnosticsEnabledLogged) {
             ROCK_LOG_INFO(Hand,
                 "World object origin diagnostics enabled: intervalFrames={} warnThresholdGameUnits={:.2f} visualSourceOrder=bodyOwnerNode>hitNode>visualNode>referenceRoot",
@@ -43,7 +44,7 @@
         if (!drawRockColliderBodies && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawFingerProbes &&
             !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal && !drawGrabContactPatch && !drawHandBoneContacts &&
             !drawSoftContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay && !drawWeaponAuthorityDebug &&
-            !drawWorldOriginDiagnostics) {
+            !drawWorldOriginDiagnostics && !drawCustomCalibrationOffset) {
             debug::ClearFrame();
             return;
         }
@@ -54,7 +55,8 @@
         frame.world = hknp;
         frame.drawRockBodies = drawRockColliderBodies || drawGrabAuthorityProxy || drawGrabPivotSourceCollider;
         frame.drawTargetBodies = g_rockConfig.rockDebugShowTargetColliders;
-        frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabForceTorque;
+        frame.drawAxes = g_rockConfig.rockDebugShowHandAxes || drawGrabTransformTelemetryAxes || drawGrabAuthorityProxy || drawGrabForceTorque ||
+            drawCustomCalibrationOffset;
         frame.drawMarkers =
             drawGrabPivots || drawFingerProbes || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton || drawGrabPocketNormal || drawGrabContactPatch ||
             drawGrabForceTorque || drawHandBoneContacts || drawSoftContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes || drawWeaponAuthorityDebug ||
@@ -262,6 +264,13 @@
                     addAxisTransform(rawHand, debug::AxisOverlayRole::RightHandRaw, rawHand.translate, false);
                     addAxisBody(_rightHand.getCollisionBodyId(), debug::AxisOverlayRole::RightHandBody, rawHand.translate, true);
                 }
+                if (drawCustomCalibrationOffset && _handBoneCache.isReady()) {
+                    custom_oga::Frame customOGA{};
+                    const RE::NiTransform handBoneWorld = _handBoneCache.getWorldTransform(false);
+                    if (custom_oga::resolveLive(false, handBoneWorld, rawHand, customOGA) && customOGA.valid) {
+                        addAxisTransform(customOGA.world, debug::AxisOverlayRole::RightCustomCalibrationOffset, customOGA.world.translate, false);
+                    }
+                }
             }
 
             if (!leftDisabled) {
@@ -269,6 +278,13 @@
                 if (g_rockConfig.rockDebugShowHandAxes) {
                     addAxisTransform(rawHand, debug::AxisOverlayRole::LeftHandRaw, rawHand.translate, false);
                     addAxisBody(_leftHand.getCollisionBodyId(), debug::AxisOverlayRole::LeftHandBody, rawHand.translate, true);
+                }
+                if (drawCustomCalibrationOffset && _handBoneCache.isReady()) {
+                    custom_oga::Frame customOGA{};
+                    const RE::NiTransform handBoneWorld = _handBoneCache.getWorldTransform(true);
+                    if (custom_oga::resolveLive(true, handBoneWorld, rawHand, customOGA) && customOGA.valid) {
+                        addAxisTransform(customOGA.world, debug::AxisOverlayRole::LeftCustomCalibrationOffset, customOGA.world.translate, false);
+                    }
                 }
             }
         }
