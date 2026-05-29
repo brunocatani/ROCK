@@ -165,21 +165,6 @@ namespace rock
         return isLeft ? g_rockConfig.rockLeftGrabAuthorityProxyOffsetGameUnits : g_rockConfig.rockRightGrabAuthorityProxyOffsetGameUnits;
     }
 
-    inline RE::NiTransform makeGrabStartupCaptureAuthorityFrame(const RE::NiTransform& rawHandWorld, const RE::NiTransform& palmAnchorWorld)
-    {
-        /*
-         * Grab startup has a narrower problem than runtime held motion: the
-         * configured proxy-local seat offset must be interpreted in controller
-         * space when choosing and freezing the first pivot point. The actual
-         * hidden proxy body still follows the existing generated palm frame
-         * after the grab is live, so do not use this helper for held updates.
-         */
-        RE::NiTransform result = palmAnchorWorld;
-        result.rotate = rawHandWorld.rotate;
-        result.scale = rawHandWorld.scale;
-        return result;
-    }
-
     inline RE::NiTransform applyGrabAuthorityProxyLocalOffsetToFrame(const RE::NiTransform& proxyFrameWorld, bool isLeft)
     {
         /*
@@ -196,23 +181,4 @@ namespace rock
         return result;
     }
 
-    inline RE::NiTransform applyRuntimeGrabAuthorityProxyOffsetToFrame(
-        const RE::NiTransform& proxyFrameWorld,
-        const RE::NiTransform& rawHandWorld,
-        bool isLeft)
-    {
-        /*
-         * Runtime Pivot A still uses the generated palm anchor as its base
-         * origin, but the hidden seat offset must follow the raw hand's local
-         * palm-depth direction. Applying the offset through the generated palm
-         * frame can send Y away from the working palm-pocket startup capture
-         * when the raw hand and generated palm bases diverge.
-         */
-        RE::NiTransform result = proxyFrameWorld;
-        const RE::NiPoint3 localOffset = computeGrabAuthorityProxyOffsetLocalGame(isLeft);
-        if (std::isfinite(localOffset.x) && std::isfinite(localOffset.y) && std::isfinite(localOffset.z)) {
-            result.translate = result.translate + transform_math::localVectorToWorld(rawHandWorld, localOffset);
-        }
-        return result;
-    }
 }

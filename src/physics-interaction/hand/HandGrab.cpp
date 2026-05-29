@@ -4241,7 +4241,7 @@ namespace rock
             const RE::NiTransform palmAnchorGrabAuthorityBase =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(out.handBodyWorld);
             out.palmAnchorGrabAuthorityWorld =
-                applyRuntimeGrabAuthorityProxyOffsetToFrame(palmAnchorGrabAuthorityBase, out.rawHandWorld, _isLeft);
+                applyGrabAuthorityProxyLocalOffsetToFrame(palmAnchorGrabAuthorityBase, _isLeft);
             out.palmAnchorGrabAuthorityBasis = grab_transform_telemetry::makeOrientationBasis(out.palmAnchorGrabAuthorityWorld);
             out.hasPalmAnchorGrabAuthority = true;
             out.nativeFlattenedHandToGrabAuthority =
@@ -4786,7 +4786,7 @@ namespace rock
         if (tryResolveLivePalmAnchorReference(world, palmReference)) {
             const RE::NiTransform proxyBaseWorld =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-            outProxyWorld = applyRuntimeGrabAuthorityProxyOffsetToFrame(proxyBaseWorld, rawHandWorld, _isLeft);
+            outProxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft);
             switch (palmReference.source) {
             case body_frame::BodyFrameSource::MotionCenterOfMass:
                 outSource = "livePalmAnchorMotionGrabFrame";
@@ -4832,7 +4832,7 @@ namespace rock
                    std::isfinite(outPivotWorld.z);
         }
 
-        return tryComputeGrabRawRollPalmPocketPivotAWorld(world, rawHandWorldTransform, outPivotWorld);
+        return tryComputeGrabProxyLocalPalmPocketPivotAWorld(world, outPivotWorld);
     }
 
     void Hand::updateConstraintGrabDriveMotors(RE::hknpWorld* world,
@@ -5593,10 +5593,9 @@ namespace rock
             return false;
         }
         /*
-         * Live proxy motion still resolves from the generated palm body, but
-         * close-grab pocket acquisition applies the configured seat offset
-         * through raw hand roll. That keeps the pocket/pivot marker locked to
-         * the palm without moving the generated collision body path.
+         * Live proxy motion and close-grab pocket acquisition both resolve the
+         * configured seat offset in generated/proxy local space. The generated
+         * collision body path and hidden proxy seat now agree at startup.
          */
         const RE::NiPoint3 grabAuthorityPivotAWorld = proxyFrameWorldAtGrab.translate;
         const RE::NiPoint3 palmPocketPivotAWorld = computeGrabStartupCapturePivotAWorld(world, handWorldTransform);
@@ -6902,9 +6901,9 @@ namespace rock
             const RE::NiTransform constraintBodyWorldAtGrab = grabBodyWorldAtGrab;
             /*
              * The hidden proxy is body A for dynamic grab. The close-grab
-             * pocket pivot is captured through raw hand roll. The proxy body
-             * keeps its seat offset, and transform A carries the selected pivot
-             * as an explicit local point on body A.
+             * pocket pivot is captured from the same generated/proxy-local
+             * seat frame. The proxy body keeps its seat offset, and transform A
+             * carries the selected pivot as an explicit local point on body A.
              */
             RE::NiPoint3 grabPivotAWorld = palmPocketPivotAWorld;
             auto* ownerCellAtGrab = sel.refr ? sel.refr->GetParentCell() : nullptr;
@@ -8674,8 +8673,8 @@ namespace rock
             }
             if (pivotNeedsSeatedReacquire && hasGrabBody) {
                 RE::NiPoint3 livePivotAWorld{};
-                if (!tryComputeGrabRawRollPalmPocketPivotAWorld(world, handWorldTransform, livePivotAWorld)) {
-                    timeoutReacquireReason = "missingRawRollPalmPocketPivot";
+                if (!tryComputeGrabProxyLocalPalmPocketPivotAWorld(world, livePivotAWorld)) {
+                    timeoutReacquireReason = "missingProxyLocalPalmPocketPivot";
                     seatedRetargetRejectedKeepFrozen = true;
                 } else {
                     const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
@@ -9309,7 +9308,7 @@ namespace rock
             } else {
                 const RE::NiTransform proxyBaseWorld =
                     hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(livePalmReference.world);
-                pending.proxyWorld = applyRuntimeGrabAuthorityProxyOffsetToFrame(proxyBaseWorld, pending.rawHandWorld, _isLeft);
+                pending.proxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft);
             }
             previousProxyWorld = _hasLastAppliedGrabAuthorityProxyWorld ? _lastAppliedGrabAuthorityProxyWorld : pending.proxyWorld;
             proxyBodyId = _grabAuthorityProxy.getBodyId();

@@ -937,16 +937,13 @@ namespace rock
             std::isfinite(palmReference.world.translate.z)) {
             const RE::NiTransform proxyBaseWorld =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-            return applyRuntimeGrabAuthorityProxyOffsetToFrame(proxyBaseWorld, fallbackHandWorldTransform, _isLeft).translate;
+            return applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft).translate;
         }
 
         return fallbackHandWorldTransform.translate;
     }
 
-    bool Hand::tryComputeGrabRawRollPalmPocketPivotAWorld(
-        RE::hknpWorld* world,
-        const RE::NiTransform& rawHandWorldTransform,
-        RE::NiPoint3& outPivotWorld) const
+    bool Hand::tryComputeGrabProxyLocalPalmPocketPivotAWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const
     {
         outPivotWorld = {};
         LivePalmAnchorReference palmReference{};
@@ -956,9 +953,7 @@ namespace rock
             std::isfinite(palmReference.world.translate.z)) {
             const RE::NiTransform palmAuthorityBaseWorld =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
-            const RE::NiTransform startupCaptureFrameWorld =
-                makeGrabStartupCaptureAuthorityFrame(rawHandWorldTransform, palmAuthorityBaseWorld);
-            outPivotWorld = applyGrabAuthorityProxyLocalOffsetToFrame(startupCaptureFrameWorld, _isLeft).translate;
+            outPivotWorld = applyGrabAuthorityProxyLocalOffsetToFrame(palmAuthorityBaseWorld, _isLeft).translate;
             return std::isfinite(outPivotWorld.x) && std::isfinite(outPivotWorld.y) && std::isfinite(outPivotWorld.z);
         }
 
@@ -967,9 +962,9 @@ namespace rock
 
     RE::NiPoint3 Hand::computeGrabStartupCapturePivotAWorld(RE::hknpWorld* world, const RE::NiTransform& rawHandWorldTransform) const
     {
-        RE::NiPoint3 rawRollPalmPocketPivotWorld{};
-        if (tryComputeGrabRawRollPalmPocketPivotAWorld(world, rawHandWorldTransform, rawRollPalmPocketPivotWorld)) {
-            return rawRollPalmPocketPivotWorld;
+        RE::NiPoint3 proxyLocalPalmPocketPivotWorld{};
+        if (tryComputeGrabProxyLocalPalmPocketPivotAWorld(world, proxyLocalPalmPocketPivotWorld)) {
+            return proxyLocalPalmPocketPivotWorld;
         }
 
         return applyGrabAuthorityProxyLocalOffsetToFrame(rawHandWorldTransform, _isLeft).translate;
@@ -978,12 +973,12 @@ namespace rock
     bool Hand::getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const
     {
         /*
-         * Offset tuning needs the startup capture seat point before a grab
-         * creates the real no-contact proxy body. This marker intentionally
-         * shows the raw-rotation capture offset, while active proxy readback
-         * remains the separate runtime held-authority frame.
+         * Offset tuning needs the proxy-local seat point before a grab creates
+         * the real no-contact proxy body. This marker intentionally follows the
+         * generated palm authority frame used by active proxy readback.
          */
         out = {};
+        (void)rawHandWorld;
 
         LivePalmAnchorReference palmReference{};
         if (!tryResolveLivePalmAnchorReference(world, palmReference) ||
@@ -996,9 +991,7 @@ namespace rock
         const RE::NiTransform palmAuthorityBaseWorld =
             hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
         out.palmAuthorityBaseWorld = palmAuthorityBaseWorld;
-        const RE::NiTransform startupCaptureFrameWorld =
-            makeGrabStartupCaptureAuthorityFrame(rawHandWorld, palmAuthorityBaseWorld);
-        out.proxyTargetWorld = applyGrabAuthorityProxyLocalOffsetToFrame(startupCaptureFrameWorld, _isLeft);
+        out.proxyTargetWorld = applyGrabAuthorityProxyLocalOffsetToFrame(palmAuthorityBaseWorld, _isLeft);
         out.localOffsetGameUnits = computeGrabAuthorityProxyOffsetLocalGame(_isLeft);
         out.palmSource = palmReference.source;
         out.palmMotionIndex = palmReference.motionIndex;
