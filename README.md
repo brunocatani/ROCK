@@ -2,6 +2,10 @@
 
 Fallout 4 VR physics-based hand interaction plugin for the ROCK/PAPER/SCISSORS interaction stack.
 
+<p align="center">
+  <img src="public/ROCK.png" alt="ROCK preview" width="800">
+</p>
+
 ## Requirements
 
 - CMake
