@@ -188,12 +188,12 @@ int main()
                 0.0f,
                 0.01f);
             ok &= expectNear(
-                "target solver rows carry body-to-hand rotation",
-                rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedBodyToHand),
+                "target columns carry body-to-hand rotation",
+                rotationDeltaDegrees(matrixFromRawColumns(targetBRca), expectedBodyToHand),
                 0.0f,
                 0.01f);
-            if (rotationDeltaDegrees(matrixFromRawColumns(targetBRca), expectedBodyToHand) <= 1.0f) {
-                std::printf("target_bRca column interpretation unexpectedly matches the solver-row convention\n");
+            if (rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedBodyToHand) <= 1.0f) {
+                std::printf("target_bRca row interpretation unexpectedly matches the native column convention\n");
                 ok = false;
             }
         }

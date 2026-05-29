@@ -98,17 +98,17 @@ namespace rock::grab_constraint_math
     inline void writeInitialGrabAngularFrame(float* transformBRotation, float* targetBRca, const Transform& desiredBodyTransformHandSpace)
     {
         /*
-         * Dynamic grab writes a custom FO4VR hknp atom chain directly, and the
-         * two angular byte consumers do not use the same storage view. The
-         * set-local-transforms atom consumes transform-B as hkMatrix column
-         * blocks, while in-game snap telemetry showed the ragdoll motor target
-         * converging to the row/forward interpretation on top grabs. Keep
-         * transform-B in column storage, but write target_bRca so its solver-row
-         * view carries the inverse body-to-hand relation.
+         * Dynamic grab writes a custom FO4VR hknp atom chain directly. Fresh
+         * runtime telemetry showed failed grabs whenever target_bRca only
+         * matched the frozen BODY relation through ROCK's row view while the
+         * Havok column-block view sat near 180 degrees from transform-B. Keep
+         * both angular atom inputs in the same native column-block convention so
+         * the ragdoll motor and set-local-transforms atom consume one BODY->hand
+         * relation.
          */
         const auto bodyToHandRotation = desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
         writeHavokRotationColumns(transformBRotation, bodyToHandRotation);
-        writeHavokRotationRows(targetBRca, bodyToHandRotation);
+        writeHavokRotationColumns(targetBRca, bodyToHandRotation);
     }
 
     template <class Transform, class Vector>
