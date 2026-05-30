@@ -4195,7 +4195,78 @@ namespace rock
 
         const RE::NiTransform desiredBodyWorld =
             grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, _grabFrame.proxyAuthorityBodyHandSpace);
-        const RE::NiPoint3 pivotBLocalGame = activeProxyConstraintPivotBLocalGame();
+        RE::NiPoint3 pivotBLocalGame = activeProxyConstraintPivotBLocalGame();
+        RE::NiPoint3 atomTransformBLocalGame = pivotBLocalGame;
+        bool hasAtomMotorFrames = false;
+
+        if (_activeConstraint.constraintData && _grabAuthorityProxyFrameValid) {
+            const auto* constraintData = static_cast<const char*>(_activeConstraint.constraintData);
+            const auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
+            const auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
+            const auto* targetBRca = reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
+            atomTransformBLocalGame = RE::NiPoint3{
+                transformBTranslation[0] * havokToGameScale(),
+                transformBTranslation[1] * havokToGameScale(),
+                transformBTranslation[2] * havokToGameScale(),
+            };
+
+            const RE::NiPoint3 pivotAProxyLocalGame = _grabAuthorityPivotAProxyLocalGame;
+            if (std::isfinite(atomTransformBLocalGame.x) &&
+                std::isfinite(atomTransformBLocalGame.y) &&
+                std::isfinite(atomTransformBLocalGame.z) &&
+                std::isfinite(pivotAProxyLocalGame.x) &&
+                std::isfinite(pivotAProxyLocalGame.y) &&
+                std::isfinite(pivotAProxyLocalGame.z)) {
+                out.motorAnchorAWorld = generatedProxyLocalPointToWorld(proxyWorld, pivotAProxyLocalGame);
+                out.motorAnchorBWorld = transform_math::localPointToWorld(liveBodyWorld, atomTransformBLocalGame);
+
+                out.motorConstraintAWorld = makeGeneratedProxyAuthorityRelationFrame(proxyWorld);
+                out.motorConstraintAWorld.translate = out.motorAnchorAWorld;
+
+                RE::NiTransform transformBLocal = makeIdentityTransform();
+                transformBLocal.rotate = matrixFromHkColumns(transformBRotation);
+                transformBLocal.translate = atomTransformBLocalGame;
+                out.motorConstraintBWorld = transform_math::composeTransforms(liveBodyWorld, transformBLocal);
+
+                auto reconstructTargetBodyWorld = [&](const RE::NiMatrix3& proxyInBodyRotation) {
+                    RE::NiTransform proxyInBody = makeIdentityTransform();
+                    proxyInBody.rotate = proxyInBodyRotation;
+                    const RE::NiPoint3 rotatedPivotA = transform_math::localVectorToWorld(proxyInBody, pivotAProxyLocalGame);
+                    proxyInBody.translate = atomTransformBLocalGame - rotatedPivotA;
+                    const RE::NiTransform bodyInProxy = transform_math::invertTransform(proxyInBody);
+                    return grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, bodyInProxy);
+                };
+
+                out.motorAtomTargetBodyWorld = reconstructTargetBodyWorld(matrixFromHkRows(targetBRca));
+                out.motorColumnTargetBodyWorld = reconstructTargetBodyWorld(matrixFromHkColumns(targetBRca));
+                out.motorAtomTargetPivotWorld =
+                    transform_math::localPointToWorld(out.motorAtomTargetBodyWorld, atomTransformBLocalGame);
+                out.motorTargetBodyDeltaGameUnits =
+                    translationDeltaGameUnits(out.motorAtomTargetBodyWorld, desiredBodyWorld);
+                out.motorTargetBodyDeltaDegrees =
+                    rotationDeltaDegrees(out.motorAtomTargetBodyWorld.rotate, desiredBodyWorld.rotate);
+                out.motorColumnTargetBodyDeltaDegrees =
+                    rotationDeltaDegrees(out.motorColumnTargetBodyWorld.rotate, desiredBodyWorld.rotate);
+                out.motorTransformBPivotToAnchorAGameUnits =
+                    pointDistanceGameUnits(out.motorAtomTargetPivotWorld, out.motorAnchorAWorld);
+                out.motorTargetBodyDeltaEndWorld = out.motorAtomTargetBodyWorld.translate;
+                out.hasMotorConstraintFrames = true;
+                out.hasMotorColumnTargetBody = true;
+                out.hasMotorTargetBodyDelta =
+                    out.motorTargetBodyDeltaGameUnits > 0.01f || out.motorTargetBodyDeltaDegrees > 0.01f;
+
+                const RE::NiPoint3 angularAxis = rotationCorrectionAxisWorld(liveBodyWorld.rotate, out.motorAtomTargetBodyWorld.rotate);
+                if (lengthSquared(angularAxis) > 0.000001f) {
+                    const float axisLength = std::clamp(out.motorTargetBodyDeltaDegrees * 0.18f, 6.0f, 34.0f);
+                    out.motorAngularAxisEndWorld = liveBodyWorld.translate + angularAxis * axisLength;
+                    out.hasMotorAngularCommand = true;
+                }
+
+                hasAtomMotorFrames = true;
+            }
+        }
+
+        pivotBLocalGame = hasAtomMotorFrames ? atomTransformBLocalGame : pivotBLocalGame;
         const RE::NiPoint3 livePivotWorld = transform_math::localPointToWorld(liveBodyWorld, pivotBLocalGame);
         const RE::NiPoint3 targetPivotWorld = transform_math::localPointToWorld(desiredBodyWorld, pivotBLocalGame);
         const RE::NiPoint3 correction = targetPivotWorld - livePivotWorld;

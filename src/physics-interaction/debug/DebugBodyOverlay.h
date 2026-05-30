@@ -68,6 +68,14 @@ namespace rock::debug
         LeftGrabForceTorqueLiveBody,
         RightGrabForceTorqueDesiredBody,
         LeftGrabForceTorqueDesiredBody,
+        RightGrabMotorConstraintA,
+        LeftGrabMotorConstraintA,
+        RightGrabMotorConstraintB,
+        LeftGrabMotorConstraintB,
+        RightGrabMotorAtomTargetBody,
+        LeftGrabMotorAtomTargetBody,
+        RightGrabMotorColumnTargetBody,
+        LeftGrabMotorColumnTargetBody,
         RightCustomCalibrationOffset,
         LeftCustomCalibrationOffset
     };
@@ -130,6 +138,16 @@ namespace rock::debug
         LeftGrabForceTorqueLever,
         RightGrabForceTorqueAxis,
         LeftGrabForceTorqueAxis,
+        RightGrabMotorAnchorA,
+        LeftGrabMotorAnchorA,
+        RightGrabMotorAnchorB,
+        LeftGrabMotorAnchorB,
+        RightGrabMotorAtomTargetPivot,
+        LeftGrabMotorAtomTargetPivot,
+        RightGrabMotorAngularCommand,
+        LeftGrabMotorAngularCommand,
+        RightGrabMotorTargetBodyDelta,
+        LeftGrabMotorTargetBodyDelta,
         RightGrabActivePivotBLiveBody,
         LeftGrabActivePivotBLiveBody,
         RightGrabActivePivotBDesiredBody,
@@ -269,7 +287,7 @@ namespace rock::debug
                 (hand_collider_semantics::kHandColliderBodyCountPerHand * 2) +
                 skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size() + 8>
             entries{};
-        std::array<AxisOverlayEntry, 58> axisEntries{};
+        std::array<AxisOverlayEntry, 72> axisEntries{};
         std::array<MarkerOverlayEntry, 192> markerEntries{};
         std::array<SkeletonOverlayEntry, skeleton_bone_debug_math::skeletonOverlayBudget()> skeletonEntries{};
         std::array<TextOverlayEntry, 40> textEntries{};

@@ -1425,6 +1425,17 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::RightGrabForceTorqueDesiredBody:
             case AxisOverlayRole::LeftGrabForceTorqueDesiredBody:
                 return 10.0f;
+            case AxisOverlayRole::RightGrabMotorConstraintA:
+            case AxisOverlayRole::LeftGrabMotorConstraintA:
+            case AxisOverlayRole::RightGrabMotorConstraintB:
+            case AxisOverlayRole::LeftGrabMotorConstraintB:
+                return 8.0f;
+            case AxisOverlayRole::RightGrabMotorAtomTargetBody:
+            case AxisOverlayRole::LeftGrabMotorAtomTargetBody:
+                return 12.0f;
+            case AxisOverlayRole::RightGrabMotorColumnTargetBody:
+            case AxisOverlayRole::LeftGrabMotorColumnTargetBody:
+                return 9.0f;
             case AxisOverlayRole::RightCustomCalibrationOffset:
             case AxisOverlayRole::LeftCustomCalibrationOffset:
                 return kColliderAxisLength;
@@ -1472,6 +1483,18 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::RightGrabForceTorqueDesiredBody:
             case AxisOverlayRole::LeftGrabForceTorqueDesiredBody:
                 return 0.52f;
+            case AxisOverlayRole::RightGrabMotorConstraintA:
+            case AxisOverlayRole::LeftGrabMotorConstraintA:
+                return 0.96f;
+            case AxisOverlayRole::RightGrabMotorConstraintB:
+            case AxisOverlayRole::LeftGrabMotorConstraintB:
+                return 0.72f;
+            case AxisOverlayRole::RightGrabMotorAtomTargetBody:
+            case AxisOverlayRole::LeftGrabMotorAtomTargetBody:
+                return 0.88f;
+            case AxisOverlayRole::RightGrabMotorColumnTargetBody:
+            case AxisOverlayRole::LeftGrabMotorColumnTargetBody:
+                return 0.38f;
             case AxisOverlayRole::RightCustomCalibrationOffset:
             case AxisOverlayRole::LeftCustomCalibrationOffset:
                 return 0.92f;
@@ -1638,6 +1661,41 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[1] = 0.15f;
                 color[2] = 0.95f;
                 color[3] = 0.96f;
+                break;
+            case MarkerOverlayRole::RightGrabMotorAnchorA:
+            case MarkerOverlayRole::LeftGrabMotorAnchorA:
+                color[0] = 0.10f;
+                color[1] = 1.0f;
+                color[2] = 0.95f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::RightGrabMotorAnchorB:
+            case MarkerOverlayRole::LeftGrabMotorAnchorB:
+                color[0] = 1.0f;
+                color[1] = 0.85f;
+                color[2] = 0.05f;
+                color[3] = 1.0f;
+                break;
+            case MarkerOverlayRole::RightGrabMotorAtomTargetPivot:
+            case MarkerOverlayRole::LeftGrabMotorAtomTargetPivot:
+                color[0] = 0.25f;
+                color[1] = 0.85f;
+                color[2] = 1.0f;
+                color[3] = 0.96f;
+                break;
+            case MarkerOverlayRole::RightGrabMotorAngularCommand:
+            case MarkerOverlayRole::LeftGrabMotorAngularCommand:
+                color[0] = 1.0f;
+                color[1] = 0.25f;
+                color[2] = 1.0f;
+                color[3] = 0.96f;
+                break;
+            case MarkerOverlayRole::RightGrabMotorTargetBodyDelta:
+            case MarkerOverlayRole::LeftGrabMotorTargetBodyDelta:
+                color[0] = 1.0f;
+                color[1] = 0.28f;
+                color[2] = 0.05f;
+                color[3] = 0.90f;
                 break;
             case MarkerOverlayRole::RightGrabActivePivotBLiveBody:
             case MarkerOverlayRole::LeftGrabActivePivotBLiveBody:

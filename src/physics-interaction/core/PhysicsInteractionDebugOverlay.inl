@@ -640,6 +640,27 @@
                     isLeft ? debug::AxisOverlayRole::LeftGrabForceTorqueDesiredBody : debug::AxisOverlayRole::RightGrabForceTorqueDesiredBody,
                     snapshot.targetPivotWorld,
                     true);
+                if (snapshot.hasMotorConstraintFrames) {
+                    addAxisTransform(snapshot.motorConstraintAWorld,
+                        isLeft ? debug::AxisOverlayRole::LeftGrabMotorConstraintA : debug::AxisOverlayRole::RightGrabMotorConstraintA,
+                        snapshot.liveBodyWorld.translate,
+                        true);
+                    addAxisTransform(snapshot.motorConstraintBWorld,
+                        isLeft ? debug::AxisOverlayRole::LeftGrabMotorConstraintB : debug::AxisOverlayRole::RightGrabMotorConstraintB,
+                        snapshot.liveBodyWorld.translate,
+                        true);
+                    addAxisTransform(snapshot.motorAtomTargetBodyWorld,
+                        isLeft ? debug::AxisOverlayRole::LeftGrabMotorAtomTargetBody : debug::AxisOverlayRole::RightGrabMotorAtomTargetBody,
+                        snapshot.motorAnchorAWorld,
+                        true);
+                    if (snapshot.hasMotorColumnTargetBody &&
+                        std::fabs(snapshot.motorColumnTargetBodyDeltaDegrees - snapshot.motorTargetBodyDeltaDegrees) > 1.0f) {
+                        addAxisTransform(snapshot.motorColumnTargetBodyWorld,
+                            isLeft ? debug::AxisOverlayRole::LeftGrabMotorColumnTargetBody : debug::AxisOverlayRole::RightGrabMotorColumnTargetBody,
+                            snapshot.motorAnchorAWorld,
+                            true);
+                    }
+                }
 
                 addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabForceTorqueTargetPivot : debug::MarkerOverlayRole::RightGrabForceTorqueTargetPivot,
                     snapshot.targetPivotWorld,
@@ -672,6 +693,31 @@
                         snapshot.liveBodyWorld.translate,
                         snapshot.torqueAxisEndWorld,
                         1.4f);
+                }
+                if (snapshot.hasMotorConstraintFrames) {
+                    addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabMotorAnchorA : debug::MarkerOverlayRole::RightGrabMotorAnchorA,
+                        snapshot.motorAnchorAWorld,
+                        3.8f);
+                    addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabMotorAnchorB : debug::MarkerOverlayRole::RightGrabMotorAnchorB,
+                        snapshot.motorAnchorBWorld,
+                        3.4f);
+                    addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabMotorAtomTargetPivot : debug::MarkerOverlayRole::RightGrabMotorAtomTargetPivot,
+                        snapshot.motorAtomTargetPivotWorld,
+                        3.2f);
+                    addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabMotorAnchorB : debug::MarkerOverlayRole::RightGrabMotorAnchorB,
+                        snapshot.motorAnchorBWorld,
+                        snapshot.motorAnchorAWorld);
+                    if (snapshot.hasMotorAngularCommand) {
+                        addMarkerRay(isLeft ? debug::MarkerOverlayRole::LeftGrabMotorAngularCommand : debug::MarkerOverlayRole::RightGrabMotorAngularCommand,
+                            snapshot.liveBodyWorld.translate,
+                            snapshot.motorAngularAxisEndWorld,
+                            1.5f);
+                    }
+                    if (snapshot.hasMotorTargetBodyDelta) {
+                        addMarkerLine(isLeft ? debug::MarkerOverlayRole::LeftGrabMotorTargetBodyDelta : debug::MarkerOverlayRole::RightGrabMotorTargetBodyDelta,
+                            snapshot.desiredBodyWorld.translate,
+                            snapshot.motorTargetBodyDeltaEndWorld);
+                    }
                 }
 
                 if (drawGrabPivotSourceEvidence) {
@@ -742,6 +788,15 @@
                         snapshot.activePivotBVisualLockErrorGameUnits,
                         snapshot.captureGripLocalDeltaGameUnits,
                         snapshot.seatedPivotReacquireCount);
+                    if (snapshot.hasMotorConstraintFrames) {
+                        addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -7.0f },
+                            detailColor,
+                            "motor atom %.2fgu %.1fdeg Aerr %.2fgu col %.1fdeg",
+                            snapshot.motorTargetBodyDeltaGameUnits,
+                            snapshot.motorTargetBodyDeltaDegrees,
+                            snapshot.motorTransformBPivotToAnchorAGameUnits,
+                            snapshot.motorColumnTargetBodyDeltaDegrees);
+                    }
                 }
             };
 
