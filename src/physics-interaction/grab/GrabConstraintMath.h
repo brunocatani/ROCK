@@ -48,38 +48,6 @@ namespace rock::grab_constraint_math
         return transform_math::transposeRotation(desiredBodyTransformHandSpaceRotation);
     }
 
-    template <class Transform, class Matrix>
-    inline Transform rotationOnlyTransform(const Matrix& rotation)
-    {
-        Transform result = transform_math::makeIdentityTransform<Transform>();
-        result.rotate = rotation;
-        return result;
-    }
-
-    template <class Transform, class Matrix>
-    inline Matrix computeConstraintFrameTargetBRca(
-        const Transform& bodyAWorld,
-        const Transform& desiredBodyBWorld,
-        const Matrix& transformARotation,
-        const Matrix& transformBRotation)
-    {
-        /*
-         * target_bRca is consumed by the ragdoll motor between the constraint
-         * frames, not between the raw body frames. Body A is the physical hidden
-         * proxy frame; body B is the desired BODY pose. Transform-B already
-         * carries the frozen BODY relation, so the motor target must be the
-         * remaining B-constraint-frame to A-constraint-frame delta.
-         */
-        const Transform constraintAWorld =
-            transform_math::composeTransforms(bodyAWorld, rotationOnlyTransform<Transform>(transformARotation));
-        const Transform constraintBWorld =
-            transform_math::composeTransforms(desiredBodyBWorld, rotationOnlyTransform<Transform>(transformBRotation));
-        return transform_math::composeTransforms(
-            transform_math::invertTransform(constraintBWorld),
-            constraintAWorld)
-            .rotate;
-    }
-
     template <class Matrix>
     inline void writeHavokRotationColumns(float* target, const Matrix& rotation)
     {
@@ -129,26 +97,18 @@ namespace rock::grab_constraint_math
     template <class Transform>
     inline void writeInitialGrabAngularFrame(float* transformBRotation, float* targetBRca, const Transform& desiredBodyTransformHandSpace)
     {
-        const auto bodyToHandRotation = desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
-        writeHavokRotationColumns(transformBRotation, bodyToHandRotation);
-        writeHavokRotationRows(targetBRca, bodyToHandRotation);
-    }
-
-    template <class Transform, class Matrix>
-    inline void writeInitialGrabAngularFrame(
-        float* transformBRotation,
-        float* targetBRca,
-        const Transform& desiredBodyTransformHandSpace,
-        const Matrix& targetBRcaRotation)
-    {
         /*
-         * The set-local-transforms atom consumes transform-B as hkMatrix column
-         * blocks. The ragdoll motor's target_bRca is a separate solver target,
-         * written in the row view the runtime telemetry shows the atom consumes.
+         * Dynamic grab writes a custom FO4VR hknp atom chain directly, and the
+         * two angular byte consumers do not use the same storage view. The
+         * set-local-transforms atom consumes transform-B as hkMatrix column
+         * blocks, while in-game snap telemetry showed the ragdoll motor target
+         * converging to the row/forward interpretation on top grabs. Keep
+         * transform-B in column storage, but write target_bRca so its solver-row
+         * view carries the inverse body-to-hand relation.
          */
         const auto bodyToHandRotation = desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
         writeHavokRotationColumns(transformBRotation, bodyToHandRotation);
-        writeHavokRotationRows(targetBRca, targetBRcaRotation);
+        writeHavokRotationRows(targetBRca, bodyToHandRotation);
     }
 
     template <class Transform, class Vector>

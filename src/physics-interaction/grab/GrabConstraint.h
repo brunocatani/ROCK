@@ -7,7 +7,6 @@
 #include "RE/Havok/hknpBodyId.h"
 #include "RE/Havok/hknpConstraintCinfo.h"
 #include "RE/Havok/hknpWorld.h"
-#include "RE/NetImmerse/NiMatrix3.h"
 
 #include <cstdint>
 #include <cstring>
@@ -241,10 +240,6 @@ namespace rock
     ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
         const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
         const RE::NiTransform& desiredBodyTransformHandSpace, const GrabConstraintMotorTuning& tuning);
-
-    ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
-        const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
-        const RE::NiTransform& desiredBodyTransformHandSpace, const RE::NiMatrix3& targetBRcaRotation, const GrabConstraintMotorTuning& tuning);
 
     void destroyGrabConstraint(RE::hknpWorld* world, ActiveConstraint& constraint);
     void serviceRetiredGrabConstraintPayloads(std::uint32_t completedPhysicsSteps = 1);
