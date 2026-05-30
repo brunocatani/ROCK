@@ -45,6 +45,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <initializer_list>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -7397,10 +7398,32 @@ namespace rock
                         pivotAuthoritySelectionDeltaGameUnits = grabSurfaceHit.selectionToMeshDistanceGameUnits;
                     }
 
-                    RE::NiPoint3 gripNormalWorld = usingPinchPocket ? grabSurfaceHit.normal : pocket.palmNormalWorld;
-                    if (usingPinchPocket && lengthSquared(gripNormalWorld) <= 0.000001f) {
-                        gripNormalWorld = pinchPocketCandidate.pinchAxisWorld;
-                    }
+                    auto firstValidNormal = [](std::initializer_list<RE::NiPoint3> candidates) {
+                        for (const auto& candidate : candidates) {
+                            const RE::NiPoint3 normal = normalizeOrZero(candidate);
+                            if (lengthSquared(normal) > 0.000001f) {
+                                return normal;
+                            }
+                        }
+                        return RE::NiPoint3{};
+                    };
+
+                    /*
+                     * Pivot B may be chosen from hand/proxy proximity, but normal
+                     * authority must come from the object surface that produced the
+                     * pivot. The palm/proxy normal is only a final fallback and
+                     * tangent/sign guide; promoting it to face authority makes the
+                     * frozen support frame follow the hand instead of the mesh.
+                     */
+                    RE::NiPoint3 gripNormalWorld = firstValidNormal({
+                        grabSurfaceHit.valid ? grabSurfaceHit.normal : RE::NiPoint3{},
+                        contactPatchRuntime.meshSnapped ? contactPatchRuntime.meshSnapHit.normal : RE::NiPoint3{},
+                        contactPatchRuntime.normalTrusted ? contactPatchRuntime.patch.normal : RE::NiPoint3{},
+                        palmPocketMeshAvailable ? palmPocketSurfaceHit.normal : RE::NiPoint3{},
+                        canonicalPivotNormalWorld,
+                        usingPinchPocket ? pinchPocketCandidate.pinchAxisWorld : RE::NiPoint3{},
+                        pocket.palmNormalWorld,
+                    });
 
                     RE::NiPoint3 gripEvidencePointWorld = grabGripPoint;
                     RE::NiPoint3 gripEvidenceNormalWorld = gripNormalWorld;
@@ -7628,10 +7651,13 @@ namespace rock
 
                     selectedGripPointLocal = transform_math::worldPointToLocal(objectWorldTransform, grabGripPoint);
                     selectedPivotBBodyLocalGame = transform_math::worldPointToLocal(grabBodyWorldAtGrab, grabGripPoint);
-                    RE::NiPoint3 supportFrameNormalWorld = normalizeOrZero(
-                        lengthSquared(gripSupportRuntime.model.supportNormal) > 0.000001f ? gripSupportRuntime.model.supportNormal : gripNormalWorld);
+                    RE::NiPoint3 supportFrameNormalWorld = normalizeOrZero(gripNormalWorld);
                     if (lengthSquared(supportFrameNormalWorld) <= 0.000001f) {
-                        supportFrameNormalWorld = normalizeOrZero(gripEvidenceNormalWorld);
+                        supportFrameNormalWorld = firstValidNormal({
+                            gripEvidenceNormalWorld,
+                            gripSupportRuntime.model.supportNormal,
+                            pocket.palmNormalWorld,
+                        });
                     }
                     const RE::NiPoint3 supportFrameAxisWorld = resolveSupportFrameAxisWorld(supportFrameNormalWorld,
                         gripSupportRuntime.model.supportAxis,
