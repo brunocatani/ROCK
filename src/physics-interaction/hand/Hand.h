@@ -740,6 +740,8 @@ namespace rock
             float ragdollBRcaColumnsErrorDegrees = -1.0f;
             float ragdollARcbRowsInverseErrorDegrees = -1.0f;
             float ragdollARcbColumnsInverseErrorDegrees = -1.0f;
+            std::uint64_t traceId = 0;
+            std::uint64_t targetWriteSequence = 0;
             std::uint64_t flushSequence = 0;
             bool bodyAWorldValid = false;
             bool ragdollMotorEnabled = false;

@@ -578,6 +578,8 @@ namespace rock
         float pivotAuthorityPositionConfidence = 0.0f;
         float handScaleAtGrab = 1.0f;
         float lastSeatedPivotReacquireLocalDeltaGameUnits = 0.0f;
+        std::uint64_t traceId = 0;
+        std::uint64_t traceTargetWriteSequence = 0;
         std::uint32_t seatedPivotReacquireCount = 0;
         const char* bodyResolutionReason = "none";
         const char* multiFingerContactReason = "none";
@@ -723,6 +725,8 @@ namespace rock
             pivotAuthorityPositionConfidence = 0.0f;
             handScaleAtGrab = 1.0f;
             lastSeatedPivotReacquireLocalDeltaGameUnits = 0.0f;
+            traceId = 0;
+            traceTargetWriteSequence = 0;
             seatedPivotReacquireCount = 0;
             bodyResolutionReason = "none";
             multiFingerContactReason = "none";

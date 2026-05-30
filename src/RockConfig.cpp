@@ -206,9 +206,11 @@ namespace rock
         rockDebugContactTargetIdentitySampleMilliseconds = 500;
         rockDebugVerboseLogging = false;
         rockDebugGrabFrameLogging = false;
+        rockDebugGrabTimelineTrace = false;
         rockDebugGrabTransformTelemetry = false;
         rockDebugGrabTransformTelemetryText = false;
         rockDebugGrabTransformTelemetryAxes = false;
+        rockDebugGrabTimelineTraceIntervalFrames = 1;
         rockDebugGrabTransformTelemetryLogIntervalFrames = 1;
         rockDebugGrabTransformTelemetryTextMode = 0;
         rockDebugShowGrabNotifications = false;
@@ -840,6 +842,12 @@ namespace rock
             ini.GetLongValue(SECTION, "iDebugContactTargetIdentitySampleMilliseconds", rockDebugContactTargetIdentitySampleMilliseconds)));
         rockDebugVerboseLogging = ini.GetBoolValue(SECTION, "bDebugVerboseLogging", rockDebugVerboseLogging);
         rockDebugGrabFrameLogging = ini.GetBoolValue(SECTION, "bDebugGrabFrameLogging", rockDebugGrabFrameLogging);
+        rockDebugGrabTimelineTrace = ini.GetBoolValue(SECTION, "bDebugGrabTimelineTrace", rockDebugGrabTimelineTrace);
+        rockDebugGrabTimelineTraceIntervalFrames =
+            static_cast<int>(ini.GetLongValue(SECTION, "iDebugGrabTimelineTraceIntervalFrames", rockDebugGrabTimelineTraceIntervalFrames));
+        if (rockDebugGrabTimelineTraceIntervalFrames < 1) {
+            rockDebugGrabTimelineTraceIntervalFrames = 1;
+        }
         rockDebugGrabTransformTelemetry = ini.GetBoolValue(SECTION, "bDebugGrabTransformTelemetry", rockDebugGrabTransformTelemetry);
         rockDebugGrabTransformTelemetryText = ini.GetBoolValue(SECTION, "bDebugGrabTransformTelemetryText", rockDebugGrabTransformTelemetryText);
         rockDebugGrabTransformTelemetryAxes = ini.GetBoolValue(SECTION, "bDebugGrabTransformTelemetryAxes", rockDebugGrabTransformTelemetryAxes);

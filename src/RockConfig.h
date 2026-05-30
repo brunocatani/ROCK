@@ -165,9 +165,11 @@ namespace rock
         int rockDebugContactTargetIdentitySampleMilliseconds = 500;
         bool rockDebugVerboseLogging = false;
         bool rockDebugGrabFrameLogging = false;
+        bool rockDebugGrabTimelineTrace = false;
         bool rockDebugGrabTransformTelemetry = false;
         bool rockDebugGrabTransformTelemetryText = false;
         bool rockDebugGrabTransformTelemetryAxes = false;
+        int rockDebugGrabTimelineTraceIntervalFrames = 1;
         int rockDebugGrabTransformTelemetryLogIntervalFrames = 1;
         int rockDebugGrabTransformTelemetryTextMode = 0;
         bool rockDebugShowGrabNotifications = false;
