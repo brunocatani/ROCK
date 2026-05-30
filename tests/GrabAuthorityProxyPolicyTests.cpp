@@ -205,8 +205,8 @@ int main()
                 0.0f,
                 0.01f);
             ok &= expectNear(
-                "creation target rows carry initial proxy-in-BODY rotation",
-                rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedInitialProxyInBody.rotate),
+                "creation target columns carry initial proxy-in-BODY rotation",
+                rotationDeltaDegrees(matrixFromRawColumns(targetBRca), expectedInitialProxyInBody.rotate),
                 0.0f,
                 0.01f);
             ok &= expectNear("creation transformB relation pivot x", transformBTranslation[0], expectedInitialPivotB.x * gameToHavokScale, 0.001f);
@@ -227,8 +227,8 @@ int main()
                 0.0f,
                 0.01f);
             ok &= expectNear(
-                "held target rows carry current proxy-in-BODY rotation",
-                rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedHeldProxyInBody.rotate),
+                "held target columns carry current proxy-in-BODY rotation",
+                rotationDeltaDegrees(matrixFromRawColumns(targetBRca), expectedHeldProxyInBody.rotate),
                 0.0f,
                 0.01f);
             ok &= expectNear("held transformB relation pivot x", transformBTranslation[0], expectedHeldPivotB.x * gameToHavokScale, 0.001f);
