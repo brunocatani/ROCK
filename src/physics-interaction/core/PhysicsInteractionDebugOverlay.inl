@@ -1203,11 +1203,11 @@
                         sample.transformBLocalDelta.distance);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 10),
                         color,
-                        "ANGT CI %.2f RI %.2f CF %.2f TB %.2f EN%d",
+                        "ANGT CI %.2f HIG %.2f CF %.2f TBF %.2f EN%d",
                         sample.targetColumnsToConstraintInverseDegrees,
-                        sample.targetRowsToConstraintInverseDegrees,
+                        sample.targetToHiggsRelationDegrees,
                         sample.targetColumnsToConstraintForwardDegrees,
-                        sample.targetColumnsToTransformBDegrees,
+                        sample.transformBFrozenDeltaDegrees,
                         sample.ragdollMotorEnabled ? 1 : 0);
                     addTextLine(grab_transform_telemetry_overlay::lineAnchor(textBasis, 11),
                         color,
@@ -1493,7 +1493,7 @@
                         grab_transform_telemetry::formatBasisDelta("rawHandToHeldRelativeHand", sample.rawHandBasis, sample.heldRelativeHandTargetBasis));
                     if (sample.hasConstraintAngularTelemetry) {
                         ROCK_LOG_INFO(Hand,
-                            "GRAB TELEMETRY {} {} transformBLocal=({:.2f},{:.2f},{:.2f}) desiredTransformBLocal=({:.2f},{:.2f},{:.2f}) transformBErr={:.3f}gu targetErr(colsInv={:.3f}deg rowsInv={:.3f}deg colsForward={:.3f}deg colsTransformB={:.3f}deg) ragEnabled={} angTau={:.3f} angDamping={:.3f} angForce={:.1f} linTau={:.3f} linForce={:.1f} mass={:.3f}",
+                            "GRAB TELEMETRY {} {} transformBLocal=({:.2f},{:.2f},{:.2f}) desiredTransformBLocal=({:.2f},{:.2f},{:.2f}) pivotBRelationDelta={:.3f}gu targetErr(colsInv={:.3f}deg targetToHiggsRelation={:.3f}deg colsForward={:.3f}deg transformBFrozenDelta={:.3f}deg) ragEnabled={} angTau={:.3f} angDamping={:.3f} angForce={:.1f} linTau={:.3f} linForce={:.1f} mass={:.3f}",
                             prefix,
                             phaseLabel,
                             sample.constraintTransformBLocalGame.x,
@@ -1504,9 +1504,9 @@
                             sample.desiredTransformBLocalGame.z,
                             sample.transformBLocalDelta.distance,
                             sample.targetColumnsToConstraintInverseDegrees,
-                            sample.targetRowsToConstraintInverseDegrees,
+                            sample.targetToHiggsRelationDegrees,
                             sample.targetColumnsToConstraintForwardDegrees,
-                            sample.targetColumnsToTransformBDegrees,
+                            sample.transformBFrozenDeltaDegrees,
                             sample.ragdollMotorEnabled ? "yes" : "no",
                             sample.angularMotorTau,
                             sample.angularMotorDamping,

@@ -157,9 +157,9 @@ namespace rock::grab_transform_telemetry
         float relationPivotErr = 0.0f;
         float rotationPreservedDeg = 0.0f;
         float targetColumnsToConstraintInverseDegrees = 0.0f;
-        float targetRowsToConstraintInverseDegrees = 0.0f;
+        float targetToHiggsRelationDegrees = 0.0f;
         float targetColumnsToConstraintForwardDegrees = 0.0f;
-        float targetColumnsToTransformBDegrees = 0.0f;
+        float transformBFrozenDeltaDegrees = 0.0f;
         float angularMotorTau = 0.0f;
         float angularMotorDamping = 0.0f;
         float angularMotorMaxForce = 0.0f;

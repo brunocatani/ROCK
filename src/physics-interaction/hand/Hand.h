@@ -752,11 +752,9 @@ namespace rock
             float angularMotorDamping = 0.0f;
             float angularMotorMaxForce = 0.0f;
             float linearMotorMaxForce = 0.0f;
-            float targetRowsToConstraintInverseDegrees = -1.0f;
-            float targetColumnsToTransformBDegrees = -1.0f;
-            float targetRowsToDesiredConstraintBRcaDegrees = -1.0f;
-            float targetColumnsToDesiredConstraintBRcaDegrees = -1.0f;
-            float desiredConstraintBRcaToIdentityDegrees = -1.0f;
+            float targetToHiggsRelationDegrees = -1.0f;
+            float transformBFrozenDeltaDegrees = -1.0f;
+            float pivotBRelationDeltaGameUnits = -1.0f;
             float transformAPivotRoundTripDeltaGameUnits = -1.0f;
             float ragdollBRcaRowsErrorDegrees = -1.0f;
             float ragdollBRcaColumnsErrorDegrees = -1.0f;
