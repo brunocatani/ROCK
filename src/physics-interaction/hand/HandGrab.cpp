@@ -4745,13 +4745,12 @@ namespace rock
             return false;
         }
 
-        RE::NiPoint3 activePivotAWorld{};
-        if (!resolveActiveGrabAuthorityPivotAWorld(proxyWorldTransform, activePivotAWorld)) {
-            return false;
-        }
-
-        const RE::NiPoint3 pivotAProxyLocalGame =
-            grab_constraint_math::computeGeneratedProxyConstraintPivotLocalGame(proxyWorldTransform, activePivotAWorld);
+        /*
+         * Transform-A is part of the frozen local constraint frame. The proxy
+         * body moves in world space; the local pivot must not be rebuilt through
+         * a world/local round-trip every substep.
+         */
+        const RE::NiPoint3 pivotAProxyLocalGame = _grabAuthorityPivotAProxyLocalGame;
         if (!std::isfinite(pivotAProxyLocalGame.x) ||
             !std::isfinite(pivotAProxyLocalGame.y) ||
             !std::isfinite(pivotAProxyLocalGame.z)) {
@@ -4761,7 +4760,6 @@ namespace rock
         auto* constraintData = static_cast<char*>(_activeConstraint.constraintData);
         auto* transformAPos = reinterpret_cast<float*>(constraintData + GRAB_TRANSFORM_A_POS);
         const float gameToHkScale = gameToHavokScale();
-        _grabAuthorityPivotAProxyLocalGame = pivotAProxyLocalGame;
         transformAPos[0] = pivotAProxyLocalGame.x * gameToHkScale;
         transformAPos[1] = pivotAProxyLocalGame.y * gameToHkScale;
         transformAPos[2] = pivotAProxyLocalGame.z * gameToHkScale;
@@ -9439,6 +9437,18 @@ namespace rock
                             float targetRowsToDesiredConstraintBRcaDegrees = -1.0f;
                             float targetColumnsToDesiredConstraintBRcaDegrees = -1.0f;
                             float desiredConstraintBRcaToIdentityDegrees = -1.0f;
+                            float transformAPivotRoundTripDeltaGameUnits = -1.0f;
+                            RE::NiPoint3 activePivotAWorld{};
+                            if (resolveActiveGrabAuthorityPivotAWorld(pending.proxyWorld, activePivotAWorld)) {
+                                const RE::NiPoint3 roundTripPivotAProxyLocalGame =
+                                    grab_constraint_math::computeGeneratedProxyConstraintPivotLocalGame(pending.proxyWorld, activePivotAWorld);
+                                if (std::isfinite(roundTripPivotAProxyLocalGame.x) &&
+                                    std::isfinite(roundTripPivotAProxyLocalGame.y) &&
+                                    std::isfinite(roundTripPivotAProxyLocalGame.z)) {
+                                    transformAPivotRoundTripDeltaGameUnits =
+                                        pointDistanceGameUnits(_grabAuthorityPivotAProxyLocalGame, roundTripPivotAProxyLocalGame);
+                                }
+                            }
                             if (bodyAWorldBeforeSolveOk) {
                                 const RE::NiMatrix3 constraintAWorldRotation =
                                     multiplyTransforms(bodyAWorldBeforeSolve, rotationOnlyTransform(transformAAsHkColumns)).rotate;
@@ -9506,6 +9516,7 @@ namespace rock
                                 .targetRowsToDesiredConstraintBRcaDegrees = targetRowsToDesiredConstraintBRcaDegrees,
                                 .targetColumnsToDesiredConstraintBRcaDegrees = targetColumnsToDesiredConstraintBRcaDegrees,
                                 .desiredConstraintBRcaToIdentityDegrees = desiredConstraintBRcaToIdentityDegrees,
+                                .transformAPivotRoundTripDeltaGameUnits = transformAPivotRoundTripDeltaGameUnits,
                                 .ragdollBRcaRowsErrorDegrees = ragdollBRcaRowsErrorDegrees,
                                 .ragdollBRcaColumnsErrorDegrees = ragdollBRcaColumnsErrorDegrees,
                                 .ragdollARcbRowsInverseErrorDegrees = ragdollARcbRowsInverseErrorDegrees,
@@ -9814,7 +9825,7 @@ namespace rock
             if (shouldLogRagdollProbe) {
                 ROCK_LOG_SAMPLE_WARN(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} RAGDOLL ANGULAR PROBE: seq={}/{} afterSeq={} probeSeq={} stale={} substep={}/{} beforeErr={:.1f}deg afterErr={:.1f}deg reduce={:.1f}deg axisDot={:.2f} reqAxis=({:.2f},{:.2f},{:.2f}) velAxis=({:.2f},{:.2f},{:.2f}) reqAxisProxy=({:.2f},{:.2f},{:.2f}) velAxisProxy=({:.2f},{:.2f},{:.2f}) beforeAng={:.2f}rad/s afterAng={:.2f}rad/s forceA={:.0f} forceL={:.0f} tau={:.3f} damp={:.2f} ragdoll={} targetRowsInv={:.1f}deg targetColsToB={:.1f}deg targetRowsDesiredBRca={:.1f}deg targetColsDesiredBRca={:.1f}deg desiredBRcaIdentity={:.1f}deg gripBefore={:.2f}gu gripAfter={:.2f}gu pivotLever={:.2f}gu angularRef={} phase={} body={} motion={}",
+                    "{} RAGDOLL ANGULAR PROBE: seq={}/{} afterSeq={} probeSeq={} stale={} substep={}/{} beforeErr={:.1f}deg afterErr={:.1f}deg reduce={:.1f}deg axisDot={:.2f} reqAxis=({:.2f},{:.2f},{:.2f}) velAxis=({:.2f},{:.2f},{:.2f}) reqAxisProxy=({:.2f},{:.2f},{:.2f}) velAxisProxy=({:.2f},{:.2f},{:.2f}) beforeAng={:.2f}rad/s afterAng={:.2f}rad/s forceA={:.0f} forceL={:.0f} tau={:.3f} damp={:.2f} ragdoll={} targetRowsInv={:.1f}deg targetColsToB={:.1f}deg targetRowsDesiredBRca={:.1f}deg targetColsDesiredBRca={:.1f}deg desiredBRcaIdentity={:.1f}deg pivotARoundTrip={:.3f}gu gripBefore={:.2f}gu gripAfter={:.2f}gu pivotLever={:.2f}gu angularRef={} phase={} body={} motion={}",
                     handName(),
                     flushSequence,
                     queuedSequence,
@@ -9851,6 +9862,7 @@ namespace rock
                     ragdollAngularProbePreSolve.targetRowsToDesiredConstraintBRcaDegrees,
                     ragdollAngularProbePreSolve.targetColumnsToDesiredConstraintBRcaDegrees,
                     ragdollAngularProbePreSolve.desiredConstraintBRcaToIdentityDegrees,
+                    ragdollAngularProbePreSolve.transformAPivotRoundTripDeltaGameUnits,
                     ragdollAngularProbePreSolve.beforeGripErrorGameUnits,
                     afterGripErrorGameUnits,
                     ragdollAngularProbePreSolve.pivotLeverGameUnits,
@@ -9921,7 +9933,7 @@ namespace rock
 
                 ROCK_LOG_SAMPLE_WARN(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} RAGDOLL FRAME ERROR: seq={}/{} appearsSolve=bRcaRows bRcaRowsErr={:.1f}deg bRcaColsErr={:.1f}deg aRcbRowsInvErr={:.1f}deg aRcbColsInvErr={:.1f}deg intendedBodyErr={:.1f}->{:.1f}deg targetRowsInv={:.1f}deg targetColsToB={:.1f}deg targetRowsDesiredBRca={:.1f}deg targetColsDesiredBRca={:.1f}deg desiredBRcaIdentity={:.1f}deg reqAxisProxy=({:.2f},{:.2f},{:.2f})",
+                    "{} RAGDOLL FRAME ERROR: seq={}/{} appearsSolve=bRcaRows bRcaRowsErr={:.1f}deg bRcaColsErr={:.1f}deg aRcbRowsInvErr={:.1f}deg aRcbColsInvErr={:.1f}deg intendedBodyErr={:.1f}->{:.1f}deg targetRowsInv={:.1f}deg targetColsToB={:.1f}deg targetRowsDesiredBRca={:.1f}deg targetColsDesiredBRca={:.1f}deg desiredBRcaIdentity={:.1f}deg pivotARoundTrip={:.3f}gu reqAxisProxy=({:.2f},{:.2f},{:.2f})",
                     handName(),
                     flushSequence,
                     queuedSequence,
@@ -9936,6 +9948,7 @@ namespace rock
                     ragdollAngularProbePreSolve.targetRowsToDesiredConstraintBRcaDegrees,
                     ragdollAngularProbePreSolve.targetColumnsToDesiredConstraintBRcaDegrees,
                     ragdollAngularProbePreSolve.desiredConstraintBRcaToIdentityDegrees,
+                    ragdollAngularProbePreSolve.transformAPivotRoundTripDeltaGameUnits,
                     ragdollAngularProbePreSolve.requiredAxisProxyLocal.x,
                     ragdollAngularProbePreSolve.requiredAxisProxyLocal.y,
                     ragdollAngularProbePreSolve.requiredAxisProxyLocal.z);
@@ -9950,7 +9963,7 @@ namespace rock
         if (likelyRawProxyFrameMismatch) {
             ROCK_LOG_SAMPLE_WARN(Hand,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "{} PROXY GRAB FRAME MISMATCH: seq={}/{} afterSeq={} substep={}/{} rawToProxyTarget={:.1f}deg rawToProxyLive={:.1f}deg targetAxisDeg=({:.1f},{:.1f},{:.1f}) liveAxisDeg=({:.1f},{:.1f},{:.1f}) determinantTarget=({:.3f},{:.3f}) determinantLive=({:.3f},{:.3f}) proxyErr={:.2f}gu/{:.1f}deg objectErr={:.2f}gu/{:.1f}deg gripErr={:.2f}gu transformBDelta={:.2f}gu targetRowsInv={:.1f}deg targetColsToTransformB={:.1f}deg targetRowsDesiredBRca={:.1f}deg targetColsDesiredBRca={:.1f}deg desiredBRcaIdentity={:.1f}deg reqAxisProxy=({:.2f},{:.2f},{:.2f}) angularRef={} proxySrc={} objectSrc={} phase={} pivotB=({:.2f},{:.2f},{:.2f})",
+                "{} PROXY GRAB FRAME MISMATCH: seq={}/{} afterSeq={} substep={}/{} rawToProxyTarget={:.1f}deg rawToProxyLive={:.1f}deg targetAxisDeg=({:.1f},{:.1f},{:.1f}) liveAxisDeg=({:.1f},{:.1f},{:.1f}) determinantTarget=({:.3f},{:.3f}) determinantLive=({:.3f},{:.3f}) proxyErr={:.2f}gu/{:.1f}deg objectErr={:.2f}gu/{:.1f}deg gripErr={:.2f}gu transformBDelta={:.2f}gu pivotARoundTrip={:.3f}gu targetRowsInv={:.1f}deg targetColsToTransformB={:.1f}deg targetRowsDesiredBRca={:.1f}deg targetColsDesiredBRca={:.1f}deg desiredBRcaIdentity={:.1f}deg reqAxisProxy=({:.2f},{:.2f},{:.2f}) angularRef={} proxySrc={} objectSrc={} phase={} pivotB=({:.2f},{:.2f},{:.2f})",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -9975,6 +9988,7 @@ namespace rock
                 objectTargetRotationErrorDegrees,
                 gripTargetErrorGameUnits,
                 hasConstraintFrameMetrics ? constraintTransformBLocalDeltaGameUnits : -1.0f,
+                ragdollAngularProbePreSolve.transformAPivotRoundTripDeltaGameUnits,
                 hasConstraintFrameMetrics ? targetRowsToConstraintInverseDegrees : -1.0f,
                 hasConstraintFrameMetrics ? targetColumnsToTransformBDegrees : -1.0f,
                 ragdollAngularProbePreSolve.targetRowsToDesiredConstraintBRcaDegrees,
