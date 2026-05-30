@@ -315,7 +315,7 @@ namespace rock
 
     ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
         const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
-        const RE::NiTransform& desiredBodyTransformHandSpace, const GrabConstraintMotorTuning& tuning)
+        const RE::NiTransform& desiredBodyTransformHandSpace, const RE::NiMatrix3& targetBRcaRotation, const GrabConstraintMotorTuning& tuning)
     {
         ActiveConstraint result;
         if (!world) {
@@ -435,7 +435,7 @@ namespace rock
             auto* tB_pos = reinterpret_cast<float*>(header + GRAB_TRANSFORM_B_POS);
             auto* targetBRca = reinterpret_cast<float*>(header + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
 
-            grab_constraint_math::writeInitialGrabAngularFrame(tB_col0, targetBRca, desiredBodyTransformHandSpace);
+            grab_constraint_math::writeInitialGrabAngularFrame(tB_col0, targetBRca, desiredBodyTransformHandSpace, targetBRcaRotation);
 
             tB_pos[0] = pivotBBodyLocalHk[0];
             tB_pos[1] = pivotBBodyLocalHk[1];
@@ -448,7 +448,7 @@ namespace rock
                 "tB_inverse_col0=({:.3f},{:.3f},{:.3f})",
                 tA_pos[0], tA_pos[1], tA_pos[2], tB_pos[0], tB_pos[1], tB_pos[2], tB_col0[0], tB_col0[1], tB_col0[2]);
 
-            ROCK_LOG_TRACE(GrabConstraint, "target_bRca initial inverse solver rows: row0=[{:.3f},{:.3f},{:.3f}] row1=[{:.3f},{:.3f},{:.3f}]", targetBRca[0], targetBRca[1],
+            ROCK_LOG_TRACE(GrabConstraint, "target_bRca initial solver rows: row0=[{:.3f},{:.3f},{:.3f}] row1=[{:.3f},{:.3f},{:.3f}]", targetBRca[0], targetBRca[1],
                 targetBRca[2], targetBRca[4], targetBRca[5], targetBRca[6]);
         }
 
@@ -548,6 +548,24 @@ namespace rock
         result.targetMaxForce = linearMaxForce;
 
         return result;
+    }
+
+    ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
+        const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
+        const RE::NiTransform& desiredBodyTransformHandSpace, const GrabConstraintMotorTuning& tuning)
+    {
+        const RE::NiMatrix3 defaultTargetBRcaRotation =
+            grab_constraint_math::desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
+        return createGrabConstraint(
+            world,
+            handBodyId,
+            objectBodyId,
+            handBodyWorld,
+            palmWorldGame,
+            pivotBBodyLocalHk,
+            desiredBodyTransformHandSpace,
+            defaultTargetBRcaRotation,
+            tuning);
     }
 
     ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,

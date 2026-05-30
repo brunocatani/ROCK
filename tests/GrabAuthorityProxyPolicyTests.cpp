@@ -200,6 +200,60 @@ int main()
     }
 
     {
+        RE::NiTransform bodyAWorld = identityTransform();
+        bodyAWorld.rotate =
+            composeRotations(rotationAroundZ(kPi * 0.37f), composeRotations(rotationAroundX(-kPi * 0.23f), rotationAroundY(kPi * 0.41f)));
+
+        const RE::NiMatrix3 transformARotation = rotationAroundY(kPi * 0.19f);
+        const RE::NiMatrix3 transformBRotation = rotationAroundX(-kPi * 0.31f);
+
+        RE::NiTransform transformAOnly = identityTransform();
+        transformAOnly.rotate = transformARotation;
+        RE::NiTransform transformBOnly = identityTransform();
+        transformBOnly.rotate = transformBRotation;
+
+        const RE::NiTransform desiredConstraintAWorld = rock::transform_math::composeTransforms(bodyAWorld, transformAOnly);
+        const RE::NiTransform desiredBodyBWorld =
+            rock::transform_math::composeTransforms(desiredConstraintAWorld, rock::transform_math::invertTransform(transformBOnly));
+        const RE::NiMatrix3 targetBRca = rock::grab_constraint_math::computeConstraintFrameTargetBRca<RE::NiTransform, RE::NiMatrix3>(
+            bodyAWorld,
+            desiredBodyBWorld,
+            transformARotation,
+            transformBRotation);
+
+        ok &= expectNear(
+            "constraint-frame target is identity when transform-B already aligns B to A",
+            rotationDeltaDegrees(targetBRca, identityTransform().rotate),
+            0.0f,
+            0.01f);
+
+        RE::NiTransform desiredBodyTransformHandSpace = identityTransform();
+        desiredBodyTransformHandSpace.rotate = rotationAroundZ(kPi * 0.42f);
+        const RE::NiMatrix3 customTargetBRca = rotationAroundX(kPi * 0.27f);
+        const RE::NiMatrix3 expectedTransformB =
+            rock::grab_constraint_math::desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
+
+        float transformBRotationRaw[12]{};
+        float targetBRcaRaw[12]{};
+        rock::grab_constraint_math::writeInitialGrabAngularFrame(
+            transformBRotationRaw,
+            targetBRcaRaw,
+            desiredBodyTransformHandSpace,
+            customTargetBRca);
+
+        ok &= expectNear(
+            "derived-target overload preserves transform-B body-to-hand columns",
+            rotationDeltaDegrees(matrixFromRawColumns(transformBRotationRaw), expectedTransformB),
+            0.0f,
+            0.01f);
+        ok &= expectNear(
+            "derived-target overload writes target_bRca solver rows independently",
+            rotationDeltaDegrees(matrixFromRawRows(targetBRcaRaw), customTargetBRca),
+            0.0f,
+            0.01f);
+    }
+
+    {
         RE::NiTransform objectWorld = identityTransform();
         objectWorld.translate = RE::NiPoint3{ 10.0f, -4.0f, 3.0f };
         objectWorld.rotate = rotationAroundZ(kPi * 0.5f);

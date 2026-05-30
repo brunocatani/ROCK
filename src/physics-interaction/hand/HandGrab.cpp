@@ -2208,11 +2208,40 @@ namespace rock
             const RE::NiMatrix3& transformARotation,
             const RE::NiMatrix3& transformBRotation)
         {
-            const RE::NiMatrix3 constraintAWorldRotation =
-                transform_math::composeTransforms(bodyAWorld, rotationOnlyTransform(transformARotation)).rotate;
-            const RE::NiMatrix3 constraintBWorldRotation =
-                transform_math::composeTransforms(bodyBWorld, rotationOnlyTransform(transformBRotation)).rotate;
-            return frameToFrameRotation(constraintBWorldRotation, constraintAWorldRotation);
+            return grab_constraint_math::computeConstraintFrameTargetBRca<RE::NiTransform, RE::NiMatrix3>(
+                bodyAWorld,
+                bodyBWorld,
+                transformARotation,
+                transformBRotation);
+        }
+
+        bool writeProxyConstraintGrabAngularFrame(
+            void* constraintData,
+            const RE::NiTransform& proxyWorldTransform,
+            const RE::NiTransform& desiredBodyWorld,
+            const RE::NiTransform& desiredBodyTransformProxySpace)
+        {
+            if (!constraintData) {
+                return false;
+            }
+
+            auto* constraintBytes = static_cast<char*>(constraintData);
+            auto* transformARotation = reinterpret_cast<float*>(constraintBytes + GRAB_TRANSFORM_A_COL0);
+            auto* transformBRotation = reinterpret_cast<float*>(constraintBytes + GRAB_TRANSFORM_B_COL0);
+            auto* targetBRca = reinterpret_cast<float*>(constraintBytes + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
+
+            const RE::NiMatrix3 transformAAsHkColumns = matrixFromHkColumns(transformARotation);
+            const RE::NiMatrix3 transformBAsHkColumns =
+                grab_constraint_math::desiredBodyToHandRotation(desiredBodyTransformProxySpace.rotate);
+            const RE::NiMatrix3 targetBRcaRotation = constraintBRcaForBodyPose(
+                proxyWorldTransform,
+                desiredBodyWorld,
+                transformAAsHkColumns,
+                transformBAsHkColumns);
+
+            grab_constraint_math::writeHavokRotationColumns(transformBRotation, transformBAsHkColumns);
+            grab_constraint_math::writeHavokRotationRows(targetBRca, targetBRcaRotation);
+            return true;
         }
 
         RE::NiTransform makeIdentityTransform()
@@ -4632,6 +4661,17 @@ namespace rock
             _heldBodyIds,
             _heldDriveDecision.includeConnectedMass);
         const float effectiveMassAtCreation = effectiveGrabMotorMass(massSummaryAtCreation.motorMass());
+        const RE::NiTransform initialAuthorityFrame =
+            makeGeneratedProxyAuthorityRelationFrame(proxyWorldTransform);
+        const RE::NiTransform initialDesiredBodyWorld =
+            multiplyTransforms(initialAuthorityFrame, desiredBodyTransformProxySpace);
+        const RE::NiMatrix3 initialTransformBRotation =
+            grab_constraint_math::desiredBodyToHandRotation(desiredBodyTransformProxySpace.rotate);
+        const RE::NiMatrix3 initialTargetBRcaRotation = constraintBRcaForBodyPose(
+            proxyWorldTransform,
+            initialDesiredBodyWorld,
+            makeIdentityTransform().rotate,
+            initialTransformBRotation);
         const GrabConstraintMotorTuning motorTuning = buildProxyConstraintMotorTuning(tau,
             damping,
             maxForce,
@@ -4649,6 +4689,7 @@ namespace rock
             constraintPivotAWorld,
             pivotBBodyLocalHk,
             desiredBodyTransformProxySpace,
+            initialTargetBRcaRotation,
             motorTuning);
         if (!_activeConstraint.isValid()) {
             ROCK_LOG_ERROR(Hand,
@@ -4767,10 +4808,14 @@ namespace rock
         transformAPos[2] = pivotAProxyLocalGame.z * gameToHkScale;
         transformAPos[3] = 0.0f;
 
-        auto* transformBRotation = reinterpret_cast<float*>(constraintData + GRAB_TRANSFORM_B_COL0);
         auto* transformBTranslation = reinterpret_cast<float*>(constraintData + GRAB_TRANSFORM_B_POS);
-        auto* targetBRca = reinterpret_cast<float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
-        grab_constraint_math::writeInitialGrabAngularFrame(transformBRotation, targetBRca, desiredBodyTransformProxySpace);
+        if (!writeProxyConstraintGrabAngularFrame(
+                constraintData,
+                proxyWorldTransform,
+                outDesiredBodyWorld,
+                desiredBodyTransformProxySpace)) {
+            return false;
+        }
         transformBTranslation[0] = outActivePivotBBodyLocalGame.x * gameToHkScale;
         transformBTranslation[1] = outActivePivotBBodyLocalGame.y * gameToHkScale;
         transformBTranslation[2] = outActivePivotBBodyLocalGame.z * gameToHkScale;
@@ -7580,10 +7625,18 @@ namespace rock
             if (g_rockConfig.rockDebugGrabFrameLogging) {
                 std::array<float, 12> freezeTransformBRotation{};
                 std::array<float, 12> freezeTargetBRca{};
+                const RE::NiMatrix3 freezeTransformBRows =
+                    grab_constraint_math::desiredBodyToHandRotation(frozenAuthorityFrame.proxyAuthorityBodyHandSpace.rotate);
+                const RE::NiMatrix3 freezeTargetBRcaRows = constraintBRcaForBodyPose(
+                    proxyFrameWorldAtGrab,
+                    frozenAuthorityFrame.desiredBodyWorld,
+                    makeIdentityTransform().rotate,
+                    freezeTransformBRows);
                 grab_constraint_math::writeInitialGrabAngularFrame(
                     freezeTransformBRotation.data(),
                     freezeTargetBRca.data(),
-                    frozenAuthorityFrame.proxyAuthorityBodyHandSpace);
+                    frozenAuthorityFrame.proxyAuthorityBodyHandSpace,
+                    freezeTargetBRcaRows);
                 const RE::NiTransform frozenDesiredBodyToHandSpace =
                     invertTransform(frozenAuthorityFrame.proxyAuthorityBodyHandSpace);
                 const RE::NiMatrix3 freezeTargetRows = matrixFromHkRows(freezeTargetBRca.data());

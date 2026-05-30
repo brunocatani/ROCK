@@ -420,3 +420,21 @@ Next code-level work should focus on the frame/pivot feed invariant:
 5. Keep using runtime telemetry to decide `target_bRca` storage convention; Ghidra layout evidence alone is not enough to change that again.
 
 Bottom line: the motors themselves look correctly allocated, initialized, attached, activated, and budgeted at the Havok data-contract level. The most likely remaining "solver sometimes gets right but not correct" class is a frame/pivot feed mismatch before data reaches the motor atoms.
+
+## Runtime Follow-Up: Constraint-Frame Target
+
+Source: ROCK runtime log from the deployed `907f373` logging-only build.
+
+Verification method: dynamic proxy grab of a Nuka-Cola bottle with new `targetRowsDesiredBRca`, `targetColsDesiredBRca`, and `desiredBRcaIdentity` telemetry.
+
+Finding:
+
+- `ragdoll=yes`, `forceA=2000`, `forceL=2000`, `tau=0.030`, and `damp=0.80`, so the angular motor was active and budgeted.
+- The hidden proxy body tracked its physical target: `proxyErr` stayed near `0.00gu/0.0deg`.
+- The selected BODY-local pivot remained coherent: `transformBDelta=0.00gu`.
+- `targetRowsInv=0.0deg` showed the old row target matched the saved proxy BODY relation, but `targetRowsDesiredBRca` and `targetColsDesiredBRca` were both high against the actual constraint-frame target.
+- On one bad sample `desiredBRcaIdentity=4.7deg` while `targetRowsDesiredBRca=97.6deg` and angular error worsened from `164.9deg` to `170.5deg`.
+
+Implication:
+
+`target_bRca` must be derived from the actual body-A/body-B constraint frames: physical proxy body A, desired BODY pose B, transform-A, and transform-B. It must not be written directly from the saved generated/proxy BODY relation, because transform-B already carries that relation into the B constraint frame.
