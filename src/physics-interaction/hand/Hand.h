@@ -716,10 +716,16 @@ namespace rock
             std::array<float, 12> targetBRcaRaw{};
             RE::NiPoint3 requiredAxisWorld{};
             RE::NiPoint3 requiredAxisProxyLocal{};
+            RE::NiPoint3 linearCorrectionWorld{};
+            RE::NiPoint3 linearLeverWorld{};
+            RE::NiPoint3 linearTorqueWitnessWorld{};
+            RE::NiPoint3 linearTorqueAxisProxyLocal{};
             RE::NiPoint3 angularVelocityBeforeRadians{};
             float beforeErrorDegrees = -1.0f;
             float beforeGripErrorGameUnits = -1.0f;
             float pivotLeverGameUnits = -1.0f;
+            float linearTorqueWitnessGameUnitsSquared = -1.0f;
+            float linearTorqueAxisDotRequired = 0.0f;
             float angularMotorTau = 0.0f;
             float angularMotorDamping = 0.0f;
             float angularMotorMaxForce = 0.0f;

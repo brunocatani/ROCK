@@ -9475,6 +9475,16 @@ namespace rock
 
                             const RE::NiPoint3 liveGripBeforeSolve =
                                 transform_math::localPointToWorld(bodyWorldBeforeSolve, activePivotBBodyLocalGame);
+                            /*
+                             * The linear motor can rotate the object only through
+                             * this off-center pivot witness. A small cross product
+                             * means the angular atom must do almost all rotation.
+                             */
+                            const RE::NiPoint3 linearCorrectionWorld = desiredTargetPointWorld - liveGripBeforeSolve;
+                            const RE::NiPoint3 linearLeverWorld = liveGripBeforeSolve - bodyWorldBeforeSolve.translate;
+                            const RE::NiPoint3 linearTorqueWitnessWorld = crossProduct(linearLeverWorld, linearCorrectionWorld);
+                            const RE::NiPoint3 linearTorqueAxisWorld = normalizeOrZero(linearTorqueWitnessWorld);
+                            const float linearTorqueWitnessGameUnitsSquared = vectorMagnitude(linearTorqueWitnessWorld);
                             RE::NiPoint3 angularVelocityBeforeSolve{};
                             if (auto* motion = havok_runtime::getBodyMotion(world, _savedObjectState.bodyId)) {
                                 angularVelocityBeforeSolve = RE::NiPoint3{
@@ -9493,6 +9503,12 @@ namespace rock
                             const RE::NiPoint3 requiredAxisProxyLocal = bodyAWorldBeforeSolveOk ?
                                 rotationAxisProxyLocal(bodyAWorldBeforeSolve.rotate, requiredAxisWorld) :
                                 RE::NiPoint3{};
+                            const RE::NiPoint3 linearTorqueAxisProxyLocal =
+                                bodyAWorldBeforeSolveOk ? rotationAxisProxyLocal(bodyAWorldBeforeSolve.rotate, linearTorqueAxisWorld) : RE::NiPoint3{};
+                            const float linearTorqueAxisDotRequired =
+                                (lengthSquared(linearTorqueAxisWorld) > 0.000001f && lengthSquared(requiredAxisWorld) > 0.000001f) ?
+                                    std::clamp(dotProduct(linearTorqueAxisWorld, requiredAxisWorld), -1.0f, 1.0f) :
+                                    0.0f;
                             _ragdollAngularProbePreSolve = RagdollAngularProbePreSolve{
                                 .objectBodyId = _savedObjectState.bodyId,
                                 .desiredBodyWorld = desiredBodyWorld,
@@ -9503,10 +9519,16 @@ namespace rock
                                 .targetBRcaRaw = targetBRcaRaw,
                                 .requiredAxisWorld = requiredAxisWorld,
                                 .requiredAxisProxyLocal = requiredAxisProxyLocal,
+                                .linearCorrectionWorld = linearCorrectionWorld,
+                                .linearLeverWorld = linearLeverWorld,
+                                .linearTorqueWitnessWorld = linearTorqueWitnessWorld,
+                                .linearTorqueAxisProxyLocal = linearTorqueAxisProxyLocal,
                                 .angularVelocityBeforeRadians = angularVelocityBeforeSolve,
                                 .beforeErrorDegrees = rotationDeltaDegrees(bodyWorldBeforeSolve.rotate, desiredBodyWorld.rotate),
                                 .beforeGripErrorGameUnits = pointDistanceGameUnits(liveGripBeforeSolve, desiredTargetPointWorld),
                                 .pivotLeverGameUnits = pointDistanceGameUnits(bodyWorldBeforeSolve.translate, liveGripBeforeSolve),
+                                .linearTorqueWitnessGameUnitsSquared = linearTorqueWitnessGameUnitsSquared,
+                                .linearTorqueAxisDotRequired = linearTorqueAxisDotRequired,
                                 .angularMotorTau = _activeConstraint.angularMotor ? _activeConstraint.angularMotor->tau : 0.0f,
                                 .angularMotorDamping = _activeConstraint.angularMotor ? _activeConstraint.angularMotor->damping : 0.0f,
                                 .angularMotorMaxForce = angularMotorBudget,
@@ -9825,7 +9847,7 @@ namespace rock
             if (shouldLogRagdollProbe) {
                 ROCK_LOG_SAMPLE_WARN(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} RAGDOLL ANGULAR PROBE: seq={}/{} afterSeq={} probeSeq={} stale={} substep={}/{} beforeErr={:.1f}deg afterErr={:.1f}deg reduce={:.1f}deg axisDot={:.2f} reqAxis=({:.2f},{:.2f},{:.2f}) velAxis=({:.2f},{:.2f},{:.2f}) reqAxisProxy=({:.2f},{:.2f},{:.2f}) velAxisProxy=({:.2f},{:.2f},{:.2f}) beforeAng={:.2f}rad/s afterAng={:.2f}rad/s forceA={:.0f} forceL={:.0f} tau={:.3f} damp={:.2f} ragdoll={} targetRowsInv={:.1f}deg targetColsToB={:.1f}deg targetRowsDesiredBRca={:.1f}deg targetColsDesiredBRca={:.1f}deg desiredBRcaIdentity={:.1f}deg pivotARoundTrip={:.3f}gu gripBefore={:.2f}gu gripAfter={:.2f}gu pivotLever={:.2f}gu angularRef={} phase={} body={} motion={}",
+                    "{} RAGDOLL ANGULAR PROBE: seq={}/{} afterSeq={} probeSeq={} stale={} substep={}/{} beforeErr={:.1f}deg afterErr={:.1f}deg reduce={:.1f}deg axisDot={:.2f} reqAxis=({:.2f},{:.2f},{:.2f}) velAxis=({:.2f},{:.2f},{:.2f}) reqAxisProxy=({:.2f},{:.2f},{:.2f}) velAxisProxy=({:.2f},{:.2f},{:.2f}) beforeAng={:.2f}rad/s afterAng={:.2f}rad/s forceA={:.0f} forceL={:.0f} tau={:.3f} damp={:.2f} ragdoll={} targetRowsInv={:.1f}deg targetColsToB={:.1f}deg targetRowsDesiredBRca={:.1f}deg targetColsDesiredBRca={:.1f}deg desiredBRcaIdentity={:.1f}deg pivotARoundTrip={:.3f}gu gripBefore={:.2f}gu gripAfter={:.2f}gu pivotLever={:.2f}gu linTorque={:.3f}gu2 linTorqueDotReq={:.2f} linTorqueAxisProxy=({:.2f},{:.2f},{:.2f}) angularRef={} phase={} body={} motion={}",
                     handName(),
                     flushSequence,
                     queuedSequence,
@@ -9866,6 +9888,11 @@ namespace rock
                     ragdollAngularProbePreSolve.beforeGripErrorGameUnits,
                     afterGripErrorGameUnits,
                     ragdollAngularProbePreSolve.pivotLeverGameUnits,
+                    ragdollAngularProbePreSolve.linearTorqueWitnessGameUnitsSquared,
+                    ragdollAngularProbePreSolve.linearTorqueAxisDotRequired,
+                    ragdollAngularProbePreSolve.linearTorqueAxisProxyLocal.x,
+                    ragdollAngularProbePreSolve.linearTorqueAxisProxyLocal.y,
+                    ragdollAngularProbePreSolve.linearTorqueAxisProxyLocal.z,
                     kGrabObjectRotationReferenceName,
                     grab_three_phase::phaseName(_grabAcquisitionPhase),
                     objectBodyId.value,
@@ -9933,7 +9960,7 @@ namespace rock
 
                 ROCK_LOG_SAMPLE_WARN(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} RAGDOLL FRAME ERROR: seq={}/{} appearsSolve=bRcaRows bRcaRowsErr={:.1f}deg bRcaColsErr={:.1f}deg aRcbRowsInvErr={:.1f}deg aRcbColsInvErr={:.1f}deg intendedBodyErr={:.1f}->{:.1f}deg targetRowsInv={:.1f}deg targetColsToB={:.1f}deg targetRowsDesiredBRca={:.1f}deg targetColsDesiredBRca={:.1f}deg desiredBRcaIdentity={:.1f}deg pivotARoundTrip={:.3f}gu reqAxisProxy=({:.2f},{:.2f},{:.2f})",
+                    "{} RAGDOLL FRAME ERROR: seq={}/{} appearsSolve=bRcaRows bRcaRowsErr={:.1f}deg bRcaColsErr={:.1f}deg aRcbRowsInvErr={:.1f}deg aRcbColsInvErr={:.1f}deg intendedBodyErr={:.1f}->{:.1f}deg targetRowsInv={:.1f}deg targetColsToB={:.1f}deg targetRowsDesiredBRca={:.1f}deg targetColsDesiredBRca={:.1f}deg desiredBRcaIdentity={:.1f}deg pivotARoundTrip={:.3f}gu linTorque={:.3f}gu2 linTorqueDotReq={:.2f} reqAxisProxy=({:.2f},{:.2f},{:.2f})",
                     handName(),
                     flushSequence,
                     queuedSequence,
@@ -9949,6 +9976,8 @@ namespace rock
                     ragdollAngularProbePreSolve.targetColumnsToDesiredConstraintBRcaDegrees,
                     ragdollAngularProbePreSolve.desiredConstraintBRcaToIdentityDegrees,
                     ragdollAngularProbePreSolve.transformAPivotRoundTripDeltaGameUnits,
+                    ragdollAngularProbePreSolve.linearTorqueWitnessGameUnitsSquared,
+                    ragdollAngularProbePreSolve.linearTorqueAxisDotRequired,
                     ragdollAngularProbePreSolve.requiredAxisProxyLocal.x,
                     ragdollAngularProbePreSolve.requiredAxisProxyLocal.y,
                     ragdollAngularProbePreSolve.requiredAxisProxyLocal.z);
@@ -9963,7 +9992,7 @@ namespace rock
         if (likelyRawProxyFrameMismatch) {
             ROCK_LOG_SAMPLE_WARN(Hand,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "{} PROXY GRAB FRAME MISMATCH: seq={}/{} afterSeq={} substep={}/{} rawToProxyTarget={:.1f}deg rawToProxyLive={:.1f}deg targetAxisDeg=({:.1f},{:.1f},{:.1f}) liveAxisDeg=({:.1f},{:.1f},{:.1f}) determinantTarget=({:.3f},{:.3f}) determinantLive=({:.3f},{:.3f}) proxyErr={:.2f}gu/{:.1f}deg objectErr={:.2f}gu/{:.1f}deg gripErr={:.2f}gu transformBDelta={:.2f}gu pivotARoundTrip={:.3f}gu targetRowsInv={:.1f}deg targetColsToTransformB={:.1f}deg targetRowsDesiredBRca={:.1f}deg targetColsDesiredBRca={:.1f}deg desiredBRcaIdentity={:.1f}deg reqAxisProxy=({:.2f},{:.2f},{:.2f}) angularRef={} proxySrc={} objectSrc={} phase={} pivotB=({:.2f},{:.2f},{:.2f})",
+                "{} PROXY GRAB FRAME MISMATCH: seq={}/{} afterSeq={} substep={}/{} rawToProxyTarget={:.1f}deg rawToProxyLive={:.1f}deg targetAxisDeg=({:.1f},{:.1f},{:.1f}) liveAxisDeg=({:.1f},{:.1f},{:.1f}) determinantTarget=({:.3f},{:.3f}) determinantLive=({:.3f},{:.3f}) proxyErr={:.2f}gu/{:.1f}deg objectErr={:.2f}gu/{:.1f}deg gripErr={:.2f}gu transformBDelta={:.2f}gu pivotARoundTrip={:.3f}gu linTorque={:.3f}gu2 linTorqueDotReq={:.2f} targetRowsInv={:.1f}deg targetColsToTransformB={:.1f}deg targetRowsDesiredBRca={:.1f}deg targetColsDesiredBRca={:.1f}deg desiredBRcaIdentity={:.1f}deg reqAxisProxy=({:.2f},{:.2f},{:.2f}) angularRef={} proxySrc={} objectSrc={} phase={} pivotB=({:.2f},{:.2f},{:.2f})",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -9989,6 +10018,8 @@ namespace rock
                 gripTargetErrorGameUnits,
                 hasConstraintFrameMetrics ? constraintTransformBLocalDeltaGameUnits : -1.0f,
                 ragdollAngularProbePreSolve.transformAPivotRoundTripDeltaGameUnits,
+                ragdollAngularProbePreSolve.linearTorqueWitnessGameUnitsSquared,
+                ragdollAngularProbePreSolve.linearTorqueAxisDotRequired,
                 hasConstraintFrameMetrics ? targetRowsToConstraintInverseDegrees : -1.0f,
                 hasConstraintFrameMetrics ? targetColumnsToTransformBDegrees : -1.0f,
                 ragdollAngularProbePreSolve.targetRowsToDesiredConstraintBRcaDegrees,
