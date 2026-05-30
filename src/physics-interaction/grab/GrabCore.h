@@ -884,6 +884,88 @@ namespace rock::grab_frame_math
         return transform_math::composeTransforms(transform_math::invertTransform(frameWorld), objectWorld);
     }
 
+    template <class Transform>
+    inline Transform objectInGeneratedProxyLocalSpace(const Transform& proxyWorld, const Transform& objectWorld)
+    {
+        using Vector = decltype(std::declval<Transform>().translate);
+
+        Transform result = transform_math::makeIdentityTransform<Transform>();
+        result.translate = hand_bone_collider_geometry_math::generatedColliderWorldPointToLocal(proxyWorld, objectWorld.translate);
+        Transform proxyRotationWorld = proxyWorld;
+        proxyRotationWorld.scale = 1.0f;
+
+        const Vector objectAxisXWorld{ objectWorld.rotate.entry[0][0], objectWorld.rotate.entry[0][1], objectWorld.rotate.entry[0][2] };
+        const Vector objectAxisYWorld{ objectWorld.rotate.entry[1][0], objectWorld.rotate.entry[1][1], objectWorld.rotate.entry[1][2] };
+        const Vector objectAxisZWorld{ objectWorld.rotate.entry[2][0], objectWorld.rotate.entry[2][1], objectWorld.rotate.entry[2][2] };
+        const Vector objectAxisXProxyLocal =
+            hand_bone_collider_geometry_math::generatedColliderWorldVectorToLocal(proxyRotationWorld, objectAxisXWorld);
+        const Vector objectAxisYProxyLocal =
+            hand_bone_collider_geometry_math::generatedColliderWorldVectorToLocal(proxyRotationWorld, objectAxisYWorld);
+        const Vector objectAxisZProxyLocal =
+            hand_bone_collider_geometry_math::generatedColliderWorldVectorToLocal(proxyRotationWorld, objectAxisZWorld);
+
+        result.rotate.entry[0][0] = objectAxisXProxyLocal.x;
+        result.rotate.entry[0][1] = objectAxisXProxyLocal.y;
+        result.rotate.entry[0][2] = objectAxisXProxyLocal.z;
+        result.rotate.entry[1][0] = objectAxisYProxyLocal.x;
+        result.rotate.entry[1][1] = objectAxisYProxyLocal.y;
+        result.rotate.entry[1][2] = objectAxisYProxyLocal.z;
+        result.rotate.entry[2][0] = objectAxisZProxyLocal.x;
+        result.rotate.entry[2][1] = objectAxisZProxyLocal.y;
+        result.rotate.entry[2][2] = objectAxisZProxyLocal.z;
+
+        result.scale = proxyWorld.scale != 0.0f ? objectWorld.scale / proxyWorld.scale : objectWorld.scale;
+        return result;
+    }
+
+    template <class Transform>
+    inline Transform objectFromGeneratedProxyLocalSpace(const Transform& proxyWorld, const Transform& objectProxyLocal)
+    {
+        using Vector = decltype(std::declval<Transform>().translate);
+
+        Transform result = transform_math::makeIdentityTransform<Transform>();
+        result.translate =
+            proxyWorld.translate +
+            hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyWorld, objectProxyLocal.translate);
+        Transform proxyRotationWorld = proxyWorld;
+        proxyRotationWorld.scale = 1.0f;
+
+        const Vector objectAxisXProxyLocal{
+            objectProxyLocal.rotate.entry[0][0],
+            objectProxyLocal.rotate.entry[0][1],
+            objectProxyLocal.rotate.entry[0][2],
+        };
+        const Vector objectAxisYProxyLocal{
+            objectProxyLocal.rotate.entry[1][0],
+            objectProxyLocal.rotate.entry[1][1],
+            objectProxyLocal.rotate.entry[1][2],
+        };
+        const Vector objectAxisZProxyLocal{
+            objectProxyLocal.rotate.entry[2][0],
+            objectProxyLocal.rotate.entry[2][1],
+            objectProxyLocal.rotate.entry[2][2],
+        };
+        const Vector objectAxisXWorld =
+            hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyRotationWorld, objectAxisXProxyLocal);
+        const Vector objectAxisYWorld =
+            hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyRotationWorld, objectAxisYProxyLocal);
+        const Vector objectAxisZWorld =
+            hand_bone_collider_geometry_math::generatedColliderLocalVectorToWorld(proxyRotationWorld, objectAxisZProxyLocal);
+
+        result.rotate.entry[0][0] = objectAxisXWorld.x;
+        result.rotate.entry[0][1] = objectAxisXWorld.y;
+        result.rotate.entry[0][2] = objectAxisXWorld.z;
+        result.rotate.entry[1][0] = objectAxisYWorld.x;
+        result.rotate.entry[1][1] = objectAxisYWorld.y;
+        result.rotate.entry[1][2] = objectAxisYWorld.z;
+        result.rotate.entry[2][0] = objectAxisZWorld.x;
+        result.rotate.entry[2][1] = objectAxisZWorld.y;
+        result.rotate.entry[2][2] = objectAxisZWorld.z;
+
+        result.scale = proxyWorld.scale * objectProxyLocal.scale;
+        return result;
+    }
+
     template <class Transform, class Vector>
     inline Vector computePivotAHandBodyLocal(const Transform& handBodyWorld, const Vector& grabPivotWorld)
     {
@@ -909,7 +991,7 @@ namespace rock::grab_frame_math
         SplitGrabFrame<Transform> result{};
         result.shiftedObjectWorld = desiredObjectWorld;
         result.rawHandSpace = objectInFrameSpace(rawHandWorld, desiredObjectWorld);
-        result.handBodyToRawHandAtGrab = objectInFrameSpace(handBodyWorld, rawHandWorld);
+        result.handBodyToRawHandAtGrab = objectInGeneratedProxyLocalSpace(handBodyWorld, rawHandWorld);
         result.pivotAHandBodyLocal = computePivotAHandBodyLocal(handBodyWorld, grabPivotWorld);
         return result;
     }
@@ -1170,12 +1252,14 @@ namespace rock::grab_authority_frame_math
         /*
          * BODY is the solver authority. The selected BODY-local pivot B must be
          * the point written into transform-B, so freeze the generated/proxy BODY
-         * relation around that exact point. Otherwise a relation-implied pivot can
-         * replace the selected grip point and feed Havok a coherent but wrong
-         * linear/angular frame pair.
+         * relation around that exact point. The proxy parent is a generated
+         * collider frame, so use the same column-authored local conversion as
+         * the collider and pivot code instead of normal NiTransform inverse math.
+         * Otherwise a relation-implied pivot can replace the selected grip point
+         * and feed Havok a coherent but wrong linear/angular frame pair.
          */
         frozen.proxyAuthorityBodyHandSpace =
-            grab_frame_math::objectInFrameSpace(input.proxyAuthorityFrameWorld, frozen.desiredBodyWorld);
+            grab_frame_math::objectInGeneratedProxyLocalSpace(input.proxyWorld, frozen.desiredBodyWorld);
         if (!alignLocalPointInTransformToLocalTarget(
                 frozen.proxyAuthorityBodyHandSpace,
                 frozen.pivotBConstraintLocalGame,
@@ -1184,7 +1268,7 @@ namespace rock::grab_authority_frame_math
         }
 
         frozen.desiredBodyWorld =
-            transform_math::composeTransforms(input.proxyAuthorityFrameWorld, frozen.proxyAuthorityBodyHandSpace);
+            grab_frame_math::objectFromGeneratedProxyLocalSpace(input.proxyWorld, frozen.proxyAuthorityBodyHandSpace);
         if (!isFiniteTransform(frozen.desiredBodyWorld)) {
             return frozen;
         }
@@ -1205,7 +1289,7 @@ namespace rock::grab_authority_frame_math
         frozen.handBodyToRawHandAtGrab = splitFrame.handBodyToRawHandAtGrab;
         frozen.pivotAHandBodyLocalGame = splitFrame.pivotAHandBodyLocal;
         frozen.proxyAuthorityHandSpace =
-            grab_frame_math::objectInFrameSpace(input.proxyAuthorityFrameWorld, frozen.desiredObjectWorld);
+            grab_frame_math::objectInGeneratedProxyLocalSpace(input.proxyWorld, frozen.desiredObjectWorld);
         frozen.valid =
             isFiniteVector(frozen.pivotBBodyLocalGame) &&
             isFiniteVector(frozen.pivotBConstraintLocalGame) &&

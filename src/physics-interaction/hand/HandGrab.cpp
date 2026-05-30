@@ -4086,8 +4086,8 @@ namespace rock
             return false;
         }
 
-        const RE::NiTransform authorityFrame = makeGeneratedProxyAuthorityRelationFrame(proxyWorld);
-        const RE::NiTransform desiredBodyWorld = multiplyTransforms(authorityFrame, _grabFrame.proxyAuthorityBodyHandSpace);
+        const RE::NiTransform desiredBodyWorld =
+            grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, _grabFrame.proxyAuthorityBodyHandSpace);
         const RE::NiPoint3 pivotBLocalGame = activeProxyConstraintPivotBLocalGame();
         const RE::NiPoint3 livePivotWorld = transform_math::localPointToWorld(liveBodyWorld, pivotBLocalGame);
         const RE::NiPoint3 targetPivotWorld = transform_math::localPointToWorld(desiredBodyWorld, pivotBLocalGame);
@@ -4460,10 +4460,15 @@ namespace rock
             auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
 
             // The ragdoll motor target is seeded and updated from the generated
-            // proxy authority BODY relation. Transform-B uses hk-column storage, but
-            // target_bRca is also logged through the solver-row view because top
-            // grab telemetry proved that is the view hknp converges toward.
-            const RE::NiTransform desiredBodyTransformHandSpace = _grabFrame.proxyAuthorityBodyHandSpace;
+            // proxy local BODY relation. The proxy parent uses the generated
+            // collider column convention, so telemetry derives the local relation
+            // through that same boundary before comparing the atom bytes.
+            const RE::NiTransform constraintProxyWorld =
+                out.hasPalmAnchorGrabAuthority ? out.palmAnchorGrabAuthorityWorld : _grabFrame.handBodyWorldAtGrab;
+            const RE::NiTransform desiredBodyWorldForConstraintTelemetry =
+                grab_frame_math::objectFromGeneratedProxyLocalSpace(constraintProxyWorld, _grabFrame.proxyAuthorityBodyHandSpace);
+            const RE::NiTransform desiredBodyTransformHandSpace =
+                grab_frame_math::objectInGeneratedProxyLocalSpace(constraintProxyWorld, desiredBodyWorldForConstraintTelemetry);
             const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
             const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
             const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
@@ -4609,12 +4614,18 @@ namespace rock
             destroyGrabAuthorityProxy(bhkWorld);
             return false;
         }
-        // Constraint creation must seed the ragdoll motor with the same angular
-        // BODY relation that held updates keep writing. Transform-B stays on the
-        // selected BODY-local grip pivot captured by the authority freeze; the
-        // freeze function translates the BODY relation so this point lands on
-        // pivot A instead of silently substituting a relation-implied pivot.
-        const RE::NiTransform desiredBodyTransformProxySpace = _grabFrame.proxyAuthorityBodyHandSpace;
+        // Constraint creation must seed the ragdoll motor with the generated
+        // proxy local BODY relation that held updates keep writing. This parent
+        // frame is the same column-authored generated-collider frame used for
+        // pivot A, so derive it through the collider local conversion instead
+        // of a normal NiTransform inverse. Transform-B stays on the selected
+        // BODY-local grip pivot captured by the authority freeze.
+        const RE::NiTransform desiredBodyWorldAtCreation =
+            _grabFrame.hasTelemetryCapture ?
+                _grabFrame.desiredBodyWorldAtGrab :
+                grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorldTransform, _grabFrame.proxyAuthorityBodyHandSpace);
+        const RE::NiTransform desiredBodyTransformProxySpace =
+            grab_frame_math::objectInGeneratedProxyLocalSpace(proxyWorldTransform, desiredBodyWorldAtCreation);
         const RE::NiPoint3 relationPivotBConstraintLocalGame =
             grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformProxySpace, _grabFrame.pivotAHandBodyLocalGame);
         const RE::NiPoint3 solverPivotBConstraintLocalGame = _grabFrame.pivotBConstraintLocalGame;
@@ -4830,11 +4841,13 @@ namespace rock
         RE::NiPoint3& outDesiredTargetPointWorld,
         RE::NiPoint3& outActivePivotBBodyLocalGame)
     {
-        const RE::NiTransform authorityFrame =
-            makeGeneratedProxyAuthorityRelationFrame(proxyWorldTransform);
-        const RE::NiTransform desiredBodyTransformProxySpace = _grabFrame.proxyAuthorityBodyHandSpace;
-        outDesiredObjectWorld = multiplyTransforms(authorityFrame, _grabFrame.proxyAuthorityHandSpace);
-        outDesiredBodyWorld = multiplyTransforms(authorityFrame, desiredBodyTransformProxySpace);
+        const RE::NiTransform desiredBodyRelationProxySpace = _grabFrame.proxyAuthorityBodyHandSpace;
+        outDesiredObjectWorld =
+            grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorldTransform, _grabFrame.proxyAuthorityHandSpace);
+        outDesiredBodyWorld =
+            grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorldTransform, desiredBodyRelationProxySpace);
+        const RE::NiTransform desiredBodyTransformProxySpace =
+            grab_frame_math::objectInGeneratedProxyLocalSpace(proxyWorldTransform, outDesiredBodyWorld);
         outActivePivotBBodyLocalGame = activeProxyConstraintPivotBLocalGame();
         outDesiredTargetPointWorld = transform_math::localPointToWorld(outDesiredBodyWorld, outActivePivotBBodyLocalGame);
 
@@ -8575,10 +8588,10 @@ namespace rock
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
             return;
         }
-        const RE::NiTransform authorityFrame =
-            makeGeneratedProxyAuthorityRelationFrame(proxyAuthorityWorld);
-        RE::NiTransform desiredObjectWorld = multiplyTransforms(authorityFrame, _grabFrame.proxyAuthorityHandSpace);
-        RE::NiTransform desiredBodyWorld = multiplyTransforms(authorityFrame, _grabFrame.proxyAuthorityBodyHandSpace);
+        RE::NiTransform desiredObjectWorld =
+            grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyAuthorityWorld, _grabFrame.proxyAuthorityHandSpace);
+        RE::NiTransform desiredBodyWorld =
+            grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyAuthorityWorld, _grabFrame.proxyAuthorityBodyHandSpace);
         const RE::NiPoint3 activePivotBBodyLocalGame = activeProxyConstraintPivotBLocalGame();
         const RE::NiPoint3 desiredTargetPointWorld = transform_math::localPointToWorld(desiredBodyWorld, activePivotBBodyLocalGame);
         float pivotTrackingErrorGameUnits = 0.0f;
@@ -8957,6 +8970,8 @@ namespace rock
                     seatedRetargetRejectedKeepFrozen = true;
                 } else {
                     const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
+                    const RE::NiTransform authorityFrame =
+                        makeGeneratedProxyAuthorityRelationFrame(proxyAuthorityWorld);
                     const float seatedEnvelope =
                         (std::max)(touchDistance, g_rockConfig.rockGrabPocketRadiusGameUnits) +
                         (std::max)(1.0f, finitePositiveOr(g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits, 3.0f));
@@ -9690,7 +9705,8 @@ namespace rock
                             const auto* targetBRca = reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
                             const auto* transformARotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_A_COL0);
                             const auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
-                            const RE::NiTransform desiredBodyTransformHandSpace = _grabFrame.proxyAuthorityBodyHandSpace;
+                            const RE::NiTransform desiredBodyTransformHandSpace =
+                                grab_frame_math::objectInGeneratedProxyLocalSpace(pending.proxyWorld, desiredBodyWorld);
                             const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
                             const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
                             const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
@@ -10040,7 +10056,10 @@ namespace rock
                 const auto* targetBRca = reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
                 const auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
                 const auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
-                const RE::NiTransform desiredBodyTransformHandSpace = _grabFrame.proxyAuthorityBodyHandSpace;
+                const RE::NiTransform desiredBodyWorldForConstraintMetrics =
+                    grab_frame_math::objectFromGeneratedProxyLocalSpace(targetProxyWorld, _grabFrame.proxyAuthorityBodyHandSpace);
+                const RE::NiTransform desiredBodyTransformHandSpace =
+                    grab_frame_math::objectInGeneratedProxyLocalSpace(targetProxyWorld, desiredBodyWorldForConstraintMetrics);
                 const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
                 const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
                 const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
@@ -10077,18 +10096,15 @@ namespace rock
             objectSource = body_frame::BodyFrameSource::Fallback;
         }
 
-        const RE::NiTransform targetAuthorityFrame =
-            makeGeneratedProxyAuthorityRelationFrame(targetProxyWorld);
-        const RE::NiTransform liveAuthorityFrame = proxyOk ?
-            makeGeneratedProxyAuthorityRelationFrame(proxyReadback) :
-            targetAuthorityFrame;
-        const RE::NiTransform desiredObjectFromTarget = multiplyTransforms(targetAuthorityFrame, proxyAuthorityHandSpace);
-        const RE::NiTransform desiredBodyFromTarget = multiplyTransforms(targetAuthorityFrame, proxyAuthorityBodyHandSpace);
+        const RE::NiTransform desiredObjectFromTarget =
+            grab_frame_math::objectFromGeneratedProxyLocalSpace(targetProxyWorld, proxyAuthorityHandSpace);
+        const RE::NiTransform desiredBodyFromTarget =
+            grab_frame_math::objectFromGeneratedProxyLocalSpace(targetProxyWorld, proxyAuthorityBodyHandSpace);
         const RE::NiTransform desiredObjectFromLiveProxy = proxyOk ?
-            multiplyTransforms(liveAuthorityFrame, proxyAuthorityHandSpace) :
+            grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyReadback, proxyAuthorityHandSpace) :
             desiredObjectFromTarget;
         const RE::NiTransform desiredBodyFromLiveProxy = proxyOk ?
-            multiplyTransforms(liveAuthorityFrame, proxyAuthorityBodyHandSpace) :
+            grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyReadback, proxyAuthorityBodyHandSpace) :
             desiredBodyFromTarget;
 
         const float proxyTargetPositionErrorGameUnits =
