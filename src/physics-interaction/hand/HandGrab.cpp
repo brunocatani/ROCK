@@ -129,6 +129,57 @@ namespace rock
             return RE::NiPoint3{ value.x * scalar, value.y * scalar, value.z * scalar };
         }
 
+        RE::NiPoint3 projectOntoPlane(const RE::NiPoint3& value, const RE::NiPoint3& normal)
+        {
+            const RE::NiPoint3 normalizedNormal = normalizeOrZero(normal);
+            if (lengthSquared(normalizedNormal) <= 0.000001f) {
+                return {};
+            }
+            return value - scalePoint(normalizedNormal, dotProduct(value, normalizedNormal));
+        }
+
+        RE::NiPoint3 stablePerpendicularAxis(const RE::NiPoint3& normal)
+        {
+            const RE::NiPoint3 normalizedNormal = normalizeOrZero(normal);
+            if (lengthSquared(normalizedNormal) <= 0.000001f) {
+                return {};
+            }
+
+            const RE::NiPoint3 reference = std::fabs(normalizedNormal.z) < 0.75f ? RE::NiPoint3{ 0.0f, 0.0f, 1.0f } : RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+            RE::NiPoint3 axis = normalizeOrZero(crossProduct(reference, normalizedNormal));
+            if (lengthSquared(axis) <= 0.000001f) {
+                axis = normalizeOrZero(crossProduct(RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, normalizedNormal));
+            }
+            return axis;
+        }
+
+        RE::NiPoint3 resolveSupportFrameAxisWorld(const RE::NiPoint3& normalWorld,
+            const RE::NiPoint3& modelAxisWorld,
+            const RE::NiPoint3& pinchAxisWorld,
+            const RE::NiPoint3& acrossPalmAxisWorld,
+            const RE::NiPoint3& fingerAxisWorld)
+        {
+            const RE::NiPoint3 normal = normalizeOrZero(normalWorld);
+            if (lengthSquared(normal) <= 0.000001f) {
+                return {};
+            }
+
+            const RE::NiPoint3 candidates[] = {
+                modelAxisWorld,
+                pinchAxisWorld,
+                acrossPalmAxisWorld,
+                fingerAxisWorld,
+            };
+            for (const auto& candidate : candidates) {
+                const RE::NiPoint3 projected = normalizeOrZero(projectOntoPlane(candidate, normal));
+                if (lengthSquared(projected) > 0.000001f) {
+                    return projected;
+                }
+            }
+
+            return stablePerpendicularAxis(normal);
+        }
+
         RE::NiPoint3 gamePointToHavokPoint(const RE::NiPoint3& value)
         {
             const float scale = physics_scale::gameToHavok();
@@ -4053,6 +4104,76 @@ namespace rock
         return count > 0;
     }
 
+    bool Hand::getGrabSupportFrameDebugSnapshot(RE::hknpWorld* world, GrabSupportFrameDebugSnapshot& out) const
+    {
+        out = {};
+
+        if (!world || !isHolding() || !_grabFrame.hasFrozenPivotB || _savedObjectState.bodyId.value == INVALID_BODY_ID) {
+            return false;
+        }
+
+        RE::NiTransform liveBodyWorld{};
+        if (!tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, liveBodyWorld)) {
+            return false;
+        }
+
+        out.pivotWorld = transform_math::localPointToWorld(liveBodyWorld, activeProxyConstraintPivotBLocalGame());
+        const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(liveBodyWorld, _grabFrame.bodyLocal);
+
+        RE::NiPoint3 normalWorld = _grabFrame.hasSupportFrameNormal ?
+            normalizeOrZero(transform_math::localVectorToWorld(liveBodyWorld, _grabFrame.supportFrameNormalBodyLocal)) :
+            RE::NiPoint3{};
+        if (lengthSquared(normalWorld) <= 0.000001f && _grabFrame.hasGripPoint) {
+            normalWorld = gripEvidenceNormalWorld(_grabFrame, currentNodeWorld);
+        }
+        if (lengthSquared(normalWorld) <= 0.000001f) {
+            return false;
+        }
+
+        RE::NiPoint3 axisWorld = _grabFrame.hasSupportFrameAxis ?
+            normalizeOrZero(transform_math::localVectorToWorld(liveBodyWorld, _grabFrame.supportFrameAxisBodyLocal)) :
+            RE::NiPoint3{};
+        if (lengthSquared(axisWorld) <= 0.000001f) {
+            axisWorld = stablePerpendicularAxis(normalWorld);
+        }
+
+        RE::NiPoint3 binormalWorld = _grabFrame.hasSupportFrameBinormal ?
+            normalizeOrZero(transform_math::localVectorToWorld(liveBodyWorld, _grabFrame.supportFrameBinormalBodyLocal)) :
+            RE::NiPoint3{};
+        if (lengthSquared(binormalWorld) <= 0.000001f) {
+            binormalWorld = normalizeOrZero(crossProduct(normalWorld, axisWorld));
+        }
+
+        const float supportHalfSpan = std::isfinite(_grabFrame.gripSupportSpanGameUnits) && _grabFrame.gripSupportSpanGameUnits > 0.0f ?
+            _grabFrame.gripSupportSpanGameUnits * 0.5f :
+            0.0f;
+        const float axisLength = std::clamp((std::max)(supportHalfSpan, 10.0f), 6.0f, 24.0f);
+        out.axisLengthGameUnits = axisLength;
+        out.normalEndWorld = out.pivotWorld + normalWorld * axisLength;
+        out.supportAxisEndWorld = out.pivotWorld + axisWorld * axisLength;
+        out.binormalEndWorld = out.pivotWorld + binormalWorld * axisLength;
+        out.hasNormal = true;
+        out.hasSupportAxis = lengthSquared(axisWorld) > 0.000001f;
+        out.hasBinormal = lengthSquared(binormalWorld) > 0.000001f;
+        out.pivotAuthoritySource = _grabFrame.pivotAuthoritySource ? _grabFrame.pivotAuthoritySource : "none";
+        out.activeGrabPointMode = _grabFrame.activeGrabPointMode ? _grabFrame.activeGrabPointMode : "none";
+        out.supportKind = grab_support_model_math::gripSupportKindName(_grabFrame.gripSupportKind);
+        out.supportReason = _grabFrame.gripSupportReason ? _grabFrame.gripSupportReason : "none";
+        out.authoredSupportPivot = _grabFrame.gripSupportAuthoredPivot;
+        out.positionOnlyPivot = _grabFrame.pivotAuthorityPositionOnly;
+        out.normalTrusted = _grabFrame.pivotAuthorityNormalTrusted;
+
+        if (_grabFrame.gripEvidenceTriangleIndex < _grabFrame.localMeshTriangles.size()) {
+            const auto& triangle = _grabFrame.localMeshTriangles[_grabFrame.gripEvidenceTriangleIndex];
+            out.pivotTriangleWorld[0] = transform_math::localPointToWorld(currentNodeWorld, triangle.v0);
+            out.pivotTriangleWorld[1] = transform_math::localPointToWorld(currentNodeWorld, triangle.v1);
+            out.pivotTriangleWorld[2] = transform_math::localPointToWorld(currentNodeWorld, triangle.v2);
+            out.hasPivotTriangle = true;
+        }
+
+        return out.hasNormal || out.hasSupportAxis || out.hasBinormal || out.hasPivotTriangle;
+    }
+
     bool Hand::getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabForceTorqueDebugSnapshot& out) const
     {
         /*
@@ -7507,6 +7628,17 @@ namespace rock
 
                     selectedGripPointLocal = transform_math::worldPointToLocal(objectWorldTransform, grabGripPoint);
                     selectedPivotBBodyLocalGame = transform_math::worldPointToLocal(grabBodyWorldAtGrab, grabGripPoint);
+                    RE::NiPoint3 supportFrameNormalWorld = normalizeOrZero(
+                        lengthSquared(gripSupportRuntime.model.supportNormal) > 0.000001f ? gripSupportRuntime.model.supportNormal : gripNormalWorld);
+                    if (lengthSquared(supportFrameNormalWorld) <= 0.000001f) {
+                        supportFrameNormalWorld = normalizeOrZero(gripEvidenceNormalWorld);
+                    }
+                    const RE::NiPoint3 supportFrameAxisWorld = resolveSupportFrameAxisWorld(supportFrameNormalWorld,
+                        gripSupportRuntime.model.supportAxis,
+                        usingPinchPocket ? pinchPocketCandidate.pinchAxisWorld : RE::NiPoint3{},
+                        pocket.valid ? pocket.crossPalmWorld : RE::NiPoint3{},
+                        pocket.valid ? pocket.fingerForwardWorld : RE::NiPoint3{});
+                    const RE::NiPoint3 supportFrameBinormalWorld = normalizeOrZero(crossProduct(supportFrameNormalWorld, supportFrameAxisWorld));
                     _grabFrame.gripEvidenceLocal = transform_math::worldPointToLocal(objectWorldTransform, gripEvidencePointWorld);
                     _grabFrame.gripNormalLocal = transform_math::worldVectorToLocal(objectWorldTransform, gripNormalWorld);
                     storeGripSourceEvidence(_grabFrame,
@@ -7537,6 +7669,12 @@ namespace rock
                     _grabFrame.pivotAuthorityNormalTrusted = pivotAuthorityNormalTrusted;
                     _grabFrame.pivotAuthorityPositionConfidence = pivotAuthorityPositionConfidence;
                     _grabFrame.hasGripSupportModel = gripSupportRuntime.valid;
+                    _grabFrame.supportFrameNormalBodyLocal = transform_math::worldVectorToLocal(grabBodyWorldAtGrab, supportFrameNormalWorld);
+                    _grabFrame.supportFrameAxisBodyLocal = transform_math::worldVectorToLocal(grabBodyWorldAtGrab, supportFrameAxisWorld);
+                    _grabFrame.supportFrameBinormalBodyLocal = transform_math::worldVectorToLocal(grabBodyWorldAtGrab, supportFrameBinormalWorld);
+                    _grabFrame.hasSupportFrameNormal = lengthSquared(supportFrameNormalWorld) > 0.000001f;
+                    _grabFrame.hasSupportFrameAxis = lengthSquared(supportFrameAxisWorld) > 0.000001f;
+                    _grabFrame.hasSupportFrameBinormal = lengthSquared(supportFrameBinormalWorld) > 0.000001f;
                     _grabFrame.gripSupportAuthoredPivot = gripSupportRuntime.model.canAuthorPivot;
                     _grabFrame.gripSupportKind = gripSupportRuntime.model.kind;
                     _grabFrame.gripSupportReason = gripSupportRuntime.model.reason;

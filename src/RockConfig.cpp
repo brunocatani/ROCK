@@ -185,6 +185,7 @@ namespace rock
         rockDebugDrawGrabForceTorqueText = false;
         rockDebugDrawGrabPivotSourceCollider = false;
         rockDebugDrawGrabPivotSourceEvidence = false;
+        rockDebugDrawGrabSupportFrame = false;
         rockDebugDrawGrabPockets = false;
         rockDebugShowGrabFingerProbes = false;
         rockDebugShowPalmVectors = false;
@@ -805,6 +806,7 @@ namespace rock
             ini.GetBoolValue(SECTION, "bDebugDrawGrabPivotSourceCollider", rockDebugDrawGrabPivotSourceCollider);
         rockDebugDrawGrabPivotSourceEvidence =
             ini.GetBoolValue(SECTION, "bDebugDrawGrabPivotSourceEvidence", rockDebugDrawGrabPivotSourceEvidence);
+        rockDebugDrawGrabSupportFrame = ini.GetBoolValue(SECTION, "bDebugDrawGrabSupportFrame", rockDebugDrawGrabSupportFrame);
         rockDebugDrawGrabPockets = ini.GetBoolValue(SECTION, "bDebugDrawGrabPockets", rockDebugDrawGrabPockets);
         rockDebugShowGrabFingerProbes = ini.GetBoolValue(SECTION, "bDebugShowGrabFingerProbes", rockDebugShowGrabFingerProbes);
         rockDebugShowPalmVectors = ini.GetBoolValue(SECTION, "bDebugShowPalmVectors", rockDebugShowPalmVectors);

@@ -77,6 +77,27 @@ namespace rock
         std::uint32_t sampleCount = 0;
     };
 
+    struct GrabSupportFrameDebugSnapshot
+    {
+        std::array<RE::NiPoint3, 3> pivotTriangleWorld{};
+        RE::NiPoint3 pivotWorld{};
+        RE::NiPoint3 normalEndWorld{};
+        RE::NiPoint3 supportAxisEndWorld{};
+        RE::NiPoint3 binormalEndWorld{};
+        float axisLengthGameUnits = 0.0f;
+        const char* pivotAuthoritySource = "none";
+        const char* activeGrabPointMode = "none";
+        const char* supportKind = "none";
+        const char* supportReason = "none";
+        bool hasNormal = false;
+        bool hasSupportAxis = false;
+        bool hasBinormal = false;
+        bool hasPivotTriangle = false;
+        bool authoredSupportPivot = false;
+        bool positionOnlyPivot = false;
+        bool normalTrusted = false;
+    };
+
     struct GrabForceTorqueDebugSnapshot
     {
         std::array<RE::NiPoint3, kMaxGrabContactPatchSamples> contactSamplePointsWorld{};
@@ -280,6 +301,7 @@ namespace rock
         bool getGrabPocketNormalDebugSnapshot(RE::hknpWorld* world, GrabPocketNormalDebugSnapshot& out) const;
         bool getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const;
         bool getGrabContactPatchDebugSnapshot(RE::hknpWorld* world, GrabContactPatchDebugSnapshot& out) const;
+        bool getGrabSupportFrameDebugSnapshot(RE::hknpWorld* world, GrabSupportFrameDebugSnapshot& out) const;
         bool getGrabForceTorqueDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabForceTorqueDebugSnapshot& out) const;
         bool getGrabTransformTelemetrySnapshot(RE::hknpWorld* world,
             const RE::NiTransform& rawHandWorld,

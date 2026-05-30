@@ -22,6 +22,7 @@
         const bool drawGrabForceTorqueText = drawGrabForceTorque && g_rockConfig.rockDebugDrawGrabForceTorqueText;
         const bool drawGrabPivotSourceCollider = drawGrabForceTorque && g_rockConfig.rockDebugDrawGrabPivotSourceCollider;
         const bool drawGrabPivotSourceEvidence = drawGrabForceTorque && g_rockConfig.rockDebugDrawGrabPivotSourceEvidence;
+        const bool drawGrabSupportFrame = g_rockConfig.rockDebugDrawGrabSupportFrame;
         const bool drawHandBoneContacts = g_rockConfig.rockDebugDrawHandBoneContacts;
         const bool drawSoftContacts = g_rockConfig.rockDebugDrawSoftContacts;
         const bool drawGrabAuthorityProxy = g_rockConfig.rockDebugDrawGrabAuthorityProxy;
@@ -44,7 +45,7 @@
         if (!drawRockColliderBodies && !g_rockConfig.rockDebugShowTargetColliders && !g_rockConfig.rockDebugShowHandAxes && !drawGrabPivots && !drawFingerProbes &&
             !drawPalmVectors && !drawGrabPockets && !drawRootFlattenedFingerSkeleton && !drawSkeletonBones && !drawGrabPocketNormal && !drawGrabContactPatch && !drawHandBoneContacts &&
             !drawSoftContacts && !drawGrabAuthorityProxy && !drawGrabForceTorque && !drawGrabTransformTelemetry && !drawPerformanceProfilerOverlay && !drawWeaponAuthorityDebug &&
-            !drawWorldOriginDiagnostics && !drawCustomCalibrationOffset) {
+            !drawGrabSupportFrame && !drawWorldOriginDiagnostics && !drawCustomCalibrationOffset) {
             debug::ClearFrame();
             return;
         }
@@ -60,7 +61,7 @@
         frame.drawMarkers =
             drawGrabPivots || drawFingerProbes || drawPalmVectors || drawGrabPockets || drawRootFlattenedFingerSkeleton || drawGrabPocketNormal || drawGrabContactPatch ||
             drawGrabForceTorque || drawHandBoneContacts || drawSoftContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes || drawWeaponAuthorityDebug ||
-            drawWorldOriginDiagnostics;
+            drawGrabSupportFrame || drawWorldOriginDiagnostics;
         frame.drawSkeleton = drawSkeletonBones;
         frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawPerformanceProfilerOverlay;
         RE::bhkWorld* originDiagnosticBhk = drawWorldOriginDiagnostics ? context.bhkWorld : nullptr;
@@ -567,6 +568,50 @@
 
             addGrabContactPatchDebug(_rightHand);
             addGrabContactPatchDebug(_leftHand);
+        }
+
+        if (drawGrabSupportFrame) {
+            auto addGrabSupportFrameDebug = [&](const Hand& hand) {
+                if ((hand.isLeft() && leftDisabled) || (!hand.isLeft() && rightDisabled)) {
+                    return;
+                }
+
+                GrabSupportFrameDebugSnapshot snapshot{};
+                if (!hand.getGrabSupportFrameDebugSnapshot(hknp, snapshot)) {
+                    return;
+                }
+
+                const bool isLeft = hand.isLeft();
+                const auto pivotRole = isLeft ? debug::MarkerOverlayRole::LeftGrabSupportFramePivot : debug::MarkerOverlayRole::RightGrabSupportFramePivot;
+                const auto normalRole = isLeft ? debug::MarkerOverlayRole::LeftGrabSupportFrameNormal : debug::MarkerOverlayRole::RightGrabSupportFrameNormal;
+                const auto axisRole = isLeft ? debug::MarkerOverlayRole::LeftGrabSupportFrameAxis : debug::MarkerOverlayRole::RightGrabSupportFrameAxis;
+                const auto binormalRole = isLeft ? debug::MarkerOverlayRole::LeftGrabSupportFrameBinormal : debug::MarkerOverlayRole::RightGrabSupportFrameBinormal;
+                const auto triangleRole = isLeft ? debug::MarkerOverlayRole::LeftGrabPivotSourceTriangle : debug::MarkerOverlayRole::RightGrabPivotSourceTriangle;
+
+                if (snapshot.hasPivotTriangle) {
+                    addMarkerLine(triangleRole, snapshot.pivotTriangleWorld[0], snapshot.pivotTriangleWorld[1]);
+                    addMarkerLine(triangleRole, snapshot.pivotTriangleWorld[1], snapshot.pivotTriangleWorld[2]);
+                    addMarkerLine(triangleRole, snapshot.pivotTriangleWorld[2], snapshot.pivotTriangleWorld[0]);
+                }
+
+                addMarkerPoint(pivotRole, snapshot.pivotWorld, 3.4f);
+                if (snapshot.hasNormal) {
+                    addMarkerRay(normalRole, snapshot.pivotWorld, snapshot.normalEndWorld, 1.8f);
+                }
+                if (snapshot.hasSupportAxis) {
+                    const RE::NiPoint3 axisVector = snapshot.supportAxisEndWorld - snapshot.pivotWorld;
+                    addMarkerLine(axisRole, snapshot.pivotWorld - axisVector, snapshot.supportAxisEndWorld);
+                    addMarkerRay(axisRole, snapshot.pivotWorld, snapshot.supportAxisEndWorld, 1.4f);
+                }
+                if (snapshot.hasBinormal) {
+                    const RE::NiPoint3 binormalVector = snapshot.binormalEndWorld - snapshot.pivotWorld;
+                    addMarkerLine(binormalRole, snapshot.pivotWorld - binormalVector, snapshot.binormalEndWorld);
+                    addMarkerRay(binormalRole, snapshot.pivotWorld, snapshot.binormalEndWorld, 1.2f);
+                }
+            };
+
+            addGrabSupportFrameDebug(_rightHand);
+            addGrabSupportFrameDebug(_leftHand);
         }
 
         if (drawGrabForceTorque) {

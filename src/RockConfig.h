@@ -144,6 +144,7 @@ namespace rock
         bool rockDebugDrawGrabForceTorqueText = false;
         bool rockDebugDrawGrabPivotSourceCollider = false;
         bool rockDebugDrawGrabPivotSourceEvidence = false;
+        bool rockDebugDrawGrabSupportFrame = false;
         bool rockDebugDrawGrabPockets = false;
         bool rockDebugShowGrabFingerProbes = false;
         bool rockDebugShowPalmVectors = false;

@@ -559,6 +559,9 @@ namespace rock
         RE::NiPoint3 gripPointBodyLocalGame{};
         RE::NiPoint3 pivotBBodyLocalGame{};
         RE::NiPoint3 pivotBConstraintLocalGame{};
+        RE::NiPoint3 supportFrameNormalBodyLocal{};
+        RE::NiPoint3 supportFrameAxisBodyLocal{};
+        RE::NiPoint3 supportFrameBinormalBodyLocal{};
         std::array<grab_contact_patch_math::GrabContactPatchSample<RE::NiPoint3>, kMaxGrabContactPatchSamples> contactPatchSamples{};
         std::uint32_t gripEvidenceTriangleIndex = 0xFFFF'FFFF;
         std::uint32_t gripEvidenceShapeKey = 0xFFFF'FFFF;
@@ -618,6 +621,9 @@ namespace rock
         bool hasFingerEvidencePoint = false;
         bool activeGrabPointUsesMultiFingerEvidence = false;
         bool hasGripSupportModel = false;
+        bool hasSupportFrameNormal = false;
+        bool hasSupportFrameAxis = false;
+        bool hasSupportFrameBinormal = false;
         bool gripSupportAuthoredPivot = false;
         bool pivotAuthorityPositionOnly = false;
         bool pivotAuthorityNormalTrusted = false;
@@ -706,6 +712,9 @@ namespace rock
             gripPointBodyLocalGame = {};
             pivotBBodyLocalGame = {};
             pivotBConstraintLocalGame = {};
+            supportFrameNormalBodyLocal = {};
+            supportFrameAxisBodyLocal = {};
+            supportFrameBinormalBodyLocal = {};
             contactPatchSamples = {};
             gripEvidenceTriangleIndex = 0xFFFF'FFFF;
             gripEvidenceShapeKey = 0xFFFF'FFFF;
@@ -759,6 +768,9 @@ namespace rock
             hasFingerEvidencePoint = false;
             activeGrabPointUsesMultiFingerEvidence = false;
             hasGripSupportModel = false;
+            hasSupportFrameNormal = false;
+            hasSupportFrameAxis = false;
+            hasSupportFrameBinormal = false;
             gripSupportAuthoredPivot = false;
             pivotAuthorityPositionOnly = false;
             pivotAuthorityNormalTrusted = false;
