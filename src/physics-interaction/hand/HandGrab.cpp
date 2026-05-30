@@ -4237,7 +4237,7 @@ namespace rock
                     return grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, bodyInProxy);
                 };
 
-                out.motorAtomTargetBodyWorld = reconstructTargetBodyWorld(matrixFromHkColumns(targetBRca));
+                out.motorAtomTargetBodyWorld = reconstructTargetBodyWorld(matrixFromHkRows(targetBRca));
                 out.motorColumnTargetBodyWorld = reconstructTargetBodyWorld(matrixFromHkColumns(targetBRca));
                 out.motorAtomTargetPivotWorld =
                     transform_math::localPointToWorld(out.motorAtomTargetBodyWorld, atomTransformBLocalGame);
@@ -4649,6 +4649,7 @@ namespace rock
                 grab_frame_math::objectInGeneratedProxyLocalSpace(constraintProxyWorld, desiredBodyWorldForConstraintTelemetry);
             const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
             const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
+            const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
             const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
 
             out.constraintTransformBLocalGame = RE::NiPoint3{
@@ -4660,7 +4661,7 @@ namespace rock
                 grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformHandSpace, _grabFrame.pivotAHandBodyLocalGame);
             out.transformBLocalDelta = grab_transform_telemetry::measurePointPair(out.constraintTransformBLocalGame, out.desiredTransformBLocalGame);
             out.targetColumnsToConstraintInverseDegrees = rotationDeltaDegrees(targetAsHkColumns, desiredBodyToHandSpace.rotate);
-            out.targetToHiggsRelationDegrees = rotationDeltaDegrees(targetAsHkColumns, desiredBodyToHandSpace.rotate);
+            out.targetToHiggsRelationDegrees = rotationDeltaDegrees(targetAsHkRows, desiredBodyToHandSpace.rotate);
             out.targetColumnsToConstraintForwardDegrees = rotationDeltaDegrees(targetAsHkColumns, desiredBodyTransformHandSpace.rotate);
             out.transformBFrozenDeltaDegrees = rotationDeltaDegrees(transformBAsHkColumns, desiredBodyToHandSpace.rotate);
             out.ragdollMotorEnabled = *(constraintData + ATOM_RAGDOLL_MOT + 0x02) != 0;
@@ -4882,7 +4883,7 @@ namespace rock
                 actualConstraintBytes = true;
             }
             const RE::NiTransform traceDesiredBodyToHandSpace = invertTransform(desiredBodyTransformProxySpace);
-            const RE::NiMatrix3 traceTargetColumns = matrixFromHkColumns(traceTargetBRcaData);
+            const RE::NiMatrix3 traceTargetRows = matrixFromHkRows(traceTargetBRcaData);
             const RE::NiMatrix3 traceTransformBColumns = matrixFromHkColumns(traceTransformBRotationData);
             const RE::NiPoint3 traceTransformBTranslationGame{
                 traceTransformBTranslationData[0] * havokToGameScale(),
@@ -4923,7 +4924,7 @@ namespace rock
                 massSummaryAtCreation.motorMass(),
                 effectiveMassAtCreation,
                 sanitizedAuthorityForceScale,
-                rotationDeltaDegrees(traceTargetColumns, traceDesiredBodyToHandSpace.rotate),
+                rotationDeltaDegrees(traceTargetRows, traceDesiredBodyToHandSpace.rotate),
                 rotationDeltaDegrees(traceTransformBColumns, traceDesiredBodyToHandSpace.rotate),
                 reason ? reason : "unknown");
 
@@ -5070,7 +5071,7 @@ namespace rock
         const std::uint64_t targetWriteSequence = ++_grabFrame.traceTargetWriteSequence;
         if (grabTimelineTraceEnabled() && shouldLogGrabTimelineSequence(targetWriteSequence)) {
             const RE::NiTransform desiredBodyToProxySpace = invertTransform(desiredBodyTransformProxySpace);
-            const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
+            const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
             const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
             const RE::NiPoint3 activeTransformBTranslationGame{
                 transformBTranslation[0] * havokToGameScale(),
@@ -5112,7 +5113,7 @@ namespace rock
                 relationPivotB.z,
                 selectedPivotRelationDeltaGameUnits,
                 pivotBRelationDeltaGameUnits,
-                rotationDeltaDegrees(targetAsHkColumns, desiredBodyToProxySpace.rotate),
+                rotationDeltaDegrees(targetAsHkRows, desiredBodyToProxySpace.rotate),
                 rotationDeltaDegrees(transformBAsHkColumns, desiredBodyToProxySpace.rotate));
         }
         return true;
@@ -7989,7 +7990,7 @@ namespace rock
                     gameToHavokScale());
                 const RE::NiTransform traceDesiredBodyToHandSpace =
                     invertTransform(frozenAuthorityFrame.proxyAuthorityBodyHandSpace);
-                const RE::NiMatrix3 traceTargetColumns = matrixFromHkColumns(traceTargetBRca.data());
+                const RE::NiMatrix3 traceTargetRows = matrixFromHkRows(traceTargetBRca.data());
                 const RE::NiMatrix3 traceTransformBColumns = matrixFromHkColumns(traceTransformBRotation.data());
                 const RE::NiPoint3 traceRelationPivotB =
                     grab_constraint_math::computeDynamicTransformBTranslationGame(
@@ -8005,7 +8006,7 @@ namespace rock
                 const float tracePivotBRelationDeltaGameUnits =
                     pointDistanceGameUnits(traceTransformBTranslationGame, traceRelationPivotB);
                 const float traceTargetToHiggsRelationDegrees =
-                    rotationDeltaDegrees(traceTargetColumns, traceDesiredBodyToHandSpace.rotate);
+                    rotationDeltaDegrees(traceTargetRows, traceDesiredBodyToHandSpace.rotate);
                 const float traceTransformBFrozenDeltaDegrees =
                     rotationDeltaDegrees(traceTransformBColumns, traceDesiredBodyToHandSpace.rotate);
                 const float traceRawToProxyRotDegrees =
@@ -8115,7 +8116,7 @@ namespace rock
                     gameToHavokScale());
                 const RE::NiTransform frozenDesiredBodyToHandSpace =
                     invertTransform(frozenAuthorityFrame.proxyAuthorityBodyHandSpace);
-                const RE::NiMatrix3 freezeTargetColumns = matrixFromHkColumns(freezeTargetBRca.data());
+                const RE::NiMatrix3 freezeTargetRows = matrixFromHkRows(freezeTargetBRca.data());
                 const RE::NiMatrix3 freezeTransformBColumns = matrixFromHkColumns(freezeTransformBRotation.data());
                 const RE::NiPoint3 predictedTransformBLocal =
                     grab_constraint_math::computeDynamicTransformBTranslationGame(
@@ -8131,7 +8132,7 @@ namespace rock
                 const float freezePivotBRelationDelta =
                     pointDistanceGameUnits(freezeTransformBTranslationGame, predictedTransformBLocal);
                 const float freezeTargetToHiggsRelationDegrees =
-                    rotationDeltaDegrees(freezeTargetColumns, frozenDesiredBodyToHandSpace.rotate);
+                    rotationDeltaDegrees(freezeTargetRows, frozenDesiredBodyToHandSpace.rotate);
                 const float freezeTransformBFrozenDeltaDegrees =
                     rotationDeltaDegrees(freezeTransformBColumns, frozenDesiredBodyToHandSpace.rotate);
                 const float rawToProxyRotDegrees =
@@ -9977,7 +9978,7 @@ namespace rock
                             float ragdollARcbRowsInverseErrorDegrees = -1.0f;
                             float ragdollARcbColumnsInverseErrorDegrees = -1.0f;
                             const float targetToHiggsRelationDegrees =
-                                rotationDeltaDegrees(targetAsHkColumns, desiredBodyToHandSpace.rotate);
+                                rotationDeltaDegrees(targetAsHkRows, desiredBodyToHandSpace.rotate);
                             const float transformBFrozenDeltaDegrees =
                                 rotationDeltaDegrees(transformBAsHkColumns, desiredBodyToHandSpace.rotate);
                             const RE::NiPoint3 relationPivotB =
@@ -10308,7 +10309,7 @@ namespace rock
                 const RE::NiTransform desiredBodyTransformHandSpace =
                     grab_frame_math::objectInGeneratedProxyLocalSpace(targetProxyWorld, desiredBodyWorldForConstraintMetrics);
                 const RE::NiTransform desiredBodyToHandSpace = invertTransform(desiredBodyTransformHandSpace);
-                const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
+                const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
                 const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
                 const RE::NiPoint3 constraintTransformBLocalGame{
                     transformBTranslation[0] * havokToGameScale(),
@@ -10319,7 +10320,7 @@ namespace rock
                     grab_constraint_math::computeDynamicTransformBTranslationGame(desiredBodyTransformHandSpace, _grabFrame.pivotAHandBodyLocalGame);
                 pivotBRelationDeltaGameUnits =
                     pointDistanceGameUnits(constraintTransformBLocalGame, desiredTransformBLocalGame);
-                targetToHiggsRelationDegrees = rotationDeltaDegrees(targetAsHkColumns, desiredBodyToHandSpace.rotate);
+                targetToHiggsRelationDegrees = rotationDeltaDegrees(targetAsHkRows, desiredBodyToHandSpace.rotate);
                 transformBFrozenDeltaDegrees = rotationDeltaDegrees(transformBAsHkColumns, desiredBodyToHandSpace.rotate);
                 hasConstraintFrameMetrics = true;
             }
