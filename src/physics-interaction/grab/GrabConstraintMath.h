@@ -13,8 +13,9 @@ namespace rock::grab_constraint_math
      * the FO4VR byte-storage convention that was proven locally. Transform A is
      * the frozen proxy-local palm pivot with identity rotation. Transform B's
      * rotation is frozen at creation from the initial proxy-in-BODY relation.
-     * Held updates write only the ragdoll target and transform-B translation,
-     * both derived from the current proxy-in-BODY relation.
+     * Held updates keep transform-B rotation frozen, write transform-B
+     * translation from the current proxy-in-BODY relation, and write target_bRca
+     * as only the angular residual needed on top of frozen transform-B.
      */
 
     /*
@@ -114,6 +115,25 @@ namespace rock::grab_constraint_math
         return transform_math::composeTransforms(transform_math::invertTransform(fromWorld), toWorld).rotate;
     }
 
+    template <class Matrix>
+    inline Matrix computeRagdollTargetBRcaResidualFromFrozenTransformB(const Matrix& frozenProxyInBodyRotation,
+        const Matrix& currentProxyInBodyRotation)
+    {
+        /*
+         * The ragdoll motor target is applied after the set-local transform-B
+         * rotation. In ROCK's verified byte convention the effective target
+         * satisfies:
+         *
+         *     target_bRca * frozenTransformB == currentProxyInBody
+         *
+         * so target_bRca must be the residual currentProxyInBody relative to the
+         * frozen transform-B relation, not the full current proxy-in-BODY frame.
+         */
+        return transform_math::multiplyStoredRotations(
+            currentProxyInBodyRotation,
+            transform_math::transposeRotation(frozenProxyInBodyRotation));
+    }
+
     template <class Transform>
     inline Transform proxyInBodyFromBodyInProxy(const Transform& bodyInProxy)
     {
@@ -138,15 +158,18 @@ namespace rock::grab_constraint_math
         return computeHiggsTransformBTranslationGameFromProxyInBody(proxyInBodyFromBodyInProxy(bodyInProxy), frozenPivotAProxyLocalGame);
     }
 
-    template <class Transform, class Vector>
+    template <class Transform, class Vector, class Matrix>
     inline void writeGrabConstraintHeldTargetAtoms(float* transformBTranslation,
         float* targetBRca,
+        const Matrix& frozenTransformBRotation,
         const Transform& bodyInProxy,
         const Vector& frozenPivotAProxyLocalGame,
         float gameToHavokScale)
     {
         const Transform proxyInBody = proxyInBodyFromBodyInProxy(bodyInProxy);
-        writeHavokRotationRows(targetBRca, proxyInBody.rotate);
+        const Matrix targetBRcaResidual =
+            computeRagdollTargetBRcaResidualFromFrozenTransformB(frozenTransformBRotation, proxyInBody.rotate);
+        writeHavokRotationRows(targetBRca, targetBRcaResidual);
 
         if (transformBTranslation) {
             const Vector transformBTranslationGame =
@@ -167,8 +190,10 @@ namespace rock::grab_constraint_math
         float gameToHavokScale)
     {
         const Transform proxyInBody = proxyInBodyFromBodyInProxy(bodyInProxyAtCreation);
+        const auto targetBRcaResidual =
+            computeRagdollTargetBRcaResidualFromFrozenTransformB(proxyInBody.rotate, proxyInBody.rotate);
         writeHavokRotationColumns(transformBRotation, proxyInBody.rotate);
-        writeHavokRotationRows(targetBRca, proxyInBody.rotate);
+        writeHavokRotationRows(targetBRca, targetBRcaResidual);
 
         if (transformBTranslation) {
             const Vector transformBTranslationGame =

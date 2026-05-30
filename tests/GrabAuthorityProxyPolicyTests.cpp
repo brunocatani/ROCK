@@ -127,6 +127,15 @@ namespace
         ok &= expectNear((std::string(label) + " rotation").c_str(), rotationDeltaDegrees(actual.rotate, expected.rotate), 0.0f, 0.01f);
         return ok;
     }
+
+    RE::NiMatrix3 reconstructSolverEffectiveBodyInProxyRotation(
+        const RE::NiMatrix3& transformBRotation,
+        const RE::NiMatrix3& targetBRcaRotation)
+    {
+        return rock::transform_math::multiplyStoredRotations(
+            rock::transform_math::transposeRotation(transformBRotation),
+            rock::transform_math::transposeRotation(targetBRcaRotation));
+    }
 }
 
 int main()
@@ -183,6 +192,14 @@ int main()
                 rock::grab_constraint_math::proxyInBodyFromBodyInProxy(bodyInProxyAtCreation);
             const RE::NiTransform expectedHeldProxyInBody =
                 rock::grab_constraint_math::proxyInBodyFromBodyInProxy(bodyInProxyHeld);
+            const RE::NiMatrix3 expectedInitialTargetResidual =
+                rock::grab_constraint_math::computeRagdollTargetBRcaResidualFromFrozenTransformB(
+                    expectedInitialProxyInBody.rotate,
+                    expectedInitialProxyInBody.rotate);
+            const RE::NiMatrix3 expectedHeldTargetResidual =
+                rock::grab_constraint_math::computeRagdollTargetBRcaResidualFromFrozenTransformB(
+                    expectedInitialProxyInBody.rotate,
+                    expectedHeldProxyInBody.rotate);
             const RE::NiPoint3 expectedInitialPivotB =
                 rock::grab_constraint_math::computeHiggsTransformBTranslationGame(bodyInProxyAtCreation, frozenPivotAProxyLocal);
             const RE::NiPoint3 expectedHeldPivotB =
@@ -205,8 +222,15 @@ int main()
                 0.0f,
                 0.01f);
             ok &= expectNear(
-                "creation target rows carry initial proxy-in-BODY rotation",
-                rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedInitialProxyInBody.rotate),
+                "creation target rows carry neutral residual",
+                rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedInitialTargetResidual),
+                0.0f,
+                0.01f);
+            ok &= expectNear(
+                "creation solver-effective relation preserves initial body-in-proxy rotation",
+                rotationDeltaDegrees(
+                    reconstructSolverEffectiveBodyInProxyRotation(matrixFromRawColumns(transformBRotation), matrixFromRawRows(targetBRca)),
+                    bodyInProxyAtCreation.rotate),
                 0.0f,
                 0.01f);
             ok &= expectNear("creation transformB relation pivot x", transformBTranslation[0], expectedInitialPivotB.x * gameToHavokScale, 0.001f);
@@ -217,6 +241,7 @@ int main()
             rock::grab_constraint_math::writeGrabConstraintHeldTargetAtoms(
                 transformBTranslation,
                 targetBRca,
+                frozenTransformBRotation,
                 bodyInProxyHeld,
                 frozenPivotAProxyLocal,
                 gameToHavokScale);
@@ -227,10 +252,21 @@ int main()
                 0.0f,
                 0.01f);
             ok &= expectNear(
-                "held target rows carry current proxy-in-BODY rotation",
-                rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedHeldProxyInBody.rotate),
+                "held target rows carry residual relative to frozen transformB",
+                rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedHeldTargetResidual),
                 0.0f,
                 0.01f);
+            ok &= expectNear(
+                "held solver-effective relation preserves current body-in-proxy rotation",
+                rotationDeltaDegrees(
+                    reconstructSolverEffectiveBodyInProxyRotation(frozenTransformBRotation, matrixFromRawRows(targetBRca)),
+                    bodyInProxyHeld.rotate),
+                0.0f,
+                0.01f);
+            if (rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedHeldProxyInBody.rotate) <= 1.0f) {
+                std::printf("held target_bRca unexpectedly duplicates the full current proxy-in-BODY relation\n");
+                ok = false;
+            }
             ok &= expectNear("held transformB relation pivot x", transformBTranslation[0], expectedHeldPivotB.x * gameToHavokScale, 0.001f);
             ok &= expectNear("held transformB relation pivot y", transformBTranslation[1], expectedHeldPivotB.y * gameToHavokScale, 0.001f);
             ok &= expectNear("held transformB relation pivot z", transformBTranslation[2], expectedHeldPivotB.z * gameToHavokScale, 0.001f);

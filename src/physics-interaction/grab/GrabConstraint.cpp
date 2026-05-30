@@ -455,7 +455,7 @@ namespace rock
                 "tB_proxyInBody_col0=({:.3f},{:.3f},{:.3f})",
                 tA_pos[0], tA_pos[1], tA_pos[2], tB_pos[0], tB_pos[1], tB_pos[2], tB_col0[0], tB_col0[1], tB_col0[2]);
 
-            ROCK_LOG_TRACE(GrabConstraint, "target_bRca initial proxy-in-BODY solver rows: row0=[{:.3f},{:.3f},{:.3f}] row1=[{:.3f},{:.3f},{:.3f}]", targetBRca[0], targetBRca[1],
+            ROCK_LOG_TRACE(GrabConstraint, "target_bRca initial residual solver rows: row0=[{:.3f},{:.3f},{:.3f}] row1=[{:.3f},{:.3f},{:.3f}]", targetBRca[0], targetBRca[1],
                 targetBRca[2], targetBRca[4], targetBRca[5], targetBRca[6]);
         }
 

@@ -5187,12 +5187,14 @@ namespace rock
         auto* constraintData = static_cast<char*>(_activeConstraint.constraintData);
         const float gameToHkScale = gameToHavokScale();
 
-        auto* transformBRotation = reinterpret_cast<float*>(constraintData + GRAB_TRANSFORM_B_COL0);
+        const auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
         auto* transformBTranslation = reinterpret_cast<float*>(constraintData + GRAB_TRANSFORM_B_POS);
         auto* targetBRca = reinterpret_cast<float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
+        const RE::NiMatrix3 frozenTransformBRotation = matrixFromHkColumns(transformBRotation);
         grab_constraint_math::writeGrabConstraintHeldTargetAtoms(
             transformBTranslation,
             targetBRca,
+            frozenTransformBRotation,
             desiredBodyTransformProxySpace,
             pivotAProxyLocalGame,
             gameToHkScale);
