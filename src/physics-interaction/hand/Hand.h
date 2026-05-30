@@ -109,11 +109,14 @@ namespace rock
         RE::NiTransform motorConstraintBWorld{};
         RE::NiTransform motorAtomTargetBodyWorld{};
         RE::NiTransform motorColumnTargetBodyWorld{};
+        RE::NiTransform motorRelationInputBodyWorld{};
+        RE::NiTransform motorRelationInverseBodyWorld{};
         RE::NiPoint3 targetPivotWorld{};
         RE::NiPoint3 livePivotWorld{};
         RE::NiPoint3 motorAnchorAWorld{};
         RE::NiPoint3 motorAnchorBWorld{};
         RE::NiPoint3 motorAtomTargetPivotWorld{};
+        RE::NiPoint3 motorRelationPivotWorld{};
         RE::NiPoint3 motorAngularAxisEndWorld{};
         RE::NiPoint3 motorTargetBodyDeltaEndWorld{};
         RE::NiPoint3 activePivotBLiveBodyWorld{};
@@ -139,6 +142,10 @@ namespace rock
         float motorTargetBodyDeltaGameUnits = 0.0f;
         float motorTargetBodyDeltaDegrees = 0.0f;
         float motorColumnTargetBodyDeltaDegrees = 0.0f;
+        float motorRelationInverseBodyDeltaGameUnits = 0.0f;
+        float motorRelationInverseBodyDeltaDegrees = 0.0f;
+        float motorAtomToRelationInverseDeltaDegrees = 0.0f;
+        float motorTransformBRelationLocalDeltaGameUnits = 0.0f;
         float motorTransformBPivotToAnchorAGameUnits = 0.0f;
         float pocketDistanceGameUnits = 0.0f;
         float selectionDistanceGameUnits = 0.0f;
@@ -156,6 +163,7 @@ namespace rock
         bool hasTorqueAxis = false;
         bool hasMotorConstraintFrames = false;
         bool hasMotorColumnTargetBody = false;
+        bool hasMotorRelationFrames = false;
         bool hasMotorAngularCommand = false;
         bool hasMotorTargetBodyDelta = false;
         bool hasPivotTriangle = false;
@@ -773,6 +781,12 @@ namespace rock
             float transformBFrozenDeltaDegrees = -1.0f;
             float pivotBRelationDeltaGameUnits = -1.0f;
             float transformAPivotRoundTripDeltaGameUnits = -1.0f;
+            float relationInverseBodyDeltaGameUnits = -1.0f;
+            float relationInverseBodyDeltaDegrees = -1.0f;
+            float atomRowsBodyDeltaGameUnits = -1.0f;
+            float atomRowsBodyDeltaDegrees = -1.0f;
+            float atomRowsToRelationInverseDegrees = -1.0f;
+            float targetRowsToProxyInBodyDegrees = -1.0f;
             float ragdollBRcaRowsErrorDegrees = -1.0f;
             float ragdollBRcaColumnsErrorDegrees = -1.0f;
             float ragdollARcbRowsInverseErrorDegrees = -1.0f;

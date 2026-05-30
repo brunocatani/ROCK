@@ -76,6 +76,10 @@ namespace rock::debug
         LeftGrabMotorAtomTargetBody,
         RightGrabMotorColumnTargetBody,
         LeftGrabMotorColumnTargetBody,
+        RightGrabMotorRelationInputBody,
+        LeftGrabMotorRelationInputBody,
+        RightGrabMotorRelationInverseBody,
+        LeftGrabMotorRelationInverseBody,
         RightCustomCalibrationOffset,
         LeftCustomCalibrationOffset
     };
