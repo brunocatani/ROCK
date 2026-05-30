@@ -80,6 +80,8 @@ namespace rock::debug
         LeftGrabMotorRelationInputBody,
         RightGrabMotorRelationInverseBody,
         LeftGrabMotorRelationInverseBody,
+        RightGrabMotorSolverEffectiveBody,
+        LeftGrabMotorSolverEffectiveBody,
         RightCustomCalibrationOffset,
         LeftCustomCalibrationOffset
     };
@@ -291,10 +293,10 @@ namespace rock::debug
                 (hand_collider_semantics::kHandColliderBodyCountPerHand * 2) +
                 skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size() + 8>
             entries{};
-        std::array<AxisOverlayEntry, 72> axisEntries{};
+        std::array<AxisOverlayEntry, 96> axisEntries{};
         std::array<MarkerOverlayEntry, 192> markerEntries{};
         std::array<SkeletonOverlayEntry, skeleton_bone_debug_math::skeletonOverlayBudget()> skeletonEntries{};
-        std::array<TextOverlayEntry, 40> textEntries{};
+        std::array<TextOverlayEntry, 96> textEntries{};
         std::uint32_t count{ 0 };
         std::uint32_t axisCount{ 0 };
         std::uint32_t markerCount{ 0 };

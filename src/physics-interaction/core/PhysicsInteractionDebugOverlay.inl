@@ -148,7 +148,7 @@
             addMarker(role, start, end, 0.0f, false, true);
         };
 
-        auto addTextLine = [&](const RE::NiPoint3& worldAnchor, const float color[4], const char* format, auto&&... args) {
+        auto addTextLineSized = [&](const RE::NiPoint3& worldAnchor, float size, const float color[4], const char* format, auto&&... args) {
             if (!frame.drawText || frame.textCount >= frame.textEntries.size()) {
                 return;
             }
@@ -156,7 +156,7 @@
             auto& entry = frame.textEntries[frame.textCount++];
             entry.x = 20.0f;
             entry.y = 0.0f;
-            entry.size = 3.0f;
+            entry.size = size;
             entry.color[0] = color[0];
             entry.color[1] = color[1];
             entry.color[2] = color[2];
@@ -164,6 +164,10 @@
             entry.worldAnchor = worldAnchor;
             entry.worldAnchored = true;
             std::snprintf(entry.text, sizeof(entry.text), format, std::forward<decltype(args)>(args)...);
+        };
+
+        auto addTextLine = [&](const RE::NiPoint3& worldAnchor, const float color[4], const char* format, auto&&... args) {
+            addTextLineSized(worldAnchor, 3.0f, color, format, std::forward<decltype(args)>(args)...);
         };
 
         auto addScreenTextLine = [&](float x, float y, const float color[4], const char* text) {
@@ -627,6 +631,16 @@
                     return;
                 }
 
+                const float labelLiveColor[4]{ 0.80f, 1.0f, 0.95f, 0.90f };
+                const float labelTargetColor[4]{ 1.0f, 0.90f, 0.18f, 0.92f };
+                const float labelRelationColor[4]{ 0.55f, 0.92f, 1.0f, 0.86f };
+                const float labelSolverColor[4]{ 1.0f, 0.36f, 0.18f, 0.96f };
+                const float labelAltColor[4]{ 0.95f, 0.72f, 1.0f, 0.78f };
+                const RE::NiPoint3 labelLift{ 0.0f, 0.0f, 3.2f };
+                auto addTriadLabel = [&](const RE::NiTransform& transform, const float color[4], const char* label) {
+                    addTextLineSized(transform.translate + labelLift, 1.85f, color, "%s", label);
+                };
+
                 if (drawGrabPivotSourceCollider) {
                     addBody(snapshot.pivotSourceBodyId,
                         isLeft ? debug::BodyOverlayRole::LeftGrabPivotSourceCollider : debug::BodyOverlayRole::RightGrabPivotSourceCollider);
@@ -636,32 +650,46 @@
                     isLeft ? debug::AxisOverlayRole::LeftGrabForceTorqueLiveBody : debug::AxisOverlayRole::RightGrabForceTorqueLiveBody,
                     snapshot.livePivotWorld,
                     true);
+                addTriadLabel(snapshot.liveBodyWorld, labelLiveColor, "LIVE BODY");
                 addAxisTransform(snapshot.desiredBodyWorld,
                     isLeft ? debug::AxisOverlayRole::LeftGrabForceTorqueDesiredBody : debug::AxisOverlayRole::RightGrabForceTorqueDesiredBody,
                     snapshot.targetPivotWorld,
                     true);
+                addTriadLabel(snapshot.desiredBodyWorld, labelTargetColor, "DESIRED BODY");
                 if (snapshot.hasMotorConstraintFrames) {
                     addAxisTransform(snapshot.motorConstraintAWorld,
                         isLeft ? debug::AxisOverlayRole::LeftGrabMotorConstraintA : debug::AxisOverlayRole::RightGrabMotorConstraintA,
                         snapshot.liveBodyWorld.translate,
                         true);
+                    addTriadLabel(snapshot.motorConstraintAWorld, labelRelationColor, "A FRAME");
                     addAxisTransform(snapshot.motorConstraintBWorld,
                         isLeft ? debug::AxisOverlayRole::LeftGrabMotorConstraintB : debug::AxisOverlayRole::RightGrabMotorConstraintB,
                         snapshot.liveBodyWorld.translate,
                         true);
+                    addTriadLabel(snapshot.motorConstraintBWorld, labelRelationColor, "B FRAME");
                     addAxisTransform(snapshot.motorAtomTargetBodyWorld,
                         isLeft ? debug::AxisOverlayRole::LeftGrabMotorAtomTargetBody : debug::AxisOverlayRole::RightGrabMotorAtomTargetBody,
                         snapshot.motorAnchorAWorld,
                         true);
+                    addTriadLabel(snapshot.motorAtomTargetBodyWorld, labelTargetColor, "ATOM ROW");
+                    if (snapshot.hasMotorSolverEffectiveBody) {
+                        addAxisTransform(snapshot.motorSolverEffectiveBodyWorld,
+                            isLeft ? debug::AxisOverlayRole::LeftGrabMotorSolverEffectiveBody : debug::AxisOverlayRole::RightGrabMotorSolverEffectiveBody,
+                            snapshot.motorAnchorAWorld,
+                            true);
+                        addTriadLabel(snapshot.motorSolverEffectiveBodyWorld, labelSolverColor, "SOLVER EFF");
+                    }
                     if (snapshot.hasMotorRelationFrames) {
                         addAxisTransform(snapshot.motorRelationInputBodyWorld,
                             isLeft ? debug::AxisOverlayRole::LeftGrabMotorRelationInputBody : debug::AxisOverlayRole::RightGrabMotorRelationInputBody,
                             snapshot.motorAnchorAWorld,
                             true);
+                        addTriadLabel(snapshot.motorRelationInputBodyWorld, labelRelationColor, "REL INPUT");
                         addAxisTransform(snapshot.motorRelationInverseBodyWorld,
                             isLeft ? debug::AxisOverlayRole::LeftGrabMotorRelationInverseBody : debug::AxisOverlayRole::RightGrabMotorRelationInverseBody,
                             snapshot.motorAnchorAWorld,
                             true);
+                        addTriadLabel(snapshot.motorRelationInverseBodyWorld, labelRelationColor, "REL INV");
                     }
                     if (snapshot.hasMotorColumnTargetBody &&
                         std::fabs(snapshot.motorColumnTargetBodyDeltaDegrees - snapshot.motorTargetBodyDeltaDegrees) > 1.0f) {
@@ -669,6 +697,7 @@
                             isLeft ? debug::AxisOverlayRole::LeftGrabMotorColumnTargetBody : debug::AxisOverlayRole::RightGrabMotorColumnTargetBody,
                             snapshot.motorAnchorAWorld,
                             true);
+                        addTriadLabel(snapshot.motorColumnTargetBodyWorld, labelAltColor, "COL ALT");
                     }
                 }
 
@@ -806,7 +835,7 @@
                     if (snapshot.hasMotorConstraintFrames) {
                         addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -7.0f },
                             detailColor,
-                            "motor atom %.2fgu %.1fdeg Aerr %.2fgu col %.1fdeg",
+                            "atom %.2fgu %.1fdeg Aerr %.2fgu col %.1fdeg",
                             snapshot.motorTargetBodyDeltaGameUnits,
                             snapshot.motorTargetBodyDeltaDegrees,
                             snapshot.motorTransformBPivotToAnchorAGameUnits,
@@ -814,11 +843,19 @@
                         if (snapshot.hasMotorRelationFrames) {
                             addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -10.5f },
                                 detailColor,
-                                "relation inv %.2fgu %.1fdeg atomRel %.1fdeg pivRel %.2fgu",
+                                "relInv %.2fgu %.1fdeg atomRel %.1fdeg pivRel %.2fgu",
                                 snapshot.motorRelationInverseBodyDeltaGameUnits,
                                 snapshot.motorRelationInverseBodyDeltaDegrees,
                                 snapshot.motorAtomToRelationInverseDeltaDegrees,
                                 snapshot.motorTransformBRelationLocalDeltaGameUnits);
+                        }
+                        if (snapshot.hasMotorSolverEffectiveBody) {
+                            addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -14.0f },
+                                detailColor,
+                                "solverEff %.2fgu %.1fdeg effAtom %.1fdeg",
+                                snapshot.motorSolverEffectiveBodyDeltaGameUnits,
+                                snapshot.motorSolverEffectiveBodyDeltaDegrees,
+                                snapshot.motorSolverEffectiveToAtomDeltaDegrees);
                         }
                     }
                 }

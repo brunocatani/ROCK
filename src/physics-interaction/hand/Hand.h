@@ -111,6 +111,7 @@ namespace rock
         RE::NiTransform motorColumnTargetBodyWorld{};
         RE::NiTransform motorRelationInputBodyWorld{};
         RE::NiTransform motorRelationInverseBodyWorld{};
+        RE::NiTransform motorSolverEffectiveBodyWorld{};
         RE::NiPoint3 targetPivotWorld{};
         RE::NiPoint3 livePivotWorld{};
         RE::NiPoint3 motorAnchorAWorld{};
@@ -145,6 +146,9 @@ namespace rock
         float motorRelationInverseBodyDeltaGameUnits = 0.0f;
         float motorRelationInverseBodyDeltaDegrees = 0.0f;
         float motorAtomToRelationInverseDeltaDegrees = 0.0f;
+        float motorSolverEffectiveBodyDeltaGameUnits = 0.0f;
+        float motorSolverEffectiveBodyDeltaDegrees = 0.0f;
+        float motorSolverEffectiveToAtomDeltaDegrees = 0.0f;
         float motorTransformBRelationLocalDeltaGameUnits = 0.0f;
         float motorTransformBPivotToAnchorAGameUnits = 0.0f;
         float pocketDistanceGameUnits = 0.0f;
@@ -164,6 +168,7 @@ namespace rock
         bool hasMotorConstraintFrames = false;
         bool hasMotorColumnTargetBody = false;
         bool hasMotorRelationFrames = false;
+        bool hasMotorSolverEffectiveBody = false;
         bool hasMotorAngularCommand = false;
         bool hasMotorTargetBodyDelta = false;
         bool hasPivotTriangle = false;
@@ -787,6 +792,9 @@ namespace rock
             float atomRowsBodyDeltaDegrees = -1.0f;
             float atomRowsToRelationInverseDegrees = -1.0f;
             float targetRowsToProxyInBodyDegrees = -1.0f;
+            float solverEffectiveBodyDeltaGameUnits = -1.0f;
+            float solverEffectiveBodyDeltaDegrees = -1.0f;
+            float solverEffectiveToAtomDegrees = -1.0f;
             float ragdollBRcaRowsErrorDegrees = -1.0f;
             float ragdollBRcaColumnsErrorDegrees = -1.0f;
             float ragdollARcbRowsInverseErrorDegrees = -1.0f;

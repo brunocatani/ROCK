@@ -1442,6 +1442,9 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::RightGrabMotorRelationInverseBody:
             case AxisOverlayRole::LeftGrabMotorRelationInverseBody:
                 return 13.0f;
+            case AxisOverlayRole::RightGrabMotorSolverEffectiveBody:
+            case AxisOverlayRole::LeftGrabMotorSolverEffectiveBody:
+                return 16.0f;
             case AxisOverlayRole::RightCustomCalibrationOffset:
             case AxisOverlayRole::LeftCustomCalibrationOffset:
                 return kColliderAxisLength;
@@ -1507,6 +1510,9 @@ float4 main(PS_INPUT input) : SV_Target {
             case AxisOverlayRole::RightGrabMotorRelationInverseBody:
             case AxisOverlayRole::LeftGrabMotorRelationInverseBody:
                 return 0.78f;
+            case AxisOverlayRole::RightGrabMotorSolverEffectiveBody:
+            case AxisOverlayRole::LeftGrabMotorSolverEffectiveBody:
+                return 0.98f;
             case AxisOverlayRole::RightCustomCalibrationOffset:
             case AxisOverlayRole::LeftCustomCalibrationOffset:
                 return 0.92f;

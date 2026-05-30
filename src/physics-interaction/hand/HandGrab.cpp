@@ -2289,6 +2289,34 @@ namespace rock
             return grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, bodyInProxy);
         }
 
+        RE::NiTransform reconstructSolverEffectiveBodyWorld(const RE::NiTransform& proxyWorld,
+            const RE::NiMatrix3& transformARotation,
+            const RE::NiMatrix3& transformBRotation,
+            const RE::NiMatrix3& targetBRcaRotation,
+            const RE::NiPoint3& transformBLocalGame,
+            const RE::NiPoint3& anchorAWorld,
+            float bodyScale)
+        {
+            const RE::NiMatrix3 constraintAWorldRotation =
+                transform_math::composeTransforms(proxyWorld, rotationOnlyTransform(transformARotation)).rotate;
+            const RE::NiMatrix3 desiredConstraintBWorldRotation =
+                transform_math::composeTransforms(
+                    rotationOnlyTransform(constraintAWorldRotation),
+                    rotationOnlyTransform(transform_math::transposeRotation(targetBRcaRotation)))
+                    .rotate;
+            const RE::NiMatrix3 desiredBodyRotation =
+                transform_math::composeTransforms(
+                    rotationOnlyTransform(desiredConstraintBWorldRotation),
+                    rotationOnlyTransform(transform_math::transposeRotation(transformBRotation)))
+                    .rotate;
+
+            RE::NiTransform result = makeIdentityTransform();
+            result.rotate = desiredBodyRotation;
+            result.scale = std::isfinite(bodyScale) && bodyScale > 0.0f ? bodyScale : 1.0f;
+            result.translate = anchorAWorld - transform_math::localVectorToWorld(result, transformBLocalGame);
+            return result;
+        }
+
         physics_recursive_wrappers::MotionPreset motionPresetFromMotionType(
             physics_body_classifier::BodyMotionType motionType,
             std::uint16_t fallbackMotionPropertiesId)
@@ -4214,6 +4242,7 @@ namespace rock
 
         if (_activeConstraint.constraintData && _grabAuthorityProxyFrameValid) {
             const auto* constraintData = static_cast<const char*>(_activeConstraint.constraintData);
+            const auto* transformARotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_A_COL0);
             const auto* transformBRotation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_COL0);
             const auto* transformBTranslation = reinterpret_cast<const float*>(constraintData + GRAB_TRANSFORM_B_POS);
             const auto* targetBRca = reinterpret_cast<const float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
@@ -4236,8 +4265,13 @@ namespace rock
                 out.motorConstraintAWorld = makeGeneratedProxyAuthorityRelationFrame(proxyWorld);
                 out.motorConstraintAWorld.translate = out.motorAnchorAWorld;
 
+                const RE::NiMatrix3 transformAAsHkColumns = matrixFromHkColumns(transformARotation);
+                const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
+                const RE::NiMatrix3 targetAsHkRows = matrixFromHkRows(targetBRca);
+                const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
+
                 RE::NiTransform transformBLocal = makeIdentityTransform();
-                transformBLocal.rotate = matrixFromHkColumns(transformBRotation);
+                transformBLocal.rotate = transformBAsHkColumns;
                 transformBLocal.translate = atomTransformBLocalGame;
                 out.motorConstraintBWorld = transform_math::composeTransforms(liveBodyWorld, transformBLocal);
 
@@ -4262,14 +4296,22 @@ namespace rock
 
                 out.motorAtomTargetBodyWorld = reconstructBodyWorldFromProxyInBody(
                     proxyWorld,
-                    matrixFromHkRows(targetBRca),
+                    targetAsHkRows,
                     atomTransformBLocalGame,
                     pivotAProxyLocalGame);
                 out.motorColumnTargetBodyWorld = reconstructBodyWorldFromProxyInBody(
                     proxyWorld,
-                    matrixFromHkColumns(targetBRca),
+                    targetAsHkColumns,
                     atomTransformBLocalGame,
                     pivotAProxyLocalGame);
+                out.motorSolverEffectiveBodyWorld = reconstructSolverEffectiveBodyWorld(
+                    proxyWorld,
+                    transformAAsHkColumns,
+                    transformBAsHkColumns,
+                    targetAsHkRows,
+                    atomTransformBLocalGame,
+                    out.motorAnchorAWorld,
+                    desiredBodyWorld.scale);
                 out.motorAtomTargetPivotWorld =
                     transform_math::localPointToWorld(out.motorAtomTargetBodyWorld, atomTransformBLocalGame);
                 out.motorTargetBodyDeltaGameUnits =
@@ -4284,6 +4326,12 @@ namespace rock
                     rotationDeltaDegrees(out.motorRelationInverseBodyWorld.rotate, desiredBodyWorld.rotate);
                 out.motorAtomToRelationInverseDeltaDegrees =
                     rotationDeltaDegrees(out.motorAtomTargetBodyWorld.rotate, out.motorRelationInverseBodyWorld.rotate);
+                out.motorSolverEffectiveBodyDeltaGameUnits =
+                    translationDeltaGameUnits(out.motorSolverEffectiveBodyWorld, desiredBodyWorld);
+                out.motorSolverEffectiveBodyDeltaDegrees =
+                    rotationDeltaDegrees(out.motorSolverEffectiveBodyWorld.rotate, desiredBodyWorld.rotate);
+                out.motorSolverEffectiveToAtomDeltaDegrees =
+                    rotationDeltaDegrees(out.motorSolverEffectiveBodyWorld.rotate, out.motorAtomTargetBodyWorld.rotate);
                 out.motorTransformBRelationLocalDeltaGameUnits =
                     pointDistanceGameUnits(atomTransformBLocalGame, relationTransformBLocalGame);
                 out.motorTransformBPivotToAnchorAGameUnits =
@@ -4292,6 +4340,7 @@ namespace rock
                 out.hasMotorConstraintFrames = true;
                 out.hasMotorColumnTargetBody = true;
                 out.hasMotorRelationFrames = true;
+                out.hasMotorSolverEffectiveBody = true;
                 out.hasMotorTargetBodyDelta =
                     out.motorTargetBodyDeltaGameUnits > 0.01f || out.motorTargetBodyDeltaDegrees > 0.01f;
 
@@ -10124,6 +10173,14 @@ namespace rock
                                 targetAsHkRows,
                                 activeTransformBTranslationGame,
                                 _grabFrame.pivotAHandBodyLocalGame);
+                            const RE::NiTransform solverEffectiveBodyWorld = reconstructSolverEffectiveBodyWorld(
+                                pending.proxyWorld,
+                                transformAAsHkColumns,
+                                transformBAsHkColumns,
+                                targetAsHkRows,
+                                activeTransformBTranslationGame,
+                                generatedProxyLocalPointToWorld(pending.proxyWorld, _grabFrame.pivotAHandBodyLocalGame),
+                                desiredBodyWorld.scale);
                             const float relationInverseBodyDeltaGameUnits =
                                 translationDeltaGameUnits(relationInverseBodyWorld, desiredBodyWorld);
                             const float relationInverseBodyDeltaDegrees =
@@ -10136,6 +10193,12 @@ namespace rock
                                 rotationDeltaDegrees(atomRowsBodyWorld.rotate, relationInverseBodyWorld.rotate);
                             const float targetRowsToProxyInBodyDegrees =
                                 rotationDeltaDegrees(targetAsHkRows, proxyInBodyBeforeTargetWrite.rotate);
+                            const float solverEffectiveBodyDeltaGameUnits =
+                                translationDeltaGameUnits(solverEffectiveBodyWorld, desiredBodyWorld);
+                            const float solverEffectiveBodyDeltaDegrees =
+                                rotationDeltaDegrees(solverEffectiveBodyWorld.rotate, desiredBodyWorld.rotate);
+                            const float solverEffectiveToAtomDegrees =
+                                rotationDeltaDegrees(solverEffectiveBodyWorld.rotate, atomRowsBodyWorld.rotate);
                             float transformAPivotRoundTripDeltaGameUnits = -1.0f;
                             RE::NiPoint3 activePivotAWorld{};
                             if (resolveActiveGrabAuthorityPivotAWorld(pending.proxyWorld, activePivotAWorld)) {
@@ -10233,6 +10296,9 @@ namespace rock
                                 .atomRowsBodyDeltaDegrees = atomRowsBodyDeltaDegrees,
                                 .atomRowsToRelationInverseDegrees = atomRowsToRelationInverseDegrees,
                                 .targetRowsToProxyInBodyDegrees = targetRowsToProxyInBodyDegrees,
+                                .solverEffectiveBodyDeltaGameUnits = solverEffectiveBodyDeltaGameUnits,
+                                .solverEffectiveBodyDeltaDegrees = solverEffectiveBodyDeltaDegrees,
+                                .solverEffectiveToAtomDegrees = solverEffectiveToAtomDegrees,
                                 .ragdollBRcaRowsErrorDegrees = ragdollBRcaRowsErrorDegrees,
                                 .ragdollBRcaColumnsErrorDegrees = ragdollBRcaColumnsErrorDegrees,
                                 .ragdollARcbRowsInverseErrorDegrees = ragdollARcbRowsInverseErrorDegrees,
@@ -10280,7 +10346,7 @@ namespace rock
                                     _ragdollAngularProbePreSolve.ragdollBRcaColumnsErrorDegrees,
                                     _ragdollAngularProbePreSolve.transformAPivotRoundTripDeltaGameUnits);
                                 ROCK_LOG_INFO(Hand,
-                                    "{} GRAB_TRACE stage=pre_solve_relation trace={} writeSeq={} flushNext={} queued={} relationInvToDesired={:.3f}gu/{:.2f}deg atomRowsToDesired={:.3f}gu/{:.2f}deg atomRowsToRelationInv={:.2f}deg targetRowsToProxyInBody={:.2f}deg tBAtomRelationDelta={:.3f}gu",
+                                    "{} GRAB_TRACE stage=pre_solve_relation trace={} writeSeq={} flushNext={} queued={} relationInvToDesired={:.3f}gu/{:.2f}deg atomRowsToDesired={:.3f}gu/{:.2f}deg atomRowsToRelationInv={:.2f}deg solverEffToDesired={:.3f}gu/{:.2f}deg solverEffToAtom={:.2f}deg targetRowsToProxyInBody={:.2f}deg tBAtomRelationDelta={:.3f}gu",
                                     handName(),
                                     _grabFrame.traceId,
                                     _grabFrame.traceTargetWriteSequence,
@@ -10291,6 +10357,9 @@ namespace rock
                                     _ragdollAngularProbePreSolve.atomRowsBodyDeltaGameUnits,
                                     _ragdollAngularProbePreSolve.atomRowsBodyDeltaDegrees,
                                     _ragdollAngularProbePreSolve.atomRowsToRelationInverseDegrees,
+                                    _ragdollAngularProbePreSolve.solverEffectiveBodyDeltaGameUnits,
+                                    _ragdollAngularProbePreSolve.solverEffectiveBodyDeltaDegrees,
+                                    _ragdollAngularProbePreSolve.solverEffectiveToAtomDegrees,
                                     _ragdollAngularProbePreSolve.targetRowsToProxyInBodyDegrees,
                                     _ragdollAngularProbePreSolve.pivotBRelationDeltaGameUnits);
                             }
@@ -10751,7 +10820,7 @@ namespace rock
 
                 ROCK_LOG_SAMPLE_WARN(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} RAGDOLL FRAME ERROR: seq={}/{} appearsSolve=bRcaRows bRcaRowsErr={:.1f}deg bRcaColsErr={:.1f}deg aRcbRowsInvErr={:.1f}deg aRcbColsInvErr={:.1f}deg intendedBodyErr={:.1f}->{:.1f}deg targetToHiggsRelation={:.1f}deg transformBFrozenDelta={:.1f}deg pivotBRelationDelta={:.3f}gu pivotARoundTrip={:.3f}gu relationInv={:.3f}gu/{:.1f}deg atomRows={:.3f}gu/{:.1f}deg atomRel={:.1f}deg rowsProxyInBody={:.1f}deg linTorque={:.3f}gu2 linTorqueDotReq={:.2f} reqAxisProxy=({:.2f},{:.2f},{:.2f})",
+                    "{} RAGDOLL FRAME ERROR: seq={}/{} appearsSolve=bRcaRows bRcaRowsErr={:.1f}deg bRcaColsErr={:.1f}deg aRcbRowsInvErr={:.1f}deg aRcbColsInvErr={:.1f}deg intendedBodyErr={:.1f}->{:.1f}deg targetToHiggsRelation={:.1f}deg transformBFrozenDelta={:.1f}deg pivotBRelationDelta={:.3f}gu pivotARoundTrip={:.3f}gu relationInv={:.3f}gu/{:.1f}deg atomRows={:.3f}gu/{:.1f}deg atomRel={:.1f}deg solverEff={:.3f}gu/{:.1f}deg effAtom={:.1f}deg rowsProxyInBody={:.1f}deg linTorque={:.3f}gu2 linTorqueDotReq={:.2f} reqAxisProxy=({:.2f},{:.2f},{:.2f})",
                     handName(),
                     flushSequence,
                     queuedSequence,
@@ -10770,6 +10839,9 @@ namespace rock
                     ragdollAngularProbePreSolve.atomRowsBodyDeltaGameUnits,
                     ragdollAngularProbePreSolve.atomRowsBodyDeltaDegrees,
                     ragdollAngularProbePreSolve.atomRowsToRelationInverseDegrees,
+                    ragdollAngularProbePreSolve.solverEffectiveBodyDeltaGameUnits,
+                    ragdollAngularProbePreSolve.solverEffectiveBodyDeltaDegrees,
+                    ragdollAngularProbePreSolve.solverEffectiveToAtomDegrees,
                     ragdollAngularProbePreSolve.targetRowsToProxyInBodyDegrees,
                     ragdollAngularProbePreSolve.linearTorqueWitnessGameUnitsSquared,
                     ragdollAngularProbePreSolve.linearTorqueAxisDotRequired,
