@@ -4798,6 +4798,7 @@ namespace rock
             proxyWorldTransform,
             constraintPivotAWorld,
             pivotBBodyLocalHk,
+            desiredBodyWorldAtCreation,
             desiredBodyTransformProxySpace,
             motorTuning);
         if (!_activeConstraint.isValid()) {
@@ -4817,6 +4818,8 @@ namespace rock
             grab_constraint_math::writeInitialGrabAngularFrame(
                 traceTransformBRotation.data(),
                 traceTargetBRca.data(),
+                proxyWorldTransform,
+                desiredBodyWorldAtCreation,
                 desiredBodyTransformProxySpace);
             const float* traceTransformBRotationData = traceTransformBRotation.data();
             const float* traceTargetBRcaData = traceTargetBRca.data();
@@ -4999,7 +5002,12 @@ namespace rock
         auto* transformBRotation = reinterpret_cast<float*>(constraintData + GRAB_TRANSFORM_B_COL0);
         auto* transformBTranslation = reinterpret_cast<float*>(constraintData + GRAB_TRANSFORM_B_POS);
         auto* targetBRca = reinterpret_cast<float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
-        grab_constraint_math::writeInitialGrabAngularFrame(transformBRotation, targetBRca, desiredBodyTransformProxySpace);
+        grab_constraint_math::writeInitialGrabAngularFrame(
+            transformBRotation,
+            targetBRca,
+            proxyWorldTransform,
+            outDesiredBodyWorld,
+            desiredBodyTransformProxySpace);
         transformBTranslation[0] = outActivePivotBBodyLocalGame.x * gameToHkScale;
         transformBTranslation[1] = outActivePivotBBodyLocalGame.y * gameToHkScale;
         transformBTranslation[2] = outActivePivotBBodyLocalGame.z * gameToHkScale;
@@ -7919,6 +7927,8 @@ namespace rock
                 grab_constraint_math::writeInitialGrabAngularFrame(
                     traceTransformBRotation.data(),
                     traceTargetBRca.data(),
+                    proxyFrameWorldAtGrab,
+                    frozenAuthorityFrame.desiredBodyWorld,
                     frozenAuthorityFrame.proxyAuthorityBodyHandSpace);
                 const RE::NiTransform traceDesiredBodyToHandSpace =
                     invertTransform(frozenAuthorityFrame.proxyAuthorityBodyHandSpace);
@@ -8034,6 +8044,8 @@ namespace rock
                 grab_constraint_math::writeInitialGrabAngularFrame(
                     freezeTransformBRotation.data(),
                     freezeTargetBRca.data(),
+                    proxyFrameWorldAtGrab,
+                    frozenAuthorityFrame.desiredBodyWorld,
                     frozenAuthorityFrame.proxyAuthorityBodyHandSpace);
                 const RE::NiTransform frozenDesiredBodyToHandSpace =
                     invertTransform(frozenAuthorityFrame.proxyAuthorityBodyHandSpace);

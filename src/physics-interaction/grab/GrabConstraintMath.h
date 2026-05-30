@@ -94,42 +94,57 @@ namespace rock::grab_constraint_math
         target[11] = 0.0f;
     }
 
-    inline void writeHavokIdentityRotation(float* target)
+    template <class Transform, class Matrix>
+    inline Transform rotationOnlyTransform(const Matrix& rotation)
     {
-        if (!target) {
-            return;
-        }
+        Transform result = transform_math::makeIdentityTransform<Transform>();
+        result.rotate = rotation;
+        return result;
+    }
 
-        target[0] = 1.0f;
-        target[1] = 0.0f;
-        target[2] = 0.0f;
-        target[3] = 0.0f;
+    template <class Transform, class Matrix>
+    inline Matrix frameToFrameRotation(const Matrix& fromWorldRotation, const Matrix& toWorldRotation)
+    {
+        const Transform fromWorld = rotationOnlyTransform<Transform>(fromWorldRotation);
+        const Transform toWorld = rotationOnlyTransform<Transform>(toWorldRotation);
+        return transform_math::composeTransforms(transform_math::invertTransform(fromWorld), toWorld).rotate;
+    }
 
-        target[4] = 0.0f;
-        target[5] = 1.0f;
-        target[6] = 0.0f;
-        target[7] = 0.0f;
-
-        target[8] = 0.0f;
-        target[9] = 0.0f;
-        target[10] = 1.0f;
-        target[11] = 0.0f;
+    template <class Transform, class Matrix>
+    inline Matrix computeDesiredRagdollTargetBRca(const Transform& bodyAWorld,
+        const Transform& desiredBodyWorld,
+        const Matrix& transformARotation,
+        const Matrix& transformBRotation)
+    {
+        const Matrix constraintAWorldRotation =
+            transform_math::composeTransforms(bodyAWorld, rotationOnlyTransform<Transform>(transformARotation)).rotate;
+        const Matrix constraintBWorldRotation =
+            transform_math::composeTransforms(desiredBodyWorld, rotationOnlyTransform<Transform>(transformBRotation)).rotate;
+        return frameToFrameRotation<Transform>(constraintBWorldRotation, constraintAWorldRotation);
     }
 
     template <class Transform>
-    inline void writeInitialGrabAngularFrame(float* transformBRotation, float* targetBRca, const Transform& desiredBodyTransformHandSpace)
+    inline void writeInitialGrabAngularFrame(float* transformBRotation,
+        float* targetBRca,
+        const Transform& bodyAWorld,
+        const Transform& desiredBodyWorld,
+        const Transform& desiredBodyTransformHandSpace)
     {
         /*
-         * Transform-B defines body B's desired local frame relative to the live
-         * generated proxy. Feeding the same relation into target_bRca gives the
-         * ragdoll atom a second angular goal; near 180-degree face/object poses
-         * can then choose the long rotation branch. Keep transform-B as the
-         * authority relation and make the ragdoll target neutral inside that
-         * already-rotated constraint frame.
+         * Transform-B still defines body B's local frame relative to the
+         * generated proxy, but target_bRca is not that same body-to-proxy
+         * relation. FO4VR's ragdoll motor consumes the target in the effective
+         * constraint A/B frame after transform-A and transform-B are applied.
+         * Feed the residual BRca that makes the desired BODY pose satisfy those
+         * frames; identity is wrong whenever the transform-B storage convention
+         * leaves a nonzero residual.
          */
-        const auto bodyToHandRotation = desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
+        auto bodyToHandRotation = desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
+        const auto transformARotation = transform_math::makeIdentityRotation<decltype(bodyToHandRotation)>();
+        const auto targetBRcaRotation =
+            computeDesiredRagdollTargetBRca(bodyAWorld, desiredBodyWorld, transformARotation, bodyToHandRotation);
         writeHavokRotationColumns(transformBRotation, bodyToHandRotation);
-        writeHavokIdentityRotation(targetBRca);
+        writeHavokRotationRows(targetBRca, targetBRcaRotation);
     }
 
     template <class Transform, class Vector>

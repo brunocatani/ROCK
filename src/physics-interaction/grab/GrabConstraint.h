@@ -235,11 +235,11 @@ namespace rock
 
     ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
         const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
-        const RE::NiTransform& desiredBodyTransformHandSpace, float tau, float damping, float maxForce, float proportionalRecovery, float constantRecovery);
+        const RE::NiTransform& desiredBodyWorld, const RE::NiTransform& desiredBodyTransformHandSpace, float tau, float damping, float maxForce, float proportionalRecovery, float constantRecovery);
 
     ActiveConstraint createGrabConstraint(RE::hknpWorld* world, RE::hknpBodyId handBodyId, RE::hknpBodyId objectBodyId,
         const RE::NiTransform& handBodyWorld, const RE::NiPoint3& palmWorldGame, const float* pivotBBodyLocalHk,
-        const RE::NiTransform& desiredBodyTransformHandSpace, const GrabConstraintMotorTuning& tuning);
+        const RE::NiTransform& desiredBodyWorld, const RE::NiTransform& desiredBodyTransformHandSpace, const GrabConstraintMotorTuning& tuning);
 
     void destroyGrabConstraint(RE::hknpWorld* world, ActiveConstraint& constraint);
     void serviceRetiredGrabConstraintPayloads(std::uint32_t completedPhysicsSteps = 1);

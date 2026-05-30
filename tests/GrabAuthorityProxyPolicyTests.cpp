@@ -171,15 +171,32 @@ int main()
         };
 
         for (const auto& bodyInHandRotation : cases) {
+            RE::NiTransform bodyAWorld = identityTransform();
+            bodyAWorld.translate = RE::NiPoint3{ 5.0f, -3.0f, 2.0f };
+            bodyAWorld.rotate = rotationAroundY(kPi * 0.18f);
+
+            RE::NiTransform desiredBodyWorld = identityTransform();
+            desiredBodyWorld.translate = RE::NiPoint3{ 8.0f, 4.0f, -6.0f };
+            desiredBodyWorld.rotate =
+                composeRotations(bodyAWorld.rotate, composeRotations(bodyInHandRotation, rotationAroundX(kPi * 0.11f)));
+
             desiredBodyTransformHandSpace.rotate = bodyInHandRotation;
             const RE::NiMatrix3 expectedBodyToHand =
                 rock::grab_constraint_math::desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
+            const RE::NiMatrix3 expectedTargetBRca =
+                rock::grab_constraint_math::computeDesiredRagdollTargetBRca(
+                    bodyAWorld,
+                    desiredBodyWorld,
+                    identityTransform().rotate,
+                    expectedBodyToHand);
 
             float transformBRotation[12]{};
             float targetBRca[12]{};
             rock::grab_constraint_math::writeInitialGrabAngularFrame(
                 transformBRotation,
                 targetBRca,
+                bodyAWorld,
+                desiredBodyWorld,
                 desiredBodyTransformHandSpace);
 
             ok &= expectNear(
@@ -188,10 +205,14 @@ int main()
                 0.0f,
                 0.01f);
             ok &= expectNear(
-                "target solver rows stay neutral",
-                rotationDeltaDegrees(matrixFromRawRows(targetBRca), identityTransform().rotate),
+                "target solver rows carry constraint-frame residual",
+                rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedTargetBRca),
                 0.0f,
                 0.01f);
+            if (rotationDeltaDegrees(matrixFromRawRows(targetBRca), identityTransform().rotate) <= 1.0f) {
+                std::printf("target_bRca unexpectedly stayed neutral instead of carrying the constraint-frame residual\n");
+                ok = false;
+            }
             if (rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedBodyToHand) <= 1.0f) {
                 std::printf("target_bRca unexpectedly duplicates the transform-B angular relation\n");
                 ok = false;
