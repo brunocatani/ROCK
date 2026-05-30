@@ -1294,6 +1294,21 @@ namespace rock::grab_support_model_math
     }
 
     template <class Vector>
+    inline Vector normalizeSupportNormalForPalm(const Vector& normal, const Vector& palmNormal)
+    {
+        Vector result = grab_contact_patch_math::normalizeOrZero(normal);
+        const Vector palm = grab_contact_patch_math::normalizeOrZero(palmNormal);
+        if (grab_contact_patch_math::lengthSquared(result) <= 0.0f ||
+            grab_contact_patch_math::lengthSquared(palm) <= 0.0f) {
+            return result;
+        }
+        if (grab_contact_patch_math::dot(result, palm) > 0.0f) {
+            result = grab_contact_patch_math::negate(result);
+        }
+        return result;
+    }
+
+    template <class Vector>
     inline bool axisAlignsWithAnyGripAxis(const Vector& axis,
         const Vector& acrossPalmAxis,
         const Vector& fingerAxis,
@@ -1325,7 +1340,10 @@ namespace rock::grab_support_model_math
     {
         GripSupportModel<Vector> result{};
         result.pivotPoint = input.anchorPoint;
-        result.supportNormal = normalizedOrFallback(input.anchorNormal, input.palmNormal);
+        result.supportNormal = normalizeSupportNormalForPalm(input.anchorNormal, input.palmNormal);
+        if (grab_contact_patch_math::lengthSquared(result.supportNormal) <= 0.0f) {
+            result.supportNormal = grab_contact_patch_math::normalizeOrZero(input.palmNormal);
+        }
         result.supportAxis = grab_contact_patch_math::stablePerpendicular(
             grab_contact_patch_math::lengthSquared(result.supportNormal) > 0.0f ?
                 result.supportNormal :
@@ -1359,7 +1377,12 @@ namespace rock::grab_support_model_math
                 if (!sample.valid || !grab_contact_patch_math::finiteVector(sample.point)) {
                     continue;
                 }
-                accepted.push_back(sample);
+                auto acceptedSample = sample;
+                acceptedSample.normal = normalizeSupportNormalForPalm(sample.normal, input.palmNormal);
+                if (grab_contact_patch_math::lengthSquared(acceptedSample.normal) <= 0.0f) {
+                    acceptedSample.normal = result.supportNormal;
+                }
+                accepted.push_back(acceptedSample);
             }
         }
         result.acceptedSampleCount = accepted.size();

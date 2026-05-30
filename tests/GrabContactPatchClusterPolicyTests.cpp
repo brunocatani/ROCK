@@ -303,6 +303,35 @@ int main()
     {
         using namespace rock::grab_support_model_math;
         const std::array samples{
+            supportSample(Vec3{ -1.2f, 0.0f, 0.0f }, GripSupportRole::AcrossNegative, Vec3{ 0.0f, 0.0f, -1.0f }),
+            supportSample(Vec3{ 1.2f, 0.0f, 0.0f }, GripSupportRole::AcrossPositive, Vec3{ 0.0f, 0.0f, 1.0f }),
+        };
+        const auto model = buildGripSupportModel(GripSupportModelInput<Vec3>{
+            .anchorPoint = Vec3{ 0.0f, 0.0f, 0.0f },
+            .anchorNormal = Vec3{ 0.0f, 0.0f, -1.0f },
+            .palmNormal = Vec3{ 0.0f, 0.0f, 1.0f },
+            .acrossPalmAxis = Vec3{ 1.0f, 0.0f, 0.0f },
+            .fingerAxis = Vec3{ 0.0f, 1.0f, 0.0f },
+            .pinchAxis = Vec3{ 1.0f, 0.0f, 0.0f },
+            .objectLongAxis = Vec3{ 0.0f, 1.0f, 0.0f },
+            .samples = samples.data(),
+            .sampleCount = samples.size(),
+            .longObjectLeverGameUnits = 72.0f,
+            .objectLongAxisSpanGameUnits = 80.0f,
+            .smallObjectReferenceLeverGameUnits = 12.0f,
+            .longObjectReferenceLeverGameUnits = 24.0f,
+            .maxPivotShiftGameUnits = 4.0f,
+            .minOpposedSpanGameUnits = 0.75f,
+            .pinchSeat = true,
+        });
+
+        ok &= expectTrue("inverted same-face winding cannot author support pivot", !model.canAuthorPivot);
+        ok &= expectTrue("inverted same-face winding is not opposed pinch", model.kind != GripSupportKind::OpposedPinch);
+    }
+
+    {
+        using namespace rock::grab_support_model_math;
+        const std::array samples{
             supportSample(Vec3{ -1.0f, -1.0f, 0.0f }, GripSupportRole::ContactPatch),
             supportSample(Vec3{ 1.0f, -1.0f, 0.0f }, GripSupportRole::ContactPatch),
             supportSample(Vec3{ -1.0f, 1.0f, 0.0f }, GripSupportRole::ContactPatch),

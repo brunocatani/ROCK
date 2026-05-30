@@ -1323,15 +1323,13 @@ namespace rock
             }
 
             ++support.meshProbeHitCount;
-            RE::NiPoint3 supportNormal = hit.normal;
-            if (hit.hasTriangle) {
-                const RE::NiPoint3 rawNormal =
-                    normalizeOrZero(crossProduct(hit.triangle.v1 - hit.triangle.v0, hit.triangle.v2 - hit.triangle.v0));
-                if (lengthSquared(rawNormal) > 0.000001f) {
-                    supportNormal = rawNormal;
-                }
-            }
-            appendRuntimeGripSupportSample(support, hit.position, supportNormal, role);
+            /*
+             * findClosestGrabSurfaceHitToPointPositionOnly orients the mesh
+             * normal to the probe direction. Do not replace it with raw
+             * triangle winding here; per-face winding is mesh data, not support
+             * authority, and can manufacture false opposed support on one face.
+             */
+            appendRuntimeGripSupportSample(support, hit.position, hit.normal, role);
         }
 
         const char* gripSupportActivePointMode(grab_support_model_math::GripSupportKind kind)
