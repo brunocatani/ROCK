@@ -726,6 +726,9 @@ namespace rock
             float linearMotorMaxForce = 0.0f;
             float targetRowsToConstraintInverseDegrees = -1.0f;
             float targetColumnsToTransformBDegrees = -1.0f;
+            float targetRowsToDesiredConstraintBRcaDegrees = -1.0f;
+            float targetColumnsToDesiredConstraintBRcaDegrees = -1.0f;
+            float desiredConstraintBRcaToIdentityDegrees = -1.0f;
             float ragdollBRcaRowsErrorDegrees = -1.0f;
             float ragdollBRcaColumnsErrorDegrees = -1.0f;
             float ragdollARcbRowsInverseErrorDegrees = -1.0f;
