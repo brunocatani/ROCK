@@ -126,6 +126,12 @@ namespace rock::debug
             DirectX::XMMATRIX worldMatrix = DirectX::XMMatrixIdentity();
         };
 
+        enum class BodyOverlayFrameSource : std::uint8_t
+        {
+            LiveMotionWhenAvailable,
+            BodyArrayTransform
+        };
+
         struct OverlayRuntimeStats
         {
             std::uint32_t bodyEntries = 0;
@@ -796,7 +802,26 @@ float4 main(PS_INPUT input) : SV_Target {
             return DirectX::XMMatrixMultiply(rotation, translation);
         }
 
-        bool extractBody(RE::hknpWorld* world, RE::hknpBodyId bodyId, BodyRenderInfo& out)
+        BodyOverlayFrameSource targetBodyOverlayFrameSource(BodyOverlayRole role)
+        {
+            /*
+             * Target colliders are grab diagnostics. Draw them from the hknp
+             * BODY array transform, matching body-B authority, instead of the
+             * generic live MOTION/COM frame used by non-target body readback.
+             */
+            return role == BodyOverlayRole::Target ?
+                       BodyOverlayFrameSource::BodyArrayTransform :
+                       BodyOverlayFrameSource::LiveMotionWhenAvailable;
+        }
+
+        BodyOverlayFrameSource targetAxisOverlayFrameSource(AxisOverlayRole role)
+        {
+            return role == AxisOverlayRole::TargetBody ?
+                       BodyOverlayFrameSource::BodyArrayTransform :
+                       BodyOverlayFrameSource::LiveMotionWhenAvailable;
+        }
+
+        bool extractBody(RE::hknpWorld* world, RE::hknpBodyId bodyId, BodyOverlayFrameSource frameSource, BodyRenderInfo& out)
         {
             if (!world || bodyId.value == kInvalidBodyId || bodyId.value > kMaxBodyIndex) {
                 return false;
@@ -829,8 +854,7 @@ float4 main(PS_INPUT input) : SV_Target {
             out.filterInfo = *reinterpret_cast<std::uint32_t*>(bodyAddress + kBodyFilterOffset);
             out.motionPropertiesId = *reinterpret_cast<std::uint16_t*>(bodyAddress + kBodyMotionPropertiesOffset);
 
-            const auto frameSource = body_frame::chooseColliderFrameSource(true, body_frame::hasUsableMotionIndex(motionIndex));
-            if (frameSource == body_frame::BodyFrameSource::BodyTransform) {
+            if (frameSource == BodyOverlayFrameSource::BodyArrayTransform) {
                 const auto* transform = reinterpret_cast<const float*>(bodyAddress);
                 out.worldMatrix = bodyToWorldMatrix(transform);
             } else if (motionIndex > 0 && motionIndex < kMaxMotionIndex) {
@@ -2044,7 +2068,7 @@ float4 main(PS_INPUT input) : SV_Target {
         void collectBodyAxisEntry(debug_overlay_line_batch::LineBatch& batch, RE::hknpWorld* world, const AxisOverlayEntry& entry, OverlayRuntimeStats& stats)
         {
             BodyRenderInfo body{};
-            if (!extractBody(world, entry.bodyId, body)) {
+            if (!extractBody(world, entry.bodyId, targetAxisOverlayFrameSource(entry.role), body)) {
                 ++stats.bodyExtractFailures;
                 return;
             }
@@ -2501,7 +2525,7 @@ float4 main(PS_INPUT input) : SV_Target {
                         }
 
                         BodyRenderInfo body{};
-                        if (!extractBody(frame.world, entry.bodyId, body)) {
+                        if (!extractBody(frame.world, entry.bodyId, targetBodyOverlayFrameSource(entry.role), body)) {
                             ++stats.bodyExtractFailures;
                             continue;
                         }
