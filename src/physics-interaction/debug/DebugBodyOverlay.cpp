@@ -795,8 +795,8 @@ float4 main(PS_INPUT input) : SV_Target {
 
         DirectX::XMMATRIX bodyToWorldMatrix(const float* transform)
         {
-            const DirectX::XMMATRIX rotation = DirectX::XMMatrixSet(transform[0], transform[4], transform[8], 0.0f, transform[1], transform[5], transform[9], 0.0f,
-                transform[2], transform[6], transform[10], 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+            const DirectX::XMMATRIX rotation = DirectX::XMMatrixSet(transform[0], transform[1], transform[2], 0.0f, transform[4], transform[5], transform[6], 0.0f,
+                transform[8], transform[9], transform[10], 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
             const DirectX::XMMATRIX translation =
                 DirectX::XMMatrixTranslation(transform[12] * havokToGameScale(), transform[13] * havokToGameScale(), transform[14] * havokToGameScale());
             return DirectX::XMMatrixMultiply(rotation, translation);
