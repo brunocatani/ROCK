@@ -14,9 +14,9 @@ namespace rock::grab_constraint_math
      * every held update. Transform A comes from the live physics hand, so a
      * frozen transform-B pivot makes the linear and angular goals disagree: the
      * pivot can be visually locked while the held body cannot rotate into the
-     * desired frame. Keeping both target_bRca and transformB.translation
-     * conversions here makes constraint creation and per-frame writes use one
-     * verified convention.
+     * desired frame. Keeping transform-B rotation, transform-B translation,
+     * and the ragdoll target initialization here makes constraint creation and
+     * per-frame writes use one verified convention.
      */
 
     /*
@@ -94,21 +94,42 @@ namespace rock::grab_constraint_math
         target[11] = 0.0f;
     }
 
+    inline void writeHavokIdentityRotation(float* target)
+    {
+        if (!target) {
+            return;
+        }
+
+        target[0] = 1.0f;
+        target[1] = 0.0f;
+        target[2] = 0.0f;
+        target[3] = 0.0f;
+
+        target[4] = 0.0f;
+        target[5] = 1.0f;
+        target[6] = 0.0f;
+        target[7] = 0.0f;
+
+        target[8] = 0.0f;
+        target[9] = 0.0f;
+        target[10] = 1.0f;
+        target[11] = 0.0f;
+    }
+
     template <class Transform>
     inline void writeInitialGrabAngularFrame(float* transformBRotation, float* targetBRca, const Transform& desiredBodyTransformHandSpace)
     {
         /*
-         * Dynamic grab writes a custom FO4VR hknp atom chain directly, and the
-         * two angular byte consumers do not use the same storage view. The
-         * set-local-transforms atom consumes transform-B as hkMatrix column
-         * blocks, while in-game snap telemetry showed the ragdoll motor target
-         * converging to the row/forward interpretation on top grabs. Keep
-         * transform-B in column storage, but write target_bRca so its solver-row
-         * view carries the inverse body-to-hand relation.
+         * Transform-B defines body B's desired local frame relative to the live
+         * generated proxy. Feeding the same relation into target_bRca gives the
+         * ragdoll atom a second angular goal; near 180-degree face/object poses
+         * can then choose the long rotation branch. Keep transform-B as the
+         * authority relation and make the ragdoll target neutral inside that
+         * already-rotated constraint frame.
          */
         const auto bodyToHandRotation = desiredBodyToHandRotation(desiredBodyTransformHandSpace.rotate);
         writeHavokRotationColumns(transformBRotation, bodyToHandRotation);
-        writeHavokRotationRows(targetBRca, bodyToHandRotation);
+        writeHavokIdentityRotation(targetBRca);
     }
 
     template <class Transform, class Vector>
