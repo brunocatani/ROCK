@@ -858,11 +858,21 @@
                                 snapshot.motorSolverEffectiveToAtomDeltaDegrees);
                             addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -17.5f },
                                 detailColor,
-                                "solv targetA %.1f liveA %.1f Aerr %.2fgu %.1fdeg",
+                                "solv targetA %.1f liveA %.1f renderA %.2fgu %.1fdeg",
                                 snapshot.motorSolverEffectiveBodyDeltaDegrees,
                                 snapshot.motorSolverEffectiveLiveABodyDeltaDegrees,
                                 snapshot.motorTargetProxyToLiveProxyDeltaGameUnits,
                                 snapshot.motorTargetProxyToLiveProxyDeltaDegrees);
+                            addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -21.0f },
+                                detailColor,
+                                "physA %.2fgu %.1fdeg relCon %.0f/%.0f raw %.0e %.0e %.0e",
+                                snapshot.motorPhysicsProxyToLiveProxyDeltaGameUnits,
+                                snapshot.motorPhysicsProxyToLiveProxyDeltaDegrees,
+                                snapshot.motorRelationToConstraintATargetDegrees,
+                                snapshot.motorRelationToConstraintALiveDegrees,
+                                snapshot.motorTransformARawMaxDelta,
+                                snapshot.motorTransformBRawMaxDelta,
+                                snapshot.motorTargetBRcaRawMaxDelta);
                         }
                         const auto liveToA = grab_transform_telemetry::formatBasisBestMap(
                             "live>A",
@@ -872,11 +882,11 @@
                             "des>A",
                             grab_transform_telemetry::makeOrientationBasis(snapshot.desiredBodyWorld),
                             grab_transform_telemetry::makeOrientationBasis(snapshot.motorConstraintAWorld));
-                        addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -21.0f },
+                        addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -24.5f },
                             detailColor,
                             "%s",
                             liveToA.c_str());
-                        addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -24.5f },
+                        addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -28.0f },
                             detailColor,
                             "%s",
                             desiredToA.c_str());
@@ -885,7 +895,7 @@
                                 "solv>A",
                                 grab_transform_telemetry::makeOrientationBasis(snapshot.motorSolverEffectiveBodyWorld),
                                 grab_transform_telemetry::makeOrientationBasis(snapshot.motorConstraintAWorld));
-                            addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -28.0f },
+                            addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -31.5f },
                                 detailColor,
                                 "%s",
                                 solverToA.c_str());

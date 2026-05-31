@@ -4370,6 +4370,30 @@ namespace rock
                     rotationDeltaDegrees(out.motorSolverEffectiveBodyWorld.rotate, desiredBodyWorld.rotate);
                 out.motorSolverEffectiveToAtomDeltaDegrees =
                     rotationDeltaDegrees(out.motorSolverEffectiveBodyWorld.rotate, out.motorAtomTargetBodyWorld.rotate);
+                const bool hasMatchingPhysicsProbe =
+                    _ragdollAngularProbePreSolve.valid &&
+                    _ragdollAngularProbePreSolve.objectBodyId.value == _savedObjectState.bodyId.value;
+                if (hasMatchingPhysicsProbe) {
+                    out.motorPhysicsProxyToLiveProxyDeltaGameUnits =
+                        _ragdollAngularProbePreSolve.targetProxyToLiveProxyDeltaGameUnits;
+                    out.motorPhysicsProxyToLiveProxyDeltaDegrees =
+                        _ragdollAngularProbePreSolve.targetProxyToLiveProxyDeltaDegrees;
+                    out.motorRelationToConstraintATargetDegrees =
+                        _ragdollAngularProbePreSolve.targetRelationAToTargetConstraintADegrees;
+                    out.motorRelationToConstraintALiveDegrees =
+                        _ragdollAngularProbePreSolve.liveRelationAToLiveConstraintADegrees;
+                    out.motorTransformARawMaxDelta = _ragdollAngularProbePreSolve.transformARawMaxDelta;
+                    out.motorTransformBRawMaxDelta = _ragdollAngularProbePreSolve.transformBRawMaxDelta;
+                    out.motorTargetBRcaRawMaxDelta = _ragdollAngularProbePreSolve.targetBRcaRawMaxDelta;
+                } else {
+                    out.motorPhysicsProxyToLiveProxyDeltaGameUnits = -1.0f;
+                    out.motorPhysicsProxyToLiveProxyDeltaDegrees = -1.0f;
+                    out.motorRelationToConstraintATargetDegrees = -1.0f;
+                    out.motorRelationToConstraintALiveDegrees = -1.0f;
+                    out.motorTransformARawMaxDelta = -1.0f;
+                    out.motorTransformBRawMaxDelta = -1.0f;
+                    out.motorTargetBRcaRawMaxDelta = -1.0f;
+                }
                 out.motorTransformBRelationLocalDeltaGameUnits =
                     pointDistanceGameUnits(atomTransformBLocalGame, relationTransformBLocalGame);
                 out.motorTransformBPivotToAnchorAGameUnits =

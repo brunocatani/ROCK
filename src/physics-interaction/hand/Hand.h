@@ -151,6 +151,13 @@ namespace rock
         float motorSolverEffectiveToAtomDeltaDegrees = 0.0f;
         float motorSolverEffectiveLiveABodyDeltaDegrees = 0.0f;
         float motorSolverEffectiveTargetALiveADeltaDegrees = 0.0f;
+        float motorPhysicsProxyToLiveProxyDeltaDegrees = 0.0f;
+        float motorPhysicsProxyToLiveProxyDeltaGameUnits = 0.0f;
+        float motorRelationToConstraintATargetDegrees = 0.0f;
+        float motorRelationToConstraintALiveDegrees = 0.0f;
+        float motorTransformARawMaxDelta = 0.0f;
+        float motorTransformBRawMaxDelta = 0.0f;
+        float motorTargetBRcaRawMaxDelta = 0.0f;
         float motorTargetProxyToLiveProxyDeltaDegrees = 0.0f;
         float motorTargetProxyToLiveProxyDeltaGameUnits = 0.0f;
         float motorTransformBRelationLocalDeltaGameUnits = 0.0f;
