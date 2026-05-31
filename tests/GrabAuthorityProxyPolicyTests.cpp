@@ -200,8 +200,8 @@ int main()
                 gameToHavokScale);
 
             ok &= expectNear(
-                "creation transformB columns freeze initial proxy-in-BODY rotation",
-                rotationDeltaDegrees(matrixFromRawColumns(transformBRotation), expectedInitialProxyInBody.rotate),
+                "creation transformB columns stay identity",
+                rotationDeltaDegrees(matrixFromRawColumns(transformBRotation), identityTransform().rotate),
                 0.0f,
                 0.01f);
             ok &= expectNear(

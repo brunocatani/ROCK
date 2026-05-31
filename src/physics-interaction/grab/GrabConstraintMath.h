@@ -11,10 +11,11 @@ namespace rock::grab_constraint_math
     /*
      * ROCK's proxy grab keeps the HIGGS constraint relationship while preserving
      * the FO4VR byte-storage convention that was proven locally. Transform A is
-     * the frozen proxy-local palm pivot with identity rotation. Transform B's
-     * rotation is frozen at creation from the initial proxy-in-BODY relation.
-     * Held updates write only the ragdoll target and transform-B translation,
-     * both derived from the current proxy-in-BODY relation.
+     * the frozen proxy-local palm pivot with identity rotation. Transform B uses
+     * a neutral BODY-local frame at creation so target_bRca alone carries the
+     * proxy-in-BODY relation. Held updates write only the ragdoll target and
+     * transform-B translation, both derived from the current proxy-in-BODY
+     * relation.
      */
 
     /*
@@ -167,7 +168,8 @@ namespace rock::grab_constraint_math
         float gameToHavokScale)
     {
         const Transform proxyInBody = proxyInBodyFromBodyInProxy(bodyInProxyAtCreation);
-        writeHavokRotationColumns(transformBRotation, proxyInBody.rotate);
+        const auto identityRotation = transform_math::makeIdentityRotation<decltype(proxyInBody.rotate)>();
+        writeHavokRotationColumns(transformBRotation, identityRotation);
         writeHavokRotationRows(targetBRca, proxyInBody.rotate);
 
         if (transformBTranslation) {
