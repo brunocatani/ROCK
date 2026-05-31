@@ -164,6 +164,7 @@ namespace rock
         float angularConstantRecovery = 1.0f;
         float angularMaxForce = 2000.0f;
         GrabAngularAuthority angularAuthority = GrabAngularAuthority::HknpRagdollMotorAtom;
+        int ragdollDecompositionMode = 1;
     };
 
     inline constexpr int MOTION_PACKED_INERTIA_OFFSET = 0x20;

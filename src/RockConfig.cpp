@@ -310,6 +310,7 @@ namespace rock
         rockGrabEffectiveMotorMassFloor = kDefaultGrabEffectiveMotorMassFloor;
 
         rockGrabForceFadeInTime = 0.1f;
+        rockGrabRagdollDecompositionMode = 1;
         rockRightGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
         rockLeftGrabAuthorityProxyOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
         rockRightCustomOGAOffsetGameUnits = RE::NiPoint3(0.0f, -2.0f, 0.0f);
@@ -1083,6 +1084,12 @@ namespace rock
             100.0f);
 
         rockGrabForceFadeInTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabForceFadeInTime", rockGrabForceFadeInTime));
+        rockGrabRagdollDecompositionMode =
+            static_cast<int>(ini.GetLongValue(SECTION, "iGrabRagdollDecompositionMode", rockGrabRagdollDecompositionMode));
+        if (rockGrabRagdollDecompositionMode < 0 || rockGrabRagdollDecompositionMode > 1) {
+            ROCK_LOG_WARN(Config, "Invalid iGrabRagdollDecompositionMode={} -- using 1", rockGrabRagdollDecompositionMode);
+            rockGrabRagdollDecompositionMode = 1;
+        }
         rockRightGrabAuthorityProxyOffsetGameUnits.x =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fRightGrabAuthorityProxyOffsetXGameUnits", rockRightGrabAuthorityProxyOffsetGameUnits.x));
         rockRightGrabAuthorityProxyOffsetGameUnits.y =
@@ -1758,11 +1765,12 @@ namespace rock
         resetToDefaults();
         readValuesFromIni(ini);
         ROCK_LOG_INFO(Config,
-            "ROCK config reloaded (rockEnabled={}, logLevel={} {}, sample={}ms)",
+            "ROCK config reloaded (rockEnabled={}, logLevel={} {}, sample={}ms, grabRagdollDecompMode={})",
             rockEnabled,
             rockLogLevel,
             logging_policy::logLevelName(rockLogLevel),
-            rockLogSampleMilliseconds);
+            rockLogSampleMilliseconds,
+            rockGrabRagdollDecompositionMode);
     }
 
     std::filesystem::path RockConfig::getConfigDirectory() const

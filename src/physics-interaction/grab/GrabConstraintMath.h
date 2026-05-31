@@ -11,11 +11,10 @@ namespace rock::grab_constraint_math
     /*
      * ROCK's proxy grab keeps the HIGGS constraint relationship while preserving
      * the FO4VR byte-storage convention that was proven locally. Transform A is
-     * the frozen proxy-local palm pivot with identity rotation. Transform B uses
-     * a neutral BODY-local frame at creation so target_bRca alone carries the
-     * proxy-in-BODY relation. Held updates write only the ragdoll target and
-     * transform-B translation, both derived from the current proxy-in-BODY
-     * relation.
+     * the frozen proxy-local palm pivot with identity rotation. The transform-B
+     * rotation is intentionally mode-selectable while investigating FO4VR's
+     * ragdoll atom composition; held updates rewrite it from the current config
+     * so the active grab can hot-swap decomposition without a rebuild.
      */
 
     /*
@@ -26,6 +25,32 @@ namespace rock::grab_constraint_math
      */
     inline constexpr std::uint32_t kHavokRealMaxBits = 0x7f7fffeeu;
     inline constexpr std::uint32_t kHavokRealHighBits = 0x5f7ffff0u;
+
+    inline constexpr int kGrabRagdollDecompositionModeRelationTransformB = 0;
+    inline constexpr int kGrabRagdollDecompositionModeNeutralTransformB = 1;
+    inline constexpr int kDefaultGrabRagdollDecompositionMode = kGrabRagdollDecompositionModeNeutralTransformB;
+
+    inline int sanitizeGrabRagdollDecompositionMode(int mode) noexcept
+    {
+        switch (mode) {
+        case kGrabRagdollDecompositionModeRelationTransformB:
+        case kGrabRagdollDecompositionModeNeutralTransformB:
+            return mode;
+        default:
+            return kDefaultGrabRagdollDecompositionMode;
+        }
+    }
+
+    inline const char* grabRagdollDecompositionModeName(int mode) noexcept
+    {
+        switch (sanitizeGrabRagdollDecompositionMode(mode)) {
+        case kGrabRagdollDecompositionModeRelationTransformB:
+            return "relationTransformB";
+        case kGrabRagdollDecompositionModeNeutralTransformB:
+        default:
+            return "neutralTransformB";
+        }
+    }
 
     inline void writeSetupStabilizationDefaults(void* setupAtom)
     {
@@ -139,15 +164,32 @@ namespace rock::grab_constraint_math
         return computeHiggsTransformBTranslationGameFromProxyInBody(proxyInBodyFromBodyInProxy(bodyInProxy), frozenPivotAProxyLocalGame);
     }
 
+    template <class Transform>
+    inline void writeGrabConstraintAngularDecomposition(float* transformBRotation,
+        float* targetBRca,
+        const Transform& proxyInBody,
+        int decompositionMode)
+    {
+        const int mode = sanitizeGrabRagdollDecompositionMode(decompositionMode);
+        const auto identityRotation = transform_math::makeIdentityRotation<decltype(proxyInBody.rotate)>();
+        const auto& transformBRelation =
+            mode == kGrabRagdollDecompositionModeRelationTransformB ? proxyInBody.rotate : identityRotation;
+
+        writeHavokRotationColumns(transformBRotation, transformBRelation);
+        writeHavokRotationRows(targetBRca, proxyInBody.rotate);
+    }
+
     template <class Transform, class Vector>
-    inline void writeGrabConstraintHeldTargetAtoms(float* transformBTranslation,
+    inline void writeGrabConstraintHeldTargetAtoms(float* transformBRotation,
+        float* transformBTranslation,
         float* targetBRca,
         const Transform& bodyInProxy,
         const Vector& frozenPivotAProxyLocalGame,
-        float gameToHavokScale)
+        float gameToHavokScale,
+        int decompositionMode)
     {
         const Transform proxyInBody = proxyInBodyFromBodyInProxy(bodyInProxy);
-        writeHavokRotationRows(targetBRca, proxyInBody.rotate);
+        writeGrabConstraintAngularDecomposition(transformBRotation, targetBRca, proxyInBody, decompositionMode);
 
         if (transformBTranslation) {
             const Vector transformBTranslationGame =
@@ -165,12 +207,11 @@ namespace rock::grab_constraint_math
         float* targetBRca,
         const Transform& bodyInProxyAtCreation,
         const Vector& frozenPivotAProxyLocalGame,
-        float gameToHavokScale)
+        float gameToHavokScale,
+        int decompositionMode)
     {
         const Transform proxyInBody = proxyInBodyFromBodyInProxy(bodyInProxyAtCreation);
-        const auto identityRotation = transform_math::makeIdentityRotation<decltype(proxyInBody.rotate)>();
-        writeHavokRotationColumns(transformBRotation, identityRotation);
-        writeHavokRotationRows(targetBRca, proxyInBody.rotate);
+        writeGrabConstraintAngularDecomposition(transformBRotation, targetBRca, proxyInBody, decompositionMode);
 
         if (transformBTranslation) {
             const Vector transformBTranslationGame =
