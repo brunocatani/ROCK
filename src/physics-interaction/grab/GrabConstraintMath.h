@@ -15,8 +15,11 @@ namespace rock::grab_constraint_math
      * the FO4VR byte-storage convention that was proven locally. Transform A is
      * the frozen proxy-local palm pivot with identity rotation. The transform-B
      * rotation is intentionally mode-selectable while investigating FO4VR's
-     * ragdoll atom composition; auto mode resolves once from the frozen
-     * proxy-in-BODY column delta and remains fixed until release.
+     * ragdoll atom composition. Runtime testing showed two stable classes:
+     * low-COL grabs need the relation in both transform-B and target_bRca,
+     * while high-COL grabs need neutral transform-B with target_bRca carrying
+     * the relation. Auto mode resolves that split once from the frozen
+     * proxy-in-BODY column delta and keeps the concrete mode until release.
      */
 
     /*
@@ -33,6 +36,15 @@ namespace rock::grab_constraint_math
     inline constexpr int kGrabRagdollDecompositionModeNeutralTransformB = 1;
     inline constexpr int kDefaultGrabRagdollDecompositionConfigMode = kGrabRagdollDecompositionModeAuto;
     inline constexpr int kDefaultGrabRagdollDecompositionResolvedMode = kGrabRagdollDecompositionModeNeutralTransformB;
+
+    /*
+     * This threshold is an empirical guardrail, not a permanent model of Havok's
+     * ragdoll motor math. The in-game failure is born at capture and is
+     * hand-independent: the same object face swaps between the two working
+     * decompositions around a 90 degree COL split. Keep this capture-time
+     * selector until the missing FO4VR atom composition step is proven and can
+     * replace both decomposition modes with one correct write path.
+     */
     inline constexpr float kGrabRagdollDecompositionAutoThresholdDegrees = 90.0f;
 
     inline int sanitizeGrabRagdollDecompositionConfigMode(int mode) noexcept
@@ -197,6 +209,9 @@ namespace rock::grab_constraint_math
             return sanitizeGrabRagdollDecompositionMode(sanitizedConfigMode);
         }
 
+        // The mode must be chosen from the frozen grab relation, not from live
+        // held-update telemetry. A good grab stays good and a bad grab starts bad,
+        // so per-frame mode changes would just move the solver target while held.
         return columnDeltaDegrees > kGrabRagdollDecompositionAutoThresholdDegrees ?
                    kGrabRagdollDecompositionModeNeutralTransformB :
                    kGrabRagdollDecompositionModeRelationTransformB;
