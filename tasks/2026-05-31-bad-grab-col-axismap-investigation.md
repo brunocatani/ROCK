@@ -18,6 +18,8 @@ Source authority:
 - Checked current branch/status, read current proxy-grab telemetry paths, and confirmed the live probes already separate relation input, atom bytes, and solver-effective body pose.
 - Re-checked FO4VR stock ragdoll constraint layout in Ghidra, then traced current freeze/capture code to see what part of the grab frame is still object-origin-relative.
 - Implemented the first narrow decomposition experiment: creation now keeps `transformBRotation` identity while `target_bRca` continues to carry the row-view proxy-in-BODY relation.
+- Runtime follow-up from hot-swappable modes: `transformB=R,target=R` and `transformB=I,target=R` each fix opposite angular classes. The same face can flip from bad to perfect by swapping only the transform-B mode, and the effect is hand-independent.
+- Added an explicit testing plan for a principled `mode 4`: split the proxy-in-BODY relation evenly so transform-B and target_bRca both receive the same half-angle rotation instead of using one of the two current extremes.
 
 ## Ghidra Findings
 
@@ -48,6 +50,14 @@ Source authority:
   - once as `target_bRca`
   - once again as `transformBRotation`
 - If that is true, grabs whose desired BODY-to-proxy relation is near a cardinal axis permutation will fail in a stable, repeatable way, which matches the screenshots much better than random motor weakness.
+
+## New Mode-Flip Interpretation
+
+- The hot-swappable experiment shows that `transformB=R,target=R` and `transformB=I,target=R` are not random good/bad modes. Each one is accidentally correct for a different orientation class.
+- That means the remaining problem is very likely decomposition, not just target storage:
+  - changing `transformBRotation` without changing `target_bRca` changes the represented solver pose
+  - the fact that opposite angle classes prefer opposite modes implies both current splits are incomplete encodings of one underlying desired constraint relation
+- This points to a missing adaptation between the captured proxy/BODY relation and the actual solver constraint-frame decomposition, especially the BODY-local B frame used by `transformBRotation`.
 
 ## Why The Bad Grab Looks Object-Origin Relative
 

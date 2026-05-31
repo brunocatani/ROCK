@@ -31,6 +31,7 @@ namespace rock::grab_constraint_math
     inline constexpr int kGrabRagdollDecompositionModeAuto = -1;
     inline constexpr int kGrabRagdollDecompositionModeRelationTransformB = 0;
     inline constexpr int kGrabRagdollDecompositionModeNeutralTransformB = 1;
+    inline constexpr int kGrabRagdollDecompositionModeHalfSplitRelation = 4;
     inline constexpr int kDefaultGrabRagdollDecompositionConfigMode = kGrabRagdollDecompositionModeAuto;
     inline constexpr int kDefaultGrabRagdollDecompositionResolvedMode = kGrabRagdollDecompositionModeNeutralTransformB;
     inline constexpr float kGrabRagdollDecompositionAutoThresholdDegrees = 90.0f;
@@ -41,6 +42,7 @@ namespace rock::grab_constraint_math
         case kGrabRagdollDecompositionModeAuto:
         case kGrabRagdollDecompositionModeRelationTransformB:
         case kGrabRagdollDecompositionModeNeutralTransformB:
+        case kGrabRagdollDecompositionModeHalfSplitRelation:
             return mode;
         default:
             return kDefaultGrabRagdollDecompositionConfigMode;
@@ -52,6 +54,7 @@ namespace rock::grab_constraint_math
         switch (mode) {
         case kGrabRagdollDecompositionModeRelationTransformB:
         case kGrabRagdollDecompositionModeNeutralTransformB:
+        case kGrabRagdollDecompositionModeHalfSplitRelation:
             return mode;
         default:
             return kDefaultGrabRagdollDecompositionResolvedMode;
@@ -67,6 +70,8 @@ namespace rock::grab_constraint_math
             return "relationTransformB";
         case kGrabRagdollDecompositionModeNeutralTransformB:
             return "neutralTransformB";
+        case kGrabRagdollDecompositionModeHalfSplitRelation:
+            return "halfSplitRelation";
         default:
             return "invalid";
         }
@@ -208,6 +213,42 @@ namespace rock::grab_constraint_math
         return proxyInBodyRotationFromBodyInProxyRotation(bodyInProxy.rotate);
     }
 
+    template <class Matrix>
+    inline Matrix halfAngleRotation(const Matrix& rotation)
+    {
+        float quaternion[4]{};
+        transform_math::niRowsToHavokQuaternion(rotation, quaternion);
+
+        if (quaternion[3] < 0.0f) {
+            quaternion[0] = -quaternion[0];
+            quaternion[1] = -quaternion[1];
+            quaternion[2] = -quaternion[2];
+            quaternion[3] = -quaternion[3];
+        }
+
+        float halfQuaternion[4]{
+            quaternion[0],
+            quaternion[1],
+            quaternion[2],
+            quaternion[3] + 1.0f,
+        };
+        const float halfLength = std::sqrt(
+            halfQuaternion[0] * halfQuaternion[0] +
+            halfQuaternion[1] * halfQuaternion[1] +
+            halfQuaternion[2] * halfQuaternion[2] +
+            halfQuaternion[3] * halfQuaternion[3]);
+        if (!std::isfinite(halfLength) || halfLength <= 0.000001f) {
+            return transform_math::makeIdentityRotation<Matrix>();
+        }
+
+        const float invHalfLength = 1.0f / halfLength;
+        halfQuaternion[0] *= invHalfLength;
+        halfQuaternion[1] *= invHalfLength;
+        halfQuaternion[2] *= invHalfLength;
+        halfQuaternion[3] *= invHalfLength;
+        return transform_math::havokQuaternionToNiRows<Matrix>(halfQuaternion);
+    }
+
     template <class Transform, class Vector>
     inline Vector computeHiggsTransformBTranslationGameFromProxyInBody(const Transform& proxyInBody, const Vector& frozenPivotAProxyLocalGame)
     {
@@ -228,11 +269,16 @@ namespace rock::grab_constraint_math
     {
         const int mode = sanitizeGrabRagdollDecompositionMode(decompositionMode);
         const auto identityRotation = transform_math::makeIdentityRotation<decltype(proxyInBody.rotate)>();
+        const auto halfRelationRotation = halfAngleRotation(proxyInBody.rotate);
         const auto& transformBRelation =
-            mode == kGrabRagdollDecompositionModeRelationTransformB ? proxyInBody.rotate : identityRotation;
+            mode == kGrabRagdollDecompositionModeRelationTransformB ? proxyInBody.rotate :
+            mode == kGrabRagdollDecompositionModeHalfSplitRelation ? halfRelationRotation :
+                                                                       identityRotation;
+        const auto& targetRelation =
+            mode == kGrabRagdollDecompositionModeHalfSplitRelation ? halfRelationRotation : proxyInBody.rotate;
 
         writeHavokRotationColumns(transformBRotation, transformBRelation);
-        writeHavokRotationRows(targetBRca, proxyInBody.rotate);
+        writeHavokRotationRows(targetBRca, targetRelation);
     }
 
     template <class Transform, class Vector>

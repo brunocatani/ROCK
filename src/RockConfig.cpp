@@ -1086,7 +1086,7 @@ namespace rock
         rockGrabForceFadeInTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabForceFadeInTime", rockGrabForceFadeInTime));
         rockGrabRagdollDecompositionMode =
             static_cast<int>(ini.GetLongValue(SECTION, "iGrabRagdollDecompositionMode", rockGrabRagdollDecompositionMode));
-        if (rockGrabRagdollDecompositionMode < -1 || rockGrabRagdollDecompositionMode > 1) {
+        if (rockGrabRagdollDecompositionMode < -1 || rockGrabRagdollDecompositionMode > 4) {
             ROCK_LOG_WARN(Config, "Invalid iGrabRagdollDecompositionMode={} -- using -1", rockGrabRagdollDecompositionMode);
             rockGrabRagdollDecompositionMode = -1;
         }
