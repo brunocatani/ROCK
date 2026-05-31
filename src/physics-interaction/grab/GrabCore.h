@@ -461,6 +461,7 @@ namespace rock
         RE::NiTransform liveHandWorld{};
         RE::NiTransform handBodyWorld{};
         RE::NiTransform objectNodeWorld{};
+        RE::NiTransform bodyWorld{};
         RE::NiTransform desiredObjectWorld{};
         RE::NiTransform desiredBodyWorld{};
         RE::NiTransform bodyLocal{};
@@ -534,6 +535,7 @@ namespace rock
         RE::NiTransform liveHandWorldAtGrab{};
         RE::NiTransform handBodyWorldAtGrab{};
         RE::NiTransform objectNodeWorldAtGrab{};
+        RE::NiTransform bodyWorldAtGrab{};
         RE::NiTransform desiredObjectWorldAtGrab{};
         RE::NiTransform desiredBodyWorldAtGrab{};
         RE::NiPoint3 pivotAHandBodyLocalGame{};
@@ -638,6 +640,7 @@ namespace rock
             captureTelemetry.liveHandWorld = liveHandWorldAtGrab;
             captureTelemetry.handBodyWorld = handBodyWorldAtGrab;
             captureTelemetry.objectNodeWorld = objectNodeWorldAtGrab;
+            captureTelemetry.bodyWorld = bodyWorldAtGrab;
             captureTelemetry.desiredObjectWorld = desiredObjectWorldAtGrab;
             captureTelemetry.desiredBodyWorld = desiredBodyWorldAtGrab;
             captureTelemetry.bodyLocal = bodyLocal;
@@ -687,6 +690,7 @@ namespace rock
             liveHandWorldAtGrab = RE::NiTransform();
             handBodyWorldAtGrab = RE::NiTransform();
             objectNodeWorldAtGrab = RE::NiTransform();
+            bodyWorldAtGrab = RE::NiTransform();
             desiredObjectWorldAtGrab = RE::NiTransform();
             desiredBodyWorldAtGrab = RE::NiTransform();
             pivotAHandBodyLocalGame = {};
@@ -1189,6 +1193,7 @@ namespace rock::grab_authority_frame_math
         Vector pivotBBodyLocalGame{};
         Vector pivotBConstraintLocalGame{};
         Transform bodyLocal{};
+        Transform bodyWorldAtGrab{};
         Transform rootBodyLocal{};
         Transform ownerBodyLocal{};
         Vector gripPointLocal{};
@@ -1216,6 +1221,7 @@ namespace rock::grab_authority_frame_math
         frozen.gripPointWorldAtGrab = input.gripPointWorld;
         frozen.rootBodyLocal = input.rootBodyLocal;
         frozen.ownerBodyLocal = input.ownerBodyLocal;
+        frozen.bodyWorldAtGrab = input.bodyWorld;
         frozen.visualNormalWorld = input.visualNormalWorld;
         frozen.visualNormalValid = input.visualNormalValid && isFiniteVector(input.visualNormalWorld);
 

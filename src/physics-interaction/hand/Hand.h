@@ -136,6 +136,12 @@ namespace rock
         float bodyVisualMeshLockErrorGameUnits = 0.0f;
         float activePivotBVisualLockErrorGameUnits = 0.0f;
         float captureGripLocalDeltaGameUnits = 0.0f;
+        float captureFreezeBodyShiftGameUnits = 0.0f;
+        float captureFreezeBodyRotationDegrees = 0.0f;
+        float captureFreezePivotGapBeforeGameUnits = 0.0f;
+        float captureFreezePivotGapAfterGameUnits = 0.0f;
+        float captureFreezeShiftDot = 0.0f;
+        float captureFreezePivotLeverGameUnits = 0.0f;
         float rotationErrorDegrees = 0.0f;
         float leverLengthGameUnits = 0.0f;
         float correctionLengthGameUnits = 0.0f;
