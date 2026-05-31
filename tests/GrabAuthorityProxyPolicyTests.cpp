@@ -90,11 +90,6 @@ namespace
         return std::max(x, std::max(y, z));
     }
 
-    RE::NiMatrix3 halfAngleRotation(const RE::NiMatrix3& rotation)
-    {
-        return rock::grab_constraint_math::halfAngleRotation(rotation);
-    }
-
     RE::NiMatrix3 matrixFromRawRows(const float* raw)
     {
         RE::NiMatrix3 result{};
@@ -210,11 +205,10 @@ int main()
                 ok = false;
             }
 
-            const int decompositionModes[4]{
+            const int decompositionModes[3]{
                 autoDecompositionMode,
                 rock::grab_constraint_math::kGrabRagdollDecompositionModeRelationTransformB,
                 rock::grab_constraint_math::kGrabRagdollDecompositionModeNeutralTransformB,
-                rock::grab_constraint_math::kGrabRagdollDecompositionModeHalfSplitRelation,
             };
             for (const int decompositionMode : decompositionModes) {
                 float transformBRotation[12]{};
@@ -231,20 +225,10 @@ int main()
 
                 const bool relationTransformB =
                     decompositionMode == rock::grab_constraint_math::kGrabRagdollDecompositionModeRelationTransformB;
-                const bool halfSplitRelation =
-                    decompositionMode == rock::grab_constraint_math::kGrabRagdollDecompositionModeHalfSplitRelation;
                 const RE::NiMatrix3 expectedCreationTransformB =
-                    relationTransformB ? expectedInitialProxyInBody.rotate :
-                    halfSplitRelation ? halfAngleRotation(expectedInitialProxyInBody.rotate) :
-                                        identityTransform().rotate;
+                    relationTransformB ? expectedInitialProxyInBody.rotate : identityTransform().rotate;
                 const RE::NiMatrix3 expectedHeldTransformB =
-                    relationTransformB ? expectedHeldProxyInBody.rotate :
-                    halfSplitRelation ? halfAngleRotation(expectedHeldProxyInBody.rotate) :
-                                        identityTransform().rotate;
-                const RE::NiMatrix3 expectedCreationTarget =
-                    halfSplitRelation ? halfAngleRotation(expectedInitialProxyInBody.rotate) : expectedInitialProxyInBody.rotate;
-                const RE::NiMatrix3 expectedHeldTarget =
-                    halfSplitRelation ? halfAngleRotation(expectedHeldProxyInBody.rotate) : expectedHeldProxyInBody.rotate;
+                    relationTransformB ? expectedHeldProxyInBody.rotate : identityTransform().rotate;
 
                 ok &= expectNear(
                     (std::string("creation transformB decomposition mode ") + std::to_string(decompositionMode)).c_str(),
@@ -253,7 +237,7 @@ int main()
                     0.01f);
                 ok &= expectNear(
                     "creation target rows carry initial proxy-in-BODY rotation",
-                    rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedCreationTarget),
+                    rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedInitialProxyInBody.rotate),
                     0.0f,
                     0.01f);
                 ok &= expectNear("creation transformB relation pivot x", transformBTranslation[0], expectedInitialPivotB.x * gameToHavokScale, 0.001f);
@@ -276,7 +260,7 @@ int main()
                     0.01f);
                 ok &= expectNear(
                     "held target rows carry current proxy-in-BODY rotation",
-                    rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedHeldTarget),
+                    rotationDeltaDegrees(matrixFromRawRows(targetBRca), expectedHeldProxyInBody.rotate),
                     0.0f,
                     0.01f);
                 ok &= expectNear("held transformB relation pivot x", transformBTranslation[0], expectedHeldPivotB.x * gameToHavokScale, 0.001f);
