@@ -125,6 +125,15 @@ namespace rock
             return lhs.x * rhs.x + lhs.y * rhs.y + lhs.z * rhs.z;
         }
 
+        float maxAbsDelta(const std::array<float, 12>& lhs, const std::array<float, 12>& rhs)
+        {
+            float maxDelta = 0.0f;
+            for (std::size_t i = 0; i < lhs.size(); ++i) {
+                maxDelta = (std::max)(maxDelta, std::fabs(lhs[i] - rhs[i]));
+            }
+            return maxDelta;
+        }
+
         RE::NiPoint3 scalePoint(const RE::NiPoint3& value, float scalar)
         {
             return RE::NiPoint3{ value.x * scalar, value.y * scalar, value.z * scalar };
@@ -4312,6 +4321,35 @@ namespace rock
                     atomTransformBLocalGame,
                     out.motorAnchorAWorld,
                     desiredBodyWorld.scale);
+                RE::NiTransform liveProxyWorld{};
+                const bool liveProxyOk =
+                    _grabAuthorityProxy.isValid() &&
+                    tryGetGrabAuthorityBodyWorldTransform(world, _grabAuthorityProxy.getBodyId(), liveProxyWorld);
+                if (liveProxyOk) {
+                    const RE::NiPoint3 liveAnchorAWorld =
+                        generatedProxyLocalPointToWorld(liveProxyWorld, pivotAProxyLocalGame);
+                    const RE::NiTransform solverEffectiveLiveAWorld = reconstructSolverEffectiveBodyWorld(
+                        liveProxyWorld,
+                        transformAAsHkColumns,
+                        transformBAsHkColumns,
+                        targetAsHkRows,
+                        atomTransformBLocalGame,
+                        liveAnchorAWorld,
+                        desiredBodyWorld.scale);
+                    out.motorSolverEffectiveLiveABodyDeltaDegrees =
+                        rotationDeltaDegrees(solverEffectiveLiveAWorld.rotate, desiredBodyWorld.rotate);
+                    out.motorSolverEffectiveTargetALiveADeltaDegrees =
+                        rotationDeltaDegrees(out.motorSolverEffectiveBodyWorld.rotate, solverEffectiveLiveAWorld.rotate);
+                    out.motorTargetProxyToLiveProxyDeltaGameUnits =
+                        pointDistanceGameUnits(proxyWorld.translate, liveProxyWorld.translate);
+                    out.motorTargetProxyToLiveProxyDeltaDegrees =
+                        rotationDeltaDegrees(proxyWorld.rotate, liveProxyWorld.rotate);
+                } else {
+                    out.motorSolverEffectiveLiveABodyDeltaDegrees = -1.0f;
+                    out.motorSolverEffectiveTargetALiveADeltaDegrees = -1.0f;
+                    out.motorTargetProxyToLiveProxyDeltaGameUnits = -1.0f;
+                    out.motorTargetProxyToLiveProxyDeltaDegrees = -1.0f;
+                }
                 out.motorAtomTargetPivotWorld =
                     transform_math::localPointToWorld(out.motorAtomTargetBodyWorld, atomTransformBLocalGame);
                 out.motorTargetBodyDeltaGameUnits =
@@ -10148,8 +10186,25 @@ namespace rock
                             const RE::NiMatrix3 targetAsHkColumns = matrixFromHkColumns(targetBRca);
                             const RE::NiMatrix3 transformAAsHkColumns = matrixFromHkColumns(transformARotation);
                             const RE::NiMatrix3 transformBAsHkColumns = matrixFromHkColumns(transformBRotation);
+                            std::array<float, 12> transformARaw{};
+                            std::array<float, 12> transformBRaw{};
                             std::array<float, 12> targetBRcaRaw{};
+                            std::memcpy(transformARaw.data(), transformARotation, sizeof(float) * transformARaw.size());
+                            std::memcpy(transformBRaw.data(), transformBRotation, sizeof(float) * transformBRaw.size());
                             std::memcpy(targetBRcaRaw.data(), targetBRca, sizeof(float) * targetBRcaRaw.size());
+                            float transformARawMaxDelta = 0.0f;
+                            float transformBRawMaxDelta = 0.0f;
+                            float targetBRcaRawMaxDelta = 0.0f;
+                            if (_hasLastGrabProbeAtomBytes && _lastGrabProbeAtomTraceId == _grabFrame.traceId) {
+                                transformARawMaxDelta = maxAbsDelta(transformARaw, _lastGrabProbeTransformARaw);
+                                transformBRawMaxDelta = maxAbsDelta(transformBRaw, _lastGrabProbeTransformBRaw);
+                                targetBRcaRawMaxDelta = maxAbsDelta(targetBRcaRaw, _lastGrabProbeTargetBRcaRaw);
+                            }
+                            _lastGrabProbeTransformARaw = transformARaw;
+                            _lastGrabProbeTransformBRaw = transformBRaw;
+                            _lastGrabProbeTargetBRcaRaw = targetBRcaRaw;
+                            _lastGrabProbeAtomTraceId = _grabFrame.traceId;
+                            _hasLastGrabProbeAtomBytes = true;
 
                             RE::NiTransform bodyAWorldBeforeSolve{};
                             bool bodyAWorldBeforeSolveOk = false;
@@ -10158,6 +10213,41 @@ namespace rock
                                 bodyAWorldBeforeSolveOk = true;
                             } else {
                                 bodyAWorldBeforeSolveOk = tryResolveLiveBodyWorldTransform(world, proxyBodyId, bodyAWorldBeforeSolve);
+                            }
+                            const RE::NiPoint3 targetAnchorAWorld =
+                                generatedProxyLocalPointToWorld(pending.proxyWorld, _grabFrame.pivotAHandBodyLocalGame);
+                            RE::NiTransform targetRelationAWorld = makeGeneratedProxyAuthorityRelationFrame(pending.proxyWorld);
+                            targetRelationAWorld.translate = targetAnchorAWorld;
+                            RE::NiTransform targetConstraintAWorld =
+                                transform_math::composeTransforms(pending.proxyWorld, rotationOnlyTransform(transformAAsHkColumns));
+                            targetConstraintAWorld.translate = targetAnchorAWorld;
+                            RE::NiTransform liveRelationAWorld = targetRelationAWorld;
+                            RE::NiTransform liveConstraintAWorld = targetConstraintAWorld;
+                            float targetProxyToLiveProxyDeltaGameUnits = -1.0f;
+                            float targetProxyToLiveProxyDeltaDegrees = -1.0f;
+                            float targetRelationAToLiveRelationADegrees = -1.0f;
+                            float targetConstraintAToLiveConstraintADegrees = -1.0f;
+                            float targetRelationAToTargetConstraintADegrees =
+                                rotationDeltaDegrees(targetRelationAWorld.rotate, targetConstraintAWorld.rotate);
+                            float liveRelationAToLiveConstraintADegrees = targetRelationAToTargetConstraintADegrees;
+                            if (bodyAWorldBeforeSolveOk) {
+                                const RE::NiPoint3 liveAnchorAWorld =
+                                    generatedProxyLocalPointToWorld(bodyAWorldBeforeSolve, _grabFrame.pivotAHandBodyLocalGame);
+                                liveRelationAWorld = makeGeneratedProxyAuthorityRelationFrame(bodyAWorldBeforeSolve);
+                                liveRelationAWorld.translate = liveAnchorAWorld;
+                                liveConstraintAWorld =
+                                    transform_math::composeTransforms(bodyAWorldBeforeSolve, rotationOnlyTransform(transformAAsHkColumns));
+                                liveConstraintAWorld.translate = liveAnchorAWorld;
+                                targetProxyToLiveProxyDeltaGameUnits =
+                                    pointDistanceGameUnits(pending.proxyWorld.translate, bodyAWorldBeforeSolve.translate);
+                                targetProxyToLiveProxyDeltaDegrees =
+                                    rotationDeltaDegrees(pending.proxyWorld.rotate, bodyAWorldBeforeSolve.rotate);
+                                targetRelationAToLiveRelationADegrees =
+                                    rotationDeltaDegrees(targetRelationAWorld.rotate, liveRelationAWorld.rotate);
+                                targetConstraintAToLiveConstraintADegrees =
+                                    rotationDeltaDegrees(targetConstraintAWorld.rotate, liveConstraintAWorld.rotate);
+                                liveRelationAToLiveConstraintADegrees =
+                                    rotationDeltaDegrees(liveRelationAWorld.rotate, liveConstraintAWorld.rotate);
                             }
 
                             float ragdollBRcaRowsErrorDegrees = -1.0f;
@@ -10197,7 +10287,15 @@ namespace rock
                                 transformBAsHkColumns,
                                 targetAsHkRows,
                                 activeTransformBTranslationGame,
-                                generatedProxyLocalPointToWorld(pending.proxyWorld, _grabFrame.pivotAHandBodyLocalGame),
+                                targetAnchorAWorld,
+                                desiredBodyWorld.scale);
+                            const RE::NiTransform solverEffectiveLiveAWorld = reconstructSolverEffectiveBodyWorld(
+                                bodyAWorldBeforeSolveOk ? bodyAWorldBeforeSolve : pending.proxyWorld,
+                                transformAAsHkColumns,
+                                transformBAsHkColumns,
+                                targetAsHkRows,
+                                activeTransformBTranslationGame,
+                                liveConstraintAWorld.translate,
                                 desiredBodyWorld.scale);
                             const float relationInverseBodyDeltaGameUnits =
                                 translationDeltaGameUnits(relationInverseBodyWorld, desiredBodyWorld);
@@ -10217,6 +10315,10 @@ namespace rock
                                 rotationDeltaDegrees(solverEffectiveBodyWorld.rotate, desiredBodyWorld.rotate);
                             const float solverEffectiveToAtomDegrees =
                                 rotationDeltaDegrees(solverEffectiveBodyWorld.rotate, atomRowsBodyWorld.rotate);
+                            const float solverEffectiveLiveABodyDeltaDegrees =
+                                rotationDeltaDegrees(solverEffectiveLiveAWorld.rotate, desiredBodyWorld.rotate);
+                            const float solverEffectiveTargetALiveADeltaDegrees =
+                                rotationDeltaDegrees(solverEffectiveBodyWorld.rotate, solverEffectiveLiveAWorld.rotate);
                             float transformAPivotRoundTripDeltaGameUnits = -1.0f;
                             RE::NiPoint3 activePivotAWorld{};
                             if (resolveActiveGrabAuthorityPivotAWorld(pending.proxyWorld, activePivotAWorld)) {
@@ -10285,9 +10387,14 @@ namespace rock
                                 .desiredBodyWorld = desiredBodyWorld,
                                 .bodyAWorldBefore = bodyAWorldBeforeSolve,
                                 .bodyWorldBefore = bodyWorldBeforeSolve,
+                                .targetRelationAWorld = targetRelationAWorld,
+                                .liveRelationAWorld = liveRelationAWorld,
+                                .targetConstraintAWorld = targetConstraintAWorld,
+                                .liveConstraintAWorld = liveConstraintAWorld,
                                 .relationInverseBodyWorld = relationInverseBodyWorld,
                                 .atomRowsBodyWorld = atomRowsBodyWorld,
                                 .solverEffectiveBodyWorld = solverEffectiveBodyWorld,
+                                .solverEffectiveLiveAWorld = solverEffectiveLiveAWorld,
                                 .transformARotation = transformAAsHkColumns,
                                 .transformBRotation = transformBAsHkColumns,
                                 .targetBRcaRaw = targetBRcaRaw,
@@ -10311,6 +10418,15 @@ namespace rock
                                 .transformBFrozenDeltaDegrees = transformBFrozenDeltaDegrees,
                                 .pivotBRelationDeltaGameUnits = pivotBRelationDeltaGameUnits,
                                 .transformAPivotRoundTripDeltaGameUnits = transformAPivotRoundTripDeltaGameUnits,
+                                .targetProxyToLiveProxyDeltaGameUnits = targetProxyToLiveProxyDeltaGameUnits,
+                                .targetProxyToLiveProxyDeltaDegrees = targetProxyToLiveProxyDeltaDegrees,
+                                .targetRelationAToLiveRelationADegrees = targetRelationAToLiveRelationADegrees,
+                                .targetConstraintAToLiveConstraintADegrees = targetConstraintAToLiveConstraintADegrees,
+                                .targetRelationAToTargetConstraintADegrees = targetRelationAToTargetConstraintADegrees,
+                                .liveRelationAToLiveConstraintADegrees = liveRelationAToLiveConstraintADegrees,
+                                .transformARawMaxDelta = transformARawMaxDelta,
+                                .transformBRawMaxDelta = transformBRawMaxDelta,
+                                .targetBRcaRawMaxDelta = targetBRcaRawMaxDelta,
                                 .relationInverseBodyDeltaGameUnits = relationInverseBodyDeltaGameUnits,
                                 .relationInverseBodyDeltaDegrees = relationInverseBodyDeltaDegrees,
                                 .atomRowsBodyDeltaGameUnits = atomRowsBodyDeltaGameUnits,
@@ -10320,6 +10436,8 @@ namespace rock
                                 .solverEffectiveBodyDeltaGameUnits = solverEffectiveBodyDeltaGameUnits,
                                 .solverEffectiveBodyDeltaDegrees = solverEffectiveBodyDeltaDegrees,
                                 .solverEffectiveToAtomDegrees = solverEffectiveToAtomDegrees,
+                                .solverEffectiveLiveABodyDeltaDegrees = solverEffectiveLiveABodyDeltaDegrees,
+                                .solverEffectiveTargetALiveADeltaDegrees = solverEffectiveTargetALiveADeltaDegrees,
                                 .ragdollBRcaRowsErrorDegrees = ragdollBRcaRowsErrorDegrees,
                                 .ragdollBRcaColumnsErrorDegrees = ragdollBRcaColumnsErrorDegrees,
                                 .ragdollARcbRowsInverseErrorDegrees = ragdollARcbRowsInverseErrorDegrees,
@@ -10383,6 +10501,26 @@ namespace rock
                                     _ragdollAngularProbePreSolve.solverEffectiveToAtomDegrees,
                                     _ragdollAngularProbePreSolve.targetRowsToProxyInBodyDegrees,
                                     _ragdollAngularProbePreSolve.pivotBRelationDeltaGameUnits);
+                                ROCK_LOG_INFO(Hand,
+                                    "{} GRAB_TRACE stage=pre_solve_a_frame trace={} writeSeq={} flushNext={} queued={} targetProxyLive={:.3f}gu/{:.2f}deg relA_targetLive={:.2f}deg conA_targetLive={:.2f}deg targetRelToCon={:.2f}deg liveRelToCon={:.2f}deg solverTargetA={:.3f}gu/{:.2f}deg solverLiveA={:.2f}deg solverTargetVsLive={:.2f}deg rawDelta tA={:.6f} tB={:.6f} target={:.6f}",
+                                    handName(),
+                                    _grabFrame.traceId,
+                                    _grabFrame.traceTargetWriteSequence,
+                                    _grabAuthorityProxyFlushSequence + 1,
+                                    _grabAuthorityProxyQueuedSequence,
+                                    _ragdollAngularProbePreSolve.targetProxyToLiveProxyDeltaGameUnits,
+                                    _ragdollAngularProbePreSolve.targetProxyToLiveProxyDeltaDegrees,
+                                    _ragdollAngularProbePreSolve.targetRelationAToLiveRelationADegrees,
+                                    _ragdollAngularProbePreSolve.targetConstraintAToLiveConstraintADegrees,
+                                    _ragdollAngularProbePreSolve.targetRelationAToTargetConstraintADegrees,
+                                    _ragdollAngularProbePreSolve.liveRelationAToLiveConstraintADegrees,
+                                    _ragdollAngularProbePreSolve.solverEffectiveBodyDeltaGameUnits,
+                                    _ragdollAngularProbePreSolve.solverEffectiveBodyDeltaDegrees,
+                                    _ragdollAngularProbePreSolve.solverEffectiveLiveABodyDeltaDegrees,
+                                    _ragdollAngularProbePreSolve.solverEffectiveTargetALiveADeltaDegrees,
+                                    _ragdollAngularProbePreSolve.transformARawMaxDelta,
+                                    _ragdollAngularProbePreSolve.transformBRawMaxDelta,
+                                    _ragdollAngularProbePreSolve.targetBRcaRawMaxDelta);
                                 if (bodyAWorldBeforeSolveOk) {
                                     const auto bodyABasis = grab_transform_telemetry::makeOrientationBasis(bodyAWorldBeforeSolve);
                                     const auto liveBodyBasis = grab_transform_telemetry::makeOrientationBasis(bodyWorldBeforeSolve);
@@ -10390,6 +10528,11 @@ namespace rock
                                     const auto relationBodyBasis = grab_transform_telemetry::makeOrientationBasis(relationInverseBodyWorld);
                                     const auto atomRowsBodyBasis = grab_transform_telemetry::makeOrientationBasis(atomRowsBodyWorld);
                                     const auto solverEffectiveBasis = grab_transform_telemetry::makeOrientationBasis(solverEffectiveBodyWorld);
+                                    const auto targetRelationABasis = grab_transform_telemetry::makeOrientationBasis(targetRelationAWorld);
+                                    const auto liveRelationABasis = grab_transform_telemetry::makeOrientationBasis(liveRelationAWorld);
+                                    const auto targetConstraintABasis = grab_transform_telemetry::makeOrientationBasis(targetConstraintAWorld);
+                                    const auto liveConstraintABasis = grab_transform_telemetry::makeOrientationBasis(liveConstraintAWorld);
+                                    const auto solverEffectiveLiveABasis = grab_transform_telemetry::makeOrientationBasis(solverEffectiveLiveAWorld);
                                     ROCK_LOG_INFO(Hand,
                                         "{} GRAB_TRACE stage=pre_solve_axismap trace={} writeSeq={} flushNext={} queued={} {} {} {}",
                                         handName(),
@@ -10410,6 +10553,28 @@ namespace rock
                                         grab_transform_telemetry::formatBasisCrossMap("relationInvToA", relationBodyBasis, bodyABasis),
                                         grab_transform_telemetry::formatBasisCrossMap("solverEffToA", solverEffectiveBasis, bodyABasis),
                                         grab_transform_telemetry::formatBasisCrossMap("liveBodyToDesiredBody", liveBodyBasis, desiredBodyBasis));
+                                    ROCK_LOG_INFO(Hand,
+                                        "{} GRAB_TRACE stage=pre_solve_a_axismap trace={} writeSeq={} flushNext={} queued={} {} {} {} {}",
+                                        handName(),
+                                        _grabFrame.traceId,
+                                        _grabFrame.traceTargetWriteSequence,
+                                        _grabAuthorityProxyFlushSequence + 1,
+                                        _grabAuthorityProxyQueuedSequence,
+                                        grab_transform_telemetry::formatBasisCrossMap("desiredToTargetRelA", desiredBodyBasis, targetRelationABasis),
+                                        grab_transform_telemetry::formatBasisCrossMap("solverToTargetRelA", solverEffectiveBasis, targetRelationABasis),
+                                        grab_transform_telemetry::formatBasisCrossMap("desiredToLiveRelA", desiredBodyBasis, liveRelationABasis),
+                                        grab_transform_telemetry::formatBasisCrossMap("solverLiveToLiveRelA", solverEffectiveLiveABasis, liveRelationABasis));
+                                    ROCK_LOG_INFO(Hand,
+                                        "{} GRAB_TRACE stage=pre_solve_constraint_a_axismap trace={} writeSeq={} flushNext={} queued={} {} {} {} {}",
+                                        handName(),
+                                        _grabFrame.traceId,
+                                        _grabFrame.traceTargetWriteSequence,
+                                        _grabAuthorityProxyFlushSequence + 1,
+                                        _grabAuthorityProxyQueuedSequence,
+                                        grab_transform_telemetry::formatBasisCrossMap("desiredToTargetConA", desiredBodyBasis, targetConstraintABasis),
+                                        grab_transform_telemetry::formatBasisCrossMap("solverToTargetConA", solverEffectiveBasis, targetConstraintABasis),
+                                        grab_transform_telemetry::formatBasisCrossMap("desiredToLiveConA", desiredBodyBasis, liveConstraintABasis),
+                                        grab_transform_telemetry::formatBasisCrossMap("solverLiveToLiveConA", solverEffectiveLiveABasis, liveConstraintABasis));
                                 }
                             }
                         }
@@ -10897,16 +11062,42 @@ namespace rock
                     ragdollAngularProbePreSolve.requiredAxisProxyLocal.x,
                     ragdollAngularProbePreSolve.requiredAxisProxyLocal.y,
                     ragdollAngularProbePreSolve.requiredAxisProxyLocal.z);
+                ROCK_LOG_SAMPLE_WARN(Hand,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "{} RAGDOLL A FRAME: seq={}/{} targetProxyLive={:.3f}gu/{:.1f}deg relA_targetLive={:.1f}deg conA_targetLive={:.1f}deg targetRelToCon={:.1f}deg liveRelToCon={:.1f}deg solverTargetA={:.3f}gu/{:.1f}deg solverLiveA={:.1f}deg solverTargetVsLive={:.1f}deg rawDelta tA={:.6f} tB={:.6f} target={:.6f}",
+                    handName(),
+                    flushSequence,
+                    queuedSequence,
+                    ragdollAngularProbePreSolve.targetProxyToLiveProxyDeltaGameUnits,
+                    ragdollAngularProbePreSolve.targetProxyToLiveProxyDeltaDegrees,
+                    ragdollAngularProbePreSolve.targetRelationAToLiveRelationADegrees,
+                    ragdollAngularProbePreSolve.targetConstraintAToLiveConstraintADegrees,
+                    ragdollAngularProbePreSolve.targetRelationAToTargetConstraintADegrees,
+                    ragdollAngularProbePreSolve.liveRelationAToLiveConstraintADegrees,
+                    ragdollAngularProbePreSolve.solverEffectiveBodyDeltaGameUnits,
+                    ragdollAngularProbePreSolve.solverEffectiveBodyDeltaDegrees,
+                    ragdollAngularProbePreSolve.solverEffectiveLiveABodyDeltaDegrees,
+                    ragdollAngularProbePreSolve.solverEffectiveTargetALiveADeltaDegrees,
+                    ragdollAngularProbePreSolve.transformARawMaxDelta,
+                    ragdollAngularProbePreSolve.transformBRawMaxDelta,
+                    ragdollAngularProbePreSolve.targetBRcaRawMaxDelta);
                 if (ragdollAngularProbePreSolve.bodyAWorldValid) {
-                    const auto bodyABasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.bodyAWorldBefore);
+                    const auto bodyABasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.liveRelationAWorld);
+                    const auto targetABasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.targetRelationAWorld);
+                    const auto targetConstraintABasis =
+                        grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.targetConstraintAWorld);
+                    const auto liveConstraintABasis =
+                        grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.liveConstraintAWorld);
                     const auto liveBeforeBasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.bodyWorldBefore);
                     const auto liveAfterBasis = grab_transform_telemetry::makeOrientationBasis(objectReadback);
                     const auto desiredBasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.desiredBodyWorld);
                     const auto atomRowsBasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.atomRowsBodyWorld);
                     const auto solverEffectiveBasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.solverEffectiveBodyWorld);
+                    const auto solverEffectiveLiveABasis =
+                        grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.solverEffectiveLiveAWorld);
                     ROCK_LOG_SAMPLE_WARN(Hand,
                         g_rockConfig.rockLogSampleMilliseconds,
-                        "{} RAGDOLL AXISMAP: seq={}/{} afterSeq={} {} {} {}",
+                        "{} RAGDOLL AXISMAP: seq={}/{} afterSeq={} ref=liveRelA {} {} {}",
                         handName(),
                         flushSequence,
                         queuedSequence,
@@ -10924,6 +11115,28 @@ namespace rock
                         grab_transform_telemetry::formatBasisCrossMap("atomRowsToA", atomRowsBasis, bodyABasis),
                         grab_transform_telemetry::formatBasisCrossMap("solverEffToA", solverEffectiveBasis, bodyABasis),
                         grab_transform_telemetry::formatBasisCrossMap("liveAfterToDesired", liveAfterBasis, desiredBasis));
+                    ROCK_LOG_SAMPLE_WARN(Hand,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "{} RAGDOLL A AXISMAP: seq={}/{} afterSeq={} {} {} {} {}",
+                        handName(),
+                        flushSequence,
+                        queuedSequence,
+                        afterSolveSequence,
+                        grab_transform_telemetry::formatBasisCrossMap("desiredToTargetRelA", desiredBasis, targetABasis),
+                        grab_transform_telemetry::formatBasisCrossMap("solverToTargetRelA", solverEffectiveBasis, targetABasis),
+                        grab_transform_telemetry::formatBasisCrossMap("desiredToLiveRelA", desiredBasis, bodyABasis),
+                        grab_transform_telemetry::formatBasisCrossMap("solverLiveToLiveRelA", solverEffectiveLiveABasis, bodyABasis));
+                    ROCK_LOG_SAMPLE_WARN(Hand,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "{} RAGDOLL CONSTRAINT A AXISMAP: seq={}/{} afterSeq={} {} {} {} {}",
+                        handName(),
+                        flushSequence,
+                        queuedSequence,
+                        afterSolveSequence,
+                        grab_transform_telemetry::formatBasisCrossMap("desiredToTargetConA", desiredBasis, targetConstraintABasis),
+                        grab_transform_telemetry::formatBasisCrossMap("solverToTargetConA", solverEffectiveBasis, targetConstraintABasis),
+                        grab_transform_telemetry::formatBasisCrossMap("desiredToLiveConA", desiredBasis, liveConstraintABasis),
+                        grab_transform_telemetry::formatBasisCrossMap("solverLiveToLiveConA", solverEffectiveLiveABasis, liveConstraintABasis));
                 }
             }
         }
