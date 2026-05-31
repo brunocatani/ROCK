@@ -188,7 +188,25 @@ int main()
             const RE::NiPoint3 expectedHeldPivotB =
                 rock::grab_constraint_math::computeHiggsTransformBTranslationGame(bodyInProxyHeld, frozenPivotAProxyLocal);
 
-            const int decompositionModes[2]{
+            float autoColumnDeltaDegrees = -1.0f;
+            const int autoDecompositionMode = rock::grab_constraint_math::resolveGrabRagdollDecompositionMode(
+                rock::grab_constraint_math::kGrabRagdollDecompositionModeAuto,
+                bodyInProxyAtCreation,
+                &autoColumnDeltaDegrees);
+            const int expectedAutoDecompositionMode =
+                autoColumnDeltaDegrees > rock::grab_constraint_math::kGrabRagdollDecompositionAutoThresholdDegrees ?
+                    rock::grab_constraint_math::kGrabRagdollDecompositionModeNeutralTransformB :
+                    rock::grab_constraint_math::kGrabRagdollDecompositionModeRelationTransformB;
+            if (autoDecompositionMode != expectedAutoDecompositionMode) {
+                std::printf("auto decomposition expected %d got %d at col %.3f\n",
+                    expectedAutoDecompositionMode,
+                    autoDecompositionMode,
+                    autoColumnDeltaDegrees);
+                ok = false;
+            }
+
+            const int decompositionModes[3]{
+                autoDecompositionMode,
                 rock::grab_constraint_math::kGrabRagdollDecompositionModeRelationTransformB,
                 rock::grab_constraint_math::kGrabRagdollDecompositionModeNeutralTransformB,
             };

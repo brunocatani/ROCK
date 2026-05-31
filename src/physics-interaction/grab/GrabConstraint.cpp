@@ -410,6 +410,14 @@ namespace rock
             RT_LINEAR_INIT_BASE + 2,
             RT_LINEAR_PREV_POS_BASE + 0x08);
 
+        const int ragdollDecompositionConfigMode =
+            grab_constraint_math::sanitizeGrabRagdollDecompositionConfigMode(tuning.ragdollDecompositionConfigMode);
+        float ragdollDecompositionColumnDeltaDegrees = -1.0f;
+        const int ragdollDecompositionMode = grab_constraint_math::resolveGrabRagdollDecompositionMode(
+            ragdollDecompositionConfigMode,
+            desiredBodyTransformHandSpace,
+            &ragdollDecompositionColumnDeltaDegrees);
+
         {
             auto* tA_col0 = reinterpret_cast<float*>(header + GRAB_TRANSFORM_A_COL0);
             auto* tA_col1 = reinterpret_cast<float*>(header + GRAB_TRANSFORM_A_COL1);
@@ -440,8 +448,6 @@ namespace rock
             auto* tB_col0 = reinterpret_cast<float*>(header + GRAB_TRANSFORM_B_COL0);
             auto* tB_pos = reinterpret_cast<float*>(header + GRAB_TRANSFORM_B_POS);
             auto* targetBRca = reinterpret_cast<float*>(header + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
-            const int ragdollDecompositionMode =
-                grab_constraint_math::sanitizeGrabRagdollDecompositionMode(tuning.ragdollDecompositionMode);
 
             grab_constraint_math::writeGrabConstraintCreationAtoms(
                 tB_col0,
@@ -455,10 +461,13 @@ namespace rock
             ROCK_LOG_TRACE(GrabConstraint,
                 "setInBodySpace: pivotA=({:.3f},{:.3f},{:.3f}) [palm] "
                 "pivotB=({:.3f},{:.3f},{:.3f}) [relation-pivot-b] "
-                "tB_proxyInBody_col0=({:.3f},{:.3f},{:.3f}) decompMode={}({})",
+                "tB_proxyInBody_col0=({:.3f},{:.3f},{:.3f}) decompConfig={}({}) decomp={}({}) col={:.2f}deg",
                 tA_pos[0], tA_pos[1], tA_pos[2], tB_pos[0], tB_pos[1], tB_pos[2], tB_col0[0], tB_col0[1], tB_col0[2],
+                ragdollDecompositionConfigMode,
+                grab_constraint_math::grabRagdollDecompositionModeName(ragdollDecompositionConfigMode),
                 ragdollDecompositionMode,
-                grab_constraint_math::grabRagdollDecompositionModeName(ragdollDecompositionMode));
+                grab_constraint_math::grabRagdollDecompositionModeName(ragdollDecompositionMode),
+                ragdollDecompositionColumnDeltaDegrees);
 
             ROCK_LOG_TRACE(GrabConstraint, "target_bRca initial proxy-in-BODY solver rows: row0=[{:.3f},{:.3f},{:.3f}] row1=[{:.3f},{:.3f},{:.3f}]", targetBRca[0], targetBRca[1],
                 targetBRca[2], targetBRca[4], targetBRca[5], targetBRca[6]);
@@ -523,12 +532,16 @@ namespace rock
         setGrabMotorAtomsActive(header, true, true);
 
         ROCK_LOG_DEBUG(GrabConstraint,
-            "Motors attached before CreateConstraint: angularBudget={:.0f} authority={} ragdollAtom=enabled linear={:.0f} decompMode={}({})",
+            "Motors attached before CreateConstraint: angularBudget={:.0f} authority={} ragdollAtom=enabled linear={:.0f} decompConfig={}({}) decomp={}({}) col={:.2f}deg",
             angularMaxForce,
             grabAngularAuthorityName(tuning.angularAuthority),
             linearMaxForce,
-            grab_constraint_math::sanitizeGrabRagdollDecompositionMode(tuning.ragdollDecompositionMode),
-            grab_constraint_math::grabRagdollDecompositionModeName(tuning.ragdollDecompositionMode));
+            grab_constraint_math::sanitizeGrabRagdollDecompositionConfigMode(tuning.ragdollDecompositionConfigMode),
+            grab_constraint_math::grabRagdollDecompositionModeName(
+                grab_constraint_math::sanitizeGrabRagdollDecompositionConfigMode(tuning.ragdollDecompositionConfigMode)),
+            ragdollDecompositionMode,
+            grab_constraint_math::grabRagdollDecompositionModeName(ragdollDecompositionMode),
+            ragdollDecompositionColumnDeltaDegrees);
 
         RE::hknpConstraintCinfo cinfo{};
         cinfo.constraintData = reinterpret_cast<RE::hkpConstraintData*>(cd);
@@ -557,6 +570,9 @@ namespace rock
         result.angularMotor = angMotor;
         result.linearMotor = linMotor;
         result.angularAuthority = tuning.angularAuthority;
+        result.ragdollDecompositionConfigMode = ragdollDecompositionConfigMode;
+        result.ragdollDecompositionMode = ragdollDecompositionMode;
+        result.ragdollDecompositionColumnDeltaDegrees = ragdollDecompositionColumnDeltaDegrees;
         result.currentTau = linearTau;
         result.currentMaxForce = linearMaxForce;
         result.targetMaxForce = linearMaxForce;
@@ -587,8 +603,8 @@ namespace rock
                 .angularProportionalRecovery = g_rockConfig.rockGrabAngularProportionalRecovery,
                 .angularConstantRecovery = g_rockConfig.rockGrabAngularConstantRecovery,
                 .angularMaxForce = linearMaxForce,
-                .ragdollDecompositionMode =
-                    grab_constraint_math::sanitizeGrabRagdollDecompositionMode(g_rockConfig.rockGrabRagdollDecompositionMode),
+                .ragdollDecompositionConfigMode =
+                    grab_constraint_math::sanitizeGrabRagdollDecompositionConfigMode(g_rockConfig.rockGrabRagdollDecompositionMode),
             });
     }
 

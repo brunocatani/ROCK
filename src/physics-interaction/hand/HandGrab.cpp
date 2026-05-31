@@ -737,8 +737,8 @@ namespace rock
                 .angularConstantRecovery =
                     scaleDriveValue(g_rockConfig.rockGrabAngularConstantRecovery, angularRecoveryMultiplier),
                 .angularMaxForce = linearMaxForce,
-                .ragdollDecompositionMode =
-                    grab_constraint_math::sanitizeGrabRagdollDecompositionMode(g_rockConfig.rockGrabRagdollDecompositionMode),
+                .ragdollDecompositionConfigMode =
+                    grab_constraint_math::sanitizeGrabRagdollDecompositionConfigMode(g_rockConfig.rockGrabRagdollDecompositionMode),
             };
         }
 
@@ -5056,7 +5056,7 @@ namespace rock
                 desiredBodyTransformProxySpace,
                 pivotAProxyLocalGame,
                 gameToHavokScale(),
-                motorTuning.ragdollDecompositionMode);
+                _activeConstraint.ragdollDecompositionMode);
             const float* traceTransformBRotationData = traceTransformBRotation.data();
             const float* traceTransformBTranslationData = traceTransformBTranslation.data();
             const float* traceTargetBRcaData = traceTargetBRca.data();
@@ -5096,15 +5096,18 @@ namespace rock
                 pointDistanceGameUnits(traceTransformBTranslationGame, relationPivotBConstraintLocalGame);
 
             ROCK_LOG_INFO(Hand,
-                "{} GRAB_TRACE stage=constraint_create trace={} constraint={} proxyBody={} objBody={} bytes={} decomp={}({}) angular={} ragdoll={} pivotAProxy=({:.2f},{:.2f},{:.2f}) pivotBSelected=({:.2f},{:.2f},{:.2f}) relationPivotB=({:.2f},{:.2f},{:.2f}) selectedPivotRelationDelta={:.3f}gu pivotBRelationDelta={:.3f}gu pivotBBody=({:.2f},{:.2f},{:.2f}) linearTau={:.3f} angularTau={:.3f} linearForce={:.0f} angularForce={:.0f} motorMass={:.3f} effectiveMass={:.3f} forceBudget={:.2f} targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg reason={}",
+                "{} GRAB_TRACE stage=constraint_create trace={} constraint={} proxyBody={} objBody={} bytes={} decompConfig={}({}) decomp={}({}) col={:.2f}deg angular={} ragdoll={} pivotAProxy=({:.2f},{:.2f},{:.2f}) pivotBSelected=({:.2f},{:.2f},{:.2f}) relationPivotB=({:.2f},{:.2f},{:.2f}) selectedPivotRelationDelta={:.3f}gu pivotBRelationDelta={:.3f}gu pivotBBody=({:.2f},{:.2f},{:.2f}) linearTau={:.3f} angularTau={:.3f} linearForce={:.0f} angularForce={:.0f} motorMass={:.3f} effectiveMass={:.3f} forceBudget={:.2f} targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg reason={}",
                 handName(),
                 _grabFrame.traceId,
                 _activeConstraint.constraintId,
                 _grabAuthorityProxy.getBodyId().value,
                 objectBodyId.value,
                 actualConstraintBytes ? "actual" : "computed",
-                motorTuning.ragdollDecompositionMode,
-                grab_constraint_math::grabRagdollDecompositionModeName(motorTuning.ragdollDecompositionMode),
+                _activeConstraint.ragdollDecompositionConfigMode,
+                grab_constraint_math::grabRagdollDecompositionModeName(_activeConstraint.ragdollDecompositionConfigMode),
+                _activeConstraint.ragdollDecompositionMode,
+                grab_constraint_math::grabRagdollDecompositionModeName(_activeConstraint.ragdollDecompositionMode),
+                _activeConstraint.ragdollDecompositionColumnDeltaDegrees,
                 grabAngularAuthorityName(_activeConstraint.angularAuthority),
                 _activeConstraint.usesRagdollAngularMotorAtom() ? "yes" : "no",
                 pivotAProxyLocalGame.x,
@@ -5273,8 +5276,9 @@ namespace rock
 
         /*
          * Transform-A is part of the frozen local constraint frame and is not
-         * rewritten while held. The current proxy-in-BODY relation drives only
-         * target_bRca and transform-B translation, matching HIGGS's update path.
+         * rewritten while held. The frozen capture chooses the ragdoll
+         * transform-B decomposition once, while the current proxy-in-BODY
+         * relation keeps updating target_bRca and transform-B translation.
          */
         const RE::NiPoint3 pivotAProxyLocalGame = _grabAuthorityPivotAProxyLocalGame;
         if (!std::isfinite(pivotAProxyLocalGame.x) ||
@@ -5290,7 +5294,7 @@ namespace rock
         auto* transformBTranslation = reinterpret_cast<float*>(constraintData + GRAB_TRANSFORM_B_POS);
         auto* targetBRca = reinterpret_cast<float*>(constraintData + ATOM_RAGDOLL_MOT + RAGDOLL_MOTOR_TARGET_BRCA);
         const int ragdollDecompositionMode =
-            grab_constraint_math::sanitizeGrabRagdollDecompositionMode(g_rockConfig.rockGrabRagdollDecompositionMode);
+            grab_constraint_math::sanitizeGrabRagdollDecompositionMode(_activeConstraint.ragdollDecompositionMode);
         grab_constraint_math::writeGrabConstraintHeldTargetAtoms(
             transformBRotation,
             transformBTranslation,
@@ -5329,7 +5333,7 @@ namespace rock
                 pivotAProxyLocalGame);
 
             ROCK_LOG_INFO(Hand,
-                "{} GRAB_TRACE stage=target_write trace={} writeSeq={} flushNext={} queued={} constraint={} proxyBody={} objBody={} decomp={}({}) proxyPos=({:.2f},{:.2f},{:.2f}) desiredBodyPos=({:.2f},{:.2f},{:.2f}) targetPoint=({:.2f},{:.2f},{:.2f}) pivotAProxy=({:.2f},{:.2f},{:.2f}) pivotBSelected=({:.2f},{:.2f},{:.2f}) relationPivotB=({:.2f},{:.2f},{:.2f}) selectedPivotRelationDelta={:.3f}gu pivotBRelationDelta={:.3f}gu targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg",
+                "{} GRAB_TRACE stage=target_write trace={} writeSeq={} flushNext={} queued={} constraint={} proxyBody={} objBody={} decompConfig={}({}) decomp={}({}) col={:.2f}deg proxyPos=({:.2f},{:.2f},{:.2f}) desiredBodyPos=({:.2f},{:.2f},{:.2f}) targetPoint=({:.2f},{:.2f},{:.2f}) pivotAProxy=({:.2f},{:.2f},{:.2f}) pivotBSelected=({:.2f},{:.2f},{:.2f}) relationPivotB=({:.2f},{:.2f},{:.2f}) selectedPivotRelationDelta={:.3f}gu pivotBRelationDelta={:.3f}gu targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg",
                 handName(),
                 _grabFrame.traceId,
                 targetWriteSequence,
@@ -5338,8 +5342,11 @@ namespace rock
                 _activeConstraint.isValid() ? _activeConstraint.constraintId : 0x7FFF'FFFFu,
                 _grabAuthorityProxy.isValid() ? _grabAuthorityProxy.getBodyId().value : INVALID_BODY_ID,
                 _savedObjectState.bodyId.value,
+                _activeConstraint.ragdollDecompositionConfigMode,
+                grab_constraint_math::grabRagdollDecompositionModeName(_activeConstraint.ragdollDecompositionConfigMode),
                 ragdollDecompositionMode,
                 grab_constraint_math::grabRagdollDecompositionModeName(ragdollDecompositionMode),
+                _activeConstraint.ragdollDecompositionColumnDeltaDegrees,
                 proxyWorldTransform.translate.x,
                 proxyWorldTransform.translate.y,
                 proxyWorldTransform.translate.z,
@@ -8255,6 +8262,13 @@ namespace rock
                 std::array<float, 12> traceTransformBRotation{};
                 std::array<float, 4> traceTransformBTranslation{};
                 std::array<float, 12> traceTargetBRca{};
+                float traceRagdollDecompositionColumnDeltaDegrees = -1.0f;
+                const int traceRagdollDecompositionConfigMode =
+                    grab_constraint_math::sanitizeGrabRagdollDecompositionConfigMode(g_rockConfig.rockGrabRagdollDecompositionMode);
+                const int traceRagdollDecompositionMode = grab_constraint_math::resolveGrabRagdollDecompositionMode(
+                    traceRagdollDecompositionConfigMode,
+                    frozenAuthorityFrame.proxyAuthorityBodyHandSpace,
+                    &traceRagdollDecompositionColumnDeltaDegrees);
                 grab_constraint_math::writeGrabConstraintCreationAtoms(
                     traceTransformBRotation.data(),
                     traceTransformBTranslation.data(),
@@ -8262,7 +8276,7 @@ namespace rock
                     frozenAuthorityFrame.proxyAuthorityBodyHandSpace,
                     frozenAuthorityFrame.pivotAHandBodyLocalGame,
                     gameToHavokScale(),
-                    grab_constraint_math::sanitizeGrabRagdollDecompositionMode(g_rockConfig.rockGrabRagdollDecompositionMode));
+                    traceRagdollDecompositionMode);
                 const RE::NiTransform traceDesiredBodyToHandSpace =
                     invertTransform(frozenAuthorityFrame.proxyAuthorityBodyHandSpace);
                 const RE::NiMatrix3 traceTargetRows = matrixFromHkRows(traceTargetBRca.data());
@@ -8364,7 +8378,7 @@ namespace rock
                     _grabFrame.pivotAuthorityPositionConfidence);
 
                 ROCK_LOG_INFO(Hand,
-                    "{} GRAB_TRACE stage=capture_frames trace={} rawPos=({:.2f},{:.2f},{:.2f}) proxyPos=({:.2f},{:.2f},{:.2f}) objectPos=({:.2f},{:.2f},{:.2f}) bodyPos=({:.2f},{:.2f},{:.2f}) desiredBodyPos=({:.2f},{:.2f},{:.2f}) rawProxyRot={:.2f}deg rawProxyAxisMax={:.2f}deg objectDesiredAxisMax={:.2f}deg desiredBodyGrabBodyAxisMax={:.2f}deg targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg",
+                    "{} GRAB_TRACE stage=capture_frames trace={} rawPos=({:.2f},{:.2f},{:.2f}) proxyPos=({:.2f},{:.2f},{:.2f}) objectPos=({:.2f},{:.2f},{:.2f}) bodyPos=({:.2f},{:.2f},{:.2f}) desiredBodyPos=({:.2f},{:.2f},{:.2f}) rawProxyRot={:.2f}deg rawProxyAxisMax={:.2f}deg objectDesiredAxisMax={:.2f}deg desiredBodyGrabBodyAxisMax={:.2f}deg decompConfig={}({}) decomp={}({}) col={:.2f}deg targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg",
                     handName(),
                     _grabFrame.traceId,
                     handWorldTransform.translate.x,
@@ -8386,6 +8400,11 @@ namespace rock
                     traceRawToProxyMaxAxisDegrees,
                     traceObjectToDesiredMaxAxisDegrees,
                     traceDesiredBodyToGrabBodyMaxAxisDegrees,
+                    traceRagdollDecompositionConfigMode,
+                    grab_constraint_math::grabRagdollDecompositionModeName(traceRagdollDecompositionConfigMode),
+                    traceRagdollDecompositionMode,
+                    grab_constraint_math::grabRagdollDecompositionModeName(traceRagdollDecompositionMode),
+                    traceRagdollDecompositionColumnDeltaDegrees,
                     traceTargetToHiggsRelationDegrees,
                     traceTransformBFrozenDeltaDegrees);
 
@@ -8444,6 +8463,13 @@ namespace rock
                 std::array<float, 12> freezeTransformBRotation{};
                 std::array<float, 4> freezeTransformBTranslation{};
                 std::array<float, 12> freezeTargetBRca{};
+                float freezeRagdollDecompositionColumnDeltaDegrees = -1.0f;
+                const int freezeRagdollDecompositionConfigMode =
+                    grab_constraint_math::sanitizeGrabRagdollDecompositionConfigMode(g_rockConfig.rockGrabRagdollDecompositionMode);
+                const int freezeRagdollDecompositionMode = grab_constraint_math::resolveGrabRagdollDecompositionMode(
+                    freezeRagdollDecompositionConfigMode,
+                    frozenAuthorityFrame.proxyAuthorityBodyHandSpace,
+                    &freezeRagdollDecompositionColumnDeltaDegrees);
                 grab_constraint_math::writeGrabConstraintCreationAtoms(
                     freezeTransformBRotation.data(),
                     freezeTransformBTranslation.data(),
@@ -8451,7 +8477,7 @@ namespace rock
                     frozenAuthorityFrame.proxyAuthorityBodyHandSpace,
                     frozenAuthorityFrame.pivotAHandBodyLocalGame,
                     gameToHavokScale(),
-                    grab_constraint_math::sanitizeGrabRagdollDecompositionMode(g_rockConfig.rockGrabRagdollDecompositionMode));
+                    freezeRagdollDecompositionMode);
                 const RE::NiTransform frozenDesiredBodyToHandSpace =
                     invertTransform(frozenAuthorityFrame.proxyAuthorityBodyHandSpace);
                 const RE::NiMatrix3 freezeTargetRows = matrixFromHkRows(freezeTargetBRca.data());
@@ -8487,7 +8513,7 @@ namespace rock
                     _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld;
 
                 ROCK_LOG_INFO(Hand,
-                    "{} GRAB FREEZE AUTHORITY: formID={:08X} name='{}' body={} mode={} pivotAuthority={} frozenSource={} resolverSource={} "
+                    "{} GRAB FREEZE AUTHORITY: formID={:08X} name='{}' body={} mode={} decompConfig={}({}) decomp={}({}) col={:.2f}deg pivotAuthority={} frozenSource={} resolverSource={} "
                     "resolverReason={} seat={} phase={} pinch={} gripSupport={} supportPivot={} supportReason={} palmPocketMesh={} fullHeld={} settledReq={} "
                     "pivotA=({:.2f},{:.2f},{:.2f}) grip=({:.2f},{:.2f},{:.2f}) pivotBBody=({:.2f},{:.2f},{:.2f}) "
                     "pivotBSelected=({:.2f},{:.2f},{:.2f}) relationPivotB=({:.2f},{:.2f},{:.2f}) "
@@ -8498,6 +8524,11 @@ namespace rock
                     objName,
                     objectBodyId.value,
                     _grabFrame.activeGrabPointMode ? _grabFrame.activeGrabPointMode : "none",
+                    freezeRagdollDecompositionConfigMode,
+                    grab_constraint_math::grabRagdollDecompositionModeName(freezeRagdollDecompositionConfigMode),
+                    freezeRagdollDecompositionMode,
+                    grab_constraint_math::grabRagdollDecompositionModeName(freezeRagdollDecompositionMode),
+                    freezeRagdollDecompositionColumnDeltaDegrees,
                     _grabFrame.pivotAuthoritySource ? _grabFrame.pivotAuthoritySource : "none",
                     grab_authority_frame_math::grabAuthorityPivotSourceName(frozenAuthorityFrame.source),
                     grab_authority_frame_math::grabAuthorityPivotSourceName(resolvedAuthorityPivotSourceForFreeze),

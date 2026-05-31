@@ -3,6 +3,8 @@
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/hand/HandColliderTypes.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 
@@ -13,8 +15,8 @@ namespace rock::grab_constraint_math
      * the FO4VR byte-storage convention that was proven locally. Transform A is
      * the frozen proxy-local palm pivot with identity rotation. The transform-B
      * rotation is intentionally mode-selectable while investigating FO4VR's
-     * ragdoll atom composition; held updates rewrite it from the current config
-     * so the active grab can hot-swap decomposition without a rebuild.
+     * ragdoll atom composition; auto mode resolves once from the frozen
+     * proxy-in-BODY column delta and remains fixed until release.
      */
 
     /*
@@ -26,9 +28,24 @@ namespace rock::grab_constraint_math
     inline constexpr std::uint32_t kHavokRealMaxBits = 0x7f7fffeeu;
     inline constexpr std::uint32_t kHavokRealHighBits = 0x5f7ffff0u;
 
+    inline constexpr int kGrabRagdollDecompositionModeAuto = -1;
     inline constexpr int kGrabRagdollDecompositionModeRelationTransformB = 0;
     inline constexpr int kGrabRagdollDecompositionModeNeutralTransformB = 1;
-    inline constexpr int kDefaultGrabRagdollDecompositionMode = kGrabRagdollDecompositionModeNeutralTransformB;
+    inline constexpr int kDefaultGrabRagdollDecompositionConfigMode = kGrabRagdollDecompositionModeAuto;
+    inline constexpr int kDefaultGrabRagdollDecompositionResolvedMode = kGrabRagdollDecompositionModeNeutralTransformB;
+    inline constexpr float kGrabRagdollDecompositionAutoThresholdDegrees = 90.0f;
+
+    inline int sanitizeGrabRagdollDecompositionConfigMode(int mode) noexcept
+    {
+        switch (mode) {
+        case kGrabRagdollDecompositionModeAuto:
+        case kGrabRagdollDecompositionModeRelationTransformB:
+        case kGrabRagdollDecompositionModeNeutralTransformB:
+            return mode;
+        default:
+            return kDefaultGrabRagdollDecompositionConfigMode;
+        }
+    }
 
     inline int sanitizeGrabRagdollDecompositionMode(int mode) noexcept
     {
@@ -37,19 +54,39 @@ namespace rock::grab_constraint_math
         case kGrabRagdollDecompositionModeNeutralTransformB:
             return mode;
         default:
-            return kDefaultGrabRagdollDecompositionMode;
+            return kDefaultGrabRagdollDecompositionResolvedMode;
         }
     }
 
     inline const char* grabRagdollDecompositionModeName(int mode) noexcept
     {
-        switch (sanitizeGrabRagdollDecompositionMode(mode)) {
+        switch (mode) {
+        case kGrabRagdollDecompositionModeAuto:
+            return "auto";
         case kGrabRagdollDecompositionModeRelationTransformB:
             return "relationTransformB";
         case kGrabRagdollDecompositionModeNeutralTransformB:
-        default:
             return "neutralTransformB";
+        default:
+            return "invalid";
         }
+    }
+
+    template <class Matrix>
+    inline float rotationDeltaDegrees(const Matrix& a, const Matrix& b)
+    {
+        const float trace =
+            (a.entry[0][0] * b.entry[0][0] + a.entry[1][0] * b.entry[1][0] + a.entry[2][0] * b.entry[2][0]) +
+            (a.entry[0][1] * b.entry[0][1] + a.entry[1][1] * b.entry[1][1] + a.entry[2][1] * b.entry[2][1]) +
+            (a.entry[0][2] * b.entry[0][2] + a.entry[1][2] * b.entry[1][2] + a.entry[2][2] * b.entry[2][2]);
+        const float cosTheta = std::clamp((trace - 1.0f) * 0.5f, -1.0f, 1.0f);
+        return std::acos(cosTheta) * (180.0f / 3.14159265358979323846f);
+    }
+
+    template <class Matrix>
+    inline float computeGrabRagdollDecompositionColumnDeltaDegrees(const Matrix& proxyInBodyRotation)
+    {
+        return rotationDeltaDegrees(proxyInBodyRotation, transform_math::transposeRotation(proxyInBodyRotation));
     }
 
     inline void writeSetupStabilizationDefaults(void* setupAtom)
@@ -144,6 +181,25 @@ namespace rock::grab_constraint_math
     inline Transform proxyInBodyFromBodyInProxy(const Transform& bodyInProxy)
     {
         return transform_math::invertTransform(bodyInProxy);
+    }
+
+    template <class Transform>
+    inline int resolveGrabRagdollDecompositionMode(int configMode, const Transform& bodyInProxy, float* outColumnDeltaDegrees = nullptr)
+    {
+        const Transform proxyInBody = proxyInBodyFromBodyInProxy(bodyInProxy);
+        const float columnDeltaDegrees = computeGrabRagdollDecompositionColumnDeltaDegrees(proxyInBody.rotate);
+        if (outColumnDeltaDegrees) {
+            *outColumnDeltaDegrees = columnDeltaDegrees;
+        }
+
+        const int sanitizedConfigMode = sanitizeGrabRagdollDecompositionConfigMode(configMode);
+        if (sanitizedConfigMode != kGrabRagdollDecompositionModeAuto) {
+            return sanitizeGrabRagdollDecompositionMode(sanitizedConfigMode);
+        }
+
+        return columnDeltaDegrees > kGrabRagdollDecompositionAutoThresholdDegrees ?
+                   kGrabRagdollDecompositionModeNeutralTransformB :
+                   kGrabRagdollDecompositionModeRelationTransformB;
     }
 
     template <class Transform>
