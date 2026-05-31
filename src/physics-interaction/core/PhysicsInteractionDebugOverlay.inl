@@ -857,6 +857,32 @@
                                 snapshot.motorSolverEffectiveBodyDeltaDegrees,
                                 snapshot.motorSolverEffectiveToAtomDeltaDegrees);
                         }
+                        const auto liveToA = grab_transform_telemetry::formatBasisBestMap(
+                            "live>A",
+                            grab_transform_telemetry::makeOrientationBasis(snapshot.liveBodyWorld),
+                            grab_transform_telemetry::makeOrientationBasis(snapshot.motorConstraintAWorld));
+                        const auto desiredToA = grab_transform_telemetry::formatBasisBestMap(
+                            "des>A",
+                            grab_transform_telemetry::makeOrientationBasis(snapshot.desiredBodyWorld),
+                            grab_transform_telemetry::makeOrientationBasis(snapshot.motorConstraintAWorld));
+                        addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -17.5f },
+                            detailColor,
+                            "%s",
+                            liveToA.c_str());
+                        addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -21.0f },
+                            detailColor,
+                            "%s",
+                            desiredToA.c_str());
+                        if (snapshot.hasMotorSolverEffectiveBody) {
+                            const auto solverToA = grab_transform_telemetry::formatBasisBestMap(
+                                "solv>A",
+                                grab_transform_telemetry::makeOrientationBasis(snapshot.motorSolverEffectiveBodyWorld),
+                                grab_transform_telemetry::makeOrientationBasis(snapshot.motorConstraintAWorld));
+                            addTextLine(labelAnchor + RE::NiPoint3{ 0.0f, 0.0f, -24.5f },
+                                detailColor,
+                                "%s",
+                                solverToA.c_str());
+                        }
                     }
                 }
             };
@@ -1607,6 +1633,20 @@
                         grab_transform_telemetry::formatBasisDelta("heldBodyToRawDesiredBody", sample.heldBodyBasis, sample.currentRawDesiredBodyWorldBasis),
                         grab_transform_telemetry::formatBasisDelta("nativeBodyToHeldBody", sample.heldNativeBodyBasis, sample.heldBodyBasis),
                         grab_transform_telemetry::formatBasisDelta("rawHandToHeldRelativeHand", sample.rawHandBasis, sample.heldRelativeHandTargetBasis));
+                    const bool hasAuthorityAxisBasis = sample.hasProxyReadback || sample.hasPalmAnchorGrabAuthority;
+                    if (hasAuthorityAxisBasis && sample.hasHeldBodyWorld && sample.hasGrabStartFrames) {
+                        const auto& authorityBasis = sample.hasProxyReadback ? sample.proxyReadbackBasis : sample.palmAnchorGrabAuthorityBasis;
+                        ROCK_LOG_INFO(Hand,
+                            "GRAB BASIS AXISMAP {} {} side={} authority={} {} {} {} {}",
+                            prefix,
+                            phaseLabel,
+                            sideLabel,
+                            sample.hasProxyReadback ? "proxyReadback" : "grabAuthority",
+                            grab_transform_telemetry::formatBasisCrossMap("heldBodyToAuthority", sample.heldBodyBasis, authorityBasis),
+                            grab_transform_telemetry::formatBasisCrossMap("desiredBodyToAuthority", sample.currentRawDesiredBodyWorldBasis, authorityBasis),
+                            grab_transform_telemetry::formatBasisCrossMap("heldBodyToDesiredBody", sample.heldBodyBasis, sample.currentRawDesiredBodyWorldBasis),
+                            grab_transform_telemetry::formatBasisCrossMap("rawHandToAuthority", sample.rawHandBasis, authorityBasis));
+                    }
                     if (sample.hasConstraintAngularTelemetry) {
                         ROCK_LOG_INFO(Hand,
                             "GRAB TELEMETRY {} {} transformBLocal=({:.2f},{:.2f},{:.2f}) desiredTransformBLocal=({:.2f},{:.2f},{:.2f}) pivotBRelationDelta={:.3f}gu targetErr(colsInv={:.3f}deg targetToHiggsRelation={:.3f}deg colsForward={:.3f}deg transformBFrozenDelta={:.3f}deg) ragEnabled={} angTau={:.3f} angDamping={:.3f} angForce={:.1f} linTau={:.3f} linForce={:.1f} mass={:.3f}",

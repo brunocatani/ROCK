@@ -8271,6 +8271,14 @@ namespace rock
                     grab_transform_telemetry::formatBasis("proxy", traceProxyBasis),
                     grab_transform_telemetry::formatBasis("body", traceBodyBasis),
                     grab_transform_telemetry::formatBasis("desiredBody", traceDesiredBodyBasis));
+                ROCK_LOG_INFO(Hand,
+                    "{} GRAB_TRACE stage=capture_axismap trace={} {} {} {} {}",
+                    handName(),
+                    _grabFrame.traceId,
+                    grab_transform_telemetry::formatBasisCrossMap("bodyToProxy", traceBodyBasis, traceProxyBasis),
+                    grab_transform_telemetry::formatBasisCrossMap("desiredBodyToProxy", traceDesiredBodyBasis, traceProxyBasis),
+                    grab_transform_telemetry::formatBasisCrossMap("proxyToBody", traceProxyBasis, traceBodyBasis),
+                    grab_transform_telemetry::formatBasisCrossMap("bodyToDesiredBody", traceBodyBasis, traceDesiredBodyBasis));
             }
             if (g_rockConfig.rockDebugGrabFrameLogging) {
                 std::array<float, 12> freezeTransformBRotation{};
@@ -8500,6 +8508,16 @@ namespace rock
                     grab_transform_telemetry::formatBasisDelta("desiredObjectToDesiredBody", desiredObjectBasis, desiredBodyBasis),
                     grab_transform_telemetry::formatBasisDelta("grabBodyToDesiredBody", grabBodyBasis, desiredBodyBasis),
                     grab_transform_telemetry::formatBasisDelta("motionBodyToGrabBody", motionBodyBasis, grabBodyBasis));
+
+                ROCK_LOG_DEBUG(Hand,
+                    "{} GRAB BASIS CAPTURE AXISMAP side={} phase=capture {} {} {} {} {}",
+                    handName(),
+                    _isLeft ? "left" : "right",
+                    grab_transform_telemetry::formatBasisCrossMap("bodyToProxy", grabBodyBasis, proxyPalmBasis),
+                    grab_transform_telemetry::formatBasisCrossMap("desiredBodyToProxy", desiredBodyBasis, proxyPalmBasis),
+                    grab_transform_telemetry::formatBasisCrossMap("proxyToBody", proxyPalmBasis, grabBodyBasis),
+                    grab_transform_telemetry::formatBasisCrossMap("rawHandToProxy", rawHandBasis, proxyPalmBasis),
+                    grab_transform_telemetry::formatBasisCrossMap("bodyToDesiredBody", grabBodyBasis, desiredBodyBasis));
 
                 ROCK_LOG_DEBUG(Hand,
                     "{} GRAB FRAME TARGETS: grabHSRaw.pos=({:.2f},{:.2f},{:.2f}) grabHSProxy.pos=({:.2f},{:.2f},{:.2f}) "
@@ -10267,6 +10285,9 @@ namespace rock
                                 .desiredBodyWorld = desiredBodyWorld,
                                 .bodyAWorldBefore = bodyAWorldBeforeSolve,
                                 .bodyWorldBefore = bodyWorldBeforeSolve,
+                                .relationInverseBodyWorld = relationInverseBodyWorld,
+                                .atomRowsBodyWorld = atomRowsBodyWorld,
+                                .solverEffectiveBodyWorld = solverEffectiveBodyWorld,
                                 .transformARotation = transformAAsHkColumns,
                                 .transformBRotation = transformBAsHkColumns,
                                 .targetBRcaRaw = targetBRcaRaw,
@@ -10362,6 +10383,34 @@ namespace rock
                                     _ragdollAngularProbePreSolve.solverEffectiveToAtomDegrees,
                                     _ragdollAngularProbePreSolve.targetRowsToProxyInBodyDegrees,
                                     _ragdollAngularProbePreSolve.pivotBRelationDeltaGameUnits);
+                                if (bodyAWorldBeforeSolveOk) {
+                                    const auto bodyABasis = grab_transform_telemetry::makeOrientationBasis(bodyAWorldBeforeSolve);
+                                    const auto liveBodyBasis = grab_transform_telemetry::makeOrientationBasis(bodyWorldBeforeSolve);
+                                    const auto desiredBodyBasis = grab_transform_telemetry::makeOrientationBasis(desiredBodyWorld);
+                                    const auto relationBodyBasis = grab_transform_telemetry::makeOrientationBasis(relationInverseBodyWorld);
+                                    const auto atomRowsBodyBasis = grab_transform_telemetry::makeOrientationBasis(atomRowsBodyWorld);
+                                    const auto solverEffectiveBasis = grab_transform_telemetry::makeOrientationBasis(solverEffectiveBodyWorld);
+                                    ROCK_LOG_INFO(Hand,
+                                        "{} GRAB_TRACE stage=pre_solve_axismap trace={} writeSeq={} flushNext={} queued={} {} {} {}",
+                                        handName(),
+                                        _grabFrame.traceId,
+                                        _grabFrame.traceTargetWriteSequence,
+                                        _grabAuthorityProxyFlushSequence + 1,
+                                        _grabAuthorityProxyQueuedSequence,
+                                        grab_transform_telemetry::formatBasisCrossMap("liveBodyToA", liveBodyBasis, bodyABasis),
+                                        grab_transform_telemetry::formatBasisCrossMap("desiredBodyToA", desiredBodyBasis, bodyABasis),
+                                        grab_transform_telemetry::formatBasisCrossMap("atomRowsToA", atomRowsBodyBasis, bodyABasis));
+                                    ROCK_LOG_INFO(Hand,
+                                        "{} GRAB_TRACE stage=pre_solve_axismap2 trace={} writeSeq={} flushNext={} queued={} {} {} {}",
+                                        handName(),
+                                        _grabFrame.traceId,
+                                        _grabFrame.traceTargetWriteSequence,
+                                        _grabAuthorityProxyFlushSequence + 1,
+                                        _grabAuthorityProxyQueuedSequence,
+                                        grab_transform_telemetry::formatBasisCrossMap("relationInvToA", relationBodyBasis, bodyABasis),
+                                        grab_transform_telemetry::formatBasisCrossMap("solverEffToA", solverEffectiveBasis, bodyABasis),
+                                        grab_transform_telemetry::formatBasisCrossMap("liveBodyToDesiredBody", liveBodyBasis, desiredBodyBasis));
+                                }
                             }
                         }
                     }
@@ -10848,6 +10897,34 @@ namespace rock
                     ragdollAngularProbePreSolve.requiredAxisProxyLocal.x,
                     ragdollAngularProbePreSolve.requiredAxisProxyLocal.y,
                     ragdollAngularProbePreSolve.requiredAxisProxyLocal.z);
+                if (ragdollAngularProbePreSolve.bodyAWorldValid) {
+                    const auto bodyABasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.bodyAWorldBefore);
+                    const auto liveBeforeBasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.bodyWorldBefore);
+                    const auto liveAfterBasis = grab_transform_telemetry::makeOrientationBasis(objectReadback);
+                    const auto desiredBasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.desiredBodyWorld);
+                    const auto atomRowsBasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.atomRowsBodyWorld);
+                    const auto solverEffectiveBasis = grab_transform_telemetry::makeOrientationBasis(ragdollAngularProbePreSolve.solverEffectiveBodyWorld);
+                    ROCK_LOG_SAMPLE_WARN(Hand,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "{} RAGDOLL AXISMAP: seq={}/{} afterSeq={} {} {} {}",
+                        handName(),
+                        flushSequence,
+                        queuedSequence,
+                        afterSolveSequence,
+                        grab_transform_telemetry::formatBasisCrossMap("liveBeforeToA", liveBeforeBasis, bodyABasis),
+                        grab_transform_telemetry::formatBasisCrossMap("liveAfterToA", liveAfterBasis, bodyABasis),
+                        grab_transform_telemetry::formatBasisCrossMap("desiredToA", desiredBasis, bodyABasis));
+                    ROCK_LOG_SAMPLE_WARN(Hand,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "{} RAGDOLL AXISMAP TARGETS: seq={}/{} afterSeq={} {} {} {}",
+                        handName(),
+                        flushSequence,
+                        queuedSequence,
+                        afterSolveSequence,
+                        grab_transform_telemetry::formatBasisCrossMap("atomRowsToA", atomRowsBasis, bodyABasis),
+                        grab_transform_telemetry::formatBasisCrossMap("solverEffToA", solverEffectiveBasis, bodyABasis),
+                        grab_transform_telemetry::formatBasisCrossMap("liveAfterToDesired", liveAfterBasis, desiredBasis));
+                }
             }
         }
 

@@ -312,6 +312,57 @@ namespace rock::grab_transform_telemetry
         return result;
     }
 
+    inline const RE::NiPoint3& basisAxis(const OrientationBasis& basis, int axis)
+    {
+        switch (axis) {
+        case 1:
+            return basis.y;
+        case 2:
+            return basis.z;
+        default:
+            return basis.x;
+        }
+    }
+
+    inline const char* axisName(int axis)
+    {
+        switch (axis) {
+        case 1:
+            return "Y";
+        case 2:
+            return "Z";
+        default:
+            return "X";
+        }
+    }
+
+    struct AxisBestMatch
+    {
+        int axis = 0;
+        float dot = 0.0f;
+        float absDot = 0.0f;
+    };
+
+    inline AxisBestMatch bestAxisMatch(const RE::NiPoint3& fromAxis, const OrientationBasis& to)
+    {
+        AxisBestMatch result{};
+        for (int axis = 0; axis < 3; ++axis) {
+            const float dot = directionDot(fromAxis, basisAxis(to, axis));
+            const float absDot = std::fabs(dot);
+            if (axis == 0 || absDot > result.absDot) {
+                result.axis = axis;
+                result.dot = dot;
+                result.absDot = absDot;
+            }
+        }
+        return result;
+    }
+
+    inline float axisLineDeltaDegrees(float absDot)
+    {
+        return std::acos((std::clamp)(absDot, 0.0f, 1.0f)) * (180.0f / 3.14159265358979323846f);
+    }
+
     inline float orientationBasisMaxDeltaDegrees(const OrientationBasis& a, const OrientationBasis& b)
     {
         const auto degrees = orientationBasisAxisDeltaDegrees(a, b);
@@ -394,6 +445,74 @@ namespace rock::grab_transform_telemetry
             degrees.z,
             label ? label : "basisDelta",
             (std::max)(degrees.x, (std::max)(degrees.y, degrees.z)));
+        return std::string(buffer);
+    }
+
+    inline std::string formatBasisBestMap(const char* label, const OrientationBasis& from, const OrientationBasis& to)
+    {
+        const AxisBestMatch x = bestAxisMatch(from.x, to);
+        const AxisBestMatch y = bestAxisMatch(from.y, to);
+        const AxisBestMatch z = bestAxisMatch(from.z, to);
+        char buffer[128]{};
+        std::snprintf(buffer,
+            sizeof(buffer),
+            "%s X->%s%s %.2f Y->%s%s %.2f Z->%s%s %.2f",
+            label ? label : "axisMap",
+            x.dot < 0.0f ? "-" : "+",
+            axisName(x.axis),
+            x.absDot,
+            y.dot < 0.0f ? "-" : "+",
+            axisName(y.axis),
+            y.absDot,
+            z.dot < 0.0f ? "-" : "+",
+            axisName(z.axis),
+            z.absDot);
+        return std::string(buffer);
+    }
+
+    inline std::string formatBasisCrossMap(const char* label, const OrientationBasis& from, const OrientationBasis& to)
+    {
+        const float xx = directionDot(from.x, to.x);
+        const float xy = directionDot(from.x, to.y);
+        const float xz = directionDot(from.x, to.z);
+        const float yx = directionDot(from.y, to.x);
+        const float yy = directionDot(from.y, to.y);
+        const float yz = directionDot(from.y, to.z);
+        const float zx = directionDot(from.z, to.x);
+        const float zy = directionDot(from.z, to.y);
+        const float zz = directionDot(from.z, to.z);
+        const AxisBestMatch x = bestAxisMatch(from.x, to);
+        const AxisBestMatch y = bestAxisMatch(from.y, to);
+        const AxisBestMatch z = bestAxisMatch(from.z, to);
+
+        char buffer[640]{};
+        std::snprintf(buffer,
+            sizeof(buffer),
+            "%s.dotRows[X=(%.3f,%.3f,%.3f) Y=(%.3f,%.3f,%.3f) Z=(%.3f,%.3f,%.3f)] "
+            "%s.best[X->%s%s abs=%.3f line=%.1f Y->%s%s abs=%.3f line=%.1f Z->%s%s abs=%.3f line=%.1f]",
+            label ? label : "axisMap",
+            xx,
+            xy,
+            xz,
+            yx,
+            yy,
+            yz,
+            zx,
+            zy,
+            zz,
+            label ? label : "axisMap",
+            x.dot < 0.0f ? "-" : "+",
+            axisName(x.axis),
+            x.absDot,
+            axisLineDeltaDegrees(x.absDot),
+            y.dot < 0.0f ? "-" : "+",
+            axisName(y.axis),
+            y.absDot,
+            axisLineDeltaDegrees(y.absDot),
+            z.dot < 0.0f ? "-" : "+",
+            axisName(z.axis),
+            z.absDot,
+            axisLineDeltaDegrees(z.absDot));
         return std::string(buffer);
     }
 

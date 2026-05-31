@@ -763,6 +763,9 @@ namespace rock
             RE::NiTransform desiredBodyWorld{};
             RE::NiTransform bodyAWorldBefore{};
             RE::NiTransform bodyWorldBefore{};
+            RE::NiTransform relationInverseBodyWorld{};
+            RE::NiTransform atomRowsBodyWorld{};
+            RE::NiTransform solverEffectiveBodyWorld{};
             RE::NiMatrix3 transformARotation{};
             RE::NiMatrix3 transformBRotation{};
             std::array<float, 12> targetBRcaRaw{};
