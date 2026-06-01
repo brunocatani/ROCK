@@ -1398,6 +1398,10 @@ namespace rock
         const char* gripSupportActivePointMode(grab_support_model_math::GripSupportKind kind)
         {
             switch (kind) {
+            case grab_support_model_math::GripSupportKind::SinglePoint:
+                return "gripSupportForcedSinglePoint";
+            case grab_support_model_math::GripSupportKind::SameSurface:
+                return "gripSupportForcedSameSurface";
             case grab_support_model_math::GripSupportKind::OpposedPinch:
                 return "gripSupportOpposedPinch";
             case grab_support_model_math::GripSupportKind::LongHandleAxis:
@@ -1407,6 +1411,53 @@ namespace rock
             default:
                 return "gripSupportEvidenceOnly";
             }
+        }
+
+        bool forceRuntimeGripSupportAuthority(RuntimeGripSupportModel& support,
+            const RE::NiPoint3& activeGripPointWorld,
+            const RE::NiPoint3& activeGripNormalWorld,
+            const RE::NiPoint3& fallbackNormalWorld,
+            const RE::NiPoint3& fallbackAxisWorld,
+            float confidenceFloor,
+            const char* reason)
+        {
+            if (support.model.canAuthorPivot) {
+                return true;
+            }
+            if (!grab_three_phase::isFinite(activeGripPointWorld)) {
+                support.model.reason = "forcedSupportInvalidAnchor";
+                return false;
+            }
+
+            auto supportNormal = normalizeOrZero(activeGripNormalWorld);
+            if (lengthSquared(supportNormal) <= 0.000001f) {
+                supportNormal = normalizeOrZero(fallbackNormalWorld);
+            }
+            if (lengthSquared(supportNormal) <= 0.000001f) {
+                supportNormal = RE::NiPoint3{ 0.0f, 0.0f, 1.0f };
+            }
+
+            auto supportAxis = normalizeOrZero(fallbackAxisWorld);
+            if (lengthSquared(supportAxis) <= 0.000001f) {
+                supportAxis = grab_contact_patch_math::stablePerpendicular(supportNormal);
+            }
+
+            if (support.model.kind == grab_support_model_math::GripSupportKind::None) {
+                support.model.kind = support.sampleCount > 0 ?
+                    grab_support_model_math::GripSupportKind::SameSurface :
+                    grab_support_model_math::GripSupportKind::SinglePoint;
+            }
+            support.model.pivotPoint = activeGripPointWorld;
+            support.model.supportNormal = supportNormal;
+            support.model.supportAxis = supportAxis;
+            support.model.pivotShiftGameUnits = 0.0f;
+            support.model.acceptedSampleCount = (std::max)(support.model.acceptedSampleCount, static_cast<std::size_t>(support.sampleCount + 1));
+            support.model.confidence = (std::max)(support.model.confidence, confidenceFloor);
+            support.model.reason = reason ? reason : "forcedSupportGroupUpgrade";
+            support.model.valid = true;
+            support.model.canAuthorPivot = true;
+            support.valid = true;
+            return true;
         }
 
         RuntimeGripSupportModel buildRuntimeGripSupportModel(
@@ -2694,7 +2745,9 @@ namespace rock
             if (std::strcmp(mode, "pinchPocket") == 0) {
                 return GrabPivotAuthoritySource::PinchPocketMeshPoint;
             }
-            if (std::strcmp(mode, "gripSupportOpposedPinch") == 0 ||
+            if (std::strcmp(mode, "gripSupportForcedSinglePoint") == 0 ||
+                std::strcmp(mode, "gripSupportForcedSameSurface") == 0 ||
+                std::strcmp(mode, "gripSupportOpposedPinch") == 0 ||
                 std::strcmp(mode, "gripSupportLongHandleAxis") == 0 ||
                 std::strcmp(mode, "gripSupportPalmWrap") == 0) {
                 return GrabPivotAuthoritySource::GripSupportModel;
@@ -7794,27 +7847,44 @@ namespace rock
                             pocket.valid ? pocket.fingerForwardWorld : RE::NiPoint3{},
                             pocket.valid ? pocket.crossPalmWorld : RE::NiPoint3{},
                             supportLeverGameUnits);
-                        if (gripSupportRuntime.model.canAuthorPivot) {
-                            grabGripPoint = gripSupportRuntime.model.pivotPoint;
-                            gripArea.contactSeedWorld = grabGripPoint;
-                            grabPointMode = gripSupportActivePointMode(gripSupportRuntime.model.kind);
-                            relationMode = grabPointMode;
-                            grabFallbackReason = gripSupportRuntime.model.reason;
-                            _grabObjectGripAtGrab.contactSeedWorld = grabGripPoint;
-                            _grabObjectGripAtGrab.source = grabPointMode;
-                            _grabObjectGripAtGrab.fallbackReason = grabFallbackReason;
-                            _grabObjectGripAtGrab.confidence = (std::max)(_grabObjectGripAtGrab.confidence, gripSupportRuntime.model.confidence);
-                            pivotAuthoritySource = grabPivotAuthoritySourceName(GrabPivotAuthoritySource::GripSupportModel);
-                            pivotAuthorityPositionOnly = false;
-                            pivotAuthorityNormalTrusted = lengthSquared(gripSupportRuntime.model.supportNormal) > 0.000001f;
-                            pivotAuthorityPositionConfidence = gripSupportRuntime.model.confidence;
-                            pivotAuthorityPocketDistanceGameUnits = pointDistanceGameUnits(grabPivotAWorld, grabGripPoint);
-                            pivotAuthoritySelectionDeltaGameUnits =
-                                sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, grabGripPoint) : std::numeric_limits<float>::max();
-                            pivotAuthorityLongLeverGameUnits = supportLeverGameUnits;
-                            if (pivotAuthorityNormalTrusted) {
-                                gripNormalWorld = gripSupportRuntime.model.supportNormal;
-                            }
+                    }
+                    /*
+                     * Support/pinch convergence is a promotion step, not a
+                     * rejection gate. If rich support probing only produced weak
+                     * same-surface or single-point evidence, promote the already
+                     * selected object-side point into SupportGroup authority
+                     * instead of aborting a valid grab.
+                     */
+                    if (!usingPinchPocket && !gripSupportRuntime.model.canAuthorPivot) {
+                        const bool hadWeakSupportModel = gripSupportRuntime.model.valid;
+                        forceRuntimeGripSupportAuthority(gripSupportRuntime,
+                            grabGripPoint,
+                            gripNormalWorld,
+                            pocket.valid ? pocket.palmNormalWorld : gripNormalWorld,
+                            pocket.valid ? pocket.crossPalmWorld : RE::NiPoint3{},
+                            hadWeakSupportModel ? 0.55f : 0.35f,
+                            hadWeakSupportModel ? "forcedSupportGroupFromWeakEvidence" : "forcedSupportGroupFromGrabPoint");
+                    }
+                    if (gripSupportRuntime.model.canAuthorPivot) {
+                        grabGripPoint = gripSupportRuntime.model.pivotPoint;
+                        gripArea.contactSeedWorld = grabGripPoint;
+                        grabPointMode = gripSupportActivePointMode(gripSupportRuntime.model.kind);
+                        relationMode = grabPointMode;
+                        grabFallbackReason = gripSupportRuntime.model.reason;
+                        _grabObjectGripAtGrab.contactSeedWorld = grabGripPoint;
+                        _grabObjectGripAtGrab.source = grabPointMode;
+                        _grabObjectGripAtGrab.fallbackReason = grabFallbackReason;
+                        _grabObjectGripAtGrab.confidence = (std::max)(_grabObjectGripAtGrab.confidence, gripSupportRuntime.model.confidence);
+                        pivotAuthoritySource = grabPivotAuthoritySourceName(GrabPivotAuthoritySource::GripSupportModel);
+                        pivotAuthorityPositionOnly = false;
+                        pivotAuthorityNormalTrusted = lengthSquared(gripSupportRuntime.model.supportNormal) > 0.000001f;
+                        pivotAuthorityPositionConfidence = gripSupportRuntime.model.confidence;
+                        pivotAuthorityPocketDistanceGameUnits = pointDistanceGameUnits(grabPivotAWorld, grabGripPoint);
+                        pivotAuthoritySelectionDeltaGameUnits =
+                            sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, grabGripPoint) : std::numeric_limits<float>::max();
+                        pivotAuthorityLongLeverGameUnits = supportLeverGameUnits;
+                        if (pivotAuthorityNormalTrusted) {
+                            gripNormalWorld = gripSupportRuntime.model.supportNormal;
                         }
                     }
 
