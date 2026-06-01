@@ -63,6 +63,7 @@ namespace rock
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 
 namespace rock::hand_semantic_contact_state
 {
@@ -76,6 +77,13 @@ namespace rock::hand_semantic_contact_state
 
     inline constexpr std::uint32_t kInvalidBodyId = hand_collider_semantics::kInvalidBodyId;
 
+    struct SemanticContactVector
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+    };
+
     struct SemanticContactRecord
     {
         bool valid = false;
@@ -87,6 +95,10 @@ namespace rock::hand_semantic_contact_state
         std::uint32_t otherBodyId = kInvalidBodyId;
         std::uint32_t sequence = 0;
         std::uint32_t framesSinceContact = 0xFFFF'FFFFu;
+        bool hasContactPointGame = false;
+        bool hasContactNormalGame = false;
+        SemanticContactVector contactPointGame{};
+        SemanticContactVector contactNormalGame{};
     };
 
     inline constexpr std::size_t kMaxSemanticContactRecords = hand_collider_semantics::kHandColliderBodyCountPerHand;
@@ -130,6 +142,28 @@ namespace rock::hand_semantic_contact_state
             return 0xFFFF'FFFFu;
         }
         return currentFrame >= contactFrame ? currentFrame - contactFrame : 0;
+    }
+
+    inline bool isFiniteVector(const SemanticContactVector& value)
+    {
+        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+    }
+
+    inline bool hasUsableContactPoint(const SemanticContactRecord& record)
+    {
+        return record.valid && record.hasContactPointGame && isFiniteVector(record.contactPointGame);
+    }
+
+    inline bool hasUsableContactNormal(const SemanticContactRecord& record)
+    {
+        if (!record.valid || !record.hasContactNormalGame || !isFiniteVector(record.contactNormalGame)) {
+            return false;
+        }
+        const float lengthSquared =
+            record.contactNormalGame.x * record.contactNormalGame.x +
+            record.contactNormalGame.y * record.contactNormalGame.y +
+            record.contactNormalGame.z * record.contactNormalGame.z;
+        return std::isfinite(lengthSquared) && lengthSquared > 1.0e-6f;
     }
 
     inline constexpr bool isThumbContactRole(hand_collider_semantics::HandColliderRole role)

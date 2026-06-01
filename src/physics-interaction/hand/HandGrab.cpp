@@ -1771,7 +1771,8 @@ namespace rock
                                                hand_collider_semantics::HandFingerSegment segment,
                                                std::uint32_t framesSinceContact,
                                                float sourceQualityScale,
-                                               bool liveProbeSource) {
+                                               bool liveProbeSource,
+                                               const hand_semantic_contact_state::SemanticContactVector* semanticContactPointGame = nullptr) {
                 if (handBodyId == hand_semantic_contact_state::kInvalidBodyId) {
                     return;
                 }
@@ -1789,19 +1790,26 @@ namespace rock
                     ++result.semanticCandidateContactCount;
                 }
 
+                const bool hasSemanticContactPoint =
+                    semanticContactPointGame && hand_semantic_contact_state::isFiniteVector(*semanticContactPointGame);
                 RE::NiTransform handContactWorld{};
-                if (!tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ handBodyId }, handContactWorld)) {
+                const bool hasLiveHandBodyPoint =
+                    tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ handBodyId }, handContactWorld);
+                if (!hasSemanticContactPoint && !hasLiveHandBodyPoint) {
                     return;
                 }
+                const RE::NiPoint3 evidencePointWorld = hasSemanticContactPoint ?
+                    RE::NiPoint3{ semanticContactPointGame->x, semanticContactPointGame->y, semanticContactPointGame->z } :
+                    handContactWorld.translate;
 
-                RE::NiPoint3 directionToObject = normalizeOrZero(objectWorldTransform.translate - handContactWorld.translate);
+                RE::NiPoint3 directionToObject = normalizeOrZero(objectWorldTransform.translate - evidencePointWorld);
                 if (directionToObject.x == 0.0f && directionToObject.y == 0.0f && directionToObject.z == 0.0f) {
                     directionToObject = RE::NiPoint3{ 0.0f, 0.0f, 1.0f };
                 }
 
                 GrabSurfaceHit hit{};
                 if (!findClosestGrabSurfaceHit(surfaceTriangles,
-                        handContactWorld.translate,
+                        evidencePointWorld,
                         directionToObject,
                         g_rockConfig.rockGrabLateralWeight,
                         g_rockConfig.rockGrabDirectionalWeight,
@@ -1816,7 +1824,7 @@ namespace rock
                     return;
                 }
 
-                const float contactDistance = pointDistanceGameUnits(handContactWorld.translate, hit.position);
+                const float contactDistance = pointDistanceGameUnits(evidencePointWorld, hit.position);
                 const float maxContactDistance = (std::max)(0.0f, g_rockConfig.rockGrabFingerContactMeshSnapMaxDistanceGameUnits);
                 if (maxContactDistance > 0.0f && contactDistance > maxContactDistance) {
                     ++result.rejectedDistanceCount;
@@ -1837,7 +1845,7 @@ namespace rock
                 patch.role = role;
                 patch.handBodyId = handBodyId;
                 patch.objectBodyId = resolvedBodyId;
-                patch.handPointWorld = handContactWorld.translate;
+                patch.handPointWorld = evidencePointWorld;
                 patch.objectPointWorld = hit.position;
                 patch.normalWorld = hit.normal;
                 patch.quality = sourceQualityScale / (1.0f + contactDistance);
@@ -1866,7 +1874,8 @@ namespace rock
                     contact.segment,
                     contact.framesSinceContact,
                     1.0f,
-                    false);
+                    false,
+                    hand_semantic_contact_state::hasUsableContactPoint(contact) ? &contact.contactPointGame : nullptr);
             }
 
             if (includeLiveColliderProbes && hand) {

@@ -1009,7 +1009,10 @@ namespace rock
         return true;
     }
 
-    void Hand::recordSemanticContact(const HandColliderBodyMetadata& metadata, std::uint32_t otherBodyId)
+    void Hand::recordSemanticContact(const HandColliderBodyMetadata& metadata,
+        std::uint32_t otherBodyId,
+        const hand_semantic_contact_state::SemanticContactVector* contactPointGame,
+        const hand_semantic_contact_state::SemanticContactVector* contactNormalGame)
     {
         if (!metadata.valid || metadata.bodyId == hand_semantic_contact_state::kInvalidBodyId || otherBodyId == hand_semantic_contact_state::kInvalidBodyId) {
             return;
@@ -1030,6 +1033,17 @@ namespace rock
             return;
         }
 
+        const bool hasContactPointGame =
+            contactPointGame && hand_semantic_contact_state::isFiniteVector(*contactPointGame);
+        const bool hasContactNormalGame =
+            contactNormalGame && hand_semantic_contact_state::isFiniteVector(*contactNormalGame) &&
+            (contactNormalGame->x * contactNormalGame->x +
+                contactNormalGame->y * contactNormalGame->y +
+                contactNormalGame->z * contactNormalGame->z) > 1.0e-6f;
+        const hand_semantic_contact_state::SemanticContactVector emptyVector{};
+        const auto& storedPoint = hasContactPointGame ? *contactPointGame : emptyVector;
+        const auto& storedNormal = hasContactNormalGame ? *contactNormalGame : emptyVector;
+
         const std::uint32_t contactFrame = _semanticContactFrameCounter.load(std::memory_order_acquire);
         _semanticContactValid.store(0, std::memory_order_release);
         std::uint32_t contactSequence = _semanticContactSequence.fetch_add(1, std::memory_order_acq_rel) + 1;
@@ -1042,6 +1056,14 @@ namespace rock
         _semanticContactHandBodyId.store(metadata.bodyId, std::memory_order_release);
         _semanticContactOtherBodyId.store(otherBodyId, std::memory_order_release);
         _semanticContactFrames.store(contactFrame, std::memory_order_release);
+        _semanticContactPointGameX.store(storedPoint.x, std::memory_order_release);
+        _semanticContactPointGameY.store(storedPoint.y, std::memory_order_release);
+        _semanticContactPointGameZ.store(storedPoint.z, std::memory_order_release);
+        _semanticContactNormalGameX.store(storedNormal.x, std::memory_order_release);
+        _semanticContactNormalGameY.store(storedNormal.y, std::memory_order_release);
+        _semanticContactNormalGameZ.store(storedNormal.z, std::memory_order_release);
+        _semanticContactHasPointGame.store(hasContactPointGame ? 1u : 0u, std::memory_order_release);
+        _semanticContactHasNormalGame.store(hasContactNormalGame ? 1u : 0u, std::memory_order_release);
         _semanticContactSequence.store(contactSequence + 1, std::memory_order_release);
         _semanticContactValid.store(1, std::memory_order_release);
 
@@ -1057,6 +1079,14 @@ namespace rock
         _semanticContactSetHandBodyId[slot].store(metadata.bodyId, std::memory_order_release);
         _semanticContactSetOtherBodyId[slot].store(otherBodyId, std::memory_order_release);
         _semanticContactSetFrames[slot].store(contactFrame, std::memory_order_release);
+        _semanticContactSetPointGameX[slot].store(storedPoint.x, std::memory_order_release);
+        _semanticContactSetPointGameY[slot].store(storedPoint.y, std::memory_order_release);
+        _semanticContactSetPointGameZ[slot].store(storedPoint.z, std::memory_order_release);
+        _semanticContactSetNormalGameX[slot].store(storedNormal.x, std::memory_order_release);
+        _semanticContactSetNormalGameY[slot].store(storedNormal.y, std::memory_order_release);
+        _semanticContactSetNormalGameZ[slot].store(storedNormal.z, std::memory_order_release);
+        _semanticContactSetHasPointGame[slot].store(hasContactPointGame ? 1u : 0u, std::memory_order_release);
+        _semanticContactSetHasNormalGame[slot].store(hasContactNormalGame ? 1u : 0u, std::memory_order_release);
         _semanticContactSetSequence[slot].store(slotSequence + 1, std::memory_order_release);
         _semanticContactSetValid[slot].store(1, std::memory_order_release);
     }
@@ -1074,6 +1104,8 @@ namespace rock
         _semanticContactHandBodyId.store(hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
         _semanticContactOtherBodyId.store(hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
         _semanticContactFrames.store(0xFFFF'FFFFu, std::memory_order_release);
+        _semanticContactHasPointGame.store(0, std::memory_order_release);
+        _semanticContactHasNormalGame.store(0, std::memory_order_release);
         _semanticContactSequence.fetch_add(2, std::memory_order_acq_rel);
 
         for (std::size_t i = 0; i < hand_semantic_contact_state::kMaxSemanticContactRecords; ++i) {
@@ -1081,6 +1113,8 @@ namespace rock
             _semanticContactSetHandBodyId[i].store(hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
             _semanticContactSetOtherBodyId[i].store(hand_semantic_contact_state::kInvalidBodyId, std::memory_order_release);
             _semanticContactSetFrames[i].store(0xFFFF'FFFFu, std::memory_order_release);
+            _semanticContactSetHasPointGame[i].store(0, std::memory_order_release);
+            _semanticContactSetHasNormalGame[i].store(0, std::memory_order_release);
             _semanticContactSetSequence[i].fetch_add(2, std::memory_order_acq_rel);
         }
     }
@@ -1115,12 +1149,30 @@ namespace rock
             contact.framesSinceContact = hand_semantic_contact_state::semanticFramesSinceContact(
                 _semanticContactFrameCounter.load(std::memory_order_acquire),
                 contactFrame);
+            contact.hasContactPointGame = _semanticContactHasPointGame.load(std::memory_order_acquire) != 0;
+            contact.hasContactNormalGame = _semanticContactHasNormalGame.load(std::memory_order_acquire) != 0;
+            contact.contactPointGame = hand_semantic_contact_state::SemanticContactVector{
+                _semanticContactPointGameX.load(std::memory_order_acquire),
+                _semanticContactPointGameY.load(std::memory_order_acquire),
+                _semanticContactPointGameZ.load(std::memory_order_acquire),
+            };
+            contact.contactNormalGame = hand_semantic_contact_state::SemanticContactVector{
+                _semanticContactNormalGameX.load(std::memory_order_acquire),
+                _semanticContactNormalGameY.load(std::memory_order_acquire),
+                _semanticContactNormalGameZ.load(std::memory_order_acquire),
+            };
             const auto sequenceAfter = _semanticContactSequence.load(std::memory_order_acquire);
             if (!hand_semantic_contact_state::semanticContactSequenceSnapshotStable(sequenceBefore, sequenceAfter)) {
                 continue;
             }
             if (contact.handBodyId == hand_semantic_contact_state::kInvalidBodyId || contact.otherBodyId == hand_semantic_contact_state::kInvalidBodyId) {
                 return false;
+            }
+            if (contact.hasContactPointGame && !hand_semantic_contact_state::isFiniteVector(contact.contactPointGame)) {
+                contact.hasContactPointGame = false;
+            }
+            if (contact.hasContactNormalGame && !hand_semantic_contact_state::hasUsableContactNormal(contact)) {
+                contact.hasContactNormalGame = false;
             }
             outContact = contact;
             return true;
@@ -1157,6 +1209,18 @@ namespace rock
             contact.framesSinceContact = hand_semantic_contact_state::semanticFramesSinceContact(
                 _semanticContactFrameCounter.load(std::memory_order_acquire),
                 contactFrame);
+            contact.hasContactPointGame = _semanticContactSetHasPointGame[slot].load(std::memory_order_acquire) != 0;
+            contact.hasContactNormalGame = _semanticContactSetHasNormalGame[slot].load(std::memory_order_acquire) != 0;
+            contact.contactPointGame = hand_semantic_contact_state::SemanticContactVector{
+                _semanticContactSetPointGameX[slot].load(std::memory_order_acquire),
+                _semanticContactSetPointGameY[slot].load(std::memory_order_acquire),
+                _semanticContactSetPointGameZ[slot].load(std::memory_order_acquire),
+            };
+            contact.contactNormalGame = hand_semantic_contact_state::SemanticContactVector{
+                _semanticContactSetNormalGameX[slot].load(std::memory_order_acquire),
+                _semanticContactSetNormalGameY[slot].load(std::memory_order_acquire),
+                _semanticContactSetNormalGameZ[slot].load(std::memory_order_acquire),
+            };
             const auto sequenceAfter = _semanticContactSetSequence[slot].load(std::memory_order_acquire);
             if (!hand_semantic_contact_state::semanticContactSequenceSnapshotStable(sequenceBefore, sequenceAfter)) {
                 continue;
@@ -1167,6 +1231,12 @@ namespace rock
                 contact.otherBodyId == hand_semantic_contact_state::kInvalidBodyId ||
                 contact.framesSinceContact > maxFramesSinceContact) {
                 return false;
+            }
+            if (contact.hasContactPointGame && !hand_semantic_contact_state::isFiniteVector(contact.contactPointGame)) {
+                contact.hasContactPointGame = false;
+            }
+            if (contact.hasContactNormalGame && !hand_semantic_contact_state::hasUsableContactNormal(contact)) {
+                contact.hasContactNormalGame = false;
             }
             outContact = contact;
             return true;
@@ -1204,6 +1274,18 @@ namespace rock
                     _semanticContactFrameCounter.load(std::memory_order_acquire),
                     contactFrame);
                 record.sequence = sequenceBefore;
+                record.hasContactPointGame = _semanticContactSetHasPointGame[i].load(std::memory_order_acquire) != 0;
+                record.hasContactNormalGame = _semanticContactSetHasNormalGame[i].load(std::memory_order_acquire) != 0;
+                record.contactPointGame = hand_semantic_contact_state::SemanticContactVector{
+                    _semanticContactSetPointGameX[i].load(std::memory_order_acquire),
+                    _semanticContactSetPointGameY[i].load(std::memory_order_acquire),
+                    _semanticContactSetPointGameZ[i].load(std::memory_order_acquire),
+                };
+                record.contactNormalGame = hand_semantic_contact_state::SemanticContactVector{
+                    _semanticContactSetNormalGameX[i].load(std::memory_order_acquire),
+                    _semanticContactSetNormalGameY[i].load(std::memory_order_acquire),
+                    _semanticContactSetNormalGameZ[i].load(std::memory_order_acquire),
+                };
                 const auto sequenceAfter = _semanticContactSetSequence[i].load(std::memory_order_acquire);
                 if (!hand_semantic_contact_state::semanticContactSequenceSnapshotStable(sequenceBefore, sequenceAfter)) {
                     continue;
@@ -1211,6 +1293,12 @@ namespace rock
 
                 if (record.handBodyId == hand_semantic_contact_state::kInvalidBodyId || record.otherBodyId != targetBodyId) {
                     break;
+                }
+                if (record.hasContactPointGame && !hand_semantic_contact_state::isFiniteVector(record.contactPointGame)) {
+                    record.hasContactPointGame = false;
+                }
+                if (record.hasContactNormalGame && !hand_semantic_contact_state::hasUsableContactNormal(record)) {
+                    record.hasContactNormalGame = false;
                 }
                 if (record.framesSinceContact <= maxFramesSinceContact) {
                     contacts.add(record);
@@ -1639,7 +1727,8 @@ namespace rock
         const std::vector<std::uint32_t>& peerHeldBodyIds,
         const RE::NiPoint3& selectionOrigin,
         const RE::NiPoint3& palmNormal,
-        float nearRange)
+        float nearRange,
+        const char** outRefusalReason)
     {
         /*
          * ROCK lets the second hand close-grab the dynamic body already held by
@@ -1649,17 +1738,34 @@ namespace rock
          * only promotes it when one of that ref's active held bodies is inside
          * close reach. Far pulls and unrelated selections remain exclusive.
          */
-        if (!selection_state_policy::canUpdateSelectionFromState(_state) || !hknpWorld || !peerSavedObjectState.isValid()) {
+        auto refuse = [&](const char* reason) {
+            if (outRefusalReason) {
+                *outRefusalReason = reason ? reason : "unknown";
+            }
             return false;
+        };
+
+        if (outRefusalReason) {
+            *outRefusalReason = "not-evaluated";
+        }
+
+        if (!selection_state_policy::canUpdateSelectionFromState(_state)) {
+            return refuse("state-not-updatable");
+        }
+        if (!hknpWorld) {
+            return refuse("missing-hknp-world");
+        }
+        if (!peerSavedObjectState.isValid()) {
+            return refuse("invalid-peer-held-state");
         }
 
         auto* peerRef = peerSavedObjectState.refr;
         if (!peerRef || peerRef->IsDeleted() || peerRef->IsDisabled()) {
-            return false;
+            return refuse("invalid-peer-ref");
         }
 
         if (_currentSelection.isValid() && !_currentSelection.isFarSelection && _currentSelection.refr != peerRef) {
-            return false;
+            return refuse("unrelated-close-selection");
         }
 
         const float closeReach = (std::max)(
@@ -1681,14 +1787,22 @@ namespace rock
         for (const auto bodyId : peerHeldBodyIds) {
             appendUniqueBody(bodyId);
         }
+        if (candidateBodyIds.empty()) {
+            return refuse("no-peer-held-bodies");
+        }
 
         SelectedObject best{};
         float bestDistance = std::numeric_limits<float>::max();
         const char* bestSource = "none";
+        const char* lastMissReason = "no-close-evidence";
+        auto toNiPoint = [](const hand_semantic_contact_state::SemanticContactVector& value) {
+            return RE::NiPoint3{ value.x, value.y, value.z };
+        };
         for (const auto bodyId : candidateBodyIds) {
             RE::NiTransform bodyWorld{};
             if (!havok_runtime::tryGetBodyArrayWorldTransform(hknpWorld, RE::hknpBodyId{ bodyId }, bodyWorld) &&
                 !tryResolveLiveBodyWorldTransform(hknpWorld, RE::hknpBodyId{ bodyId }, bodyWorld)) {
+                lastMissReason = "no-body-transform";
                 continue;
             }
 
@@ -1700,9 +1814,10 @@ namespace rock
                 }
             }
 
-            auto considerHitPoint = [&](const RE::NiPoint3& hitPointWorld, const char* source) {
+            auto considerHitPoint = [&](const RE::NiPoint3& hitPointWorld, const RE::NiPoint3& hitNormalWorld, const char* source) {
                 const float distance = pointDistanceGameUnits(selectionOrigin, hitPointWorld);
                 if (distance > closeReach || distance >= bestDistance) {
+                    lastMissReason = distance > closeReach ? "outside-close-reach" : lastMissReason;
                     return;
                 }
 
@@ -1711,7 +1826,7 @@ namespace rock
                 best.refr = peerRef;
                 best.bodyId = RE::hknpBodyId{ bodyId };
                 best.hitPointWorld = hitPointWorld;
-                best.hitNormalWorld = normalizeOrFallback(selectionOrigin - hitPointWorld, palmNormal);
+                best.hitNormalWorld = normalizeOrFallback(hitNormalWorld, normalizeOrFallback(selectionOrigin - hitPointWorld, palmNormal));
                 best.distance = distance;
                 best.signedAlongDistance = distance;
                 best.lateralDistance = 0.0f;
@@ -1735,25 +1850,42 @@ namespace rock
                     bodyId,
                     static_cast<std::uint32_t>((std::max)(0, g_rockConfig.rockGrabOppositionContactMaxAgeFrames)));
                 if (!semanticDecision.accept) {
+                    lastMissReason = semanticDecision.reason;
+                    continue;
+                }
+
+                if (hand_semantic_contact_state::hasUsableContactPoint(contact)) {
+                    const RE::NiPoint3 contactPointWorld = toNiPoint(contact.contactPointGame);
+                    const RE::NiPoint3 contactNormalWorld =
+                        hand_semantic_contact_state::hasUsableContactNormal(contact) ?
+                            toNiPoint(contact.contactNormalGame) :
+                            normalizeOrFallback(selectionOrigin - contactPointWorld, palmNormal);
+                    considerHitPoint(contactPointWorld, contactNormalWorld, "semanticContactPoint");
                     continue;
                 }
 
                 RE::NiTransform handContactWorld{};
                 if (tryResolveLiveBodyWorldTransform(hknpWorld, RE::hknpBodyId{ contact.handBodyId }, handContactWorld)) {
-                    considerHitPoint(handContactWorld.translate, semanticDecision.reason);
+                    considerHitPoint(handContactWorld.translate,
+                        normalizeOrFallback(selectionOrigin - handContactWorld.translate, palmNormal),
+                        "semanticHandBodyOriginFallback");
+                } else {
+                    lastMissReason = "semantic-hand-body-missing";
                 }
             }
 
-            considerHitPoint(bodyWorld.translate, "bodyOriginFallback");
+            considerHitPoint(bodyWorld.translate,
+                normalizeOrFallback(selectionOrigin - bodyWorld.translate, palmNormal),
+                "peerHeldBodyOriginFallback");
         }
 
         if (!best.isValid()) {
-            return false;
+            return refuse(lastMissReason);
         }
 
         const auto transition = applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::SelectionFoundClose });
         if (!transition.accepted) {
-            return false;
+            return refuse("state-transition-rejected");
         }
 
         stopSelectionHighlight();
@@ -1769,6 +1901,9 @@ namespace rock
             best.distance,
             closeReach,
             bestSource);
+        if (outRefusalReason) {
+            *outRefusalReason = bestSource;
+        }
         return true;
     }
 

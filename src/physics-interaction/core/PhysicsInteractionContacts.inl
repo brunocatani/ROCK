@@ -1088,14 +1088,44 @@
                 contactActivity.evictedStale ? "yes" : "no");
         }
 
+        hand_semantic_contact_state::SemanticContactVector semanticContactPointGame{};
+        hand_semantic_contact_state::SemanticContactVector semanticContactNormalGame{};
+        const hand_semantic_contact_state::SemanticContactVector* semanticContactPoint = nullptr;
+        const hand_semantic_contact_state::SemanticContactVector* semanticContactNormal = nullptr;
+        if (ensureRawContactPoint()) {
+            const float scale = havokToGameScale();
+            semanticContactPointGame = hand_semantic_contact_state::SemanticContactVector{
+                rawContactPoint.contactPointHavok[0] * scale,
+                rawContactPoint.contactPointHavok[1] * scale,
+                rawContactPoint.contactPointHavok[2] * scale,
+            };
+            semanticContactNormalGame = hand_semantic_contact_state::SemanticContactVector{
+                rawContactPoint.contactNormalHavok[0],
+                rawContactPoint.contactNormalHavok[1],
+                rawContactPoint.contactNormalHavok[2],
+            };
+            if (hand_semantic_contact_state::isFiniteVector(semanticContactPointGame)) {
+                semanticContactPoint = &semanticContactPointGame;
+            }
+            const float normalLengthSquared =
+                semanticContactNormalGame.x * semanticContactNormalGame.x +
+                semanticContactNormalGame.y * semanticContactNormalGame.y +
+                semanticContactNormalGame.z * semanticContactNormalGame.z;
+            if (hand_semantic_contact_state::isFiniteVector(semanticContactNormalGame) &&
+                std::isfinite(normalLengthSquared) &&
+                normalLengthSquared > 1.0e-6f) {
+                semanticContactNormal = &semanticContactNormalGame;
+            }
+        }
+
         if (handSource->isLeft) {
-            _leftHand.recordSemanticContact(handSource->metadata, contactRoute.targetBodyId);
+            _leftHand.recordSemanticContact(handSource->metadata, contactRoute.targetBodyId, semanticContactPoint, semanticContactNormal);
             if (contactRoute.driveHandDynamicPush) {
                 _lastContactSourceLeft.store(handSource->metadata.bodyId, std::memory_order_release);
                 _lastContactBodyLeft.store(contactRoute.targetBodyId, std::memory_order_release);
             }
         } else {
-            _rightHand.recordSemanticContact(handSource->metadata, contactRoute.targetBodyId);
+            _rightHand.recordSemanticContact(handSource->metadata, contactRoute.targetBodyId, semanticContactPoint, semanticContactNormal);
             if (contactRoute.driveHandDynamicPush) {
                 _lastContactSourceRight.store(handSource->metadata.bodyId, std::memory_order_release);
                 _lastContactBodyRight.store(contactRoute.targetBodyId, std::memory_order_release);

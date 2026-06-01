@@ -1594,6 +1594,7 @@ namespace rock
         _heldImpactHapticCooldownUntil.clear();
         _grabEventFrameCounter = 0;
         _grabInputIntentStates = {};
+        _peerHeldJoinRetryStates = {};
         _lastContactBodyRight.store(0xFFFFFFFF, std::memory_order_release);
         _lastContactBodyLeft.store(0xFFFFFFFF, std::memory_order_release);
         _lastContactSourceRight.store(0xFFFFFFFF, std::memory_order_release);
@@ -2527,6 +2528,7 @@ namespace rock
         _heldImpactHapticCooldownUntil.clear();
         _grabEventFrameCounter = 0;
         _grabInputIntentStates = {};
+        _peerHeldJoinRetryStates = {};
         _bodyBoneColliderCreateRetryFrames = 0;
         _handColliderCreateRetryFrames = 0;
         _lastContactBodyRight.store(0xFFFFFFFF, std::memory_order_release);
@@ -3891,13 +3893,34 @@ namespace rock
         auto processHand = [&](Hand& hand, bool isLeft) {
             const auto& handInput = isLeft ? frame.left : frame.right;
             auto& inputIntentState = _grabInputIntentStates[isLeft ? 1u : 0u];
+            auto& peerHeldJoinRetryState = _peerHeldJoinRetryStates[isLeft ? 1u : 0u];
             auto& shoulderStashState = _shoulderStashStates[isLeft ? 1u : 0u];
+            auto cancelPeerHeldJoinRetry = [&](const char* reason, bool logCancellation) {
+                if (!peerHeldJoinRetryState.active) {
+                    return;
+                }
+                const auto peerFormId = peerHeldJoinRetryState.peerFormId;
+                const auto attempts = peerHeldJoinRetryState.attempts;
+                const char* lastRefusal = peerHeldJoinRetryState.lastRefusalReason ? peerHeldJoinRetryState.lastRefusalReason : "none";
+                peer_held_join_retry_policy::reset(peerHeldJoinRetryState);
+                if (logCancellation) {
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} hand peer-held join retry cancelled: reason={} peerFormID={:08X} attempts={} lastRefusal={}",
+                        hand.handName(),
+                        reason ? reason : "unknown",
+                        peerFormId,
+                        attempts,
+                        lastRefusal);
+                }
+            };
             if (handInput.disabled) {
+                cancelPeerHeldJoinRetry("hand-input-disabled", false);
                 clearShoulderStashForHand(hand, isLeft);
                 return;
             }
             if (!weapon_two_handed_grip_math::canProcessNormalGrabInput(isLeft, equippedWeaponSupportGripActive, rightHandWeaponEquipped)) {
                 grab_input_intent_policy::reset(inputIntentState);
+                cancelPeerHeldJoinRetry("normal-grab-suppressed", true);
                 clearShoulderStashForHand(hand, isLeft);
                 _softContactRuntime.clearHandForStrongerOwner(
                     isLeft,
@@ -3925,6 +3948,7 @@ namespace rock
             }
 
             auto grabInput = readGrabButtonState(isLeft, grabButton);
+            const auto rawGrabInput = grabInput;
             if (grabInput.pressed &&
                 selection_state_policy::canProcessSelectedState(hand.getState()) &&
                 hand.hasSelection() &&
@@ -3968,11 +3992,19 @@ namespace rock
             }
 
             const Hand& peerForInputIntent = isLeft ? _rightHand : _leftHand;
-            const bool peerHeldCloseCandidate =
+            auto* peerHeldRefForInput = peerForInputIntent.getHeldRef();
+            const auto& peerSavedObjectStateForInput = peerForInputIntent.getSavedObjectState();
+            const bool peerHoldingLooseObject =
                 !hand.isHolding() &&
                 peerForInputIntent.isHolding() &&
-                peerForInputIntent.getHeldRef() &&
-                (!hand.hasSelection() || hand.getSelection().refr == peerForInputIntent.getHeldRef());
+                peerHeldRefForInput &&
+                peerSavedObjectStateForInput.isValid() &&
+                peerSavedObjectStateForInput.targetKind == grab_target::Kind::LooseObject;
+            const bool peerHeldCloseSelectionReady =
+                peerHoldingLooseObject &&
+                hand.hasSelection() &&
+                !hand.getSelection().isFarSelection &&
+                hand.getSelection().refr == peerHeldRefForInput;
             const bool selectedPressCandidate =
                 !hand.isHolding() &&
                 hand.hasSelection() &&
@@ -3985,7 +4017,7 @@ namespace rock
                     .pressed = grabInput.pressed,
                     .released = grabInput.released,
                 },
-                selectedPressCandidate || pullCatchPressCandidate || peerHeldCloseCandidate,
+                selectedPressCandidate || pullCatchPressCandidate || peerHeldCloseSelectionReady,
                 hand.isHolding(),
                 frame.deltaSeconds,
                 grab_input_intent_policy::Config{
@@ -4005,6 +4037,149 @@ namespace rock
                     grab_input_intent_policy::stateName(intentDecision.state),
                     intentDecision.reason);
             }
+
+            auto attemptPeerHeldCloseJoinSelection = [&](const char** outRefusalReason = nullptr) {
+                auto setRefusal = [&](const char* reason) {
+                    if (outRefusalReason) {
+                        *outRefusalReason = reason ? reason : "unknown";
+                    }
+                    return false;
+                };
+
+                if (hand.isHolding()) {
+                    return setRefusal("hand-already-holding");
+                }
+
+                if (outRefusalReason) {
+                    *outRefusalReason = "not-evaluated";
+                }
+
+                const Hand& peer = isLeft ? _rightHand : _leftHand;
+                if (!peer.isHolding() || !peer.getHeldRef()) {
+                    return setRefusal("peer-not-holding");
+                }
+                if (!peer.getSavedObjectState().isValid() || peer.getSavedObjectState().targetKind != grab_target::Kind::LooseObject) {
+                    return setRefusal("peer-target-not-loose-object");
+                }
+
+                if (hand.hasSelection() && !hand.getSelection().isFarSelection && hand.getSelection().refr != peer.getHeldRef()) {
+                    return setRefusal("unrelated-close-selection");
+                }
+
+                const bool hadPeerHeldCloseSelection =
+                    hand.hasSelection() && hand.getSelection().refr == peer.getHeldRef() && !hand.getSelection().isFarSelection;
+                const bool refreshedPeerHeldSelection = hand.acquirePeerHeldCloseSelection(frame.bhkWorld,
+                    frame.hknpWorld,
+                    peer.getSavedObjectState(),
+                    peer.getHeldBodyIds(),
+                    handInput.grabAnchorWorld,
+                    handInput.palmNormalWorld,
+                    g_rockConfig.rockNearDetectionRange,
+                    outRefusalReason);
+                if (!refreshedPeerHeldSelection && hadPeerHeldCloseSelection) {
+                    hand.clearSelectionState(false);
+                }
+                return refreshedPeerHeldSelection;
+            };
+
+            const bool unrelatedSelectionForPeerJoin =
+                peerHoldingLooseObject &&
+                hand.hasSelection() &&
+                hand.getSelection().refr != peerHeldRefForInput;
+            const std::uint32_t peerHeldFormIdForRetry = peerHeldRefForInput ? peerHeldRefForInput->GetFormID() : 0u;
+            const bool peerStillHoldingRetryObject =
+                peerHoldingLooseObject &&
+                (!peerHeldJoinRetryState.active ||
+                    (peerHeldJoinRetryState.peerFormId != 0 && peerHeldJoinRetryState.peerFormId == peerHeldFormIdForRetry));
+            const char* retryLastRefusalBeforeUpdate =
+                peerHeldJoinRetryState.lastRefusalReason ? peerHeldJoinRetryState.lastRefusalReason : "none";
+            const auto retryAttemptsBeforeUpdate = peerHeldJoinRetryState.attempts;
+            const auto peerHeldRetryDecision = peer_held_join_retry_policy::update(
+                peerHeldJoinRetryState,
+                peer_held_join_retry_policy::Input{
+                    .rawHeld = rawGrabInput.held,
+                    .rawPressed = rawGrabInput.pressed,
+                    .rawReleased = rawGrabInput.released,
+                    .normalGrabSuppressed = false,
+                    .handHolding = hand.isHolding(),
+                    .peerHoldingLooseObject = peerHoldingLooseObject,
+                    .peerStillHoldingSameObject = peerStillHoldingRetryObject,
+                    .unrelatedCloseSelection = unrelatedSelectionForPeerJoin,
+                    .grabSucceeded = false,
+                    .peerFormId = peerHeldFormIdForRetry,
+                    .deltaSeconds = frame.deltaSeconds,
+                    .config = peer_held_join_retry_policy::Config{
+                        .enabled = g_rockConfig.rockGrabInputIntentStateEnabled,
+                        .leewaySeconds = g_rockConfig.rockGrabInputLeewaySeconds,
+                        .forceSeconds = g_rockConfig.rockGrabInputForceSeconds,
+                    },
+                });
+            if (peerHeldRetryDecision.started) {
+                ROCK_LOG_DEBUG(Hand,
+                    "{} hand peer-held join retry started: peerFormID={:08X} window={:.3f}s interval={:.3f}s",
+                    hand.handName(),
+                    peerHeldJoinRetryState.peerFormId,
+                    peerHeldJoinRetryState.windowSeconds,
+                    peer_held_join_retry_policy::retryIntervalSeconds(peer_held_join_retry_policy::Config{
+                        .enabled = g_rockConfig.rockGrabInputIntentStateEnabled,
+                        .leewaySeconds = g_rockConfig.rockGrabInputLeewaySeconds,
+                        .forceSeconds = g_rockConfig.rockGrabInputForceSeconds,
+                    }));
+            }
+            if (peerHeldRetryDecision.cancelled) {
+                grab_input_intent_policy::reset(inputIntentState);
+                if (!peerHeldRetryDecision.success &&
+                    hand.hasSelection() &&
+                    !hand.getSelection().isFarSelection &&
+                    hand.getSelection().refr == peerHeldRefForInput) {
+                    grabInput.pressed = false;
+                    grabInput.syntheticPressed = false;
+                }
+                if (peerHeldRetryDecision.success) {
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} hand peer-held join retry succeeded: reason={} peerFormID={:08X} attempts={}",
+                        hand.handName(),
+                        peerHeldRetryDecision.reason,
+                        peerHeldFormIdForRetry,
+                        retryAttemptsBeforeUpdate);
+                } else {
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} hand peer-held join retry cancelled: reason={} peerFormID={:08X} attempts={} lastRefusal={}",
+                        hand.handName(),
+                        peerHeldRetryDecision.reason,
+                        peerHeldFormIdForRetry,
+                        retryAttemptsBeforeUpdate,
+                        retryLastRefusalBeforeUpdate);
+                }
+            }
+
+            bool peerHeldRetryAttemptDue = peerHeldRetryDecision.attempt && peerHeldJoinRetryState.active;
+            bool peerHeldRetryRefreshedSelection = false;
+            if (peerHeldRetryAttemptDue) {
+                const char* refusalReason = "not-attempted";
+                peerHeldRetryRefreshedSelection = attemptPeerHeldCloseJoinSelection(&refusalReason);
+                if (peerHeldJoinRetryState.active) {
+                    peerHeldJoinRetryState.lastRefusalReason = peerHeldRetryRefreshedSelection ? "selection-acquired" : (refusalReason ? refusalReason : "unknown");
+                }
+                if (peerHeldRetryRefreshedSelection) {
+                    ROCK_LOG_SAMPLE_DEBUG(Hand,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "{} hand peer-held join retry refreshed close selection: peerFormID={:08X} attempt={} source={}",
+                        hand.handName(),
+                        peerHeldJoinRetryState.peerFormId,
+                        peerHeldJoinRetryState.attempts,
+                        refusalReason ? refusalReason : "unknown");
+                }
+            }
+
+            const bool peerHeldRetryCommitIntent =
+                peerHeldRetryAttemptDue &&
+                peerHeldJoinRetryState.active &&
+                rawGrabInput.held &&
+                !hand.isHolding() &&
+                hand.hasSelection() &&
+                !hand.getSelection().isFarSelection &&
+                hand.getSelection().refr == peerHeldRefForInput;
 
             auto selectedObjectInteractionBlocked = [&]() {
                 const auto& sel = hand.getSelection();
@@ -4041,34 +4216,6 @@ namespace rock
                         hasMotionProps ? "yes" : "no");
                 }
                 return blocked;
-            };
-            auto attemptPeerHeldCloseJoinSelection = [&]() {
-                if (!grabInput.pressed || hand.isHolding()) {
-                    return false;
-                }
-
-                const Hand& peer = isLeft ? _rightHand : _leftHand;
-                if (!peer.isHolding() || !peer.getHeldRef()) {
-                    return false;
-                }
-
-                if (hand.hasSelection() && !hand.getSelection().isFarSelection && hand.getSelection().refr != peer.getHeldRef()) {
-                    return false;
-                }
-
-                const bool hadPeerHeldCloseSelection =
-                    hand.hasSelection() && hand.getSelection().refr == peer.getHeldRef() && !hand.getSelection().isFarSelection;
-                const bool refreshedPeerHeldSelection = hand.acquirePeerHeldCloseSelection(frame.bhkWorld,
-                    frame.hknpWorld,
-                    peer.getSavedObjectState(),
-                    peer.getHeldBodyIds(),
-                    handInput.grabAnchorWorld,
-                    handInput.palmNormalWorld,
-                    g_rockConfig.rockNearDetectionRange);
-                if (!refreshedPeerHeldSelection && hadPeerHeldCloseSelection) {
-                    hand.clearSelectionState(false);
-                }
-                return refreshedPeerHeldSelection;
             };
             auto attemptSelectedGrab = [&]() {
                 const auto& transform = handInput.rawHandWorld;
@@ -4301,8 +4448,9 @@ namespace rock
                 }
             } else {
                 clearShoulderStashForHand(hand, isLeft);
-                if (grabInput.pressed) {
-                    attemptPeerHeldCloseJoinSelection();
+                if (grabInput.pressed && !peerHeldRetryAttemptDue) {
+                    const char* refusalReason = "not-attempted";
+                    (void)attemptPeerHeldCloseJoinSelection(&refusalReason);
                 }
             }
 
@@ -4368,7 +4516,7 @@ namespace rock
                     }
                 }
 
-                if (grabInput.pressed || (pullCatchCommitPending && grabInput.held) || (actorEquipmentDropHandoffReady && grabInput.held)) {
+                if (grabInput.pressed || peerHeldRetryCommitIntent || (pullCatchCommitPending && grabInput.held) || (actorEquipmentDropHandoffReady && grabInput.held)) {
                     if (!grab_interaction_policy::canAttemptSelectedObjectGrab(
                             hand.getSelection().isFarSelection, hand.getSelection().distance, g_rockConfig.rockFarDetectionRange)) {
                         ROCK_LOG_DEBUG(Hand,
@@ -4505,7 +4653,30 @@ namespace rock
                     if (pullCatchCommitPending) {
                         dispatchSimpleGrabEvent(GrabEventType::PullCatchAttempt, isLeft, pullCatchRef, hand.getSelection().bodyId.value);
                     }
+                    const bool peerHeldRetryWasActiveForCommit =
+                        peerHeldJoinRetryState.active &&
+                        rawGrabInput.held &&
+                        !hand.isHolding() &&
+                        hand.hasSelection() &&
+                        !hand.getSelection().isFarSelection &&
+                        hand.getSelection().refr == peerHeldRefForInput;
                     const bool grabbed = attemptSelectedGrab();
+                    if (grabbed && peerHeldRetryWasActiveForCommit) {
+                        const auto peerFormId = peerHeldJoinRetryState.peerFormId;
+                        const auto attempts = peerHeldJoinRetryState.attempts;
+                        peer_held_join_retry_policy::reset(peerHeldJoinRetryState);
+                        ROCK_LOG_DEBUG(Hand,
+                            "{} hand peer-held join retry succeeded: peerFormID={:08X} attempts={}",
+                            hand.handName(),
+                            peerFormId,
+                            attempts);
+                    } else if (!grabbed && peerHeldRetryWasActiveForCommit && peerHeldJoinRetryState.active) {
+                        peerHeldJoinRetryState.lastRefusalReason = "grab-commit-refused";
+                        ROCK_LOG_SAMPLE_DEBUG(Hand,
+                            g_rockConfig.rockLogSampleMilliseconds,
+                            "{} hand retaining peer-held join retry after grab commit refused; grip still held",
+                            hand.handName());
+                    }
                     if (!grabbed && pullCatchCommitPending) {
                         hand.notePullCatchCommitAttemptFailed();
                         ROCK_LOG_SAMPLE_DEBUG(Hand,

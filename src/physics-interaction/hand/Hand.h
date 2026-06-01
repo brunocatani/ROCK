@@ -380,7 +380,8 @@ namespace rock
             const std::vector<std::uint32_t>& peerHeldBodyIds,
             const RE::NiPoint3& selectionOrigin,
             const RE::NiPoint3& palmNormal,
-            float nearRange);
+            float nearRange,
+            const char** outRefusalReason = nullptr);
 
         bool promoteHeldObjectToConstraintDrive(RE::bhkWorld* bhkWorld,
             RE::hknpWorld* world,
@@ -476,7 +477,10 @@ namespace rock
         bool isHandColliderBodyId(std::uint32_t bodyId) const { return _boneColliders.isColliderBodyIdAtomic(bodyId); }
         bool tryGetHandColliderMetadata(std::uint32_t bodyId, HandColliderBodyMetadata& outMetadata) const { return _boneColliders.tryGetBodyMetadataAtomic(bodyId, outMetadata); }
         bool tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const { return _boneColliders.tryGetPalmAnchorTarget(outTarget); }
-        void recordSemanticContact(const HandColliderBodyMetadata& metadata, std::uint32_t otherBodyId);
+        void recordSemanticContact(const HandColliderBodyMetadata& metadata,
+            std::uint32_t otherBodyId,
+            const hand_semantic_contact_state::SemanticContactVector* contactPointGame = nullptr,
+            const hand_semantic_contact_state::SemanticContactVector* contactNormalGame = nullptr);
         void clearSemanticContactEvidence();
         void tickSemanticContactState();
         bool getLastSemanticContact(hand_semantic_contact_state::SemanticContactRecord& outContact) const;
@@ -659,6 +663,14 @@ namespace rock
         std::atomic<std::uint32_t> _semanticContactHandBodyId{ hand_semantic_contact_state::kInvalidBodyId };
         std::atomic<std::uint32_t> _semanticContactOtherBodyId{ hand_semantic_contact_state::kInvalidBodyId };
         std::atomic<std::uint32_t> _semanticContactFrames{ 0xFFFF'FFFFu };
+        std::atomic<std::uint32_t> _semanticContactHasPointGame{ 0 };
+        std::atomic<std::uint32_t> _semanticContactHasNormalGame{ 0 };
+        std::atomic<float> _semanticContactPointGameX{ 0.0f };
+        std::atomic<float> _semanticContactPointGameY{ 0.0f };
+        std::atomic<float> _semanticContactPointGameZ{ 0.0f };
+        std::atomic<float> _semanticContactNormalGameX{ 0.0f };
+        std::atomic<float> _semanticContactNormalGameY{ 0.0f };
+        std::atomic<float> _semanticContactNormalGameZ{ 0.0f };
         std::mutex _semanticContactWriteMutex;
         std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetValid{};
         std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetRole{};
@@ -668,6 +680,14 @@ namespace rock
         std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetOtherBodyId{};
         std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetFrames{};
         std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetSequence{};
+        std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetHasPointGame{};
+        std::array<std::atomic<std::uint32_t>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetHasNormalGame{};
+        std::array<std::atomic<float>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetPointGameX{};
+        std::array<std::atomic<float>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetPointGameY{};
+        std::array<std::atomic<float>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetPointGameZ{};
+        std::array<std::atomic<float>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetNormalGameX{};
+        std::array<std::atomic<float>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetNormalGameY{};
+        std::array<std::atomic<float>, hand_semantic_contact_state::kMaxSemanticContactRecords> _semanticContactSetNormalGameZ{};
 
     public:
         bool isHeldBodyColliding() const { return _heldBodyContactFrame.load(std::memory_order_acquire) < 5; }
