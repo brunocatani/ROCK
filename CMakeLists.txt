@@ -315,6 +315,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGeneratedKeyframedBodyDrivePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGeneratedKeyframedBodyDrivePolicyTests)
 
+  add_executable(ROCKHavokTimingFixPolicyTests
+    "${ROOT_DIR}/tests/HavokTimingFixPolicyTests.cpp"
+  )
+  target_compile_features(ROCKHavokTimingFixPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKHavokTimingFixPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKHavokTimingFixPolicyTests)
+
   add_executable(ROCKHeldObjectStutterGuardPolicyTests
     "${ROOT_DIR}/tests/HeldObjectStutterGuardPolicyTests.cpp"
   )
@@ -421,6 +428,7 @@ if(BUILD_ROCK_TESTS)
     ROCKGrabThreePhasePolicyTests
     ROCKGrabPinchPocketPolicyTests
     ROCKGeneratedKeyframedBodyDrivePolicyTests
+    ROCKHavokTimingFixPolicyTests
     ROCKHeldObjectStutterGuardPolicyTests
     ROCKHeldBodySetDrivePolicyTests
     ROCKGrabAuthorityProxyPolicyTests

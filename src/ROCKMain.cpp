@@ -9,6 +9,7 @@
 #include "api/ROCKProviderApi.h"
 #include "physics-interaction/debug/DebugBodyOverlay.h"
 #include "physics-interaction/core/PhysicsCreationGatePolicy.h"
+#include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
@@ -431,6 +432,7 @@ namespace
             logger::info("ROCK: FRIKApi v{} (API v{}) initialized successfully.", frik::api::FRIKApi::inst->getModVersion(), frik::api::FRIKApi::inst->getVersion());
 
             g_rockConfig.load();
+            rock::installHavokTimingFixHook();
             runtime_state::initialize();
             see_through_scopes::refreshRuntimeState();
             logger::info("ROCK: Config loaded (rockEnabled={}).", g_rockConfig.rockEnabled);
@@ -527,8 +529,8 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     }
     s_messaging->RegisterListener(onF4SEMessage);
 
-    logger::info("ROCK: Allocate trampoline (1024 bytes)...");
-    F4SE::AllocTrampoline(1024);
+    logger::info("ROCK: Allocate trampoline (2048 bytes)...");
+    F4SE::AllocTrampoline(2048);
 
     logger::info("ROCK: Install main loop hook...");
     if (!hookMainLoop()) {

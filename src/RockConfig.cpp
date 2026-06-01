@@ -94,6 +94,9 @@ namespace rock
     void RockConfig::resetToDefaults()
     {
         rockEnabled = true;
+        rockHavokTimingFixEnabled = true;
+        rockHavokTimingFixMinPhysicsFrameRate = havok_timing_fix_policy::kDefaultMinPhysicsFrameRate;
+        rockHavokTimingFixMaxSubsteps = havok_timing_fix_policy::kDefaultMaxSubsteps;
 
         rockInputRemapEnabled = true;
         rockRightWeaponReadyButtonID = 32;
@@ -540,6 +543,11 @@ namespace rock
         logger::setLogLevelAndPattern(rockLogLevel, rockLogPattern);
 
         rockEnabled = ini.GetBoolValue(SECTION, "bEnabled", rockEnabled);
+        rockHavokTimingFixEnabled = ini.GetBoolValue(SECTION, "bHavokTimingFixEnabled", rockHavokTimingFixEnabled);
+        rockHavokTimingFixMinPhysicsFrameRate = havok_timing_fix_policy::sanitizeMinPhysicsFrameRate(
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fHavokTimingFixMinPhysicsFrameRate", rockHavokTimingFixMinPhysicsFrameRate)));
+        rockHavokTimingFixMaxSubsteps = havok_timing_fix_policy::sanitizeMaxSubsteps(
+            static_cast<int>(ini.GetLongValue(SECTION, "iHavokTimingFixMaxSubsteps", rockHavokTimingFixMaxSubsteps)));
         rockInputRemapEnabled = ini.GetBoolValue(SECTION, "bInputRemapEnabled", rockInputRemapEnabled);
         rockRightWeaponReadyButtonID = static_cast<int>(ini.GetLongValue(SECTION, "iRightWeaponReadyButtonID", rockRightWeaponReadyButtonID));
         if (!input_remap_policy::isValidButtonId(rockRightWeaponReadyButtonID)) {

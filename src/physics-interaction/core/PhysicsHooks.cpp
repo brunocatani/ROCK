@@ -10,6 +10,7 @@
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/native/CharacterControllerRuntime.h"
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/HavokTimingFixPolicy.h"
 
 #include "RockConfig.h"
 
@@ -32,12 +33,18 @@ namespace rock
         using NativeMeleeInputGateHandler_t = bool (*)(void*, const RE::InputEvent*);
         using NativePlayerWeaponSwingCallback_t = void (*)(RE::Actor*, std::uint32_t);
         using NativeVrMeleeImpactCallback_t = void (*)(RE::Actor*, void*, void*);
+        using BhkWorldSetDeltaTime_t = void (*)(float);
 
         static NativeMeleeHandler_t g_originalWeaponSwingHandler = nullptr;
         static NativeMeleeHandler_t g_originalHitFrameHandler = nullptr;
         static NativeMeleeInputGateHandler_t g_originalAttackBlockShouldHandleEvent = nullptr;
         static NativePlayerWeaponSwingCallback_t g_originalPlayerWeaponSwingCallback = nullptr;
         static NativeVrMeleeImpactCallback_t g_originalVrMeleeImpactCallback = nullptr;
+        static BhkWorldSetDeltaTime_t g_originalBhkWorldSetDeltaTime = nullptr;
+        static std::atomic<bool> g_havokTimingFixMissingOriginalLogged{ false };
+        static std::atomic<bool> g_havokTimingFixWriteFailureLogged{ false };
+        constexpr std::uintptr_t kFunc_BhkWorldSetDeltaTime = 0x1DF7120;
+        constexpr std::uintptr_t kHookSite_BhkWorldSetDeltaTimeMainCall = 0x0D84BD0;
         /*
          * Native melee suppression can be queried from animation-event hooks, so
          * its physical-swing bridge needs a tiny shared clock. This is advanced
@@ -149,6 +156,151 @@ namespace rock
             }
 
             return true;
+        }
+
+        float readBhkWorldFloatGlobal(std::uintptr_t offset, float fallback)
+        {
+            REL::Relocation<float*> value{ REL::Offset(offset) };
+            return value.address() ? *value : fallback;
+        }
+
+        std::uint32_t readBhkWorldUintGlobal(std::uintptr_t offset, std::uint32_t fallback)
+        {
+            REL::Relocation<std::uint32_t*> value{ REL::Offset(offset) };
+            return value.address() ? *value : fallback;
+        }
+
+        bool writeBhkWorldFloatGlobal(std::uintptr_t offset, float newValue)
+        {
+            REL::Relocation<float*> value{ REL::Offset(offset) };
+            if (!value.address()) {
+                return false;
+            }
+            *value = newValue;
+            return true;
+        }
+
+        bool writeBhkWorldUintGlobal(std::uintptr_t offset, std::uint32_t newValue)
+        {
+            REL::Relocation<std::uint32_t*> value{ REL::Offset(offset) };
+            if (!value.address()) {
+                return false;
+            }
+            *value = newValue;
+            return true;
+        }
+
+        bool validateBhkWorldSetDeltaTimeMainCallSite()
+        {
+            /*
+             * Ghidra verified the main update call at 0x140D84BD0 targets
+             * bhkWorld::SetDeltaTime at 0x141DF7120. The SetDeltaTime entry
+             * prologue includes RIP-relative instructions, so ROCK patches the
+             * call site instead of using the relocated-entry trampoline helper.
+             */
+            REL::Relocation<std::uintptr_t> callSite{ REL::Offset(kHookSite_BhkWorldSetDeltaTimeMainCall) };
+            const auto callSiteAddress = callSite.address();
+            auto* callBytes = reinterpret_cast<const std::uint8_t*>(callSiteAddress);
+            if (!callBytes) {
+                ROCK_LOG_ERROR(Init, "HAVOK_TIMING_FIX call-site validation failed: call site is null");
+                return false;
+            }
+
+            if (callBytes[0] != 0xE8) {
+                ROCK_LOG_ERROR(
+                    Init,
+                    "HAVOK_TIMING_FIX call-site validation failed at 0x{:X}: expected CALL rel32, found opcode 0x{:02X}",
+                    callSiteAddress,
+                    callBytes[0]);
+                return false;
+            }
+
+            const auto relativeTarget = *reinterpret_cast<const std::int32_t*>(callBytes + 1);
+            const auto decodedTarget = callSiteAddress + 5u + relativeTarget;
+            const auto expectedTarget = REL::Offset(kFunc_BhkWorldSetDeltaTime).address();
+            if (decodedTarget != expectedTarget) {
+                ROCK_LOG_ERROR(
+                    Init,
+                    "HAVOK_TIMING_FIX call-site validation failed at 0x{:X}: decoded target 0x{:X}, expected 0x{:X}",
+                    callSiteAddress,
+                    decodedTarget,
+                    expectedTarget);
+                return false;
+            }
+
+            return true;
+        }
+
+        void hookedBhkWorldSetDeltaTime(float rawDeltaSeconds)
+        {
+            if (!g_originalBhkWorldSetDeltaTime) {
+                if (!g_havokTimingFixMissingOriginalLogged.exchange(true, std::memory_order_acq_rel)) {
+                    ROCK_LOG_CRITICAL(Init, "HAVOK_TIMING_FIX missing original bhkWorld::SetDeltaTime; timing hook cannot safely continue");
+                }
+                return;
+            }
+
+            g_originalBhkWorldSetDeltaTime(rawDeltaSeconds);
+
+            if (!g_rockConfig.rockHavokTimingFixEnabled) {
+                return;
+            }
+
+            const float accumulatedDeltaSeconds =
+                readBhkWorldFloatGlobal(offsets::kData_BhkWorldAccumulatedDeltaSeconds, rawDeltaSeconds);
+            const float oldSubstepDeltaSeconds =
+                readBhkWorldFloatGlobal(offsets::kData_BhkWorldSubstepDeltaSeconds, rawDeltaSeconds);
+            const auto oldSubstepCount =
+                readBhkWorldUintGlobal(offsets::kData_BhkWorldSubstepCount, 1);
+            const auto decision = havok_timing_fix_policy::evaluateTimingFix(havok_timing_fix_policy::TimingFixInput{
+                .rawDeltaSeconds = rawDeltaSeconds,
+                .accumulatedDeltaSeconds = accumulatedDeltaSeconds,
+                .minPhysicsFrameRate = g_rockConfig.rockHavokTimingFixMinPhysicsFrameRate,
+                .maxSubsteps = g_rockConfig.rockHavokTimingFixMaxSubsteps,
+            });
+
+            if (!decision.valid) {
+                if (g_rockConfig.rockDebugVerboseLogging || g_rockConfig.rockDebugGrabFrameLogging) {
+                    ROCK_LOG_SAMPLE_DEBUG(Physics,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "HAVOK_TIMING_FIX skipped reason={} rawDt={:.6f} accumDt={:.6f} oldSubDt={:.6f} oldSubsteps={}",
+                        decision.reason,
+                        rawDeltaSeconds,
+                        accumulatedDeltaSeconds,
+                        oldSubstepDeltaSeconds,
+                        oldSubstepCount);
+                }
+                return;
+            }
+
+            const bool wroteSubstepDelta =
+                writeBhkWorldFloatGlobal(offsets::kData_BhkWorldSubstepDeltaSeconds, decision.substepDeltaSeconds);
+            const bool wroteSubstepCount =
+                writeBhkWorldUintGlobal(offsets::kData_BhkWorldSubstepCount, decision.substepCount);
+            if (!wroteSubstepDelta || !wroteSubstepCount) {
+                if (!g_havokTimingFixWriteFailureLogged.exchange(true, std::memory_order_acq_rel)) {
+                    ROCK_LOG_ERROR(Init,
+                        "HAVOK_TIMING_FIX failed to write FO4VR timing globals: wroteSubstepDelta={} wroteSubstepCount={}",
+                        wroteSubstepDelta ? "yes" : "no",
+                        wroteSubstepCount ? "yes" : "no");
+                }
+                return;
+            }
+
+            if (g_rockConfig.rockDebugVerboseLogging || g_rockConfig.rockDebugGrabFrameLogging) {
+                ROCK_LOG_SAMPLE_DEBUG(Physics,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "HAVOK_TIMING_FIX rawDt={:.6f} accumDt={:.6f} oldSubDt={:.6f} oldSubsteps={} newSubDt={:.6f} newSubsteps={} minHz={:.2f} maxFrameDt={:.6f} maxSubsteps={}",
+                    rawDeltaSeconds,
+                    accumulatedDeltaSeconds,
+                    oldSubstepDeltaSeconds,
+                    oldSubstepCount,
+                    decision.substepDeltaSeconds,
+                    decision.substepCount,
+                    g_rockConfig.rockHavokTimingFixMinPhysicsFrameRate,
+                    decision.maxPhysicsFrameSeconds,
+                    decision.clampedMaxSubsteps);
+            }
         }
 
         const RE::Actor* resolveNativePlayerActorGlobal()
@@ -940,6 +1092,44 @@ namespace rock
                 }
             }
         }
+    }
+
+    bool installHavokTimingFixHook()
+    {
+        static bool installed = false;
+        static bool installAttempted = false;
+        if (installed) {
+            return true;
+        }
+        if (installAttempted) {
+            return false;
+        }
+        installAttempted = true;
+
+        if (!validateBhkWorldSetDeltaTimeMainCallSite()) {
+            ROCK_LOG_ERROR(Init, "HAVOK_TIMING_FIX hook not installed; FO4VR timing call site did not match verified bytes");
+            return false;
+        }
+
+        REL::Relocation<std::uintptr_t> hookCallSite{ REL::Offset(kHookSite_BhkWorldSetDeltaTimeMainCall) };
+        auto& trampoline = F4SE::GetTrampoline();
+        const auto original = trampoline.write_call<5>(hookCallSite.address(), &hookedBhkWorldSetDeltaTime);
+        g_originalBhkWorldSetDeltaTime = reinterpret_cast<BhkWorldSetDeltaTime_t>(original);
+        installed = g_originalBhkWorldSetDeltaTime != nullptr;
+
+        if (!installed) {
+            ROCK_LOG_CRITICAL(Init, "HAVOK_TIMING_FIX hook install failed at 0x{:X}: original target was null", hookCallSite.address());
+            return false;
+        }
+
+        ROCK_LOG_INFO(Init,
+            "HAVOK_TIMING_FIX hook installed at 0x{:X}; original=0x{:X} enabled={} minHz={:.2f} maxSubsteps={}",
+            hookCallSite.address(),
+            original,
+            g_rockConfig.rockHavokTimingFixEnabled ? "yes" : "no",
+            g_rockConfig.rockHavokTimingFixMinPhysicsFrameRate,
+            g_rockConfig.rockHavokTimingFixMaxSubsteps);
+        return true;
     }
 
     void installBumpHook()

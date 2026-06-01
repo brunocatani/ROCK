@@ -26,6 +26,7 @@
 #endif
 
 #include "physics-interaction/hand/HandSelection.h"
+#include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
 
 namespace rock
@@ -53,6 +54,9 @@ namespace rock
         [[nodiscard]] bool persistGrabLegacyPalmPivotAHandspace(bool isLeft, const RE::NiPoint3& value);
 
         bool rockEnabled = true;
+        bool rockHavokTimingFixEnabled = true;
+        float rockHavokTimingFixMinPhysicsFrameRate = havok_timing_fix_policy::kDefaultMinPhysicsFrameRate;
+        int rockHavokTimingFixMaxSubsteps = havok_timing_fix_policy::kDefaultMaxSubsteps;
 
         bool rockInputRemapEnabled = true;
         int rockRightWeaponReadyButtonID = 32;
