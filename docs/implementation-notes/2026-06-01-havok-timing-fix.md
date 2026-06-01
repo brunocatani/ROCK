@@ -81,3 +81,39 @@ Expected examples with `fHavokTimingFixMinPhysicsFrameRate = 70` and `iHavokTimi
 - 2026-06-01: `cmake --preset custom-tests`, `ROCKPolicyTestBinaries`, and full `ctest` passed: 60/60 tests.
 - 2026-06-01: `custom-fast` Release build passed and auto-deployed `ROCK.dll`/`ROCK.pdb` to `D:\FO4\mods\ROCK\F4SE\Plugins`.
 - 2026-06-01: Review follow-up aligned the timing-fix minimum delta threshold with existing Havok timing sampling and added accumulated-delta policy coverage.
+
+## Final-Stage Follow-Up: Stick-Locomotion Hand Authority Bridge
+
+Runtime testing after the Havok timing fix showed the remaining visible shimmer only during controller stick locomotion while holding an object. Disabling `bGrabPlayerSpaceCompensation` did not remove it, physical room movement did not trigger it, and stick rotation was not involved. That points away from the central held-object player-space velocity writer and toward the root-translation component of the root-flattened hand authority.
+
+Design chosen:
+
+- Add `GrabLocomotionAuthorityBridge` as a small `PhysicsInteraction` state machine.
+- Drive it from `runtime_state::currentFrame().playerSpace.valid/moving` only while either hand is holding.
+- Estimate player-root velocity from `playerSpace.deltaGameUnits / frame.deltaSeconds`.
+- Smooth velocity at `45 Hz`, project a bounded `0.012s` translation lead, and clamp to `4.0` game units.
+- Reset on invalid player space, no held object, world/menu reset, invalid delta, or root jumps over `35.0` game units.
+- Apply only translation. Do not smooth rotation, snap turn, controller-local hand motion, or finger pose.
+- Apply the same offset to `HandFrameInput.rawHandWorld` and to generated hand-collider bone lookup transforms before palm/finger role frames are derived.
+
+Config keys:
+
+- `bGrabLocomotionAuthorityBridgeEnabled`
+- `fGrabLocomotionAuthorityMaxLeadSeconds`
+- `fGrabLocomotionAuthoritySmoothingHz`
+- `fGrabLocomotionAuthorityMaxOffsetGameUnits`
+- `fGrabLocomotionAuthorityResetDistanceGameUnits`
+
+Validation plan:
+
+- Policy test for zero offset on invalid player space, no held object, and not moving.
+- Policy test for bounded predictive offset during steady stick locomotion.
+- Policy test for root-jump reset.
+- Source-boundary test proving the same bridge offset reaches both held hand-frame authority and generated hand-collider bone lookup.
+- Runtime check: stick-walk while holding an object at arm's length; physical room movement and stick rotation should remain unchanged.
+
+Progress:
+
+- 2026-06-01: Implementing bridge as a final-stage follow-up to the timing/grab authority work.
+- 2026-06-01: Added bridge policy/config, runtime frame authority offset, generated hand-collider lookup offset, diagnostics, source-boundary test, and policy test.
+- 2026-06-01: `cmake --preset custom-tests`, `ROCKPolicyTestBinaries`, full `ctest`, and `custom-fast` Release plugin build passed. `custom-fast` auto-deployed `ROCK.dll`/`ROCK.pdb` to `D:\FO4\mods\ROCK\F4SE\Plugins`.

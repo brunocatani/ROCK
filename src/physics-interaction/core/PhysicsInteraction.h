@@ -13,6 +13,7 @@
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/grab/GrabEvent.h"
+#include "physics-interaction/grab/GrabLocomotionAuthorityBridge.h"
 #include "physics-interaction/contact/SoftContactRuntime.h"
 #include "physics-interaction/contact/NativeContactEvidence.h"
 #include "physics-interaction/collision/ContactActivityTracker.h"
@@ -188,6 +189,8 @@ namespace rock
         GrabSharedObjectContext makeGrabSharedObjectContext(const Hand& hand, bool isLeft) const;
 
         void updateGrabInput(const PhysicsFrameContext& frame);
+
+        grab_locomotion_authority_bridge::Output updateGrabLocomotionAuthorityBridge(float deltaSeconds, bool worldReady);
 
         HeldObjectPlayerSpaceFrame sampleHeldObjectPlayerSpaceFrame(float deltaSeconds);
 
@@ -392,6 +395,8 @@ namespace rock
         bool _hasHeldPlayerSpaceTransform = false;
         RE::NiPoint3 _lastCentralHeldPlayerSpaceVelocityHavok{};
         int _heldPlayerSpaceLogCounter = 0;
+        grab_locomotion_authority_bridge::State _grabLocomotionAuthorityBridge{};
+        int _grabLocomotionAuthorityLogCounter = 0;
         float _heldMassMovementSpeedReduction = 0.0f;
         float _heldMassMovementFadeStartReduction = 0.0f;
         float _heldMassMovementFadeElapsedSeconds = 0.0f;

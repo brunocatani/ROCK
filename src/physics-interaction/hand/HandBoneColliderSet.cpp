@@ -145,7 +145,11 @@ namespace rock
         clearAtomicBodyIds();
     }
 
-    bool HandBoneColliderSet::captureBoneLookup(bool isLeft, const RE::NiTransform& rollAuthorityWorld, BoneFrameLookup& outLookup)
+    bool HandBoneColliderSet::captureBoneLookup(
+        bool isLeft,
+        const RE::NiTransform& rollAuthorityWorld,
+        const RE::NiPoint3& authorityTranslationOffsetGame,
+        BoneFrameLookup& outLookup)
     {
         outLookup = {};
         DirectSkeletonBoneSnapshot snapshot{};
@@ -195,8 +199,38 @@ namespace rock
             return false;
         }
 
+        applyAuthorityTranslationOffset(outLookup, authorityTranslationOffsetGame);
         outLookup.valid = true;
         return true;
+    }
+
+    void HandBoneColliderSet::applyAuthorityTranslationOffset(BoneFrameLookup& lookup, const RE::NiPoint3& authorityTranslationOffsetGame) const
+    {
+        const float offsetLengthSquared =
+            authorityTranslationOffsetGame.x * authorityTranslationOffsetGame.x +
+            authorityTranslationOffsetGame.y * authorityTranslationOffsetGame.y +
+            authorityTranslationOffsetGame.z * authorityTranslationOffsetGame.z;
+        if (offsetLengthSquared <= 1.0e-8f) {
+            return;
+        }
+
+        lookup.hand.translate = lookup.hand.translate + authorityTranslationOffsetGame;
+        lookup.rollAuthorityWorld.translate = lookup.rollAuthorityWorld.translate + authorityTranslationOffsetGame;
+        if (lookup.hasForearm3) {
+            lookup.forearm3.translate = lookup.forearm3.translate + authorityTranslationOffsetGame;
+        }
+
+        for (std::size_t fingerIndex = 0; fingerIndex < hand_collider_semantics::kHandFingerCount; ++fingerIndex) {
+            if (!lookup.fingerValid[fingerIndex]) {
+                lookup.fingerBases[fingerIndex] = lookup.hand.translate;
+                continue;
+            }
+
+            for (auto& segment : lookup.fingers[fingerIndex]) {
+                segment.translate = segment.translate + authorityTranslationOffsetGame;
+            }
+            lookup.fingerBases[fingerIndex] = lookup.fingerBases[fingerIndex] + authorityTranslationOffsetGame;
+        }
     }
 
     bool HandBoneColliderSet::makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, HandColliderRole role, RoleFrameResult& outFrame) const
@@ -403,7 +437,13 @@ namespace rock
         return true;
     }
 
-    bool HandBoneColliderSet::create(RE::hknpWorld* world, void* bhkWorld, bool isLeft, const RE::NiTransform& rollAuthorityWorld, BethesdaPhysicsBody& palmAnchorBody)
+    bool HandBoneColliderSet::create(
+        RE::hknpWorld* world,
+        void* bhkWorld,
+        bool isLeft,
+        const RE::NiTransform& rollAuthorityWorld,
+        BethesdaPhysicsBody& palmAnchorBody,
+        const RE::NiPoint3& authorityTranslationOffsetGame)
     {
         destroy(bhkWorld, palmAnchorBody);
         if (!world || !bhkWorld) {
@@ -411,7 +451,7 @@ namespace rock
         }
 
         BoneFrameLookup lookup{};
-        if (!captureBoneLookup(isLeft, rollAuthorityWorld, lookup)) {
+        if (!captureBoneLookup(isLeft, rollAuthorityWorld, authorityTranslationOffsetGame, lookup)) {
             return false;
         }
 
@@ -542,7 +582,13 @@ namespace rock
         _reader.resetCache();
     }
 
-    void HandBoneColliderSet::update(RE::hknpWorld* world, bool isLeft, const RE::NiTransform& rollAuthorityWorld, BethesdaPhysicsBody& palmAnchorBody, float deltaTime)
+    void HandBoneColliderSet::update(
+        RE::hknpWorld* world,
+        bool isLeft,
+        const RE::NiTransform& rollAuthorityWorld,
+        BethesdaPhysicsBody& palmAnchorBody,
+        float deltaTime,
+        const RE::NiPoint3& authorityTranslationOffsetGame)
     {
         if (!world || !_created || !palmAnchorBody.isValid()) {
             return;
@@ -559,12 +605,12 @@ namespace rock
             }
 
             ROCK_LOG_WARN(Hand, "{} bone-derived hand collider drive failure requested rebuild", isLeft ? "Left" : "Right");
-            create(world, _cachedBhkWorld, isLeft, rollAuthorityWorld, palmAnchorBody);
+            create(world, _cachedBhkWorld, isLeft, rollAuthorityWorld, palmAnchorBody, authorityTranslationOffsetGame);
             return;
         }
 
         BoneFrameLookup lookup{};
-        if (!captureBoneLookup(isLeft, rollAuthorityWorld, lookup)) {
+        if (!captureBoneLookup(isLeft, rollAuthorityWorld, authorityTranslationOffsetGame, lookup)) {
             return;
         }
 
@@ -577,7 +623,7 @@ namespace rock
                 }
             } else {
                 ROCK_LOG_INFO(Hand, "{} bone-derived hand collider source changed; rebuilding", isLeft ? "Left" : "Right");
-                create(world, _cachedBhkWorld, isLeft, rollAuthorityWorld, palmAnchorBody);
+                create(world, _cachedBhkWorld, isLeft, rollAuthorityWorld, palmAnchorBody, authorityTranslationOffsetGame);
                 return;
             }
         }

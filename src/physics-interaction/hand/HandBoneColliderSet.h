@@ -35,10 +35,22 @@ namespace rock
     public:
         HandBoneColliderSet();
 
-        bool create(RE::hknpWorld* world, void* bhkWorld, bool isLeft, const RE::NiTransform& rollAuthorityWorld, BethesdaPhysicsBody& palmAnchorBody);
+        bool create(
+            RE::hknpWorld* world,
+            void* bhkWorld,
+            bool isLeft,
+            const RE::NiTransform& rollAuthorityWorld,
+            BethesdaPhysicsBody& palmAnchorBody,
+            const RE::NiPoint3& authorityTranslationOffsetGame = RE::NiPoint3{});
         void destroy(void* bhkWorld, BethesdaPhysicsBody& palmAnchorBody);
         void reset();
-        void update(RE::hknpWorld* world, bool isLeft, const RE::NiTransform& rollAuthorityWorld, BethesdaPhysicsBody& palmAnchorBody, float deltaTime);
+        void update(
+            RE::hknpWorld* world,
+            bool isLeft,
+            const RE::NiTransform& rollAuthorityWorld,
+            BethesdaPhysicsBody& palmAnchorBody,
+            float deltaTime,
+            const RE::NiPoint3& authorityTranslationOffsetGame = RE::NiPoint3{});
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing, BethesdaPhysicsBody& palmAnchorBody);
 
         bool hasBodies() const { return _created; }
@@ -83,7 +95,12 @@ namespace rock
             float convexRadius = 0.1f;
         };
 
-        bool captureBoneLookup(bool isLeft, const RE::NiTransform& rollAuthorityWorld, BoneFrameLookup& outLookup);
+        bool captureBoneLookup(
+            bool isLeft,
+            const RE::NiTransform& rollAuthorityWorld,
+            const RE::NiPoint3& authorityTranslationOffsetGame,
+            BoneFrameLookup& outLookup);
+        void applyAuthorityTranslationOffset(BoneFrameLookup& lookup, const RE::NiPoint3& authorityTranslationOffsetGame) const;
         bool makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, hand_collider_semantics::HandColliderRole role, RoleFrameResult& outFrame) const;
         RE::hknpShape* buildShapeForRole(const RoleFrameResult& frame, hand_collider_semantics::HandColliderRole role) const;
         bool createBodyForRole(RE::hknpWorld* world, void* bhkWorld, bool isLeft, hand_collider_semantics::HandColliderRole role, const RoleFrameResult& frame, BodyInstance& instance);

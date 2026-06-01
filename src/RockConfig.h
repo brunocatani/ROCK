@@ -27,6 +27,7 @@
 
 #include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/hand/SelectionBeamPolicy.h"
+#include "physics-interaction/grab/GrabLocomotionAuthorityBridge.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
 
@@ -341,6 +342,11 @@ namespace rock
         float rockGrabPlayerSpaceWarpDistance = 35.0f;
         float rockGrabPlayerSpaceWarpMinRotationDegrees = 0.6f;
         bool rockGrabPlayerSpaceTransformWarpEnabled = true;
+        bool rockGrabLocomotionAuthorityBridgeEnabled = true;
+        float rockGrabLocomotionAuthorityMaxLeadSeconds = grab_locomotion_authority_bridge::kDefaultMaxLeadSeconds;
+        float rockGrabLocomotionAuthoritySmoothingHz = grab_locomotion_authority_bridge::kDefaultSmoothingHz;
+        float rockGrabLocomotionAuthorityMaxOffsetGameUnits = grab_locomotion_authority_bridge::kDefaultMaxOffsetGameUnits;
+        float rockGrabLocomotionAuthorityResetDistanceGameUnits = grab_locomotion_authority_bridge::kDefaultResetDistanceGameUnits;
         bool rockGrabResidualVelocityDamping = true;
         bool rockGrabNearbyDampingEnabled = true;
         float rockGrabNearbyDampingRadius = 90.0f;

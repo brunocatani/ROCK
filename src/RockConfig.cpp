@@ -12,6 +12,7 @@
 
 #include "common/CommonUtils.h"
 #include "physics-interaction/grab/GrabNodeNamePolicy.h"
+#include "physics-interaction/grab/GrabLocomotionAuthorityBridge.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/hand/HandLifecycle.h"
@@ -380,6 +381,11 @@ namespace rock
         rockGrabPlayerSpaceWarpDistance = 35.0f;
         rockGrabPlayerSpaceWarpMinRotationDegrees = 0.6f;
         rockGrabPlayerSpaceTransformWarpEnabled = true;
+        rockGrabLocomotionAuthorityBridgeEnabled = true;
+        rockGrabLocomotionAuthorityMaxLeadSeconds = grab_locomotion_authority_bridge::kDefaultMaxLeadSeconds;
+        rockGrabLocomotionAuthoritySmoothingHz = grab_locomotion_authority_bridge::kDefaultSmoothingHz;
+        rockGrabLocomotionAuthorityMaxOffsetGameUnits = grab_locomotion_authority_bridge::kDefaultMaxOffsetGameUnits;
+        rockGrabLocomotionAuthorityResetDistanceGameUnits = grab_locomotion_authority_bridge::kDefaultResetDistanceGameUnits;
         rockGrabResidualVelocityDamping = true;
         rockGrabNearbyDampingEnabled = true;
         rockGrabNearbyDampingRadius = 90.0f;
@@ -1322,6 +1328,36 @@ namespace rock
         rockGrabPlayerSpaceWarpMinRotationDegrees =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabPlayerSpaceWarpMinRotationDegrees", rockGrabPlayerSpaceWarpMinRotationDegrees));
         rockGrabPlayerSpaceTransformWarpEnabled = ini.GetBoolValue(SECTION, "bGrabPlayerSpaceTransformWarpEnabled", rockGrabPlayerSpaceTransformWarpEnabled);
+        rockGrabLocomotionAuthorityBridgeEnabled =
+            ini.GetBoolValue(SECTION, "bGrabLocomotionAuthorityBridgeEnabled", rockGrabLocomotionAuthorityBridgeEnabled);
+        rockGrabLocomotionAuthorityMaxLeadSeconds = readClampedFloat(ini,
+            SECTION,
+            "fGrabLocomotionAuthorityMaxLeadSeconds",
+            rockGrabLocomotionAuthorityMaxLeadSeconds,
+            grab_locomotion_authority_bridge::kDefaultMaxLeadSeconds,
+            0.0f,
+            0.05f);
+        rockGrabLocomotionAuthoritySmoothingHz = readClampedFloat(ini,
+            SECTION,
+            "fGrabLocomotionAuthoritySmoothingHz",
+            rockGrabLocomotionAuthoritySmoothingHz,
+            grab_locomotion_authority_bridge::kDefaultSmoothingHz,
+            0.0f,
+            240.0f);
+        rockGrabLocomotionAuthorityMaxOffsetGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fGrabLocomotionAuthorityMaxOffsetGameUnits",
+            rockGrabLocomotionAuthorityMaxOffsetGameUnits,
+            grab_locomotion_authority_bridge::kDefaultMaxOffsetGameUnits,
+            0.0f,
+            50.0f);
+        rockGrabLocomotionAuthorityResetDistanceGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fGrabLocomotionAuthorityResetDistanceGameUnits",
+            rockGrabLocomotionAuthorityResetDistanceGameUnits,
+            grab_locomotion_authority_bridge::kDefaultResetDistanceGameUnits,
+            1.0f,
+            500.0f);
         rockGrabResidualVelocityDamping = ini.GetBoolValue(SECTION, "bGrabResidualVelocityDamping", rockGrabResidualVelocityDamping);
         rockGrabNearbyDampingEnabled = ini.GetBoolValue(SECTION, "bGrabNearbyDampingEnabled", rockGrabNearbyDampingEnabled);
         rockGrabNearbyDampingRadius =

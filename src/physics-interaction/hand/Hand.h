@@ -493,7 +493,11 @@ namespace rock
 
         void destroyCollision(void* bhkWorld);
 
-        void updateCollisionTransform(RE::hknpWorld* world, const RE::NiTransform& rollAuthorityWorld, float deltaTime);
+        void updateCollisionTransform(
+            RE::hknpWorld* world,
+            const RE::NiTransform& rollAuthorityWorld,
+            float deltaTime,
+            const RE::NiPoint3& authorityTranslationOffsetGame = RE::NiPoint3{});
 
         void flushPendingCollisionPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         void flushPendingCustomGrabAuthority(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);

@@ -19,6 +19,9 @@ namespace rock
     {
         bool isLeft = false;
         RE::NiTransform rawHandWorld{};
+        RE::NiTransform unbridgedRawHandWorld{};
+        RE::NiPoint3 locomotionAuthorityOffsetGame{};
+        bool locomotionAuthorityBridged = false;
         RE::NiNode* handNode = nullptr;
         RE::NiPoint3 grabAnchorWorld{};
         RE::NiPoint3 palmNormalWorld{};

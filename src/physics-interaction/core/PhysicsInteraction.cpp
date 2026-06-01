@@ -102,6 +102,25 @@ namespace rock
             return isLeft ? PhysicsObjectClaimOwner::LeftHand : PhysicsObjectClaimOwner::RightHand;
         }
 
+        [[nodiscard]] grab_locomotion_authority_bridge::Vec3 toGrabLocomotionAuthorityVec(const RE::NiPoint3& value)
+        {
+            return grab_locomotion_authority_bridge::Vec3{
+                .x = value.x,
+                .y = value.y,
+                .z = value.z,
+            };
+        }
+
+        [[nodiscard]] RE::NiPoint3 fromGrabLocomotionAuthorityVec(const grab_locomotion_authority_bridge::Vec3& value)
+        {
+            return RE::NiPoint3(value.x, value.y, value.z);
+        }
+
+        [[nodiscard]] float pointLength(const RE::NiPoint3& value)
+        {
+            return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
+        }
+
         FarSelectionHmdConeGate makeFarSelectionHmdConeGate(const PhysicsFrameContext& frame)
         {
             FarSelectionHmdConeGate gate{};
@@ -516,7 +535,9 @@ namespace rock
             const RE::NiTransform* rawHandWorld,
             std::uint64_t gameFrameIndex,
             float gameDeltaSeconds,
-            const havok_physics_timing::PhysicsTimingSample* timing)
+            const havok_physics_timing::PhysicsTimingSample* timing,
+            const RE::NiTransform* unbridgedRawHandWorld = nullptr,
+            const RE::NiPoint3* locomotionAuthorityOffsetGame = nullptr)
         {
             const PalmClockLogMode mode = palmClockLogMode();
             if (mode == PalmClockLogMode::Disabled) {
@@ -541,6 +562,8 @@ namespace rock
             const TransformDelta rawToTarget = (rawOk && targetOk) ? measureTransformDelta(*rawHandWorld, palmTargetWorld) : TransformDelta{ -1.0f, -1.0f };
             const TransformDelta rawToLive = (rawOk && liveOk) ? measureTransformDelta(*rawHandWorld, livePalm.world) : TransformDelta{ -1.0f, -1.0f };
             const TransformDelta targetToLive = (targetOk && liveOk) ? measureTransformDelta(palmTargetWorld, livePalm.world) : TransformDelta{ -1.0f, -1.0f };
+            const bool unbridgedOk = rawOk && unbridgedRawHandWorld != nullptr;
+            const TransformDelta rawToBridged = unbridgedOk ? measureTransformDelta(*unbridgedRawHandWorld, *rawHandWorld) : TransformDelta{ -1.0f, -1.0f };
 
             const float rawDt = timing ? timing->rawDeltaSeconds : -1.0f;
             const float subDt = timing ? timing->substepDeltaSeconds : -1.0f;
@@ -559,10 +582,13 @@ namespace rock
                 const RE::NiPoint3 rawPosition = rawOk ? rawHandWorld->translate : RE::NiPoint3{};
                 const RE::NiPoint3 targetPosition = targetOk ? palmTargetWorld.translate : RE::NiPoint3{};
                 const RE::NiPoint3 livePosition = liveOk ? livePalm.world.translate : RE::NiPoint3{};
+                const RE::NiPoint3 bridgeOffset = locomotionAuthorityOffsetGame ?
+                                                      *locomotionAuthorityOffsetGame :
+                                                      (unbridgedOk ? rawHandWorld->translate - unbridgedRawHandWorld->translate : RE::NiPoint3{});
 
                 if (mode == PalmClockLogMode::Trace) {
                     ROCK_LOG_INFO(Hand,
-                        "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg targetToLive={:.3f}gu/{:.3f}deg rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
+                        "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg targetToLive={:.3f}gu/{:.3f}deg rawToBridged={:.3f}gu/{:.3f}deg bridgeOffset=({:.2f},{:.2f},{:.2f}) rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
                         stage ? stage : "unknown",
                         hand.handName(),
                         gameFrameIndex,
@@ -586,6 +612,11 @@ namespace rock
                         rawToLive.rotationDegrees,
                         targetToLive.position,
                         targetToLive.rotationDegrees,
+                        rawToBridged.position,
+                        rawToBridged.rotationDegrees,
+                        bridgeOffset.x,
+                        bridgeOffset.y,
+                        bridgeOffset.z,
                         rawPosition.x,
                         rawPosition.y,
                         rawPosition.z,
@@ -600,7 +631,7 @@ namespace rock
                 } else {
                     ROCK_LOG_SAMPLE_DEBUG(Hand,
                         g_rockConfig.rockLogSampleMilliseconds,
-                        "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg targetToLive={:.3f}gu/{:.3f}deg rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
+                        "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg targetToLive={:.3f}gu/{:.3f}deg rawToBridged={:.3f}gu/{:.3f}deg bridgeOffset=({:.2f},{:.2f},{:.2f}) rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
                         stage ? stage : "unknown",
                         hand.handName(),
                         gameFrameIndex,
@@ -624,6 +655,11 @@ namespace rock
                         rawToLive.rotationDegrees,
                         targetToLive.position,
                         targetToLive.rotationDegrees,
+                        rawToBridged.position,
+                        rawToBridged.rotationDegrees,
+                        bridgeOffset.x,
+                        bridgeOffset.y,
+                        bridgeOffset.z,
                         rawPosition.x,
                         rawPosition.y,
                         rawPosition.z,
@@ -1881,14 +1917,18 @@ namespace rock
             frame.right.disabled ? nullptr : &frame.right.rawHandWorld,
             runtime.frameIndex,
             frame.deltaSeconds,
-            nullptr);
+            nullptr,
+            frame.right.disabled ? nullptr : &frame.right.unbridgedRawHandWorld,
+            frame.right.disabled ? nullptr : &frame.right.locomotionAuthorityOffsetGame);
         logPalmClockSampleForHand("game-after-hand-collider-queue",
             _leftHand,
             hknp,
             frame.left.disabled ? nullptr : &frame.left.rawHandWorld,
             runtime.frameIndex,
             frame.deltaSeconds,
-            nullptr);
+            nullptr,
+            frame.left.disabled ? nullptr : &frame.left.unbridgedRawHandWorld,
+            frame.left.disabled ? nullptr : &frame.left.locomotionAuthorityOffsetGame);
         updateBodyBoneCollisions(frame);
         updateNativePlayerCollisionSuppression(bhk, hknp);
 
@@ -2971,10 +3011,10 @@ namespace rock
         _leftHand.updateDelayedGrabHandCollisionRestore(world, frame.deltaSeconds);
 
         if (!frame.right.disabled) {
-            _rightHand.updateCollisionTransform(world, frame.right.rawHandWorld, frame.deltaSeconds);
+            _rightHand.updateCollisionTransform(world, frame.right.rawHandWorld, frame.deltaSeconds, frame.right.locomotionAuthorityOffsetGame);
         }
         if (!frame.left.disabled) {
-            _leftHand.updateCollisionTransform(world, frame.left.rawHandWorld, frame.deltaSeconds);
+            _leftHand.updateCollisionTransform(world, frame.left.rawHandWorld, frame.deltaSeconds, frame.left.locomotionAuthorityOffsetGame);
         }
     }
 
@@ -3465,6 +3505,67 @@ namespace rock
             .peerActiveGrabLifecycle = &peer.getActiveGrabLifecycle(),
             .peerHeldBodyIds = &peer.getHeldBodyIds(),
         };
+    }
+
+    grab_locomotion_authority_bridge::Output PhysicsInteraction::updateGrabLocomotionAuthorityBridge(float deltaSeconds, bool worldReady)
+    {
+        const auto& runtime = runtime_state::currentFrame();
+        const auto& playerSpace = runtime.playerSpace;
+        const bool rightHolding = _rightHand.isHoldingAtomic();
+        const bool leftHolding = _leftHand.isHoldingAtomic();
+        const bool anyHandHolding = rightHolding || leftHolding;
+
+        const auto output = grab_locomotion_authority_bridge::update(
+            _grabLocomotionAuthorityBridge,
+            grab_locomotion_authority_bridge::Input{
+                .config = grab_locomotion_authority_bridge::Config{
+                    .enabled = g_rockConfig.rockGrabLocomotionAuthorityBridgeEnabled,
+                    .maxLeadSeconds = g_rockConfig.rockGrabLocomotionAuthorityMaxLeadSeconds,
+                    .smoothingHz = g_rockConfig.rockGrabLocomotionAuthoritySmoothingHz,
+                    .maxOffsetGameUnits = g_rockConfig.rockGrabLocomotionAuthorityMaxOffsetGameUnits,
+                    .resetDistanceGameUnits = g_rockConfig.rockGrabLocomotionAuthorityResetDistanceGameUnits,
+                },
+                .playerSpaceValid = playerSpace.valid,
+                .playerMoving = playerSpace.moving,
+                .heldObjectActive = anyHandHolding,
+                .worldOrMenuReset = !worldReady || runtime.localMenuBlocking || runtime.localLoadingMenuOpen || runtime.localGameStopped || runtime.compatibilityConfigBlocking,
+                .playerPositionGame = toGrabLocomotionAuthorityVec(playerSpace.world.translate),
+                .playerDeltaGameUnits = toGrabLocomotionAuthorityVec(playerSpace.deltaGameUnits),
+                .deltaSeconds = deltaSeconds,
+            });
+
+        if (g_rockConfig.rockDebugGrabFrameLogging || g_rockConfig.rockDebugVerboseLogging) {
+            auto logHand = [&](const char* handLabel, bool holding) {
+                if (!holding && !g_rockConfig.rockDebugVerboseLogging) {
+                    return;
+                }
+
+                ROCK_LOG_SAMPLE_DEBUG(Hand,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "LOCOMOTION_AUTH hand={} holding={} moving={} rawDelta=({:.2f},{:.2f},{:.2f}) velocity=({:.2f},{:.2f},{:.2f}) offset=({:.2f},{:.2f},{:.2f}) reset={} reason={} active={} source={}",
+                    handLabel,
+                    holding ? "yes" : "no",
+                    playerSpace.moving ? "yes" : "no",
+                    playerSpace.deltaGameUnits.x,
+                    playerSpace.deltaGameUnits.y,
+                    playerSpace.deltaGameUnits.z,
+                    output.velocityGameUnitsPerSecond.x,
+                    output.velocityGameUnitsPerSecond.y,
+                    output.velocityGameUnitsPerSecond.z,
+                    output.offsetGameUnits.x,
+                    output.offsetGameUnits.y,
+                    output.offsetGameUnits.z,
+                    output.reset ? "yes" : "no",
+                    output.resetReason,
+                    output.active ? "yes" : "no",
+                    playerSpace.source ? playerSpace.source : "none");
+            };
+
+            logHand("Right", rightHolding);
+            logHand("Left", leftHolding);
+        }
+
+        return output;
     }
 
     HeldObjectPlayerSpaceFrame PhysicsInteraction::sampleHeldObjectPlayerSpaceFrame(float deltaSeconds)
@@ -4180,7 +4281,9 @@ namespace rock
                         &transform,
                         _palmClockGameFrameIndex.load(std::memory_order_acquire),
                         _palmClockGameDeltaSeconds.load(std::memory_order_acquire),
-                        nullptr);
+                        nullptr,
+                        &handInput.unbridgedRawHandWorld,
+                        &handInput.locomotionAuthorityOffsetGame);
                     hand.updateHeldObject(hknp,
                         transform,
                         _heldObjectPlayerSpaceFrame,

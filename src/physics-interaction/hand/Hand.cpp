@@ -1843,12 +1843,16 @@ namespace rock
         clearGrabHandCollisionSuppressionState();
     }
 
-    void Hand::updateCollisionTransform(RE::hknpWorld* world, const RE::NiTransform& rollAuthorityWorld, float deltaTime)
+    void Hand::updateCollisionTransform(
+        RE::hknpWorld* world,
+        const RE::NiTransform& rollAuthorityWorld,
+        float deltaTime,
+        const RE::NiPoint3& authorityTranslationOffsetGame)
     {
         if (!hasCollisionBody() || !world)
             return;
 
-        _boneColliders.update(world, _isLeft, rollAuthorityWorld, _handBody, deltaTime);
+        _boneColliders.update(world, _isLeft, rollAuthorityWorld, _handBody, deltaTime, authorityTranslationOffsetGame);
     }
 
     void Hand::flushPendingCollisionPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)

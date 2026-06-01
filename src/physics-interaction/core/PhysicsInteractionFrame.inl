@@ -13,6 +13,9 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
     frame.worldReady = bhk && hknp;
     frame.menuBlocked = runtime_state::isPhysicsMenuBlocked();
     frame.reloadBoundaryActive = false;
+    const auto locomotionAuthority = updateGrabLocomotionAuthorityBridge(frame.deltaSeconds, frame.worldReady);
+    const RE::NiPoint3 locomotionAuthorityOffsetGame = fromGrabLocomotionAuthorityVec(locomotionAuthority.offsetGameUnits);
+    const bool locomotionAuthorityBridged = locomotionAuthority.active && pointLength(locomotionAuthorityOffsetGame) > 0.0001f;
 
     if (auto* player = RE::PlayerCharacter::GetSingleton()) {
         (void)player;
@@ -33,6 +36,13 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
         }
 
         input.rawHandWorld = getInteractionHandTransform(isLeft);
+        input.unbridgedRawHandWorld = input.rawHandWorld;
+        const bool holdingForLocomotionAuthority = hand.isHoldingAtomic();
+        input.locomotionAuthorityOffsetGame = (locomotionAuthorityBridged && holdingForLocomotionAuthority) ? locomotionAuthorityOffsetGame : RE::NiPoint3{};
+        input.locomotionAuthorityBridged = locomotionAuthorityBridged && holdingForLocomotionAuthority;
+        if (input.locomotionAuthorityBridged) {
+            input.rawHandWorld.translate = input.rawHandWorld.translate + input.locomotionAuthorityOffsetGame;
+        }
         input.handNode = getInteractionHandNode(isLeft);
         input.grabAnchorWorld = input.rawHandWorld.translate;
         RE::NiTransform closeSelectionBasisWorld = input.rawHandWorld;
