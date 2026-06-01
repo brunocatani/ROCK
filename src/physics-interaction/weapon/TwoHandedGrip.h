@@ -78,7 +78,7 @@ namespace rock
 
         void updateFullWeaponAuthorityGrip(RE::NiNode* weaponNode, float dt);
 
-        void updateVisualOnlySupportGrip(RE::NiNode* weaponNode);
+        void updateVisualOnlySupportGrip(RE::NiNode* weaponNode, float dt);
 
         void setSupportGripPose(bool isLeft, WeaponGripPoseId poseId, const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose);
 
@@ -86,7 +86,13 @@ namespace rock
 
         bool applyWeaponVisualAuthority(RE::NiNode* weaponNode, const RE::NiTransform& solvedWeaponWorld);
 
-        bool applyLockedHandVisualAuthority(RE::NiNode* weaponNode, bool applyPrimaryHand, bool applySupportHand);
+        bool applyLockedHandVisualAuthority(
+            RE::NiNode* weaponNode,
+            bool applyPrimaryHand,
+            bool applySupportHand,
+            float dt,
+            const RE::NiTransform* livePrimaryHandWorld = nullptr,
+            const RE::NiTransform* liveSupportHandWorld = nullptr);
 
         void publishGripHandPoses(bool supportHandIsLeft);
 
@@ -99,6 +105,22 @@ namespace rock
         static RE::NiPoint3 worldToWeaponLocal(const RE::NiPoint3& worldPos, const RE::NiAVObject* weaponNode);
 
         static RE::NiPoint3 weaponLocalToWorld(const RE::NiPoint3& localPos, const RE::NiAVObject* weaponNode);
+
+        struct LockedHandVisualLerpState
+        {
+            bool active = false;
+            RE::NiTransform startWorld{};
+            float elapsedSeconds = 0.0f;
+            float durationSeconds = 0.0f;
+            float lastAlpha = 1.0f;
+        };
+
+        void resetLockedHandVisualLerp();
+        RE::NiTransform resolveLockedHandVisualTarget(
+            const RE::NiTransform& targetWorld,
+            const RE::NiTransform* liveHandWorld,
+            float dt,
+            LockedHandVisualLerpState& state);
 
         TwoHandedState _state{ TwoHandedState::Inactive };
 
@@ -137,6 +159,9 @@ namespace rock
         RE::NiTransform _supportHandWeaponLocal{};
 
         bool _hasHandWeaponLocalFrames{ false };
+
+        LockedHandVisualLerpState _primaryHandVisualLerp{};
+        LockedHandVisualLerpState _supportHandVisualLerp{};
 
         std::array<float, 15> _supportFingerPose{};
         std::array<float, 5> _supportFingerValues{};

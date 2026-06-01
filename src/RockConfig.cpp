@@ -135,6 +135,11 @@ namespace rock
         rockWeaponCollisionMaxAngularVelocity = 100.0f;
         rockWeaponInteractionProbeRadius = 12.0f;
         rockVisualOnlySidearmSupportGripEnabled = true;
+        rockWeaponSupportGripHandLerpEnabled = true;
+        rockWeaponSupportGripHandLerpTimeMin = 0.12f;
+        rockWeaponSupportGripHandLerpTimeMax = 0.20f;
+        rockWeaponSupportGripHandLerpMinDistance = 1.0f;
+        rockWeaponSupportGripHandLerpMaxDistance = 14.0f;
         rockSeeThroughScopesCompatibilityEnabled = true;
         rockSeeThroughScopesReticleAlignmentEnabled = true;
         rockSeeThroughScopesRightEyeDominant = kDefaultSeeThroughScopesRightEyeDominant;
@@ -476,10 +481,6 @@ namespace rock
         rockRightGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
         rockLeftGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);
 
-        rockGrabLerpSpeed = 300.0f;
-        rockGrabLerpAngularSpeed = 360.0f;
-        rockGrabLerpMaxTime = 0.5f;
-
         rockGrabHapticsEnabled = true;
         rockGrabHapticDurationSeconds = 0.055f;
         rockGrabHapticBaseIntensity = 0.12f;
@@ -637,6 +638,35 @@ namespace rock
         rockWeaponInteractionProbeRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponInteractionProbeRadius", rockWeaponInteractionProbeRadius));
         rockVisualOnlySidearmSupportGripEnabled =
             ini.GetBoolValue(SECTION, "bVisualOnlySidearmSupportGripEnabled", rockVisualOnlySidearmSupportGripEnabled);
+        rockWeaponSupportGripHandLerpEnabled = ini.GetBoolValue(SECTION, "bWeaponSupportGripHandLerpEnabled", rockWeaponSupportGripHandLerpEnabled);
+        rockWeaponSupportGripHandLerpTimeMin = readClampedFloat(ini,
+            SECTION,
+            "fWeaponSupportGripHandLerpTimeMin",
+            rockWeaponSupportGripHandLerpTimeMin,
+            0.12f,
+            0.0f,
+            1.0f);
+        rockWeaponSupportGripHandLerpTimeMax = readClampedFloat(ini,
+            SECTION,
+            "fWeaponSupportGripHandLerpTimeMax",
+            rockWeaponSupportGripHandLerpTimeMax,
+            0.20f,
+            rockWeaponSupportGripHandLerpTimeMin,
+            1.0f);
+        rockWeaponSupportGripHandLerpMinDistance = readClampedFloat(ini,
+            SECTION,
+            "fWeaponSupportGripHandLerpMinDistance",
+            rockWeaponSupportGripHandLerpMinDistance,
+            1.0f,
+            0.0f,
+            80.0f);
+        rockWeaponSupportGripHandLerpMaxDistance = readClampedFloat(ini,
+            SECTION,
+            "fWeaponSupportGripHandLerpMaxDistance",
+            rockWeaponSupportGripHandLerpMaxDistance,
+            14.0f,
+            rockWeaponSupportGripHandLerpMinDistance,
+            120.0f);
         rockSeeThroughScopesCompatibilityEnabled =
             ini.GetBoolValue(SECTION, "bSeeThroughScopesCompatibilityEnabled", rockSeeThroughScopesCompatibilityEnabled);
         rockSeeThroughScopesReticleAlignmentEnabled =
@@ -1583,10 +1613,34 @@ namespace rock
             rockGrabPinchDetectionAxisBlend = sanitizedPinchDetectionConfig.detectionAxisBlend;
         }
         rockGrabHandLerpEnabled = ini.GetBoolValue(SECTION, "bGrabHandLerpEnabled", rockGrabHandLerpEnabled);
-        rockGrabHandLerpTimeMin = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabHandLerpTimeMin", rockGrabHandLerpTimeMin));
-        rockGrabHandLerpTimeMax = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabHandLerpTimeMax", rockGrabHandLerpTimeMax));
-        rockGrabHandLerpMinDistance = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabHandLerpMinDistance", rockGrabHandLerpMinDistance));
-        rockGrabHandLerpMaxDistance = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabHandLerpMaxDistance", rockGrabHandLerpMaxDistance));
+        rockGrabHandLerpTimeMin = readClampedFloat(ini,
+            SECTION,
+            "fGrabHandLerpTimeMin",
+            rockGrabHandLerpTimeMin,
+            0.10f,
+            0.0f,
+            1.0f);
+        rockGrabHandLerpTimeMax = readClampedFloat(ini,
+            SECTION,
+            "fGrabHandLerpTimeMax",
+            rockGrabHandLerpTimeMax,
+            0.20f,
+            rockGrabHandLerpTimeMin,
+            1.0f);
+        rockGrabHandLerpMinDistance = readClampedFloat(ini,
+            SECTION,
+            "fGrabHandLerpMinDistance",
+            rockGrabHandLerpMinDistance,
+            7.0f,
+            0.0f,
+            80.0f);
+        rockGrabHandLerpMaxDistance = readClampedFloat(ini,
+            SECTION,
+            "fGrabHandLerpMaxDistance",
+            rockGrabHandLerpMaxDistance,
+            14.0f,
+            rockGrabHandLerpMinDistance,
+            120.0f);
         rockGrabMeshFingerPoseEnabled = ini.GetBoolValue(SECTION, "bGrabMeshFingerPoseEnabled", rockGrabMeshFingerPoseEnabled);
         rockGrabMeshJointPoseEnabled = ini.GetBoolValue(SECTION, "bGrabMeshJointPoseEnabled", rockGrabMeshJointPoseEnabled);
         rockGrabFingerPoseUpdateInterval = static_cast<int>(ini.GetLongValue(SECTION, "iGrabFingerPoseUpdateInterval", rockGrabFingerPoseUpdateInterval));
@@ -1697,10 +1751,6 @@ namespace rock
 
         readOptionalVec3("fRightGrabLegacyPalmPivotAHandspaceX", "fRightGrabLegacyPalmPivotAHandspaceY", "fRightGrabLegacyPalmPivotAHandspaceZ", rockRightGrabLegacyPalmPivotAHandspace);
         readOptionalVec3("fLeftGrabLegacyPalmPivotAHandspaceX", "fLeftGrabLegacyPalmPivotAHandspaceY", "fLeftGrabLegacyPalmPivotAHandspaceZ", rockLeftGrabLegacyPalmPivotAHandspace);
-
-        rockGrabLerpSpeed = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLerpSpeed", rockGrabLerpSpeed));
-        rockGrabLerpAngularSpeed = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLerpAngularSpeed", rockGrabLerpAngularSpeed));
-        rockGrabLerpMaxTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabLerpMaxTime", rockGrabLerpMaxTime));
 
         auto readClampedFloat = [&](const char* key, float& value, float fallback, float minValue, float maxValue) {
             value = static_cast<float>(ini.GetDoubleValue(SECTION, key, value));

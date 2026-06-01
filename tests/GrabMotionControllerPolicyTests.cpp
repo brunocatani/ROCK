@@ -51,6 +51,29 @@ namespace
         float y = 0.0f;
         float z = 0.0f;
     };
+
+    struct Mat3
+    {
+        float entry[3][3]{
+            { 1.0f, 0.0f, 0.0f },
+            { 0.0f, 1.0f, 0.0f },
+            { 0.0f, 0.0f, 1.0f },
+        };
+    };
+
+    struct Transform
+    {
+        Mat3 rotate{};
+        Vec3 translate{};
+        float scale = 1.0f;
+    };
+
+    Transform makeTransform(float x, float y, float z)
+    {
+        Transform transform{};
+        transform.translate = Vec3{ x, y, z };
+        return transform;
+    }
 }
 
 int main()
@@ -476,6 +499,37 @@ int main()
         rock::hand_visual_lerp_math::shouldSmoothHeldObjectRelativeHand(true, true, false));
     ok &= expectFalse("disabled visual hand lerp tracks object-relative pose immediately",
         rock::hand_visual_lerp_math::shouldSmoothHeldObjectRelativeHand(false, false, true));
+
+    ok &= expectNear("visual hand lerp below minimum distance is immediate",
+        rock::hand_visual_lerp_math::computeDistanceMappedDurationGameUnits(0.5f, 0.12f, 0.20f, 1.0f, 14.0f),
+        0.0f,
+        0.001f);
+    ok &= expectNear("visual hand lerp maps midpoint distance to midpoint duration",
+        rock::hand_visual_lerp_math::computeDistanceMappedDurationGameUnits(7.5f, 0.12f, 0.20f, 1.0f, 14.0f),
+        0.16f,
+        0.001f);
+    ok &= expectNear("visual hand lerp clamps to max duration",
+        rock::hand_visual_lerp_math::computeDistanceMappedDurationGameUnits(40.0f, 0.12f, 0.20f, 1.0f, 14.0f),
+        0.20f,
+        0.001f);
+
+    const Transform visualStart = makeTransform(0.0f, 0.0f, 0.0f);
+    const Transform visualTarget = makeTransform(10.0f, 0.0f, 0.0f);
+    const auto immediateVisual = rock::hand_visual_lerp_math::blendTransformOverDuration(visualStart, visualTarget, 0.0f, 0.0f);
+    ok &= expectTrue("zero-duration visual lerp reaches target", immediateVisual.reachedTarget);
+    ok &= expectNear("zero-duration visual lerp publishes target x", immediateVisual.transform.translate.x, 10.0f, 0.001f);
+
+    const auto halfwayVisual = rock::hand_visual_lerp_math::blendTransformOverDuration(visualStart, visualTarget, 0.10f, 0.20f);
+    ok &= expectFalse("half-duration visual lerp is still moving", halfwayVisual.reachedTarget);
+    ok &= expectNear("half-duration visual lerp reaches half distance", halfwayVisual.transform.translate.x, 5.0f, 0.001f);
+
+    const auto completeVisual = rock::hand_visual_lerp_math::blendTransformOverDuration(visualStart, visualTarget, 0.20f, 0.20f);
+    ok &= expectTrue("full-duration visual lerp reaches target", completeVisual.reachedTarget);
+    ok &= expectNear("full-duration visual lerp publishes target x exactly", completeVisual.transform.translate.x, 10.0f, 0.001f);
+    ok &= expectNear("timed visual lerp elapsed clamps to duration",
+        rock::hand_visual_lerp_math::advanceTimedBlendElapsed(0.15f, 0.20f, 0.20f),
+        0.20f,
+        0.001f);
 
     const auto ratioClamp = rock::grab_inertia_policy::normalizeInverseInertiaAxesForGrab(1.0f, 100.0f, 4.0f, 10.0f, 0.05f);
     ok &= expectTrue("inertia ratio clamp modifies axis", ratioClamp.modified);

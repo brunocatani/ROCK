@@ -1,6 +1,7 @@
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 
 #include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/core/RockRuntimeState.h"
@@ -464,6 +465,7 @@ namespace rock
         _supportFingerLocalTransformMask = 0;
         _hasSupportFingerLocalTransforms = false;
         _primaryGripConfidence = 0.0f;
+        resetLockedHandVisualLerp();
     }
 
     bool TwoHandedGrip::ownsWeaponTransform() const
@@ -492,6 +494,60 @@ namespace rock
         outSnapshot.rightGripWorld = transform_math::localPointToWorld(_lastSolvedWeaponTransform, _primaryGripLocal);
         outSnapshot.leftGripWorld = transform_math::localPointToWorld(_lastSolvedWeaponTransform, _offhandGripLocal);
         return true;
+    }
+
+    void TwoHandedGrip::resetLockedHandVisualLerp()
+    {
+        _primaryHandVisualLerp = {};
+        _supportHandVisualLerp = {};
+    }
+
+    RE::NiTransform TwoHandedGrip::resolveLockedHandVisualTarget(
+        const RE::NiTransform& targetWorld,
+        const RE::NiTransform* liveHandWorld,
+        float dt,
+        LockedHandVisualLerpState& state)
+    {
+        /*
+         * Two-handed weapon smoothing is visual-only. The weapon solver keeps
+         * immediate aim authority; this only eases the FRIK external hand target
+         * into the locked hand-to-weapon relation captured at grip start.
+         */
+        if (!g_rockConfig.rockWeaponSupportGripHandLerpEnabled) {
+            state = {};
+            return targetWorld;
+        }
+
+        if (!state.active) {
+            const RE::NiTransform startWorld = (liveHandWorld && isFiniteTransform(*liveHandWorld)) ? *liveHandWorld : targetWorld;
+            const float initialDistance =
+                hand_visual_lerp_math::distanceGameUnits(startWorld.translate, targetWorld.translate);
+            const float durationSeconds =
+                hand_visual_lerp_math::computeDistanceMappedDurationGameUnits(
+                    initialDistance,
+                    g_rockConfig.rockWeaponSupportGripHandLerpTimeMin,
+                    g_rockConfig.rockWeaponSupportGripHandLerpTimeMax,
+                    g_rockConfig.rockWeaponSupportGripHandLerpMinDistance,
+                    g_rockConfig.rockWeaponSupportGripHandLerpMaxDistance);
+            if (durationSeconds <= 0.0f) {
+                state = {};
+                state.lastAlpha = 1.0f;
+                return targetWorld;
+            }
+
+            state.active = true;
+            state.startWorld = startWorld;
+            state.elapsedSeconds = 0.0f;
+            state.durationSeconds = durationSeconds;
+            state.lastAlpha = 0.0f;
+        }
+
+        state.elapsedSeconds =
+            hand_visual_lerp_math::advanceTimedBlendElapsed(state.elapsedSeconds, dt, state.durationSeconds);
+        const auto blended =
+            hand_visual_lerp_math::blendTransformOverDuration(state.startWorld, targetWorld, state.elapsedSeconds, state.durationSeconds);
+        state.lastAlpha = hand_visual_lerp_math::timedBlendAlpha(state.elapsedSeconds, state.durationSeconds);
+        return blended.transform;
     }
 
     void TwoHandedGrip::transitionToTouching(RE::NiNode* weaponNode, const WeaponInteractionDecision& decision)
@@ -544,6 +600,7 @@ namespace rock
         _supportFingerLocalTransformMask = 0;
         _hasSupportFingerLocalTransforms = false;
         _primaryGripConfidence = 0.0f;
+        resetLockedHandVisualLerp();
         clearPrimaryGripPose(primaryHandIsLeft);
         clearSupportGripPose(supportHandIsLeft);
 
@@ -737,6 +794,7 @@ namespace rock
         _activeWeaponGenerationKey = 0;
         _weaponNodeLocalBaseline = {};
         _hasWeaponNodeLocalBaseline = false;
+        resetLockedHandVisualLerp();
 
         ROCK_LOG_INFO(Weapon, "TwoHandedGrip: grip released");
     }
@@ -744,7 +802,7 @@ namespace rock
     void TwoHandedGrip::updateGripping(RE::NiNode* weaponNode, float dt)
     {
         if (_authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport) {
-            updateVisualOnlySupportGrip(weaponNode);
+            updateVisualOnlySupportGrip(weaponNode, dt);
             return;
         }
 
@@ -806,7 +864,7 @@ namespace rock
         static_assert(weapon_visual_authority_math::weaponVisualPrecedesLockedHandAuthority());
         publishGripHandPoses(supportHandIsLeft);
 
-        if (!applyLockedHandVisualAuthority(weaponNode, true, true)) {
+        if (!applyLockedHandVisualAuthority(weaponNode, true, true, dt, &primaryTransform, &supportTransform)) {
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing support grip because ROCK locked hand authority failed");
             transitionToInactive(false);
@@ -824,19 +882,32 @@ namespace rock
             float separation = std::sqrt(dot(sub(primaryGripFinal, offhandGripFinal), sub(primaryGripFinal, offhandGripFinal)));
             ROCK_LOG_DEBUG(Weapon,
                 "TwoHandedGrip: blend={:.2f}, separation={:.1f}gu, "
-                "primaryGrip=({:.1f},{:.1f},{:.1f}), offhandGrip=({:.1f},{:.1f},{:.1f})",
-                _rotationBlend, separation, primaryGripFinal.x, primaryGripFinal.y, primaryGripFinal.z, offhandGripFinal.x, offhandGripFinal.y, offhandGripFinal.z);
+                "primaryGrip=({:.1f},{:.1f},{:.1f}), offhandGrip=({:.1f},{:.1f},{:.1f}), handLerp=({:.2f}/{:.3f}s,{:.2f}/{:.3f}s)",
+                _rotationBlend,
+                separation,
+                primaryGripFinal.x,
+                primaryGripFinal.y,
+                primaryGripFinal.z,
+                offhandGripFinal.x,
+                offhandGripFinal.y,
+                offhandGripFinal.z,
+                _primaryHandVisualLerp.lastAlpha,
+                _primaryHandVisualLerp.durationSeconds,
+                _supportHandVisualLerp.lastAlpha,
+                _supportHandVisualLerp.durationSeconds);
         }
     }
 
-    void TwoHandedGrip::updateVisualOnlySupportGrip(RE::NiNode* weaponNode)
+    void TwoHandedGrip::updateVisualOnlySupportGrip(RE::NiNode* weaponNode, float dt)
     {
         constexpr bool supportHandIsLeft = true;
 
         static_assert(weapon_visual_authority_math::handPosePrecedesLockedHandAuthority());
         publishGripHandPoses(supportHandIsLeft);
 
-        if (!applyLockedHandVisualAuthority(weaponNode, false, true)) {
+        RE::NiTransform supportTransform{};
+        const RE::NiTransform* liveSupportTransform = tryGetHandBoneTransform(supportHandIsLeft, supportTransform) ? &supportTransform : nullptr;
+        if (!applyLockedHandVisualAuthority(weaponNode, false, true, dt, nullptr, liveSupportTransform)) {
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing visual-only support grip because ROCK support hand authority failed");
             transitionToInactive(false);
@@ -850,11 +921,13 @@ namespace rock
             _gripLogCounter = 0;
             const RE::NiPoint3 offhandGripFinal = transform_math::localPointToWorld(weaponNode->world, _offhandGripLocal);
             ROCK_LOG_DEBUG(Weapon,
-                "TwoHandedGrip: visual-only support follows weapon='{}', offhandGrip=({:.1f},{:.1f},{:.1f})",
+                "TwoHandedGrip: visual-only support follows weapon='{}', offhandGrip=({:.1f},{:.1f},{:.1f}), handLerp={:.2f}/{:.3f}s",
                 weaponNode->name.c_str(),
                 offhandGripFinal.x,
                 offhandGripFinal.y,
-                offhandGripFinal.z);
+                offhandGripFinal.z,
+                _supportHandVisualLerp.lastAlpha,
+                _supportHandVisualLerp.durationSeconds);
         }
     }
 
@@ -913,7 +986,13 @@ namespace rock
         return true;
     }
 
-    bool TwoHandedGrip::applyLockedHandVisualAuthority(RE::NiNode* weaponNode, bool applyPrimaryHand, bool applySupportHand)
+    bool TwoHandedGrip::applyLockedHandVisualAuthority(
+        RE::NiNode* weaponNode,
+        bool applyPrimaryHand,
+        bool applySupportHand,
+        float dt,
+        const RE::NiTransform* livePrimaryHandWorld,
+        const RE::NiTransform* liveSupportHandWorld)
     {
         if (!weaponNode || !_hasHandWeaponLocalFrames) {
             return false;
@@ -932,14 +1011,18 @@ namespace rock
         if (applyPrimaryHand) {
             const RE::NiTransform primaryHandWorld =
                 weapon_visual_authority_math::weaponLocalFrameToWorld(weaponNode->world, _primaryHandWeaponLocal);
+            const RE::NiTransform appliedPrimaryHandWorld =
+                resolveLockedHandVisualTarget(primaryHandWorld, livePrimaryHandWorld, dt, _primaryHandVisualLerp);
             primaryApplied =
-                frik_visual_authority::applyExternalHandWorldTransform(PRIMARY_GRIP_TAG, frik_visual_authority::Hand::Right, primaryHandWorld, GRIP_HAND_POSE_PRIORITY);
+                frik_visual_authority::applyExternalHandWorldTransform(PRIMARY_GRIP_TAG, frik_visual_authority::Hand::Right, appliedPrimaryHandWorld, GRIP_HAND_POSE_PRIORITY);
         }
         if (applySupportHand) {
             const RE::NiTransform supportHandWorld =
                 weapon_support_authority_policy::buildVisualOnlySupportHandWorld(weaponNode->world, _supportHandWeaponLocal);
+            const RE::NiTransform appliedSupportHandWorld =
+                resolveLockedHandVisualTarget(supportHandWorld, liveSupportHandWorld, dt, _supportHandVisualLerp);
             supportApplied =
-                frik_visual_authority::applyExternalHandWorldTransform(SUPPORT_GRIP_TAG, frik_visual_authority::Hand::Left, supportHandWorld, GRIP_HAND_POSE_PRIORITY);
+                frik_visual_authority::applyExternalHandWorldTransform(SUPPORT_GRIP_TAG, frik_visual_authority::Hand::Left, appliedSupportHandWorld, GRIP_HAND_POSE_PRIORITY);
         }
         if (primaryApplied && supportApplied) {
             return true;

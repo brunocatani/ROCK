@@ -895,6 +895,9 @@ namespace rock
         std::size_t _grabDeviationHistoryNext = 0;
         RE::NiTransform _grabVisualHandTransform{};
         bool _hasGrabVisualHandTransform = false;
+        RE::NiTransform _grabVisualHandLerpStartTransform{};
+        float _grabVisualHandLerpElapsedSeconds = 0.0f;
+        float _grabVisualHandLerpDurationSeconds = 0.0f;
         float _grabVisualDeviationExceededSeconds = 0.0f;
         std::array<float, 5> _grabVisualDeviationHistory{};
         std::size_t _grabVisualDeviationHistoryCount = 0;

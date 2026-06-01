@@ -96,6 +96,11 @@ namespace rock
         float rockWeaponCollisionMaxAngularVelocity = 100.0f;
         float rockWeaponInteractionProbeRadius = 12.0f;
         bool rockVisualOnlySidearmSupportGripEnabled = true;
+        bool rockWeaponSupportGripHandLerpEnabled = true;
+        float rockWeaponSupportGripHandLerpTimeMin = 0.12f;
+        float rockWeaponSupportGripHandLerpTimeMax = 0.20f;
+        float rockWeaponSupportGripHandLerpMinDistance = 1.0f;
+        float rockWeaponSupportGripHandLerpMaxDistance = 14.0f;
         bool rockSeeThroughScopesCompatibilityEnabled = true;
         bool rockSeeThroughScopesReticleAlignmentEnabled = true;
         bool rockSeeThroughScopesRightEyeDominant = true;
@@ -434,10 +439,6 @@ namespace rock
 
         RE::NiPoint3 rockRightGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, 0.2f);
         RE::NiPoint3 rockLeftGrabLegacyPalmPivotAHandspace = RE::NiPoint3(6.0f, -2.0f, -0.2f);
-
-        float rockGrabLerpSpeed = 300.0f;
-        float rockGrabLerpAngularSpeed = 360.0f;
-        float rockGrabLerpMaxTime = 0.5f;
 
         bool rockGrabHapticsEnabled = true;
         float rockGrabHapticDurationSeconds = 0.055f;

@@ -8626,6 +8626,9 @@ namespace rock
             clearGrabExternalHandWorldTransform(_isLeft);
             _grabVisualHandTransform = handWorldTransform;
             _hasGrabVisualHandTransform = false;
+            _grabVisualHandLerpStartTransform = handWorldTransform;
+            _grabVisualHandLerpElapsedSeconds = 0.0f;
+            _grabVisualHandLerpDurationSeconds = 0.0f;
             _grabVisualDeviationExceededSeconds = 0.0f;
             _grabDeviationExceededSeconds = 0.0f;
             const RE::NiPoint3 initialGrabDelta = grabPivotAWorld - grabGripPoint;
@@ -9476,24 +9479,45 @@ namespace rock
                     hand_visual_lerp_math::buildHeldObjectRelativeHandWorld(heldVisualNodeWorld, _grabFrame.rawHandSpace);
                 targetVisualHandWorld.scale = handWorldTransform.scale;
 
-                if (!_hasGrabVisualHandTransform) {
-                    _grabVisualHandTransform = handWorldTransform;
-                    _hasGrabVisualHandTransform = true;
-                }
-
                 RE::NiTransform nextVisualHandWorld = targetVisualHandWorld;
                 const bool smoothVisualHand = hand_visual_lerp_math::shouldSmoothHeldObjectRelativeHand(
                     g_rockConfig.rockGrabHandLerpEnabled,
                     _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld,
                     visualPublishDecision.acquisition);
+                if (!_hasGrabVisualHandTransform) {
+                    _grabVisualHandTransform = handWorldTransform;
+                    _grabVisualHandLerpStartTransform = handWorldTransform;
+                    _grabVisualHandLerpElapsedSeconds = 0.0f;
+                    _grabVisualHandLerpDurationSeconds = smoothVisualHand ?
+                        hand_visual_lerp_math::computeDistanceMappedDurationGameUnits(
+                            hand_visual_lerp_math::distanceGameUnits(handWorldTransform.translate, targetVisualHandWorld.translate),
+                            g_rockConfig.rockGrabHandLerpTimeMin,
+                            g_rockConfig.rockGrabHandLerpTimeMax,
+                            g_rockConfig.rockGrabHandLerpMinDistance,
+                            g_rockConfig.rockGrabHandLerpMaxDistance) :
+                        0.0f;
+                    _hasGrabVisualHandTransform = true;
+                }
+
+                float visualHandLerpAlpha = 1.0f;
                 if (smoothVisualHand) {
-                    const auto advancedVisual = hand_visual_lerp_math::advanceTransform(
-                        _grabVisualHandTransform,
+                    _grabVisualHandLerpElapsedSeconds = hand_visual_lerp_math::advanceTimedBlendElapsed(
+                        _grabVisualHandLerpElapsedSeconds,
+                        deltaTime,
+                        _grabVisualHandLerpDurationSeconds);
+                    const auto advancedVisual = hand_visual_lerp_math::blendTransformOverDuration(
+                        _grabVisualHandLerpStartTransform,
                         targetVisualHandWorld,
-                        g_rockConfig.rockGrabLerpSpeed,
-                        g_rockConfig.rockGrabLerpAngularSpeed,
-                        deltaTime);
+                        _grabVisualHandLerpElapsedSeconds,
+                        _grabVisualHandLerpDurationSeconds);
                     nextVisualHandWorld = advancedVisual.transform;
+                    visualHandLerpAlpha = hand_visual_lerp_math::timedBlendAlpha(
+                        _grabVisualHandLerpElapsedSeconds,
+                        _grabVisualHandLerpDurationSeconds);
+                } else {
+                    _grabVisualHandLerpStartTransform = targetVisualHandWorld;
+                    _grabVisualHandLerpElapsedSeconds = 0.0f;
+                    _grabVisualHandLerpDurationSeconds = 0.0f;
                 }
 
                 const float visualHandDeviationGameUnits =
@@ -9535,13 +9559,15 @@ namespace rock
 
                 ROCK_LOG_SAMPLE_DEBUG(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "{} GRAB VISUAL HAND: relation=heldRelative phase={} visualOnly=yes authority={} shape={} follow={} scale={:.2f} target=({:.1f},{:.1f},{:.1f}) applied=({:.1f},{:.1f},{:.1f}) live=({:.1f},{:.1f},{:.1f}) deviation={:.2f}gu avgDeviation={:.2f}gu normalAuthority=false",
+                    "{} GRAB VISUAL HAND: relation=heldRelative phase={} visualOnly=yes authority={} shape={} follow={} scale={:.2f} lerpAlpha={:.2f} lerpDuration={:.3f}s target=({:.1f},{:.1f},{:.1f}) applied=({:.1f},{:.1f},{:.1f}) live=({:.1f},{:.1f},{:.1f}) deviation={:.2f}gu avgDeviation={:.2f}gu normalAuthority=false",
                     handName(),
                     grab_three_phase::phaseName(_grabAcquisitionPhase),
                     visualPublishDecision.reason,
                     grab_motion_controller::contactSupportShapeName(heldAngularAuthority.contactSupportShape),
                     smoothVisualHand ? "smoothedAcquisition" : "immediateHeldObject",
                     heldAngularAuthority.authorityScale,
+                    visualHandLerpAlpha,
+                    _grabVisualHandLerpDurationSeconds,
                     targetVisualHandWorld.translate.x,
                     targetVisualHandWorld.translate.y,
                     targetVisualHandWorld.translate.z,
@@ -9562,6 +9588,9 @@ namespace rock
                     clearGrabExternalHandWorldTransform(_isLeft);
                     _hasGrabVisualHandTransform = false;
                 }
+                _grabVisualHandLerpStartTransform = {};
+                _grabVisualHandLerpElapsedSeconds = 0.0f;
+                _grabVisualHandLerpDurationSeconds = 0.0f;
             }
         } else {
             if (_grabFrame.hasTelemetryCapture && g_rockConfig.rockDebugGrabFrameLogging &&
@@ -9587,6 +9616,9 @@ namespace rock
                 clearGrabExternalHandWorldTransform(_isLeft);
                 _hasGrabVisualHandTransform = false;
             }
+            _grabVisualHandLerpStartTransform = {};
+            _grabVisualHandLerpElapsedSeconds = 0.0f;
+            _grabVisualHandLerpDurationSeconds = 0.0f;
         }
 
         if (convergingAcquisitionPhase && _grabObjectGripAtGrab.valid) {
@@ -9870,6 +9902,9 @@ namespace rock
                                 clearGrabExternalHandWorldTransform(_isLeft);
                                 _grabVisualHandTransform = handWorldTransform;
                                 _hasGrabVisualHandTransform = false;
+                                _grabVisualHandLerpStartTransform = handWorldTransform;
+                                _grabVisualHandLerpElapsedSeconds = 0.0f;
+                                _grabVisualHandLerpDurationSeconds = 0.0f;
                                 _grabVisualDeviationExceededSeconds = 0.0f;
                                 _grabVisualDeviationHistory = {};
                                 _grabVisualDeviationHistoryCount = 0;
@@ -11861,6 +11896,9 @@ namespace rock
         _grabDeviationHistoryNext = 0;
         _grabVisualHandTransform = {};
         _hasGrabVisualHandTransform = false;
+        _grabVisualHandLerpStartTransform = {};
+        _grabVisualHandLerpElapsedSeconds = 0.0f;
+        _grabVisualHandLerpDurationSeconds = 0.0f;
         _grabVisualDeviationExceededSeconds = 0.0f;
         _grabVisualDeviationHistory = {};
         _grabVisualDeviationHistoryCount = 0;

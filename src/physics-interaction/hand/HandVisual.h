@@ -153,6 +153,85 @@ namespace rock::hand_visual_lerp_math
     }
 
     template <class Vector>
+    inline float distanceGameUnits(const Vector& lhs, const Vector& rhs)
+    {
+        const Vector delta{ lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z };
+        return std::sqrt(lengthSquared(delta));
+    }
+
+    inline float sanitizeNonNegative(float value, float fallback)
+    {
+        return std::isfinite(value) && value >= 0.0f ? value : fallback;
+    }
+
+    inline float computeDistanceMappedDurationGameUnits(float distanceGameUnits, float minSeconds, float maxSeconds, float minDistanceGameUnits, float maxDistanceGameUnits)
+    {
+        const float distance = sanitizeNonNegative(distanceGameUnits, 0.0f);
+        const float minTime = sanitizeNonNegative(minSeconds, 0.0f);
+        const float maxTime = (std::max)(minTime, sanitizeNonNegative(maxSeconds, minTime));
+        const float minDistance = sanitizeNonNegative(minDistanceGameUnits, 0.0f);
+        const float maxDistance = (std::max)(minDistance, sanitizeNonNegative(maxDistanceGameUnits, minDistance));
+        if (distance <= minDistance || maxTime <= 0.0f) {
+            return 0.0f;
+        }
+        if (maxDistance <= minDistance) {
+            return maxTime;
+        }
+
+        const float alpha = std::clamp((distance - minDistance) / (maxDistance - minDistance), 0.0f, 1.0f);
+        return minTime + (maxTime - minTime) * alpha;
+    }
+
+    inline float advanceTimedBlendElapsed(float elapsedSeconds, float deltaTime, float durationSeconds)
+    {
+        if (durationSeconds <= 0.0f) {
+            return durationSeconds;
+        }
+        const float elapsed = sanitizeNonNegative(elapsedSeconds, 0.0f);
+        const float delta = sanitizeNonNegative(deltaTime, 0.0f);
+        return (std::min)(durationSeconds, elapsed + delta);
+    }
+
+    inline float timedBlendAlpha(float elapsedSeconds, float durationSeconds)
+    {
+        if (durationSeconds <= 0.0f) {
+            return 1.0f;
+        }
+        return std::clamp(sanitizeNonNegative(elapsedSeconds, 0.0f) / durationSeconds, 0.0f, 1.0f);
+    }
+
+    template <class Transform>
+    inline Transform interpolateTransform(const Transform& start, const Transform& target, float alpha)
+    {
+        const float t = std::clamp(alpha, 0.0f, 1.0f);
+        if (t <= 0.0f) {
+            return start;
+        }
+        if (t >= 1.0f) {
+            return target;
+        }
+
+        Transform result = target;
+        result.translate = {
+            start.translate.x + (target.translate.x - start.translate.x) * t,
+            start.translate.y + (target.translate.y - start.translate.y) * t,
+            start.translate.z + (target.translate.z - start.translate.z) * t,
+        };
+        result.rotate = quaternionToMatrix<decltype(result.rotate)>(slerp(matrixToQuaternion(start.rotate), matrixToQuaternion(target.rotate), t));
+        return result;
+    }
+
+    template <class Transform>
+    inline AdvanceResult<Transform> blendTransformOverDuration(const Transform& start, const Transform& target, float elapsedSeconds, float durationSeconds)
+    {
+        AdvanceResult<Transform> result{};
+        const float alpha = timedBlendAlpha(elapsedSeconds, durationSeconds);
+        result.transform = interpolateTransform(start, target, alpha);
+        result.reachedTarget = alpha >= 1.0f;
+        return result;
+    }
+
+    template <class Vector>
     inline Vector advancePosition(const Vector& current, const Vector& target, float speed, float deltaTime, bool& reached)
     {
         const Vector delta{ target.x - current.x, target.y - current.y, target.z - current.z };
