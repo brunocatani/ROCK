@@ -2404,6 +2404,222 @@ namespace rock
             return result;
         }
 
+        /*
+         * Diagnostic-only: remove this candidate matrix once a signed
+         * proxy-in-BODY invariant predicts both +90 and -90 grab convention
+         * choices, then replace the empirical -1 hybrid with that single rule.
+         * These helpers only read local copies and never write active atoms.
+         */
+        struct SignedRagdollConventionClass
+        {
+            const char* axisName = "none";
+            float signedAngleDegrees = 0.0f;
+            float axisX = 0.0f;
+            float axisY = 0.0f;
+            float axisZ = 0.0f;
+            float determinant = 0.0f;
+        };
+
+        struct RagdollSolverCompositionDiagnostic
+        {
+            SignedRagdollConventionClass signedClass{};
+            const char* bestName = "none";
+            float bestDegrees = -1.0f;
+            float currentDegrees = -1.0f;
+            float rowsBDegrees = -1.0f;
+            float rowsNeutralDegrees = -1.0f;
+            float colsBDegrees = -1.0f;
+            float colsNeutralDegrees = -1.0f;
+            float invRowsBDegrees = -1.0f;
+            float invRowsNeutralDegrees = -1.0f;
+            float invColsBDegrees = -1.0f;
+            float invColsNeutralDegrees = -1.0f;
+            float forced0Degrees = -1.0f;
+            float forced1Degrees = -1.0f;
+            float forced0TransformBDeltaDegrees = -1.0f;
+            float forced1TransformBDeltaDegrees = -1.0f;
+        };
+
+        SignedRagdollConventionClass classifySignedRagdollConvention(const RE::NiMatrix3& proxyInBodyRotation)
+        {
+            SignedRagdollConventionClass result{};
+            result.determinant = matrixDeterminant(proxyInBodyRotation);
+
+            const float angleDegrees = rotationDeltaDegrees(proxyInBodyRotation, transform_math::makeIdentityRotation<RE::NiMatrix3>());
+            const RE::NiPoint3 skew{
+                proxyInBodyRotation.entry[2][1] - proxyInBodyRotation.entry[1][2],
+                proxyInBodyRotation.entry[0][2] - proxyInBodyRotation.entry[2][0],
+                proxyInBodyRotation.entry[1][0] - proxyInBodyRotation.entry[0][1],
+            };
+
+            float dominant = skew.x;
+            result.axisName = "X";
+            result.axisX = dominant < 0.0f ? -1.0f : 1.0f;
+            if (std::fabs(skew.y) > std::fabs(dominant)) {
+                dominant = skew.y;
+                result.axisName = "Y";
+                result.axisX = 0.0f;
+                result.axisY = dominant < 0.0f ? -1.0f : 1.0f;
+            }
+            if (std::fabs(skew.z) > std::fabs(dominant)) {
+                dominant = skew.z;
+                result.axisName = "Z";
+                result.axisX = 0.0f;
+                result.axisY = 0.0f;
+                result.axisZ = dominant < 0.0f ? -1.0f : 1.0f;
+            }
+
+            if (std::fabs(dominant) < 0.00001f) {
+                result.axisName = "none";
+                result.axisX = 0.0f;
+                result.axisY = 0.0f;
+                result.axisZ = 0.0f;
+                result.signedAngleDegrees = 0.0f;
+            } else {
+                result.signedAngleDegrees = dominant < 0.0f ? -angleDegrees : angleDegrees;
+            }
+            return result;
+        }
+
+        float solverCompositionCandidateDegrees(const RE::NiTransform& proxyWorld,
+            const RE::NiTransform& desiredBodyWorld,
+            const RE::NiMatrix3& transformARotation,
+            const RE::NiMatrix3& transformBRotation,
+            const RE::NiMatrix3& targetBRcaRotation,
+            const RE::NiPoint3& transformBLocalGame,
+            const RE::NiPoint3& anchorAWorld)
+        {
+            const RE::NiTransform candidateBodyWorld = reconstructSolverEffectiveBodyWorld(
+                proxyWorld,
+                transformARotation,
+                transformBRotation,
+                targetBRcaRotation,
+                transformBLocalGame,
+                anchorAWorld,
+                desiredBodyWorld.scale);
+            return rotationDeltaDegrees(candidateBodyWorld.rotate, desiredBodyWorld.rotate);
+        }
+
+        void updateBestSolverCompositionCandidate(RagdollSolverCompositionDiagnostic& diagnostic, const char* name, float degrees)
+        {
+            if (!std::isfinite(degrees)) {
+                return;
+            }
+            if (diagnostic.bestDegrees < 0.0f || degrees < diagnostic.bestDegrees) {
+                diagnostic.bestName = name;
+                diagnostic.bestDegrees = degrees;
+            }
+        }
+
+        float forcedRagdollModeSolverDegrees(const RE::NiTransform& proxyWorld,
+            const RE::NiTransform& desiredBodyWorld,
+            const RE::NiTransform& desiredBodyTransformProxySpace,
+            const RE::NiMatrix3& transformARotation,
+            const RE::NiPoint3& pivotAProxyLocalGame,
+            const RE::NiPoint3& anchorAWorld,
+            int mode,
+            float* outTransformBDeltaDegrees)
+        {
+            std::array<float, 12> forcedTransformBRotation{};
+            std::array<float, 4> forcedTransformBTranslation{};
+            std::array<float, 12> forcedTargetBRca{};
+            grab_constraint_math::writeGrabConstraintHeldTargetAtoms(
+                forcedTransformBRotation.data(),
+                forcedTransformBTranslation.data(),
+                forcedTargetBRca.data(),
+                desiredBodyTransformProxySpace,
+                pivotAProxyLocalGame,
+                gameToHavokScale(),
+                mode);
+
+            const RE::NiMatrix3 forcedTransformB = matrixFromHkColumns(forcedTransformBRotation.data());
+            const RE::NiMatrix3 forcedTargetRows = matrixFromHkRows(forcedTargetBRca.data());
+            const RE::NiPoint3 forcedTransformBLocalGame{
+                forcedTransformBTranslation[0] * havokToGameScale(),
+                forcedTransformBTranslation[1] * havokToGameScale(),
+                forcedTransformBTranslation[2] * havokToGameScale(),
+            };
+            if (outTransformBDeltaDegrees) {
+                const RE::NiTransform desiredBodyToProxySpace = transform_math::invertTransform(desiredBodyTransformProxySpace);
+                *outTransformBDeltaDegrees = rotationDeltaDegrees(forcedTransformB, desiredBodyToProxySpace.rotate);
+            }
+            return solverCompositionCandidateDegrees(
+                proxyWorld,
+                desiredBodyWorld,
+                transformARotation,
+                forcedTransformB,
+                forcedTargetRows,
+                forcedTransformBLocalGame,
+                anchorAWorld);
+        }
+
+        RagdollSolverCompositionDiagnostic evaluateRagdollSolverCompositionDiagnostic(const RE::NiTransform& proxyWorld,
+            const RE::NiTransform& desiredBodyWorld,
+            const RE::NiTransform& desiredBodyTransformProxySpace,
+            const RE::NiMatrix3& transformARotation,
+            const RE::NiMatrix3& transformBRotation,
+            const RE::NiMatrix3& targetRows,
+            const RE::NiMatrix3& targetColumns,
+            const RE::NiPoint3& transformBLocalGame,
+            const RE::NiPoint3& pivotAProxyLocalGame,
+            const RE::NiPoint3& anchorAWorld)
+        {
+            RagdollSolverCompositionDiagnostic diagnostic{};
+            const RE::NiTransform proxyInBody = grab_constraint_math::proxyInBodyFromBodyInProxy(desiredBodyTransformProxySpace);
+            diagnostic.signedClass = classifySignedRagdollConvention(proxyInBody.rotate);
+
+            const RE::NiMatrix3 identityRotation = transform_math::makeIdentityRotation<RE::NiMatrix3>();
+            const RE::NiMatrix3 invTargetRows = transform_math::transposeRotation(targetRows);
+            const RE::NiMatrix3 invTargetColumns = transform_math::transposeRotation(targetColumns);
+
+            diagnostic.rowsBDegrees = solverCompositionCandidateDegrees(
+                proxyWorld, desiredBodyWorld, transformARotation, transformBRotation, targetRows, transformBLocalGame, anchorAWorld);
+            diagnostic.rowsNeutralDegrees = solverCompositionCandidateDegrees(
+                proxyWorld, desiredBodyWorld, transformARotation, identityRotation, targetRows, transformBLocalGame, anchorAWorld);
+            diagnostic.colsBDegrees = solverCompositionCandidateDegrees(
+                proxyWorld, desiredBodyWorld, transformARotation, transformBRotation, targetColumns, transformBLocalGame, anchorAWorld);
+            diagnostic.colsNeutralDegrees = solverCompositionCandidateDegrees(
+                proxyWorld, desiredBodyWorld, transformARotation, identityRotation, targetColumns, transformBLocalGame, anchorAWorld);
+            diagnostic.invRowsBDegrees = solverCompositionCandidateDegrees(
+                proxyWorld, desiredBodyWorld, transformARotation, transformBRotation, invTargetRows, transformBLocalGame, anchorAWorld);
+            diagnostic.invRowsNeutralDegrees = solverCompositionCandidateDegrees(
+                proxyWorld, desiredBodyWorld, transformARotation, identityRotation, invTargetRows, transformBLocalGame, anchorAWorld);
+            diagnostic.invColsBDegrees = solverCompositionCandidateDegrees(
+                proxyWorld, desiredBodyWorld, transformARotation, transformBRotation, invTargetColumns, transformBLocalGame, anchorAWorld);
+            diagnostic.invColsNeutralDegrees = solverCompositionCandidateDegrees(
+                proxyWorld, desiredBodyWorld, transformARotation, identityRotation, invTargetColumns, transformBLocalGame, anchorAWorld);
+            diagnostic.currentDegrees = diagnostic.rowsBDegrees;
+
+            diagnostic.forced0Degrees = forcedRagdollModeSolverDegrees(
+                proxyWorld,
+                desiredBodyWorld,
+                desiredBodyTransformProxySpace,
+                transformARotation,
+                pivotAProxyLocalGame,
+                anchorAWorld,
+                grab_constraint_math::kGrabRagdollDecompositionModeRelationTransformB,
+                &diagnostic.forced0TransformBDeltaDegrees);
+            diagnostic.forced1Degrees = forcedRagdollModeSolverDegrees(
+                proxyWorld,
+                desiredBodyWorld,
+                desiredBodyTransformProxySpace,
+                transformARotation,
+                pivotAProxyLocalGame,
+                anchorAWorld,
+                grab_constraint_math::kGrabRagdollDecompositionModeNeutralTransformB,
+                &diagnostic.forced1TransformBDeltaDegrees);
+
+            updateBestSolverCompositionCandidate(diagnostic, "rowsB", diagnostic.rowsBDegrees);
+            updateBestSolverCompositionCandidate(diagnostic, "rowsNeutral", diagnostic.rowsNeutralDegrees);
+            updateBestSolverCompositionCandidate(diagnostic, "colsB", diagnostic.colsBDegrees);
+            updateBestSolverCompositionCandidate(diagnostic, "colsNeutral", diagnostic.colsNeutralDegrees);
+            updateBestSolverCompositionCandidate(diagnostic, "invRowsB", diagnostic.invRowsBDegrees);
+            updateBestSolverCompositionCandidate(diagnostic, "invRowsNeutral", diagnostic.invRowsNeutralDegrees);
+            updateBestSolverCompositionCandidate(diagnostic, "invColsB", diagnostic.invColsBDegrees);
+            updateBestSolverCompositionCandidate(diagnostic, "invColsNeutral", diagnostic.invColsNeutralDegrees);
+            return diagnostic;
+        }
+
         physics_recursive_wrappers::MotionPreset motionPresetFromMotionType(
             physics_body_classifier::BodyMotionType motionType,
             std::uint16_t fallbackMotionPropertiesId)
@@ -5136,6 +5352,7 @@ namespace rock
             }
             const RE::NiTransform traceDesiredBodyToHandSpace = invertTransform(desiredBodyTransformProxySpace);
             const RE::NiMatrix3 traceTargetRows = matrixFromHkRows(traceTargetBRcaData);
+            const RE::NiMatrix3 traceTargetColumns = matrixFromHkColumns(traceTargetBRcaData);
             const RE::NiMatrix3 traceTransformBColumns = matrixFromHkColumns(traceTransformBRotationData);
             const RE::NiPoint3 traceTransformBTranslationGame{
                 traceTransformBTranslationData[0] * havokToGameScale(),
@@ -5160,6 +5377,22 @@ namespace rock
                 pivotAProxyLocalGame);
             const float tracePivotBRelationDeltaGameUnits =
                 pointDistanceGameUnits(traceTransformBTranslationGame, relationPivotBConstraintLocalGame);
+            const RagdollSolverCompositionDiagnostic traceSolverComposition =
+                evaluateRagdollSolverCompositionDiagnostic(
+                    proxyWorldTransform,
+                    desiredBodyWorldAtCreation,
+                    desiredBodyTransformProxySpace,
+                    transform_math::makeIdentityRotation<RE::NiMatrix3>(),
+                    traceTransformBColumns,
+                    traceTargetRows,
+                    traceTargetColumns,
+                    traceTransformBTranslationGame,
+                    pivotAProxyLocalGame,
+                    constraintPivotAWorld);
+            const float traceActualBeforeDegrees =
+                _grabFrame.hasTelemetryCapture ?
+                    rotationDeltaDegrees(_grabFrame.bodyWorldAtGrab.rotate, desiredBodyWorldAtCreation.rotate) :
+                    -1.0f;
 
             ROCK_LOG_INFO(Hand,
                 "{} GRAB_TRACE stage=constraint_create trace={} constraint={} proxyBody={} objBody={} bytes={} decompConfig={}({}) decomp={}({}) col={:.2f}deg angular={} ragdoll={} pivotAProxy=({:.2f},{:.2f},{:.2f}) pivotBSelected=({:.2f},{:.2f},{:.2f}) relationPivotB=({:.2f},{:.2f},{:.2f}) selectedPivotRelationDelta={:.3f}gu pivotBRelationDelta={:.3f}gu pivotBBody=({:.2f},{:.2f},{:.2f}) linearTau={:.3f} angularTau={:.3f} linearForce={:.0f} angularForce={:.0f} motorMass={:.3f} effectiveMass={:.3f} forceBudget={:.2f} targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg reason={}",
@@ -5248,6 +5481,41 @@ namespace rock
                 traceTransformBTranslationGame.x,
                 traceTransformBTranslationGame.y,
                 traceTransformBTranslationGame.z);
+
+            ROCK_LOG_INFO(Hand,
+                "{} RAGDOLL_SOLVER_COMPOSITION phase=constraint_create trace={} writeSeq={} flushNext={} mode={}({}) config={}({}) col={:.1f}deg signed={:.1f}deg axis={} axisVec=({:.2f},{:.2f},{:.2f}) det={:.3f} actualBefore={:.1f}deg actualAfter={:.1f}deg best={}:{:.1f}deg currentSolverEff={:.1f}deg forced0={:.1f}deg forced0TB={:.1f}deg forced1={:.1f}deg forced1TB={:.1f}deg rowsB={:.1f}deg rowsNeutral={:.1f}deg colsB={:.1f}deg colsNeutral={:.1f}deg invRowsB={:.1f}deg invRowsNeutral={:.1f}deg invColsB={:.1f}deg invColsNeutral={:.1f}deg",
+                handName(),
+                _grabFrame.traceId,
+                _grabFrame.traceTargetWriteSequence,
+                _grabAuthorityProxyFlushSequence,
+                _activeConstraint.ragdollDecompositionMode,
+                grab_constraint_math::grabRagdollDecompositionModeName(_activeConstraint.ragdollDecompositionMode),
+                _activeConstraint.ragdollDecompositionConfigMode,
+                grab_constraint_math::grabRagdollDecompositionModeName(_activeConstraint.ragdollDecompositionConfigMode),
+                _activeConstraint.ragdollDecompositionColumnDeltaDegrees,
+                traceSolverComposition.signedClass.signedAngleDegrees,
+                traceSolverComposition.signedClass.axisName,
+                traceSolverComposition.signedClass.axisX,
+                traceSolverComposition.signedClass.axisY,
+                traceSolverComposition.signedClass.axisZ,
+                traceSolverComposition.signedClass.determinant,
+                traceActualBeforeDegrees,
+                -1.0f,
+                traceSolverComposition.bestName,
+                traceSolverComposition.bestDegrees,
+                traceSolverComposition.currentDegrees,
+                traceSolverComposition.forced0Degrees,
+                traceSolverComposition.forced0TransformBDeltaDegrees,
+                traceSolverComposition.forced1Degrees,
+                traceSolverComposition.forced1TransformBDeltaDegrees,
+                traceSolverComposition.rowsBDegrees,
+                traceSolverComposition.rowsNeutralDegrees,
+                traceSolverComposition.colsBDegrees,
+                traceSolverComposition.colsNeutralDegrees,
+                traceSolverComposition.invRowsBDegrees,
+                traceSolverComposition.invRowsNeutralDegrees,
+                traceSolverComposition.invColsBDegrees,
+                traceSolverComposition.invColsNeutralDegrees);
         }
 
         {
@@ -10594,6 +10862,18 @@ namespace rock
                                 activeTransformBTranslationGame,
                                 liveConstraintAWorld.translate,
                                 desiredBodyWorld.scale);
+                            const RagdollSolverCompositionDiagnostic solverCompositionDiagnostic =
+                                evaluateRagdollSolverCompositionDiagnostic(
+                                    pending.proxyWorld,
+                                    desiredBodyWorld,
+                                    desiredBodyTransformHandSpace,
+                                    transformAAsHkColumns,
+                                    transformBAsHkColumns,
+                                    targetAsHkRows,
+                                    targetAsHkColumns,
+                                    activeTransformBTranslationGame,
+                                    _grabFrame.pivotAHandBodyLocalGame,
+                                    targetAnchorAWorld);
                             const float relationInverseBodyDeltaGameUnits =
                                 translationDeltaGameUnits(relationInverseBodyWorld, desiredBodyWorld);
                             const float relationInverseBodyDeltaDegrees =
@@ -10739,6 +11019,30 @@ namespace rock
                                 .ragdollBRcaColumnsErrorDegrees = ragdollBRcaColumnsErrorDegrees,
                                 .ragdollARcbRowsInverseErrorDegrees = ragdollARcbRowsInverseErrorDegrees,
                                 .ragdollARcbColumnsInverseErrorDegrees = ragdollARcbColumnsInverseErrorDegrees,
+                                .solverCompositionSignedAngleDegrees = solverCompositionDiagnostic.signedClass.signedAngleDegrees,
+                                .solverCompositionSignedAxisX = solverCompositionDiagnostic.signedClass.axisX,
+                                .solverCompositionSignedAxisY = solverCompositionDiagnostic.signedClass.axisY,
+                                .solverCompositionSignedAxisZ = solverCompositionDiagnostic.signedClass.axisZ,
+                                .solverCompositionRelationDeterminant = solverCompositionDiagnostic.signedClass.determinant,
+                                .solverCompositionBestDegrees = solverCompositionDiagnostic.bestDegrees,
+                                .solverCompositionCurrentDegrees = solverCompositionDiagnostic.currentDegrees,
+                                .solverCompositionRowsBDegrees = solverCompositionDiagnostic.rowsBDegrees,
+                                .solverCompositionRowsNeutralDegrees = solverCompositionDiagnostic.rowsNeutralDegrees,
+                                .solverCompositionColsBDegrees = solverCompositionDiagnostic.colsBDegrees,
+                                .solverCompositionColsNeutralDegrees = solverCompositionDiagnostic.colsNeutralDegrees,
+                                .solverCompositionInvRowsBDegrees = solverCompositionDiagnostic.invRowsBDegrees,
+                                .solverCompositionInvRowsNeutralDegrees = solverCompositionDiagnostic.invRowsNeutralDegrees,
+                                .solverCompositionInvColsBDegrees = solverCompositionDiagnostic.invColsBDegrees,
+                                .solverCompositionInvColsNeutralDegrees = solverCompositionDiagnostic.invColsNeutralDegrees,
+                                .solverCompositionForced0Degrees = solverCompositionDiagnostic.forced0Degrees,
+                                .solverCompositionForced1Degrees = solverCompositionDiagnostic.forced1Degrees,
+                                .solverCompositionForced0TransformBDeltaDegrees = solverCompositionDiagnostic.forced0TransformBDeltaDegrees,
+                                .solverCompositionForced1TransformBDeltaDegrees = solverCompositionDiagnostic.forced1TransformBDeltaDegrees,
+                                .solverCompositionColumnDeltaDegrees = _activeConstraint.ragdollDecompositionColumnDeltaDegrees,
+                                .solverCompositionSignedAxis = solverCompositionDiagnostic.signedClass.axisName,
+                                .solverCompositionBestName = solverCompositionDiagnostic.bestName,
+                                .ragdollDecompositionConfigMode = _activeConstraint.ragdollDecompositionConfigMode,
+                                .ragdollDecompositionMode = _activeConstraint.ragdollDecompositionMode,
                                 .traceId = _grabFrame.traceId,
                                 .targetWriteSequence = _grabFrame.traceTargetWriteSequence,
                                 .flushSequence = _grabAuthorityProxyFlushSequence + 1,
@@ -10798,6 +11102,40 @@ namespace rock
                                     _ragdollAngularProbePreSolve.solverEffectiveToAtomDegrees,
                                     _ragdollAngularProbePreSolve.targetRowsToProxyInBodyDegrees,
                                     _ragdollAngularProbePreSolve.pivotBRelationDeltaGameUnits);
+                                ROCK_LOG_INFO(Hand,
+                                    "{} RAGDOLL_SOLVER_COMPOSITION phase=pre_solve trace={} writeSeq={} flushNext={} mode={}({}) config={}({}) col={:.1f}deg signed={:.1f}deg axis={} axisVec=({:.2f},{:.2f},{:.2f}) det={:.3f} actualBefore={:.1f}deg actualAfter={:.1f}deg best={}:{:.1f}deg currentSolverEff={:.1f}deg forced0={:.1f}deg forced0TB={:.1f}deg forced1={:.1f}deg forced1TB={:.1f}deg rowsB={:.1f}deg rowsNeutral={:.1f}deg colsB={:.1f}deg colsNeutral={:.1f}deg invRowsB={:.1f}deg invRowsNeutral={:.1f}deg invColsB={:.1f}deg invColsNeutral={:.1f}deg",
+                                    handName(),
+                                    _grabFrame.traceId,
+                                    _grabFrame.traceTargetWriteSequence,
+                                    _grabAuthorityProxyFlushSequence + 1,
+                                    _ragdollAngularProbePreSolve.ragdollDecompositionMode,
+                                    grab_constraint_math::grabRagdollDecompositionModeName(_ragdollAngularProbePreSolve.ragdollDecompositionMode),
+                                    _ragdollAngularProbePreSolve.ragdollDecompositionConfigMode,
+                                    grab_constraint_math::grabRagdollDecompositionModeName(_ragdollAngularProbePreSolve.ragdollDecompositionConfigMode),
+                                    _ragdollAngularProbePreSolve.solverCompositionColumnDeltaDegrees,
+                                    _ragdollAngularProbePreSolve.solverCompositionSignedAngleDegrees,
+                                    _ragdollAngularProbePreSolve.solverCompositionSignedAxis,
+                                    _ragdollAngularProbePreSolve.solverCompositionSignedAxisX,
+                                    _ragdollAngularProbePreSolve.solverCompositionSignedAxisY,
+                                    _ragdollAngularProbePreSolve.solverCompositionSignedAxisZ,
+                                    _ragdollAngularProbePreSolve.solverCompositionRelationDeterminant,
+                                    _ragdollAngularProbePreSolve.beforeErrorDegrees,
+                                    -1.0f,
+                                    _ragdollAngularProbePreSolve.solverCompositionBestName,
+                                    _ragdollAngularProbePreSolve.solverCompositionBestDegrees,
+                                    _ragdollAngularProbePreSolve.solverCompositionCurrentDegrees,
+                                    _ragdollAngularProbePreSolve.solverCompositionForced0Degrees,
+                                    _ragdollAngularProbePreSolve.solverCompositionForced0TransformBDeltaDegrees,
+                                    _ragdollAngularProbePreSolve.solverCompositionForced1Degrees,
+                                    _ragdollAngularProbePreSolve.solverCompositionForced1TransformBDeltaDegrees,
+                                    _ragdollAngularProbePreSolve.solverCompositionRowsBDegrees,
+                                    _ragdollAngularProbePreSolve.solverCompositionRowsNeutralDegrees,
+                                    _ragdollAngularProbePreSolve.solverCompositionColsBDegrees,
+                                    _ragdollAngularProbePreSolve.solverCompositionColsNeutralDegrees,
+                                    _ragdollAngularProbePreSolve.solverCompositionInvRowsBDegrees,
+                                    _ragdollAngularProbePreSolve.solverCompositionInvRowsNeutralDegrees,
+                                    _ragdollAngularProbePreSolve.solverCompositionInvColsBDegrees,
+                                    _ragdollAngularProbePreSolve.solverCompositionInvColsNeutralDegrees);
                                 ROCK_LOG_INFO(Hand,
                                     "{} GRAB_TRACE stage=pre_solve_a_frame trace={} writeSeq={} flushNext={} queued={} targetProxyLive={:.3f}gu/{:.2f}deg relA_targetLive={:.2f}deg conA_targetLive={:.2f}deg targetRelToCon={:.2f}deg liveRelToCon={:.2f}deg solverTargetA={:.3f}gu/{:.2f}deg solverLiveA={:.2f}deg solverTargetVsLive={:.2f}deg rawDelta tA={:.6f} tB={:.6f} target={:.6f}",
                                     handName(),
@@ -11219,6 +11557,42 @@ namespace rock
             }
 
             if (shouldLogRagdollProbe) {
+                ROCK_LOG_SAMPLE_WARN(Hand,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "{} RAGDOLL_SOLVER_COMPOSITION phase=after_solve trace={} writeSeq={} flush={} mode={}({}) config={}({}) col={:.1f}deg signed={:.1f}deg axis={} axisVec=({:.2f},{:.2f},{:.2f}) det={:.3f} actualBefore={:.1f}deg actualAfter={:.1f}deg best={}:{:.1f}deg currentSolverEff={:.1f}deg forced0={:.1f}deg forced0TB={:.1f}deg forced1={:.1f}deg forced1TB={:.1f}deg rowsB={:.1f}deg rowsNeutral={:.1f}deg colsB={:.1f}deg colsNeutral={:.1f}deg invRowsB={:.1f}deg invRowsNeutral={:.1f}deg invColsB={:.1f}deg invColsNeutral={:.1f}deg",
+                    handName(),
+                    ragdollAngularProbePreSolve.traceId,
+                    ragdollAngularProbePreSolve.targetWriteSequence,
+                    flushSequence,
+                    ragdollAngularProbePreSolve.ragdollDecompositionMode,
+                    grab_constraint_math::grabRagdollDecompositionModeName(ragdollAngularProbePreSolve.ragdollDecompositionMode),
+                    ragdollAngularProbePreSolve.ragdollDecompositionConfigMode,
+                    grab_constraint_math::grabRagdollDecompositionModeName(ragdollAngularProbePreSolve.ragdollDecompositionConfigMode),
+                    ragdollAngularProbePreSolve.solverCompositionColumnDeltaDegrees,
+                    ragdollAngularProbePreSolve.solverCompositionSignedAngleDegrees,
+                    ragdollAngularProbePreSolve.solverCompositionSignedAxis,
+                    ragdollAngularProbePreSolve.solverCompositionSignedAxisX,
+                    ragdollAngularProbePreSolve.solverCompositionSignedAxisY,
+                    ragdollAngularProbePreSolve.solverCompositionSignedAxisZ,
+                    ragdollAngularProbePreSolve.solverCompositionRelationDeterminant,
+                    ragdollAngularProbePreSolve.beforeErrorDegrees,
+                    afterErrorDegrees,
+                    ragdollAngularProbePreSolve.solverCompositionBestName,
+                    ragdollAngularProbePreSolve.solverCompositionBestDegrees,
+                    ragdollAngularProbePreSolve.solverCompositionCurrentDegrees,
+                    ragdollAngularProbePreSolve.solverCompositionForced0Degrees,
+                    ragdollAngularProbePreSolve.solverCompositionForced0TransformBDeltaDegrees,
+                    ragdollAngularProbePreSolve.solverCompositionForced1Degrees,
+                    ragdollAngularProbePreSolve.solverCompositionForced1TransformBDeltaDegrees,
+                    ragdollAngularProbePreSolve.solverCompositionRowsBDegrees,
+                    ragdollAngularProbePreSolve.solverCompositionRowsNeutralDegrees,
+                    ragdollAngularProbePreSolve.solverCompositionColsBDegrees,
+                    ragdollAngularProbePreSolve.solverCompositionColsNeutralDegrees,
+                    ragdollAngularProbePreSolve.solverCompositionInvRowsBDegrees,
+                    ragdollAngularProbePreSolve.solverCompositionInvRowsNeutralDegrees,
+                    ragdollAngularProbePreSolve.solverCompositionInvColsBDegrees,
+                    ragdollAngularProbePreSolve.solverCompositionInvColsNeutralDegrees);
+
                 ROCK_LOG_SAMPLE_WARN(Hand,
                     g_rockConfig.rockLogSampleMilliseconds,
                     "{} RAGDOLL ANGULAR PROBE: seq={}/{} afterSeq={} probeSeq={} stale={} substep={}/{} beforeErr={:.1f}deg afterErr={:.1f}deg reduce={:.1f}deg axisDot={:.2f} reqAxis=({:.2f},{:.2f},{:.2f}) velAxis=({:.2f},{:.2f},{:.2f}) reqAxisProxy=({:.2f},{:.2f},{:.2f}) velAxisProxy=({:.2f},{:.2f},{:.2f}) beforeAng={:.2f}rad/s afterAng={:.2f}rad/s forceA={:.0f} forceL={:.0f} tau={:.3f} damp={:.2f} ragdoll={} targetToHiggsRelation={:.1f}deg transformBFrozenDelta={:.1f}deg pivotBRelationDelta={:.3f}gu pivotARoundTrip={:.3f}gu gripBefore={:.2f}gu gripAfter={:.2f}gu pivotLever={:.2f}gu linTorque={:.3f}gu2 linTorqueDotReq={:.2f} linTorqueAxisProxy=({:.2f},{:.2f},{:.2f}) angularRef={} phase={} body={} motion={}",
