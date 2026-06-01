@@ -1541,6 +1541,9 @@ namespace rock
             ROCK_LOG_INFO(Init, "Initial bone-derived hand collider transforms updated");
         }
 
+        _rightHand.preloadSelectionBeam();
+        _leftHand.preloadSelectionBeam();
+
         _hasPrevPositions = false;
         _hasHeldPlayerSpacePosition = false;
         _heldObjectPlayerSpaceFrame = {};

@@ -35,6 +35,12 @@ The pure beam math and defaults live in `SelectionBeamPolicy.h` so config parsin
 - [x] Package `Meshes/ROCK/selection_beam_segment.nif` as a ROCK-owned asset.
 - [x] Add source-boundary and policy tests.
 
+## Review Fixes
+
+- Added valid-world `shutdown()` and stale-world `abandonSceneGraph()` teardown paths so ROCK never dereferences an old scenegraph parent after world loss.
+- Prewarmed both hand beam pools during physics init and changed segment creation to load one source NIF template, then clone all segment nodes from that template.
+- Made `hide()` idempotent once the beam is already inactive, avoiding repeated transform updates on disabled/config-off frames.
+
 ## Validation
 
 - `cmake --preset custom-tests`: passed.
@@ -43,3 +49,4 @@ The pure beam math and defaults live in `SelectionBeamPolicy.h` so config parsin
 - `ctest --test-dir build-tests -C Release --output-on-failure -j %NUMBER_OF_PROCESSORS%`: passed, 62/62.
 - `cmake --preset custom-fast`: passed.
 - `cmake --build build-fast --config Release --target ROCK -- /m`: passed and auto-deployed `ROCK.dll`, `ROCK.pdb`, and `Meshes/ROCK/selection_beam_segment.nif`.
+- Review-fix validation repeated after scenegraph lifetime/prewarm changes: source-boundary 33/33, full CTest 62/62, and `custom-fast` Release build/deploy passed.

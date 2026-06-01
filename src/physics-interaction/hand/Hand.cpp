@@ -201,6 +201,7 @@ namespace rock
         }
 
         stopSelectionHighlight();
+        _selectionBeam.shutdown();
         _isHoldingFlag.store(false, std::memory_order_release);
         _heldBodyIdsCount.store(0, std::memory_order_release);
         clearHeldBodyContactSnapshot();
@@ -309,6 +310,8 @@ namespace rock
 
     void Hand::abandonHavokStateAfterWorldLoss()
     {
+        _selectionBeam.abandonSceneGraph();
+
         /*
          * World-loss teardown cannot safely restore old body flags, filters, or
          * recursive motion through the stale hknp world. Normal release remains
@@ -1291,6 +1294,11 @@ namespace rock
                                           HandInteractionEvent::ObjectInvalidated;
         applyTransition(HandTransitionRequest{ .event = event });
         _selectionHoldFrames = 0;
+    }
+
+    void Hand::preloadSelectionBeam()
+    {
+        (void)_selectionBeam.preload(handName());
     }
 
     void Hand::updateSelectionBeam(RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin)
