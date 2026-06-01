@@ -250,18 +250,6 @@ namespace rock::grab_pinch_pocket_policy
             decision.reason = "notCloseGrab";
             return decision;
         }
-        if (input.handPocketOnlyGrab) {
-            decision.reason = "handPocketOnlyTarget";
-            return decision;
-        }
-        if (input.authoredGrabNode) {
-            decision.reason = "authoredGrabNode";
-            return decision;
-        }
-        if (input.looseWeaponGrab) {
-            decision.reason = "looseWeapon";
-            return decision;
-        }
         if (input.multipleAcceptedBodies) {
             decision.reason = "multiBody";
             return decision;

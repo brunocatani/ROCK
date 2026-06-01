@@ -103,14 +103,20 @@ int main()
     auto handPocketOnly = validInput(bounds(5.0f, 4.0f, 2.0f));
     handPocketOnly.handPocketOnlyGrab = true;
     decision = evaluateObject(handPocketOnly);
-    ok &= expectFalse("hand-pocket-only rejected", decision.accept);
-    ok &= expectReason("hand-pocket-only reason", decision.reason, "handPocketOnlyTarget");
+    ok &= expectTrue("hand-pocket-only can use pinch geometry", decision.accept);
+    ok &= expectReason("hand-pocket-only pinch reason", decision.reason, "pinchCompact");
 
     auto looseWeapon = validInput(bounds(5.0f, 4.0f, 2.0f));
     looseWeapon.looseWeaponGrab = true;
     decision = evaluateObject(looseWeapon);
-    ok &= expectFalse("loose weapon rejected", decision.accept);
-    ok &= expectReason("loose weapon reason", decision.reason, "looseWeapon");
+    ok &= expectTrue("loose weapon can use pinch geometry", decision.accept);
+    ok &= expectReason("loose weapon pinch reason", decision.reason, "pinchCompact");
+
+    auto authoredGrabNode = validInput(bounds(5.0f, 4.0f, 2.0f));
+    authoredGrabNode.authoredGrabNode = true;
+    decision = evaluateObject(authoredGrabNode);
+    ok &= expectTrue("authored node can use pinch geometry", decision.accept);
+    ok &= expectReason("authored node pinch reason", decision.reason, "pinchCompact");
 
     auto multiBody = validInput(bounds(5.0f, 4.0f, 2.0f));
     multiBody.multipleAcceptedBodies = true;

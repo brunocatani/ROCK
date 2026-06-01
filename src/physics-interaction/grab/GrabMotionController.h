@@ -419,6 +419,13 @@ namespace rock::grab_motion_controller
             return decision;
         }
 
+        if (!input.supportPatchValid ||
+            !input.supportPatchNormalTrusted ||
+            input.supportPatchSampleCount < 4) {
+            decision.reason = "seatedSupportGroupPromotionMissingSupport";
+            return decision;
+        }
+
         const float localDelta = finiteOr(input.candidateLocalDeltaGameUnits, std::numeric_limits<float>::infinity());
         const float immediateMax = safePositive(input.immediateMaxLocalDeltaGameUnits, 4.0f);
         if (std::isfinite(localDelta) && localDelta <= immediateMax) {

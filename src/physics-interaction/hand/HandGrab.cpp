@@ -2644,30 +2644,6 @@ namespace rock
             }
         }
 
-        grab_authority_frame_math::GrabAuthorityPivotSource toFrozenGrabAuthorityPivotSource(GrabPivotAuthoritySource source)
-        {
-            using FrozenSource = grab_authority_frame_math::GrabAuthorityPivotSource;
-            switch (source) {
-            case GrabPivotAuthoritySource::PinchPocketMeshPoint:
-                return FrozenSource::PinchPocket;
-            case GrabPivotAuthoritySource::GripSupportModel:
-                return FrozenSource::GripSupportModel;
-            case GrabPivotAuthoritySource::PalmPocketMeshPoint:
-                return FrozenSource::PalmPocketMesh;
-            case GrabPivotAuthoritySource::SelectionHitMeshSnap:
-            case GrabPivotAuthoritySource::PalmRayMeshPoint:
-                return FrozenSource::SelectionMeshSnap;
-            case GrabPivotAuthoritySource::CollisionFallback:
-                return FrozenSource::CollisionFallback;
-            case GrabPivotAuthoritySource::AuthoredGrabNode:
-            case GrabPivotAuthoritySource::ContactPatchMeshSnap:
-            case GrabPivotAuthoritySource::ContactPatchPositionOnly:
-            case GrabPivotAuthoritySource::None:
-            default:
-                return FrozenSource::None;
-            }
-        }
-
         void applyFrozenGrabAuthorityFrameToGrabFrame(
             CanonicalGrabFrame& frame,
             const grab_authority_frame_math::FrozenGrabAuthorityFrame<RE::NiTransform>& frozen)
@@ -2743,6 +2719,13 @@ namespace rock
             return std::strcmp(source, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::SelectionHitMeshSnap)) == 0 ||
                    std::strcmp(source, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::PalmRayMeshPoint)) == 0 ||
                    std::strcmp(source, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::CollisionFallback)) == 0;
+        }
+
+        bool pivotAuthoritySourceIsFinalPinchOrSupport(const char* source)
+        {
+            return source &&
+                   (std::strcmp(source, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::PinchPocketMeshPoint)) == 0 ||
+                       std::strcmp(source, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::GripSupportModel)) == 0);
         }
 
         bool pivotAuthoritySourceCanYieldToPalmPocket(GrabPivotAuthoritySource source)
@@ -4795,8 +4778,7 @@ namespace rock
                 out.rotationPreservedDeg =
                     rotationDeltaDegrees(_grabFrame.objectNodeWorldAtGrab.rotate, _grabFrame.desiredObjectWorldAtGrab.rotate);
                 out.normalAuthority = false;
-                out.authoredRotationAuthority =
-                    _grabFrame.activeGrabPointMode && std::strcmp(_grabFrame.activeGrabPointMode, "authoredGrabNodeFrame") == 0;
+                out.authoredRotationAuthority = false;
                 out.hasGrabRelationInvariants = true;
             }
             if (out.hasHeldNodeWorld) {
@@ -7651,8 +7633,8 @@ namespace rock
              * Runtime grab authority is intentionally single-source. Mesh hits,
              * authored nodes, semantic contacts, contact patches, and multi-finger
              * contacts are evidence until the pivot resolver chooses one BODY-local
-             * point to freeze. Contact patches may enrich pose/release evidence, but
-             * the palm-pocket or authored/mesh point owns the dynamic pivot.
+             * point to freeze. Final dynamic authority is strict: only a pinch
+             * pocket or an authorable support group may create the frozen frame.
              */
             {
                 auto pocket = grab_three_phase::buildGrabPocketFrameWithPalmCenter(
@@ -7725,14 +7707,7 @@ namespace rock
                         _grabObjectGripAtGrab.fallbackReason = pinchPocketCandidate.decision.reason;
                         _grabObjectGripAtGrab.confidence = 0.95f;
                     }
-                    const bool useAuthoredGrabFrame = !usingPinchPocket && authoredGrabNode != nullptr;
-                    const char* relationMode = useAuthoredGrabFrame ? "authoredGrabNodeFrame" : "rockPointToPalm";
-                    if (useAuthoredGrabFrame) {
-                        resolvedAuthorityPivotReasonForFreeze = "authoredGrabNodeFrame";
-                    }
-                    if (usingPinchPocket) {
-                        relationMode = "pinchPocket";
-                    }
+                    const char* relationMode = usingPinchPocket ? "pinchPocket" : "rockPointToPalm";
                     const char* captureReason = usingPinchPocket ? pinchPocketCandidate.decision.reason : phaseDecision.reason;
 
                     if (usingPinchPocket) {
@@ -7798,7 +7773,7 @@ namespace rock
                                 transform_math::worldPointToLocal(objectWorldTransform, grabGripPoint)) *
                                 supportObjectScale :
                             0.0f;
-                    if (!authoredGrabNode && !sel.isFarSelection && !grabSurfaceTriangles.empty() && !grabLocalMeshTriangles.empty()) {
+                    if (!grabSurfaceTriangles.empty() && !grabLocalMeshTriangles.empty()) {
                         gripSupportRuntime = buildRuntimeGripSupportModel(sel,
                             preparedBodySet,
                             objectBodyId.value,
@@ -7838,9 +7813,9 @@ namespace rock
                         }
                     }
 
-                    if (!useAuthoredGrabFrame) {
+                    {
                         using AuthorityCandidate = grab_authority_frame_math::GrabAuthorityPivotCandidate<RE::NiPoint3>;
-                        std::array<AuthorityCandidate, 5> authorityCandidates{};
+                        std::array<AuthorityCandidate, 2> authorityCandidates{};
                         authorityCandidates[0] = AuthorityCandidate{
                             .valid = pinchPocketCandidate.valid,
                             .source = grab_authority_frame_math::GrabAuthorityPivotSource::PinchPocket,
@@ -7858,52 +7833,25 @@ namespace rock
                             .normalWorld = gripSupportRuntime.model.canAuthorPivot ? gripSupportRuntime.model.supportNormal : RE::NiPoint3{},
                             .normalValid = gripSupportRuntime.model.canAuthorPivot && lengthSquared(gripSupportRuntime.model.supportNormal) > 0.000001f,
                             .bodyId = objectBodyId.value,
-                            .sourceNode = grabSurfaceHit.sourceNode,
+                            .sourceNode = grabSurfaceHit.sourceNode ? grabSurfaceHit.sourceNode : collidableNode,
                             .reason = gripSupportRuntime.model.canAuthorPivot ? gripSupportRuntime.model.reason : "gripSupportUnavailable",
-                        };
-                        authorityCandidates[2] = AuthorityCandidate{
-                            .valid = palmPocketMeshAvailable,
-                            .source = grab_authority_frame_math::GrabAuthorityPivotSource::PalmPocketMesh,
-                            .pointWorld = palmPocketMeshAvailable ? palmPocketSurfaceHit.position : RE::NiPoint3{},
-                            .normalWorld = palmPocketMeshAvailable ? palmPocketSurfaceHit.normal : RE::NiPoint3{},
-                            .normalValid = palmPocketMeshAvailable && lengthSquared(palmPocketSurfaceHit.normal) > 0.000001f,
-                            .bodyId = objectBodyId.value,
-                            .sourceNode = palmPocketMeshAvailable ? palmPocketSurfaceHit.sourceNode : nullptr,
-                            .reason = palmPocketMeshAvailable ? "palmPocketMesh" : "palmPocketMeshUnavailable",
-                        };
-                        authorityCandidates[3] = AuthorityCandidate{
-                            .valid = grabSurfaceHit.valid && grabSurfaceHit.sourceKind != GrabSurfaceSourceKind::CollisionQuery,
-                            .source = grab_authority_frame_math::GrabAuthorityPivotSource::SelectionMeshSnap,
-                            .pointWorld = grabSurfaceHit.valid ? grabSurfaceHit.position : RE::NiPoint3{},
-                            .normalWorld = grabSurfaceHit.valid ? grabSurfaceHit.normal : RE::NiPoint3{},
-                            .normalValid = grabSurfaceHit.valid && lengthSquared(grabSurfaceHit.normal) > 0.000001f,
-                            .bodyId = objectBodyId.value,
-                            .sourceNode = grabSurfaceHit.valid ? grabSurfaceHit.sourceNode : nullptr,
-                            .reason = grabSurfaceHit.valid ? grabPointMode : "selectionMeshUnavailable",
-                        };
-                        authorityCandidates[4] = AuthorityCandidate{
-                            .valid = grabSurfaceHit.valid && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::CollisionQuery,
-                            .source = grab_authority_frame_math::GrabAuthorityPivotSource::CollisionFallback,
-                            .pointWorld = grabSurfaceHit.valid ? grabSurfaceHit.position : RE::NiPoint3{},
-                            .normalWorld = grabSurfaceHit.valid ? grabSurfaceHit.normal : RE::NiPoint3{},
-                            .normalValid = grabSurfaceHit.valid && lengthSquared(grabSurfaceHit.normal) > 0.000001f,
-                            .bodyId = objectBodyId.value,
-                            .sourceNode = grabSurfaceHit.valid ? grabSurfaceHit.sourceNode : nullptr,
-                            .reason = grabSurfaceHit.valid ? grabPointMode : "collisionFallbackUnavailable",
                         };
 
                         const auto resolvedAuthorityPivot = grab_authority_frame_math::resolveGrabAuthorityPivot<RE::NiPoint3>(
                             authorityCandidates,
-                            contactSourcePolicy.allowCollisionGrabPoint && !handPocketOnlyGrab);
+                            false);
                         resolvedAuthorityPivotSourceForFreeze = resolvedAuthorityPivot.source;
                         resolvedAuthorityPivotReasonForFreeze = resolvedAuthorityPivot.reason ? resolvedAuthorityPivot.reason : "none";
                         if (!resolvedAuthorityPivot.valid) {
                             ROCK_LOG_WARN(Hand,
-                                "{} hand GRAB failed: no coherent authority pivot after resolver bodyId={} currentMode={} reason={}",
+                                "{} hand GRAB failed: no final pinch/support authority bodyId={} currentMode={} reason={} supportKind={} supportReason={} pinchReason={}",
                                 handName(),
                                 objectBodyId.value,
                                 grabPointMode,
-                                resolvedAuthorityPivot.reason ? resolvedAuthorityPivot.reason : "none");
+                                resolvedAuthorityPivot.reason ? resolvedAuthorityPivot.reason : "none",
+                                grab_support_model_math::gripSupportKindName(gripSupportRuntime.model.kind),
+                                gripSupportRuntime.model.reason ? gripSupportRuntime.model.reason : "none",
+                                pinchPocketCandidate.decision.reason ? pinchPocketCandidate.decision.reason : "none");
                             _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
                             _grabObjectGripAtGrab = {};
                             _heldObjectIsLooseWeapon = false;
@@ -7970,28 +7918,10 @@ namespace rock
                             pivotAuthorityNormalTrusted = resolvedAuthorityPivot.normalValid;
                             pivotAuthorityPositionConfidence = gripSupportRuntime.model.confidence;
                             break;
-                        case grab_authority_frame_math::GrabAuthorityPivotSource::PalmPocketMesh:
-                            grabGripPoint = palmPocketSurfaceHit.position;
-                            grabSurfaceHit = palmPocketSurfaceHit;
-                            grabPointMode = "palmPocketMeshSurface";
-                            grabFallbackReason = resolvedAuthorityPivot.reason;
-                            pivotAuthoritySource = grabPivotAuthoritySourceName(GrabPivotAuthoritySource::PalmPocketMeshPoint);
-                            pivotAuthorityNormalTrusted = resolvedAuthorityPivot.normalValid;
-                            pivotAuthorityPositionConfidence = (std::max)(pivotAuthorityPositionConfidence, 0.85f);
-                            break;
-                        case grab_authority_frame_math::GrabAuthorityPivotSource::SelectionMeshSnap:
-                            grabGripPoint = resolvedAuthorityPivot.pointWorld;
-                            pivotAuthoritySource = grabPivotAuthoritySourceName(GrabPivotAuthoritySource::SelectionHitMeshSnap);
-                            pivotAuthorityNormalTrusted = resolvedAuthorityPivot.normalValid;
-                            pivotAuthorityPositionConfidence = (std::max)(pivotAuthorityPositionConfidence, 0.80f);
-                            break;
-                        case grab_authority_frame_math::GrabAuthorityPivotSource::CollisionFallback:
-                            grabGripPoint = resolvedAuthorityPivot.pointWorld;
-                            pivotAuthoritySource = grabPivotAuthoritySourceName(GrabPivotAuthoritySource::CollisionFallback);
-                            pivotAuthorityNormalTrusted = resolvedAuthorityPivot.normalValid;
-                            pivotAuthorityPositionConfidence = (std::max)(pivotAuthorityPositionConfidence, 0.50f);
-                            break;
                         case grab_authority_frame_math::GrabAuthorityPivotSource::None:
+                        case grab_authority_frame_math::GrabAuthorityPivotSource::PalmPocketMesh:
+                        case grab_authority_frame_math::GrabAuthorityPivotSource::SelectionMeshSnap:
+                        case grab_authority_frame_math::GrabAuthorityPivotSource::CollisionFallback:
                         default:
                             break;
                         }
@@ -8040,7 +7970,7 @@ namespace rock
                     _grabFrame.grabPivotWorldAtGrab = grabPivotAWorld;
                     _grabFrame.gripPointWorldAtGrab = grabGripPoint;
                     _grabFrame.activeGrabPointMode = grabPointMode;
-                    _grabFrame.seatMode = usingPinchPocket ? GrabSeatMode::PinchPocket : GrabSeatMode::PalmPocket;
+                    _grabFrame.seatMode = usingPinchPocket ? GrabSeatMode::PinchPocket : GrabSeatMode::SupportGroup;
                     _grabFrame.hasPinchPocket = usingPinchPocket;
                     _grabFrame.pinchPocketWorldAtGrab = usingPinchPocket ? pinchPocketCandidate.pinchPocketWorld : RE::NiPoint3{};
                     _grabFrame.pinchAxisWorldAtGrab = usingPinchPocket ? pinchPocketCandidate.pinchAxisWorld : RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
@@ -8103,16 +8033,8 @@ namespace rock
                         grabPivotAWorld,
                         grabGripPoint);
                     desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
-                    if (useAuthoredGrabFrame) {
-                        desiredObjectWorld = grab_node_info_math::buildDesiredObjectWorldFromAuthoredGrabNode(
-                            objectWorldTransform,
-                            authoredGrabNode->world,
-                            handWorldTransform,
-                            grabPivotAWorld);
-                        desiredBodyWorld = multiplyTransforms(desiredObjectWorld, objectToBodyAtGrab);
-                    }
                     const float pulledGrabAdjust =
-                        (grabbedFromPullCatch && !useAuthoredGrabFrame && !usingPinchPocket) ?
+                        (grabbedFromPullCatch && !usingPinchPocket) ?
                             (std::max)(0.0f, g_rockConfig.rockPulledGrabHandAdjustDistanceGameUnits) :
                             0.0f;
                     if (pulledGrabAdjust > 0.0f) {
@@ -8133,7 +8055,7 @@ namespace rock
                         handName(),
                         relationMode,
                         grabSeatModeName(_grabFrame.seatMode),
-                        useAuthoredGrabFrame ? "authoredNode" : "preserve",
+                        "preserve",
                         grab_three_phase::phaseName(_grabAcquisitionPhase),
                         captureReason,
                         semanticContacts.count > 0 ? "yes" : "no",
@@ -8229,7 +8151,7 @@ namespace rock
                     .pivotAWorld = grabPivotAWorld,
                     .gripPointWorld = grabGripPoint,
                     .visualNormalWorld = frozenVisualNormalWorld,
-                    .source = toFrozenGrabAuthorityPivotSource(inferGrabPivotAuthoritySource(grabPointMode, pivotAuthorityPositionOnly)),
+                    .source = resolvedAuthorityPivotSourceForFreeze,
                     .hasDesiredObjectWorld = true,
                     .hasDesiredBodyWorld = true,
                     .visualNormalValid = lengthSquared(frozenVisualNormalWorld) > 0.000001f,
@@ -9206,6 +9128,21 @@ namespace rock
             return;
         }
 
+        const bool finalSeatMode =
+            _grabFrame.seatMode == GrabSeatMode::PinchPocket ||
+            _grabFrame.seatMode == GrabSeatMode::SupportGroup;
+        const bool finalPivotSource = pivotAuthoritySourceIsFinalPinchOrSupport(_grabFrame.pivotAuthoritySource);
+        if (!finalSeatMode || !finalPivotSource) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand release: held grab has non-final authority seat={} source={} phase={}",
+                handName(),
+                grabSeatModeName(_grabFrame.seatMode),
+                _grabFrame.pivotAuthoritySource ? _grabFrame.pivotAuthoritySource : "none",
+                grab_three_phase::phaseName(_grabAcquisitionPhase));
+            releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+            return;
+        }
+
         nearby_grab_damping::tickNearbyGrabDamping(world, _nearbyGrabDamping, deltaTime);
 
         suppressHandCollisionForGrab(world, bodyBoneColliders);
@@ -9729,7 +9666,7 @@ namespace rock
                                     .pivotAWorld = livePivotAWorld,
                                     .gripPointWorld = promotedPointWorld,
                                     .visualNormalWorld = promotedNormalWorld,
-                                    .source = grab_authority_frame_math::GrabAuthorityPivotSource::PalmPocketMesh,
+                                    .source = grab_authority_frame_math::GrabAuthorityPivotSource::GripSupportModel,
                                     .hasDesiredObjectWorld = true,
                                     .hasDesiredBodyWorld = true,
                                     .visualNormalValid = promotedNormalTrusted,
@@ -9752,13 +9689,21 @@ namespace rock
                                 _grabFrame.palmSeatPointWorldAtGrab = promotedPointWorld;
                                 _grabFrame.hasPalmSeatPoint = true;
                                 _grabFrame.activeGrabPointUsesMultiFingerEvidence = false;
-                                _grabFrame.activeGrabPointMode = "seatedPalmPocketPromotion";
+                                _grabFrame.activeGrabPointMode = "seatedSupportGroupPromotion";
                                 _grabFrame.palmSeatPointMode = _grabFrame.activeGrabPointMode;
-                                _grabFrame.pivotAuthoritySource = grabPivotAuthoritySourceName(GrabPivotAuthoritySource::PalmPocketMeshPoint);
+                                _grabFrame.pivotAuthoritySource = grabPivotAuthoritySourceName(GrabPivotAuthoritySource::GripSupportModel);
                                 _grabFrame.pivotAuthorityPositionOnly = false;
                                 _grabFrame.pivotAuthorityNormalTrusted = promotedNormalTrusted;
                                 _grabFrame.pivotAuthorityPositionConfidence = 0.92f;
                                 _grabFrame.requiresSettledVisualHandRelation = false;
+                                _grabFrame.seatMode = GrabSeatMode::SupportGroup;
+                                _grabFrame.hasGripSupportModel = true;
+                                _grabFrame.gripSupportAuthoredPivot = true;
+                                _grabFrame.gripSupportKind = grab_support_model_math::GripSupportKind::PalmWrap;
+                                _grabFrame.gripSupportReason = promotionDecision.reason;
+                                _grabFrame.gripSupportConfidence = 0.92f;
+                                _grabFrame.gripSupportSpanGameUnits = seatedSupportPatch.clusterMaxLateralGameUnits;
+                                _grabFrame.gripSupportPivotShiftGameUnits = reacquireLocalDeltaGameUnits;
                                 _grabFrame.fingerPoseAimValid = promotedNormalTrusted;
                                 _grabFrame.fingerPoseAimReason = promotedNormalTrusted ?
                                     promotionDecision.reason :
@@ -9807,7 +9752,7 @@ namespace rock
                                 _grabVisualDeviationHistoryCount = 0;
                                 _grabVisualDeviationHistoryNext = 0;
                                 ROCK_LOG_DEBUG(Hand,
-                                    "{} THREE-PHASE GRAB SEATED PALM-POCKET PROMOTION: phase={} source={} reason={} complete={} blend={:.2f} point=({:.1f},{:.1f},{:.1f}) "
+                                    "{} THREE-PHASE GRAB SEATED SUPPORT-GROUP PROMOTION: phase={} source={} reason={} complete={} blend={:.2f} point=({:.1f},{:.1f},{:.1f}) "
                                     "pivotB=({:.2f},{:.2f},{:.2f}) pocketDistance={:.2f}gu meshDistance={:.2f}gu localDelta={:.2f}gu normalTrusted={} samples={} patchReason={} fingerGroups={} longLever={:.1f}gu count={}",
                                     handName(),
                                     grab_three_phase::phaseName(previousAcquisitionPhase),

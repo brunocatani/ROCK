@@ -507,17 +507,17 @@ namespace rock
     enum class GrabSeatMode : std::uint8_t
     {
         None,
-        PalmPocket,
         PinchPocket,
+        SupportGroup,
     };
 
     inline const char* grabSeatModeName(GrabSeatMode mode)
     {
         switch (mode) {
-        case GrabSeatMode::PalmPocket:
-            return "palmPocket";
         case GrabSeatMode::PinchPocket:
             return "pinchPocket";
+        case GrabSeatMode::SupportGroup:
+            return "supportGroup";
         default:
             return "none";
         }
@@ -1073,6 +1073,12 @@ namespace rock::grab_authority_frame_math
         }
     }
 
+    inline bool isFinalGrabAuthorityPivotSource(GrabAuthorityPivotSource source)
+    {
+        return source == GrabAuthorityPivotSource::PinchPocket ||
+               source == GrabAuthorityPivotSource::GripSupportModel;
+    }
+
     template <class Vector>
     inline bool isFiniteVector(const Vector& value)
     {
@@ -1112,8 +1118,9 @@ namespace rock::grab_authority_frame_math
         std::span<const GrabAuthorityPivotCandidate<Vector>> candidates,
         bool collisionFallbackAllowed)
     {
+        (void)collisionFallbackAllowed;
         ResolvedGrabAuthorityPivot<Vector> selected{};
-        selected.reason = "noValidAuthorityPivot";
+        selected.reason = "noFinalPinchOrSupportAuthority";
         int selectedPriority = grabAuthorityPivotSourcePriority(GrabAuthorityPivotSource::None);
 
         for (const auto& candidate : candidates) {
@@ -1123,7 +1130,7 @@ namespace rock::grab_authority_frame_math
                 !isFiniteVector(candidate.pointWorld)) {
                 continue;
             }
-            if (candidate.source == GrabAuthorityPivotSource::CollisionFallback && !collisionFallbackAllowed) {
+            if (!isFinalGrabAuthorityPivotSource(candidate.source)) {
                 continue;
             }
 
@@ -1224,6 +1231,10 @@ namespace rock::grab_authority_frame_math
         frozen.bodyWorldAtGrab = input.bodyWorld;
         frozen.visualNormalWorld = input.visualNormalWorld;
         frozen.visualNormalValid = input.visualNormalValid && isFiniteVector(input.visualNormalWorld);
+
+        if (!isFinalGrabAuthorityPivotSource(input.source)) {
+            return frozen;
+        }
 
         if (!isFiniteTransform(input.rawHandWorld) ||
             !isFiniteTransform(input.proxyWorld) ||

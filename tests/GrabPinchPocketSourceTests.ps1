@@ -63,7 +63,7 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'sel\.pinchCloseSelecti
     'Pinch-direction selections must fail closed instead of falling through to palm-pocket authority.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'const bool usingPinchPocket = pinchPocketCandidate\.valid && gripArea\.valid' `
     'Grab commit must arbitrate pinch and palm as mutually exclusive seat choices.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFrame\.seatMode = usingPinchPocket \? GrabSeatMode::PinchPocket : GrabSeatMode::PalmPocket' `
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFrame\.seatMode = usingPinchPocket \? GrabSeatMode::PinchPocket : GrabSeatMode::SupportGroup' `
     'Accepted capture must store the selected seat mode on the grab frame.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'resolveActiveGrabAuthorityPivotAWorld\(\s*const RE::NiTransform& proxyWorldTransform[\s\S]*generatedProxyLocalPointToWorld\(proxyWorldTransform,\s*_grabFrame\.pivotAHandBodyLocalGame\)' `
     'Pinch grabs must replay the frozen generated/proxy local pivot instead of running held palm-pocket support refresh.'
