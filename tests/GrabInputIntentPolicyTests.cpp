@@ -144,6 +144,48 @@ int main()
         ok &= expectTrue("peer-held retry cancels on release", retryDecision.releaseCancel);
         ok &= expectFalse("peer-held retry inactive after release", retryState.active);
 
+        rock::peer_held_join_retry_policy::RuntimeState unrelatedSelectionState{};
+        retryDecision = rock::peer_held_join_retry_policy::update(
+            unrelatedSelectionState,
+            Input{
+                .rawHeld = true,
+                .rawPressed = true,
+                .peerHoldingLooseObject = true,
+                .peerStillHoldingSameObject = true,
+                .unrelatedSelection = true,
+                .peerFormId = 0x1234,
+                .deltaSeconds = 1.0f / 90.0f,
+                .config = retryConfig,
+            });
+        ok &= expectFalse("peer-held retry does not start with unrelated selection", retryDecision.started);
+        ok &= expectFalse("peer-held retry remains inactive with unrelated selection", unrelatedSelectionState.active);
+
+        retryDecision = rock::peer_held_join_retry_policy::update(
+            unrelatedSelectionState,
+            Input{
+                .rawHeld = true,
+                .rawPressed = true,
+                .peerHoldingLooseObject = true,
+                .peerStillHoldingSameObject = true,
+                .peerFormId = 0x1234,
+                .deltaSeconds = 1.0f / 90.0f,
+                .config = retryConfig,
+            });
+        ok &= expectTrue("peer-held retry starts before unrelated selection appears", unrelatedSelectionState.active);
+        retryDecision = rock::peer_held_join_retry_policy::update(
+            unrelatedSelectionState,
+            Input{
+                .rawHeld = true,
+                .peerHoldingLooseObject = true,
+                .peerStillHoldingSameObject = true,
+                .unrelatedSelection = true,
+                .peerFormId = 0x1234,
+                .deltaSeconds = 1.0f / 90.0f,
+                .config = retryConfig,
+            });
+        ok &= expectTrue("peer-held retry cancels when unrelated selection appears", retryDecision.cancelled);
+        ok &= expectFalse("peer-held retry inactive after unrelated selection", unrelatedSelectionState.active);
+
         retryDecision = rock::peer_held_join_retry_policy::update(
             retryState,
             Input{

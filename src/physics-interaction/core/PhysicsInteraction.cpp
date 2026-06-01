@@ -4062,8 +4062,8 @@ namespace rock
                     return setRefusal("peer-target-not-loose-object");
                 }
 
-                if (hand.hasSelection() && !hand.getSelection().isFarSelection && hand.getSelection().refr != peer.getHeldRef()) {
-                    return setRefusal("unrelated-close-selection");
+                if (hand.hasSelection() && hand.getSelection().refr != peer.getHeldRef()) {
+                    return setRefusal(hand.getSelection().isFarSelection ? "unrelated-far-selection" : "unrelated-close-selection");
                 }
 
                 const bool hadPeerHeldCloseSelection =
@@ -4104,7 +4104,7 @@ namespace rock
                     .handHolding = hand.isHolding(),
                     .peerHoldingLooseObject = peerHoldingLooseObject,
                     .peerStillHoldingSameObject = peerStillHoldingRetryObject,
-                    .unrelatedCloseSelection = unrelatedSelectionForPeerJoin,
+                    .unrelatedSelection = unrelatedSelectionForPeerJoin,
                     .grabSucceeded = false,
                     .peerFormId = peerHeldFormIdForRetry,
                     .deltaSeconds = frame.deltaSeconds,

@@ -1764,8 +1764,8 @@ namespace rock
             return refuse("invalid-peer-ref");
         }
 
-        if (_currentSelection.isValid() && !_currentSelection.isFarSelection && _currentSelection.refr != peerRef) {
-            return refuse("unrelated-close-selection");
+        if (_currentSelection.isValid() && _currentSelection.refr != peerRef) {
+            return refuse(_currentSelection.isFarSelection ? "unrelated-far-selection" : "unrelated-close-selection");
         }
 
         const float closeReach = (std::max)(

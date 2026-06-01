@@ -200,7 +200,7 @@ namespace rock::peer_held_join_retry_policy
         bool handHolding = false;
         bool peerHoldingLooseObject = false;
         bool peerStillHoldingSameObject = false;
-        bool unrelatedCloseSelection = false;
+        bool unrelatedSelection = false;
         bool grabSucceeded = false;
         std::uint32_t peerFormId = 0;
         float deltaSeconds = 0.0f;
@@ -252,7 +252,7 @@ namespace rock::peer_held_join_retry_policy
                !input.handHolding &&
                input.peerHoldingLooseObject &&
                input.peerFormId != 0 &&
-               !input.unrelatedCloseSelection;
+               !input.unrelatedSelection;
     }
 
     [[nodiscard]] inline Decision update(RuntimeState& state, const Input& input)
@@ -308,10 +308,10 @@ namespace rock::peer_held_join_retry_policy
             return decision;
         }
 
-        if (state.active && input.unrelatedCloseSelection) {
+        if (state.active && input.unrelatedSelection) {
             reset(state);
             decision.cancelled = true;
-            decision.reason = "unrelated-close-selection";
+            decision.reason = "unrelated-selection";
             return decision;
         }
 
