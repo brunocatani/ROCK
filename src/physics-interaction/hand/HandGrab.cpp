@@ -6205,6 +6205,13 @@ namespace rock
                     restoreIncompleteActivePrepRoot(rootNode, selectedOriginalMotionPropsId, handName(), "failed-setup-incomplete-scan");
                 }
             }
+            /*
+             * Some setup failures occur after body resolution has staged a saved
+             * object state but before ROCK owns a live grab constraint. Clear it
+             * here so a rejected strict-authority grab cannot look held or block
+             * later reset cleanup.
+             */
+            _savedObjectState.clear();
         };
 
         const RE::NiTransform handBodyWorldAtGrab = getLiveBodyWorldTransform(world, _handBody.getBodyId());
@@ -6355,7 +6362,7 @@ namespace rock
         const char* fingerEvidenceFallbackReason = "none";
         auto failHandPocketOnlyGrab = [&]() {
             ROCK_LOG_WARN(Hand,
-                "{} hand GRAB failed: hand-pocket-only target requires palm pocket mesh authority for '{}' formID={:08X}; targetKind={} meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} totalTris={} reason={}",
+                "{} hand GRAB failed: hand-pocket-only target requires pinch or palm-pocket support authority for '{}' formID={:08X}; targetKind={} meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} totalTris={} reason={}",
                 handName(),
                 objName,
                 sel.refr->GetFormID(),
@@ -6630,10 +6637,6 @@ namespace rock
                 }
             }
 
-            if (handPocketOnlyGrab && (!meshGrabFound || std::strcmp(grabPointMode, "palmPocketMeshSurface") != 0)) {
-                return failHandPocketOnlyGrab();
-            }
-
             if (!meshGrabFound && !grabSurfaceTriangles.empty() && sel.hasHitPoint) {
                 const RE::NiPoint3 grabPivotAWorld = palmPocketPivotAWorld;
                 RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(proxyAuthorityFrameWorldAtGrab, _isLeft);
@@ -6715,9 +6718,6 @@ namespace rock
                 grabFallbackReason = "noTriangles";
             }
         }
-        if (handPocketOnlyGrab && (!meshGrabFound || std::strcmp(grabPointMode, "palmPocketMeshSurface") != 0)) {
-            return failHandPocketOnlyGrab();
-        }
         if (!meshGrabFound) {
             ROCK_LOG_WARN(Hand,
                 "{} hand GRAB POINT FALLBACK: mode={} reason={} meshNode='{}' ownerNode='{}' rootNode='{}' "
@@ -6746,7 +6746,7 @@ namespace rock
         const bool hybridFingerProbeEvidenceEnabled =
             multiFingerEvidenceEnabled &&
             grabContactQualityMode == grab_contact_evidence_policy::GrabContactQualityMode::HybridEvidence;
-        if (contactSourcePolicy.failWithoutMesh) {
+        if (contactSourcePolicy.failWithoutMesh && !handPocketOnlyGrab) {
             ROCK_LOG_WARN(Hand,
                 "{} hand GRAB failed: mesh contact required for '{}' formID={:08X}; collision point was not used as pivot "
                 "meshNode='{}' ownerNode='{}' rootNode='{}' shapes={} totalTris={} reason={}",
@@ -7195,7 +7195,7 @@ namespace rock
                 sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, grabGripPoint) : std::numeric_limits<float>::max();
         }
 
-        if (!meshGrabFound && !sel.hasHitPoint && !authoredGrabNode) {
+        if (!meshGrabFound && !sel.hasHitPoint && !authoredGrabNode && !handPocketOnlyGrab) {
             ROCK_LOG_WARN(Hand,
                 "{} hand GRAB failed: no object-side contact point for '{}' formID={:08X}; object origin/COM fallback is not valid dynamic grab authority reason={} meshNode='{}' ownerNode='{}' rootNode='{}'",
                 handName(),
@@ -7266,6 +7266,11 @@ namespace rock
             restoreFailedGrabPrep();
             clearGrabExternalHandWorldTransform(_isLeft);
             return false;
+        }
+        if (handPocketOnlyGrab &&
+            !pinchPocketCandidate.valid &&
+            (!meshGrabFound || std::strcmp(grabPointMode, "palmPocketMeshSurface") != 0)) {
+            return failHandPocketOnlyGrab();
         }
 
         palmSeatPointWorld = grabGripPoint;
@@ -7838,8 +7843,7 @@ namespace rock
                         };
 
                         const auto resolvedAuthorityPivot = grab_authority_frame_math::resolveGrabAuthorityPivot<RE::NiPoint3>(
-                            authorityCandidates,
-                            false);
+                            authorityCandidates);
                         resolvedAuthorityPivotSourceForFreeze = resolvedAuthorityPivot.source;
                         resolvedAuthorityPivotReasonForFreeze = resolvedAuthorityPivot.reason ? resolvedAuthorityPivot.reason : "none";
                         if (!resolvedAuthorityPivot.valid) {

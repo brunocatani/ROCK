@@ -1115,10 +1115,8 @@ namespace rock::grab_authority_frame_math
 
     template <class Vector>
     inline ResolvedGrabAuthorityPivot<Vector> resolveGrabAuthorityPivot(
-        std::span<const GrabAuthorityPivotCandidate<Vector>> candidates,
-        bool collisionFallbackAllowed)
+        std::span<const GrabAuthorityPivotCandidate<Vector>> candidates)
     {
-        (void)collisionFallbackAllowed;
         ResolvedGrabAuthorityPivot<Vector> selected{};
         selected.reason = "noFinalPinchOrSupportAuthority";
         int selectedPriority = grabAuthorityPivotSourcePriority(GrabAuthorityPivotSource::None);

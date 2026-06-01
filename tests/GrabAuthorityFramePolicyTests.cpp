@@ -99,7 +99,7 @@ int main()
             },
         };
 
-        const auto resolved = authority::resolveGrabAuthorityPivot<RE::NiPoint3>(candidates, true);
+        const auto resolved = authority::resolveGrabAuthorityPivot<RE::NiPoint3>(candidates);
         ok &= expectTrue("resolver accepts best candidate", resolved.valid);
         ok &= expectTrue("pinch pocket has highest priority", resolved.source == authority::GrabAuthorityPivotSource::PinchPocket);
         ok &= expectPointNear("pinch point selected", resolved.pointWorld, RE::NiPoint3{ 10.0f, 0.0f, 0.0f }, 0.001f);
@@ -117,11 +117,8 @@ int main()
             },
         };
 
-        const auto disabled = authority::resolveGrabAuthorityPivot<RE::NiPoint3>(candidates, false);
-        ok &= expectFalse("collision fallback cannot be final authority when disabled", disabled.valid);
-
-        const auto enabled = authority::resolveGrabAuthorityPivot<RE::NiPoint3>(candidates, true);
-        ok &= expectFalse("collision fallback cannot be final authority when enabled", enabled.valid);
+        const auto resolved = authority::resolveGrabAuthorityPivot<RE::NiPoint3>(candidates);
+        ok &= expectFalse("collision fallback cannot be final authority", resolved.valid);
     }
 
     {
