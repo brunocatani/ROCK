@@ -70,9 +70,11 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'resolveActiveGrabAutho
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'promotionRequested &&\s*_grabFrame\.seatMode != GrabSeatMode::PinchPocket' `
     'Pinch grabs must not enter seated palm-pocket reacquire.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'const bool pinchFingerPose = _grabFrame\.seatMode == GrabSeatMode::PinchPocket' `
-    'Initial finger solve must identify pinch pose mode from stored seat state.'
+    'TouchHeld finger solve must identify pinch pose mode from stored seat state.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'rockGrabMaxTriangleDistance, !pinchFingerPose, liveFingerSnapshotAtGrabPtr' `
     'Pinch finger solve must bypass the generic thumb curve solver.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'if \(pinchFingerPose\) \{\s*applyPinchFingerPosePolicy\(_grabFingerPose, _grabFrame, g_rockConfig\.rockGrabFingerMinValue' `
+    'TouchHeld pinch finger solve must post-process the final stored pose.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'applyPinchFingerPosePolicy\(fingerPose, _grabFrame, g_rockConfig\.rockGrabFingerMinValue' `
     'Pinch finger pose must be post-processed into fixed thumb/index curves and closed other fingers.'
 Require-Text 'src/physics-interaction/grab/GrabPinchPocket.h' 'buildStablePinchFingerPose[\s\S]*jointValues\[0\][\s\S]*jointValues\[2\]' `
