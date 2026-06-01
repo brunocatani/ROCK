@@ -1293,6 +1293,40 @@ namespace rock
         _selectionHoldFrames = 0;
     }
 
+    void Hand::updateSelectionBeam(RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin)
+    {
+        const bool stateCanShowBeam = _state == HandState::SelectedFar || _state == HandState::SelectionLocked;
+        if (!g_rockConfig.rockSelectionBeamEnabled || !stateCanShowBeam || !_currentSelection.isValid() || !_currentSelection.isFarSelection) {
+            _selectionBeam.hide();
+            return;
+        }
+
+        RE::NiPoint3 targetWorld{};
+        if (!resolveFarSelectionHmdConeAnchor(hknpWorld, _currentSelection, targetWorld)) {
+            _selectionBeam.hide();
+            return;
+        }
+
+        (void)_selectionBeam.update(selection_beam_policy::Frame{
+                                       .active = true,
+                                       .startWorld = selectionOrigin,
+                                       .endWorld = targetWorld,
+                                       .config =
+                                           selection_beam_policy::Config{
+                                               .enabled = g_rockConfig.rockSelectionBeamEnabled,
+                                               .segmentSizeGameUnits = g_rockConfig.rockSelectionBeamSegmentSizeGameUnits,
+                                               .curveLiftGameUnits = g_rockConfig.rockSelectionBeamCurveLiftGameUnits,
+                                               .alpha = g_rockConfig.rockSelectionBeamAlpha,
+                                           },
+                                   },
+            handName());
+    }
+
+    void Hand::stopSelectionBeam()
+    {
+        _selectionBeam.hide();
+    }
+
     void Hand::updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& palmNormal,
         const RE::NiPoint3& pointingDirection, const RE::NiPoint3& pinchOrigin, const RE::NiPoint3& pinchDirection, bool hasPinchOrigin,
         const FarSelectionHmdConeGate& farHmdConeGate, float nearRange, float farRange, float deltaTime, const OtherHandSelectionContext& otherHandContext)

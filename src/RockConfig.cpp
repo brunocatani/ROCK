@@ -177,6 +177,10 @@ namespace rock
         rockNativeCharacterControllerObjectContactFilterEnabled = true;
 
         rockHighlightEnabled = true;
+        rockSelectionBeamEnabled = true;
+        rockSelectionBeamSegmentSizeGameUnits = selection_beam_policy::kDefaultSegmentSizeGameUnits;
+        rockSelectionBeamCurveLiftGameUnits = selection_beam_policy::kDefaultCurveLiftGameUnits;
+        rockSelectionBeamAlpha = selection_beam_policy::kDefaultAlpha;
 
         rockDebugShowColliders = false;
         rockDebugShowTargetColliders = false;
@@ -802,6 +806,28 @@ namespace rock
             SECTION, "bNativeCharacterControllerObjectContactFilterEnabled", rockNativeCharacterControllerObjectContactFilterEnabled);
 
         rockHighlightEnabled = ini.GetBoolValue(SECTION, "bHighlightEnabled", rockHighlightEnabled);
+        rockSelectionBeamEnabled = ini.GetBoolValue(SECTION, "bSelectionBeamEnabled", rockSelectionBeamEnabled);
+        rockSelectionBeamSegmentSizeGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fSelectionBeamSegmentSizeGameUnits",
+            rockSelectionBeamSegmentSizeGameUnits,
+            selection_beam_policy::kDefaultSegmentSizeGameUnits,
+            0.2f,
+            6.0f);
+        rockSelectionBeamCurveLiftGameUnits = readClampedFloat(ini,
+            SECTION,
+            "fSelectionBeamCurveLiftGameUnits",
+            rockSelectionBeamCurveLiftGameUnits,
+            selection_beam_policy::kDefaultCurveLiftGameUnits,
+            0.0f,
+            80.0f);
+        rockSelectionBeamAlpha = readClampedFloat(ini,
+            SECTION,
+            "fSelectionBeamAlpha",
+            rockSelectionBeamAlpha,
+            selection_beam_policy::kDefaultAlpha,
+            0.05f,
+            1.0f);
 
         rockDebugShowColliders = ini.GetBoolValue(SECTION, "bDebugShowColliders", rockDebugShowColliders);
         rockDebugShowTargetColliders = ini.GetBoolValue(SECTION, "bDebugShowTargetColliders", rockDebugShowTargetColliders);

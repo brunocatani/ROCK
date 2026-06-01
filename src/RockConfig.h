@@ -26,6 +26,7 @@
 #endif
 
 #include "physics-interaction/hand/HandSelection.h"
+#include "physics-interaction/hand/SelectionBeamPolicy.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
 
@@ -137,6 +138,10 @@ namespace rock
         bool rockNativeCharacterControllerObjectContactFilterEnabled = true;
 
         bool rockHighlightEnabled = true;
+        bool rockSelectionBeamEnabled = true;
+        float rockSelectionBeamSegmentSizeGameUnits = selection_beam_policy::kDefaultSegmentSizeGameUnits;
+        float rockSelectionBeamCurveLiftGameUnits = selection_beam_policy::kDefaultCurveLiftGameUnits;
+        float rockSelectionBeamAlpha = selection_beam_policy::kDefaultAlpha;
 
         bool rockDebugShowColliders = false;
         bool rockDebugShowTargetColliders = false;

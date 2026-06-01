@@ -3371,8 +3371,11 @@ namespace rock
 #include "physics-interaction/core/PhysicsInteractionDebugOverlay.inl"
     void PhysicsInteraction::updateSelection(const PhysicsFrameContext& frame)
     {
-        if (!runtime_state::isLocalSkeletonReady())
+        if (!runtime_state::isLocalSkeletonReady()) {
+            _rightHand.stopSelectionBeam();
+            _leftHand.stopSelectionBeam();
             return;
+        }
 
         auto selectionContextForOtherHand = [](const Hand& hand) {
             OtherHandSelectionContext context{};
@@ -3408,6 +3411,9 @@ namespace rock
                 g_rockConfig.rockFarDetectionRange,
                 frame.deltaSeconds,
                 leftHandContext);
+            _rightHand.updateSelectionBeam(frame.hknpWorld, frame.right.grabAnchorWorld);
+        } else {
+            _rightHand.stopSelectionBeam();
         }
 
         if (!frame.left.disabled) {
@@ -3424,6 +3430,9 @@ namespace rock
                 g_rockConfig.rockFarDetectionRange,
                 frame.deltaSeconds,
                 rightHandContext);
+            _leftHand.updateSelectionBeam(frame.hknpWorld, frame.left.grabAnchorWorld);
+        } else {
+            _leftHand.stopSelectionBeam();
         }
     }
 

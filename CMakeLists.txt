@@ -177,6 +177,7 @@ if(POST_BUILD_COPY_PLUGIN)
         COMMAND ${CMAKE_COMMAND} -E rm -f "${copy_path}/ROCK.esp"
         COMMAND ${CMAKE_COMMAND} -E rm -rf "${copy_path}/Scripts/ROCK"
         COMMAND ${CMAKE_COMMAND} -E rm -rf "${copy_path}/Meshes/ROCK"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${ROOT_DIR}/data/mod" "${copy_path}"
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${PROJECT_NAME}> ${copy_path}/F4SE/Plugins/
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_PDB_FILE:${PROJECT_NAME}> ${copy_path}/F4SE/Plugins/
       )
@@ -406,6 +407,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKSelectionPrecisionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKSelectionPrecisionPolicyTests)
 
+  add_executable(ROCKSelectionBeamPolicyTests
+    "${ROOT_DIR}/tests/SelectionBeamPolicyTests.cpp"
+  )
+  target_compile_features(ROCKSelectionBeamPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKSelectionBeamPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKSelectionBeamPolicyTests)
+
   add_executable(ROCKNativePlayerCollisionSuppressionPolicyTests
     "${ROOT_DIR}/tests/NativePlayerCollisionSuppressionPolicyTests.cpp"
   )
@@ -441,6 +449,7 @@ if(BUILD_ROCK_TESTS)
     ROCKActiveGrabBodyLifecyclePolicyTests
     ROCKDynamicMovableStaticGrabPolicyTests
     ROCKSelectionPrecisionPolicyTests
+    ROCKSelectionBeamPolicyTests
     ROCKNativePlayerCollisionSuppressionPolicyTests
   )
   add_custom_target(ROCKPolicyTestBinaries DEPENDS ${ROCK_COMMONLIB_TEST_TARGETS})
