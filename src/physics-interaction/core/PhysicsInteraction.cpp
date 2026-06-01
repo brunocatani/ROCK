@@ -465,6 +465,182 @@ namespace rock
             return std::sqrt(dx * dx + dy * dy + dz * dz);
         }
 
+        enum class PalmClockLogMode : std::uint8_t
+        {
+            Disabled,
+            Sampled,
+            Trace,
+        };
+
+        const char* physicsStepPhaseName(havok_physics_timing::PhysicsStepPhase phase)
+        {
+            switch (phase) {
+            case havok_physics_timing::PhysicsStepPhase::WholePreStep:
+                return "whole-pre";
+            case havok_physics_timing::PhysicsStepPhase::SubstepPreCollide:
+                return "substep-pre-collide";
+            case havok_physics_timing::PhysicsStepPhase::BetweenCollideAndSolve:
+                return "between-collide-solve";
+            case havok_physics_timing::PhysicsStepPhase::SubstepPostSolve:
+                return "substep-post-solve";
+            }
+            return "unknown";
+        }
+
+        PalmClockLogMode palmClockLogMode()
+        {
+            if (g_rockConfig.rockDebugGrabTimelineTrace) {
+                return PalmClockLogMode::Trace;
+            }
+            if (g_rockConfig.rockDebugGrabFrameLogging || g_rockConfig.rockDebugVerboseLogging) {
+                return PalmClockLogMode::Sampled;
+            }
+            return PalmClockLogMode::Disabled;
+        }
+
+        bool palmClockTraceFrameSelected(std::uint64_t gameFrameIndex)
+        {
+            const auto interval = static_cast<std::uint64_t>((std::max)(1, g_rockConfig.rockDebugGrabTimelineTraceIntervalFrames));
+            return gameFrameIndex <= 3 || (gameFrameIndex % interval) == 0;
+        }
+
+        /*
+         * Palm clock diagnostics compare the game-frame queued skeleton target to
+         * the live palm body at each authority boundary. This keeps rate-mismatch
+         * evidence in one log row without changing grab authority.
+         */
+        void logPalmClockSampleForHand(
+            const char* stage,
+            const Hand& hand,
+            RE::hknpWorld* world,
+            const RE::NiTransform* rawHandWorld,
+            std::uint64_t gameFrameIndex,
+            float gameDeltaSeconds,
+            const havok_physics_timing::PhysicsTimingSample* timing)
+        {
+            const PalmClockLogMode mode = palmClockLogMode();
+            if (mode == PalmClockLogMode::Disabled) {
+                return;
+            }
+            if (mode == PalmClockLogMode::Trace && !palmClockTraceFrameSelected(gameFrameIndex)) {
+                return;
+            }
+            if (!hand.isHoldingAtomic() && !g_rockConfig.rockDebugVerboseLogging) {
+                return;
+            }
+
+            RE::NiTransform palmTargetWorld{};
+            const bool targetOk = hand.tryGetPalmAnchorTarget(palmTargetWorld);
+            Hand::LivePalmAnchorReference livePalm{};
+            const bool liveOk = hand.tryResolveLivePalmAnchorReference(world, livePalm);
+            if (!targetOk && !liveOk && !rawHandWorld) {
+                return;
+            }
+
+            const bool rawOk = rawHandWorld != nullptr;
+            const TransformDelta rawToTarget = (rawOk && targetOk) ? measureTransformDelta(*rawHandWorld, palmTargetWorld) : TransformDelta{ -1.0f, -1.0f };
+            const TransformDelta rawToLive = (rawOk && liveOk) ? measureTransformDelta(*rawHandWorld, livePalm.world) : TransformDelta{ -1.0f, -1.0f };
+            const TransformDelta targetToLive = (targetOk && liveOk) ? measureTransformDelta(palmTargetWorld, livePalm.world) : TransformDelta{ -1.0f, -1.0f };
+
+            const float rawDt = timing ? timing->rawDeltaSeconds : -1.0f;
+            const float subDt = timing ? timing->substepDeltaSeconds : -1.0f;
+            const float driveDt = timing ? havok_physics_timing::driveDeltaSeconds(*timing) : -1.0f;
+            const float progress = timing ? timing->substepProgress : -1.0f;
+            const std::uint32_t substepIndex = timing ? timing->substepIndex + 1 : 0;
+            const std::uint32_t substepCount = timing ? timing->substepCount : 0;
+            const char* physicsPhase = timing ? physicsStepPhaseName(timing->phase) : "game-frame";
+
+            auto emit = [&]() {
+                const char* rawState = rawOk ? "ok" : "none";
+                const char* targetState = targetOk ? "ok" : "none";
+                const char* liveState = liveOk ? "ok" : "none";
+                const char* palmSource = liveOk ? body_frame::bodyFrameSourceCode(livePalm.source) : "none";
+                const std::uint32_t palmMotion = liveOk ? livePalm.motionIndex : body_frame::kFreeMotionIndex;
+                const RE::NiPoint3 rawPosition = rawOk ? rawHandWorld->translate : RE::NiPoint3{};
+                const RE::NiPoint3 targetPosition = targetOk ? palmTargetWorld.translate : RE::NiPoint3{};
+                const RE::NiPoint3 livePosition = liveOk ? livePalm.world.translate : RE::NiPoint3{};
+
+                if (mode == PalmClockLogMode::Trace) {
+                    ROCK_LOG_INFO(Hand,
+                        "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg targetToLive={:.3f}gu/{:.3f}deg rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
+                        stage ? stage : "unknown",
+                        hand.handName(),
+                        gameFrameIndex,
+                        hand.isHoldingAtomic() ? "yes" : "no",
+                        rawState,
+                        targetState,
+                        liveState,
+                        hand.getCollisionBodyId().value,
+                        hand.getGrabAuthorityProxyBodyId().value,
+                        gameDeltaSeconds,
+                        physicsPhase,
+                        rawDt,
+                        subDt,
+                        driveDt,
+                        substepIndex,
+                        substepCount,
+                        progress,
+                        rawToTarget.position,
+                        rawToTarget.rotationDegrees,
+                        rawToLive.position,
+                        rawToLive.rotationDegrees,
+                        targetToLive.position,
+                        targetToLive.rotationDegrees,
+                        rawPosition.x,
+                        rawPosition.y,
+                        rawPosition.z,
+                        targetPosition.x,
+                        targetPosition.y,
+                        targetPosition.z,
+                        livePosition.x,
+                        livePosition.y,
+                        livePosition.z,
+                        palmSource,
+                        palmMotion);
+                } else {
+                    ROCK_LOG_SAMPLE_DEBUG(Hand,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "PALM_CLOCK stage={} hand={} frame={} holding={} raw={} target={} live={} body={} proxyBody={} gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg targetToLive={:.3f}gu/{:.3f}deg rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
+                        stage ? stage : "unknown",
+                        hand.handName(),
+                        gameFrameIndex,
+                        hand.isHoldingAtomic() ? "yes" : "no",
+                        rawState,
+                        targetState,
+                        liveState,
+                        hand.getCollisionBodyId().value,
+                        hand.getGrabAuthorityProxyBodyId().value,
+                        gameDeltaSeconds,
+                        physicsPhase,
+                        rawDt,
+                        subDt,
+                        driveDt,
+                        substepIndex,
+                        substepCount,
+                        progress,
+                        rawToTarget.position,
+                        rawToTarget.rotationDegrees,
+                        rawToLive.position,
+                        rawToLive.rotationDegrees,
+                        targetToLive.position,
+                        targetToLive.rotationDegrees,
+                        rawPosition.x,
+                        rawPosition.y,
+                        rawPosition.z,
+                        targetPosition.x,
+                        targetPosition.y,
+                        targetPosition.z,
+                        livePosition.x,
+                        livePosition.y,
+                        livePosition.z,
+                        palmSource,
+                        palmMotion);
+                }
+            };
+
+            emit();
+        }
+
         float measureDirectionDeltaDegrees(const RE::NiPoint3& a, const RE::NiPoint3& b)
         {
             const float dot = std::clamp(a.x * b.x + a.y * b.y + a.z * b.z, -1.0f, 1.0f);
@@ -1578,6 +1754,8 @@ namespace rock
         refreshHandBoneCache();
         sampleHandTransformParity();
         const auto frame = buildFrameContext(bhk, hknp, _deltaTime);
+        _palmClockGameFrameIndex.store(runtime.frameIndex, std::memory_order_release);
+        _palmClockGameDeltaSeconds.store(frame.deltaSeconds, std::memory_order_release);
 
         observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
         if (!generatedBodiesMatchLifecycle(bhk, hknp)) {
@@ -1694,6 +1872,20 @@ namespace rock
         }
 
         updateHandCollisions(frame);
+        logPalmClockSampleForHand("game-after-hand-collider-queue",
+            _rightHand,
+            hknp,
+            frame.right.disabled ? nullptr : &frame.right.rawHandWorld,
+            runtime.frameIndex,
+            frame.deltaSeconds,
+            nullptr);
+        logPalmClockSampleForHand("game-after-hand-collider-queue",
+            _leftHand,
+            hknp,
+            frame.left.disabled ? nullptr : &frame.left.rawHandWorld,
+            runtime.frameIndex,
+            frame.deltaSeconds,
+            nullptr);
         updateBodyBoneCollisions(frame);
         updateNativePlayerCollisionSuppression(bhk, hknp);
 
@@ -3141,6 +3333,10 @@ namespace rock
         _leftHand.flushPendingCollisionPhysicsDrive(world, timing);
         _bodyBoneColliders.flushPendingPhysicsDrive(world, timing);
         _weaponCollision.flushPendingPhysicsDrive(world, timing);
+        const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
+        const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
+        logPalmClockSampleForHand("physics-after-collider-drive", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
+        logPalmClockSampleForHand("physics-after-collider-drive", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
     }
 
     void PhysicsInteraction::driveCustomGrabAuthorityFromBetweenStep(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)
@@ -3149,6 +3345,10 @@ namespace rock
             return;
         }
 
+        const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
+        const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
+        logPalmClockSampleForHand("physics-between-before-grab-flush", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
+        logPalmClockSampleForHand("physics-between-before-grab-flush", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         _rightHand.flushPendingCustomGrabAuthority(world, timing);
         _leftHand.flushPendingCustomGrabAuthority(world, timing);
     }
@@ -3161,6 +3361,10 @@ namespace rock
 
         _rightHand.observeCustomGrabAuthorityAfterSolve(world, timing);
         _leftHand.observeCustomGrabAuthorityAfterSolve(world, timing);
+        const auto gameFrameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
+        const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
+        logPalmClockSampleForHand("physics-after-solve", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
+        logPalmClockSampleForHand("physics-after-solve", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         serviceRetiredGrabConstraintPayloads();
     }
 
@@ -3958,6 +4162,13 @@ namespace rock
                     const auto& transform = handInput.rawHandWorld;
                     auto* heldRef = hand.getHeldRef();
                     auto heldFormID = heldRef ? heldRef->GetFormID() : 0u;
+                    logPalmClockSampleForHand("game-before-held-update",
+                        hand,
+                        hknp,
+                        &transform,
+                        _palmClockGameFrameIndex.load(std::memory_order_acquire),
+                        _palmClockGameDeltaSeconds.load(std::memory_order_acquire),
+                        nullptr);
                     hand.updateHeldObject(hknp,
                         transform,
                         _heldObjectPlayerSpaceFrame,

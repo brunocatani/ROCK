@@ -355,6 +355,8 @@ namespace rock
         int _paritySummaryCounter = 0;
         bool _parityEnabledLogged = false;
         bool _runtimeScaleLogged = false;
+        std::atomic<std::uint64_t> _palmClockGameFrameIndex{ 0 };
+        std::atomic<float> _palmClockGameDeltaSeconds{ 1.0f / 90.0f };
         struct GrabTransformTelemetryState
         {
             bool active = false;
