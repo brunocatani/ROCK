@@ -80,3 +80,4 @@ Expected examples with `fHavokTimingFixMinPhysicsFrameRate = 70` and `iHavokTimi
 - 2026-06-01: Implemented call-site hook, config keys, pure policy, packaged INI documentation, source-boundary test, and policy test.
 - 2026-06-01: `cmake --preset custom-tests`, `ROCKPolicyTestBinaries`, and full `ctest` passed: 60/60 tests.
 - 2026-06-01: `custom-fast` Release build passed and auto-deployed `ROCK.dll`/`ROCK.pdb` to `D:\FO4\mods\ROCK\F4SE\Plugins`.
+- 2026-06-01: Review follow-up aligned the timing-fix minimum delta threshold with existing Havok timing sampling and added accumulated-delta policy coverage.

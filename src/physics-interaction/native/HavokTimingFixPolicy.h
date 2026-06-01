@@ -11,6 +11,7 @@ namespace rock::havok_timing_fix_policy
     constexpr int kEngineMaxSubsteps = 6;
     constexpr float kMinPhysicsFrameRateFloor = 30.0f;
     constexpr float kMinPhysicsFrameRateCeiling = 240.0f;
+    constexpr float kMinAcceptedFrameDeltaSeconds = 0.000001f;
     constexpr float kMaxAcceptedFrameDeltaSeconds = 0.25f;
 
     struct TimingFixInput
@@ -33,7 +34,7 @@ namespace rock::havok_timing_fix_policy
 
     inline bool isUsableDeltaSeconds(float value)
     {
-        return std::isfinite(value) && value > 0.0f && value <= kMaxAcceptedFrameDeltaSeconds;
+        return std::isfinite(value) && value > kMinAcceptedFrameDeltaSeconds && value <= kMaxAcceptedFrameDeltaSeconds;
     }
 
     inline float sanitizeMinPhysicsFrameRate(float value)

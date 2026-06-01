@@ -109,6 +109,34 @@ int main()
     }
 
     {
+        constexpr float rawDelta = 1.0f / 90.0f;
+        const auto decision = evaluateTimingFix(TimingFixInput{
+            .rawDeltaSeconds = rawDelta,
+            .accumulatedDeltaSeconds = rawDelta * 2.0f,
+            .minPhysicsFrameRate = 70.0f,
+            .maxSubsteps = 3,
+        });
+
+        ok &= expectTrue("accumulated 90hz two-step frame is valid", decision.valid);
+        ok &= expectNear("accumulated 90hz keeps frame delta", decision.substepDeltaSeconds, rawDelta, 0.000001f);
+        ok &= expectEqual("accumulated 90hz count", decision.substepCount, 2);
+    }
+
+    {
+        constexpr float rawDelta = 1.0f / 60.0f;
+        const auto decision = evaluateTimingFix(TimingFixInput{
+            .rawDeltaSeconds = rawDelta,
+            .accumulatedDeltaSeconds = rawDelta * 1.5f,
+            .minPhysicsFrameRate = 70.0f,
+            .maxSubsteps = 3,
+        });
+
+        ok &= expectTrue("accumulated 60hz clamp frame is valid", decision.valid);
+        ok &= expectNear("accumulated 60hz keeps split delta", decision.substepDeltaSeconds, rawDelta * 0.5f, 0.000001f);
+        ok &= expectEqual("accumulated 60hz count clamps to max", decision.substepCount, 3);
+    }
+
+    {
         const auto decision = evaluateTimingFix(TimingFixInput{
             .rawDeltaSeconds = 0.0f,
             .accumulatedDeltaSeconds = 1.0f / 90.0f,
@@ -128,6 +156,17 @@ int main()
         });
 
         ok &= expectFalse("zero accumulated delta is invalid", decision.valid);
+    }
+
+    {
+        const auto decision = evaluateTimingFix(TimingFixInput{
+            .rawDeltaSeconds = kMinAcceptedFrameDeltaSeconds,
+            .accumulatedDeltaSeconds = 1.0f / 90.0f,
+            .minPhysicsFrameRate = 70.0f,
+            .maxSubsteps = 3,
+        });
+
+        ok &= expectFalse("minimum threshold raw delta is invalid", decision.valid);
     }
 
     return ok ? 0 : 1;
