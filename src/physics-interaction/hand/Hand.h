@@ -528,11 +528,17 @@ namespace rock
             RE::NiTransform& outDesiredBodyWorld,
             RE::NiPoint3& outDesiredTargetPointWorld,
             RE::NiPoint3& outActivePivotBBodyLocalGame);
+        enum class GrabAuthorityProxyFramePolicy : std::uint8_t
+        {
+            LivePalmOnly = 0,
+            PreferQueuedPalmTarget
+        };
         bool resolveGrabAuthorityProxyFrame(RE::hknpWorld* world,
             const RE::NiTransform& rawHandWorld,
             const RE::NiTransform* fallbackPalmAnchorWorld,
             RE::NiTransform& outProxyWorld,
-            const char*& outSource) const;
+            const char*& outSource,
+            GrabAuthorityProxyFramePolicy policy = GrabAuthorityProxyFramePolicy::LivePalmOnly) const;
         bool resolveActiveGrabAuthorityPivotAWorld(
             const RE::NiTransform& proxyWorldTransform,
             RE::NiPoint3& outPivotWorld) const;
@@ -545,6 +551,7 @@ namespace rock
             const grab_motion_controller::HeldAuthorityState& heldAuthority);
         void queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
             const RE::NiTransform& rawHandWorldTransform,
+            const char* proxyFrameSource,
             float deltaTime,
             float forceFadeInTime,
             float tauMin,
@@ -769,6 +776,7 @@ namespace rock
         {
             RE::NiTransform proxyWorld{};
             RE::NiTransform rawHandWorld{};
+            const char* proxyFrameSource = "unknown";
             float deltaTime = 0.0f;
             float forceFadeInTime = 0.0f;
             float tauMin = 0.0f;

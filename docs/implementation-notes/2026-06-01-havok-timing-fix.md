@@ -117,3 +117,28 @@ Progress:
 - 2026-06-01: Implementing bridge as a final-stage follow-up to the timing/grab authority work.
 - 2026-06-01: Added bridge policy/config, runtime frame authority offset, generated hand-collider lookup offset, diagnostics, source-boundary test, and policy test.
 - 2026-06-01: `cmake --preset custom-tests`, `ROCKPolicyTestBinaries`, full `ctest`, and `custom-fast` Release plugin build passed. `custom-fast` auto-deployed `ROCK.dll`/`ROCK.pdb` to `D:\FO4\mods\ROCK\F4SE\Plugins`.
+
+## Final-Stage Follow-Up: Held Proxy Queued Palm Authority
+
+Runtime logs showed the locomotion bridge was active, with nonzero `bridgeOffset` and `rawToBridged` values during held stick locomotion, but the visual shimmer remained. The important diagnostic was `targetToLive`: the generated palm target moved with the bridge while the live palm body still lagged by roughly the bridge offset. The held object path was still ultimately bound to the live Havok palm because `flushPendingCustomGrabAuthority` copied the game-frame pending proxy target, then overwrote `pending.proxyWorld` from `tryResolveLivePalmAnchorReference`.
+
+Design chosen:
+
+- Keep grab acquisition, close-grab pocket capture, pivot capture, and idle debug snapshots on the live palm-anchor body.
+- Add an explicit `GrabAuthorityProxyFramePolicy`.
+- Use `LivePalmOnly` for grab start and debug paths.
+- Use `PreferQueuedPalmTarget` only for already-held `updateHeldObject` authority queuing.
+- Preserve live palm readback in the physics flush as a fail-closed health check and optional velocity telemetry source.
+- Stop rebinding `pending.proxyWorld` to the live palm during `flushPendingCustomGrabAuthority`; the game-frame queued target now remains the target driven through the generated keyframed proxy body.
+
+Validation plan:
+
+- Source-boundary test proving grab commit remains `LivePalmOnly`.
+- Source-boundary test proving held updates opt into `PreferQueuedPalmTarget`.
+- Source-boundary test rejecting flush-time overwrite of `pending.proxyWorld` from live palm.
+- Full ROCK policy/source tests and `custom-fast` Release build/deploy.
+
+Progress:
+
+- 2026-06-01: Implemented the explicit live-vs-queued proxy frame policy, held-update queued palm authority, source-boundary tests, and flush-time no-overwrite guard.
+- 2026-06-01: `cmake --preset custom-tests`, `ROCKPolicyTestBinaries`, full `ctest` (64/64), and `custom-fast` Release plugin build passed. `custom-fast` auto-deployed `ROCK.dll`/`ROCK.pdb` to `D:\FO4\mods\ROCK\F4SE\Plugins`.
