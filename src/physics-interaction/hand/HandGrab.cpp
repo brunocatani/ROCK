@@ -2254,7 +2254,7 @@ namespace rock
 
         struct GrabCaptureTransformRefreshResult
         {
-            std::array<GrabCaptureTransformRefreshSample, 3> samples{};
+            std::array<GrabCaptureTransformRefreshSample, 6> samples{};
             std::uint32_t count = 0;
             bool ok = true;
         };
@@ -5942,8 +5942,8 @@ namespace rock
             .fadeDuration = forceFadeInTime,
         };
         const auto output = grab_motion_controller::solveMotorTargetsWithAuthority(motorInput, heldAuthority);
-        _lastGrabPhysicsHz = output.physicsHz;
-        _lastGrabPhysicsRateForceScale = output.physicsRateForceScale;
+        _lastGrabPhysicsHz.store(output.physicsHz, std::memory_order_relaxed);
+        _lastGrabPhysicsRateForceScale.store(output.physicsRateForceScale, std::memory_order_relaxed);
 
         _activeConstraint.linearMotor->tau = output.linearTau;
         _activeConstraint.linearMotor->damping = scaleDriveValue(g_rockConfig.rockGrabLinearDamping, looseLinearDampingMultiplier);
@@ -6816,10 +6816,12 @@ namespace rock
             return false;
         };
 
-        const auto captureRefresh = refreshGrabCaptureTransforms(rootNode, meshSourceNode, collidableNode);
-        if (grabTimelineTraceEnabled()) {
-            for (std::uint32_t i = 0; i < captureRefresh.count; ++i) {
-                const auto& sample = captureRefresh.samples[i];
+        const auto logGrabCaptureRefresh = [&](const GrabCaptureTransformRefreshResult& refresh) {
+            if (!grabTimelineTraceEnabled()) {
+                return;
+            }
+            for (std::uint32_t i = 0; i < refresh.count; ++i) {
+                const auto& sample = refresh.samples[i];
                 ROCK_LOG_INFO(Hand,
                     "{} GRAB_TRACE stage=capture_refresh trace={} hand={} role={} node='{}'({:p}) validBefore={} validAfter={} posDelta={:.4f}gu rotDelta={:.3f}deg",
                     handName(),
@@ -6833,7 +6835,10 @@ namespace rock
                     sample.positionDeltaGameUnits,
                     sample.rotationDeltaDegrees);
             }
-        }
+        };
+
+        const auto captureRefresh = refreshGrabCaptureTransforms(rootNode, meshSourceNode, collidableNode);
+        logGrabCaptureRefresh(captureRefresh);
         if (!captureRefresh.ok) {
             ROCK_LOG_WARN(Hand,
                 "{} hand GRAB failed: capture transform refresh produced a non-finite node transform for '{}' formID={:08X}; root='{}' mesh='{}' collidable='{}'",
@@ -7377,8 +7382,33 @@ namespace rock
             auto* bhkWorldAtResolution = ownerCellAtResolution ? ownerCellAtResolution->GetbhkWorld() : nullptr;
             auto* bodyCollisionObjectAtResolution = bhkWorldAtResolution ? RE::bhkNPCollisionObject::Getbhk(bhkWorldAtResolution, objectBodyId) : nullptr;
             if (auto* resolvedOwnerNode = bodyCollisionObjectAtResolution ? bodyCollisionObjectAtResolution->sceneObject : nullptr) {
+                GrabCaptureTransformRefreshResult resolvedOwnerRefresh{};
+                refreshGrabCaptureNodeTransform(resolvedOwnerRefresh, "resolvedOwner", resolvedOwnerNode);
+                logGrabCaptureRefresh(resolvedOwnerRefresh);
+                if (!resolvedOwnerRefresh.ok) {
+                    ROCK_LOG_WARN(Hand,
+                        "{} hand GRAB failed: resolved owner transform refresh produced a non-finite node transform for '{}' formID={:08X}; owner='{}'",
+                        handName(),
+                        objName,
+                        sel.refr ? sel.refr->GetFormID() : 0,
+                        nodeDebugName(resolvedOwnerNode));
+                    restoreFailedGrabPrep();
+                    clearGrabExternalHandWorldTransform(_isLeft);
+                    return false;
+                }
                 collidableNode = resolvedOwnerNode;
                 objectWorldTransform = collidableNode->world;
+                if (!grab_three_phase::isFinite(objectWorldTransform)) {
+                    ROCK_LOG_WARN(Hand,
+                        "{} hand GRAB failed: resolved owner transform is non-finite for '{}' formID={:08X}; owner='{}'",
+                        handName(),
+                        objName,
+                        sel.refr ? sel.refr->GetFormID() : 0,
+                        nodeDebugName(collidableNode));
+                    restoreFailedGrabPrep();
+                    clearGrabExternalHandWorldTransform(_isLeft);
+                    return false;
+                }
             }
         }
 
@@ -8039,6 +8069,22 @@ namespace rock
             auto* bhkWorldAtGrab = ownerCellAtGrab ? ownerCellAtGrab->GetbhkWorld() : nullptr;
             auto* bodyCollisionObjectAtGrab = bhkWorldAtGrab ? RE::bhkNPCollisionObject::Getbhk(bhkWorldAtGrab, objectBodyId) : nullptr;
             auto* ownerNodeAtGrab = bodyCollisionObjectAtGrab ? bodyCollisionObjectAtGrab->sceneObject : nullptr;
+            if (ownerNodeAtGrab && ownerNodeAtGrab != collidableNode) {
+                GrabCaptureTransformRefreshResult ownerAtGrabRefresh{};
+                refreshGrabCaptureNodeTransform(ownerAtGrabRefresh, "ownerAtGrab", ownerNodeAtGrab);
+                logGrabCaptureRefresh(ownerAtGrabRefresh);
+                if (!ownerAtGrabRefresh.ok) {
+                    ROCK_LOG_WARN(Hand,
+                        "{} hand GRAB failed: owner-at-grab transform refresh produced a non-finite node transform for '{}' formID={:08X}; owner='{}'",
+                        handName(),
+                        objName,
+                        sel.refr ? sel.refr->GetFormID() : 0,
+                        nodeDebugName(ownerNodeAtGrab));
+                    restoreFailedGrabPrep();
+                    clearGrabExternalHandWorldTransform(_isLeft);
+                    return false;
+                }
+            }
             _grabFrame.heldNode = collidableNode;
             const RE::NiTransform objectToBodyAtGrab = computeRuntimeBodyLocalTransform(objectWorldTransform, grabBodyWorldAtGrab);
             /*
@@ -10651,6 +10697,8 @@ namespace rock
             }
 
             const std::uint32_t heldFormId = _savedObjectState.refr ? _savedObjectState.refr->GetFormID() : 0;
+            const float lastGrabPhysicsHz = _lastGrabPhysicsHz.load(std::memory_order_relaxed);
+            const float lastGrabPhysicsRateForceScale = _lastGrabPhysicsRateForceScale.load(std::memory_order_relaxed);
 
             ROCK_LOG_DEBUG(Hand,
                 "{} HELD dynamic: drive={} bodyDriveMode={} linearScope={} angularScope={} massScope={} looseWeapon={} formID={:08X} constraint={} queued={} flushed={} failedFlushes={} lastDt={:.6f} proxyFrame={}/{} "
@@ -10681,8 +10729,8 @@ namespace rock
                 heldMotorContactSoftening ? "soften" : "preserve",
                 heldMotorContactReason,
                 authorityForceScale,
-                _lastGrabPhysicsHz,
-                _lastGrabPhysicsRateForceScale,
+                lastGrabPhysicsHz,
+                lastGrabPhysicsRateForceScale,
                 _grabFrame.longObjectLeverGameUnits,
                 pivotErrGame,
                 averageGrabDeviationGameUnits,
@@ -11168,6 +11216,8 @@ namespace rock
                                 .valid = true,
                             };
                             if (grabTimelineTraceEnabled() && shouldLogGrabTimelineSequence(_grabFrame.traceTargetWriteSequence)) {
+                                const float lastGrabPhysicsHz = _lastGrabPhysicsHz.load(std::memory_order_relaxed);
+                                const float lastGrabPhysicsRateForceScale = _lastGrabPhysicsRateForceScale.load(std::memory_order_relaxed);
                                 ROCK_LOG_INFO(Hand,
                                     "{} GRAB_TRACE stage=pre_solve trace={} writeSeq={} flushNext={} queued={} substep={}/{} constraint={} proxyBody={} objBody={} bodyA={} beforeErr={:.2f}deg gripBefore={:.2f}gu pivotLever={:.2f}gu linTorque={:.3f}gu2 linTorqueDotReq={:.2f} reqAxis=({:.3f},{:.3f},{:.3f}) reqAxisProxy=({:.3f},{:.3f},{:.3f}) forceA={:.0f} forceL={:.0f} physHz={:.1f} forceScale={:.3f} tau={:.3f} damp={:.2f} targetToHiggsRelation={:.2f}deg transformBFrozenDelta={:.2f}deg pivotBRelationDelta={:.3f}gu bRcaRowsErr={:.2f}deg bRcaColsErr={:.2f}deg pivotARoundTrip={:.3f}gu",
                                     handName(),
@@ -11194,8 +11244,8 @@ namespace rock
                                     _ragdollAngularProbePreSolve.requiredAxisProxyLocal.z,
                                     _ragdollAngularProbePreSolve.angularMotorMaxForce,
                                     _ragdollAngularProbePreSolve.linearMotorMaxForce,
-                                    _lastGrabPhysicsHz,
-                                    _lastGrabPhysicsRateForceScale,
+                                    lastGrabPhysicsHz,
+                                    lastGrabPhysicsRateForceScale,
                                     _ragdollAngularProbePreSolve.angularMotorTau,
                                     _ragdollAngularProbePreSolve.angularMotorDamping,
                                     _ragdollAngularProbePreSolve.targetToHiggsRelationDegrees,
