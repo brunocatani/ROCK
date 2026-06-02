@@ -118,6 +118,31 @@ int main()
     ok &= expectNear("loose weapon base force is not double-boosted", looseWeaponOutput.linearMaxForce, 9000.0f, 0.001f);
     ok &= expectNear("loose weapon angular force follows existing weapon ceiling", looseWeaponOutput.angularMaxForce, 9000.0f, 0.001f);
 
+    ok &= expectNear("90hz physics force scale is neutral", computePhysicsRateForceScale(true, 1.0f / 90.0f, 90.0f, 0.5f, 0.75f, 1.35f), 1.0f, 0.001f);
+    ok &= expectNear("60hz physics force scale strengthens held motors", computePhysicsRateForceScale(true, 1.0f / 60.0f, 90.0f, 0.5f, 0.75f, 1.35f), 1.224745f, 0.001f);
+    ok &= expectNear("120hz physics force scale softens held motors", computePhysicsRateForceScale(true, 1.0f / 120.0f, 90.0f, 0.5f, 0.75f, 1.35f), 0.866025f, 0.001f);
+    ok &= expectNear("high physics rate clamps to minimum force scale", computePhysicsRateForceScale(true, 1.0f / 240.0f, 90.0f, 0.5f, 0.75f, 1.35f), 0.75f, 0.001f);
+    ok &= expectNear("invalid physics delta keeps neutral force scale", computePhysicsRateForceScale(true, 0.0f, 90.0f, 0.5f, 0.75f, 1.35f), 1.0f, 0.001f);
+
+    MotorInput scaledAt60Hz = singleHand;
+    scaledAt60Hz.physicsRateForceScalingEnabled = true;
+    scaledAt60Hz.physicsDeltaSeconds = 1.0f / 60.0f;
+    scaledAt60Hz.mass = 100.0f;
+    const auto scaledAt60HzOutput = solveMotorTargets(scaledAt60Hz);
+    ok &= expectNear("60hz motor output records physics hz", scaledAt60HzOutput.physicsHz, 60.0f, 0.001f);
+    ok &= expectNear("60hz force scale applies before mass cap", scaledAt60HzOutput.linearMaxForce, 2449.49f, 0.02f);
+    ok &= expectNear("60hz angular force follows scaled linear force", scaledAt60HzOutput.angularMaxForce, 2449.49f, 0.02f);
+
+    MotorInput massCappedScaled = scaledAt60Hz;
+    massCappedScaled.mass = 2.0f;
+    const auto massCappedScaledOutput = solveMotorTargets(massCappedScaled);
+    ok &= expectNear("physics-rate scaling still obeys mass cap", massCappedScaledOutput.linearMaxForce, 1000.0f, 0.001f);
+
+    MotorInput authorityScaled = scaledAt60Hz;
+    authorityScaled.authorityForceScale = 0.5f;
+    const auto authorityScaledOutput = solveMotorTargets(authorityScaled);
+    ok &= expectNear("authority scale applies after physics-rate force scale", authorityScaledOutput.linearMaxForce, 1224.745f, 0.02f);
+
     MotorInput angularFixedTau = singleHand;
     angularFixedTau.mass = 100.0f;
     angularFixedTau.currentLinearTau = 0.8f;

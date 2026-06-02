@@ -63,6 +63,12 @@ namespace rock::grab_motion_controller
         float currentAngularTau = 0.03f;
         float tauLerpSpeed = 0.5f;
         float deltaTime = 1.0f / 90.0f;
+        bool physicsRateForceScalingEnabled = false;
+        float physicsDeltaSeconds = 1.0f / 90.0f;
+        float physicsRateReferenceHz = 90.0f;
+        float physicsRateForceScaleExponent = 0.5f;
+        float physicsRateMinForceScale = 0.75f;
+        float physicsRateMaxForceScale = 1.35f;
 
         float baseMaxForce = 2000.0f;
         float authorityForceScale = 1.0f;
@@ -83,6 +89,8 @@ namespace rock::grab_motion_controller
         float linearMaxForce = 0.0f;
         float angularMaxForce = 0.0f;
         float fadeFactor = 1.0f;
+        float physicsHz = 90.0f;
+        float physicsRateForceScale = 1.0f;
     };
 
     struct AngularAuthorityInput
@@ -185,6 +193,45 @@ namespace rock::grab_motion_controller
 
         const float sanitizedFloor = (std::isfinite(massFloor) && massFloor > 0.0f) ? massFloor : 0.0f;
         return (std::max)(sanitizedMass, sanitizedFloor);
+    }
+
+    inline float computePhysicsHz(float physicsDeltaSeconds, float fallbackHz = 90.0f)
+    {
+        const float sanitizedDelta = safePositive(physicsDeltaSeconds, 0.0f);
+        if (sanitizedDelta <= 0.0f) {
+            return safePositive(fallbackHz, 90.0f);
+        }
+
+        const float hz = 1.0f / sanitizedDelta;
+        return std::isfinite(hz) && hz > 0.0f ? hz : safePositive(fallbackHz, 90.0f);
+    }
+
+    inline float computePhysicsRateForceScale(
+        bool enabled,
+        float physicsDeltaSeconds,
+        float referenceHz,
+        float exponent,
+        float minScale,
+        float maxScale)
+    {
+        if (!enabled) {
+            return 1.0f;
+        }
+
+        const float sanitizedReferenceHz = safePositive(referenceHz, 90.0f);
+        const float physicsHz = computePhysicsHz(physicsDeltaSeconds, sanitizedReferenceHz);
+        const float sanitizedExponent = (std::isfinite(exponent) && exponent >= 0.0f) ? exponent : 0.5f;
+        const float lowerScale = safePositive((std::min)(minScale, maxScale), 1.0f);
+        const float upperScale = (std::max)(lowerScale, safePositive((std::max)(minScale, maxScale), 1.0f));
+        if (physicsHz <= 0.0f || sanitizedReferenceHz <= 0.0f) {
+            return 1.0f;
+        }
+
+        const float scale = std::pow(sanitizedReferenceHz / physicsHz, sanitizedExponent);
+        if (!std::isfinite(scale)) {
+            return 1.0f;
+        }
+        return std::clamp(scale, lowerScale, upperScale);
     }
 
     inline float computeLongObjectAngularSpeedScale(bool enabled, float leverGameUnits, float referenceLeverGameUnits, float minScale)
@@ -658,11 +705,20 @@ namespace rock::grab_motion_controller
         const float baseForce = (std::max)(0.0f, finiteOr(input.baseMaxForce, 0.0f));
         const float authorityForceScale = std::clamp(safePositive(input.authorityForceScale, 1.0f), 0.05f, 1.0f);
         out.fadeFactor = input.fadeInEnabled ? computeFadeFactor(input.fadeElapsed, input.fadeDuration) : 1.0f;
+        out.physicsHz = computePhysicsHz(input.physicsDeltaSeconds, input.physicsRateReferenceHz);
+        out.physicsRateForceScale = computePhysicsRateForceScale(
+            input.physicsRateForceScalingEnabled,
+            input.physicsDeltaSeconds,
+            input.physicsRateReferenceHz,
+            input.physicsRateForceScaleExponent,
+            input.physicsRateMinForceScale,
+            input.physicsRateMaxForceScale);
         const float motorMass = effectiveMotorMass(
             input.mass,
             input.effectiveMotorMassFloorEnabled,
             input.effectiveMotorMassFloor);
-        out.linearMaxForce = capForceByMass(baseForce * out.fadeFactor, motorMass, input.forceToMassRatio) * authorityForceScale;
+        const float scaledBaseForce = baseForce * out.physicsRateForceScale;
+        out.linearMaxForce = capForceByMass(scaledBaseForce * out.fadeFactor, motorMass, input.forceToMassRatio) * authorityForceScale;
         out.angularMaxForce = out.linearMaxForce;
         return out;
     }

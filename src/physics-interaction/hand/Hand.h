@@ -786,6 +786,8 @@ namespace rock
         void recordHeldObjectVelocitySample(RE::hknpWorld* world, const HeldObjectPlayerSpaceFrame& playerSpaceFrame);
 
         ActiveConstraint _activeConstraint;
+        float _lastGrabPhysicsHz = 90.0f;
+        float _lastGrabPhysicsRateForceScale = 1.0f;
         BethesdaPhysicsBody _grabAuthorityProxy;
         RE::bhkWorld* _grabAuthorityProxyBhkWorld = nullptr;
         RE::hknpWorld* _grabAuthorityProxyHknpWorld = nullptr;

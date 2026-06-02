@@ -282,6 +282,11 @@ namespace rock
         float rockGrabMaxForceToMassRatio = 500.0f;
         bool rockGrabEffectiveMotorMassFloorEnabled = true;
         float rockGrabEffectiveMotorMassFloor = 2.0f;
+        bool rockGrabPhysicsRateForceScalingEnabled = true;
+        float rockGrabPhysicsRateReferenceHz = 90.0f;
+        float rockGrabPhysicsRateForceScaleExponent = 0.5f;
+        float rockGrabPhysicsRateMinForceScale = 0.75f;
+        float rockGrabPhysicsRateMaxForceScale = 1.35f;
 
         float rockGrabForceFadeInTime = 0.1f;
         int rockGrabRagdollDecompositionMode = -1;
