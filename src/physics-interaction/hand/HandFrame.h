@@ -46,11 +46,8 @@ namespace rock::handspace_convention
 namespace rock::pointing_direction_math
 {
     /*
-     * ROCK keeps close palm selection and far pointing selection as separate
-     * handspace directions so debugging the blue far selection ray never changes
-     * the yellow palm-normal line or close-grab direction. This helper keeps the
-     * optional far-ray reversal shared between runtime selection and the
-     * visualizer.
+     * ROCK keeps the legacy pointing vector independent from palm-facing
+     * behavior. Object selection now uses fixed-angle selection directions.
      */
     template <class Vector>
     inline Vector applyFarGrabNormalReversal(Vector direction, bool reverse)
@@ -138,10 +135,10 @@ namespace rock
     inline RE::NiPoint3 computePalmNormalFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
         /*
-         * Close selection uses the same palm-depth convention proven by the working
-         * far ray: authored Y is the collider's palm-depth normal. The live
+         * Palm-facing grab/contact behavior uses the authored palm-depth normal.
+         * The live
          * ROCK root-flattened game hand frame already carries left/right handedness,
-         * so applying a separate authored Z mirror sends close detection across the palm.
+         * so applying a separate authored Z mirror sends palm evidence across the hand.
          */
         const RE::NiPoint3 authoredNormal = g_rockConfig.rockPalmNormalHandspace;
         RE::NiPoint3 normal = transformHandspaceDirection(handTransform, authoredNormal, isLeft);
@@ -157,6 +154,24 @@ namespace rock
     {
         return pointing_direction_math::applyFarGrabNormalReversal(
             transformHandspaceDirection(handTransform, g_rockConfig.rockPointingVectorHandspace, isLeft), g_rockConfig.rockReverseFarGrabNormal);
+    }
+
+    inline RE::NiPoint3 computeSelectionDirectionFromHandBasis(const RE::NiTransform& handTransform, int angleDegrees, bool isLeft)
+    {
+        return transformHandspaceDirection(
+            handTransform,
+            selection_query_policy::selectionAimHandspaceVectorFromAngleDegrees<RE::NiPoint3>(angleDegrees),
+            isLeft);
+    }
+
+    inline RE::NiPoint3 computeCloseSelectionDirectionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
+    {
+        return computeSelectionDirectionFromHandBasis(handTransform, g_rockConfig.rockCloseSelectionAngleDegrees, isLeft);
+    }
+
+    inline RE::NiPoint3 computeFarSelectionDirectionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
+    {
+        return computeSelectionDirectionFromHandBasis(handTransform, g_rockConfig.rockFarSelectionAngleDegrees, isLeft);
     }
 
     inline RE::NiPoint3 computePinchDetectionDirectionFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)

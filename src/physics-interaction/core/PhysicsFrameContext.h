@@ -26,6 +26,8 @@ namespace rock
         RE::NiPoint3 grabAnchorWorld{};
         RE::NiPoint3 palmNormalWorld{};
         RE::NiPoint3 pointingWorld{};
+        RE::NiPoint3 closeSelectionDirectionWorld{};
+        RE::NiPoint3 farSelectionDirectionWorld{};
         RE::NiPoint3 pinchDirectionWorld{};
         RE::NiPoint3 thumbPadWorld{};
         RE::NiPoint3 indexPadWorld{};

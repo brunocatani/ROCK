@@ -32,6 +32,14 @@ Require-Text 'src/physics-interaction/hand/HandSelection.h' 'scoreShapeCastCandi
     'Selection precision must score candidates from lateral, depth, and surface evidence.'
 Require-Text 'src/physics-interaction/hand/HandSelection.h' 'shouldKeepCurrentCloseSelectionAgainstCandidate' `
     'Close-selection stickiness must use candidate confidence before falling back to distance.'
+Require-Text 'src/physics-interaction/hand/HandSelection.h' 'sanitizeSelectionAimAngleDegrees' `
+    'Fixed selection aim angles must be sanitized by the selection policy.'
+Require-Text 'src/RockConfig.cpp' 'iCloseSelectionAngleDegrees' `
+    'Runtime config loading must read the close selection aim angle.'
+Require-Text 'src/RockConfig.cpp' 'iFarSelectionAngleDegrees' `
+    'Runtime config loading must read the far selection aim angle.'
+Require-Text 'data/config/ROCK.ini' 'iCloseSelectionAngleDegrees\s*=\s*0[\s\S]*iFarSelectionAngleDegrees\s*=\s*0' `
+    'Packaged ROCK.ini must expose separate close and far fixed selection angles.'
 
 Require-Text 'src/physics-interaction/object/ObjectDetection.cpp' 'std::array<RankedSelectionCandidate,\s*selection_query_policy::kMaxShapeCastPrecisionCandidates>' `
     'Shape-cast selection must keep a bounded top-candidate shortlist instead of one mutable winner.'

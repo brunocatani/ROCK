@@ -26,6 +26,7 @@ namespace rock::selection_query_policy
     constexpr std::size_t kMaxShapeCastPrecisionCandidates = 4;
     constexpr float kShapeCastCandidateScoreTieEpsilon = 0.0001f;
     constexpr float kCloseSelectionCandidateSwitchScoreRatio = 0.70f;
+    constexpr int kDefaultSelectionAimAngleDegrees = 0;
 
     struct ShapeCastCandidateScoringInput
     {
@@ -46,6 +47,27 @@ namespace rock::selection_query_policy
         float surfaceComponent = 0.0f;
         bool valid = false;
     };
+
+    inline bool isAllowedSelectionAimAngleDegrees(int angleDegrees)
+    {
+        return angleDegrees == 0 || angleDegrees == 20 || angleDegrees == 45 || angleDegrees == 75 || angleDegrees == 90;
+    }
+
+    inline int sanitizeSelectionAimAngleDegrees(int angleDegrees)
+    {
+        return isAllowedSelectionAimAngleDegrees(angleDegrees) ? angleDegrees : kDefaultSelectionAimAngleDegrees;
+    }
+
+    template <class Vector>
+    inline Vector selectionAimHandspaceVectorFromAngleDegrees(int angleDegrees)
+    {
+        const float radians = static_cast<float>(sanitizeSelectionAimAngleDegrees(angleDegrees)) * kDegreesToRadians;
+        Vector result{};
+        result.x = std::sin(radians);
+        result.y = -std::cos(radians);
+        result.z = 0.0f;
+        return result;
+    }
 
     inline std::uint32_t sanitizeFilterInfo(std::uint32_t configuredValue, std::uint32_t fallback)
     {

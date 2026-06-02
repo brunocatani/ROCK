@@ -302,16 +302,16 @@
 
                 const auto& handInput = isLeft ? context.left : context.right;
                 const RE::NiPoint3 grabAnchor = handInput.grabAnchorWorld;
-                const RE::NiPoint3 palmNormal = handInput.palmNormalWorld;
-                const RE::NiPoint3 pointing = handInput.pointingWorld;
+                const RE::NiPoint3 closeSelectionDirection = handInput.closeSelectionDirectionWorld;
+                const RE::NiPoint3 farSelectionDirection = handInput.farSelectionDirectionWorld;
                 const float palmNormalLength = (std::max)(5.0f, g_rockConfig.rockNearDetectionRange);
                 const float pointingLength = (std::min)(90.0f, (std::max)(20.0f, g_rockConfig.rockFarDetectionRange));
 
                 addMarkerPoint(isLeft ? debug::MarkerOverlayRole::LeftGrabAnchor : debug::MarkerOverlayRole::RightGrabAnchor, grabAnchor, 2.0f);
                 addMarkerRay(isLeft ? debug::MarkerOverlayRole::LeftPalmNormal : debug::MarkerOverlayRole::RightPalmNormal, grabAnchor,
-                    grabAnchor + palmNormal * palmNormalLength, 1.6f);
+                    grabAnchor + closeSelectionDirection * palmNormalLength, 1.6f);
                 addMarkerRay(isLeft ? debug::MarkerOverlayRole::LeftPointing : debug::MarkerOverlayRole::RightPointing, grabAnchor,
-                    grabAnchor + pointing * pointingLength, 1.2f);
+                    grabAnchor + farSelectionDirection * pointingLength, 1.2f);
             };
 
             addPalmVectorDebug(false);

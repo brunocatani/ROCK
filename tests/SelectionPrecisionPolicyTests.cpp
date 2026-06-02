@@ -23,6 +23,15 @@ namespace
         return false;
     }
 
+    bool expectEqual(const char* label, int actual, int expected)
+    {
+        if (actual == expected) {
+            return true;
+        }
+        std::printf("%s expected %d got %d\n", label, expected, actual);
+        return false;
+    }
+
     rock::selection_query_policy::ShapeCastCandidateScore scoreClose(float lateral, float along, float normalDotDirection = -1.0f)
     {
         return rock::selection_query_policy::scoreShapeCastCandidate(
@@ -57,6 +66,16 @@ int main()
     bool ok = true;
 
     {
+        ok &= expectEqual("selection angle allows 0", sanitizeSelectionAimAngleDegrees(0), 0);
+        ok &= expectEqual("selection angle allows 20", sanitizeSelectionAimAngleDegrees(20), 20);
+        ok &= expectEqual("selection angle allows 45", sanitizeSelectionAimAngleDegrees(45), 45);
+        ok &= expectEqual("selection angle allows 75", sanitizeSelectionAimAngleDegrees(75), 75);
+        ok &= expectEqual("selection angle allows 90", sanitizeSelectionAimAngleDegrees(90), 90);
+        ok &= expectEqual("selection angle rejects arbitrary values", sanitizeSelectionAimAngleDegrees(30), 0);
+        ok &= expectEqual("selection angle rejects negative values", sanitizeSelectionAimAngleDegrees(-20), 0);
+    }
+
+    {
         const auto centeredLater = scoreClose(0.20f, 8.0f);
         const auto nearerButOffPalm = scoreClose(5.0f, 2.0f);
         ok &= expectTrue("close selection prefers palm-centered evidence over nearest-along clutter",
@@ -73,7 +92,7 @@ int main()
     {
         const auto pointedFar = scoreFar(0.30f, 500.0f);
         const auto nearButOffRay = scoreFar(8.0f, 50.0f);
-        ok &= expectTrue("far selection remains pointing-ray first in crowded scenes",
+        ok &= expectTrue("far selection remains ray-alignment first in crowded scenes",
             isBetterShapeCastCandidateScore(pointedFar, nearButOffRay));
     }
 

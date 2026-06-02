@@ -55,6 +55,8 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
         }
         input.palmNormalWorld = computePalmNormalFromHandBasis(closeSelectionBasisWorld, isLeft);
         input.pointingWorld = computePointingVectorFromHandBasis(input.rawHandWorld, isLeft);
+        input.closeSelectionDirectionWorld = computeCloseSelectionDirectionFromHandBasis(closeSelectionBasisWorld, isLeft);
+        input.farSelectionDirectionWorld = computeFarSelectionDirectionFromHandBasis(input.rawHandWorld, isLeft);
         input.pinchDirectionWorld = computePinchDetectionDirectionFromHandBasis(closeSelectionBasisWorld, isLeft);
         if (g_rockConfig.rockDebugDrawGrabPockets) {
             root_flattened_finger_skeleton_runtime::Snapshot fingerSnapshot{};

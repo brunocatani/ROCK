@@ -91,6 +91,16 @@ namespace
         }
         return std::clamp(value, minValue, maxValue);
     }
+
+    int readSelectionAimAngleDegrees(CSimpleIniA& ini, const char* section, const char* key, int currentValue)
+    {
+        const int configuredValue = static_cast<int>(ini.GetLongValue(section, key, currentValue));
+        const int sanitizedValue = rock::selection_query_policy::sanitizeSelectionAimAngleDegrees(configuredValue);
+        if (configuredValue != sanitizedValue) {
+            ROCK_LOG_WARN(Config, "Invalid {}={} -- using {}", key, configuredValue, sanitizedValue);
+        }
+        return sanitizedValue;
+    }
 }
 
 namespace rock
@@ -286,6 +296,8 @@ namespace rock
         rockNearCastRadiusGameUnits = kDefaultNearCastRadiusGameUnits;
         rockNearCastDistanceGameUnits = kDefaultNearCastDistanceGameUnits;
         rockFarCastRadiusGameUnits = 21.0f;
+        rockCloseSelectionAngleDegrees = selection_query_policy::kDefaultSelectionAimAngleDegrees;
+        rockFarSelectionAngleDegrees = selection_query_policy::kDefaultSelectionAimAngleDegrees;
         rockFarSelectionHmdConeEnabled = true;
         rockFarSelectionHmdConeHalfAngleDegrees = selection_query_policy::kDefaultFarSelectionHmdConeHalfAngleDegrees;
         rockFarSelectionBlockedReferenceFormIds.clear();
@@ -1081,6 +1093,10 @@ namespace rock
             0.1f,
             kDefaultNearCastDistanceGameUnits);
         rockFarCastRadiusGameUnits = static_cast<float>(ini.GetDoubleValue(SECTION, "fFarCastRadiusGameUnits", rockFarCastRadiusGameUnits));
+        rockCloseSelectionAngleDegrees =
+            readSelectionAimAngleDegrees(ini, SECTION, "iCloseSelectionAngleDegrees", rockCloseSelectionAngleDegrees);
+        rockFarSelectionAngleDegrees =
+            readSelectionAimAngleDegrees(ini, SECTION, "iFarSelectionAngleDegrees", rockFarSelectionAngleDegrees);
         rockFarSelectionHmdConeEnabled = ini.GetBoolValue(SECTION, "bFarSelectionHmdConeEnabled", rockFarSelectionHmdConeEnabled);
         rockFarSelectionHmdConeHalfAngleDegrees =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fFarSelectionHmdConeHalfAngleDegrees", rockFarSelectionHmdConeHalfAngleDegrees));

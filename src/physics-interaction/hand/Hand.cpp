@@ -1423,8 +1423,8 @@ namespace rock
         _selectionBeam.hide();
     }
 
-    void Hand::updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& palmNormal,
-        const RE::NiPoint3& pointingDirection, const RE::NiPoint3& pinchOrigin, const RE::NiPoint3& pinchDirection, bool hasPinchOrigin,
+    void Hand::updateSelection(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiPoint3& selectionOrigin, const RE::NiPoint3& closeSelectionDirection,
+        const RE::NiPoint3& farSelectionDirection, const RE::NiPoint3& pinchOrigin, const RE::NiPoint3& pinchDirection, bool hasPinchOrigin,
         const FarSelectionHmdConeGate& farHmdConeGate, float nearRange, float farRange, float deltaTime, const OtherHandSelectionContext& otherHandContext)
     {
         if (!selection_state_policy::canUpdateSelectionFromState(_state))
@@ -1481,7 +1481,7 @@ namespace rock
             return true;
         };
 
-        auto nearCandidate = findCloseObject(bhkWorld, hknpWorld, selectionOrigin, palmNormal, nearRange, _isLeft, otherHandContext);
+        auto nearCandidate = findCloseObject(bhkWorld, hknpWorld, selectionOrigin, closeSelectionDirection, nearRange, _isLeft, otherHandContext);
         if (!nearCandidate.isValid() &&
             g_rockConfig.rockGrabPinchPocketEnabled &&
             g_rockConfig.rockGrabPinchCloseSelectionEnabled &&
@@ -1516,7 +1516,7 @@ namespace rock
             _farDetectCounter++;
             if (_farDetectCounter >= 3) {
                 _farDetectCounter = 0;
-                farCandidate = findFarObject(bhkWorld, hknpWorld, selectionOrigin, pointingDirection, farRange, farHmdConeGate, otherHandContext);
+                farCandidate = findFarObject(bhkWorld, hknpWorld, selectionOrigin, farSelectionDirection, farRange, farHmdConeGate, otherHandContext);
                 _cachedFarCandidate = farCandidate;
             } else {
                 farCandidate = _cachedFarCandidate;

@@ -243,6 +243,8 @@ namespace rock
         float rockNearCastRadiusGameUnits = 3.5f;
         float rockNearCastDistanceGameUnits = 7.0f;
         float rockFarCastRadiusGameUnits = 21.0f;
+        int rockCloseSelectionAngleDegrees = selection_query_policy::kDefaultSelectionAimAngleDegrees;
+        int rockFarSelectionAngleDegrees = selection_query_policy::kDefaultSelectionAimAngleDegrees;
         bool rockFarSelectionHmdConeEnabled = true;
         float rockFarSelectionHmdConeHalfAngleDegrees = selection_query_policy::kDefaultFarSelectionHmdConeHalfAngleDegrees;
         std::string rockFarSelectionBlockedReferenceFormIds = "";
