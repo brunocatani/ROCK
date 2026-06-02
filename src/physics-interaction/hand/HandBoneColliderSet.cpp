@@ -12,7 +12,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -108,6 +111,225 @@ namespace rock
         {
             (void)role;
             return powerArmor ? 0.15f : 0.10f;
+        }
+
+        float sanitizeHandColliderScale(float value)
+        {
+            if (!std::isfinite(value)) {
+                return 1.0f;
+            }
+            return std::clamp(value, 0.05f, 8.0f);
+        }
+
+        std::string_view trimOverrideToken(std::string_view value)
+        {
+            while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) {
+                value.remove_prefix(1);
+            }
+            while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) {
+                value.remove_suffix(1);
+            }
+            return value;
+        }
+
+        char lowerAscii(char ch)
+        {
+            return static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        }
+
+        bool equalsAsciiInsensitive(std::string_view lhs, std::string_view rhs)
+        {
+            if (lhs.size() != rhs.size()) {
+                return false;
+            }
+            for (std::size_t i = 0; i < lhs.size(); ++i) {
+                if (lowerAscii(lhs[i]) != lowerAscii(rhs[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        bool parseOverrideFloat(std::string_view token, float& outValue)
+        {
+            token = trimOverrideToken(token);
+            if (token.empty()) {
+                return false;
+            }
+
+            const std::string buffer{ token };
+            char* end = nullptr;
+            const float parsed = std::strtof(buffer.c_str(), &end);
+            if (end == buffer.c_str() || !std::isfinite(parsed)) {
+                return false;
+            }
+            while (end && *end != '\0') {
+                if (!std::isspace(static_cast<unsigned char>(*end))) {
+                    return false;
+                }
+                ++end;
+            }
+            outValue = parsed;
+            return true;
+        }
+
+        bool handOverrideProfileMatches(std::string_view profile, bool powerArmor)
+        {
+            profile = trimOverrideToken(profile);
+            if (profile.empty()) {
+                return true;
+            }
+            if (equalsAsciiInsensitive(profile, "PowerArmor")) {
+                return powerArmor;
+            }
+            if (equalsAsciiInsensitive(profile, "Standard")) {
+                return !powerArmor;
+            }
+            return false;
+        }
+
+        enum class HandOverrideMatch : int
+        {
+            None = 0,
+            Generic = 1,
+            ProfileSpecific = 2,
+        };
+
+        HandOverrideMatch handRoleOverrideKeyMatch(std::string_view key, HandColliderRole role, bool powerArmor)
+        {
+            key = trimOverrideToken(key);
+            const auto dot = key.find('.');
+            std::string_view roleNameToken = key;
+            bool profileSpecific = false;
+            if (dot != std::string_view::npos) {
+                if (!handOverrideProfileMatches(key.substr(0, dot), powerArmor)) {
+                    return HandOverrideMatch::None;
+                }
+                roleNameToken = trimOverrideToken(key.substr(dot + 1));
+                profileSpecific = true;
+            }
+
+            return equalsAsciiInsensitive(roleNameToken, hand_collider_semantics::roleName(role)) ?
+                       (profileSpecific ? HandOverrideMatch::ProfileSpecific : HandOverrideMatch::Generic) :
+                       HandOverrideMatch::None;
+        }
+
+        float handRoleRadiusScaleOverride(HandColliderRole role, bool powerArmor)
+        {
+            if (hand_collider_semantics::isPalmRole(role) || g_rockConfig.rockHandBoneColliderRadiusScaleOverrides.empty()) {
+                return 1.0f;
+            }
+
+            std::string_view overrides{ g_rockConfig.rockHandBoneColliderRadiusScaleOverrides };
+            HandOverrideMatch bestMatch = HandOverrideMatch::None;
+            float bestScale = 1.0f;
+            while (!overrides.empty()) {
+                const auto semicolon = overrides.find(';');
+                const auto entry = trimOverrideToken(overrides.substr(0, semicolon));
+                if (!entry.empty()) {
+                    const auto equals = entry.find('=');
+                    const auto matchType = equals != std::string_view::npos ? handRoleOverrideKeyMatch(entry.substr(0, equals), role, powerArmor) :
+                                                                              HandOverrideMatch::None;
+                    if (matchType != HandOverrideMatch::None && static_cast<int>(matchType) >= static_cast<int>(bestMatch)) {
+                        float parsed = 1.0f;
+                        if (parseOverrideFloat(entry.substr(equals + 1), parsed)) {
+                            bestMatch = matchType;
+                            bestScale = sanitizeHandColliderScale(parsed);
+                        }
+                    }
+                }
+                if (semicolon == std::string_view::npos) {
+                    break;
+                }
+                overrides.remove_prefix(semicolon + 1);
+            }
+            return bestScale;
+        }
+
+        struct PalmDimensionScale
+        {
+            float x = 1.0f;
+            float y = 1.0f;
+            float z = 1.0f;
+        };
+
+        bool parsePalmDimensionScale(std::string_view value, PalmDimensionScale& outScale)
+        {
+            outScale = {};
+            float parsed[3]{};
+            std::uint32_t count = 0;
+            value = trimOverrideToken(value);
+            while (!value.empty() && count < 3) {
+                const auto comma = value.find(',');
+                const auto token = trimOverrideToken(value.substr(0, comma));
+                if (!parseOverrideFloat(token, parsed[count])) {
+                    return false;
+                }
+                ++count;
+                if (comma == std::string_view::npos) {
+                    break;
+                }
+                if (count >= 3) {
+                    return false;
+                }
+                value.remove_prefix(comma + 1);
+            }
+
+            if (count != 3 || value.find(',') != std::string_view::npos) {
+                return false;
+            }
+
+            outScale.x = sanitizeHandColliderScale(parsed[0]);
+            outScale.y = sanitizeHandColliderScale(parsed[1]);
+            outScale.z = sanitizeHandColliderScale(parsed[2]);
+            return true;
+        }
+
+        PalmDimensionScale palmDimensionScaleOverride(HandColliderRole role, bool powerArmor)
+        {
+            PalmDimensionScale result{};
+            if (!hand_collider_semantics::isPalmRole(role) || g_rockConfig.rockHandPalmColliderDimensionScaleOverrides.empty()) {
+                return result;
+            }
+
+            std::string_view overrides{ g_rockConfig.rockHandPalmColliderDimensionScaleOverrides };
+            HandOverrideMatch bestMatch = HandOverrideMatch::None;
+            while (!overrides.empty()) {
+                const auto semicolon = overrides.find(';');
+                const auto entry = trimOverrideToken(overrides.substr(0, semicolon));
+                if (!entry.empty()) {
+                    const auto equals = entry.find('=');
+                    const auto matchType = equals != std::string_view::npos ? handRoleOverrideKeyMatch(entry.substr(0, equals), role, powerArmor) :
+                                                                              HandOverrideMatch::None;
+                    if (matchType != HandOverrideMatch::None && static_cast<int>(matchType) >= static_cast<int>(bestMatch)) {
+                        PalmDimensionScale parsed{};
+                        if (parsePalmDimensionScale(entry.substr(equals + 1), parsed)) {
+                            bestMatch = matchType;
+                            result = parsed;
+                        }
+                    }
+                }
+                if (semicolon == std::string_view::npos) {
+                    break;
+                }
+                overrides.remove_prefix(semicolon + 1);
+            }
+            return result;
+        }
+
+        void mixHandColliderSignatureString(std::uint64_t& signature, const std::string& value)
+        {
+            for (unsigned char ch : value) {
+                signature ^= static_cast<std::uint64_t>(ch) + 0x9E37'79B9'7F4A'7C15ull + (signature << 6) + (signature >> 2);
+            }
+        }
+
+        std::uint64_t handColliderTuningSignature(bool powerArmor)
+        {
+            std::uint64_t signature = powerArmor ? 0x4841'4E44'5041ull : 0x4841'4E44'5354ull;
+            mixHandColliderSignatureString(signature, g_rockConfig.rockHandBoneColliderRadiusScaleOverrides);
+            mixHandColliderSignatureString(signature, g_rockConfig.rockHandPalmColliderDimensionScaleOverrides);
+            return signature;
         }
 
         hand_bone_collider_geometry_math::ColliderDimensionLimits handRoleDimensionLimits(HandColliderRole role, bool powerArmor)
@@ -304,7 +526,7 @@ namespace rock
         }
 
         hand_bone_collider_geometry_math::BoneColliderFrameInput<RE::NiTransform, RE::NiPoint3> input{};
-        input.radius = roleRadius(role, _lastCapturedPowerArmor);
+        input.radius = roleRadius(role, _lastCapturedPowerArmor) * handRoleRadiusScaleOverride(role, _lastCapturedPowerArmor);
         input.convexRadius = roleConvexRadius(role, _lastCapturedPowerArmor);
 
         if (role == HandColliderRole::PalmHeel) {
@@ -385,7 +607,27 @@ namespace rock
                                     role == HandColliderRole::PalmBack ? radius * 0.70f :
                                     role == HandColliderRole::ThumbPad ? radius * 0.80f :
                                     radius * 0.95f;
-            const auto gamePoints = hand_bone_collider_geometry_math::makePalmBoxHullPoints<RE::NiPoint3>(length, palmDepth, crossPalmWidth);
+            const auto dimensionScale = palmDimensionScaleOverride(role, _lastCapturedPowerArmor);
+            length *= dimensionScale.x;
+            const float scaledPalmDepth = palmDepth * dimensionScale.y;
+            const float scaledCrossPalmWidth = crossPalmWidth * dimensionScale.z;
+            const float radialEquivalent = (std::max)(scaledPalmDepth, scaledCrossPalmWidth) * 0.5f;
+            if (!hand_bone_collider_geometry_math::colliderDimensionsWithinLimits(
+                    length,
+                    radialEquivalent,
+                    frame.convexRadius,
+                    handRoleDimensionLimits(role, _lastCapturedPowerArmor))) {
+                ROCK_LOG_WARN(Hand,
+                    "{} collider shape rejected: implausible palm dimensions x={:.2f} y={:.2f} z={:.2f} convex={:.2f} powerArmor={}",
+                    hand_collider_semantics::roleName(role),
+                    length,
+                    scaledPalmDepth,
+                    scaledCrossPalmWidth,
+                    frame.convexRadius,
+                    _lastCapturedPowerArmor ? "yes" : "no");
+                return nullptr;
+            }
+            const auto gamePoints = hand_bone_collider_geometry_math::makePalmBoxHullPoints<RE::NiPoint3>(length, scaledPalmDepth, scaledCrossPalmWidth);
             return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(toHavokPointCloud(gamePoints), frame.convexRadius * gameToHavokScale());
         }
 
@@ -454,6 +696,7 @@ namespace rock
         if (!captureBoneLookup(isLeft, rollAuthorityWorld, authorityTranslationOffsetGame, lookup)) {
             return false;
         }
+        const auto tuningSignature = handColliderTuningSignature(_lastCapturedPowerArmor);
 
         RoleFrameResult anchorFrame{};
         if (!makeRoleFrame(lookup, isLeft, HandColliderRole::PalmAnchor, anchorFrame)) {
@@ -516,6 +759,7 @@ namespace rock
         _cachedSkeleton = _lastCapturedSkeleton;
         _cachedBoneTree = _lastCapturedBoneTree;
         _cachedPowerArmor = _lastCapturedPowerArmor;
+        _cachedTuningSignature = tuningSignature;
         _isLeftAtomic.store(isLeft ? 1u : 0u, std::memory_order_release);
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
@@ -555,6 +799,7 @@ namespace rock
         _cachedSkeleton = nullptr;
         _cachedBoneTree = nullptr;
         _cachedPowerArmor = false;
+        _cachedTuningSignature = 0;
         _isLeftAtomic.store(0, std::memory_order_release);
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
@@ -576,6 +821,7 @@ namespace rock
         _cachedSkeleton = nullptr;
         _cachedBoneTree = nullptr;
         _cachedPowerArmor = false;
+        _cachedTuningSignature = 0;
         _isLeftAtomic.store(0, std::memory_order_release);
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
@@ -614,15 +860,27 @@ namespace rock
             return;
         }
 
-        if (_cachedWorld != world || _cachedSkeleton != _lastCapturedSkeleton || _cachedBoneTree != _lastCapturedBoneTree || _cachedPowerArmor != _lastCapturedPowerArmor) {
+        const auto tuningSignature = handColliderTuningSignature(_lastCapturedPowerArmor);
+        if (_cachedWorld != world ||
+            _cachedSkeleton != _lastCapturedSkeleton ||
+            _cachedBoneTree != _lastCapturedBoneTree ||
+            _cachedPowerArmor != _lastCapturedPowerArmor ||
+            _cachedTuningSignature != tuningSignature) {
             if (palmAnchorBody.isConstrained()) {
                 if (++_updateLogCounter > 120) {
                     _updateLogCounter = 0;
-                    ROCK_LOG_WARN(Hand, "{} bone-derived hand collider shape rebuild deferred while palm anchor is constrained; live transforms still update",
-                        isLeft ? "Left" : "Right");
+                    ROCK_LOG_WARN(Hand,
+                        "{} bone-derived hand collider source/tuning rebuild deferred while palm anchor is constrained; live transforms still update tuning=0x{:016X}->0x{:016X}",
+                        isLeft ? "Left" : "Right",
+                        _cachedTuningSignature,
+                        tuningSignature);
                 }
             } else {
-                ROCK_LOG_INFO(Hand, "{} bone-derived hand collider source changed; rebuilding", isLeft ? "Left" : "Right");
+                ROCK_LOG_INFO(Hand,
+                    "{} bone-derived hand collider source/tuning changed; rebuilding tuning=0x{:016X}->0x{:016X}",
+                    isLeft ? "Left" : "Right",
+                    _cachedTuningSignature,
+                    tuningSignature);
                 create(world, _cachedBhkWorld, isLeft, rollAuthorityWorld, palmAnchorBody, authorityTranslationOffsetGame);
                 return;
             }

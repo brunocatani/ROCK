@@ -272,7 +272,10 @@ namespace rock
         rockBodyBoneColliderLegLengthScale = 1.0f;
         rockBodyBoneColliderFootLengthScale = 1.0f;
         rockBodyBoneColliderZoneScaleOverrides = "";
+        rockBodyBoneColliderRadiusScaleOverrides = "";
         rockHandCollisionStaticWorldEnabled = true;
+        rockHandBoneColliderRadiusScaleOverrides = "";
+        rockHandPalmColliderDimensionScaleOverrides = "";
         rockHandBoneCollidersRequirePalmAnchor = true;
         rockHandBoneCollidersRequireAllFingerBones = true;
         rockHandBoneColliderMaxLinearVelocity = 200.0f;
@@ -1043,7 +1046,11 @@ namespace rock
         rockBodyBoneColliderLegLengthScale = readBodyBoneScale("fBodyBoneColliderLegLengthScale", rockBodyBoneColliderLegLengthScale);
         rockBodyBoneColliderFootLengthScale = readBodyBoneScale("fBodyBoneColliderFootLengthScale", rockBodyBoneColliderFootLengthScale);
         rockBodyBoneColliderZoneScaleOverrides = ini.GetValue(SECTION, "sBodyBoneColliderZoneScaleOverrides", rockBodyBoneColliderZoneScaleOverrides.c_str());
+        rockBodyBoneColliderRadiusScaleOverrides = ini.GetValue(SECTION, "sBodyBoneColliderRadiusScaleOverrides", rockBodyBoneColliderRadiusScaleOverrides.c_str());
         rockHandCollisionStaticWorldEnabled = ini.GetBoolValue(SECTION, "bHandCollisionStaticWorldEnabled", rockHandCollisionStaticWorldEnabled);
+        rockHandBoneColliderRadiusScaleOverrides = ini.GetValue(SECTION, "sHandBoneColliderRadiusScaleOverrides", rockHandBoneColliderRadiusScaleOverrides.c_str());
+        rockHandPalmColliderDimensionScaleOverrides =
+            ini.GetValue(SECTION, "sHandPalmColliderDimensionScaleOverrides", rockHandPalmColliderDimensionScaleOverrides.c_str());
         rockHandBoneCollidersRequirePalmAnchor = ini.GetBoolValue(SECTION, "bHandBoneCollidersRequirePalmAnchor", rockHandBoneCollidersRequirePalmAnchor);
         rockHandBoneCollidersRequireAllFingerBones = ini.GetBoolValue(SECTION, "bHandBoneCollidersRequireAllFingerBones", rockHandBoneCollidersRequireAllFingerBones);
         rockHandBoneColliderMaxLinearVelocity =

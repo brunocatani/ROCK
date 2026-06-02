@@ -274,6 +274,85 @@ namespace rock
             return genericMatch;
         }
 
+        enum class BodyRadiusOverrideMatch : int
+        {
+            None = 0,
+            GenericZone = 1,
+            ProfileZone = 2,
+            GenericBonePair = 3,
+            ProfileBonePair = 4,
+        };
+
+        bool bonePairOverrideKeyMatches(std::string_view key, const BoneColliderDescriptor& descriptor)
+        {
+            key = trimZoneOverrideToken(key);
+            const auto arrow = key.find("->");
+            const auto delimiterOffset = arrow != std::string_view::npos ? arrow : key.find('>');
+            const auto delimiterLength = arrow != std::string_view::npos ? 2u : 1u;
+            if (delimiterOffset == std::string_view::npos) {
+                return false;
+            }
+
+            const auto start = trimZoneOverrideToken(key.substr(0, delimiterOffset));
+            const auto end = trimZoneOverrideToken(key.substr(delimiterOffset + delimiterLength));
+            return equalsAsciiInsensitive(start, descriptor.startBone) && equalsAsciiInsensitive(end, descriptor.endBone);
+        }
+
+        BodyRadiusOverrideMatch bodyRadiusOverrideKeyMatch(std::string_view key, const BoneColliderDescriptor& descriptor, bool inPowerArmor)
+        {
+            key = trimZoneOverrideToken(key);
+            const auto dot = key.find('.');
+            std::string_view colliderName = key;
+            bool profileSpecific = false;
+            if (dot != std::string_view::npos) {
+                if (!zoneOverrideProfileMatches(key.substr(0, dot), inPowerArmor)) {
+                    return BodyRadiusOverrideMatch::None;
+                }
+                colliderName = trimZoneOverrideToken(key.substr(dot + 1));
+                profileSpecific = true;
+            }
+
+            if (bonePairOverrideKeyMatches(colliderName, descriptor)) {
+                return profileSpecific ? BodyRadiusOverrideMatch::ProfileBonePair : BodyRadiusOverrideMatch::GenericBonePair;
+            }
+            if (equalsAsciiInsensitive(colliderName, body_zone::bodyZoneName(descriptor.zone))) {
+                return profileSpecific ? BodyRadiusOverrideMatch::ProfileZone : BodyRadiusOverrideMatch::GenericZone;
+            }
+            return BodyRadiusOverrideMatch::None;
+        }
+
+        float bodyRadiusScaleOverride(const BoneColliderDescriptor& descriptor, bool inPowerArmor)
+        {
+            if (g_rockConfig.rockBodyBoneColliderRadiusScaleOverrides.empty()) {
+                return 1.0f;
+            }
+
+            std::string_view overrides{ g_rockConfig.rockBodyBoneColliderRadiusScaleOverrides };
+            BodyRadiusOverrideMatch bestMatch = BodyRadiusOverrideMatch::None;
+            float bestScale = 1.0f;
+            while (!overrides.empty()) {
+                const auto semicolon = overrides.find(';');
+                const auto entry = trimZoneOverrideToken(overrides.substr(0, semicolon));
+                if (!entry.empty()) {
+                    const auto equals = entry.find('=');
+                    const auto matchType = equals != std::string_view::npos ? bodyRadiusOverrideKeyMatch(entry.substr(0, equals), descriptor, inPowerArmor) :
+                                                                              BodyRadiusOverrideMatch::None;
+                    if (matchType != BodyRadiusOverrideMatch::None && static_cast<int>(matchType) >= static_cast<int>(bestMatch)) {
+                        float parsed = 1.0f;
+                        if (parseZoneOverrideFloat(entry.substr(equals + 1), parsed)) {
+                            bestMatch = matchType;
+                            bestScale = sanitizeBodyColliderScale(parsed);
+                        }
+                    }
+                }
+                if (semicolon == std::string_view::npos) {
+                    break;
+                }
+                overrides.remove_prefix(semicolon + 1);
+            }
+            return bestScale;
+        }
+
         std::uint32_t quantizeBodyColliderScale(float value)
         {
             return static_cast<std::uint32_t>(std::lround(sanitizeBodyColliderScale(value) * 10000.0f));
@@ -306,6 +385,7 @@ namespace rock
             mixBodyColliderSignature(signature, g_rockConfig.rockBodyBoneColliderLegLengthScale);
             mixBodyColliderSignature(signature, g_rockConfig.rockBodyBoneColliderFootLengthScale);
             mixBodyColliderSignatureString(signature, g_rockConfig.rockBodyBoneColliderZoneScaleOverrides);
+            mixBodyColliderSignatureString(signature, g_rockConfig.rockBodyBoneColliderRadiusScaleOverrides);
             return signature;
         }
 
@@ -409,7 +489,8 @@ namespace rock
             hand_bone_collider_geometry_math::BoneColliderFrameInput<RE::NiTransform, RE::NiPoint3> input{};
             const auto zoneOverride = bodyZoneTuningOverride(descriptor.zone, inPowerArmor);
             const float radiusScale = profileRadiusScale(inPowerArmor) * roleRadiusScale(descriptor.role) *
-                                      (zoneOverride.valid ? zoneOverride.radiusScale : 1.0f);
+                                      (zoneOverride.valid ? zoneOverride.radiusScale : 1.0f) *
+                                      bodyRadiusScaleOverride(descriptor, inPowerArmor);
             const float lengthScale = profileLengthScale(inPowerArmor) * roleLengthScale(descriptor.role) *
                                       (zoneOverride.valid ? zoneOverride.lengthScale : 1.0f);
             const float convexRadiusScale = profileConvexRadiusScale(inPowerArmor) *

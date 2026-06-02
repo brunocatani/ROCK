@@ -229,7 +229,10 @@ namespace rock
         float rockBodyBoneColliderLegLengthScale = 1.0f;
         float rockBodyBoneColliderFootLengthScale = 1.0f;
         std::string rockBodyBoneColliderZoneScaleOverrides = "";
+        std::string rockBodyBoneColliderRadiusScaleOverrides = "";
         bool rockHandCollisionStaticWorldEnabled = true;
+        std::string rockHandBoneColliderRadiusScaleOverrides = "";
+        std::string rockHandPalmColliderDimensionScaleOverrides = "";
         bool rockHandBoneCollidersRequirePalmAnchor = true;
         bool rockHandBoneCollidersRequireAllFingerBones = true;
         float rockHandBoneColliderMaxLinearVelocity = 200.0f;

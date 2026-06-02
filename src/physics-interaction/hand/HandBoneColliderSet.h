@@ -121,6 +121,7 @@ namespace rock
         const void* _cachedSkeleton = nullptr;
         const void* _cachedBoneTree = nullptr;
         bool _cachedPowerArmor = false;
+        std::uint64_t _cachedTuningSignature = 0;
         const void* _lastCapturedSkeleton = nullptr;
         const void* _lastCapturedBoneTree = nullptr;
         bool _lastCapturedPowerArmor = false;
