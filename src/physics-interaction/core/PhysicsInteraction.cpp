@@ -4381,9 +4381,6 @@ namespace rock
                         }
                         const auto transferResult = shoulder_stash::transferToPlayerInventory(shoulder_stash::TransferInput{
                             .heldRef = heldRef,
-                            .skipActivateBooks = g_rockConfig.rockShoulderStashSkipActivateBooks,
-                            .skipActivateNotes = g_rockConfig.rockShoulderStashSkipActivateNotes,
-                            .playPickupSounds = true,
                         });
                         if (heldFormID == 0 && transferResult.formID != 0) {
                             heldFormID = transferResult.formID;

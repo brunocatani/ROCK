@@ -402,8 +402,6 @@ namespace rock
         rockShoulderStashHmdBackEnterPaddingGameUnits = 0.0f;
         rockShoulderStashHmdBackExitPaddingGameUnits = 2.0f;
         rockShoulderStashHmdBackMinBehindGameUnits = 4.0f;
-        rockShoulderStashSkipActivateBooks = true;
-        rockShoulderStashSkipActivateNotes = true;
         rockShoulderStashShowCollectedNotifications = true;
         rockGrabVelocityDamping = 0.25f;
         rockGrabPlayerSpaceCompensation = true;
@@ -1853,10 +1851,6 @@ namespace rock
             "fShoulderStashHmdBackExitPaddingGameUnits", rockShoulderStashHmdBackExitPaddingGameUnits, 2.0f, 0.0f, 60.0f);
         readClampedFloat(
             "fShoulderStashHmdBackMinBehindGameUnits", rockShoulderStashHmdBackMinBehindGameUnits, 4.0f, 0.0f, 40.0f);
-        rockShoulderStashSkipActivateBooks =
-            ini.GetBoolValue(SECTION, "bShoulderStashSkipActivateBooks", rockShoulderStashSkipActivateBooks);
-        rockShoulderStashSkipActivateNotes =
-            ini.GetBoolValue(SECTION, "bShoulderStashSkipActivateNotes", rockShoulderStashSkipActivateNotes);
         rockShoulderStashShowCollectedNotifications =
             ini.GetBoolValue(SECTION, "bShoulderStashShowCollectedNotifications", rockShoulderStashShowCollectedNotifications);
 

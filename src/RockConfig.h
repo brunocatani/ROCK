@@ -349,8 +349,6 @@ namespace rock
         float rockShoulderStashHmdBackEnterPaddingGameUnits = 0.0f;
         float rockShoulderStashHmdBackExitPaddingGameUnits = 2.0f;
         float rockShoulderStashHmdBackMinBehindGameUnits = 4.0f;
-        bool rockShoulderStashSkipActivateBooks = true;
-        bool rockShoulderStashSkipActivateNotes = true;
         bool rockShoulderStashShowCollectedNotifications = true;
         float rockGrabVelocityDamping = 0.25f;
         bool rockGrabPlayerSpaceCompensation = true;

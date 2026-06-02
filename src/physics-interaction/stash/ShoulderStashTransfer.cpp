@@ -1,6 +1,5 @@
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 
-#include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/BSExtraData.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESBoundObjects.h"
@@ -28,10 +27,6 @@ namespace rock::shoulder_stash
             return "missing-base-form";
         case TransferReason::ActivateRef:
             return "activate-ref";
-        case TransferReason::ActorPickUpObjectBook:
-            return "actor-pickup-object-book";
-        case TransferReason::ActorPickUpObjectNote:
-            return "actor-pickup-object-note";
         default:
             return "not-attempted";
         }
@@ -78,20 +73,8 @@ namespace rock::shoulder_stash
         }
 
         result.attempted = true;
-        if (input.skipActivateBooks && result.baseForm->Is(RE::ENUM_FORM_ID::kBOOK)) {
-            player->PickUpObject(heldRef, result.count, input.playPickupSounds);
-            result.success = true;
-            result.reason = TransferReason::ActorPickUpObjectBook;
-            return result;
-        }
-
-        if (input.skipActivateNotes && result.baseForm->Is(RE::ENUM_FORM_ID::kNOTE)) {
-            player->PickUpObject(heldRef, result.count, input.playPickupSounds);
-            result.success = true;
-            result.reason = TransferReason::ActorPickUpObjectNote;
-            return result;
-        }
-
+        // Collectibles such as magazines, notes, and holotapes need native activation
+        // so their scripts, perk grants, and terminal/holotape behavior run normally.
         result.success = heldRef->ActivateRef(player, nullptr, result.count, false, false, false);
         result.reason = TransferReason::ActivateRef;
         return result;

@@ -18,16 +18,11 @@ namespace rock::shoulder_stash
         MissingPlayer,
         MissingBaseForm,
         ActivateRef,
-        ActorPickUpObjectBook,
-        ActorPickUpObjectNote,
     };
 
     struct TransferInput
     {
         RE::TESObjectREFR* heldRef = nullptr;
-        bool skipActivateBooks = false;
-        bool skipActivateNotes = false;
-        bool playPickupSounds = true;
     };
 
     struct TransferResult
