@@ -3,7 +3,9 @@
 Fallout 4 VR physics-based hand interaction plugin for the ROCK/PAPER/SCISSORS interaction stack.
 
 <p align="center">
-  <img src="public/ROCK.png" alt="ROCK preview" width="800">
+  <a href="https://www.youtube.com/watch?v=tPaIzmZ9P0o&t=113s">
+    <img src="https://img.youtube.com/vi/tPaIzmZ9P0o/maxresdefault.jpg" alt="ROCK video preview" width="800">
+  </a>
 </p>
 
 ## Requirements
