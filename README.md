@@ -25,7 +25,11 @@ My aim with ROCK is to bring as much immersion and realism to Fallout 4 VR as po
 
 ## Release Install
 
-ROCK v0.5 currently requires the matching hFRIK release named **FRIK Experimental**. Download and install that hFRIK release before using ROCK v0.5.
+ROCK v0.5 currently requires the matching hFRIK release named **FRIK Experimental**. Download and install that hFRIK release before using ROCK v0.5:
+
+```text
+https://github.com/brunocatani/hFRIK/releases/tag/frik-experimental
+```
 
 This hFRIK dependency is temporary. It is required only until the hFRIK modifications are merged upstream into `github.com/rollingrock/Fallout-4-VR-Body`.
 
@@ -47,7 +51,7 @@ Create the `ROCK_Config` folder if it does not already exist. The release archiv
 
 - Fallout 4 VR
 - F4SE VR
-- FRIK Experimental release, installed separately
+- FRIK Experimental release, installed separately: `https://github.com/brunocatani/hFRIK/releases/tag/frik-experimental`
 - CMake, Visual Studio 2022, and vcpkg for local builds
 - Local Fallout 4 VR/CommonLib dependencies configured in `CMakeUserPresets.json`
 

@@ -4,6 +4,9 @@ ROCK v0.5 - Release Install Notes
 ROCK currently requires the matching hFRIK release named FRIK Experimental.
 Download and install FRIK Experimental before using ROCK v0.5.
 
+Download FRIK Experimental here:
+https://github.com/brunocatani/hFRIK/releases/tag/frik-experimental
+
 This hFRIK dependency is temporary. It is required only until the hFRIK
 modifications are merged upstream into:
 
