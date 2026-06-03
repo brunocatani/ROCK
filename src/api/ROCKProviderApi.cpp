@@ -60,7 +60,7 @@ namespace
 
     const char* ROCK_PROVIDER_CALL apiGetModVersion()
     {
-        static constexpr const char* version = "0.1.0";
+        static constexpr const char* version = "0.5.0";
         return version;
     }
 
