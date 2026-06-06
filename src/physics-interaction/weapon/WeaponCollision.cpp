@@ -1500,8 +1500,8 @@ namespace rock
     void WeaponCollision::clearPendingWeaponVisualRebuild()
     {
         _pendingWeaponVisualRebuildKey = 0;
-        _pendingWeaponVisualSourceSignature = 0;
-        _pendingWeaponVisualSourceCount = 0;
+        _pendingWeaponVisualWitnessKey = 0;
+        _pendingWeaponVisualVisibleTriShapeCount = 0;
         _pendingWeaponVisualStableFrames = 0;
     }
 
@@ -2107,7 +2107,8 @@ namespace rock
         }
 
         WeaponVisualKeyStats visualKeyStats{};
-        const std::uint64_t observedKey = getEquippedWeaponKey(weaponNode, visualKeyStats);
+        std::uint64_t observedVisualKey = 0;
+        const std::uint64_t observedKey = getEquippedWeaponKey(weaponNode, visualKeyStats, &observedVisualKey);
         const bool settingsChanged = weaponCollisionSettingsChanged();
         const bool driveRequestedRebuild = _driveRebuildRequested.exchange(false, std::memory_order_acq_rel);
         const bool keyChanged = observedKey != 0 && observedKey != _cachedWeaponKey;
@@ -2145,11 +2146,11 @@ namespace rock
                  * while child TriShapes still look locally visible. Replacing the
                  * active body set from that frame can lock in an incomplete hull
                  * inventory, so keep the current bodies until the visual tree has
-                 * presented a stable, visible source signature.
+                 * presented a stable, visible witness.
                  */
                 _pendingWeaponVisualRebuildKey = observedKey;
-                _pendingWeaponVisualSourceSignature = 0;
-                _pendingWeaponVisualSourceCount = 0;
+                _pendingWeaponVisualWitnessKey = observedVisualKey;
+                _pendingWeaponVisualVisibleTriShapeCount = 0;
                 _pendingWeaponVisualStableFrames = 0;
                 ROCK_LOG_SAMPLE_INFO(Weapon,
                     g_rockConfig.rockLogSampleMilliseconds,
@@ -2164,37 +2165,35 @@ namespace rock
                     visualKeyStats.invisibleNodeCount,
                     requiredStableFrames);
             } else {
-                std::vector<GeneratedHullSource> generatedSources;
-                const std::size_t generatedCount = findGeneratedWeaponShapeSources(weaponNode, generatedSources);
-                const bool hasBuildableSource = std::any_of(generatedSources.begin(), generatedSources.end(), [](const GeneratedHullSource& source) {
-                    return pointCloudCanBuildHull(source.localPointsGame);
-                });
-                const auto generatedSummary = summarizeGeneratedSources(generatedSources);
-
                 if (stabilizeVisualRebuild) {
-                    const bool samePendingSource =
+                    /*
+                     * Stabilization is a cheap visual-witness wait. Full mesh
+                     * extraction and Havok shape creation happen once after the
+                     * visible tree has stayed stable for the configured frames.
+                     */
+                    const bool samePendingVisual =
                         _pendingWeaponVisualRebuildKey == observedKey &&
-                        _pendingWeaponVisualSourceSignature == generatedSummary.signature &&
-                        _pendingWeaponVisualSourceCount == generatedCount;
+                        _pendingWeaponVisualWitnessKey == observedVisualKey &&
+                        _pendingWeaponVisualVisibleTriShapeCount == visualKeyStats.visibleTriShapeCount;
 
                     _pendingWeaponVisualRebuildKey = observedKey;
-                    _pendingWeaponVisualSourceSignature = generatedSummary.signature;
-                    _pendingWeaponVisualSourceCount = generatedCount;
-                    _pendingWeaponVisualStableFrames = samePendingSource ? _pendingWeaponVisualStableFrames + 1 : 1;
+                    _pendingWeaponVisualWitnessKey = observedVisualKey;
+                    _pendingWeaponVisualVisibleTriShapeCount = visualKeyStats.visibleTriShapeCount;
+                    _pendingWeaponVisualStableFrames = samePendingVisual ? _pendingWeaponVisualStableFrames + 1 : 1;
 
                     if (_pendingWeaponVisualStableFrames < requiredStableFrames) {
                         ROCK_LOG_SAMPLE_INFO(Weapon,
                             g_rockConfig.rockLogSampleMilliseconds,
-                            "Generated weapon collision rebuild waiting for stable visual sources cachedKey={:016X} observedKey={:016X} stableFrames={}/{} sources={} signature={:016X} buildable={} visualRoots={} visibleTriShapes={}",
+                            "Generated weapon collision rebuild waiting for stable visual witness cachedKey={:016X} observedKey={:016X} stableFrames={}/{} visualKey={:016X} visualRoots={} visibleTriShapes={} visualNodes={} invisibleNodes={}",
                             _cachedWeaponKey,
                             observedKey,
                             _pendingWeaponVisualStableFrames,
                             requiredStableFrames,
-                            generatedCount,
-                            generatedSummary.signature,
-                            hasBuildableSource ? "yes" : "no",
+                            observedVisualKey,
                             visualKeyStats.rootCount,
-                            visualKeyStats.visibleTriShapeCount);
+                            visualKeyStats.visibleTriShapeCount,
+                            visualKeyStats.nodeCount,
+                            visualKeyStats.invisibleNodeCount);
                         const bool hasActiveWeaponCollision = hasWeaponBody() && getCurrentWeaponGenerationKey() != 0;
                         if (hasActiveWeaponCollision && !_dominantHandDisabled && dominantHandBodyId.value != INVALID_BODY_ID) {
                             disableDominantHandCollision(world, dominantHandBodyId);
@@ -2204,6 +2203,13 @@ namespace rock
                         return;
                     }
                 }
+
+                std::vector<GeneratedHullSource> generatedSources;
+                const std::size_t generatedCount = findGeneratedWeaponShapeSources(weaponNode, generatedSources);
+                const bool hasBuildableSource = std::any_of(generatedSources.begin(), generatedSources.end(), [](const GeneratedHullSource& source) {
+                    return pointCloudCanBuildHull(source.localPointsGame);
+                });
+                const auto generatedSummary = summarizeGeneratedSources(generatedSources);
 
                 if (!hasBuildableSource || generatedCount == 0 || generatedSummary.signature == 0) {
                     ROCK_LOG_SAMPLE_WARN(Weapon,

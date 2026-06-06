@@ -260,8 +260,8 @@ namespace rock
         int _cachedSupportFitTargetPoints{ -1 };
         float _cachedSupportFitMaxErrorGameUnits{ -1.0f };
         std::uint64_t _pendingWeaponVisualRebuildKey{ 0 };
-        std::uint64_t _pendingWeaponVisualSourceSignature{ 0 };
-        std::size_t _pendingWeaponVisualSourceCount{ 0 };
+        std::uint64_t _pendingWeaponVisualWitnessKey{ 0 };
+        std::size_t _pendingWeaponVisualVisibleTriShapeCount{ 0 };
         int _pendingWeaponVisualStableFrames{ 0 };
         int _weaponAnimNodeDumpFrameCounter{ 0 };
         std::uint64_t _lastWeaponAnimNodeDumpKey{ 0 };
