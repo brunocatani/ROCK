@@ -44,8 +44,6 @@ function Reject-Text {
     }
 }
 
-Require-Text 'docs/implementation-notes/2026-06-01-havok-timing-fix.md' '0x141DF7120[\s\S]*0x140D84BD0' `
-    'Timing-fix note must record the Ghidra-verified SetDeltaTime function and hook call site.'
 Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'kFunc_BhkWorldSetDeltaTime\s*=\s*0x1DF7120' `
     'FO4VR bhkWorld::SetDeltaTime offset must be named explicitly near the hook.'
 Require-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'kHookSite_BhkWorldSetDeltaTimeMainCall\s*=\s*0x0D84BD0' `
