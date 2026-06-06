@@ -499,6 +499,13 @@
         const auto rightId = _rightHand.getCollisionBodyId().value;
         const auto leftId = _leftHand.getCollisionBodyId().value;
 
+        using generated_body_contact_registry::Classification;
+        using generated_body_contact_registry::GeneratedBodyKind;
+        using generated_body_contact_registry::hasFiniteSampledVelocity;
+        using generated_body_contact_registry::hasFlag;
+        using generated_body_contact_registry::kFlagPowerArmor;
+        using generated_body_contact_registry::kFlagPrimaryAnchor;
+
         struct HandContactSource
         {
             bool valid = false;
@@ -507,35 +514,100 @@
             HandColliderBodyMetadata metadata{};
         };
 
-        auto classifyHandBody = [](const Hand& hand, std::uint32_t bodyId, bool isLeft, std::uint32_t anchorId) {
+        struct WeaponContactSource
+        {
+            bool valid = false;
+            WeaponInteractionContact contact{};
+            bool hasSampledVelocity = false;
+            float sampledVelocityHavok[4]{};
+        };
+
+        Classification bodyAClassification{};
+        Classification bodyBClassification{};
+        const bool bodyAClassified = _generatedBodyContactRegistry.tryClassify(bodyIdA, bodyAClassification);
+        const bool bodyBClassified = _generatedBodyContactRegistry.tryClassify(bodyIdB, bodyBClassification);
+        (void)bodyAClassified;
+        (void)bodyBClassified;
+
+        auto classifyHandBody = [](const Classification& classification) {
             HandContactSource source{};
-            HandColliderBodyMetadata metadata{};
-            if (hand.tryGetHandColliderMetadata(bodyId, metadata)) {
-                source.valid = true;
-                source.isLeft = isLeft;
-                source.primaryAnchor = metadata.primaryPalmAnchor || bodyId == anchorId;
-                source.metadata = metadata;
-                source.metadata.isLeft = isLeft;
+            if (!classification.valid ||
+                (classification.kind != GeneratedBodyKind::RightHand && classification.kind != GeneratedBodyKind::LeftHand)) {
                 return source;
             }
 
-            if (bodyId == anchorId && bodyId != INVALID_BODY_ID) {
-                source.valid = true;
-                source.isLeft = isLeft;
-                source.primaryAnchor = true;
-                source.metadata.valid = true;
-                source.metadata.isLeft = isLeft;
-                source.metadata.primaryPalmAnchor = true;
-                source.metadata.bodyId = bodyId;
-                source.metadata.role = hand_collider_semantics::HandColliderRole::PalmAnchor;
+            source.valid = true;
+            source.isLeft = classification.kind == GeneratedBodyKind::LeftHand;
+            source.primaryAnchor = hasFlag(classification.flags, kFlagPrimaryAnchor);
+            source.metadata.valid = true;
+            source.metadata.isLeft = source.isLeft;
+            source.metadata.primaryPalmAnchor = source.primaryAnchor;
+            source.metadata.bodyId = classification.bodyId;
+            source.metadata.role = static_cast<hand_collider_semantics::HandColliderRole>(classification.role);
+            source.metadata.finger = static_cast<hand_collider_semantics::HandFinger>(classification.partKind);
+            source.metadata.segment = static_cast<hand_collider_semantics::HandFingerSegment>(classification.subRole);
+            if (hasFiniteSampledVelocity(classification)) {
+                source.metadata.hasSampledLinearVelocityHavok = true;
+                source.metadata.sampledLinearVelocityHavok[0] = classification.sampledVelocityHavokX;
+                source.metadata.sampledLinearVelocityHavok[1] = classification.sampledVelocityHavokY;
+                source.metadata.sampledLinearVelocityHavok[2] = classification.sampledVelocityHavokZ;
+                source.metadata.sampledLinearVelocityHavok[3] = 0.0f;
             }
             return source;
         };
 
-        const auto bodyARight = classifyHandBody(_rightHand, bodyIdA, false, rightId);
-        const auto bodyBRight = classifyHandBody(_rightHand, bodyIdB, false, rightId);
-        const auto bodyALeft = classifyHandBody(_leftHand, bodyIdA, true, leftId);
-        const auto bodyBLeft = classifyHandBody(_leftHand, bodyIdB, true, leftId);
+        auto classifyWeaponBody = [](const Classification& classification) {
+            WeaponContactSource source{};
+            if (!classification.valid || classification.kind != GeneratedBodyKind::Weapon) {
+                return source;
+            }
+
+            source.valid = true;
+            source.contact.valid = true;
+            source.contact.bodyId = classification.bodyId;
+            source.contact.partKind = static_cast<WeaponPartKind>(classification.partKind);
+            source.contact.reloadRole = static_cast<WeaponReloadRole>(classification.role);
+            source.contact.supportGripRole = static_cast<WeaponSupportGripRole>(classification.subRole);
+            source.contact.socketRole = static_cast<WeaponSocketRole>(classification.socketRole);
+            source.contact.actionRole = static_cast<WeaponActionRole>(classification.actionRole);
+            source.contact.fallbackGripPose = static_cast<WeaponGripPoseId>(classification.gripPose);
+            source.contact.weaponGenerationKey = classification.generationKey;
+            if (hasFiniteSampledVelocity(classification)) {
+                source.hasSampledVelocity = true;
+                source.sampledVelocityHavok[0] = classification.sampledVelocityHavokX;
+                source.sampledVelocityHavok[1] = classification.sampledVelocityHavokY;
+                source.sampledVelocityHavok[2] = classification.sampledVelocityHavokZ;
+                source.sampledVelocityHavok[3] = 0.0f;
+            }
+            return source;
+        };
+
+        auto classifyBodyCollider = [](const Classification& classification) {
+            BodyBoneColliderMetadata metadata{};
+            if (!classification.valid || classification.kind != GeneratedBodyKind::Body) {
+                return metadata;
+            }
+
+            metadata.valid = true;
+            metadata.inPowerArmor = hasFlag(classification.flags, kFlagPowerArmor);
+            metadata.role = static_cast<skeleton_bone_debug_math::BoneColliderRole>(classification.role);
+            metadata.zone = static_cast<body_zone::BodyZoneKind>(classification.zone);
+            metadata.side = static_cast<body_zone::BodyZoneSide>(classification.side);
+            metadata.bodyId = classification.bodyId;
+            metadata.descriptorIndex = classification.descriptorIndex;
+            metadata.lengthGameUnits = classification.lengthGameUnits;
+            metadata.radiusGameUnits = classification.radiusGameUnits;
+            return metadata;
+        };
+
+        const auto bodyARight = bodyAClassification.kind == GeneratedBodyKind::RightHand ? classifyHandBody(bodyAClassification) : HandContactSource{};
+        const auto bodyBRight = bodyBClassification.kind == GeneratedBodyKind::RightHand ? classifyHandBody(bodyBClassification) : HandContactSource{};
+        const auto bodyALeft = bodyAClassification.kind == GeneratedBodyKind::LeftHand ? classifyHandBody(bodyAClassification) : HandContactSource{};
+        const auto bodyBLeft = bodyBClassification.kind == GeneratedBodyKind::LeftHand ? classifyHandBody(bodyBClassification) : HandContactSource{};
+        const auto bodyAWeapon = classifyWeaponBody(bodyAClassification);
+        const auto bodyBWeapon = classifyWeaponBody(bodyBClassification);
+        BodyBoneColliderMetadata bodyABodyMetadata = classifyBodyCollider(bodyAClassification);
+        BodyBoneColliderMetadata bodyBBodyMetadata = classifyBodyCollider(bodyBClassification);
         const bool bodyAIsRight = bodyARight.valid;
         const bool bodyBIsRight = bodyBRight.valid;
         const bool bodyAIsLeft = bodyALeft.valid;
@@ -546,12 +618,10 @@
         const bool bodyBIsRightHeld = _rightHand.isHeldBodyId(bodyIdB);
         const bool bodyAIsLeftHeld = _leftHand.isHeldBodyId(bodyIdA);
         const bool bodyBIsLeftHeld = _leftHand.isHeldBodyId(bodyIdB);
-        const bool bodyAIsWeapon = _weaponCollision.isWeaponBodyIdAtomic(bodyIdA);
-        const bool bodyBIsWeapon = _weaponCollision.isWeaponBodyIdAtomic(bodyIdB);
-        BodyBoneColliderMetadata bodyABodyMetadata{};
-        BodyBoneColliderMetadata bodyBBodyMetadata{};
-        const bool bodyAIsBody = _bodyBoneColliders.tryGetBodyMetadataAtomic(bodyIdA, bodyABodyMetadata);
-        const bool bodyBIsBody = _bodyBoneColliders.tryGetBodyMetadataAtomic(bodyIdB, bodyBBodyMetadata);
+        const bool bodyAIsWeapon = bodyAWeapon.valid;
+        const bool bodyBIsWeapon = bodyBWeapon.valid;
+        const bool bodyAIsBody = bodyABodyMetadata.valid;
+        const bool bodyBIsBody = bodyBBodyMetadata.valid;
         const bool bodyAIsRockSource = bodyAIsRight || bodyAIsLeft || bodyAIsRightHeld || bodyAIsLeftHeld || bodyAIsWeapon || bodyAIsBody;
         const bool bodyBIsRockSource = bodyBIsRight || bodyBIsLeft || bodyBIsRightHeld || bodyBIsLeftHeld || bodyBIsWeapon || bodyBIsBody;
 
@@ -638,6 +708,16 @@
             return nullptr;
         };
 
+        auto weaponSourceFor = [&](std::uint32_t bodyId) -> const WeaponContactSource* {
+            if (bodyAWeapon.valid && bodyAWeapon.contact.bodyId == bodyId) {
+                return &bodyAWeapon;
+            }
+            if (bodyBWeapon.valid && bodyBWeapon.contact.bodyId == bodyId) {
+                return &bodyBWeapon;
+            }
+            return nullptr;
+        };
+
         auto fillSourceVelocity = [&](std::uint32_t sourceBodyId,
                                       ::rock::provider::RockProviderExternalSourceKind sourceKind,
                                       const HandColliderBodyMetadata* handMetadata,
@@ -649,10 +729,10 @@
             }
 
             if (sourceKind == ::rock::provider::RockProviderExternalSourceKind::Weapon) {
-                float sampledWeaponVelocity[4]{};
-                if (_weaponCollision.tryGetWeaponBodySampledVelocityAtomic(sourceBodyId, sampledWeaponVelocity) &&
-                    havok_runtime::isFinite3(sampledWeaponVelocity)) {
-                    std::copy_n(sampledWeaponVelocity, 4, contact.sourceVelocityHavok);
+                const auto* weaponSource = weaponSourceFor(sourceBodyId);
+                if (weaponSource && weaponSource->valid && weaponSource->hasSampledVelocity &&
+                    havok_runtime::isFinite3(weaponSource->sampledVelocityHavok)) {
+                    std::copy_n(weaponSource->sampledVelocityHavok, 4, contact.sourceVelocityHavok);
                     return;
                 }
             }
@@ -743,11 +823,10 @@
                 contact.sourcePartKind = static_cast<std::uint32_t>(handMetadata->finger);
                 contact.sourceSubRole = static_cast<std::uint32_t>(handMetadata->segment);
             } else if (sourceKind == ::rock::provider::RockProviderExternalSourceKind::Weapon) {
-                WeaponInteractionContact weaponContact{};
-                if (_weaponCollision.tryGetWeaponContactAtomic(sourceBodyId, weaponContact)) {
-                    contact.sourcePartKind = static_cast<std::uint32_t>(weaponContact.partKind);
-                    contact.sourceRole = static_cast<std::uint32_t>(weaponContact.reloadRole);
-                    contact.sourceSubRole = static_cast<std::uint32_t>(weaponContact.supportGripRole);
+                if (const auto* weaponSource = weaponSourceFor(sourceBodyId); weaponSource && weaponSource->valid) {
+                    contact.sourcePartKind = static_cast<std::uint32_t>(weaponSource->contact.partKind);
+                    contact.sourceRole = static_cast<std::uint32_t>(weaponSource->contact.reloadRole);
+                    contact.sourceSubRole = static_cast<std::uint32_t>(weaponSource->contact.supportGripRole);
                 }
             }
 
@@ -847,11 +926,10 @@
                 evidence.sourcePartKind = static_cast<std::uint32_t>(handMetadata->finger);
                 evidence.sourceSubRole = static_cast<std::uint32_t>(handMetadata->segment);
             } else if (contactRoute.source.kind == contact_pipeline_policy::ContactEndpointKind::Weapon) {
-                WeaponInteractionContact weaponContact{};
-                if (_weaponCollision.tryGetWeaponContactAtomic(contactRoute.sourceBodyId, weaponContact)) {
-                    evidence.sourcePartKind = static_cast<std::uint32_t>(weaponContact.partKind);
-                    evidence.sourceRole = static_cast<std::uint32_t>(weaponContact.reloadRole);
-                    evidence.sourceSubRole = static_cast<std::uint32_t>(weaponContact.supportGripRole);
+                if (const auto* weaponSource = weaponSourceFor(contactRoute.sourceBodyId); weaponSource && weaponSource->valid) {
+                    evidence.sourcePartKind = static_cast<std::uint32_t>(weaponSource->contact.partKind);
+                    evidence.sourceRole = static_cast<std::uint32_t>(weaponSource->contact.reloadRole);
+                    evidence.sourceSubRole = static_cast<std::uint32_t>(weaponSource->contact.supportGripRole);
                 }
             }
 
@@ -910,16 +988,17 @@
 
             const std::uint32_t heldId = bodyAIsHeld ? bodyIdA : bodyIdB;
             const std::uint32_t other = bodyAIsHeld ? bodyIdB : bodyIdA;
+            const bool otherIsA = other == bodyIdA;
             const auto decision = held_object_contact_policy::evaluateHeldExternalContact(
                 held_object_contact_policy::HeldExternalContactInput{
                     .handHolding = hand.isHoldingAtomic(),
                     .bodyAIsHeld = bodyAIsHeld,
                     .bodyBIsHeld = bodyBIsHeld,
-                    .otherIsRightHand = _rightHand.isHandColliderBodyId(other),
-                    .otherIsLeftHand = _leftHand.isHandColliderBodyId(other),
+                    .otherIsRightHand = otherIsA ? bodyAIsRight : bodyBIsRight,
+                    .otherIsLeftHand = otherIsA ? bodyAIsLeft : bodyBIsLeft,
                     .otherIsRightPalmBody = other == rightId,
                     .otherIsLeftPalmBody = other == leftId,
-                    .otherIsBodyCollider = _bodyBoneColliders.isColliderBodyIdAtomic(other),
+                    .otherIsBodyCollider = otherIsA ? bodyAIsBody : bodyBIsBody,
                     .otherIsExternalProvider = ::rock::provider::isExternalBodyId(other),
                 });
             if (decision.sameHeldObject) {
@@ -1064,9 +1143,8 @@
         }
 
         if (contactRoute.drivesWeaponSupportContact && contact_pipeline_policy::isLeftHand(contactRoute.source.kind)) {
-            WeaponInteractionContact weaponContact{};
-            if (_weaponCollision.tryGetWeaponContactAtomic(contactRoute.targetBodyId, weaponContact)) {
-                publishLeftWeaponContactFromPhysics(weaponContact, contactRoute.targetBodyId);
+            if (const auto* weaponSource = weaponSourceFor(contactRoute.targetBodyId); weaponSource && weaponSource->valid) {
+                publishLeftWeaponContactFromPhysics(weaponSource->contact, contactRoute.targetBodyId);
             }
         }
 

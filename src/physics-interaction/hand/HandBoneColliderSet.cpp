@@ -890,7 +890,7 @@ namespace rock
         if (makeRoleFrame(lookup, isLeft, HandColliderRole::PalmAnchor, anchorFrame)) {
             _latestPalmAnchorTarget = anchorFrame.transform;
             _hasLatestPalmAnchorTarget = true;
-            queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState);
+            queueBodyTarget(palmAnchorBody, anchorFrame.transform, deltaTime, _palmAnchorDriveState, _palmAnchorPublicationIndex);
         }
 
         for (auto& instance : _bodies) {
@@ -899,7 +899,7 @@ namespace rock
             }
             RoleFrameResult frame{};
             if (makeRoleFrame(lookup, isLeft, instance.role, frame)) {
-                queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState);
+                queueBodyTarget(instance.body, frame.transform, deltaTime, instance.driveState, instance.publicationIndex);
             }
         }
     }
@@ -942,14 +942,14 @@ namespace rock
         }
     }
 
-    void HandBoneColliderSet::queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds, GeneratedKeyframedBodyDriveState& driveState)
+    void HandBoneColliderSet::queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds, GeneratedKeyframedBodyDriveState& driveState, std::uint32_t publicationIndex)
     {
         if (!body.isValid()) {
             return;
         }
 
-        queueGeneratedKeyframedBodyTarget(driveState, target, sourceDeltaSeconds, 1000.0f);
-        publishSampledVelocityAtomic(body.getBodyId().value, driveState);
+        const auto queueResult = queueGeneratedKeyframedBodyTarget(driveState, target, sourceDeltaSeconds, 1000.0f);
+        publishSampledVelocityAtomic(publicationIndex, queueResult);
     }
 
     bool HandBoneColliderSet::tryGetPalmAnchorTarget(RE::NiTransform& outTarget) const
@@ -1002,10 +1002,15 @@ namespace rock
         instance.role = HandColliderRole::PalmFace;
         instance.ownsShapeRef = false;
         clearGeneratedKeyframedBodyDriveState(instance.driveState);
+        instance.publicationIndex = kInvalidPublicationIndex;
     }
 
     void HandBoneColliderSet::clearAtomicBodyIds()
     {
+        _palmAnchorPublicationIndex = kInvalidPublicationIndex;
+        for (auto& instance : _bodies) {
+            instance.publicationIndex = kInvalidPublicationIndex;
+        }
         _bodyCountAtomic.store(0, std::memory_order_release);
         for (std::size_t i = 0; i < _bodyIdsAtomic.size(); ++i) {
             _bodyIdsAtomic[i].store(hand_collider_semantics::kInvalidBodyId, std::memory_order_release);
@@ -1020,34 +1025,24 @@ namespace rock
         }
     }
 
-    void HandBoneColliderSet::publishSampledVelocityAtomic(std::uint32_t bodyId, const GeneratedKeyframedBodyDriveState& driveState)
+    void HandBoneColliderSet::publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult)
     {
-        if (bodyId == hand_collider_semantics::kInvalidBodyId) {
+        if (publicationIndex >= _bodyIdsAtomic.size() || publicationIndex >= _bodyCountAtomic.load(std::memory_order_acquire)) {
             return;
         }
 
-        const auto sampledVelocity = snapshotGeneratedKeyframedBodyDriveSampledVelocity(driveState);
-        const bool velocityValid = sampledVelocity.valid;
-        const std::uint32_t count = _bodyCountAtomic.load(std::memory_order_acquire);
-        for (std::uint32_t i = 0; i < count && i < _bodyIdsAtomic.size(); ++i) {
-            if (_bodyIdsAtomic[i].load(std::memory_order_acquire) != bodyId) {
-                continue;
-            }
-
-            if (!velocityValid) {
-                _sampledVelocityValidAtomic[i].store(0, std::memory_order_release);
-                _sampledVelocityHavokXAtomic[i].store(0.0f, std::memory_order_release);
-                _sampledVelocityHavokYAtomic[i].store(0.0f, std::memory_order_release);
-                _sampledVelocityHavokZAtomic[i].store(0.0f, std::memory_order_release);
-                return;
-            }
-
-            _sampledVelocityHavokXAtomic[i].store(sampledVelocity.velocityHavok.x, std::memory_order_release);
-            _sampledVelocityHavokYAtomic[i].store(sampledVelocity.velocityHavok.y, std::memory_order_release);
-            _sampledVelocityHavokZAtomic[i].store(sampledVelocity.velocityHavok.z, std::memory_order_release);
-            _sampledVelocityValidAtomic[i].store(1, std::memory_order_release);
+        if (!queueResult.sampledVelocityValid) {
+            _sampledVelocityValidAtomic[publicationIndex].store(0, std::memory_order_release);
+            _sampledVelocityHavokXAtomic[publicationIndex].store(0.0f, std::memory_order_release);
+            _sampledVelocityHavokYAtomic[publicationIndex].store(0.0f, std::memory_order_release);
+            _sampledVelocityHavokZAtomic[publicationIndex].store(0.0f, std::memory_order_release);
             return;
         }
+
+        _sampledVelocityHavokXAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.x, std::memory_order_release);
+        _sampledVelocityHavokYAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.y, std::memory_order_release);
+        _sampledVelocityHavokZAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.z, std::memory_order_release);
+        _sampledVelocityValidAtomic[publicationIndex].store(1, std::memory_order_release);
     }
 
     void HandBoneColliderSet::publishAtomicBodyIds(const BethesdaPhysicsBody& palmAnchorBody, bool isLeft)
@@ -1055,6 +1050,7 @@ namespace rock
         clearAtomicBodyIds();
         std::uint32_t count = 0;
         if (palmAnchorBody.isValid()) {
+            _palmAnchorPublicationIndex = count;
             _rolesAtomic[count].store(static_cast<std::uint32_t>(HandColliderRole::PalmAnchor), std::memory_order_release);
             _fingersAtomic[count].store(static_cast<std::uint32_t>(HandFinger::None), std::memory_order_release);
             _segmentsAtomic[count].store(static_cast<std::uint32_t>(HandFingerSegment::None), std::memory_order_release);
@@ -1063,10 +1059,12 @@ namespace rock
             ++count;
         }
 
-        for (const auto& instance : _bodies) {
+        for (auto& instance : _bodies) {
             if (!instance.body.isValid() || count >= _bodyIdsAtomic.size()) {
+                instance.publicationIndex = kInvalidPublicationIndex;
                 continue;
             }
+            instance.publicationIndex = count;
             const auto role = instance.role;
             _rolesAtomic[count].store(static_cast<std::uint32_t>(role), std::memory_order_release);
             _fingersAtomic[count].store(static_cast<std::uint32_t>(hand_collider_semantics::fingerForRole(role)), std::memory_order_release);

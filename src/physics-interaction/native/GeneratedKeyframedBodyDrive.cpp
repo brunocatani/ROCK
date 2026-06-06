@@ -345,13 +345,14 @@ namespace rock
         state.consumedSequence = 1;
     }
 
-    void queueGeneratedKeyframedBodyTarget(
+    GeneratedKeyframedBodyDriveQueueResult queueGeneratedKeyframedBodyTarget(
         GeneratedKeyframedBodyDriveState& state,
         const RE::NiTransform& target,
         float sourceDeltaSeconds,
         float teleportDistanceGameUnits)
     {
         std::scoped_lock lock(state.mutex);
+        GeneratedKeyframedBodyDriveQueueResult result{};
         const float sanitizedSourceDelta = generated_keyframed_body_drive_math::sanitizeSourceDeltaSeconds(sourceDeltaSeconds);
         const bool hadReferenceTarget = state.hasPendingTarget || state.hasPreviousTarget;
         const RE::NiTransform referenceTarget = state.hasPendingTarget ? state.pendingTarget : state.previousTarget;
@@ -364,6 +365,13 @@ namespace rock
                 sanitizedSourceDelta,
                 gameToHavokScale(),
                 state.sampledLinearVelocityHavok);
+        }
+        result.sampledVelocityValid = state.hasSampledLinearVelocityHavok &&
+                                      std::isfinite(state.sampledLinearVelocityHavok.x) &&
+                                      std::isfinite(state.sampledLinearVelocityHavok.y) &&
+                                      std::isfinite(state.sampledLinearVelocityHavok.z);
+        if (result.sampledVelocityValid) {
+            result.sampledLinearVelocityHavok = state.sampledLinearVelocityHavok;
         }
 
         if (!state.hasPreviousTarget) {
@@ -378,6 +386,9 @@ namespace rock
         state.pendingTeleport = state.hasPreviousTarget && targetMovedFarEnoughForTeleport(state.previousTarget.translate, target.translate, teleportDistanceGameUnits);
         state.hasPendingTarget = true;
         ++state.queuedSequence;
+        result.queued = true;
+        result.queuedSequence = state.queuedSequence;
+        return result;
     }
 
     GeneratedKeyframedBodyDriveSampledVelocity snapshotGeneratedKeyframedBodyDriveSampledVelocity(const GeneratedKeyframedBodyDriveState& state)

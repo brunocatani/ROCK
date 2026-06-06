@@ -452,9 +452,17 @@ namespace rock
         RE::NiPoint3 velocityHavok{};
     };
 
+    struct GeneratedKeyframedBodyDriveQueueResult
+    {
+        bool queued = false;
+        bool sampledVelocityValid = false;
+        RE::NiPoint3 sampledLinearVelocityHavok{};
+        std::uint64_t queuedSequence = 0;
+    };
+
     void clearGeneratedKeyframedBodyDriveState(GeneratedKeyframedBodyDriveState& state);
     void initializeGeneratedKeyframedBodyDriveState(GeneratedKeyframedBodyDriveState& state, const RE::NiTransform& target);
-    void queueGeneratedKeyframedBodyTarget(
+    GeneratedKeyframedBodyDriveQueueResult queueGeneratedKeyframedBodyTarget(
         GeneratedKeyframedBodyDriveState& state,
         const RE::NiTransform& target,
         float sourceDeltaSeconds,

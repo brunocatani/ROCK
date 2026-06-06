@@ -63,6 +63,7 @@ namespace rock
 
     private:
         static constexpr std::size_t MAX_SEGMENT_BODIES = hand_collider_semantics::kHandSegmentColliderBodyCountPerHand;
+        static constexpr std::uint32_t kInvalidPublicationIndex = 0xFFFF'FFFFu;
 
         struct BodyInstance
         {
@@ -71,6 +72,7 @@ namespace rock
             hand_collider_semantics::HandColliderRole role = hand_collider_semantics::HandColliderRole::PalmFace;
             bool ownsShapeRef = false;
             GeneratedKeyframedBodyDriveState driveState{};
+            std::uint32_t publicationIndex = kInvalidPublicationIndex;
         };
 
         struct BoneFrameLookup
@@ -104,11 +106,11 @@ namespace rock
         bool makeRoleFrame(const BoneFrameLookup& lookup, bool isLeft, hand_collider_semantics::HandColliderRole role, RoleFrameResult& outFrame) const;
         RE::hknpShape* buildShapeForRole(const RoleFrameResult& frame, hand_collider_semantics::HandColliderRole role) const;
         bool createBodyForRole(RE::hknpWorld* world, void* bhkWorld, bool isLeft, hand_collider_semantics::HandColliderRole role, const RoleFrameResult& frame, BodyInstance& instance);
-        void queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds, GeneratedKeyframedBodyDriveState& driveState);
+        void queueBodyTarget(BethesdaPhysicsBody& body, const RE::NiTransform& target, float sourceDeltaSeconds, GeneratedKeyframedBodyDriveState& driveState, std::uint32_t publicationIndex);
         void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);
         void clearInstance(BodyInstance& instance, bool releaseShapeRef);
         void publishAtomicBodyIds(const BethesdaPhysicsBody& palmAnchorBody, bool isLeft);
-        void publishSampledVelocityAtomic(std::uint32_t bodyId, const GeneratedKeyframedBodyDriveState& driveState);
+        void publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult);
         void clearAtomicBodyIds();
 
         DirectSkeletonBoneReader _reader;
@@ -128,6 +130,7 @@ namespace rock
         std::atomic<std::uint32_t> _isLeftAtomic{ 0 };
         std::atomic<bool> _driveRebuildRequested{ false };
         std::atomic<std::uint32_t> _driveFailureCount{ 0 };
+        std::uint32_t _palmAnchorPublicationIndex = kInvalidPublicationIndex;
         bool _created = false;
         int _updateLogCounter = 0;
 

@@ -3062,6 +3062,7 @@ namespace rock
         instance.semantic = {};
         instance.ownsShapeRef = false;
         clearGeneratedKeyframedBodyDriveState(instance.driveState);
+        instance.publicationIndex = INVALID_BODY_ID;
     }
 
     void WeaponCollision::beginWeaponBodyPublication()
@@ -3135,7 +3136,7 @@ namespace rock
         clearAtomicBodyIds();
     }
 
-    void WeaponCollision::publishAtomicBodyIds(const WeaponBodyBank& bank)
+    void WeaponCollision::publishAtomicBodyIds(WeaponBodyBank& bank)
     {
         auto evidenceSnapshot = buildProfileEvidenceSnapshot(bank);
         std::uint32_t count = 0;
@@ -3153,8 +3154,9 @@ namespace rock
             _profileEvidenceSnapshot = std::move(evidenceSnapshot);
         }
         RE::NiAVObject* packageDriveNode = resolvePackageDriveNode(bank, nullptr);
-        for (const auto& instance : bank) {
+        for (auto& instance : bank) {
             if (instance.body.isValid() && count < MAX_WEAPON_BODIES) {
+                instance.publicationIndex = count;
                 _weaponBodyPartKindsAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.partKind), std::memory_order_release);
                 _weaponBodyReloadRolesAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.reloadRole), std::memory_order_release);
                 _weaponBodySupportRolesAtomic[count].store(static_cast<std::uint32_t>(instance.semantic.supportGripRole), std::memory_order_release);
@@ -3166,40 +3168,32 @@ namespace rock
                 _weaponBodyGenerationKeysAtomic[count].store(_cachedWeaponBodySetKey, std::memory_order_release);
                 _weaponBodyIdsAtomic[count].store(instance.body.getBodyId().value, std::memory_order_release);
                 ++count;
+            } else {
+                instance.publicationIndex = INVALID_BODY_ID;
             }
         }
         _weaponBodyCountAtomic.store(count, std::memory_order_release);
         endWeaponBodyPublication();
     }
 
-    void WeaponCollision::publishSampledVelocityAtomic(std::uint32_t bodyId, const GeneratedKeyframedBodyDriveState& driveState)
+    void WeaponCollision::publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult)
     {
-        if (bodyId == INVALID_BODY_ID) {
+        if (publicationIndex >= MAX_WEAPON_BODIES || publicationIndex >= _weaponBodyCountAtomic.load(std::memory_order_acquire)) {
             return;
         }
 
-        const auto sampledVelocity = snapshotGeneratedKeyframedBodyDriveSampledVelocity(driveState);
-        const bool velocityValid = sampledVelocity.valid;
-        const std::uint32_t count = _weaponBodyCountAtomic.load(std::memory_order_acquire);
-        for (std::uint32_t i = 0; i < count && i < MAX_WEAPON_BODIES; ++i) {
-            if (_weaponBodyIdsAtomic[i].load(std::memory_order_acquire) != bodyId) {
-                continue;
-            }
-
-            if (!velocityValid) {
-                _weaponBodySampledVelocityValidAtomic[i].store(0, std::memory_order_release);
-                _weaponBodySampledVelocityHavokXAtomic[i].store(0.0f, std::memory_order_release);
-                _weaponBodySampledVelocityHavokYAtomic[i].store(0.0f, std::memory_order_release);
-                _weaponBodySampledVelocityHavokZAtomic[i].store(0.0f, std::memory_order_release);
-                return;
-            }
-
-            _weaponBodySampledVelocityHavokXAtomic[i].store(sampledVelocity.velocityHavok.x, std::memory_order_release);
-            _weaponBodySampledVelocityHavokYAtomic[i].store(sampledVelocity.velocityHavok.y, std::memory_order_release);
-            _weaponBodySampledVelocityHavokZAtomic[i].store(sampledVelocity.velocityHavok.z, std::memory_order_release);
-            _weaponBodySampledVelocityValidAtomic[i].store(1, std::memory_order_release);
+        if (!queueResult.sampledVelocityValid) {
+            _weaponBodySampledVelocityValidAtomic[publicationIndex].store(0, std::memory_order_release);
+            _weaponBodySampledVelocityHavokXAtomic[publicationIndex].store(0.0f, std::memory_order_release);
+            _weaponBodySampledVelocityHavokYAtomic[publicationIndex].store(0.0f, std::memory_order_release);
+            _weaponBodySampledVelocityHavokZAtomic[publicationIndex].store(0.0f, std::memory_order_release);
             return;
         }
+
+        _weaponBodySampledVelocityHavokXAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.x, std::memory_order_release);
+        _weaponBodySampledVelocityHavokYAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.y, std::memory_order_release);
+        _weaponBodySampledVelocityHavokZAtomic[publicationIndex].store(queueResult.sampledLinearVelocityHavok.z, std::memory_order_release);
+        _weaponBodySampledVelocityValidAtomic[publicationIndex].store(1, std::memory_order_release);
     }
 
     void WeaponCollision::updateBodiesFromCurrentSourceTransforms(RE::hknpWorld* world, RE::NiAVObject* fallbackWeaponNode, float sourceDeltaSeconds)
@@ -3243,8 +3237,8 @@ namespace rock
             return;
         }
 
-        queueGeneratedKeyframedBodyTarget(instance.driveState, weaponTransform, sourceDeltaSeconds, 1000.0f);
-        publishSampledVelocityAtomic(instance.body.getBodyId().value, instance.driveState);
+        const auto queueResult = queueGeneratedKeyframedBodyTarget(instance.driveState, weaponTransform, sourceDeltaSeconds, 1000.0f);
+        publishSampledVelocityAtomic(instance.publicationIndex, queueResult);
     }
 
     void WeaponCollision::flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing)

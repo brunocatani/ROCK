@@ -156,6 +156,7 @@ namespace rock
             WeaponPartClassification semantic{};
             bool ownsShapeRef{ false };
             GeneratedKeyframedBodyDriveState driveState{};
+            std::uint32_t publicationIndex{ INVALID_BODY_ID };
         };
 
         using WeaponBodyBank = std::array<WeaponBodyInstance, MAX_WEAPON_BODIES>;
@@ -189,12 +190,12 @@ namespace rock
         void clearAtomicBodyIds();
         void resetWeaponBodySetGeneration();
         void publishWeaponBodySetGeneration(const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& sourceCompleteness);
-        void publishAtomicBodyIds(const WeaponBodyBank& bank);
+        void publishAtomicBodyIds(WeaponBodyBank& bank);
         void unpublishAtomicBodyIds();
         void beginWeaponBodyPublication();
         void endWeaponBodyPublication();
         std::vector<WeaponCollisionProfileEvidenceDescriptor> buildProfileEvidenceSnapshot(const WeaponBodyBank& bank) const;
-        void publishSampledVelocityAtomic(std::uint32_t bodyId, const GeneratedKeyframedBodyDriveState& driveState);
+        void publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult);
 
         std::size_t findGeneratedWeaponShapeSources(RE::NiAVObject* weaponNode, std::vector<GeneratedHullSource>& outSources);
 

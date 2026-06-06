@@ -1241,10 +1241,12 @@ namespace rock
         _generatedBodiesWorldGeneration = _lifecycleState.worldGeneration;
         _generatedBodiesSkeletonGeneration = _lifecycleState.skeletonGeneration;
         _generatedBodiesProviderGeneration = _lifecycleState.providerGeneration;
+        refreshGeneratedBodyContactRegistry();
     }
 
     void PhysicsInteraction::markGeneratedBodiesInvalidated()
     {
+        clearGeneratedBodyContactRegistry();
         _generatedBodiesBhkWorld = nullptr;
         _generatedBodiesHknpWorld = nullptr;
         _generatedBodiesWorldGeneration = 0;
@@ -1261,6 +1263,119 @@ namespace rock
         _lifecycleHknpWorldAtomic.store(nullptr, std::memory_order_release);
         _generatedBodyStepDrive.reset();
         _shoulderStashStates = {};
+    }
+
+    void PhysicsInteraction::clearGeneratedBodyContactRegistry()
+    {
+        _generatedBodyContactRegistry.clear();
+    }
+
+    void PhysicsInteraction::refreshGeneratedBodyContactRegistry()
+    {
+        using generated_body_contact_registry::Entry;
+        using generated_body_contact_registry::GeneratedBodyKind;
+        using generated_body_contact_registry::kFlagPowerArmor;
+        using generated_body_contact_registry::kFlagPrimaryAnchor;
+        using generated_body_contact_registry::kFlagSampledVelocity;
+
+        std::array<Entry, kGeneratedBodyContactRegistryCapacity> entries{};
+        std::size_t entryCount = 0;
+
+        auto addEntry = [&](const Entry& entry) {
+            if (entryCount < entries.size()) {
+                entries[entryCount++] = entry;
+            }
+        };
+
+        auto addHandEntries = [&](const Hand& hand, bool isLeft) {
+            const std::uint32_t count = (std::min)(hand.getHandColliderBodyCount(), static_cast<std::uint32_t>(hand_collider_semantics::kHandColliderBodyCountPerHand));
+            for (std::uint32_t i = 0; i < count; ++i) {
+                const std::uint32_t bodyId = hand.getHandColliderBodyIdAtomic(i);
+                HandColliderBodyMetadata metadata{};
+                if (!hand.tryGetHandColliderMetadata(bodyId, metadata) || !metadata.valid) {
+                    continue;
+                }
+
+                Entry entry{};
+                entry.bodyId = metadata.bodyId;
+                entry.kind = isLeft ? GeneratedBodyKind::LeftHand : GeneratedBodyKind::RightHand;
+                entry.role = static_cast<std::uint32_t>(metadata.role);
+                entry.partKind = static_cast<std::uint32_t>(metadata.finger);
+                entry.subRole = static_cast<std::uint32_t>(metadata.segment);
+                if (metadata.primaryPalmAnchor) {
+                    entry.flags |= kFlagPrimaryAnchor;
+                }
+                if (metadata.hasSampledLinearVelocityHavok &&
+                    std::isfinite(metadata.sampledLinearVelocityHavok[0]) &&
+                    std::isfinite(metadata.sampledLinearVelocityHavok[1]) &&
+                    std::isfinite(metadata.sampledLinearVelocityHavok[2])) {
+                    entry.flags |= kFlagSampledVelocity;
+                    entry.sampledVelocityHavokX = metadata.sampledLinearVelocityHavok[0];
+                    entry.sampledVelocityHavokY = metadata.sampledLinearVelocityHavok[1];
+                    entry.sampledVelocityHavokZ = metadata.sampledLinearVelocityHavok[2];
+                }
+                addEntry(entry);
+            }
+        };
+
+        addHandEntries(_rightHand, false);
+        addHandEntries(_leftHand, true);
+
+        const auto weaponSnapshot = _weaponCollision.getWeaponBodySnapshotAtomic();
+        for (std::uint32_t i = 0; i < weaponSnapshot.count && i < MAX_WEAPON_COLLISION_BODIES; ++i) {
+            WeaponInteractionContact contact{};
+            if (!_weaponCollision.tryGetWeaponContactAtomic(weaponSnapshot.bodyIds[i], contact) || !contact.valid) {
+                continue;
+            }
+
+            Entry entry{};
+            entry.bodyId = contact.bodyId;
+            entry.kind = GeneratedBodyKind::Weapon;
+            entry.role = static_cast<std::uint32_t>(contact.reloadRole);
+            entry.partKind = static_cast<std::uint32_t>(contact.partKind);
+            entry.subRole = static_cast<std::uint32_t>(contact.supportGripRole);
+            entry.socketRole = static_cast<std::uint32_t>(contact.socketRole);
+            entry.actionRole = static_cast<std::uint32_t>(contact.actionRole);
+            entry.gripPose = static_cast<std::uint32_t>(contact.fallbackGripPose);
+            entry.generationKey = contact.weaponGenerationKey;
+
+            float sampledVelocityHavok[4]{};
+            if (_weaponCollision.tryGetWeaponBodySampledVelocityAtomic(contact.bodyId, sampledVelocityHavok) &&
+                std::isfinite(sampledVelocityHavok[0]) &&
+                std::isfinite(sampledVelocityHavok[1]) &&
+                std::isfinite(sampledVelocityHavok[2])) {
+                entry.flags |= kFlagSampledVelocity;
+                entry.sampledVelocityHavokX = sampledVelocityHavok[0];
+                entry.sampledVelocityHavokY = sampledVelocityHavok[1];
+                entry.sampledVelocityHavokZ = sampledVelocityHavok[2];
+            }
+            addEntry(entry);
+        }
+
+        const std::uint32_t bodyCount = (std::min)(_bodyBoneColliders.getBodyCount(), static_cast<std::uint32_t>(kBodyBoneColliderBodyCount));
+        for (std::uint32_t i = 0; i < bodyCount; ++i) {
+            const std::uint32_t bodyId = _bodyBoneColliders.getBodyIdAtomic(i);
+            BodyBoneColliderMetadata metadata{};
+            if (!_bodyBoneColliders.tryGetBodyMetadataAtomic(bodyId, metadata) || !metadata.valid) {
+                continue;
+            }
+
+            Entry entry{};
+            entry.bodyId = metadata.bodyId;
+            entry.kind = GeneratedBodyKind::Body;
+            entry.role = static_cast<std::uint32_t>(metadata.role);
+            entry.zone = static_cast<std::uint32_t>(metadata.zone);
+            entry.side = static_cast<std::uint32_t>(metadata.side);
+            entry.descriptorIndex = metadata.descriptorIndex;
+            entry.lengthGameUnits = metadata.lengthGameUnits;
+            entry.radiusGameUnits = metadata.radiusGameUnits;
+            if (metadata.inPowerArmor) {
+                entry.flags |= kFlagPowerArmor;
+            }
+            addEntry(entry);
+        }
+
+        _generatedBodyContactRegistry.publish(entries.data(), entryCount);
     }
 
     bool PhysicsInteraction::rebuildGeneratedBodiesForLifecycle(RE::bhkWorld* bhk, RE::hknpWorld* hknp, const char* reason)
@@ -1949,6 +2064,7 @@ namespace rock
             }
             _weaponCollision.update(hknp, weaponNode, dominantHandBodyId, frame.deltaSeconds);
         }
+        refreshGeneratedBodyContactRegistry();
 
         _generatedBodyStepDrive.registerForNextStep(bhk, hknp);
 
@@ -2075,6 +2191,7 @@ namespace rock
             if (weaponNode) {
                 performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponCollision);
                 _weaponCollision.updateBodiesFromCurrentSourceTransforms(hknp, weaponNode, frame.deltaSeconds);
+                refreshGeneratedBodyContactRegistry();
             }
             if (f4vr::isNodeVisible(weaponNode)) {
                 applyFinalWeaponMuzzleAuthority();
@@ -2977,6 +3094,7 @@ namespace rock
 
     void PhysicsInteraction::destroyHandCollisions(void* bhkWorld)
     {
+        clearGeneratedBodyContactRegistry();
         _rightHand.destroyCollision(bhkWorld);
         _leftHand.destroyCollision(bhkWorld);
         _handColliderCreateRetryFrames = 0;
@@ -3046,6 +3164,7 @@ namespace rock
 
     void PhysicsInteraction::destroyBodyBoneCollisions(void* bhkWorld)
     {
+        clearGeneratedBodyContactRegistry();
         _bodyBoneColliders.destroy(bhkWorld);
         _bodyContactRuntime.reset();
         _bodyBoneColliderCreateRetryFrames = 0;

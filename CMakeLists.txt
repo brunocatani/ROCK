@@ -323,6 +323,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGeneratedKeyframedBodyDrivePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGeneratedKeyframedBodyDrivePolicyTests)
 
+  add_executable(ROCKGeneratedBodyContactRegistryPolicyTests
+    "${ROOT_DIR}/tests/GeneratedBodyContactRegistryPolicyTests.cpp"
+  )
+  target_compile_features(ROCKGeneratedBodyContactRegistryPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKGeneratedBodyContactRegistryPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKGeneratedBodyContactRegistryPolicyTests)
+
   add_executable(ROCKHavokTimingFixPolicyTests
     "${ROOT_DIR}/tests/HavokTimingFixPolicyTests.cpp"
   )
@@ -451,6 +458,7 @@ if(BUILD_ROCK_TESTS)
     ROCKGrabThreePhasePolicyTests
     ROCKGrabPinchPocketPolicyTests
     ROCKGeneratedKeyframedBodyDrivePolicyTests
+    ROCKGeneratedBodyContactRegistryPolicyTests
     ROCKHavokTimingFixPolicyTests
     ROCKHeldObjectStutterGuardPolicyTests
     ROCKGrabLocomotionAuthorityBridgePolicyTests

@@ -15,6 +15,7 @@
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/GrabLocomotionAuthorityBridge.h"
 #include "physics-interaction/contact/SoftContactRuntime.h"
+#include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
 #include "physics-interaction/contact/NativeContactEvidence.h"
 #include "physics-interaction/collision/ContactActivityTracker.h"
 #include "physics-interaction/PhysicsLog.h"
@@ -150,6 +151,8 @@ namespace rock
         bool generatedBodiesMatchLifecycle(RE::bhkWorld* bhk, RE::hknpWorld* hknp) const;
         void markGeneratedBodiesRebuilt(RE::bhkWorld* bhk, RE::hknpWorld* hknp);
         void markGeneratedBodiesInvalidated();
+        void clearGeneratedBodyContactRegistry();
+        void refreshGeneratedBodyContactRegistry();
         bool rebuildGeneratedBodiesForLifecycle(RE::bhkWorld* bhk, RE::hknpWorld* hknp, const char* reason);
         void observeLifecycleFrame(RE::bhkWorld* bhk, RE::hknpWorld* hknp, ::rock::provider::RockProviderLifecycleReason reasonHint);
         bool physicsWritesAllowedForWorld(RE::hknpWorld* world) const;
@@ -302,6 +305,12 @@ namespace rock
         std::atomic<void*> _contactEventSignal{ nullptr };
         contact_activity_tracker::ContactActivityTracker _handContactActivity;
         body_contact_runtime::BodyContactRuntime _bodyContactRuntime;
+
+        static constexpr std::size_t kGeneratedBodyContactRegistryCapacity =
+            (hand_collider_semantics::kHandColliderBodyCountPerHand * 2u) +
+            MAX_WEAPON_COLLISION_BODIES +
+            kBodyBoneColliderBodyCount;
+        generated_body_contact_registry::Registry<kGeneratedBodyContactRegistryCapacity> _generatedBodyContactRegistry;
 
         std::atomic<std::uint32_t> _lastContactSourceRight{ 0xFFFFFFFF };
         std::atomic<std::uint32_t> _lastContactSourceLeft{ 0xFFFFFFFF };
