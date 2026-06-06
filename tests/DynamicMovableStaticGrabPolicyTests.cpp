@@ -1,5 +1,6 @@
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
+#include "physics-interaction/grab/GrabInteractionPolicy.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 
@@ -205,6 +206,38 @@ int main()
     ok &= expectFalse("detached gore cannot use dynamic pull", grab_target::canUseRockDynamicPull(grab_target::Kind::DetachedGore));
     ok &= expectFalse("dead actor bodies cannot use dynamic pull", grab_target::canUseRockDynamicPull(grab_target::Kind::DeadActorBody));
     ok &= expectTrue("ordinary loose objects may use dynamic pull", grab_target::canUseRockDynamicPull(grab_target::Kind::LooseObject));
+    ok &= expectTrue("static activator is not a loose selection candidate",
+        grab_interaction_policy::evaluateLooseObjectSelectionCandidate(
+            "ACTI",
+            true,
+            0,
+            true,
+            collision_layer_policy::FO4_LAYER_PROPS)
+            .blocked);
+    ok &= expectTrue("keyframed activator is not a loose selection candidate",
+        grab_interaction_policy::evaluateLooseObjectSelectionCandidate(
+            "ACTI",
+            true,
+            2,
+            true,
+            collision_layer_policy::FO4_LAYER_PROPS)
+            .blocked);
+    ok &= expectTrue("animstatic loose-form candidate cannot be selected for active grab",
+        grab_interaction_policy::evaluateLooseObjectSelectionCandidate(
+            "ACTI",
+            false,
+            0,
+            true,
+            collision_layer_policy::FO4_LAYER_ANIMSTATIC)
+            .blocked);
+    ok &= expectFalse("dynamic prop loose candidate remains selectable",
+        grab_interaction_policy::evaluateLooseObjectSelectionCandidate(
+            "MISC",
+            true,
+            1,
+            true,
+            collision_layer_policy::FO4_LAYER_CLUTTER)
+            .blocked);
     ok &= expectTrue("far blacklist blocks reference form id",
         far_selection_blacklist_policy::evaluateFarSelectionBlacklist(far_selection_blacklist_policy::FarSelectionBlacklistInput{
             .isFarSelection = true,

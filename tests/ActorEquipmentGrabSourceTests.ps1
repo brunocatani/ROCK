@@ -101,7 +101,7 @@ Require-Text 'src/physics-interaction/hand/Hand.h' 'selection\.targetKind\s*==\s
 Require-Text 'src/physics-interaction/hand/Hand.h' 'playSelectionHighlightCandidate\(selection\.refr,\s*selection\.visualNode' 'Actor-equipment highlight should target the clothing visual before falling back to the actor root.'
 
 Require-Text 'src/physics-interaction/object/GrabTargetKind.h' 'return isPhysicalRockObject\(kind\)' 'Actor-driven targets must stay out of direct dynamic pull and active grab.'
-Require-Text 'src/physics-interaction/grab/GrabCore.h' 'targetKind == grab_target::Kind::ActorEquipment' 'The selected-object guard must still block actor equipment from generic interaction after the drop pre-pass.'
+Require-Text 'src/physics-interaction/grab/GrabInteractionPolicy.h' 'targetKind == grab_target::Kind::ActorEquipment' 'The selected-object guard must still block actor equipment from generic interaction after the drop pre-pass.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'Actor equipment grab source boundary failed:'

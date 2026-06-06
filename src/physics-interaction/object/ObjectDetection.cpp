@@ -1,5 +1,6 @@
 #include "physics-interaction/object/ObjectDetection.h"
 #include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
+#include "physics-interaction/grab/GrabInteractionPolicy.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
 #include "physics-interaction/hand/HandFrame.h"
@@ -296,6 +297,30 @@ namespace rock
             auto* root3D = ref ? ref->Get3D() : nullptr;
             return hitNode && root3D && !actor_equipment_grab::nodeContainsNode(root3D, hitNode, 64);
         }
+
+        bool readSelectionBodyInteractionState(
+            RE::hknpWorld* hknpWorld,
+            RE::hknpBodyId bodyId,
+            std::uint16_t& outMotionPropsId,
+            std::uint32_t& outCollisionLayer)
+        {
+            if (!hknpWorld || bodyId.value == kInvalidBodyId) {
+                return false;
+            }
+
+            auto* body = havok_runtime::getBody(hknpWorld, bodyId);
+            if (!body) {
+                return false;
+            }
+
+            outCollisionLayer = body->collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK;
+            outMotionPropsId = static_cast<std::uint16_t>(body->motionPropertiesId);
+            std::uint16_t resolvedMotionProps = outMotionPropsId;
+            if (havok_runtime::tryReadBodyMotionPropertiesId(hknpWorld, bodyId, resolvedMotionProps)) {
+                outMotionPropsId = resolvedMotionProps;
+            }
+            return true;
+        }
     }
 
     GrabTargetClassification classifySelectionGrabTarget(RE::TESObjectREFR* ref,
@@ -368,6 +393,20 @@ namespace rock
         if (isLooseGrabbableBaseType(baseForm)) {
             if (!object_physics_body_set::hasCollisionObjectInSubtree(root3D, (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth))) {
                 return { .kind = grab_target::Kind::LooseObject, .reason = "no-collision-subtree", .grabbable = false };
+            }
+
+            std::uint16_t motionPropsId = 0;
+            std::uint32_t collisionLayer = 0;
+            const bool hasBodyInteractionState = readSelectionBodyInteractionState(hknpWorld, bodyId, motionPropsId, collisionLayer);
+            const char* formTypeChars = baseForm->GetFormTypeString();
+            const auto decision = grab_interaction_policy::evaluateLooseObjectSelectionCandidate(
+                formTypeChars ? std::string_view(formTypeChars) : std::string_view{},
+                hasBodyInteractionState,
+                motionPropsId,
+                hasBodyInteractionState,
+                collisionLayer);
+            if (decision.blocked) {
+                return { .kind = grab_target::Kind::LooseObject, .reason = decision.reason, .grabbable = false };
             }
             return { .kind = grab_target::Kind::LooseObject, .reason = "loose-form-whitelist", .grabbable = true };
         }
