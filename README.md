@@ -27,8 +27,9 @@ My aim with ROCK is to bring as much immersion and realism to Fallout 4 VR as po
 
 ROCK v0.5 currently requires the matching hFRIK release named **FRIK Experimental**. Download and install that hFRIK release before using ROCK v0.5:
 
+TEMPORARILY REMOVED, I`M UPDATING THE MOD TO USE PROD VERSION OF FRIK, A FEW DAYS UNTIL I CAN DO SO.
 ```text
-https://github.com/brunocatani/hFRIK/releases/tag/frik-experimental
+NOT WORKING AT THE MOMENT - https://github.com/brunocatani/hFRIK/releases/tag/frik-experimental
 ```
 
 This hFRIK dependency is temporary. It is required only until the hFRIK modifications are merged upstream into `github.com/rollingrock/Fallout-4-VR-Body`.
