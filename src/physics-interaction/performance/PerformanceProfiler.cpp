@@ -67,6 +67,14 @@ namespace rock::performance_profiler
                 return "generatedFlush";
             case Scope::WeaponCollision:
                 return "weaponCollision";
+            case Scope::WeaponColliderBuild:
+                return "weaponColliderBuild";
+            case Scope::WeaponColliderCreate:
+                return "weaponColliderCreate";
+            case Scope::TwoHandedGripStart:
+                return "twoHandedGripStart";
+            case Scope::SupportGripSuppression:
+                return "supportGripSuppression";
             case Scope::SelectionCasts:
                 return "selectionCasts";
             case Scope::SoftContact:

@@ -2149,6 +2149,7 @@ namespace rock
                 leftHandHoldingObject,
                 frame.deltaSeconds,
                 currentWeaponGenerationKey,
+                _weaponCollision,
                 providerInteractionState,
                 supportAuthorityMode);
             const bool weaponSupportGripActive = _twoHandedGrip.isGripping();
@@ -2447,6 +2448,8 @@ namespace rock
 
     void PhysicsInteraction::suppressLeftHandCollisionForWeaponSupport(RE::hknpWorld* world)
     {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::SupportGripSuppression);
+
         /*
          * Layer 43 vs 44 is intentionally allowed so the offhand can physically
          * touch the equipped weapon before support grip starts. Once support
@@ -2455,6 +2458,40 @@ namespace rock
          * collision suppression.
          */
         _leftWeaponSupportCollisionSuppressed.store(true, std::memory_order_release);
+
+        auto bodyAlreadySuppressed = [&](std::uint32_t bodyId) {
+            return bodyId == INVALID_CONTACT_BODY_ID ||
+                   hand_collision_suppression_math::findSuppressionState(_leftWeaponSupportCollisionSuppression, bodyId) != nullptr;
+        };
+
+        auto currentLeftHandBodiesAlreadySuppressed = [&]() {
+            if (!_leftHand.hasCollisionBody()) {
+                return false;
+            }
+
+            bool sawValidBody = false;
+            const std::uint32_t colliderCount = _leftHand.getHandColliderBodyCount();
+            if (colliderCount > 0) {
+                for (std::uint32_t i = 0; i < colliderCount; ++i) {
+                    const std::uint32_t bodyId = _leftHand.getHandColliderBodyIdAtomic(i);
+                    if (bodyId == INVALID_CONTACT_BODY_ID) {
+                        continue;
+                    }
+                    sawValidBody = true;
+                    if (!bodyAlreadySuppressed(bodyId)) {
+                        return false;
+                    }
+                }
+                return sawValidBody;
+            }
+
+            const std::uint32_t bodyId = _leftHand.getCollisionBodyId().value;
+            return bodyId != INVALID_CONTACT_BODY_ID && bodyAlreadySuppressed(bodyId);
+        };
+
+        if (currentLeftHandBodiesAlreadySuppressed()) {
+            return;
+        }
 
         if (!world || !_leftHand.hasCollisionBody()) {
             return;

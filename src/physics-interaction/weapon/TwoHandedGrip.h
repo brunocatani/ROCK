@@ -16,6 +16,8 @@
 
 namespace rock
 {
+    class WeaponCollision;
+
     namespace grab_finger_pose_runtime
     {
         struct SolvedGrabFingerPose;
@@ -47,6 +49,7 @@ namespace rock
             bool supportHandHoldingObject,
             float dt,
             std::uint64_t currentWeaponGenerationKey,
+            const WeaponCollision& weaponCollision,
             const WeaponInteractionRuntimeState& runtimeState,
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode);
 
@@ -71,6 +74,7 @@ namespace rock
         void transitionToGripping(
             RE::NiNode* weaponNode,
             const WeaponInteractionDecision& decision,
+            const WeaponCollision& weaponCollision,
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode);
         void transitionToInactive(bool publishRestoredWeaponTransform);
 

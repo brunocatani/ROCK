@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "physics-interaction/grab/MeshGrab.h"
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/GeneratedKeyframedBodyDrive.h"
 #include "physics-interaction/native/HavokPhysicsTiming.h"
@@ -112,6 +113,10 @@ namespace rock
             const RE::NiPoint3& fallbackNormalWorld,
             WeaponSoftContactResult& outContact) const;
 
+        bool tryBuildSupportGripEvidenceTriangles(
+            std::uint32_t bodyId,
+            std::vector<TriangleData>& outTriangles) const;
+
         BethesdaPhysicsBody& getWeaponBody();
 
         void destroyWeaponBody(RE::hknpWorld* world);
@@ -129,6 +134,7 @@ namespace rock
         struct GeneratedHullSource
         {
             std::vector<RE::NiPoint3> localPointsGame;
+            std::vector<TriangleData> localTrianglesGame;
             std::vector<std::vector<RE::NiPoint3>> childLocalPointCloudsGame;
             RE::NiPoint3 localCenterGame{};
             RE::NiPoint3 localMinGame{};
@@ -152,6 +158,7 @@ namespace rock
             RE::NiPoint3 generatedLocalMinGame{};
             RE::NiPoint3 generatedLocalMaxGame{};
             std::vector<RE::NiPoint3> generatedLocalPointsGame{};
+            std::vector<TriangleData> generatedLocalTrianglesGame{};
             std::uint32_t generatedPointCount{ 0 };
             WeaponPartClassification semantic{};
             bool ownsShapeRef{ false };
@@ -172,6 +179,39 @@ namespace rock
             bool collisionEnabledOnCreate{ false };
         };
 
+        struct GeneratedSourceCache
+        {
+            bool valid{ false };
+            std::uint64_t equippedKey{ 0 };
+            std::uint64_t visualKey{ 0 };
+            float convexRadius{ -1.0f };
+            float pointDedupGrid{ -1.0f };
+            int supportFitTargetPoints{ -1 };
+            float supportFitMaxErrorGameUnits{ -1.0f };
+            std::vector<GeneratedHullSource> sources;
+            weapon_generated_source_completeness_policy::GeneratedSourceCompleteness summary{};
+        };
+
+        struct PendingGeneratedWeaponBuild
+        {
+            bool active{ false };
+            bool replacingExisting{ false };
+            bool settingsChanged{ false };
+            bool driveRequestedRebuild{ false };
+            std::uint64_t equippedKey{ 0 };
+            std::uint64_t visualKey{ 0 };
+            std::uint32_t visualRootCount{ 0 };
+            std::uint32_t visibleTriShapeCount{ 0 };
+            float convexRadius{ -1.0f };
+            float pointDedupGrid{ -1.0f };
+            int supportFitTargetPoints{ -1 };
+            float supportFitMaxErrorGameUnits{ -1.0f };
+            std::size_t nextSourceIndex{ 0 };
+            std::size_t createdCount{ 0 };
+            std::vector<GeneratedHullSource> sources;
+            weapon_generated_source_completeness_policy::GeneratedSourceCompleteness summary{};
+        };
+
         WeaponBodyBank& activeWeaponBodies();
         const WeaponBodyBank& activeWeaponBodies() const;
         WeaponBodyBank& inactiveWeaponBodies();
@@ -184,6 +224,13 @@ namespace rock
             const std::vector<GeneratedHullSource>& sources,
             WeaponBodyBank& bank,
             const GeneratedWeaponBodyCreateOptions& options);
+        std::size_t createGeneratedWeaponBodiesInBankSlice(
+            RE::hknpWorld* world,
+            const std::vector<GeneratedHullSource>& sources,
+            WeaponBodyBank& bank,
+            const GeneratedWeaponBodyCreateOptions& options,
+            std::size_t& nextSourceIndex,
+            std::size_t maxSourceAttemptsThisFrame);
         void destroyWeaponBodyBank(WeaponBodyBank& bank, bool releaseShapeRef);
         void setWeaponBodyBankCollisionEnabled(RE::hknpWorld* world, WeaponBodyBank& bank, bool enabled);
         void clearWeaponBodyInstance(WeaponBodyInstance& instance, bool releaseShapeRef);
@@ -211,6 +258,23 @@ namespace rock
         void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);
         void clearGeneratedSourceCompletenessTracking();
         void clearPendingWeaponVisualRebuild();
+        void clearGeneratedSourceCache();
+        bool generatedSourceCacheMatches(std::uint64_t equippedKey, std::uint64_t visualKey) const;
+        void storeGeneratedSourceCache(std::uint64_t equippedKey,
+            std::uint64_t visualKey,
+            std::vector<GeneratedHullSource> sources,
+            const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& summary);
+        void clearPendingGeneratedWeaponBuild(RE::hknpWorld* world, bool destroyTargetBank);
+        bool beginPendingGeneratedWeaponBuild(std::uint64_t equippedKey,
+            std::uint64_t visualKey,
+            const WeaponVisualKeyStats& visualKeyStats,
+            bool replacingExisting,
+            bool settingsChanged,
+            bool driveRequestedRebuild,
+            std::vector<GeneratedHullSource> sources,
+            const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& summary);
+        bool advancePendingGeneratedWeaponBuild(RE::hknpWorld* world);
+        bool pendingGeneratedWeaponBuildMatches(std::uint64_t equippedKey, std::uint64_t visualKey) const;
         void resetWeaponCollisionSettingsCache();
 
         std::uint64_t getEquippedWeaponKey(
@@ -229,6 +293,8 @@ namespace rock
         std::uint64_t _cachedWeaponBodySetKey{ 0 };
         std::uint64_t _weaponBodySetEpoch{ 0 };
         weapon_generated_source_completeness_policy::GeneratedSourceCompleteness _cachedGeneratedSourceCompleteness{};
+        GeneratedSourceCache _generatedSourceCache{};
+        PendingGeneratedWeaponBuild _pendingGeneratedWeaponBuild{};
         RE::hknpWorld* _cachedWorld{ nullptr };
         void* _cachedBhkWorld{ nullptr };
         std::atomic<bool> _driveRebuildRequested{ false };

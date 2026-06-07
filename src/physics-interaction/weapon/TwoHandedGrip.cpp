@@ -5,10 +5,12 @@
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/core/RockRuntimeState.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 #include "RockConfig.h"
 #include "RockUtils.h"
 #include "physics-interaction/TransformMath.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 #include "f4vr/F4VRUtils.h"
@@ -369,6 +371,7 @@ namespace rock
         bool supportHandHoldingObject,
         float dt,
         std::uint64_t currentWeaponGenerationKey,
+        const WeaponCollision& weaponCollision,
         const WeaponInteractionRuntimeState& runtimeState,
         weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode)
     {
@@ -407,7 +410,7 @@ namespace rock
                 }
             }
             if (weapon_two_handed_grip_math::canStartSupportGrip(leftTouchingSupport, leftGripPressed, supportHandHoldingObject)) {
-                transitionToGripping(interactionWeaponNode, decision, supportAuthorityMode);
+                transitionToGripping(interactionWeaponNode, decision, weaponCollision, supportAuthorityMode);
             }
             break;
 
@@ -575,8 +578,11 @@ namespace rock
     void TwoHandedGrip::transitionToGripping(
         RE::NiNode* weaponNode,
         const WeaponInteractionDecision& decision,
+        const WeaponCollision& weaponCollision,
         weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode)
     {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::TwoHandedGripStart);
+
         if (!weaponNode) {
             transitionToInactive(false);
             return;
@@ -624,7 +630,7 @@ namespace rock
         RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(supportTransform, supportHandIsLeft);
 
         std::vector<TriangleData> triangles;
-        extractAllTriangles(sourceRoot, triangles);
+        const bool cachedTrianglesFound = weaponCollision.tryBuildSupportGripEvidenceTriangles(decision.bodyId, triangles);
 
         GrabPoint grabPoint;
         bool meshFound = false;
@@ -741,9 +747,9 @@ namespace rock
         ROCK_LOG_INFO(Weapon,
             "TwoHandedGrip: grip active weapon='{}', "
             "primaryLocal=({:.3f},{:.3f},{:.3f}), supportLocal=({:.3f},{:.3f},{:.3f}), "
-            "gripSeparation={:.3f}, primaryGripSource={}, primaryGripConfidence={:.2f}, meshGrab={}, triangles={}, partKind={}, pose={}, authorityMode={}, weaponRoot='{}', sourceRoot='{}', generation={:016X}",
+            "gripSeparation={:.3f}, primaryGripSource={}, primaryGripConfidence={:.2f}, meshGrab={}, triangles={}, cachedTriangles={}, partKind={}, pose={}, authorityMode={}, weaponRoot='{}', sourceRoot='{}', generation={:016X}",
             weaponNode->name.c_str(), _primaryGripLocal.x, _primaryGripLocal.y, _primaryGripLocal.z, _offhandGripLocal.x, _offhandGripLocal.y, _offhandGripLocal.z, gripDist,
-            "root-flattened", _primaryGripConfidence, meshFound ? "YES" : "FALLBACK", triangles.size(), static_cast<int>(_supportPartKind),
+            "root-flattened", _primaryGripConfidence, meshFound ? "YES" : "FALLBACK", triangles.size(), cachedTrianglesFound ? "yes" : "no", static_cast<int>(_supportPartKind),
             static_cast<int>(_supportGripPose), static_cast<int>(_authorityMode), weaponNode->name.c_str(), sourceRoot ? sourceRoot->name.c_str() : "(null)", _activeWeaponGenerationKey);
     }
 
