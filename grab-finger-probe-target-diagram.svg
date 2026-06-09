@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="950" viewBox="0 0 1500 950" role="img" aria-labelledby="title desc">
+  <title id="title">ROCK Grab Finger Probe And Target Diagram</title>
+  <desc id="desc">Diagram showing how ROCK builds five finger probes from live finger bases, how debug probe lines differ from final surface aim targets, and how targets are stored object-local and rebuilt as the object moves.</desc>
+  <defs>
+    <marker id="arrowDark" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#263545" />
+    </marker>
+    <marker id="arrowProbe" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#2f6fed" />
+    </marker>
+    <marker id="arrowTarget" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#df4b2f" />
+    </marker>
+    <style>
+      .bg { fill: #f6f8fb; }
+      .panel { fill: #ffffff; stroke: #c8d1dc; stroke-width: 2; rx: 22; }
+      .title { font: 700 34px Arial, sans-serif; fill: #16202a; }
+      .subtitle { font: 400 18px Arial, sans-serif; fill: #465666; }
+      .panelTitle { font: 700 22px Arial, sans-serif; fill: #16202a; }
+      .label { font: 700 16px Arial, sans-serif; fill: #263545; }
+      .small { font: 400 14px Arial, sans-serif; fill: #526273; }
+      .tiny { font: 400 12px Arial, sans-serif; fill: #526273; }
+      .code { font: 700 14px Consolas, monospace; fill: #263545; }
+      .hand { fill: #f3c7a4; stroke: #8a5a44; stroke-width: 3; }
+      .finger { fill: none; stroke: #8a5a44; stroke-width: 12; stroke-linecap: round; }
+      .bone { fill: #7d4f3b; stroke: #4f2e22; stroke-width: 1; }
+      .object { fill: #dfe8f6; stroke: #496a94; stroke-width: 3; }
+      .objectGhost { fill: #dfe8f6; stroke: #496a94; stroke-width: 2; opacity: 0.25; }
+      .tri { fill: none; stroke: #7691b3; stroke-width: 2; stroke-dasharray: 5 5; }
+      .probe { fill: none; stroke: #2f6fed; stroke-width: 4; marker-end: url(#arrowProbe); }
+      .probeFaint { fill: none; stroke: #2f6fed; stroke-width: 3; opacity: 0.35; marker-end: url(#arrowProbe); }
+      .targetLine { fill: none; stroke: #df4b2f; stroke-width: 4; marker-end: url(#arrowTarget); }
+      .flow { fill: none; stroke: #263545; stroke-width: 3; marker-end: url(#arrowDark); }
+      .target { fill: #ff7a59; stroke: #9f2d16; stroke-width: 2; }
+      .probeEnd { fill: #2f6fed; stroke: #123f99; stroke-width: 2; }
+      .base { fill: #ffffff; stroke: #263545; stroke-width: 3; }
+      .stored { fill: #ffd2c6; stroke: #9f2d16; stroke-width: 2; stroke-dasharray: 5 4; }
+      .note { fill: #fff7e8; stroke: #e0b45b; stroke-width: 2; rx: 14; }
+      .good { fill: #eaf6ef; stroke: #4c9a72; stroke-width: 2; rx: 14; }
+      .warn { fill: #fff1f1; stroke: #d67b7b; stroke-width: 2; rx: 14; }
+      .angle { fill: none; stroke: #b85c00; stroke-width: 4; }
+      .angleText { font: 700 16px Arial, sans-serif; fill: #b85c00; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1500" height="950" />
+  <text class="title" x="55" y="62">Five finger probes vs final surface targets</text>
+  <text class="subtitle" x="55" y="94">The debug rays show solver probe geometry. Splay/local-transform targeting uses accepted hit points stored as current `surfaceAimTarget` values.</text>
+
+  <rect class="panel" x="45" y="130" width="315" height="655" rx="22" />
+  <text class="panelTitle" x="75" y="172">1. Live source</text>
+  <text class="small" x="75" y="200">ROCK samples the root-flattened hand.</text>
+
+  <ellipse class="hand" cx="190" cy="515" rx="60" ry="80" transform="rotate(-8 190 515)" />
+  <path class="finger" d="M150 455 C120 415 105 370 103 330" />
+  <path class="finger" d="M175 440 C160 390 155 350 158 312" />
+  <path class="finger" d="M200 438 C205 388 214 348 230 310" />
+  <path class="finger" d="M225 448 C250 405 275 372 306 345" />
+  <path class="finger" d="M148 525 C112 510 85 482 65 452" />
+
+  <circle class="base" cx="150" cy="455" r="7" />
+  <circle class="base" cx="175" cy="440" r="7" />
+  <circle class="base" cx="200" cy="438" r="7" />
+  <circle class="base" cx="225" cy="448" r="7" />
+  <circle class="base" cx="148" cy="525" r="7" />
+  <path class="probeFaint" d="M150 455 L105 325" />
+  <path class="probeFaint" d="M175 440 L158 312" />
+  <path class="probeFaint" d="M200 438 L230 310" />
+  <path class="probeFaint" d="M225 448 L306 345" />
+  <path class="probeFaint" d="M148 525 L65 452" />
+
+  <rect class="good" x="75" y="620" width="240" height="110" rx="14" />
+  <text class="code" x="95" y="650">probeStart[finger]</text>
+  <text class="small" x="95" y="675">live finger base</text>
+  <text class="code" x="95" y="704">live.openDirection</text>
+  <text class="small" x="95" y="729">from live finger chain</text>
+
+  <rect class="panel" x="405" y="130" width="430" height="655" rx="22" />
+  <text class="panelTitle" x="435" y="172">2. Broad mesh solve</text>
+  <text class="small" x="435" y="200">Five probes are built and tested against object triangles.</text>
+
+  <path class="object" d="M565 315 L750 260 L790 510 L575 575 Z" />
+  <path class="tri" d="M565 315 L790 510 M750 260 L575 575 M600 420 L768 378 M645 300 L705 550" />
+
+  <circle class="base" cx="480" cy="380" r="6" />
+  <circle class="base" cx="485" cy="430" r="6" />
+  <circle class="base" cx="492" cy="480" r="6" />
+  <circle class="base" cx="505" cy="528" r="6" />
+  <circle class="base" cx="468" cy="545" r="6" />
+
+  <path class="probe" d="M480 380 L660 340" />
+  <path class="probe" d="M485 430 L705 392" />
+  <path class="probe" d="M492 480 L720 470" />
+  <path class="probe" d="M505 528 L670 540" />
+  <path class="probe" d="M468 545 L590 495" />
+
+  <circle class="target" cx="620" cy="349" r="10" />
+  <circle class="target" cx="660" cy="400" r="10" />
+  <circle class="probeEnd" cx="720" cy="470" r="7" />
+  <circle class="target" cx="632" cy="536" r="10" />
+  <circle class="target" cx="575" cy="501" r="10" />
+
+  <text class="label" x="575" y="630">Debug line</text>
+  <text class="small" x="575" y="654">`probeStart -> probeEnd`</text>
+  <text class="label" x="575" y="690">Actual target</text>
+  <text class="small" x="575" y="714">accepted hit point when valid</text>
+
+  <rect class="warn" x="435" y="620" width="270" height="110" rx="14" />
+  <text class="code" x="455" y="650">surfaceAimTargetValid</text>
+  <text class="small" x="455" y="675">can be false for a finger</text>
+  <text class="small" x="455" y="700">debug probe may still exist</text>
+  <text class="small" x="455" y="724">but splay stays zero</text>
+
+  <rect class="panel" x="880" y="130" width="275" height="655" rx="22" />
+  <text class="panelTitle" x="910" y="172">3. Store and rebuild</text>
+  <text class="small" x="910" y="200">Targets are tied to the object, not world.</text>
+
+  <path class="objectGhost" d="M960 335 L1080 300 L1105 445 L965 490 Z" />
+  <path class="object" d="M985 385 L1105 350 L1130 495 L990 540 Z" />
+  <circle class="stored" cx="1010" cy="430" r="10" />
+  <circle class="target" cx="1040" cy="480" r="10" />
+  <path class="targetLine" d="M1010 430 C1010 460 1020 475 1040 480" />
+
+  <rect class="note" x="910" y="585" width="210" height="145" rx="14" />
+  <text class="code" x="930" y="615">At grab:</text>
+  <text class="small" x="930" y="640">world target -></text>
+  <text class="small" x="930" y="662">object-local target</text>
+  <text class="code" x="930" y="692">While held:</text>
+  <text class="small" x="930" y="716">object-local -></text>
+  <text class="small" x="930" y="738">current world target</text>
+
+  <rect class="panel" x="1200" y="130" width="255" height="655" rx="22" />
+  <text class="panelTitle" x="1230" y="172">4. Pose use</text>
+  <text class="small" x="1230" y="200">Splay uses the current target.</text>
+
+  <circle class="base" cx="1270" cy="405" r="8" />
+  <circle class="target" cx="1400" cy="350" r="11" />
+  <path class="probeFaint" d="M1270 405 L1415 395" />
+  <path class="targetLine" d="M1270 405 L1390 354" />
+  <path class="probe" d="M1270 405 L1365 405" />
+  <path class="angle" d="M1310 402 C1328 392 1340 380 1346 365" />
+  <text class="angleText" x="1332" y="348">splay</text>
+
+  <rect class="good" x="1228" y="500" width="200" height="110" rx="14" />
+  <text class="code" x="1248" y="530">splay = angle</text>
+  <text class="small" x="1248" y="555">open direction vs</text>
+  <text class="small" x="1248" y="579">base-to-target</text>
+  <text class="small" x="1248" y="603">on palm plane</text>
+
+  <rect class="warn" x="1228" y="642" width="200" height="88" rx="14" />
+  <text class="code" x="1248" y="672">Not probeEnd</text>
+  <text class="small" x="1248" y="696">uses hit/target point</text>
+  <text class="small" x="1248" y="720">when valid</text>
+
+  <path class="flow" d="M360 460 C380 460 385 460 405 460" />
+  <path class="flow" d="M835 460 C855 460 860 460 880 460" />
+  <path class="flow" d="M1155 460 C1175 460 1180 460 1200 460" />
+
+  <rect class="panel" x="45" y="820" width="1410" height="85" rx="22" />
+  <text class="label" x="75" y="855">What your debug rays mean:</text>
+  <text class="small" x="75" y="881">They are real solver probes: `probeStart[finger]` to `probeEnd[finger]`. They show the search path. The pose enrichment uses `surfaceAimTarget[finger]` only if the solver accepted a valid hit/target for that finger.</text>
+</svg>
