@@ -110,6 +110,16 @@ int main()
         correctionStrengthForFinger(0, 0.25f, 0.8f), 0.8f);
     ok &= expectFloat("finger correction uses surface aim strength",
         correctionStrengthForFinger(3, 0.25f, 0.8f), 0.25f);
+    ok &= expectFloat("non-thumb proximal surface target correction is disabled",
+        surfaceAimSegmentCorrectionWeight(2, 0), 0.0f);
+    ok &= expectFloat("non-thumb distal surface target correction is bounded",
+        surfaceAimSegmentCorrectionWeight(2, 2), 0.34f);
+    ok &= expectFloat("thumb surface target correction keeps proximal limit",
+        surfaceAimSegmentCorrectionWeight(0, 0), 0.08f);
+    ok &= expectFloat("bounded surface aim correction applies segment cap",
+        boundedSurfaceAimCorrectionRadians(1.0f, 1.0f, 0.5f, 2, 2), 0.17f);
+    ok &= expectFloat("bounded surface aim correction skips disabled proximal segment",
+        boundedSurfaceAimCorrectionRadians(1.0f, 1.0f, 0.5f, 2, 0), 0.0f);
     ok &= expectBool("alternate thumb skips shared surface aim",
         shouldApplySurfaceAimCorrection(0, true), false);
     ok &= expectBool("primary thumb keeps shared surface aim",
@@ -236,6 +246,9 @@ int main()
     ok &= expectFloat("surface-contact splay clamps large lateral targets",
         clampSurfaceContactSplayRadians(1.0f, 0.28f),
         0.28f);
+    ok &= expectFloat("surface-contact splay default stays conservative",
+        clampSurfaceContactSplayRadians(1.0f),
+        kDefaultSurfaceContactSplayMaxRadians);
 
     rock::root_flattened_finger_skeleton_runtime::Snapshot liveFingerSnapshot{};
     liveFingerSnapshot.valid = true;

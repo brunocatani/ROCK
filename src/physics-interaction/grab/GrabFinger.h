@@ -1397,7 +1397,7 @@ namespace rock::grab_finger_pose_runtime
     }
 
     // Semantic splay follows current finger/contact geometry; wrist pitch/yaw remain owned by hand-world authority.
-    inline constexpr float kDefaultSurfaceContactSplayMaxRadians = 0.28f;
+    inline constexpr float kDefaultSurfaceContactSplayMaxRadians = 0.16f;
 
     inline bool hasSurfaceContactSplayCandidates(const SolvedGrabFingerPose& pose)
     {
@@ -1869,6 +1869,41 @@ namespace rock::grab_finger_local_transform_math
     [[nodiscard]] inline float correctionStrengthForFinger(std::size_t fingerIndex, float surfaceAimStrength, float thumbOppositionStrength)
     {
         return fingerIndex == 0 ? thumbOppositionStrength : surfaceAimStrength;
+    }
+
+    [[nodiscard]] inline float surfaceAimSegmentCorrectionWeight(std::size_t fingerIndex, std::size_t segment)
+    {
+        static constexpr float kThumbWeights[3]{ 0.08f, 0.18f, 0.30f };
+        static constexpr float kFingerWeights[3]{ 0.0f, 0.18f, 0.34f };
+        if (segment >= 3) {
+            return 0.0f;
+        }
+        return fingerIndex == 0 ? kThumbWeights[segment] : kFingerWeights[segment];
+    }
+
+    [[nodiscard]] inline float boundedSurfaceAimCorrectionRadians(
+        float rawAngleRadians,
+        float strength,
+        float maxCorrectionRadians,
+        std::size_t fingerIndex,
+        std::size_t segment)
+    {
+        if (!std::isfinite(rawAngleRadians) || rawAngleRadians <= 0.0f ||
+            !std::isfinite(maxCorrectionRadians) || maxCorrectionRadians <= 0.0f) {
+            return 0.0f;
+        }
+
+        const float segmentWeight = surfaceAimSegmentCorrectionWeight(fingerIndex, segment);
+        if (segmentWeight <= 0.0f) {
+            return 0.0f;
+        }
+
+        const float resolvedStrength = sanitizeUnitStrength(strength, 0.0f);
+        if (resolvedStrength <= 0.0f) {
+            return 0.0f;
+        }
+
+        return std::min(rawAngleRadians * resolvedStrength * segmentWeight, maxCorrectionRadians * segmentWeight);
     }
 
     [[nodiscard]] inline bool shouldApplySurfaceAimCorrection(
@@ -2432,6 +2467,8 @@ namespace rock::grab_finger_local_transform_runtime
                     continue;
                 }
 
+                const std::size_t segment = index % 3;
+
                 const RE::NiPoint3 currentAxisWorld = normalizeOrFallback(
                     transform_math::rotateLocalVectorToWorld(node.world.rotate, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }),
                     RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
@@ -2446,7 +2483,15 @@ namespace rock::grab_finger_local_transform_runtime
                 if (!std::isfinite(angle) || angle <= 0.0001f) {
                     continue;
                 }
-                angle = std::min(angle * strength, maxCorrectionRadians);
+                angle = grab_finger_local_transform_math::boundedSurfaceAimCorrectionRadians(
+                    angle,
+                    strength,
+                    maxCorrectionRadians,
+                    finger,
+                    segment);
+                if (angle <= 0.0001f) {
+                    continue;
+                }
 
                 RE::NiPoint3 axis = cross(currentAxisWorld, targetAxisWorld);
                 if (lengthSquared(axis) <= 0.000001f) {
