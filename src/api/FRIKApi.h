@@ -204,7 +204,7 @@ namespace frik::api
 
         bool(FRIK_CALL* setHandPoseCustomFingerPositionsWithPriority)(const char* tag, Hand hand, float thumb, float index, float middle, float ring, float pinky, int priority);
 
-        bool(FRIK_CALL* setHandPoseCustomJointPositionsWithPriority)(const char* tag, Hand hand, const float values[15], int priority);
+        bool(FRIK_CALL* setHandPoseCustomWithPriority)(const char* tag, Hand hand, const HandPoseData& handPose, int priority);
 
         bool(FRIK_CALL* applyExternalHandWorldTransform)(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority);
 
@@ -215,7 +215,7 @@ namespace frik::api
         // are not suppressed by incomplete overrides.
         bool(FRIK_CALL* setHandPoseCustomLocalTransformsWithPriority)(const char* tag, Hand hand, const FingerLocalTransformOverride* overrideData, int priority);
 
-        bool(FRIK_CALL* getHandPoseLocalTransformsForJointPositions)(Hand hand, const float values[15], FingerLocalTransformOverride* outTransforms);
+        bool(FRIK_CALL* getHandPoseLocalTransformsForPose)(Hand hand, const HandPoseData& handPose, FingerLocalTransformOverride* outTransforms);
 
         [[nodiscard]] static int initialize(const uint32_t minVersion = FRIK_API_VERSION)
         {
@@ -249,5 +249,5 @@ namespace frik::api
         inline static const FRIKApi* inst = nullptr;
     };
 
-    static_assert(FRIK_API_VERSION == 5, "ROCK requires FRIK API v5 upstream-compatible hand pose and visual-authority support");
+    static_assert(FRIK_API_VERSION == 5, "ROCK requires the local FRIK API v5 canonical 22-float hand-pose and visual-authority contract");
 }

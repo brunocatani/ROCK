@@ -3935,16 +3935,20 @@ namespace rock
                 return;
             }
 
-            if (g_rockConfig.rockGrabMeshJointPoseEnabled && fingerPose.solved && fingerPose.hasJointValues) {
+            if (g_rockConfig.rockGrabMeshJointPoseEnabled && fingerPose.solved) {
+                const auto targetJointPose = fingerPose.hasJointValues ?
+                    fingerPose.jointValues :
+                    grab_finger_pose_math::expandFingerCurlsToJointValues(fingerPose.values);
                 if (!hasCurrentJointPose) {
-                    currentJointPose = fingerPose.jointValues;
+                    currentJointPose = targetJointPose;
                     hasCurrentJointPose = true;
                 } else {
                     currentJointPose = grab_finger_pose_math::advanceJointValues(
-                        currentJointPose, fingerPose.jointValues, g_rockConfig.rockGrabFingerPoseSmoothingSpeed, deltaTime);
+                        currentJointPose, targetJointPose, g_rockConfig.rockGrabFingerPoseSmoothingSpeed, deltaTime);
                 }
 
-                if (!frik_visual_authority::setHandPoseCustomJointPositionsWithPriority("ROCK_Grab", hand, currentJointPose.data(), 100)) {
+                const auto currentHandPose = frik_visual_authority::makeHandPoseDataFromJointValues(currentJointPose);
+                if (!frik_visual_authority::setHandPoseCustomWithPriority("ROCK_Grab", hand, currentHandPose, 100)) {
                     hasCurrentJointPose = false;
                     grab_finger_local_transform_runtime::clearLocalTransformOverride("ROCK_Grab", hand, 100, localTransformState);
                     syncLocalTransformState();
@@ -3954,7 +3958,7 @@ namespace rock
                     hand,
                     isLeft,
                     fingerPose,
-                    currentJointPose,
+                    currentHandPose,
                     grab_finger_local_transform_runtime::Options{
                         .enabled = publishLocalTransforms && g_rockConfig.rockGrabMeshLocalTransformPoseEnabled,
                         .smoothingSpeed = g_rockConfig.rockGrabFingerLocalTransformSmoothingSpeed,
@@ -3983,15 +3987,13 @@ namespace rock
                 hasCurrentJointPose = false;
                 grab_finger_local_transform_runtime::clearLocalTransformOverride("ROCK_Grab", hand, 100, localTransformState);
                 syncLocalTransformState();
-                const bool published = frik_visual_authority::setHandPoseCustomFingerPositionsWithPriority(
-                    "ROCK_Grab",
-                    hand,
+                const auto handPose = frik_visual_authority::makeUniformHandPoseData(
                     fingerPose.values[0],
                     fingerPose.values[1],
                     fingerPose.values[2],
                     fingerPose.values[3],
-                    fingerPose.values[4],
-                    100);
+                    fingerPose.values[4]);
+                const bool published = frik_visual_authority::setHandPoseCustomWithPriority("ROCK_Grab", hand, handPose, 100);
                 if (published && g_rockConfig.rockDebugGrabFrameLogging) {
                     ROCK_LOG_DEBUG(Hand,
                         "{} hand FINGER POSE: mesh values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} candidateTris={} altThumb={}",
@@ -4009,10 +4011,13 @@ namespace rock
             const float configuredFallback =
                 std::isfinite(g_rockConfig.rockSelectedCloseFingerAnimValue) ? g_rockConfig.rockSelectedCloseFingerAnimValue : 0.9f;
             const float fallbackValue = std::clamp(configuredFallback, fallbackMin, 1.0f);
-            if (!frik_visual_authority::setHandPoseCustomFingerPositionsWithPriority(
-                    "ROCK_Grab", hand, fallbackValue, fallbackValue, fallbackValue, fallbackValue, fallbackValue, 100)) {
-                (void)frik_visual_authority::setHandPoseWithPriority("ROCK_Grab", hand, frik_visual_authority::HandPoses::Fist, 100);
-            }
+            const auto fallbackPose = frik_visual_authority::makeUniformHandPoseData(
+                fallbackValue,
+                fallbackValue,
+                fallbackValue,
+                fallbackValue,
+                fallbackValue);
+            (void)frik_visual_authority::setHandPoseCustomWithPriority("ROCK_Grab", hand, fallbackPose, 100);
             if (g_rockConfig.rockDebugGrabFrameLogging) {
                 ROCK_LOG_DEBUG(Hand,
                     "{} hand FINGER POSE: using selected-close fallback value={:.2f} solved={} hits={} candidateTris={}",

@@ -1922,7 +1922,11 @@ namespace rock
 
         const float value = std::clamp(g_rockConfig.rockSelectedCloseFingerAnimValue, 0.0f, 1.0f);
         const auto hand = handFromBool(_isLeft);
-        if (frik_visual_authority::setHandPoseCustomFingerPositionsWithPriority(SELECTED_CLOSE_FINGER_TAG, hand, value, value, value, value, value, 10)) {
+        if (frik_visual_authority::setHandPoseCustomWithPriority(
+                SELECTED_CLOSE_FINGER_TAG,
+                hand,
+                frik_visual_authority::makeUniformHandPoseData(value, value, value, value, value),
+                10)) {
             _selectedCloseFingerPoseActive = true;
         }
     }

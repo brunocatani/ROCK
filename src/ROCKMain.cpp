@@ -431,6 +431,21 @@ namespace
 
             logger::info("ROCK: FRIKApi v{} (API v{}) initialized successfully.", frik::api::FRIKApi::inst->getModVersion(), frik::api::FRIKApi::inst->getVersion());
 
+            const auto* frikApi = frik::api::FRIKApi::inst;
+            const bool hasCanonicalHandPoseContract =
+                frikApi &&
+                frikApi->setHandPoseCustomWithPriority != nullptr &&
+                frikApi->getHandPoseLocalTransformsForPose != nullptr &&
+                frikApi->setHandPoseCustomLocalTransformsWithPriority != nullptr &&
+                frikApi->applyExternalHandWorldTransform != nullptr &&
+                frikApi->clearExternalHandWorldTransform != nullptr;
+            if (!hasCanonicalHandPoseContract) {
+                logger::critical(
+                    "ROCK: FRIKApi v5 contract mismatch. Loaded FRIK.dll does not expose the canonical 22-float hand-pose contract required by this ROCK build. Deploy the matching rebuilt FRIK.dll. ROCK is now DISABLED.");
+                s_frikAvailable = false;
+                return;
+            }
+
             g_rockConfig.load();
             rock::installHavokTimingFixHook();
             runtime_state::initialize();

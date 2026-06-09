@@ -1287,11 +1287,11 @@ namespace rock::grab_finger_local_transform_math
     [[nodiscard]] inline bool shouldPublishLocalTransformPose(
         bool enabled,
         bool poseSolved,
-        bool hasJointValues,
+        bool hasCanonicalHandPose,
         bool hasBaselineApi,
         bool hasPublishApi)
     {
-        return enabled && poseSolved && hasJointValues && hasBaselineApi && hasPublishApi;
+        return enabled && poseSolved && hasCanonicalHandPose && hasBaselineApi && hasPublishApi;
     }
 
     [[nodiscard]] inline float sanitizeUnitStrength(float value, float fallback)
@@ -2006,7 +2006,7 @@ namespace rock::grab_finger_local_transform_runtime
         frik_visual_authority::Hand hand,
         bool isLeft,
         const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose,
-        const std::array<float, 15>& jointValues,
+        const frik_visual_authority::HandPoseData& handPose,
         Options options,
         float deltaTime,
         int priority,
@@ -2017,8 +2017,8 @@ namespace rock::grab_finger_local_transform_runtime
             grab_finger_local_transform_math::shouldPublishLocalTransformPose(
                 options.enabled,
                 fingerPose.solved,
-                fingerPose.hasJointValues,
-                api && api->getHandPoseLocalTransformsForJointPositions != nullptr,
+                true,
+                api && api->getHandPoseLocalTransformsForPose != nullptr,
                 api && api->setHandPoseCustomLocalTransformsWithPriority != nullptr);
         if (!canPublish) {
             clearLocalTransformOverride(tag, hand, priority, state);
@@ -2026,7 +2026,7 @@ namespace rock::grab_finger_local_transform_runtime
         }
 
         frik_visual_authority::FingerLocalTransformOverride baseline{};
-        if (!frik_visual_authority::getHandPoseLocalTransformsForJointPositions(hand, jointValues.data(), &baseline)) {
+        if (!frik_visual_authority::getHandPoseLocalTransformsForPose(hand, handPose, &baseline)) {
             clearLocalTransformOverride(tag, hand, priority, state);
             return false;
         }

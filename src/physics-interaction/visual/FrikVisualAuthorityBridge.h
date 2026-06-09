@@ -1,12 +1,50 @@
 #pragma once
 
+#include <array>
+
 #include "api/FRIKApi.h"
 
 namespace rock::frik_visual_authority
 {
     using Hand = frik::api::FRIKApi::Hand;
-    using HandPoses = frik::api::FRIKApi::HandPoses;
+    using HandPoseData = frik::api::FRIKApi::HandPoseData;
     using FingerLocalTransformOverride = frik::api::FRIKApi::FingerLocalTransformOverride;
+
+    [[nodiscard]] inline HandPoseData makeHandPoseDataFromJointValues(const float values[15])
+    {
+        return HandPoseData{
+            .thumb = { values[0], values[1], values[2], 0.0f },
+            .index = { values[3], values[4], values[5], 0.0f },
+            .middle = { values[6], values[7], values[8], 0.0f },
+            .ring = { values[9], values[10], values[11], 0.0f },
+            .pinky = { values[12], values[13], values[14], 0.0f },
+            .palmPitch = 0.0f,
+            .palmYaw = 0.0f,
+        };
+    }
+
+    [[nodiscard]] inline HandPoseData makeHandPoseDataFromJointValues(const std::array<float, 15>& values)
+    {
+        return makeHandPoseDataFromJointValues(values.data());
+    }
+
+    [[nodiscard]] inline HandPoseData makeUniformHandPoseData(
+        float thumb,
+        float index,
+        float middle,
+        float ring,
+        float pinky)
+    {
+        return HandPoseData{
+            .thumb = { thumb, thumb, thumb, 0.0f },
+            .index = { index, index, index, 0.0f },
+            .middle = { middle, middle, middle, 0.0f },
+            .ring = { ring, ring, ring, 0.0f },
+            .pinky = { pinky, pinky, pinky, 0.0f },
+            .palmPitch = 0.0f,
+            .palmYaw = 0.0f,
+        };
+    }
 
     [[nodiscard]] inline const frik::api::FRIKApi* api()
     {
@@ -41,32 +79,10 @@ namespace rock::frik_visual_authority
         return frikApi && frikApi->clearHandPose && frikApi->clearHandPose(tag, hand);
     }
 
-    [[nodiscard]] inline bool setHandPoseWithPriority(const char* tag, Hand hand, HandPoses pose, int priority)
+    [[nodiscard]] inline bool setHandPoseCustomWithPriority(const char* tag, Hand hand, const HandPoseData& handPose, int priority)
     {
         auto* frikApi = api();
-        return frikApi && frikApi->setHandPoseWithPriority && frikApi->setHandPoseWithPriority(tag, hand, pose, priority);
-    }
-
-    [[nodiscard]] inline bool setHandPoseCustomFingerPositionsWithPriority(
-        const char* tag,
-        Hand hand,
-        float thumb,
-        float index,
-        float middle,
-        float ring,
-        float pinky,
-        int priority)
-    {
-        auto* frikApi = api();
-        return frikApi &&
-            frikApi->setHandPoseCustomFingerPositionsWithPriority &&
-            frikApi->setHandPoseCustomFingerPositionsWithPriority(tag, hand, thumb, index, middle, ring, pinky, priority);
-    }
-
-    [[nodiscard]] inline bool setHandPoseCustomJointPositionsWithPriority(const char* tag, Hand hand, const float values[15], int priority)
-    {
-        auto* frikApi = api();
-        return frikApi && frikApi->setHandPoseCustomJointPositionsWithPriority && frikApi->setHandPoseCustomJointPositionsWithPriority(tag, hand, values, priority);
+        return frikApi && frikApi->setHandPoseCustomWithPriority && frikApi->setHandPoseCustomWithPriority(tag, hand, handPose, priority);
     }
 
     [[nodiscard]] inline bool applyExternalHandWorldTransform(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority)
@@ -93,15 +109,15 @@ namespace rock::frik_visual_authority
             frikApi->setHandPoseCustomLocalTransformsWithPriority(tag, hand, overrideData, priority);
     }
 
-    [[nodiscard]] inline bool getHandPoseLocalTransformsForJointPositions(
+    [[nodiscard]] inline bool getHandPoseLocalTransformsForPose(
         Hand hand,
-        const float values[15],
+        const HandPoseData& handPose,
         FingerLocalTransformOverride* outTransforms)
     {
         auto* frikApi = api();
         return frikApi &&
-            frikApi->getHandPoseLocalTransformsForJointPositions &&
-            frikApi->getHandPoseLocalTransformsForJointPositions(hand, values, outTransforms);
+            frikApi->getHandPoseLocalTransformsForPose &&
+            frikApi->getHandPoseLocalTransformsForPose(hand, handPose, outTransforms);
     }
 
     [[nodiscard]] inline bool blockOffHandWeaponGripping(const char* tag, bool block)
