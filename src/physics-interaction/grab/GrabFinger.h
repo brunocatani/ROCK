@@ -805,6 +805,63 @@ namespace rock::grab_finger_pose_runtime
         grab_finger_pose_math::FingerCurlValue thumbAlternateCurve{};
     };
 
+    struct GrabFingerPoseTargetSet
+    {
+        std::array<RE::NiPoint3, 5> targets{};
+        std::array<RE::NiPoint3, 5> targetNormals{};
+        std::array<std::uint8_t, 5> targetValid{};
+        std::array<std::uint8_t, 5> targetNormalValid{};
+        RE::NiPoint3 seatPointWorld{};
+        RE::NiPoint3 seatNormalWorld{};
+        bool seatPointValid = false;
+        bool seatNormalValid = false;
+        bool useSeatPointForMissingTargets = true;
+        bool useWholeMeshForMissingTargets = false;
+        std::uint32_t targetCount = 0;
+    };
+
+    struct FingerPadSurfaceEvidence
+    {
+        RE::NiPoint3 startWorld{};
+        RE::NiPoint3 endWorld{};
+        RE::NiPoint3 hitPointWorld{};
+        RE::NiPoint3 hitNormalWorld{};
+        float distanceGameUnits = 0.0f;
+        float quality = 0.0f;
+        bool hit = false;
+        bool fromClosestSurface = false;
+        bool padMayBeInsideSurface = false;
+    };
+
+    struct FingerPadProbeOptions
+    {
+        float probeRadiusGameUnits = 1.0f;
+        float probeDistanceGameUnits = 6.0f;
+        float closestSurfaceMaxDistanceGameUnits = 4.0f;
+        float openBiasStrength = 0.65f;
+        float targetOverrideMinQuality = 0.5f;
+    };
+
+    inline FingerPadProbeOptions sanitizeFingerPadProbeOptions(FingerPadProbeOptions options)
+    {
+        if (!std::isfinite(options.probeRadiusGameUnits) || options.probeRadiusGameUnits <= 0.0f) {
+            options.probeRadiusGameUnits = 1.0f;
+        }
+        if (!std::isfinite(options.probeDistanceGameUnits) || options.probeDistanceGameUnits <= 0.0f) {
+            options.probeDistanceGameUnits = 6.0f;
+        }
+        if (!std::isfinite(options.closestSurfaceMaxDistanceGameUnits) || options.closestSurfaceMaxDistanceGameUnits <= 0.0f) {
+            options.closestSurfaceMaxDistanceGameUnits = 4.0f;
+        }
+
+        options.probeRadiusGameUnits = std::clamp(options.probeRadiusGameUnits, 0.05f, 8.0f);
+        options.probeDistanceGameUnits = std::clamp(options.probeDistanceGameUnits, 0.5f, 32.0f);
+        options.closestSurfaceMaxDistanceGameUnits = std::clamp(options.closestSurfaceMaxDistanceGameUnits, 0.5f, 24.0f);
+        options.openBiasStrength = std::isfinite(options.openBiasStrength) ? std::clamp(options.openBiasStrength, 0.0f, 1.0f) : 0.65f;
+        options.targetOverrideMinQuality = std::isfinite(options.targetOverrideMinQuality) ? std::clamp(options.targetOverrideMinQuality, 0.0f, 1.0f) : 0.5f;
+        return options;
+    }
+
     inline void captureSurfaceAimObjectLocal(SolvedGrabFingerPose& pose, const RE::NiTransform& objectWorldTransform)
     {
         pose.surfaceAimTargetObjectLocal = {};
@@ -948,6 +1005,392 @@ namespace rock::grab_finger_pose_runtime
         return dx * dx + dy * dy + dz * dz;
     }
 
+    inline bool isFinitePoint(const RE::NiPoint3& point)
+    {
+        return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
+    }
+
+    inline bool isFiniteTransformForFingerPadProbe(const RE::NiTransform& transform)
+    {
+        if (!isFinitePoint(transform.translate) || !std::isfinite(transform.scale) || std::abs(transform.scale) <= 0.000001f) {
+            return false;
+        }
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                if (!std::isfinite(transform.rotate.entry[row][column])) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    inline bool shouldRunFingerPadProbeRefinement(
+        bool meshFingerPoseEnabled,
+        bool grabFingerPosePublished,
+        bool hasObjectTransform,
+        bool hasLiveFingerSnapshot,
+        bool hasTriangles)
+    {
+        return meshFingerPoseEnabled && grabFingerPosePublished && hasObjectTransform && hasLiveFingerSnapshot && hasTriangles;
+    }
+
+    inline bool computeFingerPadCenter(
+        const root_flattened_finger_skeleton_runtime::FingerChain& chain,
+        RE::NiPoint3& outPadCenterWorld)
+    {
+        if (!chain.valid || !isFinitePoint(chain.points[1]) || !isFinitePoint(chain.points[2])) {
+            outPadCenterWorld = {};
+            return false;
+        }
+
+        outPadCenterWorld = (chain.points[1] + chain.points[2]) * 0.5f;
+        return isFinitePoint(outPadCenterWorld);
+    }
+
+    inline RE::NiPoint3 fingerPadProbeDirection(
+        const SolvedGrabFingerPose& pose,
+        const GrabFingerPoseTargetSet& poseTargets,
+        const root_flattened_finger_skeleton_runtime::FingerLandmark& liveFinger,
+        std::size_t finger,
+        const RE::NiPoint3& padCenterWorld)
+    {
+        RE::NiPoint3 targetWorld{};
+        bool hasTarget = false;
+        if (finger < pose.surfaceAimTargetValid.size() && pose.surfaceAimTargetValid[finger]) {
+            targetWorld = pose.surfaceAimTarget[finger];
+            hasTarget = true;
+        } else if (finger < poseTargets.targetValid.size() && poseTargets.targetValid[finger]) {
+            targetWorld = poseTargets.targets[finger];
+            hasTarget = true;
+        } else if (poseTargets.seatPointValid) {
+            targetWorld = poseTargets.seatPointWorld;
+            hasTarget = true;
+        }
+
+        const RE::NiPoint3 fallback = liveFinger.valid ? liveFinger.openDirection : RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+        if (!hasTarget || !isFinitePoint(targetWorld)) {
+            return normalizedOrFallback(fallback, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+        }
+
+        return normalizedOrFallback(targetWorld - padCenterWorld, fallback);
+    }
+
+    inline RE::NiPoint3 flippedNormal(const RE::NiPoint3& normal)
+    {
+        return RE::NiPoint3{ -normal.x, -normal.y, -normal.z };
+    }
+
+    inline RE::NiPoint3 orientSurfaceNormalTowardPoint(
+        const RE::NiPoint3& rawNormal,
+        const RE::NiPoint3& surfacePoint,
+        const RE::NiPoint3& pointWorld)
+    {
+        RE::NiPoint3 normal = normalizedOrFallback(rawNormal, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+        const RE::NiPoint3 toPoint = pointWorld - surfacePoint;
+        if (distanceSquared(toPoint, RE::NiPoint3{}) > 0.000001f && dotPoint(normal, toPoint) < 0.0f) {
+            normal = flippedNormal(normal);
+        }
+        return normal;
+    }
+
+    inline RE::NiPoint3 orientSurfaceNormalAgainstProbe(
+        const RE::NiPoint3& rawNormal,
+        const RE::NiPoint3& probeDirectionWorld)
+    {
+        RE::NiPoint3 normal = normalizedOrFallback(rawNormal, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+        if (dotPoint(normal, probeDirectionWorld) > 0.0f) {
+            normal = flippedNormal(normal);
+        }
+        return normal;
+    }
+
+    inline bool padSurfaceNormalCompatible(
+        const RE::NiPoint3& candidateNormalWorld,
+        const RE::NiPoint3& preferredNormalWorld,
+        bool hasPreferredNormal)
+    {
+        if (!hasPreferredNormal || distanceSquared(preferredNormalWorld, RE::NiPoint3{}) <= 0.000001f) {
+            return true;
+        }
+
+        const RE::NiPoint3 candidate = normalizedOrFallback(candidateNormalWorld, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+        const RE::NiPoint3 preferred = normalizedOrFallback(preferredNormalWorld, candidate);
+        return dotPoint(candidate, preferred) >= -0.55f;
+    }
+
+    inline bool hasFingerPadProbeLine(const FingerPadSurfaceEvidence& evidence)
+    {
+        return isFinitePoint(evidence.startWorld) && isFinitePoint(evidence.endWorld) &&
+               distanceSquared(evidence.startWorld, evidence.endWorld) > 0.000001f;
+    }
+
+    inline FingerPadSurfaceEvidence solveFingerPadSurfaceEvidenceFromTriangles(
+        const std::vector<TriangleData>& triangles,
+        const RE::NiPoint3& padCenterWorld,
+        const RE::NiPoint3& probeDirectionWorld,
+        const RE::NiPoint3& preferredSurfaceNormalWorld,
+        bool hasPreferredSurfaceNormal,
+        FingerPadProbeOptions options = {})
+    {
+        options = sanitizeFingerPadProbeOptions(options);
+        FingerPadSurfaceEvidence result{};
+        const RE::NiPoint3 probeDirection = normalizedOrFallback(probeDirectionWorld, RE::NiPoint3{ 1.0f, 0.0f, 0.0f });
+        result.startWorld = padCenterWorld;
+        result.endWorld = padCenterWorld + probeDirection * options.probeDistanceGameUnits;
+        if (triangles.empty() || !isFinitePoint(padCenterWorld) || !isFinitePoint(probeDirection)) {
+            return result;
+        }
+
+        FingerPadSurfaceEvidence bestClosest{};
+        FingerPadSurfaceEvidence bestProbe{};
+        bool bestClosestValid = false;
+        bool bestProbeValid = false;
+        float bestClosestDistanceSquared = options.closestSurfaceMaxDistanceGameUnits * options.closestSurfaceMaxDistanceGameUnits;
+        float bestProbeDistance = options.probeDistanceGameUnits;
+
+        auto considerClosest = [&](const RE::NiPoint3& point, const RE::NiPoint3& normal, float distanceSq) {
+            if (!std::isfinite(distanceSq) || distanceSq > bestClosestDistanceSquared || !isFinitePoint(point) || !isFinitePoint(normal)) {
+                return;
+            }
+            if (!padSurfaceNormalCompatible(normal, preferredSurfaceNormalWorld, hasPreferredSurfaceNormal)) {
+                return;
+            }
+
+            const float distance = std::sqrt(std::max(0.0f, distanceSq));
+            const RE::NiPoint3 toSurface = point - padCenterWorld;
+            if (distance > options.probeRadiusGameUnits && dotPoint(toSurface, probeDirection) < -options.probeRadiusGameUnits) {
+                return;
+            }
+
+            bestClosestDistanceSquared = distanceSq;
+            bestClosest.startWorld = result.startWorld;
+            bestClosest.endWorld = result.endWorld;
+            bestClosest.hitPointWorld = point;
+            bestClosest.hitNormalWorld = normal;
+            bestClosest.distanceGameUnits = distance;
+            bestClosest.quality = std::clamp(1.0f - (distance / options.closestSurfaceMaxDistanceGameUnits), 0.0f, 1.0f);
+            bestClosest.hit = true;
+            bestClosest.fromClosestSurface = true;
+            bestClosest.padMayBeInsideSurface = distance <= options.probeRadiusGameUnits;
+            bestClosestValid = true;
+        };
+
+        auto considerProbe = [&](const RE::NiPoint3& point, const RE::NiPoint3& normal, float travelDistance) {
+            if (!std::isfinite(travelDistance) || travelDistance > bestProbeDistance || !isFinitePoint(point) || !isFinitePoint(normal)) {
+                return;
+            }
+            if (!padSurfaceNormalCompatible(normal, preferredSurfaceNormalWorld, hasPreferredSurfaceNormal)) {
+                return;
+            }
+
+            bestProbeDistance = travelDistance;
+            const float pointDistance = std::sqrt(std::max(0.0f, distanceSquared(point, padCenterWorld)));
+            bestProbe.startWorld = result.startWorld;
+            bestProbe.endWorld = result.endWorld;
+            bestProbe.hitPointWorld = point;
+            bestProbe.hitNormalWorld = normal;
+            bestProbe.distanceGameUnits = pointDistance;
+            bestProbe.quality = std::clamp(1.0f - (travelDistance / options.probeDistanceGameUnits), 0.0f, 1.0f);
+            bestProbe.hit = true;
+            bestProbe.fromClosestSurface = false;
+            bestProbe.padMayBeInsideSurface = pointDistance <= options.probeRadiusGameUnits || travelDistance <= options.probeRadiusGameUnits;
+            bestProbeValid = true;
+        };
+
+        for (const auto& triangleData : triangles) {
+            if (!isFinitePoint(triangleData.v0) || !isFinitePoint(triangleData.v1) || !isFinitePoint(triangleData.v2)) {
+                continue;
+            }
+
+            const grab_finger_pose_math::Triangle<RE::NiPoint3> triangle{ triangleData.v0, triangleData.v1, triangleData.v2 };
+            const RE::NiPoint3 rawNormal = grab_finger_pose_math::triangleNormal(triangle);
+            if (distanceSquared(rawNormal, RE::NiPoint3{}) <= 0.000001f) {
+                continue;
+            }
+
+            const RE::NiPoint3 closestPoint = grab_finger_pose_math::closestPointOnTriangle(padCenterWorld, triangle);
+            const RE::NiPoint3 closestNormal = orientSurfaceNormalTowardPoint(rawNormal, closestPoint, padCenterWorld);
+            considerClosest(closestPoint, closestNormal, distanceSquared(closestPoint, padCenterWorld));
+
+            float travelDistance = 0.0f;
+            RE::NiPoint3 probeHitPoint{};
+            bool hasProbeHitPoint = false;
+            if (grab_finger_pose_math::rayTriangleIntersection(padCenterWorld, probeDirection, triangle, options.probeDistanceGameUnits, travelDistance)) {
+                probeHitPoint = padCenterWorld + probeDirection * travelDistance;
+                hasProbeHitPoint = true;
+            } else if (grab_finger_pose_math::probeCapsuleTriangleIntersection(
+                           padCenterWorld,
+                           probeDirection,
+                           triangle,
+                           options.probeDistanceGameUnits,
+                           options.probeRadiusGameUnits,
+                           travelDistance,
+                           &probeHitPoint)) {
+                hasProbeHitPoint = true;
+            }
+            if (hasProbeHitPoint) {
+                considerProbe(probeHitPoint, orientSurfaceNormalAgainstProbe(rawNormal, probeDirection), travelDistance);
+            }
+        }
+
+        if (bestClosestValid && (!bestProbeValid || bestClosest.padMayBeInsideSurface || bestClosest.quality >= bestProbe.quality)) {
+            return bestClosest;
+        }
+        if (bestProbeValid) {
+            return bestProbe;
+        }
+        return result;
+    }
+
+    inline float fingerPadOpenBiasValue(float currentOpenValue, const FingerPadSurfaceEvidence& evidence, FingerPadProbeOptions options = {})
+    {
+        options = sanitizeFingerPadProbeOptions(options);
+        const float current = std::clamp(std::isfinite(currentOpenValue) ? currentOpenValue : 1.0f, 0.0f, 1.0f);
+        if (!evidence.hit || !std::isfinite(evidence.distanceGameUnits)) {
+            return current;
+        }
+
+        const float denominator = std::max(0.001f, options.closestSurfaceMaxDistanceGameUnits - options.probeRadiusGameUnits);
+        const float distanceBeyondPad = std::max(0.0f, evidence.distanceGameUnits - options.probeRadiusGameUnits);
+        const float proximity = evidence.padMayBeInsideSurface ? 1.0f : std::clamp(1.0f - (distanceBeyondPad / denominator), 0.0f, 1.0f);
+        if (proximity <= 0.0f) {
+            return current;
+        }
+
+        const float quality = std::clamp(std::isfinite(evidence.quality) ? evidence.quality : 0.0f, 0.0f, 1.0f);
+        const float bias = std::clamp(options.openBiasStrength * proximity * std::max(0.25f, quality), 0.0f, 1.0f);
+        return std::clamp(current + (1.0f - current) * bias, current, 1.0f);
+    }
+
+    inline bool shouldAcceptFingerPadTarget(
+        const SolvedGrabFingerPose& pose,
+        const GrabFingerPoseTargetSet& poseTargets,
+        const FingerPadSurfaceEvidence& evidence,
+        std::size_t finger,
+        FingerPadProbeOptions options)
+    {
+        options = sanitizeFingerPadProbeOptions(options);
+        if (!evidence.hit || evidence.quality < options.targetOverrideMinQuality || !isFinitePoint(evidence.hitPointWorld)) {
+            return false;
+        }
+        if (!pose.thumbSurfaceFollowAllowed && finger < 2) {
+            return false;
+        }
+
+        const bool existingTarget = finger < pose.surfaceAimTargetValid.size() && pose.surfaceAimTargetValid[finger] != 0;
+        const bool explicitFingerTarget = finger < poseTargets.targetValid.size() && poseTargets.targetValid[finger] != 0;
+        if (!existingTarget) {
+            return true;
+        }
+
+        const float existingDistance = std::sqrt(std::max(0.0f, distanceSquared(pose.surfaceAimTarget[finger], evidence.startWorld)));
+        if (evidence.padMayBeInsideSurface) {
+            return true;
+        }
+        if (explicitFingerTarget) {
+            return false;
+        }
+
+        constexpr float kReplacementSlopGameUnits = 0.25f;
+        return evidence.distanceGameUnits + kReplacementSlopGameUnits < existingDistance;
+    }
+
+    inline bool refineGrabFingerPoseWithPadProbes(
+        SolvedGrabFingerPose& pose,
+        const std::vector<TriangleData>& worldTriangles,
+        const GrabFingerPoseTargetSet& poseTargets,
+        const root_flattened_finger_skeleton_runtime::Snapshot& liveFingerSnapshot,
+        const RE::NiTransform& objectWorldTransform,
+        bool meshFingerPoseEnabled,
+        bool grabFingerPosePublished,
+        std::array<FingerPadSurfaceEvidence, 5>& outEvidence,
+        FingerPadProbeOptions options = {})
+    {
+        options = sanitizeFingerPadProbeOptions(options);
+        outEvidence = {};
+        const bool liveSnapshotValid = liveFingerSnapshot.valid;
+        const bool shouldRun = shouldRunFingerPadProbeRefinement(
+            meshFingerPoseEnabled,
+            grabFingerPosePublished,
+            isFiniteTransformForFingerPadProbe(objectWorldTransform),
+            liveSnapshotValid,
+            !worldTriangles.empty());
+        if (!shouldRun || !pose.solved) {
+            return false;
+        }
+
+        const auto liveLandmarks = root_flattened_finger_skeleton_runtime::buildLandmarkSet(liveFingerSnapshot);
+        if (!liveLandmarks.valid) {
+            return false;
+        }
+
+        bool anyProbeLine = false;
+        bool anyOpenBias = false;
+        std::array<std::uint8_t, 5> openBiased{};
+        for (std::size_t finger = 0; finger < outEvidence.size(); ++finger) {
+            RE::NiPoint3 padCenterWorld{};
+            if (!computeFingerPadCenter(liveFingerSnapshot.fingers[finger], padCenterWorld)) {
+                continue;
+            }
+
+            const RE::NiPoint3 probeDirection = fingerPadProbeDirection(pose, poseTargets, liveLandmarks.fingers[finger], finger, padCenterWorld);
+            const bool hasPreferredNormal = finger < pose.surfaceAimNormalValid.size() && pose.surfaceAimNormalValid[finger] != 0;
+            const RE::NiPoint3 preferredNormal = hasPreferredNormal ? pose.surfaceAimNormal[finger] : RE::NiPoint3{};
+            FingerPadSurfaceEvidence evidence = solveFingerPadSurfaceEvidenceFromTriangles(
+                worldTriangles,
+                padCenterWorld,
+                probeDirection,
+                preferredNormal,
+                hasPreferredNormal,
+                options);
+            outEvidence[finger] = evidence;
+            anyProbeLine = anyProbeLine || hasFingerPadProbeLine(evidence);
+            if (!evidence.hit) {
+                continue;
+            }
+
+            if (shouldAcceptFingerPadTarget(pose, poseTargets, evidence, finger, options)) {
+                pose.surfaceAimTarget[finger] = evidence.hitPointWorld;
+                pose.surfaceAimTargetValid[finger] = 1;
+                if (distanceSquared(evidence.hitNormalWorld, RE::NiPoint3{}) > 0.000001f) {
+                    pose.surfaceAimNormal[finger] = normalizedOrFallback(evidence.hitNormalWorld, liveLandmarks.palmNormalWorld);
+                    pose.surfaceAimNormalValid[finger] = 1;
+                }
+            }
+
+            const float openedValue = fingerPadOpenBiasValue(pose.values[finger], evidence, options);
+            if (openedValue > pose.values[finger] + 0.0001f) {
+                pose.values[finger] = openedValue;
+                openBiased[finger] = 1;
+                anyOpenBias = true;
+            }
+        }
+
+        if (anyOpenBias) {
+            const auto openedJointValues = grab_finger_pose_math::expandFingerCurlsToJointValues(pose.values);
+            if (!pose.hasJointValues) {
+                pose.jointValues = openedJointValues;
+                pose.hasJointValues = pose.solved;
+            } else {
+                for (std::size_t finger = 0; finger < openBiased.size(); ++finger) {
+                    if (!openBiased[finger]) {
+                        continue;
+                    }
+                    const std::size_t base = finger * 3;
+                    for (std::size_t segment = 0; segment < 3; ++segment) {
+                        pose.jointValues[base + segment] = std::clamp(
+                            std::max(pose.jointValues[base + segment], openedJointValues[base + segment]),
+                            0.0f,
+                            1.0f);
+                    }
+                }
+            }
+        }
+
+        return anyProbeLine;
+    }
+
     // Semantic splay follows current finger/contact geometry; wrist pitch/yaw remain owned by hand-world authority.
     inline constexpr float kDefaultSurfaceContactSplayMaxRadians = 0.28f;
 
@@ -1059,21 +1502,6 @@ namespace rock::grab_finger_pose_runtime
 
         return buildSurfaceContactSplayValues(pose, liveFingerSnapshot, outSplayRadians, maxSplayRadians);
     }
-
-    struct GrabFingerPoseTargetSet
-    {
-        std::array<RE::NiPoint3, 5> targets{};
-        std::array<RE::NiPoint3, 5> targetNormals{};
-        std::array<std::uint8_t, 5> targetValid{};
-        std::array<std::uint8_t, 5> targetNormalValid{};
-        RE::NiPoint3 seatPointWorld{};
-        RE::NiPoint3 seatNormalWorld{};
-        bool seatPointValid = false;
-        bool seatNormalValid = false;
-        bool useSeatPointForMissingTargets = true;
-        bool useWholeMeshForMissingTargets = false;
-        std::uint32_t targetCount = 0;
-    };
 
     inline GrabFingerPoseTargetSet makeSharedGripPoseTarget(const RE::NiPoint3& grabGripPoint, const RE::NiPoint3& grabGripNormal = RE::NiPoint3{})
     {

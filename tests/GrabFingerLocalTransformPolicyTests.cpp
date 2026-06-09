@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 namespace
 {
@@ -84,6 +85,7 @@ int main()
     bool ok = true;
     using namespace rock::grab_finger_local_transform_math;
     using namespace rock::grab_finger_pose_runtime;
+    using rock::TriangleData;
 
     ok &= expectBool("full 15-bone mask is sanitized",
         sanitizeFingerLocalTransformMask(0xFFFF) == kFullFingerLocalTransformMask, true);
@@ -189,6 +191,16 @@ int main()
         missedFingerCurlFallbackValue(true, rock::grab_finger_pose_math::FingerCurlValue::HitKind::BackSurface, 0.2f),
         1.0f);
 
+    ok &= expectBool("pad probes require published TouchHeld-or-later pose",
+        shouldRunFingerPadProbeRefinement(true, false, true, true, true),
+        false);
+    ok &= expectBool("pad probes require mesh finger pose enablement",
+        shouldRunFingerPadProbeRefinement(false, true, true, true, true),
+        false);
+    ok &= expectBool("pad probes accept complete held-state inputs",
+        shouldRunFingerPadProbeRefinement(true, true, true, true, true),
+        true);
+
     SolvedGrabFingerPose pose{};
     pose.surfaceAimTarget[0] = RE::NiPoint3{ 11.0f, 2.0f, 3.0f };
     pose.surfaceAimNormal[0] = RE::NiPoint3{ 0.0f, 1.0f, 0.0f };
@@ -236,6 +248,26 @@ int main()
         chain.valid = true;
     }
 
+    RE::NiPoint3 padCenter{};
+    ok &= expectBool("pad center uses distal chain midpoint",
+        computeFingerPadCenter(liveFingerSnapshot.fingers[1], padCenter),
+        true);
+    ok &= expectPointClose("pad center midpoint matches live chain",
+        padCenter,
+        RE::NiPoint3{ 1.5f, 0.0f, 0.0f });
+    const auto padLandmarks = rock::root_flattened_finger_skeleton_runtime::buildLandmarkSet(liveFingerSnapshot);
+    SolvedGrabFingerPose directionPose{};
+    directionPose.surfaceAimTarget[1] = RE::NiPoint3{ 1.5f, 2.0f, 0.0f };
+    directionPose.surfaceAimTargetValid[1] = 1;
+    auto padTargets = makeSharedGripPoseTarget(RE::NiPoint3{ 1.5f, 0.0f, 2.0f });
+    ok &= expectPointClose("pad direction prefers current surface target",
+        fingerPadProbeDirection(directionPose, padTargets, padLandmarks.fingers[1], 1, padCenter),
+        RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+    directionPose.surfaceAimTargetValid[1] = 0;
+    ok &= expectPointClose("pad direction falls back to grip seat",
+        fingerPadProbeDirection(directionPose, padTargets, padLandmarks.fingers[1], 1, padCenter),
+        RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+
     std::array<float, 5> splayRadians{};
     SolvedGrabFingerPose splayPose{};
     ok &= expectBool("surface-contact splay rejects poses without targets",
@@ -282,6 +314,141 @@ int main()
         thumbIndexCurveOnly.surfaceAimTargetObjectLocalValid[1] == 0, true);
     ok &= expectBool("curve-only thumb-index preserves other object-local aim state",
         thumbIndexCurveOnly.hasObjectLocalSurfaceAim, true);
+
+    rock::root_flattened_finger_skeleton_runtime::Snapshot padProbeSnapshot = liveFingerSnapshot;
+    for (auto& chain : padProbeSnapshot.fingers) {
+        chain.points[0] = RE::NiPoint3{ 0.0f, 0.0f, 0.0f };
+        chain.points[1] = RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+        chain.points[2] = RE::NiPoint3{ 3.0f, 0.0f, 0.0f };
+        chain.valid = true;
+    }
+
+    std::vector<TriangleData> closePadTriangles{
+        TriangleData{
+            RE::NiPoint3{ 1.0f, -1.0f, 0.5f },
+            RE::NiPoint3{ 3.0f, -1.0f, 0.5f },
+            RE::NiPoint3{ 2.0f, 1.0f, 0.5f },
+        },
+    };
+    RE::NiTransform padObjectWorld = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+    auto closePadTargets = makeSharedGripPoseTarget(RE::NiPoint3{ 2.0f, 0.0f, 0.5f });
+    closePadTargets.useSeatPointForMissingTargets = false;
+    closePadTargets.useWholeMeshForMissingTargets = true;
+
+    SolvedGrabFingerPose padPose{};
+    padPose.solved = true;
+    padPose.hasJointValues = true;
+    padPose.values = { 1.0f, 0.2f, 1.0f, 1.0f, 1.0f };
+    padPose.jointValues = rock::grab_finger_pose_math::expandFingerCurlsToJointValues(padPose.values);
+    const float previousIndexOpenValue = padPose.values[1];
+    const float previousIndexMiddleJoint = padPose.jointValues[4];
+    std::array<FingerPadSurfaceEvidence, 5> closePadEvidence{};
+    ok &= expectBool("pad refinement runs with complete held inputs",
+        refineGrabFingerPoseWithPadProbes(
+            padPose,
+            closePadTriangles,
+            closePadTargets,
+            padProbeSnapshot,
+            padObjectWorld,
+            true,
+            true,
+            closePadEvidence),
+        true);
+    ok &= expectBool("pad evidence records index hit",
+        closePadEvidence[1].hit,
+        true);
+    ok &= expectBool("pad evidence opens but never closes finger value",
+        padPose.values[1] >= previousIndexOpenValue && padPose.values[1] <= 1.0f,
+        true);
+    ok &= expectBool("pad open bias feeds joint pose by max only",
+        padPose.jointValues[4] >= previousIndexMiddleJoint && padPose.jointValues[4] <= 1.0f,
+        true);
+    ok &= expectBool("pad evidence can create surface target",
+        padPose.surfaceAimTargetValid[1] != 0,
+        true);
+    ok &= expectPointClose("pad-created surface target uses hit point",
+        padPose.surfaceAimTarget[1],
+        RE::NiPoint3{ 2.0f, 0.0f, 0.5f });
+
+    FingerPadSurfaceEvidence directBiasEvidence{};
+    directBiasEvidence.hit = true;
+    directBiasEvidence.distanceGameUnits = 0.25f;
+    directBiasEvidence.quality = 1.0f;
+    directBiasEvidence.padMayBeInsideSurface = true;
+    ok &= expectBool("direct pad open bias cannot reduce openness",
+        fingerPadOpenBiasValue(0.8f, directBiasEvidence) >= 0.8f,
+        true);
+
+    SolvedGrabFingerPose invalidPadPose{};
+    invalidPadPose.solved = true;
+    invalidPadPose.surfaceAimTarget[2] = RE::NiPoint3{ 9.0f, 0.0f, 0.0f };
+    invalidPadPose.surfaceAimTargetValid[2] = 1;
+    std::array<FingerPadSurfaceEvidence, 5> invalidPadEvidence{};
+    ok &= expectBool("missing triangles fail pad refinement closed",
+        refineGrabFingerPoseWithPadProbes(
+            invalidPadPose,
+            std::vector<TriangleData>{},
+            closePadTargets,
+            padProbeSnapshot,
+            padObjectWorld,
+            true,
+            true,
+            invalidPadEvidence),
+        false);
+    ok &= expectPointClose("invalid pad evidence preserves existing target",
+        invalidPadPose.surfaceAimTarget[2],
+        RE::NiPoint3{ 9.0f, 0.0f, 0.0f });
+
+    SolvedGrabFingerPose replacePadPose{};
+    replacePadPose.solved = true;
+    replacePadPose.hasJointValues = true;
+    replacePadPose.values = { 1.0f, 0.5f, 1.0f, 1.0f, 1.0f };
+    replacePadPose.jointValues = rock::grab_finger_pose_math::expandFingerCurlsToJointValues(replacePadPose.values);
+    replacePadPose.surfaceAimTarget[1] = RE::NiPoint3{ 2.0f, 0.0f, 5.0f };
+    replacePadPose.surfaceAimTargetValid[1] = 1;
+    std::array<FingerPadSurfaceEvidence, 5> replacePadEvidence{};
+    (void)refineGrabFingerPoseWithPadProbes(
+        replacePadPose,
+        closePadTriangles,
+        closePadTargets,
+        padProbeSnapshot,
+        padObjectWorld,
+        true,
+        true,
+        replacePadEvidence);
+    ok &= expectPointClose("better pad evidence replaces broad target",
+        replacePadPose.surfaceAimTarget[1],
+        RE::NiPoint3{ 2.0f, 0.0f, 0.5f });
+
+    std::vector<TriangleData> farPadTriangles{
+        TriangleData{
+            RE::NiPoint3{ 1.0f, -1.0f, 2.0f },
+            RE::NiPoint3{ 3.0f, -1.0f, 2.0f },
+            RE::NiPoint3{ 2.0f, 1.0f, 2.0f },
+        },
+    };
+    auto explicitPadTargets = closePadTargets;
+    explicitPadTargets.targets[1] = RE::NiPoint3{ 2.0f, 0.0f, 5.0f };
+    explicitPadTargets.targetValid[1] = 1;
+    explicitPadTargets.targetCount = 1;
+    SolvedGrabFingerPose explicitPadPose{};
+    explicitPadPose.solved = true;
+    explicitPadPose.values = { 1.0f, 0.5f, 1.0f, 1.0f, 1.0f };
+    explicitPadPose.surfaceAimTarget[1] = RE::NiPoint3{ 2.0f, 0.0f, 5.0f };
+    explicitPadPose.surfaceAimTargetValid[1] = 1;
+    std::array<FingerPadSurfaceEvidence, 5> explicitPadEvidence{};
+    (void)refineGrabFingerPoseWithPadProbes(
+        explicitPadPose,
+        farPadTriangles,
+        explicitPadTargets,
+        padProbeSnapshot,
+        padObjectWorld,
+        true,
+        true,
+        explicitPadEvidence);
+    ok &= expectPointClose("non-penetrating pad evidence preserves explicit target",
+        explicitPadPose.surfaceAimTarget[1],
+        RE::NiPoint3{ 2.0f, 0.0f, 5.0f });
 
     return ok ? 0 : 1;
 }

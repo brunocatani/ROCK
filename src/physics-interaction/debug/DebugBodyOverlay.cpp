@@ -1851,6 +1851,20 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[2] = 0.95f;
                 color[3] = 0.75f;
                 break;
+            case MarkerOverlayRole::RightGrabFingerPadProbe:
+            case MarkerOverlayRole::LeftGrabFingerPadProbe:
+                color[0] = 1.0f;
+                color[1] = 0.72f;
+                color[2] = 0.08f;
+                color[3] = 0.82f;
+                break;
+            case MarkerOverlayRole::RightGrabFingerSurfaceTarget:
+            case MarkerOverlayRole::LeftGrabFingerSurfaceTarget:
+                color[0] = 1.0f;
+                color[1] = 0.24f;
+                color[2] = 0.05f;
+                color[3] = 0.95f;
+                break;
             case MarkerOverlayRole::RightHandBoneContact:
                 color[0] = 0.0f;
                 color[1] = 1.0f;

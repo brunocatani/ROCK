@@ -3901,6 +3901,40 @@ namespace rock
                 held_object_contact_policy::HeldContactOtherMotion::FixedOrStatic;
         }
 
+        struct FingerPadPublishDebug
+        {
+            std::array<RE::NiPoint3, 5> padProbeStart{};
+            std::array<RE::NiPoint3, 5> padProbeEnd{};
+            std::array<RE::NiPoint3, 5> padProbeHit{};
+            std::array<std::uint8_t, 5> padProbeHitValid{};
+            bool hasPadProbeDebug = false;
+            std::array<RE::NiPoint3, 5> surfaceTarget{};
+            std::array<std::uint8_t, 5> surfaceTargetValid{};
+            bool hasSurfaceTargetDebug = false;
+        };
+
+        FingerPadPublishDebug makeFingerPadPublishDebug(
+            const grab_finger_pose_runtime::SolvedGrabFingerPose& pose,
+            const std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5>& padEvidence)
+        {
+            FingerPadPublishDebug debug{};
+            for (std::size_t finger = 0; finger < padEvidence.size(); ++finger) {
+                const auto& evidence = padEvidence[finger];
+                debug.padProbeStart[finger] = evidence.startWorld;
+                debug.padProbeEnd[finger] = evidence.endWorld;
+                debug.padProbeHit[finger] = evidence.hitPointWorld;
+                debug.padProbeHitValid[finger] = evidence.hit ? 1 : 0;
+                debug.hasPadProbeDebug = debug.hasPadProbeDebug || grab_finger_pose_runtime::hasFingerPadProbeLine(evidence);
+
+                if (pose.surfaceAimTargetValid[finger]) {
+                    debug.surfaceTarget[finger] = pose.surfaceAimTarget[finger];
+                    debug.surfaceTargetValid[finger] = 1;
+                    debug.hasSurfaceTargetDebug = true;
+                }
+            }
+            return debug;
+        }
+
         void applyRockGrabHandPose(bool isLeft,
             const grab_finger_pose_runtime::SolvedGrabFingerPose& fingerPose,
             std::array<float, 15>& currentJointPose,
@@ -9521,6 +9555,14 @@ namespace rock
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};
         _hasGrabFingerProbeDebug = false;
+        _grabFingerPadProbeStart = {};
+        _grabFingerPadProbeEnd = {};
+        _grabFingerPadProbeHit = {};
+        _grabFingerPadProbeHitValid = {};
+        _hasGrabFingerPadProbeDebug = false;
+        _grabFingerSurfaceTarget = {};
+        _grabFingerSurfaceTargetValid = {};
+        _hasGrabFingerSurfaceTargetDebug = false;
         _grabFingerPosePublished =
             g_rockConfig.rockGrabMeshFingerPoseEnabled &&
             _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld;
@@ -9548,8 +9590,27 @@ namespace rock
             _grabFingerProbeStart = fingerPose.probeStart;
             _grabFingerProbeEnd = fingerPose.probeEnd;
             _hasGrabFingerProbeDebug = fingerPose.candidateTriangleCount > 0;
-            const auto publishFingerPose =
+            auto publishFingerPose =
                 grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, objectWorldTransform);
+            std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
+            (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(
+                publishFingerPose,
+                grabMeshTriangles,
+                initialFingerPoseTargets,
+                liveFingerSnapshotAtGrab,
+                objectWorldTransform,
+                g_rockConfig.rockGrabMeshFingerPoseEnabled,
+                _grabFingerPosePublished,
+                padEvidence);
+            const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
+            _grabFingerPadProbeStart = padDebug.padProbeStart;
+            _grabFingerPadProbeEnd = padDebug.padProbeEnd;
+            _grabFingerPadProbeHit = padDebug.padProbeHit;
+            _grabFingerPadProbeHitValid = padDebug.padProbeHitValid;
+            _hasGrabFingerPadProbeDebug = padDebug.hasPadProbeDebug;
+            _grabFingerSurfaceTarget = padDebug.surfaceTarget;
+            _grabFingerSurfaceTargetValid = padDebug.surfaceTargetValid;
+            _hasGrabFingerSurfaceTargetDebug = padDebug.hasSurfaceTargetDebug;
             applyRockGrabHandPose(_isLeft,
                 publishFingerPose,
                 _grabFingerJointPose,
@@ -10325,6 +10386,14 @@ namespace rock
                                     _grabFingerProbeStart = {};
                                     _grabFingerProbeEnd = {};
                                     _hasGrabFingerProbeDebug = false;
+                                    _grabFingerPadProbeStart = {};
+                                    _grabFingerPadProbeEnd = {};
+                                    _grabFingerPadProbeHit = {};
+                                    _grabFingerPadProbeHitValid = {};
+                                    _hasGrabFingerPadProbeDebug = false;
+                                    _grabFingerSurfaceTarget = {};
+                                    _grabFingerSurfaceTargetValid = {};
+                                    _hasGrabFingerSurfaceTargetDebug = false;
                                     _grabFingerPosePublished = false;
                                 }
 
@@ -10478,8 +10547,27 @@ namespace rock
                     _hasGrabFingerProbeDebug = _grabFingerPose.candidateTriangleCount > 0;
                     _grabFingerPoseFrameCounter = 0;
                     _grabFingerPoseAccumulatedDeltaTime = 0.0f;
-                    const auto publishFingerPose =
+                    auto publishFingerPose =
                         grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, currentNodeWorld);
+                    std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
+                    (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(
+                        publishFingerPose,
+                        touchHeldWorldTriangles,
+                        touchHeldFingerPoseTargets,
+                        liveFingerSnapshot,
+                        currentNodeWorld,
+                        g_rockConfig.rockGrabMeshFingerPoseEnabled,
+                        true,
+                        padEvidence);
+                    const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
+                    _grabFingerPadProbeStart = padDebug.padProbeStart;
+                    _grabFingerPadProbeEnd = padDebug.padProbeEnd;
+                    _grabFingerPadProbeHit = padDebug.padProbeHit;
+                    _grabFingerPadProbeHitValid = padDebug.padProbeHitValid;
+                    _hasGrabFingerPadProbeDebug = padDebug.hasPadProbeDebug;
+                    _grabFingerSurfaceTarget = padDebug.surfaceTarget;
+                    _grabFingerSurfaceTargetValid = padDebug.surfaceTargetValid;
+                    _hasGrabFingerSurfaceTargetDebug = padDebug.hasSurfaceTargetDebug;
                     applyRockGrabHandPose(_isLeft,
                         publishFingerPose,
                         _grabFingerJointPose,
@@ -10523,6 +10611,38 @@ namespace rock
                 if (tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, currentGrabBodyWorld)) {
                     const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(currentGrabBodyWorld, _grabFrame.bodyLocal);
                     publishFingerPose = grab_finger_pose_runtime::resolveSurfaceAimObjectLocal(_grabFingerPose, currentNodeWorld);
+                    const auto currentWorldTriangles = rebuildFingerPoseWorldTrianglesFromGrabFrame(_grabFrame, currentNodeWorld);
+                    const auto currentFingerPoseTargets = rebuildFingerPoseTargetsFromGrabFrame(_grabFrame, currentNodeWorld);
+                    root_flattened_finger_skeleton_runtime::Snapshot liveFingerSnapshot{};
+                    (void)root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(_isLeft, liveFingerSnapshot);
+                    std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
+                    (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(
+                        publishFingerPose,
+                        currentWorldTriangles,
+                        currentFingerPoseTargets,
+                        liveFingerSnapshot,
+                        currentNodeWorld,
+                        g_rockConfig.rockGrabMeshFingerPoseEnabled,
+                        _grabFingerPosePublished,
+                        padEvidence);
+                    const auto padDebug = makeFingerPadPublishDebug(publishFingerPose, padEvidence);
+                    _grabFingerPadProbeStart = padDebug.padProbeStart;
+                    _grabFingerPadProbeEnd = padDebug.padProbeEnd;
+                    _grabFingerPadProbeHit = padDebug.padProbeHit;
+                    _grabFingerPadProbeHitValid = padDebug.padProbeHitValid;
+                    _hasGrabFingerPadProbeDebug = padDebug.hasPadProbeDebug;
+                    _grabFingerSurfaceTarget = padDebug.surfaceTarget;
+                    _grabFingerSurfaceTargetValid = padDebug.surfaceTargetValid;
+                    _hasGrabFingerSurfaceTargetDebug = padDebug.hasSurfaceTargetDebug;
+                } else {
+                    _grabFingerPadProbeStart = {};
+                    _grabFingerPadProbeEnd = {};
+                    _grabFingerPadProbeHit = {};
+                    _grabFingerPadProbeHitValid = {};
+                    _hasGrabFingerPadProbeDebug = false;
+                    _grabFingerSurfaceTarget = {};
+                    _grabFingerSurfaceTargetValid = {};
+                    _hasGrabFingerSurfaceTargetDebug = false;
                 }
                 applyRockGrabHandPose(_isLeft,
                     publishFingerPose,
@@ -12468,6 +12588,14 @@ namespace rock
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};
         _hasGrabFingerProbeDebug = false;
+        _grabFingerPadProbeStart = {};
+        _grabFingerPadProbeEnd = {};
+        _grabFingerPadProbeHit = {};
+        _grabFingerPadProbeHitValid = {};
+        _hasGrabFingerPadProbeDebug = false;
+        _grabFingerSurfaceTarget = {};
+        _grabFingerSurfaceTargetValid = {};
+        _hasGrabFingerSurfaceTargetDebug = false;
         _grabFingerJointPose = {};
         _grabFingerLocalTransforms = {};
         _grabFingerLocalTransformMask = 0;

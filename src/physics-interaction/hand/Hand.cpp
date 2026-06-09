@@ -277,6 +277,14 @@ namespace rock
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};
         _hasGrabFingerProbeDebug = false;
+        _grabFingerPadProbeStart = {};
+        _grabFingerPadProbeEnd = {};
+        _grabFingerPadProbeHit = {};
+        _grabFingerPadProbeHitValid = {};
+        _hasGrabFingerPadProbeDebug = false;
+        _grabFingerSurfaceTarget = {};
+        _grabFingerSurfaceTargetValid = {};
+        _hasGrabFingerSurfaceTargetDebug = false;
         _grabFingerJointPose = {};
         _grabFingerLocalTransforms = {};
         _grabFingerLocalTransformMask = 0;

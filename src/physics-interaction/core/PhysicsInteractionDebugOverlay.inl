@@ -933,6 +933,39 @@
                 for (std::size_t i = 0; i < starts.size(); ++i) {
                     addMarkerLine(role, starts[i], ends[i]);
                 }
+
+                std::array<RE::NiPoint3, 5> padStarts{};
+                std::array<RE::NiPoint3, 5> padEnds{};
+                std::array<RE::NiPoint3, 5> padHits{};
+                std::array<std::uint8_t, 5> padHitValid{};
+                if (hand.getGrabFingerPadProbeDebug(padStarts, padEnds, padHits, padHitValid)) {
+                    const auto padRole = hand.isLeft() ? debug::MarkerOverlayRole::LeftGrabFingerPadProbe : debug::MarkerOverlayRole::RightGrabFingerPadProbe;
+                    for (std::size_t i = 0; i < padStarts.size(); ++i) {
+                        const RE::NiPoint3 delta = padEnds[i] - padStarts[i];
+                        const bool hasLine =
+                            std::isfinite(padStarts[i].x) && std::isfinite(padStarts[i].y) && std::isfinite(padStarts[i].z) &&
+                            std::isfinite(padEnds[i].x) && std::isfinite(padEnds[i].y) && std::isfinite(padEnds[i].z) &&
+                            (delta.x * delta.x + delta.y * delta.y + delta.z * delta.z) > 0.000001f;
+                        if (!hasLine) {
+                            continue;
+                        }
+                        addMarkerLine(padRole, padStarts[i], padEnds[i]);
+                        if (padHitValid[i]) {
+                            addMarkerPoint(padRole, padHits[i], 1.4f);
+                        }
+                    }
+                }
+
+                std::array<RE::NiPoint3, 5> surfaceTargets{};
+                std::array<std::uint8_t, 5> surfaceTargetValid{};
+                if (hand.getGrabFingerSurfaceTargetDebug(surfaceTargets, surfaceTargetValid)) {
+                    const auto targetRole = hand.isLeft() ? debug::MarkerOverlayRole::LeftGrabFingerSurfaceTarget : debug::MarkerOverlayRole::RightGrabFingerSurfaceTarget;
+                    for (std::size_t i = 0; i < surfaceTargets.size(); ++i) {
+                        if (surfaceTargetValid[i]) {
+                            addMarkerPoint(targetRole, surfaceTargets[i], 2.0f);
+                        }
+                    }
+                }
             };
 
             addFingerProbeDebug(_rightHand);

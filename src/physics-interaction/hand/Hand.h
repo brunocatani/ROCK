@@ -364,6 +364,32 @@ namespace rock
             return true;
         }
 
+        bool getGrabFingerPadProbeDebug(
+            std::array<RE::NiPoint3, 5>& outStart,
+            std::array<RE::NiPoint3, 5>& outEnd,
+            std::array<RE::NiPoint3, 5>& outHit,
+            std::array<std::uint8_t, 5>& outHitValid) const
+        {
+            if (!_hasGrabFingerPadProbeDebug)
+                return false;
+            outStart = _grabFingerPadProbeStart;
+            outEnd = _grabFingerPadProbeEnd;
+            outHit = _grabFingerPadProbeHit;
+            outHitValid = _grabFingerPadProbeHitValid;
+            return true;
+        }
+
+        bool getGrabFingerSurfaceTargetDebug(
+            std::array<RE::NiPoint3, 5>& outTarget,
+            std::array<std::uint8_t, 5>& outTargetValid) const
+        {
+            if (!_hasGrabFingerSurfaceTargetDebug)
+                return false;
+            outTarget = _grabFingerSurfaceTarget;
+            outTargetValid = _grabFingerSurfaceTargetValid;
+            return true;
+        }
+
         bool grabSelectedObject(RE::hknpWorld* world,
             const RE::NiTransform& handWorldTransform,
             float tau,
@@ -951,6 +977,14 @@ namespace rock
         std::array<RE::NiPoint3, 5> _grabFingerProbeStart{};
         std::array<RE::NiPoint3, 5> _grabFingerProbeEnd{};
         bool _hasGrabFingerProbeDebug = false;
+        std::array<RE::NiPoint3, 5> _grabFingerPadProbeStart{};
+        std::array<RE::NiPoint3, 5> _grabFingerPadProbeEnd{};
+        std::array<RE::NiPoint3, 5> _grabFingerPadProbeHit{};
+        std::array<std::uint8_t, 5> _grabFingerPadProbeHitValid{};
+        bool _hasGrabFingerPadProbeDebug = false;
+        std::array<RE::NiPoint3, 5> _grabFingerSurfaceTarget{};
+        std::array<std::uint8_t, 5> _grabFingerSurfaceTargetValid{};
+        bool _hasGrabFingerSurfaceTargetDebug = false;
         std::array<float, 15> _grabFingerJointPose{};
         std::array<RE::NiTransform, 15> _grabFingerLocalTransforms{};
         std::uint16_t _grabFingerLocalTransformMask = 0;
