@@ -1305,6 +1305,8 @@ namespace rock::grab_finger_pose_runtime
         bool meshFingerPoseEnabled,
         bool grabFingerPosePublished,
         std::array<FingerPadSurfaceEvidence, 5>& outEvidence,
+        bool allowSurfaceTargetRefinement = true,
+        bool allowOpenBias = true,
         FingerPadProbeOptions options = {})
     {
         options = sanitizeFingerPadProbeOptions(options);
@@ -1350,7 +1352,7 @@ namespace rock::grab_finger_pose_runtime
                 continue;
             }
 
-            if (shouldAcceptFingerPadTarget(pose, poseTargets, evidence, finger, options)) {
+            if (allowSurfaceTargetRefinement && shouldAcceptFingerPadTarget(pose, poseTargets, evidence, finger, options)) {
                 pose.surfaceAimTarget[finger] = evidence.hitPointWorld;
                 pose.surfaceAimTargetValid[finger] = 1;
                 if (distanceSquared(evidence.hitNormalWorld, RE::NiPoint3{}) > 0.000001f) {
@@ -1359,6 +1361,9 @@ namespace rock::grab_finger_pose_runtime
                 }
             }
 
+            if (!allowOpenBias) {
+                continue;
+            }
             const float openedValue = fingerPadOpenBiasValue(pose.values[finger], evidence, options);
             if (openedValue > pose.values[finger] + 0.0001f) {
                 pose.values[finger] = openedValue;

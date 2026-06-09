@@ -370,6 +370,31 @@ int main()
         padPose.surfaceAimTarget[1],
         RE::NiPoint3{ 2.0f, 0.0f, 0.5f });
 
+    SolvedGrabFingerPose targetCaptureOnlyPose{};
+    targetCaptureOnlyPose.solved = true;
+    targetCaptureOnlyPose.hasJointValues = true;
+    targetCaptureOnlyPose.values = { 1.0f, 0.2f, 1.0f, 1.0f, 1.0f };
+    targetCaptureOnlyPose.jointValues = rock::grab_finger_pose_math::expandFingerCurlsToJointValues(targetCaptureOnlyPose.values);
+    const float captureOnlyOpenValue = targetCaptureOnlyPose.values[1];
+    std::array<FingerPadSurfaceEvidence, 5> targetCaptureOnlyEvidence{};
+    (void)refineGrabFingerPoseWithPadProbes(
+        targetCaptureOnlyPose,
+        closePadTriangles,
+        closePadTargets,
+        padProbeSnapshot,
+        padObjectWorld,
+        true,
+        true,
+        targetCaptureOnlyEvidence,
+        true,
+        false);
+    ok &= expectPointClose("pad target capture can create stable target without opening",
+        targetCaptureOnlyPose.surfaceAimTarget[1],
+        RE::NiPoint3{ 2.0f, 0.0f, 0.5f });
+    ok &= expectFloat("pad target capture leaves curl unchanged when open bias is disabled",
+        targetCaptureOnlyPose.values[1],
+        captureOnlyOpenValue);
+
     FingerPadSurfaceEvidence directBiasEvidence{};
     directBiasEvidence.hit = true;
     directBiasEvidence.distanceGameUnits = 0.25f;
@@ -419,6 +444,33 @@ int main()
     ok &= expectPointClose("better pad evidence replaces broad target",
         replacePadPose.surfaceAimTarget[1],
         RE::NiPoint3{ 2.0f, 0.0f, 0.5f });
+
+    SolvedGrabFingerPose heldUpdatePose{};
+    heldUpdatePose.solved = true;
+    heldUpdatePose.hasJointValues = true;
+    heldUpdatePose.values = { 1.0f, 0.2f, 1.0f, 1.0f, 1.0f };
+    heldUpdatePose.jointValues = rock::grab_finger_pose_math::expandFingerCurlsToJointValues(heldUpdatePose.values);
+    heldUpdatePose.surfaceAimTarget[1] = RE::NiPoint3{ 2.0f, 0.0f, 5.0f };
+    heldUpdatePose.surfaceAimTargetValid[1] = 1;
+    const float heldUpdateOpenValue = heldUpdatePose.values[1];
+    std::array<FingerPadSurfaceEvidence, 5> heldUpdateEvidence{};
+    (void)refineGrabFingerPoseWithPadProbes(
+        heldUpdatePose,
+        closePadTriangles,
+        closePadTargets,
+        padProbeSnapshot,
+        padObjectWorld,
+        true,
+        true,
+        heldUpdateEvidence,
+        false,
+        true);
+    ok &= expectPointClose("held pad update preserves captured surface target",
+        heldUpdatePose.surfaceAimTarget[1],
+        RE::NiPoint3{ 2.0f, 0.0f, 5.0f });
+    ok &= expectBool("held pad update can still open finger",
+        heldUpdatePose.values[1] >= heldUpdateOpenValue,
+        true);
 
     std::vector<TriangleData> farPadTriangles{
         TriangleData{
