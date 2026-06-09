@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
+  <title id="title">ROCK Hand Pose Splay Source Diagram</title>
+  <desc id="desc">Diagram showing how ROCK derives per-finger splay from current object surface targets and the live root-flattened finger skeleton before publishing HandPoseData to hFRIK.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#243447" />
+    </marker>
+    <marker id="blueArrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#2f6fed" />
+    </marker>
+    <marker id="greenArrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#1b8a5a" />
+    </marker>
+    <style>
+      .bg { fill: #f6f8fb; }
+      .panel { fill: #ffffff; stroke: #c8d1dc; stroke-width: 2; rx: 24; }
+      .title { font: 700 34px Arial, sans-serif; fill: #16202a; }
+      .subtitle { font: 400 18px Arial, sans-serif; fill: #465666; }
+      .panelTitle { font: 700 22px Arial, sans-serif; fill: #16202a; }
+      .label { font: 600 16px Arial, sans-serif; fill: #243447; }
+      .small { font: 400 14px Arial, sans-serif; fill: #526273; }
+      .tiny { font: 400 12px Arial, sans-serif; fill: #526273; }
+      .code { font: 700 14px Consolas, monospace; fill: #243447; }
+      .hand { fill: #f3c7a4; stroke: #8a5a44; stroke-width: 3; }
+      .finger { fill: none; stroke: #8a5a44; stroke-width: 16; stroke-linecap: round; }
+      .fingerThin { fill: none; stroke: #8a5a44; stroke-width: 10; stroke-linecap: round; }
+      .object { fill: #dfe8f6; stroke: #496a94; stroke-width: 3; }
+      .target { fill: #ff7a59; stroke: #9f2d16; stroke-width: 2; }
+      .storedTarget { fill: #ffd2c6; stroke: #9f2d16; stroke-width: 2; stroke-dasharray: 5 4; }
+      .arrow { fill: none; stroke: #243447; stroke-width: 3; marker-end: url(#arrow); }
+      .blueArrow { fill: none; stroke: #2f6fed; stroke-width: 4; marker-end: url(#blueArrow); }
+      .greenArrow { fill: none; stroke: #1b8a5a; stroke-width: 4; marker-end: url(#greenArrow); }
+      .dash { fill: none; stroke: #526273; stroke-width: 2; stroke-dasharray: 6 6; }
+      .angle { fill: none; stroke: #b85c00; stroke-width: 4; }
+      .angleText { font: 700 18px Arial, sans-serif; fill: #b85c00; }
+      .note { fill: #fff7e8; stroke: #e0b45b; stroke-width: 2; rx: 14; }
+      .api { fill: #eaf6ef; stroke: #4c9a72; stroke-width: 2; rx: 14; }
+      .zero { fill: #f1f3f5; stroke: #aeb8c2; stroke-width: 2; rx: 14; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1400" height="900" />
+  <text class="title" x="60" y="65">ROCK mesh-grab hand pose enrichment</text>
+  <text class="subtitle" x="60" y="96">Where the new per-finger splay values come from, and why they update as the held object moves.</text>
+
+  <rect class="panel" x="50" y="130" width="390" height="610" rx="24" />
+  <text class="panelTitle" x="80" y="175">1. At grab solve</text>
+  <text class="small" x="80" y="202">ROCK probes object triangles and records contact targets.</text>
+
+  <path class="object" d="M155 330 L320 260 L360 445 L205 515 Z" />
+  <line class="dash" x1="210" y1="350" x2="330" y2="430" />
+  <line class="dash" x1="300" y1="285" x2="205" y2="515" />
+  <circle class="target" cx="305" cy="365" r="11" />
+  <circle class="target" cx="268" cy="424" r="11" />
+  <circle class="storedTarget" cx="222" cy="390" r="11" />
+  <text class="label" x="108" y="565">Object mesh triangles</text>
+  <text class="small" x="106" y="590">surfaceAimTarget[5]</text>
+  <text class="small" x="106" y="613">surfaceAimNormal[5]</text>
+
+  <path class="arrow" d="M315 510 C340 555 335 600 300 635" />
+  <rect class="note" x="86" y="640" width="305" height="70" rx="14" />
+  <text class="code" x="108" y="668">captureSurfaceAimObjectLocal()</text>
+  <text class="small" x="108" y="692">Stores targets in object-local space.</text>
+
+  <rect class="panel" x="505" y="130" width="390" height="610" rx="24" />
+  <text class="panelTitle" x="535" y="175">2. While held</text>
+  <text class="small" x="535" y="202">Targets are rebuilt from the current object transform.</text>
+
+  <path class="object" d="M640 305 L805 235 L845 420 L690 490 Z" />
+  <path class="object" d="M615 350 L780 280 L820 465 L665 535 Z" opacity="0.22" />
+  <circle class="storedTarget" cx="708" cy="398" r="11" />
+  <circle class="target" cx="775" cy="340" r="11" />
+  <path class="greenArrow" d="M708 398 C720 365 740 348 775 340" />
+  <text class="small" x="535" y="555">Object moved/rotated</text>
+  <text class="small" x="535" y="579">object-local target follows it</text>
+  <rect class="note" x="535" y="640" width="325" height="70" rx="14" />
+  <text class="code" x="557" y="668">resolveSurfaceAimObjectLocal()</text>
+  <text class="small" x="557" y="692">Returns current world-space target.</text>
+
+  <rect class="panel" x="960" y="130" width="390" height="610" rx="24" />
+  <text class="panelTitle" x="990" y="175">3. At pose publish</text>
+  <text class="small" x="990" y="202">Splay is the signed palm-plane angle to the current target.</text>
+
+  <ellipse class="hand" cx="1120" cy="500" rx="58" ry="75" transform="rotate(-10 1120 500)" />
+  <path class="finger" d="M1092 432 C1060 390 1048 350 1050 305" />
+  <path class="finger" d="M1124 422 C1120 370 1125 335 1140 298" />
+  <path class="finger" d="M1154 435 C1178 392 1200 365 1232 340" />
+  <path class="fingerThin" d="M1082 520 C1045 505 1015 480 988 445" />
+
+  <circle class="target" cx="1245" cy="350" r="12" />
+  <circle fill="#243447" cx="1154" cy="435" r="6" />
+  <path class="blueArrow" d="M1154 435 L1230 340" />
+  <path class="greenArrow" d="M1154 435 L1212 412" />
+  <path class="angle" d="M1190 422 C1206 405 1215 384 1218 363" />
+  <text class="angleText" x="1218" y="405">splay</text>
+  <text class="small" x="995" y="604">green: live open finger direction</text>
+  <text class="small" x="995" y="628">blue: base-to-current surface target</text>
+  <text class="small" x="995" y="652">angle projected onto palm plane</text>
+
+  <path class="arrow" d="M438 430 C470 430 475 430 505 430" />
+  <path class="arrow" d="M895 430 C925 430 930 430 960 430" />
+
+  <rect class="api" x="170" y="785" width="420" height="78" rx="14" />
+  <text class="code" x="195" y="815">HandPoseData = curls + splay</text>
+  <text class="small" x="195" y="840">prox/mid/dist still come from solved joint curls.</text>
+
+  <rect class="zero" x="630" y="785" width="300" height="78" rx="14" />
+  <text class="code" x="655" y="815">palmPitch = 0</text>
+  <text class="code" x="655" y="840">palmYaw = 0</text>
+
+  <rect class="api" x="970" y="785" width="330" height="78" rx="14" />
+  <text class="code" x="995" y="815">hFRIK baseline pose</text>
+  <text class="small" x="995" y="840">ROCK still adds local transform correction after this.</text>
+
+  <path class="arrow" d="M590 824 L630 824" />
+  <path class="arrow" d="M930 824 L970 824" />
+</svg>
