@@ -1396,8 +1396,9 @@ namespace rock::grab_finger_pose_runtime
         return anyProbeLine;
     }
 
-    // Semantic splay follows current finger/contact geometry; wrist pitch/yaw remain owned by hand-world authority.
-    inline constexpr float kDefaultSurfaceContactSplayMaxRadians = 0.16f;
+    // Red surface targets are contact hints only. Side-to-side splay must stay anatomically bounded.
+    inline constexpr float kMaxSurfaceContactSplayRadians = 0.08726646259971647f;
+    inline constexpr float kDefaultSurfaceContactSplayMaxRadians = kMaxSurfaceContactSplayRadians;
 
     inline bool hasSurfaceContactSplayCandidates(const SolvedGrabFingerPose& pose)
     {
@@ -1441,7 +1442,8 @@ namespace rock::grab_finger_pose_runtime
 
     inline float clampSurfaceContactSplayRadians(float splayRadians, float maxSplayRadians = kDefaultSurfaceContactSplayMaxRadians)
     {
-        const float resolvedMax = std::isfinite(maxSplayRadians) ? std::max(0.0f, maxSplayRadians) : kDefaultSurfaceContactSplayMaxRadians;
+        const float requestedMax = std::isfinite(maxSplayRadians) ? std::max(0.0f, maxSplayRadians) : kDefaultSurfaceContactSplayMaxRadians;
+        const float resolvedMax = std::min(requestedMax, kMaxSurfaceContactSplayRadians);
         if (!std::isfinite(splayRadians) || resolvedMax <= 0.0f) {
             return 0.0f;
         }
@@ -1823,6 +1825,7 @@ namespace rock::grab_finger_local_transform_math
     inline constexpr float kDefaultSurfaceAimStrength = 0.75f;
     inline constexpr float kDefaultThumbOppositionStrength = 1.0f;
     inline constexpr float kDefaultThumbAlternateCurveStrength = 0.65f;
+    inline constexpr float kMaxSurfaceAimCorrectionRadians = 0.08726646259971647f;
 
     [[nodiscard]] inline std::uint16_t sanitizeFingerLocalTransformMask(std::uint16_t mask)
     {
@@ -1874,11 +1877,10 @@ namespace rock::grab_finger_local_transform_math
     [[nodiscard]] inline float surfaceAimSegmentCorrectionWeight(std::size_t fingerIndex, std::size_t segment)
     {
         static constexpr float kThumbWeights[3]{ 0.08f, 0.18f, 0.30f };
-        static constexpr float kFingerWeights[3]{ 0.0f, 0.18f, 0.34f };
         if (segment >= 3) {
             return 0.0f;
         }
-        return fingerIndex == 0 ? kThumbWeights[segment] : kFingerWeights[segment];
+        return fingerIndex == 0 ? kThumbWeights[segment] : 0.0f;
     }
 
     [[nodiscard]] inline float boundedSurfaceAimCorrectionRadians(
@@ -1903,7 +1905,9 @@ namespace rock::grab_finger_local_transform_math
             return 0.0f;
         }
 
-        return std::min(rawAngleRadians * resolvedStrength * segmentWeight, maxCorrectionRadians * segmentWeight);
+        return std::min(
+            std::min(rawAngleRadians * resolvedStrength * segmentWeight, maxCorrectionRadians * segmentWeight),
+            kMaxSurfaceAimCorrectionRadians);
     }
 
     [[nodiscard]] inline bool shouldApplySurfaceAimCorrection(
@@ -1911,7 +1915,7 @@ namespace rock::grab_finger_local_transform_math
         bool alternateThumbPlaneCorrection,
         bool thumbSurfaceFollowAllowed = true)
     {
-        return fingerIndex != 0 || (thumbSurfaceFollowAllowed && !alternateThumbPlaneCorrection);
+        return fingerIndex == 0 && thumbSurfaceFollowAllowed && !alternateThumbPlaneCorrection;
     }
 
     [[nodiscard]] inline bool shouldApplyAlternateThumbLocalCorrection(bool usedAlternateThumbCurve, bool usedAlternateThumbSurfaceHit)

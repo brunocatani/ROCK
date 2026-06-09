@@ -112,12 +112,14 @@ int main()
         correctionStrengthForFinger(3, 0.25f, 0.8f), 0.25f);
     ok &= expectFloat("non-thumb proximal surface target correction is disabled",
         surfaceAimSegmentCorrectionWeight(2, 0), 0.0f);
-    ok &= expectFloat("non-thumb distal surface target correction is bounded",
-        surfaceAimSegmentCorrectionWeight(2, 2), 0.34f);
+    ok &= expectFloat("non-thumb distal surface target correction is disabled",
+        surfaceAimSegmentCorrectionWeight(2, 2), 0.0f);
     ok &= expectFloat("thumb surface target correction keeps proximal limit",
         surfaceAimSegmentCorrectionWeight(0, 0), 0.08f);
-    ok &= expectFloat("bounded surface aim correction applies segment cap",
-        boundedSurfaceAimCorrectionRadians(1.0f, 1.0f, 0.5f, 2, 2), 0.17f);
+    ok &= expectFloat("thumb surface aim correction hard-caps at five degrees",
+        boundedSurfaceAimCorrectionRadians(1.0f, 1.0f, 0.5f, 0, 2), kMaxSurfaceAimCorrectionRadians);
+    ok &= expectFloat("non-thumb surface aim correction skips disabled distal segment",
+        boundedSurfaceAimCorrectionRadians(1.0f, 1.0f, 0.5f, 2, 2), 0.0f);
     ok &= expectFloat("bounded surface aim correction skips disabled proximal segment",
         boundedSurfaceAimCorrectionRadians(1.0f, 1.0f, 0.5f, 2, 0), 0.0f);
     ok &= expectBool("alternate thumb skips shared surface aim",
@@ -126,8 +128,8 @@ int main()
         shouldApplySurfaceAimCorrection(0, false), true);
     ok &= expectBool("curve-only thumb skips shared surface aim",
         shouldApplySurfaceAimCorrection(0, false, false), false);
-    ok &= expectBool("alternate thumb does not disable non-thumb aim",
-        shouldApplySurfaceAimCorrection(2, true, false), true);
+    ok &= expectBool("non-thumb red target local correction is disabled",
+        shouldApplySurfaceAimCorrection(2, true, false), false);
     ok &= expectBool("alternate thumb local correction needs a surface hit",
         shouldApplyAlternateThumbLocalCorrection(true, false), false);
     ok &= expectBool("alternate thumb local correction accepts real surface hit",
@@ -243,9 +245,9 @@ int main()
             RE::NiPoint3{ 1.0f, -0.1f, 0.0f },
             RE::NiPoint3{ 0.0f, 0.0f, 1.0f }),
         std::atan2(-0.1f, 1.0f));
-    ok &= expectFloat("surface-contact splay clamps large lateral targets",
+    ok &= expectFloat("surface-contact splay clamps large lateral targets to five degrees",
         clampSurfaceContactSplayRadians(1.0f, 0.28f),
-        0.28f);
+        kMaxSurfaceContactSplayRadians);
     ok &= expectFloat("surface-contact splay default stays conservative",
         clampSurfaceContactSplayRadians(1.0f),
         kDefaultSurfaceContactSplayMaxRadians);
@@ -293,14 +295,14 @@ int main()
         true);
     ok &= expectFloat("surface-contact splay stores positive index offset",
         splayRadians[1],
-        std::atan2(0.2f, 2.0f));
+        kMaxSurfaceContactSplayRadians);
     splayPose.surfaceAimTarget[1] = RE::NiPoint3{ 2.0f, -0.2f, 0.0f };
     ok &= expectBool("surface-contact splay rebuilds when target moves",
         buildSurfaceContactSplayValues(splayPose, liveFingerSnapshot, splayRadians),
         true);
     ok &= expectFloat("surface-contact splay stores negative index offset",
         splayRadians[1],
-        std::atan2(-0.2f, 2.0f));
+        -kMaxSurfaceContactSplayRadians);
 
     SolvedGrabFingerPose thumbIndexCurveOnly{};
     thumbIndexCurveOnly.usedAlternateThumbSurfaceHit = true;
