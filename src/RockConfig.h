@@ -65,6 +65,7 @@ namespace rock
         bool rockSuppressRightGrabGameInput = true;
         bool rockSuppressRightFavoritesGameInput = true;
         bool rockSuppressNativeReadyWeaponAutoReady = true;
+        bool rockSuppressNativeMeleeThrowGameInput = true;
         bool rockGrabInputIntentStateEnabled = true;
         float rockGrabInputLeewaySeconds = 0.12f;
         float rockGrabInputForceSeconds = 0.08f;

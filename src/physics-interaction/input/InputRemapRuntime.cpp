@@ -34,6 +34,8 @@ namespace rock::input_remap_runtime
         constexpr std::uintptr_t kReadyWeaponHandlerHandleEventVTableSlotOffset = 0x2D8A4D0;
         constexpr std::uintptr_t kFavoritesManagerHandleEventFunctionOffset = 0x12F19D0;
         constexpr std::uintptr_t kFavoritesManagerHandleEventVTableSlotOffset = 0x2DC8520;
+        constexpr std::uintptr_t kMeleeThrowHandlerHandleEventFunctionOffset = 0x0FC8AE0;
+        constexpr std::uintptr_t kMeleeThrowHandlerHandleEventVTableSlotOffset = 0x2D8A9F0;
         constexpr std::uintptr_t kMeleeThrowFallbackDrawPressPatchSite = 0x0FC8C88;
         constexpr std::uintptr_t kMeleeThrowFallbackDrawReleasePatchSite = 0x0FC8E7E;
         constexpr std::uint8_t kConditionalShortJumpGreaterEqual = 0x7D;
@@ -69,6 +71,7 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_hooksInstalled{ false };
         std::atomic<bool> s_readyWeaponEventHookInstalled{ false };
         std::atomic<bool> s_favoritesEventHookInstalled{ false };
+        std::atomic<bool> s_meleeThrowEventHookInstalled{ false };
         std::atomic<bool> s_meleeThrowFallbackPatchesApplied{ false };
         std::atomic<bool> s_menuInputGateRegistered{ false };
         std::atomic<bool> s_menuInputActive{ false };
@@ -84,6 +87,7 @@ namespace rock::input_remap_runtime
         GetControllerState_t s_originalGetControllerState = nullptr;
         GetControllerStateWithPose_t s_originalGetControllerStateWithPose = nullptr;
         NativeInputEventHandler_t s_originalReadyWeaponEventHandler = nullptr;
+        NativeInputEventHandler_t s_originalMeleeThrowEventHandler = nullptr;
         FavoritesInputEventHandler_t s_originalFavoritesEventHandler = nullptr;
 
         /*
@@ -296,6 +300,7 @@ namespace rock::input_remap_runtime
                 .suppressRightGrabGameInput = g_rockConfig.rockSuppressRightGrabGameInput,
                 .suppressRightFavoritesGameInput = g_rockConfig.rockSuppressRightFavoritesGameInput,
                 .suppressRightTriggerGameInput = g_rockConfig.rockSuppressNativeReadyWeaponAutoReady,
+                .suppressNativeMeleeThrowGameInput = g_rockConfig.rockSuppressNativeMeleeThrowGameInput,
             };
         }
 
@@ -572,6 +577,13 @@ namespace rock::input_remap_runtime
                 makeNativeActionSuppressionInput(g_rockConfig.rockSuppressNativeReadyWeaponAutoReady, eventNameMatches(event, kNativeEventWandTrigger)));
         }
 
+        [[nodiscard]] bool shouldSuppressNativeMeleeThrowAction(const RE::InputEvent* event)
+        {
+            // FO4VR's verified MeleeThrow handler accepts its grenade/throw action from WandGrip.
+            return input_remap_policy::shouldSuppressNativeMeleeThrowAction(
+                makeNativeActionSuppressionInput(g_rockConfig.rockSuppressNativeMeleeThrowGameInput, eventNameMatches(event, kNativeEventWandGrip)));
+        }
+
         void hookedReadyWeaponEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
         {
             if (shouldSuppressNativeGripReadyAction(inputEvent)) {
@@ -599,6 +611,21 @@ namespace rock::input_remap_runtime
 
             if (s_originalFavoritesEventHandler) {
                 s_originalFavoritesEventHandler(handler, inputEvent);
+            }
+        }
+
+        void hookedMeleeThrowEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
+        {
+            if (shouldSuppressNativeMeleeThrowAction(inputEvent)) {
+                markInputEventStopped(inputEvent);
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Suppressed native WandGrip MeleeThrow event while ROCK owns gameplay grab input");
+                return;
+            }
+
+            if (s_originalMeleeThrowEventHandler) {
+                s_originalMeleeThrowEventHandler(handler, inputEvent, cursor, unk);
             }
         }
 
@@ -668,6 +695,16 @@ namespace rock::input_remap_runtime
                 s_originalFavoritesEventHandler,
                 s_favoritesEventHookInstalled,
                 "FavoritesManager::HandleEvent suppression");
+        }
+
+        bool installMeleeThrowEventSuppressionHook()
+        {
+            return installNativeActionVTableHook(kMeleeThrowHandlerHandleEventVTableSlotOffset,
+                kMeleeThrowHandlerHandleEventFunctionOffset,
+                &hookedMeleeThrowEventHandler,
+                s_originalMeleeThrowEventHandler,
+                s_meleeThrowEventHookInstalled,
+                "MeleeThrowHandler::HandleEvent suppression");
         }
 
         bool writeMeleeThrowFallbackBranch(std::uintptr_t siteOffset, bool suppress, const char* label)
@@ -753,6 +790,9 @@ namespace rock::input_remap_runtime
             }
             if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightFavoritesGameInput)) {
                 ready = installFavoritesEventSuppressionHook() && ready;
+            }
+            if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressNativeMeleeThrowGameInput)) {
+                ready = installMeleeThrowEventSuppressionHook() && ready;
             }
 
             const bool suppressTriggerFallbacks = input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightTriggerGameInput);

@@ -18,6 +18,7 @@ namespace rock::input_remap_policy
         bool suppressRightGrabGameInput{ true };
         bool suppressRightFavoritesGameInput{ true };
         bool suppressRightTriggerGameInput{ true };
+        bool suppressNativeMeleeThrowGameInput{ true };
     };
 
     struct Input
@@ -103,6 +104,11 @@ namespace rock::input_remap_policy
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeFavoritesAction(const NativeActionSuppressionInput& input)
+    {
+        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched;
+    }
+
+    [[nodiscard]] constexpr bool shouldSuppressNativeMeleeThrowAction(const NativeActionSuppressionInput& input)
     {
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched;
     }

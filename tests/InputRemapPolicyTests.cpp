@@ -90,9 +90,17 @@ int main()
     favorites.weaponDrawn = true;
     ok &= expectTrue("WandThumbClick suppresses native favorites even with weapon drawn", shouldSuppressNativeFavoritesAction(favorites));
 
+    auto meleeThrow = base;
+    meleeThrow.weaponDrawn = true;
+    ok &= expectTrue("WandGrip suppresses native melee throw even with weapon drawn", shouldSuppressNativeMeleeThrowAction(meleeThrow));
+
     auto menuFavorites = favorites;
     menuFavorites.menuInputActive = true;
     ok &= expectFalse("menu input allows native favorites handling", shouldSuppressNativeFavoritesAction(menuFavorites));
+
+    auto menuMeleeThrow = meleeThrow;
+    menuMeleeThrow.menuInputActive = true;
+    ok &= expectFalse("menu input allows native melee throw handling", shouldSuppressNativeMeleeThrowAction(menuMeleeThrow));
 
     auto unmatched = base;
     unmatched.eventMatched = false;
