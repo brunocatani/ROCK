@@ -225,6 +225,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGrabInputIntentPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabInputIntentPolicyTests)
 
+  add_executable(ROCKInputRemapPolicyTests
+    "${ROOT_DIR}/tests/InputRemapPolicyTests.cpp"
+  )
+  target_compile_features(ROCKInputRemapPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKInputRemapPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKInputRemapPolicyTests)
+
   add_executable(ROCKGrabFingerLocalTransformPolicyTests
     "${ROOT_DIR}/tests/GrabFingerLocalTransformPolicyTests.cpp"
   )
@@ -444,6 +451,7 @@ if(BUILD_ROCK_TESTS)
 
   set(ROCK_COMMONLIB_TEST_TARGETS
     ROCKGrabInputIntentPolicyTests
+    ROCKInputRemapPolicyTests
     ROCKGrabFingerLocalTransformPolicyTests
     ROCKGrabHapticPolicyTests
     ROCKGrabContactEvidencePolicyTests

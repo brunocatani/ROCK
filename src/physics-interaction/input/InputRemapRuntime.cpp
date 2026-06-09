@@ -7,6 +7,7 @@
 #include "f4vr/F4VRUtils.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/ControlMap.h"
+#include "RE/Bethesda/InputEvent.h"
 #include "RE/Bethesda/UI.h"
 
 #include <REL/Relocation.h>
@@ -19,7 +20,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
-#include <intrin.h>
 #include <optional>
 #include <string_view>
 
@@ -30,20 +30,24 @@ namespace rock::input_remap_runtime
         constexpr std::size_t kGetControllerStateVTableIndex = 34;
         constexpr std::size_t kGetControllerStateWithPoseVTableIndex = 35;
         constexpr DWORD kPageExecuteReadWrite = 0x00000040u;
-        // Ghidra verified FO4VR's ReadyWeapon handler target at 0x140FCE650 is a normal
-        // function prologue and the live dispatch slot is 0x142D8A480. The previous
-        // CommonLib write_branch hook treated that prologue as an existing branch/call
-        // and produced a bogus callable original, which crashed on right-thumbstick
-        // input. A vtable-slot hook keeps the original function pointer intact; an
-        // entry trampoline would also work, but this handler is virtual and the slot is
-        // the narrower patch surface.
-        constexpr std::uintptr_t kReadyWeaponHandlerFunctionOffset = 0xFCE650;
-        constexpr std::uintptr_t kReadyWeaponHandlerVTableSlotOffset = 0x2D8A480;
+        constexpr std::uintptr_t kReadyWeaponHandlerHandleEventFunctionOffset = 0x0FC9220;
+        constexpr std::uintptr_t kReadyWeaponHandlerHandleEventVTableSlotOffset = 0x2D8A4D0;
+        constexpr std::uintptr_t kFavoritesManagerHandleEventFunctionOffset = 0x12F19D0;
+        constexpr std::uintptr_t kFavoritesManagerHandleEventVTableSlotOffset = 0x2DC8520;
+        constexpr std::uintptr_t kMeleeThrowFallbackDrawPressPatchSite = 0x0FC8C88;
+        constexpr std::uintptr_t kMeleeThrowFallbackDrawReleasePatchSite = 0x0FC8E7E;
+        constexpr std::uint8_t kConditionalShortJumpGreaterEqual = 0x7D;
+        constexpr std::uint8_t kUnconditionalShortJump = 0xEB;
+        constexpr std::uint8_t kMeleeThrowFallbackBranchDisplacement = 0x0D;
+        constexpr std::string_view kNativeEventWandGrip{ "WandGrip" };
+        constexpr std::string_view kNativeEventWandTrigger{ "WandTrigger" };
+        constexpr std::string_view kNativeEventWandThumbClick{ "WandThumbClick" };
 
         using GetControllerState_t = bool (*)(vr::IVRSystem*, vr::TrackedDeviceIndex_t, vr::VRControllerState_t*, std::uint32_t);
         using GetControllerStateWithPose_t =
             bool (*)(vr::IVRSystem*, vr::ETrackingUniverseOrigin, vr::TrackedDeviceIndex_t, vr::VRControllerState_t*, std::uint32_t, vr::TrackedDevicePose_t*);
-        using ReadyWeaponHandler_t = bool (*)(void*, void*);
+        using NativeInputEventHandler_t = void (*)(void*, RE::InputEvent*, void*, void*);
+        using FavoritesInputEventHandler_t = void (*)(void*, RE::InputEvent*);
 
         struct ControllerTracker
         {
@@ -55,8 +59,6 @@ namespace rock::input_remap_runtime
             std::atomic<std::uint64_t> pressedEdges{ 0 };
             std::atomic<std::uint64_t> releasedEdges{ 0 };
             std::atomic<bool> valid{ false };
-            std::atomic<std::uint64_t> gameFacingPressed{ 0 };
-            std::atomic<bool> gameFacingValid{ false };
             std::atomic<std::uint32_t> rawThumbDirection{ 0 };
         };
 
@@ -65,7 +67,9 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_weaponDrawn{ false };
         std::atomic<std::uint32_t> s_pendingWeaponToggleRequests{ 0 };
         std::atomic<bool> s_hooksInstalled{ false };
-        std::atomic<bool> s_readyWeaponHookInstalled{ false };
+        std::atomic<bool> s_readyWeaponEventHookInstalled{ false };
+        std::atomic<bool> s_favoritesEventHookInstalled{ false };
+        std::atomic<bool> s_meleeThrowFallbackPatchesApplied{ false };
         std::atomic<bool> s_menuInputGateRegistered{ false };
         std::atomic<bool> s_menuInputActive{ false };
         std::atomic<bool> s_missingVRSystemLogged{ false };
@@ -79,7 +83,8 @@ namespace rock::input_remap_runtime
         void** s_vrSystemVTable = nullptr;
         GetControllerState_t s_originalGetControllerState = nullptr;
         GetControllerStateWithPose_t s_originalGetControllerStateWithPose = nullptr;
-        ReadyWeaponHandler_t s_originalReadyWeaponHandler = nullptr;
+        NativeInputEventHandler_t s_originalReadyWeaponEventHandler = nullptr;
+        FavoritesInputEventHandler_t s_originalFavoritesEventHandler = nullptr;
 
         /*
          * ROCK remaps right-hand grab/trigger/thumbstick only while gameplay owns controller input.
@@ -316,12 +321,6 @@ namespace rock::input_remap_runtime
             return false;
         }
 
-        [[nodiscard]] bool shouldFilterCaller(std::uintptr_t callerAddress)
-        {
-            const auto text = REL::Module::get().segment(REL::Segment::text);
-            return input_remap_policy::shouldFilterGameFacingInput(callerAddress, text.address(), text.size());
-        }
-
         bool ensureMenuInputGateRegistered()
         {
             auto* ui = RE::UI::GetSingleton();
@@ -375,45 +374,6 @@ namespace rock::input_remap_runtime
             return text.size() != 0 && address >= text.address() && address < text.address() + text.size();
         }
 
-        [[nodiscard]] std::uint32_t externalDiagnosticSuppressionFlagsFor(input_remap_policy::Hand hand, bool menuInputActive)
-        {
-            if (menuInputActive || s_externalDiagnosticSuppressionOwner.load(std::memory_order_acquire) == 0) {
-                return 0;
-            }
-
-            const auto flags = s_externalDiagnosticSuppressionFlags.load(std::memory_order_acquire);
-            std::uint32_t activeFlags = 0;
-            if ((flags & kDiagnosticSuppressionPrimaryTrigger) != 0 && isPrimaryHand(hand)) {
-                activeFlags |= kDiagnosticSuppressionPrimaryTrigger;
-            }
-            if ((flags & kDiagnosticSuppressionRightThumbstick) != 0 && hand == input_remap_policy::Hand::Right) {
-                activeFlags |= kDiagnosticSuppressionRightThumbstick;
-            }
-            return activeFlags;
-        }
-
-        void suppressAxisButtonInGameFacingDecision(input_remap_policy::Decision& decision, int buttonId)
-        {
-            const auto buttonMask = input_remap_policy::buttonMask(buttonId);
-            if (buttonMask == 0) {
-                return;
-            }
-
-            decision.filteredPressed &= ~buttonMask;
-            decision.filteredTouched &= ~buttonMask;
-            decision.filteredAxisMask |= input_remap_policy::axisMaskFromOpenVrButtonId(buttonId);
-        }
-
-        void applyDiagnosticSuppression(input_remap_policy::Decision& decision, std::uint32_t suppressionFlags)
-        {
-            if ((suppressionFlags & kDiagnosticSuppressionPrimaryTrigger) != 0) {
-                suppressAxisButtonInGameFacingDecision(decision, input_remap_policy::kOpenVrSteamVrTriggerButtonId);
-            }
-            if ((suppressionFlags & kDiagnosticSuppressionRightThumbstick) != 0) {
-                suppressAxisButtonInGameFacingDecision(decision, input_remap_policy::kOpenVrAxisButtonBase);
-            }
-        }
-
         void recordDiagnosticInputSample(input_remap_policy::Hand hand, const vr::VRControllerState_t& state, const input_remap_policy::EdgeTransition& rawTransition)
         {
             std::uint32_t pressedFlags = 0;
@@ -448,7 +408,7 @@ namespace rock::input_remap_runtime
             }
         }
 
-        void captureAndFilterControllerState(vr::TrackedDeviceIndex_t deviceIndex, vr::VRControllerState_t* state, std::uint32_t stateSize, bool filterGameFacingState)
+        void captureControllerState(vr::TrackedDeviceIndex_t deviceIndex, vr::VRControllerState_t* state, std::uint32_t stateSize)
         {
             if (!state || stateSize < sizeof(vr::VRControllerState_t)) {
                 return;
@@ -477,14 +437,6 @@ namespace rock::input_remap_runtime
             }
             recordDiagnosticInputSample(hand, *state, rawTransition);
 
-            if (!filterGameFacingState) {
-                return;
-            }
-
-            const bool hadGameFacingPrevious = tracker.gameFacingValid.exchange(true, std::memory_order_acq_rel);
-            const std::uint64_t previousGameFacingPressed = tracker.gameFacingPressed.exchange(rawPressed, std::memory_order_acq_rel);
-            const auto gameFacingTransition = input_remap_policy::evaluateEdgeTransition(hadGameFacingPrevious, previousGameFacingPressed, rawPressed);
-
             const auto decision = input_remap_policy::evaluate(
                 input_remap_policy::Input{
                     .hand = hand,
@@ -493,26 +445,12 @@ namespace rock::input_remap_runtime
                     .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
                     .rawPressed = rawPressed,
                     .rawTouched = rawTouched,
-                    .previousRawPressed = gameFacingTransition.previousPressedForEvaluation,
+                    .previousRawPressed = rawTransition.previousPressedForEvaluation,
                 },
                 makeSettings());
 
-            auto filteredDecision = decision;
-            applyDiagnosticSuppression(filteredDecision, externalDiagnosticSuppressionFlagsFor(hand, isGameStoppingMenuInputActive()));
-
-            if (filteredDecision.weaponToggleRequested) {
+            if (decision.weaponToggleRequested) {
                 s_pendingWeaponToggleRequests.fetch_add(1, std::memory_order_acq_rel);
-            }
-
-            state->ulButtonPressed = filteredDecision.filteredPressed;
-            state->ulButtonTouched = filteredDecision.filteredTouched;
-            for (std::uint32_t axisIndex = 0; axisIndex < vr::k_unControllerStateAxisCount; ++axisIndex) {
-                if ((filteredDecision.filteredAxisMask & (std::uint8_t{ 1 } << axisIndex)) == 0) {
-                    continue;
-                }
-
-                state->rAxis[axisIndex].x = 0.0f;
-                state->rAxis[axisIndex].y = 0.0f;
             }
         }
 
@@ -521,8 +459,7 @@ namespace rock::input_remap_runtime
         {
             const bool result = s_originalGetControllerState ? s_originalGetControllerState(system, controllerDeviceIndex, controllerState, controllerStateSize) : false;
             if (result) {
-                captureAndFilterControllerState(
-                    controllerDeviceIndex, controllerState, controllerStateSize, shouldFilterCaller(reinterpret_cast<std::uintptr_t>(_ReturnAddress())));
+                captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
             }
             return result;
         }
@@ -538,8 +475,7 @@ namespace rock::input_remap_runtime
                                     s_originalGetControllerStateWithPose(system, origin, controllerDeviceIndex, controllerState, controllerStateSize, trackedDevicePose) :
                                     false;
             if (result) {
-                captureAndFilterControllerState(
-                    controllerDeviceIndex, controllerState, controllerStateSize, shouldFilterCaller(reinterpret_cast<std::uintptr_t>(_ReturnAddress())));
+                captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
             }
             return result;
         }
@@ -582,68 +518,246 @@ namespace rock::input_remap_runtime
             return patchPointerSlot(&vtable[index], hook, original, label);
         }
 
-        bool shouldSuppressNativeReadyWeaponAction(bool originalReadyActionMatched)
+        /*
+         * ROCK samples OpenVR controller state for its own intent detection, but
+         * suppresses FO4VR's native auto-actions at their verified action handlers.
+         * That keeps trigger/grip/thumbstick state readable for other OpenVR users
+         * while preventing duplicate vanilla ready/favorites/attack behavior.
+         */
+        [[nodiscard]] bool eventNameMatches(const RE::InputEvent* event, std::string_view expected)
         {
-            return input_remap_policy::shouldSuppressNativeReadyWeaponAutoReady(input_remap_policy::NativeReadyWeaponSuppressionInput{
+            if (!event) {
+                return false;
+            }
+
+            const auto& userEvent = event->QUserEvent();
+            const auto* userEventText = userEvent.c_str();
+            return std::string_view{ userEventText ? userEventText : "", userEvent.length() } == expected;
+        }
+
+        [[nodiscard]] input_remap_policy::NativeActionSuppressionInput makeNativeActionSuppressionInput(bool suppressionEnabled, bool eventMatched)
+        {
+            return input_remap_policy::NativeActionSuppressionInput{
                 .remapEnabled = g_rockConfig.rockInputRemapEnabled,
-                .suppressionEnabled = g_rockConfig.rockSuppressNativeReadyWeaponAutoReady,
+                .suppressionEnabled = suppressionEnabled,
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
                 .menuInputActive = isGameStoppingMenuInputActive(),
                 .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
-                .originalReadyActionMatched = originalReadyActionMatched,
-            });
+                .eventMatched = eventMatched,
+            };
         }
 
-        bool hookedReadyWeaponHandler(void* handler, void* inputEvent)
+        void markInputEventStopped(RE::InputEvent* event)
         {
-            const bool originalMatched = s_originalReadyWeaponHandler ? s_originalReadyWeaponHandler(handler, inputEvent) : false;
-            if (shouldSuppressNativeReadyWeaponAction(originalMatched)) {
-                ROCK_LOG_DEBUG(Input, "Suppressed native ReadyWeapon auto-ready while weapon is holstered");
-                return false;
+            if (event) {
+                event->handled = RE::InputEvent::HANDLED_RESULT::kStop;
+            }
+        }
+
+        [[nodiscard]] bool shouldSuppressNativeGripReadyAction(const RE::InputEvent* event)
+        {
+            return input_remap_policy::shouldSuppressNativeGripReadyAction(
+                makeNativeActionSuppressionInput(g_rockConfig.rockSuppressRightGrabGameInput, eventNameMatches(event, kNativeEventWandGrip)));
+        }
+
+        [[nodiscard]] bool shouldSuppressNativeFavoritesAction(const RE::InputEvent* event)
+        {
+            return input_remap_policy::shouldSuppressNativeFavoritesAction(
+                makeNativeActionSuppressionInput(g_rockConfig.rockSuppressRightFavoritesGameInput, eventNameMatches(event, kNativeEventWandThumbClick)));
+        }
+
+        [[nodiscard]] bool shouldSuppressNativeTriggerActionEvent(const RE::InputEvent* event)
+        {
+            return input_remap_policy::shouldSuppressNativeTriggerAction(
+                makeNativeActionSuppressionInput(g_rockConfig.rockSuppressNativeReadyWeaponAutoReady, eventNameMatches(event, kNativeEventWandTrigger)));
+        }
+
+        void hookedReadyWeaponEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
+        {
+            if (shouldSuppressNativeGripReadyAction(inputEvent)) {
+                markInputEventStopped(inputEvent);
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Suppressed native WandGrip ReadyWeapon event while ROCK owns holstered right-grab input");
+                return;
             }
 
-            return originalMatched;
+            if (s_originalReadyWeaponEventHandler) {
+                s_originalReadyWeaponEventHandler(handler, inputEvent, cursor, unk);
+            }
         }
 
-        bool installNativeReadyWeaponSuppressionHook()
+        void hookedFavoritesEventHandler(void* handler, RE::InputEvent* inputEvent)
         {
-            if (s_readyWeaponHookInstalled.load(std::memory_order_acquire)) {
+            if (shouldSuppressNativeFavoritesAction(inputEvent)) {
+                markInputEventStopped(inputEvent);
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Suppressed native WandThumbClick Favorites event while ROCK owns right-stick weapon toggle");
+                return;
+            }
+
+            if (s_originalFavoritesEventHandler) {
+                s_originalFavoritesEventHandler(handler, inputEvent);
+            }
+        }
+
+        template <class HandlerT>
+        bool installNativeActionVTableHook(
+            std::uintptr_t slotOffset, std::uintptr_t expectedFunctionOffset, HandlerT hook, HandlerT& original, std::atomic<bool>& installedFlag, const char* label)
+        {
+            if (installedFlag.load(std::memory_order_acquire)) {
                 return true;
             }
 
-            REL::Relocation<std::uintptr_t> slotEntry{ REL::Offset(kReadyWeaponHandlerVTableSlotOffset) };
+            REL::Relocation<std::uintptr_t> slotEntry{ REL::Offset(slotOffset) };
             auto* slot = reinterpret_cast<void**>(slotEntry.address());
-            const auto expectedTarget = REL::Offset(kReadyWeaponHandlerFunctionOffset).address();
+            const auto expectedTarget = REL::Offset(expectedFunctionOffset).address();
+            const auto hookTarget = reinterpret_cast<std::uintptr_t>(hook);
             const auto currentTarget = slot ? reinterpret_cast<std::uintptr_t>(*slot) : 0;
             if (!slot || currentTarget == 0) {
-                ROCK_LOG_ERROR(Input, "Failed to install ReadyWeapon action suppression hook: vtable slot 0x{:X} is invalid", slotEntry.address());
+                ROCK_LOG_ERROR(Input, "Failed to install {} hook: vtable slot 0x{:X} is invalid", label, slotEntry.address());
                 return false;
+            }
+
+            if (currentTarget == hookTarget) {
+                const bool installed = original != nullptr;
+                installedFlag.store(installed, std::memory_order_release);
+                return installed;
             }
 
             if (currentTarget != expectedTarget) {
                 if (isAddressInGameText(currentTarget)) {
                     ROCK_LOG_ERROR(Input,
-                        "ReadyWeapon action suppression hook validation failed: slot 0x{:X} points to game text 0x{:X}, expected 0x{:X}",
+                        "{} hook validation failed: slot 0x{:X} points to game text 0x{:X}, expected 0x{:X}",
+                        label,
                         slotEntry.address(),
                         currentTarget,
                         expectedTarget);
                     return false;
                 }
 
-                ROCK_LOG_WARN(Input,
-                    "ReadyWeapon action suppression vtable slot 0x{:X} is already patched to external target 0x{:X}; ROCK will chain it",
-                    slotEntry.address(),
-                    currentTarget);
+                ROCK_LOG_WARN(Input, "{} vtable slot 0x{:X} is already patched to external target 0x{:X}; ROCK will chain it", label, slotEntry.address(), currentTarget);
             }
 
-            void* original = reinterpret_cast<void*>(s_originalReadyWeaponHandler);
-            const bool installed = patchPointerSlot(slot, reinterpret_cast<void*>(&hookedReadyWeaponHandler), original, "ReadyWeapon action suppression");
-            s_originalReadyWeaponHandler = reinterpret_cast<ReadyWeaponHandler_t>(original);
-            s_readyWeaponHookInstalled.store(installed, std::memory_order_release);
+            void* originalPointer = reinterpret_cast<void*>(original);
+            const bool installed = patchPointerSlot(slot, reinterpret_cast<void*>(hook), originalPointer, label);
+            original = reinterpret_cast<HandlerT>(originalPointer);
+            installedFlag.store(installed, std::memory_order_release);
             if (!installed) {
-                ROCK_LOG_ERROR(Input, "Failed to install ReadyWeapon action suppression hook at vtable slot 0x{:X}", slotEntry.address());
+                ROCK_LOG_ERROR(Input, "Failed to install {} hook at vtable slot 0x{:X}", label, slotEntry.address());
             }
             return installed;
+        }
+
+        bool installReadyWeaponEventSuppressionHook()
+        {
+            return installNativeActionVTableHook(kReadyWeaponHandlerHandleEventVTableSlotOffset,
+                kReadyWeaponHandlerHandleEventFunctionOffset,
+                &hookedReadyWeaponEventHandler,
+                s_originalReadyWeaponEventHandler,
+                s_readyWeaponEventHookInstalled,
+                "ReadyWeaponHandler::HandleEvent suppression");
+        }
+
+        bool installFavoritesEventSuppressionHook()
+        {
+            return installNativeActionVTableHook(kFavoritesManagerHandleEventVTableSlotOffset,
+                kFavoritesManagerHandleEventFunctionOffset,
+                &hookedFavoritesEventHandler,
+                s_originalFavoritesEventHandler,
+                s_favoritesEventHookInstalled,
+                "FavoritesManager::HandleEvent suppression");
+        }
+
+        bool writeMeleeThrowFallbackBranch(std::uintptr_t siteOffset, bool suppress, const char* label)
+        {
+            REL::Relocation<std::uintptr_t> site{ REL::Offset(siteOffset) };
+            auto* bytes = reinterpret_cast<std::uint8_t*>(site.address());
+            if (!bytes) {
+                ROCK_LOG_ERROR(Input, "{} patch failed: site is null", label);
+                return false;
+            }
+
+            if (bytes[1] != kMeleeThrowFallbackBranchDisplacement) {
+                ROCK_LOG_ERROR(Input,
+                    "{} patch validation failed at 0x{:X}: expected branch displacement 0x{:02X}, found 0x{:02X}",
+                    label,
+                    site.address(),
+                    kMeleeThrowFallbackBranchDisplacement,
+                    bytes[1]);
+                return false;
+            }
+
+            const auto desiredOpcode = suppress ? kUnconditionalShortJump : kConditionalShortJumpGreaterEqual;
+            const auto expectedCurrentOpcode = suppress ? kConditionalShortJumpGreaterEqual : kUnconditionalShortJump;
+            if (bytes[0] == desiredOpcode) {
+                return true;
+            }
+            if (bytes[0] != expectedCurrentOpcode) {
+                ROCK_LOG_ERROR(Input,
+                    "{} patch validation failed at 0x{:X}: expected opcode 0x{:02X} or 0x{:02X}, found 0x{:02X}",
+                    label,
+                    site.address(),
+                    desiredOpcode,
+                    expectedCurrentOpcode,
+                    bytes[0]);
+                return false;
+            }
+
+            DWORD oldProtect = 0;
+            if (!VirtualProtect(bytes, sizeof(std::uint8_t), kPageExecuteReadWrite, &oldProtect)) {
+                ROCK_LOG_ERROR(Input, "{} patch failed at 0x{:X}: VirtualProtect failed", label, site.address());
+                return false;
+            }
+
+            bytes[0] = desiredOpcode;
+            FlushInstructionCache(GetCurrentProcess(), bytes, sizeof(std::uint8_t));
+            VirtualProtect(bytes, sizeof(std::uint8_t), oldProtect, &oldProtect);
+
+            ROCK_LOG_INFO(Input, "{} MeleeThrow fallback draw branch at 0x{:X}", suppress ? "Patched" : "Restored", site.address());
+            return true;
+        }
+
+        bool updateMeleeThrowFallbackPatches(bool suppress)
+        {
+            const bool firstPatchOk = writeMeleeThrowFallbackBranch(kMeleeThrowFallbackDrawPressPatchSite,
+                suppress,
+                "MeleeThrowHandler fallback draw press");
+            const bool secondPatchOk = writeMeleeThrowFallbackBranch(kMeleeThrowFallbackDrawReleasePatchSite,
+                suppress,
+                "MeleeThrowHandler fallback draw release");
+
+            if (suppress && !(firstPatchOk && secondPatchOk)) {
+                (void)writeMeleeThrowFallbackBranch(kMeleeThrowFallbackDrawPressPatchSite,
+                    false,
+                    "MeleeThrowHandler fallback draw press rollback");
+                (void)writeMeleeThrowFallbackBranch(kMeleeThrowFallbackDrawReleasePatchSite,
+                    false,
+                    "MeleeThrowHandler fallback draw release rollback");
+                s_meleeThrowFallbackPatchesApplied.store(false, std::memory_order_release);
+                return false;
+            }
+
+            if (firstPatchOk && secondPatchOk) {
+                s_meleeThrowFallbackPatchesApplied.store(suppress, std::memory_order_release);
+            }
+            return firstPatchOk && secondPatchOk;
+        }
+
+        bool updateNativeActionSuppressionHooks(const input_remap_policy::Settings& settings)
+        {
+            bool ready = true;
+            if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightGrabGameInput)) {
+                ready = installReadyWeaponEventSuppressionHook() && ready;
+            }
+            if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightFavoritesGameInput)) {
+                ready = installFavoritesEventSuppressionHook() && ready;
+            }
+
+            const bool suppressTriggerFallbacks = input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightTriggerGameInput);
+            ready = updateMeleeThrowFallbackPatches(suppressTriggerFallbacks) && ready;
+            return ready;
         }
 
         RawButtonState readRawButtonState(bool isLeft, int buttonId, bool consumeEdges)
@@ -694,8 +808,13 @@ namespace rock::input_remap_runtime
                 return false;
             }
 
-            captureAndFilterControllerState(index, &state, sizeof(state), false);
+            captureControllerState(index, &state, sizeof(state));
             return true;
+        }
+
+        void refreshWeaponToggleControllerTracker()
+        {
+            (void)refreshControllerTrackerFromOpenVr(vr::TrackedControllerRole_RightHand);
         }
 
         void refreshDiagnosticControllerTrackers()
@@ -710,16 +829,14 @@ namespace rock::input_remap_runtime
         ensureMenuInputGateRegistered();
 
         const auto settings = makeSettings();
-        const bool needsNativeReadyWeaponHook = input_remap_policy::shouldInstallNativeReadyWeaponSuppressionHook(
-            g_rockConfig.rockInputRemapEnabled, g_rockConfig.rockSuppressNativeReadyWeaponAutoReady);
-        const bool nativeReadyWeaponHookReady = !needsNativeReadyWeaponHook || installNativeReadyWeaponSuppressionHook();
+        const bool nativeActionSuppressionReady = updateNativeActionSuppressionHooks(settings);
 
         if (!settings.enabled) {
-            return nativeReadyWeaponHookReady;
+            return nativeActionSuppressionReady;
         }
 
         if (s_hooksInstalled.load(std::memory_order_acquire)) {
-            return nativeReadyWeaponHookReady;
+            return nativeActionSuppressionReady;
         }
 
         auto* system = vr::VRSystem();
@@ -749,7 +866,7 @@ namespace rock::input_remap_runtime
 
         const bool installed = stateHooked && stateWithPoseHooked;
         s_hooksInstalled.store(installed, std::memory_order_release);
-        return installed && nativeReadyWeaponHookReady;
+        return installed && nativeActionSuppressionReady;
     }
 
     bool isInputRemapHookInstalled()
@@ -772,8 +889,15 @@ namespace rock::input_remap_runtime
         return isGameStoppingMenuInputActive();
     }
 
+    bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event)
+    {
+        return shouldSuppressNativeTriggerActionEvent(event);
+    }
+
     void processPendingWeaponToggleRequests()
     {
+        refreshWeaponToggleControllerTracker();
+
         const std::uint32_t requestCount = s_pendingWeaponToggleRequests.exchange(0, std::memory_order_acq_rel);
         if (requestCount == 0) {
             return;
@@ -850,7 +974,10 @@ namespace rock::input_remap_runtime
             const auto currentOwner = s_externalDiagnosticSuppressionOwner.exchange(ownerToken, std::memory_order_acq_rel);
             const auto previousFlags = s_externalDiagnosticSuppressionFlags.exchange(suppressionFlags, std::memory_order_acq_rel);
             if (currentOwner != ownerToken || previousFlags != suppressionFlags) {
-                ROCK_LOG_INFO(Input, "External diagnostic input suppression acquired by owner=0x{:X} flags=0x{:X}", ownerToken, suppressionFlags);
+                ROCK_LOG_INFO(Input,
+                    "External diagnostic input suppression request noted by owner=0x{:X} flags=0x{:X}; OpenVR state remains read-only under native action suppression",
+                    ownerToken,
+                    suppressionFlags);
             }
             return true;
         }

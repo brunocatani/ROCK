@@ -33,23 +33,20 @@ namespace rock::input_remap_policy
 
     struct Decision
     {
-        std::uint64_t filteredPressed{ 0 };
-        std::uint64_t filteredTouched{ 0 };
-        std::uint8_t filteredAxisMask{ 0 };
         bool weaponToggleRequested{ false };
         bool grabHeld{ false };
         bool grabPressed{ false };
         bool grabReleased{ false };
     };
 
-    struct NativeReadyWeaponSuppressionInput
+    struct NativeActionSuppressionInput
     {
         bool remapEnabled{ true };
         bool suppressionEnabled{ true };
         bool gameplayInputAllowed{ true };
         bool menuInputActive{ false };
         bool weaponDrawn{ false };
-        bool originalReadyActionMatched{ false };
+        bool eventMatched{ false };
     };
 
     struct EdgeTransition
@@ -66,9 +63,9 @@ namespace rock::input_remap_policy
 
     /*
      * Fallout VR consumes trigger as both an OpenVR button bit and analog Axis1.x.
-     * ROCK's draw/holster remap must therefore suppress both representations while
-     * the weapon is holstered; otherwise the attack handler can still auto-ready the
-     * weapon even after the ReadyWeapon action itself is suppressed.
+     * ROCK keeps those raw values readable and suppresses the native trigger action
+     * gates instead, otherwise attack handling can still auto-ready the weapon even
+     * after the ReadyWeapon action itself is suppressed.
      */
     inline constexpr int kOpenVrAxisButtonBase = 32;
     inline constexpr int kOpenVrAxisCount = 5;
@@ -95,17 +92,22 @@ namespace rock::input_remap_policy
         return mask != 0 && (pressedMask & mask) != 0;
     }
 
-    [[nodiscard]] constexpr bool shouldFilterGameFacingInput(std::uintptr_t callerAddress, std::uintptr_t gameTextStart, std::uintptr_t gameTextSize)
+    [[nodiscard]] constexpr bool shouldSuppressNativeGripReadyAction(const NativeActionSuppressionInput& input)
     {
-        return gameTextSize != 0 && callerAddress >= gameTextStart && (callerAddress - gameTextStart) < gameTextSize;
+        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched && !input.weaponDrawn;
     }
 
-    [[nodiscard]] constexpr bool shouldSuppressNativeReadyWeaponAutoReady(const NativeReadyWeaponSuppressionInput& input)
+    [[nodiscard]] constexpr bool shouldSuppressNativeTriggerAction(const NativeActionSuppressionInput& input)
     {
-        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.originalReadyActionMatched && !input.weaponDrawn;
+        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched && !input.weaponDrawn;
     }
 
-    [[nodiscard]] constexpr bool shouldInstallNativeReadyWeaponSuppressionHook(bool remapEnabled, bool suppressionEnabled)
+    [[nodiscard]] constexpr bool shouldSuppressNativeFavoritesAction(const NativeActionSuppressionInput& input)
+    {
+        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched;
+    }
+
+    [[nodiscard]] constexpr bool shouldInstallNativeActionSuppressionHook(bool remapEnabled, bool suppressionEnabled)
     {
         return remapEnabled && suppressionEnabled;
     }
@@ -126,12 +128,9 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr Decision evaluate(const Input& input, const Settings& settings)
     {
         Decision decision{};
-        decision.filteredPressed = input.rawPressed;
-        decision.filteredTouched = input.rawTouched;
 
         const auto grabMask = buttonMask(settings.grabButtonId);
         const auto weaponToggleMask = buttonMask(settings.weaponToggleButtonId);
-        const auto triggerMask = buttonMask(kOpenVrSteamVrTriggerButtonId);
 
         decision.grabHeld = grabMask != 0 && (input.rawPressed & grabMask) != 0;
         decision.grabPressed = grabMask != 0 && (input.rawPressed & grabMask) != 0 && (input.previousRawPressed & grabMask) == 0;
@@ -139,22 +138,6 @@ namespace rock::input_remap_policy
 
         if (!settings.enabled || !input.gameplayInputAllowed || input.menuInputActive || input.hand != Hand::Right) {
             return decision;
-        }
-
-        if (settings.suppressRightGrabGameInput && !input.weaponDrawn && grabMask != 0) {
-            decision.filteredPressed &= ~grabMask;
-            decision.filteredTouched &= ~grabMask;
-        }
-
-        if (settings.suppressRightTriggerGameInput && !input.weaponDrawn && triggerMask != 0) {
-            decision.filteredPressed &= ~triggerMask;
-            decision.filteredTouched &= ~triggerMask;
-            decision.filteredAxisMask |= axisMaskFromOpenVrButtonId(kOpenVrSteamVrTriggerButtonId);
-        }
-
-        if (settings.suppressRightFavoritesGameInput && weaponToggleMask != 0) {
-            decision.filteredPressed &= ~weaponToggleMask;
-            decision.filteredTouched &= ~weaponToggleMask;
         }
 
         decision.weaponToggleRequested =

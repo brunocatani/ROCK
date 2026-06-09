@@ -2,6 +2,11 @@
 
 #include <cstdint>
 
+namespace RE
+{
+    class InputEvent;
+}
+
 namespace rock::input_remap_runtime
 {
     struct RawButtonState
@@ -44,6 +49,7 @@ namespace rock::input_remap_runtime
     void setGameplayInputAllowed(bool allowed);
     void setWeaponDrawn(bool weaponDrawn);
     bool isMenuInputActive();
+    bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event);
     void processPendingWeaponToggleRequests();
 
     RawButtonState peekRawButtonState(bool isLeft, int buttonId);

@@ -2,6 +2,7 @@
 
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
+#include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/NativeMeleeSuppressionPolicy.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
@@ -678,6 +679,13 @@ namespace rock
 
         bool hookedAttackBlockShouldHandleEvent(void* handler, const RE::InputEvent* event)
         {
+            if (input_remap_runtime::shouldSuppressNativeTriggerAction(event)) {
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Suppressed native WandTrigger AttackBlock gate while ROCK owns holstered trigger input");
+                return false;
+            }
+
             /*
              * FO4VR has a third native melee path before the animation events:
              * AttackBlockHandler::ShouldHandleEvent accepts the VR RightStick
