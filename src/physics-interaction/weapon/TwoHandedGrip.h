@@ -168,9 +168,11 @@ namespace rock
         LockedHandVisualLerpState _supportHandVisualLerp{};
 
         std::array<float, 15> _supportFingerPose{};
+        std::array<float, 5> _supportFingerSplayRadians{};
         std::array<RE::NiTransform, 15> _supportFingerLocalTransforms{};
         std::uint16_t _supportFingerLocalTransformMask{ 0 };
         bool _hasSupportFingerPose{ false };
+        bool _hasSupportFingerSplay{ false };
         bool _hasSupportFingerLocalTransforms{ false };
 
         float _primaryGripConfidence{ 0.0f };

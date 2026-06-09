@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 
 #include "api/FRIKApi.h"
 
@@ -10,17 +11,40 @@ namespace rock::frik_visual_authority
     using HandPoseData = frik::api::FRIKApi::HandPoseData;
     using FingerLocalTransformOverride = frik::api::FRIKApi::FingerLocalTransformOverride;
 
-    [[nodiscard]] inline HandPoseData makeHandPoseDataFromJointValues(const float values[15])
+    [[nodiscard]] inline float finiteOrZero(float value)
+    {
+        return std::isfinite(value) ? value : 0.0f;
+    }
+
+    [[nodiscard]] inline HandPoseData makeHandPoseDataFromJointValues(
+        const float values[15],
+        const std::array<float, 5>& splayRadians,
+        float palmPitchDegrees = 0.0f,
+        float palmYawDegrees = 0.0f)
     {
         return HandPoseData{
-            .thumb = { values[0], values[1], values[2], 0.0f },
-            .index = { values[3], values[4], values[5], 0.0f },
-            .middle = { values[6], values[7], values[8], 0.0f },
-            .ring = { values[9], values[10], values[11], 0.0f },
-            .pinky = { values[12], values[13], values[14], 0.0f },
-            .palmPitch = 0.0f,
-            .palmYaw = 0.0f,
+            .thumb = { values[0], values[1], values[2], finiteOrZero(splayRadians[0]) },
+            .index = { values[3], values[4], values[5], finiteOrZero(splayRadians[1]) },
+            .middle = { values[6], values[7], values[8], finiteOrZero(splayRadians[2]) },
+            .ring = { values[9], values[10], values[11], finiteOrZero(splayRadians[3]) },
+            .pinky = { values[12], values[13], values[14], finiteOrZero(splayRadians[4]) },
+            .palmPitch = finiteOrZero(palmPitchDegrees),
+            .palmYaw = finiteOrZero(palmYawDegrees),
         };
+    }
+
+    [[nodiscard]] inline HandPoseData makeHandPoseDataFromJointValues(const float values[15])
+    {
+        return makeHandPoseDataFromJointValues(values, std::array<float, 5>{});
+    }
+
+    [[nodiscard]] inline HandPoseData makeHandPoseDataFromJointValues(
+        const std::array<float, 15>& values,
+        const std::array<float, 5>& splayRadians,
+        float palmPitchDegrees = 0.0f,
+        float palmYawDegrees = 0.0f)
+    {
+        return makeHandPoseDataFromJointValues(values.data(), splayRadians, palmPitchDegrees, palmYawDegrees);
     }
 
     [[nodiscard]] inline HandPoseData makeHandPoseDataFromJointValues(const std::array<float, 15>& values)
@@ -33,16 +57,19 @@ namespace rock::frik_visual_authority
         float index,
         float middle,
         float ring,
-        float pinky)
+        float pinky,
+        const std::array<float, 5>& splayRadians = {},
+        float palmPitchDegrees = 0.0f,
+        float palmYawDegrees = 0.0f)
     {
         return HandPoseData{
-            .thumb = { thumb, thumb, thumb, 0.0f },
-            .index = { index, index, index, 0.0f },
-            .middle = { middle, middle, middle, 0.0f },
-            .ring = { ring, ring, ring, 0.0f },
-            .pinky = { pinky, pinky, pinky, 0.0f },
-            .palmPitch = 0.0f,
-            .palmYaw = 0.0f,
+            .thumb = { thumb, thumb, thumb, finiteOrZero(splayRadians[0]) },
+            .index = { index, index, index, finiteOrZero(splayRadians[1]) },
+            .middle = { middle, middle, middle, finiteOrZero(splayRadians[2]) },
+            .ring = { ring, ring, ring, finiteOrZero(splayRadians[3]) },
+            .pinky = { pinky, pinky, pinky, finiteOrZero(splayRadians[4]) },
+            .palmPitch = finiteOrZero(palmPitchDegrees),
+            .palmYaw = finiteOrZero(palmYawDegrees),
         };
     }
 

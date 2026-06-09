@@ -948,6 +948,118 @@ namespace rock::grab_finger_pose_runtime
         return dx * dx + dy * dy + dz * dz;
     }
 
+    // Semantic splay follows current finger/contact geometry; wrist pitch/yaw remain owned by hand-world authority.
+    inline constexpr float kDefaultSurfaceContactSplayMaxRadians = 0.28f;
+
+    inline bool hasSurfaceContactSplayCandidates(const SolvedGrabFingerPose& pose)
+    {
+        for (const auto targetValid : pose.surfaceAimTargetValid) {
+            if (targetValid != 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    inline RE::NiPoint3 rejectFromDirection(const RE::NiPoint3& value, const RE::NiPoint3& direction)
+    {
+        return RE::NiPoint3{
+            value.x - direction.x * dotPoint(value, direction),
+            value.y - direction.y * dotPoint(value, direction),
+            value.z - direction.z * dotPoint(value, direction),
+        };
+    }
+
+    inline float signedPalmPlaneSplayRadians(
+        const RE::NiPoint3& openDirectionWorld,
+        const RE::NiPoint3& targetDirectionWorld,
+        const RE::NiPoint3& palmNormalWorld)
+    {
+        const RE::NiPoint3 palmNormal = normalizedOrFallback(palmNormalWorld, RE::NiPoint3{ 0.0f, 0.0f, -1.0f });
+        const RE::NiPoint3 openPlanar = rejectFromDirection(openDirectionWorld, palmNormal);
+        const RE::NiPoint3 targetPlanar = rejectFromDirection(targetDirectionWorld, palmNormal);
+
+        if (dotPoint(openPlanar, openPlanar) <= 0.000001f || dotPoint(targetPlanar, targetPlanar) <= 0.000001f) {
+            return 0.0f;
+        }
+
+        const RE::NiPoint3 open = normalizedOrFallback(openPlanar, openDirectionWorld);
+        const RE::NiPoint3 target = normalizedOrFallback(targetPlanar, open);
+        const float sinAngle = std::clamp(dotPoint(palmNormal, crossPoint(open, target)), -1.0f, 1.0f);
+        const float cosAngle = std::clamp(dotPoint(open, target), -1.0f, 1.0f);
+        const float angle = std::atan2(sinAngle, cosAngle);
+        return std::isfinite(angle) ? angle : 0.0f;
+    }
+
+    inline float clampSurfaceContactSplayRadians(float splayRadians, float maxSplayRadians = kDefaultSurfaceContactSplayMaxRadians)
+    {
+        const float resolvedMax = std::isfinite(maxSplayRadians) ? std::max(0.0f, maxSplayRadians) : kDefaultSurfaceContactSplayMaxRadians;
+        if (!std::isfinite(splayRadians) || resolvedMax <= 0.0f) {
+            return 0.0f;
+        }
+        return std::clamp(splayRadians, -resolvedMax, resolvedMax);
+    }
+
+    inline bool buildSurfaceContactSplayValues(
+        const SolvedGrabFingerPose& pose,
+        const root_flattened_finger_skeleton_runtime::Snapshot& liveFingerSnapshot,
+        std::array<float, 5>& outSplayRadians,
+        float maxSplayRadians = kDefaultSurfaceContactSplayMaxRadians)
+    {
+        outSplayRadians = {};
+        if (!hasSurfaceContactSplayCandidates(pose)) {
+            return false;
+        }
+
+        const auto liveLandmarks = root_flattened_finger_skeleton_runtime::buildLandmarkSet(liveFingerSnapshot);
+        if (!liveLandmarks.valid) {
+            return false;
+        }
+
+        bool anySplay = false;
+        for (std::size_t finger = 0; finger < pose.surfaceAimTargetValid.size(); ++finger) {
+            if (pose.surfaceAimTargetValid[finger] == 0 || !liveLandmarks.fingers[finger].valid) {
+                continue;
+            }
+
+            const RE::NiPoint3 toSurface = pose.surfaceAimTarget[finger] - liveLandmarks.fingers[finger].base;
+            if (distanceSquared(toSurface, RE::NiPoint3{}) <= 0.000001f) {
+                continue;
+            }
+
+            const float splayRadians = clampSurfaceContactSplayRadians(
+                signedPalmPlaneSplayRadians(liveLandmarks.fingers[finger].openDirection, toSurface, liveLandmarks.palmNormalWorld),
+                maxSplayRadians);
+            if (std::abs(splayRadians) <= 0.0001f) {
+                continue;
+            }
+
+            outSplayRadians[finger] = splayRadians;
+            anySplay = true;
+        }
+
+        return anySplay;
+    }
+
+    inline bool resolveSurfaceContactSplayValues(
+        bool isLeft,
+        const SolvedGrabFingerPose& pose,
+        std::array<float, 5>& outSplayRadians,
+        float maxSplayRadians = kDefaultSurfaceContactSplayMaxRadians)
+    {
+        outSplayRadians = {};
+        if (!hasSurfaceContactSplayCandidates(pose)) {
+            return false;
+        }
+
+        root_flattened_finger_skeleton_runtime::Snapshot liveFingerSnapshot{};
+        if (!root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(isLeft, liveFingerSnapshot)) {
+            return false;
+        }
+
+        return buildSurfaceContactSplayValues(pose, liveFingerSnapshot, outSplayRadians, maxSplayRadians);
+    }
+
     struct GrabFingerPoseTargetSet
     {
         std::array<RE::NiPoint3, 5> targets{};

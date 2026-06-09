@@ -3947,7 +3947,9 @@ namespace rock
                         currentJointPose, targetJointPose, g_rockConfig.rockGrabFingerPoseSmoothingSpeed, deltaTime);
                 }
 
-                const auto currentHandPose = frik_visual_authority::makeHandPoseDataFromJointValues(currentJointPose);
+                std::array<float, 5> currentSplayRadians{};
+                (void)grab_finger_pose_runtime::resolveSurfaceContactSplayValues(isLeft, fingerPose, currentSplayRadians);
+                const auto currentHandPose = frik_visual_authority::makeHandPoseDataFromJointValues(currentJointPose, currentSplayRadians);
                 if (!frik_visual_authority::setHandPoseCustomWithPriority("ROCK_Grab", hand, currentHandPose, 100)) {
                     hasCurrentJointPose = false;
                     grab_finger_local_transform_runtime::clearLocalTransformOverride("ROCK_Grab", hand, 100, localTransformState);
@@ -3987,12 +3989,15 @@ namespace rock
                 hasCurrentJointPose = false;
                 grab_finger_local_transform_runtime::clearLocalTransformOverride("ROCK_Grab", hand, 100, localTransformState);
                 syncLocalTransformState();
+                std::array<float, 5> currentSplayRadians{};
+                (void)grab_finger_pose_runtime::resolveSurfaceContactSplayValues(isLeft, fingerPose, currentSplayRadians);
                 const auto handPose = frik_visual_authority::makeUniformHandPoseData(
                     fingerPose.values[0],
                     fingerPose.values[1],
                     fingerPose.values[2],
                     fingerPose.values[3],
-                    fingerPose.values[4]);
+                    fingerPose.values[4],
+                    currentSplayRadians);
                 const bool published = frik_visual_authority::setHandPoseCustomWithPriority("ROCK_Grab", hand, handPose, 100);
                 if (published && g_rockConfig.rockDebugGrabFrameLogging) {
                     ROCK_LOG_DEBUG(Hand,

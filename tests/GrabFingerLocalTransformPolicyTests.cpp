@@ -1,6 +1,7 @@
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/TransformMath.h"
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 
@@ -207,6 +208,54 @@ int main()
     ok &= expectPointClose("surface normal follows moved object",
         resolvedPose.surfaceAimNormal[0],
         RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+
+    ok &= expectFloat("surface-contact splay uses signed palm-plane angle",
+        signedPalmPlaneSplayRadians(
+            RE::NiPoint3{ 1.0f, 0.0f, 0.0f },
+            RE::NiPoint3{ 1.0f, 0.1f, 0.0f },
+            RE::NiPoint3{ 0.0f, 0.0f, 1.0f }),
+        std::atan2(0.1f, 1.0f));
+    ok &= expectFloat("surface-contact splay preserves negative side",
+        signedPalmPlaneSplayRadians(
+            RE::NiPoint3{ 1.0f, 0.0f, 0.0f },
+            RE::NiPoint3{ 1.0f, -0.1f, 0.0f },
+            RE::NiPoint3{ 0.0f, 0.0f, 1.0f }),
+        std::atan2(-0.1f, 1.0f));
+    ok &= expectFloat("surface-contact splay clamps large lateral targets",
+        clampSurfaceContactSplayRadians(1.0f, 0.28f),
+        0.28f);
+
+    rock::root_flattened_finger_skeleton_runtime::Snapshot liveFingerSnapshot{};
+    liveFingerSnapshot.valid = true;
+    liveFingerSnapshot.palmNormalValid = true;
+    liveFingerSnapshot.palmNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f };
+    for (auto& chain : liveFingerSnapshot.fingers) {
+        chain.points[0] = RE::NiPoint3{ 0.0f, 0.0f, 0.0f };
+        chain.points[1] = RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+        chain.points[2] = RE::NiPoint3{ 2.0f, 0.0f, 0.0f };
+        chain.valid = true;
+    }
+
+    std::array<float, 5> splayRadians{};
+    SolvedGrabFingerPose splayPose{};
+    ok &= expectBool("surface-contact splay rejects poses without targets",
+        buildSurfaceContactSplayValues(splayPose, liveFingerSnapshot, splayRadians),
+        false);
+    splayPose.surfaceAimTarget[1] = RE::NiPoint3{ 2.0f, 0.2f, 0.0f };
+    splayPose.surfaceAimTargetValid[1] = 1;
+    ok &= expectBool("surface-contact splay builds from current target",
+        buildSurfaceContactSplayValues(splayPose, liveFingerSnapshot, splayRadians),
+        true);
+    ok &= expectFloat("surface-contact splay stores positive index offset",
+        splayRadians[1],
+        std::atan2(0.2f, 2.0f));
+    splayPose.surfaceAimTarget[1] = RE::NiPoint3{ 2.0f, -0.2f, 0.0f };
+    ok &= expectBool("surface-contact splay rebuilds when target moves",
+        buildSurfaceContactSplayValues(splayPose, liveFingerSnapshot, splayRadians),
+        true);
+    ok &= expectFloat("surface-contact splay stores negative index offset",
+        splayRadians[1],
+        std::atan2(-0.2f, 2.0f));
 
     SolvedGrabFingerPose thumbIndexCurveOnly{};
     thumbIndexCurveOnly.usedAlternateThumbSurfaceHit = true;

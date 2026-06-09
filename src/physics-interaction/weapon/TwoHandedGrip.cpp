@@ -461,7 +461,9 @@ namespace rock
         _supportHandWeaponLocal = {};
         _hasHandWeaponLocalFrames = false;
         _supportFingerPose = {};
+        _supportFingerSplayRadians = {};
         _hasSupportFingerPose = false;
+        _hasSupportFingerSplay = false;
         _supportFingerLocalTransforms = {};
         _supportFingerLocalTransformMask = 0;
         _hasSupportFingerLocalTransforms = false;
@@ -599,6 +601,8 @@ namespace rock
         _weaponNodeLocalBaseline = weaponNode->local;
         _hasWeaponNodeLocalBaseline = true;
         _hasSupportFingerPose = false;
+        _supportFingerSplayRadians = {};
+        _hasSupportFingerSplay = false;
         _supportFingerLocalTransforms = {};
         _supportFingerLocalTransformMask = 0;
         _hasSupportFingerLocalTransforms = false;
@@ -725,10 +729,13 @@ namespace rock
         if (meshFingerPosePtr && _hasSupportFingerPose) {
             std::array<RE::NiTransform, 15> localTransforms{};
             std::uint16_t localTransformMask = 0;
+            const auto supportHandPose = _hasSupportFingerSplay ?
+                frik_visual_authority::makeHandPoseDataFromJointValues(_supportFingerPose, _supportFingerSplayRadians) :
+                frik_visual_authority::makeHandPoseDataFromJointValues(_supportFingerPose);
             if (buildFullHandLocalTransformsForMeshPose(
                     supportHandIsLeft,
                     *meshFingerPosePtr,
-                    frik_visual_authority::makeHandPoseDataFromJointValues(_supportFingerPose),
+                    supportHandPose,
                     localTransforms,
                     localTransformMask)) {
                 _supportFingerLocalTransforms = localTransforms;
@@ -790,7 +797,9 @@ namespace rock
         _supportHandWeaponLocal = {};
         _hasHandWeaponLocalFrames = false;
         _supportFingerPose = {};
+        _supportFingerSplayRadians = {};
         _hasSupportFingerPose = false;
+        _hasSupportFingerSplay = false;
         _supportFingerLocalTransforms = {};
         _supportFingerLocalTransformMask = 0;
         _hasSupportFingerLocalTransforms = false;
@@ -939,22 +948,27 @@ namespace rock
 
     void TwoHandedGrip::setSupportGripPose(bool isLeft, WeaponGripPoseId poseId, const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose)
     {
-        (void)isLeft;
         if (meshFingerPose && meshFingerPose->solved) {
             _supportFingerPose = meshFingerPose->hasJointValues ? meshFingerPose->jointValues : grab_finger_pose_math::expandFingerCurlsToJointValues(meshFingerPose->values);
+            _supportFingerSplayRadians = {};
+            _hasSupportFingerSplay = grab_finger_pose_runtime::resolveSurfaceContactSplayValues(isLeft, *meshFingerPose, _supportFingerSplayRadians);
             _hasSupportFingerPose = true;
             return;
         }
 
         const auto& poseValues = poseValuesForGrip(poseId);
         _supportFingerPose = poseValues;
+        _supportFingerSplayRadians = {};
         _hasSupportFingerPose = true;
+        _hasSupportFingerSplay = false;
     }
 
     void TwoHandedGrip::clearSupportGripPose(bool isLeft)
     {
         _supportFingerPose = {};
+        _supportFingerSplayRadians = {};
         _hasSupportFingerPose = false;
+        _hasSupportFingerSplay = false;
         _supportFingerLocalTransforms = {};
         _supportFingerLocalTransformMask = 0;
         _hasSupportFingerLocalTransforms = false;
@@ -1038,10 +1052,13 @@ namespace rock
         }
 
         if (weapon_visual_authority_math::shouldPublishTwoHandedGripPose(weapon_visual_authority_math::LockedHandRole::Support) && _hasSupportFingerPose) {
+            const auto supportHandPose = _hasSupportFingerSplay ?
+                frik_visual_authority::makeHandPoseDataFromJointValues(_supportFingerPose, _supportFingerSplayRadians) :
+                frik_visual_authority::makeHandPoseDataFromJointValues(_supportFingerPose);
             (void)frik_visual_authority::setHandPoseCustomWithPriority(
                 SUPPORT_GRIP_TAG,
                 handFromBool(supportHandIsLeft),
-                frik_visual_authority::makeHandPoseDataFromJointValues(_supportFingerPose),
+                supportHandPose,
                 GRIP_HAND_POSE_PRIORITY);
         }
 
