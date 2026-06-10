@@ -1006,15 +1006,9 @@
                         continue;
                     }
 
-                    const bool worldContact = contact.kind == soft_contact_math::ContactKind::WorldStatic;
-                    const auto contactRole = worldContact ?
-                                                 (contact.isLeft ? debug::MarkerOverlayRole::LeftWorldSoftContact : debug::MarkerOverlayRole::RightWorldSoftContact) :
-                                                 (contact.isLeft ? debug::MarkerOverlayRole::LeftSoftContact : debug::MarkerOverlayRole::RightSoftContact);
-                    const auto correctionRole = worldContact ?
-                                                    (contact.isLeft ? debug::MarkerOverlayRole::LeftWorldSoftContactCorrection :
-                                                                      debug::MarkerOverlayRole::RightWorldSoftContactCorrection) :
-                                                    (contact.isLeft ? debug::MarkerOverlayRole::LeftSoftContactCorrection :
-                                                                      debug::MarkerOverlayRole::RightSoftContactCorrection);
+                    const auto contactRole = contact.isLeft ? debug::MarkerOverlayRole::LeftWorldSoftContact : debug::MarkerOverlayRole::RightWorldSoftContact;
+                    const auto correctionRole =
+                        contact.isLeft ? debug::MarkerOverlayRole::LeftWorldSoftContactCorrection : debug::MarkerOverlayRole::RightWorldSoftContactCorrection;
                     addMarkerRay(contactRole, contact.point, contact.normalEnd, contact.suppressed ? 1.6f : 2.4f);
                     if (!contact.suppressed) {
                         addMarkerLine(correctionRole, contact.point, contact.correctionEnd);

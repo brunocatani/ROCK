@@ -111,17 +111,7 @@ namespace rock
         float rockSeeThroughScopesLookDotThreshold = 0.98f;
         float rockSeeThroughScopesDistanceThresholdGameUnits = 20.0f;
 
-        bool rockSoftContactEnabled = true;
-        bool rockSoftContactHandHandEnabled = true;
-        bool rockSoftContactWeaponHandEnabled = true;
-        bool rockSoftContactBodyEnabled = true;
         bool rockSoftContactWorldEnabled = true;
-        float rockSoftContactRadiusPaddingGameUnits = 0.75f;
-        float rockSoftContactMaxCorrectionGameUnits = 7.0f;
-        float rockSoftContactWeaponHandRadiusPaddingGameUnits = 0.25f;
-        float rockSoftContactWeaponHandMaxCorrectionGameUnits = 3.0f;
-        float rockSoftContactWeaponHandCorrectionScale = 0.35f;
-        float rockSoftContactWeaponHandHardStopPenetrationGameUnits = 4.0f;
         int rockSoftContactVisualPriority = 80;
         float rockSoftContactWorldRadiusPaddingGameUnits = 1.5f;
         float rockSoftContactWorldContactPaddingGameUnits = 0.35f;

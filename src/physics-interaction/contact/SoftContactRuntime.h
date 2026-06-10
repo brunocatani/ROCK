@@ -4,20 +4,13 @@
 #include "physics-interaction/contact/NativeContactEvidence.h"
 #include "physics-interaction/contact/ContactTargetIdentity.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
-#include "physics-interaction/hand/HandSkeleton.h"
 
 #include <array>
 #include <cstdint>
 
-namespace RE
-{
-    class NiAVObject;
-}
-
 namespace rock
 {
     class Hand;
-    class WeaponCollision;
 
     struct SoftContactDebugContact
     {
@@ -63,8 +56,6 @@ namespace rock
         void update(const PhysicsFrameContext& frame,
             const Hand& rightHand,
             const Hand& leftHand,
-            const WeaponCollision& weaponCollision,
-            RE::NiAVObject* weaponNode,
             bool rightHandWeaponEquipped,
             bool leftSupportGripActive,
             const contact_evidence::NativeContactEvidenceSnapshot& nativeContactEvidence);
@@ -104,7 +95,6 @@ namespace rock
         void clearHand(bool isLeft);
         void clearAllHands();
 
-        DirectSkeletonBoneReader _bodyReader;
         std::array<HandRuntime, 2> _hands{};
         SoftContactDebugSnapshot _debugSnapshot{};
         bool _wasEnabled = false;

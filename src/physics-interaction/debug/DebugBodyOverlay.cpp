@@ -1969,25 +1969,6 @@ float4 main(PS_INPUT input) : SV_Target {
                 color[2] = 0.20f;
                 color[3] = 0.95f;
                 break;
-            case MarkerOverlayRole::RightSoftContact:
-                color[0] = 0.05f;
-                color[1] = 0.95f;
-                color[2] = 1.0f;
-                color[3] = 0.96f;
-                break;
-            case MarkerOverlayRole::LeftSoftContact:
-                color[0] = 1.0f;
-                color[1] = 0.28f;
-                color[2] = 0.95f;
-                color[3] = 0.96f;
-                break;
-            case MarkerOverlayRole::RightSoftContactCorrection:
-            case MarkerOverlayRole::LeftSoftContactCorrection:
-                color[0] = 1.0f;
-                color[1] = 0.85f;
-                color[2] = 0.08f;
-                color[3] = 0.95f;
-                break;
             case MarkerOverlayRole::RightWorldSoftContact:
             case MarkerOverlayRole::LeftWorldSoftContact:
                 color[0] = 0.35f;

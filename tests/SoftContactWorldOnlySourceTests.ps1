@@ -1,0 +1,103 @@
+param(
+    [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$failures = [System.Collections.Generic.List[string]]::new()
+
+function Read-Source {
+    param([string]$RelativePath)
+
+    $path = Join-Path $Root $RelativePath
+    if (-not (Test-Path -LiteralPath $path)) {
+        $failures.Add("$RelativePath`: missing required file")
+        return ''
+    }
+
+    return Get-Content -Raw -LiteralPath $path
+}
+
+function Require-Text {
+    param(
+        [string]$RelativePath,
+        [string]$Pattern,
+        [string]$Message
+    )
+
+    $text = Read-Source $RelativePath
+    if ($text -notmatch $Pattern) {
+        $failures.Add("$RelativePath`: $Message")
+    }
+}
+
+function Reject-Text {
+    param(
+        [string]$RelativePath,
+        [string]$Pattern,
+        [string]$Message
+    )
+
+    $text = Read-Source $RelativePath
+    if ($text -match $Pattern) {
+        $failures.Add("$RelativePath`: $Message")
+    }
+}
+
+$removedConfigPattern = 'rockSoftContact(?:Enabled|HandHandEnabled|WeaponHandEnabled|BodyEnabled|RadiusPaddingGameUnits|MaxCorrectionGameUnits|WeaponHand)'
+$removedIniPattern = 'bSoftContact(?:Enabled|HandHandEnabled|WeaponHandEnabled|BodyEnabled)|fSoftContact(?:RadiusPaddingGameUnits|MaxCorrectionGameUnits|WeaponHand)'
+
+Reject-Text 'src/RockConfig.h' $removedConfigPattern `
+    'RockConfig must not expose removed non-world or legacy global soft-contact settings.'
+Reject-Text 'src/RockConfig.cpp' "$removedConfigPattern|$removedIniPattern" `
+    'RockConfig loader must not read removed non-world or legacy global soft-contact INI keys.'
+Require-Text 'src/RockConfig.h' 'rockSoftContactWorldEnabled' `
+    'World soft contact must keep a source config toggle.'
+Require-Text 'src/RockConfig.cpp' 'bSoftContactWorldEnabled' `
+    'World soft contact must keep reading its source config toggle.'
+
+Reject-Text 'data/config/ROCK.ini' $removedIniPattern `
+    'Default config must not document removed soft-contact toggles or tuning.'
+Reject-Text 'data/mod/ROCK_Config/ROCK.ini' $removedIniPattern `
+    'Packaged mod config must not document removed soft-contact toggles or tuning.'
+Require-Text 'data/config/ROCK.ini' 'bSoftContactWorldEnabled\s*=\s*true' `
+    'Default config must expose the world soft-contact toggle.'
+Require-Text 'data/mod/ROCK_Config/ROCK.ini' 'bSoftContactWorldEnabled\s*=\s*true' `
+    'Packaged mod config must expose the world soft-contact toggle.'
+
+Reject-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'buildHandShapes|buildBodyShapes|solveShapeAgainstShapes|solveShapeAgainstWeapon|RuntimeShape|DirectSkeletonBoneSnapshot|_bodyReader|std::vector<|WeaponCollision|NiAVObject' `
+    'SoftContactRuntime must not retain hand-hand, body, weapon, or per-frame shape-vector solve paths.'
+Reject-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'ContactKind::(?:HandHand|WeaponHand|Body)|rockSoftContact(?:Enabled|HandHandEnabled|WeaponHandEnabled|BodyEnabled|RadiusPaddingGameUnits|MaxCorrectionGameUnits|WeaponHand)' `
+    'SoftContactRuntime must not branch on removed non-world contact kinds or config.'
+Require-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' '!g_rockConfig\.rockSoftContactWorldEnabled\s*\|\|\s*!frame\.worldReady\s*\|\|\s*frame\.menuBlocked' `
+    'SoftContactRuntime must use the world toggle as the runtime gate.'
+Require-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'solveWorldStaticContact\(' `
+    'SoftContactRuntime must keep the world contact solve path.'
+Require-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'worldOnly=yes' `
+    'SoftContactRuntime active logging must report world-only behavior.'
+
+Reject-Text 'src/physics-interaction/contact/SoftContactMath.h' 'ContactKind\s*:\s*std::uint8_t[\s\S]{0,120}(HandHand|WeaponHand|Body)|struct\s+(?:Capsule|Aabb)\b|solveCapsule(?:Pair|Aabb)|compliantHardStopResponseScale|projectCompliantTrackedMagnetCorrection' `
+    'SoftContactMath must not retain removed synthetic capsule or weapon compliance helpers.'
+
+Reject-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'tryFindSoftContactForCapsule|WeaponSoftContactResult' `
+    'WeaponCollision must not expose the removed hand-weapon soft-contact query.'
+Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'tryFindSoftContactForCapsule|SoftContactMath|solveCapsuleAabb|WeaponSoftContactResult' `
+    'WeaponCollision must not retain the removed hand-weapon soft-contact implementation.'
+Reject-Text 'src/physics-interaction/weapon/WeaponTypes.h' 'WeaponSoftContactResult' `
+    'WeaponTypes must not retain the removed soft-contact result payload.'
+
+Reject-Text 'src/physics-interaction/debug/DebugBodyOverlay.h' 'RightSoftContact|LeftSoftContact|RightSoftContactCorrection|LeftSoftContactCorrection' `
+    'Debug overlay roles must only expose world soft-contact markers.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'RightSoftContact|LeftSoftContact|RightSoftContactCorrection|LeftSoftContactCorrection' `
+    'Debug overlay drawing must not branch to removed non-world soft-contact markers.'
+
+if ($failures.Count -gt 0) {
+    Write-Host 'SoftContactWorldOnlySourceTests failed:' -ForegroundColor Red
+    foreach ($failure in $failures) {
+        Write-Host " - $failure"
+    }
+    exit 1
+}
+
+Write-Host 'SoftContactWorldOnlySourceTests passed.' -ForegroundColor Green

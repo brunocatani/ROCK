@@ -154,17 +154,6 @@ namespace rock
         std::uint32_t sequence{ 0 };
     };
 
-    struct WeaponSoftContactResult
-    {
-        bool valid{ false };
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        RE::NiPoint3 movablePointWorld{};
-        RE::NiPoint3 weaponPointWorld{};
-        RE::NiPoint3 normalWorld{};
-        float distanceGame{ 0.0f };
-        float penetrationGame{ 0.0f };
-    };
-
     /*
      * Grab diagnostics intentionally live beside the semantic contact types
      * instead of inside the contact itself. ROCK keeps collision callbacks on

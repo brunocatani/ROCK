@@ -2231,8 +2231,6 @@ namespace rock
             frame,
             _rightHand,
             _leftHand,
-            _weaponCollision,
-            weaponNode,
             rightHandWeaponEquipped,
             leftSupportGripActive,
             nativeContactEvidence);

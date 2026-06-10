@@ -104,15 +104,6 @@ namespace rock
             float probeRadiusGame,
             WeaponInteractionContact& outContact) const;
 
-        bool tryFindSoftContactForCapsule(
-            const RE::NiAVObject* weaponNode,
-            const RE::NiPoint3& capsuleStartWorld,
-            const RE::NiPoint3& capsuleEndWorld,
-            float capsuleRadiusGame,
-            float radiusPaddingGame,
-            const RE::NiPoint3& fallbackNormalWorld,
-            WeaponSoftContactResult& outContact) const;
-
         bool tryBuildSupportGripEvidenceTriangles(
             std::uint32_t bodyId,
             std::vector<TriangleData>& outTriangles) const;

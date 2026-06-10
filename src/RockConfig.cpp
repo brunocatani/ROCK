@@ -34,10 +34,6 @@ namespace
     constexpr int kDefaultWeaponCollisionVisualStabilizationFrames = 8;
     constexpr int kMaxWeaponCollisionVisualStabilizationFrames = 60;
     constexpr float kDefaultWeaponCollisionSupportFitMaxErrorGameUnits = 0.5f;
-    constexpr float kDefaultSoftContactWeaponHandRadiusPaddingGameUnits = 0.25f;
-    constexpr float kDefaultSoftContactWeaponHandMaxCorrectionGameUnits = 3.0f;
-    constexpr float kDefaultSoftContactWeaponHandCorrectionScale = 0.35f;
-    constexpr float kDefaultSoftContactWeaponHandHardStopPenetrationGameUnits = 4.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearTauMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularTauMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintCollisionTauMultiplier = 1.0f;
@@ -164,17 +160,7 @@ namespace rock
         rockSeeThroughScopesLookDotThreshold = see_through_scopes_policy::kDefaultReticleLookDotThreshold;
         rockSeeThroughScopesDistanceThresholdGameUnits = see_through_scopes_policy::kDefaultReticleDistanceThresholdGameUnits;
 
-        rockSoftContactEnabled = true;
-        rockSoftContactHandHandEnabled = true;
-        rockSoftContactWeaponHandEnabled = true;
-        rockSoftContactBodyEnabled = true;
         rockSoftContactWorldEnabled = true;
-        rockSoftContactRadiusPaddingGameUnits = 0.75f;
-        rockSoftContactMaxCorrectionGameUnits = 7.0f;
-        rockSoftContactWeaponHandRadiusPaddingGameUnits = kDefaultSoftContactWeaponHandRadiusPaddingGameUnits;
-        rockSoftContactWeaponHandMaxCorrectionGameUnits = kDefaultSoftContactWeaponHandMaxCorrectionGameUnits;
-        rockSoftContactWeaponHandCorrectionScale = kDefaultSoftContactWeaponHandCorrectionScale;
-        rockSoftContactWeaponHandHardStopPenetrationGameUnits = kDefaultSoftContactWeaponHandHardStopPenetrationGameUnits;
         rockSoftContactVisualPriority = 80;
         rockSoftContactWorldRadiusPaddingGameUnits = 1.5f;
         rockSoftContactWorldContactPaddingGameUnits = 0.35f;
@@ -748,45 +734,7 @@ namespace rock
         }
         rockSeeThroughScopesDistanceThresholdGameUnits = std::clamp(rockSeeThroughScopesDistanceThresholdGameUnits, 1.0f, 100.0f);
 
-        rockSoftContactEnabled = ini.GetBoolValue(SECTION, "bSoftContactEnabled", rockSoftContactEnabled);
-        rockSoftContactHandHandEnabled = ini.GetBoolValue(SECTION, "bSoftContactHandHandEnabled", rockSoftContactHandHandEnabled);
-        rockSoftContactWeaponHandEnabled = ini.GetBoolValue(SECTION, "bSoftContactWeaponHandEnabled", rockSoftContactWeaponHandEnabled);
-        rockSoftContactBodyEnabled = ini.GetBoolValue(SECTION, "bSoftContactBodyEnabled", rockSoftContactBodyEnabled);
         rockSoftContactWorldEnabled = ini.GetBoolValue(SECTION, "bSoftContactWorldEnabled", rockSoftContactWorldEnabled);
-        rockSoftContactRadiusPaddingGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSoftContactRadiusPaddingGameUnits", rockSoftContactRadiusPaddingGameUnits));
-        if (!std::isfinite(rockSoftContactRadiusPaddingGameUnits) || rockSoftContactRadiusPaddingGameUnits < 0.0f) {
-            rockSoftContactRadiusPaddingGameUnits = 0.75f;
-        }
-        rockSoftContactMaxCorrectionGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSoftContactMaxCorrectionGameUnits", rockSoftContactMaxCorrectionGameUnits));
-        if (!std::isfinite(rockSoftContactMaxCorrectionGameUnits) || rockSoftContactMaxCorrectionGameUnits <= 0.0f) {
-            rockSoftContactMaxCorrectionGameUnits = 7.0f;
-        }
-        rockSoftContactWeaponHandRadiusPaddingGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSoftContactWeaponHandRadiusPaddingGameUnits", rockSoftContactWeaponHandRadiusPaddingGameUnits));
-        if (!std::isfinite(rockSoftContactWeaponHandRadiusPaddingGameUnits) || rockSoftContactWeaponHandRadiusPaddingGameUnits < 0.0f) {
-            rockSoftContactWeaponHandRadiusPaddingGameUnits = kDefaultSoftContactWeaponHandRadiusPaddingGameUnits;
-        }
-        rockSoftContactWeaponHandMaxCorrectionGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSoftContactWeaponHandMaxCorrectionGameUnits", rockSoftContactWeaponHandMaxCorrectionGameUnits));
-        if (!std::isfinite(rockSoftContactWeaponHandMaxCorrectionGameUnits) || rockSoftContactWeaponHandMaxCorrectionGameUnits <= 0.0f) {
-            rockSoftContactWeaponHandMaxCorrectionGameUnits = kDefaultSoftContactWeaponHandMaxCorrectionGameUnits;
-        }
-        rockSoftContactWeaponHandCorrectionScale =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSoftContactWeaponHandCorrectionScale", rockSoftContactWeaponHandCorrectionScale));
-        if (!std::isfinite(rockSoftContactWeaponHandCorrectionScale)) {
-            rockSoftContactWeaponHandCorrectionScale = kDefaultSoftContactWeaponHandCorrectionScale;
-        }
-        rockSoftContactWeaponHandCorrectionScale = std::clamp(rockSoftContactWeaponHandCorrectionScale, 0.0f, 1.0f);
-        rockSoftContactWeaponHandHardStopPenetrationGameUnits =
-            static_cast<float>(ini.GetDoubleValue(
-                SECTION,
-                "fSoftContactWeaponHandHardStopPenetrationGameUnits",
-                rockSoftContactWeaponHandHardStopPenetrationGameUnits));
-        if (!std::isfinite(rockSoftContactWeaponHandHardStopPenetrationGameUnits) || rockSoftContactWeaponHandHardStopPenetrationGameUnits <= 0.0f) {
-            rockSoftContactWeaponHandHardStopPenetrationGameUnits = kDefaultSoftContactWeaponHandHardStopPenetrationGameUnits;
-        }
         rockSoftContactVisualPriority = static_cast<int>(ini.GetLongValue(SECTION, "iSoftContactVisualPriority", rockSoftContactVisualPriority));
         rockSoftContactVisualPriority = std::clamp(rockSoftContactVisualPriority, 0, 99);
         rockSoftContactWorldRadiusPaddingGameUnits =

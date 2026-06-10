@@ -7,7 +7,6 @@
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/grab/MeshGrab.h"
 #include "RockConfig.h"
-#include "physics-interaction/contact/SoftContactMath.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
@@ -640,21 +639,6 @@ namespace rock
             result.rotate.entry[2][2] = 1.0f;
             result.scale = 1.0f;
             return result;
-        }
-
-        float safeAbsoluteScale(float scale)
-        {
-            const float absoluteScale = std::abs(scale);
-            return absoluteScale > 1.0e-6f && std::isfinite(absoluteScale) ? absoluteScale : 1.0f;
-        }
-
-        RE::NiPoint3 worldVectorToLocal(const RE::NiMatrix3& rootRotation, const RE::NiPoint3& worldVector)
-        {
-            return RE::NiPoint3{
-                rootRotation.entry[0][0] * worldVector.x + rootRotation.entry[0][1] * worldVector.y + rootRotation.entry[0][2] * worldVector.z,
-                rootRotation.entry[1][0] * worldVector.x + rootRotation.entry[1][1] * worldVector.y + rootRotation.entry[1][2] * worldVector.z,
-                rootRotation.entry[2][0] * worldVector.x + rootRotation.entry[2][1] * worldVector.y + rootRotation.entry[2][2] * worldVector.z,
-            };
         }
 
         QuantizedPointKey quantizePoint(const RE::NiPoint3& point, float grid)
@@ -2125,107 +2109,6 @@ namespace rock
         outContact.sourceRoot = bestInstance->sourceNode;
         outContact.weaponGenerationKey = getCurrentWeaponGenerationKey();
         outContact.probeDistanceGame = std::sqrt(bestDistanceSquared);
-        return true;
-    }
-
-    bool WeaponCollision::tryFindSoftContactForCapsule(
-        const RE::NiAVObject* weaponNode,
-        const RE::NiPoint3& capsuleStartWorld,
-        const RE::NiPoint3& capsuleEndWorld,
-        float capsuleRadiusGame,
-        float radiusPaddingGame,
-        const RE::NiPoint3& fallbackNormalWorld,
-        WeaponSoftContactResult& outContact) const
-    {
-        outContact = {};
-        if (!weaponNode ||
-            getCurrentWeaponGenerationKey() == 0 ||
-            !soft_contact_math::isFinite(capsuleStartWorld) ||
-            !soft_contact_math::isFinite(capsuleEndWorld) ||
-            !std::isfinite(capsuleRadiusGame) ||
-            capsuleRadiusGame < 0.0f) {
-            return false;
-        }
-
-        const RE::NiAVObject* packageDriveRoot = resolvePackageDriveNode(activeWeaponBodies(), const_cast<RE::NiAVObject*>(weaponNode));
-        if (!packageDriveRoot) {
-            return false;
-        }
-
-        const float absScale = safeAbsoluteScale(packageDriveRoot->world.scale);
-        const float invAbsScale = 1.0f / absScale;
-        const RE::NiPoint3 localStart = weapon_collision_geometry_math::worldPointToLocal(
-            packageDriveRoot->world.rotate,
-            packageDriveRoot->world.translate,
-            packageDriveRoot->world.scale,
-            capsuleStartWorld);
-        const RE::NiPoint3 localEnd = weapon_collision_geometry_math::worldPointToLocal(
-            packageDriveRoot->world.rotate,
-            packageDriveRoot->world.translate,
-            packageDriveRoot->world.scale,
-            capsuleEndWorld);
-        const RE::NiPoint3 fallbackLocal = soft_contact_math::normalizeOr(
-            worldVectorToLocal(packageDriveRoot->world.rotate, fallbackNormalWorld),
-            RE::NiPoint3(0.0f, 0.0f, 1.0f));
-
-        soft_contact_math::Capsule localCapsule{
-            .start = localStart,
-            .end = localEnd,
-            .radius = capsuleRadiusGame * invAbsScale,
-            .id = 0,
-            .valid = true,
-        };
-
-        bool found = false;
-        soft_contact_math::CapsuleContact bestContact{};
-        std::uint32_t bestBodyId = INVALID_BODY_ID;
-        for (const auto& instance : activeWeaponBodies()) {
-            if (!instance.body.isValid()) {
-                continue;
-            }
-
-            const std::uint32_t bodyId = instance.body.getBodyId().value;
-            const soft_contact_math::Aabb bounds{
-                .min = instance.generatedLocalMinGame,
-                .max = instance.generatedLocalMaxGame,
-                .id = bodyId,
-                .valid = true,
-            };
-            const auto contact = soft_contact_math::solveCapsuleAabb(localCapsule, bounds, fallbackLocal, radiusPaddingGame * invAbsScale);
-            if (!contact.active) {
-                continue;
-            }
-            if (!found || contact.penetration > bestContact.penetration) {
-                found = true;
-                bestContact = contact;
-                bestBodyId = bodyId;
-            }
-        }
-
-        if (!found) {
-            return false;
-        }
-
-        RE::NiPoint3 normalWorld = weapon_collision_geometry_math::rotateLocalPoint(packageDriveRoot->world.rotate, bestContact.normal);
-        if (packageDriveRoot->world.scale < 0.0f) {
-            normalWorld = soft_contact_math::mul(normalWorld, -1.0f);
-        }
-
-        outContact.valid = true;
-        outContact.bodyId = bestBodyId;
-        outContact.movablePointWorld = weapon_collision_geometry_math::localPointToWorld(
-            packageDriveRoot->world.rotate,
-            packageDriveRoot->world.translate,
-            packageDriveRoot->world.scale,
-            bestContact.movablePoint);
-        outContact.weaponPointWorld = weapon_collision_geometry_math::localPointToWorld(
-            packageDriveRoot->world.rotate,
-            packageDriveRoot->world.translate,
-            packageDriveRoot->world.scale,
-            bestContact.targetPoint);
-        outContact.normalWorld = soft_contact_math::normalizeOr(normalWorld, fallbackNormalWorld);
-        outContact.distanceGame = bestContact.distance * absScale;
-        outContact.penetrationGame = bestContact.penetration * absScale;
         return true;
     }
 

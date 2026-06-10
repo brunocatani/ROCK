@@ -1,10 +1,10 @@
 #pragma once
 
 /*
- * World soft contact stays query-driven because ROCK's generated hand layers
- * deliberately do not physically collide with static geometry yet. This keeps
- * swept-sphere world evidence available while avoiding native collision matrix
- * changes until the real static collision stack is explicitly enabled.
+ * World soft contact consumes native hand/world evidence when available and
+ * falls back to swept-sphere queries over stable support/blocker layers. Dynamic
+ * props stay outside this policy so visual hand stops do not fight grab, push,
+ * weapon, or held-object systems.
  */
 
 #include "physics-interaction/collision/CollisionLayerPolicy.h"

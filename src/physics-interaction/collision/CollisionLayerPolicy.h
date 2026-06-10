@@ -104,7 +104,23 @@ namespace rock::collision_layer_policy
 
     inline constexpr bool isWorldSurfaceLayer(std::uint32_t layer)
     {
-        return layer == FO4_LAYER_STATIC || layer == FO4_LAYER_ANIMSTATIC;
+        switch (layer) {
+        case FO4_LAYER_STATIC:
+        case FO4_LAYER_ANIMSTATIC:
+        case FO4_LAYER_TRANSPARENT:
+        case FO4_LAYER_TREES:
+        case FO4_LAYER_TERRAIN:
+        case FO4_LAYER_GROUND:
+        case FO4_LAYER_TRANSPARENT_SMALL:
+        case FO4_LAYER_INVISIBLE_WALL:
+        case FO4_LAYER_TRANSPARENT_SMALL_ANIM:
+        case FO4_LAYER_STAIRHELPER:
+        case FO4_LAYER_AVOIDBOX:
+        case FO4_LAYER_COLLISIONBOX:
+            return true;
+        default:
+            return false;
+        }
     }
 
     /*
@@ -132,23 +148,7 @@ namespace rock::collision_layer_policy
 
     inline constexpr bool isPlayerCharacterControllerSupportLayer(std::uint32_t layer)
     {
-        switch (layer) {
-        case FO4_LAYER_STATIC:
-        case FO4_LAYER_ANIMSTATIC:
-        case FO4_LAYER_TRANSPARENT:
-        case FO4_LAYER_TREES:
-        case FO4_LAYER_TERRAIN:
-        case FO4_LAYER_GROUND:
-        case FO4_LAYER_TRANSPARENT_SMALL:
-        case FO4_LAYER_INVISIBLE_WALL:
-        case FO4_LAYER_TRANSPARENT_SMALL_ANIM:
-        case FO4_LAYER_STAIRHELPER:
-        case FO4_LAYER_AVOIDBOX:
-        case FO4_LAYER_COLLISIONBOX:
-            return true;
-        default:
-            return false;
-        }
+        return isWorldSurfaceLayer(layer);
     }
 
     inline constexpr bool isNativePlayerCollisionSuppressionLayer(std::uint32_t layer)

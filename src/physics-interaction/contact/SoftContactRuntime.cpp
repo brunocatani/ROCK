@@ -6,23 +6,19 @@
 #include "physics-interaction/contact/SoftContactWorldPolicy.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/hand/Hand.h"
+#include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/native/PhysicsShapeCast.h"
 #include "physics-interaction/native/PhysicsUtils.h"
-#include "physics-interaction/weapon/WeaponCollision.h"
 
 #include "RE/Havok/hknpAllHitsCollector.h"
 #include "RE/Havok/hknpCollisionResult.h"
-#include "RE/NetImmerse/NiAVObject.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
-#include <string_view>
-#include <unordered_map>
-#include <vector>
 
 #include <vrcf/VRControllersManager.h>
 
@@ -30,7 +26,6 @@ namespace rock
 {
     namespace
     {
-        using soft_contact_math::Capsule;
         using soft_contact_math::CapsuleContact;
         using soft_contact_math::ContactKind;
         using soft_contact_math::ContactState;
@@ -44,33 +39,13 @@ namespace rock
         constexpr float kDefaultWorldContactPaddingGameUnits = 0.35f;
         constexpr float kDefaultWorldPostReleaseReentryMinApproachDistanceGameUnits = 0.025f;
         constexpr float kDefaultWorldCachedPlaneMaxTangentDriftGameUnits = 10.0f;
-        constexpr float kDefaultWeaponHandRadiusPaddingGameUnits = 0.25f;
-        constexpr float kDefaultWeaponHandMaxCorrectionGameUnits = 3.0f;
-        constexpr float kDefaultWeaponHandCorrectionScale = 0.35f;
-        constexpr float kDefaultWeaponHandHardStopPenetrationGameUnits = 4.0f;
         constexpr std::uint32_t kNativeWorldContactMaxAgeFrames = 2;
         constexpr std::uint32_t kWorldProbeIdRightBase = 0x5000u;
         constexpr std::uint32_t kWorldProbeIdLeftBase = 0x6000u;
 
-        enum class ShapeOwnerSide : std::uint8_t
-        {
-            Neutral = 0,
-            Left,
-            Right
-        };
-
-        struct RuntimeShape
-        {
-            Capsule capsule{};
-            ContactKind kind = ContactKind::None;
-            ShapeOwnerSide ownerSide = ShapeOwnerSide::Neutral;
-            bool sameSideArm = false;
-        };
-
         enum class CandidateSource : std::uint8_t
         {
-            Shape = 0,
-            QueryWorld,
+            QueryWorld = 0,
             CachedWorldPlane,
             NativeWorld,
         };
@@ -80,7 +55,7 @@ namespace rock
             bool valid = false;
             bool suppressed = false;
             ContactKind kind = ContactKind::None;
-            CandidateSource source = CandidateSource::Shape;
+            CandidateSource source = CandidateSource::QueryWorld;
             CapsuleContact contact{};
             float approachSpeedGameUnits = 0.0f;
             contact_target_identity::ContactTargetIdentity targetIdentity{};
@@ -102,8 +77,6 @@ namespace rock
             std::uint32_t id = 0;
             std::size_t stateIndex = 0;
         };
-
-        using BoneMap = std::unordered_map<std::string_view, const DirectSkeletonBoneEntry*>;
 
         contact_target_identity::ContactTargetResolutionOptions contactTargetResolutionOptions()
         {
@@ -129,153 +102,9 @@ namespace rock
             return isLeft ? 1u : 0u;
         }
 
-        bool startsWith(std::string_view value, std::string_view prefix)
-        {
-            return value.size() >= prefix.size() && value.substr(0, prefix.size()) == prefix;
-        }
-
-        ShapeOwnerSide sideForBoneName(std::string_view name)
-        {
-            if (startsWith(name, "LArm_")) {
-                return ShapeOwnerSide::Left;
-            }
-            if (startsWith(name, "RArm_")) {
-                return ShapeOwnerSide::Right;
-            }
-            return ShapeOwnerSide::Neutral;
-        }
-
-        bool isSameSideArmDescriptor(const skeleton_bone_debug_math::BoneColliderDescriptor& descriptor, bool isLeft)
-        {
-            const auto desiredSide = isLeft ? ShapeOwnerSide::Left : ShapeOwnerSide::Right;
-            return (sideForBoneName(descriptor.startBone) == desiredSide || sideForBoneName(descriptor.endBone) == desiredSide) &&
-                   (startsWith(descriptor.startBone, isLeft ? "LArm_" : "RArm_") || startsWith(descriptor.endBone, isLeft ? "LArm_" : "RArm_"));
-        }
-
-        BoneMap makeBoneMap(const DirectSkeletonBoneSnapshot& snapshot)
-        {
-            BoneMap map;
-            map.reserve(snapshot.bones.size());
-            for (const auto& bone : snapshot.bones) {
-                map.emplace(std::string_view{ bone.name }, &bone);
-            }
-            return map;
-        }
-
-        bool findBonePosition(const BoneMap& bones, std::string_view name, RE::NiPoint3& outPosition)
-        {
-            const auto it = bones.find(name);
-            if (it == bones.end() || !it->second) {
-                return false;
-            }
-
-            outPosition = it->second->world.translate;
-            return true;
-        }
-
-        float fingerRadius(std::size_t segmentIndex)
-        {
-            switch (segmentIndex) {
-            case 0:
-                return 0.65f;
-            case 1:
-                return 0.55f;
-            default:
-                return 0.45f;
-            }
-        }
-
-        std::uint32_t makeShapeId(bool isLeft, std::uint32_t ordinal)
-        {
-            return (isLeft ? 0x2000u : 0x1000u) + ordinal;
-        }
-
         std::uint32_t makeWorldProbeId(bool isLeft, std::uint32_t ordinal)
         {
             return (isLeft ? kWorldProbeIdLeftBase : kWorldProbeIdRightBase) + ordinal;
-        }
-
-        void addCapsule(std::vector<RuntimeShape>& outShapes,
-            const RE::NiPoint3& start,
-            const RE::NiPoint3& end,
-            float radius,
-            ContactKind kind,
-            std::uint32_t id,
-            ShapeOwnerSide side = ShapeOwnerSide::Neutral,
-            bool sameSideArm = false)
-        {
-            if (!soft_contact_math::isFinite(start) || !soft_contact_math::isFinite(end) || !std::isfinite(radius) || radius <= 0.0f) {
-                return;
-            }
-
-            RuntimeShape shape{};
-            shape.capsule = Capsule{
-                .start = start,
-                .end = end,
-                .radius = radius,
-                .id = id,
-                .valid = true,
-            };
-            shape.kind = kind;
-            shape.ownerSide = side;
-            shape.sameSideArm = sameSideArm;
-            outShapes.push_back(shape);
-        }
-
-        void buildHandShapes(bool isLeft, const HandFrameInput& handInput, std::vector<RuntimeShape>& outShapes)
-        {
-            outShapes.clear();
-            if (handInput.disabled) {
-                return;
-            }
-
-            std::uint32_t ordinal = 0;
-            addCapsule(outShapes,
-                handInput.rawHandWorld.translate,
-                handInput.grabAnchorWorld,
-                2.6f,
-                ContactKind::HandHand,
-                makeShapeId(isLeft, ordinal++),
-                isLeft ? ShapeOwnerSide::Left : ShapeOwnerSide::Right);
-
-            root_flattened_finger_skeleton_runtime::Snapshot snapshot{};
-            if (!root_flattened_finger_skeleton_runtime::resolveLiveFingerSkeletonSnapshot(isLeft, snapshot)) {
-                return;
-            }
-
-            for (std::size_t finger = 0; finger < snapshot.fingers.size(); ++finger) {
-                const auto& chain = snapshot.fingers[finger];
-                if (!chain.valid) {
-                    continue;
-                }
-
-                addCapsule(outShapes,
-                    chain.points[0],
-                    chain.points[1],
-                    fingerRadius(0),
-                    ContactKind::HandHand,
-                    makeShapeId(isLeft, ordinal++),
-                    isLeft ? ShapeOwnerSide::Left : ShapeOwnerSide::Right);
-                addCapsule(outShapes,
-                    chain.points[1],
-                    chain.points[2],
-                    fingerRadius(1),
-                    ContactKind::HandHand,
-                    makeShapeId(isLeft, ordinal++),
-                    isLeft ? ShapeOwnerSide::Left : ShapeOwnerSide::Right);
-
-                const RE::NiPoint3 tipDirection = soft_contact_math::normalizeOr(
-                    soft_contact_math::sub(chain.points[2], chain.points[1]),
-                    soft_contact_math::sub(chain.points[2], chain.points[0]));
-                const float tipLength = std::max(1.4f, soft_contact_math::length(soft_contact_math::sub(chain.points[2], chain.points[1])) * 0.55f);
-                addCapsule(outShapes,
-                    chain.points[2],
-                    soft_contact_math::add(chain.points[2], soft_contact_math::mul(tipDirection, tipLength)),
-                    fingerRadius(2),
-                    ContactKind::HandHand,
-                    makeShapeId(isLeft, ordinal++),
-                    isLeft ? ShapeOwnerSide::Left : ShapeOwnerSide::Right);
-            }
         }
 
         void addWorldContactProbe(
@@ -326,68 +155,6 @@ namespace rock
             }
         }
 
-        void buildBodyShapes(const DirectSkeletonBoneSnapshot& snapshot, std::vector<RuntimeShape>& outShapes)
-        {
-            outShapes.clear();
-            if (!snapshot.valid) {
-                return;
-            }
-
-            const auto bones = makeBoneMap(snapshot);
-            const auto descriptors = skeleton_bone_debug_math::colliderDescriptors(
-                skeleton_bone_debug_math::colliderVariantForPowerArmor(snapshot.inPowerArmor));
-            std::uint32_t ordinal = 0;
-            for (const auto& descriptor : descriptors) {
-                if (!descriptor.enabled ||
-                    descriptor.role == skeleton_bone_debug_math::BoneColliderRole::FingerSegment ||
-                    descriptor.role == skeleton_bone_debug_math::BoneColliderRole::HandSegment ||
-                    descriptor.endpointMode != skeleton_bone_debug_math::BoneColliderEndpointMode::ChildBone) {
-                    continue;
-                }
-
-                RE::NiPoint3 start{};
-                RE::NiPoint3 end{};
-                if (!findBonePosition(bones, descriptor.startBone, start) || !findBonePosition(bones, descriptor.endBone, end)) {
-                    continue;
-                }
-
-                const bool leftArm = isSameSideArmDescriptor(descriptor, true);
-                const bool rightArm = isSameSideArmDescriptor(descriptor, false);
-                const auto side = leftArm ? ShapeOwnerSide::Left : rightArm ? ShapeOwnerSide::Right : ShapeOwnerSide::Neutral;
-                addCapsule(outShapes,
-                    start,
-                    end,
-                    descriptor.radiusGameUnits,
-                    ContactKind::Body,
-                    0x3000u + ordinal++,
-                    side,
-                    leftArm || rightArm);
-            }
-        }
-
-        bool shouldSkipBodyTargetForHand(const RuntimeShape& bodyShape, bool handIsLeft)
-        {
-            if (!bodyShape.sameSideArm) {
-                return false;
-            }
-
-            return bodyShape.ownerSide == (handIsLeft ? ShapeOwnerSide::Left : ShapeOwnerSide::Right);
-        }
-
-        int candidatePriority(ContactKind kind)
-        {
-            switch (kind) {
-            case ContactKind::WorldStatic:
-                return 20;
-            case ContactKind::HandHand:
-            case ContactKind::WeaponHand:
-            case ContactKind::Body:
-                return 10;
-            default:
-                return 0;
-            }
-        }
-
         int candidateSourcePriority(CandidateSource source)
         {
             switch (source) {
@@ -397,14 +164,12 @@ namespace rock
                 return 20;
             case CandidateSource::QueryWorld:
                 return 10;
-            case CandidateSource::Shape:
             default:
                 return 0;
             }
         }
 
-        float maxCorrectionForContactKind(ContactKind kind);
-        float responseScaleForCandidate(const Candidate& candidate);
+        float maxWorldCorrection();
         RE::NiPoint3 correctionForCandidate(const Candidate& candidate);
 
         float candidateResponseStrength(const Candidate& candidate)
@@ -427,88 +192,13 @@ namespace rock
                 return;
             }
 
-            const int bestPriority = best.valid ? candidatePriority(best.kind) : -1;
-            const int candidatePriorityValue = candidatePriority(candidate.kind);
             const int bestSourcePriority = best.valid ? candidateSourcePriority(best.source) : -1;
             const int candidateSourcePriorityValue = candidateSourcePriority(candidate.source);
             if (!best.valid ||
-                candidatePriorityValue > bestPriority ||
-                (candidatePriorityValue == bestPriority &&
-                    (candidateSourcePriorityValue > bestSourcePriority ||
-                        (candidateSourcePriorityValue == bestSourcePriority && candidateResponseWinsTie(best, candidate))))) {
+                candidateSourcePriorityValue > bestSourcePriority ||
+                (candidateSourcePriorityValue == bestSourcePriority && candidateResponseWinsTie(best, candidate))) {
                 best = candidate;
             }
-        }
-
-        Candidate solveShapeAgainstShapes(const RuntimeShape& movableShape,
-            const std::vector<RuntimeShape>& targets,
-            const RE::NiPoint3& fallbackNormal,
-            ContactKind kind,
-            float radiusPadding,
-            bool handIsLeft,
-            bool skipSameSideBodyArm)
-        {
-            Candidate best{};
-            for (const auto& target : targets) {
-                if (!target.capsule.valid) {
-                    continue;
-                }
-                if (skipSameSideBodyArm && shouldSkipBodyTargetForHand(target, handIsLeft)) {
-                    continue;
-                }
-
-                const auto contact = soft_contact_math::solveCapsulePair(movableShape.capsule, target.capsule, fallbackNormal, radiusPadding);
-                if (!contact.active) {
-                    continue;
-                }
-
-                keepStrongerCandidate(best, Candidate{
-                    .valid = true,
-                    .kind = kind,
-                    .contact = contact,
-                });
-            }
-            return best;
-        }
-
-        Candidate solveShapeAgainstWeapon(const RuntimeShape& movableShape,
-            const WeaponCollision& weaponCollision,
-            RE::NiAVObject* weaponNode,
-            const RE::NiPoint3& fallbackNormal,
-            float radiusPadding)
-        {
-            Candidate best{};
-            if (!weaponNode || !movableShape.capsule.valid || !weaponCollision.hasWeaponBody()) {
-                return best;
-            }
-
-            WeaponSoftContactResult contact{};
-            if (weaponCollision.tryFindSoftContactForCapsule(
-                    weaponNode,
-                    movableShape.capsule.start,
-                    movableShape.capsule.end,
-                    movableShape.capsule.radius,
-                    radiusPadding,
-                    fallbackNormal,
-                    contact) &&
-                contact.valid) {
-                CapsuleContact softContact{};
-                softContact.active = true;
-                softContact.movablePoint = contact.movablePointWorld;
-                softContact.targetPoint = contact.weaponPointWorld;
-                softContact.normal = soft_contact_math::normalizeOr(contact.normalWorld, fallbackNormal);
-                softContact.distance = contact.distanceGame;
-                softContact.penetration = contact.penetrationGame;
-                softContact.movableId = movableShape.capsule.id;
-                softContact.targetId = contact.bodyId;
-                keepStrongerCandidate(best, Candidate{
-                    .valid = true,
-                    .kind = ContactKind::WeaponHand,
-                    .contact = softContact,
-                });
-            }
-
-            return best;
         }
 
         void clearWorldContactState(auto& handState)
@@ -550,78 +240,22 @@ namespace rock
                 kDefaultWorldCachedPlaneMaxTangentDriftGameUnits);
         }
 
-        float weaponHandRadiusPadding()
+        float maxWorldCorrection()
         {
-            return soft_contact_math::sanitizeNonNegative(
-                g_rockConfig.rockSoftContactWeaponHandRadiusPaddingGameUnits,
-                kDefaultWeaponHandRadiusPaddingGameUnits);
-        }
-
-        float weaponHandCorrectionScale()
-        {
-            return std::clamp(
-                std::isfinite(g_rockConfig.rockSoftContactWeaponHandCorrectionScale) ?
-                    g_rockConfig.rockSoftContactWeaponHandCorrectionScale :
-                    kDefaultWeaponHandCorrectionScale,
-                0.0f,
-                1.0f);
-        }
-
-        float weaponHandHardStopPenetration()
-        {
-            return soft_contact_math::sanitizePositive(
-                g_rockConfig.rockSoftContactWeaponHandHardStopPenetrationGameUnits,
-                kDefaultWeaponHandHardStopPenetrationGameUnits);
-        }
-
-        float maxCorrectionForContactKind(ContactKind kind)
-        {
-            switch (kind) {
-            case ContactKind::WorldStatic:
-                return soft_contact_math::sanitizePositive(g_rockConfig.rockSoftContactWorldMaxCorrectionGameUnits, 18.0f);
-            case ContactKind::WeaponHand:
-                return soft_contact_math::sanitizePositive(
-                    g_rockConfig.rockSoftContactWeaponHandMaxCorrectionGameUnits,
-                    kDefaultWeaponHandMaxCorrectionGameUnits);
-            default:
-                return soft_contact_math::sanitizePositive(g_rockConfig.rockSoftContactMaxCorrectionGameUnits, 7.0f);
-            }
+            return soft_contact_math::sanitizePositive(g_rockConfig.rockSoftContactWorldMaxCorrectionGameUnits, 18.0f);
         }
 
         float responseScaleForCandidate(const Candidate& candidate)
         {
-            if (candidate.kind != ContactKind::WeaponHand) {
-                return candidate.contact.penetration > 0.0f ? 1.0f : 0.0f;
-            }
-
-            return soft_contact_math::compliantHardStopResponseScale(
-                candidate.contact.penetration,
-                weaponHandCorrectionScale(),
-                weaponHandHardStopPenetration());
+            return candidate.contact.penetration > 0.0f ? 1.0f : 0.0f;
         }
 
         RE::NiPoint3 correctionForCandidate(const Candidate& candidate)
         {
-            /*
-             * Weapon contact is tuned separately because the weapon already has
-             * visual/gameplay authority in the hand. ROCK keeps wall/body contact
-             * as a hard current-frame projection, but weapon-hand overlap uses a
-             * compliant current-frame response that ramps to a hard stop only for
-             * deep penetration.
-             */
-            const float maxCorrection = maxCorrectionForContactKind(candidate.kind);
-            if (candidate.kind == ContactKind::WeaponHand) {
-                const RE::NiPoint3 hardStopCorrection = soft_contact_math::projectTrackedMagnetCorrection(
-                    candidate.contact.normal,
-                    candidate.contact.penetration,
-                    maxCorrection);
-                return soft_contact_math::mul(hardStopCorrection, responseScaleForCandidate(candidate));
-            }
-
             return soft_contact_math::projectTrackedMagnetCorrection(
                 candidate.contact.normal,
                 candidate.contact.penetration,
-                maxCorrection);
+                maxWorldCorrection());
         }
 
         std::uint32_t resolveWorldHitFilterInfo(RE::hknpWorld* world, const RE::hknpCollisionResult& hit)
@@ -650,7 +284,7 @@ namespace rock
             case CandidateSource::NativeWorld:
                 return "NativeWorld";
             default:
-                return "Shape";
+                return "Unknown";
             }
         }
 
@@ -1219,7 +853,7 @@ namespace rock
             entry.correctionEnd = soft_contact_math::add(candidate.contact.movablePoint, correction);
             entry.penetration = candidate.contact.penetration;
             entry.responseScale = responseScaleForCandidate(candidate);
-            entry.maxCorrection = maxCorrectionForContactKind(candidate.kind);
+            entry.maxCorrection = maxWorldCorrection();
             entry.correctionLength = soft_contact_math::length(correction);
             entry.movableId = candidate.contact.movableId;
             entry.targetId = candidate.contact.targetId;
@@ -1234,7 +868,6 @@ namespace rock
     void SoftContactRuntime::reset()
     {
         clearAllHands();
-        _bodyReader.resetCache();
         _debugSnapshot = {};
         _wasEnabled = false;
         _logCounter = 0;
@@ -1282,8 +915,6 @@ namespace rock
     void SoftContactRuntime::update(const PhysicsFrameContext& frame,
         const Hand& rightHand,
         const Hand& leftHand,
-        const WeaponCollision& weaponCollision,
-        RE::NiAVObject* weaponNode,
         bool rightHandWeaponEquipped,
         bool leftSupportGripActive,
         const contact_evidence::NativeContactEvidenceSnapshot& nativeContactEvidence)
@@ -1294,7 +925,7 @@ namespace rock
         _debugSnapshot.rightState = _hands[0].state;
         _debugSnapshot.leftState = _hands[1].state;
 
-        if (!g_rockConfig.rockSoftContactEnabled || !frame.worldReady || frame.menuBlocked) {
+        if (!g_rockConfig.rockSoftContactWorldEnabled || !frame.worldReady || frame.menuBlocked) {
             if (_wasEnabled) {
                 clearAllHands();
             }
@@ -1308,22 +939,10 @@ namespace rock
             _logCounter = 0;
             const float loggedWorldContactPadding = worldContactPadding();
             const float loggedWorldQueryPadding = worldQueryRadiusPadding(loggedWorldContactPadding);
-            const float loggedMaxCorrection = maxCorrectionForContactKind(ContactKind::Body);
-            const float loggedWeaponMaxCorrection = maxCorrectionForContactKind(ContactKind::WeaponHand);
-            const float loggedWorldMaxCorrection = maxCorrectionForContactKind(ContactKind::WorldStatic);
             ROCK_LOG_DEBUG(Hand,
-                "SoftContact active: handHand={} weaponHand={} body={} world={} worldHaptics={} maxCorrection={:.2f} weaponMaxCorrection={:.2f} weaponRadiusPadding={:.2f} weaponCorrectionScale={:.2f} weaponHardStop={:.2f} worldMaxCorrection={:.2f} worldQueryPadding={:.2f} worldContactPadding={:.2f} worldPostReleaseReentryMinApproach={:.3f} worldCachedPlaneMaxTangentDrift={:.2f} priority={}",
-                g_rockConfig.rockSoftContactHandHandEnabled ? "yes" : "no",
-                g_rockConfig.rockSoftContactWeaponHandEnabled ? "yes" : "no",
-                g_rockConfig.rockSoftContactBodyEnabled ? "yes" : "no",
-                g_rockConfig.rockSoftContactWorldEnabled ? "yes" : "no",
+                "SoftContact active: worldOnly=yes worldHaptics={} worldMaxCorrection={:.2f} worldQueryPadding={:.2f} worldContactPadding={:.2f} worldPostReleaseReentryMinApproach={:.3f} worldCachedPlaneMaxTangentDrift={:.2f} priority={}",
                 g_rockConfig.rockSoftContactWorldHapticsEnabled ? "yes" : "no",
-                loggedMaxCorrection,
-                loggedWeaponMaxCorrection,
-                weaponHandRadiusPadding(),
-                weaponHandCorrectionScale(),
-                weaponHandHardStopPenetration(),
-                loggedWorldMaxCorrection,
+                maxWorldCorrection(),
                 loggedWorldQueryPadding,
                 loggedWorldContactPadding,
                 worldPostReleaseReentryMinApproachDistance(),
@@ -1331,33 +950,12 @@ namespace rock
                 g_rockConfig.rockSoftContactVisualPriority);
         }
 
-        std::vector<RuntimeShape> rightShapes;
-        std::vector<RuntimeShape> leftShapes;
-        std::vector<RuntimeShape> bodyShapes;
-        rightShapes.reserve(24);
-        leftShapes.reserve(24);
-        bodyShapes.reserve(32);
-
-        buildHandShapes(false, frame.right, rightShapes);
-        buildHandShapes(true, frame.left, leftShapes);
-
-        if (g_rockConfig.rockSoftContactBodyEnabled) {
-            DirectSkeletonBoneSnapshot bodySnapshot{};
-            if (_bodyReader.capture(skeleton_bone_debug_math::DebugSkeletonBoneMode::CoreBodyAndFingers,
-                    skeleton_bone_debug_math::DebugSkeletonBoneSource::GameRootFlattenedBoneTree,
-                    bodySnapshot)) {
-                buildBodyShapes(bodySnapshot, bodyShapes);
-            }
-        } else {
-            _bodyReader.resetCache();
-        }
-
-        auto solveForHand = [&](bool isLeft, const HandFrameInput& handInput, const Hand& hand, const std::vector<RuntimeShape>& movableShapes,
-                                const std::vector<RuntimeShape>& oppositeHandShapes) {
+        auto solveForHand = [&](bool isLeft, const HandFrameInput& handInput, const Hand& hand) {
             auto& handState = _hands[handIndex(isLeft)];
             /*
-             * ROCK disables generated hand contact while a held object or
-             * two-handed weapon state owns the hand. Pull/locked-selection are
+             * ROCK soft contact is production world-only visual authority. It
+             * still yields to held objects and weapon owners because those
+             * systems own the hand transform when active. Pull/locked-selection are
              * also grab ownership states: they can transition into a capture in
              * the same frame, so stale visual contact must not survive there and
              * poison the raw tracked hand frame used by grab setup.
@@ -1376,25 +974,8 @@ namespace rock
 
             Candidate best{};
             const RE::NiPoint3 fallbackNormal = soft_contact_math::normalizeOr(handInput.palmNormalWorld, RE::NiPoint3(0.0f, 0.0f, 1.0f));
-            const float radiusPadding = soft_contact_math::sanitizeNonNegative(g_rockConfig.rockSoftContactRadiusPaddingGameUnits, 0.75f);
-            const float weaponRadiusPadding = weaponHandRadiusPadding();
 
             if (!handInput.disabled) {
-                for (const auto& shape : movableShapes) {
-                    if (g_rockConfig.rockSoftContactHandHandEnabled) {
-                        keepStrongerCandidate(best,
-                            solveShapeAgainstShapes(shape, oppositeHandShapes, fallbackNormal, ContactKind::HandHand, radiusPadding, isLeft, false));
-                    }
-                    if (g_rockConfig.rockSoftContactBodyEnabled) {
-                        keepStrongerCandidate(best,
-                            solveShapeAgainstShapes(shape, bodyShapes, fallbackNormal, ContactKind::Body, radiusPadding, isLeft, true));
-                    }
-                    if (g_rockConfig.rockSoftContactWeaponHandEnabled) {
-                        keepStrongerCandidate(best,
-                            solveShapeAgainstWeapon(shape, weaponCollision, weaponNode, fallbackNormal, weaponRadiusPadding));
-                    }
-                }
-
                 keepStrongerCandidate(best,
                     solveWorldStaticContact(
                         frame.bhkWorld,
@@ -1414,25 +995,11 @@ namespace rock
             }
 
             if (best.valid) {
-                const bool worldContact = best.kind == ContactKind::WorldStatic;
-                if (worldContact) {
-                    logContactTargetIdentity(isLeft, best);
-                }
-                updateWorldContactHaptics(handState, isLeft, worldContact, best.approachSpeedGameUnits, frame.deltaSeconds);
+                logContactTargetIdentity(isLeft, best);
+                updateWorldContactHaptics(handState, isLeft, true, best.approachSpeedGameUnits, frame.deltaSeconds);
                 handState.correction = correctionForCandidate(best);
                 handState.lastContactKind = best.kind;
                 handState.state = best.contact.penetration >= 0.5f ? ContactState::Penetrating : ContactState::Touching;
-                if (best.kind == ContactKind::WeaponHand) {
-                    ROCK_LOG_SAMPLE_DEBUG(Hand,
-                        500,
-                        "{} weapon-hand soft contact: penetration={:.3f} correction={:.3f} responseScale={:.3f} maxCorrection={:.3f} radiusPadding={:.3f}",
-                        isLeft ? "Left" : "Right",
-                        best.contact.penetration,
-                        soft_contact_math::length(handState.correction),
-                        responseScaleForCandidate(best),
-                        maxCorrectionForContactKind(best.kind),
-                        weaponRadiusPadding);
-                }
 
                 RE::NiTransform target = handInput.rawHandWorld;
                 target.translate = soft_contact_math::add(target.translate, handState.correction);
@@ -1460,8 +1027,8 @@ namespace rock
             handState.state = ContactState::Inactive;
         };
 
-        solveForHand(false, frame.right, rightHand, rightShapes, leftShapes);
-        solveForHand(true, frame.left, leftHand, leftShapes, rightShapes);
+        solveForHand(false, frame.right, rightHand);
+        solveForHand(true, frame.left, leftHand);
 
         _debugSnapshot.rightState = _hands[0].state;
         _debugSnapshot.leftState = _hands[1].state;
