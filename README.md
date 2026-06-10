@@ -80,6 +80,16 @@ cmake --build build-tests --config Release --target ROCKPolicyTestBinaries -- /m
 ctest --test-dir build-tests -C Release --output-on-failure
 ```
 
+## Public API
+
+ROCK ships a public SDK for FO4VR F4SE plugins under `SDK/ROCK`.
+
+- `SDK/ROCK/include/ROCKProviderApi.h` is the stable provider API for new integrations.
+- `SDK/ROCK/include/ROCKApi.h` is the legacy/simple compatibility API and should not be used for new write/control behavior.
+- Provider API v9 adds ROCK-issued owner tokens, capability grants, provider limits, feature bits, and owner-filtered external contacts.
+
+Start with `SDK/ROCK/docs/PublicApi.md` and `SDK/ROCK/examples/MinimalProviderConsumer.cpp`. Public force grab/release commands are intentionally not exposed until they can run through a bounded ROCK-owned command queue from a safe update point.
+
 ## Credits
 
 - **[rollingrock](https://github.com/rollingrock)** - Creator of FRIK (Fallout 4 VR Body)

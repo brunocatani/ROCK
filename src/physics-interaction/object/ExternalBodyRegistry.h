@@ -208,6 +208,31 @@ namespace rock
             return count;
         }
 
+        [[nodiscard]] std::uint32_t copyContactsV2ForOwner(
+            std::uint64_t ownerToken,
+            ::rock::provider::RockProviderExternalContactV2* outContacts,
+            std::uint32_t maxContacts) const
+        {
+            if (ownerToken == 0 || !outContacts || maxContacts == 0) {
+                return 0;
+            }
+
+            std::uint32_t count = 0;
+            std::array<::rock::provider::RockProviderExternalContactV2, kMaxContacts> latest{};
+            for (std::uint32_t read = _contactCount; read > 0 && count < maxContacts; --read) {
+                const std::uint32_t i = read - 1;
+                if (_contacts[i].ownerToken != ownerToken) {
+                    continue;
+                }
+                latest[count++] = _contacts[i];
+            }
+
+            for (std::uint32_t i = 0; i < count; ++i) {
+                outContacts[i] = latest[count - 1 - i];
+            }
+            return count;
+        }
+
         [[nodiscard]] std::uint32_t bodyCount() const { return _bodyCount; }
 
     private:

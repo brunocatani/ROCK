@@ -29,7 +29,7 @@ namespace rock::provider
 
 #define ROCK_PROVIDER_CALL __cdecl
 
-    inline constexpr std::uint32_t ROCK_PROVIDER_API_VERSION = 8;
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_VERSION = 9;
     inline constexpr std::uint32_t ROCK_PROVIDER_FRAME_SNAPSHOT_V6_SIZE = 256;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_BODIES = 8;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EVIDENCE_NAME = 64;
@@ -40,6 +40,8 @@ namespace rock::provider
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_V4 = 8;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_CHARS_V4 = 128;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_BODY_CONTACTS_V6 = 128;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_FRAME_CALLBACKS_V9 = 16;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_CONSUMERS_V9 = 64;
 
     enum class RockProviderHand : std::uint32_t
     {
@@ -190,10 +192,106 @@ namespace rock::provider
         Shutdown = 15,
     };
 
+    enum class RockProviderResultV9 : std::uint32_t
+    {
+        Ok = 0,
+        NotReady = 1,
+        InvalidArgument = 2,
+        InvalidSize = 3,
+        UnsupportedVersion = 4,
+        CapacityFull = 5,
+        OwnerNotRegistered = 6,
+        OwnerConflict = 7,
+        PermissionDenied = 8,
+        WorldNotReady = 9,
+        TargetInvalid = 10,
+        TargetUnavailable = 11,
+        HandUnavailable = 12,
+        HandBusy = 13,
+        ObjectAlreadyOwned = 14,
+        RequestQueued = 15,
+        RequestRejected = 16,
+        RequestNotFound = 17,
+    };
+
+    enum class RockProviderConsumerCapabilityV9 : std::uint32_t
+    {
+        None = 0,
+        FrameSnapshots = 1u << 0,
+        ExternalBodies = 1u << 1,
+        ExternalContacts = 1u << 2,
+        OffhandReservation = 1u << 3,
+        DiagnosticOverlay = 1u << 4,
+        DiagnosticInput = 1u << 5,
+        InteractionCommands = 1u << 6,
+    };
+
+    enum class RockProviderFeatureBitV9 : std::uint32_t
+    {
+        None = 0,
+        FrameCallbacks = 1u << 0,
+        LifecycleFields = 1u << 1,
+        HandFramesV8 = 1u << 2,
+        WeaponEvidenceV3 = 1u << 3,
+        BodyContactsV6 = 1u << 4,
+        ExternalContactsV2 = 1u << 5,
+        DiagnosticOverlayV4 = 1u << 6,
+        DiagnosticInputV5 = 1u << 7,
+        ConsumerRegistrationV9 = 1u << 8,
+        OwnerFilteredExternalContactsV9 = 1u << 9,
+        InteractionCommandQueue = 1u << 10,
+        ForceGrabCommand = 1u << 11,
+        ForceReleaseCommand = 1u << 12,
+    };
+
     [[nodiscard]] inline constexpr bool hasLifecycleFlag(std::uint32_t flags, RockProviderLifecycleFlag flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
+
+    [[nodiscard]] inline constexpr bool hasConsumerCapabilityV9(std::uint32_t capabilities, RockProviderConsumerCapabilityV9 capability)
+    {
+        return (capabilities & static_cast<std::uint32_t>(capability)) != 0;
+    }
+
+    [[nodiscard]] inline constexpr bool hasFeatureBitV9(std::uint32_t featureBits, RockProviderFeatureBitV9 feature)
+    {
+        return (featureBits & static_cast<std::uint32_t>(feature)) != 0;
+    }
+
+    struct RockProviderConsumerRegistrationV9
+    {
+        std::uint32_t size{ sizeof(RockProviderConsumerRegistrationV9) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        char modName[64]{};
+        std::uint32_t requestedCapabilities{ 0 };
+        std::uint32_t reserved[7]{};
+    };
+
+    struct RockProviderConsumerHandleV9
+    {
+        std::uint32_t size{ sizeof(RockProviderConsumerHandleV9) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t ownerToken{ 0 };
+        std::uint32_t grantedCapabilities{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[6]{};
+    };
+
+    struct RockProviderLimitsV9
+    {
+        std::uint32_t size{ sizeof(RockProviderLimitsV9) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint32_t featureBits{ 0 };
+        std::uint32_t maxFrameCallbacks{ 0 };
+        std::uint32_t maxConsumers{ 0 };
+        std::uint32_t maxExternalBodies{ 0 };
+        std::uint32_t maxExternalContacts{ 0 };
+        std::uint32_t maxBodyContacts{ 0 };
+        std::uint32_t maxWeaponBodies{ 0 };
+        std::uint32_t maxInteractionCommands{ 0 };
+        std::uint32_t reserved[8]{};
+    };
 
     struct RockProviderTransform
     {
@@ -547,6 +645,16 @@ namespace rock::provider
         RockProviderHand(ROCK_PROVIDER_CALL* getPrimaryHandV8)();
         RockProviderHand(ROCK_PROVIDER_CALL* getOffhandHandV8)();
         bool(ROCK_PROVIDER_CALL* getHandFrameV8)(RockProviderHand hand, RockProviderHandFrameV8* outFrame);
+        RockProviderResultV9(ROCK_PROVIDER_CALL* registerConsumerV9)(
+            const RockProviderConsumerRegistrationV9* registration,
+            RockProviderConsumerHandleV9* outHandle);
+        RockProviderResultV9(ROCK_PROVIDER_CALL* unregisterConsumerV9)(std::uint64_t ownerToken);
+        std::uint32_t(ROCK_PROVIDER_CALL* getGrantedCapabilitiesV9)(std::uint64_t ownerToken);
+        bool(ROCK_PROVIDER_CALL* getProviderLimitsV9)(RockProviderLimitsV9* outLimits);
+        std::uint32_t(ROCK_PROVIDER_CALL* getExternalContactSnapshotForOwnerV9)(
+            std::uint64_t ownerToken,
+            RockProviderExternalContactV2* outContacts,
+            std::uint32_t maxContacts);
 
         [[nodiscard]] static int initialize(const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION)
         {
@@ -582,6 +690,18 @@ namespace rock::provider
 
     static_assert(std::is_standard_layout_v<RockProviderTransform>);
     static_assert(std::is_trivially_copyable_v<RockProviderTransform>);
+    static_assert(sizeof(RockProviderConsumerRegistrationV9) == 104);
+    static_assert(alignof(RockProviderConsumerRegistrationV9) == 4);
+    static_assert(std::is_standard_layout_v<RockProviderConsumerRegistrationV9>);
+    static_assert(std::is_trivially_copyable_v<RockProviderConsumerRegistrationV9>);
+    static_assert(sizeof(RockProviderConsumerHandleV9) == 48);
+    static_assert(alignof(RockProviderConsumerHandleV9) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderConsumerHandleV9>);
+    static_assert(std::is_trivially_copyable_v<RockProviderConsumerHandleV9>);
+    static_assert(sizeof(RockProviderLimitsV9) == 72);
+    static_assert(alignof(RockProviderLimitsV9) == 4);
+    static_assert(std::is_standard_layout_v<RockProviderLimitsV9>);
+    static_assert(std::is_trivially_copyable_v<RockProviderLimitsV9>);
     static_assert(sizeof(RockProviderTransform) == 52);
     static_assert(sizeof(RockProviderFrameSnapshot) == 272);
     static_assert(alignof(RockProviderFrameSnapshot) == 8);
