@@ -200,6 +200,7 @@ namespace rock
             bool driveRequestedRebuild{ false };
             std::uint64_t equippedKey{ 0 };
             std::uint64_t visualKey{ 0 };
+            std::uint64_t identityKey{ 0 };
             std::uint32_t visualRootCount{ 0 };
             std::uint32_t visibleTriShapeCount{ 0 };
             float convexRadius{ -1.0f };
@@ -267,6 +268,7 @@ namespace rock
         void clearPendingGeneratedWeaponBuild(RE::hknpWorld* world, bool destroyTargetBank);
         bool beginPendingGeneratedWeaponBuild(std::uint64_t equippedKey,
             std::uint64_t visualKey,
+            std::uint64_t identityKey,
             const WeaponVisualKeyStats& visualKeyStats,
             bool replacingExisting,
             bool settingsChanged,
@@ -280,7 +282,8 @@ namespace rock
         std::uint64_t getEquippedWeaponKey(
             RE::NiAVObject* weaponNode,
             WeaponVisualKeyStats& stats,
-            std::uint64_t* outVisualKey = nullptr) const;
+            std::uint64_t* outVisualKey = nullptr,
+            std::uint64_t* outIdentityKey = nullptr) const;
 
         void maybeDumpWeaponAnimNodeDiagnostics(RE::NiAVObject* updateWeaponNode, std::uint64_t observedKey);
 
@@ -290,6 +293,8 @@ namespace rock
         WeaponBodyBank _weaponReplacementBodies{};
         bool _usingReplacementWeaponBodies{ false };
         std::uint64_t _cachedWeaponKey{ 0 };
+        std::uint64_t _cachedWeaponVisualKey{ 0 };
+        std::uint64_t _cachedWeaponIdentityKey{ 0 };
         std::uint64_t _cachedWeaponBodySetKey{ 0 };
         std::uint64_t _weaponBodySetEpoch{ 0 };
         weapon_generated_source_completeness_policy::GeneratedSourceCompleteness _cachedGeneratedSourceCompleteness{};

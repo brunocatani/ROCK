@@ -21,6 +21,8 @@ namespace rock::performance_profiler
         BodyColliderUpdate,
         GeneratedColliderPhysicsFlush,
         WeaponCollision,
+        WeaponCollisionTransforms,
+        GeneratedBodyContactRegistry,
         WeaponColliderBuild,
         WeaponColliderCreate,
         TwoHandedGripStart,
@@ -34,6 +36,33 @@ namespace rock::performance_profiler
         Count
     };
 
+    enum class Counter : std::uint8_t
+    {
+        WeaponRebuildQueued = 0,
+        WeaponRebuildCanceled,
+        WeaponRebuildCompleted,
+        WeaponRebuildVisualRootDeferred,
+        WeaponRebuildVisualStableWait,
+        WeaponRebuildReasonSettingsChanged,
+        WeaponRebuildReasonDriveRequested,
+        WeaponRebuildReasonKeyChanged,
+        WeaponRebuildReasonMissingBodies,
+        WeaponKeyChangeVisualOnly,
+        WeaponKeyChangeIdentityOnly,
+        WeaponKeyChangeVisualAndIdentity,
+        Count
+    };
+
+    enum class ValueMetric : std::uint8_t
+    {
+        WeaponBuildVisibleTriShapes = 0,
+        WeaponBuildGeneratedSources,
+        WeaponBuildBodiesCreated,
+        WeaponBuildTransientReloadSources,
+        WeaponBuildBodyCount,
+        Count
+    };
+
     inline constexpr std::size_t kOverlayMaxLines = 8;
     inline constexpr std::size_t kOverlayLineLength = 128;
     using OverlayLines = std::array<std::array<char, kOverlayLineLength>, kOverlayMaxLines>;
@@ -42,6 +71,8 @@ namespace rock::performance_profiler
     void beginFrame() noexcept;
     void endFrame() noexcept;
     void addEventCount(Scope scope, std::uint64_t count = 1) noexcept;
+    void addCounter(Counter counter, std::uint64_t count = 1) noexcept;
+    void observeValue(ValueMetric metric, std::uint64_t value) noexcept;
     bool overlayTextEnabled() noexcept;
     std::uint32_t copyOverlayLines(OverlayLines& outLines) noexcept;
 

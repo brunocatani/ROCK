@@ -1272,6 +1272,8 @@ namespace rock
 
     void PhysicsInteraction::refreshGeneratedBodyContactRegistry()
     {
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GeneratedBodyContactRegistry);
+
         using generated_body_contact_registry::Entry;
         using generated_body_contact_registry::GeneratedBodyKind;
         using generated_body_contact_registry::kFlagPowerArmor;
@@ -2190,7 +2192,7 @@ namespace rock
             }
 
             if (weaponNode) {
-                performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponCollision);
+                performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponCollisionTransforms);
                 _weaponCollision.updateBodiesFromCurrentSourceTransforms(hknp, weaponNode, frame.deltaSeconds);
                 refreshGeneratedBodyContactRegistry();
             }
