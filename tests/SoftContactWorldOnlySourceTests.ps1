@@ -56,6 +56,10 @@ Require-Text 'src/RockConfig.h' 'rockSoftContactWorldEnabled' `
     'World soft contact must keep a source config toggle.'
 Require-Text 'src/RockConfig.cpp' 'bSoftContactWorldEnabled' `
     'World soft contact must keep reading its source config toggle.'
+Require-Text 'src/RockConfig.h' 'rockSoftContactWorldShapeCastFilterInfo' `
+    'World soft contact must own a dedicated fallback shape-cast filter config.'
+Require-Text 'src/RockConfig.cpp' 'sSoftContactWorldShapeCastFilterInfo' `
+    'World soft contact must read its dedicated fallback shape-cast filter config.'
 
 Reject-Text 'data/config/ROCK.ini' $removedIniPattern `
     'Default config must not document removed soft-contact toggles or tuning.'
@@ -65,6 +69,10 @@ Require-Text 'data/config/ROCK.ini' 'bSoftContactWorldEnabled\s*=\s*true' `
     'Default config must expose the world soft-contact toggle.'
 Require-Text 'data/mod/ROCK_Config/ROCK.ini' 'bSoftContactWorldEnabled\s*=\s*true' `
     'Packaged mod config must expose the world soft-contact toggle.'
+Require-Text 'data/config/ROCK.ini' 'sSoftContactWorldShapeCastFilterInfo\s*=\s*000B002D' `
+    'Default config must expose the dedicated world soft-contact fallback query filter.'
+Require-Text 'data/mod/ROCK_Config/ROCK.ini' 'sSoftContactWorldShapeCastFilterInfo\s*=\s*000B002D' `
+    'Packaged mod config must expose the dedicated world soft-contact fallback query filter.'
 
 Reject-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'buildHandShapes|buildBodyShapes|solveShapeAgainstShapes|solveShapeAgainstWeapon|RuntimeShape|DirectSkeletonBoneSnapshot|_bodyReader|std::vector<|WeaponCollision|NiAVObject' `
     'SoftContactRuntime must not retain hand-hand, body, weapon, or per-frame shape-vector solve paths.'
@@ -76,6 +84,17 @@ Require-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'solveWorl
     'SoftContactRuntime must keep the world contact solve path.'
 Require-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'worldOnly=yes' `
     'SoftContactRuntime active logging must report world-only behavior.'
+Require-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'collisionFilterInfo\s*=\s*g_rockConfig\.rockSoftContactWorldShapeCastFilterInfo' `
+    'SoftContactRuntime fallback casts must use the dedicated world soft-contact filter, not selection tuning.'
+Reject-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'collisionFilterInfo\s*=\s*g_rockConfig\.rockSelectionShapeCastFilterInfo' `
+    'SoftContactRuntime fallback casts must not share selection shape-cast filter tuning.'
+
+Require-Text 'src/physics-interaction/contact/SoftContactRuntime.h' 'enum class SoftContactDebugSource' `
+    'Soft contact debug snapshots must expose source kind for world-contact tuning.'
+Require-Text 'src/physics-interaction/contact/SoftContactRuntime.h' 'SoftContactDebugSource source' `
+    'Soft contact debug contacts must carry source kind.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'softContactSourceName' `
+    'Debug overlay must render soft-contact source kind.'
 
 Reject-Text 'src/physics-interaction/contact/SoftContactMath.h' 'ContactKind\s*:\s*std::uint8_t[\s\S]{0,120}(HandHand|WeaponHand|Body)|struct\s+(?:Capsule|Aabb)\b|solveCapsule(?:Pair|Aabb)|compliantHardStopResponseScale|projectCompliantTrackedMagnetCorrection' `
     'SoftContactMath must not retain removed synthetic capsule or weapon compliance helpers.'

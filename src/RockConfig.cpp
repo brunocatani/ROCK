@@ -168,6 +168,7 @@ namespace rock
         rockSoftContactWorldPostReleaseReentryMinApproachDistanceGameUnits = 0.025f;
         rockSoftContactWorldCachedPlaneMaxTangentDriftGameUnits = 10.0f;
         rockSoftContactWorldMaxCorrectionGameUnits = 18.0f;
+        rockSoftContactWorldShapeCastFilterInfo = selection_query_policy::kDefaultShapeCastFilterInfo;
         rockSoftContactWorldHapticsEnabled = true;
         rockSoftContactWorldHapticDurationSeconds = 0.035f;
         rockSoftContactWorldHapticBaseIntensity = 0.18f;
@@ -772,6 +773,10 @@ namespace rock
         if (!std::isfinite(rockSoftContactWorldMaxCorrectionGameUnits) || rockSoftContactWorldMaxCorrectionGameUnits <= 0.0f) {
             rockSoftContactWorldMaxCorrectionGameUnits = 18.0f;
         }
+        rockSoftContactWorldShapeCastFilterInfo = readHexFilter(
+            "sSoftContactWorldShapeCastFilterInfo",
+            rockSoftContactWorldShapeCastFilterInfo,
+            selection_query_policy::kDefaultShapeCastFilterInfo);
         rockSoftContactWorldHapticsEnabled = ini.GetBoolValue(SECTION, "bSoftContactWorldHapticsEnabled", rockSoftContactWorldHapticsEnabled);
         rockSoftContactWorldHapticDurationSeconds =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fSoftContactWorldHapticDurationSeconds", rockSoftContactWorldHapticDurationSeconds));

@@ -3,7 +3,6 @@
 #include "physics-interaction/contact/SoftContactMath.h"
 #include "physics-interaction/contact/NativeContactEvidence.h"
 #include "physics-interaction/contact/ContactTargetIdentity.h"
-#include "physics-interaction/core/PhysicsFrameContext.h"
 
 #include <array>
 #include <cstdint>
@@ -11,6 +10,15 @@
 namespace rock
 {
     class Hand;
+    struct PhysicsFrameContext;
+
+    enum class SoftContactDebugSource : std::uint8_t
+    {
+        Unknown = 0,
+        QueryWorld,
+        CachedWorldPlane,
+        NativeWorld
+    };
 
     struct SoftContactDebugContact
     {
@@ -18,6 +26,7 @@ namespace rock
         bool isLeft = false;
         bool suppressed = false;
         soft_contact_math::ContactKind kind = soft_contact_math::ContactKind::None;
+        SoftContactDebugSource source = SoftContactDebugSource::Unknown;
         soft_contact_math::ContactState state = soft_contact_math::ContactState::Inactive;
         RE::NiPoint3 point{};
         RE::NiPoint3 normalEnd{};

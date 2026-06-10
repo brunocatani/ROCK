@@ -4,6 +4,7 @@
 #include "RockUtils.h"
 #include "physics-interaction/contact/ContactTargetIdentity.h"
 #include "physics-interaction/contact/SoftContactWorldPolicy.h"
+#include "physics-interaction/core/PhysicsFrameContext.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/hand/HandSkeleton.h"
@@ -285,6 +286,20 @@ namespace rock
                 return "NativeWorld";
             default:
                 return "Unknown";
+            }
+        }
+
+        SoftContactDebugSource debugSourceForCandidateSource(CandidateSource source)
+        {
+            switch (source) {
+            case CandidateSource::QueryWorld:
+                return SoftContactDebugSource::QueryWorld;
+            case CandidateSource::CachedWorldPlane:
+                return SoftContactDebugSource::CachedWorldPlane;
+            case CandidateSource::NativeWorld:
+                return SoftContactDebugSource::NativeWorld;
+            default:
+                return SoftContactDebugSource::Unknown;
             }
         }
 
@@ -583,7 +598,7 @@ namespace rock
                         .directionGame = displacement,
                         .distanceGame = distance,
                         .radiusGame = probe.radius + queryRadiusPadding,
-                        .collisionFilterInfo = g_rockConfig.rockSelectionShapeCastFilterInfo },
+                        .collisionFilterInfo = g_rockConfig.rockSoftContactWorldShapeCastFilterInfo },
                     collector,
                     nullptr)) {
                 return best;
@@ -847,6 +862,7 @@ namespace rock
             entry.isLeft = isLeft;
             entry.suppressed = candidate.suppressed;
             entry.kind = candidate.kind;
+            entry.source = debugSourceForCandidateSource(candidate.source);
             entry.state = state;
             entry.point = candidate.contact.movablePoint;
             entry.normalEnd = soft_contact_math::add(candidate.contact.movablePoint, soft_contact_math::mul(candidate.contact.normal, 8.0f));

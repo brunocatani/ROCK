@@ -23,6 +23,12 @@ namespace rock::soft_contact_world_policy
 
     inline constexpr bool acceptsWorldSurfaceLayer(std::uint32_t layer)
     {
+        /*
+         * Soft contact intentionally mirrors ROCK's stable world/support layer
+         * set today, but the wrapper keeps visual-stop policy ownership local.
+         * Future soft-contact tuning should change this function first instead
+         * of reaching through to every generic world-surface caller.
+         */
         return collision_layer_policy::isWorldSurfaceLayer(layer);
     }
 

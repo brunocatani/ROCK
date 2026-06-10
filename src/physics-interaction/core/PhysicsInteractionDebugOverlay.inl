@@ -63,7 +63,7 @@
             drawGrabForceTorque || drawHandBoneContacts || drawSoftContacts || drawGrabAuthorityProxy || drawGrabTransformTelemetryAxes || drawWeaponAuthorityDebug ||
             drawGrabSupportFrame || drawWorldOriginDiagnostics;
         frame.drawSkeleton = drawSkeletonBones;
-        frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawPerformanceProfilerOverlay;
+        frame.drawText = drawGrabTransformTelemetryText || drawGrabForceTorqueText || drawPerformanceProfilerOverlay || drawSoftContacts;
         RE::bhkWorld* originDiagnosticBhk = drawWorldOriginDiagnostics ? context.bhkWorld : nullptr;
         const bool rightDisabled = context.right.disabled;
         const bool leftDisabled = context.left.disabled;
@@ -998,6 +998,20 @@
         }
 
         if (drawSoftContacts) {
+            const float softContactLabelColor[4]{ 0.82f, 0.96f, 1.0f, 0.88f };
+            auto softContactSourceName = [](SoftContactDebugSource source) {
+                switch (source) {
+                case SoftContactDebugSource::NativeWorld:
+                    return "native";
+                case SoftContactDebugSource::CachedWorldPlane:
+                    return "cached";
+                case SoftContactDebugSource::QueryWorld:
+                    return "query";
+                default:
+                    return "unknown";
+                }
+            };
+
             SoftContactDebugSnapshot snapshot{};
             if (_softContactRuntime.getDebugSnapshot(snapshot)) {
                 for (std::uint32_t i = 0; i < snapshot.contactCount && i < snapshot.contacts.size(); ++i) {
@@ -1013,6 +1027,12 @@
                     if (!contact.suppressed) {
                         addMarkerLine(correctionRole, contact.point, contact.correctionEnd);
                     }
+                    addTextLineSized(contact.point, 2.0f, softContactLabelColor,
+                        "soft world %s layer=%u pen=%.2f corr=%.2f",
+                        softContactSourceName(contact.source),
+                        contact.targetLayer,
+                        contact.penetration,
+                        contact.correctionLength);
                 }
             }
         }
