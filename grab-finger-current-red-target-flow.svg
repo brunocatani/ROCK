@@ -1,0 +1,167 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="950" viewBox="0 0 1500 950" role="img" aria-labelledby="title desc">
+  <title id="title">ROCK Current Grab Finger Red Target Flow</title>
+  <desc id="desc">Diagram showing the current ROCK grab finger flow. Blue mesh probes solve curl and joint values. Red surfaceAimTarget markers are stored object-local and are only bounded contact hints. Non-thumb red targets can only add five degree capped splay and do not drive local bone target chasing.</desc>
+  <defs>
+    <marker id="arrowDark" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#263545" />
+    </marker>
+    <marker id="arrowProbe" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#2f6fed" />
+    </marker>
+    <marker id="arrowTarget" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#df4b2f" />
+    </marker>
+    <marker id="arrowGood" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#4c9a72" />
+    </marker>
+    <style>
+      .bg { fill: #f6f8fb; }
+      .panel { fill: #ffffff; stroke: #c8d1dc; stroke-width: 2; rx: 22; }
+      .title { font: 700 34px Arial, sans-serif; fill: #16202a; }
+      .subtitle { font: 400 18px Arial, sans-serif; fill: #465666; }
+      .panelTitle { font: 700 22px Arial, sans-serif; fill: #16202a; }
+      .label { font: 700 16px Arial, sans-serif; fill: #263545; }
+      .small { font: 400 14px Arial, sans-serif; fill: #526273; }
+      .tiny { font: 400 12px Arial, sans-serif; fill: #526273; }
+      .code { font: 700 14px Consolas, monospace; fill: #263545; }
+      .hand { fill: #f3c7a4; stroke: #8a5a44; stroke-width: 3; }
+      .finger { fill: none; stroke: #8a5a44; stroke-width: 12; stroke-linecap: round; }
+      .fingerThin { fill: none; stroke: #8a5a44; stroke-width: 8; stroke-linecap: round; }
+      .fingerGhost { fill: none; stroke: #8a5a44; stroke-width: 10; stroke-linecap: round; opacity: 0.22; }
+      .fingerBad { fill: none; stroke: #d67b7b; stroke-width: 8; stroke-linecap: round; stroke-dasharray: 8 7; }
+      .bone { fill: #7d4f3b; stroke: #4f2e22; stroke-width: 1; }
+      .joint { fill: #ffffff; stroke: #4f2e22; stroke-width: 3; }
+      .object { fill: #dfe8f6; stroke: #496a94; stroke-width: 3; }
+      .objectGhost { fill: #dfe8f6; stroke: #496a94; stroke-width: 2; opacity: 0.25; }
+      .tri { fill: none; stroke: #7691b3; stroke-width: 2; stroke-dasharray: 5 5; }
+      .probe { fill: none; stroke: #2f6fed; stroke-width: 4; marker-end: url(#arrowProbe); }
+      .probeFaint { fill: none; stroke: #2f6fed; stroke-width: 3; opacity: 0.35; marker-end: url(#arrowProbe); }
+      .targetLine { fill: none; stroke: #df4b2f; stroke-width: 4; marker-end: url(#arrowTarget); }
+      .targetLineFaint { fill: none; stroke: #df4b2f; stroke-width: 3; opacity: 0.35; marker-end: url(#arrowTarget); }
+      .flow { fill: none; stroke: #263545; stroke-width: 3; marker-end: url(#arrowDark); }
+      .goodFlow { fill: none; stroke: #4c9a72; stroke-width: 4; marker-end: url(#arrowGood); }
+      .target { fill: #ff7a59; stroke: #9f2d16; stroke-width: 2; }
+      .targetSmall { fill: #ff7a59; stroke: #9f2d16; stroke-width: 2; }
+      .probeEnd { fill: #2f6fed; stroke: #123f99; stroke-width: 2; }
+      .base { fill: #ffffff; stroke: #263545; stroke-width: 3; }
+      .stored { fill: #ffd2c6; stroke: #9f2d16; stroke-width: 2; stroke-dasharray: 5 4; }
+      .note { fill: #fff7e8; stroke: #e0b45b; stroke-width: 2; rx: 14; }
+      .good { fill: #eaf6ef; stroke: #4c9a72; stroke-width: 2; rx: 14; }
+      .warn { fill: #fff1f1; stroke: #d67b7b; stroke-width: 2; rx: 14; }
+      .hard { fill: #eef2ff; stroke: #5d6fd6; stroke-width: 2; rx: 14; }
+      .off { fill: #f0f2f5; stroke: #8d9aaa; stroke-width: 2; rx: 14; }
+      .angle { fill: none; stroke: #b85c00; stroke-width: 4; }
+      .angleDashed { fill: none; stroke: #b85c00; stroke-width: 3; stroke-dasharray: 6 5; opacity: 0.55; }
+      .angleText { font: 700 16px Arial, sans-serif; fill: #b85c00; }
+      .xText { font: 900 26px Arial, sans-serif; fill: #9f2d16; }
+      .offText { font: 900 22px Arial, sans-serif; fill: #667486; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1500" height="950" />
+  <text class="title" x="55" y="62">Current grab finger flow after red target cap</text>
+  <text class="subtitle" x="55" y="94">Blue probes solve finger curl. Red surfaceAimTarget markers are bounded contact hints, not spline goals and not non-thumb bone targets.</text>
+
+  <rect class="panel" x="45" y="130" width="320" height="650" rx="22" />
+  <text class="panelTitle" x="75" y="172">1. Mesh probes</text>
+  <text class="small" x="75" y="200">Live finger bases probe the held mesh.</text>
+
+  <path class="object" d="M175 310 L315 275 L340 525 L170 575 Z" />
+  <path class="tri" d="M175 310 L340 525 M315 275 L170 575 M202 420 L330 384 M230 300 L288 552" />
+
+  <circle class="base" cx="85" cy="365" r="7" />
+  <circle class="base" cx="90" cy="420" r="7" />
+  <circle class="base" cx="97" cy="475" r="7" />
+  <circle class="base" cx="108" cy="530" r="7" />
+
+  <path class="probe" d="M85 365 L210 340" />
+  <path class="probe" d="M90 420 L250 395" />
+  <path class="probe" d="M97 475 L276 470" />
+  <path class="probe" d="M108 530 L230 540" />
+
+  <circle class="target" cx="198" cy="343" r="10" />
+  <circle class="target" cx="236" cy="397" r="10" />
+  <circle class="target" cx="276" cy="470" r="10" />
+  <circle class="target" cx="226" cy="538" r="10" />
+
+  <rect class="good" x="75" y="620" width="240" height="105" rx="14" />
+  <text class="code" x="95" y="650">primary pose solve</text>
+  <text class="small" x="95" y="675">hit evidence -&gt; curl</text>
+  <text class="small" x="95" y="700">curl -&gt; 15 joint values</text>
+
+  <rect class="panel" x="405" y="130" width="305" height="650" rx="22" />
+  <text class="panelTitle" x="435" y="172">2. FRIK finger pose</text>
+  <text class="small" x="435" y="200">ROCK publishes joint values.</text>
+
+  <circle class="joint" cx="475" cy="390" r="9" />
+  <circle class="joint" cx="545" cy="405" r="9" />
+  <circle class="joint" cx="603" cy="443" r="9" />
+  <circle class="joint" cx="640" cy="505" r="9" />
+  <path class="fingerThin" d="M475 390 C515 390 532 397 545 405" />
+  <path class="fingerThin" d="M545 405 C574 416 592 430 603 443" />
+  <path class="fingerThin" d="M603 443 C625 472 637 492 640 505" />
+
+  <circle class="joint" cx="475" cy="500" r="9" />
+  <circle class="joint" cx="545" cy="512" r="9" />
+  <circle class="joint" cx="605" cy="545" r="9" />
+  <circle class="joint" cx="645" cy="600" r="9" />
+  <path class="fingerThin" d="M475 500 C512 500 533 506 545 512" />
+  <path class="fingerThin" d="M545 512 C575 522 592 535 605 545" />
+  <path class="fingerThin" d="M605 545 C629 570 642 590 645 600" />
+
+  <rect class="note" x="435" y="620" width="230" height="105" rx="14" />
+  <text class="code" x="455" y="650">not a spline IK</text>
+  <text class="small" x="455" y="675">no curve is fitted to red X</text>
+  <text class="small" x="455" y="700">FRIK gets pose values</text>
+
+  <rect class="panel" x="750" y="130" width="315" height="650" rx="22" />
+  <text class="panelTitle" x="780" y="172">3. Red target storage</text>
+  <text class="small" x="780" y="200">Accepted red points are object-local.</text>
+
+  <path class="objectGhost" d="M830 330 L955 300 L980 450 L835 500 Z" />
+  <path class="object" d="M865 390 L990 360 L1015 510 L870 560 Z" />
+  <circle class="stored" cx="850" cy="420" r="10" />
+  <circle class="target" cx="900" cy="470" r="11" />
+  <path class="targetLine" d="M850 420 C858 452 875 466 900 470" />
+  <text class="tiny" x="815" y="405">at grab</text>
+  <text class="tiny" x="912" y="490">while held</text>
+
+  <rect class="good" x="785" y="620" width="245" height="105" rx="14" />
+  <text class="code" x="805" y="650">surfaceAimTarget</text>
+  <text class="small" x="805" y="675">captured once at TouchHeld</text>
+  <text class="small" x="805" y="700">rebuilt from object transform</text>
+
+  <rect class="panel" x="1105" y="130" width="350" height="650" rx="22" />
+  <text class="panelTitle" x="1135" y="172">4. How red affects pose now</text>
+  <text class="small" x="1135" y="200">Non-thumb red target is only splay.</text>
+
+  <circle class="base" cx="1195" cy="398" r="9" />
+  <path class="probeFaint" d="M1195 398 L1365 398" />
+  <circle class="target" cx="1370" cy="320" r="12" />
+  <path class="targetLineFaint" d="M1195 398 L1358 326" />
+  <path class="finger" d="M1195 398 C1245 396 1284 398 1330 398" />
+  <path class="angleDashed" d="M1248 395 C1262 368 1289 346 1320 335" />
+  <path class="angle" d="M1245 399 C1260 392 1274 388 1288 386" />
+  <text class="angleText" x="1250" y="373">max 5 deg</text>
+  <text class="small" x="1210" y="435">open direction</text>
+  <text class="small" x="1302" y="306">red X can be far away</text>
+
+  <rect class="hard" x="1135" y="500" width="285" height="92" rx="14" />
+  <text class="code" x="1155" y="530">non-thumb red target</text>
+  <text class="small" x="1155" y="555">splay only</text>
+  <text class="small" x="1155" y="579">hard cap: +/- 5 deg</text>
+
+  <rect class="off" x="1135" y="620" width="285" height="105" rx="14" />
+  <text class="code" x="1155" y="650">local bone chasing</text>
+  <text class="offText" x="1155" y="681">OFF</text>
+  <text class="small" x="1198" y="681">for index, middle, ring, pinky</text>
+  <text class="small" x="1155" y="705">red X is not a finger goal</text>
+
+  <path class="flow" d="M365 455 C385 455 390 455 405 455" />
+  <path class="flow" d="M710 455 C730 455 735 455 750 455" />
+  <path class="flow" d="M1065 455 C1085 455 1090 455 1105 455" />
+
+  <rect class="panel" x="45" y="815" width="1410" height="90" rx="22" />
+  <text class="label" x="75" y="850">Result:</text>
+  <text class="small" x="75" y="878">The finger pose comes from mesh contact curl and FRIK joint values. Red surfaceAimTarget points are stored object-local and only nudge non-thumb side-to-side splay by at most five degrees.</text>
+</svg>
