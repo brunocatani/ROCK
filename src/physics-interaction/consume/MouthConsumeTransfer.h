@@ -26,8 +26,6 @@ namespace rock::mouth_consume
         StackedReferenceUnsupported,
         ActivateRef,
         ActivateRefFailed,
-        DrinkPotion,
-        DrinkPotionFailed,
     };
 
     struct ConsumeInput

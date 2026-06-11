@@ -4,7 +4,6 @@
 #include "physics-interaction/stash/ShoulderStashPolicy.h"
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 
-#include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/MagicItems.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESBoundObjects.h"
@@ -39,10 +38,6 @@ namespace rock::mouth_consume
             return "activate-ref";
         case ConsumeReason::ActivateRefFailed:
             return "activate-ref-failed";
-        case ConsumeReason::DrinkPotion:
-            return "drink-potion";
-        case ConsumeReason::DrinkPotionFailed:
-            return "drink-potion-failed";
         default:
             return "not-attempted";
         }
@@ -116,17 +111,9 @@ namespace rock::mouth_consume
             return result;
         }
 
-        if (result.baseForm->Is(RE::ENUM_FORM_ID::kALCH)) {
-            auto* alchemyItem = static_cast<RE::AlchemyItem*>(result.baseForm);
-            if (player->DrinkPotion(alchemyItem, 0)) {
-                result.success = true;
-                result.reason = ConsumeReason::DrinkPotion;
-            } else {
-                result.reason = ConsumeReason::DrinkPotionFailed;
-            }
-            return result;
-        }
-
+        // Keep transfer on the source-backed activation path. The CommonLibF4VR
+        // DrinkPotion virtual and stack-ID contract are not verified for FO4VR,
+        // and calling it after ActivateRef double-mutates ingestion effects.
         result.success = true;
         result.reason = ConsumeReason::ActivateRef;
         return result;
