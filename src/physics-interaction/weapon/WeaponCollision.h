@@ -106,6 +106,7 @@ namespace rock
 
         bool tryBuildSupportGripEvidenceTriangles(
             std::uint32_t bodyId,
+            const RE::NiAVObject* currentWeaponRoot,
             std::vector<TriangleData>& outTriangles) const;
 
         BethesdaPhysicsBody& getWeaponBody();
@@ -251,6 +252,8 @@ namespace rock
         void clearGeneratedSourceCompletenessTracking();
         void clearPendingWeaponVisualRebuild();
         void clearGeneratedSourceCache();
+        void resetVisualSourceUnavailableRetention();
+        bool canRetainCurrentWeaponBodiesForVisualSourceMiss(std::uint64_t observedIdentityKey, RE::NiAVObject* currentWeaponRoot, int retainFrameLimit);
         bool generatedSourceCacheMatches(std::uint64_t equippedKey, std::uint64_t visualKey) const;
         void storeGeneratedSourceCache(std::uint64_t equippedKey,
             std::uint64_t visualKey,
@@ -326,6 +329,9 @@ namespace rock
         std::uint64_t _pendingWeaponVisualWitnessKey{ 0 };
         std::size_t _pendingWeaponVisualVisibleTriShapeCount{ 0 };
         int _pendingWeaponVisualStableFrames{ 0 };
+        std::uint64_t _visualSourceUnavailableRetainIdentityKey{ 0 };
+        std::uintptr_t _visualSourceUnavailableRetainRoot{ 0 };
+        int _visualSourceUnavailableRetainFrames{ 0 };
         int _weaponAnimNodeDumpFrameCounter{ 0 };
         std::uint64_t _lastWeaponAnimNodeDumpKey{ 0 };
 

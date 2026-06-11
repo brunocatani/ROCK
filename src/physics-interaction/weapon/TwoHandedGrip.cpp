@@ -591,7 +591,7 @@ namespace rock
         constexpr bool supportHandIsLeft = true;
         constexpr bool primaryHandIsLeft = false;
 
-        RE::NiAVObject* sourceRoot = decision.interactionRoot ? decision.interactionRoot : weaponNode;
+        RE::NiAVObject* sourceRoot = weaponNode;
         _authorityMode = supportAuthorityMode;
         _supportGripPose = decision.gripPose != WeaponGripPoseId::None ? decision.gripPose : _supportGripPose;
         _supportPartKind = decision.partKind;
@@ -631,7 +631,7 @@ namespace rock
         RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(supportTransform, supportHandIsLeft);
 
         std::vector<TriangleData> triangles;
-        const bool cachedTrianglesFound = weaponCollision.tryBuildSupportGripEvidenceTriangles(decision.bodyId, triangles);
+        const bool cachedTrianglesFound = weaponCollision.tryBuildSupportGripEvidenceTriangles(decision.bodyId, weaponNode, triangles);
 
         GrabPoint grabPoint;
         bool meshFound = false;

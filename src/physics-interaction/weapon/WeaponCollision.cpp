@@ -1338,12 +1338,16 @@ namespace rock
 
     RE::NiAVObject* WeaponCollision::resolvePackageDriveNode(const WeaponBodyBank& bank, RE::NiAVObject* fallbackWeaponNode)
     {
+        if (fallbackWeaponNode) {
+            return fallbackWeaponNode;
+        }
+
         for (const auto& instance : bank) {
             if (instance.body.isValid() && instance.driveNode) {
                 return instance.driveNode;
             }
         }
-        return fallbackWeaponNode;
+        return nullptr;
     }
 
     weapon_generated_source_completeness_policy::GeneratedSourceCompleteness WeaponCollision::summarizeGeneratedSources(const std::vector<GeneratedHullSource>& sources)
@@ -1499,6 +1503,40 @@ namespace rock
     void WeaponCollision::clearGeneratedSourceCache()
     {
         _generatedSourceCache = {};
+    }
+
+    void WeaponCollision::resetVisualSourceUnavailableRetention()
+    {
+        _visualSourceUnavailableRetainIdentityKey = 0;
+        _visualSourceUnavailableRetainRoot = 0;
+        _visualSourceUnavailableRetainFrames = 0;
+    }
+
+    bool WeaponCollision::canRetainCurrentWeaponBodiesForVisualSourceMiss(
+        std::uint64_t observedIdentityKey,
+        RE::NiAVObject* currentWeaponRoot,
+        int retainFrameLimit)
+    {
+        if (observedIdentityKey == 0 || !currentWeaponRoot) {
+            resetVisualSourceUnavailableRetention();
+            return false;
+        }
+
+        retainFrameLimit = (std::max)(1, retainFrameLimit);
+        const auto currentRoot = reinterpret_cast<std::uintptr_t>(currentWeaponRoot);
+        if (_visualSourceUnavailableRetainIdentityKey != observedIdentityKey ||
+            _visualSourceUnavailableRetainRoot != currentRoot) {
+            _visualSourceUnavailableRetainIdentityKey = observedIdentityKey;
+            _visualSourceUnavailableRetainRoot = currentRoot;
+            _visualSourceUnavailableRetainFrames = 0;
+        }
+
+        if (_visualSourceUnavailableRetainFrames >= retainFrameLimit) {
+            return false;
+        }
+
+        ++_visualSourceUnavailableRetainFrames;
+        return true;
     }
 
     bool WeaponCollision::generatedSourceCacheMatches(std::uint64_t equippedKey, std::uint64_t visualKey) const
@@ -1935,7 +1973,10 @@ namespace rock
         return false;
     }
 
-    bool WeaponCollision::tryBuildSupportGripEvidenceTriangles(std::uint32_t bodyId, std::vector<TriangleData>& outTriangles) const
+    bool WeaponCollision::tryBuildSupportGripEvidenceTriangles(
+        std::uint32_t bodyId,
+        const RE::NiAVObject* currentWeaponRoot,
+        std::vector<TriangleData>& outTriangles) const
     {
         outTriangles.clear();
         if (bodyId == INVALID_BODY_ID) {
@@ -1943,12 +1984,16 @@ namespace rock
         }
 
         for (const auto& instance : activeWeaponBodies()) {
-            if (!instance.body.isValid() || instance.body.getBodyId().value != bodyId || !instance.driveNode || instance.generatedLocalTrianglesGame.empty()) {
+            if (!instance.body.isValid() || instance.body.getBodyId().value != bodyId || instance.generatedLocalTrianglesGame.empty()) {
+                continue;
+            }
+            const RE::NiAVObject* driveRoot = currentWeaponRoot ? currentWeaponRoot : instance.driveNode;
+            if (!driveRoot) {
                 continue;
             }
 
             outTriangles.reserve(instance.generatedLocalTrianglesGame.size());
-            const RE::NiTransform driveWorld = instance.driveNode->world;
+            const RE::NiTransform driveWorld = driveRoot->world;
             for (const auto& localTriangle : instance.generatedLocalTrianglesGame) {
                 TriangleData worldTriangle = localTriangle;
                 worldTriangle.applyTransform(driveWorld);
@@ -2199,6 +2244,7 @@ namespace rock
             clearPendingWeaponVisualRebuild();
             clearGeneratedSourceCache();
             clearPendingGeneratedWeaponBuild(world, true);
+            resetVisualSourceUnavailableRetention();
             resetWeaponBodySetGeneration();
             resetWeaponCollisionSettingsCache();
             _driveRebuildRequested.store(false, std::memory_order_release);
@@ -2450,30 +2496,53 @@ namespace rock
                         _cachedWeaponIdentityKey != 0 &&
                         observedIdentityKey == _cachedWeaponIdentityKey &&
                         !identityKeyChanged;
-                    if (hasWeaponBody() &&
+                    RE::NiAVObject* retainedPackageRoot = resolvePackageDriveNode(activeWeaponBodies(), nullptr);
+                    const bool retainedPackageRootStillCurrent = retainedPackageRoot && retainedPackageRoot == weaponNode;
+                    const bool retainCandidate =
+                        hasWeaponBody() &&
                         sameEquippedIdentity &&
                         visualKeyChanged &&
+                        retainedPackageRootStillCurrent &&
                         !settingsChanged &&
-                        !driveRequestedRebuild) {
+                        !driveRequestedRebuild;
+                    const int visualSourceMissRetainFrameLimit = (std::max)(1, requiredStableFrames);
+                    if (retainCandidate &&
+                        canRetainCurrentWeaponBodiesForVisualSourceMiss(observedIdentityKey, weaponNode, visualSourceMissRetainFrameLimit)) {
                         performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildVisualSourceUnavailableRetained);
                         /*
                          * The visible tree can briefly report no extractable
-                         * TriShapes while the same equipped weapon identity is
-                         * still live. Keep the current body set through that
-                         * transient miss; actual identity/settings/drive changes
-                         * still fall through and destroy stale collision.
+                         * TriShapes while the same equipped weapon identity and
+                         * package root are still live. Keep the current body set
+                         * only for a bounded window; actual identity/root,
+                         * settings, or drive changes still fall through and
+                         * destroy stale collision.
                          */
                         ROCK_LOG_SAMPLE_INFO(Weapon,
                             g_rockConfig.rockLogSampleMilliseconds,
-                            "Generated weapon mesh collision unavailable for same equipped identity - retaining current bodies cachedKey={:016X} observedKey={:016X} visualKey={:016X} bodies={}",
+                            "Generated weapon mesh collision unavailable for same equipped identity - retaining current bodies cachedKey={:016X} observedKey={:016X} visualKey={:016X} bodies={} retainFrame={}/{}",
                             _cachedWeaponKey,
                             observedKey,
                             observedVisualKey,
-                            getWeaponBodyCount());
+                            getWeaponBodyCount(),
+                            _visualSourceUnavailableRetainFrames,
+                            visualSourceMissRetainFrameLimit);
                         clearPendingGeneratedWeaponBuild(world, true);
                         clearPendingWeaponVisualRebuild();
                         syncDominantHandCollisionState();
                         return;
+                    }
+                    if (retainCandidate) {
+                        performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildVisualSourceUnavailableRetainExpired);
+                        ROCK_LOG_SAMPLE_WARN(Weapon,
+                            g_rockConfig.rockLogSampleMilliseconds,
+                            "Generated weapon mesh collision same-identity retain window expired cachedKey={:016X} observedKey={:016X} visualKey={:016X} retainFrames={} limit={} - destroying stale bodies",
+                            _cachedWeaponKey,
+                            observedKey,
+                            observedVisualKey,
+                            _visualSourceUnavailableRetainFrames,
+                            visualSourceMissRetainFrameLimit);
+                    } else {
+                        resetVisualSourceUnavailableRetention();
                     }
 
                     if (hasWeaponBody()) {
@@ -2488,9 +2557,12 @@ namespace rock
                     clearGeneratedSourceCompletenessTracking();
                     clearPendingWeaponVisualRebuild();
                     clearGeneratedSourceCache();
+                    resetVisualSourceUnavailableRetention();
                     clearPendingGeneratedWeaponBuild(world, true);
                     return;
                 }
+
+                resetVisualSourceUnavailableRetention();
 
                 const bool replacingExisting = hasWeaponBody();
                 auto& targetBank = replacingExisting ? inactiveWeaponBodies() : activeWeaponBodies();
@@ -3298,6 +3370,7 @@ namespace rock
         clearPendingWeaponVisualRebuild();
         clearGeneratedSourceCache();
         clearPendingGeneratedWeaponBuild(world, true);
+        resetVisualSourceUnavailableRetention();
         resetWeaponCollisionSettingsCache();
         _driveRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
@@ -3488,11 +3561,14 @@ namespace rock
         }
 
         auto& bank = activeWeaponBodies();
-        RE::NiAVObject* packageDriveNode = resolvePackageDriveNode(bank, fallbackWeaponNode);
+        RE::NiAVObject* cachedPackageDriveNode = resolvePackageDriveNode(bank, nullptr);
+        RE::NiAVObject* packageDriveNode = fallbackWeaponNode ? fallbackWeaponNode : cachedPackageDriveNode;
         if (!packageDriveNode) {
             return;
         }
         const RE::NiTransform packageWorld = packageDriveNode->world;
+        const bool packageRootDiffersFromCached = cachedPackageDriveNode && cachedPackageDriveNode != packageDriveNode;
+        bool updatedPublishedRoots = false;
 
         for (std::size_t i = 0; i < bank.size(); ++i) {
             auto& instance = bank[i];
@@ -3503,15 +3579,31 @@ namespace rock
             if (instance.driveNode && instance.driveNode != packageDriveNode) {
                 ROCK_LOG_SAMPLE_WARN(Weapon,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "Generated weapon package drive root mismatch bodyId={} bodyRoot='{}' packageRoot='{}' sourceRoot='{}' — using package root for motion",
+                    "Generated weapon package drive root mismatch bodyId={} bodyRoot=0x{:X} packageRoot='{}' packageRootAddr=0x{:X} sourceRoot='{}' - using current package root for motion",
                     instance.body.getBodyId().value,
-                    safeNodeName(instance.driveNode),
+                    static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(instance.driveNode)),
                     safeNodeName(packageDriveNode),
+                    static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(packageDriveNode)),
                     instance.sourceRootName);
+            }
+
+            if (packageRootDiffersFromCached && instance.publicationIndex < MAX_WEAPON_BODIES) {
+                if (!updatedPublishedRoots) {
+                    beginWeaponBodyPublication();
+                    updatedPublishedRoots = true;
+                }
+                _weaponBodyInteractionRootsAtomic[instance.publicationIndex].store(reinterpret_cast<std::uintptr_t>(packageDriveNode), std::memory_order_release);
+                if (instance.driveNode && instance.driveNode != packageDriveNode) {
+                    _weaponBodySourceRootsAtomic[instance.publicationIndex].store(0, std::memory_order_release);
+                }
             }
 
             const RE::NiTransform generatedTransform = makeGeneratedBodyWorldTransform(packageWorld, instance.generatedLocalCenterGame);
             queueBodyTarget(instance, generatedTransform, sourceDeltaSeconds);
+        }
+
+        if (updatedPublishedRoots) {
+            endWeaponBodyPublication();
         }
 
     }

@@ -132,6 +132,8 @@ namespace rock::performance_profiler
                 return "weaponRebuildVisualStableWait";
             case Counter::WeaponRebuildVisualSourceUnavailableRetained:
                 return "weaponRebuildVisualSourceUnavailableRetained";
+            case Counter::WeaponRebuildVisualSourceUnavailableRetainExpired:
+                return "weaponRebuildVisualSourceUnavailableRetainExpired";
             case Counter::WeaponRebuildReasonSettingsChanged:
                 return "weaponRebuildReasonSettingsChanged";
             case Counter::WeaponRebuildReasonDriveRequested:
