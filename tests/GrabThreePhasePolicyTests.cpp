@@ -182,5 +182,101 @@ int main()
     ok &= expectFalse("behind palm remains rejected even with authority evidence", behindPalm.accepted);
     ok &= expectReason("behind palm reason", behindPalm.reason, "behindPalm");
 
+    const auto normalCloseSeat = evaluatePullCatchSeatSafety(PullCatchSeatSafetyInput{
+        .grabbedFromPullCatch = false,
+        .usingPinchPocket = false,
+        .capturePhase = AcquisitionPhase::TouchHeld,
+        .pocketValid = true,
+        .pivotAuthorityNormalTrusted = false,
+        .pivotAuthorityPositionOnly = true,
+        .gripToPocketDistanceGameUnits = 1.0f,
+        .signedPalmDistanceGameUnits = 1.0f,
+        .pulledAdjustDistanceGameUnits = 10.5f,
+        .palmNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
+        .gripNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
+    });
+    ok &= expectTrue("normal close grabs ignore pull-catch seat gate", normalCloseSeat.allowImmediateTouchHeld);
+    ok &= expectFalse("normal close grabs do not get pulled adjust", normalCloseSeat.allowPulledAdjust);
+    ok &= expectReason("normal close seat reason", normalCloseSeat.reason, "notPullCatch");
+
+    const auto pinchPullSeat = evaluatePullCatchSeatSafety(PullCatchSeatSafetyInput{
+        .grabbedFromPullCatch = true,
+        .usingPinchPocket = true,
+        .capturePhase = AcquisitionPhase::TouchHeld,
+        .pocketValid = true,
+        .pivotAuthorityNormalTrusted = false,
+        .gripToPocketDistanceGameUnits = 1.0f,
+        .signedPalmDistanceGameUnits = 1.0f,
+        .pulledAdjustDistanceGameUnits = 10.5f,
+        .palmNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
+        .gripNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
+    });
+    ok &= expectTrue("pinch pocket pull-catch keeps immediate touch-held", pinchPullSeat.allowImmediateTouchHeld);
+    ok &= expectFalse("pinch pocket pull-catch never uses pulled adjust", pinchPullSeat.allowPulledAdjust);
+    ok &= expectReason("pinch pocket seat reason", pinchPullSeat.reason, "pinchPocket");
+
+    const auto unsafeNormalPullSeat = evaluatePullCatchSeatSafety(PullCatchSeatSafetyInput{
+        .grabbedFromPullCatch = true,
+        .usingPinchPocket = false,
+        .capturePhase = AcquisitionPhase::TouchHeld,
+        .pocketValid = true,
+        .stablePocketTouchContact = true,
+        .pivotAuthorityNormalTrusted = true,
+        .pivotAuthorityPositionOnly = false,
+        .gripToPocketDistanceGameUnits = 3.0f,
+        .signedPalmDistanceGameUnits = 1.0f,
+        .behindPalmToleranceGameUnits = 1.5f,
+        .touchAcquireDistanceGameUnits = 4.0f,
+        .pocketRadiusGameUnits = 9.0f,
+        .pulledAdjustDistanceGameUnits = 10.5f,
+        .palmNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
+        .gripNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
+    });
+    ok &= expectFalse("unsafe pull-catch normal defers touch-held", unsafeNormalPullSeat.allowImmediateTouchHeld);
+    ok &= expectTrue("unsafe pull-catch normal requires settled visual relation", unsafeNormalPullSeat.requireSettledVisualRelation);
+    ok &= expectFalse("unsafe pull-catch normal disables pulled adjust", unsafeNormalPullSeat.allowPulledAdjust);
+    ok &= expectReason("unsafe pull-catch normal reason", unsafeNormalPullSeat.reason, "pullCatchSeatNormalWrongSide");
+
+    const auto safeStablePullSeat = evaluatePullCatchSeatSafety(PullCatchSeatSafetyInput{
+        .grabbedFromPullCatch = true,
+        .usingPinchPocket = false,
+        .capturePhase = AcquisitionPhase::TouchHeld,
+        .pocketValid = true,
+        .stablePocketTouchContact = true,
+        .pivotAuthorityNormalTrusted = true,
+        .pivotAuthorityPositionOnly = false,
+        .gripToPocketDistanceGameUnits = 6.0f,
+        .signedPalmDistanceGameUnits = 1.0f,
+        .behindPalmToleranceGameUnits = 1.5f,
+        .touchAcquireDistanceGameUnits = 4.0f,
+        .pocketRadiusGameUnits = 9.0f,
+        .pulledAdjustDistanceGameUnits = 10.5f,
+        .palmNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
+        .gripNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, -1.0f },
+    });
+    ok &= expectTrue("safe stable pull-catch preserves immediate touch-held", safeStablePullSeat.allowImmediateTouchHeld);
+    ok &= expectFalse("safe stable pull-catch does not require settled relation", safeStablePullSeat.requireSettledVisualRelation);
+    ok &= expectTrue("safe stable pull-catch allows pulled adjust", safeStablePullSeat.allowPulledAdjust);
+    ok &= expectNear("safe stable pull-catch applies configured adjust", safeStablePullSeat.adjustDistanceGameUnits, 10.5f, 0.001f);
+    ok &= expectNear("safe stable pull-catch normal faces palm", safeStablePullSeat.normalDotPalm, -1.0f, 0.001f);
+    ok &= expectReason("safe stable pull-catch reason", safeStablePullSeat.reason, "pullCatchSeatSafe");
+
+    const auto behindPullSeat = evaluatePullCatchSeatSafety(PullCatchSeatSafetyInput{
+        .grabbedFromPullCatch = true,
+        .capturePhase = AcquisitionPhase::TouchHeld,
+        .pocketValid = true,
+        .stablePocketTouchContact = true,
+        .pivotAuthorityNormalTrusted = true,
+        .gripToPocketDistanceGameUnits = 3.0f,
+        .signedPalmDistanceGameUnits = -2.0f,
+        .behindPalmToleranceGameUnits = 1.0f,
+        .pulledAdjustDistanceGameUnits = 10.5f,
+        .palmNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
+        .gripNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, -1.0f },
+    });
+    ok &= expectFalse("behind-palm pull-catch defers touch-held", behindPullSeat.allowImmediateTouchHeld);
+    ok &= expectFalse("behind-palm pull-catch disables pulled adjust", behindPullSeat.allowPulledAdjust);
+    ok &= expectReason("behind-palm pull-catch reason", behindPullSeat.reason, "pullCatchSeatBehindPalm");
+
     return ok ? 0 : 1;
 }

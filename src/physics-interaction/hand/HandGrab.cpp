@@ -8550,6 +8550,44 @@ namespace rock
                         _grabObjectGripAtGrab.fallbackReason = grabFallbackReason;
                     }
 
+                    const RE::NiPoint3 finalGripToPocketVector =
+                        pocket.valid ? (grabGripPoint - pocket.palmCenterWorld) : RE::NiPoint3{};
+                    const float finalGripToPocketDistance =
+                        pocket.valid ?
+                            std::sqrt(finalGripToPocketVector.x * finalGripToPocketVector.x +
+                                      finalGripToPocketVector.y * finalGripToPocketVector.y +
+                                      finalGripToPocketVector.z * finalGripToPocketVector.z) :
+                            std::numeric_limits<float>::max();
+                    const float finalSignedPalmDistance =
+                        pocket.valid ? grab_three_phase::dot(finalGripToPocketVector, pocket.palmNormalWorld) : 0.0f;
+                    const auto pullCatchSeatSafety =
+                        grab_three_phase::evaluatePullCatchSeatSafety(grab_three_phase::PullCatchSeatSafetyInput{
+                            .grabbedFromPullCatch = grabbedFromPullCatch,
+                            .usingPinchPocket = usingPinchPocket,
+                            .capturePhase = _grabAcquisitionPhase,
+                            .pocketValid = pocket.valid,
+                            .stablePocketTouchContact = hasStablePocketTouchContact,
+                            .pivotAuthorityNormalTrusted = pivotAuthorityNormalTrusted,
+                            .pivotAuthorityPositionOnly = pivotAuthorityPositionOnly,
+                            .gripToPocketDistanceGameUnits = finalGripToPocketDistance,
+                            .signedPalmDistanceGameUnits = finalSignedPalmDistance,
+                            .behindPalmToleranceGameUnits = g_rockConfig.rockGrabSurfaceBehindPalmToleranceGameUnits,
+                            .touchAcquireDistanceGameUnits = g_rockConfig.rockGrabTouchAcquireDistanceGameUnits,
+                            .pocketRadiusGameUnits = pocket.valid ? pocket.pocketRadiusGameUnits : g_rockConfig.rockGrabPocketRadiusGameUnits,
+                            .pulledAdjustDistanceGameUnits = g_rockConfig.rockPulledGrabHandAdjustDistanceGameUnits,
+                            .palmNormalWorld = pocket.valid ? pocket.palmNormalWorld : RE::NiPoint3{},
+                            .gripNormalWorld = gripNormalWorld,
+                        });
+                    if (grabbedFromPullCatch &&
+                        !usingPinchPocket &&
+                        _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld &&
+                        !pullCatchSeatSafety.allowImmediateTouchHeld) {
+                        _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::NearConverging;
+                        captureReason = pullCatchSeatSafety.reason;
+                        grabFallbackReason = captureReason;
+                        _grabObjectGripAtGrab.fallbackReason = captureReason;
+                    }
+
                     selectedGripPointLocal = transform_math::worldPointToLocal(objectWorldTransform, grabGripPoint);
                     selectedPivotBBodyLocalGame = transform_math::worldPointToLocal(grabBodyWorldAtGrab, grabGripPoint);
                     RE::NiPoint3 supportFrameNormalWorld = normalizeOrZero(gripNormalWorld);
@@ -8610,10 +8648,11 @@ namespace rock
                     _grabFrame.gripSupportPivotShiftGameUnits = gripSupportRuntime.model.pivotShiftGameUnits;
                     _grabFrame.requiresSettledVisualHandRelation = usingPinchPocket ?
                         false :
-                        pivotAuthorityRequiresSettledVisualRelation(
-                            _grabFrame.pivotAuthoritySource,
-                            _grabFrame.pivotAuthorityPositionOnly,
-                            _grabAcquisitionPhase);
+                        (pullCatchSeatSafety.requireSettledVisualRelation ||
+                            pivotAuthorityRequiresSettledVisualRelation(
+                                _grabFrame.pivotAuthoritySource,
+                                _grabFrame.pivotAuthorityPositionOnly,
+                                _grabAcquisitionPhase));
                     _grabFrame.fingerPoseAimValid = true;
                     _grabFrame.fingerPoseAimReason = usingPinchPocket ? "pinchPocketThumbIndexTargets" : "rockPointToPalmEvidence";
                     if (_grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::NearConverging ||
@@ -8643,10 +8682,7 @@ namespace rock
                         grabPivotAWorld,
                         grabGripPoint);
                     desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
-                    const float pulledGrabAdjust =
-                        (grabbedFromPullCatch && !usingPinchPocket) ?
-                            (std::max)(0.0f, g_rockConfig.rockPulledGrabHandAdjustDistanceGameUnits) :
-                            0.0f;
+                    const float pulledGrabAdjust = pullCatchSeatSafety.adjustDistanceGameUnits;
                     if (pulledGrabAdjust > 0.0f) {
                         desiredObjectWorld.translate = desiredObjectWorld.translate + gripNormalWorld * pulledGrabAdjust;
                         desiredBodyWorld.translate = desiredBodyWorld.translate + gripNormalWorld * pulledGrabAdjust;
@@ -8661,7 +8697,7 @@ namespace rock
                         "{} THREE-PHASE GRAB CAPTURE: relation={} seat={} rotation={} phase={} reason={} touchContact={} stableTouch={} pocket=({:.1f},{:.1f},{:.1f}) "
                         "palm=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) seed=({:.1f},{:.1f},{:.1f}) "
                         "grip=({:.1f},{:.1f},{:.1f}) gripLocal=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) dist={:.1f} signedPalm={:.1f} "
-                        "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} support={} supportPivot={} supportConfidence={:.2f} supportSpan={:.2f} supportShift={:.2f} supportReason={} supportSamples={} supportMeshHits={} supportRejectOwner={} supportRejectDistance={} settledVisualRequired={} pulledAdjust={:.1f} inset={:.2f} insetSource={}",
+                        "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} support={} supportPivot={} supportConfidence={:.2f} supportSpan={:.2f} supportShift={:.2f} supportReason={} supportSamples={} supportMeshHits={} supportRejectOwner={} supportRejectDistance={} settledVisualRequired={} pullSeatSafety={} pullSeatDot={:.3f} pullSeatSigned={:.1f} pullSeatDist={:.1f} pulledAdjustAllowed={} pulledAdjust={:.1f} inset={:.2f} insetSource={}",
                         handName(),
                         relationMode,
                         grabSeatModeName(_grabFrame.seatMode),
@@ -8691,8 +8727,8 @@ namespace rock
                         selectedPivotBBodyLocalGame.x,
                         selectedPivotBBodyLocalGame.y,
                         selectedPivotBBodyLocalGame.z,
-                        usingPinchPocket ? pinchPocketCandidate.pocketToSurfaceDistanceGameUnits : phaseDecision.gripToPocketDistanceGameUnits,
-                        usingPinchPocket ? 0.0f : phaseDecision.signedPalmDistanceGameUnits,
+                        usingPinchPocket ? pinchPocketCandidate.pocketToSurfaceDistanceGameUnits : finalGripToPocketDistance,
+                        usingPinchPocket ? 0.0f : finalSignedPalmDistance,
                         fullHeldAuthorityAtCapture ? "yes" : "no",
                         _grabFrame.pivotAuthoritySource,
                         _grabFrame.pivotAuthorityPositionOnly ? "yes" : "no",
@@ -8708,6 +8744,11 @@ namespace rock
                         gripSupportRuntime.rejectedOwnerCount,
                         gripSupportRuntime.rejectedDistanceCount,
                         _grabFrame.requiresSettledVisualHandRelation ? "yes" : "no",
+                        pullCatchSeatSafety.reason,
+                        pullCatchSeatSafety.normalDotPalm,
+                        finalSignedPalmDistance,
+                        finalGripToPocketDistance,
+                        pullCatchSeatSafety.allowPulledAdjust ? "yes" : "no",
                         pulledGrabAdjust,
                         gripArea.seedInsetGameUnits,
                         gripArea.fallbackReason);

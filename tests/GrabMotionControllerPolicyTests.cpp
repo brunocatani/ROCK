@@ -367,6 +367,26 @@ int main()
         seatedContactSupportOnly.reason,
         "seatedPalmPocketPromotionContactSofteningKeepFrozen");
 
+    const auto seatedTimeoutPromotion = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
+        .weakMeshStart = true,
+        .hasSeatedCandidate = true,
+        .timedOutInsidePocket = true,
+        .motorContactSoftening = false,
+        .candidateNormalTrusted = true,
+        .supportPatchValid = true,
+        .supportPatchNormalTrusted = true,
+        .currentContactPatchSampleCount = 1,
+        .supportPatchSampleCount = 5,
+        .candidateLocalDeltaGameUnits = 2.0f,
+        .immediateMaxLocalDeltaGameUnits = 4.0f,
+        .lerpMaxLocalDeltaGameUnits = 12.0f,
+    });
+    ok &= expectTrue("seated timeout promotion accepts safe settled pivot", seatedTimeoutPromotion.promotePivot);
+    ok &= expectTrue("seated timeout promotion completes safe settled relation", seatedTimeoutPromotion.completeSeatedRelation);
+    ok &= expectReason("seated timeout promotion reason",
+        seatedTimeoutPromotion.reason,
+        "seatedPalmPocketPromotionImmediate");
+
     const auto seatedLargeDeltaSupportOnly = evaluateSeatedPalmPocketPromotion(SeatedPalmPocketPromotionInput{
         .weakMeshStart = true,
         .hasSeatedCandidate = true,

@@ -83,6 +83,17 @@ namespace rock::grab_three_phase
         return true;
     }
 
+    inline RE::NiPoint3 normalizeOrZero(const RE::NiPoint3& value)
+    {
+        const float lenSq = lengthSquared(value);
+        if (!std::isfinite(lenSq) || lenSq <= 0.000001f) {
+            return RE::NiPoint3{};
+        }
+
+        const float invLen = 1.0f / std::sqrt(lenSq);
+        return RE::NiPoint3{ value.x * invLen, value.y * invLen, value.z * invLen };
+    }
+
     inline RE::NiPoint3 normalizeOrFallback(const RE::NiPoint3& value, const RE::NiPoint3& fallback)
     {
         const float lenSq = lengthSquared(value);
@@ -343,6 +354,118 @@ namespace rock::grab_three_phase
         result.phase = AcquisitionPhase::GravityPulling;
         result.reason = input.isFarSelection ? "farSelection" : "outsideNearEnvelope";
         return result;
+    }
+
+    struct PullCatchSeatSafetyInput
+    {
+        bool grabbedFromPullCatch = false;
+        bool usingPinchPocket = false;
+        AcquisitionPhase capturePhase = AcquisitionPhase::Idle;
+        bool pocketValid = false;
+        bool stablePocketTouchContact = false;
+        bool pivotAuthorityNormalTrusted = false;
+        bool pivotAuthorityPositionOnly = false;
+        float gripToPocketDistanceGameUnits = std::numeric_limits<float>::max();
+        float signedPalmDistanceGameUnits = 0.0f;
+        float behindPalmToleranceGameUnits = 1.5f;
+        float touchAcquireDistanceGameUnits = 4.0f;
+        float pocketRadiusGameUnits = 9.0f;
+        float pulledAdjustDistanceGameUnits = 0.0f;
+        RE::NiPoint3 palmNormalWorld{};
+        RE::NiPoint3 gripNormalWorld{};
+    };
+
+    struct PullCatchSeatSafetyDecision
+    {
+        bool allowImmediateTouchHeld = true;
+        bool requireSettledVisualRelation = false;
+        bool allowPulledAdjust = false;
+        float adjustDistanceGameUnits = 0.0f;
+        float normalDotPalm = 0.0f;
+        const char* reason = "notPullCatch";
+    };
+
+    inline PullCatchSeatSafetyDecision evaluatePullCatchSeatSafety(const PullCatchSeatSafetyInput& input)
+    {
+        PullCatchSeatSafetyDecision decision{};
+        if (!input.grabbedFromPullCatch) {
+            decision.reason = "notPullCatch";
+            return decision;
+        }
+        if (input.usingPinchPocket) {
+            decision.reason = "pinchPocket";
+            return decision;
+        }
+
+        decision.allowImmediateTouchHeld = false;
+        decision.requireSettledVisualRelation = true;
+
+        const RE::NiPoint3 palmNormal = normalizeOrZero(input.palmNormalWorld);
+        const RE::NiPoint3 gripNormal = normalizeOrZero(input.gripNormalWorld);
+        const bool hasPalmNormal = lengthSquared(palmNormal) > 0.000001f;
+        const bool hasGripNormal = lengthSquared(gripNormal) > 0.000001f;
+        decision.normalDotPalm = hasPalmNormal && hasGripNormal ? dot(gripNormal, palmNormal) : 0.0f;
+
+        if (!input.pocketValid ||
+            !std::isfinite(input.gripToPocketDistanceGameUnits) ||
+            !std::isfinite(input.signedPalmDistanceGameUnits) ||
+            !hasPalmNormal ||
+            !hasGripNormal) {
+            decision.reason = "pullCatchSeatMissingFrame";
+            return decision;
+        }
+
+        const float behindTolerance =
+            (std::max)(0.0f, std::isfinite(input.behindPalmToleranceGameUnits) ? input.behindPalmToleranceGameUnits : 1.5f);
+        if (input.signedPalmDistanceGameUnits < -behindTolerance) {
+            decision.reason = "pullCatchSeatBehindPalm";
+            return decision;
+        }
+
+        const float touchDistance =
+            (std::max)(0.1f, std::isfinite(input.touchAcquireDistanceGameUnits) ? input.touchAcquireDistanceGameUnits : 4.0f);
+        const float pocketRadius =
+            (std::max)(touchDistance, std::isfinite(input.pocketRadiusGameUnits) ? input.pocketRadiusGameUnits : 9.0f);
+        if (input.gripToPocketDistanceGameUnits > pocketRadius) {
+            decision.reason = "pullCatchSeatOutsidePocket";
+            return decision;
+        }
+
+        const bool inTouchRange = input.gripToPocketDistanceGameUnits <= touchDistance;
+        const bool contactInsidePocket = input.stablePocketTouchContact && input.gripToPocketDistanceGameUnits <= pocketRadius;
+        if (!inTouchRange && !contactInsidePocket) {
+            decision.reason = "pullCatchSeatAwaitingTouch";
+            return decision;
+        }
+
+        if (input.capturePhase != AcquisitionPhase::TouchHeld) {
+            decision.reason = "pullCatchSeatAlreadyConverging";
+            return decision;
+        }
+
+        if (input.pivotAuthorityPositionOnly) {
+            decision.reason = "pullCatchSeatPositionOnly";
+            return decision;
+        }
+        if (!input.pivotAuthorityNormalTrusted) {
+            decision.reason = "pullCatchSeatNormalUntrusted";
+            return decision;
+        }
+
+        constexpr float kMaxPalmFacingNormalDot = -0.10f;
+        if (decision.normalDotPalm > kMaxPalmFacingNormalDot) {
+            decision.reason = "pullCatchSeatNormalWrongSide";
+            return decision;
+        }
+
+        decision.allowImmediateTouchHeld = true;
+        decision.requireSettledVisualRelation = false;
+        decision.allowPulledAdjust =
+            std::isfinite(input.pulledAdjustDistanceGameUnits) && input.pulledAdjustDistanceGameUnits > 0.0f;
+        decision.adjustDistanceGameUnits =
+            decision.allowPulledAdjust ? (std::max)(0.0f, input.pulledAdjustDistanceGameUnits) : 0.0f;
+        decision.reason = "pullCatchSeatSafe";
+        return decision;
     }
 
     inline float computeAcquisitionVisualEnvelopeGameUnits(float touchDistanceGameUnits, float nearConvergeDistanceGameUnits, float configuredVisualStartDistanceGameUnits)
