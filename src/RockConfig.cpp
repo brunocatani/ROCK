@@ -1598,7 +1598,7 @@ namespace rock
             rockGrabPinchCompactMaxExtentGameUnits,
             grab_pinch_pocket_policy::kDefaultCompactMaxExtentGameUnits,
             1.0f,
-            80.0f);
+            grab_pinch_pocket_policy::kDefaultCompactMaxExtentGameUnits);
         rockGrabPinchThinRodMaxLengthGameUnits = readClampedFloat(ini,
             SECTION,
             "fGrabPinchThinRodMaxLengthGameUnits",

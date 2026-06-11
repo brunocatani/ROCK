@@ -10,7 +10,7 @@
 
 namespace rock::grab_pinch_pocket_policy
 {
-    inline constexpr float kDefaultCompactMaxExtentGameUnits = 10.0f;
+    inline constexpr float kDefaultCompactMaxExtentGameUnits = 8.0f;
     inline constexpr float kDefaultThinRodMaxLengthGameUnits = 18.0f;
     inline constexpr float kDefaultThinRodMaxCrossSectionGameUnits = 4.0f;
     inline constexpr float kDefaultMaxPocketDistanceGameUnits = 8.0f;

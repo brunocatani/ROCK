@@ -63,6 +63,12 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'sel\.pinchCloseSelecti
     'Pinch-direction selections must fail closed instead of falling through to palm-pocket authority.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'const bool usingPinchPocket = pinchPocketCandidate\.valid && gripArea\.valid' `
     'Grab commit must arbitrate pinch and palm as mutually exclusive seat choices.'
+Require-Text 'src/RockConfig.cpp' 'fGrabPinchCompactMaxExtentGameUnits[\s\S]*grab_pinch_pocket_policy::kDefaultCompactMaxExtentGameUnits,[\s\S]*1\.0f,[\s\S]*grab_pinch_pocket_policy::kDefaultCompactMaxExtentGameUnits' `
+    'Runtime config loading must cap compact pinch extent at the current policy limit.'
+Require-Text 'data/config/ROCK.ini' 'fGrabPinchCompactMaxExtentGameUnits\s*=\s*8\.0' `
+    'Packaged ROCK.ini must default compact pinch extent to 8gu.'
+Require-Text 'data/mod/ROCK_Config/ROCK.ini' 'fGrabPinchCompactMaxExtentGameUnits\s*=\s*8\.0' `
+    'Mod-packaged ROCK.ini must default compact pinch extent to 8gu.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabFrame\.seatMode = usingPinchPocket \? GrabSeatMode::PinchPocket : GrabSeatMode::SupportGroup' `
     'Accepted capture must store the selected seat mode on the grab frame.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'resolveActiveGrabAuthorityPivotAWorld\(\s*const RE::NiTransform& proxyWorldTransform[\s\S]*generatedProxyLocalPointToWorld\(proxyWorldTransform,\s*_grabFrame\.pivotAHandBodyLocalGame\)' `

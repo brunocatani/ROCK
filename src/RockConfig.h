@@ -392,7 +392,7 @@ namespace rock
         int rockGrabOppositionContactMaxAgeFrames = 5;
         bool rockGrabPinchPocketEnabled = true;
         bool rockGrabPinchCloseSelectionEnabled = true;
-        float rockGrabPinchCompactMaxExtentGameUnits = 10.0f;
+        float rockGrabPinchCompactMaxExtentGameUnits = 8.0f;
         float rockGrabPinchThinRodMaxLengthGameUnits = 18.0f;
         float rockGrabPinchThinRodMaxCrossSectionGameUnits = 4.0f;
         float rockGrabPinchMaxPocketDistanceGameUnits = 8.0f;
