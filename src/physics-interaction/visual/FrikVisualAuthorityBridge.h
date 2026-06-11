@@ -1,15 +1,150 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <string_view>
 
 #include "api/FRIKApi.h"
 
 namespace rock::frik_visual_authority
 {
     using Hand = frik::api::FRIKApi::Hand;
+    using HandPoseTagState = frik::api::FRIKApi::HandPoseTagState;
     using HandPoseData = frik::api::FRIKApi::HandPoseData;
     using FingerLocalTransformOverride = frik::api::FRIKApi::FingerLocalTransformOverride;
+
+    namespace detail
+    {
+        constexpr std::size_t kCachedHandPosePublicationCount = 8;
+        constexpr std::size_t kCachedHandPoseTagCapacity = 64;
+
+        struct CachedHandPosePublication
+        {
+            std::array<char, kCachedHandPoseTagCapacity> tag{};
+            std::size_t tagLength = 0;
+            Hand hand = Hand::Left;
+            int priority = 0;
+            HandPoseData pose{};
+            bool valid = false;
+        };
+
+        inline std::array<CachedHandPosePublication, kCachedHandPosePublicationCount> g_cachedHandPosePublications{};
+        inline std::size_t g_nextCachedHandPosePublication = 0;
+
+        [[nodiscard]] inline bool makeCacheableTagView(const char* tag, std::string_view& outTag)
+        {
+            if (!tag) {
+                return false;
+            }
+
+            outTag = std::string_view(tag);
+            return !outTag.empty() && outTag.size() < kCachedHandPoseTagCapacity;
+        }
+
+        [[nodiscard]] inline std::string_view cachedTagView(const CachedHandPosePublication& entry)
+        {
+            return std::string_view(entry.tag.data(), entry.tagLength);
+        }
+
+        [[nodiscard]] inline bool sameFingerPoseData(
+            const frik::api::FRIKApi::FingerPoseData& lhs,
+            const frik::api::FRIKApi::FingerPoseData& rhs)
+        {
+            return lhs.prox == rhs.prox &&
+                   lhs.mid == rhs.mid &&
+                   lhs.dist == rhs.dist &&
+                   lhs.splay == rhs.splay;
+        }
+
+        [[nodiscard]] inline bool sameHandPoseData(const HandPoseData& lhs, const HandPoseData& rhs)
+        {
+            return sameFingerPoseData(lhs.thumb, rhs.thumb) &&
+                   sameFingerPoseData(lhs.index, rhs.index) &&
+                   sameFingerPoseData(lhs.middle, rhs.middle) &&
+                   sameFingerPoseData(lhs.ring, rhs.ring) &&
+                   sameFingerPoseData(lhs.pinky, rhs.pinky) &&
+                   lhs.palmPitch == rhs.palmPitch &&
+                   lhs.palmYaw == rhs.palmYaw;
+        }
+
+        [[nodiscard]] inline CachedHandPosePublication* findCachedHandPosePublication(std::string_view tag, Hand hand)
+        {
+            for (auto& entry : g_cachedHandPosePublications) {
+                if (entry.valid && entry.hand == hand && cachedTagView(entry) == tag) {
+                    return &entry;
+                }
+            }
+            return nullptr;
+        }
+
+        inline void invalidateCachedHandPosePublication(const char* tag, Hand hand)
+        {
+            std::string_view tagView;
+            if (!makeCacheableTagView(tag, tagView)) {
+                return;
+            }
+
+            if (auto* entry = findCachedHandPosePublication(tagView, hand)) {
+                entry->valid = false;
+            }
+        }
+
+        inline void rememberCachedHandPosePublication(std::string_view tag, Hand hand, const HandPoseData& handPose, int priority)
+        {
+            auto* entry = findCachedHandPosePublication(tag, hand);
+            if (!entry) {
+                for (auto& candidate : g_cachedHandPosePublications) {
+                    if (!candidate.valid) {
+                        entry = &candidate;
+                        break;
+                    }
+                }
+            }
+            if (!entry) {
+                entry = &g_cachedHandPosePublications[g_nextCachedHandPosePublication % g_cachedHandPosePublications.size()];
+                ++g_nextCachedHandPosePublication;
+            }
+
+            entry->tag.fill('\0');
+            std::copy(tag.begin(), tag.end(), entry->tag.begin());
+            entry->tagLength = tag.size();
+            entry->hand = hand;
+            entry->priority = priority;
+            entry->pose = handPose;
+            entry->valid = true;
+        }
+
+        [[nodiscard]] inline bool cachedHandPosePublicationStillActive(
+            const frik::api::FRIKApi* frikApi,
+            const char* tag,
+            Hand hand)
+        {
+            return frikApi &&
+                   frikApi->getHandPoseSetTagState &&
+                   frikApi->getHandPoseSetTagState(tag, hand) == HandPoseTagState::Active;
+        }
+
+        [[nodiscard]] inline bool shouldSkipCachedHandPosePublication(
+            const frik::api::FRIKApi* frikApi,
+            const char* tag,
+            Hand hand,
+            const HandPoseData& handPose,
+            int priority,
+            std::string_view& outTagView)
+        {
+            if (!makeCacheableTagView(tag, outTagView)) {
+                return false;
+            }
+
+            const auto* entry = findCachedHandPosePublication(outTagView, hand);
+            return entry &&
+                   entry->priority == priority &&
+                   sameHandPoseData(entry->pose, handPose) &&
+                   cachedHandPosePublicationStillActive(frikApi, tag, hand);
+        }
+    }
 
     [[nodiscard]] inline float finiteOrZero(float value)
     {
@@ -102,6 +237,7 @@ namespace rock::frik_visual_authority
 
     [[nodiscard]] inline bool clearHandPose(const char* tag, Hand hand)
     {
+        detail::invalidateCachedHandPosePublication(tag, hand);
         auto* frikApi = api();
         return frikApi && frikApi->clearHandPose && frikApi->clearHandPose(tag, hand);
     }
@@ -109,7 +245,23 @@ namespace rock::frik_visual_authority
     [[nodiscard]] inline bool setHandPoseCustomWithPriority(const char* tag, Hand hand, const HandPoseData& handPose, int priority)
     {
         auto* frikApi = api();
-        return frikApi && frikApi->setHandPoseCustomWithPriority && frikApi->setHandPoseCustomWithPriority(tag, hand, handPose, priority);
+        if (!frikApi || !frikApi->setHandPoseCustomWithPriority) {
+            detail::invalidateCachedHandPosePublication(tag, hand);
+            return false;
+        }
+
+        std::string_view tagView;
+        if (detail::shouldSkipCachedHandPosePublication(frikApi, tag, hand, handPose, priority, tagView)) {
+            return true;
+        }
+
+        const bool published = frikApi->setHandPoseCustomWithPriority(tag, hand, handPose, priority);
+        if (published && !tagView.empty()) {
+            detail::rememberCachedHandPosePublication(tagView, hand, handPose, priority);
+        } else if (!published) {
+            detail::invalidateCachedHandPosePublication(tag, hand);
+        }
+        return published;
     }
 
     [[nodiscard]] inline bool applyExternalHandWorldTransform(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority)
