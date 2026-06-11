@@ -2072,7 +2072,7 @@ namespace rock
                     }
                 }
             }
-            _weaponCollision.update(hknp, weaponNode, dominantHandBodyId, frame.deltaSeconds);
+            _weaponCollision.update(hknp, weaponNode, dominantHandBodyId, frame.deltaSeconds, runtime.weaponDrawn);
         }
 
         {

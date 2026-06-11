@@ -44,6 +44,16 @@ namespace
         std::printf("%s expected different values\n", label);
         return false;
     }
+
+    bool expectSame(const char* label, std::uint64_t lhs, std::uint64_t rhs)
+    {
+        if (lhs == rhs) {
+            return true;
+        }
+
+        std::printf("%s expected same values\n", label);
+        return false;
+    }
 }
 
 int main()
@@ -120,7 +130,8 @@ int main()
     identity.instanceContentKey = 0x3333;
     identity.displayName = "Test Weapon";
     const std::uint64_t generationKey = makeEquippedWeaponGenerationKey(0x4444, identity);
-    ok &= expectNonZero("equipped visual and identity create generation key", generationKey);
+    ok &= expectNonZero("equipped identity creates generation key", generationKey);
+    ok &= expectSame("visual-only witness changes do not change generation key", generationKey, makeEquippedWeaponGenerationKey(0x5555, identity));
     identity.instanceContentKey = 0x3334;
     ok &= expectDifferent("generation key changes with equipped instance content", generationKey, makeEquippedWeaponGenerationKey(0x4444, identity));
 

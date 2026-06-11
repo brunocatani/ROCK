@@ -65,7 +65,7 @@ namespace rock
 
         void shutdown();
 
-        void update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, RE::hknpBodyId dominantHandBodyId, float dt);
+        void update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, RE::hknpBodyId dominantHandBodyId, float dt, bool weaponDrawn);
 
         bool hasWeaponBody() const;
 
@@ -270,14 +270,11 @@ namespace rock
             std::vector<GeneratedHullSource> sources,
             const weapon_generated_source_completeness_policy::GeneratedSourceCompleteness& summary);
         bool advancePendingGeneratedWeaponBuild(RE::hknpWorld* world);
-        bool pendingGeneratedWeaponBuildMatches(std::uint64_t equippedKey, std::uint64_t visualKey) const;
+        bool pendingGeneratedWeaponBuildMatches(std::uint64_t equippedKey) const;
         void resetWeaponCollisionSettingsCache();
 
-        std::uint64_t getEquippedWeaponKey(
-            RE::NiAVObject* weaponNode,
-            WeaponVisualKeyStats& stats,
-            std::uint64_t* outVisualKey = nullptr,
-            std::uint64_t* outIdentityKey = nullptr) const;
+        std::uint64_t getEquippedWeaponIdentityKey(std::uint64_t* outIdentityKey = nullptr) const;
+        std::uint64_t getWeaponVisualCompositionKey(RE::NiAVObject* weaponNode, WeaponVisualKeyStats& stats) const;
 
         void maybeDumpWeaponAnimNodeDiagnostics(RE::NiAVObject* updateWeaponNode, std::uint64_t observedKey);
 

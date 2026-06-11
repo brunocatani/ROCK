@@ -1014,11 +1014,6 @@ namespace rock
             return identity;
         }
 
-        std::uint64_t makeEquippedWeaponIdentityKey(const weapon_generation_identity_policy::EquippedWeaponGenerationIdentity& identity)
-        {
-            return weapon_generation_identity_policy::makeEquippedWeaponGenerationKey(0, identity);
-        }
-
         GeneratedPointCloudClusterSet splitGeneratedWeaponPointCloudForCollision(const std::vector<RE::NiPoint3>& localPoints)
         {
             GeneratedPointCloudClusterSet result{};
@@ -1617,11 +1612,10 @@ namespace rock
         return true;
     }
 
-    bool WeaponCollision::pendingGeneratedWeaponBuildMatches(std::uint64_t equippedKey, std::uint64_t visualKey) const
+    bool WeaponCollision::pendingGeneratedWeaponBuildMatches(std::uint64_t equippedKey) const
     {
         return _pendingGeneratedWeaponBuild.active &&
                _pendingGeneratedWeaponBuild.equippedKey == equippedKey &&
-               _pendingGeneratedWeaponBuild.visualKey == visualKey &&
                std::abs(_pendingGeneratedWeaponBuild.convexRadius - g_rockConfig.rockWeaponCollisionConvexRadius) <= 0.00001f &&
                std::abs(_pendingGeneratedWeaponBuild.pointDedupGrid - g_rockConfig.rockWeaponCollisionPointDedupGrid) <= 0.00001f &&
                _pendingGeneratedWeaponBuild.supportFitTargetPoints == g_rockConfig.rockWeaponCollisionSupportFitTargetPoints &&
@@ -2232,7 +2226,7 @@ namespace rock
     }
 
 
-    void WeaponCollision::update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, RE::hknpBodyId dominantHandBodyId, float dt)
+    void WeaponCollision::update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, RE::hknpBodyId dominantHandBodyId, float dt, bool weaponDrawn)
     {
         (void)dt;
 
@@ -2286,9 +2280,13 @@ namespace rock
             clearCurrentWeaponState();
         }
 
-        if (!weaponNode) {
+        std::uint64_t observedIdentityKey = 0;
+        const std::uint64_t observedKey = getEquippedWeaponIdentityKey(&observedIdentityKey);
+        if (!weaponDrawn || observedKey == 0) {
             if (hasWeaponBody()) {
-                ROCK_LOG_INFO(Weapon, "Weapon visual node absent - destroying generated weapon bodies");
+                ROCK_LOG_INFO(Weapon,
+                    "{} - destroying generated weapon bodies",
+                    weaponDrawn ? "Weapon identity unavailable" : "Weapon no longer drawn");
                 destroyWeaponBody(world);
             } else if (_dominantHandDisabled) {
                 enableDominantHandCollision(world);
@@ -2297,15 +2295,10 @@ namespace rock
             return;
         }
 
-        WeaponVisualKeyStats visualKeyStats{};
-        std::uint64_t observedVisualKey = 0;
-        std::uint64_t observedIdentityKey = 0;
-        const std::uint64_t observedKey = getEquippedWeaponKey(weaponNode, visualKeyStats, &observedVisualKey, &observedIdentityKey);
         const bool settingsChanged = weaponCollisionSettingsChanged();
         const bool driveRequestedRebuild = _driveRebuildRequested.exchange(false, std::memory_order_acq_rel);
         const bool keyChanged = observedKey != 0 && observedKey != _cachedWeaponKey;
         const bool missingBodies = observedKey != 0 && !hasWeaponBody();
-        const bool visualKeyChanged = observedVisualKey != 0 && observedVisualKey != _cachedWeaponVisualKey;
         const bool identityKeyChanged = observedIdentityKey != 0 && observedIdentityKey != _cachedWeaponIdentityKey;
         bool rebuildRequired = driveRequestedRebuild || settingsChanged || keyChanged || missingBodies;
         bool rebuildDiagnosticsRecorded = false;
@@ -2326,12 +2319,7 @@ namespace rock
             }
             if (keyChanged && _cachedWeaponKey != 0) {
                 performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildReasonKeyChanged);
-
-                if (visualKeyChanged && identityKeyChanged) {
-                    performance_profiler::addCounter(performance_profiler::Counter::WeaponKeyChangeVisualAndIdentity);
-                } else if (visualKeyChanged) {
-                    performance_profiler::addCounter(performance_profiler::Counter::WeaponKeyChangeVisualOnly);
-                } else if (identityKeyChanged) {
+                if (identityKeyChanged) {
                     performance_profiler::addCounter(performance_profiler::Counter::WeaponKeyChangeIdentityOnly);
                 }
             }
@@ -2348,25 +2336,15 @@ namespace rock
                 observedKey);
         }
 
-        if (observedKey == 0) {
-            if (hasWeaponBody()) {
-                ROCK_LOG_INFO(Weapon, "Weapon identity unavailable - destroying generated weapon bodies");
-                destroyWeaponBody(world);
-            } else if (_dominantHandDisabled) {
-                enableDominantHandCollision(world);
-            }
-            clearCurrentWeaponState();
-            return;
-        }
-
         if (_pendingGeneratedWeaponBuild.active) {
-            if (!pendingGeneratedWeaponBuildMatches(observedKey, observedVisualKey)) {
+            const bool pendingInvalidated = driveRequestedRebuild || !pendingGeneratedWeaponBuildMatches(observedKey);
+            if (pendingInvalidated) {
                 ROCK_LOG_INFO(Weapon,
-                    "Generated weapon staged create cancelled: pendingKey={:016X} observedKey={:016X} pendingVisual={:016X} observedVisual={:016X}",
+                    "Generated weapon staged create cancelled: pendingKey={:016X} observedKey={:016X} pendingVisual={:016X} driveRebuild={}",
                     _pendingGeneratedWeaponBuild.equippedKey,
                     observedKey,
                     _pendingGeneratedWeaponBuild.visualKey,
-                    observedVisualKey);
+                    driveRequestedRebuild ? "yes" : "no");
                 performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildCanceled);
                 clearPendingGeneratedWeaponBuild(world, true);
                 rebuildRequired = true;
@@ -2377,7 +2355,46 @@ namespace rock
             }
         }
 
+        if (!weaponNode) {
+            if (hasWeaponBody() && !keyChanged && !missingBodies && !settingsChanged && !driveRequestedRebuild) {
+                /*
+                 * Reload animation can briefly hide or detach the first-person
+                 * weapon visual while the equipped identity is unchanged. Keep
+                 * the existing collider set instead of turning that visual gap
+                 * into a destroy/recreate cycle.
+                 */
+                ROCK_LOG_SAMPLE_DEBUG(Weapon,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Weapon visual node absent for unchanged equipped identity - retaining generated weapon bodies key={:016X} bodies={}",
+                    _cachedWeaponKey,
+                    getWeaponBodyCount());
+                clearPendingWeaponVisualRebuild();
+                resetVisualSourceUnavailableRetention();
+                syncDominantHandCollisionState();
+                return;
+            }
+
+            if (hasWeaponBody()) {
+                ROCK_LOG_INFO(Weapon,
+                    "Weapon visual node absent while rebuild required - destroying generated weapon bodies cachedKey={:016X} observedKey={:016X} missingBodies={} settingsChanged={} driveRebuild={} identityChanged={}",
+                    _cachedWeaponKey,
+                    observedKey,
+                    missingBodies ? "yes" : "no",
+                    settingsChanged ? "yes" : "no",
+                    driveRequestedRebuild ? "yes" : "no",
+                    identityKeyChanged ? "yes" : "no");
+                destroyWeaponBody(world);
+            } else if (_dominantHandDisabled) {
+                enableDominantHandCollision(world);
+            }
+            clearCurrentWeaponState();
+            return;
+        }
+
         if (rebuildRequired) {
+            WeaponVisualKeyStats visualKeyStats{};
+            const std::uint64_t observedVisualKey = getWeaponVisualCompositionKey(weaponNode, visualKeyStats);
+            const bool visualKeyChanged = observedVisualKey != 0 && observedVisualKey != _cachedWeaponVisualKey;
             const bool generationDrivenRebuild = keyChanged || missingBodies;
             const int requiredStableFrames = (std::max)(0, g_rockConfig.rockWeaponCollisionVisualStabilizationFrames);
             const bool stabilizeVisualRebuild = generationDrivenRebuild && requiredStableFrames > 0;
@@ -2769,14 +2786,19 @@ namespace rock
     }
 
 
-    std::uint64_t WeaponCollision::getEquippedWeaponKey(
-        RE::NiAVObject* weaponNode,
-        WeaponVisualKeyStats& stats,
-        std::uint64_t* outVisualKey,
-        std::uint64_t* outIdentityKey) const
+    std::uint64_t WeaponCollision::getEquippedWeaponIdentityKey(std::uint64_t* outIdentityKey) const
     {
         const auto identity = readEquippedWeaponGenerationIdentity();
-        const auto identityKey = makeEquippedWeaponIdentityKey(identity);
+        const auto identityKey = weapon_generation_identity_policy::makeEquippedWeaponIdentityKey(identity);
+        if (outIdentityKey) {
+            *outIdentityKey = identityKey;
+        }
+
+        return identityKey;
+    }
+
+    std::uint64_t WeaponCollision::getWeaponVisualCompositionKey(RE::NiAVObject* weaponNode, WeaponVisualKeyStats& stats) const
+    {
         std::uint64_t visualKey = 0;
         if (weaponNode) {
             visualKey = weapon_visual_composition_policy::kWeaponVisualCompositionOffset;
@@ -2796,14 +2818,7 @@ namespace rock
                 visualKey = reinterpret_cast<std::uint64_t>(weaponNode);
             }
         }
-        if (outVisualKey) {
-            *outVisualKey = visualKey;
-        }
-        if (outIdentityKey) {
-            *outIdentityKey = identityKey;
-        }
-
-        return weapon_generation_identity_policy::makeEquippedWeaponGenerationKey(visualKey, identity);
+        return visualKey;
     }
 
     std::size_t WeaponCollision::findGeneratedWeaponShapeSources(RE::NiAVObject* weaponNode, std::vector<GeneratedHullSource>& outSources)

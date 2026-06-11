@@ -475,12 +475,10 @@ namespace rock::weapon_generated_source_completeness_policy
 namespace rock::weapon_generation_identity_policy
 {
     /*
-     * Generated collision must rebuild from the equipped weapon instance, not
-     * only from the visual tree. FO4VR and FRIK can reuse or temporarily hide
-     * the same weapon root while a modded instance changes underneath it. Mixing
-     * the form, instance, equipped-data object, and visual composition key keeps
-     * generated mesh detail tied to the visible tree while still detecting
-     * equipped-instance changes when a root is reused or invisible during settle.
+     * Generated collision rebuild authority comes from the equipped weapon
+     * instance, not from reload-time visual tree churn. Visual composition is
+     * still collected when a rebuild is already allowed, but it must not make a
+     * stable equipped weapon look like a new collider lifecycle.
      */
     struct EquippedWeaponGenerationIdentity
     {
@@ -500,17 +498,14 @@ namespace rock::weapon_generation_identity_policy
         bool hasEquippedWeapon{ false };
     };
 
-    inline std::uint64_t makeEquippedWeaponGenerationKey(
-        std::uint64_t visualCompositionKey,
-        const EquippedWeaponGenerationIdentity& identity)
+    inline std::uint64_t makeEquippedWeaponIdentityKey(const EquippedWeaponGenerationIdentity& identity)
     {
-        if (visualCompositionKey == 0 && !identity.hasEquippedWeapon) {
+        if (!identity.hasEquippedWeapon) {
             return 0;
         }
 
         std::uint64_t key = weapon_visual_composition_policy::kWeaponVisualCompositionOffset;
-        weapon_visual_composition_policy::mixString(key, "ROCKWeaponGenerationV2");
-        weapon_visual_composition_policy::mixValue(key, visualCompositionKey);
+        weapon_visual_composition_policy::mixString(key, "ROCKWeaponGenerationIdentityV1");
         weapon_visual_composition_policy::mixValue(key, identity.hasEquippedWeapon ? 1ULL : 0ULL);
         weapon_visual_composition_policy::mixValue(key, identity.formID);
         weapon_visual_composition_policy::mixValue(key, identity.formAddress);
@@ -525,5 +520,13 @@ namespace rock::weapon_generation_identity_policy
         weapon_visual_composition_policy::mixValue(key, identity.equippedObjectAddress);
         weapon_visual_composition_policy::mixString(key, identity.displayName);
         return key;
+    }
+
+    inline std::uint64_t makeEquippedWeaponGenerationKey(
+        std::uint64_t visualCompositionKey,
+        const EquippedWeaponGenerationIdentity& identity)
+    {
+        (void)visualCompositionKey;
+        return makeEquippedWeaponIdentityKey(identity);
     }
 }
