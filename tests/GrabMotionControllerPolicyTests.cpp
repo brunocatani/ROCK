@@ -114,10 +114,11 @@ int main()
 
     MotorInput looseWeapon = singleHand;
     looseWeapon.baseMaxForce = 9000.0f;
+    looseWeapon.angularForceMultiplier = 2.0f;
     looseWeapon.mass = 1000.0f;
     const auto looseWeaponOutput = solveMotorTargets(looseWeapon);
     ok &= expectNear("loose weapon base force is not double-boosted", looseWeaponOutput.linearMaxForce, 9000.0f, 0.001f);
-    ok &= expectNear("loose weapon angular force follows existing weapon ceiling", looseWeaponOutput.angularMaxForce, 9000.0f, 0.001f);
+    ok &= expectNear("loose weapon angular force can exceed linear pull authority", looseWeaponOutput.angularMaxForce, 18000.0f, 0.001f);
 
     ok &= expectNear("90hz physics force scale is neutral", computePhysicsRateForceScale(true, 1.0f / 90.0f, 90.0f, 0.5f, 0.75f, 1.35f), 1.0f, 0.001f);
     ok &= expectNear("60hz physics force scale strengthens held motors", computePhysicsRateForceScale(true, 1.0f / 60.0f, 90.0f, 0.5f, 0.75f, 1.35f), 1.224745f, 0.001f);

@@ -782,12 +782,26 @@ namespace rock
                         savedMotionState.savedPackedMass,
                         packed[3]);
                 } else if (mass > 0.0f) {
-                    ROCK_LOG_DEBUG(GrabConstraint,
-                        "Loose weapon mass OK: body={} motion={} mass={:.3f} limit={:.3f}",
-                        bodyId.value,
-                        motionIndex,
-                        mass,
-                        grab_mass_policy::kLooseWeaponGrabMassCeiling);
+                    if (inertiaModified) {
+                        // hknp can recompute packed mass when inertia is rebuilt. Loose weapons keep the
+                        // pre-rebuild mass unless the weapon mass cap intentionally replaces it.
+                        desiredPackedMass = packed[3];
+                        savedMotionState.massModified = true;
+                        ROCK_LOG_DEBUG(GrabConstraint,
+                            "Loose weapon mass preserved through inertia rebuild: body={} motion={} mass={:.3f} limit={:.3f} packedMass={}",
+                            bodyId.value,
+                            motionIndex,
+                            mass,
+                            grab_mass_policy::kLooseWeaponGrabMassCeiling,
+                            packed[3]);
+                    } else {
+                        ROCK_LOG_DEBUG(GrabConstraint,
+                            "Loose weapon mass OK: body={} motion={} mass={:.3f} limit={:.3f}",
+                            bodyId.value,
+                            motionIndex,
+                            mass,
+                            grab_mass_policy::kLooseWeaponGrabMassCeiling);
+                    }
                 }
             }
 
@@ -921,6 +935,14 @@ namespace rock
                 packed[2],
                 packed[3]);
             havok_runtime::rebuildMotionMassProperties(world, savedMotion.motionIndex);
+            if (savedMotion.massModified) {
+                packed[3] = savedMotion.savedPackedMass;
+                ROCK_LOG_TRACE(GrabConstraint,
+                    "Restored packed mass override reapplied after rebuild: body={} motion={} massPacked={}",
+                    savedMotion.bodyId.value,
+                    savedMotion.motionIndex,
+                    packed[3]);
+            }
             savedMotion.inertiaModified = false;
             savedMotion.massModified = false;
         }

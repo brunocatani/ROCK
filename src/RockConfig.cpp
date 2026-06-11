@@ -40,6 +40,7 @@ namespace
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearDampingMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularDampingMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintMaxForceMultiplier = 4.5f;
+    constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularForceMultiplier = 2.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = 1.0f;
     constexpr float kMaxMouthConsumeHmdOffsetGameUnits = 120.0f;
@@ -359,6 +360,7 @@ namespace rock
         rockGrabLooseWeaponSharedConstraintLinearDampingMultiplier = kDefaultGrabLooseWeaponSharedConstraintLinearDampingMultiplier;
         rockGrabLooseWeaponSharedConstraintAngularDampingMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularDampingMultiplier;
         rockGrabLooseWeaponSharedConstraintMaxForceMultiplier = kDefaultGrabLooseWeaponSharedConstraintMaxForceMultiplier;
+        rockGrabLooseWeaponSharedConstraintAngularForceMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularForceMultiplier;
         rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = kDefaultGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier;
         rockGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier;
         rockGrabTauMin = 0.01f;
@@ -1332,6 +1334,13 @@ namespace rock
             "fGrabLooseWeaponSharedConstraintMaxForceMultiplier",
             rockGrabLooseWeaponSharedConstraintMaxForceMultiplier,
             kDefaultGrabLooseWeaponSharedConstraintMaxForceMultiplier,
+            0.05f,
+            8.0f);
+        rockGrabLooseWeaponSharedConstraintAngularForceMultiplier = readClampedFloat(ini,
+            SECTION,
+            "fGrabLooseWeaponSharedConstraintAngularForceMultiplier",
+            rockGrabLooseWeaponSharedConstraintAngularForceMultiplier,
+            kDefaultGrabLooseWeaponSharedConstraintAngularForceMultiplier,
             0.05f,
             8.0f);
         rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = readClampedFloat(ini,

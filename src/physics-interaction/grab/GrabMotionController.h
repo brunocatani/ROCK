@@ -72,6 +72,7 @@ namespace rock::grab_motion_controller
 
         float baseMaxForce = 2000.0f;
         float authorityForceScale = 1.0f;
+        float angularForceMultiplier = 1.0f;
         float mass = 0.0f;
         float forceToMassRatio = 500.0f;
         bool effectiveMotorMassFloorEnabled = true;
@@ -719,7 +720,9 @@ namespace rock::grab_motion_controller
             input.effectiveMotorMassFloor);
         const float scaledBaseForce = baseForce * out.physicsRateForceScale;
         out.linearMaxForce = capForceByMass(scaledBaseForce * out.fadeFactor, motorMass, input.forceToMassRatio) * authorityForceScale;
-        out.angularMaxForce = out.linearMaxForce;
+        const float angularForceMultiplier =
+            std::clamp(safePositive(input.angularForceMultiplier, 1.0f), 0.05f, 8.0f);
+        out.angularMaxForce = out.linearMaxForce * angularForceMultiplier;
         return out;
     }
 

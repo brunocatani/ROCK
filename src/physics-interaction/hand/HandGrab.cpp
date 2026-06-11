@@ -736,6 +736,8 @@ namespace rock
                 looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularDampingMultiplier);
             const float maxForceMultiplier =
                 looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintMaxForceMultiplier);
+            const float angularForceMultiplier =
+                looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularForceMultiplier);
             const float linearRecoveryMultiplier =
                 looseWeaponMultiplier(looseWeaponGrab, g_rockConfig.rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier);
             const float angularRecoveryMultiplier =
@@ -746,6 +748,7 @@ namespace rock
                 std::clamp(std::isfinite(authorityForceScale) && authorityForceScale > 0.0f ? authorityForceScale : 1.0f, 0.05f, 1.0f);
             const float linearMaxForce =
                 grab_motion_controller::capForceByMass(linearBudget, mass, forceToMassRatio) * sanitizedAuthorityForceScale;
+            const float angularMaxForce = linearMaxForce * angularForceMultiplier;
 
             return GrabConstraintMotorTuning{
                 .linearTau = scaleDriveValue(tau, linearTauMultiplier),
@@ -759,7 +762,7 @@ namespace rock
                     scaleDriveValue(g_rockConfig.rockGrabAngularProportionalRecovery, angularRecoveryMultiplier),
                 .angularConstantRecovery =
                     scaleDriveValue(g_rockConfig.rockGrabAngularConstantRecovery, angularRecoveryMultiplier),
-                .angularMaxForce = linearMaxForce,
+                .angularMaxForce = angularMaxForce,
                 .ragdollDecompositionConfigMode =
                     grab_constraint_math::sanitizeGrabRagdollDecompositionConfigMode(g_rockConfig.rockGrabRagdollDecompositionMode),
             };
@@ -6118,6 +6121,8 @@ namespace rock
             looseWeaponMultiplier(_heldObjectIsLooseWeapon, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularDampingMultiplier);
         const float looseMaxForceMultiplier =
             looseWeaponMultiplier(_heldObjectIsLooseWeapon, g_rockConfig.rockGrabLooseWeaponSharedConstraintMaxForceMultiplier);
+        const float looseAngularForceMultiplier =
+            looseWeaponMultiplier(_heldObjectIsLooseWeapon, g_rockConfig.rockGrabLooseWeaponSharedConstraintAngularForceMultiplier);
         const float looseLinearRecoveryMultiplier =
             looseWeaponMultiplier(_heldObjectIsLooseWeapon, g_rockConfig.rockGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier);
         const float looseAngularRecoveryMultiplier =
@@ -6146,6 +6151,7 @@ namespace rock
             .physicsRateMaxForceScale = g_rockConfig.rockGrabPhysicsRateMaxForceScale,
             .baseMaxForce = sharedBaseMaxForce,
             .authorityForceScale = authorityForceScale,
+            .angularForceMultiplier = looseAngularForceMultiplier,
             .mass = massSummary.motorMass(),
             .forceToMassRatio = g_rockConfig.rockGrabMaxForceToMassRatio,
             .effectiveMotorMassFloorEnabled = g_rockConfig.rockGrabEffectiveMotorMassFloorEnabled,
