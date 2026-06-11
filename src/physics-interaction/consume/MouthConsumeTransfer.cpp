@@ -4,6 +4,7 @@
 #include "physics-interaction/stash/ShoulderStashPolicy.h"
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 
+#include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/MagicItems.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESBoundObjects.h"
@@ -18,6 +19,8 @@ namespace rock::mouth_consume
             return "missing-ref";
         case ConsumeReason::MissingPlayer:
             return "missing-player";
+        case ConsumeReason::MissingEquipManager:
+            return "missing-equip-manager";
         case ConsumeReason::DeletedOrDisabled:
             return "deleted-or-disabled";
         case ConsumeReason::PlayerRef:
@@ -36,6 +39,8 @@ namespace rock::mouth_consume
             return "stacked-reference-unsupported";
         case ConsumeReason::ActivateRef:
             return "activate-ref";
+        case ConsumeReason::ActivateRefThenUseObject:
+            return "activate-ref-use-object";
         case ConsumeReason::ActivateRefFailed:
             return "activate-ref-failed";
         default:
@@ -104,6 +109,13 @@ namespace rock::mouth_consume
             return result;
         }
 
+        const bool useAsInventoryObject = result.baseForm->Is(RE::ENUM_FORM_ID::kALCH);
+        auto* equipManager = useAsInventoryObject ? RE::ActorEquipManager::GetSingleton() : nullptr;
+        if (useAsInventoryObject && !equipManager) {
+            result.reason = ConsumeReason::MissingEquipManager;
+            return result;
+        }
+
         result.attempted = true;
         const bool activated = heldRef->ActivateRef(player, nullptr, result.count, false, false, false);
         if (!activated) {
@@ -111,9 +123,20 @@ namespace rock::mouth_consume
             return result;
         }
 
-        // Keep transfer on the source-backed activation path. The CommonLibF4VR
-        // DrinkPotion virtual and stack-ID contract are not verified for FO4VR,
-        // and calling it after ActivateRef double-mutates ingestion effects.
+        if (useAsInventoryObject) {
+            RE::BGSObjectInstance objectInstance(result.baseForm, nullptr);
+            // FO4VR Ghidra verification: ActorEquipManager::EquipObject at 0x140e6fea0
+            // dispatches consumables through UseObject at 0x140e712d0 when forceEquip is false.
+            // A null instance pointer lets native code resolve the stack from player inventory
+            // after ActivateRef has transferred the loose reference.
+            // The wrapper can return false for that use path, so activation success is the
+            // transfer boundary and the use call is a best-effort inventory consume dispatch.
+            static_cast<void>(equipManager->EquipObject(player, objectInstance, 0, 1, nullptr, false, false, true, false, false));
+            result.success = true;
+            result.reason = ConsumeReason::ActivateRefThenUseObject;
+            return result;
+        }
+
         result.success = true;
         result.reason = ConsumeReason::ActivateRef;
         return result;

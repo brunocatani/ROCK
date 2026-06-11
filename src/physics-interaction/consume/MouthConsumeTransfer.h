@@ -16,6 +16,7 @@ namespace rock::mouth_consume
         NotAttempted = 0,
         MissingRef,
         MissingPlayer,
+        MissingEquipManager,
         DeletedOrDisabled,
         PlayerRef,
         MissingBaseForm,
@@ -25,6 +26,7 @@ namespace rock::mouth_consume
         UntakeableBook,
         StackedReferenceUnsupported,
         ActivateRef,
+        ActivateRefThenUseObject,
         ActivateRefFailed,
     };
 
