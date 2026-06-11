@@ -434,6 +434,10 @@ namespace rock
                 return false;
             }
 
+            if (input_remap_runtime::shouldDeferGrabInputForVirtualHolsters(isLeft, buttonId)) {
+                return false;
+            }
+
             const auto rawState = input_remap_runtime::peekRawButtonState(isLeft, buttonId);
             if (rawState.available) {
                 return rawState.held;
@@ -445,6 +449,10 @@ namespace rock
         bool readGrabButtonPressedEdge(bool isLeft, int buttonId)
         {
             if (!input_remap_policy::isValidButtonId(buttonId)) {
+                return false;
+            }
+
+            if (input_remap_runtime::shouldDeferGrabInputForVirtualHolsters(isLeft, buttonId)) {
                 return false;
             }
 
@@ -4104,6 +4112,13 @@ namespace rock
             }
 
             auto grabInput = readGrabButtonState(isLeft, grabButton);
+            const bool virtualHolstersDeferredGrab =
+                !hand.isHolding() && input_remap_runtime::shouldDeferGrabInputForVirtualHolsters(isLeft, grabButton);
+            if (virtualHolstersDeferredGrab) {
+                grab_input_intent_policy::reset(inputIntentState);
+                cancelPeerHeldJoinRetry("virtual-holsters-zone", false);
+                grabInput = {};
+            }
             const auto rawGrabInput = grabInput;
             if (grabInput.pressed &&
                 selection_state_policy::canProcessSelectedState(hand.getState()) &&

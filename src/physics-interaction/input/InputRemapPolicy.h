@@ -19,6 +19,10 @@ namespace rock::input_remap_policy
         bool suppressRightFavoritesGameInput{ true };
         bool suppressRightTriggerGameInput{ true };
         bool suppressNativeMeleeThrowGameInput{ true };
+        bool virtualHolstersCompatibilityEnabled{ true };
+        bool virtualHolstersDeferGrabInZone{ true };
+        bool virtualHolstersDeferWeaponToggleInZone{ true };
+        bool virtualHolstersDeferOnlyMatchingButton{ false };
     };
 
     struct Input
@@ -48,6 +52,18 @@ namespace rock::input_remap_policy
         bool menuInputActive{ false };
         bool weaponDrawn{ false };
         bool eventMatched{ false };
+    };
+
+    struct VirtualHolstersCompatibilityInput
+    {
+        bool compatibilityEnabled{ true };
+        bool deferActionEnabled{ true };
+        bool deferOnlyMatchingButton{ false };
+        bool apiAvailable{ false };
+        bool initialized{ false };
+        bool handInZone{ false };
+        int rockButtonId{ 2 };
+        int holsterButtonId{ 2 };
     };
 
     struct EdgeTransition
@@ -116,6 +132,15 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr bool shouldInstallNativeActionSuppressionHook(bool remapEnabled, bool suppressionEnabled)
     {
         return remapEnabled && suppressionEnabled;
+    }
+
+    [[nodiscard]] constexpr bool shouldDeferVirtualHolstersInput(const VirtualHolstersCompatibilityInput& input)
+    {
+        if (!input.compatibilityEnabled || !input.deferActionEnabled || !input.apiAvailable || !input.initialized || !input.handInZone || !isValidButtonId(input.rockButtonId)) {
+            return false;
+        }
+
+        return !input.deferOnlyMatchingButton || input.rockButtonId == input.holsterButtonId;
     }
 
     [[nodiscard]] constexpr EdgeTransition evaluateEdgeTransition(bool hadPrevious, std::uint64_t previousPressed, std::uint64_t currentPressed)

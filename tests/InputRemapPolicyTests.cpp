@@ -109,5 +109,29 @@ int main()
     ok &= expectTrue("enabled suppression requests native hook install", shouldInstallNativeActionSuppressionHook(true, true));
     ok &= expectFalse("disabled remap skips native hook install", shouldInstallNativeActionSuppressionHook(false, true));
 
+    VirtualHolstersCompatibilityInput virtualHolsters{
+        .compatibilityEnabled = true,
+        .deferActionEnabled = true,
+        .deferOnlyMatchingButton = true,
+        .apiAvailable = true,
+        .initialized = true,
+        .handInZone = true,
+        .rockButtonId = 2,
+        .holsterButtonId = 2,
+    };
+    ok &= expectTrue("VirtualHolsters zone defers matching ROCK button", shouldDeferVirtualHolstersInput(virtualHolsters));
+
+    auto unmatchedVirtualHolsters = virtualHolsters;
+    unmatchedVirtualHolsters.holsterButtonId = 7;
+    ok &= expectFalse("VirtualHolsters match-only mode allows unrelated ROCK button", shouldDeferVirtualHolstersInput(unmatchedVirtualHolsters));
+
+    auto broadVirtualHolsters = unmatchedVirtualHolsters;
+    broadVirtualHolsters.deferOnlyMatchingButton = false;
+    ok &= expectTrue("VirtualHolsters broad mode defers unrelated ROCK button", shouldDeferVirtualHolstersInput(broadVirtualHolsters));
+
+    auto inactiveVirtualHolsters = virtualHolsters;
+    inactiveVirtualHolsters.handInZone = false;
+    ok &= expectFalse("VirtualHolsters outside zone does not defer ROCK input", shouldDeferVirtualHolstersInput(inactiveVirtualHolsters));
+
     return ok ? 0 : 1;
 }

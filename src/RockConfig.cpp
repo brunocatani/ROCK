@@ -115,6 +115,10 @@ namespace rock
         rockSuppressRightFavoritesGameInput = true;
         rockSuppressNativeReadyWeaponAutoReady = true;
         rockSuppressNativeMeleeThrowGameInput = true;
+        rockVirtualHolstersCompatibilityEnabled = true;
+        rockVirtualHolstersDeferGrabInZone = true;
+        rockVirtualHolstersDeferWeaponToggleInZone = true;
+        rockVirtualHolstersDeferOnlyMatchingButton = false;
         rockGrabInputIntentStateEnabled = true;
         rockGrabInputLeewaySeconds = 0.12f;
         rockGrabInputForceSeconds = 0.08f;
@@ -585,6 +589,10 @@ namespace rock
         rockSuppressRightFavoritesGameInput = ini.GetBoolValue(SECTION, "bSuppressRightFavoritesGameInput", rockSuppressRightFavoritesGameInput);
         rockSuppressNativeReadyWeaponAutoReady = ini.GetBoolValue(SECTION, "bSuppressNativeReadyWeaponAutoReady", rockSuppressNativeReadyWeaponAutoReady);
         rockSuppressNativeMeleeThrowGameInput = ini.GetBoolValue(SECTION, "bSuppressNativeMeleeThrowGameInput", rockSuppressNativeMeleeThrowGameInput);
+        rockVirtualHolstersCompatibilityEnabled = ini.GetBoolValue(SECTION, "bVirtualHolstersCompatibilityEnabled", rockVirtualHolstersCompatibilityEnabled);
+        rockVirtualHolstersDeferGrabInZone = ini.GetBoolValue(SECTION, "bVirtualHolstersDeferGrabInZone", rockVirtualHolstersDeferGrabInZone);
+        rockVirtualHolstersDeferWeaponToggleInZone = ini.GetBoolValue(SECTION, "bVirtualHolstersDeferWeaponToggleInZone", rockVirtualHolstersDeferWeaponToggleInZone);
+        rockVirtualHolstersDeferOnlyMatchingButton = ini.GetBoolValue(SECTION, "bVirtualHolstersDeferOnlyMatchingButton", rockVirtualHolstersDeferOnlyMatchingButton);
         rockGrabInputIntentStateEnabled = ini.GetBoolValue(SECTION, "bGrabInputIntentStateEnabled", rockGrabInputIntentStateEnabled);
         rockGrabInputLeewaySeconds = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabInputLeewaySeconds", rockGrabInputLeewaySeconds));
         if (!std::isfinite(rockGrabInputLeewaySeconds) || rockGrabInputLeewaySeconds < 0.0f) {

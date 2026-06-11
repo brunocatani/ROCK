@@ -301,7 +301,160 @@ namespace rock::input_remap_runtime
                 .suppressRightFavoritesGameInput = g_rockConfig.rockSuppressRightFavoritesGameInput,
                 .suppressRightTriggerGameInput = g_rockConfig.rockSuppressNativeReadyWeaponAutoReady,
                 .suppressNativeMeleeThrowGameInput = g_rockConfig.rockSuppressNativeMeleeThrowGameInput,
+                .virtualHolstersCompatibilityEnabled = g_rockConfig.rockVirtualHolstersCompatibilityEnabled,
+                .virtualHolstersDeferGrabInZone = g_rockConfig.rockVirtualHolstersDeferGrabInZone,
+                .virtualHolstersDeferWeaponToggleInZone = g_rockConfig.rockVirtualHolstersDeferWeaponToggleInZone,
+                .virtualHolstersDeferOnlyMatchingButton = g_rockConfig.rockVirtualHolstersDeferOnlyMatchingButton,
             };
+        }
+
+        /*
+         * Optional ABI bridge into VirtualHolsters. ROCK never loads the DLL and
+         * only resolves the exported API if VirtualHolsters is already present.
+         * The local prefix mirrors VirtualHolstersAPI.h through the methods ROCK
+         * calls; no object ownership crosses the plugin boundary.
+         */
+        class VirtualHolstersAPI
+        {
+        public:
+            virtual std::uint32_t __cdecl GetVersion() const = 0;
+            virtual bool __cdecl IsHandInHolsterZone(bool isLeft) const = 0;
+            virtual std::uint32_t __cdecl GetCurrentHolster() const = 0;
+            virtual bool __cdecl IsHolsterFree(std::uint32_t holsterIndex) const = 0;
+            virtual const char* __cdecl GetHolsteredWeaponName(std::uint32_t holsterIndex) const = 0;
+            virtual bool __cdecl IsWeaponAlreadyHolstered(const char* weaponName) const = 0;
+            virtual bool __cdecl GetHolsterPosition(std::uint32_t holsterIndex, float& outX, float& outY, float& outZ) const = 0;
+            virtual float __cdecl GetHolsterRadius(std::uint32_t holsterIndex) const = 0;
+            virtual bool __cdecl IsInitialized() const = 0;
+            virtual bool __cdecl IsGripAssignedToHolster() const = 0;
+            virtual std::uint32_t __cdecl GetHolsterButtonId() const = 0;
+        };
+
+        using GetVirtualHolstersApi_t = VirtualHolstersAPI*(__cdecl*)();
+
+        struct VirtualHolstersState
+        {
+            bool available{ false };
+            bool initialized{ false };
+            bool handInZone{ false };
+            int holsterButtonId{ -1 };
+        };
+
+        std::atomic<VirtualHolstersAPI*> s_virtualHolstersApi{ nullptr };
+        std::atomic<std::uint64_t> s_nextVirtualHolstersProbeMs{ 0 };
+        std::atomic<bool> s_virtualHolstersResolvedLogged{ false };
+        std::atomic<bool> s_virtualHolstersInvalidLogged{ false };
+
+        [[nodiscard]] VirtualHolstersAPI* resolveVirtualHolstersApi()
+        {
+            if (!g_rockConfig.rockVirtualHolstersCompatibilityEnabled) {
+                return nullptr;
+            }
+
+            if (auto* cachedApi = s_virtualHolstersApi.load(std::memory_order_acquire)) {
+                return cachedApi;
+            }
+
+            const auto nowMs = static_cast<std::uint64_t>(GetTickCount64());
+            auto nextProbeMs = s_nextVirtualHolstersProbeMs.load(std::memory_order_acquire);
+            if (nowMs < nextProbeMs) {
+                return nullptr;
+            }
+            if (!s_nextVirtualHolstersProbeMs.compare_exchange_strong(nextProbeMs, nowMs + 3000u, std::memory_order_acq_rel)) {
+                return nullptr;
+            }
+
+            auto* module = GetModuleHandleA("VirtualHolsters.dll");
+            if (!module) {
+                return nullptr;
+            }
+
+            auto* getApi = reinterpret_cast<GetVirtualHolstersApi_t>(GetProcAddress(module, "VHAPI_GetApi"));
+            if (!getApi) {
+                if (!s_virtualHolstersInvalidLogged.exchange(true, std::memory_order_acq_rel)) {
+                    ROCK_LOG_WARN(Input, "VirtualHolsters.dll is loaded but VHAPI_GetApi was not exported; compatibility bridge disabled");
+                }
+                return nullptr;
+            }
+
+            auto* api = getApi();
+            if (!api) {
+                if (!s_virtualHolstersInvalidLogged.exchange(true, std::memory_order_acq_rel)) {
+                    ROCK_LOG_WARN(Input, "VirtualHolsters VHAPI_GetApi returned null; compatibility bridge disabled");
+                }
+                return nullptr;
+            }
+
+            const auto version = api->GetVersion();
+            if (version < 1) {
+                if (!s_virtualHolstersInvalidLogged.exchange(true, std::memory_order_acq_rel)) {
+                    ROCK_LOG_WARN(Input, "VirtualHolsters API version {} is unsupported; compatibility bridge disabled", version);
+                }
+                return nullptr;
+            }
+
+            s_virtualHolstersApi.store(api, std::memory_order_release);
+            if (!s_virtualHolstersResolvedLogged.exchange(true, std::memory_order_acq_rel)) {
+                ROCK_LOG_INFO(Input, "Resolved VirtualHolsters API v{} for optional input compatibility", version);
+            }
+            return api;
+        }
+
+        [[nodiscard]] VirtualHolstersState queryVirtualHolstersState(bool isLeft)
+        {
+            VirtualHolstersState state{};
+            auto* api = resolveVirtualHolstersApi();
+            if (!api) {
+                return state;
+            }
+
+            state.available = true;
+            state.initialized = api->IsInitialized();
+            if (!state.initialized) {
+                return state;
+            }
+
+            state.handInZone = api->IsHandInHolsterZone(isLeft);
+            if (state.handInZone) {
+                state.holsterButtonId = static_cast<int>(api->GetHolsterButtonId());
+            }
+            return state;
+        }
+
+        [[nodiscard]] bool shouldDeferVirtualHolstersInput(bool isLeft, int buttonId, bool deferActionEnabled, std::string_view actionName)
+        {
+            const auto settings = makeSettings();
+            const auto virtualHolsters = queryVirtualHolstersState(isLeft);
+            const bool defer = input_remap_policy::shouldDeferVirtualHolstersInput(input_remap_policy::VirtualHolstersCompatibilityInput{
+                .compatibilityEnabled = settings.virtualHolstersCompatibilityEnabled,
+                .deferActionEnabled = deferActionEnabled,
+                .deferOnlyMatchingButton = settings.virtualHolstersDeferOnlyMatchingButton,
+                .apiAvailable = virtualHolsters.available,
+                .initialized = virtualHolsters.initialized,
+                .handInZone = virtualHolsters.handInZone,
+                .rockButtonId = buttonId,
+                .holsterButtonId = virtualHolsters.holsterButtonId,
+            });
+
+            if (defer) {
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Deferred ROCK {} input for {} hand in VirtualHolsters zone: ROCK button={} VH button={} matchOnly={}",
+                    actionName,
+                    isLeft ? "left" : "right",
+                    buttonId,
+                    virtualHolsters.holsterButtonId,
+                    settings.virtualHolstersDeferOnlyMatchingButton ? "yes" : "no");
+            }
+            return defer;
+        }
+
+        [[nodiscard]] bool shouldDeferWeaponToggleForVirtualHolsters()
+        {
+            return shouldDeferVirtualHolstersInput(false,
+                g_rockConfig.rockRightWeaponReadyButtonID,
+                g_rockConfig.rockVirtualHolstersDeferWeaponToggleInZone,
+                "weapon toggle");
         }
 
         [[nodiscard]] bool resolveControllerHand(vr::TrackedDeviceIndex_t deviceIndex, input_remap_policy::Hand& outHand)
@@ -929,6 +1082,14 @@ namespace rock::input_remap_runtime
         return isGameStoppingMenuInputActive();
     }
 
+    bool shouldDeferGrabInputForVirtualHolsters(bool isLeft, int buttonId)
+    {
+        return shouldDeferVirtualHolstersInput(isLeft,
+            buttonId,
+            g_rockConfig.rockVirtualHolstersDeferGrabInZone,
+            "grab");
+    }
+
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event)
     {
         return shouldSuppressNativeTriggerActionEvent(event);
@@ -945,6 +1106,11 @@ namespace rock::input_remap_runtime
 
         if (!g_rockConfig.rockInputRemapEnabled || !s_gameplayInputAllowed.load(std::memory_order_acquire) || isGameStoppingMenuInputActive()) {
             ROCK_LOG_DEBUG(Input, "Dropped {} pending weapon toggle request(s) because gameplay input is not active", requestCount);
+            return;
+        }
+
+        if (shouldDeferWeaponToggleForVirtualHolsters()) {
+            ROCK_LOG_DEBUG(Input, "Dropped {} pending weapon toggle request(s) because VirtualHolsters owns the active holster zone", requestCount);
             return;
         }
 
