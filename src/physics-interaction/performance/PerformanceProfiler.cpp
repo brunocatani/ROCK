@@ -119,6 +119,12 @@ namespace rock::performance_profiler
                 return "grabMeshExtraction";
             case Scope::GrabNearbyDampingBegin:
                 return "grabNearbyDampingBegin";
+            case Scope::GrabHeldObjectUpdate:
+                return "grabHeldObjectUpdate";
+            case Scope::GrabAuthorityFlush:
+                return "grabAuthorityFlush";
+            case Scope::GrabAuthorityAfterSolveDiagnostics:
+                return "grabAuthorityAfterSolveDiagnostics";
             case Scope::Count:
                 break;
             }

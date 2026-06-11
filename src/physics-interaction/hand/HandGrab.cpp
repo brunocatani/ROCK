@@ -9906,6 +9906,7 @@ namespace rock
     {
         if (!isHolding() || !world)
             return;
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabHeldObjectUpdate);
         if (_grabAuthorityProxyReleasePending.load(std::memory_order_acquire) || !_activeConstraint.isValid() || !_grabAuthorityProxy.isValid()) {
             ROCK_LOG_WARN(Hand, "{} hand release: proxy constraint authority marked grab invalid", handName());
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
@@ -11105,6 +11106,8 @@ namespace rock
             if (!hasAuthority) {
                 return;
             }
+            performance_profiler::addEventCount(performance_profiler::Scope::GrabAuthorityFlush);
+            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAuthorityFlush);
 
             pending = _grabAuthorityPendingTarget;
             livePalmReferenceOk = tryResolveLivePalmAnchorReference(world, livePalmReference);
@@ -11808,6 +11811,9 @@ namespace rock
             return;
         }
 
+        const bool debugGrabFrameLogging = g_rockConfig.rockDebugGrabFrameLogging;
+        const bool timelineTraceLogging = grabTimelineTraceEnabled();
+
         RE::hknpBodyId proxyBodyId{ INVALID_BODY_ID };
         RE::hknpBodyId objectBodyId{ INVALID_BODY_ID };
         RE::NiTransform targetProxyWorld{};
@@ -11845,12 +11851,17 @@ namespace rock
             ragdollAngularProbePreSolve = _ragdollAngularProbePreSolve;
         }
 
-        const bool debugGrabFrameLogging = g_rockConfig.rockDebugGrabFrameLogging;
-        const bool timelineTraceLogging = grabTimelineTraceEnabled();
-        const bool shouldSampleForAnomaly = afterSolveSequence <= 16u || (afterSolveSequence % 30u) == 0u;
+        const bool shouldSampleForAnomaly = g_rockConfig.rockDebugGrabAfterSolveAnomalySampling &&
+                                            (afterSolveSequence <= 16u || (afterSolveSequence % 30u) == 0u);
+        /*
+         * After-solve readback is diagnostic only. Keeping it behind explicit
+         * grab diagnostics avoids paying body readback, constraint atom, and
+         * basis math costs during normal two-hand held-object gameplay.
+         */
         if (!debugGrabFrameLogging && !timelineTraceLogging && !shouldSampleForAnomaly) {
             return;
         }
+        performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAuthorityAfterSolveDiagnostics);
 
         bool hasConstraintFrameMetrics = false;
         float pivotBRelationDeltaGameUnits = -1.0f;

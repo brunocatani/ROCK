@@ -184,6 +184,7 @@ namespace rock
         bool rockDebugVerboseLogging = false;
         bool rockDebugGrabFrameLogging = false;
         bool rockDebugGrabTimelineTrace = false;
+        bool rockDebugGrabAfterSolveAnomalySampling = false;
         bool rockDebugGrabTransformTelemetry = false;
         bool rockDebugGrabTransformTelemetryText = false;
         bool rockDebugGrabTransformTelemetryAxes = false;

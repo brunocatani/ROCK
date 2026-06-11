@@ -37,6 +37,9 @@ namespace rock::performance_profiler
         GrabAcquisitionActivePrep,
         GrabMeshExtraction,
         GrabNearbyDampingBegin,
+        GrabHeldObjectUpdate,
+        GrabAuthorityFlush,
+        GrabAuthorityAfterSolveDiagnostics,
         Count
     };
 
