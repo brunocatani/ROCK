@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="950" viewBox="0 0 1500 950" role="img" aria-labelledby="title desc">
+  <title id="title">ROCK Finger Pad Refinement Fallback Chain</title>
+  <desc id="desc">Diagram explaining the fallback target chain used by ROCK finger pad refinement only when live thumb-index opposition cannot produce a probe direction.</desc>
+  <defs>
+    <marker id="arrowFlow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#263545" />
+    </marker>
+    <marker id="arrowBlue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#2f6fed" />
+    </marker>
+    <marker id="arrowFallback" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#7a6475" />
+    </marker>
+    <style>
+      .bg { fill: #f6f8fb; }
+      .panel { fill: #ffffff; stroke: #c8d1dc; stroke-width: 2; rx: 20; }
+      .title { font: 700 34px Arial, sans-serif; fill: #16202a; }
+      .subtitle { font: 400 18px Arial, sans-serif; fill: #465666; }
+      .panelTitle { font: 700 22px Arial, sans-serif; fill: #16202a; }
+      .label { font: 700 16px Arial, sans-serif; fill: #263545; }
+      .small { font: 400 14px Arial, sans-serif; fill: #526273; }
+      .tiny { font: 400 12px Arial, sans-serif; fill: #526273; }
+      .code { font: 700 14px Consolas, monospace; fill: #263545; }
+      .codeSmall { font: 700 12px Consolas, monospace; fill: #263545; }
+      .object { fill: #dfe8f6; stroke: #496a94; stroke-width: 3; }
+      .tri { fill: none; stroke: #7691b3; stroke-width: 2; stroke-dasharray: 5 5; }
+      .finger { fill: none; stroke: #8a5a44; stroke-width: 12; stroke-linecap: round; }
+      .fingerGhost { fill: none; stroke: #8a5a44; stroke-width: 10; stroke-linecap: round; opacity: 0.25; }
+      .pad { fill: #2f6fed; stroke: #123f99; stroke-width: 2; }
+      .target { fill: #ff7a59; stroke: #9f2d16; stroke-width: 2; }
+      .seat { fill: #8ed1b0; stroke: #357b57; stroke-width: 2; }
+      .pose { fill: #c7b7ff; stroke: #6652b8; stroke-width: 2; }
+      .open { fill: #f4d27e; stroke: #9d7520; stroke-width: 2; }
+      .flow { fill: none; stroke: #263545; stroke-width: 3; marker-end: url(#arrowFlow); }
+      .probe { fill: none; stroke: #2f6fed; stroke-width: 5; marker-end: url(#arrowBlue); }
+      .fallbackLine { fill: none; stroke: #7a6475; stroke-width: 4; stroke-dasharray: 8 6; marker-end: url(#arrowFallback); }
+      .box { fill: #ffffff; stroke: #c8d1dc; stroke-width: 2; rx: 14; }
+      .primary { fill: #edf4ff; stroke: #5e8de6; stroke-width: 2; rx: 14; }
+      .fallbackBox { fill: #fbf2fb; stroke: #b493af; stroke-width: 2; rx: 14; }
+      .surfaceBox { fill: #fff1ec; stroke: #d18a67; stroke-width: 2; rx: 14; }
+      .poseBox { fill: #f1edff; stroke: #8b78d6; stroke-width: 2; rx: 14; }
+      .seatBox { fill: #eaf6ef; stroke: #4c9a72; stroke-width: 2; rx: 14; }
+      .openBox { fill: #fff7df; stroke: #d9b24c; stroke-width: 2; rx: 14; }
+      .deadBox { fill: #f0f2f5; stroke: #8d9aaa; stroke-width: 2; rx: 14; }
+      .xText { font: 900 24px Arial, sans-serif; fill: #9f2d16; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1500" height="950" />
+  <text class="title" x="55" y="62">Finger pad refinement fallback target chain</text>
+  <text class="subtitle" x="55" y="94">This chain is only used if live opposition cannot produce a valid probe direction.</text>
+
+  <rect class="panel" x="45" y="130" width="410" height="690" rx="20" />
+  <text class="panelTitle" x="75" y="174">Normal Path</text>
+  <text class="small" x="75" y="202">Used first for every refinement probe.</text>
+
+  <path class="finger" d="M135 365 C178 320 225 300 286 290" />
+  <path class="fingerGhost" d="M140 510 C205 462 278 430 350 395" />
+  <circle class="pad" cx="135" cy="365" r="11" />
+  <circle class="pad" cx="286" cy="290" r="11" />
+  <circle class="pad" cx="140" cy="510" r="11" />
+  <circle class="pad" cx="350" cy="395" r="11" />
+  <text class="label" x="101" y="342">thumb[2]</text>
+  <text class="label" x="260" y="270">index[2]</text>
+  <text class="label" x="92" y="542">finger[2]</text>
+  <text class="label" x="310" y="424">thumb[2]</text>
+
+  <path class="probe" d="M135 365 L286 290" />
+  <path class="probe" d="M140 510 L350 395" />
+
+  <rect class="primary" x="75" y="610" width="330" height="145" rx="14" />
+  <text class="code" x="98" y="642">computeOpposedFingerPadProbeDirection</text>
+  <text class="small" x="98" y="670">thumb aims at index points[2]</text>
+  <text class="small" x="98" y="696">index/middle/ring/pinky aim at thumb points[2]</text>
+  <text class="small" x="98" y="722">If this works, fallback chain is not used.</text>
+
+  <rect class="panel" x="505" y="130" width="950" height="690" rx="20" />
+  <text class="panelTitle" x="535" y="174">Fallback Chain</text>
+  <text class="small" x="535" y="202">Used only when live opposition is invalid or degenerate.</text>
+
+  <rect class="surfaceBox" x="540" y="250" width="360" height="115" rx="14" />
+  <text class="label" x="565" y="282">1. surfaceAimTarget[finger]</text>
+  <text class="small" x="565" y="310">Existing accepted mesh hit for this finger.</text>
+  <text class="codeSmall" x="565" y="338">pose.surfaceAimTarget[finger]</text>
+
+  <rect class="poseBox" x="1040" y="250" width="360" height="115" rx="14" />
+  <text class="label" x="1065" y="282">2. poseTargets.targets[finger]</text>
+  <text class="small" x="1065" y="310">Explicit per-finger target from grab setup.</text>
+  <text class="codeSmall" x="1065" y="338">poseTargets.targetValid[finger]</text>
+
+  <rect class="seatBox" x="540" y="450" width="360" height="115" rx="14" />
+  <text class="label" x="565" y="482">3. seatPointWorld</text>
+  <text class="small" x="565" y="510">Shared grip/seat point for the whole grab.</text>
+  <text class="codeSmall" x="565" y="538">poseTargets.seatPointWorld</text>
+
+  <rect class="openBox" x="1040" y="450" width="360" height="115" rx="14" />
+  <text class="label" x="1065" y="482">4. openDirection</text>
+  <text class="small" x="1065" y="510">Finger's live chain open direction.</text>
+  <text class="codeSmall" x="1065" y="538">liveFinger.openDirection</text>
+
+  <path class="flow" d="M900 307 L1040 307" />
+  <path class="flow" d="M1220 365 L1220 450" />
+  <path class="flow" d="M1040 507 L900 507" />
+
+  <rect class="deadBox" x="540" y="635" width="860" height="95" rx="14" />
+  <text class="label" x="565" y="668">Not in this chain anymore</text>
+  <text class="small" x="565" y="696">padProbeAimWorld / pinchPocketWorld were removed from refinement probe fallback.</text>
+  <text class="xText" x="1334" y="695">X</text>
+
+  <path class="fallbackLine" d="M455 468 C488 468 505 398 540 332" />
+  <text class="small" x="505" y="428">fallback only</text>
+
+  <rect class="panel" x="45" y="850" width="1410" height="65" rx="20" />
+  <text class="label" x="75" y="884">Meaning:</text>
+  <text class="small" x="155" y="884">These are not "the object" as a volume. They are point targets used to choose a direction. The actual contact point still comes from the ray/capsule hitting object triangles.</text>
+</svg>
