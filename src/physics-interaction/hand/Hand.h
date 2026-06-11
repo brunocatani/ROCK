@@ -227,6 +227,7 @@ namespace rock
         PhysicalDrop,
         PendingInventoryTransfer,
         TransferToInventory,
+        PendingConsumeTransfer,
         OwnershipHandoff,
     };
 
@@ -556,6 +557,8 @@ namespace rock
         void observeCustomGrabAuthorityAfterSolve(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
         bool beginStashCandidate();
         bool cancelStashCandidate();
+        bool beginConsumeCandidate();
+        bool cancelConsumeCandidate();
 
     private:
         HandTransitionResult applyTransition(const HandTransitionRequest& request);

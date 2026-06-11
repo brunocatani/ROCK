@@ -402,6 +402,14 @@ namespace rock
         rockShoulderStashHmdBackExitPaddingGameUnits = 2.0f;
         rockShoulderStashHmdBackMinBehindGameUnits = 4.0f;
         rockShoulderStashShowCollectedNotifications = true;
+        rockMouthConsumeEnabled = true;
+        rockMouthConsumeAllowPoison = false;
+        rockMouthConsumeHmdOffsetGameUnits = RE::NiPoint3(0.0f, 10.0f, -9.0f);
+        rockMouthConsumeRadiusGameUnits = 11.0f;
+        rockMouthConsumeEnterPaddingGameUnits = 0.0f;
+        rockMouthConsumeExitPaddingGameUnits = 2.0f;
+        rockMouthConsumeMinDwellSeconds = 0.06f;
+        rockMouthConsumeMaxSpeedGameUnitsPerSecond = 120.0f;
         rockGrabVelocityDamping = 0.25f;
         rockGrabPlayerSpaceCompensation = true;
         rockGrabPlayerSpaceWarpDistance = 35.0f;
@@ -530,6 +538,13 @@ namespace rock
         rockShoulderStashCandidateHapticIntervalSeconds = 0.075f;
         rockShoulderStashCommitHapticDurationSeconds = 0.12f;
         rockShoulderStashCommitHapticIntensity = 0.85f;
+        rockMouthConsumeHapticsEnabled = true;
+        rockMouthConsumeCandidateHapticDurationSeconds = 0.050f;
+        rockMouthConsumeCandidateHapticBaseIntensity = 0.22f;
+        rockMouthConsumeCandidateHapticIntensity = 0.45f;
+        rockMouthConsumeCandidateHapticIntervalSeconds = 0.075f;
+        rockMouthConsumeCommitHapticDurationSeconds = 0.12f;
+        rockMouthConsumeCommitHapticIntensity = 0.85f;
 
     }
 
@@ -1861,6 +1876,17 @@ namespace rock
             "fShoulderStashHmdBackMinBehindGameUnits", rockShoulderStashHmdBackMinBehindGameUnits, 4.0f, 0.0f, 40.0f);
         rockShoulderStashShowCollectedNotifications =
             ini.GetBoolValue(SECTION, "bShoulderStashShowCollectedNotifications", rockShoulderStashShowCollectedNotifications);
+        rockMouthConsumeEnabled = ini.GetBoolValue(SECTION, "bMouthConsumeEnabled", rockMouthConsumeEnabled);
+        rockMouthConsumeAllowPoison = ini.GetBoolValue(SECTION, "bMouthConsumeAllowPoison", rockMouthConsumeAllowPoison);
+        readOptionalVec3("fMouthConsumeHmdOffsetXGameUnits",
+            "fMouthConsumeHmdOffsetYGameUnits",
+            "fMouthConsumeHmdOffsetZGameUnits",
+            rockMouthConsumeHmdOffsetGameUnits);
+        readClampedFloat("fMouthConsumeRadiusGameUnits", rockMouthConsumeRadiusGameUnits, 11.0f, 1.0f, 80.0f);
+        readClampedFloat("fMouthConsumeEnterPaddingGameUnits", rockMouthConsumeEnterPaddingGameUnits, 0.0f, 0.0f, 40.0f);
+        readClampedFloat("fMouthConsumeExitPaddingGameUnits", rockMouthConsumeExitPaddingGameUnits, 2.0f, 0.0f, 60.0f);
+        readClampedFloat("fMouthConsumeMinDwellSeconds", rockMouthConsumeMinDwellSeconds, 0.06f, 0.0f, 1.0f);
+        readClampedFloat("fMouthConsumeMaxSpeedGameUnitsPerSecond", rockMouthConsumeMaxSpeedGameUnitsPerSecond, 120.0f, 0.0f, 1000.0f);
 
         rockGrabHapticsEnabled = ini.GetBoolValue(SECTION, "bGrabHapticsEnabled", rockGrabHapticsEnabled);
         readClampedFloat("fGrabHapticDurationSeconds", rockGrabHapticDurationSeconds, 0.055f, 0.0f, 0.2f);
@@ -1898,6 +1924,19 @@ namespace rock
         readClampedFloat(
             "fShoulderStashCommitHapticDurationSeconds", rockShoulderStashCommitHapticDurationSeconds, 0.12f, 0.0f, 0.2f);
         readClampedFloat("fShoulderStashCommitHapticIntensity", rockShoulderStashCommitHapticIntensity, 0.85f, 0.0f, 1.0f);
+        rockMouthConsumeHapticsEnabled = ini.GetBoolValue(SECTION, "bMouthConsumeHapticsEnabled", rockMouthConsumeHapticsEnabled);
+        readClampedFloat(
+            "fMouthConsumeCandidateHapticDurationSeconds", rockMouthConsumeCandidateHapticDurationSeconds, 0.050f, 0.0f, 0.2f);
+        readClampedFloat(
+            "fMouthConsumeCandidateHapticBaseIntensity", rockMouthConsumeCandidateHapticBaseIntensity, 0.22f, 0.0f, 1.0f);
+        readClampedFloat("fMouthConsumeCandidateHapticIntensity",
+            rockMouthConsumeCandidateHapticIntensity,
+            0.45f,
+            rockMouthConsumeCandidateHapticBaseIntensity,
+            1.0f);
+        readClampedFloat("fMouthConsumeCandidateHapticIntervalSeconds", rockMouthConsumeCandidateHapticIntervalSeconds, 0.075f, 0.0f, 2.0f);
+        readClampedFloat("fMouthConsumeCommitHapticDurationSeconds", rockMouthConsumeCommitHapticDurationSeconds, 0.12f, 0.0f, 0.2f);
+        readClampedFloat("fMouthConsumeCommitHapticIntensity", rockMouthConsumeCommitHapticIntensity, 0.85f, 0.0f, 1.0f);
 
     }
 

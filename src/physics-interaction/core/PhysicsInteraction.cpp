@@ -21,6 +21,10 @@
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/collision/ContactPipelinePolicy.h"
 #include "physics-interaction/collision/ContactSignalSubscriptionPolicy.h"
+#include "physics-interaction/consume/MouthConsumeDetector.h"
+#include "physics-interaction/consume/MouthConsumePolicy.h"
+#include "physics-interaction/consume/MouthConsumeTransfer.h"
+#include "physics-interaction/feedback/FeedbackHaptics.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/debug/DebugBodyOverlay.h"
@@ -245,6 +249,43 @@ namespace rock
         {
             shoulder_stash::Probe probe{};
             probe.pointGame = handInput.rawHandWorld.translate;
+            return probe;
+        }
+
+        mouth_consume::DetectorConfig makeMouthConsumeDetectorConfig()
+        {
+            mouth_consume::DetectorConfig config{};
+            config.enabled = g_rockConfig.rockMouthConsumeEnabled;
+            config.hmdMouthOffsetGameUnits = g_rockConfig.rockMouthConsumeHmdOffsetGameUnits;
+            config.mouthRadiusGameUnits = g_rockConfig.rockMouthConsumeRadiusGameUnits;
+            config.enterPaddingGameUnits = g_rockConfig.rockMouthConsumeEnterPaddingGameUnits;
+            config.exitPaddingGameUnits = g_rockConfig.rockMouthConsumeExitPaddingGameUnits;
+            config.minDwellSeconds = g_rockConfig.rockMouthConsumeMinDwellSeconds;
+            config.maxSpeedGameUnitsPerSecond = g_rockConfig.rockMouthConsumeMaxSpeedGameUnitsPerSecond;
+            return config;
+        }
+
+        mouth_consume::Probe makeMouthConsumeObjectProbe(RE::hknpWorld* world, const Hand& hand, const HandFrameInput& handInput)
+        {
+            mouth_consume::Probe probe{};
+            if (hand.tryGetHeldObjectGrabPivotWorld(world, probe.pointGame)) {
+                return probe;
+            }
+
+            const auto& savedState = hand.getSavedObjectState();
+            RE::NiTransform heldBodyWorld{};
+            if (savedState.isValid() && world && tryGetBodyWorldTransform(world, savedState.bodyId, heldBodyWorld)) {
+                probe.pointGame = heldBodyWorld.translate;
+            } else {
+                probe.pointGame = handInput.grabAnchorWorld;
+            }
+            return probe;
+        }
+
+        mouth_consume::Probe makeMouthConsumeHandProbe(const HandFrameInput& handInput)
+        {
+            mouth_consume::Probe probe{};
+            probe.pointGame = handInput.grabAnchorWorld;
             return probe;
         }
 
@@ -1354,6 +1395,8 @@ namespace rock
         _lifecycleHknpWorldAtomic.store(nullptr, std::memory_order_release);
         _generatedBodyStepDrive.reset();
         _shoulderStashStates = {};
+        _mouthConsumeStates = {};
+        _feedbackHaptics.reset();
     }
 
     void PhysicsInteraction::clearGeneratedBodyContactRegistry()
@@ -1802,6 +1845,9 @@ namespace rock
         _dynamicPushCooldownUntil.clear();
         _heldImpactHapticCooldownUntil.clear();
         _grabEventFrameCounter = 0;
+        _shoulderStashStates = {};
+        _mouthConsumeStates = {};
+        _feedbackHaptics.reset();
         _grabInputIntentStates = {};
         _peerHeldJoinRetryStates = {};
         _lastContactBodyRight.store(0xFFFFFFFF, std::memory_order_release);
@@ -1834,6 +1880,9 @@ namespace rock
         const auto& runtime = runtime_state::currentFrame();
         if (!runtime.visualAuthorityAvailable) {
             restoreHeldMassMovementSlowdown("frik-unavailable");
+            _shoulderStashStates = {};
+            _mouthConsumeStates = {};
+            _feedbackHaptics.reset();
             return;
         }
 
@@ -1907,6 +1956,9 @@ namespace rock
             auto* snapshotHknp = snapshotBhk ? getHknpWorld(snapshotBhk) : nullptr;
             observeLifecycleFrame(snapshotBhk, snapshotHknp, ::rock::provider::RockProviderLifecycleReason::MenuBlocked);
             restoreHeldMassMovementSlowdown("menu-blocked");
+            _shoulderStashStates = {};
+            _mouthConsumeStates = {};
+            _feedbackHaptics.reset();
             ::rock::provider::dispatchFrameCallbacks(*this);
             return;
         }
@@ -1954,6 +2006,9 @@ namespace rock
             _nativeContactEvidence.reset();
             debug::ClearFrame();
             restoreHeldMassMovementSlowdown("world-unavailable");
+            _shoulderStashStates = {};
+            _mouthConsumeStates = {};
+            _feedbackHaptics.reset();
             ::rock::provider::dispatchFrameCallbacks(*this);
             return;
         }
@@ -2024,6 +2079,9 @@ namespace rock
                     _providerGenerationAtomic.load(std::memory_order_acquire),
                     _stableFrameCountAtomic.load(std::memory_order_acquire));
                 debug::ClearFrame();
+                _shoulderStashStates = {};
+                _mouthConsumeStates = {};
+                _feedbackHaptics.reset();
                 ::rock::provider::dispatchFrameCallbacks(*this);
                 return;
             }
@@ -2040,6 +2098,9 @@ namespace rock
                 _providerGenerationAtomic.load(std::memory_order_acquire),
                 _stableFrameCountAtomic.load(std::memory_order_acquire));
             debug::ClearFrame();
+            _shoulderStashStates = {};
+            _mouthConsumeStates = {};
+            _feedbackHaptics.reset();
             ::rock::provider::dispatchFrameCallbacks(*this);
             return;
         }
@@ -2314,6 +2375,7 @@ namespace rock
         applyHeldPlayerSpaceVelocity(hknp);
 
         updateGrabInput(frame);
+        updateFeedbackHaptics(frame.deltaSeconds);
         updateHeldMassMovementSlowdown(hknp, frame.deltaSeconds);
         synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive);
 
@@ -2742,6 +2804,8 @@ namespace rock
         _softContactRuntime.reset();
         _bodyContactRuntime.reset();
         _shoulderStashStates = {};
+        _mouthConsumeStates = {};
+        _feedbackHaptics.reset();
         _weaponCollision.shutdown();
         _bodyBoneColliders.reset();
         _generatedBodyStepDrive.reset();
@@ -2781,6 +2845,8 @@ namespace rock
         _dynamicPushCooldownUntil.clear();
         _heldImpactHapticCooldownUntil.clear();
         _grabEventFrameCounter = 0;
+        _mouthConsumeStates = {};
+        _feedbackHaptics.reset();
         _grabInputIntentStates = {};
         _peerHeldJoinRetryStates = {};
         _bodyBoneColliderCreateRetryFrames = 0;
@@ -2835,17 +2901,11 @@ namespace rock
 
     void PhysicsInteraction::handleGrabEventHaptics(const GrabEventData& eventData)
     {
-        auto triggerHaptic = [](bool isLeft, float durationSeconds, float intensity) {
-            const float duration = std::clamp(std::isfinite(durationSeconds) ? durationSeconds : 0.0f, 0.0f, 0.2f);
-            const float clampedIntensity = std::clamp(std::isfinite(intensity) ? intensity : 0.0f, 0.0f, 1.0f);
-            if (duration <= 0.0f || clampedIntensity <= 0.0f) {
-                return;
-            }
-
-            f4cf::vrcf::VRControllers.triggerHaptic(
-                isLeft ? f4cf::vrcf::Hand::Left : f4cf::vrcf::Hand::Right,
-                duration,
-                clampedIntensity);
+        auto queueHaptic = [this](bool isLeft, float durationSeconds, float intensity) {
+            (void)_feedbackHaptics.queue(
+                isLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
+                durationSeconds,
+                intensity);
         };
 
         if ((eventData.flags & ROCK_GRAB_EVENT_FLAG_SUPPRESS_HAPTIC) != 0) {
@@ -2855,30 +2915,30 @@ namespace rock
         switch (eventData.type) {
         case GrabEventType::SelectionLocked:
             if (g_rockConfig.rockGrabHapticsEnabled) {
-                triggerHaptic(eventData.isLeft, g_rockConfig.rockGrabHapticDurationSeconds, g_rockConfig.rockSelectionLockHapticIntensity);
+                queueHaptic(eventData.isLeft, g_rockConfig.rockGrabHapticDurationSeconds, g_rockConfig.rockSelectionLockHapticIntensity);
             }
             return;
         case GrabEventType::SelectionUnlocked:
             if (g_rockConfig.rockGrabHapticsEnabled) {
-                triggerHaptic(
+                queueHaptic(
                     eventData.isLeft, g_rockConfig.rockSelectionLockReleaseHapticDurationSeconds, g_rockConfig.rockSelectionLockReleaseHapticIntensity);
             }
             return;
         case GrabEventType::PullStarted:
             if (g_rockConfig.rockGrabHapticsEnabled) {
-                triggerHaptic(eventData.isLeft, g_rockConfig.rockGrabHapticDurationSeconds, g_rockConfig.rockPullStartHapticIntensity);
+                queueHaptic(eventData.isLeft, g_rockConfig.rockGrabHapticDurationSeconds, g_rockConfig.rockPullStartHapticIntensity);
             }
             return;
         case GrabEventType::PullCatchSucceeded:
             if (g_rockConfig.rockGrabHapticsEnabled) {
-                triggerHaptic(eventData.isLeft, g_rockConfig.rockGrabHapticDurationSeconds, g_rockConfig.rockPullCatchHapticIntensity);
+                queueHaptic(eventData.isLeft, g_rockConfig.rockGrabHapticDurationSeconds, g_rockConfig.rockPullCatchHapticIntensity);
             }
             return;
         case GrabEventType::StashCandidate:
             if (g_rockConfig.rockShoulderStashHapticsEnabled) {
                 const float confidence =
                     (eventData.flags & ROCK_GRAB_EVENT_FLAG_INTENSITY_VALID) != 0 ? eventData.intensityHint : 1.0f;
-                triggerHaptic(eventData.isLeft,
+                queueHaptic(eventData.isLeft,
                     g_rockConfig.rockShoulderStashCandidateHapticDurationSeconds,
                     shoulder_stash_haptic_policy::computeCandidatePulseIntensity(confidence,
                         shoulder_stash_haptic_policy::CandidatePulseConfig{
@@ -2890,13 +2950,34 @@ namespace rock
             return;
         case GrabEventType::Stashed:
             if (g_rockConfig.rockShoulderStashHapticsEnabled) {
-                triggerHaptic(eventData.isLeft,
+                queueHaptic(eventData.isLeft,
                     g_rockConfig.rockShoulderStashCommitHapticDurationSeconds,
                     g_rockConfig.rockShoulderStashCommitHapticIntensity);
             }
             return;
+        case GrabEventType::ConsumeCandidate:
+            if (g_rockConfig.rockMouthConsumeHapticsEnabled) {
+                const float confidence =
+                    (eventData.flags & ROCK_GRAB_EVENT_FLAG_INTENSITY_VALID) != 0 ? eventData.intensityHint : 1.0f;
+                queueHaptic(eventData.isLeft,
+                    g_rockConfig.rockMouthConsumeCandidateHapticDurationSeconds,
+                    mouth_consume_haptic_policy::computeCandidatePulseIntensity(confidence,
+                        mouth_consume_haptic_policy::CandidatePulseConfig{
+                            .enabled = true,
+                            .baseIntensity = g_rockConfig.rockMouthConsumeCandidateHapticBaseIntensity,
+                            .maxIntensity = g_rockConfig.rockMouthConsumeCandidateHapticIntensity,
+                        }));
+            }
+            return;
+        case GrabEventType::Consumed:
+            if (g_rockConfig.rockMouthConsumeHapticsEnabled) {
+                queueHaptic(eventData.isLeft,
+                    g_rockConfig.rockMouthConsumeCommitHapticDurationSeconds,
+                    g_rockConfig.rockMouthConsumeCommitHapticIntensity);
+            }
+            return;
         case GrabEventType::GrabCommitted:
-            triggerHaptic(eventData.isLeft,
+            queueHaptic(eventData.isLeft,
                 g_rockConfig.rockGrabHapticDurationSeconds,
                 grab_haptic_policy::computeMassPulseIntensity(eventData.mass,
                     grab_haptic_policy::MassPulseConfig{
@@ -2938,11 +3019,28 @@ namespace rock
 
             _heldImpactHapticCooldownUntil[cooldownKey] =
                 _dynamicPushElapsedSeconds + (std::max)(0.0f, g_rockConfig.rockHeldImpactHapticCooldownSeconds);
-            triggerHaptic(eventData.isLeft, g_rockConfig.rockHeldImpactHapticDurationSeconds, intensity);
+            queueHaptic(eventData.isLeft, g_rockConfig.rockHeldImpactHapticDurationSeconds, intensity);
             return;
         }
         default:
             return;
+        }
+    }
+
+    void PhysicsInteraction::updateFeedbackHaptics(float deltaSeconds)
+    {
+        std::array<feedback_haptics::HapticOutput, 2> outputs{};
+        const auto outputCount = _feedbackHaptics.update(deltaSeconds, outputs.data(), outputs.size());
+        for (std::size_t i = 0; i < outputCount; ++i) {
+            const auto& output = outputs[i];
+            if (!output.active || output.intensity <= 0.0f || output.pulseDurationSeconds <= 0.0f) {
+                continue;
+            }
+
+            f4cf::vrcf::VRControllers.triggerHaptic(
+                output.hand == feedback_haptics::FeedbackHand::Left ? f4cf::vrcf::Hand::Left : f4cf::vrcf::Hand::Right,
+                output.pulseDurationSeconds,
+                output.intensity);
         }
     }
 
@@ -4122,9 +4220,19 @@ namespace rock
             hand.cancelStashCandidate();
         };
 
+        auto clearMouthConsumeForHand = [&](Hand& hand, bool isLeft) {
+            mouth_consume::resetRuntime(_mouthConsumeStates[isLeft ? 1u : 0u]);
+            hand.cancelConsumeCandidate();
+        };
+
+        auto clearGameplayCandidatesForHand = [&](Hand& hand, bool isLeft) {
+            clearShoulderStashForHand(hand, isLeft);
+            clearMouthConsumeForHand(hand, isLeft);
+        };
+
         if (!runtime_state::isLocalSkeletonReady()) {
-            clearShoulderStashForHand(_rightHand, false);
-            clearShoulderStashForHand(_leftHand, true);
+            clearGameplayCandidatesForHand(_rightHand, false);
+            clearGameplayCandidatesForHand(_leftHand, true);
             return;
         }
 
@@ -4151,6 +4259,7 @@ namespace rock
             auto& inputIntentState = _grabInputIntentStates[isLeft ? 1u : 0u];
             auto& peerHeldJoinRetryState = _peerHeldJoinRetryStates[isLeft ? 1u : 0u];
             auto& shoulderStashState = _shoulderStashStates[isLeft ? 1u : 0u];
+            auto& mouthConsumeState = _mouthConsumeStates[isLeft ? 1u : 0u];
             auto cancelPeerHeldJoinRetry = [&](const char* reason, bool logCancellation) {
                 if (!peerHeldJoinRetryState.active) {
                     return;
@@ -4171,13 +4280,13 @@ namespace rock
             };
             if (handInput.disabled) {
                 cancelPeerHeldJoinRetry("hand-input-disabled", false);
-                clearShoulderStashForHand(hand, isLeft);
+                clearGameplayCandidatesForHand(hand, isLeft);
                 return;
             }
             if (!weapon_two_handed_grip_math::canProcessNormalGrabInput(isLeft, equippedWeaponSupportGripActive, rightHandWeaponEquipped)) {
                 grab_input_intent_policy::reset(inputIntentState);
                 cancelPeerHeldJoinRetry("normal-grab-suppressed", true);
-                clearShoulderStashForHand(hand, isLeft);
+                clearGameplayCandidatesForHand(hand, isLeft);
                 _softContactRuntime.clearHandForStrongerOwner(
                     isLeft,
                     isLeft ? "equipped-weapon-support-grip" : "right-hand-equipped-weapon");
@@ -4539,8 +4648,8 @@ namespace rock
                     dispatchGrabEvent(eventData);
                 };
             auto dispatchShoulderStashEvent = [&](GrabEventType type,
-                                                  RE::TESObjectREFR* refr,
-                                                  std::uint32_t formID,
+                                                   RE::TESObjectREFR* refr,
+                                                   std::uint32_t formID,
                                                   std::uint32_t primaryBodyId,
                                                   const shoulder_stash::Decision& decision) {
                 GrabEventData eventData{};
@@ -4563,22 +4672,99 @@ namespace rock
                 eventData.flags |= ROCK_GRAB_EVENT_FLAG_INTENSITY_VALID;
                 dispatchGrabEvent(eventData);
             };
+            auto dispatchMouthConsumeEvent = [&](GrabEventType type,
+                                                 RE::TESObjectREFR* refr,
+                                                 std::uint32_t formID,
+                                                 std::uint32_t primaryBodyId,
+                                                 const mouth_consume::Decision& decision) {
+                GrabEventData eventData{};
+                eventData.type = type;
+                eventData.sourceKind = GrabEventSourceKind::HeldObject;
+                eventData.isLeft = isLeft;
+                eventData.refr = refr;
+                eventData.formID = formID != 0 ? formID : (refr ? refr->GetFormID() : 0);
+                eventData.primaryBodyId = primaryBodyId;
+                eventData.positionGame[0] = decision.mouthCenterGame.x;
+                eventData.positionGame[1] = decision.mouthCenterGame.y;
+                eventData.positionGame[2] = decision.mouthCenterGame.z;
+                eventData.flags |= ROCK_GRAB_EVENT_FLAG_POSITION_VALID;
+                if (std::isfinite(decision.speedGameUnitsPerSecond)) {
+                    eventData.speedGameUnitsPerSecond = decision.speedGameUnitsPerSecond;
+                    eventData.flags |= ROCK_GRAB_EVENT_FLAG_SPEED_VALID;
+                }
+                eventData.intensityHint = std::clamp(std::isfinite(decision.confidence) ? decision.confidence : 0.0f, 0.0f, 1.0f);
+                eventData.flags |= ROCK_GRAB_EVENT_FLAG_INTENSITY_VALID;
+                dispatchGrabEvent(eventData);
+            };
 
             if (hand.isHolding()) {
                 _softContactRuntime.clearHandForStrongerOwner(isLeft, "held-object");
                 const Hand& peer = isLeft ? _rightHand : _leftHand;
-                auto* heldRefForStash = hand.getHeldRef();
+                auto* heldRefForGameplay = hand.getHeldRef();
                 const bool peerHoldingSameObject =
-                    heldRefForStash && peer.isHolding() && peer.getHeldRef() == heldRefForStash;
-                const auto stashEligibility = shoulder_stash::evaluateEligibility(shoulder_stash::EligibilityInput{
-                    .enabled = g_rockConfig.rockShoulderStashEnabled,
+                    heldRefForGameplay && peer.isHolding() && peer.getHeldRef() == heldRefForGameplay;
+                const auto consumeEligibility = mouth_consume::evaluateEligibility(mouth_consume::EligibilityInput{
+                    .enabled = g_rockConfig.rockMouthConsumeEnabled,
+                    .allowPoison = g_rockConfig.rockMouthConsumeAllowPoison,
                     .peerHoldingSameObject = peerHoldingSameObject,
-                    .heldRef = heldRefForStash,
+                    .heldRef = heldRefForGameplay,
                     .savedState = &hand.getSavedObjectState(),
                 });
 
+                mouth_consume::Decision consumeDecision{};
+                if (consumeEligibility.eligible) {
+                    consumeDecision = mouth_consume::evaluate(mouth_consume::DetectorInput{
+                            .hasHmdFrame = frame.hasHmdFrame,
+                            .hmdPositionWorld = frame.hmdPositionWorld,
+                            .hmdForwardWorld = frame.hmdForwardWorld,
+                            .objectProbe = makeMouthConsumeObjectProbe(hknp, hand, handInput),
+                            .handProbe = makeMouthConsumeHandProbe(handInput),
+                            .hasHandProbe = true,
+                            .deltaSeconds = frame.deltaSeconds,
+                            .config = makeMouthConsumeDetectorConfig(),
+                        },
+                        mouthConsumeState);
+                } else {
+                    clearMouthConsumeForHand(hand, isLeft);
+                }
+
+                bool consumeCandidateActive = false;
+                if (consumeEligibility.eligible && consumeDecision.candidate) {
+                    if (hand.getState() == HandState::StashCandidate) {
+                        hand.cancelStashCandidate();
+                    }
+                    if (hand.getState() == HandState::HeldBody) {
+                        hand.beginConsumeCandidate();
+                    }
+                    if (hand.getState() == HandState::ConsumeCandidate) {
+                        consumeCandidateActive = true;
+                        const bool pulseDue = _dynamicPushElapsedSeconds >= mouthConsumeState.nextCandidatePulseTimeSeconds;
+                        if (consumeDecision.enteredCandidate || consumeDecision.changedCandidate || pulseDue) {
+                            dispatchMouthConsumeEvent(
+                                GrabEventType::ConsumeCandidate,
+                                heldRefForGameplay,
+                                heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0,
+                                hand.getSavedObjectState().bodyId.value,
+                                consumeDecision);
+                            mouthConsumeState.nextCandidatePulseTimeSeconds =
+                                _dynamicPushElapsedSeconds + (std::max)(0.02f, g_rockConfig.rockMouthConsumeCandidateHapticIntervalSeconds);
+                        }
+                    }
+                } else {
+                    hand.cancelConsumeCandidate();
+                }
+
+                const auto stashEligibility = !consumeCandidateActive ?
+                    shoulder_stash::evaluateEligibility(shoulder_stash::EligibilityInput{
+                        .enabled = g_rockConfig.rockShoulderStashEnabled,
+                        .peerHoldingSameObject = peerHoldingSameObject,
+                        .heldRef = heldRefForGameplay,
+                        .savedState = &hand.getSavedObjectState(),
+                    }) :
+                    shoulder_stash::EligibilityResult{ .eligible = false, .reason = shoulder_stash::EligibilityReason::SharedHeldObject };
+
                 shoulder_stash::Decision stashDecision{};
-                if (stashEligibility.eligible) {
+                if (!consumeCandidateActive && stashEligibility.eligible) {
                     stashDecision = shoulder_stash::evaluate(shoulder_stash::DetectorInput{
                             .world = hknp,
                             .bodyColliders = &_bodyBoneColliders,
@@ -4600,7 +4786,7 @@ namespace rock
                     clearShoulderStashForHand(hand, isLeft);
                 }
 
-                if (stashEligibility.eligible && stashDecision.candidate) {
+                if (!consumeCandidateActive && stashEligibility.eligible && stashDecision.candidate) {
                     if (hand.getState() == HandState::HeldBody) {
                         hand.beginStashCandidate();
                     }
@@ -4609,8 +4795,8 @@ namespace rock
                         if (stashDecision.enteredCandidate || stashDecision.changedCandidate || pulseDue) {
                             dispatchShoulderStashEvent(
                                 GrabEventType::StashCandidate,
-                                heldRefForStash,
-                                heldRefForStash ? heldRefForStash->GetFormID() : 0,
+                                heldRefForGameplay,
+                                heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0,
                                 hand.getSavedObjectState().bodyId.value,
                                 stashDecision);
                             shoulderStashState.nextCandidatePulseTimeSeconds =
@@ -4625,6 +4811,53 @@ namespace rock
                     hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, _heldObjectPlayerSpaceFrame, frame.deltaSeconds);
                     auto* heldRef = hand.getHeldRef();
                     std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;
+                    if (consumeEligibility.eligible && consumeDecision.confirmedForCommit && hand.getState() == HandState::ConsumeCandidate) {
+                        /*
+                         * Mouth consume mirrors shoulder stash's two-phase release:
+                         * detach the grab without throw velocity first, then let the
+                         * native consume/activation path take ownership. Only failures
+                         * that leave a world ref behind get the captured throw velocity.
+                         */
+                        auto releaseContext = makeGrabReleaseContext(hand, isLeft);
+                        releaseContext.disposition = GrabReleaseDisposition::PendingConsumeTransfer;
+                        releaseContext.reason = "mouth-consume-pending-transfer";
+                        const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
+                        const auto releaseOutcome = hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+                        if (heldRef) {
+                            releaseObject(heldRef, claimOwnerForHand(isLeft));
+                        }
+                        const auto consumeResult = mouth_consume::transferToPlayerConsume(mouth_consume::ConsumeInput{
+                            .heldRef = heldRef,
+                        });
+                        if (heldFormID == 0 && consumeResult.formID != 0) {
+                            heldFormID = consumeResult.formID;
+                        }
+
+                        const bool failedBeforeOwnershipTransfer =
+                            !consumeResult.attempted || consumeResult.reason == mouth_consume::ConsumeReason::ActivateRefFailed;
+                        auto* postConsumeRef = failedBeforeOwnershipTransfer ? heldRef : nullptr;
+                        dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, postConsumeRef, heldFormID, 0);
+                        if (consumeResult.success) {
+                            dispatchMouthConsumeEvent(GrabEventType::Consumed, nullptr, heldFormID, primaryBodyId, consumeDecision);
+                        } else {
+                            if (failedBeforeOwnershipTransfer) {
+                                hand.applyReleaseVelocitySnapshot(hknp, releaseOutcome.velocity);
+                            }
+                            dispatchHeldObjectEventByFormID(GrabEventType::Released, postConsumeRef, heldFormID, primaryBodyId);
+                        }
+                        ROCK_LOG_INFO(Hand,
+                            "{} hand mouth consume release formID={:08X} success={} consumeReason={} count={} confidence={:.2f} distance={:.1f} speed={:.1f}",
+                            hand.handName(),
+                            heldFormID,
+                            consumeResult.success ? "yes" : "no",
+                            mouth_consume::consumeReasonName(consumeResult.reason),
+                            consumeResult.count,
+                            consumeDecision.confidence,
+                            consumeDecision.distanceGameUnits,
+                            consumeDecision.speedGameUnitsPerSecond);
+                        clearGameplayCandidatesForHand(hand, isLeft);
+                        return;
+                    }
                     if (stashEligibility.eligible && stashDecision.confirmedForCommit && hand.getState() == HandState::StashCandidate) {
                         /*
                          * Shoulder stash uses a two-phase release because native
@@ -4669,7 +4902,7 @@ namespace rock
                             transferResult.count,
                             stashDecision.confidence,
                             stashDecision.speedGameUnitsPerSecond);
-                        clearShoulderStashForHand(hand, isLeft);
+                        clearGameplayCandidatesForHand(hand, isLeft);
                         return;
                     }
                     hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Delayed, makeGrabReleaseContext(hand, isLeft));
@@ -4677,7 +4910,7 @@ namespace rock
                         releaseObject(heldRef, claimOwnerForHand(isLeft));
                     dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, heldRef, heldFormID, 0);
                     dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
-                    clearShoulderStashForHand(hand, isLeft);
+                    clearGameplayCandidatesForHand(hand, isLeft);
                 } else {
                     const auto& transform = handInput.rawHandWorld;
                     auto* heldRef = hand.getHeldRef();
@@ -4703,11 +4936,11 @@ namespace rock
                         releaseObject(heldRef, claimOwnerForHand(isLeft));
                         dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, heldRef, heldFormID, 0);
                         dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, heldRef);
-                        clearShoulderStashForHand(hand, isLeft);
+                        clearGameplayCandidatesForHand(hand, isLeft);
                     }
                 }
             } else {
-                clearShoulderStashForHand(hand, isLeft);
+                clearGameplayCandidatesForHand(hand, isLeft);
                 if (grabInput.pressed && !peerHeldRetryAttemptDue) {
                     const char* refusalReason = "not-attempted";
                     (void)attemptPeerHeldCloseJoinSelection(&refusalReason);

@@ -18,9 +18,11 @@
 #include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
 #include "physics-interaction/contact/NativeContactEvidence.h"
 #include "physics-interaction/collision/ContactActivityTracker.h"
+#include "physics-interaction/consume/MouthConsumeDetector.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
 #include "physics-interaction/core/PhysicsLifecycleState.h"
+#include "physics-interaction/feedback/FeedbackHaptics.h"
 #include "physics-interaction/input/GrabInputIntentPolicy.h"
 #include "physics-interaction/native/PhysicsStepDriveCoordinator.h"
 #include "physics-interaction/stash/ShoulderStashDetector.h"
@@ -240,6 +242,7 @@ namespace rock
         void dispatchGrabCommittedEvent(bool isLeft, RE::TESObjectREFR* refr, std::uint32_t primaryBodyId, RE::hknpWorld* world);
         void dispatchHeldImpactGrabEvent(bool isLeft, RE::TESObjectREFR* refr, std::uint32_t heldBodyId, std::uint32_t otherBodyId, float mass, float speedGameUnitsPerSecond);
         void handleGrabEventHaptics(const GrabEventData& eventData);
+        void updateFeedbackHaptics(float deltaSeconds);
         void pruneHeldImpactHapticCooldowns();
 
         static void onContactCallback(void* userData, void** worldPtrHolder, void* contactEventData);
@@ -327,6 +330,8 @@ namespace rock
         std::unordered_map<std::uint64_t, float> _heldImpactHapticCooldownUntil;
         std::uint64_t _grabEventFrameCounter = 0;
         std::array<shoulder_stash::RuntimeState, 2> _shoulderStashStates{};
+        std::array<mouth_consume::RuntimeState, 2> _mouthConsumeStates{};
+        feedback_haptics::FeedbackHaptics _feedbackHaptics;
 
         static constexpr std::uint32_t INVALID_CONTACT_BODY_ID = 0x7FFF'FFFF;
         static constexpr std::uint32_t WEAPON_CONTACT_TIMEOUT_FRAMES = 5;

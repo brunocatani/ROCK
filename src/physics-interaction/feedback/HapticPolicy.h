@@ -98,7 +98,7 @@ namespace rock::grab_haptic_policy
     }
 }
 
-namespace rock::shoulder_stash_haptic_policy
+namespace rock::candidate_haptic_policy
 {
     struct CandidatePulseConfig
     {
@@ -127,5 +127,15 @@ namespace rock::shoulder_stash_haptic_policy
         const float maxIntensity = std::clamp(sanitizeIntensity(config.maxIntensity, 0.42f), base, 1.0f);
         const float normalizedConfidence = std::clamp(finiteOr(confidence, 0.0f), 0.0f, 1.0f);
         return std::clamp(base + (maxIntensity - base) * normalizedConfidence, base, maxIntensity);
+    }
+}
+
+namespace rock::shoulder_stash_haptic_policy
+{
+    using CandidatePulseConfig = candidate_haptic_policy::CandidatePulseConfig;
+
+    [[nodiscard]] inline float computeCandidatePulseIntensity(float confidence, const CandidatePulseConfig& config) noexcept
+    {
+        return candidate_haptic_policy::computeCandidatePulseIntensity(confidence, config);
     }
 }

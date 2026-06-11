@@ -353,6 +353,14 @@ namespace rock
         float rockShoulderStashHmdBackExitPaddingGameUnits = 2.0f;
         float rockShoulderStashHmdBackMinBehindGameUnits = 4.0f;
         bool rockShoulderStashShowCollectedNotifications = true;
+        bool rockMouthConsumeEnabled = true;
+        bool rockMouthConsumeAllowPoison = false;
+        RE::NiPoint3 rockMouthConsumeHmdOffsetGameUnits = RE::NiPoint3(0.0f, 10.0f, -9.0f);
+        float rockMouthConsumeRadiusGameUnits = 11.0f;
+        float rockMouthConsumeEnterPaddingGameUnits = 0.0f;
+        float rockMouthConsumeExitPaddingGameUnits = 2.0f;
+        float rockMouthConsumeMinDwellSeconds = 0.06f;
+        float rockMouthConsumeMaxSpeedGameUnitsPerSecond = 120.0f;
         float rockGrabVelocityDamping = 0.25f;
         bool rockGrabPlayerSpaceCompensation = true;
         float rockGrabPlayerSpaceWarpDistance = 35.0f;
@@ -479,6 +487,13 @@ namespace rock
         float rockShoulderStashCandidateHapticIntervalSeconds = 0.075f;
         float rockShoulderStashCommitHapticDurationSeconds = 0.12f;
         float rockShoulderStashCommitHapticIntensity = 0.85f;
+        bool rockMouthConsumeHapticsEnabled = true;
+        float rockMouthConsumeCandidateHapticDurationSeconds = 0.050f;
+        float rockMouthConsumeCandidateHapticBaseIntensity = 0.22f;
+        float rockMouthConsumeCandidateHapticIntensity = 0.45f;
+        float rockMouthConsumeCandidateHapticIntervalSeconds = 0.075f;
+        float rockMouthConsumeCommitHapticDurationSeconds = 0.12f;
+        float rockMouthConsumeCommitHapticIntensity = 0.85f;
 
     private:
         void resetToDefaults();

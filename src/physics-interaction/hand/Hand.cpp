@@ -455,6 +455,19 @@ namespace rock
         return applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::CancelGameplayCandidate }).accepted;
     }
 
+    bool Hand::beginConsumeCandidate()
+    {
+        return applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::BeginConsumeCandidate }).accepted;
+    }
+
+    bool Hand::cancelConsumeCandidate()
+    {
+        if (_state != HandState::ConsumeCandidate) {
+            return false;
+        }
+        return applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::CancelGameplayCandidate }).accepted;
+    }
+
     void Hand::clearPullRuntimeState(bool restorePreparedObject, const char* context)
     {
         if (restorePreparedObject) {

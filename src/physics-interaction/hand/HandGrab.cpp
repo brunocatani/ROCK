@@ -89,6 +89,8 @@ namespace rock
                 return "pending-inventory-transfer";
             case GrabReleaseDisposition::TransferToInventory:
                 return "transfer-to-inventory";
+            case GrabReleaseDisposition::PendingConsumeTransfer:
+                return "pending-consume-transfer";
             case GrabReleaseDisposition::OwnershipHandoff:
                 return "ownership-handoff";
             }
@@ -12465,7 +12467,8 @@ namespace rock
 
         const bool captureReleaseVelocity =
             (releaseContext.disposition == GrabReleaseDisposition::PhysicalDrop ||
-                releaseContext.disposition == GrabReleaseDisposition::PendingInventoryTransfer) &&
+                releaseContext.disposition == GrabReleaseDisposition::PendingInventoryTransfer ||
+                releaseContext.disposition == GrabReleaseDisposition::PendingConsumeTransfer) &&
             releaseContext.finalObjectRelease && world && (_heldLocalLinearVelocityHistoryCount > 0 || _heldHandVelocityHistoryCount > 0);
         if (captureReleaseVelocity) {
             std::array<RE::NiPoint3, GRAB_RELEASE_VELOCITY_HISTORY> orderedObjectHistory{};
@@ -12810,10 +12813,10 @@ namespace rock
         _lastPlayerSpaceVelocityHavok = {};
         _currentSelection.clear();
         clearGrabAcquisitionCache("release-cleared-selection");
-        const HandInteractionEvent releaseEvent =
-            releaseContext.disposition == GrabReleaseDisposition::TransferToInventory && _state == HandState::StashCandidate ?
-                HandInteractionEvent::CommitStash :
-                HandInteractionEvent::ReleaseRequested;
+        HandInteractionEvent releaseEvent = HandInteractionEvent::ReleaseRequested;
+        if (releaseContext.disposition == GrabReleaseDisposition::TransferToInventory && _state == HandState::StashCandidate) {
+            releaseEvent = HandInteractionEvent::CommitStash;
+        }
         applyTransition(HandTransitionRequest{ .event = releaseEvent });
 
         ROCK_LOG_DEBUG(Hand, "{} hand: Idle", handName());

@@ -428,6 +428,22 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKShoulderStashPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKShoulderStashPolicyTests)
 
+  add_executable(ROCKMouthConsumePolicyTests
+    "${ROOT_DIR}/tests/MouthConsumePolicyTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/consume/MouthConsumeDetector.cpp"
+  )
+  target_compile_features(ROCKMouthConsumePolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKMouthConsumePolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKMouthConsumePolicyTests)
+
+  add_executable(ROCKFeedbackHapticsPolicyTests
+    "${ROOT_DIR}/tests/FeedbackHapticsPolicyTests.cpp"
+    "${SOURCE_DIR}/physics-interaction/feedback/FeedbackHaptics.cpp"
+  )
+  target_compile_features(ROCKFeedbackHapticsPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKFeedbackHapticsPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKFeedbackHapticsPolicyTests)
+
   add_executable(ROCKSeeThroughScopesPolicyTests
     "${ROOT_DIR}/tests/SeeThroughScopesPolicyTests.cpp"
   )
@@ -515,6 +531,8 @@ if(BUILD_ROCK_TESTS)
     ROCKHknpBodyFramePolicyTests
     ROCKGrabNodeNamePolicyTests
     ROCKShoulderStashPolicyTests
+    ROCKMouthConsumePolicyTests
+    ROCKFeedbackHapticsPolicyTests
     ROCKSeeThroughScopesPolicyTests
     ROCKWeaponCollisionLifecyclePolicyTests
     ROCKActiveGrabBodyLifecyclePolicyTests
