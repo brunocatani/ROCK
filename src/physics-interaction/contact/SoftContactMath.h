@@ -293,6 +293,23 @@ namespace rock::soft_contact_math
         return tangentDistanceFromAnchor(projectedPoint, anchorPoint, surfaceNormal) <= limit;
     }
 
+    inline bool withinClearDistanceLimit(
+        const RE::NiPoint3& point,
+        const RE::NiPoint3& anchorPoint,
+        float maxClearDistance)
+    {
+        if (!isFinite(point) || !isFinite(anchorPoint)) {
+            return false;
+        }
+
+        const float limit = sanitizePositive(maxClearDistance, 0.0f);
+        if (limit <= 0.0f) {
+            return false;
+        }
+
+        return length(sub(point, anchorPoint)) <= limit;
+    }
+
     inline bool shouldAllowPostReleaseReentrySweep(
         bool releasedCachedPlane,
         const RE::NiPoint3& sweepDelta,

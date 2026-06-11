@@ -60,6 +60,10 @@ Require-Text 'src/RockConfig.h' 'rockSoftContactWorldShapeCastFilterInfo' `
     'World soft contact must own a dedicated fallback shape-cast filter config.'
 Require-Text 'src/RockConfig.cpp' 'sSoftContactWorldShapeCastFilterInfo' `
     'World soft contact must read its dedicated fallback shape-cast filter config.'
+Require-Text 'src/RockConfig.h' 'rockSoftContactWorldCachedPlaneMaxClearDistanceGameUnits[\s\S]*rockSoftContactWorldReleaseLerpEnabled[\s\S]*rockSoftContactWorldReleaseLerpTimeMin[\s\S]*rockSoftContactWorldReleaseLerpTimeMax' `
+    'World soft contact must expose clear-distance and release-lerp tuning.'
+Require-Text 'src/RockConfig.cpp' 'fSoftContactWorldCachedPlaneMaxClearDistanceGameUnits[\s\S]*bSoftContactWorldReleaseLerpEnabled[\s\S]*fSoftContactWorldReleaseLerpTimeMin[\s\S]*fSoftContactWorldReleaseLerpTimeMax' `
+    'World soft contact must read clear-distance and release-lerp tuning.'
 
 Reject-Text 'data/config/ROCK.ini' $removedIniPattern `
     'Default config must not document removed soft-contact toggles or tuning.'
@@ -73,6 +77,10 @@ Require-Text 'data/config/ROCK.ini' 'sSoftContactWorldShapeCastFilterInfo\s*=\s*
     'Default config must expose the dedicated world soft-contact fallback query filter.'
 Require-Text 'data/mod/ROCK_Config/ROCK.ini' 'sSoftContactWorldShapeCastFilterInfo\s*=\s*000B002D' `
     'Packaged mod config must expose the dedicated world soft-contact fallback query filter.'
+Require-Text 'data/config/ROCK.ini' 'fSoftContactWorldCachedPlaneMaxClearDistanceGameUnits\s*=\s*18\.0[\s\S]*bSoftContactWorldReleaseLerpEnabled\s*=\s*true' `
+    'Default config must expose soft-contact clear distance and release lerp.'
+Require-Text 'data/mod/ROCK_Config/ROCK.ini' 'fSoftContactWorldCachedPlaneMaxClearDistanceGameUnits\s*=\s*18\.0[\s\S]*bSoftContactWorldReleaseLerpEnabled\s*=\s*true' `
+    'Packaged mod config must expose soft-contact clear distance and release lerp.'
 
 Reject-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'buildHandShapes|buildBodyShapes|solveShapeAgainstShapes|solveShapeAgainstWeapon|RuntimeShape|DirectSkeletonBoneSnapshot|_bodyReader|std::vector<|WeaponCollision|NiAVObject' `
     'SoftContactRuntime must not retain hand-hand, body, weapon, or per-frame shape-vector solve paths.'
@@ -84,6 +92,8 @@ Require-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'solveWorl
     'SoftContactRuntime must keep the world contact solve path.'
 Require-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'worldOnly=yes' `
     'SoftContactRuntime active logging must report world-only behavior.'
+Require-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'withinClearDistanceLimit\([\s\S]*applyReleaseBlend[\s\S]*blendTransformOverDuration' `
+    'SoftContactRuntime must clear cached planes by all-direction distance and smooth visual release.'
 Require-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'collisionFilterInfo\s*=\s*g_rockConfig\.rockSoftContactWorldShapeCastFilterInfo' `
     'SoftContactRuntime fallback casts must use the dedicated world soft-contact filter, not selection tuning.'
 Reject-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'collisionFilterInfo\s*=\s*g_rockConfig\.rockSelectionShapeCastFilterInfo' `

@@ -91,6 +91,12 @@ int main()
         withinTangentDriftLimit(RE::NiPoint3{ 2.0f, 0.0f, 0.0f }, planePoint, planeNormal, 3.0f));
     ok &= expectFalse("cached plane rejects excessive tangent drift",
         withinTangentDriftLimit(RE::NiPoint3{ 4.0f, 0.0f, 0.0f }, planePoint, planeNormal, 3.0f));
+    ok &= expectTrue("cached plane keeps bounded radial distance",
+        withinClearDistanceLimit(RE::NiPoint3{ 0.0f, 0.0f, -2.0f }, planePoint, 3.0f));
+    ok &= expectFalse("cached plane rejects excessive distance through plane",
+        withinClearDistanceLimit(RE::NiPoint3{ 0.0f, 0.0f, -4.0f }, planePoint, 3.0f));
+    ok &= expectFalse("cached plane rejects excessive distance on any axis",
+        withinClearDistanceLimit(RE::NiPoint3{ 2.5f, 2.5f, 0.0f }, planePoint, 3.0f));
     ok &= expectTrue("normal frame sweep is allowed when no cached plane was released",
         shouldAllowPostReleaseReentrySweep(false, RE::NiPoint3{ 0.0f, 0.0f, 1.0f }, planeNormal, 0.05f));
     ok &= expectTrue("post-release reentry allows renewed approach",

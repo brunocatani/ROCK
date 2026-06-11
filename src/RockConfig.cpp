@@ -167,7 +167,13 @@ namespace rock
         rockSoftContactWorldSkinGameUnits = 0.5f;
         rockSoftContactWorldPostReleaseReentryMinApproachDistanceGameUnits = 0.025f;
         rockSoftContactWorldCachedPlaneMaxTangentDriftGameUnits = 10.0f;
+        rockSoftContactWorldCachedPlaneMaxClearDistanceGameUnits = 18.0f;
         rockSoftContactWorldMaxCorrectionGameUnits = 18.0f;
+        rockSoftContactWorldReleaseLerpEnabled = true;
+        rockSoftContactWorldReleaseLerpTimeMin = 0.06f;
+        rockSoftContactWorldReleaseLerpTimeMax = 0.12f;
+        rockSoftContactWorldReleaseLerpMinDistance = 0.5f;
+        rockSoftContactWorldReleaseLerpMaxDistance = 18.0f;
         rockSoftContactWorldShapeCastFilterInfo = selection_query_policy::kDefaultShapeCastFilterInfo;
         rockSoftContactWorldHapticsEnabled = true;
         rockSoftContactWorldHapticDurationSeconds = 0.035f;
@@ -768,11 +774,47 @@ namespace rock
         if (!std::isfinite(rockSoftContactWorldCachedPlaneMaxTangentDriftGameUnits) || rockSoftContactWorldCachedPlaneMaxTangentDriftGameUnits <= 0.0f) {
             rockSoftContactWorldCachedPlaneMaxTangentDriftGameUnits = 10.0f;
         }
+        rockSoftContactWorldCachedPlaneMaxClearDistanceGameUnits =
+            static_cast<float>(ini.GetDoubleValue(SECTION,
+                "fSoftContactWorldCachedPlaneMaxClearDistanceGameUnits",
+                rockSoftContactWorldCachedPlaneMaxClearDistanceGameUnits));
+        if (!std::isfinite(rockSoftContactWorldCachedPlaneMaxClearDistanceGameUnits) || rockSoftContactWorldCachedPlaneMaxClearDistanceGameUnits <= 0.0f) {
+            rockSoftContactWorldCachedPlaneMaxClearDistanceGameUnits = 18.0f;
+        }
         rockSoftContactWorldMaxCorrectionGameUnits =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fSoftContactWorldMaxCorrectionGameUnits", rockSoftContactWorldMaxCorrectionGameUnits));
         if (!std::isfinite(rockSoftContactWorldMaxCorrectionGameUnits) || rockSoftContactWorldMaxCorrectionGameUnits <= 0.0f) {
             rockSoftContactWorldMaxCorrectionGameUnits = 18.0f;
         }
+        rockSoftContactWorldReleaseLerpEnabled = ini.GetBoolValue(SECTION, "bSoftContactWorldReleaseLerpEnabled", rockSoftContactWorldReleaseLerpEnabled);
+        rockSoftContactWorldReleaseLerpTimeMin = readClampedFloat(ini,
+            SECTION,
+            "fSoftContactWorldReleaseLerpTimeMin",
+            rockSoftContactWorldReleaseLerpTimeMin,
+            0.06f,
+            0.0f,
+            0.5f);
+        rockSoftContactWorldReleaseLerpTimeMax = readClampedFloat(ini,
+            SECTION,
+            "fSoftContactWorldReleaseLerpTimeMax",
+            rockSoftContactWorldReleaseLerpTimeMax,
+            0.12f,
+            rockSoftContactWorldReleaseLerpTimeMin,
+            0.5f);
+        rockSoftContactWorldReleaseLerpMinDistance = readClampedFloat(ini,
+            SECTION,
+            "fSoftContactWorldReleaseLerpMinDistance",
+            rockSoftContactWorldReleaseLerpMinDistance,
+            0.5f,
+            0.0f,
+            100.0f);
+        rockSoftContactWorldReleaseLerpMaxDistance = readClampedFloat(ini,
+            SECTION,
+            "fSoftContactWorldReleaseLerpMaxDistance",
+            rockSoftContactWorldReleaseLerpMaxDistance,
+            18.0f,
+            rockSoftContactWorldReleaseLerpMinDistance,
+            200.0f);
         rockSoftContactWorldShapeCastFilterInfo = readHexFilter(
             "sSoftContactWorldShapeCastFilterInfo",
             rockSoftContactWorldShapeCastFilterInfo,

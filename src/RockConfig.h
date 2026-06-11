@@ -118,7 +118,13 @@ namespace rock
         float rockSoftContactWorldSkinGameUnits = 0.5f;
         float rockSoftContactWorldPostReleaseReentryMinApproachDistanceGameUnits = 0.025f;
         float rockSoftContactWorldCachedPlaneMaxTangentDriftGameUnits = 10.0f;
+        float rockSoftContactWorldCachedPlaneMaxClearDistanceGameUnits = 18.0f;
         float rockSoftContactWorldMaxCorrectionGameUnits = 18.0f;
+        bool rockSoftContactWorldReleaseLerpEnabled = true;
+        float rockSoftContactWorldReleaseLerpTimeMin = 0.06f;
+        float rockSoftContactWorldReleaseLerpTimeMax = 0.12f;
+        float rockSoftContactWorldReleaseLerpMinDistance = 0.5f;
+        float rockSoftContactWorldReleaseLerpMaxDistance = 18.0f;
         std::uint32_t rockSoftContactWorldShapeCastFilterInfo = selection_query_policy::kDefaultShapeCastFilterInfo;
         bool rockSoftContactWorldHapticsEnabled = true;
         float rockSoftContactWorldHapticDurationSeconds = 0.035f;

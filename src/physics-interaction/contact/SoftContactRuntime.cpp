@@ -8,6 +8,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/hand/Hand.h"
 #include "physics-interaction/hand/HandSkeleton.h"
+#include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/native/PhysicsShapeCast.h"
@@ -40,6 +41,7 @@ namespace rock
         constexpr float kDefaultWorldContactPaddingGameUnits = 0.35f;
         constexpr float kDefaultWorldPostReleaseReentryMinApproachDistanceGameUnits = 0.025f;
         constexpr float kDefaultWorldCachedPlaneMaxTangentDriftGameUnits = 10.0f;
+        constexpr float kDefaultWorldCachedPlaneMaxClearDistanceGameUnits = 18.0f;
         constexpr std::uint32_t kNativeWorldContactMaxAgeFrames = 2;
         constexpr std::uint32_t kWorldProbeIdRightBase = 0x5000u;
         constexpr std::uint32_t kWorldProbeIdLeftBase = 0x6000u;
@@ -241,9 +243,58 @@ namespace rock
                 kDefaultWorldCachedPlaneMaxTangentDriftGameUnits);
         }
 
+        float worldCachedPlaneMaxClearDistance()
+        {
+            return soft_contact_math::sanitizePositive(
+                g_rockConfig.rockSoftContactWorldCachedPlaneMaxClearDistanceGameUnits,
+                kDefaultWorldCachedPlaneMaxClearDistanceGameUnits);
+        }
+
         float maxWorldCorrection()
         {
             return soft_contact_math::sanitizePositive(g_rockConfig.rockSoftContactWorldMaxCorrectionGameUnits, 18.0f);
+        }
+
+        float softContactReleaseLerpMinTime()
+        {
+            return std::clamp(std::isfinite(g_rockConfig.rockSoftContactWorldReleaseLerpTimeMin) ? g_rockConfig.rockSoftContactWorldReleaseLerpTimeMin : 0.06f,
+                0.0f,
+                0.5f);
+        }
+
+        float softContactReleaseLerpMaxTime()
+        {
+            return std::clamp(std::isfinite(g_rockConfig.rockSoftContactWorldReleaseLerpTimeMax) ? g_rockConfig.rockSoftContactWorldReleaseLerpTimeMax : 0.12f,
+                softContactReleaseLerpMinTime(),
+                0.5f);
+        }
+
+        float softContactReleaseLerpMinDistance()
+        {
+            return soft_contact_math::sanitizeNonNegative(g_rockConfig.rockSoftContactWorldReleaseLerpMinDistance, 0.5f);
+        }
+
+        float softContactReleaseLerpMaxDistance()
+        {
+            return std::max(
+                softContactReleaseLerpMinDistance(),
+                soft_contact_math::sanitizeNonNegative(g_rockConfig.rockSoftContactWorldReleaseLerpMaxDistance, 18.0f));
+        }
+
+        bool isFiniteTransform(const RE::NiTransform& transform)
+        {
+            if (!soft_contact_math::isFinite(transform.translate) || !std::isfinite(transform.scale)) {
+                return false;
+            }
+
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    if (!std::isfinite(transform.rotate.entry[row][column])) {
+                        return false;
+                    }
+                }
+            }
+            return true;
         }
 
         float responseScaleForCandidate(const Candidate& candidate)
@@ -501,6 +552,7 @@ namespace rock
             float contactPadding,
             float skin,
             float maxTangentDrift,
+            float maxClearDistance,
             float deltaSeconds)
         {
             CachedWorldPlaneResult result{};
@@ -519,6 +571,17 @@ namespace rock
             }
 
             if (!probe) {
+                handState.cachedWorldPlane = {};
+                result.leftContact = true;
+                return result;
+            }
+
+            /*
+             * Tangent drift protects sliding along a surface, but it does not
+             * catch the raw hand moving deep through the cached plane. This
+             * radial limit is the hard escape hatch for all directions.
+             */
+            if (!soft_contact_math::withinClearDistanceLimit(probe->position, handState.cachedWorldPlane.surfacePoint, maxClearDistance)) {
                 handState.cachedWorldPlane = {};
                 result.leftContact = true;
                 return result;
@@ -663,6 +726,7 @@ namespace rock
                 soft_contact_math::sanitizeNonNegative(g_rockConfig.rockSoftContactWorldSkinGameUnits, 0.5f);
             const float reentryMinApproachDistance = worldPostReleaseReentryMinApproachDistance();
             const float maxTangentDrift = worldCachedPlaneMaxTangentDrift();
+            const float maxClearDistance = worldCachedPlaneMaxClearDistance();
             const float dt = std::clamp(std::isfinite(deltaSeconds) ? deltaSeconds : (1.0f / 90.0f), 0.0f, 0.1f);
 
             const auto cachedPlaneContact = solveCachedWorldPlaneContact(
@@ -672,6 +736,7 @@ namespace rock
                 contactPadding,
                 skin,
                 maxTangentDrift,
+                maxClearDistance,
                 deltaSeconds);
             keepStrongerCandidate(best, cachedPlaneContact.candidate);
 
@@ -879,6 +944,75 @@ namespace rock
             entry.targetBaseFormId = candidate.targetIdentity.baseFormId;
             entry.surfaceHint = candidate.targetIdentity.surfaceHint;
         }
+
+        void beginReleaseBlend(auto& handState, const RE::NiTransform& rawHandWorld)
+        {
+            handState.releaseBlend = {};
+            if (!g_rockConfig.rockSoftContactWorldReleaseLerpEnabled ||
+                !handState.externalTransformActive ||
+                !isFiniteTransform(handState.lastAppliedWorld) ||
+                !isFiniteTransform(rawHandWorld)) {
+                return;
+            }
+
+            const float distance = hand_visual_lerp_math::distanceGameUnits(handState.lastAppliedWorld.translate, rawHandWorld.translate);
+            const float duration = hand_visual_lerp_math::computeDistanceMappedDurationGameUnits(
+                distance,
+                softContactReleaseLerpMinTime(),
+                softContactReleaseLerpMaxTime(),
+                softContactReleaseLerpMinDistance(),
+                softContactReleaseLerpMaxDistance());
+            if (duration <= 0.0f) {
+                return;
+            }
+
+            handState.releaseBlend.active = true;
+            handState.releaseBlend.startWorld = handState.lastAppliedWorld;
+            handState.releaseBlend.elapsedSeconds = 0.0f;
+            handState.releaseBlend.durationSeconds = duration;
+        }
+
+        enum class ReleaseBlendStep : std::uint8_t
+        {
+            Inactive,
+            Applied,
+            Finished,
+            Failed
+        };
+
+        ReleaseBlendStep applyReleaseBlend(auto& handState, bool isLeft, const RE::NiTransform& rawHandWorld, float deltaSeconds)
+        {
+            if (!handState.releaseBlend.active) {
+                beginReleaseBlend(handState, rawHandWorld);
+            }
+            if (!handState.releaseBlend.active) {
+                return ReleaseBlendStep::Inactive;
+            }
+
+            auto& release = handState.releaseBlend;
+            release.elapsedSeconds = hand_visual_lerp_math::advanceTimedBlendElapsed(
+                release.elapsedSeconds,
+                std::clamp(std::isfinite(deltaSeconds) ? deltaSeconds : (1.0f / 90.0f), 0.0f, 0.1f),
+                release.durationSeconds);
+            const auto blend = hand_visual_lerp_math::blendTransformOverDuration(
+                release.startWorld,
+                rawHandWorld,
+                release.elapsedSeconds,
+                release.durationSeconds);
+            if (!frik_visual_authority::applyExternalHandWorldTransform(
+                    softContactTag(isLeft),
+                    handFromBool(isLeft),
+                    blend.transform,
+                    g_rockConfig.rockSoftContactVisualPriority)) {
+                return ReleaseBlendStep::Failed;
+            }
+
+            handState.lastAppliedWorld = blend.transform;
+            handState.externalTransformActive = true;
+            handState.correction = soft_contact_math::sub(blend.transform.translate, rawHandWorld.translate);
+            handState.state = ContactState::Inactive;
+            return blend.reachedTarget ? ReleaseBlendStep::Finished : ReleaseBlendStep::Applied;
+        }
     }
 
     void SoftContactRuntime::reset()
@@ -956,13 +1090,17 @@ namespace rock
             const float loggedWorldContactPadding = worldContactPadding();
             const float loggedWorldQueryPadding = worldQueryRadiusPadding(loggedWorldContactPadding);
             ROCK_LOG_DEBUG(Hand,
-                "SoftContact active: worldOnly=yes worldHaptics={} worldMaxCorrection={:.2f} worldQueryPadding={:.2f} worldContactPadding={:.2f} worldPostReleaseReentryMinApproach={:.3f} worldCachedPlaneMaxTangentDrift={:.2f} priority={}",
+                "SoftContact active: worldOnly=yes worldHaptics={} worldMaxCorrection={:.2f} worldQueryPadding={:.2f} worldContactPadding={:.2f} worldPostReleaseReentryMinApproach={:.3f} worldCachedPlaneMaxTangentDrift={:.2f} worldCachedPlaneMaxClearDistance={:.2f} releaseLerp={} releaseLerpTime={:.2f}-{:.2f}s priority={}",
                 g_rockConfig.rockSoftContactWorldHapticsEnabled ? "yes" : "no",
                 maxWorldCorrection(),
                 loggedWorldQueryPadding,
                 loggedWorldContactPadding,
                 worldPostReleaseReentryMinApproachDistance(),
                 worldCachedPlaneMaxTangentDrift(),
+                worldCachedPlaneMaxClearDistance(),
+                g_rockConfig.rockSoftContactWorldReleaseLerpEnabled ? "yes" : "no",
+                softContactReleaseLerpMinTime(),
+                softContactReleaseLerpMaxTime(),
                 g_rockConfig.rockSoftContactVisualPriority);
         }
 
@@ -1013,6 +1151,7 @@ namespace rock
             if (best.valid) {
                 logContactTargetIdentity(isLeft, best);
                 updateWorldContactHaptics(handState, isLeft, true, best.approachSpeedGameUnits, frame.deltaSeconds);
+                handState.releaseBlend = {};
                 handState.correction = correctionForCandidate(best);
                 handState.lastContactKind = best.kind;
                 handState.state = best.contact.penetration >= 0.5f ? ContactState::Penetrating : ContactState::Touching;
@@ -1020,6 +1159,7 @@ namespace rock
                 RE::NiTransform target = handInput.rawHandWorld;
                 target.translate = soft_contact_math::add(target.translate, handState.correction);
                 if (frik_visual_authority::applyExternalHandWorldTransform(softContactTag(isLeft), handFromBool(isLeft), target, g_rockConfig.rockSoftContactVisualPriority)) {
+                    handState.lastAppliedWorld = target;
                     handState.externalTransformActive = true;
                 } else {
                     ROCK_LOG_SAMPLE_WARN(Hand,
@@ -1035,7 +1175,17 @@ namespace rock
             }
 
             updateWorldContactHaptics(handState, isLeft, false, 0.0f, frame.deltaSeconds);
-            if (handState.externalTransformActive || soft_contact_math::length(handState.correction) > kCorrectionClearDistance) {
+            if (handState.externalTransformActive || handState.releaseBlend.active || soft_contact_math::length(handState.correction) > kCorrectionClearDistance) {
+                const auto releaseStep = applyReleaseBlend(handState, isLeft, handInput.rawHandWorld, frame.deltaSeconds);
+                if (releaseStep == ReleaseBlendStep::Applied) {
+                    return;
+                }
+                if (releaseStep == ReleaseBlendStep::Failed) {
+                    ROCK_LOG_SAMPLE_WARN(Hand,
+                        1000,
+                        "{} soft contact release blend apply failed; clearing visual contact state",
+                        isLeft ? "Left" : "Right");
+                }
                 clearHand(isLeft);
                 return;
             }

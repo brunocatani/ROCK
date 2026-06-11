@@ -7,6 +7,8 @@
 #include <array>
 #include <cstdint>
 
+#include "RE/NetImmerse/NiTransform.h"
+
 namespace rock
 {
     class Hand;
@@ -92,10 +94,20 @@ namespace rock
                 contact_target_identity::ContactTargetIdentity targetIdentity{};
             };
 
+            struct ReleaseBlend
+            {
+                bool active = false;
+                RE::NiTransform startWorld{};
+                float elapsedSeconds = 0.0f;
+                float durationSeconds = 0.0f;
+            };
+
             soft_contact_math::ContactState state = soft_contact_math::ContactState::Inactive;
             soft_contact_math::ContactKind lastContactKind = soft_contact_math::ContactKind::None;
             RE::NiPoint3 correction{};
+            RE::NiTransform lastAppliedWorld{};
             bool externalTransformActive = false;
+            ReleaseBlend releaseBlend{};
             std::array<WorldProbeState, kMaxWorldContactProbesPerHand> worldProbes{};
             CachedWorldPlane cachedWorldPlane{};
             soft_contact_math::HapticEdgeState worldHaptic{};
