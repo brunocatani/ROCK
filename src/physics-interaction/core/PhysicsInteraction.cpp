@@ -2074,9 +2074,6 @@ namespace rock
             }
             _weaponCollision.update(hknp, weaponNode, dominantHandBodyId, frame.deltaSeconds);
         }
-        refreshGeneratedBodyContactRegistry();
-
-        _generatedBodyStepDrive.registerForNextStep(bhk, hknp);
 
         {
             WeaponInteractionContact leftWeaponContact{};
@@ -2202,12 +2199,14 @@ namespace rock
             if (weaponNode) {
                 performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponCollisionTransforms);
                 _weaponCollision.updateBodiesFromCurrentSourceTransforms(hknp, weaponNode, frame.deltaSeconds);
-                refreshGeneratedBodyContactRegistry();
             }
             if (f4vr::isNodeVisible(weaponNode)) {
                 applyFinalWeaponMuzzleAuthority();
             }
         }
+
+        refreshGeneratedBodyContactRegistry();
+        _generatedBodyStepDrive.registerForNextStep(bhk, hknp);
 
         updateSelection(frame);
 

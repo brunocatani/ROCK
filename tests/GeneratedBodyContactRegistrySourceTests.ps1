@@ -46,6 +46,23 @@ Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'publishSample
 Require-Text 'src/physics-interaction/contact/GeneratedBodyContactRegistry.h' 'std::atomic<std::uint64_t> _publicationVersion' 'Generated-body callback registry must use atomic publication versioning.'
 Require-Text 'src/physics-interaction/contact/GeneratedBodyContactRegistry.h' 'std::sort' 'Generated-body callback registry must publish sorted fixed storage for bounded lookup.'
 
+$physicsInteraction = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/core/PhysicsInteraction.cpp')
+$frameGeneratedBodyBlock = [regex]::Match(
+    $physicsInteraction,
+    '(?s)updateHandCollisions\(frame\);(?<block>.*?)updateSelection\(frame\);')
+if (!$frameGeneratedBodyBlock.Success) {
+    $failures.Add('src/physics-interaction/core/PhysicsInteraction.cpp: Could not locate generated-body frame update block for registry publication checks.')
+} else {
+    $block = $frameGeneratedBodyBlock.Groups['block'].Value
+    $publishCount = [regex]::Matches($block, 'refreshGeneratedBodyContactRegistry\(\);').Count
+    if ($publishCount -ne 1) {
+        $failures.Add("src/physics-interaction/core/PhysicsInteraction.cpp: Generated-body frame update must publish the contact registry exactly once after queueing targets; found $publishCount.")
+    }
+    if ($block -notmatch '(?s)updateBodiesFromCurrentSourceTransforms\(hknp,\s*weaponNode,\s*frame\.deltaSeconds\).*?refreshGeneratedBodyContactRegistry\(\);\s*_generatedBodyStepDrive\.registerForNextStep\(bhk,\s*hknp\);') {
+        $failures.Add('src/physics-interaction/core/PhysicsInteraction.cpp: Generated-body registry publication and step-drive registration must run after weapon transform target queueing.')
+    }
+}
+
 if ($failures.Count -gt 0) {
     Write-Host 'GeneratedBodyContactRegistrySourceTests failed:' -ForegroundColor Red
     foreach ($failure in $failures) {

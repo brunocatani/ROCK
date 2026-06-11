@@ -130,6 +130,8 @@ namespace rock::performance_profiler
                 return "weaponRebuildVisualRootDeferred";
             case Counter::WeaponRebuildVisualStableWait:
                 return "weaponRebuildVisualStableWait";
+            case Counter::WeaponRebuildVisualSourceUnavailableRetained:
+                return "weaponRebuildVisualSourceUnavailableRetained";
             case Counter::WeaponRebuildReasonSettingsChanged:
                 return "weaponRebuildReasonSettingsChanged";
             case Counter::WeaponRebuildReasonDriveRequested:

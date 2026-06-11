@@ -43,6 +43,7 @@ namespace rock::performance_profiler
         WeaponRebuildCompleted,
         WeaponRebuildVisualRootDeferred,
         WeaponRebuildVisualStableWait,
+        WeaponRebuildVisualSourceUnavailableRetained,
         WeaponRebuildReasonSettingsChanged,
         WeaponRebuildReasonDriveRequested,
         WeaponRebuildReasonKeyChanged,

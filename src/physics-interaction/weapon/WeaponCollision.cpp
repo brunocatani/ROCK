@@ -2435,7 +2435,7 @@ namespace rock
                     recordRebuildDiagnostics();
                     ROCK_LOG_SAMPLE_WARN(Weapon,
                         g_rockConfig.rockLogSampleMilliseconds,
-                        "Generated weapon mesh collision unavailable from current visible geometry - destroying stale bodies cachedKey={:016X} observedKey={:016X} visualRoots={} visualNodes={} visibleTriShapes={} sources={} missingGeometry={} invisibleNodes={}",
+                        "Generated weapon mesh collision unavailable from current visible geometry cachedKey={:016X} observedKey={:016X} visualRoots={} visualNodes={} visibleTriShapes={} sources={} missingGeometry={} invisibleNodes={}",
                         _cachedWeaponKey,
                         observedKey,
                         visualKeyStats.rootCount,
@@ -2444,6 +2444,38 @@ namespace rock
                         generatedCount,
                         visualKeyStats.missingRendererCount + visualKeyStats.emptyGeometryCount,
                         visualKeyStats.invisibleNodeCount);
+
+                    const bool sameEquippedIdentity =
+                        observedIdentityKey != 0 &&
+                        _cachedWeaponIdentityKey != 0 &&
+                        observedIdentityKey == _cachedWeaponIdentityKey &&
+                        !identityKeyChanged;
+                    if (hasWeaponBody() &&
+                        sameEquippedIdentity &&
+                        visualKeyChanged &&
+                        !settingsChanged &&
+                        !driveRequestedRebuild) {
+                        performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildVisualSourceUnavailableRetained);
+                        /*
+                         * The visible tree can briefly report no extractable
+                         * TriShapes while the same equipped weapon identity is
+                         * still live. Keep the current body set through that
+                         * transient miss; actual identity/settings/drive changes
+                         * still fall through and destroy stale collision.
+                         */
+                        ROCK_LOG_SAMPLE_INFO(Weapon,
+                            g_rockConfig.rockLogSampleMilliseconds,
+                            "Generated weapon mesh collision unavailable for same equipped identity - retaining current bodies cachedKey={:016X} observedKey={:016X} visualKey={:016X} bodies={}",
+                            _cachedWeaponKey,
+                            observedKey,
+                            observedVisualKey,
+                            getWeaponBodyCount());
+                        clearPendingGeneratedWeaponBuild(world, true);
+                        clearPendingWeaponVisualRebuild();
+                        syncDominantHandCollisionState();
+                        return;
+                    }
+
                     if (hasWeaponBody()) {
                         destroyWeaponBody(world);
                     } else {
