@@ -2830,20 +2830,6 @@ namespace rock
             return restored;
         }
 
-        std::uint16_t motionPropsIdFromRecordMotionType(physics_body_classifier::BodyMotionType motionType, std::uint16_t fallback)
-        {
-            switch (motionType) {
-            case physics_body_classifier::BodyMotionType::Static:
-                return 0;
-            case physics_body_classifier::BodyMotionType::Dynamic:
-                return 1;
-            case physics_body_classifier::BodyMotionType::Keyframed:
-                return 2;
-            default:
-                return fallback;
-            }
-        }
-
         RE::NiTransform invertTransform(const RE::NiTransform& transform) { return transform_math::invertTransform(transform); }
 
         RE::NiTransform multiplyTransforms(const RE::NiTransform& parent, const RE::NiTransform& child) { return transform_math::composeTransforms(parent, child); }
@@ -7733,7 +7719,7 @@ namespace rock
         _savedObjectState.originalFilterInfo = preparedBody->collisionFilterInfo;
         _savedObjectState.originalMotionPropsId = selectedOriginalMotionPropsId;
         if (const auto* originalPrimaryRecord = beforePrepBodySet.findRecord(objectBodyId.value)) {
-            _savedObjectState.originalMotionPropsId = motionPropsIdFromRecordMotionType(originalPrimaryRecord->motionType, selectedOriginalMotionPropsId);
+            _savedObjectState.originalMotionPropsId = originalPrimaryRecord->motionPropertiesId;
         }
 
         {

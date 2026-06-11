@@ -64,6 +64,8 @@ int main()
         BodyReleaseIntent::PhysicalDrop);
     ok &= expectFalse("loose dynamic release should keep active collision filter", dynamicRelease.entries.front().restoreFilter);
     ok &= expectFalse("loose dynamic release should keep dynamic motion", dynamicRelease.entries.front().restoreMotion);
+    ok &= expectTrue("loose dynamic physical drop should skip incomplete root restore when no state is restored",
+        shouldSkipIncompleteScanRootRestore(dynamicRelease, 5));
     ok &= expectTrue("loose object release should use protected restore policy",
         releaseRestorePolicyForTargetKind(grab_target::Kind::LooseObject) == BodyRestorePolicy::ProtectComplexSystemOwned);
 

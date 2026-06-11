@@ -493,6 +493,13 @@ namespace rock::active_grab_body_lifecycle
             return false;
         }
 
+        // A protected loose-dynamic physical drop intentionally leaves both
+        // motion and filter active. Running the coarse recursive restore after
+        // that can collapse weapon-specific motion property ids such as 5.
+        if (plan.motionRestoreCount == 0 && plan.filterRestoreCount == 0) {
+            return true;
+        }
+
         if (plan.preservedConvertedMotionCount > 0) {
             return true;
         }
