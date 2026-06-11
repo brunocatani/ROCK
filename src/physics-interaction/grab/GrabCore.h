@@ -558,7 +558,6 @@ namespace rock
         std::array<RE::NiPoint3, 5> fingerPoseTargetNormalLocal{};
         std::array<std::uint8_t, 5> fingerPoseTargetValid{};
         std::array<std::uint8_t, 5> fingerPoseTargetNormalValid{};
-        RE::NiPoint3 fingerPosePadProbeAimLocal{};
         RE::NiPoint3 gripPointBodyLocalGame{};
         RE::NiPoint3 pivotBBodyLocalGame{};
         RE::NiPoint3 pivotBConstraintLocalGame{};
@@ -572,7 +571,6 @@ namespace rock
         std::uint32_t contactPatchSampleCount = 0;
         std::uint32_t multiFingerContactGroupCount = 0;
         std::uint32_t fingerPoseTargetCount = 0;
-        std::uint8_t fingerPosePadProbeAimValid = 0;
         float gripEvidenceHitFraction = 1.0f;
         float pocketToGripDistanceGameUnits = 0.0f;
         float selectionToGripEvidenceDistanceGameUnits = 0.0f;
@@ -715,7 +713,6 @@ namespace rock
             fingerPoseTargetNormalLocal = {};
             fingerPoseTargetValid = {};
             fingerPoseTargetNormalValid = {};
-            fingerPosePadProbeAimLocal = {};
             gripPointBodyLocalGame = {};
             pivotBBodyLocalGame = {};
             pivotBConstraintLocalGame = {};
@@ -729,7 +726,6 @@ namespace rock
             contactPatchSampleCount = 0;
             multiFingerContactGroupCount = 0;
             fingerPoseTargetCount = 0;
-            fingerPosePadProbeAimValid = 0;
             gripEvidenceHitFraction = 1.0f;
             pocketToGripDistanceGameUnits = 0.0f;
             selectionToGripEvidenceDistanceGameUnits = 0.0f;

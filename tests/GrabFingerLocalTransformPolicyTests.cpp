@@ -289,6 +289,46 @@ int main()
         padCenter,
         RE::NiPoint3{ 2.0f, 0.0f, 0.0f });
     const auto padLandmarks = rock::root_flattened_finger_skeleton_runtime::buildLandmarkSet(liveFingerSnapshot);
+    auto opposedProbeSnapshot = liveFingerSnapshot;
+    opposedProbeSnapshot.fingers[0].points[2] = RE::NiPoint3{ 0.0f, -2.0f, 0.0f };
+    opposedProbeSnapshot.fingers[1].points[2] = RE::NiPoint3{ 0.0f, 0.0f, 0.0f };
+    opposedProbeSnapshot.fingers[2].points[2] = RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+    const auto opposedPadLandmarks = rock::root_flattened_finger_skeleton_runtime::buildLandmarkSet(opposedProbeSnapshot);
+    RE::NiPoint3 opposedProbeDirection{};
+    ok &= expectBool("thumb pad probe can aim at distal index point",
+        computeOpposedFingerPadProbeDirection(
+            opposedProbeSnapshot,
+            opposedPadLandmarks.fingers[0],
+            0,
+            opposedProbeSnapshot.fingers[0].points[2],
+            opposedProbeDirection),
+        true);
+    ok &= expectPointClose("thumb pad probe direction points to index",
+        opposedProbeDirection,
+        RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+    ok &= expectBool("index pad probe can aim at distal thumb point",
+        computeOpposedFingerPadProbeDirection(
+            opposedProbeSnapshot,
+            opposedPadLandmarks.fingers[1],
+            1,
+            opposedProbeSnapshot.fingers[1].points[2],
+            opposedProbeDirection),
+        true);
+    ok &= expectPointClose("index pad probe direction points to thumb",
+        opposedProbeDirection,
+        RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
+    ok &= expectBool("middle pad probe also aims at distal thumb point",
+        computeOpposedFingerPadProbeDirection(
+            opposedProbeSnapshot,
+            opposedPadLandmarks.fingers[2],
+            2,
+            opposedProbeSnapshot.fingers[2].points[2],
+            opposedProbeDirection),
+        true);
+    ok &= expectPointClose("middle pad probe direction points to thumb",
+        opposedProbeDirection,
+        RE::NiPoint3{ -0.4472f, -0.8944f, 0.0f });
+
     SolvedGrabFingerPose directionPose{};
     directionPose.surfaceAimTarget[1] = RE::NiPoint3{ 2.0f, 2.0f, 0.0f };
     directionPose.surfaceAimTargetValid[1] = 1;
@@ -296,12 +336,6 @@ int main()
     ok &= expectPointClose("pad direction prefers current surface target",
         fingerPadProbeDirection(directionPose, padTargets, padLandmarks.fingers[1], 1, padCenter),
         RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
-    padTargets.padProbeAimWorld = RE::NiPoint3{ 2.0f, -2.0f, 0.0f };
-    padTargets.padProbeAimValid = true;
-    ok &= expectPointClose("pinch-pocket pad aim overrides red surface target",
-        fingerPadProbeDirection(directionPose, padTargets, padLandmarks.fingers[1], 1, padCenter),
-        RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
-    padTargets.padProbeAimValid = false;
     directionPose.surfaceAimTargetValid[1] = 0;
     ok &= expectPointClose("pad direction falls back to grip seat",
         fingerPadProbeDirection(directionPose, padTargets, padLandmarks.fingers[1], 1, padCenter),

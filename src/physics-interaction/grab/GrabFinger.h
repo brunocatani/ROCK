@@ -841,10 +841,8 @@ namespace rock::grab_finger_pose_runtime
         std::array<std::uint8_t, 5> targetNormalValid{};
         RE::NiPoint3 seatPointWorld{};
         RE::NiPoint3 seatNormalWorld{};
-        RE::NiPoint3 padProbeAimWorld{};
         bool seatPointValid = false;
         bool seatNormalValid = false;
-        bool padProbeAimValid = false;
         bool useSeatPointForMissingTargets = true;
         bool useWholeMeshForMissingTargets = false;
         std::uint32_t targetCount = 0;
@@ -1078,6 +1076,36 @@ namespace rock::grab_finger_pose_runtime
         return isFinitePoint(outPadCenterWorld);
     }
 
+    inline bool computeOpposedFingerPadProbeDirection(
+        const root_flattened_finger_skeleton_runtime::Snapshot& liveFingerSnapshot,
+        const root_flattened_finger_skeleton_runtime::FingerLandmark& liveFinger,
+        std::size_t finger,
+        const RE::NiPoint3& padCenterWorld,
+        RE::NiPoint3& outProbeDirection)
+    {
+        outProbeDirection = {};
+        if (!liveFingerSnapshot.valid ||
+            !liveFingerSnapshot.fingers[0].valid ||
+            !liveFingerSnapshot.fingers[1].valid ||
+            !isFinitePoint(padCenterWorld)) {
+            return false;
+        }
+
+        const auto& aimChain = finger == 0 ? liveFingerSnapshot.fingers[1] : liveFingerSnapshot.fingers[0];
+        if (!aimChain.valid || !isFinitePoint(aimChain.points[2])) {
+            return false;
+        }
+
+        const RE::NiPoint3 toOpposedFinger = aimChain.points[2] - padCenterWorld;
+        if (distanceSquared(toOpposedFinger, RE::NiPoint3{}) <= 0.000001f) {
+            return false;
+        }
+
+        const RE::NiPoint3 fallback = liveFinger.valid ? liveFinger.openDirection : RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+        outProbeDirection = normalizedOrFallback(toOpposedFinger, fallback);
+        return isFinitePoint(outProbeDirection) && distanceSquared(outProbeDirection, RE::NiPoint3{}) > 0.000001f;
+    }
+
     inline RE::NiPoint3 fingerPadProbeDirection(
         const SolvedGrabFingerPose& pose,
         const GrabFingerPoseTargetSet& poseTargets,
@@ -1087,10 +1115,7 @@ namespace rock::grab_finger_pose_runtime
     {
         RE::NiPoint3 targetWorld{};
         bool hasTarget = false;
-        if (poseTargets.padProbeAimValid) {
-            targetWorld = poseTargets.padProbeAimWorld;
-            hasTarget = true;
-        } else if (finger < pose.surfaceAimTargetValid.size() && pose.surfaceAimTargetValid[finger]) {
+        if (finger < pose.surfaceAimTargetValid.size() && pose.surfaceAimTargetValid[finger]) {
             targetWorld = pose.surfaceAimTarget[finger];
             hasTarget = true;
         } else if (finger < poseTargets.targetValid.size() && poseTargets.targetValid[finger]) {
@@ -1394,7 +1419,10 @@ namespace rock::grab_finger_pose_runtime
                 continue;
             }
 
-            const RE::NiPoint3 probeDirection = fingerPadProbeDirection(pose, poseTargets, liveLandmarks.fingers[finger], finger, padCenterWorld);
+            RE::NiPoint3 probeDirection{};
+            if (!computeOpposedFingerPadProbeDirection(liveFingerSnapshot, liveLandmarks.fingers[finger], finger, padCenterWorld, probeDirection)) {
+                probeDirection = fingerPadProbeDirection(pose, poseTargets, liveLandmarks.fingers[finger], finger, padCenterWorld);
+            }
             const bool hasPreferredNormal = finger < pose.surfaceAimNormalValid.size() && pose.surfaceAimNormalValid[finger] != 0;
             const RE::NiPoint3 preferredNormal = hasPreferredNormal ? pose.surfaceAimNormal[finger] : RE::NiPoint3{};
             FingerPadSurfaceEvidence evidence = solveFingerPadSurfaceEvidenceFromTriangles(
