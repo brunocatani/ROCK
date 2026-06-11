@@ -45,6 +45,8 @@ namespace rock
         constexpr std::uint32_t kNativeWorldContactMaxAgeFrames = 2;
         constexpr std::uint32_t kWorldProbeIdRightBase = 0x5000u;
         constexpr std::uint32_t kWorldProbeIdLeftBase = 0x6000u;
+        constexpr float kWorldContactDuplicateNormalDot = 0.92f;
+        constexpr std::uint32_t kWorldContactSolverPasses = 3;
 
         enum class CandidateSource : std::uint8_t
         {
@@ -64,12 +66,19 @@ namespace rock
             contact_target_identity::ContactTargetIdentity targetIdentity{};
         };
 
-        struct CachedWorldPlaneResult
+        struct CandidateManifold
         {
-            Candidate candidate{};
+            std::array<Candidate, SoftContactRuntime::kMaxWorldContactManifoldContactsPerHand> contacts{};
+            std::uint32_t count = 0;
+        };
+
+        struct CachedWorldPlaneContactsResult
+        {
+            CandidateManifold manifold{};
             bool hadCachedPlane = false;
             bool leftContact = false;
-            RE::NiPoint3 normal{};
+            std::array<RE::NiPoint3, SoftContactRuntime::kMaxWorldContactManifoldContactsPerHand> releasedNormals{};
+            std::uint32_t releasedNormalCount = 0;
         };
 
         struct WorldContactProbe
@@ -180,28 +189,111 @@ namespace rock
             return soft_contact_math::length(correctionForCandidate(candidate));
         }
 
-        bool candidateResponseWinsTie(const Candidate& best, const Candidate& candidate)
+        bool candidateRanksBefore(const Candidate& lhs, const Candidate& rhs)
         {
+            if (!lhs.valid) {
+                return false;
+            }
+            if (!rhs.valid) {
+                return true;
+            }
+
+            const int lhsSourcePriority = candidateSourcePriority(lhs.source);
+            const int rhsSourcePriority = candidateSourcePriority(rhs.source);
+            if (lhsSourcePriority != rhsSourcePriority) {
+                return lhsSourcePriority > rhsSourcePriority;
+            }
+
             return soft_contact_math::preferStrongerContactResponse(
-                candidateResponseStrength(candidate),
-                candidate.contact.penetration,
-                candidateResponseStrength(best),
-                best.contact.penetration);
+                candidateResponseStrength(lhs),
+                lhs.contact.penetration,
+                candidateResponseStrength(rhs),
+                rhs.contact.penetration);
         }
 
-        void keepStrongerCandidate(Candidate& best, const Candidate& candidate)
+        bool candidatesShareContactDirection(const Candidate& lhs, const Candidate& rhs)
+        {
+            if (!lhs.valid || !rhs.valid || !soft_contact_math::isFinite(lhs.contact.normal) || !soft_contact_math::isFinite(rhs.contact.normal)) {
+                return false;
+            }
+
+            const auto lhsNormal = soft_contact_math::normalizeOr(lhs.contact.normal, RE::NiPoint3{});
+            const auto rhsNormal = soft_contact_math::normalizeOr(rhs.contact.normal, RE::NiPoint3{});
+            return soft_contact_math::dot(lhsNormal, rhsNormal) >= kWorldContactDuplicateNormalDot;
+        }
+
+        void addCandidateToManifold(CandidateManifold& manifold, const Candidate& candidate)
         {
             if (!candidate.valid) {
                 return;
             }
 
-            const int bestSourcePriority = best.valid ? candidateSourcePriority(best.source) : -1;
-            const int candidateSourcePriorityValue = candidateSourcePriority(candidate.source);
-            if (!best.valid ||
-                candidateSourcePriorityValue > bestSourcePriority ||
-                (candidateSourcePriorityValue == bestSourcePriority && candidateResponseWinsTie(best, candidate))) {
-                best = candidate;
+            for (std::uint32_t i = 0; i < manifold.count && i < manifold.contacts.size(); ++i) {
+                auto& existing = manifold.contacts[i];
+                if (!candidatesShareContactDirection(existing, candidate)) {
+                    continue;
+                }
+
+                if (candidateRanksBefore(candidate, existing)) {
+                    existing = candidate;
+                }
+                return;
             }
+
+            if (manifold.count < manifold.contacts.size()) {
+                manifold.contacts[manifold.count++] = candidate;
+                return;
+            }
+
+            std::uint32_t weakestIndex = 0;
+            for (std::uint32_t i = 1; i < manifold.count && i < manifold.contacts.size(); ++i) {
+                if (candidateRanksBefore(manifold.contacts[weakestIndex], manifold.contacts[i])) {
+                    weakestIndex = i;
+                }
+            }
+            if (candidateRanksBefore(candidate, manifold.contacts[weakestIndex])) {
+                manifold.contacts[weakestIndex] = candidate;
+            }
+        }
+
+        void addCandidatesToManifold(CandidateManifold& target, const CandidateManifold& source)
+        {
+            for (std::uint32_t i = 0; i < source.count && i < source.contacts.size(); ++i) {
+                addCandidateToManifold(target, source.contacts[i]);
+            }
+        }
+
+        void sortCandidateManifold(CandidateManifold& manifold)
+        {
+            std::sort(manifold.contacts.begin(), manifold.contacts.begin() + manifold.count, candidateRanksBefore);
+        }
+
+        bool hasWorldContact(const CandidateManifold& manifold)
+        {
+            return manifold.count > 0;
+        }
+
+        float maxApproachSpeed(const CandidateManifold& manifold)
+        {
+            float approachSpeed = 0.0f;
+            for (std::uint32_t i = 0; i < manifold.count && i < manifold.contacts.size(); ++i) {
+                const float candidateSpeed = manifold.contacts[i].approachSpeedGameUnits;
+                if (std::isfinite(candidateSpeed)) {
+                    approachSpeed = std::max(approachSpeed, candidateSpeed);
+                }
+            }
+            return approachSpeed;
+        }
+
+        bool anyPenetratingContact(const CandidateManifold& manifold, float threshold)
+        {
+            for (std::uint32_t i = 0; i < manifold.count && i < manifold.contacts.size(); ++i) {
+                const float penetration = manifold.contacts[i].contact.penetration;
+                if (std::isfinite(penetration) && penetration >= threshold) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         void clearWorldContactState(auto& handState)
@@ -209,7 +301,9 @@ namespace rock
             for (auto& probe : handState.worldProbes) {
                 probe = {};
             }
-            handState.cachedWorldPlane = {};
+            for (auto& cachedPlane : handState.cachedWorldPlanes) {
+                cachedPlane = {};
+            }
             handState.worldHaptic = {};
         }
 
@@ -308,6 +402,25 @@ namespace rock
                 candidate.contact.normal,
                 candidate.contact.penetration,
                 maxWorldCorrection());
+        }
+
+        RE::NiPoint3 correctionForManifold(const CandidateManifold& manifold)
+        {
+            std::array<CapsuleContact, SoftContactRuntime::kMaxWorldContactManifoldContactsPerHand> contacts{};
+            std::uint32_t count = 0;
+            for (std::uint32_t i = 0; i < manifold.count && i < manifold.contacts.size(); ++i) {
+                const auto& candidate = manifold.contacts[i];
+                if (!candidate.valid || !candidate.contact.active || count >= contacts.size()) {
+                    continue;
+                }
+                contacts[count++] = candidate.contact;
+            }
+
+            return soft_contact_math::projectTrackedMagnetPlaneSetCorrection(
+                contacts,
+                count,
+                maxWorldCorrection(),
+                kWorldContactSolverPasses);
         }
 
         std::uint32_t resolveWorldHitFilterInfo(RE::hknpWorld* world, const RE::hknpCollisionResult& hit)
@@ -503,7 +616,8 @@ namespace rock
             return candidate;
         }
 
-        Candidate solveNativeWorldStaticContact(
+        void collectNativeWorldStaticContacts(
+            CandidateManifold& manifold,
             RE::bhkWorld* bhkWorld,
             RE::hknpWorld* hknpWorld,
             const contact_evidence::NativeContactEvidenceSnapshot& evidenceSnapshot,
@@ -516,7 +630,6 @@ namespace rock
             float skin,
             float deltaSeconds)
         {
-            Candidate best{};
             using contact_evidence::NativeContactEndpointKind;
             for (std::uint32_t i = 0; i < evidenceSnapshot.count && i < evidenceSnapshot.records.size(); ++i) {
                 const auto& evidence = evidenceSnapshot.records[i];
@@ -540,13 +653,21 @@ namespace rock
                     continue;
                 }
 
-                keepStrongerCandidate(best,
+                addCandidateToManifold(manifold,
                     makeNativeWorldStaticCandidate(bhkWorld, hknpWorld, evidence, *probe, handState, fallbackNormal, contactPadding, skin, deltaSeconds));
             }
-            return best;
         }
 
-        CachedWorldPlaneResult solveCachedWorldPlaneContact(auto& handState,
+        void addReleasedCachedPlaneNormal(CachedWorldPlaneContactsResult& result, const RE::NiPoint3& normal)
+        {
+            result.leftContact = true;
+            if (result.releasedNormalCount >= result.releasedNormals.size() || !soft_contact_math::isFinite(normal)) {
+                return;
+            }
+            result.releasedNormals[result.releasedNormalCount++] = normal;
+        }
+
+        CachedWorldPlaneContactsResult solveCachedWorldPlaneContacts(auto& handState,
             const std::array<WorldContactProbe, SoftContactRuntime::kMaxWorldContactProbesPerHand>& probes,
             std::uint32_t probeCount,
             float contactPadding,
@@ -555,87 +676,128 @@ namespace rock
             float maxClearDistance,
             float deltaSeconds)
         {
-            CachedWorldPlaneResult result{};
-            if (!handState.cachedWorldPlane.active) {
-                return result;
-            }
-            result.hadCachedPlane = true;
-            result.normal = handState.cachedWorldPlane.normal;
-
-            const WorldContactProbe* probe = nullptr;
-            for (std::uint32_t i = 0; i < probeCount && i < probes.size(); ++i) {
-                if (probes[i].valid && probes[i].id == handState.cachedWorldPlane.probeId) {
-                    probe = &probes[i];
-                    break;
+            CachedWorldPlaneContactsResult result{};
+            for (auto& cachedPlane : handState.cachedWorldPlanes) {
+                if (!cachedPlane.active) {
+                    continue;
                 }
+                result.hadCachedPlane = true;
+
+                const WorldContactProbe* probe = nullptr;
+                for (std::uint32_t i = 0; i < probeCount && i < probes.size(); ++i) {
+                    if (probes[i].valid && probes[i].id == cachedPlane.probeId) {
+                        probe = &probes[i];
+                        break;
+                    }
+                }
+
+                auto releaseCachedPlane = [&]() {
+                    addReleasedCachedPlaneNormal(result, cachedPlane.normal);
+                    cachedPlane = {};
+                };
+
+                if (!probe) {
+                    releaseCachedPlane();
+                    continue;
+                }
+
+                /*
+                 * Tangent drift protects sliding along a surface, but it does
+                 * not catch the raw hand moving deep through the cached plane.
+                 * This radial limit is the hard escape hatch for all directions.
+                 */
+                if (!soft_contact_math::withinClearDistanceLimit(probe->position, cachedPlane.surfacePoint, maxClearDistance)) {
+                    releaseCachedPlane();
+                    continue;
+                }
+
+                const float effectiveProbeRadius = probe->radius + soft_contact_math::sanitizeNonNegative(contactPadding, 0.0f);
+                auto contact = soft_contact_math::solvePointPlaneContact(
+                    probe->position,
+                    cachedPlane.surfacePoint,
+                    cachedPlane.normal,
+                    effectiveProbeRadius,
+                    skin,
+                    probe->id,
+                    cachedPlane.bodyId);
+
+                /*
+                 * This is cached evidence, not a lock. The current tracked probe
+                 * must still be penetrating the cached plane this frame; otherwise
+                 * the external visual authority is released immediately.
+                 */
+                if (!contact.active) {
+                    releaseCachedPlane();
+                    continue;
+                }
+
+                if (!soft_contact_math::withinTangentDriftLimit(
+                        contact.targetPoint,
+                        cachedPlane.surfacePoint,
+                        cachedPlane.normal,
+                        maxTangentDrift)) {
+                    releaseCachedPlane();
+                    continue;
+                }
+
+                float approachSpeed = cachedPlane.approachSpeedGameUnits;
+                if (probe->stateIndex < handState.worldProbes.size() && handState.worldProbes[probe->stateIndex].valid) {
+                    const float dt = std::clamp(std::isfinite(deltaSeconds) ? deltaSeconds : (1.0f / 90.0f), 1.0f / 240.0f, 0.1f);
+                    const auto sweepDelta = soft_contact_math::sub(probe->position, handState.worldProbes[probe->stateIndex].previous);
+                    const auto velocity = soft_contact_math::mul(sweepDelta, 1.0f / dt);
+                    approachSpeed = std::max(0.0f, -soft_contact_math::dot(velocity, contact.normal));
+                }
+
+                Candidate candidate{};
+                candidate.valid = true;
+                candidate.kind = ContactKind::WorldStatic;
+                candidate.source = CandidateSource::CachedWorldPlane;
+                candidate.contact = contact;
+                candidate.approachSpeedGameUnits = approachSpeed;
+                candidate.targetIdentity = cachedPlane.targetIdentity;
+                addCandidateToManifold(result.manifold, candidate);
             }
-
-            if (!probe) {
-                handState.cachedWorldPlane = {};
-                result.leftContact = true;
-                return result;
-            }
-
-            /*
-             * Tangent drift protects sliding along a surface, but it does not
-             * catch the raw hand moving deep through the cached plane. This
-             * radial limit is the hard escape hatch for all directions.
-             */
-            if (!soft_contact_math::withinClearDistanceLimit(probe->position, handState.cachedWorldPlane.surfacePoint, maxClearDistance)) {
-                handState.cachedWorldPlane = {};
-                result.leftContact = true;
-                return result;
-            }
-
-            const float effectiveProbeRadius = probe->radius + soft_contact_math::sanitizeNonNegative(contactPadding, 0.0f);
-            auto contact = soft_contact_math::solvePointPlaneContact(
-                probe->position,
-                handState.cachedWorldPlane.surfacePoint,
-                handState.cachedWorldPlane.normal,
-                effectiveProbeRadius,
-                skin,
-                probe->id,
-                handState.cachedWorldPlane.bodyId);
-
-            /*
-             * This is cached evidence, not a lock. The current tracked probe
-             * must still be penetrating the cached plane this frame; otherwise
-             * the external visual authority is released immediately.
-             */
-            if (!contact.active) {
-                handState.cachedWorldPlane = {};
-                result.leftContact = true;
-                return result;
-            }
-
-            if (!soft_contact_math::withinTangentDriftLimit(
-                    contact.targetPoint,
-                    handState.cachedWorldPlane.surfacePoint,
-                    handState.cachedWorldPlane.normal,
-                    maxTangentDrift)) {
-                handState.cachedWorldPlane = {};
-                result.leftContact = true;
-                return result;
-            }
-
-            float approachSpeed = handState.cachedWorldPlane.approachSpeedGameUnits;
-            if (probe->stateIndex < handState.worldProbes.size() && handState.worldProbes[probe->stateIndex].valid) {
-                const float dt = std::clamp(std::isfinite(deltaSeconds) ? deltaSeconds : (1.0f / 90.0f), 1.0f / 240.0f, 0.1f);
-                const auto sweepDelta = soft_contact_math::sub(probe->position, handState.worldProbes[probe->stateIndex].previous);
-                const auto velocity = soft_contact_math::mul(sweepDelta, 1.0f / dt);
-                approachSpeed = std::max(0.0f, -soft_contact_math::dot(velocity, contact.normal));
-            }
-
-            result.candidate.valid = true;
-            result.candidate.kind = ContactKind::WorldStatic;
-            result.candidate.source = CandidateSource::CachedWorldPlane;
-            result.candidate.contact = contact;
-            result.candidate.approachSpeedGameUnits = approachSpeed;
-            result.candidate.targetIdentity = handState.cachedWorldPlane.targetIdentity;
             return result;
         }
 
-        Candidate runWorldProbeCast(RE::bhkWorld* bhkWorld,
+        bool normalsShareDirection(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
+        {
+            if (!soft_contact_math::isFinite(lhs) || !soft_contact_math::isFinite(rhs)) {
+                return false;
+            }
+            const auto lhsNormal = soft_contact_math::normalizeOr(lhs, RE::NiPoint3{});
+            const auto rhsNormal = soft_contact_math::normalizeOr(rhs, RE::NiPoint3{});
+            return soft_contact_math::dot(lhsNormal, rhsNormal) >= kWorldContactDuplicateNormalDot;
+        }
+
+        bool shouldAcceptPostReleaseQueryCandidate(
+            const CachedWorldPlaneContactsResult& cachedPlaneContacts,
+            const RE::NiPoint3& sweepDelta,
+            const Candidate& candidate,
+            float reentryMinApproachDistance)
+        {
+            if (!cachedPlaneContacts.leftContact || !candidate.valid) {
+                return true;
+            }
+
+            for (std::uint32_t i = 0; i < cachedPlaneContacts.releasedNormalCount && i < cachedPlaneContacts.releasedNormals.size(); ++i) {
+                const auto& releasedNormal = cachedPlaneContacts.releasedNormals[i];
+                if (!normalsShareDirection(candidate.contact.normal, releasedNormal)) {
+                    continue;
+                }
+
+                return soft_contact_math::shouldAllowPostReleaseReentrySweep(
+                    true,
+                    sweepDelta,
+                    releasedNormal,
+                    reentryMinApproachDistance);
+            }
+
+            return true;
+        }
+
+        void collectWorldProbeCastContacts(CandidateManifold& manifold,
+            RE::bhkWorld* bhkWorld,
             RE::hknpWorld* world,
             const WorldContactProbe& probe,
             const RE::NiPoint3& start,
@@ -646,11 +808,12 @@ namespace rock
             float queryRadiusPadding,
             float contactPadding,
             float skin,
+            const CachedWorldPlaneContactsResult& cachedPlaneContacts,
+            float reentryMinApproachDistance,
             float deltaSeconds)
         {
-            Candidate best{};
             if (!world || !probe.valid || !std::isfinite(distance) || distance <= 0.001f) {
-                return best;
+                return;
             }
 
             RE::hknpAllHitsCollector collector;
@@ -664,7 +827,7 @@ namespace rock
                         .collisionFilterInfo = g_rockConfig.rockSoftContactWorldShapeCastFilterInfo },
                     collector,
                     nullptr)) {
-                return best;
+                return;
             }
 
             auto* hits = collector.hits._data;
@@ -676,11 +839,12 @@ namespace rock
                     continue;
                 }
 
-                keepStrongerCandidate(best,
-                    makeWorldStaticCandidate(bhkWorld, world, hit, probe, previousPosition, fallbackNormal, contactPadding, skin, deltaSeconds));
+                const auto candidate =
+                    makeWorldStaticCandidate(bhkWorld, world, hit, probe, previousPosition, fallbackNormal, contactPadding, skin, deltaSeconds);
+                if (shouldAcceptPostReleaseQueryCandidate(cachedPlaneContacts, displacement, candidate, reentryMinApproachDistance)) {
+                    addCandidateToManifold(manifold, candidate);
+                }
             }
-
-            return best;
         }
 
         void storeWorldProbePositions(auto& handState,
@@ -697,7 +861,31 @@ namespace rock
             }
         }
 
-        Candidate solveWorldStaticContact(RE::bhkWorld* bhkWorld,
+        void storeCachedWorldPlanes(auto& handState, const CandidateManifold& manifold)
+        {
+            for (auto& cachedPlane : handState.cachedWorldPlanes) {
+                cachedPlane = {};
+            }
+
+            std::uint32_t cachedCount = 0;
+            for (std::uint32_t i = 0; i < manifold.count && i < manifold.contacts.size() && cachedCount < handState.cachedWorldPlanes.size(); ++i) {
+                const auto& candidate = manifold.contacts[i];
+                if (!candidate.valid || candidate.kind != ContactKind::WorldStatic) {
+                    continue;
+                }
+
+                auto& cachedPlane = handState.cachedWorldPlanes[cachedCount++];
+                cachedPlane.active = true;
+                cachedPlane.bodyId = candidate.contact.targetId;
+                cachedPlane.probeId = candidate.contact.movableId;
+                cachedPlane.surfacePoint = candidate.contact.targetPoint;
+                cachedPlane.normal = candidate.contact.normal;
+                cachedPlane.approachSpeedGameUnits = candidate.approachSpeedGameUnits;
+                cachedPlane.targetIdentity = candidate.targetIdentity;
+            }
+        }
+
+        CandidateManifold solveWorldStaticContact(RE::bhkWorld* bhkWorld,
             RE::hknpWorld* world,
             const contact_evidence::NativeContactEvidenceSnapshot& nativeContactEvidence,
             auto& handState,
@@ -706,10 +894,10 @@ namespace rock
             const RE::NiPoint3& fallbackNormal,
             float deltaSeconds)
         {
-            Candidate best{};
+            CandidateManifold manifold{};
             if (!g_rockConfig.rockSoftContactWorldEnabled || !world || handInput.disabled) {
                 clearWorldContactState(handState);
-                return best;
+                return manifold;
             }
 
             std::array<WorldContactProbe, SoftContactRuntime::kMaxWorldContactProbesPerHand> probes{};
@@ -717,7 +905,7 @@ namespace rock
             buildWorldContactProbes(isLeft, handInput, probes, probeCount);
             if (probeCount == 0) {
                 clearWorldContactState(handState);
-                return best;
+                return manifold;
             }
 
             const float contactPadding = worldContactPadding();
@@ -729,7 +917,7 @@ namespace rock
             const float maxClearDistance = worldCachedPlaneMaxClearDistance();
             const float dt = std::clamp(std::isfinite(deltaSeconds) ? deltaSeconds : (1.0f / 90.0f), 0.0f, 0.1f);
 
-            const auto cachedPlaneContact = solveCachedWorldPlaneContact(
+            const auto cachedPlaneContacts = solveCachedWorldPlaneContacts(
                 handState,
                 probes,
                 probeCount,
@@ -738,30 +926,26 @@ namespace rock
                 maxTangentDrift,
                 maxClearDistance,
                 deltaSeconds);
-            keepStrongerCandidate(best, cachedPlaneContact.candidate);
+            addCandidatesToManifold(manifold, cachedPlaneContacts.manifold);
 
-            keepStrongerCandidate(best,
-                solveNativeWorldStaticContact(
-                    bhkWorld,
-                    world,
-                    nativeContactEvidence,
-                    handState,
-                    isLeft,
-                    probes,
-                    probeCount,
-                    fallbackNormal,
-                    contactPadding,
-                    skin,
-                    deltaSeconds));
-
-            const bool hasAuthoritativeWorldCandidate =
-                best.valid &&
-                best.kind == ContactKind::WorldStatic &&
-                (best.source == CandidateSource::NativeWorld || best.source == CandidateSource::CachedWorldPlane);
+            collectNativeWorldStaticContacts(
+                manifold,
+                bhkWorld,
+                world,
+                nativeContactEvidence,
+                handState,
+                isLeft,
+                probes,
+                probeCount,
+                fallbackNormal,
+                contactPadding,
+                skin,
+                deltaSeconds);
+            const bool hadContactBeforeQuery = hasWorldContact(manifold);
             const bool releasedCachedPlaneThisFrame =
-                cachedPlaneContact.hadCachedPlane && cachedPlaneContact.leftContact;
+                cachedPlaneContacts.hadCachedPlane && cachedPlaneContacts.leftContact;
 
-            if (!hasAuthoritativeWorldCandidate) {
+            if (manifold.count < manifold.contacts.size()) {
                 for (std::uint32_t i = 0; i < probeCount && i < probes.size(); ++i) {
                     const auto& probe = probes[i];
                     if (!probe.valid || probe.stateIndex >= handState.worldProbes.size()) {
@@ -780,65 +964,54 @@ namespace rock
                         previousState.valid &&
                         std::isfinite(sweepDistance) &&
                         sweepDistance > kWorldProbeMinSweepDistanceGameUnits;
-                    const bool allowPostReleaseSweep =
-                        soft_contact_math::shouldAllowPostReleaseReentrySweep(
-                            releasedCachedPlaneThisFrame,
+                    if (canSweep) {
+                        collectWorldProbeCastContacts(manifold,
+                            bhkWorld,
+                            world,
+                            probe,
+                            previousState.previous,
                             sweepDelta,
-                            cachedPlaneContact.normal,
-                            reentryMinApproachDistance);
-
-                    if (canSweep && allowPostReleaseSweep) {
-                        keepStrongerCandidate(best,
-                            runWorldProbeCast(bhkWorld,
-                                world,
-                                probe,
-                                previousState.previous,
-                                sweepDelta,
-                                sweepDistance,
-                                previousState.previous,
-                                fallbackNormal,
-                                queryRadiusPadding,
-                                contactPadding,
-                                skin,
-                                deltaSeconds));
+                            sweepDistance,
+                            previousState.previous,
+                            fallbackNormal,
+                            queryRadiusPadding,
+                            contactPadding,
+                            skin,
+                            cachedPlaneContacts,
+                            reentryMinApproachDistance,
+                            deltaSeconds);
                     }
 
-                    if (canSweep || releasedCachedPlaneThisFrame || previousState.restQueryCooldownSeconds > 0.0f) {
+                    if (canSweep || releasedCachedPlaneThisFrame || hadContactBeforeQuery || previousState.restQueryCooldownSeconds > 0.0f) {
                         continue;
                     }
 
                     previousState.restQueryCooldownSeconds = kWorldProbeRestQueryCooldownSeconds;
                     const RE::NiPoint3 restDirection = soft_contact_math::normalizeOr(fallbackNormal, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
                     const RE::NiPoint3 previousPosition = previousState.valid ? previousState.previous : probe.position;
-                    keepStrongerCandidate(best,
-                        runWorldProbeCast(bhkWorld,
-                            world,
-                            probe,
-                            probe.position,
-                            restDirection,
-                            kWorldProbeRestQueryDistanceGameUnits,
-                            previousPosition,
-                            fallbackNormal,
-                            queryRadiusPadding,
-                            contactPadding,
-                            skin,
-                            deltaSeconds));
+                    collectWorldProbeCastContacts(manifold,
+                        bhkWorld,
+                        world,
+                        probe,
+                        probe.position,
+                        restDirection,
+                        kWorldProbeRestQueryDistanceGameUnits,
+                        previousPosition,
+                        fallbackNormal,
+                        queryRadiusPadding,
+                        contactPadding,
+                        skin,
+                        cachedPlaneContacts,
+                        reentryMinApproachDistance,
+                        deltaSeconds);
                 }
             }
 
             storeWorldProbePositions(handState, probes, probeCount);
+            sortCandidateManifold(manifold);
+            storeCachedWorldPlanes(handState, manifold);
 
-            if (best.valid && best.kind == ContactKind::WorldStatic) {
-                handState.cachedWorldPlane.active = true;
-                handState.cachedWorldPlane.bodyId = best.contact.targetId;
-                handState.cachedWorldPlane.probeId = best.contact.movableId;
-                handState.cachedWorldPlane.surfacePoint = best.contact.targetPoint;
-                handState.cachedWorldPlane.normal = best.contact.normal;
-                handState.cachedWorldPlane.approachSpeedGameUnits = best.approachSpeedGameUnits;
-                handState.cachedWorldPlane.targetIdentity = best.targetIdentity;
-            }
-
-            return best;
+            return manifold;
         }
 
         void updateWorldContactHaptics(
@@ -1126,20 +1299,19 @@ namespace rock
                 return;
             }
 
-            Candidate best{};
+            CandidateManifold manifold{};
             const RE::NiPoint3 fallbackNormal = soft_contact_math::normalizeOr(handInput.palmNormalWorld, RE::NiPoint3(0.0f, 0.0f, 1.0f));
 
             if (!handInput.disabled) {
-                keepStrongerCandidate(best,
-                    solveWorldStaticContact(
-                        frame.bhkWorld,
-                        frame.hknpWorld,
-                        nativeContactEvidence,
-                        _hands[handIndex(isLeft)],
-                        isLeft,
-                        handInput,
-                        fallbackNormal,
-                        frame.deltaSeconds));
+                manifold = solveWorldStaticContact(
+                    frame.bhkWorld,
+                    frame.hknpWorld,
+                    nativeContactEvidence,
+                    _hands[handIndex(isLeft)],
+                    isLeft,
+                    handInput,
+                    fallbackNormal,
+                    frame.deltaSeconds);
             }
 
             if (!frik_visual_authority::isAvailable() || handInput.disabled) {
@@ -1148,13 +1320,15 @@ namespace rock
                 return;
             }
 
-            if (best.valid) {
-                logContactTargetIdentity(isLeft, best);
-                updateWorldContactHaptics(handState, isLeft, true, best.approachSpeedGameUnits, frame.deltaSeconds);
+            if (hasWorldContact(manifold)) {
+                for (std::uint32_t i = 0; i < manifold.count && i < manifold.contacts.size(); ++i) {
+                    logContactTargetIdentity(isLeft, manifold.contacts[i]);
+                }
+                updateWorldContactHaptics(handState, isLeft, true, maxApproachSpeed(manifold), frame.deltaSeconds);
                 handState.releaseBlend = {};
-                handState.correction = correctionForCandidate(best);
-                handState.lastContactKind = best.kind;
-                handState.state = best.contact.penetration >= 0.5f ? ContactState::Penetrating : ContactState::Touching;
+                handState.correction = correctionForManifold(manifold);
+                handState.lastContactKind = ContactKind::WorldStatic;
+                handState.state = anyPenetratingContact(manifold, 0.5f) ? ContactState::Penetrating : ContactState::Touching;
 
                 RE::NiTransform target = handInput.rawHandWorld;
                 target.translate = soft_contact_math::add(target.translate, handState.correction);
@@ -1170,7 +1344,9 @@ namespace rock
                     handState.state = ContactState::Inactive;
                     return;
                 }
-                addDebugContact(_debugSnapshot, isLeft, handState.state, best, handState.correction);
+                for (std::uint32_t i = 0; i < manifold.count && i < manifold.contacts.size(); ++i) {
+                    addDebugContact(_debugSnapshot, isLeft, handState.state, manifold.contacts[i], handState.correction);
+                }
                 return;
             }
 
