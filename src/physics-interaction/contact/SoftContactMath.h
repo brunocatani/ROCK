@@ -14,7 +14,6 @@
 #include "RE/NetImmerse/NiPoint.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -208,67 +207,6 @@ namespace rock::soft_contact_math
         return clampLength(
             mul(normalizeOr(contactNormal, RE::NiPoint3(0.0f, 0.0f, 1.0f)), penetration),
             sanitizePositive(maxCorrection, 0.0f));
-    }
-
-    template <std::size_t ContactCount>
-    inline RE::NiPoint3 projectTrackedMagnetPlaneSetCorrection(
-        const std::array<CapsuleContact, ContactCount>& contacts,
-        std::uint32_t contactCount,
-        float maxCorrection,
-        std::uint32_t passCount = 3)
-    {
-        const float correctionLimit = sanitizePositive(maxCorrection, 0.0f);
-        if (correctionLimit <= 0.0f || contactCount == 0) {
-            return RE::NiPoint3{};
-        }
-
-        RE::NiPoint3 correction{};
-        const std::uint32_t boundedContactCount =
-            std::min<std::uint32_t>(contactCount, static_cast<std::uint32_t>(contacts.size()));
-        const std::uint32_t boundedPassCount = std::clamp(passCount, 1u, 8u);
-        for (std::uint32_t pass = 0; pass < boundedPassCount; ++pass) {
-            bool changed = false;
-            for (std::uint32_t i = 0; i < boundedContactCount; ++i) {
-                const auto& contact = contacts[i];
-                if (!contact.active ||
-                    !isFinite(contact.movablePoint) ||
-                    !isFinite(contact.targetPoint) ||
-                    !isFinite(contact.normal)) {
-                    continue;
-                }
-
-                const float normalLenSq = lengthSquared(contact.normal);
-                if (!std::isfinite(normalLenSq) || normalLenSq <= 1.0e-6f) {
-                    continue;
-                }
-
-                const RE::NiPoint3 normal = mul(contact.normal, 1.0f / std::sqrt(normalLenSq));
-                const float requiredDistance = contact.distance + sanitizeNonNegative(contact.penetration, 0.0f);
-                if (!std::isfinite(requiredDistance)) {
-                    continue;
-                }
-
-                const RE::NiPoint3 correctedPoint = add(contact.movablePoint, correction);
-                const float correctedDistance = dot(sub(correctedPoint, contact.targetPoint), normal);
-                if (!std::isfinite(correctedDistance)) {
-                    continue;
-                }
-
-                const float missingDistance = requiredDistance - correctedDistance;
-                if (missingDistance <= 0.0001f) {
-                    continue;
-                }
-
-                correction = clampLength(add(correction, mul(normal, missingDistance)), correctionLimit);
-                changed = true;
-            }
-
-            if (!changed) {
-                break;
-            }
-        }
-
-        return correction;
     }
 
     inline bool preferStrongerContactResponse(

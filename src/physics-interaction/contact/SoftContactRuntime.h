@@ -59,7 +59,6 @@ namespace rock
     {
     public:
         static constexpr std::size_t kMaxWorldContactProbesPerHand = 7;
-        static constexpr std::size_t kMaxWorldContactManifoldContactsPerHand = 4;
 
         void reset();
 
@@ -110,7 +109,7 @@ namespace rock
             bool externalTransformActive = false;
             ReleaseBlend releaseBlend{};
             std::array<WorldProbeState, kMaxWorldContactProbesPerHand> worldProbes{};
-            std::array<CachedWorldPlane, kMaxWorldContactManifoldContactsPerHand> cachedWorldPlanes{};
+            CachedWorldPlane cachedWorldPlane{};
             soft_contact_math::HapticEdgeState worldHaptic{};
         };
 

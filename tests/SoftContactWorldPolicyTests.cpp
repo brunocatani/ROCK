@@ -3,7 +3,6 @@
 #include "physics-interaction/contact/SoftContactWorldPolicy.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 
-#include <array>
 #include <cstdio>
 
 namespace
@@ -87,19 +86,6 @@ int main()
 
     const auto separated = solvePointPlaneContact(RE::NiPoint3{ 0.0f, 0.0f, 0.4f }, planePoint, planeNormal, 0.2f, 0.1f, 10u, 20u);
     ok &= expectFalse("point-plane contact releases after separation", separated.active);
-
-    std::array<CapsuleContact, 2> cornerContacts{
-        solvePointPlaneContact(RE::NiPoint3{ 0.1f, 0.1f, 0.0f }, planePoint, RE::NiPoint3{ 1.0f, 0.0f, 0.0f }, 0.25f, 0.05f, 11u, 21u),
-        solvePointPlaneContact(RE::NiPoint3{ 0.1f, 0.1f, 0.0f }, planePoint, RE::NiPoint3{ 0.0f, 1.0f, 0.0f }, 0.25f, 0.05f, 12u, 22u),
-    };
-    const auto cornerCorrection = projectTrackedMagnetPlaneSetCorrection(cornerContacts, 2u, 2.0f);
-    ok &= expectNear("plane-set correction combines first axis", cornerCorrection.x, 0.2f, 0.001f);
-    ok &= expectNear("plane-set correction combines second axis", cornerCorrection.y, 0.2f, 0.001f);
-    ok &= expectNear("plane-set correction leaves unrelated axis", cornerCorrection.z, 0.0f, 0.001f);
-
-    const auto clampedCornerCorrection = projectTrackedMagnetPlaneSetCorrection(cornerContacts, 2u, 0.25f);
-    ok &= expectTrue("plane-set correction respects max correction",
-        length(clampedCornerCorrection) <= 0.251f);
 
     ok &= expectTrue("cached plane keeps bounded tangent drift",
         withinTangentDriftLimit(RE::NiPoint3{ 2.0f, 0.0f, 0.0f }, planePoint, planeNormal, 3.0f));

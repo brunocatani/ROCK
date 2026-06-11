@@ -94,12 +94,6 @@ Require-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'worldOnly
     'SoftContactRuntime active logging must report world-only behavior.'
 Require-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'withinClearDistanceLimit\([\s\S]*applyReleaseBlend[\s\S]*blendTransformOverDuration' `
     'SoftContactRuntime must clear cached planes by all-direction distance and smooth visual release.'
-Require-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'CandidateManifold[\s\S]*addCandidateToManifold[\s\S]*correctionForManifold[\s\S]*collectNativeWorldStaticContacts[\s\S]*solveCachedWorldPlaneContacts[\s\S]*collectWorldProbeCastContacts' `
-    'SoftContactRuntime must collect bounded multi-direction world contacts instead of collapsing to one candidate.'
-Require-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'projectTrackedMagnetPlaneSetCorrection' `
-    'SoftContactRuntime must solve combined correction from the accepted contact manifold.'
-Reject-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'keepStrongerCandidate|Candidate\s+best\{\}' `
-    'SoftContactRuntime must not retain the old single-winner soft-contact path.'
 Require-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'collisionFilterInfo\s*=\s*g_rockConfig\.rockSoftContactWorldShapeCastFilterInfo' `
     'SoftContactRuntime fallback casts must use the dedicated world soft-contact filter, not selection tuning.'
 Reject-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'collisionFilterInfo\s*=\s*g_rockConfig\.rockSelectionShapeCastFilterInfo' `
@@ -109,15 +103,11 @@ Require-Text 'src/physics-interaction/contact/SoftContactRuntime.h' 'enum class 
     'Soft contact debug snapshots must expose source kind for world-contact tuning.'
 Require-Text 'src/physics-interaction/contact/SoftContactRuntime.h' 'SoftContactDebugSource source' `
     'Soft contact debug contacts must carry source kind.'
-Require-Text 'src/physics-interaction/contact/SoftContactRuntime.h' 'kMaxWorldContactManifoldContactsPerHand[\s\S]*cachedWorldPlanes' `
-    'SoftContactRuntime must cache a bounded set of world contact planes per hand.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionDebugOverlay.inl' 'softContactSourceName' `
     'Debug overlay must render soft-contact source kind.'
 
 Reject-Text 'src/physics-interaction/contact/SoftContactMath.h' 'ContactKind\s*:\s*std::uint8_t[\s\S]{0,120}(HandHand|WeaponHand|Body)|struct\s+(?:Capsule|Aabb)\b|solveCapsule(?:Pair|Aabb)|compliantHardStopResponseScale|projectCompliantTrackedMagnetCorrection' `
     'SoftContactMath must not retain removed synthetic capsule or weapon compliance helpers.'
-Require-Text 'src/physics-interaction/contact/SoftContactMath.h' 'projectTrackedMagnetPlaneSetCorrection' `
-    'SoftContactMath must expose the bounded multi-plane correction solver.'
 
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'tryFindSoftContactForCapsule|WeaponSoftContactResult' `
     'WeaponCollision must not expose the removed hand-weapon soft-contact query.'
