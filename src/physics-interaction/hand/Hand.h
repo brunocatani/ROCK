@@ -15,6 +15,7 @@
 #include "physics-interaction/hand/SelectionBeamEffect.h"
 #include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/object/ObjectDetection.h"
+#include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "RockConfig.h"
@@ -306,6 +307,26 @@ namespace rock
         void clearPullPrepTracking();
         void restorePullPrepIfActive(const char* context);
         bool consumePullPrepLifecycleForActiveGrab(RE::TESObjectREFR* refr, active_grab_body_lifecycle::BodyLifecycleSnapshot& outLifecycle);
+        object_physics_body_set::BodySetScanOptions makeActiveGrabBodyScanOptions(const SelectedObject& selection) const;
+        void clearGrabAcquisitionCache(const char* reason);
+        void updateGrabAcquisitionCache(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld);
+        bool grabAcquisitionCacheMatches(
+            RE::bhkWorld* bhkWorld,
+            RE::hknpWorld* hknpWorld,
+            const SelectedObject& selection,
+            const object_physics_body_set::BodySetScanOptions& options) const;
+        bool tryUseGrabAcquisitionBeforePrepCache(
+            RE::bhkWorld* bhkWorld,
+            RE::hknpWorld* hknpWorld,
+            const SelectedObject& selection,
+            const object_physics_body_set::BodySetScanOptions& options,
+            object_physics_body_set::ObjectPhysicsBodySet& outBodySet) const;
+        bool tryBuildGrabAcquisitionPreparedBodySetFromCache(
+            RE::bhkWorld* bhkWorld,
+            RE::hknpWorld* hknpWorld,
+            const SelectedObject& selection,
+            const object_physics_body_set::BodySetScanOptions& options,
+            object_physics_body_set::ObjectPhysicsBodySet& outBodySet) const;
         void updateSelectedCloseFingerPose();
         void clearSelectedCloseFingerPose();
     public:
@@ -637,6 +658,44 @@ namespace rock
             std::uint32_t droppedFormId = 0;
         };
 
+        struct GrabAcquisitionCache
+        {
+            RE::TESObjectREFR* refr = nullptr;
+            RE::NiAVObject* rootNode = nullptr;
+            RE::NiAVObject* hitNode = nullptr;
+            RE::bhkWorld* bhkWorld = nullptr;
+            RE::hknpWorld* hknpWorld = nullptr;
+            std::uint32_t formId = 0;
+            std::uint32_t selectedBodyId = INVALID_BODY_ID;
+            std::uint32_t rightHandBodyId = INVALID_BODY_ID;
+            std::uint32_t leftHandBodyId = INVALID_BODY_ID;
+            std::uint32_t sourceBodyId = INVALID_BODY_ID;
+            grab_target::Kind targetKind = grab_target::Kind::LooseObject;
+            int maxDepth = 0;
+            object_physics_body_set::ObjectPhysicsBodyScanCache scanCache;
+            object_physics_body_set::ObjectPhysicsBodySet beforePrepBodySet;
+            bool valid = false;
+
+            void clear() noexcept
+            {
+                refr = nullptr;
+                rootNode = nullptr;
+                hitNode = nullptr;
+                bhkWorld = nullptr;
+                hknpWorld = nullptr;
+                formId = 0;
+                selectedBodyId = INVALID_BODY_ID;
+                rightHandBodyId = INVALID_BODY_ID;
+                leftHandBodyId = INVALID_BODY_ID;
+                sourceBodyId = INVALID_BODY_ID;
+                targetKind = grab_target::Kind::LooseObject;
+                maxDepth = 0;
+                scanCache.clear();
+                beforePrepBodySet = {};
+                valid = false;
+            }
+        };
+
         void armPullCatchIntent(RE::TESObjectREFR* refr, std::uint32_t primaryBodyId, grab_target::Kind targetKind);
         void markPullCatchIntentArrived();
         bool pullCatchIntentMatchesSelection() const;
@@ -655,6 +714,7 @@ namespace rock
 
         SelectedObject _currentSelection;
         SelectedObject _cachedFarCandidate;
+        GrabAcquisitionCache _grabAcquisitionCache;
         int _farDetectCounter = 0;
         int _selectionHoldFrames = 0;
         int _selectionHighlightRefreshFrames = 0;

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <string>
+#include <utility>
 
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/native/HavokRuntime.h"
@@ -12,6 +13,7 @@
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/hand/HandSelection.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/TransformMath.h"
 #include "RockUtils.h"
 #include "RE/Havok/hknpMotion.h"
@@ -215,6 +217,7 @@ namespace rock
         _handBody.reset();
         _currentSelection.clear();
         _cachedFarCandidate.clear();
+        clearGrabAcquisitionCache("reset");
         _farDetectCounter = 0;
         _selectionHoldFrames = 0;
         _deselectCooldown = 0;
@@ -353,6 +356,7 @@ namespace rock
         _savedObjectState.clear();
         _activeGrabLifecycle.clear();
         _heldBodyIds.clear();
+        clearGrabAcquisitionCache("worldLoss");
         clearPullRuntimeState(false, "worldLoss");
         clearPullCatchIntent("worldLoss");
         clearActorEquipmentDropHandoff("worldLoss");
@@ -461,6 +465,186 @@ namespace rock
         _pullElapsedSeconds = 0.0f;
         _pullDurationSeconds = 0.0f;
         _pullHasTarget = false;
+    }
+
+    object_physics_body_set::BodySetScanOptions Hand::makeActiveGrabBodyScanOptions(const SelectedObject& selection) const
+    {
+        object_physics_body_set::BodySetScanOptions scanOptions{};
+        scanOptions.mode = physics_body_classifier::InteractionMode::ActiveGrab;
+        scanOptions.rightHandBodyId = _isLeft ? INVALID_BODY_ID : _handBody.getBodyId().value;
+        scanOptions.leftHandBodyId = _isLeft ? _handBody.getBodyId().value : INVALID_BODY_ID;
+        scanOptions.sourceBodyId = _handBody.getBodyId().value;
+        scanOptions.seedBodyId = selection.bodyId.value;
+        scanOptions.targetKind = selection.targetKind;
+        scanOptions.seedHitNode = selection.hitNode;
+        scanOptions.requireSameResolvedRef = true;
+        scanOptions.allowWeaponRefExpansion = true;
+        scanOptions.heldBySameHand = &_heldBodyIds;
+        scanOptions.maxDepth = g_rockConfig.rockObjectPhysicsTreeMaxDepth;
+        return scanOptions;
+    }
+
+    void Hand::clearGrabAcquisitionCache(const char* reason)
+    {
+        if (_grabAcquisitionCache.valid) {
+            performance_profiler::addCounter(performance_profiler::Counter::GrabAcquisitionCacheInvalidated);
+            ROCK_LOG_TRACE(Hand,
+                "{} hand cleared grab acquisition cache: reason={} formID={:08X} body={} cachedBodies={}",
+                handName(),
+                reason ? reason : "unknown",
+                _grabAcquisitionCache.formId,
+                _grabAcquisitionCache.selectedBodyId,
+                _grabAcquisitionCache.scanCache.bodyIdCount);
+        }
+        _grabAcquisitionCache.clear();
+    }
+
+    bool Hand::grabAcquisitionCacheMatches(
+        RE::bhkWorld* bhkWorld,
+        RE::hknpWorld* hknpWorld,
+        const SelectedObject& selection,
+        const object_physics_body_set::BodySetScanOptions& options) const
+    {
+        if (!_grabAcquisitionCache.valid || !bhkWorld || !hknpWorld || !selection.isValid() || !selection.refr) {
+            return false;
+        }
+        if (selection.refr->IsDeleted() || selection.refr->IsDisabled()) {
+            return false;
+        }
+
+        auto* rootNode = selection.refr->Get3D();
+        return rootNode &&
+               _grabAcquisitionCache.refr == selection.refr &&
+               _grabAcquisitionCache.formId == selection.refr->GetFormID() &&
+               _grabAcquisitionCache.rootNode == rootNode &&
+               _grabAcquisitionCache.hitNode == selection.hitNode &&
+               _grabAcquisitionCache.bhkWorld == bhkWorld &&
+               _grabAcquisitionCache.hknpWorld == hknpWorld &&
+               _grabAcquisitionCache.selectedBodyId == options.seedBodyId &&
+               _grabAcquisitionCache.rightHandBodyId == options.rightHandBodyId &&
+               _grabAcquisitionCache.leftHandBodyId == options.leftHandBodyId &&
+               _grabAcquisitionCache.sourceBodyId == options.sourceBodyId &&
+               _grabAcquisitionCache.targetKind == options.targetKind &&
+               _grabAcquisitionCache.maxDepth == options.maxDepth;
+    }
+
+    void Hand::updateGrabAcquisitionCache(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld)
+    {
+        if (!_currentSelection.isValid() || !_currentSelection.refr || !bhkWorld || !hknpWorld || !_handBody.isValid()) {
+            clearGrabAcquisitionCache("selection-unavailable");
+            return;
+        }
+        if (_currentSelection.refr->IsDeleted() || _currentSelection.refr->IsDisabled()) {
+            clearGrabAcquisitionCache("selection-invalid");
+            return;
+        }
+        if (!grab_target::canUseRockActiveGrab(_currentSelection.targetKind) &&
+            !grab_target::canUseRockDynamicPull(_currentSelection.targetKind)) {
+            clearGrabAcquisitionCache("target-kind-not-physical");
+            return;
+        }
+
+        const auto scanOptions = makeActiveGrabBodyScanOptions(_currentSelection);
+        if (grabAcquisitionCacheMatches(bhkWorld, hknpWorld, _currentSelection, scanOptions)) {
+            return;
+        }
+
+        clearGrabAcquisitionCache("selection-identity-changed");
+        auto* rootNode = _currentSelection.refr->Get3D();
+        if (!rootNode) {
+            return;
+        }
+
+        object_physics_body_set::ObjectPhysicsBodyScanCache scanCache;
+        object_physics_body_set::ObjectPhysicsBodySet beforePrepBodySet;
+        {
+            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAcquisitionBodyScan);
+            scanCache = object_physics_body_set::captureObjectPhysicsBodyScanCache(bhkWorld, hknpWorld, _currentSelection.refr, scanOptions);
+            beforePrepBodySet =
+                object_physics_body_set::buildObjectPhysicsBodySetFromScanCache(bhkWorld, hknpWorld, _currentSelection.refr, scanOptions, scanCache);
+        }
+
+        if (!scanCache.valid || beforePrepBodySet.records.empty()) {
+            performance_profiler::addCounter(performance_profiler::Counter::GrabAcquisitionCacheMiss);
+            return;
+        }
+
+        performance_profiler::addCounter(performance_profiler::Counter::GrabAcquisitionCachePrewarm);
+        performance_profiler::observeValue(performance_profiler::ValueMetric::GrabAcquisitionVisitedNodes, scanCache.diagnostics.visitedNodes);
+        performance_profiler::observeValue(performance_profiler::ValueMetric::GrabAcquisitionCollisionObjects, scanCache.diagnostics.collisionObjects);
+        performance_profiler::observeValue(performance_profiler::ValueMetric::GrabAcquisitionBodyIds, scanCache.bodyIdCount);
+
+        _grabAcquisitionCache.refr = _currentSelection.refr;
+        _grabAcquisitionCache.rootNode = rootNode;
+        _grabAcquisitionCache.hitNode = _currentSelection.hitNode;
+        _grabAcquisitionCache.bhkWorld = bhkWorld;
+        _grabAcquisitionCache.hknpWorld = hknpWorld;
+        _grabAcquisitionCache.formId = _currentSelection.refr->GetFormID();
+        _grabAcquisitionCache.selectedBodyId = scanOptions.seedBodyId;
+        _grabAcquisitionCache.rightHandBodyId = scanOptions.rightHandBodyId;
+        _grabAcquisitionCache.leftHandBodyId = scanOptions.leftHandBodyId;
+        _grabAcquisitionCache.sourceBodyId = scanOptions.sourceBodyId;
+        _grabAcquisitionCache.targetKind = scanOptions.targetKind;
+        _grabAcquisitionCache.maxDepth = scanOptions.maxDepth;
+        _grabAcquisitionCache.scanCache = std::move(scanCache);
+        _grabAcquisitionCache.beforePrepBodySet = std::move(beforePrepBodySet);
+        _grabAcquisitionCache.valid = true;
+
+        ROCK_LOG_SAMPLE_DEBUG(Hand,
+            g_rockConfig.rockLogSampleMilliseconds,
+            "{} hand prewarmed grab acquisition cache: formID={:08X} body={} targetKind={} records={} accepted={} visitedNodes={} collisionObjects={} cachedBodyIds={} invalidSystems={} benignSkips={}",
+            handName(),
+            _grabAcquisitionCache.formId,
+            _grabAcquisitionCache.selectedBodyId,
+            grab_target::name(_grabAcquisitionCache.targetKind),
+            _grabAcquisitionCache.beforePrepBodySet.records.size(),
+            _grabAcquisitionCache.beforePrepBodySet.acceptedCount(),
+            _grabAcquisitionCache.scanCache.diagnostics.visitedNodes,
+            _grabAcquisitionCache.scanCache.diagnostics.collisionObjects,
+            _grabAcquisitionCache.scanCache.bodyIdCount,
+            _grabAcquisitionCache.scanCache.diagnostics.invalidPhysicsSystems,
+            _grabAcquisitionCache.scanCache.diagnostics.benignScanSkips);
+    }
+
+    bool Hand::tryUseGrabAcquisitionBeforePrepCache(
+        RE::bhkWorld* bhkWorld,
+        RE::hknpWorld* hknpWorld,
+        const SelectedObject& selection,
+        const object_physics_body_set::BodySetScanOptions& options,
+        object_physics_body_set::ObjectPhysicsBodySet& outBodySet) const
+    {
+        if (!grabAcquisitionCacheMatches(bhkWorld, hknpWorld, selection, options)) {
+            performance_profiler::addCounter(performance_profiler::Counter::GrabAcquisitionCacheMiss);
+            return false;
+        }
+        outBodySet = _grabAcquisitionCache.beforePrepBodySet;
+        performance_profiler::addCounter(performance_profiler::Counter::GrabAcquisitionCacheHit);
+        return true;
+    }
+
+    bool Hand::tryBuildGrabAcquisitionPreparedBodySetFromCache(
+        RE::bhkWorld* bhkWorld,
+        RE::hknpWorld* hknpWorld,
+        const SelectedObject& selection,
+        const object_physics_body_set::BodySetScanOptions& options,
+        object_physics_body_set::ObjectPhysicsBodySet& outBodySet) const
+    {
+        if (!grabAcquisitionCacheMatches(bhkWorld, hknpWorld, selection, options)) {
+            performance_profiler::addCounter(performance_profiler::Counter::GrabAcquisitionCacheMiss);
+            return false;
+        }
+        outBodySet = object_physics_body_set::buildObjectPhysicsBodySetFromScanCache(
+            bhkWorld,
+            hknpWorld,
+            selection.refr,
+            options,
+            _grabAcquisitionCache.scanCache);
+        if (outBodySet.records.empty()) {
+            performance_profiler::addCounter(performance_profiler::Counter::GrabAcquisitionCacheMiss);
+            return false;
+        }
+        performance_profiler::addCounter(performance_profiler::Counter::GrabAcquisitionCacheHit);
+        return true;
     }
 
     void Hand::armPullCatchIntent(RE::TESObjectREFR* refr, std::uint32_t primaryBodyId, grab_target::Kind targetKind)
@@ -1378,6 +1562,7 @@ namespace rock
         }
         _currentSelection.clear();
         _cachedFarCandidate.clear();
+        clearGrabAcquisitionCache(rememberDeselect ? "selection-cleared-remembered" : "selection-cleared");
         clearPullRuntimeState(true, rememberDeselect ? "selection-cleared-remembered" : "selection-cleared");
         clearPullCatchIntent(rememberDeselect ? "selectionClearedRemembered" : "selectionCleared");
         clearActorEquipmentDropHandoff(rememberDeselect ? "selectionClearedRemembered" : "selectionCleared");
@@ -1448,6 +1633,7 @@ namespace rock
             if (_currentSelection.isValid()) {
                 _selectionHoldFrames++;
                 refreshSelectionHighlight(_currentSelection);
+                updateGrabAcquisitionCache(bhkWorld, hknpWorld);
             }
             return;
         }
@@ -1463,6 +1649,7 @@ namespace rock
             if (_currentSelection.isValid()) {
                 _selectionHoldFrames++;
                 refreshSelectionHighlight(_currentSelection);
+                updateGrabAcquisitionCache(bhkWorld, hknpWorld);
             }
             return;
         }
@@ -1567,6 +1754,7 @@ namespace rock
             if (selection_query_policy::shouldKeepCurrentCloseSelectionAgainstCandidate(currentScore, candidateScore, _currentSelection.distance, best.distance)) {
                 _selectionHoldFrames++;
                 refreshSelectionHighlight(_currentSelection);
+                updateGrabAcquisitionCache(bhkWorld, hknpWorld);
                 return;
             }
         }
@@ -1677,6 +1865,7 @@ namespace rock
                 } else {
                     stopSelectionHighlight();
                     _currentSelection.clear();
+                    clearGrabAcquisitionCache("selection-anchor-lost");
                     applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::SelectionLost });
                     _selectionHoldFrames = 0;
                     clearSelectedCloseFingerPose();
@@ -1727,6 +1916,7 @@ namespace rock
         }
 
         updateSelectedCloseFingerPose();
+        updateGrabAcquisitionCache(bhkWorld, hknpWorld);
     }
 
     bool Hand::acquirePeerHeldCloseSelection(RE::bhkWorld* bhkWorld,

@@ -55,6 +55,11 @@ Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.cpp' 'record\.
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.cpp' 'unresolvedRefBodiesAccepted' 'Unresolved selected-tree bodies must be accepted only through an explicit diagnostic path.'
 Require-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.cpp' 'Object body scan skipped invalid physics system' 'Invalid weapon/tree physics systems must be logged as skipped nodes instead of crashing.'
 Reject-Text 'src/physics-interaction/object/ObjectPhysicsBodySet.cpp' 'havok_runtime::forEachPhysicsSystemBodyId\(collisionObject' 'Object-body expansion must not use the old boolean-only scanner directly.'
+Require-Text 'src/physics-interaction/hand/Hand.cpp' 'makeActiveGrabBodyScanOptions' 'Active grab and pull scans must share one seeded scan-option builder.'
+Require-Text 'src/physics-interaction/hand/Hand.cpp' 'scanOptions\.seedBodyId\s*=\s*selection\.bodyId\.value' 'The shared scan-option builder must seed object scanning from the selected body.'
+Require-Text 'src/physics-interaction/hand/Hand.cpp' 'scanOptions\.requireSameResolvedRef\s*=\s*true' 'The shared scan-option builder must keep expanded bodies owned by the selected ref.'
+Require-Text 'src/physics-interaction/hand/Hand.cpp' 'tryUseGrabAcquisitionBeforePrepCache' 'Active grab startup must have a pre-prep acquisition cache path.'
+Require-Text 'src/physics-interaction/hand/Hand.cpp' 'tryBuildGrabAcquisitionPreparedBodySetFromCache' 'Active grab startup must rebuild prepared records from cached body-id evidence.'
 
 Require-Text 'src/physics-interaction/grab/GrabCore.h' 'capturedAfterPrep' 'Lifecycle records must identify bodies discovered only after recursive active prep.'
 Require-Text 'src/physics-interaction/grab/GrabCore.h' 'originalStateKnown' 'Lifecycle restore plans must not restore manufactured original state for late bodies.'
@@ -77,17 +82,23 @@ if ($pullStart -lt 0 -or $pullEnd -lt 0) {
     $failures.Add('Hand::startDynamicPull boundary could not be located.')
 } else {
     $pullText = $handGrabText.Substring($pullStart, $pullEnd - $pullStart)
-    if ($pullText -notmatch 'scanOptions\.seedBodyId\s*=\s*_currentSelection\.bodyId\.value') {
-        $failures.Add('Dynamic pull must seed object scanning from the selected far-hit body.')
+    if ($pullText -notmatch 'makeActiveGrabBodyScanOptions\(_currentSelection\)') {
+        $failures.Add('Dynamic pull must build seeded object scan options from the current far-hit selection.')
     }
-    if ($pullText -notmatch 'scanOptions\.requireSameResolvedRef\s*=\s*true') {
-        $failures.Add('Dynamic pull scans must keep expanded bodies owned by the selected ref.')
+    if ($pullText -notmatch 'tryUseGrabAcquisitionBeforePrepCache') {
+        $failures.Add('Dynamic pull must try the prewarmed acquisition cache before a direct tree scan.')
+    }
+    if ($pullText -notmatch 'tryBuildGrabAcquisitionPreparedBodySetFromCache') {
+        $failures.Add('Dynamic pull must rebuild prepared body records from cached acquisition evidence before falling back to a direct scan.')
     }
     if ($pullText -notmatch 'PULL scan:') {
         $failures.Add('Dynamic pull must log seeded scan diagnostics.')
     }
     if ($pullText -notmatch 'unresolvedAccepted') {
         $failures.Add('Dynamic pull logs must expose unresolved ownership fallback counts.')
+    }
+    if ($pullText -notmatch 'scanSource=\{\}/\{\}') {
+        $failures.Add('Dynamic pull logs must expose cache/direct scan source for both before and prepared body sets.')
     }
     if ($pullText -notmatch '_pulledBodyIds\s*=\s*preparedBodySet\.acceptedBodyIds\(\)') {
         $failures.Add('Dynamic pull must retain all accepted object bodies for activation/ownership, not collapse multipart weapons to one motion body.')
@@ -112,17 +123,23 @@ if ($grabStart -lt 0 -or $grabEnd -lt 0) {
     $failures.Add('Hand::grabSelectedObject boundary could not be located.')
 } else {
     $grabText = $handGrabText.Substring($grabStart, $grabEnd - $grabStart)
-    if ($grabText -notmatch 'scanOptions\.seedBodyId\s*=\s*sel\.bodyId\.value') {
-        $failures.Add('Close/pull-catch grab must seed object scanning from the selected body.')
+    if ($grabText -notmatch 'makeActiveGrabBodyScanOptions\(sel\)') {
+        $failures.Add('Close/pull-catch grab must build seeded object scan options from the selected body.')
     }
-    if ($grabText -notmatch 'scanOptions\.requireSameResolvedRef\s*=\s*true') {
-        $failures.Add('Close/pull-catch grab scans must keep expanded bodies owned by the selected ref.')
+    if ($grabText -notmatch 'tryUseGrabAcquisitionBeforePrepCache') {
+        $failures.Add('Close/pull-catch grab must try the prewarmed acquisition cache before a direct tree scan.')
+    }
+    if ($grabText -notmatch 'tryBuildGrabAcquisitionPreparedBodySetFromCache') {
+        $failures.Add('Close/pull-catch grab must rebuild prepared body records from cached acquisition evidence before falling back to a direct scan.')
     }
     if ($grabText -notmatch 'invalidSystems') {
         $failures.Add('Grab object-tree prep logs must include invalid native physics-system diagnostics.')
     }
     if ($grabText -notmatch 'latePrepared') {
         $failures.Add('Grab object-tree prep logs must include late body lifecycle diagnostics.')
+    }
+    if ($grabText -notmatch 'scanSource=\{\}/\{\}') {
+        $failures.Add('Grab object-tree prep logs must expose cache/direct scan source for both before and prepared body sets.')
     }
     if ($grabText -notmatch 'restoreIncompleteActivePrepRoot\(rootNode,\s*selectedOriginalMotionPropsId') {
         $failures.Add('Failed grab setup must restore the root when body scanning was incomplete.')

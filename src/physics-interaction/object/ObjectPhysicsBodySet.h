@@ -247,7 +247,30 @@ namespace rock::object_physics_body_set
         std::uint32_t unresolvedRefBodySkips = 0;
         std::uint32_t weaponExpansionSkips = 0;
         std::uint32_t depthLimitSkips = 0;
+        std::uint32_t cachedScanHits = 0;
+        std::uint32_t cachedBodyIds = 0;
+        std::uint32_t cachedCollisionObjects = 0;
         std::array<std::uint32_t, 32> rejectCounts{};
+    };
+
+    struct ObjectPhysicsBodyScanEntry
+    {
+        RE::NiAVObject* node = nullptr;
+        RE::NiCollisionObject* collisionObject = nullptr;
+        std::vector<std::uint32_t> bodyIds;
+    };
+
+    struct ObjectPhysicsBodyScanCache
+    {
+        RE::TESObjectREFR* rootRef = nullptr;
+        RE::NiAVObject* rootNode = nullptr;
+        std::uint32_t rootFormId = 0;
+        BodySetDiagnostics diagnostics;
+        std::vector<ObjectPhysicsBodyScanEntry> entries;
+        std::uint32_t bodyIdCount = 0;
+        bool valid = false;
+
+        void clear() noexcept;
     };
 
     class ObjectPhysicsBodySet
@@ -272,5 +295,16 @@ namespace rock::object_physics_body_set
 
     bool hasCollisionObjectInSubtree(RE::NiAVObject* root, int maxDepth);
 
+    ObjectPhysicsBodyScanCache captureObjectPhysicsBodyScanCache(
+        RE::bhkWorld* bhkWorld,
+        RE::hknpWorld* hknpWorld,
+        RE::TESObjectREFR* ref,
+        const BodySetScanOptions& options);
+    ObjectPhysicsBodySet buildObjectPhysicsBodySetFromScanCache(
+        RE::bhkWorld* bhkWorld,
+        RE::hknpWorld* hknpWorld,
+        RE::TESObjectREFR* ref,
+        const BodySetScanOptions& options,
+        const ObjectPhysicsBodyScanCache& cache);
     ObjectPhysicsBodySet scanObjectPhysicsBodySet(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::TESObjectREFR* ref, const BodySetScanOptions& options);
 }

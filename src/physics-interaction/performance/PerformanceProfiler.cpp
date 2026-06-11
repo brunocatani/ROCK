@@ -111,6 +111,14 @@ namespace rock::performance_profiler
                 return "contactResolve";
             case Scope::NativeContactCallback:
                 return "nativeContactCallbacks";
+            case Scope::GrabAcquisitionBodyScan:
+                return "grabAcquisitionBodyScan";
+            case Scope::GrabAcquisitionActivePrep:
+                return "grabAcquisitionActivePrep";
+            case Scope::GrabMeshExtraction:
+                return "grabMeshExtraction";
+            case Scope::GrabNearbyDampingBegin:
+                return "grabNearbyDampingBegin";
             case Scope::Count:
                 break;
             }
@@ -148,6 +156,14 @@ namespace rock::performance_profiler
                 return "weaponKeyChangeIdentityOnly";
             case Counter::WeaponKeyChangeVisualAndIdentity:
                 return "weaponKeyChangeVisualAndIdentity";
+            case Counter::GrabAcquisitionCachePrewarm:
+                return "grabAcquisitionCachePrewarm";
+            case Counter::GrabAcquisitionCacheHit:
+                return "grabAcquisitionCacheHit";
+            case Counter::GrabAcquisitionCacheMiss:
+                return "grabAcquisitionCacheMiss";
+            case Counter::GrabAcquisitionCacheInvalidated:
+                return "grabAcquisitionCacheInvalidated";
             case Counter::Count:
                 break;
             }
@@ -167,6 +183,16 @@ namespace rock::performance_profiler
                 return "weaponBuildTransientReloadSources";
             case ValueMetric::WeaponBuildBodyCount:
                 return "weaponBuildBodyCount";
+            case ValueMetric::GrabAcquisitionVisitedNodes:
+                return "grabAcquisitionVisitedNodes";
+            case ValueMetric::GrabAcquisitionCollisionObjects:
+                return "grabAcquisitionCollisionObjects";
+            case ValueMetric::GrabAcquisitionBodyIds:
+                return "grabAcquisitionBodyIds";
+            case ValueMetric::GrabMeshTriangles:
+                return "grabMeshTriangles";
+            case ValueMetric::GrabNearbyDampingMotions:
+                return "grabNearbyDampingMotions";
             case ValueMetric::Count:
                 break;
             }

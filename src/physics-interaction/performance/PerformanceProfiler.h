@@ -33,6 +33,10 @@ namespace rock::performance_profiler
         DebugOverlayRender,
         ContactResolve,
         NativeContactCallback,
+        GrabAcquisitionBodyScan,
+        GrabAcquisitionActivePrep,
+        GrabMeshExtraction,
+        GrabNearbyDampingBegin,
         Count
     };
 
@@ -52,6 +56,10 @@ namespace rock::performance_profiler
         WeaponKeyChangeVisualOnly,
         WeaponKeyChangeIdentityOnly,
         WeaponKeyChangeVisualAndIdentity,
+        GrabAcquisitionCachePrewarm,
+        GrabAcquisitionCacheHit,
+        GrabAcquisitionCacheMiss,
+        GrabAcquisitionCacheInvalidated,
         Count
     };
 
@@ -62,6 +70,11 @@ namespace rock::performance_profiler
         WeaponBuildBodiesCreated,
         WeaponBuildTransientReloadSources,
         WeaponBuildBodyCount,
+        GrabAcquisitionVisitedNodes,
+        GrabAcquisitionCollisionObjects,
+        GrabAcquisitionBodyIds,
+        GrabMeshTriangles,
+        GrabNearbyDampingMotions,
         Count
     };
 

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <unordered_map>
+#include <utility>
 
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/object/ObjectDetection.h"
@@ -111,6 +112,15 @@ namespace rock::object_physics_body_set
             const BodySetScanOptions* options = nullptr;
             ObjectPhysicsBodySet* out = nullptr;
             std::unordered_set<std::uint32_t>* seenBodyIds = nullptr;
+        };
+
+        struct ScanCacheContext
+        {
+            RE::hknpWorld* hknpWorld = nullptr;
+            RE::TESObjectREFR* rootRef = nullptr;
+            RE::NiAVObject* node = nullptr;
+            RE::NiCollisionObject* collisionObject = nullptr;
+            ObjectPhysicsBodyScanCache* out = nullptr;
         };
 
         bool appendBodyRecord(ScanBodyContext& context, std::uint32_t rawBodyId, bool seeded)
@@ -299,6 +309,128 @@ namespace rock::object_physics_body_set
                 }
             }
         }
+
+        void appendCachedScanEntry(ScanCacheContext& context)
+        {
+            if (!context.hknpWorld || !context.collisionObject || !context.out) {
+                return;
+            }
+
+            auto& out = *context.out;
+            ObjectPhysicsBodyScanEntry entry{};
+            entry.node = context.node;
+            entry.collisionObject = context.collisionObject;
+            entry.bodyIds.reserve(16);
+
+            auto visitBody = [](std::uint32_t rawBodyId, void* userData) {
+                auto* entry = static_cast<ObjectPhysicsBodyScanEntry*>(userData);
+                if (!entry) {
+                    return false;
+                }
+                entry->bodyIds.push_back(rawBodyId);
+                return true;
+            };
+            const auto scanResult = havok_runtime::forEachPhysicsSystemBodyIdDetailed(
+                context.collisionObject,
+                context.hknpWorld,
+                256,
+                visitBody,
+                &entry);
+            if (!scanResult.enumerated()) {
+                if (isInvalidPhysicsSystemStatus(scanResult.status)) {
+                    ++out.diagnostics.scanFailures;
+                    ++out.diagnostics.invalidPhysicsSystems;
+                    ROCK_LOG_SAMPLE_WARN(Hand,
+                        1000,
+                        "Object body scan cache skipped invalid physics system: status={} rootFormID={:08X} node='{}' bodyCount={} visited={} invalidIds={} weaponRef={}",
+                        havok_runtime::physicsSystemBodyScanStatusName(scanResult.status),
+                        context.rootRef ? context.rootRef->GetFormID() : 0,
+                        nodeName(context.node),
+                        scanResult.bodyCount,
+                        scanResult.visitedBodies,
+                        scanResult.skippedInvalidBodies,
+                        isWeaponReference(context.rootRef) ? "yes" : "no");
+                } else {
+                    ++out.diagnostics.benignScanSkips;
+                }
+            }
+
+            if (entry.bodyIds.empty()) {
+                return;
+            }
+
+            out.bodyIdCount += static_cast<std::uint32_t>(entry.bodyIds.size());
+            out.entries.push_back(std::move(entry));
+        }
+
+        void captureScanNode(RE::bhkWorld* bhkWorld,
+            RE::hknpWorld* hknpWorld,
+            RE::TESObjectREFR* rootRef,
+            RE::NiAVObject* node,
+            int depth,
+            const BodySetScanOptions& options,
+            ObjectPhysicsBodyScanCache& out)
+        {
+            (void)bhkWorld;
+            if (!node) {
+                return;
+            }
+            if (depth < 0) {
+                ++out.diagnostics.depthLimitSkips;
+                return;
+            }
+
+            ++out.diagnostics.visitedNodes;
+
+            auto* collisionObject = node->collisionObject.get();
+            if (collisionObject) {
+                ++out.diagnostics.collisionObjects;
+                ScanCacheContext context{ hknpWorld, rootRef, node, collisionObject, &out };
+                appendCachedScanEntry(context);
+            }
+
+            auto* niNode = node->IsNode();
+            if (!niNode) {
+                return;
+            }
+
+            auto& children = niNode->GetRuntimeData().children;
+            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
+                auto* child = children[i].get();
+                if (child) {
+                    captureScanNode(bhkWorld, hknpWorld, rootRef, child, depth - 1, options, out);
+                }
+            }
+        }
+
+        void appendCachedBodyRecords(RE::bhkWorld* bhkWorld,
+            RE::hknpWorld* hknpWorld,
+            RE::TESObjectREFR* rootRef,
+            const BodySetScanOptions& options,
+            const ObjectPhysicsBodyScanCache& cache,
+            ObjectPhysicsBodySet& out,
+            std::unordered_set<std::uint32_t>& seenBodyIds)
+        {
+            for (const auto& entry : cache.entries) {
+                ScanBodyContext context{ bhkWorld, hknpWorld, rootRef, entry.node, entry.collisionObject, &options, &out, &seenBodyIds };
+                for (const auto rawBodyId : entry.bodyIds) {
+                    if (!appendBodyRecord(context, rawBodyId, false)) {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    void ObjectPhysicsBodyScanCache::clear() noexcept
+    {
+        rootRef = nullptr;
+        rootNode = nullptr;
+        rootFormId = 0;
+        diagnostics = {};
+        entries.clear();
+        bodyIdCount = 0;
+        valid = false;
     }
 
     std::size_t ObjectPhysicsBodySet::acceptedCount() const
@@ -461,6 +593,67 @@ namespace rock::object_physics_body_set
             }
         }
         return false;
+    }
+
+    ObjectPhysicsBodyScanCache captureObjectPhysicsBodyScanCache(
+        RE::bhkWorld* bhkWorld,
+        RE::hknpWorld* hknpWorld,
+        RE::TESObjectREFR* ref,
+        const BodySetScanOptions& options)
+    {
+        ObjectPhysicsBodyScanCache result;
+        result.rootRef = ref;
+        result.rootFormId = ref ? ref->GetFormID() : 0;
+        if (!bhkWorld || !hknpWorld || !ref || ref->IsDeleted() || ref->IsDisabled()) {
+            return result;
+        }
+
+        result.rootNode = ref->Get3D();
+        if (!result.rootNode) {
+            return result;
+        }
+
+        if (options.allowWeaponRefExpansion || !isWeaponReference(ref)) {
+            captureScanNode(bhkWorld, hknpWorld, ref, result.rootNode, (std::max)(0, options.maxDepth), options, result);
+        } else {
+            ++result.diagnostics.weaponExpansionSkips;
+        }
+
+        result.valid = true;
+        return result;
+    }
+
+    ObjectPhysicsBodySet buildObjectPhysicsBodySetFromScanCache(
+        RE::bhkWorld* bhkWorld,
+        RE::hknpWorld* hknpWorld,
+        RE::TESObjectREFR* ref,
+        const BodySetScanOptions& options,
+        const ObjectPhysicsBodyScanCache& cache)
+    {
+        ObjectPhysicsBodySet result;
+        result.rootRef = ref;
+        if (!bhkWorld || !hknpWorld || !ref || ref->IsDeleted() || ref->IsDisabled() || !cache.valid || cache.rootRef != ref) {
+            return result;
+        }
+
+        result.rootNode = ref->Get3D();
+        if (!result.rootNode || result.rootNode != cache.rootNode) {
+            return result;
+        }
+
+        result.diagnostics = cache.diagnostics;
+        ++result.diagnostics.cachedScanHits;
+        result.diagnostics.cachedBodyIds = cache.bodyIdCount;
+        result.diagnostics.cachedCollisionObjects = static_cast<std::uint32_t>(cache.entries.size());
+
+        std::unordered_set<std::uint32_t> seenBodyIds;
+        if (options.seedBodyId != INVALID_BODY_ID) {
+            ScanBodyContext seedContext{ bhkWorld, hknpWorld, ref, options.seedHitNode ? options.seedHitNode : result.rootNode, nullptr, &options, &result, &seenBodyIds };
+            appendBodyRecord(seedContext, options.seedBodyId, true);
+        }
+
+        appendCachedBodyRecords(bhkWorld, hknpWorld, ref, options, cache, result, seenBodyIds);
+        return result;
     }
 
     ObjectPhysicsBodySet scanObjectPhysicsBodySet(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, RE::TESObjectREFR* ref, const BodySetScanOptions& options)

@@ -23,6 +23,7 @@
 #include "physics-interaction/object/MechanicalConnectedBodySet.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/object/SkinnedBodyResolver.h"
+#include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
@@ -6159,25 +6160,24 @@ namespace rock
             }
         }
 
-        object_physics_body_set::BodySetScanOptions scanOptions{};
-        scanOptions.mode = physics_body_classifier::InteractionMode::ActiveGrab;
-        scanOptions.rightHandBodyId = _isLeft ? INVALID_BODY_ID : _handBody.getBodyId().value;
-        scanOptions.leftHandBodyId = _isLeft ? _handBody.getBodyId().value : INVALID_BODY_ID;
-        scanOptions.sourceBodyId = _handBody.getBodyId().value;
-        scanOptions.seedBodyId = _currentSelection.bodyId.value;
-        scanOptions.targetKind = _currentSelection.targetKind;
-        scanOptions.seedHitNode = _currentSelection.hitNode;
-        scanOptions.requireSameResolvedRef = true;
-        scanOptions.allowWeaponRefExpansion = true;
-        scanOptions.heldBySameHand = &_heldBodyIds;
-        scanOptions.maxDepth = g_rockConfig.rockObjectPhysicsTreeMaxDepth;
+        const auto scanOptions = makeActiveGrabBodyScanOptions(_currentSelection);
 
-        const auto beforePrepBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, selectedRef, scanOptions);
+        object_physics_body_set::ObjectPhysicsBodySet beforePrepBodySet;
+        bool beforePrepScanCacheHit = tryUseGrabAcquisitionBeforePrepCache(bhkWorld, world, _currentSelection, scanOptions, beforePrepBodySet);
+        if (!beforePrepScanCacheHit) {
+            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAcquisitionBodyScan);
+            beforePrepBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, selectedRef, scanOptions);
+        }
         active_grab_body_lifecycle::BodyLifecycleSnapshot pullLifecycle;
         pullLifecycle.captureBeforeActivePrep(beforePrepBodySet);
-        const bool motionConverted =
-            physics_recursive_wrappers::setMotionRecursive(rootNode, physics_recursive_wrappers::MotionPreset::Dynamic, true, true, true);
-        const bool collisionEnabled = physics_recursive_wrappers::enableCollisionRecursive(rootNode, true, true, true);
+        bool motionConverted = false;
+        bool collisionEnabled = false;
+        {
+            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAcquisitionActivePrep);
+            motionConverted =
+                physics_recursive_wrappers::setMotionRecursive(rootNode, physics_recursive_wrappers::MotionPreset::Dynamic, true, true, true);
+            collisionEnabled = physics_recursive_wrappers::enableCollisionRecursive(rootNode, true, true, true);
+        }
         auto restoreFailedPullPrep = [&]() {
             restoreActiveGrabLifecycle(world,
                 pullLifecycle,
@@ -6196,12 +6196,18 @@ namespace rock
                     false);
             }
         };
-        const auto preparedBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, selectedRef, scanOptions);
+        object_physics_body_set::ObjectPhysicsBodySet preparedBodySet;
+        bool preparedScanCacheHit = tryBuildGrabAcquisitionPreparedBodySetFromCache(bhkWorld, world, _currentSelection, scanOptions, preparedBodySet);
+        if (!preparedScanCacheHit || preparedBodySet.acceptedCount() == 0) {
+            preparedScanCacheHit = false;
+            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAcquisitionBodyScan);
+            preparedBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, selectedRef, scanOptions);
+        }
         pullLifecycle.markPreparedBodies(preparedBodySet);
         _pullDriveDecision = classifyHeldBodySetDrive(beforePrepBodySet, preparedBodySet, pullLifecycle.hasIncompleteNativeScan());
         ROCK_LOG_DEBUG(Hand,
             "{} hand PULL scan: type={} weapon={} name='{}' formID={:08X} seedBody={} beforeBodies={} afterBodies={} accepted={} rejected={} "
-            "seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} collisionObjects={} visitedNodes={} driveMode={} driveReason={} linearScope={} angularScope={}",
+            "seeded={} scanSource={}/{} cachedBodyIds={} cacheHits={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} collisionObjects={} visitedNodes={} driveMode={} driveReason={} linearScope={} angularScope={}",
             handName(),
             selectedType ? selectedType : "???",
             selectedIsWeapon ? "yes" : "no",
@@ -6213,6 +6219,10 @@ namespace rock
             preparedBodySet.acceptedCount(),
             preparedBodySet.rejectedCount(),
             preparedBodySet.diagnostics.seedBodiesAdded,
+            beforePrepScanCacheHit ? "cache" : "direct",
+            preparedScanCacheHit ? "cache" : "direct",
+            preparedBodySet.diagnostics.cachedBodyIds,
+            preparedBodySet.diagnostics.cachedScanHits,
             preparedBodySet.diagnostics.scanFailures,
             preparedBodySet.diagnostics.invalidPhysicsSystems,
             preparedBodySet.diagnostics.benignScanSkips,
@@ -6638,38 +6648,47 @@ namespace rock
                 nodeDebugName(rootNode));
         }
 
-        object_physics_body_set::BodySetScanOptions scanOptions{};
-        scanOptions.mode = physics_body_classifier::InteractionMode::ActiveGrab;
-        scanOptions.rightHandBodyId = _isLeft ? INVALID_BODY_ID : _handBody.getBodyId().value;
-        scanOptions.leftHandBodyId = _isLeft ? _handBody.getBodyId().value : INVALID_BODY_ID;
-        scanOptions.sourceBodyId = _handBody.getBodyId().value;
-        scanOptions.seedBodyId = sel.bodyId.value;
-        scanOptions.targetKind = sel.targetKind;
-        scanOptions.seedHitNode = sel.hitNode;
-        scanOptions.requireSameResolvedRef = true;
-        scanOptions.allowWeaponRefExpansion = true;
-        scanOptions.heldBySameHand = &_heldBodyIds;
-        scanOptions.maxDepth = g_rockConfig.rockObjectPhysicsTreeMaxDepth;
+        const auto scanOptions = makeActiveGrabBodyScanOptions(sel);
 
         active_grab_body_lifecycle::BodyLifecycleSnapshot activeLifecycle;
         const bool consumedPullPrepLifecycle =
             !joiningPeerHeldObject && grabbedFromPullCatch && consumePullPrepLifecycleForActiveGrab(sel.refr, activeLifecycle);
-        const auto beforePrepBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, sel.refr, scanOptions);
+        object_physics_body_set::ObjectPhysicsBodySet beforePrepBodySet;
+        bool beforePrepScanCacheHit = tryUseGrabAcquisitionBeforePrepCache(bhkWorld, world, sel, scanOptions, beforePrepBodySet);
+        if (!beforePrepScanCacheHit) {
+            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAcquisitionBodyScan);
+            beforePrepBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, sel.refr, scanOptions);
+        }
         if (!joiningPeerHeldObject && !consumedPullPrepLifecycle) {
             activeLifecycle.captureBeforeActivePrep(beforePrepBodySet);
         }
 
-        const bool motionConverted = joiningPeerHeldObject ? true :
-                                                               physics_recursive_wrappers::setMotionRecursive(
-                                                                   rootNode,
-                                                                   physics_recursive_wrappers::MotionPreset::Dynamic,
-                                                                   true,
-                                                                   true,
-                                                                   true);
-        const bool collisionEnabled = joiningPeerHeldObject ? true : physics_recursive_wrappers::enableCollisionRecursive(rootNode, true, true, true);
+        bool motionConverted = true;
+        bool collisionEnabled = true;
+        if (!joiningPeerHeldObject) {
+            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAcquisitionActivePrep);
+            motionConverted =
+                physics_recursive_wrappers::setMotionRecursive(
+                    rootNode,
+                    physics_recursive_wrappers::MotionPreset::Dynamic,
+                    true,
+                    true,
+                    true);
+            collisionEnabled = physics_recursive_wrappers::enableCollisionRecursive(rootNode, true, true, true);
+        }
 
-        auto preparedBodySet =
-            joiningPeerHeldObject ? beforePrepBodySet : object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, sel.refr, scanOptions);
+        object_physics_body_set::ObjectPhysicsBodySet preparedBodySet;
+        bool preparedScanCacheHit = joiningPeerHeldObject;
+        if (joiningPeerHeldObject) {
+            preparedBodySet = beforePrepBodySet;
+        } else {
+            preparedScanCacheHit = tryBuildGrabAcquisitionPreparedBodySetFromCache(bhkWorld, world, sel, scanOptions, preparedBodySet);
+            if (!preparedScanCacheHit || preparedBodySet.acceptedCount() == 0) {
+                preparedScanCacheHit = false;
+                performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAcquisitionBodyScan);
+                preparedBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, sel.refr, scanOptions);
+            }
+        }
         if (!joiningPeerHeldObject) {
             activeLifecycle.markPreparedBodies(preparedBodySet);
         } else if (sharedContext.peerActiveGrabLifecycle) {
@@ -6762,7 +6781,7 @@ namespace rock
 
         ROCK_LOG_DEBUG(Hand,
             "{} hand object-tree prep: ref='{}' formID={:08X} beforeBodies={} afterBodies={} accepted={} rejected={} "
-            "seedBody={} seeded={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} "
+            "seedBody={} seeded={} scanSource={}/{} cachedBodyIds={} cacheHits={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} "
             "latePrepared={} incompleteScan={} collisionObjects={} visitedNodes={} setMotion={} enableCollision={} sharedPeer={} "
             "proxyPivot=({:.1f},{:.1f},{:.1f}) palmPocketPivot=({:.1f},{:.1f},{:.1f}) pocketProxyDelta={:.2f} palmBasis={:.1f}deg axisDeg=({:.1f},{:.1f},{:.1f}) determinant=({:.3f},{:.3f})",
             handName(),
@@ -6774,6 +6793,10 @@ namespace rock
             preparedBodySet.rejectedCount(),
             scanOptions.seedBodyId,
             preparedBodySet.diagnostics.seedBodiesAdded,
+            beforePrepScanCacheHit ? "cache" : "direct",
+            preparedScanCacheHit ? "cache" : "direct",
+            preparedBodySet.diagnostics.cachedBodyIds,
+            preparedBodySet.diagnostics.cachedScanHits,
             preparedBodySet.diagnostics.scanFailures,
             preparedBodySet.diagnostics.invalidPhysicsSystems,
             preparedBodySet.diagnostics.benignScanSkips,
@@ -6952,6 +6975,7 @@ namespace rock
         }
 
         if (meshSourceNode) {
+            performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabMeshExtraction);
             const int meshExtractionDepth = (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth);
             std::array<RE::NiAVObject*, 3> meshExtractionAttemptedRoots{};
             std::uint32_t meshExtractionAttemptCount = 0;
@@ -7024,6 +7048,7 @@ namespace rock
                 meshExtractionAttemptCount, meshStats.staticShapes,
                 meshStats.staticTriangles, meshStats.dynamicShapes, meshStats.dynamicTriangles, meshStats.skinnedShapes, meshStats.skinnedTriangles,
                 meshStats.dynamicSkinnedSkipped, meshStats.emptyShapes, meshStats.blacklistedShapes, meshStats.totalTriangles());
+            performance_profiler::observeValue(performance_profiler::ValueMetric::GrabMeshTriangles, meshStats.totalTriangles());
 
             {
                 RE::BSTriShape* firstTriShape = meshSourceNode->IsTriShape();
@@ -9633,16 +9658,20 @@ namespace rock
             dampingOptions.leftHandBodyId = _isLeft ? _handBody.getBodyId().value : INVALID_BODY_ID;
             dampingOptions.heldBySameHand = &_heldBodyIds;
             dampingOptions.maxDepth = (std::max)(1, g_rockConfig.rockObjectPhysicsTreeMaxDepth);
-            _nearbyGrabDamping = nearby_grab_damping::beginNearbyGrabDamping(bhkWorld,
-                world,
-                sel.refr,
-                _heldBodyIds,
-                grabGripPoint,
-                g_rockConfig.rockGrabNearbyDampingRadius,
-                g_rockConfig.rockGrabNearbyDampingSeconds,
-                g_rockConfig.rockGrabNearbyLinearDamping,
-                g_rockConfig.rockGrabNearbyAngularDamping,
-                dampingOptions);
+            {
+                performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabNearbyDampingBegin);
+                _nearbyGrabDamping = nearby_grab_damping::beginNearbyGrabDamping(bhkWorld,
+                    world,
+                    sel.refr,
+                    _heldBodyIds,
+                    grabGripPoint,
+                    g_rockConfig.rockGrabNearbyDampingRadius,
+                    g_rockConfig.rockGrabNearbyDampingSeconds,
+                    g_rockConfig.rockGrabNearbyLinearDamping,
+                    g_rockConfig.rockGrabNearbyAngularDamping,
+                    dampingOptions);
+            }
+            performance_profiler::observeValue(performance_profiler::ValueMetric::GrabNearbyDampingMotions, _nearbyGrabDamping.motions.size());
         } else {
             _nearbyGrabDamping.clear();
         }
@@ -12750,6 +12779,7 @@ namespace rock
         _hasLastHeldHandPositionHavok = false;
         _lastPlayerSpaceVelocityHavok = {};
         _currentSelection.clear();
+        clearGrabAcquisitionCache("release-cleared-selection");
         const HandInteractionEvent releaseEvent =
             releaseContext.disposition == GrabReleaseDisposition::TransferToInventory && _state == HandState::StashCandidate ?
                 HandInteractionEvent::CommitStash :
