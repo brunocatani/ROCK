@@ -935,13 +935,27 @@ namespace rock
                 packed[2],
                 packed[3]);
             havok_runtime::rebuildMotionMassProperties(world, savedMotion.motionIndex);
+            packed[0] = savedMotion.savedPackedInertia[0];
+            packed[1] = savedMotion.savedPackedInertia[1];
+            packed[2] = savedMotion.savedPackedInertia[2];
             if (savedMotion.massModified) {
                 packed[3] = savedMotion.savedPackedMass;
                 ROCK_LOG_TRACE(GrabConstraint,
-                    "Restored packed mass override reapplied after rebuild: body={} motion={} massPacked={}",
+                    "Restored packed inertia/mass override reapplied after rebuild: body={} motion={} packed=[{},{},{}] massPacked={}",
                     savedMotion.bodyId.value,
                     savedMotion.motionIndex,
+                    packed[0],
+                    packed[1],
+                    packed[2],
                     packed[3]);
+            } else {
+                ROCK_LOG_TRACE(GrabConstraint,
+                    "Restored packed inertia override reapplied after rebuild: body={} motion={} packed=[{},{},{}]",
+                    savedMotion.bodyId.value,
+                    savedMotion.motionIndex,
+                    packed[0],
+                    packed[1],
+                    packed[2]);
             }
             savedMotion.inertiaModified = false;
             savedMotion.massModified = false;
