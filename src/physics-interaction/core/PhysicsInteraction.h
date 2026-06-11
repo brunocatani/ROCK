@@ -86,6 +86,7 @@ namespace rock
         void shutdown(::rock::provider::RockProviderLifecycleReason reason = ::rock::provider::RockProviderLifecycleReason::Shutdown);
 
         bool isInitialized() const { return _initialized; }
+        void requestWeaponCollisionRebuildAfterWorkbenchExit(const char* sourceMenuName);
         void noteSkeletonLifecycle(std::uint32_t skeletonGeneration, ::rock::provider::RockProviderLifecycleReason reason);
         void noteProviderLifecycle(std::uint32_t providerGeneration, ::rock::provider::RockProviderLifecycleReason reason);
 

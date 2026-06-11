@@ -64,10 +64,12 @@
 
 #include "RE/Bethesda/ActorValueInfo.h"
 #include "RE/Bethesda/BSHavok.h"
+#include "RE/Bethesda/Events.h"
 #include "RE/Bethesda/FormComponents.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/TESForms.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
+#include "RE/Bethesda/UI.h"
 #include "RE/Havok/hknpMotion.h"
 #include "RE/Havok/hknpWorld.h"
 
@@ -91,6 +93,75 @@ namespace rock
         constexpr float kRawParityFailRotationDegrees = 2.0f;
         constexpr int kRawParityWarnFrames = 2;
         constexpr int kRawParityFailFrames = 10;
+        constexpr std::array<std::string_view, 5> kWeaponCollisionWorkbenchExitMenuNames{
+            "ExamineMenu",
+            "PowerArmorModMenu",
+            "RobotModMenu",
+            "Crafting Menu",
+            "CraftingMenu",
+        };
+
+        std::atomic<bool> s_weaponCollisionWorkbenchExitMenuSinkRegistered{ false };
+        std::atomic<bool> s_weaponCollisionWorkbenchExitMenuSinkMissingUILogged{ false };
+
+        [[nodiscard]] bool isWeaponCollisionWorkbenchExitMenu(const RE::BSFixedString& menuName)
+        {
+            for (const auto name : kWeaponCollisionWorkbenchExitMenuNames) {
+                if (menuName == name) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        class WeaponCollisionWorkbenchExitMenuSink final : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
+        {
+        public:
+            RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent& event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
+            {
+                if (event.opening || !event.menuName.c_str() || !isWeaponCollisionWorkbenchExitMenu(event.menuName)) {
+                    return RE::BSEventNotifyControl::kContinue;
+                }
+
+                auto* interaction = PhysicsInteraction::s_instance.load(std::memory_order_acquire);
+                if (interaction && interaction->isInitialized()) {
+                    interaction->requestWeaponCollisionRebuildAfterWorkbenchExit(event.menuName.c_str());
+                }
+
+                return RE::BSEventNotifyControl::kContinue;
+            }
+        };
+
+        WeaponCollisionWorkbenchExitMenuSink s_weaponCollisionWorkbenchExitMenuSink;
+
+        bool ensureWeaponCollisionWorkbenchExitMenuSinkRegistered()
+        {
+            bool expected = false;
+            if (!s_weaponCollisionWorkbenchExitMenuSinkRegistered.compare_exchange_strong(
+                    expected,
+                    true,
+                    std::memory_order_acq_rel,
+                    std::memory_order_acquire)) {
+                return true;
+            }
+
+            auto* ui = RE::UI::GetSingleton();
+            if (!ui) {
+                s_weaponCollisionWorkbenchExitMenuSinkRegistered.store(false, std::memory_order_release);
+                if (!s_weaponCollisionWorkbenchExitMenuSinkMissingUILogged.exchange(true, std::memory_order_acq_rel)) {
+                    ROCK_LOG_WARN(Weapon, "UI singleton unavailable; weapon collision workbench-exit menu sink will retry");
+                }
+                return false;
+            }
+
+            ui->RegisterSink<RE::MenuOpenCloseEvent>(&s_weaponCollisionWorkbenchExitMenuSink);
+            s_weaponCollisionWorkbenchExitMenuSinkMissingUILogged.store(false, std::memory_order_release);
+            ROCK_LOG_INFO(Weapon,
+                "Registered weapon collision workbench-exit menu sink for {} menu names",
+                kWeaponCollisionWorkbenchExitMenuNames.size());
+            return true;
+        }
 
         constexpr std::uint32_t claimOwnerBit(PhysicsObjectClaimOwner owner)
         {
@@ -1183,6 +1254,18 @@ namespace rock
         ROCK_LOG_INFO(Init, "ROCK Physics Module — destroyed");
     }
 
+    void PhysicsInteraction::requestWeaponCollisionRebuildAfterWorkbenchExit(const char* sourceMenuName)
+    {
+        if (!_initialized.load(std::memory_order_acquire)) {
+            return;
+        }
+
+        _weaponCollision.requestWorkbenchExitRebuild();
+        ROCK_LOG_DEBUG(Weapon,
+            "Weapon collision workbench-exit rebuild gate armed by {} close",
+            sourceMenuName ? sourceMenuName : "<unknown>");
+    }
+
     bool PhysicsInteraction::tryGetRootFlattenedHandTransform(bool isLeft, RE::NiTransform& outTransform) const
     {
         outTransform = {};
@@ -1690,6 +1773,7 @@ namespace rock
         subscribeContactEvents(hknp);
 
         _weaponCollision.init(hknp, bhk);
+        ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
 
         if (frik_visual_authority::blockOffHandWeaponGripping("ROCK_Physics", true)) {
             ROCK_LOG_INFO(Init, "FRIK offhand grip permanently suppressed");
@@ -1745,6 +1829,8 @@ namespace rock
 
     void PhysicsInteraction::update()
     {
+        ensureWeaponCollisionWorkbenchExitMenuSinkRegistered();
+
         const auto& runtime = runtime_state::currentFrame();
         if (!runtime.visualAuthorityAvailable) {
             restoreHeldMassMovementSlowdown("frik-unavailable");

@@ -8,10 +8,10 @@ ROCK must stop treating reload animation visual churn as a reason to walk the eq
 
 - Project: ROCK.
 - Branch observed before planning: `feature/ghidra-grab-motor-mapping`.
-- Source used: current local ROCK source and tests only.
+- Source used: current local ROCK source, tests, CommonLibF4VR headers, and approved Ghidra inspection of the loaded FO4VR executable.
 - External sources: none.
-- Ghidra / FO4 Mods MCP: not used and not needed for this change.
-- Confidence: medium-high for the source-level failure mode. Runtime validation is still required because FO4VR reload visual timing can only be fully confirmed in game.
+- Ghidra / FO4 Mods MCP: Ghidra used after explicit approval on 2026-06-11; FO4 Mods MCP not used.
+- Confidence: high for the source-level gate and workbench close signal; runtime validation is still required because FO4VR reload and workbench visual timing can only be fully confirmed in game.
 
 ## Current Failure Surfaces
 
@@ -132,13 +132,13 @@ After build/deploy, validate in game with logging/profiler:
 
 - Draw/equip weapon: one collider creation is expected.
 - Reload repeatedly: no `WeaponColliderBuild`, no `WeaponColliderCreate`, no staged create queued, no weapon body destroy/recreate.
-- Enter and exit workbench without changing weapon mods: no recreate expected unless the game genuinely changes equipped instance data.
-- Exit workbench after changing weapon mods: one rebuild is expected after identity changes and visual source stabilizes.
+- Enter and exit workbench without changing weapon mods: at most one rebuild is allowed because workbench exit is an explicit lifecycle gate.
+- Exit workbench after changing weapon mods: one rebuild is expected after the menu closes and visual source stabilizes.
 - Holster weapon: bodies may be destroyed/cleared through the no-drawn-weapon path.
 
 ## Risks
 
-- If FO4VR workbench changes only visual nodes without updating equipped instance/object-extra identity, this design will intentionally not rebuild. That would require a separate approved source of workbench-exit truth or a local runtime event hook, not visual churn guessing.
+- ROCK currently observes workbench exit through `RE::MenuOpenCloseEvent` for workbench-family menus, not the lower-level `WeaponsWorkbenchExited` custom event. This avoids a new raw binary hook but can allow a rebuild after non-weapon workbench-family closes.
 - If reload temporarily changes `equipData` or object-instance-extra in a way that looks like a real mod change, identity may still rebuild. Runtime logs should confirm whether that happens.
 - Retaining bodies during transient missing visuals means collision bodies may hold the last transform briefly. This is preferable to destroy/recreate churn, but runtime validation should check that no stale collider persists after actual holster or weapon removal.
 
@@ -178,6 +178,24 @@ Implemented after code review on 2026-06-11:
 - `PhysicsInteraction` now treats retained generated weapon bodies as active right-hand weapon authority even when `resolveEquippedWeaponInteractionNode()` returns null. This keeps dominant-hand collision suppression, contact evidence ownership, and soft-contact ownership aligned with the retained weapon collider set during reload-null visual frames.
 - `WeaponCollision` no longer acquires/releases `WeaponDominantHand` suppression directly. `PhysicsInteraction` owns suppression for the complete generated hand-collider set; keeping a second single-body owner path risks releasing the shared suppression owner while retained weapon bodies are still live.
 
-Still blocked:
+## Ghidra Follow-Up
 
-- A true workbench-exit rebuild gate is not implemented here because current local source does not expose an authoritative workbench-exit signal. PAPER should not own this ROCK collider lifecycle. Finding a reliable signal likely requires approved FO4VR binary investigation in Ghidra, scoped to workbench/menu exit or weapon-mod apply events.
+Approved Ghidra inspection on 2026-06-11 answered the remaining workbench-exit question.
+
+- Loaded binary sanity: Ghidra strings include `Fallout4VR` at `0x142d78a68` and `Fallout4VR.exe` at `0x1436f00f0`.
+- `Exit Workbench?` at `0x142d1d038` is referenced from `ExamineMenu::vfunction2` around `0x140b38d67`, where FO4VR creates an `ExamineConfirmMenu` exit callback.
+- `WeaponsWorkbenchExited` at `0x142d5ed58` is referenced from `WorkbenchMenuBase::vfunction4` around `0x140bfa8e4`.
+- In `WorkbenchMenuBase::vfunction4`, close message handling branches on workbench type and emits `WeaponsWorkbenchExited` for type `0x02`; other branches emit `ArmorWorkbenchExited`, `PowerArmorWorkbenchExited`, and related workbench events.
+- CommonLibF4VR exposes `RE::MenuOpenCloseEvent` and ROCK already uses that UI event surface safely. The precise `WeaponsWorkbenchExited` custom event is not exposed as a typed C++ event source in the current local headers.
+
+Implementation decision:
+
+- Do not add a raw hook on `WorkbenchMenuBase::vfunction4` for this gate.
+- Register a static `RE::MenuOpenCloseEvent` sink for workbench-family menus and arm a one-shot weapon collision rebuild request on close.
+- Consume that request only when `WeaponCollision::update` has a drawn equipped weapon and a non-null weapon visual root. This preserves the reload-null visual retain path and prevents a workbench request from becoming a null-visual destroy/recreate.
+
+Workbench-exit implementation result:
+
+- `PhysicsInteraction` registers `WeaponCollisionWorkbenchExitMenuSink` and retries registration from update if the UI singleton was unavailable during init.
+- `WeaponCollision::requestWorkbenchExitRebuild` arms `_workbenchExitRebuildRequested`.
+- `WeaponCollision::update` consumes `_workbenchExitRebuildRequested` only when `weaponNode != nullptr`, adds it to the explicit rebuild gates, and restarts any matching staged create so old geometry cannot survive a workbench close.

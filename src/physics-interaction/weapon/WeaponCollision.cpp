@@ -2174,6 +2174,7 @@ namespace rock
         clearPendingGeneratedWeaponBuild(world, false);
         _usingReplacementWeaponBodies = false;
         _driveRebuildRequested.store(false, std::memory_order_release);
+        _workbenchExitRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
         resetWeaponCollisionSettingsCache();
         _weaponAnimNodeDumpFrameCounter = 0;
@@ -2208,12 +2209,25 @@ namespace rock
         _cachedBhkWorld = nullptr;
         _usingReplacementWeaponBodies = false;
         _driveRebuildRequested.store(false, std::memory_order_release);
+        _workbenchExitRebuildRequested.store(false, std::memory_order_release);
         _driveFailureCount.store(0, std::memory_order_release);
         resetWeaponCollisionSettingsCache();
         _weaponAnimNodeDumpFrameCounter = 0;
         _lastWeaponAnimNodeDumpKey = 0;
 
         ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown");
+    }
+
+    void WeaponCollision::requestWorkbenchExitRebuild()
+    {
+        /*
+         * Workbench close is observed from the UI event source while weapon
+         * collision is updated from the physics runtime. Keep the cross-surface
+         * handoff to one atomic bit; the update path consumes it only when the
+         * drawn weapon visual is available, so reload-null visuals cannot turn
+         * this permission into a destroy/recreate cycle.
+         */
+        _workbenchExitRebuildRequested.store(true, std::memory_order_release);
     }
 
 
@@ -2233,6 +2247,7 @@ namespace rock
             resetWeaponBodySetGeneration();
             resetWeaponCollisionSettingsCache();
             _driveRebuildRequested.store(false, std::memory_order_release);
+            _workbenchExitRebuildRequested.store(false, std::memory_order_release);
             _driveFailureCount.store(0, std::memory_order_release);
         };
 
@@ -2275,10 +2290,12 @@ namespace rock
 
         const bool settingsChanged = weaponCollisionSettingsChanged();
         const bool driveRequestedRebuild = _driveRebuildRequested.exchange(false, std::memory_order_acq_rel);
+        const bool workbenchExitRequested =
+            weaponNode != nullptr && _workbenchExitRebuildRequested.exchange(false, std::memory_order_acq_rel);
         const bool keyChanged = observedKey != 0 && observedKey != _cachedWeaponKey;
         const bool missingBodies = observedKey != 0 && !hasWeaponBody();
         const bool identityKeyChanged = observedIdentityKey != 0 && observedIdentityKey != _cachedWeaponIdentityKey;
-        bool rebuildRequired = driveRequestedRebuild || settingsChanged || keyChanged || missingBodies;
+        bool rebuildRequired = driveRequestedRebuild || workbenchExitRequested || settingsChanged || keyChanged || missingBodies;
         bool rebuildDiagnosticsRecorded = false;
 
         const auto recordRebuildDiagnostics = [&]() {
@@ -2313,16 +2330,23 @@ namespace rock
                 _cachedWeaponKey,
                 observedKey);
         }
+        if (workbenchExitRequested) {
+            ROCK_LOG_INFO(Weapon,
+                "Workbench exit requested generated weapon collision rebuild cachedKey={:016X} observedKey={:016X}",
+                _cachedWeaponKey,
+                observedKey);
+        }
 
         if (_pendingGeneratedWeaponBuild.active) {
-            const bool pendingInvalidated = driveRequestedRebuild || !pendingGeneratedWeaponBuildMatches(observedKey);
+            const bool pendingInvalidated = driveRequestedRebuild || workbenchExitRequested || !pendingGeneratedWeaponBuildMatches(observedKey);
             if (pendingInvalidated) {
                 ROCK_LOG_INFO(Weapon,
-                    "Generated weapon staged create cancelled: pendingKey={:016X} observedKey={:016X} pendingVisual={:016X} driveRebuild={}",
+                    "Generated weapon staged create cancelled: pendingKey={:016X} observedKey={:016X} pendingVisual={:016X} driveRebuild={} workbenchExit={}",
                     _pendingGeneratedWeaponBuild.equippedKey,
                     observedKey,
                     _pendingGeneratedWeaponBuild.visualKey,
-                    driveRequestedRebuild ? "yes" : "no");
+                    driveRequestedRebuild ? "yes" : "no",
+                    workbenchExitRequested ? "yes" : "no");
                 performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildCanceled);
                 clearPendingGeneratedWeaponBuild(world, true);
                 rebuildRequired = true;
@@ -2593,13 +2617,14 @@ namespace rock
                 performance_profiler::addCounter(performance_profiler::Counter::WeaponRebuildQueued);
 
                 ROCK_LOG_INFO(Weapon,
-                    "Generated weapon collision staged create queued cachedKey={:016X} observedKey={:016X} sources={} replacingExisting={} settingsChanged={} driveRebuild={} cachedSources={} batch={}",
+                    "Generated weapon collision staged create queued cachedKey={:016X} observedKey={:016X} sources={} replacingExisting={} settingsChanged={} driveRebuild={} workbenchExit={} cachedSources={} batch={}",
                     _cachedWeaponKey,
                     observedKey,
                     generatedCount,
                     replacingExisting ? "yes" : "no",
                     settingsChanged ? "yes" : "no",
                     driveRequestedRebuild ? "yes" : "no",
+                    workbenchExitRequested ? "yes" : "no",
                     usedCachedSources ? "yes" : "no",
                     GENERATED_WEAPON_BODY_CREATION_BATCH);
                 return;

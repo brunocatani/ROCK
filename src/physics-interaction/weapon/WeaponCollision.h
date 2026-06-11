@@ -67,6 +67,8 @@ namespace rock
 
         void update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, float dt, bool weaponDrawn);
 
+        void requestWorkbenchExitRebuild();
+
         bool hasWeaponBody() const;
 
         std::uint32_t getWeaponBodyCount() const;
@@ -294,6 +296,7 @@ namespace rock
         RE::hknpWorld* _cachedWorld{ nullptr };
         void* _cachedBhkWorld{ nullptr };
         std::atomic<bool> _driveRebuildRequested{ false };
+        std::atomic<bool> _workbenchExitRebuildRequested{ false };
         std::atomic<std::uint32_t> _driveFailureCount{ 0 };
 
         std::array<std::atomic<std::uint32_t>, MAX_WEAPON_BODIES> _weaponBodyIdsAtomic;
