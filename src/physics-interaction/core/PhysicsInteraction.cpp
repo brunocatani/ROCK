@@ -4294,6 +4294,7 @@ namespace rock
                     releaseSuppressedHeldObject(hand, isLeft, isLeft ? "equipped weapon support grip active" : "right-hand weapon equipped");
                 } else if (hand.hasActivePullCatchIntent()) {
                     auto* pullCatchRef = hand.getPullCatchIntentRef();
+                    hand.finishPullPrepAsPhysicalDropIfActive("pull-catch-normal-grab-suppressed");
                     hand.clearSelectionState(true);
                     releaseObject(pullCatchRef, claimOwnerForHand(isLeft));
                     ROCK_LOG_DEBUG(Hand, "{} hand: cleared pull catch because normal grab input is suppressed", hand.handName());
@@ -4304,6 +4305,8 @@ namespace rock
                     auto* selectedRef = hand.getSelection().refr;
                     if (hand.getState() == HandState::SelectionLocked) {
                         dispatchSimpleGrabEvent(GrabEventType::SelectionUnlocked, isLeft, selectedRef, hand.getSelection().bodyId.value);
+                    } else {
+                        hand.finishPullPrepAsPhysicalDropIfActive("pull-normal-grab-suppressed");
                     }
                     hand.clearSelectionState(true);
                     releaseObject(selectedRef, claimOwnerForHand(isLeft));
@@ -4357,6 +4360,7 @@ namespace rock
                     ROCK_LOG_DEBUG(Hand,
                         "{} hand cancelled stale pull catch commit because selected close ref/body no longer matches the pull owner",
                         hand.handName());
+                    hand.finishPullPrepAsPhysicalDropIfActive("pull-catch-stale-reacquire-failed");
                     hand.clearSelectionState(true);
                     releaseObject(pullCatchRef, claimOwnerForHand(isLeft));
                     return;
