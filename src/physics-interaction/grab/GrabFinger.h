@@ -712,7 +712,7 @@ namespace rock::grab_finger_pose_math
     }
 
     inline constexpr float kMaxFingerOpenValue = 1.0f;
-    inline constexpr float kMaxThumbOverOpenValue = 1.2f;
+    inline constexpr float kMaxThumbOverOpenValue = 2.0f;
     inline constexpr float kThumbOverOpenStartValue = 0.98f;
 
     [[nodiscard]] inline float maxOpenValueForFinger(std::size_t finger)
@@ -841,8 +841,10 @@ namespace rock::grab_finger_pose_runtime
         std::array<std::uint8_t, 5> targetNormalValid{};
         RE::NiPoint3 seatPointWorld{};
         RE::NiPoint3 seatNormalWorld{};
+        RE::NiPoint3 padProbeAimWorld{};
         bool seatPointValid = false;
         bool seatNormalValid = false;
+        bool padProbeAimValid = false;
         bool useSeatPointForMissingTargets = true;
         bool useWholeMeshForMissingTargets = false;
         std::uint32_t targetCount = 0;
@@ -1085,7 +1087,10 @@ namespace rock::grab_finger_pose_runtime
     {
         RE::NiPoint3 targetWorld{};
         bool hasTarget = false;
-        if (finger < pose.surfaceAimTargetValid.size() && pose.surfaceAimTargetValid[finger]) {
+        if (poseTargets.padProbeAimValid) {
+            targetWorld = poseTargets.padProbeAimWorld;
+            hasTarget = true;
+        } else if (finger < pose.surfaceAimTargetValid.size() && pose.surfaceAimTargetValid[finger]) {
             targetWorld = pose.surfaceAimTarget[finger];
             hasTarget = true;
         } else if (finger < poseTargets.targetValid.size() && poseTargets.targetValid[finger]) {

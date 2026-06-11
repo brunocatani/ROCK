@@ -143,7 +143,7 @@ int main()
     ok &= expectFloat("zero smoothing speed snaps to target",
         exponentialSmoothingAlpha(0.0f, 1.0f / 90.0f), 1.0f);
     const auto overOpenJoints = rock::grab_finger_pose_math::expandFingerCurlsToJointValues(
-        std::array<float, 5>{ 1.2f, 1.2f, 1.0f, 1.0f, 1.0f });
+        std::array<float, 5>{ 2.5f, 2.5f, 1.0f, 1.0f, 1.0f });
     ok &= expectFloat("thumb curl can over-open through FRIK flex range",
         overOpenJoints[1],
         rock::grab_finger_pose_math::kMaxThumbOverOpenValue);
@@ -152,7 +152,7 @@ int main()
         rock::grab_finger_pose_math::kMaxFingerOpenValue);
     std::array<float, 15> overOpenTarget{};
     overOpenTarget[1] = rock::grab_finger_pose_math::kMaxThumbOverOpenValue;
-    overOpenTarget[4] = 1.2f;
+    overOpenTarget[4] = 2.5f;
     const auto snappedOverOpenJoints = rock::grab_finger_pose_math::advanceJointValues({}, overOpenTarget, 0.0f, 1.0f / 90.0f);
     ok &= expectFloat("thumb over-open survives snap sanitization",
         snappedOverOpenJoints[1],
@@ -296,6 +296,12 @@ int main()
     ok &= expectPointClose("pad direction prefers current surface target",
         fingerPadProbeDirection(directionPose, padTargets, padLandmarks.fingers[1], 1, padCenter),
         RE::NiPoint3{ 0.0f, 1.0f, 0.0f });
+    padTargets.padProbeAimWorld = RE::NiPoint3{ 1.5f, -2.0f, 0.0f };
+    padTargets.padProbeAimValid = true;
+    ok &= expectPointClose("pinch-pocket pad aim overrides red surface target",
+        fingerPadProbeDirection(directionPose, padTargets, padLandmarks.fingers[1], 1, padCenter),
+        RE::NiPoint3{ 0.0f, -1.0f, 0.0f });
+    padTargets.padProbeAimValid = false;
     directionPose.surfaceAimTargetValid[1] = 0;
     ok &= expectPointClose("pad direction falls back to grip seat",
         fingerPadProbeDirection(directionPose, padTargets, padLandmarks.fingers[1], 1, padCenter),
@@ -442,7 +448,7 @@ int main()
     ok &= expectBool("direct pad open bias cannot reduce openness",
         fingerPadOpenBiasValue(0.8f, directBiasEvidence) >= 0.8f,
         true);
-    ok &= expectFloat("direct thumb pad over-open reaches thumb cap",
+    ok &= expectFloat("direct thumb pad over-open reaches full hFRIK flex cap",
         fingerPadThumbOverOpenValue(1.0f, directBiasEvidence),
         rock::grab_finger_pose_math::kMaxThumbOverOpenValue);
     ok &= expectFloat("direct thumb pad over-open waits for open thumb",

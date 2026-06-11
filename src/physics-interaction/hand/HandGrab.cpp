@@ -1222,6 +1222,8 @@ namespace rock
             auto targets = grab_finger_pose_runtime::makeSharedGripPoseTarget(candidate.surfaceHit.position, candidate.surfaceHit.normal);
             targets.useSeatPointForMissingTargets = false;
             targets.useWholeMeshForMissingTargets = false;
+            targets.padProbeAimWorld = candidate.pinchPocketWorld;
+            targets.padProbeAimValid = true;
 
             const auto config = currentPinchPocketConfig();
             const float halfWidth =
@@ -1616,7 +1618,13 @@ namespace rock
             frame.fingerPoseTargetNormalLocal = {};
             frame.fingerPoseTargetValid = {};
             frame.fingerPoseTargetNormalValid = {};
+            frame.fingerPosePadProbeAimLocal = {};
+            frame.fingerPosePadProbeAimValid = 0;
             frame.fingerPoseTargetCount = 0;
+            if (targets.padProbeAimValid) {
+                frame.fingerPosePadProbeAimLocal = transform_math::worldPointToLocal(objectWorldTransform, targets.padProbeAimWorld);
+                frame.fingerPosePadProbeAimValid = 1;
+            }
             for (std::size_t finger = 0; finger < targets.targets.size(); ++finger) {
                 if (!targets.targetValid[finger]) {
                     continue;
@@ -1705,6 +1713,10 @@ namespace rock
             auto targets = grab_finger_pose_runtime::makeSharedGripPoseTarget(gripEvidencePointWorld(frame, currentNodeWorld), seatNormalWorld);
             targets.useSeatPointForMissingTargets = false;
             targets.useWholeMeshForMissingTargets = true;
+            if (frame.fingerPosePadProbeAimValid) {
+                targets.padProbeAimWorld = transform_math::localPointToWorld(currentNodeWorld, frame.fingerPosePadProbeAimLocal);
+                targets.padProbeAimValid = true;
+            }
             for (std::size_t finger = 0; finger < frame.fingerPoseTargetLocal.size(); ++finger) {
                 if (!frame.fingerPoseTargetValid[finger]) {
                     continue;
