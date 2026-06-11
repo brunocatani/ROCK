@@ -309,6 +309,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKGrabAuthorityFramePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKGrabAuthorityFramePolicyTests)
 
+  add_executable(ROCKTransformMathDoublePrecisionPolicyTests
+    "${ROOT_DIR}/tests/TransformMathDoublePrecisionPolicyTests.cpp"
+  )
+  target_compile_features(ROCKTransformMathDoublePrecisionPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKTransformMathDoublePrecisionPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKTransformMathDoublePrecisionPolicyTests)
+
   add_executable(ROCKGrabThreePhasePolicyTests
     "${ROOT_DIR}/tests/GrabThreePhasePolicyTests.cpp"
   )
@@ -491,6 +498,7 @@ if(BUILD_ROCK_TESTS)
     ROCKGrabPivotAuthorityPolicyTests
     ROCKGrabMotionControllerPolicyTests
     ROCKGrabAuthorityFramePolicyTests
+    ROCKTransformMathDoublePrecisionPolicyTests
     ROCKGrabThreePhasePolicyTests
     ROCKGrabPinchPocketPolicyTests
     ROCKGeneratedKeyframedBodyDrivePolicyTests

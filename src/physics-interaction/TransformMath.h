@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <type_traits>
 
 namespace rock::transform_math
 {
@@ -11,7 +12,70 @@ namespace rock::transform_math
      * through the stored Ni basis as Transpose()*v. Centralizing that here
      * prevents hand grabs, debug markers, two-handed grip, and mesh weapon
      * bodies from drifting back into the older row-vector/wand math.
+     *
+     * Intermediate arithmetic intentionally promotes to double before writing
+     * back to Ni's float storage. This mirrors HIGGS' double transform path for
+     * ROCK's shared grab/weapon transform math without changing engine types.
      */
+
+    namespace detail
+    {
+        template <class Value>
+        using StoredValue = std::remove_cv_t<std::remove_reference_t<Value>>;
+
+        template <class Value>
+        inline StoredValue<Value> narrowDouble(double value)
+        {
+            return static_cast<StoredValue<Value>>(value);
+        }
+
+        template <class Vector>
+        inline Vector makeVector(double x, double y, double z)
+        {
+            Vector result{};
+            result.x = narrowDouble<decltype(result.x)>(x);
+            result.y = narrowDouble<decltype(result.y)>(y);
+            result.z = narrowDouble<decltype(result.z)>(z);
+            return result;
+        }
+
+        template <class Matrix>
+        inline void setMatrixEntry(Matrix& matrix, int row, int column, double value)
+        {
+            matrix.entry[row][column] = narrowDouble<decltype(matrix.entry[row][column])>(value);
+        }
+
+        template <class Matrix>
+        inline double multiplyStoredRotationEntry(const Matrix& lhs, const Matrix& rhs, int row, int column)
+        {
+            return static_cast<double>(lhs.entry[row][0]) * static_cast<double>(rhs.entry[0][column]) +
+                   static_cast<double>(lhs.entry[row][1]) * static_cast<double>(rhs.entry[1][column]) +
+                   static_cast<double>(lhs.entry[row][2]) * static_cast<double>(rhs.entry[2][column]);
+        }
+
+        template <class Matrix, class Vector>
+        inline double rotateLocalVectorToWorldAxis(const Matrix& matrix, const Vector& vector, int column)
+        {
+            return static_cast<double>(matrix.entry[0][column]) * static_cast<double>(vector.x) +
+                   static_cast<double>(matrix.entry[1][column]) * static_cast<double>(vector.y) +
+                   static_cast<double>(matrix.entry[2][column]) * static_cast<double>(vector.z);
+        }
+
+        template <class Matrix, class Vector>
+        inline double rotateWorldVectorToLocalAxis(const Matrix& matrix, const Vector& vector, int row)
+        {
+            return static_cast<double>(matrix.entry[row][0]) * static_cast<double>(vector.x) +
+                   static_cast<double>(matrix.entry[row][1]) * static_cast<double>(vector.y) +
+                   static_cast<double>(matrix.entry[row][2]) * static_cast<double>(vector.z);
+        }
+
+        template <class Matrix>
+        inline double rotateWorldOffsetToLocalAxis(const Matrix& matrix, double offsetX, double offsetY, double offsetZ, int row)
+        {
+            return static_cast<double>(matrix.entry[row][0]) * offsetX + static_cast<double>(matrix.entry[row][1]) * offsetY +
+                   static_cast<double>(matrix.entry[row][2]) * offsetZ;
+        }
+    }
 
     template <class Matrix>
     inline Matrix makeIdentityRotation()
@@ -50,8 +114,7 @@ namespace rock::transform_math
         Matrix result{};
         for (int row = 0; row < 3; ++row) {
             for (int column = 0; column < 3; ++column) {
-                result.entry[row][column] = lhs.entry[row][0] * rhs.entry[0][column] + lhs.entry[row][1] * rhs.entry[1][column] +
-                                            lhs.entry[row][2] * rhs.entry[2][column];
+                detail::setMatrixEntry(result, row, column, detail::multiplyStoredRotationEntry(lhs, rhs, row, column));
             }
         }
         return result;
@@ -60,50 +123,65 @@ namespace rock::transform_math
     template <class Matrix, class Vector>
     inline Vector rotateLocalVectorToWorld(const Matrix& matrix, const Vector& vector)
     {
-        return Vector{
-            matrix.entry[0][0] * vector.x + matrix.entry[1][0] * vector.y + matrix.entry[2][0] * vector.z,
-            matrix.entry[0][1] * vector.x + matrix.entry[1][1] * vector.y + matrix.entry[2][1] * vector.z,
-            matrix.entry[0][2] * vector.x + matrix.entry[1][2] * vector.y + matrix.entry[2][2] * vector.z,
-        };
+        return detail::makeVector<Vector>(
+            detail::rotateLocalVectorToWorldAxis(matrix, vector, 0),
+            detail::rotateLocalVectorToWorldAxis(matrix, vector, 1),
+            detail::rotateLocalVectorToWorldAxis(matrix, vector, 2));
     }
 
     template <class Matrix, class Vector>
     inline Vector rotateWorldVectorToLocal(const Matrix& matrix, const Vector& vector)
     {
-        return Vector{
-            matrix.entry[0][0] * vector.x + matrix.entry[0][1] * vector.y + matrix.entry[0][2] * vector.z,
-            matrix.entry[1][0] * vector.x + matrix.entry[1][1] * vector.y + matrix.entry[1][2] * vector.z,
-            matrix.entry[2][0] * vector.x + matrix.entry[2][1] * vector.y + matrix.entry[2][2] * vector.z,
-        };
+        return detail::makeVector<Vector>(
+            detail::rotateWorldVectorToLocalAxis(matrix, vector, 0),
+            detail::rotateWorldVectorToLocalAxis(matrix, vector, 1),
+            detail::rotateWorldVectorToLocalAxis(matrix, vector, 2));
     }
 
     template <class Transform, class Vector>
     inline Vector localVectorToWorld(const Transform& transform, const Vector& vector)
     {
-        const Vector rotated = rotateLocalVectorToWorld(transform.rotate, vector);
-        return Vector{ rotated.x * transform.scale, rotated.y * transform.scale, rotated.z * transform.scale };
+        const double scale = static_cast<double>(transform.scale);
+        return detail::makeVector<Vector>(
+            detail::rotateLocalVectorToWorldAxis(transform.rotate, vector, 0) * scale,
+            detail::rotateLocalVectorToWorldAxis(transform.rotate, vector, 1) * scale,
+            detail::rotateLocalVectorToWorldAxis(transform.rotate, vector, 2) * scale);
     }
 
     template <class Transform, class Vector>
     inline Vector worldVectorToLocal(const Transform& transform, const Vector& vector)
     {
-        const float inverseScale = (std::abs(transform.scale) > 0.0001f) ? (1.0f / transform.scale) : 1.0f;
-        const Vector rotated = rotateWorldVectorToLocal(transform.rotate, vector);
-        return Vector{ rotated.x * inverseScale, rotated.y * inverseScale, rotated.z * inverseScale };
+        const double scale = static_cast<double>(transform.scale);
+        const double inverseScale = (std::abs(scale) > 0.0001) ? (1.0 / scale) : 1.0;
+        return detail::makeVector<Vector>(
+            detail::rotateWorldVectorToLocalAxis(transform.rotate, vector, 0) * inverseScale,
+            detail::rotateWorldVectorToLocalAxis(transform.rotate, vector, 1) * inverseScale,
+            detail::rotateWorldVectorToLocalAxis(transform.rotate, vector, 2) * inverseScale);
     }
 
     template <class Transform, class Vector>
     inline Vector localPointToWorld(const Transform& transform, const Vector& point)
     {
-        const Vector offset = localVectorToWorld(transform, point);
-        return Vector{ transform.translate.x + offset.x, transform.translate.y + offset.y, transform.translate.z + offset.z };
+        const double scale = static_cast<double>(transform.scale);
+        return detail::makeVector<Vector>(
+            static_cast<double>(transform.translate.x) + detail::rotateLocalVectorToWorldAxis(transform.rotate, point, 0) * scale,
+            static_cast<double>(transform.translate.y) + detail::rotateLocalVectorToWorldAxis(transform.rotate, point, 1) * scale,
+            static_cast<double>(transform.translate.z) + detail::rotateLocalVectorToWorldAxis(transform.rotate, point, 2) * scale);
     }
 
     template <class Transform, class Vector>
     inline Vector worldPointToLocal(const Transform& transform, const Vector& point)
     {
-        return worldVectorToLocal(transform,
-            Vector{ point.x - transform.translate.x, point.y - transform.translate.y, point.z - transform.translate.z });
+        const double scale = static_cast<double>(transform.scale);
+        const double inverseScale = (std::abs(scale) > 0.0001) ? (1.0 / scale) : 1.0;
+        const double offsetX = static_cast<double>(point.x) - static_cast<double>(transform.translate.x);
+        const double offsetY = static_cast<double>(point.y) - static_cast<double>(transform.translate.y);
+        const double offsetZ = static_cast<double>(point.z) - static_cast<double>(transform.translate.z);
+
+        return detail::makeVector<Vector>(
+            detail::rotateWorldOffsetToLocalAxis(transform.rotate, offsetX, offsetY, offsetZ, 0) * inverseScale,
+            detail::rotateWorldOffsetToLocalAxis(transform.rotate, offsetX, offsetY, offsetZ, 1) * inverseScale,
+            detail::rotateWorldOffsetToLocalAxis(transform.rotate, offsetX, offsetY, offsetZ, 2) * inverseScale);
     }
 
     template <class Transform>
@@ -112,7 +190,7 @@ namespace rock::transform_math
         Transform result = makeIdentityTransform<Transform>();
         result.rotate = multiplyStoredRotations(child.rotate, parent.rotate);
         result.translate = localPointToWorld(parent, child.translate);
-        result.scale = parent.scale * child.scale;
+        result.scale = detail::narrowDouble<decltype(result.scale)>(static_cast<double>(parent.scale) * static_cast<double>(child.scale));
         return result;
     }
 
@@ -121,7 +199,8 @@ namespace rock::transform_math
     {
         Transform result = makeIdentityTransform<Transform>();
         result.rotate = transposeRotation(transform.rotate);
-        result.scale = (std::abs(transform.scale) > 0.0001f) ? (1.0f / transform.scale) : 1.0f;
+        const double scale = static_cast<double>(transform.scale);
+        result.scale = detail::narrowDouble<decltype(result.scale)>((std::abs(scale) > 0.0001) ? (1.0 / scale) : 1.0);
         const decltype(transform.translate) origin{};
         result.translate = worldPointToLocal(transform, origin);
         return result;
