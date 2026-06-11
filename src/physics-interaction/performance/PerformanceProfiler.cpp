@@ -7,14 +7,18 @@
 
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <cmath>
 #include <cstdio>
+#include <chrono>
 #include <memory>
 #include <mutex>
-#include <string>
+#include <thread>
 #include <utility>
 
-#include "physics-interaction/PhysicsLog.h"
+#include <spdlog/pattern_formatter.h>
+#include <spdlog/sinks/rotating_file_sink.h>
+#include <spdlog/spdlog.h>
 
 namespace rock::performance_profiler
 {
@@ -59,9 +63,6 @@ namespace rock::performance_profiler
         std::mutex s_overlayMutex;
         OverlayLines s_overlayLines{};
         std::uint32_t s_overlayLineCount = 0;
-        std::mutex s_profilerLoggerMutex;
-        std::shared_ptr<spdlog::logger> s_profilerLogger;
-        std::string s_profilerLoggerPattern;
 
         constexpr std::uint32_t sanitizeIntervalFrames(int value) noexcept
         {
@@ -316,6 +317,271 @@ namespace rock::performance_profiler
             [[nodiscard]] double avg() const noexcept { return samples > 0 ? static_cast<double>(total) / static_cast<double>(samples) : 0.0; }
         };
 
+        struct QueuedSnapshot
+        {
+            std::array<ScopeSnapshot, static_cast<std::size_t>(Scope::Count)> scopes{};
+            std::array<CounterSnapshot, static_cast<std::size_t>(Counter::Count)> counters{};
+            std::array<ValueSnapshot, static_cast<std::size_t>(ValueMetric::Count)> values{};
+            std::uint64_t frames{ 0 };
+            std::uint64_t droppedSnapshotsBeforeThis{ 0 };
+        };
+
+        class AsyncProfilerWriter
+        {
+        public:
+            ~AsyncProfilerWriter() noexcept { stop(); }
+
+            bool start() noexcept
+            {
+                if (_startFailed.load(std::memory_order_acquire)) {
+                    return false;
+                }
+
+                if (_started.load(std::memory_order_acquire)) {
+                    return true;
+                }
+
+                std::scoped_lock lock(_threadMutex);
+                if (_started.load(std::memory_order_acquire)) {
+                    return true;
+                }
+
+                _stopRequested.store(false, std::memory_order_release);
+                try {
+                    _thread = std::thread([this]() noexcept { run(); });
+                    _started.store(true, std::memory_order_release);
+                    return true;
+                } catch (...) {
+                    _started.store(false, std::memory_order_release);
+                    _startFailed.store(true, std::memory_order_release);
+                    _droppedSnapshots.fetch_add(1, std::memory_order_relaxed);
+                    return false;
+                }
+            }
+
+            void enqueue(QueuedSnapshot snapshot) noexcept
+            {
+                if (!_started.load(std::memory_order_acquire)) {
+                    _droppedSnapshots.fetch_add(1, std::memory_order_relaxed);
+                    return;
+                }
+
+                const auto writeSeq = _writeSeq.load(std::memory_order_relaxed);
+                const auto readSeq = _readSeq.load(std::memory_order_acquire);
+                if (writeSeq - readSeq >= static_cast<std::uint64_t>(kQueueCapacity)) {
+                    _droppedSnapshots.fetch_add(1, std::memory_order_relaxed);
+                    return;
+                }
+
+                snapshot.droppedSnapshotsBeforeThis = _droppedSnapshots.exchange(0, std::memory_order_acq_rel);
+                _queue[static_cast<std::size_t>(writeSeq % kQueueCapacity)] = snapshot;
+                _writeSeq.store(writeSeq + 1, std::memory_order_release);
+                _wakeCv.notify_one();
+            }
+
+            void stop() noexcept
+            {
+                std::thread threadToJoin;
+                {
+                    std::scoped_lock lock(_threadMutex);
+                    if (!_started.load(std::memory_order_acquire) && !_thread.joinable()) {
+                        return;
+                    }
+                    _stopRequested.store(true, std::memory_order_release);
+                    _wakeCv.notify_one();
+                    if (_thread.joinable()) {
+                        threadToJoin = std::move(_thread);
+                    }
+                }
+
+                if (threadToJoin.joinable()) {
+                    try {
+                        threadToJoin.join();
+                    } catch (...) {
+                    }
+                }
+
+                _started.store(false, std::memory_order_release);
+                _stopRequested.store(false, std::memory_order_release);
+            }
+
+        private:
+            static constexpr std::size_t kQueueCapacity = 16;
+            static constexpr auto kFlushInterval = std::chrono::seconds(2);
+
+            [[nodiscard]] bool hasPending() const noexcept
+            {
+                return _readSeq.load(std::memory_order_acquire) != _writeSeq.load(std::memory_order_acquire);
+            }
+
+            bool tryDequeue(QueuedSnapshot& outSnapshot) noexcept
+            {
+                const auto readSeq = _readSeq.load(std::memory_order_relaxed);
+                const auto writeSeq = _writeSeq.load(std::memory_order_acquire);
+                if (readSeq == writeSeq) {
+                    return false;
+                }
+
+                outSnapshot = _queue[static_cast<std::size_t>(readSeq % kQueueCapacity)];
+                _readSeq.store(readSeq + 1, std::memory_order_release);
+                return true;
+            }
+
+            std::shared_ptr<spdlog::logger> ensureLogger() noexcept
+            {
+                if (_logger) {
+                    return _logger;
+                }
+
+                try {
+                    auto path = F4SE::log::log_directory();
+                    if (!path.has_value()) {
+                        return nullptr;
+                    }
+
+                    const auto gamepath = REL::Module::IsVR() ? "Fallout4VR/F4SE" : "Fallout4/F4SE";
+                    if (!path.value().generic_string().ends_with(gamepath)) {
+                        path = path.value().parent_path().append(gamepath);
+                    }
+
+                    *path /= "ROCK_Profiler.log";
+                    auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_st>(path->string(), 1024 * 1024 * 10, 5, true);
+                    _logger = std::make_shared<spdlog::logger>("ROCK_PROFILER_ASYNC", sink);
+                    _logger->set_level(spdlog::level::info);
+                    _logger->flush_on(spdlog::level::critical);
+                    _logger->set_formatter(std::make_unique<spdlog::pattern_formatter>("%Y-%m-%d %H:%M:%S.%e [%l] %v"));
+                    return _logger;
+                } catch (...) {
+                    return nullptr;
+                }
+            }
+
+            void flushLogger() noexcept
+            {
+                try {
+                    if (_logger) {
+                        _logger->flush();
+                    }
+                } catch (...) {
+                }
+            }
+
+            void flushIfDue() noexcept
+            {
+                const auto now = std::chrono::steady_clock::now();
+                if (now < _nextFlush) {
+                    return;
+                }
+
+                flushLogger();
+                _nextFlush = now + kFlushInterval;
+            }
+
+            void writeSnapshot(const QueuedSnapshot& snapshot) noexcept
+            {
+                try {
+                    const auto logger = ensureLogger();
+                    if (!logger) {
+                        _droppedSnapshots.fetch_add(1, std::memory_order_relaxed);
+                        return;
+                    }
+
+                    if (snapshot.droppedSnapshotsBeforeThis > 0) {
+                        logger->warn(
+                            "[ROCK::Performance] Profiler writer dropped {} snapshot window(s) before this window",
+                            snapshot.droppedSnapshotsBeforeThis);
+                    }
+
+                    logger->info("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes", snapshot.frames);
+                    for (const auto& item : snapshot.scopes) {
+                        if (!item.hasData()) {
+                            continue;
+                        }
+                        logger->info(
+                            "[ROCK::Performance] Profiler {}: avgMs={:.4f} maxMs={:.4f} totalMs={:.4f} samples={} events={}",
+                            scopeName(item.scope),
+                            item.avgMs(),
+                            item.maxMs(),
+                            item.totalMs(),
+                            item.samples,
+                            item.events);
+                    }
+
+                    for (const auto& item : snapshot.counters) {
+                        if (!item.hasData()) {
+                            continue;
+                        }
+                        logger->info("[ROCK::Performance] Profiler counter {}: count={}", counterName(item.counter), item.count);
+                    }
+
+                    for (const auto& item : snapshot.values) {
+                        if (!item.hasData()) {
+                            continue;
+                        }
+                        logger->info(
+                            "[ROCK::Performance] Profiler value {}: avg={:.2f} max={} samples={}",
+                            valueMetricName(item.metric),
+                            item.avg(),
+                            item.max,
+                            item.samples);
+                    }
+
+                    flushIfDue();
+                } catch (...) {
+                    _droppedSnapshots.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+
+            void drainQueue() noexcept
+            {
+                QueuedSnapshot snapshot{};
+                while (tryDequeue(snapshot)) {
+                    writeSnapshot(snapshot);
+                }
+            }
+
+            void run() noexcept
+            {
+                _nextFlush = std::chrono::steady_clock::now() + kFlushInterval;
+
+                for (;;) {
+                    drainQueue();
+                    if (_stopRequested.load(std::memory_order_acquire)) {
+                        break;
+                    }
+
+                    std::unique_lock lock(_wakeMutex);
+                    _wakeCv.wait_for(lock, std::chrono::milliseconds(250), [this]() noexcept {
+                        return _stopRequested.load(std::memory_order_acquire) || hasPending();
+                    });
+                }
+
+                drainQueue();
+                flushLogger();
+                _logger.reset();
+            }
+
+            std::array<QueuedSnapshot, kQueueCapacity> _queue{};
+            std::atomic<std::uint64_t> _writeSeq{ 0 };
+            std::atomic<std::uint64_t> _readSeq{ 0 };
+            std::atomic<std::uint64_t> _droppedSnapshots{ 0 };
+            std::atomic<bool> _started{ false };
+            std::atomic<bool> _startFailed{ false };
+            std::atomic<bool> _stopRequested{ false };
+            std::mutex _threadMutex;
+            std::mutex _wakeMutex;
+            std::condition_variable _wakeCv;
+            std::thread _thread;
+            std::shared_ptr<spdlog::logger> _logger;
+            std::chrono::steady_clock::time_point _nextFlush{};
+        };
+
+        AsyncProfilerWriter& asyncProfilerWriter() noexcept
+        {
+            static AsyncProfilerWriter writer;
+            return writer;
+        }
+
         std::array<ScopeSnapshot, static_cast<std::size_t>(Scope::Count)> takeSnapshot() noexcept
         {
             std::array<ScopeSnapshot, static_cast<std::size_t>(Scope::Count)> snapshot{};
@@ -360,61 +626,6 @@ namespace rock::performance_profiler
             return snapshot;
         }
 
-        std::string profilerLogPattern()
-        {
-            const auto& pattern = ::f4cf::logger::internal::_logPattern;
-            return pattern.empty() ? "%Y-%m-%d %H:%M:%S.%e [%l] %v" : pattern;
-        }
-
-        std::shared_ptr<spdlog::logger> ensureProfilerLogger() noexcept
-        {
-            try {
-                std::scoped_lock lock(s_profilerLoggerMutex);
-                const auto pattern = profilerLogPattern();
-
-                if (s_profilerLogger) {
-                    if (s_profilerLoggerPattern != pattern) {
-                        s_profilerLogger->set_formatter(std::make_unique<spdlog::pattern_formatter>(pattern));
-                        s_profilerLoggerPattern = pattern;
-                    }
-                    return s_profilerLogger;
-                }
-
-                auto path = F4SE::log::log_directory();
-                if (!path.has_value()) {
-                    return nullptr;
-                }
-
-                const auto gamepath = REL::Module::IsVR() ? "Fallout4VR/F4SE" : "Fallout4/F4SE";
-                if (!path.value().generic_string().ends_with(gamepath)) {
-                    path = path.value().parent_path().append(gamepath);
-                }
-
-                *path /= "ROCK_Profiler.log";
-                auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(path->string(), 1024 * 1024 * 10, 5, true);
-                s_profilerLogger = std::make_shared<spdlog::logger>("ROCK_PROFILER", sink);
-                s_profilerLogger->set_level(spdlog::level::info);
-                s_profilerLogger->flush_on(spdlog::level::info);
-                s_profilerLogger->set_formatter(std::make_unique<spdlog::pattern_formatter>(pattern));
-                s_profilerLoggerPattern = pattern;
-                return s_profilerLogger;
-            } catch (...) {
-                return nullptr;
-            }
-        }
-
-        void writeProfilerFileLine(const std::string& message) noexcept
-        {
-            try {
-                const auto logger = ensureProfilerLogger();
-                if (!logger) {
-                    return;
-                }
-                logger->log(spdlog::level::info, "{}", message);
-            } catch (...) {
-            }
-        }
-
         void publishOverlayLines(const std::array<ScopeSnapshot, static_cast<std::size_t>(Scope::Count)>& snapshot, std::uint64_t frames) noexcept
         {
             std::scoped_lock lock(s_overlayMutex);
@@ -444,60 +655,19 @@ namespace rock::performance_profiler
             }
         }
 
-        void logSnapshot(const std::array<ScopeSnapshot, static_cast<std::size_t>(Scope::Count)>& snapshot,
+        void queueSnapshot(const std::array<ScopeSnapshot, static_cast<std::size_t>(Scope::Count)>& snapshot,
             const std::array<CounterSnapshot, static_cast<std::size_t>(Counter::Count)>& counterSnapshot,
             const std::array<ValueSnapshot, static_cast<std::size_t>(ValueMetric::Count)>& valueSnapshot,
             std::uint64_t frames) noexcept
         {
-            ROCK_LOG_INFO(Performance, "Profiler window: frames={} warmupComplete=yes", frames);
-            writeProfilerFileLine(fmt::format("[ROCK::Performance] Profiler window: frames={} warmupComplete=yes", frames));
-            for (const auto& item : snapshot) {
-                if (!item.hasData()) {
-                    continue;
-                }
-                ROCK_LOG_INFO(Performance,
-                    "Profiler {}: avgMs={:.4f} maxMs={:.4f} totalMs={:.4f} samples={} events={}",
-                    scopeName(item.scope),
-                    item.avgMs(),
-                    item.maxMs(),
-                    item.totalMs(),
-                    item.samples,
-                    item.events);
-                writeProfilerFileLine(fmt::format(
-                    "[ROCK::Performance] Profiler {}: avgMs={:.4f} maxMs={:.4f} totalMs={:.4f} samples={} events={}",
-                    scopeName(item.scope),
-                    item.avgMs(),
-                    item.maxMs(),
-                    item.totalMs(),
-                    item.samples,
-                    item.events));
-            }
-
-            for (const auto& item : counterSnapshot) {
-                if (!item.hasData()) {
-                    continue;
-                }
-                ROCK_LOG_INFO(Performance, "Profiler counter {}: count={}", counterName(item.counter), item.count);
-                writeProfilerFileLine(fmt::format("[ROCK::Performance] Profiler counter {}: count={}", counterName(item.counter), item.count));
-            }
-
-            for (const auto& item : valueSnapshot) {
-                if (!item.hasData()) {
-                    continue;
-                }
-                ROCK_LOG_INFO(Performance,
-                    "Profiler value {}: avg={:.2f} max={} samples={}",
-                    valueMetricName(item.metric),
-                    item.avg(),
-                    item.max,
-                    item.samples);
-                writeProfilerFileLine(fmt::format(
-                    "[ROCK::Performance] Profiler value {}: avg={:.2f} max={} samples={}",
-                    valueMetricName(item.metric),
-                    item.avg(),
-                    item.max,
-                    item.samples));
-            }
+            // The frame thread publishes one fixed-size snapshot and never formats strings,
+            // writes files, or waits for diagnostics; if the writer falls behind, snapshots are dropped.
+            asyncProfilerWriter().enqueue(QueuedSnapshot{
+                .scopes = snapshot,
+                .counters = counterSnapshot,
+                .values = valueSnapshot,
+                .frames = frames,
+            });
         }
     }
 
@@ -534,6 +704,8 @@ namespace rock::performance_profiler
             clearOverlayLines();
             return;
         }
+
+        asyncProfilerWriter().start();
 
         if (!wasEnabled || settingsChanged) {
             clearAccumulators();
@@ -581,10 +753,10 @@ namespace rock::performance_profiler
         const auto counterSnapshot = takeCounterSnapshot();
         const auto valueSnapshot = takeValueSnapshot();
         const auto frames = frame - intervalStart;
-        logSnapshot(snapshot, counterSnapshot, valueSnapshot, frames);
         if (s_settings.overlayText.load(std::memory_order_acquire)) {
             publishOverlayLines(snapshot, frames);
         }
+        queueSnapshot(snapshot, counterSnapshot, valueSnapshot, frames);
     }
 
     void addEventCount(Scope scope, std::uint64_t count) noexcept
