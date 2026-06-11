@@ -169,3 +169,15 @@ cmake --build build-fast --config Release --target ROCK -- /m
 ```
 
 All tests passed locally. The `custom-fast` Release build copied `ROCK.dll` and `ROCK.pdb` to `D:\FO4\mods\ROCK\F4SE\Plugins`.
+
+## Review Follow-Up
+
+Implemented after code review on 2026-06-11:
+
+- Equipped weapon lifecycle keys no longer mix raw runtime pointer addresses such as equip-data, instance-data, object-extra, or visual-object addresses. Those values can churn during reload/runtime wrapper updates and must not open the collider rebuild gate.
+- `PhysicsInteraction` now treats retained generated weapon bodies as active right-hand weapon authority even when `resolveEquippedWeaponInteractionNode()` returns null. This keeps dominant-hand collision suppression, contact evidence ownership, and soft-contact ownership aligned with the retained weapon collider set during reload-null visual frames.
+- `WeaponCollision` no longer acquires/releases `WeaponDominantHand` suppression directly. `PhysicsInteraction` owns suppression for the complete generated hand-collider set; keeping a second single-body owner path risks releasing the shared suppression owner while retained weapon bodies are still live.
+
+Still blocked:
+
+- A true workbench-exit rebuild gate is not implemented here because current local source does not expose an authoritative workbench-exit signal. PAPER should not own this ROCK collider lifecycle. Finding a reliable signal likely requires approved FO4VR binary investigation in Ghidra, scoped to workbench/menu exit or weapon-mod apply events.

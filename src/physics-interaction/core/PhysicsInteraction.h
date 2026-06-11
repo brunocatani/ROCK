@@ -249,7 +249,7 @@ namespace rock
         void handleContactEvent(RE::hknpWorld* world, void* contactEventData);
         bool isHandContactEvidenceSuppressed(bool isLeft) const;
         void clearContactEvidenceForHand(bool isLeft, const char* reason);
-        void synchronizeContactEvidenceOwnership(bool rightHandWeaponEquipped, bool leftSupportGripActive);
+        void synchronizeContactEvidenceOwnership(bool rightHandWeaponAuthorityActive, bool leftSupportGripActive);
 
         std::atomic<bool> _initialized{ false };
         bool _collisionLayerRegistered = false;

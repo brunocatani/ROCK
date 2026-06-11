@@ -475,10 +475,11 @@ namespace rock::weapon_generated_source_completeness_policy
 namespace rock::weapon_generation_identity_policy
 {
     /*
-     * Generated collision rebuild authority comes from the equipped weapon
-     * instance, not from reload-time visual tree churn. Visual composition is
-     * still collected when a rebuild is already allowed, but it must not make a
-     * stable equipped weapon look like a new collider lifecycle.
+     * Generated collision rebuild authority comes from stable equipped weapon
+     * content, not from reload-time visual tree churn or transient runtime
+     * wrapper addresses. Visual composition is still collected when a rebuild is
+     * already allowed, but it must not make a stable equipped weapon look like a
+     * new collider lifecycle.
      */
     struct EquippedWeaponGenerationIdentity
     {
@@ -505,19 +506,14 @@ namespace rock::weapon_generation_identity_policy
         }
 
         std::uint64_t key = weapon_visual_composition_policy::kWeaponVisualCompositionOffset;
-        weapon_visual_composition_policy::mixString(key, "ROCKWeaponGenerationIdentityV1");
+        weapon_visual_composition_policy::mixString(key, "ROCKWeaponGenerationIdentityV2");
         weapon_visual_composition_policy::mixValue(key, identity.hasEquippedWeapon ? 1ULL : 0ULL);
         weapon_visual_composition_policy::mixValue(key, identity.formID);
-        weapon_visual_composition_policy::mixValue(key, identity.formAddress);
-        weapon_visual_composition_policy::mixValue(key, identity.instanceDataAddress);
-        weapon_visual_composition_policy::mixValue(key, identity.instanceKeywordDataAddress);
         weapon_visual_composition_policy::mixValue(key, identity.instanceContentKey);
         weapon_visual_composition_policy::mixValue(key, identity.objectIndexDataSignature);
         weapon_visual_composition_policy::mixValue(key, identity.objectIndexDataCount);
         weapon_visual_composition_policy::mixValue(key, identity.activeModCount);
         weapon_visual_composition_policy::mixValue(key, identity.disabledModCount);
-        weapon_visual_composition_policy::mixValue(key, identity.equippedDataAddress);
-        weapon_visual_composition_policy::mixValue(key, identity.equippedObjectAddress);
         weapon_visual_composition_policy::mixString(key, identity.displayName);
         return key;
     }

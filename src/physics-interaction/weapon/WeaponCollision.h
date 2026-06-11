@@ -65,7 +65,7 @@ namespace rock
 
         void shutdown();
 
-        void update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, RE::hknpBodyId dominantHandBodyId, float dt, bool weaponDrawn);
+        void update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, float dt, bool weaponDrawn);
 
         bool hasWeaponBody() const;
 
@@ -332,12 +332,6 @@ namespace rock
         int _weaponAnimNodeDumpFrameCounter{ 0 };
         std::uint64_t _lastWeaponAnimNodeDumpKey{ 0 };
 
-        bool _dominantHandDisabled{ false };
-        RE::hknpBodyId _disabledHandBodyId{ INVALID_BODY_ID };
-
-        void disableDominantHandCollision(RE::hknpWorld* world, RE::hknpBodyId handBodyId);
-
-        void enableDominantHandCollision(RE::hknpWorld* world);
     };
 
 }

@@ -127,13 +127,32 @@ int main()
     identity.hasEquippedWeapon = true;
     identity.formID = 0x1234;
     identity.formAddress = 0x2222;
+    identity.instanceDataAddress = 0x2223;
+    identity.instanceKeywordDataAddress = 0x2224;
     identity.instanceContentKey = 0x3333;
+    identity.objectInstanceExtraAddress = 0x2225;
+    identity.equippedDataAddress = 0x2226;
+    identity.equippedObjectAddress = 0x2227;
+    identity.objectIndexDataSignature = 0xAAAA;
+    identity.objectIndexDataCount = 2;
+    identity.activeModCount = 2;
     identity.displayName = "Test Weapon";
     const std::uint64_t generationKey = makeEquippedWeaponGenerationKey(0x4444, identity);
     ok &= expectNonZero("equipped identity creates generation key", generationKey);
     ok &= expectSame("visual-only witness changes do not change generation key", generationKey, makeEquippedWeaponGenerationKey(0x5555, identity));
+    auto pointerChurnIdentity = identity;
+    pointerChurnIdentity.formAddress = 0x9000;
+    pointerChurnIdentity.instanceDataAddress = 0x9001;
+    pointerChurnIdentity.instanceKeywordDataAddress = 0x9002;
+    pointerChurnIdentity.objectInstanceExtraAddress = 0x9003;
+    pointerChurnIdentity.equippedDataAddress = 0x9004;
+    pointerChurnIdentity.equippedObjectAddress = 0x9005;
+    ok &= expectSame("runtime pointer churn does not change generation key", generationKey, makeEquippedWeaponGenerationKey(0x4444, pointerChurnIdentity));
     identity.instanceContentKey = 0x3334;
     ok &= expectDifferent("generation key changes with equipped instance content", generationKey, makeEquippedWeaponGenerationKey(0x4444, identity));
+    identity.instanceContentKey = 0x3333;
+    identity.objectIndexDataSignature = 0xAAAB;
+    ok &= expectDifferent("generation key changes with equipped mod index content", generationKey, makeEquippedWeaponGenerationKey(0x4444, identity));
 
     return ok ? 0 : 1;
 }

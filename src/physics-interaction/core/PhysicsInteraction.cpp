@@ -2029,8 +2029,16 @@ namespace rock
 
         RE::NiNode* weaponNode = resolveEquippedWeaponInteractionNode();
         const bool rightHandWeaponEquipped = weaponNode != nullptr;
+        const bool retainedWeaponCollisionActive =
+            _weaponCollision.hasWeaponBody() && _weaponCollision.getCurrentWeaponGenerationKey() != 0;
+        /*
+         * Reload can temporarily remove the first-person weapon node while ROCK
+         * deliberately retains the generated weapon body set. Keep the dominant
+         * hand under weapon authority until those retained bodies are gone.
+         */
+        const bool rightHandWeaponAuthorityActive = rightHandWeaponEquipped || retainedWeaponCollisionActive;
         bool leftSupportGripActive = false;
-        if (rightHandWeaponEquipped) {
+        if (rightHandWeaponAuthorityActive) {
             suppressRightHandCollisionForDominantWeapon(hknp);
         } else {
             restoreRightHandCollisionAfterDominantWeapon(hknp);
@@ -2060,7 +2068,6 @@ namespace rock
 
         {
             performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponCollision);
-            auto dominantHandBodyId = _rightHand.getCollisionBodyId();
 
             if (g_rockConfig.rockDebugVerboseLogging) {
                 if (++_wpnNodeLogCounter >= 90) {
@@ -2072,7 +2079,7 @@ namespace rock
                     }
                 }
             }
-            _weaponCollision.update(hknp, weaponNode, dominantHandBodyId, frame.deltaSeconds, runtime.weaponDrawn);
+            _weaponCollision.update(hknp, weaponNode, frame.deltaSeconds, runtime.weaponDrawn);
         }
 
         {
@@ -2222,7 +2229,7 @@ namespace rock
 
         updateGrabInput(frame);
         updateHeldMassMovementSlowdown(hknp, frame.deltaSeconds);
-        synchronizeContactEvidenceOwnership(rightHandWeaponEquipped, leftSupportGripActive);
+        synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive);
 
         /*
          * Soft contact is intentionally evaluated after normal grab input. A
@@ -2238,7 +2245,7 @@ namespace rock
             frame,
             _rightHand,
             _leftHand,
-            rightHandWeaponEquipped,
+            rightHandWeaponAuthorityActive,
             leftSupportGripActive,
             nativeContactEvidence);
 
@@ -2328,7 +2335,7 @@ namespace rock
         }
     }
 
-    void PhysicsInteraction::synchronizeContactEvidenceOwnership(bool rightHandWeaponEquipped, bool leftSupportGripActive)
+    void PhysicsInteraction::synchronizeContactEvidenceOwnership(bool rightHandWeaponAuthorityActive, bool leftSupportGripActive)
     {
         /*
          * ROCK disables generated hand collision when a grab or two-hand/tool
@@ -2336,9 +2343,9 @@ namespace rock
          * step boundary, so producer caches must be invalidated at the same
          * authority transition before the visual solver snapshots them.
          */
-        if (_rightHand.hasContactEvidenceSuppressedAtomic() || rightHandWeaponEquipped ||
+        if (_rightHand.hasContactEvidenceSuppressedAtomic() || rightHandWeaponAuthorityActive ||
             _rightDominantWeaponCollisionSuppressed.load(std::memory_order_acquire)) {
-            clearContactEvidenceForHand(false, rightHandWeaponEquipped ? "right-hand-equipped-weapon" : "right-hand-grab-owner");
+            clearContactEvidenceForHand(false, rightHandWeaponAuthorityActive ? "right-hand-weapon-authority" : "right-hand-grab-owner");
         }
 
         if (_leftHand.hasContactEvidenceSuppressedAtomic() || leftSupportGripActive ||

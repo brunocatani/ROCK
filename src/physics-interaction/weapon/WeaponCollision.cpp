@@ -1574,9 +1574,7 @@ namespace rock
             destroyWeaponBodyBank(_pendingGeneratedWeaponBuild.replacingExisting ? inactiveWeaponBodies() : activeWeaponBodies(), true);
         }
         _pendingGeneratedWeaponBuild = {};
-        if (_dominantHandDisabled && world && !hasWeaponBody()) {
-            enableDominantHandCollision(world);
-        }
+        (void)world;
     }
 
     bool WeaponCollision::beginPendingGeneratedWeaponBuild(std::uint64_t equippedKey,
@@ -1695,9 +1693,6 @@ namespace rock
                 createdCount,
                 settingsChanged,
                 driveRequestedRebuild);
-            if (_dominantHandDisabled) {
-                enableDominantHandCollision(world);
-            }
             clearAtomicBodyIds();
             destroyWeaponBodyBank(activeWeaponBodies(), true);
             _usingReplacementWeaponBodies = !_usingReplacementWeaponBodies;
@@ -2198,8 +2193,6 @@ namespace rock
         if (hasWeaponBody()) {
             ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown destroying generated bodies from cached context");
             destroyWeaponBody(_cachedWorld);
-        } else if (_dominantHandDisabled && _cachedWorld) {
-            enableDominantHandCollision(_cachedWorld);
         }
 
         _cachedWeaponKey = 0;
@@ -2219,14 +2212,12 @@ namespace rock
         resetWeaponCollisionSettingsCache();
         _weaponAnimNodeDumpFrameCounter = 0;
         _lastWeaponAnimNodeDumpKey = 0;
-        _dominantHandDisabled = false;
-        _disabledHandBodyId.value = INVALID_BODY_ID;
 
         ROCK_LOG_INFO(Weapon, "WeaponCollision shutdown");
     }
 
 
-    void WeaponCollision::update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, RE::hknpBodyId dominantHandBodyId, float dt, bool weaponDrawn)
+    void WeaponCollision::update(RE::hknpWorld* world, RE::NiAVObject* weaponNode, float dt, bool weaponDrawn)
     {
         (void)dt;
 
@@ -2245,21 +2236,10 @@ namespace rock
             _driveFailureCount.store(0, std::memory_order_release);
         };
 
-        auto syncDominantHandCollisionState = [&]() {
-            const bool hasActiveWeaponCollision = hasWeaponBody() && getCurrentWeaponGenerationKey() != 0;
-            if (hasActiveWeaponCollision && !_dominantHandDisabled && dominantHandBodyId.value != INVALID_BODY_ID) {
-                disableDominantHandCollision(world, dominantHandBodyId);
-            } else if (!hasActiveWeaponCollision && _dominantHandDisabled) {
-                enableDominantHandCollision(world);
-            }
-        };
-
         if (!g_rockConfig.rockWeaponCollisionEnabled) {
             if (hasWeaponBody() && world) {
                 ROCK_LOG_INFO(Weapon, "WeaponCollision disabled via hot reload - destroying generated weapon bodies");
                 destroyWeaponBody(world);
-            } else if (_dominantHandDisabled && world) {
-                enableDominantHandCollision(world);
             }
             clearCurrentWeaponState();
             return;
@@ -2288,8 +2268,6 @@ namespace rock
                     "{} - destroying generated weapon bodies",
                     weaponDrawn ? "Weapon identity unavailable" : "Weapon no longer drawn");
                 destroyWeaponBody(world);
-            } else if (_dominantHandDisabled) {
-                enableDominantHandCollision(world);
             }
             clearCurrentWeaponState();
             return;
@@ -2350,7 +2328,6 @@ namespace rock
                 rebuildRequired = true;
             } else {
                 advancePendingGeneratedWeaponBuild(world);
-                syncDominantHandCollisionState();
                 return;
             }
         }
@@ -2370,7 +2347,6 @@ namespace rock
                     getWeaponBodyCount());
                 clearPendingWeaponVisualRebuild();
                 resetVisualSourceUnavailableRetention();
-                syncDominantHandCollisionState();
                 return;
             }
 
@@ -2384,8 +2360,6 @@ namespace rock
                     driveRequestedRebuild ? "yes" : "no",
                     identityKeyChanged ? "yes" : "no");
                 destroyWeaponBody(world);
-            } else if (_dominantHandDisabled) {
-                enableDominantHandCollision(world);
             }
             clearCurrentWeaponState();
             return;
@@ -2464,7 +2438,6 @@ namespace rock
                             visualKeyStats.visibleTriShapeCount,
                             visualKeyStats.nodeCount,
                             visualKeyStats.invisibleNodeCount);
-                        syncDominantHandCollisionState();
                         return;
                         }
                 }
@@ -2545,7 +2518,6 @@ namespace rock
                             visualSourceMissRetainFrameLimit);
                         clearPendingGeneratedWeaponBuild(world, true);
                         clearPendingWeaponVisualRebuild();
-                        syncDominantHandCollisionState();
                         return;
                     }
                     if (retainCandidate) {
@@ -2630,12 +2602,9 @@ namespace rock
                     driveRequestedRebuild ? "yes" : "no",
                     usedCachedSources ? "yes" : "no",
                     GENERATED_WEAPON_BODY_CREATION_BATCH);
-                syncDominantHandCollisionState();
                 return;
             }
         }
-
-        syncDominantHandCollisionState();
     }
 
 
@@ -3341,10 +3310,6 @@ namespace rock
             return;
         }
 
-        if (_dominantHandDisabled && world) {
-            enableDominantHandCollision(world);
-        }
-
         clearAtomicBodyIds();
         resetWeaponBodySetGeneration();
 
@@ -3372,9 +3337,6 @@ namespace rock
         } else {
             clearAtomicBodyIds();
             resetWeaponBodySetGeneration();
-            if (_dominantHandDisabled && world) {
-                enableDominantHandCollision(world);
-            }
             ROCK_LOG_DEBUG(Weapon, "Generated weapon collision scale invalidation had no active bodies");
         }
 
@@ -3691,58 +3653,4 @@ namespace rock
             result.hasLiveBodyTransform ? result.bodyDeltaGameUnits : -1.0f,
             result.hasLiveBodyTransform ? result.targetToBodyRotationDegrees : -1.0f);
     }
-
-    void WeaponCollision::disableDominantHandCollision(RE::hknpWorld* world, RE::hknpBodyId handBodyId)
-    {
-        if (!world || handBodyId.value == INVALID_BODY_ID)
-            return;
-
-        const auto result = collision_suppression_registry::globalCollisionSuppressionRegistry().acquire(
-            world,
-            handBodyId.value,
-            collision_suppression_registry::CollisionSuppressionOwner::WeaponDominantHand,
-            "weapon-dominant-hand");
-        if (result.readFailed || !result.valid) {
-            return;
-        }
-
-        _dominantHandDisabled = true;
-        _disabledHandBodyId = handBodyId;
-
-        ROCK_LOG_DEBUG(Weapon,
-            "Dominant hand collision lease acquired bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBefore={} leases={}",
-            handBodyId.value,
-            result.filterBefore,
-            result.filterAfter,
-            result.wasNoCollideBeforeSuppression ? "yes" : "no",
-            result.activeLeaseCount);
-    }
-
-    void WeaponCollision::enableDominantHandCollision(RE::hknpWorld* world)
-    {
-        if (!world || _disabledHandBodyId.value == INVALID_BODY_ID)
-            return;
-
-        const auto result = collision_suppression_registry::globalCollisionSuppressionRegistry().release(
-            world,
-            _disabledHandBodyId.value,
-            collision_suppression_registry::CollisionSuppressionOwner::WeaponDominantHand,
-            "weapon-dominant-hand");
-        if (result.readFailed) {
-            ROCK_LOG_WARN(Weapon, "Dominant hand collision restore deferred bodyId={}", _disabledHandBodyId.value);
-            return;
-        }
-
-        ROCK_LOG_DEBUG(Weapon,
-            "Dominant hand collision lease released bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} fullyReleased={}",
-            _disabledHandBodyId.value,
-            result.filterBefore,
-            result.filterAfter,
-            result.wasNoCollideBeforeSuppression ? "yes" : "no",
-            result.bodyFullyReleased ? "yes" : "no");
-
-        _dominantHandDisabled = false;
-        _disabledHandBodyId.value = INVALID_BODY_ID;
-    }
-
 }
