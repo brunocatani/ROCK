@@ -16,8 +16,14 @@ namespace rock::mouth_consume
         NotAttempted = 0,
         MissingRef,
         MissingPlayer,
+        DeletedOrDisabled,
+        PlayerRef,
         MissingBaseForm,
+        NonPlayableBase,
         UnsupportedBaseForm,
+        PoisonBlockedByConfig,
+        UntakeableBook,
+        StackedReferenceUnsupported,
         ActivateRef,
         ActivateRefFailed,
         DrinkPotion,
@@ -27,6 +33,7 @@ namespace rock::mouth_consume
     struct ConsumeInput
     {
         RE::TESObjectREFR* heldRef = nullptr;
+        bool allowPoison = false;
     };
 
     struct ConsumeResult

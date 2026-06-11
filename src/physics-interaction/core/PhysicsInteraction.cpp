@@ -4718,6 +4718,7 @@ namespace rock
                             .hmdPositionWorld = frame.hmdPositionWorld,
                             .hmdForwardWorld = frame.hmdForwardWorld,
                             .objectProbe = makeMouthConsumeObjectProbe(hknp, hand, handInput),
+                            .hasObjectProbe = true,
                             .handProbe = makeMouthConsumeHandProbe(handInput),
                             .hasHandProbe = true,
                             .deltaSeconds = frame.deltaSeconds,
@@ -4828,6 +4829,7 @@ namespace rock
                         }
                         const auto consumeResult = mouth_consume::transferToPlayerConsume(mouth_consume::ConsumeInput{
                             .heldRef = heldRef,
+                            .allowPoison = g_rockConfig.rockMouthConsumeAllowPoison,
                         });
                         if (heldFormID == 0 && consumeResult.formID != 0) {
                             heldFormID = consumeResult.formID;

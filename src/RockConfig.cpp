@@ -42,6 +42,8 @@ namespace
     constexpr float kDefaultGrabLooseWeaponSharedConstraintMaxForceMultiplier = 4.5f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = 1.0f;
+    constexpr float kMaxMouthConsumeHmdOffsetGameUnits = 120.0f;
+    const RE::NiPoint3 kDefaultMouthConsumeHmdOffsetGameUnits{ 0.0f, 10.0f, -9.0f };
     constexpr float kDefaultGrabThrowObjectVelocityBlend = 0.35f;
     constexpr float kDefaultGrabThrowTangentialVelocityScale = 1.0f;
     constexpr float kDefaultGrabThrowMaxVelocityHavok = 12.0f;
@@ -563,6 +565,29 @@ namespace rock
 
             readVec3(keyX, keyY, keyZ, value);
             return true;
+        };
+        auto sanitizeMouthConsumeOffset = [&]() {
+            auto sanitizeComponent = [](float value, float fallback) {
+                if (!std::isfinite(value)) {
+                    return fallback;
+                }
+                return std::clamp(value, -kMaxMouthConsumeHmdOffsetGameUnits, kMaxMouthConsumeHmdOffsetGameUnits);
+            };
+
+            const RE::NiPoint3 original = rockMouthConsumeHmdOffsetGameUnits;
+            rockMouthConsumeHmdOffsetGameUnits.x = sanitizeComponent(original.x, kDefaultMouthConsumeHmdOffsetGameUnits.x);
+            rockMouthConsumeHmdOffsetGameUnits.y = sanitizeComponent(original.y, kDefaultMouthConsumeHmdOffsetGameUnits.y);
+            rockMouthConsumeHmdOffsetGameUnits.z = sanitizeComponent(original.z, kDefaultMouthConsumeHmdOffsetGameUnits.z);
+            if (original.x != rockMouthConsumeHmdOffsetGameUnits.x ||
+                original.y != rockMouthConsumeHmdOffsetGameUnits.y ||
+                original.z != rockMouthConsumeHmdOffsetGameUnits.z) {
+                ROCK_LOG_WARN(Config,
+                    "Mouth consume HMD offset must be finite and within +/-{:.1f} game units; using ({:.1f}, {:.1f}, {:.1f})",
+                    kMaxMouthConsumeHmdOffsetGameUnits,
+                    rockMouthConsumeHmdOffsetGameUnits.x,
+                    rockMouthConsumeHmdOffsetGameUnits.y,
+                    rockMouthConsumeHmdOffsetGameUnits.z);
+            }
         };
         auto readHexFilter = [&](const char* key, std::uint32_t currentValue, std::uint32_t fallback) {
             char hexBuf[16] = {};
@@ -1882,6 +1907,7 @@ namespace rock
             "fMouthConsumeHmdOffsetYGameUnits",
             "fMouthConsumeHmdOffsetZGameUnits",
             rockMouthConsumeHmdOffsetGameUnits);
+        sanitizeMouthConsumeOffset();
         readClampedFloat("fMouthConsumeRadiusGameUnits", rockMouthConsumeRadiusGameUnits, 11.0f, 1.0f, 80.0f);
         readClampedFloat("fMouthConsumeEnterPaddingGameUnits", rockMouthConsumeEnterPaddingGameUnits, 0.0f, 0.0f, 40.0f);
         readClampedFloat("fMouthConsumeExitPaddingGameUnits", rockMouthConsumeExitPaddingGameUnits, 2.0f, 0.0f, 60.0f);

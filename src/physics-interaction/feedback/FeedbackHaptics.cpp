@@ -110,6 +110,14 @@ namespace rock::feedback_haptics
                 }
             }
 
+            if (latest) {
+                for (auto& event : _events[hand]) {
+                    if (event.active && &event != latest && event.sequence < latest->sequence) {
+                        event.active = false;
+                    }
+                }
+            }
+
             if (latest && outputs && outputCount < outputCapacity) {
                 const float remaining = (std::max)(0.0f, latest->durationSeconds - latest->elapsedSeconds);
                 outputs[outputCount++] = HapticOutput{

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace rock::mouth_consume
 {
@@ -47,33 +48,45 @@ namespace rock::mouth_consume
         [[nodiscard]] float length(const RE::NiPoint3& value) noexcept
         {
             const float sq = lengthSquared(value);
-            return sq > 0.0f && std::isfinite(sq) ? std::sqrt(sq) : 0.0f;
+            if (!std::isfinite(sq)) {
+                return (std::numeric_limits<float>::infinity)();
+            }
+            return sq > 0.0f ? std::sqrt(sq) : 0.0f;
         }
 
         [[nodiscard]] RE::NiPoint3 normalizeOr(const RE::NiPoint3& value, const RE::NiPoint3& fallback) noexcept
         {
             const float len = length(value);
-            if (len <= 0.00001f) {
+            if (!std::isfinite(len) || len <= 0.00001f) {
                 return fallback;
             }
             return mul(value, 1.0f / len);
         }
 
-        [[nodiscard]] const Probe& selectedProbe(const DetectorInput& input) noexcept
+        [[nodiscard]] const Probe* selectedProbe(const DetectorInput& input) noexcept
         {
-            return finitePoint(input.objectProbe.pointGame) ? input.objectProbe : input.handProbe;
+            if (input.hasObjectProbe && finitePoint(input.objectProbe.pointGame)) {
+                return &input.objectProbe;
+            }
+            if (input.hasHandProbe && finitePoint(input.handProbe.pointGame)) {
+                return &input.handProbe;
+            }
+            return nullptr;
         }
 
         [[nodiscard]] float resolvedProbeSpeed(const DetectorInput& input, const RuntimeState& runtime) noexcept
         {
-            const Probe& probe = selectedProbe(input);
-            if (probe.hasVelocity) {
-                return probeSpeed(probe);
+            const Probe* probe = selectedProbe(input);
+            if (!probe) {
+                return 0.0f;
+            }
+            if (probe->hasVelocity) {
+                return probeSpeed(*probe);
             }
             if (!runtime.hasLastProbePoint || input.deltaSeconds <= 0.000001f) {
                 return 0.0f;
             }
-            return length(sub(probe.pointGame, runtime.lastProbePointGame)) / input.deltaSeconds;
+            return length(sub(probe->pointGame, runtime.lastProbePointGame)) / input.deltaSeconds;
         }
     }
 
@@ -120,16 +133,30 @@ namespace rock::mouth_consume
     Decision evaluate(const DetectorInput& input, RuntimeState& runtime) noexcept
     {
         Decision decision{};
-        const Probe& probe = selectedProbe(input);
+        const Probe* probe = selectedProbe(input);
         auto updateProbeHistory = [&]() {
-            runtime.lastProbePointGame = probe.pointGame;
-            runtime.hasLastProbePoint = finitePoint(probe.pointGame);
+            if (!probe) {
+                runtime.hasLastProbePoint = false;
+                return;
+            }
+            runtime.lastProbePointGame = probe->pointGame;
+            runtime.hasLastProbePoint = finitePoint(probe->pointGame);
         };
 
         const float speed = resolvedProbeSpeed(input, runtime);
         decision.speedGameUnitsPerSecond = speed;
 
-        if (!input.config.enabled || !input.hasHmdFrame || !finitePoint(input.hmdPositionWorld) || !finitePoint(input.hmdForwardWorld) || !finitePoint(probe.pointGame)) {
+        if (!input.config.enabled ||
+            !input.hasHmdFrame ||
+            !probe ||
+            !finitePoint(input.hmdPositionWorld) ||
+            !finitePoint(input.hmdForwardWorld) ||
+            !finitePoint(input.config.hmdMouthOffsetGameUnits) ||
+            !std::isfinite(input.config.mouthRadiusGameUnits) ||
+            !std::isfinite(input.config.enterPaddingGameUnits) ||
+            !std::isfinite(input.config.exitPaddingGameUnits) ||
+            !std::isfinite(input.config.minDwellSeconds) ||
+            !std::isfinite(input.config.maxSpeedGameUnitsPerSecond)) {
             resetRuntime(runtime);
             updateProbeHistory();
             return decision;
@@ -146,11 +173,18 @@ namespace rock::mouth_consume
         }
 
         const RE::NiPoint3 mouthCenter = computeMouthCenter(input.hmdPositionWorld, input.hmdForwardWorld, input.config.hmdMouthOffsetGameUnits);
+        if (!finitePoint(mouthCenter)) {
+            runtime.candidate = false;
+            runtime.confirmed = false;
+            runtime.dwellSeconds = 0.0f;
+            updateProbeHistory();
+            return decision;
+        }
         const float radius = (std::max)(0.1f, input.config.mouthRadiusGameUnits);
         const bool wasCandidate = runtime.candidate;
         const float padding = wasCandidate ? input.config.exitPaddingGameUnits : input.config.enterPaddingGameUnits;
         const float threshold = radius + (std::max)(0.0f, padding);
-        const float distanceGameUnits = length(sub(probe.pointGame, mouthCenter));
+        const float distanceGameUnits = length(sub(probe->pointGame, mouthCenter));
         if (!std::isfinite(distanceGameUnits) || distanceGameUnits > threshold) {
             runtime.candidate = false;
             runtime.confirmed = false;

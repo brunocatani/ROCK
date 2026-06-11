@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 
 namespace
 {
@@ -65,6 +66,7 @@ int main()
     input.hmdPositionWorld = RE::NiPoint3{ 0.0f, 0.0f, 0.0f };
     input.hmdForwardWorld = RE::NiPoint3{ 0.0f, 1.0f, 0.0f };
     input.objectProbe.pointGame = RE::NiPoint3{ 0.0f, 10.0f, -4.0f };
+    input.hasObjectProbe = true;
     input.deltaSeconds = 0.03f;
     input.config = config;
 
@@ -92,6 +94,19 @@ int main()
     input.objectProbe.hasVelocity = true;
     decision = evaluate(input, runtime);
     ok &= expectFalse("fast probe is rejected", decision.candidate);
+
+    resetRuntime(runtime);
+    input.objectProbe.hasVelocity = false;
+    input.objectProbe.pointGame = RE::NiPoint3{ 0.0f, 10.0f, -4.0f };
+    input.config.hmdMouthOffsetGameUnits = RE::NiPoint3{ (std::numeric_limits<float>::infinity)(), 10.0f, -4.0f };
+    decision = evaluate(input, runtime);
+    ok &= expectFalse("invalid mouth offset fails closed", decision.candidate);
+
+    input.config = config;
+    input.hasObjectProbe = false;
+    input.hasHandProbe = false;
+    decision = evaluate(input, runtime);
+    ok &= expectFalse("missing probes fail closed", decision.candidate);
 
     haptics::CandidatePulseConfig haptic{};
     haptic.baseIntensity = 0.22f;

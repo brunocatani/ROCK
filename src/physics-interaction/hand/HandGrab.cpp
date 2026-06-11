@@ -9889,6 +9889,17 @@ namespace rock
             bodyIds.push_back(snapshot.bodyIds[i]);
         }
 
+        const auto releaseActivation = activateHeldObjectBodySet(world, snapshot.primaryBodyId.value, bodyIds);
+        if (releaseActivation.failedActivationCount > 0) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand pending-transfer release activation incomplete: primaryBody={} bodies={} activated={} failed={}",
+                handName(),
+                snapshot.primaryBodyId.value,
+                releaseActivation.bodyCount,
+                releaseActivation.activatedCount,
+                releaseActivation.failedActivationCount);
+        }
+
         setHeldVelocity(world,
             snapshot.primaryBodyId,
             bodyIds,

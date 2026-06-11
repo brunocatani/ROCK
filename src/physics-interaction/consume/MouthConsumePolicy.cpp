@@ -3,6 +3,7 @@
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/object/GrabTargetKind.h"
 #include "physics-interaction/stash/ShoulderStashPolicy.h"
+#include "physics-interaction/stash/ShoulderStashTransfer.h"
 
 #include "RE/Bethesda/MagicItems.h"
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -40,6 +41,8 @@ namespace rock::mouth_consume
             return "poison-blocked-by-config";
         case EligibilityReason::UntakeableBook:
             return "untakeable-book";
+        case EligibilityReason::StackedReferenceUnsupported:
+            return "stacked-reference-unsupported";
         }
         return "unknown";
     }
@@ -118,6 +121,11 @@ namespace rock::mouth_consume
 
         if (shoulder_stash::isUntakeableBook(baseForm)) {
             result.reason = EligibilityReason::UntakeableBook;
+            return result;
+        }
+
+        if (shoulder_stash::resolveReferenceStackCount(heldRef) > 1) {
+            result.reason = EligibilityReason::StackedReferenceUnsupported;
             return result;
         }
 

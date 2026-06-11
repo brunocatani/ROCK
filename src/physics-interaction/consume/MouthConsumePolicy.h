@@ -32,6 +32,7 @@ namespace rock::mouth_consume
         UnsupportedBaseForm,
         PoisonBlockedByConfig,
         UntakeableBook,
+        StackedReferenceUnsupported,
     };
 
     struct EligibilityInput

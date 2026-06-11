@@ -59,6 +59,16 @@ int main()
     ok &= expectEqual("expired fade clears", haptics.activeEventCount(FeedbackHand::Left), 0);
 
     haptics.reset();
+    ok &= expectTrue("long candidate queue succeeds", haptics.queue(FeedbackHand::Right, 0.10f, 0.20f));
+    ok &= expectTrue("short confirmation queue succeeds", haptics.queue(FeedbackHand::Right, 0.02f, 0.90f));
+    count = haptics.update(0.01f, outputs, 2);
+    ok &= expectEqual("confirmation suppresses older candidate", count, 1);
+    ok &= expectNear("confirmation intensity wins", outputs[0].intensity, 0.90f, 0.001f);
+    (void)haptics.update(0.02f, outputs, 2);
+    count = haptics.update(0.01f, outputs, 2);
+    ok &= expectEqual("older candidate does not resume", count, 0);
+
+    haptics.reset();
     for (int i = 0; i < 12; ++i) {
         ok &= expectTrue("capacity queue succeeds", haptics.queue(FeedbackHand::Right, 0.10f, 0.20f));
     }

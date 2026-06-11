@@ -38,6 +38,7 @@ namespace rock::mouth_consume
         RE::NiPoint3 hmdPositionWorld{};
         RE::NiPoint3 hmdForwardWorld{};
         Probe objectProbe{};
+        bool hasObjectProbe = false;
         Probe handProbe{};
         bool hasHandProbe = false;
         float deltaSeconds = 0.0f;
