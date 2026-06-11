@@ -689,7 +689,10 @@ namespace rock
             savedMotionState.savedPackedInertia[2] = packed[2];
             savedMotionState.savedPackedMass = packed[3];
 
+            std::int16_t desiredPackedInertia[3] = { packed[0], packed[1], packed[2] };
+            std::int16_t desiredPackedMass = packed[3];
             bool inertiaUsable = true;
+            bool inertiaModified = false;
             if (packed[0] <= 0 || packed[1] <= 0 || packed[2] <= 0) {
                 ROCK_LOG_WARN(GrabConstraint, "Skipping inertia normalization: zero/negative packed value");
                 inertiaUsable = false;
@@ -730,6 +733,10 @@ namespace rock
                     packed[0] = repackBfloat16(invI[0]);
                     packed[1] = repackBfloat16(invI[1]);
                     packed[2] = repackBfloat16(invI[2]);
+                    desiredPackedInertia[0] = packed[0];
+                    desiredPackedInertia[1] = packed[1];
+                    desiredPackedInertia[2] = packed[2];
+                    inertiaModified = true;
 
                     ROCK_LOG_DEBUG(GrabConstraint,
                         "Inertia clamped: ratio {:.1f}x -> {:.1f}x limit={:.1f} minInertiaMaxInv={:.6e} "
@@ -764,6 +771,7 @@ namespace rock
                     const float normalizedInverseMass = 1.0f / normalizedMass;
                     const std::int16_t normalizedPackedMass = repackBfloat16(normalizedInverseMass);
                     packed[3] = normalizedPackedMass;
+                    desiredPackedMass = normalizedPackedMass;
                     savedMotionState.massModified = true;
                     ROCK_LOG_DEBUG(GrabConstraint,
                         "Loose weapon mass clamped: body={} motion={} mass={:.3f}->{:.3f} packedMass {}->{}",
@@ -783,13 +791,23 @@ namespace rock
                 }
             }
 
-            if (!inertiaUsable && !savedMotionState.massModified) {
+            if (!inertiaModified && !savedMotionState.massModified) {
                 return false;
             }
             savedMotionState.inertiaModified = true;
 
-            havok_runtime::rebuildMotionMassProperties(world, motionIndex);
-            ROCK_LOG_TRACE(GrabConstraint, "rebuildMotionMassProperties called for motionIndex={}", motionIndex);
+            if (inertiaModified) {
+                havok_runtime::rebuildMotionMassProperties(world, motionIndex);
+                packed[0] = desiredPackedInertia[0];
+                packed[1] = desiredPackedInertia[1];
+                packed[2] = desiredPackedInertia[2];
+                if (savedMotionState.massModified) {
+                    packed[3] = desiredPackedMass;
+                }
+                ROCK_LOG_TRACE(GrabConstraint,
+                    "rebuildMotionMassProperties called for motionIndex={} and packed grab overrides reapplied",
+                    motionIndex);
+            }
             return true;
         }
     }
