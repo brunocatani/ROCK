@@ -23,7 +23,6 @@ namespace rock::mouth_consume
         NonPlayableBase,
         UnsupportedBaseForm,
         PoisonBlockedByConfig,
-        UntakeableBook,
         StackedReferenceUnsupported,
         ActivateRef,
         ActivateRefThenUseObject,

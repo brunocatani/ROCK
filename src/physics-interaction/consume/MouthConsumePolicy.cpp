@@ -2,7 +2,6 @@
 
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/object/GrabTargetKind.h"
-#include "physics-interaction/stash/ShoulderStashPolicy.h"
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 
 #include "RE/Bethesda/MagicItems.h"
@@ -39,8 +38,6 @@ namespace rock::mouth_consume
             return "unsupported-base-form";
         case EligibilityReason::PoisonBlockedByConfig:
             return "poison-blocked-by-config";
-        case EligibilityReason::UntakeableBook:
-            return "untakeable-book";
         case EligibilityReason::StackedReferenceUnsupported:
             return "stacked-reference-unsupported";
         }
@@ -49,10 +46,7 @@ namespace rock::mouth_consume
 
     bool isSupportedConsumableBaseForm(RE::TESBoundObject* baseForm) noexcept
     {
-        return baseForm &&
-               (baseForm->Is(RE::ENUM_FORM_ID::kALCH) ||
-                   baseForm->Is(RE::ENUM_FORM_ID::kINGR) ||
-                   baseForm->Is(RE::ENUM_FORM_ID::kBOOK));
+        return baseForm && baseForm->Is(RE::ENUM_FORM_ID::kALCH);
     }
 
     EligibilityResult evaluateEligibility(const EligibilityInput& input) noexcept
@@ -117,11 +111,6 @@ namespace rock::mouth_consume
                 result.reason = EligibilityReason::PoisonBlockedByConfig;
                 return result;
             }
-        }
-
-        if (shoulder_stash::isUntakeableBook(baseForm)) {
-            result.reason = EligibilityReason::UntakeableBook;
-            return result;
         }
 
         if (shoulder_stash::resolveReferenceStackCount(heldRef) > 1) {

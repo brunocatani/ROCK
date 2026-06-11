@@ -43,7 +43,7 @@ namespace
     constexpr float kDefaultGrabLooseWeaponSharedConstraintLinearRecoveryMultiplier = 1.0f;
     constexpr float kDefaultGrabLooseWeaponSharedConstraintAngularRecoveryMultiplier = 1.0f;
     constexpr float kMaxMouthConsumeHmdOffsetGameUnits = 120.0f;
-    const RE::NiPoint3 kDefaultMouthConsumeHmdOffsetGameUnits{ 0.0f, 10.0f, -9.0f };
+    const RE::NiPoint3 kDefaultMouthConsumeHmdOffsetGameUnits{ 0.0f, 7.0f, -7.0f };
     constexpr float kDefaultGrabThrowObjectVelocityBlend = 0.35f;
     constexpr float kDefaultGrabThrowTangentialVelocityScale = 1.0f;
     constexpr float kDefaultGrabThrowMaxVelocityHavok = 12.0f;
@@ -406,11 +406,11 @@ namespace rock
         rockShoulderStashShowCollectedNotifications = true;
         rockMouthConsumeEnabled = true;
         rockMouthConsumeAllowPoison = false;
-        rockMouthConsumeHmdOffsetGameUnits = RE::NiPoint3(0.0f, 10.0f, -9.0f);
-        rockMouthConsumeRadiusGameUnits = 11.0f;
+        rockMouthConsumeHmdOffsetGameUnits = RE::NiPoint3(0.0f, 7.0f, -7.0f);
+        rockMouthConsumeRadiusGameUnits = 5.5f;
         rockMouthConsumeEnterPaddingGameUnits = 0.0f;
-        rockMouthConsumeExitPaddingGameUnits = 2.0f;
-        rockMouthConsumeMinDwellSeconds = 0.06f;
+        rockMouthConsumeExitPaddingGameUnits = 1.0f;
+        rockMouthConsumeMinDwellSeconds = 0.08f;
         rockMouthConsumeMaxSpeedGameUnitsPerSecond = 120.0f;
         rockGrabVelocityDamping = 0.25f;
         rockGrabPlayerSpaceCompensation = true;
@@ -1908,10 +1908,10 @@ namespace rock
             "fMouthConsumeHmdOffsetZGameUnits",
             rockMouthConsumeHmdOffsetGameUnits);
         sanitizeMouthConsumeOffset();
-        readClampedFloat("fMouthConsumeRadiusGameUnits", rockMouthConsumeRadiusGameUnits, 11.0f, 1.0f, 80.0f);
+        readClampedFloat("fMouthConsumeRadiusGameUnits", rockMouthConsumeRadiusGameUnits, 5.5f, 1.0f, 80.0f);
         readClampedFloat("fMouthConsumeEnterPaddingGameUnits", rockMouthConsumeEnterPaddingGameUnits, 0.0f, 0.0f, 40.0f);
-        readClampedFloat("fMouthConsumeExitPaddingGameUnits", rockMouthConsumeExitPaddingGameUnits, 2.0f, 0.0f, 60.0f);
-        readClampedFloat("fMouthConsumeMinDwellSeconds", rockMouthConsumeMinDwellSeconds, 0.06f, 0.0f, 1.0f);
+        readClampedFloat("fMouthConsumeExitPaddingGameUnits", rockMouthConsumeExitPaddingGameUnits, 1.0f, 0.0f, 60.0f);
+        readClampedFloat("fMouthConsumeMinDwellSeconds", rockMouthConsumeMinDwellSeconds, 0.08f, 0.0f, 1.0f);
         readClampedFloat("fMouthConsumeMaxSpeedGameUnitsPerSecond", rockMouthConsumeMaxSpeedGameUnitsPerSecond, 120.0f, 0.0f, 1000.0f);
 
         rockGrabHapticsEnabled = ini.GetBoolValue(SECTION, "bGrabHapticsEnabled", rockGrabHapticsEnabled);

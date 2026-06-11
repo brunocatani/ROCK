@@ -1,7 +1,6 @@
 #include "physics-interaction/consume/MouthConsumeTransfer.h"
 
 #include "physics-interaction/consume/MouthConsumePolicy.h"
-#include "physics-interaction/stash/ShoulderStashPolicy.h"
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 
 #include "RE/Bethesda/Actor.h"
@@ -33,8 +32,6 @@ namespace rock::mouth_consume
             return "unsupported-base-form";
         case ConsumeReason::PoisonBlockedByConfig:
             return "poison-blocked-by-config";
-        case ConsumeReason::UntakeableBook:
-            return "untakeable-book";
         case ConsumeReason::StackedReferenceUnsupported:
             return "stacked-reference-unsupported";
         case ConsumeReason::ActivateRef:
@@ -97,11 +94,6 @@ namespace rock::mouth_consume
                 result.reason = ConsumeReason::PoisonBlockedByConfig;
                 return result;
             }
-        }
-
-        if (shoulder_stash::isUntakeableBook(result.baseForm)) {
-            result.reason = ConsumeReason::UntakeableBook;
-            return result;
         }
 
         if (result.count > 1) {

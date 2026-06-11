@@ -355,11 +355,11 @@ namespace rock
         bool rockShoulderStashShowCollectedNotifications = true;
         bool rockMouthConsumeEnabled = true;
         bool rockMouthConsumeAllowPoison = false;
-        RE::NiPoint3 rockMouthConsumeHmdOffsetGameUnits = RE::NiPoint3(0.0f, 10.0f, -9.0f);
-        float rockMouthConsumeRadiusGameUnits = 11.0f;
+        RE::NiPoint3 rockMouthConsumeHmdOffsetGameUnits = RE::NiPoint3(0.0f, 7.0f, -7.0f);
+        float rockMouthConsumeRadiusGameUnits = 5.5f;
         float rockMouthConsumeEnterPaddingGameUnits = 0.0f;
-        float rockMouthConsumeExitPaddingGameUnits = 2.0f;
-        float rockMouthConsumeMinDwellSeconds = 0.06f;
+        float rockMouthConsumeExitPaddingGameUnits = 1.0f;
+        float rockMouthConsumeMinDwellSeconds = 0.08f;
         float rockMouthConsumeMaxSpeedGameUnitsPerSecond = 120.0f;
         float rockGrabVelocityDamping = 0.25f;
         bool rockGrabPlayerSpaceCompensation = true;
