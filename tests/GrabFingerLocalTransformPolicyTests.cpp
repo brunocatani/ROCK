@@ -142,6 +142,24 @@ int main()
         alternateThumbSegmentCorrectionStrength(2, 4.0f), 0.85f);
     ok &= expectFloat("zero smoothing speed snaps to target",
         exponentialSmoothingAlpha(0.0f, 1.0f / 90.0f), 1.0f);
+    const auto overOpenJoints = rock::grab_finger_pose_math::expandFingerCurlsToJointValues(
+        std::array<float, 5>{ 1.2f, 1.2f, 1.0f, 1.0f, 1.0f });
+    ok &= expectFloat("thumb curl can over-open through FRIK flex range",
+        overOpenJoints[1],
+        rock::grab_finger_pose_math::kMaxThumbOverOpenValue);
+    ok &= expectFloat("non-thumb curl remains capped at authored open",
+        overOpenJoints[4],
+        rock::grab_finger_pose_math::kMaxFingerOpenValue);
+    std::array<float, 15> overOpenTarget{};
+    overOpenTarget[1] = rock::grab_finger_pose_math::kMaxThumbOverOpenValue;
+    overOpenTarget[4] = 1.2f;
+    const auto snappedOverOpenJoints = rock::grab_finger_pose_math::advanceJointValues({}, overOpenTarget, 0.0f, 1.0f / 90.0f);
+    ok &= expectFloat("thumb over-open survives snap sanitization",
+        snappedOverOpenJoints[1],
+        rock::grab_finger_pose_math::kMaxThumbOverOpenValue);
+    ok &= expectFloat("non-thumb snap sanitization rejects over-open",
+        snappedOverOpenJoints[4],
+        rock::grab_finger_pose_math::kMaxFingerOpenValue);
 
     TestTransform hiddenScaleTransform{};
     hiddenScaleTransform.rotate.entry[0][0] = 1.0f;
@@ -378,6 +396,12 @@ int main()
     ok &= expectBool("pad open bias feeds joint pose by max only",
         padPose.jointValues[4] >= previousIndexMiddleJoint && padPose.jointValues[4] <= 1.0f,
         true);
+    ok &= expectBool("pad evidence can over-open thumb only",
+        padPose.values[0] > 1.0f && padPose.values[0] <= rock::grab_finger_pose_math::kMaxThumbOverOpenValue,
+        true);
+    ok &= expectFloat("thumb over-open feeds thumb joint pose",
+        padPose.jointValues[1],
+        padPose.values[0]);
     ok &= expectBool("pad evidence can create surface target",
         padPose.surfaceAimTargetValid[1] != 0,
         true);
@@ -418,6 +442,12 @@ int main()
     ok &= expectBool("direct pad open bias cannot reduce openness",
         fingerPadOpenBiasValue(0.8f, directBiasEvidence) >= 0.8f,
         true);
+    ok &= expectFloat("direct thumb pad over-open reaches thumb cap",
+        fingerPadThumbOverOpenValue(1.0f, directBiasEvidence),
+        rock::grab_finger_pose_math::kMaxThumbOverOpenValue);
+    ok &= expectFloat("direct thumb pad over-open waits for open thumb",
+        fingerPadThumbOverOpenValue(0.5f, directBiasEvidence),
+        0.5f);
 
     SolvedGrabFingerPose invalidPadPose{};
     invalidPadPose.solved = true;

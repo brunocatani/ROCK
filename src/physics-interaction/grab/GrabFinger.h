@@ -711,18 +711,43 @@ namespace rock::grab_finger_pose_math
         return result;
     }
 
+    inline constexpr float kMaxFingerOpenValue = 1.0f;
+    inline constexpr float kMaxThumbOverOpenValue = 1.2f;
+    inline constexpr float kThumbOverOpenStartValue = 0.98f;
+
+    [[nodiscard]] inline float maxOpenValueForFinger(std::size_t finger)
+    {
+        return finger == 0 ? kMaxThumbOverOpenValue : kMaxFingerOpenValue;
+    }
+
+    [[nodiscard]] inline float maxOpenValueForJoint(std::size_t joint)
+    {
+        return maxOpenValueForFinger(joint / 3);
+    }
+
+    [[nodiscard]] inline float clampOpenValueForFinger(float value, std::size_t finger)
+    {
+        return std::clamp(std::isfinite(value) ? value : kMaxFingerOpenValue, 0.0f, maxOpenValueForFinger(finger));
+    }
+
+    [[nodiscard]] inline float clampOpenValueForJoint(float value, std::size_t joint)
+    {
+        return std::clamp(std::isfinite(value) ? value : kMaxFingerOpenValue, 0.0f, maxOpenValueForJoint(joint));
+    }
+
     inline std::array<float, 15> expandFingerCurlsToJointValues(const std::array<float, 5>& values)
     {
         std::array<float, 15> joints{};
         for (std::size_t finger = 0; finger < values.size(); ++finger) {
-            const float value = std::clamp(values[finger], 0.0f, 1.0f);
-            const float closed = 1.0f - value;
+            const float value = clampOpenValueForFinger(values[finger], finger);
+            const float closed = kMaxFingerOpenValue - std::min(value, kMaxFingerOpenValue);
             const float proximalOpenBias = (finger == 0) ? 0.15f : 0.25f;
             const float distalCloseBias = (finger == 0) ? 0.10f : 0.15f;
+            const float maxOpenValue = maxOpenValueForFinger(finger);
             const std::size_t base = finger * 3;
-            joints[base + 0] = std::clamp(value + closed * proximalOpenBias, 0.0f, 1.0f);
+            joints[base + 0] = std::clamp(value + closed * proximalOpenBias, 0.0f, maxOpenValue);
             joints[base + 1] = value;
-            joints[base + 2] = std::clamp(value - closed * distalCloseBias, 0.0f, 1.0f);
+            joints[base + 2] = std::clamp(value - closed * distalCloseBias, 0.0f, maxOpenValue);
         }
         return joints;
     }
@@ -731,14 +756,17 @@ namespace rock::grab_finger_pose_math
     {
         std::array<float, 15> result{};
         if (!std::isfinite(speed) || speed <= 0.0f) {
-            return target;
+            for (std::size_t i = 0; i < result.size(); ++i) {
+                result[i] = clampOpenValueForJoint(target[i], i);
+            }
+            return result;
         }
 
         const float dt = (std::isfinite(deltaTime) && deltaTime > 0.0f) ? deltaTime : (1.0f / 90.0f);
         const float step = speed * dt;
         for (std::size_t i = 0; i < result.size(); ++i) {
-            const float from = std::clamp(current[i], 0.0f, 1.0f);
-            const float to = std::clamp(target[i], 0.0f, 1.0f);
+            const float from = clampOpenValueForJoint(current[i], i);
+            const float to = clampOpenValueForJoint(target[i], i);
             const float delta = to - from;
             if (std::abs(delta) <= step) {
                 result[i] = to;
@@ -1263,6 +1291,31 @@ namespace rock::grab_finger_pose_runtime
         return std::clamp(current + (1.0f - current) * bias, current, 1.0f);
     }
 
+    inline float fingerPadThumbOverOpenValue(float currentOpenValue, const FingerPadSurfaceEvidence& evidence, FingerPadProbeOptions options = {})
+    {
+        options = sanitizeFingerPadProbeOptions(options);
+        const float current = grab_finger_pose_math::clampOpenValueForFinger(currentOpenValue, 0);
+        if (!evidence.hit || !std::isfinite(evidence.distanceGameUnits)) {
+            return current;
+        }
+
+        const float denominator = std::max(0.001f, options.closestSurfaceMaxDistanceGameUnits - options.probeRadiusGameUnits);
+        const float distanceBeyondPad = std::max(0.0f, evidence.distanceGameUnits - options.probeRadiusGameUnits);
+        const float proximity = evidence.padMayBeInsideSurface ? 1.0f : std::clamp(1.0f - (distanceBeyondPad / denominator), 0.0f, 1.0f);
+        const float openReadiness = std::clamp(
+            (current - grab_finger_pose_math::kThumbOverOpenStartValue) / (grab_finger_pose_math::kMaxFingerOpenValue - grab_finger_pose_math::kThumbOverOpenStartValue),
+            0.0f,
+            1.0f);
+        if (proximity <= 0.0f || openReadiness <= 0.0f) {
+            return current;
+        }
+
+        const float quality = std::clamp(std::isfinite(evidence.quality) ? evidence.quality : 0.0f, 0.0f, 1.0f);
+        const float overOpenRange = grab_finger_pose_math::kMaxThumbOverOpenValue - grab_finger_pose_math::kMaxFingerOpenValue;
+        const float target = grab_finger_pose_math::kMaxFingerOpenValue + overOpenRange * proximity * std::max(0.25f, quality) * openReadiness;
+        return std::clamp(std::max(current, target), 0.0f, grab_finger_pose_math::kMaxThumbOverOpenValue);
+    }
+
     inline bool shouldAcceptFingerPadTarget(
         const SolvedGrabFingerPose& pose,
         const GrabFingerPoseTargetSet& poseTargets,
@@ -1364,7 +1417,10 @@ namespace rock::grab_finger_pose_runtime
             if (!allowOpenBias) {
                 continue;
             }
-            const float openedValue = fingerPadOpenBiasValue(pose.values[finger], evidence, options);
+            float openedValue = fingerPadOpenBiasValue(pose.values[finger], evidence, options);
+            if (finger == 0) {
+                openedValue = fingerPadThumbOverOpenValue(openedValue, evidence, options);
+            }
             if (openedValue > pose.values[finger] + 0.0001f) {
                 pose.values[finger] = openedValue;
                 openBiased[finger] = 1;
@@ -1387,7 +1443,7 @@ namespace rock::grab_finger_pose_runtime
                         pose.jointValues[base + segment] = std::clamp(
                             std::max(pose.jointValues[base + segment], openedJointValues[base + segment]),
                             0.0f,
-                            1.0f);
+                            grab_finger_pose_math::maxOpenValueForJoint(base + segment));
                     }
                 }
             }
