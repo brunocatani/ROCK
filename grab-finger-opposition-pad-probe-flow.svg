@@ -1,0 +1,159 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="950" viewBox="0 0 1500 950" role="img" aria-labelledby="title desc">
+  <title id="title">ROCK Finger Pad Probe Direction Before And After</title>
+  <desc id="desc">Diagram comparing the old ROCK finger pad refinement probe direction with the new live thumb-index opposition direction. The old shared pinch pocket aim has been removed from refinement probes.</desc>
+  <defs>
+    <marker id="arrowOld" markerWidth="13" markerHeight="13" refX="11" refY="6.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L11,6.5 L2,11 Z" fill="#c35b2f" />
+    </marker>
+    <marker id="arrowNew" markerWidth="13" markerHeight="13" refX="11" refY="6.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L11,6.5 L2,11 Z" fill="#2f6fed" />
+    </marker>
+    <marker id="arrowFlow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#263545" />
+    </marker>
+    <marker id="arrowFallback" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#6e7784" />
+    </marker>
+    <style>
+      .bg { fill: #f6f8fb; }
+      .panel { fill: #ffffff; stroke: #c8d1dc; stroke-width: 2; rx: 20; }
+      .title { font: 700 34px Arial, sans-serif; fill: #16202a; }
+      .subtitle { font: 400 18px Arial, sans-serif; fill: #465666; }
+      .panelTitle { font: 700 22px Arial, sans-serif; fill: #16202a; }
+      .label { font: 700 16px Arial, sans-serif; fill: #263545; }
+      .small { font: 400 14px Arial, sans-serif; fill: #526273; }
+      .tiny { font: 400 12px Arial, sans-serif; fill: #526273; }
+      .code { font: 700 14px Consolas, monospace; fill: #263545; }
+      .codeSmall { font: 700 12px Consolas, monospace; fill: #263545; }
+      .hand { fill: #f3c7a4; stroke: #8a5a44; stroke-width: 3; }
+      .finger { fill: none; stroke: #8a5a44; stroke-width: 13; stroke-linecap: round; }
+      .fingerThin { fill: none; stroke: #8a5a44; stroke-width: 9; stroke-linecap: round; }
+      .fingerGhost { fill: none; stroke: #8a5a44; stroke-width: 10; stroke-linecap: round; opacity: 0.22; }
+      .joint { fill: #ffffff; stroke: #4f2e22; stroke-width: 3; }
+      .distal { fill: #2f6fed; stroke: #123f99; stroke-width: 2; }
+      .oldPoint { fill: #ff9b73; stroke: #9f2d16; stroke-width: 2; }
+      .object { fill: #dfe8f6; stroke: #496a94; stroke-width: 3; }
+      .tri { fill: none; stroke: #7691b3; stroke-width: 2; stroke-dasharray: 5 5; }
+      .oldProbe { fill: none; stroke: #c35b2f; stroke-width: 4; stroke-dasharray: 9 6; marker-end: url(#arrowOld); }
+      .newProbe { fill: none; stroke: #2f6fed; stroke-width: 5; marker-end: url(#arrowNew); }
+      .flow { fill: none; stroke: #263545; stroke-width: 3; marker-end: url(#arrowFlow); }
+      .fallback { fill: none; stroke: #6e7784; stroke-width: 3; stroke-dasharray: 7 6; marker-end: url(#arrowFallback); }
+      .oldBox { fill: #fff1ec; stroke: #d18a67; stroke-width: 2; rx: 14; }
+      .newBox { fill: #edf4ff; stroke: #5e8de6; stroke-width: 2; rx: 14; }
+      .note { fill: #fff7e8; stroke: #e0b45b; stroke-width: 2; rx: 14; }
+      .good { fill: #eaf6ef; stroke: #4c9a72; stroke-width: 2; rx: 14; }
+      .dead { fill: #f0f2f5; stroke: #8d9aaa; stroke-width: 2; rx: 14; }
+      .xText { font: 900 24px Arial, sans-serif; fill: #9f2d16; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1500" height="950" />
+  <text class="title" x="55" y="62">Finger pad refinement probes now use live opposition</text>
+  <text class="subtitle" x="55" y="94">Pad source is points[2]. Probes fire thumb-to-index and finger-to-thumb; pinchPocketWorld is no longer a refinement probe fallback.</text>
+
+  <rect class="panel" x="45" y="130" width="430" height="675" rx="20" />
+  <text class="panelTitle" x="75" y="174">Before</text>
+  <text class="small" x="75" y="202">Refinement direction was target-driven.</text>
+
+  <ellipse class="hand" cx="222" cy="490" rx="72" ry="96" transform="rotate(-7 222 490)" />
+  <path class="finger" d="M170 420 C140 382 127 340 123 300" />
+  <path class="finger" d="M205 400 C196 355 196 322 204 287" />
+  <path class="finger" d="M235 405 C247 357 264 326 292 296" />
+  <path class="finger" d="M260 430 C300 400 330 375 358 345" />
+  <path class="finger" d="M175 520 C136 510 106 484 82 452" />
+
+  <circle class="joint" cx="148" cy="362" r="8" />
+  <circle class="oldPoint" cx="123" cy="300" r="9" />
+  <circle class="joint" cx="200" cy="342" r="8" />
+  <circle class="oldPoint" cx="204" cy="287" r="9" />
+  <circle class="joint" cx="262" cy="334" r="8" />
+  <circle class="oldPoint" cx="292" cy="296" r="9" />
+  <circle class="joint" cx="324" cy="374" r="8" />
+  <circle class="oldPoint" cx="358" cy="345" r="9" />
+  <circle class="joint" cx="123" cy="485" r="8" />
+  <circle class="oldPoint" cx="82" cy="452" r="9" />
+
+  <path class="object" d="M288 220 L410 250 L388 520 L282 595 L236 360 Z" />
+  <path class="tri" d="M288 220 L388 520 M410 250 L282 595 M253 363 L400 380" />
+
+  <circle class="oldPoint" cx="333" cy="405" r="12" />
+  <text class="label" x="344" y="397">old target</text>
+  <text class="tiny" x="344" y="416">surface target / pose target / seat</text>
+
+  <path class="oldProbe" d="M123 300 C198 320 255 358 333 405" />
+  <path class="oldProbe" d="M204 287 C245 320 292 360 333 405" />
+  <path class="oldProbe" d="M292 296 C315 330 325 365 333 405" />
+  <path class="oldProbe" d="M358 345 C362 370 350 390 333 405" />
+
+  <rect class="oldBox" x="75" y="640" width="350" height="115" rx="14" />
+  <text class="code" x="98" y="670">fingerPadProbeDirection(...)</text>
+  <text class="small" x="98" y="697">picked a target point first</text>
+  <text class="small" x="98" y="722">pinch could provide pinchPocketWorld</text>
+  <text class="small" x="98" y="747">regular grabs often chased a weak surface target</text>
+
+  <rect class="panel" x="535" y="130" width="430" height="675" rx="20" />
+  <text class="panelTitle" x="565" y="174">Now</text>
+  <text class="small" x="565" y="202">Refinement direction is hand-opposition-driven.</text>
+
+  <ellipse class="hand" cx="725" cy="490" rx="72" ry="96" transform="rotate(-7 725 490)" />
+  <path class="finger" d="M673 420 C640 382 626 340 622 300" />
+  <path class="finger" d="M708 400 C699 355 700 322 709 287" />
+  <path class="finger" d="M738 405 C750 357 768 326 797 296" />
+  <path class="finger" d="M763 430 C804 400 835 375 864 345" />
+  <path class="finger" d="M678 520 C640 510 610 484 585 452" />
+
+  <circle class="distal" cx="622" cy="300" r="10" />
+  <circle class="distal" cx="709" cy="287" r="10" />
+  <circle class="distal" cx="797" cy="296" r="10" />
+  <circle class="distal" cx="864" cy="345" r="10" />
+  <circle class="distal" cx="585" cy="452" r="10" />
+
+  <path class="object" d="M785 220 L910 250 L895 520 L790 595 L738 360 Z" />
+  <path class="tri" d="M785 220 L895 520 M910 250 L790 595 M746 363 L904 380" />
+
+  <path class="newProbe" d="M622 300 L709 287" />
+  <path class="newProbe" d="M709 287 L622 300" />
+  <path class="newProbe" d="M797 296 L622 300" />
+  <path class="newProbe" d="M864 345 L622 300" />
+  <path class="newProbe" d="M585 452 L622 300" />
+
+  <text class="label" x="598" y="279">thumb[2]</text>
+  <text class="label" x="694" y="265">index[2]</text>
+  <text class="small" x="770" y="635">All probe rays start from each finger points[2].</text>
+  <text class="small" x="770" y="660">Thumb aims at index[2].</text>
+  <text class="small" x="770" y="685">Index through pinky aim at thumb[2].</text>
+
+  <rect class="newBox" x="565" y="640" width="350" height="115" rx="14" />
+  <text class="code" x="588" y="670">computeOpposedFingerPadProbeDirection(...)</text>
+  <text class="small" x="588" y="697">runs first for every refinement probe</text>
+  <text class="small" x="588" y="722">same for regular and pinch grabs</text>
+  <text class="small" x="588" y="747">object surface is found along that ray</text>
+
+  <rect class="panel" x="1025" y="130" width="430" height="675" rx="20" />
+  <text class="panelTitle" x="1055" y="174">What Uses What</text>
+  <text class="small" x="1055" y="202">Final code paths after the change.</text>
+
+  <rect class="good" x="1060" y="240" width="350" height="105" rx="14" />
+  <text class="label" x="1085" y="272">Pad source</text>
+  <text class="code" x="1085" y="300">computeFingerPadCenter = points[2]</text>
+  <text class="small" x="1085" y="324">No midpoint between points[1] and points[2].</text>
+
+  <rect class="newBox" x="1060" y="375" width="350" height="150" rx="14" />
+  <text class="label" x="1085" y="407">Refinement probe direction</text>
+  <text class="codeSmall" x="1085" y="435">thumb: points[2] -&gt; index.points[2]</text>
+  <text class="codeSmall" x="1085" y="462">index: points[2] -&gt; thumb.points[2]</text>
+  <text class="codeSmall" x="1085" y="489">middle/ring/pinky -&gt; thumb.points[2]</text>
+
+  <rect class="dead" x="1060" y="555" width="350" height="115" rx="14" />
+  <text class="label" x="1085" y="587">Removed from refinement</text>
+  <text class="code" x="1085" y="615">padProbeAimWorld</text>
+  <text class="small" x="1085" y="640">No stored pinchPocketWorld fallback.</text>
+  <text class="xText" x="1350" y="624">X</text>
+
+  <rect class="note" x="1060" y="700" width="350" height="70" rx="14" />
+  <text class="label" x="1085" y="730">If live opposition is invalid</text>
+  <text class="small" x="1085" y="755">Fallback: surface target, pose target, seat point, open direction.</text>
+
+  <path class="flow" d="M475 468 L535 468" />
+  <path class="flow" d="M965 468 L1025 468" />
+</svg>
