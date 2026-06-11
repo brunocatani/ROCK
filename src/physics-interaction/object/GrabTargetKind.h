@@ -31,6 +31,15 @@ namespace rock::grab_target
         HandPocketOnly,
     };
 
+    enum class HandlingProfile : std::uint8_t
+    {
+        OrdinaryLooseObject,
+        CloseSimplePhysical,
+        CloseMechanicalPreferred,
+        ActorDriven,
+        Blocked,
+    };
+
     [[nodiscard]] inline constexpr const char* name(Kind kind) noexcept
     {
         switch (kind) {
@@ -56,6 +65,27 @@ namespace rock::grab_target
     [[nodiscard]] inline constexpr bool isPhysicalRockObject(Kind kind) noexcept
     {
         return kind == Kind::LooseObject || kind == Kind::DetachedGore || kind == Kind::DynamicMovableStatic || kind == Kind::DeadActorBody;
+    }
+
+    [[nodiscard]] inline constexpr HandlingProfile handlingProfile(Kind kind) noexcept
+    {
+        switch (kind) {
+        case Kind::LooseObject:
+            return HandlingProfile::OrdinaryLooseObject;
+        case Kind::DetachedGore:
+            return HandlingProfile::CloseSimplePhysical;
+        case Kind::DynamicMovableStatic:
+            return HandlingProfile::CloseMechanicalPreferred;
+        case Kind::DeadActorBody:
+            return HandlingProfile::CloseMechanicalPreferred;
+        case Kind::ActorEquipment:
+        case Kind::LiveActorScissors:
+            return HandlingProfile::ActorDriven;
+        case Kind::BlockedWholeActorBody:
+            return HandlingProfile::Blocked;
+        default:
+            return HandlingProfile::Blocked;
+        }
     }
 
     [[nodiscard]] inline constexpr GrabAcquisitionMode acquisitionMode(Kind kind) noexcept
@@ -88,6 +118,16 @@ namespace rock::grab_target
     [[nodiscard]] inline constexpr bool canUseRockActiveGrab(Kind kind) noexcept
     {
         return isPhysicalRockObject(kind);
+    }
+
+    [[nodiscard]] inline constexpr bool prefersMechanicalScope(Kind kind) noexcept
+    {
+        return kind == Kind::DeadActorBody || kind == Kind::DynamicMovableStatic;
+    }
+
+    [[nodiscard]] inline constexpr bool relaxesStrictPocketAuthorityForMechanicalGrab(Kind kind) noexcept
+    {
+        return kind == Kind::DeadActorBody;
     }
 
     [[nodiscard]] inline constexpr bool isActorDriven(Kind kind) noexcept

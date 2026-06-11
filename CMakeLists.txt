@@ -365,6 +365,27 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKHeldBodySetDrivePolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKHeldBodySetDrivePolicyTests)
 
+  add_executable(ROCKSkinnedBodyResolverPolicyTests
+    "${ROOT_DIR}/tests/SkinnedBodyResolverPolicyTests.cpp"
+  )
+  target_compile_features(ROCKSkinnedBodyResolverPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKSkinnedBodyResolverPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKSkinnedBodyResolverPolicyTests)
+
+  add_executable(ROCKMechanicalConnectedBodySetPolicyTests
+    "${ROOT_DIR}/tests/MechanicalConnectedBodySetPolicyTests.cpp"
+  )
+  target_compile_features(ROCKMechanicalConnectedBodySetPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKMechanicalConnectedBodySetPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKMechanicalConnectedBodySetPolicyTests)
+
+  add_executable(ROCKArticulatedAcquisitionPolicyTests
+    "${ROOT_DIR}/tests/ArticulatedAcquisitionPolicyTests.cpp"
+  )
+  target_compile_features(ROCKArticulatedAcquisitionPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKArticulatedAcquisitionPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKArticulatedAcquisitionPolicyTests)
+
   add_executable(ROCKGrabAuthorityProxyPolicyTests
     "${ROOT_DIR}/tests/GrabAuthorityProxyPolicyTests.cpp"
   )
@@ -478,6 +499,9 @@ if(BUILD_ROCK_TESTS)
     ROCKHeldObjectStutterGuardPolicyTests
     ROCKGrabLocomotionAuthorityBridgePolicyTests
     ROCKHeldBodySetDrivePolicyTests
+    ROCKSkinnedBodyResolverPolicyTests
+    ROCKMechanicalConnectedBodySetPolicyTests
+    ROCKArticulatedAcquisitionPolicyTests
     ROCKGrabAuthorityProxyPolicyTests
     ROCKHandColliderFramePolicyTests
     ROCKHknpBodyFramePolicyTests

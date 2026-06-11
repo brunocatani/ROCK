@@ -20,7 +20,9 @@
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/grab/MeshGrab.h"
+#include "physics-interaction/object/MechanicalConnectedBodySet.h"
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
+#include "physics-interaction/object/SkinnedBodyResolver.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
@@ -948,7 +950,7 @@ namespace rock
 
         std::vector<std::uint32_t> buildCommittedHeldBodyIds(
             std::uint32_t primaryBodyId,
-            const object_physics_body_set::ObjectPhysicsBodySet& preparedBodySet,
+            const std::vector<std::uint32_t>& mechanicalScopeBodyIds,
             const GrabSharedObjectContext& sharedContext,
             bool& adoptedPeerHeldBodyIds)
         {
@@ -965,7 +967,7 @@ namespace rock
                 sourceBodyIds = *sharedContext.peerHeldBodyIds;
                 adoptedPeerHeldBodyIds = true;
             } else {
-                sourceBodyIds = preparedBodySet.acceptedBodyIds();
+                sourceBodyIds = mechanicalScopeBodyIds;
             }
 
             return held_object_body_set_policy::makePrimaryFirstUniqueBodyList(primaryBodyId, sourceBodyIds);
@@ -7301,8 +7303,34 @@ namespace rock
         }
 
         const RE::NiPoint3 primaryChoiceTarget = meshGrabFound ? grabGripPoint : (sel.hasHitPoint ? sel.hitPointWorld : grabPivotAForPrimaryChoice);
-        const auto primaryChoice =
-            preparedBodySet.choosePrimaryBodyWithSurfaceOwner(sel.bodyId.value, surfaceOwnerNode, object_physics_body_set::PurePoint3{ primaryChoiceTarget });
+        const auto nearestPrimaryChoice =
+            preparedBodySet.choosePrimaryBody(object_physics_body_set::INVALID_BODY_ID, object_physics_body_set::PurePoint3{ primaryChoiceTarget });
+        const auto* surfaceOwnerRecord = preparedBodySet.findAcceptedRecordByOwnerNode(surfaceOwnerNode);
+        const auto skinnedBodyResolution = skinned_body_resolver::resolvePrimaryBody(skinned_body_resolver::ResolutionInput{
+            .targetKind = sel.targetKind,
+            .authoredBodyId = authoredGrabNode && surfaceOwnerRecord ? surfaceOwnerRecord->bodyId : object_physics_body_set::INVALID_BODY_ID,
+            .surfaceOwnerBodyId = surfaceOwnerRecord ? surfaceOwnerRecord->bodyId : object_physics_body_set::INVALID_BODY_ID,
+            .selectedBodyId = sel.bodyId.value,
+            .nearestBodyId = nearestPrimaryChoice.bodyId,
+            .authoredUsable = authoredGrabNode != nullptr && surfaceOwnerRecord != nullptr,
+            .surfaceOwnerUsable = surfaceOwnerRecord != nullptr,
+            .selectedUsable = preparedBodySet.containsAcceptedBody(sel.bodyId.value),
+            .nearestUsable = nearestPrimaryChoice.bodyId != object_physics_body_set::INVALID_BODY_ID,
+            .surfaceIsSkinned = grabSurfaceHit.valid && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::Skinned,
+            .hasSkinInfluences = grabSurfaceHit.valid && grabSurfaceHit.hasSkinInfluences,
+        });
+        const object_physics_body_set::PrimaryBodyChoice primaryChoice{
+            .bodyId = skinnedBodyResolution.bodyId,
+            .reason = skinnedBodyResolution.source == skinned_body_resolver::ResolutionSource::WeightedSkinOwner ||
+                    skinnedBodyResolution.source == skinned_body_resolver::ResolutionSource::TriangleOwner ||
+                    skinnedBodyResolution.source == skinned_body_resolver::ResolutionSource::AuthoredNode ?
+                object_physics_body_set::PrimaryBodyChoiceReason::SurfaceOwnerAccepted :
+                (skinnedBodyResolution.source == skinned_body_resolver::ResolutionSource::SelectedBody ?
+                        object_physics_body_set::PrimaryBodyChoiceReason::PreferredHitAccepted :
+                        (skinnedBodyResolution.source == skinned_body_resolver::ResolutionSource::NearestAccepted ?
+                                object_physics_body_set::PrimaryBodyChoiceReason::NearestAcceptedFallback :
+                                object_physics_body_set::PrimaryBodyChoiceReason::NoAcceptedBody)),
+        };
         bool surfaceOwnerMatchesResolvedBody = true;
         if (grabSurfaceHit.valid) {
             const bool handPocketPositionOnlySkinnedSurface =
@@ -7313,7 +7341,6 @@ namespace rock
                 surfaceOwnerMatchesResolvedBody =
                     primaryChoice.bodyId == sel.bodyId.value && preparedBodySet.containsAcceptedBody(sel.bodyId.value);
             } else {
-                const auto* surfaceOwnerRecord = preparedBodySet.findAcceptedRecordByOwnerNode(surfaceOwnerNode);
                 surfaceOwnerMatchesResolvedBody =
                     (surfaceOwnerRecord && surfaceOwnerRecord->bodyId == primaryChoice.bodyId) ||
                     acceptsSelectedMultibodyOwnerlessVisualMesh(sel,
@@ -7325,11 +7352,14 @@ namespace rock
             grabSurfaceHit.resolvedOwnerMatchesBody = surfaceOwnerMatchesResolvedBody;
         }
         ROCK_LOG_DEBUG(Hand,
-            "{} hand GRAB BODY RESOLUTION: selectedBody={} resolvedBody={} reason={} sourceNode='{}' sourceKind={} ownerMatch={} target=({:.1f},{:.1f},{:.1f})",
+            "{} hand GRAB BODY RESOLUTION: selectedBody={} resolvedBody={} reason={} resolver={} resolverReason={} skin={} sourceNode='{}' sourceKind={} ownerMatch={} target=({:.1f},{:.1f},{:.1f})",
             handName(),
             sel.bodyId.value,
             primaryChoice.bodyId,
             primaryBodyChoiceReasonName(primaryChoice.reason),
+            skinned_body_resolver::sourceName(skinnedBodyResolution.source),
+            skinnedBodyResolution.reason,
+            skinnedBodyResolution.usedSkinInfluences ? "weighted" : (grabSurfaceHit.valid && grabSurfaceHit.sourceKind == GrabSurfaceSourceKind::Skinned ? "positionOnly" : "no"),
             nodeDebugName(surfaceOwnerNode),
             grabSurfaceHit.valid ? grabSurfaceSourceKindName(grabSurfaceHit.sourceKind) : (authoredGrabNode ? "authoredNode" : "fallback"),
             surfaceOwnerMatchesResolvedBody ? "yes" : "no",
@@ -7366,11 +7396,37 @@ namespace rock
             return false;
         }
 
+        const auto mechanicalScope = mechanical_connected_body_set::buildFromPreparedBodySet(
+            beforePrepBodySet,
+            preparedBodySet,
+            primaryChoice.bodyId,
+            sel.targetKind,
+            activeLifecycle.hasIncompleteNativeScan());
+        const bool relaxedArticulatedAuthority =
+            mechanicalScope.strictPocketAuthorityRelaxed && primaryChoice.bodyId != object_physics_body_set::INVALID_BODY_ID;
+        ROCK_LOG_DEBUG(Hand,
+            "{} hand MECHANICAL SCOPE: targetKind={} kind={} reason={} primaryBody={} bodies={} accepted={} motions={} fixedRejects={} incomplete={} driveMode={} linearScope={} angularScope={} massScope={}",
+            handName(),
+            grab_target::name(sel.targetKind),
+            mechanical_connected_body_set::scopeKindName(mechanicalScope.kind),
+            mechanicalScope.reason,
+            mechanicalScope.primaryBodyId,
+            mechanicalScope.committedBodyIds.size(),
+            mechanicalScope.acceptedBodyCount,
+            mechanicalScope.uniqueMotionCount,
+            mechanicalScope.rejectedFixedOrNonDynamicCount,
+            mechanicalScope.incompleteDiscovery ? "yes" : "no",
+            held_object_drive_policy::modeName(mechanicalScope.driveDecision.mode),
+            mechanicalScope.driveDecision.includeConnectedLinearVelocity ? "bodySet" : "primaryOnly",
+            mechanicalScope.driveDecision.includeConnectedAngularVelocity ? "bodySet" : "primaryOnly",
+            mechanicalScope.driveDecision.includeConnectedMass ? "bodySet" : "primaryOnly");
+
         if (grab_contact_source_policy::shouldRejectMeshOwnerMismatch(meshContactOnly,
                 g_rockConfig.rockGrabRequireMeshContact,
                 hasMeshSurfaceContact,
                 authoredGrabNode != nullptr,
-                surfaceOwnerMatchesResolvedBody)) {
+                surfaceOwnerMatchesResolvedBody) &&
+            !relaxedArticulatedAuthority) {
             ROCK_LOG_WARN(Hand,
                 "{} hand GRAB failed: mesh contact owner does not match resolved body for '{}' formID={:08X}; "
                 "selectedBody={} resolvedBody={} sourceNode='{}' sourceKind={} target=({:.1f},{:.1f},{:.1f})",
@@ -7830,6 +7886,7 @@ namespace rock
         }
         if (handPocketOnlyGrab &&
             !pinchPocketCandidate.valid &&
+            !relaxedArticulatedAuthority &&
             (!meshGrabFound || std::strcmp(grabPointMode, "palmPocketMeshSurface") != 0)) {
             return failHandPocketOnlyGrab();
         }
@@ -8042,19 +8099,20 @@ namespace rock
         }
 
         bool adoptedPeerHeldBodySet = false;
-        _heldBodyIds = buildCommittedHeldBodyIds(objectBodyId.value, preparedBodySet, sharedContext, adoptedPeerHeldBodySet);
+        _heldBodyIds = buildCommittedHeldBodyIds(objectBodyId.value, mechanicalScope.committedBodyIds, sharedContext, adoptedPeerHeldBodySet);
         if (_heldBodyIds.empty()) {
             _heldBodyIds.push_back(objectBodyId.value);
         }
-        _heldDriveDecision = classifyHeldBodySetDrive(beforePrepBodySet, preparedBodySet, activeLifecycle.hasIncompleteNativeScan());
+        _heldDriveDecision = mechanicalScope.driveDecision;
         if (adoptedPeerHeldBodySet) {
             ROCK_LOG_DEBUG(Hand,
-                "{} hand SHARED held body set adopted: primaryBody={} peerBodies={} committedBodies={} scanAccepted={} driveMode={} driveReason={}",
+                "{} hand SHARED held body set adopted: primaryBody={} peerBodies={} committedBodies={} scanAccepted={} mechanicalKind={} driveMode={} driveReason={}",
                 handName(),
                 objectBodyId.value,
                 sharedContext.peerHeldBodyIds ? sharedContext.peerHeldBodyIds->size() : 0,
                 _heldBodyIds.size(),
                 preparedBodySet.acceptedCount(),
+                mechanical_connected_body_set::scopeKindName(mechanicalScope.kind),
                 held_object_drive_policy::modeName(_heldDriveDecision.mode),
                 _heldDriveDecision.reason);
         }
