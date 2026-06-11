@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <type_traits>
 #include <vector>
 
 namespace rock::weapon_collision_geometry_math
@@ -31,6 +32,43 @@ namespace rock::weapon_collision_geometry_math
      * row-space body rotation makes every hull spin around its own center
      * instead of moving as one weapon package.
      */
+    namespace detail
+    {
+        template <class Value>
+        using StoredValue = std::remove_cv_t<std::remove_reference_t<Value>>;
+
+        template <class Value>
+        inline StoredValue<Value> narrowDouble(double value)
+        {
+            return static_cast<StoredValue<Value>>(value);
+        }
+
+        template <class Vector>
+        inline Vector makeVector(double x, double y, double z)
+        {
+            Vector result{};
+            result.x = narrowDouble<decltype(result.x)>(x);
+            result.y = narrowDouble<decltype(result.y)>(y);
+            result.z = narrowDouble<decltype(result.z)>(z);
+            return result;
+        }
+
+        template <class Matrix, class Vector>
+        inline double rotateLocalPointAxis(const Matrix& matrix, const Vector& point, int column)
+        {
+            return static_cast<double>(matrix.entry[0][column]) * static_cast<double>(point.x) +
+                   static_cast<double>(matrix.entry[1][column]) * static_cast<double>(point.y) +
+                   static_cast<double>(matrix.entry[2][column]) * static_cast<double>(point.z);
+        }
+
+        template <class Matrix>
+        inline double rotateWorldDeltaAxis(const Matrix& matrix, double deltaX, double deltaY, double deltaZ, int row)
+        {
+            return static_cast<double>(matrix.entry[row][0]) * deltaX + static_cast<double>(matrix.entry[row][1]) * deltaY +
+                   static_cast<double>(matrix.entry[row][2]) * deltaZ;
+        }
+    }
+
     template <class Matrix>
     inline Matrix transposeRotation(const Matrix& matrix)
     {
@@ -47,31 +85,34 @@ namespace rock::weapon_collision_geometry_math
     template <class Matrix, class Vector>
     inline Vector rotateLocalPoint(const Matrix& matrix, const Vector& point)
     {
-        return Vector{
-            matrix.entry[0][0] * point.x + matrix.entry[1][0] * point.y + matrix.entry[2][0] * point.z,
-            matrix.entry[0][1] * point.x + matrix.entry[1][1] * point.y + matrix.entry[2][1] * point.z,
-            matrix.entry[0][2] * point.x + matrix.entry[1][2] * point.y + matrix.entry[2][2] * point.z,
-        };
+        return detail::makeVector<Vector>(
+            detail::rotateLocalPointAxis(matrix, point, 0),
+            detail::rotateLocalPointAxis(matrix, point, 1),
+            detail::rotateLocalPointAxis(matrix, point, 2));
     }
 
     template <class Matrix, class Vector>
     inline Vector localPointToWorld(const Matrix& rootRotation, const Vector& rootTranslation, float rootScale, const Vector& localPoint)
     {
-        const Vector scaled{ localPoint.x * rootScale, localPoint.y * rootScale, localPoint.z * rootScale };
-        const Vector rotated = rotateLocalPoint(rootRotation, scaled);
-        return Vector{ rootTranslation.x + rotated.x, rootTranslation.y + rotated.y, rootTranslation.z + rotated.z };
+        const double scale = static_cast<double>(rootScale);
+        return detail::makeVector<Vector>(
+            static_cast<double>(rootTranslation.x) + detail::rotateLocalPointAxis(rootRotation, localPoint, 0) * scale,
+            static_cast<double>(rootTranslation.y) + detail::rotateLocalPointAxis(rootRotation, localPoint, 1) * scale,
+            static_cast<double>(rootTranslation.z) + detail::rotateLocalPointAxis(rootRotation, localPoint, 2) * scale);
     }
 
     template <class Matrix, class Vector>
     inline Vector worldPointToLocal(const Matrix& rootRotation, const Vector& rootTranslation, float rootScale, const Vector& worldPoint)
     {
-        const Vector delta{ worldPoint.x - rootTranslation.x, worldPoint.y - rootTranslation.y, worldPoint.z - rootTranslation.z };
-        const float invScale = std::abs(rootScale) > 1.0e-6f ? 1.0f / rootScale : 1.0f;
-        return Vector{
-            (rootRotation.entry[0][0] * delta.x + rootRotation.entry[0][1] * delta.y + rootRotation.entry[0][2] * delta.z) * invScale,
-            (rootRotation.entry[1][0] * delta.x + rootRotation.entry[1][1] * delta.y + rootRotation.entry[1][2] * delta.z) * invScale,
-            (rootRotation.entry[2][0] * delta.x + rootRotation.entry[2][1] * delta.y + rootRotation.entry[2][2] * delta.z) * invScale,
-        };
+        const double scale = static_cast<double>(rootScale);
+        const double invScale = std::abs(scale) > 1.0e-6 ? 1.0 / scale : 1.0;
+        const double deltaX = static_cast<double>(worldPoint.x) - static_cast<double>(rootTranslation.x);
+        const double deltaY = static_cast<double>(worldPoint.y) - static_cast<double>(rootTranslation.y);
+        const double deltaZ = static_cast<double>(worldPoint.z) - static_cast<double>(rootTranslation.z);
+        return detail::makeVector<Vector>(
+            detail::rotateWorldDeltaAxis(rootRotation, deltaX, deltaY, deltaZ, 0) * invScale,
+            detail::rotateWorldDeltaAxis(rootRotation, deltaX, deltaY, deltaZ, 1) * invScale,
+            detail::rotateWorldDeltaAxis(rootRotation, deltaX, deltaY, deltaZ, 2) * invScale);
     }
 
     template <class Vector>
