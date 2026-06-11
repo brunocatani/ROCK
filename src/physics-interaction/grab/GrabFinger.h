@@ -798,6 +798,8 @@ namespace rock::grab_finger_pose_runtime
      * lets FRIK own the rendered skeleton. Probe bases, open vectors, and palm
      * curl normals come directly from the live root flattened finger bones.
      */
+    constexpr std::size_t kMaxFingerPoseCandidateTriangles = 2048;
+
     struct SolvedGrabFingerPose
     {
         std::array<float, 5> values{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
@@ -1036,6 +1038,25 @@ namespace rock::grab_finger_pose_runtime
     inline bool isFinitePoint(const RE::NiPoint3& point)
     {
         return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
+    }
+
+    inline float triangleDistanceSquaredToPoint(const TriangleData& triangle, const RE::NiPoint3& point)
+    {
+        const RE::NiPoint3 centroid = (triangle.v0 + triangle.v1 + triangle.v2) * (1.0f / 3.0f);
+        return (std::min)({
+            distanceSquared(centroid, point),
+            distanceSquared(triangle.v0, point),
+            distanceSquared(triangle.v1, point),
+            distanceSquared(triangle.v2, point),
+        });
+    }
+
+    inline void appendTriangleCandidate(const TriangleData& triangle, std::vector<grab_finger_pose_math::Triangle<RE::NiPoint3>>& outTriangles)
+    {
+        if (outTriangles.size() >= kMaxFingerPoseCandidateTriangles) {
+            return;
+        }
+        outTriangles.push_back({ triangle.v0, triangle.v1, triangle.v2 });
     }
 
     inline bool isFiniteTransformForFingerPadProbe(const RE::NiTransform& transform)
@@ -1620,12 +1641,15 @@ namespace rock::grab_finger_pose_runtime
             return;
         }
 
-        std::vector<grab_finger_pose_math::Triangle<RE::NiPoint3>> allTriangles;
-        allTriangles.reserve((std::min)(triangles.size(), static_cast<std::size_t>(512)));
+        outTriangles.reserve((std::min)(triangles.size(), kMaxFingerPoseCandidateTriangles));
         for (const auto& triangle : triangles) {
-            allTriangles.push_back({ triangle.v0, triangle.v1, triangle.v2 });
+            if (triangleDistanceSquaredToPoint(triangle, grabGripPoint) <= maxTriangleDistanceSquared) {
+                appendTriangleCandidate(triangle, outTriangles);
+                if (outTriangles.size() >= kMaxFingerPoseCandidateTriangles) {
+                    break;
+                }
+            }
         }
-        outTriangles = grab_finger_pose_math::filterTrianglesNearPoint(allTriangles, grabGripPoint, maxTriangleDistanceSquared);
     }
 
     inline void appendCandidateTriangles(const std::vector<TriangleData>& triangles, const GrabFingerPoseTargetSet& poseTargets, float maxTriangleDistanceSquared,
@@ -1637,9 +1661,48 @@ namespace rock::grab_finger_pose_runtime
         }
 
         if (poseTargets.useWholeMeshForMissingTargets && poseTargets.targetCount == 0) {
-            outTriangles.reserve(triangles.size());
-            for (const auto& triangle : triangles) {
-                outTriangles.push_back({ triangle.v0, triangle.v1, triangle.v2 });
+            outTriangles.reserve((std::min)(triangles.size(), kMaxFingerPoseCandidateTriangles));
+            if (!poseTargets.seatPointValid || triangles.size() <= kMaxFingerPoseCandidateTriangles) {
+                for (const auto& triangle : triangles) {
+                    appendTriangleCandidate(triangle, outTriangles);
+                    if (outTriangles.size() >= kMaxFingerPoseCandidateTriangles) {
+                        break;
+                    }
+                }
+                return;
+            }
+
+            struct RankedTriangle
+            {
+                float distanceSquared = 0.0f;
+                std::size_t index = 0;
+            };
+
+            std::vector<RankedTriangle> rankedTriangles;
+            rankedTriangles.reserve(triangles.size());
+            for (std::size_t i = 0; i < triangles.size(); ++i) {
+                rankedTriangles.push_back(RankedTriangle{
+                    triangleDistanceSquaredToPoint(triangles[i], poseTargets.seatPointWorld),
+                    i,
+                });
+            }
+
+            const auto selectedEnd = rankedTriangles.begin() + kMaxFingerPoseCandidateTriangles;
+            std::nth_element(rankedTriangles.begin(), selectedEnd, rankedTriangles.end(), [](const RankedTriangle& lhs, const RankedTriangle& rhs) {
+                if (lhs.distanceSquared == rhs.distanceSquared) {
+                    return lhs.index < rhs.index;
+                }
+                return lhs.distanceSquared < rhs.distanceSquared;
+            });
+            std::sort(rankedTriangles.begin(), selectedEnd, [](const RankedTriangle& lhs, const RankedTriangle& rhs) {
+                if (lhs.distanceSquared == rhs.distanceSquared) {
+                    return lhs.index < rhs.index;
+                }
+                return lhs.distanceSquared < rhs.distanceSquared;
+            });
+
+            for (auto it = rankedTriangles.begin(); it != selectedEnd; ++it) {
+                appendTriangleCandidate(triangles[it->index], outTriangles);
             }
             return;
         }
@@ -1658,26 +1721,22 @@ namespace rock::grab_finger_pose_runtime
             return;
         }
 
-        outTriangles.reserve((std::min)(triangles.size(), static_cast<std::size_t>(256)));
+        outTriangles.reserve((std::min)(triangles.size(), kMaxFingerPoseCandidateTriangles));
         for (const auto& triangle : triangles) {
-            const auto candidate = grab_finger_pose_math::Triangle<RE::NiPoint3>{ triangle.v0, triangle.v1, triangle.v2 };
-            const RE::NiPoint3 centroid = (triangle.v0 + triangle.v1 + triangle.v2) * (1.0f / 3.0f);
             bool nearAnyTarget = false;
             for (std::size_t pointIndex = 0; pointIndex < pointCount; ++pointIndex) {
                 const auto& point = points[pointIndex];
-                const float bestVertexOrCentroidDistance = (std::min)({
-                    distanceSquared(centroid, point),
-                    distanceSquared(triangle.v0, point),
-                    distanceSquared(triangle.v1, point),
-                    distanceSquared(triangle.v2, point),
-                });
+                const float bestVertexOrCentroidDistance = triangleDistanceSquaredToPoint(triangle, point);
                 if (bestVertexOrCentroidDistance <= maxTriangleDistanceSquared) {
                     nearAnyTarget = true;
                     break;
                 }
             }
             if (nearAnyTarget) {
-                outTriangles.push_back(candidate);
+                appendTriangleCandidate(triangle, outTriangles);
+                if (outTriangles.size() >= kMaxFingerPoseCandidateTriangles) {
+                    break;
+                }
             }
         }
     }

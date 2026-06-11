@@ -587,5 +587,32 @@ int main()
         explicitPadPose.surfaceAimTarget[1],
         RE::NiPoint3{ 3.0f, 0.0f, 5.0f });
 
+    std::vector<TriangleData> highPolyFallbackTriangles;
+    highPolyFallbackTriangles.reserve(kMaxFingerPoseCandidateTriangles + 16);
+    highPolyFallbackTriangles.push_back(TriangleData{
+        RE::NiPoint3{ 0.0f, 0.0f, 0.0f },
+        RE::NiPoint3{ 1.0f, 0.0f, 0.0f },
+        RE::NiPoint3{ 0.0f, 1.0f, 0.0f },
+    });
+    for (std::size_t i = 0; i < kMaxFingerPoseCandidateTriangles + 15; ++i) {
+        const float offset = 1000.0f + static_cast<float>(i * 3);
+        highPolyFallbackTriangles.push_back(TriangleData{
+            RE::NiPoint3{ offset, 0.0f, 0.0f },
+            RE::NiPoint3{ offset + 1.0f, 0.0f, 0.0f },
+            RE::NiPoint3{ offset, 1.0f, 0.0f },
+        });
+    }
+    auto highPolyTargets = makeSharedGripPoseTarget(RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
+    highPolyTargets.useSeatPointForMissingTargets = false;
+    highPolyTargets.useWholeMeshForMissingTargets = true;
+    std::vector<rock::grab_finger_pose_math::Triangle<RE::NiPoint3>> highPolyCandidates;
+    appendCandidateTriangles(highPolyFallbackTriangles, highPolyTargets, 100.0f, highPolyCandidates);
+    ok &= expectBool("whole-mesh finger fallback is bounded",
+        highPolyCandidates.size() == kMaxFingerPoseCandidateTriangles,
+        true);
+    ok &= expectPointClose("whole-mesh finger fallback keeps nearest seat triangle first",
+        highPolyCandidates.empty() ? RE::NiPoint3{} : highPolyCandidates.front().v0,
+        RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
+
     return ok ? 0 : 1;
 }

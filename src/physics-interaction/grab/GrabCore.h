@@ -694,6 +694,7 @@ namespace rock
         const char* motorFadeReason = "none";
         ImmutableGrabCaptureTelemetry captureTelemetry{};
         std::vector<GrabLocalTriangle> localMeshTriangles;
+        std::vector<GrabLocalTriangle> fingerPoseLocalMeshTriangles;
         RE::NiAVObject* heldNode = nullptr;
         RE::NiAVObject* gripSourceNode = nullptr;
         bool hasMeshPoseData = false;
@@ -843,6 +844,7 @@ namespace rock
             motorFadeReason = "none";
             captureTelemetry.clear();
             localMeshTriangles.clear();
+            fingerPoseLocalMeshTriangles.clear();
             heldNode = nullptr;
             gripSourceNode = nullptr;
             hasMeshPoseData = false;
@@ -872,7 +874,7 @@ namespace rock
             fadeInGrabConstraint = false;
         }
 
-        bool isValid() const { return heldNode != nullptr || hasMeshPoseData || !localMeshTriangles.empty(); }
+        bool isValid() const { return heldNode != nullptr || hasMeshPoseData || !localMeshTriangles.empty() || !fingerPoseLocalMeshTriangles.empty(); }
     };
 }
 

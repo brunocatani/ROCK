@@ -1748,8 +1748,11 @@ namespace rock
             const RE::NiTransform& currentNodeWorld)
         {
             std::vector<TriangleData> worldTriangles;
-            worldTriangles.reserve(frame.localMeshTriangles.size());
-            for (const auto& localTriangle : frame.localMeshTriangles) {
+            const auto& localPoseTriangles = !frame.fingerPoseLocalMeshTriangles.empty() ?
+                frame.fingerPoseLocalMeshTriangles :
+                frame.localMeshTriangles;
+            worldTriangles.reserve(localPoseTriangles.size());
+            for (const auto& localTriangle : localPoseTriangles) {
                 worldTriangles.push_back(TriangleData{
                     transform_math::localPointToWorld(currentNodeWorld, localTriangle.v0),
                     transform_math::localPointToWorld(currentNodeWorld, localTriangle.v1),
@@ -2859,6 +2862,94 @@ namespace rock
                 });
             }
             return localTriangles;
+        }
+
+        constexpr std::size_t kMaxGrabRuntimeSurfaceContactTriangles = 2048;
+        constexpr std::size_t kMaxGrabRuntimeFingerPoseTriangles = 2048;
+
+        float triangleDistanceSquaredToPoint(const TriangleData& triangle, const RE::NiPoint3& point)
+        {
+            const RE::NiPoint3 centroid = (triangle.v0 + triangle.v1 + triangle.v2) * (1.0f / 3.0f);
+            return (std::min)({
+                lengthSquared(centroid - point),
+                lengthSquared(triangle.v0 - point),
+                lengthSquared(triangle.v1 - point),
+                lengthSquared(triangle.v2 - point),
+            });
+        }
+
+        struct RankedGrabTriangle
+        {
+            float distanceSquared = 0.0f;
+            std::size_t index = 0;
+        };
+
+        bool rankedGrabTriangleLess(const RankedGrabTriangle& lhs, const RankedGrabTriangle& rhs)
+        {
+            if (lhs.distanceSquared == rhs.distanceSquared) {
+                return lhs.index < rhs.index;
+            }
+            return lhs.distanceSquared < rhs.distanceSquared;
+        }
+
+        std::vector<GrabSurfaceTriangleData> selectNearestGrabSurfaceTriangles(
+            const std::vector<GrabSurfaceTriangleData>& sourceTriangles,
+            const RE::NiPoint3& centerWorld,
+            std::size_t maxTriangles)
+        {
+            if (sourceTriangles.size() <= maxTriangles || maxTriangles == 0 || !grab_three_phase::isFinite(centerWorld)) {
+                return sourceTriangles;
+            }
+
+            std::vector<RankedGrabTriangle> rankedTriangles;
+            rankedTriangles.reserve(sourceTriangles.size());
+            for (std::size_t i = 0; i < sourceTriangles.size(); ++i) {
+                rankedTriangles.push_back(RankedGrabTriangle{
+                    triangleDistanceSquaredToPoint(sourceTriangles[i].triangle, centerWorld),
+                    i,
+                });
+            }
+
+            const auto selectedEnd = rankedTriangles.begin() + maxTriangles;
+            std::nth_element(rankedTriangles.begin(), selectedEnd, rankedTriangles.end(), rankedGrabTriangleLess);
+            std::sort(rankedTriangles.begin(), selectedEnd, rankedGrabTriangleLess);
+
+            std::vector<GrabSurfaceTriangleData> selectedTriangles;
+            selectedTriangles.reserve(maxTriangles);
+            for (auto it = rankedTriangles.begin(); it != selectedEnd; ++it) {
+                selectedTriangles.push_back(sourceTriangles[it->index]);
+            }
+            return selectedTriangles;
+        }
+
+        std::vector<TriangleData> selectNearestGrabFingerPoseTriangles(
+            const std::vector<TriangleData>& sourceTriangles,
+            const RE::NiPoint3& centerWorld,
+            std::size_t maxTriangles)
+        {
+            if (sourceTriangles.size() <= maxTriangles || maxTriangles == 0 || !grab_three_phase::isFinite(centerWorld)) {
+                return sourceTriangles;
+            }
+
+            std::vector<RankedGrabTriangle> rankedTriangles;
+            rankedTriangles.reserve(sourceTriangles.size());
+            for (std::size_t i = 0; i < sourceTriangles.size(); ++i) {
+                rankedTriangles.push_back(RankedGrabTriangle{
+                    triangleDistanceSquaredToPoint(sourceTriangles[i], centerWorld),
+                    i,
+                });
+            }
+
+            const auto selectedEnd = rankedTriangles.begin() + maxTriangles;
+            std::nth_element(rankedTriangles.begin(), selectedEnd, rankedTriangles.end(), rankedGrabTriangleLess);
+            std::sort(rankedTriangles.begin(), selectedEnd, rankedGrabTriangleLess);
+
+            std::vector<TriangleData> selectedTriangles;
+            selectedTriangles.reserve(maxTriangles);
+            for (auto it = rankedTriangles.begin(); it != selectedEnd; ++it) {
+                selectedTriangles.push_back(sourceTriangles[it->index]);
+            }
+            return selectedTriangles;
         }
 
         RE::NiAVObject* findNamedNodeRecursive(RE::NiAVObject* root, std::string_view name, int maxDepth = 12)
@@ -6971,8 +7062,10 @@ namespace rock
         bool meshGrabFound = false;
         MeshExtractionStats meshStats;
         std::vector<TriangleData> grabMeshTriangles;
+        std::vector<TriangleData> grabFingerPoseMeshTriangles;
         std::vector<GrabSurfaceTriangleData> grabSurfaceTriangles;
         std::vector<GrabLocalTriangle> grabLocalMeshTriangles;
+        std::vector<GrabLocalTriangle> grabFingerPoseLocalMeshTriangles;
         GrabSurfaceHit grabSurfaceHit{};
         RuntimeGrabContactPatch contactPatchRuntime{};
         RuntimeMultiFingerGripContact multiFingerGripRuntime{};
@@ -7732,6 +7825,25 @@ namespace rock
                     computeLocalMeshMaxDistanceFromPoint(grabLocalMeshTriangles, canonicalPivotLocal) *
                     finitePositiveOr(objectWorldTransform.scale, 1.0f);
             }
+            std::vector<GrabSurfaceTriangleData> contactPatchSurfaceTriangles;
+            const RE::NiPoint3 contactPatchTriangleCenter =
+                acquisitionPocket.valid ? acquisitionPocket.palmCenterWorld : canonicalPivotPointWorld;
+            const std::vector<GrabSurfaceTriangleData>* contactPatchTriangleSource = &grabSurfaceTriangles;
+            if (grabSurfaceTriangles.size() > kMaxGrabRuntimeSurfaceContactTriangles) {
+                contactPatchSurfaceTriangles = selectNearestGrabSurfaceTriangles(
+                    grabSurfaceTriangles,
+                    contactPatchTriangleCenter,
+                    kMaxGrabRuntimeSurfaceContactTriangles);
+                contactPatchTriangleSource = &contactPatchSurfaceTriangles;
+                ROCK_LOG_DEBUG(Hand,
+                    "{} hand MESH CONTACT TRIANGLES: use=contactPatch sourceTris={} localTris={} center=({:.1f},{:.1f},{:.1f})",
+                    handName(),
+                    grabSurfaceTriangles.size(),
+                    contactPatchSurfaceTriangles.size(),
+                    contactPatchTriangleCenter.x,
+                    contactPatchTriangleCenter.y,
+                    contactPatchTriangleCenter.z);
+            }
             contactPatchRuntime = buildRuntimeGrabContactPatch(world,
                 preparedBodySet,
                 objectBodyId.value,
@@ -7743,7 +7855,7 @@ namespace rock
                 palmTangentWorld,
                 palmBitangentWorld,
                 contactPatchObjectLeverEstimateGameUnits,
-                grabSurfaceTriangles);
+                *contactPatchTriangleSource);
 
             const bool contactPatchAcceptedForPivot = grab_contact_source_policy::shouldAcceptContactPatchPivot(
                 contactSourcePolicy,
@@ -8058,12 +8170,29 @@ namespace rock
         palmSeatPointValid = canonicalPivotAvailable;
 
         if (!pinchPocketCandidate.valid && multiFingerEvidenceEnabled) {
+            std::vector<GrabSurfaceTriangleData> multiFingerSurfaceTriangles;
+            const std::vector<GrabSurfaceTriangleData>* multiFingerTriangleSource = &grabSurfaceTriangles;
+            if (grabSurfaceTriangles.size() > kMaxGrabRuntimeSurfaceContactTriangles) {
+                multiFingerSurfaceTriangles = selectNearestGrabSurfaceTriangles(
+                    grabSurfaceTriangles,
+                    grabGripPoint,
+                    kMaxGrabRuntimeSurfaceContactTriangles);
+                multiFingerTriangleSource = &multiFingerSurfaceTriangles;
+                ROCK_LOG_DEBUG(Hand,
+                    "{} hand MESH CONTACT TRIANGLES: use=multiFinger sourceTris={} localTris={} center=({:.1f},{:.1f},{:.1f})",
+                    handName(),
+                    grabSurfaceTriangles.size(),
+                    multiFingerSurfaceTriangles.size(),
+                    grabGripPoint.x,
+                    grabGripPoint.y,
+                    grabGripPoint.z);
+            }
             multiFingerGripRuntime = buildRuntimeMultiFingerGripContact(world,
                 preparedBodySet,
                 objectBodyId.value,
                 objectWorldTransform,
                 semanticContacts,
-                grabSurfaceTriangles,
+                *multiFingerTriangleSource,
                 this,
                 hybridFingerProbeEvidenceEnabled);
             if (multiFingerGripRuntime.gripSet.valid) {
@@ -8363,7 +8492,25 @@ namespace rock
                 rootNode ? computeRuntimeBodyLocalTransform(rootNode->world, grabBodyWorldAtGrab) : makeIdentityTransform();
             RE::NiPoint3 selectedGripPointLocal = transform_math::worldPointToLocal(objectWorldTransform, grabGripPoint);
             RE::NiPoint3 selectedPivotBBodyLocalGame = transform_math::worldPointToLocal(grabBodyWorldAtGrab, grabGripPoint);
+            if (!grabMeshTriangles.empty()) {
+                grabFingerPoseMeshTriangles = selectNearestGrabFingerPoseTriangles(
+                    grabMeshTriangles,
+                    grabGripPoint,
+                    kMaxGrabRuntimeFingerPoseTriangles);
+                grabFingerPoseLocalMeshTriangles = cacheTrianglesInLocalSpace(grabFingerPoseMeshTriangles, objectWorldTransform);
+                if (grabFingerPoseMeshTriangles.size() != grabMeshTriangles.size()) {
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} hand MESH FINGER POSE TRIANGLES: sourceTris={} localTris={} center=({:.1f},{:.1f},{:.1f})",
+                        handName(),
+                        grabMeshTriangles.size(),
+                        grabFingerPoseMeshTriangles.size(),
+                        grabGripPoint.x,
+                        grabGripPoint.y,
+                        grabGripPoint.z);
+                }
+            }
             _grabFrame.localMeshTriangles.clear();
+            _grabFrame.fingerPoseLocalMeshTriangles.clear();
             _grabFrame.gripEvidenceLocal = selectedGripPointLocal;
             _grabFrame.gripNormalLocal = grabSurfaceHit.valid ? transform_math::worldVectorToLocal(objectWorldTransform, grabSurfaceHit.normal) : RE::NiPoint3{};
             storeGripSourceEvidence(_grabFrame,
@@ -8421,8 +8568,13 @@ namespace rock
             _grabFrame.hasMeshPoseData = false;
             if (!grabLocalMeshTriangles.empty()) {
                 _grabFrame.localMeshTriangles = grabLocalMeshTriangles;
-                _grabFrame.hasMeshPoseData = !_grabFrame.localMeshTriangles.empty();
             }
+            if (!grabFingerPoseLocalMeshTriangles.empty()) {
+                _grabFrame.fingerPoseLocalMeshTriangles = grabFingerPoseLocalMeshTriangles;
+            }
+            _grabFrame.hasMeshPoseData =
+                !_grabFrame.localMeshTriangles.empty() ||
+                !_grabFrame.fingerPoseLocalMeshTriangles.empty();
 
             RE::NiTransform desiredObjectWorld = objectWorldTransform;
             RE::NiTransform desiredBodyWorld = grabBodyWorldAtGrab;
@@ -9839,7 +9991,7 @@ namespace rock
             const auto initialFingerPoseTargets = rebuildFingerPoseTargetsFromGrabFrame(_grabFrame, objectWorldTransform);
             const bool pinchFingerPose = _grabFrame.seatMode == GrabSeatMode::PinchPocket;
             auto fingerPose = grab_finger_pose_runtime::solveGrabFingerPoseFromTriangles(
-                grabMeshTriangles, initialFingerHandTransform, _isLeft,
+                grabFingerPoseMeshTriangles, initialFingerHandTransform, _isLeft,
                 fingerPosePivotWorld, initialFingerPoseTargets,
                 g_rockConfig.rockGrabFingerMinValue, g_rockConfig.rockGrabMaxTriangleDistance, !pinchFingerPose, liveFingerSnapshotAtGrabPtr,
                 g_rockConfig.rockGrabFingerRejectBacksideHits, g_rockConfig.rockGrabFingerSurfacePlaneToleranceGameUnits,
@@ -9851,7 +10003,7 @@ namespace rock
             std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padCaptureEvidence{};
             (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(
                 fingerPose,
-                grabMeshTriangles,
+                grabFingerPoseMeshTriangles,
                 initialFingerPoseTargets,
                 liveFingerSnapshotAtGrab,
                 objectWorldTransform,
@@ -9870,7 +10022,7 @@ namespace rock
             std::array<grab_finger_pose_runtime::FingerPadSurfaceEvidence, 5> padEvidence{};
             (void)grab_finger_pose_runtime::refineGrabFingerPoseWithPadProbes(
                 publishFingerPose,
-                grabMeshTriangles,
+                grabFingerPoseMeshTriangles,
                 initialFingerPoseTargets,
                 liveFingerSnapshotAtGrab,
                 objectWorldTransform,
@@ -9901,7 +10053,7 @@ namespace rock
                 "{} THREE-PHASE GRAB POSE: mesh probe solve deferred until TouchHeld phase={} cachedTriangles={} poseTargets={}",
                 handName(),
                 grab_three_phase::phaseName(_grabAcquisitionPhase),
-                _grabFrame.localMeshTriangles.size(),
+                _grabFrame.fingerPoseLocalMeshTriangles.empty() ? _grabFrame.localMeshTriangles.size() : _grabFrame.fingerPoseLocalMeshTriangles.size(),
                 _grabFrame.fingerPoseTargetCount);
         }
 
