@@ -45,14 +45,20 @@ Require-Text 'src/physics-interaction/grab/GrabCore.h' 'enum class GrabSeatMode[
     'Canonical grab frames must carry an explicit pinch seat mode.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'buildRuntimePinchPocketCandidate[\s\S]*resolveLiveFingerSkeletonSnapshot' `
     'Pinch pocket must be captured from the root-flattened finger snapshot at grab commit.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'pinchPadPointFromSnapshot[\s\S]*return chain\.points\[2\];[\s\S]*candidate\.thumbPadWorld = pinchPadPointFromSnapshot\(fingerSnapshot\.fingers\[0\]\);[\s\S]*candidate\.indexPadWorld = pinchPadPointFromSnapshot\(fingerSnapshot\.fingers\[1\]\);' `
+    'Pinch-pocket grab commit must use the distal tracked thumb/index bone points as pad sources.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'pinchDetectionDirectionWorld[\s\S]*findClosestGrabSurfaceHitToPointPositionOnly' `
     'Pinch mesh surface search must use the explicit pinch detection direction, not the palm normal.'
 Require-Text 'src/physics-interaction/core/PhysicsFrameContext.h' 'pinchPocketWorld[\s\S]*hasPinchPocketWorld' `
     'Frame context must carry the live thumb-index pinch pocket.'
 Require-Text 'src/physics-interaction/core/PhysicsInteractionFrame.inl' 'resolveLiveFingerSkeletonSnapshot[\s\S]*pinchPocketWorld' `
     'Debug pocket markers must use the live thumb-index pocket snapshot.'
+Require-Text 'src/physics-interaction/core/PhysicsInteractionFrame.inl' 'input\.thumbPadWorld = fingerSnapshot\.fingers\[0\]\.points\[2\];[\s\S]*input\.indexPadWorld = fingerSnapshot\.fingers\[1\]\.points\[2\];' `
+    'Debug pocket markers must show the same distal thumb/index source points used by pinch grab commit.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'resolvePinchOriginIfNeeded[\s\S]*resolveLiveFingerSkeletonSnapshot[\s\S]*resolvedPinchOrigin' `
     'Runtime pinch selection must lazily resolve the live thumb-index pocket after palm selection misses.'
+Require-Text 'src/physics-interaction/hand/Hand.cpp' 'const RE::NiPoint3 thumbPad = fingerSnapshot\.fingers\[0\]\.points\[2\];[\s\S]*const RE::NiPoint3 indexPad = fingerSnapshot\.fingers\[1\]\.points\[2\];[\s\S]*resolvedPinchOrigin = \(thumbPad \+ indexPad\) \* 0\.5f;' `
+    'Pinch close selection must cast from the center between distal thumb/index source points.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'rockGrabPinchCloseSelectionEnabled[\s\S]*findCloseObject\(bhkWorld,[\s\S]*resolvedPinchOrigin,[\s\S]*pinchDirection' `
     'Pinch close selection must cast from the live pinch pocket after palm close selection misses.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'currentCloseSelectionOrigin[\s\S]*pinchCloseSelectionFallback[\s\S]*pinchOrigin[\s\S]*body_frame::distance' `

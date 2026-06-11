@@ -1482,8 +1482,8 @@ namespace rock
                 return false;
             }
 
-            const RE::NiPoint3 thumbPad = (fingerSnapshot.fingers[0].points[1] + fingerSnapshot.fingers[0].points[2]) * 0.5f;
-            const RE::NiPoint3 indexPad = (fingerSnapshot.fingers[1].points[1] + fingerSnapshot.fingers[1].points[2]) * 0.5f;
+            const RE::NiPoint3 thumbPad = fingerSnapshot.fingers[0].points[2];
+            const RE::NiPoint3 indexPad = fingerSnapshot.fingers[1].points[2];
             resolvedPinchOrigin = (thumbPad + indexPad) * 0.5f;
             resolvedHasPinchOrigin = true;
             return true;

@@ -64,8 +64,8 @@ PhysicsFrameContext PhysicsInteraction::buildFrameContext(RE::bhkWorld* bhk, RE:
                 fingerSnapshot.valid &&
                 fingerSnapshot.fingers[0].valid &&
                 fingerSnapshot.fingers[1].valid) {
-                input.thumbPadWorld = (fingerSnapshot.fingers[0].points[1] + fingerSnapshot.fingers[0].points[2]) * 0.5f;
-                input.indexPadWorld = (fingerSnapshot.fingers[1].points[1] + fingerSnapshot.fingers[1].points[2]) * 0.5f;
+                input.thumbPadWorld = fingerSnapshot.fingers[0].points[2];
+                input.indexPadWorld = fingerSnapshot.fingers[1].points[2];
                 input.pinchPocketWorld = (input.thumbPadWorld + input.indexPadWorld) * 0.5f;
                 input.hasPinchPocketWorld = true;
             }

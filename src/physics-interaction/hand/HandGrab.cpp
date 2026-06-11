@@ -1121,9 +1121,9 @@ namespace rock
             });
         }
 
-        RE::NiPoint3 distalPadCenterFromSnapshot(const root_flattened_finger_skeleton_runtime::FingerChain& chain)
+        RE::NiPoint3 pinchPadPointFromSnapshot(const root_flattened_finger_skeleton_runtime::FingerChain& chain)
         {
-            return (chain.points[1] + chain.points[2]) * 0.5f;
+            return chain.points[2];
         }
 
         RuntimePinchPocketCandidate buildRuntimePinchPocketCandidate(
@@ -1157,8 +1157,8 @@ namespace rock
             bool hasPinchSurface = false;
             bool ownerMatchesResolvedBody = false;
             if (hasFingerSnapshot && !surfaceTriangles.empty()) {
-                candidate.thumbPadWorld = distalPadCenterFromSnapshot(fingerSnapshot.fingers[0]);
-                candidate.indexPadWorld = distalPadCenterFromSnapshot(fingerSnapshot.fingers[1]);
+                candidate.thumbPadWorld = pinchPadPointFromSnapshot(fingerSnapshot.fingers[0]);
+                candidate.indexPadWorld = pinchPadPointFromSnapshot(fingerSnapshot.fingers[1]);
                 candidate.thumbIndexGapGameUnits =
                     grab_pinch_pocket_policy::distance(candidate.thumbPadWorld, candidate.indexPadWorld);
                 candidate.pinchAxisWorld =
