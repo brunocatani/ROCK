@@ -71,6 +71,29 @@ namespace rock::active_grab_body_lifecycle
         Release,
     };
 
+    enum class BodyReleaseIntent : std::uint8_t
+    {
+        FailedSetup,
+        PhysicalDrop,
+        NonPhysicalTransfer,
+        OwnershipHandoff,
+    };
+
+    inline constexpr const char* releaseIntentName(BodyReleaseIntent intent) noexcept
+    {
+        switch (intent) {
+        case BodyReleaseIntent::FailedSetup:
+            return "failed-setup";
+        case BodyReleaseIntent::PhysicalDrop:
+            return "physical-drop";
+        case BodyReleaseIntent::NonPhysicalTransfer:
+            return "non-physical-transfer";
+        case BodyReleaseIntent::OwnershipHandoff:
+            return "ownership-handoff";
+        }
+        return "unknown";
+    }
+
     inline constexpr BodyRestorePolicy releaseRestorePolicyForTargetKind(grab_target::Kind targetKind) noexcept
     {
         /*
@@ -123,9 +146,13 @@ namespace rock::active_grab_body_lifecycle
     {
         BodyRestoreReason reason = BodyRestoreReason::None;
         BodyRestorePolicy policy = BodyRestorePolicy::ProtectComplexSystemOwned;
+        BodyReleaseIntent intent = BodyReleaseIntent::FailedSetup;
+        grab_target::Kind targetKind = grab_target::Kind::None;
         std::vector<BodyRestorePlanEntry> entries;
         std::uint32_t motionRestoreCount = 0;
         std::uint32_t filterRestoreCount = 0;
+        std::uint32_t preservedConvertedMotionCount = 0;
+        std::uint32_t preservedConvertedFilterCount = 0;
 
         bool shouldRestoreMotion(std::uint32_t bodyId) const
         {
@@ -145,10 +172,14 @@ namespace rock::active_grab_body_lifecycle
         std::uint32_t dampingSnapshotCount = 0;
         std::uint32_t inertiaSnapshotCount = 0;
         std::uint32_t latePreparedBodyCount = 0;
+        std::uint32_t preservedConvertedMotionCount = 0;
+        std::uint32_t preservedConvertedFilterCount = 0;
         bool incompleteNativeScan = false;
         std::uint32_t primaryBodyId = kInvalidBodyId;
         BodyRestoreReason reason = BodyRestoreReason::None;
         BodyRestorePolicy policy = BodyRestorePolicy::ProtectComplexSystemOwned;
+        BodyReleaseIntent intent = BodyReleaseIntent::FailedSetup;
+        grab_target::Kind targetKind = grab_target::Kind::None;
     };
 
     inline MotionRole motionRoleFromBodyMotionType(physics_body_classifier::BodyMotionType motionType)
@@ -183,6 +214,22 @@ namespace rock::active_grab_body_lifecycle
         default:
             return false;
         }
+    }
+
+    inline constexpr bool isLooseObjectPhysicalDrop(grab_target::Kind targetKind, BodyReleaseIntent intent) noexcept
+    {
+        return targetKind == grab_target::Kind::LooseObject && intent == BodyReleaseIntent::PhysicalDrop;
+    }
+
+    inline bool shouldPreserveConvertedMotionOnRelease(
+        const BodyLifecycleRecord& record,
+        grab_target::Kind targetKind,
+        BodyReleaseIntent intent) noexcept
+    {
+        return isLooseObjectPhysicalDrop(targetKind, intent) &&
+               record.originalStateKnown &&
+               record.motionChangedByRock &&
+               record.originalMotionType == physics_body_classifier::BodyMotionType::Keyframed;
     }
 
     class BodyLifecycleSnapshot
@@ -284,9 +331,11 @@ namespace rock::active_grab_body_lifecycle
             }
         }
 
-        BodyRestorePlan restorePlanForFailure() const { return makeRestorePlan(BodyRestoreReason::FailedGrabSetup, BodyRestorePolicy::RestoreAllChanged); }
+        BodyRestorePlan restorePlanForFailure() const { return makeRestorePlan(BodyRestoreReason::FailedGrabSetup, BodyRestorePolicy::RestoreAllChanged, grab_target::Kind::None, BodyReleaseIntent::FailedSetup); }
 
-        BodyRestorePlan restorePlanForRelease(BodyRestorePolicy policy) const { return makeRestorePlan(BodyRestoreReason::Release, policy); }
+        BodyRestorePlan restorePlanForRelease(BodyRestorePolicy policy) const { return makeRestorePlan(BodyRestoreReason::Release, policy, grab_target::Kind::None, BodyReleaseIntent::NonPhysicalTransfer); }
+
+        BodyRestorePlan restorePlanForRelease(BodyRestorePolicy policy, grab_target::Kind targetKind, BodyReleaseIntent intent) const { return makeRestorePlan(BodyRestoreReason::Release, policy, targetKind, intent); }
 
         std::vector<MotionRestoreCommand> makeMotionRestoreCommands(const BodyRestorePlan& plan) const
         {
@@ -350,29 +399,42 @@ namespace rock::active_grab_body_lifecycle
             }
         }
 
-        BodyRestorePlan makeRestorePlan(BodyRestoreReason reason, BodyRestorePolicy policy) const
+        BodyRestorePlan makeRestorePlan(BodyRestoreReason reason, BodyRestorePolicy policy, grab_target::Kind targetKind, BodyReleaseIntent intent) const
         {
             /*
              * Release restore must keep one coherent body contract. If ROCK keeps
              * a loose object dynamic after a physical drop, restoring its pre-grab
              * collision filter can leave it dynamic but non-colliding. Failure and
              * explicit restore-all paths still put every captured filter back;
-             * protected release restores filters only for system-owned non-dynamic
-             * bodies whose motion ownership is also returned to the engine.
+             * protected non-physical release restores filters only for system-owned
+             * non-dynamic bodies whose motion ownership is also returned to the engine.
+             * A successful physical drop of a converted keyframed loose object is
+             * player-owned physical state now, so ROCK preserves dynamic motion and
+             * the matching active filter instead of returning the object to floating
+             * keyframed state.
              */
             BodyRestorePlan plan{};
             plan.reason = reason;
             plan.policy = policy;
+            plan.intent = intent;
+            plan.targetKind = targetKind;
             plan.entries.reserve(_records.size());
 
             for (const auto& record : _records) {
                 BodyRestorePlanEntry entry{};
                 entry.record = record;
+                const bool preserveConvertedMotion =
+                    reason == BodyRestoreReason::Release &&
+                    policy == BodyRestorePolicy::ProtectComplexSystemOwned &&
+                    shouldPreserveConvertedMotionOnRelease(record, targetKind, intent);
 
                 if (reason == BodyRestoreReason::FailedGrabSetup) {
                     entry.restoreMotion = record.originalStateKnown && record.motionChangedByRock;
                 } else if (policy == BodyRestorePolicy::RestoreAllChanged) {
                     entry.restoreMotion = record.originalStateKnown && record.motionChangedByRock;
+                } else if (preserveConvertedMotion) {
+                    entry.restoreMotion = false;
+                    ++plan.preservedConvertedMotionCount;
                 } else {
                     entry.restoreMotion =
                         record.originalStateKnown && record.motionChangedByRock && record.motionRole == MotionRole::SystemOwnedNonDynamic;
@@ -380,6 +442,9 @@ namespace rock::active_grab_body_lifecycle
 
                 if (reason == BodyRestoreReason::FailedGrabSetup || policy == BodyRestorePolicy::RestoreAllChanged) {
                     entry.restoreFilter = record.originalStateKnown;
+                } else if (preserveConvertedMotion) {
+                    entry.restoreFilter = false;
+                    ++plan.preservedConvertedFilterCount;
                 } else {
                     entry.restoreFilter = record.originalStateKnown && record.motionRole == MotionRole::SystemOwnedNonDynamic;
                 }
@@ -411,11 +476,28 @@ namespace rock::active_grab_body_lifecycle
             .dampingSnapshotCount = snapshot.dampingSnapshotCount(),
             .inertiaSnapshotCount = snapshot.inertiaSnapshotCount(),
             .latePreparedBodyCount = snapshot.latePreparedBodyCount(),
+            .preservedConvertedMotionCount = plan.preservedConvertedMotionCount,
+            .preservedConvertedFilterCount = plan.preservedConvertedFilterCount,
             .incompleteNativeScan = snapshot.hasIncompleteNativeScan(),
             .primaryBodyId = primaryBodyId,
             .reason = plan.reason,
             .policy = plan.policy,
+            .intent = plan.intent,
+            .targetKind = plan.targetKind,
         };
+    }
+
+    inline bool shouldSkipIncompleteScanRootRestore(const BodyRestorePlan& plan, std::uint16_t originalMotionPropsId) noexcept
+    {
+        if (plan.reason != BodyRestoreReason::Release || !isLooseObjectPhysicalDrop(plan.targetKind, plan.intent)) {
+            return false;
+        }
+
+        if (plan.preservedConvertedMotionCount > 0) {
+            return true;
+        }
+
+        return physics_body_classifier::motionTypeFromMotionPropertiesId(originalMotionPropsId) == physics_body_classifier::BodyMotionType::Keyframed;
     }
 }
 

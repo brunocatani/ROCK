@@ -58,7 +58,10 @@ int main()
     BodyLifecycleSnapshot dynamicSnapshot{};
     dynamicSnapshot.captureBeforeActivePrep(dynamicBefore);
     dynamicSnapshot.markPreparedBodies(dynamicBefore);
-    const auto dynamicRelease = dynamicSnapshot.restorePlanForRelease(BodyRestorePolicy::ProtectComplexSystemOwned);
+    const auto dynamicRelease = dynamicSnapshot.restorePlanForRelease(
+        releaseRestorePolicyForTargetKind(grab_target::Kind::LooseObject),
+        grab_target::Kind::LooseObject,
+        BodyReleaseIntent::PhysicalDrop);
     ok &= expectFalse("loose dynamic release should keep active collision filter", dynamicRelease.entries.front().restoreFilter);
     ok &= expectFalse("loose dynamic release should keep dynamic motion", dynamicRelease.entries.front().restoreMotion);
     ok &= expectTrue("loose object release should use protected restore policy",
@@ -83,7 +86,10 @@ int main()
     cachedPreparedSnapshot.markIncompleteNativeScan();
     ok &= expectTrue("pre-prep cached replay without post-prep proof should force incomplete restore fallback", cachedPreparedSnapshot.hasIncompleteNativeScan());
 
-    const auto deadActorRelease = dynamicSnapshot.restorePlanForRelease(releaseRestorePolicyForTargetKind(grab_target::Kind::DeadActorBody));
+    const auto deadActorRelease = dynamicSnapshot.restorePlanForRelease(
+        releaseRestorePolicyForTargetKind(grab_target::Kind::DeadActorBody),
+        grab_target::Kind::DeadActorBody,
+        BodyReleaseIntent::PhysicalDrop);
     ok &= expectTrue("dead actor release should restore captured dynamic filter", deadActorRelease.entries.front().restoreFilter);
     ok &= expectTrue("dead actor release should restore touched dynamic motion", deadActorRelease.entries.front().restoreMotion);
     ok &= expectTrue("dead actor release should use restore-all policy",
@@ -96,9 +102,48 @@ int main()
     BodyLifecycleSnapshot keyframedSnapshot{};
     keyframedSnapshot.captureBeforeActivePrep(keyframedBefore);
     keyframedSnapshot.markPreparedBodies(keyframedPrepared);
-    const auto keyframedRelease = keyframedSnapshot.restorePlanForRelease(BodyRestorePolicy::ProtectComplexSystemOwned);
-    ok &= expectTrue("system-owned release should restore filter", keyframedRelease.entries.front().restoreFilter);
-    ok &= expectTrue("system-owned release should restore motion", keyframedRelease.entries.front().restoreMotion);
+    const auto keyframedPhysicalDrop = keyframedSnapshot.restorePlanForRelease(
+        releaseRestorePolicyForTargetKind(grab_target::Kind::LooseObject),
+        grab_target::Kind::LooseObject,
+        BodyReleaseIntent::PhysicalDrop);
+    ok &= expectFalse("loose keyframed physical drop should keep active collision filter", keyframedPhysicalDrop.entries.front().restoreFilter);
+    ok &= expectFalse("loose keyframed physical drop should keep converted dynamic motion", keyframedPhysicalDrop.entries.front().restoreMotion);
+    ok &= expectTrue("loose keyframed physical drop should count preserved motion", keyframedPhysicalDrop.preservedConvertedMotionCount == 1);
+    ok &= expectTrue("loose keyframed physical drop should skip incomplete root restore",
+        shouldSkipIncompleteScanRootRestore(keyframedPhysicalDrop, 2));
+
+    const auto keyframedTransfer = keyframedSnapshot.restorePlanForRelease(
+        releaseRestorePolicyForTargetKind(grab_target::Kind::LooseObject),
+        grab_target::Kind::LooseObject,
+        BodyReleaseIntent::NonPhysicalTransfer);
+    ok &= expectTrue("loose keyframed non-physical transfer should restore filter", keyframedTransfer.entries.front().restoreFilter);
+    ok &= expectTrue("loose keyframed non-physical transfer should restore motion", keyframedTransfer.entries.front().restoreMotion);
+    ok &= expectFalse("loose keyframed non-physical transfer should allow incomplete root restore skip",
+        shouldSkipIncompleteScanRootRestore(keyframedTransfer, 2));
+
+    const auto keyframedFailure = keyframedSnapshot.restorePlanForFailure();
+    ok &= expectTrue("failed keyframed prep should restore filter", keyframedFailure.entries.front().restoreFilter);
+    ok &= expectTrue("failed keyframed prep should restore motion", keyframedFailure.entries.front().restoreMotion);
+
+    BodyLifecycleSnapshot pullConsumedSnapshot = keyframedSnapshot;
+    const auto pullConsumedRelease = pullConsumedSnapshot.restorePlanForRelease(
+        releaseRestorePolicyForTargetKind(grab_target::Kind::LooseObject),
+        grab_target::Kind::LooseObject,
+        BodyReleaseIntent::PhysicalDrop);
+    ok &= expectFalse("pull-consumed loose keyframed physical drop should keep converted dynamic motion", pullConsumedRelease.entries.front().restoreMotion);
+
+    ObjectPhysicsBodySet staticBefore{};
+    staticBefore.records.push_back(makeRecord(303u, BodyMotionType::Static, BodyRejectReason::StaticMotion, false));
+    ObjectPhysicsBodySet staticPrepared{};
+    staticPrepared.records.push_back(makeRecord(303u, BodyMotionType::Dynamic, BodyRejectReason::None, true));
+    BodyLifecycleSnapshot staticSnapshot{};
+    staticSnapshot.captureBeforeActivePrep(staticBefore);
+    staticSnapshot.markPreparedBodies(staticPrepared);
+    const auto staticPhysicalDrop = staticSnapshot.restorePlanForRelease(
+        releaseRestorePolicyForTargetKind(grab_target::Kind::LooseObject),
+        grab_target::Kind::LooseObject,
+        BodyReleaseIntent::PhysicalDrop);
+    ok &= expectTrue("loose static physical drop should still restore motion", staticPhysicalDrop.entries.front().restoreMotion);
 
     return ok ? 0 : 1;
 }

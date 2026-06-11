@@ -97,6 +97,22 @@ namespace rock
             return "unknown";
         }
 
+        active_grab_body_lifecycle::BodyReleaseIntent releaseIntentFromDisposition(GrabReleaseDisposition disposition) noexcept
+        {
+            using active_grab_body_lifecycle::BodyReleaseIntent;
+            switch (disposition) {
+            case GrabReleaseDisposition::PhysicalDrop:
+                return BodyReleaseIntent::PhysicalDrop;
+            case GrabReleaseDisposition::OwnershipHandoff:
+                return BodyReleaseIntent::OwnershipHandoff;
+            case GrabReleaseDisposition::PendingInventoryTransfer:
+            case GrabReleaseDisposition::TransferToInventory:
+            case GrabReleaseDisposition::PendingConsumeTransfer:
+                return BodyReleaseIntent::NonPhysicalTransfer;
+            }
+            return BodyReleaseIntent::NonPhysicalTransfer;
+        }
+
         RE::NiPoint3 getMatrixColumn(const RE::NiMatrix3& matrix, int column) { return RE::NiPoint3(matrix.entry[0][column], matrix.entry[1][column], matrix.entry[2][column]); }
 
         RE::NiPoint3 getMatrixRow(const RE::NiMatrix3& matrix, int row) { return RE::NiPoint3(matrix.entry[row][0], matrix.entry[row][1], matrix.entry[row][2]); }
@@ -2751,13 +2767,17 @@ namespace rock
             }
 
             ROCK_LOG_DEBUG(Hand,
-                "{} hand grab lifecycle audit {}: bodies={} converted={} restoredMotion={} restoredFilter={} dampingSnapshots={} inertiaSnapshots={} latePrepared={} incompleteScan={} primaryBody={}",
+                "{} hand grab lifecycle audit {}: targetKind={} intent={} bodies={} converted={} restoredMotion={} restoredFilter={} preservedMotion={} preservedFilter={} dampingSnapshots={} inertiaSnapshots={} latePrepared={} incompleteScan={} primaryBody={}",
                 handName ? handName : "?",
                 context ? context : "",
+                grab_target::name(audit.targetKind),
+                active_grab_body_lifecycle::releaseIntentName(audit.intent),
                 audit.bodyCount,
                 audit.convertedCount,
                 audit.restoredMotionCount,
                 audit.restoredFilterCount,
+                audit.preservedConvertedMotionCount,
+                audit.preservedConvertedFilterCount,
                 audit.dampingSnapshotCount,
                 audit.inertiaSnapshotCount,
                 audit.latePreparedBodyCount,
@@ -4168,6 +4188,7 @@ namespace rock
         _pullPrepHknpWorld = nullptr;
         _pullPrepRootNode = nullptr;
         _pullPrepRefr = nullptr;
+        _pullPrepTargetKind = grab_target::Kind::LooseObject;
         _pullPrepOriginalMotionPropsId = 1;
         _pullPrepRestoreArmed = false;
     }
@@ -4193,6 +4214,62 @@ namespace rock
                 _pullPrepOriginalMotionPropsId,
                 handName(),
                 context ? context : "pull-prep-abandoned-incomplete-scan");
+        }
+
+        clearPullPrepTracking();
+    }
+
+    void Hand::finishPullPrepAsPhysicalDropIfActive(const char* context)
+    {
+        if (!_pullPrepRestoreArmed) {
+            return;
+        }
+
+        const std::uint32_t primaryBodyId =
+            _pulledPrimaryBodyId != INVALID_BODY_ID ? _pulledPrimaryBodyId : active_grab_body_lifecycle::kInvalidBodyId;
+        const auto releaseRestorePolicy =
+            active_grab_body_lifecycle::releaseRestorePolicyForTargetKind(_pullPrepTargetKind);
+        const auto releasePlan = _pullActiveLifecycle.restorePlanForRelease(
+            releaseRestorePolicy,
+            _pullPrepTargetKind,
+            active_grab_body_lifecycle::BodyReleaseIntent::PhysicalDrop);
+
+        restoreActiveGrabLifecycle(_pullPrepHknpWorld,
+            _pullActiveLifecycle,
+            releasePlan,
+            primaryBodyId,
+            handName(),
+            context ? context : "pull-physical-drop");
+
+        if (_pullActiveLifecycle.hasIncompleteNativeScan()) {
+            if (active_grab_body_lifecycle::shouldSkipIncompleteScanRootRestore(releasePlan, _pullPrepOriginalMotionPropsId)) {
+                ROCK_LOG_DEBUG(Hand,
+                    "{} hand {}: skipped recursive root restore for converted loose-object physical pull drop root='{}' motionProps={} preservedMotion={}",
+                    handName(),
+                    context ? context : "pull-physical-drop",
+                    nodeDebugName(_pullPrepRootNode),
+                    _pullPrepOriginalMotionPropsId,
+                    releasePlan.preservedConvertedMotionCount);
+            } else {
+                restoreIncompleteActivePrepRoot(
+                    _pullPrepRootNode,
+                    _pullPrepOriginalMotionPropsId,
+                    handName(),
+                    context ? context : "pull-physical-drop-incomplete-scan");
+            }
+        }
+
+        if (_pullPrepHknpWorld && primaryBodyId != INVALID_BODY_ID) {
+            const auto releaseActivation = activateHeldObjectBodySet(_pullPrepHknpWorld, primaryBodyId, _pulledBodyIds);
+            if (releaseActivation.failedActivationCount > 0) {
+                ROCK_LOG_WARN(Hand,
+                    "{} hand PULL physical-drop activation incomplete: primaryBody={} bodies={} activated={} failed={}",
+                    handName(),
+                    primaryBodyId,
+                    releaseActivation.bodyCount,
+                    releaseActivation.activatedCount,
+                    releaseActivation.failedActivationCount);
+            }
         }
 
         clearPullPrepTracking();
@@ -6358,6 +6435,7 @@ namespace rock
         _pullPrepHknpWorld = world;
         _pullPrepRootNode = rootNode;
         _pullPrepRefr = selectedRef;
+        _pullPrepTargetKind = _currentSelection.targetKind;
         _pullPrepOriginalMotionPropsId = selectedOriginalMotionPropsId;
         _pullPrepRestoreArmed = true;
         stopSelectionHighlight();
@@ -6478,6 +6556,7 @@ namespace rock
                 _pullElapsedSeconds,
                 _pullDurationSeconds,
                 g_rockConfig.rockPullOwnerGraceSeconds);
+            finishPullPrepAsPhysicalDropIfActive("pull-owner-expired");
             clearSelectionState(true);
             return false;
         }
@@ -6717,14 +6796,53 @@ namespace rock
 
         auto restoreFailedGrabPrep = [&]() {
             if (!joiningPeerHeldObject) {
-                restoreActiveGrabLifecycle(world,
-                    activeLifecycle,
-                    activeLifecycle.restorePlanForFailure(),
-                    objectBodyId.value,
-                    handName(),
-                    "failed-setup");
-                if (activeLifecycle.hasIncompleteNativeScan()) {
-                    restoreIncompleteActivePrepRoot(rootNode, selectedOriginalMotionPropsId, handName(), "failed-setup-incomplete-scan");
+                if (consumedPullPrepLifecycle) {
+                    const auto releaseRestorePolicy =
+                        active_grab_body_lifecycle::releaseRestorePolicyForTargetKind(sel.targetKind);
+                    const auto releasePlan = activeLifecycle.restorePlanForRelease(
+                        releaseRestorePolicy,
+                        sel.targetKind,
+                        active_grab_body_lifecycle::BodyReleaseIntent::PhysicalDrop);
+                    restoreActiveGrabLifecycle(world,
+                        activeLifecycle,
+                        releasePlan,
+                        objectBodyId.value,
+                        handName(),
+                        "failed-pull-catch-setup-physical-drop");
+                    if (activeLifecycle.hasIncompleteNativeScan()) {
+                        if (active_grab_body_lifecycle::shouldSkipIncompleteScanRootRestore(releasePlan, selectedOriginalMotionPropsId)) {
+                            ROCK_LOG_DEBUG(Hand,
+                                "{} hand failed pull-catch setup: skipped recursive root restore for converted loose-object physical drop root='{}' motionProps={} preservedMotion={}",
+                                handName(),
+                                nodeDebugName(rootNode),
+                                selectedOriginalMotionPropsId,
+                                releasePlan.preservedConvertedMotionCount);
+                        } else {
+                            restoreIncompleteActivePrepRoot(rootNode, selectedOriginalMotionPropsId, handName(), "failed-pull-catch-setup-incomplete-scan");
+                        }
+                    }
+                    if (world && objectBodyId.value != INVALID_BODY_ID) {
+                        const auto releaseActivation = activateHeldObjectBodySet(world, objectBodyId.value, _pulledBodyIds);
+                        if (releaseActivation.failedActivationCount > 0) {
+                            ROCK_LOG_WARN(Hand,
+                                "{} hand failed pull-catch setup activation incomplete: primaryBody={} bodies={} activated={} failed={}",
+                                handName(),
+                                objectBodyId.value,
+                                releaseActivation.bodyCount,
+                                releaseActivation.activatedCount,
+                                releaseActivation.failedActivationCount);
+                        }
+                    }
+                } else {
+                    restoreActiveGrabLifecycle(world,
+                        activeLifecycle,
+                        activeLifecycle.restorePlanForFailure(),
+                        objectBodyId.value,
+                        handName(),
+                        "failed-setup");
+                    if (activeLifecycle.hasIncompleteNativeScan()) {
+                        restoreIncompleteActivePrepRoot(rootNode, selectedOriginalMotionPropsId, handName(), "failed-setup-incomplete-scan");
+                    }
                 }
             }
             /*
@@ -12678,15 +12796,29 @@ namespace rock
         if (releaseContext.finalObjectRelease && world && _activeGrabLifecycle.size() > 0) {
             const auto releaseRestorePolicy =
                 active_grab_body_lifecycle::releaseRestorePolicyForTargetKind(_savedObjectState.targetKind);
+            const auto releaseIntent = releaseIntentFromDisposition(releaseContext.disposition);
+            const auto releasePlan = _activeGrabLifecycle.restorePlanForRelease(
+                releaseRestorePolicy,
+                _savedObjectState.targetKind,
+                releaseIntent);
             restoreActiveGrabLifecycle(world,
                 _activeGrabLifecycle,
-                _activeGrabLifecycle.restorePlanForRelease(releaseRestorePolicy),
+                releasePlan,
                 _savedObjectState.bodyId.value,
                 handName(),
                 "release");
             if (_activeGrabLifecycle.hasIncompleteNativeScan()) {
                 auto* rootNode = _savedObjectState.refr ? _savedObjectState.refr->Get3D() : nullptr;
-                restoreIncompleteActivePrepRoot(rootNode, _savedObjectState.originalMotionPropsId, handName(), "release-incomplete-scan");
+                if (active_grab_body_lifecycle::shouldSkipIncompleteScanRootRestore(releasePlan, _savedObjectState.originalMotionPropsId)) {
+                    ROCK_LOG_DEBUG(Hand,
+                        "{} hand release: skipped recursive root restore for converted loose-object physical drop root='{}' motionProps={} preservedMotion={}",
+                        handName(),
+                        nodeDebugName(rootNode),
+                        _savedObjectState.originalMotionPropsId,
+                        releasePlan.preservedConvertedMotionCount);
+                } else {
+                    restoreIncompleteActivePrepRoot(rootNode, _savedObjectState.originalMotionPropsId, handName(), "release-incomplete-scan");
+                }
             }
         }
 

@@ -4962,6 +4962,7 @@ namespace rock
                 if (pullCatchCommitPending) {
                     if (grabInput.released || !grabInput.held) {
                         ROCK_LOG_DEBUG(Hand, "{} hand cancelled pull catch commit because grip was released", hand.handName());
+                        hand.finishPullPrepAsPhysicalDropIfActive("pull-catch-release");
                         hand.clearSelectionState(true);
                         releaseObject(pullCatchRef, claimOwnerForHand(isLeft));
                         return;
@@ -4971,6 +4972,7 @@ namespace rock
                             "{} hand cancelled pull catch commit because retry window expired ({:.3f}s)",
                             hand.handName(),
                             g_rockConfig.rockPullCatchRetryMaxTimeSeconds);
+                        hand.finishPullPrepAsPhysicalDropIfActive("pull-catch-retry-expired");
                         hand.clearSelectionState(true);
                         releaseObject(pullCatchRef, claimOwnerForHand(isLeft));
                         return;
@@ -5092,6 +5094,7 @@ namespace rock
 
                     if (selectedObjectInteractionBlocked()) {
                         if (pullCatchCommitPending) {
+                            hand.finishPullPrepAsPhysicalDropIfActive("pull-catch-blocked");
                             hand.clearSelectionState(true);
                             releaseObject(pullCatchRef, claimOwnerForHand(isLeft));
                         }
@@ -5103,6 +5106,7 @@ namespace rock
                             ROCK_LOG_WARN(Hand,
                                 "{} hand cancelled pull catch commit because pending catch unexpectedly resolved to far selection",
                                 hand.handName());
+                            hand.finishPullPrepAsPhysicalDropIfActive("pull-catch-far-selection");
                             hand.clearSelectionState(true);
                             releaseObject(pullCatchRef, claimOwnerForHand(isLeft));
                             return;
@@ -5192,6 +5196,7 @@ namespace rock
                 auto* pulledRef = hand.getSelection().refr;
                 if (grabInput.released) {
                     ROCK_LOG_DEBUG(Hand, "{} hand released dynamic pull", hand.handName());
+                    hand.finishPullPrepAsPhysicalDropIfActive("pull-release");
                     hand.clearSelectionState(true);
                     releaseObject(pulledRef, claimOwnerForHand(isLeft));
                     return;
@@ -5207,6 +5212,7 @@ namespace rock
                 if (readyToGrab) {
                     dispatchSimpleGrabEvent(GrabEventType::PullArrived, isLeft, pulledRef, hand.getSelection().bodyId.value);
                     if (selectedObjectInteractionBlocked()) {
+                        hand.finishPullPrepAsPhysicalDropIfActive("pull-arrived-blocked");
                         hand.clearSelectionState(true);
                         releaseObject(pulledRef, claimOwnerForHand(isLeft));
                         return;
@@ -5216,6 +5222,7 @@ namespace rock
                     dispatchSimpleGrabEvent(GrabEventType::PullCatchAttempt, isLeft, pulledRef, hand.getSelection().bodyId.value);
                     const bool grabbed = attemptSelectedGrab();
                     if (!grabbed && (!hand.hasSelection() || !hand.hasPendingPullCatchCommit())) {
+                        hand.finishPullPrepAsPhysicalDropIfActive("pull-grab-refused");
                         hand.clearSelectionState(true);
                         releaseObject(pulledRef, claimOwnerForHand(isLeft));
                     } else if (!grabbed) {

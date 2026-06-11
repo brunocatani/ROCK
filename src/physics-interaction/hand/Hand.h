@@ -463,6 +463,7 @@ namespace rock
         bool lockFarSelection();
         bool startDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform);
         bool updateDynamicPull(RE::hknpWorld* world, const RE::NiTransform& handWorldTransform, float deltaTime);
+        void finishPullPrepAsPhysicalDropIfActive(const char* context);
         bool hasActivePullCatchIntent() const;
         bool hasArrivedPullCatchIntent() const;
         bool hasPendingPullCatchCommit() const;
@@ -1103,6 +1104,7 @@ namespace rock
         RE::hknpWorld* _pullPrepHknpWorld = nullptr;
         RE::NiAVObject* _pullPrepRootNode = nullptr;
         RE::TESObjectREFR* _pullPrepRefr = nullptr;
+        grab_target::Kind _pullPrepTargetKind = grab_target::Kind::LooseObject;
         std::uint16_t _pullPrepOriginalMotionPropsId = 1;
         bool _pullPrepRestoreArmed = false;
         std::uint32_t _pulledPrimaryBodyId = INVALID_BODY_ID;
