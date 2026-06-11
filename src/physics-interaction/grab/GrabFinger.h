@@ -1069,12 +1069,12 @@ namespace rock::grab_finger_pose_runtime
         const root_flattened_finger_skeleton_runtime::FingerChain& chain,
         RE::NiPoint3& outPadCenterWorld)
     {
-        if (!chain.valid || !isFinitePoint(chain.points[1]) || !isFinitePoint(chain.points[2])) {
+        if (!chain.valid || !isFinitePoint(chain.points[2])) {
             outPadCenterWorld = {};
             return false;
         }
 
-        outPadCenterWorld = (chain.points[1] + chain.points[2]) * 0.5f;
+        outPadCenterWorld = chain.points[2];
         return isFinitePoint(outPadCenterWorld);
     }
 
