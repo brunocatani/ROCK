@@ -11,6 +11,10 @@
 #include "physics-interaction/object/GeometryBodyResolver.h"
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
 
+#include "RE/NetImmerse/NiAVObject.h"
+#include "RE/NetImmerse/NiCollisionObject.h"
+#include "RE/NetImmerse/NiSmartPointer.h"
+
 namespace RE
 {
     class NiAVObject;
@@ -250,20 +254,27 @@ namespace rock::object_physics_body_set
         std::uint32_t cachedScanHits = 0;
         std::uint32_t cachedBodyIds = 0;
         std::uint32_t cachedCollisionObjects = 0;
+        std::uint32_t staleCacheEntrySkips = 0;
         std::array<std::uint32_t, 32> rejectCounts{};
     };
 
     struct ObjectPhysicsBodyScanEntry
     {
-        RE::NiAVObject* node = nullptr;
-        RE::NiCollisionObject* collisionObject = nullptr;
+        RE::NiPointer<RE::NiAVObject> node;
+        RE::NiPointer<RE::NiCollisionObject> collisionObject;
         std::vector<std::uint32_t> bodyIds;
+    };
+
+    struct ObjectPhysicsBodyScanCursorEntry
+    {
+        RE::NiPointer<RE::NiAVObject> node;
+        int depth = 0;
     };
 
     struct ObjectPhysicsBodyScanCache
     {
         RE::TESObjectREFR* rootRef = nullptr;
-        RE::NiAVObject* rootNode = nullptr;
+        RE::NiPointer<RE::NiAVObject> rootNode;
         std::uint32_t rootFormId = 0;
         BodySetDiagnostics diagnostics;
         std::vector<ObjectPhysicsBodyScanEntry> entries;
@@ -271,6 +282,36 @@ namespace rock::object_physics_body_set
         bool valid = false;
 
         void clear() noexcept;
+    };
+
+    struct ObjectPhysicsBodyScanCursor
+    {
+        RE::TESObjectREFR* rootRef = nullptr;
+        RE::NiPointer<RE::NiAVObject> rootNode;
+        std::uint32_t rootFormId = 0;
+        std::vector<ObjectPhysicsBodyScanCursorEntry> pendingNodes;
+        bool initialized = false;
+        bool finished = false;
+
+        void clear() noexcept;
+    };
+
+    struct ObjectPhysicsBodyScanBudget
+    {
+        std::uint32_t maxVisitedNodes = 32;
+        std::uint32_t maxCollisionObjects = 8;
+        std::uint32_t maxBodyIds = 64;
+    };
+
+    struct ObjectPhysicsBodyScanStepResult
+    {
+        std::uint32_t visitedNodes = 0;
+        std::uint32_t collisionObjects = 0;
+        std::uint32_t bodyIds = 0;
+        bool progressed = false;
+        bool finished = false;
+        bool invalidated = false;
+        bool budgetExhausted = false;
     };
 
     class ObjectPhysicsBodySet
@@ -295,6 +336,17 @@ namespace rock::object_physics_body_set
 
     bool hasCollisionObjectInSubtree(RE::NiAVObject* root, int maxDepth);
 
+    bool beginObjectPhysicsBodyScanCache(
+        RE::TESObjectREFR* ref,
+        const BodySetScanOptions& options,
+        ObjectPhysicsBodyScanCursor& cursor,
+        ObjectPhysicsBodyScanCache& outCache);
+    ObjectPhysicsBodyScanStepResult advanceObjectPhysicsBodyScanCache(
+        RE::hknpWorld* hknpWorld,
+        const BodySetScanOptions& options,
+        const ObjectPhysicsBodyScanBudget& budget,
+        ObjectPhysicsBodyScanCursor& cursor,
+        ObjectPhysicsBodyScanCache& outCache);
     ObjectPhysicsBodyScanCache captureObjectPhysicsBodyScanCache(
         RE::bhkWorld* bhkWorld,
         RE::hknpWorld* hknpWorld,

@@ -6197,17 +6197,23 @@ namespace rock
             }
         };
         object_physics_body_set::ObjectPhysicsBodySet preparedBodySet;
-        bool preparedScanCacheHit = tryBuildGrabAcquisitionPreparedBodySetFromCache(bhkWorld, world, _currentSelection, scanOptions, preparedBodySet);
+        bool preparedBodySetPostPrepComplete = false;
+        bool preparedScanCacheHit =
+            tryBuildGrabAcquisitionPreparedBodySetFromCache(bhkWorld, world, _currentSelection, scanOptions, preparedBodySet, preparedBodySetPostPrepComplete);
         if (!preparedScanCacheHit || preparedBodySet.acceptedCount() == 0) {
             preparedScanCacheHit = false;
+            preparedBodySetPostPrepComplete = true;
             performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAcquisitionBodyScan);
             preparedBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, selectedRef, scanOptions);
         }
         pullLifecycle.markPreparedBodies(preparedBodySet);
+        if (preparedScanCacheHit && !preparedBodySetPostPrepComplete) {
+            pullLifecycle.markIncompleteNativeScan();
+        }
         _pullDriveDecision = classifyHeldBodySetDrive(beforePrepBodySet, preparedBodySet, pullLifecycle.hasIncompleteNativeScan());
         ROCK_LOG_DEBUG(Hand,
             "{} hand PULL scan: type={} weapon={} name='{}' formID={:08X} seedBody={} beforeBodies={} afterBodies={} accepted={} rejected={} "
-            "seeded={} scanSource={}/{} cachedBodyIds={} cacheHits={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} collisionObjects={} visitedNodes={} driveMode={} driveReason={} linearScope={} angularScope={}",
+            "seeded={} scanSource={}/{} preparedComplete={} cachedBodyIds={} cacheHits={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} collisionObjects={} visitedNodes={} driveMode={} driveReason={} linearScope={} angularScope={}",
             handName(),
             selectedType ? selectedType : "???",
             selectedIsWeapon ? "yes" : "no",
@@ -6221,6 +6227,7 @@ namespace rock
             preparedBodySet.diagnostics.seedBodiesAdded,
             beforePrepScanCacheHit ? "cache" : "direct",
             preparedScanCacheHit ? "cache" : "direct",
+            preparedBodySetPostPrepComplete ? "yes" : "no",
             preparedBodySet.diagnostics.cachedBodyIds,
             preparedBodySet.diagnostics.cachedScanHits,
             preparedBodySet.diagnostics.scanFailures,
@@ -6679,18 +6686,29 @@ namespace rock
 
         object_physics_body_set::ObjectPhysicsBodySet preparedBodySet;
         bool preparedScanCacheHit = joiningPeerHeldObject;
+        bool preparedBodySetPostPrepComplete = joiningPeerHeldObject;
         if (joiningPeerHeldObject) {
             preparedBodySet = beforePrepBodySet;
         } else {
-            preparedScanCacheHit = tryBuildGrabAcquisitionPreparedBodySetFromCache(bhkWorld, world, sel, scanOptions, preparedBodySet);
+            preparedScanCacheHit = tryBuildGrabAcquisitionPreparedBodySetFromCache(
+                bhkWorld,
+                world,
+                sel,
+                scanOptions,
+                preparedBodySet,
+                preparedBodySetPostPrepComplete);
             if (!preparedScanCacheHit || preparedBodySet.acceptedCount() == 0) {
                 preparedScanCacheHit = false;
+                preparedBodySetPostPrepComplete = true;
                 performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAcquisitionBodyScan);
                 preparedBodySet = object_physics_body_set::scanObjectPhysicsBodySet(bhkWorld, world, sel.refr, scanOptions);
             }
         }
         if (!joiningPeerHeldObject) {
             activeLifecycle.markPreparedBodies(preparedBodySet);
+            if (preparedScanCacheHit && !preparedBodySetPostPrepComplete) {
+                activeLifecycle.markIncompleteNativeScan();
+            }
         } else if (sharedContext.peerActiveGrabLifecycle) {
             activeLifecycle = *sharedContext.peerActiveGrabLifecycle;
         }
@@ -6781,7 +6799,7 @@ namespace rock
 
         ROCK_LOG_DEBUG(Hand,
             "{} hand object-tree prep: ref='{}' formID={:08X} beforeBodies={} afterBodies={} accepted={} rejected={} "
-            "seedBody={} seeded={} scanSource={}/{} cachedBodyIds={} cacheHits={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} "
+            "seedBody={} seeded={} scanSource={}/{} preparedComplete={} cachedBodyIds={} cacheHits={} scanFailures={} invalidSystems={} benignSkips={} foreignSkips={} unresolvedAccepted={} unresolvedSkips={} "
             "latePrepared={} incompleteScan={} collisionObjects={} visitedNodes={} setMotion={} enableCollision={} sharedPeer={} "
             "proxyPivot=({:.1f},{:.1f},{:.1f}) palmPocketPivot=({:.1f},{:.1f},{:.1f}) pocketProxyDelta={:.2f} palmBasis={:.1f}deg axisDeg=({:.1f},{:.1f},{:.1f}) determinant=({:.3f},{:.3f})",
             handName(),
@@ -6795,6 +6813,7 @@ namespace rock
             preparedBodySet.diagnostics.seedBodiesAdded,
             beforePrepScanCacheHit ? "cache" : "direct",
             preparedScanCacheHit ? "cache" : "direct",
+            preparedBodySetPostPrepComplete ? "yes" : "no",
             preparedBodySet.diagnostics.cachedBodyIds,
             preparedBodySet.diagnostics.cachedScanHits,
             preparedBodySet.diagnostics.scanFailures,

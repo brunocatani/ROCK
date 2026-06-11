@@ -272,6 +272,11 @@ namespace rock::active_grab_body_lifecycle
             }
         }
 
+        void markIncompleteNativeScan()
+        {
+            _incompleteNativeScan = true;
+        }
+
         void markFilterChanged(std::uint32_t bodyId)
         {
             if (auto* record = find(bodyId)) {

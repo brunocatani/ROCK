@@ -84,6 +84,14 @@ namespace rock::object_physics_body_set
                    status == PhysicsSystemBodyScanStatus::MissingBodyIds;
         }
 
+        ObjectPhysicsBodyScanBudget sanitizeBudget(ObjectPhysicsBodyScanBudget budget)
+        {
+            budget.maxVisitedNodes = (std::max)(1u, budget.maxVisitedNodes);
+            budget.maxCollisionObjects = (std::max)(1u, budget.maxCollisionObjects);
+            budget.maxBodyIds = (std::max)(1u, budget.maxBodyIds);
+            return budget;
+        }
+
         const char* bodyMotionTypeName(physics_body_classifier::BodyMotionType motionType)
         {
             using physics_body_classifier::BodyMotionType;
@@ -318,8 +326,8 @@ namespace rock::object_physics_body_set
 
             auto& out = *context.out;
             ObjectPhysicsBodyScanEntry entry{};
-            entry.node = context.node;
-            entry.collisionObject = context.collisionObject;
+            entry.node.reset(context.node);
+            entry.collisionObject.reset(context.collisionObject);
             entry.bodyIds.reserve(16);
 
             auto visitBody = [](std::uint32_t rawBodyId, void* userData) {
@@ -361,6 +369,36 @@ namespace rock::object_physics_body_set
 
             out.bodyIdCount += static_cast<std::uint32_t>(entry.bodyIds.size());
             out.entries.push_back(std::move(entry));
+        }
+
+        void pushScanChildren(RE::NiAVObject* node, int childDepth, std::vector<ObjectPhysicsBodyScanCursorEntry>& pendingNodes)
+        {
+            auto* niNode = node ? node->IsNode() : nullptr;
+            if (!niNode) {
+                return;
+            }
+
+            auto& children = niNode->GetRuntimeData().children;
+            for (auto i = children.size(); i > 0; --i) {
+                auto* child = children[i - 1].get();
+                if (child) {
+                    ObjectPhysicsBodyScanCursorEntry entry{};
+                    entry.node.reset(child);
+                    entry.depth = childDepth;
+                    pendingNodes.push_back(std::move(entry));
+                }
+            }
+        }
+
+        bool cacheEntryStillReachable(RE::NiAVObject* rootNode, const ObjectPhysicsBodyScanEntry& entry)
+        {
+            auto* node = entry.node.get();
+            auto* collisionObject = entry.collisionObject.get();
+            return rootNode &&
+                   node &&
+                   collisionObject &&
+                   nodeIsOrContains(rootNode, node) &&
+                   node->collisionObject.get() == collisionObject;
         }
 
         void captureScanNode(RE::bhkWorld* bhkWorld,
@@ -406,13 +444,19 @@ namespace rock::object_physics_body_set
         void appendCachedBodyRecords(RE::bhkWorld* bhkWorld,
             RE::hknpWorld* hknpWorld,
             RE::TESObjectREFR* rootRef,
+            RE::NiAVObject* rootNode,
             const BodySetScanOptions& options,
             const ObjectPhysicsBodyScanCache& cache,
             ObjectPhysicsBodySet& out,
             std::unordered_set<std::uint32_t>& seenBodyIds)
         {
             for (const auto& entry : cache.entries) {
-                ScanBodyContext context{ bhkWorld, hknpWorld, rootRef, entry.node, entry.collisionObject, &options, &out, &seenBodyIds };
+                if (!cacheEntryStillReachable(rootNode, entry)) {
+                    ++out.diagnostics.staleCacheEntrySkips;
+                    out.records.clear();
+                    return;
+                }
+                ScanBodyContext context{ bhkWorld, hknpWorld, rootRef, entry.node.get(), entry.collisionObject.get(), &options, &out, &seenBodyIds };
                 for (const auto rawBodyId : entry.bodyIds) {
                     if (!appendBodyRecord(context, rawBodyId, false)) {
                         return;
@@ -425,12 +469,22 @@ namespace rock::object_physics_body_set
     void ObjectPhysicsBodyScanCache::clear() noexcept
     {
         rootRef = nullptr;
-        rootNode = nullptr;
+        rootNode.reset();
         rootFormId = 0;
         diagnostics = {};
         entries.clear();
         bodyIdCount = 0;
         valid = false;
+    }
+
+    void ObjectPhysicsBodyScanCursor::clear() noexcept
+    {
+        rootRef = nullptr;
+        rootNode.reset();
+        rootFormId = 0;
+        pendingNodes.clear();
+        initialized = false;
+        finished = false;
     }
 
     std::size_t ObjectPhysicsBodySet::acceptedCount() const
@@ -595,6 +649,125 @@ namespace rock::object_physics_body_set
         return false;
     }
 
+    bool beginObjectPhysicsBodyScanCache(
+        RE::TESObjectREFR* ref,
+        const BodySetScanOptions& options,
+        ObjectPhysicsBodyScanCursor& cursor,
+        ObjectPhysicsBodyScanCache& outCache)
+    {
+        cursor.clear();
+        outCache.clear();
+        outCache.rootRef = ref;
+        outCache.rootFormId = ref ? ref->GetFormID() : 0;
+        if (!ref || ref->IsDeleted() || ref->IsDisabled()) {
+            return false;
+        }
+
+        auto* rootNode = ref->Get3D();
+        if (!rootNode) {
+            return false;
+        }
+
+        cursor.rootRef = ref;
+        cursor.rootNode.reset(rootNode);
+        cursor.rootFormId = ref->GetFormID();
+        cursor.initialized = true;
+        outCache.rootNode.reset(rootNode);
+
+        if (!options.allowWeaponRefExpansion && isWeaponReference(ref)) {
+            ++outCache.diagnostics.weaponExpansionSkips;
+            cursor.finished = true;
+            outCache.valid = true;
+            return true;
+        }
+
+        ObjectPhysicsBodyScanCursorEntry rootEntry{};
+        rootEntry.node.reset(rootNode);
+        rootEntry.depth = (std::max)(0, options.maxDepth);
+        cursor.pendingNodes.push_back(std::move(rootEntry));
+        return true;
+    }
+
+    ObjectPhysicsBodyScanStepResult advanceObjectPhysicsBodyScanCache(
+        RE::hknpWorld* hknpWorld,
+        const BodySetScanOptions& options,
+        const ObjectPhysicsBodyScanBudget& rawBudget,
+        ObjectPhysicsBodyScanCursor& cursor,
+        ObjectPhysicsBodyScanCache& outCache)
+    {
+        (void)options;
+        ObjectPhysicsBodyScanStepResult result{};
+        const auto budget = sanitizeBudget(rawBudget);
+        if (!hknpWorld || !cursor.initialized || !cursor.rootRef || cursor.rootRef->IsDeleted() || cursor.rootRef->IsDisabled()) {
+            result.invalidated = true;
+            cursor.clear();
+            outCache.clear();
+            return result;
+        }
+
+        auto* currentRoot = cursor.rootRef->Get3D();
+        if (!currentRoot || currentRoot != cursor.rootNode.get() || outCache.rootRef != cursor.rootRef || outCache.rootNode.get() != currentRoot) {
+            result.invalidated = true;
+            cursor.clear();
+            outCache.clear();
+            return result;
+        }
+
+        if (cursor.finished) {
+            outCache.valid = true;
+            result.finished = true;
+            return result;
+        }
+
+        while (!cursor.pendingNodes.empty()) {
+            auto item = std::move(cursor.pendingNodes.back());
+            cursor.pendingNodes.pop_back();
+            auto* node = item.node.get();
+            if (!node) {
+                continue;
+            }
+            if (item.depth < 0) {
+                ++outCache.diagnostics.depthLimitSkips;
+                continue;
+            }
+            if (!nodeIsOrContains(currentRoot, node)) {
+                ++outCache.diagnostics.staleCacheEntrySkips;
+                continue;
+            }
+
+            ++outCache.diagnostics.visitedNodes;
+            ++result.visitedNodes;
+            result.progressed = true;
+
+            auto* collisionObject = node->collisionObject.get();
+            if (collisionObject) {
+                ++outCache.diagnostics.collisionObjects;
+                ++result.collisionObjects;
+                const auto beforeBodyIds = outCache.bodyIdCount;
+                ScanCacheContext context{ hknpWorld, cursor.rootRef, node, collisionObject, &outCache };
+                appendCachedScanEntry(context);
+                result.bodyIds += outCache.bodyIdCount - beforeBodyIds;
+            }
+
+            pushScanChildren(node, item.depth - 1, cursor.pendingNodes);
+
+            if (result.visitedNodes >= budget.maxVisitedNodes ||
+                result.collisionObjects >= budget.maxCollisionObjects ||
+                result.bodyIds >= budget.maxBodyIds) {
+                result.budgetExhausted = !cursor.pendingNodes.empty();
+                break;
+            }
+        }
+
+        if (cursor.pendingNodes.empty()) {
+            cursor.finished = true;
+            outCache.valid = true;
+            result.finished = true;
+        }
+
+        return result;
+    }
+
     ObjectPhysicsBodyScanCache captureObjectPhysicsBodyScanCache(
         RE::bhkWorld* bhkWorld,
         RE::hknpWorld* hknpWorld,
@@ -608,13 +781,13 @@ namespace rock::object_physics_body_set
             return result;
         }
 
-        result.rootNode = ref->Get3D();
-        if (!result.rootNode) {
+        result.rootNode.reset(ref->Get3D());
+        if (!result.rootNode.get()) {
             return result;
         }
 
         if (options.allowWeaponRefExpansion || !isWeaponReference(ref)) {
-            captureScanNode(bhkWorld, hknpWorld, ref, result.rootNode, (std::max)(0, options.maxDepth), options, result);
+            captureScanNode(bhkWorld, hknpWorld, ref, result.rootNode.get(), (std::max)(0, options.maxDepth), options, result);
         } else {
             ++result.diagnostics.weaponExpansionSkips;
         }
@@ -637,7 +810,7 @@ namespace rock::object_physics_body_set
         }
 
         result.rootNode = ref->Get3D();
-        if (!result.rootNode || result.rootNode != cache.rootNode) {
+        if (!result.rootNode || result.rootNode != cache.rootNode.get()) {
             return result;
         }
 
@@ -652,7 +825,7 @@ namespace rock::object_physics_body_set
             appendBodyRecord(seedContext, options.seedBodyId, true);
         }
 
-        appendCachedBodyRecords(bhkWorld, hknpWorld, ref, options, cache, result, seenBodyIds);
+        appendCachedBodyRecords(bhkWorld, hknpWorld, ref, result.rootNode, options, cache, result, seenBodyIds);
         return result;
     }
 

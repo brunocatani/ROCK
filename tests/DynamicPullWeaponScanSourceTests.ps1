@@ -59,7 +59,8 @@ Require-Text 'src/physics-interaction/hand/Hand.cpp' 'makeActiveGrabBodyScanOpti
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'scanOptions\.seedBodyId\s*=\s*selection\.bodyId\.value' 'The shared scan-option builder must seed object scanning from the selected body.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'scanOptions\.requireSameResolvedRef\s*=\s*true' 'The shared scan-option builder must keep expanded bodies owned by the selected ref.'
 Require-Text 'src/physics-interaction/hand/Hand.cpp' 'tryUseGrabAcquisitionBeforePrepCache' 'Active grab startup must have a pre-prep acquisition cache path.'
-Require-Text 'src/physics-interaction/hand/Hand.cpp' 'tryBuildGrabAcquisitionPreparedBodySetFromCache' 'Active grab startup must rebuild prepared records from cached body-id evidence.'
+Require-Text 'src/physics-interaction/hand/Hand.cpp' 'tryBuildGrabAcquisitionPreparedBodySetFromCache' 'Active grab startup may rebuild prepared records from cached body-id evidence only with explicit completeness reporting.'
+Require-Text 'src/physics-interaction/hand/Hand.cpp' 'outPostPrepComplete' 'Cached prepared record rebuilds must report whether post-prep discovery was actually complete.'
 
 Require-Text 'src/physics-interaction/grab/GrabCore.h' 'capturedAfterPrep' 'Lifecycle records must identify bodies discovered only after recursive active prep.'
 Require-Text 'src/physics-interaction/grab/GrabCore.h' 'originalStateKnown' 'Lifecycle restore plans must not restore manufactured original state for late bodies.'
@@ -89,7 +90,13 @@ if ($pullStart -lt 0 -or $pullEnd -lt 0) {
         $failures.Add('Dynamic pull must try the prewarmed acquisition cache before a direct tree scan.')
     }
     if ($pullText -notmatch 'tryBuildGrabAcquisitionPreparedBodySetFromCache') {
-        $failures.Add('Dynamic pull must rebuild prepared body records from cached acquisition evidence before falling back to a direct scan.')
+        $failures.Add('Dynamic pull must explicitly route cached prepared body records through the completeness-aware cache helper.')
+    }
+    if ($pullText -notmatch 'preparedBodySetPostPrepComplete') {
+        $failures.Add('Dynamic pull must track whether cached prepared body records have true post-prep proof.')
+    }
+    if ($pullText -notmatch 'preparedScanCacheHit && !preparedBodySetPostPrepComplete[\s\S]*markIncompleteNativeScan') {
+        $failures.Add('Dynamic pull must mark lifecycle discovery incomplete when prepared records come only from pre-prep cache replay.')
     }
     if ($pullText -notmatch 'PULL scan:') {
         $failures.Add('Dynamic pull must log seeded scan diagnostics.')
@@ -99,6 +106,9 @@ if ($pullStart -lt 0 -or $pullEnd -lt 0) {
     }
     if ($pullText -notmatch 'scanSource=\{\}/\{\}') {
         $failures.Add('Dynamic pull logs must expose cache/direct scan source for both before and prepared body sets.')
+    }
+    if ($pullText -notmatch 'preparedComplete=\{\}') {
+        $failures.Add('Dynamic pull logs must expose whether prepared body evidence was post-prep complete.')
     }
     if ($pullText -notmatch '_pulledBodyIds\s*=\s*preparedBodySet\.acceptedBodyIds\(\)') {
         $failures.Add('Dynamic pull must retain all accepted object bodies for activation/ownership, not collapse multipart weapons to one motion body.')
@@ -130,7 +140,13 @@ if ($grabStart -lt 0 -or $grabEnd -lt 0) {
         $failures.Add('Close/pull-catch grab must try the prewarmed acquisition cache before a direct tree scan.')
     }
     if ($grabText -notmatch 'tryBuildGrabAcquisitionPreparedBodySetFromCache') {
-        $failures.Add('Close/pull-catch grab must rebuild prepared body records from cached acquisition evidence before falling back to a direct scan.')
+        $failures.Add('Close/pull-catch grab must explicitly route cached prepared body records through the completeness-aware cache helper.')
+    }
+    if ($grabText -notmatch 'preparedBodySetPostPrepComplete') {
+        $failures.Add('Close/pull-catch grab must track whether cached prepared body records have true post-prep proof.')
+    }
+    if ($grabText -notmatch 'preparedScanCacheHit && !preparedBodySetPostPrepComplete[\s\S]*markIncompleteNativeScan') {
+        $failures.Add('Close/pull-catch grab must mark lifecycle discovery incomplete when prepared records come only from pre-prep cache replay.')
     }
     if ($grabText -notmatch 'invalidSystems') {
         $failures.Add('Grab object-tree prep logs must include invalid native physics-system diagnostics.')
@@ -140,6 +156,9 @@ if ($grabStart -lt 0 -or $grabEnd -lt 0) {
     }
     if ($grabText -notmatch 'scanSource=\{\}/\{\}') {
         $failures.Add('Grab object-tree prep logs must expose cache/direct scan source for both before and prepared body sets.')
+    }
+    if ($grabText -notmatch 'preparedComplete=\{\}') {
+        $failures.Add('Grab object-tree prep logs must expose whether prepared body evidence was post-prep complete.')
     }
     if ($grabText -notmatch 'restoreIncompleteActivePrepRoot\(rootNode,\s*selectedOriginalMotionPropsId') {
         $failures.Add('Failed grab setup must restore the root when body scanning was incomplete.')

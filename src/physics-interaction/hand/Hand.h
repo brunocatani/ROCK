@@ -326,7 +326,8 @@ namespace rock
             RE::hknpWorld* hknpWorld,
             const SelectedObject& selection,
             const object_physics_body_set::BodySetScanOptions& options,
-            object_physics_body_set::ObjectPhysicsBodySet& outBodySet) const;
+            object_physics_body_set::ObjectPhysicsBodySet& outBodySet,
+            bool& outPostPrepComplete) const;
         void updateSelectedCloseFingerPose();
         void clearSelectedCloseFingerPose();
     public:
@@ -660,9 +661,16 @@ namespace rock
 
         struct GrabAcquisitionCache
         {
+            enum class Stage : std::uint8_t
+            {
+                Empty,
+                PreScanRunning,
+                PreScanReady,
+            };
+
             RE::TESObjectREFR* refr = nullptr;
-            RE::NiAVObject* rootNode = nullptr;
-            RE::NiAVObject* hitNode = nullptr;
+            RE::NiPointer<RE::NiAVObject> rootNode;
+            RE::NiPointer<RE::NiAVObject> hitNode;
             RE::bhkWorld* bhkWorld = nullptr;
             RE::hknpWorld* hknpWorld = nullptr;
             std::uint32_t formId = 0;
@@ -672,15 +680,20 @@ namespace rock
             std::uint32_t sourceBodyId = INVALID_BODY_ID;
             grab_target::Kind targetKind = grab_target::Kind::LooseObject;
             int maxDepth = 0;
+            Stage stage = Stage::Empty;
+            object_physics_body_set::ObjectPhysicsBodyScanCursor scanCursor;
             object_physics_body_set::ObjectPhysicsBodyScanCache scanCache;
             object_physics_body_set::ObjectPhysicsBodySet beforePrepBodySet;
+            object_physics_body_set::ObjectPhysicsBodyScanCache postPrepScanCache;
+            object_physics_body_set::ObjectPhysicsBodySet postPrepBodySet;
+            bool postPrepComplete = false;
             bool valid = false;
 
             void clear() noexcept
             {
                 refr = nullptr;
-                rootNode = nullptr;
-                hitNode = nullptr;
+                rootNode.reset();
+                hitNode.reset();
                 bhkWorld = nullptr;
                 hknpWorld = nullptr;
                 formId = 0;
@@ -690,8 +703,13 @@ namespace rock
                 sourceBodyId = INVALID_BODY_ID;
                 targetKind = grab_target::Kind::LooseObject;
                 maxDepth = 0;
+                stage = Stage::Empty;
+                scanCursor.clear();
                 scanCache.clear();
                 beforePrepBodySet = {};
+                postPrepScanCache.clear();
+                postPrepBodySet = {};
+                postPrepComplete = false;
                 valid = false;
             }
         };

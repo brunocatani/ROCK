@@ -74,6 +74,15 @@ int main()
     truncatedSnapshot.captureBeforeActivePrep(truncatedScan);
     ok &= expectTrue("depth-truncated scans should force incomplete restore fallback", truncatedSnapshot.hasIncompleteNativeScan());
 
+    ObjectPhysicsBodySet cachedPreparedReplay{};
+    cachedPreparedReplay.records.push_back(makeRecord(151u, BodyMotionType::Dynamic, BodyRejectReason::None, true));
+    BodyLifecycleSnapshot cachedPreparedSnapshot{};
+    cachedPreparedSnapshot.captureBeforeActivePrep(cachedPreparedReplay);
+    cachedPreparedSnapshot.markPreparedBodies(cachedPreparedReplay);
+    ok &= expectFalse("pre-prep cached replay should not manufacture late bodies", cachedPreparedSnapshot.latePreparedBodyCount() > 0);
+    cachedPreparedSnapshot.markIncompleteNativeScan();
+    ok &= expectTrue("pre-prep cached replay without post-prep proof should force incomplete restore fallback", cachedPreparedSnapshot.hasIncompleteNativeScan());
+
     const auto deadActorRelease = dynamicSnapshot.restorePlanForRelease(releaseRestorePolicyForTargetKind(grab_target::Kind::DeadActorBody));
     ok &= expectTrue("dead actor release should restore captured dynamic filter", deadActorRelease.entries.front().restoreFilter);
     ok &= expectTrue("dead actor release should restore touched dynamic motion", deadActorRelease.entries.front().restoreMotion);
