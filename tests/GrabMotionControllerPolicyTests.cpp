@@ -1,4 +1,5 @@
 #include "physics-interaction/grab/GrabMotionController.h"
+#include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabInertiaPolicy.h"
 #include "physics-interaction/grab/HeldMassMovement.h"
 #include "physics-interaction/hand/HandVisual.h"
@@ -187,6 +188,21 @@ int main()
     ok &= expectNear("effective motor mass floors tiny finite mass", effectiveMotorMass(0.25f, true, 2.0f), 2.0f, 0.001f);
     ok &= expectNear("effective motor mass leaves heavier mass untouched", effectiveMotorMass(10.0f, true, 2.0f), 10.0f, 0.001f);
     ok &= expectNear("effective motor mass disabled keeps sanitized raw mass", effectiveMotorMass(0.25f, false, 2.0f), 0.25f, 0.001f);
+
+    const float g3DecodedMass = rock::grab_mass_policy::massFromInverseMass(4.529953003e-05f);
+    ok &= expectNear("tiny positive inverse mass remains readable", g3DecodedMass, 22075.284f, 0.02f);
+    ok &= expectNear("loose weapon grab mass is capped while held",
+        rock::grab_mass_policy::normalizedLooseWeaponGrabMass(g3DecodedMass, true),
+        rock::grab_mass_policy::kLooseWeaponGrabMassCeiling,
+        0.001f);
+    ok &= expectNear("generic heavy object mass is not capped by weapon policy",
+        rock::grab_mass_policy::normalizedLooseWeaponGrabMass(g3DecodedMass, false),
+        g3DecodedMass,
+        0.02f);
+    ok &= expectTrue("large loose weapon mass requests normalization",
+        rock::grab_mass_policy::shouldNormalizeLooseWeaponGrabMass(g3DecodedMass, true));
+    ok &= expectTrue("large generic object mass does not request weapon normalization",
+        !rock::grab_mass_policy::shouldNormalizeLooseWeaponGrabMass(g3DecodedMass, false));
 
     const auto trustedAuthority = computeAngularAuthorityScale(AngularAuthorityInput{
         .enabled = true,

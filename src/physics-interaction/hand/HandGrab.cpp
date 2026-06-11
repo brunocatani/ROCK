@@ -13,6 +13,7 @@
 #include "physics-interaction/grab/GrabContact.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/GrabFinger.h"
+#include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
 #include "physics-interaction/grab/GrabNodeInfoMath.h"
 #include "physics-interaction/grab/GrabNodeNamePolicy.h"
@@ -963,6 +964,7 @@ namespace rock
             target.savedPackedInertia[0] = peer.savedPackedInertia[0];
             target.savedPackedInertia[1] = peer.savedPackedInertia[1];
             target.savedPackedInertia[2] = peer.savedPackedInertia[2];
+            target.savedPackedMass = peer.savedPackedMass;
             target.inertiaModified = peer.inertiaModified;
             target.motionInertiaStates = peer.motionInertiaStates;
         }
@@ -3809,18 +3811,12 @@ namespace rock
                 return 0.0f;
             }
 
-            auto packedInvMass = static_cast<std::uint16_t>(motion->packedInverseInertia[3]);
+            const auto packedInvMass = static_cast<std::int16_t>(motion->packedInverseInertia[3]);
             if (packedInvMass == 0) {
                 return 0.0f;
             }
 
-            std::uint32_t asUint = static_cast<std::uint32_t>(packedInvMass) << 16;
-            float invMass = 0.0f;
-            std::memcpy(&invMass, &asUint, sizeof(float));
-            if (!std::isfinite(invMass) || invMass <= 0.0001f) {
-                return 0.0f;
-            }
-            return 1.0f / invMass;
+            return grab_mass_policy::massFromInverseMass(unpackBfloat16(packedInvMass));
         }
 
         struct HeldBodyMassSummary
@@ -9616,7 +9612,7 @@ namespace rock
                 sharedContext.peerSavedObjectState->motionInertiaStates.size(),
                 sharedContext.peerSavedObjectState->inertiaModified ? "yes" : "no");
         } else {
-            normalizeGrabbedInertiaForBodies(world, objectBodyId, _heldBodyIds, _savedObjectState);
+            normalizeGrabbedInertiaForBodies(world, objectBodyId, _heldBodyIds, _savedObjectState, looseWeaponGrab);
         }
 
         {

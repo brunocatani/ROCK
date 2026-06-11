@@ -2,6 +2,7 @@
 
 #include "physics-interaction/grab/GrabInertiaPolicy.h"
 #include "physics-interaction/grab/GrabConstraintMath.h"
+#include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "RockConfig.h"
@@ -661,7 +662,11 @@ namespace rock
 
     namespace
     {
-        bool normalizeGrabbedInertiaMotion(RE::hknpWorld* world, RE::hknpBodyId bodyId, SavedObjectState::SavedMotionInertiaState& savedMotionState)
+        bool normalizeGrabbedInertiaMotion(
+            RE::hknpWorld* world,
+            RE::hknpBodyId bodyId,
+            SavedObjectState::SavedMotionInertiaState& savedMotionState,
+            bool looseWeaponGrab)
         {
             if (!world)
                 return false;
@@ -682,68 +687,105 @@ namespace rock
             savedMotionState.savedPackedInertia[0] = packed[0];
             savedMotionState.savedPackedInertia[1] = packed[1];
             savedMotionState.savedPackedInertia[2] = packed[2];
+            savedMotionState.savedPackedMass = packed[3];
 
+            bool inertiaUsable = true;
             if (packed[0] <= 0 || packed[1] <= 0 || packed[2] <= 0) {
                 ROCK_LOG_WARN(GrabConstraint, "Skipping inertia normalization: zero/negative packed value");
-                return false;
+                inertiaUsable = false;
             }
 
-            float invI[3] = { unpackBfloat16(packed[0]), unpackBfloat16(packed[1]), unpackBfloat16(packed[2]) };
-
-            ROCK_LOG_DEBUG(GrabConstraint,
-                "Inertia pre-normalize: body={} motion={} packed=[{},{},{}] "
-                "float=[{:.6e},{:.6e},{:.6e}] mass_packed={}",
-                bodyId.value, motionIndex, packed[0], packed[1], packed[2], invI[0], invI[1], invI[2], packed[3]);
-
-            if (invI[0] <= 0.0f || invI[1] <= 0.0f || invI[2] <= 0.0f) {
-                ROCK_LOG_WARN(GrabConstraint, "Skipping inertia normalization: zero unpacked float value");
-                return false;
-            }
-
-            const auto normalizedInertia = grab_inertia_policy::normalizeInverseInertiaAxesForGrab(
-                invI[0],
-                invI[1],
-                invI[2],
-                g_rockConfig.rockGrabMaxInertiaRatio,
-                g_rockConfig.rockGrabMinInertia);
-            if (!normalizedInertia.valid) {
-                ROCK_LOG_WARN(GrabConstraint, "Skipping inertia normalization: invalid unpacked values");
-                return false;
-            }
-
-            if (normalizedInertia.modified) {
-                invI[0] = normalizedInertia.normalized[0];
-                invI[1] = normalizedInertia.normalized[1];
-                invI[2] = normalizedInertia.normalized[2];
-
-                packed[0] = repackBfloat16(invI[0]);
-                packed[1] = repackBfloat16(invI[1]);
-                packed[2] = repackBfloat16(invI[2]);
+            float invI[3] = {};
+            if (inertiaUsable) {
+                invI[0] = unpackBfloat16(packed[0]);
+                invI[1] = unpackBfloat16(packed[1]);
+                invI[2] = unpackBfloat16(packed[2]);
 
                 ROCK_LOG_DEBUG(GrabConstraint,
-                    "Inertia clamped: ratio {:.1f}x -> {:.1f}x limit={:.1f} minInertiaMaxInv={:.6e} "
-                    "packed [{},{},{}] -> [{},{},{}] float [{:.6e},{:.6e},{:.6e}]",
-                    normalizedInertia.originalRatio,
-                    normalizedInertia.normalizedRatio,
-                    normalizedInertia.ratioLimit,
-                    normalizedInertia.maxInverseInertiaFromMinimum,
-                    savedMotionState.savedPackedInertia[0],
-                    savedMotionState.savedPackedInertia[1],
-                    savedMotionState.savedPackedInertia[2],
-                    packed[0],
-                    packed[1],
-                    packed[2],
+                    "Inertia pre-normalize: body={} motion={} packed=[{},{},{}] "
+                    "float=[{:.6e},{:.6e},{:.6e}] mass_packed={}",
+                    bodyId.value, motionIndex, packed[0], packed[1], packed[2], invI[0], invI[1], invI[2], packed[3]);
+
+                if (invI[0] <= 0.0f || invI[1] <= 0.0f || invI[2] <= 0.0f) {
+                    ROCK_LOG_WARN(GrabConstraint, "Skipping inertia normalization: zero unpacked float value");
+                    inertiaUsable = false;
+                }
+            }
+
+            if (inertiaUsable) {
+                const auto normalizedInertia = grab_inertia_policy::normalizeInverseInertiaAxesForGrab(
                     invI[0],
                     invI[1],
-                    invI[2]);
-            } else {
-                ROCK_LOG_DEBUG(GrabConstraint,
-                    "Inertia OK: ratio {:.1f}x limit={:.1f} minInertiaMaxInv={:.6e}, no clamping needed",
-                    normalizedInertia.originalRatio,
-                    normalizedInertia.ratioLimit,
-                    normalizedInertia.maxInverseInertiaFromMinimum);
+                    invI[2],
+                    g_rockConfig.rockGrabMaxInertiaRatio,
+                    g_rockConfig.rockGrabMinInertia);
+                if (!normalizedInertia.valid) {
+                    ROCK_LOG_WARN(GrabConstraint, "Skipping inertia normalization: invalid unpacked values");
+                    inertiaUsable = false;
+                } else if (normalizedInertia.modified) {
+                    invI[0] = normalizedInertia.normalized[0];
+                    invI[1] = normalizedInertia.normalized[1];
+                    invI[2] = normalizedInertia.normalized[2];
+
+                    packed[0] = repackBfloat16(invI[0]);
+                    packed[1] = repackBfloat16(invI[1]);
+                    packed[2] = repackBfloat16(invI[2]);
+
+                    ROCK_LOG_DEBUG(GrabConstraint,
+                        "Inertia clamped: ratio {:.1f}x -> {:.1f}x limit={:.1f} minInertiaMaxInv={:.6e} "
+                        "packed [{},{},{}] -> [{},{},{}] float [{:.6e},{:.6e},{:.6e}]",
+                        normalizedInertia.originalRatio,
+                        normalizedInertia.normalizedRatio,
+                        normalizedInertia.ratioLimit,
+                        normalizedInertia.maxInverseInertiaFromMinimum,
+                        savedMotionState.savedPackedInertia[0],
+                        savedMotionState.savedPackedInertia[1],
+                        savedMotionState.savedPackedInertia[2],
+                        packed[0],
+                        packed[1],
+                        packed[2],
+                        invI[0],
+                        invI[1],
+                        invI[2]);
+                } else {
+                    ROCK_LOG_DEBUG(GrabConstraint,
+                        "Inertia OK: ratio {:.1f}x limit={:.1f} minInertiaMaxInv={:.6e}, no clamping needed",
+                        normalizedInertia.originalRatio,
+                        normalizedInertia.ratioLimit,
+                        normalizedInertia.maxInverseInertiaFromMinimum);
+                }
             }
 
+            if (looseWeaponGrab) {
+                const float inverseMass = unpackBfloat16(packed[3]);
+                const float mass = grab_mass_policy::massFromInverseMass(inverseMass);
+                if (grab_mass_policy::shouldNormalizeLooseWeaponGrabMass(mass, looseWeaponGrab)) {
+                    const float normalizedMass = grab_mass_policy::normalizedLooseWeaponGrabMass(mass, looseWeaponGrab);
+                    const float normalizedInverseMass = 1.0f / normalizedMass;
+                    const std::int16_t normalizedPackedMass = repackBfloat16(normalizedInverseMass);
+                    packed[3] = normalizedPackedMass;
+                    savedMotionState.massModified = true;
+                    ROCK_LOG_DEBUG(GrabConstraint,
+                        "Loose weapon mass clamped: body={} motion={} mass={:.3f}->{:.3f} packedMass {}->{}",
+                        bodyId.value,
+                        motionIndex,
+                        mass,
+                        normalizedMass,
+                        savedMotionState.savedPackedMass,
+                        packed[3]);
+                } else if (mass > 0.0f) {
+                    ROCK_LOG_DEBUG(GrabConstraint,
+                        "Loose weapon mass OK: body={} motion={} mass={:.3f} limit={:.3f}",
+                        bodyId.value,
+                        motionIndex,
+                        mass,
+                        grab_mass_policy::kLooseWeaponGrabMassCeiling);
+                }
+            }
+
+            if (!inertiaUsable && !savedMotionState.massModified) {
+                return false;
+            }
             savedMotionState.inertiaModified = true;
 
             havok_runtime::rebuildMotionMassProperties(world, motionIndex);
@@ -752,21 +794,27 @@ namespace rock
         }
     }
 
-    void normalizeGrabbedInertia(RE::hknpWorld* world, RE::hknpBodyId bodyId, SavedObjectState& savedState)
+    void normalizeGrabbedInertia(RE::hknpWorld* world, RE::hknpBodyId bodyId, SavedObjectState& savedState, bool looseWeaponGrab)
     {
         savedState.motionInertiaStates.clear();
         savedState.inertiaModified = false;
         SavedObjectState::SavedMotionInertiaState savedMotion{};
-        if (normalizeGrabbedInertiaMotion(world, bodyId, savedMotion)) {
+        if (normalizeGrabbedInertiaMotion(world, bodyId, savedMotion, looseWeaponGrab)) {
             savedState.savedPackedInertia[0] = savedMotion.savedPackedInertia[0];
             savedState.savedPackedInertia[1] = savedMotion.savedPackedInertia[1];
             savedState.savedPackedInertia[2] = savedMotion.savedPackedInertia[2];
+            savedState.savedPackedMass = savedMotion.savedPackedMass;
             savedState.inertiaModified = true;
             savedState.motionInertiaStates.push_back(savedMotion);
         }
     }
 
-    void normalizeGrabbedInertiaForBodies(RE::hknpWorld* world, RE::hknpBodyId primaryBodyId, const std::vector<std::uint32_t>& heldBodyIds, SavedObjectState& savedState)
+    void normalizeGrabbedInertiaForBodies(
+        RE::hknpWorld* world,
+        RE::hknpBodyId primaryBodyId,
+        const std::vector<std::uint32_t>& heldBodyIds,
+        SavedObjectState& savedState,
+        bool looseWeaponGrab)
     {
         savedState.motionInertiaStates.clear();
         savedState.inertiaModified = false;
@@ -795,7 +843,7 @@ namespace rock
                 continue;
             }
             SavedObjectState::SavedMotionInertiaState savedMotion{};
-            if (normalizeGrabbedInertiaMotion(world, RE::hknpBodyId{ rawBodyId }, savedMotion)) {
+            if (normalizeGrabbedInertiaMotion(world, RE::hknpBodyId{ rawBodyId }, savedMotion, looseWeaponGrab)) {
                 savedState.motionInertiaStates.push_back(savedMotion);
             }
         }
@@ -805,6 +853,7 @@ namespace rock
             savedState.savedPackedInertia[0] = primarySaved.savedPackedInertia[0];
             savedState.savedPackedInertia[1] = primarySaved.savedPackedInertia[1];
             savedState.savedPackedInertia[2] = primarySaved.savedPackedInertia[2];
+            savedState.savedPackedMass = primarySaved.savedPackedMass;
             savedState.inertiaModified = true;
         }
     }
@@ -820,6 +869,7 @@ namespace rock
             legacyState.savedPackedInertia[0] = savedState.savedPackedInertia[0];
             legacyState.savedPackedInertia[1] = savedState.savedPackedInertia[1];
             legacyState.savedPackedInertia[2] = savedState.savedPackedInertia[2];
+            legacyState.savedPackedMass = savedState.savedPackedMass;
             legacyState.inertiaModified = savedState.inertiaModified;
             if (auto* body = havok_runtime::getBody(world, savedState.bodyId)) {
                 legacyState.motionIndex = body->motionIndex;
@@ -840,11 +890,21 @@ namespace rock
             packed[0] = savedMotion.savedPackedInertia[0];
             packed[1] = savedMotion.savedPackedInertia[1];
             packed[2] = savedMotion.savedPackedInertia[2];
+            if (savedMotion.massModified) {
+                packed[3] = savedMotion.savedPackedMass;
+            }
 
-            ROCK_LOG_DEBUG(
-                GrabConstraint, "Inertia restored: body={} motion={} -> packed=[{},{},{}]", savedMotion.bodyId.value, savedMotion.motionIndex, packed[0], packed[1], packed[2]);
+            ROCK_LOG_DEBUG(GrabConstraint,
+                "Inertia restored: body={} motion={} -> packed=[{},{},{}] massPacked={}",
+                savedMotion.bodyId.value,
+                savedMotion.motionIndex,
+                packed[0],
+                packed[1],
+                packed[2],
+                packed[3]);
             havok_runtime::rebuildMotionMassProperties(world, savedMotion.motionIndex);
             savedMotion.inertiaModified = false;
+            savedMotion.massModified = false;
         }
         savedState.inertiaModified = false;
         savedState.motionInertiaStates.clear();

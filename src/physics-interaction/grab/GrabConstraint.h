@@ -203,7 +203,9 @@ namespace rock
             RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
             std::uint32_t motionIndex = 0;
             std::int16_t savedPackedInertia[3] = { 0, 0, 0 };
+            std::int16_t savedPackedMass = 0;
             bool inertiaModified = false;
+            bool massModified = false;
         };
 
         RE::hknpBodyId bodyId{ 0x7FFF'FFFF };
@@ -213,6 +215,7 @@ namespace rock
         std::uint16_t originalMotionPropsId = 0;
         float inverseMass = 0.0f;
         std::int16_t savedPackedInertia[3] = { 0, 0, 0 };
+        std::int16_t savedPackedMass = 0;
         bool inertiaModified = false;
         std::vector<SavedMotionInertiaState> motionInertiaStates;
 
@@ -227,14 +230,20 @@ namespace rock
             originalMotionPropsId = 0;
             inverseMass = 0.0f;
             savedPackedInertia[0] = savedPackedInertia[1] = savedPackedInertia[2] = 0;
+            savedPackedMass = 0;
             inertiaModified = false;
             motionInertiaStates.clear();
         }
     };
 
-    void normalizeGrabbedInertia(RE::hknpWorld* world, RE::hknpBodyId bodyId, SavedObjectState& savedState);
+    void normalizeGrabbedInertia(RE::hknpWorld* world, RE::hknpBodyId bodyId, SavedObjectState& savedState, bool looseWeaponGrab = false);
 
-    void normalizeGrabbedInertiaForBodies(RE::hknpWorld* world, RE::hknpBodyId primaryBodyId, const std::vector<std::uint32_t>& heldBodyIds, SavedObjectState& savedState);
+    void normalizeGrabbedInertiaForBodies(
+        RE::hknpWorld* world,
+        RE::hknpBodyId primaryBodyId,
+        const std::vector<std::uint32_t>& heldBodyIds,
+        SavedObjectState& savedState,
+        bool looseWeaponGrab = false);
 
     void restoreGrabbedInertia(RE::hknpWorld* world, SavedObjectState& savedState);
 

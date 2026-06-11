@@ -43,14 +43,11 @@
                 return 0.0f;
             }
 
-            const auto packedInvMass = static_cast<std::uint16_t>(motion->packedInverseInertia[3]);
-            const std::uint32_t asUint = static_cast<std::uint32_t>(packedInvMass) << 16;
-            float inverseMass = 0.0f;
-            std::memcpy(&inverseMass, &asUint, sizeof(float));
-            if (!std::isfinite(inverseMass) || inverseMass <= 0.0001f) {
+            const auto packedInvMass = static_cast<std::int16_t>(motion->packedInverseInertia[3]);
+            if (packedInvMass == 0) {
                 return 0.0f;
             }
-            return 1.0f / inverseMass;
+            return grab_mass_policy::massFromInverseMass(unpackBfloat16(packedInvMass));
         };
 
         auto readBodySpeedGameUnits = [](RE::hknpWorld* world, std::uint32_t bodyId) {
