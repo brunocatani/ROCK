@@ -18,6 +18,15 @@ namespace rock
         Keyframed = 2
     };
 
+    struct RetiredBethesdaPhysicsBodyPayload
+    {
+        void* collisionObject = nullptr;
+        void* niNode = nullptr;
+        std::uint32_t bodyId = 0x7FFF'FFFF;
+
+        [[nodiscard]] bool occupied() const { return collisionObject != nullptr || niNode != nullptr; }
+    };
+
     class BethesdaPhysicsBody
     {
     public:
@@ -33,6 +42,10 @@ namespace rock
             const char* name = "ROCK_Body");
 
         void destroy(void* bhkWorld);
+
+        bool retireFromWorld(void* bhkWorld, RetiredBethesdaPhysicsBodyPayload& outPayload);
+
+        static void releaseRetiredPayload(RetiredBethesdaPhysicsBodyPayload& payload);
 
         void reset();
 

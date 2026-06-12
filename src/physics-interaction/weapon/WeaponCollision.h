@@ -121,9 +121,13 @@ namespace rock
 
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
 
+        void serviceRetiredWeaponBodies(std::uint32_t completedPhysicsSteps = 1);
+
     private:
         static constexpr std::uint32_t INVALID_BODY_ID = 0x7FFF'FFFF;
         static constexpr std::size_t MAX_WEAPON_BODIES = MAX_WEAPON_COLLISION_BODIES;
+        static constexpr std::uint32_t RETIRED_GENERATED_WEAPON_BODY_GRACE_STEPS = 8;
+        static constexpr std::size_t MAX_RETIRED_GENERATED_WEAPON_BODY_PAYLOADS = MAX_WEAPON_BODIES * 4;
 
         struct GeneratedHullSource
         {
@@ -158,6 +162,14 @@ namespace rock
             bool ownsShapeRef{ false };
             GeneratedKeyframedBodyDriveState driveState{};
             std::uint32_t publicationIndex{ INVALID_BODY_ID };
+        };
+
+        struct RetiredWeaponBodyPayload
+        {
+            RetiredBethesdaPhysicsBodyPayload bodyPayload{};
+            std::uint32_t remainingPhysicsSteps{ 0 };
+
+            [[nodiscard]] bool occupied() const { return bodyPayload.occupied(); }
         };
 
         using WeaponBodyBank = std::array<WeaponBodyInstance, MAX_WEAPON_BODIES>;
@@ -227,6 +239,8 @@ namespace rock
             std::size_t& nextSourceIndex,
             std::size_t maxSourceAttemptsThisFrame);
         void destroyWeaponBodyBank(WeaponBodyBank& bank, bool releaseShapeRef);
+        void retireWeaponBodyInstance(WeaponBodyInstance& instance, bool releaseShapeRef);
+        void retireWeaponBodyPayload(RetiredBethesdaPhysicsBodyPayload& payload);
         void setWeaponBodyBankCollisionEnabled(RE::hknpWorld* world, WeaponBodyBank& bank, bool enabled);
         void clearWeaponBodyInstance(WeaponBodyInstance& instance, bool releaseShapeRef);
         void clearAtomicBodyIds();
@@ -284,6 +298,9 @@ namespace rock
 
         WeaponBodyBank _weaponBodies{};
         WeaponBodyBank _weaponReplacementBodies{};
+        std::array<RetiredWeaponBodyPayload, MAX_RETIRED_GENERATED_WEAPON_BODY_PAYLOADS> _retiredWeaponBodyPayloads{};
+        std::uint32_t _retiredWeaponBodyPayloadCount{ 0 };
+        mutable std::mutex _retiredWeaponBodyPayloadMutex;
         bool _usingReplacementWeaponBodies{ false };
         std::uint64_t _cachedWeaponKey{ 0 };
         std::uint64_t _cachedWeaponVisualKey{ 0 };

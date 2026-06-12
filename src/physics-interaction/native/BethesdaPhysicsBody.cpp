@@ -551,6 +551,26 @@ namespace rock
         return true;
     }
 
+    static void detachAndReleaseNiNode(void* collisionObject, void*& niNode)
+    {
+        if (!niNode)
+            return;
+
+        if (collisionObject) {
+            *reinterpret_cast<void**>(reinterpret_cast<char*>(collisionObject) + offsets::kCollisionObject_OwnerNode) = nullptr;
+        }
+
+        auto** nodeCollisionObjectSlot = reinterpret_cast<void**>(reinterpret_cast<char*>(niNode) + offsets::kNiAVObject_CollisionObject);
+        void* nodeCollisionObject = *nodeCollisionObjectSlot;
+        *nodeCollisionObjectSlot = nullptr;
+        if (nodeCollisionObject) {
+            releaseRefCounted(nodeCollisionObject);
+        }
+
+        releaseRefCounted(niNode);
+        niNode = nullptr;
+    }
+
     void BethesdaPhysicsBody::destroy(void* bhkWorld)
     {
         if (!_created && !_collisionObject && !_niNode)
@@ -579,6 +599,55 @@ namespace rock
         }
 
         reset();
+    }
+
+    bool BethesdaPhysicsBody::retireFromWorld(void* bhkWorld, RetiredBethesdaPhysicsBodyPayload& outPayload)
+    {
+        if (outPayload.occupied()) {
+            ROCK_LOG_ERROR(BethesdaBody, "retireFromWorld called with an occupied output payload");
+            return false;
+        }
+
+        if (!_created && !_collisionObject && !_niNode) {
+            return false;
+        }
+
+        ROCK_LOG_DEBUG(BethesdaBody, "Retiring body from world: bodyId={} collObj={:p}", _bodyId.value, _collisionObject);
+
+        auto* physicsSystemInstance = nativePhysicsSystemInstance(_physicsSystem);
+        if (bhkWorld && physicsSystemInstance) {
+            static REL::Relocation<RemovePhysicsSystem_t> removePhysicsSystem{ REL::Offset(offsets::kFunc_BhkWorld_RemovePhysicsSystemInstance) };
+            removePhysicsSystem(bhkWorld, physicsSystemInstance);
+            ROCK_LOG_DEBUG(BethesdaBody, "Removed native physics system instance for retired body {}", _bodyId.value);
+        } else if (_physicsSystem) {
+            ROCK_LOG_WARN(
+                BethesdaBody,
+                "Retiring body {} without native physics-system removal: bhkWorld={:p} instance={:p}",
+                _bodyId.value,
+                bhkWorld,
+                physicsSystemInstance);
+        }
+
+        outPayload.collisionObject = _collisionObject;
+        outPayload.niNode = _niNode;
+        outPayload.bodyId = _bodyId.value;
+        reset();
+        return outPayload.occupied();
+    }
+
+    void BethesdaPhysicsBody::releaseRetiredPayload(RetiredBethesdaPhysicsBodyPayload& payload)
+    {
+        if (!payload.occupied()) {
+            return;
+        }
+
+        auto* collisionObject = payload.collisionObject;
+        auto* niNode = payload.niNode;
+        detachAndReleaseNiNode(collisionObject, niNode);
+        if (collisionObject) {
+            releaseRefCounted(collisionObject);
+        }
+        payload = {};
     }
 
     void BethesdaPhysicsBody::reset()
@@ -655,19 +724,7 @@ namespace rock
         if (!_niNode)
             return;
 
-        if (_collisionObject) {
-            *reinterpret_cast<void**>(reinterpret_cast<char*>(_collisionObject) + offsets::kCollisionObject_OwnerNode) = nullptr;
-        }
-
-        auto** nodeCollisionObjectSlot = reinterpret_cast<void**>(reinterpret_cast<char*>(_niNode) + offsets::kNiAVObject_CollisionObject);
-        void* nodeCollisionObject = *nodeCollisionObjectSlot;
-        *nodeCollisionObjectSlot = nullptr;
-        if (nodeCollisionObject) {
-            releaseRefCounted(nodeCollisionObject);
-        }
-
-        releaseRefCounted(_niNode);
-        _niNode = nullptr;
+        detachAndReleaseNiNode(_collisionObject, _niNode);
 
         ROCK_LOG_DEBUG(BethesdaBody, "NiNode destroyed");
     }

@@ -3763,6 +3763,7 @@ namespace rock
         logPalmClockSampleForHand("physics-after-solve", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         logPalmClockSampleForHand("physics-after-solve", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         serviceRetiredGrabConstraintPayloads();
+        _weaponCollision.serviceRetiredWeaponBodies();
     }
 
 #include "physics-interaction/core/PhysicsInteractionDebugOverlay.inl"

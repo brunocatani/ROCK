@@ -3300,9 +3300,8 @@ namespace rock
                     source.sourceName,
                     safeNodeName(source.driveRoot),
                     safeNodeName(source.sourceRoot));
-                instance.body.destroy(_cachedBhkWorld);
+                retireWeaponBodyInstance(instance, false);
                 shapeRemoveRef(shape);
-                clearWeaponBodyInstance(instance, false);
                 continue;
             }
             initializeGeneratedKeyframedBodyDriveState(instance.driveState, initialTransform);
@@ -3381,11 +3380,62 @@ namespace rock
     void WeaponCollision::destroyWeaponBodyBank(WeaponBodyBank& bank, bool releaseShapeRef)
     {
         for (auto& instance : bank) {
-            if (instance.body.isValid()) {
-                instance.body.destroy(_cachedBhkWorld);
-            }
-            clearWeaponBodyInstance(instance, releaseShapeRef);
+            retireWeaponBodyInstance(instance, releaseShapeRef);
         }
+    }
+
+    void WeaponCollision::retireWeaponBodyInstance(WeaponBodyInstance& instance, bool releaseShapeRef)
+    {
+        if (instance.body.isValid()) {
+            RetiredBethesdaPhysicsBodyPayload payload{};
+            if (instance.body.retireFromWorld(_cachedBhkWorld, payload) && payload.occupied()) {
+                retireWeaponBodyPayload(payload);
+            } else {
+                /*
+                 * Releasing a generated wrapper immediately after a rebuild was
+                 * observed to leave native readers with stale collision-object
+                 * pointers. If retirement cannot produce a payload, clear ROCK's
+                 * ownership without calling the immediate destructor path.
+                 */
+                ROCK_LOG_ERROR(Weapon,
+                    "Generated weapon body {} could not be retired; wrapper ownership cleared without immediate native release",
+                    instance.body.getBodyId().value);
+            }
+        }
+        clearWeaponBodyInstance(instance, releaseShapeRef);
+    }
+
+    void WeaponCollision::retireWeaponBodyPayload(RetiredBethesdaPhysicsBodyPayload& payload)
+    {
+        if (!payload.occupied()) {
+            return;
+        }
+
+        std::scoped_lock lock(_retiredWeaponBodyPayloadMutex);
+        for (auto& retired : _retiredWeaponBodyPayloads) {
+            if (!retired.occupied()) {
+                retired.bodyPayload = payload;
+                retired.remainingPhysicsSteps = RETIRED_GENERATED_WEAPON_BODY_GRACE_STEPS;
+                ++_retiredWeaponBodyPayloadCount;
+                ROCK_LOG_SAMPLE_DEBUG(Weapon,
+                    1000,
+                    "Generated weapon body {} payload retired for {} physics steps activeRetired={}",
+                    payload.bodyId,
+                    RETIRED_GENERATED_WEAPON_BODY_GRACE_STEPS,
+                    _retiredWeaponBodyPayloadCount);
+                payload = {};
+                return;
+            }
+        }
+
+        /*
+         * A leak is safer than freeing a collision object that native pathing or
+         * collision readers may still touch after a generated weapon rebuild.
+         */
+        ROCK_LOG_ERROR(Weapon,
+            "Retired generated weapon body queue full; intentionally leaking body {} payload to avoid native use-after-free",
+            payload.bodyId);
+        payload = {};
     }
 
     void WeaponCollision::setWeaponBodyBankCollisionEnabled(RE::hknpWorld* world, WeaponBodyBank& bank, bool enabled)
@@ -3645,6 +3695,38 @@ namespace rock
                     g_rockConfig.rockWeaponCollisionMaxAngularVelocity),
                 "weapon-collision",
                 bodyIndex);
+        }
+    }
+
+    void WeaponCollision::serviceRetiredWeaponBodies(std::uint32_t completedPhysicsSteps)
+    {
+        if (completedPhysicsSteps == 0) {
+            return;
+        }
+
+        std::scoped_lock lock(_retiredWeaponBodyPayloadMutex);
+        for (auto& retired : _retiredWeaponBodyPayloads) {
+            if (!retired.occupied()) {
+                continue;
+            }
+
+            retired.remainingPhysicsSteps =
+                retired.remainingPhysicsSteps > completedPhysicsSteps ? retired.remainingPhysicsSteps - completedPhysicsSteps : 0;
+            if (retired.remainingPhysicsSteps != 0) {
+                continue;
+            }
+
+            const auto bodyId = retired.bodyPayload.bodyId;
+            BethesdaPhysicsBody::releaseRetiredPayload(retired.bodyPayload);
+            retired = {};
+            if (_retiredWeaponBodyPayloadCount > 0) {
+                --_retiredWeaponBodyPayloadCount;
+            }
+            ROCK_LOG_SAMPLE_DEBUG(Weapon,
+                1000,
+                "Retired generated weapon body {} payload reclaimed activeRetired={}",
+                bodyId,
+                _retiredWeaponBodyPayloadCount);
         }
     }
 
