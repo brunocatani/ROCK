@@ -38,13 +38,19 @@ namespace rock::frik_visual_authority
 
         [[nodiscard]] inline BlockPrimaryHandWeaponPoseFn blockPrimaryHandWeaponPoseExport()
         {
-            static BlockPrimaryHandWeaponPoseFn fn = []() -> BlockPrimaryHandWeaponPoseFn {
+            static BlockPrimaryHandWeaponPoseFn fn = nullptr;
+            static bool attemptedWithLoadedFrik = false;
+            if (!fn) {
                 const auto frikDll = GetModuleHandleA("FRIK.dll");
                 if (!frikDll) {
                     return nullptr;
                 }
-                return reinterpret_cast<BlockPrimaryHandWeaponPoseFn>(GetProcAddress(frikDll, "FRIKAPI_BlockPrimaryHandWeaponPose"));
-            }();
+                if (attemptedWithLoadedFrik) {
+                    return nullptr;
+                }
+                attemptedWithLoadedFrik = true;
+                fn = reinterpret_cast<BlockPrimaryHandWeaponPoseFn>(GetProcAddress(frikDll, "FRIKAPI_BlockPrimaryHandWeaponPose"));
+            }
             return fn;
         }
 
@@ -331,6 +337,11 @@ namespace rock::frik_visual_authority
     {
         const auto fn = detail::blockPrimaryHandWeaponPoseExport();
         return fn && fn(tag, block);
+    }
+
+    [[nodiscard]] inline bool canBlockPrimaryHandWeaponPose()
+    {
+        return detail::blockPrimaryHandWeaponPoseExport() != nullptr;
     }
 
     [[nodiscard]] inline RE::NiTransform getHandWorldTransform(Hand hand)

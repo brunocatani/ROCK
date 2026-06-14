@@ -165,6 +165,21 @@ int main()
     virtualHolstersActivateReload.virtualHolstersOwnsInput = true;
     ok &= expectFalse("VirtualHolsters zone ownership blocks primary activate reload", shouldRoutePrimaryActivateReload(virtualHolstersActivateReload));
 
+    EquippedWeaponPrimaryDetachInputGate primaryDetachGate{
+        .featureAvailable = true,
+        .canUsePrimaryDetachInput = false,
+        .virtualHolstersOwnsInput = false,
+    };
+    ok &= expectTrue("primary detach feature consumes stale edges before armed", shouldConsumeEquippedWeaponPrimaryDetachInput(primaryDetachGate));
+    ok &= expectFalse("primary detach ignores consumed edges until armed", shouldUseEquippedWeaponPrimaryDetachInput(primaryDetachGate));
+    primaryDetachGate.canUsePrimaryDetachInput = true;
+    ok &= expectTrue("primary detach uses fresh edge after armed", shouldUseEquippedWeaponPrimaryDetachInput(primaryDetachGate));
+    primaryDetachGate.virtualHolstersOwnsInput = true;
+    ok &= expectFalse("VirtualHolsters ownership blocks primary detach edge use", shouldUseEquippedWeaponPrimaryDetachInput(primaryDetachGate));
+    primaryDetachGate.featureAvailable = false;
+    primaryDetachGate.virtualHolstersOwnsInput = false;
+    ok &= expectFalse("missing hFRIK blocker export disables primary detach consumption", shouldConsumeEquippedWeaponPrimaryDetachInput(primaryDetachGate));
+
     HeldWeaponEquipInput equipInput{
         .remapEnabled = true,
         .gameplayInputAllowed = true,

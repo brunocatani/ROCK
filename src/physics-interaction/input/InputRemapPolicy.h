@@ -70,6 +70,13 @@ namespace rock::input_remap_policy
         bool eventMatched{ false };
     };
 
+    struct EquippedWeaponPrimaryDetachInputGate
+    {
+        bool featureAvailable{ false };
+        bool canUsePrimaryDetachInput{ false };
+        bool virtualHolstersOwnsInput{ false };
+    };
+
     struct HeldWeaponEquipInput
     {
         bool remapEnabled{ true };
@@ -162,6 +169,16 @@ namespace rock::input_remap_policy
     {
         return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.weaponDrawn && input.primaryHandEvent &&
                input.buttonJustPressed && !input.virtualHolstersOwnsInput && input.eventMatched;
+    }
+
+    [[nodiscard]] constexpr bool shouldConsumeEquippedWeaponPrimaryDetachInput(const EquippedWeaponPrimaryDetachInputGate& input)
+    {
+        return input.featureAvailable;
+    }
+
+    [[nodiscard]] constexpr bool shouldUseEquippedWeaponPrimaryDetachInput(const EquippedWeaponPrimaryDetachInputGate& input)
+    {
+        return input.featureAvailable && input.canUsePrimaryDetachInput && !input.virtualHolstersOwnsInput;
     }
 
     [[nodiscard]] constexpr bool shouldRequestHeldWeaponEquip(const HeldWeaponEquipInput& input)

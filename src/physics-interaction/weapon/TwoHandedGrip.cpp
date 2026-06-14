@@ -431,6 +431,7 @@ namespace rock
                 transitionToInactive(ownsWeaponTransform());
             } else if (primaryDetachEnabled &&
                        _authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver &&
+                       primaryGripInput.held &&
                        primaryGripInput.pressed) {
                 if (transitionToPrimaryDetached()) {
                     auto consumedDetachInput = primaryGripInput;
@@ -1029,7 +1030,7 @@ namespace rock
         constexpr bool supportHandIsLeft = true;
         constexpr bool primaryHandIsLeft = false;
 
-        if (primaryGripInput.pressed && tryReattachPrimaryGrip(weaponNode)) {
+        if (primaryGripInput.held && primaryGripInput.pressed && tryReattachPrimaryGrip(weaponNode)) {
             updateFullWeaponAuthorityGrip(weaponNode, dt);
             return;
         }

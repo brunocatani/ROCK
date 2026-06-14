@@ -2332,16 +2332,24 @@ namespace rock
             const bool leftHandHoldingObject = _leftHand.isHolding();
             const auto supportAuthorityMode = resolveEquippedWeaponSupportAuthorityMode(weaponNode);
             EquippedWeaponPrimaryGripInput primaryGripInput{};
-            const bool primaryDetachEnabled =
+            const bool primaryDetachFeatureAvailable =
                 g_rockConfig.rockEquippedWeaponPrimaryDetachEnabled &&
-                supportAuthorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
-            if (primaryDetachEnabled && _twoHandedGrip.canUsePrimaryDetachInput()) {
+                supportAuthorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver &&
+                frik_visual_authority::canBlockPrimaryHandWeaponPose();
+            const input_remap_policy::EquippedWeaponPrimaryDetachInputGate primaryDetachInputGate{
+                .featureAvailable = primaryDetachFeatureAvailable,
+                .canUsePrimaryDetachInput = _twoHandedGrip.canUsePrimaryDetachInput(),
+                .virtualHolstersOwnsInput = input_remap_runtime::shouldDeferGrabInputForVirtualHolsters(false, g_rockConfig.rockGrabButtonID),
+            };
+            if (input_remap_policy::shouldConsumeEquippedWeaponPrimaryDetachInput(primaryDetachInputGate)) {
                 const auto primaryGrabState = readGrabButtonState(false, g_rockConfig.rockGrabButtonID);
-                primaryGripInput = EquippedWeaponPrimaryGripInput{
-                    .held = primaryGrabState.held,
-                    .pressed = primaryGrabState.pressed,
-                    .released = primaryGrabState.released,
-                };
+                if (input_remap_policy::shouldUseEquippedWeaponPrimaryDetachInput(primaryDetachInputGate)) {
+                    primaryGripInput = EquippedWeaponPrimaryGripInput{
+                        .held = primaryGrabState.held,
+                        .pressed = primaryGrabState.pressed,
+                        .released = primaryGrabState.released,
+                    };
+                }
             }
 
             _twoHandedGrip.update(
@@ -2354,11 +2362,16 @@ namespace rock
                 _weaponCollision,
                 providerInteractionState,
                 supportAuthorityMode,
-                primaryDetachEnabled,
+                primaryDetachFeatureAvailable,
                 primaryGripInput);
             const bool weaponSupportGripActive = _twoHandedGrip.isGripping();
+            const input_remap_policy::EquippedWeaponPrimaryDetachInputGate updatedPrimaryDetachInputGate{
+                .featureAvailable = primaryDetachFeatureAvailable,
+                .canUsePrimaryDetachInput = _twoHandedGrip.canUsePrimaryDetachInput(),
+                .virtualHolstersOwnsInput = primaryDetachInputGate.virtualHolstersOwnsInput,
+            };
             input_remap_runtime::setEquippedWeaponPrimaryDetachInputActive(
-                primaryDetachEnabled && _twoHandedGrip.canUsePrimaryDetachInput());
+                input_remap_policy::shouldUseEquippedWeaponPrimaryDetachInput(updatedPrimaryDetachInputGate));
             input_remap_runtime::setEquippedWeaponPrimaryDetached(_twoHandedGrip.isPrimaryDetached());
             if (g_rockConfig.rockDebugShowWeaponNotifications) {
                 const auto gripNotificationEvent =
