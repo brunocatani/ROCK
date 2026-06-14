@@ -58,24 +58,24 @@ namespace
 
     constexpr std::uint64_t kRockIssuedOwnerTokenNamespace = 0xA000'0000'0000'0000ull;
     constexpr std::uint64_t kRockIssuedOwnerTokenSequenceMask = 0x0FFF'FFFF'FFFF'FFFFull;
-    constexpr std::uint32_t kImplementedConsumerCapabilitiesV9 =
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV9::FrameSnapshots) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV9::ExternalBodies) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV9::ExternalContacts) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV9::OffhandReservation) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV9::DiagnosticOverlay) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV9::DiagnosticInput);
-    constexpr std::uint32_t kProviderFeatureBitsV9 =
-        static_cast<std::uint32_t>(RockProviderFeatureBitV9::FrameCallbacks) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV9::LifecycleFields) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV9::HandFramesV8) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV9::WeaponEvidenceV3) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV9::BodyContactsV6) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV9::ExternalContactsV2) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV9::DiagnosticOverlayV4) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV9::DiagnosticInputV5) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV9::ConsumerRegistrationV9) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV9::OwnerFilteredExternalContactsV9);
+    constexpr std::uint32_t kImplementedConsumerCapabilitiesV1 =
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::FrameSnapshots) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ExternalBodies) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ExternalContacts) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::OffhandReservation) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::DiagnosticOverlay) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::DiagnosticInput);
+    constexpr std::uint32_t kProviderFeatureBitsV1 =
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::FrameCallbacks) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::LifecycleFields) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::HandFramesV8) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponEvidenceV3) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::BodyContactsV6) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::ExternalContactsV2) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::DiagnosticOverlayV4) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::DiagnosticInputV5) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::ConsumerRegistrationV1) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::OwnerFilteredExternalContactsV1);
 
     struct ConsumerSlot
     {
@@ -86,7 +86,7 @@ namespace
     };
 
     std::mutex s_consumerMutex;
-    std::array<ConsumerSlot, ROCK_PROVIDER_MAX_CONSUMERS_V9> s_consumers{};
+    std::array<ConsumerSlot, ROCK_PROVIDER_MAX_CONSUMERS_V1> s_consumers{};
     std::atomic<std::uint64_t> s_nextConsumerTokenSequence{ 1 };
 
     std::uint32_t ROCK_PROVIDER_CALL apiGetVersion() { return ROCK_PROVIDER_API_VERSION; }
@@ -296,34 +296,34 @@ namespace
         return kRockIssuedOwnerTokenNamespace | (sequence & kRockIssuedOwnerTokenSequenceMask);
     }
 
-    RockProviderResultV9 ROCK_PROVIDER_CALL apiRegisterConsumerV9(
-        const RockProviderConsumerRegistrationV9* registration,
-        RockProviderConsumerHandleV9* outHandle)
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiRegisterConsumerV1(
+        const RockProviderConsumerRegistrationV1* registration,
+        RockProviderConsumerHandleV1* outHandle)
     {
         if (!registration || !outHandle) {
-            return RockProviderResultV9::InvalidArgument;
+            return RockProviderResultV1::InvalidArgument;
         }
 
-        if (registration->size != sizeof(RockProviderConsumerRegistrationV9) || outHandle->size != sizeof(RockProviderConsumerHandleV9)) {
-            return RockProviderResultV9::InvalidSize;
+        if (registration->size != sizeof(RockProviderConsumerRegistrationV1) || outHandle->size != sizeof(RockProviderConsumerHandleV1)) {
+            return RockProviderResultV1::InvalidSize;
         }
 
         if (registration->version == 0 || registration->version > ROCK_PROVIDER_API_VERSION) {
-            return RockProviderResultV9::UnsupportedVersion;
+            return RockProviderResultV1::UnsupportedVersion;
         }
 
         const auto modNameLength = boundedStringLength(registration->modName, sizeof(registration->modName));
         if (modNameLength == 0 || modNameLength >= sizeof(registration->modName)) {
-            return RockProviderResultV9::InvalidArgument;
+            return RockProviderResultV1::InvalidArgument;
         }
 
-        const auto grantedCapabilities = registration->requestedCapabilities & kImplementedConsumerCapabilitiesV9;
+        const auto grantedCapabilities = registration->requestedCapabilities & kImplementedConsumerCapabilitiesV1;
         const auto providerGeneration = currentProviderGenerationForRegistration();
 
         std::scoped_lock lock(s_consumerMutex);
         for (const auto& slot : s_consumers) {
             if (modNameEquals(slot, registration->modName, modNameLength)) {
-                return RockProviderResultV9::OwnerConflict;
+                return RockProviderResultV1::OwnerConflict;
             }
         }
 
@@ -339,28 +339,28 @@ namespace
             std::memcpy(slot.modName, registration->modName, modNameLength);
 
             *outHandle = {};
-            outHandle->size = sizeof(RockProviderConsumerHandleV9);
+            outHandle->size = sizeof(RockProviderConsumerHandleV1);
             outHandle->version = ROCK_PROVIDER_API_VERSION;
             outHandle->ownerToken = slot.token;
             outHandle->grantedCapabilities = slot.grantedCapabilities;
             outHandle->providerGeneration = slot.providerGeneration;
-            return RockProviderResultV9::Ok;
+            return RockProviderResultV1::Ok;
         }
 
-        return RockProviderResultV9::CapacityFull;
+        return RockProviderResultV1::CapacityFull;
     }
 
-    RockProviderResultV9 ROCK_PROVIDER_CALL apiUnregisterConsumerV9(std::uint64_t ownerToken)
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiUnregisterConsumerV1(std::uint64_t ownerToken)
     {
         if (ownerToken == 0) {
-            return RockProviderResultV9::InvalidArgument;
+            return RockProviderResultV1::InvalidArgument;
         }
 
         {
             std::scoped_lock lock(s_consumerMutex);
             auto* slot = findConsumerSlotLocked(ownerToken);
             if (!slot) {
-                return RockProviderResultV9::OwnerNotRegistered;
+                return RockProviderResultV1::OwnerNotRegistered;
             }
             *slot = {};
         }
@@ -376,28 +376,28 @@ namespace
         }
 
         (void)rock::input_remap_runtime::setExternalDiagnosticInputSuppression(ownerToken, 0);
-        return RockProviderResultV9::Ok;
+        return RockProviderResultV1::Ok;
     }
 
-    std::uint32_t ROCK_PROVIDER_CALL apiGetGrantedCapabilitiesV9(std::uint64_t ownerToken)
+    std::uint32_t ROCK_PROVIDER_CALL apiGetGrantedCapabilitiesV1(std::uint64_t ownerToken)
     {
         std::scoped_lock lock(s_consumerMutex);
         auto* slot = findConsumerSlotLocked(ownerToken);
         return slot ? slot->grantedCapabilities : 0;
     }
 
-    bool ROCK_PROVIDER_CALL apiGetProviderLimitsV9(RockProviderLimitsV9* outLimits)
+    bool ROCK_PROVIDER_CALL apiGetProviderLimitsV1(RockProviderLimitsV1* outLimits)
     {
-        if (!outLimits || outLimits->size != sizeof(RockProviderLimitsV9)) {
+        if (!outLimits || outLimits->size != sizeof(RockProviderLimitsV1)) {
             return false;
         }
 
         *outLimits = {};
-        outLimits->size = sizeof(RockProviderLimitsV9);
+        outLimits->size = sizeof(RockProviderLimitsV1);
         outLimits->version = ROCK_PROVIDER_API_VERSION;
-        outLimits->featureBits = kProviderFeatureBitsV9;
-        outLimits->maxFrameCallbacks = ROCK_PROVIDER_MAX_FRAME_CALLBACKS_V9;
-        outLimits->maxConsumers = ROCK_PROVIDER_MAX_CONSUMERS_V9;
+        outLimits->featureBits = kProviderFeatureBitsV1;
+        outLimits->maxFrameCallbacks = ROCK_PROVIDER_MAX_FRAME_CALLBACKS_V1;
+        outLimits->maxConsumers = ROCK_PROVIDER_MAX_CONSUMERS_V1;
         outLimits->maxExternalBodies = ROCK_PROVIDER_MAX_EXTERNAL_BODIES_V2;
         outLimits->maxExternalContacts = ROCK_PROVIDER_MAX_EXTERNAL_CONTACTS_V2;
         outLimits->maxBodyContacts = ROCK_PROVIDER_MAX_BODY_CONTACTS_V6;
@@ -655,7 +655,7 @@ namespace
         return s_externalBodies.copyContactsV2(outContacts, maxContacts);
     }
 
-    std::uint32_t ROCK_PROVIDER_CALL apiGetExternalContactSnapshotForOwnerV9(
+    std::uint32_t ROCK_PROVIDER_CALL apiGetExternalContactSnapshotForOwnerV1(
         std::uint64_t ownerToken,
         RockProviderExternalContactV2* outContacts,
         std::uint32_t maxContacts)
@@ -718,11 +718,11 @@ namespace
         .getPrimaryHandV8 = &apiGetPrimaryHandV8,
         .getOffhandHandV8 = &apiGetOffhandHandV8,
         .getHandFrameV8 = &apiGetHandFrameV8,
-        .registerConsumerV9 = &apiRegisterConsumerV9,
-        .unregisterConsumerV9 = &apiUnregisterConsumerV9,
-        .getGrantedCapabilitiesV9 = &apiGetGrantedCapabilitiesV9,
-        .getProviderLimitsV9 = &apiGetProviderLimitsV9,
-        .getExternalContactSnapshotForOwnerV9 = &apiGetExternalContactSnapshotForOwnerV9,
+        .registerConsumerV1 = &apiRegisterConsumerV1,
+        .unregisterConsumerV1 = &apiUnregisterConsumerV1,
+        .getGrantedCapabilitiesV1 = &apiGetGrantedCapabilitiesV1,
+        .getProviderLimitsV1 = &apiGetProviderLimitsV1,
+        .getExternalContactSnapshotForOwnerV1 = &apiGetExternalContactSnapshotForOwnerV1,
     };
 }
 

@@ -5,7 +5,6 @@
 #include "api/FRIKApi.h"
 #define ROCK_API_EXPORTS
 #include "RockConfig.h"
-#include "api/ROCKApi.h"
 #include "api/ROCKProviderApi.h"
 #include "physics-interaction/debug/DebugBodyOverlay.h"
 #include "physics-interaction/core/PhysicsCreationGatePolicy.h"
@@ -125,7 +124,6 @@ namespace
         }
 
         PhysicsInteraction::s_hooksEnabled.store(true, std::memory_order_release);
-        rock::api::setPhysicsInteractionInstance(s_physicsInteraction);
         rock::provider::setPhysicsInteractionInstance(s_physicsInteraction);
         s_physicsPublished = true;
         logger::info("ROCK: PhysicsInteraction initialized and published.");
@@ -234,7 +232,6 @@ namespace
         s_physicsInteraction->shutdown(reason);
         rock::provider::dispatchFrameCallbacks(*s_physicsInteraction);
 
-        rock::api::setPhysicsInteractionInstance(nullptr);
         rock::provider::setPhysicsInteractionInstance(nullptr);
         rock::provider::clearExternalBodiesForProviderLoss();
         s_physicsPublished = false;

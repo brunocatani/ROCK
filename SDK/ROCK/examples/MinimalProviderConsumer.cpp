@@ -17,7 +17,7 @@ namespace
         }
 
         std::array<RockProviderExternalContactV2, 16> contacts{};
-        const std::uint32_t count = RockProviderApi::inst->getExternalContactSnapshotForOwnerV9(
+        const std::uint32_t count = RockProviderApi::inst->getExternalContactSnapshotForOwnerV1(
             g_ownerToken,
             contacts.data(),
             static_cast<std::uint32_t>(contacts.size()));
@@ -31,25 +31,25 @@ namespace
 
 bool StartRockConsumer()
 {
-    if (RockProviderApi::initialize(9) != 0 || !RockProviderApi::inst) {
+    if (RockProviderApi::initialize(ROCK_PROVIDER_API_VERSION) != 0 || !RockProviderApi::inst) {
         return false;
     }
 
-    RockProviderLimitsV9 limits{};
-    if (!RockProviderApi::inst->getProviderLimitsV9(&limits) ||
-        !hasFeatureBitV9(limits.featureBits, RockProviderFeatureBitV9::ConsumerRegistrationV9)) {
+    RockProviderLimitsV1 limits{};
+    if (!RockProviderApi::inst->getProviderLimitsV1(&limits) ||
+        !hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::ConsumerRegistrationV1)) {
         return false;
     }
 
-    RockProviderConsumerRegistrationV9 registration{};
+    RockProviderConsumerRegistrationV1 registration{};
     std::snprintf(registration.modName, sizeof(registration.modName), "MinimalProviderConsumer");
     registration.requestedCapabilities =
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV9::FrameSnapshots) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV9::ExternalBodies) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV9::ExternalContacts);
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::FrameSnapshots) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ExternalBodies) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ExternalContacts);
 
-    RockProviderConsumerHandleV9 handle{};
-    if (RockProviderApi::inst->registerConsumerV9(&registration, &handle) != RockProviderResultV9::Ok ||
+    RockProviderConsumerHandleV1 handle{};
+    if (RockProviderApi::inst->registerConsumerV1(&registration, &handle) != RockProviderResultV1::Ok ||
         handle.ownerToken == 0) {
         return false;
     }
@@ -57,7 +57,7 @@ bool StartRockConsumer()
     g_ownerToken = handle.ownerToken;
     g_frameCallbackToken = RockProviderApi::inst->registerFrameCallback(&onRockFrame, nullptr);
     if (g_frameCallbackToken == 0) {
-        RockProviderApi::inst->unregisterConsumerV9(g_ownerToken);
+        RockProviderApi::inst->unregisterConsumerV1(g_ownerToken);
         g_ownerToken = 0;
         return false;
     }
@@ -77,7 +77,7 @@ void StopRockConsumer()
     }
 
     if (g_ownerToken != 0) {
-        RockProviderApi::inst->unregisterConsumerV9(g_ownerToken);
+        RockProviderApi::inst->unregisterConsumerV1(g_ownerToken);
         g_ownerToken = 0;
     }
 }

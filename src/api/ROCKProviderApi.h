@@ -29,7 +29,7 @@ namespace rock::provider
 
 #define ROCK_PROVIDER_CALL __cdecl
 
-    inline constexpr std::uint32_t ROCK_PROVIDER_API_VERSION = 9;
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_VERSION = 1;
     inline constexpr std::uint32_t ROCK_PROVIDER_FRAME_SNAPSHOT_V6_SIZE = 256;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_BODIES = 8;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EVIDENCE_NAME = 64;
@@ -40,8 +40,8 @@ namespace rock::provider
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_V4 = 8;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_CHARS_V4 = 128;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_BODY_CONTACTS_V6 = 128;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_FRAME_CALLBACKS_V9 = 16;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_CONSUMERS_V9 = 64;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_FRAME_CALLBACKS_V1 = 16;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_CONSUMERS_V1 = 64;
 
     enum class RockProviderHand : std::uint32_t
     {
@@ -192,7 +192,7 @@ namespace rock::provider
         Shutdown = 15,
     };
 
-    enum class RockProviderResultV9 : std::uint32_t
+    enum class RockProviderResultV1 : std::uint32_t
     {
         Ok = 0,
         NotReady = 1,
@@ -214,7 +214,7 @@ namespace rock::provider
         RequestNotFound = 17,
     };
 
-    enum class RockProviderConsumerCapabilityV9 : std::uint32_t
+    enum class RockProviderConsumerCapabilityV1 : std::uint32_t
     {
         None = 0,
         FrameSnapshots = 1u << 0,
@@ -226,7 +226,7 @@ namespace rock::provider
         InteractionCommands = 1u << 6,
     };
 
-    enum class RockProviderFeatureBitV9 : std::uint32_t
+    enum class RockProviderFeatureBitV1 : std::uint32_t
     {
         None = 0,
         FrameCallbacks = 1u << 0,
@@ -237,8 +237,8 @@ namespace rock::provider
         ExternalContactsV2 = 1u << 5,
         DiagnosticOverlayV4 = 1u << 6,
         DiagnosticInputV5 = 1u << 7,
-        ConsumerRegistrationV9 = 1u << 8,
-        OwnerFilteredExternalContactsV9 = 1u << 9,
+        ConsumerRegistrationV1 = 1u << 8,
+        OwnerFilteredExternalContactsV1 = 1u << 9,
         InteractionCommandQueue = 1u << 10,
         ForceGrabCommand = 1u << 11,
         ForceReleaseCommand = 1u << 12,
@@ -249,28 +249,28 @@ namespace rock::provider
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
 
-    [[nodiscard]] inline constexpr bool hasConsumerCapabilityV9(std::uint32_t capabilities, RockProviderConsumerCapabilityV9 capability)
+    [[nodiscard]] inline constexpr bool hasConsumerCapabilityV1(std::uint32_t capabilities, RockProviderConsumerCapabilityV1 capability)
     {
         return (capabilities & static_cast<std::uint32_t>(capability)) != 0;
     }
 
-    [[nodiscard]] inline constexpr bool hasFeatureBitV9(std::uint32_t featureBits, RockProviderFeatureBitV9 feature)
+    [[nodiscard]] inline constexpr bool hasFeatureBitV1(std::uint32_t featureBits, RockProviderFeatureBitV1 feature)
     {
         return (featureBits & static_cast<std::uint32_t>(feature)) != 0;
     }
 
-    struct RockProviderConsumerRegistrationV9
+    struct RockProviderConsumerRegistrationV1
     {
-        std::uint32_t size{ sizeof(RockProviderConsumerRegistrationV9) };
+        std::uint32_t size{ sizeof(RockProviderConsumerRegistrationV1) };
         std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
         char modName[64]{};
         std::uint32_t requestedCapabilities{ 0 };
         std::uint32_t reserved[7]{};
     };
 
-    struct RockProviderConsumerHandleV9
+    struct RockProviderConsumerHandleV1
     {
-        std::uint32_t size{ sizeof(RockProviderConsumerHandleV9) };
+        std::uint32_t size{ sizeof(RockProviderConsumerHandleV1) };
         std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
         std::uint64_t ownerToken{ 0 };
         std::uint32_t grantedCapabilities{ 0 };
@@ -278,9 +278,9 @@ namespace rock::provider
         std::uint32_t reserved[6]{};
     };
 
-    struct RockProviderLimitsV9
+    struct RockProviderLimitsV1
     {
-        std::uint32_t size{ sizeof(RockProviderLimitsV9) };
+        std::uint32_t size{ sizeof(RockProviderLimitsV1) };
         std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
         std::uint32_t featureBits{ 0 };
         std::uint32_t maxFrameCallbacks{ 0 };
@@ -645,13 +645,13 @@ namespace rock::provider
         RockProviderHand(ROCK_PROVIDER_CALL* getPrimaryHandV8)();
         RockProviderHand(ROCK_PROVIDER_CALL* getOffhandHandV8)();
         bool(ROCK_PROVIDER_CALL* getHandFrameV8)(RockProviderHand hand, RockProviderHandFrameV8* outFrame);
-        RockProviderResultV9(ROCK_PROVIDER_CALL* registerConsumerV9)(
-            const RockProviderConsumerRegistrationV9* registration,
-            RockProviderConsumerHandleV9* outHandle);
-        RockProviderResultV9(ROCK_PROVIDER_CALL* unregisterConsumerV9)(std::uint64_t ownerToken);
-        std::uint32_t(ROCK_PROVIDER_CALL* getGrantedCapabilitiesV9)(std::uint64_t ownerToken);
-        bool(ROCK_PROVIDER_CALL* getProviderLimitsV9)(RockProviderLimitsV9* outLimits);
-        std::uint32_t(ROCK_PROVIDER_CALL* getExternalContactSnapshotForOwnerV9)(
+        RockProviderResultV1(ROCK_PROVIDER_CALL* registerConsumerV1)(
+            const RockProviderConsumerRegistrationV1* registration,
+            RockProviderConsumerHandleV1* outHandle);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* unregisterConsumerV1)(std::uint64_t ownerToken);
+        std::uint32_t(ROCK_PROVIDER_CALL* getGrantedCapabilitiesV1)(std::uint64_t ownerToken);
+        bool(ROCK_PROVIDER_CALL* getProviderLimitsV1)(RockProviderLimitsV1* outLimits);
+        std::uint32_t(ROCK_PROVIDER_CALL* getExternalContactSnapshotForOwnerV1)(
             std::uint64_t ownerToken,
             RockProviderExternalContactV2* outContacts,
             std::uint32_t maxContacts);
@@ -688,20 +688,22 @@ namespace rock::provider
         inline static const RockProviderApi* inst = nullptr;
     };
 
+    ROCK_PROVIDER_API const RockProviderApi* ROCK_PROVIDER_CALL ROCKAPI_GetProviderApi();
+
     static_assert(std::is_standard_layout_v<RockProviderTransform>);
     static_assert(std::is_trivially_copyable_v<RockProviderTransform>);
-    static_assert(sizeof(RockProviderConsumerRegistrationV9) == 104);
-    static_assert(alignof(RockProviderConsumerRegistrationV9) == 4);
-    static_assert(std::is_standard_layout_v<RockProviderConsumerRegistrationV9>);
-    static_assert(std::is_trivially_copyable_v<RockProviderConsumerRegistrationV9>);
-    static_assert(sizeof(RockProviderConsumerHandleV9) == 48);
-    static_assert(alignof(RockProviderConsumerHandleV9) == 8);
-    static_assert(std::is_standard_layout_v<RockProviderConsumerHandleV9>);
-    static_assert(std::is_trivially_copyable_v<RockProviderConsumerHandleV9>);
-    static_assert(sizeof(RockProviderLimitsV9) == 72);
-    static_assert(alignof(RockProviderLimitsV9) == 4);
-    static_assert(std::is_standard_layout_v<RockProviderLimitsV9>);
-    static_assert(std::is_trivially_copyable_v<RockProviderLimitsV9>);
+    static_assert(sizeof(RockProviderConsumerRegistrationV1) == 104);
+    static_assert(alignof(RockProviderConsumerRegistrationV1) == 4);
+    static_assert(std::is_standard_layout_v<RockProviderConsumerRegistrationV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderConsumerRegistrationV1>);
+    static_assert(sizeof(RockProviderConsumerHandleV1) == 48);
+    static_assert(alignof(RockProviderConsumerHandleV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderConsumerHandleV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderConsumerHandleV1>);
+    static_assert(sizeof(RockProviderLimitsV1) == 72);
+    static_assert(alignof(RockProviderLimitsV1) == 4);
+    static_assert(std::is_standard_layout_v<RockProviderLimitsV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderLimitsV1>);
     static_assert(sizeof(RockProviderTransform) == 52);
     static_assert(sizeof(RockProviderFrameSnapshot) == 272);
     static_assert(alignof(RockProviderFrameSnapshot) == 8);

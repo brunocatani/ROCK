@@ -108,7 +108,7 @@ function Require-SequenceEqual {
 }
 
 Require-Path 'SDK/ROCK/include/ROCKProviderApi.h' 'Public SDK must ship the provider header.'
-Require-Path 'SDK/ROCK/include/ROCKApi.h' 'Public SDK must ship the legacy compatibility header while it remains public.'
+Require-Path 'SDK/ROCK/include/ROCKApi.h' 'Public SDK must ship the API alias header.'
 Require-Path 'SDK/ROCK/docs/PublicApi.md' 'Public API documentation must be packaged with the SDK.'
 Require-Path 'SDK/ROCK/docs/VersionMatrix.md' 'API version matrix must be packaged with the SDK.'
 Require-Path 'SDK/ROCK/examples/MinimalProviderConsumer.cpp' 'A minimal provider consumer example must be packaged with the SDK.'
@@ -116,20 +116,22 @@ Require-Path 'SDK/ROCK/examples/MinimalProviderConsumer.cpp' 'A minimal provider
 Require-FilesEqual 'src/api/ROCKProviderApi.h' 'SDK/ROCK/include/ROCKProviderApi.h' `
     'SDK provider header must stay byte-for-byte synced with the source ABI header.'
 Require-FilesEqual 'src/api/ROCKApi.h' 'SDK/ROCK/include/ROCKApi.h' `
-    'SDK legacy header must stay byte-for-byte synced with the source ABI header.'
+    'SDK API alias header must stay byte-for-byte synced with the source ABI header.'
 
-Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_VERSION\s*=\s*9' `
-    'Provider API version must be v9 for the public foundation launch.'
-Require-Text 'src/api/ROCKApi.h' 'ROCK_API_VERSION\s*=\s*4' `
-    'Legacy/simple API must remain frozen at v4.'
-Require-Text 'src/api/ROCKProviderApi.h' 'enum\s+class\s+RockProviderResultV9' `
-    'v9 must expose explicit result codes.'
-Require-Text 'src/api/ROCKProviderApi.h' 'struct\s+RockProviderConsumerRegistrationV9' `
-    'v9 must expose consumer registration.'
-Require-Text 'src/api/ROCKProviderApi.h' 'struct\s+RockProviderLimitsV9' `
-    'v9 must expose provider limits.'
-Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_MAX_CONSUMERS_V9\s*=\s*64' `
+Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_VERSION\s*=\s*1' `
+    'Provider API version must be v1.'
+Require-Text 'src/api/ROCKApi.h' 'ROCK_API_VERSION\s*=\s*rock::provider::ROCK_PROVIDER_API_VERSION' `
+    'ROCKApi alias must use the same version constant as the provider API.'
+Require-Text 'src/api/ROCKProviderApi.h' 'enum\s+class\s+RockProviderResultV1' `
+    'v1 must expose explicit result codes.'
+Require-Text 'src/api/ROCKProviderApi.h' 'struct\s+RockProviderConsumerRegistrationV1' `
+    'v1 must expose consumer registration.'
+Require-Text 'src/api/ROCKProviderApi.h' 'struct\s+RockProviderLimitsV1' `
+    'v1 must expose provider limits.'
+Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_MAX_CONSUMERS_V1\s*=\s*64' `
     'Public consumer registry capacity must be an explicit SDK limit.'
+Require-Text 'src/api/ROCKApi.cpp' 'ROCKAPI_GetProviderApi\(\)' `
+    'ROCKAPI_GetApi must return the same table as ROCKAPI_GetProviderApi.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'kRockIssuedOwnerTokenNamespace\s*=\s*0xA000''0000''0000''0000ull' `
     'Registered public owner tokens must be ROCK-issued and namespaced.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 's_externalBodies\.clearOwner\(ownerToken\)' `
@@ -138,16 +140,16 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'setExternalDiagnosticInputSuppressio
     'Unregistering a consumer must release diagnostic input suppression.'
 Require-Text 'src/physics-interaction/object/ExternalBodyRegistry.h' 'copyContactsV2ForOwner' `
     'Owner-filtered contact polling must be implemented in the external-body registry.'
-Require-Text 'SDK/ROCK/docs/PublicApi.md' 'ROCK v9 does not expose public force-grab or force-release commands' `
+Require-Text 'SDK/ROCK/docs/PublicApi.md' 'ROCK v1 does not expose public force-grab or force-release commands' `
     'Docs must state that command APIs are not public until the safe queue exists.'
-Require-Text 'README.md' 'Provider API v9 adds ROCK-issued owner tokens' `
-    'README must point public consumers to the v9 provider API.'
+Require-Text 'README.md' 'API v1 includes ROCK-issued owner tokens' `
+    'README must point consumers to the v1 API.'
 Require-Text 'cmake/package.cmake' 'SDK/ROCK' `
     'Release packaging must include the SDK directory.'
 Require-Text 'cmake/package.cmake' 'src/api/ROCKProviderApi\.h' `
     'Release packaging must copy the source provider ABI header into the SDK include directory.'
 Require-Text 'cmake/package.cmake' 'src/api/ROCKApi\.h' `
-    'Release packaging must copy the legacy ABI header into the SDK include directory.'
+    'Release packaging must copy the API alias header into the SDK include directory.'
 
 Reject-Text 'src/api/ROCKProviderApi.h' 'requestForceGrabV10|requestForceReleaseV10' `
     'Public force-grab/release functions must not be exported until a real queued implementation exists.'
@@ -182,11 +184,11 @@ $expectedProviderFunctions = [string[]]@(
     'getPrimaryHandV8',
     'getOffhandHandV8',
     'getHandFrameV8',
-    'registerConsumerV9',
-    'unregisterConsumerV9',
-    'getGrantedCapabilitiesV9',
-    'getProviderLimitsV9',
-    'getExternalContactSnapshotForOwnerV9'
+    'registerConsumerV1',
+    'unregisterConsumerV1',
+    'getGrantedCapabilitiesV1',
+    'getProviderLimitsV1',
+    'getExternalContactSnapshotForOwnerV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 
