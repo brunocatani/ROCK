@@ -5,9 +5,7 @@
 #include <exception>
 
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/TransformMath.h"
 #include "f4vr/F4VRUtils.h"
-#include "f4vr/PlayerNodes.h"
 
 #include "RE/Bethesda/TESObjectREFRs.h"
 
@@ -20,15 +18,6 @@ namespace rock
         constexpr std::uint32_t kMinHandoffFrames = 3;
         constexpr std::uint32_t kMinEquippedVisualFrames = 4;
         constexpr std::uint32_t kMaxSceneGraphDepth = 32;
-
-        [[nodiscard]] RE::NiTransform makeLocalTransformForParent(const RE::NiNode* parent, const RE::NiTransform& world)
-        {
-            if (!parent) {
-                return world;
-            }
-
-            return transform_math::composeTransforms(transform_math::invertTransform(parent->world), world);
-        }
 
         [[nodiscard]] bool isRenderableNode(RE::NiAVObject* node) noexcept
         {
@@ -111,10 +100,7 @@ namespace rock
         auto* heldRef = input.heldRef;
         auto* heldRoot = heldRef ? heldRef->Get3D() : nullptr;
         auto* heldRootNode = heldRoot ? heldRoot->IsNode() : nullptr;
-        auto* parent = f4vr::getWorldRootNode();
-        if (!parent && heldRoot) {
-            parent = heldRoot->parent;
-        }
+        auto* parent = heldRoot ? heldRoot->parent : nullptr;
         if (!heldRef || !heldRoot || !heldRootNode || !parent) {
             return false;
         }
@@ -132,15 +118,15 @@ namespace rock
         _heldFormID = heldRef->GetFormID();
         _isLeft = input.isLeft;
         _phantomRoot->name = RE::BSFixedString(kPhantomNodeName);
-        // The held object scene graph is the visual authority at trigger time; avoid rebuilding it from hand axes.
-        _phantomRoot->local = makeLocalTransformForParent(parent, heldRoot->world);
-        _phantomRoot->world = heldRoot->world;
-        _phantomRoot->previousWorld = heldRoot->previousWorld;
         _phantomRoot->fadeAmount = 1.0f;
         clearCollisionObjectsRecursive(_phantomRoot.get(), 0);
         forceVisibleRecursive(_phantomRoot.get(), 0);
         parent->AttachChild(_phantomRoot.get(), true);
-        f4vr::updateDown(parent, true);
+        // The held object scene graph is the visual authority at trigger time; keep its parent-space snapshot.
+        _phantomRoot->local = heldRoot->local;
+        _phantomRoot->world = heldRoot->world;
+        _phantomRoot->previousWorld = heldRoot->previousWorld;
+        f4vr::updateDown(_phantomRoot.get(), true);
 
         _active = true;
         ROCK_LOG_DEBUG(Weapon,
