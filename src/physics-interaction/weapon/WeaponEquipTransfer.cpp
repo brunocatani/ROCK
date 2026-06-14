@@ -209,7 +209,7 @@ namespace rock::weapon_equip_transfer
             stack.equipSlot,
             true,
             false,
-            true,
+            input.playSounds,
             true,
             false);
         if (!equipped) {

@@ -33,6 +33,7 @@ namespace rock::weapon_equip_transfer
     struct EquipInput
     {
         RE::TESObjectREFR* heldRef = nullptr;
+        bool playSounds = true;
     };
 
     struct EquipResult

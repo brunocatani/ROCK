@@ -2185,6 +2185,12 @@ namespace rock
         }
 
         RE::NiNode* weaponNode = resolveEquippedWeaponInteractionNode();
+        _heldWeaponEquipVisualHandoff.prepareForWeaponCollision(HeldWeaponEquipVisualHandoff::FrameInput{
+            .deltaSeconds = frame.deltaSeconds,
+            .equippedWeaponRoot = weaponNode,
+            .rightHandWorld = frame.right.disabled ? nullptr : &frame.right.rawHandWorld,
+            .leftHandWorld = frame.left.disabled ? nullptr : &frame.left.rawHandWorld,
+        });
         const bool rightHandWeaponEquipped = weaponNode != nullptr;
         const bool retainedWeaponCollisionActive =
             _weaponCollision.hasWeaponBody() && _weaponCollision.getCurrentWeaponGenerationKey() != 0;
@@ -2368,6 +2374,12 @@ namespace rock
                 applyFinalWeaponMuzzleAuthority();
             }
         }
+        _heldWeaponEquipVisualHandoff.updateAfterWeaponCollision(HeldWeaponEquipVisualHandoff::FrameInput{
+            .deltaSeconds = frame.deltaSeconds,
+            .equippedWeaponRoot = weaponNode,
+            .rightHandWorld = frame.right.disabled ? nullptr : &frame.right.rawHandWorld,
+            .leftHandWorld = frame.left.disabled ? nullptr : &frame.left.rawHandWorld,
+        });
 
         refreshGeneratedBodyContactRegistry();
         _generatedBodyStepDrive.registerForNextStep(bhk, hknp);
@@ -2767,6 +2779,7 @@ namespace rock
         dispatchPhysicsMessage(kPhysMsg_OnPhysicsShutdown, false);
 
         ROCK_LOG_INFO(Init, "Shutting down ROCK physics module...");
+        _heldWeaponEquipVisualHandoff.cancel();
         restoreHeldMassMovementSlowdown("shutdown");
 
         auto* currentBhk = getPlayerBhkWorld();
@@ -4734,6 +4747,16 @@ namespace rock
                 if (heldWeaponEquipRequested) {
                     hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, _heldObjectPlayerSpaceFrame, frame.deltaSeconds);
                     auto* heldRef = hand.getHeldRef();
+                    hand.stopSelectionHighlight();
+                    Hand& peerHandForVisualState = isLeft ? _rightHand : _leftHand;
+                    if (heldRef && peerHandForVisualState.hasSelection() && peerHandForVisualState.getSelection().refr == heldRef) {
+                        peerHandForVisualState.clearSelectionState(false);
+                    }
+                    const bool visualHandoffStarted = _heldWeaponEquipVisualHandoff.begin(HeldWeaponEquipVisualHandoff::BeginInput{
+                        .heldRef = heldRef,
+                        .isLeft = isLeft,
+                        .handWorld = handInput.rawHandWorld,
+                    });
                     std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;
                     const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
                     auto releaseContext = makeGrabReleaseContext(hand, isLeft);
@@ -4746,7 +4769,20 @@ namespace rock
 
                     const auto equipResult = weapon_equip_transfer::transferHeldWeaponToPlayerAndEquip(weapon_equip_transfer::EquipInput{
                         .heldRef = heldRef,
+                        .playSounds = false,
                     });
+                    if (visualHandoffStarted) {
+                        if (equipResult.success) {
+                            _heldWeaponEquipVisualHandoff.updateAfterWeaponCollision(HeldWeaponEquipVisualHandoff::FrameInput{
+                                .deltaSeconds = 0.0f,
+                                .equippedWeaponRoot = resolveEquippedWeaponInteractionNode(),
+                                .rightHandWorld = frame.right.disabled ? nullptr : &frame.right.rawHandWorld,
+                                .leftHandWorld = frame.left.disabled ? nullptr : &frame.left.rawHandWorld,
+                            });
+                        } else {
+                            _heldWeaponEquipVisualHandoff.cancel();
+                        }
+                    }
                     if (heldFormID == 0 && equipResult.formID != 0) {
                         heldFormID = equipResult.formID;
                     }
