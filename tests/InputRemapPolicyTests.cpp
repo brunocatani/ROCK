@@ -155,6 +155,9 @@ int main()
     auto unmatchedActivateReload = activateReload;
     unmatchedActivateReload.eventMatched = false;
     ok &= expectFalse("unmatched activate event does not route reload", shouldRoutePrimaryActivateReload(unmatchedActivateReload));
+    auto virtualHolstersActivateReload = activateReload;
+    virtualHolstersActivateReload.virtualHolstersOwnsInput = true;
+    ok &= expectFalse("VirtualHolsters zone ownership blocks primary activate reload", shouldRoutePrimaryActivateReload(virtualHolstersActivateReload));
 
     HeldWeaponEquipInput equipInput{
         .remapEnabled = true,
@@ -200,6 +203,14 @@ int main()
     auto broadVirtualHolsters = unmatchedVirtualHolsters;
     broadVirtualHolsters.deferOnlyMatchingButton = false;
     ok &= expectTrue("VirtualHolsters broad mode defers unrelated ROCK button", shouldDeferVirtualHolstersInput(broadVirtualHolsters));
+
+    auto unknownBroadVirtualHolsters = broadVirtualHolsters;
+    unknownBroadVirtualHolsters.rockButtonId = -1;
+    ok &= expectTrue("VirtualHolsters broad mode defers unknown native button", shouldDeferVirtualHolstersInput(unknownBroadVirtualHolsters));
+
+    auto unknownMatchingVirtualHolsters = unknownBroadVirtualHolsters;
+    unknownMatchingVirtualHolsters.deferOnlyMatchingButton = true;
+    ok &= expectFalse("VirtualHolsters match-only mode requires known matching button", shouldDeferVirtualHolstersInput(unknownMatchingVirtualHolsters));
 
     auto inactiveVirtualHolsters = virtualHolsters;
     inactiveVirtualHolsters.handInZone = false;

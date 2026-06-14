@@ -4,6 +4,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
 
+#include "f4vr/F4VRUtils.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/ControlMap.h"
 #include "RE/Bethesda/InputEvent.h"
@@ -657,6 +658,17 @@ namespace rock::input_remap_runtime
             return eventNameMatches(event, kNativeEventActivate) || eventNameMatches(event, kNativeEventWandAccept);
         }
 
+        [[nodiscard]] int nativeEventButtonIdForVirtualHolsters(const RE::InputEvent* event)
+        {
+            const auto* idEvent = event ? event->As<RE::IDEvent>() : nullptr;
+            if (!idEvent) {
+                return -1;
+            }
+
+            const auto buttonId = static_cast<int>(idEvent->QIDCode());
+            return input_remap_policy::isValidButtonId(buttonId) ? buttonId : -1;
+        }
+
         [[nodiscard]] input_remap_policy::NativeActionSuppressionInput makeNativeActionSuppressionInput(bool suppressionEnabled, bool eventMatched)
         {
             return input_remap_policy::NativeActionSuppressionInput{
@@ -720,14 +732,22 @@ namespace rock::input_remap_runtime
         [[nodiscard]] bool shouldRoutePrimaryActivateReload(const RE::InputEvent* event)
         {
             const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
+            const bool eventMatched = isActivateReloadEvent(event);
+            const bool primaryHandEvent = eventMatched && isPrimaryWandInputEvent(event);
+            const bool virtualHolstersOwnsInput = primaryHandEvent &&
+                                                  shouldDeferVirtualHolstersInput(f4vr::isLeftHandedMode(),
+                                                      nativeEventButtonIdForVirtualHolsters(event),
+                                                      g_rockConfig.rockVirtualHolstersDeferWeaponToggleInZone,
+                                                      "primary activate reload");
             return input_remap_policy::shouldRoutePrimaryActivateReload(input_remap_policy::NativeActivateReloadInput{
                 .remapEnabled = g_rockConfig.rockInputRemapEnabled,
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
                 .menuInputActive = isGameStoppingMenuInputActive(),
                 .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
-                .primaryHandEvent = isPrimaryWandInputEvent(event),
+                .primaryHandEvent = primaryHandEvent,
                 .buttonJustPressed = button && button->QJustPressed(),
-                .eventMatched = isActivateReloadEvent(event),
+                .virtualHolstersOwnsInput = virtualHolstersOwnsInput,
+                .eventMatched = eventMatched,
             });
         }
 
