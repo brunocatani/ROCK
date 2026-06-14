@@ -12,6 +12,7 @@
 #include "physics-interaction/grab/GrabConstraintMath.h"
 #include "physics-interaction/grab/GrabContact.h"
 #include "physics-interaction/grab/GrabCore.h"
+#include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
@@ -41,6 +42,7 @@
 #include "RockConfig.h"
 #include "RockUtils.h"
 #include "physics-interaction/TransformMath.h"
+#include "f4vr/PlayerNodes.h"
 #include "f4vr/F4VRUtils.h"
 
 #include <cmath>
@@ -781,6 +783,121 @@ namespace rock
 
             auto* selectedBase = selection.refr->GetObjectReference();
             return selectedBase && selectedBase->Is(RE::ENUM_FORM_ID::kWEAP);
+        }
+
+        bool isPrimaryHandForWeaponAttach(bool isLeft)
+        {
+            return isLeft == f4vr::isLeftHandedMode();
+        }
+
+        bool isFiniteNiTransform(const RE::NiTransform& value)
+        {
+            bool rotationFinite = true;
+            for (std::uint32_t row = 0; row < 3; ++row) {
+                for (std::uint32_t column = 0; column < 3; ++column) {
+                    rotationFinite = rotationFinite && std::isfinite(value.rotate.entry[row][column]);
+                }
+            }
+            return rotationFinite &&
+                   std::isfinite(value.translate.x) &&
+                   std::isfinite(value.translate.y) &&
+                   std::isfinite(value.translate.z) &&
+                   std::isfinite(value.scale) &&
+                   value.scale > 0.0001f;
+        }
+
+        bool nodeIsOrDescendsFrom(const RE::NiAVObject* root, const RE::NiAVObject* node);
+        RE::NiTransform multiplyTransforms(const RE::NiTransform& parent, const RE::NiTransform& child);
+        RE::NiTransform deriveNodeWorldFromBodyWorld(const RE::NiTransform& bodyWorld, const RE::NiTransform& bodyLocalTransform);
+
+        const RE::TESObjectWEAP* selectedLooseWeaponForm(const SelectedObject& selection)
+        {
+            auto* selectedBase = selection.refr ? selection.refr->GetObjectReference() : nullptr;
+            return selectedBase ? selectedBase->As<RE::TESObjectWEAP>() : nullptr;
+        }
+
+        struct LooseWeaponPrimaryAttachFrame
+        {
+            bool valid = false;
+            RE::NiTransform desiredRootWorld{};
+            bool sourceVisible = false;
+            RE::NiTransform desiredObjectWorld{};
+            RE::NiTransform desiredBodyWorld{};
+            RE::NiPoint3 gripPointWorld{};
+            const char* reason = "notEvaluated";
+        };
+
+        LooseWeaponPrimaryAttachFrame resolveLooseWeaponPrimaryAttachFrame(
+            bool looseWeaponGrab,
+            bool isLeft,
+            const SelectedObject& selection,
+            const RE::NiAVObject* rootNode,
+            const RE::NiTransform& rootBodyLocalAtGrab,
+            const RE::NiTransform& objectToBodyAtGrab,
+            const RE::NiTransform& grabBodyWorldAtGrab,
+            const RE::NiPoint3& grabPivotAWorld)
+        {
+            LooseWeaponPrimaryAttachFrame frame{};
+            if (!looseWeaponGrab) {
+                frame.reason = "notLooseWeapon";
+                return frame;
+            }
+            if (!isPrimaryHandForWeaponAttach(isLeft)) {
+                frame.reason = "notPrimaryHand";
+                return frame;
+            }
+            if (!rootNode || !isFiniteNiTransform(rootNode->world)) {
+                frame.reason = "missingWeaponRoot";
+                return frame;
+            }
+
+            const auto offsetLookup = frik_weapon_offset_cache::findPrimaryWeaponOffset(selectedLooseWeaponForm(selection), rootNode);
+            if (!offsetLookup.found) {
+                frame.reason = offsetLookup.reason;
+                return frame;
+            }
+
+            /*
+             * FRIK's weapon offset is the local transform written onto the live
+             * first-person Weapon node. A loose weapon is not equipped, so use
+             * only that node's current parent frame and never its stale/hidden
+             * world transform.
+             */
+            auto* weaponNode = f4vr::getWeaponNode();
+            if (!weaponNode || !weaponNode->parent) {
+                frame.reason = "missingPrimaryWeaponParent";
+                return frame;
+            }
+            if (!isFiniteNiTransform(weaponNode->parent->world)) {
+                frame.reason = "nonFinitePrimaryWeaponParent";
+                return frame;
+            }
+
+            frame.desiredRootWorld = multiplyTransforms(weaponNode->parent->world, offsetLookup.offset);
+            frame.desiredRootWorld.scale =
+                std::isfinite(rootNode->world.scale) && rootNode->world.scale > 0.0001f ? rootNode->world.scale : 1.0f;
+            if (!isFiniteNiTransform(frame.desiredRootWorld)) {
+                frame.reason = "nonFiniteDesiredRoot";
+                return frame;
+            }
+
+            frame.desiredBodyWorld = multiplyTransforms(frame.desiredRootWorld, rootBodyLocalAtGrab);
+            frame.desiredObjectWorld = deriveNodeWorldFromBodyWorld(frame.desiredBodyWorld, objectToBodyAtGrab);
+            const RE::NiPoint3 desiredPivotBodyLocal = transform_math::worldPointToLocal(frame.desiredBodyWorld, grabPivotAWorld);
+            frame.gripPointWorld = transform_math::localPointToWorld(grabBodyWorldAtGrab, desiredPivotBodyLocal);
+            if (!isFiniteNiTransform(frame.desiredBodyWorld) ||
+                !isFiniteNiTransform(frame.desiredObjectWorld) ||
+                !std::isfinite(frame.gripPointWorld.x) ||
+                !std::isfinite(frame.gripPointWorld.y) ||
+                !std::isfinite(frame.gripPointWorld.z)) {
+                frame.reason = "nonFiniteDesiredBody";
+                return frame;
+            }
+
+            frame.sourceVisible = f4vr::isNodeVisible(weaponNode);
+            frame.valid = true;
+            frame.reason = offsetLookup.reason;
+            return frame;
         }
 
         bool nodeIsOrDescendsFrom(const RE::NiAVObject* root, const RE::NiAVObject* node)
@@ -8570,6 +8687,9 @@ namespace rock
 
             RE::NiTransform desiredObjectWorld = objectWorldTransform;
             RE::NiTransform desiredBodyWorld = grabBodyWorldAtGrab;
+            bool looseWeaponPrimaryAttachApplied = false;
+            bool looseWeaponPrimaryAttachSourceVisible = false;
+            const char* looseWeaponPrimaryAttachReason = "notEvaluated";
             const auto oppositionContacts = hand_semantic_contact_state::selectThumbOppositionContacts(semanticContacts);
             auto resolvedAuthorityPivotSourceForFreeze = grab_authority_frame_math::GrabAuthorityPivotSource::None;
             const char* resolvedAuthorityPivotReasonForFreeze = "notResolved";
@@ -8938,6 +9058,41 @@ namespace rock
                         _grabObjectGripAtGrab.fallbackReason = captureReason;
                     }
 
+                    desiredBodyWorld = grab_frame_math::shiftObjectToAlignGripWithPocket(
+                        grabBodyWorldAtGrab,
+                        grabPivotAWorld,
+                        grabGripPoint);
+                    desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
+                    const auto looseWeaponPrimaryAttachFrame = resolveLooseWeaponPrimaryAttachFrame(
+                        looseWeaponGrab,
+                        _isLeft,
+                        sel,
+                        rootNode,
+                        rootBodyLocalAtGrab,
+                        objectToBodyAtGrab,
+                        grabBodyWorldAtGrab,
+                        grabPivotAWorld);
+                    looseWeaponPrimaryAttachReason = looseWeaponPrimaryAttachFrame.reason;
+                    if (looseWeaponPrimaryAttachFrame.valid) {
+                        desiredObjectWorld = looseWeaponPrimaryAttachFrame.desiredObjectWorld;
+                        desiredBodyWorld = looseWeaponPrimaryAttachFrame.desiredBodyWorld;
+                        grabGripPoint = looseWeaponPrimaryAttachFrame.gripPointWorld;
+                        gripArea.contactSeedWorld = grabGripPoint;
+                        gripEvidencePointWorld = grabGripPoint;
+                        _grabObjectGripAtGrab.contactSeedWorld = grabGripPoint;
+                        _grabObjectGripAtGrab.gripCenterWorld = grabGripPoint;
+                        grabPointMode = "looseWeaponPrimaryAttach";
+                        relationMode = grabPointMode;
+                        grabFallbackReason = looseWeaponPrimaryAttachFrame.reason;
+                        looseWeaponPrimaryAttachApplied = true;
+                        looseWeaponPrimaryAttachSourceVisible = looseWeaponPrimaryAttachFrame.sourceVisible;
+                    }
+                    const float pulledGrabAdjust = pullCatchSeatSafety.adjustDistanceGameUnits;
+                    if (pulledGrabAdjust > 0.0f) {
+                        desiredObjectWorld.translate = desiredObjectWorld.translate + gripNormalWorld * pulledGrabAdjust;
+                        desiredBodyWorld.translate = desiredBodyWorld.translate + gripNormalWorld * pulledGrabAdjust;
+                    }
+
                     selectedGripPointLocal = transform_math::worldPointToLocal(objectWorldTransform, grabGripPoint);
                     selectedPivotBBodyLocalGame = transform_math::worldPointToLocal(grabBodyWorldAtGrab, grabGripPoint);
                     RE::NiPoint3 supportFrameNormalWorld = normalizeOrZero(gripNormalWorld);
@@ -9027,17 +9182,6 @@ namespace rock
                         _grabFrame.multiFingerAverageNormalWorldAtGrab = gripNormalWorld;
                     }
 
-                    desiredBodyWorld = grab_frame_math::shiftObjectToAlignGripWithPocket(
-                        grabBodyWorldAtGrab,
-                        grabPivotAWorld,
-                        grabGripPoint);
-                    desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
-                    const float pulledGrabAdjust = pullCatchSeatSafety.adjustDistanceGameUnits;
-                    if (pulledGrabAdjust > 0.0f) {
-                        desiredObjectWorld.translate = desiredObjectWorld.translate + gripNormalWorld * pulledGrabAdjust;
-                        desiredBodyWorld.translate = desiredBodyWorld.translate + gripNormalWorld * pulledGrabAdjust;
-                    }
-
                     const auto captureFingerTargets = usingPinchPocket ?
                         buildRuntimePinchFingerPoseTargets(pinchPocketCandidate) :
                         buildRuntimeFingerPoseTargets(gripEvidencePointWorld, gripEvidenceNormalWorld);
@@ -9047,11 +9191,11 @@ namespace rock
                         "{} THREE-PHASE GRAB CAPTURE: relation={} seat={} rotation={} phase={} reason={} touchContact={} stableTouch={} pocket=({:.1f},{:.1f},{:.1f}) "
                         "palm=({:.1f},{:.1f},{:.1f}) normal=({:.3f},{:.3f},{:.3f}) seed=({:.1f},{:.1f},{:.1f}) "
                         "grip=({:.1f},{:.1f},{:.1f}) gripLocal=({:.2f},{:.2f},{:.2f}) pivotB=({:.2f},{:.2f},{:.2f}) dist={:.1f} signedPalm={:.1f} "
-                        "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} support={} supportPivot={} supportConfidence={:.2f} supportSpan={:.2f} supportShift={:.2f} supportReason={} supportSamples={} supportMeshHits={} supportRejectOwner={} supportRejectDistance={} settledVisualRequired={} pullSeatSafety={} pullSeatDot={:.3f} pullSeatSigned={:.1f} pullSeatDist={:.1f} pulledAdjustAllowed={} pulledAdjust={:.1f} inset={:.2f} insetSource={}",
+                        "fullHeldAuthority={} pivotAuthoritySource={} positionOnlyPatch={} normalTrusted={} support={} supportPivot={} supportConfidence={:.2f} supportSpan={:.2f} supportShift={:.2f} supportReason={} supportSamples={} supportMeshHits={} supportRejectOwner={} supportRejectDistance={} settledVisualRequired={} pullSeatSafety={} pullSeatDot={:.3f} pullSeatSigned={:.1f} pullSeatDist={:.1f} pulledAdjustAllowed={} pulledAdjust={:.1f} inset={:.2f} insetSource={} looseWeaponPrimaryAttach={} attachReason={} attachVisible={}",
                         handName(),
                         relationMode,
                         grabSeatModeName(_grabFrame.seatMode),
-                        "preserve",
+                        looseWeaponPrimaryAttachApplied ? "primaryWeaponAttach" : "preserve",
                         grab_three_phase::phaseName(_grabAcquisitionPhase),
                         captureReason,
                         semanticContacts.count > 0 ? "yes" : "no",
@@ -9101,7 +9245,10 @@ namespace rock
                         pullCatchSeatSafety.allowPulledAdjust ? "yes" : "no",
                         pulledGrabAdjust,
                         gripArea.seedInsetGameUnits,
-                        gripArea.fallbackReason);
+                        gripArea.fallbackReason,
+                        looseWeaponPrimaryAttachApplied ? "yes" : "no",
+                        looseWeaponPrimaryAttachReason,
+                        looseWeaponPrimaryAttachSourceVisible ? "yes" : "no");
                 } else {
                     _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::Idle;
                     _grabObjectGripAtGrab = {};
