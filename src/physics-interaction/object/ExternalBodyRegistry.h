@@ -162,20 +162,6 @@ namespace rock
             return true;
         }
 
-        [[nodiscard]] std::uint32_t copyContactsV1(::rock::provider::RockProviderExternalContactV1* outContacts, std::uint32_t maxContacts) const
-        {
-            if (!outContacts || maxContacts == 0) {
-                return 0;
-            }
-
-            const std::uint32_t count = (std::min)(maxContacts, _contactCount);
-            const std::uint32_t start = _contactCount - count;
-            for (std::uint32_t i = 0; i < count; ++i) {
-                outContacts[i] = _contacts[start + i];
-            }
-            return count;
-        }
-
         [[nodiscard]] std::uint32_t copyContactsForOwnerV1(
             std::uint64_t ownerToken,
             ::rock::provider::RockProviderExternalContactV1* outContacts,

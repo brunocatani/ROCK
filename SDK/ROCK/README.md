@@ -5,7 +5,7 @@ This SDK is the public v1 ABI surface for FO4VR F4SE integrations with ROCK.
 ## Files
 
 - `include/ROCKProviderApi.h` is the canonical header.
-- `include/ROCKApi.h` is a compatibility alias for the same v1 table.
+- `include/ROCKApi.h` is an alias header for the same v1 table.
 - `docs/PublicApi.md` documents initialization, ownership, lifecycle, and feature discovery.
 - `docs/VersionMatrix.md` records the public API version contract.
 - `examples/MinimalProviderConsumer.cpp` shows registration, a frame callback, and owner-filtered contact polling.

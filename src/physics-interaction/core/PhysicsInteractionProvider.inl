@@ -75,36 +75,6 @@
         return contact.valid;
     }
 
-    std::uint32_t PhysicsInteraction::copyProviderWeaponEvidenceDescriptors(
-        ::rock::provider::RockProviderWeaponEvidenceDescriptor* outDescriptors,
-        std::uint32_t maxDescriptors) const
-    {
-        if (!outDescriptors || maxDescriptors == 0) {
-            return 0;
-        }
-
-        const auto descriptors = _weaponCollision.getProfileEvidenceDescriptors();
-        const std::uint32_t count = (std::min)(maxDescriptors, static_cast<std::uint32_t>(descriptors.size()));
-        for (std::uint32_t i = 0; i < count; ++i) {
-            const auto& descriptor = descriptors[i];
-            auto& out = outDescriptors[i];
-            out = {};
-            out.bodyId = descriptor.bodyId;
-            out.partKind = static_cast<std::uint32_t>(descriptor.semantic.partKind);
-            out.reloadRole = static_cast<std::uint32_t>(descriptor.semantic.reloadRole);
-            out.supportRole = static_cast<std::uint32_t>(descriptor.semantic.supportGripRole);
-            out.socketRole = static_cast<std::uint32_t>(descriptor.semantic.socketRole);
-            out.actionRole = static_cast<std::uint32_t>(descriptor.semantic.actionRole);
-            out.fallbackGripPose = static_cast<std::uint32_t>(descriptor.semantic.fallbackGripPose);
-            out.interactionRoot = descriptor.geometryRootAddress;
-            out.sourceRoot = descriptor.sourceRootAddress;
-            out.weaponGenerationKey = descriptor.weaponGenerationKey;
-            copyProviderString(out.sourceName, sizeof(out.sourceName), descriptor.sourceName);
-        }
-
-        return count;
-    }
-
     std::uint32_t PhysicsInteraction::getProviderWeaponEvidenceDetailCountV1() const
     {
         return static_cast<std::uint32_t>(_weaponCollision.getProfileEvidenceDescriptors().size());

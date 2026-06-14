@@ -132,6 +132,8 @@ Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_MAX_CONSUMERS_V1\s*=\s*6
     'Public consumer registry capacity must be an explicit SDK limit.'
 Require-Text 'src/api/ROCKApi.cpp' 'ROCKAPI_GetProviderApi\(\)' `
     'ROCKAPI_GetApi must return the same table as ROCKAPI_GetProviderApi.'
+Require-Text 'SDK/ROCK/docs/PublicApi.md' 'rock::provider::ROCK_PROVIDER_API_VERSION' `
+    'Public API initialization sample must use the namespaced v1 version constant.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'kRockIssuedOwnerTokenNamespace\s*=\s*0xA000''0000''0000''0000ull' `
     'Registered public owner tokens must be ROCK-issued and namespaced.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 's_externalBodies\.clearOwner\(ownerToken\)' `
@@ -155,6 +157,8 @@ Reject-Text 'src/api/ROCKProviderApi.h' 'requestForceGrab|requestForceRelease' `
     'Public force-grab/release functions must not be exported until a real queued implementation exists.'
 Reject-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestForceGrab|apiRequestForceRelease' `
     'Provider glue must not expose fake immediate command stubs.'
+Reject-Text 'src/api/ROCKProviderApi.h' 'getWeaponEvidenceDescriptors|RockProviderWeaponEvidenceDescriptor|getExternalContactSnapshotV1' `
+    'Public API must not expose redundant shallow weapon evidence or unowned contact snapshots.'
 
 $providerHeader = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/api/ROCKProviderApi.h')
 $expectedProviderFunctions = [string[]]@(
@@ -165,11 +169,9 @@ $expectedProviderFunctions = [string[]]@(
     'unregisterFrameCallback',
     'getFrameSnapshot',
     'queryWeaponContactAtPoint',
-    'getWeaponEvidenceDescriptors',
     'clearExternalBodies',
     'setOffhandInteractionReservation',
     'registerExternalBodiesV1',
-    'getExternalContactSnapshotV1',
     'getWeaponEvidenceDetailCountV1',
     'copyWeaponEvidenceDetailsV1',
     'getWeaponEvidenceDetailPointCountV1',

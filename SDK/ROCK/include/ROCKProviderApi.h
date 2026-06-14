@@ -374,23 +374,6 @@ namespace rock::provider
         std::uint32_t reserved{ 0 };
     };
 
-    struct RockProviderWeaponEvidenceDescriptor
-    {
-        std::uint32_t size{ sizeof(RockProviderWeaponEvidenceDescriptor) };
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        std::uint32_t partKind{ 0 };
-        std::uint32_t reloadRole{ 0 };
-        std::uint32_t supportRole{ 0 };
-        std::uint32_t socketRole{ 0 };
-        std::uint32_t actionRole{ 0 };
-        std::uint32_t fallbackGripPose{ 0 };
-        std::uintptr_t interactionRoot{ 0 };
-        std::uintptr_t sourceRoot{ 0 };
-        std::uint64_t weaponGenerationKey{ 0 };
-        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
-        std::uint32_t reserved[2]{};
-    };
-
     struct RockProviderPoint3
     {
         float x{ 0.0f };
@@ -603,14 +586,12 @@ namespace rock::provider
         bool(ROCK_PROVIDER_CALL* unregisterFrameCallback)(std::uint64_t callbackToken);
         bool(ROCK_PROVIDER_CALL* getFrameSnapshot)(RockProviderFrameSnapshot* outSnapshot);
         bool(ROCK_PROVIDER_CALL* queryWeaponContactAtPoint)(const RockProviderWeaponContactQuery* query, RockProviderWeaponContactResult* outResult);
-        std::uint32_t(ROCK_PROVIDER_CALL* getWeaponEvidenceDescriptors)(RockProviderWeaponEvidenceDescriptor* outDescriptors, std::uint32_t maxDescriptors);
         void(ROCK_PROVIDER_CALL* clearExternalBodies)(std::uint64_t ownerToken);
         bool(ROCK_PROVIDER_CALL* setOffhandInteractionReservation)(std::uint64_t ownerToken, RockProviderOffhandReservation reservation);
         bool(ROCK_PROVIDER_CALL* registerExternalBodiesV1)(
             std::uint64_t ownerToken,
             const RockProviderExternalBodyRegistration* bodies,
             std::uint32_t bodyCount);
-        std::uint32_t(ROCK_PROVIDER_CALL* getExternalContactSnapshotV1)(RockProviderExternalContactV1* outContacts, std::uint32_t maxContacts);
         std::uint32_t(ROCK_PROVIDER_CALL* getWeaponEvidenceDetailCountV1)();
         std::uint32_t(ROCK_PROVIDER_CALL* copyWeaponEvidenceDetailsV1)(RockProviderWeaponEvidenceDetailV1* outDetails, std::uint32_t maxDetails);
         std::uint32_t(ROCK_PROVIDER_CALL* getWeaponEvidenceDetailPointCountV1)(std::uint32_t bodyId);
@@ -694,7 +675,6 @@ namespace rock::provider
     static_assert(sizeof(RockProviderExternalBodyRegistration) == 32);
     static_assert(sizeof(RockProviderExternalContactV1) == 128);
     static_assert(alignof(RockProviderExternalContactV1) == 8);
-    static_assert(sizeof(RockProviderWeaponEvidenceDescriptor) == 128);
     static_assert(sizeof(RockProviderPoint3) == 12);
     static_assert(sizeof(RockProviderBounds3) == 32);
     static_assert(sizeof(RockProviderWeaponEvidenceDetailV1) == 192);

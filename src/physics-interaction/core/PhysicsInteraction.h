@@ -117,9 +117,6 @@ namespace rock
         bool queryProviderWeaponContactAtPoint(
             const ::rock::provider::RockProviderWeaponContactQuery& query,
             ::rock::provider::RockProviderWeaponContactResult& outResult) const;
-        std::uint32_t copyProviderWeaponEvidenceDescriptors(
-            ::rock::provider::RockProviderWeaponEvidenceDescriptor* outDescriptors,
-            std::uint32_t maxDescriptors) const;
         std::uint32_t getProviderWeaponEvidenceDetailCountV1() const;
         std::uint32_t copyProviderWeaponEvidenceDetailsV1(
             ::rock::provider::RockProviderWeaponEvidenceDetailV1* outDetails,

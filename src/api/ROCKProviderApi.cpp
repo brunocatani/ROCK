@@ -424,18 +424,6 @@ namespace
         return pi->queryProviderWeaponContactAtPoint(*query, *outResult);
     }
 
-    std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEvidenceDescriptors(
-        RockProviderWeaponEvidenceDescriptor* outDescriptors,
-        std::uint32_t maxDescriptors)
-    {
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
-        if (!pi || !pi->isInitialized()) {
-            return 0;
-        }
-
-        return pi->copyProviderWeaponEvidenceDescriptors(outDescriptors, maxDescriptors);
-    }
-
     std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEvidenceDetailCountV1()
     {
         auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
@@ -625,14 +613,6 @@ namespace
         s_externalBodies.clearOwner(ownerToken);
     }
 
-    std::uint32_t ROCK_PROVIDER_CALL apiGetExternalContactSnapshotV1(
-        RockProviderExternalContactV1* outContacts,
-        std::uint32_t maxContacts)
-    {
-        std::scoped_lock lock(s_externalBodyMutex);
-        return s_externalBodies.copyContactsV1(outContacts, maxContacts);
-    }
-
     std::uint32_t ROCK_PROVIDER_CALL apiGetExternalContactSnapshotForOwnerV1(
         std::uint64_t ownerToken,
         RockProviderExternalContactV1* outContacts,
@@ -677,11 +657,9 @@ namespace
         .unregisterFrameCallback = &apiUnregisterFrameCallback,
         .getFrameSnapshot = &apiGetFrameSnapshot,
         .queryWeaponContactAtPoint = &apiQueryWeaponContactAtPoint,
-        .getWeaponEvidenceDescriptors = &apiGetWeaponEvidenceDescriptors,
         .clearExternalBodies = &apiClearExternalBodies,
         .setOffhandInteractionReservation = &apiSetOffhandInteractionReservation,
         .registerExternalBodiesV1 = &apiRegisterExternalBodiesV1,
-        .getExternalContactSnapshotV1 = &apiGetExternalContactSnapshotV1,
         .getWeaponEvidenceDetailCountV1 = &apiGetWeaponEvidenceDetailCountV1,
         .copyWeaponEvidenceDetailsV1 = &apiCopyWeaponEvidenceDetailsV1,
         .getWeaponEvidenceDetailPointCountV1 = &apiGetWeaponEvidenceDetailPointCountV1,

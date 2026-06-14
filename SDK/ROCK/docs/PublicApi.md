@@ -5,7 +5,7 @@ ROCK exposes one v1 C ABI table from `ROCK.dll`:
 - `ROCKProviderApi.h`: the public API for FO4VR F4SE plugins.
 - `ROCKApi.h`: an alias header for the same v1 API table.
 
-The API is POD/value ABI and avoids private ROCK headers. It is the stable SDK surface for frame snapshots, hand frames, weapon evidence, body contacts, external body registration, external contact polling, offhand reservation, diagnostic overlay, and diagnostic input.
+The API is POD/value ABI and avoids private ROCK headers. It is the stable SDK surface for frame snapshots, hand frames, detailed weapon evidence, body contacts, external body registration, owner-filtered external contact polling, offhand reservation, diagnostic overlay, and diagnostic input.
 
 ## Initialization
 
@@ -24,7 +24,7 @@ using rock::provider::RockProviderApi;
 
 bool initRock()
 {
-    const int err = RockProviderApi::initialize(ROCK_PROVIDER_API_VERSION);
+    const int err = RockProviderApi::initialize(rock::provider::ROCK_PROVIDER_API_VERSION);
     return err == 0 && RockProviderApi::inst;
 }
 ```
