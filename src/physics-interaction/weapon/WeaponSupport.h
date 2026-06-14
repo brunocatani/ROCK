@@ -346,13 +346,13 @@ namespace rock::weapon_two_handed_grip_math
         return gripPressed && !supportHandHoldingObject;
     }
 
-    inline bool canProcessNormalGrabInput(bool isLeft, bool equippedWeaponSupportGripActive, bool rightHandWeaponEquipped)
+    inline bool canProcessNormalGrabInput(bool isLeft, bool equippedWeaponSupportGripActive, bool rightHandWeaponEquipped, bool primaryHandDetached)
     {
         if (isLeft) {
             return !equippedWeaponSupportGripActive;
         }
 
-        return !rightHandWeaponEquipped;
+        return !rightHandWeaponEquipped || primaryHandDetached;
     }
 }
 

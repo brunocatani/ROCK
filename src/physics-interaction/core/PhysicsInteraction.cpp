@@ -2064,6 +2064,7 @@ namespace rock
             _nativeContactEvidence.reset();
             _bodyContactRuntime.reset();
             clearLeftWeaponContact();
+            clearRightWeaponContact();
 
             destroyHandCollisions(bhk);
             destroyBodyBoneCollisions(bhk);
@@ -2212,7 +2213,12 @@ namespace rock
          * deliberately retains the generated weapon body set. Keep the dominant
          * hand under weapon authority until those retained bodies are gone.
          */
-        const bool rightHandWeaponAuthorityActive = rightHandWeaponEquipped || retainedWeaponCollisionActive;
+        bool rightHandWeaponAuthorityActive = rightHandWeaponEquipped || retainedWeaponCollisionActive;
+        // Retained reload bodies still own right-hand collision; only a visible detached primary releases it.
+        if (rightHandWeaponEquipped && !retainedWeaponCollisionActive && _twoHandedGrip.isPrimaryDetached()) {
+            rightHandWeaponAuthorityActive = false;
+        }
+        const bool rightHandWeaponAuthorityActiveBeforeGrip = rightHandWeaponAuthorityActive;
         bool leftSupportGripActive = false;
         if (rightHandWeaponAuthorityActive) {
             suppressRightHandCollisionForDominantWeapon(hknp);
@@ -2260,57 +2266,90 @@ namespace rock
 
         {
             WeaponInteractionContact leftWeaponContact{};
+            WeaponInteractionContact rightWeaponContact{};
             auto leftWeaponContactSource = weapon_debug_notification_policy::WeaponContactSource::None;
 
-            auto publishLeftWeaponProbeContact = [&](WeaponInteractionContact& contact) {
-                _leftWeaponContactPartKind.store(static_cast<std::uint32_t>(contact.partKind), std::memory_order_release);
-                _leftWeaponContactReloadRole.store(static_cast<std::uint32_t>(contact.reloadRole), std::memory_order_release);
-                _leftWeaponContactSupportRole.store(static_cast<std::uint32_t>(contact.supportGripRole), std::memory_order_release);
-                _leftWeaponContactSocketRole.store(static_cast<std::uint32_t>(contact.socketRole), std::memory_order_release);
-                _leftWeaponContactActionRole.store(static_cast<std::uint32_t>(contact.actionRole), std::memory_order_release);
-                _leftWeaponContactGripPose.store(static_cast<std::uint32_t>(contact.fallbackGripPose), std::memory_order_release);
-                contact.sequence = _leftWeaponContactSequence.fetch_add(1, std::memory_order_acq_rel) + 1;
-                _leftWeaponContactMissedFrames.store(0, std::memory_order_release);
+            auto publishWeaponProbeContact = [&](bool isLeft, WeaponInteractionContact& contact) {
+                auto& partKind = isLeft ? _leftWeaponContactPartKind : _rightWeaponContactPartKind;
+                auto& reloadRole = isLeft ? _leftWeaponContactReloadRole : _rightWeaponContactReloadRole;
+                auto& supportRole = isLeft ? _leftWeaponContactSupportRole : _rightWeaponContactSupportRole;
+                auto& socketRole = isLeft ? _leftWeaponContactSocketRole : _rightWeaponContactSocketRole;
+                auto& actionRole = isLeft ? _leftWeaponContactActionRole : _rightWeaponContactActionRole;
+                auto& gripPose = isLeft ? _leftWeaponContactGripPose : _rightWeaponContactGripPose;
+                auto& sequence = isLeft ? _leftWeaponContactSequence : _rightWeaponContactSequence;
+                auto& missedFrames = isLeft ? _leftWeaponContactMissedFrames : _rightWeaponContactMissedFrames;
+
+                partKind.store(static_cast<std::uint32_t>(contact.partKind), std::memory_order_release);
+                reloadRole.store(static_cast<std::uint32_t>(contact.reloadRole), std::memory_order_release);
+                supportRole.store(static_cast<std::uint32_t>(contact.supportGripRole), std::memory_order_release);
+                socketRole.store(static_cast<std::uint32_t>(contact.socketRole), std::memory_order_release);
+                actionRole.store(static_cast<std::uint32_t>(contact.actionRole), std::memory_order_release);
+                gripPose.store(static_cast<std::uint32_t>(contact.fallbackGripPose), std::memory_order_release);
+                contact.sequence = sequence.fetch_add(1, std::memory_order_acq_rel) + 1;
+                missedFrames.store(0, std::memory_order_release);
             };
 
-            const std::uint32_t leftWeaponBodyId = _leftWeaponContactBodyId.exchange(INVALID_CONTACT_BODY_ID, std::memory_order_acquire);
-            if (leftWeaponBodyId != INVALID_CONTACT_BODY_ID) {
-                _leftWeaponContactMissedFrames.store(0, std::memory_order_release);
-                if (!_weaponCollision.tryGetWeaponContactAtomic(leftWeaponBodyId, leftWeaponContact)) {
+            auto clearWeaponContactForHand = [&](bool isLeft) {
+                if (isLeft) {
                     clearLeftWeaponContact();
-                    leftWeaponContact = {};
-                    leftWeaponContactSource = weapon_debug_notification_policy::WeaponContactSource::None;
                 } else {
-                    leftWeaponContact.sequence = _leftWeaponContactSequence.load(std::memory_order_acquire);
-                    leftWeaponContactSource = weapon_debug_notification_policy::WeaponContactSource::Contact;
+                    clearRightWeaponContact();
                 }
-            } else if (weaponNode) {
-                const RE::NiPoint3 leftProbePoint = frame.left.grabAnchorWorld;
-                if (_weaponCollision.tryFindInteractionContactNearPoint(weaponNode, leftProbePoint, g_rockConfig.rockWeaponInteractionProbeRadius, leftWeaponContact)) {
-                    publishLeftWeaponProbeContact(leftWeaponContact);
-                    leftWeaponContactSource = weapon_debug_notification_policy::WeaponContactSource::Probe;
-                    if (g_rockConfig.rockDebugVerboseLogging && ++_weaponInteractionProbeLogCounter >= 90) {
-                        _weaponInteractionProbeLogCounter = 0;
-                        ROCK_LOG_DEBUG(Weapon, "WeaponInteractionProbe: bodyId={} partKind={} supportRole={} reloadRole={} actionRole={} radius={:.1f}",
-                            leftWeaponContact.bodyId,
-                            static_cast<int>(leftWeaponContact.partKind),
-                            static_cast<int>(leftWeaponContact.supportGripRole),
-                            static_cast<int>(leftWeaponContact.reloadRole),
-                            static_cast<int>(leftWeaponContact.actionRole),
-                            g_rockConfig.rockWeaponInteractionProbeRadius);
+            };
+
+            auto consumeWeaponContactForHand = [&](bool isLeft, const HandFrameInput& handInput, bool probeAllowed, WeaponInteractionContact& outContact) {
+                auto& bodyIdAtomic = isLeft ? _leftWeaponContactBodyId : _rightWeaponContactBodyId;
+                auto& missedFrames = isLeft ? _leftWeaponContactMissedFrames : _rightWeaponContactMissedFrames;
+                auto& sequence = isLeft ? _leftWeaponContactSequence : _rightWeaponContactSequence;
+                auto source = weapon_debug_notification_policy::WeaponContactSource::None;
+
+                const std::uint32_t weaponBodyId = bodyIdAtomic.exchange(INVALID_CONTACT_BODY_ID, std::memory_order_acquire);
+                if (weaponBodyId != INVALID_CONTACT_BODY_ID) {
+                    missedFrames.store(0, std::memory_order_release);
+                    if (!_weaponCollision.tryGetWeaponContactAtomic(weaponBodyId, outContact)) {
+                        clearWeaponContactForHand(isLeft);
+                        outContact = {};
+                        source = weapon_debug_notification_policy::WeaponContactSource::None;
+                    } else {
+                        outContact.sequence = sequence.load(std::memory_order_acquire);
+                        source = weapon_debug_notification_policy::WeaponContactSource::Contact;
+                    }
+                } else if (weaponNode && probeAllowed) {
+                    const RE::NiPoint3 probePoint = handInput.grabAnchorWorld;
+                    if (_weaponCollision.tryFindInteractionContactNearPoint(weaponNode, probePoint, g_rockConfig.rockWeaponInteractionProbeRadius, outContact)) {
+                        publishWeaponProbeContact(isLeft, outContact);
+                        source = weapon_debug_notification_policy::WeaponContactSource::Probe;
+                        if (g_rockConfig.rockDebugVerboseLogging && ++_weaponInteractionProbeLogCounter >= 90) {
+                            _weaponInteractionProbeLogCounter = 0;
+                            ROCK_LOG_DEBUG(Weapon,
+                                "WeaponInteractionProbe: hand={} bodyId={} partKind={} supportRole={} reloadRole={} actionRole={} radius={:.1f}",
+                                isLeft ? "left" : "right",
+                                outContact.bodyId,
+                                static_cast<int>(outContact.partKind),
+                                static_cast<int>(outContact.supportGripRole),
+                                static_cast<int>(outContact.reloadRole),
+                                static_cast<int>(outContact.actionRole),
+                                g_rockConfig.rockWeaponInteractionProbeRadius);
+                        }
+                    } else {
+                        const auto missed = missedFrames.fetch_add(1, std::memory_order_acq_rel) + 1;
+                        if (missed > WEAPON_CONTACT_TIMEOUT_FRAMES) {
+                            clearWeaponContactForHand(isLeft);
+                        }
                     }
                 } else {
-                    const auto missedFrames = _leftWeaponContactMissedFrames.fetch_add(1, std::memory_order_acq_rel) + 1;
-                    if (missedFrames > WEAPON_CONTACT_TIMEOUT_FRAMES) {
-                        clearLeftWeaponContact();
+                    const auto missed = missedFrames.fetch_add(1, std::memory_order_acq_rel) + 1;
+                    if (missed > WEAPON_CONTACT_TIMEOUT_FRAMES) {
+                        clearWeaponContactForHand(isLeft);
                     }
                 }
-            } else {
-                const auto missedFrames = _leftWeaponContactMissedFrames.fetch_add(1, std::memory_order_acq_rel) + 1;
-                if (missedFrames > WEAPON_CONTACT_TIMEOUT_FRAMES) {
-                    clearLeftWeaponContact();
-                }
-            }
+
+                return source;
+            };
+
+            leftWeaponContactSource = consumeWeaponContactForHand(true, frame.left, weaponNode != nullptr, leftWeaponContact);
+            const bool rightWeaponContactProbeAllowed = weaponNode != nullptr && _twoHandedGrip.isPrimaryDetached();
+            (void)consumeWeaponContactForHand(false, frame.right, rightWeaponContactProbeAllowed, rightWeaponContact);
 
             const bool gripPressed = readGrabButtonHeld(true, g_rockConfig.rockGrabButtonID);
             const bool gripConfirmPressed = readGrabButtonPressedEdge(true, g_rockConfig.rockGrabButtonID);
@@ -2355,6 +2394,7 @@ namespace rock
             _twoHandedGrip.update(
                 weaponNode,
                 leftWeaponContact,
+                rightWeaponContact,
                 gripPressed,
                 leftHandHoldingObject,
                 frame.deltaSeconds,
@@ -2373,6 +2413,21 @@ namespace rock
             input_remap_runtime::setEquippedWeaponPrimaryDetachInputActive(
                 input_remap_policy::shouldUseEquippedWeaponPrimaryDetachInput(updatedPrimaryDetachInputGate));
             input_remap_runtime::setEquippedWeaponPrimaryDetached(_twoHandedGrip.isPrimaryDetached());
+
+            bool rightHandWeaponAuthorityActiveAfterGrip = rightHandWeaponEquipped || retainedWeaponCollisionActive;
+            // Retained reload bodies still own right-hand collision; only a visible detached primary releases it.
+            if (rightHandWeaponEquipped && !retainedWeaponCollisionActive && _twoHandedGrip.isPrimaryDetached()) {
+                rightHandWeaponAuthorityActiveAfterGrip = false;
+            }
+            if (rightHandWeaponAuthorityActiveAfterGrip != rightHandWeaponAuthorityActiveBeforeGrip) {
+                if (rightHandWeaponAuthorityActiveAfterGrip) {
+                    suppressRightHandCollisionForDominantWeapon(hknp);
+                } else {
+                    restoreRightHandCollisionAfterDominantWeapon(hknp);
+                }
+            }
+            rightHandWeaponAuthorityActive = rightHandWeaponAuthorityActiveAfterGrip;
+
             if (g_rockConfig.rockDebugShowWeaponNotifications) {
                 const auto gripNotificationEvent =
                     weapon_debug_notification_policy::observeWeaponSupportGrip(_weaponDebugNotificationState, weaponSupportGripActive);
@@ -2511,6 +2566,18 @@ namespace rock
         _leftWeaponContactActionRole.store(static_cast<std::uint32_t>(WeaponActionRole::None), std::memory_order_release);
         _leftWeaponContactGripPose.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
         _leftWeaponContactMissedFrames.store(WEAPON_CONTACT_TIMEOUT_FRAMES + 1, std::memory_order_release);
+    }
+
+    void PhysicsInteraction::clearRightWeaponContact()
+    {
+        _rightWeaponContactBodyId.store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
+        _rightWeaponContactPartKind.store(static_cast<std::uint32_t>(WeaponPartKind::Other), std::memory_order_release);
+        _rightWeaponContactReloadRole.store(static_cast<std::uint32_t>(WeaponReloadRole::None), std::memory_order_release);
+        _rightWeaponContactSupportRole.store(static_cast<std::uint32_t>(WeaponSupportGripRole::None), std::memory_order_release);
+        _rightWeaponContactSocketRole.store(static_cast<std::uint32_t>(WeaponSocketRole::None), std::memory_order_release);
+        _rightWeaponContactActionRole.store(static_cast<std::uint32_t>(WeaponActionRole::None), std::memory_order_release);
+        _rightWeaponContactGripPose.store(static_cast<std::uint32_t>(WeaponGripPoseId::None), std::memory_order_release);
+        _rightWeaponContactMissedFrames.store(WEAPON_CONTACT_TIMEOUT_FRAMES + 1, std::memory_order_release);
     }
 
     bool PhysicsInteraction::isHandContactEvidenceSuppressed(bool isLeft) const
@@ -2879,6 +2946,7 @@ namespace rock
         collision_suppression_registry::globalCollisionSuppressionRegistry().clear();
         ::rock::provider::clearExternalBodiesForProviderLoss();
         clearLeftWeaponContact();
+        clearRightWeaponContact();
         releaseAllObjects();
         _rightHand.reset();
         _leftHand.reset();
@@ -4355,7 +4423,11 @@ namespace rock
                 clearGameplayCandidatesForHand(hand, isLeft);
                 return;
             }
-            if (!weapon_two_handed_grip_math::canProcessNormalGrabInput(isLeft, equippedWeaponSupportGripActive, rightHandWeaponEquipped)) {
+            if (!weapon_two_handed_grip_math::canProcessNormalGrabInput(
+                    isLeft,
+                    equippedWeaponSupportGripActive,
+                    rightHandWeaponEquipped,
+                    _twoHandedGrip.isPrimaryDetached())) {
                 grab_input_intent_policy::reset(inputIntentState);
                 cancelPeerHeldJoinRetry("normal-grab-suppressed", true);
                 clearGameplayCandidatesForHand(hand, isLeft);

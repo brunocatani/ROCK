@@ -217,6 +217,7 @@ namespace rock
         void publishDebugBodyOverlay(const PhysicsFrameContext& frame);
 
         void clearLeftWeaponContact();
+        void clearRightWeaponContact();
 
         void suppressRightHandCollisionForDominantWeapon(RE::hknpWorld* world);
 
@@ -343,6 +344,15 @@ namespace rock
         std::atomic<std::uint32_t> _leftWeaponContactGripPose{ static_cast<std::uint32_t>(WeaponGripPoseId::None) };
         std::atomic<std::uint32_t> _leftWeaponContactSequence{ 0 };
         std::atomic<std::uint32_t> _leftWeaponContactMissedFrames{ WEAPON_CONTACT_TIMEOUT_FRAMES + 1 };
+        std::atomic<std::uint32_t> _rightWeaponContactBodyId{ INVALID_CONTACT_BODY_ID };
+        std::atomic<std::uint32_t> _rightWeaponContactPartKind{ static_cast<std::uint32_t>(WeaponPartKind::Other) };
+        std::atomic<std::uint32_t> _rightWeaponContactReloadRole{ static_cast<std::uint32_t>(WeaponReloadRole::None) };
+        std::atomic<std::uint32_t> _rightWeaponContactSupportRole{ static_cast<std::uint32_t>(WeaponSupportGripRole::None) };
+        std::atomic<std::uint32_t> _rightWeaponContactSocketRole{ static_cast<std::uint32_t>(WeaponSocketRole::None) };
+        std::atomic<std::uint32_t> _rightWeaponContactActionRole{ static_cast<std::uint32_t>(WeaponActionRole::None) };
+        std::atomic<std::uint32_t> _rightWeaponContactGripPose{ static_cast<std::uint32_t>(WeaponGripPoseId::None) };
+        std::atomic<std::uint32_t> _rightWeaponContactSequence{ 0 };
+        std::atomic<std::uint32_t> _rightWeaponContactMissedFrames{ WEAPON_CONTACT_TIMEOUT_FRAMES + 1 };
         int _weaponInteractionProbeLogCounter = 0;
         std::atomic<bool> _rightDominantWeaponCollisionSuppressed{ false };
         std::atomic<bool> _leftWeaponSupportCollisionSuppressed{ false };

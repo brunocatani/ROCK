@@ -53,6 +53,7 @@ namespace rock
         void update(
             RE::NiNode* weaponNode,
             const WeaponInteractionContact& leftWeaponContact,
+            const WeaponInteractionContact& rightWeaponContact,
             bool leftGripPressed,
             bool supportHandHoldingObject,
             float dt,
@@ -96,17 +97,22 @@ namespace rock
 
         void updateFullWeaponAuthorityGrip(RE::NiNode* weaponNode, float dt);
 
-        void updatePrimaryDetachedGrip(RE::NiNode* weaponNode, float dt, const EquippedWeaponPrimaryGripInput& primaryGripInput);
+        void updatePrimaryDetachedGrip(
+            RE::NiNode* weaponNode,
+            float dt,
+            const EquippedWeaponPrimaryGripInput& primaryGripInput,
+            const WeaponInteractionContact& rightWeaponContact);
 
         void updateVisualOnlySupportGrip(RE::NiNode* weaponNode, float dt);
 
         bool transitionToPrimaryDetached();
 
-        bool tryReattachPrimaryGrip(RE::NiNode* weaponNode);
+        bool tryReattachPrimaryGrip(RE::NiNode* weaponNode, const WeaponInteractionContact& rightWeaponContact);
 
-        bool primaryGripInputNearCapturedGrip(RE::NiNode* weaponNode, const RE::NiTransform& primaryTransform) const;
-
-        bool applyDetachedPrimaryVisualAuthority(const RE::NiTransform& livePrimaryHandWorld);
+        bool primaryGripContactMatchesCapturedGrip(
+            RE::NiNode* weaponNode,
+            const WeaponInteractionContact& rightWeaponContact,
+            const RE::NiTransform& primaryTransform) const;
 
         void setSupportGripPose(bool isLeft, WeaponGripPoseId poseId, const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose);
 

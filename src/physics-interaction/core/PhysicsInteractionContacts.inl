@@ -1119,16 +1119,26 @@
             }
         }
 
-        auto publishLeftWeaponContactFromPhysics = [&](const WeaponInteractionContact& weaponContact, std::uint32_t bodyId) {
-            _leftWeaponContactPartKind.store(static_cast<std::uint32_t>(weaponContact.partKind), std::memory_order_release);
-            _leftWeaponContactReloadRole.store(static_cast<std::uint32_t>(weaponContact.reloadRole), std::memory_order_release);
-            _leftWeaponContactSupportRole.store(static_cast<std::uint32_t>(weaponContact.supportGripRole), std::memory_order_release);
-            _leftWeaponContactSocketRole.store(static_cast<std::uint32_t>(weaponContact.socketRole), std::memory_order_release);
-            _leftWeaponContactActionRole.store(static_cast<std::uint32_t>(weaponContact.actionRole), std::memory_order_release);
-            _leftWeaponContactGripPose.store(static_cast<std::uint32_t>(weaponContact.fallbackGripPose), std::memory_order_release);
-            _leftWeaponContactSequence.fetch_add(1, std::memory_order_acq_rel);
-            _leftWeaponContactMissedFrames.store(0, std::memory_order_release);
-            _leftWeaponContactBodyId.store(bodyId, std::memory_order_release);
+        auto publishWeaponContactFromPhysics = [&](bool isLeft, const WeaponInteractionContact& weaponContact, std::uint32_t bodyId) {
+            auto& partKind = isLeft ? _leftWeaponContactPartKind : _rightWeaponContactPartKind;
+            auto& reloadRole = isLeft ? _leftWeaponContactReloadRole : _rightWeaponContactReloadRole;
+            auto& supportRole = isLeft ? _leftWeaponContactSupportRole : _rightWeaponContactSupportRole;
+            auto& socketRole = isLeft ? _leftWeaponContactSocketRole : _rightWeaponContactSocketRole;
+            auto& actionRole = isLeft ? _leftWeaponContactActionRole : _rightWeaponContactActionRole;
+            auto& gripPose = isLeft ? _leftWeaponContactGripPose : _rightWeaponContactGripPose;
+            auto& sequence = isLeft ? _leftWeaponContactSequence : _rightWeaponContactSequence;
+            auto& missedFrames = isLeft ? _leftWeaponContactMissedFrames : _rightWeaponContactMissedFrames;
+            auto& bodyIdAtomic = isLeft ? _leftWeaponContactBodyId : _rightWeaponContactBodyId;
+
+            partKind.store(static_cast<std::uint32_t>(weaponContact.partKind), std::memory_order_release);
+            reloadRole.store(static_cast<std::uint32_t>(weaponContact.reloadRole), std::memory_order_release);
+            supportRole.store(static_cast<std::uint32_t>(weaponContact.supportGripRole), std::memory_order_release);
+            socketRole.store(static_cast<std::uint32_t>(weaponContact.socketRole), std::memory_order_release);
+            actionRole.store(static_cast<std::uint32_t>(weaponContact.actionRole), std::memory_order_release);
+            gripPose.store(static_cast<std::uint32_t>(weaponContact.fallbackGripPose), std::memory_order_release);
+            sequence.fetch_add(1, std::memory_order_acq_rel);
+            missedFrames.store(0, std::memory_order_release);
+            bodyIdAtomic.store(bodyId, std::memory_order_release);
         };
 
         if (!isRight && !isLeft) {
@@ -1139,9 +1149,9 @@
             return;
         }
 
-        if (contactRoute.drivesWeaponSupportContact && contact_pipeline_policy::isLeftHand(contactRoute.source.kind)) {
+        if (contactRoute.drivesWeaponSupportContact && contact_pipeline_policy::isHand(contactRoute.source.kind)) {
             if (const auto* weaponSource = weaponSourceFor(contactRoute.targetBodyId); weaponSource && weaponSource->valid) {
-                publishLeftWeaponContactFromPhysics(weaponSource->contact, contactRoute.targetBodyId);
+                publishWeaponContactFromPhysics(contact_pipeline_policy::isLeftHand(contactRoute.source.kind), weaponSource->contact, contactRoute.targetBodyId);
             }
         }
 
