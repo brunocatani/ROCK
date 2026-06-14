@@ -674,6 +674,14 @@ namespace rock::input_remap_runtime
                 return;
             }
 
+            if (shouldSuppressNativeTriggerActionEvent(inputEvent)) {
+                markInputEventStopped(inputEvent);
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Suppressed native WandTrigger ReadyWeapon event while ROCK owns holstered or held-weapon trigger input");
+                return;
+            }
+
             if (s_originalReadyWeaponEventHandler) {
                 s_originalReadyWeaponEventHandler(handler, inputEvent, cursor, unk);
             }

@@ -19,24 +19,24 @@ namespace rock::weapon_equip_transfer
             bool found = false;
             bool matchedInstanceData = false;
             std::uint32_t stackID = 0;
-            RE::TBO_InstanceData* instanceData = nullptr;
+            RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
             RE::BGSEquipSlot* equipSlot = nullptr;
         };
 
-        [[nodiscard]] RE::TBO_InstanceData* resolveReferenceInstanceData(RE::TESObjectREFR* refr) noexcept
+        [[nodiscard]] RE::BSTSmartPointer<RE::TBO_InstanceData> resolveReferenceInstanceData(RE::TESObjectREFR* refr) noexcept
         {
             if (!refr || !refr->extraList) {
-                return nullptr;
+                return {};
             }
 
             const auto* instanceExtra = refr->extraList->GetByType<RE::ExtraInstanceData>();
-            return instanceExtra ? instanceExtra->data.get() : nullptr;
+            return instanceExtra ? instanceExtra->data : RE::BSTSmartPointer<RE::TBO_InstanceData>{};
         }
 
         [[nodiscard]] InventoryWeaponStack findTransferredWeaponStack(
             RE::PlayerCharacter* player,
             RE::TESObjectWEAP* weapon,
-            RE::TBO_InstanceData* expectedInstanceData) noexcept
+            const RE::BSTSmartPointer<RE::TBO_InstanceData>& expectedInstanceData) noexcept
         {
             InventoryWeaponStack firstCandidate{};
             InventoryWeaponStack fallback{};
@@ -53,11 +53,19 @@ namespace rock::weapon_equip_transfer
 
                 std::uint32_t stackID = 0;
                 for (auto* stack = inventoryItem.stackData.get(); stack; stack = stack->nextStack.get(), ++stackID) {
-                    auto* instanceData = inventoryItem.GetInstanceData(stackID);
-                    auto* equipSlot = weapon->GetEquipSlot(instanceData);
+                    RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
+                    if (stack->extra) {
+                        if (const auto* instanceExtra = stack->extra->GetByType<RE::ExtraInstanceData>()) {
+                            instanceData = instanceExtra->data;
+                        }
+                    }
+                    auto* equipSlot = weapon->GetEquipSlot(instanceData.get());
+                    if (!equipSlot) {
+                        equipSlot = weapon->GetEquipSlot(nullptr);
+                    }
                     InventoryWeaponStack candidate{
                         .found = true,
-                        .matchedInstanceData = expectedInstanceData && instanceData == expectedInstanceData,
+                        .matchedInstanceData = expectedInstanceData && instanceData.get() == expectedInstanceData.get(),
                         .stackID = stackID,
                         .instanceData = instanceData,
                         .equipSlot = equipSlot,
@@ -71,7 +79,7 @@ namespace rock::weapon_equip_transfer
                     if (!firstCandidate.found) {
                         firstCandidate = candidate;
                     }
-                    const bool fallbackMatches = expectedInstanceData || instanceData == nullptr;
+                    const bool fallbackMatches = expectedInstanceData || !instanceData;
                     if (fallbackMatches && !fallback.found) {
                         fallback = candidate;
                     }
@@ -167,7 +175,7 @@ namespace rock::weapon_equip_transfer
             return result;
         }
 
-        auto* expectedInstanceData = resolveReferenceInstanceData(heldRef);
+        const auto expectedInstanceData = resolveReferenceInstanceData(heldRef);
         result.attempted = true;
         const bool activated = heldRef->ActivateRef(player, nullptr, result.count, false, false, false);
         if (!activated) {
@@ -193,7 +201,7 @@ namespace rock::weapon_equip_transfer
 
         result.stackID = stack.stackID;
         result.matchedInstanceData = stack.matchedInstanceData;
-        RE::BGSObjectInstance objectInstance(result.weapon, stack.instanceData);
+        RE::BGSObjectInstance objectInstance(result.weapon, stack.instanceData.get());
         const bool equipped = equipManager->EquipObject(player,
             objectInstance,
             stack.stackID,
