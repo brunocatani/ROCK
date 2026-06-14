@@ -5,9 +5,7 @@
 #include <exception>
 
 #include "physics-interaction/PhysicsLog.h"
-#include "physics-interaction/TransformMath.h"
 #include "f4vr/F4VRUtils.h"
-#include "f4vr/PlayerNodes.h"
 
 #include "RE/Bethesda/TESObjectREFRs.h"
 
@@ -20,15 +18,6 @@ namespace rock
         constexpr std::uint32_t kMinHandoffFrames = 3;
         constexpr std::uint32_t kMinEquippedVisualFrames = 4;
         constexpr std::uint32_t kMaxSceneGraphDepth = 32;
-
-        [[nodiscard]] RE::NiTransform makeLocalTransformForParent(const RE::NiNode* parent, const RE::NiTransform& world)
-        {
-            if (!parent) {
-                return world;
-            }
-
-            return transform_math::composeTransforms(transform_math::invertTransform(parent->world), world);
-        }
 
         [[nodiscard]] bool isRenderableNode(RE::NiAVObject* node) noexcept
         {
@@ -90,10 +79,7 @@ namespace rock
         auto* heldRef = input.heldRef;
         auto* heldRoot = heldRef ? heldRef->Get3D() : nullptr;
         auto* heldRootNode = heldRoot ? heldRoot->IsNode() : nullptr;
-        auto* parent = f4vr::getWorldRootNode();
-        if (!parent && heldRoot) {
-            parent = heldRoot->parent;
-        }
+        auto* parent = heldRoot ? heldRoot->parent : nullptr;
         if (!heldRef || !heldRoot || !heldRootNode || !parent) {
             return false;
         }
@@ -110,11 +96,11 @@ namespace rock
         _phantomParent.reset(parent);
         _heldFormID = heldRef->GetFormID();
         _isLeft = input.isLeft;
-        _followAnchorStartWorld = input.handWorld;
-        _phantomStartWorld = heldRoot->world;
-        _hasFollowAnchor = true;
         _phantomRoot->name = RE::BSFixedString(kPhantomNodeName);
-        _phantomRoot->local = makeLocalTransformForParent(parent, _phantomStartWorld);
+        // The held object scene graph is the visual authority at trigger time; avoid rebuilding it from hand axes.
+        _phantomRoot->local = heldRoot->local;
+        _phantomRoot->world = heldRoot->world;
+        _phantomRoot->previousWorld = heldRoot->previousWorld;
         _phantomRoot->fadeAmount = heldRoot->fadeAmount;
         clearCollisionObjectsRecursive(_phantomRoot.get(), 0);
         parent->AttachChild(_phantomRoot.get(), true);
@@ -148,7 +134,7 @@ namespace rock
 
     void HeldWeaponEquipVisualHandoff::prepareForWeaponCollisionImpl(const FrameInput& input)
     {
-        updatePhantomTransform(_isLeft ? input.leftHandWorld : input.rightHandWorld);
+        (void)input;
         restoreHiddenWeaponNodes();
     }
 
@@ -174,8 +160,6 @@ namespace rock
         const float dt = std::isfinite(input.deltaSeconds) ? std::clamp(input.deltaSeconds, 0.0f, 0.1f) : 0.0f;
         _elapsedSeconds += dt;
         ++_frames;
-
-        updatePhantomTransform(_isLeft ? input.leftHandWorld : input.rightHandWorld);
 
         bool capturedEquippedVisual = false;
         auto* equippedRoot = input.equippedWeaponRoot;
@@ -247,9 +231,6 @@ namespace rock
         _frames = 0;
         _equippedVisualFrames = 0;
         _elapsedSeconds = 0.0f;
-        _followAnchorStartWorld = transform_math::makeIdentityTransform<RE::NiTransform>();
-        _phantomStartWorld = transform_math::makeIdentityTransform<RE::NiTransform>();
-        _hasFollowAnchor = false;
         _active = false;
         _isLeft = false;
     }
@@ -352,23 +333,4 @@ namespace rock
         }
     }
 
-    void HeldWeaponEquipVisualHandoff::updatePhantomTransform(const RE::NiTransform* handWorld) noexcept
-    {
-        auto* phantom = _phantomRoot.get();
-        if (!phantom || !handWorld) {
-            return;
-        }
-
-        auto* parent = _phantomParent.get();
-        if (!parent) {
-            parent = phantom->parent;
-        }
-
-        RE::NiTransform phantomWorld = _phantomStartWorld;
-        if (_hasFollowAnchor) {
-            phantomWorld.translate = _phantomStartWorld.translate + (handWorld->translate - _followAnchorStartWorld.translate);
-        }
-        phantom->local = makeLocalTransformForParent(parent, phantomWorld);
-        f4vr::updateDown(phantom, true);
-    }
 }

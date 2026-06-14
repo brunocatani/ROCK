@@ -2188,8 +2188,6 @@ namespace rock
         _heldWeaponEquipVisualHandoff.prepareForWeaponCollision(HeldWeaponEquipVisualHandoff::FrameInput{
             .deltaSeconds = frame.deltaSeconds,
             .equippedWeaponRoot = weaponNode,
-            .rightHandWorld = frame.right.disabled ? nullptr : &frame.right.rawHandWorld,
-            .leftHandWorld = frame.left.disabled ? nullptr : &frame.left.rawHandWorld,
         });
         const bool rightHandWeaponEquipped = weaponNode != nullptr;
         const bool retainedWeaponCollisionActive =
@@ -2377,8 +2375,6 @@ namespace rock
         _heldWeaponEquipVisualHandoff.updateAfterWeaponCollision(HeldWeaponEquipVisualHandoff::FrameInput{
             .deltaSeconds = frame.deltaSeconds,
             .equippedWeaponRoot = weaponNode,
-            .rightHandWorld = frame.right.disabled ? nullptr : &frame.right.rawHandWorld,
-            .leftHandWorld = frame.left.disabled ? nullptr : &frame.left.rawHandWorld,
         });
 
         refreshGeneratedBodyContactRegistry();
@@ -4755,7 +4751,6 @@ namespace rock
                     const bool visualHandoffStarted = _heldWeaponEquipVisualHandoff.begin(HeldWeaponEquipVisualHandoff::BeginInput{
                         .heldRef = heldRef,
                         .isLeft = isLeft,
-                        .handWorld = handInput.rawHandWorld,
                     });
                     std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;
                     const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
@@ -4776,8 +4771,6 @@ namespace rock
                             _heldWeaponEquipVisualHandoff.updateAfterWeaponCollision(HeldWeaponEquipVisualHandoff::FrameInput{
                                 .deltaSeconds = 0.0f,
                                 .equippedWeaponRoot = resolveEquippedWeaponInteractionNode(),
-                                .rightHandWorld = frame.right.disabled ? nullptr : &frame.right.rawHandWorld,
-                                .leftHandWorld = frame.left.disabled ? nullptr : &frame.left.rawHandWorld,
                             });
                         } else {
                             _heldWeaponEquipVisualHandoff.cancel();
