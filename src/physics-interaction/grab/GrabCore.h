@@ -725,6 +725,8 @@ namespace rock
         bool pivotAuthorityPositionOnly = false;
         bool pivotAuthorityNormalTrusted = false;
         bool requiresSettledVisualHandRelation = false;
+        bool hasSettledVisualHandRelation = false;
+        bool syntheticLooseWeaponPrimaryAttach = false;
         bool hasTelemetryCapture = false;
         bool hasSeatedPivotReacquire = false;
         bool fingerPoseAimValid = false;
@@ -875,6 +877,8 @@ namespace rock
             pivotAuthorityPositionOnly = false;
             pivotAuthorityNormalTrusted = false;
             requiresSettledVisualHandRelation = false;
+            hasSettledVisualHandRelation = false;
+            syntheticLooseWeaponPrimaryAttach = false;
             hasTelemetryCapture = false;
             hasSeatedPivotReacquire = false;
             fingerPoseAimValid = false;
@@ -1064,6 +1068,7 @@ namespace rock::grab_authority_frame_math
         None,
         PinchPocket,
         GripSupportModel,
+        LooseWeaponPrimaryAttach,
         PalmPocketMesh,
         SelectionMeshSnap,
         CollisionFallback
@@ -1076,6 +1081,8 @@ namespace rock::grab_authority_frame_math
             return "pinchPocket";
         case GrabAuthorityPivotSource::GripSupportModel:
             return "gripSupportModel";
+        case GrabAuthorityPivotSource::LooseWeaponPrimaryAttach:
+            return "looseWeaponPrimaryAttach";
         case GrabAuthorityPivotSource::PalmPocketMesh:
             return "palmPocketMesh";
         case GrabAuthorityPivotSource::SelectionMeshSnap:
@@ -1095,6 +1102,8 @@ namespace rock::grab_authority_frame_math
             return 0;
         case GrabAuthorityPivotSource::GripSupportModel:
             return 1;
+        case GrabAuthorityPivotSource::LooseWeaponPrimaryAttach:
+            return 1;
         case GrabAuthorityPivotSource::PalmPocketMesh:
             return 2;
         case GrabAuthorityPivotSource::SelectionMeshSnap:
@@ -1110,7 +1119,8 @@ namespace rock::grab_authority_frame_math
     inline bool isFinalGrabAuthorityPivotSource(GrabAuthorityPivotSource source)
     {
         return source == GrabAuthorityPivotSource::PinchPocket ||
-               source == GrabAuthorityPivotSource::GripSupportModel;
+               source == GrabAuthorityPivotSource::GripSupportModel ||
+               source == GrabAuthorityPivotSource::LooseWeaponPrimaryAttach;
     }
 
     template <class Vector>

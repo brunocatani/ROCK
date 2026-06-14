@@ -322,6 +322,7 @@ namespace rock
         _hasLastHeldHandPositionHavok = false;
         _lastPlayerSpaceVelocityHavok = {};
         clearGrabHandCollisionSuppressionState();
+        clearHeldLooseWeaponBodyCollisionSuppressionState();
     }
 
     void Hand::abandonHavokStateAfterWorldLoss()
@@ -338,20 +339,22 @@ namespace rock
         const bool hadConstraint = _activeConstraint.isValid();
         const bool hadProxy = _grabAuthorityProxy.isValid();
         const bool hadSuppression = hand_collision_suppression_math::hasActive(_grabHandCollisionSuppression);
+        const bool hadLooseWeaponBodySuppression = hand_collision_suppression_math::hasActive(_heldLooseWeaponBodyCollisionSuppression);
         const auto heldBodyCount = _heldBodyIds.size();
         const bool hadSavedState = _savedObjectState.isValid();
         const bool hadHandBody = hasCollisionBody();
 
-        if (!hadConstraint && !hadProxy && !hadSuppression && heldBodyCount == 0 && !hadSavedState && !hadHandBody) {
+        if (!hadConstraint && !hadProxy && !hadSuppression && !hadLooseWeaponBodySuppression && heldBodyCount == 0 && !hadSavedState && !hadHandBody) {
             return;
         }
 
         ROCK_LOG_WARN(Hand,
-            "{} hand abandoning Havok state after world loss: constraint={} proxy={} suppression={} heldBodies={} savedState={} handBody={}",
+            "{} hand abandoning Havok state after world loss: constraint={} proxy={} suppression={} looseWeaponBodySuppression={} heldBodies={} savedState={} handBody={}",
             handName(),
             hadConstraint ? "yes" : "no",
             hadProxy ? "yes" : "no",
             hadSuppression ? "yes" : "no",
+            hadLooseWeaponBodySuppression ? "yes" : "no",
             heldBodyCount,
             hadSavedState ? "yes" : "no",
             hadHandBody ? "yes" : "no");
@@ -377,6 +380,7 @@ namespace rock
         _grabConvergeStableInsidePocketFrames = 0;
         _grabConvergePreviousGripErrorGameUnits = std::numeric_limits<float>::max();
         clearGrabHandCollisionSuppressionState();
+        clearHeldLooseWeaponBodyCollisionSuppressionState();
         _boneColliders.reset();
         _handBody.reset();
         _grabAuthorityProxyReleasePending.store(false, std::memory_order_release);
@@ -2253,6 +2257,7 @@ namespace rock
         ROCK_LOG_DEBUG(Hand, "{} hand collision destroying — palmAnchorBody={}", handName(), _handBody.getBodyId().value);
         _boneColliders.destroy(bhkWorld, _handBody);
         clearGrabHandCollisionSuppressionState();
+        clearHeldLooseWeaponBodyCollisionSuppressionState();
     }
 
     void Hand::updateCollisionTransform(

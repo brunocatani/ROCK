@@ -3177,6 +3177,7 @@ namespace rock
             PalmPocketMeshPoint,
             PinchPocketMeshPoint,
             GripSupportModel,
+            LooseWeaponPrimaryAttach,
             PalmRayMeshPoint,
             CollisionFallback
         };
@@ -3198,6 +3199,8 @@ namespace rock
                 return "pinchPocketMeshPoint";
             case GrabPivotAuthoritySource::GripSupportModel:
                 return "gripSupportModel";
+            case GrabPivotAuthoritySource::LooseWeaponPrimaryAttach:
+                return "looseWeaponPrimaryAttach";
             case GrabPivotAuthoritySource::PalmRayMeshPoint:
                 return "palmRayMeshPoint";
             case GrabPivotAuthoritySource::CollisionFallback:
@@ -3264,6 +3267,9 @@ namespace rock
                 std::strcmp(mode, "gripSupportPalmWrap") == 0) {
                 return GrabPivotAuthoritySource::GripSupportModel;
             }
+            if (std::strcmp(mode, "looseWeaponPrimaryAttach") == 0) {
+                return GrabPivotAuthoritySource::LooseWeaponPrimaryAttach;
+            }
             if (std::strcmp(mode, "meshSurface") == 0) {
                 return GrabPivotAuthoritySource::PalmRayMeshPoint;
             }
@@ -3290,7 +3296,8 @@ namespace rock
         {
             return source &&
                    (std::strcmp(source, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::PinchPocketMeshPoint)) == 0 ||
-                       std::strcmp(source, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::GripSupportModel)) == 0);
+                       std::strcmp(source, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::GripSupportModel)) == 0 ||
+                       std::strcmp(source, grabPivotAuthoritySourceName(GrabPivotAuthoritySource::LooseWeaponPrimaryAttach)) == 0);
         }
 
         bool pivotAuthoritySourceCanYieldToPalmPocket(GrabPivotAuthoritySource source)
@@ -3307,6 +3314,7 @@ namespace rock
             case GrabPivotAuthoritySource::PalmPocketMeshPoint:
             case GrabPivotAuthoritySource::PinchPocketMeshPoint:
             case GrabPivotAuthoritySource::GripSupportModel:
+            case GrabPivotAuthoritySource::LooseWeaponPrimaryAttach:
                 return false;
             }
             return false;
@@ -4491,6 +4499,11 @@ namespace rock
         hand_collision_suppression_math::clear(_grabHandCollisionDelayedRestore);
     }
 
+    void Hand::clearHeldLooseWeaponBodyCollisionSuppressionState()
+    {
+        hand_collision_suppression_math::clear(_heldLooseWeaponBodyCollisionSuppression);
+    }
+
     void Hand::suppressHandCollisionForGrab(RE::hknpWorld* world, const BodyBoneColliderSet* bodyBoneColliders)
     {
         /*
@@ -4607,6 +4620,144 @@ namespace rock
             return;
         }
         clearGrabHandCollisionSuppressionState();
+    }
+
+    void Hand::suppressBodyCollisionForHeldLooseWeapon(RE::hknpWorld* world, const BodyBoneColliderSet* bodyBoneColliders)
+    {
+        if (!world || !bodyBoneColliders || !bodyBoneColliders->hasBodies()) {
+            return;
+        }
+
+        auto keepBodyColliderEnabled = [&](const BodyBoneColliderMetadata& metadata) {
+            const auto otherSide = _isLeft ? body_zone::BodyZoneSide::Right : body_zone::BodyZoneSide::Left;
+            if (metadata.side != otherSide) {
+                return false;
+            }
+            return metadata.role == skeleton_bone_debug_math::BoneColliderRole::ForearmSegment ||
+                   metadata.role == skeleton_bone_debug_math::BoneColliderRole::HandSegment;
+        };
+
+        auto roleName = [](skeleton_bone_debug_math::BoneColliderRole role) {
+            using skeleton_bone_debug_math::BoneColliderRole;
+            switch (role) {
+            case BoneColliderRole::UpperArmSegment:
+                return "UpperArmSegment";
+            case BoneColliderRole::ForearmSegment:
+                return "ForearmSegment";
+            case BoneColliderRole::HandSegment:
+                return "HandSegment";
+            case BoneColliderRole::FingerSegment:
+                return "FingerSegment";
+            case BoneColliderRole::TorsoSegment:
+                return "TorsoSegment";
+            case BoneColliderRole::LegSegment:
+                return "LegSegment";
+            case BoneColliderRole::FootSegment:
+                return "FootSegment";
+            }
+            return "Unknown";
+        };
+
+        auto suppressBody = [&](std::uint32_t bodyId) {
+            if (bodyId == INVALID_BODY_ID) {
+                return;
+            }
+
+            BodyBoneColliderMetadata metadata{};
+            if (!bodyBoneColliders->tryGetBodyMetadataAtomic(bodyId, metadata) || keepBodyColliderEnabled(metadata)) {
+                return;
+            }
+
+            std::uint32_t currentFilter = 0;
+            if (!body_collision::tryReadFilterInfo(world, RE::hknpBodyId{ bodyId }, currentFilter)) {
+                return;
+            }
+
+            const auto suppression = hand_collision_suppression_math::beginSuppression(_heldLooseWeaponBodyCollisionSuppression, bodyId, currentFilter);
+            if (!suppression.stored) {
+                ROCK_LOG_WARN(Hand,
+                    "{} hand: held loose weapon body suppression set full; bodyId={} role={} zone={} side={} left active",
+                    handName(),
+                    bodyId,
+                    roleName(metadata.role),
+                    body_zone::bodyZoneName(metadata.zone),
+                    body_zone::bodyZoneSideName(metadata.side));
+                return;
+            }
+
+            const auto registryResult = collision_suppression_registry::globalCollisionSuppressionRegistry().acquire(
+                world,
+                bodyId,
+                collision_suppression_registry::CollisionSuppressionOwner::HeldLooseWeaponBody,
+                "held-loose-weapon-body");
+
+            if (registryResult.valid && (registryResult.filterChanged || registryResult.firstLeaseForBody)) {
+                ROCK_LOG_DEBUG(Hand,
+                    "{} hand: held loose weapon body collision lease acquired bodyId={} role={} zone={} side={} filter=0x{:08X}->0x{:08X} wasDisabledBefore={} leases={}",
+                    handName(),
+                    bodyId,
+                    roleName(metadata.role),
+                    body_zone::bodyZoneName(metadata.zone),
+                    body_zone::bodyZoneSideName(metadata.side),
+                    registryResult.filterBefore,
+                    registryResult.filterAfter,
+                    registryResult.wasNoCollideBeforeSuppression ? "yes" : "no",
+                    registryResult.activeLeaseCount);
+            }
+        };
+
+        const std::uint32_t bodyCount = bodyBoneColliders->getBodyCount();
+        for (std::uint32_t i = 0; i < bodyCount; ++i) {
+            suppressBody(bodyBoneColliders->getBodyIdAtomic(i));
+        }
+    }
+
+    void Hand::restoreBodyCollisionAfterHeldLooseWeapon(RE::hknpWorld* world)
+    {
+        if (!hand_collision_suppression_math::hasActive(_heldLooseWeaponBodyCollisionSuppression)) {
+            return;
+        }
+
+        if (!world) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand: cannot restore held loose weapon body collision yet (world={}); preserving suppression state",
+                handName(),
+                static_cast<const void*>(world));
+            return;
+        }
+
+        bool restoreDeferred = false;
+        for (const auto& entry : _heldLooseWeaponBodyCollisionSuppression.entries) {
+            if (!entry.active || entry.bodyId == INVALID_BODY_ID) {
+                continue;
+            }
+
+            const auto releaseResult = collision_suppression_registry::globalCollisionSuppressionRegistry().release(
+                world,
+                entry.bodyId,
+                collision_suppression_registry::CollisionSuppressionOwner::HeldLooseWeaponBody,
+                "held-loose-weapon-body");
+            if (releaseResult.readFailed) {
+                restoreDeferred = true;
+                continue;
+            }
+
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand: held loose weapon body collision lease released bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} fullyReleased={}",
+                handName(),
+                entry.bodyId,
+                releaseResult.filterBefore,
+                releaseResult.filterAfter,
+                releaseResult.wasNoCollideBeforeSuppression ? "yes" : "no",
+                releaseResult.bodyFullyReleased ? "yes" : "no");
+        }
+
+        if (restoreDeferred) {
+            ROCK_LOG_WARN(Hand, "{} hand: held loose weapon body collision restore deferred; suppression leases preserved", handName());
+            return;
+        }
+
+        clearHeldLooseWeaponBodyCollisionSuppressionState();
     }
 
     void Hand::updateDelayedGrabHandCollisionRestore(RE::hknpWorld* world, float deltaTime)
@@ -9079,11 +9230,33 @@ namespace rock
                         grabGripPoint = looseWeaponPrimaryAttachFrame.gripPointWorld;
                         gripArea.contactSeedWorld = grabGripPoint;
                         gripEvidencePointWorld = grabGripPoint;
+                        gripNormalWorld = firstValidNormal({
+                            pocket.valid ? pocket.palmNormalWorld : RE::NiPoint3{},
+                            gripNormalWorld,
+                        });
+                        gripEvidenceNormalWorld = gripNormalWorld;
                         _grabObjectGripAtGrab.contactSeedWorld = grabGripPoint;
                         _grabObjectGripAtGrab.gripCenterWorld = grabGripPoint;
                         grabPointMode = "looseWeaponPrimaryAttach";
                         relationMode = grabPointMode;
                         grabFallbackReason = looseWeaponPrimaryAttachFrame.reason;
+                        _grabObjectGripAtGrab.source = grabPointMode;
+                        _grabObjectGripAtGrab.fallbackReason = grabFallbackReason;
+                        if (_grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld) {
+                            _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::NearConverging;
+                            captureReason = "looseWeaponPrimaryAttachSettle";
+                        }
+                        grabSurfaceHit = GrabSurfaceHit{};
+                        contactPatchRuntime = RuntimeGrabContactPatch{};
+                        contactPatchEvidenceAvailable = false;
+                        pivotAuthoritySource = grabPivotAuthoritySourceName(GrabPivotAuthoritySource::LooseWeaponPrimaryAttach);
+                        pivotAuthorityPositionOnly = false;
+                        pivotAuthorityNormalTrusted = true;
+                        pivotAuthorityPositionConfidence = 1.0f;
+                        pivotAuthorityPocketDistanceGameUnits = pointDistanceGameUnits(grabPivotAWorld, grabGripPoint);
+                        pivotAuthoritySelectionDeltaGameUnits = sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, grabGripPoint) : std::numeric_limits<float>::max();
+                        resolvedAuthorityPivotSourceForFreeze = grab_authority_frame_math::GrabAuthorityPivotSource::LooseWeaponPrimaryAttach;
+                        resolvedAuthorityPivotReasonForFreeze = looseWeaponPrimaryAttachFrame.reason;
                         looseWeaponPrimaryAttachApplied = true;
                         looseWeaponPrimaryAttachSourceVisible = looseWeaponPrimaryAttachFrame.sourceVisible;
                     }
@@ -9095,6 +9268,7 @@ namespace rock
 
                     selectedGripPointLocal = transform_math::worldPointToLocal(objectWorldTransform, grabGripPoint);
                     selectedPivotBBodyLocalGame = transform_math::worldPointToLocal(grabBodyWorldAtGrab, grabGripPoint);
+                    const bool effectivePinchPocket = usingPinchPocket && !looseWeaponPrimaryAttachApplied;
                     RE::NiPoint3 supportFrameNormalWorld = normalizeOrZero(gripNormalWorld);
                     if (lengthSquared(supportFrameNormalWorld) <= 0.000001f) {
                         supportFrameNormalWorld = firstValidNormal({
@@ -9117,6 +9291,30 @@ namespace rock
                         gripEvidencePointWorld,
                         gripEvidenceNormalWorld,
                         lengthSquared(gripEvidenceNormalWorld) > 0.000001f);
+                    if (looseWeaponPrimaryAttachApplied) {
+                        _grabFrame.gripSourceNode = nullptr;
+                        _grabFrame.gripPointSourceNodeLocal = {};
+                        _grabFrame.gripNormalSourceNodeLocal = {};
+                        _grabFrame.hasGripSourceNodePoint = false;
+                        _grabFrame.hasGripSourceNodeNormal = false;
+                        _grabFrame.gripEvidenceTriangleIndex = 0xFFFF'FFFF;
+                        _grabFrame.gripEvidenceShapeKey = 0xFFFF'FFFF;
+                        _grabFrame.gripEvidenceShapeCollisionFilterInfo = 0;
+                        _grabFrame.gripEvidenceHitFraction = 1.0f;
+                        _grabFrame.hasGripEvidenceShapeKey = false;
+                        _grabFrame.contactPatchSamples = {};
+                        _grabFrame.contactPatchSampleCount = 0;
+                        _grabFrame.hasContactPatch = false;
+                        _grabFrame.hasContactPatchEvidence = false;
+                        _grabFrame.contactPatchMeshSnapDeltaGameUnits = 0.0f;
+                        _grabFrame.hasMultiFingerContactPatch = false;
+                        _grabFrame.multiFingerContactGroupCount = 0;
+                        _grabFrame.multiFingerContactReason = "looseWeaponPrimaryAttach";
+                        _grabFrame.multiFingerContactSpreadGameUnits = 0.0f;
+                        _grabFrame.multiFingerGripCenterWorldAtGrab = {};
+                        _grabFrame.multiFingerHandCenterWorldAtGrab = {};
+                        _grabFrame.multiFingerAverageNormalWorldAtGrab = {};
+                    }
                     _grabFrame.pocketToGripDistanceGameUnits = pointDistanceGameUnits(grabPivotAWorld, grabGripPoint);
                     _grabFrame.selectionToGripEvidenceDistanceGameUnits =
                         sel.hasHitPoint ? pointDistanceGameUnits(sel.hitPointWorld, gripArea.contactSeedWorld) : std::numeric_limits<float>::max();
@@ -9124,42 +9322,56 @@ namespace rock
                     _grabFrame.gripPointWorldAtGrab = grabGripPoint;
                     _grabFrame.activeGrabPointMode = grabPointMode;
                     _grabFrame.seatMode = usingPinchPocket ? GrabSeatMode::PinchPocket : GrabSeatMode::SupportGroup;
-                    _grabFrame.hasPinchPocket = usingPinchPocket;
-                    _grabFrame.pinchPocketWorldAtGrab = usingPinchPocket ? pinchPocketCandidate.pinchPocketWorld : RE::NiPoint3{};
-                    _grabFrame.pinchAxisWorldAtGrab = usingPinchPocket ? pinchPocketCandidate.pinchAxisWorld : RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
-                    _grabFrame.palmSeatPointWorldAtGrab = usingPinchPocket ? pinchPocketCandidate.pinchPocketWorld : pocket.palmCenterWorld;
-                    _grabFrame.fingerEvidencePointWorldAtGrab = usingPinchPocket ? grabGripPoint : _grabFrame.fingerEvidencePointWorldAtGrab;
+                    if (looseWeaponPrimaryAttachApplied) {
+                        _grabFrame.seatMode = GrabSeatMode::SupportGroup;
+                    }
+                    _grabFrame.hasPinchPocket = effectivePinchPocket;
+                    _grabFrame.pinchPocketWorldAtGrab = effectivePinchPocket ? pinchPocketCandidate.pinchPocketWorld : RE::NiPoint3{};
+                    _grabFrame.pinchAxisWorldAtGrab = effectivePinchPocket ? pinchPocketCandidate.pinchAxisWorld : RE::NiPoint3{ 1.0f, 0.0f, 0.0f };
+                    _grabFrame.palmSeatPointWorldAtGrab = effectivePinchPocket ? pinchPocketCandidate.pinchPocketWorld : pocket.palmCenterWorld;
+                    _grabFrame.fingerEvidencePointWorldAtGrab = effectivePinchPocket ? grabGripPoint : _grabFrame.fingerEvidencePointWorldAtGrab;
                     _grabFrame.hasPalmSeatPoint = true;
-                    _grabFrame.hasFingerEvidencePoint = usingPinchPocket ? true : _grabFrame.hasFingerEvidencePoint;
-                    _grabFrame.palmSeatPointMode = usingPinchPocket ? "pinchPocket" : "threePhasePocket";
-                    _grabFrame.fingerEvidencePointMode = usingPinchPocket ? "pinchThumbIndex" : "evidenceOnly";
+                    _grabFrame.hasFingerEvidencePoint = effectivePinchPocket ? true : _grabFrame.hasFingerEvidencePoint;
+                    _grabFrame.palmSeatPointMode = effectivePinchPocket ? "pinchPocket" : "threePhasePocket";
+                    _grabFrame.fingerEvidencePointMode = effectivePinchPocket ? "pinchThumbIndex" : "evidenceOnly";
+                    if (looseWeaponPrimaryAttachApplied) {
+                        _grabFrame.fingerEvidencePointWorldAtGrab = grabGripPoint;
+                        _grabFrame.hasFingerEvidencePoint = true;
+                        _grabFrame.fingerEvidencePointMode = "looseWeaponPrimaryAttach";
+                    }
                     _grabFrame.activeGrabPointUsesMultiFingerEvidence = false;
                     _grabFrame.pivotAuthoritySource = pivotAuthoritySource;
                     _grabFrame.pivotAuthorityPositionOnly = pivotAuthorityPositionOnly;
                     _grabFrame.pivotAuthorityNormalTrusted = pivotAuthorityNormalTrusted;
                     _grabFrame.pivotAuthorityPositionConfidence = pivotAuthorityPositionConfidence;
-                    _grabFrame.hasGripSupportModel = gripSupportRuntime.valid;
+                    _grabFrame.syntheticLooseWeaponPrimaryAttach = looseWeaponPrimaryAttachApplied;
+                    if (looseWeaponPrimaryAttachApplied) {
+                        _grabFrame.hasSettledVisualHandRelation = false;
+                    }
+                    _grabFrame.hasGripSupportModel = looseWeaponPrimaryAttachApplied ? false : gripSupportRuntime.valid;
                     _grabFrame.supportFrameNormalBodyLocal = transform_math::worldVectorToLocal(grabBodyWorldAtGrab, supportFrameNormalWorld);
                     _grabFrame.supportFrameAxisBodyLocal = transform_math::worldVectorToLocal(grabBodyWorldAtGrab, supportFrameAxisWorld);
                     _grabFrame.supportFrameBinormalBodyLocal = transform_math::worldVectorToLocal(grabBodyWorldAtGrab, supportFrameBinormalWorld);
                     _grabFrame.hasSupportFrameNormal = lengthSquared(supportFrameNormalWorld) > 0.000001f;
                     _grabFrame.hasSupportFrameAxis = lengthSquared(supportFrameAxisWorld) > 0.000001f;
                     _grabFrame.hasSupportFrameBinormal = lengthSquared(supportFrameBinormalWorld) > 0.000001f;
-                    _grabFrame.gripSupportAuthoredPivot = gripSupportRuntime.model.canAuthorPivot;
-                    _grabFrame.gripSupportKind = gripSupportRuntime.model.kind;
-                    _grabFrame.gripSupportReason = gripSupportRuntime.model.reason;
-                    _grabFrame.gripSupportConfidence = gripSupportRuntime.model.confidence;
-                    _grabFrame.gripSupportSpanGameUnits = gripSupportRuntime.model.supportSpanGameUnits;
-                    _grabFrame.gripSupportPivotShiftGameUnits = gripSupportRuntime.model.pivotShiftGameUnits;
-                    _grabFrame.requiresSettledVisualHandRelation = usingPinchPocket ?
-                        false :
-                        (pullCatchSeatSafety.requireSettledVisualRelation ||
-                            pivotAuthorityRequiresSettledVisualRelation(
-                                _grabFrame.pivotAuthoritySource,
-                                _grabFrame.pivotAuthorityPositionOnly,
-                                _grabAcquisitionPhase));
+                    _grabFrame.gripSupportAuthoredPivot = looseWeaponPrimaryAttachApplied ? false : gripSupportRuntime.model.canAuthorPivot;
+                    _grabFrame.gripSupportKind = looseWeaponPrimaryAttachApplied ? grab_support_model_math::GripSupportKind::None : gripSupportRuntime.model.kind;
+                    _grabFrame.gripSupportReason = looseWeaponPrimaryAttachApplied ? looseWeaponPrimaryAttachReason : gripSupportRuntime.model.reason;
+                    _grabFrame.gripSupportConfidence = looseWeaponPrimaryAttachApplied ? 0.0f : gripSupportRuntime.model.confidence;
+                    _grabFrame.gripSupportSpanGameUnits = looseWeaponPrimaryAttachApplied ? 0.0f : gripSupportRuntime.model.supportSpanGameUnits;
+                    _grabFrame.gripSupportPivotShiftGameUnits = looseWeaponPrimaryAttachApplied ? 0.0f : gripSupportRuntime.model.pivotShiftGameUnits;
+                    _grabFrame.requiresSettledVisualHandRelation = looseWeaponPrimaryAttachApplied ?
+                        true :
+                        (effectivePinchPocket ?
+                                false :
+                                (pullCatchSeatSafety.requireSettledVisualRelation ||
+                                    pivotAuthorityRequiresSettledVisualRelation(
+                                        _grabFrame.pivotAuthoritySource,
+                                        _grabFrame.pivotAuthorityPositionOnly,
+                                        _grabAcquisitionPhase)));
                     _grabFrame.fingerPoseAimValid = true;
-                    _grabFrame.fingerPoseAimReason = usingPinchPocket ? "pinchPocketThumbIndexTargets" : "rockPointToPalmEvidence";
+                    _grabFrame.fingerPoseAimReason = effectivePinchPocket ? "pinchPocketThumbIndexTargets" : "rockPointToPalmEvidence";
                     if (_grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::NearConverging ||
                         _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::GravityPulling) {
                         _grabFrame.fingerPoseAimValid = false;
@@ -9167,7 +9379,7 @@ namespace rock
                     }
                     const bool fullHeldAuthorityAtCapture =
                         _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld;
-                    if (usingPinchPocket) {
+                    if (effectivePinchPocket) {
                         _grabFrame.contactPatchSamples = {};
                         _grabFrame.contactPatchSampleCount = 0;
                         _grabFrame.hasContactPatch = false;
@@ -9182,7 +9394,7 @@ namespace rock
                         _grabFrame.multiFingerAverageNormalWorldAtGrab = gripNormalWorld;
                     }
 
-                    const auto captureFingerTargets = usingPinchPocket ?
+                    const auto captureFingerTargets = effectivePinchPocket ?
                         buildRuntimePinchFingerPoseTargets(pinchPocketCandidate) :
                         buildRuntimeFingerPoseTargets(gripEvidencePointWorld, gripEvidenceNormalWorld);
                     storeFingerPoseTargetsInGrabFrame(_grabFrame, captureFingerTargets, objectWorldTransform);
@@ -9993,6 +10205,7 @@ namespace rock
             }
             restoreFailedGrabPrep();
             restoreHandCollisionAfterGrab(world);
+            restoreBodyCollisionAfterHeldLooseWeapon(world);
             _savedObjectState.clear();
             _heldBodyIds.clear();
             _heldDriveDecision = {};
@@ -10001,6 +10214,9 @@ namespace rock
         }
 
         _heldObjectIsLooseWeapon = looseWeaponGrab;
+        if (_heldObjectIsLooseWeapon) {
+            suppressBodyCollisionForHeldLooseWeapon(world, bodyBoneColliders);
+        }
         const auto massSummaryAtGrab = readHeldBodyMassSummary(
             world,
             _savedObjectState.bodyId,
@@ -10354,6 +10570,9 @@ namespace rock
         nearby_grab_damping::tickNearbyGrabDamping(world, _nearbyGrabDamping, deltaTime);
 
         suppressHandCollisionForGrab(world, bodyBoneColliders);
+        if (_heldObjectIsLooseWeapon) {
+            suppressBodyCollisionForHeldLooseWeapon(world, bodyBoneColliders);
+        }
 
         _grabStartTime += held_object_physics_math::finitePositiveOrZero(deltaTime);
 
@@ -10533,7 +10752,7 @@ namespace rock
                 .motorContactSoftening = heldMotorContactSoftening,
                 .pivotAuthorityPositionOnly = _grabFrame.pivotAuthorityPositionOnly,
                 .pivotAuthorityNormalTrusted = _grabFrame.pivotAuthorityNormalTrusted,
-                .hasSeatedPivotReacquire = _grabFrame.hasSeatedPivotReacquire,
+                .hasSeatedPivotReacquire = _grabFrame.hasSeatedPivotReacquire || _grabFrame.hasSettledVisualHandRelation,
                 .requiresSettledVisualRelation = _grabFrame.requiresSettledVisualHandRelation,
                 .multiFingerContactGroupCount = _grabFrame.multiFingerContactGroupCount,
                 .contactPatchSampleCount = _grabFrame.contactPatchSampleCount,
@@ -10779,6 +10998,7 @@ namespace rock
             const bool pivotNeedsSeatedReacquire =
                 promotionRequested &&
                 _grabFrame.seatMode != GrabSeatMode::PinchPocket &&
+                !_grabFrame.syntheticLooseWeaponPrimaryAttach &&
                 (_grabFrame.requiresSettledVisualHandRelation ||
                     pivotAuthoritySourceShouldReacquireAtSeat(_grabFrame.pivotAuthoritySource, _grabFrame.pivotAuthorityPositionOnly));
             bool timeoutReacquiredSeatedPivot = false;
@@ -11069,7 +11289,11 @@ namespace rock
             if (reachedTouchMayPromote || timeoutMayPromote) {
                 const char* promotionReason =
                     timeoutReacquiredSeatedPivot ? "threePhaseReacquiredSeatedPivot" :
-                    (reachedTouchMayPromote ? "threePhaseTouchReachedFrozenRelation" : "threePhaseTimeoutInsidePocket");
+                    (_grabFrame.syntheticLooseWeaponPrimaryAttach ? "looseWeaponPrimaryAttachSettled" :
+                                                                  (reachedTouchMayPromote ? "threePhaseTouchReachedFrozenRelation" : "threePhaseTimeoutInsidePocket"));
+                if (_grabFrame.syntheticLooseWeaponPrimaryAttach) {
+                    _grabFrame.hasSettledVisualHandRelation = true;
+                }
                 _grabAcquisitionPhase = grab_three_phase::AcquisitionPhase::TouchHeld;
                 _grabFrame.fadeInGrabConstraint = false;
                 _grabFrame.motorFadeReason = promotionReason;
@@ -13166,6 +13390,7 @@ namespace rock
         const bool delayRestore = collisionRestoreMode == GrabReleaseCollisionRestoreMode::Delayed &&
                                   hand_collision_suppression_math::beginDelayedRestore(
                                       _grabHandCollisionDelayedRestore, _grabHandCollisionSuppression, g_rockConfig.rockGrabReleaseHandCollisionDelaySeconds);
+        restoreBodyCollisionAfterHeldLooseWeapon(world);
         if (delayRestore) {
             ROCK_LOG_DEBUG(Hand,
                 "{} hand: grab hand collision restore delayed bodies={} firstBodyId={} seconds={:.3f}",

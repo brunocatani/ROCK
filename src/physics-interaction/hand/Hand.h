@@ -2,6 +2,7 @@
 
 #include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
+#include "physics-interaction/debug/SkeletonBoneDebugMath.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
@@ -48,6 +49,8 @@ namespace rock
     inline constexpr std::size_t kGrabCollisionSuppressionArmBodyCountPerHand = 3;
     inline constexpr std::size_t kGrabCollisionSuppressionBodyCountPerHand =
         hand_collider_semantics::kHandColliderBodyCountPerHand + kGrabCollisionSuppressionArmBodyCountPerHand;
+    inline constexpr std::size_t kHeldLooseWeaponBodyCollisionSuppressionCapacity =
+        skeleton_bone_debug_math::kStandardBodyColliderDescriptors.size() * 2u;
 
     struct GrabPivotDebugSnapshot
     {
@@ -304,6 +307,9 @@ namespace rock
         void suppressHandCollisionForGrab(RE::hknpWorld* world, const BodyBoneColliderSet* bodyBoneColliders);
         void restoreHandCollisionAfterGrab(RE::hknpWorld* world);
         void clearGrabHandCollisionSuppressionState();
+        void suppressBodyCollisionForHeldLooseWeapon(RE::hknpWorld* world, const BodyBoneColliderSet* bodyBoneColliders);
+        void restoreBodyCollisionAfterHeldLooseWeapon(RE::hknpWorld* world);
+        void clearHeldLooseWeaponBodyCollisionSuppressionState();
         void clearPullRuntimeState(bool restorePreparedObject = true, const char* context = "clear-pull-runtime");
         void clearPullPrepTracking();
         void restorePullPrepIfActive(const char* context);
@@ -762,6 +768,7 @@ namespace rock
         std::atomic<float> _heldContactNormalHavokZ{ 0.0f };
 
         hand_collision_suppression_math::SuppressionSet<kGrabCollisionSuppressionBodyCountPerHand> _grabHandCollisionSuppression{};
+        hand_collision_suppression_math::SuppressionSet<kHeldLooseWeaponBodyCollisionSuppressionCapacity> _heldLooseWeaponBodyCollisionSuppression{};
         hand_collision_suppression_math::DelayedRestoreState _grabHandCollisionDelayedRestore{};
         std::atomic<std::uint32_t> _semanticContactFrameCounter{ 0 };
         std::atomic<std::uint32_t> _semanticContactValid{ 0 };

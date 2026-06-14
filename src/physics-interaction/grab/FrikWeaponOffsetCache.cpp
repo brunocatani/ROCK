@@ -4,12 +4,16 @@
 
 #include "common/CommonUtils.h"
 #include "f4vr/F4VRUtils.h"
+#include "f4vr/PlayerNodes.h"
 
 #include "RE/Bethesda/FormComponents.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -29,9 +33,19 @@ namespace rock::frik_weapon_offset_cache
         constexpr auto kFrikModuleName = "FRIK.dll";
         constexpr auto kFrikWeaponOffsetsRelativePath = R"(\My Games\Fallout4VR\FRIK_Config\Weapons_Offsets)";
 
+        struct CustomOffsetsSignature
+        {
+            bool directoryExists = false;
+            std::uint32_t fileCount = 0;
+            std::int64_t latestWriteTick = 0;
+
+            [[nodiscard]] bool operator==(const CustomOffsetsSignature&) const = default;
+        };
+
         struct CacheState
         {
             std::unordered_map<std::string, RE::NiTransform> offsets;
+            CustomOffsetsSignature customSignature{};
             bool loaded = false;
             std::size_t embeddedCount = 0;
             std::size_t customCount = 0;
@@ -43,6 +57,57 @@ namespace rock::frik_weapon_offset_cache
         [[nodiscard]] bool hasText(std::string_view text)
         {
             return !text.empty();
+        }
+
+        [[nodiscard]] std::filesystem::path customOffsetDirectory()
+        {
+            return common::getRelativePathInDocuments(kFrikWeaponOffsetsRelativePath);
+        }
+
+        [[nodiscard]] CustomOffsetsSignature scanCustomOffsetsSignature()
+        {
+            CustomOffsetsSignature signature{};
+            const std::filesystem::path offsetDir = customOffsetDirectory();
+            std::error_code ec;
+            if (!std::filesystem::exists(offsetDir, ec) || !std::filesystem::is_directory(offsetDir, ec)) {
+                return signature;
+            }
+
+            signature.directoryExists = true;
+            for (const auto& entry : std::filesystem::directory_iterator(offsetDir, ec)) {
+                if (ec) {
+                    break;
+                }
+
+                std::error_code entryEc;
+                if (!entry.is_regular_file(entryEc)) {
+                    continue;
+                }
+
+                ++signature.fileCount;
+                const auto writeTime = entry.last_write_time(entryEc);
+                if (!entryEc) {
+                    const auto ticks = static_cast<std::int64_t>(writeTime.time_since_epoch().count());
+                    signature.latestWriteTick = (std::max)(signature.latestWriteTick, ticks);
+                }
+            }
+            return signature;
+        }
+
+        [[nodiscard]] bool isFiniteNiTransform(const RE::NiTransform& value)
+        {
+            bool rotationFinite = true;
+            for (std::uint32_t row = 0; row < 3; ++row) {
+                for (std::uint32_t column = 0; column < 3; ++column) {
+                    rotationFinite = rotationFinite && std::isfinite(value.rotate.entry[row][column]);
+                }
+            }
+            return rotationFinite &&
+                   std::isfinite(value.translate.x) &&
+                   std::isfinite(value.translate.y) &&
+                   std::isfinite(value.translate.z) &&
+                   std::isfinite(value.scale) &&
+                   value.scale > 0.0001f;
         }
 
         [[nodiscard]] std::optional<std::string> readFrikResourceString(WORD resourceId)
@@ -146,7 +211,7 @@ namespace rock::frik_weapon_offset_cache
 
         [[nodiscard]] std::size_t loadCustomOffsets(std::unordered_map<std::string, RE::NiTransform>& offsets)
         {
-            const std::filesystem::path offsetDir = common::getRelativePathInDocuments(kFrikWeaponOffsetsRelativePath);
+            const std::filesystem::path offsetDir = customOffsetDirectory();
             std::error_code ec;
             if (!std::filesystem::exists(offsetDir, ec) || !std::filesystem::is_directory(offsetDir, ec)) {
                 return 0;
@@ -166,6 +231,15 @@ namespace rock::frik_weapon_offset_cache
                 }
             }
             return loadedCount;
+        }
+
+        [[nodiscard]] std::optional<RE::NiTransform> liveWeaponNodeDefaultOffset()
+        {
+            auto* weaponNode = f4vr::getWeaponNode();
+            if (!weaponNode || !isFiniteNiTransform(weaponNode->local)) {
+                return std::nullopt;
+            }
+            return weaponNode->local;
         }
 
         [[nodiscard]] std::string firstChildNameOfPGrip(const RE::NiAVObject* weaponRoot)
@@ -236,6 +310,20 @@ namespace rock::frik_weapon_offset_cache
 
             return LookupResult{ .found = false, .reason = "offsetMissing" };
         }
+
+        void refreshIfStale()
+        {
+            const auto currentSignature = scanCustomOffsetsSignature();
+            bool shouldReload = false;
+            {
+                std::scoped_lock lock(g_cacheMutex);
+                shouldReload = !g_cache.loaded || !(g_cache.customSignature == currentSignature);
+            }
+
+            if (shouldReload) {
+                preload();
+            }
+        }
     }
 
     void preload()
@@ -243,6 +331,7 @@ namespace rock::frik_weapon_offset_cache
         CacheState next{};
         next.embeddedCount = loadEmbeddedOffsets(next.offsets);
         next.customCount = loadCustomOffsets(next.offsets);
+        next.customSignature = scanCustomOffsetsSignature();
         next.loaded = true;
         const std::size_t totalCount = next.offsets.size();
         const std::size_t embeddedCount = next.embeddedCount;
@@ -274,7 +363,21 @@ namespace rock::frik_weapon_offset_cache
         }
 
         const std::string weaponName = extendWeaponNameLikeFrik(std::string(fullName), weaponRoot);
-        std::scoped_lock lock(g_cacheMutex);
-        return findPrimaryWeaponOffsetLocked(g_cache, weaponName);
+        refreshIfStale();
+
+        LookupResult lookup{};
+        {
+            std::scoped_lock lock(g_cacheMutex);
+            lookup = findPrimaryWeaponOffsetLocked(g_cache, weaponName);
+        }
+        if (lookup.found) {
+            return lookup;
+        }
+
+        const auto defaultOffset = liveWeaponNodeDefaultOffset();
+        if (defaultOffset) {
+            return LookupResult{ .found = true, .offset = *defaultOffset, .reason = "defaultWeaponNodeLocal" };
+        }
+        return lookup;
     }
 }
