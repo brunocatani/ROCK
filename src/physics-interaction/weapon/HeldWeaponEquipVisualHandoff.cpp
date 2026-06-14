@@ -5,7 +5,9 @@
 #include <exception>
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/TransformMath.h"
 #include "f4vr/F4VRUtils.h"
+#include "f4vr/PlayerNodes.h"
 
 #include "RE/Bethesda/TESObjectREFRs.h"
 
@@ -19,9 +21,39 @@ namespace rock
         constexpr std::uint32_t kMinEquippedVisualFrames = 4;
         constexpr std::uint32_t kMaxSceneGraphDepth = 32;
 
+        [[nodiscard]] RE::NiTransform makeLocalTransformForParent(const RE::NiNode* parent, const RE::NiTransform& world)
+        {
+            if (!parent) {
+                return world;
+            }
+
+            return transform_math::composeTransforms(transform_math::invertTransform(parent->world), world);
+        }
+
         [[nodiscard]] bool isRenderableNode(RE::NiAVObject* node) noexcept
         {
             return node && (node->IsGeometry() || node->IsParticlesGeom());
+        }
+
+        void forceVisibleRecursive(RE::NiAVObject* node, std::uint32_t depth) noexcept
+        {
+            if (!node || depth > kMaxSceneGraphDepth) {
+                return;
+            }
+
+            f4vr::setNodeVisibility(node, true);
+            node->fadeAmount = 1.0f;
+
+            auto* niNode = node->IsNode();
+            if (!niNode) {
+                return;
+            }
+
+            for (auto& child : niNode->children) {
+                if (child) {
+                    forceVisibleRecursive(child.get(), depth + 1);
+                }
+            }
         }
 
         void clearCollisionObjectsRecursive(RE::NiAVObject* node, std::uint32_t depth) noexcept
@@ -79,7 +111,10 @@ namespace rock
         auto* heldRef = input.heldRef;
         auto* heldRoot = heldRef ? heldRef->Get3D() : nullptr;
         auto* heldRootNode = heldRoot ? heldRoot->IsNode() : nullptr;
-        auto* parent = heldRoot ? heldRoot->parent : nullptr;
+        auto* parent = f4vr::getWorldRootNode();
+        if (!parent && heldRoot) {
+            parent = heldRoot->parent;
+        }
         if (!heldRef || !heldRoot || !heldRootNode || !parent) {
             return false;
         }
@@ -98,11 +133,12 @@ namespace rock
         _isLeft = input.isLeft;
         _phantomRoot->name = RE::BSFixedString(kPhantomNodeName);
         // The held object scene graph is the visual authority at trigger time; avoid rebuilding it from hand axes.
-        _phantomRoot->local = heldRoot->local;
+        _phantomRoot->local = makeLocalTransformForParent(parent, heldRoot->world);
         _phantomRoot->world = heldRoot->world;
         _phantomRoot->previousWorld = heldRoot->previousWorld;
-        _phantomRoot->fadeAmount = heldRoot->fadeAmount;
+        _phantomRoot->fadeAmount = 1.0f;
         clearCollisionObjectsRecursive(_phantomRoot.get(), 0);
+        forceVisibleRecursive(_phantomRoot.get(), 0);
         parent->AttachChild(_phantomRoot.get(), true);
         f4vr::updateDown(parent, true);
 
