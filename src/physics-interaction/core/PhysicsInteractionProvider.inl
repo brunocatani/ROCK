@@ -105,13 +105,13 @@
         return count;
     }
 
-    std::uint32_t PhysicsInteraction::getProviderWeaponEvidenceDetailCountV3() const
+    std::uint32_t PhysicsInteraction::getProviderWeaponEvidenceDetailCountV1() const
     {
         return static_cast<std::uint32_t>(_weaponCollision.getProfileEvidenceDescriptors().size());
     }
 
-    std::uint32_t PhysicsInteraction::copyProviderWeaponEvidenceDetailsV3(
-        ::rock::provider::RockProviderWeaponEvidenceDetailV3* outDetails,
+    std::uint32_t PhysicsInteraction::copyProviderWeaponEvidenceDetailsV1(
+        ::rock::provider::RockProviderWeaponEvidenceDetailV1* outDetails,
         std::uint32_t maxDetails) const
     {
         if (!outDetails || maxDetails == 0) {
@@ -124,7 +124,7 @@
             const auto& descriptor = descriptors[i];
             auto& out = outDetails[i];
             out = {};
-            out.size = sizeof(::rock::provider::RockProviderWeaponEvidenceDetailV3);
+            out.size = sizeof(::rock::provider::RockProviderWeaponEvidenceDetailV1);
             out.bodyId = descriptor.bodyId;
             out.partKind = static_cast<std::uint32_t>(descriptor.semantic.partKind);
             out.reloadRole = static_cast<std::uint32_t>(descriptor.semantic.reloadRole);
@@ -145,7 +145,7 @@
         return count;
     }
 
-    std::uint32_t PhysicsInteraction::getProviderWeaponEvidenceDetailPointCountV3(std::uint32_t bodyId) const
+    std::uint32_t PhysicsInteraction::getProviderWeaponEvidenceDetailPointCountV1(std::uint32_t bodyId) const
     {
         WeaponCollisionProfileEvidenceDescriptor descriptor{};
         RE::NiAVObject* sourceNode = nullptr;
@@ -156,7 +156,7 @@
         return descriptor.pointCount;
     }
 
-    std::uint32_t PhysicsInteraction::copyProviderWeaponEvidenceDetailPointsV3(
+    std::uint32_t PhysicsInteraction::copyProviderWeaponEvidenceDetailPointsV1(
         std::uint32_t bodyId,
         ::rock::provider::RockProviderPoint3* outPoints,
         std::uint32_t maxPoints) const
@@ -179,8 +179,8 @@
         return copied;
     }
 
-    std::uint32_t PhysicsInteraction::copyProviderBodyContactsV6(
-        ::rock::provider::RockProviderBodyContactV6* outContacts,
+    std::uint32_t PhysicsInteraction::copyProviderBodyContacts(
+        ::rock::provider::RockProviderBodyContactV1* outContacts,
         std::uint32_t maxContacts) const
     {
         if (!outContacts || maxContacts == 0) {
@@ -194,7 +194,7 @@
             const auto& record = records[i];
             auto& out = outContacts[i];
             out = {};
-            out.size = sizeof(::rock::provider::RockProviderBodyContactV6);
+            out.size = sizeof(::rock::provider::RockProviderBodyContactV1);
             out.version = ::rock::provider::ROCK_PROVIDER_API_VERSION;
             out.frameIndex = record.frame;
             out.bodyId = record.bodyId;

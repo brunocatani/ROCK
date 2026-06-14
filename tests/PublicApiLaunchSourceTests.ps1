@@ -138,7 +138,7 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 's_externalBodies\.clearOwner\(ownerT
     'Unregistering a consumer must release that owner external-body state.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'setExternalDiagnosticInputSuppression\(ownerToken,\s*0\)' `
     'Unregistering a consumer must release diagnostic input suppression.'
-Require-Text 'src/physics-interaction/object/ExternalBodyRegistry.h' 'copyContactsV2ForOwner' `
+Require-Text 'src/physics-interaction/object/ExternalBodyRegistry.h' 'copyContactsForOwnerV1' `
     'Owner-filtered contact polling must be implemented in the external-body registry.'
 Require-Text 'SDK/ROCK/docs/PublicApi.md' 'ROCK v1 does not expose public force-grab or force-release commands' `
     'Docs must state that command APIs are not public until the safe queue exists.'
@@ -151,10 +151,10 @@ Require-Text 'cmake/package.cmake' 'src/api/ROCKProviderApi\.h' `
 Require-Text 'cmake/package.cmake' 'src/api/ROCKApi\.h' `
     'Release packaging must copy the API alias header into the SDK include directory.'
 
-Reject-Text 'src/api/ROCKProviderApi.h' 'requestForceGrabV10|requestForceReleaseV10' `
+Reject-Text 'src/api/ROCKProviderApi.h' 'requestForceGrab|requestForceRelease' `
     'Public force-grab/release functions must not be exported until a real queued implementation exists.'
-Reject-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestForceGrabV10|apiRequestForceReleaseV10' `
-    'Provider glue must not expose fake immediate v10 command stubs.'
+Reject-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestForceGrab|apiRequestForceRelease' `
+    'Provider glue must not expose fake immediate command stubs.'
 
 $providerHeader = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/api/ROCKProviderApi.h')
 $expectedProviderFunctions = [string[]]@(
@@ -166,24 +166,21 @@ $expectedProviderFunctions = [string[]]@(
     'getFrameSnapshot',
     'queryWeaponContactAtPoint',
     'getWeaponEvidenceDescriptors',
-    'registerExternalBodies',
     'clearExternalBodies',
-    'getExternalContactSnapshot',
     'setOffhandInteractionReservation',
-    'registerExternalBodiesV2',
-    'getExternalContactSnapshotV2',
-    'getWeaponEvidenceDetailCountV3',
-    'copyWeaponEvidenceDetailsV3',
-    'getWeaponEvidenceDetailPointCountV3',
-    'copyWeaponEvidenceDetailPointsV3',
-    'publishDiagnosticOverlayV4',
-    'setDiagnosticInputSuppressionV4',
-    'getDiagnosticInputSnapshotV5',
-    'setDiagnosticInputSuppressionV5',
-    'getBodyContactSnapshotV6',
-    'getPrimaryHandV8',
-    'getOffhandHandV8',
-    'getHandFrameV8',
+    'registerExternalBodiesV1',
+    'getExternalContactSnapshotV1',
+    'getWeaponEvidenceDetailCountV1',
+    'copyWeaponEvidenceDetailsV1',
+    'getWeaponEvidenceDetailPointCountV1',
+    'copyWeaponEvidenceDetailPointsV1',
+    'publishDiagnosticOverlay',
+    'getDiagnosticInputSnapshotV1',
+    'setDiagnosticInputSuppressionV1',
+    'getBodyContactSnapshotV1',
+    'getPrimaryHandV1',
+    'getOffhandHandV1',
+    'getHandFrameV1',
     'registerConsumerV1',
     'unregisterConsumerV1',
     'getGrantedCapabilitiesV1',

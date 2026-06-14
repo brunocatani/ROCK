@@ -18,8 +18,8 @@ namespace rock
     class ExternalBodyRegistry
     {
     public:
-        static constexpr std::uint32_t kMaxBodies = ::rock::provider::ROCK_PROVIDER_MAX_EXTERNAL_BODIES_V2;
-        static constexpr std::uint32_t kMaxContacts = ::rock::provider::ROCK_PROVIDER_MAX_EXTERNAL_CONTACTS_V2;
+        static constexpr std::uint32_t kMaxBodies = ::rock::provider::ROCK_PROVIDER_MAX_EXTERNAL_BODIES_V1;
+        static constexpr std::uint32_t kMaxContacts = ::rock::provider::ROCK_PROVIDER_MAX_EXTERNAL_CONTACTS_V1;
 
         bool registerBodies(
             std::uint64_t ownerToken,
@@ -121,19 +121,19 @@ namespace rock
                 return;
             }
 
-            ::rock::provider::RockProviderExternalContactV2 contact{};
+            ::rock::provider::RockProviderExternalContactV1 contact{};
             contact.sourceBodyId = handBodyId;
             contact.targetExternalBodyId = externalBodyId;
             contact.frameIndex = frameIndex;
             contact.sourceKind = ::rock::provider::RockProviderExternalSourceKind::Hand;
             contact.sourceHand = isLeft ? ::rock::provider::RockProviderHand::Left : ::rock::provider::RockProviderHand::Right;
             contact.quality = ::rock::provider::RockProviderExternalContactQuality::BodyPairOnly;
-            recordContactV2(contact);
+            recordContactV1(contact);
         }
 
-        bool recordContactV2(::rock::provider::RockProviderExternalContactV2 contact)
+        bool recordContactV1(::rock::provider::RockProviderExternalContactV1 contact)
         {
-            if (contact.size != sizeof(::rock::provider::RockProviderExternalContactV2) || contact.sourceBodyId == kInvalidBodyId ||
+            if (contact.size != sizeof(::rock::provider::RockProviderExternalContactV1) || contact.sourceBodyId == kInvalidBodyId ||
                 contact.targetExternalBodyId == kInvalidBodyId || contact.sourceBodyId == contact.targetExternalBodyId) {
                 return false;
             }
@@ -162,39 +162,7 @@ namespace rock
             return true;
         }
 
-        [[nodiscard]] std::uint32_t copyContacts(::rock::provider::RockProviderExternalContact* outContacts, std::uint32_t maxContacts) const
-        {
-            if (!outContacts || maxContacts == 0) {
-                return 0;
-            }
-
-            std::uint32_t count = 0;
-            std::array<::rock::provider::RockProviderExternalContact, kMaxContacts> latest{};
-            for (std::uint32_t read = _contactCount; read > 0 && count < maxContacts; --read) {
-                const std::uint32_t i = read - 1;
-                const auto& source = _contacts[i];
-                if (source.sourceKind != ::rock::provider::RockProviderExternalSourceKind::Hand) {
-                    continue;
-                }
-
-                ::rock::provider::RockProviderExternalContact contact{};
-                contact.handBodyId = source.sourceBodyId;
-                contact.externalBodyId = source.targetExternalBodyId;
-                contact.generation = source.generation;
-                contact.ownerToken = source.ownerToken;
-                contact.sequence = source.sequence;
-                contact.hand = source.sourceHand;
-                contact.role = source.targetRole;
-                latest[count++] = contact;
-            }
-
-            for (std::uint32_t i = 0; i < count; ++i) {
-                outContacts[i] = latest[count - 1 - i];
-            }
-            return count;
-        }
-
-        [[nodiscard]] std::uint32_t copyContactsV2(::rock::provider::RockProviderExternalContactV2* outContacts, std::uint32_t maxContacts) const
+        [[nodiscard]] std::uint32_t copyContactsV1(::rock::provider::RockProviderExternalContactV1* outContacts, std::uint32_t maxContacts) const
         {
             if (!outContacts || maxContacts == 0) {
                 return 0;
@@ -208,9 +176,9 @@ namespace rock
             return count;
         }
 
-        [[nodiscard]] std::uint32_t copyContactsV2ForOwner(
+        [[nodiscard]] std::uint32_t copyContactsForOwnerV1(
             std::uint64_t ownerToken,
-            ::rock::provider::RockProviderExternalContactV2* outContacts,
+            ::rock::provider::RockProviderExternalContactV1* outContacts,
             std::uint32_t maxContacts) const
         {
             if (ownerToken == 0 || !outContacts || maxContacts == 0) {
@@ -218,7 +186,7 @@ namespace rock
             }
 
             std::uint32_t count = 0;
-            std::array<::rock::provider::RockProviderExternalContactV2, kMaxContacts> latest{};
+            std::array<::rock::provider::RockProviderExternalContactV1, kMaxContacts> latest{};
             for (std::uint32_t read = _contactCount; read > 0 && count < maxContacts; --read) {
                 const std::uint32_t i = read - 1;
                 if (_contacts[i].ownerToken != ownerToken) {
@@ -333,7 +301,7 @@ namespace rock
         }
 
         std::array<::rock::provider::RockProviderExternalBodyRegistration, kMaxBodies> _bodies{};
-        std::array<::rock::provider::RockProviderExternalContactV2, kMaxContacts> _contacts{};
+        std::array<::rock::provider::RockProviderExternalContactV1, kMaxContacts> _contacts{};
         std::uint32_t _bodyCount{ 0 };
         std::uint32_t _contactCount{ 0 };
         std::uint64_t _nextContactSequence{ 1 };

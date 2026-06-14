@@ -68,12 +68,12 @@ namespace
     constexpr std::uint32_t kProviderFeatureBitsV1 =
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::FrameCallbacks) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::LifecycleFields) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::HandFramesV8) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponEvidenceV3) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::BodyContactsV6) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::ExternalContactsV2) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::DiagnosticOverlayV4) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::DiagnosticInputV5) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::HandFrames) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponEvidence) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::BodyContacts) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::ExternalContacts) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::DiagnosticOverlay) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::DiagnosticInput) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::ConsumerRegistrationV1) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::OwnerFilteredExternalContactsV1);
 
@@ -175,7 +175,7 @@ namespace
 
     bool ROCK_PROVIDER_CALL apiGetFrameSnapshot(RockProviderFrameSnapshot* outSnapshot)
     {
-        if (!outSnapshot || outSnapshot->size < ROCK_PROVIDER_FRAME_SNAPSHOT_V6_SIZE) {
+        if (!outSnapshot || outSnapshot->size < ROCK_PROVIDER_FRAME_SNAPSHOT_V1_SIZE) {
             return false;
         }
 
@@ -191,26 +191,26 @@ namespace
         return true;
     }
 
-    RockProviderHand ROCK_PROVIDER_CALL apiGetPrimaryHandV8()
+    RockProviderHand ROCK_PROVIDER_CALL apiGetPrimaryHandV1()
     {
         return f4vr::isLeftHandedMode() ? RockProviderHand::Left : RockProviderHand::Right;
     }
 
-    RockProviderHand ROCK_PROVIDER_CALL apiGetOffhandHandV8()
+    RockProviderHand ROCK_PROVIDER_CALL apiGetOffhandHandV1()
     {
         return f4vr::isLeftHandedMode() ? RockProviderHand::Right : RockProviderHand::Left;
     }
 
-    bool ROCK_PROVIDER_CALL apiGetHandFrameV8(RockProviderHand hand, RockProviderHandFrameV8* outFrame)
+    bool ROCK_PROVIDER_CALL apiGetHandFrameV1(RockProviderHand hand, RockProviderHandFrameV1* outFrame)
     {
         /*
-         * V8 exposes ROCK's hand authority as a value snapshot instead of a
-         * NiNode lookup. Consumers such as PAPER need the same primary/offhand
-         * mapping, body id, and root-flattened transform that ROCK drives each
-         * frame, while ROCK deliberately does not promise a live scene node for
-         * that authority surface.
+         * Hand frames expose ROCK's hand authority as a value snapshot instead
+         * of a NiNode lookup. Consumers need the same primary/offhand mapping,
+         * body id, and root-flattened transform that ROCK drives each frame,
+         * while ROCK deliberately does not promise a live scene node for that
+         * authority surface.
          */
-        if (!outFrame || outFrame->size != sizeof(RockProviderHandFrameV8)) {
+        if (!outFrame || outFrame->size != sizeof(RockProviderHandFrameV1)) {
             return false;
         }
 
@@ -232,18 +232,18 @@ namespace
         }
 
         const bool isLeft = hand == RockProviderHand::Left;
-        RockProviderHandFrameV8 frame{};
+        RockProviderHandFrameV1 frame{};
         frame.hand = hand;
-        frame.flags = static_cast<std::uint32_t>(RockProviderHandFrameFlagV8::Valid) |
-                      static_cast<std::uint32_t>(RockProviderHandFrameFlagV8::RootFlattenedAuthority);
+        frame.flags = static_cast<std::uint32_t>(RockProviderHandFrameFlagV1::Valid) |
+                      static_cast<std::uint32_t>(RockProviderHandFrameFlagV1::RootFlattenedAuthority);
         if (isLeft) {
-            frame.flags |= static_cast<std::uint32_t>(RockProviderHandFrameFlagV8::Left);
+            frame.flags |= static_cast<std::uint32_t>(RockProviderHandFrameFlagV1::Left);
         }
-        if (hand == apiGetPrimaryHandV8()) {
-            frame.flags |= static_cast<std::uint32_t>(RockProviderHandFrameFlagV8::Primary);
+        if (hand == apiGetPrimaryHandV1()) {
+            frame.flags |= static_cast<std::uint32_t>(RockProviderHandFrameFlagV1::Primary);
         }
-        if (hand == apiGetOffhandHandV8()) {
-            frame.flags |= static_cast<std::uint32_t>(RockProviderHandFrameFlagV8::Offhand);
+        if (hand == apiGetOffhandHandV1()) {
+            frame.flags |= static_cast<std::uint32_t>(RockProviderHandFrameFlagV1::Offhand);
         }
 
         frame.transform = isLeft ? snapshot.leftHandTransform : snapshot.rightHandTransform;
@@ -398,9 +398,9 @@ namespace
         outLimits->featureBits = kProviderFeatureBitsV1;
         outLimits->maxFrameCallbacks = ROCK_PROVIDER_MAX_FRAME_CALLBACKS_V1;
         outLimits->maxConsumers = ROCK_PROVIDER_MAX_CONSUMERS_V1;
-        outLimits->maxExternalBodies = ROCK_PROVIDER_MAX_EXTERNAL_BODIES_V2;
-        outLimits->maxExternalContacts = ROCK_PROVIDER_MAX_EXTERNAL_CONTACTS_V2;
-        outLimits->maxBodyContacts = ROCK_PROVIDER_MAX_BODY_CONTACTS_V6;
+        outLimits->maxExternalBodies = ROCK_PROVIDER_MAX_EXTERNAL_BODIES_V1;
+        outLimits->maxExternalContacts = ROCK_PROVIDER_MAX_EXTERNAL_CONTACTS_V1;
+        outLimits->maxBodyContacts = ROCK_PROVIDER_MAX_BODY_CONTACTS_V1;
         outLimits->maxWeaponBodies = ROCK_PROVIDER_MAX_WEAPON_BODIES;
         outLimits->maxInteractionCommands = 0;
         return true;
@@ -436,18 +436,18 @@ namespace
         return pi->copyProviderWeaponEvidenceDescriptors(outDescriptors, maxDescriptors);
     }
 
-    std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEvidenceDetailCountV3()
+    std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEvidenceDetailCountV1()
     {
         auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
         if (!pi || !pi->isInitialized()) {
             return 0;
         }
 
-        return pi->getProviderWeaponEvidenceDetailCountV3();
+        return pi->getProviderWeaponEvidenceDetailCountV1();
     }
 
-    std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEvidenceDetailsV3(
-        RockProviderWeaponEvidenceDetailV3* outDetails,
+    std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEvidenceDetailsV1(
+        RockProviderWeaponEvidenceDetailV1* outDetails,
         std::uint32_t maxDetails)
     {
         auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
@@ -455,20 +455,20 @@ namespace
             return 0;
         }
 
-        return pi->copyProviderWeaponEvidenceDetailsV3(outDetails, maxDetails);
+        return pi->copyProviderWeaponEvidenceDetailsV1(outDetails, maxDetails);
     }
 
-    std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEvidenceDetailPointCountV3(std::uint32_t bodyId)
+    std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEvidenceDetailPointCountV1(std::uint32_t bodyId)
     {
         auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
         if (!pi || !pi->isInitialized()) {
             return 0;
         }
 
-        return pi->getProviderWeaponEvidenceDetailPointCountV3(bodyId);
+        return pi->getProviderWeaponEvidenceDetailPointCountV1(bodyId);
     }
 
-    std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEvidenceDetailPointsV3(
+    std::uint32_t ROCK_PROVIDER_CALL apiCopyWeaponEvidenceDetailPointsV1(
         std::uint32_t bodyId,
         RockProviderPoint3* outPoints,
         std::uint32_t maxPoints)
@@ -478,11 +478,11 @@ namespace
             return 0;
         }
 
-        return pi->copyProviderWeaponEvidenceDetailPointsV3(bodyId, outPoints, maxPoints);
+        return pi->copyProviderWeaponEvidenceDetailPointsV1(bodyId, outPoints, maxPoints);
     }
 
-    std::uint32_t ROCK_PROVIDER_CALL apiGetBodyContactSnapshotV6(
-        RockProviderBodyContactV6* outContacts,
+    std::uint32_t ROCK_PROVIDER_CALL apiGetBodyContactSnapshotV1(
+        RockProviderBodyContactV1* outContacts,
         std::uint32_t maxContacts)
     {
         auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
@@ -490,7 +490,7 @@ namespace
             return 0;
         }
 
-        return pi->copyProviderBodyContactsV6(outContacts, maxContacts);
+        return pi->copyProviderBodyContacts(outContacts, maxContacts);
     }
 
     RE::NiPoint3 providerPoint(const float source[3])
@@ -511,14 +511,14 @@ namespace
         return transform;
     }
 
-    bool diagnosticOverlayFlagSet(std::uint32_t flags, RockProviderDiagnosticOverlayFlagsV4 flag)
+    bool diagnosticOverlayFlagSet(std::uint32_t flags, RockProviderDiagnosticOverlayFlagsV1 flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
 
-    bool ROCK_PROVIDER_CALL apiPublishDiagnosticOverlayV4(const RockProviderDiagnosticOverlayFrameV4* frame)
+    bool ROCK_PROVIDER_CALL apiPublishDiagnosticOverlay(const RockProviderDiagnosticOverlayFrameV1* frame)
     {
-        if (!frame || frame->size != sizeof(RockProviderDiagnosticOverlayFrameV4) || frame->ownerToken == 0 || frame->hknpWorld == 0) {
+        if (!frame || frame->size != sizeof(RockProviderDiagnosticOverlayFrameV1) || frame->ownerToken == 0 || frame->hknpWorld == 0) {
             return false;
         }
 
@@ -532,14 +532,14 @@ namespace
 
         debug::BodyOverlayFrame overlay{};
         overlay.world = reinterpret_cast<RE::hknpWorld*>(frame->hknpWorld);
-        overlay.drawAxes = diagnosticOverlayFlagSet(frame->flags, RockProviderDiagnosticOverlayFlagsV4::DrawAxes);
-        overlay.drawMarkers = diagnosticOverlayFlagSet(frame->flags, RockProviderDiagnosticOverlayFlagsV4::DrawMarkers);
-        overlay.drawText = diagnosticOverlayFlagSet(frame->flags, RockProviderDiagnosticOverlayFlagsV4::DrawScreenText);
+        overlay.drawAxes = diagnosticOverlayFlagSet(frame->flags, RockProviderDiagnosticOverlayFlagsV1::DrawAxes);
+        overlay.drawMarkers = diagnosticOverlayFlagSet(frame->flags, RockProviderDiagnosticOverlayFlagsV1::DrawMarkers);
+        overlay.drawText = diagnosticOverlayFlagSet(frame->flags, RockProviderDiagnosticOverlayFlagsV1::DrawScreenText);
 
-        const auto axisCount = (std::min)(frame->axisCount, ROCK_PROVIDER_MAX_DIAGNOSTIC_AXES_V4);
+        const auto axisCount = (std::min)(frame->axisCount, ROCK_PROVIDER_MAX_DIAGNOSTIC_AXES_V1);
         for (std::uint32_t i = 0; overlay.drawAxes && i < axisCount && overlay.axisCount < overlay.axisEntries.size(); ++i) {
             const auto& source = frame->axes[i];
-            if (source.size != sizeof(RockProviderDiagnosticOverlayAxisV4)) {
+            if (source.size != sizeof(RockProviderDiagnosticOverlayAxisV1)) {
                 continue;
             }
 
@@ -551,10 +551,10 @@ namespace
             target.drawTranslationLine = source.drawTranslationLine != 0;
         }
 
-        const auto markerCount = (std::min)(frame->markerCount, ROCK_PROVIDER_MAX_DIAGNOSTIC_MARKERS_V4);
+        const auto markerCount = (std::min)(frame->markerCount, ROCK_PROVIDER_MAX_DIAGNOSTIC_MARKERS_V1);
         for (std::uint32_t i = 0; overlay.drawMarkers && i < markerCount && overlay.markerCount < overlay.markerEntries.size(); ++i) {
             const auto& source = frame->markers[i];
-            if (source.size != sizeof(RockProviderDiagnosticOverlayMarkerV4)) {
+            if (source.size != sizeof(RockProviderDiagnosticOverlayMarkerV1)) {
                 continue;
             }
 
@@ -567,10 +567,10 @@ namespace
             target.drawLine = source.drawLine != 0;
         }
 
-        const auto textCount = (std::min)(frame->textCount, ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_V4);
+        const auto textCount = (std::min)(frame->textCount, ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_V1);
         for (std::uint32_t i = 0; overlay.drawText && i < textCount && overlay.textCount < overlay.textEntries.size(); ++i) {
             const auto& source = frame->texts[i];
-            if (source.size != sizeof(RockProviderDiagnosticOverlayTextV4)) {
+            if (source.size != sizeof(RockProviderDiagnosticOverlayTextV1)) {
                 continue;
             }
 
@@ -588,14 +588,9 @@ namespace
         return true;
     }
 
-    bool ROCK_PROVIDER_CALL apiSetDiagnosticInputSuppressionV4(std::uint64_t ownerToken, bool suppressPrimaryTrigger)
+    bool ROCK_PROVIDER_CALL apiGetDiagnosticInputSnapshotV1(std::uint64_t ownerToken, RockProviderDiagnosticInputSnapshotV1* outSnapshot)
     {
-        return rock::input_remap_runtime::setExternalPrimaryTriggerSuppression(ownerToken, suppressPrimaryTrigger);
-    }
-
-    bool ROCK_PROVIDER_CALL apiGetDiagnosticInputSnapshotV5(std::uint64_t ownerToken, RockProviderDiagnosticInputSnapshotV5* outSnapshot)
-    {
-        if (ownerToken == 0 || !outSnapshot || outSnapshot->size != sizeof(RockProviderDiagnosticInputSnapshotV5)) {
+        if (ownerToken == 0 || !outSnapshot || outSnapshot->size != sizeof(RockProviderDiagnosticInputSnapshotV1)) {
             return false;
         }
 
@@ -610,21 +605,12 @@ namespace
         return true;
     }
 
-    bool ROCK_PROVIDER_CALL apiSetDiagnosticInputSuppressionV5(std::uint64_t ownerToken, std::uint32_t suppressionFlags)
+    bool ROCK_PROVIDER_CALL apiSetDiagnosticInputSuppressionV1(std::uint64_t ownerToken, std::uint32_t suppressionFlags)
     {
         return rock::input_remap_runtime::setExternalDiagnosticInputSuppression(ownerToken, suppressionFlags);
     }
 
-    bool ROCK_PROVIDER_CALL apiRegisterExternalBodies(
-        std::uint64_t ownerToken,
-        const RockProviderExternalBodyRegistration* bodies,
-        std::uint32_t bodyCount)
-    {
-        std::scoped_lock lock(s_externalBodyMutex);
-        return s_externalBodies.registerBodies(ownerToken, bodies, bodyCount);
-    }
-
-    bool ROCK_PROVIDER_CALL apiRegisterExternalBodiesV2(
+    bool ROCK_PROVIDER_CALL apiRegisterExternalBodiesV1(
         std::uint64_t ownerToken,
         const RockProviderExternalBodyRegistration* bodies,
         std::uint32_t bodyCount)
@@ -639,25 +625,17 @@ namespace
         s_externalBodies.clearOwner(ownerToken);
     }
 
-    std::uint32_t ROCK_PROVIDER_CALL apiGetExternalContactSnapshot(
-        RockProviderExternalContact* outContacts,
+    std::uint32_t ROCK_PROVIDER_CALL apiGetExternalContactSnapshotV1(
+        RockProviderExternalContactV1* outContacts,
         std::uint32_t maxContacts)
     {
         std::scoped_lock lock(s_externalBodyMutex);
-        return s_externalBodies.copyContacts(outContacts, maxContacts);
-    }
-
-    std::uint32_t ROCK_PROVIDER_CALL apiGetExternalContactSnapshotV2(
-        RockProviderExternalContactV2* outContacts,
-        std::uint32_t maxContacts)
-    {
-        std::scoped_lock lock(s_externalBodyMutex);
-        return s_externalBodies.copyContactsV2(outContacts, maxContacts);
+        return s_externalBodies.copyContactsV1(outContacts, maxContacts);
     }
 
     std::uint32_t ROCK_PROVIDER_CALL apiGetExternalContactSnapshotForOwnerV1(
         std::uint64_t ownerToken,
-        RockProviderExternalContactV2* outContacts,
+        RockProviderExternalContactV1* outContacts,
         std::uint32_t maxContacts)
     {
         if (ownerToken == 0 || !outContacts || maxContacts == 0) {
@@ -668,7 +646,7 @@ namespace
         if (!findConsumerSlotLocked(ownerToken)) {
             return 0;
         }
-        return s_externalBodies.copyContactsV2ForOwner(ownerToken, outContacts, maxContacts);
+        return s_externalBodies.copyContactsForOwnerV1(ownerToken, outContacts, maxContacts);
     }
 
     bool ROCK_PROVIDER_CALL apiSetOffhandInteractionReservation(std::uint64_t ownerToken, RockProviderOffhandReservation reservation)
@@ -700,24 +678,21 @@ namespace
         .getFrameSnapshot = &apiGetFrameSnapshot,
         .queryWeaponContactAtPoint = &apiQueryWeaponContactAtPoint,
         .getWeaponEvidenceDescriptors = &apiGetWeaponEvidenceDescriptors,
-        .registerExternalBodies = &apiRegisterExternalBodies,
         .clearExternalBodies = &apiClearExternalBodies,
-        .getExternalContactSnapshot = &apiGetExternalContactSnapshot,
         .setOffhandInteractionReservation = &apiSetOffhandInteractionReservation,
-        .registerExternalBodiesV2 = &apiRegisterExternalBodiesV2,
-        .getExternalContactSnapshotV2 = &apiGetExternalContactSnapshotV2,
-        .getWeaponEvidenceDetailCountV3 = &apiGetWeaponEvidenceDetailCountV3,
-        .copyWeaponEvidenceDetailsV3 = &apiCopyWeaponEvidenceDetailsV3,
-        .getWeaponEvidenceDetailPointCountV3 = &apiGetWeaponEvidenceDetailPointCountV3,
-        .copyWeaponEvidenceDetailPointsV3 = &apiCopyWeaponEvidenceDetailPointsV3,
-        .publishDiagnosticOverlayV4 = &apiPublishDiagnosticOverlayV4,
-        .setDiagnosticInputSuppressionV4 = &apiSetDiagnosticInputSuppressionV4,
-        .getDiagnosticInputSnapshotV5 = &apiGetDiagnosticInputSnapshotV5,
-        .setDiagnosticInputSuppressionV5 = &apiSetDiagnosticInputSuppressionV5,
-        .getBodyContactSnapshotV6 = &apiGetBodyContactSnapshotV6,
-        .getPrimaryHandV8 = &apiGetPrimaryHandV8,
-        .getOffhandHandV8 = &apiGetOffhandHandV8,
-        .getHandFrameV8 = &apiGetHandFrameV8,
+        .registerExternalBodiesV1 = &apiRegisterExternalBodiesV1,
+        .getExternalContactSnapshotV1 = &apiGetExternalContactSnapshotV1,
+        .getWeaponEvidenceDetailCountV1 = &apiGetWeaponEvidenceDetailCountV1,
+        .copyWeaponEvidenceDetailsV1 = &apiCopyWeaponEvidenceDetailsV1,
+        .getWeaponEvidenceDetailPointCountV1 = &apiGetWeaponEvidenceDetailPointCountV1,
+        .copyWeaponEvidenceDetailPointsV1 = &apiCopyWeaponEvidenceDetailPointsV1,
+        .publishDiagnosticOverlay = &apiPublishDiagnosticOverlay,
+        .getDiagnosticInputSnapshotV1 = &apiGetDiagnosticInputSnapshotV1,
+        .setDiagnosticInputSuppressionV1 = &apiSetDiagnosticInputSuppressionV1,
+        .getBodyContactSnapshotV1 = &apiGetBodyContactSnapshotV1,
+        .getPrimaryHandV1 = &apiGetPrimaryHandV1,
+        .getOffhandHandV1 = &apiGetOffhandHandV1,
+        .getHandFrameV1 = &apiGetHandFrameV1,
         .registerConsumerV1 = &apiRegisterConsumerV1,
         .unregisterConsumerV1 = &apiUnregisterConsumerV1,
         .getGrantedCapabilitiesV1 = &apiGetGrantedCapabilitiesV1,
@@ -806,10 +781,10 @@ namespace rock::provider
         return true;
     }
 
-    bool recordExternalContact(const RockProviderExternalContactV2& contact)
+    bool recordExternalContact(const RockProviderExternalContactV1& contact)
     {
         std::scoped_lock lock(s_externalBodyMutex);
-        return s_externalBodies.recordContactV2(contact);
+        return s_externalBodies.recordContactV1(contact);
     }
 
     RockProviderOffhandReservation currentOffhandReservation()

@@ -718,7 +718,7 @@
         auto fillSourceVelocity = [&](std::uint32_t sourceBodyId,
                                       ::rock::provider::RockProviderExternalSourceKind sourceKind,
                                       const HandColliderBodyMetadata* handMetadata,
-                                      ::rock::provider::RockProviderExternalContactV2& contact) {
+                                      ::rock::provider::RockProviderExternalContactV1& contact) {
             if (handMetadata && handMetadata->valid && handMetadata->hasSampledLinearVelocityHavok &&
                 havok_runtime::isFinite3(handMetadata->sampledLinearVelocityHavok)) {
                 std::copy_n(handMetadata->sampledLinearVelocityHavok, 4, contact.sourceVelocityHavok);
@@ -750,7 +750,7 @@
 
         auto tryFillAggregateContactPoint = [world](std::uint32_t sourceBodyId,
                                                     std::uint32_t externalBodyId,
-                                                    ::rock::provider::RockProviderExternalContactV2& contact) {
+                                                    ::rock::provider::RockProviderExternalContactV1& contact) {
             if (!world || sourceBodyId == INVALID_CONTACT_BODY_ID || externalBodyId == INVALID_CONTACT_BODY_ID) {
                 return false;
             }
@@ -798,7 +798,7 @@
                 return;
             }
 
-            ::rock::provider::RockProviderExternalContactV2 contact{};
+            ::rock::provider::RockProviderExternalContactV1 contact{};
             contact.sourceBodyId = sourceBodyId;
             contact.targetExternalBodyId = externalBodyId;
             contact.sourceKind = sourceKind;

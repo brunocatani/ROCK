@@ -35,7 +35,7 @@ bool initRock()
 - `1`: `ROCK.dll` is not loaded.
 - `2`: `ROCKAPI_GetProviderApi` was not exported.
 - `3`: ROCK returned no provider table.
-- `4`: the provider table is older than the requested minimum version.
+- `4`: the provider table is below the requested minimum version.
 
 Consumers may call read-only queries from ordinary F4SE plugin code, but frame-sensitive decisions should be made from a ROCK provider frame callback. Runtime writes and control calls must be treated as ROCK-owned work and should use a ROCK-issued owner token.
 
@@ -70,12 +70,12 @@ Implemented v1 feature bits:
 
 - `FrameCallbacks`
 - `LifecycleFields`
-- `HandFramesV8`
-- `WeaponEvidenceV3`
-- `BodyContactsV6`
-- `ExternalContactsV2`
-- `DiagnosticOverlayV4`
-- `DiagnosticInputV5`
+- `HandFrames`
+- `WeaponEvidence`
+- `BodyContacts`
+- `ExternalContacts`
+- `DiagnosticOverlay`
+- `DiagnosticInput`
 - `ConsumerRegistrationV1`
 - `OwnerFilteredExternalContactsV1`
 
@@ -95,7 +95,7 @@ Generation fields are guards. Cache them only long enough to validate same-frame
 
 ## External Bodies And Contacts
 
-Register external hknp body IDs with `registerExternalBodiesV2` using the ROCK-issued owner token. Bodies are replaced per owner; explicit clear/unregister drops the owner's registrations and pending contacts.
+Register external hknp body IDs with `registerExternalBodiesV1` using the ROCK-issued owner token. Bodies are replaced per owner; explicit clear/unregister drops the owner's registrations and pending contacts.
 
 Use `getExternalContactSnapshotForOwnerV1` for integrations. It returns only contacts targeting bodies registered by that owner.
 

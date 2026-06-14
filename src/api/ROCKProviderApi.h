@@ -30,16 +30,16 @@ namespace rock::provider
 #define ROCK_PROVIDER_CALL __cdecl
 
     inline constexpr std::uint32_t ROCK_PROVIDER_API_VERSION = 1;
-    inline constexpr std::uint32_t ROCK_PROVIDER_FRAME_SNAPSHOT_V6_SIZE = 256;
+    inline constexpr std::uint32_t ROCK_PROVIDER_FRAME_SNAPSHOT_V1_SIZE = 256;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_BODIES = 8;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EVIDENCE_NAME = 64;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_BODIES_V2 = 2048;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_CONTACTS_V2 = 512;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DIAGNOSTIC_AXES_V4 = 16;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DIAGNOSTIC_MARKERS_V4 = 16;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_V4 = 8;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_CHARS_V4 = 128;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_BODY_CONTACTS_V6 = 128;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_BODIES_V1 = 2048;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_CONTACTS_V1 = 512;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DIAGNOSTIC_AXES_V1 = 16;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DIAGNOSTIC_MARKERS_V1 = 16;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_V1 = 8;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_CHARS_V1 = 128;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_BODY_CONTACTS_V1 = 128;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_FRAME_CALLBACKS_V1 = 16;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_CONSUMERS_V1 = 64;
 
@@ -58,7 +58,7 @@ namespace rock::provider
         PhysicsDisabled = 1u << 2,
     };
 
-    enum class RockProviderHandFrameFlagV8 : std::uint32_t
+    enum class RockProviderHandFrameFlagV1 : std::uint32_t
     {
         None = 0,
         Valid = 1u << 0,
@@ -231,12 +231,12 @@ namespace rock::provider
         None = 0,
         FrameCallbacks = 1u << 0,
         LifecycleFields = 1u << 1,
-        HandFramesV8 = 1u << 2,
-        WeaponEvidenceV3 = 1u << 3,
-        BodyContactsV6 = 1u << 4,
-        ExternalContactsV2 = 1u << 5,
-        DiagnosticOverlayV4 = 1u << 6,
-        DiagnosticInputV5 = 1u << 7,
+        HandFrames = 1u << 2,
+        WeaponEvidence = 1u << 3,
+        BodyContacts = 1u << 4,
+        ExternalContacts = 1u << 5,
+        DiagnosticOverlay = 1u << 6,
+        DiagnosticInput = 1u << 7,
         ConsumerRegistrationV1 = 1u << 8,
         OwnerFilteredExternalContactsV1 = 1u << 9,
         InteractionCommandQueue = 1u << 10,
@@ -335,9 +335,9 @@ namespace rock::provider
         std::uint32_t stableFrameCount{ 0 };
     };
 
-    struct RockProviderHandFrameV8
+    struct RockProviderHandFrameV1
     {
-        std::uint32_t size{ sizeof(RockProviderHandFrameV8) };
+        std::uint32_t size{ sizeof(RockProviderHandFrameV1) };
         std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
         RockProviderHand hand{ RockProviderHand::None };
         std::uint32_t flags{ 0 };
@@ -407,16 +407,14 @@ namespace rock::provider
     };
 
     /*
-     * V3 keeps generated reload evidence detailed without making the fixed
-     * function table own variable-length buffers. The detail row carries the
-     * semantic body identity, local generated bounds, and total point count;
-     * callers fetch the local mesh point cloud through the body-id keyed copy
-     * function below. The older v2 descriptor remains available for consumers
-     * that only need contact classification.
+     * Detailed weapon evidence carries semantic body identity, local generated
+     * bounds, and total point count without making the fixed function table own
+     * variable-length buffers. Callers fetch the local mesh point cloud through
+     * the body-id keyed copy function below.
      */
-    struct RockProviderWeaponEvidenceDetailV3
+    struct RockProviderWeaponEvidenceDetailV1
     {
-        std::uint32_t size{ sizeof(RockProviderWeaponEvidenceDetailV3) };
+        std::uint32_t size{ sizeof(RockProviderWeaponEvidenceDetailV1) };
         std::uint32_t bodyId{ 0x7FFF'FFFF };
         std::uint32_t partKind{ 0 };
         std::uint32_t reloadRole{ 0 };
@@ -433,9 +431,9 @@ namespace rock::provider
         std::uint32_t reserved[9]{};
     };
 
-    struct RockProviderBodyContactV6
+    struct RockProviderBodyContactV1
     {
-        std::uint32_t size{ sizeof(RockProviderBodyContactV6) };
+        std::uint32_t size{ sizeof(RockProviderBodyContactV1) };
         std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
         std::uint64_t frameIndex{ 0 };
         std::uint32_t bodyId{ 0x7FFF'FFFF };
@@ -470,21 +468,9 @@ namespace rock::provider
         RockProviderHand ownerHand{ RockProviderHand::None };
     };
 
-    struct RockProviderExternalContact
+    struct RockProviderExternalContactV1
     {
-        std::uint32_t size{ sizeof(RockProviderExternalContact) };
-        std::uint32_t handBodyId{ 0x7FFF'FFFF };
-        std::uint32_t externalBodyId{ 0x7FFF'FFFF };
-        std::uint32_t generation{ 0 };
-        std::uint64_t ownerToken{ 0 };
-        std::uint64_t sequence{ 0 };
-        RockProviderHand hand{ RockProviderHand::None };
-        RockProviderExternalBodyRole role{ RockProviderExternalBodyRole::Unknown };
-    };
-
-    struct RockProviderExternalContactV2
-    {
-        std::uint32_t size{ sizeof(RockProviderExternalContactV2) };
+        std::uint32_t size{ sizeof(RockProviderExternalContactV1) };
         std::uint32_t sourceBodyId{ 0x7FFF'FFFF };
         std::uint32_t targetExternalBodyId{ 0x7FFF'FFFF };
         std::uint32_t generation{ 0 };
@@ -510,7 +496,7 @@ namespace rock::provider
         std::uint32_t reserved[2]{};
     };
 
-    enum class RockProviderDiagnosticOverlayFlagsV4 : std::uint32_t
+    enum class RockProviderDiagnosticOverlayFlagsV1 : std::uint32_t
     {
         None = 0,
         DrawAxes = 1u << 0,
@@ -518,9 +504,9 @@ namespace rock::provider
         DrawScreenText = 1u << 2,
     };
 
-    struct RockProviderDiagnosticOverlayAxisV4
+    struct RockProviderDiagnosticOverlayAxisV1
     {
-        std::uint32_t size{ sizeof(RockProviderDiagnosticOverlayAxisV4) };
+        std::uint32_t size{ sizeof(RockProviderDiagnosticOverlayAxisV1) };
         std::uint32_t role{ 0 };
         RockProviderTransform transform{};
         float translationStart[3]{};
@@ -528,9 +514,9 @@ namespace rock::provider
         std::uint32_t reserved[3]{};
     };
 
-    struct RockProviderDiagnosticOverlayMarkerV4
+    struct RockProviderDiagnosticOverlayMarkerV1
     {
-        std::uint32_t size{ sizeof(RockProviderDiagnosticOverlayMarkerV4) };
+        std::uint32_t size{ sizeof(RockProviderDiagnosticOverlayMarkerV1) };
         std::uint32_t role{ 0 };
         float position[3]{};
         float lineEnd[3]{};
@@ -540,11 +526,11 @@ namespace rock::provider
         std::uint32_t reserved[3]{};
     };
 
-    struct RockProviderDiagnosticOverlayTextV4
+    struct RockProviderDiagnosticOverlayTextV1
     {
-        std::uint32_t size{ sizeof(RockProviderDiagnosticOverlayTextV4) };
+        std::uint32_t size{ sizeof(RockProviderDiagnosticOverlayTextV1) };
         std::uint32_t role{ 0 };
-        char text[ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_CHARS_V4]{};
+        char text[ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_CHARS_V1]{};
         float x{ 18.0f };
         float y{ 18.0f };
         float sizeScale{ 2.0f };
@@ -554,9 +540,9 @@ namespace rock::provider
         std::uint32_t reserved[3]{};
     };
 
-    struct RockProviderDiagnosticOverlayFrameV4
+    struct RockProviderDiagnosticOverlayFrameV1
     {
-        std::uint32_t size{ sizeof(RockProviderDiagnosticOverlayFrameV4) };
+        std::uint32_t size{ sizeof(RockProviderDiagnosticOverlayFrameV1) };
         std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
         std::uint64_t ownerToken{ 0 };
         std::uintptr_t hknpWorld{ 0 };
@@ -565,13 +551,13 @@ namespace rock::provider
         std::uint32_t axisCount{ 0 };
         std::uint32_t markerCount{ 0 };
         std::uint32_t textCount{ 0 };
-        RockProviderDiagnosticOverlayAxisV4 axes[ROCK_PROVIDER_MAX_DIAGNOSTIC_AXES_V4]{};
-        RockProviderDiagnosticOverlayMarkerV4 markers[ROCK_PROVIDER_MAX_DIAGNOSTIC_MARKERS_V4]{};
-        RockProviderDiagnosticOverlayTextV4 texts[ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_V4]{};
+        RockProviderDiagnosticOverlayAxisV1 axes[ROCK_PROVIDER_MAX_DIAGNOSTIC_AXES_V1]{};
+        RockProviderDiagnosticOverlayMarkerV1 markers[ROCK_PROVIDER_MAX_DIAGNOSTIC_MARKERS_V1]{};
+        RockProviderDiagnosticOverlayTextV1 texts[ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_V1]{};
         std::uint32_t reserved[8]{};
     };
 
-    enum class RockProviderDiagnosticInputFlagsV5 : std::uint32_t
+    enum class RockProviderDiagnosticInputFlagsV1 : std::uint32_t
     {
         None = 0,
         PrimaryTriggerHeld = 1u << 0,
@@ -583,16 +569,16 @@ namespace rock::provider
         RightThumbstickDownPressed = 1u << 6,
     };
 
-    enum class RockProviderDiagnosticSuppressionFlagsV5 : std::uint32_t
+    enum class RockProviderDiagnosticSuppressionFlagsV1 : std::uint32_t
     {
         None = 0,
         PrimaryTrigger = 1u << 0,
         RightThumbstick = 1u << 1,
     };
 
-    struct RockProviderDiagnosticInputSnapshotV5
+    struct RockProviderDiagnosticInputSnapshotV1
     {
-        std::uint32_t size{ sizeof(RockProviderDiagnosticInputSnapshotV5) };
+        std::uint32_t size{ sizeof(RockProviderDiagnosticInputSnapshotV1) };
         std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
         std::uint64_t ownerToken{ 0 };
         std::uint64_t sequence{ 0 };
@@ -618,33 +604,27 @@ namespace rock::provider
         bool(ROCK_PROVIDER_CALL* getFrameSnapshot)(RockProviderFrameSnapshot* outSnapshot);
         bool(ROCK_PROVIDER_CALL* queryWeaponContactAtPoint)(const RockProviderWeaponContactQuery* query, RockProviderWeaponContactResult* outResult);
         std::uint32_t(ROCK_PROVIDER_CALL* getWeaponEvidenceDescriptors)(RockProviderWeaponEvidenceDescriptor* outDescriptors, std::uint32_t maxDescriptors);
-        bool(ROCK_PROVIDER_CALL* registerExternalBodies)(
-            std::uint64_t ownerToken,
-            const RockProviderExternalBodyRegistration* bodies,
-            std::uint32_t bodyCount);
         void(ROCK_PROVIDER_CALL* clearExternalBodies)(std::uint64_t ownerToken);
-        std::uint32_t(ROCK_PROVIDER_CALL* getExternalContactSnapshot)(RockProviderExternalContact* outContacts, std::uint32_t maxContacts);
         bool(ROCK_PROVIDER_CALL* setOffhandInteractionReservation)(std::uint64_t ownerToken, RockProviderOffhandReservation reservation);
-        bool(ROCK_PROVIDER_CALL* registerExternalBodiesV2)(
+        bool(ROCK_PROVIDER_CALL* registerExternalBodiesV1)(
             std::uint64_t ownerToken,
             const RockProviderExternalBodyRegistration* bodies,
             std::uint32_t bodyCount);
-        std::uint32_t(ROCK_PROVIDER_CALL* getExternalContactSnapshotV2)(RockProviderExternalContactV2* outContacts, std::uint32_t maxContacts);
-        std::uint32_t(ROCK_PROVIDER_CALL* getWeaponEvidenceDetailCountV3)();
-        std::uint32_t(ROCK_PROVIDER_CALL* copyWeaponEvidenceDetailsV3)(RockProviderWeaponEvidenceDetailV3* outDetails, std::uint32_t maxDetails);
-        std::uint32_t(ROCK_PROVIDER_CALL* getWeaponEvidenceDetailPointCountV3)(std::uint32_t bodyId);
-        std::uint32_t(ROCK_PROVIDER_CALL* copyWeaponEvidenceDetailPointsV3)(
+        std::uint32_t(ROCK_PROVIDER_CALL* getExternalContactSnapshotV1)(RockProviderExternalContactV1* outContacts, std::uint32_t maxContacts);
+        std::uint32_t(ROCK_PROVIDER_CALL* getWeaponEvidenceDetailCountV1)();
+        std::uint32_t(ROCK_PROVIDER_CALL* copyWeaponEvidenceDetailsV1)(RockProviderWeaponEvidenceDetailV1* outDetails, std::uint32_t maxDetails);
+        std::uint32_t(ROCK_PROVIDER_CALL* getWeaponEvidenceDetailPointCountV1)(std::uint32_t bodyId);
+        std::uint32_t(ROCK_PROVIDER_CALL* copyWeaponEvidenceDetailPointsV1)(
             std::uint32_t bodyId,
             RockProviderPoint3* outPoints,
             std::uint32_t maxPoints);
-        bool(ROCK_PROVIDER_CALL* publishDiagnosticOverlayV4)(const RockProviderDiagnosticOverlayFrameV4* frame);
-        bool(ROCK_PROVIDER_CALL* setDiagnosticInputSuppressionV4)(std::uint64_t ownerToken, bool suppressPrimaryTrigger);
-        bool(ROCK_PROVIDER_CALL* getDiagnosticInputSnapshotV5)(std::uint64_t ownerToken, RockProviderDiagnosticInputSnapshotV5* outSnapshot);
-        bool(ROCK_PROVIDER_CALL* setDiagnosticInputSuppressionV5)(std::uint64_t ownerToken, std::uint32_t suppressionFlags);
-        std::uint32_t(ROCK_PROVIDER_CALL* getBodyContactSnapshotV6)(RockProviderBodyContactV6* outContacts, std::uint32_t maxContacts);
-        RockProviderHand(ROCK_PROVIDER_CALL* getPrimaryHandV8)();
-        RockProviderHand(ROCK_PROVIDER_CALL* getOffhandHandV8)();
-        bool(ROCK_PROVIDER_CALL* getHandFrameV8)(RockProviderHand hand, RockProviderHandFrameV8* outFrame);
+        bool(ROCK_PROVIDER_CALL* publishDiagnosticOverlay)(const RockProviderDiagnosticOverlayFrameV1* frame);
+        bool(ROCK_PROVIDER_CALL* getDiagnosticInputSnapshotV1)(std::uint64_t ownerToken, RockProviderDiagnosticInputSnapshotV1* outSnapshot);
+        bool(ROCK_PROVIDER_CALL* setDiagnosticInputSuppressionV1)(std::uint64_t ownerToken, std::uint32_t suppressionFlags);
+        std::uint32_t(ROCK_PROVIDER_CALL* getBodyContactSnapshotV1)(RockProviderBodyContactV1* outContacts, std::uint32_t maxContacts);
+        RockProviderHand(ROCK_PROVIDER_CALL* getPrimaryHandV1)();
+        RockProviderHand(ROCK_PROVIDER_CALL* getOffhandHandV1)();
+        bool(ROCK_PROVIDER_CALL* getHandFrameV1)(RockProviderHand hand, RockProviderHandFrameV1* outFrame);
         RockProviderResultV1(ROCK_PROVIDER_CALL* registerConsumerV1)(
             const RockProviderConsumerRegistrationV1* registration,
             RockProviderConsumerHandleV1* outHandle);
@@ -653,7 +633,7 @@ namespace rock::provider
         bool(ROCK_PROVIDER_CALL* getProviderLimitsV1)(RockProviderLimitsV1* outLimits);
         std::uint32_t(ROCK_PROVIDER_CALL* getExternalContactSnapshotForOwnerV1)(
             std::uint64_t ownerToken,
-            RockProviderExternalContactV2* outContacts,
+            RockProviderExternalContactV1* outContacts,
             std::uint32_t maxContacts);
 
         [[nodiscard]] static int initialize(const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION)
@@ -707,36 +687,35 @@ namespace rock::provider
     static_assert(sizeof(RockProviderTransform) == 52);
     static_assert(sizeof(RockProviderFrameSnapshot) == 272);
     static_assert(alignof(RockProviderFrameSnapshot) == 8);
-    static_assert(sizeof(RockProviderHandFrameV8) == 112);
-    static_assert(alignof(RockProviderHandFrameV8) == 8);
-    static_assert(std::is_standard_layout_v<RockProviderHandFrameV8>);
-    static_assert(std::is_trivially_copyable_v<RockProviderHandFrameV8>);
+    static_assert(sizeof(RockProviderHandFrameV1) == 112);
+    static_assert(alignof(RockProviderHandFrameV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderHandFrameV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderHandFrameV1>);
     static_assert(sizeof(RockProviderExternalBodyRegistration) == 32);
-    static_assert(sizeof(RockProviderExternalContact) == 40);
-    static_assert(sizeof(RockProviderExternalContactV2) == 128);
-    static_assert(alignof(RockProviderExternalContactV2) == 8);
+    static_assert(sizeof(RockProviderExternalContactV1) == 128);
+    static_assert(alignof(RockProviderExternalContactV1) == 8);
     static_assert(sizeof(RockProviderWeaponEvidenceDescriptor) == 128);
     static_assert(sizeof(RockProviderPoint3) == 12);
     static_assert(sizeof(RockProviderBounds3) == 32);
-    static_assert(sizeof(RockProviderWeaponEvidenceDetailV3) == 192);
-    static_assert(alignof(RockProviderWeaponEvidenceDetailV3) == 8);
-    static_assert(std::is_standard_layout_v<RockProviderWeaponEvidenceDetailV3>);
-    static_assert(std::is_trivially_copyable_v<RockProviderWeaponEvidenceDetailV3>);
-    static_assert(sizeof(RockProviderBodyContactV6) == 128);
-    static_assert(alignof(RockProviderBodyContactV6) == 8);
-    static_assert(std::is_standard_layout_v<RockProviderBodyContactV6>);
-    static_assert(std::is_trivially_copyable_v<RockProviderBodyContactV6>);
-    static_assert(sizeof(RockProviderDiagnosticOverlayAxisV4) == 88);
-    static_assert(sizeof(RockProviderDiagnosticOverlayMarkerV4) == 56);
-    static_assert(sizeof(RockProviderDiagnosticOverlayTextV4) == 192);
-    static_assert(sizeof(RockProviderDiagnosticOverlayFrameV4) == 3920);
-    static_assert(alignof(RockProviderDiagnosticOverlayFrameV4) == 8);
-    static_assert(std::is_standard_layout_v<RockProviderDiagnosticOverlayFrameV4>);
-    static_assert(std::is_trivially_copyable_v<RockProviderDiagnosticOverlayFrameV4>);
-    static_assert(sizeof(RockProviderDiagnosticInputSnapshotV5) == 64);
-    static_assert(alignof(RockProviderDiagnosticInputSnapshotV5) == 8);
-    static_assert(std::is_standard_layout_v<RockProviderDiagnosticInputSnapshotV5>);
-    static_assert(std::is_trivially_copyable_v<RockProviderDiagnosticInputSnapshotV5>);
+    static_assert(sizeof(RockProviderWeaponEvidenceDetailV1) == 192);
+    static_assert(alignof(RockProviderWeaponEvidenceDetailV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderWeaponEvidenceDetailV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderWeaponEvidenceDetailV1>);
+    static_assert(sizeof(RockProviderBodyContactV1) == 128);
+    static_assert(alignof(RockProviderBodyContactV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderBodyContactV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderBodyContactV1>);
+    static_assert(sizeof(RockProviderDiagnosticOverlayAxisV1) == 88);
+    static_assert(sizeof(RockProviderDiagnosticOverlayMarkerV1) == 56);
+    static_assert(sizeof(RockProviderDiagnosticOverlayTextV1) == 192);
+    static_assert(sizeof(RockProviderDiagnosticOverlayFrameV1) == 3920);
+    static_assert(alignof(RockProviderDiagnosticOverlayFrameV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderDiagnosticOverlayFrameV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderDiagnosticOverlayFrameV1>);
+    static_assert(sizeof(RockProviderDiagnosticInputSnapshotV1) == 64);
+    static_assert(alignof(RockProviderDiagnosticInputSnapshotV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderDiagnosticInputSnapshotV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderDiagnosticInputSnapshotV1>);
 }
 
 namespace rock
@@ -752,7 +731,7 @@ namespace rock::provider
     bool isExternalBodyId(std::uint32_t bodyId);
     bool isExternalBodyDynamicPushSuppressed(std::uint32_t bodyId);
     bool recordExternalHandContact(bool isLeft, std::uint32_t handBodyId, std::uint32_t externalBodyId, std::uint64_t frameIndex);
-    bool recordExternalContact(const RockProviderExternalContactV2& contact);
+    bool recordExternalContact(const RockProviderExternalContactV1& contact);
     RockProviderOffhandReservation currentOffhandReservation();
     std::uint32_t currentExternalBodyCount();
 }

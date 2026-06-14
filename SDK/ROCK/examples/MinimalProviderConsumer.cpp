@@ -16,7 +16,7 @@ namespace
             return;
         }
 
-        std::array<RockProviderExternalContactV2, 16> contacts{};
+        std::array<RockProviderExternalContactV1, 16> contacts{};
         const std::uint32_t count = RockProviderApi::inst->getExternalContactSnapshotForOwnerV1(
             g_ownerToken,
             contacts.data(),
