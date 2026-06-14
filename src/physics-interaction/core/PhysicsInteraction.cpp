@@ -575,15 +575,15 @@ namespace rock
             return vrcf::VRControllers.isPressed(isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, buttonId);
         }
 
-        bool readRightHeldWeaponEquipButtonPressedEdge()
+        bool readHeldWeaponEquipTriggerPressedEdge(bool isLeft)
         {
             constexpr int buttonId = input_remap_policy::kOpenVrSteamVrTriggerButtonId;
-            const auto rawState = input_remap_runtime::consumeRawButtonState(false, buttonId);
+            const auto rawState = input_remap_runtime::consumeRawButtonState(isLeft, buttonId);
             if (rawState.available) {
                 return rawState.pressed;
             }
 
-            return vrcf::VRControllers.isPressed(vrcf::Hand::Right, buttonId);
+            return vrcf::VRControllers.isPressed(isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, buttonId);
         }
 
         struct TransformDelta
@@ -4273,6 +4273,8 @@ namespace rock
             auto& peerHeldJoinRetryState = _peerHeldJoinRetryStates[isLeft ? 1u : 0u];
             auto& shoulderStashState = _shoulderStashStates[isLeft ? 1u : 0u];
             auto& mouthConsumeState = _mouthConsumeStates[isLeft ? 1u : 0u];
+            const bool heldWeaponAtFrameStart = hand.isHoldingLooseWeapon();
+            const bool heldWeaponEquipTriggerPressed = readHeldWeaponEquipTriggerPressedEdge(isLeft);
             auto cancelPeerHeldJoinRetry = [&](const char* reason, bool logCancellation) {
                 if (!peerHeldJoinRetryState.active) {
                     return;
@@ -4720,23 +4722,23 @@ namespace rock
                 auto* heldRefForGameplay = hand.getHeldRef();
                 const bool peerHoldingSameObject =
                     heldRefForGameplay && peer.isHolding() && peer.getHeldRef() == heldRefForGameplay;
-                const bool rightHeldWeaponEquipRequested = input_remap_policy::shouldRequestRightHeldWeaponEquip(input_remap_policy::HeldWeaponEquipInput{
+                const bool heldWeaponEquipRequested = input_remap_policy::shouldRequestHeldWeaponEquip(input_remap_policy::HeldWeaponEquipInput{
                     .remapEnabled = g_rockConfig.rockInputRemapEnabled,
                     .gameplayInputAllowed = true,
                     .menuInputActive = input_remap_runtime::isMenuInputActive(),
-                    .hand = isLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right,
-                    .rightHandHeldWeapon = !isLeft && hand.isHoldingLooseWeapon(),
-                    .pressedEdge = !isLeft && hand.isHoldingLooseWeapon() && readRightHeldWeaponEquipButtonPressedEdge(),
+                    .heldWeaponAtFrameStart = heldWeaponAtFrameStart,
+                    .heldWeaponNow = hand.isHoldingLooseWeapon(),
+                    .sameHandTriggerPressedEdge = heldWeaponEquipTriggerPressed,
                 });
 
-                if (rightHeldWeaponEquipRequested) {
+                if (heldWeaponEquipRequested) {
                     hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, _heldObjectPlayerSpaceFrame, frame.deltaSeconds);
                     auto* heldRef = hand.getHeldRef();
                     std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;
                     const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
                     auto releaseContext = makeGrabReleaseContext(hand, isLeft);
                     releaseContext.disposition = GrabReleaseDisposition::PendingInventoryTransfer;
-                    releaseContext.reason = "right-trigger-held-weapon-equip";
+                    releaseContext.reason = "same-hand-trigger-held-weapon-equip";
                     const auto releaseOutcome = hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
                     if (heldRef) {
                         releaseObject(heldRef, claimOwnerForHand(isLeft));
@@ -4756,7 +4758,7 @@ namespace rock
                     }
                     dispatchHeldObjectEventByFormID(GrabEventType::Released, postEquipRef, heldFormID, primaryBodyId);
                     ROCK_LOG_INFO(Hand,
-                        "{} hand right-trigger held weapon equip formID={:08X} success={} equipReason={} count={} stack={} instanceMatch={} transferred={}",
+                        "{} hand trigger held weapon equip formID={:08X} success={} equipReason={} count={} stack={} instanceMatch={} transferred={}",
                         hand.handName(),
                         heldFormID,
                         equipResult.success ? "yes" : "no",

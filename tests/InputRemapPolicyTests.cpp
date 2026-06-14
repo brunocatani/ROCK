@@ -129,23 +129,23 @@ int main()
         .remapEnabled = true,
         .gameplayInputAllowed = true,
         .menuInputActive = false,
-        .hand = Hand::Right,
-        .rightHandHeldWeapon = true,
-        .pressedEdge = true,
+        .heldWeaponAtFrameStart = true,
+        .heldWeaponNow = true,
+        .sameHandTriggerPressedEdge = true,
     };
-    ok &= expectTrue("right trigger edge equips right held ROCK weapon", shouldRequestRightHeldWeaponEquip(equipInput));
-    auto leftEquipInput = equipInput;
-    leftEquipInput.hand = Hand::Left;
-    ok &= expectFalse("left hand cannot request right held weapon equip", shouldRequestRightHeldWeaponEquip(leftEquipInput));
+    ok &= expectTrue("same-hand trigger edge equips already held ROCK weapon", shouldRequestHeldWeaponEquip(equipInput));
+    auto newGrabEquipInput = equipInput;
+    newGrabEquipInput.heldWeaponAtFrameStart = false;
+    ok &= expectFalse("trigger edge during new grab does not equip weapon", shouldRequestHeldWeaponEquip(newGrabEquipInput));
     auto noHeldWeaponEquipInput = equipInput;
-    noHeldWeaponEquipInput.rightHandHeldWeapon = false;
-    ok &= expectFalse("trigger edge without right held weapon does not request equip", shouldRequestRightHeldWeaponEquip(noHeldWeaponEquipInput));
+    noHeldWeaponEquipInput.heldWeaponNow = false;
+    ok &= expectFalse("trigger edge without held weapon does not request equip", shouldRequestHeldWeaponEquip(noHeldWeaponEquipInput));
     auto menuEquipInput = equipInput;
     menuEquipInput.menuInputActive = true;
-    ok &= expectFalse("menu input blocks right held weapon equip request", shouldRequestRightHeldWeaponEquip(menuEquipInput));
+    ok &= expectFalse("menu input blocks held weapon equip request", shouldRequestHeldWeaponEquip(menuEquipInput));
     auto heldEquipInput = equipInput;
-    heldEquipInput.pressedEdge = false;
-    ok &= expectFalse("held trigger does not repeat right held weapon equip request", shouldRequestRightHeldWeaponEquip(heldEquipInput));
+    heldEquipInput.sameHandTriggerPressedEdge = false;
+    ok &= expectFalse("held trigger does not repeat held weapon equip request", shouldRequestHeldWeaponEquip(heldEquipInput));
 
     ok &= expectTrue("enabled suppression requests native hook install", shouldInstallNativeActionSuppressionHook(true, true));
     ok &= expectFalse("disabled remap skips native hook install", shouldInstallNativeActionSuppressionHook(false, true));

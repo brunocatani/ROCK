@@ -60,9 +60,9 @@ namespace rock::input_remap_policy
         bool remapEnabled{ true };
         bool gameplayInputAllowed{ true };
         bool menuInputActive{ false };
-        Hand hand{ Hand::Right };
-        bool rightHandHeldWeapon{ false };
-        bool pressedEdge{ false };
+        bool heldWeaponAtFrameStart{ false };
+        bool heldWeaponNow{ false };
+        bool sameHandTriggerPressedEdge{ false };
     };
 
     struct VirtualHolstersCompatibilityInput
@@ -136,9 +136,10 @@ namespace rock::input_remap_policy
                (!input.weaponDrawn || input.rightHandHeldWeapon);
     }
 
-    [[nodiscard]] constexpr bool shouldRequestRightHeldWeaponEquip(const HeldWeaponEquipInput& input)
+    [[nodiscard]] constexpr bool shouldRequestHeldWeaponEquip(const HeldWeaponEquipInput& input)
     {
-        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.hand == Hand::Right && input.rightHandHeldWeapon && input.pressedEdge;
+        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.heldWeaponAtFrameStart && input.heldWeaponNow &&
+               input.sameHandTriggerPressedEdge;
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeFavoritesAction(const NativeActionSuppressionInput& input)
