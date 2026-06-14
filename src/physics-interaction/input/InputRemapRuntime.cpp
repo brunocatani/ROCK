@@ -76,6 +76,8 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_gameplayInputAllowed{ false };
         std::atomic<bool> s_weaponDrawn{ false };
         std::atomic<bool> s_rightHandHeldWeapon{ false };
+        std::atomic<bool> s_equippedWeaponPrimaryDetachInputActive{ false };
+        std::atomic<bool> s_equippedWeaponPrimaryDetached{ false };
         std::atomic<std::uint32_t> s_pendingWeaponToggleRequests{ 0 };
         std::atomic<bool> s_hooksInstalled{ false };
         std::atomic<bool> s_readyWeaponEventHookInstalled{ false };
@@ -679,6 +681,8 @@ namespace rock::input_remap_runtime
                 .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
                 .rightHandHeldWeapon = s_rightHandHeldWeapon.load(std::memory_order_acquire),
                 .primaryHandEvent = false,
+                .equippedWeaponPrimaryDetachInputActive = s_equippedWeaponPrimaryDetachInputActive.load(std::memory_order_acquire),
+                .equippedWeaponPrimaryDetached = s_equippedWeaponPrimaryDetached.load(std::memory_order_acquire),
                 .eventMatched = eventMatched,
             };
         }
@@ -1149,6 +1153,16 @@ namespace rock::input_remap_runtime
     void setRightHandHeldWeapon(bool heldWeapon)
     {
         s_rightHandHeldWeapon.store(heldWeapon, std::memory_order_release);
+    }
+
+    void setEquippedWeaponPrimaryDetachInputActive(bool active)
+    {
+        s_equippedWeaponPrimaryDetachInputActive.store(active, std::memory_order_release);
+    }
+
+    void setEquippedWeaponPrimaryDetached(bool detached)
+    {
+        s_equippedWeaponPrimaryDetached.store(detached, std::memory_order_release);
     }
 
     bool isMenuInputActive()

@@ -153,6 +153,7 @@ namespace rock
         rockWeaponCollisionMaxAngularVelocity = 100.0f;
         rockWeaponInteractionProbeRadius = 12.0f;
         rockVisualOnlySidearmSupportGripEnabled = true;
+        rockEquippedWeaponPrimaryDetachEnabled = true;
         rockWeaponSupportGripHandLerpEnabled = true;
         rockWeaponSupportGripHandLerpTimeMin = 0.12f;
         rockWeaponSupportGripHandLerpTimeMax = 0.20f;
@@ -706,6 +707,8 @@ namespace rock
         rockWeaponInteractionProbeRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponInteractionProbeRadius", rockWeaponInteractionProbeRadius));
         rockVisualOnlySidearmSupportGripEnabled =
             ini.GetBoolValue(SECTION, "bVisualOnlySidearmSupportGripEnabled", rockVisualOnlySidearmSupportGripEnabled);
+        rockEquippedWeaponPrimaryDetachEnabled =
+            ini.GetBoolValue(SECTION, "bEquippedWeaponPrimaryDetachEnabled", rockEquippedWeaponPrimaryDetachEnabled);
         rockWeaponSupportGripHandLerpEnabled = ini.GetBoolValue(SECTION, "bWeaponSupportGripHandLerpEnabled", rockWeaponSupportGripHandLerpEnabled);
         rockWeaponSupportGripHandLerpTimeMin = readClampedFloat(ini,
             SECTION,

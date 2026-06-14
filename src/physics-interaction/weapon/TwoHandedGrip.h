@@ -28,6 +28,14 @@ namespace rock
         Inactive,
         Touching,
         Gripping,
+        PrimaryDetached,
+    };
+
+    struct EquippedWeaponPrimaryGripInput
+    {
+        bool held{ false };
+        bool pressed{ false };
+        bool released{ false };
     };
 
     struct TwoHandedGripDebugSnapshot
@@ -51,11 +59,17 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             const WeaponCollision& weaponCollision,
             const WeaponInteractionRuntimeState& runtimeState,
-            weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode);
+            weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
+            bool primaryDetachEnabled,
+            const EquippedWeaponPrimaryGripInput& primaryGripInput);
 
         void reset();
 
-        bool isGripping() const { return _state == TwoHandedState::Gripping; }
+        bool isGripping() const { return _state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryDetached; }
+
+        bool isPrimaryDetached() const { return _state == TwoHandedState::PrimaryDetached; }
+
+        bool canUsePrimaryDetachInput() const { return _state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryDetached; }
 
         bool isTouching() const { return _state == TwoHandedState::Touching; }
 
@@ -82,11 +96,23 @@ namespace rock
 
         void updateFullWeaponAuthorityGrip(RE::NiNode* weaponNode, float dt);
 
+        void updatePrimaryDetachedGrip(RE::NiNode* weaponNode, float dt, const EquippedWeaponPrimaryGripInput& primaryGripInput);
+
         void updateVisualOnlySupportGrip(RE::NiNode* weaponNode, float dt);
+
+        bool transitionToPrimaryDetached();
+
+        bool tryReattachPrimaryGrip(RE::NiNode* weaponNode);
+
+        bool primaryGripInputNearCapturedGrip(RE::NiNode* weaponNode, const RE::NiTransform& primaryTransform) const;
+
+        bool applyDetachedPrimaryVisualAuthority(const RE::NiTransform& livePrimaryHandWorld);
 
         void setSupportGripPose(bool isLeft, WeaponGripPoseId poseId, const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose);
 
         void clearSupportGripPose(bool isLeft);
+
+        void clearPrimaryDetachVisualAuthority(bool isLeft);
 
         bool applyWeaponVisualAuthority(RE::NiNode* weaponNode, const RE::NiTransform& solvedWeaponWorld);
 
@@ -105,6 +131,10 @@ namespace rock
         static void killFrikOffhandGrip();
 
         static void restoreFrikOffhandGrip();
+
+        static bool blockFrikPrimaryWeaponPose();
+
+        static void restoreFrikPrimaryWeaponPose();
 
         static RE::NiPoint3 worldToWeaponLocal(const RE::NiPoint3& worldPos, const RE::NiAVObject* weaponNode);
 

@@ -96,6 +96,9 @@ int main()
     auto drawnGrip = base;
     drawnGrip.weaponDrawn = true;
     ok &= expectFalse("drawn weapon allows native grip ready action", shouldSuppressNativeGripReadyAction(drawnGrip));
+    auto primaryDetachGrip = drawnGrip;
+    primaryDetachGrip.equippedWeaponPrimaryDetachInputActive = true;
+    ok &= expectTrue("primary detach input suppresses drawn native grip ready action", shouldSuppressNativeGripReadyAction(primaryDetachGrip));
     drawnGrip.primaryHandEvent = true;
     ok &= expectTrue("drawn primary WandGrip suppresses native reload action", shouldSuppressNativeGripReloadAction(drawnGrip));
     auto drawnOffhandGrip = drawnGrip;
@@ -109,6 +112,9 @@ int main()
     auto heldWeaponTrigger = drawnTrigger;
     heldWeaponTrigger.rightHandHeldWeapon = true;
     ok &= expectTrue("right held ROCK weapon suppresses native trigger even if weapon drawn", shouldSuppressNativeTriggerAction(heldWeaponTrigger));
+    auto primaryDetachedTrigger = drawnTrigger;
+    primaryDetachedTrigger.equippedWeaponPrimaryDetached = true;
+    ok &= expectTrue("primary-detached equipped weapon suppresses drawn native trigger", shouldSuppressNativeTriggerAction(primaryDetachedTrigger));
 
     auto favorites = base;
     favorites.weaponDrawn = true;

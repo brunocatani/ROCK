@@ -34,6 +34,20 @@ namespace rock::frik_visual_authority
         inline std::array<CachedHandPosePublication, kCachedHandPosePublicationCount> g_cachedHandPosePublications{};
         inline std::size_t g_nextCachedHandPosePublication = 0;
 
+        using BlockPrimaryHandWeaponPoseFn = bool(FRIK_CALL*)(const char*, bool);
+
+        [[nodiscard]] inline BlockPrimaryHandWeaponPoseFn blockPrimaryHandWeaponPoseExport()
+        {
+            static BlockPrimaryHandWeaponPoseFn fn = []() -> BlockPrimaryHandWeaponPoseFn {
+                const auto frikDll = GetModuleHandleA("FRIK.dll");
+                if (!frikDll) {
+                    return nullptr;
+                }
+                return reinterpret_cast<BlockPrimaryHandWeaponPoseFn>(GetProcAddress(frikDll, "FRIKAPI_BlockPrimaryHandWeaponPose"));
+            }();
+            return fn;
+        }
+
         [[nodiscard]] inline bool makeCacheableTagView(const char* tag, std::string_view& outTag)
         {
             if (!tag) {
@@ -311,6 +325,12 @@ namespace rock::frik_visual_authority
     {
         auto* frikApi = api();
         return frikApi && frikApi->blockOffHandWeaponGripping && frikApi->blockOffHandWeaponGripping(tag, block);
+    }
+
+    [[nodiscard]] inline bool blockPrimaryHandWeaponPose(const char* tag, bool block)
+    {
+        const auto fn = detail::blockPrimaryHandWeaponPoseExport();
+        return fn && fn(tag, block);
     }
 
     [[nodiscard]] inline RE::NiTransform getHandWorldTransform(Hand hand)

@@ -27,6 +27,7 @@ namespace rock
     namespace
     {
         constexpr const char* PRIMARY_GRIP_TAG = "ROCK_WeaponPrimaryGrip";
+        constexpr const char* PRIMARY_DETACH_TAG = "ROCK_WeaponPrimaryDetach";
         constexpr const char* SUPPORT_GRIP_TAG = "ROCK_WeaponSupportGrip";
         constexpr int GRIP_HAND_POSE_PRIORITY = 100;
         constexpr float SUPPORT_NORMAL_TWIST_FACTOR = 0.5f;
@@ -373,7 +374,9 @@ namespace rock
         std::uint64_t currentWeaponGenerationKey,
         const WeaponCollision& weaponCollision,
         const WeaponInteractionRuntimeState& runtimeState,
-        weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode)
+        weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
+        bool primaryDetachEnabled,
+        const EquippedWeaponPrimaryGripInput& primaryGripInput)
     {
         _hasSolvedWeaponTransform = false;
 
@@ -426,8 +429,35 @@ namespace rock
                 transitionToInactive(false);
             } else if (!weapon_two_handed_grip_math::shouldContinueSupportGrip(leftGripPressed, supportHandHoldingObject)) {
                 transitionToInactive(ownsWeaponTransform());
+            } else if (primaryDetachEnabled &&
+                       _authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver &&
+                       primaryGripInput.pressed) {
+                if (transitionToPrimaryDetached()) {
+                    auto consumedDetachInput = primaryGripInput;
+                    consumedDetachInput.pressed = false;
+                    updatePrimaryDetachedGrip(_activeWeaponNode, dt, consumedDetachInput);
+                } else {
+                    updateGripping(_activeWeaponNode, dt);
+                }
             } else {
                 updateGripping(_activeWeaponNode, dt);
+            }
+            break;
+
+        case TwoHandedState::PrimaryDetached:
+            if (!_activeWeaponNode) {
+                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing primary-detached authority because active weapon source root is unavailable");
+                transitionToInactive(false);
+            } else if (!weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(_activeWeaponGenerationKey, currentWeaponGenerationKey)) {
+                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing primary-detached authority because weapon generation changed");
+                transitionToInactive(false);
+            } else if (!runtimeState.supportGripAllowed) {
+                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing primary-detached authority because offhand reservation disabled support grip");
+                transitionToInactive(false);
+            } else if (!primaryDetachEnabled || !weapon_two_handed_grip_math::shouldContinueSupportGrip(leftGripPressed, supportHandHoldingObject)) {
+                transitionToInactive(ownsWeaponTransform());
+            } else {
+                updatePrimaryDetachedGrip(_activeWeaponNode, dt, primaryGripInput);
             }
             break;
         }
@@ -436,7 +466,9 @@ namespace rock
     void TwoHandedGrip::reset()
     {
         clearPrimaryGripPose(false);
+        clearPrimaryDetachVisualAuthority(false);
         clearSupportGripPose(true);
+        restoreFrikPrimaryWeaponPose();
         if (_state != TwoHandedState::Inactive) {
             transitionToInactive(false);
             return;
@@ -473,7 +505,8 @@ namespace rock
 
     bool TwoHandedGrip::ownsWeaponTransform() const
     {
-        return _state == TwoHandedState::Gripping && weapon_support_authority_policy::supportGripOwnsWeaponTransform(_authorityMode);
+        return (_state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryDetached) &&
+               weapon_support_authority_policy::supportGripOwnsWeaponTransform(_authorityMode);
     }
 
     bool TwoHandedGrip::getSolvedWeaponTransform(RE::NiTransform& outTransform) const
@@ -765,8 +798,10 @@ namespace rock
     void TwoHandedGrip::transitionToInactive(bool publishRestoredWeaponTransform)
     {
         clearPrimaryGripPose(false);
+        clearPrimaryDetachVisualAuthority(false);
         clearSupportGripPose(true);
         restoreFrikOffhandGrip();
+        restoreFrikPrimaryWeaponPose();
         bool restoredWeaponTransformAvailable = false;
         RE::NiTransform restoredWeaponTransform{};
         if (publishRestoredWeaponTransform && _hasWeaponNodeLocalBaseline && _activeWeaponNode) {
@@ -910,6 +945,156 @@ namespace rock
                 _primaryHandVisualLerp.durationSeconds,
                 _supportHandVisualLerp.lastAlpha,
                 _supportHandVisualLerp.durationSeconds);
+        }
+    }
+
+    bool TwoHandedGrip::transitionToPrimaryDetached()
+    {
+        if (_state == TwoHandedState::PrimaryDetached) {
+            return true;
+        }
+
+        clearPrimaryGripPose(false);
+        if (!blockFrikPrimaryWeaponPose()) {
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: primary detach skipped because hFRIK primary weapon-pose blocker is unavailable");
+            return false;
+        }
+        _primaryHandVisualLerp = {};
+        _supportHandVisualLerp = {};
+        _rotationBlend = 1.0f;
+        _state = TwoHandedState::PrimaryDetached;
+        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: primary hand detached; support grip owns equipped weapon authority");
+        return true;
+    }
+
+    bool TwoHandedGrip::primaryGripInputNearCapturedGrip(RE::NiNode* weaponNode, const RE::NiTransform& primaryTransform) const
+    {
+        if (!weaponNode) {
+            return false;
+        }
+
+        constexpr bool primaryHandIsLeft = false;
+        const RE::NiPoint3 primaryPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(primaryTransform, primaryHandIsLeft);
+        const RE::NiPoint3 primaryGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
+        const RE::NiPoint3 delta = sub(primaryPalm, primaryGripWorld);
+        const float distance = std::sqrt(dot(delta, delta));
+        const float reattachRadius = (std::max)(2.0f, g_rockConfig.rockWeaponInteractionProbeRadius);
+        return std::isfinite(distance) && distance <= reattachRadius;
+    }
+
+    bool TwoHandedGrip::tryReattachPrimaryGrip(RE::NiNode* weaponNode)
+    {
+        if (!weaponNode) {
+            return false;
+        }
+
+        constexpr bool primaryHandIsLeft = false;
+        RE::NiTransform primaryTransform{};
+        if (!tryGetHandBoneTransform(primaryHandIsLeft, primaryTransform)) {
+            return false;
+        }
+
+        if (!primaryGripInputNearCapturedGrip(weaponNode, primaryTransform)) {
+            return false;
+        }
+
+        const RE::NiPoint3 primaryPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(primaryTransform, primaryHandIsLeft);
+        const RE::NiPoint3 primaryGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
+        const RE::NiTransform adjustedPrimaryTransform =
+            weapon_two_handed_grip_math::alignHandFrameToGripPoint(primaryTransform, primaryPalm, primaryGripWorld);
+        _primaryHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), adjustedPrimaryTransform);
+        _primaryHandVisualLerp = {};
+        clearPrimaryDetachVisualAuthority(primaryHandIsLeft);
+        restoreFrikPrimaryWeaponPose();
+        _state = TwoHandedState::Gripping;
+        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: primary hand reattached at configured grip");
+        return true;
+    }
+
+    bool TwoHandedGrip::applyDetachedPrimaryVisualAuthority(const RE::NiTransform& livePrimaryHandWorld)
+    {
+        if (!frik_visual_authority::isAvailable()) {
+            return false;
+        }
+
+        return frik_visual_authority::applyExternalHandWorldTransform(
+            PRIMARY_DETACH_TAG,
+            frik_visual_authority::Hand::Right,
+            livePrimaryHandWorld,
+            GRIP_HAND_POSE_PRIORITY);
+    }
+
+    void TwoHandedGrip::updatePrimaryDetachedGrip(RE::NiNode* weaponNode, float dt, const EquippedWeaponPrimaryGripInput& primaryGripInput)
+    {
+        constexpr bool supportHandIsLeft = true;
+        constexpr bool primaryHandIsLeft = false;
+
+        if (primaryGripInput.pressed && tryReattachPrimaryGrip(weaponNode)) {
+            updateFullWeaponAuthorityGrip(weaponNode, dt);
+            return;
+        }
+
+        RE::NiTransform primaryTransform{};
+        RE::NiTransform supportTransform{};
+        if (!tryGetHandBoneTransform(primaryHandIsLeft, primaryTransform) || !tryGetHandBoneTransform(supportHandIsLeft, supportTransform)) {
+            _hasSolvedWeaponTransform = false;
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing primary-detached grip because root flattened hand transforms are unavailable");
+            transitionToInactive(false);
+            return;
+        }
+
+        if (!_hasHandWeaponLocalFrames) {
+            _hasSolvedWeaponTransform = false;
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing primary-detached grip because captured hand frames are unavailable");
+            transitionToInactive(false);
+            return;
+        }
+
+        const RE::NiTransform solvedWeaponWorld =
+            transform_math::composeTransforms(supportTransform, transform_math::invertTransform(_supportHandWeaponLocal));
+        if (!isFiniteTransform(solvedWeaponWorld)) {
+            _hasSolvedWeaponTransform = false;
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing primary-detached grip because support-only weapon solve produced invalid transform");
+            transitionToInactive(false);
+            return;
+        }
+
+        if (!applyWeaponVisualAuthority(weaponNode, solvedWeaponWorld)) {
+            _hasSolvedWeaponTransform = false;
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing primary-detached grip because ROCK visual weapon authority failed");
+            transitionToInactive(false);
+            return;
+        }
+
+        publishGripHandPoses(supportHandIsLeft);
+        if (!applyLockedHandVisualAuthority(weaponNode, false, true, dt, nullptr, &supportTransform)) {
+            _hasSolvedWeaponTransform = false;
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing primary-detached grip because ROCK support hand authority failed");
+            transitionToInactive(false);
+            return;
+        }
+
+        if (!applyDetachedPrimaryVisualAuthority(primaryTransform)) {
+            _hasSolvedWeaponTransform = false;
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing primary-detached grip because ROCK primary detach authority failed");
+            transitionToInactive(false);
+            return;
+        }
+
+        _lastSolvedWeaponTransform = weaponNode->world;
+        _hasSolvedWeaponTransform = true;
+
+        if (++_gripLogCounter >= 90) {
+            _gripLogCounter = 0;
+            const RE::NiPoint3 offhandGripFinal = transform_math::localPointToWorld(_lastSolvedWeaponTransform, _offhandGripLocal);
+            ROCK_LOG_DEBUG(Weapon,
+                "TwoHandedGrip: primary-detached support authority offhandGrip=({:.1f},{:.1f},{:.1f}) supportHand=({:.1f},{:.1f},{:.1f})",
+                offhandGripFinal.x,
+                offhandGripFinal.y,
+                offhandGripFinal.z,
+                supportTransform.translate.x,
+                supportTransform.translate.y,
+                supportTransform.translate.z);
         }
     }
 
@@ -1078,6 +1263,12 @@ namespace rock
         (void)frik_visual_authority::clearExternalHandWorldTransform(PRIMARY_GRIP_TAG, handFromBool(isLeft));
     }
 
+    void TwoHandedGrip::clearPrimaryDetachVisualAuthority(bool isLeft)
+    {
+        (void)frik_visual_authority::clearHandPose(PRIMARY_DETACH_TAG, handFromBool(isLeft));
+        (void)frik_visual_authority::clearExternalHandWorldTransform(PRIMARY_DETACH_TAG, handFromBool(isLeft));
+    }
+
     void TwoHandedGrip::killFrikOffhandGrip()
     {
         if (frik_visual_authority::blockOffHandWeaponGripping("ROCK_TwoHanded", true)) {
@@ -1089,6 +1280,22 @@ namespace rock
     {
         if (frik_visual_authority::blockOffHandWeaponGripping("ROCK_TwoHanded", false)) {
             ROCK_LOG_DEBUG(Weapon, "FRIK offhand grip restored");
+        }
+    }
+
+    bool TwoHandedGrip::blockFrikPrimaryWeaponPose()
+    {
+        if (frik_visual_authority::blockPrimaryHandWeaponPose("ROCK_PrimaryDetach", true)) {
+            ROCK_LOG_DEBUG(Weapon, "FRIK primary weapon pose suppressed");
+            return true;
+        }
+        return false;
+    }
+
+    void TwoHandedGrip::restoreFrikPrimaryWeaponPose()
+    {
+        if (frik_visual_authority::blockPrimaryHandWeaponPose("ROCK_PrimaryDetach", false)) {
+            ROCK_LOG_DEBUG(Weapon, "FRIK primary weapon pose restored");
         }
     }
 

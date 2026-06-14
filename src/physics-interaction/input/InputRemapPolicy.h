@@ -53,6 +53,8 @@ namespace rock::input_remap_policy
         bool weaponDrawn{ false };
         bool rightHandHeldWeapon{ false };
         bool primaryHandEvent{ false };
+        bool equippedWeaponPrimaryDetachInputActive{ false };
+        bool equippedWeaponPrimaryDetached{ false };
         bool eventMatched{ false };
     };
 
@@ -140,13 +142,14 @@ namespace rock::input_remap_policy
 
     [[nodiscard]] constexpr bool shouldSuppressNativeGripReadyAction(const NativeActionSuppressionInput& input)
     {
-        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched && !input.weaponDrawn;
+        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
+               (!input.weaponDrawn || input.equippedWeaponPrimaryDetachInputActive);
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeTriggerAction(const NativeActionSuppressionInput& input)
     {
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
-               (!input.weaponDrawn || input.rightHandHeldWeapon);
+               (!input.weaponDrawn || input.rightHandHeldWeapon || input.equippedWeaponPrimaryDetached);
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeGripReloadAction(const NativeActionSuppressionInput& input)
