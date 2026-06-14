@@ -138,8 +138,6 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 'kRockIssuedOwnerTokenNamespace\s*=\s
     'Registered public owner tokens must be ROCK-issued and namespaced.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 's_externalBodies\.clearOwner\(ownerToken\)' `
     'Unregistering a consumer must release that owner external-body state.'
-Require-Text 'src/api/ROCKProviderApi.cpp' 'setExternalDiagnosticInputSuppression\(ownerToken,\s*0\)' `
-    'Unregistering a consumer must release diagnostic input suppression.'
 Require-Text 'src/physics-interaction/object/ExternalBodyRegistry.h' 'copyContactsForOwnerV1' `
     'Owner-filtered contact polling must be implemented in the external-body registry.'
 Require-Text 'SDK/ROCK/docs/PublicApi.md' 'ROCK v1 does not expose public force-grab or force-release commands' `
@@ -159,6 +157,10 @@ Reject-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestForceGrab|apiRequestForceRe
     'Provider glue must not expose fake immediate command stubs.'
 Reject-Text 'src/api/ROCKProviderApi.h' 'getWeaponEvidenceDescriptors|RockProviderWeaponEvidenceDescriptor|getExternalContactSnapshotV1' `
     'Public API must not expose redundant shallow weapon evidence or unowned contact snapshots.'
+Reject-Text 'src/api/ROCKProviderApi.h' 'DiagnosticOverlay|DiagnosticInput|publishDiagnosticOverlay|getDiagnosticInputSnapshotV1|setDiagnosticInputSuppressionV1' `
+    'Public API must not expose diagnostic/probe control surfaces.'
+Reject-Text 'src/api/ROCKProviderApi.h' 'InteractionCommands|InteractionCommandQueue|ForceGrabCommand|ForceReleaseCommand|maxInteractionCommands|RequestQueued|RequestRejected|RequestNotFound' `
+    'Public API must not expose reserved interaction command scaffolding.'
 
 $providerHeader = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/api/ROCKProviderApi.h')
 $expectedProviderFunctions = [string[]]@(
@@ -176,9 +178,6 @@ $expectedProviderFunctions = [string[]]@(
     'copyWeaponEvidenceDetailsV1',
     'getWeaponEvidenceDetailPointCountV1',
     'copyWeaponEvidenceDetailPointsV1',
-    'publishDiagnosticOverlay',
-    'getDiagnosticInputSnapshotV1',
-    'setDiagnosticInputSuppressionV1',
     'getBodyContactSnapshotV1',
     'getPrimaryHandV1',
     'getOffhandHandV1',

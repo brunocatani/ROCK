@@ -4,15 +4,11 @@
 #include <array>
 #include <atomic>
 #include <algorithm>
-#include <cstdio>
 #include <cstring>
-#include <iterator>
 #include <mutex>
 
 #include "physics-interaction/object/ExternalBodyRegistry.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
-#include "physics-interaction/debug/DebugBodyOverlay.h"
-#include "physics-interaction/input/InputRemapRuntime.h"
 #include "f4vr/F4VRUtils.h"
 
 #ifdef DrawText
@@ -62,9 +58,7 @@ namespace
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::FrameSnapshots) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ExternalBodies) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ExternalContacts) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::OffhandReservation) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::DiagnosticOverlay) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::DiagnosticInput);
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::OffhandReservation);
     constexpr std::uint32_t kProviderFeatureBitsV1 =
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::FrameCallbacks) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::LifecycleFields) |
@@ -72,8 +66,6 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponEvidence) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::BodyContacts) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::ExternalContacts) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::DiagnosticOverlay) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::DiagnosticInput) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::ConsumerRegistrationV1) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::OwnerFilteredExternalContactsV1);
 
@@ -375,7 +367,6 @@ namespace
             s_offhandReservationOwner.store(0, std::memory_order_release);
         }
 
-        (void)rock::input_remap_runtime::setExternalDiagnosticInputSuppression(ownerToken, 0);
         return RockProviderResultV1::Ok;
     }
 
@@ -402,7 +393,6 @@ namespace
         outLimits->maxExternalContacts = ROCK_PROVIDER_MAX_EXTERNAL_CONTACTS_V1;
         outLimits->maxBodyContacts = ROCK_PROVIDER_MAX_BODY_CONTACTS_V1;
         outLimits->maxWeaponBodies = ROCK_PROVIDER_MAX_WEAPON_BODIES;
-        outLimits->maxInteractionCommands = 0;
         return true;
     }
 
@@ -481,123 +471,6 @@ namespace
         return pi->copyProviderBodyContacts(outContacts, maxContacts);
     }
 
-    RE::NiPoint3 providerPoint(const float source[3])
-    {
-        return RE::NiPoint3(source[0], source[1], source[2]);
-    }
-
-    RE::NiTransform providerTransform(const RockProviderTransform& source)
-    {
-        RE::NiTransform transform{};
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                transform.rotate.entry[row][column] = source.rotate[static_cast<std::size_t>(row * 3 + column)];
-            }
-        }
-        transform.translate = providerPoint(source.translate);
-        transform.scale = source.scale;
-        return transform;
-    }
-
-    bool diagnosticOverlayFlagSet(std::uint32_t flags, RockProviderDiagnosticOverlayFlagsV1 flag)
-    {
-        return (flags & static_cast<std::uint32_t>(flag)) != 0;
-    }
-
-    bool ROCK_PROVIDER_CALL apiPublishDiagnosticOverlay(const RockProviderDiagnosticOverlayFrameV1* frame)
-    {
-        if (!frame || frame->size != sizeof(RockProviderDiagnosticOverlayFrameV1) || frame->ownerToken == 0 || frame->hknpWorld == 0) {
-            return false;
-        }
-
-        /*
-         * External diagnostic drawing is intentionally exposed as a small value
-         * ABI instead of sharing ROCK's renderer internals with consumers. ROCK
-         * remains the only owner of the OpenVR/D3D hook; PAPER and future tools
-         * publish axes, markers, and note text as frame data.
-         */
-        debug::Install();
-
-        debug::BodyOverlayFrame overlay{};
-        overlay.world = reinterpret_cast<RE::hknpWorld*>(frame->hknpWorld);
-        overlay.drawAxes = diagnosticOverlayFlagSet(frame->flags, RockProviderDiagnosticOverlayFlagsV1::DrawAxes);
-        overlay.drawMarkers = diagnosticOverlayFlagSet(frame->flags, RockProviderDiagnosticOverlayFlagsV1::DrawMarkers);
-        overlay.drawText = diagnosticOverlayFlagSet(frame->flags, RockProviderDiagnosticOverlayFlagsV1::DrawScreenText);
-
-        const auto axisCount = (std::min)(frame->axisCount, ROCK_PROVIDER_MAX_DIAGNOSTIC_AXES_V1);
-        for (std::uint32_t i = 0; overlay.drawAxes && i < axisCount && overlay.axisCount < overlay.axisEntries.size(); ++i) {
-            const auto& source = frame->axes[i];
-            if (source.size != sizeof(RockProviderDiagnosticOverlayAxisV1)) {
-                continue;
-            }
-
-            auto& target = overlay.axisEntries[overlay.axisCount++];
-            target.source = debug::AxisOverlaySource::Transform;
-            target.role = debug::AxisOverlayRole::TargetBody;
-            target.transform = providerTransform(source.transform);
-            target.translationStart = providerPoint(source.translationStart);
-            target.drawTranslationLine = source.drawTranslationLine != 0;
-        }
-
-        const auto markerCount = (std::min)(frame->markerCount, ROCK_PROVIDER_MAX_DIAGNOSTIC_MARKERS_V1);
-        for (std::uint32_t i = 0; overlay.drawMarkers && i < markerCount && overlay.markerCount < overlay.markerEntries.size(); ++i) {
-            const auto& source = frame->markers[i];
-            if (source.size != sizeof(RockProviderDiagnosticOverlayMarkerV1)) {
-                continue;
-            }
-
-            auto& target = overlay.markerEntries[overlay.markerCount++];
-            target.role = debug::MarkerOverlayRole::TargetVisualOrigin;
-            target.position = providerPoint(source.position);
-            target.lineEnd = providerPoint(source.lineEnd);
-            target.size = source.sizeGame;
-            target.drawPoint = source.drawPoint != 0;
-            target.drawLine = source.drawLine != 0;
-        }
-
-        const auto textCount = (std::min)(frame->textCount, ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_V1);
-        for (std::uint32_t i = 0; overlay.drawText && i < textCount && overlay.textCount < overlay.textEntries.size(); ++i) {
-            const auto& source = frame->texts[i];
-            if (source.size != sizeof(RockProviderDiagnosticOverlayTextV1)) {
-                continue;
-            }
-
-            auto& target = overlay.textEntries[overlay.textCount++];
-            std::snprintf(target.text, sizeof(target.text), "%s", source.text);
-            target.x = source.x;
-            target.y = source.y;
-            target.size = source.sizeScale;
-            std::copy(std::begin(source.color), std::end(source.color), std::begin(target.color));
-            target.worldAnchor = providerPoint(source.worldAnchor);
-            target.worldAnchored = source.worldAnchored != 0;
-        }
-
-        debug::PublishFrame(overlay);
-        return true;
-    }
-
-    bool ROCK_PROVIDER_CALL apiGetDiagnosticInputSnapshotV1(std::uint64_t ownerToken, RockProviderDiagnosticInputSnapshotV1* outSnapshot)
-    {
-        if (ownerToken == 0 || !outSnapshot || outSnapshot->size != sizeof(RockProviderDiagnosticInputSnapshotV1)) {
-            return false;
-        }
-
-        const auto snapshot = rock::input_remap_runtime::consumeDiagnosticInputSnapshot();
-        outSnapshot->version = ROCK_PROVIDER_API_VERSION;
-        outSnapshot->ownerToken = ownerToken;
-        outSnapshot->sequence = snapshot.sequence;
-        outSnapshot->flags = snapshot.flags;
-        outSnapshot->rightThumbstickX = snapshot.rightThumbstickX;
-        outSnapshot->rightThumbstickY = snapshot.rightThumbstickY;
-        outSnapshot->primaryTriggerAxisX = snapshot.primaryTriggerAxisX;
-        return true;
-    }
-
-    bool ROCK_PROVIDER_CALL apiSetDiagnosticInputSuppressionV1(std::uint64_t ownerToken, std::uint32_t suppressionFlags)
-    {
-        return rock::input_remap_runtime::setExternalDiagnosticInputSuppression(ownerToken, suppressionFlags);
-    }
-
     bool ROCK_PROVIDER_CALL apiRegisterExternalBodiesV1(
         std::uint64_t ownerToken,
         const RockProviderExternalBodyRegistration* bodies,
@@ -664,9 +537,6 @@ namespace
         .copyWeaponEvidenceDetailsV1 = &apiCopyWeaponEvidenceDetailsV1,
         .getWeaponEvidenceDetailPointCountV1 = &apiGetWeaponEvidenceDetailPointCountV1,
         .copyWeaponEvidenceDetailPointsV1 = &apiCopyWeaponEvidenceDetailPointsV1,
-        .publishDiagnosticOverlay = &apiPublishDiagnosticOverlay,
-        .getDiagnosticInputSnapshotV1 = &apiGetDiagnosticInputSnapshotV1,
-        .setDiagnosticInputSuppressionV1 = &apiSetDiagnosticInputSuppressionV1,
         .getBodyContactSnapshotV1 = &apiGetBodyContactSnapshotV1,
         .getPrimaryHandV1 = &apiGetPrimaryHandV1,
         .getOffhandHandV1 = &apiGetOffhandHandV1,

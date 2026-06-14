@@ -35,10 +35,6 @@ namespace rock::provider
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EVIDENCE_NAME = 64;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_BODIES_V1 = 2048;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_EXTERNAL_CONTACTS_V1 = 512;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DIAGNOSTIC_AXES_V1 = 16;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DIAGNOSTIC_MARKERS_V1 = 16;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_V1 = 8;
-    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_CHARS_V1 = 128;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_BODY_CONTACTS_V1 = 128;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_FRAME_CALLBACKS_V1 = 16;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_CONSUMERS_V1 = 64;
@@ -209,9 +205,6 @@ namespace rock::provider
         HandUnavailable = 12,
         HandBusy = 13,
         ObjectAlreadyOwned = 14,
-        RequestQueued = 15,
-        RequestRejected = 16,
-        RequestNotFound = 17,
     };
 
     enum class RockProviderConsumerCapabilityV1 : std::uint32_t
@@ -221,9 +214,6 @@ namespace rock::provider
         ExternalBodies = 1u << 1,
         ExternalContacts = 1u << 2,
         OffhandReservation = 1u << 3,
-        DiagnosticOverlay = 1u << 4,
-        DiagnosticInput = 1u << 5,
-        InteractionCommands = 1u << 6,
     };
 
     enum class RockProviderFeatureBitV1 : std::uint32_t
@@ -235,13 +225,8 @@ namespace rock::provider
         WeaponEvidence = 1u << 3,
         BodyContacts = 1u << 4,
         ExternalContacts = 1u << 5,
-        DiagnosticOverlay = 1u << 6,
-        DiagnosticInput = 1u << 7,
         ConsumerRegistrationV1 = 1u << 8,
         OwnerFilteredExternalContactsV1 = 1u << 9,
-        InteractionCommandQueue = 1u << 10,
-        ForceGrabCommand = 1u << 11,
-        ForceReleaseCommand = 1u << 12,
     };
 
     [[nodiscard]] inline constexpr bool hasLifecycleFlag(std::uint32_t flags, RockProviderLifecycleFlag flag)
@@ -289,8 +274,7 @@ namespace rock::provider
         std::uint32_t maxExternalContacts{ 0 };
         std::uint32_t maxBodyContacts{ 0 };
         std::uint32_t maxWeaponBodies{ 0 };
-        std::uint32_t maxInteractionCommands{ 0 };
-        std::uint32_t reserved[8]{};
+        std::uint32_t reserved[9]{};
     };
 
     struct RockProviderTransform
@@ -479,100 +463,6 @@ namespace rock::provider
         std::uint32_t reserved[2]{};
     };
 
-    enum class RockProviderDiagnosticOverlayFlagsV1 : std::uint32_t
-    {
-        None = 0,
-        DrawAxes = 1u << 0,
-        DrawMarkers = 1u << 1,
-        DrawScreenText = 1u << 2,
-    };
-
-    struct RockProviderDiagnosticOverlayAxisV1
-    {
-        std::uint32_t size{ sizeof(RockProviderDiagnosticOverlayAxisV1) };
-        std::uint32_t role{ 0 };
-        RockProviderTransform transform{};
-        float translationStart[3]{};
-        std::uint32_t drawTranslationLine{ 0 };
-        std::uint32_t reserved[3]{};
-    };
-
-    struct RockProviderDiagnosticOverlayMarkerV1
-    {
-        std::uint32_t size{ sizeof(RockProviderDiagnosticOverlayMarkerV1) };
-        std::uint32_t role{ 0 };
-        float position[3]{};
-        float lineEnd[3]{};
-        float sizeGame{ 2.0f };
-        std::uint32_t drawPoint{ 1 };
-        std::uint32_t drawLine{ 0 };
-        std::uint32_t reserved[3]{};
-    };
-
-    struct RockProviderDiagnosticOverlayTextV1
-    {
-        std::uint32_t size{ sizeof(RockProviderDiagnosticOverlayTextV1) };
-        std::uint32_t role{ 0 };
-        char text[ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_CHARS_V1]{};
-        float x{ 18.0f };
-        float y{ 18.0f };
-        float sizeScale{ 2.0f };
-        float color[4]{ 0.90f, 1.0f, 0.95f, 0.92f };
-        float worldAnchor[3]{};
-        std::uint32_t worldAnchored{ 0 };
-        std::uint32_t reserved[3]{};
-    };
-
-    struct RockProviderDiagnosticOverlayFrameV1
-    {
-        std::uint32_t size{ sizeof(RockProviderDiagnosticOverlayFrameV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t ownerToken{ 0 };
-        std::uintptr_t hknpWorld{ 0 };
-        std::uint64_t frameIndex{ 0 };
-        std::uint32_t flags{ 0 };
-        std::uint32_t axisCount{ 0 };
-        std::uint32_t markerCount{ 0 };
-        std::uint32_t textCount{ 0 };
-        RockProviderDiagnosticOverlayAxisV1 axes[ROCK_PROVIDER_MAX_DIAGNOSTIC_AXES_V1]{};
-        RockProviderDiagnosticOverlayMarkerV1 markers[ROCK_PROVIDER_MAX_DIAGNOSTIC_MARKERS_V1]{};
-        RockProviderDiagnosticOverlayTextV1 texts[ROCK_PROVIDER_MAX_DIAGNOSTIC_TEXT_V1]{};
-        std::uint32_t reserved[8]{};
-    };
-
-    enum class RockProviderDiagnosticInputFlagsV1 : std::uint32_t
-    {
-        None = 0,
-        PrimaryTriggerHeld = 1u << 0,
-        PrimaryTriggerPressed = 1u << 1,
-        PrimaryTriggerReleased = 1u << 2,
-        RightThumbstickLeftPressed = 1u << 3,
-        RightThumbstickRightPressed = 1u << 4,
-        RightThumbstickUpPressed = 1u << 5,
-        RightThumbstickDownPressed = 1u << 6,
-    };
-
-    enum class RockProviderDiagnosticSuppressionFlagsV1 : std::uint32_t
-    {
-        None = 0,
-        PrimaryTrigger = 1u << 0,
-        RightThumbstick = 1u << 1,
-    };
-
-    struct RockProviderDiagnosticInputSnapshotV1
-    {
-        std::uint32_t size{ sizeof(RockProviderDiagnosticInputSnapshotV1) };
-        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
-        std::uint64_t ownerToken{ 0 };
-        std::uint64_t sequence{ 0 };
-        std::uint32_t flags{ 0 };
-        std::uint32_t reserved0{ 0 };
-        float rightThumbstickX{ 0.0f };
-        float rightThumbstickY{ 0.0f };
-        float primaryTriggerAxisX{ 0.0f };
-        std::uint32_t reserved[5]{};
-    };
-
     using RockProviderFrameCallback = void(ROCK_PROVIDER_CALL*)(const RockProviderFrameSnapshot* snapshot, void* userData);
 
     struct RockProviderApi
@@ -599,9 +489,6 @@ namespace rock::provider
             std::uint32_t bodyId,
             RockProviderPoint3* outPoints,
             std::uint32_t maxPoints);
-        bool(ROCK_PROVIDER_CALL* publishDiagnosticOverlay)(const RockProviderDiagnosticOverlayFrameV1* frame);
-        bool(ROCK_PROVIDER_CALL* getDiagnosticInputSnapshotV1)(std::uint64_t ownerToken, RockProviderDiagnosticInputSnapshotV1* outSnapshot);
-        bool(ROCK_PROVIDER_CALL* setDiagnosticInputSuppressionV1)(std::uint64_t ownerToken, std::uint32_t suppressionFlags);
         std::uint32_t(ROCK_PROVIDER_CALL* getBodyContactSnapshotV1)(RockProviderBodyContactV1* outContacts, std::uint32_t maxContacts);
         RockProviderHand(ROCK_PROVIDER_CALL* getPrimaryHandV1)();
         RockProviderHand(ROCK_PROVIDER_CALL* getOffhandHandV1)();
@@ -685,17 +572,6 @@ namespace rock::provider
     static_assert(alignof(RockProviderBodyContactV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderBodyContactV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderBodyContactV1>);
-    static_assert(sizeof(RockProviderDiagnosticOverlayAxisV1) == 88);
-    static_assert(sizeof(RockProviderDiagnosticOverlayMarkerV1) == 56);
-    static_assert(sizeof(RockProviderDiagnosticOverlayTextV1) == 192);
-    static_assert(sizeof(RockProviderDiagnosticOverlayFrameV1) == 3920);
-    static_assert(alignof(RockProviderDiagnosticOverlayFrameV1) == 8);
-    static_assert(std::is_standard_layout_v<RockProviderDiagnosticOverlayFrameV1>);
-    static_assert(std::is_trivially_copyable_v<RockProviderDiagnosticOverlayFrameV1>);
-    static_assert(sizeof(RockProviderDiagnosticInputSnapshotV1) == 64);
-    static_assert(alignof(RockProviderDiagnosticInputSnapshotV1) == 8);
-    static_assert(std::is_standard_layout_v<RockProviderDiagnosticInputSnapshotV1>);
-    static_assert(std::is_trivially_copyable_v<RockProviderDiagnosticInputSnapshotV1>);
 }
 
 namespace rock

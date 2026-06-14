@@ -4,7 +4,6 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
 
-#include "f4vr/F4VRUtils.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/ControlMap.h"
 #include "RE/Bethesda/InputEvent.h"
@@ -19,7 +18,6 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <cmath>
 #include <optional>
 #include <string_view>
 
@@ -55,13 +53,9 @@ namespace rock::input_remap_runtime
         {
             std::atomic<std::uint64_t> rawPressed{ 0 };
             std::atomic<std::uint64_t> rawTouched{ 0 };
-            std::atomic<float> rawAxis0X{ 0.0f };
-            std::atomic<float> rawAxis0Y{ 0.0f };
-            std::atomic<float> rawAxis1X{ 0.0f };
             std::atomic<std::uint64_t> pressedEdges{ 0 };
             std::atomic<std::uint64_t> releasedEdges{ 0 };
             std::atomic<bool> valid{ false };
-            std::atomic<std::uint32_t> rawThumbDirection{ 0 };
         };
 
         std::array<ControllerTracker, 2> s_controllers;
@@ -77,12 +71,6 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_menuInputActive{ false };
         std::atomic<bool> s_missingVRSystemLogged{ false };
         std::atomic<bool> s_missingUILogged{ false };
-        std::atomic<std::uint64_t> s_externalDiagnosticSuppressionOwner{ 0 };
-        std::atomic<std::uint32_t> s_externalDiagnosticSuppressionFlags{ 0 };
-        std::atomic<std::uint32_t> s_diagnosticInputPressedFlags{ 0 };
-        std::atomic<std::uint32_t> s_diagnosticInputReleasedFlags{ 0 };
-        std::atomic<std::uint64_t> s_diagnosticInputSequence{ 0 };
-
         void** s_vrSystemVTable = nullptr;
         GetControllerState_t s_originalGetControllerState = nullptr;
         GetControllerStateWithPose_t s_originalGetControllerStateWithPose = nullptr;
@@ -264,31 +252,6 @@ namespace rock::input_remap_runtime
         [[nodiscard]] constexpr std::size_t controllerIndex(input_remap_policy::Hand hand)
         {
             return hand == input_remap_policy::Hand::Left ? 0u : 1u;
-        }
-
-        [[nodiscard]] bool isPrimaryHand(input_remap_policy::Hand hand)
-        {
-            const bool primaryIsLeft = f4vr::isLeftHandedMode();
-            return hand == (primaryIsLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right);
-        }
-
-        [[nodiscard]] std::uint32_t thumbDirectionFromAxis(float x, float y)
-        {
-            constexpr float threshold = 0.72f;
-            if (!std::isfinite(x) || !std::isfinite(y)) {
-                return 0;
-            }
-
-            const float absX = std::fabs(x);
-            const float absY = std::fabs(y);
-            if (absX < threshold && absY < threshold) {
-                return 0;
-            }
-
-            if (absX >= absY) {
-                return x < 0.0f ? kDiagnosticInputRightThumbstickLeftPressed : kDiagnosticInputRightThumbstickRightPressed;
-            }
-            return y < 0.0f ? kDiagnosticInputRightThumbstickDownPressed : kDiagnosticInputRightThumbstickUpPressed;
         }
 
         [[nodiscard]] input_remap_policy::Settings makeSettings()
@@ -532,40 +495,6 @@ namespace rock::input_remap_runtime
             return text.size() != 0 && address >= text.address() && address < text.address() + text.size();
         }
 
-        void recordDiagnosticInputSample(input_remap_policy::Hand hand, const vr::VRControllerState_t& state, const input_remap_policy::EdgeTransition& rawTransition)
-        {
-            std::uint32_t pressedFlags = 0;
-            std::uint32_t releasedFlags = 0;
-            const auto triggerMask = input_remap_policy::buttonMask(input_remap_policy::kOpenVrSteamVrTriggerButtonId);
-            if (triggerMask != 0 && isPrimaryHand(hand)) {
-                if ((rawTransition.pressedEdges & triggerMask) != 0) {
-                    pressedFlags |= kDiagnosticInputPrimaryTriggerPressed;
-                }
-                if ((rawTransition.releasedEdges & triggerMask) != 0) {
-                    releasedFlags |= kDiagnosticInputPrimaryTriggerReleased;
-                }
-            }
-
-            if (hand == input_remap_policy::Hand::Right) {
-                auto& tracker = s_controllers[controllerIndex(hand)];
-                const auto direction = thumbDirectionFromAxis(state.rAxis[0].x, state.rAxis[0].y);
-                const auto previousDirection = tracker.rawThumbDirection.exchange(direction, std::memory_order_acq_rel);
-                if (direction != 0 && direction != previousDirection) {
-                    pressedFlags |= direction;
-                }
-            }
-
-            if (pressedFlags != 0) {
-                s_diagnosticInputPressedFlags.fetch_or(pressedFlags, std::memory_order_acq_rel);
-            }
-            if (releasedFlags != 0) {
-                s_diagnosticInputReleasedFlags.fetch_or(releasedFlags, std::memory_order_acq_rel);
-            }
-            if (pressedFlags != 0 || releasedFlags != 0) {
-                s_diagnosticInputSequence.fetch_add(1, std::memory_order_acq_rel);
-            }
-        }
-
         void captureControllerState(vr::TrackedDeviceIndex_t deviceIndex, vr::VRControllerState_t* state, std::uint32_t stateSize)
         {
             if (!state || stateSize < sizeof(vr::VRControllerState_t)) {
@@ -584,16 +513,12 @@ namespace rock::input_remap_runtime
             const bool hadPrevious = tracker.valid.exchange(true, std::memory_order_acq_rel);
             const std::uint64_t previousRawPressed = tracker.rawPressed.exchange(rawPressed, std::memory_order_acq_rel);
             tracker.rawTouched.store(rawTouched, std::memory_order_release);
-            tracker.rawAxis0X.store(state->rAxis[0].x, std::memory_order_release);
-            tracker.rawAxis0Y.store(state->rAxis[0].y, std::memory_order_release);
-            tracker.rawAxis1X.store(state->rAxis[1].x, std::memory_order_release);
 
             const auto rawTransition = input_remap_policy::evaluateEdgeTransition(hadPrevious, previousRawPressed, rawPressed);
             if (hadPrevious) {
                 tracker.pressedEdges.fetch_or(rawTransition.pressedEdges, std::memory_order_acq_rel);
                 tracker.releasedEdges.fetch_or(rawTransition.releasedEdges, std::memory_order_acq_rel);
             }
-            recordDiagnosticInputSample(hand, *state, rawTransition);
 
             const auto decision = input_remap_policy::evaluate(
                 input_remap_policy::Input{
@@ -1010,11 +935,6 @@ namespace rock::input_remap_runtime
             (void)refreshControllerTrackerFromOpenVr(vr::TrackedControllerRole_RightHand);
         }
 
-        void refreshDiagnosticControllerTrackers()
-        {
-            (void)refreshControllerTrackerFromOpenVr(vr::TrackedControllerRole_LeftHand);
-            (void)refreshControllerTrackerFromOpenVr(vr::TrackedControllerRole_RightHand);
-        }
     }
 
     bool installInputRemapHooks()
@@ -1141,63 +1061,4 @@ namespace rock::input_remap_runtime
         return readRawButtonState(isLeft, buttonId, true);
     }
 
-    DiagnosticInputSnapshot consumeDiagnosticInputSnapshot()
-    {
-        refreshDiagnosticControllerTrackers();
-
-        const bool primaryIsLeft = f4vr::isLeftHandedMode();
-        auto& primary = s_controllers[primaryIsLeft ? 0u : 1u];
-        auto& right = s_controllers[1u];
-
-        DiagnosticInputSnapshot snapshot{};
-        snapshot.sequence = s_diagnosticInputSequence.load(std::memory_order_acquire);
-        snapshot.flags = s_diagnosticInputPressedFlags.exchange(0, std::memory_order_acq_rel) |
-                         s_diagnosticInputReleasedFlags.exchange(0, std::memory_order_acq_rel);
-
-        const auto triggerMask = input_remap_policy::buttonMask(input_remap_policy::kOpenVrSteamVrTriggerButtonId);
-        if (triggerMask != 0 && (primary.rawPressed.load(std::memory_order_acquire) & triggerMask) != 0) {
-            snapshot.flags |= kDiagnosticInputPrimaryTriggerHeld;
-        }
-
-        snapshot.rightThumbstickX = right.rawAxis0X.load(std::memory_order_acquire);
-        snapshot.rightThumbstickY = right.rawAxis0Y.load(std::memory_order_acquire);
-        snapshot.primaryTriggerAxisX = primary.rawAxis1X.load(std::memory_order_acquire);
-        return snapshot;
-    }
-
-    bool setExternalPrimaryTriggerSuppression(std::uint64_t ownerToken, bool suppress)
-    {
-        return setExternalDiagnosticInputSuppression(ownerToken, suppress ? kDiagnosticSuppressionPrimaryTrigger : 0u);
-    }
-
-    bool setExternalDiagnosticInputSuppression(std::uint64_t ownerToken, std::uint32_t suppressionFlags)
-    {
-        if (ownerToken == 0) {
-            return false;
-        }
-
-        if (suppressionFlags != 0) {
-            const auto currentOwner = s_externalDiagnosticSuppressionOwner.exchange(ownerToken, std::memory_order_acq_rel);
-            const auto previousFlags = s_externalDiagnosticSuppressionFlags.exchange(suppressionFlags, std::memory_order_acq_rel);
-            if (currentOwner != ownerToken || previousFlags != suppressionFlags) {
-                ROCK_LOG_INFO(Input,
-                    "External diagnostic input suppression request noted by owner=0x{:X} flags=0x{:X}; OpenVR state remains read-only under native action suppression",
-                    ownerToken,
-                    suppressionFlags);
-            }
-            return true;
-        }
-
-        const auto currentOwner = s_externalDiagnosticSuppressionOwner.load(std::memory_order_acquire);
-        if (currentOwner == ownerToken || currentOwner == 0) {
-            const auto previousFlags = s_externalDiagnosticSuppressionFlags.exchange(0, std::memory_order_acq_rel);
-            s_externalDiagnosticSuppressionOwner.store(0, std::memory_order_release);
-            if (previousFlags != 0 || currentOwner != 0) {
-                ROCK_LOG_INFO(Input, "External diagnostic input suppression released by owner=0x{:X}", ownerToken);
-            }
-            return true;
-        }
-
-        return false;
-    }
 }

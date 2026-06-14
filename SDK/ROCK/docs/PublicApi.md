@@ -5,7 +5,7 @@ ROCK exposes one v1 C ABI table from `ROCK.dll`:
 - `ROCKProviderApi.h`: the public API for FO4VR F4SE plugins.
 - `ROCKApi.h`: an alias header for the same v1 API table.
 
-The API is POD/value ABI and avoids private ROCK headers. It is the stable SDK surface for frame snapshots, hand frames, detailed weapon evidence, body contacts, external body registration, owner-filtered external contact polling, offhand reservation, diagnostic overlay, and diagnostic input.
+The API is POD/value ABI and avoids private ROCK headers. It is the stable SDK surface for frame snapshots, hand frames, detailed weapon evidence, body contacts, external body registration, owner-filtered external contact polling, and offhand reservation.
 
 ## Initialization
 
@@ -56,9 +56,9 @@ rock::provider::RockProviderConsumerHandleV1 handle{};
 const auto result = RockProviderApi::inst->registerConsumerV1(&registration, &handle);
 ```
 
-Use `handle.ownerToken` for provider write/control calls. `handle.grantedCapabilities` is authoritative; unsupported requested capabilities are not granted. `InteractionCommands` is reserved for a future queued command API and is not granted by v1.
+Use `handle.ownerToken` for provider write/control calls. `handle.grantedCapabilities` is authoritative; unsupported requested capabilities are not granted.
 
-Call `unregisterConsumerV1(ownerToken)` during plugin shutdown. Unregistering clears that owner's external bodies, offhand reservation, and diagnostic input suppression.
+Call `unregisterConsumerV1(ownerToken)` during plugin shutdown. Unregistering clears that owner's external bodies and offhand reservation.
 
 Sibling plugins should register and must not invent global owner tokens.
 
@@ -74,12 +74,8 @@ Implemented v1 feature bits:
 - `WeaponEvidence`
 - `BodyContacts`
 - `ExternalContacts`
-- `DiagnosticOverlay`
-- `DiagnosticInput`
 - `ConsumerRegistrationV1`
 - `OwnerFilteredExternalContactsV1`
-
-The interaction command feature bits are defined in the header but are not set by ROCK v1.
 
 ## Frame And Lifecycle Rules
 
@@ -103,12 +99,6 @@ Use `getExternalContactSnapshotForOwnerV1` for integrations. It returns only con
 
 `setOffhandInteractionReservation` should use a registered owner token and should release the reservation by setting `Normal` when finished. Lease priority and expiry are not public in v1.
 
-## Diagnostics
-
-Diagnostic overlay frames and diagnostic input suppression should use registered owner tokens. Diagnostic input suppression is cleared automatically on `unregisterConsumerV1`.
-
 ## Interaction Commands
 
 ROCK v1 does not expose public force-grab or force-release commands.
-
-The planned public command model is a bounded ROCK-owned queue executed from a safe update point, with tokenized ownership and result polling. Do not implement external immediate grab/release behavior against ROCK internals.
