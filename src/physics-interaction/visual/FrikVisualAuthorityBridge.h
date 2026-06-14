@@ -11,6 +11,7 @@
 namespace rock::frik_visual_authority
 {
     using Hand = frik::api::FRIKApi::Hand;
+    using HandPoseKind = frik::api::FRIKApi::HandPoseKind;
     using HandPoseTagState = frik::api::FRIKApi::HandPoseTagState;
     using HandPoseData = frik::api::FRIKApi::HandPoseData;
     using FingerLocalTransformOverride = frik::api::FRIKApi::FingerLocalTransformOverride;
@@ -262,6 +263,13 @@ namespace rock::frik_visual_authority
             detail::invalidateCachedHandPosePublication(tag, hand);
         }
         return published;
+    }
+
+    [[nodiscard]] inline bool setHandPoseWithPriority(const char* tag, Hand hand, HandPoseKind handPose, int priority)
+    {
+        detail::invalidateCachedHandPosePublication(tag, hand);
+        auto* frikApi = api();
+        return frikApi && frikApi->setHandPoseWithPriority && frikApi->setHandPoseWithPriority(tag, hand, handPose, priority);
     }
 
     [[nodiscard]] inline bool applyExternalHandWorldTransform(const char* tag, Hand hand, const RE::NiTransform& worldTarget, int priority)

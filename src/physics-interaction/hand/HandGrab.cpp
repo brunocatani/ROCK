@@ -38,6 +38,7 @@
 #include "RE/Havok/hkVector4.h"
 #include "RE/Havok/hknpMotion.h"
 #include "RE/Bethesda/PlayerCharacter.h"
+#include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/NetImmerse/NiUpdateData.h"
 #include "RockConfig.h"
 #include "RockUtils.h"
@@ -810,10 +811,31 @@ namespace rock
         RE::NiTransform multiplyTransforms(const RE::NiTransform& parent, const RE::NiTransform& child);
         RE::NiTransform deriveNodeWorldFromBodyWorld(const RE::NiTransform& bodyWorld, const RE::NiTransform& bodyLocalTransform);
 
+        const RE::TESObjectWEAP* looseWeaponFormFromRef(RE::TESObjectREFR* refr)
+        {
+            auto* selectedBase = refr ? refr->GetObjectReference() : nullptr;
+            return selectedBase ? selectedBase->As<RE::TESObjectWEAP>() : nullptr;
+        }
+
         const RE::TESObjectWEAP* selectedLooseWeaponForm(const SelectedObject& selection)
         {
-            auto* selectedBase = selection.refr ? selection.refr->GetObjectReference() : nullptr;
-            return selectedBase ? selectedBase->As<RE::TESObjectWEAP>() : nullptr;
+            return looseWeaponFormFromRef(selection.refr);
+        }
+
+        frik_visual_authority::HandPoseKind looseWeaponPrimaryAttachPoseKind(const RE::TESObjectWEAP* weapon)
+        {
+            return weapon && weapon->IsMeleeWeapon() ?
+                       frik_visual_authority::HandPoseKind::HoldingMelee :
+                       frik_visual_authority::HandPoseKind::HoldingGun;
+        }
+
+        bool publishLooseWeaponPrimaryAttachHandPose(bool isLeft, RE::TESObjectREFR* refr)
+        {
+            return frik_visual_authority::setHandPoseWithPriority(
+                "ROCK_Grab",
+                handFromBool(isLeft),
+                looseWeaponPrimaryAttachPoseKind(looseWeaponFormFromRef(refr)),
+                100);
         }
 
         struct LooseWeaponPrimaryAttachFrame
@@ -10321,7 +10343,8 @@ namespace rock
         stopSelectionHighlight();
         clearSelectedCloseFingerPose();
         _grabFingerPose = {};
-        _hasGrabFingerPose = g_rockConfig.rockGrabMeshFingerPoseEnabled;
+        const bool useLooseWeaponPrimaryAttachHandPose = _grabFrame.syntheticLooseWeaponPrimaryAttach;
+        _hasGrabFingerPose = g_rockConfig.rockGrabMeshFingerPoseEnabled && !useLooseWeaponPrimaryAttachHandPose;
         _grabFingerProbeStart = {};
         _grabFingerProbeEnd = {};
         _hasGrabFingerProbeDebug = false;
@@ -10333,10 +10356,18 @@ namespace rock
         _grabFingerSurfaceTarget = {};
         _grabFingerSurfaceTargetValid = {};
         _hasGrabFingerSurfaceTargetDebug = false;
-        _grabFingerPosePublished =
-            g_rockConfig.rockGrabMeshFingerPoseEnabled &&
-            _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld;
-        if (_grabFingerPosePublished) {
+        _grabFingerPosePublished = false;
+        if (useLooseWeaponPrimaryAttachHandPose) {
+            _grabFingerPosePublished = publishLooseWeaponPrimaryAttachHandPose(_isLeft, sel.refr);
+            if (!_grabFingerPosePublished) {
+                ROCK_LOG_WARN(Hand, "{} hand loose weapon attach: failed to publish FRIK weapon hand pose", handName());
+            }
+        } else {
+            _grabFingerPosePublished =
+                g_rockConfig.rockGrabMeshFingerPoseEnabled &&
+                _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld;
+        }
+        if (_grabFingerPosePublished && _hasGrabFingerPose) {
             const RE::NiTransform& initialFingerHandTransform = handWorldTransform;
             root_flattened_finger_skeleton_runtime::Snapshot liveFingerSnapshotAtGrab{};
             const auto* liveFingerSnapshotAtGrabPtr =
@@ -10403,7 +10434,7 @@ namespace rock
                 _grabFingerLocalTransformMask,
                 _hasGrabFingerLocalTransforms,
                 0.0f);
-        } else if (g_rockConfig.rockGrabMeshFingerPoseEnabled) {
+        } else if (g_rockConfig.rockGrabMeshFingerPoseEnabled && !useLooseWeaponPrimaryAttachHandPose) {
             ROCK_LOG_DEBUG(Hand,
                 "{} THREE-PHASE GRAB POSE: mesh probe solve deferred until TouchHeld phase={} cachedTriangles={} poseTargets={}",
                 handName(),
@@ -10974,7 +11005,8 @@ namespace rock
                     convergenceDecision.separatingSpeedGameUnitsPerSecond);
             }
 
-            if (hasGrabBody && !reachedTouchRange && !convergenceTimedOutInsidePocket && g_rockConfig.rockGrabMeshFingerPoseEnabled && _hasGrabFingerPose &&
+            if (hasGrabBody && !reachedTouchRange && !convergenceTimedOutInsidePocket && !_grabFrame.syntheticLooseWeaponPrimaryAttach &&
+                g_rockConfig.rockGrabMeshFingerPoseEnabled && _hasGrabFingerPose &&
                 !_grabFingerPosePublished) {
                 const float nearDistance = (std::max)(touchDistance, g_rockConfig.rockGrabNearConvergeDistanceGameUnits);
                 const float progressDenominator = (std::max)(0.001f, nearDistance - touchDistance);
@@ -11307,7 +11339,7 @@ namespace rock
                     heldBodyColliding ? "yes" : "no",
                     _grabFingerPosePublished ? "yes" : "no");
 
-                if (g_rockConfig.rockGrabMeshFingerPoseEnabled && _hasGrabFingerPose && !_grabFingerPosePublished) {
+                if (!_grabFrame.syntheticLooseWeaponPrimaryAttach && g_rockConfig.rockGrabMeshFingerPoseEnabled && _hasGrabFingerPose && !_grabFingerPosePublished) {
                     const RE::NiTransform currentNodeWorld = deriveNodeWorldFromBodyWorld(grabBodyWorld, _grabFrame.bodyLocal);
                     if (!_grabFrame.fingerPoseAimValid && _grabFrame.pivotAuthorityNormalTrusted) {
                         _grabFrame.fingerPoseAimValid = true;
@@ -11415,7 +11447,7 @@ namespace rock
 
         recordHeldObjectVelocitySample(world, playerSpaceFrame);
 
-        if (g_rockConfig.rockGrabMeshFingerPoseEnabled && _hasGrabFingerPose && _grabFingerPosePublished) {
+        if (!_grabFrame.syntheticLooseWeaponPrimaryAttach && g_rockConfig.rockGrabMeshFingerPoseEnabled && _hasGrabFingerPose && _grabFingerPosePublished) {
             const int updateInterval = (std::max)(1, g_rockConfig.rockGrabFingerPoseUpdateInterval);
             _grabFingerPoseAccumulatedDeltaTime += (std::max)(0.0f, std::isfinite(deltaTime) ? deltaTime : 0.0f);
             ++_grabFingerPoseFrameCounter;
