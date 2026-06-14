@@ -3,6 +3,8 @@
 #include <array>
 #include <cstdint>
 
+#include "physics-interaction/weapon/HeldWeaponVisualSnapshot.h"
+
 #include "RE/NetImmerse/NiNode.h"
 #include "RE/NetImmerse/NiTransform.h"
 
@@ -18,8 +20,7 @@ namespace rock
     public:
         struct BeginInput
         {
-            RE::TESObjectREFR* heldRef = nullptr;
-            bool isLeft = false;
+            HeldWeaponVisualSnapshot visual{};
         };
 
         struct FrameInput

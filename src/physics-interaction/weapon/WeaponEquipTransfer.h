@@ -28,7 +28,6 @@ namespace rock::weapon_equip_transfer
         InventoryStackNotFound,
         EquipObjectFailed,
         ActivateRefThenEquipObject,
-        SilentInventoryTransferThenEquipObject,
     };
 
     struct EquipInput

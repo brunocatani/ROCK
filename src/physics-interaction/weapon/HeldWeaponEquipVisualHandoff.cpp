@@ -5,6 +5,7 @@
 #include <exception>
 
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/TransformMath.h"
 #include "f4vr/F4VRUtils.h"
 
 #include "RE/Bethesda/TESObjectREFRs.h"
@@ -18,6 +19,15 @@ namespace rock
         constexpr std::uint32_t kMinHandoffFrames = 3;
         constexpr std::uint32_t kMinEquippedVisualFrames = 4;
         constexpr std::uint32_t kMaxSceneGraphDepth = 32;
+
+        [[nodiscard]] RE::NiTransform makeLocalTransformForParent(const RE::NiNode* parent, const RE::NiTransform& world)
+        {
+            if (!parent) {
+                return world;
+            }
+
+            return transform_math::composeTransforms(transform_math::invertTransform(parent->world), world);
+        }
 
         [[nodiscard]] bool isRenderableNode(RE::NiAVObject* node) noexcept
         {
@@ -97,43 +107,42 @@ namespace rock
 
     bool HeldWeaponEquipVisualHandoff::beginImpl(const BeginInput& input)
     {
-        auto* heldRef = input.heldRef;
-        auto* heldRoot = heldRef ? heldRef->Get3D() : nullptr;
-        auto* heldRootNode = heldRoot ? heldRoot->IsNode() : nullptr;
-        auto* parent = heldRoot ? heldRoot->parent : nullptr;
-        if (!heldRef || !heldRoot || !heldRootNode || !parent) {
+        const auto& visual = input.visual;
+        auto* cloneSourceNode = visual.cloneSourceNode;
+        auto* parent = visual.parent;
+        if (!visual.isValid() || !cloneSourceNode || !parent) {
             return false;
         }
 
         f4vr::NiCloneProcess cloneProcess;
         cloneProcess.unk18 = reinterpret_cast<std::uint64_t*>(f4vr::cloneAddr1.address());
         cloneProcess.unk48 = reinterpret_cast<std::uint64_t*>(f4vr::cloneAddr2.address());
-        auto* clone = f4vr::cloneNode(heldRootNode, &cloneProcess);
+        auto* clone = f4vr::cloneNode(cloneSourceNode, &cloneProcess);
         if (!clone) {
             return false;
         }
 
         _phantomRoot.reset(clone);
         _phantomParent.reset(parent);
-        _heldFormID = heldRef->GetFormID();
-        _isLeft = input.isLeft;
+        _heldFormID = visual.formID;
+        _isLeft = visual.isLeft;
         _phantomRoot->name = RE::BSFixedString(kPhantomNodeName);
         _phantomRoot->fadeAmount = 1.0f;
         clearCollisionObjectsRecursive(_phantomRoot.get(), 0);
         forceVisibleRecursive(_phantomRoot.get(), 0);
         parent->AttachChild(_phantomRoot.get(), true);
-        // The held object scene graph is the visual authority at trigger time; keep its parent-space snapshot.
-        _phantomRoot->local = heldRoot->local;
-        _phantomRoot->world = heldRoot->world;
-        _phantomRoot->previousWorld = heldRoot->previousWorld;
+        _phantomRoot->local = makeLocalTransformForParent(parent, visual.sourceWorld);
+        _phantomRoot->world = visual.sourceWorld;
+        _phantomRoot->previousWorld = visual.sourceWorld;
         f4vr::updateDown(_phantomRoot.get(), true);
 
         _active = true;
         ROCK_LOG_DEBUG(Weapon,
-            "Held weapon equip visual handoff started formID={:08X} hand={} parent='{}'",
+            "Held weapon equip visual handoff started formID={:08X} hand={} parent='{}' source='{}'",
             _heldFormID,
             _isLeft ? "left" : "right",
-            parent->name.c_str());
+            parent->name.c_str(),
+            visual.source ? visual.source : "none");
         return true;
     }
 

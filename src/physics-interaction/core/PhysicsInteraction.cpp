@@ -4741,17 +4741,27 @@ namespace rock
                 });
 
                 if (heldWeaponEquipRequested) {
+                    if (peerHoldingSameObject) {
+                        ROCK_LOG_WARN(Hand,
+                            "{} hand trigger held weapon equip blocked: peer hand still holding formID={:08X}",
+                            hand.handName(),
+                            heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0u);
+                        return;
+                    }
+
                     hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, _heldObjectPlayerSpaceFrame, frame.deltaSeconds);
                     auto* heldRef = hand.getHeldRef();
+                    HeldWeaponVisualSnapshot visualSnapshot{};
+                    const bool hasVisualSnapshot = hand.captureHeldWeaponEquipVisualSnapshot(hknp, visualSnapshot);
                     hand.stopSelectionHighlight();
                     Hand& peerHandForVisualState = isLeft ? _rightHand : _leftHand;
                     if (heldRef && peerHandForVisualState.hasSelection() && peerHandForVisualState.getSelection().refr == heldRef) {
                         peerHandForVisualState.clearSelectionState(false);
                     }
-                    const bool visualHandoffStarted = _heldWeaponEquipVisualHandoff.begin(HeldWeaponEquipVisualHandoff::BeginInput{
-                        .heldRef = heldRef,
-                        .isLeft = isLeft,
-                    });
+                    const bool visualHandoffStarted = hasVisualSnapshot &&
+                                                      _heldWeaponEquipVisualHandoff.begin(HeldWeaponEquipVisualHandoff::BeginInput{
+                                                          .visual = visualSnapshot,
+                                                      });
                     std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;
                     const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
                     auto releaseContext = makeGrabReleaseContext(hand, isLeft);

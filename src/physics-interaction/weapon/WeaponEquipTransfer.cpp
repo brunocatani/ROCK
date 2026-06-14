@@ -95,24 +95,6 @@ namespace rock::weapon_equip_transfer
             return fallback;
         }
 
-        void addReferenceToInventorySilently(RE::PlayerCharacter* player, RE::TESObjectREFR* heldRef, RE::TESObjectWEAP* weapon, std::int32_t count) noexcept
-        {
-            if (!player || !heldRef || !weapon) {
-                return;
-            }
-
-            player->AddObjectToContainer(weapon, heldRef->extraList, count, nullptr, RE::ITEM_REMOVE_REASON::kNone);
-        }
-
-        void retireTransferredWorldReference(RE::TESObjectREFR* heldRef) noexcept
-        {
-            if (!heldRef) {
-                return;
-            }
-
-            heldRef->Disable();
-            heldRef->SetWantsDelete(true);
-        }
     }
 
     const char* equipReasonName(EquipReason reason) noexcept
@@ -144,8 +126,6 @@ namespace rock::weapon_equip_transfer
             return "equip-object-failed";
         case EquipReason::ActivateRefThenEquipObject:
             return "activate-ref-equip-object";
-        case EquipReason::SilentInventoryTransferThenEquipObject:
-            return "silent-inventory-transfer-equip-object";
         default:
             return "not-attempted";
         }
@@ -203,26 +183,17 @@ namespace rock::weapon_equip_transfer
 
         const auto expectedInstanceData = resolveReferenceInstanceData(heldRef);
         result.attempted = true;
-        const bool silentTransfer = !input.playSounds;
-        if (silentTransfer) {
-            addReferenceToInventorySilently(player, heldRef, result.weapon, result.count);
-        } else {
-            const bool activated = heldRef->ActivateRef(player, nullptr, result.count, false, false, false);
-            if (!activated) {
-                result.reason = EquipReason::ActivateRefFailed;
-                return result;
-            }
-            result.transferredToInventory = true;
+        const bool activated = heldRef->ActivateRef(player, nullptr, result.count, false, false, false);
+        if (!activated) {
+            result.reason = EquipReason::ActivateRefFailed;
+            return result;
         }
+        result.transferredToInventory = true;
 
         const auto stack = findTransferredWeaponStack(player, result.weapon, expectedInstanceData);
         if (!stack.found) {
             result.reason = EquipReason::InventoryStackNotFound;
             return result;
-        }
-        if (silentTransfer) {
-            retireTransferredWorldReference(heldRef);
-            result.transferredToInventory = true;
         }
         if (!stack.equipSlot) {
             result.reason = EquipReason::MissingEquipSlot;
@@ -248,7 +219,7 @@ namespace rock::weapon_equip_transfer
         }
 
         result.success = true;
-        result.reason = silentTransfer ? EquipReason::SilentInventoryTransferThenEquipObject : EquipReason::ActivateRefThenEquipObject;
+        result.reason = EquipReason::ActivateRefThenEquipObject;
         return result;
     }
 }
