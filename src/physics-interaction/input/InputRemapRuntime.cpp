@@ -30,15 +30,26 @@ namespace rock::input_remap_runtime
         constexpr DWORD kPageExecuteReadWrite = 0x00000040u;
         constexpr std::uintptr_t kReadyWeaponHandlerHandleEventFunctionOffset = 0x0FC9220;
         constexpr std::uintptr_t kReadyWeaponHandlerHandleEventVTableSlotOffset = 0x2D8A4D0;
+        constexpr std::uintptr_t kActivateHandlerHandleEventFunctionOffset = 0x0FC7F00;
+        constexpr std::uintptr_t kActivateHandlerHandleEventVTableSlotOffset = 0x2D8A640;
         constexpr std::uintptr_t kFavoritesManagerHandleEventFunctionOffset = 0x12F19D0;
         constexpr std::uintptr_t kFavoritesManagerHandleEventVTableSlotOffset = 0x2DC8520;
         constexpr std::uintptr_t kMeleeThrowHandlerHandleEventFunctionOffset = 0x0FC8AE0;
         constexpr std::uintptr_t kMeleeThrowHandlerHandleEventVTableSlotOffset = 0x2D8A9F0;
+        constexpr std::uintptr_t kNativeActionDispatcherFunctionOffset = 0x0FC07E0;
+        constexpr std::uintptr_t kNativeInputDeviceToControllerIdFunctionOffset = 0x1BA6ED0;
+        constexpr std::uintptr_t kNativePlayerActionDispatcherDataOffset = 0x5A3B8A0;
+        constexpr std::uintptr_t kNativePlayerDataOffset = 0x5B043F0;
+        constexpr std::ptrdiff_t kNativePrimaryWandDeviceIdOffset = 0x8CC;
+        constexpr int kNativeReloadActionId = 0x6C;
+        constexpr std::uint32_t kNativeActionPriorityQueue = 2;
         constexpr std::uintptr_t kMeleeThrowFallbackDrawPressPatchSite = 0x0FC8C88;
         constexpr std::uintptr_t kMeleeThrowFallbackDrawReleasePatchSite = 0x0FC8E7E;
         constexpr std::uint8_t kConditionalShortJumpGreaterEqual = 0x7D;
         constexpr std::uint8_t kUnconditionalShortJump = 0xEB;
         constexpr std::uint8_t kMeleeThrowFallbackBranchDisplacement = 0x0D;
+        constexpr std::string_view kNativeEventActivate{ "Activate" };
+        constexpr std::string_view kNativeEventWandAccept{ "WandAccept" };
         constexpr std::string_view kNativeEventWandGrip{ "WandGrip" };
         constexpr std::string_view kNativeEventWandTrigger{ "WandTrigger" };
         constexpr std::string_view kNativeEventWandThumbClick{ "WandThumbClick" };
@@ -47,6 +58,8 @@ namespace rock::input_remap_runtime
         using GetControllerStateWithPose_t =
             bool (*)(vr::IVRSystem*, vr::ETrackingUniverseOrigin, vr::TrackedDeviceIndex_t, vr::VRControllerState_t*, std::uint32_t, vr::TrackedDevicePose_t*);
         using NativeInputEventHandler_t = void (*)(void*, RE::InputEvent*, void*, void*);
+        using NativeActionDispatcher_t = bool (*)(void*, int, std::uint32_t);
+        using NativeInputDeviceToControllerId_t = std::int32_t (*)(std::int32_t);
         using FavoritesInputEventHandler_t = void (*)(void*, RE::InputEvent*);
 
         struct ControllerTracker
@@ -65,6 +78,7 @@ namespace rock::input_remap_runtime
         std::atomic<std::uint32_t> s_pendingWeaponToggleRequests{ 0 };
         std::atomic<bool> s_hooksInstalled{ false };
         std::atomic<bool> s_readyWeaponEventHookInstalled{ false };
+        std::atomic<bool> s_activateEventHookInstalled{ false };
         std::atomic<bool> s_favoritesEventHookInstalled{ false };
         std::atomic<bool> s_meleeThrowEventHookInstalled{ false };
         std::atomic<bool> s_meleeThrowFallbackPatchesApplied{ false };
@@ -76,6 +90,7 @@ namespace rock::input_remap_runtime
         GetControllerState_t s_originalGetControllerState = nullptr;
         GetControllerStateWithPose_t s_originalGetControllerStateWithPose = nullptr;
         NativeInputEventHandler_t s_originalReadyWeaponEventHandler = nullptr;
+        NativeInputEventHandler_t s_originalActivateEventHandler = nullptr;
         NativeInputEventHandler_t s_originalMeleeThrowEventHandler = nullptr;
         FavoritesInputEventHandler_t s_originalFavoritesEventHandler = nullptr;
 
@@ -619,6 +634,29 @@ namespace rock::input_remap_runtime
             return std::string_view{ userEventText ? userEventText : "", userEvent.length() } == expected;
         }
 
+        [[nodiscard]] bool isPrimaryWandInputEvent(const RE::InputEvent* event)
+        {
+            if (!event) {
+                return false;
+            }
+
+            static REL::Relocation<NativeInputDeviceToControllerId_t> nativeDeviceToControllerId{ REL::Offset(kNativeInputDeviceToControllerIdFunctionOffset) };
+            static REL::Relocation<void**> nativePlayer{ REL::Offset(kNativePlayerDataOffset) };
+
+            auto* player = *nativePlayer;
+            if (!player) {
+                return false;
+            }
+
+            const auto primaryWandDeviceId = *reinterpret_cast<const std::int32_t*>(reinterpret_cast<std::uintptr_t>(player) + kNativePrimaryWandDeviceIdOffset);
+            return nativeDeviceToControllerId(event->deviceID) == primaryWandDeviceId;
+        }
+
+        [[nodiscard]] bool isActivateReloadEvent(const RE::InputEvent* event)
+        {
+            return eventNameMatches(event, kNativeEventActivate) || eventNameMatches(event, kNativeEventWandAccept);
+        }
+
         [[nodiscard]] input_remap_policy::NativeActionSuppressionInput makeNativeActionSuppressionInput(bool suppressionEnabled, bool eventMatched)
         {
             return input_remap_policy::NativeActionSuppressionInput{
@@ -628,8 +666,17 @@ namespace rock::input_remap_runtime
                 .menuInputActive = isGameStoppingMenuInputActive(),
                 .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
                 .rightHandHeldWeapon = s_rightHandHeldWeapon.load(std::memory_order_acquire),
+                .primaryHandEvent = false,
                 .eventMatched = eventMatched,
             };
+        }
+
+        [[nodiscard]] input_remap_policy::NativeActionSuppressionInput makeNativeActionSuppressionInput(
+            bool suppressionEnabled, const RE::InputEvent* event, bool eventMatched)
+        {
+            auto input = makeNativeActionSuppressionInput(suppressionEnabled, eventMatched);
+            input.primaryHandEvent = isPrimaryWandInputEvent(event);
+            return input;
         }
 
         void markInputEventStopped(RE::InputEvent* event)
@@ -643,6 +690,12 @@ namespace rock::input_remap_runtime
         {
             return input_remap_policy::shouldSuppressNativeGripReadyAction(
                 makeNativeActionSuppressionInput(g_rockConfig.rockSuppressRightGrabGameInput, eventNameMatches(event, kNativeEventWandGrip)));
+        }
+
+        [[nodiscard]] bool shouldSuppressNativeGripReloadAction(const RE::InputEvent* event)
+        {
+            return input_remap_policy::shouldSuppressNativeGripReloadAction(
+                makeNativeActionSuppressionInput(g_rockConfig.rockSuppressRightGrabGameInput, event, eventNameMatches(event, kNativeEventWandGrip)));
         }
 
         [[nodiscard]] bool shouldSuppressNativeFavoritesAction(const RE::InputEvent* event)
@@ -664,6 +717,34 @@ namespace rock::input_remap_runtime
                 makeNativeActionSuppressionInput(g_rockConfig.rockSuppressNativeMeleeThrowGameInput, eventNameMatches(event, kNativeEventWandGrip)));
         }
 
+        [[nodiscard]] bool shouldRoutePrimaryActivateReload(const RE::InputEvent* event)
+        {
+            const auto* button = event ? event->As<RE::ButtonEvent>() : nullptr;
+            return input_remap_policy::shouldRoutePrimaryActivateReload(input_remap_policy::NativeActivateReloadInput{
+                .remapEnabled = g_rockConfig.rockInputRemapEnabled,
+                .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
+                .menuInputActive = isGameStoppingMenuInputActive(),
+                .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
+                .primaryHandEvent = isPrimaryWandInputEvent(event),
+                .buttonJustPressed = button && button->QJustPressed(),
+                .eventMatched = isActivateReloadEvent(event),
+            });
+        }
+
+        [[nodiscard]] bool dispatchNativeReloadAction()
+        {
+            static REL::Relocation<void**> nativeActionDispatcherObject{ REL::Offset(kNativePlayerActionDispatcherDataOffset) };
+            static REL::Relocation<NativeActionDispatcher_t> nativeActionDispatcher{ REL::Offset(kNativeActionDispatcherFunctionOffset) };
+
+            auto* dispatcherObject = *nativeActionDispatcherObject;
+            if (!dispatcherObject) {
+                ROCK_LOG_SAMPLE_WARN(Input, g_rockConfig.rockLogSampleMilliseconds, "Cannot route primary activate to reload: native action dispatcher unavailable");
+                return false;
+            }
+
+            return nativeActionDispatcher(dispatcherObject, kNativeReloadActionId, kNativeActionPriorityQueue);
+        }
+
         void hookedReadyWeaponEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
         {
             if (shouldSuppressNativeGripReadyAction(inputEvent)) {
@@ -671,6 +752,14 @@ namespace rock::input_remap_runtime
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
                     "Suppressed native WandGrip ReadyWeapon event while ROCK owns holstered right-grab input");
+                return;
+            }
+
+            if (shouldSuppressNativeGripReloadAction(inputEvent)) {
+                markInputEventStopped(inputEvent);
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Suppressed native primary WandGrip ReadyWeapon reload while ROCK routes reload to activate/use");
                 return;
             }
 
@@ -684,6 +773,23 @@ namespace rock::input_remap_runtime
 
             if (s_originalReadyWeaponEventHandler) {
                 s_originalReadyWeaponEventHandler(handler, inputEvent, cursor, unk);
+            }
+        }
+
+        void hookedActivateEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
+        {
+            if (shouldRoutePrimaryActivateReload(inputEvent)) {
+                markInputEventStopped(inputEvent);
+                if (dispatchNativeReloadAction()) {
+                    ROCK_LOG_SAMPLE_DEBUG(Input,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "Routed native primary activate/use input to equipped weapon reload");
+                }
+                return;
+            }
+
+            if (s_originalActivateEventHandler) {
+                s_originalActivateEventHandler(handler, inputEvent, cursor, unk);
             }
         }
 
@@ -773,6 +879,16 @@ namespace rock::input_remap_runtime
                 s_originalReadyWeaponEventHandler,
                 s_readyWeaponEventHookInstalled,
                 "ReadyWeaponHandler::HandleEvent suppression");
+        }
+
+        bool installActivateEventReloadHook()
+        {
+            return installNativeActionVTableHook(kActivateHandlerHandleEventVTableSlotOffset,
+                kActivateHandlerHandleEventFunctionOffset,
+                &hookedActivateEventHandler,
+                s_originalActivateEventHandler,
+                s_activateEventHookInstalled,
+                "ActivateHandler::HandleEvent reload remap");
         }
 
         bool installFavoritesEventSuppressionHook()
@@ -875,6 +991,9 @@ namespace rock::input_remap_runtime
             bool ready = true;
             if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightGrabGameInput)) {
                 ready = installReadyWeaponEventSuppressionHook() && ready;
+            }
+            if (settings.enabled) {
+                ready = installActivateEventReloadHook() && ready;
             }
             if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightFavoritesGameInput)) {
                 ready = installFavoritesEventSuppressionHook() && ready;

@@ -52,6 +52,18 @@ namespace rock::input_remap_policy
         bool menuInputActive{ false };
         bool weaponDrawn{ false };
         bool rightHandHeldWeapon{ false };
+        bool primaryHandEvent{ false };
+        bool eventMatched{ false };
+    };
+
+    struct NativeActivateReloadInput
+    {
+        bool remapEnabled{ true };
+        bool gameplayInputAllowed{ true };
+        bool menuInputActive{ false };
+        bool weaponDrawn{ false };
+        bool primaryHandEvent{ false };
+        bool buttonJustPressed{ false };
         bool eventMatched{ false };
     };
 
@@ -134,6 +146,18 @@ namespace rock::input_remap_policy
     {
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
                (!input.weaponDrawn || input.rightHandHeldWeapon);
+    }
+
+    [[nodiscard]] constexpr bool shouldSuppressNativeGripReloadAction(const NativeActionSuppressionInput& input)
+    {
+        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
+               input.weaponDrawn && input.primaryHandEvent;
+    }
+
+    [[nodiscard]] constexpr bool shouldRoutePrimaryActivateReload(const NativeActivateReloadInput& input)
+    {
+        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.weaponDrawn && input.primaryHandEvent &&
+               input.buttonJustPressed && input.eventMatched;
     }
 
     [[nodiscard]] constexpr bool shouldRequestHeldWeaponEquip(const HeldWeaponEquipInput& input)

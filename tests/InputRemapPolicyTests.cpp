@@ -96,6 +96,11 @@ int main()
     auto drawnGrip = base;
     drawnGrip.weaponDrawn = true;
     ok &= expectFalse("drawn weapon allows native grip ready action", shouldSuppressNativeGripReadyAction(drawnGrip));
+    drawnGrip.primaryHandEvent = true;
+    ok &= expectTrue("drawn primary WandGrip suppresses native reload action", shouldSuppressNativeGripReloadAction(drawnGrip));
+    auto drawnOffhandGrip = drawnGrip;
+    drawnOffhandGrip.primaryHandEvent = false;
+    ok &= expectFalse("drawn offhand WandGrip does not suppress reload action", shouldSuppressNativeGripReloadAction(drawnOffhandGrip));
 
     ok &= expectTrue("holstered WandTrigger suppresses native attack gate", shouldSuppressNativeTriggerAction(base));
     auto drawnTrigger = base;
@@ -124,6 +129,32 @@ int main()
     auto unmatched = base;
     unmatched.eventMatched = false;
     ok &= expectFalse("unmatched native event is not suppressed", shouldSuppressNativeTriggerAction(unmatched));
+
+    NativeActivateReloadInput activateReload{
+        .remapEnabled = true,
+        .gameplayInputAllowed = true,
+        .menuInputActive = false,
+        .weaponDrawn = true,
+        .primaryHandEvent = true,
+        .buttonJustPressed = true,
+        .eventMatched = true,
+    };
+    ok &= expectTrue("primary activate edge routes to reload while weapon drawn", shouldRoutePrimaryActivateReload(activateReload));
+    auto heldActivateReload = activateReload;
+    heldActivateReload.buttonJustPressed = false;
+    ok &= expectFalse("held primary activate does not repeat reload", shouldRoutePrimaryActivateReload(heldActivateReload));
+    auto offhandActivateReload = activateReload;
+    offhandActivateReload.primaryHandEvent = false;
+    ok &= expectFalse("offhand activate is left for normal use", shouldRoutePrimaryActivateReload(offhandActivateReload));
+    auto holsteredActivateReload = activateReload;
+    holsteredActivateReload.weaponDrawn = false;
+    ok &= expectFalse("holstered primary activate does not route reload", shouldRoutePrimaryActivateReload(holsteredActivateReload));
+    auto menuActivateReload = activateReload;
+    menuActivateReload.menuInputActive = true;
+    ok &= expectFalse("menu input blocks primary activate reload", shouldRoutePrimaryActivateReload(menuActivateReload));
+    auto unmatchedActivateReload = activateReload;
+    unmatchedActivateReload.eventMatched = false;
+    ok &= expectFalse("unmatched activate event does not route reload", shouldRoutePrimaryActivateReload(unmatchedActivateReload));
 
     HeldWeaponEquipInput equipInput{
         .remapEnabled = true,
