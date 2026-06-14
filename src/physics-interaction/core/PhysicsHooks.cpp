@@ -682,7 +682,7 @@ namespace rock
             if (input_remap_runtime::shouldSuppressNativeTriggerAction(event)) {
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "Suppressed native WandTrigger AttackBlock gate while ROCK owns holstered trigger input");
+                    "Suppressed native WandTrigger AttackBlock gate while ROCK owns holstered or held-weapon trigger input");
                 return false;
             }
 

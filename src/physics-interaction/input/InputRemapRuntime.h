@@ -20,6 +20,7 @@ namespace rock::input_remap_runtime
 
     void setGameplayInputAllowed(bool allowed);
     void setWeaponDrawn(bool weaponDrawn);
+    void setRightHandHeldWeapon(bool heldWeapon);
     bool isMenuInputActive();
     bool shouldDeferGrabInputForVirtualHolsters(bool isLeft, int buttonId);
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event);

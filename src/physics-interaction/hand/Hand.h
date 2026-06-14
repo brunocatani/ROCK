@@ -363,6 +363,7 @@ namespace rock
         }
 
         bool isHolding() const { return isHoldingState(_state); }
+        bool isHoldingLooseWeapon() const { return isHolding() && _heldObjectIsLooseWeapon; }
         RE::TESObjectREFR* getHeldRef() const { return _savedObjectState.refr; }
         const ActiveConstraint& getActiveConstraint() const { return _activeConstraint; }
         const SavedObjectState& getSavedObjectState() const { return _savedObjectState; }

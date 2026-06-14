@@ -33,6 +33,9 @@ int main()
     settings.enabled = true;
     settings.weaponToggleButtonId = kOpenVrAxisButtonBase;
 
+    ok &= expectTrue("normal grab button id is accepted", isAllowedGrabButtonId(2));
+    ok &= expectFalse("SteamVR trigger button id is reserved and rejected for grab", isAllowedGrabButtonId(kOpenVrSteamVrTriggerButtonId));
+
     const auto weaponToggleMask = buttonMask(settings.weaponToggleButtonId);
     const auto toggleDecision = evaluate(Input{
                                              .hand = Hand::Right,
@@ -67,6 +70,19 @@ int main()
         settings);
     ok &= expectFalse("menu input blocks weapon toggle request", menuToggleDecision.weaponToggleRequested);
 
+    settings.grabButtonId = kOpenVrSteamVrTriggerButtonId;
+    const auto triggerGrabDecision = evaluate(Input{
+                                                .hand = Hand::Right,
+                                                .gameplayInputAllowed = true,
+                                                .menuInputActive = false,
+                                                .weaponDrawn = false,
+                                                .rawPressed = buttonMask(kOpenVrSteamVrTriggerButtonId),
+                                                .previousRawPressed = 0,
+                                            },
+        settings);
+    ok &= expectFalse("SteamVR trigger does not act as ROCK grab input", triggerGrabDecision.grabPressed);
+    settings.grabButtonId = 2;
+
     NativeActionSuppressionInput base{
         .remapEnabled = true,
         .suppressionEnabled = true,
@@ -85,6 +101,9 @@ int main()
     auto drawnTrigger = base;
     drawnTrigger.weaponDrawn = true;
     ok &= expectFalse("drawn weapon allows native trigger attack gate", shouldSuppressNativeTriggerAction(drawnTrigger));
+    auto heldWeaponTrigger = drawnTrigger;
+    heldWeaponTrigger.rightHandHeldWeapon = true;
+    ok &= expectTrue("right held ROCK weapon suppresses native trigger even if weapon drawn", shouldSuppressNativeTriggerAction(heldWeaponTrigger));
 
     auto favorites = base;
     favorites.weaponDrawn = true;
@@ -105,6 +124,28 @@ int main()
     auto unmatched = base;
     unmatched.eventMatched = false;
     ok &= expectFalse("unmatched native event is not suppressed", shouldSuppressNativeTriggerAction(unmatched));
+
+    HeldWeaponEquipInput equipInput{
+        .remapEnabled = true,
+        .gameplayInputAllowed = true,
+        .menuInputActive = false,
+        .hand = Hand::Right,
+        .rightHandHeldWeapon = true,
+        .pressedEdge = true,
+    };
+    ok &= expectTrue("right trigger edge equips right held ROCK weapon", shouldRequestRightHeldWeaponEquip(equipInput));
+    auto leftEquipInput = equipInput;
+    leftEquipInput.hand = Hand::Left;
+    ok &= expectFalse("left hand cannot request right held weapon equip", shouldRequestRightHeldWeaponEquip(leftEquipInput));
+    auto noHeldWeaponEquipInput = equipInput;
+    noHeldWeaponEquipInput.rightHandHeldWeapon = false;
+    ok &= expectFalse("trigger edge without right held weapon does not request equip", shouldRequestRightHeldWeaponEquip(noHeldWeaponEquipInput));
+    auto menuEquipInput = equipInput;
+    menuEquipInput.menuInputActive = true;
+    ok &= expectFalse("menu input blocks right held weapon equip request", shouldRequestRightHeldWeaponEquip(menuEquipInput));
+    auto heldEquipInput = equipInput;
+    heldEquipInput.pressedEdge = false;
+    ok &= expectFalse("held trigger does not repeat right held weapon equip request", shouldRequestRightHeldWeaponEquip(heldEquipInput));
 
     ok &= expectTrue("enabled suppression requests native hook install", shouldInstallNativeActionSuppressionHook(true, true));
     ok &= expectFalse("disabled remap skips native hook install", shouldInstallNativeActionSuppressionHook(false, true));

@@ -51,6 +51,7 @@
 #include "physics-interaction/stash/ShoulderStashDetector.h"
 #include "physics-interaction/stash/ShoulderStashPolicy.h"
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
+#include "physics-interaction/weapon/WeaponEquipTransfer.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/core/PhysicsHooks.h"
@@ -521,7 +522,7 @@ namespace rock
 
         GrabButtonState readGrabButtonState(bool isLeft, int buttonId)
         {
-            if (!input_remap_policy::isValidButtonId(buttonId)) {
+            if (!input_remap_policy::isAllowedGrabButtonId(buttonId)) {
                 return {};
             }
 
@@ -540,7 +541,7 @@ namespace rock
 
         bool readGrabButtonHeld(bool isLeft, int buttonId)
         {
-            if (!input_remap_policy::isValidButtonId(buttonId)) {
+            if (!input_remap_policy::isAllowedGrabButtonId(buttonId)) {
                 return false;
             }
 
@@ -558,7 +559,7 @@ namespace rock
 
         bool readGrabButtonPressedEdge(bool isLeft, int buttonId)
         {
-            if (!input_remap_policy::isValidButtonId(buttonId)) {
+            if (!input_remap_policy::isAllowedGrabButtonId(buttonId)) {
                 return false;
             }
 
@@ -572,6 +573,17 @@ namespace rock
             }
 
             return vrcf::VRControllers.isPressed(isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, buttonId);
+        }
+
+        bool readRightHeldWeaponEquipButtonPressedEdge()
+        {
+            constexpr int buttonId = input_remap_policy::kOpenVrSteamVrTriggerButtonId;
+            const auto rawState = input_remap_runtime::consumeRawButtonState(false, buttonId);
+            if (rawState.available) {
+                return rawState.pressed;
+            }
+
+            return vrcf::VRControllers.isPressed(vrcf::Hand::Right, buttonId);
         }
 
         struct TransformDelta
@@ -4230,6 +4242,7 @@ namespace rock
         };
 
         if (!runtime_state::isLocalSkeletonReady()) {
+            input_remap_runtime::setRightHandHeldWeapon(false);
             clearGameplayCandidatesForHand(_rightHand, false);
             clearGameplayCandidatesForHand(_leftHand, true);
             return;
@@ -4240,6 +4253,7 @@ namespace rock
         const bool rightHandWeaponEquipped = resolveEquippedWeaponInteractionNode() != nullptr;
         const bool equippedWeaponSupportGripActive = _twoHandedGrip.isGripping();
         const auto farHmdConeGate = makeFarSelectionHmdConeGate(frame);
+        input_remap_runtime::setRightHandHeldWeapon(_rightHand.isHoldingLooseWeapon());
 
         auto releaseSuppressedHeldObject = [&](Hand& hand, bool isLeft, const char* reason) {
             auto* heldRef = hand.getHeldRef();
@@ -4706,6 +4720,56 @@ namespace rock
                 auto* heldRefForGameplay = hand.getHeldRef();
                 const bool peerHoldingSameObject =
                     heldRefForGameplay && peer.isHolding() && peer.getHeldRef() == heldRefForGameplay;
+                const bool rightHeldWeaponEquipRequested = input_remap_policy::shouldRequestRightHeldWeaponEquip(input_remap_policy::HeldWeaponEquipInput{
+                    .remapEnabled = g_rockConfig.rockInputRemapEnabled,
+                    .gameplayInputAllowed = true,
+                    .menuInputActive = input_remap_runtime::isMenuInputActive(),
+                    .hand = isLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right,
+                    .rightHandHeldWeapon = !isLeft && hand.isHoldingLooseWeapon(),
+                    .pressedEdge = !isLeft && hand.isHoldingLooseWeapon() && readRightHeldWeaponEquipButtonPressedEdge(),
+                });
+
+                if (rightHeldWeaponEquipRequested) {
+                    hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, _heldObjectPlayerSpaceFrame, frame.deltaSeconds);
+                    auto* heldRef = hand.getHeldRef();
+                    std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;
+                    const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
+                    auto releaseContext = makeGrabReleaseContext(hand, isLeft);
+                    releaseContext.disposition = GrabReleaseDisposition::PendingInventoryTransfer;
+                    releaseContext.reason = "right-trigger-held-weapon-equip";
+                    const auto releaseOutcome = hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+                    if (heldRef) {
+                        releaseObject(heldRef, claimOwnerForHand(isLeft));
+                    }
+
+                    const auto equipResult = weapon_equip_transfer::transferHeldWeaponToPlayerAndEquip(weapon_equip_transfer::EquipInput{
+                        .heldRef = heldRef,
+                    });
+                    if (heldFormID == 0 && equipResult.formID != 0) {
+                        heldFormID = equipResult.formID;
+                    }
+
+                    auto* postEquipRef = equipResult.transferredToInventory ? nullptr : heldRef;
+                    dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, postEquipRef, heldFormID, 0);
+                    if (!equipResult.success && !equipResult.transferredToInventory) {
+                        hand.applyReleaseVelocitySnapshot(hknp, releaseOutcome.velocity);
+                    }
+                    dispatchHeldObjectEventByFormID(GrabEventType::Released, postEquipRef, heldFormID, primaryBodyId);
+                    ROCK_LOG_INFO(Hand,
+                        "{} hand right-trigger held weapon equip formID={:08X} success={} equipReason={} count={} stack={} instanceMatch={} transferred={}",
+                        hand.handName(),
+                        heldFormID,
+                        equipResult.success ? "yes" : "no",
+                        weapon_equip_transfer::equipReasonName(equipResult.reason),
+                        equipResult.count,
+                        equipResult.stackID,
+                        equipResult.matchedInstanceData ? "yes" : "no",
+                        equipResult.transferredToInventory ? "yes" : "no");
+                    input_remap_runtime::setRightHandHeldWeapon(false);
+                    clearGameplayCandidatesForHand(hand, isLeft);
+                    return;
+                }
+
                 const auto consumeEligibility = mouth_consume::evaluateEligibility(mouth_consume::EligibilityInput{
                     .enabled = g_rockConfig.rockMouthConsumeEnabled,
                     .allowPoison = g_rockConfig.rockMouthConsumeAllowPoison,

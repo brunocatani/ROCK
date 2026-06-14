@@ -1430,8 +1430,8 @@ namespace rock
         rockGrabMaxDeviation = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxDeviation", rockGrabMaxDeviation));
         rockGrabMaxDeviationTime = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxDeviationTime", rockGrabMaxDeviationTime));
         rockGrabButtonID = static_cast<int>(ini.GetLongValue(SECTION, "iGrabButtonID", rockGrabButtonID));
-        if (!input_remap_policy::isValidButtonId(rockGrabButtonID)) {
-            ROCK_LOG_WARN(Config, "iGrabButtonID must be 0..63; using 2");
+        if (!input_remap_policy::isAllowedGrabButtonId(rockGrabButtonID)) {
+            ROCK_LOG_WARN(Config, "iGrabButtonID must be 0..63 and cannot be SteamVR trigger button {}; using 2", input_remap_policy::kOpenVrSteamVrTriggerButtonId);
             rockGrabButtonID = 2;
         }
         rockThrowVelocityMultiplier = static_cast<float>(ini.GetDoubleValue(SECTION, "fThrowVelocityMultiplier", rockThrowVelocityMultiplier));

@@ -61,6 +61,7 @@ namespace rock::input_remap_runtime
         std::array<ControllerTracker, 2> s_controllers;
         std::atomic<bool> s_gameplayInputAllowed{ false };
         std::atomic<bool> s_weaponDrawn{ false };
+        std::atomic<bool> s_rightHandHeldWeapon{ false };
         std::atomic<std::uint32_t> s_pendingWeaponToggleRequests{ 0 };
         std::atomic<bool> s_hooksInstalled{ false };
         std::atomic<bool> s_readyWeaponEventHookInstalled{ false };
@@ -626,6 +627,7 @@ namespace rock::input_remap_runtime
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
                 .menuInputActive = isGameStoppingMenuInputActive(),
                 .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
+                .rightHandHeldWeapon = s_rightHandHeldWeapon.load(std::memory_order_acquire),
                 .eventMatched = eventMatched,
             };
         }
@@ -995,6 +997,11 @@ namespace rock::input_remap_runtime
     void setWeaponDrawn(bool weaponDrawn)
     {
         s_weaponDrawn.store(weaponDrawn, std::memory_order_release);
+    }
+
+    void setRightHandHeldWeapon(bool heldWeapon)
+    {
+        s_rightHandHeldWeapon.store(heldWeapon, std::memory_order_release);
     }
 
     bool isMenuInputActive()

@@ -51,7 +51,18 @@ namespace rock::input_remap_policy
         bool gameplayInputAllowed{ true };
         bool menuInputActive{ false };
         bool weaponDrawn{ false };
+        bool rightHandHeldWeapon{ false };
         bool eventMatched{ false };
+    };
+
+    struct HeldWeaponEquipInput
+    {
+        bool remapEnabled{ true };
+        bool gameplayInputAllowed{ true };
+        bool menuInputActive{ false };
+        Hand hand{ Hand::Right };
+        bool rightHandHeldWeapon{ false };
+        bool pressedEdge{ false };
     };
 
     struct VirtualHolstersCompatibilityInput
@@ -88,6 +99,11 @@ namespace rock::input_remap_policy
     inline constexpr int kOpenVrAxisCount = 5;
     inline constexpr int kOpenVrSteamVrTriggerButtonId = kOpenVrAxisButtonBase + 1;
 
+    [[nodiscard]] constexpr bool isAllowedGrabButtonId(int buttonId)
+    {
+        return isValidButtonId(buttonId) && buttonId != kOpenVrSteamVrTriggerButtonId;
+    }
+
     [[nodiscard]] constexpr std::uint64_t buttonMask(int buttonId)
     {
         return isValidButtonId(buttonId) ? (std::uint64_t{ 1 } << static_cast<unsigned>(buttonId)) : 0;
@@ -116,7 +132,13 @@ namespace rock::input_remap_policy
 
     [[nodiscard]] constexpr bool shouldSuppressNativeTriggerAction(const NativeActionSuppressionInput& input)
     {
-        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched && !input.weaponDrawn;
+        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
+               (!input.weaponDrawn || input.rightHandHeldWeapon);
+    }
+
+    [[nodiscard]] constexpr bool shouldRequestRightHeldWeaponEquip(const HeldWeaponEquipInput& input)
+    {
+        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.hand == Hand::Right && input.rightHandHeldWeapon && input.pressedEdge;
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeFavoritesAction(const NativeActionSuppressionInput& input)
@@ -160,7 +182,7 @@ namespace rock::input_remap_policy
     {
         Decision decision{};
 
-        const auto grabMask = buttonMask(settings.grabButtonId);
+        const auto grabMask = isAllowedGrabButtonId(settings.grabButtonId) ? buttonMask(settings.grabButtonId) : 0;
         const auto weaponToggleMask = buttonMask(settings.weaponToggleButtonId);
 
         decision.grabHeld = grabMask != 0 && (input.rawPressed & grabMask) != 0;
