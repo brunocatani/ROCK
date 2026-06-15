@@ -38,10 +38,37 @@ namespace rock::input_remap_policy
 
     struct Decision
     {
-        bool weaponToggleRequested{ false };
         bool grabHeld{ false };
         bool grabPressed{ false };
         bool grabReleased{ false };
+    };
+
+    inline constexpr double kDefaultWeaponToggleMaxClickSeconds = 0.35;
+
+    struct WeaponToggleClickState
+    {
+        bool tracking{ false };
+        bool eligibleAtPress{ false };
+        bool blocked{ false };
+        double pressStartSeconds{ 0.0 };
+    };
+
+    struct WeaponToggleClickInput
+    {
+        bool enabled{ true };
+        bool gameplayInputAllowed{ true };
+        bool menuInputActive{ false };
+        bool rightHand{ true };
+        bool held{ false };
+        bool pressed{ false };
+        bool released{ false };
+        double currentTimeSeconds{ 0.0 };
+        double maxClickSeconds{ kDefaultWeaponToggleMaxClickSeconds };
+    };
+
+    struct WeaponToggleClickDecision
+    {
+        bool weaponToggleRequested{ false };
     };
 
     struct NativeActionSuppressionInput
@@ -74,6 +101,7 @@ namespace rock::input_remap_policy
     {
         bool featureAvailable{ false };
         bool canUsePrimaryDetachInput{ false };
+        bool menuInputActive{ false };
         bool virtualHolstersOwnsInput{ false };
     };
 
@@ -85,6 +113,7 @@ namespace rock::input_remap_policy
         bool heldWeaponAtFrameStart{ false };
         bool heldWeaponNow{ false };
         bool sameHandTriggerPressedEdge{ false };
+        bool primaryHand{ true };
         bool autoEquipEnabled{ false };
         bool autoEquipSettled{ false };
     };
@@ -180,18 +209,18 @@ namespace rock::input_remap_policy
 
     [[nodiscard]] constexpr bool shouldUseEquippedWeaponPrimaryDetachInput(const EquippedWeaponPrimaryDetachInputGate& input)
     {
-        return input.featureAvailable && input.canUsePrimaryDetachInput && !input.virtualHolstersOwnsInput;
+        return input.featureAvailable && input.canUsePrimaryDetachInput && !input.menuInputActive && !input.virtualHolstersOwnsInput;
     }
 
     [[nodiscard]] constexpr bool shouldRequestHeldWeaponEquip(const HeldWeaponEquipInput& input)
     {
         return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.heldWeaponAtFrameStart && input.heldWeaponNow &&
-               (input.sameHandTriggerPressedEdge || (input.autoEquipEnabled && input.autoEquipSettled));
+               (input.sameHandTriggerPressedEdge || (input.primaryHand && input.autoEquipEnabled && input.autoEquipSettled));
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeFavoritesAction(const NativeActionSuppressionInput& input)
     {
-        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched;
+        return input.remapEnabled && input.suppressionEnabled && input.eventMatched;
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeMeleeThrowAction(const NativeActionSuppressionInput& input)
@@ -226,23 +255,61 @@ namespace rock::input_remap_policy
         };
     }
 
+    inline WeaponToggleClickDecision updateWeaponToggleClick(WeaponToggleClickState& state, const WeaponToggleClickInput& input)
+    {
+        WeaponToggleClickDecision decision{};
+        if (!input.enabled || !input.rightHand) {
+            state = {};
+            return decision;
+        }
+
+        const double maxClickSeconds = input.maxClickSeconds > 0.0 ? input.maxClickSeconds : kDefaultWeaponToggleMaxClickSeconds;
+        if (input.pressed) {
+            state.tracking = true;
+            state.eligibleAtPress = input.gameplayInputAllowed && !input.menuInputActive;
+            state.blocked = !state.eligibleAtPress;
+            state.pressStartSeconds = input.currentTimeSeconds;
+        }
+
+        if (!state.tracking) {
+            return decision;
+        }
+
+        if (!input.gameplayInputAllowed || input.menuInputActive) {
+            state.blocked = true;
+        }
+
+        const double elapsedSeconds = input.currentTimeSeconds >= state.pressStartSeconds ? input.currentTimeSeconds - state.pressStartSeconds : 0.0;
+        if (elapsedSeconds > maxClickSeconds) {
+            state.blocked = true;
+        }
+
+        if (input.released) {
+            decision.weaponToggleRequested = state.eligibleAtPress &&
+                                             !state.blocked &&
+                                             input.gameplayInputAllowed &&
+                                             !input.menuInputActive &&
+                                             elapsedSeconds <= maxClickSeconds;
+            state = {};
+            return decision;
+        }
+
+        if (!input.held && !input.pressed) {
+            state = {};
+        }
+
+        return decision;
+    }
+
     [[nodiscard]] constexpr Decision evaluate(const Input& input, const Settings& settings)
     {
         Decision decision{};
 
         const auto grabMask = isAllowedGrabButtonId(settings.grabButtonId) ? buttonMask(settings.grabButtonId) : 0;
-        const auto weaponToggleMask = buttonMask(settings.weaponToggleButtonId);
 
         decision.grabHeld = grabMask != 0 && (input.rawPressed & grabMask) != 0;
         decision.grabPressed = grabMask != 0 && (input.rawPressed & grabMask) != 0 && (input.previousRawPressed & grabMask) == 0;
         decision.grabReleased = grabMask != 0 && (input.rawPressed & grabMask) == 0 && (input.previousRawPressed & grabMask) != 0;
-
-        if (!settings.enabled || !input.gameplayInputAllowed || input.menuInputActive || input.hand != Hand::Right) {
-            return decision;
-        }
-
-        decision.weaponToggleRequested =
-            weaponToggleMask != 0 && (input.rawPressed & weaponToggleMask) != 0 && (input.previousRawPressed & weaponToggleMask) == 0;
         return decision;
     }
 }

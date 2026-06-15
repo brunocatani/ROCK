@@ -36,39 +36,92 @@ int main()
     ok &= expectTrue("normal grab button id is accepted", isAllowedGrabButtonId(2));
     ok &= expectFalse("SteamVR trigger button id is reserved and rejected for grab", isAllowedGrabButtonId(kOpenVrSteamVrTriggerButtonId));
 
-    const auto weaponToggleMask = buttonMask(settings.weaponToggleButtonId);
-    const auto toggleDecision = evaluate(Input{
-                                             .hand = Hand::Right,
-                                             .gameplayInputAllowed = true,
-                                             .menuInputActive = false,
-                                             .weaponDrawn = false,
-                                             .rawPressed = weaponToggleMask,
-                                             .previousRawPressed = 0,
-                                         },
-        settings);
-    ok &= expectTrue("right thumbstick edge requests weapon toggle", toggleDecision.weaponToggleRequested);
+    WeaponToggleClickState toggleState{};
+    auto togglePress = updateWeaponToggleClick(toggleState,
+        WeaponToggleClickInput{
+            .enabled = settings.enabled,
+            .gameplayInputAllowed = true,
+            .menuInputActive = false,
+            .rightHand = true,
+            .held = true,
+            .pressed = true,
+            .released = false,
+            .currentTimeSeconds = 10.0,
+        });
+    ok &= expectFalse("right thumbstick press waits for click release", togglePress.weaponToggleRequested);
+    auto toggleRelease = updateWeaponToggleClick(toggleState,
+        WeaponToggleClickInput{
+            .enabled = settings.enabled,
+            .gameplayInputAllowed = true,
+            .menuInputActive = false,
+            .rightHand = true,
+            .held = false,
+            .pressed = false,
+            .released = true,
+            .currentTimeSeconds = 10.10,
+        });
+    ok &= expectTrue("short right thumbstick click release requests weapon toggle", toggleRelease.weaponToggleRequested);
 
-    const auto heldToggleDecision = evaluate(Input{
-                                                 .hand = Hand::Right,
-                                                 .gameplayInputAllowed = true,
-                                                 .menuInputActive = false,
-                                                 .weaponDrawn = false,
-                                                 .rawPressed = weaponToggleMask,
-                                                 .previousRawPressed = weaponToggleMask,
-                                             },
-        settings);
-    ok &= expectFalse("held right thumbstick does not repeat weapon toggle", heldToggleDecision.weaponToggleRequested);
+    toggleState = {};
+    (void)updateWeaponToggleClick(toggleState,
+        WeaponToggleClickInput{
+            .enabled = settings.enabled,
+            .gameplayInputAllowed = true,
+            .menuInputActive = false,
+            .rightHand = true,
+            .held = true,
+            .pressed = true,
+            .released = false,
+            .currentTimeSeconds = 20.0,
+        });
+    auto heldToggleRelease = updateWeaponToggleClick(toggleState,
+        WeaponToggleClickInput{
+            .enabled = settings.enabled,
+            .gameplayInputAllowed = true,
+            .menuInputActive = false,
+            .rightHand = true,
+            .held = false,
+            .pressed = false,
+            .released = true,
+            .currentTimeSeconds = 20.50,
+        });
+    ok &= expectFalse("held right thumbstick does not become weapon toggle", heldToggleRelease.weaponToggleRequested);
 
-    const auto menuToggleDecision = evaluate(Input{
-                                                 .hand = Hand::Right,
-                                                 .gameplayInputAllowed = true,
-                                                 .menuInputActive = true,
-                                                 .weaponDrawn = false,
-                                                 .rawPressed = weaponToggleMask,
-                                                 .previousRawPressed = 0,
-                                             },
-        settings);
-    ok &= expectFalse("menu input blocks weapon toggle request", menuToggleDecision.weaponToggleRequested);
+    toggleState = {};
+    (void)updateWeaponToggleClick(toggleState,
+        WeaponToggleClickInput{
+            .enabled = settings.enabled,
+            .gameplayInputAllowed = true,
+            .menuInputActive = false,
+            .rightHand = true,
+            .held = true,
+            .pressed = true,
+            .released = false,
+            .currentTimeSeconds = 30.0,
+        });
+    (void)updateWeaponToggleClick(toggleState,
+        WeaponToggleClickInput{
+            .enabled = settings.enabled,
+            .gameplayInputAllowed = true,
+            .menuInputActive = true,
+            .rightHand = true,
+            .held = true,
+            .pressed = false,
+            .released = false,
+            .currentTimeSeconds = 30.10,
+        });
+    auto menuToggleRelease = updateWeaponToggleClick(toggleState,
+        WeaponToggleClickInput{
+            .enabled = settings.enabled,
+            .gameplayInputAllowed = true,
+            .menuInputActive = false,
+            .rightHand = true,
+            .held = false,
+            .pressed = false,
+            .released = true,
+            .currentTimeSeconds = 30.15,
+        });
+    ok &= expectFalse("menu opened during thumbstick hold blocks weapon toggle", menuToggleRelease.weaponToggleRequested);
 
     settings.grabButtonId = kOpenVrSteamVrTriggerButtonId;
     const auto triggerGrabDecision = evaluate(Input{
@@ -126,7 +179,7 @@ int main()
 
     auto menuFavorites = favorites;
     menuFavorites.menuInputActive = true;
-    ok &= expectFalse("menu input allows native favorites handling", shouldSuppressNativeFavoritesAction(menuFavorites));
+    ok &= expectTrue("menu input still suppresses native favorites handling", shouldSuppressNativeFavoritesAction(menuFavorites));
 
     auto menuMeleeThrow = meleeThrow;
     menuMeleeThrow.menuInputActive = true;
@@ -174,6 +227,9 @@ int main()
     ok &= expectFalse("primary detach ignores consumed edges until armed", shouldUseEquippedWeaponPrimaryDetachInput(primaryDetachGate));
     primaryDetachGate.canUsePrimaryDetachInput = true;
     ok &= expectTrue("primary detach uses fresh edge after armed", shouldUseEquippedWeaponPrimaryDetachInput(primaryDetachGate));
+    primaryDetachGate.menuInputActive = true;
+    ok &= expectFalse("menu input blocks primary detach edge use", shouldUseEquippedWeaponPrimaryDetachInput(primaryDetachGate));
+    primaryDetachGate.menuInputActive = false;
     primaryDetachGate.virtualHolstersOwnsInput = true;
     ok &= expectFalse("VirtualHolsters ownership blocks primary detach edge use", shouldUseEquippedWeaponPrimaryDetachInput(primaryDetachGate));
     primaryDetachGate.featureAvailable = false;
@@ -208,6 +264,9 @@ int main()
     auto disabledAutoEquipInput = autoEquipInput;
     disabledAutoEquipInput.autoEquipEnabled = false;
     ok &= expectFalse("settled held weapon does not auto-equip when disabled", shouldRequestHeldWeaponEquip(disabledAutoEquipInput));
+    auto offhandAutoEquipInput = autoEquipInput;
+    offhandAutoEquipInput.primaryHand = false;
+    ok &= expectFalse("settled offhand held weapon does not auto-equip", shouldRequestHeldWeaponEquip(offhandAutoEquipInput));
     auto unsettledAutoEquipInput = autoEquipInput;
     unsettledAutoEquipInput.autoEquipSettled = false;
     ok &= expectFalse("unsettled held weapon does not auto-equip", shouldRequestHeldWeaponEquip(unsettledAutoEquipInput));

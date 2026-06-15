@@ -4,6 +4,8 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
 
+#include "api/FRIKApi.h"
+
 #include "f4vr/F4VRUtils.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/ControlMap.h"
@@ -69,7 +71,12 @@ namespace rock::input_remap_runtime
             std::atomic<std::uint64_t> rawTouched{ 0 };
             std::atomic<std::uint64_t> pressedEdges{ 0 };
             std::atomic<std::uint64_t> releasedEdges{ 0 };
+            std::atomic<std::uint64_t> rearmPressedMask{ 0 };
             std::atomic<bool> valid{ false };
+            std::atomic<bool> weaponToggleTracking{ false };
+            std::atomic<bool> weaponToggleEligibleAtPress{ false };
+            std::atomic<bool> weaponToggleBlocked{ false };
+            std::atomic<std::uint64_t> weaponTogglePressStartMs{ 0 };
         };
 
         std::array<ControllerTracker, 2> s_controllers;
@@ -194,6 +201,14 @@ namespace rock::input_remap_runtime
             }
 
             s_menuInputActive.store(false, std::memory_order_release);
+        }
+
+        [[nodiscard]] bool isCompatibilityConfigInputActive()
+        {
+            const auto* frikApi = frik::api::FRIKApi::inst;
+            return frikApi &&
+                   ((frikApi->isConfigOpen && frikApi->isConfigOpen()) ||
+                       (frikApi->isWristPipboyOpen && frikApi->isWristPipboyOpen()));
         }
 
         void refreshTrackedMenuState(const RE::UI& ui)
@@ -533,6 +548,42 @@ namespace rock::input_remap_runtime
             return false;
         }
 
+        [[nodiscard]] bool isInputBlockingMenuActive()
+        {
+            return isGameStoppingMenuInputActive() || isCompatibilityConfigInputActive();
+        }
+
+        [[nodiscard]] double currentTimeSeconds()
+        {
+            return static_cast<double>(GetTickCount64()) / 1000.0;
+        }
+
+        [[nodiscard]] input_remap_policy::WeaponToggleClickState loadWeaponToggleClickState(const ControllerTracker& tracker)
+        {
+            return input_remap_policy::WeaponToggleClickState{
+                .tracking = tracker.weaponToggleTracking.load(std::memory_order_acquire),
+                .eligibleAtPress = tracker.weaponToggleEligibleAtPress.load(std::memory_order_acquire),
+                .blocked = tracker.weaponToggleBlocked.load(std::memory_order_acquire),
+                .pressStartSeconds = static_cast<double>(tracker.weaponTogglePressStartMs.load(std::memory_order_acquire)) / 1000.0,
+            };
+        }
+
+        void storeWeaponToggleClickState(ControllerTracker& tracker, const input_remap_policy::WeaponToggleClickState& state)
+        {
+            tracker.weaponToggleTracking.store(state.tracking, std::memory_order_release);
+            tracker.weaponToggleEligibleAtPress.store(state.eligibleAtPress, std::memory_order_release);
+            tracker.weaponToggleBlocked.store(state.blocked, std::memory_order_release);
+            tracker.weaponTogglePressStartMs.store(
+                state.pressStartSeconds > 0.0 ? static_cast<std::uint64_t>(state.pressStartSeconds * 1000.0) : 0u,
+                std::memory_order_release);
+        }
+
+        void clearButtonEdges(ControllerTracker& tracker, std::uint64_t mask)
+        {
+            tracker.pressedEdges.fetch_and(~mask, std::memory_order_acq_rel);
+            tracker.releasedEdges.fetch_and(~mask, std::memory_order_acq_rel);
+        }
+
         [[nodiscard]] bool isAddressInGameText(std::uintptr_t address)
         {
             const auto text = REL::Module::get().segment(REL::Segment::text);
@@ -564,19 +615,35 @@ namespace rock::input_remap_runtime
                 tracker.releasedEdges.fetch_or(rawTransition.releasedEdges, std::memory_order_acq_rel);
             }
 
-            const auto decision = input_remap_policy::evaluate(
-                input_remap_policy::Input{
-                    .hand = hand,
-                    .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
-                    .menuInputActive = isGameStoppingMenuInputActive(),
-                    .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
-                    .rawPressed = rawPressed,
-                    .rawTouched = rawTouched,
-                    .previousRawPressed = rawTransition.previousPressedForEvaluation,
-                },
-                makeSettings());
+            const bool inputBlockingMenuActive = isInputBlockingMenuActive();
+            if (inputBlockingMenuActive) {
+                tracker.rearmPressedMask.fetch_or(rawPressed, std::memory_order_acq_rel);
+            } else {
+                const auto rearmMask = tracker.rearmPressedMask.load(std::memory_order_acquire);
+                const auto releasedFromRearm = rearmMask & ~rawPressed;
+                if (releasedFromRearm != 0) {
+                    clearButtonEdges(tracker, releasedFromRearm);
+                    tracker.rearmPressedMask.fetch_and(~releasedFromRearm, std::memory_order_acq_rel);
+                }
+            }
 
-            if (decision.weaponToggleRequested) {
+            const auto settings = makeSettings();
+            const auto weaponToggleMask = input_remap_policy::buttonMask(settings.weaponToggleButtonId);
+            auto weaponToggleClickState = loadWeaponToggleClickState(tracker);
+            const auto weaponToggleClick = input_remap_policy::updateWeaponToggleClick(weaponToggleClickState,
+                input_remap_policy::WeaponToggleClickInput{
+                    .enabled = settings.enabled,
+                    .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
+                    .menuInputActive = inputBlockingMenuActive,
+                    .rightHand = hand == input_remap_policy::Hand::Right,
+                    .held = weaponToggleMask != 0 && (rawPressed & weaponToggleMask) != 0,
+                    .pressed = hadPrevious && weaponToggleMask != 0 && (rawTransition.pressedEdges & weaponToggleMask) != 0,
+                    .released = hadPrevious && weaponToggleMask != 0 && (rawTransition.releasedEdges & weaponToggleMask) != 0,
+                    .currentTimeSeconds = currentTimeSeconds(),
+                });
+            storeWeaponToggleClickState(tracker, weaponToggleClickState);
+
+            if (weaponToggleClick.weaponToggleRequested) {
                 s_pendingWeaponToggleRequests.fetch_add(1, std::memory_order_acq_rel);
             }
         }
@@ -710,7 +777,7 @@ namespace rock::input_remap_runtime
                 .remapEnabled = g_rockConfig.rockInputRemapEnabled,
                 .suppressionEnabled = suppressionEnabled,
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
-                .menuInputActive = isGameStoppingMenuInputActive(),
+                .menuInputActive = isInputBlockingMenuActive(),
                 .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
                 .rightHandHeldWeapon = s_rightHandHeldWeapon.load(std::memory_order_acquire),
                 .primaryHandEvent = false,
@@ -779,7 +846,7 @@ namespace rock::input_remap_runtime
             return input_remap_policy::shouldRoutePrimaryActivateReload(input_remap_policy::NativeActivateReloadInput{
                 .remapEnabled = g_rockConfig.rockInputRemapEnabled,
                 .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
-                .menuInputActive = isGameStoppingMenuInputActive(),
+                .menuInputActive = isInputBlockingMenuActive(),
                 .weaponDrawn = s_weaponDrawn.load(std::memory_order_acquire),
                 .primaryHandEvent = primaryHandEvent,
                 .buttonJustPressed = button && button->QJustPressed(),
@@ -1079,7 +1146,26 @@ namespace rock::input_remap_runtime
             }
 
             result.available = true;
-            result.held = (tracker.rawPressed.load(std::memory_order_acquire) & mask) != 0;
+            const auto rawPressed = tracker.rawPressed.load(std::memory_order_acquire);
+            const bool rawHeld = (rawPressed & mask) != 0;
+
+            if (isInputBlockingMenuActive()) {
+                if (rawHeld) {
+                    tracker.rearmPressedMask.fetch_or(mask, std::memory_order_acq_rel);
+                }
+                clearButtonEdges(tracker, mask);
+                return result;
+            }
+
+            if ((tracker.rearmPressedMask.load(std::memory_order_acquire) & mask) != 0) {
+                clearButtonEdges(tracker, mask);
+                if (!rawHeld) {
+                    tracker.rearmPressedMask.fetch_and(~mask, std::memory_order_acq_rel);
+                }
+                return result;
+            }
+
+            result.held = rawHeld;
 
             if (consumeEdges) {
                 result.pressed = (tracker.pressedEdges.fetch_and(~mask, std::memory_order_acq_rel) & mask) != 0;
@@ -1200,7 +1286,7 @@ namespace rock::input_remap_runtime
 
     bool isMenuInputActive()
     {
-        return isGameStoppingMenuInputActive();
+        return isInputBlockingMenuActive();
     }
 
     bool shouldDeferGrabInputForVirtualHolsters(bool isLeft, int buttonId)
@@ -1282,7 +1368,7 @@ namespace rock::input_remap_runtime
             return;
         }
 
-        if (!g_rockConfig.rockInputRemapEnabled || !s_gameplayInputAllowed.load(std::memory_order_acquire) || isGameStoppingMenuInputActive()) {
+        if (!g_rockConfig.rockInputRemapEnabled || !s_gameplayInputAllowed.load(std::memory_order_acquire) || isInputBlockingMenuActive()) {
             ROCK_LOG_DEBUG(Input, "Dropped {} pending weapon toggle request(s) because gameplay input is not active", requestCount);
             return;
         }
