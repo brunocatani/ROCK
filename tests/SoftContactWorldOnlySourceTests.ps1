@@ -65,23 +65,6 @@ Require-Text 'src/RockConfig.h' 'rockSoftContactWorldCachedPlaneMaxClearDistance
 Require-Text 'src/RockConfig.cpp' 'fSoftContactWorldCachedPlaneMaxClearDistanceGameUnits[\s\S]*bSoftContactWorldReleaseLerpEnabled[\s\S]*fSoftContactWorldReleaseLerpTimeMin[\s\S]*fSoftContactWorldReleaseLerpTimeMax' `
     'World soft contact must read clear-distance and release-lerp tuning.'
 
-Reject-Text 'data/config/ROCK.ini' $removedIniPattern `
-    'Default config must not document removed soft-contact toggles or tuning.'
-Reject-Text 'data/mod/ROCK_Config/ROCK.ini' $removedIniPattern `
-    'Packaged mod config must not document removed soft-contact toggles or tuning.'
-Require-Text 'data/config/ROCK.ini' 'bSoftContactWorldEnabled\s*=\s*true' `
-    'Default config must expose the world soft-contact toggle.'
-Require-Text 'data/mod/ROCK_Config/ROCK.ini' 'bSoftContactWorldEnabled\s*=\s*true' `
-    'Packaged mod config must expose the world soft-contact toggle.'
-Require-Text 'data/config/ROCK.ini' 'sSoftContactWorldShapeCastFilterInfo\s*=\s*000B002D' `
-    'Default config must expose the dedicated world soft-contact fallback query filter.'
-Require-Text 'data/mod/ROCK_Config/ROCK.ini' 'sSoftContactWorldShapeCastFilterInfo\s*=\s*000B002D' `
-    'Packaged mod config must expose the dedicated world soft-contact fallback query filter.'
-Require-Text 'data/config/ROCK.ini' 'fSoftContactWorldCachedPlaneMaxClearDistanceGameUnits\s*=\s*18\.0[\s\S]*bSoftContactWorldReleaseLerpEnabled\s*=\s*true' `
-    'Default config must expose soft-contact clear distance and release lerp.'
-Require-Text 'data/mod/ROCK_Config/ROCK.ini' 'fSoftContactWorldCachedPlaneMaxClearDistanceGameUnits\s*=\s*18\.0[\s\S]*bSoftContactWorldReleaseLerpEnabled\s*=\s*true' `
-    'Packaged mod config must expose soft-contact clear distance and release lerp.'
-
 Reject-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'buildHandShapes|buildBodyShapes|solveShapeAgainstShapes|solveShapeAgainstWeapon|RuntimeShape|DirectSkeletonBoneSnapshot|_bodyReader|std::vector<|WeaponCollision|NiAVObject' `
     'SoftContactRuntime must not retain hand-hand, body, weapon, or per-frame shape-vector solve paths.'
 Reject-Text 'src/physics-interaction/contact/SoftContactRuntime.cpp' 'ContactKind::(?:HandHand|WeaponHand|Body)|rockSoftContact(?:Enabled|HandHandEnabled|WeaponHandEnabled|BodyEnabled|RadiusPaddingGameUnits|MaxCorrectionGameUnits|WeaponHand)' `

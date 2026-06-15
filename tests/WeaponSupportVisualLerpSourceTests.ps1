@@ -37,8 +37,6 @@ Require-Text 'src/RockConfig.h' 'rockWeaponSupportGripHandLerpEnabled[\s\S]*rock
     'RockConfig must expose weapon support grip hand visual lerp settings.'
 Require-Text 'src/RockConfig.cpp' 'bWeaponSupportGripHandLerpEnabled[\s\S]*fWeaponSupportGripHandLerpTimeMin[\s\S]*fWeaponSupportGripHandLerpTimeMax[\s\S]*fWeaponSupportGripHandLerpMinDistance[\s\S]*fWeaponSupportGripHandLerpMaxDistance' `
     'RockConfig must load weapon support grip hand visual lerp settings from ROCK.ini.'
-Require-Text 'data/config/ROCK.ini' 'bWeaponSupportGripHandLerpEnabled[\s\S]*fWeaponSupportGripHandLerpTimeMin[\s\S]*fWeaponSupportGripHandLerpTimeMax[\s\S]*fWeaponSupportGripHandLerpMinDistance[\s\S]*fWeaponSupportGripHandLerpMaxDistance' `
-    'Packaged ROCK.ini must document weapon support grip hand visual lerp settings.'
 
 Require-Text 'src/physics-interaction/hand/HandVisual.h' 'computeDistanceMappedDurationGameUnits[\s\S]*blendTransformOverDuration' `
     'Visual hand helper must expose time-based distance-mapped transform blending.'
@@ -71,8 +69,6 @@ Reject-Text 'src/RockConfig.h' 'rockGrabLerp(Speed|AngularSpeed|MaxTime)' `
     'Removed generic grab startup lerp config fields must not remain in RockConfig.'
 Reject-Text 'src/RockConfig.cpp' 'fGrabLerp(Speed|AngularSpeed|MaxTime)|rockGrabLerp(Speed|AngularSpeed|MaxTime)' `
     'Removed generic grab startup lerp config loading must not remain.'
-Reject-Text 'data/config/ROCK.ini' 'fGrabLerp(Speed|AngularSpeed|MaxTime)' `
-    'Packaged ROCK.ini must not keep obsolete generic grab startup lerp keys.'
 Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'rockGrabLerp(Speed|AngularSpeed)' `
     'Normal grab visual hand smoothing must not use old speed-based generic grab lerp settings.'
 

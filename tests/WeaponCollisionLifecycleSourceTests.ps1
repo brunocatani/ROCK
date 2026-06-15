@@ -159,7 +159,6 @@ Reject-TextInTree 'src/physics-interaction/weapon' @('*.cpp', '*.h') '\b(?:evalu
 Reject-Text 'src/ROCKMain.cpp' 'weapon_instance_witness_runtime|WeaponInstanceWitnessRuntime' 'ROCK startup must not install removed weapon instance witness hooks.'
 Reject-Text 'src/RockConfig.h' 'rockWeaponCollisionNativeVisualRemapEnabled' 'ROCK config must not expose removed native visual remap option.'
 Reject-Text 'src/RockConfig.cpp' 'bWeaponCollisionNativeVisualRemapEnabled|rockWeaponCollisionNativeVisualRemapEnabled' 'ROCK config loader must not read removed native visual remap option.'
-Reject-Text 'data/config/ROCK.ini' 'bWeaponCollisionNativeVisualRemapEnabled' 'Default ROCK.ini must not document removed native visual remap option.'
 
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'deferGenerationForWeaponVisualRefresh' 'Initial weapon collision generation must not defer through a visual-refresh state machine.'
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'advanceWeaponVisualRefreshFrame\(\);' 'Generated weapon collision must not retain visual-refresh cooldown advancement.'

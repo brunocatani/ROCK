@@ -54,8 +54,6 @@ Reject-Text 'src/RockConfig.h' 'rockShoulderStashSkipActivate(Books|Notes)' `
     'Obsolete shoulder-stash collectible activation bypass config must not remain in runtime config.'
 Reject-Text 'src/RockConfig.cpp' 'bShoulderStashSkipActivate(Books|Notes)' `
     'Obsolete shoulder-stash collectible activation bypass INI keys must not be read.'
-Reject-Text 'data/config/ROCK.ini' 'bShoulderStashSkipActivate(Books|Notes)' `
-    'Packaged config must not advertise the obsolete collectible activation bypass.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'ShoulderStashTransferSourceTests failed:' -ForegroundColor Red

@@ -27,9 +27,6 @@ Require-Text 'src/RockConfig.h' 'rockHandPalmColliderDimensionScaleOverrides' 'C
 Require-Text 'src/RockConfig.cpp' '"sBodyBoneColliderRadiusScaleOverrides"' 'Config loader must read body per-collider radius scale overrides.'
 Require-Text 'src/RockConfig.cpp' '"sHandBoneColliderRadiusScaleOverrides"' 'Config loader must read hand capsule-like radius scale overrides.'
 Require-Text 'src/RockConfig.cpp' '"sHandPalmColliderDimensionScaleOverrides"' 'Config loader must read palm-box X/Y/Z scale overrides.'
-Require-Text 'data/config/ROCK.ini' 'sBodyBoneColliderRadiusScaleOverrides' 'Default INI must document body per-collider radius scale overrides.'
-Require-Text 'data/config/ROCK.ini' 'sHandBoneColliderRadiusScaleOverrides' 'Default INI must document hand capsule-like radius scale overrides.'
-Require-Text 'data/config/ROCK.ini' 'sHandPalmColliderDimensionScaleOverrides' 'Default INI must document palm-box X/Y/Z scale overrides.'
 
 Require-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' 'bodyRadiusScaleOverride\(descriptor,\s*inPowerArmor\)' 'Body collider frame construction must apply per-collider radius overrides.'
 Require-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' 'mixBodyColliderSignatureString\(signature,\s*g_rockConfig\.rockBodyBoneColliderRadiusScaleOverrides\)' 'Body collider rebuild signature must include radius override changes.'

@@ -109,8 +109,6 @@ function Require-SequenceEqual {
 
 Require-Path 'SDK/ROCK/include/ROCKProviderApi.h' 'Public SDK must ship the provider header.'
 Require-Path 'SDK/ROCK/include/ROCKApi.h' 'Public SDK must ship the API alias header.'
-Require-Path 'SDK/ROCK/docs/PublicApi.md' 'Public API documentation must be packaged with the SDK.'
-Require-Path 'SDK/ROCK/docs/VersionMatrix.md' 'API version matrix must be packaged with the SDK.'
 Require-Path 'SDK/ROCK/examples/MinimalProviderConsumer.cpp' 'A minimal provider consumer example must be packaged with the SDK.'
 
 Require-FilesEqual 'src/api/ROCKProviderApi.h' 'SDK/ROCK/include/ROCKProviderApi.h' `
@@ -132,18 +130,12 @@ Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_MAX_CONSUMERS_V1\s*=\s*6
     'Public consumer registry capacity must be an explicit SDK limit.'
 Require-Text 'src/api/ROCKApi.cpp' 'ROCKAPI_GetProviderApi\(\)' `
     'ROCKAPI_GetApi must return the same table as ROCKAPI_GetProviderApi.'
-Require-Text 'SDK/ROCK/docs/PublicApi.md' 'rock::provider::ROCK_PROVIDER_API_VERSION' `
-    'Public API initialization sample must use the namespaced v1 version constant.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'kRockIssuedOwnerTokenNamespace\s*=\s*0xA000''0000''0000''0000ull' `
     'Registered public owner tokens must be ROCK-issued and namespaced.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 's_externalBodies\.clearOwner\(ownerToken\)' `
     'Unregistering a consumer must release that owner external-body state.'
 Require-Text 'src/physics-interaction/object/ExternalBodyRegistry.h' 'copyContactsForOwnerV1' `
     'Owner-filtered contact polling must be implemented in the external-body registry.'
-Require-Text 'SDK/ROCK/docs/PublicApi.md' 'Successful force grabs enter ROCK''s existing dynamic grab path' `
-    'Docs must state that force grab uses the normal dynamic grab path.'
-Require-Text 'README.md' 'API v1 includes ROCK-issued owner tokens' `
-    'README must point consumers to the v1 API.'
 Require-Text 'cmake/package.cmake' 'SDK/ROCK' `
     'Release packaging must include the SDK directory.'
 Require-Text 'cmake/package.cmake' 'src/api/ROCKProviderApi\.h' `

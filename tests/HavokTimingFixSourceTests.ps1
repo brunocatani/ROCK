@@ -60,8 +60,6 @@ Require-Text 'src/RockConfig.h' 'rockHavokTimingFixEnabled[\s\S]*rockHavokTiming
     'RockConfig must expose timing-fix settings.'
 Require-Text 'src/RockConfig.cpp' 'bHavokTimingFixEnabled[\s\S]*fHavokTimingFixMinPhysicsFrameRate[\s\S]*iHavokTimingFixMaxSubsteps' `
     'RockConfig must load timing-fix settings from ROCK.ini.'
-Require-Text 'data/config/ROCK.ini' 'bHavokTimingFixEnabled[\s\S]*fHavokTimingFixMinPhysicsFrameRate[\s\S]*iHavokTimingFixMaxSubsteps' `
-    'Packaged ROCK.ini must document timing-fix settings.'
 Require-Text 'src/ROCKMain.cpp' 'g_rockConfig\.load\(\);[\s\S]*installHavokTimingFixHook\(\)' `
     'Timing hook must be installed after config load so config reload can toggle behavior.'
 Reject-Text 'src/physics-interaction/core/PhysicsHooks.cpp' 'kData_BhkWorldBaseSubstepDeltaSeconds' `

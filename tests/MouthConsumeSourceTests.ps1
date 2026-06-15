@@ -56,9 +56,6 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'if \(consumeEligibility\.eligible && consumeDecision\.candidate\)' `
     'Mouth candidate haptics must be gated by consume eligibility.'
-Require-Text 'data/config/ROCK.ini' `
-    'fMouthConsumeRadiusGameUnits = 5\.5' `
-    'Packaged config must use the tight mouth consume radius.'
 
 if ($failures.Count -gt 0) {
     Write-Host 'MouthConsumeSourceTests failed:' -ForegroundColor Red

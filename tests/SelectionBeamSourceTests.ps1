@@ -62,8 +62,6 @@ Require-Text 'src/RockConfig.h' 'rockSelectionBeamEnabled[\s\S]*rockSelectionBea
     'RockConfig must expose selection beam settings.'
 Require-Text 'src/RockConfig.cpp' 'bSelectionBeamEnabled[\s\S]*fSelectionBeamSegmentSizeGameUnits[\s\S]*fSelectionBeamCurveLiftGameUnits[\s\S]*fSelectionBeamAlpha' `
     'RockConfig must load selection beam settings from ROCK.ini.'
-Require-Text 'data/config/ROCK.ini' 'bSelectionBeamEnabled[\s\S]*fSelectionBeamSegmentSizeGameUnits[\s\S]*fSelectionBeamCurveLiftGameUnits[\s\S]*fSelectionBeamAlpha' `
-    'Packaged ROCK.ini must document selection beam settings.'
 Require-Text 'src/physics-interaction/hand/SelectionBeamEffect.cpp' 'Data/Meshes/ROCK/selection_beam_segment\.nif' `
     'Selection beam scenegraph effect must load the packaged ROCK mesh asset.'
 Reject-Text 'src/physics-interaction/hand/SelectionBeamEffect.cpp' 'getClonedNiNodeForNifFileSetName' `

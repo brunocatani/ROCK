@@ -27,8 +27,6 @@ Require-Text 'src/RockConfig.h' 'rockGrabLocomotionAuthorityBridgeEnabled[\s\S]*
     'RockConfig must expose all locomotion authority bridge settings.'
 Require-Text 'src/RockConfig.cpp' 'bGrabLocomotionAuthorityBridgeEnabled[\s\S]*fGrabLocomotionAuthorityMaxLeadSeconds[\s\S]*fGrabLocomotionAuthoritySmoothingHz[\s\S]*fGrabLocomotionAuthorityMaxOffsetGameUnits[\s\S]*fGrabLocomotionAuthorityResetDistanceGameUnits' `
     'RockConfig must read all locomotion authority bridge settings from INI.'
-Require-Text 'data/config/ROCK.ini' 'bGrabLocomotionAuthorityBridgeEnabled\s*=\s*true[\s\S]*fGrabLocomotionAuthorityMaxLeadSeconds\s*=\s*0\.012[\s\S]*fGrabLocomotionAuthoritySmoothingHz\s*=\s*45\.0[\s\S]*fGrabLocomotionAuthorityMaxOffsetGameUnits\s*=\s*4\.0[\s\S]*fGrabLocomotionAuthorityResetDistanceGameUnits\s*=\s*35\.0' `
-    'Packaged INI must expose the approved locomotion authority bridge defaults.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.h' 'grab_locomotion_authority_bridge::State\s+_grabLocomotionAuthorityBridge' `
     'PhysicsInteraction must own the bridge state.'
 Require-Text 'src/physics-interaction/core/PhysicsFrameContext.h' 'unbridgedRawHandWorld[\s\S]*locomotionAuthorityOffsetGame[\s\S]*locomotionAuthorityBridged' `

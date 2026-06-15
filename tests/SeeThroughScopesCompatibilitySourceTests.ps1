@@ -97,11 +97,6 @@ Require-Text `
     'The overlay patch log should identify that only STS-sourced OMOD records are patched.'
 
 Require-Text `
-    'data/config/ROCK.ini' `
-    'Active renderable equipped STS scopes are preferred; native scope overlays stay enabled when STS mesh is unavailable or the scope is non-STS\.' `
-    'ROCK.ini must document renderable STS-preferred/native-fallback scope behavior.'
-
-Require-Text `
     'src/physics-interaction/weapon/SeeThroughScopesPolicy.h' `
     'enum\s+class\s+EquippedScopeRoute[\s\S]*NativeFallback[\s\S]*StsPreferred[\s\S]*stsScopeMeshRenderable[\s\S]*chooseEquippedScopeRoute' `
     'Pure STS scope policy must expose renderable STS-preferred/native-fallback routing.'

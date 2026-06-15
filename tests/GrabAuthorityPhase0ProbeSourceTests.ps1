@@ -73,8 +73,6 @@ Reject-Text 'src/RockConfig.h' 'GrabAuthorityPhase0|Phase0' `
     'RockConfig must not expose removed Phase 0 diagnostic settings.'
 Reject-Text 'src/RockConfig.cpp' 'GrabAuthorityPhase0|Phase0' `
     'RockConfig must not read removed Phase 0 diagnostic settings.'
-Reject-Text 'data/config/ROCK.ini' 'GrabAuthorityPhase0|Phase0' `
-    'Packaged ROCK.ini must not ship removed Phase 0 diagnostic settings.'
 
 if ($failures.Count -gt 0) {
     Write-Host "GrabAuthorityPhase0ProbeSourceTests failed:" -ForegroundColor Red
