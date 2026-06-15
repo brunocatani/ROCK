@@ -26,6 +26,7 @@
 #include "physics-interaction/input/GrabInputIntentPolicy.h"
 #include "physics-interaction/native/PhysicsStepDriveCoordinator.h"
 #include "physics-interaction/stash/ShoulderStashDetector.h"
+#include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/HeldWeaponEquipVisualHandoff.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
@@ -227,6 +228,16 @@ namespace rock
 
         void restoreLeftHandCollisionAfterWeaponSupport(RE::hknpWorld* world);
 
+        void suppressHandCollisionAfterEquippedWeaponDrop(
+            RE::hknpWorld* world,
+            equipped_weapon_drop_policy::SourceHand sourceHand);
+
+        void restoreHandCollisionAfterEquippedWeaponDrop(RE::hknpWorld* world, bool isLeft);
+
+        void updateEquippedWeaponPostDropCollisionSuppression(RE::hknpWorld* world);
+
+        void clearEquippedWeaponPostDropCollisionSuppressionState();
+
         void subscribeContactEvents(RE::hknpWorld* world);
         void unsubscribeContactEvents(RE::hknpWorld* liveWorld);
 
@@ -356,8 +367,14 @@ namespace rock
         int _weaponInteractionProbeLogCounter = 0;
         std::atomic<bool> _rightDominantWeaponCollisionSuppressed{ false };
         std::atomic<bool> _leftWeaponSupportCollisionSuppressed{ false };
+        std::atomic<bool> _rightEquippedWeaponDropCollisionSuppressed{ false };
+        std::atomic<bool> _leftEquippedWeaponDropCollisionSuppressed{ false };
         hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _rightDominantWeaponCollisionSuppression{};
         hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _leftWeaponSupportCollisionSuppression{};
+        hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _rightEquippedWeaponDropCollisionSuppression{};
+        hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _leftEquippedWeaponDropCollisionSuppression{};
+        equipped_weapon_drop_policy::SuppressionFrameState _rightEquippedWeaponDropSuppressionFrames{};
+        equipped_weapon_drop_policy::SuppressionFrameState _leftEquippedWeaponDropSuppressionFrames{};
         weapon_debug_notification_policy::WeaponNotificationState _weaponDebugNotificationState{};
         bool _pendingEquippedWeaponPrimaryOnlyGripStart = false;
         static constexpr std::size_t kNativePlayerCollisionSuppressionBodyCapacity = 64;

@@ -7,6 +7,7 @@
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 
@@ -46,6 +47,12 @@ namespace rock
         RE::NiTransform leftRequestedHandWorld{};
         RE::NiPoint3 rightGripWorld{};
         RE::NiPoint3 leftGripWorld{};
+    };
+
+    struct EquippedWeaponManualDropRequest
+    {
+        bool requested{ false };
+        equipped_weapon_drop_policy::SourceHand sourceHand{ equipped_weapon_drop_policy::SourceHand::None };
     };
 
     class TwoHandedGrip
@@ -99,7 +106,7 @@ namespace rock
 
         bool beginPrimaryOnlyGrip(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
 
-        bool consumeEquippedWeaponDropRequest();
+        EquippedWeaponManualDropRequest consumeEquippedWeaponDropRequest();
 
     private:
         void transitionToTouching(RE::NiNode* weaponNode, const WeaponInteractionDecision& decision);
@@ -126,7 +133,7 @@ namespace rock
 
         bool transitionToPrimaryOnly(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const char* reason);
 
-        void requestEquippedWeaponDrop(const char* reason);
+        void requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand);
 
         void updatePrimaryOnlyGrip(
             RE::NiNode* weaponNode,
@@ -245,7 +252,7 @@ namespace rock
         RE::NiTransform _weaponNodeLocalBaseline{};
         bool _hasWeaponNodeLocalBaseline{ false };
 
-        bool _equippedWeaponDropRequested{ false };
+        EquippedWeaponManualDropRequest _equippedWeaponDropRequest{};
     };
 
 }

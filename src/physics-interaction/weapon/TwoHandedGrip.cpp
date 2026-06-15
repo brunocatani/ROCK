@@ -434,7 +434,9 @@ namespace rock
                     if (primaryGripInput.held) {
                         transitionToPrimaryOnly(_activeWeaponNode, currentWeaponGenerationKey, "support-released-primary-held");
                     } else {
-                        requestEquippedWeaponDrop("support-released-primary-not-held");
+                        requestEquippedWeaponDrop(
+                            "support-released-primary-not-held",
+                            equipped_weapon_drop_policy::sourceForSupportRelease(primaryGripInput.released));
                     }
                 } else {
                     transitionToInactive(ownsWeaponTransform());
@@ -466,7 +468,9 @@ namespace rock
                 if (primaryGripInput.held && tryReattachPrimaryGrip(_activeWeaponNode, rightWeaponContact)) {
                     transitionToPrimaryOnly(_activeWeaponNode, currentWeaponGenerationKey, "support-released-primary-reattached");
                 } else {
-                    requestEquippedWeaponDrop(primaryGripInput.held ? "support-released-primary-contact-missing" : "support-released-primary-not-held");
+                    requestEquippedWeaponDrop(
+                        primaryGripInput.held ? "support-released-primary-contact-missing" : "support-released-primary-not-held",
+                        equipped_weapon_drop_policy::SourceHand::Left);
                 }
             } else {
                 updatePrimaryDetachedGrip(_activeWeaponNode, dt, primaryGripInput, rightWeaponContact);
@@ -493,7 +497,7 @@ namespace rock
 
     void TwoHandedGrip::reset()
     {
-        _equippedWeaponDropRequested = false;
+        _equippedWeaponDropRequest = {};
         clearPrimaryGripPose(false);
         clearPrimaryDetachVisualAuthority(false);
         clearSupportGripPose(true);
@@ -1005,11 +1009,11 @@ namespace rock
         return transitionToPrimaryOnly(weaponNode, currentWeaponGenerationKey, "primary-grip-start");
     }
 
-    bool TwoHandedGrip::consumeEquippedWeaponDropRequest()
+    EquippedWeaponManualDropRequest TwoHandedGrip::consumeEquippedWeaponDropRequest()
     {
-        const bool requested = _equippedWeaponDropRequested;
-        _equippedWeaponDropRequested = false;
-        return requested;
+        const EquippedWeaponManualDropRequest request = _equippedWeaponDropRequest;
+        _equippedWeaponDropRequest = {};
+        return request;
     }
 
     bool TwoHandedGrip::transitionToPrimaryOnly(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const char* reason)
@@ -1061,17 +1065,21 @@ namespace rock
         return true;
     }
 
-    void TwoHandedGrip::requestEquippedWeaponDrop(const char* reason)
+    void TwoHandedGrip::requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand)
     {
-        if (_equippedWeaponDropRequested) {
+        if (_equippedWeaponDropRequest.requested) {
             transitionToInactive(false);
             return;
         }
 
-        _equippedWeaponDropRequested = true;
+        _equippedWeaponDropRequest = EquippedWeaponManualDropRequest{
+            .requested = true,
+            .sourceHand = sourceHand,
+        };
         ROCK_LOG_INFO(Weapon,
-            "TwoHandedGrip: equipped weapon drop requested reason={} generation={:016X}",
+            "TwoHandedGrip: equipped weapon drop requested reason={} sourceHand={} generation={:016X}",
             reason ? reason : "unknown",
+            equipped_weapon_drop_policy::sourceHandName(sourceHand),
             _activeWeaponGenerationKey);
         transitionToInactive(false);
     }
@@ -1095,7 +1103,7 @@ namespace rock
             });
 
         if (manualDecision.dropRequested) {
-            requestEquippedWeaponDrop("primary-only-grip-released");
+            requestEquippedWeaponDrop("primary-only-grip-released", equipped_weapon_drop_policy::SourceHand::Right);
             return;
         }
 

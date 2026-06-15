@@ -1,4 +1,5 @@
 #include "physics-interaction/collision/ContactPipelinePolicy.h"
+#include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 
 #include <cstdio>
@@ -128,6 +129,21 @@ int main()
         });
     ok &= expectTrue("weapon generation change clears manual ownership", manualDecision.cleared);
     ok &= expectFalse("weapon generation change does not drop old equipped weapon", manualDecision.dropRequested);
+
+    using namespace rock::equipped_weapon_drop_policy;
+    ok &= expectEqual("support release normally drops from left hand", sourceForSupportRelease(false), SourceHand::Left);
+    ok &= expectEqual("same-frame primary release drops from right hand", sourceForSupportRelease(true), SourceHand::Right);
+
+    SuppressionFrameState postDropSuppression{};
+    beginPostDropSuppression(postDropSuppression);
+    ok &= expectTrue("post-drop suppression starts active", postDropSuppression.active());
+    ok &= expectEqual("post-drop suppression frame count", postDropSuppression.framesRemaining, kPostDropHandCollisionSuppressionFrames);
+    for (int frame = 1; frame < kPostDropHandCollisionSuppressionFrames; ++frame) {
+        ok &= expectFalse("post-drop suppression remains active before final frame", advancePostDropSuppression(postDropSuppression));
+        ok &= expectTrue("post-drop suppression countdown remains active", postDropSuppression.active());
+    }
+    ok &= expectTrue("post-drop suppression expires on final frame", advancePostDropSuppression(postDropSuppression));
+    ok &= expectFalse("post-drop suppression inactive after expiry", postDropSuppression.active());
 
     return ok ? 0 : 1;
 }

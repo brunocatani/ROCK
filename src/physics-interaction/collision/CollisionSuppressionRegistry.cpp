@@ -31,6 +31,8 @@ namespace rock::collision_suppression_registry
                 return "NativePlayerBody";
             case CollisionSuppressionOwner::HeldLooseWeaponBody:
                 return "HeldLooseWeaponBody";
+            case CollisionSuppressionOwner::EquippedWeaponDropHand:
+                return "EquippedWeaponDropHand";
             }
             return "Unknown";
         }
