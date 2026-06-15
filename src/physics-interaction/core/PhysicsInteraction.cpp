@@ -2394,13 +2394,28 @@ namespace rock
                 }
                 return primaryGrabState;
             };
+            const bool fullTwoHandedSolverMode =
+                supportAuthorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
+            const bool primaryPoseBlockerAvailable = frik_visual_authority::canBlockPrimaryHandWeaponPose();
             const bool primaryDetachFeatureAvailable = equipped_weapon_manual_ownership_policy::featureAvailable(
                 g_rockConfig.rockEquippedWeaponPrimaryDetachEnabled,
-                supportAuthorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver,
-                frik_visual_authority::canBlockPrimaryHandWeaponPose(),
+                fullTwoHandedSolverMode,
+                primaryPoseBlockerAvailable,
                 weaponNode != nullptr,
                 currentWeaponGenerationKey);
             const bool primaryGrabDeferredForVirtualHolsters = input_remap_runtime::shouldDeferGrabInputForVirtualHolsters(false, g_rockConfig.rockGrabButtonID);
+            if (_pendingEquippedWeaponPrimaryOnlyGripStart &&
+                !equipped_weapon_manual_ownership_policy::shouldKeepPendingPrimaryOnlyStart(
+                    equipped_weapon_manual_ownership_policy::PendingPrimaryOnlyStartInput{
+                        .pending = _pendingEquippedWeaponPrimaryOnlyGripStart,
+                        .gripHeld = readGrabButtonHeld(false, g_rockConfig.rockGrabButtonID),
+                        .configEnabled = g_rockConfig.rockEquippedWeaponPrimaryDetachEnabled,
+                        .fullTwoHandedSolverMode = fullTwoHandedSolverMode,
+                        .primaryPoseBlockerAvailable = primaryPoseBlockerAvailable,
+                        .virtualHolstersOwnsInput = primaryGrabDeferredForVirtualHolsters,
+                    })) {
+                _pendingEquippedWeaponPrimaryOnlyGripStart = false;
+            }
             const input_remap_policy::EquippedWeaponPrimaryDetachInputGate primaryDetachInputGate{
                 .featureAvailable = primaryDetachFeatureAvailable,
                 .canUsePrimaryDetachInput = _twoHandedGrip.canUsePrimaryDetachInput(),
@@ -2438,7 +2453,7 @@ namespace rock
                         .released = primaryState.released,
                     };
                 }
-            } else if (!primaryDetachFeatureAvailable || primaryGrabDeferredForVirtualHolsters) {
+            } else if (primaryGrabDeferredForVirtualHolsters) {
                 _pendingEquippedWeaponPrimaryOnlyGripStart = false;
             }
 
@@ -2470,37 +2485,54 @@ namespace rock
                 const RE::NiPoint3 dropLoc = sourceHandKnown ?
                                                 (equipped_weapon_drop_policy::isLeft(sourceHand) ? frame.left.grabAnchorWorld : frame.right.grabAnchorWorld) :
                                                 (weaponNode ? weaponNode->world.translate : frame.right.grabAnchorWorld);
-                const auto dropResult = weapon_equip_transfer::dropEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedDropInput{
-                    .dropLoc = dropLoc,
-                    .hasDropLoc = true,
-                });
-                if (dropResult.success) {
+                const bool virtualHolstersOwnsRelease = sourceHandKnown &&
+                                                        input_remap_runtime::requestVirtualHolstersHolsterPress(
+                                                            equipped_weapon_drop_policy::isLeft(sourceHand),
+                                                            dropLoc.x,
+                                                            dropLoc.y,
+                                                            dropLoc.z);
+                if (equipped_weapon_drop_policy::shouldSurrenderReleaseToVirtualHolsters(sourceHand, virtualHolstersOwnsRelease)) {
                     ROCK_LOG_INFO(Weapon,
-                        "Equipped weapon manual release dropped weapon formID={:08X} dropped={:08X} sourceHand={} dropLoc=({:.1f},{:.1f},{:.1f}) stack={} instanceMatch={}",
-                        dropResult.formID,
-                        dropResult.droppedFormID,
+                        "Equipped weapon manual release surrendered to VirtualHolsters sourceHand={} releaseLoc=({:.1f},{:.1f},{:.1f})",
                         equipped_weapon_drop_policy::sourceHandName(sourceHand),
                         dropLoc.x,
                         dropLoc.y,
-                        dropLoc.z,
-                        dropResult.stackID,
-                        dropResult.matchedInstanceData ? "yes" : "no");
+                        dropLoc.z);
+                    _pendingEquippedWeaponPrimaryOnlyGripStart = false;
+                    clearEquippedWeaponPrimaryInputState();
                 } else {
-                    ROCK_LOG_WARN(Weapon,
-                        "Equipped weapon manual release drop failed formID={:08X} reason={} sourceHand={} attempted={} stack={} instanceMatch={}",
-                        dropResult.formID,
-                        weapon_equip_transfer::dropReasonName(dropResult.reason),
-                        equipped_weapon_drop_policy::sourceHandName(sourceHand),
-                        dropResult.attempted ? "yes" : "no",
-                        dropResult.stackID,
-                        dropResult.matchedInstanceData ? "yes" : "no");
+                    const auto dropResult = weapon_equip_transfer::dropEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedDropInput{
+                        .dropLoc = dropLoc,
+                        .hasDropLoc = true,
+                    });
+                    if (dropResult.success) {
+                        ROCK_LOG_INFO(Weapon,
+                            "Equipped weapon manual release dropped weapon formID={:08X} dropped={:08X} sourceHand={} dropLoc=({:.1f},{:.1f},{:.1f}) stack={} instanceMatch={}",
+                            dropResult.formID,
+                            dropResult.droppedFormID,
+                            equipped_weapon_drop_policy::sourceHandName(sourceHand),
+                            dropLoc.x,
+                            dropLoc.y,
+                            dropLoc.z,
+                            dropResult.stackID,
+                            dropResult.matchedInstanceData ? "yes" : "no");
+                    } else {
+                        ROCK_LOG_WARN(Weapon,
+                            "Equipped weapon manual release drop failed formID={:08X} reason={} sourceHand={} attempted={} stack={} instanceMatch={}",
+                            dropResult.formID,
+                            weapon_equip_transfer::dropReasonName(dropResult.reason),
+                            equipped_weapon_drop_policy::sourceHandName(sourceHand),
+                            dropResult.attempted ? "yes" : "no",
+                            dropResult.stackID,
+                            dropResult.matchedInstanceData ? "yes" : "no");
+                    }
+                    if (sourceHandKnown &&
+                        (dropResult.success || dropResult.reason == weapon_equip_transfer::DropReason::DroppedReferenceUnavailable)) {
+                        suppressHandCollisionAfterEquippedWeaponDrop(hknp, sourceHand);
+                    }
+                    _pendingEquippedWeaponPrimaryOnlyGripStart = false;
+                    clearEquippedWeaponPrimaryInputState();
                 }
-                if (sourceHandKnown &&
-                    (dropResult.success || dropResult.reason == weapon_equip_transfer::DropReason::DroppedReferenceUnavailable)) {
-                    suppressHandCollisionAfterEquippedWeaponDrop(hknp, sourceHand);
-                }
-                _pendingEquippedWeaponPrimaryOnlyGripStart = false;
-                clearEquippedWeaponPrimaryInputState();
             }
             const bool weaponSupportGripActive = _twoHandedGrip.isGripping();
             const input_remap_policy::EquippedWeaponPrimaryDetachInputGate updatedPrimaryDetachInputGate{

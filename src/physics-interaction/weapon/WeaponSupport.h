@@ -333,6 +333,16 @@ namespace rock::equipped_weapon_manual_ownership_policy
         bool dropRequested{ false };
     };
 
+    struct PendingPrimaryOnlyStartInput
+    {
+        bool pending{ false };
+        bool gripHeld{ false };
+        bool configEnabled{ true };
+        bool fullTwoHandedSolverMode{ true };
+        bool primaryPoseBlockerAvailable{ true };
+        bool virtualHolstersOwnsInput{ false };
+    };
+
     [[nodiscard]] inline constexpr bool featureAvailable(
         bool configEnabled,
         bool fullTwoHandedSolverMode,
@@ -345,6 +355,17 @@ namespace rock::equipped_weapon_manual_ownership_policy
                primaryPoseBlockerAvailable &&
                weaponNodeAvailable &&
                weaponGenerationKey != 0;
+    }
+
+    [[nodiscard]] inline constexpr bool shouldKeepPendingPrimaryOnlyStart(const PendingPrimaryOnlyStartInput& input) noexcept
+    {
+        // Keep trigger-equip's already-held grip alive across equipped weapon node/collision generation latency.
+        return input.pending &&
+               input.gripHeld &&
+               input.configEnabled &&
+               input.fullTwoHandedSolverMode &&
+               input.primaryPoseBlockerAvailable &&
+               !input.virtualHolstersOwnsInput;
     }
 
     inline constexpr Decision update(RuntimeState& state, const Input& input) noexcept

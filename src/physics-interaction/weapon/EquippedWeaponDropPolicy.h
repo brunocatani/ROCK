@@ -43,6 +43,11 @@ namespace rock::equipped_weapon_drop_policy
         return primaryReleasedThisFrame ? SourceHand::Right : SourceHand::Left;
     }
 
+    [[nodiscard]] inline constexpr bool shouldSurrenderReleaseToVirtualHolsters(SourceHand sourceHand, bool virtualHolstersOwnsSourceHand) noexcept
+    {
+        return sourceHand != SourceHand::None && virtualHolstersOwnsSourceHand;
+    }
+
     inline constexpr void beginPostDropSuppression(SuppressionFrameState& state) noexcept
     {
         state.framesRemaining = kPostDropHandCollisionSuppressionFrames;

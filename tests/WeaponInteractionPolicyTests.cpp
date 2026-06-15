@@ -75,6 +75,42 @@ int main()
     ok &= expectTrue("manual grip feature is available for active full-solver weapon", featureAvailable(true, true, true, true, 10));
     ok &= expectFalse("manual grip feature is unavailable without active weapon node", featureAvailable(true, true, true, false, 10));
     ok &= expectFalse("manual grip feature is unavailable without weapon generation", featureAvailable(true, true, true, true, 0));
+    ok &= expectTrue("pending trigger-equip grip waits while runtime weapon is not ready",
+        shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
+            .pending = true,
+            .gripHeld = true,
+            .configEnabled = true,
+            .fullTwoHandedSolverMode = true,
+            .primaryPoseBlockerAvailable = true,
+            .virtualHolstersOwnsInput = false,
+        }));
+    ok &= expectFalse("pending trigger-equip grip clears on release",
+        shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
+            .pending = true,
+            .gripHeld = false,
+            .configEnabled = true,
+            .fullTwoHandedSolverMode = true,
+            .primaryPoseBlockerAvailable = true,
+            .virtualHolstersOwnsInput = false,
+        }));
+    ok &= expectFalse("pending trigger-equip grip clears for visual-only sidearm mode",
+        shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
+            .pending = true,
+            .gripHeld = true,
+            .configEnabled = true,
+            .fullTwoHandedSolverMode = false,
+            .primaryPoseBlockerAvailable = true,
+            .virtualHolstersOwnsInput = false,
+        }));
+    ok &= expectFalse("pending trigger-equip grip clears when virtual holsters owns input",
+        shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
+            .pending = true,
+            .gripHeld = true,
+            .configEnabled = true,
+            .fullTwoHandedSolverMode = true,
+            .primaryPoseBlockerAvailable = true,
+            .virtualHolstersOwnsInput = true,
+        }));
 
     RuntimeState manualState{};
     auto manualDecision = update(manualState,
@@ -133,6 +169,14 @@ int main()
     using namespace rock::equipped_weapon_drop_policy;
     ok &= expectEqual("support release normally drops from left hand", sourceForSupportRelease(false), SourceHand::Left);
     ok &= expectEqual("same-frame primary release drops from right hand", sourceForSupportRelease(true), SourceHand::Right);
+    ok &= expectTrue("right-hand release surrenders to VirtualHolsters when source hand owns input",
+        shouldSurrenderReleaseToVirtualHolsters(SourceHand::Right, true));
+    ok &= expectTrue("left-hand release surrenders to VirtualHolsters when source hand owns input",
+        shouldSurrenderReleaseToVirtualHolsters(SourceHand::Left, true));
+    ok &= expectFalse("release does not surrender without VirtualHolsters source-hand ownership",
+        shouldSurrenderReleaseToVirtualHolsters(SourceHand::Right, false));
+    ok &= expectFalse("unknown release source never surrenders to VirtualHolsters",
+        shouldSurrenderReleaseToVirtualHolsters(SourceHand::None, true));
 
     SuppressionFrameState postDropSuppression{};
     beginPostDropSuppression(postDropSuppression);
