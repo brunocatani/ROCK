@@ -4334,7 +4334,6 @@ namespace rock
             .finalObjectRelease = !peerStillHoldingSameObject,
             .peerHandStillHolding = peerStillHoldingSameObject,
             .reason = peerStillHoldingSameObject ? "peer-hand-still-holding-object" : "last-hand-release",
-            .peerHand = peerStillHoldingSameObject ? &peer : nullptr,
         };
     }
 
@@ -5571,11 +5570,6 @@ namespace rock
                         nullptr,
                         &handInput.unbridgedRawHandWorld,
                         &handInput.locomotionAuthorityOffsetGame);
-                    auto releaseContext = makeGrabReleaseContext(hand, isLeft);
-                    if (releaseContext.peerHandStillHolding) {
-                        const auto& peerInput = isLeft ? frame.right : frame.left;
-                        releaseContext.peerHandWorldTransform = &peerInput.rawHandWorld;
-                    }
                     hand.updateHeldObject(hknp,
                         transform,
                         _heldObjectPlayerSpaceFrame,
@@ -5583,7 +5577,7 @@ namespace rock
                         g_rockConfig.rockGrabForceFadeInTime,
                         g_rockConfig.rockGrabTauMin,
                         &_bodyBoneColliders,
-                        releaseContext);
+                        makeGrabReleaseContext(hand, isLeft));
                     if (heldRef && !hand.isHolding()) {
                         releaseObject(heldRef, claimOwnerForHand(isLeft));
                         dispatchPhysicsMessage(kPhysMsg_OnRelease, isLeft, heldRef, heldFormID, 0);

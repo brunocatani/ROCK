@@ -35,7 +35,6 @@
 #include "physics-interaction/native/PhysicsScale.h"
 #include "physics-interaction/native/HavokMaterialRegistry.h"
 #include "physics-interaction/native/HavokRefCount.h"
-#include "physics-interaction/weapon/WeaponSupport.h"
 #include "RE/Havok/hkVector4.h"
 #include "RE/Havok/hknpMotion.h"
 #include "RE/Bethesda/PlayerCharacter.h"
@@ -811,199 +810,6 @@ namespace rock
         bool nodeIsOrDescendsFrom(const RE::NiAVObject* root, const RE::NiAVObject* node);
         RE::NiTransform multiplyTransforms(const RE::NiTransform& parent, const RE::NiTransform& child);
         RE::NiTransform deriveNodeWorldFromBodyWorld(const RE::NiTransform& bodyWorld, const RE::NiTransform& bodyLocalTransform);
-
-        constexpr float kTwoHandObjectMinimumGripSeparationGameUnits = 1.0f;
-        constexpr float kTwoHandObjectSupportNormalTwistFactor = 0.5f;
-
-        struct TwoHandObjectAuthorityTarget
-        {
-            bool valid = false;
-            bool selfIsPrimary = false;
-            RE::NiTransform desiredObjectWorld{};
-            RE::NiTransform desiredBodyWorld{};
-            RE::NiPoint3 primaryTargetWorld{};
-            RE::NiPoint3 supportTargetWorld{};
-            float primaryErrorGameUnits = 0.0f;
-            float supportErrorGameUnits = 0.0f;
-            const char* reason = "none";
-        };
-
-        bool isFiniteVectorGame(const RE::NiPoint3& value)
-        {
-            return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-        }
-
-        bool hasUsableTwoHandObjectGrabFrame(const CanonicalGrabFrame& frame)
-        {
-            return frame.hasTelemetryCapture &&
-                   frame.hasFrozenPivotB &&
-                   grab_authority_frame_math::isFiniteVector(frame.pivotBConstraintLocalGame) &&
-                   grab_authority_frame_math::isFiniteTransform(frame.bodyWorldAtGrab) &&
-                   grab_authority_frame_math::isFiniteTransform(frame.liveHandWorldAtGrab);
-        }
-
-        bool resolveSupportPalmNormalBodyLocalForTwoHandObject(
-            const CanonicalGrabFrame& supportFrame,
-            bool supportHandIsLeft,
-            RE::NiPoint3& outNormalBodyLocal)
-        {
-            outNormalBodyLocal = {};
-            if (grab_authority_frame_math::isFiniteTransform(supportFrame.bodyWorldAtGrab) &&
-                grab_authority_frame_math::isFiniteTransform(supportFrame.liveHandWorldAtGrab)) {
-                const RE::NiPoint3 palmNormalWorld = computePalmNormalFromHandBasis(supportFrame.liveHandWorldAtGrab, supportHandIsLeft);
-                if (isFiniteVectorGame(palmNormalWorld) && vectorMagnitude(palmNormalWorld) > 0.000001f) {
-                    const RE::NiPoint3 normalBodyLocal = transform_math::worldVectorToLocal(supportFrame.bodyWorldAtGrab, palmNormalWorld);
-                    if (isFiniteVectorGame(normalBodyLocal) && vectorMagnitude(normalBodyLocal) > 0.000001f) {
-                        outNormalBodyLocal = normalBodyLocal;
-                        return true;
-                    }
-                }
-            }
-
-            if (supportFrame.hasSupportFrameNormal &&
-                isFiniteVectorGame(supportFrame.supportFrameNormalBodyLocal) &&
-                vectorMagnitude(supportFrame.supportFrameNormalBodyLocal) > 0.000001f) {
-                outNormalBodyLocal = supportFrame.supportFrameNormalBodyLocal;
-                return true;
-            }
-
-            return false;
-        }
-
-        TwoHandObjectAuthorityTarget trySolveSharedTwoHandObjectAuthorityTarget(
-            const Hand& self,
-            RE::hknpWorld* world,
-            const RE::NiTransform& selfHandWorld,
-            const RE::NiTransform& selfProxyWorld,
-            const RE::NiTransform& liveBodyWorld,
-            const GrabReleaseContext& releaseContext)
-        {
-            TwoHandObjectAuthorityTarget target{};
-            if (!world || !releaseContext.peerHandStillHolding || !releaseContext.peerHand || !releaseContext.peerHandWorldTransform) {
-                target.reason = "missing-peer-context";
-                return target;
-            }
-
-            const Hand& peer = *releaseContext.peerHand;
-            const SavedObjectState& selfState = self.getSavedObjectState();
-            const SavedObjectState& peerState = peer.getSavedObjectState();
-            if (!selfState.isValid() || !peerState.isValid() || selfState.refr != peerState.refr || selfState.bodyId.value != peerState.bodyId.value) {
-                target.reason = "peer-not-same-body";
-                return target;
-            }
-            if (selfState.targetKind != grab_target::Kind::LooseObject || peerState.targetKind != grab_target::Kind::LooseObject) {
-                target.reason = "target-not-loose-object";
-                return target;
-            }
-            if (self.isHoldingLooseWeapon() || peer.isHoldingLooseWeapon()) {
-                target.reason = "loose-weapon-excluded";
-                return target;
-            }
-
-            const CanonicalGrabFrame& selfFrame = self.getGrabFrame();
-            const CanonicalGrabFrame& peerFrame = peer.getGrabFrame();
-            if (!hasUsableTwoHandObjectGrabFrame(selfFrame) || !hasUsableTwoHandObjectGrabFrame(peerFrame)) {
-                target.reason = "unusable-grab-frame";
-                return target;
-            }
-            if (!isFiniteNiTransform(liveBodyWorld) || !isFiniteNiTransform(selfProxyWorld) || !isFiniteNiTransform(selfHandWorld)) {
-                target.reason = "non-finite-self-frame";
-                return target;
-            }
-
-            RE::NiTransform peerProxyWorld{};
-            const char* peerProxySource = "none";
-            if (!peer.tryResolveHeldGrabAuthorityProxyFrame(world, *releaseContext.peerHandWorldTransform, peerProxyWorld, peerProxySource) ||
-                !isFiniteNiTransform(peerProxyWorld)) {
-                target.reason = "peer-proxy-unavailable";
-                return target;
-            }
-
-            RE::NiPoint3 selfTargetWorld{};
-            RE::NiPoint3 peerTargetWorld{};
-            if (!self.tryResolveHeldGrabAuthorityPivotAWorld(selfProxyWorld, selfTargetWorld) ||
-                !peer.tryResolveHeldGrabAuthorityPivotAWorld(peerProxyWorld, peerTargetWorld)) {
-                target.reason = "pivot-a-unavailable";
-                return target;
-            }
-            if (!isFiniteVectorGame(selfTargetWorld) || !isFiniteVectorGame(peerTargetWorld)) {
-                target.reason = "non-finite-pivot-a";
-                return target;
-            }
-
-            const bool selfIsPrimary =
-                selfFrame.traceId < peerFrame.traceId ||
-                (selfFrame.traceId == peerFrame.traceId && !self.isLeft());
-            const CanonicalGrabFrame& primaryFrame = selfIsPrimary ? selfFrame : peerFrame;
-            const CanonicalGrabFrame& supportFrame = selfIsPrimary ? peerFrame : selfFrame;
-            const RE::NiPoint3 primaryTargetWorld = selfIsPrimary ? selfTargetWorld : peerTargetWorld;
-            const RE::NiPoint3 supportControllerWorld = selfIsPrimary ? peerTargetWorld : selfTargetWorld;
-            const RE::NiTransform& supportHandWorld = selfIsPrimary ? *releaseContext.peerHandWorldTransform : selfHandWorld;
-            const bool supportHandIsLeft = selfIsPrimary ? peer.isLeft() : self.isLeft();
-
-            const RE::NiPoint3 currentPrimaryGripWorld = transform_math::localPointToWorld(liveBodyWorld, primaryFrame.pivotBConstraintLocalGame);
-            const RE::NiPoint3 currentSupportGripWorld = transform_math::localPointToWorld(liveBodyWorld, supportFrame.pivotBConstraintLocalGame);
-            const float lockedGripDistanceGameUnits = pointDistanceGameUnits(currentPrimaryGripWorld, currentSupportGripWorld);
-            if (!std::isfinite(lockedGripDistanceGameUnits) || lockedGripDistanceGameUnits <= kTwoHandObjectMinimumGripSeparationGameUnits) {
-                target.reason = "grip-separation-too-small";
-                return target;
-            }
-
-            RE::NiPoint3 supportNormalLocal{};
-            const bool hasSupportNormalLocal = resolveSupportPalmNormalBodyLocalForTwoHandObject(
-                supportFrame,
-                supportHandIsLeft,
-                supportNormalLocal);
-            const RE::NiPoint3 supportNormalTargetWorld = computePalmNormalFromHandBasis(supportHandWorld, supportHandIsLeft);
-            const bool useSupportNormalTwist =
-                hasSupportNormalLocal &&
-                isFiniteVectorGame(supportNormalTargetWorld) &&
-                vectorMagnitude(supportNormalTargetWorld) > 0.000001f;
-
-            const RE::NiPoint3 lockedSupportTargetWorld = makeLockedSupportGripTarget(
-                primaryTargetWorld,
-                supportControllerWorld,
-                currentSupportGripWorld,
-                lockedGripDistanceGameUnits,
-                kTwoHandObjectMinimumGripSeparationGameUnits);
-            if (!isFiniteVectorGame(lockedSupportTargetWorld)) {
-                target.reason = "support-target-non-finite";
-                return target;
-            }
-
-            WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3> solverInput{};
-            solverInput.weaponWorldTransform = liveBodyWorld;
-            solverInput.primaryGripLocal = primaryFrame.pivotBConstraintLocalGame;
-            solverInput.supportGripLocal = supportFrame.pivotBConstraintLocalGame;
-            solverInput.primaryTargetWorld = primaryTargetWorld;
-            solverInput.supportTargetWorld = lockedSupportTargetWorld;
-            solverInput.supportNormalLocal = supportNormalLocal;
-            solverInput.supportNormalTargetWorld = supportNormalTargetWorld;
-            solverInput.minimumSeparation = kTwoHandObjectMinimumGripSeparationGameUnits;
-            solverInput.supportNormalTwistFactor = kTwoHandObjectSupportNormalTwistFactor;
-            solverInput.useSupportNormalTwist = useSupportNormalTwist;
-
-            const auto solved = solveTwoHandedWeaponTransformFrikPivot(solverInput);
-            if (!solved.solved || !isFiniteNiTransform(solved.weaponWorldTransform)) {
-                target.reason = "solver-failed";
-                return target;
-            }
-
-            target.valid = true;
-            target.selfIsPrimary = selfIsPrimary;
-            target.desiredBodyWorld = solved.weaponWorldTransform;
-            target.desiredObjectWorld = deriveNodeWorldFromBodyWorld(target.desiredBodyWorld, selfFrame.bodyLocal);
-            target.primaryTargetWorld = primaryTargetWorld;
-            target.supportTargetWorld = lockedSupportTargetWorld;
-            target.primaryErrorGameUnits = solved.primaryError;
-            target.supportErrorGameUnits = solved.supportError;
-            target.reason = useSupportNormalTwist ? "two-hand-object-steering-with-twist" : "two-hand-object-steering-no-twist";
-            if (!isFiniteNiTransform(target.desiredObjectWorld)) {
-                target = {};
-                target.reason = "desired-object-non-finite";
-            }
-            return target;
-        }
 
         const RE::TESObjectWEAP* looseWeaponFormFromRef(RE::TESObjectREFR* refr)
         {
@@ -6336,20 +6142,13 @@ namespace rock
         RE::NiTransform& outDesiredObjectWorld,
         RE::NiTransform& outDesiredBodyWorld,
         RE::NiPoint3& outDesiredTargetPointWorld,
-        RE::NiPoint3& outActivePivotBBodyLocalGame,
-        const RE::NiTransform* sharedDesiredObjectWorld,
-        const RE::NiTransform* sharedDesiredBodyWorld)
+        RE::NiPoint3& outActivePivotBBodyLocalGame)
     {
-        if (sharedDesiredObjectWorld && sharedDesiredBodyWorld) {
-            outDesiredObjectWorld = *sharedDesiredObjectWorld;
-            outDesiredBodyWorld = *sharedDesiredBodyWorld;
-        } else {
-            const RE::NiTransform desiredBodyRelationProxySpace = _grabFrame.proxyAuthorityBodyHandSpace;
-            outDesiredObjectWorld =
-                grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorldTransform, _grabFrame.proxyAuthorityHandSpace);
-            outDesiredBodyWorld =
-                grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorldTransform, desiredBodyRelationProxySpace);
-        }
+        const RE::NiTransform desiredBodyRelationProxySpace = _grabFrame.proxyAuthorityBodyHandSpace;
+        outDesiredObjectWorld =
+            grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorldTransform, _grabFrame.proxyAuthorityHandSpace);
+        outDesiredBodyWorld =
+            grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorldTransform, desiredBodyRelationProxySpace);
         const RE::NiTransform desiredBodyTransformProxySpace =
             grab_frame_math::objectInGeneratedProxyLocalSpace(proxyWorldTransform, outDesiredBodyWorld);
         const RE::NiPoint3 selectedPivotBBodyLocalGame = activeProxyConstraintPivotBLocalGame();
@@ -6574,36 +6373,6 @@ namespace rock
                std::isfinite(outPivotWorld.z);
     }
 
-    bool Hand::tryResolveHeldGrabAuthorityProxyFrame(RE::hknpWorld* world,
-        const RE::NiTransform& rawHandWorld,
-        RE::NiTransform& outProxyWorld,
-        const char*& outSource) const
-    {
-        if (!isHolding() || !_activeConstraint.isValid() || !_grabAuthorityProxy.isValid()) {
-            outProxyWorld = transform_math::makeIdentityTransform<RE::NiTransform>();
-            outSource = "heldGrabAuthorityUnavailable";
-            return false;
-        }
-
-        return resolveGrabAuthorityProxyFrame(
-            world,
-            rawHandWorld,
-            nullptr,
-            outProxyWorld,
-            outSource,
-            GrabAuthorityProxyFramePolicy::PreferQueuedPalmTarget);
-    }
-
-    bool Hand::tryResolveHeldGrabAuthorityPivotAWorld(const RE::NiTransform& proxyWorldTransform, RE::NiPoint3& outPivotWorld) const
-    {
-        if (!isHolding() || !_activeConstraint.isValid() || !_grabAuthorityProxy.isValid()) {
-            outPivotWorld = {};
-            return false;
-        }
-
-        return resolveActiveGrabAuthorityPivotAWorld(proxyWorldTransform, outPivotWorld);
-    }
-
     void Hand::updateConstraintGrabDriveMotors(RE::hknpWorld* world,
         float deltaTime,
         float forceFadeInTime,
@@ -6704,10 +6473,7 @@ namespace rock
         float grabPositionErrorGameUnits,
         float grabRotationErrorDegrees,
         float authorityForceScale,
-        bool heldBodyColliding,
-        const RE::NiTransform* sharedDesiredObjectWorld,
-        const RE::NiTransform* sharedDesiredBodyWorld,
-        const char* authorityMode)
+        bool heldBodyColliding)
     {
         std::scoped_lock lock(_grabAuthorityProxyMutex);
         if (!_grabAuthorityProxy.isValid()) {
@@ -6727,10 +6493,6 @@ namespace rock
             0.05f,
             1.0f);
         _grabAuthorityPendingTarget.heldBodyColliding = heldBodyColliding;
-        _grabAuthorityPendingTarget.hasSharedTwoHandObjectTarget = sharedDesiredObjectWorld && sharedDesiredBodyWorld;
-        _grabAuthorityPendingTarget.sharedDesiredObjectWorld = sharedDesiredObjectWorld ? *sharedDesiredObjectWorld : RE::NiTransform{};
-        _grabAuthorityPendingTarget.sharedDesiredBodyWorld = sharedDesiredBodyWorld ? *sharedDesiredBodyWorld : RE::NiTransform{};
-        _grabAuthorityPendingTarget.authorityMode = authorityMode ? authorityMode : "single-hand";
         _grabAuthorityPendingTarget.valid = true;
         ++_grabAuthorityProxyQueuedSequence;
     }
@@ -10937,11 +10699,26 @@ namespace rock
         RE::NiTransform desiredBodyWorld =
             grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyAuthorityWorld, _grabFrame.proxyAuthorityBodyHandSpace);
         const RE::NiPoint3 activePivotBBodyLocalGame = activeProxyConstraintPivotBLocalGame();
+        const RE::NiPoint3 desiredTargetPointWorld = transform_math::localPointToWorld(desiredBodyWorld, activePivotBBodyLocalGame);
         float pivotTrackingErrorGameUnits = 0.0f;
         float grabRotationErrorDegrees = 0.0f;
+        bool hasPivotTrackingError = false;
         RE::NiPoint3 liveGripWorldForAuthority{};
-        RE::NiTransform liveGrabBodyWorld{};
-        if (!tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, liveGrabBodyWorld)) {
+        {
+            RE::NiTransform grabBodyWorld{};
+            if (tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, grabBodyWorld)) {
+                const RE::NiPoint3 liveGripWorld = transform_math::localPointToWorld(grabBodyWorld, activePivotBBodyLocalGame);
+                liveGripWorldForAuthority = liveGripWorld;
+                pivotTrackingErrorGameUnits = pointDistanceGameUnits(liveGripWorld, desiredTargetPointWorld);
+                hasPivotTrackingError = true;
+                if (_grabFrame.heldNode) {
+                    grabRotationErrorDegrees = rotationDeltaDegrees(_grabFrame.heldNode->world.rotate, desiredObjectWorld.rotate);
+                } else {
+                    grabRotationErrorDegrees = rotationDeltaDegrees(grabBodyWorld.rotate, desiredBodyWorld.rotate);
+                }
+            }
+        }
+        if (!hasPivotTrackingError) {
             ROCK_LOG_WARN(Hand,
                 "{} hand release: held object drive body readback failed before queuing grab authority bodyId={} phase={}",
                 handName(),
@@ -10949,29 +10726,6 @@ namespace rock
                 grab_three_phase::phaseName(_grabAcquisitionPhase));
             releaseGrabbedObject(world, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
             return;
-        }
-
-        // Two-hand object steering keeps both proxy constraints alive, but queues one solved body target so they agree.
-        TwoHandObjectAuthorityTarget sharedTwoHandTarget = trySolveSharedTwoHandObjectAuthorityTarget(
-            *this,
-            world,
-            handWorldTransform,
-            proxyAuthorityWorld,
-            liveGrabBodyWorld,
-            releaseContext);
-        if (sharedTwoHandTarget.valid) {
-            desiredObjectWorld = sharedTwoHandTarget.desiredObjectWorld;
-            desiredBodyWorld = sharedTwoHandTarget.desiredBodyWorld;
-        }
-
-        const RE::NiPoint3 desiredTargetPointWorld = transform_math::localPointToWorld(desiredBodyWorld, activePivotBBodyLocalGame);
-        const RE::NiPoint3 liveGripWorldForTarget = transform_math::localPointToWorld(liveGrabBodyWorld, activePivotBBodyLocalGame);
-        liveGripWorldForAuthority = liveGripWorldForTarget;
-        pivotTrackingErrorGameUnits = pointDistanceGameUnits(liveGripWorldForTarget, desiredTargetPointWorld);
-        if (_grabFrame.heldNode) {
-            grabRotationErrorDegrees = rotationDeltaDegrees(_grabFrame.heldNode->world.rotate, desiredObjectWorld.rotate);
-        } else {
-            grabRotationErrorDegrees = rotationDeltaDegrees(liveGrabBodyWorld.rotate, desiredBodyWorld.rotate);
         }
         if (held_object_physics_math::instantDeviationExceeded(pivotTrackingErrorGameUnits, g_rockConfig.rockGrabMaxDeviation)) {
             ROCK_LOG_WARN(Hand,
@@ -11006,7 +10760,7 @@ namespace rock
                 held_object_contact_policy::evaluateHeldContactMotorSoftening(
                     held_object_contact_policy::HeldContactMotorSofteningInput<RE::NiPoint3>{
                         .recentContact = true,
-                        .hasCorrectionVector = true,
+                        .hasCorrectionVector = hasPivotTrackingError,
                         .hasHeldToOtherVector = hasHeldContactBody && hasOtherContactBody,
                         .hasContactNormal = heldContactSnapshot.hasNormal,
                         .otherMotion = classifyHeldContactOtherMotion(world, heldContactSnapshot.otherBodyId),
@@ -11030,10 +10784,7 @@ namespace rock
                 pivotTrackingErrorGameUnits,
                 grabRotationErrorDegrees,
                 authorityForceScale,
-                heldMotorContactSoftening,
-                sharedTwoHandTarget.valid ? &desiredObjectWorld : nullptr,
-                sharedTwoHandTarget.valid ? &desiredBodyWorld : nullptr,
-                sharedTwoHandTarget.valid ? (sharedTwoHandTarget.selfIsPrimary ? "two-hand-object-primary" : "two-hand-object-support") : "single-hand");
+                heldMotorContactSoftening);
         } else {
             ROCK_LOG_SAMPLE_WARN(Hand,
                 500,
@@ -11077,6 +10828,7 @@ namespace rock
                 (std::max)(g_rockConfig.rockGrabTouchAcquireDistanceGameUnits, g_rockConfig.rockGrabPocketRadiusGameUnits));
         const bool acquisitionVisualEligible =
             convergingAcquisitionPhase &&
+            hasPivotTrackingError &&
             _grabObjectGripAtGrab.valid &&
             pivotTrackingErrorGameUnits <= acquisitionVisualAttachEnvelope;
         const auto heldAuthority = evaluateRuntimeHeldAuthority(
@@ -11088,7 +10840,7 @@ namespace rock
                 .hasTelemetryCapture = _grabFrame.hasTelemetryCapture,
                 .touchHeldPhase = _grabAcquisitionPhase == grab_three_phase::AcquisitionPhase::TouchHeld,
                 .acquisitionVisualEligible = acquisitionVisualEligible,
-                .hasPivotTrackingError = true,
+                .hasPivotTrackingError = hasPivotTrackingError,
                 .motorContactSoftening = heldMotorContactSoftening,
                 .pivotAuthorityPositionOnly = _grabFrame.pivotAuthorityPositionOnly,
                 .pivotAuthorityNormalTrusted = _grabFrame.pivotAuthorityNormalTrusted,
@@ -12167,9 +11919,7 @@ namespace rock
                     desiredObjectWorld,
                     desiredBodyWorld,
                     desiredTargetPointWorld,
-                    activePivotBBodyLocalGame,
-                    pending.hasSharedTwoHandObjectTarget ? &pending.sharedDesiredObjectWorld : nullptr,
-                    pending.hasSharedTwoHandObjectTarget ? &pending.sharedDesiredBodyWorld : nullptr);
+                    activePivotBBodyLocalGame);
                 if (!targetUpdateOk) {
                     ++_grabAuthorityProxyFailedFlushes;
                     _grabAuthorityProxyReleasePending.store(true, std::memory_order_release);
@@ -12746,7 +12496,7 @@ namespace rock
             std::uint32_t filterInfo = 0;
             const bool filterReadOk = havok_runtime::tryReadFilterInfo(world, proxyBodyId, filterInfo);
             ROCK_LOG_DEBUG(Hand,
-                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+queuedTarget+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} targetSrc={} mode={} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularAuthority={} angularRef={} solverAngular=ragdollAtom angularBudget={:.3f} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
+                "{} PROXY GRAB AUTHORITY: seq={}/{} diag=bodyFrameConstraint+queuedTarget+generatedKeyframedProxy proxyBody={} constraint={} substep={}/{} dt={:.6f} targetSrc={} target=({:.1f},{:.1f},{:.1f}) desiredBody=({:.1f},{:.1f},{:.1f}) angularAuthority={} angularRef={} solverAngular=ragdollAtom angularBudget={:.3f} pivotB=({:.2f},{:.2f},{:.2f}) err={:.2f}gu rotErr={:.2f}deg proxyDrive=driveToKeyFrame palmRef={} palmSrc={} palmMotion={} proxyVelSource={} proxyVel={:.3f}hk proxyAngVel={:.3f}rad/s longLever={:.1f}gu proxyRead={} proxySrc={} proxyMotion={} proxyErr={:.3f}gu/{:.2f}deg forceBudget={:.2f} colliding={} filterRead={} filter=0x{:08X} noContact={}",
                 handName(),
                 flushSequence,
                 queuedSequence,
@@ -12756,7 +12506,6 @@ namespace rock
                 timing.substepCount,
                 havok_physics_timing::driveDeltaSeconds(timing),
                 pending.proxyFrameSource ? pending.proxyFrameSource : "unknown",
-                pending.authorityMode ? pending.authorityMode : "single-hand",
                 pending.proxyWorld.translate.x,
                 pending.proxyWorld.translate.y,
                 pending.proxyWorld.translate.z,

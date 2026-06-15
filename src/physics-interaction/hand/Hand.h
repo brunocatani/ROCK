@@ -235,8 +235,6 @@ namespace rock
         OwnershipHandoff,
     };
 
-    class Hand;
-
     struct GrabSharedObjectContext
     {
         bool joiningPeerHeldObject = false;
@@ -256,8 +254,6 @@ namespace rock
         bool peerHandStillHolding = false;
         GrabReleaseDisposition disposition = GrabReleaseDisposition::PhysicalDrop;
         const char* reason = "single-hand";
-        const Hand* peerHand = nullptr;
-        const RE::NiTransform* peerHandWorldTransform = nullptr;
     };
 
     struct GrabReleaseOutcome
@@ -379,7 +375,6 @@ namespace rock
         const ActiveConstraint& getActiveConstraint() const { return _activeConstraint; }
         const SavedObjectState& getSavedObjectState() const { return _savedObjectState; }
         const active_grab_body_lifecycle::BodyLifecycleSnapshot& getActiveGrabLifecycle() const { return _activeGrabLifecycle; }
-        const CanonicalGrabFrame& getGrabFrame() const { return _grabFrame; }
         bool tryGetHeldObjectGrabPivotWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const;
         bool getGrabPivotDebugSnapshot(RE::hknpWorld* world, GrabPivotDebugSnapshot& out) const;
         bool getGrabPocketNormalDebugSnapshot(RE::hknpWorld* world, GrabPocketNormalDebugSnapshot& out) const;
@@ -532,11 +527,6 @@ namespace rock
         bool hasCollisionBody() const { return _handBody.isValid(); }
         BethesdaPhysicsBody& getHandBody() { return _handBody; }
         const BethesdaPhysicsBody& getHandBody() const { return _handBody; }
-        bool tryResolveHeldGrabAuthorityProxyFrame(RE::hknpWorld* world,
-            const RE::NiTransform& rawHandWorld,
-            RE::NiTransform& outProxyWorld,
-            const char*& outSource) const;
-        bool tryResolveHeldGrabAuthorityPivotAWorld(const RE::NiTransform& proxyWorldTransform, RE::NiPoint3& outPivotWorld) const;
         bool tryResolveLivePalmAnchorReference(RE::hknpWorld* world, LivePalmAnchorReference& outReference) const;
         RE::NiPoint3 computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const;
         bool tryComputeGrabProxyLocalPalmPocketFrameWorld(RE::hknpWorld* world, RE::NiTransform& outFrameWorld) const;
@@ -602,9 +592,7 @@ namespace rock
             RE::NiTransform& outDesiredObjectWorld,
             RE::NiTransform& outDesiredBodyWorld,
             RE::NiPoint3& outDesiredTargetPointWorld,
-            RE::NiPoint3& outActivePivotBBodyLocalGame,
-            const RE::NiTransform* sharedDesiredObjectWorld = nullptr,
-            const RE::NiTransform* sharedDesiredBodyWorld = nullptr);
+            RE::NiPoint3& outActivePivotBBodyLocalGame);
         enum class GrabAuthorityProxyFramePolicy : std::uint8_t
         {
             LivePalmOnly = 0,
@@ -635,10 +623,7 @@ namespace rock
             float grabPositionErrorGameUnits,
             float grabRotationErrorDegrees,
             float authorityForceScale,
-            bool heldBodyColliding,
-            const RE::NiTransform* sharedDesiredObjectWorld = nullptr,
-            const RE::NiTransform* sharedDesiredBodyWorld = nullptr,
-            const char* authorityMode = "single-hand");
+            bool heldBodyColliding);
         void destroyGrabAuthorityProxy(RE::bhkWorld* bhkWorld);
         void abandonGrabAuthorityProxy();
         void clearGrabAuthorityProxyRuntime();
@@ -939,10 +924,6 @@ namespace rock
             float grabRotationErrorDegrees = 0.0f;
             float authorityForceScale = 1.0f;
             bool heldBodyColliding = false;
-            bool hasSharedTwoHandObjectTarget = false;
-            RE::NiTransform sharedDesiredObjectWorld{};
-            RE::NiTransform sharedDesiredBodyWorld{};
-            const char* authorityMode = "single-hand";
             bool valid = false;
         };
         GrabAuthorityProxyPendingTarget _grabAuthorityPendingTarget{};
