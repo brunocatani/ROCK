@@ -2420,7 +2420,7 @@ namespace rock
             };
             const bool primaryPoseBlockerAvailable = frik_visual_authority::canBlockPrimaryHandWeaponPose();
             const bool primaryDetachFeatureAvailable = equipped_weapon_manual_ownership_policy::featureAvailable(
-                g_rockConfig.rockEquippedWeaponPrimaryDetachEnabled,
+                g_rockConfig.rockRealisticWeaponHandlingEnabled,
                 primaryPoseBlockerAvailable,
                 weaponNode != nullptr,
                 currentWeaponGenerationKey);
@@ -2433,7 +2433,7 @@ namespace rock
                     equipped_weapon_manual_ownership_policy::PendingPrimaryOnlyStartInput{
                         .pending = _pendingEquippedWeaponPrimaryOnlyGripStart,
                         .gripHeld = readGrabButtonHeld(false, g_rockConfig.rockGrabButtonID),
-                        .configEnabled = g_rockConfig.rockEquippedWeaponPrimaryDetachEnabled,
+                        .configEnabled = g_rockConfig.rockRealisticWeaponHandlingEnabled,
                         .primaryPoseBlockerAvailable = primaryPoseBlockerAvailable,
                         .virtualHolstersOwnsInput = primaryGrabDeferredForVirtualHolsters,
                     })) {

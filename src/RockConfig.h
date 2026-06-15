@@ -101,7 +101,7 @@ namespace rock
         float rockWeaponCollisionMaxAngularVelocity = 100.0f;
         float rockWeaponInteractionProbeRadius = 12.0f;
         bool rockVisualOnlySidearmSupportGripEnabled = true;
-        bool rockEquippedWeaponPrimaryDetachEnabled = true;
+        bool rockRealisticWeaponHandlingEnabled = false;
         bool rockGrabbedWeaponAutoEquipEnabled = false;
         float rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
         bool rockWeaponSupportGripHandLerpEnabled = true;

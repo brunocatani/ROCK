@@ -154,7 +154,7 @@ namespace rock
         rockWeaponCollisionMaxAngularVelocity = 100.0f;
         rockWeaponInteractionProbeRadius = 12.0f;
         rockVisualOnlySidearmSupportGripEnabled = true;
-        rockEquippedWeaponPrimaryDetachEnabled = true;
+        rockRealisticWeaponHandlingEnabled = false;
         rockGrabbedWeaponAutoEquipEnabled = false;
         rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
         rockWeaponSupportGripHandLerpEnabled = true;
@@ -710,12 +710,16 @@ namespace rock
         rockWeaponInteractionProbeRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponInteractionProbeRadius", rockWeaponInteractionProbeRadius));
         rockVisualOnlySidearmSupportGripEnabled =
             ini.GetBoolValue(SECTION, "bVisualOnlySidearmSupportGripEnabled", rockVisualOnlySidearmSupportGripEnabled);
-        const bool legacyPrimaryDetachEnabled =
-            ini.GetBoolValue(SECTION, "bEquippedWeaponPrimaryDetachEnabled", rockEquippedWeaponPrimaryDetachEnabled);
-        rockEquippedWeaponPrimaryDetachEnabled = ini.GetBoolValue(
+        const bool legacyPhysicsPrimaryDetachEnabled =
+            ini.GetBoolValue(SECTION, "bEquippedWeaponPrimaryDetachEnabled", rockRealisticWeaponHandlingEnabled);
+        const bool legacyRealisticPrimaryDetachEnabled = ini.GetBoolValue(
             REALISTIC_WEAPONS_SECTION,
             "bEquippedWeaponPrimaryDetachEnabled",
-            legacyPrimaryDetachEnabled);
+            legacyPhysicsPrimaryDetachEnabled);
+        rockRealisticWeaponHandlingEnabled = ini.GetBoolValue(
+            REALISTIC_WEAPONS_SECTION,
+            "bRealisticWeaponHandlingEnabled",
+            legacyRealisticPrimaryDetachEnabled);
         rockGrabbedWeaponAutoEquipEnabled = ini.GetBoolValue(
             REALISTIC_WEAPONS_SECTION,
             "bGrabbedWeaponAutoEquipEnabled",

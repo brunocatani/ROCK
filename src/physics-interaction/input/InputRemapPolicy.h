@@ -23,6 +23,7 @@ namespace rock::input_remap_policy
         bool virtualHolstersDeferGrabInZone{ true };
         bool virtualHolstersDeferWeaponToggleInZone{ true };
         bool virtualHolstersDeferOnlyMatchingButton{ false };
+        bool realisticWeaponHandlingEnabled{ false };
     };
 
     struct Input
@@ -123,6 +124,7 @@ namespace rock::input_remap_policy
         bool compatibilityEnabled{ true };
         bool deferActionEnabled{ true };
         bool deferOnlyMatchingButton{ false };
+        bool realisticWeaponHandlingEnabled{ false };
         bool apiAvailable{ false };
         bool initialized{ false };
         bool handInZone{ false };
@@ -235,7 +237,8 @@ namespace rock::input_remap_policy
 
     [[nodiscard]] constexpr bool shouldDeferVirtualHolstersInput(const VirtualHolstersCompatibilityInput& input)
     {
-        if (!input.compatibilityEnabled || !input.deferActionEnabled || !input.apiAvailable || !input.initialized || !input.handInZone) {
+        if (!input.compatibilityEnabled || input.realisticWeaponHandlingEnabled || !input.deferActionEnabled ||
+            !input.apiAvailable || !input.initialized || !input.handInZone) {
             return false;
         }
 

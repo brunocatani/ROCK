@@ -302,6 +302,7 @@ namespace rock::input_remap_runtime
                 .virtualHolstersDeferGrabInZone = g_rockConfig.rockVirtualHolstersDeferGrabInZone,
                 .virtualHolstersDeferWeaponToggleInZone = g_rockConfig.rockVirtualHolstersDeferWeaponToggleInZone,
                 .virtualHolstersDeferOnlyMatchingButton = g_rockConfig.rockVirtualHolstersDeferOnlyMatchingButton,
+                .realisticWeaponHandlingEnabled = g_rockConfig.rockRealisticWeaponHandlingEnabled,
             };
         }
 
@@ -349,7 +350,7 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] VirtualHolstersAPI* resolveVirtualHolstersApi()
         {
-            if (!g_rockConfig.rockVirtualHolstersCompatibilityEnabled) {
+            if (!g_rockConfig.rockVirtualHolstersCompatibilityEnabled || g_rockConfig.rockRealisticWeaponHandlingEnabled) {
                 return nullptr;
             }
 
@@ -431,6 +432,7 @@ namespace rock::input_remap_runtime
                 .compatibilityEnabled = settings.virtualHolstersCompatibilityEnabled,
                 .deferActionEnabled = deferActionEnabled,
                 .deferOnlyMatchingButton = settings.virtualHolstersDeferOnlyMatchingButton,
+                .realisticWeaponHandlingEnabled = settings.realisticWeaponHandlingEnabled,
                 .apiAvailable = virtualHolsters.available,
                 .initialized = virtualHolsters.initialized,
                 .handInZone = virtualHolsters.handInZone,
@@ -1309,7 +1311,7 @@ namespace rock::input_remap_runtime
         (void)releaseZ;
 
         const auto settings = makeSettings();
-        if (!settings.virtualHolstersCompatibilityEnabled || !settings.virtualHolstersDeferGrabInZone) {
+        if (!settings.virtualHolstersCompatibilityEnabled || settings.realisticWeaponHandlingEnabled || !settings.virtualHolstersDeferGrabInZone) {
             return false;
         }
 

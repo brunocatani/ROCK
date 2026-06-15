@@ -286,6 +286,10 @@ int main()
     };
     ok &= expectTrue("VirtualHolsters zone defers matching ROCK button", shouldDeferVirtualHolstersInput(virtualHolsters));
 
+    auto realisticWeaponHandlingVirtualHolsters = virtualHolsters;
+    realisticWeaponHandlingVirtualHolsters.realisticWeaponHandlingEnabled = true;
+    ok &= expectFalse("realistic weapon handling disables VirtualHolsters input deferral", shouldDeferVirtualHolstersInput(realisticWeaponHandlingVirtualHolsters));
+
     auto unmatchedVirtualHolsters = virtualHolsters;
     unmatchedVirtualHolsters.holsterButtonId = 7;
     ok &= expectFalse("VirtualHolsters match-only mode allows unrelated ROCK button", shouldDeferVirtualHolstersInput(unmatchedVirtualHolsters));
