@@ -81,6 +81,22 @@ namespace rock
             float blue = 0.0f;
         };
 
+        struct NativeVatsOverrideState
+        {
+            bool valid = false;
+            bool active = false;
+            float red = 0.0f;
+            float green = 0.0f;
+            float blue = 0.0f;
+        };
+
+        NativeVatsOverrideState s_savedNativeVatsOverride;
+        NativeVatsOverrideState s_lastRockNativeVatsOverride;
+        bool s_hasSavedNativeVatsOverride = false;
+        bool s_rockNativeVatsOverrideApplied = false;
+        bool s_warnedNativeVatsOverrideUnavailable = false;
+        bool s_loggedNativeVatsOverridePreempted = false;
+
         float intensityForMode(int mode) noexcept
         {
             switch (mode) {
@@ -110,6 +126,64 @@ namespace rock
             return { 1.0f, 0.5f, 0.0f };
         }
 
+        std::uint8_t* nativeVatsOverrideActiveFlag()
+        {
+            static REL::Relocation<std::uint8_t*> overrideActive{ REL::ID(384369) };
+            return overrideActive.get();
+        }
+
+        float* nativeVatsOverrideColorBase()
+        {
+            static REL::Relocation<float*> overrideRed{ REL::ID(1285265) };
+            return overrideRed.get();
+        }
+
+        NativeVatsOverrideState readNativeVatsOverrideState()
+        {
+            auto* activeFlag = nativeVatsOverrideActiveFlag();
+            auto* color = nativeVatsOverrideColorBase();
+            if (!activeFlag || !color) {
+                return {};
+            }
+
+            return NativeVatsOverrideState{
+                .valid = true,
+                .active = *activeFlag != 0,
+                .red = color[0],
+                .green = color[1],
+                .blue = color[2],
+            };
+        }
+
+        bool writeNativeVatsOverrideState(const NativeVatsOverrideState& state)
+        {
+            if (!state.valid) {
+                return false;
+            }
+
+            auto* activeFlag = nativeVatsOverrideActiveFlag();
+            auto* color = nativeVatsOverrideColorBase();
+            if (!activeFlag || !color) {
+                return false;
+            }
+
+            color[0] = state.red;
+            color[1] = state.green;
+            color[2] = state.blue;
+            *activeFlag = static_cast<std::uint8_t>(state.active ? 1 : 0);
+            return true;
+        }
+
+        bool sameNativeVatsOverrideState(const NativeVatsOverrideState& lhs, const NativeVatsOverrideState& rhs) noexcept
+        {
+            return lhs.valid &&
+                rhs.valid &&
+                lhs.active == rhs.active &&
+                lhs.red == rhs.red &&
+                lhs.green == rhs.green &&
+                lhs.blue == rhs.blue;
+        }
+
         detail::VatsEffectTarget* constructTarget(RE::NiAVObject* root3D)
         {
             using ctor_t = detail::VatsEffectTarget* (*)(detail::VatsEffectTarget*, RE::NiAVObject*);
@@ -132,16 +206,60 @@ namespace rock
             using set_override_t = void (*)(float, float, float);
             static REL::Relocation<set_override_t> setOverrideColor{ REL::ID(403512) };
 
+            // FO4VR stores the VATS target override as native-global shader state; ROCK must restore or yield it explicitly.
+            if (!s_hasSavedNativeVatsOverride) {
+                s_savedNativeVatsOverride = readNativeVatsOverrideState();
+                if (!s_savedNativeVatsOverride.valid) {
+                    if (!s_warnedNativeVatsOverrideUnavailable) {
+                        ROCK_LOG_WARN(Hand, "ROCK grab highlight color override skipped: native VATS override globals are unavailable");
+                        s_warnedNativeVatsOverrideUnavailable = true;
+                    }
+                    return;
+                }
+
+                s_hasSavedNativeVatsOverride = true;
+                s_rockNativeVatsOverrideApplied = false;
+                s_loggedNativeVatsOverridePreempted = false;
+            }
+
+            if (s_rockNativeVatsOverrideApplied) {
+                const auto currentState = readNativeVatsOverrideState();
+                if (!sameNativeVatsOverrideState(currentState, s_lastRockNativeVatsOverride)) {
+                    if (!s_loggedNativeVatsOverridePreempted) {
+                        ROCK_LOG_DEBUG(Hand, "ROCK grab highlight color override not refreshed: native VATS override changed outside ROCK");
+                        s_loggedNativeVatsOverridePreempted = true;
+                    }
+                    return;
+                }
+            }
+
             const auto color = colorForName(g_rockConfig.rockHighlightColor);
             const float intensity = intensityForMode(g_rockConfig.rockHighlightIntensityMode);
             setOverrideColor(color.red * intensity, color.green * intensity, color.blue * intensity);
+            s_lastRockNativeVatsOverride = readNativeVatsOverrideState();
+            s_rockNativeVatsOverrideApplied = s_lastRockNativeVatsOverride.valid;
         }
 
-        void clearRockGrabHighlightOverride()
+        void restoreRockGrabHighlightOverride()
         {
-            using clear_override_t = void (*)();
-            static REL::Relocation<clear_override_t> clearOverrideColor{ REL::ID(1187937) };
-            clearOverrideColor();
+            if (!s_hasSavedNativeVatsOverride) {
+                return;
+            }
+
+            const auto currentState = readNativeVatsOverrideState();
+            if (s_rockNativeVatsOverrideApplied && sameNativeVatsOverrideState(currentState, s_lastRockNativeVatsOverride)) {
+                if (!writeNativeVatsOverrideState(s_savedNativeVatsOverride)) {
+                    ROCK_LOG_WARN(Hand, "ROCK grab highlight color override restore failed: native VATS override globals are unavailable");
+                }
+            } else if (s_rockNativeVatsOverrideApplied) {
+                ROCK_LOG_DEBUG(Hand, "ROCK grab highlight color override restore skipped: native VATS override changed outside ROCK");
+            }
+
+            s_savedNativeVatsOverride = {};
+            s_lastRockNativeVatsOverride = {};
+            s_hasSavedNativeVatsOverride = false;
+            s_rockNativeVatsOverrideApplied = false;
+            s_loggedNativeVatsOverridePreempted = false;
         }
 
         void disableVatsEffectControl(bool clearTargets)
@@ -299,7 +417,7 @@ namespace rock
 
         if (remainingRockTargets == 0) {
             disableVatsEffectControl(true);
-            clearRockGrabHighlightOverride();
+            restoreRockGrabHighlightOverride();
         } else {
             TargetSmartPointer targetRef(target);
             removeTarget(targetRef);
