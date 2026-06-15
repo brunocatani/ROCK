@@ -43,6 +43,10 @@ Reject-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'snapshotGene
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'snapshotGeneratedKeyframedBodyDriveSampledVelocity' 'Weapon generated body queue path must publish queue-result sampled velocity without immediately snapshotting drive state.'
 Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'publishSampledVelocityAtomic\(publicationIndex, queueResult\)' 'Hand generated body queue path must publish sampled velocity by cached publication slot.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'publishSampledVelocityAtomic\(instance\.publicationIndex, queueResult\)' 'Weapon generated body queue path must publish sampled velocity by cached publication slot.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'generatedSourceLocalPointsGame' 'Generated weapon bodies must retain source-local hull points for driven source-node collider updates.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'source\.sourceLocalPointsGame' 'Generated weapon source extraction must build source-local hull point clouds.'
+Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'const bool useSourceNode = instance\.sourceNode && actor_equipment_grab::nodeContainsNode' 'Weapon body follow-updates must validate and use current source-node transforms when available.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'restoreExpiredProviderWeaponPartDriveNodes' 'Provider weapon part drives must restore nodes whose drive leases are not renewed.'
 Require-Text 'src/physics-interaction/contact/GeneratedBodyContactRegistry.h' 'std::atomic<std::uint64_t> _publicationVersion' 'Generated-body callback registry must use atomic publication versioning.'
 Require-Text 'src/physics-interaction/contact/GeneratedBodyContactRegistry.h' 'std::sort' 'Generated-body callback registry must publish sorted fixed storage for bounded lookup.'
 

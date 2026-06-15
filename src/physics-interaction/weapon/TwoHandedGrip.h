@@ -114,10 +114,15 @@ namespace rock
             RE::NiNode* weaponNode,
             const WeaponInteractionDecision& decision,
             const WeaponCollision& weaponCollision,
-            weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode);
+            weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
+            const WeaponProviderPartAuthority& providerPartAuthority);
         void transitionToInactive(bool publishRestoredWeaponTransform);
 
         void updateGripping(RE::NiNode* weaponNode, float dt);
+
+        bool providerPartAuthorityStillCurrent(std::uint64_t currentWeaponGenerationKey) const;
+
+        void clearProviderPartAuthority();
 
         void updateFullWeaponAuthorityGrip(RE::NiNode* weaponNode, float dt);
 
@@ -187,6 +192,8 @@ namespace rock
 
         RE::NiTransform resolveSupportHandWorld(RE::NiNode* weaponNode) const;
 
+        RE::NiAVObject* resolveCurrentSupportAttachmentRoot(RE::NiNode* weaponNode) const;
+
         struct LockedHandVisualLerpState
         {
             bool active = false;
@@ -245,9 +252,13 @@ namespace rock
 
         RE::NiTransform _supportHandSourceLocal{};
 
+        RE::NiTransform _supportAttachmentWeaponLocal{};
+
         bool _hasHandWeaponLocalFrames{ false };
 
         bool _hasSupportSourceLocalFrame{ false };
+
+        bool _hasSupportAttachmentWeaponLocal{ false };
 
         LockedHandVisualLerpState _primaryHandVisualLerp{};
         LockedHandVisualLerpState _supportHandVisualLerp{};
@@ -266,6 +277,7 @@ namespace rock
         RE::NiAVObject* _activeSourceRoot{ nullptr };
         RE::NiAVObject* _supportAttachmentRoot{ nullptr };
         std::uint64_t _activeWeaponGenerationKey{ 0 };
+        WeaponProviderPartAuthority _providerPartAuthority{};
         RE::NiTransform _weaponNodeLocalBaseline{};
         bool _hasWeaponNodeLocalBaseline{ false };
 

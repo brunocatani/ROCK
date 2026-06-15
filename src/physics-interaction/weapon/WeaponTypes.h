@@ -7,6 +7,8 @@
 
 // ---- WeaponSemanticTypes.h ----
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -186,9 +188,29 @@ namespace rock
         std::uint64_t weaponGenerationKey{ 0 };
     };
 
+    inline constexpr std::size_t kWeaponProviderSourceNameCapacity = 64;
+
+    struct WeaponProviderPartAuthority
+    {
+        bool active{ false };
+        std::uint64_t ownerToken{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t bodyId{ 0x7FFF'FFFF };
+        std::uintptr_t sourceRoot{ 0 };
+        std::uint32_t partKind{ 0 };
+        std::uint32_t reloadRole{ 0 };
+        std::uint32_t supportRole{ 0 };
+        std::uint32_t socketRole{ 0 };
+        std::uint32_t actionRole{ 0 };
+        std::uint32_t groupId{ 0 };
+        std::uint32_t grabMode{ 0 };
+        std::array<char, kWeaponProviderSourceNameCapacity> sourceName{};
+    };
+
     struct WeaponInteractionRuntimeState
     {
         bool supportGripAllowed{ true };
+        WeaponProviderPartAuthority providerPartAuthority{};
     };
 }
 

@@ -1014,7 +1014,9 @@ namespace rock
             target[targetSize - 1] = '\0';
         }
 
-        ::rock::provider::RockProviderWeaponPartTargetQueryV1 makeProviderWeaponPartTargetQuery(const WeaponInteractionContact& contact)
+        ::rock::provider::RockProviderWeaponPartTargetQueryV1 makeProviderWeaponPartTargetQuery(
+            const WeaponInteractionContact& contact,
+            const WeaponCollision& weaponCollision)
         {
             ::rock::provider::RockProviderWeaponPartTargetQueryV1 query{};
             query.weaponGenerationKey = contact.weaponGenerationKey;
@@ -1025,8 +1027,37 @@ namespace rock
             query.socketRole = static_cast<std::uint32_t>(contact.socketRole);
             query.actionRole = static_cast<std::uint32_t>(contact.actionRole);
             query.sourceRoot = reinterpret_cast<std::uintptr_t>(contact.sourceRoot);
-            copyProviderString(query.sourceName, sizeof(query.sourceName), contact.sourceRoot ? contact.sourceRoot->name.c_str() : "");
+            WeaponCollisionProfileEvidenceDescriptor descriptor{};
+            RE::NiAVObject* sourceNode = nullptr;
+            if (weaponCollision.tryGetProfileEvidenceDescriptorForBodyId(contact.bodyId, descriptor, sourceNode) &&
+                descriptor.weaponGenerationKey == contact.weaponGenerationKey) {
+                query.sourceRoot = descriptor.sourceRootAddress;
+                copyProviderString(query.sourceName, sizeof(query.sourceName), descriptor.sourceName);
+            }
             return query;
+        }
+
+        WeaponProviderPartAuthority makeWeaponProviderPartAuthority(
+            const ::rock::provider::RockProviderWeaponPartTargetQueryV1& query,
+            const ::rock::provider::RockProviderWeaponPartTargetResolutionV1& resolution)
+        {
+            WeaponProviderPartAuthority authority{};
+            authority.active = resolution.matched != 0;
+            authority.ownerToken = resolution.ownerToken;
+            authority.weaponGenerationKey = query.weaponGenerationKey;
+            authority.bodyId = query.bodyId;
+            authority.sourceRoot = query.sourceRoot;
+            authority.partKind = query.partKind;
+            authority.reloadRole = query.reloadRole;
+            authority.supportRole = query.supportRole;
+            authority.socketRole = query.socketRole;
+            authority.actionRole = query.actionRole;
+            authority.groupId = resolution.groupId;
+            authority.grabMode = static_cast<std::uint32_t>(resolution.grabMode);
+            static_assert(WeaponProviderPartAuthority{}.sourceName.size() == ::rock::provider::ROCK_PROVIDER_MAX_EVIDENCE_NAME);
+            std::memcpy(authority.sourceName.data(), query.sourceName, authority.sourceName.size());
+            authority.sourceName[authority.sourceName.size() - 1] = '\0';
+            return authority;
         }
 
         ::rock::provider::RockProviderPoint3 makeProviderPoint(const WeaponEvidencePoint3& point)
@@ -2499,11 +2530,14 @@ namespace rock
             }
 
             ::rock::provider::RockProviderWeaponPartTargetResolutionV1 weaponPartResolution{};
+            const auto weaponPartQuery = makeProviderWeaponPartTargetQuery(leftWeaponContact, _weaponCollision);
             const bool weaponPartWhitelistActive = leftWeaponContact.valid &&
-                ::rock::provider::resolveWeaponPartTargetV1(makeProviderWeaponPartTargetQuery(leftWeaponContact), weaponPartResolution) &&
+                ::rock::provider::resolveWeaponPartTargetV1(weaponPartQuery, weaponPartResolution) &&
                 weaponPartResolution.whitelistActive != 0;
             if (weaponPartWhitelistActive && weaponPartResolution.matched == 0) {
                 providerInteractionState.supportGripAllowed = false;
+            } else if (weaponPartWhitelistActive) {
+                providerInteractionState.providerPartAuthority = makeWeaponProviderPartAuthority(weaponPartQuery, weaponPartResolution);
             }
 
             const WeaponInteractionDecision leftWeaponDecision = routeWeaponInteraction(leftWeaponContact, providerInteractionState);
@@ -4866,7 +4900,18 @@ namespace rock
     {
         outDrivenSourceNodes = {};
         if (!weaponNode || currentWeaponGenerationKey == 0 || !frame.worldReady) {
+            if (weaponNode && currentWeaponGenerationKey != 0) {
+                restoreExpiredProviderWeaponPartDriveNodes(weaponNode, currentWeaponGenerationKey);
+            }
             return 0;
+        }
+
+        if (_providerWeaponPartDriveGenerationKey != 0 && _providerWeaponPartDriveGenerationKey != currentWeaponGenerationKey) {
+            _providerWeaponPartDriveNodeStates = {};
+            _providerWeaponPartDriveGenerationKey = 0;
+        }
+        for (auto& state : _providerWeaponPartDriveNodeStates) {
+            state.activeThisFrame = false;
         }
 
         std::array<::rock::provider::RockProviderWeaponPartDriveTargetV1, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> driveTargets{};
@@ -4874,6 +4919,7 @@ namespace rock
             driveTargets.data(),
             static_cast<std::uint32_t>(driveTargets.size()));
         if (driveCount == 0) {
+            restoreExpiredProviderWeaponPartDriveNodes(weaponNode, currentWeaponGenerationKey);
             return 0;
         }
 
@@ -4885,18 +4931,30 @@ namespace rock
 
         std::array<AppliedNode, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> appliedNodes{};
         std::size_t appliedNodeCount = 0;
+        const auto evidenceDescriptors = _weaponCollision.getProfileEvidenceDescriptors();
 
         auto resolveDriveNode = [&](const ::rock::provider::RockProviderWeaponPartDriveTargetV1& drive) -> RE::NiAVObject* {
             if (drive.weaponGenerationKey != 0 && drive.weaponGenerationKey != currentWeaponGenerationKey) {
                 return nullptr;
             }
 
+            RE::NiAVObject* candidate = nullptr;
+            auto acceptResolvedNode = [&](RE::NiAVObject* node) {
+                if (!node || !actor_equipment_grab::nodeContainsNode(weaponNode, node, 64)) {
+                    return false;
+                }
+                if (candidate && candidate != node) {
+                    return false;
+                }
+                candidate = node;
+                return true;
+            };
+
             if ((drive.flags & static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchSourceRoot)) != 0 && drive.sourceRoot != 0) {
                 auto* node = reinterpret_cast<RE::NiAVObject*>(drive.sourceRoot);
-                if (node && actor_equipment_grab::nodeContainsNode(weaponNode, node, 64)) {
-                    return node;
+                if (!acceptResolvedNode(node)) {
+                    return nullptr;
                 }
-                return nullptr;
             }
 
             if ((drive.flags & static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchBodyId)) != 0 && drive.bodyId != INVALID_CONTACT_BODY_ID) {
@@ -4905,18 +4963,31 @@ namespace rock
                 if (_weaponCollision.tryGetProfileEvidenceDescriptorForBodyId(drive.bodyId, descriptor, sourceNode) &&
                     sourceNode &&
                     descriptor.weaponGenerationKey == currentWeaponGenerationKey &&
-                    actor_equipment_grab::nodeContainsNode(weaponNode, sourceNode, 64)) {
-                    return sourceNode;
+                    acceptResolvedNode(sourceNode)) {
+                } else {
+                    return nullptr;
                 }
-                return nullptr;
             }
 
             const auto sourceName = providerFixedStringView(drive.sourceName, ::rock::provider::ROCK_PROVIDER_MAX_EVIDENCE_NAME);
             if ((drive.flags & static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchSourceName)) != 0 && !sourceName.empty()) {
-                return findWeaponNodeBySourceName(weaponNode, sourceName, 32);
+                RE::NiAVObject* matchedSourceNode = nullptr;
+                for (const auto& descriptor : evidenceDescriptors) {
+                    if (!descriptor.valid || descriptor.weaponGenerationKey != currentWeaponGenerationKey || descriptor.sourceName != sourceName) {
+                        continue;
+                    }
+                    matchedSourceNode = reinterpret_cast<RE::NiAVObject*>(descriptor.sourceRootAddress);
+                    break;
+                }
+                if (!matchedSourceNode) {
+                    matchedSourceNode = findWeaponNodeBySourceName(weaponNode, sourceName, 32);
+                }
+                if (!acceptResolvedNode(matchedSourceNode)) {
+                    return nullptr;
+                }
             }
 
-            return nullptr;
+            return candidate;
         };
 
         auto shouldApplyPriority = [&](RE::NiAVObject* node, std::uint32_t priority) {
@@ -4933,6 +5004,30 @@ namespace rock
             if (appliedNodeCount < appliedNodes.size()) {
                 appliedNodes[appliedNodeCount++] = AppliedNode{ .node = node, .priority = priority };
                 return true;
+            }
+            return false;
+        };
+
+        auto markDrivenNode = [&](RE::NiAVObject* node) {
+            if (!node) {
+                return false;
+            }
+            if (_providerWeaponPartDriveGenerationKey == 0) {
+                _providerWeaponPartDriveGenerationKey = currentWeaponGenerationKey;
+            }
+            for (auto& state : _providerWeaponPartDriveNodeStates) {
+                if (state.node == node) {
+                    state.activeThisFrame = true;
+                    return true;
+                }
+            }
+            for (auto& state : _providerWeaponPartDriveNodeStates) {
+                if (!state.node) {
+                    state.node = node;
+                    state.baselineLocal = node->local;
+                    state.activeThisFrame = true;
+                    return true;
+                }
             }
             return false;
         };
@@ -4964,10 +5059,14 @@ namespace rock
                 continue;
             }
 
-            sourceNode->local = transform_math::composeTransforms(transform_math::invertTransform(sourceNode->parent->world), desiredWorld);
-            if (!finiteNiTransform(sourceNode->local)) {
+            const RE::NiTransform requestedNodeLocal = transform_math::composeTransforms(transform_math::invertTransform(sourceNode->parent->world), desiredWorld);
+            if (!finiteNiTransform(requestedNodeLocal)) {
                 continue;
             }
+            if (!markDrivenNode(sourceNode)) {
+                continue;
+            }
+            sourceNode->local = requestedNodeLocal;
             f4vr::updateTransformsDown(sourceNode, true);
 
             if (drivenSourceNodeCount < outDrivenSourceNodes.size()) {
@@ -4975,7 +5074,39 @@ namespace rock
             }
         }
 
+        restoreExpiredProviderWeaponPartDriveNodes(weaponNode, currentWeaponGenerationKey);
         return drivenSourceNodeCount;
+    }
+
+    void PhysicsInteraction::restoreExpiredProviderWeaponPartDriveNodes(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey)
+    {
+        if (_providerWeaponPartDriveGenerationKey == 0) {
+            return;
+        }
+        if (!weaponNode || currentWeaponGenerationKey == 0 || _providerWeaponPartDriveGenerationKey != currentWeaponGenerationKey) {
+            _providerWeaponPartDriveNodeStates = {};
+            _providerWeaponPartDriveGenerationKey = 0;
+            return;
+        }
+
+        bool anyActive = false;
+        for (auto& state : _providerWeaponPartDriveNodeStates) {
+            if (!state.node) {
+                continue;
+            }
+            if (state.activeThisFrame) {
+                anyActive = true;
+                continue;
+            }
+            if (actor_equipment_grab::nodeContainsNode(weaponNode, state.node, 64)) {
+                state.node->local = state.baselineLocal;
+                f4vr::updateTransformsDown(state.node, true);
+            }
+            state = {};
+        }
+        if (!anyActive) {
+            _providerWeaponPartDriveGenerationKey = 0;
+        }
     }
 
     grab_locomotion_authority_bridge::Output PhysicsInteraction::updateGrabLocomotionAuthorityBridge(float deltaSeconds, bool worldReady)

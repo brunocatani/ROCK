@@ -185,6 +185,20 @@ Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_WEAPON_PART_INTER
     'SDK must expose a table-size guard for weapon part interaction slots.'
 Require-Text 'src/api/ROCKProviderApi.h' 'supportsWeaponPartInteractionV1' `
     'SDK must expose safe feature/table helpers for weapon part interaction.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'kImplementedWeaponPartDriveMatcherFlagsV1' `
+    'Weapon part drive targets must only accept concrete body/source/name matcher flags.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'hasValidWeaponPartTargetSemantics' `
+    'Weapon part target API must range-check public semantic enum values before runtime casts.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'availableWeaponPartTargetSlotsForOwnerLocked' `
+    'Weapon part target replacement must prove capacity before clearing existing owner registrations.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'availableWeaponPartDriveSlotsForOwnerLocked' `
+    'Weapon part drive replacement must prove capacity before clearing existing owner registrations.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'providerPartAuthorityStillCurrent' `
+    'Provider-authorized weapon part grips must revalidate owner target authority while active.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'resolveCurrentSupportAttachmentRoot' `
+    'Weapon part support attachment roots must be current-tree validated before dereference.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_supportAttachmentWeaponLocal' `
+    'Primary-detached source-part grips must solve weapon authority from the captured source-to-weapon frame.'
 Require-Text 'src/api/ROCKProviderApi.h' 'supportsForceGrabCommandV1' `
     'SDK must expose safe feature/table helpers for force-grab commands.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'providerApiByteSize\s*=\s*static_cast<std::uint32_t>\(sizeof\(RockProviderApi\)\)' `

@@ -138,11 +138,15 @@ namespace rock
         {
             std::vector<RE::NiPoint3> localPointsGame;
             std::vector<TriangleData> localTrianglesGame;
+            std::vector<RE::NiPoint3> sourceLocalPointsGame;
+            std::vector<TriangleData> sourceLocalTrianglesGame;
             std::vector<std::vector<RE::NiPoint3>> childLocalPointCloudsGame;
             RE::NiPoint3 localCenterGame{};
             RE::NiPoint3 sourceLocalCenterGame{};
             RE::NiPoint3 localMinGame{};
             RE::NiPoint3 localMaxGame{};
+            RE::NiPoint3 sourceLocalMinGame{};
+            RE::NiPoint3 sourceLocalMaxGame{};
             RE::NiAVObject* driveRoot{ nullptr };
             RE::NiAVObject* sourceRoot{ nullptr };
             std::uintptr_t sourceGroupId{ 0 };
@@ -162,8 +166,12 @@ namespace rock
             RE::NiPoint3 generatedSourceLocalCenterGame{};
             RE::NiPoint3 generatedLocalMinGame{};
             RE::NiPoint3 generatedLocalMaxGame{};
+            RE::NiPoint3 generatedSourceLocalMinGame{};
+            RE::NiPoint3 generatedSourceLocalMaxGame{};
             std::vector<RE::NiPoint3> generatedLocalPointsGame{};
             std::vector<TriangleData> generatedLocalTrianglesGame{};
+            std::vector<RE::NiPoint3> generatedSourceLocalPointsGame{};
+            std::vector<TriangleData> generatedSourceLocalTrianglesGame{};
             std::uint32_t generatedPointCount{ 0 };
             WeaponPartClassification semantic{};
             bool ownsShapeRef{ false };

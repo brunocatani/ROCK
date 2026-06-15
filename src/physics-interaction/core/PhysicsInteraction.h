@@ -202,6 +202,8 @@ namespace rock
             const PhysicsFrameContext& frame,
             std::array<const RE::NiAVObject*, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1>& outDrivenSourceNodes);
 
+        void restoreExpiredProviderWeaponPartDriveNodes(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
+
         grab_locomotion_authority_bridge::Output updateGrabLocomotionAuthorityBridge(float deltaSeconds, bool worldReady);
 
         HeldObjectPlayerSpaceFrame sampleHeldObjectPlayerSpaceFrame(float deltaSeconds);
@@ -390,6 +392,14 @@ namespace rock
         hand_collision_suppression_math::DelayedRestoreState _leftEquippedWeaponDropDelayedRestore{};
         weapon_debug_notification_policy::WeaponNotificationState _weaponDebugNotificationState{};
         bool _pendingEquippedWeaponPrimaryOnlyGripStart = false;
+        struct ProviderWeaponPartDriveNodeState
+        {
+            RE::NiAVObject* node{ nullptr };
+            RE::NiTransform baselineLocal{};
+            bool activeThisFrame{ false };
+        };
+        std::array<ProviderWeaponPartDriveNodeState, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> _providerWeaponPartDriveNodeStates{};
+        std::uint64_t _providerWeaponPartDriveGenerationKey{ 0 };
         static constexpr std::size_t kNativePlayerCollisionSuppressionBodyCapacity = 64;
         std::array<std::uint32_t, kNativePlayerCollisionSuppressionBodyCapacity> _nativePlayerCollisionSuppressedBodyIds{};
         std::uint32_t _nativePlayerCollisionSuppressedBodyCount = 0;

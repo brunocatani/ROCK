@@ -102,6 +102,10 @@ namespace
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSupportRole) |
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSocketRole) |
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchActionRole);
+    constexpr std::uint32_t kImplementedWeaponPartDriveMatcherFlagsV1 =
+        static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchBodyId) |
+        static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceRoot) |
+        static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceName);
     constexpr std::uint32_t kProviderInvalidBodyId = 0x7FFF'FFFFu;
 
     struct ConsumerSlot
@@ -440,13 +444,96 @@ namespace
 
     bool hasConcreteWeaponPartDriveMatcher(std::uint32_t flags, std::uint32_t bodyId, std::uintptr_t sourceRoot, const char* sourceName)
     {
-        if (!hasValidWeaponPartMatcher(flags, bodyId, sourceRoot, sourceName)) {
+        if ((flags & ~kImplementedWeaponPartDriveMatcherFlagsV1) != 0 || (flags & kImplementedWeaponPartDriveMatcherFlagsV1) == 0) {
+            return false;
+        }
+        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchBodyId)) != 0 && bodyId == kProviderInvalidBodyId) {
+            return false;
+        }
+        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceRoot)) != 0 && sourceRoot == 0) {
+            return false;
+        }
+        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceName)) != 0 &&
+            boundedStringLength(sourceName, ROCK_PROVIDER_MAX_EVIDENCE_NAME) == 0) {
             return false;
         }
         return ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceRoot)) != 0 && sourceRoot != 0) ||
                ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchBodyId)) != 0 && bodyId != kProviderInvalidBodyId) ||
                ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceName)) != 0 &&
                    boundedStringLength(sourceName, ROCK_PROVIDER_MAX_EVIDENCE_NAME) != 0);
+    }
+
+    bool isValidWeaponPartKindValue(std::uint32_t value)
+    {
+        return value <= static_cast<std::uint32_t>(WeaponPartKind::Other);
+    }
+
+    bool isValidWeaponReloadRoleValue(std::uint32_t value)
+    {
+        return value <= static_cast<std::uint32_t>(WeaponReloadRole::Receiver);
+    }
+
+    bool isValidWeaponSupportRoleValue(std::uint32_t value)
+    {
+        return value <= static_cast<std::uint32_t>(WeaponSupportGripRole::ReceiverSupport);
+    }
+
+    bool isValidWeaponSocketRoleValue(std::uint32_t value)
+    {
+        return value <= static_cast<std::uint32_t>(WeaponSocketRole::LoadingGate);
+    }
+
+    bool isValidWeaponActionRoleValue(std::uint32_t value)
+    {
+        return value <= static_cast<std::uint32_t>(WeaponActionRole::Latch);
+    }
+
+    bool hasValidWeaponPartTargetSemantics(const RockProviderWeaponPartTargetV1& target)
+    {
+        const auto flags = target.flags;
+        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchPartKind)) != 0 &&
+            !isValidWeaponPartKindValue(target.partKind)) {
+            return false;
+        }
+        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchReloadRole)) != 0 &&
+            !isValidWeaponReloadRoleValue(target.reloadRole)) {
+            return false;
+        }
+        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSupportRole)) != 0 &&
+            !isValidWeaponSupportRoleValue(target.supportRole)) {
+            return false;
+        }
+        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSocketRole)) != 0 &&
+            !isValidWeaponSocketRoleValue(target.socketRole)) {
+            return false;
+        }
+        if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchActionRole)) != 0 &&
+            !isValidWeaponActionRoleValue(target.actionRole)) {
+            return false;
+        }
+        return true;
+    }
+
+    std::size_t availableWeaponPartTargetSlotsForOwnerLocked(std::uint64_t ownerToken)
+    {
+        std::size_t available = 0;
+        for (const auto& slot : s_weaponPartTargets) {
+            if (!slot.active || slot.ownerToken == ownerToken) {
+                ++available;
+            }
+        }
+        return available;
+    }
+
+    std::size_t availableWeaponPartDriveSlotsForOwnerLocked(std::uint64_t ownerToken)
+    {
+        std::size_t available = 0;
+        for (const auto& slot : s_weaponPartDrives) {
+            if (!slot.active || slot.ownerToken == ownerToken) {
+                ++available;
+            }
+        }
+        return available;
     }
 
     bool isValidWeaponPartGrabMode(RockProviderWeaponPartGrabModeV1 mode)
@@ -1173,6 +1260,12 @@ namespace
             return RockProviderResultV1::CapacityFull;
         }
 
+        std::scoped_lock lock(s_consumerMutex, s_weaponPartMutex);
+        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::WeaponPartInteraction);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+
         for (std::uint32_t i = 0; i < targetCount; ++i) {
             const auto& target = targets[i];
             if (target.size != sizeof(RockProviderWeaponPartTargetV1)) {
@@ -1182,15 +1275,14 @@ namespace
                 return RockProviderResultV1::UnsupportedVersion;
             }
             if (!isValidWeaponPartGrabMode(target.grabMode) ||
-                !hasValidWeaponPartMatcher(target.flags, target.bodyId, target.sourceRoot, target.sourceName)) {
+                !hasValidWeaponPartMatcher(target.flags, target.bodyId, target.sourceRoot, target.sourceName) ||
+                !hasValidWeaponPartTargetSemantics(target)) {
                 return RockProviderResultV1::InvalidArgument;
             }
         }
 
-        std::scoped_lock lock(s_consumerMutex, s_weaponPartMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::WeaponPartInteraction);
-        if (ownerResult != RockProviderResultV1::Ok) {
-            return ownerResult;
+        if (targetCount > availableWeaponPartTargetSlotsForOwnerLocked(ownerToken)) {
+            return RockProviderResultV1::CapacityFull;
         }
 
         clearWeaponPartTargetsForOwnerLocked(ownerToken);
@@ -1241,6 +1333,13 @@ namespace
             return RockProviderResultV1::CapacityFull;
         }
 
+        const auto frameIndex = currentProviderFrameIndex();
+        std::scoped_lock lock(s_consumerMutex, s_weaponPartMutex);
+        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::WeaponPartInteraction);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+
         for (std::uint32_t i = 0; i < targetCount; ++i) {
             const auto& target = targets[i];
             if (target.size != sizeof(RockProviderWeaponPartDriveTargetV1)) {
@@ -1257,14 +1356,10 @@ namespace
             }
         }
 
-        const auto frameIndex = currentProviderFrameIndex();
-        std::scoped_lock lock(s_consumerMutex, s_weaponPartMutex);
-        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::WeaponPartInteraction);
-        if (ownerResult != RockProviderResultV1::Ok) {
-            return ownerResult;
-        }
-
         pruneExpiredWeaponPartDrivesLocked(frameIndex);
+        if (targetCount > availableWeaponPartDriveSlotsForOwnerLocked(ownerToken)) {
+            return RockProviderResultV1::CapacityFull;
+        }
         clearWeaponPartDrivesForOwnerLocked(ownerToken);
         for (std::uint32_t i = 0; i < targetCount; ++i) {
             const auto leaseFrames = (std::min)(targets[i].leaseFrames, ROCK_PROVIDER_MAX_WEAPON_PART_DRIVE_LEASE_FRAMES_V1);

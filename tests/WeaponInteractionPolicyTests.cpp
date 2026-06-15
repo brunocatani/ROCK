@@ -266,6 +266,43 @@ int main()
         });
     ok &= expectFalse("weapon part whitelist does not apply to other generation", otherGeneration.whitelistActive);
 
+    std::array<Target, 1> strictWeaponPartTarget{};
+    strictWeaponPartTarget[0].active = true;
+    strictWeaponPartTarget[0].ownerToken = 20;
+    strictWeaponPartTarget[0].weaponGenerationKey = 0xABC;
+    strictWeaponPartTarget[0].flags = MatchBodyId | MatchSourceName | MatchPartKind;
+    strictWeaponPartTarget[0].grabMode = GrabMode::AttachOnly;
+    strictWeaponPartTarget[0].bodyId = 42;
+    strictWeaponPartTarget[0].partKind = rock::WeaponPartKind::Bolt;
+    std::memcpy(strictWeaponPartTarget[0].sourceName.data(), "BoltNode", 8);
+
+    const auto strictMatched = resolveTarget(strictWeaponPartTarget,
+        Contact{
+            .weaponGenerationKey = 0xABC,
+            .bodyId = 42,
+            .sourceName = "BoltNode",
+            .partKind = rock::WeaponPartKind::Bolt,
+        });
+    ok &= expectTrue("weapon part target requires and accepts all requested match fields", strictMatched.matched);
+
+    const auto strictWrongName = resolveTarget(strictWeaponPartTarget,
+        Contact{
+            .weaponGenerationKey = 0xABC,
+            .bodyId = 42,
+            .sourceName = "Receiver",
+            .partKind = rock::WeaponPartKind::Bolt,
+        });
+    ok &= expectFalse("weapon part target rejects partial match with wrong source name", strictWrongName.matched);
+
+    const auto strictWrongPart = resolveTarget(strictWeaponPartTarget,
+        Contact{
+            .weaponGenerationKey = 0xABC,
+            .bodyId = 42,
+            .sourceName = "BoltNode",
+            .partKind = rock::WeaponPartKind::Receiver,
+        });
+    ok &= expectFalse("weapon part target rejects partial match with wrong semantic part", strictWrongPart.matched);
+
     using namespace rock::hand_collision_suppression_math;
     SuppressionSet<2> postDropSuppression{};
     const auto postDropSuppressionResult = beginSuppression(postDropSuppression, 42, 0);

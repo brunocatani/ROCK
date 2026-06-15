@@ -1,5 +1,7 @@
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 
+#include "api/ROCKProviderApi.h"
+#include "physics-interaction/actor/ActorEquipmentGrab.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/grab/GrabFinger.h"
@@ -20,6 +22,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <string_view>
 
 namespace rock
@@ -367,8 +370,8 @@ namespace rock
 
     RE::NiPoint3 TwoHandedGrip::resolveSupportGripWorld(RE::NiNode* weaponNode) const
     {
-        if (_hasSupportSourceLocalFrame && _supportAttachmentRoot) {
-            return transform_math::localPointToWorld(_supportAttachmentRoot->world, _offhandGripSourceLocal);
+        if (auto* supportAttachmentRoot = resolveCurrentSupportAttachmentRoot(weaponNode)) {
+            return transform_math::localPointToWorld(supportAttachmentRoot->world, _offhandGripSourceLocal);
         }
         return weaponLocalToWorld(_offhandGripLocal, weaponNode);
     }
@@ -380,8 +383,8 @@ namespace rock
 
     RE::NiPoint3 TwoHandedGrip::resolveSupportNormalWeaponLocal(RE::NiNode* weaponNode) const
     {
-        if (_hasSupportSourceLocalFrame && _supportAttachmentRoot && weaponNode) {
-            const RE::NiPoint3 supportNormalWorld = transform_math::localVectorToWorld(_supportAttachmentRoot->world, _supportNormalSourceLocal);
+        if (auto* supportAttachmentRoot = resolveCurrentSupportAttachmentRoot(weaponNode)) {
+            const RE::NiPoint3 supportNormalWorld = transform_math::localVectorToWorld(supportAttachmentRoot->world, _supportNormalSourceLocal);
             return transform_math::worldVectorToLocal(weaponNode->world, supportNormalWorld);
         }
         return _supportNormalLocal;
@@ -389,13 +392,21 @@ namespace rock
 
     RE::NiTransform TwoHandedGrip::resolveSupportHandWorld(RE::NiNode* weaponNode) const
     {
-        if (_hasSupportSourceLocalFrame && _supportAttachmentRoot) {
-            return transform_math::composeTransforms(_supportAttachmentRoot->world, _supportHandSourceLocal);
+        if (auto* supportAttachmentRoot = resolveCurrentSupportAttachmentRoot(weaponNode)) {
+            return transform_math::composeTransforms(supportAttachmentRoot->world, _supportHandSourceLocal);
         }
         if (!weaponNode) {
             return RE::NiTransform{};
         }
         return weapon_support_authority_policy::buildVisualOnlySupportHandWorld(weaponNode->world, _supportHandWeaponLocal);
+    }
+
+    RE::NiAVObject* TwoHandedGrip::resolveCurrentSupportAttachmentRoot(RE::NiNode* weaponNode) const
+    {
+        if (!_hasSupportSourceLocalFrame || !_supportAttachmentRoot || !weaponNode) {
+            return nullptr;
+        }
+        return actor_equipment_grab::nodeContainsNode(weaponNode, _supportAttachmentRoot, 64) ? _supportAttachmentRoot : nullptr;
     }
 
     void TwoHandedGrip::update(
@@ -447,7 +458,7 @@ namespace rock
                 }
             }
             if (weapon_two_handed_grip_math::canStartSupportGrip(leftTouchingSupport, leftGripPressed, supportHandHoldingObject)) {
-                transitionToGripping(interactionWeaponNode, decision, weaponCollision, supportAuthorityMode);
+                transitionToGripping(interactionWeaponNode, decision, weaponCollision, supportAuthorityMode, runtimeState.providerPartAuthority);
             }
             break;
 
@@ -457,6 +468,9 @@ namespace rock
                 transitionToInactive(false);
             } else if (!weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(_activeWeaponGenerationKey, currentWeaponGenerationKey)) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because weapon generation changed during support grip");
+                transitionToInactive(false);
+            } else if (!providerPartAuthorityStillCurrent(currentWeaponGenerationKey)) {
+                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because provider weapon-part target is no longer current");
                 transitionToInactive(false);
             } else if (!runtimeState.supportGripAllowed) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because offhand reservation disabled support grip");
@@ -490,6 +504,9 @@ namespace rock
             } else if (!weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(_activeWeaponGenerationKey, currentWeaponGenerationKey)) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing primary-detached authority because weapon generation changed");
                 transitionToInactive(false);
+            } else if (!providerPartAuthorityStillCurrent(currentWeaponGenerationKey)) {
+                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing primary-detached authority because provider weapon-part target is no longer current");
+                transitionToInactive(false);
             } else if (!runtimeState.supportGripAllowed) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing primary-detached authority because offhand reservation disabled support grip");
                 transitionToInactive(false);
@@ -518,7 +535,7 @@ namespace rock
             } else if (!primaryDetachEnabled) {
                 transitionToInactive(false);
             } else if (leftTouchingSupport && weapon_two_handed_grip_math::canStartSupportGrip(leftTouchingSupport, leftGripPressed, supportHandHoldingObject)) {
-                transitionToGripping(interactionWeaponNode, decision, weaponCollision, supportAuthorityMode);
+                transitionToGripping(interactionWeaponNode, decision, weaponCollision, supportAuthorityMode, runtimeState.providerPartAuthority);
             } else {
                 updatePrimaryOnlyGrip(_activeWeaponNode, currentWeaponGenerationKey, primaryGripInput);
             }
@@ -546,6 +563,8 @@ namespace rock
         _supportNormalLocal = {};
         _offhandGripSourceLocal = {};
         _supportNormalSourceLocal = {};
+        _supportHandSourceLocal = {};
+        _supportAttachmentWeaponLocal = {};
         _authorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
         _supportGripPose = WeaponGripPoseId::BarrelWrap;
         _supportPartKind = WeaponPartKind::Other;
@@ -554,11 +573,14 @@ namespace rock
         _activeSourceRoot = nullptr;
         _supportAttachmentRoot = nullptr;
         _activeWeaponGenerationKey = 0;
+        clearProviderPartAuthority();
         _weaponNodeLocalBaseline = {};
         _hasWeaponNodeLocalBaseline = false;
         _primaryHandWeaponLocal = {};
         _supportHandWeaponLocal = {};
         _hasHandWeaponLocalFrames = false;
+        _hasSupportSourceLocalFrame = false;
+        _hasSupportAttachmentWeaponLocal = false;
         _supportFingerPose = {};
         _supportFingerSplayRadians = {};
         _hasSupportFingerPose = false;
@@ -679,7 +701,8 @@ namespace rock
         RE::NiNode* weaponNode,
         const WeaponInteractionDecision& decision,
         const WeaponCollision& weaponCollision,
-        weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode)
+        weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
+        const WeaponProviderPartAuthority& providerPartAuthority)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::TwoHandedGripStart);
 
@@ -700,6 +723,7 @@ namespace rock
         _activeSourceRoot = sourceRoot;
         _supportAttachmentRoot = supportAttachmentRoot;
         _activeWeaponGenerationKey = decision.weaponGenerationKey;
+        _providerPartAuthority = providerPartAuthority.active ? providerPartAuthority : WeaponProviderPartAuthority{};
         _weaponNodeLocalBaseline = weaponNode->local;
         _hasWeaponNodeLocalBaseline = true;
         _hasSupportFingerPose = false;
@@ -711,7 +735,9 @@ namespace rock
         _offhandGripSourceLocal = {};
         _supportNormalSourceLocal = {};
         _supportHandSourceLocal = {};
+        _supportAttachmentWeaponLocal = {};
         _hasSupportSourceLocalFrame = false;
+        _hasSupportAttachmentWeaponLocal = false;
         _primaryGripConfidence = 0.0f;
         resetLockedHandVisualLerp();
         clearPrimaryGripPose(primaryHandIsLeft);
@@ -769,7 +795,9 @@ namespace rock
             _offhandGripSourceLocal = transform_math::worldPointToLocal(supportAttachmentRoot->world, supportGripWorldPoint);
             _supportNormalSourceLocal = transform_math::worldVectorToLocal(supportAttachmentRoot->world, palmDir);
             _supportHandSourceLocal = transform_math::composeTransforms(transform_math::invertTransform(supportAttachmentRoot->world), adjustedSupportTransform);
+            _supportAttachmentWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(sourceRoot->world), supportAttachmentRoot->world);
             _hasSupportSourceLocalFrame = true;
+            _hasSupportAttachmentWeaponLocal = true;
         }
         const RE::NiPoint3 primaryToSupportWorld = sub(supportGripWorldPoint, primaryGripWorldPoint);
         _lockedGripSeparationWorld = std::sqrt(dot(primaryToSupportWorld, primaryToSupportWorld));
@@ -901,6 +929,7 @@ namespace rock
         _supportNormalLocal = {};
         _offhandGripSourceLocal = {};
         _supportNormalSourceLocal = {};
+        _supportAttachmentWeaponLocal = {};
         _lockedGripSeparationWorld = 0.0f;
         _authorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
         _supportGripPose = WeaponGripPoseId::BarrelWrap;
@@ -912,8 +941,10 @@ namespace rock
         _primaryHandWeaponLocal = {};
         _supportHandWeaponLocal = {};
         _supportHandSourceLocal = {};
+        _supportAttachmentWeaponLocal = {};
         _hasHandWeaponLocalFrames = false;
         _hasSupportSourceLocalFrame = false;
+        _hasSupportAttachmentWeaponLocal = false;
         _supportFingerPose = {};
         _supportFingerSplayRadians = {};
         _hasSupportFingerPose = false;
@@ -943,6 +974,42 @@ namespace rock
         updateFullWeaponAuthorityGrip(weaponNode, dt);
     }
 
+    bool TwoHandedGrip::providerPartAuthorityStillCurrent(std::uint64_t currentWeaponGenerationKey) const
+    {
+        if (!_providerPartAuthority.active) {
+            return true;
+        }
+        if (currentWeaponGenerationKey == 0 || currentWeaponGenerationKey != _providerPartAuthority.weaponGenerationKey) {
+            return false;
+        }
+
+        ::rock::provider::RockProviderWeaponPartTargetQueryV1 query{};
+        query.weaponGenerationKey = _providerPartAuthority.weaponGenerationKey;
+        query.bodyId = _providerPartAuthority.bodyId;
+        query.partKind = _providerPartAuthority.partKind;
+        query.reloadRole = _providerPartAuthority.reloadRole;
+        query.supportRole = _providerPartAuthority.supportRole;
+        query.socketRole = _providerPartAuthority.socketRole;
+        query.actionRole = _providerPartAuthority.actionRole;
+        query.sourceRoot = _providerPartAuthority.sourceRoot;
+        std::memcpy(query.sourceName, _providerPartAuthority.sourceName.data(), _providerPartAuthority.sourceName.size());
+        query.sourceName[sizeof(query.sourceName) - 1] = '\0';
+
+        ::rock::provider::RockProviderWeaponPartTargetResolutionV1 resolution{};
+        if (!::rock::provider::resolveWeaponPartTargetV1(query, resolution)) {
+            return false;
+        }
+        return resolution.matched != 0 &&
+               resolution.ownerToken == _providerPartAuthority.ownerToken &&
+               resolution.groupId == _providerPartAuthority.groupId &&
+               static_cast<std::uint32_t>(resolution.grabMode) == _providerPartAuthority.grabMode;
+    }
+
+    void TwoHandedGrip::clearProviderPartAuthority()
+    {
+        _providerPartAuthority = {};
+    }
+
     void TwoHandedGrip::updateFullWeaponAuthorityGrip(RE::NiNode* weaponNode, float dt)
     {
         constexpr bool supportHandIsLeft = true;
@@ -963,12 +1030,15 @@ namespace rock
         RE::NiPoint3 supportController = computeGrabLegacyPalmPivotAWorldFromHandBasis(supportTransform, supportHandIsLeft);
 
         const RE::NiPoint3 currentSupportWorld = resolveSupportGripWorld(weaponNode);
+        const RE::NiPoint3 currentPrimaryGripWorld = transform_math::localPointToWorld(weaponNode->world, _primaryGripLocal);
+        const float currentGripSeparationWorld = std::sqrt(dot(sub(currentSupportWorld, currentPrimaryGripWorld), sub(currentSupportWorld, currentPrimaryGripWorld)));
+        const float lockedGripSeparationWorld = _hasSupportSourceLocalFrame ? currentGripSeparationWorld : _lockedGripSeparationWorld;
         const RE::NiPoint3 supportGripLocal = resolveSupportGripWeaponLocal(weaponNode);
         const RE::NiPoint3 lockedSupportControllerTarget = makeLockedSupportGripTarget(
             primaryController,
             supportController,
             currentSupportWorld,
-            _lockedGripSeparationWorld,
+            lockedGripSeparationWorld,
             0.001f);
         const RE::NiPoint3 blendedSupportTarget = lerpPoint(currentSupportWorld, lockedSupportControllerTarget, _rotationBlend);
 
@@ -1100,11 +1170,14 @@ namespace rock
         clearPrimaryDetachVisualAuthority(primaryHandIsLeft);
         restoreFrikOffhandGrip();
         restoreFrikPrimaryWeaponPose();
+        clearProviderPartAuthority();
         _hasSolvedWeaponTransform = false;
         _hasHandWeaponLocalFrames = false;
         _supportHandWeaponLocal = {};
         _supportHandSourceLocal = {};
+        _supportAttachmentWeaponLocal = {};
         _hasSupportSourceLocalFrame = false;
+        _hasSupportAttachmentWeaponLocal = false;
         _offhandGripSourceLocal = {};
         _supportNormalSourceLocal = {};
         _supportAttachmentRoot = nullptr;
@@ -1254,8 +1327,14 @@ namespace rock
             return;
         }
 
-        const RE::NiTransform solvedWeaponWorld =
-            transform_math::composeTransforms(supportTransform, transform_math::invertTransform(_supportHandWeaponLocal));
+        RE::NiTransform solvedWeaponWorld{};
+        if (_hasSupportSourceLocalFrame && _hasSupportAttachmentWeaponLocal && resolveCurrentSupportAttachmentRoot(weaponNode)) {
+            const RE::NiTransform solvedSourceWorld =
+                transform_math::composeTransforms(supportTransform, transform_math::invertTransform(_supportHandSourceLocal));
+            solvedWeaponWorld = transform_math::composeTransforms(solvedSourceWorld, transform_math::invertTransform(_supportAttachmentWeaponLocal));
+        } else {
+            solvedWeaponWorld = transform_math::composeTransforms(supportTransform, transform_math::invertTransform(_supportHandWeaponLocal));
+        }
         if (!isFiniteTransform(solvedWeaponWorld)) {
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing primary-detached grip because support-only weapon solve produced invalid transform");
