@@ -117,7 +117,12 @@ namespace rock
 
         void invalidateForScaleChange(RE::hknpWorld* world);
 
-        void updateBodiesFromCurrentSourceTransforms(RE::hknpWorld* world, RE::NiAVObject* fallbackWeaponNode, float sourceDeltaSeconds);
+        void updateBodiesFromCurrentSourceTransforms(
+            RE::hknpWorld* world,
+            RE::NiAVObject* fallbackWeaponNode,
+            float sourceDeltaSeconds,
+            const RE::NiAVObject* const* drivenSourceNodes = nullptr,
+            std::size_t drivenSourceNodeCount = 0);
 
         void flushPendingPhysicsDrive(RE::hknpWorld* world, const havok_physics_timing::PhysicsTimingSample& timing);
 
@@ -135,6 +140,7 @@ namespace rock
             std::vector<TriangleData> localTrianglesGame;
             std::vector<std::vector<RE::NiPoint3>> childLocalPointCloudsGame;
             RE::NiPoint3 localCenterGame{};
+            RE::NiPoint3 sourceLocalCenterGame{};
             RE::NiPoint3 localMinGame{};
             RE::NiPoint3 localMaxGame{};
             RE::NiAVObject* driveRoot{ nullptr };
@@ -153,6 +159,7 @@ namespace rock
             std::string sourceName;
             std::string sourceRootName;
             RE::NiPoint3 generatedLocalCenterGame{};
+            RE::NiPoint3 generatedSourceLocalCenterGame{};
             RE::NiPoint3 generatedLocalMinGame{};
             RE::NiPoint3 generatedLocalMaxGame{};
             std::vector<RE::NiPoint3> generatedLocalPointsGame{};

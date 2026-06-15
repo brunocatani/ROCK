@@ -179,6 +179,14 @@ namespace rock
 
         static RE::NiPoint3 weaponLocalToWorld(const RE::NiPoint3& localPos, const RE::NiAVObject* weaponNode);
 
+        RE::NiPoint3 resolveSupportGripWorld(RE::NiNode* weaponNode) const;
+
+        RE::NiPoint3 resolveSupportGripWeaponLocal(RE::NiNode* weaponNode) const;
+
+        RE::NiPoint3 resolveSupportNormalWeaponLocal(RE::NiNode* weaponNode) const;
+
+        RE::NiTransform resolveSupportHandWorld(RE::NiNode* weaponNode) const;
+
         struct LockedHandVisualLerpState
         {
             bool active = false;
@@ -209,6 +217,10 @@ namespace rock
 
         RE::NiPoint3 _supportNormalLocal{};
 
+        RE::NiPoint3 _offhandGripSourceLocal{};
+
+        RE::NiPoint3 _supportNormalSourceLocal{};
+
         float _lockedGripSeparationWorld{ 0.0f };
 
         WeaponGripPoseId _supportGripPose{ WeaponGripPoseId::BarrelWrap };
@@ -231,7 +243,11 @@ namespace rock
 
         RE::NiTransform _supportHandWeaponLocal{};
 
+        RE::NiTransform _supportHandSourceLocal{};
+
         bool _hasHandWeaponLocalFrames{ false };
+
+        bool _hasSupportSourceLocalFrame{ false };
 
         LockedHandVisualLerpState _primaryHandVisualLerp{};
         LockedHandVisualLerpState _supportHandVisualLerp{};
@@ -248,6 +264,7 @@ namespace rock
 
         RE::NiNode* _activeWeaponNode{ nullptr };
         RE::NiAVObject* _activeSourceRoot{ nullptr };
+        RE::NiAVObject* _supportAttachmentRoot{ nullptr };
         std::uint64_t _activeWeaponGenerationKey{ 0 };
         RE::NiTransform _weaponNodeLocalBaseline{};
         bool _hasWeaponNodeLocalBaseline{ false };

@@ -1,10 +1,13 @@
 #include "physics-interaction/collision/ContactPipelinePolicy.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
+#include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 
+#include <array>
 #include <cstdio>
 #include <cstdint>
+#include <cstring>
 
 namespace
 {
@@ -191,6 +194,77 @@ int main()
         shouldSurrenderReleaseToVirtualHolsters(SourceHand::Right, false));
     ok &= expectFalse("unknown release source never surrenders to VirtualHolsters",
         shouldSurrenderReleaseToVirtualHolsters(SourceHand::None, true));
+
+    using namespace rock::weapon_part_runtime;
+    std::array<Target, 3> weaponPartTargets{};
+    weaponPartTargets[0].active = true;
+    weaponPartTargets[0].ownerToken = 10;
+    weaponPartTargets[0].weaponGenerationKey = 0xABC;
+    weaponPartTargets[0].flags = MatchBodyId;
+    weaponPartTargets[0].grabMode = GrabMode::AttachOnly;
+    weaponPartTargets[0].bodyId = 42;
+    weaponPartTargets[0].priority = 1;
+    weaponPartTargets[0].groupId = 7;
+    weaponPartTargets[1].active = true;
+    weaponPartTargets[1].ownerToken = 11;
+    weaponPartTargets[1].weaponGenerationKey = 0xABC;
+    weaponPartTargets[1].flags = MatchBodyId;
+    weaponPartTargets[1].grabMode = GrabMode::FullTwoHandAuthority;
+    weaponPartTargets[1].bodyId = 42;
+    weaponPartTargets[1].priority = 2;
+    weaponPartTargets[2].active = true;
+    weaponPartTargets[2].ownerToken = 12;
+    weaponPartTargets[2].weaponGenerationKey = 0xABC;
+    weaponPartTargets[2].flags = MatchSourceName;
+    weaponPartTargets[2].grabMode = GrabMode::AttachOnly;
+    std::memcpy(weaponPartTargets[2].sourceName.data(), "BoltNode", 8);
+    weaponPartTargets[2].priority = 3;
+
+    const auto unmatchedWhitelist = resolveTarget(weaponPartTargets,
+        Contact{
+            .weaponGenerationKey = 0xABC,
+            .bodyId = 100,
+            .sourceRoot = 0x900,
+            .sourceName = "Receiver",
+        });
+    ok &= expectTrue("weapon part whitelist becomes active for matching generation", unmatchedWhitelist.whitelistActive);
+    ok &= expectFalse("weapon part whitelist fails closed for unregistered contact", unmatchedWhitelist.matched);
+
+    const auto matchedBody = resolveTarget(weaponPartTargets,
+        Contact{
+            .weaponGenerationKey = 0xABC,
+            .bodyId = 42,
+            .sourceRoot = 0x900,
+            .sourceName = "Receiver",
+        });
+    ok &= expectTrue("weapon part body target matches", matchedBody.matched);
+    ok &= expectEqual("higher priority matching target selects full authority",
+        matchedBody.grabMode,
+        GrabMode::FullTwoHandAuthority);
+    ok &= expectEqual("matching target owner is preserved",
+        matchedBody.ownerToken,
+        static_cast<std::uint64_t>(11));
+
+    const auto matchedName = resolveTarget(weaponPartTargets,
+        Contact{
+            .weaponGenerationKey = 0xABC,
+            .bodyId = 100,
+            .sourceRoot = 0x900,
+            .sourceName = "BoltNode",
+        });
+    ok &= expectTrue("weapon part source-name target matches", matchedName.matched);
+    ok &= expectEqual("source-name target selects attach-only mode",
+        matchedName.grabMode,
+        GrabMode::AttachOnly);
+
+    const auto otherGeneration = resolveTarget(weaponPartTargets,
+        Contact{
+            .weaponGenerationKey = 0xDEF,
+            .bodyId = 100,
+            .sourceRoot = 0x900,
+            .sourceName = "Receiver",
+        });
+    ok &= expectFalse("weapon part whitelist does not apply to other generation", otherGeneration.whitelistActive);
 
     using namespace rock::hand_collision_suppression_math;
     SuppressionSet<2> postDropSuppression{};

@@ -175,6 +175,16 @@ Require-Text 'src/api/ROCKProviderApi.h' 'providerApiByteSize' `
     'v1 provider limits must expose the returned function table byte size for appended-slot negotiation.'
 Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_HAND_INPUT_SUPPRESSION_TABLE_BYTES' `
     'SDK must expose a table-size guard for hand input suppression slots.'
+Require-Text 'src/api/ROCKProviderApi.h' 'WeaponPartInteraction' `
+    'v1 must expose weapon part interaction capability and feature names.'
+Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderWeaponPartTargetV1' `
+    'v1 must expose weapon part target registrations.'
+Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderWeaponPartDriveTargetV1' `
+    'v1 must expose weapon part drive targets.'
+Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_WEAPON_PART_INTERACTION_TABLE_BYTES' `
+    'SDK must expose a table-size guard for weapon part interaction slots.'
+Require-Text 'src/api/ROCKProviderApi.h' 'supportsWeaponPartInteractionV1' `
+    'SDK must expose safe feature/table helpers for weapon part interaction.'
 Require-Text 'src/api/ROCKProviderApi.h' 'supportsForceGrabCommandV1' `
     'SDK must expose safe feature/table helpers for force-grab commands.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'providerApiByteSize\s*=\s*static_cast<std::uint32_t>\(sizeof\(RockProviderApi\)\)' `
@@ -250,7 +260,11 @@ $expectedProviderFunctions = [string[]]@(
     'requestForceReleaseV1',
     'requestThrownDropV1',
     'setHandInputSuppressionV1',
-    'clearHandInputSuppressionV1'
+    'clearHandInputSuppressionV1',
+    'setWeaponPartTargetsV1',
+    'clearWeaponPartTargetsV1',
+    'setWeaponPartDriveTargetsV1',
+    'clearWeaponPartDriveTargetsV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 

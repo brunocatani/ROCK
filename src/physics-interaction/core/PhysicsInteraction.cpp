@@ -905,6 +905,80 @@ namespace rock
             target.scale = source.scale;
         }
 
+        RE::NiTransform providerTransformToNi(const ::rock::provider::RockProviderTransform& source)
+        {
+            RE::NiTransform result{};
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    result.rotate.entry[row][column] = source.rotate[static_cast<std::size_t>(row * 3 + column)];
+                }
+            }
+            result.translate.x = source.translate[0];
+            result.translate.y = source.translate[1];
+            result.translate.z = source.translate[2];
+            result.scale = source.scale;
+            return result;
+        }
+
+        bool finiteNiTransform(const RE::NiTransform& transform)
+        {
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    if (!std::isfinite(transform.rotate.entry[row][column])) {
+                        return false;
+                    }
+                }
+            }
+            return std::isfinite(transform.translate.x) &&
+                   std::isfinite(transform.translate.y) &&
+                   std::isfinite(transform.translate.z) &&
+                   std::isfinite(transform.scale) &&
+                   std::abs(transform.scale) > 0.0001f;
+        }
+
+        std::string_view providerFixedStringView(const char* value, std::size_t capacity)
+        {
+            if (!value) {
+                return {};
+            }
+            for (std::size_t i = 0; i < capacity; ++i) {
+                if (value[i] == '\0') {
+                    return std::string_view(value, i);
+                }
+            }
+            return std::string_view(value, capacity);
+        }
+
+        bool nodeNameEquals(RE::NiAVObject* node, std::string_view name)
+        {
+            if (!node || name.empty()) {
+                return false;
+            }
+            const char* nodeName = node->name.c_str();
+            return nodeName && std::string_view(nodeName) == name;
+        }
+
+        RE::NiAVObject* findWeaponNodeBySourceName(RE::NiAVObject* root, std::string_view sourceName, int maxDepth = 32)
+        {
+            if (!root || sourceName.empty() || maxDepth < 0) {
+                return nullptr;
+            }
+            if (nodeNameEquals(root, sourceName)) {
+                return root;
+            }
+            auto* node = root->IsNode();
+            if (!node) {
+                return nullptr;
+            }
+            auto& children = node->GetRuntimeData().children;
+            for (std::uint16_t i = 0; i < children.size(); ++i) {
+                if (auto* found = findWeaponNodeBySourceName(children[i].get(), sourceName, maxDepth - 1)) {
+                    return found;
+                }
+            }
+            return nullptr;
+        }
+
         std::uint32_t providerHandStateFlags(const Hand& hand, bool isLeft)
         {
             std::uint32_t flags = 0;
@@ -929,6 +1003,30 @@ namespace rock
 
             std::snprintf(target, targetSize, "%s", source.c_str());
             target[targetSize - 1] = '\0';
+        }
+
+        void copyProviderString(char* target, std::size_t targetSize, const char* source)
+        {
+            if (!target || targetSize == 0) {
+                return;
+            }
+            std::snprintf(target, targetSize, "%s", source ? source : "");
+            target[targetSize - 1] = '\0';
+        }
+
+        ::rock::provider::RockProviderWeaponPartTargetQueryV1 makeProviderWeaponPartTargetQuery(const WeaponInteractionContact& contact)
+        {
+            ::rock::provider::RockProviderWeaponPartTargetQueryV1 query{};
+            query.weaponGenerationKey = contact.weaponGenerationKey;
+            query.bodyId = contact.bodyId;
+            query.partKind = static_cast<std::uint32_t>(contact.partKind);
+            query.reloadRole = static_cast<std::uint32_t>(contact.reloadRole);
+            query.supportRole = static_cast<std::uint32_t>(contact.supportGripRole);
+            query.socketRole = static_cast<std::uint32_t>(contact.socketRole);
+            query.actionRole = static_cast<std::uint32_t>(contact.actionRole);
+            query.sourceRoot = reinterpret_cast<std::uintptr_t>(contact.sourceRoot);
+            copyProviderString(query.sourceName, sizeof(query.sourceName), contact.sourceRoot ? contact.sourceRoot->name.c_str() : "");
+            return query;
         }
 
         ::rock::provider::RockProviderPoint3 makeProviderPoint(const WeaponEvidencePoint3& point)
@@ -2399,6 +2497,14 @@ namespace rock
                 providerInteractionState.supportGripAllowed = false;
             }
 
+            ::rock::provider::RockProviderWeaponPartTargetResolutionV1 weaponPartResolution{};
+            const bool weaponPartWhitelistActive = leftWeaponContact.valid &&
+                ::rock::provider::resolveWeaponPartTargetV1(makeProviderWeaponPartTargetQuery(leftWeaponContact), weaponPartResolution) &&
+                weaponPartResolution.whitelistActive != 0;
+            if (weaponPartWhitelistActive && weaponPartResolution.matched == 0) {
+                providerInteractionState.supportGripAllowed = false;
+            }
+
             const WeaponInteractionDecision leftWeaponDecision = routeWeaponInteraction(leftWeaponContact, providerInteractionState);
             const std::uint64_t currentWeaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey();
             const auto weaponNotificationKey = weapon_debug_notification_policy::makeWeaponNotificationKey(
@@ -2407,7 +2513,14 @@ namespace rock
                 leftWeaponContactSource);
 
             const bool leftHandHoldingObject = _leftHand.isHolding();
-            const auto supportAuthorityMode = resolveEquippedWeaponSupportAuthorityMode(weaponNode);
+            auto supportAuthorityMode = resolveEquippedWeaponSupportAuthorityMode(weaponNode);
+            if (weaponPartWhitelistActive && weaponPartResolution.matched != 0) {
+                if (weaponPartResolution.grabMode == ::rock::provider::RockProviderWeaponPartGrabModeV1::FullTwoHandAuthority) {
+                    supportAuthorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
+                } else if (weaponPartResolution.grabMode == ::rock::provider::RockProviderWeaponPartGrabModeV1::AttachOnly) {
+                    supportAuthorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport;
+                }
+            }
             EquippedWeaponPrimaryGripInput primaryGripInput{};
             GrabButtonState primaryGrabState{};
             bool primaryGrabStateRead = false;
@@ -2483,6 +2596,16 @@ namespace rock
 
             if (primaryDetachFeatureAvailable && !inputBlockingMenuActive && primaryGrabDeferredForVirtualHolsters && _twoHandedGrip.canUsePrimaryDetachInput()) {
                 primaryGripInput.held = true;
+            }
+
+            std::array<const RE::NiAVObject*, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> drivenSourceNodes{};
+            std::size_t drivenSourceNodeCount = 0;
+            if (weaponNode) {
+                drivenSourceNodeCount = applyProviderWeaponPartDrives(
+                    weaponNode,
+                    currentWeaponGenerationKey,
+                    frame,
+                    drivenSourceNodes);
             }
 
             _twoHandedGrip.update(
@@ -2630,7 +2753,12 @@ namespace rock
 
             if (weaponNode) {
                 performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponCollisionTransforms);
-                _weaponCollision.updateBodiesFromCurrentSourceTransforms(hknp, weaponNode, frame.deltaSeconds);
+                _weaponCollision.updateBodiesFromCurrentSourceTransforms(
+                    hknp,
+                    weaponNode,
+                    frame.deltaSeconds,
+                    drivenSourceNodes.data(),
+                    drivenSourceNodeCount);
             }
             if (f4vr::isNodeVisible(weaponNode)) {
                 applyFinalWeaponMuzzleAuthority();
@@ -4727,6 +4855,126 @@ namespace rock
             dispatchGrabCommittedEvent(isLeft, heldRef, primaryBodyId, frame.hknpWorld);
             complete(RockProviderInteractionCommandStateV1::Succeeded, RockProviderInteractionFailureV1::None);
         }
+    }
+
+    std::size_t PhysicsInteraction::applyProviderWeaponPartDrives(
+        RE::NiNode* weaponNode,
+        std::uint64_t currentWeaponGenerationKey,
+        const PhysicsFrameContext& frame,
+        std::array<const RE::NiAVObject*, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1>& outDrivenSourceNodes)
+    {
+        outDrivenSourceNodes = {};
+        if (!weaponNode || currentWeaponGenerationKey == 0 || !frame.worldReady) {
+            return 0;
+        }
+
+        std::array<::rock::provider::RockProviderWeaponPartDriveTargetV1, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> driveTargets{};
+        const std::uint32_t driveCount = ::rock::provider::copyWeaponPartDriveTargetsV1(
+            driveTargets.data(),
+            static_cast<std::uint32_t>(driveTargets.size()));
+        if (driveCount == 0) {
+            return 0;
+        }
+
+        struct AppliedNode
+        {
+            RE::NiAVObject* node{ nullptr };
+            std::uint32_t priority{ 0 };
+        };
+
+        std::array<AppliedNode, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> appliedNodes{};
+        std::size_t appliedNodeCount = 0;
+
+        auto resolveDriveNode = [&](const ::rock::provider::RockProviderWeaponPartDriveTargetV1& drive) -> RE::NiAVObject* {
+            if (drive.weaponGenerationKey != 0 && drive.weaponGenerationKey != currentWeaponGenerationKey) {
+                return nullptr;
+            }
+
+            if ((drive.flags & static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchSourceRoot)) != 0 && drive.sourceRoot != 0) {
+                auto* node = reinterpret_cast<RE::NiAVObject*>(drive.sourceRoot);
+                if (node && actor_equipment_grab::nodeContainsNode(weaponNode, node, 64)) {
+                    return node;
+                }
+                return nullptr;
+            }
+
+            if ((drive.flags & static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchBodyId)) != 0 && drive.bodyId != INVALID_CONTACT_BODY_ID) {
+                WeaponCollisionProfileEvidenceDescriptor descriptor{};
+                RE::NiAVObject* sourceNode = nullptr;
+                if (_weaponCollision.tryGetProfileEvidenceDescriptorForBodyId(drive.bodyId, descriptor, sourceNode) &&
+                    sourceNode &&
+                    descriptor.weaponGenerationKey == currentWeaponGenerationKey &&
+                    actor_equipment_grab::nodeContainsNode(weaponNode, sourceNode, 64)) {
+                    return sourceNode;
+                }
+                return nullptr;
+            }
+
+            const auto sourceName = providerFixedStringView(drive.sourceName, ::rock::provider::ROCK_PROVIDER_MAX_EVIDENCE_NAME);
+            if ((drive.flags & static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchSourceName)) != 0 && !sourceName.empty()) {
+                return findWeaponNodeBySourceName(weaponNode, sourceName, 32);
+            }
+
+            return nullptr;
+        };
+
+        auto shouldApplyPriority = [&](RE::NiAVObject* node, std::uint32_t priority) {
+            for (std::size_t i = 0; i < appliedNodeCount; ++i) {
+                if (appliedNodes[i].node != node) {
+                    continue;
+                }
+                if (priority < appliedNodes[i].priority) {
+                    return false;
+                }
+                appliedNodes[i].priority = priority;
+                return true;
+            }
+            if (appliedNodeCount < appliedNodes.size()) {
+                appliedNodes[appliedNodeCount++] = AppliedNode{ .node = node, .priority = priority };
+                return true;
+            }
+            return false;
+        };
+
+        std::size_t drivenSourceNodeCount = 0;
+        for (std::uint32_t i = 0; i < driveCount && i < driveTargets.size(); ++i) {
+            const auto& drive = driveTargets[i];
+            auto* sourceNode = resolveDriveNode(drive);
+            if (!sourceNode || !sourceNode->parent || !shouldApplyPriority(sourceNode, drive.priority)) {
+                continue;
+            }
+
+            const RE::NiTransform requestedLocal = providerTransformToNi(drive.targetTransform);
+            if (!finiteNiTransform(requestedLocal)) {
+                continue;
+            }
+
+            RE::NiTransform desiredWorld{};
+            switch (drive.driveSpace) {
+            case ::rock::provider::RockProviderWeaponPartDriveSpaceV1::SourceParentLocal:
+                desiredWorld = transform_math::composeTransforms(sourceNode->parent->world, requestedLocal);
+                break;
+            case ::rock::provider::RockProviderWeaponPartDriveSpaceV1::WeaponRootLocal:
+            default:
+                desiredWorld = transform_math::composeTransforms(weaponNode->world, requestedLocal);
+                break;
+            }
+            if (!finiteNiTransform(desiredWorld)) {
+                continue;
+            }
+
+            sourceNode->local = transform_math::composeTransforms(transform_math::invertTransform(sourceNode->parent->world), desiredWorld);
+            if (!finiteNiTransform(sourceNode->local)) {
+                continue;
+            }
+            f4vr::updateTransformsDown(sourceNode, true);
+
+            if (drivenSourceNodeCount < outDrivenSourceNodes.size()) {
+                outDrivenSourceNodes[drivenSourceNodeCount++] = sourceNode;
+            }
+        }
+
+        return drivenSourceNodeCount;
     }
 
     grab_locomotion_authority_bridge::Output PhysicsInteraction::updateGrabLocomotionAuthorityBridge(float deltaSeconds, bool worldReady)

@@ -44,6 +44,9 @@ namespace rock::provider
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_COMPLETED_INTERACTION_COMMANDS_V1 = 64;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_INPUT_SUPPRESSIONS_V1 = 32;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_INPUT_SUPPRESSION_LEASE_FRAMES_V1 = 120;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_TARGETS_V1 = 128;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1 = 64;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_WEAPON_PART_DRIVE_LEASE_FRAMES_V1 = 120;
 
     enum class RockProviderHand : std::uint32_t
     {
@@ -224,6 +227,7 @@ namespace rock::provider
         OffhandReservation = 1u << 3,
         InteractionCommands = 1u << 4,
         HandInputSuppression = 1u << 5,
+        WeaponPartInteraction = 1u << 6,
     };
 
     enum class RockProviderFeatureBitV1 : std::uint32_t
@@ -242,6 +246,7 @@ namespace rock::provider
         ForceReleaseCommand = 1u << 12,
         ThrownDropCommand = 1u << 13,
         HandInputSuppression = 1u << 14,
+        WeaponPartInteraction = 1u << 15,
     };
 
     enum class RockProviderInteractionCommandKindV1 : std::uint32_t
@@ -318,6 +323,32 @@ namespace rock::provider
             static_cast<std::uint32_t>(SuppressGameplayCandidates),
     };
 
+    enum class RockProviderWeaponPartGrabModeV1 : std::uint32_t
+    {
+        None = 0,
+        FullTwoHandAuthority = 1,
+        AttachOnly = 2,
+    };
+
+    enum class RockProviderWeaponPartTargetFlagV1 : std::uint32_t
+    {
+        None = 0,
+        MatchBodyId = 1u << 0,
+        MatchSourceRoot = 1u << 1,
+        MatchSourceName = 1u << 2,
+        MatchPartKind = 1u << 3,
+        MatchReloadRole = 1u << 4,
+        MatchSupportRole = 1u << 5,
+        MatchSocketRole = 1u << 6,
+        MatchActionRole = 1u << 7,
+    };
+
+    enum class RockProviderWeaponPartDriveSpaceV1 : std::uint32_t
+    {
+        WeaponRootLocal = 0,
+        SourceParentLocal = 1,
+    };
+
     [[nodiscard]] inline constexpr bool hasLifecycleFlag(std::uint32_t flags, RockProviderLifecycleFlag flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
@@ -336,6 +367,13 @@ namespace rock::provider
     [[nodiscard]] inline constexpr bool hasHandInputSuppressionFlagV1(
         std::uint32_t flags,
         RockProviderHandInputSuppressionFlagV1 flag)
+    {
+        return (flags & static_cast<std::uint32_t>(flag)) != 0;
+    }
+
+    [[nodiscard]] inline constexpr bool hasWeaponPartTargetFlagV1(
+        std::uint32_t flags,
+        RockProviderWeaponPartTargetFlagV1 flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
@@ -462,11 +500,70 @@ namespace rock::provider
         std::uint32_t reserved[8]{};
     };
 
+    struct RockProviderWeaponPartTargetV1
+    {
+        std::uint32_t size{ sizeof(RockProviderWeaponPartTargetV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint32_t flags{ 0 };
+        RockProviderWeaponPartGrabModeV1 grabMode{ RockProviderWeaponPartGrabModeV1::None };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uintptr_t sourceRoot{ 0 };
+        std::uint32_t bodyId{ 0x7FFF'FFFF };
+        std::uint32_t partKind{ 0 };
+        std::uint32_t reloadRole{ 0 };
+        std::uint32_t supportRole{ 0 };
+        std::uint32_t socketRole{ 0 };
+        std::uint32_t actionRole{ 0 };
+        std::uint32_t groupId{ 0 };
+        std::uint32_t priority{ 0 };
+        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
+        std::uint32_t reserved[8]{};
+    };
+
+    struct RockProviderWeaponPartTargetQueryV1
+    {
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t bodyId{ 0x7FFF'FFFF };
+        std::uint32_t partKind{ 0 };
+        std::uint32_t reloadRole{ 0 };
+        std::uint32_t supportRole{ 0 };
+        std::uint32_t socketRole{ 0 };
+        std::uint32_t actionRole{ 0 };
+        std::uintptr_t sourceRoot{ 0 };
+        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
+    };
+
+    struct RockProviderWeaponPartTargetResolutionV1
+    {
+        std::uint32_t whitelistActive{ 0 };
+        std::uint32_t matched{ 0 };
+        RockProviderWeaponPartGrabModeV1 grabMode{ RockProviderWeaponPartGrabModeV1::None };
+        std::uint32_t groupId{ 0 };
+        std::uint64_t ownerToken{ 0 };
+    };
+
     struct RockProviderTransform
     {
         float rotate[9]{};
         float translate[3]{};
         float scale{ 1.0f };
+    };
+
+    struct RockProviderWeaponPartDriveTargetV1
+    {
+        std::uint32_t size{ sizeof(RockProviderWeaponPartDriveTargetV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint32_t flags{ 0 };
+        RockProviderWeaponPartDriveSpaceV1 driveSpace{ RockProviderWeaponPartDriveSpaceV1::WeaponRootLocal };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uintptr_t sourceRoot{ 0 };
+        std::uint32_t bodyId{ 0x7FFF'FFFF };
+        std::uint32_t groupId{ 0 };
+        std::uint32_t priority{ 0 };
+        std::uint32_t leaseFrames{ 1 };
+        RockProviderTransform targetTransform{};
+        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
+        std::uint32_t reserved[7]{};
     };
 
     struct RockProviderFrameSnapshot
@@ -710,6 +807,16 @@ namespace rock::provider
         RockProviderResultV1(ROCK_PROVIDER_CALL* clearHandInputSuppressionV1)(
             std::uint64_t ownerToken,
             RockProviderHand hand);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* setWeaponPartTargetsV1)(
+            std::uint64_t ownerToken,
+            const RockProviderWeaponPartTargetV1* targets,
+            std::uint32_t targetCount);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* clearWeaponPartTargetsV1)(std::uint64_t ownerToken);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* setWeaponPartDriveTargetsV1)(
+            std::uint64_t ownerToken,
+            const RockProviderWeaponPartDriveTargetV1* targets,
+            std::uint32_t targetCount);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* clearWeaponPartDriveTargetsV1)(std::uint64_t ownerToken);
 
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
@@ -772,6 +879,8 @@ namespace rock::provider
         offsetof(RockProviderApi, requestThrownDropV1) + sizeof(std::declval<RockProviderApi>().requestThrownDropV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_HAND_INPUT_SUPPRESSION_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, clearHandInputSuppressionV1) + sizeof(std::declval<RockProviderApi>().clearHandInputSuppressionV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_WEAPON_PART_INTERACTION_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, clearWeaponPartDriveTargetsV1) + sizeof(std::declval<RockProviderApi>().clearWeaponPartDriveTargetsV1));
 
     [[nodiscard]] inline bool queryProviderLimitsV1(RockProviderLimitsV1& outLimits)
     {
@@ -845,6 +954,18 @@ namespace rock::provider
         return queryProviderLimitsV1(limits) && supportsHandInputSuppressionV1(limits);
     }
 
+    [[nodiscard]] inline bool supportsWeaponPartInteractionV1(const RockProviderLimitsV1& limits)
+    {
+        return providerApiTableSupportsV1(limits, ROCK_PROVIDER_API_V1_WEAPON_PART_INTERACTION_TABLE_BYTES) &&
+               hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::WeaponPartInteraction);
+    }
+
+    [[nodiscard]] inline bool supportsWeaponPartInteractionV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsWeaponPartInteractionV1(limits);
+    }
+
     static_assert(std::is_standard_layout_v<RockProviderTransform>);
     static_assert(std::is_trivially_copyable_v<RockProviderTransform>);
     static_assert(sizeof(RockProviderConsumerRegistrationV1) == 104);
@@ -879,7 +1000,23 @@ namespace rock::provider
     static_assert(alignof(RockProviderHandInputSuppressionRequestV1) == 4);
     static_assert(std::is_standard_layout_v<RockProviderHandInputSuppressionRequestV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderHandInputSuppressionRequestV1>);
+    static_assert(sizeof(RockProviderWeaponPartTargetV1) == 160);
+    static_assert(alignof(RockProviderWeaponPartTargetV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderWeaponPartTargetV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderWeaponPartTargetV1>);
     static_assert(sizeof(RockProviderTransform) == 52);
+    static_assert(sizeof(RockProviderWeaponPartDriveTargetV1) == 192);
+    static_assert(alignof(RockProviderWeaponPartDriveTargetV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderWeaponPartDriveTargetV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderWeaponPartDriveTargetV1>);
+    static_assert(sizeof(RockProviderWeaponPartTargetQueryV1) == 104);
+    static_assert(alignof(RockProviderWeaponPartTargetQueryV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderWeaponPartTargetQueryV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderWeaponPartTargetQueryV1>);
+    static_assert(sizeof(RockProviderWeaponPartTargetResolutionV1) == 24);
+    static_assert(alignof(RockProviderWeaponPartTargetResolutionV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderWeaponPartTargetResolutionV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderWeaponPartTargetResolutionV1>);
     static_assert(sizeof(RockProviderFrameSnapshot) == 272);
     static_assert(alignof(RockProviderFrameSnapshot) == 8);
     static_assert(sizeof(RockProviderHandFrameV1) == 112);
@@ -917,5 +1054,11 @@ namespace rock::provider
     bool recordExternalContact(const RockProviderExternalContactV1& contact);
     RockProviderOffhandReservation currentOffhandReservation();
     std::uint32_t currentHandInputSuppressionFlagsV1(RockProviderHand hand);
+    bool resolveWeaponPartTargetV1(
+        const RockProviderWeaponPartTargetQueryV1& query,
+        RockProviderWeaponPartTargetResolutionV1& outResolution);
+    std::uint32_t copyWeaponPartDriveTargetsV1(
+        RockProviderWeaponPartDriveTargetV1* outTargets,
+        std::uint32_t maxTargets);
     std::uint32_t currentExternalBodyCount();
 }

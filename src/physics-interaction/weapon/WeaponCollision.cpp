@@ -3099,6 +3099,16 @@ namespace rock
 
                 GeneratedHullSource source;
                 source.localCenterGame = weapon_collision_geometry_math::pointCenter(cluster);
+                const RE::NiPoint3 sourceCenterWorld = weapon_collision_geometry_math::localPointToWorld(
+                    weaponRootTransform.rotate,
+                    weaponRootTransform.translate,
+                    weaponRootTransform.scale,
+                    source.localCenterGame);
+                source.sourceLocalCenterGame = weapon_collision_geometry_math::worldPointToLocal(
+                    node->world.rotate,
+                    node->world.translate,
+                    node->world.scale,
+                    sourceCenterWorld);
                 const auto bounds = pointCloudBounds(cluster);
                 source.localMinGame = bounds.min;
                 source.localMaxGame = bounds.max;
@@ -3276,6 +3286,7 @@ namespace rock
             instance.sourceName = source.sourceName;
             instance.sourceRootName = source.sourceRoot ? safeNodeName(source.sourceRoot) : "";
             instance.generatedLocalCenterGame = source.localCenterGame;
+            instance.generatedSourceLocalCenterGame = source.sourceLocalCenterGame;
             instance.generatedLocalMinGame = source.localMinGame;
             instance.generatedLocalMaxGame = source.localMaxGame;
             instance.generatedLocalPointsGame = source.localPointsGame;
@@ -3471,6 +3482,7 @@ namespace rock
         instance.sourceName.clear();
         instance.sourceRootName.clear();
         instance.generatedLocalCenterGame = {};
+        instance.generatedSourceLocalCenterGame = {};
         instance.generatedLocalMinGame = {};
         instance.generatedLocalMaxGame = {};
         instance.generatedLocalPointsGame.clear();
@@ -3613,7 +3625,12 @@ namespace rock
         _weaponBodySampledVelocityValidAtomic[publicationIndex].store(1, std::memory_order_release);
     }
 
-    void WeaponCollision::updateBodiesFromCurrentSourceTransforms(RE::hknpWorld* world, RE::NiAVObject* fallbackWeaponNode, float sourceDeltaSeconds)
+    void WeaponCollision::updateBodiesFromCurrentSourceTransforms(
+        RE::hknpWorld* world,
+        RE::NiAVObject* fallbackWeaponNode,
+        float sourceDeltaSeconds,
+        const RE::NiAVObject* const* drivenSourceNodes,
+        std::size_t drivenSourceNodeCount)
     {
         if (!world || !hasWeaponBody() || getCurrentWeaponGenerationKey() == 0) {
             return;
@@ -3628,6 +3645,18 @@ namespace rock
         const RE::NiTransform packageWorld = packageDriveNode->world;
         const bool packageRootDiffersFromCached = cachedPackageDriveNode && cachedPackageDriveNode != packageDriveNode;
         bool updatedPublishedRoots = false;
+
+        auto sourceNodeIsDriven = [&](const RE::NiAVObject* sourceNode) {
+            if (!sourceNode || !drivenSourceNodes || drivenSourceNodeCount == 0) {
+                return false;
+            }
+            for (std::size_t i = 0; i < drivenSourceNodeCount; ++i) {
+                if (drivenSourceNodes[i] == sourceNode) {
+                    return true;
+                }
+            }
+            return false;
+        };
 
         for (std::size_t i = 0; i < bank.size(); ++i) {
             auto& instance = bank[i];
@@ -3657,7 +3686,10 @@ namespace rock
                 }
             }
 
-            const RE::NiTransform generatedTransform = makeGeneratedBodyWorldTransform(packageWorld, instance.generatedLocalCenterGame);
+            const bool useDrivenSourceNode = sourceNodeIsDriven(instance.sourceNode);
+            const RE::NiTransform& driveWorld = useDrivenSourceNode && instance.sourceNode ? instance.sourceNode->world : packageWorld;
+            const RE::NiPoint3& centerGame = useDrivenSourceNode ? instance.generatedSourceLocalCenterGame : instance.generatedLocalCenterGame;
+            const RE::NiTransform generatedTransform = makeGeneratedBodyWorldTransform(driveWorld, centerGame);
             queueBodyTarget(instance, generatedTransform, sourceDeltaSeconds);
         }
 

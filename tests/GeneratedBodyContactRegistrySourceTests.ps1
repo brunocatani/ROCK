@@ -58,7 +58,7 @@ if (!$frameGeneratedBodyBlock.Success) {
     if ($publishCount -ne 1) {
         $failures.Add("src/physics-interaction/core/PhysicsInteraction.cpp: Generated-body frame update must publish the contact registry exactly once after queueing targets; found $publishCount.")
     }
-    if ($block -notmatch '(?s)updateBodiesFromCurrentSourceTransforms\(hknp,\s*weaponNode,\s*frame\.deltaSeconds\).*?refreshGeneratedBodyContactRegistry\(\);\s*_generatedBodyStepDrive\.registerForNextStep\(bhk,\s*hknp\);') {
+    if ($block -notmatch '(?s)updateBodiesFromCurrentSourceTransforms\(\s*hknp,\s*weaponNode,\s*frame\.deltaSeconds[\s\S]*?\);\s*}\s*if \(f4vr::isNodeVisible\(weaponNode\)\)[\s\S]*?refreshGeneratedBodyContactRegistry\(\);\s*_generatedBodyStepDrive\.registerForNextStep\(bhk,\s*hknp\);') {
         $failures.Add('src/physics-interaction/core/PhysicsInteraction.cpp: Generated-body registry publication and step-drive registration must run after weapon transform target queueing.')
     }
 }
