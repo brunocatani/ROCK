@@ -2387,10 +2387,12 @@ namespace rock
                 }
                 return primaryGrabState;
             };
-            const bool primaryDetachFeatureAvailable =
-                g_rockConfig.rockEquippedWeaponPrimaryDetachEnabled &&
-                supportAuthorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver &&
-                frik_visual_authority::canBlockPrimaryHandWeaponPose();
+            const bool primaryDetachFeatureAvailable = equipped_weapon_manual_ownership_policy::featureAvailable(
+                g_rockConfig.rockEquippedWeaponPrimaryDetachEnabled,
+                supportAuthorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver,
+                frik_visual_authority::canBlockPrimaryHandWeaponPose(),
+                weaponNode != nullptr,
+                currentWeaponGenerationKey);
             const bool primaryGrabDeferredForVirtualHolsters = input_remap_runtime::shouldDeferGrabInputForVirtualHolsters(false, g_rockConfig.rockGrabButtonID);
             const input_remap_policy::EquippedWeaponPrimaryDetachInputGate primaryDetachInputGate{
                 .featureAvailable = primaryDetachFeatureAvailable,

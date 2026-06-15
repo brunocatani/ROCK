@@ -71,6 +71,10 @@ int main()
     ok &= expectTrue("right normal grab stays available without equipped weapon", canProcessNormalGrabInput(false, false, false, false));
 
     using namespace rock::equipped_weapon_manual_ownership_policy;
+    ok &= expectTrue("manual grip feature is available for active full-solver weapon", featureAvailable(true, true, true, true, 10));
+    ok &= expectFalse("manual grip feature is unavailable without active weapon node", featureAvailable(true, true, true, false, 10));
+    ok &= expectFalse("manual grip feature is unavailable without weapon generation", featureAvailable(true, true, true, true, 0));
+
     RuntimeState manualState{};
     auto manualDecision = update(manualState,
         Input{

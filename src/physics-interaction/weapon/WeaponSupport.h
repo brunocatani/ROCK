@@ -333,6 +333,20 @@ namespace rock::equipped_weapon_manual_ownership_policy
         bool dropRequested{ false };
     };
 
+    [[nodiscard]] inline constexpr bool featureAvailable(
+        bool configEnabled,
+        bool fullTwoHandedSolverMode,
+        bool primaryPoseBlockerAvailable,
+        bool weaponNodeAvailable,
+        std::uint64_t weaponGenerationKey) noexcept
+    {
+        return configEnabled &&
+               fullTwoHandedSolverMode &&
+               primaryPoseBlockerAvailable &&
+               weaponNodeAvailable &&
+               weaponGenerationKey != 0;
+    }
+
     inline constexpr Decision update(RuntimeState& state, const Input& input) noexcept
     {
         Decision decision{};
