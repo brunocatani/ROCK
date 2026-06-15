@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <mutex>
 
@@ -71,9 +72,19 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::ConsumerRegistrationV1) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::OwnerFilteredExternalContactsV1) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::InteractionCommandQueue) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::ForceGrabCommand);
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::ForceGrabCommand) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::ForceReleaseCommand) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::ThrownDropCommand);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
+    constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
+        static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::ImmediateCollisionRestore) |
+        static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::RequireMatchingTarget);
+    constexpr std::uint32_t kImplementedThrownDropFlagsV1 =
+        static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::ImmediateCollisionRestore) |
+        static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::RequireMatchingTarget) |
+        static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::UseVelocityHavok);
+    constexpr std::uint32_t kProviderInvalidBodyId = 0x7FFF'FFFFu;
 
     struct ConsumerSlot
     {
@@ -327,6 +338,104 @@ namespace
         return id;
     }
 
+    RockProviderHand commandHand(const QueuedInteractionCommandV1& command)
+    {
+        switch (command.kind) {
+        case RockProviderInteractionCommandKindV1::ForceGrab:
+            return command.forceGrab.hand;
+        case RockProviderInteractionCommandKindV1::ForceRelease:
+            return command.forceRelease.hand;
+        case RockProviderInteractionCommandKindV1::ThrownDrop:
+            return command.thrownDrop.hand;
+        default:
+            return RockProviderHand::None;
+        }
+    }
+
+    std::uintptr_t commandTargetRefr(const QueuedInteractionCommandV1& command)
+    {
+        switch (command.kind) {
+        case RockProviderInteractionCommandKindV1::ForceGrab:
+            return command.forceGrab.targetRefr;
+        case RockProviderInteractionCommandKindV1::ForceRelease:
+            return command.forceRelease.targetRefr;
+        case RockProviderInteractionCommandKindV1::ThrownDrop:
+            return command.thrownDrop.targetRefr;
+        default:
+            return 0;
+        }
+    }
+
+    std::uint32_t commandTargetFormId(const QueuedInteractionCommandV1& command)
+    {
+        switch (command.kind) {
+        case RockProviderInteractionCommandKindV1::ForceGrab:
+            return command.forceGrab.targetFormId;
+        case RockProviderInteractionCommandKindV1::ForceRelease:
+            return command.forceRelease.targetFormId;
+        case RockProviderInteractionCommandKindV1::ThrownDrop:
+            return command.thrownDrop.targetFormId;
+        default:
+            return 0;
+        }
+    }
+
+    std::uint32_t commandTargetBodyId(const QueuedInteractionCommandV1& command)
+    {
+        switch (command.kind) {
+        case RockProviderInteractionCommandKindV1::ForceGrab:
+            return command.forceGrab.targetBodyId;
+        case RockProviderInteractionCommandKindV1::ForceRelease:
+            return command.forceRelease.targetBodyId;
+        case RockProviderInteractionCommandKindV1::ThrownDrop:
+            return command.thrownDrop.targetBodyId;
+        default:
+            return kProviderInvalidBodyId;
+        }
+    }
+
+    std::uint32_t commandWorldGeneration(const QueuedInteractionCommandV1& command)
+    {
+        switch (command.kind) {
+        case RockProviderInteractionCommandKindV1::ForceGrab:
+            return command.forceGrab.worldGeneration;
+        case RockProviderInteractionCommandKindV1::ForceRelease:
+            return command.forceRelease.worldGeneration;
+        case RockProviderInteractionCommandKindV1::ThrownDrop:
+            return command.thrownDrop.worldGeneration;
+        default:
+            return 0;
+        }
+    }
+
+    std::uint32_t commandSkeletonGeneration(const QueuedInteractionCommandV1& command)
+    {
+        switch (command.kind) {
+        case RockProviderInteractionCommandKindV1::ForceGrab:
+            return command.forceGrab.skeletonGeneration;
+        case RockProviderInteractionCommandKindV1::ForceRelease:
+            return command.forceRelease.skeletonGeneration;
+        case RockProviderInteractionCommandKindV1::ThrownDrop:
+            return command.thrownDrop.skeletonGeneration;
+        default:
+            return 0;
+        }
+    }
+
+    std::uint32_t commandProviderGeneration(const QueuedInteractionCommandV1& command)
+    {
+        switch (command.kind) {
+        case RockProviderInteractionCommandKindV1::ForceGrab:
+            return command.forceGrab.providerGeneration;
+        case RockProviderInteractionCommandKindV1::ForceRelease:
+            return command.forceRelease.providerGeneration;
+        case RockProviderInteractionCommandKindV1::ThrownDrop:
+            return command.thrownDrop.providerGeneration;
+        default:
+            return 0;
+        }
+    }
+
     RockProviderInteractionCommandResultV1 makeCommandResult(
         const QueuedInteractionCommandV1& command,
         RockProviderInteractionCommandStateV1 state,
@@ -340,13 +449,13 @@ namespace
         result.kind = command.kind;
         result.state = state;
         result.failure = failure;
-        result.hand = command.forceGrab.hand;
-        result.targetRefr = command.forceGrab.targetRefr;
-        result.targetFormId = command.forceGrab.targetFormId;
-        result.targetBodyId = command.forceGrab.targetBodyId;
-        result.worldGeneration = command.forceGrab.worldGeneration;
-        result.skeletonGeneration = command.forceGrab.skeletonGeneration;
-        result.providerGeneration = command.forceGrab.providerGeneration;
+        result.hand = commandHand(command);
+        result.targetRefr = commandTargetRefr(command);
+        result.targetFormId = commandTargetFormId(command);
+        result.targetBodyId = commandTargetBodyId(command);
+        result.worldGeneration = commandWorldGeneration(command);
+        result.skeletonGeneration = commandSkeletonGeneration(command);
+        result.providerGeneration = commandProviderGeneration(command);
         return result;
     }
 
@@ -509,6 +618,56 @@ namespace
         return true;
     }
 
+    bool hasInteractionTargetIdentity(std::uintptr_t targetRefr, std::uint32_t targetFormId, std::uint32_t targetBodyId)
+    {
+        return targetRefr != 0 || targetFormId != 0 || targetBodyId != kProviderInvalidBodyId;
+    }
+
+    bool isFiniteVector3(const float values[3])
+    {
+        return std::isfinite(values[0]) && std::isfinite(values[1]) && std::isfinite(values[2]);
+    }
+
+    RockProviderResultV1 validateInteractionCommandOwner(std::uint64_t ownerToken)
+    {
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!pi || !pi->isInitialized()) {
+            return RockProviderResultV1::NotReady;
+        }
+
+        std::scoped_lock lock(s_consumerMutex);
+        if (!findConsumerSlotLocked(ownerToken)) {
+            return RockProviderResultV1::OwnerNotRegistered;
+        }
+        if (!consumerHasCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::InteractionCommands)) {
+            return RockProviderResultV1::PermissionDenied;
+        }
+        return RockProviderResultV1::Ok;
+    }
+
+    RockProviderResultV1 enqueueInteractionCommand(QueuedInteractionCommandV1 command, std::uint64_t* outCommandId)
+    {
+        if (!outCommandId) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+
+        command.commandId = nextInteractionCommandId();
+        std::scoped_lock lock(s_interactionCommandMutex);
+        for (auto& slot : s_interactionCommands) {
+            if (!slot.active) {
+                slot = InteractionCommandSlot{
+                    .active = true,
+                    .command = command,
+                };
+                *outCommandId = command.commandId;
+                storeInteractionResultLocked(makeCommandResult(command, RockProviderInteractionCommandStateV1::Queued, RockProviderInteractionFailureV1::None));
+                return RockProviderResultV1::RequestQueued;
+            }
+        }
+
+        return RockProviderResultV1::CapacityFull;
+    }
+
     RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestForceGrabV1(
         std::uint64_t ownerToken,
         const RockProviderForceGrabRequestV1* request,
@@ -532,19 +691,9 @@ namespace
             return RockProviderResultV1::InvalidArgument;
         }
 
-        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
-        if (!pi || !pi->isInitialized()) {
-            return RockProviderResultV1::NotReady;
-        }
-
-        {
-            std::scoped_lock lock(s_consumerMutex);
-            if (!findConsumerSlotLocked(ownerToken)) {
-                return RockProviderResultV1::OwnerNotRegistered;
-            }
-            if (!consumerHasCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::InteractionCommands)) {
-                return RockProviderResultV1::PermissionDenied;
-            }
+        const auto ownerResult = validateInteractionCommandOwner(ownerToken);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
         }
 
         auto* targetRef = reinterpret_cast<RE::TESObjectREFR*>(request->targetRefr);
@@ -562,26 +711,93 @@ namespace
 
         QueuedInteractionCommandV1 command{};
         command.ownerToken = ownerToken;
-        command.commandId = nextInteractionCommandId();
         command.kind = RockProviderInteractionCommandKindV1::ForceGrab;
         command.forceGrab = *request;
         command.forceGrab.targetFormId = request->targetFormId != 0 ? request->targetFormId : targetRef->GetFormID();
         command.targetHandle = handle;
+        return enqueueInteractionCommand(command, outCommandId);
+    }
 
-        std::scoped_lock lock(s_interactionCommandMutex);
-        for (auto& slot : s_interactionCommands) {
-            if (!slot.active) {
-                slot = InteractionCommandSlot{
-                    .active = true,
-                    .command = command,
-                };
-                *outCommandId = command.commandId;
-                storeInteractionResultLocked(makeCommandResult(command, RockProviderInteractionCommandStateV1::Queued, RockProviderInteractionFailureV1::None));
-                return RockProviderResultV1::RequestQueued;
-            }
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestForceReleaseV1(
+        std::uint64_t ownerToken,
+        const RockProviderForceReleaseRequestV1* request,
+        std::uint64_t* outCommandId)
+    {
+        if (!request || !outCommandId || ownerToken == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        *outCommandId = 0;
+
+        if (request->size != sizeof(RockProviderForceReleaseRequestV1)) {
+            return RockProviderResultV1::InvalidSize;
+        }
+        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
+            return RockProviderResultV1::UnsupportedVersion;
+        }
+        if (request->hand != RockProviderHand::Right && request->hand != RockProviderHand::Left) {
+            return RockProviderResultV1::HandUnavailable;
+        }
+        if ((request->flags & ~kImplementedForceReleaseFlagsV1) != 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if ((request->flags & static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::RequireMatchingTarget)) != 0 &&
+            !hasInteractionTargetIdentity(request->targetRefr, request->targetFormId, request->targetBodyId)) {
+            return RockProviderResultV1::InvalidArgument;
         }
 
-        return RockProviderResultV1::CapacityFull;
+        const auto ownerResult = validateInteractionCommandOwner(ownerToken);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+
+        QueuedInteractionCommandV1 command{};
+        command.ownerToken = ownerToken;
+        command.kind = RockProviderInteractionCommandKindV1::ForceRelease;
+        command.forceRelease = *request;
+        return enqueueInteractionCommand(command, outCommandId);
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestThrownDropV1(
+        std::uint64_t ownerToken,
+        const RockProviderThrownDropRequestV1* request,
+        std::uint64_t* outCommandId)
+    {
+        if (!request || !outCommandId || ownerToken == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        *outCommandId = 0;
+
+        if (request->size != sizeof(RockProviderThrownDropRequestV1)) {
+            return RockProviderResultV1::InvalidSize;
+        }
+        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
+            return RockProviderResultV1::UnsupportedVersion;
+        }
+        if (request->hand != RockProviderHand::Right && request->hand != RockProviderHand::Left) {
+            return RockProviderResultV1::HandUnavailable;
+        }
+        if ((request->flags & ~kImplementedThrownDropFlagsV1) != 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if ((request->flags & static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::RequireMatchingTarget)) != 0 &&
+            !hasInteractionTargetIdentity(request->targetRefr, request->targetFormId, request->targetBodyId)) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if ((request->flags & static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::UseVelocityHavok)) != 0 &&
+            (!isFiniteVector3(request->linearVelocityHavok) || !isFiniteVector3(request->angularVelocityRadiansPerSecond))) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+
+        const auto ownerResult = validateInteractionCommandOwner(ownerToken);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+
+        QueuedInteractionCommandV1 command{};
+        command.ownerToken = ownerToken;
+        command.kind = RockProviderInteractionCommandKindV1::ThrownDrop;
+        command.thrownDrop = *request;
+        return enqueueInteractionCommand(command, outCommandId);
     }
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiGetInteractionCommandResultV1(
@@ -769,6 +985,8 @@ namespace
         .getProviderLimitsV1 = &apiGetProviderLimitsV1,
         .getExternalContactSnapshotForOwnerV1 = &apiGetExternalContactSnapshotForOwnerV1,
         .requestForceGrabV1 = &apiRequestForceGrabV1,
+        .requestForceReleaseV1 = &apiRequestForceReleaseV1,
+        .requestThrownDropV1 = &apiRequestThrownDropV1,
         .getInteractionCommandResultV1 = &apiGetInteractionCommandResultV1,
     };
 }

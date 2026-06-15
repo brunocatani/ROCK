@@ -21,13 +21,15 @@ Goal:
 Implemented scope:
 
 - `ROCK_PROVIDER_API_VERSION` remains `1`.
-- `InteractionCommands`, `InteractionCommandQueue`, and `ForceGrabCommand` are real v1 capability/feature bits.
+- `InteractionCommands`, `InteractionCommandQueue`, `ForceGrabCommand`, `ForceReleaseCommand`, and `ThrownDropCommand` are real v1 capability/feature bits.
 - `requestForceGrabV1` enqueues a bounded command and returns a command id.
+- `requestForceReleaseV1` enqueues a bounded force-release command and returns a command id.
+- `requestThrownDropV1` enqueues a bounded thrown-drop command and returns a command id.
 - `getInteractionCommandResultV1` polls queued/completed command state.
-- Provider glue validates owner token, granted capability, struct size/version, hand, flags, target ref, target form id, and queue capacity.
-- Runtime execution revalidates world/physics writes, generations, hand availability, target availability, object ownership, body scan, and distance.
+- Provider glue validates owner token, granted capability, struct size/version, hand, flags, target identity, velocity shape where applicable, and queue capacity.
+- Runtime execution revalidates world/physics writes, generations, hand availability, target availability, object ownership, body scan, distance, held-object match, and release state.
 - Successful execution creates a temporary loose-object selection and commits through `Hand::grabSelectedObject`.
-- Public force release and thrown-drop APIs remain unimplemented.
+- Successful force release and thrown drop execute through `Hand::releaseGrabbedObject`, release ROCK's object claim, dispatch normal release messages/events, and clear per-hand interaction intent/candidate state.
 
 Initial limitations:
 
@@ -35,6 +37,8 @@ Initial limitations:
 - Live loose object / loose weapon reference only.
 - Near/object-at-hand force grab only. Far dynamic pull is intentionally deferred until it can reuse the existing pull path cleanly.
 - Busy hands reject rather than dropping existing held objects.
+- Force release and thrown drop require an explicit hand and only release ROCK-held objects.
+- Thrown drop rejects shared two-hand held objects because the peer hand still owns the object.
 
 Validation run:
 
@@ -48,5 +52,4 @@ Validation run:
 Known follow-up:
 
 - Add far dynamic-pull command execution through existing `lockFarSelection`, `startDynamicPull`, `updateDynamicPull`, and pull-catch commit paths.
-- Add force release / thrown drop as separate real behavior using the same queued command/result model.
 - Runtime smoke test in FO4VR with an external consumer once a caller is available.

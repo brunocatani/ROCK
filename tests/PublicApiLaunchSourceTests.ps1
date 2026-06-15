@@ -151,30 +151,32 @@ Require-Text 'cmake/package.cmake' 'src/api/ROCKProviderApi\.h' `
 Require-Text 'cmake/package.cmake' 'src/api/ROCKApi\.h' `
     'Release packaging must copy the API alias header into the SDK include directory.'
 
-Require-Text 'src/api/ROCKProviderApi.h' 'InteractionCommands|InteractionCommandQueue|ForceGrabCommand' `
-    'v1 must expose the real queued force-grab command surface.'
-Require-Text 'src/api/ROCKProviderApi.h' 'requestForceGrabV1|getInteractionCommandResultV1' `
-    'v1 function table must expose queued force-grab request and result polling.'
+Require-Text 'src/api/ROCKProviderApi.h' 'InteractionCommands|InteractionCommandQueue|ForceGrabCommand|ForceReleaseCommand|ThrownDropCommand' `
+    'v1 must expose the real queued interaction command surface.'
+Require-Text 'src/api/ROCKProviderApi.h' 'requestForceGrabV1|requestForceReleaseV1|requestThrownDropV1|getInteractionCommandResultV1' `
+    'v1 function table must expose queued request and result polling functions.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestForceGrabV1' `
     'Provider glue must implement queued force-grab request validation.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestForceReleaseV1' `
+    'Provider glue must implement queued force-release request validation.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestThrownDropV1' `
+    'Provider glue must implement queued thrown-drop request validation.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 's_interactionCommands' `
     'Provider glue must use a bounded interaction command queue.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'processProviderInteractionCommands' `
     'ROCK runtime must execute provider commands from the update path.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'hand\.grabSelectedObject' `
     'Force grab execution must commit through the existing dynamic grab path.'
-Reject-Text 'src/api/ROCKProviderApi.h' 'requestForceRelease' `
-    'Public force-release must not be exported until real behavior exists.'
-Reject-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestForceRelease' `
-    'Provider glue must not expose fake force-release stubs.'
-Reject-Text 'src/api/ROCKProviderApi.cpp' 'grabSelectedObject' `
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'releaseGrabbedObject' `
+    'Force release and thrown drop must use the existing release path.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'applyReleaseVelocitySnapshot' `
+    'Thrown drop must apply caller-provided velocity through the existing release velocity path.'
+Reject-Text 'src/api/ROCKProviderApi.cpp' 'grabSelectedObject|releaseGrabbedObject|applyReleaseVelocitySnapshot' `
     'Provider API glue must only enqueue commands, not mutate hand state directly.'
 Reject-Text 'src/api/ROCKProviderApi.h' 'getWeaponEvidenceDescriptors|RockProviderWeaponEvidenceDescriptor|getExternalContactSnapshotV1' `
     'Public API must not expose redundant shallow weapon evidence or unowned contact snapshots.'
 Reject-Text 'src/api/ROCKProviderApi.h' 'DiagnosticOverlay|DiagnosticInput|publishDiagnosticOverlay|getDiagnosticInputSnapshotV1|setDiagnosticInputSuppressionV1' `
     'Public API must not expose diagnostic/probe control surfaces.'
-Reject-Text 'src/api/ROCKProviderApi.h' 'ForceReleaseCommand' `
-    'Public API must not expose reserved force-release scaffolding.'
 
 $providerHeader = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/api/ROCKProviderApi.h')
 $expectedProviderFunctions = [string[]]@(
@@ -202,6 +204,8 @@ $expectedProviderFunctions = [string[]]@(
     'getProviderLimitsV1',
     'getExternalContactSnapshotForOwnerV1',
     'requestForceGrabV1',
+    'requestForceReleaseV1',
+    'requestThrownDropV1',
     'getInteractionCommandResultV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions

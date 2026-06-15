@@ -117,4 +117,8 @@ Initial force-grab scope:
 
 Successful force grabs enter ROCK's existing dynamic grab path. Finger posing, grab settling, haptics, object ownership, and release behavior are therefore the same systems used by normal grabs.
 
-ROCK v1 does not expose public force-release or thrown-drop commands yet.
+To force release a held object, fill `RockProviderForceReleaseRequestV1` and call `requestForceReleaseV1`. The selected hand must be `Left` or `Right`. If a target ref, form id, or body id is supplied, the held object must match before ROCK releases it.
+
+To request a thrown drop, fill `RockProviderThrownDropRequestV1` and call `requestThrownDropV1`. ROCK captures the current held release motion before detaching. If `UseVelocityHavok` is set, ROCK applies the supplied linear and angular Havok velocities through the same release velocity path after detach.
+
+Successful force release and thrown drop commands use ROCK's existing `Hand::releaseGrabbedObject` path. Collision restore, body lifecycle restore, claim release, release messages, hand pose cleanup, and release events therefore match normal releases.

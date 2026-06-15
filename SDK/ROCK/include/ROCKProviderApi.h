@@ -234,12 +234,16 @@ namespace rock::provider
         OwnerFilteredExternalContactsV1 = 1u << 9,
         InteractionCommandQueue = 1u << 10,
         ForceGrabCommand = 1u << 11,
+        ForceReleaseCommand = 1u << 12,
+        ThrownDropCommand = 1u << 13,
     };
 
     enum class RockProviderInteractionCommandKindV1 : std::uint32_t
     {
         Unknown = 0,
         ForceGrab = 1,
+        ForceRelease = 2,
+        ThrownDrop = 3,
     };
 
     enum class RockProviderInteractionCommandStateV1 : std::uint32_t
@@ -268,12 +272,29 @@ namespace rock::provider
         HandInvalid = 12,
         HandDisabled = 13,
         HandBusy = 14,
+        HandNotHolding = 15,
+        HeldObjectMismatch = 16,
     };
 
     enum class RockProviderForceGrabFlagV1 : std::uint32_t
     {
         None = 0,
         UsePreferredGrabPointGame = 1u << 0,
+    };
+
+    enum class RockProviderForceReleaseFlagV1 : std::uint32_t
+    {
+        None = 0,
+        ImmediateCollisionRestore = 1u << 0,
+        RequireMatchingTarget = 1u << 1,
+    };
+
+    enum class RockProviderThrownDropFlagV1 : std::uint32_t
+    {
+        None = 0,
+        ImmediateCollisionRestore = 1u << 0,
+        RequireMatchingTarget = 1u << 1,
+        UseVelocityHavok = 1u << 2,
     };
 
     [[nodiscard]] inline constexpr bool hasLifecycleFlag(std::uint32_t flags, RockProviderLifecycleFlag flag)
@@ -341,6 +362,39 @@ namespace rock::provider
         float maxDistanceGame{ 0.0f };
         float preferredGrabPointGame[3]{};
         std::uint32_t reserved[5]{};
+    };
+
+    struct RockProviderForceReleaseRequestV1
+    {
+        std::uint32_t size{ sizeof(RockProviderForceReleaseRequestV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        RockProviderHand hand{ RockProviderHand::None };
+        std::uint32_t flags{ 0 };
+        std::uintptr_t targetRefr{ 0 };
+        std::uint32_t targetFormId{ 0 };
+        std::uint32_t targetBodyId{ 0x7FFF'FFFF };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved[5]{};
+    };
+
+    struct RockProviderThrownDropRequestV1
+    {
+        std::uint32_t size{ sizeof(RockProviderThrownDropRequestV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        RockProviderHand hand{ RockProviderHand::None };
+        std::uint32_t flags{ 0 };
+        std::uintptr_t targetRefr{ 0 };
+        std::uint32_t targetFormId{ 0 };
+        std::uint32_t targetBodyId{ 0x7FFF'FFFF };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved0{ 0 };
+        float linearVelocityHavok[3]{};
+        float angularVelocityRadiansPerSecond[3]{};
+        std::uint32_t reserved[6]{};
     };
 
     struct RockProviderInteractionCommandResultV1
@@ -594,6 +648,14 @@ namespace rock::provider
             std::uint64_t ownerToken,
             const RockProviderForceGrabRequestV1* request,
             std::uint64_t* outCommandId);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* requestForceReleaseV1)(
+            std::uint64_t ownerToken,
+            const RockProviderForceReleaseRequestV1* request,
+            std::uint64_t* outCommandId);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* requestThrownDropV1)(
+            std::uint64_t ownerToken,
+            const RockProviderThrownDropRequestV1* request,
+            std::uint64_t* outCommandId);
         RockProviderResultV1(ROCK_PROVIDER_CALL* getInteractionCommandResultV1)(
             std::uint64_t ownerToken,
             std::uint64_t commandId,
@@ -651,6 +713,14 @@ namespace rock::provider
     static_assert(alignof(RockProviderForceGrabRequestV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderForceGrabRequestV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderForceGrabRequestV1>);
+    static_assert(sizeof(RockProviderForceReleaseRequestV1) == 64);
+    static_assert(alignof(RockProviderForceReleaseRequestV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderForceReleaseRequestV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderForceReleaseRequestV1>);
+    static_assert(sizeof(RockProviderThrownDropRequestV1) == 96);
+    static_assert(alignof(RockProviderThrownDropRequestV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderThrownDropRequestV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderThrownDropRequestV1>);
     static_assert(sizeof(RockProviderInteractionCommandResultV1) == 112);
     static_assert(alignof(RockProviderInteractionCommandResultV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderInteractionCommandResultV1>);

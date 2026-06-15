@@ -86,9 +86,9 @@ ROCK ships a public SDK for FO4VR F4SE plugins under `SDK/ROCK`.
 
 - `SDK/ROCK/include/ROCKProviderApi.h` is the stable provider API for integrations.
 - `SDK/ROCK/include/ROCKApi.h` is an alias for the same v1 API table.
-- API v1 includes ROCK-issued owner tokens, capability grants, provider limits, feature bits, owner-filtered external contacts, and queued force-grab interaction commands.
+- API v1 includes ROCK-issued owner tokens, capability grants, provider limits, feature bits, owner-filtered external contacts, and queued interaction commands.
 
-Start with `SDK/ROCK/docs/PublicApi.md` and `SDK/ROCK/examples/MinimalProviderConsumer.cpp`. Public force grab runs through a bounded ROCK-owned command queue from a safe update point; public force release and thrown-drop commands are not exposed yet.
+Start with `SDK/ROCK/docs/PublicApi.md` and `SDK/ROCK/examples/MinimalProviderConsumer.cpp`. Public force grab, force release, and thrown drop run through a bounded ROCK-owned command queue from safe update points.
 
 ## Credits
 

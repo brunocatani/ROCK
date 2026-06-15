@@ -12,6 +12,8 @@ namespace rock::provider
         std::uint64_t commandId{ 0 };
         RockProviderInteractionCommandKindV1 kind{ RockProviderInteractionCommandKindV1::Unknown };
         RockProviderForceGrabRequestV1 forceGrab{};
+        RockProviderForceReleaseRequestV1 forceRelease{};
+        RockProviderThrownDropRequestV1 thrownDrop{};
         RE::ObjectRefHandle targetHandle{};
     };
 
