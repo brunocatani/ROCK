@@ -151,20 +151,54 @@ Require-Text 'cmake/package.cmake' 'src/api/ROCKProviderApi\.h' `
 Require-Text 'cmake/package.cmake' 'src/api/ROCKApi\.h' `
     'Release packaging must copy the API alias header into the SDK include directory.'
 
-Require-Text 'src/api/ROCKProviderApi.h' 'InteractionCommands|InteractionCommandQueue|ForceGrabCommand|ForceReleaseCommand|ThrownDropCommand' `
-    'v1 must expose the real queued interaction command surface.'
-Require-Text 'src/api/ROCKProviderApi.h' 'requestForceGrabV1|requestForceReleaseV1|requestThrownDropV1|getInteractionCommandResultV1' `
-    'v1 function table must expose queued request and result polling functions.'
-Require-Text 'src/api/ROCKProviderApi.h' 'HandInputSuppression|RockProviderHandInputSuppressionRequestV1|SuppressConfigModeChord' `
-    'v1 must expose owner-token hand input suppression leases for external config chords.'
-Require-Text 'src/api/ROCKProviderApi.h' 'setHandInputSuppressionV1|clearHandInputSuppressionV1' `
-    'v1 function table must append hand input suppression lease functions.'
+Require-Text 'src/api/ROCKProviderApi.h' 'InteractionCommands' `
+    'v1 must expose the interaction command consumer capability.'
+Require-Text 'src/api/ROCKProviderApi.h' 'InteractionCommandQueue' `
+    'v1 must expose the queued interaction command feature bit.'
+Require-Text 'src/api/ROCKProviderApi.h' 'ForceGrabCommand' `
+    'v1 must expose the force-grab command feature bit.'
+Require-Text 'src/api/ROCKProviderApi.h' 'ForceReleaseCommand' `
+    'v1 must expose the force-release command feature bit.'
+Require-Text 'src/api/ROCKProviderApi.h' 'ThrownDropCommand' `
+    'v1 must expose the thrown-drop command feature bit.'
+Require-Text 'src/api/ROCKProviderApi.h' 'requestForceGrabV1' `
+    'v1 function table must expose queued force-grab requests.'
+Require-Text 'src/api/ROCKProviderApi.h' 'requestForceReleaseV1' `
+    'v1 function table must expose queued force-release requests.'
+Require-Text 'src/api/ROCKProviderApi.h' 'requestThrownDropV1' `
+    'v1 function table must expose queued thrown-drop requests.'
+Require-Text 'src/api/ROCKProviderApi.h' 'getInteractionCommandResultV1' `
+    'v1 function table must expose queued command result polling.'
+Require-Text 'src/api/ROCKProviderApi.h' 'HandInputSuppression' `
+    'v1 must expose hand input suppression capability and feature names.'
+Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderHandInputSuppressionRequestV1' `
+    'v1 must expose owner-token hand input suppression lease requests.'
+Require-Text 'src/api/ROCKProviderApi.h' 'SuppressConfigModeChord' `
+    'v1 must expose external config chord suppression flags.'
+Require-Text 'src/api/ROCKProviderApi.h' 'setHandInputSuppressionV1' `
+    'v1 function table must append hand input suppression lease setup.'
+Require-Text 'src/api/ROCKProviderApi.h' 'clearHandInputSuppressionV1' `
+    'v1 function table must append hand input suppression lease clearing.'
+Require-Text 'src/api/ROCKProviderApi.h' 'providerApiByteSize' `
+    'v1 provider limits must expose the returned function table byte size for appended-slot negotiation.'
+Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_HAND_INPUT_SUPPRESSION_TABLE_BYTES' `
+    'SDK must expose a table-size guard for hand input suppression slots.'
+Require-Text 'src/api/ROCKProviderApi.h' 'supportsForceGrabCommandV1' `
+    'SDK must expose safe feature/table helpers for force-grab commands.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'providerApiByteSize\s*=\s*static_cast<std::uint32_t>\(sizeof\(RockProviderApi\)\)' `
+    'Provider limits must report the current function table byte size.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderForceReleaseFlagV1[\s\S]*UseVelocityHavok' `
     'Force release must expose an explicit trusted Havok velocity flag.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderForceReleaseRequestV1[\s\S]*linearVelocityHavok[\s\S]*angularVelocityRadiansPerSecond' `
     'Force release must expose trusted linear and angular Havok velocity payloads.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestForceGrabV1' `
     'Provider glue must implement queued force-grab request validation.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'request->targetFormId\s*==\s*0' `
+    'Force-grab API validation must require stable FormID identity before queueing.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'isFiniteVector3\(request->preferredGrabPointGame\)' `
+    'Force-grab API validation must finite-check caller-supplied preferred grab points.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'TESForm::GetFormByID<RE::TESObjectREFR>' `
+    'Force-grab execution must resolve targets on the ROCK update path by FormID.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestForceReleaseV1' `
     'Provider glue must implement queued force-release request validation.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestThrownDropV1' `
@@ -187,6 +221,8 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'deferredGrab
     'Suppressed grab releases must be deferred instead of dropping held objects during external config chords.'
 Reject-Text 'src/api/ROCKProviderApi.cpp' 'grabSelectedObject|releaseGrabbedObject|applyReleaseVelocitySnapshot' `
     'Provider API glue must only enqueue commands, not mutate hand state directly.'
+Reject-Text 'src/api/ROCKProviderApi.cpp' 'reinterpret_cast<RE::TESObjectREFR\*>\(request->targetRefr\)' `
+    'Provider API glue must not dereference caller-supplied reference pointers.'
 Reject-Text 'src/api/ROCKProviderApi.h' 'getWeaponEvidenceDescriptors|RockProviderWeaponEvidenceDescriptor|getExternalContactSnapshotV1' `
     'Public API must not expose redundant shallow weapon evidence or unowned contact snapshots.'
 Reject-Text 'src/api/ROCKProviderApi.h' 'DiagnosticOverlay|DiagnosticInput|publishDiagnosticOverlay|getDiagnosticInputSnapshotV1|setDiagnosticInputSuppressionV1' `

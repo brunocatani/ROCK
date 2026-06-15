@@ -4645,10 +4645,18 @@ namespace rock
                 continue;
             }
 
-            auto targetRefPtr = command.targetHandle.get();
-            auto* targetRef = targetRefPtr.get();
+            if (command.forceGrab.targetFormId == 0) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::InvalidRequest);
+                continue;
+            }
+
+            auto* targetRef = RE::TESForm::GetFormByID<RE::TESObjectREFR>(command.forceGrab.targetFormId);
             if (!targetRef) {
                 complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetMissing);
+                continue;
+            }
+            if (command.forceGrab.targetRefr != 0 && reinterpret_cast<std::uintptr_t>(targetRef) != command.forceGrab.targetRefr) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
                 continue;
             }
             result.targetRefr = reinterpret_cast<std::uintptr_t>(targetRef);
@@ -5089,6 +5097,7 @@ namespace rock
         };
 
         if (!runtime_state::isLocalSkeletonReady()) {
+            provider::clearInteractionCommandsForProviderLossV1(provider::RockProviderInteractionFailureV1::ProviderNotReady);
             input_remap_runtime::setRightHandHeldWeapon(false);
             input_remap_runtime::setEquippedWeaponPrimaryDetachInputActive(false);
             input_remap_runtime::setEquippedWeaponPrimaryDetached(false);

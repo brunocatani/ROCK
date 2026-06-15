@@ -2,8 +2,6 @@
 
 #include "api/ROCKProviderApi.h"
 
-#include "RE/Bethesda/TESObjectREFRs.h"
-
 namespace rock::provider
 {
     struct QueuedInteractionCommandV1
@@ -14,7 +12,6 @@ namespace rock::provider
         RockProviderForceGrabRequestV1 forceGrab{};
         RockProviderForceReleaseRequestV1 forceRelease{};
         RockProviderThrownDropRequestV1 thrownDrop{};
-        RE::ObjectRefHandle targetHandle{};
     };
 
     [[nodiscard]] bool dequeueInteractionCommandV1(QueuedInteractionCommandV1& outCommand);

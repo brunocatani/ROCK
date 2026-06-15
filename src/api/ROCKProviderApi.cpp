@@ -361,7 +361,7 @@ namespace
         }
     }
 
-    RockProviderResultV1 validateRegisteredOwnerCapability(
+    RockProviderResultV1 validateRegisteredOwnerCapabilityLocked(
         std::uint64_t ownerToken,
         RockProviderConsumerCapabilityV1 capability)
     {
@@ -369,7 +369,6 @@ namespace
             return RockProviderResultV1::InvalidArgument;
         }
 
-        std::scoped_lock lock(s_consumerMutex);
         if (!findConsumerSlotLocked(ownerToken)) {
             return RockProviderResultV1::OwnerNotRegistered;
         }
@@ -377,6 +376,11 @@ namespace
             return RockProviderResultV1::PermissionDenied;
         }
         return RockProviderResultV1::Ok;
+    }
+
+    RockProviderResultV1 validateInteractionCommandOwnerLocked(std::uint64_t ownerToken)
+    {
+        return validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::InteractionCommands);
     }
 
     RockProviderResultV1 validateGenerationGuards(
@@ -651,27 +655,19 @@ namespace
         }
 
         {
-            std::scoped_lock lock(s_consumerMutex);
+            std::scoped_lock lock(s_consumerMutex, s_interactionCommandMutex, s_handInputSuppressionMutex);
             auto* slot = findConsumerSlotLocked(ownerToken);
             if (!slot) {
                 return RockProviderResultV1::OwnerNotRegistered;
             }
             *slot = {};
+            clearInteractionCommandsForOwnerLocked(ownerToken, RockProviderInteractionFailureV1::OwnerNotRegistered);
+            clearHandInputSuppressionsForOwnerLocked(ownerToken, RockProviderHand::None);
         }
 
         {
             std::scoped_lock lock(s_externalBodyMutex);
             s_externalBodies.clearOwner(ownerToken);
-        }
-
-        {
-            std::scoped_lock lock(s_interactionCommandMutex);
-            clearInteractionCommandsForOwnerLocked(ownerToken, RockProviderInteractionFailureV1::OwnerNotRegistered);
-        }
-
-        {
-            std::scoped_lock lock(s_handInputSuppressionMutex);
-            clearHandInputSuppressionsForOwnerLocked(ownerToken, RockProviderHand::None);
         }
 
         if (s_offhandReservationOwner.load(std::memory_order_acquire) == ownerToken) {
@@ -707,6 +703,7 @@ namespace
         outLimits->maxWeaponBodies = ROCK_PROVIDER_MAX_WEAPON_BODIES;
         outLimits->maxInteractionCommands = ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1;
         outLimits->maxCompletedInteractionCommands = ROCK_PROVIDER_MAX_COMPLETED_INTERACTION_COMMANDS_V1;
+        outLimits->providerApiByteSize = static_cast<std::uint32_t>(sizeof(RockProviderApi));
         return true;
     }
 
@@ -720,19 +717,11 @@ namespace
         return std::isfinite(values[0]) && std::isfinite(values[1]) && std::isfinite(values[2]);
     }
 
-    RockProviderResultV1 validateInteractionCommandOwner(std::uint64_t ownerToken)
+    RockProviderResultV1 validateInteractionCommandProviderReady()
     {
         auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
         if (!pi || !pi->isInitialized()) {
             return RockProviderResultV1::NotReady;
-        }
-
-        std::scoped_lock lock(s_consumerMutex);
-        if (!findConsumerSlotLocked(ownerToken)) {
-            return RockProviderResultV1::OwnerNotRegistered;
-        }
-        if (!consumerHasCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::InteractionCommands)) {
-            return RockProviderResultV1::PermissionDenied;
         }
         return RockProviderResultV1::Ok;
     }
@@ -743,10 +732,20 @@ namespace
             return RockProviderResultV1::InvalidArgument;
         }
 
-        command.commandId = nextInteractionCommandId();
-        std::scoped_lock lock(s_interactionCommandMutex);
+        const auto providerReadyResult = validateInteractionCommandProviderReady();
+        if (providerReadyResult != RockProviderResultV1::Ok) {
+            return providerReadyResult;
+        }
+
+        std::scoped_lock lock(s_consumerMutex, s_interactionCommandMutex);
+        const auto ownerResult = validateInteractionCommandOwnerLocked(command.ownerToken);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+
         for (auto& slot : s_interactionCommands) {
             if (!slot.active) {
+                command.commandId = nextInteractionCommandId();
                 slot = InteractionCommandSlot{
                     .active = true,
                     .command = command,
@@ -779,34 +778,21 @@ namespace
         if (request->hand != RockProviderHand::Right && request->hand != RockProviderHand::Left) {
             return RockProviderResultV1::HandUnavailable;
         }
-        if (request->targetRefr == 0 || (request->flags & ~kImplementedForceGrabFlagsV1) != 0) {
+        if (request->targetFormId == 0 || (request->flags & ~kImplementedForceGrabFlagsV1) != 0) {
             return RockProviderResultV1::InvalidArgument;
         }
-
-        const auto ownerResult = validateInteractionCommandOwner(ownerToken);
-        if (ownerResult != RockProviderResultV1::Ok) {
-            return ownerResult;
+        if (!std::isfinite(request->maxDistanceGame)) {
+            return RockProviderResultV1::InvalidArgument;
         }
-
-        auto* targetRef = reinterpret_cast<RE::TESObjectREFR*>(request->targetRefr);
-        if (!targetRef || targetRef->IsDeleted() || targetRef->IsDisabled()) {
-            return RockProviderResultV1::TargetInvalid;
-        }
-        if (request->targetFormId != 0 && targetRef->GetFormID() != request->targetFormId) {
-            return RockProviderResultV1::TargetInvalid;
-        }
-
-        const auto handle = targetRef->GetHandle();
-        if (!handle) {
-            return RockProviderResultV1::TargetInvalid;
+        if ((request->flags & static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame)) != 0 &&
+            !isFiniteVector3(request->preferredGrabPointGame)) {
+            return RockProviderResultV1::InvalidArgument;
         }
 
         QueuedInteractionCommandV1 command{};
         command.ownerToken = ownerToken;
         command.kind = RockProviderInteractionCommandKindV1::ForceGrab;
         command.forceGrab = *request;
-        command.forceGrab.targetFormId = request->targetFormId != 0 ? request->targetFormId : targetRef->GetFormID();
-        command.targetHandle = handle;
         return enqueueInteractionCommand(command, outCommandId);
     }
 
@@ -839,11 +825,6 @@ namespace
         if ((request->flags & static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::UseVelocityHavok)) != 0 &&
             (!isFiniteVector3(request->linearVelocityHavok) || !isFiniteVector3(request->angularVelocityRadiansPerSecond))) {
             return RockProviderResultV1::InvalidArgument;
-        }
-
-        const auto ownerResult = validateInteractionCommandOwner(ownerToken);
-        if (ownerResult != RockProviderResultV1::Ok) {
-            return ownerResult;
         }
 
         QueuedInteractionCommandV1 command{};
@@ -882,11 +863,6 @@ namespace
         if ((request->flags & static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::UseVelocityHavok)) != 0 &&
             (!isFiniteVector3(request->linearVelocityHavok) || !isFiniteVector3(request->angularVelocityRadiansPerSecond))) {
             return RockProviderResultV1::InvalidArgument;
-        }
-
-        const auto ownerResult = validateInteractionCommandOwner(ownerToken);
-        if (ownerResult != RockProviderResultV1::Ok) {
-            return ownerResult;
         }
 
         QueuedInteractionCommandV1 command{};
@@ -953,10 +929,6 @@ namespace
             return RockProviderResultV1::InvalidArgument;
         }
 
-        const auto ownerResult = validateRegisteredOwnerCapability(ownerToken, RockProviderConsumerCapabilityV1::HandInputSuppression);
-        if (ownerResult != RockProviderResultV1::Ok) {
-            return ownerResult;
-        }
         const auto generationResult = validateGenerationGuards(
             request->worldGeneration,
             request->skeletonGeneration,
@@ -969,7 +941,12 @@ namespace
         const auto frameIndex = currentProviderFrameIndex();
         const auto expiresAfterFrame = frameIndex + leaseFrames;
 
-        std::scoped_lock lock(s_handInputSuppressionMutex);
+        std::scoped_lock lock(s_consumerMutex, s_handInputSuppressionMutex);
+        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::HandInputSuppression);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+
         pruneExpiredHandInputSuppressionsLocked(frameIndex);
         for (auto& slot : s_handInputSuppressions) {
             if (slot.active && slot.ownerToken == ownerToken && slot.hand == request->hand) {
@@ -1006,12 +983,12 @@ namespace
             return RockProviderResultV1::HandUnavailable;
         }
 
-        const auto ownerResult = validateRegisteredOwnerCapability(ownerToken, RockProviderConsumerCapabilityV1::HandInputSuppression);
+        std::scoped_lock lock(s_consumerMutex, s_handInputSuppressionMutex);
+        const auto ownerResult = validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::HandInputSuppression);
         if (ownerResult != RockProviderResultV1::Ok) {
             return ownerResult;
         }
 
-        std::scoped_lock lock(s_handInputSuppressionMutex);
         clearHandInputSuppressionsForOwnerLocked(ownerToken, hand);
         return RockProviderResultV1::Ok;
     }
@@ -1241,12 +1218,17 @@ namespace rock::provider
     bool dequeueInteractionCommandV1(QueuedInteractionCommandV1& outCommand)
     {
         std::scoped_lock lock(s_interactionCommandMutex);
+        InteractionCommandSlot* oldestSlot = nullptr;
         for (auto& slot : s_interactionCommands) {
-            if (slot.active) {
-                outCommand = slot.command;
-                slot = {};
-                return true;
+            if (slot.active && (!oldestSlot || slot.command.commandId < oldestSlot->command.commandId)) {
+                oldestSlot = &slot;
             }
+        }
+
+        if (oldestSlot) {
+            outCommand = oldestSlot->command;
+            *oldestSlot = {};
+            return true;
         }
         return false;
     }

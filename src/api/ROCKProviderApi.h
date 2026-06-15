@@ -7,8 +7,10 @@
 #define NOMMNOSOUND
 #endif
 
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 #if !defined(_WINDOWS_) && !defined(_INC_WINDOWS)
 struct HINSTANCE__;
@@ -370,7 +372,8 @@ namespace rock::provider
         std::uint32_t maxWeaponBodies{ 0 };
         std::uint32_t maxInteractionCommands{ 0 };
         std::uint32_t maxCompletedInteractionCommands{ 0 };
-        std::uint32_t reserved[7]{};
+        std::uint32_t providerApiByteSize{ 0 };
+        std::uint32_t reserved[6]{};
     };
 
     struct RockProviderForceGrabRequestV1
@@ -708,10 +711,26 @@ namespace rock::provider
             std::uint64_t ownerToken,
             RockProviderHand hand);
 
-        [[nodiscard]] static int initialize(const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION)
+        [[nodiscard]] static int initialize(
+            const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
+            const std::uint32_t minProviderApiByteSize = 0)
         {
+            const auto hasMinimumTableSize = [](const RockProviderApi* api, std::uint32_t requiredByteSize) {
+                if (requiredByteSize == 0) {
+                    return true;
+                }
+                if (!api || !api->getProviderLimitsV1) {
+                    return false;
+                }
+                RockProviderLimitsV1 limits{};
+                return api->getProviderLimitsV1(&limits) && limits.providerApiByteSize >= requiredByteSize;
+            };
+
             if (inst) {
-                return inst->getVersion() < minVersion ? 4 : 0;
+                if (inst->getVersion() < minVersion) {
+                    return 4;
+                }
+                return hasMinimumTableSize(inst, minProviderApiByteSize) ? 0 : 5;
             }
 
             const auto rockDll = GetModuleHandleA("ROCK.dll");
@@ -732,6 +751,9 @@ namespace rock::provider
             if (api->getVersion() < minVersion) {
                 return 4;
             }
+            if (!hasMinimumTableSize(api, minProviderApiByteSize)) {
+                return 5;
+            }
 
             inst = api;
             return 0;
@@ -741,6 +763,87 @@ namespace rock::provider
     };
 
     ROCK_PROVIDER_API const RockProviderApi* ROCK_PROVIDER_CALL ROCKAPI_GetProviderApi();
+
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_FORCE_GRAB_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, getInteractionCommandResultV1) + sizeof(std::declval<RockProviderApi>().getInteractionCommandResultV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_FORCE_RELEASE_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, requestForceReleaseV1) + sizeof(std::declval<RockProviderApi>().requestForceReleaseV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_THROWN_DROP_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, requestThrownDropV1) + sizeof(std::declval<RockProviderApi>().requestThrownDropV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_HAND_INPUT_SUPPRESSION_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, clearHandInputSuppressionV1) + sizeof(std::declval<RockProviderApi>().clearHandInputSuppressionV1));
+
+    [[nodiscard]] inline bool queryProviderLimitsV1(RockProviderLimitsV1& outLimits)
+    {
+        if (!RockProviderApi::inst || !RockProviderApi::inst->getProviderLimitsV1) {
+            return false;
+        }
+
+        outLimits = {};
+        return RockProviderApi::inst->getProviderLimitsV1(&outLimits);
+    }
+
+    [[nodiscard]] inline bool providerApiTableSupportsV1(const RockProviderLimitsV1& limits, std::uint32_t requiredByteSize)
+    {
+        return requiredByteSize != 0 && limits.providerApiByteSize >= requiredByteSize;
+    }
+
+    [[nodiscard]] inline bool providerApiTableSupportsV1(std::uint32_t requiredByteSize)
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && providerApiTableSupportsV1(limits, requiredByteSize);
+    }
+
+    [[nodiscard]] inline bool supportsForceGrabCommandV1(const RockProviderLimitsV1& limits)
+    {
+        return providerApiTableSupportsV1(limits, ROCK_PROVIDER_API_V1_FORCE_GRAB_TABLE_BYTES) &&
+               hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::InteractionCommandQueue) &&
+               hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::ForceGrabCommand);
+    }
+
+    [[nodiscard]] inline bool supportsForceGrabCommandV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsForceGrabCommandV1(limits);
+    }
+
+    [[nodiscard]] inline bool supportsForceReleaseCommandV1(const RockProviderLimitsV1& limits)
+    {
+        return providerApiTableSupportsV1(limits, ROCK_PROVIDER_API_V1_FORCE_RELEASE_TABLE_BYTES) &&
+               hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::InteractionCommandQueue) &&
+               hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::ForceReleaseCommand);
+    }
+
+    [[nodiscard]] inline bool supportsForceReleaseCommandV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsForceReleaseCommandV1(limits);
+    }
+
+    [[nodiscard]] inline bool supportsThrownDropCommandV1(const RockProviderLimitsV1& limits)
+    {
+        return providerApiTableSupportsV1(limits, ROCK_PROVIDER_API_V1_THROWN_DROP_TABLE_BYTES) &&
+               hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::InteractionCommandQueue) &&
+               hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::ThrownDropCommand);
+    }
+
+    [[nodiscard]] inline bool supportsThrownDropCommandV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsThrownDropCommandV1(limits);
+    }
+
+    [[nodiscard]] inline bool supportsHandInputSuppressionV1(const RockProviderLimitsV1& limits)
+    {
+        return providerApiTableSupportsV1(limits, ROCK_PROVIDER_API_V1_HAND_INPUT_SUPPRESSION_TABLE_BYTES) &&
+               hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::HandInputSuppression);
+    }
+
+    [[nodiscard]] inline bool supportsHandInputSuppressionV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsHandInputSuppressionV1(limits);
+    }
 
     static_assert(std::is_standard_layout_v<RockProviderTransform>);
     static_assert(std::is_trivially_copyable_v<RockProviderTransform>);
