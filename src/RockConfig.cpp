@@ -156,7 +156,7 @@ namespace rock
         rockVisualOnlySidearmSupportGripEnabled = true;
         rockEquippedWeaponPrimaryDetachEnabled = true;
         rockGrabbedWeaponAutoEquipEnabled = false;
-        rockGrabbedWeaponAutoEquipSettleSeconds = 0.35f;
+        rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
         rockWeaponSupportGripHandLerpEnabled = true;
         rockWeaponSupportGripHandLerpTimeMin = 0.12f;
         rockWeaponSupportGripHandLerpTimeMax = 0.20f;
@@ -724,7 +724,7 @@ namespace rock
             REALISTIC_WEAPONS_SECTION,
             "fGrabbedWeaponAutoEquipSettleSeconds",
             rockGrabbedWeaponAutoEquipSettleSeconds,
-            0.35f,
+            0.75f,
             0.0f,
             5.0f);
         rockWeaponSupportGripHandLerpEnabled = ini.GetBoolValue(SECTION, "bWeaponSupportGripHandLerpEnabled", rockWeaponSupportGripHandLerpEnabled);

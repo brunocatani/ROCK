@@ -103,7 +103,7 @@ namespace rock
         bool rockVisualOnlySidearmSupportGripEnabled = true;
         bool rockEquippedWeaponPrimaryDetachEnabled = true;
         bool rockGrabbedWeaponAutoEquipEnabled = false;
-        float rockGrabbedWeaponAutoEquipSettleSeconds = 0.35f;
+        float rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
         bool rockWeaponSupportGripHandLerpEnabled = true;
         float rockWeaponSupportGripHandLerpTimeMin = 0.12f;
         float rockWeaponSupportGripHandLerpTimeMax = 0.20f;
