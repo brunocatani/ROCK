@@ -194,6 +194,7 @@ namespace rock
         GrabSharedObjectContext makeGrabSharedObjectContext(const Hand& hand, bool isLeft) const;
 
         void updateGrabInput(const PhysicsFrameContext& frame);
+        void processProviderInteractionCommands(const PhysicsFrameContext& frame);
 
         grab_locomotion_authority_bridge::Output updateGrabLocomotionAuthorityBridge(float deltaSeconds, bool worldReady);
 

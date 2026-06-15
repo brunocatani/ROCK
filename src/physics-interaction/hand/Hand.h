@@ -498,6 +498,12 @@ namespace rock
             RE::hknpWorld* hknpWorld,
             RE::TESObjectREFR* droppedRef,
             const RE::NiPoint3& sourceHitPointWorld);
+        bool acquireForceGrabLooseSelection(RE::bhkWorld* bhkWorld,
+            RE::hknpWorld* hknpWorld,
+            RE::TESObjectREFR* targetRef,
+            const RE::NiPoint3& sourcePointWorld,
+            std::uint32_t preferredBodyId,
+            float maxDistanceGame);
         void clearActorEquipmentDropHandoff(const char* reason = "cleared");
         void clearPullCatchIntent(const char* reason = "cleared");
         void clearSelectionState(bool rememberDeselect);

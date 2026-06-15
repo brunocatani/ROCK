@@ -5,7 +5,7 @@ ROCK exposes one v1 C ABI table from `ROCK.dll`:
 - `ROCKProviderApi.h`: the public API for FO4VR F4SE plugins.
 - `ROCKApi.h`: an alias header for the same v1 API table.
 
-The API is POD/value ABI and avoids private ROCK headers. It is the stable SDK surface for frame snapshots, hand frames, detailed weapon evidence, body contacts, external body registration, owner-filtered external contact polling, and offhand reservation.
+The API is POD/value ABI and avoids private ROCK headers. It is the stable SDK surface for frame snapshots, hand frames, detailed weapon evidence, body contacts, external body registration, owner-filtered external contact polling, offhand reservation, and queued interaction commands.
 
 ## Initialization
 
@@ -50,7 +50,8 @@ std::snprintf(registration.modName, sizeof(registration.modName), "MyPlugin");
 registration.requestedCapabilities =
     static_cast<std::uint32_t>(rock::provider::RockProviderConsumerCapabilityV1::FrameSnapshots) |
     static_cast<std::uint32_t>(rock::provider::RockProviderConsumerCapabilityV1::ExternalBodies) |
-    static_cast<std::uint32_t>(rock::provider::RockProviderConsumerCapabilityV1::ExternalContacts);
+    static_cast<std::uint32_t>(rock::provider::RockProviderConsumerCapabilityV1::ExternalContacts) |
+    static_cast<std::uint32_t>(rock::provider::RockProviderConsumerCapabilityV1::InteractionCommands);
 
 rock::provider::RockProviderConsumerHandleV1 handle{};
 const auto result = RockProviderApi::inst->registerConsumerV1(&registration, &handle);
@@ -76,6 +77,8 @@ Implemented v1 feature bits:
 - `ExternalContacts`
 - `ConsumerRegistrationV1`
 - `OwnerFilteredExternalContactsV1`
+- `InteractionCommandQueue`
+- `ForceGrabCommand`
 
 ## Frame And Lifecycle Rules
 
@@ -101,4 +104,17 @@ Use `getExternalContactSnapshotForOwnerV1` for integrations. It returns only con
 
 ## Interaction Commands
 
-ROCK v1 does not expose public force-grab or force-release commands.
+Interaction commands are queued through ROCK and executed from ROCK-owned update points. Provider API calls validate owner token, capability, struct shape, and queue capacity, then enqueue work; they do not mutate hand/grab state immediately.
+
+To force grab a target, register with `InteractionCommands`, fill `RockProviderForceGrabRequestV1`, and call `requestForceGrabV1`. Poll the returned command id with `getInteractionCommandResultV1` until it reports `Succeeded`, `Rejected`, or `Cancelled`.
+
+Initial force-grab scope:
+
+- Explicit `Left` or `Right` hand only.
+- Live loose-object / loose-weapon references only.
+- Near force grab only. Targets beyond `maxDistanceGame`, or beyond ROCK's near-grab range when `maxDistanceGame` is zero, are rejected.
+- Busy hands, invalid targets, stale generation guards, already-owned targets, missing bodies, and blocked physics writes fail closed.
+
+Successful force grabs enter ROCK's existing dynamic grab path. Finger posing, grab settling, haptics, object ownership, and release behavior are therefore the same systems used by normal grabs.
+
+ROCK v1 does not expose public force-release or thrown-drop commands yet.

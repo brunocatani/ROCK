@@ -8,6 +8,7 @@
 #include <mutex>
 
 #include "physics-interaction/object/ExternalBodyRegistry.h"
+#include "physics-interaction/api/InteractionCommandQueue.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "f4vr/F4VRUtils.h"
 
@@ -58,7 +59,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::FrameSnapshots) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ExternalBodies) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ExternalContacts) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::OffhandReservation);
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::OffhandReservation) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::InteractionCommands);
     constexpr std::uint32_t kProviderFeatureBitsV1 =
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::FrameCallbacks) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::LifecycleFields) |
@@ -67,7 +69,11 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::BodyContacts) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::ExternalContacts) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::ConsumerRegistrationV1) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::OwnerFilteredExternalContactsV1);
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::OwnerFilteredExternalContactsV1) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::InteractionCommandQueue) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::ForceGrabCommand);
+    constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
+        static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
 
     struct ConsumerSlot
     {
@@ -80,6 +86,24 @@ namespace
     std::mutex s_consumerMutex;
     std::array<ConsumerSlot, ROCK_PROVIDER_MAX_CONSUMERS_V1> s_consumers{};
     std::atomic<std::uint64_t> s_nextConsumerTokenSequence{ 1 };
+
+    struct InteractionCommandSlot
+    {
+        bool active{ false };
+        QueuedInteractionCommandV1 command{};
+    };
+
+    struct InteractionCommandResultSlot
+    {
+        bool active{ false };
+        RockProviderInteractionCommandResultV1 result{};
+    };
+
+    std::mutex s_interactionCommandMutex;
+    std::array<InteractionCommandSlot, ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1> s_interactionCommands{};
+    std::array<InteractionCommandResultSlot, ROCK_PROVIDER_MAX_COMPLETED_INTERACTION_COMMANDS_V1> s_interactionResults{};
+    std::size_t s_nextInteractionResultSlot{ 0 };
+    std::atomic<std::uint64_t> s_nextInteractionCommandId{ 1 };
 
     std::uint32_t ROCK_PROVIDER_CALL apiGetVersion() { return ROCK_PROVIDER_API_VERSION; }
 
@@ -276,6 +300,12 @@ namespace
         return nullptr;
     }
 
+    bool consumerHasCapabilityLocked(std::uint64_t ownerToken, RockProviderConsumerCapabilityV1 capability)
+    {
+        const auto* slot = findConsumerSlotLocked(ownerToken);
+        return slot && hasConsumerCapabilityV1(slot->grantedCapabilities, capability);
+    }
+
     std::uint32_t currentProviderGenerationForRegistration()
     {
         std::scoped_lock lock(s_snapshotMutex);
@@ -286,6 +316,82 @@ namespace
     {
         const auto sequence = s_nextConsumerTokenSequence.fetch_add(1, std::memory_order_acq_rel);
         return kRockIssuedOwnerTokenNamespace | (sequence & kRockIssuedOwnerTokenSequenceMask);
+    }
+
+    std::uint64_t nextInteractionCommandId()
+    {
+        auto id = s_nextInteractionCommandId.fetch_add(1, std::memory_order_acq_rel);
+        if (id == 0) {
+            id = s_nextInteractionCommandId.fetch_add(1, std::memory_order_acq_rel);
+        }
+        return id;
+    }
+
+    RockProviderInteractionCommandResultV1 makeCommandResult(
+        const QueuedInteractionCommandV1& command,
+        RockProviderInteractionCommandStateV1 state,
+        RockProviderInteractionFailureV1 failure)
+    {
+        RockProviderInteractionCommandResultV1 result{};
+        result.size = sizeof(RockProviderInteractionCommandResultV1);
+        result.version = ROCK_PROVIDER_API_VERSION;
+        result.ownerToken = command.ownerToken;
+        result.commandId = command.commandId;
+        result.kind = command.kind;
+        result.state = state;
+        result.failure = failure;
+        result.hand = command.forceGrab.hand;
+        result.targetRefr = command.forceGrab.targetRefr;
+        result.targetFormId = command.forceGrab.targetFormId;
+        result.targetBodyId = command.forceGrab.targetBodyId;
+        result.worldGeneration = command.forceGrab.worldGeneration;
+        result.skeletonGeneration = command.forceGrab.skeletonGeneration;
+        result.providerGeneration = command.forceGrab.providerGeneration;
+        return result;
+    }
+
+    void storeInteractionResultLocked(const RockProviderInteractionCommandResultV1& result)
+    {
+        for (auto& slot : s_interactionResults) {
+            if (slot.active && slot.result.ownerToken == result.ownerToken && slot.result.commandId == result.commandId) {
+                slot.result = result;
+                return;
+            }
+        }
+
+        s_interactionResults[s_nextInteractionResultSlot] = InteractionCommandResultSlot{
+            .active = true,
+            .result = result,
+        };
+        s_nextInteractionResultSlot = (s_nextInteractionResultSlot + 1) % s_interactionResults.size();
+    }
+
+    void completeInteractionCommandLocked(
+        const QueuedInteractionCommandV1& command,
+        RockProviderInteractionCommandStateV1 state,
+        RockProviderInteractionFailureV1 failure)
+    {
+        storeInteractionResultLocked(makeCommandResult(command, state, failure));
+    }
+
+    void clearInteractionCommandsForOwnerLocked(std::uint64_t ownerToken, RockProviderInteractionFailureV1 failure)
+    {
+        if (ownerToken == 0) {
+            return;
+        }
+
+        for (auto& slot : s_interactionCommands) {
+            if (slot.active && slot.command.ownerToken == ownerToken) {
+                completeInteractionCommandLocked(slot.command, RockProviderInteractionCommandStateV1::Cancelled, failure);
+                slot = {};
+            }
+        }
+
+        for (auto& slot : s_interactionResults) {
+            if (slot.active && slot.result.ownerToken == ownerToken) {
+                slot = {};
+            }
+        }
     }
 
     RockProviderResultV1 ROCK_PROVIDER_CALL apiRegisterConsumerV1(
@@ -362,6 +468,11 @@ namespace
             s_externalBodies.clearOwner(ownerToken);
         }
 
+        {
+            std::scoped_lock lock(s_interactionCommandMutex);
+            clearInteractionCommandsForOwnerLocked(ownerToken, RockProviderInteractionFailureV1::OwnerNotRegistered);
+        }
+
         if (s_offhandReservationOwner.load(std::memory_order_acquire) == ownerToken) {
             s_offhandReservation.store(static_cast<std::uint32_t>(RockProviderOffhandReservation::Normal), std::memory_order_release);
             s_offhandReservationOwner.store(0, std::memory_order_release);
@@ -393,7 +504,118 @@ namespace
         outLimits->maxExternalContacts = ROCK_PROVIDER_MAX_EXTERNAL_CONTACTS_V1;
         outLimits->maxBodyContacts = ROCK_PROVIDER_MAX_BODY_CONTACTS_V1;
         outLimits->maxWeaponBodies = ROCK_PROVIDER_MAX_WEAPON_BODIES;
+        outLimits->maxInteractionCommands = ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1;
+        outLimits->maxCompletedInteractionCommands = ROCK_PROVIDER_MAX_COMPLETED_INTERACTION_COMMANDS_V1;
         return true;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiRequestForceGrabV1(
+        std::uint64_t ownerToken,
+        const RockProviderForceGrabRequestV1* request,
+        std::uint64_t* outCommandId)
+    {
+        if (!request || !outCommandId || ownerToken == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        *outCommandId = 0;
+
+        if (request->size != sizeof(RockProviderForceGrabRequestV1)) {
+            return RockProviderResultV1::InvalidSize;
+        }
+        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
+            return RockProviderResultV1::UnsupportedVersion;
+        }
+        if (request->hand != RockProviderHand::Right && request->hand != RockProviderHand::Left) {
+            return RockProviderResultV1::HandUnavailable;
+        }
+        if (request->targetRefr == 0 || (request->flags & ~kImplementedForceGrabFlagsV1) != 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!pi || !pi->isInitialized()) {
+            return RockProviderResultV1::NotReady;
+        }
+
+        {
+            std::scoped_lock lock(s_consumerMutex);
+            if (!findConsumerSlotLocked(ownerToken)) {
+                return RockProviderResultV1::OwnerNotRegistered;
+            }
+            if (!consumerHasCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::InteractionCommands)) {
+                return RockProviderResultV1::PermissionDenied;
+            }
+        }
+
+        auto* targetRef = reinterpret_cast<RE::TESObjectREFR*>(request->targetRefr);
+        if (!targetRef || targetRef->IsDeleted() || targetRef->IsDisabled()) {
+            return RockProviderResultV1::TargetInvalid;
+        }
+        if (request->targetFormId != 0 && targetRef->GetFormID() != request->targetFormId) {
+            return RockProviderResultV1::TargetInvalid;
+        }
+
+        const auto handle = targetRef->GetHandle();
+        if (!handle) {
+            return RockProviderResultV1::TargetInvalid;
+        }
+
+        QueuedInteractionCommandV1 command{};
+        command.ownerToken = ownerToken;
+        command.commandId = nextInteractionCommandId();
+        command.kind = RockProviderInteractionCommandKindV1::ForceGrab;
+        command.forceGrab = *request;
+        command.forceGrab.targetFormId = request->targetFormId != 0 ? request->targetFormId : targetRef->GetFormID();
+        command.targetHandle = handle;
+
+        std::scoped_lock lock(s_interactionCommandMutex);
+        for (auto& slot : s_interactionCommands) {
+            if (!slot.active) {
+                slot = InteractionCommandSlot{
+                    .active = true,
+                    .command = command,
+                };
+                *outCommandId = command.commandId;
+                storeInteractionResultLocked(makeCommandResult(command, RockProviderInteractionCommandStateV1::Queued, RockProviderInteractionFailureV1::None));
+                return RockProviderResultV1::RequestQueued;
+            }
+        }
+
+        return RockProviderResultV1::CapacityFull;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiGetInteractionCommandResultV1(
+        std::uint64_t ownerToken,
+        std::uint64_t commandId,
+        RockProviderInteractionCommandResultV1* outResult)
+    {
+        if (!outResult || ownerToken == 0 || commandId == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (outResult->size != sizeof(RockProviderInteractionCommandResultV1)) {
+            return RockProviderResultV1::InvalidSize;
+        }
+
+        std::scoped_lock lock(s_consumerMutex, s_interactionCommandMutex);
+        if (!findConsumerSlotLocked(ownerToken)) {
+            return RockProviderResultV1::OwnerNotRegistered;
+        }
+
+        for (const auto& slot : s_interactionResults) {
+            if (slot.active && slot.result.ownerToken == ownerToken && slot.result.commandId == commandId) {
+                *outResult = slot.result;
+                return RockProviderResultV1::Ok;
+            }
+        }
+
+        for (const auto& slot : s_interactionCommands) {
+            if (slot.active && slot.command.ownerToken == ownerToken && slot.command.commandId == commandId) {
+                *outResult = makeCommandResult(slot.command, RockProviderInteractionCommandStateV1::Queued, RockProviderInteractionFailureV1::None);
+                return RockProviderResultV1::Ok;
+            }
+        }
+
+        return RockProviderResultV1::RequestNotFound;
     }
 
     bool ROCK_PROVIDER_CALL apiQueryWeaponContactAtPoint(
@@ -546,6 +768,8 @@ namespace
         .getGrantedCapabilitiesV1 = &apiGetGrantedCapabilitiesV1,
         .getProviderLimitsV1 = &apiGetProviderLimitsV1,
         .getExternalContactSnapshotForOwnerV1 = &apiGetExternalContactSnapshotForOwnerV1,
+        .requestForceGrabV1 = &apiRequestForceGrabV1,
+        .getInteractionCommandResultV1 = &apiGetInteractionCommandResultV1,
     };
 }
 
@@ -603,8 +827,39 @@ namespace rock::provider
             std::scoped_lock lock(s_externalBodyMutex);
             s_externalBodies.clearAll();
         }
+        clearInteractionCommandsForProviderLossV1(RockProviderInteractionFailureV1::ProviderNotReady);
         s_offhandReservation.store(static_cast<std::uint32_t>(RockProviderOffhandReservation::Normal), std::memory_order_release);
         s_offhandReservationOwner.store(0, std::memory_order_release);
+    }
+
+    bool dequeueInteractionCommandV1(QueuedInteractionCommandV1& outCommand)
+    {
+        std::scoped_lock lock(s_interactionCommandMutex);
+        for (auto& slot : s_interactionCommands) {
+            if (slot.active) {
+                outCommand = slot.command;
+                slot = {};
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void completeInteractionCommandV1(const RockProviderInteractionCommandResultV1& result)
+    {
+        std::scoped_lock lock(s_interactionCommandMutex);
+        storeInteractionResultLocked(result);
+    }
+
+    void clearInteractionCommandsForProviderLossV1(RockProviderInteractionFailureV1 failure)
+    {
+        std::scoped_lock lock(s_interactionCommandMutex);
+        for (auto& slot : s_interactionCommands) {
+            if (slot.active) {
+                completeInteractionCommandLocked(slot.command, RockProviderInteractionCommandStateV1::Cancelled, failure);
+                slot = {};
+            }
+        }
     }
 
     bool isExternalBodyId(std::uint32_t bodyId)

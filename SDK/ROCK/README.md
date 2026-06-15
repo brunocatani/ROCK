@@ -20,6 +20,6 @@ Use `RockProviderApi::initialize(rock::provider::ROCK_PROVIDER_API_VERSION)`, th
 
 ## Ownership
 
-Register with `registerConsumerV1` and use the returned ROCK-issued owner token for write/control calls. Do not invent global owner tokens. `unregisterConsumerV1` releases that owner's external bodies, offhand reservation, and diagnostic input suppression.
+Register with `registerConsumerV1` and use the returned ROCK-issued owner token for write/control calls. Do not invent global owner tokens. `unregisterConsumerV1` releases that owner's external bodies, offhand reservation, and queued interaction commands.
 
-ROCK v1 does not expose public force-grab or force-release commands. Those remain reserved until they are implemented through a bounded ROCK-owned command queue.
+ROCK v1 exposes queued force grab through `requestForceGrabV1` and `getInteractionCommandResultV1`. Public force release and thrown-drop commands are not exposed yet.

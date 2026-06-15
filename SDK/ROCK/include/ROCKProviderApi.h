@@ -38,6 +38,8 @@ namespace rock::provider
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_BODY_CONTACTS_V1 = 128;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_FRAME_CALLBACKS_V1 = 16;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_CONSUMERS_V1 = 64;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1 = 32;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_COMPLETED_INTERACTION_COMMANDS_V1 = 64;
 
     enum class RockProviderHand : std::uint32_t
     {
@@ -205,6 +207,8 @@ namespace rock::provider
         HandUnavailable = 12,
         HandBusy = 13,
         ObjectAlreadyOwned = 14,
+        RequestQueued = 15,
+        RequestNotFound = 16,
     };
 
     enum class RockProviderConsumerCapabilityV1 : std::uint32_t
@@ -214,6 +218,7 @@ namespace rock::provider
         ExternalBodies = 1u << 1,
         ExternalContacts = 1u << 2,
         OffhandReservation = 1u << 3,
+        InteractionCommands = 1u << 4,
     };
 
     enum class RockProviderFeatureBitV1 : std::uint32_t
@@ -227,6 +232,48 @@ namespace rock::provider
         ExternalContacts = 1u << 5,
         ConsumerRegistrationV1 = 1u << 8,
         OwnerFilteredExternalContactsV1 = 1u << 9,
+        InteractionCommandQueue = 1u << 10,
+        ForceGrabCommand = 1u << 11,
+    };
+
+    enum class RockProviderInteractionCommandKindV1 : std::uint32_t
+    {
+        Unknown = 0,
+        ForceGrab = 1,
+    };
+
+    enum class RockProviderInteractionCommandStateV1 : std::uint32_t
+    {
+        Unknown = 0,
+        Queued = 1,
+        Succeeded = 2,
+        Rejected = 3,
+        Cancelled = 4,
+    };
+
+    enum class RockProviderInteractionFailureV1 : std::uint32_t
+    {
+        None = 0,
+        ProviderNotReady = 1,
+        PhysicsWritesBlocked = 2,
+        OwnerNotRegistered = 3,
+        InvalidRequest = 4,
+        StaleWorldGeneration = 5,
+        StaleSkeletonGeneration = 6,
+        StaleProviderGeneration = 7,
+        TargetMissing = 8,
+        TargetUnavailable = 9,
+        TargetBodyMissing = 10,
+        TargetAlreadyOwned = 11,
+        HandInvalid = 12,
+        HandDisabled = 13,
+        HandBusy = 14,
+    };
+
+    enum class RockProviderForceGrabFlagV1 : std::uint32_t
+    {
+        None = 0,
+        UsePreferredGrabPointGame = 1u << 0,
     };
 
     [[nodiscard]] inline constexpr bool hasLifecycleFlag(std::uint32_t flags, RockProviderLifecycleFlag flag)
@@ -274,7 +321,47 @@ namespace rock::provider
         std::uint32_t maxExternalContacts{ 0 };
         std::uint32_t maxBodyContacts{ 0 };
         std::uint32_t maxWeaponBodies{ 0 };
-        std::uint32_t reserved[9]{};
+        std::uint32_t maxInteractionCommands{ 0 };
+        std::uint32_t maxCompletedInteractionCommands{ 0 };
+        std::uint32_t reserved[7]{};
+    };
+
+    struct RockProviderForceGrabRequestV1
+    {
+        std::uint32_t size{ sizeof(RockProviderForceGrabRequestV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        RockProviderHand hand{ RockProviderHand::None };
+        std::uint32_t flags{ 0 };
+        std::uintptr_t targetRefr{ 0 };
+        std::uint32_t targetFormId{ 0 };
+        std::uint32_t targetBodyId{ 0x7FFF'FFFF };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        float maxDistanceGame{ 0.0f };
+        float preferredGrabPointGame[3]{};
+        std::uint32_t reserved[5]{};
+    };
+
+    struct RockProviderInteractionCommandResultV1
+    {
+        std::uint32_t size{ sizeof(RockProviderInteractionCommandResultV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint64_t ownerToken{ 0 };
+        std::uint64_t commandId{ 0 };
+        RockProviderInteractionCommandKindV1 kind{ RockProviderInteractionCommandKindV1::Unknown };
+        RockProviderInteractionCommandStateV1 state{ RockProviderInteractionCommandStateV1::Unknown };
+        RockProviderInteractionFailureV1 failure{ RockProviderInteractionFailureV1::None };
+        RockProviderHand hand{ RockProviderHand::None };
+        std::uintptr_t targetRefr{ 0 };
+        std::uint32_t targetFormId{ 0 };
+        std::uint32_t targetBodyId{ 0x7FFF'FFFF };
+        std::uint64_t frameIndex{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        std::uint32_t reserved0{ 0 };
+        std::uint32_t reserved[8]{};
     };
 
     struct RockProviderTransform
@@ -503,6 +590,14 @@ namespace rock::provider
             std::uint64_t ownerToken,
             RockProviderExternalContactV1* outContacts,
             std::uint32_t maxContacts);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* requestForceGrabV1)(
+            std::uint64_t ownerToken,
+            const RockProviderForceGrabRequestV1* request,
+            std::uint64_t* outCommandId);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* getInteractionCommandResultV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t commandId,
+            RockProviderInteractionCommandResultV1* outResult);
 
         [[nodiscard]] static int initialize(const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION)
         {
@@ -552,6 +647,14 @@ namespace rock::provider
     static_assert(alignof(RockProviderLimitsV1) == 4);
     static_assert(std::is_standard_layout_v<RockProviderLimitsV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderLimitsV1>);
+    static_assert(sizeof(RockProviderForceGrabRequestV1) == 80);
+    static_assert(alignof(RockProviderForceGrabRequestV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderForceGrabRequestV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderForceGrabRequestV1>);
+    static_assert(sizeof(RockProviderInteractionCommandResultV1) == 112);
+    static_assert(alignof(RockProviderInteractionCommandResultV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderInteractionCommandResultV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderInteractionCommandResultV1>);
     static_assert(sizeof(RockProviderTransform) == 52);
     static_assert(sizeof(RockProviderFrameSnapshot) == 272);
     static_assert(alignof(RockProviderFrameSnapshot) == 8);

@@ -1088,6 +1088,107 @@ namespace rock
         return true;
     }
 
+    bool Hand::acquireForceGrabLooseSelection(RE::bhkWorld* bhkWorld,
+        RE::hknpWorld* hknpWorld,
+        RE::TESObjectREFR* targetRef,
+        const RE::NiPoint3& sourcePointWorld,
+        std::uint32_t preferredBodyId,
+        float maxDistanceGame)
+    {
+        if (!hknpWorld || !targetRef || targetRef->IsDeleted() || targetRef->IsDisabled()) {
+            return false;
+        }
+
+        auto* scanWorld = bhkWorld;
+        if (!scanWorld) {
+            auto* cell = targetRef->GetParentCell();
+            scanWorld = cell ? cell->GetbhkWorld() : nullptr;
+        }
+        if (!scanWorld) {
+            return false;
+        }
+
+        object_physics_body_set::BodySetScanOptions scanOptions{};
+        scanOptions.mode = physics_body_classifier::InteractionMode::ActiveGrab;
+        scanOptions.rightHandBodyId = _isLeft ? INVALID_BODY_ID : _handBody.getBodyId().value;
+        scanOptions.leftHandBodyId = _isLeft ? _handBody.getBodyId().value : INVALID_BODY_ID;
+        scanOptions.sourceBodyId = _handBody.getBodyId().value;
+        scanOptions.targetKind = grab_target::Kind::LooseObject;
+        scanOptions.requireSameResolvedRef = true;
+        scanOptions.allowUnresolvedRefBodies = true;
+        scanOptions.allowWeaponRefExpansion = true;
+        scanOptions.heldBySameHand = &_heldBodyIds;
+        scanOptions.maxDepth = g_rockConfig.rockObjectPhysicsTreeMaxDepth;
+
+        const auto bodySet = object_physics_body_set::scanObjectPhysicsBodySet(scanWorld, hknpWorld, targetRef, scanOptions);
+        const auto preferred = preferredBodyId != INVALID_BODY_ID ? preferredBodyId : object_physics_body_set::INVALID_BODY_ID;
+        const auto primaryChoice = bodySet.choosePrimaryBody(preferred, object_physics_body_set::PurePoint3{ sourcePointWorld });
+        if (primaryChoice.bodyId == object_physics_body_set::INVALID_BODY_ID) {
+            ROCK_LOG_WARN(Hand,
+                "{} hand force-grab could not resolve a loose-object body: target={:08X} scanned={} accepted={} rejected={} collisions={} visited={}",
+                handName(),
+                targetRef->GetFormID(),
+                bodySet.records.size(),
+                bodySet.acceptedCount(),
+                bodySet.rejectedCount(),
+                bodySet.diagnostics.collisionObjects,
+                bodySet.diagnostics.visitedNodes);
+            return false;
+        }
+
+        const auto* primaryRecord = bodySet.findRecord(primaryChoice.bodyId);
+        const RE::NiPoint3 bodyPoint = primaryRecord ?
+                                           RE::NiPoint3(primaryRecord->positionGame.x, primaryRecord->positionGame.y, primaryRecord->positionGame.z) :
+                                           sourcePointWorld;
+        const float distance = pointDistanceGameUnits(sourcePointWorld, bodyPoint);
+        const float acceptedDistance = std::isfinite(maxDistanceGame) && maxDistanceGame > 0.0f ? maxDistanceGame : g_rockConfig.rockNearDetectionRange;
+        if (acceptedDistance > 0.0f && distance > acceptedDistance) {
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand force-grab selection rejected by distance: target={:08X} body={} distance={:.1f} max={:.1f}",
+                handName(),
+                targetRef->GetFormID(),
+                primaryChoice.bodyId,
+                distance,
+                acceptedDistance);
+            return false;
+        }
+
+        SelectedObject selection{};
+        selection.refr = targetRef;
+        selection.bodyId = RE::hknpBodyId{ primaryChoice.bodyId };
+        selection.hitNode = primaryRecord && primaryRecord->owningNode ? primaryRecord->owningNode : targetRef->Get3D();
+        selection.visualNode = targetRef->Get3D();
+        selection.hitPointWorld = bodyPoint;
+        selection.hitNormalWorld = normalizeOrFallback(sourcePointWorld - bodyPoint, RE::NiPoint3{ 0.0f, 0.0f, 1.0f });
+        selection.distance = distance;
+        selection.signedAlongDistance = distance;
+        selection.lateralDistance = 0.0f;
+        selection.hitFraction = 0.0f;
+        selection.targetKind = grab_target::Kind::LooseObject;
+        selection.isFarSelection = false;
+        selection.hasHitPoint = true;
+        selection.hasHitNormal = true;
+
+        if (!selection.isValid()) {
+            return false;
+        }
+
+        stopSelectionHighlight();
+        _currentSelection = selection;
+        applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::SelectionFoundClose });
+        _selectionHoldFrames = 0;
+        clearSelectedCloseFingerPose();
+
+        ROCK_LOG_DEBUG(Hand,
+            "{} hand force-grab selection acquired: target={:08X} body={} reason={} distance={:.1f}",
+            handName(),
+            targetRef->GetFormID(),
+            primaryChoice.bodyId,
+            primaryBodyChoiceReasonName(primaryChoice.reason),
+            distance);
+        return true;
+    }
+
     void Hand::clearActorEquipmentDropHandoff(const char* reason)
     {
         if (_actorEquipmentDropHandoff.active) {

@@ -17,6 +17,7 @@
 
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
+#include "physics-interaction/api/InteractionCommandQueue.h"
 #include "physics-interaction/collision/CollisionLayerPolicy.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/collision/ContactPipelinePolicy.h"
@@ -4353,6 +4354,163 @@ namespace rock
         };
     }
 
+    void PhysicsInteraction::processProviderInteractionCommands(const PhysicsFrameContext& frame)
+    {
+        using namespace provider;
+
+        QueuedInteractionCommandV1 command{};
+        std::uint32_t processed = 0;
+        while (processed++ < ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1 && provider::dequeueInteractionCommandV1(command)) {
+            RockProviderInteractionCommandResultV1 result{};
+            result.size = sizeof(RockProviderInteractionCommandResultV1);
+            result.version = ROCK_PROVIDER_API_VERSION;
+            result.ownerToken = command.ownerToken;
+            result.commandId = command.commandId;
+            result.kind = command.kind;
+            result.state = RockProviderInteractionCommandStateV1::Rejected;
+            result.failure = RockProviderInteractionFailureV1::InvalidRequest;
+            result.hand = command.forceGrab.hand;
+            result.targetRefr = command.forceGrab.targetRefr;
+            result.targetFormId = command.forceGrab.targetFormId;
+            result.targetBodyId = command.forceGrab.targetBodyId;
+            result.frameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
+            result.worldGeneration = _worldGenerationAtomic.load(std::memory_order_acquire);
+            result.skeletonGeneration = _skeletonGenerationAtomic.load(std::memory_order_acquire);
+            result.providerGeneration = _providerGenerationAtomic.load(std::memory_order_acquire);
+
+            auto complete = [&](RockProviderInteractionCommandStateV1 state, RockProviderInteractionFailureV1 failure) {
+                result.state = state;
+                result.failure = failure;
+                provider::completeInteractionCommandV1(result);
+            };
+
+            if (command.kind != RockProviderInteractionCommandKindV1::ForceGrab) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::InvalidRequest);
+                continue;
+            }
+
+            if (!frame.worldReady || !frame.bhkWorld || !frame.hknpWorld) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::ProviderNotReady);
+                continue;
+            }
+            if (!physicsWritesAllowedForWorld(frame.hknpWorld)) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::PhysicsWritesBlocked);
+                continue;
+            }
+            if (command.forceGrab.worldGeneration != 0 && command.forceGrab.worldGeneration != result.worldGeneration) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::StaleWorldGeneration);
+                continue;
+            }
+            if (command.forceGrab.skeletonGeneration != 0 && command.forceGrab.skeletonGeneration != result.skeletonGeneration) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::StaleSkeletonGeneration);
+                continue;
+            }
+            if (command.forceGrab.providerGeneration != 0 && command.forceGrab.providerGeneration != result.providerGeneration) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::StaleProviderGeneration);
+                continue;
+            }
+
+            const bool isLeft = command.forceGrab.hand == RockProviderHand::Left;
+            if (command.forceGrab.hand != RockProviderHand::Left && command.forceGrab.hand != RockProviderHand::Right) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandInvalid);
+                continue;
+            }
+            Hand& hand = isLeft ? _leftHand : _rightHand;
+            const auto& handInput = isLeft ? frame.left : frame.right;
+            if (handInput.disabled) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandDisabled);
+                continue;
+            }
+            if (!weapon_two_handed_grip_math::canProcessNormalGrabInput(
+                    isLeft,
+                    _twoHandedGrip.isGripping(),
+                    resolveEquippedWeaponInteractionNode() != nullptr,
+                    _twoHandedGrip.isPrimaryDetached())) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandBusy);
+                continue;
+            }
+            if (hand.isHolding() || hand.hasActivePullCatchIntent() || hand.hasPendingActorEquipmentDropHandoff() ||
+                hand.getState() == HandState::SelectionLocked || hand.getState() == HandState::Pulled) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandBusy);
+                continue;
+            }
+
+            auto targetRefPtr = command.targetHandle.get();
+            auto* targetRef = targetRefPtr.get();
+            if (!targetRef) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetMissing);
+                continue;
+            }
+            result.targetRefr = reinterpret_cast<std::uintptr_t>(targetRef);
+            result.targetFormId = targetRef->GetFormID();
+            if (targetRef->IsDeleted() || targetRef->IsDisabled()) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
+                continue;
+            }
+            if (command.forceGrab.targetFormId != 0 && targetRef->GetFormID() != command.forceGrab.targetFormId) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
+                continue;
+            }
+            if (physicsModOwnsObject(targetRef)) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetAlreadyOwned);
+                continue;
+            }
+
+            RE::NiPoint3 sourcePoint = handInput.grabAnchorWorld;
+            if ((command.forceGrab.flags & static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame)) != 0) {
+                sourcePoint = RE::NiPoint3{
+                    command.forceGrab.preferredGrabPointGame[0],
+                    command.forceGrab.preferredGrabPointGame[1],
+                    command.forceGrab.preferredGrabPointGame[2],
+                };
+            }
+
+            if (!hand.acquireForceGrabLooseSelection(
+                    frame.bhkWorld,
+                    frame.hknpWorld,
+                    targetRef,
+                    sourcePoint,
+                    command.forceGrab.targetBodyId,
+                    command.forceGrab.maxDistanceGame)) {
+                hand.clearSelectionState(false);
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetBodyMissing);
+                continue;
+            }
+
+            if (command.forceGrab.targetBodyId != INVALID_BODY_ID && hand.getSelection().bodyId.value != command.forceGrab.targetBodyId) {
+                result.targetBodyId = hand.getSelection().bodyId.value;
+                hand.clearSelectionState(false);
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetBodyMissing);
+                continue;
+            }
+
+            const auto sharedContext = makeGrabSharedObjectContext(hand, isLeft);
+            _softContactRuntime.clearHandForStrongerOwner(isLeft, "provider-force-grab");
+            const bool grabbed = hand.grabSelectedObject(frame.hknpWorld,
+                handInput.rawHandWorld,
+                g_rockConfig.rockGrabLinearTau,
+                g_rockConfig.rockGrabLinearDamping,
+                g_rockConfig.rockGrabConstraintMaxForce,
+                g_rockConfig.rockGrabLinearProportionalRecovery,
+                g_rockConfig.rockGrabLinearConstantRecovery,
+                &_bodyBoneColliders,
+                sharedContext);
+            if (!grabbed) {
+                hand.clearSelectionState(false);
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
+                continue;
+            }
+
+            auto* heldRef = hand.getHeldRef();
+            const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
+            result.targetBodyId = primaryBodyId;
+            claimObject(heldRef, claimOwnerForHand(isLeft));
+            dispatchPhysicsMessage(kPhysMsg_OnGrab, isLeft, heldRef, heldRef ? heldRef->GetFormID() : 0, 0);
+            dispatchGrabCommittedEvent(isLeft, heldRef, primaryBodyId, frame.hknpWorld);
+            complete(RockProviderInteractionCommandStateV1::Succeeded, RockProviderInteractionFailureV1::None);
+        }
+    }
+
     grab_locomotion_authority_bridge::Output PhysicsInteraction::updateGrabLocomotionAuthorityBridge(float deltaSeconds, bool worldReady)
     {
         const auto& runtime = runtime_state::currentFrame();
@@ -4736,6 +4894,7 @@ namespace rock
         const bool equippedWeaponSupportGripActive = _twoHandedGrip.isGripping();
         const auto farHmdConeGate = makeFarSelectionHmdConeGate(frame);
         input_remap_runtime::setRightHandHeldWeapon(_rightHand.isHoldingLooseWeapon());
+        processProviderInteractionCommands(frame);
 
         auto releaseSuppressedHeldObject = [&](Hand& hand, bool isLeft, const char* reason) {
             auto* heldRef = hand.getHeldRef();

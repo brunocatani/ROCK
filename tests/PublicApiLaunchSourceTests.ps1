@@ -140,8 +140,8 @@ Require-Text 'src/api/ROCKProviderApi.cpp' 's_externalBodies\.clearOwner\(ownerT
     'Unregistering a consumer must release that owner external-body state.'
 Require-Text 'src/physics-interaction/object/ExternalBodyRegistry.h' 'copyContactsForOwnerV1' `
     'Owner-filtered contact polling must be implemented in the external-body registry.'
-Require-Text 'SDK/ROCK/docs/PublicApi.md' 'ROCK v1 does not expose public force-grab or force-release commands' `
-    'Docs must state that command APIs are not public until the safe queue exists.'
+Require-Text 'SDK/ROCK/docs/PublicApi.md' 'Successful force grabs enter ROCK''s existing dynamic grab path' `
+    'Docs must state that force grab uses the normal dynamic grab path.'
 Require-Text 'README.md' 'API v1 includes ROCK-issued owner tokens' `
     'README must point consumers to the v1 API.'
 Require-Text 'cmake/package.cmake' 'SDK/ROCK' `
@@ -151,16 +151,30 @@ Require-Text 'cmake/package.cmake' 'src/api/ROCKProviderApi\.h' `
 Require-Text 'cmake/package.cmake' 'src/api/ROCKApi\.h' `
     'Release packaging must copy the API alias header into the SDK include directory.'
 
-Reject-Text 'src/api/ROCKProviderApi.h' 'requestForceGrab|requestForceRelease' `
-    'Public force-grab/release functions must not be exported until a real queued implementation exists.'
-Reject-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestForceGrab|apiRequestForceRelease' `
-    'Provider glue must not expose fake immediate command stubs.'
+Require-Text 'src/api/ROCKProviderApi.h' 'InteractionCommands|InteractionCommandQueue|ForceGrabCommand' `
+    'v1 must expose the real queued force-grab command surface.'
+Require-Text 'src/api/ROCKProviderApi.h' 'requestForceGrabV1|getInteractionCommandResultV1' `
+    'v1 function table must expose queued force-grab request and result polling.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestForceGrabV1' `
+    'Provider glue must implement queued force-grab request validation.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 's_interactionCommands' `
+    'Provider glue must use a bounded interaction command queue.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'processProviderInteractionCommands' `
+    'ROCK runtime must execute provider commands from the update path.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'hand\.grabSelectedObject' `
+    'Force grab execution must commit through the existing dynamic grab path.'
+Reject-Text 'src/api/ROCKProviderApi.h' 'requestForceRelease' `
+    'Public force-release must not be exported until real behavior exists.'
+Reject-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestForceRelease' `
+    'Provider glue must not expose fake force-release stubs.'
+Reject-Text 'src/api/ROCKProviderApi.cpp' 'grabSelectedObject' `
+    'Provider API glue must only enqueue commands, not mutate hand state directly.'
 Reject-Text 'src/api/ROCKProviderApi.h' 'getWeaponEvidenceDescriptors|RockProviderWeaponEvidenceDescriptor|getExternalContactSnapshotV1' `
     'Public API must not expose redundant shallow weapon evidence or unowned contact snapshots.'
 Reject-Text 'src/api/ROCKProviderApi.h' 'DiagnosticOverlay|DiagnosticInput|publishDiagnosticOverlay|getDiagnosticInputSnapshotV1|setDiagnosticInputSuppressionV1' `
     'Public API must not expose diagnostic/probe control surfaces.'
-Reject-Text 'src/api/ROCKProviderApi.h' 'InteractionCommands|InteractionCommandQueue|ForceGrabCommand|ForceReleaseCommand|maxInteractionCommands|RequestQueued|RequestRejected|RequestNotFound' `
-    'Public API must not expose reserved interaction command scaffolding.'
+Reject-Text 'src/api/ROCKProviderApi.h' 'ForceReleaseCommand' `
+    'Public API must not expose reserved force-release scaffolding.'
 
 $providerHeader = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/api/ROCKProviderApi.h')
 $expectedProviderFunctions = [string[]]@(
@@ -186,7 +200,9 @@ $expectedProviderFunctions = [string[]]@(
     'unregisterConsumerV1',
     'getGrantedCapabilitiesV1',
     'getProviderLimitsV1',
-    'getExternalContactSnapshotForOwnerV1'
+    'getExternalContactSnapshotForOwnerV1',
+    'requestForceGrabV1',
+    'getInteractionCommandResultV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 
