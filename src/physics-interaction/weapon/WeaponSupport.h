@@ -306,6 +306,65 @@ namespace rock::weapon_support_thumb_pose_policy
     }
 }
 
+// ---- EquippedWeaponManualOwnershipPolicy.h ----
+
+namespace rock::equipped_weapon_manual_ownership_policy
+{
+    struct RuntimeState
+    {
+        bool active{ false };
+        std::uint64_t weaponGenerationKey{ 0 };
+    };
+
+    struct Input
+    {
+        bool weaponEquipped{ false };
+        std::uint64_t weaponGenerationKey{ 0 };
+        bool startRequested{ false };
+        bool primaryGripRetained{ false };
+        bool supportGripRetained{ false };
+    };
+
+    struct Decision
+    {
+        bool active{ false };
+        bool started{ false };
+        bool cleared{ false };
+        bool dropRequested{ false };
+    };
+
+    inline constexpr Decision update(RuntimeState& state, const Input& input) noexcept
+    {
+        Decision decision{};
+
+        if (!input.weaponEquipped || input.weaponGenerationKey == 0) {
+            decision.cleared = state.active;
+            state = {};
+            return decision;
+        }
+
+        if (state.active && state.weaponGenerationKey != input.weaponGenerationKey) {
+            decision.cleared = true;
+            state = {};
+        }
+
+        if (!state.active && input.startRequested) {
+            state.active = true;
+            state.weaponGenerationKey = input.weaponGenerationKey;
+            decision.started = true;
+        }
+
+        if (state.active && !input.primaryGripRetained && !input.supportGripRetained) {
+            decision.dropRequested = true;
+            state = {};
+            return decision;
+        }
+
+        decision.active = state.active;
+        return decision;
+    }
+}
+
 // ---- WeaponTwoHandedGripMath.h ----
 
 namespace rock

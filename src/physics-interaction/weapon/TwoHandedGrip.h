@@ -29,6 +29,7 @@ namespace rock
         Touching,
         Gripping,
         PrimaryDetached,
+        PrimaryOnly,
     };
 
     struct EquippedWeaponPrimaryGripInput
@@ -68,9 +69,21 @@ namespace rock
 
         bool isGripping() const { return _state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryDetached; }
 
+        bool isManualOwnershipActive() const
+        {
+            return _state == TwoHandedState::Gripping ||
+                   _state == TwoHandedState::PrimaryDetached ||
+                   _state == TwoHandedState::PrimaryOnly;
+        }
+
         bool isPrimaryDetached() const { return _state == TwoHandedState::PrimaryDetached; }
 
-        bool canUsePrimaryDetachInput() const { return _state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryDetached; }
+        bool canUsePrimaryDetachInput() const
+        {
+            return _state == TwoHandedState::Gripping ||
+                   _state == TwoHandedState::PrimaryDetached ||
+                   _state == TwoHandedState::PrimaryOnly;
+        }
 
         bool isTouching() const { return _state == TwoHandedState::Touching; }
 
@@ -83,6 +96,10 @@ namespace rock
         bool getSolvedWeaponTransform(RE::NiTransform& outTransform) const;
 
         bool getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const;
+
+        bool beginPrimaryOnlyGrip(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
+
+        bool consumeEquippedWeaponDropRequest();
 
     private:
         void transitionToTouching(RE::NiNode* weaponNode, const WeaponInteractionDecision& decision);
@@ -106,6 +123,15 @@ namespace rock
         void updateVisualOnlySupportGrip(RE::NiNode* weaponNode, float dt);
 
         bool transitionToPrimaryDetached();
+
+        bool transitionToPrimaryOnly(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const char* reason);
+
+        void requestEquippedWeaponDrop(const char* reason);
+
+        void updatePrimaryOnlyGrip(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            const EquippedWeaponPrimaryGripInput& primaryGripInput);
 
         bool tryReattachPrimaryGrip(RE::NiNode* weaponNode, const WeaponInteractionContact& rightWeaponContact);
 
@@ -218,6 +244,8 @@ namespace rock
         std::uint64_t _activeWeaponGenerationKey{ 0 };
         RE::NiTransform _weaponNodeLocalBaseline{};
         bool _hasWeaponNodeLocalBaseline{ false };
+
+        bool _equippedWeaponDropRequested{ false };
     };
 
 }

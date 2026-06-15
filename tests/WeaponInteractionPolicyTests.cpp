@@ -70,5 +70,60 @@ int main()
     ok &= expectTrue("right normal grab is restored while primary hand is detached", canProcessNormalGrabInput(false, false, true, true));
     ok &= expectTrue("right normal grab stays available without equipped weapon", canProcessNormalGrabInput(false, false, false, false));
 
+    using namespace rock::equipped_weapon_manual_ownership_policy;
+    RuntimeState manualState{};
+    auto manualDecision = update(manualState,
+        Input{
+            .weaponEquipped = true,
+            .weaponGenerationKey = 10,
+            .startRequested = false,
+            .primaryGripRetained = false,
+            .supportGripRetained = false,
+        });
+    ok &= expectFalse("native equip alone does not start manual ownership", manualDecision.active);
+    ok &= expectFalse("native equip alone does not request drop", manualDecision.dropRequested);
+
+    manualDecision = update(manualState,
+        Input{
+            .weaponEquipped = true,
+            .weaponGenerationKey = 10,
+            .startRequested = true,
+            .primaryGripRetained = true,
+            .supportGripRetained = false,
+        });
+    ok &= expectTrue("first retained grip starts manual ownership", manualDecision.started);
+    ok &= expectTrue("manual ownership remains active while primary grip retained", manualDecision.active);
+
+    manualDecision = update(manualState,
+        Input{
+            .weaponEquipped = true,
+            .weaponGenerationKey = 10,
+            .startRequested = false,
+            .primaryGripRetained = false,
+            .supportGripRetained = false,
+        });
+    ok &= expectTrue("manual ownership requests drop when all grips release", manualDecision.dropRequested);
+    ok &= expectFalse("drop request clears manual ownership state", manualState.active);
+
+    manualDecision = update(manualState,
+        Input{
+            .weaponEquipped = true,
+            .weaponGenerationKey = 11,
+            .startRequested = true,
+            .primaryGripRetained = false,
+            .supportGripRetained = true,
+        });
+    ok &= expectTrue("support grip can start manual ownership", manualDecision.started);
+    manualDecision = update(manualState,
+        Input{
+            .weaponEquipped = true,
+            .weaponGenerationKey = 12,
+            .startRequested = false,
+            .primaryGripRetained = false,
+            .supportGripRetained = false,
+        });
+    ok &= expectTrue("weapon generation change clears manual ownership", manualDecision.cleared);
+    ok &= expectFalse("weapon generation change does not drop old equipped weapon", manualDecision.dropRequested);
+
     return ok ? 0 : 1;
 }

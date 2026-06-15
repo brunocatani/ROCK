@@ -10,6 +10,9 @@
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
 
+#include "f4vr/PlayerNodes.h"
+#include "f4sevr/Forms.h"
+
 namespace rock::weapon_equip_transfer
 {
     namespace
@@ -19,9 +22,38 @@ namespace rock::weapon_equip_transfer
             bool found = false;
             bool matchedInstanceData = false;
             std::uint32_t stackID = 0;
+            std::uint32_t count = 0;
             RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
             RE::BGSEquipSlot* equipSlot = nullptr;
         };
+
+        struct EquippedWeaponSnapshot
+        {
+            RE::TESObjectWEAP* weapon = nullptr;
+            RE::TBO_InstanceData* instanceData = nullptr;
+        };
+
+        [[nodiscard]] RE::TESObjectWEAP* asWeaponForm(const F4SEVR::TESForm* form) noexcept
+        {
+            if (!form || form->formType != static_cast<std::uint8_t>(RE::ENUM_FORM_ID::kWEAP)) {
+                return nullptr;
+            }
+
+            auto* reForm = reinterpret_cast<RE::TESForm*>(const_cast<F4SEVR::TESForm*>(form));
+            return reForm ? reForm->As<RE::TESObjectWEAP>() : nullptr;
+        }
+
+        [[nodiscard]] EquippedWeaponSnapshot readEquippedWeaponSnapshot() noexcept
+        {
+            EquippedWeaponSnapshot snapshot{};
+            auto* player = f4vr::getPlayer();
+            auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
+            auto* equipData = processData ? processData->equipData : nullptr;
+            auto* weaponForm = equipData ? equipData->item : nullptr;
+            snapshot.weapon = asWeaponForm(weaponForm);
+            snapshot.instanceData = equipData ? equipData->instanceData : nullptr;
+            return snapshot;
+        }
 
         [[nodiscard]] RE::BSTSmartPointer<RE::TBO_InstanceData> resolveReferenceInstanceData(RE::TESObjectREFR* refr) noexcept
         {
@@ -67,6 +99,7 @@ namespace rock::weapon_equip_transfer
                         .found = true,
                         .matchedInstanceData = expectedInstanceData && instanceData.get() == expectedInstanceData.get(),
                         .stackID = stackID,
+                        .count = stack->GetCount(),
                         .instanceData = instanceData,
                         .equipSlot = equipSlot,
                     };
@@ -91,6 +124,64 @@ namespace rock::weapon_equip_transfer
             }
             if (!fallback.found && candidateCount == 1u) {
                 return firstCandidate;
+            }
+            return fallback;
+        }
+
+        [[nodiscard]] InventoryWeaponStack findEquippedWeaponStack(
+            RE::PlayerCharacter* player,
+            RE::TESObjectWEAP* weapon,
+            const RE::TBO_InstanceData* expectedInstanceData) noexcept
+        {
+            InventoryWeaponStack fallback{};
+            std::uint32_t equippedCandidateCount = 0;
+            if (!player || !weapon || !player->inventoryList) {
+                return fallback;
+            }
+
+            const RE::BSAutoReadLock inventoryLock{ player->inventoryList->rwLock };
+            for (auto& inventoryItem : player->inventoryList->data) {
+                if (inventoryItem.object != weapon) {
+                    continue;
+                }
+
+                std::uint32_t stackID = 0;
+                for (auto* stack = inventoryItem.stackData.get(); stack; stack = stack->nextStack.get(), ++stackID) {
+                    if (!stack->IsEquipped()) {
+                        continue;
+                    }
+
+                    ++equippedCandidateCount;
+                    RE::BSTSmartPointer<RE::TBO_InstanceData> instanceData{};
+                    if (stack->extra) {
+                        if (const auto* instanceExtra = stack->extra->GetByType<RE::ExtraInstanceData>()) {
+                            instanceData = instanceExtra->data;
+                        }
+                    }
+
+                    InventoryWeaponStack candidate{
+                        .found = true,
+                        .matchedInstanceData = expectedInstanceData && instanceData.get() == expectedInstanceData,
+                        .stackID = stackID,
+                        .count = stack->GetCount(),
+                        .instanceData = instanceData,
+                        .equipSlot = weapon->GetEquipSlot(instanceData.get()),
+                    };
+                    if (!candidate.equipSlot) {
+                        candidate.equipSlot = weapon->GetEquipSlot(nullptr);
+                    }
+
+                    if (candidate.matchedInstanceData) {
+                        return candidate;
+                    }
+                    if (!fallback.found) {
+                        fallback = candidate;
+                    }
+                }
+            }
+
+            if (expectedInstanceData && equippedCandidateCount != 1u) {
+                return {};
             }
             return fallback;
         }
@@ -126,6 +217,30 @@ namespace rock::weapon_equip_transfer
             return "equip-object-failed";
         case EquipReason::ActivateRefThenEquipObject:
             return "activate-ref-equip-object";
+        default:
+            return "not-attempted";
+        }
+    }
+
+    const char* dropReasonName(DropReason reason) noexcept
+    {
+        switch (reason) {
+        case DropReason::MissingPlayer:
+            return "missing-player";
+        case DropReason::MissingEquippedWeapon:
+            return "missing-equipped-weapon";
+        case DropReason::UnsupportedEquippedForm:
+            return "unsupported-equipped-form";
+        case DropReason::MissingInventoryList:
+            return "missing-inventory-list";
+        case DropReason::InventoryStackNotFound:
+            return "inventory-stack-not-found";
+        case DropReason::RemoveItemFailed:
+            return "remove-item-failed";
+        case DropReason::DroppedReferenceUnavailable:
+            return "dropped-reference-unavailable";
+        case DropReason::Dropped:
+            return "dropped";
         default:
             return "not-attempted";
         }
@@ -220,6 +335,65 @@ namespace rock::weapon_equip_transfer
 
         result.success = true;
         result.reason = EquipReason::ActivateRefThenEquipObject;
+        return result;
+    }
+
+    EquippedDropResult dropEquippedWeaponFromPlayer(const EquippedDropInput& input) noexcept
+    {
+        EquippedDropResult result{};
+
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!player) {
+            result.reason = DropReason::MissingPlayer;
+            return result;
+        }
+
+        const auto equipped = readEquippedWeaponSnapshot();
+        result.weapon = equipped.weapon;
+        result.formID = equipped.weapon ? equipped.weapon->GetFormID() : 0;
+        if (!equipped.weapon) {
+            result.reason = DropReason::MissingEquippedWeapon;
+            return result;
+        }
+
+        if (!player->inventoryList) {
+            result.reason = DropReason::MissingInventoryList;
+            return result;
+        }
+
+        const auto stack = findEquippedWeaponStack(player, equipped.weapon, equipped.instanceData);
+        if (!stack.found || stack.count == 0) {
+            result.reason = DropReason::InventoryStackNotFound;
+            return result;
+        }
+
+        result.attempted = true;
+        result.count = 1;
+        result.stackID = stack.stackID;
+        result.matchedInstanceData = stack.matchedInstanceData;
+
+        RE::TESObjectREFR::RemoveItemData removeData(equipped.weapon, result.count);
+        removeData.reason = RE::ITEM_REMOVE_REASON::KDropping;
+        if (input.hasDropLoc) {
+            removeData.dropLoc = &input.dropLoc;
+        }
+        removeData.stackData.push_back(stack.stackID);
+
+        result.handle = player->RemoveItem(removeData);
+        if (!result.handle) {
+            result.reason = DropReason::RemoveItemFailed;
+            return result;
+        }
+
+        result.droppedRef = result.handle.get();
+        if (!result.droppedRef) {
+            result.reason = DropReason::DroppedReferenceUnavailable;
+            return result;
+        }
+
+        result.success = true;
+        result.reason = DropReason::Dropped;
+        result.droppedFormID = result.droppedRef->GetFormID();
         return result;
     }
 }
