@@ -30,6 +30,7 @@ namespace rock::weapon_equip_transfer
         MissingInventoryList,
         InventoryStackNotFound,
         EquipObjectFailed,
+        EquippedWeaponMismatch,
         ActivateRefThenEquipObject,
     };
 
@@ -61,6 +62,7 @@ namespace rock::weapon_equip_transfer
         EquipReason reason = EquipReason::NotAttempted;
         std::int32_t count = 1;
         std::uint32_t formID = 0;
+        std::uint32_t observedEquippedFormID = 0;
         std::uint32_t stackID = 0;
         RE::TESObjectWEAP* weapon = nullptr;
     };

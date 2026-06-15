@@ -5317,7 +5317,7 @@ namespace rock
                     }
                     dispatchHeldObjectEventByFormID(GrabEventType::Released, postEquipRef, heldFormID, primaryBodyId);
                     ROCK_LOG_INFO(Hand,
-                        "{} hand {} held weapon equip formID={:08X} success={} equipReason={} count={} stack={} instanceMatch={} transferred={} nativeDrawRequested={} immediateWeaponNode={}",
+                        "{} hand {} held weapon equip formID={:08X} success={} equipReason={} count={} stack={} instanceMatch={} transferred={} observedEquipped={:08X} nativeDrawRequested={} immediateWeaponNode={}",
                         hand.handName(),
                         logAction ? logAction : "requested",
                         heldFormID,
@@ -5327,6 +5327,7 @@ namespace rock
                         equipResult.stackID,
                         equipResult.matchedInstanceData ? "yes" : "no",
                         equipResult.transferredToInventory ? "yes" : "no",
+                        equipResult.observedEquippedFormID,
                         nativeDrawRequested ? "yes" : "no",
                         immediateWeaponNode ? "yes" : "no");
                     if (equipResult.success && !isLeft && rawGrabInput.held) {

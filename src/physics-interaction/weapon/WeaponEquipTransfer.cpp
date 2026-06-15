@@ -215,6 +215,8 @@ namespace rock::weapon_equip_transfer
             return "inventory-stack-not-found";
         case EquipReason::EquipObjectFailed:
             return "equip-object-failed";
+        case EquipReason::EquippedWeaponMismatch:
+            return "equipped-weapon-mismatch";
         case EquipReason::ActivateRefThenEquipObject:
             return "activate-ref-equip-object";
         default:
@@ -330,6 +332,13 @@ namespace rock::weapon_equip_transfer
             false);
         if (!equipped) {
             result.reason = EquipReason::EquipObjectFailed;
+            return result;
+        }
+
+        const auto equippedAfter = readEquippedWeaponSnapshot();
+        result.observedEquippedFormID = equippedAfter.weapon ? equippedAfter.weapon->GetFormID() : 0;
+        if (equippedAfter.weapon != result.weapon) {
+            result.reason = EquipReason::EquippedWeaponMismatch;
             return result;
         }
 
