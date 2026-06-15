@@ -217,6 +217,8 @@ namespace frik::api
 
         bool(FRIK_CALL* getHandPoseLocalTransformsForPose)(Hand hand, const HandPoseData& handPose, FingerLocalTransformOverride* outTransforms);
 
+        bool(FRIK_CALL* blockPrimaryHandWeaponPose)(const char* tag, bool block);
+
         [[nodiscard]] static int initialize(const uint32_t minVersion = FRIK_API_VERSION)
         {
             if (inst) {
