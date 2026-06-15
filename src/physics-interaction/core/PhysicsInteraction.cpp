@@ -5125,8 +5125,21 @@ namespace rock
             auto& autoEquipState = _heldWeaponAutoEquipStates[isLeft ? 1u : 0u];
             auto& shoulderStashState = _shoulderStashStates[isLeft ? 1u : 0u];
             auto& mouthConsumeState = _mouthConsumeStates[isLeft ? 1u : 0u];
+            auto& inputSuppressionState = _providerHandInputSuppressionStates[isLeft ? 1u : 0u];
             const bool heldWeaponAtFrameStart = hand.isHoldingLooseWeapon();
-            const bool heldWeaponEquipTriggerPressed = readHeldWeaponEquipTriggerPressedEdge(isLeft);
+            const auto providerHand = isLeft ? provider::RockProviderHand::Left : provider::RockProviderHand::Right;
+            const std::uint32_t providerInputSuppressionFlags = provider::currentHandInputSuppressionFlagsV1(providerHand);
+            auto providerSuppresses = [&](provider::RockProviderHandInputSuppressionFlagV1 flag) {
+                return provider::hasHandInputSuppressionFlagV1(providerInputSuppressionFlags, flag);
+            };
+            const bool providerSuppressesNormalGrabPress =
+                providerSuppresses(provider::RockProviderHandInputSuppressionFlagV1::SuppressNormalGrabPress);
+            const bool providerSuppressesGrabRelease =
+                providerSuppresses(provider::RockProviderHandInputSuppressionFlagV1::SuppressGrabRelease);
+            const bool providerSuppressesHeldWeaponTriggerEquip =
+                providerSuppresses(provider::RockProviderHandInputSuppressionFlagV1::SuppressHeldWeaponTriggerEquip);
+            const bool providerSuppressesGameplayCandidates =
+                providerSuppresses(provider::RockProviderHandInputSuppressionFlagV1::SuppressGameplayCandidates);
             auto cancelPeerHeldJoinRetry = [&](const char* reason, bool logCancellation) {
                 if (!peerHeldJoinRetryState.active) {
                     return;
@@ -5151,6 +5164,30 @@ namespace rock
                 clearGameplayCandidatesForHand(hand, isLeft);
                 return;
             }
+            if (providerSuppressesGameplayCandidates) {
+                clearGameplayCandidatesForHand(hand, isLeft);
+            }
+            const bool providerHoldsCurrentGrabState =
+                providerSuppressesGrabRelease &&
+                (hand.isHolding() || hand.getState() == HandState::SelectionLocked || hand.getState() == HandState::Pulled);
+            const bool providerBlocksNewGrabPress =
+                providerSuppressesNormalGrabPress &&
+                !hand.isHolding() &&
+                hand.getState() != HandState::SelectionLocked &&
+                hand.getState() != HandState::Pulled;
+            if (providerHoldsCurrentGrabState || providerBlocksNewGrabPress) {
+                grab_input_intent_policy::reset(inputIntentState);
+                cancelPeerHeldJoinRetry("provider-hand-input-suppressed", true);
+                if (providerHoldsCurrentGrabState &&
+                    !readGrabButtonHeld(isLeft, grabButton)) {
+                    inputSuppressionState.deferredGrabRelease = true;
+                }
+                _softContactRuntime.clearHandForStrongerOwner(isLeft, "provider-hand-input-suppressed");
+                return;
+            }
+
+            const bool heldWeaponEquipTriggerPressed =
+                !providerSuppressesHeldWeaponTriggerEquip && readHeldWeaponEquipTriggerPressedEdge(isLeft);
             if (!weapon_two_handed_grip_math::canProcessNormalGrabInput(
                     isLeft,
                     equippedWeaponSupportGripActive,
@@ -5194,6 +5231,17 @@ namespace rock
                 grab_input_intent_policy::reset(inputIntentState);
                 cancelPeerHeldJoinRetry("virtual-holsters-zone", false);
                 grabInput = {};
+            }
+            if (inputSuppressionState.deferredGrabRelease) {
+                if (grabInput.held) {
+                    inputSuppressionState.deferredGrabRelease = false;
+                } else {
+                    if (!grabInput.released &&
+                        (hand.isHolding() || hand.getState() == HandState::SelectionLocked || hand.getState() == HandState::Pulled)) {
+                        grabInput.released = true;
+                    }
+                    inputSuppressionState.deferredGrabRelease = false;
+                }
             }
             const auto rawGrabInput = grabInput;
             if (grabInput.pressed &&

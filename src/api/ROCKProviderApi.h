@@ -40,6 +40,8 @@ namespace rock::provider
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_CONSUMERS_V1 = 64;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_INTERACTION_COMMANDS_V1 = 32;
     inline constexpr std::uint32_t ROCK_PROVIDER_MAX_COMPLETED_INTERACTION_COMMANDS_V1 = 64;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_INPUT_SUPPRESSIONS_V1 = 32;
+    inline constexpr std::uint32_t ROCK_PROVIDER_MAX_HAND_INPUT_SUPPRESSION_LEASE_FRAMES_V1 = 120;
 
     enum class RockProviderHand : std::uint32_t
     {
@@ -219,6 +221,7 @@ namespace rock::provider
         ExternalContacts = 1u << 2,
         OffhandReservation = 1u << 3,
         InteractionCommands = 1u << 4,
+        HandInputSuppression = 1u << 5,
     };
 
     enum class RockProviderFeatureBitV1 : std::uint32_t
@@ -236,6 +239,7 @@ namespace rock::provider
         ForceGrabCommand = 1u << 11,
         ForceReleaseCommand = 1u << 12,
         ThrownDropCommand = 1u << 13,
+        HandInputSuppression = 1u << 14,
     };
 
     enum class RockProviderInteractionCommandKindV1 : std::uint32_t
@@ -298,6 +302,20 @@ namespace rock::provider
         UseVelocityHavok = 1u << 2,
     };
 
+    enum class RockProviderHandInputSuppressionFlagV1 : std::uint32_t
+    {
+        None = 0,
+        SuppressNormalGrabPress = 1u << 0,
+        SuppressGrabRelease = 1u << 1,
+        SuppressHeldWeaponTriggerEquip = 1u << 2,
+        SuppressGameplayCandidates = 1u << 3,
+        SuppressConfigModeChord =
+            static_cast<std::uint32_t>(SuppressNormalGrabPress) |
+            static_cast<std::uint32_t>(SuppressGrabRelease) |
+            static_cast<std::uint32_t>(SuppressHeldWeaponTriggerEquip) |
+            static_cast<std::uint32_t>(SuppressGameplayCandidates),
+    };
+
     [[nodiscard]] inline constexpr bool hasLifecycleFlag(std::uint32_t flags, RockProviderLifecycleFlag flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
@@ -311,6 +329,13 @@ namespace rock::provider
     [[nodiscard]] inline constexpr bool hasFeatureBitV1(std::uint32_t featureBits, RockProviderFeatureBitV1 feature)
     {
         return (featureBits & static_cast<std::uint32_t>(feature)) != 0;
+    }
+
+    [[nodiscard]] inline constexpr bool hasHandInputSuppressionFlagV1(
+        std::uint32_t flags,
+        RockProviderHandInputSuppressionFlagV1 flag)
+    {
+        return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
 
     struct RockProviderConsumerRegistrationV1
@@ -418,6 +443,19 @@ namespace rock::provider
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
         std::uint32_t reserved0{ 0 };
+        std::uint32_t reserved[8]{};
+    };
+
+    struct RockProviderHandInputSuppressionRequestV1
+    {
+        std::uint32_t size{ sizeof(RockProviderHandInputSuppressionRequestV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        RockProviderHand hand{ RockProviderHand::None };
+        std::uint32_t flags{ 0 };
+        std::uint32_t leaseFrames{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
         std::uint32_t reserved[8]{};
     };
 
@@ -663,6 +701,12 @@ namespace rock::provider
             std::uint64_t ownerToken,
             const RockProviderThrownDropRequestV1* request,
             std::uint64_t* outCommandId);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* setHandInputSuppressionV1)(
+            std::uint64_t ownerToken,
+            const RockProviderHandInputSuppressionRequestV1* request);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* clearHandInputSuppressionV1)(
+            std::uint64_t ownerToken,
+            RockProviderHand hand);
 
         [[nodiscard]] static int initialize(const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION)
         {
@@ -728,6 +772,10 @@ namespace rock::provider
     static_assert(alignof(RockProviderInteractionCommandResultV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderInteractionCommandResultV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderInteractionCommandResultV1>);
+    static_assert(sizeof(RockProviderHandInputSuppressionRequestV1) == 64);
+    static_assert(alignof(RockProviderHandInputSuppressionRequestV1) == 4);
+    static_assert(std::is_standard_layout_v<RockProviderHandInputSuppressionRequestV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderHandInputSuppressionRequestV1>);
     static_assert(sizeof(RockProviderTransform) == 52);
     static_assert(sizeof(RockProviderFrameSnapshot) == 272);
     static_assert(alignof(RockProviderFrameSnapshot) == 8);
@@ -765,5 +813,6 @@ namespace rock::provider
     bool recordExternalHandContact(bool isLeft, std::uint32_t handBodyId, std::uint32_t externalBodyId, std::uint64_t frameIndex);
     bool recordExternalContact(const RockProviderExternalContactV1& contact);
     RockProviderOffhandReservation currentOffhandReservation();
+    std::uint32_t currentHandInputSuppressionFlagsV1(RockProviderHand hand);
     std::uint32_t currentExternalBodyCount();
 }

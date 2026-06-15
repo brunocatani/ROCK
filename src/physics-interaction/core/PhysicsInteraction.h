@@ -432,6 +432,12 @@ namespace rock
 
         std::array<GrabTransformTelemetryState, 2> _grabTransformTelemetryStates{};
         std::uint32_t _grabTransformTelemetryNextSession = 1;
+        struct ProviderHandInputSuppressionRuntimeState
+        {
+            bool deferredGrabRelease = false;
+        };
+
+        std::array<ProviderHandInputSuppressionRuntimeState, 2> _providerHandInputSuppressionStates{};
         std::array<grab_input_intent_policy::RuntimeState, 2> _grabInputIntentStates{};
         std::array<peer_held_join_retry_policy::RuntimeState, 2> _peerHeldJoinRetryStates{};
         std::array<HeldWeaponAutoEquipState, 2> _heldWeaponAutoEquipStates{};

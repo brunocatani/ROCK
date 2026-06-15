@@ -155,6 +155,10 @@ Require-Text 'src/api/ROCKProviderApi.h' 'InteractionCommands|InteractionCommand
     'v1 must expose the real queued interaction command surface.'
 Require-Text 'src/api/ROCKProviderApi.h' 'requestForceGrabV1|requestForceReleaseV1|requestThrownDropV1|getInteractionCommandResultV1' `
     'v1 function table must expose queued request and result polling functions.'
+Require-Text 'src/api/ROCKProviderApi.h' 'HandInputSuppression|RockProviderHandInputSuppressionRequestV1|SuppressConfigModeChord' `
+    'v1 must expose owner-token hand input suppression leases for external config chords.'
+Require-Text 'src/api/ROCKProviderApi.h' 'setHandInputSuppressionV1|clearHandInputSuppressionV1' `
+    'v1 function table must append hand input suppression lease functions.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderForceReleaseFlagV1[\s\S]*UseVelocityHavok' `
     'Force release must expose an explicit trusted Havok velocity flag.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderForceReleaseRequestV1[\s\S]*linearVelocityHavok[\s\S]*angularVelocityRadiansPerSecond' `
@@ -177,6 +181,10 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'applyRelease
     'Trusted release/drop velocity must apply through the existing release velocity path.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'applyCapturedReleaseVelocity\s*=\s*isThrownDropCommand\s*&&\s*!applyRequestedVelocity' `
     'Provider force release must not reuse captured controller throw velocity by default.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'currentHandInputSuppressionFlagsV1' `
+    'ROCK runtime must observe provider hand input suppression leases.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'deferredGrabRelease' `
+    'Suppressed grab releases must be deferred instead of dropping held objects during external config chords.'
 Reject-Text 'src/api/ROCKProviderApi.cpp' 'grabSelectedObject|releaseGrabbedObject|applyReleaseVelocitySnapshot' `
     'Provider API glue must only enqueue commands, not mutate hand state directly.'
 Reject-Text 'src/api/ROCKProviderApi.h' 'getWeaponEvidenceDescriptors|RockProviderWeaponEvidenceDescriptor|getExternalContactSnapshotV1' `
@@ -212,7 +220,9 @@ $expectedProviderFunctions = [string[]]@(
     'requestForceGrabV1',
     'getInteractionCommandResultV1',
     'requestForceReleaseV1',
-    'requestThrownDropV1'
+    'requestThrownDropV1',
+    'setHandInputSuppressionV1',
+    'clearHandInputSuppressionV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 

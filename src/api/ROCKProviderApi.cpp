@@ -61,7 +61,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ExternalBodies) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::ExternalContacts) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::OffhandReservation) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::InteractionCommands);
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::InteractionCommands) |
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::HandInputSuppression);
     constexpr std::uint32_t kProviderFeatureBitsV1 =
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::FrameCallbacks) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::LifecycleFields) |
@@ -74,7 +75,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::InteractionCommandQueue) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::ForceGrabCommand) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::ForceReleaseCommand) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::ThrownDropCommand);
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::ThrownDropCommand) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::HandInputSuppression);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
@@ -85,6 +87,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::ImmediateCollisionRestore) |
         static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::RequireMatchingTarget) |
         static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::UseVelocityHavok);
+    constexpr std::uint32_t kImplementedHandInputSuppressionFlagsV1 =
+        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord);
     constexpr std::uint32_t kProviderInvalidBodyId = 0x7FFF'FFFFu;
 
     struct ConsumerSlot
@@ -116,6 +120,18 @@ namespace
     std::array<InteractionCommandResultSlot, ROCK_PROVIDER_MAX_COMPLETED_INTERACTION_COMMANDS_V1> s_interactionResults{};
     std::size_t s_nextInteractionResultSlot{ 0 };
     std::atomic<std::uint64_t> s_nextInteractionCommandId{ 1 };
+
+    struct HandInputSuppressionSlot
+    {
+        bool active{ false };
+        std::uint64_t ownerToken{ 0 };
+        RockProviderHand hand{ RockProviderHand::None };
+        std::uint32_t flags{ 0 };
+        std::uint64_t expiresAfterFrame{ 0 };
+    };
+
+    std::mutex s_handInputSuppressionMutex;
+    std::array<HandInputSuppressionSlot, ROCK_PROVIDER_MAX_HAND_INPUT_SUPPRESSIONS_V1> s_handInputSuppressions{};
 
     std::uint32_t ROCK_PROVIDER_CALL apiGetVersion() { return ROCK_PROVIDER_API_VERSION; }
 
@@ -316,6 +332,76 @@ namespace
     {
         const auto* slot = findConsumerSlotLocked(ownerToken);
         return slot && hasConsumerCapabilityV1(slot->grantedCapabilities, capability);
+    }
+
+    std::uint64_t currentProviderFrameIndex()
+    {
+        const auto nextFrameIndex = s_nextFrameIndex.load(std::memory_order_acquire);
+        return nextFrameIndex > 0 ? nextFrameIndex - 1 : 0;
+    }
+
+    void pruneExpiredHandInputSuppressionsLocked(std::uint64_t frameIndex)
+    {
+        for (auto& slot : s_handInputSuppressions) {
+            if (slot.active && slot.expiresAfterFrame < frameIndex) {
+                slot = {};
+            }
+        }
+    }
+
+    void clearHandInputSuppressionsForOwnerLocked(std::uint64_t ownerToken, RockProviderHand hand)
+    {
+        for (auto& slot : s_handInputSuppressions) {
+            if (!slot.active || slot.ownerToken != ownerToken) {
+                continue;
+            }
+            if (hand == RockProviderHand::None || slot.hand == hand) {
+                slot = {};
+            }
+        }
+    }
+
+    RockProviderResultV1 validateRegisteredOwnerCapability(
+        std::uint64_t ownerToken,
+        RockProviderConsumerCapabilityV1 capability)
+    {
+        if (ownerToken == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+
+        std::scoped_lock lock(s_consumerMutex);
+        if (!findConsumerSlotLocked(ownerToken)) {
+            return RockProviderResultV1::OwnerNotRegistered;
+        }
+        if (!consumerHasCapabilityLocked(ownerToken, capability)) {
+            return RockProviderResultV1::PermissionDenied;
+        }
+        return RockProviderResultV1::Ok;
+    }
+
+    RockProviderResultV1 validateGenerationGuards(
+        std::uint32_t worldGeneration,
+        std::uint32_t skeletonGeneration,
+        std::uint32_t providerGeneration)
+    {
+        if (worldGeneration == 0 && skeletonGeneration == 0 && providerGeneration == 0) {
+            return RockProviderResultV1::Ok;
+        }
+
+        std::scoped_lock lock(s_snapshotMutex);
+        if (!s_hasSnapshot) {
+            return RockProviderResultV1::NotReady;
+        }
+        if (worldGeneration != 0 && worldGeneration != s_lastSnapshot.worldGeneration) {
+            return RockProviderResultV1::WorldNotReady;
+        }
+        if (skeletonGeneration != 0 && skeletonGeneration != s_lastSnapshot.skeletonGeneration) {
+            return RockProviderResultV1::NotReady;
+        }
+        if (providerGeneration != 0 && providerGeneration != s_lastSnapshot.providerGeneration) {
+            return RockProviderResultV1::NotReady;
+        }
+        return RockProviderResultV1::Ok;
     }
 
     std::uint32_t currentProviderGenerationForRegistration()
@@ -583,6 +669,11 @@ namespace
             clearInteractionCommandsForOwnerLocked(ownerToken, RockProviderInteractionFailureV1::OwnerNotRegistered);
         }
 
+        {
+            std::scoped_lock lock(s_handInputSuppressionMutex);
+            clearHandInputSuppressionsForOwnerLocked(ownerToken, RockProviderHand::None);
+        }
+
         if (s_offhandReservationOwner.load(std::memory_order_acquire) == ownerToken) {
             s_offhandReservation.store(static_cast<std::uint32_t>(RockProviderOffhandReservation::Normal), std::memory_order_release);
             s_offhandReservationOwner.store(0, std::memory_order_release);
@@ -839,6 +930,92 @@ namespace
         return RockProviderResultV1::RequestNotFound;
     }
 
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetHandInputSuppressionV1(
+        std::uint64_t ownerToken,
+        const RockProviderHandInputSuppressionRequestV1* request)
+    {
+        if (!request || ownerToken == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (request->size != sizeof(RockProviderHandInputSuppressionRequestV1)) {
+            return RockProviderResultV1::InvalidSize;
+        }
+        if (request->version == 0 || request->version > ROCK_PROVIDER_API_VERSION) {
+            return RockProviderResultV1::UnsupportedVersion;
+        }
+        if (request->hand != RockProviderHand::Right && request->hand != RockProviderHand::Left) {
+            return RockProviderResultV1::HandUnavailable;
+        }
+        if (request->flags == 0 || (request->flags & ~kImplementedHandInputSuppressionFlagsV1) != 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (request->leaseFrames == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+
+        const auto ownerResult = validateRegisteredOwnerCapability(ownerToken, RockProviderConsumerCapabilityV1::HandInputSuppression);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+        const auto generationResult = validateGenerationGuards(
+            request->worldGeneration,
+            request->skeletonGeneration,
+            request->providerGeneration);
+        if (generationResult != RockProviderResultV1::Ok) {
+            return generationResult;
+        }
+
+        const auto leaseFrames = (std::min)(request->leaseFrames, ROCK_PROVIDER_MAX_HAND_INPUT_SUPPRESSION_LEASE_FRAMES_V1);
+        const auto frameIndex = currentProviderFrameIndex();
+        const auto expiresAfterFrame = frameIndex + leaseFrames;
+
+        std::scoped_lock lock(s_handInputSuppressionMutex);
+        pruneExpiredHandInputSuppressionsLocked(frameIndex);
+        for (auto& slot : s_handInputSuppressions) {
+            if (slot.active && slot.ownerToken == ownerToken && slot.hand == request->hand) {
+                slot.flags = request->flags;
+                slot.expiresAfterFrame = expiresAfterFrame;
+                return RockProviderResultV1::Ok;
+            }
+        }
+
+        for (auto& slot : s_handInputSuppressions) {
+            if (!slot.active) {
+                slot = HandInputSuppressionSlot{
+                    .active = true,
+                    .ownerToken = ownerToken,
+                    .hand = request->hand,
+                    .flags = request->flags,
+                    .expiresAfterFrame = expiresAfterFrame,
+                };
+                return RockProviderResultV1::Ok;
+            }
+        }
+
+        return RockProviderResultV1::CapacityFull;
+    }
+
+    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearHandInputSuppressionV1(
+        std::uint64_t ownerToken,
+        RockProviderHand hand)
+    {
+        if (ownerToken == 0) {
+            return RockProviderResultV1::InvalidArgument;
+        }
+        if (hand != RockProviderHand::None && hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
+            return RockProviderResultV1::HandUnavailable;
+        }
+
+        const auto ownerResult = validateRegisteredOwnerCapability(ownerToken, RockProviderConsumerCapabilityV1::HandInputSuppression);
+        if (ownerResult != RockProviderResultV1::Ok) {
+            return ownerResult;
+        }
+
+        std::scoped_lock lock(s_handInputSuppressionMutex);
+        clearHandInputSuppressionsForOwnerLocked(ownerToken, hand);
+        return RockProviderResultV1::Ok;
+    }
+
     bool ROCK_PROVIDER_CALL apiQueryWeaponContactAtPoint(
         const RockProviderWeaponContactQuery* query,
         RockProviderWeaponContactResult* outResult)
@@ -993,6 +1170,8 @@ namespace
         .getInteractionCommandResultV1 = &apiGetInteractionCommandResultV1,
         .requestForceReleaseV1 = &apiRequestForceReleaseV1,
         .requestThrownDropV1 = &apiRequestThrownDropV1,
+        .setHandInputSuppressionV1 = &apiSetHandInputSuppressionV1,
+        .clearHandInputSuppressionV1 = &apiClearHandInputSuppressionV1,
     };
 }
 
@@ -1051,6 +1230,10 @@ namespace rock::provider
             s_externalBodies.clearAll();
         }
         clearInteractionCommandsForProviderLossV1(RockProviderInteractionFailureV1::ProviderNotReady);
+        {
+            std::scoped_lock lock(s_handInputSuppressionMutex);
+            s_handInputSuppressions = {};
+        }
         s_offhandReservation.store(static_cast<std::uint32_t>(RockProviderOffhandReservation::Normal), std::memory_order_release);
         s_offhandReservationOwner.store(0, std::memory_order_release);
     }
@@ -1116,6 +1299,24 @@ namespace rock::provider
     RockProviderOffhandReservation currentOffhandReservation()
     {
         return static_cast<RockProviderOffhandReservation>(s_offhandReservation.load(std::memory_order_acquire));
+    }
+
+    std::uint32_t currentHandInputSuppressionFlagsV1(RockProviderHand hand)
+    {
+        if (hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
+            return 0;
+        }
+
+        const auto frameIndex = currentProviderFrameIndex();
+        std::uint32_t flags = 0;
+        std::scoped_lock lock(s_handInputSuppressionMutex);
+        pruneExpiredHandInputSuppressionsLocked(frameIndex);
+        for (const auto& slot : s_handInputSuppressions) {
+            if (slot.active && slot.hand == hand) {
+                flags |= slot.flags;
+            }
+        }
+        return flags;
     }
 
     std::uint32_t currentExternalBodyCount()
