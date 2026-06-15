@@ -2275,13 +2275,20 @@ namespace rock
             clearCurrentWeaponState();
         }
 
+        if (!weaponDrawn) {
+            if (hasWeaponBody()) {
+                ROCK_LOG_INFO(Weapon, "Weapon no longer drawn - destroying generated weapon bodies");
+                destroyWeaponBody(world);
+            }
+            clearCurrentWeaponState();
+            return;
+        }
+
         std::uint64_t observedIdentityKey = 0;
         const std::uint64_t observedKey = getEquippedWeaponIdentityKey(&observedIdentityKey);
-        if (!weaponDrawn || observedKey == 0) {
+        if (observedKey == 0) {
             if (hasWeaponBody()) {
-                ROCK_LOG_INFO(Weapon,
-                    "{} - destroying generated weapon bodies",
-                    weaponDrawn ? "Weapon identity unavailable" : "Weapon no longer drawn");
+                ROCK_LOG_INFO(Weapon, "Weapon identity unavailable - destroying generated weapon bodies");
                 destroyWeaponBody(world);
             }
             clearCurrentWeaponState();

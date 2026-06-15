@@ -100,6 +100,7 @@ Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'collisionEnable
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'publishAfterCreate' 'Weapon body creation must not expose publication as a creation-time option.'
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'createGeneratedWeaponBodiesInBank\([^\)]*bool publishAfterCreate' 'Weapon body creation must not use a boolean that couples publishing with collision filter activation.'
 
+Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'if \(!weaponDrawn\)[\s\S]{0,700}clearCurrentWeaponState\(\);[\s\S]{0,140}return;[\s\S]{0,500}getEquippedWeaponIdentityKey\(&observedIdentityKey\)' 'Weapon collision update must clear not-drawn weapons before reading equipped instance identity data.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'getEquippedWeaponIdentityKey\(&observedIdentityKey\)' 'Weapon collision update must read equipped identity before any visual tree witness.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'getWeaponVisualCompositionKey\(weaponNode,\s*visualKeyStats\)' 'Weapon visual witness collection must be an explicit rebuild-time step.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'findGeneratedWeaponShapeSources\(weaponNode,\s*generatedSources\)' 'Weapon collision update must scan the current equipped visible geometry directly only after rebuild gates open.'
