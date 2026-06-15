@@ -1282,6 +1282,26 @@ namespace rock
             return resolveEquippedWeaponInteractionNodeDirect();
         }
 
+        using RefreshPlayerDrawnWeaponVisual_t = void (*)(RE::PlayerCharacter*, bool);
+        using RefreshEquippedActorVisual_t = void (*)(RE::Actor*);
+
+        constexpr std::uintptr_t kFunc_RefreshPlayerDrawnWeaponVisual = 0xF203B0;
+        constexpr std::uintptr_t kFunc_RefreshEquippedActorVisual = 0xE08A80;
+
+        void refreshHeldWeaponNativeEquipVisuals(RE::PlayerCharacter* player)
+        {
+            static REL::Relocation<RefreshPlayerDrawnWeaponVisual_t> refreshDrawnWeaponVisual{
+                REL::Offset(kFunc_RefreshPlayerDrawnWeaponVisual)
+            };
+            static REL::Relocation<RefreshEquippedActorVisual_t> refreshEquippedActorVisual{
+                REL::Offset(kFunc_RefreshEquippedActorVisual)
+            };
+
+            // Ghidra verified: passing false avoids the heavy native draw animation path.
+            refreshDrawnWeaponVisual(player, false);
+            refreshEquippedActorVisual(player);
+        }
+
         bool requestImmediateHeldWeaponNativeDraw()
         {
             auto* player = RE::PlayerCharacter::GetSingleton();
@@ -1289,8 +1309,9 @@ namespace rock
                 return false;
             }
 
-            player->DrawWeaponMagicHands(true);
-            return true;
+            player->SetWeaponState(RE::WEAPON_STATE::kDrawn);
+            refreshHeldWeaponNativeEquipVisuals(player);
+            return player->GetWeaponMagicDrawn();
         }
     }
 
