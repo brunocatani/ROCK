@@ -409,6 +409,13 @@ namespace rock
 
 namespace rock::weapon_two_handed_grip_math
 {
+    enum class SupportReleaseManualAction
+    {
+        EndSupportOnly = 0,
+        KeepPrimaryOwnership = 1,
+        DropEquippedWeapon = 2,
+    };
+
     /*
      * Equipped weapon two-hand support has two independent ownership rules:
      * the support hand must be attached to the mesh point it actually touched,
@@ -434,6 +441,15 @@ namespace rock::weapon_two_handed_grip_math
     inline bool shouldContinueSupportGrip(bool gripPressed, bool supportHandHoldingObject)
     {
         return gripPressed && !supportHandHoldingObject;
+    }
+
+    inline constexpr SupportReleaseManualAction resolveSupportReleaseManualAction(bool primaryDetachEnabled, bool primaryGripHeld)
+    {
+        if (!primaryDetachEnabled) {
+            return SupportReleaseManualAction::EndSupportOnly;
+        }
+
+        return primaryGripHeld ? SupportReleaseManualAction::KeepPrimaryOwnership : SupportReleaseManualAction::DropEquippedWeapon;
     }
 
     inline bool canProcessNormalGrabInput(bool isLeft, bool equippedWeaponSupportGripActive, bool rightHandWeaponEquipped, bool primaryHandDetached)

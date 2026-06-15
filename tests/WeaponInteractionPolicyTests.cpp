@@ -67,10 +67,21 @@ int main()
     ok &= expectEqual("right hand remains contact source", rightWeapon.source.kind, ContactEndpointKind::RightHand);
 
     using rock::weapon_two_handed_grip_math::canProcessNormalGrabInput;
+    using rock::weapon_two_handed_grip_math::resolveSupportReleaseManualAction;
+    using rock::weapon_two_handed_grip_math::SupportReleaseManualAction;
     ok &= expectFalse("left normal grab is blocked while support grip owns weapon", canProcessNormalGrabInput(true, true, true, false));
     ok &= expectFalse("right normal grab is blocked while firing hand owns equipped weapon", canProcessNormalGrabInput(false, false, true, false));
     ok &= expectTrue("right normal grab is restored while primary hand is detached", canProcessNormalGrabInput(false, false, true, true));
     ok &= expectTrue("right normal grab stays available without equipped weapon", canProcessNormalGrabInput(false, false, false, false));
+    ok &= expectEqual("support release keeps primary ownership when primary grip is held",
+        resolveSupportReleaseManualAction(true, true),
+        SupportReleaseManualAction::KeepPrimaryOwnership);
+    ok &= expectEqual("support release drops equipped weapon when primary grip is not held",
+        resolveSupportReleaseManualAction(true, false),
+        SupportReleaseManualAction::DropEquippedWeapon);
+    ok &= expectEqual("support release ends support only when manual detach is disabled",
+        resolveSupportReleaseManualAction(false, true),
+        SupportReleaseManualAction::EndSupportOnly);
 
     using namespace rock::equipped_weapon_manual_ownership_policy;
     ok &= expectTrue("manual grip feature is available for active equipped weapon", featureAvailable(true, true, true, 10));

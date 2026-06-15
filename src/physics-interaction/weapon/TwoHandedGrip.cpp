@@ -429,15 +429,13 @@ namespace rock
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because offhand reservation disabled support grip");
                 transitionToInactive(false);
             } else if (!weapon_two_handed_grip_math::shouldContinueSupportGrip(leftGripPressed, supportHandHoldingObject)) {
-                if (primaryDetachEnabled &&
-                    _authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver) {
-                    if (primaryGripInput.held) {
-                        transitionToPrimaryOnly(_activeWeaponNode, currentWeaponGenerationKey, "support-released-primary-held");
-                    } else {
-                        requestEquippedWeaponDrop(
-                            "support-released-primary-not-held",
-                            equipped_weapon_drop_policy::sourceForSupportRelease(primaryGripInput.released));
-                    }
+                const auto releaseAction = weapon_two_handed_grip_math::resolveSupportReleaseManualAction(primaryDetachEnabled, primaryGripInput.held);
+                if (releaseAction == weapon_two_handed_grip_math::SupportReleaseManualAction::KeepPrimaryOwnership) {
+                    transitionToPrimaryOnly(_activeWeaponNode, currentWeaponGenerationKey, "support-released-primary-held");
+                } else if (releaseAction == weapon_two_handed_grip_math::SupportReleaseManualAction::DropEquippedWeapon) {
+                    requestEquippedWeaponDrop(
+                        "support-released-primary-not-held",
+                        equipped_weapon_drop_policy::sourceForSupportRelease(primaryGripInput.released));
                 } else {
                     transitionToInactive(ownsWeaponTransform());
                 }
