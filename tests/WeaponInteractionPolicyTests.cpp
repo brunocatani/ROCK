@@ -73,6 +73,12 @@ int main()
     ok &= expectFalse("right normal grab is blocked while firing hand owns equipped weapon", canProcessNormalGrabInput(false, false, true, false));
     ok &= expectTrue("right normal grab is restored while primary hand is detached", canProcessNormalGrabInput(false, false, true, true));
     ok &= expectTrue("right normal grab stays available without equipped weapon", canProcessNormalGrabInput(false, false, false, false));
+    ok &= expectTrue("full two-handed support still owns weapon transform",
+        rock::weapon_support_authority_policy::supportGripOwnsWeaponTransform(rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
+    ok &= expectFalse("full two-handed support does not override FRIK primary hand pose",
+        rock::weapon_support_authority_policy::supportGripAppliesPrimaryHandAuthority(rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
+    ok &= expectTrue("support grip continues to apply offhand visual authority",
+        rock::weapon_support_authority_policy::supportGripAppliesSupportHandAuthority(rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
     ok &= expectEqual("support release keeps primary ownership when primary grip is held",
         resolveSupportReleaseManualAction(true, true),
         SupportReleaseManualAction::KeepPrimaryOwnership);

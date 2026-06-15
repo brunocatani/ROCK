@@ -46,8 +46,10 @@ Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'computeDistanceMappedD
     'Normal grab visual hand smoothing must use the explicit grab hand lerp duration settings.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'resolveLockedHandVisualTarget[\s\S]*rockWeaponSupportGripHandLerpEnabled[\s\S]*blendTransformOverDuration' `
     'Two-handed weapon grab must smooth only the locked external hand visual target.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'applyLockedHandVisualAuthority\(weaponNode,\s*true,\s*true,\s*dt,\s*&primaryTransform,\s*&supportTransform\)' `
-    'Full two-handed weapon authority must pass live hand transforms into visual-only hand lerp.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'supportGripAppliesPrimaryHandAuthority\(_authorityMode\)[\s\S]*applyLockedHandVisualAuthority\(weaponNode,\s*applyPrimaryHandAuthority,\s*true,\s*dt,\s*&primaryTransform,\s*&supportTransform\)' `
+    'Full two-handed weapon authority must gate primary visual authority while passing live support hand transforms into visual-only hand lerp.'
+Reject-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'applyLockedHandVisualAuthority\(weaponNode,\s*true,\s*true,\s*dt' `
+    'Full two-handed weapon authority must not hard-code primary hand external authority over FRIK configured pose.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'updateVisualOnlySupportGrip\(RE::NiNode\* weaponNode,\s*float dt\)[\s\S]*applyLockedHandVisualAuthority\(weaponNode,\s*false,\s*true,\s*dt' `
     'Visual-only sidearm support grip must use the same support hand visual lerp path.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'handLerp=\(' `
