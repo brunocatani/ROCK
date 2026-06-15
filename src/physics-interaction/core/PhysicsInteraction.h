@@ -14,6 +14,7 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/GrabLocomotionAuthorityBridge.h"
+#include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/contact/SoftContactRuntime.h"
 #include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
 #include "physics-interaction/contact/NativeContactEvidence.h"
@@ -195,6 +196,10 @@ namespace rock
 
         void updateGrabInput(const PhysicsFrameContext& frame);
         void processProviderInteractionCommands(const PhysicsFrameContext& frame);
+        void servicePendingLooseGrenadeEquip(const PhysicsFrameContext& frame);
+        bool armHeldLooseGrenade(Hand& hand, const PhysicsFrameContext& frame);
+        void updateLooseGrenadeFuses(const PhysicsFrameContext& frame);
+        void clearLooseGrenadeRuntimeState();
 
         std::size_t applyProviderWeaponPartDrives(
             RE::NiNode* weaponNode,
@@ -361,6 +366,25 @@ namespace rock
             std::uint32_t bodyId{ INVALID_CONTACT_BODY_ID };
             float settledSeconds{ 0.0f };
         };
+        struct PendingLooseGrenadeGrabState
+        {
+            bool active{ false };
+            std::uint64_t requestId{ 0 };
+            RE::ObjectRefHandle handle{};
+            loose_grenade_runtime::GrenadeRuntimeData runtime{};
+            float elapsedSeconds{ 0.0f };
+        };
+        struct ArmedLooseGrenadeFuseState
+        {
+            bool active{ false };
+            RE::ObjectRefHandle handle{};
+            std::uint32_t refFormID{ 0 };
+            loose_grenade_runtime::GrenadeRuntimeData runtime{};
+            float remainingSeconds{ 0.0f };
+        };
+        static constexpr std::size_t kArmedLooseGrenadeFuseCapacity = 4;
+        PendingLooseGrenadeGrabState _pendingLooseGrenadeGrab{};
+        std::array<ArmedLooseGrenadeFuseState, kArmedLooseGrenadeFuseCapacity> _armedLooseGrenadeFuses{};
         std::atomic<std::uint32_t> _leftWeaponContactBodyId{ INVALID_CONTACT_BODY_ID };
         std::atomic<std::uint32_t> _leftWeaponContactPartKind{ static_cast<std::uint32_t>(WeaponPartKind::Other) };
         std::atomic<std::uint32_t> _leftWeaponContactReloadRole{ static_cast<std::uint32_t>(WeaponReloadRole::None) };

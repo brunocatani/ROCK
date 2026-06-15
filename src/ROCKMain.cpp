@@ -10,6 +10,7 @@
 #include "physics-interaction/core/PhysicsCreationGatePolicy.h"
 #include "physics-interaction/core/PhysicsHooks.h"
 #include "physics-interaction/core/RockRuntimeState.h"
+#include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/native/HavokOffsets.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/input/DebugControllerRuntime.h"
@@ -549,6 +550,11 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
 
     logger::info("ROCK: Allocate trampoline (2048 bytes)...");
     F4SE::AllocTrampoline(2048);
+
+    logger::info("ROCK: Install loose grenade equip hook...");
+    if (!rock::loose_grenade_runtime::installEquipHook()) {
+        return false;
+    }
 
     logger::info("ROCK: Install main loop hook...");
     if (!hookMainLoop()) {
