@@ -66,6 +66,7 @@ namespace rock
         bool rockSuppressRightFavoritesGameInput = true;
         bool rockSuppressNativeReadyWeaponAutoReady = true;
         bool rockSuppressNativeMeleeThrowGameInput = true;
+        bool rockSuppressNativeGrabHoverHaptics = true;
         bool rockVirtualHolstersCompatibilityEnabled = true;
         bool rockVirtualHolstersDeferGrabInZone = true;
         bool rockVirtualHolstersDeferWeaponToggleInZone = true;

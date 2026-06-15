@@ -149,6 +149,7 @@ namespace rock
         rockSuppressRightFavoritesGameInput = true;
         rockSuppressNativeReadyWeaponAutoReady = true;
         rockSuppressNativeMeleeThrowGameInput = true;
+        rockSuppressNativeGrabHoverHaptics = true;
         rockVirtualHolstersCompatibilityEnabled = true;
         rockVirtualHolstersDeferGrabInZone = true;
         rockVirtualHolstersDeferWeaponToggleInZone = true;
@@ -668,6 +669,7 @@ namespace rock
         rockSuppressRightFavoritesGameInput = ini.GetBoolValue(SECTION, "bSuppressRightFavoritesGameInput", rockSuppressRightFavoritesGameInput);
         rockSuppressNativeReadyWeaponAutoReady = ini.GetBoolValue(SECTION, "bSuppressNativeReadyWeaponAutoReady", rockSuppressNativeReadyWeaponAutoReady);
         rockSuppressNativeMeleeThrowGameInput = ini.GetBoolValue(SECTION, "bSuppressNativeMeleeThrowGameInput", rockSuppressNativeMeleeThrowGameInput);
+        rockSuppressNativeGrabHoverHaptics = ini.GetBoolValue(SECTION, "bSuppressNativeGrabHoverHaptics", rockSuppressNativeGrabHoverHaptics);
         rockVirtualHolstersCompatibilityEnabled = ini.GetBoolValue(SECTION, "bVirtualHolstersCompatibilityEnabled", rockVirtualHolstersCompatibilityEnabled);
         rockVirtualHolstersDeferGrabInZone = ini.GetBoolValue(SECTION, "bVirtualHolstersDeferGrabInZone", rockVirtualHolstersDeferGrabInZone);
         rockVirtualHolstersDeferWeaponToggleInZone = ini.GetBoolValue(SECTION, "bVirtualHolstersDeferWeaponToggleInZone", rockVirtualHolstersDeferWeaponToggleInZone);

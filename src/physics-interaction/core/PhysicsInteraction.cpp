@@ -2034,6 +2034,7 @@ namespace rock
         }
         advanceNativeMeleeFrameClock();
         enforceNativeMeleeRuntimeSuppression();
+        enforceNativeGrabHapticRuntimeSuppression();
         _dynamicPushElapsedSeconds += _deltaTime;
         if (_dynamicPushCooldownUntil.size() > 512) {
             for (auto it = _dynamicPushCooldownUntil.begin(); it != _dynamicPushCooldownUntil.end();) {

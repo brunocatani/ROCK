@@ -500,6 +500,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKNativePlayerCollisionSuppressionPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKNativePlayerCollisionSuppressionPolicyTests)
 
+  add_executable(ROCKNativeGrabHapticSuppressionPolicyTests
+    "${ROOT_DIR}/tests/NativeGrabHapticSuppressionPolicyTests.cpp"
+  )
+  target_compile_features(ROCKNativeGrabHapticSuppressionPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKNativeGrabHapticSuppressionPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKNativeGrabHapticSuppressionPolicyTests)
+
   add_executable(ROCKSoftContactWorldPolicyTests
     "${ROOT_DIR}/tests/SoftContactWorldPolicyTests.cpp"
   )
@@ -548,6 +555,7 @@ if(BUILD_ROCK_TESTS)
     ROCKSelectionPrecisionPolicyTests
     ROCKSelectionBeamPolicyTests
     ROCKNativePlayerCollisionSuppressionPolicyTests
+    ROCKNativeGrabHapticSuppressionPolicyTests
     ROCKSoftContactWorldPolicyTests
   )
   add_custom_target(ROCKPolicyTestBinaries DEPENDS ${ROCK_COMMONLIB_TEST_TARGETS})

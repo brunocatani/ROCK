@@ -8,6 +8,7 @@ namespace rock
     bool validateNativeMeleeSuppressionHookTargets();
     bool installNativeMeleeSuppressionHooks();
     void enforceNativeMeleeRuntimeSuppression(bool forceCheck = false);
+    void enforceNativeGrabHapticRuntimeSuppression(bool forceCheck = false);
     void installRefreshManifoldHook();
 
     void advanceNativeMeleeFrameClock();

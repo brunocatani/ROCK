@@ -12,6 +12,7 @@
 #include "physics-interaction/native/CharacterControllerRuntime.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/native/HavokTimingFixPolicy.h"
+#include "physics-interaction/native/NativeGrabHapticSuppressionPolicy.h"
 
 #include "RockConfig.h"
 
@@ -58,6 +59,7 @@ namespace rock
         static std::atomic<bool> g_nativeMeleeSuppressionHooksInstalled{ false };
         constexpr std::uint64_t kNativeMeleePhysicalSwingLeaseFrames = 24;
         constexpr std::uint64_t kNativeMeleeRuntimeSettingCheckIntervalFrames = 90;
+        constexpr std::uint64_t kNativeGrabHapticRuntimeSettingCheckIntervalFrames = 90;
         constexpr char kNativeMeleeVelocityCheckSetting[] = "bMeleeVelocityCheck:VRInput";
         constexpr char kNativeMeleeLinearVelocityThresholdSetting[] = "fMeleeLinearVelocityThreshold:VRInput";
         constexpr char kNativeMeleeAngularVelocityThresholdSetting[] = "fMeleeAngularVelocityThreshold:VRInput";
@@ -97,10 +99,38 @@ namespace rock
             std::atomic<std::uint32_t> reapplyCount{ 0 };
         };
 
+        struct NativeGrabHapticBinarySettingState
+        {
+            RE::Setting* setting = nullptr;
+            bool originalValue = false;
+            bool originalCaptured = false;
+            bool missingLogged = false;
+            bool typeMismatchLogged = false;
+            bool confirmedLogged = false;
+            bool applied = false;
+            std::atomic<std::uint32_t> reapplyCount{ 0 };
+        };
+
+        struct NativeGrabHapticFloatSettingState
+        {
+            RE::Setting* setting = nullptr;
+            float originalValue = 0.0f;
+            bool originalCaptured = false;
+            bool missingLogged = false;
+            bool typeMismatchLogged = false;
+            bool confirmedLogged = false;
+            bool applied = false;
+            std::atomic<std::uint32_t> reapplyCount{ 0 };
+        };
+
         static std::atomic<std::uint64_t> g_nativeMeleeRuntimeSettingNextCheckFrame{ 0 };
         static NativeBinaryRuntimeSettingState g_nativeMeleeVelocityCheckState;
         static NativeFloatRuntimeSettingState g_nativeMeleeLinearThresholdState;
         static NativeFloatRuntimeSettingState g_nativeMeleeAngularThresholdState;
+        static std::atomic<std::uint64_t> g_nativeGrabHapticRuntimeSettingNextCheckFrame{ 0 };
+        static NativeGrabHapticBinarySettingState g_nativeGrabHapticRolloverState;
+        static NativeGrabHapticFloatSettingState g_nativeGrabHapticHoverIntensityState;
+        static NativeGrabHapticFloatSettingState g_nativeGrabHapticHoverDurationState;
 
         bool isAddressInGameText(std::uintptr_t address)
         {
@@ -502,6 +532,180 @@ namespace rock
             return true;
         }
 
+        RE::Setting* resolveNativeGrabHapticRuntimeSetting(RE::Setting*& cachedSetting, const char* settingName, bool& missingLogged)
+        {
+            if (!cachedSetting) {
+                cachedSetting = RE::GetINISetting(settingName);
+            }
+
+            if (!cachedSetting && !missingLogged) {
+                missingLogged = true;
+                ROCK_LOG_WARN(Haptics, "Native grab-hover haptic suppression could not resolve INI setting '{}'", settingName);
+            }
+
+            return cachedSetting;
+        }
+
+        bool enforceNativeGrabHapticBinarySetting(NativeGrabHapticBinarySettingState& state, const char* settingName, bool desiredValue, const char* label)
+        {
+            auto* setting = resolveNativeGrabHapticRuntimeSetting(state.setting, settingName, state.missingLogged);
+            if (!setting) {
+                return false;
+            }
+
+            if (setting->GetType() != RE::Setting::SETTING_TYPE::kBinary) {
+                if (!state.typeMismatchLogged) {
+                    state.typeMismatchLogged = true;
+                    ROCK_LOG_ERROR(Haptics, "Native grab-hover haptic suppression found non-binary setting '{}'", settingName);
+                }
+                return false;
+            }
+
+            if (!state.originalCaptured) {
+                state.originalValue = setting->GetBinary();
+                state.originalCaptured = true;
+                ROCK_LOG_INFO(Haptics, "Native grab-hover {} setting '{}' resolved: original={}", label, settingName, state.originalValue ? "true" : "false");
+            }
+
+            const bool currentValue = setting->GetBinary();
+            if (currentValue != desiredValue) {
+                setting->SetBinary(desiredValue);
+                state.applied = true;
+                const auto reapplyCount = state.reapplyCount.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (reapplyCount == 1 || reapplyCount % 30 == 0) {
+                    ROCK_LOG_WARN(Haptics,
+                        "Set FO4VR native grab-hover {} setting '{}' to {} (original={} reapplyCount={})",
+                        label,
+                        settingName,
+                        desiredValue ? "true" : "false",
+                        state.originalValue ? "true" : "false",
+                        reapplyCount);
+                }
+                state.confirmedLogged = true;
+                return true;
+            }
+
+            if (!state.confirmedLogged) {
+                ROCK_LOG_INFO(Haptics, "FO4VR native grab-hover {} setting '{}' is {}", label, settingName, desiredValue ? "true" : "false");
+                state.confirmedLogged = true;
+            }
+
+            return true;
+        }
+
+        bool enforceNativeGrabHapticFloatSetting(NativeGrabHapticFloatSettingState& state, const char* settingName, float desiredValue, const char* label)
+        {
+            auto* setting = resolveNativeGrabHapticRuntimeSetting(state.setting, settingName, state.missingLogged);
+            if (!setting) {
+                return false;
+            }
+
+            if (setting->GetType() != RE::Setting::SETTING_TYPE::kFloat) {
+                if (!state.typeMismatchLogged) {
+                    state.typeMismatchLogged = true;
+                    ROCK_LOG_ERROR(Haptics, "Native grab-hover haptic suppression found non-float setting '{}'", settingName);
+                }
+                return false;
+            }
+
+            if (!state.originalCaptured) {
+                state.originalValue = setting->GetFloat();
+                state.originalCaptured = true;
+                ROCK_LOG_INFO(Haptics, "Native grab-hover {} setting '{}' resolved: original={:.3f}", label, settingName, state.originalValue);
+            }
+
+            const float currentValue = setting->GetFloat();
+            if (!std::isfinite(currentValue) || currentValue != desiredValue) {
+                setting->SetFloat(desiredValue);
+                state.applied = true;
+                const auto reapplyCount = state.reapplyCount.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (reapplyCount == 1 || reapplyCount % 30 == 0) {
+                    ROCK_LOG_WARN(Haptics,
+                        "Set FO4VR native grab-hover {} setting '{}' to {:.3f} (original={:.3f} reapplyCount={})",
+                        label,
+                        settingName,
+                        desiredValue,
+                        state.originalValue,
+                        reapplyCount);
+                }
+                state.confirmedLogged = true;
+                return true;
+            }
+
+            if (!state.confirmedLogged) {
+                ROCK_LOG_INFO(Haptics, "FO4VR native grab-hover {} setting '{}' is {:.3f}", label, settingName, desiredValue);
+                state.confirmedLogged = true;
+            }
+
+            return true;
+        }
+
+        bool restoreNativeGrabHapticBinarySetting(NativeGrabHapticBinarySettingState& state, const char* settingName, const char* label)
+        {
+            if (!state.originalCaptured || !state.applied) {
+                return true;
+            }
+
+            auto* setting = resolveNativeGrabHapticRuntimeSetting(state.setting, settingName, state.missingLogged);
+            if (!setting) {
+                return false;
+            }
+
+            if (setting->GetType() != RE::Setting::SETTING_TYPE::kBinary) {
+                if (!state.typeMismatchLogged) {
+                    state.typeMismatchLogged = true;
+                    ROCK_LOG_ERROR(Haptics, "Native grab-hover haptic suppression found non-binary setting '{}' while restoring", settingName);
+                }
+                return false;
+            }
+
+            if (setting->GetBinary() != state.originalValue) {
+                setting->SetBinary(state.originalValue);
+                ROCK_LOG_INFO(Haptics,
+                    "Restored FO4VR native grab-hover {} setting '{}' to {}",
+                    label,
+                    settingName,
+                    state.originalValue ? "true" : "false");
+            }
+            state.applied = false;
+            state.confirmedLogged = false;
+            return true;
+        }
+
+        bool restoreNativeGrabHapticFloatSetting(NativeGrabHapticFloatSettingState& state, const char* settingName, const char* label)
+        {
+            if (!state.originalCaptured || !state.applied) {
+                return true;
+            }
+
+            auto* setting = resolveNativeGrabHapticRuntimeSetting(state.setting, settingName, state.missingLogged);
+            if (!setting) {
+                return false;
+            }
+
+            if (setting->GetType() != RE::Setting::SETTING_TYPE::kFloat) {
+                if (!state.typeMismatchLogged) {
+                    state.typeMismatchLogged = true;
+                    ROCK_LOG_ERROR(Haptics, "Native grab-hover haptic suppression found non-float setting '{}' while restoring", settingName);
+                }
+                return false;
+            }
+
+            const float currentValue = setting->GetFloat();
+            if (!std::isfinite(currentValue) || currentValue != state.originalValue) {
+                setting->SetFloat(state.originalValue);
+                ROCK_LOG_INFO(Haptics, "Restored FO4VR native grab-hover {} setting '{}' to {:.3f}", label, settingName, state.originalValue);
+            }
+            state.applied = false;
+            state.confirmedLogged = false;
+            return true;
+        }
+
+        [[nodiscard]] bool nativeGrabHapticSuppressionApplied()
+        {
+            return g_nativeGrabHapticRolloverState.applied || g_nativeGrabHapticHoverIntensityState.applied || g_nativeGrabHapticHoverDurationState.applied;
+        }
+
         bool isLeftSideString(const RE::BSFixedString* side)
         {
             if (!side) {
@@ -865,6 +1069,58 @@ namespace rock
             g_nativeMeleeLinearThresholdState, kNativeMeleeLinearVelocityThresholdSetting, kNativeMeleeSuppressedVelocityThreshold, "linear threshold");
         enforceNativeMeleeFloatMinimumSetting(
             g_nativeMeleeAngularThresholdState, kNativeMeleeAngularVelocityThresholdSetting, kNativeMeleeSuppressedVelocityThreshold, "angular threshold");
+    }
+
+    void enforceNativeGrabHapticRuntimeSuppression(bool forceCheck)
+    {
+        /*
+         * FO4VR's native grabbable-object affordance is exposed through the VR
+         * hover/rollover rumble settings. Suppressing those settings leaves
+         * ROCK-owned haptics untouched because ROCK emits haptics directly
+         * through its feedback pipeline instead of through native rollover UI.
+         */
+        const native_grab_haptic_suppression::RuntimeInput input{
+            .rockEnabled = g_rockConfig.rockEnabled,
+            .suppressionEnabled = g_rockConfig.rockSuppressNativeGrabHoverHaptics,
+        };
+        const bool shouldSuppress = native_grab_haptic_suppression::shouldSuppressNativeGrabHoverHaptics(input);
+        const bool shouldRestore = native_grab_haptic_suppression::shouldRestoreNativeGrabHoverHaptics(nativeGrabHapticSuppressionApplied(), input);
+        if (!shouldSuppress && !shouldRestore) {
+            return;
+        }
+
+        const auto currentFrame = g_nativeMeleeFrameClock.load(std::memory_order_acquire);
+        const auto nextCheckFrame = g_nativeGrabHapticRuntimeSettingNextCheckFrame.load(std::memory_order_acquire);
+        if (!forceCheck && currentFrame < nextCheckFrame) {
+            return;
+        }
+        g_nativeGrabHapticRuntimeSettingNextCheckFrame.store(currentFrame + kNativeGrabHapticRuntimeSettingCheckIntervalFrames, std::memory_order_release);
+
+        if (shouldSuppress) {
+            enforceNativeGrabHapticBinarySetting(g_nativeGrabHapticRolloverState,
+                native_grab_haptic_suppression::kRolloverRumbleEnabledSetting,
+                native_grab_haptic_suppression::kSuppressedRolloverRumbleEnabled,
+                "rollover rumble");
+            enforceNativeGrabHapticFloatSetting(g_nativeGrabHapticHoverIntensityState,
+                native_grab_haptic_suppression::kHoverRumbleIntensitySetting,
+                native_grab_haptic_suppression::kSuppressedHoverRumbleFloat,
+                "hover intensity");
+            enforceNativeGrabHapticFloatSetting(g_nativeGrabHapticHoverDurationState,
+                native_grab_haptic_suppression::kHoverRumbleDurationSetting,
+                native_grab_haptic_suppression::kSuppressedHoverRumbleFloat,
+                "hover duration");
+            return;
+        }
+
+        restoreNativeGrabHapticBinarySetting(g_nativeGrabHapticRolloverState,
+            native_grab_haptic_suppression::kRolloverRumbleEnabledSetting,
+            "rollover rumble");
+        restoreNativeGrabHapticFloatSetting(g_nativeGrabHapticHoverIntensityState,
+            native_grab_haptic_suppression::kHoverRumbleIntensitySetting,
+            "hover intensity");
+        restoreNativeGrabHapticFloatSetting(g_nativeGrabHapticHoverDurationState,
+            native_grab_haptic_suppression::kHoverRumbleDurationSetting,
+            "hover duration");
     }
 
     using HandleBumpedCharacter_t = void (*)(void*, void*, void*);
