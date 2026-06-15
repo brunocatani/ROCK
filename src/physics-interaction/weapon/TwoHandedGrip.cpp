@@ -1041,6 +1041,7 @@ namespace rock
             }
         }
 
+        clearPrimaryGripPose(primaryHandIsLeft);
         clearSupportGripPose(supportHandIsLeft);
         clearPrimaryDetachVisualAuthority(primaryHandIsLeft);
         restoreFrikOffhandGrip();
@@ -1055,6 +1056,7 @@ namespace rock
         _supportFingerLocalTransforms = {};
         _supportFingerLocalTransformMask = 0;
         _hasSupportFingerLocalTransforms = false;
+        _primaryHandVisualLerp = {};
         _state = TwoHandedState::PrimaryOnly;
 
         ROCK_LOG_INFO(Weapon,

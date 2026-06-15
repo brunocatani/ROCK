@@ -80,10 +80,9 @@ namespace rock::weapon_support_authority_policy
         return mode == WeaponSupportAuthorityMode::FullTwoHandedSolver;
     }
 
-    inline constexpr bool supportGripAppliesPrimaryHandAuthority(WeaponSupportAuthorityMode)
+    inline constexpr bool supportGripAppliesPrimaryHandAuthority(WeaponSupportAuthorityMode mode)
     {
-        // The primary hand is already owned by FRIK's configured equipped-weapon pose.
-        return false;
+        return mode == WeaponSupportAuthorityMode::FullTwoHandedSolver;
     }
 
     inline constexpr bool supportGripAppliesSupportHandAuthority(WeaponSupportAuthorityMode)
