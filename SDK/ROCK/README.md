@@ -22,4 +22,4 @@ Use `RockProviderApi::initialize(rock::provider::ROCK_PROVIDER_API_VERSION)`, th
 
 Register with `registerConsumerV1` and use the returned ROCK-issued owner token for write/control calls. Do not invent global owner tokens. `unregisterConsumerV1` releases that owner's external bodies, offhand reservation, and queued interaction commands.
 
-ROCK v1 exposes queued force grab, force release, and thrown drop through `requestForceGrabV1`, `requestForceReleaseV1`, `requestThrownDropV1`, and `getInteractionCommandResultV1`.
+ROCK v1 exposes queued force grab, force release, and thrown drop through `requestForceGrabV1`, `getInteractionCommandResultV1`, `requestForceReleaseV1`, and `requestThrownDropV1`. Force release defaults to a gentle non-throw drop; force release and thrown drop can apply trusted caller-supplied Havok velocity when their `UseVelocityHavok` flag is set.

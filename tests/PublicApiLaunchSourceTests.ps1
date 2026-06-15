@@ -155,6 +155,10 @@ Require-Text 'src/api/ROCKProviderApi.h' 'InteractionCommands|InteractionCommand
     'v1 must expose the real queued interaction command surface.'
 Require-Text 'src/api/ROCKProviderApi.h' 'requestForceGrabV1|requestForceReleaseV1|requestThrownDropV1|getInteractionCommandResultV1' `
     'v1 function table must expose queued request and result polling functions.'
+Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderForceReleaseFlagV1[\s\S]*UseVelocityHavok' `
+    'Force release must expose an explicit trusted Havok velocity flag.'
+Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderForceReleaseRequestV1[\s\S]*linearVelocityHavok[\s\S]*angularVelocityRadiansPerSecond' `
+    'Force release must expose trusted linear and angular Havok velocity payloads.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestForceGrabV1' `
     'Provider glue must implement queued force-grab request validation.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'apiRequestForceReleaseV1' `
@@ -170,7 +174,9 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'hand\.grabSe
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'releaseGrabbedObject' `
     'Force release and thrown drop must use the existing release path.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'applyReleaseVelocitySnapshot' `
-    'Thrown drop must apply caller-provided velocity through the existing release velocity path.'
+    'Trusted release/drop velocity must apply through the existing release velocity path.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'applyCapturedReleaseVelocity\s*=\s*isThrownDropCommand\s*&&\s*!applyRequestedVelocity' `
+    'Provider force release must not reuse captured controller throw velocity by default.'
 Reject-Text 'src/api/ROCKProviderApi.cpp' 'grabSelectedObject|releaseGrabbedObject|applyReleaseVelocitySnapshot' `
     'Provider API glue must only enqueue commands, not mutate hand state directly.'
 Reject-Text 'src/api/ROCKProviderApi.h' 'getWeaponEvidenceDescriptors|RockProviderWeaponEvidenceDescriptor|getExternalContactSnapshotV1' `
@@ -204,9 +210,9 @@ $expectedProviderFunctions = [string[]]@(
     'getProviderLimitsV1',
     'getExternalContactSnapshotForOwnerV1',
     'requestForceGrabV1',
+    'getInteractionCommandResultV1',
     'requestForceReleaseV1',
-    'requestThrownDropV1',
-    'getInteractionCommandResultV1'
+    'requestThrownDropV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 

@@ -79,7 +79,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::ImmediateCollisionRestore) |
-        static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::RequireMatchingTarget);
+        static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::RequireMatchingTarget) |
+        static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::UseVelocityHavok);
     constexpr std::uint32_t kImplementedThrownDropFlagsV1 =
         static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::ImmediateCollisionRestore) |
         static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::RequireMatchingTarget) |
@@ -744,6 +745,10 @@ namespace
             !hasInteractionTargetIdentity(request->targetRefr, request->targetFormId, request->targetBodyId)) {
             return RockProviderResultV1::InvalidArgument;
         }
+        if ((request->flags & static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::UseVelocityHavok)) != 0 &&
+            (!isFiniteVector3(request->linearVelocityHavok) || !isFiniteVector3(request->angularVelocityRadiansPerSecond))) {
+            return RockProviderResultV1::InvalidArgument;
+        }
 
         const auto ownerResult = validateInteractionCommandOwner(ownerToken);
         if (ownerResult != RockProviderResultV1::Ok) {
@@ -985,9 +990,9 @@ namespace
         .getProviderLimitsV1 = &apiGetProviderLimitsV1,
         .getExternalContactSnapshotForOwnerV1 = &apiGetExternalContactSnapshotForOwnerV1,
         .requestForceGrabV1 = &apiRequestForceGrabV1,
+        .getInteractionCommandResultV1 = &apiGetInteractionCommandResultV1,
         .requestForceReleaseV1 = &apiRequestForceReleaseV1,
         .requestThrownDropV1 = &apiRequestThrownDropV1,
-        .getInteractionCommandResultV1 = &apiGetInteractionCommandResultV1,
     };
 }
 

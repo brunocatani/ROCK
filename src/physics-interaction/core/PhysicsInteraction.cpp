@@ -4560,20 +4560,30 @@ namespace rock
                 }
 
                 GrabReleaseOutcome::VelocitySnapshot requestedVelocity{};
-                const bool applyRequestedVelocity = isThrownDropCommand &&
+                const bool forceReleaseUsesVelocity = isForceReleaseCommand &&
+                    (command.forceRelease.flags & static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::UseVelocityHavok)) != 0;
+                const bool thrownDropUsesVelocity = isThrownDropCommand &&
                     (command.thrownDrop.flags & static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::UseVelocityHavok)) != 0;
+                const bool applyRequestedVelocity = forceReleaseUsesVelocity || thrownDropUsesVelocity;
                 if (applyRequestedVelocity) {
+                    const float* linearVelocityHavok = forceReleaseUsesVelocity ?
+                        command.forceRelease.linearVelocityHavok :
+                        command.thrownDrop.linearVelocityHavok;
+                    const float* angularVelocityRadiansPerSecond = forceReleaseUsesVelocity ?
+                        command.forceRelease.angularVelocityRadiansPerSecond :
+                        command.thrownDrop.angularVelocityRadiansPerSecond;
+
                     requestedVelocity.available = true;
                     requestedVelocity.primaryBodyId = RE::hknpBodyId{ primaryBodyId };
                     requestedVelocity.linearVelocityHavok = RE::NiPoint3{
-                        command.thrownDrop.linearVelocityHavok[0],
-                        command.thrownDrop.linearVelocityHavok[1],
-                        command.thrownDrop.linearVelocityHavok[2],
+                        linearVelocityHavok[0],
+                        linearVelocityHavok[1],
+                        linearVelocityHavok[2],
                     };
                     requestedVelocity.angularVelocityRadiansPerSecond = RE::NiPoint3{
-                        command.thrownDrop.angularVelocityRadiansPerSecond[0],
-                        command.thrownDrop.angularVelocityRadiansPerSecond[1],
-                        command.thrownDrop.angularVelocityRadiansPerSecond[2],
+                        angularVelocityRadiansPerSecond[0],
+                        angularVelocityRadiansPerSecond[1],
+                        angularVelocityRadiansPerSecond[2],
                     };
                     requestedVelocity.overrideAngularVelocity = true;
                     for (const auto bodyId : hand.getHeldBodyIds()) {
@@ -4584,7 +4594,7 @@ namespace rock
                     }
                 }
 
-                if (isThrownDropCommand) {
+                if (isThrownDropCommand && !applyRequestedVelocity) {
                     hand.captureHeldReleaseMotion(frame.hknpWorld, handInput.rawHandWorld, _heldObjectPlayerSpaceFrame, frame.deltaSeconds);
                 }
 
@@ -4594,6 +4604,7 @@ namespace rock
                     (flags & static_cast<std::uint32_t>(RockProviderForceReleaseFlagV1::ImmediateCollisionRestore)) != 0;
                 auto releaseContext = makeGrabReleaseContext(hand, isLeft);
                 releaseContext.disposition = GrabReleaseDisposition::PhysicalDrop;
+                releaseContext.applyCapturedReleaseVelocity = isThrownDropCommand && !applyRequestedVelocity;
                 releaseContext.reason = isThrownDropCommand ? "provider-thrown-drop" : "provider-force-release";
                 const auto releaseOutcome = hand.releaseGrabbedObject(frame.hknpWorld,
                     immediateCollisionRestore ? GrabReleaseCollisionRestoreMode::Immediate : GrabReleaseCollisionRestoreMode::Delayed,

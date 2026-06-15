@@ -253,6 +253,7 @@ namespace rock
         bool finalObjectRelease = true;
         bool peerHandStillHolding = false;
         GrabReleaseDisposition disposition = GrabReleaseDisposition::PhysicalDrop;
+        bool applyCapturedReleaseVelocity = true;
         const char* reason = "single-hand";
     };
 

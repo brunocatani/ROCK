@@ -79,6 +79,8 @@ Implemented v1 feature bits:
 - `OwnerFilteredExternalContactsV1`
 - `InteractionCommandQueue`
 - `ForceGrabCommand`
+- `ForceReleaseCommand`
+- `ThrownDropCommand`
 
 ## Frame And Lifecycle Rules
 
@@ -117,8 +119,10 @@ Initial force-grab scope:
 
 Successful force grabs enter ROCK's existing dynamic grab path. Finger posing, grab settling, haptics, object ownership, and release behavior are therefore the same systems used by normal grabs.
 
-To force release a held object, fill `RockProviderForceReleaseRequestV1` and call `requestForceReleaseV1`. The selected hand must be `Left` or `Right`. If a target ref, form id, or body id is supplied, the held object must match before ROCK releases it.
+To force release a held object, fill `RockProviderForceReleaseRequestV1` and call `requestForceReleaseV1`. The selected hand must be `Left` or `Right`. If a target ref, form id, or body id is supplied, the held object must match before ROCK releases it. A force release with no velocity flags is a gentle physical drop: ROCK detaches through the normal release path but does not reuse captured controller throw history.
 
-To request a thrown drop, fill `RockProviderThrownDropRequestV1` and call `requestThrownDropV1`. ROCK captures the current held release motion before detaching. If `UseVelocityHavok` is set, ROCK applies the supplied linear and angular Havok velocities through the same release velocity path after detach.
+Set `RockProviderForceReleaseFlagV1::UseVelocityHavok` to apply caller-supplied `linearVelocityHavok` and `angularVelocityRadiansPerSecond` after detach. The supplied force-release velocities are trusted and only finite-checked; ROCK does not clamp them.
+
+To request a thrown drop, fill `RockProviderThrownDropRequestV1` and call `requestThrownDropV1`. Without `UseVelocityHavok`, ROCK captures the current held release motion before detaching. If `UseVelocityHavok` is set, ROCK applies the supplied linear and angular Havok velocities through the same release velocity path after detach. The supplied thrown-drop velocities are trusted and only finite-checked; ROCK does not clamp them.
 
 Successful force release and thrown drop commands use ROCK's existing `Hand::releaseGrabbedObject` path. Collision restore, body lifecycle restore, claim release, release messages, hand pose cleanup, and release events therefore match normal releases.

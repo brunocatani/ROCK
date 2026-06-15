@@ -287,6 +287,7 @@ namespace rock::provider
         None = 0,
         ImmediateCollisionRestore = 1u << 0,
         RequireMatchingTarget = 1u << 1,
+        UseVelocityHavok = 1u << 2,
     };
 
     enum class RockProviderThrownDropFlagV1 : std::uint32_t
@@ -376,7 +377,9 @@ namespace rock::provider
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
-        std::uint32_t reserved[5]{};
+        float linearVelocityHavok[3]{};
+        float angularVelocityRadiansPerSecond[3]{};
+        std::uint32_t reserved[1]{};
     };
 
     struct RockProviderThrownDropRequestV1
@@ -648,6 +651,10 @@ namespace rock::provider
             std::uint64_t ownerToken,
             const RockProviderForceGrabRequestV1* request,
             std::uint64_t* outCommandId);
+        RockProviderResultV1(ROCK_PROVIDER_CALL* getInteractionCommandResultV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t commandId,
+            RockProviderInteractionCommandResultV1* outResult);
         RockProviderResultV1(ROCK_PROVIDER_CALL* requestForceReleaseV1)(
             std::uint64_t ownerToken,
             const RockProviderForceReleaseRequestV1* request,
@@ -656,10 +663,6 @@ namespace rock::provider
             std::uint64_t ownerToken,
             const RockProviderThrownDropRequestV1* request,
             std::uint64_t* outCommandId);
-        RockProviderResultV1(ROCK_PROVIDER_CALL* getInteractionCommandResultV1)(
-            std::uint64_t ownerToken,
-            std::uint64_t commandId,
-            RockProviderInteractionCommandResultV1* outResult);
 
         [[nodiscard]] static int initialize(const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION)
         {
@@ -713,7 +716,7 @@ namespace rock::provider
     static_assert(alignof(RockProviderForceGrabRequestV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderForceGrabRequestV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderForceGrabRequestV1>);
-    static_assert(sizeof(RockProviderForceReleaseRequestV1) == 64);
+    static_assert(sizeof(RockProviderForceReleaseRequestV1) == 72);
     static_assert(alignof(RockProviderForceReleaseRequestV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderForceReleaseRequestV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderForceReleaseRequestV1>);
