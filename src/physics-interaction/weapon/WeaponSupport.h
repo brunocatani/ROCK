@@ -338,20 +338,17 @@ namespace rock::equipped_weapon_manual_ownership_policy
         bool pending{ false };
         bool gripHeld{ false };
         bool configEnabled{ true };
-        bool fullTwoHandedSolverMode{ true };
         bool primaryPoseBlockerAvailable{ true };
         bool virtualHolstersOwnsInput{ false };
     };
 
     [[nodiscard]] inline constexpr bool featureAvailable(
         bool configEnabled,
-        bool fullTwoHandedSolverMode,
         bool primaryPoseBlockerAvailable,
         bool weaponNodeAvailable,
         std::uint64_t weaponGenerationKey) noexcept
     {
         return configEnabled &&
-               fullTwoHandedSolverMode &&
                primaryPoseBlockerAvailable &&
                weaponNodeAvailable &&
                weaponGenerationKey != 0;
@@ -363,7 +360,6 @@ namespace rock::equipped_weapon_manual_ownership_policy
         return input.pending &&
                input.gripHeld &&
                input.configEnabled &&
-               input.fullTwoHandedSolverMode &&
                input.primaryPoseBlockerAvailable &&
                !input.virtualHolstersOwnsInput;
     }

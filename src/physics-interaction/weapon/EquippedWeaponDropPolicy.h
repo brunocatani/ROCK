@@ -11,15 +11,6 @@ namespace rock::equipped_weapon_drop_policy
         Left,
     };
 
-    inline constexpr int kPostDropHandCollisionSuppressionFrames = 5;
-
-    struct SuppressionFrameState
-    {
-        int framesRemaining{ 0 };
-
-        [[nodiscard]] constexpr bool active() const noexcept { return framesRemaining > 0; }
-    };
-
     [[nodiscard]] inline constexpr bool isLeft(SourceHand hand) noexcept
     {
         return hand == SourceHand::Left;
@@ -48,24 +39,4 @@ namespace rock::equipped_weapon_drop_policy
         return sourceHand != SourceHand::None && virtualHolstersOwnsSourceHand;
     }
 
-    inline constexpr void beginPostDropSuppression(SuppressionFrameState& state) noexcept
-    {
-        state.framesRemaining = kPostDropHandCollisionSuppressionFrames;
-    }
-
-    inline constexpr void clearPostDropSuppression(SuppressionFrameState& state) noexcept
-    {
-        state.framesRemaining = 0;
-    }
-
-    [[nodiscard]] inline constexpr bool advancePostDropSuppression(SuppressionFrameState& state) noexcept
-    {
-        if (state.framesRemaining <= 0) {
-            state.framesRemaining = 0;
-            return false;
-        }
-
-        --state.framesRemaining;
-        return state.framesRemaining == 0;
-    }
 }

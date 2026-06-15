@@ -234,7 +234,7 @@ namespace rock
 
         void restoreHandCollisionAfterEquippedWeaponDrop(RE::hknpWorld* world, bool isLeft);
 
-        void updateEquippedWeaponPostDropCollisionSuppression(RE::hknpWorld* world);
+        void updateEquippedWeaponPostDropCollisionSuppression(RE::hknpWorld* world, float deltaSeconds);
 
         void clearEquippedWeaponPostDropCollisionSuppressionState();
 
@@ -371,10 +371,10 @@ namespace rock
         std::atomic<bool> _leftEquippedWeaponDropCollisionSuppressed{ false };
         hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _rightDominantWeaponCollisionSuppression{};
         hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _leftWeaponSupportCollisionSuppression{};
-        hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _rightEquippedWeaponDropCollisionSuppression{};
-        hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _leftEquippedWeaponDropCollisionSuppression{};
-        equipped_weapon_drop_policy::SuppressionFrameState _rightEquippedWeaponDropSuppressionFrames{};
-        equipped_weapon_drop_policy::SuppressionFrameState _leftEquippedWeaponDropSuppressionFrames{};
+        hand_collision_suppression_math::SuppressionSet<kGrabCollisionSuppressionBodyCountPerHand> _rightEquippedWeaponDropCollisionSuppression{};
+        hand_collision_suppression_math::SuppressionSet<kGrabCollisionSuppressionBodyCountPerHand> _leftEquippedWeaponDropCollisionSuppression{};
+        hand_collision_suppression_math::DelayedRestoreState _rightEquippedWeaponDropDelayedRestore{};
+        hand_collision_suppression_math::DelayedRestoreState _leftEquippedWeaponDropDelayedRestore{};
         weapon_debug_notification_policy::WeaponNotificationState _weaponDebugNotificationState{};
         bool _pendingEquippedWeaponPrimaryOnlyGripStart = false;
         static constexpr std::size_t kNativePlayerCollisionSuppressionBodyCapacity = 64;

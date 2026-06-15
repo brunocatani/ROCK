@@ -1,4 +1,5 @@
 #include "physics-interaction/collision/ContactPipelinePolicy.h"
+#include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 
@@ -72,15 +73,14 @@ int main()
     ok &= expectTrue("right normal grab stays available without equipped weapon", canProcessNormalGrabInput(false, false, false, false));
 
     using namespace rock::equipped_weapon_manual_ownership_policy;
-    ok &= expectTrue("manual grip feature is available for active full-solver weapon", featureAvailable(true, true, true, true, 10));
-    ok &= expectFalse("manual grip feature is unavailable without active weapon node", featureAvailable(true, true, true, false, 10));
-    ok &= expectFalse("manual grip feature is unavailable without weapon generation", featureAvailable(true, true, true, true, 0));
+    ok &= expectTrue("manual grip feature is available for active equipped weapon", featureAvailable(true, true, true, 10));
+    ok &= expectFalse("manual grip feature is unavailable without active weapon node", featureAvailable(true, true, false, 10));
+    ok &= expectFalse("manual grip feature is unavailable without weapon generation", featureAvailable(true, true, true, 0));
     ok &= expectTrue("pending trigger-equip grip waits while runtime weapon is not ready",
         shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
             .pending = true,
             .gripHeld = true,
             .configEnabled = true,
-            .fullTwoHandedSolverMode = true,
             .primaryPoseBlockerAvailable = true,
             .virtualHolstersOwnsInput = false,
         }));
@@ -89,16 +89,14 @@ int main()
             .pending = true,
             .gripHeld = false,
             .configEnabled = true,
-            .fullTwoHandedSolverMode = true,
             .primaryPoseBlockerAvailable = true,
             .virtualHolstersOwnsInput = false,
         }));
-    ok &= expectFalse("pending trigger-equip grip clears for visual-only sidearm mode",
+    ok &= expectTrue("pending trigger-equip grip is retained for visual-only sidearm release",
         shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
             .pending = true,
             .gripHeld = true,
             .configEnabled = true,
-            .fullTwoHandedSolverMode = false,
             .primaryPoseBlockerAvailable = true,
             .virtualHolstersOwnsInput = false,
         }));
@@ -107,7 +105,6 @@ int main()
             .pending = true,
             .gripHeld = true,
             .configEnabled = true,
-            .fullTwoHandedSolverMode = true,
             .primaryPoseBlockerAvailable = true,
             .virtualHolstersOwnsInput = true,
         }));
@@ -178,16 +175,14 @@ int main()
     ok &= expectFalse("unknown release source never surrenders to VirtualHolsters",
         shouldSurrenderReleaseToVirtualHolsters(SourceHand::None, true));
 
-    SuppressionFrameState postDropSuppression{};
-    beginPostDropSuppression(postDropSuppression);
-    ok &= expectTrue("post-drop suppression starts active", postDropSuppression.active());
-    ok &= expectEqual("post-drop suppression frame count", postDropSuppression.framesRemaining, kPostDropHandCollisionSuppressionFrames);
-    for (int frame = 1; frame < kPostDropHandCollisionSuppressionFrames; ++frame) {
-        ok &= expectFalse("post-drop suppression remains active before final frame", advancePostDropSuppression(postDropSuppression));
-        ok &= expectTrue("post-drop suppression countdown remains active", postDropSuppression.active());
-    }
-    ok &= expectTrue("post-drop suppression expires on final frame", advancePostDropSuppression(postDropSuppression));
-    ok &= expectFalse("post-drop suppression inactive after expiry", postDropSuppression.active());
+    using namespace rock::hand_collision_suppression_math;
+    SuppressionSet<2> postDropSuppression{};
+    const auto postDropSuppressionResult = beginSuppression(postDropSuppression, 42, 0);
+    ok &= expectTrue("post-drop suppression stores release body", postDropSuppressionResult.stored);
+    DelayedRestoreState postDropRestore{};
+    ok &= expectTrue("post-drop suppression uses grab release delay seconds", beginDelayedRestore(postDropRestore, postDropSuppression, 0.8f));
+    ok &= expectFalse("post-drop suppression remains active before configured delay", advanceDelayedRestore(postDropRestore, postDropSuppression, 0.79f));
+    ok &= expectTrue("post-drop suppression expires at configured delay", advanceDelayedRestore(postDropRestore, postDropSuppression, 0.01f));
 
     return ok ? 0 : 1;
 }
