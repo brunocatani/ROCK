@@ -28,6 +28,7 @@ namespace
 
     constexpr auto SECTION = "PhysicsInteraction";
     constexpr auto DEBUG_SECTION = "Debug";
+    constexpr auto REALISTIC_WEAPONS_SECTION = "RealisticWeapons";
     constexpr int kDefaultWeaponCollisionSupportFitTargetPoints = 96;
     constexpr int kMinWeaponCollisionSupportFitTargetPoints = 4;
     constexpr int kMaxWeaponCollisionSupportFitTargetPoints = 252;
@@ -154,6 +155,8 @@ namespace rock
         rockWeaponInteractionProbeRadius = 12.0f;
         rockVisualOnlySidearmSupportGripEnabled = true;
         rockEquippedWeaponPrimaryDetachEnabled = true;
+        rockGrabbedWeaponAutoEquipEnabled = false;
+        rockGrabbedWeaponAutoEquipSettleSeconds = 0.35f;
         rockWeaponSupportGripHandLerpEnabled = true;
         rockWeaponSupportGripHandLerpTimeMin = 0.12f;
         rockWeaponSupportGripHandLerpTimeMax = 0.20f;
@@ -707,8 +710,23 @@ namespace rock
         rockWeaponInteractionProbeRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponInteractionProbeRadius", rockWeaponInteractionProbeRadius));
         rockVisualOnlySidearmSupportGripEnabled =
             ini.GetBoolValue(SECTION, "bVisualOnlySidearmSupportGripEnabled", rockVisualOnlySidearmSupportGripEnabled);
-        rockEquippedWeaponPrimaryDetachEnabled =
+        const bool legacyPrimaryDetachEnabled =
             ini.GetBoolValue(SECTION, "bEquippedWeaponPrimaryDetachEnabled", rockEquippedWeaponPrimaryDetachEnabled);
+        rockEquippedWeaponPrimaryDetachEnabled = ini.GetBoolValue(
+            REALISTIC_WEAPONS_SECTION,
+            "bEquippedWeaponPrimaryDetachEnabled",
+            legacyPrimaryDetachEnabled);
+        rockGrabbedWeaponAutoEquipEnabled = ini.GetBoolValue(
+            REALISTIC_WEAPONS_SECTION,
+            "bGrabbedWeaponAutoEquipEnabled",
+            rockGrabbedWeaponAutoEquipEnabled);
+        rockGrabbedWeaponAutoEquipSettleSeconds = readClampedFloat(ini,
+            REALISTIC_WEAPONS_SECTION,
+            "fGrabbedWeaponAutoEquipSettleSeconds",
+            rockGrabbedWeaponAutoEquipSettleSeconds,
+            0.35f,
+            0.0f,
+            5.0f);
         rockWeaponSupportGripHandLerpEnabled = ini.GetBoolValue(SECTION, "bWeaponSupportGripHandLerpEnabled", rockWeaponSupportGripHandLerpEnabled);
         rockWeaponSupportGripHandLerpTimeMin = readClampedFloat(ini,
             SECTION,

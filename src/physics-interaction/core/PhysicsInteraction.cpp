@@ -1866,6 +1866,7 @@ namespace rock
         _feedbackHaptics.reset();
         _grabInputIntentStates = {};
         _peerHeldJoinRetryStates = {};
+        _heldWeaponAutoEquipStates = {};
         _pendingEquippedWeaponPrimaryOnlyGripStart = false;
         clearEquippedWeaponPostDropCollisionSuppressionState();
         _lastContactBodyRight.store(0xFFFFFFFF, std::memory_order_release);
@@ -3298,6 +3299,7 @@ namespace rock
         _feedbackHaptics.reset();
         _grabInputIntentStates = {};
         _peerHeldJoinRetryStates = {};
+        _heldWeaponAutoEquipStates = {};
         _bodyBoneColliderCreateRetryFrames = 0;
         _handColliderCreateRetryFrames = 0;
         _lastContactBodyRight.store(0xFFFFFFFF, std::memory_order_release);
@@ -4686,6 +4688,7 @@ namespace rock
             input_remap_runtime::setRightHandHeldWeapon(false);
             input_remap_runtime::setEquippedWeaponPrimaryDetachInputActive(false);
             input_remap_runtime::setEquippedWeaponPrimaryDetached(false);
+            _heldWeaponAutoEquipStates = {};
             clearGameplayCandidatesForHand(_rightHand, false);
             clearGameplayCandidatesForHand(_leftHand, true);
             return;
@@ -4714,6 +4717,7 @@ namespace rock
             const auto& handInput = isLeft ? frame.left : frame.right;
             auto& inputIntentState = _grabInputIntentStates[isLeft ? 1u : 0u];
             auto& peerHeldJoinRetryState = _peerHeldJoinRetryStates[isLeft ? 1u : 0u];
+            auto& autoEquipState = _heldWeaponAutoEquipStates[isLeft ? 1u : 0u];
             auto& shoulderStashState = _shoulderStashStates[isLeft ? 1u : 0u];
             auto& mouthConsumeState = _mouthConsumeStates[isLeft ? 1u : 0u];
             const bool heldWeaponAtFrameStart = hand.isHoldingLooseWeapon();
@@ -4738,6 +4742,7 @@ namespace rock
             };
             if (handInput.disabled) {
                 cancelPeerHeldJoinRetry("hand-input-disabled", false);
+                autoEquipState = {};
                 clearGameplayCandidatesForHand(hand, isLeft);
                 return;
             }
@@ -5163,12 +5168,45 @@ namespace rock
                 dispatchGrabEvent(eventData);
             };
 
+            if (!hand.isHoldingLooseWeapon()) {
+                autoEquipState = {};
+            }
+
             if (hand.isHolding()) {
                 _softContactRuntime.clearHandForStrongerOwner(isLeft, "held-object");
                 const Hand& peer = isLeft ? _rightHand : _leftHand;
                 auto* heldRefForGameplay = hand.getHeldRef();
                 const bool peerHoldingSameObject =
                     heldRefForGameplay && peer.isHolding() && peer.getHeldRef() == heldRefForGameplay;
+                const bool heldWeaponAutoEquipSettled = [&]() {
+                    if (!hand.isHoldingLooseWeapon()) {
+                        autoEquipState = {};
+                        return false;
+                    }
+
+                    auto* currentRef = hand.getHeldRef();
+                    const auto currentFormID = currentRef ? currentRef->GetFormID() : 0u;
+                    const auto currentBodyId = hand.getSavedObjectState().bodyId.value;
+                    if (currentFormID == 0 || currentBodyId == INVALID_CONTACT_BODY_ID) {
+                        autoEquipState = {};
+                        return false;
+                    }
+
+                    if (autoEquipState.formID != currentFormID || autoEquipState.bodyId != currentBodyId) {
+                        autoEquipState = HeldWeaponAutoEquipState{
+                            .formID = currentFormID,
+                            .bodyId = currentBodyId,
+                        };
+                    }
+
+                    if (hand.getState() != HandState::HeldBody) {
+                        autoEquipState.settledSeconds = 0.0f;
+                        return false;
+                    }
+
+                    autoEquipState.settledSeconds += (std::max)(0.0f, frame.deltaSeconds);
+                    return autoEquipState.settledSeconds >= g_rockConfig.rockGrabbedWeaponAutoEquipSettleSeconds;
+                }();
                 const bool heldWeaponEquipRequested = input_remap_policy::shouldRequestHeldWeaponEquip(input_remap_policy::HeldWeaponEquipInput{
                     .remapEnabled = g_rockConfig.rockInputRemapEnabled,
                     .gameplayInputAllowed = true,
@@ -5176,15 +5214,19 @@ namespace rock
                     .heldWeaponAtFrameStart = heldWeaponAtFrameStart,
                     .heldWeaponNow = hand.isHoldingLooseWeapon(),
                     .sameHandTriggerPressedEdge = heldWeaponEquipTriggerPressed,
+                    .autoEquipEnabled = g_rockConfig.rockGrabbedWeaponAutoEquipEnabled,
+                    .autoEquipSettled = heldWeaponAutoEquipSettled,
                 });
 
-                if (heldWeaponEquipRequested) {
+                auto equipHeldWeaponFromHand = [&](const char* requestReason, const char* logAction) {
                     if (peerHoldingSameObject) {
                         ROCK_LOG_WARN(Hand,
-                            "{} hand trigger held weapon equip blocked: peer hand still holding formID={:08X}",
+                            "{} hand {} held weapon equip blocked: peer hand still holding formID={:08X}",
                             hand.handName(),
+                            logAction ? logAction : "requested",
                             heldRefForGameplay ? heldRefForGameplay->GetFormID() : 0u);
-                        return;
+                        autoEquipState = {};
+                        return true;
                     }
 
                     hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, _heldObjectPlayerSpaceFrame, frame.deltaSeconds);
@@ -5204,7 +5246,7 @@ namespace rock
                     const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
                     auto releaseContext = makeGrabReleaseContext(hand, isLeft);
                     releaseContext.disposition = GrabReleaseDisposition::PendingInventoryTransfer;
-                    releaseContext.reason = "same-hand-trigger-held-weapon-equip";
+                    releaseContext.reason = requestReason ? requestReason : "held-weapon-equip";
                     const auto releaseOutcome = hand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
                     if (heldRef) {
                         releaseObject(heldRef, claimOwnerForHand(isLeft));
@@ -5235,8 +5277,9 @@ namespace rock
                     }
                     dispatchHeldObjectEventByFormID(GrabEventType::Released, postEquipRef, heldFormID, primaryBodyId);
                     ROCK_LOG_INFO(Hand,
-                        "{} hand trigger held weapon equip formID={:08X} success={} equipReason={} count={} stack={} instanceMatch={} transferred={}",
+                        "{} hand {} held weapon equip formID={:08X} success={} equipReason={} count={} stack={} instanceMatch={} transferred={}",
                         hand.handName(),
+                        logAction ? logAction : "requested",
                         heldFormID,
                         equipResult.success ? "yes" : "no",
                         weapon_equip_transfer::equipReasonName(equipResult.reason),
@@ -5248,8 +5291,18 @@ namespace rock
                         _pendingEquippedWeaponPrimaryOnlyGripStart = true;
                     }
                     input_remap_runtime::setRightHandHeldWeapon(false);
+                    autoEquipState = {};
                     clearGameplayCandidatesForHand(hand, isLeft);
-                    return;
+                    return true;
+                };
+
+                if (heldWeaponEquipRequested) {
+                    const bool triggeredByInput = heldWeaponEquipTriggerPressed;
+                    if (equipHeldWeaponFromHand(
+                            triggeredByInput ? "same-hand-trigger-held-weapon-equip" : "settled-auto-held-weapon-equip",
+                            triggeredByInput ? "trigger" : "auto")) {
+                        return;
+                    }
                 }
 
                 const auto consumeEligibility = mouth_consume::evaluateEligibility(mouth_consume::EligibilityInput{

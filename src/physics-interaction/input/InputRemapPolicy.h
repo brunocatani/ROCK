@@ -85,6 +85,8 @@ namespace rock::input_remap_policy
         bool heldWeaponAtFrameStart{ false };
         bool heldWeaponNow{ false };
         bool sameHandTriggerPressedEdge{ false };
+        bool autoEquipEnabled{ false };
+        bool autoEquipSettled{ false };
     };
 
     struct VirtualHolstersCompatibilityInput
@@ -184,7 +186,7 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr bool shouldRequestHeldWeaponEquip(const HeldWeaponEquipInput& input)
     {
         return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.heldWeaponAtFrameStart && input.heldWeaponNow &&
-               input.sameHandTriggerPressedEdge;
+               (input.sameHandTriggerPressedEdge || (input.autoEquipEnabled && input.autoEquipSettled));
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeFavoritesAction(const NativeActionSuppressionInput& input)

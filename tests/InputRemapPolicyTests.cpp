@@ -201,6 +201,16 @@ int main()
     auto heldEquipInput = equipInput;
     heldEquipInput.sameHandTriggerPressedEdge = false;
     ok &= expectFalse("held trigger does not repeat held weapon equip request", shouldRequestHeldWeaponEquip(heldEquipInput));
+    auto autoEquipInput = heldEquipInput;
+    autoEquipInput.autoEquipEnabled = true;
+    autoEquipInput.autoEquipSettled = true;
+    ok &= expectTrue("settled held weapon can auto-equip when enabled", shouldRequestHeldWeaponEquip(autoEquipInput));
+    auto disabledAutoEquipInput = autoEquipInput;
+    disabledAutoEquipInput.autoEquipEnabled = false;
+    ok &= expectFalse("settled held weapon does not auto-equip when disabled", shouldRequestHeldWeaponEquip(disabledAutoEquipInput));
+    auto unsettledAutoEquipInput = autoEquipInput;
+    unsettledAutoEquipInput.autoEquipSettled = false;
+    ok &= expectFalse("unsettled held weapon does not auto-equip", shouldRequestHeldWeaponEquip(unsettledAutoEquipInput));
 
     ok &= expectTrue("enabled suppression requests native hook install", shouldInstallNativeActionSuppressionHook(true, true));
     ok &= expectFalse("disabled remap skips native hook install", shouldInstallNativeActionSuppressionHook(false, true));
