@@ -55,6 +55,10 @@ Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'instanceData\s*\?\s*instanceData->GetKeywordData\(\)\s*:\s*nullptr' `
     'Instance keywords must remain on the guarded TBO_InstanceData::GetKeywordData path.'
 
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'resolveEquippedWeaponSupportAuthorityMode\(RE::NiNode\* weaponNode\)[\s\S]*if \(!weaponNode\)[\s\S]*return WeaponSupportAuthorityMode::FullTwoHandedSolver;[\s\S]*makeEquippedWeaponSupportIdentity\(weaponNode\)' `
+    'Support authority classification must not read equipped instance keyword data when no live weapon node is available.'
+
 Require-Text 'src/physics-interaction/weapon/WeaponSupport.h' `
     'Base WEAP keywords and instance keyword data are read[\s\S]*separate guarded paths' `
     'Weapon support documentation must record why base and instance keyword authority are separated.'

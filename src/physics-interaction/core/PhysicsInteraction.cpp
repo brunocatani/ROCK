@@ -1147,6 +1147,10 @@ namespace rock
                 return WeaponSupportAuthorityMode::FullTwoHandedSolver;
             }
 
+            if (!weaponNode) {
+                return WeaponSupportAuthorityMode::FullTwoHandedSolver;
+            }
+
             const auto identity = makeEquippedWeaponSupportIdentity(weaponNode);
             const auto weaponClass = classifyEquippedWeaponForSupportGrip(identity);
             const auto authorityMode = resolveSupportAuthorityMode(true, weaponClass);
