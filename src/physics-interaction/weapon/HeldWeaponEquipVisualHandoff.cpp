@@ -7,6 +7,7 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/TransformMath.h"
 #include "f4vr/F4VRUtils.h"
+#include "f4vr/PlayerNodes.h"
 
 #include "RE/Bethesda/TESObjectREFRs.h"
 
@@ -16,8 +17,6 @@ namespace rock
     {
         constexpr const char* kPhantomNodeName = "ROCK_HeldWeaponEquipVisualHandoff";
         constexpr float kMaxHandoffSeconds = 0.75f;
-        constexpr std::uint32_t kMinHandoffFrames = 3;
-        constexpr std::uint32_t kMinEquippedVisualFrames = 4;
         constexpr std::uint32_t kMaxSceneGraphDepth = 32;
 
         [[nodiscard]] RE::NiTransform makeLocalTransformForParent(const RE::NiNode* parent, const RE::NiTransform& world)
@@ -32,6 +31,78 @@ namespace rock
         [[nodiscard]] bool isRenderableNode(RE::NiAVObject* node) noexcept
         {
             return node && (node->IsGeometry() || node->IsParticlesGeom());
+        }
+
+        [[nodiscard]] bool hasUsableWorldTransform(const RE::NiAVObject* node) noexcept
+        {
+            return node &&
+                   std::isfinite(node->world.translate.x) &&
+                   std::isfinite(node->world.translate.y) &&
+                   std::isfinite(node->world.translate.z) &&
+                   std::isfinite(node->world.scale) &&
+                   std::abs(node->world.scale) > 0.0001f;
+        }
+
+        [[nodiscard]] bool isVisibleRenderableNode(const RE::NiAVObject* node) noexcept
+        {
+            return isRenderableNode(const_cast<RE::NiAVObject*>(node)) &&
+                   f4vr::isNodeVisible(node) &&
+                   !node->GetAppCulled() &&
+                   node->local.scale != 0.0f;
+        }
+
+        [[nodiscard]] bool hasVisibleRenderableDescendant(RE::NiAVObject* node, std::uint32_t depth) noexcept
+        {
+            if (!node || depth > kMaxSceneGraphDepth) {
+                return false;
+            }
+
+            if (depth > 0 && isVisibleRenderableNode(node)) {
+                return true;
+            }
+
+            auto* niNode = node->IsNode();
+            if (!niNode) {
+                return false;
+            }
+
+            for (auto& child : niNode->children) {
+                if (child && hasVisibleRenderableDescendant(child.get(), depth + 1)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        [[nodiscard]] RE::NiNode* selectStableHandoffParent() noexcept
+        {
+            auto usable = [](RE::NiNode* node) noexcept -> RE::NiNode* {
+                return hasUsableWorldTransform(node) ? node : nullptr;
+            };
+
+            if (f4vr::getPlayer()) {
+                auto* playerNodes = f4vr::getPlayerNodes();
+                if (auto* node = usable(playerNodes->primaryWeaponOffsetNOde)) {
+                    return node;
+                }
+                if (auto* node = usable(playerNodes->primaryWeapontoWeaponNode)) {
+                    return node;
+                }
+                if (auto* node = usable(playerNodes->roomnode)) {
+                    return node;
+                }
+                if (auto* node = usable(playerNodes->playerworldnode)) {
+                    return node;
+                }
+            }
+
+            if (auto* node = usable(f4vr::getFirstPersonSkeleton())) {
+                return node;
+            }
+            if (auto* node = usable(f4vr::getRootNode())) {
+                return node;
+            }
+            return nullptr;
         }
 
         void forceVisibleRecursive(RE::NiAVObject* node, std::uint32_t depth) noexcept
@@ -77,12 +148,6 @@ namespace rock
             }
         }
 
-        void setVisible(RE::NiAVObject* node, bool visible) noexcept
-        {
-            if (node) {
-                f4vr::setNodeVisibility(node, visible);
-            }
-        }
     }
 
     HeldWeaponEquipVisualHandoff::~HeldWeaponEquipVisualHandoff()
@@ -109,7 +174,7 @@ namespace rock
     {
         const auto& visual = input.visual;
         auto* cloneSourceNode = visual.cloneSourceNode;
-        auto* parent = visual.parent;
+        auto* parent = selectStableHandoffParent();
         if (!visual.isValid() || !cloneSourceNode || !parent) {
             return false;
         }
@@ -138,7 +203,7 @@ namespace rock
 
         _active = true;
         ROCK_LOG_DEBUG(Weapon,
-            "Held weapon equip visual handoff started formID={:08X} hand={} parent='{}' source='{}'",
+            "Held weapon equip visual handoff started formID={:08X} hand={} stableParent='{}' source='{}'",
             _heldFormID,
             _isLeft ? "left" : "right",
             parent->name.c_str(),
@@ -166,7 +231,6 @@ namespace rock
     void HeldWeaponEquipVisualHandoff::prepareForWeaponCollisionImpl(const FrameInput& input)
     {
         (void)input;
-        restoreHiddenWeaponNodes();
     }
 
     void HeldWeaponEquipVisualHandoff::updateAfterWeaponCollision(const FrameInput& input) noexcept
@@ -192,60 +256,41 @@ namespace rock
         _elapsedSeconds += dt;
         ++_frames;
 
-        bool capturedEquippedVisual = false;
         auto* equippedRoot = input.equippedWeaponRoot;
         if (equippedRoot) {
             if (_observedEquippedWeaponRoot.get() != equippedRoot) {
                 _observedEquippedWeaponRoot.reset(equippedRoot);
                 _equippedVisualFrames = 0;
             }
-            if (_hiddenWeaponRoot.get() != equippedRoot) {
-                restoreHiddenWeaponNodes();
-                if (!captureAndHideEquippedWeapon(equippedRoot)) {
-                    ROCK_LOG_WARN(Weapon,
-                        "Held weapon equip visual handoff cancelled: equipped weapon render node capture overflow formID={:08X}",
-                        _heldFormID);
-                    cancel();
-                    return;
-                }
-            } else {
-                hideCapturedWeaponNodes();
+            if (hasVisibleRenderableDescendant(equippedRoot, 0)) {
+                ++_equippedVisualFrames;
+                ROCK_LOG_DEBUG(Weapon,
+                    "Held weapon equip visual handoff finished on native visual formID={:08X} frames={} nativeVisibleFrames={} elapsed={:.3f}s",
+                    _heldFormID,
+                    _frames,
+                    _equippedVisualFrames,
+                    _elapsedSeconds);
+                cancel();
+                return;
             }
-            capturedEquippedVisual = _hiddenVisibleWeaponNodeCount > 0;
         } else {
             _observedEquippedWeaponRoot.reset();
-        }
-
-        if (capturedEquippedVisual) {
-            ++_equippedVisualFrames;
-        } else {
             _equippedVisualFrames = 0;
         }
 
-        if (_frames >= kMinHandoffFrames && _equippedVisualFrames >= kMinEquippedVisualFrames) {
-            ROCK_LOG_DEBUG(Weapon,
-                "Held weapon equip visual handoff finished formID={:08X} frames={} equippedVisualFrames={} elapsed={:.3f}s hiddenNodes={}",
-                _heldFormID,
-                _frames,
-                _equippedVisualFrames,
-                _elapsedSeconds,
-                _hiddenWeaponNodeCount);
-            cancel();
-        } else if (_elapsedSeconds >= kMaxHandoffSeconds) {
+        if (_elapsedSeconds >= kMaxHandoffSeconds) {
             ROCK_LOG_WARN(Weapon,
-                "Held weapon equip visual handoff timed out formID={:08X} frames={} equippedVisualFrames={} elapsed={:.3f}s hiddenNodes={}",
+                "Held weapon equip visual handoff timed out formID={:08X} frames={} nativeVisibleFrames={} elapsed={:.3f}s",
                 _heldFormID,
                 _frames,
                 _equippedVisualFrames,
-                _elapsedSeconds,
-                _hiddenWeaponNodeCount);
+                _elapsedSeconds);
             cancel();
         }
     }
 
     void HeldWeaponEquipVisualHandoff::cancel() noexcept
     {
-        restoreHiddenWeaponNodes();
         detachPhantom();
         resetState();
     }
@@ -254,10 +299,7 @@ namespace rock
     {
         _phantomRoot.reset();
         _phantomParent.reset();
-        _hiddenWeaponRoot.reset();
         _observedEquippedWeaponRoot.reset();
-        _hiddenWeaponNodeCount = 0;
-        _hiddenVisibleWeaponNodeCount = 0;
         _heldFormID = 0;
         _frames = 0;
         _equippedVisualFrames = 0;
@@ -281,86 +323,6 @@ namespace rock
             RE::NiPointer<RE::NiAVObject> detached;
             parent->DetachChild(phantom, detached);
             f4vr::updateDown(parent, true);
-        }
-    }
-
-    void HeldWeaponEquipVisualHandoff::restoreHiddenWeaponNodes() noexcept
-    {
-        for (std::uint32_t i = 0; i < _hiddenWeaponNodeCount; ++i) {
-            auto& entry = _hiddenWeaponNodes[i];
-            setVisible(entry.node.get(), !entry.wasAppCulled);
-            entry.node.reset();
-            entry.wasAppCulled = false;
-        }
-
-        if (_hiddenWeaponRoot) {
-            f4vr::updateDown(_hiddenWeaponRoot.get(), true);
-        }
-        _hiddenWeaponRoot.reset();
-        _hiddenWeaponNodeCount = 0;
-        _hiddenVisibleWeaponNodeCount = 0;
-    }
-
-    bool HeldWeaponEquipVisualHandoff::captureAndHideEquippedWeapon(RE::NiAVObject* root) noexcept
-    {
-        if (!root) {
-            return true;
-        }
-
-        _hiddenWeaponRoot.reset(root);
-        _hiddenWeaponNodeCount = 0;
-        _hiddenVisibleWeaponNodeCount = 0;
-        const bool captured = captureAndHideRenderableDescendants(root, 0);
-        if (!captured) {
-            restoreHiddenWeaponNodes();
-            return false;
-        }
-
-        hideCapturedWeaponNodes();
-        return true;
-    }
-
-    bool HeldWeaponEquipVisualHandoff::captureAndHideRenderableDescendants(RE::NiAVObject* node, std::uint32_t depth) noexcept
-    {
-        if (!node || depth > kMaxSceneGraphDepth) {
-            return true;
-        }
-
-        if (depth > 0 && isRenderableNode(node)) {
-            if (_hiddenWeaponNodeCount >= _hiddenWeaponNodes.size()) {
-                return false;
-            }
-
-            auto& entry = _hiddenWeaponNodes[_hiddenWeaponNodeCount++];
-            entry.node.reset(node);
-            entry.wasAppCulled = node->GetAppCulled();
-            if (!entry.wasAppCulled) {
-                ++_hiddenVisibleWeaponNodeCount;
-            }
-            setVisible(node, false);
-        }
-
-        auto* niNode = node->IsNode();
-        if (!niNode) {
-            return true;
-        }
-
-        for (auto& child : niNode->children) {
-            if (child && !captureAndHideRenderableDescendants(child.get(), depth + 1)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    void HeldWeaponEquipVisualHandoff::hideCapturedWeaponNodes() noexcept
-    {
-        for (std::uint32_t i = 0; i < _hiddenWeaponNodeCount; ++i) {
-            setVisible(_hiddenWeaponNodes[i].node.get(), false);
-        }
-        if (_hiddenWeaponRoot) {
-            f4vr::updateDown(_hiddenWeaponRoot.get(), true);
         }
     }
 

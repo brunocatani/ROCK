@@ -1257,6 +1257,12 @@ namespace rock
             f4vr::updateTransformsDown(muzzle->fireNode, true);
         }
 
+        RE::NiNode* resolveEquippedWeaponInteractionNodeDirect()
+        {
+            auto* firstPersonSkeleton = f4vr::getFirstPersonSkeleton();
+            return firstPersonSkeleton ? f4vr::findNode(firstPersonSkeleton, "Weapon") : nullptr;
+        }
+
         RE::NiNode* resolveEquippedWeaponInteractionNode()
         {
             /*
@@ -1269,7 +1275,18 @@ namespace rock
                 return nullptr;
             }
 
-            return f4vr::getWeaponNode();
+            return resolveEquippedWeaponInteractionNodeDirect();
+        }
+
+        bool requestImmediateHeldWeaponNativeDraw()
+        {
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            if (!player || player->GetWeaponMagicDrawn()) {
+                return false;
+            }
+
+            player->DrawWeaponMagicHands(true);
+            return true;
         }
     }
 
@@ -2216,9 +2233,10 @@ namespace rock
         }
 
         RE::NiNode* weaponNode = resolveEquippedWeaponInteractionNode();
+        RE::NiNode* handoffWeaponNode = _heldWeaponEquipVisualHandoff.active() ? resolveEquippedWeaponInteractionNodeDirect() : weaponNode;
         _heldWeaponEquipVisualHandoff.prepareForWeaponCollision(HeldWeaponEquipVisualHandoff::FrameInput{
             .deltaSeconds = frame.deltaSeconds,
-            .equippedWeaponRoot = weaponNode,
+            .equippedWeaponRoot = handoffWeaponNode,
         });
         const bool rightHandWeaponEquipped = weaponNode != nullptr;
         const bool retainedWeaponCollisionActive =
@@ -2615,7 +2633,7 @@ namespace rock
         }
         _heldWeaponEquipVisualHandoff.updateAfterWeaponCollision(HeldWeaponEquipVisualHandoff::FrameInput{
             .deltaSeconds = frame.deltaSeconds,
-            .equippedWeaponRoot = weaponNode,
+            .equippedWeaponRoot = _heldWeaponEquipVisualHandoff.active() ? resolveEquippedWeaponInteractionNodeDirect() : weaponNode,
         });
 
         refreshGeneratedBodyContactRegistry();
@@ -5271,11 +5289,13 @@ namespace rock
                         .heldRef = heldRef,
                         .playSounds = false,
                     });
+                    const bool nativeDrawRequested = equipResult.success && requestImmediateHeldWeaponNativeDraw();
+                    auto* immediateWeaponNode = equipResult.success ? resolveEquippedWeaponInteractionNodeDirect() : nullptr;
                     if (visualHandoffStarted) {
                         if (equipResult.success) {
                             _heldWeaponEquipVisualHandoff.updateAfterWeaponCollision(HeldWeaponEquipVisualHandoff::FrameInput{
                                 .deltaSeconds = 0.0f,
-                                .equippedWeaponRoot = resolveEquippedWeaponInteractionNode(),
+                                .equippedWeaponRoot = immediateWeaponNode,
                             });
                         } else {
                             _heldWeaponEquipVisualHandoff.cancel();
@@ -5292,7 +5312,7 @@ namespace rock
                     }
                     dispatchHeldObjectEventByFormID(GrabEventType::Released, postEquipRef, heldFormID, primaryBodyId);
                     ROCK_LOG_INFO(Hand,
-                        "{} hand {} held weapon equip formID={:08X} success={} equipReason={} count={} stack={} instanceMatch={} transferred={}",
+                        "{} hand {} held weapon equip formID={:08X} success={} equipReason={} count={} stack={} instanceMatch={} transferred={} nativeDrawRequested={} immediateWeaponNode={}",
                         hand.handName(),
                         logAction ? logAction : "requested",
                         heldFormID,
@@ -5301,7 +5321,9 @@ namespace rock
                         equipResult.count,
                         equipResult.stackID,
                         equipResult.matchedInstanceData ? "yes" : "no",
-                        equipResult.transferredToInventory ? "yes" : "no");
+                        equipResult.transferredToInventory ? "yes" : "no",
+                        nativeDrawRequested ? "yes" : "no",
+                        immediateWeaponNode ? "yes" : "no");
                     if (equipResult.success && !isLeft && rawGrabInput.held) {
                         _pendingEquippedWeaponPrimaryOnlyGripStart = true;
                     }
