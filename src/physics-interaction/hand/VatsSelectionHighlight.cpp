@@ -1,6 +1,7 @@
 #include "physics-interaction/hand/HandSelection.h"
 
 #include "physics-interaction/PhysicsLog.h"
+#include "RockConfig.h"
 
 #include "RE/Bethesda/BSTSmartPointer.h"
 #include "RE/Bethesda/MemoryManager.h"
@@ -12,6 +13,7 @@
 #include <cstdlib>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 namespace rock
 {
@@ -72,6 +74,42 @@ namespace rock
 
         std::uint32_t s_activeRockVatsTargets = 0;
 
+        struct HighlightColor
+        {
+            float red = 1.0f;
+            float green = 0.5f;
+            float blue = 0.0f;
+        };
+
+        float intensityForMode(int mode) noexcept
+        {
+            switch (mode) {
+            case 1:
+                return 0.40f;
+            case 2:
+                return 0.60f;
+            case 4:
+                return 1.00f;
+            case 3:
+            default:
+                return 0.80f;
+            }
+        }
+
+        HighlightColor colorForName(const std::string& color) noexcept
+        {
+            if (color == "red") {
+                return { 1.0f, 0.0f, 0.0f };
+            }
+            if (color == "blue") {
+                return { 0.0f, 0.25f, 1.0f };
+            }
+            if (color == "white") {
+                return { 1.0f, 1.0f, 1.0f };
+            }
+            return { 1.0f, 0.5f, 0.0f };
+        }
+
         detail::VatsEffectTarget* constructTarget(RE::NiAVObject* root3D)
         {
             using ctor_t = detail::VatsEffectTarget* (*)(detail::VatsEffectTarget*, RE::NiAVObject*);
@@ -87,6 +125,23 @@ namespace rock
             static REL::Relocation<enable_t> enable{ REL::ID(499745) };
             enable(selection_highlight_policy::kVatsHighlightEnableImageSpaceEffect,
                 selection_highlight_policy::kVatsHighlightUseObjectRolloverState);
+        }
+
+        void applyRockGrabHighlightOverride()
+        {
+            using set_override_t = void (*)(float, float, float);
+            static REL::Relocation<set_override_t> setOverrideColor{ REL::ID(403512) };
+
+            const auto color = colorForName(g_rockConfig.rockHighlightColor);
+            const float intensity = intensityForMode(g_rockConfig.rockHighlightIntensityMode);
+            setOverrideColor(color.red * intensity, color.green * intensity, color.blue * intensity);
+        }
+
+        void clearRockGrabHighlightOverride()
+        {
+            using clear_override_t = void (*)();
+            static REL::Relocation<clear_override_t> clearOverrideColor{ REL::ID(1187937) };
+            clearOverrideColor();
         }
 
         void disableVatsEffectControl(bool clearTargets)
@@ -165,6 +220,7 @@ namespace rock
         }
 
         enableVatsEffectControlForWorldRollover();
+        applyRockGrabHighlightOverride();
 
         TargetSmartPointer targetRef(target);
         addTarget(targetRef);
@@ -204,6 +260,7 @@ namespace rock
         }
 
         enableVatsEffectControlForWorldRollover();
+        applyRockGrabHighlightOverride();
 
         ROCK_LOG_TRACE(Hand, "{} selection highlight refreshed for reference 0x{:08X} source={} targetObjects={}",
             handName ? handName : "Hand",
@@ -242,10 +299,12 @@ namespace rock
 
         if (remainingRockTargets == 0) {
             disableVatsEffectControl(true);
+            clearRockGrabHighlightOverride();
         } else {
             TargetSmartPointer targetRef(target);
             removeTarget(targetRef);
             enableVatsEffectControlForWorldRollover();
+            applyRockGrabHighlightOverride();
         }
 
         releaseOwnedTarget(target);

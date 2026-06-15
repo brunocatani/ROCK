@@ -70,6 +70,8 @@ namespace
     constexpr float kDefaultNearCastDistanceGameUnits = 7.0f;
     const RE::NiPoint3 kDefaultPalmNormalHandspace{ 0.0f, 1.0f, 0.0f };
     constexpr bool kDefaultSeeThroughScopesRightEyeDominant = true;
+    constexpr int kDefaultHighlightIntensityMode = 3;
+    constexpr const char* kDefaultHighlightColor = "orange";
 
     std::string resolveIniPath()
     {
@@ -100,6 +102,34 @@ namespace
             ROCK_LOG_WARN(Config, "Invalid {}={} -- using {}", key, configuredValue, sanitizedValue);
         }
         return sanitizedValue;
+    }
+
+    int readHighlightIntensityMode(CSimpleIniA& ini, const char* section, const char* key, int currentValue)
+    {
+        const int configuredValue = static_cast<int>(ini.GetLongValue(section, key, currentValue));
+        if (configuredValue >= 1 && configuredValue <= 4) {
+            return configuredValue;
+        }
+
+        ROCK_LOG_WARN(Config, "Invalid {}={} -- using {}", key, configuredValue, kDefaultHighlightIntensityMode);
+        return kDefaultHighlightIntensityMode;
+    }
+
+    std::string readHighlightColor(CSimpleIniA& ini, const char* section, const char* key, const std::string& currentValue)
+    {
+        std::string configuredValue = ini.GetValue(section, key, currentValue.c_str());
+        for (auto& ch : configuredValue) {
+            if (ch >= 'A' && ch <= 'Z') {
+                ch = static_cast<char>(ch - 'A' + 'a');
+            }
+        }
+
+        if (configuredValue == "red" || configuredValue == "blue" || configuredValue == "orange" || configuredValue == "white") {
+            return configuredValue;
+        }
+
+        ROCK_LOG_WARN(Config, "Invalid {}='{}' -- using {}", key, configuredValue, kDefaultHighlightColor);
+        return kDefaultHighlightColor;
     }
 }
 
@@ -202,6 +232,8 @@ namespace rock
         rockNativeCharacterControllerObjectContactFilterEnabled = true;
 
         rockHighlightEnabled = true;
+        rockHighlightIntensityMode = kDefaultHighlightIntensityMode;
+        rockHighlightColor = kDefaultHighlightColor;
         rockSelectionBeamEnabled = true;
         rockSelectionBeamSegmentSizeGameUnits = selection_beam_policy::kDefaultSegmentSizeGameUnits;
         rockSelectionBeamCurveLiftGameUnits = selection_beam_policy::kDefaultCurveLiftGameUnits;
@@ -937,6 +969,8 @@ namespace rock
             SECTION, "bNativeCharacterControllerObjectContactFilterEnabled", rockNativeCharacterControllerObjectContactFilterEnabled);
 
         rockHighlightEnabled = ini.GetBoolValue(SECTION, "bHighlightEnabled", rockHighlightEnabled);
+        rockHighlightIntensityMode = readHighlightIntensityMode(ini, SECTION, "iHighlightIntensityMode", rockHighlightIntensityMode);
+        rockHighlightColor = readHighlightColor(ini, SECTION, "sHighlightColor", rockHighlightColor);
         rockSelectionBeamEnabled = ini.GetBoolValue(SECTION, "bSelectionBeamEnabled", rockSelectionBeamEnabled);
         rockSelectionBeamSegmentSizeGameUnits = readClampedFloat(ini,
             SECTION,

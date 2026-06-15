@@ -149,6 +149,8 @@ namespace rock
         bool rockNativeCharacterControllerObjectContactFilterEnabled = true;
 
         bool rockHighlightEnabled = true;
+        int rockHighlightIntensityMode = 3;
+        std::string rockHighlightColor = "orange";
         bool rockSelectionBeamEnabled = true;
         float rockSelectionBeamSegmentSizeGameUnits = selection_beam_policy::kDefaultSegmentSizeGameUnits;
         float rockSelectionBeamCurveLiftGameUnits = selection_beam_policy::kDefaultCurveLiftGameUnits;
