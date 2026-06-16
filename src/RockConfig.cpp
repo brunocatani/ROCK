@@ -186,6 +186,7 @@ namespace rock
         rockWeaponInteractionProbeRadius = 12.0f;
         rockVisualOnlySidearmSupportGripEnabled = true;
         rockRealisticWeaponHandlingEnabled = false;
+        rockRealisticGrenadesEnabled = false;
         rockGrabbedWeaponAutoEquipEnabled = false;
         rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
         rockWeaponSupportGripHandLerpEnabled = true;
@@ -754,6 +755,10 @@ namespace rock
             REALISTIC_WEAPONS_SECTION,
             "bRealisticWeaponHandlingEnabled",
             legacyRealisticPrimaryDetachEnabled);
+        rockRealisticGrenadesEnabled = ini.GetBoolValue(
+            REALISTIC_WEAPONS_SECTION,
+            "bRealisticGrenadesEnabled",
+            rockRealisticGrenadesEnabled);
         rockGrabbedWeaponAutoEquipEnabled = ini.GetBoolValue(
             REALISTIC_WEAPONS_SECTION,
             "bGrabbedWeaponAutoEquipEnabled",

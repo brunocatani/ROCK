@@ -233,7 +233,7 @@ namespace rock::loose_grenade_runtime
         {
             outWeapon = nullptr;
             outRuntime = {};
-            if (t_insideEquipHook || !g_rockConfig.rockEnabled || number == 0) {
+            if (t_insideEquipHook || !g_rockConfig.rockEnabled || !g_rockConfig.rockRealisticGrenadesEnabled || number == 0) {
                 return false;
             }
 
@@ -428,6 +428,7 @@ namespace rock::loose_grenade_runtime
         outRuntime = GrenadeRuntimeData{
             .projectile = projectile,
             .explosion = projectile->data.explosionType,
+            .pinPulledSound = projectile->data.countdownSound,
             .fuseSeconds = fuseSeconds,
         };
         return true;
@@ -472,6 +473,12 @@ namespace rock::loose_grenade_runtime
                 return;
             }
         }
+    }
+
+    void clearPendingEquipRequests()
+    {
+        std::scoped_lock lock(s_pendingEquipMutex);
+        s_pendingEquipRequests = {};
     }
 
     DropResult dropPendingEquipRequestToWorld(
@@ -549,6 +556,21 @@ namespace rock::loose_grenade_runtime
 
         const auto handle = dataHandler->CreateReferenceAtLocation(data);
         return handle.get() != nullptr;
+    }
+
+    bool playPinPulledFeedbackAtReference(RE::TESObjectREFR* ref, const GrenadeRuntimeData& runtime)
+    {
+        (void)runtime;
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        auto* object = ref ? ref->GetObjectReference() : nullptr;
+        if (!player || !object) {
+            return false;
+        }
+
+        // Local headers do not expose a verified BGSSoundDescriptorForm playback wrapper.
+        // Use the object's native pickup/use sound as the audible pin-pull cue.
+        player->PlayPickUpSound(object, false, true);
+        return true;
     }
 
     void disableAndDeleteReference(RE::TESObjectREFR* ref)

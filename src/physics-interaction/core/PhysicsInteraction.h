@@ -374,6 +374,7 @@ namespace rock
             loose_grenade_runtime::GrenadeRuntimeData runtime{};
             float elapsedSeconds{ 0.0f };
         };
+        float _pendingLooseGrenadeEquipWaitSeconds{ 0.0f };
         struct ArmedLooseGrenadeFuseState
         {
             bool active{ false };

@@ -9,6 +9,7 @@ namespace RE
 {
     class BGSExplosion;
     class BGSProjectile;
+    class BGSSoundDescriptorForm;
     class TESObjectREFR;
     class TESObjectWEAP;
     class TBO_InstanceData;
@@ -21,6 +22,7 @@ namespace rock::loose_grenade_runtime
     {
         RE::BGSProjectile* projectile{ nullptr };
         RE::BGSExplosion* explosion{ nullptr };
+        RE::BGSSoundDescriptorForm* pinPulledSound{ nullptr };
         float fuseSeconds{ 0.0f };
     };
 
@@ -64,5 +66,7 @@ namespace rock::loose_grenade_runtime
         const RE::NiPoint3* dropRotation);
 
     [[nodiscard]] bool createExplosionAtReference(RE::TESObjectREFR* ref, RE::BGSExplosion* explosion);
+    [[nodiscard]] bool playPinPulledFeedbackAtReference(RE::TESObjectREFR* ref, const GrenadeRuntimeData& runtime);
+    void clearPendingEquipRequests();
     void disableAndDeleteReference(RE::TESObjectREFR* ref);
 }

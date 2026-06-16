@@ -553,7 +553,7 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
 
     logger::info("ROCK: Install loose grenade equip hook...");
     if (!rock::loose_grenade_runtime::installEquipHook()) {
-        return false;
+        logger::warn("ROCK: loose grenade equip hook unavailable; realistic grenades will stay disabled for this session.");
     }
 
     logger::info("ROCK: Install main loop hook...");

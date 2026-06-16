@@ -4523,13 +4523,22 @@ namespace rock
     void PhysicsInteraction::clearLooseGrenadeRuntimeState()
     {
         _pendingLooseGrenadeGrab = {};
+        _pendingLooseGrenadeEquipWaitSeconds = 0.0f;
         _armedLooseGrenadeFuses = {};
+        loose_grenade_runtime::clearPendingEquipRequests();
     }
 
     void PhysicsInteraction::servicePendingLooseGrenadeEquip(const PhysicsFrameContext& frame)
     {
         constexpr float kPendingLooseGrenadeGrabMaxSeconds = 1.5f;
         constexpr float kPendingLooseGrenadeForceGrabMaxDistanceGame = 96.0f;
+
+        if (!g_rockConfig.rockRealisticGrenadesEnabled) {
+            _pendingLooseGrenadeGrab = {};
+            _pendingLooseGrenadeEquipWaitSeconds = 0.0f;
+            loose_grenade_runtime::clearPendingEquipRequests();
+            return;
+        }
 
         if (!frame.worldReady || !frame.bhkWorld || !frame.hknpWorld) {
             return;
@@ -4553,11 +4562,23 @@ namespace rock
         if (!_pendingLooseGrenadeGrab.active) {
             loose_grenade_runtime::PendingEquipRequest request{};
             if (!loose_grenade_runtime::copyOldestPendingEquipRequest(request)) {
+                _pendingLooseGrenadeEquipWaitSeconds = 0.0f;
                 return;
             }
             if (!rightHandAvailable()) {
+                _pendingLooseGrenadeEquipWaitSeconds += (std::max)(0.0f, frame.deltaSeconds);
+                if (_pendingLooseGrenadeEquipWaitSeconds >= kPendingLooseGrenadeGrabMaxSeconds) {
+                    ROCK_LOG_WARN(Hand,
+                        "Loose grenade menu drop abandoned because right hand stayed busy: weapon={:08X} request={} stack={}",
+                        request.weapon ? request.weapon->GetFormID() : 0,
+                        request.requestId,
+                        request.stackId);
+                    loose_grenade_runtime::discardPendingEquipRequest(request.requestId);
+                    _pendingLooseGrenadeEquipWaitSeconds = 0.0f;
+                }
                 return;
             }
+            _pendingLooseGrenadeEquipWaitSeconds = 0.0f;
 
             const auto dropResult = loose_grenade_runtime::dropPendingEquipRequestToWorld(
                 request,
@@ -4670,7 +4691,7 @@ namespace rock
     bool PhysicsInteraction::armHeldLooseGrenade(Hand& hand, const PhysicsFrameContext& frame)
     {
         auto* heldRef = hand.getHeldRef();
-        if (!heldRef || !loose_grenade_runtime::isGrenadeRef(heldRef)) {
+        if (!g_rockConfig.rockRealisticGrenadesEnabled || !heldRef || !loose_grenade_runtime::isGrenadeRef(heldRef)) {
             return false;
         }
 
@@ -4716,6 +4737,13 @@ namespace rock
                 runtime.explosion ? runtime.explosion->GetFormID() : 0,
                 runtime.fuseSeconds,
                 frame.deltaSeconds);
+            const bool feedbackPlayed = loose_grenade_runtime::playPinPulledFeedbackAtReference(heldRef, runtime);
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand loose grenade pin-pull feedback: ref={:08X} sound={:08X} played={}",
+                hand.handName(),
+                heldRef->GetFormID(),
+                runtime.pinPulledSound ? runtime.pinPulledSound->GetFormID() : 0,
+                feedbackPlayed ? "yes" : "no");
             return true;
         }
 
@@ -6291,7 +6319,7 @@ namespace rock
                 _softContactRuntime.clearHandForStrongerOwner(isLeft, "held-object");
                 const Hand& peer = isLeft ? _rightHand : _leftHand;
                 auto* heldRefForGameplay = hand.getHeldRef();
-                const bool heldLooseGrenade = loose_grenade_runtime::isGrenadeRef(heldRefForGameplay);
+                const bool heldLooseGrenade = g_rockConfig.rockRealisticGrenadesEnabled && loose_grenade_runtime::isGrenadeRef(heldRefForGameplay);
                 const bool peerHoldingSameObject =
                     heldRefForGameplay && peer.isHolding() && peer.getHeldRef() == heldRefForGameplay;
                 const bool heldWeaponAutoEquipSettled = !heldLooseGrenade && [&]() {
