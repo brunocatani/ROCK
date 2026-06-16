@@ -459,6 +459,23 @@ namespace rock::weapon_two_handed_grip_math
         return distanceGameUnits >= 0.0f && radiusGameUnits > 0.0f && distanceGameUnits <= radiusGameUnits;
     }
 
+    inline constexpr bool rightHandDominantWeaponCollisionOwnsHand(
+        bool rightHandWeaponVisible,
+        bool generatedWeaponCollisionActive,
+        bool primaryHandDetached,
+        bool detachedPrimarySupportGripActive)
+    {
+        if (detachedPrimarySupportGripActive) {
+            return true;
+        }
+
+        if (primaryHandDetached) {
+            return !rightHandWeaponVisible && generatedWeaponCollisionActive;
+        }
+
+        return rightHandWeaponVisible || generatedWeaponCollisionActive;
+    }
+
     inline bool canProcessNormalGrabInput(
         bool isLeft,
         bool equippedWeaponSupportGripActive,

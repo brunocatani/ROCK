@@ -1510,6 +1510,35 @@ namespace rock
         ROCK_LOG_INFO(Init, "ROCK Physics Module v0.1 — created");
     }
 
+    EquippedWeaponFiringGripReference PhysicsInteraction::resolveCachedEquippedWeaponFiringGripReference(
+        const RE::TESObjectWEAP* weapon,
+        const RE::NiAVObject* weaponNode,
+        std::uint64_t currentWeaponGenerationKey)
+    {
+        if (!weapon || !weaponNode || currentWeaponGenerationKey == 0) {
+            _equippedWeaponFiringGripReferenceCache = {};
+            EquippedWeaponFiringGripReference reference{};
+            reference.reason = !weapon ? "missingWeaponForm" : (!weaponNode ? "missingWeaponNode" : "missingWeaponGeneration");
+            return reference;
+        }
+
+        const std::uint32_t weaponFormID = weapon->GetFormID();
+        if (_equippedWeaponFiringGripReferenceCache.weaponGenerationKey == currentWeaponGenerationKey &&
+            _equippedWeaponFiringGripReferenceCache.weaponFormID == weaponFormID &&
+            _equippedWeaponFiringGripReferenceCache.weaponRoot == weaponNode) {
+            return _equippedWeaponFiringGripReferenceCache.reference;
+        }
+
+        EquippedWeaponFiringGripReference reference = resolveEquippedWeaponFiringGripReference(weapon, weaponNode);
+        _equippedWeaponFiringGripReferenceCache = EquippedWeaponFiringGripReferenceCache{
+            .weaponGenerationKey = currentWeaponGenerationKey,
+            .weaponFormID = weaponFormID,
+            .weaponRoot = weaponNode,
+            .reference = reference,
+        };
+        return reference;
+    }
+
     PhysicsInteraction::~PhysicsInteraction()
     {
         s_instance.store(nullptr, std::memory_order_release);
@@ -2433,18 +2462,18 @@ namespace rock
             .equippedWeaponRoot = handoffWeaponNode,
         });
         const bool rightHandWeaponEquipped = weaponNode != nullptr;
-        const bool retainedWeaponCollisionActive =
+        const bool generatedWeaponCollisionActive =
             _weaponCollision.hasWeaponBody() && _weaponCollision.getCurrentWeaponGenerationKey() != 0;
         /*
          * Reload can temporarily remove the first-person weapon node while ROCK
          * deliberately retains the generated weapon body set. Keep the dominant
          * hand under weapon authority until those retained bodies are gone.
          */
-        bool rightHandWeaponAuthorityActive = rightHandWeaponEquipped || retainedWeaponCollisionActive;
-        // Retained reload bodies still own right-hand collision; only a visible detached primary releases it.
-        if (rightHandWeaponEquipped && !retainedWeaponCollisionActive && _twoHandedGrip.isPrimaryDetached()) {
-            rightHandWeaponAuthorityActive = false;
-        }
+        bool rightHandWeaponAuthorityActive = weapon_two_handed_grip_math::rightHandDominantWeaponCollisionOwnsHand(
+            rightHandWeaponEquipped,
+            generatedWeaponCollisionActive,
+            _twoHandedGrip.isPrimaryDetached(),
+            _twoHandedGrip.isDetachedPrimarySupportGripActive());
         const bool rightHandWeaponAuthorityActiveBeforeGrip = rightHandWeaponAuthorityActive;
         bool leftSupportGripActive = false;
         if (rightHandWeaponAuthorityActive) {
@@ -2583,20 +2612,33 @@ namespace rock
             (void)gripConfirmPressed;
 
             WeaponInteractionRuntimeState providerInteractionState{};
+            WeaponInteractionRuntimeState detachedPrimaryInteractionState{};
             const auto offhandReservation = offhand_interaction_reservation::fromProvider(::rock::provider::currentOffhandReservation());
             if (!offhand_interaction_reservation::allowsSupportGrip(offhandReservation)) {
                 providerInteractionState.supportGripAllowed = false;
+                detachedPrimaryInteractionState.supportGripAllowed = false;
             }
 
-            ::rock::provider::RockProviderWeaponPartTargetResolutionV1 weaponPartResolution{};
-            const auto weaponPartQuery = makeProviderWeaponPartTargetQuery(leftWeaponContact, _weaponCollision);
-            const bool weaponPartWhitelistActive = leftWeaponContact.valid &&
-                ::rock::provider::resolveWeaponPartTargetV1(weaponPartQuery, weaponPartResolution) &&
-                weaponPartResolution.whitelistActive != 0;
-            if (weaponPartWhitelistActive && weaponPartResolution.matched == 0) {
+            ::rock::provider::RockProviderWeaponPartTargetResolutionV1 leftWeaponPartResolution{};
+            const auto leftWeaponPartQuery = makeProviderWeaponPartTargetQuery(leftWeaponContact, _weaponCollision);
+            const bool leftWeaponPartWhitelistActive = leftWeaponContact.valid &&
+                ::rock::provider::resolveWeaponPartTargetV1(leftWeaponPartQuery, leftWeaponPartResolution) &&
+                leftWeaponPartResolution.whitelistActive != 0;
+            if (leftWeaponPartWhitelistActive && leftWeaponPartResolution.matched == 0) {
                 providerInteractionState.supportGripAllowed = false;
-            } else if (weaponPartWhitelistActive) {
-                providerInteractionState.providerPartAuthority = makeWeaponProviderPartAuthority(weaponPartQuery, weaponPartResolution);
+            } else if (leftWeaponPartWhitelistActive) {
+                providerInteractionState.providerPartAuthority = makeWeaponProviderPartAuthority(leftWeaponPartQuery, leftWeaponPartResolution);
+            }
+
+            ::rock::provider::RockProviderWeaponPartTargetResolutionV1 rightWeaponPartResolution{};
+            const auto rightWeaponPartQuery = makeProviderWeaponPartTargetQuery(rightWeaponContact, _weaponCollision);
+            const bool rightWeaponPartWhitelistActive = rightWeaponContact.valid &&
+                ::rock::provider::resolveWeaponPartTargetV1(rightWeaponPartQuery, rightWeaponPartResolution) &&
+                rightWeaponPartResolution.whitelistActive != 0;
+            if (rightWeaponPartWhitelistActive && rightWeaponPartResolution.matched == 0) {
+                detachedPrimaryInteractionState.supportGripAllowed = false;
+            } else if (rightWeaponPartWhitelistActive) {
+                detachedPrimaryInteractionState.providerPartAuthority = makeWeaponProviderPartAuthority(rightWeaponPartQuery, rightWeaponPartResolution);
             }
 
             const WeaponInteractionDecision leftWeaponDecision = routeWeaponInteraction(leftWeaponContact, providerInteractionState);
@@ -2608,10 +2650,10 @@ namespace rock
 
             const bool leftHandHoldingObject = _leftHand.isHolding();
             auto supportAuthorityMode = resolveEquippedWeaponSupportAuthorityMode(weaponNode);
-            if (weaponPartWhitelistActive && weaponPartResolution.matched != 0) {
-                if (weaponPartResolution.grabMode == ::rock::provider::RockProviderWeaponPartGrabModeV1::FullTwoHandAuthority) {
+            if (leftWeaponPartWhitelistActive && leftWeaponPartResolution.matched != 0) {
+                if (leftWeaponPartResolution.grabMode == ::rock::provider::RockProviderWeaponPartGrabModeV1::FullTwoHandAuthority) {
                     supportAuthorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
-                } else if (weaponPartResolution.grabMode == ::rock::provider::RockProviderWeaponPartGrabModeV1::AttachOnly) {
+                } else if (leftWeaponPartResolution.grabMode == ::rock::provider::RockProviderWeaponPartGrabModeV1::AttachOnly) {
                     supportAuthorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport;
                 }
             }
@@ -2707,7 +2749,7 @@ namespace rock
             }
 
             const EquippedWeaponFiringGripReference firingGripReference =
-                resolveEquippedWeaponFiringGripReference(currentEquippedWeaponForm(), weaponNode);
+                resolveCachedEquippedWeaponFiringGripReference(currentEquippedWeaponForm(), weaponNode, currentWeaponGenerationKey);
             _twoHandedGrip.update(
                 weaponNode,
                 leftWeaponContact,
@@ -2718,6 +2760,7 @@ namespace rock
                 currentWeaponGenerationKey,
                 _weaponCollision,
                 providerInteractionState,
+                detachedPrimaryInteractionState,
                 supportAuthorityMode,
                 primaryDetachFeatureAvailable,
                 primaryGripInput,
@@ -2806,14 +2849,11 @@ namespace rock
                 input_remap_policy::shouldUseEquippedWeaponPrimaryDetachInput(updatedPrimaryDetachInputGate));
             input_remap_runtime::setEquippedWeaponPrimaryDetached(_twoHandedGrip.isPrimaryDetached());
 
-            bool rightHandWeaponAuthorityActiveAfterGrip = rightHandWeaponEquipped || retainedWeaponCollisionActive;
-            // Retained reload bodies and detached-primary part grabs still own right-hand collision; a free detached primary releases it.
-            if (rightHandWeaponEquipped &&
-                !retainedWeaponCollisionActive &&
-                _twoHandedGrip.isPrimaryDetached() &&
-                !_twoHandedGrip.isDetachedPrimarySupportGripActive()) {
-                rightHandWeaponAuthorityActiveAfterGrip = false;
-            }
+            bool rightHandWeaponAuthorityActiveAfterGrip = weapon_two_handed_grip_math::rightHandDominantWeaponCollisionOwnsHand(
+                rightHandWeaponEquipped,
+                generatedWeaponCollisionActive,
+                _twoHandedGrip.isPrimaryDetached(),
+                _twoHandedGrip.isDetachedPrimarySupportGripActive());
             if (rightHandWeaponAuthorityActiveAfterGrip != rightHandWeaponAuthorityActiveBeforeGrip) {
                 if (rightHandWeaponAuthorityActiveAfterGrip) {
                     suppressRightHandCollisionForDominantWeapon(hknp);

@@ -39,7 +39,9 @@ namespace RE
     class bhkWorld;
     class hknpWorld;
     class TESAmmo;
+    class TESObjectWEAP;
     class TESObjectREFR;
+    class NiAVObject;
 }
 
 namespace rock
@@ -207,6 +209,11 @@ namespace rock
             const PhysicsFrameContext& frame,
             std::array<const RE::NiAVObject*, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1>& outDrivenSourceNodes);
 
+        EquippedWeaponFiringGripReference resolveCachedEquippedWeaponFiringGripReference(
+            const RE::TESObjectWEAP* weapon,
+            const RE::NiAVObject* weaponNode,
+            std::uint64_t currentWeaponGenerationKey);
+
         void restoreExpiredProviderWeaponPartDriveNodes(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
 
         grab_locomotion_authority_bridge::Output updateGrabLocomotionAuthorityBridge(float deltaSeconds, bool worldReady);
@@ -303,6 +310,14 @@ namespace rock
         PhysicsStepDriveCoordinator _generatedBodyStepDrive;
 
         TwoHandedGrip _twoHandedGrip;
+        struct EquippedWeaponFiringGripReferenceCache
+        {
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint32_t weaponFormID{ 0 };
+            const RE::NiAVObject* weaponRoot{ nullptr };
+            EquippedWeaponFiringGripReference reference{};
+        };
+        EquippedWeaponFiringGripReferenceCache _equippedWeaponFiringGripReferenceCache{};
         SoftContactRuntime _softContactRuntime;
         contact_evidence::NativeContactEvidenceCache _nativeContactEvidence;
 

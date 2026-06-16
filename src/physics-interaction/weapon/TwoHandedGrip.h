@@ -76,7 +76,8 @@ namespace rock
             float dt,
             std::uint64_t currentWeaponGenerationKey,
             const WeaponCollision& weaponCollision,
-            const WeaponInteractionRuntimeState& runtimeState,
+            const WeaponInteractionRuntimeState& supportRuntimeState,
+            const WeaponInteractionRuntimeState& detachedPrimaryRuntimeState,
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
             bool primaryDetachEnabled,
             const EquippedWeaponPrimaryGripInput& primaryGripInput,
@@ -145,6 +146,8 @@ namespace rock
 
         bool providerPartAuthorityStillCurrent(std::uint64_t currentWeaponGenerationKey) const;
 
+        bool providerPartAuthorityStillCurrent(const WeaponProviderPartAuthority& authority, std::uint64_t currentWeaponGenerationKey) const;
+
         void clearProviderPartAuthority();
 
         void updateFullWeaponAuthorityGrip(RE::NiNode* weaponNode, float dt);
@@ -155,15 +158,14 @@ namespace rock
             const EquippedWeaponPrimaryGripInput& primaryGripInput,
             const WeaponInteractionContact& rightWeaponContact,
             const WeaponCollision& weaponCollision,
-            const WeaponInteractionRuntimeState& runtimeState,
+            const WeaponInteractionRuntimeState& detachedPrimaryRuntimeState,
             const EquippedWeaponFiringGripReference& firingGripReference);
 
         void updatePrimaryDetachedManipulationGrip(
             RE::NiNode* weaponNode,
             float dt,
             const EquippedWeaponPrimaryGripInput& primaryGripInput,
-            const WeaponInteractionContact& rightWeaponContact,
-            const WeaponInteractionRuntimeState& runtimeState,
+            const WeaponInteractionRuntimeState& detachedPrimaryRuntimeState,
             const EquippedWeaponFiringGripReference& firingGripReference);
 
         void updateVisualOnlySupportGrip(RE::NiNode* weaponNode, float dt);
@@ -181,12 +183,10 @@ namespace rock
 
         bool tryReattachPrimaryGrip(
             RE::NiNode* weaponNode,
-            const WeaponInteractionContact& rightWeaponContact,
             const EquippedWeaponFiringGripReference& firingGripReference);
 
         bool primaryGripContactMatchesCapturedGrip(
             RE::NiNode* weaponNode,
-            const WeaponInteractionContact& rightWeaponContact,
             const RE::NiTransform& primaryTransform,
             const EquippedWeaponFiringGripReference& firingGripReference) const;
 
@@ -194,7 +194,7 @@ namespace rock
             RE::NiNode* weaponNode,
             const WeaponInteractionContact& rightWeaponContact,
             const WeaponCollision& weaponCollision,
-            const WeaponInteractionRuntimeState& runtimeState);
+            const WeaponInteractionRuntimeState& detachedPrimaryRuntimeState);
 
         void clearDetachedPrimarySupportGrip();
 
@@ -354,6 +354,7 @@ namespace rock
         RE::NiAVObject* _supportAttachmentRoot{ nullptr };
         std::uint64_t _activeWeaponGenerationKey{ 0 };
         WeaponProviderPartAuthority _providerPartAuthority{};
+        WeaponProviderPartAuthority _detachedPrimarySupportProviderPartAuthority{};
         RE::NiTransform _weaponNodeLocalBaseline{};
         bool _hasWeaponNodeLocalBaseline{ false };
 
