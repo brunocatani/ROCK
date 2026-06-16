@@ -398,7 +398,8 @@ namespace rock::loose_grenade_runtime
 
     bool isGrenadeWeapon(const RE::TESObjectWEAP* weapon) noexcept
     {
-        return weapon && weapon->weaponData.type.any(RE::WEAPON_TYPE::kGrenade);
+        // WEAPON_TYPE is a single-valued enum stored in EnumSet; bitmask any() makes guns/mines alias grenades.
+        return weapon && weapon->weaponData.type == RE::WEAPON_TYPE::kGrenade;
     }
 
     bool isGrenadeRef(RE::TESObjectREFR* ref) noexcept
