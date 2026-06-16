@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -21,6 +22,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 namespace rock::frik_weapon_offset_cache
 {
@@ -32,6 +34,15 @@ namespace rock::frik_weapon_offset_cache
         constexpr WORD kFrikWeaponOffsetResourceLast = 600;
         constexpr auto kFrikModuleName = "FRIK.dll";
         constexpr auto kFrikWeaponOffsetsRelativePath = R"(\My Games\Fallout4VR\FRIK_Config\Weapons_Offsets)";
+        constexpr auto kPowerArmorSuffix = "-PowerArmor";
+        constexpr auto kLeftHandedSuffix = "-leftHanded";
+        constexpr auto kThrowableSuffix = "-throwable";
+
+        enum class OffsetMode
+        {
+            Weapon,
+            Throwable,
+        };
 
         struct CustomOffsetsSignature
         {
@@ -57,6 +68,69 @@ namespace rock::frik_weapon_offset_cache
         [[nodiscard]] bool hasText(std::string_view text)
         {
             return !text.empty();
+        }
+
+        [[nodiscard]] bool equalsIgnoreCase(std::string_view lhs, std::string_view rhs)
+        {
+            if (lhs.size() != rhs.size()) {
+                return false;
+            }
+            for (std::size_t i = 0; i < lhs.size(); ++i) {
+                const auto left = static_cast<unsigned char>(lhs[i]);
+                const auto right = static_cast<unsigned char>(rhs[i]);
+                if (std::tolower(left) != std::tolower(right)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        void appendUniqueCandidate(std::vector<std::string>& candidates, std::string candidate)
+        {
+            if (candidate.empty()) {
+                return;
+            }
+            if (std::ranges::none_of(candidates, [&](const auto& existing) { return existing == candidate; })) {
+                candidates.push_back(std::move(candidate));
+            }
+        }
+
+        void appendModelStemCandidates(std::vector<std::string>& candidates, const char* modelPath)
+        {
+            if (!modelPath || !modelPath[0]) {
+                return;
+            }
+
+            const std::filesystem::path model{ modelPath };
+            const std::string stem = model.stem().string();
+            if (stem.empty()) {
+                return;
+            }
+
+            if (!stem.ends_with('$')) {
+                appendUniqueCandidate(candidates, stem + '$');
+            }
+            appendUniqueCandidate(candidates, stem);
+        }
+
+        [[nodiscard]] std::vector<std::string> throwableNameCandidates(
+            const RE::TESObjectWEAP* weapon,
+            const RE::BGSProjectile* projectile)
+        {
+            std::vector<std::string> candidates;
+            candidates.reserve(8);
+
+            appendModelStemCandidates(candidates, projectile ? projectile->GetModel() : nullptr);
+            appendModelStemCandidates(candidates, weapon && weapon->firstPersonModel ? weapon->firstPersonModel->GetModel() : nullptr);
+            appendModelStemCandidates(candidates, weapon ? weapon->GetModel() : nullptr);
+
+            if (weapon) {
+                const auto fullName = RE::TESFullName::GetFullName(*weapon, false);
+                if (hasText(fullName)) {
+                    appendUniqueCandidate(candidates, std::string(fullName));
+                }
+            }
+            return candidates;
         }
 
         [[nodiscard]] std::filesystem::path customOffsetDirectory()
@@ -273,17 +347,41 @@ namespace rock::frik_weapon_offset_cache
             return weaponName;
         }
 
-        [[nodiscard]] std::string weaponNodeOffsetKey(std::string_view weaponName, bool inPowerArmor, bool leftHanded)
+        [[nodiscard]] std::string weaponOffsetKey(std::string_view weaponName, OffsetMode mode, bool inPowerArmor, bool leftHanded)
         {
-            // hFRIK Weapon mode has no mode suffix; PrimaryHand is a hand-node rotation offset, not a Weapon-node local transform.
             std::string key(weaponName);
+            if (mode == OffsetMode::Throwable) {
+                key += kThrowableSuffix;
+            }
             if (inPowerArmor) {
-                key += "-PowerArmor";
+                key += kPowerArmorSuffix;
             }
             if (leftHanded) {
-                key += "-leftHanded";
+                key += kLeftHandedSuffix;
             }
             return key;
+        }
+
+        [[nodiscard]] std::optional<RE::NiTransform> findOffsetByKeyLocked(
+            const CacheState& cache,
+            const std::string& key,
+            bool allowCaseInsensitiveFallback)
+        {
+            const auto it = cache.offsets.find(key);
+            if (it != cache.offsets.end()) {
+                return it->second;
+            }
+
+            if (!allowCaseInsensitiveFallback) {
+                return std::nullopt;
+            }
+
+            for (const auto& [storedKey, offset] : cache.offsets) {
+                if (equalsIgnoreCase(storedKey, key)) {
+                    return offset;
+                }
+            }
+            return std::nullopt;
         }
 
         [[nodiscard]] LookupResult findPrimaryWeaponOffsetLocked(
@@ -297,18 +395,51 @@ namespace rock::frik_weapon_offset_cache
             const bool inPowerArmor = f4vr::isInPowerArmor();
             const bool leftHanded = f4vr::isLeftHandedMode();
             if (inPowerArmor) {
-                const auto paIt = cache.offsets.find(weaponNodeOffsetKey(weaponName, true, leftHanded));
-                if (paIt != cache.offsets.end()) {
-                    return LookupResult{ .found = true, .offset = paIt->second, .reason = "powerArmorOffset" };
+                const auto powerArmorOffset = findOffsetByKeyLocked(cache, weaponOffsetKey(weaponName, OffsetMode::Weapon, true, leftHanded), false);
+                if (powerArmorOffset) {
+                    return LookupResult{ .found = true, .offset = *powerArmorOffset, .reason = "powerArmorOffset" };
                 }
             }
 
-            const auto it = cache.offsets.find(weaponNodeOffsetKey(weaponName, false, leftHanded));
-            if (it != cache.offsets.end()) {
-                return LookupResult{ .found = true, .offset = it->second, .reason = "offset" };
+            const auto offset = findOffsetByKeyLocked(cache, weaponOffsetKey(weaponName, OffsetMode::Weapon, false, leftHanded), false);
+            if (offset) {
+                return LookupResult{ .found = true, .offset = *offset, .reason = "offset" };
             }
 
             return LookupResult{ .found = false, .reason = "offsetMissing" };
+        }
+
+        [[nodiscard]] LookupResult findThrowableWeaponOffsetLocked(
+            const CacheState& cache,
+            const RE::TESObjectWEAP* weapon,
+            const RE::BGSProjectile* projectile)
+        {
+            if (!cache.loaded) {
+                return LookupResult{ .found = false, .reason = "cacheNotLoaded" };
+            }
+
+            const auto candidates = throwableNameCandidates(weapon, projectile);
+            if (candidates.empty()) {
+                return LookupResult{ .found = false, .reason = "throwableOffsetKeyMissing" };
+            }
+
+            const bool inPowerArmor = f4vr::isInPowerArmor();
+            const bool leftHanded = f4vr::isLeftHandedMode();
+            for (const auto& candidate : candidates) {
+                if (inPowerArmor) {
+                    const auto powerArmorOffset = findOffsetByKeyLocked(cache, weaponOffsetKey(candidate, OffsetMode::Throwable, true, leftHanded), true);
+                    if (powerArmorOffset) {
+                        return LookupResult{ .found = true, .offset = *powerArmorOffset, .reason = "throwablePowerArmorOffset" };
+                    }
+                }
+
+                const auto offset = findOffsetByKeyLocked(cache, weaponOffsetKey(candidate, OffsetMode::Throwable, false, leftHanded), true);
+                if (offset) {
+                    return LookupResult{ .found = true, .offset = *offset, .reason = inPowerArmor ? "throwableFallbackOffset" : "throwableOffset" };
+                }
+            }
+
+            return LookupResult{ .found = false, .reason = "throwableOffsetMissing" };
         }
 
         void refreshIfStale()
@@ -379,5 +510,19 @@ namespace rock::frik_weapon_offset_cache
             return LookupResult{ .found = true, .offset = *defaultOffset, .reason = "defaultWeaponNodeLocal" };
         }
         return lookup;
+    }
+
+    LookupResult findThrowableWeaponOffset(
+        const RE::TESObjectWEAP* weapon,
+        const RE::BGSProjectile* projectile)
+    {
+        if (!weapon && !projectile) {
+            return LookupResult{ .found = false, .reason = "missingThrowableForm" };
+        }
+
+        refreshIfStale();
+
+        std::scoped_lock lock(g_cacheMutex);
+        return findThrowableWeaponOffsetLocked(g_cache, weapon, projectile);
     }
 }

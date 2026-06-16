@@ -34,10 +34,12 @@
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/grab/CustomOGA.h"
+#include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
+#include "physics-interaction/grab/GrabNodeInfoMath.h"
 #include "physics-interaction/grab/GrabPinchPocket.h"
 #include "physics-interaction/grab/GrabThreePhase.h"
 #include "physics-interaction/grab/HeldMassMovement.h"
@@ -68,6 +70,7 @@
 #include "physics-interaction/weapon/WeaponSupport.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
+#include "physics-interaction/TransformMath.h"
 
 #include "RE/Bethesda/ActorValueInfo.h"
 #include "RE/Bethesda/BSHavok.h"
@@ -4559,10 +4562,32 @@ namespace rock
                 return;
             }
 
+            RE::NiPoint3 dropLocation = frame.right.grabAnchorWorld;
+            RE::NiPoint3 dropRotation{};
+            const RE::NiPoint3* dropRotationPtr = nullptr;
+            const auto throwableOffset = frik_weapon_offset_cache::findThrowableWeaponOffset(request.weapon, request.runtime.projectile);
+            const char* frikThrowableDropReason = throwableOffset.reason;
+            if (throwableOffset.found) {
+                auto* playerNodes = RE::PlayerCharacter::GetSingleton() ? f4vr::getPlayerNodes() : nullptr;
+                auto* throwableParent = playerNodes ? playerNodes->primaryMeleeWeaponOffsetNode : nullptr;
+                if (throwableParent && finiteNiTransform(throwableParent->world)) {
+                    const RE::NiTransform desiredWorld = transform_math::composeTransforms(throwableParent->world, throwableOffset.offset);
+                    if (finiteNiTransform(desiredWorld)) {
+                        dropLocation = desiredWorld.translate;
+                        dropRotation = grab_node_info_math::nifskopeMatrixToEulerRadians<RE::NiMatrix3, RE::NiPoint3>(desiredWorld.rotate);
+                        dropRotationPtr = &dropRotation;
+                    } else {
+                        frikThrowableDropReason = "throwableWorldNonFinite";
+                    }
+                } else {
+                    frikThrowableDropReason = "throwableParentMissing";
+                }
+            }
+
             const auto dropResult = loose_grenade_runtime::dropPendingEquipRequestToWorld(
                 request,
-                frame.right.grabAnchorWorld,
-                nullptr);
+                dropLocation,
+                dropRotationPtr);
             loose_grenade_runtime::discardPendingEquipRequest(request.requestId);
             if (!dropResult.success) {
                 ROCK_LOG_WARN(Hand,
@@ -4581,11 +4606,12 @@ namespace rock
                 .runtime = request.runtime,
             };
             ROCK_LOG_INFO(Hand,
-                "Loose grenade menu drop created ref={:08X} weapon={:08X} stack={} request={}",
+                "Loose grenade menu drop created ref={:08X} weapon={:08X} stack={} request={} frikThrowableOffset={}",
                 dropResult.droppedRef ? dropResult.droppedRef->GetFormID() : 0,
                 request.weapon ? request.weapon->GetFormID() : 0,
                 dropResult.stackId,
-                request.requestId);
+                request.requestId,
+                dropRotationPtr ? throwableOffset.reason : frikThrowableDropReason);
         }
 
         if (!_pendingLooseGrenadeGrab.active) {
