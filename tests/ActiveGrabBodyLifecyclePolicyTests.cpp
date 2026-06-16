@@ -66,6 +66,14 @@ int main()
     ok &= expectFalse("loose dynamic release should keep dynamic motion", dynamicRelease.entries.front().restoreMotion);
     ok &= expectTrue("loose dynamic physical drop should skip incomplete root restore when no state is restored",
         shouldSkipIncompleteScanRootRestore(dynamicRelease, 5));
+    const auto dynamicPendingNativeTransfer = dynamicSnapshot.restorePlanForRelease(
+        releaseRestorePolicyForTargetKind(grab_target::Kind::LooseObject),
+        grab_target::Kind::LooseObject,
+        BodyReleaseIntent::PendingNativeTransfer);
+    ok &= expectFalse("loose dynamic pending native transfer should keep active collision filter", dynamicPendingNativeTransfer.entries.front().restoreFilter);
+    ok &= expectFalse("loose dynamic pending native transfer should keep dynamic motion", dynamicPendingNativeTransfer.entries.front().restoreMotion);
+    ok &= expectTrue("loose dynamic pending native transfer should skip incomplete root restore",
+        shouldSkipIncompleteScanRootRestore(dynamicPendingNativeTransfer, 5));
     ok &= expectTrue("loose object release should use protected restore policy",
         releaseRestorePolicyForTargetKind(grab_target::Kind::LooseObject) == BodyRestorePolicy::ProtectComplexSystemOwned);
 
@@ -120,8 +128,17 @@ int main()
         BodyReleaseIntent::NonPhysicalTransfer);
     ok &= expectTrue("loose keyframed non-physical transfer should restore filter", keyframedTransfer.entries.front().restoreFilter);
     ok &= expectTrue("loose keyframed non-physical transfer should restore motion", keyframedTransfer.entries.front().restoreMotion);
-    ok &= expectFalse("loose keyframed non-physical transfer should allow incomplete root restore skip",
+    ok &= expectFalse("loose keyframed non-physical transfer should allow incomplete root restore",
         shouldSkipIncompleteScanRootRestore(keyframedTransfer, 2));
+
+    const auto keyframedPendingNativeTransfer = keyframedSnapshot.restorePlanForRelease(
+        releaseRestorePolicyForTargetKind(grab_target::Kind::LooseObject),
+        grab_target::Kind::LooseObject,
+        BodyReleaseIntent::PendingNativeTransfer);
+    ok &= expectTrue("loose keyframed pending native transfer should keep captured filter restore", keyframedPendingNativeTransfer.entries.front().restoreFilter);
+    ok &= expectTrue("loose keyframed pending native transfer should keep captured motion restore", keyframedPendingNativeTransfer.entries.front().restoreMotion);
+    ok &= expectTrue("loose keyframed pending native transfer should skip incomplete root restore",
+        shouldSkipIncompleteScanRootRestore(keyframedPendingNativeTransfer, 2));
 
     const auto keyframedFailure = keyframedSnapshot.restorePlanForFailure();
     ok &= expectTrue("failed keyframed prep should restore filter", keyframedFailure.entries.front().restoreFilter);
