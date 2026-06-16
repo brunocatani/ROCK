@@ -433,7 +433,10 @@ namespace rock::loose_grenade_runtime
             return false;
         }
 
-        const float fuseSeconds = projectile->data.explosionTimer;
+        const float configuredFuseSeconds = g_rockConfig.rockRealisticGrenadeFuseSeconds;
+        const float fuseSeconds = std::isfinite(configuredFuseSeconds) && configuredFuseSeconds > 0.0f ?
+            configuredFuseSeconds :
+            projectile->data.explosionTimer;
         if (!std::isfinite(fuseSeconds) || fuseSeconds <= 0.0f) {
             return false;
         }
