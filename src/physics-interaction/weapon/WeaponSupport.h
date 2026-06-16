@@ -452,13 +452,25 @@ namespace rock::weapon_two_handed_grip_math
         return primaryGripHeld ? SupportReleaseManualAction::KeepPrimaryOwnership : SupportReleaseManualAction::DropEquippedWeapon;
     }
 
-    inline bool canProcessNormalGrabInput(bool isLeft, bool equippedWeaponSupportGripActive, bool rightHandWeaponEquipped, bool primaryHandDetached)
+    inline constexpr float kPrimaryFiringGripReattachRadiusGameUnits = 2.0f;
+
+    inline constexpr bool canReattachPrimaryFiringGrip(float distanceGameUnits, float radiusGameUnits = kPrimaryFiringGripReattachRadiusGameUnits)
+    {
+        return distanceGameUnits >= 0.0f && radiusGameUnits > 0.0f && distanceGameUnits <= radiusGameUnits;
+    }
+
+    inline bool canProcessNormalGrabInput(
+        bool isLeft,
+        bool equippedWeaponSupportGripActive,
+        bool rightHandWeaponEquipped,
+        bool primaryHandDetached,
+        bool detachedPrimarySupportGripActive = false)
     {
         if (isLeft) {
             return !equippedWeaponSupportGripActive;
         }
 
-        return !rightHandWeaponEquipped || primaryHandDetached;
+        return (!rightHandWeaponEquipped || primaryHandDetached) && !detachedPrimarySupportGripActive;
     }
 }
 
