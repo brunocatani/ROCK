@@ -2456,11 +2456,6 @@ namespace rock
         }
 
         RE::NiNode* weaponNode = resolveEquippedWeaponInteractionNode();
-        RE::NiNode* handoffWeaponNode = _heldWeaponEquipVisualHandoff.active() ? resolveEquippedWeaponInteractionNodeDirect() : weaponNode;
-        _heldWeaponEquipVisualHandoff.prepareForWeaponCollision(HeldWeaponEquipVisualHandoff::FrameInput{
-            .deltaSeconds = frame.deltaSeconds,
-            .equippedWeaponRoot = handoffWeaponNode,
-        });
         const bool rightHandWeaponEquipped = weaponNode != nullptr;
         const bool generatedWeaponCollisionActive =
             _weaponCollision.hasWeaponBody() && _weaponCollision.getCurrentWeaponGenerationKey() != 0;
@@ -2918,11 +2913,6 @@ namespace rock
                 applyFinalWeaponMuzzleAuthority();
             }
         }
-        _heldWeaponEquipVisualHandoff.updateAfterWeaponCollision(HeldWeaponEquipVisualHandoff::FrameInput{
-            .deltaSeconds = frame.deltaSeconds,
-            .equippedWeaponRoot = _heldWeaponEquipVisualHandoff.active() ? resolveEquippedWeaponInteractionNodeDirect() : weaponNode,
-        });
-
         refreshGeneratedBodyContactRegistry();
         _generatedBodyStepDrive.registerForNextStep(bhk, hknp);
 
@@ -3519,7 +3509,6 @@ namespace rock
         dispatchPhysicsMessage(kPhysMsg_OnPhysicsShutdown, false);
 
         ROCK_LOG_INFO(Init, "Shutting down ROCK physics module...");
-        _heldWeaponEquipVisualHandoff.cancel();
         restoreHeldMassMovementSlowdown("shutdown");
 
         auto* currentBhk = getPlayerBhkWorld();
@@ -6503,17 +6492,11 @@ namespace rock
 
                     hand.captureHeldReleaseMotion(hknp, handInput.rawHandWorld, _heldObjectPlayerSpaceFrame, frame.deltaSeconds);
                     auto* heldRef = hand.getHeldRef();
-                    HeldWeaponVisualSnapshot visualSnapshot{};
-                    const bool hasVisualSnapshot = hand.captureHeldWeaponEquipVisualSnapshot(hknp, visualSnapshot);
                     hand.stopSelectionHighlight();
                     Hand& peerHandForVisualState = isLeft ? _rightHand : _leftHand;
                     if (heldRef && peerHandForVisualState.hasSelection() && peerHandForVisualState.getSelection().refr == heldRef) {
                         peerHandForVisualState.clearSelectionState(false);
                     }
-                    const bool visualHandoffStarted = hasVisualSnapshot &&
-                                                      _heldWeaponEquipVisualHandoff.begin(HeldWeaponEquipVisualHandoff::BeginInput{
-                                                          .visual = visualSnapshot,
-                                                      });
                     std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;
                     const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
                     auto releaseContext = makeGrabReleaseContext(hand, isLeft);
@@ -6530,16 +6513,6 @@ namespace rock
                     });
                     const bool nativeDrawRequested = equipResult.success && requestImmediateHeldWeaponNativeDraw();
                     auto* immediateWeaponNode = equipResult.success ? resolveEquippedWeaponInteractionNodeDirect() : nullptr;
-                    if (visualHandoffStarted) {
-                        if (equipResult.success) {
-                            _heldWeaponEquipVisualHandoff.updateAfterWeaponCollision(HeldWeaponEquipVisualHandoff::FrameInput{
-                                .deltaSeconds = 0.0f,
-                                .equippedWeaponRoot = immediateWeaponNode,
-                            });
-                        } else {
-                            _heldWeaponEquipVisualHandoff.cancel();
-                        }
-                    }
                     if (heldFormID == 0 && equipResult.formID != 0) {
                         heldFormID = equipResult.formID;
                     }

@@ -94,6 +94,13 @@ Reject-Path 'src/physics-interaction/weapon/WeaponVisualRemapRuntime.cpp' 'Nativ
 Reject-Path 'src/physics-interaction/weapon/WeaponVisualRemapRuntime.h' 'Native weapon visual remap runtime header must be removed from the collider lifecycle.'
 Reject-Path 'src/physics-interaction/weapon/WeaponInstanceWitnessRuntime.cpp' 'Weapon instance witness runtime must be removed from the collider lifecycle.'
 Reject-Path 'src/physics-interaction/weapon/WeaponInstanceWitnessRuntime.h' 'Weapon instance witness runtime header must be removed from the collider lifecycle.'
+Reject-Path 'src/physics-interaction/weapon/HeldWeaponEquipVisualHandoff.cpp' 'Held weapon equip phantom visual handoff must stay removed.'
+Reject-Path 'src/physics-interaction/weapon/HeldWeaponEquipVisualHandoff.h' 'Held weapon equip phantom visual handoff header must stay removed.'
+Reject-Path 'src/physics-interaction/weapon/HeldWeaponVisualSnapshot.h' 'Held weapon equip phantom visual snapshot must stay removed.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'HeldWeaponEquipVisualHandoff|captureHeldWeaponEquipVisualSnapshot|visualHandoffStarted' 'Held weapon equip must not run phantom visual handoff code.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.h' 'HeldWeaponEquipVisualHandoff' 'PhysicsInteraction must not own phantom visual handoff state.'
+Reject-Text 'src/physics-interaction/hand/Hand.h' 'HeldWeaponVisualSnapshot|captureHeldWeaponEquipVisualSnapshot' 'Hand must not expose phantom held-weapon visual snapshot capture.'
+Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' 'captureHeldWeaponEquipVisualSnapshot' 'Hand grab runtime must not retain phantom held-weapon visual snapshot capture.'
 
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct GeneratedWeaponBodyCreateOptions' 'Weapon body creation must keep explicit creation options.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'collisionEnabledOnCreate' 'Weapon body creation options must name the initial filter state explicitly.'
