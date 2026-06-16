@@ -316,6 +316,7 @@ namespace rock::provider
         SuppressGrabRelease = 1u << 1,
         SuppressHeldWeaponTriggerEquip = 1u << 2,
         SuppressGameplayCandidates = 1u << 3,
+        SuppressOpenVrGameInput = 1u << 4,
         SuppressConfigModeChord =
             static_cast<std::uint32_t>(SuppressNormalGrabPress) |
             static_cast<std::uint32_t>(SuppressGrabRelease) |

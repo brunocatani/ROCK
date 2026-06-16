@@ -5894,6 +5894,8 @@ namespace rock
             input_remap_runtime::setRightHandHeldWeapon(false);
             input_remap_runtime::setEquippedWeaponPrimaryDetachInputActive(false);
             input_remap_runtime::setEquippedWeaponPrimaryDetached(false);
+            input_remap_runtime::setProviderOpenVrGameInputSuppressed(false, false);
+            input_remap_runtime::setProviderOpenVrGameInputSuppressed(true, false);
             _heldWeaponAutoEquipStates = {};
             clearGameplayCandidatesForHand(_rightHand, false);
             clearGameplayCandidatesForHand(_leftHand, true);
@@ -5945,6 +5947,9 @@ namespace rock
                 providerSuppresses(provider::RockProviderHandInputSuppressionFlagV1::SuppressHeldWeaponTriggerEquip);
             const bool providerSuppressesGameplayCandidates =
                 providerSuppresses(provider::RockProviderHandInputSuppressionFlagV1::SuppressGameplayCandidates);
+            const bool providerSuppressesOpenVrGameInput =
+                providerSuppresses(provider::RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput);
+            input_remap_runtime::setProviderOpenVrGameInputSuppressed(isLeft, providerSuppressesOpenVrGameInput);
             auto cancelPeerHeldJoinRetry = [&](const char* reason, bool logCancellation) {
                 if (!peerHeldJoinRetryState.active) {
                     return;
