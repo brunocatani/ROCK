@@ -452,45 +452,13 @@ namespace rock::weapon_two_handed_grip_math
         return primaryGripHeld ? SupportReleaseManualAction::KeepPrimaryOwnership : SupportReleaseManualAction::DropEquippedWeapon;
     }
 
-    inline constexpr float kPrimaryFiringGripReattachRadiusGameUnits = 2.0f;
-
-    inline constexpr bool canReattachPrimaryFiringGrip(float distanceGameUnits, float radiusGameUnits = kPrimaryFiringGripReattachRadiusGameUnits)
-    {
-        return distanceGameUnits >= 0.0f && radiusGameUnits > 0.0f && distanceGameUnits <= radiusGameUnits;
-    }
-
-    inline constexpr bool canProcessDetachedPrimaryGrabPress(bool gripPressed, bool handHoldingObject)
-    {
-        return gripPressed && !handHoldingObject;
-    }
-
-    inline constexpr bool rightHandDominantWeaponCollisionOwnsHand(
-        bool rightHandWeaponVisible,
-        bool generatedWeaponCollisionActive,
-        bool primaryHandDetached,
-        bool detachedPrimarySupportGripActive)
-    {
-        (void)detachedPrimarySupportGripActive;
-
-        if (primaryHandDetached) {
-            return false;
-        }
-
-        return rightHandWeaponVisible || generatedWeaponCollisionActive;
-    }
-
-    inline bool canProcessNormalGrabInput(
-        bool isLeft,
-        bool equippedWeaponSupportGripActive,
-        bool rightHandWeaponEquipped,
-        bool primaryHandDetached,
-        bool detachedPrimarySupportGripActive = false)
+    inline bool canProcessNormalGrabInput(bool isLeft, bool equippedWeaponSupportGripActive, bool rightHandWeaponEquipped, bool primaryHandDetached)
     {
         if (isLeft) {
             return !equippedWeaponSupportGripActive;
         }
 
-        return (!rightHandWeaponEquipped || primaryHandDetached) && !detachedPrimarySupportGripActive;
+        return !rightHandWeaponEquipped || primaryHandDetached;
     }
 }
 

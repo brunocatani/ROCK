@@ -92,8 +92,7 @@ namespace
         static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::RequireMatchingTarget) |
         static_cast<std::uint32_t>(RockProviderThrownDropFlagV1::UseVelocityHavok);
     constexpr std::uint32_t kImplementedHandInputSuppressionFlagsV1 =
-        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord) |
-        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput);
+        static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord);
     constexpr std::uint32_t kImplementedWeaponPartTargetFlagsV1 =
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchBodyId) |
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceRoot) |

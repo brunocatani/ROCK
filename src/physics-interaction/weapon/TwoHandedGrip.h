@@ -30,7 +30,6 @@ namespace rock
         Touching,
         Gripping,
         PrimaryDetached,
-        PrimaryDetachedManipulation,
         PrimaryOnly,
     };
 
@@ -39,19 +38,6 @@ namespace rock
         bool held{ false };
         bool pressed{ false };
         bool released{ false };
-        RE::NiTransform handWorld{};
-        bool hasHandWorld{ false };
-        RE::NiPoint3 firingGripProbeWorld{};
-        bool hasFiringGripProbeWorld{ false };
-        bool handHoldingObject{ false };
-    };
-
-    struct EquippedWeaponFiringGripReference
-    {
-        bool valid{ false };
-        RE::NiPoint3 gripLocal{};
-        const RE::NiAVObject* weaponRoot{ nullptr };
-        const char* reason{ "notEvaluated" };
     };
 
     struct TwoHandedGripDebugSnapshot
@@ -81,43 +67,28 @@ namespace rock
             float dt,
             std::uint64_t currentWeaponGenerationKey,
             const WeaponCollision& weaponCollision,
-            const WeaponInteractionRuntimeState& supportRuntimeState,
-            const WeaponInteractionRuntimeState& detachedPrimaryRuntimeState,
+            const WeaponInteractionRuntimeState& runtimeState,
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
             bool primaryDetachEnabled,
-            const EquippedWeaponPrimaryGripInput& primaryGripInput,
-            const EquippedWeaponFiringGripReference& firingGripReference);
+            const EquippedWeaponPrimaryGripInput& primaryGripInput);
 
         void reset();
 
-        bool isGripping() const
-        {
-            return _state == TwoHandedState::Gripping ||
-                   _state == TwoHandedState::PrimaryDetached ||
-                   _state == TwoHandedState::PrimaryDetachedManipulation;
-        }
+        bool isGripping() const { return _state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryDetached; }
 
         bool isManualOwnershipActive() const
         {
             return _state == TwoHandedState::Gripping ||
                    _state == TwoHandedState::PrimaryDetached ||
-                   _state == TwoHandedState::PrimaryDetachedManipulation ||
                    _state == TwoHandedState::PrimaryOnly;
         }
 
-        bool isPrimaryDetached() const
-        {
-            return _state == TwoHandedState::PrimaryDetached ||
-                   _state == TwoHandedState::PrimaryDetachedManipulation;
-        }
-
-        bool isDetachedPrimarySupportGripActive() const { return _state == TwoHandedState::PrimaryDetachedManipulation; }
+        bool isPrimaryDetached() const { return _state == TwoHandedState::PrimaryDetached; }
 
         bool canUsePrimaryDetachInput() const
         {
             return _state == TwoHandedState::Gripping ||
                    _state == TwoHandedState::PrimaryDetached ||
-                   _state == TwoHandedState::PrimaryDetachedManipulation ||
                    _state == TwoHandedState::PrimaryOnly;
         }
 
@@ -151,8 +122,6 @@ namespace rock
 
         bool providerPartAuthorityStillCurrent(std::uint64_t currentWeaponGenerationKey) const;
 
-        bool providerPartAuthorityStillCurrent(const WeaponProviderPartAuthority& authority, std::uint64_t currentWeaponGenerationKey) const;
-
         void clearProviderPartAuthority();
 
         void updateFullWeaponAuthorityGrip(RE::NiNode* weaponNode, float dt);
@@ -161,16 +130,7 @@ namespace rock
             RE::NiNode* weaponNode,
             float dt,
             const EquippedWeaponPrimaryGripInput& primaryGripInput,
-            const WeaponInteractionContact& rightWeaponContact,
-            const WeaponCollision& weaponCollision,
-            const WeaponInteractionRuntimeState& detachedPrimaryRuntimeState,
-            const EquippedWeaponFiringGripReference& firingGripReference);
-
-        void updatePrimaryDetachedManipulationGrip(
-            RE::NiNode* weaponNode,
-            float dt,
-            const EquippedWeaponPrimaryGripInput& primaryGripInput,
-            const WeaponInteractionRuntimeState& detachedPrimaryRuntimeState);
+            const WeaponInteractionContact& rightWeaponContact);
 
         void updateVisualOnlySupportGrip(RE::NiNode* weaponNode, float dt);
 
@@ -185,40 +145,16 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             const EquippedWeaponPrimaryGripInput& primaryGripInput);
 
-        bool tryReattachPrimaryGrip(
-            RE::NiNode* weaponNode,
-            const EquippedWeaponPrimaryGripInput& primaryGripInput,
-            const WeaponInteractionContact& rightWeaponContact,
-            const EquippedWeaponFiringGripReference& firingGripReference);
+        bool tryReattachPrimaryGrip(RE::NiNode* weaponNode, const WeaponInteractionContact& rightWeaponContact);
 
-        bool primaryGripContactMatchesCanonicalGrip(const WeaponInteractionContact& rightWeaponContact) const;
-
-        bool primaryGripContactMatchesFiringGrip(
-            RE::NiNode* weaponNode,
-            const RE::NiPoint3& primaryProbeWorld,
-            const EquippedWeaponFiringGripReference& firingGripReference) const;
-
-        bool tryStartDetachedPrimarySupportGrip(
+        bool primaryGripContactMatchesCapturedGrip(
             RE::NiNode* weaponNode,
             const WeaponInteractionContact& rightWeaponContact,
-            const WeaponCollision& weaponCollision,
-            const EquippedWeaponPrimaryGripInput& primaryGripInput,
-            const WeaponInteractionRuntimeState& detachedPrimaryRuntimeState);
-
-        void clearDetachedPrimarySupportGrip();
-
-        RE::NiPoint3 resolveDetachedPrimarySupportGripWorld(RE::NiNode* weaponNode) const;
-        RE::NiPoint3 resolveDetachedPrimarySupportGripWeaponLocal(RE::NiNode* weaponNode) const;
-        RE::NiAVObject* resolveCurrentDetachedPrimarySupportAttachmentRoot(RE::NiNode* weaponNode) const;
-        RE::NiTransform resolveDetachedPrimarySupportHandWorld(RE::NiNode* weaponNode) const;
+            const RE::NiTransform& primaryTransform) const;
 
         void setSupportGripPose(bool isLeft, WeaponGripPoseId poseId, const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose);
 
         void clearSupportGripPose(bool isLeft);
-
-        void setDetachedPrimarySupportGripPose(WeaponGripPoseId poseId, const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose);
-
-        void clearDetachedPrimarySupportGripPose();
 
         void clearPrimaryDetachVisualAuthority(bool isLeft);
 
@@ -233,8 +169,6 @@ namespace rock
             const RE::NiTransform* liveSupportHandWorld = nullptr);
 
         void publishGripHandPoses(bool supportHandIsLeft);
-
-        void publishDetachedPrimarySupportGripPose();
 
         void clearPrimaryGripPose(bool isLeft);
 
@@ -337,25 +271,6 @@ namespace rock
         bool _hasSupportFingerSplay{ false };
         bool _hasSupportFingerLocalTransforms{ false };
 
-        RE::NiPoint3 _detachedPrimarySupportGripLocal{};
-        RE::NiPoint3 _detachedPrimarySupportGripSourceLocal{};
-        RE::NiPoint3 _detachedPrimarySupportNormalLocal{};
-        RE::NiPoint3 _detachedPrimarySupportNormalSourceLocal{};
-        RE::NiTransform _detachedPrimarySupportHandWeaponLocal{};
-        RE::NiTransform _detachedPrimarySupportHandSourceLocal{};
-        RE::NiTransform _detachedPrimarySupportAttachmentWeaponLocal{};
-        RE::NiAVObject* _detachedPrimarySupportAttachmentRoot{ nullptr };
-        bool _hasDetachedPrimarySupportSourceLocalFrame{ false };
-        bool _hasDetachedPrimarySupportAttachmentWeaponLocal{ false };
-        std::array<float, 15> _detachedPrimarySupportFingerPose{};
-        std::array<float, 5> _detachedPrimarySupportFingerSplayRadians{};
-        std::array<RE::NiTransform, 15> _detachedPrimarySupportFingerLocalTransforms{};
-        std::uint16_t _detachedPrimarySupportFingerLocalTransformMask{ 0 };
-        bool _hasDetachedPrimarySupportFingerPose{ false };
-        bool _hasDetachedPrimarySupportFingerSplay{ false };
-        bool _hasDetachedPrimarySupportFingerLocalTransforms{ false };
-        LockedHandVisualLerpState _detachedPrimarySupportHandVisualLerp{};
-
         float _primaryGripConfidence{ 0.0f };
 
         RE::NiNode* _activeWeaponNode{ nullptr };
@@ -363,7 +278,6 @@ namespace rock
         RE::NiAVObject* _supportAttachmentRoot{ nullptr };
         std::uint64_t _activeWeaponGenerationKey{ 0 };
         WeaponProviderPartAuthority _providerPartAuthority{};
-        WeaponProviderPartAuthority _detachedPrimarySupportProviderPartAuthority{};
         RE::NiTransform _weaponNodeLocalBaseline{};
         bool _hasWeaponNodeLocalBaseline{ false };
 

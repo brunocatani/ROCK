@@ -489,11 +489,7 @@ namespace rock::active_grab_body_lifecycle
 
     inline bool shouldSkipIncompleteScanRootRestore(const BodyRestorePlan& plan, std::uint16_t originalMotionPropsId) noexcept
     {
-        if (plan.reason != BodyRestoreReason::Release || plan.targetKind != grab_target::Kind::LooseObject) {
-            return false;
-        }
-
-        if (plan.intent != BodyReleaseIntent::PhysicalDrop) {
+        if (plan.reason != BodyRestoreReason::Release || !isLooseObjectPhysicalDrop(plan.targetKind, plan.intent)) {
             return false;
         }
 

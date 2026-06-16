@@ -120,7 +120,7 @@ int main()
         BodyReleaseIntent::NonPhysicalTransfer);
     ok &= expectTrue("loose keyframed non-physical transfer should restore filter", keyframedTransfer.entries.front().restoreFilter);
     ok &= expectTrue("loose keyframed non-physical transfer should restore motion", keyframedTransfer.entries.front().restoreMotion);
-    ok &= expectFalse("loose keyframed non-physical transfer should allow incomplete root restore",
+    ok &= expectFalse("loose keyframed non-physical transfer should allow incomplete root restore skip",
         shouldSkipIncompleteScanRootRestore(keyframedTransfer, 2));
 
     const auto keyframedFailure = keyframedSnapshot.restorePlanForFailure();

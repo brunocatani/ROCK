@@ -2217,9 +2217,7 @@ namespace rock
             ROCK_LOG_DEBUG(Config, "Starting file watch on '{}'", _iniFilePath);
 
             _fileWatch = std::make_unique<filewatch::FileWatch<std::string>>(_iniFilePath, [this](const std::string&, const filewatch::Event changeType) {
-                if (changeType != filewatch::Event::modified &&
-                    changeType != filewatch::Event::added &&
-                    changeType != filewatch::Event::renamed_new) {
+                if (changeType != filewatch::Event::modified) {
                     return;
                 }
 

@@ -10579,6 +10579,67 @@ namespace rock
         recordHeldObjectVelocitySample(world, playerSpaceFrame);
     }
 
+    bool Hand::captureHeldWeaponEquipVisualSnapshot(RE::hknpWorld* world, HeldWeaponVisualSnapshot& out) const
+    {
+        out = {};
+        if (!isHolding() || !_heldObjectIsLooseWeapon || !_savedObjectState.isValid()) {
+            return false;
+        }
+
+        auto* heldRef = _savedObjectState.refr;
+        if (!heldRef || heldRef->IsDeleted() || heldRef->IsDisabled()) {
+            return false;
+        }
+
+        auto* referenceRoot = heldRef->Get3D();
+        auto* referenceRootNode = referenceRoot ? referenceRoot->IsNode() : nullptr;
+        RE::NiNode* cloneSourceNode = nullptr;
+        const char* source = "none";
+        if (referenceRootNode && referenceRootNode->parent) {
+            cloneSourceNode = referenceRootNode;
+            source = "reference-root";
+        } else if (_grabFrame.heldNode) {
+            cloneSourceNode = _grabFrame.heldNode->IsNode();
+            source = "grab-frame-held-node";
+            if (!cloneSourceNode) {
+                cloneSourceNode = _grabFrame.heldNode->parent;
+                source = "grab-frame-held-parent";
+            }
+        }
+        if (!cloneSourceNode || !cloneSourceNode->parent) {
+            return false;
+        }
+
+        RE::NiTransform sourceWorld = cloneSourceNode->world;
+        bool hasSourceWorld = grab_three_phase::isFinite(sourceWorld);
+        if (world && _savedObjectState.bodyId.value != INVALID_BODY_ID) {
+            RE::NiTransform bodyWorld{};
+            if (tryGetGrabDriveObjectWorldTransform(world, _savedObjectState.bodyId, bodyWorld)) {
+                if (cloneSourceNode == referenceRootNode && grab_three_phase::isFinite(_grabFrame.rootBodyLocal)) {
+                    sourceWorld = deriveNodeWorldFromBodyWorld(bodyWorld, _grabFrame.rootBodyLocal);
+                    source = "body-derived-reference-root";
+                    hasSourceWorld = true;
+                } else if (_grabFrame.heldNode && cloneSourceNode == _grabFrame.heldNode->IsNode() && grab_three_phase::isFinite(_grabFrame.bodyLocal)) {
+                    sourceWorld = deriveNodeWorldFromBodyWorld(bodyWorld, _grabFrame.bodyLocal);
+                    source = "body-derived-held-node";
+                    hasSourceWorld = true;
+                }
+            }
+        }
+        if (!hasSourceWorld) {
+            return false;
+        }
+
+        out.heldRef = heldRef;
+        out.cloneSourceNode = cloneSourceNode;
+        out.parent = cloneSourceNode->parent;
+        out.sourceWorld = sourceWorld;
+        out.formID = heldRef->GetFormID();
+        out.source = source;
+        out.isLeft = _isLeft;
+        return out.isValid();
+    }
+
     void Hand::applyReleaseVelocitySnapshot(RE::hknpWorld* world, const GrabReleaseOutcome::VelocitySnapshot& snapshot) const
     {
         if (!world || !snapshot.available) {

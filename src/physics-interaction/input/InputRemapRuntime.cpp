@@ -4,7 +4,6 @@
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
 
-#include "api/ROCKProviderApi.h"
 #include "api/FRIKApi.h"
 
 #include "f4vr/F4VRUtils.h"
@@ -22,7 +21,6 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <intrin.h>
 #include <optional>
 #include <string_view>
 
@@ -98,7 +96,6 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_menuInputActive{ false };
         std::atomic<bool> s_missingVRSystemLogged{ false };
         std::atomic<bool> s_missingUILogged{ false };
-        std::array<std::atomic<bool>, 2> s_providerOpenVrGameInputSuppressed{};
         void** s_vrSystemVTable = nullptr;
         GetControllerState_t s_originalGetControllerState = nullptr;
         GetControllerStateWithPose_t s_originalGetControllerStateWithPose = nullptr;
@@ -289,83 +286,6 @@ namespace rock::input_remap_runtime
         [[nodiscard]] constexpr std::size_t controllerIndex(input_remap_policy::Hand hand)
         {
             return hand == input_remap_policy::Hand::Left ? 0u : 1u;
-        }
-
-        [[nodiscard]] bool isProviderOpenVrGameInputSuppressed(input_remap_policy::Hand hand)
-        {
-            return s_providerOpenVrGameInputSuppressed[controllerIndex(hand)].load(std::memory_order_acquire);
-        }
-
-        [[nodiscard]] bool isAnyProviderOpenVrGameInputSuppressed()
-        {
-            return s_providerOpenVrGameInputSuppressed[0].load(std::memory_order_acquire) ||
-                   s_providerOpenVrGameInputSuppressed[1].load(std::memory_order_acquire);
-        }
-
-        [[nodiscard]] bool isCallerModule(const void* address, const wchar_t* moduleName)
-        {
-            if (!address || !moduleName) {
-                return false;
-            }
-
-            HMODULE callerModule = nullptr;
-            if (!GetModuleHandleExW(
-                    GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                    reinterpret_cast<LPCWSTR>(address),
-                    &callerModule) ||
-                !callerModule) {
-                return false;
-            }
-
-            return callerModule == GetModuleHandleW(moduleName);
-        }
-
-        [[nodiscard]] bool isModuleOnCurrentStack(const wchar_t* moduleName)
-        {
-            auto* targetModule = GetModuleHandleW(moduleName);
-            if (!targetModule) {
-                return false;
-            }
-
-            void* frames[16]{};
-            const auto frameCount = CaptureStackBackTrace(0, static_cast<DWORD>(sizeof(frames) / sizeof(frames[0])), frames, nullptr);
-            for (USHORT i = 0; i < frameCount; ++i) {
-                HMODULE frameModule = nullptr;
-                if (GetModuleHandleExW(
-                        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                        reinterpret_cast<LPCWSTR>(frames[i]),
-                        &frameModule) &&
-                    frameModule == targetModule) {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        [[nodiscard]] bool shouldBypassProviderOpenVrGameInputSuppression(const void* callerAddress)
-        {
-            /*
-             * The configurator consumes raw controller input through ROCK while its lease masks game-facing state.
-             * Some helper paths call through framework/static-library frames before reaching OpenVR, so the immediate
-             * return address is not always enough to identify the configurator as the consumer.
-             */
-            return isCallerModule(callerAddress, L"ROCKConfigurator.dll") ||
-                   isModuleOnCurrentStack(L"ROCKConfigurator.dll");
-        }
-
-        void clearOpenVrControllerStateForGame(vr::VRControllerState_t* state, std::uint32_t stateSize)
-        {
-            if (!state || stateSize < sizeof(vr::VRControllerState_t)) {
-                return;
-            }
-
-            state->ulButtonPressed = 0;
-            state->ulButtonTouched = 0;
-            for (auto& axis : state->rAxis) {
-                axis.x = 0.0f;
-                axis.y = 0.0f;
-            }
         }
 
         [[nodiscard]] input_remap_policy::Settings makeSettings()
@@ -733,17 +653,11 @@ namespace rock::input_remap_runtime
         bool hookedGetControllerState(
             vr::IVRSystem* system, vr::TrackedDeviceIndex_t controllerDeviceIndex, vr::VRControllerState_t* controllerState, std::uint32_t controllerStateSize)
         {
-            const void* callerAddress = _ReturnAddress();
             const bool result = s_originalGetControllerState ? s_originalGetControllerState(system, controllerDeviceIndex, controllerState, controllerStateSize) : false;
             if (result) {
                 captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand)) {
-                    if (isProviderOpenVrGameInputSuppressed(hand) &&
-                        !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        clearOpenVrControllerStateForGame(controllerState, controllerStateSize);
-                        return result;
-                    }
                     applyVirtualHolstersSyntheticPress(hand, controllerState);
                 }
             }
@@ -757,7 +671,6 @@ namespace rock::input_remap_runtime
             std::uint32_t controllerStateSize,
             vr::TrackedDevicePose_t* trackedDevicePose)
         {
-            const void* callerAddress = _ReturnAddress();
             const bool result = s_originalGetControllerStateWithPose ?
                                     s_originalGetControllerStateWithPose(system, origin, controllerDeviceIndex, controllerState, controllerStateSize, trackedDevicePose) :
                                     false;
@@ -765,11 +678,6 @@ namespace rock::input_remap_runtime
                 captureControllerState(controllerDeviceIndex, controllerState, controllerStateSize);
                 input_remap_policy::Hand hand{};
                 if (resolveControllerHand(controllerDeviceIndex, hand)) {
-                    if (isProviderOpenVrGameInputSuppressed(hand) &&
-                        !shouldBypassProviderOpenVrGameInputSuppression(callerAddress)) {
-                        clearOpenVrControllerStateForGame(controllerState, controllerStateSize);
-                        return result;
-                    }
                     applyVirtualHolstersSyntheticPress(hand, controllerState);
                 }
             }
@@ -965,14 +873,6 @@ namespace rock::input_remap_runtime
 
         void hookedReadyWeaponEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
         {
-            if (isAnyProviderOpenVrGameInputSuppressed()) {
-                markInputEventStopped(inputEvent);
-                ROCK_LOG_SAMPLE_DEBUG(Input,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "Suppressed native ReadyWeapon input while provider OpenVR game-input suppression is active");
-                return;
-            }
-
             if (shouldSuppressNativeGripReadyAction(inputEvent)) {
                 markInputEventStopped(inputEvent);
                 ROCK_LOG_SAMPLE_DEBUG(Input,
@@ -1004,14 +904,6 @@ namespace rock::input_remap_runtime
 
         void hookedActivateEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
         {
-            if (isAnyProviderOpenVrGameInputSuppressed()) {
-                markInputEventStopped(inputEvent);
-                ROCK_LOG_SAMPLE_DEBUG(Input,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "Suppressed native Activate input while provider OpenVR game-input suppression is active");
-                return;
-            }
-
             if (shouldRoutePrimaryActivateReload(inputEvent)) {
                 markInputEventStopped(inputEvent);
                 if (dispatchNativeReloadAction()) {
@@ -1029,14 +921,6 @@ namespace rock::input_remap_runtime
 
         void hookedFavoritesEventHandler(void* handler, RE::InputEvent* inputEvent)
         {
-            if (isAnyProviderOpenVrGameInputSuppressed()) {
-                markInputEventStopped(inputEvent);
-                ROCK_LOG_SAMPLE_DEBUG(Input,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "Suppressed native Favorites input while provider OpenVR game-input suppression is active");
-                return;
-            }
-
             if (shouldSuppressNativeFavoritesAction(inputEvent)) {
                 markInputEventStopped(inputEvent);
                 ROCK_LOG_SAMPLE_DEBUG(Input,
@@ -1052,14 +936,6 @@ namespace rock::input_remap_runtime
 
         void hookedMeleeThrowEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
         {
-            if (isAnyProviderOpenVrGameInputSuppressed()) {
-                markInputEventStopped(inputEvent);
-                ROCK_LOG_SAMPLE_DEBUG(Input,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "Suppressed native MeleeThrow input while provider OpenVR game-input suppression is active");
-                return;
-            }
-
             if (shouldSuppressNativeMeleeThrowAction(inputEvent)) {
                 markInputEventStopped(inputEvent);
                 ROCK_LOG_SAMPLE_DEBUG(Input,
@@ -1408,11 +1284,6 @@ namespace rock::input_remap_runtime
     void setEquippedWeaponPrimaryDetached(bool detached)
     {
         s_equippedWeaponPrimaryDetached.store(detached, std::memory_order_release);
-    }
-
-    void setProviderOpenVrGameInputSuppressed(bool isLeft, bool suppressed)
-    {
-        s_providerOpenVrGameInputSuppressed[isLeft ? 0u : 1u].store(suppressed, std::memory_order_release);
     }
 
     bool isMenuInputActive()

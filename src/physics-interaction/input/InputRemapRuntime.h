@@ -23,7 +23,6 @@ namespace rock::input_remap_runtime
     void setRightHandHeldWeapon(bool heldWeapon);
     void setEquippedWeaponPrimaryDetachInputActive(bool active);
     void setEquippedWeaponPrimaryDetached(bool detached);
-    void setProviderOpenVrGameInputSuppressed(bool isLeft, bool suppressed);
     bool isMenuInputActive();
     bool shouldDeferGrabInputForVirtualHolsters(bool isLeft, int buttonId);
     bool requestVirtualHolstersHolsterPress(bool isLeft, float releaseX, float releaseY, float releaseZ);

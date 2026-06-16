@@ -19,6 +19,7 @@
 #include "physics-interaction/object/ObjectPhysicsBodySet.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/native/PhysicsUtils.h"
+#include "physics-interaction/weapon/HeldWeaponVisualSnapshot.h"
 #include "RockConfig.h"
 #include "physics-interaction/hand/HandSelection.h"
 #include "f4vr/F4VRUtils.h"
@@ -385,6 +386,8 @@ namespace rock
         bool getGrabTransformTelemetrySnapshot(RE::hknpWorld* world,
             const RE::NiTransform& rawHandWorld,
             grab_transform_telemetry::RuntimeSample& out) const;
+        bool captureHeldWeaponEquipVisualSnapshot(RE::hknpWorld* world, HeldWeaponVisualSnapshot& out) const;
+
         bool getGrabFingerProbeDebug(std::array<RE::NiPoint3, 5>& outStart, std::array<RE::NiPoint3, 5>& outEnd) const
         {
             if (!_hasGrabFingerProbeDebug)
