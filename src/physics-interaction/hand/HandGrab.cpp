@@ -822,6 +822,20 @@ namespace rock
             return looseWeaponFormFromRef(selection.refr);
         }
 
+        const RE::BGSProjectile* looseWeaponProjectileFromWeapon(const RE::TESObjectWEAP* weapon)
+        {
+            if (!weapon) {
+                return nullptr;
+            }
+            if (weapon->weaponData.rangedData && weapon->weaponData.rangedData->overrideProjectile) {
+                return weapon->weaponData.rangedData->overrideProjectile;
+            }
+            if (weapon->weaponData.ammo && weapon->weaponData.ammo->data.projectile) {
+                return weapon->weaponData.ammo->data.projectile;
+            }
+            return nullptr;
+        }
+
         frik_visual_authority::HandPoseKind looseWeaponPrimaryAttachPoseKind(const RE::TESObjectWEAP* weapon)
         {
             return weapon && weapon->IsMeleeWeapon() ?
@@ -849,6 +863,45 @@ namespace rock
             const char* reason = "notEvaluated";
         };
 
+        struct LooseWeaponPrimaryAttachSource
+        {
+            frik_weapon_offset_cache::LookupResult offset{};
+            RE::NiAVObject* parent = nullptr;
+            RE::NiAVObject* visibilityNode = nullptr;
+            const char* missingParentReason = "missingPrimaryWeaponParent";
+            const char* nonFiniteParentReason = "nonFinitePrimaryWeaponParent";
+        };
+
+        LooseWeaponPrimaryAttachSource resolveLooseWeaponPrimaryAttachSource(
+            const RE::TESObjectWEAP* weapon,
+            const RE::NiAVObject* rootNode)
+        {
+            LooseWeaponPrimaryAttachSource source{};
+
+            const auto throwableOffset = frik_weapon_offset_cache::findThrowableWeaponOffset(
+                weapon,
+                looseWeaponProjectileFromWeapon(weapon));
+            if (throwableOffset.found) {
+                auto* playerNodes = RE::PlayerCharacter::GetSingleton() ? f4vr::getPlayerNodes() : nullptr;
+                source.offset = throwableOffset;
+                source.parent = playerNodes ? playerNodes->primaryMeleeWeaponOffsetNode : nullptr;
+                source.visibilityNode = source.parent;
+                source.missingParentReason = "throwableParentMissing";
+                source.nonFiniteParentReason = "throwableParentNonFinite";
+                return source;
+            }
+
+            source.offset = frik_weapon_offset_cache::findPrimaryWeaponOffset(weapon, rootNode);
+            if (!source.offset.found) {
+                return source;
+            }
+
+            auto* weaponNode = f4vr::getWeaponNode();
+            source.parent = weaponNode ? weaponNode->parent : nullptr;
+            source.visibilityNode = weaponNode;
+            return source;
+        }
+
         LooseWeaponPrimaryAttachFrame resolveLooseWeaponPrimaryAttachFrame(
             bool looseWeaponGrab,
             bool isLeft,
@@ -873,29 +926,27 @@ namespace rock
                 return frame;
             }
 
-            const auto offsetLookup = frik_weapon_offset_cache::findPrimaryWeaponOffset(selectedLooseWeaponForm(selection), rootNode);
-            if (!offsetLookup.found) {
-                frame.reason = offsetLookup.reason;
+            const auto attachSource = resolveLooseWeaponPrimaryAttachSource(selectedLooseWeaponForm(selection), rootNode);
+            if (!attachSource.offset.found) {
+                frame.reason = attachSource.offset.reason;
                 return frame;
             }
 
             /*
-             * FRIK's weapon offset is the local transform written onto the live
-             * first-person Weapon node. A loose weapon is not equipped, so use
-             * only that node's current parent frame and never its stale/hidden
-             * world transform.
+             * FRIK offsets are local transforms written under a live first-person
+             * attach parent. Loose refs are not equipped, so use only the current
+             * parent frame and never a stale/hidden equipped-object world transform.
              */
-            auto* weaponNode = f4vr::getWeaponNode();
-            if (!weaponNode || !weaponNode->parent) {
-                frame.reason = "missingPrimaryWeaponParent";
+            if (!attachSource.parent) {
+                frame.reason = attachSource.missingParentReason;
                 return frame;
             }
-            if (!isFiniteNiTransform(weaponNode->parent->world)) {
-                frame.reason = "nonFinitePrimaryWeaponParent";
+            if (!isFiniteNiTransform(attachSource.parent->world)) {
+                frame.reason = attachSource.nonFiniteParentReason;
                 return frame;
             }
 
-            frame.desiredRootWorld = multiplyTransforms(weaponNode->parent->world, offsetLookup.offset);
+            frame.desiredRootWorld = multiplyTransforms(attachSource.parent->world, attachSource.offset.offset);
             frame.desiredRootWorld.scale =
                 std::isfinite(rootNode->world.scale) && rootNode->world.scale > 0.0001f ? rootNode->world.scale : 1.0f;
             if (!isFiniteNiTransform(frame.desiredRootWorld)) {
@@ -916,9 +967,9 @@ namespace rock
                 return frame;
             }
 
-            frame.sourceVisible = f4vr::isNodeVisible(weaponNode);
+            frame.sourceVisible = f4vr::isNodeVisible(attachSource.visibilityNode);
             frame.valid = true;
-            frame.reason = offsetLookup.reason;
+            frame.reason = attachSource.offset.reason;
             return frame;
         }
 
