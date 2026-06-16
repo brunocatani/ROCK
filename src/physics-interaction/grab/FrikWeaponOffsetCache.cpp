@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -91,6 +92,22 @@ namespace rock::frik_weapon_offset_cache
                 }
             }
             return signature;
+        }
+
+        [[nodiscard]] bool isFiniteNiTransform(const RE::NiTransform& value)
+        {
+            bool rotationFinite = true;
+            for (std::uint32_t row = 0; row < 3; ++row) {
+                for (std::uint32_t column = 0; column < 3; ++column) {
+                    rotationFinite = rotationFinite && std::isfinite(value.rotate.entry[row][column]);
+                }
+            }
+            return rotationFinite &&
+                   std::isfinite(value.translate.x) &&
+                   std::isfinite(value.translate.y) &&
+                   std::isfinite(value.translate.z) &&
+                   std::isfinite(value.scale) &&
+                   value.scale > 0.0001f;
         }
 
         [[nodiscard]] std::optional<std::string> readFrikResourceString(WORD resourceId)
@@ -214,6 +231,15 @@ namespace rock::frik_weapon_offset_cache
                 }
             }
             return loadedCount;
+        }
+
+        [[nodiscard]] std::optional<RE::NiTransform> liveWeaponNodeDefaultOffset()
+        {
+            auto* weaponNode = f4vr::getWeaponNode();
+            if (!weaponNode || !isFiniteNiTransform(weaponNode->local)) {
+                return std::nullopt;
+            }
+            return weaponNode->local;
         }
 
         [[nodiscard]] std::string firstChildNameOfPGrip(const RE::NiAVObject* weaponRoot)
@@ -346,6 +372,11 @@ namespace rock::frik_weapon_offset_cache
         }
         if (lookup.found) {
             return lookup;
+        }
+
+        const auto defaultOffset = liveWeaponNodeDefaultOffset();
+        if (defaultOffset) {
+            return LookupResult{ .found = true, .offset = *defaultOffset, .reason = "defaultWeaponNodeLocal" };
         }
         return lookup;
     }

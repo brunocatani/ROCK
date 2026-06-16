@@ -48,8 +48,6 @@ namespace rock
         bool hasSelectionScore = false;
         bool hasHmdConeDot = false;
         bool pinchCloseSelectionFallback = false;
-        // Synthetic force-grab selections should keep loose-weapon behavior without bypassing ROCK's normal mesh/finger capture.
-        bool suppressLooseWeaponPrimaryAttach = false;
         actor_equipment_grab::ActorEquipmentSelection actorEquipment{};
 
         void clear()
@@ -76,7 +74,6 @@ namespace rock
             hasSelectionScore = false;
             hasHmdConeDot = false;
             pinchCloseSelectionFallback = false;
-            suppressLooseWeaponPrimaryAttach = false;
             actorEquipment = {};
         }
 

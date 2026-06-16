@@ -1168,7 +1168,6 @@ namespace rock
         selection.isFarSelection = false;
         selection.hasHitPoint = true;
         selection.hasHitNormal = true;
-        selection.suppressLooseWeaponPrimaryAttach = true;
 
         if (!selection.isValid()) {
             return false;
