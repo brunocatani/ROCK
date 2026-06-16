@@ -2748,8 +2748,14 @@ namespace rock
                     drivenSourceNodes);
             }
 
-            const EquippedWeaponFiringGripReference firingGripReference =
-                resolveCachedEquippedWeaponFiringGripReference(currentEquippedWeaponForm(), weaponNode, currentWeaponGenerationKey);
+            EquippedWeaponFiringGripReference firingGripReference{};
+            if (_twoHandedGrip.isPrimaryDetached()) {
+                firingGripReference = resolveCachedEquippedWeaponFiringGripReference(currentEquippedWeaponForm(), weaponNode, currentWeaponGenerationKey);
+            } else {
+                // FRIK offset lookup walks live weapon nodes; avoid it during ordinary equip/handoff frames.
+                _equippedWeaponFiringGripReferenceCache = {};
+                firingGripReference.reason = "primary-attached";
+            }
             _twoHandedGrip.update(
                 weaponNode,
                 leftWeaponContact,
