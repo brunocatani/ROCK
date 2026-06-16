@@ -6994,6 +6994,7 @@ namespace rock
         const bool joiningPeerHeldObject = sharedContextMatchesSelection(sharedContext, sel);
         const bool grabbedFromPullCatch = pullCatchIntentMatchesSelection();
         const bool looseWeaponGrab = isLooseWeaponGrabTarget(sel);
+        const bool looseWeaponPrimaryAttachAllowed = looseWeaponGrab && !sel.suppressLooseWeaponPrimaryAttach;
         const bool handPocketOnlyGrab = grab_target::requiresHandPocketGrab(sel.targetKind);
 
         auto objectBodyId = sel.bodyId;
@@ -9241,7 +9242,7 @@ namespace rock
                         grabGripPoint);
                     desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
                     const auto looseWeaponPrimaryAttachFrame = resolveLooseWeaponPrimaryAttachFrame(
-                        looseWeaponGrab,
+                        looseWeaponPrimaryAttachAllowed,
                         _isLeft,
                         sel,
                         rootNode,

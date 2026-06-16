@@ -197,9 +197,21 @@ namespace rock
         void updateGrabInput(const PhysicsFrameContext& frame);
         void processProviderInteractionCommands(const PhysicsFrameContext& frame);
         void servicePendingLooseGrenadeEquip(const PhysicsFrameContext& frame);
+        void servicePendingProviderForceGrabCommands(const PhysicsFrameContext& frame);
         bool armHeldLooseGrenade(Hand& hand, const PhysicsFrameContext& frame);
         void updateLooseGrenadeFuses(const PhysicsFrameContext& frame);
         void clearLooseGrenadeRuntimeState();
+        void clearPendingProviderForceGrabCommands(::rock::provider::RockProviderInteractionFailureV1 failure);
+        bool tryCommitForceGrabToHand(
+            Hand& hand,
+            bool isLeft,
+            const PhysicsFrameContext& frame,
+            RE::TESObjectREFR* targetRef,
+            const RE::NiPoint3& sourcePoint,
+            std::uint32_t preferredBodyId,
+            float maxDistanceGame,
+            const char* reason,
+            std::uint32_t& outPrimaryBodyId);
 
         std::size_t applyProviderWeaponPartDrives(
             RE::NiNode* weaponNode,
@@ -375,6 +387,14 @@ namespace rock
             float elapsedSeconds{ 0.0f };
         };
         float _pendingLooseGrenadeEquipWaitSeconds{ 0.0f };
+        struct PendingProviderForceGrabState
+        {
+            bool active{ false };
+            ::rock::provider::RockProviderForceGrabRequestV1 request{};
+            ::rock::provider::RockProviderInteractionCommandResultV1 result{};
+            float elapsedSeconds{ 0.0f };
+        };
+        std::array<PendingProviderForceGrabState, 2> _pendingProviderForceGrabs{};
         struct ArmedLooseGrenadeFuseState
         {
             bool active{ false };

@@ -104,6 +104,7 @@ namespace rock
         bool rockVisualOnlySidearmSupportGripEnabled = true;
         bool rockRealisticWeaponHandlingEnabled = false;
         bool rockRealisticGrenadesEnabled = false;
+        float rockRealisticGrenadeFuseSeconds = 5.0f;
         bool rockGrabbedWeaponAutoEquipEnabled = false;
         float rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
         bool rockWeaponSupportGripHandLerpEnabled = true;

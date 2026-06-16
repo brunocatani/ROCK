@@ -187,6 +187,7 @@ namespace rock
         rockVisualOnlySidearmSupportGripEnabled = true;
         rockRealisticWeaponHandlingEnabled = false;
         rockRealisticGrenadesEnabled = false;
+        rockRealisticGrenadeFuseSeconds = 5.0f;
         rockGrabbedWeaponAutoEquipEnabled = false;
         rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
         rockWeaponSupportGripHandLerpEnabled = true;
@@ -759,6 +760,13 @@ namespace rock
             REALISTIC_WEAPONS_SECTION,
             "bRealisticGrenadesEnabled",
             rockRealisticGrenadesEnabled);
+        rockRealisticGrenadeFuseSeconds = readClampedFloat(ini,
+            REALISTIC_WEAPONS_SECTION,
+            "fRealisticGrenadeFuseSeconds",
+            rockRealisticGrenadeFuseSeconds,
+            5.0f,
+            0.0f,
+            30.0f);
         rockGrabbedWeaponAutoEquipEnabled = ini.GetBoolValue(
             REALISTIC_WEAPONS_SECTION,
             "bGrabbedWeaponAutoEquipEnabled",
