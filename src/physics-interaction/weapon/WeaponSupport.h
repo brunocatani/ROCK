@@ -465,12 +465,10 @@ namespace rock::weapon_two_handed_grip_math
         bool primaryHandDetached,
         bool detachedPrimarySupportGripActive)
     {
-        if (detachedPrimarySupportGripActive) {
-            return true;
-        }
+        (void)detachedPrimarySupportGripActive;
 
         if (primaryHandDetached) {
-            return !rightHandWeaponVisible && generatedWeaponCollisionActive;
+            return false;
         }
 
         return rightHandWeaponVisible || generatedWeaponCollisionActive;

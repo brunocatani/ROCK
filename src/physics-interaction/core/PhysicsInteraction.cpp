@@ -958,6 +958,22 @@ namespace rock
                    std::abs(transform.scale) > 0.0001f;
         }
 
+        bool tryResolveTrackedHandWorld(bool isLeft, RE::NiTransform& outTransform)
+        {
+            outTransform = {};
+            if (!RE::PlayerCharacter::GetSingleton()) {
+                return false;
+            }
+
+            const auto* node = isLeft ? f4vr::getLeftHandNode() : f4vr::getRightHandNode();
+            if (!node || !finiteNiTransform(node->world)) {
+                return false;
+            }
+
+            outTransform = node->world;
+            return true;
+        }
+
         std::string_view providerFixedStringView(const char* value, std::size_t capacity)
         {
             if (!value) {
@@ -2519,6 +2535,8 @@ namespace rock
             WeaponInteractionContact leftWeaponContact{};
             WeaponInteractionContact rightWeaponContact{};
             auto leftWeaponContactSource = weapon_debug_notification_policy::WeaponContactSource::None;
+            RE::NiTransform rightTrackedHandWorld{};
+            const bool hasRightTrackedHandWorld = tryResolveTrackedHandWorld(false, rightTrackedHandWorld);
 
             auto publishWeaponProbeContact = [&](bool isLeft, WeaponInteractionContact& contact) {
                 auto& partKind = isLeft ? _leftWeaponContactPartKind : _rightWeaponContactPartKind;
@@ -2653,8 +2671,26 @@ namespace rock
                 }
             }
             EquippedWeaponPrimaryGripInput primaryGripInput{};
+            primaryGripInput.handWorld = frame.right.rawHandWorld;
+            primaryGripInput.hasHandWorld = !frame.right.disabled;
+            // Firing-grip reattach must use physical controller authority, not the weapon-posed hand skeleton.
+            primaryGripInput.firingGripProbeWorld = hasRightTrackedHandWorld ? rightTrackedHandWorld.translate : RE::NiPoint3{};
+            primaryGripInput.hasFiringGripProbeWorld = hasRightTrackedHandWorld;
+            primaryGripInput.handHoldingObject = _rightHand.isHolding();
             GrabButtonState primaryGrabState{};
             bool primaryGrabStateRead = false;
+            auto makePrimaryGripInput = [&](const GrabButtonState& primaryState) {
+                EquippedWeaponPrimaryGripInput input{};
+                input.held = primaryState.held;
+                input.pressed = primaryState.pressed;
+                input.released = primaryState.released;
+                input.handWorld = frame.right.rawHandWorld;
+                input.hasHandWorld = !frame.right.disabled;
+                input.firingGripProbeWorld = hasRightTrackedHandWorld ? rightTrackedHandWorld.translate : RE::NiPoint3{};
+                input.hasFiringGripProbeWorld = hasRightTrackedHandWorld;
+                input.handHoldingObject = _rightHand.isHolding();
+                return input;
+            };
             const bool preservePrimaryGrabEdgeForNormalGrab =
                 _twoHandedGrip.isPrimaryDetached() && !_twoHandedGrip.isDetachedPrimarySupportGripActive();
             auto readPrimaryGrabState = [&]() -> const GrabButtonState& {
@@ -2696,11 +2732,7 @@ namespace rock
             if (input_remap_policy::shouldConsumeEquippedWeaponPrimaryDetachInput(primaryDetachInputGate)) {
                 const auto& primaryState = readPrimaryGrabState();
                 if (input_remap_policy::shouldUseEquippedWeaponPrimaryDetachInput(primaryDetachInputGate)) {
-                    primaryGripInput = EquippedWeaponPrimaryGripInput{
-                        .held = primaryState.held,
-                        .pressed = primaryState.pressed,
-                        .released = primaryState.released,
-                    };
+                    primaryGripInput = makePrimaryGripInput(primaryState);
                 }
             }
 
@@ -2719,11 +2751,7 @@ namespace rock
                 if (primaryOnlyStartRequested && _twoHandedGrip.beginPrimaryOnlyGrip(weaponNode, currentWeaponGenerationKey)) {
                     primaryOnlyGripStartedThisFrame = true;
                     _pendingEquippedWeaponPrimaryOnlyGripStart = false;
-                    primaryGripInput = EquippedWeaponPrimaryGripInput{
-                        .held = primaryState.held,
-                        .pressed = primaryState.pressed,
-                        .released = primaryState.released,
-                    };
+                    primaryGripInput = makePrimaryGripInput(primaryState);
                 }
             } else if (inputBlockingMenuActive || primaryGrabDeferredForVirtualHolsters) {
                 _pendingEquippedWeaponPrimaryOnlyGripStart = false;

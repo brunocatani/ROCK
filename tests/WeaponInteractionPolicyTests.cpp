@@ -83,8 +83,8 @@ int main()
     ok &= expectFalse("primary firing grip cannot reattach outside strict radius", canReattachPrimaryFiringGrip(2.01f));
     ok &= expectTrue("attached visible weapon owns right-hand collision", rightHandDominantWeaponCollisionOwnsHand(true, true, false, false));
     ok &= expectFalse("free detached primary releases visible weapon collision ownership", rightHandDominantWeaponCollisionOwnsHand(true, true, true, false));
-    ok &= expectTrue("detached primary manipulation owns right-hand collision", rightHandDominantWeaponCollisionOwnsHand(true, true, true, true));
-    ok &= expectTrue("retained generated weapon bodies own right-hand collision without visible weapon", rightHandDominantWeaponCollisionOwnsHand(false, true, true, false));
+    ok &= expectFalse("detached primary manipulation keeps right-hand collision available", rightHandDominantWeaponCollisionOwnsHand(true, true, true, true));
+    ok &= expectFalse("free detached primary keeps right-hand collision available across retained generated bodies", rightHandDominantWeaponCollisionOwnsHand(false, true, true, false));
     ok &= expectTrue("full two-handed support still owns weapon transform",
         rock::weapon_support_authority_policy::supportGripOwnsWeaponTransform(rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
     ok &= expectTrue("full two-handed support applies primary hand authority while active",

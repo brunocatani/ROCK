@@ -39,6 +39,11 @@ namespace rock
         bool held{ false };
         bool pressed{ false };
         bool released{ false };
+        RE::NiTransform handWorld{};
+        bool hasHandWorld{ false };
+        RE::NiPoint3 firingGripProbeWorld{};
+        bool hasFiringGripProbeWorld{ false };
+        bool handHoldingObject{ false };
     };
 
     struct EquippedWeaponFiringGripReference
@@ -183,17 +188,19 @@ namespace rock
 
         bool tryReattachPrimaryGrip(
             RE::NiNode* weaponNode,
+            const EquippedWeaponPrimaryGripInput& primaryGripInput,
             const EquippedWeaponFiringGripReference& firingGripReference);
 
-        bool primaryGripContactMatchesCapturedGrip(
+        bool primaryGripContactMatchesFiringGrip(
             RE::NiNode* weaponNode,
-            const RE::NiTransform& primaryTransform,
+            const RE::NiPoint3& primaryProbeWorld,
             const EquippedWeaponFiringGripReference& firingGripReference) const;
 
         bool tryStartDetachedPrimarySupportGrip(
             RE::NiNode* weaponNode,
             const WeaponInteractionContact& rightWeaponContact,
             const WeaponCollision& weaponCollision,
+            const EquippedWeaponPrimaryGripInput& primaryGripInput,
             const WeaponInteractionRuntimeState& detachedPrimaryRuntimeState);
 
         void clearDetachedPrimarySupportGrip();
