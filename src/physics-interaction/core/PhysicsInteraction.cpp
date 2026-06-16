@@ -142,12 +142,6 @@ namespace rock
 
         WeaponCollisionWorkbenchExitMenuSink s_weaponCollisionWorkbenchExitMenuSink;
 
-        [[nodiscard]] bool handOwnsHeldTriggerInput(const Hand& hand)
-        {
-            return hand.isHoldingLooseWeapon() ||
-                   (g_rockConfig.rockRealisticGrenadesEnabled && loose_grenade_runtime::isGrenadeRef(hand.getHeldRef()));
-        }
-
         bool ensureWeaponCollisionWorkbenchExitMenuSinkRegistered()
         {
             bool expected = false;
@@ -2024,7 +2018,6 @@ namespace rock
         _grabInputIntentStates = {};
         _peerHeldJoinRetryStates = {};
         _heldWeaponAutoEquipStates = {};
-        clearPendingProviderForceGrabCommands(provider::RockProviderInteractionFailureV1::ProviderNotReady);
         clearLooseGrenadeRuntimeState();
         _pendingEquippedWeaponPrimaryOnlyGripStart = false;
         clearEquippedWeaponPostDropCollisionSuppressionState();
@@ -3457,7 +3450,6 @@ namespace rock
         debug::ClearFrame();
         _twoHandedGrip.reset();
         _pendingEquippedWeaponPrimaryOnlyGripStart = false;
-        clearPendingProviderForceGrabCommands(provider::RockProviderInteractionFailureV1::ProviderNotReady);
         clearLooseGrenadeRuntimeState();
         clearEquippedWeaponPrimaryInputState();
         _softContactRuntime.reset();
@@ -3510,7 +3502,6 @@ namespace rock
         _grabInputIntentStates = {};
         _peerHeldJoinRetryStates = {};
         _heldWeaponAutoEquipStates = {};
-        clearPendingProviderForceGrabCommands(provider::RockProviderInteractionFailureV1::ProviderNotReady);
         clearLooseGrenadeRuntimeState();
         _bodyBoneColliderCreateRetryFrames = 0;
         _handColliderCreateRetryFrames = 0;
@@ -4532,217 +4523,13 @@ namespace rock
     void PhysicsInteraction::clearLooseGrenadeRuntimeState()
     {
         _pendingLooseGrenadeGrab = {};
-        _pendingLooseGrenadeEquipWaitSeconds = 0.0f;
         _armedLooseGrenadeFuses = {};
-        loose_grenade_runtime::clearPendingEquipRequests();
-    }
-
-    void PhysicsInteraction::clearPendingProviderForceGrabCommands(provider::RockProviderInteractionFailureV1 failure)
-    {
-        for (auto& pending : _pendingProviderForceGrabs) {
-            if (!pending.active) {
-                continue;
-            }
-            pending.result.state = provider::RockProviderInteractionCommandStateV1::Cancelled;
-            pending.result.failure = failure;
-            provider::completeInteractionCommandV1(pending.result);
-            pending = {};
-        }
-    }
-
-    bool PhysicsInteraction::tryCommitForceGrabToHand(
-        Hand& hand,
-        bool isLeft,
-        const PhysicsFrameContext& frame,
-        RE::TESObjectREFR* targetRef,
-        const RE::NiPoint3& sourcePoint,
-        std::uint32_t preferredBodyId,
-        float maxDistanceGame,
-        const char* reason,
-        std::uint32_t& outPrimaryBodyId)
-    {
-        outPrimaryBodyId = INVALID_BODY_ID;
-        if (!targetRef || !frame.hknpWorld) {
-            return false;
-        }
-
-        if (!hand.acquireForceGrabLooseSelection(
-                frame.bhkWorld,
-                frame.hknpWorld,
-                targetRef,
-                sourcePoint,
-                preferredBodyId,
-                maxDistanceGame)) {
-            return false;
-        }
-
-        const auto& handInput = isLeft ? frame.left : frame.right;
-        const auto sharedContext = makeGrabSharedObjectContext(hand, isLeft);
-        _softContactRuntime.clearHandForStrongerOwner(isLeft, reason ? reason : "provider-force-grab");
-        const bool grabbed = hand.grabSelectedObject(frame.hknpWorld,
-            handInput.rawHandWorld,
-            g_rockConfig.rockGrabLinearTau,
-            g_rockConfig.rockGrabLinearDamping,
-            g_rockConfig.rockGrabConstraintMaxForce,
-            g_rockConfig.rockGrabLinearProportionalRecovery,
-            g_rockConfig.rockGrabLinearConstantRecovery,
-            &_bodyBoneColliders,
-            sharedContext);
-        if (!grabbed) {
-            hand.clearSelectionState(false);
-            return false;
-        }
-
-        auto* heldRef = hand.getHeldRef();
-        outPrimaryBodyId = hand.getSavedObjectState().bodyId.value;
-        claimObject(heldRef, claimOwnerForHand(isLeft));
-        dispatchPhysicsMessage(kPhysMsg_OnGrab, isLeft, heldRef, heldRef ? heldRef->GetFormID() : 0, 0);
-        dispatchGrabCommittedEvent(isLeft, heldRef, outPrimaryBodyId, frame.hknpWorld);
-        if (!isLeft) {
-            input_remap_runtime::setRightHandHeldWeapon(handOwnsHeldTriggerInput(_rightHand));
-        }
-        return true;
-    }
-
-    void PhysicsInteraction::servicePendingProviderForceGrabCommands(const PhysicsFrameContext& frame)
-    {
-        constexpr float kPendingProviderForceGrabMinSettleSeconds = 0.12f;
-        constexpr float kPendingProviderForceGrabMaxSeconds = 2.0f;
-
-        auto complete = [&](PendingProviderForceGrabState& pending,
-                            provider::RockProviderInteractionCommandStateV1 state,
-                            provider::RockProviderInteractionFailureV1 failure) {
-            pending.result.state = state;
-            pending.result.failure = failure;
-            pending.result.frameIndex = _palmClockGameFrameIndex.load(std::memory_order_acquire);
-            pending.result.worldGeneration = _worldGenerationAtomic.load(std::memory_order_acquire);
-            pending.result.skeletonGeneration = _skeletonGenerationAtomic.load(std::memory_order_acquire);
-            pending.result.providerGeneration = _providerGenerationAtomic.load(std::memory_order_acquire);
-            provider::completeInteractionCommandV1(pending.result);
-            pending = {};
-        };
-
-        for (std::size_t index = 0; index < _pendingProviderForceGrabs.size(); ++index) {
-            auto& pending = _pendingProviderForceGrabs[index];
-            if (!pending.active) {
-                continue;
-            }
-
-            pending.elapsedSeconds += (std::max)(0.0f, frame.deltaSeconds);
-            const bool isLeft = index == 1;
-            Hand& hand = isLeft ? _leftHand : _rightHand;
-            const auto& handInput = isLeft ? frame.left : frame.right;
-
-            if (!frame.worldReady || !frame.bhkWorld || !frame.hknpWorld) {
-                complete(pending, provider::RockProviderInteractionCommandStateV1::Rejected, provider::RockProviderInteractionFailureV1::ProviderNotReady);
-                continue;
-            }
-            if (!physicsWritesAllowedForWorld(frame.hknpWorld)) {
-                complete(pending, provider::RockProviderInteractionCommandStateV1::Rejected, provider::RockProviderInteractionFailureV1::PhysicsWritesBlocked);
-                continue;
-            }
-            if (handInput.disabled) {
-                complete(pending, provider::RockProviderInteractionCommandStateV1::Rejected, provider::RockProviderInteractionFailureV1::HandDisabled);
-                continue;
-            }
-
-            const auto currentWorldGeneration = _worldGenerationAtomic.load(std::memory_order_acquire);
-            const auto currentSkeletonGeneration = _skeletonGenerationAtomic.load(std::memory_order_acquire);
-            const auto currentProviderGeneration = _providerGenerationAtomic.load(std::memory_order_acquire);
-            if (pending.request.worldGeneration != 0 && pending.request.worldGeneration != currentWorldGeneration) {
-                complete(pending, provider::RockProviderInteractionCommandStateV1::Rejected, provider::RockProviderInteractionFailureV1::StaleWorldGeneration);
-                continue;
-            }
-            if (pending.request.skeletonGeneration != 0 && pending.request.skeletonGeneration != currentSkeletonGeneration) {
-                complete(pending, provider::RockProviderInteractionCommandStateV1::Rejected, provider::RockProviderInteractionFailureV1::StaleSkeletonGeneration);
-                continue;
-            }
-            if (pending.request.providerGeneration != 0 && pending.request.providerGeneration != currentProviderGeneration) {
-                complete(pending, provider::RockProviderInteractionCommandStateV1::Rejected, provider::RockProviderInteractionFailureV1::StaleProviderGeneration);
-                continue;
-            }
-
-            const bool handBusy = hand.isHolding() || hand.hasActivePullCatchIntent() || hand.hasPendingActorEquipmentDropHandoff() ||
-                hand.getState() == HandState::SelectionLocked || hand.getState() == HandState::Pulled ||
-                !weapon_two_handed_grip_math::canProcessNormalGrabInput(
-                    isLeft,
-                    _twoHandedGrip.isGripping(),
-                    resolveEquippedWeaponInteractionNode() != nullptr,
-                    _twoHandedGrip.isPrimaryDetached());
-            if (handBusy) {
-                if (pending.elapsedSeconds >= kPendingProviderForceGrabMaxSeconds) {
-                    complete(pending, provider::RockProviderInteractionCommandStateV1::Rejected, provider::RockProviderInteractionFailureV1::HandBusy);
-                }
-                continue;
-            }
-
-            auto* targetRef = RE::TESForm::GetFormByID<RE::TESObjectREFR>(pending.request.targetFormId);
-            if (!targetRef) {
-                if (pending.elapsedSeconds >= kPendingProviderForceGrabMaxSeconds) {
-                    complete(pending, provider::RockProviderInteractionCommandStateV1::Rejected, provider::RockProviderInteractionFailureV1::TargetMissing);
-                }
-                continue;
-            }
-            if ((pending.request.targetRefr != 0 && reinterpret_cast<std::uintptr_t>(targetRef) != pending.request.targetRefr) ||
-                targetRef->IsDeleted() ||
-                targetRef->IsDisabled()) {
-                if (pending.elapsedSeconds >= kPendingProviderForceGrabMaxSeconds) {
-                    complete(pending, provider::RockProviderInteractionCommandStateV1::Rejected, provider::RockProviderInteractionFailureV1::TargetUnavailable);
-                }
-                continue;
-            }
-            if (physicsModOwnsObject(targetRef)) {
-                complete(pending, provider::RockProviderInteractionCommandStateV1::Rejected, provider::RockProviderInteractionFailureV1::TargetAlreadyOwned);
-                continue;
-            }
-            if (pending.elapsedSeconds < kPendingProviderForceGrabMinSettleSeconds) {
-                continue;
-            }
-
-            RE::NiPoint3 sourcePoint = handInput.hasPinchPocketWorld ? handInput.pinchPocketWorld : handInput.grabAnchorWorld;
-            if ((pending.request.flags & static_cast<std::uint32_t>(provider::RockProviderForceGrabFlagV1::UsePreferredGrabPointGame)) != 0) {
-                sourcePoint = RE::NiPoint3{
-                    pending.request.preferredGrabPointGame[0],
-                    pending.request.preferredGrabPointGame[1],
-                    pending.request.preferredGrabPointGame[2],
-                };
-            }
-
-            std::uint32_t primaryBodyId = INVALID_BODY_ID;
-            if (tryCommitForceGrabToHand(hand,
-                    isLeft,
-                    frame,
-                    targetRef,
-                    sourcePoint,
-                    pending.request.targetBodyId,
-                    pending.request.maxDistanceGame,
-                    "provider-force-grab-deferred",
-                    primaryBodyId)) {
-                pending.result.targetRefr = reinterpret_cast<std::uintptr_t>(targetRef);
-                pending.result.targetFormId = targetRef->GetFormID();
-                pending.result.targetBodyId = primaryBodyId;
-                complete(pending, provider::RockProviderInteractionCommandStateV1::Succeeded, provider::RockProviderInteractionFailureV1::None);
-                continue;
-            }
-
-            if (pending.elapsedSeconds >= kPendingProviderForceGrabMaxSeconds) {
-                complete(pending, provider::RockProviderInteractionCommandStateV1::Rejected, provider::RockProviderInteractionFailureV1::TargetBodyMissing);
-            }
-        }
     }
 
     void PhysicsInteraction::servicePendingLooseGrenadeEquip(const PhysicsFrameContext& frame)
     {
-        constexpr float kPendingLooseGrenadeForceGrabMinSettleSeconds = 0.12f;
         constexpr float kPendingLooseGrenadeGrabMaxSeconds = 1.5f;
         constexpr float kPendingLooseGrenadeForceGrabMaxDistanceGame = 96.0f;
-
-        if (!g_rockConfig.rockRealisticGrenadesEnabled) {
-            _pendingLooseGrenadeGrab = {};
-            _pendingLooseGrenadeEquipWaitSeconds = 0.0f;
-            loose_grenade_runtime::clearPendingEquipRequests();
-            return;
-        }
 
         if (!frame.worldReady || !frame.bhkWorld || !frame.hknpWorld) {
             return;
@@ -4766,28 +4553,15 @@ namespace rock
         if (!_pendingLooseGrenadeGrab.active) {
             loose_grenade_runtime::PendingEquipRequest request{};
             if (!loose_grenade_runtime::copyOldestPendingEquipRequest(request)) {
-                _pendingLooseGrenadeEquipWaitSeconds = 0.0f;
                 return;
             }
             if (!rightHandAvailable()) {
-                _pendingLooseGrenadeEquipWaitSeconds += (std::max)(0.0f, frame.deltaSeconds);
-                if (_pendingLooseGrenadeEquipWaitSeconds >= kPendingLooseGrenadeGrabMaxSeconds) {
-                    ROCK_LOG_WARN(Hand,
-                        "Loose grenade menu drop abandoned because right hand stayed busy: weapon={:08X} request={} stack={}",
-                        request.weapon ? request.weapon->GetFormID() : 0,
-                        request.requestId,
-                        request.stackId);
-                    loose_grenade_runtime::discardPendingEquipRequest(request.requestId);
-                    _pendingLooseGrenadeEquipWaitSeconds = 0.0f;
-                }
                 return;
             }
-            _pendingLooseGrenadeEquipWaitSeconds = 0.0f;
 
-            const RE::NiPoint3 dropLocation = frame.right.hasPinchPocketWorld ? frame.right.pinchPocketWorld : frame.right.grabAnchorWorld;
             const auto dropResult = loose_grenade_runtime::dropPendingEquipRequestToWorld(
                 request,
-                dropLocation,
+                frame.right.grabAnchorWorld,
                 nullptr);
             loose_grenade_runtime::discardPendingEquipRequest(request.requestId);
             if (!dropResult.success) {
@@ -4840,24 +4614,16 @@ namespace rock
             return;
         }
 
-        if (_pendingLooseGrenadeGrab.elapsedSeconds < kPendingLooseGrenadeForceGrabMinSettleSeconds) {
-            return;
-        }
-
-        const RE::NiPoint3 sourcePoint = frame.right.hasPinchPocketWorld ? frame.right.pinchPocketWorld : frame.right.grabAnchorWorld;
-        std::uint32_t primaryBodyId = INVALID_BODY_ID;
-        if (!tryCommitForceGrabToHand(_rightHand,
-                false,
-                frame,
+        if (!_rightHand.acquireForceGrabLooseSelection(
+                frame.bhkWorld,
+                frame.hknpWorld,
                 droppedRef,
-                sourcePoint,
+                frame.right.grabAnchorWorld,
                 INVALID_BODY_ID,
-                kPendingLooseGrenadeForceGrabMaxDistanceGame,
-                "loose-grenade-menu-force-grab",
-                primaryBodyId)) {
+                kPendingLooseGrenadeForceGrabMaxDistanceGame)) {
             if (_pendingLooseGrenadeGrab.elapsedSeconds >= kPendingLooseGrenadeGrabMaxSeconds) {
                 ROCK_LOG_WARN(Hand,
-                    "Loose grenade pending force-grab timed out committing normal close grab: ref={:08X} request={}",
+                    "Loose grenade pending force-grab timed out resolving physics body: ref={:08X} request={}",
                     droppedRef->GetFormID(),
                     _pendingLooseGrenadeGrab.requestId);
                 _pendingLooseGrenadeGrab = {};
@@ -4865,6 +4631,34 @@ namespace rock
             return;
         }
 
+        const auto sharedContext = makeGrabSharedObjectContext(_rightHand, false);
+        _softContactRuntime.clearHandForStrongerOwner(false, "loose-grenade-menu-force-grab");
+        const bool grabbed = _rightHand.grabSelectedObject(frame.hknpWorld,
+            frame.right.rawHandWorld,
+            g_rockConfig.rockGrabLinearTau,
+            g_rockConfig.rockGrabLinearDamping,
+            g_rockConfig.rockGrabConstraintMaxForce,
+            g_rockConfig.rockGrabLinearProportionalRecovery,
+            g_rockConfig.rockGrabLinearConstantRecovery,
+            &_bodyBoneColliders,
+            sharedContext);
+        if (!grabbed) {
+            _rightHand.clearSelectionState(false);
+            if (_pendingLooseGrenadeGrab.elapsedSeconds >= kPendingLooseGrenadeGrabMaxSeconds) {
+                ROCK_LOG_WARN(Hand,
+                    "Loose grenade pending force-grab timed out committing grab: ref={:08X} request={}",
+                    droppedRef->GetFormID(),
+                    _pendingLooseGrenadeGrab.requestId);
+                _pendingLooseGrenadeGrab = {};
+            }
+            return;
+        }
+
+        const std::uint32_t primaryBodyId = _rightHand.getSavedObjectState().bodyId.value;
+        claimObject(droppedRef, PhysicsObjectClaimOwner::RightHand);
+        dispatchPhysicsMessage(kPhysMsg_OnGrab, false, droppedRef, droppedRef->GetFormID(), 0);
+        dispatchGrabCommittedEvent(false, droppedRef, primaryBodyId, frame.hknpWorld);
+        input_remap_runtime::setRightHandHeldWeapon(_rightHand.isHoldingLooseWeapon());
         ROCK_LOG_INFO(Hand,
             "Loose grenade menu drop force-grabbed: ref={:08X} body={} request={}",
             droppedRef->GetFormID(),
@@ -4876,7 +4670,7 @@ namespace rock
     bool PhysicsInteraction::armHeldLooseGrenade(Hand& hand, const PhysicsFrameContext& frame)
     {
         auto* heldRef = hand.getHeldRef();
-        if (!g_rockConfig.rockRealisticGrenadesEnabled || !heldRef || !loose_grenade_runtime::isGrenadeRef(heldRef)) {
+        if (!heldRef || !loose_grenade_runtime::isGrenadeRef(heldRef)) {
             return false;
         }
 
@@ -4922,13 +4716,6 @@ namespace rock
                 runtime.explosion ? runtime.explosion->GetFormID() : 0,
                 runtime.fuseSeconds,
                 frame.deltaSeconds);
-            const bool feedbackPlayed = loose_grenade_runtime::playPinPulledFeedbackAtReference(heldRef, runtime);
-            ROCK_LOG_DEBUG(Hand,
-                "{} hand loose grenade pin-pull feedback: ref={:08X} sound={:08X} played={}",
-                hand.handName(),
-                heldRef->GetFormID(),
-                runtime.pinPulledSound ? runtime.pinPulledSound->GetFormID() : 0,
-                feedbackPlayed ? "yes" : "no");
             return true;
         }
 
@@ -5178,7 +4965,7 @@ namespace rock
                 hand.cancelStashCandidate();
                 hand.cancelConsumeCandidate();
                 if (!isLeft) {
-                    input_remap_runtime::setRightHandHeldWeapon(handOwnsHeldTriggerInput(_rightHand));
+                    input_remap_runtime::setRightHandHeldWeapon(_rightHand.isHoldingLooseWeapon());
                 }
             };
 
@@ -5296,39 +5083,82 @@ namespace rock
                 continue;
             }
 
-            auto& pendingForceGrab = _pendingProviderForceGrabs[isLeft ? 1u : 0u];
-            if (pendingForceGrab.active) {
-                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandBusy);
+            auto* targetRef = RE::TESForm::GetFormByID<RE::TESObjectREFR>(command.forceGrab.targetFormId);
+            if (!targetRef) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetMissing);
                 continue;
             }
-
-            auto* targetRef = RE::TESForm::GetFormByID<RE::TESObjectREFR>(command.forceGrab.targetFormId);
-            if (targetRef && command.forceGrab.targetRefr != 0 && reinterpret_cast<std::uintptr_t>(targetRef) != command.forceGrab.targetRefr) {
+            if (command.forceGrab.targetRefr != 0 && reinterpret_cast<std::uintptr_t>(targetRef) != command.forceGrab.targetRefr) {
                 complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
                 continue;
             }
-            if (targetRef && physicsModOwnsObject(targetRef)) {
+            result.targetRefr = reinterpret_cast<std::uintptr_t>(targetRef);
+            result.targetFormId = targetRef->GetFormID();
+            if (targetRef->IsDeleted() || targetRef->IsDisabled()) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
+                continue;
+            }
+            if (command.forceGrab.targetFormId != 0 && targetRef->GetFormID() != command.forceGrab.targetFormId) {
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
+                continue;
+            }
+            if (physicsModOwnsObject(targetRef)) {
                 complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetAlreadyOwned);
                 continue;
             }
 
-            if (targetRef) {
-                result.targetRefr = reinterpret_cast<std::uintptr_t>(targetRef);
-                result.targetFormId = targetRef->GetFormID();
+            RE::NiPoint3 sourcePoint = handInput.grabAnchorWorld;
+            if ((command.forceGrab.flags & static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame)) != 0) {
+                sourcePoint = RE::NiPoint3{
+                    command.forceGrab.preferredGrabPointGame[0],
+                    command.forceGrab.preferredGrabPointGame[1],
+                    command.forceGrab.preferredGrabPointGame[2],
+                };
             }
-            result.state = RockProviderInteractionCommandStateV1::Queued;
-            result.failure = RockProviderInteractionFailureV1::None;
-            pendingForceGrab = PendingProviderForceGrabState{
-                .active = true,
-                .request = command.forceGrab,
-                .result = result,
-            };
-            ROCK_LOG_DEBUG(Hand,
-                "Provider force-grab queued for deferred close-grab commit: hand={} target={:08X} preferredBody={} maxDistance={:.1f}",
-                isLeft ? "left" : "right",
-                command.forceGrab.targetFormId,
-                command.forceGrab.targetBodyId,
-                command.forceGrab.maxDistanceGame);
+
+            if (!hand.acquireForceGrabLooseSelection(
+                    frame.bhkWorld,
+                    frame.hknpWorld,
+                    targetRef,
+                    sourcePoint,
+                    command.forceGrab.targetBodyId,
+                    command.forceGrab.maxDistanceGame)) {
+                hand.clearSelectionState(false);
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetBodyMissing);
+                continue;
+            }
+
+            if (command.forceGrab.targetBodyId != INVALID_BODY_ID && hand.getSelection().bodyId.value != command.forceGrab.targetBodyId) {
+                result.targetBodyId = hand.getSelection().bodyId.value;
+                hand.clearSelectionState(false);
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetBodyMissing);
+                continue;
+            }
+
+            const auto sharedContext = makeGrabSharedObjectContext(hand, isLeft);
+            _softContactRuntime.clearHandForStrongerOwner(isLeft, "provider-force-grab");
+            const bool grabbed = hand.grabSelectedObject(frame.hknpWorld,
+                handInput.rawHandWorld,
+                g_rockConfig.rockGrabLinearTau,
+                g_rockConfig.rockGrabLinearDamping,
+                g_rockConfig.rockGrabConstraintMaxForce,
+                g_rockConfig.rockGrabLinearProportionalRecovery,
+                g_rockConfig.rockGrabLinearConstantRecovery,
+                &_bodyBoneColliders,
+                sharedContext);
+            if (!grabbed) {
+                hand.clearSelectionState(false);
+                complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::TargetUnavailable);
+                continue;
+            }
+
+            auto* heldRef = hand.getHeldRef();
+            const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
+            result.targetBodyId = primaryBodyId;
+            claimObject(heldRef, claimOwnerForHand(isLeft));
+            dispatchPhysicsMessage(kPhysMsg_OnGrab, isLeft, heldRef, heldRef ? heldRef->GetFormID() : 0, 0);
+            dispatchGrabCommittedEvent(isLeft, heldRef, primaryBodyId, frame.hknpWorld);
+            complete(RockProviderInteractionCommandStateV1::Succeeded, RockProviderInteractionFailureV1::None);
         }
     }
 
@@ -5918,7 +5748,6 @@ namespace rock
 
         if (!runtime_state::isLocalSkeletonReady()) {
             provider::clearInteractionCommandsForProviderLossV1(provider::RockProviderInteractionFailureV1::ProviderNotReady);
-            clearPendingProviderForceGrabCommands(provider::RockProviderInteractionFailureV1::ProviderNotReady);
             input_remap_runtime::setRightHandHeldWeapon(false);
             input_remap_runtime::setEquippedWeaponPrimaryDetachInputActive(false);
             input_remap_runtime::setEquippedWeaponPrimaryDetached(false);
@@ -5933,12 +5762,11 @@ namespace rock
         const bool rightHandWeaponEquipped = resolveEquippedWeaponInteractionNode() != nullptr;
         const bool equippedWeaponSupportGripActive = _twoHandedGrip.isGripping();
         const auto farHmdConeGate = makeFarSelectionHmdConeGate(frame);
-        input_remap_runtime::setRightHandHeldWeapon(handOwnsHeldTriggerInput(_rightHand));
+        input_remap_runtime::setRightHandHeldWeapon(_rightHand.isHoldingLooseWeapon());
         processProviderInteractionCommands(frame);
-        servicePendingProviderForceGrabCommands(frame);
         servicePendingLooseGrenadeEquip(frame);
         updateLooseGrenadeFuses(frame);
-        input_remap_runtime::setRightHandHeldWeapon(handOwnsHeldTriggerInput(_rightHand));
+        input_remap_runtime::setRightHandHeldWeapon(_rightHand.isHoldingLooseWeapon());
 
         auto releaseSuppressedHeldObject = [&](Hand& hand, bool isLeft, const char* reason) {
             auto* heldRef = hand.getHeldRef();
@@ -6463,7 +6291,7 @@ namespace rock
                 _softContactRuntime.clearHandForStrongerOwner(isLeft, "held-object");
                 const Hand& peer = isLeft ? _rightHand : _leftHand;
                 auto* heldRefForGameplay = hand.getHeldRef();
-                const bool heldLooseGrenade = g_rockConfig.rockRealisticGrenadesEnabled && loose_grenade_runtime::isGrenadeRef(heldRefForGameplay);
+                const bool heldLooseGrenade = loose_grenade_runtime::isGrenadeRef(heldRefForGameplay);
                 const bool peerHoldingSameObject =
                     heldRefForGameplay && peer.isHolding() && peer.getHeldRef() == heldRefForGameplay;
                 const bool heldWeaponAutoEquipSettled = !heldLooseGrenade && [&]() {
@@ -6495,24 +6323,17 @@ namespace rock
                     autoEquipState.settledSeconds += (std::max)(0.0f, frame.deltaSeconds);
                     return autoEquipState.settledSeconds >= g_rockConfig.rockGrabbedWeaponAutoEquipSettleSeconds;
                 }();
-                const bool heldWeaponTriggerEquipRequested =
-                    heldWeaponEquipTriggerPressed &&
-                    heldWeaponAtFrameStart &&
-                    hand.isHoldingLooseWeapon() &&
-                    !heldLooseGrenade &&
-                    !input_remap_runtime::isMenuInputActive();
-                const bool heldWeaponAutoEquipRequested = input_remap_policy::shouldRequestHeldWeaponEquip(input_remap_policy::HeldWeaponEquipInput{
+                const bool heldWeaponEquipRequested = input_remap_policy::shouldRequestHeldWeaponEquip(input_remap_policy::HeldWeaponEquipInput{
                     .remapEnabled = g_rockConfig.rockInputRemapEnabled,
                     .gameplayInputAllowed = true,
                     .menuInputActive = input_remap_runtime::isMenuInputActive(),
                     .heldWeaponAtFrameStart = heldWeaponAtFrameStart,
                     .heldWeaponNow = hand.isHoldingLooseWeapon(),
-                    .sameHandTriggerPressedEdge = false,
+                    .sameHandTriggerPressedEdge = heldWeaponEquipTriggerPressed,
                     .primaryHand = !isLeft,
                     .autoEquipEnabled = g_rockConfig.rockGrabbedWeaponAutoEquipEnabled,
                     .autoEquipSettled = heldWeaponAutoEquipSettled,
                 });
-                const bool heldWeaponEquipRequested = heldWeaponTriggerEquipRequested || heldWeaponAutoEquipRequested;
 
                 auto equipHeldWeaponFromHand = [&](const char* requestReason, const char* logAction) {
                     if (peerHoldingSameObject) {
@@ -6603,7 +6424,7 @@ namespace rock
                         static_cast<void>(armHeldLooseGrenade(hand, frame));
                     }
                 } else if (heldWeaponEquipRequested) {
-                    const bool triggeredByInput = heldWeaponTriggerEquipRequested;
+                    const bool triggeredByInput = heldWeaponEquipTriggerPressed;
                     if (equipHeldWeaponFromHand(
                             triggeredByInput ? "same-hand-trigger-held-weapon-equip" : "settled-auto-held-weapon-equip",
                             triggeredByInput ? "trigger" : "auto")) {

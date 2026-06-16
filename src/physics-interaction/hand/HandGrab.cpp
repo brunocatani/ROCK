@@ -13,7 +13,6 @@
 #include "physics-interaction/grab/GrabContact.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
-#include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
@@ -780,9 +779,6 @@ namespace rock
         bool isLooseWeaponGrabTarget(const SelectedObject& selection)
         {
             if (!selection.refr || !grab_target::canUseRockActiveGrab(selection.targetKind)) {
-                return false;
-            }
-            if (g_rockConfig.rockRealisticGrenadesEnabled && loose_grenade_runtime::isGrenadeRef(selection.refr)) {
                 return false;
             }
 
