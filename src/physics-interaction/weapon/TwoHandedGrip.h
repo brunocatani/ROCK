@@ -188,7 +188,10 @@ namespace rock
         bool tryReattachPrimaryGrip(
             RE::NiNode* weaponNode,
             const EquippedWeaponPrimaryGripInput& primaryGripInput,
+            const WeaponInteractionContact& rightWeaponContact,
             const EquippedWeaponFiringGripReference& firingGripReference);
+
+        bool primaryGripContactMatchesCanonicalGrip(const WeaponInteractionContact& rightWeaponContact) const;
 
         bool primaryGripContactMatchesFiringGrip(
             RE::NiNode* weaponNode,
