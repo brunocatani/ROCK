@@ -320,10 +320,38 @@ namespace rock::input_remap_runtime
             return callerModule == GetModuleHandleW(moduleName);
         }
 
+        [[nodiscard]] bool isModuleOnCurrentStack(const wchar_t* moduleName)
+        {
+            auto* targetModule = GetModuleHandleW(moduleName);
+            if (!targetModule) {
+                return false;
+            }
+
+            void* frames[16]{};
+            const auto frameCount = CaptureStackBackTrace(0, static_cast<DWORD>(sizeof(frames) / sizeof(frames[0])), frames, nullptr);
+            for (USHORT i = 0; i < frameCount; ++i) {
+                HMODULE frameModule = nullptr;
+                if (GetModuleHandleExW(
+                        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                        reinterpret_cast<LPCWSTR>(frames[i]),
+                        &frameModule) &&
+                    frameModule == targetModule) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         [[nodiscard]] bool shouldBypassProviderOpenVrGameInputSuppression(const void* callerAddress)
         {
-            // The configurator consumes raw controller input through ROCK while its lease masks game-facing state.
-            return isCallerModule(callerAddress, L"ROCKConfigurator.dll");
+            /*
+             * The configurator consumes raw controller input through ROCK while its lease masks game-facing state.
+             * Some helper paths call through framework/static-library frames before reaching OpenVR, so the immediate
+             * return address is not always enough to identify the configurator as the consumer.
+             */
+            return isCallerModule(callerAddress, L"ROCKConfigurator.dll") ||
+                   isModuleOnCurrentStack(L"ROCKConfigurator.dll");
         }
 
         void clearOpenVrControllerStateForGame(vr::VRControllerState_t* state, std::uint32_t stateSize)
