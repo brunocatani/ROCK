@@ -170,8 +170,7 @@ namespace rock
             RE::NiNode* weaponNode,
             float dt,
             const EquippedWeaponPrimaryGripInput& primaryGripInput,
-            const WeaponInteractionRuntimeState& detachedPrimaryRuntimeState,
-            const EquippedWeaponFiringGripReference& firingGripReference);
+            const WeaponInteractionRuntimeState& detachedPrimaryRuntimeState);
 
         void updateVisualOnlySupportGrip(RE::NiNode* weaponNode, float dt);
 
