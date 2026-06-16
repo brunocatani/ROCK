@@ -5,12 +5,9 @@
 #include "RockConfig.h"
 
 #include "RE/Bethesda/Actor.h"
-#include "RE/Bethesda/BSAudioManager.h"
 #include "RE/Bethesda/BGSInventoryItem.h"
 #include "RE/Bethesda/BSExtraData.h"
 #include "RE/Bethesda/BSLock.h"
-#include "RE/Bethesda/BSSoundHandle.h"
-#include "RE/Bethesda/FormComponents.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 #include "RE/Bethesda/TESDataHandler.h"
@@ -44,35 +41,14 @@ namespace rock::loose_grenade_runtime
             bool,
             bool,
             bool);
-        using CanPlayDescriptorAtReference_t = bool (*)(
-            RE::BGSSoundDescriptorForm*,
-            RE::TESObjectREFR*,
-            const RE::NiPoint3*);
-        using AudioDistanceFromListener_t = float (*)(RE::BSAudioManager*, const RE::NiPoint3*);
-        using InitDescriptorSoundHandle_t = bool (*)(
-            RE::BSAudioManager*,
-            RE::BSSoundHandle*,
-            RE::BSISoundDescriptor*,
-            float,
-            std::uint32_t,
-            RE::BSISoundDescriptor::ExtraResolutionData*);
-        using AttachSoundHandleTo3D_t = void (*)(RE::BSSoundHandle*, RE::NiAVObject*);
-        using PlaySoundHandle_t = bool (*)(RE::BSSoundHandle*);
 
         constexpr std::uintptr_t kFuncActorEquipManagerEquipObject = 0x0E6FEA0;
-        constexpr std::uintptr_t kFuncCanPlayDescriptorAtReference = 0x0CD4300;
-        constexpr std::uintptr_t kFuncAudioDistanceFromListener = 0x1B4F890;
-        constexpr std::uintptr_t kFuncInitDescriptorSoundHandle = 0x1B4CF50;
-        constexpr std::uintptr_t kFuncAttachSoundHandleTo3D = 0x1B4B0A0;
-        constexpr std::uintptr_t kFuncPlaySoundHandle = 0x1B4A9C0;
         constexpr std::size_t kPendingEquipCapacity = 4;
         constexpr DWORD kPageExecuteRead = 0x20u;
         constexpr DWORD kPageExecuteReadWrite = 0x40u;
         constexpr DWORD kVirtualMemoryCommitReserve = MEM_COMMIT | MEM_RESERVE;
         constexpr DWORD kVirtualMemoryRelease = MEM_RELEASE;
         constexpr std::uint32_t kInvalidStackId = 0xFFFF'FFFFu;
-        constexpr std::uint32_t kInvalidSoundId = 0xFFFF'FFFFu;
-        constexpr std::uint32_t kSoundUsagePlayAtReference = 0x10u;
         constexpr std::array<std::uint8_t, 17> kActorEquipManagerEquipObjectExpectedPrefix{
             0x4C, 0x8B, 0xDC,
             0x49, 0x89, 0x53, 0x10,
@@ -150,60 +126,16 @@ namespace rock::loose_grenade_runtime
             return nullptr;
         }
 
-        [[nodiscard]] bool playSoundDescriptorAtReference(RE::BGSSoundDescriptorForm* sound, RE::TESObjectREFR* ref)
+        [[nodiscard]] bool playObjectPickupSoundAtReference(RE::TESObjectREFR* ref)
         {
-            if (!sound || !ref) {
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            auto* object = ref ? ref->GetObjectReference() : nullptr;
+            if (!player || !object) {
                 return false;
             }
 
-            auto* object3D = ref->Get3D();
-            if (!object3D) {
-                return false;
-            }
-
-            // Mirrors FO4VR Sound.Play: descriptor form -> BSISoundDescriptor -> sound handle -> ref 3D -> play.
-            static REL::Relocation<CanPlayDescriptorAtReference_t> canPlay{
-                REL::Offset(kFuncCanPlayDescriptorAtReference)
-            };
-            if (!canPlay(sound, ref, nullptr)) {
-                return false;
-            }
-
-            auto* audioManager = RE::BSAudioManager::GetSingleton();
-            auto* descriptor = static_cast<RE::BSISoundDescriptor*>(sound);
-            if (!audioManager || !descriptor) {
-                return false;
-            }
-
-            static REL::Relocation<AudioDistanceFromListener_t> distanceFromListener{
-                REL::Offset(kFuncAudioDistanceFromListener)
-            };
-            static REL::Relocation<InitDescriptorSoundHandle_t> initDescriptorSoundHandle{
-                REL::Offset(kFuncInitDescriptorSoundHandle)
-            };
-            static REL::Relocation<AttachSoundHandleTo3D_t> attachSoundHandleTo3D{
-                REL::Offset(kFuncAttachSoundHandleTo3D)
-            };
-            static REL::Relocation<PlaySoundHandle_t> playSoundHandle{ REL::Offset(kFuncPlaySoundHandle) };
-
-            RE::BSSoundHandle handle{};
-            handle.soundID = kInvalidSoundId;
-            handle.assumeSuccess = false;
-            handle.state = 0;
-
-            const float distance = distanceFromListener(audioManager, &ref->data.location);
-            if (!initDescriptorSoundHandle(
-                    audioManager,
-                    &handle,
-                    descriptor,
-                    distance,
-                    kSoundUsagePlayAtReference,
-                    nullptr)) {
-                return false;
-            }
-
-            attachSoundHandleTo3D(&handle, object3D);
-            return playSoundHandle(&handle);
+            player->PlayPickUpSound(object, false, true);
+            return true;
         }
 
         [[nodiscard]] RE::BSTSmartPointer<RE::TBO_InstanceData> resolveReferenceInstanceData(RE::TESObjectREFR* ref) noexcept
@@ -509,7 +441,6 @@ namespace rock::loose_grenade_runtime
         outRuntime = GrenadeRuntimeData{
             .projectile = projectile,
             .explosion = projectile->data.explosionType,
-            .pinPulledSound = projectile->data.countdownSound,
             .fuseSeconds = fuseSeconds,
         };
         return true;
@@ -633,9 +564,9 @@ namespace rock::loose_grenade_runtime
         return handle.get() != nullptr;
     }
 
-    bool playPinPulledFeedbackAtReference(RE::TESObjectREFR* ref, const GrenadeRuntimeData& runtime)
+    bool playPinPulledFeedbackAtReference(RE::TESObjectREFR* ref)
     {
-        return playSoundDescriptorAtReference(runtime.pinPulledSound, ref);
+        return playObjectPickupSoundAtReference(ref);
     }
 
     void disableAndDeleteReference(RE::TESObjectREFR* ref)

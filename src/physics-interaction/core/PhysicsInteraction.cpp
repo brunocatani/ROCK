@@ -4742,12 +4742,11 @@ namespace rock
                 runtime.explosion ? runtime.explosion->GetFormID() : 0,
                 runtime.fuseSeconds,
                 frame.deltaSeconds);
-            const bool feedbackPlayed = loose_grenade_runtime::playPinPulledFeedbackAtReference(heldRef, runtime);
+            const bool feedbackPlayed = loose_grenade_runtime::playPinPulledFeedbackAtReference(heldRef);
             ROCK_LOG_DEBUG(Hand,
-                "{} hand loose grenade pin-pull feedback: ref={:08X} sound={:08X} played={}",
+                "{} hand loose grenade pin-pull feedback: ref={:08X} played={}",
                 hand.handName(),
                 heldRef->GetFormID(),
-                runtime.pinPulledSound ? runtime.pinPulledSound->GetFormID() : 0,
                 feedbackPlayed ? "yes" : "no");
             return true;
         }
