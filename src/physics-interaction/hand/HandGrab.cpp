@@ -110,9 +110,8 @@ namespace rock
             case GrabReleaseDisposition::OwnershipHandoff:
                 return BodyReleaseIntent::OwnershipHandoff;
             case GrabReleaseDisposition::PendingInventoryTransfer:
-            case GrabReleaseDisposition::PendingConsumeTransfer:
-                return BodyReleaseIntent::PendingNativeTransfer;
             case GrabReleaseDisposition::TransferToInventory:
+            case GrabReleaseDisposition::PendingConsumeTransfer:
                 return BodyReleaseIntent::NonPhysicalTransfer;
             }
             return BodyReleaseIntent::NonPhysicalTransfer;

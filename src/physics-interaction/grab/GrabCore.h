@@ -76,7 +76,6 @@ namespace rock::active_grab_body_lifecycle
         FailedSetup,
         PhysicalDrop,
         NonPhysicalTransfer,
-        PendingNativeTransfer,
         OwnershipHandoff,
     };
 
@@ -89,8 +88,6 @@ namespace rock::active_grab_body_lifecycle
             return "physical-drop";
         case BodyReleaseIntent::NonPhysicalTransfer:
             return "non-physical-transfer";
-        case BodyReleaseIntent::PendingNativeTransfer:
-            return "pending-native-transfer";
         case BodyReleaseIntent::OwnershipHandoff:
             return "ownership-handoff";
         }
@@ -494,16 +491,6 @@ namespace rock::active_grab_body_lifecycle
     {
         if (plan.reason != BodyRestoreReason::Release || plan.targetKind != grab_target::Kind::LooseObject) {
             return false;
-        }
-
-        if (plan.intent == BodyReleaseIntent::PendingNativeTransfer) {
-            /*
-             * Inventory, equip, consume, and stash transfers immediately hand the
-             * reference to native ownership. Keep captured per-body restores, but
-             * do not recurse over uncaptured children while the object tree is being
-             * removed or reattached by the engine.
-             */
-            return true;
         }
 
         if (plan.intent != BodyReleaseIntent::PhysicalDrop) {
