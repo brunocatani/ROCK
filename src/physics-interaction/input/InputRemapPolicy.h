@@ -111,7 +111,6 @@ namespace rock::input_remap_policy
         bool remapEnabled{ true };
         bool gameplayInputAllowed{ true };
         bool menuInputActive{ false };
-        bool suppressHeldWeaponEquip{ false };
         bool heldWeaponAtFrameStart{ false };
         bool heldWeaponNow{ false };
         bool sameHandTriggerPressedEdge{ false };
@@ -217,8 +216,7 @@ namespace rock::input_remap_policy
 
     [[nodiscard]] constexpr bool shouldRequestHeldWeaponEquip(const HeldWeaponEquipInput& input)
     {
-        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && !input.suppressHeldWeaponEquip &&
-               input.heldWeaponAtFrameStart && input.heldWeaponNow &&
+        return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.heldWeaponAtFrameStart && input.heldWeaponNow &&
                (input.sameHandTriggerPressedEdge || (input.primaryHand && input.autoEquipEnabled && input.autoEquipSettled));
     }
 

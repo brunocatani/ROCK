@@ -254,9 +254,6 @@ int main()
     auto menuEquipInput = equipInput;
     menuEquipInput.menuInputActive = true;
     ok &= expectFalse("menu input blocks held weapon equip request", shouldRequestHeldWeaponEquip(menuEquipInput));
-    auto suppressedEquipInput = equipInput;
-    suppressedEquipInput.suppressHeldWeaponEquip = true;
-    ok &= expectFalse("detached primary free-hand state blocks held weapon equip", shouldRequestHeldWeaponEquip(suppressedEquipInput));
     auto heldEquipInput = equipInput;
     heldEquipInput.sameHandTriggerPressedEdge = false;
     ok &= expectFalse("held trigger does not repeat held weapon equip request", shouldRequestHeldWeaponEquip(heldEquipInput));

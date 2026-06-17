@@ -80,9 +80,9 @@ namespace rock::weapon_support_authority_policy
         return mode == WeaponSupportAuthorityMode::FullTwoHandedSolver;
     }
 
-    inline constexpr bool supportGripAppliesPrimaryHandAuthority(WeaponSupportAuthorityMode)
+    inline constexpr bool supportGripAppliesPrimaryHandAuthority(WeaponSupportAuthorityMode mode)
     {
-        return false;
+        return mode == WeaponSupportAuthorityMode::FullTwoHandedSolver;
     }
 
     inline constexpr bool supportGripAppliesSupportHandAuthority(WeaponSupportAuthorityMode)
