@@ -1329,7 +1329,7 @@ namespace rock
         namespace primary_grip = weapon_primary_grip_frame_policy;
 
         RE::NiNode* routeWeaponNode = _activeWeaponNode ? _activeWeaponNode : weaponNode;
-        if (_state != TwoHandedState::PrimaryDetached || !routeWeaponNode) {
+        if (!primaryHandIsDetachedFromFiringGrip() || !routeWeaponNode) {
             return primary_grip::DetachedPrimaryGripRoute::FreeHand;
         }
 
@@ -1345,9 +1345,10 @@ namespace rock
         const float distance = std::sqrt(dot(delta, delta));
 
         return primary_grip::resolveDetachedPrimaryGripRoute(primary_grip::DetachedPrimaryReattachInput{
-            .primaryDetached = _state == TwoHandedState::PrimaryDetached,
+            .primaryDetached = primaryHandIsDetachedFromFiringGrip(),
             .weaponGenerationCurrent = _activeWeaponGenerationKey != 0,
             .firingGripResolved = _hasPrimaryFiringGripWeaponLocal,
+            .primaryHandHasFiringGripContact = primaryGripInput.primaryHandHasFiringGripContact,
             .primaryHandHasNormalGrabOwner = primaryGripInput.primaryHandHasNormalGrabOwner,
             .supportHandStillOwnsWeapon = ownsWeaponTransform(),
             .primaryGripHeld = primaryGripInput.held,

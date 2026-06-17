@@ -46,6 +46,7 @@ namespace rock
         bool held{ false };
         bool pressed{ false };
         bool released{ false };
+        bool primaryHandHasFiringGripContact{ false };
         bool primaryHandHasNormalGrabOwner{ false };
         weapon_primary_grip_frame_policy::DetachedPrimaryGripRoute detachedPrimaryRoute{
             weapon_primary_grip_frame_policy::DetachedPrimaryGripRoute::FreeHand

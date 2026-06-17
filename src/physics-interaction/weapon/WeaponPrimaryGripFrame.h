@@ -103,6 +103,7 @@ namespace rock::weapon_primary_grip_frame_policy
         bool primaryDetached{ false };
         bool weaponGenerationCurrent{ false };
         bool firingGripResolved{ false };
+        bool primaryHandHasFiringGripContact{ false };
         bool primaryHandHasNormalGrabOwner{ false };
         bool supportHandStillOwnsWeapon{ false };
         bool primaryGripHeld{ false };
@@ -125,6 +126,7 @@ namespace rock::weapon_primary_grip_frame_policy
         if (!input.primaryDetached ||
             !input.weaponGenerationCurrent ||
             !input.firingGripResolved ||
+            !input.primaryHandHasFiringGripContact ||
             !input.supportHandStillOwnsWeapon ||
             input.primaryHandHasNormalGrabOwner ||
             !std::isfinite(input.distanceToFiringGripGameUnits)) {

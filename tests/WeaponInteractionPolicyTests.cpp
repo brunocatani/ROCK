@@ -78,7 +78,7 @@ int main()
     ok &= expectTrue("right normal grab stays available without equipped weapon", canProcessNormalGrabInput(false, false, false, false));
     ok &= expectTrue("full two-handed support still owns weapon transform",
         rock::weapon_support_authority_policy::supportGripOwnsWeaponTransform(rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
-    ok &= expectTrue("full two-handed support applies primary hand authority while active",
+    ok &= expectFalse("full two-handed support leaves primary firing grip visual authority with FRIK",
         rock::weapon_support_authority_policy::supportGripAppliesPrimaryHandAuthority(rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
     ok &= expectTrue("support grip continues to apply offhand visual authority",
         rock::weapon_support_authority_policy::supportGripAppliesSupportHandAuthority(rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));

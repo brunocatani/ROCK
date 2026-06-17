@@ -2573,6 +2573,12 @@ namespace rock
 
             const WeaponInteractionDecision leftWeaponDecision = routeWeaponInteraction(leftWeaponContact, providerInteractionState);
             const std::uint64_t currentWeaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey();
+            const bool rightHandFiringGripContact =
+                rightWeaponContact.valid &&
+                rightWeaponContact.partKind == WeaponPartKind::Grip &&
+                weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(
+                    rightWeaponContact.weaponGenerationKey,
+                    currentWeaponGenerationKey);
             const auto weaponNotificationKey = weapon_debug_notification_policy::makeWeaponNotificationKey(
                 leftWeaponContact,
                 leftWeaponDecision,
@@ -2620,6 +2626,7 @@ namespace rock
                     .held = state.held,
                     .pressed = state.pressed,
                     .released = state.released,
+                    .primaryHandHasFiringGripContact = rightHandFiringGripContact,
                     .primaryHandHasNormalGrabOwner = rightHandNormalGrabOwner,
                 };
             };
