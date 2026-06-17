@@ -2397,8 +2397,13 @@ namespace rock
          * hand under weapon authority until those retained bodies are gone.
          */
         bool rightHandWeaponAuthorityActive = rightHandWeaponEquipped || retainedWeaponCollisionActive;
-        // Retained reload bodies still own right-hand collision; only a visible detached primary releases it.
-        if (rightHandWeaponEquipped && !retainedWeaponCollisionActive && _twoHandedGrip.primaryHandIsDetachedFree()) {
+        /*
+         * Retained reload bodies still own right-hand collision when the visible
+         * weapon node is absent. A visible detached primary is different: the
+         * equipped weapon bodies remain live, but the right hand is no longer
+         * the firing-grip owner and must regain its generated colliders.
+         */
+        if (rightHandWeaponEquipped && _twoHandedGrip.primaryHandIsDetachedFree()) {
             rightHandWeaponAuthorityActive = false;
         }
         const bool rightHandWeaponAuthorityActiveBeforeGrip = rightHandWeaponAuthorityActive;
@@ -2780,8 +2785,7 @@ namespace rock
             input_remap_runtime::setEquippedWeaponPrimaryDetached(_twoHandedGrip.primaryHandIsDetachedFree());
 
             bool rightHandWeaponAuthorityActiveAfterGrip = rightHandWeaponEquipped || retainedWeaponCollisionActive;
-            // Retained reload bodies still own right-hand collision; only a visible detached primary releases it.
-            if (rightHandWeaponEquipped && !retainedWeaponCollisionActive && _twoHandedGrip.primaryHandIsDetachedFree()) {
+            if (rightHandWeaponEquipped && _twoHandedGrip.primaryHandIsDetachedFree()) {
                 rightHandWeaponAuthorityActiveAfterGrip = false;
             }
             if (rightHandWeaponAuthorityActiveAfterGrip != rightHandWeaponAuthorityActiveBeforeGrip) {
@@ -6397,6 +6401,7 @@ namespace rock
                     .remapEnabled = g_rockConfig.rockInputRemapEnabled,
                     .gameplayInputAllowed = true,
                     .menuInputActive = input_remap_runtime::isMenuInputActive(),
+                    .suppressHeldWeaponEquip = !isLeft && _twoHandedGrip.primaryHandIsDetachedFree(),
                     .heldWeaponAtFrameStart = heldWeaponAtFrameStart,
                     .heldWeaponNow = hand.isHoldingLooseWeapon(),
                     .sameHandTriggerPressedEdge = heldWeaponEquipTriggerPressed,
