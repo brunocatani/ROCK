@@ -2536,7 +2536,7 @@ namespace rock
             };
 
             leftWeaponContactSource = consumeWeaponContactForHand(true, frame.left, weaponNode != nullptr, leftWeaponContact);
-            const bool rightWeaponContactProbeAllowed = weaponNode != nullptr && _twoHandedGrip.primaryHandIsDetachedFree();
+            const bool rightWeaponContactProbeAllowed = weaponNode != nullptr && _twoHandedGrip.primaryHandIsDetachedFromFiringGrip();
             (void)consumeWeaponContactForHand(false, frame.right, rightWeaponContactProbeAllowed, rightWeaponContact);
 
             const bool gripPressed = readGrabButtonHeld(true, g_rockConfig.rockGrabButtonID);
@@ -2548,6 +2548,7 @@ namespace rock
             if (!offhand_interaction_reservation::allowsSupportGrip(offhandReservation)) {
                 providerInteractionState.supportGripAllowed = false;
             }
+            WeaponInteractionRuntimeState rightProviderInteractionState{};
 
             ::rock::provider::RockProviderWeaponPartTargetResolutionV1 weaponPartResolution{};
             const auto weaponPartQuery = makeProviderWeaponPartTargetQuery(leftWeaponContact, _weaponCollision);
@@ -2558,6 +2559,16 @@ namespace rock
                 providerInteractionState.supportGripAllowed = false;
             } else if (weaponPartWhitelistActive) {
                 providerInteractionState.providerPartAuthority = makeWeaponProviderPartAuthority(weaponPartQuery, weaponPartResolution);
+            }
+            ::rock::provider::RockProviderWeaponPartTargetResolutionV1 rightWeaponPartResolution{};
+            const auto rightWeaponPartQuery = makeProviderWeaponPartTargetQuery(rightWeaponContact, _weaponCollision);
+            const bool rightWeaponPartWhitelistActive = rightWeaponContact.valid &&
+                ::rock::provider::resolveWeaponPartTargetV1(rightWeaponPartQuery, rightWeaponPartResolution) &&
+                rightWeaponPartResolution.whitelistActive != 0;
+            if (rightWeaponPartWhitelistActive && rightWeaponPartResolution.matched == 0) {
+                rightProviderInteractionState.supportGripAllowed = false;
+            } else if (rightWeaponPartWhitelistActive) {
+                rightProviderInteractionState.providerPartAuthority = makeWeaponProviderPartAuthority(rightWeaponPartQuery, rightWeaponPartResolution);
             }
 
             const WeaponInteractionDecision leftWeaponDecision = routeWeaponInteraction(leftWeaponContact, providerInteractionState);
@@ -2640,11 +2651,12 @@ namespace rock
                 .virtualHolstersOwnsInput = primaryGrabDeferredForVirtualHolsters,
             };
             if (input_remap_policy::shouldConsumeEquippedWeaponPrimaryDetachInput(primaryDetachInputGate)) {
+                const bool detachedPrimaryFromFiring = _twoHandedGrip.primaryHandIsDetachedFromFiringGrip();
                 const bool detachedPrimaryFree = _twoHandedGrip.primaryHandIsDetachedFree();
                 const auto& primaryState = readPrimaryGrabState(detachedPrimaryFree ? GrabButtonReadMode::PeekEdges : GrabButtonReadMode::ConsumeEdges);
                 if (input_remap_policy::shouldUseEquippedWeaponPrimaryDetachInput(primaryDetachInputGate)) {
                     primaryGripInput = makePrimaryGripInput(primaryState);
-                    if (detachedPrimaryFree) {
+                    if (detachedPrimaryFromFiring) {
                         primaryGripInput.detachedPrimaryRoute = _twoHandedGrip.resolveDetachedPrimaryGripRoute(weaponNode, primaryGripInput);
                         if (primaryGripInput.detachedPrimaryRoute == weapon_primary_grip_frame_policy::DetachedPrimaryGripRoute::ReattachNow) {
                             const auto& consumedPrimaryState = readPrimaryGrabState(GrabButtonReadMode::ConsumeEdges);
@@ -2694,12 +2706,14 @@ namespace rock
             _twoHandedGrip.update(
                 weaponNode,
                 leftWeaponContact,
+                rightWeaponContact,
                 gripPressed,
                 leftHandHoldingObject,
                 frame.deltaSeconds,
                 currentWeaponGenerationKey,
                 _weaponCollision,
                 providerInteractionState,
+                rightProviderInteractionState,
                 supportAuthorityMode,
                 primaryDetachFeatureAvailable,
                 equippedWeapon,
@@ -2782,7 +2796,7 @@ namespace rock
             };
             input_remap_runtime::setEquippedWeaponPrimaryDetachInputActive(
                 input_remap_policy::shouldUseEquippedWeaponPrimaryDetachInput(updatedPrimaryDetachInputGate));
-            input_remap_runtime::setEquippedWeaponPrimaryDetached(_twoHandedGrip.primaryHandIsDetachedFree());
+            input_remap_runtime::setEquippedWeaponPrimaryDetached(_twoHandedGrip.primaryHandIsDetachedFromFiringGrip());
 
             bool rightHandWeaponAuthorityActiveAfterGrip = rightHandWeaponEquipped || retainedWeaponCollisionActive;
             if (rightHandWeaponEquipped && _twoHandedGrip.primaryHandIsDetachedFree()) {
@@ -6401,7 +6415,7 @@ namespace rock
                     .remapEnabled = g_rockConfig.rockInputRemapEnabled,
                     .gameplayInputAllowed = true,
                     .menuInputActive = input_remap_runtime::isMenuInputActive(),
-                    .suppressHeldWeaponEquip = !isLeft && _twoHandedGrip.primaryHandIsDetachedFree(),
+                    .suppressHeldWeaponEquip = !isLeft && _twoHandedGrip.primaryHandIsDetachedFromFiringGrip(),
                     .heldWeaponAtFrameStart = heldWeaponAtFrameStart,
                     .heldWeaponNow = hand.isHoldingLooseWeapon(),
                     .sameHandTriggerPressedEdge = heldWeaponEquipTriggerPressed,
