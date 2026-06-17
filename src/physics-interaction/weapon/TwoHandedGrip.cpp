@@ -2,6 +2,7 @@
 
 #include "api/ROCKProviderApi.h"
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
+#include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/hand/HandSkeleton.h"
 #include "physics-interaction/hand/HandVisual.h"
 #include "physics-interaction/grab/GrabFinger.h"
@@ -368,6 +369,40 @@ namespace rock
         return weapon_collision_geometry_math::localPointToWorld(weaponNode->world.rotate, weaponNode->world.translate, weaponNode->world.scale, localPos);
     }
 
+    weapon_primary_grip_frame_policy::PrimaryGripFrameResult TwoHandedGrip::resolvePrimaryGripFrameWeaponLocal(
+        const RE::TESObjectWEAP* equippedWeapon,
+        const RE::NiAVObject* weaponRoot) const
+    {
+        namespace primary_grip = weapon_primary_grip_frame_policy;
+
+        const auto frikOffset = frik_weapon_offset_cache::findPrimaryWeaponOffset(equippedWeapon, weaponRoot);
+        if (frikOffset.found && primary_grip::isExplicitFrikWeaponOffsetReason(frikOffset.reason)) {
+            return primary_grip::primaryGripFrameFromWeaponOffset(
+                frikOffset.offset,
+                primary_grip::PrimaryGripFrameSource::FrikWeaponOffset,
+                frikOffset.reason);
+        }
+
+        if (_hasWeaponNodeLocalBaseline) {
+            auto baselineFrame = primary_grip::primaryGripFrameFromWeaponOffset(
+                _weaponNodeLocalBaseline,
+                primary_grip::PrimaryGripFrameSource::WeaponNodeLocalBaseline,
+                "weapon-node-local-baseline");
+            if (baselineFrame.valid) {
+                return baselineFrame;
+            }
+        }
+
+        if (frikOffset.found) {
+            return primary_grip::primaryGripFrameFromWeaponOffset(
+                frikOffset.offset,
+                primary_grip::PrimaryGripFrameSource::WeaponNodeLocalBaseline,
+                frikOffset.reason);
+        }
+
+        return primary_grip::PrimaryGripFrameResult{ .valid = false, .reason = frikOffset.reason };
+    }
+
     RE::NiPoint3 TwoHandedGrip::resolveSupportGripWorld(RE::NiNode* weaponNode) const
     {
         if (auto* supportAttachmentRoot = resolveCurrentSupportAttachmentRoot(weaponNode)) {
@@ -412,7 +447,6 @@ namespace rock
     void TwoHandedGrip::update(
         RE::NiNode* weaponNode,
         const WeaponInteractionContact& leftWeaponContact,
-        const WeaponInteractionContact& rightWeaponContact,
         bool leftGripPressed,
         bool supportHandHoldingObject,
         float dt,
@@ -421,6 +455,7 @@ namespace rock
         const WeaponInteractionRuntimeState& runtimeState,
         weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
         bool primaryDetachEnabled,
+        const RE::TESObjectWEAP* equippedWeapon,
         const EquippedWeaponPrimaryGripInput& primaryGripInput)
     {
         _hasSolvedWeaponTransform = false;
@@ -458,7 +493,7 @@ namespace rock
                 }
             }
             if (weapon_two_handed_grip_math::canStartSupportGrip(leftTouchingSupport, leftGripPressed, supportHandHoldingObject)) {
-                transitionToGripping(interactionWeaponNode, decision, weaponCollision, supportAuthorityMode, runtimeState.providerPartAuthority);
+                transitionToGripping(interactionWeaponNode, decision, weaponCollision, supportAuthorityMode, equippedWeapon, runtimeState.providerPartAuthority);
             }
             break;
 
@@ -478,7 +513,7 @@ namespace rock
             } else if (!weapon_two_handed_grip_math::shouldContinueSupportGrip(leftGripPressed, supportHandHoldingObject)) {
                 const auto releaseAction = weapon_two_handed_grip_math::resolveSupportReleaseManualAction(primaryDetachEnabled, primaryGripInput.held);
                 if (releaseAction == weapon_two_handed_grip_math::SupportReleaseManualAction::KeepPrimaryOwnership) {
-                    transitionToPrimaryOnly(_activeWeaponNode, currentWeaponGenerationKey, "support-released-primary-held");
+                    transitionToPrimaryOnly(_activeWeaponNode, currentWeaponGenerationKey, equippedWeapon, "support-released-primary-held");
                 } else if (releaseAction == weapon_two_handed_grip_math::SupportReleaseManualAction::DropEquippedWeapon) {
                     requestEquippedWeaponDrop(
                         "support-released-primary-not-held",
@@ -490,7 +525,7 @@ namespace rock
                        _authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver &&
                        !primaryGripInput.held) {
                 if (transitionToPrimaryDetached()) {
-                    updatePrimaryDetachedGrip(_activeWeaponNode, dt, primaryGripInput, rightWeaponContact);
+                    updatePrimaryDetachedGrip(_activeWeaponNode, dt, primaryGripInput);
                 }
             } else {
                 updateGripping(_activeWeaponNode, dt);
@@ -513,15 +548,16 @@ namespace rock
             } else if (!primaryDetachEnabled) {
                 transitionToInactive(ownsWeaponTransform());
             } else if (!weapon_two_handed_grip_math::shouldContinueSupportGrip(leftGripPressed, supportHandHoldingObject)) {
-                if (primaryGripInput.held && tryReattachPrimaryGrip(_activeWeaponNode, rightWeaponContact)) {
-                    transitionToPrimaryOnly(_activeWeaponNode, currentWeaponGenerationKey, "support-released-primary-reattached");
+                if (primaryGripInput.detachedPrimaryRoute == weapon_primary_grip_frame_policy::DetachedPrimaryGripRoute::ReattachNow &&
+                    tryReattachPrimaryGrip(_activeWeaponNode, primaryGripInput)) {
+                    transitionToPrimaryOnly(_activeWeaponNode, currentWeaponGenerationKey, equippedWeapon, "support-released-primary-reattached");
                 } else {
                     requestEquippedWeaponDrop(
                         primaryGripInput.held ? "support-released-primary-contact-missing" : "support-released-primary-not-held",
                         equipped_weapon_drop_policy::SourceHand::Left);
                 }
             } else {
-                updatePrimaryDetachedGrip(_activeWeaponNode, dt, primaryGripInput, rightWeaponContact);
+                updatePrimaryDetachedGrip(_activeWeaponNode, dt, primaryGripInput);
             }
             break;
 
@@ -535,7 +571,7 @@ namespace rock
             } else if (!primaryDetachEnabled) {
                 transitionToInactive(false);
             } else if (leftTouchingSupport && weapon_two_handed_grip_math::canStartSupportGrip(leftTouchingSupport, leftGripPressed, supportHandHoldingObject)) {
-                transitionToGripping(interactionWeaponNode, decision, weaponCollision, supportAuthorityMode, runtimeState.providerPartAuthority);
+                transitionToGripping(interactionWeaponNode, decision, weaponCollision, supportAuthorityMode, equippedWeapon, runtimeState.providerPartAuthority);
             } else {
                 updatePrimaryOnlyGrip(_activeWeaponNode, currentWeaponGenerationKey, primaryGripInput);
             }
@@ -577,6 +613,9 @@ namespace rock
         _weaponNodeLocalBaseline = {};
         _hasWeaponNodeLocalBaseline = false;
         _primaryHandWeaponLocal = {};
+        _primaryFiringGripWeaponLocal = {};
+        _hasPrimaryFiringGripWeaponLocal = false;
+        _primaryFiringGripSource = "none";
         _supportHandWeaponLocal = {};
         _hasHandWeaponLocalFrames = false;
         _hasSupportSourceLocalFrame = false;
@@ -702,6 +741,7 @@ namespace rock
         const WeaponInteractionDecision& decision,
         const WeaponCollision& weaponCollision,
         weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
+        const RE::TESObjectWEAP* equippedWeapon,
         const WeaponProviderPartAuthority& providerPartAuthority)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::TwoHandedGripStart);
@@ -738,6 +778,9 @@ namespace rock
         _supportAttachmentWeaponLocal = {};
         _hasSupportSourceLocalFrame = false;
         _hasSupportAttachmentWeaponLocal = false;
+        _primaryFiringGripWeaponLocal = {};
+        _hasPrimaryFiringGripWeaponLocal = false;
+        _primaryFiringGripSource = "none";
         _primaryGripConfidence = 0.0f;
         resetLockedHandVisualLerp();
         clearPrimaryGripPose(primaryHandIsLeft);
@@ -753,11 +796,25 @@ namespace rock
             return;
         }
 
+        const auto primaryGripFrame = resolvePrimaryGripFrameWeaponLocal(equippedWeapon, sourceRoot);
+        if (!primaryGripFrame.valid) {
+            ROCK_LOG_WARN(Weapon,
+                "TwoHandedGrip: support grip start skipped because weapon-relative primary firing grip is unavailable reason={}",
+                primaryGripFrame.reason ? primaryGripFrame.reason : "unknown");
+            restoreFrikOffhandGrip();
+            transitionToInactive(false);
+            return;
+        }
+
         const RE::NiPoint3 primaryPalmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(primaryTransform, primaryHandIsLeft);
-        _primaryGripLocal = worldToWeaponLocal(primaryPalmPos, sourceRoot);
+        _primaryFiringGripWeaponLocal = primaryGripFrame.weaponLocalFrame;
+        _hasPrimaryFiringGripWeaponLocal = true;
+        _primaryFiringGripSource = weapon_primary_grip_frame_policy::primaryGripFrameSourceName(primaryGripFrame.source);
+        _primaryGripLocal = _primaryFiringGripWeaponLocal.translate;
         _primaryGripConfidence = 1.0f;
-        const RE::NiPoint3 primaryGripWorldPoint = primaryPalmPos;
-        const RE::NiTransform adjustedPrimaryTransform = primaryTransform;
+        const RE::NiPoint3 primaryGripWorldPoint = weaponLocalToWorld(_primaryGripLocal, sourceRoot);
+        const RE::NiTransform adjustedPrimaryTransform =
+            weapon_two_handed_grip_math::alignHandFrameToGripPoint(primaryTransform, primaryPalmPos, primaryGripWorldPoint);
 
         RE::NiPoint3 palmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(supportTransform, supportHandIsLeft);
         RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(supportTransform, supportHandIsLeft);
@@ -898,7 +955,7 @@ namespace rock
             "primaryLocal=({:.3f},{:.3f},{:.3f}), supportLocal=({:.3f},{:.3f},{:.3f}), "
             "gripSeparation={:.3f}, primaryGripSource={}, primaryGripConfidence={:.2f}, meshGrab={}, triangles={}, cachedTriangles={}, partKind={}, pose={}, authorityMode={}, weaponRoot='{}', sourceRoot='{}', generation={:016X}",
             weaponNode->name.c_str(), _primaryGripLocal.x, _primaryGripLocal.y, _primaryGripLocal.z, _offhandGripLocal.x, _offhandGripLocal.y, _offhandGripLocal.z, gripDist,
-            "root-flattened", _primaryGripConfidence, meshFound ? "YES" : "FALLBACK", triangles.size(), cachedTrianglesFound ? "yes" : "no", static_cast<int>(_supportPartKind),
+            _primaryFiringGripSource, _primaryGripConfidence, meshFound ? "YES" : "FALLBACK", triangles.size(), cachedTrianglesFound ? "yes" : "no", static_cast<int>(_supportPartKind),
             static_cast<int>(_supportGripPose), static_cast<int>(_authorityMode), weaponNode->name.c_str(), sourceRoot ? sourceRoot->name.c_str() : "(null)", _activeWeaponGenerationKey);
     }
 
@@ -939,6 +996,9 @@ namespace rock
             _lastSolvedWeaponTransform = restoredWeaponTransform;
         }
         _primaryHandWeaponLocal = {};
+        _primaryFiringGripWeaponLocal = {};
+        _hasPrimaryFiringGripWeaponLocal = false;
+        _primaryFiringGripSource = "none";
         _supportHandWeaponLocal = {};
         _supportHandSourceLocal = {};
         _supportAttachmentWeaponLocal = {};
@@ -1123,13 +1183,50 @@ namespace rock
         return true;
     }
 
-    bool TwoHandedGrip::beginPrimaryOnlyGrip(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey)
+    weapon_primary_grip_frame_policy::DetachedPrimaryGripRoute TwoHandedGrip::resolveDetachedPrimaryGripRoute(
+        RE::NiNode* weaponNode,
+        const EquippedWeaponPrimaryGripInput& primaryGripInput) const
+    {
+        namespace primary_grip = weapon_primary_grip_frame_policy;
+
+        RE::NiNode* routeWeaponNode = _activeWeaponNode ? _activeWeaponNode : weaponNode;
+        if (_state != TwoHandedState::PrimaryDetached || !routeWeaponNode) {
+            return primary_grip::DetachedPrimaryGripRoute::FreeHand;
+        }
+
+        constexpr bool primaryHandIsLeft = false;
+        RE::NiTransform primaryTransform{};
+        if (!tryGetHandBoneTransform(primaryHandIsLeft, primaryTransform)) {
+            return primary_grip::DetachedPrimaryGripRoute::FreeHand;
+        }
+
+        const RE::NiPoint3 primaryPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(primaryTransform, primaryHandIsLeft);
+        const RE::NiPoint3 primaryGripWorld = weaponLocalToWorld(_primaryGripLocal, routeWeaponNode);
+        const RE::NiPoint3 delta = sub(primaryPalm, primaryGripWorld);
+        const float distance = std::sqrt(dot(delta, delta));
+
+        return primary_grip::resolveDetachedPrimaryGripRoute(primary_grip::DetachedPrimaryReattachInput{
+            .primaryDetached = _state == TwoHandedState::PrimaryDetached,
+            .weaponGenerationCurrent = _activeWeaponGenerationKey != 0,
+            .firingGripResolved = _hasPrimaryFiringGripWeaponLocal,
+            .primaryHandHasNormalGrabOwner = primaryGripInput.primaryHandHasNormalGrabOwner,
+            .supportHandStillOwnsWeapon = ownsWeaponTransform(),
+            .primaryGripHeld = primaryGripInput.held,
+            .primaryGripPressed = primaryGripInput.pressed,
+            .distanceToFiringGripGameUnits = distance,
+        });
+    }
+
+    bool TwoHandedGrip::beginPrimaryOnlyGrip(
+        RE::NiNode* weaponNode,
+        std::uint64_t currentWeaponGenerationKey,
+        const RE::TESObjectWEAP* equippedWeapon)
     {
         if (!weaponNode || currentWeaponGenerationKey == 0 || _state != TwoHandedState::Inactive) {
             return false;
         }
 
-        return transitionToPrimaryOnly(weaponNode, currentWeaponGenerationKey, "primary-grip-start");
+        return transitionToPrimaryOnly(weaponNode, currentWeaponGenerationKey, equippedWeapon, "primary-grip-start");
     }
 
     EquippedWeaponManualDropRequest TwoHandedGrip::consumeEquippedWeaponDropRequest()
@@ -1139,7 +1236,11 @@ namespace rock
         return request;
     }
 
-    bool TwoHandedGrip::transitionToPrimaryOnly(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const char* reason)
+    bool TwoHandedGrip::transitionToPrimaryOnly(
+        RE::NiNode* weaponNode,
+        std::uint64_t currentWeaponGenerationKey,
+        const RE::TESObjectWEAP* equippedWeapon,
+        const char* reason)
     {
         if (!weaponNode || currentWeaponGenerationKey == 0) {
             return false;
@@ -1155,11 +1256,17 @@ namespace rock
             _weaponNodeLocalBaseline = weaponNode->local;
             _hasWeaponNodeLocalBaseline = true;
 
-            RE::NiTransform primaryTransform{};
-            if (tryGetHandBoneTransform(primaryHandIsLeft, primaryTransform)) {
-                _primaryGripLocal = worldToWeaponLocal(computeGrabLegacyPalmPivotAWorldFromHandBasis(primaryTransform, primaryHandIsLeft), weaponNode);
+            const auto primaryGripFrame = resolvePrimaryGripFrameWeaponLocal(equippedWeapon, weaponNode);
+            if (primaryGripFrame.valid) {
+                _primaryFiringGripWeaponLocal = primaryGripFrame.weaponLocalFrame;
+                _hasPrimaryFiringGripWeaponLocal = true;
+                _primaryFiringGripSource = weapon_primary_grip_frame_policy::primaryGripFrameSourceName(primaryGripFrame.source);
+                _primaryGripLocal = _primaryFiringGripWeaponLocal.translate;
                 _primaryGripConfidence = 1.0f;
             } else {
+                _primaryFiringGripWeaponLocal = {};
+                _hasPrimaryFiringGripWeaponLocal = false;
+                _primaryFiringGripSource = "none";
                 _primaryGripLocal = {};
                 _primaryGripConfidence = 0.0f;
             }
@@ -1248,16 +1355,11 @@ namespace rock
         _hasSolvedWeaponTransform = false;
     }
 
-    bool TwoHandedGrip::primaryGripContactMatchesCapturedGrip(
+    bool TwoHandedGrip::primaryGripAnchorWithinWeaponRelativeReattachRadius(
         RE::NiNode* weaponNode,
-        const WeaponInteractionContact& rightWeaponContact,
         const RE::NiTransform& primaryTransform) const
     {
-        if (!weaponNode || !rightWeaponContact.valid) {
-            return false;
-        }
-
-        if (!weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(rightWeaponContact.weaponGenerationKey, _activeWeaponGenerationKey)) {
+        if (!weaponNode || !_hasPrimaryFiringGripWeaponLocal || _activeWeaponGenerationKey == 0) {
             return false;
         }
 
@@ -1266,13 +1368,15 @@ namespace rock
         const RE::NiPoint3 primaryGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
         const RE::NiPoint3 delta = sub(primaryPalm, primaryGripWorld);
         const float distance = std::sqrt(dot(delta, delta));
-        const float reattachRadius = (std::max)(2.0f, g_rockConfig.rockWeaponInteractionProbeRadius);
-        return std::isfinite(distance) && distance <= reattachRadius;
+        return std::isfinite(distance) &&
+               distance <= weapon_primary_grip_frame_policy::kDefaultReattachEnterRadiusGameUnits;
     }
 
-    bool TwoHandedGrip::tryReattachPrimaryGrip(RE::NiNode* weaponNode, const WeaponInteractionContact& rightWeaponContact)
+    bool TwoHandedGrip::tryReattachPrimaryGrip(RE::NiNode* weaponNode, const EquippedWeaponPrimaryGripInput& primaryGripInput)
     {
-        if (!weaponNode) {
+        if (!weaponNode ||
+            weaponNode != _activeWeaponNode ||
+            primaryGripInput.detachedPrimaryRoute != weapon_primary_grip_frame_policy::DetachedPrimaryGripRoute::ReattachNow) {
             return false;
         }
 
@@ -1282,7 +1386,7 @@ namespace rock
             return false;
         }
 
-        if (!primaryGripContactMatchesCapturedGrip(weaponNode, rightWeaponContact, primaryTransform)) {
+        if (!primaryGripAnchorWithinWeaponRelativeReattachRadius(weaponNode, primaryTransform)) {
             return false;
         }
 
@@ -1295,19 +1399,19 @@ namespace rock
         clearPrimaryDetachVisualAuthority(primaryHandIsLeft);
         restoreFrikPrimaryWeaponPose();
         _state = TwoHandedState::Gripping;
-        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: primary hand reattached at configured grip");
+        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: primary hand reattached at weapon-relative firing grip source={}", _primaryFiringGripSource);
         return true;
     }
 
     void TwoHandedGrip::updatePrimaryDetachedGrip(
         RE::NiNode* weaponNode,
         float dt,
-        const EquippedWeaponPrimaryGripInput& primaryGripInput,
-        const WeaponInteractionContact& rightWeaponContact)
+        const EquippedWeaponPrimaryGripInput& primaryGripInput)
     {
         constexpr bool supportHandIsLeft = true;
 
-        if (primaryGripInput.held && tryReattachPrimaryGrip(weaponNode, rightWeaponContact)) {
+        if (primaryGripInput.detachedPrimaryRoute == weapon_primary_grip_frame_policy::DetachedPrimaryGripRoute::ReattachNow &&
+            tryReattachPrimaryGrip(weaponNode, primaryGripInput)) {
             updateFullWeaponAuthorityGrip(weaponNode, dt);
             return;
         }

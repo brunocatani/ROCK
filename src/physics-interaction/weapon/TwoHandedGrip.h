@@ -9,11 +9,17 @@
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
+#include "physics-interaction/weapon/WeaponPrimaryGripFrame.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 
 #include "RE/NetImmerse/NiAVObject.h"
 #include "RE/NetImmerse/NiNode.h"
 #include "RE/NetImmerse/NiTransform.h"
+
+namespace RE
+{
+    class TESObjectWEAP;
+}
 
 namespace rock
 {
@@ -38,6 +44,10 @@ namespace rock
         bool held{ false };
         bool pressed{ false };
         bool released{ false };
+        bool primaryHandHasNormalGrabOwner{ false };
+        weapon_primary_grip_frame_policy::DetachedPrimaryGripRoute detachedPrimaryRoute{
+            weapon_primary_grip_frame_policy::DetachedPrimaryGripRoute::FreeHand
+        };
     };
 
     struct TwoHandedGripDebugSnapshot
@@ -61,7 +71,6 @@ namespace rock
         void update(
             RE::NiNode* weaponNode,
             const WeaponInteractionContact& leftWeaponContact,
-            const WeaponInteractionContact& rightWeaponContact,
             bool leftGripPressed,
             bool supportHandHoldingObject,
             float dt,
@@ -70,11 +79,18 @@ namespace rock
             const WeaponInteractionRuntimeState& runtimeState,
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
             bool primaryDetachEnabled,
+            const RE::TESObjectWEAP* equippedWeapon,
             const EquippedWeaponPrimaryGripInput& primaryGripInput);
 
         void reset();
 
         bool isGripping() const { return _state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryDetached; }
+
+        bool supportHandOwnsWeaponGrip() const { return _state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryDetached; }
+
+        bool primaryHandOwnsFiringGrip() const { return _state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryOnly; }
+
+        bool primaryHandIsDetachedFree() const { return _state == TwoHandedState::PrimaryDetached; }
 
         bool isManualOwnershipActive() const
         {
@@ -104,7 +120,14 @@ namespace rock
 
         bool getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const;
 
-        bool beginPrimaryOnlyGrip(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
+        weapon_primary_grip_frame_policy::DetachedPrimaryGripRoute resolveDetachedPrimaryGripRoute(
+            RE::NiNode* weaponNode,
+            const EquippedWeaponPrimaryGripInput& primaryGripInput) const;
+
+        bool beginPrimaryOnlyGrip(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            const RE::TESObjectWEAP* equippedWeapon);
 
         EquippedWeaponManualDropRequest consumeEquippedWeaponDropRequest();
 
@@ -115,6 +138,7 @@ namespace rock
             const WeaponInteractionDecision& decision,
             const WeaponCollision& weaponCollision,
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
+            const RE::TESObjectWEAP* equippedWeapon,
             const WeaponProviderPartAuthority& providerPartAuthority);
         void transitionToInactive(bool publishRestoredWeaponTransform);
 
@@ -129,14 +153,17 @@ namespace rock
         void updatePrimaryDetachedGrip(
             RE::NiNode* weaponNode,
             float dt,
-            const EquippedWeaponPrimaryGripInput& primaryGripInput,
-            const WeaponInteractionContact& rightWeaponContact);
+            const EquippedWeaponPrimaryGripInput& primaryGripInput);
 
         void updateVisualOnlySupportGrip(RE::NiNode* weaponNode, float dt);
 
         bool transitionToPrimaryDetached();
 
-        bool transitionToPrimaryOnly(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const char* reason);
+        bool transitionToPrimaryOnly(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            const RE::TESObjectWEAP* equippedWeapon,
+            const char* reason);
 
         void requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand);
 
@@ -145,12 +172,15 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             const EquippedWeaponPrimaryGripInput& primaryGripInput);
 
-        bool tryReattachPrimaryGrip(RE::NiNode* weaponNode, const WeaponInteractionContact& rightWeaponContact);
+        bool tryReattachPrimaryGrip(RE::NiNode* weaponNode, const EquippedWeaponPrimaryGripInput& primaryGripInput);
 
-        bool primaryGripContactMatchesCapturedGrip(
+        bool primaryGripAnchorWithinWeaponRelativeReattachRadius(
             RE::NiNode* weaponNode,
-            const WeaponInteractionContact& rightWeaponContact,
             const RE::NiTransform& primaryTransform) const;
+
+        weapon_primary_grip_frame_policy::PrimaryGripFrameResult resolvePrimaryGripFrameWeaponLocal(
+            const RE::TESObjectWEAP* equippedWeapon,
+            const RE::NiAVObject* weaponRoot) const;
 
         void setSupportGripPose(bool isLeft, WeaponGripPoseId poseId, const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose);
 
@@ -247,6 +277,12 @@ namespace rock
         bool _hasSolvedWeaponTransform{ false };
 
         RE::NiTransform _primaryHandWeaponLocal{};
+
+        RE::NiTransform _primaryFiringGripWeaponLocal{};
+
+        bool _hasPrimaryFiringGripWeaponLocal{ false };
+
+        const char* _primaryFiringGripSource{ "none" };
 
         RE::NiTransform _supportHandWeaponLocal{};
 
