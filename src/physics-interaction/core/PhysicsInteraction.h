@@ -414,7 +414,6 @@ namespace rock
         hand_collision_suppression_math::DelayedRestoreState _leftEquippedWeaponDropDelayedRestore{};
         weapon_debug_notification_policy::WeaponNotificationState _weaponDebugNotificationState{};
         bool _pendingEquippedWeaponPrimaryOnlyGripStart = false;
-        weapon_two_handed_grip_math::PrimaryReattachRuntimeState _primaryDetachedReattachPreviewState{};
         bool _primaryDetachedRightHandWorldGrabLogged = false;
         struct ProviderWeaponPartDriveNodeState
         {

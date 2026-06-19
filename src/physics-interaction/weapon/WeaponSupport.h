@@ -418,6 +418,12 @@ namespace rock::weapon_two_handed_grip_math
         ReattachingToFiringGrip = 4,
     };
 
+    enum class DetachedPrimarySupportReleaseAction
+    {
+        ReattachPrimaryToFiringGrip = 0,
+        KeepPrimaryWeaponPartOwnership = 1,
+    };
+
     enum class SupportReleaseManualAction
     {
         EndSupportOnly = 0,
@@ -445,6 +451,16 @@ namespace rock::weapon_two_handed_grip_math
         bool armed{ false };
         bool completed{ false };
         bool cancelled{ false };
+    };
+
+    struct PrimaryWeaponControlCapabilities
+    {
+        bool frikPrimaryWeaponPoseBlocked{ false };
+        bool suppressPrimaryHandColliders{ true };
+        bool allowNormalRockGrab{ false };
+        bool allowWeaponPartGrab{ false };
+        bool primaryOwnsWeaponPartThroughRock{ false };
+        bool supportHandMustOwnWeapon{ true };
     };
 
     /*
@@ -483,6 +499,79 @@ namespace rock::weapon_two_handed_grip_math
         return primaryGripHeld ? SupportReleaseManualAction::KeepPrimaryOwnership : SupportReleaseManualAction::DropEquippedWeapon;
     }
 
+    [[nodiscard]] inline constexpr bool isPrimaryRockOwned(PrimaryWeaponControlState state) noexcept
+    {
+        return state == PrimaryWeaponControlState::DetachedFree ||
+               state == PrimaryWeaponControlState::DetachedGrabbingWorldObject ||
+               state == PrimaryWeaponControlState::DetachedGrabbingWeaponPart;
+    }
+
+    [[nodiscard]] inline constexpr PrimaryWeaponControlCapabilities capabilitiesForPrimaryWeaponControl(
+        PrimaryWeaponControlState state) noexcept
+    {
+        switch (state) {
+        case PrimaryWeaponControlState::DetachedFree:
+            return PrimaryWeaponControlCapabilities{
+                .frikPrimaryWeaponPoseBlocked = true,
+                .suppressPrimaryHandColliders = false,
+                .allowNormalRockGrab = true,
+                .allowWeaponPartGrab = true,
+                .primaryOwnsWeaponPartThroughRock = false,
+                .supportHandMustOwnWeapon = true,
+            };
+        case PrimaryWeaponControlState::DetachedGrabbingWorldObject:
+            return PrimaryWeaponControlCapabilities{
+                .frikPrimaryWeaponPoseBlocked = true,
+                .suppressPrimaryHandColliders = false,
+                .allowNormalRockGrab = true,
+                .allowWeaponPartGrab = false,
+                .primaryOwnsWeaponPartThroughRock = false,
+                .supportHandMustOwnWeapon = true,
+            };
+        case PrimaryWeaponControlState::DetachedGrabbingWeaponPart:
+            return PrimaryWeaponControlCapabilities{
+                .frikPrimaryWeaponPoseBlocked = true,
+                .suppressPrimaryHandColliders = false,
+                .allowNormalRockGrab = false,
+                .allowWeaponPartGrab = false,
+                .primaryOwnsWeaponPartThroughRock = true,
+                .supportHandMustOwnWeapon = false,
+            };
+        case PrimaryWeaponControlState::ReattachingToFiringGrip:
+            return PrimaryWeaponControlCapabilities{
+                .frikPrimaryWeaponPoseBlocked = false,
+                .suppressPrimaryHandColliders = true,
+                .allowNormalRockGrab = false,
+                .allowWeaponPartGrab = false,
+                .primaryOwnsWeaponPartThroughRock = false,
+                .supportHandMustOwnWeapon = false,
+            };
+        case PrimaryWeaponControlState::AttachedFiringGrip:
+        default:
+            return PrimaryWeaponControlCapabilities{};
+        }
+    }
+
+    [[nodiscard]] inline constexpr bool shouldSuppressPrimaryHandCollidersForWeapon(
+        bool weaponNodeAvailable,
+        bool retainedWeaponCollisionActive,
+        PrimaryWeaponControlState state) noexcept
+    {
+        if (!weaponNodeAvailable) {
+            return retainedWeaponCollisionActive;
+        }
+
+        return capabilitiesForPrimaryWeaponControl(state).suppressPrimaryHandColliders;
+    }
+
+    [[nodiscard]] inline constexpr DetachedPrimarySupportReleaseAction resolveDetachedPrimarySupportReleaseAction(
+        PrimaryWeaponControlState state) noexcept
+    {
+        return capabilitiesForPrimaryWeaponControl(state).primaryOwnsWeaponPartThroughRock ?
+            DetachedPrimarySupportReleaseAction::KeepPrimaryWeaponPartOwnership :
+            DetachedPrimarySupportReleaseAction::ReattachPrimaryToFiringGrip;
+    }
+
     inline constexpr PrimaryReattachDecision updatePrimaryReattach(
         PrimaryReattachRuntimeState& state,
         const PrimaryReattachInput& input) noexcept
@@ -515,13 +604,18 @@ namespace rock::weapon_two_handed_grip_math
         return decision;
     }
 
-    inline bool canProcessNormalGrabInput(bool isLeft, bool equippedWeaponSupportGripActive, bool rightHandWeaponEquipped, bool primaryHandDetached)
+    inline bool canProcessNormalGrabInput(
+        bool isLeft,
+        bool equippedWeaponSupportGripActive,
+        bool rightHandWeaponEquipped,
+        PrimaryWeaponControlState primaryControlState)
     {
         if (isLeft) {
             return !equippedWeaponSupportGripActive;
         }
 
-        return !rightHandWeaponEquipped || primaryHandDetached;
+        return !rightHandWeaponEquipped ||
+               capabilitiesForPrimaryWeaponControl(primaryControlState).allowNormalRockGrab;
     }
 }
 

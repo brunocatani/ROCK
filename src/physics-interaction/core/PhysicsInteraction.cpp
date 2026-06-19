@@ -2396,11 +2396,10 @@ namespace rock
          * deliberately retains the generated weapon body set. Keep the dominant
          * hand under weapon authority until those retained bodies are gone.
          */
-        bool rightHandWeaponAuthorityActive = rightHandWeaponEquipped || retainedWeaponCollisionActive;
-        // Retained reload bodies still own right-hand collision; only a visible detached primary releases it.
-        if (rightHandWeaponEquipped && !retainedWeaponCollisionActive && _twoHandedGrip.isPrimaryDetached()) {
-            rightHandWeaponAuthorityActive = false;
-        }
+        bool rightHandWeaponAuthorityActive = weapon_two_handed_grip_math::shouldSuppressPrimaryHandCollidersForWeapon(
+            rightHandWeaponEquipped,
+            retainedWeaponCollisionActive,
+            _twoHandedGrip.getPrimaryWeaponControlState());
         const bool rightHandWeaponAuthorityActiveBeforeGrip = rightHandWeaponAuthorityActive;
         bool leftSupportGripActive = false;
         if (rightHandWeaponAuthorityActive) {
@@ -2555,6 +2554,20 @@ namespace rock
                 providerInteractionState.providerPartAuthority = makeWeaponProviderPartAuthority(weaponPartQuery, weaponPartResolution);
             }
 
+            WeaponInteractionRuntimeState primaryProviderInteractionState{};
+            if (_twoHandedGrip.isPrimaryDetached()) {
+                ::rock::provider::RockProviderWeaponPartTargetResolutionV1 primaryWeaponPartResolution{};
+                const auto primaryWeaponPartQuery = makeProviderWeaponPartTargetQuery(rightWeaponContact, _weaponCollision);
+                const bool primaryWeaponPartWhitelistActive = rightWeaponContact.valid &&
+                    ::rock::provider::resolveWeaponPartTargetV1(primaryWeaponPartQuery, primaryWeaponPartResolution) &&
+                    primaryWeaponPartResolution.whitelistActive != 0;
+                if (primaryWeaponPartWhitelistActive && primaryWeaponPartResolution.matched == 0) {
+                    primaryProviderInteractionState.supportGripAllowed = false;
+                } else if (primaryWeaponPartWhitelistActive) {
+                    primaryProviderInteractionState.providerPartAuthority = makeWeaponProviderPartAuthority(primaryWeaponPartQuery, primaryWeaponPartResolution);
+                }
+            }
+
             const WeaponInteractionDecision leftWeaponDecision = routeWeaponInteraction(leftWeaponContact, providerInteractionState);
             const std::uint64_t currentWeaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey();
             const auto weaponNotificationKey = weapon_debug_notification_policy::makeWeaponNotificationKey(
@@ -2660,32 +2673,6 @@ namespace rock
                     .triggerHeld = primaryTriggerState.held,
                     .triggerPressed = primaryTriggerState.pressed,
                 };
-
-                auto previewInput = primaryReattachInput;
-                const auto previewDecision = weapon_two_handed_grip_math::updatePrimaryReattach(_primaryDetachedReattachPreviewState, previewInput);
-                if (previewDecision.completed && _rightHand.isHolding()) {
-                    auto* heldRef = _rightHand.getHeldRef();
-                    const std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;
-                    _rightHand.captureHeldReleaseMotion(hknp, frame.right.rawHandWorld, _heldObjectPlayerSpaceFrame, frame.deltaSeconds);
-                    auto releaseContext = makeGrabReleaseContext(_rightHand, false);
-                    releaseContext.disposition = GrabReleaseDisposition::PhysicalDrop;
-                    releaseContext.reason = "primary-detached-firing-grip-reattach";
-                    static_cast<void>(_rightHand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, releaseContext));
-                    if (heldRef) {
-                        releaseObject(heldRef, claimOwnerForHand(false));
-                    }
-                    dispatchPhysicsMessage(kPhysMsg_OnRelease, false, heldRef, heldFormID, 0);
-                    dispatchSimpleGrabEvent(GrabEventType::Released, false, heldRef);
-                    shoulder_stash::resetRuntime(_shoulderStashStates[0]);
-                    _rightHand.cancelStashCandidate();
-                    mouth_consume::resetRuntime(_mouthConsumeStates[0]);
-                    _rightHand.cancelConsumeCandidate();
-                    ROCK_LOG_INFO(Weapon,
-                        "Primary detached reattach released ROCK-held right-hand object formID={:08X} before restoring firing grip",
-                        heldFormID);
-                }
-            } else {
-                _primaryDetachedReattachPreviewState = {};
             }
 
             std::array<const RE::NiAVObject*, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> drivenSourceNodes{};
@@ -2708,12 +2695,52 @@ namespace rock
                 currentWeaponGenerationKey,
                 _weaponCollision,
                 providerInteractionState,
+                primaryProviderInteractionState,
                 supportAuthorityMode,
                 primaryDetachFeatureAvailable,
                 primaryGripInput,
-                primaryReattachInput);
+                primaryReattachInput,
+                _twoHandedGrip.isPrimaryDetached() && _rightHand.isHolding());
             if (primaryOnlyGripStartedThisFrame) {
                 ROCK_LOG_DEBUG(Weapon, "Equipped weapon primary-only manual ownership started from primary grip input");
+            }
+            const auto primaryReattachRequest = _twoHandedGrip.consumePrimaryReattachRequest();
+            if (primaryReattachRequest.requested) {
+                bool releasedPrimaryRockWorldGrab = !primaryReattachRequest.releasePrimaryRockWorldGrab;
+                if (primaryReattachRequest.releasePrimaryRockWorldGrab && _rightHand.isHolding()) {
+                    auto* heldRef = _rightHand.getHeldRef();
+                    const std::uint32_t heldFormID = heldRef ? heldRef->GetFormID() : 0u;
+                    _rightHand.captureHeldReleaseMotion(hknp, frame.right.rawHandWorld, _heldObjectPlayerSpaceFrame, frame.deltaSeconds);
+                    auto releaseContext = makeGrabReleaseContext(_rightHand, false);
+                    releaseContext.disposition = GrabReleaseDisposition::PhysicalDrop;
+                    releaseContext.reason = primaryReattachRequest.reason ? primaryReattachRequest.reason : "primary-detached-firing-grip-reattach";
+                    const auto releaseOutcome = _rightHand.releaseGrabbedObject(hknp, GrabReleaseCollisionRestoreMode::Immediate, releaseContext);
+                    releasedPrimaryRockWorldGrab = releaseOutcome.released;
+                    if (heldRef) {
+                        releaseObject(heldRef, claimOwnerForHand(false));
+                    }
+                    dispatchPhysicsMessage(kPhysMsg_OnRelease, false, heldRef, heldFormID, 0);
+                    dispatchSimpleGrabEvent(GrabEventType::Released, false, heldRef);
+                    shoulder_stash::resetRuntime(_shoulderStashStates[0]);
+                    _rightHand.cancelStashCandidate();
+                    mouth_consume::resetRuntime(_mouthConsumeStates[0]);
+                    _rightHand.cancelConsumeCandidate();
+                    ROCK_LOG_INFO(Weapon,
+                        "Primary detached reattach released ROCK-held right-hand object formID={:08X} reason={} outcome={}",
+                        heldFormID,
+                        primaryReattachRequest.reason ? primaryReattachRequest.reason : "unknown",
+                        releasedPrimaryRockWorldGrab ? "released" : "not-released");
+                }
+
+                if (releasedPrimaryRockWorldGrab || !_rightHand.isHolding()) {
+                    if (_twoHandedGrip.completePendingPrimaryReattach(
+                            weaponNode,
+                            frame.deltaSeconds,
+                            primaryReattachRequest.reason,
+                            primaryReattachRequest.continueSupportGrip)) {
+                        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: pending primary firing-grip reattach complete");
+                    }
+                }
             }
             const auto equippedWeaponDropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
             if (equippedWeaponDropRequest.requested) {
@@ -2792,11 +2819,10 @@ namespace rock
                 input_remap_policy::shouldUseEquippedWeaponPrimaryDetachInput(updatedPrimaryDetachInputGate));
             input_remap_runtime::setEquippedWeaponPrimaryDetached(_twoHandedGrip.isPrimaryDetached());
 
-            bool rightHandWeaponAuthorityActiveAfterGrip = rightHandWeaponEquipped || retainedWeaponCollisionActive;
-            // Retained reload bodies still own right-hand collision; only a visible detached primary releases it.
-            if (rightHandWeaponEquipped && !retainedWeaponCollisionActive && _twoHandedGrip.isPrimaryDetached()) {
-                rightHandWeaponAuthorityActiveAfterGrip = false;
-            }
+            bool rightHandWeaponAuthorityActiveAfterGrip = weapon_two_handed_grip_math::shouldSuppressPrimaryHandCollidersForWeapon(
+                rightHandWeaponEquipped,
+                retainedWeaponCollisionActive,
+                _twoHandedGrip.getPrimaryWeaponControlState());
             if (rightHandWeaponAuthorityActiveAfterGrip != rightHandWeaponAuthorityActiveBeforeGrip) {
                 if (rightHandWeaponAuthorityActiveAfterGrip) {
                     suppressRightHandCollisionForDominantWeapon(hknp);
@@ -4607,8 +4633,7 @@ namespace rock
                 false,
                 _twoHandedGrip.isGripping(),
                 resolveEquippedWeaponInteractionNode() != nullptr,
-                _twoHandedGrip.isPrimaryDetached() &&
-                    _twoHandedGrip.getPrimaryWeaponControlState() != weapon_two_handed_grip_math::PrimaryWeaponControlState::DetachedGrabbingWeaponPart);
+                _twoHandedGrip.getPrimaryWeaponControlState());
         };
 
         if (!_pendingLooseGrenadeGrab.active) {
@@ -5158,8 +5183,7 @@ namespace rock
                     isLeft,
                     _twoHandedGrip.isGripping(),
                     resolveEquippedWeaponInteractionNode() != nullptr,
-                    _twoHandedGrip.isPrimaryDetached() &&
-                        _twoHandedGrip.getPrimaryWeaponControlState() != weapon_two_handed_grip_math::PrimaryWeaponControlState::DetachedGrabbingWeaponPart)) {
+                    _twoHandedGrip.getPrimaryWeaponControlState())) {
                 complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandBusy);
                 continue;
             }
@@ -5950,8 +5974,7 @@ namespace rock
                     isLeft,
                     equippedWeaponSupportGripActive,
                     rightHandWeaponEquipped,
-                    _twoHandedGrip.isPrimaryDetached() &&
-                        _twoHandedGrip.getPrimaryWeaponControlState() != weapon_two_handed_grip_math::PrimaryWeaponControlState::DetachedGrabbingWeaponPart)) {
+                    _twoHandedGrip.getPrimaryWeaponControlState())) {
                 grab_input_intent_policy::reset(inputIntentState);
                 cancelPeerHeldJoinRetry("normal-grab-suppressed", true);
                 clearGameplayCandidatesForHand(hand, isLeft);

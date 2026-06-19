@@ -55,6 +55,14 @@ namespace rock
         equipped_weapon_drop_policy::SourceHand sourceHand{ equipped_weapon_drop_policy::SourceHand::None };
     };
 
+    struct EquippedWeaponPrimaryReattachRequest
+    {
+        bool requested{ false };
+        bool releasePrimaryRockWorldGrab{ false };
+        bool continueSupportGrip{ true };
+        const char* reason{ nullptr };
+    };
+
     class TwoHandedGrip
     {
     public:
@@ -68,10 +76,12 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             const WeaponCollision& weaponCollision,
             const WeaponInteractionRuntimeState& runtimeState,
+            const WeaponInteractionRuntimeState& primaryRuntimeState,
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
             bool primaryDetachEnabled,
             const EquippedWeaponPrimaryGripInput& primaryGripInput,
-            const weapon_two_handed_grip_math::PrimaryReattachInput& primaryReattachInput);
+            const weapon_two_handed_grip_math::PrimaryReattachInput& primaryReattachInput,
+            bool primaryRockWorldGrabActive);
 
         void reset();
 
@@ -113,6 +123,10 @@ namespace rock
 
         EquippedWeaponManualDropRequest consumeEquippedWeaponDropRequest();
 
+        EquippedWeaponPrimaryReattachRequest consumePrimaryReattachRequest();
+
+        bool completePendingPrimaryReattach(RE::NiNode* weaponNode, float dt, const char* reason, bool continueSupportGrip);
+
     private:
         void transitionToTouching(RE::NiNode* weaponNode, const WeaponInteractionDecision& decision);
         void transitionToGripping(
@@ -131,13 +145,17 @@ namespace rock
 
         void updateFullWeaponAuthorityGrip(RE::NiNode* weaponNode, float dt);
 
+        void updatePrimaryWeaponPartOnlyGrip(RE::NiNode* weaponNode);
+
         void updatePrimaryDetachedGrip(
             RE::NiNode* weaponNode,
             float dt,
             const EquippedWeaponPrimaryGripInput& primaryGripInput,
             const weapon_two_handed_grip_math::PrimaryReattachInput& primaryReattachInput,
+            const WeaponInteractionRuntimeState& primaryRuntimeState,
             const WeaponInteractionContact& rightWeaponContact,
-            const WeaponCollision& weaponCollision);
+            const WeaponCollision& weaponCollision,
+            bool primaryRockWorldGrabActive);
 
         void updateVisualOnlySupportGrip(RE::NiNode* weaponNode, float dt);
 
@@ -146,7 +164,8 @@ namespace rock
         bool beginDetachedPrimaryWeaponPartGrip(
             RE::NiNode* weaponNode,
             const WeaponInteractionDecision& decision,
-            const WeaponCollision& weaponCollision);
+            const WeaponCollision& weaponCollision,
+            const WeaponProviderPartAuthority& providerPartAuthority);
 
         bool transitionToPrimaryOnly(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const char* reason);
 
@@ -293,6 +312,7 @@ namespace rock
         bool _hasWeaponNodeLocalBaseline{ false };
 
         EquippedWeaponManualDropRequest _equippedWeaponDropRequest{};
+        EquippedWeaponPrimaryReattachRequest _primaryReattachRequest{};
     };
 
 }

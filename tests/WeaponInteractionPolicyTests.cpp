@@ -70,12 +70,43 @@ int main()
     ok &= expectEqual("right hand remains contact source", rightWeapon.source.kind, ContactEndpointKind::RightHand);
 
     using rock::weapon_two_handed_grip_math::canProcessNormalGrabInput;
+    using rock::weapon_two_handed_grip_math::capabilitiesForPrimaryWeaponControl;
+    using rock::weapon_two_handed_grip_math::DetachedPrimarySupportReleaseAction;
+    using rock::weapon_two_handed_grip_math::PrimaryWeaponControlState;
+    using rock::weapon_two_handed_grip_math::resolveDetachedPrimarySupportReleaseAction;
     using rock::weapon_two_handed_grip_math::resolveSupportReleaseManualAction;
+    using rock::weapon_two_handed_grip_math::shouldSuppressPrimaryHandCollidersForWeapon;
     using rock::weapon_two_handed_grip_math::SupportReleaseManualAction;
-    ok &= expectFalse("left normal grab is blocked while support grip owns weapon", canProcessNormalGrabInput(true, true, true, false));
-    ok &= expectFalse("right normal grab is blocked while firing hand owns equipped weapon", canProcessNormalGrabInput(false, false, true, false));
-    ok &= expectTrue("right normal grab is restored while primary hand is detached", canProcessNormalGrabInput(false, false, true, true));
-    ok &= expectTrue("right normal grab stays available without equipped weapon", canProcessNormalGrabInput(false, false, false, false));
+    ok &= expectFalse("left normal grab is blocked while support grip owns weapon",
+        canProcessNormalGrabInput(true, true, true, PrimaryWeaponControlState::AttachedFiringGrip));
+    ok &= expectFalse("right normal grab is blocked while firing hand owns equipped weapon",
+        canProcessNormalGrabInput(false, false, true, PrimaryWeaponControlState::AttachedFiringGrip));
+    ok &= expectTrue("right normal grab is restored while primary hand is detached free",
+        canProcessNormalGrabInput(false, false, true, PrimaryWeaponControlState::DetachedFree));
+    ok &= expectTrue("right normal grab remains active while detached primary world grab owns the hand",
+        canProcessNormalGrabInput(false, false, true, PrimaryWeaponControlState::DetachedGrabbingWorldObject));
+    ok &= expectFalse("right normal grab is blocked while detached primary weapon-part grip owns the hand",
+        canProcessNormalGrabInput(false, false, true, PrimaryWeaponControlState::DetachedGrabbingWeaponPart));
+    ok &= expectTrue("right normal grab stays available without equipped weapon",
+        canProcessNormalGrabInput(false, false, false, PrimaryWeaponControlState::AttachedFiringGrip));
+    ok &= expectTrue("attached firing grip suppresses primary hand colliders",
+        shouldSuppressPrimaryHandCollidersForWeapon(true, true, PrimaryWeaponControlState::AttachedFiringGrip));
+    ok &= expectFalse("detached free primary restores hand colliders despite generated weapon bodies",
+        shouldSuppressPrimaryHandCollidersForWeapon(true, true, PrimaryWeaponControlState::DetachedFree));
+    ok &= expectFalse("detached weapon-part primary restores hand colliders despite generated weapon bodies",
+        shouldSuppressPrimaryHandCollidersForWeapon(true, true, PrimaryWeaponControlState::DetachedGrabbingWeaponPart));
+    ok &= expectTrue("retained reload bodies suppress primary colliders without visible weapon node",
+        shouldSuppressPrimaryHandCollidersForWeapon(false, true, PrimaryWeaponControlState::DetachedFree));
+    ok &= expectTrue("detached free primary still needs support weapon ownership",
+        capabilitiesForPrimaryWeaponControl(PrimaryWeaponControlState::DetachedFree).supportHandMustOwnWeapon);
+    ok &= expectFalse("detached weapon-part primary is a valid weapon owner",
+        capabilitiesForPrimaryWeaponControl(PrimaryWeaponControlState::DetachedGrabbingWeaponPart).supportHandMustOwnWeapon);
+    ok &= expectEqual("support release reattaches when detached primary is free",
+        resolveDetachedPrimarySupportReleaseAction(PrimaryWeaponControlState::DetachedFree),
+        DetachedPrimarySupportReleaseAction::ReattachPrimaryToFiringGrip);
+    ok &= expectEqual("support release keeps primary weapon-part ownership",
+        resolveDetachedPrimarySupportReleaseAction(PrimaryWeaponControlState::DetachedGrabbingWeaponPart),
+        DetachedPrimarySupportReleaseAction::KeepPrimaryWeaponPartOwnership);
     using rock::weapon_two_handed_grip_math::PrimaryReattachInput;
     using rock::weapon_two_handed_grip_math::PrimaryReattachRuntimeState;
     using rock::weapon_two_handed_grip_math::updatePrimaryReattach;
