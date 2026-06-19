@@ -70,7 +70,8 @@ namespace rock
             const WeaponInteractionRuntimeState& runtimeState,
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
             bool primaryDetachEnabled,
-            const EquippedWeaponPrimaryGripInput& primaryGripInput);
+            const EquippedWeaponPrimaryGripInput& primaryGripInput,
+            const weapon_two_handed_grip_math::PrimaryReattachInput& primaryReattachInput);
 
         void reset();
 
@@ -84,6 +85,10 @@ namespace rock
         }
 
         bool isPrimaryDetached() const { return _state == TwoHandedState::PrimaryDetached; }
+
+        weapon_two_handed_grip_math::PrimaryWeaponControlState getPrimaryWeaponControlState() const { return _primaryControlState; }
+
+        void notePrimaryRockWorldGrabState(bool active);
 
         bool canUsePrimaryDetachInput() const
         {
@@ -130,11 +135,18 @@ namespace rock
             RE::NiNode* weaponNode,
             float dt,
             const EquippedWeaponPrimaryGripInput& primaryGripInput,
-            const WeaponInteractionContact& rightWeaponContact);
+            const weapon_two_handed_grip_math::PrimaryReattachInput& primaryReattachInput,
+            const WeaponInteractionContact& rightWeaponContact,
+            const WeaponCollision& weaponCollision);
 
         void updateVisualOnlySupportGrip(RE::NiNode* weaponNode, float dt);
 
         bool transitionToPrimaryDetached();
+
+        bool beginDetachedPrimaryWeaponPartGrip(
+            RE::NiNode* weaponNode,
+            const WeaponInteractionDecision& decision,
+            const WeaponCollision& weaponCollision);
 
         bool transitionToPrimaryOnly(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const char* reason);
 
@@ -145,12 +157,7 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             const EquippedWeaponPrimaryGripInput& primaryGripInput);
 
-        bool tryReattachPrimaryGrip(RE::NiNode* weaponNode, const WeaponInteractionContact& rightWeaponContact);
-
-        bool primaryGripContactMatchesCapturedGrip(
-            RE::NiNode* weaponNode,
-            const WeaponInteractionContact& rightWeaponContact,
-            const RE::NiTransform& primaryTransform) const;
+        bool completePrimaryReattach(RE::NiNode* weaponNode, float dt, const char* reason, bool continueSupportGrip);
 
         void setSupportGripPose(bool isLeft, WeaponGripPoseId poseId, const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose);
 
@@ -211,6 +218,10 @@ namespace rock
             LockedHandVisualLerpState& state);
 
         TwoHandedState _state{ TwoHandedState::Inactive };
+        weapon_two_handed_grip_math::PrimaryWeaponControlState _primaryControlState{
+            weapon_two_handed_grip_math::PrimaryWeaponControlState::AttachedFiringGrip
+        };
+        weapon_two_handed_grip_math::PrimaryReattachRuntimeState _primaryReattachState{};
 
         weapon_support_authority_policy::WeaponSupportAuthorityMode _authorityMode{
             weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver

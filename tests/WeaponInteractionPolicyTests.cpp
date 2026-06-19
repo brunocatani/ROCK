@@ -76,6 +76,47 @@ int main()
     ok &= expectFalse("right normal grab is blocked while firing hand owns equipped weapon", canProcessNormalGrabInput(false, false, true, false));
     ok &= expectTrue("right normal grab is restored while primary hand is detached", canProcessNormalGrabInput(false, false, true, true));
     ok &= expectTrue("right normal grab stays available without equipped weapon", canProcessNormalGrabInput(false, false, false, false));
+    using rock::weapon_two_handed_grip_math::PrimaryReattachInput;
+    using rock::weapon_two_handed_grip_math::PrimaryReattachRuntimeState;
+    using rock::weapon_two_handed_grip_math::updatePrimaryReattach;
+    PrimaryReattachRuntimeState reattachState{};
+    auto reattachDecision = updatePrimaryReattach(reattachState,
+        PrimaryReattachInput{
+            .detachedRockOwned = true,
+            .grabHeld = true,
+            .grabPressed = true,
+            .triggerHeld = false,
+            .triggerPressed = false,
+        });
+    ok &= expectFalse("primary grab alone does not arm reattach", reattachDecision.armed);
+    ok &= expectFalse("primary grab alone does not complete reattach", reattachDecision.completed);
+    reattachDecision = updatePrimaryReattach(reattachState,
+        PrimaryReattachInput{
+            .detachedRockOwned = true,
+            .grabHeld = true,
+            .grabPressed = false,
+            .triggerHeld = true,
+            .triggerPressed = true,
+        });
+    ok &= expectTrue("primary grab and trigger combo arms reattach", reattachDecision.armed);
+    ok &= expectFalse("armed primary combo waits for grab release", reattachDecision.completed);
+    reattachDecision = updatePrimaryReattach(reattachState,
+        PrimaryReattachInput{
+            .detachedRockOwned = true,
+            .grabHeld = false,
+            .grabPressed = false,
+            .grabReleased = true,
+            .triggerHeld = true,
+            .triggerPressed = false,
+        });
+    ok &= expectTrue("armed primary combo completes on grab release", reattachDecision.completed);
+    reattachDecision = updatePrimaryReattach(reattachState,
+        PrimaryReattachInput{
+            .detachedRockOwned = false,
+            .grabHeld = true,
+            .triggerHeld = true,
+        });
+    ok &= expectFalse("attached firing grip ignores reattach combo", reattachDecision.completed);
     ok &= expectTrue("full two-handed support still owns weapon transform",
         rock::weapon_support_authority_policy::supportGripOwnsWeaponTransform(rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
     ok &= expectTrue("full two-handed support applies primary hand authority while active",
