@@ -1812,6 +1812,18 @@ namespace rock
             pose.values = stablePose.values;
             pose.usedAlternateThumbCurve = false;
             pose.usedAlternateThumbSurfaceHit = false;
+            pose.selectedThumbLane = grab_finger_calibration_data::BakedGrabThumbLane::Wrap;
+            pose.selectedThumbLaneNormalBlend = 0.0f;
+            pose.selectedThumbLaneLocalCorrectionStrength = 0.0f;
+            pose.hasThumbAlternateCurveFrame = false;
+            pose.thumbAlternateCurveBaseWorld = {};
+            pose.thumbAlternateCurveOpenDirectionWorld = {};
+            pose.thumbAlternateCurveNormalWorld = {};
+            pose.thumbAlternateCurveMaxCurlAngleRadians = 0.0f;
+            pose.hasThumbCurveDiagnostics = false;
+            pose.thumbPrimaryCurve = {};
+            pose.thumbAlternateCurve = {};
+            pose.thumbSidePadCurve = {};
             pose.poseTargetCount = (std::max)(pose.poseTargetCount, static_cast<int>(frame.fingerPoseTargetCount));
 
             for (std::size_t finger = 0; finger < 2 && finger < pose.surfaceAimTargetValid.size(); ++finger) {
@@ -4310,9 +4322,10 @@ namespace rock
                 syncLocalTransformState();
                 if (g_rockConfig.rockDebugGrabFrameLogging) {
                     ROCK_LOG_DEBUG(Hand,
-                        "{} hand FINGER JOINT POSE: thumb=({:.2f},{:.2f},{:.2f}) index=({:.2f},{:.2f},{:.2f}) hits={} candidateTris={} altThumb={} localTransforms={} mask=0x{:04X}",
+                        "{} hand FINGER JOINT POSE: thumb=({:.2f},{:.2f},{:.2f}) index=({:.2f},{:.2f},{:.2f}) hits={} candidateTris={} altThumb={} thumbLane={} localTransforms={} mask=0x{:04X}",
                         isLeft ? "Left" : "Right", currentJointPose[0], currentJointPose[1], currentJointPose[2], currentJointPose[3], currentJointPose[4],
                         currentJointPose[5], fingerPose.hitCount, fingerPose.candidateTriangleCount, fingerPose.usedAlternateThumbCurve ? "yes" : "no",
+                        grab_finger_pose_math::thumbLaneName(fingerPose.selectedThumbLane),
                         publishedLocalTransforms ? "yes" : "no", currentLocalTransformMask);
                 }
                 return;
@@ -4334,9 +4347,10 @@ namespace rock
                 const bool published = frik_visual_authority::setHandPoseCustomWithPriority("ROCK_Grab", hand, handPose, 100);
                 if (published && g_rockConfig.rockDebugGrabFrameLogging) {
                     ROCK_LOG_DEBUG(Hand,
-                        "{} hand FINGER POSE: mesh values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} candidateTris={} altThumb={}",
+                        "{} hand FINGER POSE: mesh values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} candidateTris={} altThumb={} thumbLane={}",
                         isLeft ? "Left" : "Right", fingerPose.values[0], fingerPose.values[1], fingerPose.values[2], fingerPose.values[3], fingerPose.values[4],
-                        fingerPose.hitCount, fingerPose.candidateTriangleCount, fingerPose.usedAlternateThumbCurve ? "yes" : "no");
+                        fingerPose.hitCount, fingerPose.candidateTriangleCount, fingerPose.usedAlternateThumbCurve ? "yes" : "no",
+                        grab_finger_pose_math::thumbLaneName(fingerPose.selectedThumbLane));
                 }
                 return;
             }

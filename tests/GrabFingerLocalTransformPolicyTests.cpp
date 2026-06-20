@@ -143,6 +143,25 @@ namespace
             },
         };
     }
+
+    std::vector<rock::grab_finger_pose_math::Triangle<TestVector>> makeTriangleThroughThumbSidePadPlanePoint(const TestVector& point)
+    {
+        constexpr float kSidePadNormalY = 0.48f;
+        constexpr float kSidePadNormalZ = 1.0f - kSidePadNormalY;
+        const auto sidePadPlaneZForY = [](float y) {
+            return -(kSidePadNormalY / kSidePadNormalZ) * y;
+        };
+        const TestVector onPlanePoint{ point.x, point.y, sidePadPlaneZForY(point.y) };
+        constexpr float kTangentY = 0.0367f;
+        const TestVector sidePadTangent{ 0.0f, kTangentY, sidePadPlaneZForY(kTangentY) };
+        return {
+            rock::grab_finger_pose_math::Triangle<TestVector>{
+                TestVector{ onPlanePoint.x - 0.05f, onPlanePoint.y, onPlanePoint.z },
+                TestVector{ onPlanePoint.x + 0.05f, onPlanePoint.y, onPlanePoint.z },
+                TestVector{ onPlanePoint.x + sidePadTangent.x, onPlanePoint.y + sidePadTangent.y, onPlanePoint.z + sidePadTangent.z },
+            },
+        };
+    }
 }
 
 int main()
@@ -680,6 +699,7 @@ int main()
         RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
 
     using namespace rock::grab_finger_pose_math;
+    namespace grab_data = rock::grab_finger_calibration_data;
     constexpr float kHalfPi = 1.57079632679489661923f;
     CalibratedFingerCurveSample<TestVector> interpolatedSample{};
     ok &= expectBool("calibrated curve lookup accepts midpoint",
@@ -718,6 +738,21 @@ int main()
     ok &= expectBool("baked power armor profile has distinct index curve",
         bakedCalibratedFingerMaxAngleRadians(1, false, true) > bakedCalibratedFingerMaxAngleRadians(1, false, false),
         true);
+    const auto& bakedThumbProfile = grab_data::bakedGrabThumbProfile(false, false);
+    ok &= expectBool("baked thumb profile creates wrap/opposition/side-pad lanes",
+        bakedThumbProfile.lanes[0].lane == grab_data::BakedGrabThumbLane::Wrap &&
+            bakedThumbProfile.lanes[1].lane == grab_data::BakedGrabThumbLane::Opposition &&
+            bakedThumbProfile.lanes[2].lane == grab_data::BakedGrabThumbLane::SidePad,
+        true);
+    ok &= expectFloat("baked side-pad lane uses intermediate thumb normal",
+        bakedThumbProfile.lanes[2].normalBlend,
+        0.48f);
+    ok &= expectFloat("baked side-pad lane has bounded local correction strength",
+        bakedThumbProfile.lanes[2].localCorrectionStrength,
+        0.82f);
+    ok &= expectBool("baked side-pad lane owns the custom thumb curve",
+        bakedThumbProfile.lanes[2].curveSource == grab_data::BakedGrabThumbCurveSource::SidePad,
+        true);
     const auto bakedThumbPrimaryCurve = makeBakedCalibratedFingerCurve<TestVector>(
         0,
         false,
@@ -741,6 +776,20 @@ int main()
     ok &= expectFloat("baked thumb alternate preserves explicit plane normal",
         bakedThumbAlternateCurve.normal.z,
         1.0f);
+    const TestVector sidePadNormal = blendedThumbLaneNormal(
+        TestVector{ 0.0f, 0.0f, 1.0f },
+        TestVector{ 0.0f, 1.0f, 0.0f },
+        bakedThumbProfile.lanes[2].normalBlend);
+    const auto bakedThumbSidePadCurve = makeBakedCalibratedThumbLaneCurve<TestVector>(
+        bakedThumbProfile.lanes[2],
+        bakedThumbProfile.sidePadCurve,
+        TestVector{ 0.0f, 0.0f, 0.0f },
+        sidePadNormal,
+        TestVector{ 1.0f, 0.0f, 0.0f },
+        10.0f);
+    ok &= expectBool("baked side-pad curve preserves blended explicit plane",
+        bakedThumbSidePadCurve.normal.y > 0.60f && bakedThumbSidePadCurve.normal.z > 0.70f,
+        true);
 
     const TestVector fortyFiveDegreeContact{ 0.70710678f, 0.70710678f, 0.0f };
     const auto leastClosingCurve = makeThreeProbeCurve(
@@ -804,9 +853,38 @@ int main()
     ok &= expectBool("calibrated alternate thumb retries when primary plane misses",
         alternateThumbSolved.usedAlternateThumbCurve,
         true);
+    ok &= expectBool("calibrated alternate thumb records opposition lane",
+        alternateThumbSolved.selectedThumbLane == grab_data::BakedGrabThumbLane::Opposition,
+        true);
+    ok &= expectFloat("calibrated alternate thumb carries opposition correction strength",
+        alternateThumbSolved.selectedThumbLaneLocalCorrectionStrength,
+        1.0f);
     ok &= expectBool("calibrated alternate thumb returns a valid hit",
         alternateThumbSolved.value.hit,
         true);
+
+    const TestVector sidePadThumbContact{ 1.3164f, 0.5285f, -0.4876f };
+    const auto sidePadThumbSolved = solveThumbAwareCalibratedFingerCurveCurlValue(
+        makeTriangleThroughThumbSidePadPlanePoint(sidePadThumbContact),
+        0,
+        false,
+        false,
+        TestVector{ 0.0f, 0.0f, 0.0f },
+        TestVector{ 0.0f, 0.0f, 1.0f },
+        TestVector{ 0.0f, 1.0f, 0.0f },
+        TestVector{ 1.0f, 0.0f, 0.0f },
+        2.0f,
+        0.2f,
+        true);
+    ok &= expectBool("calibrated thumb can select baked side-pad lane",
+        sidePadThumbSolved.selectedThumbLane == grab_data::BakedGrabThumbLane::SidePad,
+        true);
+    ok &= expectBool("calibrated side-pad thumb returns selected hit",
+        sidePadThumbSolved.selectedThumbCurve.hit && sidePadThumbSolved.value.hit,
+        true);
+    ok &= expectFloat("calibrated side-pad thumb carries lane correction strength",
+        sidePadThumbSolved.selectedThumbLaneLocalCorrectionStrength,
+        0.82f);
 
     return ok ? 0 : 1;
 }

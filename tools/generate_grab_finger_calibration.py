@@ -22,8 +22,34 @@ from typing import Iterable
 
 
 SAMPLE_COUNT = 201
-GENERATOR_VERSION = 2
+GENERATOR_VERSION = 3
 OUTPUT_RELATIVE = pathlib.Path("src/physics-interaction/grab/GeneratedGrabFingerCalibration.h")
+THUMB_LANES = (
+    {
+        "name": "Wrap",
+        "curve_source": "HandThumb",
+        "normal_blend": 0.0,
+        "local_correction_strength": 0.0,
+        "surface_thickness_scale": 0.060,
+        "apply_authored_normal_sign": True,
+    },
+    {
+        "name": "Opposition",
+        "curve_source": "HandThumb",
+        "normal_blend": 1.0,
+        "local_correction_strength": 1.0,
+        "surface_thickness_scale": 0.066,
+        "apply_authored_normal_sign": False,
+    },
+    {
+        "name": "SidePad",
+        "curve_source": "SidePad",
+        "normal_blend": 0.48,
+        "local_correction_strength": 0.82,
+        "surface_thickness_scale": 0.078,
+        "apply_authored_normal_sign": False,
+    },
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -340,11 +366,17 @@ def distal_open_length(bones: list[HandBonePoseData], is_left: bool, finger: int
     raise ValueError(f"missing distal bone length for finger {finger}")
 
 
-def probe_offset(probe: str, distal_length: float, finger: int, is_left: bool) -> Vec3:
+def probe_offset(probe: str, distal_length: float, finger: int, is_left: bool, thumb_lane: str = "Wrap") -> Vec3:
     side = -1.0 if is_left else 1.0
     if probe == "Tip":
+        if finger == 0 and thumb_lane == "SidePad":
+            return Vec3(distal_length * 0.70, distal_length * 0.24, side * distal_length * 0.18)
         return Vec3(distal_length, 0.0, 0.0)
     if finger == 0:
+        if thumb_lane == "SidePad":
+            if probe == "Outer":
+                return Vec3(distal_length * 0.76, distal_length * 0.26, side * distal_length * 0.22)
+            return Vec3(distal_length * 0.54, distal_length * 0.18, side * distal_length * 0.08)
         if probe == "Outer":
             return Vec3(distal_length * 0.72, distal_length * 0.20, side * distal_length * 0.12)
         return Vec3(distal_length * 0.48, distal_length * 0.16, -side * distal_length * 0.12)
@@ -364,7 +396,14 @@ def runtime_landmark_reference_length(world: list[Transform], finger: int) -> fl
     return max(0.0001, length(mid - base) + length(distal - mid))
 
 
-def sample_raw_probe_curve(bones: list[HandBonePoseData], is_left: bool, in_power_armor: bool, finger: int, probe: str) -> tuple[float, list[RawSample]]:
+def sample_raw_probe_curve(
+    bones: list[HandBonePoseData],
+    is_left: bool,
+    in_power_armor: bool,
+    finger: int,
+    probe: str,
+    thumb_lane: str = "Wrap",
+) -> tuple[float, list[RawSample]]:
     open_world = build_world_transforms(bones, is_left, in_power_armor, 1.0)
     base_open = open_world[finger * 3].translate
     distal_length = distal_open_length(bones, is_left, finger, in_power_armor)
@@ -374,7 +413,7 @@ def sample_raw_probe_curve(bones: list[HandBonePoseData], is_left: bool, in_powe
     reference_length = runtime_landmark_reference_length(open_world, finger)
 
     closed_world = build_world_transforms(bones, is_left, in_power_armor, 0.0)
-    closed_probe = transformed_probe_point(closed_world[finger * 3 + 2], probe_offset("Tip", distal_length, finger, is_left))
+    closed_probe = transformed_probe_point(closed_world[finger * 3 + 2], probe_offset("Tip", distal_length, finger, is_left, thumb_lane))
     closed_angle = signed_angle(closed_probe - closed_world[finger * 3].translate, zero, canonical_normal)
     normal_sign = -1.0 if closed_angle < 0.0 else 1.0
 
@@ -383,10 +422,10 @@ def sample_raw_probe_curve(bones: list[HandBonePoseData], is_left: bool, in_powe
         open_value = 1.0 - (index / (SAMPLE_COUNT - 1))
         world = build_world_transforms(bones, is_left, in_power_armor, open_value)
         base = world[finger * 3].translate
-        point = transformed_probe_point(world[finger * 3 + 2], probe_offset(probe, distal_length, finger, is_left))
+        point = transformed_probe_point(world[finger * 3 + 2], probe_offset(probe, distal_length, finger, is_left, thumb_lane))
         angle = signed_angle(point - base, zero, canonical_normal) * normal_sign
         if not math.isfinite(angle):
-            raise ValueError(f"non-finite angle for finger={finger} probe={probe}")
+            raise ValueError(f"non-finite angle for finger={finger} probe={probe} thumb_lane={thumb_lane}")
         raw.append(RawSample(open_value, max(0.0, angle), length(point - base) / reference_length))
     return normal_sign, raw
 
@@ -443,38 +482,75 @@ def f32(value: float) -> str:
     return f"{value:.6f}f"
 
 
+def build_finger_curve(
+    bones: list[HandBonePoseData],
+    is_left: bool,
+    in_power_armor: bool,
+    finger: int,
+    surface_thickness_scale: float,
+    thumb_lane: str = "Wrap",
+) -> dict:
+    normal_sign, tip_raw = sample_raw_probe_curve(bones, is_left, in_power_armor, finger, "Tip", thumb_lane)
+    tip_max_angle = max(sample.angle for sample in tip_raw)
+    if tip_max_angle <= 0.0001:
+        raise ValueError(f"finger {finger} thumb_lane={thumb_lane} tip calibration has no usable curl angle")
+    probes = []
+    for probe in ("Tip", "Outer", "Inner"):
+        _, raw = sample_raw_probe_curve(bones, is_left, in_power_armor, finger, probe, thumb_lane)
+        probe_max_angle = max(sample.angle for sample in raw)
+        if probe != "Tip" and probe_max_angle < tip_max_angle * 0.25:
+            # Some hFRIK power-armor auxiliary pad offsets primarily change
+            # reach rather than angular curl. Keep their baked reach model,
+            # but use the tip's stable authored angle parameter so runtime
+            # lookup remains monotonic and the probe still participates.
+            raw = [
+                RawSample(aux.open_value, tip.angle, aux.reach_scale)
+                for aux, tip in zip(raw, tip_raw)
+            ]
+        probes.append((probe, resample_curve(raw)))
+    return {
+        "normal_sign": normal_sign,
+        "surface_thickness_scale": surface_thickness_scale,
+        "probes": probes,
+    }
+
+
 def generate_profile(bones: list[HandBonePoseData], is_left: bool, in_power_armor: bool) -> dict:
     fingers = []
     for finger in range(5):
-        normal_sign, tip_raw = sample_raw_probe_curve(bones, is_left, in_power_armor, finger, "Tip")
-        tip_max_angle = max(sample.angle for sample in tip_raw)
-        if tip_max_angle <= 0.0001:
-            raise ValueError(f"finger {finger} tip calibration has no usable curl angle")
-        probes = []
-        for probe in ("Tip", "Outer", "Inner"):
-            _, raw = sample_raw_probe_curve(bones, is_left, in_power_armor, finger, probe)
-            probe_max_angle = max(sample.angle for sample in raw)
-            if probe != "Tip" and probe_max_angle < tip_max_angle * 0.25:
-                # Some hFRIK power-armor auxiliary pad offsets primarily change
-                # reach rather than angular curl. Keep their baked reach model,
-                # but use the tip's stable authored angle parameter so runtime
-                # lookup remains monotonic and the probe still participates.
-                raw = [
-                    RawSample(aux.open_value, tip.angle, aux.reach_scale)
-                    for aux, tip in zip(raw, tip_raw)
-                ]
-            probes.append((probe, resample_curve(raw)))
         fingers.append(
+            build_finger_curve(
+                bones,
+                is_left,
+                in_power_armor,
+                finger,
+                0.060 if finger == 0 else 0.050)
+        )
+    thumb_side_pad_curve = build_finger_curve(
+        bones,
+        is_left,
+        in_power_armor,
+        0,
+        0.078,
+        "SidePad")
+    thumb_lanes = []
+    for lane in THUMB_LANES:
+        thumb_lanes.append(
             {
-                "normal_sign": normal_sign,
-                "surface_thickness_scale": 0.060 if finger == 0 else 0.050,
-                "probes": probes,
+                "name": lane["name"],
+                "curve_source": lane["curve_source"],
+                "normal_blend": lane["normal_blend"],
+                "local_correction_strength": lane["local_correction_strength"],
+                "surface_thickness_scale": lane["surface_thickness_scale"],
+                "apply_authored_normal_sign": lane["apply_authored_normal_sign"],
             }
         )
     return {
         "is_left": is_left,
         "in_power_armor": in_power_armor,
         "fingers": fingers,
+        "thumb_lanes": thumb_lanes,
+        "thumb_side_pad_curve": thumb_side_pad_curve,
     }
 
 
@@ -497,6 +573,25 @@ def generate_header(repo_root: pathlib.Path, hfrik_root: pathlib.Path, deps_root
         generate_profile(bones, is_left=False, in_power_armor=True),
         generate_profile(bones, is_left=True, in_power_armor=True),
     ]
+
+    def append_baked_curve(lines: list[str], curve: dict, indent: str) -> None:
+        lines.append(f"{indent}BakedGrabFingerCurve{{")
+        lines.append(f"{indent}    .normalSign = {f32(curve['normal_sign'])},")
+        lines.append(f"{indent}    .surfaceThicknessScale = {f32(curve['surface_thickness_scale'])},")
+        lines.append(f"{indent}    .probes = {{ {{")
+        for probe_name, samples in curve["probes"]:
+            lines.append(f"{indent}        BakedGrabFingerProbeCurve{{")
+            lines.append(f"{indent}            .probe = BakedGrabFingerProbe::{probe_name},")
+            lines.append(f"{indent}            .samples = {{ {{")
+            for sample in samples:
+                lines.append(
+                    f"{indent}                BakedGrabFingerCurveSample{{ "
+                    f"{f32(sample.open_value)}, {f32(sample.angle)}, {f32(sample.reach_scale)} }},"
+                )
+            lines.append(f"{indent}            }} }},")
+            lines.append(f"{indent}        }},")
+        lines.append(f"{indent}    }} }},")
+        lines.append(f"{indent}}},")
 
     lines: list[str] = []
     lines.extend(
@@ -548,11 +643,42 @@ def generate_header(repo_root: pathlib.Path, hfrik_root: pathlib.Path, deps_root
             "        std::array<BakedGrabFingerProbeCurve, 3> probes{};",
             "    };",
             "",
+            "    enum class BakedGrabThumbLane : std::uint8_t",
+            "    {",
+            "        Wrap,",
+            "        Opposition,",
+            "        SidePad",
+            "    };",
+            "",
+            "    enum class BakedGrabThumbCurveSource : std::uint8_t",
+            "    {",
+            "        HandThumb,",
+            "        SidePad",
+            "    };",
+            "",
+            "    struct BakedGrabThumbLaneCurve",
+            "    {",
+            "        BakedGrabThumbLane lane = BakedGrabThumbLane::Wrap;",
+            "        BakedGrabThumbCurveSource curveSource = BakedGrabThumbCurveSource::HandThumb;",
+            "        float normalBlend = 0.0f;",
+            "        float localCorrectionStrength = 0.0f;",
+            "        float surfaceThicknessScale = 0.06f;",
+            "        bool applyAuthoredNormalSign = true;",
+            "    };",
+            "",
             "    struct BakedGrabFingerHandProfile",
             "    {",
             "        bool isLeft = false;",
             "        bool inPowerArmor = false;",
             "        std::array<BakedGrabFingerCurve, 5> fingers{};",
+            "    };",
+            "",
+            "    struct BakedGrabThumbProfile",
+            "    {",
+            "        bool isLeft = false;",
+            "        bool inPowerArmor = false;",
+            "        std::array<BakedGrabThumbLaneCurve, 3> lanes{};",
+            "        BakedGrabFingerCurve sidePadCurve{};",
             "    };",
             "",
             "    inline constexpr std::array<BakedGrabFingerHandProfile, 4> kBakedGrabFingerHandProfiles{ {",
@@ -565,24 +691,37 @@ def generate_header(repo_root: pathlib.Path, hfrik_root: pathlib.Path, deps_root
         lines.append(f"            .inPowerArmor = {'true' if profile['in_power_armor'] else 'false'},")
         lines.append("            .fingers = { {")
         for finger in profile["fingers"]:
-            lines.append("                BakedGrabFingerCurve{")
-            lines.append(f"                    .normalSign = {f32(finger['normal_sign'])},")
-            lines.append(f"                    .surfaceThicknessScale = {f32(finger['surface_thickness_scale'])},")
-            lines.append("                    .probes = { {")
-            for probe_name, samples in finger["probes"]:
-                lines.append("                        BakedGrabFingerProbeCurve{")
-                lines.append(f"                            .probe = BakedGrabFingerProbe::{probe_name},")
-                lines.append("                            .samples = { {")
-                for sample in samples:
-                    lines.append(
-                        "                                BakedGrabFingerCurveSample{ "
-                        f"{f32(sample.open_value)}, {f32(sample.angle)}, {f32(sample.reach_scale)} }},"
-                    )
-                lines.append("                            } },")
-                lines.append("                        },")
-            lines.append("                    } },")
+            append_baked_curve(lines, finger, "                ")
+        lines.append("            } },")
+        lines.append("        },")
+        if profile_index + 1 < len(profiles):
+            lines.append("")
+
+    lines.extend(
+        [
+            "    } };",
+            "",
+            "    inline constexpr std::array<BakedGrabThumbProfile, 4> kBakedGrabThumbProfiles{ {",
+        ]
+    )
+
+    for profile_index, profile in enumerate(profiles):
+        lines.append("        BakedGrabThumbProfile{")
+        lines.append(f"            .isLeft = {'true' if profile['is_left'] else 'false'},")
+        lines.append(f"            .inPowerArmor = {'true' if profile['in_power_armor'] else 'false'},")
+        lines.append("            .lanes = { {")
+        for lane in profile["thumb_lanes"]:
+            lines.append("                BakedGrabThumbLaneCurve{")
+            lines.append(f"                    .lane = BakedGrabThumbLane::{lane['name']},")
+            lines.append(f"                    .curveSource = BakedGrabThumbCurveSource::{lane['curve_source']},")
+            lines.append(f"                    .normalBlend = {f32(lane['normal_blend'])},")
+            lines.append(f"                    .localCorrectionStrength = {f32(lane['local_correction_strength'])},")
+            lines.append(f"                    .surfaceThicknessScale = {f32(lane['surface_thickness_scale'])},")
+            lines.append(f"                    .applyAuthoredNormalSign = {'true' if lane['apply_authored_normal_sign'] else 'false'},")
             lines.append("                },")
         lines.append("            } },")
+        lines.append("            .sidePadCurve =")
+        append_baked_curve(lines, profile["thumb_side_pad_curve"], "                ")
         lines.append("        },")
         if profile_index + 1 < len(profiles):
             lines.append("")
@@ -594,6 +733,11 @@ def generate_header(repo_root: pathlib.Path, hfrik_root: pathlib.Path, deps_root
             "    [[nodiscard]] constexpr const BakedGrabFingerHandProfile& bakedGrabFingerHandProfile(bool isLeft, bool inPowerArmor)",
             "    {",
             "        return kBakedGrabFingerHandProfiles[(inPowerArmor ? 2 : 0) + (isLeft ? 1 : 0)];",
+            "    }",
+            "",
+            "    [[nodiscard]] constexpr const BakedGrabThumbProfile& bakedGrabThumbProfile(bool isLeft, bool inPowerArmor)",
+            "    {",
+            "        return kBakedGrabThumbProfiles[(inPowerArmor ? 2 : 0) + (isLeft ? 1 : 0)];",
             "    }",
             "}",
             "",

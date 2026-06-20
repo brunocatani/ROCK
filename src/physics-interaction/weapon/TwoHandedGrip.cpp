@@ -820,7 +820,7 @@ namespace rock
                 meshFingerPose = solvedFingerPose;
                 meshFingerPosePtr = &meshFingerPose;
                 ROCK_LOG_DEBUG(Weapon,
-                    "TwoHandedGrip: mesh finger pose hand={} values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} candidateTris={} altThumb={}",
+                    "TwoHandedGrip: mesh finger pose hand={} values=({:.2f},{:.2f},{:.2f},{:.2f},{:.2f}) hits={} candidateTris={} altThumb={} thumbLane={}",
                     supportHandIsLeft ? "left" : "right",
                     meshFingerPose.values[0],
                     meshFingerPose.values[1],
@@ -829,17 +829,21 @@ namespace rock
                     meshFingerPose.values[4],
                     solvedFingerPose.hitCount,
                     solvedFingerPose.candidateTriangleCount,
-                    solvedFingerPose.usedAlternateThumbCurve ? "yes" : "no");
+                    solvedFingerPose.usedAlternateThumbCurve ? "yes" : "no",
+                    grab_finger_pose_math::thumbLaneName(solvedFingerPose.selectedThumbLane));
                 if (solvedFingerPose.hasThumbCurveDiagnostics) {
                     ROCK_LOG_DEBUG(Weapon,
-                        "TwoHandedGrip: thumb curve primary(hit={} value={:.2f} behind={}) alternate(hit={} value={:.2f} behind={}) selected={}",
+                        "TwoHandedGrip: thumb curve primary(hit={} value={:.2f} behind={}) opposition(hit={} value={:.2f} behind={}) sidePad(hit={} value={:.2f} behind={}) selected={}",
                         solvedFingerPose.thumbPrimaryCurve.hit ? "yes" : "no",
                         solvedFingerPose.thumbPrimaryCurve.value,
                         solvedFingerPose.thumbPrimaryCurve.openedByBehindContact ? "yes" : "no",
                         solvedFingerPose.thumbAlternateCurve.hit ? "yes" : "no",
                         solvedFingerPose.thumbAlternateCurve.value,
                         solvedFingerPose.thumbAlternateCurve.openedByBehindContact ? "yes" : "no",
-                        solvedFingerPose.usedAlternateThumbCurve ? "alternate" : "primary");
+                        solvedFingerPose.thumbSidePadCurve.hit ? "yes" : "no",
+                        solvedFingerPose.thumbSidePadCurve.value,
+                        solvedFingerPose.thumbSidePadCurve.openedByBehindContact ? "yes" : "no",
+                        grab_finger_pose_math::thumbLaneName(solvedFingerPose.selectedThumbLane));
                 }
 
                 const bool canPublishAlternateThumb = !g_rockConfig.rockGrabMeshLocalTransformPoseEnabled &&
