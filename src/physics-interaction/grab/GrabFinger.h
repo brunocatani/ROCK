@@ -711,6 +711,387 @@ namespace rock::grab_finger_pose_math
         return result;
     }
 
+    enum class CalibratedFingerProbe : std::uint8_t
+    {
+        Tip,
+        Outer,
+        Inner
+    };
+
+    inline constexpr std::size_t kCalibratedFingerCurveSampleCount = 201;
+
+    template <class Vector>
+    struct CalibratedFingerCurveSample
+    {
+        float openValue = 1.0f;
+        float angleRadians = 0.0f;
+        float reachLength = 0.0f;
+    };
+
+    template <class Vector>
+    struct CalibratedFingerProbeCurve
+    {
+        CalibratedFingerProbe probe = CalibratedFingerProbe::Tip;
+        std::array<CalibratedFingerCurveSample<Vector>, kCalibratedFingerCurveSampleCount> samples{};
+        std::size_t sampleCount = 0;
+    };
+
+    template <class Vector>
+    struct CalibratedFingerCurve
+    {
+        Vector center{};
+        Vector normal{ 0.0f, 0.0f, 1.0f };
+        Vector zeroAngleVector{ 1.0f, 0.0f, 0.0f };
+        std::array<CalibratedFingerProbeCurve<Vector>, 3> probes{};
+        std::size_t probeCount = 0;
+        float surfaceThickness = 0.35f;
+    };
+
+    template <class Vector>
+    inline bool lookupCalibratedFingerCurveSample(
+        const CalibratedFingerProbeCurve<Vector>& curve,
+        float angleRadians,
+        CalibratedFingerCurveSample<Vector>& outSample)
+    {
+        if (curve.sampleCount == 0 ||
+            curve.sampleCount > curve.samples.size() ||
+            !std::isfinite(angleRadians)) {
+            return false;
+        }
+
+        const auto& first = curve.samples[0];
+        const auto& last = curve.samples[curve.sampleCount - 1];
+        if (angleRadians < first.angleRadians - 0.0001f ||
+            angleRadians > last.angleRadians + 0.0001f) {
+            return false;
+        }
+        if (angleRadians <= first.angleRadians) {
+            outSample = first;
+            return true;
+        }
+
+        for (std::size_t i = 0; i + 1 < curve.sampleCount; ++i) {
+            const auto& a = curve.samples[i];
+            const auto& b = curve.samples[i + 1];
+            if (angleRadians < a.angleRadians || angleRadians > b.angleRadians) {
+                continue;
+            }
+
+            const float denom = b.angleRadians - a.angleRadians;
+            const float t = std::abs(denom) <= 0.000001f ? 0.0f : std::clamp((angleRadians - a.angleRadians) / denom, 0.0f, 1.0f);
+            outSample.openValue = a.openValue + (b.openValue - a.openValue) * t;
+            outSample.angleRadians = angleRadians;
+            outSample.reachLength = a.reachLength + (b.reachLength - a.reachLength) * t;
+            return true;
+        }
+
+        outSample = last;
+        return true;
+    }
+
+    template <class Vector>
+    inline float maxCalibratedCurveAngle(const CalibratedFingerCurve<Vector>& curve)
+    {
+        float result = 0.0f;
+        for (std::size_t i = 0; i < curve.probeCount && i < curve.probes.size(); ++i) {
+            const auto& probe = curve.probes[i];
+            if (probe.sampleCount > 0 && probe.sampleCount <= probe.samples.size()) {
+                result = (std::max)(result, probe.samples[probe.sampleCount - 1].angleRadians);
+            }
+        }
+        return result;
+    }
+
+    template <class Vector>
+    inline float maxCalibratedCurveReach(const CalibratedFingerCurve<Vector>& curve)
+    {
+        float result = 0.0f;
+        for (std::size_t probeIndex = 0; probeIndex < curve.probeCount && probeIndex < curve.probes.size(); ++probeIndex) {
+            const auto& probe = curve.probes[probeIndex];
+            if (probe.sampleCount == 0 || probe.sampleCount > probe.samples.size()) {
+                continue;
+            }
+            for (std::size_t sampleIndex = 0; sampleIndex < probe.sampleCount; ++sampleIndex) {
+                result = (std::max)(result, probe.samples[sampleIndex].reachLength);
+            }
+        }
+        return result;
+    }
+
+    template <class Vector>
+    inline CalibratedFingerProbeCurve<Vector> makeLinearCalibratedFingerProbeCurve(
+        CalibratedFingerProbe probe,
+        float maxCurlAngleRadians,
+        float reachLength,
+        float curlShapeExponent = 1.0f)
+    {
+        CalibratedFingerProbeCurve<Vector> curve{};
+        curve.probe = probe;
+        if (!std::isfinite(maxCurlAngleRadians) || maxCurlAngleRadians <= 0.0001f ||
+            !std::isfinite(reachLength) || reachLength <= 0.0001f) {
+            return curve;
+        }
+
+        const float maxAngle = (std::max)(0.0001f, maxCurlAngleRadians);
+        const float length = (std::max)(0.0001f, reachLength);
+        const float exponent = std::clamp(std::isfinite(curlShapeExponent) ? curlShapeExponent : 1.0f, 0.25f, 4.0f);
+        curve.sampleCount = curve.samples.size();
+        for (std::size_t i = 0; i < curve.samples.size(); ++i) {
+            const float t = static_cast<float>(i) / static_cast<float>(curve.samples.size() - 1);
+            curve.samples[i] = CalibratedFingerCurveSample<Vector>{
+                .openValue = std::clamp(1.0f - std::pow(t, exponent), 0.0f, 1.0f),
+                .angleRadians = maxAngle * t,
+                .reachLength = length,
+            };
+        }
+        return curve;
+    }
+
+    template <class Vector>
+    inline CalibratedFingerCurve<Vector> makeRuntimeCalibratedFingerCurve(
+        const Vector& center,
+        const Vector& normal,
+        const Vector& zeroAngleVector,
+        float maxCurlAngleRadians,
+        float fingerLength)
+    {
+        /*
+         * This is ROCK's first FO4VR-native calibrated curve model. The samples
+         * are generated from the live hFRIK finger length and curl plane, but
+         * they are represented as explicit tip/outer/inner lookup curves so a
+         * later offline hFRIK calibration generator can replace the sample
+         * source without changing the solver contract.
+         */
+        CalibratedFingerCurve<Vector> curve{};
+        curve.center = center;
+        curve.normal = normal;
+        curve.zeroAngleVector = zeroAngleVector;
+        curve.surfaceThickness = 0.35f;
+        curve.probeCount = curve.probes.size();
+        curve.probes[0] = makeLinearCalibratedFingerProbeCurve<Vector>(
+            CalibratedFingerProbe::Tip, maxCurlAngleRadians, fingerLength, 1.0f);
+        curve.probes[1] = makeLinearCalibratedFingerProbeCurve<Vector>(
+            CalibratedFingerProbe::Outer, maxCurlAngleRadians, fingerLength * 0.72f, 1.08f);
+        curve.probes[2] = makeLinearCalibratedFingerProbeCurve<Vector>(
+            CalibratedFingerProbe::Inner, maxCurlAngleRadians, fingerLength * 0.48f, 1.16f);
+        return curve;
+    }
+
+    template <class Vector>
+    inline FingerCurlValue solveCalibratedFingerCurveCurlValue(
+        const std::vector<Triangle<Vector>>& triangles,
+        const CalibratedFingerCurve<Vector>& curve,
+        float minValue,
+        const Vector& surfacePoint = Vector{},
+        const Vector& surfaceNormal = Vector{},
+        bool rejectBacksideHits = false,
+        float surfacePlaneToleranceGameUnits = 0.0f)
+    {
+        FingerCurlValue result{};
+        result.value = std::clamp(minValue, 0.0f, 1.0f);
+        if (triangles.empty() || curve.probeCount == 0) {
+            return result;
+        }
+
+        const Vector planeNormal = normalize(curve.normal);
+        const Vector zero = normalize(curve.zeroAngleVector);
+        const float maxAngle = maxCalibratedCurveAngle(curve);
+        const float maxReach = maxCalibratedCurveReach(curve);
+        if (!std::isfinite(maxAngle) || maxAngle <= 0.0001f ||
+            !std::isfinite(maxReach) || maxReach <= 0.0001f) {
+            return result;
+        }
+
+        const float clampedMin = std::clamp(minValue, 0.0f, 1.0f);
+        const float thickness = std::max(0.0f, std::isfinite(curve.surfaceThickness) ? curve.surfaceThickness : 0.0f);
+        const bool hasSurfaceGate = rejectBacksideHits && hasUsableDirection(surfaceNormal);
+        const Vector normalizedSurfaceNormal = hasSurfaceGate ? normalize(surfaceNormal) : Vector{};
+        const float planeTolerance = std::max(0.0f, std::isfinite(surfacePlaneToleranceGameUnits) ? surfacePlaneToleranceGameUnits : 0.0f);
+
+        float bestOpenValue = -1.0f;
+        float bestAngle = (std::numeric_limits<float>::max)();
+        Vector bestHitPoint{};
+        Vector bestHitNormal{};
+        bool bestHitPointValid = false;
+        bool bestHitNormalValid = false;
+        bool foundBehindContact = false;
+        bool sawBackSurface = false;
+
+        auto considerPoint = [&](const Vector& point, const Vector& candidateSurfaceNormal) {
+            const Vector fromCenter = sub(point, curve.center);
+            const float radius = length(fromCenter);
+            if (radius <= 0.0001f || radius > maxReach + thickness) {
+                return;
+            }
+
+            const float angle = signedAngleAroundNormal(fromCenter, zero, planeNormal);
+            if (!std::isfinite(angle)) {
+                return;
+            }
+
+            if (angle < 0.0f && std::abs(angle) <= maxAngle) {
+                foundBehindContact = true;
+                return;
+            }
+
+            if (angle < 0.0f || angle > maxAngle) {
+                return;
+            }
+
+            if (hasSurfaceGate) {
+                const float planeDistance = dot(normalizedSurfaceNormal, sub(point, surfacePoint));
+                const float normalDot = dot(candidateSurfaceNormal, normalizedSurfaceNormal);
+                if (planeDistance < -planeTolerance || normalDot < -0.25f) {
+                    sawBackSurface = true;
+                    return;
+                }
+            }
+
+            for (std::size_t probeIndex = 0; probeIndex < curve.probeCount && probeIndex < curve.probes.size(); ++probeIndex) {
+                CalibratedFingerCurveSample<Vector> sample{};
+                if (!lookupCalibratedFingerCurveSample(curve.probes[probeIndex], angle, sample)) {
+                    continue;
+                }
+                if (!std::isfinite(sample.reachLength) || radius > sample.reachLength + thickness) {
+                    continue;
+                }
+
+                const float openValue = std::clamp(sample.openValue, clampedMin, 1.0f);
+                if (openValue > bestOpenValue + 0.0001f ||
+                    (std::abs(openValue - bestOpenValue) <= 0.0001f && angle < bestAngle)) {
+                    bestOpenValue = openValue;
+                    bestAngle = angle;
+                    bestHitPoint = point;
+                    bestHitNormal = candidateSurfaceNormal;
+                    bestHitPointValid = true;
+                    bestHitNormalValid = hasUsableDirection(candidateSurfaceNormal);
+                }
+            }
+        };
+
+        for (const auto& triangle : triangles) {
+            std::array<Vector, 3> intersections{};
+            std::size_t intersectionCount = 0;
+            auto addIntersection = [&](const Vector& a, const Vector& b) {
+                if (intersectionCount >= intersections.size()) {
+                    return;
+                }
+                Vector intersection{};
+                if (planeIntersectsSegment(curve.center, planeNormal, a, b, intersection)) {
+                    intersections[intersectionCount++] = intersection;
+                }
+            };
+
+            addIntersection(triangle.v0, triangle.v1);
+            addIntersection(triangle.v1, triangle.v2);
+            addIntersection(triangle.v2, triangle.v0);
+            if (intersectionCount == 0) {
+                continue;
+            }
+
+            const Vector candidateSurfaceNormal = triangleNormal(triangle);
+            for (std::size_t i = 0; i < intersectionCount; ++i) {
+                considerPoint(intersections[i], candidateSurfaceNormal);
+            }
+            if (intersectionCount >= 2) {
+                considerPoint(scale(add(intersections[0], intersections[1]), 0.5f), candidateSurfaceNormal);
+            }
+        }
+
+        if (bestOpenValue >= 0.0f) {
+            result.hit = true;
+            result.distance = bestAngle;
+            result.rawCurveValue = bestOpenValue;
+            result.value = std::clamp(bestOpenValue, clampedMin, 1.0f);
+            result.hitKind = FingerCurlValue::HitKind::FrontValid;
+            if (bestHitPointValid) {
+                result.hitPointX = bestHitPoint.x;
+                result.hitPointY = bestHitPoint.y;
+                result.hitPointZ = bestHitPoint.z;
+                result.hasHitPoint = true;
+            }
+            if (bestHitNormalValid) {
+                result.hitNormalX = bestHitNormal.x;
+                result.hitNormalY = bestHitNormal.y;
+                result.hitNormalZ = bestHitNormal.z;
+                result.hasHitNormal = true;
+            }
+            return result;
+        }
+
+        if (foundBehindContact) {
+            result.hit = true;
+            result.value = 1.0f;
+            result.rawCurveValue = -1.0f;
+            result.openedByBehindContact = true;
+            result.hitKind = FingerCurlValue::HitKind::BehindCurlPlane;
+        } else if (sawBackSurface) {
+            result.hitKind = FingerCurlValue::HitKind::BackSurface;
+        }
+        return result;
+    }
+
+    template <class Vector>
+    inline ThumbAwareFingerCurveCurlValue<Vector> solveThumbAwareCalibratedFingerCurveCurlValue(
+        const std::vector<Triangle<Vector>>& triangles,
+        const Vector& center,
+        const Vector& primaryNormal,
+        const Vector& alternateThumbNormal,
+        const Vector& zeroAngleVector,
+        float maxCurlAngleRadians,
+        float fingerLength,
+        float minValue,
+        bool allowAlternateThumbCurve,
+        const Vector& surfacePoint = Vector{},
+        const Vector& surfaceNormal = Vector{},
+        bool rejectBacksideHits = false,
+        float surfacePlaneToleranceGameUnits = 0.0f)
+    {
+        ThumbAwareFingerCurveCurlValue<Vector> result{};
+        const auto primaryCurve = makeRuntimeCalibratedFingerCurve(
+            center, primaryNormal, zeroAngleVector, maxCurlAngleRadians, fingerLength);
+        result.primary = solveCalibratedFingerCurveCurlValue(
+            triangles,
+            primaryCurve,
+            minValue,
+            surfacePoint,
+            surfaceNormal,
+            rejectBacksideHits,
+            surfacePlaneToleranceGameUnits);
+        result.value = result.primary;
+
+        if (!allowAlternateThumbCurve) {
+            return result;
+        }
+
+        const auto alternateCurve = makeRuntimeCalibratedFingerCurve(
+            center, alternateThumbNormal, zeroAngleVector, maxCurlAngleRadians, fingerLength);
+        result.alternateThumb = solveCalibratedFingerCurveCurlValue(
+            triangles,
+            alternateCurve,
+            minValue,
+            surfacePoint,
+            surfaceNormal,
+            rejectBacksideHits,
+            surfacePlaneToleranceGameUnits);
+
+        constexpr float kClosedEpsilon = 0.0001f;
+        const bool primaryClosedOrMissed = !result.primary.hit || result.primary.rawCurveValue <= kClosedEpsilon;
+        const bool primaryNeedsAlternate = primaryClosedOrMissed || result.primary.openedByBehindContact;
+        const bool alternatePositive =
+            result.alternateThumb.hit && !result.alternateThumb.openedByBehindContact && result.alternateThumb.rawCurveValue > kClosedEpsilon;
+        const bool alternateClosedOrMissed =
+            !result.alternateThumb.hit || (!result.alternateThumb.openedByBehindContact && result.alternateThumb.rawCurveValue <= kClosedEpsilon);
+        const bool bothCurvesClosedOrMissed = primaryClosedOrMissed && !result.primary.openedByBehindContact && alternateClosedOrMissed;
+
+        if (primaryNeedsAlternate && (alternatePositive || bothCurvesClosedOrMissed)) {
+            result.value = result.alternateThumb;
+            result.usedAlternateThumbCurve = true;
+        }
+
+        return result;
+    }
+
     inline constexpr float kMaxFingerOpenValue = 1.0f;
     inline constexpr float kMaxThumbOverOpenValue = 2.0f;
     inline constexpr float kThumbOverOpenStartValue = 0.98f;
@@ -1819,7 +2200,7 @@ namespace rock::grab_finger_pose_runtime
             bool curveSolverSelectedAlternateThumb = false;
             if (useCurveSolver) {
                 const bool isThumb = finger == 0;
-                const auto curveSolved = grab_finger_pose_math::solveThumbAwareFingerCurveCurlValue(candidateTriangles,
+                const auto curveSolved = grab_finger_pose_math::solveThumbAwareCalibratedFingerCurveCurlValue(candidateTriangles,
                     baseWorld,
                     curlNormalWorld,
                     thumbAlternateCurlNormalWorld,

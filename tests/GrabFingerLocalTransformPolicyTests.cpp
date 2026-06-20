@@ -78,6 +78,71 @@ namespace
         }
         return true;
     }
+
+    rock::grab_finger_pose_math::CalibratedFingerProbeCurve<TestVector> makeTwoSampleProbeCurve(
+        rock::grab_finger_pose_math::CalibratedFingerProbe probe,
+        float openValueAtMaxAngle,
+        float reachLength)
+    {
+        constexpr float kHalfPi = 1.57079632679489661923f;
+        rock::grab_finger_pose_math::CalibratedFingerProbeCurve<TestVector> curve{};
+        curve.probe = probe;
+        curve.sampleCount = 2;
+        curve.samples[0] = {
+            .openValue = 1.0f,
+            .angleRadians = 0.0f,
+            .reachLength = reachLength,
+        };
+        curve.samples[1] = {
+            .openValue = openValueAtMaxAngle,
+            .angleRadians = kHalfPi,
+            .reachLength = reachLength,
+        };
+        return curve;
+    }
+
+    rock::grab_finger_pose_math::CalibratedFingerCurve<TestVector> makeThreeProbeCurve(
+        float tipOpenAtMaxAngle,
+        float outerOpenAtMaxAngle,
+        float innerOpenAtMaxAngle,
+        float tipReach,
+        float outerReach,
+        float innerReach)
+    {
+        using namespace rock::grab_finger_pose_math;
+        CalibratedFingerCurve<TestVector> curve{};
+        curve.center = TestVector{ 0.0f, 0.0f, 0.0f };
+        curve.normal = TestVector{ 0.0f, 0.0f, 1.0f };
+        curve.zeroAngleVector = TestVector{ 1.0f, 0.0f, 0.0f };
+        curve.surfaceThickness = 0.0f;
+        curve.probeCount = 3;
+        curve.probes[0] = makeTwoSampleProbeCurve(CalibratedFingerProbe::Tip, tipOpenAtMaxAngle, tipReach);
+        curve.probes[1] = makeTwoSampleProbeCurve(CalibratedFingerProbe::Outer, outerOpenAtMaxAngle, outerReach);
+        curve.probes[2] = makeTwoSampleProbeCurve(CalibratedFingerProbe::Inner, innerOpenAtMaxAngle, innerReach);
+        return curve;
+    }
+
+    std::vector<rock::grab_finger_pose_math::Triangle<TestVector>> makeTriangleThroughZPlanePoint(const TestVector& point)
+    {
+        return {
+            rock::grab_finger_pose_math::Triangle<TestVector>{
+                TestVector{ point.x, point.y, point.z - 0.05f },
+                TestVector{ point.x, point.y, point.z + 0.05f },
+                TestVector{ point.x + 0.01f, point.y + 0.01f, point.z + 0.02f },
+            },
+        };
+    }
+
+    std::vector<rock::grab_finger_pose_math::Triangle<TestVector>> makeTriangleThroughYPlanePoint(const TestVector& point)
+    {
+        return {
+            rock::grab_finger_pose_math::Triangle<TestVector>{
+                TestVector{ point.x, point.y - 0.05f, point.z },
+                TestVector{ point.x, point.y + 0.05f, point.z },
+                TestVector{ point.x + 0.01f, point.y + 0.02f, point.z - 0.01f },
+            },
+        };
+    }
 }
 
 int main()
@@ -613,6 +678,86 @@ int main()
     ok &= expectPointClose("whole-mesh finger fallback keeps nearest seat triangle first",
         highPolyCandidates.empty() ? RE::NiPoint3{} : highPolyCandidates.front().v0,
         RE::NiPoint3{ 0.0f, 0.0f, 0.0f });
+
+    using namespace rock::grab_finger_pose_math;
+    constexpr float kHalfPi = 1.57079632679489661923f;
+    CalibratedFingerCurveSample<TestVector> interpolatedSample{};
+    ok &= expectBool("calibrated curve lookup accepts midpoint",
+        lookupCalibratedFingerCurveSample(
+            makeTwoSampleProbeCurve(CalibratedFingerProbe::Tip, 0.0f, 2.0f),
+            kHalfPi * 0.5f,
+            interpolatedSample),
+        true);
+    ok &= expectFloat("calibrated curve lookup interpolates open value",
+        interpolatedSample.openValue,
+        0.5f);
+    ok &= expectFloat("calibrated curve lookup interpolates reach length",
+        interpolatedSample.reachLength,
+        2.0f);
+
+    const TestVector fortyFiveDegreeContact{ 0.70710678f, 0.70710678f, 0.0f };
+    const auto leastClosingCurve = makeThreeProbeCurve(
+        0.0f,
+        0.5f,
+        0.25f,
+        2.0f,
+        2.0f,
+        2.0f);
+    const auto leastClosingSolved = solveCalibratedFingerCurveCurlValue(
+        makeTriangleThroughZPlanePoint(fortyFiveDegreeContact),
+        leastClosingCurve,
+        0.2f);
+    ok &= expectBool("calibrated probes hit triangle slice",
+        leastClosingSolved.hit,
+        true);
+    ok &= expectFloat("calibrated probes choose least-closing valid probe",
+        leastClosingSolved.value,
+        0.75f);
+
+    const auto unreachableOuterCurve = makeThreeProbeCurve(
+        0.0f,
+        0.75f,
+        0.75f,
+        2.0f,
+        0.5f,
+        0.5f);
+    const auto unreachableOuterSolved = solveCalibratedFingerCurveCurlValue(
+        makeTriangleThroughZPlanePoint(fortyFiveDegreeContact),
+        unreachableOuterCurve,
+        0.2f);
+    ok &= expectFloat("calibrated probes ignore unreachable less-closing probes",
+        unreachableOuterSolved.value,
+        0.5f);
+
+    const TestVector behindFingerContact{ 0.70710678f, -0.70710678f, 0.0f };
+    const auto behindSolved = solveCalibratedFingerCurveCurlValue(
+        makeTriangleThroughZPlanePoint(behindFingerContact),
+        leastClosingCurve,
+        0.2f);
+    ok &= expectBool("calibrated behind-contact opens finger",
+        behindSolved.openedByBehindContact,
+        true);
+    ok &= expectFloat("calibrated behind-contact value is open",
+        behindSolved.value,
+        1.0f);
+
+    const TestVector alternateThumbContact{ 0.70710678f, 0.0f, -0.70710678f };
+    const auto alternateThumbSolved = solveThumbAwareCalibratedFingerCurveCurlValue(
+        makeTriangleThroughYPlanePoint(alternateThumbContact),
+        TestVector{ 0.0f, 0.0f, 0.0f },
+        TestVector{ 0.0f, 0.0f, 1.0f },
+        TestVector{ 0.0f, 1.0f, 0.0f },
+        TestVector{ 1.0f, 0.0f, 0.0f },
+        kHalfPi,
+        2.0f,
+        0.2f,
+        true);
+    ok &= expectBool("calibrated alternate thumb retries when primary plane misses",
+        alternateThumbSolved.usedAlternateThumbCurve,
+        true);
+    ok &= expectBool("calibrated alternate thumb returns a valid hit",
+        alternateThumbSolved.value.hit,
+        true);
 
     return ok ? 0 : 1;
 }
