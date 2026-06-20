@@ -593,8 +593,6 @@ namespace rock
             const char* reason);
         bool updateProxyConstraintGrabDriveTarget(RE::hknpWorld* world,
             const RE::NiTransform& proxyWorldTransform,
-            const RE::NiTransform& desiredObjectWorldAuthority,
-            const RE::NiTransform& desiredBodyWorldAuthority,
             RE::NiTransform& outDesiredObjectWorld,
             RE::NiTransform& outDesiredBodyWorld,
             RE::NiPoint3& outDesiredTargetPointWorld,
@@ -622,8 +620,6 @@ namespace rock
             const grab_motion_controller::HeldAuthorityState& heldAuthority);
         void queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
             const RE::NiTransform& rawHandWorldTransform,
-            const RE::NiTransform& desiredObjectWorldAuthority,
-            const RE::NiTransform& desiredBodyWorldAuthority,
             const char* proxyFrameSource,
             float deltaTime,
             float forceFadeInTime,
@@ -658,15 +654,6 @@ namespace rock
             grab_target::Kind targetKind = grab_target::Kind::LooseObject;
             float commitElapsedSeconds = 0.0f;
             std::uint32_t failedCommitAttempts = 0;
-            RE::NiPoint3 transitPointWorld{};
-            RE::NiPoint3 transitPointBodyLocal{};
-            RE::NiPoint3 arrivalTransitPointWorld{};
-            RE::NiTransform arrivalBodyWorld{};
-            const char* transitPointSource = "none";
-            bool hasTransitPointWorld = false;
-            bool hasTransitPointBodyLocal = false;
-            bool hasArrivalTransitPointWorld = false;
-            bool hasArrivalBodyWorld = false;
         };
 
         /*
@@ -933,8 +920,6 @@ namespace rock
         {
             RE::NiTransform proxyWorld{};
             RE::NiTransform rawHandWorld{};
-            RE::NiTransform desiredObjectWorld{};
-            RE::NiTransform desiredBodyWorld{};
             const char* proxyFrameSource = "unknown";
             float deltaTime = 0.0f;
             float forceFadeInTime = 0.0f;

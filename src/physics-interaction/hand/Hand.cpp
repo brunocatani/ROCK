@@ -851,26 +851,7 @@ namespace rock
             return false;
         }
 
-        RE::NiPoint3 restoredPointWorld = bodyWorld.translate;
-        const char* restoredPointSource = "bodyOriginFallback";
-        bool hasRestoredPoint = false;
-        if (_pullCatchIntent.hasTransitPointBodyLocal) {
-            restoredPointWorld = transform_math::localPointToWorld(bodyWorld, _pullCatchIntent.transitPointBodyLocal);
-            restoredPointSource = _pullCatchIntent.transitPointSource ? _pullCatchIntent.transitPointSource : "transitBodyLocal";
-            hasRestoredPoint = true;
-        } else if (_pullCatchIntent.hasArrivalTransitPointWorld) {
-            restoredPointWorld = _pullCatchIntent.arrivalTransitPointWorld;
-            restoredPointSource = "arrivalTransitWorld";
-            hasRestoredPoint = true;
-        } else if (_pullCatchIntent.hasTransitPointWorld) {
-            restoredPointWorld = _pullCatchIntent.transitPointWorld;
-            restoredPointSource = _pullCatchIntent.transitPointSource ? _pullCatchIntent.transitPointSource : "transitWorld";
-            hasRestoredPoint = true;
-        }
-
-        const float bodyDistance = pointDistanceGameUnits(selectionOrigin, bodyWorld.translate);
-        const float transitDistance = hasRestoredPoint ? pointDistanceGameUnits(selectionOrigin, restoredPointWorld) : bodyDistance;
-        const float distance = (std::min)(bodyDistance, transitDistance);
+        const float distance = pointDistanceGameUnits(selectionOrigin, bodyWorld.translate);
         const float radius = std::isfinite(radiusGameUnits) ? (std::max)(0.0f, radiusGameUnits) : 0.0f;
         const float maxBodyDistance = std::isfinite(maxBodyDistanceGameUnits) ? (std::max)(0.0f, maxBodyDistanceGameUnits) : radius;
         const float acceptedDistance = (std::max)(radius, maxBodyDistance);
@@ -881,10 +862,10 @@ namespace rock
         SelectedObject selection{};
         selection.refr = refr;
         selection.bodyId = bodyId;
-        selection.hitPointWorld = restoredPointWorld;
-        selection.hitNormalWorld = normalizeOrFallback(selectionOrigin - restoredPointWorld, palmNormal);
-        selection.distance = transitDistance;
-        selection.signedAlongDistance = transitDistance;
+        selection.hitPointWorld = bodyWorld.translate;
+        selection.hitNormalWorld = normalizeOrFallback(selectionOrigin - bodyWorld.translate, palmNormal);
+        selection.distance = distance;
+        selection.signedAlongDistance = distance;
         selection.lateralDistance = 0.0f;
         selection.hitFraction = 0.0f;
         selection.targetKind = _pullCatchIntent.targetKind;
@@ -912,17 +893,12 @@ namespace rock
         playSelectionHighlight(_currentSelection);
 
         ROCK_LOG_DEBUG(Hand,
-            "{} hand pull-catch wide reacquired close selection: formID={:08X} body={} pointSource={} transitDist={:.1f} bodyDist={:.1f} acceptedDistance={:.1f} point=({:.1f},{:.1f},{:.1f})",
+            "{} hand pull-catch wide reacquired close selection: formID={:08X} body={} dist={:.1f} acceptedDistance={:.1f}",
             handName(),
             _pullCatchIntent.formId,
             _pullCatchIntent.primaryBodyId,
-            restoredPointSource,
-            transitDistance,
-            bodyDistance,
-            acceptedDistance,
-            restoredPointWorld.x,
-            restoredPointWorld.y,
-            restoredPointWorld.z);
+            distance,
+            acceptedDistance);
         return true;
     }
 
@@ -1329,8 +1305,12 @@ namespace rock
 
     RE::NiPoint3 Hand::computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const
     {
-        (void)world;
-        return makeRawHandGrabAuthorityFrame(fallbackHandWorldTransform, _isLeft).translate;
+        RE::NiTransform proxyFrameWorld{};
+        if (tryComputeGrabProxyLocalPalmPocketFrameWorld(world, proxyFrameWorld)) {
+            return proxyFrameWorld.translate;
+        }
+
+        return fallbackHandWorldTransform.translate;
     }
 
     bool Hand::tryComputeGrabProxyLocalPalmPocketFrameWorld(RE::hknpWorld* world, RE::NiTransform& outFrameWorld) const

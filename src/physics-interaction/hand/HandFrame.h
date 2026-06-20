@@ -118,10 +118,9 @@ namespace rock
     }
 
     /*
-     * Authored palm pivot retained for API palm-position compatibility,
-     * telemetry/debug tuning, two-handed grip, and dynamic grab authority.
-     * The hidden generated proxy is solver plumbing only; it must not decide
-     * the hand/object relation when the generated palm basis is untrusted.
+     * Legacy authored palm pivot retained for API palm-position compatibility,
+     * telemetry/debug tuning, two-handed grip, and non-dynamic helper paths.
+     * Dynamic object grabs use the generated hidden proxy authority frame.
      */
     inline RE::NiPoint3 computeGrabLegacyPalmPivotAHandspacePosition(bool isLeft)
     {
@@ -131,13 +130,6 @@ namespace rock
     inline RE::NiPoint3 computeGrabLegacyPalmPivotAWorldFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
     {
         return transformHandspacePosition(handTransform, computeGrabLegacyPalmPivotAHandspacePosition(isLeft), isLeft);
-    }
-
-    inline RE::NiTransform makeRawHandGrabAuthorityFrame(const RE::NiTransform& handTransform, bool isLeft)
-    {
-        RE::NiTransform result = handTransform;
-        result.translate = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, isLeft);
-        return result;
     }
 
     inline RE::NiPoint3 computePalmNormalFromHandBasis(const RE::NiTransform& handTransform, bool isLeft)
