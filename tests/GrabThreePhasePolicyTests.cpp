@@ -278,5 +278,40 @@ int main()
     ok &= expectFalse("behind-palm pull-catch disables pulled adjust", behindPullSeat.allowPulledAdjust);
     ok &= expectReason("behind-palm pull-catch reason", behindPullSeat.reason, "pullCatchSeatBehindPalm");
 
+    const auto pullCatchFreshPalmSeat = choosePullCatchSeatSource(PullCatchSeatSourceInput{
+        .grabbedFromPullCatch = true,
+        .usingPinchPocket = false,
+        .hasPalmPocketSurface = true,
+        .palmPocketNormalTrusted = true,
+        .hasCurrentSeat = true,
+        .currentSeatTrustedSurface = false,
+        .currentSeatPositionOnly = true,
+        .hasTransitPoint = true,
+        .palmPocketDistanceGameUnits = 3.0f,
+        .currentSeatDistanceGameUnits = 7.0f,
+        .touchAcquireDistanceGameUnits = 4.0f,
+        .pocketRadiusGameUnits = 9.0f,
+    });
+    ok &= expectTrue("pull-catch fresh palm surface wins over transit", pullCatchFreshPalmSeat.usePalmPocketSurface);
+    ok &= expectFalse("pull-catch trusted palm surface does not force settled visual", pullCatchFreshPalmSeat.requireSettledVisualRelation);
+    ok &= expectReason("pull-catch fresh palm surface reason", pullCatchFreshPalmSeat.reason, "pullCatchFreshPalmPocketSurface");
+
+    const auto pullCatchTransitEvidenceOnly = choosePullCatchSeatSource(PullCatchSeatSourceInput{
+        .grabbedFromPullCatch = true,
+        .usingPinchPocket = false,
+        .hasPalmPocketSurface = false,
+        .hasCurrentSeat = true,
+        .currentSeatTrustedSurface = false,
+        .currentSeatPositionOnly = true,
+        .hasTransitPoint = true,
+        .currentSeatDistanceGameUnits = 6.0f,
+        .touchAcquireDistanceGameUnits = 4.0f,
+        .pocketRadiusGameUnits = 9.0f,
+    });
+    ok &= expectFalse("pull-catch transit evidence does not become palm surface", pullCatchTransitEvidenceOnly.usePalmPocketSurface);
+    ok &= expectTrue("pull-catch transit is preserved as evidence only", pullCatchTransitEvidenceOnly.preserveTransitEvidence);
+    ok &= expectTrue("pull-catch transit evidence requires settled visual relation", pullCatchTransitEvidenceOnly.requireSettledVisualRelation);
+    ok &= expectReason("pull-catch transit evidence reason", pullCatchTransitEvidenceOnly.reason, "pullCatchTransitEvidenceOnly");
+
     return ok ? 0 : 1;
 }

@@ -89,7 +89,7 @@ Require-Text 'src/physics-interaction/grab/GrabPinchPocket.h' 'buildStablePinchF
     'Pinch finger pose must publish a stable whole-thumb joint shape instead of raw mesh-solver curl.'
 Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'buildStablePinchFingerPose[\s\S]*surfaceAimTargetValid\[finger\] = 0[\s\S]*pose\.solved = true' `
     'Pinch pose must clear raw mesh-solver thumb/index aim instead of installing object-local mesh-follow targets.'
-Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'useThumbIndexCurveOnlyPose\(fingerPose\)[\s\S]*captureSurfaceAimObjectLocal\(fingerPose, objectWorldTransform\)' `
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' 'useThumbIndexCurveOnlyPose\(fingerPose\)[\s\S]*captureSurfaceAimObjectLocal\(fingerPose, fingerPoseObjectWorld\)' `
     'Object grabs must disable thumb/index mesh-follow before capturing object-local surface aim.'
 Require-Text 'src/physics-interaction/grab/GrabFinger.h' 'thumbSurfaceFollowAllowed[\s\S]*shouldApplySurfaceAimCorrection' `
     'Thumb mesh-follow authority must be explicit so ROCK object grabs can use fixed thumb/index curves.'

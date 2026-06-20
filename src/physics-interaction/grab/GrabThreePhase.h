@@ -468,6 +468,106 @@ namespace rock::grab_three_phase
         return decision;
     }
 
+    enum class PullCatchSeatSource : std::uint8_t
+    {
+        CurrentSeat,
+        PalmPocketSurface,
+        TransitEvidence,
+    };
+
+    inline const char* pullCatchSeatSourceName(PullCatchSeatSource source)
+    {
+        switch (source) {
+        case PullCatchSeatSource::CurrentSeat:
+            return "currentSeat";
+        case PullCatchSeatSource::PalmPocketSurface:
+            return "palmPocketSurface";
+        case PullCatchSeatSource::TransitEvidence:
+            return "transitEvidence";
+        default:
+            return "unknown";
+        }
+    }
+
+    struct PullCatchSeatSourceInput
+    {
+        bool grabbedFromPullCatch = false;
+        bool usingPinchPocket = false;
+        bool hasPalmPocketSurface = false;
+        bool palmPocketNormalTrusted = false;
+        bool hasCurrentSeat = false;
+        bool currentSeatTrustedSurface = false;
+        bool currentSeatPositionOnly = false;
+        bool hasTransitPoint = false;
+        float palmPocketDistanceGameUnits = std::numeric_limits<float>::max();
+        float currentSeatDistanceGameUnits = std::numeric_limits<float>::max();
+        float touchAcquireDistanceGameUnits = 4.0f;
+        float pocketRadiusGameUnits = 9.0f;
+    };
+
+    struct PullCatchSeatSourceDecision
+    {
+        PullCatchSeatSource source = PullCatchSeatSource::CurrentSeat;
+        bool usePalmPocketSurface = false;
+        bool preserveTransitEvidence = false;
+        bool requireSettledVisualRelation = false;
+        bool normalTrusted = false;
+        const char* reason = "notPullCatch";
+    };
+
+    inline PullCatchSeatSourceDecision choosePullCatchSeatSource(const PullCatchSeatSourceInput& input)
+    {
+        PullCatchSeatSourceDecision decision{};
+        if (!input.grabbedFromPullCatch) {
+            return decision;
+        }
+        if (input.usingPinchPocket) {
+            decision.reason = "pinchPocket";
+            decision.normalTrusted = true;
+            return decision;
+        }
+
+        const float touchDistance =
+            (std::max)(0.1f, std::isfinite(input.touchAcquireDistanceGameUnits) ? input.touchAcquireDistanceGameUnits : 4.0f);
+        const float pocketRadius =
+            (std::max)(touchDistance, std::isfinite(input.pocketRadiusGameUnits) ? input.pocketRadiusGameUnits : 9.0f);
+        const bool palmPocketInside =
+            input.hasPalmPocketSurface &&
+            std::isfinite(input.palmPocketDistanceGameUnits) &&
+            input.palmPocketDistanceGameUnits <= pocketRadius;
+        if (palmPocketInside) {
+            decision.source = PullCatchSeatSource::PalmPocketSurface;
+            decision.usePalmPocketSurface = true;
+            decision.requireSettledVisualRelation = !input.palmPocketNormalTrusted;
+            decision.normalTrusted = input.palmPocketNormalTrusted;
+            decision.reason = input.palmPocketNormalTrusted ? "pullCatchFreshPalmPocketSurface" : "pullCatchPalmPocketPositionOnly";
+            return decision;
+        }
+
+        const bool currentInside =
+            input.hasCurrentSeat &&
+            std::isfinite(input.currentSeatDistanceGameUnits) &&
+            input.currentSeatDistanceGameUnits <= pocketRadius;
+        if (currentInside && input.currentSeatTrustedSurface && !input.currentSeatPositionOnly) {
+            decision.source = PullCatchSeatSource::CurrentSeat;
+            decision.normalTrusted = true;
+            decision.reason = "pullCatchCurrentTrustedSurface";
+            return decision;
+        }
+
+        if (input.hasTransitPoint) {
+            decision.source = PullCatchSeatSource::TransitEvidence;
+            decision.preserveTransitEvidence = true;
+            decision.requireSettledVisualRelation = true;
+            decision.reason = "pullCatchTransitEvidenceOnly";
+            return decision;
+        }
+
+        decision.requireSettledVisualRelation = true;
+        decision.reason = currentInside ? "pullCatchCurrentWeakSurface" : "pullCatchNoSeatEvidence";
+        return decision;
+    }
+
     inline float computeAcquisitionVisualEnvelopeGameUnits(float touchDistanceGameUnits, float nearConvergeDistanceGameUnits, float configuredVisualStartDistanceGameUnits)
     {
         const float touchDistance = (std::max)(0.1f, std::isfinite(touchDistanceGameUnits) ? touchDistanceGameUnits : 4.0f);
