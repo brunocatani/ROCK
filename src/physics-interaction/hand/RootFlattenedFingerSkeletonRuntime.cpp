@@ -58,6 +58,7 @@ namespace rock::root_flattened_finger_skeleton_runtime
             return false;
         }
 
+        outSnapshot.inPowerArmor = snapshot.inPowerArmor;
         outSnapshot.palmNormalWorld = normalizedOrFallback(
             debug_axis_math::rotateNiLocalToWorld(handNode->world.rotate, RE::NiPoint3(0.0f, 0.0f, -1.0f)),
             RE::NiPoint3(0.0f, 0.0f, -1.0f));

@@ -218,6 +218,7 @@ namespace rock::root_flattened_finger_skeleton_runtime
         std::array<FingerChain, 5> fingers{};
         RE::NiPoint3 palmNormalWorld{ 0.0f, 0.0f, -1.0f };
         bool palmNormalValid = false;
+        bool inPowerArmor = false;
         bool valid = false;
     };
 

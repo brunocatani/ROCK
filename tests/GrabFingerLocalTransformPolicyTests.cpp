@@ -695,6 +695,50 @@ int main()
         interpolatedSample.reachLength,
         2.0f);
 
+    const auto bakedIndexCurve = makeBakedCalibratedFingerCurve<TestVector>(
+        1,
+        false,
+        false,
+        TestVector{ 0.0f, 0.0f, 0.0f },
+        TestVector{ 0.0f, 0.0f, 1.0f },
+        TestVector{ 1.0f, 0.0f, 0.0f },
+        10.0f);
+    ok &= expectBool("baked calibration creates three probe curves",
+        bakedIndexCurve.probeCount == 3 &&
+            bakedIndexCurve.probes[0].sampleCount == kCalibratedFingerCurveSampleCount &&
+            bakedIndexCurve.probes[1].sampleCount == kCalibratedFingerCurveSampleCount &&
+            bakedIndexCurve.probes[2].sampleCount == kCalibratedFingerCurveSampleCount,
+        true);
+    ok &= expectBool("baked standard index has usable max curl angle",
+        bakedCalibratedFingerMaxAngleRadians(1, false, false) > 1.0f,
+        true);
+    ok &= expectBool("baked power armor profile has distinct index curve",
+        bakedCalibratedFingerMaxAngleRadians(1, false, true) > bakedCalibratedFingerMaxAngleRadians(1, false, false),
+        true);
+    const auto bakedThumbPrimaryCurve = makeBakedCalibratedFingerCurve<TestVector>(
+        0,
+        false,
+        false,
+        TestVector{ 0.0f, 0.0f, 0.0f },
+        TestVector{ 0.0f, 0.0f, 1.0f },
+        TestVector{ 1.0f, 0.0f, 0.0f },
+        10.0f);
+    const auto bakedThumbAlternateCurve = makeBakedCalibratedFingerCurve<TestVector>(
+        0,
+        false,
+        false,
+        TestVector{ 0.0f, 0.0f, 0.0f },
+        TestVector{ 0.0f, 0.0f, 1.0f },
+        TestVector{ 1.0f, 0.0f, 0.0f },
+        10.0f,
+        false);
+    ok &= expectFloat("baked thumb primary applies authored normal sign",
+        bakedThumbPrimaryCurve.normal.z,
+        -1.0f);
+    ok &= expectFloat("baked thumb alternate preserves explicit plane normal",
+        bakedThumbAlternateCurve.normal.z,
+        1.0f);
+
     const TestVector fortyFiveDegreeContact{ 0.70710678f, 0.70710678f, 0.0f };
     const auto leastClosingCurve = makeThreeProbeCurve(
         0.0f,
@@ -741,14 +785,16 @@ int main()
         behindSolved.value,
         1.0f);
 
-    const TestVector alternateThumbContact{ 0.70710678f, 0.0f, -0.70710678f };
+    const TestVector alternateThumbContact{ 0.86602540f, 0.0f, -0.50000000f };
     const auto alternateThumbSolved = solveThumbAwareCalibratedFingerCurveCurlValue(
         makeTriangleThroughYPlanePoint(alternateThumbContact),
+        0,
+        false,
+        false,
         TestVector{ 0.0f, 0.0f, 0.0f },
         TestVector{ 0.0f, 0.0f, 1.0f },
         TestVector{ 0.0f, 1.0f, 0.0f },
         TestVector{ 1.0f, 0.0f, 0.0f },
-        kHalfPi,
         2.0f,
         0.2f,
         true);

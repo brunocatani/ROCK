@@ -14,6 +14,8 @@
 #include <limits>
 #include <vector>
 
+#include "physics-interaction/grab/GeneratedGrabFingerCalibration.h"
+
 namespace rock::grab_finger_pose_math
 {
     /*
@@ -818,63 +820,92 @@ namespace rock::grab_finger_pose_math
         return result;
     }
 
+    [[nodiscard]] inline CalibratedFingerProbe calibratedFingerProbeFromBaked(
+        grab_finger_calibration_data::BakedGrabFingerProbe probe)
+    {
+        using grab_finger_calibration_data::BakedGrabFingerProbe;
+        switch (probe) {
+        case BakedGrabFingerProbe::Outer:
+            return CalibratedFingerProbe::Outer;
+        case BakedGrabFingerProbe::Inner:
+            return CalibratedFingerProbe::Inner;
+        case BakedGrabFingerProbe::Tip:
+        default:
+            return CalibratedFingerProbe::Tip;
+        }
+    }
+
     template <class Vector>
-    inline CalibratedFingerProbeCurve<Vector> makeLinearCalibratedFingerProbeCurve(
-        CalibratedFingerProbe probe,
-        float maxCurlAngleRadians,
-        float reachLength,
-        float curlShapeExponent = 1.0f)
+    inline CalibratedFingerProbeCurve<Vector> makeBakedCalibratedFingerProbeCurve(
+        const grab_finger_calibration_data::BakedGrabFingerProbeCurve& baked,
+        float fingerLength)
     {
         CalibratedFingerProbeCurve<Vector> curve{};
-        curve.probe = probe;
-        if (!std::isfinite(maxCurlAngleRadians) || maxCurlAngleRadians <= 0.0001f ||
-            !std::isfinite(reachLength) || reachLength <= 0.0001f) {
+        curve.probe = calibratedFingerProbeFromBaked(baked.probe);
+        if (!std::isfinite(fingerLength) || fingerLength <= 0.0001f) {
             return curve;
         }
 
-        const float maxAngle = (std::max)(0.0001f, maxCurlAngleRadians);
-        const float length = (std::max)(0.0001f, reachLength);
-        const float exponent = std::clamp(std::isfinite(curlShapeExponent) ? curlShapeExponent : 1.0f, 0.25f, 4.0f);
         curve.sampleCount = curve.samples.size();
         for (std::size_t i = 0; i < curve.samples.size(); ++i) {
-            const float t = static_cast<float>(i) / static_cast<float>(curve.samples.size() - 1);
+            const auto& sample = baked.samples[i];
             curve.samples[i] = CalibratedFingerCurveSample<Vector>{
-                .openValue = std::clamp(1.0f - std::pow(t, exponent), 0.0f, 1.0f),
-                .angleRadians = maxAngle * t,
-                .reachLength = length,
+                .openValue = std::clamp(std::isfinite(sample.openValue) ? sample.openValue : 1.0f, 0.0f, 1.0f),
+                .angleRadians = std::max(0.0f, std::isfinite(sample.angleRadians) ? sample.angleRadians : 0.0f),
+                .reachLength = std::max(0.0001f, (std::isfinite(sample.reachScale) ? sample.reachScale : 1.0f) * fingerLength),
             };
         }
         return curve;
     }
 
     template <class Vector>
-    inline CalibratedFingerCurve<Vector> makeRuntimeCalibratedFingerCurve(
+    inline CalibratedFingerCurve<Vector> makeBakedCalibratedFingerCurve(
+        std::size_t fingerIndex,
+        bool isLeft,
+        bool inPowerArmor,
         const Vector& center,
         const Vector& normal,
         const Vector& zeroAngleVector,
-        float maxCurlAngleRadians,
-        float fingerLength)
+        float fingerLength,
+        bool applyBakedNormalSign = true)
     {
-        /*
-         * This is ROCK's first FO4VR-native calibrated curve model. The samples
-         * are generated from the live hFRIK finger length and curl plane, but
-         * they are represented as explicit tip/outer/inner lookup curves so a
-         * later offline hFRIK calibration generator can replace the sample
-         * source without changing the solver contract.
-         */
         CalibratedFingerCurve<Vector> curve{};
+        if (fingerIndex >= 5 || !std::isfinite(fingerLength) || fingerLength <= 0.0001f) {
+            return curve;
+        }
+
+        const auto& profile = grab_finger_calibration_data::bakedGrabFingerHandProfile(isLeft, inPowerArmor);
+        const auto& baked = profile.fingers[fingerIndex];
+        const float normalSign = applyBakedNormalSign && baked.normalSign < 0.0f ? -1.0f : 1.0f;
+        const float thicknessScale = std::clamp(
+            std::isfinite(baked.surfaceThicknessScale) ? baked.surfaceThicknessScale : 0.05f,
+            0.0f,
+            0.25f);
+
         curve.center = center;
-        curve.normal = normal;
+        curve.normal = scale(normal, normalSign);
         curve.zeroAngleVector = zeroAngleVector;
-        curve.surfaceThickness = 0.35f;
+        curve.surfaceThickness = std::clamp(fingerLength * thicknessScale, 0.25f, 0.75f);
         curve.probeCount = curve.probes.size();
-        curve.probes[0] = makeLinearCalibratedFingerProbeCurve<Vector>(
-            CalibratedFingerProbe::Tip, maxCurlAngleRadians, fingerLength, 1.0f);
-        curve.probes[1] = makeLinearCalibratedFingerProbeCurve<Vector>(
-            CalibratedFingerProbe::Outer, maxCurlAngleRadians, fingerLength * 0.72f, 1.08f);
-        curve.probes[2] = makeLinearCalibratedFingerProbeCurve<Vector>(
-            CalibratedFingerProbe::Inner, maxCurlAngleRadians, fingerLength * 0.48f, 1.16f);
+        for (std::size_t probe = 0; probe < curve.probes.size(); ++probe) {
+            curve.probes[probe] = makeBakedCalibratedFingerProbeCurve<Vector>(baked.probes[probe], fingerLength);
+        }
         return curve;
+    }
+
+    [[nodiscard]] inline float bakedCalibratedFingerMaxAngleRadians(std::size_t fingerIndex, bool isLeft, bool inPowerArmor)
+    {
+        if (fingerIndex >= 5) {
+            return 0.0f;
+        }
+
+        const auto& profile = grab_finger_calibration_data::bakedGrabFingerHandProfile(isLeft, inPowerArmor);
+        const auto& baked = profile.fingers[fingerIndex];
+        float result = 0.0f;
+        for (const auto& probe : baked.probes) {
+            result = (std::max)(result, probe.samples.back().angleRadians);
+        }
+        return result;
     }
 
     template <class Vector>
@@ -1034,11 +1065,13 @@ namespace rock::grab_finger_pose_math
     template <class Vector>
     inline ThumbAwareFingerCurveCurlValue<Vector> solveThumbAwareCalibratedFingerCurveCurlValue(
         const std::vector<Triangle<Vector>>& triangles,
+        std::size_t fingerIndex,
+        bool isLeft,
+        bool inPowerArmor,
         const Vector& center,
         const Vector& primaryNormal,
         const Vector& alternateThumbNormal,
         const Vector& zeroAngleVector,
-        float maxCurlAngleRadians,
         float fingerLength,
         float minValue,
         bool allowAlternateThumbCurve,
@@ -1048,8 +1081,8 @@ namespace rock::grab_finger_pose_math
         float surfacePlaneToleranceGameUnits = 0.0f)
     {
         ThumbAwareFingerCurveCurlValue<Vector> result{};
-        const auto primaryCurve = makeRuntimeCalibratedFingerCurve(
-            center, primaryNormal, zeroAngleVector, maxCurlAngleRadians, fingerLength);
+        const auto primaryCurve = makeBakedCalibratedFingerCurve(
+            fingerIndex, isLeft, inPowerArmor, center, primaryNormal, zeroAngleVector, fingerLength);
         result.primary = solveCalibratedFingerCurveCurlValue(
             triangles,
             primaryCurve,
@@ -1064,8 +1097,8 @@ namespace rock::grab_finger_pose_math
             return result;
         }
 
-        const auto alternateCurve = makeRuntimeCalibratedFingerCurve(
-            center, alternateThumbNormal, zeroAngleVector, maxCurlAngleRadians, fingerLength);
+        const auto alternateCurve = makeBakedCalibratedFingerCurve(
+            fingerIndex, isLeft, inPowerArmor, center, alternateThumbNormal, zeroAngleVector, fingerLength, false);
         result.alternateThumb = solveCalibratedFingerCurveCurlValue(
             triangles,
             alternateCurve,
@@ -1366,12 +1399,6 @@ namespace rock::grab_finger_pose_runtime
             return 1.0f;
         }
         return std::clamp(minValue, 0.0f, 1.0f);
-    }
-
-    inline const std::array<float, 5>& fingerMaxAnglesRadians()
-    {
-        static const std::array<float, 5> kAngles{ 1.225f, 1.45f, 1.50f, 1.48f, 1.42f };
-        return kAngles;
     }
 
     inline RE::NiPoint3 crossPoint(const RE::NiPoint3& a, const RE::NiPoint3& b)
@@ -2148,11 +2175,11 @@ namespace rock::grab_finger_pose_runtime
         constexpr float kMaxFingerProbeDistance = 26.0f;
         constexpr float kFingerProbeRadius = 1.25f;
         const RE::NiPoint3 fallbackDirection = transformHandspaceDirection(handTransform, RE::NiPoint3(1.0f, 0.0f, 0.0f), isLeft);
-        const auto& maxAngles = fingerMaxAnglesRadians();
         const auto liveLandmarks = liveFingerSnapshot ? root_flattened_finger_skeleton_runtime::buildLandmarkSet(*liveFingerSnapshot) : root_flattened_finger_skeleton_runtime::LandmarkSet{};
         if (!liveLandmarks.valid) {
             return result;
         }
+        const bool inPowerArmor = liveFingerSnapshot && liveFingerSnapshot->inPowerArmor;
         const RE::NiPoint3 curlNormalWorld = liveLandmarks.palmNormalWorld;
         const bool usePalmSeatProbeShift =
             poseTargets.useWholeMeshForMissingTargets && poseTargets.seatPointValid && poseTargets.targetCount == 0;
@@ -2189,7 +2216,7 @@ namespace rock::grab_finger_pose_runtime
                 result.thumbAlternateCurveBaseWorld = baseWorld;
                 result.thumbAlternateCurveOpenDirectionWorld = normalizedOrFallback(openDirectionWorld, fallbackDirection);
                 result.thumbAlternateCurveNormalWorld = normalizedOrFallback(thumbAlternateCurlNormalWorld, curlNormalWorld);
-                result.thumbAlternateCurveMaxCurlAngleRadians = maxAngles[finger];
+                result.thumbAlternateCurveMaxCurlAngleRadians = grab_finger_pose_math::bakedCalibratedFingerMaxAngleRadians(finger, isLeft, inPowerArmor);
             }
 
             auto solved = grab_finger_pose_math::FingerCurlValue{};
@@ -2201,11 +2228,13 @@ namespace rock::grab_finger_pose_runtime
             if (useCurveSolver) {
                 const bool isThumb = finger == 0;
                 const auto curveSolved = grab_finger_pose_math::solveThumbAwareCalibratedFingerCurveCurlValue(candidateTriangles,
+                    finger,
+                    isLeft,
+                    inPowerArmor,
                     baseWorld,
                     curlNormalWorld,
                     thumbAlternateCurlNormalWorld,
                     openDirectionWorld,
-                    maxAngles[finger],
                     fingerOpenLengthWorld,
                     clampedMin,
                     isThumb,
@@ -2257,7 +2286,7 @@ namespace rock::grab_finger_pose_runtime
                     kFingerProbeRadius,
                     curlNormalWorld,
                     openDirectionWorld,
-                    maxAngles[finger],
+                    grab_finger_pose_math::bakedCalibratedFingerMaxAngleRadians(finger, isLeft, inPowerArmor),
                     fingerTargetWorld,
                     fingerTargetNormalWorld,
                     rejectBacksideHits && useTargetNormal,
