@@ -735,6 +735,10 @@ namespace rock
             .formId = refr ? refr->GetFormID() : 0,
             .primaryBodyId = primaryBodyId,
             .targetKind = targetKind,
+            .arrivalTransitPointWorld = {},
+            .arrivalMotionPointWorld = {},
+            .hasArrivalTransitPoint = false,
+            .hasArrivalMotionPoint = false,
             .commitElapsedSeconds = 0.0f,
             .failedCommitAttempts = 0,
         };
@@ -748,20 +752,30 @@ namespace rock
         }
     }
 
-    void Hand::markPullCatchIntentArrived()
+    void Hand::markPullCatchIntentArrived(const RE::NiPoint3& transitPointWorld, const RE::NiPoint3& motionPointWorld)
     {
         if (!_pullCatchIntent.active) {
             return;
         }
 
         _pullCatchIntent.commitPending = true;
+        _pullCatchIntent.arrivalTransitPointWorld = transitPointWorld;
+        _pullCatchIntent.arrivalMotionPointWorld = motionPointWorld;
+        _pullCatchIntent.hasArrivalTransitPoint = grab_three_phase::isFinite(transitPointWorld);
+        _pullCatchIntent.hasArrivalMotionPoint = grab_three_phase::isFinite(motionPointWorld);
         _pullCatchIntent.commitElapsedSeconds = 0.0f;
         _pullCatchIntent.failedCommitAttempts = 0;
         ROCK_LOG_DEBUG(Hand,
-            "{} hand PULL catch intent arrived formID={:08X} primaryBody={}",
+            "{} hand PULL catch intent arrived formID={:08X} primaryBody={} transit=({:.1f},{:.1f},{:.1f}) motion=({:.1f},{:.1f},{:.1f})",
             handName(),
             _pullCatchIntent.formId,
-            _pullCatchIntent.primaryBodyId);
+            _pullCatchIntent.primaryBodyId,
+            transitPointWorld.x,
+            transitPointWorld.y,
+            transitPointWorld.z,
+            motionPointWorld.x,
+            motionPointWorld.y,
+            motionPointWorld.z);
     }
 
     bool Hand::pullCatchIntentMatchesSelection() const

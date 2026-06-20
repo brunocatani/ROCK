@@ -52,6 +52,22 @@ namespace
         return false;
     }
 
+    bool expectSeatSource(
+        const char* label,
+        rock::grab_three_phase::PullCatchDynamicSeatSource actual,
+        rock::grab_three_phase::PullCatchDynamicSeatSource expected)
+    {
+        if (actual == expected) {
+            return true;
+        }
+
+        std::printf("%s expected %s got %s\n",
+            label,
+            rock::grab_three_phase::pullCatchDynamicSeatSourceName(expected),
+            rock::grab_three_phase::pullCatchDynamicSeatSourceName(actual));
+        return false;
+    }
+
     bool expectNear(const char* label, float actual, float expected, float tolerance)
     {
         if (std::fabs(actual - expected) <= tolerance) {
@@ -277,6 +293,80 @@ int main()
     ok &= expectFalse("behind-palm pull-catch defers touch-held", behindPullSeat.allowImmediateTouchHeld);
     ok &= expectFalse("behind-palm pull-catch disables pulled adjust", behindPullSeat.allowPulledAdjust);
     ok &= expectReason("behind-palm pull-catch reason", behindPullSeat.reason, "pullCatchSeatBehindPalm");
+
+    const auto palmSeatReplacesTransit = resolvePullCatchDynamicSeat(PullCatchDynamicSeatInput{
+        .grabbedFromPullCatch = true,
+        .pocket = makePocket(),
+        .transitPointWorld = RE::NiPoint3{ 25.0f, 0.0f, 0.0f },
+        .hasTransitPoint = true,
+        .existingGripPointWorld = RE::NiPoint3{ 25.0f, 0.0f, 0.0f },
+        .existingGripNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
+        .hasExistingGrip = true,
+        .existingGripTrusted = false,
+        .existingGripNormalTrusted = false,
+        .existingGripPositionOnly = false,
+        .palmPocketSurfacePointWorld = RE::NiPoint3{ 1.0f, 0.0f, 1.0f },
+        .palmPocketSurfaceNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, -1.0f },
+        .hasPalmPocketSurface = true,
+        .palmPocketSurfaceNormalTrusted = true,
+        .bodyFallbackPointWorld = RE::NiPoint3{ 0.0f, 0.0f, 0.0f },
+        .hasBodyFallbackPoint = true,
+        .touchAcquireDistanceGameUnits = 4.0f,
+        .pocketRadiusGameUnits = 9.0f,
+        .behindPalmToleranceGameUnits = 1.5f,
+        .pulledAdjustDistanceGameUnits = 10.5f,
+    });
+    ok &= expectTrue("pull-catch palm surface decision valid", palmSeatReplacesTransit.valid);
+    ok &= expectSeatSource("pull-catch palm surface replaces transit", palmSeatReplacesTransit.source, PullCatchDynamicSeatSource::PalmPocketSurface);
+    ok &= expectTrue("pull-catch palm surface changed from transit", palmSeatReplacesTransit.changedFromTransit);
+    ok &= expectTrue("pull-catch palm surface trusted", palmSeatReplacesTransit.trustedSurface);
+    ok &= expectPhase("pull-catch palm surface can touch-hold", palmSeatReplacesTransit.phase, AcquisitionPhase::TouchHeld);
+    ok &= expectTrue("pull-catch palm surface permits pre-freeze adjust", palmSeatReplacesTransit.allowPulledAdjust);
+    ok &= expectNear("pull-catch palm surface adjust", palmSeatReplacesTransit.adjustDistanceGameUnits, 10.5f, 0.001f);
+    ok &= expectReason("pull-catch palm surface reason", palmSeatReplacesTransit.reason, "pullCatchPalmPocketSurface");
+
+    const auto weakSurfaceSeat = resolvePullCatchDynamicSeat(PullCatchDynamicSeatInput{
+        .grabbedFromPullCatch = true,
+        .pocket = makePocket(),
+        .transitPointWorld = RE::NiPoint3{ 25.0f, 0.0f, 0.0f },
+        .hasTransitPoint = true,
+        .existingGripPointWorld = RE::NiPoint3{ 25.0f, 0.0f, 0.0f },
+        .hasExistingGrip = true,
+        .palmPocketSurfacePointWorld = RE::NiPoint3{ 1.0f, 0.0f, 1.0f },
+        .palmPocketSurfaceNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, -1.0f },
+        .hasPalmPocketSurface = true,
+        .palmPocketSurfaceNormalTrusted = false,
+        .touchAcquireDistanceGameUnits = 4.0f,
+        .pocketRadiusGameUnits = 9.0f,
+        .behindPalmToleranceGameUnits = 1.5f,
+        .pulledAdjustDistanceGameUnits = 10.5f,
+    });
+    ok &= expectSeatSource("weak pull-catch surface still replaces transit", weakSurfaceSeat.source, PullCatchDynamicSeatSource::PalmPocketSurface);
+    ok &= expectPhase("weak pull-catch surface must settle", weakSurfaceSeat.phase, AcquisitionPhase::NearConverging);
+    ok &= expectTrue("weak pull-catch surface requires settled relation", weakSurfaceSeat.requireSettledVisualRelation);
+    ok &= expectFalse("weak pull-catch surface disables adjust", weakSurfaceSeat.allowPulledAdjust);
+    ok &= expectReason("weak pull-catch surface reason", weakSurfaceSeat.reason, "pullCatchSeatNormalUntrusted");
+
+    const auto bodyFallbackSeat = resolvePullCatchDynamicSeat(PullCatchDynamicSeatInput{
+        .grabbedFromPullCatch = true,
+        .pocket = makePocket(),
+        .transitPointWorld = RE::NiPoint3{ 25.0f, 0.0f, 0.0f },
+        .hasTransitPoint = true,
+        .existingGripPointWorld = RE::NiPoint3{ 25.0f, 0.0f, 0.0f },
+        .hasExistingGrip = true,
+        .bodyFallbackPointWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
+        .hasBodyFallbackPoint = true,
+        .touchAcquireDistanceGameUnits = 4.0f,
+        .pocketRadiusGameUnits = 9.0f,
+        .behindPalmToleranceGameUnits = 1.5f,
+        .pulledAdjustDistanceGameUnits = 10.5f,
+    });
+    ok &= expectTrue("pull-catch body fallback valid as seed", bodyFallbackSeat.valid);
+    ok &= expectSeatSource("pull-catch body fallback source", bodyFallbackSeat.source, PullCatchDynamicSeatSource::BodyFallbackSeed);
+    ok &= expectFalse("pull-catch body fallback is not trusted surface", bodyFallbackSeat.trustedSurface);
+    ok &= expectTrue("pull-catch body fallback is position-only", bodyFallbackSeat.positionOnly);
+    ok &= expectPhase("pull-catch body fallback must converge", bodyFallbackSeat.phase, AcquisitionPhase::NearConverging);
+    ok &= expectReason("pull-catch body fallback reason", bodyFallbackSeat.reason, "pullCatchSeatPositionOnly");
 
     return ok ? 0 : 1;
 }
