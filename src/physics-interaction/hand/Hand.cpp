@@ -737,8 +737,10 @@ namespace rock
             .targetKind = targetKind,
             .arrivalTransitPointWorld = {},
             .arrivalMotionPointWorld = {},
+            .arrivalTransitMotionOffsetWorld = {},
             .hasArrivalTransitPoint = false,
             .hasArrivalMotionPoint = false,
+            .hasArrivalTransitMotionOffset = false,
             .commitElapsedSeconds = 0.0f,
             .failedCommitAttempts = 0,
         };
@@ -763,10 +765,18 @@ namespace rock
         _pullCatchIntent.arrivalMotionPointWorld = motionPointWorld;
         _pullCatchIntent.hasArrivalTransitPoint = grab_three_phase::isFinite(transitPointWorld);
         _pullCatchIntent.hasArrivalMotionPoint = grab_three_phase::isFinite(motionPointWorld);
+        _pullCatchIntent.arrivalTransitMotionOffsetWorld =
+            (_pullCatchIntent.hasArrivalTransitPoint && _pullCatchIntent.hasArrivalMotionPoint) ?
+                transitPointWorld - motionPointWorld :
+                RE::NiPoint3{};
+        _pullCatchIntent.hasArrivalTransitMotionOffset =
+            _pullCatchIntent.hasArrivalTransitPoint &&
+            _pullCatchIntent.hasArrivalMotionPoint &&
+            grab_three_phase::isFinite(_pullCatchIntent.arrivalTransitMotionOffsetWorld);
         _pullCatchIntent.commitElapsedSeconds = 0.0f;
         _pullCatchIntent.failedCommitAttempts = 0;
         ROCK_LOG_DEBUG(Hand,
-            "{} hand PULL catch intent arrived formID={:08X} primaryBody={} transit=({:.1f},{:.1f},{:.1f}) motion=({:.1f},{:.1f},{:.1f})",
+            "{} hand PULL catch intent arrived formID={:08X} primaryBody={} transit=({:.1f},{:.1f},{:.1f}) motion=({:.1f},{:.1f},{:.1f}) offset=({:.1f},{:.1f},{:.1f})",
             handName(),
             _pullCatchIntent.formId,
             _pullCatchIntent.primaryBodyId,
@@ -775,7 +785,10 @@ namespace rock
             transitPointWorld.z,
             motionPointWorld.x,
             motionPointWorld.y,
-            motionPointWorld.z);
+            motionPointWorld.z,
+            _pullCatchIntent.arrivalTransitMotionOffsetWorld.x,
+            _pullCatchIntent.arrivalTransitMotionOffsetWorld.y,
+            _pullCatchIntent.arrivalTransitMotionOffsetWorld.z);
     }
 
     bool Hand::pullCatchIntentMatchesSelection() const
@@ -897,13 +910,37 @@ namespace rock
         auto toNiPoint = [](const hand_semantic_contact_state::SemanticContactVector& value) {
             return RE::NiPoint3{ value.x, value.y, value.z };
         };
-        auto considerEvidence = [&](const RE::NiPoint3& pointWorld, const RE::NiPoint3& normalWorld, const char* source) {
+        const float finitePocketRadius =
+            std::isfinite(g_rockConfig.rockGrabPocketRadiusGameUnits) ? (std::max)(0.0f, g_rockConfig.rockGrabPocketRadiusGameUnits) : 0.0f;
+        const float finiteProbeSpacing =
+            std::isfinite(g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits) ?
+                (std::max)(0.0f, g_rockConfig.rockGrabContactPatchProbeSpacingGameUnits) :
+                0.0f;
+        const float transitBodySlack = (std::max)(2.0f, (std::max)(finitePocketRadius, finiteProbeSpacing));
+        const float transitOffsetDistance =
+            _pullCatchIntent.hasArrivalTransitMotionOffset ?
+                pointDistanceGameUnits(RE::NiPoint3{}, _pullCatchIntent.arrivalTransitMotionOffsetWorld) :
+                0.0f;
+        const float maxTransitBodyDistance =
+            _pullCatchIntent.hasArrivalTransitMotionOffset ? transitOffsetDistance + transitBodySlack : acceptedDistance;
+
+        auto considerEvidence = [&](const RE::NiPoint3& pointWorld,
+                                    const RE::NiPoint3& normalWorld,
+                                    const char* source,
+                                    bool requireBodyProximity,
+                                    float maxEvidenceBodyDistance) {
             if (!grab_three_phase::isFinite(pointWorld)) {
                 lastMissReason = "non-finite-close-evidence";
                 return;
             }
 
             const float handDistance = pointDistanceGameUnits(selectionOrigin, pointWorld);
+            const float bodyDistance = pointDistanceGameUnits(pointWorld, bodyWorld.translate);
+            if (requireBodyProximity &&
+                (!std::isfinite(bodyDistance) || bodyDistance > maxEvidenceBodyDistance)) {
+                lastMissReason = "close-evidence-detached-from-body";
+                return;
+            }
             if (handDistance > acceptedDistance || handDistance >= evidence.handDistance) {
                 lastMissReason = handDistance > acceptedDistance ? "outside-close-reacquire-reach" : lastMissReason;
                 return;
@@ -912,7 +949,7 @@ namespace rock
             evidence.point = pointWorld;
             evidence.normal = normalizeOrFallback(normalWorld, normalizeOrFallback(selectionOrigin - pointWorld, palmNormal));
             evidence.handDistance = handDistance;
-            evidence.bodyDistance = pointDistanceGameUnits(pointWorld, bodyWorld.translate);
+            evidence.bodyDistance = bodyDistance;
             evidence.source = source;
             evidence.valid = true;
         };
@@ -941,13 +978,19 @@ namespace rock
                 hand_semantic_contact_state::hasUsableContactNormal(contact) ?
                     toNiPoint(contact.contactNormalGame) :
                     normalizeOrFallback(selectionOrigin - contactPointWorld, palmNormal);
-            considerEvidence(contactPointWorld, contactNormalWorld, "semanticContactPoint");
+            considerEvidence(contactPointWorld, contactNormalWorld, "semanticContactPoint", false, 0.0f);
         }
 
         if (_pullCatchIntent.hasArrivalTransitPoint) {
-            considerEvidence(_pullCatchIntent.arrivalTransitPointWorld,
-                normalizeOrFallback(selectionOrigin - _pullCatchIntent.arrivalTransitPointWorld, palmNormal),
-                "pullCatchArrivalTransitPoint");
+            const RE::NiPoint3 transitPointWorld =
+                _pullCatchIntent.hasArrivalTransitMotionOffset ?
+                    bodyWorld.translate + _pullCatchIntent.arrivalTransitMotionOffsetWorld :
+                    _pullCatchIntent.arrivalTransitPointWorld;
+            considerEvidence(transitPointWorld,
+                normalizeOrFallback(selectionOrigin - transitPointWorld, palmNormal),
+                _pullCatchIntent.hasArrivalTransitMotionOffset ? "pullCatchLiveTransitOffset" : "pullCatchArrivalTransitPoint",
+                true,
+                maxTransitBodyDistance);
         }
 
         if (!evidence.valid) {
@@ -983,9 +1026,19 @@ namespace rock
             return false;
         }
 
+        const auto transition = applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::SelectionFoundClose });
+        if (!transition.accepted) {
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand pull-catch close reacquire refused: formID={:08X} body={} reason=state-transition-rejected state={}",
+                handName(),
+                _pullCatchIntent.formId,
+                _pullCatchIntent.primaryBodyId,
+                handStateName(_state));
+            return false;
+        }
+
         stopSelectionHighlight();
         _currentSelection = selection;
-        applyTransition(HandTransitionRequest{ .event = HandInteractionEvent::SelectionFoundClose });
         _selectionHoldFrames = 0;
         clearSelectedCloseFingerPose();
         playSelectionHighlight(_currentSelection);

@@ -7060,10 +7060,10 @@ namespace rock
         const bool joiningPeerHeldObject = sharedContextMatchesSelection(sharedContext, sel);
         const bool grabbedFromPullCatch = pullCatchIntentMatchesSelection();
         const bool pullCatchHasTransitPoint = grabbedFromPullCatch && _pullCatchIntent.hasArrivalTransitPoint;
-        const RE::NiPoint3 pullCatchTransitPointWorld =
+        RE::NiPoint3 pullCatchTransitPointWorld =
             pullCatchHasTransitPoint ? _pullCatchIntent.arrivalTransitPointWorld : (sel.hasHitPoint ? sel.hitPointWorld : RE::NiPoint3{});
         const bool pullCatchHasMotionPoint = grabbedFromPullCatch && _pullCatchIntent.hasArrivalMotionPoint;
-        const RE::NiPoint3 pullCatchMotionPointWorld =
+        RE::NiPoint3 pullCatchMotionPointWorld =
             pullCatchHasMotionPoint ? _pullCatchIntent.arrivalMotionPointWorld : RE::NiPoint3{};
         const bool looseWeaponGrab = isLooseWeaponGrabTarget(sel);
         const bool handPocketOnlyGrab = grab_target::requiresHandPocketGrab(sel.targetKind);
@@ -8453,6 +8453,19 @@ namespace rock
         }
 
         if (grabbedFromPullCatch) {
+            bool pullCatchHasBodyFallbackPoint = pullCatchHasMotionPoint || grab_three_phase::isFinite(objectWorldTransform.translate);
+            RE::NiPoint3 pullCatchBodyFallbackPointWorld =
+                pullCatchHasMotionPoint ? pullCatchMotionPointWorld : objectWorldTransform.translate;
+            RE::NiTransform livePullCatchBodyWorld{};
+            if (havok_runtime::tryGetBodyArrayWorldTransform(world, objectBodyId, livePullCatchBodyWorld) ||
+                tryResolveLiveBodyWorldTransform(world, objectBodyId, livePullCatchBodyWorld)) {
+                pullCatchMotionPointWorld = livePullCatchBodyWorld.translate;
+                pullCatchBodyFallbackPointWorld = livePullCatchBodyWorld.translate;
+                pullCatchHasBodyFallbackPoint = true;
+                if (pullCatchHasTransitPoint && _pullCatchIntent.hasArrivalTransitMotionOffset) {
+                    pullCatchTransitPointWorld = livePullCatchBodyWorld.translate + _pullCatchIntent.arrivalTransitMotionOffsetWorld;
+                }
+            }
             const char* pullCatchExistingGripMode = grabPointMode;
             const bool existingGripIsMeshSurface =
                 meshGrabFound &&
@@ -8484,8 +8497,8 @@ namespace rock
                 .hasContactPatch = hasContactPatchSeat,
                 .contactPatchNormalTrusted = hasContactPatchSeat && contactPatchRuntime.normalTrusted,
                 .contactPatchPositionOnly = hasContactPatchSeat && contactPatchRuntime.positionOnly,
-                .bodyFallbackPointWorld = pullCatchHasMotionPoint ? pullCatchMotionPointWorld : objectWorldTransform.translate,
-                .hasBodyFallbackPoint = pullCatchHasMotionPoint || grab_three_phase::isFinite(objectWorldTransform.translate),
+                .bodyFallbackPointWorld = pullCatchBodyFallbackPointWorld,
+                .hasBodyFallbackPoint = pullCatchHasBodyFallbackPoint,
                 .stablePocketTouchContact = false,
                 .touchAcquireDistanceGameUnits = g_rockConfig.rockGrabTouchAcquireDistanceGameUnits,
                 .pocketRadiusGameUnits = acquisitionPocket.valid ? acquisitionPocket.pocketRadiusGameUnits : g_rockConfig.rockGrabPocketRadiusGameUnits,

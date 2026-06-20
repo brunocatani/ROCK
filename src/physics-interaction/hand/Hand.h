@@ -654,8 +654,10 @@ namespace rock
             grab_target::Kind targetKind = grab_target::Kind::LooseObject;
             RE::NiPoint3 arrivalTransitPointWorld{};
             RE::NiPoint3 arrivalMotionPointWorld{};
+            RE::NiPoint3 arrivalTransitMotionOffsetWorld{};
             bool hasArrivalTransitPoint = false;
             bool hasArrivalMotionPoint = false;
+            bool hasArrivalTransitMotionOffset = false;
             float commitElapsedSeconds = 0.0f;
             std::uint32_t failedCommitAttempts = 0;
         };
