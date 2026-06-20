@@ -709,6 +709,9 @@ int main()
             bakedIndexCurve.probes[1].sampleCount == kCalibratedFingerCurveSampleCount &&
             bakedIndexCurve.probes[2].sampleCount == kCalibratedFingerCurveSampleCount,
         true);
+    ok &= expectBool("baked tip reach is scaled from runtime landmark length to authored fingertip reach",
+        bakedIndexCurve.probes[0].samples[0].reachLength > 12.0f,
+        true);
     ok &= expectBool("baked standard index has usable max curl angle",
         bakedCalibratedFingerMaxAngleRadians(1, false, false) > 1.0f,
         true);

@@ -522,8 +522,8 @@ namespace rock::grab_finger_pose_math
         /*
          * ROCK intersects the object's local triangle slice with the finger curl
          * disk and converts the hit angle back into an open/closed curve value.
-         * This keeps finger solving geometric while using compact parametric
-         * curves instead of generated lookup tables in runtime code.
+         * This path is retained as the simpler target-ray fallback; the primary
+         * contact solver consumes the baked hFRIK-derived lookup tables below.
          */
         FingerCurlValue result{};
         result.value = std::clamp(minValue, 0.0f, 1.0f);
@@ -721,6 +721,9 @@ namespace rock::grab_finger_pose_math
     };
 
     inline constexpr std::size_t kCalibratedFingerCurveSampleCount = 201;
+    static_assert(
+        grab_finger_calibration_data::kGrabFingerCalibrationSampleCount == kCalibratedFingerCurveSampleCount,
+        "Generated grab-finger calibration sample count must match the runtime solver sample count.");
 
     template <class Vector>
     struct CalibratedFingerCurveSample
