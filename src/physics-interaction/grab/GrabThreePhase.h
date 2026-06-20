@@ -399,6 +399,12 @@ namespace rock::grab_three_phase
 
         decision.allowImmediateTouchHeld = false;
         decision.requireSettledVisualRelation = true;
+        auto allowPulledAdjustForCorrectedSeat = [&]() {
+            if (std::isfinite(input.pulledAdjustDistanceGameUnits) && input.pulledAdjustDistanceGameUnits > 0.0f) {
+                decision.allowPulledAdjust = true;
+                decision.adjustDistanceGameUnits = (std::max)(0.0f, input.pulledAdjustDistanceGameUnits);
+            }
+        };
 
         const RE::NiPoint3 palmNormal = normalizeOrZero(input.palmNormalWorld);
         const RE::NiPoint3 gripNormal = normalizeOrZero(input.gripNormalWorld);
@@ -413,19 +419,22 @@ namespace rock::grab_three_phase
             decision.reason = "pullCatchSeatMissingFrame";
             return decision;
         }
+
+        const float behindTolerance =
+            (std::max)(0.0f, std::isfinite(input.behindPalmToleranceGameUnits) ? input.behindPalmToleranceGameUnits : 1.5f);
+        if (input.signedPalmDistanceGameUnits < -behindTolerance) {
+            decision.reason = "pullCatchSeatBehindPalm";
+            return decision;
+        }
+
+        allowPulledAdjustForCorrectedSeat();
+
         if (input.pivotAuthorityPositionOnly) {
             decision.reason = "pullCatchSeatPositionOnly";
             return decision;
         }
         if (!hasGripNormal) {
             decision.reason = "pullCatchSeatMissingFrame";
-            return decision;
-        }
-
-        const float behindTolerance =
-            (std::max)(0.0f, std::isfinite(input.behindPalmToleranceGameUnits) ? input.behindPalmToleranceGameUnits : 1.5f);
-        if (input.signedPalmDistanceGameUnits < -behindTolerance) {
-            decision.reason = "pullCatchSeatBehindPalm";
             return decision;
         }
 
@@ -457,16 +466,14 @@ namespace rock::grab_three_phase
 
         constexpr float kMaxPalmFacingNormalDot = -0.10f;
         if (decision.normalDotPalm > kMaxPalmFacingNormalDot) {
+            decision.allowPulledAdjust = false;
+            decision.adjustDistanceGameUnits = 0.0f;
             decision.reason = "pullCatchSeatNormalWrongSide";
             return decision;
         }
 
         decision.allowImmediateTouchHeld = true;
         decision.requireSettledVisualRelation = false;
-        decision.allowPulledAdjust =
-            std::isfinite(input.pulledAdjustDistanceGameUnits) && input.pulledAdjustDistanceGameUnits > 0.0f;
-        decision.adjustDistanceGameUnits =
-            decision.allowPulledAdjust ? (std::max)(0.0f, input.pulledAdjustDistanceGameUnits) : 0.0f;
         decision.reason = "pullCatchSeatSafe";
         return decision;
     }
@@ -660,7 +667,7 @@ namespace rock::grab_three_phase
             .stablePocketTouchContact = stableSeatContact,
             .pivotAuthorityNormalTrusted = decision.normalTrusted,
             .pivotAuthorityPositionOnly = decision.positionOnly,
-            .gripToPocketDistanceGameUnits = decision.seatToPocketDistanceGameUnits,
+            .gripToPocketDistanceGameUnits = 0.0f,
             .signedPalmDistanceGameUnits = decision.signedPalmDistanceGameUnits,
             .behindPalmToleranceGameUnits = input.behindPalmToleranceGameUnits,
             .touchAcquireDistanceGameUnits = touchDistance,
@@ -677,8 +684,6 @@ namespace rock::grab_three_phase
         decision.phase = safety.allowImmediateTouchHeld ? AcquisitionPhase::TouchHeld : AcquisitionPhase::NearConverging;
         if (!safety.allowImmediateTouchHeld) {
             decision.requireSettledVisualRelation = true;
-            decision.allowPulledAdjust = false;
-            decision.adjustDistanceGameUnits = 0.0f;
             decision.reason = safety.reason;
         }
 

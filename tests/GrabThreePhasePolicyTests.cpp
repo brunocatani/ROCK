@@ -325,6 +325,28 @@ int main()
     ok &= expectNear("pull-catch palm surface adjust", palmSeatReplacesTransit.adjustDistanceGameUnits, 10.5f, 0.001f);
     ok &= expectReason("pull-catch palm surface reason", palmSeatReplacesTransit.reason, "pullCatchPalmPocketSurface");
 
+    const auto trustedOutsidePocketSeat = resolvePullCatchDynamicSeat(PullCatchDynamicSeatInput{
+        .grabbedFromPullCatch = true,
+        .pocket = makePocket(),
+        .transitPointWorld = RE::NiPoint3{ 25.0f, 0.0f, 0.0f },
+        .hasTransitPoint = true,
+        .existingGripPointWorld = RE::NiPoint3{ 25.0f, 0.0f, 6.0f },
+        .existingGripNormalWorld = RE::NiPoint3{ 0.0f, 0.0f, -1.0f },
+        .hasExistingGrip = true,
+        .existingGripTrusted = true,
+        .existingGripNormalTrusted = true,
+        .existingGripPositionOnly = false,
+        .touchAcquireDistanceGameUnits = 4.0f,
+        .pocketRadiusGameUnits = 9.0f,
+        .behindPalmToleranceGameUnits = 1.5f,
+        .pulledAdjustDistanceGameUnits = 10.5f,
+    });
+    ok &= expectTrue("trusted pull-catch outside pocket remains valid", trustedOutsidePocketSeat.valid);
+    ok &= expectSeatSource("trusted pull-catch outside pocket source", trustedOutsidePocketSeat.source, PullCatchDynamicSeatSource::ExistingGrip);
+    ok &= expectPhase("trusted pull-catch outside pocket uses corrected commit seat", trustedOutsidePocketSeat.phase, AcquisitionPhase::TouchHeld);
+    ok &= expectTrue("trusted pull-catch outside pocket allows adjust", trustedOutsidePocketSeat.allowPulledAdjust);
+    ok &= expectNear("trusted pull-catch outside pocket keeps live distance telemetry", trustedOutsidePocketSeat.seatToPocketDistanceGameUnits, std::sqrt(25.0f * 25.0f + 6.0f * 6.0f), 0.001f);
+
     const auto weakSurfaceSeat = resolvePullCatchDynamicSeat(PullCatchDynamicSeatInput{
         .grabbedFromPullCatch = true,
         .pocket = makePocket(),
@@ -344,7 +366,8 @@ int main()
     ok &= expectSeatSource("weak pull-catch surface still replaces transit", weakSurfaceSeat.source, PullCatchDynamicSeatSource::PalmPocketSurface);
     ok &= expectPhase("weak pull-catch surface must settle", weakSurfaceSeat.phase, AcquisitionPhase::NearConverging);
     ok &= expectTrue("weak pull-catch surface requires settled relation", weakSurfaceSeat.requireSettledVisualRelation);
-    ok &= expectFalse("weak pull-catch surface disables adjust", weakSurfaceSeat.allowPulledAdjust);
+    ok &= expectTrue("weak pull-catch surface still applies corrected-seat adjust", weakSurfaceSeat.allowPulledAdjust);
+    ok &= expectNear("weak pull-catch surface adjust", weakSurfaceSeat.adjustDistanceGameUnits, 10.5f, 0.001f);
     ok &= expectReason("weak pull-catch surface reason", weakSurfaceSeat.reason, "pullCatchSeatNormalUntrusted");
 
     const auto transitSeat = resolvePullCatchDynamicSeat(PullCatchDynamicSeatInput{
@@ -366,6 +389,7 @@ int main()
     ok &= expectFalse("pull-catch transit is not trusted surface", transitSeat.trustedSurface);
     ok &= expectTrue("pull-catch transit is position-only", transitSeat.positionOnly);
     ok &= expectPhase("pull-catch transit must converge", transitSeat.phase, AcquisitionPhase::NearConverging);
+    ok &= expectTrue("pull-catch transit keeps corrected-seat adjust", transitSeat.allowPulledAdjust);
     ok &= expectReason("pull-catch transit reason", transitSeat.reason, "pullCatchSeatPositionOnly");
 
     const auto bodyFallbackSeat = resolvePullCatchDynamicSeat(PullCatchDynamicSeatInput{
@@ -383,6 +407,7 @@ int main()
     ok &= expectFalse("pull-catch body fallback is not trusted surface", bodyFallbackSeat.trustedSurface);
     ok &= expectTrue("pull-catch body fallback is position-only", bodyFallbackSeat.positionOnly);
     ok &= expectPhase("pull-catch body fallback must converge", bodyFallbackSeat.phase, AcquisitionPhase::NearConverging);
+    ok &= expectTrue("pull-catch body fallback keeps corrected-seat adjust", bodyFallbackSeat.allowPulledAdjust);
     ok &= expectReason("pull-catch body fallback reason", bodyFallbackSeat.reason, "pullCatchSeatPositionOnly");
 
     return ok ? 0 : 1;
