@@ -1329,12 +1329,8 @@ namespace rock
 
     RE::NiPoint3 Hand::computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const
     {
-        RE::NiTransform proxyFrameWorld{};
-        if (tryComputeGrabProxyLocalPalmPocketFrameWorld(world, proxyFrameWorld)) {
-            return proxyFrameWorld.translate;
-        }
-
-        return fallbackHandWorldTransform.translate;
+        (void)world;
+        return makeRawHandGrabAuthorityFrame(fallbackHandWorldTransform, _isLeft).translate;
     }
 
     bool Hand::tryComputeGrabProxyLocalPalmPocketFrameWorld(RE::hknpWorld* world, RE::NiTransform& outFrameWorld) const

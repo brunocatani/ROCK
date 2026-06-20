@@ -620,6 +620,7 @@ namespace rock
     struct CanonicalGrabFrame
     {
         RE::NiTransform rawHandSpace{};
+        RE::NiTransform rawBodyHandSpace{};
         RE::NiTransform proxyAuthorityHandSpace{};
         RE::NiTransform proxyAuthorityBodyHandSpace{};
         RE::NiTransform handBodyToRawHandAtGrab{};
@@ -778,6 +779,7 @@ namespace rock
         void clear()
         {
             rawHandSpace = RE::NiTransform();
+            rawBodyHandSpace = RE::NiTransform();
             proxyAuthorityHandSpace = RE::NiTransform();
             proxyAuthorityBodyHandSpace = RE::NiTransform();
             handBodyToRawHandAtGrab = RE::NiTransform();
@@ -1251,6 +1253,7 @@ namespace rock::grab_authority_frame_math
         Transform desiredObjectWorld{};
         Transform desiredBodyWorld{};
         Transform rawHandSpace{};
+        Transform rawBodyHandSpace{};
         Transform handBodyToRawHandAtGrab{};
         Vector pivotAHandBodyLocalGame{};
         Transform proxyAuthorityHandSpace{};
@@ -1263,6 +1266,8 @@ namespace rock::grab_authority_frame_math
     inline FrozenGrabAuthorityFrame<Transform> freezeGrabAuthorityFrame(
         const GrabAuthorityFrameFreezeInput<Transform>& input)
     {
+        using Vector = typename GrabAuthorityFrameFreezeInput<Transform>::Vector;
+
         FrozenGrabAuthorityFrame<Transform> frozen{};
         frozen.source = input.source;
         frozen.pivotAWorld = input.pivotAWorld;
@@ -1321,25 +1326,26 @@ namespace rock::grab_authority_frame_math
         }
 
         /*
-         * BODY is the solver authority. The selected BODY-local pivot B must be
-         * the point written into transform-B, so freeze the generated/proxy BODY
-         * relation around that exact point. The proxy parent is a generated
-         * collider frame, so use the same column-authored local conversion as
-         * the collider and pivot code instead of normal NiTransform inverse math.
-         * Otherwise a relation-implied pivot can replace the selected grip point
-         * and feed Havok a coherent but wrong linear/angular frame pair.
+         * BODY is still the solver authority, but dynamic grab relation now uses
+         * the raw hand frame. The generated proxy can be late or basis-flipped,
+         * so it is only a body-A transport frame; desired BODY/object targets are
+         * frozen and replayed from raw hand space, then converted to proxy local
+         * atoms at the final solver boundary.
          */
-        frozen.proxyAuthorityBodyHandSpace =
-            grab_frame_math::objectInGeneratedProxyLocalSpace(input.proxyWorld, frozen.desiredBodyWorld);
+        const Vector pivotARawHandLocal = transform_math::worldPointToLocal(input.rawHandWorld, input.pivotAWorld);
+        if (!isFiniteVector(pivotARawHandLocal)) {
+            return frozen;
+        }
+        frozen.rawBodyHandSpace = grab_frame_math::objectInFrameSpace(input.rawHandWorld, frozen.desiredBodyWorld);
         if (!alignLocalPointInTransformToLocalTarget(
-                frozen.proxyAuthorityBodyHandSpace,
+                frozen.rawBodyHandSpace,
                 frozen.pivotBConstraintLocalGame,
-                frozen.pivotAHandBodyLocalGame)) {
+                pivotARawHandLocal)) {
             return frozen;
         }
 
         frozen.desiredBodyWorld =
-            grab_frame_math::objectFromGeneratedProxyLocalSpace(input.proxyWorld, frozen.proxyAuthorityBodyHandSpace);
+            transform_math::composeTransforms(input.rawHandWorld, frozen.rawBodyHandSpace);
         if (!isFiniteTransform(frozen.desiredBodyWorld)) {
             return frozen;
         }
@@ -1359,8 +1365,11 @@ namespace rock::grab_authority_frame_math
         frozen.rawHandSpace = splitFrame.rawHandSpace;
         frozen.handBodyToRawHandAtGrab = splitFrame.handBodyToRawHandAtGrab;
         frozen.pivotAHandBodyLocalGame = splitFrame.pivotAHandBodyLocal;
+        frozen.rawBodyHandSpace = grab_frame_math::objectInFrameSpace(input.rawHandWorld, frozen.desiredBodyWorld);
         frozen.proxyAuthorityHandSpace =
             grab_frame_math::objectInGeneratedProxyLocalSpace(input.proxyWorld, frozen.desiredObjectWorld);
+        frozen.proxyAuthorityBodyHandSpace =
+            grab_frame_math::objectInGeneratedProxyLocalSpace(input.proxyWorld, frozen.desiredBodyWorld);
         frozen.valid =
             isFiniteVector(frozen.pivotBBodyLocalGame) &&
             isFiniteVector(frozen.pivotBConstraintLocalGame) &&
@@ -1368,6 +1377,7 @@ namespace rock::grab_authority_frame_math
             isFiniteTransform(frozen.bodyLocal) &&
             isFiniteTransform(frozen.desiredBodyWorld) &&
             isFiniteTransform(frozen.rawHandSpace) &&
+            isFiniteTransform(frozen.rawBodyHandSpace) &&
             isFiniteTransform(frozen.proxyAuthorityHandSpace) &&
             isFiniteTransform(frozen.proxyAuthorityBodyHandSpace);
         return frozen;

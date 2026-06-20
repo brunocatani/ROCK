@@ -593,6 +593,8 @@ namespace rock
             const char* reason);
         bool updateProxyConstraintGrabDriveTarget(RE::hknpWorld* world,
             const RE::NiTransform& proxyWorldTransform,
+            const RE::NiTransform& desiredObjectWorldAuthority,
+            const RE::NiTransform& desiredBodyWorldAuthority,
             RE::NiTransform& outDesiredObjectWorld,
             RE::NiTransform& outDesiredBodyWorld,
             RE::NiPoint3& outDesiredTargetPointWorld,
@@ -620,6 +622,8 @@ namespace rock
             const grab_motion_controller::HeldAuthorityState& heldAuthority);
         void queueProxyGrabAuthorityTarget(const RE::NiTransform& proxyWorldTransform,
             const RE::NiTransform& rawHandWorldTransform,
+            const RE::NiTransform& desiredObjectWorldAuthority,
+            const RE::NiTransform& desiredBodyWorldAuthority,
             const char* proxyFrameSource,
             float deltaTime,
             float forceFadeInTime,
@@ -929,6 +933,8 @@ namespace rock
         {
             RE::NiTransform proxyWorld{};
             RE::NiTransform rawHandWorld{};
+            RE::NiTransform desiredObjectWorld{};
+            RE::NiTransform desiredBodyWorld{};
             const char* proxyFrameSource = "unknown";
             float deltaTime = 0.0f;
             float forceFadeInTime = 0.0f;
