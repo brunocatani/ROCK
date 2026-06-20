@@ -652,12 +652,6 @@ namespace rock
             std::uint32_t formId = 0;
             std::uint32_t primaryBodyId = INVALID_BODY_ID;
             grab_target::Kind targetKind = grab_target::Kind::LooseObject;
-            RE::NiPoint3 arrivalTransitPointWorld{};
-            RE::NiPoint3 arrivalMotionPointWorld{};
-            RE::NiPoint3 arrivalTransitMotionOffsetWorld{};
-            bool hasArrivalTransitPoint = false;
-            bool hasArrivalMotionPoint = false;
-            bool hasArrivalTransitMotionOffset = false;
             float commitElapsedSeconds = 0.0f;
             std::uint32_t failedCommitAttempts = 0;
         };
@@ -738,7 +732,7 @@ namespace rock
         };
 
         void armPullCatchIntent(RE::TESObjectREFR* refr, std::uint32_t primaryBodyId, grab_target::Kind targetKind);
-        void markPullCatchIntentArrived(const RE::NiPoint3& transitPointWorld, const RE::NiPoint3& motionPointWorld);
+        void markPullCatchIntentArrived();
         bool pullCatchIntentMatchesSelection() const;
 
         bool _isLeft;

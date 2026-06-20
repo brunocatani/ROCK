@@ -399,12 +399,6 @@ namespace rock::grab_three_phase
 
         decision.allowImmediateTouchHeld = false;
         decision.requireSettledVisualRelation = true;
-        auto allowPulledAdjustForCorrectedSeat = [&]() {
-            if (std::isfinite(input.pulledAdjustDistanceGameUnits) && input.pulledAdjustDistanceGameUnits > 0.0f) {
-                decision.allowPulledAdjust = true;
-                decision.adjustDistanceGameUnits = (std::max)(0.0f, input.pulledAdjustDistanceGameUnits);
-            }
-        };
 
         const RE::NiPoint3 palmNormal = normalizeOrZero(input.palmNormalWorld);
         const RE::NiPoint3 gripNormal = normalizeOrZero(input.gripNormalWorld);
@@ -415,7 +409,8 @@ namespace rock::grab_three_phase
         if (!input.pocketValid ||
             !std::isfinite(input.gripToPocketDistanceGameUnits) ||
             !std::isfinite(input.signedPalmDistanceGameUnits) ||
-            !hasPalmNormal) {
+            !hasPalmNormal ||
+            !hasGripNormal) {
             decision.reason = "pullCatchSeatMissingFrame";
             return decision;
         }
@@ -424,17 +419,6 @@ namespace rock::grab_three_phase
             (std::max)(0.0f, std::isfinite(input.behindPalmToleranceGameUnits) ? input.behindPalmToleranceGameUnits : 1.5f);
         if (input.signedPalmDistanceGameUnits < -behindTolerance) {
             decision.reason = "pullCatchSeatBehindPalm";
-            return decision;
-        }
-
-        allowPulledAdjustForCorrectedSeat();
-
-        if (input.pivotAuthorityPositionOnly) {
-            decision.reason = "pullCatchSeatPositionOnly";
-            return decision;
-        }
-        if (!hasGripNormal) {
-            decision.reason = "pullCatchSeatMissingFrame";
             return decision;
         }
 
@@ -459,6 +443,10 @@ namespace rock::grab_three_phase
             return decision;
         }
 
+        if (input.pivotAuthorityPositionOnly) {
+            decision.reason = "pullCatchSeatPositionOnly";
+            return decision;
+        }
         if (!input.pivotAuthorityNormalTrusted) {
             decision.reason = "pullCatchSeatNormalUntrusted";
             return decision;
@@ -466,227 +454,17 @@ namespace rock::grab_three_phase
 
         constexpr float kMaxPalmFacingNormalDot = -0.10f;
         if (decision.normalDotPalm > kMaxPalmFacingNormalDot) {
-            decision.allowPulledAdjust = false;
-            decision.adjustDistanceGameUnits = 0.0f;
             decision.reason = "pullCatchSeatNormalWrongSide";
             return decision;
         }
 
         decision.allowImmediateTouchHeld = true;
         decision.requireSettledVisualRelation = false;
+        decision.allowPulledAdjust =
+            std::isfinite(input.pulledAdjustDistanceGameUnits) && input.pulledAdjustDistanceGameUnits > 0.0f;
+        decision.adjustDistanceGameUnits =
+            decision.allowPulledAdjust ? (std::max)(0.0f, input.pulledAdjustDistanceGameUnits) : 0.0f;
         decision.reason = "pullCatchSeatSafe";
-        return decision;
-    }
-
-    enum class PullCatchDynamicSeatSource : std::uint8_t
-    {
-        None,
-        ExistingGrip,
-        PalmPocketSurface,
-        ContactPatchSurface,
-        BodyFallbackSeed,
-        TransitPointSeed,
-    };
-
-    inline const char* pullCatchDynamicSeatSourceName(PullCatchDynamicSeatSource source)
-    {
-        switch (source) {
-        case PullCatchDynamicSeatSource::ExistingGrip:
-            return "existingGrip";
-        case PullCatchDynamicSeatSource::PalmPocketSurface:
-            return "palmPocketSurface";
-        case PullCatchDynamicSeatSource::ContactPatchSurface:
-            return "contactPatchSurface";
-        case PullCatchDynamicSeatSource::BodyFallbackSeed:
-            return "bodyFallbackSeed";
-        case PullCatchDynamicSeatSource::TransitPointSeed:
-            return "transitPointSeed";
-        case PullCatchDynamicSeatSource::None:
-        default:
-            return "none";
-        }
-    }
-
-    struct PullCatchDynamicSeatInput
-    {
-        bool grabbedFromPullCatch = false;
-        GrabPocketFrame pocket{};
-        RE::NiPoint3 transitPointWorld{};
-        bool hasTransitPoint = false;
-        RE::NiPoint3 existingGripPointWorld{};
-        RE::NiPoint3 existingGripNormalWorld{};
-        bool hasExistingGrip = false;
-        bool existingGripTrusted = false;
-        bool existingGripNormalTrusted = false;
-        bool existingGripPositionOnly = false;
-        RE::NiPoint3 palmPocketSurfacePointWorld{};
-        RE::NiPoint3 palmPocketSurfaceNormalWorld{};
-        bool hasPalmPocketSurface = false;
-        bool palmPocketSurfaceNormalTrusted = false;
-        RE::NiPoint3 contactPatchPointWorld{};
-        RE::NiPoint3 contactPatchNormalWorld{};
-        bool hasContactPatch = false;
-        bool contactPatchNormalTrusted = false;
-        bool contactPatchPositionOnly = false;
-        RE::NiPoint3 bodyFallbackPointWorld{};
-        bool hasBodyFallbackPoint = false;
-        bool stablePocketTouchContact = false;
-        float touchAcquireDistanceGameUnits = 4.0f;
-        float pocketRadiusGameUnits = 9.0f;
-        float behindPalmToleranceGameUnits = 1.5f;
-        float pulledAdjustDistanceGameUnits = 0.0f;
-    };
-
-    struct PullCatchDynamicSeatDecision
-    {
-        RE::NiPoint3 seatPointWorld{};
-        RE::NiPoint3 seatNormalWorld{};
-        PullCatchDynamicSeatSource source = PullCatchDynamicSeatSource::None;
-        AcquisitionPhase phase = AcquisitionPhase::Idle;
-        bool valid = false;
-        bool changedFromTransit = false;
-        bool trustedSurface = false;
-        bool normalTrusted = false;
-        bool positionOnly = false;
-        bool allowPulledAdjust = false;
-        bool requireSettledVisualRelation = false;
-        float adjustDistanceGameUnits = 0.0f;
-        float seatToPocketDistanceGameUnits = std::numeric_limits<float>::max();
-        float transitToSeatDistanceGameUnits = std::numeric_limits<float>::max();
-        float signedPalmDistanceGameUnits = 0.0f;
-        float normalDotPalm = 0.0f;
-        const char* reason = "none";
-    };
-
-    inline PullCatchDynamicSeatDecision resolvePullCatchDynamicSeat(const PullCatchDynamicSeatInput& input)
-    {
-        PullCatchDynamicSeatDecision decision{};
-
-        if (!input.grabbedFromPullCatch) {
-            if (input.hasExistingGrip && isFinite(input.existingGripPointWorld)) {
-                decision.seatPointWorld = input.existingGripPointWorld;
-                decision.seatNormalWorld = normalizeOrZero(input.existingGripNormalWorld);
-                decision.source = PullCatchDynamicSeatSource::ExistingGrip;
-                decision.phase = AcquisitionPhase::TouchHeld;
-                decision.valid = true;
-                decision.trustedSurface = input.existingGripTrusted;
-                decision.normalTrusted = input.existingGripNormalTrusted;
-                decision.positionOnly = input.existingGripPositionOnly;
-                decision.reason = "notPullCatch";
-            }
-            return decision;
-        }
-
-        if (!input.pocket.valid || !isFinite(input.pocket.palmCenterWorld)) {
-            decision.reason = "pullCatchSeatMissingPocket";
-            return decision;
-        }
-
-        auto chooseCandidate = [&](const RE::NiPoint3& point,
-                                   const RE::NiPoint3& normal,
-                                   PullCatchDynamicSeatSource source,
-                                   bool trustedSurface,
-                                   bool normalTrusted,
-                                   bool positionOnly,
-                                   const char* reason) {
-            decision.seatPointWorld = point;
-            decision.seatNormalWorld = normalizeOrZero(normal);
-            decision.source = source;
-            decision.trustedSurface = trustedSurface;
-            decision.normalTrusted = normalTrusted;
-            decision.positionOnly = positionOnly;
-            decision.reason = reason;
-            decision.valid = true;
-        };
-
-        if (input.hasPalmPocketSurface && isFinite(input.palmPocketSurfacePointWorld)) {
-            chooseCandidate(input.palmPocketSurfacePointWorld,
-                input.palmPocketSurfaceNormalWorld,
-                PullCatchDynamicSeatSource::PalmPocketSurface,
-                true,
-                input.palmPocketSurfaceNormalTrusted,
-                false,
-                "pullCatchPalmPocketSurface");
-        } else if (input.hasContactPatch && isFinite(input.contactPatchPointWorld)) {
-            chooseCandidate(input.contactPatchPointWorld,
-                input.contactPatchNormalWorld,
-                PullCatchDynamicSeatSource::ContactPatchSurface,
-                true,
-                input.contactPatchNormalTrusted,
-                input.contactPatchPositionOnly,
-                "pullCatchContactPatchSurface");
-        } else if (input.hasExistingGrip && input.existingGripTrusted && isFinite(input.existingGripPointWorld)) {
-            chooseCandidate(input.existingGripPointWorld,
-                input.existingGripNormalWorld,
-                PullCatchDynamicSeatSource::ExistingGrip,
-                true,
-                input.existingGripNormalTrusted,
-                input.existingGripPositionOnly,
-                "pullCatchExistingTrustedGrip");
-        } else if (input.hasTransitPoint && isFinite(input.transitPointWorld)) {
-            chooseCandidate(input.transitPointWorld,
-                RE::NiPoint3{},
-                PullCatchDynamicSeatSource::TransitPointSeed,
-                false,
-                false,
-                true,
-                "pullCatchTransitSeedOnly");
-        } else if (input.hasBodyFallbackPoint && isFinite(input.bodyFallbackPointWorld)) {
-            chooseCandidate(input.bodyFallbackPointWorld,
-                RE::NiPoint3{},
-                PullCatchDynamicSeatSource::BodyFallbackSeed,
-                false,
-                false,
-                true,
-                "pullCatchBodyFallbackSeed");
-        } else {
-            decision.reason = "pullCatchNoSeatCandidate";
-            return decision;
-        }
-
-        const RE::NiPoint3 seatToPocket = decision.seatPointWorld - input.pocket.palmCenterWorld;
-        decision.seatToPocketDistanceGameUnits = length(seatToPocket);
-        decision.signedPalmDistanceGameUnits = dot(seatToPocket, input.pocket.palmNormalWorld);
-        if (input.hasTransitPoint && isFinite(input.transitPointWorld)) {
-            decision.transitToSeatDistanceGameUnits = length(decision.seatPointWorld - input.transitPointWorld);
-            decision.changedFromTransit = decision.transitToSeatDistanceGameUnits > 0.5f;
-        }
-
-        const float touchDistance =
-            (std::max)(0.1f, std::isfinite(input.touchAcquireDistanceGameUnits) ? input.touchAcquireDistanceGameUnits : 4.0f);
-        const float pocketRadius =
-            (std::max)(touchDistance, std::isfinite(input.pocketRadiusGameUnits) ? input.pocketRadiusGameUnits : 9.0f);
-        const bool surfaceInsidePocket = decision.trustedSurface && decision.seatToPocketDistanceGameUnits <= pocketRadius;
-        const bool stableSeatContact = input.stablePocketTouchContact || surfaceInsidePocket;
-
-        const auto safety = evaluatePullCatchSeatSafety(PullCatchSeatSafetyInput{
-            .grabbedFromPullCatch = true,
-            .usingPinchPocket = false,
-            .capturePhase = AcquisitionPhase::TouchHeld,
-            .pocketValid = input.pocket.valid,
-            .stablePocketTouchContact = stableSeatContact,
-            .pivotAuthorityNormalTrusted = decision.normalTrusted,
-            .pivotAuthorityPositionOnly = decision.positionOnly,
-            .gripToPocketDistanceGameUnits = 0.0f,
-            .signedPalmDistanceGameUnits = decision.signedPalmDistanceGameUnits,
-            .behindPalmToleranceGameUnits = input.behindPalmToleranceGameUnits,
-            .touchAcquireDistanceGameUnits = touchDistance,
-            .pocketRadiusGameUnits = pocketRadius,
-            .pulledAdjustDistanceGameUnits = input.pulledAdjustDistanceGameUnits,
-            .palmNormalWorld = input.pocket.palmNormalWorld,
-            .gripNormalWorld = decision.seatNormalWorld,
-        });
-
-        decision.allowPulledAdjust = safety.allowPulledAdjust;
-        decision.requireSettledVisualRelation = safety.requireSettledVisualRelation;
-        decision.adjustDistanceGameUnits = safety.adjustDistanceGameUnits;
-        decision.normalDotPalm = safety.normalDotPalm;
-        decision.phase = safety.allowImmediateTouchHeld ? AcquisitionPhase::TouchHeld : AcquisitionPhase::NearConverging;
-        if (!safety.allowImmediateTouchHeld) {
-            decision.requireSettledVisualRelation = true;
-            decision.reason = safety.reason;
-        }
-
         return decision;
     }
 
