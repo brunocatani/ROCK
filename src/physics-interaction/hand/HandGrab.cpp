@@ -8453,8 +8453,12 @@ namespace rock
         }
 
         if (grabbedFromPullCatch) {
-            const bool existingGripIsPalmPocket =
-                std::strcmp(grabPointMode, "palmPocketMeshSurface") == 0 && grabSurfaceHit.valid;
+            const char* pullCatchExistingGripMode = grabPointMode;
+            const bool existingGripIsMeshSurface =
+                meshGrabFound &&
+                grabSurfaceHit.valid &&
+                grabSurfaceHit.sourceKind != GrabSurfaceSourceKind::CollisionQuery &&
+                grab_three_phase::isFinite(grabGripPoint);
             const bool hasContactPatchSeat =
                 contactPatchRuntime.meshSnapped && contactPatchRuntime.meshSnapHit.valid;
             pullCatchDynamicSeat = grab_three_phase::resolvePullCatchDynamicSeat(grab_three_phase::PullCatchDynamicSeatInput{
@@ -8465,8 +8469,8 @@ namespace rock
                 .existingGripPointWorld = grabGripPoint,
                 .existingGripNormalWorld = grabSurfaceHit.valid ? grabSurfaceHit.normal : RE::NiPoint3{},
                 .hasExistingGrip = grab_three_phase::isFinite(grabGripPoint),
-                .existingGripTrusted = existingGripIsPalmPocket,
-                .existingGripNormalTrusted = existingGripIsPalmPocket,
+                .existingGripTrusted = existingGripIsMeshSurface,
+                .existingGripNormalTrusted = existingGripIsMeshSurface && lengthSquared(grabSurfaceHit.normal) > 0.000001f,
                 .existingGripPositionOnly = false,
                 .palmPocketSurfacePointWorld = palmPocketSurfaceHit.position,
                 .palmPocketSurfaceNormalWorld = palmPocketSurfaceHit.normal,
@@ -8491,7 +8495,9 @@ namespace rock
 
             if (pullCatchDynamicSeat.valid) {
                 grabGripPoint = pullCatchDynamicSeat.seatPointWorld;
-                grabPointMode = grab_three_phase::pullCatchDynamicSeatSourceName(pullCatchDynamicSeat.source);
+                grabPointMode = pullCatchDynamicSeat.source == grab_three_phase::PullCatchDynamicSeatSource::ExistingGrip ?
+                    pullCatchExistingGripMode :
+                    grab_three_phase::pullCatchDynamicSeatSourceName(pullCatchDynamicSeat.source);
                 grabFallbackReason = pullCatchDynamicSeat.reason;
                 switch (pullCatchDynamicSeat.source) {
                 case grab_three_phase::PullCatchDynamicSeatSource::PalmPocketSurface:
@@ -8512,7 +8518,8 @@ namespace rock
                         contactPatchRuntime.positionOnly ? GrabPivotAuthoritySource::ContactPatchPositionOnly : GrabPivotAuthoritySource::ContactPatchMeshSnap);
                     break;
                 case grab_three_phase::PullCatchDynamicSeatSource::ExistingGrip:
-                    pivotAuthoritySource = grabPivotAuthoritySourceName(GrabPivotAuthoritySource::PalmPocketMeshPoint);
+                    pivotAuthoritySource =
+                        grabPivotAuthoritySourceName(inferGrabPivotAuthoritySource(pullCatchExistingGripMode));
                     break;
                 case grab_three_phase::PullCatchDynamicSeatSource::BodyFallbackSeed:
                 case grab_three_phase::PullCatchDynamicSeatSource::TransitPointSeed:

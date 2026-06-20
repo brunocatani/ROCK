@@ -616,14 +616,6 @@ namespace rock::grab_three_phase
                 input.existingGripNormalTrusted,
                 input.existingGripPositionOnly,
                 "pullCatchExistingTrustedGrip");
-        } else if (input.hasBodyFallbackPoint && isFinite(input.bodyFallbackPointWorld)) {
-            chooseCandidate(input.bodyFallbackPointWorld,
-                RE::NiPoint3{},
-                PullCatchDynamicSeatSource::BodyFallbackSeed,
-                false,
-                false,
-                true,
-                "pullCatchBodyFallbackSeed");
         } else if (input.hasTransitPoint && isFinite(input.transitPointWorld)) {
             chooseCandidate(input.transitPointWorld,
                 RE::NiPoint3{},
@@ -632,6 +624,14 @@ namespace rock::grab_three_phase
                 false,
                 true,
                 "pullCatchTransitSeedOnly");
+        } else if (input.hasBodyFallbackPoint && isFinite(input.bodyFallbackPointWorld)) {
+            chooseCandidate(input.bodyFallbackPointWorld,
+                RE::NiPoint3{},
+                PullCatchDynamicSeatSource::BodyFallbackSeed,
+                false,
+                false,
+                true,
+                "pullCatchBodyFallbackSeed");
         } else {
             decision.reason = "pullCatchNoSeatCandidate";
             return decision;

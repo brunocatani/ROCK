@@ -869,31 +869,115 @@ namespace rock
         const float radius = std::isfinite(radiusGameUnits) ? (std::max)(0.0f, radiusGameUnits) : 0.0f;
         const float maxBodyDistance = std::isfinite(maxBodyDistanceGameUnits) ? (std::max)(0.0f, maxBodyDistanceGameUnits) : radius;
         const float acceptedDistance = (std::max)(radius, maxBodyDistance);
-        if (acceptedDistance <= 0.0f || distance > acceptedDistance) {
+        if (acceptedDistance <= 0.0f) {
+            return false;
+        }
+
+        auto* visualNode = refr->Get3D();
+        auto* hitNode = visualNode;
+        if (bhkWorld) {
+            auto bodyHandle = bodyId;
+            if (auto* collisionObject = RE::bhkNPCollisionObject::Getbhk(bhkWorld, bodyHandle)) {
+                hitNode = collisionObject->sceneObject ? collisionObject->sceneObject : hitNode;
+            }
+        }
+
+        struct PullCatchCloseEvidence
+        {
+            RE::NiPoint3 point{};
+            RE::NiPoint3 normal{};
+            float handDistance = std::numeric_limits<float>::max();
+            float bodyDistance = std::numeric_limits<float>::max();
+            const char* source = "none";
+            bool valid = false;
+        };
+
+        PullCatchCloseEvidence evidence{};
+        const char* lastMissReason = "no-object-side-close-evidence";
+        auto toNiPoint = [](const hand_semantic_contact_state::SemanticContactVector& value) {
+            return RE::NiPoint3{ value.x, value.y, value.z };
+        };
+        auto considerEvidence = [&](const RE::NiPoint3& pointWorld, const RE::NiPoint3& normalWorld, const char* source) {
+            if (!grab_three_phase::isFinite(pointWorld)) {
+                lastMissReason = "non-finite-close-evidence";
+                return;
+            }
+
+            const float handDistance = pointDistanceGameUnits(selectionOrigin, pointWorld);
+            if (handDistance > acceptedDistance || handDistance >= evidence.handDistance) {
+                lastMissReason = handDistance > acceptedDistance ? "outside-close-reacquire-reach" : lastMissReason;
+                return;
+            }
+
+            evidence.point = pointWorld;
+            evidence.normal = normalizeOrFallback(normalWorld, normalizeOrFallback(selectionOrigin - pointWorld, palmNormal));
+            evidence.handDistance = handDistance;
+            evidence.bodyDistance = pointDistanceGameUnits(pointWorld, bodyWorld.translate);
+            evidence.source = source;
+            evidence.valid = true;
+        };
+
+        const auto semanticContacts = collectFreshSemanticContactsForBody(
+            _pullCatchIntent.primaryBodyId,
+            static_cast<std::uint32_t>((std::max)(0, g_rockConfig.rockGrabOppositionContactMaxAgeFrames)));
+        for (std::size_t i = 0; i < semanticContacts.count && i < semanticContacts.records.size(); ++i) {
+            const auto& contact = semanticContacts.records[i];
+            const auto semanticDecision = hand_semantic_contact_state::evaluateSemanticPivotCandidate(
+                true,
+                contact,
+                _pullCatchIntent.primaryBodyId,
+                static_cast<std::uint32_t>((std::max)(0, g_rockConfig.rockGrabOppositionContactMaxAgeFrames)));
+            if (!semanticDecision.accept) {
+                lastMissReason = semanticDecision.reason;
+                continue;
+            }
+            if (!hand_semantic_contact_state::hasUsableContactPoint(contact)) {
+                lastMissReason = "semantic-contact-missing-point";
+                continue;
+            }
+
+            const RE::NiPoint3 contactPointWorld = toNiPoint(contact.contactPointGame);
+            const RE::NiPoint3 contactNormalWorld =
+                hand_semantic_contact_state::hasUsableContactNormal(contact) ?
+                    toNiPoint(contact.contactNormalGame) :
+                    normalizeOrFallback(selectionOrigin - contactPointWorld, palmNormal);
+            considerEvidence(contactPointWorld, contactNormalWorld, "semanticContactPoint");
+        }
+
+        if (_pullCatchIntent.hasArrivalTransitPoint) {
+            considerEvidence(_pullCatchIntent.arrivalTransitPointWorld,
+                normalizeOrFallback(selectionOrigin - _pullCatchIntent.arrivalTransitPointWorld, palmNormal),
+                "pullCatchArrivalTransitPoint");
+        }
+
+        if (!evidence.valid) {
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand pull-catch close reacquire refused: formID={:08X} body={} reason={} bodyOriginDist={:.1f} acceptedDistance={:.1f} transit={}",
+                handName(),
+                _pullCatchIntent.formId,
+                _pullCatchIntent.primaryBodyId,
+                lastMissReason,
+                distance,
+                acceptedDistance,
+                _pullCatchIntent.hasArrivalTransitPoint ? "yes" : "no");
             return false;
         }
 
         SelectedObject selection{};
         selection.refr = refr;
         selection.bodyId = bodyId;
-        selection.hitPointWorld = bodyWorld.translate;
-        selection.hitNormalWorld = normalizeOrFallback(selectionOrigin - bodyWorld.translate, palmNormal);
-        selection.distance = distance;
-        selection.signedAlongDistance = distance;
+        selection.hitPointWorld = evidence.point;
+        selection.hitNormalWorld = evidence.normal;
+        selection.distance = evidence.handDistance;
+        selection.signedAlongDistance = evidence.handDistance;
         selection.lateralDistance = 0.0f;
         selection.hitFraction = 0.0f;
         selection.targetKind = _pullCatchIntent.targetKind;
         selection.isFarSelection = false;
         selection.hasHitPoint = true;
         selection.hasHitNormal = true;
-        selection.visualNode = refr->Get3D();
-        selection.hitNode = selection.visualNode;
-        if (bhkWorld) {
-            auto bodyHandle = bodyId;
-            if (auto* collisionObject = RE::bhkNPCollisionObject::Getbhk(bhkWorld, bodyHandle)) {
-                selection.hitNode = collisionObject->sceneObject ? collisionObject->sceneObject : selection.hitNode;
-            }
-        }
+        selection.visualNode = visualNode;
+        selection.hitNode = hitNode ? hitNode : selection.visualNode;
 
         if (!selection.isValid()) {
             return false;
@@ -906,12 +990,15 @@ namespace rock
         clearSelectedCloseFingerPose();
         playSelectionHighlight(_currentSelection);
 
-        ROCK_LOG_DEBUG(Hand,
-            "{} hand pull-catch wide reacquired close selection: formID={:08X} body={} dist={:.1f} acceptedDistance={:.1f}",
+        ROCK_LOG_INFO(Hand,
+            "{} hand pull-catch close reacquired selection: formID={:08X} body={} source={} hitDist={:.1f} bodyOriginDist={:.1f} bodyDelta={:.1f} acceptedDistance={:.1f}",
             handName(),
             _pullCatchIntent.formId,
             _pullCatchIntent.primaryBodyId,
+            evidence.source,
+            evidence.handDistance,
             distance,
+            evidence.bodyDistance,
             acceptedDistance);
         return true;
     }

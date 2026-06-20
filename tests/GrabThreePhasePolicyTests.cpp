@@ -347,13 +347,30 @@ int main()
     ok &= expectFalse("weak pull-catch surface disables adjust", weakSurfaceSeat.allowPulledAdjust);
     ok &= expectReason("weak pull-catch surface reason", weakSurfaceSeat.reason, "pullCatchSeatNormalUntrusted");
 
-    const auto bodyFallbackSeat = resolvePullCatchDynamicSeat(PullCatchDynamicSeatInput{
+    const auto transitSeat = resolvePullCatchDynamicSeat(PullCatchDynamicSeatInput{
         .grabbedFromPullCatch = true,
         .pocket = makePocket(),
         .transitPointWorld = RE::NiPoint3{ 25.0f, 0.0f, 0.0f },
         .hasTransitPoint = true,
         .existingGripPointWorld = RE::NiPoint3{ 25.0f, 0.0f, 0.0f },
         .hasExistingGrip = true,
+        .bodyFallbackPointWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
+        .hasBodyFallbackPoint = true,
+        .touchAcquireDistanceGameUnits = 4.0f,
+        .pocketRadiusGameUnits = 9.0f,
+        .behindPalmToleranceGameUnits = 1.5f,
+        .pulledAdjustDistanceGameUnits = 10.5f,
+    });
+    ok &= expectTrue("pull-catch transit valid as seed", transitSeat.valid);
+    ok &= expectSeatSource("pull-catch transit beats body fallback source", transitSeat.source, PullCatchDynamicSeatSource::TransitPointSeed);
+    ok &= expectFalse("pull-catch transit is not trusted surface", transitSeat.trustedSurface);
+    ok &= expectTrue("pull-catch transit is position-only", transitSeat.positionOnly);
+    ok &= expectPhase("pull-catch transit must converge", transitSeat.phase, AcquisitionPhase::NearConverging);
+    ok &= expectReason("pull-catch transit reason", transitSeat.reason, "pullCatchSeatPositionOnly");
+
+    const auto bodyFallbackSeat = resolvePullCatchDynamicSeat(PullCatchDynamicSeatInput{
+        .grabbedFromPullCatch = true,
+        .pocket = makePocket(),
         .bodyFallbackPointWorld = RE::NiPoint3{ 0.0f, 0.0f, 1.0f },
         .hasBodyFallbackPoint = true,
         .touchAcquireDistanceGameUnits = 4.0f,
