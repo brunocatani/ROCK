@@ -596,6 +596,24 @@ namespace rock
             return vrcf::VRControllers.isPressed(isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, buttonId);
         }
 
+        // Peek-only trigger read for the firing-grip reattach chord: edges must
+        // stay visible to the held-weapon trigger-equip consumer.
+        GrabButtonState readTriggerButtonStatePeek(bool isLeft)
+        {
+            constexpr int buttonId = input_remap_policy::kOpenVrSteamVrTriggerButtonId;
+            const auto rawState = input_remap_runtime::peekRawButtonState(isLeft, buttonId);
+            if (rawState.available) {
+                return GrabButtonState{ .held = rawState.held, .pressed = rawState.pressed, .released = rawState.released };
+            }
+
+            const auto vrHand = isLeft ? vrcf::Hand::Left : vrcf::Hand::Right;
+            return GrabButtonState{
+                .held = vrcf::VRControllers.isPressHeldDown(vrHand, buttonId),
+                .pressed = vrcf::VRControllers.isPressed(vrHand, buttonId),
+                .released = vrcf::VRControllers.isReleased(vrHand, buttonId),
+            };
+        }
+
         struct TransformDelta
         {
             float position = 0.0f;
@@ -2103,7 +2121,8 @@ namespace rock
                     auto* hknpMenu = getHknpWorld(bhkMenu);
                     if (hknpMenu) {
                         restoreRightHandCollisionAfterDominantWeapon(hknpMenu);
-                        restoreLeftHandCollisionAfterWeaponSupport(hknpMenu);
+                        restoreHandCollisionAfterWeaponSupport(hknpMenu, true);
+                        restoreHandCollisionAfterWeaponSupport(hknpMenu, false);
                         restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, false);
                         restoreHandCollisionAfterEquippedWeaponDrop(hknpMenu, true);
                         _softContactRuntime.reset();
@@ -2124,8 +2143,10 @@ namespace rock
                 } else {
                     _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
                     _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
+                    _rightWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
                     hand_collision_suppression_math::clear(_rightDominantWeaponCollisionSuppression);
                     hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
+                    hand_collision_suppression_math::clear(_rightWeaponSupportCollisionSuppression);
                     clearEquippedWeaponPostDropCollisionSuppressionState();
                     _softContactRuntime.reset();
                     _nativeContactEvidence.reset();
@@ -2222,7 +2243,8 @@ namespace rock
             releaseHeldForScaleChange(_leftHand, true);
 
             restoreRightHandCollisionAfterDominantWeapon(hknp);
-            restoreLeftHandCollisionAfterWeaponSupport(hknp);
+            restoreHandCollisionAfterWeaponSupport(hknp, true);
+            restoreHandCollisionAfterWeaponSupport(hknp, false);
             restoreHandCollisionAfterEquippedWeaponDrop(hknp, false);
             restoreHandCollisionAfterEquippedWeaponDrop(hknp, true);
             _twoHandedGrip.reset();
@@ -2240,8 +2262,10 @@ namespace rock
             markGeneratedBodiesInvalidated();
             hand_collision_suppression_math::clear(_rightDominantWeaponCollisionSuppression);
             hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
+            hand_collision_suppression_math::clear(_rightWeaponSupportCollisionSuppression);
             _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
             _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
+            _rightWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
             clearEquippedWeaponPostDropCollisionSuppressionState();
             restoreNativePlayerCollisionSuppression(hknp, "scale-change");
             _nativePlayerCollisionSuppressionRefreshFrames = 0;
@@ -2381,16 +2405,31 @@ namespace rock
          * hand under weapon authority until those retained bodies are gone.
          */
         bool rightHandWeaponAuthorityActive = rightHandWeaponEquipped || retainedWeaponCollisionActive;
-        // Retained reload bodies still own right-hand collision; only a visible detached primary releases it.
-        if (rightHandWeaponEquipped && !retainedWeaponCollisionActive && _twoHandedGrip.isPrimaryDetached()) {
+        /*
+         * A visible part-carry (no hand at the firing grip) frees the right hand
+         * even while generated weapon bodies exist: the free hand needs live
+         * colliders for offhand-parity interaction, the same layer 43 vs 44
+         * coexistence the left hand already has. Reload-retained bodies with no
+         * visible weapon node keep the dominant-hand suppression because the
+         * part-carry state cannot survive a missing weapon node anyway.
+         */
+        if (rightHandWeaponEquipped && _twoHandedGrip.isPartCarryActive()) {
             rightHandWeaponAuthorityActive = false;
         }
         const bool rightHandWeaponAuthorityActiveBeforeGrip = rightHandWeaponAuthorityActive;
         bool leftSupportGripActive = false;
+        bool rightPartGripActive = _twoHandedGrip.isHandPartGripping(false);
         if (rightHandWeaponAuthorityActive) {
             suppressRightHandCollisionForDominantWeapon(hknp);
         } else {
             restoreRightHandCollisionAfterDominantWeapon(hknp);
+        }
+        // A part-gripping free hand is a transform driver like the support hand
+        // and must not also solve contacts against the weapon package.
+        if (rightPartGripActive) {
+            suppressHandCollisionForWeaponSupport(hknp, false);
+        } else {
+            restoreHandCollisionAfterWeaponSupport(hknp, false);
         }
 
         updateHandCollisions(frame);
@@ -2515,7 +2554,9 @@ namespace rock
             };
 
             leftWeaponContactSource = consumeWeaponContactForHand(true, frame.left, weaponNode != nullptr, leftWeaponContact);
-            const bool rightWeaponContactProbeAllowed = weaponNode != nullptr && _twoHandedGrip.isPrimaryDetached();
+            // The free firing hand needs weapon-part probes for part grips and
+            // for the reattach chord's proximity check, exactly like the offhand.
+            const bool rightWeaponContactProbeAllowed = weaponNode != nullptr && _twoHandedGrip.isPartCarryActive();
             (void)consumeWeaponContactForHand(false, frame.right, rightWeaponContactProbeAllowed, rightWeaponContact);
 
             const bool gripPressed = readGrabButtonHeld(true, g_rockConfig.rockGrabButtonID);
@@ -2537,6 +2578,24 @@ namespace rock
                 providerInteractionState.supportGripAllowed = false;
             } else if (weaponPartWhitelistActive) {
                 providerInteractionState.providerPartAuthority = makeWeaponProviderPartAuthority(weaponPartQuery, weaponPartResolution);
+            }
+
+            /*
+             * The offhand reservation applies to the offhand only. Part grips by
+             * the free firing hand are gated by the provider part whitelist
+             * alone so PAPER reload sessions still constrain which parts the
+             * free hand may take.
+             */
+            WeaponInteractionRuntimeState rightHandInteractionState{};
+            ::rock::provider::RockProviderWeaponPartTargetResolutionV1 rightWeaponPartResolution{};
+            const auto rightWeaponPartQuery = makeProviderWeaponPartTargetQuery(rightWeaponContact, _weaponCollision);
+            const bool rightWeaponPartWhitelistActive = rightWeaponContact.valid &&
+                ::rock::provider::resolveWeaponPartTargetV1(rightWeaponPartQuery, rightWeaponPartResolution) &&
+                rightWeaponPartResolution.whitelistActive != 0;
+            if (rightWeaponPartWhitelistActive && rightWeaponPartResolution.matched == 0) {
+                rightHandInteractionState.supportGripAllowed = false;
+            } else if (rightWeaponPartWhitelistActive) {
+                rightHandInteractionState.providerPartAuthority = makeWeaponProviderPartAuthority(rightWeaponPartQuery, rightWeaponPartResolution);
             }
 
             const WeaponInteractionDecision leftWeaponDecision = routeWeaponInteraction(leftWeaponContact, providerInteractionState);
@@ -2642,19 +2701,45 @@ namespace rock
                     drivenSourceNodes);
             }
 
+            /*
+             * Firing-grip reattach is an explicit grab+trigger chord. The
+             * trigger is peeked (not consumed) because the native trigger
+             * action is already suppressed while no hand holds the firing grip.
+             */
+            bool reattachChordPressed = false;
+            if (_twoHandedGrip.isPartCarryActive() && primaryDetachFeatureAvailable) {
+                const auto rightTriggerState = readTriggerButtonStatePeek(false);
+                reattachChordPressed = weapon_two_handed_grip_math::shouldRequestFiringGripReattach(
+                    weapon_two_handed_grip_math::FiringGripReattachChordInput{
+                        .partCarryActive = true,
+                        .menuInputActive = inputBlockingMenuActive,
+                        .handHoldingObject = _rightHand.isHolding(),
+                        .gripHeld = primaryGripInput.held,
+                        .gripPressed = primaryGripInput.pressed,
+                        .triggerHeld = rightTriggerState.held,
+                        .triggerPressed = rightTriggerState.pressed,
+                    });
+            }
+
+            const EquippedWeaponGripFrameInput gripFrameInput{
+                .leftGripHeld = gripPressed,
+                .leftHandHoldingObject = leftHandHoldingObject,
+                .rightHandHoldingObject = _rightHand.isHolding(),
+                .reattachChordPressed = reattachChordPressed,
+                .primaryGripInput = primaryGripInput,
+            };
             _twoHandedGrip.update(
                 weaponNode,
                 leftWeaponContact,
                 rightWeaponContact,
-                gripPressed,
-                leftHandHoldingObject,
+                gripFrameInput,
                 frame.deltaSeconds,
                 currentWeaponGenerationKey,
                 _weaponCollision,
                 providerInteractionState,
+                rightHandInteractionState,
                 supportAuthorityMode,
-                primaryDetachFeatureAvailable,
-                primaryGripInput);
+                primaryDetachFeatureAvailable);
             if (primaryOnlyGripStartedThisFrame) {
                 ROCK_LOG_DEBUG(Weapon, "Equipped weapon primary-only manual ownership started from primary grip input");
             }
@@ -2724,7 +2809,7 @@ namespace rock
                     clearEquippedWeaponPrimaryInputState();
                 }
             }
-            const bool weaponSupportGripActive = _twoHandedGrip.isGripping();
+            const bool weaponSupportGripActive = _twoHandedGrip.isHandPartGripping(true);
             const input_remap_policy::EquippedWeaponPrimaryDetachInputGate updatedPrimaryDetachInputGate{
                 .featureAvailable = primaryDetachFeatureAvailable,
                 .canUsePrimaryDetachInput = _twoHandedGrip.canUsePrimaryDetachInput(),
@@ -2733,11 +2818,11 @@ namespace rock
             };
             input_remap_runtime::setEquippedWeaponPrimaryDetachInputActive(
                 input_remap_policy::shouldUseEquippedWeaponPrimaryDetachInput(updatedPrimaryDetachInputGate));
-            input_remap_runtime::setEquippedWeaponPrimaryDetached(_twoHandedGrip.isPrimaryDetached());
+            input_remap_runtime::setEquippedWeaponPrimaryDetached(_twoHandedGrip.isPartCarryActive());
 
             bool rightHandWeaponAuthorityActiveAfterGrip = rightHandWeaponEquipped || retainedWeaponCollisionActive;
-            // Retained reload bodies still own right-hand collision; only a visible detached primary releases it.
-            if (rightHandWeaponEquipped && !retainedWeaponCollisionActive && _twoHandedGrip.isPrimaryDetached()) {
+            // A visible part-carry frees the right hand even while weapon bodies exist (see the pre-grip gate).
+            if (rightHandWeaponEquipped && _twoHandedGrip.isPartCarryActive()) {
                 rightHandWeaponAuthorityActiveAfterGrip = false;
             }
             if (rightHandWeaponAuthorityActiveAfterGrip != rightHandWeaponAuthorityActiveBeforeGrip) {
@@ -2748,6 +2833,15 @@ namespace rock
                 }
             }
             rightHandWeaponAuthorityActive = rightHandWeaponAuthorityActiveAfterGrip;
+            const bool rightPartGripActiveAfterGrip = _twoHandedGrip.isHandPartGripping(false);
+            if (rightPartGripActiveAfterGrip != rightPartGripActive) {
+                if (rightPartGripActiveAfterGrip) {
+                    suppressHandCollisionForWeaponSupport(hknp, false);
+                } else {
+                    restoreHandCollisionAfterWeaponSupport(hknp, false);
+                }
+            }
+            rightPartGripActive = rightPartGripActiveAfterGrip;
 
             if (g_rockConfig.rockDebugShowWeaponNotifications) {
                 const auto gripNotificationEvent =
@@ -2780,9 +2874,9 @@ namespace rock
             leftSupportGripActive = weaponSupportGripActive;
 
             if (weaponSupportGripActive) {
-                suppressLeftHandCollisionForWeaponSupport(hknp);
+                suppressHandCollisionForWeaponSupport(hknp, true);
             } else {
-                restoreLeftHandCollisionAfterWeaponSupport(hknp);
+                restoreHandCollisionAfterWeaponSupport(hknp, true);
             }
 
             if (weaponNode) {
@@ -2816,7 +2910,7 @@ namespace rock
         updateGrabInput(frame);
         updateFeedbackHaptics(frame.deltaSeconds);
         updateHeldMassMovementSlowdown(hknp, frame.deltaSeconds);
-        synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive);
+        synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive, rightPartGripActive);
 
         /*
          * Soft contact is intentionally evaluated after normal grab input. A
@@ -2912,6 +3006,7 @@ namespace rock
         const Hand& hand = isLeft ? _leftHand : _rightHand;
         return hand.hasContactEvidenceSuppressedAtomic() ||
                (!isLeft && _rightDominantWeaponCollisionSuppressed.load(std::memory_order_acquire)) ||
+               (!isLeft && _rightWeaponSupportCollisionSuppressed.load(std::memory_order_acquire)) ||
                (isLeft && _leftWeaponSupportCollisionSuppressed.load(std::memory_order_acquire));
     }
 
@@ -2934,7 +3029,7 @@ namespace rock
         }
     }
 
-    void PhysicsInteraction::synchronizeContactEvidenceOwnership(bool rightHandWeaponAuthorityActive, bool leftSupportGripActive)
+    void PhysicsInteraction::synchronizeContactEvidenceOwnership(bool rightHandWeaponAuthorityActive, bool leftSupportGripActive, bool rightPartGripActive)
     {
         /*
          * ROCK disables generated hand collision when a grab or two-hand/tool
@@ -2942,8 +3037,9 @@ namespace rock
          * step boundary, so producer caches must be invalidated at the same
          * authority transition before the visual solver snapshots them.
          */
-        if (_rightHand.hasContactEvidenceSuppressedAtomic() || rightHandWeaponAuthorityActive ||
-            _rightDominantWeaponCollisionSuppressed.load(std::memory_order_acquire)) {
+        if (_rightHand.hasContactEvidenceSuppressedAtomic() || rightHandWeaponAuthorityActive || rightPartGripActive ||
+            _rightDominantWeaponCollisionSuppressed.load(std::memory_order_acquire) ||
+            _rightWeaponSupportCollisionSuppressed.load(std::memory_order_acquire)) {
             clearContactEvidenceForHand(false, rightHandWeaponAuthorityActive ? "right-hand-weapon-authority" : "right-hand-grab-owner");
         }
 
@@ -3059,34 +3155,38 @@ namespace rock
         _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
     }
 
-    void PhysicsInteraction::suppressLeftHandCollisionForWeaponSupport(RE::hknpWorld* world)
+    void PhysicsInteraction::suppressHandCollisionForWeaponSupport(RE::hknpWorld* world, bool isLeft)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::SupportGripSuppression);
 
         /*
-         * Layer 43 vs 44 is intentionally allowed so the offhand can physically
-         * touch the equipped weapon before support grip starts. Once support
-         * grip owns the transform, the left hand body becomes a driver and must
+         * Layer 43 vs 44 is intentionally allowed so a free hand can physically
+         * touch the equipped weapon before a part grip starts. Once the part
+         * grip owns the transform, that hand body becomes a driver and must
          * stop solving against the weapon package just like held-object hand
-         * collision suppression.
+         * collision suppression. This applies to the offhand support grip and
+         * to the detached firing hand's part grips symmetrically.
          */
-        _leftWeaponSupportCollisionSuppressed.store(true, std::memory_order_release);
+        Hand& hand = isLeft ? _leftHand : _rightHand;
+        auto& suppressionSet = isLeft ? _leftWeaponSupportCollisionSuppression : _rightWeaponSupportCollisionSuppression;
+        auto& suppressedFlag = isLeft ? _leftWeaponSupportCollisionSuppressed : _rightWeaponSupportCollisionSuppressed;
+        suppressedFlag.store(true, std::memory_order_release);
 
         auto bodyAlreadySuppressed = [&](std::uint32_t bodyId) {
             return bodyId == INVALID_CONTACT_BODY_ID ||
-                   hand_collision_suppression_math::findSuppressionState(_leftWeaponSupportCollisionSuppression, bodyId) != nullptr;
+                   hand_collision_suppression_math::findSuppressionState(suppressionSet, bodyId) != nullptr;
         };
 
-        auto currentLeftHandBodiesAlreadySuppressed = [&]() {
-            if (!_leftHand.hasCollisionBody()) {
+        auto currentHandBodiesAlreadySuppressed = [&]() {
+            if (!hand.hasCollisionBody()) {
                 return false;
             }
 
             bool sawValidBody = false;
-            const std::uint32_t colliderCount = _leftHand.getHandColliderBodyCount();
+            const std::uint32_t colliderCount = hand.getHandColliderBodyCount();
             if (colliderCount > 0) {
                 for (std::uint32_t i = 0; i < colliderCount; ++i) {
-                    const std::uint32_t bodyId = _leftHand.getHandColliderBodyIdAtomic(i);
+                    const std::uint32_t bodyId = hand.getHandColliderBodyIdAtomic(i);
                     if (bodyId == INVALID_CONTACT_BODY_ID) {
                         continue;
                     }
@@ -3098,15 +3198,15 @@ namespace rock
                 return sawValidBody;
             }
 
-            const std::uint32_t bodyId = _leftHand.getCollisionBodyId().value;
+            const std::uint32_t bodyId = hand.getCollisionBodyId().value;
             return bodyId != INVALID_CONTACT_BODY_ID && bodyAlreadySuppressed(bodyId);
         };
 
-        if (currentLeftHandBodiesAlreadySuppressed()) {
+        if (currentHandBodiesAlreadySuppressed()) {
             return;
         }
 
-        if (!world || !_leftHand.hasCollisionBody()) {
+        if (!world || !hand.hasCollisionBody()) {
             return;
         }
 
@@ -3120,9 +3220,9 @@ namespace rock
                 return;
             }
 
-            const auto suppression = hand_collision_suppression_math::beginSuppression(_leftWeaponSupportCollisionSuppression, bodyId, currentFilter);
+            const auto suppression = hand_collision_suppression_math::beginSuppression(suppressionSet, bodyId, currentFilter);
             if (!suppression.stored) {
-                ROCK_LOG_WARN(Weapon, "TwoHandedGrip: left hand support suppression set full; bodyId={} left active", bodyId);
+                ROCK_LOG_WARN(Weapon, "TwoHandedGrip: {} hand support suppression set full; bodyId={} left active", isLeft ? "left" : "right", bodyId);
                 return;
             }
 
@@ -3134,7 +3234,8 @@ namespace rock
 
             if (registryResult.valid && (registryResult.firstLeaseForBody || registryResult.filterChanged)) {
                 ROCK_LOG_DEBUG(Weapon,
-                    "TwoHandedGrip: left hand collision lease acquired bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBefore={} leases={}",
+                    "TwoHandedGrip: {} hand collision lease acquired bodyId={} filter=0x{:08X}->0x{:08X} wasDisabledBefore={} leases={}",
+                    isLeft ? "left" : "right",
                     bodyId,
                     registryResult.filterBefore,
                     registryResult.filterAfter,
@@ -3143,30 +3244,32 @@ namespace rock
             }
         };
 
-        const std::uint32_t colliderCount = _leftHand.getHandColliderBodyCount();
+        const std::uint32_t colliderCount = hand.getHandColliderBodyCount();
         if (colliderCount > 0) {
             for (std::uint32_t i = 0; i < colliderCount; ++i) {
-                suppressBody(_leftHand.getHandColliderBodyIdAtomic(i));
+                suppressBody(hand.getHandColliderBodyIdAtomic(i));
             }
         } else {
-            suppressBody(_leftHand.getCollisionBodyId().value);
+            suppressBody(hand.getCollisionBodyId().value);
         }
     }
 
-    void PhysicsInteraction::restoreLeftHandCollisionAfterWeaponSupport(RE::hknpWorld* world)
+    void PhysicsInteraction::restoreHandCollisionAfterWeaponSupport(RE::hknpWorld* world, bool isLeft)
     {
-        if (!hand_collision_suppression_math::hasActive(_leftWeaponSupportCollisionSuppression)) {
-            _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
+        auto& suppressionSet = isLeft ? _leftWeaponSupportCollisionSuppression : _rightWeaponSupportCollisionSuppression;
+        auto& suppressedFlag = isLeft ? _leftWeaponSupportCollisionSuppressed : _rightWeaponSupportCollisionSuppressed;
+        if (!hand_collision_suppression_math::hasActive(suppressionSet)) {
+            suppressedFlag.store(false, std::memory_order_release);
             return;
         }
 
         if (!world) {
-            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: cannot restore left hand support collision yet (world=null); preserving suppression leases");
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: cannot restore {} hand support collision yet (world=null); preserving suppression leases", isLeft ? "left" : "right");
             return;
         }
 
         bool restoreDeferred = false;
-        for (const auto& entry : _leftWeaponSupportCollisionSuppression.entries) {
+        for (const auto& entry : suppressionSet.entries) {
             if (!entry.active || entry.bodyId == INVALID_CONTACT_BODY_ID) {
                 continue;
             }
@@ -3182,7 +3285,8 @@ namespace rock
             }
 
             ROCK_LOG_DEBUG(Weapon,
-                "TwoHandedGrip: left hand collision lease released bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} fullyReleased={}",
+                "TwoHandedGrip: {} hand collision lease released bodyId={} filter=0x{:08X}->0x{:08X} restoreDisabled={} fullyReleased={}",
+                isLeft ? "left" : "right",
                 entry.bodyId,
                 releaseResult.filterBefore,
                 releaseResult.filterAfter,
@@ -3191,12 +3295,12 @@ namespace rock
         }
 
         if (restoreDeferred) {
-            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: left hand support collision restore deferred; suppression leases preserved");
+            ROCK_LOG_WARN(Weapon, "TwoHandedGrip: {} hand support collision restore deferred; suppression leases preserved", isLeft ? "left" : "right");
             return;
         }
 
-        hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
-        _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
+        hand_collision_suppression_math::clear(suppressionSet);
+        suppressedFlag.store(false, std::memory_order_release);
     }
 
     void PhysicsInteraction::suppressHandCollisionAfterEquippedWeaponDrop(
@@ -3404,7 +3508,8 @@ namespace rock
             unsubscribeContactEvents(hknp);
             restoreNativePlayerCollisionSuppression(hknp, "shutdown");
             restoreRightHandCollisionAfterDominantWeapon(hknp);
-            restoreLeftHandCollisionAfterWeaponSupport(hknp);
+            restoreHandCollisionAfterWeaponSupport(hknp, true);
+            restoreHandCollisionAfterWeaponSupport(hknp, false);
             restoreHandCollisionAfterEquippedWeaponDrop(hknp, false);
             restoreHandCollisionAfterEquippedWeaponDrop(hknp, true);
             if (_rightHand.isHolding()) {
@@ -3430,8 +3535,10 @@ namespace rock
             _bodyBoneColliders.reset();
             _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
             _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
+            _rightWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
             hand_collision_suppression_math::clear(_rightDominantWeaponCollisionSuppression);
             hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
+            hand_collision_suppression_math::clear(_rightWeaponSupportCollisionSuppression);
             clearEquippedWeaponPostDropCollisionSuppressionState();
             _nativePlayerCollisionSuppressedBodyCount = 0;
             _nativePlayerCollisionSuppressionRefreshFrames = 0;
@@ -3510,8 +3617,10 @@ namespace rock
         _bodyContactRuntime.reset();
         hand_collision_suppression_math::clear(_rightDominantWeaponCollisionSuppression);
         hand_collision_suppression_math::clear(_leftWeaponSupportCollisionSuppression);
+        hand_collision_suppression_math::clear(_rightWeaponSupportCollisionSuppression);
         _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
         _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
+        _rightWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
         clearEquippedWeaponPostDropCollisionSuppressionState();
         _nativePlayerCollisionSuppressedBodyCount = 0;
         _nativePlayerCollisionSuppressionRefreshFrames = 0;
@@ -4537,9 +4646,9 @@ namespace rock
             }
             return weapon_two_handed_grip_math::canProcessNormalGrabInput(
                 false,
-                _twoHandedGrip.isGripping(),
+                _twoHandedGrip.isHandPartGripping(true),
                 resolveEquippedWeaponInteractionNode() != nullptr,
-                _twoHandedGrip.isPrimaryDetached());
+                _twoHandedGrip.isPartCarryActive() && !_twoHandedGrip.isHandPartGripping(false));
         };
 
         if (!_pendingLooseGrenadeGrab.active) {
@@ -5087,9 +5196,9 @@ namespace rock
             }
             if (!weapon_two_handed_grip_math::canProcessNormalGrabInput(
                     isLeft,
-                    _twoHandedGrip.isGripping(),
+                    _twoHandedGrip.isHandPartGripping(true),
                     resolveEquippedWeaponInteractionNode() != nullptr,
-                    _twoHandedGrip.isPrimaryDetached())) {
+                    _twoHandedGrip.isPartCarryActive() && !_twoHandedGrip.isHandPartGripping(false))) {
                 complete(RockProviderInteractionCommandStateV1::Rejected, RockProviderInteractionFailureV1::HandBusy);
                 continue;
             }
@@ -5783,7 +5892,7 @@ namespace rock
         auto* hknp = frame.hknpWorld;
         int grabButton = g_rockConfig.rockGrabButtonID;
         const bool rightHandWeaponEquipped = resolveEquippedWeaponInteractionNode() != nullptr;
-        const bool equippedWeaponSupportGripActive = _twoHandedGrip.isGripping();
+        const bool equippedWeaponSupportGripActive = _twoHandedGrip.isHandPartGripping(true);
         const auto farHmdConeGate = makeFarSelectionHmdConeGate(frame);
         input_remap_runtime::setRightHandHeldWeapon(_rightHand.isHoldingLooseWeapon());
         processProviderInteractionCommands(frame);
@@ -5880,7 +5989,7 @@ namespace rock
                     isLeft,
                     equippedWeaponSupportGripActive,
                     rightHandWeaponEquipped,
-                    _twoHandedGrip.isPrimaryDetached())) {
+                    _twoHandedGrip.isPartCarryActive() && !_twoHandedGrip.isHandPartGripping(false))) {
                 grab_input_intent_policy::reset(inputIntentState);
                 cancelPeerHeldJoinRetry("normal-grab-suppressed", true);
                 clearGameplayCandidatesForHand(hand, isLeft);

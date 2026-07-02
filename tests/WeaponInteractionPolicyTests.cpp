@@ -92,6 +92,75 @@ int main()
         resolveSupportReleaseManualAction(false, true),
         SupportReleaseManualAction::EndSupportOnly);
 
+    using rock::weapon_two_handed_grip_math::canStartFreeHandPartGrip;
+    using rock::weapon_two_handed_grip_math::FiringGripReattachChordInput;
+    using rock::weapon_two_handed_grip_math::shouldRequestFiringGripReattach;
+    ok &= expectTrue("reattach chord fires on grab press with trigger held",
+        shouldRequestFiringGripReattach(FiringGripReattachChordInput{
+            .partCarryActive = true,
+            .gripHeld = true,
+            .gripPressed = true,
+            .triggerHeld = true,
+        }));
+    ok &= expectTrue("reattach chord fires on trigger press with grab held",
+        shouldRequestFiringGripReattach(FiringGripReattachChordInput{
+            .partCarryActive = true,
+            .gripHeld = true,
+            .triggerHeld = true,
+            .triggerPressed = true,
+        }));
+    ok &= expectFalse("reattach chord requires a fresh press edge",
+        shouldRequestFiringGripReattach(FiringGripReattachChordInput{
+            .partCarryActive = true,
+            .gripHeld = true,
+            .triggerHeld = true,
+        }));
+    ok &= expectFalse("reattach chord requires the grab button held",
+        shouldRequestFiringGripReattach(FiringGripReattachChordInput{
+            .partCarryActive = true,
+            .triggerHeld = true,
+            .triggerPressed = true,
+        }));
+    ok &= expectFalse("reattach chord ignores a plain grab press without trigger",
+        shouldRequestFiringGripReattach(FiringGripReattachChordInput{
+            .partCarryActive = true,
+            .gripHeld = true,
+            .gripPressed = true,
+        }));
+    ok &= expectFalse("reattach chord requires part-carry state",
+        shouldRequestFiringGripReattach(FiringGripReattachChordInput{
+            .gripHeld = true,
+            .gripPressed = true,
+            .triggerHeld = true,
+        }));
+    ok &= expectFalse("reattach chord is blocked while a menu owns input",
+        shouldRequestFiringGripReattach(FiringGripReattachChordInput{
+            .partCarryActive = true,
+            .menuInputActive = true,
+            .gripHeld = true,
+            .gripPressed = true,
+            .triggerHeld = true,
+        }));
+    ok &= expectFalse("reattach chord is blocked while the hand holds an object",
+        shouldRequestFiringGripReattach(FiringGripReattachChordInput{
+            .partCarryActive = true,
+            .handHoldingObject = true,
+            .gripHeld = true,
+            .gripPressed = true,
+            .triggerHeld = true,
+        }));
+
+    ok &= expectTrue("free hand part grip starts on grab press over a routed support part",
+        canStartFreeHandPartGrip(true, true, false, false));
+    ok &= expectFalse("free hand part grip requires a routed support-grip contact",
+        canStartFreeHandPartGrip(false, true, false, false));
+    ok &= expectFalse("free hand part grip requires a grab press edge",
+        canStartFreeHandPartGrip(true, false, false, false));
+    ok &= expectFalse("free hand part grip is blocked while the hand holds an object",
+        canStartFreeHandPartGrip(true, true, true, false));
+    ok &= expectFalse("free hand part grip does not restart while already gripping",
+        canStartFreeHandPartGrip(true, true, false, true));
+
     using namespace rock::equipped_weapon_manual_ownership_policy;
     ok &= expectTrue("manual grip feature is available for active equipped weapon", featureAvailable(true, true, true, 10));
     ok &= expectFalse("manual grip feature is unavailable without active weapon node", featureAvailable(true, true, false, 10));

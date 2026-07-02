@@ -197,8 +197,8 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'providerPartAut
     'Provider-authorized weapon part grips must revalidate owner target authority while active.'
 Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'resolveCurrentSupportAttachmentRoot' `
     'Weapon part support attachment roots must be current-tree validated before dereference.'
-Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' '_supportAttachmentWeaponLocal' `
-    'Primary-detached source-part grips must solve weapon authority from the captured source-to-weapon frame.'
+Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'attachmentWeaponLocal' `
+    'Part-carry source-part grips must solve weapon authority from the captured source-to-weapon frame.'
 Require-Text 'src/api/ROCKProviderApi.h' 'supportsForceGrabCommandV1' `
     'SDK must expose safe feature/table helpers for force-grab commands.'
 Require-Text 'src/api/ROCKProviderApi.cpp' 'providerApiByteSize\s*=\s*static_cast<std::uint32_t>\(sizeof\(RockProviderApi\)\)' `

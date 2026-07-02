@@ -237,9 +237,9 @@ namespace rock
 
         void restoreRightHandCollisionAfterDominantWeapon(RE::hknpWorld* world);
 
-        void suppressLeftHandCollisionForWeaponSupport(RE::hknpWorld* world);
+        void suppressHandCollisionForWeaponSupport(RE::hknpWorld* world, bool isLeft);
 
-        void restoreLeftHandCollisionAfterWeaponSupport(RE::hknpWorld* world);
+        void restoreHandCollisionAfterWeaponSupport(RE::hknpWorld* world, bool isLeft);
 
         void suppressHandCollisionAfterEquippedWeaponDrop(
             RE::hknpWorld* world,
@@ -276,7 +276,7 @@ namespace rock
         void handleContactEvent(RE::hknpWorld* world, void* contactEventData);
         bool isHandContactEvidenceSuppressed(bool isLeft) const;
         void clearContactEvidenceForHand(bool isLeft, const char* reason);
-        void synchronizeContactEvidenceOwnership(bool rightHandWeaponAuthorityActive, bool leftSupportGripActive);
+        void synchronizeContactEvidenceOwnership(bool rightHandWeaponAuthorityActive, bool leftSupportGripActive, bool rightPartGripActive);
 
         std::atomic<bool> _initialized{ false };
         bool _collisionLayerRegistered = false;
@@ -404,10 +404,12 @@ namespace rock
         int _weaponInteractionProbeLogCounter = 0;
         std::atomic<bool> _rightDominantWeaponCollisionSuppressed{ false };
         std::atomic<bool> _leftWeaponSupportCollisionSuppressed{ false };
+        std::atomic<bool> _rightWeaponSupportCollisionSuppressed{ false };
         std::atomic<bool> _rightEquippedWeaponDropCollisionSuppressed{ false };
         std::atomic<bool> _leftEquippedWeaponDropCollisionSuppressed{ false };
         hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _rightDominantWeaponCollisionSuppression{};
         hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _leftWeaponSupportCollisionSuppression{};
+        hand_collision_suppression_math::SuppressionSet<hand_collider_semantics::kHandColliderBodyCountPerHand> _rightWeaponSupportCollisionSuppression{};
         hand_collision_suppression_math::SuppressionSet<kGrabCollisionSuppressionBodyCountPerHand> _rightEquippedWeaponDropCollisionSuppression{};
         hand_collision_suppression_math::SuppressionSet<kGrabCollisionSuppressionBodyCountPerHand> _leftEquippedWeaponDropCollisionSuppression{};
         hand_collision_suppression_math::DelayedRestoreState _rightEquippedWeaponDropDelayedRestore{};

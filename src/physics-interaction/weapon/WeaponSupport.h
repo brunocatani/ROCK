@@ -460,6 +460,35 @@ namespace rock::weapon_two_handed_grip_math
 
         return !rightHandWeaponEquipped || primaryHandDetached;
     }
+
+    struct FiringGripReattachChordInput
+    {
+        bool partCarryActive{ false };
+        bool menuInputActive{ false };
+        bool handHoldingObject{ false };
+        bool gripHeld{ false };
+        bool gripPressed{ false };
+        bool triggerHeld{ false };
+        bool triggerPressed{ false };
+    };
+
+    /*
+     * Reattaching to the firing grip is an explicit grab+trigger chord. A plain
+     * grab press on the free firing hand must stay available for world grabs and
+     * weapon part grips, so proximity alone must never re-take the firing grip.
+     * The chord requires both buttons held with at least one fresh press edge so
+     * merely holding both through unrelated actions cannot re-fire it.
+     */
+    inline constexpr bool shouldRequestFiringGripReattach(const FiringGripReattachChordInput& input)
+    {
+        return input.partCarryActive && !input.menuInputActive && !input.handHoldingObject &&
+               input.gripHeld && input.triggerHeld && (input.gripPressed || input.triggerPressed);
+    }
+
+    inline constexpr bool canStartFreeHandPartGrip(bool routedSupportGrip, bool gripPressed, bool handHoldingObject, bool handAlreadyGripping)
+    {
+        return routedSupportGrip && gripPressed && !handHoldingObject && !handAlreadyGripping;
+    }
 }
 
 // ---- WeaponTwoHandedSolver.h ----

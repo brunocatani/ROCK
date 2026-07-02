@@ -55,7 +55,7 @@ Require-Text 'src/physics-interaction/weapon/TwoHandedGrip.cpp' 'handLerp=\(' `
 
 $weaponText = Get-Content -Raw -LiteralPath (Join-Path $Root 'src/physics-interaction/weapon/TwoHandedGrip.cpp')
 $applyWeaponStart = $weaponText.IndexOf('bool TwoHandedGrip::applyWeaponVisualAuthority')
-$applyWeaponEnd = if ($applyWeaponStart -ge 0) { $weaponText.IndexOf('bool TwoHandedGrip::applyLockedHandVisualAuthority', $applyWeaponStart) } else { -1 }
+$applyWeaponEnd = if ($applyWeaponStart -ge 0) { $weaponText.IndexOf('bool TwoHandedGrip::applyFiringHandLockedVisual', $applyWeaponStart) } else { -1 }
 if ($applyWeaponStart -lt 0 -or $applyWeaponEnd -lt 0) {
     $failures.Add('Weapon visual authority function boundary could not be located.')
 } else {
