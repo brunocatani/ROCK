@@ -1525,16 +1525,6 @@ namespace rock
             return false;
         }
 
-        // Diagnostic telemetry for the reported part-carry drift; remove once
-        // the drift source is confirmed and fixed.
-        const RE::NiPoint3 previousSolvedTranslate = _lastSolvedWeaponTransform.translate;
-        RE::NiPoint3 telemetryPivotPalm{};
-        RE::NiPoint3 telemetryAimPalm{};
-        float telemetryPalmSeparation = -1.0f;
-        float telemetryGripSeparation = -1.0f;
-        float telemetryPrimaryError = -1.0f;
-        float telemetrySupportError = -1.0f;
-
         if (aimGrip.active) {
             RE::NiTransform aimHandTransform{};
             if (!tryGetHandBoneTransform(!pivotIsLeft, aimHandTransform)) {
@@ -1587,14 +1577,6 @@ namespace rock
             if (!solved.solved) {
                 return true;
             }
-
-            telemetryPivotPalm = pivotPalm;
-            telemetryAimPalm = aimPalm;
-            const RE::NiPoint3 palmDelta = sub(aimPalm, pivotPalm);
-            telemetryPalmSeparation = std::sqrt(dot(palmDelta, palmDelta));
-            telemetryGripSeparation = currentSeparation;
-            telemetryPrimaryError = solved.primaryError;
-            telemetrySupportError = solved.supportError;
 
             // Break the rotation feedback loop's orthonormality decay before
             // the solved transform becomes next frame's base.
@@ -1656,45 +1638,20 @@ namespace rock
         _lastSolvedWeaponTransform = weaponNode->world;
         _hasSolvedWeaponTransform = true;
 
-        /*
-         * Diagnostic telemetry for the reported part-carry drift ("weapon
-         * slowly pulls toward the player" while two-anchor gripping). Remove
-         * once the drift source is confirmed and fixed.
-         */
-        if (++_gripLogCounter >= 45) {
+        if (++_gripLogCounter >= 90) {
             _gripLogCounter = 0;
             const RE::NiPoint3 pivotGripFinal = resolvePartGripWorld(pivotGrip, weaponNode);
-            if (!aimGrip.active) {
-                telemetryPivotPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(pivotHandTransform, pivotIsLeft);
-            }
-            const RE::NiPoint3 frameDelta = sub(weaponNode->world.translate, previousSolvedTranslate);
-            const RE::NiPoint3 rotationRow0{ weaponNode->world.rotate.entry[0][0], weaponNode->world.rotate.entry[0][1], weaponNode->world.rotate.entry[0][2] };
-            const float rotationRow0Norm = std::sqrt(dot(rotationRow0, rotationRow0));
-            ROCK_LOG_INFO(Weapon,
-                "TwoHandedGrip: part-carry telemetry pivot={} anchors={} scale={:.4f} rotRow0Norm={:.4f} frameDelta=({:.3f},{:.3f},{:.3f}) "
-                "pivotPalm=({:.1f},{:.1f},{:.1f}) pivotGrip=({:.1f},{:.1f},{:.1f}) aimPalm=({:.1f},{:.1f},{:.1f}) "
-                "palmSep={:.2f} gripSep={:.2f} primaryErr={:.3f} supportErr={:.3f} blend={:.2f}",
+            ROCK_LOG_DEBUG(Weapon,
+                "TwoHandedGrip: part-carry authority pivot={} anchors={} pivotGrip=({:.1f},{:.1f},{:.1f}) handLerp=({:.2f}/{:.3f}s,{:.2f}/{:.3f}s)",
                 pivotIsLeft ? "left" : "right",
                 aimGrip.active ? 2 : 1,
-                weaponNode->world.scale,
-                rotationRow0Norm,
-                frameDelta.x,
-                frameDelta.y,
-                frameDelta.z,
-                telemetryPivotPalm.x,
-                telemetryPivotPalm.y,
-                telemetryPivotPalm.z,
                 pivotGripFinal.x,
                 pivotGripFinal.y,
                 pivotGripFinal.z,
-                telemetryAimPalm.x,
-                telemetryAimPalm.y,
-                telemetryAimPalm.z,
-                telemetryPalmSeparation,
-                telemetryGripSeparation,
-                telemetryPrimaryError,
-                telemetrySupportError,
-                _rotationBlend);
+                pivotGrip.visualLerp.lastAlpha,
+                pivotGrip.visualLerp.durationSeconds,
+                aimGrip.visualLerp.lastAlpha,
+                aimGrip.visualLerp.durationSeconds);
         }
         return true;
     }
