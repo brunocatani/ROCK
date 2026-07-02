@@ -34,13 +34,6 @@ namespace rock
         constexpr const char* SUPPORT_GRIP_TAG = "ROCK_WeaponSupportGrip";
         constexpr int GRIP_HAND_POSE_PRIORITY = 100;
         constexpr float SUPPORT_NORMAL_TWIST_FACTOR = 0.5f;
-        /*
-         * Free-hand part grips are blocked inside this fraction of the reattach
-         * radius around the captured firing-grip point: that zone belongs to the
-         * grab+trigger chord, and the grip part itself sits well inside it while
-         * handguard/barrel parts sit outside.
-         */
-        constexpr float FIRING_GRIP_ZONE_RADIUS_FRACTION = 0.5f;
 
         constexpr std::array<float, 15> BARREL_WRAP_POSE = { 0.85f, 0.80f, 0.75f, 0.35f, 0.30f, 0.25f, 0.30f, 0.25f, 0.20f, 0.35f, 0.30f, 0.25f, 0.40f, 0.35f, 0.30f };
         constexpr std::array<float, 15> HANDGUARD_CLAMP_POSE = { 0.75f, 0.72f, 0.68f, 0.45f, 0.42f, 0.38f, 0.46f, 0.42f, 0.38f, 0.48f, 0.44f, 0.40f, 0.54f, 0.48f, 0.42f };
@@ -1318,24 +1311,6 @@ namespace rock
         return std::isfinite(distance) && distance <= reattachRadius;
     }
 
-    bool TwoHandedGrip::firingHandPalmNearCapturedGrip(RE::NiNode* weaponNode, float radiusGame) const
-    {
-        if (!weaponNode) {
-            return false;
-        }
-
-        RE::NiTransform firingHandTransform{};
-        if (!tryGetHandBoneTransform(_firingHandIsLeft, firingHandTransform)) {
-            return false;
-        }
-
-        const RE::NiPoint3 firingPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(firingHandTransform, _firingHandIsLeft);
-        const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
-        const RE::NiPoint3 delta = sub(firingPalm, firingGripWorld);
-        const float distance = std::sqrt(dot(delta, delta));
-        return std::isfinite(distance) && distance <= radiusGame;
-    }
-
     bool TwoHandedGrip::tryReattachFiringGrip(RE::NiNode* weaponNode, const WeaponInteractionContact& firingHandWeaponContact)
     {
         if (!weaponNode) {
@@ -1428,23 +1403,12 @@ namespace rock
         }
 
         if (!freeHandGrip.active && frameInput.primaryGripInput.pressed) {
-            /*
-             * The zone around the captured firing-grip point is reserved for
-             * the grab+trigger reattach chord. A plain grab there must not
-             * capture a generic part grip on the grip itself (the free hand
-             * naturally hovers next to the firing grip after detaching); it
-             * falls through to the normal world-grab pipeline instead.
-             */
-            const float firingGripZoneRadius =
-                FIRING_GRIP_ZONE_RADIUS_FRACTION * (std::max)(2.0f, g_rockConfig.rockWeaponInteractionProbeRadius);
-            const bool freeHandInFiringGripZone = firingHandPalmNearCapturedGrip(weaponNode, firingGripZoneRadius);
             const WeaponInteractionDecision freeHandDecision = routeWeaponInteraction(firingHandContact, rightRuntimeState);
             if (weapon_two_handed_grip_math::canStartFreeHandPartGrip(
                     freeHandDecision.kind == WeaponInteractionKind::SupportGrip,
                     frameInput.primaryGripInput.pressed,
                     frameInput.rightHandHoldingObject,
-                    freeHandGrip.active,
-                    freeHandInFiringGripZone)) {
+                    freeHandGrip.active)) {
                 if (capturePartGrip(firingHandIsLeft, weaponNode, freeHandDecision, weaponCollision, rightRuntimeState.providerPartAuthority) &&
                     supportGrip.active) {
                     _partCarryGripSeparationWorld = partCarryGripSeparation(weaponNode);
@@ -1510,6 +1474,16 @@ namespace rock
             return false;
         }
 
+        // Diagnostic telemetry for the reported part-carry drift; remove once
+        // the drift source is confirmed and fixed.
+        const RE::NiPoint3 previousSolvedTranslate = _lastSolvedWeaponTransform.translate;
+        RE::NiPoint3 telemetryPivotPalm{};
+        RE::NiPoint3 telemetryAimPalm{};
+        float telemetryPalmSeparation = -1.0f;
+        float telemetryGripSeparation = -1.0f;
+        float telemetryPrimaryError = -1.0f;
+        float telemetrySupportError = -1.0f;
+
         if (aimGrip.active) {
             RE::NiTransform aimHandTransform{};
             if (!tryGetHandBoneTransform(!pivotIsLeft, aimHandTransform)) {
@@ -1552,6 +1526,14 @@ namespace rock
             if (!solved.solved) {
                 return true;
             }
+
+            telemetryPivotPalm = pivotPalm;
+            telemetryAimPalm = aimPalm;
+            const RE::NiPoint3 palmDelta = sub(aimPalm, pivotPalm);
+            telemetryPalmSeparation = std::sqrt(dot(palmDelta, palmDelta));
+            telemetryGripSeparation = currentSeparation;
+            telemetryPrimaryError = solved.primaryError;
+            telemetrySupportError = solved.supportError;
 
             if (!applyWeaponVisualAuthority(weaponNode, solved.weaponWorldTransform)) {
                 _hasSolvedWeaponTransform = false;
@@ -1608,20 +1590,41 @@ namespace rock
         _lastSolvedWeaponTransform = weaponNode->world;
         _hasSolvedWeaponTransform = true;
 
-        if (++_gripLogCounter >= 90) {
+        /*
+         * Diagnostic telemetry for the reported part-carry drift ("weapon
+         * slowly pulls toward the player" while two-anchor gripping). Remove
+         * once the drift source is confirmed and fixed.
+         */
+        if (++_gripLogCounter >= 45) {
             _gripLogCounter = 0;
             const RE::NiPoint3 pivotGripFinal = resolvePartGripWorld(pivotGrip, weaponNode);
-            ROCK_LOG_DEBUG(Weapon,
-                "TwoHandedGrip: part-carry authority pivot={} anchors={} pivotGrip=({:.1f},{:.1f},{:.1f}) handLerp=({:.2f}/{:.3f}s,{:.2f}/{:.3f}s)",
+            if (!aimGrip.active) {
+                telemetryPivotPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(pivotHandTransform, pivotIsLeft);
+            }
+            const RE::NiPoint3 frameDelta = sub(weaponNode->world.translate, previousSolvedTranslate);
+            ROCK_LOG_INFO(Weapon,
+                "TwoHandedGrip: part-carry telemetry pivot={} anchors={} frameDelta=({:.3f},{:.3f},{:.3f}) "
+                "pivotPalm=({:.1f},{:.1f},{:.1f}) pivotGrip=({:.1f},{:.1f},{:.1f}) aimPalm=({:.1f},{:.1f},{:.1f}) "
+                "palmSep={:.2f} gripSep={:.2f} primaryErr={:.3f} supportErr={:.3f} blend={:.2f}",
                 pivotIsLeft ? "left" : "right",
                 aimGrip.active ? 2 : 1,
+                frameDelta.x,
+                frameDelta.y,
+                frameDelta.z,
+                telemetryPivotPalm.x,
+                telemetryPivotPalm.y,
+                telemetryPivotPalm.z,
                 pivotGripFinal.x,
                 pivotGripFinal.y,
                 pivotGripFinal.z,
-                pivotGrip.visualLerp.lastAlpha,
-                pivotGrip.visualLerp.durationSeconds,
-                aimGrip.visualLerp.lastAlpha,
-                aimGrip.visualLerp.durationSeconds);
+                telemetryAimPalm.x,
+                telemetryAimPalm.y,
+                telemetryAimPalm.z,
+                telemetryPalmSeparation,
+                telemetryGripSeparation,
+                telemetryPrimaryError,
+                telemetrySupportError,
+                _rotationBlend);
         }
         return true;
     }

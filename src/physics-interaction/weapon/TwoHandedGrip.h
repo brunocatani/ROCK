@@ -236,8 +236,6 @@ namespace rock
             const WeaponInteractionContact& firingHandWeaponContact,
             const RE::NiTransform& firingHandTransform) const;
 
-        bool firingHandPalmNearCapturedGrip(RE::NiNode* weaponNode, float radiusGame) const;
-
         bool capturePartGrip(
             bool isLeft,
             RE::NiNode* weaponNode,

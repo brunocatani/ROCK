@@ -489,10 +489,9 @@ namespace rock::weapon_two_handed_grip_math
         bool routedSupportGrip,
         bool gripPressed,
         bool handHoldingObject,
-        bool handAlreadyGripping,
-        bool handInFiringGripZone)
+        bool handAlreadyGripping)
     {
-        return routedSupportGrip && gripPressed && !handHoldingObject && !handAlreadyGripping && !handInFiringGripZone;
+        return routedSupportGrip && gripPressed && !handHoldingObject && !handAlreadyGripping;
     }
 }
 
