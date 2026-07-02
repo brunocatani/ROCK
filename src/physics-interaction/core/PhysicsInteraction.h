@@ -416,6 +416,20 @@ namespace rock
         hand_collision_suppression_math::DelayedRestoreState _leftEquippedWeaponDropDelayedRestore{};
         weapon_debug_notification_policy::WeaponNotificationState _weaponDebugNotificationState{};
         bool _pendingEquippedWeaponPrimaryOnlyGripStart = false;
+        /*
+         * Single-consumption snapshot of the firing hand's grab button. The
+         * equipped-weapon manual ownership path consumes the raw edges once per
+         * frame; the normal grab pipeline must reuse this snapshot instead of
+         * re-reading, or it sees cleared press/release edges.
+         */
+        struct SharedGrabButtonFrameState
+        {
+            bool valid{ false };
+            bool held{ false };
+            bool pressed{ false };
+            bool released{ false };
+        };
+        SharedGrabButtonFrameState _rightGrabButtonFrameState{};
         struct ProviderWeaponPartDriveNodeState
         {
             RE::NiAVObject* node{ nullptr };

@@ -2617,10 +2617,19 @@ namespace rock
             EquippedWeaponPrimaryGripInput primaryGripInput{};
             GrabButtonState primaryGrabState{};
             bool primaryGrabStateRead = false;
+            _rightGrabButtonFrameState = {};
             auto readPrimaryGrabState = [&]() -> const GrabButtonState& {
                 if (!primaryGrabStateRead) {
                     primaryGrabState = readGrabButtonState(false, g_rockConfig.rockGrabButtonID);
                     primaryGrabStateRead = true;
+                    // Publish the consumed snapshot so the normal grab pipeline
+                    // sees the same edges instead of re-consuming cleared ones.
+                    _rightGrabButtonFrameState = SharedGrabButtonFrameState{
+                        .valid = true,
+                        .held = primaryGrabState.held,
+                        .pressed = primaryGrabState.pressed,
+                        .released = primaryGrabState.released,
+                    };
                 }
                 return primaryGrabState;
             };
@@ -6021,7 +6030,23 @@ namespace rock
                 return;
             }
 
-            auto grabInput = readGrabButtonState(isLeft, grabButton);
+            /*
+             * The equipped-weapon manual ownership path consumes the firing
+             * hand's grab edges earlier this frame. Reuse that single consumed
+             * snapshot for the right hand; re-reading would see cleared edges
+             * and starve free-hand world grabs of press/release input.
+             */
+            GrabButtonState grabInput{};
+            if (!isLeft && _rightGrabButtonFrameState.valid) {
+                grabInput = GrabButtonState{
+                    .held = _rightGrabButtonFrameState.held,
+                    .pressed = _rightGrabButtonFrameState.pressed,
+                    .released = _rightGrabButtonFrameState.released,
+                };
+                _rightGrabButtonFrameState.valid = false;
+            } else {
+                grabInput = readGrabButtonState(isLeft, grabButton);
+            }
             const bool virtualHolstersDeferredGrab =
                 !hand.isHolding() && input_remap_runtime::shouldDeferGrabInputForVirtualHolsters(isLeft, grabButton);
             if (virtualHolstersDeferredGrab) {
