@@ -243,6 +243,8 @@ namespace rock
             const WeaponCollision& weaponCollision,
             const WeaponProviderPartAuthority& providerPartAuthority);
 
+        void lockPartGripToWeaponRoot(bool isLeft);
+
         void releasePartGrip(bool isLeft, const char* reason);
 
         void setSupportGripPose(bool isLeft, WeaponGripPoseId poseId, const grab_finger_pose_runtime::SolvedGrabFingerPose* meshFingerPose);

@@ -878,6 +878,21 @@ namespace rock
         return true;
     }
 
+    void TwoHandedGrip::lockPartGripToWeaponRoot(bool isLeft)
+    {
+        /*
+         * Part-carry feeds its own solved weapon transform back as the next
+         * frame's base, so grips must resolve exclusively through the captured
+         * weapon-root frames while it is active. Following live part-node
+         * chains lets any per-frame part animation integrate into a steady
+         * carry drift and pulls the locked hand visuals apart (verified by
+         * telemetry: rigid-weapon grip separation grew frame over frame).
+         */
+        WeaponPartGrip& grip = partGrip(isLeft);
+        grip.hasSourceFrames = false;
+        grip.hasAttachmentWeaponLocal = false;
+    }
+
     void TwoHandedGrip::releasePartGrip(bool isLeft, const char* reason)
     {
         WeaponPartGrip& grip = partGrip(isLeft);
@@ -1160,6 +1175,7 @@ namespace rock
         }
         _primaryHandVisualLerp = {};
         partGrip(!_firingHandIsLeft).visualLerp = {};
+        lockPartGripToWeaponRoot(!_firingHandIsLeft);
         _rotationBlend = 1.0f;
         _partCarryPivotIsLeft = !_firingHandIsLeft;
         _partCarryGripSeparationWorld = 0.0f;
@@ -1409,10 +1425,12 @@ namespace rock
                     frameInput.primaryGripInput.pressed,
                     frameInput.rightHandHoldingObject,
                     freeHandGrip.active)) {
-                if (capturePartGrip(firingHandIsLeft, weaponNode, freeHandDecision, weaponCollision, rightRuntimeState.providerPartAuthority) &&
-                    supportGrip.active) {
-                    _partCarryGripSeparationWorld = partCarryGripSeparation(weaponNode);
-                    _rotationBlend = 0.0f;
+                if (capturePartGrip(firingHandIsLeft, weaponNode, freeHandDecision, weaponCollision, rightRuntimeState.providerPartAuthority)) {
+                    lockPartGripToWeaponRoot(firingHandIsLeft);
+                    if (supportGrip.active) {
+                        _partCarryGripSeparationWorld = partCarryGripSeparation(weaponNode);
+                        _rotationBlend = 0.0f;
+                    }
                 }
             }
         }
@@ -1421,10 +1439,12 @@ namespace rock
             const WeaponInteractionDecision supportDecision = routeWeaponInteraction(leftWeaponContact, leftRuntimeState);
             if (supportDecision.kind == WeaponInteractionKind::SupportGrip &&
                 weapon_two_handed_grip_math::canStartSupportGrip(true, frameInput.leftGripHeld, frameInput.leftHandHoldingObject)) {
-                if (capturePartGrip(supportHandIsLeft, weaponNode, supportDecision, weaponCollision, leftRuntimeState.providerPartAuthority) &&
-                    freeHandGrip.active) {
-                    _partCarryGripSeparationWorld = partCarryGripSeparation(weaponNode);
-                    _rotationBlend = 0.0f;
+                if (capturePartGrip(supportHandIsLeft, weaponNode, supportDecision, weaponCollision, leftRuntimeState.providerPartAuthority)) {
+                    lockPartGripToWeaponRoot(supportHandIsLeft);
+                    if (freeHandGrip.active) {
+                        _partCarryGripSeparationWorld = partCarryGripSeparation(weaponNode);
+                        _rotationBlend = 0.0f;
+                    }
                 }
             }
         }
@@ -1495,14 +1515,24 @@ namespace rock
 
             _rotationBlend = (std::min)(1.0f, _rotationBlend + dt * ROTATION_BLEND_SPEED);
 
+            /*
+             * The two-anchor solve must be closed over the captured
+             * weapon-root-local grip points. Part-carry feeds its own solved
+             * transform back as the next frame's base, so re-resolving grips
+             * through live part-node chains lets any per-frame part animation
+             * integrate into a steady carry drift (verified by telemetry:
+             * rigid-weapon grip separation grew frame over frame). The
+             * trade-off is that a two-anchor carry does not follow externally
+             * driven part motion; provider part revocation releases the grip
+             * in that case.
+             */
             const RE::NiPoint3 pivotPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(pivotHandTransform, pivotIsLeft);
             const RE::NiPoint3 aimPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(aimHandTransform, !pivotIsLeft);
-            const RE::NiPoint3 currentAimGripWorld = resolvePartGripWorld(aimGrip, weaponNode);
-            const RE::NiPoint3 currentPivotGripWorld = resolvePartGripWorld(pivotGrip, weaponNode);
+            const RE::NiPoint3 currentAimGripWorld = weaponLocalToWorld(aimGrip.gripLocal, weaponNode);
+            const RE::NiPoint3 currentPivotGripWorld = weaponLocalToWorld(pivotGrip.gripLocal, weaponNode);
             const RE::NiPoint3 currentSeparationDelta = sub(currentAimGripWorld, currentPivotGripWorld);
             const float currentSeparation = std::sqrt(dot(currentSeparationDelta, currentSeparationDelta));
-            const float lockedSeparation =
-                (pivotGrip.hasSourceFrames || aimGrip.hasSourceFrames) ? currentSeparation : _partCarryGripSeparationWorld;
+            const float lockedSeparation = _partCarryGripSeparationWorld > 0.0f ? _partCarryGripSeparationWorld : currentSeparation;
             const RE::NiPoint3 lockedAimTarget = makeLockedSupportGripTarget(
                 pivotPalm,
                 aimPalm,
@@ -1513,11 +1543,11 @@ namespace rock
 
             WeaponTwoHandedSolverInput<RE::NiTransform, RE::NiPoint3> solverInput{};
             solverInput.weaponWorldTransform = weaponNode->world;
-            solverInput.primaryGripLocal = resolvePartGripWeaponLocal(pivotGrip, weaponNode);
-            solverInput.supportGripLocal = resolvePartGripWeaponLocal(aimGrip, weaponNode);
+            solverInput.primaryGripLocal = pivotGrip.gripLocal;
+            solverInput.supportGripLocal = aimGrip.gripLocal;
             solverInput.primaryTargetWorld = pivotPalm;
             solverInput.supportTargetWorld = blendedAimTarget;
-            solverInput.supportNormalLocal = resolvePartGripNormalWeaponLocal(aimGrip, weaponNode);
+            solverInput.supportNormalLocal = aimGrip.normalLocal;
             solverInput.supportNormalTargetWorld = computePalmNormalFromHandBasis(aimHandTransform, !pivotIsLeft);
             solverInput.useSupportNormalTwist = true;
             solverInput.supportNormalTwistFactor = SUPPORT_NORMAL_TWIST_FACTOR;
