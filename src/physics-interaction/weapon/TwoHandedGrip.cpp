@@ -63,6 +63,37 @@ namespace rock
             }
         }
 
+        /*
+         * The part-carry two-anchor solve feeds its own rotation back as the
+         * next frame's base, chaining several float matrix products per frame.
+         * Without re-orthonormalization the rotation's row norms decay and the
+         * matrix acquires shear, which visibly stretches the weapon mesh and
+         * collapses the grip geometry (telemetry: rigid grip separation decayed
+         * ~0.05% per frame). Rows are the stored local axes.
+         */
+        RE::NiMatrix3 orthonormalizeStoredRotation(const RE::NiMatrix3& rotation)
+        {
+            const RE::NiPoint3 row0{ rotation.entry[0][0], rotation.entry[0][1], rotation.entry[0][2] };
+            const RE::NiPoint3 row1{ rotation.entry[1][0], rotation.entry[1][1], rotation.entry[1][2] };
+
+            const RE::NiPoint3 axis0 = weaponSolverNormalize(row0);
+            RE::NiPoint3 axis2 = weaponSolverCross(axis0, row1);
+            axis2 = weaponSolverNormalize(axis2);
+            const RE::NiPoint3 axis1 = weaponSolverCross(axis2, axis0);
+
+            RE::NiMatrix3 result = rotation;
+            result.entry[0][0] = axis0.x;
+            result.entry[0][1] = axis0.y;
+            result.entry[0][2] = axis0.z;
+            result.entry[1][0] = axis1.x;
+            result.entry[1][1] = axis1.y;
+            result.entry[1][2] = axis1.z;
+            result.entry[2][0] = axis2.x;
+            result.entry[2][1] = axis2.y;
+            result.entry[2][2] = axis2.z;
+            return result;
+        }
+
         RE::NiNode* sourceRootNodeOrFallback(RE::NiAVObject* sourceRoot, RE::NiNode* fallback)
         {
             if (sourceRoot) {
@@ -1565,7 +1596,12 @@ namespace rock
             telemetryPrimaryError = solved.primaryError;
             telemetrySupportError = solved.supportError;
 
-            if (!applyWeaponVisualAuthority(weaponNode, solved.weaponWorldTransform)) {
+            // Break the rotation feedback loop's orthonormality decay before
+            // the solved transform becomes next frame's base.
+            RE::NiTransform stabilizedWeaponWorld = solved.weaponWorldTransform;
+            stabilizedWeaponWorld.rotate = orthonormalizeStoredRotation(stabilizedWeaponWorld.rotate);
+
+            if (!applyWeaponVisualAuthority(weaponNode, stabilizedWeaponWorld)) {
                 _hasSolvedWeaponTransform = false;
                 ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing part-carry grip because ROCK visual weapon authority failed");
                 transitionToInactive(false);
@@ -1632,12 +1668,16 @@ namespace rock
                 telemetryPivotPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(pivotHandTransform, pivotIsLeft);
             }
             const RE::NiPoint3 frameDelta = sub(weaponNode->world.translate, previousSolvedTranslate);
+            const RE::NiPoint3 rotationRow0{ weaponNode->world.rotate.entry[0][0], weaponNode->world.rotate.entry[0][1], weaponNode->world.rotate.entry[0][2] };
+            const float rotationRow0Norm = std::sqrt(dot(rotationRow0, rotationRow0));
             ROCK_LOG_INFO(Weapon,
-                "TwoHandedGrip: part-carry telemetry pivot={} anchors={} frameDelta=({:.3f},{:.3f},{:.3f}) "
+                "TwoHandedGrip: part-carry telemetry pivot={} anchors={} scale={:.4f} rotRow0Norm={:.4f} frameDelta=({:.3f},{:.3f},{:.3f}) "
                 "pivotPalm=({:.1f},{:.1f},{:.1f}) pivotGrip=({:.1f},{:.1f},{:.1f}) aimPalm=({:.1f},{:.1f},{:.1f}) "
                 "palmSep={:.2f} gripSep={:.2f} primaryErr={:.3f} supportErr={:.3f} blend={:.2f}",
                 pivotIsLeft ? "left" : "right",
                 aimGrip.active ? 2 : 1,
+                weaponNode->world.scale,
+                rotationRow0Norm,
                 frameDelta.x,
                 frameDelta.y,
                 frameDelta.z,
