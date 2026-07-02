@@ -127,6 +127,15 @@ namespace rock
 
         bool beginPrimaryOnlyGrip(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
 
+        /*
+         * FRIK re-attaches the weapon node to the firing hand every frame
+         * before ROCK runs, even while the firing hand is detached. Callers
+         * must republish ROCK's solved part-carry transform before reading the
+         * weapon node (probes, grip-zone checks, capture frames), or every
+         * weapon-relative computation sees the weapon glued to the firing hand.
+         */
+        bool republishPartCarryWeaponTransform(RE::NiNode* weaponNode);
+
         EquippedWeaponManualDropRequest consumeEquippedWeaponDropRequest();
 
     private:

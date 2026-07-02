@@ -1175,6 +1175,14 @@ namespace rock
         return true;
     }
 
+    bool TwoHandedGrip::republishPartCarryWeaponTransform(RE::NiNode* weaponNode)
+    {
+        if (_state != TwoHandedState::PartCarry || !_hasSolvedWeaponTransform || !weaponNode) {
+            return false;
+        }
+        return applyWeaponVisualAuthority(weaponNode, _lastSolvedWeaponTransform);
+    }
+
     bool TwoHandedGrip::beginPrimaryOnlyGrip(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey)
     {
         if (!weaponNode || currentWeaponGenerationKey == 0 || _state != TwoHandedState::Inactive) {

@@ -2396,6 +2396,14 @@ namespace rock
         }
 
         RE::NiNode* weaponNode = resolveEquippedWeaponInteractionNode();
+        /*
+         * FRIK re-attaches the weapon node to the firing hand every frame
+         * before ROCK runs, even in part-carry. Republish ROCK's solved carry
+         * transform first so weapon-part probes, firing-grip zone checks, and
+         * grip capture frames all read the weapon where the player sees it —
+         * the same frame the generated colliders follow.
+         */
+        (void)_twoHandedGrip.republishPartCarryWeaponTransform(weaponNode);
         const bool rightHandWeaponEquipped = weaponNode != nullptr;
         const bool retainedWeaponCollisionActive =
             _weaponCollision.hasWeaponBody() && _weaponCollision.getCurrentWeaponGenerationKey() != 0;
