@@ -151,15 +151,17 @@ int main()
         }));
 
     ok &= expectTrue("free hand part grip starts on grab press over a routed support part",
-        canStartFreeHandPartGrip(true, true, false, false));
+        canStartFreeHandPartGrip(true, true, false, false, false));
     ok &= expectFalse("free hand part grip requires a routed support-grip contact",
-        canStartFreeHandPartGrip(false, true, false, false));
+        canStartFreeHandPartGrip(false, true, false, false, false));
     ok &= expectFalse("free hand part grip requires a grab press edge",
-        canStartFreeHandPartGrip(true, false, false, false));
+        canStartFreeHandPartGrip(true, false, false, false, false));
     ok &= expectFalse("free hand part grip is blocked while the hand holds an object",
-        canStartFreeHandPartGrip(true, true, true, false));
+        canStartFreeHandPartGrip(true, true, true, false, false));
     ok &= expectFalse("free hand part grip does not restart while already gripping",
-        canStartFreeHandPartGrip(true, true, false, true));
+        canStartFreeHandPartGrip(true, true, false, true, false));
+    ok &= expectFalse("free hand part grip yields the firing-grip zone to the reattach chord",
+        canStartFreeHandPartGrip(true, true, false, false, true));
 
     using namespace rock::equipped_weapon_manual_ownership_policy;
     ok &= expectTrue("manual grip feature is available for active equipped weapon", featureAvailable(true, true, true, 10));

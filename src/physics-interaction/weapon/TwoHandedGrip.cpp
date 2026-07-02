@@ -34,6 +34,13 @@ namespace rock
         constexpr const char* SUPPORT_GRIP_TAG = "ROCK_WeaponSupportGrip";
         constexpr int GRIP_HAND_POSE_PRIORITY = 100;
         constexpr float SUPPORT_NORMAL_TWIST_FACTOR = 0.5f;
+        /*
+         * Free-hand part grips are blocked inside this fraction of the reattach
+         * radius around the captured firing-grip point: that zone belongs to the
+         * grab+trigger chord, and the grip part itself sits well inside it while
+         * handguard/barrel parts sit outside.
+         */
+        constexpr float FIRING_GRIP_ZONE_RADIUS_FRACTION = 0.5f;
 
         constexpr std::array<float, 15> BARREL_WRAP_POSE = { 0.85f, 0.80f, 0.75f, 0.35f, 0.30f, 0.25f, 0.30f, 0.25f, 0.20f, 0.35f, 0.30f, 0.25f, 0.40f, 0.35f, 0.30f };
         constexpr std::array<float, 15> HANDGUARD_CLAMP_POSE = { 0.75f, 0.72f, 0.68f, 0.45f, 0.42f, 0.38f, 0.46f, 0.42f, 0.38f, 0.48f, 0.44f, 0.40f, 0.54f, 0.48f, 0.42f };
@@ -1303,6 +1310,24 @@ namespace rock
         return std::isfinite(distance) && distance <= reattachRadius;
     }
 
+    bool TwoHandedGrip::firingHandPalmNearCapturedGrip(RE::NiNode* weaponNode, float radiusGame) const
+    {
+        if (!weaponNode) {
+            return false;
+        }
+
+        RE::NiTransform firingHandTransform{};
+        if (!tryGetHandBoneTransform(_firingHandIsLeft, firingHandTransform)) {
+            return false;
+        }
+
+        const RE::NiPoint3 firingPalm = computeGrabLegacyPalmPivotAWorldFromHandBasis(firingHandTransform, _firingHandIsLeft);
+        const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
+        const RE::NiPoint3 delta = sub(firingPalm, firingGripWorld);
+        const float distance = std::sqrt(dot(delta, delta));
+        return std::isfinite(distance) && distance <= radiusGame;
+    }
+
     bool TwoHandedGrip::tryReattachFiringGrip(RE::NiNode* weaponNode, const WeaponInteractionContact& firingHandWeaponContact)
     {
         if (!weaponNode) {
@@ -1394,13 +1419,24 @@ namespace rock
             }
         }
 
-        if (!freeHandGrip.active) {
+        if (!freeHandGrip.active && frameInput.primaryGripInput.pressed) {
+            /*
+             * The zone around the captured firing-grip point is reserved for
+             * the grab+trigger reattach chord. A plain grab there must not
+             * capture a generic part grip on the grip itself (the free hand
+             * naturally hovers next to the firing grip after detaching); it
+             * falls through to the normal world-grab pipeline instead.
+             */
+            const float firingGripZoneRadius =
+                FIRING_GRIP_ZONE_RADIUS_FRACTION * (std::max)(2.0f, g_rockConfig.rockWeaponInteractionProbeRadius);
+            const bool freeHandInFiringGripZone = firingHandPalmNearCapturedGrip(weaponNode, firingGripZoneRadius);
             const WeaponInteractionDecision freeHandDecision = routeWeaponInteraction(firingHandContact, rightRuntimeState);
             if (weapon_two_handed_grip_math::canStartFreeHandPartGrip(
                     freeHandDecision.kind == WeaponInteractionKind::SupportGrip,
                     frameInput.primaryGripInput.pressed,
                     frameInput.rightHandHoldingObject,
-                    freeHandGrip.active)) {
+                    freeHandGrip.active,
+                    freeHandInFiringGripZone)) {
                 if (capturePartGrip(firingHandIsLeft, weaponNode, freeHandDecision, weaponCollision, rightRuntimeState.providerPartAuthority) &&
                     supportGrip.active) {
                     _partCarryGripSeparationWorld = partCarryGripSeparation(weaponNode);

@@ -485,9 +485,14 @@ namespace rock::weapon_two_handed_grip_math
                input.gripHeld && input.triggerHeld && (input.gripPressed || input.triggerPressed);
     }
 
-    inline constexpr bool canStartFreeHandPartGrip(bool routedSupportGrip, bool gripPressed, bool handHoldingObject, bool handAlreadyGripping)
+    inline constexpr bool canStartFreeHandPartGrip(
+        bool routedSupportGrip,
+        bool gripPressed,
+        bool handHoldingObject,
+        bool handAlreadyGripping,
+        bool handInFiringGripZone)
     {
-        return routedSupportGrip && gripPressed && !handHoldingObject && !handAlreadyGripping;
+        return routedSupportGrip && gripPressed && !handHoldingObject && !handAlreadyGripping && !handInFiringGripZone;
     }
 }
 
