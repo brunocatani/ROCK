@@ -497,6 +497,7 @@ namespace rock::weapon_generation_identity_policy
         std::uintptr_t equippedObjectAddress{ 0 };
         std::string_view displayName{};
         bool hasEquippedWeapon{ false };
+        WeaponSizeClass sizeClass{ WeaponSizeClass::Rifle };
     };
 
     inline std::uint64_t makeEquippedWeaponIdentityKey(const EquippedWeaponGenerationIdentity& identity)

@@ -268,7 +268,7 @@ namespace rock
         std::vector<WeaponCollisionProfileEvidenceDescriptor> buildProfileEvidenceSnapshot(const WeaponBodyBank& bank) const;
         void publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult);
 
-        std::size_t findGeneratedWeaponShapeSources(RE::NiAVObject* weaponNode, std::vector<GeneratedHullSource>& outSources);
+        std::size_t findGeneratedWeaponShapeSources(RE::NiAVObject* weaponNode, std::vector<GeneratedHullSource>& outSources, float maxSourceDistanceGame);
 
         void findGeneratedWeaponShapeSourcesRecursive(RE::NiAVObject* node, RE::NiAVObject* sourceRoot, const RE::NiTransform& weaponRootTransform,
             int depth,
@@ -276,7 +276,9 @@ namespace rock
             std::uint32_t& visitedShapes,
             std::uint32_t& extractedTriangles,
             const std::unordered_set<std::uintptr_t>& claimedSourceGroups,
-            std::unordered_set<std::uintptr_t>& candidateExtractedSourceGroups);
+            std::unordered_set<std::uintptr_t>& candidateExtractedSourceGroups,
+            float maxSourceDistanceGame,
+            std::uint32_t& culledForDistance);
         RE::NiTransform makeGeneratedBodyWorldTransform(const RE::NiTransform& weaponRootTransform, const RE::NiPoint3& localCenterGame) const;
         bool weaponCollisionSettingsChanged() const;
         void handleGeneratedBodyDriveResult(const GeneratedKeyframedBodyDriveResult& result, const char* ownerName, std::uint32_t bodyIndex);
@@ -304,7 +306,7 @@ namespace rock
         bool pendingGeneratedWeaponBuildMatches(std::uint64_t equippedKey) const;
         void resetWeaponCollisionSettingsCache();
 
-        std::uint64_t getEquippedWeaponIdentityKey(std::uint64_t* outIdentityKey = nullptr) const;
+        std::uint64_t getEquippedWeaponIdentityKey(std::uint64_t* outIdentityKey = nullptr, WeaponSizeClass* outSizeClass = nullptr) const;
         std::uint64_t getWeaponVisualCompositionKey(RE::NiAVObject* weaponNode, WeaponVisualKeyStats& stats) const;
 
         void maybeDumpWeaponAnimNodeDiagnostics(RE::NiAVObject* updateWeaponNode, std::uint64_t observedKey);

@@ -949,6 +949,49 @@ namespace rock
             return reForm->As<RE::TESObjectWEAP>();
         }
 
+        /*
+         * RE::WEAPON_TYPE collapses every firearm to kGun, so it cannot separate
+         * pistol/rifle/heavy. Item weight is the only generic per-weapon signal
+         * available for every vanilla and modded weapon without a curated
+         * per-FormID profile, so the collision-distance size class is a weight
+         * heuristic with two user-configurable breakpoints. Melee is resolved
+         * from WEAPON_TYPE directly since that data already exists.
+         */
+        WeaponSizeClass classifyWeaponSizeClass(const RE::TESObjectWEAP* weapon, float weightGame)
+        {
+            if (!weapon) {
+                return WeaponSizeClass::Rifle;
+            }
+            if (weapon->IsMeleeWeapon()) {
+                return WeaponSizeClass::Melee;
+            }
+            if (weightGame <= g_rockConfig.rockWeaponSizeClassPistolMaxWeight) {
+                return WeaponSizeClass::Pistol;
+            }
+            if (weightGame <= g_rockConfig.rockWeaponSizeClassRifleMaxWeight) {
+                return WeaponSizeClass::Rifle;
+            }
+            return WeaponSizeClass::Heavy;
+        }
+
+        float resolveMaxGeneratedSourceDistanceGame(WeaponSizeClass sizeClass)
+        {
+            if (!g_rockConfig.rockWeaponCollisionMaxSourceDistanceEnabled) {
+                return 0.0f;
+            }
+            switch (sizeClass) {
+            case WeaponSizeClass::Melee:
+                return g_rockConfig.rockWeaponCollisionMaxSourceDistanceMelee;
+            case WeaponSizeClass::Pistol:
+                return g_rockConfig.rockWeaponCollisionMaxSourceDistancePistol;
+            case WeaponSizeClass::Heavy:
+                return g_rockConfig.rockWeaponCollisionMaxSourceDistanceHeavy;
+            case WeaponSizeClass::Rifle:
+            default:
+                return g_rockConfig.rockWeaponCollisionMaxSourceDistanceRifle;
+            }
+        }
+
         std::uint64_t makeEquippedWeaponInstanceContentKey(
             const RE::TESObjectWEAP* weapon,
             const RE::TBO_InstanceData* instanceData,
@@ -1006,6 +1049,11 @@ namespace rock
             identity.disabledModCount = objectInstanceWitness.disabledCount;
             if (const auto* weapon = asEquippedWeaponForm(weaponForm)) {
                 identity.instanceContentKey = makeEquippedWeaponInstanceContentKey(weapon, equipData->instanceData, objectInstanceExtra);
+                float weightGame = equipData->instanceData ? equipData->instanceData->GetWeight() : -1.0f;
+                if (weightGame < 0.0f) {
+                    weightGame = weapon->weaponData.weight;
+                }
+                identity.sizeClass = classifyWeaponSizeClass(weapon, weightGame);
             } else {
                 identity.instanceContentKey = makeEquippedWeaponInstanceContentKey(nullptr, equipData->instanceData, objectInstanceExtra);
             }
@@ -2317,7 +2365,8 @@ namespace rock
         }
 
         std::uint64_t observedIdentityKey = 0;
-        const std::uint64_t observedKey = getEquippedWeaponIdentityKey(&observedIdentityKey);
+        WeaponSizeClass observedSizeClass{ WeaponSizeClass::Rifle };
+        const std::uint64_t observedKey = getEquippedWeaponIdentityKey(&observedIdentityKey, &observedSizeClass);
         if (observedKey == 0) {
             if (hasWeaponBody()) {
                 ROCK_LOG_INFO(Weapon, "Weapon identity unavailable - destroying generated weapon bodies");
@@ -2522,7 +2571,8 @@ namespace rock
                         generatedCount);
                 } else {
                     performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::WeaponColliderBuild);
-                    generatedCount = findGeneratedWeaponShapeSources(weaponNode, generatedSources);
+                    const float maxGeneratedSourceDistanceGame = resolveMaxGeneratedSourceDistanceGame(observedSizeClass);
+                    generatedCount = findGeneratedWeaponShapeSources(weaponNode, generatedSources, maxGeneratedSourceDistanceGame);
                     generatedSummary = summarizeGeneratedSources(generatedSources);
                 }
 
@@ -2819,12 +2869,15 @@ namespace rock
     }
 
 
-    std::uint64_t WeaponCollision::getEquippedWeaponIdentityKey(std::uint64_t* outIdentityKey) const
+    std::uint64_t WeaponCollision::getEquippedWeaponIdentityKey(std::uint64_t* outIdentityKey, WeaponSizeClass* outSizeClass) const
     {
         const auto identity = readEquippedWeaponGenerationIdentity();
         const auto identityKey = weapon_generation_identity_policy::makeEquippedWeaponIdentityKey(identity);
         if (outIdentityKey) {
             *outIdentityKey = identityKey;
+        }
+        if (outSizeClass) {
+            *outSizeClass = identity.sizeClass;
         }
 
         return identityKey;
@@ -2854,7 +2907,7 @@ namespace rock
         return visualKey;
     }
 
-    std::size_t WeaponCollision::findGeneratedWeaponShapeSources(RE::NiAVObject* weaponNode, std::vector<GeneratedHullSource>& outSources)
+    std::size_t WeaponCollision::findGeneratedWeaponShapeSources(RE::NiAVObject* weaponNode, std::vector<GeneratedHullSource>& outSources, float maxSourceDistanceGame)
     {
         outSources.clear();
         if (!weaponNode) {
@@ -2882,6 +2935,7 @@ namespace rock
         std::size_t acceptedCandidateCount = 0;
         std::uint32_t totalVisitedShapes = 0;
         std::uint32_t totalExtractedTriangles = 0;
+        std::uint32_t totalCulledForDistance = 0;
         const auto groupingMode = weapon_collision_grouping_policy::sanitizeWeaponCollisionGroupingMode(g_rockConfig.rockWeaponCollisionGroupingMode);
         for (const auto& candidate : candidates) {
             std::vector<GeneratedHullSource> candidateSources;
@@ -2889,6 +2943,7 @@ namespace rock
             candidateExtractedSourceGroups.reserve(64);
             std::uint32_t visitedShapes = 0;
             std::uint32_t extractedTriangles = 0;
+            std::uint32_t culledForDistance = 0;
             findGeneratedWeaponShapeSourcesRecursive(
                 candidate.root,
                 packageDriveRoot,
@@ -2898,7 +2953,10 @@ namespace rock
                 visitedShapes,
                 extractedTriangles,
                 claimedSourceGroups,
-                candidateExtractedSourceGroups);
+                candidateExtractedSourceGroups,
+                maxSourceDistanceGame,
+                culledForDistance);
+            totalCulledForDistance += culledForDistance;
 
             ROCK_LOG_DEBUG(Weapon,
                 "Generated weapon mesh candidate: label='{}' root='{}' addr={:x} packageRoot='{}' grouping={} acceptedShapes={} visitedShapes={} triangles={} hulls={}",
@@ -3043,6 +3101,15 @@ namespace rock
             totalVisitedShapes,
             totalExtractedTriangles,
             outSources.size());
+
+        if (totalCulledForDistance > 0) {
+            ROCK_LOG_WARN(Weapon,
+                "Generated weapon mesh distance filter: culled {} source(s) beyond {:.2f} game units from weapon origin root='{}' (likely misplaced/detached attachment geometry, e.g. laser/holosight nodes authored off-mesh)",
+                totalCulledForDistance,
+                maxSourceDistanceGame,
+                safeNodeName(packageDriveRoot));
+        }
+
         return outSources.size();
     }
 
@@ -3054,7 +3121,9 @@ namespace rock
         std::uint32_t& visitedShapes,
         std::uint32_t& extractedTriangles,
         const std::unordered_set<std::uintptr_t>& claimedSourceGroups,
-        std::unordered_set<std::uintptr_t>& candidateExtractedSourceGroups)
+        std::unordered_set<std::uintptr_t>& candidateExtractedSourceGroups,
+        float maxSourceDistanceGame,
+        std::uint32_t& culledForDistance)
     {
         if (!node || depth > 15) {
             return;
@@ -3110,6 +3179,27 @@ namespace rock
                 ROCK_LOG_TRACE(Weapon, "{}generated mesh source skipped '{}': degenerate point cloud points={}", std::string(depth * 2, ' '), safeNodeName(node),
                     localPoints.size());
                 return;
+            }
+
+            if (maxSourceDistanceGame > 0.0f) {
+                /*
+                 * Distance is measured from the weapon-root origin (0,0,0 in this
+                 * already-converted local space), not from the individual node's
+                 * own transform, so it catches geometry whose NiNode was authored
+                 * detached/displaced from the weapon mesh (common for laser and
+                 * holosight attachments) before any hull/Havok work is spent on it.
+                 */
+                const float centerDistanceGame = weapon_collision_geometry_math::pointCenter(localPoints).Length();
+                if (centerDistanceGame > maxSourceDistanceGame) {
+                    ++culledForDistance;
+                    ROCK_LOG_TRACE(Weapon,
+                        "{}generated mesh source skipped '{}': centerDistance={:.2f} exceeds maxSourceDistance={:.2f} game units from weapon origin",
+                        std::string(depth * 2, ' '),
+                        safeNodeName(node),
+                        centerDistanceGame,
+                        maxSourceDistanceGame);
+                    return;
+                }
             }
 
             const auto sourceSemantic = classifyWeaponPartName(safeNodeName(node));
@@ -3191,7 +3281,9 @@ namespace rock
                         visitedShapes,
                         extractedTriangles,
                         claimedSourceGroups,
-                        candidateExtractedSourceGroups);
+                        candidateExtractedSourceGroups,
+                        maxSourceDistanceGame,
+                        culledForDistance);
                 }
             }
         }

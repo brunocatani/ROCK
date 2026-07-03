@@ -183,6 +183,13 @@ namespace rock
         rockWeaponCollisionSupportFitMaxErrorGameUnits = kDefaultWeaponCollisionSupportFitMaxErrorGameUnits;
         rockWeaponCollisionMaxLinearVelocity = 50.0f;
         rockWeaponCollisionMaxAngularVelocity = 100.0f;
+        rockWeaponCollisionMaxSourceDistanceEnabled = true;
+        rockWeaponCollisionMaxSourceDistanceMelee = 90.0f;
+        rockWeaponCollisionMaxSourceDistancePistol = 20.0f;
+        rockWeaponCollisionMaxSourceDistanceRifle = 45.0f;
+        rockWeaponCollisionMaxSourceDistanceHeavy = 70.0f;
+        rockWeaponSizeClassPistolMaxWeight = 6.0f;
+        rockWeaponSizeClassRifleMaxWeight = 20.0f;
         rockWeaponInteractionProbeRadius = 12.0f;
         rockWeaponFiringGripReattachRadius = 3.0f;
         rockVisualOnlySidearmSupportGripEnabled = true;
@@ -750,6 +757,58 @@ namespace rock
             static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionMaxLinearVelocity", rockWeaponCollisionMaxLinearVelocity));
         rockWeaponCollisionMaxAngularVelocity =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionMaxAngularVelocity", rockWeaponCollisionMaxAngularVelocity));
+        rockWeaponCollisionMaxSourceDistanceEnabled =
+            ini.GetBoolValue(SECTION, "bWeaponCollisionMaxSourceDistanceEnabled", rockWeaponCollisionMaxSourceDistanceEnabled);
+        rockWeaponCollisionMaxSourceDistanceMelee = readClampedFloat(ini,
+            SECTION,
+            "fWeaponCollisionMaxSourceDistanceMelee",
+            rockWeaponCollisionMaxSourceDistanceMelee,
+            90.0f,
+            1.0f,
+            500.0f);
+        rockWeaponCollisionMaxSourceDistancePistol = readClampedFloat(ini,
+            SECTION,
+            "fWeaponCollisionMaxSourceDistancePistol",
+            rockWeaponCollisionMaxSourceDistancePistol,
+            20.0f,
+            1.0f,
+            500.0f);
+        rockWeaponCollisionMaxSourceDistanceRifle = readClampedFloat(ini,
+            SECTION,
+            "fWeaponCollisionMaxSourceDistanceRifle",
+            rockWeaponCollisionMaxSourceDistanceRifle,
+            45.0f,
+            1.0f,
+            500.0f);
+        rockWeaponCollisionMaxSourceDistanceHeavy = readClampedFloat(ini,
+            SECTION,
+            "fWeaponCollisionMaxSourceDistanceHeavy",
+            rockWeaponCollisionMaxSourceDistanceHeavy,
+            70.0f,
+            1.0f,
+            500.0f);
+        rockWeaponSizeClassPistolMaxWeight = readClampedFloat(ini,
+            SECTION,
+            "fWeaponSizeClassPistolMaxWeight",
+            rockWeaponSizeClassPistolMaxWeight,
+            6.0f,
+            0.0f,
+            200.0f);
+        rockWeaponSizeClassRifleMaxWeight = readClampedFloat(ini,
+            SECTION,
+            "fWeaponSizeClassRifleMaxWeight",
+            rockWeaponSizeClassRifleMaxWeight,
+            20.0f,
+            0.0f,
+            200.0f);
+        if (rockWeaponSizeClassPistolMaxWeight >= rockWeaponSizeClassRifleMaxWeight) {
+            ROCK_LOG_WARN(Config,
+                "Invalid weapon size class weight thresholds: fWeaponSizeClassPistolMaxWeight={:.2f} >= fWeaponSizeClassRifleMaxWeight={:.2f} - using defaults",
+                rockWeaponSizeClassPistolMaxWeight,
+                rockWeaponSizeClassRifleMaxWeight);
+            rockWeaponSizeClassPistolMaxWeight = 6.0f;
+            rockWeaponSizeClassRifleMaxWeight = 20.0f;
+        }
         rockWeaponInteractionProbeRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponInteractionProbeRadius", rockWeaponInteractionProbeRadius));
         rockWeaponFiringGripReattachRadius = readClampedFloat(ini,
             REALISTIC_WEAPONS_SECTION,
