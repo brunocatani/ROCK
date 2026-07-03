@@ -54,7 +54,7 @@
 #include "physics-interaction/stash/ShoulderStashDetector.h"
 #include "physics-interaction/stash/ShoulderStashPolicy.h"
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
-#include "physics-interaction/weapon/LooseWeaponGripProbe.h"
+#include "physics-interaction/weapon/LooseWeaponGripZone.h"
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/hand/HandFrame.h"
@@ -2403,10 +2403,6 @@ namespace rock
          * the same frame the generated colliders follow.
          */
         (void)_twoHandedGrip.republishPartCarryWeaponTransform(weaponNode);
-        loose_weapon_grip_probe::captureFromEquippedWeapon(
-            weaponNode,
-            _twoHandedGrip.isFiringHandLeft(),
-            _twoHandedGrip.isManualOwnershipActive());
         const bool rightHandWeaponEquipped = weaponNode != nullptr;
         const bool retainedWeaponCollisionActive =
             _weaponCollision.hasWeaponBody() && _weaponCollision.getCurrentWeaponGenerationKey() != 0;
@@ -6604,7 +6600,12 @@ namespace rock
                 autoEquipState = {};
             }
 
-            loose_weapon_grip_probe::updateHeldLooseWeaponProbe(isLeft, hand.isHoldingLooseWeapon(), hand.getHeldRef());
+            loose_weapon_grip_zone::updateHeldLooseWeapon(
+                isLeft,
+                hand.isHoldingLooseWeapon(),
+                hand.getHeldRef(),
+                hand.getState() == HandState::HeldBody,
+                frame.deltaSeconds);
 
             if (hand.isHolding()) {
                 _softContactRuntime.clearHandForStrongerOwner(isLeft, "held-object");
@@ -6642,6 +6643,7 @@ namespace rock
                     autoEquipState.settledSeconds += (std::max)(0.0f, frame.deltaSeconds);
                     return autoEquipState.settledSeconds >= g_rockConfig.rockGrabbedWeaponAutoEquipSettleSeconds;
                 }();
+                const bool heldWeaponGripZoneEquipSettled = !heldLooseGrenade && loose_weapon_grip_zone::isGripZoneEquipSettled(isLeft);
                 const bool heldWeaponEquipRequested = input_remap_policy::shouldRequestHeldWeaponEquip(input_remap_policy::HeldWeaponEquipInput{
                     .remapEnabled = g_rockConfig.rockInputRemapEnabled,
                     .gameplayInputAllowed = true,
@@ -6652,6 +6654,8 @@ namespace rock
                     .primaryHand = !isLeft,
                     .autoEquipEnabled = g_rockConfig.rockGrabbedWeaponAutoEquipEnabled,
                     .autoEquipSettled = heldWeaponAutoEquipSettled,
+                    .gripZoneEquipEnabled = g_rockConfig.rockGrabbedWeaponGripZoneEquipEnabled,
+                    .gripZoneEquipSettled = heldWeaponGripZoneEquipSettled,
                 });
 
                 auto equipHeldWeaponFromHand = [&](const char* requestReason, const char* logAction) {
@@ -6728,9 +6732,15 @@ namespace rock
                     }
                 } else if (heldWeaponEquipRequested) {
                     const bool triggeredByInput = heldWeaponEquipTriggerPressed;
-                    if (equipHeldWeaponFromHand(
-                            triggeredByInput ? "same-hand-trigger-held-weapon-equip" : "settled-auto-held-weapon-equip",
-                            triggeredByInput ? "trigger" : "auto")) {
+                    const bool triggeredByLegacyAutoEquip =
+                        !triggeredByInput && g_rockConfig.rockGrabbedWeaponAutoEquipEnabled && heldWeaponAutoEquipSettled;
+                    const char* requestReason = triggeredByInput          ? "same-hand-trigger-held-weapon-equip" :
+                                                triggeredByLegacyAutoEquip ? "settled-auto-held-weapon-equip" :
+                                                                             "grip-zone-held-weapon-equip";
+                    const char* logAction = triggeredByInput          ? "trigger" :
+                                            triggeredByLegacyAutoEquip ? "auto" :
+                                                                         "grip-zone";
+                    if (equipHeldWeaponFromHand(requestReason, logAction)) {
                         return;
                     }
                 }

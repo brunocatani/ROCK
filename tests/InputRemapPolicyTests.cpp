@@ -270,6 +270,19 @@ int main()
     auto unsettledAutoEquipInput = autoEquipInput;
     unsettledAutoEquipInput.autoEquipSettled = false;
     ok &= expectFalse("unsettled held weapon does not auto-equip", shouldRequestHeldWeaponEquip(unsettledAutoEquipInput));
+    auto gripZoneEquipInput = heldEquipInput;
+    gripZoneEquipInput.gripZoneEquipEnabled = true;
+    gripZoneEquipInput.gripZoneEquipSettled = true;
+    ok &= expectTrue("palm settled in grip zone equips held weapon when enabled", shouldRequestHeldWeaponEquip(gripZoneEquipInput));
+    auto disabledGripZoneEquipInput = gripZoneEquipInput;
+    disabledGripZoneEquipInput.gripZoneEquipEnabled = false;
+    ok &= expectFalse("grip zone equip disabled does not equip held weapon", shouldRequestHeldWeaponEquip(disabledGripZoneEquipInput));
+    auto offhandGripZoneEquipInput = gripZoneEquipInput;
+    offhandGripZoneEquipInput.primaryHand = false;
+    ok &= expectFalse("offhand palm in grip zone does not equip held weapon", shouldRequestHeldWeaponEquip(offhandGripZoneEquipInput));
+    auto outsideGripZoneEquipInput = gripZoneEquipInput;
+    outsideGripZoneEquipInput.gripZoneEquipSettled = false;
+    ok &= expectFalse("palm outside grip zone does not equip held weapon", shouldRequestHeldWeaponEquip(outsideGripZoneEquipInput));
 
     ok &= expectTrue("enabled suppression requests native hook install", shouldInstallNativeActionSuppressionHook(true, true));
     ok &= expectFalse("disabled remap skips native hook install", shouldInstallNativeActionSuppressionHook(false, true));

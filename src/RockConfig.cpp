@@ -204,6 +204,9 @@ namespace rock
         rockRealisticGrenadeFuseSeconds = 5.0f;
         rockGrabbedWeaponAutoEquipEnabled = false;
         rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
+        rockGrabbedWeaponGripZoneEquipEnabled = true;
+        rockGrabbedWeaponGripZoneEquipRadius = 3.0f;
+        rockGrabbedWeaponGripZoneEquipSettleSeconds = 0.15f;
         rockWeaponSupportGripHandLerpEnabled = true;
         rockWeaponSupportGripHandLerpTimeMin = 0.12f;
         rockWeaponSupportGripHandLerpTimeMax = 0.20f;
@@ -884,6 +887,24 @@ namespace rock
             "fGrabbedWeaponAutoEquipSettleSeconds",
             rockGrabbedWeaponAutoEquipSettleSeconds,
             0.75f,
+            0.0f,
+            5.0f);
+        rockGrabbedWeaponGripZoneEquipEnabled = ini.GetBoolValue(
+            REALISTIC_WEAPONS_SECTION,
+            "bGrabbedWeaponGripZoneEquipEnabled",
+            rockGrabbedWeaponGripZoneEquipEnabled);
+        rockGrabbedWeaponGripZoneEquipRadius = readClampedFloat(ini,
+            REALISTIC_WEAPONS_SECTION,
+            "fGrabbedWeaponGripZoneEquipRadius",
+            rockGrabbedWeaponGripZoneEquipRadius,
+            3.0f,
+            0.25f,
+            30.0f);
+        rockGrabbedWeaponGripZoneEquipSettleSeconds = readClampedFloat(ini,
+            REALISTIC_WEAPONS_SECTION,
+            "fGrabbedWeaponGripZoneEquipSettleSeconds",
+            rockGrabbedWeaponGripZoneEquipSettleSeconds,
+            0.15f,
             0.0f,
             5.0f);
         rockWeaponSupportGripHandLerpEnabled = ini.GetBoolValue(SECTION, "bWeaponSupportGripHandLerpEnabled", rockWeaponSupportGripHandLerpEnabled);

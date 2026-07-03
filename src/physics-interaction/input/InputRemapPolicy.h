@@ -117,6 +117,8 @@ namespace rock::input_remap_policy
         bool primaryHand{ true };
         bool autoEquipEnabled{ false };
         bool autoEquipSettled{ false };
+        bool gripZoneEquipEnabled{ false };
+        bool gripZoneEquipSettled{ false };
     };
 
     struct VirtualHolstersCompatibilityInput
@@ -214,10 +216,19 @@ namespace rock::input_remap_policy
         return input.featureAvailable && input.canUsePrimaryDetachInput && !input.menuInputActive && !input.virtualHolstersOwnsInput;
     }
 
+    /*
+     * Loose-weapon equip fires on an explicit same-hand trigger edge, or on a
+     * primary-hand automatic path: the legacy settle timer (position-blind) or
+     * the firing-grip zone (palm settled inside the grip radius). The grip
+     * zone is the position-aware replacement; the timer remains a config
+     * choice for players who want equip-anywhere behavior.
+     */
     [[nodiscard]] constexpr bool shouldRequestHeldWeaponEquip(const HeldWeaponEquipInput& input)
     {
         return input.remapEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.heldWeaponAtFrameStart && input.heldWeaponNow &&
-               (input.sameHandTriggerPressedEdge || (input.primaryHand && input.autoEquipEnabled && input.autoEquipSettled));
+               (input.sameHandTriggerPressedEdge ||
+                   (input.primaryHand && input.autoEquipEnabled && input.autoEquipSettled) ||
+                   (input.primaryHand && input.gripZoneEquipEnabled && input.gripZoneEquipSettled));
     }
 
     [[nodiscard]] constexpr bool shouldSuppressNativeFavoritesAction(const NativeActionSuppressionInput& input)

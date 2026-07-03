@@ -904,6 +904,7 @@ namespace rock
 
         LooseWeaponPrimaryAttachFrame resolveLooseWeaponPrimaryAttachFrame(
             bool looseWeaponGrab,
+            bool grabbedFromPullCatch,
             bool isLeft,
             const SelectedObject& selection,
             const RE::NiAVObject* rootNode,
@@ -915,6 +916,16 @@ namespace rock
             LooseWeaponPrimaryAttachFrame frame{};
             if (!looseWeaponGrab) {
                 frame.reason = "notLooseWeapon";
+                return frame;
+            }
+            /*
+             * Only far/pull grabs snap the loose weapon to the FRIK offset.
+             * A close grab is a free mesh hold on either hand; the firing-grip
+             * transition happens later through the grip-zone equip path
+             * (loose_weapon_grip_zone), not by forcing the attach at grab.
+             */
+            if (!grabbedFromPullCatch) {
+                frame.reason = "closeGrabFreeHold";
                 return frame;
             }
             if (!isPrimaryHandForWeaponAttach(isLeft)) {
@@ -9303,6 +9314,7 @@ namespace rock
                     desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
                     const auto looseWeaponPrimaryAttachFrame = resolveLooseWeaponPrimaryAttachFrame(
                         looseWeaponGrab,
+                        grabbedFromPullCatch,
                         _isLeft,
                         sel,
                         rootNode,

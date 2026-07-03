@@ -121,6 +121,9 @@ namespace rock
         float rockRealisticGrenadeFuseSeconds = 5.0f;
         bool rockGrabbedWeaponAutoEquipEnabled = false;
         float rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
+        bool rockGrabbedWeaponGripZoneEquipEnabled = true;
+        float rockGrabbedWeaponGripZoneEquipRadius = 3.0f;
+        float rockGrabbedWeaponGripZoneEquipSettleSeconds = 0.15f;
         bool rockWeaponSupportGripHandLerpEnabled = true;
         float rockWeaponSupportGripHandLerpTimeMin = 0.12f;
         float rockWeaponSupportGripHandLerpTimeMax = 0.20f;

@@ -1067,30 +1067,26 @@
 
         if (drawGrabPivots) {
             /*
-             * LooseWeaponGripProbe spike: project the learned firing grip onto
-             * a loosely held weapon so the marker can be judged against the
-             * visible grip in-game. Reuses the two-handed grip marker/axis
-             * roles; the hand gate keeps stale snapshots from drawing after
-             * release.
+             * Loose-weapon grip zone: the FRIK-offset-projected firing grip on
+             * a loosely held weapon, plus the palm-to-grip line the equip gate
+             * measures. Marker grows while the palm is inside the equip
+             * radius. Reuses the two-handed grip marker roles; the hand gate
+             * keeps stale snapshots from drawing after release.
              */
-            for (const bool probeHandIsLeft : { false, true }) {
-                const Hand& probeHand = probeHandIsLeft ? _leftHand : _rightHand;
-                if (!probeHand.isHoldingLooseWeapon()) {
+            for (const bool zoneHandIsLeft : { false, true }) {
+                const Hand& zoneHand = zoneHandIsLeft ? _leftHand : _rightHand;
+                if (!zoneHand.isHoldingLooseWeapon()) {
                     continue;
                 }
-                loose_weapon_grip_probe::ResolvedGripDebug gripProbe{};
-                if (!loose_weapon_grip_probe::tryGetResolvedGripDebug(probeHandIsLeft, gripProbe)) {
+                loose_weapon_grip_zone::GripZoneDebug gripZone{};
+                if (!loose_weapon_grip_zone::tryGetGripZoneDebug(zoneHandIsLeft, gripZone)) {
                     continue;
                 }
                 const auto markerRole =
-                    probeHandIsLeft ? debug::MarkerOverlayRole::LeftWeaponSupportGrip : debug::MarkerOverlayRole::RightWeaponPrimaryGrip;
-                addMarkerPoint(markerRole, gripProbe.gripWorld, 3.0f);
-                addAxisTransform(gripProbe.handTargetWorld,
-                    probeHandIsLeft ? debug::AxisOverlayRole::LeftWeaponSupportGrip : debug::AxisOverlayRole::RightWeaponPrimaryGrip,
-                    gripProbe.gripWorld,
-                    true);
-                if (gripProbe.palmValid) {
-                    addMarkerLine(markerRole, gripProbe.palmWorld, gripProbe.gripWorld);
+                    zoneHandIsLeft ? debug::MarkerOverlayRole::LeftWeaponSupportGrip : debug::MarkerOverlayRole::RightWeaponPrimaryGrip;
+                addMarkerPoint(markerRole, gripZone.gripWorld, gripZone.insideRadius ? 5.0f : 3.0f);
+                if (gripZone.palmValid) {
+                    addMarkerLine(markerRole, gripZone.palmWorld, gripZone.gripWorld);
                 }
             }
         }
