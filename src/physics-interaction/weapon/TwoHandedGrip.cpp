@@ -383,6 +383,16 @@ namespace rock
         return true;
     }
 
+    bool TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(bool isLeft, RE::NiPoint3& outPalmWorld, RE::NiTransform& outHandWorld)
+    {
+        outPalmWorld = {};
+        if (!tryGetHandBoneTransform(isLeft, outHandWorld)) {
+            return false;
+        }
+        outPalmWorld = computeGrabLegacyPalmPivotAWorldFromHandBasis(outHandWorld, isLeft);
+        return true;
+    }
+
     RE::NiPoint3 TwoHandedGrip::worldToWeaponLocal(const RE::NiPoint3& worldPos, const RE::NiAVObject* weaponNode)
     {
         if (!weaponNode) {

@@ -160,6 +160,15 @@ namespace rock
 
         TwoHandedGripHapticEvents consumeHapticEvents();
 
+        /*
+         * Shared palm capture for firing-grip math. Uses the same
+         * root-flattened bone reader and palm-pivot formula as the internal
+         * grip capture (_primaryGripLocal), so external grip-point learners
+         * (LooseWeaponGripProbe) stay definitionally identical to the
+         * two-handed firing grip.
+         */
+        static bool tryCaptureRootFlattenedPalmWorld(bool isLeft, RE::NiPoint3& outPalmWorld, RE::NiTransform& outHandWorld);
+
     private:
         struct LockedHandVisualLerpState
         {

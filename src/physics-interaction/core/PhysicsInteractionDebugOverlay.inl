@@ -1065,6 +1065,36 @@
             }
         }
 
+        if (drawGrabPivots) {
+            /*
+             * LooseWeaponGripProbe spike: project the learned firing grip onto
+             * a loosely held weapon so the marker can be judged against the
+             * visible grip in-game. Reuses the two-handed grip marker/axis
+             * roles; the hand gate keeps stale snapshots from drawing after
+             * release.
+             */
+            for (const bool probeHandIsLeft : { false, true }) {
+                const Hand& probeHand = probeHandIsLeft ? _leftHand : _rightHand;
+                if (!probeHand.isHoldingLooseWeapon()) {
+                    continue;
+                }
+                loose_weapon_grip_probe::ResolvedGripDebug gripProbe{};
+                if (!loose_weapon_grip_probe::tryGetResolvedGripDebug(probeHandIsLeft, gripProbe)) {
+                    continue;
+                }
+                const auto markerRole =
+                    probeHandIsLeft ? debug::MarkerOverlayRole::LeftWeaponSupportGrip : debug::MarkerOverlayRole::RightWeaponPrimaryGrip;
+                addMarkerPoint(markerRole, gripProbe.gripWorld, 3.0f);
+                addAxisTransform(gripProbe.handTargetWorld,
+                    probeHandIsLeft ? debug::AxisOverlayRole::LeftWeaponSupportGrip : debug::AxisOverlayRole::RightWeaponPrimaryGrip,
+                    gripProbe.gripWorld,
+                    true);
+                if (gripProbe.palmValid) {
+                    addMarkerLine(markerRole, gripProbe.palmWorld, gripProbe.gripWorld);
+                }
+            }
+        }
+
         if (drawGrabTransformTelemetry) {
             struct GrabAngularDeltaLogValue
             {

@@ -54,6 +54,7 @@
 #include "physics-interaction/stash/ShoulderStashDetector.h"
 #include "physics-interaction/stash/ShoulderStashPolicy.h"
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
+#include "physics-interaction/weapon/LooseWeaponGripProbe.h"
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/hand/HandFrame.h"
@@ -2402,6 +2403,10 @@ namespace rock
          * the same frame the generated colliders follow.
          */
         (void)_twoHandedGrip.republishPartCarryWeaponTransform(weaponNode);
+        loose_weapon_grip_probe::captureFromEquippedWeapon(
+            weaponNode,
+            _twoHandedGrip.isFiringHandLeft(),
+            _twoHandedGrip.isManualOwnershipActive());
         const bool rightHandWeaponEquipped = weaponNode != nullptr;
         const bool retainedWeaponCollisionActive =
             _weaponCollision.hasWeaponBody() && _weaponCollision.getCurrentWeaponGenerationKey() != 0;
@@ -6596,6 +6601,8 @@ namespace rock
             if (!hand.isHoldingLooseWeapon()) {
                 autoEquipState = {};
             }
+
+            loose_weapon_grip_probe::updateHeldLooseWeaponProbe(isLeft, hand.isHoldingLooseWeapon(), hand.getHeldRef());
 
             if (hand.isHolding()) {
                 _softContactRuntime.clearHandForStrongerOwner(isLeft, "held-object");
