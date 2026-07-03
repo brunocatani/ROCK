@@ -1611,33 +1611,37 @@ namespace rock
 
             // Temporary two-anchor stutter diagnostics (remove after fix).
             {
-                const RE::NiPoint3 basePos = solverInput.weaponWorldTransform.translate;
-                const RE::NiPoint3 solvedDelta = _dbgHasPrevSolved ? sub(stabilizedWeaponWorld.translate, _dbgPrevSolvedPos) : RE::NiPoint3{};
-                float rotDeltaDeg = 0.0f;
-                if (_dbgHasPrevSolved) {
+                const auto rotAngleDeg = [](const RE::NiMatrix3& a, const RE::NiMatrix3& b) {
                     float rotTrace = 0.0f;
                     for (int i = 0; i < 3; ++i) {
                         for (int j = 0; j < 3; ++j) {
-                            rotTrace += _dbgPrevSolvedRot.entry[i][j] * stabilizedWeaponWorld.rotate.entry[i][j];
+                            rotTrace += a.entry[i][j] * b.entry[i][j];
                         }
                     }
                     const float cosAngle = std::clamp((rotTrace - 1.0f) * 0.5f, -1.0f, 1.0f);
-                    rotDeltaDeg = std::acos(cosAngle) * 57.29578f;
-                }
-                (void)basePos;
+                    return std::acos(cosAngle) * 57.29578f;
+                };
+                const RE::NiPoint3 solvedDelta = _dbgHasPrevSolved ? sub(stabilizedWeaponWorld.translate, _dbgPrevSolvedPos) : RE::NiPoint3{};
+                const float rotDeltaDeg = _dbgHasPrevSolved ? rotAngleDeg(_dbgPrevSolvedRot, stabilizedWeaponWorld.rotate) : 0.0f;
+                // _lastSolvedWeaponTransform still holds LAST frame's solve here:
+                // base-vs-last deltas expose anything that moved the weapon node
+                // between the early republish and this solve.
+                const float baseRotDeg = _dbgHasPrevSolved ? rotAngleDeg(_lastSolvedWeaponTransform.rotate, solverInput.weaponWorldTransform.rotate) : 0.0f;
+                const RE::NiPoint3 basePosDelta = sub(solverInput.weaponWorldTransform.translate, _lastSolvedWeaponTransform.translate);
+                const RE::NiPoint3 currentAxisWorld = sub(
+                    transform_math::localPointToWorld(solverInput.weaponWorldTransform, aimGrip.gripLocal),
+                    transform_math::localPointToWorld(solverInput.weaponWorldTransform, pivotGrip.gripLocal));
+                const RE::NiPoint3 desiredAxisWorld = sub(blendedAimTarget, pivotPalm);
+                const float axisLenProduct = std::sqrt(dot(currentAxisWorld, currentAxisWorld)) * std::sqrt(dot(desiredAxisWorld, desiredAxisWorld));
+                const float alignErrDeg = axisLenProduct > 0.0001f ?
+                    std::acos(std::clamp(dot(currentAxisWorld, desiredAxisWorld) / axisLenProduct, -1.0f, 1.0f)) * 57.29578f : 0.0f;
                 ROCK_LOG_INFO(Weapon,
-                    "TwoHandedGrip: 2A-dbg dPos={:.3f} dRot={:.2f}deg "
-                    "pvtHand=({:.3f},{:.3f},{:.3f}) pvtR0=({:.4f},{:.4f},{:.4f}) "
-                    "aimHand=({:.3f},{:.3f},{:.3f}) aimR0=({:.4f},{:.4f},{:.4f}) "
-                    "pivotPalm=({:.3f},{:.3f},{:.3f}) aimPalm=({:.3f},{:.3f},{:.3f}) blend={:.2f} pivot={}",
+                    "TwoHandedGrip: 2A-dbg dPos={:.3f} dRot={:.2f}deg baseRot={:.2f}deg basePos={:.3f} alignErr={:.2f}deg blend={:.2f} pivot={}",
                     std::sqrt(dot(solvedDelta, solvedDelta)),
                     rotDeltaDeg,
-                    pivotHandTransform.translate.x, pivotHandTransform.translate.y, pivotHandTransform.translate.z,
-                    pivotHandTransform.rotate.entry[0][0], pivotHandTransform.rotate.entry[0][1], pivotHandTransform.rotate.entry[0][2],
-                    aimHandTransform.translate.x, aimHandTransform.translate.y, aimHandTransform.translate.z,
-                    aimHandTransform.rotate.entry[0][0], aimHandTransform.rotate.entry[0][1], aimHandTransform.rotate.entry[0][2],
-                    pivotPalm.x, pivotPalm.y, pivotPalm.z,
-                    aimPalm.x, aimPalm.y, aimPalm.z,
+                    baseRotDeg,
+                    std::sqrt(dot(basePosDelta, basePosDelta)),
+                    alignErrDeg,
                     _rotationBlend,
                     pivotIsLeft ? "L" : "R");
                 _dbgPrevSolvedPos = stabilizedWeaponWorld.translate;
