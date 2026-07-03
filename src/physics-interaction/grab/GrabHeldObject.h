@@ -514,6 +514,85 @@ namespace rock::held_object_physics_math
             (history[largestIndex - 1].z + history[largestIndex].z + history[largestIndex + 1].z) / 3.0f);
     }
 
+    /*
+     * Axis-angle rate extraction from two rotation matrices sampled deltaTime
+     * apart. Matrix3 must expose entry[3][3] with world axes stored as
+     * columns (RE::NiMatrix3 layout).
+     */
+    template <class Matrix3, class Vec3>
+    [[nodiscard]] inline Vec3 angularVelocityFromRotationDelta(const Matrix3& previous, const Matrix3& current, float deltaTime)
+    {
+        if (!std::isfinite(deltaTime) || deltaTime <= 0.000001f) {
+            return Vec3{};
+        }
+
+        const float trace =
+            previous.entry[0][0] * current.entry[0][0] + previous.entry[0][1] * current.entry[0][1] + previous.entry[0][2] * current.entry[0][2] +
+            previous.entry[1][0] * current.entry[1][0] + previous.entry[1][1] * current.entry[1][1] + previous.entry[1][2] * current.entry[1][2] +
+            previous.entry[2][0] * current.entry[2][0] + previous.entry[2][1] * current.entry[2][1] + previous.entry[2][2] * current.entry[2][2];
+        const float angle = std::acos(std::clamp((trace - 1.0f) * 0.5f, -1.0f, 1.0f));
+        if (!std::isfinite(angle) || angle <= 0.000001f) {
+            return Vec3{};
+        }
+
+        const auto column = [](const Matrix3& matrix, int index) {
+            return makeVector<Vec3>(matrix.entry[0][index], matrix.entry[1][index], matrix.entry[2][index]);
+        };
+        const auto crossOf = [](const Vec3& lhs, const Vec3& rhs) {
+            return makeVector<Vec3>(
+                lhs.y * rhs.z - lhs.z * rhs.y,
+                lhs.z * rhs.x - lhs.x * rhs.z,
+                lhs.x * rhs.y - lhs.y * rhs.x);
+        };
+        const auto normalizedOrZero = [](const Vec3& value) {
+            const float valueLengthSquared = lengthSquared(value);
+            if (valueLengthSquared <= 1.0e-8f) {
+                return Vec3{};
+            }
+            const float inverseLength = 1.0f / std::sqrt(valueLengthSquared);
+            return makeVector<Vec3>(value.x * inverseLength, value.y * inverseLength, value.z * inverseLength);
+        };
+
+        Vec3 axisSum{};
+        for (int index = 0; index < 3; ++index) {
+            const Vec3 witness = crossOf(column(previous, index), column(current, index));
+            axisSum = makeVector<Vec3>(axisSum.x + witness.x, axisSum.y + witness.y, axisSum.z + witness.z);
+        }
+
+        Vec3 axis = normalizedOrZero(axisSum);
+        if (lengthSquared(axis) <= 0.000001f) {
+            /*
+             * At exactly 180 degrees the cross-sum axis is singular even
+             * though the correction is maximal. Pick the strongest
+             * unchanged-axis witness from previous+current columns so the
+             * release angular history still records the bad half-turn state
+             * instead of outputting zero velocity.
+             */
+            float bestAxisLength = 0.0f;
+            Vec3 bestAxis{};
+            for (int index = 0; index < 3; ++index) {
+                const Vec3 previousColumn = column(previous, index);
+                const Vec3 currentColumn = column(current, index);
+                const Vec3 candidate = makeVector<Vec3>(
+                    previousColumn.x + currentColumn.x,
+                    previousColumn.y + currentColumn.y,
+                    previousColumn.z + currentColumn.z);
+                const float candidateLength = lengthSquared(candidate);
+                if (candidateLength > bestAxisLength) {
+                    bestAxisLength = candidateLength;
+                    bestAxis = candidate;
+                }
+            }
+            axis = normalizedOrZero(bestAxis);
+            if (lengthSquared(axis) <= 0.000001f) {
+                return Vec3{};
+            }
+        }
+
+        const float rate = angle / deltaTime;
+        return makeVector<Vec3>(axis.x * rate, axis.y * rate, axis.z * rate);
+    }
+
     inline float computeHandLerpDuration(float distanceGameUnits, float minTime, float maxTime, float minDistanceGameUnits, float maxDistanceGameUnits)
     {
         if (!std::isfinite(minTime) || minTime < 0.0f) {

@@ -274,50 +274,7 @@ namespace rock
 
         RE::NiPoint3 angularVelocityFromRotationDelta(const RE::NiMatrix3& previous, const RE::NiMatrix3& current, float deltaTime)
         {
-            if (!std::isfinite(deltaTime) || deltaTime <= 0.000001f) {
-                return RE::NiPoint3{};
-            }
-
-            const float trace =
-                previous.entry[0][0] * current.entry[0][0] + previous.entry[0][1] * current.entry[0][1] + previous.entry[0][2] * current.entry[0][2] +
-                previous.entry[1][0] * current.entry[1][0] + previous.entry[1][1] * current.entry[1][1] + previous.entry[1][2] * current.entry[1][2] +
-                previous.entry[2][0] * current.entry[2][0] + previous.entry[2][1] * current.entry[2][1] + previous.entry[2][2] * current.entry[2][2];
-            const float angle = std::acos(std::clamp((trace - 1.0f) * 0.5f, -1.0f, 1.0f));
-            if (!std::isfinite(angle) || angle <= 0.000001f) {
-                return RE::NiPoint3{};
-            }
-
-            RE::NiPoint3 axisSum{};
-            for (int column = 0; column < 3; ++column) {
-                axisSum = axisSum + crossProduct(getMatrixColumn(previous, column), getMatrixColumn(current, column));
-            }
-
-            RE::NiPoint3 axis = normalizeOrZero(axisSum);
-            if (lengthSquared(axis) <= 0.000001f) {
-                /*
-                 * At exactly 180 degrees the cross-sum axis is singular even
-                 * though the correction is maximal. Pick the strongest
-                 * unchanged-axis witness from previous+current columns so the
-                 * release angular history still records the bad half-turn state
-                 * seen in runtime logs instead of outputting zero velocity.
-                 */
-                float bestAxisLength = 0.0f;
-                RE::NiPoint3 bestAxis{};
-                for (int column = 0; column < 3; ++column) {
-                    const RE::NiPoint3 candidate = getMatrixColumn(previous, column) + getMatrixColumn(current, column);
-                    const float candidateLength = lengthSquared(candidate);
-                    if (candidateLength > bestAxisLength) {
-                        bestAxisLength = candidateLength;
-                        bestAxis = candidate;
-                    }
-                }
-                axis = normalizeOrZero(bestAxis);
-                if (lengthSquared(axis) <= 0.000001f) {
-                    return RE::NiPoint3{};
-                }
-            }
-
-            return scalePoint(axis, angle / deltaTime);
+            return held_object_physics_math::angularVelocityFromRotationDelta<RE::NiMatrix3, RE::NiPoint3>(previous, current, deltaTime);
         }
 
         RE::NiPoint3 rotationCorrectionAxisWorld(const RE::NiMatrix3& current, const RE::NiMatrix3& target)
@@ -822,20 +779,6 @@ namespace rock
             return looseWeaponFormFromRef(selection.refr);
         }
 
-        const RE::BGSProjectile* looseWeaponProjectileFromWeapon(const RE::TESObjectWEAP* weapon)
-        {
-            if (!weapon) {
-                return nullptr;
-            }
-            if (weapon->weaponData.rangedData && weapon->weaponData.rangedData->overrideProjectile) {
-                return weapon->weaponData.rangedData->overrideProjectile;
-            }
-            if (weapon->weaponData.ammo && weapon->weaponData.ammo->data.projectile) {
-                return weapon->weaponData.ammo->data.projectile;
-            }
-            return nullptr;
-        }
-
         frik_visual_authority::HandPoseKind looseWeaponPrimaryAttachPoseKind(const RE::TESObjectWEAP* weapon)
         {
             return weapon && weapon->IsMeleeWeapon() ?
@@ -878,19 +821,6 @@ namespace rock
         {
             LooseWeaponPrimaryAttachSource source{};
 
-            const auto throwableOffset = frik_weapon_offset_cache::findThrowableWeaponOffset(
-                weapon,
-                looseWeaponProjectileFromWeapon(weapon));
-            if (throwableOffset.found) {
-                auto* playerNodes = RE::PlayerCharacter::GetSingleton() ? f4vr::getPlayerNodes() : nullptr;
-                source.offset = throwableOffset;
-                source.parent = playerNodes ? playerNodes->primaryMeleeWeaponOffsetNode : nullptr;
-                source.visibilityNode = source.parent;
-                source.missingParentReason = "throwableParentMissing";
-                source.nonFiniteParentReason = "throwableParentNonFinite";
-                return source;
-            }
-
             source.offset = frik_weapon_offset_cache::findPrimaryWeaponOffset(weapon, rootNode);
             if (!source.offset.found) {
                 return source;
@@ -911,7 +841,8 @@ namespace rock
             const RE::NiTransform& rootBodyLocalAtGrab,
             const RE::NiTransform& objectToBodyAtGrab,
             const RE::NiTransform& grabBodyWorldAtGrab,
-            const RE::NiPoint3& grabPivotAWorld)
+            const RE::NiPoint3& grabPivotAWorld,
+            const RE::NiTransform& handWorldAtGrab)
         {
             LooseWeaponPrimaryAttachFrame frame{};
             if (!looseWeaponGrab) {
@@ -919,17 +850,18 @@ namespace rock
                 return frame;
             }
             /*
-             * Only far/pull grabs snap the loose weapon to the FRIK offset.
-             * A close grab is a free mesh hold on either hand; the firing-grip
-             * transition happens later through the grip-zone equip path
-             * (loose_weapon_grip_zone), not by forcing the attach at grab.
+             * Only programmatic arrivals snap the loose weapon to a canonical
+             * attach pose: pull catches snap the primary hand to the FRIK
+             * offset, and force grabs (menu grenade equip, provider ForceGrab)
+             * snap to the FRIK offset when one exists or to a palm-anchored
+             * pose otherwise, so the commit pose never depends on where spawn
+             * physics left the object. A close grab is a free mesh hold on
+             * either hand; the firing-grip transition happens later through
+             * the grip-zone equip path (loose_weapon_grip_zone), not by
+             * forcing the attach at grab.
              */
-            if (!grabbedFromPullCatch) {
+            if (!grabbedFromPullCatch && !selection.forcedArrival) {
                 frame.reason = "closeGrabFreeHold";
-                return frame;
-            }
-            if (!isPrimaryHandForWeaponAttach(isLeft)) {
-                frame.reason = "notPrimaryHand";
                 return frame;
             }
             if (!rootNode || !isFiniteNiTransform(rootNode->world)) {
@@ -937,27 +869,48 @@ namespace rock
                 return frame;
             }
 
-            const auto attachSource = resolveLooseWeaponPrimaryAttachSource(selectedLooseWeaponForm(selection), rootNode);
-            if (!attachSource.offset.found) {
-                frame.reason = attachSource.offset.reason;
+            bool haveDesiredRoot = false;
+            if (isPrimaryHandForWeaponAttach(isLeft)) {
+                const auto attachSource = resolveLooseWeaponPrimaryAttachSource(selectedLooseWeaponForm(selection), rootNode);
+                /*
+                 * FRIK offsets are local transforms written under a live first-person
+                 * attach parent. Loose refs are not equipped, so use only the current
+                 * parent frame and never a stale/hidden equipped-object world transform.
+                 */
+                if (attachSource.offset.found && attachSource.parent && isFiniteNiTransform(attachSource.parent->world)) {
+                    frame.desiredRootWorld = multiplyTransforms(attachSource.parent->world, attachSource.offset.offset);
+                    frame.sourceVisible = f4vr::isNodeVisible(attachSource.visibilityNode);
+                    frame.reason = attachSource.offset.reason;
+                    haveDesiredRoot = true;
+                } else if (!selection.forcedArrival) {
+                    frame.reason = !attachSource.offset.found       ? attachSource.offset.reason :
+                                   !attachSource.parent             ? attachSource.missingParentReason :
+                                                                      attachSource.nonFiniteParentReason;
+                    return frame;
+                }
+            } else if (!selection.forcedArrival) {
+                frame.reason = "notPrimaryHand";
                 return frame;
             }
 
-            /*
-             * FRIK offsets are local transforms written under a live first-person
-             * attach parent. Loose refs are not equipped, so use only the current
-             * parent frame and never a stale/hidden equipped-object world transform.
-             */
-            if (!attachSource.parent) {
-                frame.reason = attachSource.missingParentReason;
-                return frame;
-            }
-            if (!isFiniteNiTransform(attachSource.parent->world)) {
-                frame.reason = attachSource.nonFiniteParentReason;
-                return frame;
+            if (!haveDesiredRoot) {
+                /*
+                 * Palm-anchored fallback for forced arrivals without a usable
+                 * FRIK offset (e.g. grenades): root axes follow the live hand
+                 * basis and the root origin sits on the hand grab pivot. Any
+                 * fixed choice is correct here -- the goal is a deterministic
+                 * commit pose, not a per-weapon tuned grip.
+                 */
+                if (!isFiniteNiTransform(handWorldAtGrab)) {
+                    frame.reason = "nonFiniteHandWorld";
+                    return frame;
+                }
+                frame.desiredRootWorld.rotate = handWorldAtGrab.rotate;
+                frame.desiredRootWorld.translate = grabPivotAWorld;
+                frame.sourceVisible = false;
+                frame.reason = "forcedArrivalPalmPose";
             }
 
-            frame.desiredRootWorld = multiplyTransforms(attachSource.parent->world, attachSource.offset.offset);
             frame.desiredRootWorld.scale =
                 std::isfinite(rootNode->world.scale) && rootNode->world.scale > 0.0001f ? rootNode->world.scale : 1.0f;
             if (!isFiniteNiTransform(frame.desiredRootWorld)) {
@@ -978,9 +931,7 @@ namespace rock
                 return frame;
             }
 
-            frame.sourceVisible = f4vr::isNodeVisible(attachSource.visibilityNode);
             frame.valid = true;
-            frame.reason = attachSource.offset.reason;
             return frame;
         }
 
@@ -9321,7 +9272,8 @@ namespace rock
                         rootBodyLocalAtGrab,
                         objectToBodyAtGrab,
                         grabBodyWorldAtGrab,
-                        grabPivotAWorld);
+                        grabPivotAWorld,
+                        handWorldTransform);
                     looseWeaponPrimaryAttachReason = looseWeaponPrimaryAttachFrame.reason;
                     if (looseWeaponPrimaryAttachFrame.valid) {
                         desiredObjectWorld = looseWeaponPrimaryAttachFrame.desiredObjectWorld;

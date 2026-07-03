@@ -249,6 +249,7 @@ namespace rock::provider
         WeaponPartInteraction = 1u << 15,
         WeaponPartGripState = 1u << 16,
         WeaponPartRecordIdentity = 1u << 17,
+        WeaponPartTargetNonExclusive = 1u << 18,
     };
 
     enum class RockProviderInteractionCommandKindV1 : std::uint32_t
@@ -344,6 +345,14 @@ namespace rock::provider
         MatchSupportRole = 1u << 5,
         MatchSocketRole = 1u << 6,
         MatchActionRole = 1u << 7,
+        /*
+         * Non-exclusive target (feature bit WeaponPartTargetNonExclusive):
+         * grants its grab mode on match without activating whitelist gating,
+         * so unmatched parts keep their normal grip behavior. Omit the flag
+         * for reload-session semantics where every unmatched part grip is
+         * rejected while the whitelist is active.
+         */
+        NonExclusive = 1u << 8,
     };
 
     enum class RockProviderWeaponPartDriveSpaceV1 : std::uint32_t

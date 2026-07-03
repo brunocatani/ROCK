@@ -60,8 +60,7 @@ namespace rock::loose_grenade_runtime
 
     [[nodiscard]] DropResult dropPendingEquipRequestToWorld(
         const PendingEquipRequest& request,
-        const RE::NiPoint3& dropLocation,
-        const RE::NiPoint3* dropRotation);
+        const RE::NiPoint3& dropLocation);
 
     [[nodiscard]] bool createExplosionAtReference(RE::TESObjectREFR* ref, RE::BGSExplosion* explosion);
     [[nodiscard]] bool playPinPulledFeedbackAtReference(RE::TESObjectREFR* ref);

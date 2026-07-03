@@ -28,9 +28,17 @@ namespace rock::weapon_part_runtime
         MatchSupportRole = 1u << 5,
         MatchSocketRole = 1u << 6,
         MatchActionRole = 1u << 7,
+        /*
+         * A non-exclusive target grants its grab mode on match but does not
+         * activate whitelist gating: contacts that match no target keep their
+         * normal grip behavior instead of being blocked. Exclusive targets
+         * (flag absent) preserve the original session semantics where an
+         * active whitelist rejects every unmatched part grip.
+         */
+        NonExclusive = 1u << 8,
     };
 
-    inline constexpr std::uint32_t kImplementedTargetFlags =
+    inline constexpr std::uint32_t kMatcherTargetFlags =
         MatchBodyId |
         MatchSourceRoot |
         MatchSourceName |
@@ -39,6 +47,8 @@ namespace rock::weapon_part_runtime
         MatchSupportRole |
         MatchSocketRole |
         MatchActionRole;
+
+    inline constexpr std::uint32_t kImplementedTargetFlags = kMatcherTargetFlags | NonExclusive;
 
     struct Contact
     {
@@ -122,7 +132,12 @@ namespace rock::weapon_part_runtime
         if ((target.flags & MatchSourceName) != 0 && fixedStringView(target.sourceName).empty()) {
             return false;
         }
-        return (target.flags & kImplementedTargetFlags) != 0;
+        return (target.flags & kMatcherTargetFlags) != 0;
+    }
+
+    inline bool targetIsExclusive(const Target& target)
+    {
+        return (target.flags & NonExclusive) == 0;
     }
 
     inline bool sourceNamesMatch(std::string_view lhs, std::string_view rhs)
@@ -189,7 +204,9 @@ namespace rock::weapon_part_runtime
                 continue;
             }
 
-            result.whitelistActive = true;
+            if (targetIsExclusive(target)) {
+                result.whitelistActive = true;
+            }
             if (!targetMatchesContact(target, contact)) {
                 continue;
             }

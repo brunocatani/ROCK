@@ -95,7 +95,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::HandInputSuppression) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartInteraction) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartGripState) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartRecordIdentity);
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartRecordIdentity) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartTargetNonExclusive);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
@@ -109,7 +110,7 @@ namespace
     constexpr std::uint32_t kImplementedHandInputSuppressionFlagsV1 =
         static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressConfigModeChord) |
         static_cast<std::uint32_t>(RockProviderHandInputSuppressionFlagV1::SuppressOpenVrGameInput);
-    constexpr std::uint32_t kImplementedWeaponPartTargetFlagsV1 =
+    constexpr std::uint32_t kWeaponPartTargetMatcherFlagsV1 =
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchBodyId) |
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceRoot) |
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceName) |
@@ -118,6 +119,9 @@ namespace
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSupportRole) |
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSocketRole) |
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchActionRole);
+    constexpr std::uint32_t kImplementedWeaponPartTargetFlagsV1 =
+        kWeaponPartTargetMatcherFlagsV1 |
+        static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::NonExclusive);
     constexpr std::uint32_t kImplementedWeaponPartDriveMatcherFlagsV1 =
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchBodyId) |
         static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchSourceRoot) |
@@ -459,7 +463,9 @@ namespace
 
     bool hasValidWeaponPartMatcher(std::uint32_t flags, std::uint32_t bodyId, std::uintptr_t sourceRoot, const char* sourceName)
     {
-        if ((flags & ~kImplementedWeaponPartTargetFlagsV1) != 0 || (flags & kImplementedWeaponPartTargetFlagsV1) == 0) {
+        // NonExclusive is a semantics flag, not a matcher: at least one match
+        // flag must still be present for the target to select anything.
+        if ((flags & ~kImplementedWeaponPartTargetFlagsV1) != 0 || (flags & kWeaponPartTargetMatcherFlagsV1) == 0) {
             return false;
         }
         if ((flags & static_cast<std::uint32_t>(RockProviderWeaponPartTargetFlagV1::MatchBodyId)) != 0 && bodyId == kProviderInvalidBodyId) {
@@ -1799,7 +1805,9 @@ namespace rock::provider
         outResolution.grabMode = fromRuntimeGrabMode(resolution.grabMode);
         outResolution.groupId = resolution.groupId;
         outResolution.ownerToken = resolution.ownerToken;
-        return resolution.whitelistActive;
+        // Non-exclusive targets can match without raising whitelistActive, so
+        // a resolution is meaningful whenever either signal is set.
+        return resolution.whitelistActive || resolution.matched;
     }
 
     std::uint32_t copyWeaponPartDriveTargetsV1(

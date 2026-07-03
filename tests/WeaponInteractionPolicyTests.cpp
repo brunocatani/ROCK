@@ -3,6 +3,8 @@
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
+#include "physics-interaction/weapon/WeaponPartMotionPathPolicy.h"
+#include "physics-interaction/weapon/WeaponPartMotionScrubPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRecordIdentityPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
@@ -271,14 +273,6 @@ int main()
     using namespace rock::equipped_weapon_drop_policy;
     ok &= expectEqual("support release normally drops from left hand", sourceForSupportRelease(false), SourceHand::Left);
     ok &= expectEqual("same-frame primary release drops from right hand", sourceForSupportRelease(true), SourceHand::Right);
-    ok &= expectTrue("right-hand release surrenders to VirtualHolsters when source hand owns input",
-        shouldSurrenderReleaseToVirtualHolsters(SourceHand::Right, true));
-    ok &= expectTrue("left-hand release surrenders to VirtualHolsters when source hand owns input",
-        shouldSurrenderReleaseToVirtualHolsters(SourceHand::Left, true));
-    ok &= expectFalse("release does not surrender without VirtualHolsters source-hand ownership",
-        shouldSurrenderReleaseToVirtualHolsters(SourceHand::Right, false));
-    ok &= expectFalse("unknown release source never surrenders to VirtualHolsters",
-        shouldSurrenderReleaseToVirtualHolsters(SourceHand::None, true));
 
     ok &= expectEqual("primary-only carry stashes from the firing hand",
         resolveEquippedWeaponStashCarryHand(true, false, false, false, false),
@@ -516,6 +510,175 @@ int main()
             .partKind = rock::WeaponPartKind::Receiver,
         });
     ok &= expectFalse("weapon part target rejects partial match with wrong semantic part", strictWrongPart.matched);
+
+    // Non-exclusive whitelist targets grant grab modes without activating
+    // whitelist gating for everything else.
+    std::array<Target, 2> mixedExclusivityTargets{};
+    mixedExclusivityTargets[0].active = true;
+    mixedExclusivityTargets[0].ownerToken = 30;
+    mixedExclusivityTargets[0].flags = MatchActionRole | NonExclusive;
+    mixedExclusivityTargets[0].grabMode = GrabMode::AttachOnly;
+    mixedExclusivityTargets[0].actionRole = rock::WeaponActionRole::Bolt;
+
+    const auto nonExclusiveBolt = resolveTarget(mixedExclusivityTargets,
+        Contact{
+            .weaponGenerationKey = 0xABC,
+            .bodyId = 42,
+            .sourceName = "BoltNode",
+            .actionRole = rock::WeaponActionRole::Bolt,
+        });
+    ok &= expectTrue("non-exclusive bolt target matches bolt contact", nonExclusiveBolt.matched);
+    ok &= expectEqual("non-exclusive bolt target grants attach-only", nonExclusiveBolt.grabMode, GrabMode::AttachOnly);
+    ok &= expectFalse("non-exclusive target does not activate whitelist gating", nonExclusiveBolt.whitelistActive);
+
+    const auto nonExclusiveMiss = resolveTarget(mixedExclusivityTargets,
+        Contact{
+            .weaponGenerationKey = 0xABC,
+            .bodyId = 43,
+            .sourceName = "Receiver",
+        });
+    ok &= expectFalse("non-bolt contact stays unmatched under non-exclusive target", nonExclusiveMiss.matched);
+    ok &= expectFalse("non-bolt contact is not whitelist-gated by non-exclusive target", nonExclusiveMiss.whitelistActive);
+
+    mixedExclusivityTargets[1].active = true;
+    mixedExclusivityTargets[1].ownerToken = 31;
+    mixedExclusivityTargets[1].flags = MatchBodyId;
+    mixedExclusivityTargets[1].grabMode = GrabMode::FullTwoHandAuthority;
+    mixedExclusivityTargets[1].bodyId = 77;
+    const auto mixedUnmatched = resolveTarget(mixedExclusivityTargets,
+        Contact{
+            .weaponGenerationKey = 0xABC,
+            .bodyId = 43,
+            .sourceName = "Receiver",
+        });
+    ok &= expectTrue("exclusive target still activates whitelist gating alongside non-exclusive", mixedUnmatched.whitelistActive);
+    ok &= expectFalse("mixed whitelist still fails closed for unmatched contact", mixedUnmatched.matched);
+
+    std::array<Target, 1> semanticsOnlyTarget{};
+    semanticsOnlyTarget[0].active = true;
+    semanticsOnlyTarget[0].ownerToken = 32;
+    semanticsOnlyTarget[0].flags = NonExclusive;
+    semanticsOnlyTarget[0].grabMode = GrabMode::AttachOnly;
+    const auto semanticsOnly = resolveTarget(semanticsOnlyTarget,
+        Contact{
+            .weaponGenerationKey = 0xABC,
+            .bodyId = 42,
+            .sourceName = "BoltNode",
+        });
+    ok &= expectFalse("NonExclusive without a matcher is unusable", semanticsOnly.matched);
+    ok &= expectFalse("NonExclusive without a matcher activates nothing", semanticsOnly.whitelistActive);
+
+    {
+        using namespace rock::weapon_part_motion_path;
+
+        // A synthetic bolt stroke: rest, pull back 6 units along +Y in steps,
+        // hold at peak, return to rest, hold still until completion.
+        RecorderState recorder{};
+        std::array<PoseSample, kMaxRecordingSamples> buffer{};
+        PoseSample rest{};
+        rest.translate = Vec3{ 1.0f, 2.0f, 3.0f };
+
+        StepResult lastResult = StepResult::Idle;
+        for (std::uint32_t i = 0; i <= kRestStableFramesToArm; ++i) {
+            lastResult = step(recorder, buffer.data(), rest, true);
+        }
+        ok &= expectEqual("motion recorder arms after stable rest", lastResult, StepResult::Armed);
+
+        for (int i = 1; i <= 12; ++i) {
+            PoseSample moving = rest;
+            moving.translate.y = rest.translate.y + 0.5f * static_cast<float>(i);
+            lastResult = step(recorder, buffer.data(), moving, true);
+            ok &= expectEqual("motion recorder records the stroke", lastResult, StepResult::RecordingActive);
+        }
+        PoseSample peak = rest;
+        peak.translate.y = rest.translate.y + 6.0f;
+        for (std::uint32_t i = 0; i < 3; ++i) {
+            lastResult = step(recorder, buffer.data(), peak, true);
+        }
+        PoseSample returned = rest;
+        for (int i = 11; i >= 0; --i) {
+            returned.translate.y = rest.translate.y + 0.5f * static_cast<float>(i);
+            lastResult = step(recorder, buffer.data(), returned, true);
+        }
+        for (std::uint32_t i = 0; i < kRestReturnFramesToComplete && lastResult != StepResult::RecordingComplete; ++i) {
+            lastResult = step(recorder, buffer.data(), rest, true);
+        }
+        ok &= expectEqual("motion recorder completes when the part is still again", lastResult, StepResult::RecordingComplete);
+
+        MotionPath path{};
+        ok &= expectTrue("completed stroke builds a motion path", buildPathFromRecording(buffer.data(), recorder.sampleCount, path));
+        ok &= expectTrue("motion path is valid", path.valid);
+        ok &= expectTrue("motion path arc covers the stroke", path.totalArcLength > 5.5f && path.totalArcLength < 6.5f);
+        ok &= expectTrue("motion path starts at rest",
+            std::abs(path.keys[0].translate.y - rest.translate.y) < 0.05f);
+        ok &= expectTrue("motion path is truncated at peak excursion, not the return",
+            std::abs(path.keys[kResampledKeyCount - 1].translate.y - peak.translate.y) < 0.30f);
+
+        // Untrusted (driven) frames discard an in-flight recording.
+        RecorderState drivenRecorder{};
+        for (std::uint32_t i = 0; i <= kRestStableFramesToArm; ++i) {
+            (void)step(drivenRecorder, buffer.data(), rest, true);
+        }
+        PoseSample drivenMove = rest;
+        drivenMove.translate.y += 1.0f;
+        (void)step(drivenRecorder, buffer.data(), drivenMove, true);
+        const auto drivenResult = step(drivenRecorder, buffer.data(), drivenMove, false);
+        ok &= expectEqual("driven frame discards in-flight recording", drivenResult, StepResult::RecordingDiscarded);
+
+        // Micro-jitter strokes never become paths.
+        std::array<PoseSample, 4> jitter{};
+        jitter[0] = rest;
+        jitter[1] = rest;
+        jitter[1].translate.y += 0.15f;
+        jitter[2] = rest;
+        jitter[3] = rest;
+        MotionPath jitterPath{};
+        ok &= expectFalse("stroke below the noise floor builds no path",
+            buildPathFromRecording(jitter.data(), static_cast<std::uint32_t>(jitter.size()), jitterPath));
+
+        MotionPath shorterPath = path;
+        shorterPath.totalArcLength = path.totalArcLength * 0.5f;
+        ok &= expectFalse("shorter stroke does not replace a longer stored path", shouldReplacePath(path, shorterPath));
+        MotionPath longerPath = path;
+        longerPath.totalArcLength = path.totalArcLength * 1.5f;
+        ok &= expectTrue("longer stroke replaces the stored path", shouldReplacePath(path, longerPath));
+        ok &= expectTrue("any valid stroke replaces an empty slot", shouldReplacePath(MotionPath{}, path));
+
+        using namespace rock::weapon_part_motion_scrub;
+        const auto seededAtRest = initialScrubPosition(path, rest.translate);
+        ok &= expectTrue("scrub seeds from the part pose", seededAtRest.valid);
+        ok &= expectTrue("scrub seeded at rest starts near arc zero", seededAtRest.arcPosition < 0.5f);
+        const auto seededAtPeak = initialScrubPosition(path, peak.translate);
+        ok &= expectTrue("scrub seeded at peak lands near full arc",
+            seededAtPeak.valid && seededAtPeak.arcPosition > path.totalArcLength - 0.5f);
+
+        // Pulling the hand along the stroke advances the scrub and the target
+        // follows the path; the per-frame clamp bounds each step.
+        float arc = seededAtRest.arcPosition;
+        Vec3 desired = rest.translate;
+        desired.y += 3.0f;
+        for (int i = 0; i < 8; ++i) {
+            const auto result = scrub(path, arc, desired);
+            ok &= expectTrue("scrub result stays valid", result.valid);
+            ok &= expectTrue("scrub advance respects the per-frame clamp",
+                result.arcPosition - arc <= kMaxScrubAdvancePerFrame + 0.001f);
+            arc = result.arcPosition;
+        }
+        ok &= expectTrue("scrub converges to the hand's point on the stroke", std::abs(arc - 3.0f) < 0.35f);
+        const auto midTarget = scrub(path, arc, desired);
+        ok &= expectTrue("scrub target tracks the path translation",
+            std::abs(midTarget.target.translate.y - desired.y) < 0.35f &&
+            std::abs(midTarget.target.translate.x - rest.translate.x) < 0.10f);
+
+        // Overshooting the stroke clamps at the path end.
+        Vec3 beyond = peak.translate;
+        beyond.y += 10.0f;
+        for (int i = 0; i < 16; ++i) {
+            arc = scrub(path, arc, beyond).arcPosition;
+        }
+        ok &= expectTrue("scrub clamps at the end of the stroke", arc <= path.totalArcLength + 0.001f);
+        ok &= expectTrue("scrub reaches the end of the stroke", arc > path.totalArcLength - 0.35f);
+    }
 
     using namespace rock::hand_collision_suppression_math;
     SuppressionSet<2> postDropSuppression{};

@@ -34,7 +34,6 @@
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/grab/CustomOGA.h"
-#include "physics-interaction/grab/FrikWeaponOffsetCache.h"
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/GrabTelemetry.h"
 #include "physics-interaction/grab/GrabHeldObject.h"
@@ -2592,12 +2591,13 @@ namespace rock
 
             ::rock::provider::RockProviderWeaponPartTargetResolutionV1 weaponPartResolution{};
             const auto weaponPartQuery = makeProviderWeaponPartTargetQuery(leftWeaponContact, _weaponCollision);
-            const bool weaponPartWhitelistActive = leftWeaponContact.valid &&
-                ::rock::provider::resolveWeaponPartTargetV1(weaponPartQuery, weaponPartResolution) &&
-                weaponPartResolution.whitelistActive != 0;
-            if (weaponPartWhitelistActive && weaponPartResolution.matched == 0) {
+            const bool weaponPartResolved = leftWeaponContact.valid &&
+                ::rock::provider::resolveWeaponPartTargetV1(weaponPartQuery, weaponPartResolution);
+            const bool weaponPartWhitelistActive = weaponPartResolved && weaponPartResolution.whitelistActive != 0;
+            const bool weaponPartMatched = weaponPartResolved && weaponPartResolution.matched != 0;
+            if (weaponPartWhitelistActive && !weaponPartMatched) {
                 providerInteractionState.supportGripAllowed = false;
-            } else if (weaponPartWhitelistActive) {
+            } else if (weaponPartMatched) {
                 providerInteractionState.providerPartAuthority = makeWeaponProviderPartAuthority(weaponPartQuery, weaponPartResolution);
             }
 
@@ -2610,12 +2610,13 @@ namespace rock
             WeaponInteractionRuntimeState rightHandInteractionState{};
             ::rock::provider::RockProviderWeaponPartTargetResolutionV1 rightWeaponPartResolution{};
             const auto rightWeaponPartQuery = makeProviderWeaponPartTargetQuery(rightWeaponContact, _weaponCollision);
-            const bool rightWeaponPartWhitelistActive = rightWeaponContact.valid &&
-                ::rock::provider::resolveWeaponPartTargetV1(rightWeaponPartQuery, rightWeaponPartResolution) &&
-                rightWeaponPartResolution.whitelistActive != 0;
-            if (rightWeaponPartWhitelistActive && rightWeaponPartResolution.matched == 0) {
+            const bool rightWeaponPartResolved = rightWeaponContact.valid &&
+                ::rock::provider::resolveWeaponPartTargetV1(rightWeaponPartQuery, rightWeaponPartResolution);
+            const bool rightWeaponPartWhitelistActive = rightWeaponPartResolved && rightWeaponPartResolution.whitelistActive != 0;
+            const bool rightWeaponPartMatched = rightWeaponPartResolved && rightWeaponPartResolution.matched != 0;
+            if (rightWeaponPartWhitelistActive && !rightWeaponPartMatched) {
                 rightHandInteractionState.supportGripAllowed = false;
-            } else if (rightWeaponPartWhitelistActive) {
+            } else if (rightWeaponPartMatched) {
                 rightHandInteractionState.providerPartAuthority = makeWeaponProviderPartAuthority(rightWeaponPartQuery, rightWeaponPartResolution);
             }
 
@@ -2629,7 +2630,7 @@ namespace rock
             const bool leftHandHoldingObject = _leftHand.isHolding();
             auto supportAuthorityMode = resolveEquippedWeaponSupportAuthorityMode(weaponNode);
             bool supportAuthorityProviderOverride = false;
-            if (weaponPartWhitelistActive && weaponPartResolution.matched != 0) {
+            if (weaponPartMatched) {
                 if (weaponPartResolution.grabMode == ::rock::provider::RockProviderWeaponPartGrabModeV1::FullTwoHandAuthority) {
                     supportAuthorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
                     supportAuthorityProviderOverride = true;
@@ -2725,6 +2726,16 @@ namespace rock
 
             if (primaryDetachFeatureAvailable && !inputBlockingMenuActive && primaryGrabDeferredForVirtualHolsters && _twoHandedGrip.canUsePrimaryDetachInput()) {
                 primaryGripInput.held = true;
+            }
+
+            /*
+             * Bolt-drive sandbox motion learning samples engine-animated part
+             * poses BEFORE provider drives apply this frame; nodes still held
+             * by an unexpired drive arrive untrusted so the learner never
+             * records our own authority as animation evidence.
+             */
+            if (g_rockConfig.rockBoltDriveSandboxEnabled && weaponNode) {
+                observeWeaponPartMotion(weaponNode, currentWeaponGenerationKey);
             }
 
             std::array<const RE::NiAVObject*, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> drivenSourceNodes{};
@@ -2858,6 +2869,21 @@ namespace rock
                     queueGripHaptic(false, g_rockConfig.rockWeaponSupportGripHapticIntensity);
                 }
             }
+            /*
+             * Bolt-drive sandbox runs after the grip update so it sees this
+             * frame's fresh attach-only grip reports; its drive targets apply
+             * next frame through the same provider drive path external
+             * consumers use.
+             */
+            if (g_rockConfig.rockBoltDriveSandboxEnabled) {
+                updateWeaponPartDriveSandbox(weaponNode, currentWeaponGenerationKey, frame);
+                _weaponPartDriveSandboxWasEnabled = true;
+            } else if (_weaponPartDriveSandboxWasEnabled) {
+                _weaponPartDriveSandbox.shutdown();
+                _weaponPartMotionLearner.reset();
+                _boltPartCache = {};
+                _weaponPartDriveSandboxWasEnabled = false;
+            }
             const auto equippedWeaponDropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
             if (equippedWeaponDropRequest.requested) {
                 const auto sourceHand = equippedWeaponDropRequest.sourceHand;
@@ -2923,54 +2949,67 @@ namespace rock
                     _pendingEquippedWeaponPrimaryOnlyGripStart = false;
                     clearEquippedWeaponPrimaryInputState();
                 } else {
-                    const bool virtualHolstersOwnsRelease = sourceHandKnown &&
-                                                            input_remap_runtime::requestVirtualHolstersHolsterPress(
-                                                                equipped_weapon_drop_policy::isLeft(sourceHand),
-                                                                dropLoc.x,
-                                                                dropLoc.y,
-                                                                dropLoc.z);
-                    if (equipped_weapon_drop_policy::shouldSurrenderReleaseToVirtualHolsters(sourceHand, virtualHolstersOwnsRelease)) {
+                    /*
+                     * Seamless drop: spawn the world ref at the weapon's last
+                     * visually-published pose (equipped and dropped weapons
+                     * share the same nif) and hand the captured release
+                     * momentum to the spawned physics bodies once they
+                     * resolve. The previous-frame capture is preferred over
+                     * the live node because the release transition restores
+                     * the weapon node to the FRIK hand baseline before this
+                     * code runs.
+                     */
+                    RE::NiPoint3 releaseLoc = dropLoc;
+                    RE::NiPoint3 releaseRot{};
+                    bool hasReleaseRot = false;
+                    if (_equippedWeaponReleaseCapture.hasWeaponWorld) {
+                        releaseLoc = _equippedWeaponReleaseCapture.weaponWorld.translate;
+                        releaseRot = grab_node_info_math::nifskopeMatrixToEulerRadians<RE::NiMatrix3, RE::NiPoint3>(
+                            _equippedWeaponReleaseCapture.weaponWorld.rotate);
+                        hasReleaseRot = true;
+                    } else if (weaponNode && finiteNiTransform(weaponNode->world)) {
+                        releaseLoc = weaponNode->world.translate;
+                        releaseRot = grab_node_info_math::nifskopeMatrixToEulerRadians<RE::NiMatrix3, RE::NiPoint3>(weaponNode->world.rotate);
+                        hasReleaseRot = true;
+                    }
+                    const auto dropResult = weapon_equip_transfer::dropEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedDropInput{
+                        .dropLoc = releaseLoc,
+                        .dropRot = releaseRot,
+                        .hasDropLoc = true,
+                        .hasDropRot = hasReleaseRot,
+                    });
+                    if (dropResult.success) {
+                        armEquippedWeaponDropMomentumHandoff(dropResult.handle, dropResult.droppedFormID, sourceHand);
                         ROCK_LOG_INFO(Weapon,
-                            "Equipped weapon manual release surrendered to VirtualHolsters sourceHand={} releaseLoc=({:.1f},{:.1f},{:.1f})",
+                            "Equipped weapon manual release dropped weapon formID={:08X} dropped={:08X} sourceHand={} dropLoc=({:.1f},{:.1f},{:.1f}) poseCaptured={} stack={} instanceMatch={}",
+                            dropResult.formID,
+                            dropResult.droppedFormID,
                             equipped_weapon_drop_policy::sourceHandName(sourceHand),
-                            dropLoc.x,
-                            dropLoc.y,
-                            dropLoc.z);
+                            releaseLoc.x,
+                            releaseLoc.y,
+                            releaseLoc.z,
+                            hasReleaseRot ? "yes" : "no",
+                            dropResult.stackID,
+                            dropResult.matchedInstanceData ? "yes" : "no");
                     } else {
-                        const auto dropResult = weapon_equip_transfer::dropEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedDropInput{
-                            .dropLoc = dropLoc,
-                            .hasDropLoc = true,
-                        });
-                        if (dropResult.success) {
-                            ROCK_LOG_INFO(Weapon,
-                                "Equipped weapon manual release dropped weapon formID={:08X} dropped={:08X} sourceHand={} dropLoc=({:.1f},{:.1f},{:.1f}) stack={} instanceMatch={}",
-                                dropResult.formID,
-                                dropResult.droppedFormID,
-                                equipped_weapon_drop_policy::sourceHandName(sourceHand),
-                                dropLoc.x,
-                                dropLoc.y,
-                                dropLoc.z,
-                                dropResult.stackID,
-                                dropResult.matchedInstanceData ? "yes" : "no");
-                        } else {
-                            ROCK_LOG_WARN(Weapon,
-                                "Equipped weapon manual release drop failed formID={:08X} reason={} sourceHand={} attempted={} stack={} instanceMatch={}",
-                                dropResult.formID,
-                                weapon_equip_transfer::dropReasonName(dropResult.reason),
-                                equipped_weapon_drop_policy::sourceHandName(sourceHand),
-                                dropResult.attempted ? "yes" : "no",
-                                dropResult.stackID,
-                                dropResult.matchedInstanceData ? "yes" : "no");
-                        }
-                        if (sourceHandKnown &&
-                            (dropResult.success || dropResult.reason == weapon_equip_transfer::DropReason::DroppedReferenceUnavailable)) {
-                            suppressHandCollisionAfterEquippedWeaponDrop(hknp, sourceHand);
-                        }
+                        ROCK_LOG_WARN(Weapon,
+                            "Equipped weapon manual release drop failed formID={:08X} reason={} sourceHand={} attempted={} stack={} instanceMatch={}",
+                            dropResult.formID,
+                            weapon_equip_transfer::dropReasonName(dropResult.reason),
+                            equipped_weapon_drop_policy::sourceHandName(sourceHand),
+                            dropResult.attempted ? "yes" : "no",
+                            dropResult.stackID,
+                            dropResult.matchedInstanceData ? "yes" : "no");
+                    }
+                    if (sourceHandKnown &&
+                        (dropResult.success || dropResult.reason == weapon_equip_transfer::DropReason::DroppedReferenceUnavailable)) {
+                        suppressHandCollisionAfterEquippedWeaponDrop(hknp, sourceHand);
                     }
                     _pendingEquippedWeaponPrimaryOnlyGripStart = false;
                     clearEquippedWeaponPrimaryInputState();
                 }
             }
+            updateEquippedWeaponReleaseCapture(frame, weaponNode);
             const bool weaponSupportGripActive = _twoHandedGrip.isHandPartGripping(true);
             const input_remap_policy::EquippedWeaponPrimaryDetachInputGate updatedPrimaryDetachInputGate{
                 .featureAvailable = primaryDetachFeatureAvailable,
@@ -4822,32 +4861,20 @@ namespace rock
                 return;
             }
 
+            /*
+             * Spawn pose is irrelevant: the force-grab commit snaps the
+             * grenade to a canonical attach pose, so the drop only needs a
+             * location with enough clearance that the spawned body does not
+             * start intersecting the hand collider and get ejected before
+             * the grab commits.
+             */
+            constexpr float kLooseGrenadeSpawnHandClearanceGameUnits = 3.0f;
             RE::NiPoint3 dropLocation = frame.right.grabAnchorWorld;
-            RE::NiPoint3 dropRotation{};
-            const RE::NiPoint3* dropRotationPtr = nullptr;
-            const auto throwableOffset = frik_weapon_offset_cache::findThrowableWeaponOffset(request.weapon, request.runtime.projectile);
-            const char* frikThrowableDropReason = throwableOffset.reason;
-            if (throwableOffset.found) {
-                auto* playerNodes = RE::PlayerCharacter::GetSingleton() ? f4vr::getPlayerNodes() : nullptr;
-                auto* throwableParent = playerNodes ? playerNodes->primaryMeleeWeaponOffsetNode : nullptr;
-                if (throwableParent && finiteNiTransform(throwableParent->world)) {
-                    const RE::NiTransform desiredWorld = transform_math::composeTransforms(throwableParent->world, throwableOffset.offset);
-                    if (finiteNiTransform(desiredWorld)) {
-                        dropLocation = desiredWorld.translate;
-                        dropRotation = grab_node_info_math::nifskopeMatrixToEulerRadians<RE::NiMatrix3, RE::NiPoint3>(desiredWorld.rotate);
-                        dropRotationPtr = &dropRotation;
-                    } else {
-                        frikThrowableDropReason = "throwableWorldNonFinite";
-                    }
-                } else {
-                    frikThrowableDropReason = "throwableParentMissing";
-                }
-            }
+            dropLocation.z -= kLooseGrenadeSpawnHandClearanceGameUnits;
 
             const auto dropResult = loose_grenade_runtime::dropPendingEquipRequestToWorld(
                 request,
-                dropLocation,
-                dropRotationPtr);
+                dropLocation);
             loose_grenade_runtime::discardPendingEquipRequest(request.requestId);
             if (!dropResult.success) {
                 ROCK_LOG_WARN(Hand,
@@ -4866,12 +4893,11 @@ namespace rock
                 .runtime = request.runtime,
             };
             ROCK_LOG_INFO(Hand,
-                "Loose grenade menu drop created ref={:08X} weapon={:08X} stack={} request={} frikThrowableOffset={}",
+                "Loose grenade menu drop created ref={:08X} weapon={:08X} stack={} request={}",
                 dropResult.droppedRef ? dropResult.droppedRef->GetFormID() : 0,
                 request.weapon ? request.weapon->GetFormID() : 0,
                 dropResult.stackId,
-                request.requestId,
-                dropRotationPtr ? throwableOffset.reason : frikThrowableDropReason);
+                request.requestId);
         }
 
         if (!_pendingLooseGrenadeGrab.active) {
@@ -4951,6 +4977,214 @@ namespace rock
             primaryBodyId,
             _pendingLooseGrenadeGrab.requestId);
         _pendingLooseGrenadeGrab = {};
+    }
+
+    void PhysicsInteraction::updateEquippedWeaponReleaseCapture(const PhysicsFrameContext& frame, RE::NiNode* weaponNode)
+    {
+        auto& capture = _equippedWeaponReleaseCapture;
+        if (!_twoHandedGrip.isManualOwnershipActive()) {
+            capture = {};
+            return;
+        }
+
+        /*
+         * Prefer the transform ROCK published this frame (part-carry and
+         * two-handed solves own the weapon node); the live node world is the
+         * FRIK/game-final pose otherwise (primary-only carry).
+         */
+        RE::NiTransform solvedWeaponWorld{};
+        if (_twoHandedGrip.getSolvedWeaponTransform(solvedWeaponWorld) && finiteNiTransform(solvedWeaponWorld)) {
+            capture.weaponWorld = solvedWeaponWorld;
+            capture.hasWeaponWorld = true;
+        } else if (weaponNode && finiteNiTransform(weaponNode->world)) {
+            capture.weaponWorld = weaponNode->world;
+            capture.hasWeaponWorld = true;
+        }
+
+        /*
+         * _heldObjectPlayerSpaceFrame is sampled later in the frame, so this
+         * reads the previous frame's player velocity -- consistent with the
+         * one-frame-old hand deltas it compensates.
+         */
+        const bool playerSpaceWarp = _heldObjectPlayerSpaceFrame.enabled && _heldObjectPlayerSpaceFrame.warp;
+        const RE::NiPoint3 playerVelocityHavok =
+            (_heldObjectPlayerSpaceFrame.enabled && !playerSpaceWarp) ? _heldObjectPlayerSpaceFrame.velocityHavok : RE::NiPoint3{};
+        const bool usableDeltaTime = std::isfinite(frame.deltaSeconds) && frame.deltaSeconds > 0.000001f;
+
+        for (std::size_t handIndex = 0; handIndex < 2; ++handIndex) {
+            const auto& handInput = handIndex == 1 ? frame.left : frame.right;
+            auto& history = capture.handHistories[handIndex];
+            if (!finiteNiTransform(handInput.rawHandWorld)) {
+                continue;
+            }
+            if (playerSpaceWarp) {
+                history.reset();
+            } else if (capture.hasPreviousHandWorld[handIndex] && usableDeltaTime) {
+                const RE::NiPoint3 deltaGameUnits = handInput.rawHandWorld.translate - capture.previousHandWorld[handIndex].translate;
+                const RE::NiPoint3 rawHandVelocityHavok = held_object_physics_math::gameUnitsDeltaToHavokVelocity(
+                    deltaGameUnits,
+                    frame.deltaSeconds,
+                    physics_scale::havokToGame());
+                const RE::NiPoint3 angularVelocity = held_object_physics_math::angularVelocityFromRotationDelta<RE::NiMatrix3, RE::NiPoint3>(
+                    capture.previousHandWorld[handIndex].rotate,
+                    handInput.rawHandWorld.rotate,
+                    frame.deltaSeconds);
+                history.push(rawHandVelocityHavok - playerVelocityHavok, angularVelocity);
+            }
+            capture.previousHandWorld[handIndex] = handInput.rawHandWorld;
+            capture.hasPreviousHandWorld[handIndex] = true;
+        }
+    }
+
+    void PhysicsInteraction::armEquippedWeaponDropMomentumHandoff(
+        const RE::ObjectRefHandle& handle,
+        std::uint32_t droppedFormId,
+        equipped_weapon_drop_policy::SourceHand sourceHand)
+    {
+        _equippedWeaponDropMomentumHandoff = {};
+        if (!handle) {
+            return;
+        }
+
+        // Unknown source (SourceHand::None) falls back to the right hand.
+        const auto& history = _equippedWeaponReleaseCapture.handHistories[equipped_weapon_drop_policy::isLeft(sourceHand) ? 1u : 0u];
+        const RE::NiPoint3 playerVelocityHavok =
+            (_heldObjectPlayerSpaceFrame.enabled && !_heldObjectPlayerSpaceFrame.warp) ? _heldObjectPlayerSpaceFrame.velocityHavok : RE::NiPoint3{};
+        const auto release = equipped_weapon_drop_momentum::composeReleaseVelocity(
+            history,
+            playerVelocityHavok,
+            equipped_weapon_drop_momentum::ReleaseVelocitySettings{
+                .controllerDerivedEnabled = g_rockConfig.rockGrabControllerDerivedThrowVelocityEnabled,
+                .throwMultiplier = g_rockConfig.rockThrowVelocityMultiplier,
+                .maxLinearVelocityHavok = g_rockConfig.rockGrabThrowMaxVelocityHavok,
+                .angularVelocityScale = g_rockConfig.rockGrabThrowAngularVelocityScale,
+                .maxAngularVelocityRadiansPerSecond = g_rockConfig.rockGrabThrowMaxAngularVelocityRadiansPerSecond,
+            });
+        if (!release.hasData) {
+            ROCK_LOG_DEBUG(Weapon,
+                "Equipped weapon drop momentum skipped: no hand motion history sourceHand={} dropped={:08X}",
+                equipped_weapon_drop_policy::sourceHandName(sourceHand),
+                droppedFormId);
+            return;
+        }
+
+        _equippedWeaponDropMomentumHandoff = EquippedWeaponDropMomentumHandoff{
+            .active = true,
+            .handle = handle,
+            .droppedFormId = droppedFormId,
+            .linearVelocityHavok = release.linearVelocityHavok,
+            .angularVelocityRadiansPerSecond = release.angularVelocityRadiansPerSecond,
+        };
+        ROCK_LOG_INFO(Weapon,
+            "Equipped weapon drop momentum armed: dropped={:08X} sourceHand={} linear=({:.3f},{:.3f},{:.3f}) angular=({:.3f},{:.3f},{:.3f})",
+            droppedFormId,
+            equipped_weapon_drop_policy::sourceHandName(sourceHand),
+            release.linearVelocityHavok.x,
+            release.linearVelocityHavok.y,
+            release.linearVelocityHavok.z,
+            release.angularVelocityRadiansPerSecond.x,
+            release.angularVelocityRadiansPerSecond.y,
+            release.angularVelocityRadiansPerSecond.z);
+    }
+
+    void PhysicsInteraction::serviceEquippedWeaponDropMomentumHandoff(const PhysicsFrameContext& frame)
+    {
+        constexpr float kEquippedWeaponDropMomentumMaxSeconds = 1.0f;
+
+        auto& handoff = _equippedWeaponDropMomentumHandoff;
+        if (!handoff.active) {
+            return;
+        }
+        if (!frame.worldReady || !frame.hknpWorld) {
+            return;
+        }
+
+        handoff.elapsedSeconds += (std::max)(0.0f, frame.deltaSeconds);
+        const bool timedOut = handoff.elapsedSeconds >= kEquippedWeaponDropMomentumMaxSeconds;
+
+        const auto droppedRefPtr = handoff.handle.get();
+        auto* droppedRef = droppedRefPtr.get();
+        if (!droppedRef || droppedRef->IsDeleted() || droppedRef->IsDisabled()) {
+            if (timedOut) {
+                ROCK_LOG_WARN(Weapon,
+                    "Equipped weapon drop momentum abandoned: dropped ref unavailable dropped={:08X}",
+                    handoff.droppedFormId);
+                handoff = {};
+            }
+            return;
+        }
+
+        auto* scanWorld = frame.bhkWorld;
+        if (!scanWorld) {
+            auto* cell = droppedRef->GetParentCell();
+            scanWorld = cell ? cell->GetbhkWorld() : nullptr;
+        }
+        if (!scanWorld || !droppedRef->Get3D()) {
+            if (timedOut) {
+                ROCK_LOG_WARN(Weapon,
+                    "Equipped weapon drop momentum timed out waiting for 3D dropped={:08X}",
+                    handoff.droppedFormId);
+                handoff = {};
+            }
+            return;
+        }
+
+        object_physics_body_set::BodySetScanOptions scanOptions{};
+        scanOptions.mode = physics_body_classifier::InteractionMode::ActiveGrab;
+        scanOptions.targetKind = grab_target::Kind::LooseObject;
+        scanOptions.requireSameResolvedRef = true;
+        scanOptions.allowUnresolvedRefBodies = true;
+        scanOptions.allowWeaponRefExpansion = true;
+        scanOptions.maxDepth = g_rockConfig.rockObjectPhysicsTreeMaxDepth;
+
+        const auto bodySet = object_physics_body_set::scanObjectPhysicsBodySet(scanWorld, frame.hknpWorld, droppedRef, scanOptions);
+        const RE::hkVector4f linearVelocity{
+            handoff.linearVelocityHavok.x,
+            handoff.linearVelocityHavok.y,
+            handoff.linearVelocityHavok.z,
+            0.0f,
+        };
+        const RE::hkVector4f angularVelocity{
+            handoff.angularVelocityRadiansPerSecond.x,
+            handoff.angularVelocityRadiansPerSecond.y,
+            handoff.angularVelocityRadiansPerSecond.z,
+            0.0f,
+        };
+        std::uint32_t appliedBodies = 0;
+        for (const auto& record : bodySet.records) {
+            if (!record.accepted || record.bodyId == object_physics_body_set::INVALID_BODY_ID) {
+                continue;
+            }
+            if (havok_runtime::setBodyVelocityDeferred(frame.hknpWorld, record.bodyId, linearVelocity, angularVelocity)) {
+                (void)havok_runtime::activateBody(frame.hknpWorld, record.bodyId);
+                ++appliedBodies;
+            }
+        }
+
+        if (appliedBodies > 0) {
+            ROCK_LOG_INFO(Weapon,
+                "Equipped weapon drop momentum applied: dropped={:08X} bodies={} elapsed={:.3f}s linear=({:.3f},{:.3f},{:.3f}) angular=({:.3f},{:.3f},{:.3f})",
+                handoff.droppedFormId,
+                appliedBodies,
+                handoff.elapsedSeconds,
+                handoff.linearVelocityHavok.x,
+                handoff.linearVelocityHavok.y,
+                handoff.linearVelocityHavok.z,
+                handoff.angularVelocityRadiansPerSecond.x,
+                handoff.angularVelocityRadiansPerSecond.y,
+                handoff.angularVelocityRadiansPerSecond.z);
+            handoff = {};
+            return;
+        }
+
+        if (timedOut) {
+            ROCK_LOG_WARN(Weapon,
+                "Equipped weapon drop momentum timed out resolving physics bodies dropped={:08X} scanned={} accepted={}",
+                handoff.droppedFormId,
+                bodySet.records.size(),
+                bodySet.acceptedCount());
+            handoff = {};
+        }
     }
 
     bool PhysicsInteraction::armHeldLooseGrenade(Hand& hand, const PhysicsFrameContext& frame)
@@ -5671,6 +5905,163 @@ namespace rock
         }
     }
 
+    void PhysicsInteraction::refreshBoltPartCache(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey)
+    {
+        if (_boltPartCache.generationKey == currentWeaponGenerationKey) {
+            return;
+        }
+        _boltPartCache = {};
+        if (!weaponNode || currentWeaponGenerationKey == 0) {
+            return;
+        }
+
+        // One heap-allocating descriptor copy per weapon generation, never per
+        // frame. The cache key is only committed once a descriptor for the
+        // current generation is seen, so an early call before the evidence
+        // snapshot publishes retries next frame instead of caching emptiness.
+        const auto descriptors = _weaponCollision.getProfileEvidenceDescriptors();
+        bool sawCurrentGeneration = false;
+        for (const auto& descriptor : descriptors) {
+            if (!descriptor.valid || descriptor.weaponGenerationKey != currentWeaponGenerationKey) {
+                continue;
+            }
+            sawCurrentGeneration = true;
+            if (descriptor.semantic.actionRole != WeaponActionRole::Bolt) {
+                continue;
+            }
+            auto* node = reinterpret_cast<RE::NiAVObject*>(descriptor.sourceRootAddress);
+            if (!node || descriptor.sourceName.empty() || _boltPartCache.count >= _boltPartCache.entries.size()) {
+                continue;
+            }
+            auto& entry = _boltPartCache.entries[_boltPartCache.count++];
+            entry.bodyId = descriptor.bodyId;
+            entry.node = node;
+            entry.sourceName = {};
+            std::memcpy(
+                entry.sourceName.data(),
+                descriptor.sourceName.data(),
+                (std::min)(descriptor.sourceName.size(), entry.sourceName.size() - 1));
+        }
+        if (sawCurrentGeneration) {
+            _boltPartCache.generationKey = currentWeaponGenerationKey;
+        }
+    }
+
+    void PhysicsInteraction::observeWeaponPartMotion(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey)
+    {
+        if (!weaponNode || currentWeaponGenerationKey == 0) {
+            return;
+        }
+        refreshBoltPartCache(weaponNode, currentWeaponGenerationKey);
+        if (_boltPartCache.generationKey != currentWeaponGenerationKey || _boltPartCache.count == 0) {
+            return;
+        }
+        const auto weaponFormId = currentEquippedWeaponFormId();
+        if (weaponFormId == 0) {
+            return;
+        }
+
+        const RE::NiTransform weaponWorldInverse = transform_math::invertTransform(weaponNode->world);
+        for (std::uint32_t i = 0; i < _boltPartCache.count; ++i) {
+            const auto& entry = _boltPartCache.entries[i];
+            if (!entry.node || !actor_equipment_grab::nodeContainsNode(weaponNode, entry.node, 64)) {
+                continue;
+            }
+            bool driven = false;
+            for (const auto& driveState : _providerWeaponPartDriveNodeStates) {
+                if (driveState.node == entry.node) {
+                    driven = true;
+                    break;
+                }
+            }
+            const RE::NiTransform partWeaponLocal = transform_math::composeTransforms(weaponWorldInverse, entry.node->world);
+            if (!finiteNiTransform(partWeaponLocal)) {
+                continue;
+            }
+            weapon_part_motion_path::PoseSample pose{};
+            pose.translate = weapon_part_motion_path::Vec3{
+                partWeaponLocal.translate.x,
+                partWeaponLocal.translate.y,
+                partWeaponLocal.translate.z,
+            };
+            float quaternion[4]{};
+            transform_math::niRowsToHavokQuaternion(partWeaponLocal.rotate, quaternion);
+            pose.rotate = weapon_part_motion_path::Quat{ quaternion[3], quaternion[0], quaternion[1], quaternion[2] };
+            _weaponPartMotionLearner.observe(WeaponPartMotionLearner::Observation{
+                .weaponFormId = weaponFormId,
+                .sourceName = providerFixedStringView(entry.sourceName.data(), entry.sourceName.size()),
+                .pose = pose,
+                .trusted = !driven,
+            });
+        }
+    }
+
+    void PhysicsInteraction::updateWeaponPartDriveSandbox(
+        RE::NiNode* weaponNode,
+        std::uint64_t currentWeaponGenerationKey,
+        const PhysicsFrameContext& frame)
+    {
+        WeaponPartDriveSandbox::FrameInput input{};
+        input.weaponGenerationKey = currentWeaponGenerationKey;
+        input.weaponFormId = weaponNode && currentWeaponGenerationKey != 0 ? currentEquippedWeaponFormId() : 0;
+
+        RE::NiTransform weaponWorldInverse{};
+        bool hasWeaponInverse = false;
+        if (weaponNode && input.weaponFormId != 0) {
+            weaponWorldInverse = transform_math::invertTransform(weaponNode->world);
+            hasWeaponInverse = true;
+        }
+
+        for (const bool isLeft : { false, true }) {
+            auto& handInput = input.hands[isLeft ? 1u : 0u];
+            HandGripReport report{};
+            _twoHandedGrip.getHandGripReport(isLeft, report);
+            if (!report.active || !report.attachOnly ||
+                static_cast<WeaponActionRole>(report.actionRole) != WeaponActionRole::Bolt ||
+                report.providerOwnerToken != _weaponPartDriveSandbox.ownerToken() ||
+                report.weaponGenerationKey != currentWeaponGenerationKey) {
+                continue;
+            }
+
+            handInput.gripActive = true;
+            handInput.gripSequence = report.gripSequence;
+            handInput.bodyId = report.bodyId;
+
+            // Names and nodes come from the member cache (stable storage) so
+            // the string_views handed to the sandbox outlive this scope.
+            RE::NiAVObject* node = nullptr;
+            if (_boltPartCache.generationKey == currentWeaponGenerationKey) {
+                for (std::uint32_t i = 0; i < _boltPartCache.count; ++i) {
+                    if (_boltPartCache.entries[i].bodyId == report.bodyId) {
+                        node = _boltPartCache.entries[i].node;
+                        handInput.sourceName = providerFixedStringView(
+                            _boltPartCache.entries[i].sourceName.data(),
+                            _boltPartCache.entries[i].sourceName.size());
+                        break;
+                    }
+                }
+            }
+            if (hasWeaponInverse && node && actor_equipment_grab::nodeContainsNode(weaponNode, node, 64)) {
+                const RE::NiTransform partWeaponLocal = transform_math::composeTransforms(weaponWorldInverse, node->world);
+                const RE::NiPoint3 handWeaponLocal = transform_math::worldPointToLocal(
+                    weaponNode->world,
+                    isLeft ? frame.left.grabAnchorWorld : frame.right.grabAnchorWorld);
+                if (finiteNiTransform(partWeaponLocal)) {
+                    handInput.partTranslate = weapon_part_motion_path::Vec3{
+                        partWeaponLocal.translate.x,
+                        partWeaponLocal.translate.y,
+                        partWeaponLocal.translate.z,
+                    };
+                    handInput.partScale = partWeaponLocal.scale;
+                    handInput.handTranslate = weapon_part_motion_path::Vec3{ handWeaponLocal.x, handWeaponLocal.y, handWeaponLocal.z };
+                    handInput.transformsValid = true;
+                }
+            }
+        }
+
+        _weaponPartDriveSandbox.update(input, _weaponPartMotionLearner);
+    }
+
     grab_locomotion_authority_bridge::Output PhysicsInteraction::updateGrabLocomotionAuthorityBridge(float deltaSeconds, bool worldReady)
     {
         const auto& runtime = runtime_state::currentFrame();
@@ -6059,6 +6450,7 @@ namespace rock
         input_remap_runtime::setRightHandHeldWeapon(_rightHand.isHoldingLooseWeapon());
         processProviderInteractionCommands(frame);
         servicePendingLooseGrenadeEquip(frame);
+        serviceEquippedWeaponDropMomentumHandoff(frame);
         updateLooseGrenadeFuses(frame);
         input_remap_runtime::setRightHandHeldWeapon(_rightHand.isHoldingLooseWeapon());
 

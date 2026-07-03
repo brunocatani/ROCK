@@ -26,8 +26,6 @@ namespace rock::input_remap_runtime
     void setProviderOpenVrGameInputSuppressed(bool isLeft, bool suppressed);
     bool isMenuInputActive();
     bool shouldDeferGrabInputForVirtualHolsters(bool isLeft, int buttonId);
-    bool requestVirtualHolstersHolsterPress(bool isLeft, float releaseX, float releaseY, float releaseZ);
-    void advanceVirtualHolstersSyntheticInputFrame();
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event);
     void processPendingWeaponToggleRequests();
 

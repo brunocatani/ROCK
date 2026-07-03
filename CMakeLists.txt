@@ -365,6 +365,13 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKHeldObjectStutterGuardPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKHeldObjectStutterGuardPolicyTests)
 
+  add_executable(ROCKEquippedWeaponDropMomentumPolicyTests
+    "${ROOT_DIR}/tests/EquippedWeaponDropMomentumPolicyTests.cpp"
+  )
+  target_compile_features(ROCKEquippedWeaponDropMomentumPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(ROCKEquippedWeaponDropMomentumPolicyTests PRIVATE ${SOURCE_DIR})
+  add_rock_test(ROCKEquippedWeaponDropMomentumPolicyTests)
+
   add_executable(ROCKGrabLocomotionAuthorityBridgePolicyTests
     "${ROOT_DIR}/tests/GrabLocomotionAuthorityBridgePolicyTests.cpp"
   )
@@ -536,6 +543,7 @@ if(BUILD_ROCK_TESTS)
     ROCKGeneratedBodyContactRegistryPolicyTests
     ROCKHavokTimingFixPolicyTests
     ROCKHeldObjectStutterGuardPolicyTests
+    ROCKEquippedWeaponDropMomentumPolicyTests
     ROCKGrabLocomotionAuthorityBridgePolicyTests
     ROCKHeldBodySetDrivePolicyTests
     ROCKSkinnedBodyResolverPolicyTests

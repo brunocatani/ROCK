@@ -83,7 +83,10 @@ namespace rock::weapon_equip_transfer
     struct EquippedDropInput
     {
         RE::NiPoint3 dropLoc{};
+        // Reference Euler radians (nifskope convention) for the spawned ref.
+        RE::NiPoint3 dropRot{};
         bool hasDropLoc{ false };
+        bool hasDropRot{ false };
     };
 
     struct EquippedDropResult

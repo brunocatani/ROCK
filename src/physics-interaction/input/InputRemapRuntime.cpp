@@ -422,11 +422,6 @@ namespace rock::input_remap_runtime
         std::atomic<std::uint64_t> s_nextVirtualHolstersProbeMs{ 0 };
         std::atomic<bool> s_virtualHolstersResolvedLogged{ false };
         std::atomic<bool> s_virtualHolstersInvalidLogged{ false };
-        std::atomic<bool> s_virtualHolstersSyntheticActive{ false };
-        std::atomic<std::size_t> s_virtualHolstersSyntheticHandIndex{ 0 };
-        std::atomic<std::uint32_t> s_virtualHolstersSyntheticButtonId{ 0 };
-        std::atomic<int> s_virtualHolstersSyntheticFramesRemaining{ 0 };
-        constexpr int kVirtualHolstersSyntheticPressFrames = 12;
 
         [[nodiscard]] VirtualHolstersAPI* resolveVirtualHolstersApi()
         {
@@ -531,26 +526,6 @@ namespace rock::input_remap_runtime
                     settings.virtualHolstersDeferOnlyMatchingButton ? "yes" : "no");
             }
             return defer;
-        }
-
-        void applyVirtualHolstersSyntheticPress(input_remap_policy::Hand hand, vr::VRControllerState_t* state)
-        {
-            if (!state || !s_virtualHolstersSyntheticActive.load(std::memory_order_acquire)) {
-                return;
-            }
-
-            if (controllerIndex(hand) != s_virtualHolstersSyntheticHandIndex.load(std::memory_order_acquire)) {
-                return;
-            }
-
-            const auto buttonId = static_cast<int>(s_virtualHolstersSyntheticButtonId.load(std::memory_order_acquire));
-            const auto buttonMask = input_remap_policy::buttonMask(buttonId);
-            if (buttonMask == 0) {
-                return;
-            }
-
-            state->ulButtonPressed |= buttonMask;
-            state->ulButtonTouched |= buttonMask;
         }
 
         [[nodiscard]] bool shouldDeferWeaponToggleForVirtualHolsters()
@@ -744,7 +719,6 @@ namespace rock::input_remap_runtime
                         clearOpenVrControllerStateForGame(controllerState, controllerStateSize);
                         return result;
                     }
-                    applyVirtualHolstersSyntheticPress(hand, controllerState);
                 }
             }
             return result;
@@ -770,7 +744,6 @@ namespace rock::input_remap_runtime
                         clearOpenVrControllerStateForGame(controllerState, controllerStateSize);
                         return result;
                     }
-                    applyVirtualHolstersSyntheticPress(hand, controllerState);
                 }
             }
             return result;
@@ -1426,63 +1399,6 @@ namespace rock::input_remap_runtime
             buttonId,
             g_rockConfig.rockVirtualHolstersDeferGrabInZone,
             "grab");
-    }
-
-    bool requestVirtualHolstersHolsterPress(bool isLeft, float releaseX, float releaseY, float releaseZ)
-    {
-        /*
-         * VirtualHolsters' newer same-version vtable methods are not a stable ABI.
-         * Use the already-established zone/button prefix and synthesize the configured
-         * button so VirtualHolsters keeps ownership of WeapSort/inventory rules.
-         */
-        (void)releaseX;
-        (void)releaseY;
-        (void)releaseZ;
-
-        const auto settings = makeSettings();
-        if (!settings.virtualHolstersCompatibilityEnabled || settings.realisticWeaponHandlingEnabled || !settings.virtualHolstersDeferGrabInZone) {
-            return false;
-        }
-
-        const auto virtualHolsters = queryVirtualHolstersState(isLeft);
-        if (!virtualHolsters.available || !virtualHolsters.initialized || !virtualHolsters.handInZone) {
-            return false;
-        }
-
-        const auto holsterButtonId = virtualHolsters.holsterButtonId;
-        if (!input_remap_policy::isValidButtonId(holsterButtonId)) {
-            ROCK_LOG_WARN(Input, "VirtualHolsters synthetic holster input skipped: invalid holster button {}", holsterButtonId);
-            return false;
-        }
-
-        s_virtualHolstersSyntheticHandIndex.store(
-            controllerIndex(isLeft ? input_remap_policy::Hand::Left : input_remap_policy::Hand::Right),
-            std::memory_order_release);
-        s_virtualHolstersSyntheticButtonId.store(static_cast<std::uint32_t>(holsterButtonId), std::memory_order_release);
-        s_virtualHolstersSyntheticFramesRemaining.store(kVirtualHolstersSyntheticPressFrames, std::memory_order_release);
-        s_virtualHolstersSyntheticActive.store(true, std::memory_order_release);
-
-        ROCK_LOG_INFO(Input,
-            "Queued VirtualHolsters synthetic holster input hand={} button={} frames={}",
-            isLeft ? "left" : "right",
-            holsterButtonId,
-            kVirtualHolstersSyntheticPressFrames);
-        return true;
-    }
-
-    void advanceVirtualHolstersSyntheticInputFrame()
-    {
-        if (!s_virtualHolstersSyntheticActive.load(std::memory_order_acquire)) {
-            return;
-        }
-
-        const int remaining = s_virtualHolstersSyntheticFramesRemaining.fetch_sub(1, std::memory_order_acq_rel);
-        if (remaining > 1) {
-            return;
-        }
-
-        s_virtualHolstersSyntheticFramesRemaining.store(0, std::memory_order_release);
-        s_virtualHolstersSyntheticActive.store(false, std::memory_order_release);
     }
 
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event)

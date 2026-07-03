@@ -410,6 +410,9 @@ namespace rock::weapon_equip_transfer
         if (input.hasDropLoc) {
             removeData.dropLoc = &input.dropLoc;
         }
+        if (input.hasDropRot) {
+            removeData.rotate = &input.dropRot;
+        }
         removeData.stackData.push_back(stack.stackID);
 
         result.handle = player->RemoveItem(removeData);

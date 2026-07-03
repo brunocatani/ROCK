@@ -27,10 +27,13 @@
 #include "physics-interaction/input/GrabInputIntentPolicy.h"
 #include "physics-interaction/native/PhysicsStepDriveCoordinator.h"
 #include "physics-interaction/stash/ShoulderStashDetector.h"
+#include "physics-interaction/weapon/EquippedWeaponDropMomentum.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponDebug.h"
+#include "physics-interaction/weapon/WeaponPartDriveSandbox.h"
+#include "physics-interaction/weapon/WeaponPartMotionLearner.h"
 #include "api/ROCKProviderApi.h"
 
 namespace RE
@@ -199,6 +202,12 @@ namespace rock
         void updateGrabInput(const PhysicsFrameContext& frame);
         void processProviderInteractionCommands(const PhysicsFrameContext& frame);
         void servicePendingLooseGrenadeEquip(const PhysicsFrameContext& frame);
+        void updateEquippedWeaponReleaseCapture(const PhysicsFrameContext& frame, RE::NiNode* weaponNode);
+        void armEquippedWeaponDropMomentumHandoff(
+            const RE::ObjectRefHandle& handle,
+            std::uint32_t droppedFormId,
+            equipped_weapon_drop_policy::SourceHand sourceHand);
+        void serviceEquippedWeaponDropMomentumHandoff(const PhysicsFrameContext& frame);
         bool armHeldLooseGrenade(Hand& hand, const PhysicsFrameContext& frame);
         void updateLooseGrenadeFuses(const PhysicsFrameContext& frame);
         void clearLooseGrenadeRuntimeState();
@@ -210,6 +219,10 @@ namespace rock
             std::array<const RE::NiAVObject*, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1>& outDrivenSourceNodes);
 
         void restoreExpiredProviderWeaponPartDriveNodes(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
+
+        void refreshBoltPartCache(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
+        void observeWeaponPartMotion(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
+        void updateWeaponPartDriveSandbox(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const PhysicsFrameContext& frame);
 
         grab_locomotion_authority_bridge::Output updateGrabLocomotionAuthorityBridge(float deltaSeconds, bool worldReady);
 
@@ -389,6 +402,38 @@ namespace rock
         static constexpr std::size_t kArmedLooseGrenadeFuseCapacity = 4;
         PendingLooseGrenadeGrabState _pendingLooseGrenadeGrab{};
         std::array<ArmedLooseGrenadeFuseState, kArmedLooseGrenadeFuseCapacity> _armedLooseGrenadeFuses{};
+        /*
+         * Release capture for manually carried equipped weapons: the last
+         * ROCK-visible weapon pose (captured one frame ahead of the release,
+         * because the release transition restores the node to the FRIK hand
+         * baseline before the drop request is consumed) plus per-hand motion
+         * histories for drop momentum. Index 0 = right hand, 1 = left hand.
+         */
+        struct EquippedWeaponReleaseCapture
+        {
+            bool hasWeaponWorld{ false };
+            RE::NiTransform weaponWorld{};
+            std::array<equipped_weapon_drop_momentum::HandMotionHistory<RE::NiPoint3>, 2> handHistories{};
+            std::array<bool, 2> hasPreviousHandWorld{};
+            std::array<RE::NiTransform, 2> previousHandWorld{};
+        };
+        /*
+         * Deferred momentum application for a dropped equipped weapon: the
+         * spawned ref's 3D and physics bodies load asynchronously, so the
+         * captured release velocity is applied on the first frame the body
+         * set resolves and abandoned fail-closed on timeout.
+         */
+        struct EquippedWeaponDropMomentumHandoff
+        {
+            bool active{ false };
+            RE::ObjectRefHandle handle{};
+            std::uint32_t droppedFormId{ 0 };
+            float elapsedSeconds{ 0.0f };
+            RE::NiPoint3 linearVelocityHavok{};
+            RE::NiPoint3 angularVelocityRadiansPerSecond{};
+        };
+        EquippedWeaponReleaseCapture _equippedWeaponReleaseCapture{};
+        EquippedWeaponDropMomentumHandoff _equippedWeaponDropMomentumHandoff{};
         std::atomic<std::uint32_t> _leftWeaponContactBodyId{ INVALID_CONTACT_BODY_ID };
         std::atomic<std::uint32_t> _leftWeaponContactPartKind{ static_cast<std::uint32_t>(WeaponPartKind::Other) };
         std::atomic<std::uint32_t> _leftWeaponContactReloadRole{ static_cast<std::uint32_t>(WeaponReloadRole::None) };
@@ -444,6 +489,30 @@ namespace rock
         };
         std::array<ProviderWeaponPartDriveNodeState, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> _providerWeaponPartDriveNodeStates{};
         std::uint64_t _providerWeaponPartDriveGenerationKey{ 0 };
+
+        /*
+         * Bolt-drive sandbox (rockBoltDriveSandboxEnabled): per-generation
+         * cache of Bolt-classified parts so the per-frame learner/sandbox path
+         * never touches the heap-allocating evidence descriptor copies.
+         * Nodes are non-owning engine pointers valid only while the cached
+         * generation key matches the current weapon generation.
+         */
+        struct BoltPartCacheEntry
+        {
+            std::uint32_t bodyId{ 0x7FFF'FFFFu };
+            RE::NiAVObject* node{ nullptr };
+            std::array<char, 64> sourceName{};
+        };
+        struct BoltPartCache
+        {
+            std::uint64_t generationKey{ 0 };
+            std::uint32_t count{ 0 };
+            std::array<BoltPartCacheEntry, 4> entries{};
+        };
+        BoltPartCache _boltPartCache{};
+        WeaponPartMotionLearner _weaponPartMotionLearner;
+        WeaponPartDriveSandbox _weaponPartDriveSandbox;
+        bool _weaponPartDriveSandboxWasEnabled{ false };
         static constexpr std::size_t kNativePlayerCollisionSuppressionBodyCapacity = 64;
         std::array<std::uint32_t, kNativePlayerCollisionSuppressionBodyCapacity> _nativePlayerCollisionSuppressedBodyIds{};
         std::uint32_t _nativePlayerCollisionSuppressedBodyCount = 0;

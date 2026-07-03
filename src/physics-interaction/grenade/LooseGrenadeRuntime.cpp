@@ -492,8 +492,7 @@ namespace rock::loose_grenade_runtime
 
     DropResult dropPendingEquipRequestToWorld(
         const PendingEquipRequest& request,
-        const RE::NiPoint3& dropLocation,
-        const RE::NiPoint3* dropRotation)
+        const RE::NiPoint3& dropLocation)
     {
         DropResult result{};
         result.stackId = request.stackId;
@@ -520,7 +519,6 @@ namespace rock::loose_grenade_runtime
         RE::TESObjectREFR::RemoveItemData removeData(request.weapon, 1);
         removeData.reason = RE::ITEM_REMOVE_REASON::KDropping;
         removeData.dropLoc = &dropLocation;
-        removeData.rotate = dropRotation;
         removeData.stackData.push_back(stack.stackId);
 
         result.stackId = stack.stackId;

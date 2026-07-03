@@ -4,7 +4,6 @@
 
 namespace RE
 {
-    class BGSProjectile;
     class NiAVObject;
     class TESObjectWEAP;
 }
@@ -23,8 +22,4 @@ namespace rock::frik_weapon_offset_cache
     [[nodiscard]] LookupResult findPrimaryWeaponOffset(
         const RE::TESObjectWEAP* weapon,
         const RE::NiAVObject* weaponRoot);
-
-    [[nodiscard]] LookupResult findThrowableWeaponOffset(
-        const RE::TESObjectWEAP* weapon,
-        const RE::BGSProjectile* projectile);
 }

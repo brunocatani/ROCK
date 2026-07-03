@@ -1168,6 +1168,7 @@ namespace rock
         selection.isFarSelection = false;
         selection.hasHitPoint = true;
         selection.hasHitNormal = true;
+        selection.forcedArrival = true;
 
         if (!selection.isValid()) {
             return false;

@@ -252,7 +252,6 @@ namespace
             g_rockConfig.rockPerformanceProfilerWarmupFrames,
             g_rockConfig.rockPerformanceProfilerOverlayText);
         performance_profiler::FrameScope profilerFrame;
-        input_remap_runtime::advanceVirtualHolstersSyntheticInputFrame();
 
         if (!s_pluginLoaded || !s_frikAvailable) {
             input_remap_runtime::setGameplayInputAllowed(false);

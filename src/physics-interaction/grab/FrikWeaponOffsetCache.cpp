@@ -36,13 +36,6 @@ namespace rock::frik_weapon_offset_cache
         constexpr auto kFrikWeaponOffsetsRelativePath = R"(\My Games\Fallout4VR\FRIK_Config\Weapons_Offsets)";
         constexpr auto kPowerArmorSuffix = "-PowerArmor";
         constexpr auto kLeftHandedSuffix = "-leftHanded";
-        constexpr auto kThrowableSuffix = "-throwable";
-
-        enum class OffsetMode
-        {
-            Weapon,
-            Throwable,
-        };
 
         struct CustomOffsetsSignature
         {
@@ -83,54 +76,6 @@ namespace rock::frik_weapon_offset_cache
                 }
             }
             return true;
-        }
-
-        void appendUniqueCandidate(std::vector<std::string>& candidates, std::string candidate)
-        {
-            if (candidate.empty()) {
-                return;
-            }
-            if (std::ranges::none_of(candidates, [&](const auto& existing) { return existing == candidate; })) {
-                candidates.push_back(std::move(candidate));
-            }
-        }
-
-        void appendModelStemCandidates(std::vector<std::string>& candidates, const char* modelPath)
-        {
-            if (!modelPath || !modelPath[0]) {
-                return;
-            }
-
-            const std::filesystem::path model{ modelPath };
-            const std::string stem = model.stem().string();
-            if (stem.empty()) {
-                return;
-            }
-
-            if (!stem.ends_with('$')) {
-                appendUniqueCandidate(candidates, stem + '$');
-            }
-            appendUniqueCandidate(candidates, stem);
-        }
-
-        [[nodiscard]] std::vector<std::string> throwableNameCandidates(
-            const RE::TESObjectWEAP* weapon,
-            const RE::BGSProjectile* projectile)
-        {
-            std::vector<std::string> candidates;
-            candidates.reserve(8);
-
-            appendModelStemCandidates(candidates, projectile ? projectile->GetModel() : nullptr);
-            appendModelStemCandidates(candidates, weapon && weapon->firstPersonModel ? weapon->firstPersonModel->GetModel() : nullptr);
-            appendModelStemCandidates(candidates, weapon ? weapon->GetModel() : nullptr);
-
-            if (weapon) {
-                const auto fullName = RE::TESFullName::GetFullName(*weapon, false);
-                if (hasText(fullName)) {
-                    appendUniqueCandidate(candidates, std::string(fullName));
-                }
-            }
-            return candidates;
         }
 
         [[nodiscard]] std::filesystem::path customOffsetDirectory()
@@ -347,12 +292,9 @@ namespace rock::frik_weapon_offset_cache
             return weaponName;
         }
 
-        [[nodiscard]] std::string weaponOffsetKey(std::string_view weaponName, OffsetMode mode, bool inPowerArmor, bool leftHanded)
+        [[nodiscard]] std::string weaponOffsetKey(std::string_view weaponName, bool inPowerArmor, bool leftHanded)
         {
             std::string key(weaponName);
-            if (mode == OffsetMode::Throwable) {
-                key += kThrowableSuffix;
-            }
             if (inPowerArmor) {
                 key += kPowerArmorSuffix;
             }
@@ -395,51 +337,18 @@ namespace rock::frik_weapon_offset_cache
             const bool inPowerArmor = f4vr::isInPowerArmor();
             const bool leftHanded = f4vr::isLeftHandedMode();
             if (inPowerArmor) {
-                const auto powerArmorOffset = findOffsetByKeyLocked(cache, weaponOffsetKey(weaponName, OffsetMode::Weapon, true, leftHanded), false);
+                const auto powerArmorOffset = findOffsetByKeyLocked(cache, weaponOffsetKey(weaponName, true, leftHanded), false);
                 if (powerArmorOffset) {
                     return LookupResult{ .found = true, .offset = *powerArmorOffset, .reason = "powerArmorOffset" };
                 }
             }
 
-            const auto offset = findOffsetByKeyLocked(cache, weaponOffsetKey(weaponName, OffsetMode::Weapon, false, leftHanded), false);
+            const auto offset = findOffsetByKeyLocked(cache, weaponOffsetKey(weaponName, false, leftHanded), false);
             if (offset) {
                 return LookupResult{ .found = true, .offset = *offset, .reason = "offset" };
             }
 
             return LookupResult{ .found = false, .reason = "offsetMissing" };
-        }
-
-        [[nodiscard]] LookupResult findThrowableWeaponOffsetLocked(
-            const CacheState& cache,
-            const RE::TESObjectWEAP* weapon,
-            const RE::BGSProjectile* projectile)
-        {
-            if (!cache.loaded) {
-                return LookupResult{ .found = false, .reason = "cacheNotLoaded" };
-            }
-
-            const auto candidates = throwableNameCandidates(weapon, projectile);
-            if (candidates.empty()) {
-                return LookupResult{ .found = false, .reason = "throwableOffsetKeyMissing" };
-            }
-
-            const bool inPowerArmor = f4vr::isInPowerArmor();
-            const bool leftHanded = f4vr::isLeftHandedMode();
-            for (const auto& candidate : candidates) {
-                if (inPowerArmor) {
-                    const auto powerArmorOffset = findOffsetByKeyLocked(cache, weaponOffsetKey(candidate, OffsetMode::Throwable, true, leftHanded), true);
-                    if (powerArmorOffset) {
-                        return LookupResult{ .found = true, .offset = *powerArmorOffset, .reason = "throwablePowerArmorOffset" };
-                    }
-                }
-
-                const auto offset = findOffsetByKeyLocked(cache, weaponOffsetKey(candidate, OffsetMode::Throwable, false, leftHanded), true);
-                if (offset) {
-                    return LookupResult{ .found = true, .offset = *offset, .reason = inPowerArmor ? "throwableFallbackOffset" : "throwableOffset" };
-                }
-            }
-
-            return LookupResult{ .found = false, .reason = "throwableOffsetMissing" };
         }
 
         void refreshIfStale()
@@ -512,17 +421,4 @@ namespace rock::frik_weapon_offset_cache
         return lookup;
     }
 
-    LookupResult findThrowableWeaponOffset(
-        const RE::TESObjectWEAP* weapon,
-        const RE::BGSProjectile* projectile)
-    {
-        if (!weapon && !projectile) {
-            return LookupResult{ .found = false, .reason = "missingThrowableForm" };
-        }
-
-        refreshIfStale();
-
-        std::scoped_lock lock(g_cacheMutex);
-        return findThrowableWeaponOffsetLocked(g_cache, weapon, projectile);
-    }
 }
