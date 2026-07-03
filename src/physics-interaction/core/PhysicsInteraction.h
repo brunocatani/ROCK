@@ -132,6 +132,8 @@ namespace rock
             ::rock::provider::RockProviderBodyContactV1* outContacts,
             std::uint32_t maxContacts) const;
         bool queryProviderEquippedWeaponClassificationV1(::rock::provider::RockProviderWeaponClassificationV1& outResult) const;
+        void fillProviderWeaponPartGripStates(
+            std::array<::rock::provider::RockProviderWeaponPartGripStateV1, 2>& outStates) const;
 
     private:
         bool validateCriticalOffsets() const;

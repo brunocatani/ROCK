@@ -12,6 +12,7 @@
 #include "physics-interaction/object/ExternalBodyRegistry.h"
 #include "physics-interaction/api/InteractionCommandQueue.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "f4vr/F4VRUtils.h"
 
@@ -30,6 +31,16 @@ namespace
                   static_cast<std::uint32_t>(body_zone::BodyZoneKind::RightShoulder));
     static_assert(static_cast<std::uint32_t>(RockProviderBodyZoneSide::Left) ==
                   static_cast<std::uint32_t>(body_zone::BodyZoneSide::Left));
+    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartGripKindV1::FiringGrip) ==
+                  static_cast<std::uint32_t>(weapon_part_grip_report_policy::HandGripKind::FiringGrip));
+    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartGripKindV1::SupportFullAuthority) ==
+                  static_cast<std::uint32_t>(weapon_part_grip_report_policy::HandGripKind::SupportFullAuthority));
+    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartGripKindV1::SupportVisualOnly) ==
+                  static_cast<std::uint32_t>(weapon_part_grip_report_policy::HandGripKind::SupportVisualOnly));
+    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartGripKindV1::PartCarry) ==
+                  static_cast<std::uint32_t>(weapon_part_grip_report_policy::HandGripKind::PartCarry));
+    static_assert(static_cast<std::uint32_t>(RockProviderWeaponPartGripKindV1::AttachOnly) ==
+                  static_cast<std::uint32_t>(weapon_part_grip_report_policy::HandGripKind::AttachOnly));
 
     struct CallbackSlot
     {
@@ -47,6 +58,8 @@ namespace
     std::mutex s_snapshotMutex;
     RockProviderFrameSnapshot s_lastSnapshot{};
     bool s_hasSnapshot{ false };
+    // Published together with the frame snapshot; indexed [right, left].
+    std::array<RockProviderWeaponPartGripStateV1, 2> s_lastPartGripStates{};
 
     std::mutex s_externalBodyMutex;
     ExternalBodyRegistry s_externalBodies{};
@@ -80,7 +93,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::ForceReleaseCommand) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::ThrownDropCommand) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::HandInputSuppression) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartInteraction);
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartInteraction) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartGripState);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
@@ -331,6 +345,23 @@ namespace
         frame.bodyId = isLeft ? snapshot.leftHandBodyId : snapshot.rightHandBodyId;
         frame.state = isLeft ? snapshot.leftHandState : snapshot.rightHandState;
         *outFrame = frame;
+        return true;
+    }
+
+    bool ROCK_PROVIDER_CALL apiGetWeaponPartGripStateV1(RockProviderHand hand, RockProviderWeaponPartGripStateV1* outState)
+    {
+        if (!outState || outState->size != sizeof(RockProviderWeaponPartGripStateV1)) {
+            return false;
+        }
+        if (hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
+            return false;
+        }
+
+        std::scoped_lock lock(s_snapshotMutex);
+        if (!s_hasSnapshot || s_lastSnapshot.providerReady == 0) {
+            return false;
+        }
+        *outState = s_lastPartGripStates[hand == RockProviderHand::Left ? 1u : 0u];
         return true;
     }
 
@@ -1575,6 +1606,7 @@ namespace
         .setWeaponPartDriveTargetsV1 = &apiSetWeaponPartDriveTargetsV1,
         .clearWeaponPartDriveTargetsV1 = &apiClearWeaponPartDriveTargetsV1,
         .queryEquippedWeaponClassificationV1 = &apiQueryEquippedWeaponClassificationV1,
+        .getWeaponPartGripStateV1 = &apiGetWeaponPartGripStateV1,
     };
 }
 
@@ -1597,10 +1629,14 @@ namespace rock::provider
         pi.fillProviderFrameSnapshot(snapshot);
         snapshot.externalBodyCount = currentExternalBodyCount();
 
+        std::array<RockProviderWeaponPartGripStateV1, 2> partGripStates{};
+        pi.fillProviderWeaponPartGripStates(partGripStates);
+
         {
             std::scoped_lock lock(s_snapshotMutex);
             s_lastSnapshot = snapshot;
             s_hasSnapshot = true;
+            s_lastPartGripStates = partGripStates;
         }
 
         std::array<CallbackSlot, 16> callbacks{};

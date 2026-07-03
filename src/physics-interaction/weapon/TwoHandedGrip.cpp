@@ -772,6 +772,33 @@ namespace rock
         grip.partKind = decision.partKind;
         grip.attachmentRoot = supportAttachmentRoot;
         grip.providerPartAuthority = providerPartAuthority.active ? providerPartAuthority : WeaponProviderPartAuthority{};
+        grip.attachOnly = weapon_part_grip_report_policy::providerGrabModeIsAttachOnly(
+            grip.providerPartAuthority.active,
+            grip.providerPartAuthority.grabMode);
+        grip.contactBodyId = decision.bodyId;
+        grip.reloadRole = decision.reloadRole;
+        grip.socketRole = decision.socketRole;
+        grip.actionRole = decision.actionRole;
+        grip.weaponGenerationKey = decision.weaponGenerationKey;
+        grip.gripSequence = ++_gripCaptureSequence;
+        {
+            // The routing decision carries no support role or authored source
+            // name; both come from the evidence descriptor keyed by the
+            // contact body, matching the provider target-query construction.
+            WeaponCollisionProfileEvidenceDescriptor descriptor{};
+            RE::NiAVObject* descriptorSourceNode = nullptr;
+            if (weaponCollision.tryGetProfileEvidenceDescriptorForBodyId(decision.bodyId, descriptor, descriptorSourceNode) &&
+                descriptor.weaponGenerationKey == decision.weaponGenerationKey) {
+                grip.supportRole = descriptor.semantic.supportGripRole;
+                const std::size_t copyLength = (std::min)(descriptor.sourceName.size(), grip.sourceName.size() - 1);
+                std::memcpy(grip.sourceName.data(), descriptor.sourceName.data(), copyLength);
+                grip.sourceName[copyLength] = '\0';
+            } else if (grip.providerPartAuthority.active) {
+                grip.supportRole = static_cast<WeaponSupportGripRole>(grip.providerPartAuthority.supportRole);
+                grip.sourceName = grip.providerPartAuthority.sourceName;
+                grip.sourceName[grip.sourceName.size() - 1] = '\0';
+            }
+        }
 
         RE::NiPoint3 palmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(handTransform, isLeft);
         RE::NiPoint3 palmDir = computePalmNormalFromHandBasis(handTransform, isLeft);
@@ -995,6 +1022,7 @@ namespace rock
         _primaryGripConfidence = 1.0f;
         _primaryHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), primaryTransform);
         _hasFiringHandWeaponLocal = true;
+        _firingGripSequence = ++_gripCaptureSequence;
 
         /*
          * Sidearm hybrid: at capture the firing grip point is the primary palm,
@@ -1285,6 +1313,7 @@ namespace rock
         // from support-release paths where the firing grip never changed.
         _hapticEvents.firingGripAttached = true;
         _hapticEvents.firingGripAttachedHandIsLeft = _firingHandIsLeft;
+        _firingGripSequence = ++_gripCaptureSequence;
         return true;
     }
 
@@ -1293,6 +1322,58 @@ namespace rock
         const EquippedWeaponManualDropRequest request = _equippedWeaponDropRequest;
         _equippedWeaponDropRequest = {};
         return request;
+    }
+
+    void TwoHandedGrip::getHandGripReport(bool isLeft, HandGripReport& outReport) const
+    {
+        outReport = {};
+        const bool isFiringHand = isLeft == _firingHandIsLeft;
+        const WeaponPartGrip& grip = partGrip(isLeft);
+        const auto kind = weapon_part_grip_report_policy::resolveHandGripKind(
+            _state == TwoHandedState::Gripping,
+            _state == TwoHandedState::PartCarry,
+            _state == TwoHandedState::PrimaryOnly,
+            isFiringHand,
+            grip.active,
+            grip.attachOnly,
+            _authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport);
+        outReport.kind = kind;
+        if (kind == weapon_part_grip_report_policy::HandGripKind::None) {
+            return;
+        }
+
+        outReport.active = true;
+        if (kind == weapon_part_grip_report_policy::HandGripKind::FiringGrip) {
+            // In PrimaryOnly the weapon rides the FRIK-native hand attach and
+            // ROCK holds no captured hand-to-weapon frame; hasHandPartLocal
+            // stays false there by design.
+            outReport.gripSequence = _firingGripSequence;
+            outReport.weaponGenerationKey = _activeWeaponGenerationKey;
+            outReport.sourceRoot = reinterpret_cast<std::uintptr_t>(_activeWeaponNode);
+            outReport.hasHandPartLocal = _hasFiringHandWeaponLocal;
+            outReport.handPartLocal = _primaryHandWeaponLocal;
+            return;
+        }
+
+        outReport.attachOnly = grip.attachOnly;
+        outReport.gripSequence = grip.gripSequence;
+        outReport.weaponGenerationKey = grip.weaponGenerationKey != 0 ? grip.weaponGenerationKey : _activeWeaponGenerationKey;
+        outReport.bodyId = grip.contactBodyId;
+        outReport.partKind = static_cast<std::uint32_t>(grip.partKind);
+        outReport.reloadRole = static_cast<std::uint32_t>(grip.reloadRole);
+        outReport.supportRole = static_cast<std::uint32_t>(grip.supportRole);
+        outReport.socketRole = static_cast<std::uint32_t>(grip.socketRole);
+        outReport.actionRole = static_cast<std::uint32_t>(grip.actionRole);
+        outReport.sourceRoot = reinterpret_cast<std::uintptr_t>(grip.attachmentRoot);
+        if (grip.providerPartAuthority.active) {
+            outReport.providerOwnerToken = grip.providerPartAuthority.ownerToken;
+            outReport.providerGroupId = grip.providerPartAuthority.groupId;
+            outReport.providerGrabMode = grip.providerPartAuthority.grabMode;
+        }
+        outReport.hasHandPartLocal = grip.hasSourceFrames || grip.hasHandWeaponLocal;
+        outReport.handPartLocalIsSourceLocal = grip.hasSourceFrames;
+        outReport.handPartLocal = grip.hasSourceFrames ? grip.handSourceLocal : grip.handWeaponLocal;
+        outReport.sourceName = grip.sourceName;
     }
 
     TwoHandedGripHapticEvents TwoHandedGrip::consumeHapticEvents()
@@ -1462,6 +1543,7 @@ namespace rock
             weapon_two_handed_grip_math::alignHandFrameToGripPoint(firingHandTransform, firingPalm, firingGripWorld);
         _primaryHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), adjustedFiringHandTransform);
         _hasFiringHandWeaponLocal = true;
+        _firingGripSequence = ++_gripCaptureSequence;
         _primaryHandVisualLerp = {};
         clearPrimaryDetachVisualAuthority(firingHandIsLeft);
         restoreFrikPrimaryWeaponPose();
@@ -1554,10 +1636,22 @@ namespace rock
                     frameInput.rightHandHoldingObject,
                     freeHandGrip.active)) {
                 if (capturePartGrip(firingHandIsLeft, weaponNode, freeHandDecision, weaponCollision, rightRuntimeState.providerPartAuthority)) {
-                    lockPartGripToWeaponRoot(firingHandIsLeft);
-                    if (supportGrip.active) {
-                        _partCarryGripSeparationWorld = partCarryGripSeparation(weaponNode);
-                        _rotationBlend = 0.0f;
+                    /*
+                     * AttachOnly keeps its authored source frames so the glued
+                     * hand follows provider-driven part motion; it never joins
+                     * the carry solve, so it cannot feed part animation back
+                     * into the carry (the drift lockPartGripToWeaponRoot
+                     * prevents). Separation/blend only matter for a two-anchor
+                     * carry, which needs both grips to hold carry authority.
+                     */
+                    if (freeHandGrip.attachOnly) {
+                        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: free-hand part grip captured as provider attach-only glue");
+                    } else {
+                        lockPartGripToWeaponRoot(firingHandIsLeft);
+                        if (weapon_part_grip_report_policy::partGripCountsAsCarry(supportGrip.active, supportGrip.attachOnly)) {
+                            _partCarryGripSeparationWorld = partCarryGripSeparation(weaponNode);
+                            _rotationBlend = 0.0f;
+                        }
                     }
                 }
             }
@@ -1568,16 +1662,31 @@ namespace rock
             if (supportDecision.kind == WeaponInteractionKind::SupportGrip &&
                 weapon_two_handed_grip_math::canStartSupportGrip(true, frameInput.leftGripHeld, frameInput.leftHandHoldingObject)) {
                 if (capturePartGrip(supportHandIsLeft, weaponNode, supportDecision, weaponCollision, leftRuntimeState.providerPartAuthority)) {
-                    lockPartGripToWeaponRoot(supportHandIsLeft);
-                    if (freeHandGrip.active) {
-                        _partCarryGripSeparationWorld = partCarryGripSeparation(weaponNode);
-                        _rotationBlend = 0.0f;
+                    // Symmetric to the free-hand capture above: attach-only
+                    // glue keeps source frames and stays out of the carry.
+                    if (supportGrip.attachOnly) {
+                        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: support-hand part grip captured as provider attach-only glue");
+                    } else {
+                        lockPartGripToWeaponRoot(supportHandIsLeft);
+                        if (weapon_part_grip_report_policy::partGripCountsAsCarry(freeHandGrip.active, freeHandGrip.attachOnly)) {
+                            _partCarryGripSeparationWorld = partCarryGripSeparation(weaponNode);
+                            _rotationBlend = 0.0f;
+                        }
                     }
                 }
             }
         }
 
-        if (!supportGrip.active && !freeHandGrip.active) {
+        /*
+         * Only carry-authority grips can hold the weapon. When the last carry
+         * grip releases, a remaining AttachOnly glue cannot inherit pivot
+         * authority (never upgrade), so it releases with the carry and the
+         * normal manual-drop request proceeds (fail closed).
+         */
+        if (!weapon_part_grip_report_policy::partGripCountsAsCarry(supportGrip.active, supportGrip.attachOnly) &&
+            !weapon_part_grip_report_policy::partGripCountsAsCarry(freeHandGrip.active, freeHandGrip.attachOnly)) {
+            releasePartGrip(supportHandIsLeft, "carry-authority-lost");
+            releasePartGrip(firingHandIsLeft, "carry-authority-lost");
             requestEquippedWeaponDrop(
                 "part-carry-all-grips-released",
                 lastReleaseWasSupportHand ?
@@ -1586,7 +1695,11 @@ namespace rock
             return;
         }
 
-        if (!partGrip(_partCarryPivotIsLeft).active) {
+        // The pivot must always be a carry-authority grip; after the check
+        // above, the other hand is guaranteed to hold one.
+        if (!weapon_part_grip_report_policy::partGripCountsAsCarry(
+                partGrip(_partCarryPivotIsLeft).active,
+                partGrip(_partCarryPivotIsLeft).attachOnly)) {
             _partCarryPivotIsLeft = !_partCarryPivotIsLeft;
         }
 
@@ -1607,6 +1720,9 @@ namespace rock
         const bool pivotIsLeft = _partCarryPivotIsLeft;
         const WeaponPartGrip& pivotGrip = partGrip(pivotIsLeft);
         const WeaponPartGrip& aimGrip = partGrip(!pivotIsLeft);
+        // An AttachOnly glue never aims the weapon; the carry solves
+        // single-anchor around the pivot and the glue publishes afterwards.
+        const bool aimGripCarries = weapon_part_grip_report_policy::partGripCountsAsCarry(aimGrip.active, aimGrip.attachOnly);
         if (!pivotGrip.active || !pivotGrip.hasHandWeaponLocal) {
             _hasSolvedWeaponTransform = false;
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing part-carry grip because captured hand frames are unavailable");
@@ -1622,7 +1738,7 @@ namespace rock
             return false;
         }
 
-        if (aimGrip.active) {
+        if (aimGripCarries) {
             RE::NiTransform aimHandTransform{};
             if (!tryGetHandBoneTransform(!pivotIsLeft, aimHandTransform)) {
                 _hasSolvedWeaponTransform = false;
@@ -1729,6 +1845,22 @@ namespace rock
                 ROCK_LOG_WARN(Weapon, "TwoHandedGrip: clearing part-carry grip because ROCK part grip hand authority failed");
                 transitionToInactive(false);
                 return false;
+            }
+        }
+
+        /*
+         * AttachOnly glue publishes after the weapon solve so it composes from
+         * this frame's part transforms (including provider part drives applied
+         * earlier in the frame). A glue visual failure only loses the attach;
+         * the carry pivot must survive it.
+         */
+        if (aimGrip.active && aimGrip.attachOnly) {
+            RE::NiTransform attachHandTransform{};
+            const RE::NiTransform* liveAttachHandWorld =
+                tryGetHandBoneTransform(!pivotIsLeft, attachHandTransform) ? &attachHandTransform : nullptr;
+            publishGripHandPoses(!pivotIsLeft);
+            if (!applyPartGripLockedVisual(!pivotIsLeft, weaponNode, dt, liveAttachHandWorld)) {
+                releasePartGrip(!pivotIsLeft, "attach-only-visual-authority-failed");
             }
         }
 

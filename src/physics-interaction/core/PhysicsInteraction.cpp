@@ -2766,11 +2766,13 @@ namespace rock
              */
             std::array<shoulder_stash::Decision, 2> equippedWeaponStashDecisions{};
             {
+                // Carry-authority grips only: an AttachOnly glue hand cannot
+                // carry the weapon, so it can never be the stash carry hand.
                 const auto stashCarryHand = equipped_weapon_drop_policy::resolveEquippedWeaponStashCarryHand(
                     _twoHandedGrip.isPrimaryOnlyActive(),
                     _twoHandedGrip.isPartCarryActive(),
-                    _twoHandedGrip.isHandPartGripping(true),
-                    _twoHandedGrip.isHandPartGripping(false),
+                    _twoHandedGrip.isHandPartCarryGripping(true),
+                    _twoHandedGrip.isHandPartCarryGripping(false),
                     _twoHandedGrip.isFiringHandLeft());
                 const bool stashCarryEligible = g_rockConfig.rockEquippedWeaponShoulderStashEnabled &&
                                                 !inputBlockingMenuActive &&

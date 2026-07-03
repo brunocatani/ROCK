@@ -9,6 +9,7 @@
 #include "physics-interaction/native/PhysicsUtils.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
+#include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 
 #include "RE/NetImmerse/NiAVObject.h"
@@ -88,6 +89,37 @@ namespace rock
         bool rightPartGripCaptured{ false };
     };
 
+    /*
+     * Value snapshot of what one physical hand currently holds on the equipped
+     * weapon, published to the provider API each frame. sourceRoot is a
+     * non-owning engine pointer valid only within the reported
+     * weaponGenerationKey; handPartLocal is the hand frame captured at grip
+     * start, in part-source-local space when handPartLocalIsSourceLocal is set
+     * and weapon-root-local space otherwise.
+     */
+    struct HandGripReport
+    {
+        weapon_part_grip_report_policy::HandGripKind kind{ weapon_part_grip_report_policy::HandGripKind::None };
+        bool active{ false };
+        bool attachOnly{ false };
+        std::uint64_t gripSequence{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t bodyId{ 0x7FFF'FFFFu };
+        std::uint32_t partKind{ 0 };
+        std::uint32_t reloadRole{ 0 };
+        std::uint32_t supportRole{ 0 };
+        std::uint32_t socketRole{ 0 };
+        std::uint32_t actionRole{ 0 };
+        std::uintptr_t sourceRoot{ 0 };
+        std::uint64_t providerOwnerToken{ 0 };
+        std::uint32_t providerGroupId{ 0 };
+        std::uint32_t providerGrabMode{ 0 };
+        bool hasHandPartLocal{ false };
+        bool handPartLocalIsSourceLocal{ false };
+        RE::NiTransform handPartLocal{};
+        std::array<char, kWeaponProviderSourceNameCapacity> sourceName{};
+    };
+
     class TwoHandedGrip
     {
     public:
@@ -121,6 +153,17 @@ namespace rock
         bool isPrimaryOnlyActive() const { return _state == TwoHandedState::PrimaryOnly; }
 
         bool isHandPartGripping(bool isLeft) const { return partGrip(isLeft).active; }
+
+        /*
+         * True only for part grips that hold weapon transform authority.
+         * AttachOnly glue grips report isHandPartGripping (the hand is
+         * occupied) but never count as a carry anchor.
+         */
+        bool isHandPartCarryGripping(bool isLeft) const
+        {
+            const WeaponPartGrip& grip = partGrip(isLeft);
+            return weapon_part_grip_report_policy::partGripCountsAsCarry(grip.active, grip.attachOnly);
+        }
 
         bool isFiringGripOccupied() const { return _state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryOnly; }
 
@@ -157,6 +200,12 @@ namespace rock
         bool republishPartCarryWeaponTransform(RE::NiNode* weaponNode);
 
         EquippedWeaponManualDropRequest consumeEquippedWeaponDropRequest();
+
+        /*
+         * Per-hand grip report for the provider API. Always succeeds; an idle
+         * hand reports kind None. Main-thread only (reads live grip state).
+         */
+        void getHandGripReport(bool isLeft, HandGripReport& outReport) const;
 
         TwoHandedGripHapticEvents consumeHapticEvents();
 
@@ -204,6 +253,26 @@ namespace rock
             WeaponGripPoseId gripPose{ WeaponGripPoseId::BarrelWrap };
             WeaponPartKind partKind{ WeaponPartKind::Other };
             WeaponProviderPartAuthority providerPartAuthority{};
+            /*
+             * AttachOnly glue: the hand stays visually attached to the part
+             * (source frames survive part-carry so it follows provider-driven
+             * part motion) but the grip never holds weapon pivot authority.
+             * Resolved once at capture from the provider whitelist grab mode.
+             */
+            bool attachOnly{ false };
+            /*
+             * Contact identity captured at grip start for the provider API
+             * grip report. Distinct from providerPartAuthority, which only
+             * exists when a consumer whitelist matched the part.
+             */
+            std::uint32_t contactBodyId{ 0x7FFF'FFFFu };
+            WeaponReloadRole reloadRole{ WeaponReloadRole::None };
+            WeaponSupportGripRole supportRole{ WeaponSupportGripRole::None };
+            WeaponSocketRole socketRole{ WeaponSocketRole::None };
+            WeaponActionRole actionRole{ WeaponActionRole::None };
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint64_t gripSequence{ 0 };
+            std::array<char, kWeaponProviderSourceNameCapacity> sourceName{};
             std::array<float, 15> fingerPose{};
             std::array<float, 5> fingerSplayRadians{};
             std::array<RE::NiTransform, 15> fingerLocalTransforms{};
@@ -349,6 +418,14 @@ namespace rock
         bool _firingHandIsLeft{ false };
 
         std::array<WeaponPartGrip, 2> _partGrips{};
+
+        /*
+         * Monotonic capture sequences so API consumers can detect a re-grab
+         * of the same part without frame-edge callbacks. One counter for part
+         * grips (stamped per capture) and one for fresh firing-grip captures.
+         */
+        std::uint64_t _gripCaptureSequence{ 0 };
+        std::uint64_t _firingGripSequence{ 0 };
 
         /*
          * Which active part grip anchors the part-carry solve. The older grip

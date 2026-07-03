@@ -45,6 +45,45 @@
         outSnapshot.leftHandState = providerHandStateFlags(_leftHand, true);
         outSnapshot.offhandReservation = ::rock::provider::currentOffhandReservation();
     }
+    void PhysicsInteraction::fillProviderWeaponPartGripStates(
+        std::array<::rock::provider::RockProviderWeaponPartGripStateV1, 2>& outStates) const
+    {
+        // Indexed [right, left] to match the getter's hand mapping. Published
+        // after the grip update each frame, so consumers always read this
+        // frame's grip decision alongside the frame snapshot.
+        for (const bool isLeft : { false, true }) {
+            auto& outState = outStates[isLeft ? 1u : 0u];
+            outState = {};
+            outState.hand = isLeft ? ::rock::provider::RockProviderHand::Left : ::rock::provider::RockProviderHand::Right;
+
+            HandGripReport report{};
+            _twoHandedGrip.getHandGripReport(isLeft, report);
+            outState.gripKind = static_cast<::rock::provider::RockProviderWeaponPartGripKindV1>(report.kind);
+            outState.active = report.active ? 1u : 0u;
+            outState.attachOnly = report.attachOnly ? 1u : 0u;
+            outState.gripSequence = report.gripSequence;
+            outState.weaponGenerationKey = report.weaponGenerationKey;
+            outState.bodyId = report.bodyId;
+            outState.partKind = report.partKind;
+            outState.reloadRole = report.reloadRole;
+            outState.supportRole = report.supportRole;
+            outState.socketRole = report.socketRole;
+            outState.actionRole = report.actionRole;
+            outState.sourceRoot = report.sourceRoot;
+            outState.providerOwnerToken = report.providerOwnerToken;
+            outState.providerGroupId = report.providerGroupId;
+            outState.providerGrabMode = report.providerGrabMode;
+            outState.hasHandPartLocal = report.hasHandPartLocal ? 1u : 0u;
+            outState.handPartLocalSpace = report.handPartLocalIsSourceLocal ?
+                ::rock::provider::RockProviderWeaponPartGripLocalSpaceV1::PartSourceLocal :
+                ::rock::provider::RockProviderWeaponPartGripLocalSpaceV1::WeaponRootLocal;
+            fillProviderTransform(report.handPartLocal, outState.handPartLocal);
+            static_assert(sizeof(outState.sourceName) == std::tuple_size_v<decltype(report.sourceName)>);
+            std::memcpy(outState.sourceName, report.sourceName.data(), sizeof(outState.sourceName));
+            outState.sourceName[sizeof(outState.sourceName) - 1] = '\0';
+        }
+    }
+
     bool PhysicsInteraction::queryProviderWeaponContactAtPoint(
         const ::rock::provider::RockProviderWeaponContactQuery& query,
         ::rock::provider::RockProviderWeaponContactResult& outResult) const

@@ -247,6 +247,7 @@ namespace rock::provider
         ThrownDropCommand = 1u << 13,
         HandInputSuppression = 1u << 14,
         WeaponPartInteraction = 1u << 15,
+        WeaponPartGripState = 1u << 16,
     };
 
     enum class RockProviderInteractionCommandKindV1 : std::uint32_t
@@ -348,6 +349,25 @@ namespace rock::provider
     {
         WeaponRootLocal = 0,
         SourceParentLocal = 1,
+    };
+
+    /*
+     * What a physical hand currently holds on the equipped weapon.
+     * FiringGrip: the hand owns the firing grip (weapon rides this hand).
+     * SupportFullAuthority: offhand support grip driving the two-hand solver.
+     * SupportVisualOnly: visual-only support (sidearm shooting cup).
+     * PartCarry: carry-authority part grip while the firing hand is detached.
+     * AttachOnly: whitelist-mandated glue — the hand follows the part
+     * (including provider part drives) but never steers the weapon.
+     */
+    enum class RockProviderWeaponPartGripKindV1 : std::uint32_t
+    {
+        None = 0,
+        FiringGrip = 1,
+        SupportFullAuthority = 2,
+        SupportVisualOnly = 3,
+        PartCarry = 4,
+        AttachOnly = 5,
     };
 
     /*
@@ -651,6 +671,50 @@ namespace rock::provider
         std::uint32_t reserved[7]{};
     };
 
+    enum class RockProviderWeaponPartGripLocalSpaceV1 : std::uint32_t
+    {
+        WeaponRootLocal = 0,
+        PartSourceLocal = 1,
+    };
+
+    /*
+     * Per-hand grip report: which weapon part (if any) the hand is attached
+     * to this frame. Polled; gripSequence increases on every fresh capture so
+     * consumers detect re-grabs without frame callbacks. sourceRoot is a
+     * non-owning engine pointer valid only while weaponGenerationKey matches
+     * the frame snapshot. handPartLocal is the hand frame captured at grip
+     * start in handPartLocalSpace; composing it with the part's current world
+     * transform yields the glued hand target, so a consumer driving the part
+     * via setWeaponPartDriveTargetsV1 can also derive controller-to-part
+     * displacement from it.
+     */
+    struct RockProviderWeaponPartGripStateV1
+    {
+        std::uint32_t size{ sizeof(RockProviderWeaponPartGripStateV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        RockProviderHand hand{ RockProviderHand::None };
+        RockProviderWeaponPartGripKindV1 gripKind{ RockProviderWeaponPartGripKindV1::None };
+        std::uint32_t active{ 0 };
+        std::uint32_t attachOnly{ 0 };
+        std::uint64_t gripSequence{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t bodyId{ 0x7FFF'FFFF };
+        std::uint32_t partKind{ 0 };
+        std::uint32_t reloadRole{ 0 };
+        std::uint32_t supportRole{ 0 };
+        std::uint32_t socketRole{ 0 };
+        std::uint32_t actionRole{ 0 };
+        std::uintptr_t sourceRoot{ 0 };
+        std::uint64_t providerOwnerToken{ 0 };
+        std::uint32_t providerGroupId{ 0 };
+        std::uint32_t providerGrabMode{ 0 };
+        std::uint32_t hasHandPartLocal{ 0 };
+        RockProviderWeaponPartGripLocalSpaceV1 handPartLocalSpace{ RockProviderWeaponPartGripLocalSpaceV1::WeaponRootLocal };
+        RockProviderTransform handPartLocal{};
+        char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
+        std::uint32_t reserved[9]{};
+    };
+
     struct RockProviderFrameSnapshot
     {
         std::uint32_t size{ sizeof(RockProviderFrameSnapshot) };
@@ -921,6 +985,7 @@ namespace rock::provider
             std::uint32_t targetCount);
         RockProviderResultV1(ROCK_PROVIDER_CALL* clearWeaponPartDriveTargetsV1)(std::uint64_t ownerToken);
         bool(ROCK_PROVIDER_CALL* queryEquippedWeaponClassificationV1)(RockProviderWeaponClassificationV1* outResult);
+        bool(ROCK_PROVIDER_CALL* getWeaponPartGripStateV1)(RockProviderHand hand, RockProviderWeaponPartGripStateV1* outState);
 
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
@@ -987,6 +1052,8 @@ namespace rock::provider
         offsetof(RockProviderApi, clearWeaponPartDriveTargetsV1) + sizeof(std::declval<RockProviderApi>().clearWeaponPartDriveTargetsV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_WEAPON_CLASSIFICATION_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, queryEquippedWeaponClassificationV1) + sizeof(std::declval<RockProviderApi>().queryEquippedWeaponClassificationV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_WEAPON_PART_GRIP_STATE_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, getWeaponPartGripStateV1) + sizeof(std::declval<RockProviderApi>().getWeaponPartGripStateV1));
 
     [[nodiscard]] inline bool queryProviderLimitsV1(RockProviderLimitsV1& outLimits)
     {
@@ -1072,6 +1139,18 @@ namespace rock::provider
         return queryProviderLimitsV1(limits) && supportsWeaponPartInteractionV1(limits);
     }
 
+    [[nodiscard]] inline bool supportsWeaponPartGripStateV1(const RockProviderLimitsV1& limits)
+    {
+        return providerApiTableSupportsV1(limits, ROCK_PROVIDER_API_V1_WEAPON_PART_GRIP_STATE_TABLE_BYTES) &&
+               hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::WeaponPartGripState);
+    }
+
+    [[nodiscard]] inline bool supportsWeaponPartGripStateV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsWeaponPartGripStateV1(limits);
+    }
+
     static_assert(std::is_standard_layout_v<RockProviderTransform>);
     static_assert(std::is_trivially_copyable_v<RockProviderTransform>);
     static_assert(sizeof(RockProviderConsumerRegistrationV1) == 104);
@@ -1127,6 +1206,10 @@ namespace rock::provider
     static_assert(alignof(RockProviderWeaponClassificationV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderWeaponClassificationV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderWeaponClassificationV1>);
+    static_assert(sizeof(RockProviderWeaponPartGripStateV1) == 248);
+    static_assert(alignof(RockProviderWeaponPartGripStateV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderWeaponPartGripStateV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderWeaponPartGripStateV1>);
     static_assert(sizeof(RockProviderFrameSnapshot) == 272);
     static_assert(alignof(RockProviderFrameSnapshot) == 8);
     static_assert(sizeof(RockProviderHandFrameV1) == 112);

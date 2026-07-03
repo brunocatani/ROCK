@@ -2,6 +2,7 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
+#include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 
@@ -296,6 +297,51 @@ int main()
     ok &= expectEqual("inactive grip states have no stash carry hand",
         resolveEquippedWeaponStashCarryHand(false, false, false, false, false),
         SourceHand::None);
+
+    {
+        using namespace rock::weapon_part_grip_report_policy;
+        ok &= expectTrue("active non-attach part grip counts as carry", partGripCountsAsCarry(true, false));
+        ok &= expectFalse("attach-only part grip never counts as carry", partGripCountsAsCarry(true, true));
+        ok &= expectFalse("inactive part grip never counts as carry", partGripCountsAsCarry(false, false));
+
+        ok &= expectTrue("provider AttachOnly grab mode resolves attach-only",
+            providerGrabModeIsAttachOnly(true, static_cast<std::uint32_t>(rock::weapon_part_runtime::GrabMode::AttachOnly)));
+        ok &= expectFalse("provider full-authority grab mode is not attach-only",
+            providerGrabModeIsAttachOnly(true, static_cast<std::uint32_t>(rock::weapon_part_runtime::GrabMode::FullTwoHandAuthority)));
+        ok &= expectFalse("attach-only requires an active provider authority",
+            providerGrabModeIsAttachOnly(false, static_cast<std::uint32_t>(rock::weapon_part_runtime::GrabMode::AttachOnly)));
+
+        ok &= expectEqual("firing hand in gripping state reports the firing grip",
+            resolveHandGripKind(true, false, false, true, false, false, false),
+            HandGripKind::FiringGrip);
+        ok &= expectEqual("firing hand in primary-only state reports the firing grip",
+            resolveHandGripKind(false, false, true, true, false, false, false),
+            HandGripKind::FiringGrip);
+        ok &= expectEqual("offhand full-authority support grip reports full authority",
+            resolveHandGripKind(true, false, false, false, true, false, false),
+            HandGripKind::SupportFullAuthority);
+        ok &= expectEqual("offhand visual-only support grip reports visual-only",
+            resolveHandGripKind(true, false, false, false, true, false, true),
+            HandGripKind::SupportVisualOnly);
+        ok &= expectEqual("attach-only grip reports attach-only in gripping state",
+            resolveHandGripKind(true, false, false, false, true, true, true),
+            HandGripKind::AttachOnly);
+        ok &= expectEqual("carry part grip in part-carry reports part carry",
+            resolveHandGripKind(false, true, false, false, true, false, false),
+            HandGripKind::PartCarry);
+        ok &= expectEqual("detached firing hand attach-only grip reports attach-only",
+            resolveHandGripKind(false, true, false, true, true, true, false),
+            HandGripKind::AttachOnly);
+        ok &= expectEqual("detached firing hand carry grip reports part carry",
+            resolveHandGripKind(false, true, false, true, true, false, false),
+            HandGripKind::PartCarry);
+        ok &= expectEqual("idle hand reports no grip",
+            resolveHandGripKind(false, false, false, false, false, false, false),
+            HandGripKind::None);
+        ok &= expectEqual("firing hand without part grip in part-carry reports no grip",
+            resolveHandGripKind(false, true, false, true, false, false, false),
+            HandGripKind::None);
+    }
 
     using namespace rock::weapon_part_runtime;
     std::array<Target, 3> weaponPartTargets{};
