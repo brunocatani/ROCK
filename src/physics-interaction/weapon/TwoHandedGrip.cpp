@@ -1210,7 +1210,6 @@ namespace rock
         _rotationBlend = 1.0f;
         _partCarryPivotIsLeft = !_firingHandIsLeft;
         _partCarryGripSeparationWorld = 0.0f;
-        _autoReattachArmed = false;
         _state = TwoHandedState::PartCarry;
         ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing hand detached; part grips own equipped weapon authority");
         return true;
@@ -1341,20 +1340,13 @@ namespace rock
     bool TwoHandedGrip::firingGripContactMatchesCapturedGrip(
         RE::NiNode* weaponNode,
         const WeaponInteractionContact& firingHandWeaponContact,
-        const RE::NiTransform& firingHandTransform,
-        bool logRejections) const
+        const RE::NiTransform& firingHandTransform) const
     {
         if (!weaponNode || !firingHandWeaponContact.valid) {
-            if (logRejections) {
-                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing grip reattach rejected because the firing hand has no current weapon contact");
-            }
             return false;
         }
 
         if (!weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(firingHandWeaponContact.weaponGenerationKey, _activeWeaponGenerationKey)) {
-            if (logRejections) {
-                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing grip reattach rejected because the weapon contact generation is stale");
-            }
             return false;
         }
 
@@ -1362,21 +1354,7 @@ namespace rock
         const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
         const RE::NiPoint3 delta = sub(firingPalm, firingGripWorld);
         const float distance = std::sqrt(dot(delta, delta));
-        const float reattachRadius = g_rockConfig.rockWeaponFiringGripReattachRadius;
-        const bool withinRadius = std::isfinite(distance) && distance <= reattachRadius;
-        /*
-         * Chord attempts log one line per press edge as radius-tuning
-         * telemetry. The auto-proximity path calls this every eligible frame,
-         * so its rejections must stay silent.
-         */
-        if (logRejections) {
-            ROCK_LOG_INFO(Weapon,
-                "TwoHandedGrip: firing grip reattach chord palm-to-grip distance={:.2f}gu radius={:.2f}gu -> {}",
-                distance,
-                reattachRadius,
-                withinRadius ? "accepted" : "rejected-too-far");
-        }
-        return withinRadius;
+        return std::isfinite(distance) && distance <= g_rockConfig.rockWeaponFiringGripReattachRadius;
     }
 
     bool TwoHandedGrip::tryComputeFiringPalmToGripDistance(RE::NiNode* weaponNode, float& outDistance) const
@@ -1399,7 +1377,7 @@ namespace rock
         return true;
     }
 
-    bool TwoHandedGrip::tryReattachFiringGrip(RE::NiNode* weaponNode, const WeaponInteractionContact& firingHandWeaponContact, bool fromChord)
+    bool TwoHandedGrip::tryReattachFiringGrip(RE::NiNode* weaponNode, const WeaponInteractionContact& firingHandWeaponContact)
     {
         if (!weaponNode) {
             return false;
@@ -1408,13 +1386,10 @@ namespace rock
         const bool firingHandIsLeft = _firingHandIsLeft;
         RE::NiTransform firingHandTransform{};
         if (!tryGetHandBoneTransform(firingHandIsLeft, firingHandTransform)) {
-            if (fromChord) {
-                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing grip reattach rejected because the firing hand bone transform is unavailable");
-            }
             return false;
         }
 
-        if (!firingGripContactMatchesCapturedGrip(weaponNode, firingHandWeaponContact, firingHandTransform, fromChord)) {
+        if (!firingGripContactMatchesCapturedGrip(weaponNode, firingHandWeaponContact, firingHandTransform)) {
             return false;
         }
 
@@ -1427,7 +1402,7 @@ namespace rock
         _primaryHandVisualLerp = {};
         clearPrimaryDetachVisualAuthority(firingHandIsLeft);
         restoreFrikPrimaryWeaponPose();
-        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing hand reattached at configured grip ({})", fromChord ? "chord" : "auto-proximity");
+        ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing hand reattached at configured grip");
         return true;
     }
 
@@ -1447,51 +1422,30 @@ namespace rock
         const WeaponInteractionContact& firingHandContact = firingHandIsLeft ? leftWeaponContact : rightWeaponContact;
 
         /*
-         * Three reattach paths: the explicit grab+trigger chord (always on,
-         * converts even an active firing-hand part grip), and two config-gated
-         * paths that require a free firing hand - a held grab with the palm on
-         * the grip (immediate: closed hand is explicit intent, and it cannot
-         * re-capture a fresh detach because the detach requires the grab to be
-         * open), and buttonless proximity, which is hysteresis armed so a
-         * detach with the palm resting on the grip point is not instantly
-         * re-captured.
+         * Firing-grip reattach is the squeeze gesture: a held grab with the
+         * free firing palm inside the reattach radius re-takes the grip.
+         * Nothing attaches to an open hand, and the gesture cannot re-capture
+         * a fresh detach because the detach requires the grab to be open. A
+         * hand already part-gripping is never converted; open it first, then
+         * squeeze the grip.
          */
-        bool autoReattachRequested = false;
-        if (frameInput.reattachAutoEligible && !partGrip(firingHandIsLeft).active) {
+        bool reattachRequested = false;
+        if (frameInput.reattachEligible && !partGrip(firingHandIsLeft).active) {
             float palmToGripDistance = 0.0f;
             if (tryComputeFiringPalmToGripDistance(weaponNode, palmToGripDistance)) {
-                const float reattachRadius = g_rockConfig.rockWeaponFiringGripReattachRadius;
-                if (weapon_two_handed_grip_math::shouldArmFiringGripAutoReattach(_autoReattachArmed, palmToGripDistance, reattachRadius)) {
-                    _autoReattachArmed = true;
-                    ROCK_LOG_INFO(Weapon,
-                        "TwoHandedGrip: firing grip auto-reattach armed at palm-to-grip distance={:.2f}gu radius={:.2f}gu",
-                        palmToGripDistance,
-                        reattachRadius);
-                }
-                autoReattachRequested = weapon_two_handed_grip_math::shouldFireFiringGripAutoReattach(
-                    _autoReattachArmed,
+                reattachRequested = weapon_two_handed_grip_math::shouldReattachFiringGripOnGrab(
                     frameInput.primaryGripInput.held,
                     palmToGripDistance,
-                    reattachRadius);
+                    g_rockConfig.rockWeaponFiringGripReattachRadius);
             }
         }
 
-        if ((frameInput.reattachChordPressed || autoReattachRequested) &&
-            tryReattachFiringGrip(weaponNode, firingHandContact, frameInput.reattachChordPressed)) {
-            releasePartGrip(firingHandIsLeft, "reattached-firing-grip");
+        if (reattachRequested && tryReattachFiringGrip(weaponNode, firingHandContact)) {
             if (partGrip(supportHandIsLeft).active) {
                 _state = TwoHandedState::Gripping;
                 updateFullWeaponAuthorityGrip(weaponNode, dt);
-            } else if (frameInput.primaryGripInput.held) {
-                transitionToPrimaryOnly(weaponNode, currentWeaponGenerationKey, "part-carry-reattached-firing-grip");
             } else {
-                /*
-                 * Reattached with an open grab and no support grip: no closed
-                 * hand holds the weapon, so return it to FRIK-native carry.
-                 * PrimaryOnly would treat the open grab as a release and drop
-                 * the weapon on the next frame.
-                 */
-                transitionToInactive(false);
+                transitionToPrimaryOnly(weaponNode, currentWeaponGenerationKey, "part-carry-reattached-firing-grip");
             }
             return;
         }

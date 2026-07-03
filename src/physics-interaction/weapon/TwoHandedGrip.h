@@ -54,8 +54,7 @@ namespace rock
         bool leftGripHeld{ false };
         bool leftHandHoldingObject{ false };
         bool rightHandHoldingObject{ false };
-        bool reattachChordPressed{ false };
-        bool reattachAutoEligible{ false };
+        bool reattachEligible{ false };
         EquippedWeaponPrimaryGripInput primaryGripInput{};
     };
 
@@ -230,13 +229,12 @@ namespace rock
             std::uint64_t currentWeaponGenerationKey,
             const EquippedWeaponPrimaryGripInput& primaryGripInput);
 
-        bool tryReattachFiringGrip(RE::NiNode* weaponNode, const WeaponInteractionContact& firingHandWeaponContact, bool fromChord);
+        bool tryReattachFiringGrip(RE::NiNode* weaponNode, const WeaponInteractionContact& firingHandWeaponContact);
 
         bool firingGripContactMatchesCapturedGrip(
             RE::NiNode* weaponNode,
             const WeaponInteractionContact& firingHandWeaponContact,
-            const RE::NiTransform& firingHandTransform,
-            bool logRejections) const;
+            const RE::NiTransform& firingHandTransform) const;
 
         bool tryComputeFiringPalmToGripDistance(RE::NiNode* weaponNode, float& outDistance) const;
 
@@ -331,14 +329,6 @@ namespace rock
         float _lockedGripSeparationWorld{ 0.0f };
 
         float _partCarryGripSeparationWorld{ 0.0f };
-
-        /*
-         * Proximity auto-reattach hysteresis: false until the free firing palm
-         * has left the reattach radius (with margin) after entering PartCarry,
-         * so detaching never gets instantly re-captured. Reset on every
-         * PartCarry entry.
-         */
-        bool _autoReattachArmed{ false };
 
         int _touchFrames{ 0 };
         static constexpr int TOUCH_TIMEOUT_FRAMES = 5;

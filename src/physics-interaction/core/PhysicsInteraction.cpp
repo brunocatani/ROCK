@@ -596,24 +596,6 @@ namespace rock
             return vrcf::VRControllers.isPressed(isLeft ? vrcf::Hand::Left : vrcf::Hand::Right, buttonId);
         }
 
-        // Peek-only trigger read for the firing-grip reattach chord: edges must
-        // stay visible to the held-weapon trigger-equip consumer.
-        GrabButtonState readTriggerButtonStatePeek(bool isLeft)
-        {
-            constexpr int buttonId = input_remap_policy::kOpenVrSteamVrTriggerButtonId;
-            const auto rawState = input_remap_runtime::peekRawButtonState(isLeft, buttonId);
-            if (rawState.available) {
-                return GrabButtonState{ .held = rawState.held, .pressed = rawState.pressed, .released = rawState.released };
-            }
-
-            const auto vrHand = isLeft ? vrcf::Hand::Left : vrcf::Hand::Right;
-            return GrabButtonState{
-                .held = vrcf::VRControllers.isPressHeldDown(vrHand, buttonId),
-                .pressed = vrcf::VRControllers.isPressed(vrHand, buttonId),
-                .released = vrcf::VRControllers.isReleased(vrHand, buttonId),
-            };
-        }
-
         struct TransformDelta
         {
             float position = 0.0f;
@@ -2719,29 +2701,14 @@ namespace rock
             }
 
             /*
-             * Firing-grip reattach: explicit grab+trigger chord, plus the
-             * config-gated proximity path (distance/hysteresis evaluated by
-             * TwoHandedGrip). The trigger is peeked (not consumed) because the
-             * native trigger action is already suppressed while no hand holds
-             * the firing grip.
+             * Firing-grip reattach is the squeeze gesture (grab held with the
+             * palm on the grip); distance is evaluated by TwoHandedGrip. This
+             * only gates whether the free firing hand may be captured at all.
              */
-            bool reattachChordPressed = false;
-            bool reattachAutoEligible = false;
+            bool reattachEligible = false;
             if (_twoHandedGrip.isPartCarryActive() && primaryDetachFeatureAvailable) {
-                const auto rightTriggerState = readTriggerButtonStatePeek(false);
-                reattachChordPressed = weapon_two_handed_grip_math::shouldRequestFiringGripReattach(
-                    weapon_two_handed_grip_math::FiringGripReattachChordInput{
-                        .partCarryActive = true,
-                        .menuInputActive = inputBlockingMenuActive,
-                        .handHoldingObject = _rightHand.isHolding(),
-                        .gripHeld = primaryGripInput.held,
-                        .gripPressed = primaryGripInput.pressed,
-                        .triggerHeld = rightTriggerState.held,
-                        .triggerPressed = rightTriggerState.pressed,
-                    });
-                reattachAutoEligible = weapon_two_handed_grip_math::canAttemptFiringGripAutoReattach(
-                    weapon_two_handed_grip_math::FiringGripAutoReattachInput{
-                        .autoReattachEnabled = g_rockConfig.rockWeaponFiringGripAutoReattachEnabled,
+                reattachEligible = weapon_two_handed_grip_math::canAttemptFiringGripReattach(
+                    weapon_two_handed_grip_math::FiringGripReattachInput{
                         .partCarryActive = true,
                         .menuInputActive = inputBlockingMenuActive,
                         .handHoldingObject = _rightHand.isHolding(),
@@ -2752,8 +2719,7 @@ namespace rock
                 .leftGripHeld = gripPressed,
                 .leftHandHoldingObject = leftHandHoldingObject,
                 .rightHandHoldingObject = _rightHand.isHolding(),
-                .reattachChordPressed = reattachChordPressed,
-                .reattachAutoEligible = reattachAutoEligible,
+                .reattachEligible = reattachEligible,
                 .primaryGripInput = primaryGripInput,
             };
             _twoHandedGrip.update(

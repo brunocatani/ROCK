@@ -461,75 +461,29 @@ namespace rock::weapon_two_handed_grip_math
         return !rightHandWeaponEquipped || primaryHandDetached;
     }
 
-    struct FiringGripReattachChordInput
+    struct FiringGripReattachInput
     {
-        bool partCarryActive{ false };
-        bool menuInputActive{ false };
-        bool handHoldingObject{ false };
-        bool gripHeld{ false };
-        bool gripPressed{ false };
-        bool triggerHeld{ false };
-        bool triggerPressed{ false };
-    };
-
-    /*
-     * Reattaching to the firing grip is an explicit grab+trigger chord. A plain
-     * grab press on the free firing hand must stay available for world grabs and
-     * weapon part grips. The chord requires both buttons held with at least one
-     * fresh press edge so merely holding both through unrelated actions cannot
-     * re-fire it. The chord always works; proximity auto-reattach below is the
-     * config-gated buttonless alternative.
-     */
-    inline constexpr bool shouldRequestFiringGripReattach(const FiringGripReattachChordInput& input)
-    {
-        return input.partCarryActive && !input.menuInputActive && !input.handHoldingObject &&
-               input.gripHeld && input.triggerHeld && (input.gripPressed || input.triggerPressed);
-    }
-
-    struct FiringGripAutoReattachInput
-    {
-        bool autoReattachEnabled{ false };
         bool partCarryActive{ false };
         bool menuInputActive{ false };
         bool handHoldingObject{ false };
     };
 
-    /*
-     * Buttonless proximity reattach eligibility. Distance and hysteresis are
-     * evaluated separately per frame; this only gates whether the free firing
-     * hand is allowed to be captured by proximity at all.
-     */
-    inline constexpr bool canAttemptFiringGripAutoReattach(const FiringGripAutoReattachInput& input)
+    inline constexpr bool canAttemptFiringGripReattach(const FiringGripReattachInput& input)
     {
-        return input.autoReattachEnabled && input.partCarryActive && !input.menuInputActive && !input.handHoldingObject;
+        return input.partCarryActive && !input.menuInputActive && !input.handHoldingObject;
     }
 
     /*
-     * Detaching leaves the palm exactly on the grip point, so buttonless
-     * proximity alone would instantly re-take the grip and make detach
-     * impossible. The buttonless path therefore arms only after the palm has
-     * left the radius with a margin, and fires when it comes back inside. The
-     * margin also prevents arm/fire flutter when the palm hovers at the
-     * boundary.
+     * Firing-grip reattach contract: the grab button is the hand. A held grab
+     * with the free firing palm inside the reattach radius re-takes the grip;
+     * nothing ever attaches to an open hand. The gesture cannot re-capture a
+     * fresh detach because the detach itself requires the grab to be open,
+     * and the same squeeze outside the radius stays available for weapon part
+     * grips and world grabs.
      */
-    inline constexpr float kFiringGripAutoReattachArmDistanceFactor = 1.5f;
-
-    inline constexpr bool shouldArmFiringGripAutoReattach(bool armed, float palmToGripDistance, float reattachRadius)
+    inline constexpr bool shouldReattachFiringGripOnGrab(bool gripHeld, float palmToGripDistance, float reattachRadius)
     {
-        return !armed && palmToGripDistance > reattachRadius * kFiringGripAutoReattachArmDistanceFactor;
-    }
-
-    /*
-     * A held grab bypasses arming: a closed hand on the grip is explicit
-     * intent, and it cannot re-capture a fresh detach because the detach
-     * itself requires the grab to be open. This is the "squeeze the grip to
-     * hold the weapon" self-heal the pre-part-carry design had; without it a
-     * single grab release leaves the primary permanently detached, which
-     * suppresses sustained (automatic) trigger fire.
-     */
-    inline constexpr bool shouldFireFiringGripAutoReattach(bool armed, bool gripHeld, float palmToGripDistance, float reattachRadius)
-    {
-        return (armed || gripHeld) && palmToGripDistance <= reattachRadius;
+        return gripHeld && palmToGripDistance <= reattachRadius;
     }
 
     inline constexpr bool canStartFreeHandPartGrip(
