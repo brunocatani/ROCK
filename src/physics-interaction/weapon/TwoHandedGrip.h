@@ -87,6 +87,7 @@ namespace rock
             const WeaponInteractionRuntimeState& leftRuntimeState,
             const WeaponInteractionRuntimeState& rightRuntimeState,
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
+            bool sidearmHybridEligible,
             bool primaryDetachEnabled);
 
         void reset();
@@ -192,6 +193,7 @@ namespace rock
             const WeaponInteractionDecision& decision,
             const WeaponCollision& weaponCollision,
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
+            bool sidearmHybridEligible,
             const WeaponProviderPartAuthority& providerPartAuthority);
         void transitionToInactive(bool publishRestoredWeaponTransform);
 

@@ -75,6 +75,34 @@ namespace rock::weapon_support_authority_policy
                    WeaponSupportAuthorityMode::FullTwoHandedSolver;
     }
 
+    /*
+     * Sidearm hybrid support grip: a sidearm support grab that lands close to
+     * the firing grip is a shooting cup and stays visual-only so the two
+     * authorities do not fight over the short pistol frame, while a grab
+     * farther out is a manipulation grip and takes the same full two-handed
+     * authority long guns use (enabling detach/part-carry when realistic
+     * handling is on, and plain two-handed manipulation when it is off).
+     * Provider-mandated grab modes are exempt: a part whitelisted as
+     * AttachOnly must never be upgraded to full authority by proximity.
+     * The decision is made once at grip capture; changing modes requires
+     * releasing and re-grabbing.
+     */
+    inline constexpr bool canApplySidearmHybridAuthority(
+        WeaponSupportAuthorityMode resolvedMode,
+        bool providerGrabModeOverride)
+    {
+        return resolvedMode == WeaponSupportAuthorityMode::VisualOnlySupport && !providerGrabModeOverride;
+    }
+
+    inline constexpr WeaponSupportAuthorityMode resolveSidearmHybridSupportAuthorityMode(
+        float supportPalmToFiringGripDistance,
+        float visualOnlyRadius)
+    {
+        return supportPalmToFiringGripDistance <= visualOnlyRadius ?
+                   WeaponSupportAuthorityMode::VisualOnlySupport :
+                   WeaponSupportAuthorityMode::FullTwoHandedSolver;
+    }
+
     inline constexpr bool supportGripOwnsWeaponTransform(WeaponSupportAuthorityMode mode)
     {
         return mode == WeaponSupportAuthorityMode::FullTwoHandedSolver;

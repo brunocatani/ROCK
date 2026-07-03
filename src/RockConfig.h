@@ -103,6 +103,7 @@ namespace rock
         float rockWeaponInteractionProbeRadius = 12.0f;
         float rockWeaponFiringGripReattachRadius = 3.0f;
         bool rockVisualOnlySidearmSupportGripEnabled = true;
+        float rockSidearmVisualOnlySupportGripRadius = 6.0f;
         bool rockRealisticWeaponHandlingEnabled = false;
         float rockRealisticGrenadeFuseSeconds = 5.0f;
         bool rockGrabbedWeaponAutoEquipEnabled = false;

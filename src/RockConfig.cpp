@@ -186,6 +186,7 @@ namespace rock
         rockWeaponInteractionProbeRadius = 12.0f;
         rockWeaponFiringGripReattachRadius = 3.0f;
         rockVisualOnlySidearmSupportGripEnabled = true;
+        rockSidearmVisualOnlySupportGripRadius = 6.0f;
         rockRealisticWeaponHandlingEnabled = false;
         rockRealisticGrenadeFuseSeconds = 5.0f;
         rockGrabbedWeaponAutoEquipEnabled = false;
@@ -753,6 +754,13 @@ namespace rock
             30.0f);
         rockVisualOnlySidearmSupportGripEnabled =
             ini.GetBoolValue(REALISTIC_WEAPONS_SECTION, "bVisualOnlySidearmSupportGripEnabled", rockVisualOnlySidearmSupportGripEnabled);
+        rockSidearmVisualOnlySupportGripRadius = readClampedFloat(ini,
+            REALISTIC_WEAPONS_SECTION,
+            "fSidearmVisualOnlySupportGripRadius",
+            rockSidearmVisualOnlySupportGripRadius,
+            6.0f,
+            0.25f,
+            30.0f);
         const bool legacyPhysicsPrimaryDetachEnabled =
             ini.GetBoolValue(SECTION, "bEquippedWeaponPrimaryDetachEnabled", rockRealisticWeaponHandlingEnabled);
         const bool legacyRealisticPrimaryDetachEnabled = ini.GetBoolValue(

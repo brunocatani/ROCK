@@ -451,6 +451,7 @@ namespace rock
         const WeaponInteractionRuntimeState& leftRuntimeState,
         const WeaponInteractionRuntimeState& rightRuntimeState,
         weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
+        bool sidearmHybridEligible,
         bool primaryDetachEnabled)
     {
         _hasSolvedWeaponTransform = false;
@@ -492,7 +493,7 @@ namespace rock
                 }
             }
             if (weapon_two_handed_grip_math::canStartSupportGrip(leftTouchingSupport, leftGripPressed, supportHandHoldingObject)) {
-                transitionToGripping(interactionWeaponNode, decision, weaponCollision, supportAuthorityMode, leftRuntimeState.providerPartAuthority);
+                transitionToGripping(interactionWeaponNode, decision, weaponCollision, supportAuthorityMode, sidearmHybridEligible, leftRuntimeState.providerPartAuthority);
             }
             break;
 
@@ -573,7 +574,7 @@ namespace rock
             } else if (!primaryDetachEnabled) {
                 transitionToInactive(false);
             } else if (leftTouchingSupport && weapon_two_handed_grip_math::canStartSupportGrip(leftTouchingSupport, leftGripPressed, supportHandHoldingObject)) {
-                transitionToGripping(interactionWeaponNode, decision, weaponCollision, supportAuthorityMode, leftRuntimeState.providerPartAuthority);
+                transitionToGripping(interactionWeaponNode, decision, weaponCollision, supportAuthorityMode, sidearmHybridEligible, leftRuntimeState.providerPartAuthority);
             } else {
                 updatePrimaryOnlyGrip(_activeWeaponNode, currentWeaponGenerationKey, primaryGripInput);
             }
@@ -940,6 +941,7 @@ namespace rock
         const WeaponInteractionDecision& decision,
         const WeaponCollision& weaponCollision,
         weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
+        bool sidearmHybridEligible,
         const WeaponProviderPartAuthority& providerPartAuthority)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::TwoHandedGripStart);
@@ -977,6 +979,35 @@ namespace rock
         _primaryGripConfidence = 1.0f;
         _primaryHandWeaponLocal = transform_math::composeTransforms(transform_math::invertTransform(weaponNode->world), primaryTransform);
         _hasFiringHandWeaponLocal = true;
+
+        /*
+         * Sidearm hybrid: at capture the firing grip point is the primary palm,
+         * so support-palm-to-firing-grip distance decides whether this grab is
+         * a shooting cup (visual-only) or a manipulation grip (full two-handed
+         * authority). Missing support hand transforms fail closed to
+         * visual-only, the pre-hybrid sidearm behavior.
+         */
+        if (sidearmHybridEligible &&
+            _authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport) {
+            RE::NiTransform supportTransform{};
+            if (tryGetHandBoneTransform(supportHandIsLeft, supportTransform)) {
+                const RE::NiPoint3 supportPalmPos = computeGrabLegacyPalmPivotAWorldFromHandBasis(supportTransform, supportHandIsLeft);
+                const RE::NiPoint3 supportToGrip = sub(primaryPalmPos, supportPalmPos);
+                const float supportPalmToGripDistance = std::sqrt(dot(supportToGrip, supportToGrip));
+                if (std::isfinite(supportPalmToGripDistance)) {
+                    _authorityMode = weapon_support_authority_policy::resolveSidearmHybridSupportAuthorityMode(
+                        supportPalmToGripDistance,
+                        g_rockConfig.rockSidearmVisualOnlySupportGripRadius);
+                    ROCK_LOG_INFO(Weapon,
+                        "TwoHandedGrip: sidearm hybrid support grip distance={:.2f} radius={:.2f} mode={}",
+                        supportPalmToGripDistance,
+                        g_rockConfig.rockSidearmVisualOnlySupportGripRadius,
+                        _authorityMode == weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport ?
+                            "visual-only" :
+                            "full-authority");
+                }
+            }
+        }
 
         if (!capturePartGrip(supportHandIsLeft, weaponNode, decision, weaponCollision, providerPartAuthority)) {
             ROCK_LOG_WARN(Weapon, "TwoHandedGrip: support grip start skipped because part grip capture failed");

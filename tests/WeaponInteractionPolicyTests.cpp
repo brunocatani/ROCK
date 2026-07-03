@@ -82,6 +82,22 @@ int main()
         rock::weapon_support_authority_policy::supportGripAppliesPrimaryHandAuthority(rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
     ok &= expectTrue("support grip continues to apply offhand visual authority",
         rock::weapon_support_authority_policy::supportGripAppliesSupportHandAuthority(rock::weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver));
+
+    using rock::weapon_support_authority_policy::canApplySidearmHybridAuthority;
+    using rock::weapon_support_authority_policy::resolveSidearmHybridSupportAuthorityMode;
+    using rock::weapon_support_authority_policy::WeaponSupportAuthorityMode;
+    ok &= expectTrue("sidearm hybrid applies to class-resolved visual-only support",
+        canApplySidearmHybridAuthority(WeaponSupportAuthorityMode::VisualOnlySupport, false));
+    ok &= expectFalse("sidearm hybrid never applies to full-authority resolution",
+        canApplySidearmHybridAuthority(WeaponSupportAuthorityMode::FullTwoHandedSolver, false));
+    ok &= expectFalse("sidearm hybrid never upgrades a provider-mandated grab mode",
+        canApplySidearmHybridAuthority(WeaponSupportAuthorityMode::VisualOnlySupport, true));
+    ok &= expectEqual("sidearm grab near the firing grip stays visual-only",
+        resolveSidearmHybridSupportAuthorityMode(5.5f, 6.0f),
+        WeaponSupportAuthorityMode::VisualOnlySupport);
+    ok &= expectEqual("sidearm grab away from the firing grip takes full authority",
+        resolveSidearmHybridSupportAuthorityMode(6.5f, 6.0f),
+        WeaponSupportAuthorityMode::FullTwoHandedSolver);
     ok &= expectEqual("support release keeps primary ownership when primary grip is held",
         resolveSupportReleaseManualAction(true, true),
         SupportReleaseManualAction::KeepPrimaryOwnership);

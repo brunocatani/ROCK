@@ -2597,13 +2597,19 @@ namespace rock
 
             const bool leftHandHoldingObject = _leftHand.isHolding();
             auto supportAuthorityMode = resolveEquippedWeaponSupportAuthorityMode(weaponNode);
+            bool supportAuthorityProviderOverride = false;
             if (weaponPartWhitelistActive && weaponPartResolution.matched != 0) {
                 if (weaponPartResolution.grabMode == ::rock::provider::RockProviderWeaponPartGrabModeV1::FullTwoHandAuthority) {
                     supportAuthorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::FullTwoHandedSolver;
+                    supportAuthorityProviderOverride = true;
                 } else if (weaponPartResolution.grabMode == ::rock::provider::RockProviderWeaponPartGrabModeV1::AttachOnly) {
                     supportAuthorityMode = weapon_support_authority_policy::WeaponSupportAuthorityMode::VisualOnlySupport;
+                    supportAuthorityProviderOverride = true;
                 }
             }
+            const bool sidearmHybridEligible = weapon_support_authority_policy::canApplySidearmHybridAuthority(
+                supportAuthorityMode,
+                supportAuthorityProviderOverride);
             EquippedWeaponPrimaryGripInput primaryGripInput{};
             GrabButtonState primaryGrabState{};
             bool primaryGrabStateRead = false;
@@ -2733,6 +2739,7 @@ namespace rock
                 providerInteractionState,
                 rightHandInteractionState,
                 supportAuthorityMode,
+                sidearmHybridEligible,
                 primaryDetachFeatureAvailable);
             if (primaryOnlyGripStartedThisFrame) {
                 ROCK_LOG_DEBUG(Weapon, "Equipped weapon primary-only manual ownership started from primary grip input");
