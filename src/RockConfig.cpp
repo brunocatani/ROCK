@@ -301,6 +301,7 @@ namespace rock
         rockDebugGrabTransformTelemetryTextMode = 0;
         rockDebugShowGrabNotifications = false;
         rockDebugShowWeaponNotifications = false;
+        rockDebugWeaponOmodDumpEnabled = false;
         rockDebugHandTransformParity = false;
         rockDebugWorldObjectOriginDiagnostics = false;
         rockDebugWorldObjectOriginLogIntervalFrames = 120;
@@ -1211,6 +1212,7 @@ namespace rock
         }
         rockDebugShowGrabNotifications = ini.GetBoolValue(SECTION, "bDebugShowGrabNotifications", rockDebugShowGrabNotifications);
         rockDebugShowWeaponNotifications = ini.GetBoolValue(SECTION, "bDebugShowWeaponNotifications", rockDebugShowWeaponNotifications);
+        rockDebugWeaponOmodDumpEnabled = ini.GetBoolValue(SECTION, "bDebugWeaponOmodDump", rockDebugWeaponOmodDumpEnabled);
         rockDebugHandTransformParity = ini.GetBoolValue(SECTION, "bDebugHandTransformParity", rockDebugHandTransformParity);
         rockDebugWorldObjectOriginDiagnostics =
             ini.GetBoolValue(SECTION, "bDebugWorldObjectOriginDiagnostics", rockDebugWorldObjectOriginDiagnostics);

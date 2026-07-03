@@ -218,6 +218,7 @@ namespace rock
         int rockDebugGrabTransformTelemetryTextMode = 0;
         bool rockDebugShowGrabNotifications = false;
         bool rockDebugShowWeaponNotifications = false;
+        bool rockDebugWeaponOmodDumpEnabled = false;
         bool rockDebugHandTransformParity = false;
         bool rockDebugWorldObjectOriginDiagnostics = false;
         int rockDebugWorldObjectOriginLogIntervalFrames = 120;

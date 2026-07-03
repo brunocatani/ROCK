@@ -281,6 +281,7 @@ namespace rock
         void endWeaponBodyPublication();
         std::vector<WeaponCollisionProfileEvidenceDescriptor> buildProfileEvidenceSnapshot(const WeaponBodyBank& bank) const;
         void publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult);
+        void dumpEquippedWeaponOmodEvidence(const WeaponBodyBank& bank, RE::NiAVObject* packageDriveNode);
 
         std::size_t findGeneratedWeaponShapeSources(RE::NiAVObject* weaponNode, std::vector<GeneratedHullSource>& outSources, float maxSourceDistanceGame);
 
@@ -366,6 +367,8 @@ namespace rock
         std::atomic<std::uint64_t> _weaponBodyPublicationVersion{ 0 };
         mutable std::mutex _profileEvidenceSnapshotMutex;
         std::vector<WeaponCollisionProfileEvidenceDescriptor> _profileEvidenceSnapshot;
+        // Debug OMOD evidence dump fires once per weapon generation key.
+        std::uint64_t _lastOmodDumpGenerationKey{ 0 };
 
         int _posLogCounter{ 0 };
 
