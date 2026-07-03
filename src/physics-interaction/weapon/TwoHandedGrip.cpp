@@ -1218,11 +1218,8 @@ namespace rock
     bool TwoHandedGrip::republishPartCarryWeaponTransform(RE::NiNode* weaponNode)
     {
         if (_state != TwoHandedState::PartCarry || !_hasSolvedWeaponTransform || !weaponNode) {
-            _dbgRepublishDriftGu = -1.0f;
             return false;
         }
-        const RE::NiPoint3 republishDrift = sub(weaponNode->world.translate, _lastSolvedWeaponTransform.translate);
-        _dbgRepublishDriftGu = std::sqrt(dot(republishDrift, republishDrift));
         return applyWeaponVisualAuthority(weaponNode, _lastSolvedWeaponTransform);
     }
 
@@ -1404,9 +1401,6 @@ namespace rock
         const bool supportHandIsLeft = !_firingHandIsLeft;
         const bool firingHandIsLeft = _firingHandIsLeft;
         const WeaponInteractionContact& firingHandContact = firingHandIsLeft ? leftWeaponContact : rightWeaponContact;
-
-        _dbgLeftGripHeld = frameInput.leftGripHeld;
-        _dbgRightGripHeld = frameInput.primaryGripInput.held;
 
         /*
          * Reattaching to the firing grip is an explicit grab+trigger chord: a
@@ -1608,48 +1602,7 @@ namespace rock
                 transitionToInactive(false);
                 return false;
             }
-
-            // Temporary two-anchor stutter diagnostics (remove after fix).
-            {
-                const auto rotAngleDeg = [](const RE::NiMatrix3& a, const RE::NiMatrix3& b) {
-                    float rotTrace = 0.0f;
-                    for (int i = 0; i < 3; ++i) {
-                        for (int j = 0; j < 3; ++j) {
-                            rotTrace += a.entry[i][j] * b.entry[i][j];
-                        }
-                    }
-                    const float cosAngle = std::clamp((rotTrace - 1.0f) * 0.5f, -1.0f, 1.0f);
-                    return std::acos(cosAngle) * 57.29578f;
-                };
-                const RE::NiPoint3 solvedDelta = _dbgHasPrevSolved ? sub(stabilizedWeaponWorld.translate, _dbgPrevSolvedPos) : RE::NiPoint3{};
-                const float rotDeltaDeg = _dbgHasPrevSolved ? rotAngleDeg(_dbgPrevSolvedRot, stabilizedWeaponWorld.rotate) : 0.0f;
-                // _lastSolvedWeaponTransform still holds LAST frame's solve here:
-                // base-vs-last deltas expose anything that moved the weapon node
-                // between the early republish and this solve.
-                const float baseRotDeg = _dbgHasPrevSolved ? rotAngleDeg(_lastSolvedWeaponTransform.rotate, solverInput.weaponWorldTransform.rotate) : 0.0f;
-                const RE::NiPoint3 basePosDelta = sub(solverInput.weaponWorldTransform.translate, _lastSolvedWeaponTransform.translate);
-                const RE::NiPoint3 currentAxisWorld = sub(
-                    transform_math::localPointToWorld(solverInput.weaponWorldTransform, aimGrip.gripLocal),
-                    transform_math::localPointToWorld(solverInput.weaponWorldTransform, pivotGrip.gripLocal));
-                const RE::NiPoint3 desiredAxisWorld = sub(blendedAimTarget, pivotPalm);
-                const float axisLenProduct = std::sqrt(dot(currentAxisWorld, currentAxisWorld)) * std::sqrt(dot(desiredAxisWorld, desiredAxisWorld));
-                const float alignErrDeg = axisLenProduct > 0.0001f ?
-                    std::acos(std::clamp(dot(currentAxisWorld, desiredAxisWorld) / axisLenProduct, -1.0f, 1.0f)) * 57.29578f : 0.0f;
-                ROCK_LOG_INFO(Weapon,
-                    "TwoHandedGrip: 2A-dbg dPos={:.3f} dRot={:.2f}deg baseRot={:.2f}deg basePos={:.3f} alignErr={:.2f}deg blend={:.2f} pivot={}",
-                    std::sqrt(dot(solvedDelta, solvedDelta)),
-                    rotDeltaDeg,
-                    baseRotDeg,
-                    std::sqrt(dot(basePosDelta, basePosDelta)),
-                    alignErrDeg,
-                    _rotationBlend,
-                    pivotIsLeft ? "L" : "R");
-                _dbgPrevSolvedPos = stabilizedWeaponWorld.translate;
-                _dbgPrevSolvedRot = stabilizedWeaponWorld.rotate;
-                _dbgHasPrevSolved = true;
-            }
         } else {
-            _dbgHasPrevSolved = false;
             RE::NiTransform solvedWeaponWorld{};
             if (pivotGrip.hasSourceFrames && pivotGrip.hasAttachmentWeaponLocal && resolveCurrentSupportAttachmentRoot(pivotGrip, weaponNode)) {
                 const RE::NiTransform solvedSourceWorld =

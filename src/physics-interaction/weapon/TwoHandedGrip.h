@@ -336,14 +336,6 @@ namespace rock
 
         int _gripLogCounter{ 0 };
 
-        // Temporary two-anchor part-carry stutter diagnostics (remove after fix).
-        float _dbgRepublishDriftGu{ -1.0f };
-        RE::NiPoint3 _dbgPrevSolvedPos{};
-        RE::NiMatrix3 _dbgPrevSolvedRot{};
-        bool _dbgHasPrevSolved{ false };
-        bool _dbgLeftGripHeld{ false };
-        bool _dbgRightGripHeld{ false };
-
         RE::NiTransform _lastSolvedWeaponTransform{};
 
         bool _hasSolvedWeaponTransform{ false };
