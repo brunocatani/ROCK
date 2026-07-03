@@ -2738,6 +2738,18 @@ namespace rock
                     });
             }
 
+            // Temporary two-anchor stutter diagnostics: controller-derived hand
+            // transforms as the smooth reference against flattened-tree reads.
+            if (_twoHandedGrip.isPartCarryActive() &&
+                _twoHandedGrip.isHandPartGripping(true) &&
+                _twoHandedGrip.isHandPartGripping(false)) {
+                ROCK_LOG_INFO(Weapon,
+                    "TwoHandedGrip: 2A-dbg rawHands L=({:.3f},{:.3f},{:.3f}) R=({:.3f},{:.3f},{:.3f}) dt={:.4f}",
+                    frame.left.rawHandWorld.translate.x, frame.left.rawHandWorld.translate.y, frame.left.rawHandWorld.translate.z,
+                    frame.right.rawHandWorld.translate.x, frame.right.rawHandWorld.translate.y, frame.right.rawHandWorld.translate.z,
+                    frame.deltaSeconds);
+            }
+
             const EquippedWeaponGripFrameInput gripFrameInput{
                 .leftGripHeld = gripPressed,
                 .leftHandHoldingObject = leftHandHoldingObject,

@@ -1624,20 +1624,21 @@ namespace rock
                     const float cosAngle = std::clamp((rotTrace - 1.0f) * 0.5f, -1.0f, 1.0f);
                     rotDeltaDeg = std::acos(cosAngle) * 57.29578f;
                 }
+                (void)basePos;
                 ROCK_LOG_INFO(Weapon,
-                    "TwoHandedGrip: 2A-dbg repub={:.2f} base=({:.1f},{:.1f},{:.1f}) solved=({:.1f},{:.1f},{:.1f}) dPos={:.3f} dRot={:.2f}deg "
-                    "pivotPalm=({:.1f},{:.1f},{:.1f}) aimPalm=({:.1f},{:.1f},{:.1f}) sep={:.2f}/{:.2f} blend={:.2f} held(L/R)={}/{} pivot={}",
-                    _dbgRepublishDriftGu,
-                    basePos.x, basePos.y, basePos.z,
-                    stabilizedWeaponWorld.translate.x, stabilizedWeaponWorld.translate.y, stabilizedWeaponWorld.translate.z,
+                    "TwoHandedGrip: 2A-dbg dPos={:.3f} dRot={:.2f}deg "
+                    "pvtHand=({:.3f},{:.3f},{:.3f}) pvtR0=({:.4f},{:.4f},{:.4f}) "
+                    "aimHand=({:.3f},{:.3f},{:.3f}) aimR0=({:.4f},{:.4f},{:.4f}) "
+                    "pivotPalm=({:.3f},{:.3f},{:.3f}) aimPalm=({:.3f},{:.3f},{:.3f}) blend={:.2f} pivot={}",
                     std::sqrt(dot(solvedDelta, solvedDelta)),
                     rotDeltaDeg,
+                    pivotHandTransform.translate.x, pivotHandTransform.translate.y, pivotHandTransform.translate.z,
+                    pivotHandTransform.rotate.entry[0][0], pivotHandTransform.rotate.entry[0][1], pivotHandTransform.rotate.entry[0][2],
+                    aimHandTransform.translate.x, aimHandTransform.translate.y, aimHandTransform.translate.z,
+                    aimHandTransform.rotate.entry[0][0], aimHandTransform.rotate.entry[0][1], aimHandTransform.rotate.entry[0][2],
                     pivotPalm.x, pivotPalm.y, pivotPalm.z,
                     aimPalm.x, aimPalm.y, aimPalm.z,
-                    currentSeparation, lockedSeparation,
                     _rotationBlend,
-                    _dbgLeftGripHeld ? 1 : 0,
-                    _dbgRightGripHeld ? 1 : 0,
                     pivotIsLeft ? "L" : "R");
                 _dbgPrevSolvedPos = stabilizedWeaponWorld.translate;
                 _dbgPrevSolvedRot = stabilizedWeaponWorld.rotate;
