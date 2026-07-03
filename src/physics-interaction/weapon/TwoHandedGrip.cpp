@@ -1343,10 +1343,12 @@ namespace rock
         const RE::NiTransform& firingHandTransform) const
     {
         if (!weaponNode || !firingHandWeaponContact.valid) {
+            ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing grip reattach rejected because the firing hand has no current weapon contact");
             return false;
         }
 
         if (!weapon_authority_lifecycle_policy::isWeaponContactGenerationCurrent(firingHandWeaponContact.weaponGenerationKey, _activeWeaponGenerationKey)) {
+            ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing grip reattach rejected because the weapon contact generation is stale");
             return false;
         }
 
@@ -1354,8 +1356,19 @@ namespace rock
         const RE::NiPoint3 firingGripWorld = weaponLocalToWorld(_primaryGripLocal, weaponNode);
         const RE::NiPoint3 delta = sub(firingPalm, firingGripWorld);
         const float distance = std::sqrt(dot(delta, delta));
-        const float reattachRadius = (std::max)(2.0f, g_rockConfig.rockWeaponInteractionProbeRadius);
-        return std::isfinite(distance) && distance <= reattachRadius;
+        const float reattachRadius = g_rockConfig.rockWeaponFiringGripReattachRadius;
+        const bool withinRadius = std::isfinite(distance) && distance <= reattachRadius;
+        /*
+         * One line per chord press edge (never per-frame): this is the tuning
+         * telemetry for how tight the firing-grip proximity gate can be before
+         * an eventual proximity-based auto-reattach becomes viable.
+         */
+        ROCK_LOG_INFO(Weapon,
+            "TwoHandedGrip: firing grip reattach chord palm-to-grip distance={:.2f}gu radius={:.2f}gu -> {}",
+            distance,
+            reattachRadius,
+            withinRadius ? "accepted" : "rejected-too-far");
+        return withinRadius;
     }
 
     bool TwoHandedGrip::tryReattachFiringGrip(RE::NiNode* weaponNode, const WeaponInteractionContact& firingHandWeaponContact)
@@ -1367,6 +1380,7 @@ namespace rock
         const bool firingHandIsLeft = _firingHandIsLeft;
         RE::NiTransform firingHandTransform{};
         if (!tryGetHandBoneTransform(firingHandIsLeft, firingHandTransform)) {
+            ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing grip reattach rejected because the firing hand bone transform is unavailable");
             return false;
         }
 

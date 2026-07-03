@@ -184,6 +184,7 @@ namespace rock
         rockWeaponCollisionMaxLinearVelocity = 50.0f;
         rockWeaponCollisionMaxAngularVelocity = 100.0f;
         rockWeaponInteractionProbeRadius = 12.0f;
+        rockWeaponFiringGripReattachRadius = 3.0f;
         rockVisualOnlySidearmSupportGripEnabled = true;
         rockRealisticWeaponHandlingEnabled = false;
         rockRealisticGrenadeFuseSeconds = 5.0f;
@@ -743,6 +744,13 @@ namespace rock
         rockWeaponCollisionMaxAngularVelocity =
             static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionMaxAngularVelocity", rockWeaponCollisionMaxAngularVelocity));
         rockWeaponInteractionProbeRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponInteractionProbeRadius", rockWeaponInteractionProbeRadius));
+        rockWeaponFiringGripReattachRadius = readClampedFloat(ini,
+            SECTION,
+            "fWeaponFiringGripReattachRadius",
+            rockWeaponFiringGripReattachRadius,
+            3.0f,
+            0.25f,
+            30.0f);
         rockVisualOnlySidearmSupportGripEnabled =
             ini.GetBoolValue(SECTION, "bVisualOnlySidearmSupportGripEnabled", rockVisualOnlySidearmSupportGripEnabled);
         const bool legacyPhysicsPrimaryDetachEnabled =
