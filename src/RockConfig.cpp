@@ -681,8 +681,10 @@ namespace rock
             static_cast<int>(ini.GetLongValue(SECTION, "iHavokTimingFixMaxSubsteps", rockHavokTimingFixMaxSubsteps)));
         rockInputRemapEnabled = ini.GetBoolValue(SECTION, "bInputRemapEnabled", rockInputRemapEnabled);
         rockRightWeaponReadyButtonID = static_cast<int>(ini.GetLongValue(SECTION, "iRightWeaponReadyButtonID", rockRightWeaponReadyButtonID));
-        if (!input_remap_policy::isValidButtonId(rockRightWeaponReadyButtonID)) {
-            ROCK_LOG_WARN(Config, "iRightWeaponReadyButtonID must be 0..63; using 32");
+        if (rockRightWeaponReadyButtonID == input_remap_policy::kWeaponReadyButtonUnbound) {
+            ROCK_LOG_INFO(Config, "iRightWeaponReadyButtonID = -1: weapon ready/holster toggle unbound; right stick click is free for external consumers");
+        } else if (!input_remap_policy::isValidButtonId(rockRightWeaponReadyButtonID)) {
+            ROCK_LOG_WARN(Config, "iRightWeaponReadyButtonID must be -1 (unbound) or 0..63; using 32");
             rockRightWeaponReadyButtonID = 32;
         }
         rockSuppressRightGrabGameInput = ini.GetBoolValue(SECTION, "bSuppressRightGrabGameInput", rockSuppressRightGrabGameInput);

@@ -123,6 +123,9 @@ int main()
         });
     ok &= expectFalse("menu opened during thumbstick hold blocks weapon toggle", menuToggleRelease.weaponToggleRequested);
 
+    ok &= expectFalse("unbound weapon ready button is not a valid button id", isValidButtonId(kWeaponReadyButtonUnbound));
+    ok &= expectTrue("unbound weapon ready button produces no button mask", buttonMask(kWeaponReadyButtonUnbound) == 0);
+
     settings.grabButtonId = kOpenVrSteamVrTriggerButtonId;
     const auto triggerGrabDecision = evaluate(Input{
                                                 .hand = Hand::Right,

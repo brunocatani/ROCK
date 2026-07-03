@@ -46,6 +46,14 @@ namespace rock::input_remap_policy
 
     inline constexpr double kDefaultWeaponToggleMaxClickSeconds = 0.35;
 
+    /*
+     * iRightWeaponReadyButtonID sentinel: ROCK never binds the weapon
+     * ready/holster toggle to any button. buttonMask() yields 0 for it, so no
+     * toggle click is ever tracked; the physical button stays free for
+     * external consumers reading raw OpenVR state through ROCK's hook.
+     */
+    inline constexpr int kWeaponReadyButtonUnbound = -1;
+
     struct WeaponToggleClickState
     {
         bool tracking{ false };
