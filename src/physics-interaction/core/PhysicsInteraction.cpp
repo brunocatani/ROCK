@@ -2744,6 +2744,27 @@ namespace rock
             if (primaryOnlyGripStartedThisFrame) {
                 ROCK_LOG_DEBUG(Weapon, "Equipped weapon primary-only manual ownership started from primary grip input");
             }
+            const auto gripHapticEvents = _twoHandedGrip.consumeHapticEvents();
+            if (g_rockConfig.rockWeaponGripHapticsEnabled) {
+                const auto queueGripHaptic = [this](bool isLeft, float intensity) {
+                    (void)_feedbackHaptics.queue(
+                        isLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
+                        g_rockConfig.rockWeaponGripHapticDurationSeconds,
+                        intensity);
+                };
+                if (gripHapticEvents.firingGripAttached) {
+                    queueGripHaptic(gripHapticEvents.firingGripAttachedHandIsLeft, g_rockConfig.rockWeaponFiringGripAttachHapticIntensity);
+                }
+                if (gripHapticEvents.firingGripDetached) {
+                    queueGripHaptic(gripHapticEvents.firingGripDetachedHandIsLeft, g_rockConfig.rockWeaponFiringGripDetachHapticIntensity);
+                }
+                if (gripHapticEvents.leftPartGripCaptured) {
+                    queueGripHaptic(true, g_rockConfig.rockWeaponSupportGripHapticIntensity);
+                }
+                if (gripHapticEvents.rightPartGripCaptured) {
+                    queueGripHaptic(false, g_rockConfig.rockWeaponSupportGripHapticIntensity);
+                }
+            }
             const auto equippedWeaponDropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
             if (equippedWeaponDropRequest.requested) {
                 const auto sourceHand = equippedWeaponDropRequest.sourceHand;

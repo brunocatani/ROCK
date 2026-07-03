@@ -187,6 +187,11 @@ namespace rock
         rockWeaponFiringGripReattachRadius = 3.0f;
         rockVisualOnlySidearmSupportGripEnabled = true;
         rockSidearmVisualOnlySupportGripRadius = 6.0f;
+        rockWeaponGripHapticsEnabled = true;
+        rockWeaponGripHapticDurationSeconds = 0.10f;
+        rockWeaponFiringGripAttachHapticIntensity = 0.85f;
+        rockWeaponFiringGripDetachHapticIntensity = 0.30f;
+        rockWeaponSupportGripHapticIntensity = 0.50f;
         rockRealisticWeaponHandlingEnabled = false;
         rockRealisticGrenadeFuseSeconds = 5.0f;
         rockGrabbedWeaponAutoEquipEnabled = false;
@@ -761,6 +766,36 @@ namespace rock
             6.0f,
             0.25f,
             30.0f);
+        rockWeaponGripHapticsEnabled =
+            ini.GetBoolValue(REALISTIC_WEAPONS_SECTION, "bWeaponGripHapticsEnabled", rockWeaponGripHapticsEnabled);
+        rockWeaponGripHapticDurationSeconds = readClampedFloat(ini,
+            REALISTIC_WEAPONS_SECTION,
+            "fWeaponGripHapticDurationSeconds",
+            rockWeaponGripHapticDurationSeconds,
+            0.10f,
+            0.01f,
+            0.50f);
+        rockWeaponFiringGripAttachHapticIntensity = readClampedFloat(ini,
+            REALISTIC_WEAPONS_SECTION,
+            "fWeaponFiringGripAttachHapticIntensity",
+            rockWeaponFiringGripAttachHapticIntensity,
+            0.85f,
+            0.0f,
+            1.0f);
+        rockWeaponFiringGripDetachHapticIntensity = readClampedFloat(ini,
+            REALISTIC_WEAPONS_SECTION,
+            "fWeaponFiringGripDetachHapticIntensity",
+            rockWeaponFiringGripDetachHapticIntensity,
+            0.30f,
+            0.0f,
+            1.0f);
+        rockWeaponSupportGripHapticIntensity = readClampedFloat(ini,
+            REALISTIC_WEAPONS_SECTION,
+            "fWeaponSupportGripHapticIntensity",
+            rockWeaponSupportGripHapticIntensity,
+            0.50f,
+            0.0f,
+            1.0f);
         const bool legacyPhysicsPrimaryDetachEnabled =
             ini.GetBoolValue(SECTION, "bEquippedWeaponPrimaryDetachEnabled", rockRealisticWeaponHandlingEnabled);
         const bool legacyRealisticPrimaryDetachEnabled = ini.GetBoolValue(

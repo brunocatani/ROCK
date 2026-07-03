@@ -73,6 +73,21 @@ namespace rock
         equipped_weapon_drop_policy::SourceHand sourceHand{ equipped_weapon_drop_policy::SourceHand::None };
     };
 
+    /*
+     * One-shot grip transition events for controller haptics. TwoHandedGrip
+     * never talks to the VR controllers directly; PhysicsInteraction consumes
+     * these once per frame right after update() and queues the pulses.
+     */
+    struct TwoHandedGripHapticEvents
+    {
+        bool firingGripAttached{ false };
+        bool firingGripAttachedHandIsLeft{ false };
+        bool firingGripDetached{ false };
+        bool firingGripDetachedHandIsLeft{ false };
+        bool leftPartGripCaptured{ false };
+        bool rightPartGripCaptured{ false };
+    };
+
     class TwoHandedGrip
     {
     public:
@@ -138,6 +153,8 @@ namespace rock
         bool republishPartCarryWeaponTransform(RE::NiNode* weaponNode);
 
         EquippedWeaponManualDropRequest consumeEquippedWeaponDropRequest();
+
+        TwoHandedGripHapticEvents consumeHapticEvents();
 
     private:
         struct LockedHandVisualLerpState
@@ -358,6 +375,7 @@ namespace rock
         bool _hasWeaponNodeLocalBaseline{ false };
 
         EquippedWeaponManualDropRequest _equippedWeaponDropRequest{};
+        TwoHandedGripHapticEvents _hapticEvents{};
     };
 
 }

@@ -585,6 +585,7 @@ namespace rock
     void TwoHandedGrip::reset()
     {
         _equippedWeaponDropRequest = {};
+        _hapticEvents = {};
         clearPrimaryGripPose(_firingHandIsLeft);
         clearPrimaryDetachVisualAuthority(_firingHandIsLeft);
         clearSupportGripPose(true);
@@ -893,6 +894,11 @@ namespace rock
 
         grip.visualLerp = {};
         grip.active = true;
+        if (isLeft) {
+            _hapticEvents.leftPartGripCaptured = true;
+        } else {
+            _hapticEvents.rightPartGripCaptured = true;
+        }
 
         ROCK_LOG_INFO(Weapon,
             "TwoHandedGrip: part grip captured hand={} weapon='{}' gripLocal=({:.3f},{:.3f},{:.3f}) meshGrab={} triangles={} cachedTriangles={} partKind={} pose={} generation={:016X}",
@@ -1242,6 +1248,8 @@ namespace rock
         _partCarryPivotIsLeft = !_firingHandIsLeft;
         _partCarryGripSeparationWorld = 0.0f;
         _state = TwoHandedState::PartCarry;
+        _hapticEvents.firingGripDetached = true;
+        _hapticEvents.firingGripDetachedHandIsLeft = _firingHandIsLeft;
         ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing hand detached; part grips own equipped weapon authority");
         return true;
     }
@@ -1260,7 +1268,14 @@ namespace rock
             return false;
         }
 
-        return transitionToPrimaryOnly(weaponNode, currentWeaponGenerationKey, "primary-grip-start");
+        if (!transitionToPrimaryOnly(weaponNode, currentWeaponGenerationKey, "primary-grip-start")) {
+            return false;
+        }
+        // Only a fresh grab pulses; transitionToPrimaryOnly is also reached
+        // from support-release paths where the firing grip never changed.
+        _hapticEvents.firingGripAttached = true;
+        _hapticEvents.firingGripAttachedHandIsLeft = _firingHandIsLeft;
+        return true;
     }
 
     EquippedWeaponManualDropRequest TwoHandedGrip::consumeEquippedWeaponDropRequest()
@@ -1268,6 +1283,13 @@ namespace rock
         const EquippedWeaponManualDropRequest request = _equippedWeaponDropRequest;
         _equippedWeaponDropRequest = {};
         return request;
+    }
+
+    TwoHandedGripHapticEvents TwoHandedGrip::consumeHapticEvents()
+    {
+        const TwoHandedGripHapticEvents events = _hapticEvents;
+        _hapticEvents = {};
+        return events;
     }
 
     bool TwoHandedGrip::transitionToPrimaryOnly(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const char* reason)
@@ -1433,6 +1455,8 @@ namespace rock
         _primaryHandVisualLerp = {};
         clearPrimaryDetachVisualAuthority(firingHandIsLeft);
         restoreFrikPrimaryWeaponPose();
+        _hapticEvents.firingGripAttached = true;
+        _hapticEvents.firingGripAttachedHandIsLeft = firingHandIsLeft;
         ROCK_LOG_INFO(Weapon, "TwoHandedGrip: firing hand reattached at configured grip");
         return true;
     }
