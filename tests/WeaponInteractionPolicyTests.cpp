@@ -3,6 +3,7 @@
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
+#include "physics-interaction/weapon/WeaponPartRecordIdentityPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 
@@ -341,6 +342,71 @@ int main()
         ok &= expectEqual("firing hand without part grip in part-carry reports no grip",
             resolveHandGripKind(false, true, false, true, false, false, false),
             HandGripKind::None);
+    }
+
+    {
+        using namespace rock::weapon_part_record_identity_policy;
+        ok &= expectEqual("P-Mag resolves the magazine slot anchor",
+            resolveStructureAnchor("P-Mag"), StructureAnchor::SlotMagazine);
+        ok &= expectEqual("P-Barrel resolves the barrel slot anchor",
+            resolveStructureAnchor("P-Barrel"), StructureAnchor::SlotBarrel);
+        ok &= expectEqual("P-Compensator resolves the muzzle slot anchor",
+            resolveStructureAnchor("P-Compensator"), StructureAnchor::SlotMuzzle);
+        ok &= expectEqual("WeaponBolt resolves the bolt rig anchor",
+            resolveStructureAnchor("WeaponBolt"), StructureAnchor::RigBolt);
+        ok &= expectEqual("WeaponMagazineChild3 resolves the magazine display rig anchor",
+            resolveStructureAnchor("WeaponMagazineChild3"), StructureAnchor::RigMagazineDisplay);
+        ok &= expectEqual("unknown mod-added connect point resolves no anchor",
+            resolveStructureAnchor("P-CustomThing"), StructureAnchor::None);
+        ok &= expectEqual("plain mesh name resolves no anchor",
+            resolveStructureAnchor("AK74M_Body"), StructureAnchor::None);
+
+        const auto otherByName = rock::classifyWeaponPartKind(rock::WeaponPartKind::Other);
+        const auto magFromSlot = applyStructureAnchor(otherByName, StructureAnchor::SlotMagazine);
+        ok &= expectEqual("magazine slot classifies an unnamed part as magazine",
+            magFromSlot.partKind, rock::WeaponPartKind::Magazine);
+        ok &= expectEqual("magazine slot classification is slot-sourced",
+            magFromSlot.classificationSource, rock::WeaponPartClassificationSource::SlotAnchor);
+        ok &= expectEqual("magazine slot carries the vanilla attach-point form id",
+            magFromSlot.attachPointFormId, kAttachPointMagazine);
+
+        const auto receiverByWeakToken = rock::classifyWeaponPartKind(rock::WeaponPartKind::Receiver);
+        const auto barrelOverride = applyStructureAnchor(receiverByWeakToken, StructureAnchor::SlotBarrel);
+        ok &= expectEqual("barrel slot overrides a weak receiver name match",
+            barrelOverride.partKind, rock::WeaponPartKind::Barrel);
+
+        const auto slideByName = rock::classifyWeaponPartKind(rock::WeaponPartKind::Slide);
+        const auto slideKept = applyStructureAnchor(slideByName, StructureAnchor::RigBolt);
+        ok &= expectEqual("action-named part keeps its name under the bolt rig",
+            slideKept.partKind, rock::WeaponPartKind::Slide);
+        ok &= expectEqual("kept action name stays name-sourced",
+            slideKept.classificationSource, rock::WeaponPartClassificationSource::NameToken);
+        const auto pumpKept = applyStructureAnchor(
+            rock::classifyWeaponPartKind(rock::WeaponPartKind::Pump), StructureAnchor::SlotHandguard);
+        ok &= expectEqual("pump keeps its action role inside the handguard slot",
+            pumpKept.partKind, rock::WeaponPartKind::Pump);
+
+        const auto receiverFill = applyStructureAnchor(otherByName, StructureAnchor::SlotReceiver);
+        ok &= expectEqual("receiver slot fills unclassified parts",
+            receiverFill.partKind, rock::WeaponPartKind::Receiver);
+        const auto stockKeptOverReceiver = applyStructureAnchor(
+            rock::classifyWeaponPartKind(rock::WeaponPartKind::Stock), StructureAnchor::SlotReceiver);
+        ok &= expectEqual("receiver slot never overrides a critical name match",
+            stockKeptOverReceiver.partKind, rock::WeaponPartKind::Stock);
+
+        const auto roundKept = applyStructureAnchor(
+            rock::classifyWeaponPartKind(rock::WeaponPartKind::Round), StructureAnchor::RigMagazineDisplay);
+        ok &= expectEqual("named ammo round keeps its reload role under the magazine rig",
+            roundKept.partKind, rock::WeaponPartKind::Round);
+        const auto followerFill = applyStructureAnchor(otherByName, StructureAnchor::RigMagazineDisplay);
+        ok &= expectEqual("unnamed magazine-rig part fills as cosmetic ammo",
+            followerFill.partKind, rock::WeaponPartKind::CosmeticAmmo);
+
+        const auto noAnchor = applyStructureAnchor(otherByName, StructureAnchor::None);
+        ok &= expectEqual("no anchor keeps the name classification",
+            noAnchor.partKind, rock::WeaponPartKind::Other);
+        ok &= expectEqual("no anchor keeps the name source",
+            noAnchor.classificationSource, rock::WeaponPartClassificationSource::NameToken);
     }
 
     using namespace rock::weapon_part_runtime;

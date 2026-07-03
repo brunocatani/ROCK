@@ -790,6 +790,9 @@ namespace rock
             if (weaponCollision.tryGetProfileEvidenceDescriptorForBodyId(decision.bodyId, descriptor, descriptorSourceNode) &&
                 descriptor.weaponGenerationKey == decision.weaponGenerationKey) {
                 grip.supportRole = descriptor.semantic.supportGripRole;
+                grip.omodFormId = descriptor.omodFormId;
+                grip.attachPointFormId = descriptor.semantic.attachPointFormId;
+                grip.classificationSource = descriptor.semantic.classificationSource;
                 const std::size_t copyLength = (std::min)(descriptor.sourceName.size(), grip.sourceName.size() - 1);
                 std::memcpy(grip.sourceName.data(), descriptor.sourceName.data(), copyLength);
                 grip.sourceName[copyLength] = '\0';
@@ -1374,6 +1377,9 @@ namespace rock
         outReport.handPartLocalIsSourceLocal = grip.hasSourceFrames;
         outReport.handPartLocal = grip.hasSourceFrames ? grip.handSourceLocal : grip.handWeaponLocal;
         outReport.sourceName = grip.sourceName;
+        outReport.omodFormId = grip.omodFormId;
+        outReport.attachPointFormId = grip.attachPointFormId;
+        outReport.classificationSource = static_cast<std::uint32_t>(grip.classificationSource);
     }
 
     TwoHandedGripHapticEvents TwoHandedGrip::consumeHapticEvents()

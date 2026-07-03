@@ -118,6 +118,10 @@ namespace rock
         bool handPartLocalIsSourceLocal{ false };
         RE::NiTransform handPartLocal{};
         std::array<char, kWeaponProviderSourceNameCapacity> sourceName{};
+        // Record-authored identity of the gripped part (0 when unpaired).
+        std::uint32_t omodFormId{ 0 };
+        std::uint32_t attachPointFormId{ 0 };
+        std::uint32_t classificationSource{ 0 };
     };
 
     class TwoHandedGrip
@@ -273,6 +277,10 @@ namespace rock
             std::uint64_t weaponGenerationKey{ 0 };
             std::uint64_t gripSequence{ 0 };
             std::array<char, kWeaponProviderSourceNameCapacity> sourceName{};
+            // Record-authored identity from the evidence descriptor at capture.
+            std::uint32_t omodFormId{ 0 };
+            std::uint32_t attachPointFormId{ 0 };
+            WeaponPartClassificationSource classificationSource{ WeaponPartClassificationSource::NameToken };
             std::array<float, 15> fingerPose{};
             std::array<float, 5> fingerSplayRadians{};
             std::array<RE::NiTransform, 15> fingerLocalTransforms{};

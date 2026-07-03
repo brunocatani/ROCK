@@ -81,6 +81,9 @@
             static_assert(sizeof(outState.sourceName) == std::tuple_size_v<decltype(report.sourceName)>);
             std::memcpy(outState.sourceName, report.sourceName.data(), sizeof(outState.sourceName));
             outState.sourceName[sizeof(outState.sourceName) - 1] = '\0';
+            outState.omodFormId = report.omodFormId;
+            outState.attachPointFormId = report.attachPointFormId;
+            outState.classificationSource = report.classificationSource;
         }
     }
 
@@ -161,6 +164,9 @@
             out.localBoundsGame.valid = descriptor.localBoundsGame.valid ? 1u : 0u;
             out.pointCount = descriptor.pointCount;
             copyProviderString(out.sourceName, sizeof(out.sourceName), descriptor.sourceName);
+            out.omodFormId = descriptor.omodFormId;
+            out.attachPointFormId = descriptor.semantic.attachPointFormId;
+            out.classificationSource = static_cast<std::uint32_t>(descriptor.semantic.classificationSource);
         }
 
         return count;

@@ -248,6 +248,7 @@ namespace rock::provider
         HandInputSuppression = 1u << 14,
         WeaponPartInteraction = 1u << 15,
         WeaponPartGripState = 1u << 16,
+        WeaponPartRecordIdentity = 1u << 17,
     };
 
     enum class RockProviderInteractionCommandKindV1 : std::uint32_t
@@ -678,6 +679,20 @@ namespace rock::provider
     };
 
     /*
+     * Which signal classified a weapon part. NameToken is NIF-name matching
+     * (author discretion, least trustworthy); SlotAnchor means the part sits
+     * under a connect-point slot and carries record-authored identity
+     * (attach point, owning OMOD); RigAnchor means an engine-animated rig
+     * node (bolt, magazine display) supplied the function.
+     */
+    enum class RockProviderWeaponPartClassificationSourceV1 : std::uint32_t
+    {
+        NameToken = 0,
+        SlotAnchor = 1,
+        RigAnchor = 2,
+    };
+
+    /*
      * Per-hand grip report: which weapon part (if any) the hand is attached
      * to this frame. Polled; gripSequence increases on every fresh capture so
      * consumers detect re-grabs without frame callbacks. sourceRoot is a
@@ -712,7 +727,12 @@ namespace rock::provider
         RockProviderWeaponPartGripLocalSpaceV1 handPartLocalSpace{ RockProviderWeaponPartGripLocalSpaceV1::WeaponRootLocal };
         RockProviderTransform handPartLocal{};
         char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
-        std::uint32_t reserved[9]{};
+        // Record-authored identity of the gripped part; see the evidence
+        // detail struct for field semantics (WeaponPartRecordIdentity bit).
+        std::uint32_t omodFormId{ 0 };
+        std::uint32_t attachPointFormId{ 0 };
+        std::uint32_t classificationSource{ 0 };
+        std::uint32_t reserved[6]{};
     };
 
     struct RockProviderFrameSnapshot
@@ -844,7 +864,17 @@ namespace rock::provider
         RockProviderBounds3 localBoundsGame{};
         std::uint32_t pointCount{ 0 };
         char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};
-        std::uint32_t reserved[9]{};
+        /*
+         * Record-authored identity (feature bit WeaponPartRecordIdentity;
+         * fields were reserved zeros before it). omodFormId is the installed
+         * OMOD occupying this part's slot (0 when unpaired); attachPointFormId
+         * is the vanilla attach-point keyword of that slot; classification-
+         * Source is RockProviderWeaponPartClassificationSourceV1.
+         */
+        std::uint32_t omodFormId{ 0 };
+        std::uint32_t attachPointFormId{ 0 };
+        std::uint32_t classificationSource{ 0 };
+        std::uint32_t reserved[6]{};
     };
 
     struct RockProviderBodyContactV1
@@ -1149,6 +1179,17 @@ namespace rock::provider
     {
         RockProviderLimitsV1 limits{};
         return queryProviderLimitsV1(limits) && supportsWeaponPartGripStateV1(limits);
+    }
+
+    [[nodiscard]] inline bool supportsWeaponPartRecordIdentityV1(const RockProviderLimitsV1& limits)
+    {
+        return hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::WeaponPartRecordIdentity);
+    }
+
+    [[nodiscard]] inline bool supportsWeaponPartRecordIdentityV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsWeaponPartRecordIdentityV1(limits);
     }
 
     static_assert(std::is_standard_layout_v<RockProviderTransform>);

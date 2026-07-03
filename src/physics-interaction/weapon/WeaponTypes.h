@@ -205,6 +205,18 @@ namespace rock
         PassiveTouch
     };
 
+    /*
+     * Which signal produced a part classification. NIF name tokens are author
+     * discretion; slot/rig anchors are structural (connect points and engine
+     * rig nodes the game itself depends on) and therefore outrank names.
+     */
+    enum class WeaponPartClassificationSource : std::uint8_t
+    {
+        NameToken = 0,
+        SlotAnchor = 1,
+        RigAnchor = 2,
+    };
+
     struct WeaponPartClassification
     {
         WeaponPartKind partKind{ WeaponPartKind::Other };
@@ -216,6 +228,13 @@ namespace rock
         std::uint8_t priority{ 10 };
         bool gameplayCritical{ false };
         bool cosmetic{ false };
+        WeaponPartClassificationSource classificationSource{ WeaponPartClassificationSource::NameToken };
+        /*
+         * Vanilla attach-point keyword FormID of the owning slot when a slot
+         * anchor classified this part; 0 otherwise (including mod-added attach
+         * points, which cannot be paired to a keyword at runtime yet).
+         */
+        std::uint32_t attachPointFormId{ 0 };
     };
 
     struct WeaponInteractionContact
@@ -348,6 +367,12 @@ namespace rock
         WeaponEvidenceBounds3 localBoundsGame{};
         std::vector<WeaponEvidencePoint3> localMeshPointsGame{};
         std::uint32_t pointCount{ 0 };
+        /*
+         * FormID of the installed OMOD whose attach point owns this part's
+         * slot anchor; 0 when the part was not slot-classified or no installed
+         * mod matches the slot's attach-point keyword.
+         */
+        std::uint32_t omodFormId{ 0 };
     };
 
     inline WeaponEvidencePoint3 makeWeaponEvidencePoint(float x, float y, float z)

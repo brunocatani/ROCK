@@ -10,6 +10,7 @@
 #include "RockConfig.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
+#include "physics-interaction/weapon/WeaponPartRecordIdentityPolicy.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
 
@@ -2206,6 +2207,38 @@ namespace rock
         std::vector<WeaponCollisionProfileEvidenceDescriptor> descriptors;
         descriptors.reserve(bankWeaponBodyCount(bank));
 
+        /*
+         * Pair slot-classified parts with the installed OMOD occupying that
+         * slot: resolve the equipped instance's active mods once and index
+         * them by attach-point keyword FormID. Runs once per publication on
+         * the main thread; ~a dozen form lookups.
+         */
+        std::unordered_map<std::uint32_t, std::uint32_t> omodByAttachPointFormId;
+        {
+            auto* player = f4vr::getPlayer();
+            auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
+            auto* equipData = processData ? processData->equipData : nullptr;
+            auto* weaponForm = equipData ? equipData->item : nullptr;
+            const RE::BGSObjectInstanceExtra* objectInstanceExtra =
+                weaponForm ? findEquippedWeaponObjectInstanceExtra(player, weaponForm, equipData->instanceData) : nullptr;
+            if (objectInstanceExtra && objectInstanceExtra->values) {
+                for (const auto& modIndex : objectInstanceExtra->GetIndexData()) {
+                    if (modIndex.disabled) {
+                        continue;
+                    }
+                    auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(modIndex.objectID);
+                    if (!omod) {
+                        continue;
+                    }
+                    const RE::BGSKeyword* attachPointKeyword =
+                        RE::BGSKeyword::GetTypedKeywordByIndex(RE::KeywordType::kAttachPoint, omod->attachPoint.keywordIndex);
+                    if (attachPointKeyword) {
+                        omodByAttachPointFormId.emplace(attachPointKeyword->formID, omod->formID);
+                    }
+                }
+            }
+        }
+
         auto copyLocalPoints = [](const std::vector<RE::NiPoint3>& points) {
             std::vector<WeaponEvidencePoint3> result;
             result.reserve(points.size());
@@ -2239,6 +2272,12 @@ namespace rock
             };
             descriptor.localMeshPointsGame = copyLocalPoints(instance.generatedLocalPointsGame);
             descriptor.pointCount = instance.generatedPointCount;
+            if (instance.semantic.attachPointFormId != 0) {
+                const auto omodIt = omodByAttachPointFormId.find(instance.semantic.attachPointFormId);
+                if (omodIt != omodByAttachPointFormId.end()) {
+                    descriptor.omodFormId = omodIt->second;
+                }
+            }
             descriptors.push_back(std::move(descriptor));
         }
 
@@ -3384,7 +3423,34 @@ namespace rock
                 }
             }
 
-            const auto sourceSemantic = classifyWeaponPartName(safeNodeName(node));
+            /*
+             * Structure anchors outrank NIF name tokens: the nearest ancestor
+             * that is a connect point (P-*) or an engine rig node decides the
+             * part's slot/function per the record-identity policy. The walk is
+             * bounded and purely upward, so it needs no recursion-state
+             * threading and stays valid for cached sources (the OMOD set is
+             * part of the weapon generation identity).
+             */
+            auto sourceSemantic = classifyWeaponPartName(safeNodeName(node));
+            {
+                auto structureAnchor = weapon_part_record_identity_policy::StructureAnchor::None;
+                RE::NiAVObject* ancestor = node->parent;
+                for (int step = 0; ancestor && step < 24; ++step, ancestor = ancestor->parent) {
+                    structureAnchor = weapon_part_record_identity_policy::resolveStructureAnchor(safeNodeName(ancestor));
+                    if (structureAnchor != weapon_part_record_identity_policy::StructureAnchor::None) {
+                        break;
+                    }
+                }
+                sourceSemantic = weapon_part_record_identity_policy::applyStructureAnchor(sourceSemantic, structureAnchor);
+                if (sourceSemantic.classificationSource != WeaponPartClassificationSource::NameToken) {
+                    ROCK_LOG_DEBUG(Weapon,
+                        "{}generated mesh source '{}' classified by structure anchor: partKind={} attachPoint={:08X}",
+                        std::string(depth * 2, ' '),
+                        safeNodeName(node),
+                        static_cast<int>(sourceSemantic.partKind),
+                        sourceSemantic.attachPointFormId);
+                }
+            }
             auto clusterSet = splitGeneratedWeaponPointCloudForCollision(localPoints);
             auto& clusters = clusterSet.clusters;
             if (clusterSet.supportFitAttempted) {

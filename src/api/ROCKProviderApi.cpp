@@ -94,7 +94,8 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::ThrownDropCommand) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::HandInputSuppression) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartInteraction) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartGripState);
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartGripState) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartRecordIdentity);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
