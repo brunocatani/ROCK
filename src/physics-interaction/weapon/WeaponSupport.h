@@ -505,11 +505,12 @@ namespace rock::weapon_two_handed_grip_math
     }
 
     /*
-     * Detaching leaves the palm exactly on the grip point, so proximity alone
-     * would instantly re-take the grip and make detach impossible. Auto
-     * reattach therefore arms only after the palm has left the radius with a
-     * margin, and fires when it comes back inside. The margin also prevents
-     * arm/fire flutter when the palm hovers at the boundary.
+     * Detaching leaves the palm exactly on the grip point, so buttonless
+     * proximity alone would instantly re-take the grip and make detach
+     * impossible. The buttonless path therefore arms only after the palm has
+     * left the radius with a margin, and fires when it comes back inside. The
+     * margin also prevents arm/fire flutter when the palm hovers at the
+     * boundary.
      */
     inline constexpr float kFiringGripAutoReattachArmDistanceFactor = 1.5f;
 
@@ -518,9 +519,17 @@ namespace rock::weapon_two_handed_grip_math
         return !armed && palmToGripDistance > reattachRadius * kFiringGripAutoReattachArmDistanceFactor;
     }
 
-    inline constexpr bool shouldFireFiringGripAutoReattach(bool armed, float palmToGripDistance, float reattachRadius)
+    /*
+     * A held grab bypasses arming: a closed hand on the grip is explicit
+     * intent, and it cannot re-capture a fresh detach because the detach
+     * itself requires the grab to be open. This is the "squeeze the grip to
+     * hold the weapon" self-heal the pre-part-carry design had; without it a
+     * single grab release leaves the primary permanently detached, which
+     * suppresses sustained (automatic) trigger fire.
+     */
+    inline constexpr bool shouldFireFiringGripAutoReattach(bool armed, bool gripHeld, float palmToGripDistance, float reattachRadius)
     {
-        return armed && palmToGripDistance <= reattachRadius;
+        return (armed || gripHeld) && palmToGripDistance <= reattachRadius;
     }
 
     inline constexpr bool canStartFreeHandPartGrip(

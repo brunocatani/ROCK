@@ -187,11 +187,15 @@ int main()
     ok &= expectFalse("auto reattach does not re-arm while already armed",
         shouldArmFiringGripAutoReattach(true, 10.0f, 3.0f));
     ok &= expectTrue("auto reattach fires when armed and the palm is inside the radius",
-        shouldFireFiringGripAutoReattach(true, 2.9f, 3.0f));
-    ok &= expectFalse("auto reattach never fires unarmed even inside the radius",
-        shouldFireFiringGripAutoReattach(false, 0.1f, 3.0f));
+        shouldFireFiringGripAutoReattach(true, false, 2.9f, 3.0f));
+    ok &= expectFalse("buttonless auto reattach never fires unarmed even inside the radius",
+        shouldFireFiringGripAutoReattach(false, false, 0.1f, 3.0f));
     ok &= expectFalse("auto reattach does not fire in the hysteresis dead band",
-        shouldFireFiringGripAutoReattach(true, 3.5f, 3.0f));
+        shouldFireFiringGripAutoReattach(true, false, 3.5f, 3.0f));
+    ok &= expectTrue("held grab re-takes the grip immediately without arming",
+        shouldFireFiringGripAutoReattach(false, true, 2.9f, 3.0f));
+    ok &= expectFalse("held grab reattach still requires the palm inside the radius",
+        shouldFireFiringGripAutoReattach(false, true, 3.5f, 3.0f));
 
     ok &= expectTrue("free hand part grip starts on grab press over a routed support part",
         canStartFreeHandPartGrip(true, true, false, false));

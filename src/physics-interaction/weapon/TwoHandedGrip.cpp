@@ -1447,14 +1447,17 @@ namespace rock
         const WeaponInteractionContact& firingHandContact = firingHandIsLeft ? leftWeaponContact : rightWeaponContact;
 
         /*
-         * Two reattach paths: the explicit grab+trigger chord (always on), and
-         * config-gated buttonless proximity. The proximity path is hysteresis
-         * armed: the palm must first leave the radius (with margin) after
-         * PartCarry entry, otherwise detaching would be instantly re-captured
-         * because detach leaves the palm exactly on the grip point.
+         * Three reattach paths: the explicit grab+trigger chord (always on,
+         * converts even an active firing-hand part grip), and two config-gated
+         * paths that require a free firing hand - a held grab with the palm on
+         * the grip (immediate: closed hand is explicit intent, and it cannot
+         * re-capture a fresh detach because the detach requires the grab to be
+         * open), and buttonless proximity, which is hysteresis armed so a
+         * detach with the palm resting on the grip point is not instantly
+         * re-captured.
          */
         bool autoReattachRequested = false;
-        if (frameInput.reattachAutoEligible) {
+        if (frameInput.reattachAutoEligible && !partGrip(firingHandIsLeft).active) {
             float palmToGripDistance = 0.0f;
             if (tryComputeFiringPalmToGripDistance(weaponNode, palmToGripDistance)) {
                 const float reattachRadius = g_rockConfig.rockWeaponFiringGripReattachRadius;
@@ -1465,8 +1468,11 @@ namespace rock
                         palmToGripDistance,
                         reattachRadius);
                 }
-                autoReattachRequested =
-                    weapon_two_handed_grip_math::shouldFireFiringGripAutoReattach(_autoReattachArmed, palmToGripDistance, reattachRadius);
+                autoReattachRequested = weapon_two_handed_grip_math::shouldFireFiringGripAutoReattach(
+                    _autoReattachArmed,
+                    frameInput.primaryGripInput.held,
+                    palmToGripDistance,
+                    reattachRadius);
             }
         }
 
@@ -1476,8 +1482,16 @@ namespace rock
             if (partGrip(supportHandIsLeft).active) {
                 _state = TwoHandedState::Gripping;
                 updateFullWeaponAuthorityGrip(weaponNode, dt);
-            } else {
+            } else if (frameInput.primaryGripInput.held) {
                 transitionToPrimaryOnly(weaponNode, currentWeaponGenerationKey, "part-carry-reattached-firing-grip");
+            } else {
+                /*
+                 * Reattached with an open grab and no support grip: no closed
+                 * hand holds the weapon, so return it to FRIK-native carry.
+                 * PrimaryOnly would treat the open grab as a release and drop
+                 * the weapon on the next frame.
+                 */
+                transitionToInactive(false);
             }
             return;
         }
