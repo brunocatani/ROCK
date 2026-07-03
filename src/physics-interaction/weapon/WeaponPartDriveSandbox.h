@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string_view>
 
+#include "physics-interaction/weapon/WeaponClipStrokePolicy.h"
 #include "physics-interaction/weapon/WeaponPartMotionPathPolicy.h"
 
 namespace rock
@@ -74,6 +75,14 @@ namespace rock
             // the path's own geometry.
             weapon_part_motion_path::Vec3 pathAnchorTranslate{};
             float partScale{ 1.0f };
+            /*
+             * Authored assembly followers copied at grip start (the learner
+             * slot can be replaced mid-session by a fresh harvest, so the
+             * session owns its data). Each follower node is driven at the
+             * same stroke progress as the leader.
+             */
+            std::uint32_t followerCount{ 0 };
+            std::array<weapon_clip_stroke::AuthoredFollower, weapon_clip_stroke::kMaxFollowers> followers{};
         };
 
         bool ensureRegistered();

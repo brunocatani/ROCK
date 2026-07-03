@@ -54,6 +54,7 @@
 #include "physics-interaction/stash/ShoulderStashPolicy.h"
 #include "physics-interaction/stash/ShoulderStashTransfer.h"
 #include "physics-interaction/weapon/LooseWeaponGripZone.h"
+#include "physics-interaction/weapon/WeaponClipMotionHarvest.h"
 #include "physics-interaction/weapon/WeaponEquipTransfer.h"
 #include "physics-interaction/weapon/WeaponInteraction.h"
 #include "physics-interaction/hand/HandFrame.h"
@@ -2876,12 +2877,15 @@ namespace rock
              * consumers use.
              */
             if (g_rockConfig.rockBoltDriveSandboxEnabled) {
+                drainWeaponClipHarvest(weaponNode, currentWeaponGenerationKey);
                 updateWeaponPartDriveSandbox(weaponNode, currentWeaponGenerationKey, frame);
                 _weaponPartDriveSandboxWasEnabled = true;
             } else if (_weaponPartDriveSandboxWasEnabled) {
                 _weaponPartDriveSandbox.shutdown();
                 _weaponPartMotionLearner.reset();
                 _boltPartCache = {};
+                ::rock::weapon_clip_motion_harvest::clearPending();
+                _lastClipHarvestWeaponFormId = 0;
                 _weaponPartDriveSandboxWasEnabled = false;
             }
             const auto equippedWeaponDropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
@@ -5993,6 +5997,144 @@ namespace rock
                 .pose = pose,
                 .trusted = !driven,
             });
+        }
+    }
+
+    void PhysicsInteraction::drainWeaponClipHarvest(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey)
+    {
+        if (!weaponNode || currentWeaponGenerationKey == 0) {
+            return;
+        }
+        const auto weaponFormId = currentEquippedWeaponFormId();
+        if (weaponFormId == 0) {
+            return;
+        }
+        if (weaponFormId != _lastClipHarvestWeaponFormId) {
+            // Strokes still queued belong to the previous weapon's subgraph;
+            // shared rig-bone names (WeaponBolt) would misattribute them.
+            ::rock::weapon_clip_motion_harvest::clearPending();
+            _lastClipHarvestWeaponFormId = weaponFormId;
+            return;
+        }
+
+        std::array<weapon_clip_stroke::AuthoredStrokeGroup, 4> drainedGroups{};
+        const auto drainedCount = ::rock::weapon_clip_motion_harvest::drainGroups(
+            drainedGroups.data(),
+            static_cast<std::uint32_t>(drainedGroups.size()));
+        if (drainedCount == 0) {
+            return;
+        }
+
+        const auto poseToNi = [](const weapon_part_motion_path::PoseSample& pose) {
+            RE::NiTransform result{};
+            const float quaternion[4]{ pose.rotate.x, pose.rotate.y, pose.rotate.z, pose.rotate.w };
+            result.rotate = transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(quaternion);
+            result.translate = RE::NiPoint3{ pose.translate.x, pose.translate.y, pose.translate.z };
+            result.scale = 1.0f;
+            return result;
+        };
+        const auto niToPose = [](const RE::NiTransform& transform) {
+            weapon_part_motion_path::PoseSample pose{};
+            float quaternion[4]{};
+            transform_math::niRowsToHavokQuaternion(transform.rotate, quaternion);
+            pose.rotate = weapon_part_motion_path::Quat{ quaternion[3], quaternion[0], quaternion[1], quaternion[2] };
+            pose.translate = weapon_part_motion_path::Vec3{ transform.translate.x, transform.translate.y, transform.translate.z };
+            return pose;
+        };
+        const auto convertLeaderPath = [&](const weapon_clip_stroke::AuthoredStrokeGroup& source,
+                                           const RE::NiTransform& leaderParentWeaponLocal,
+                                           const RE::NiTransform* tail,
+                                           weapon_part_motion_path::MotionPath& outPath) {
+            outPath = weapon_part_motion_path::MotionPath{};
+            float arc = 0.0f;
+            for (std::uint32_t key = 0; key < weapon_part_motion_path::kResampledKeyCount; ++key) {
+                RE::NiTransform keyLocal = poseToNi(source.leaderPath.keys[key]);
+                if (tail) {
+                    keyLocal = transform_math::composeTransforms(keyLocal, *tail);
+                }
+                outPath.keys[key] = niToPose(transform_math::composeTransforms(leaderParentWeaponLocal, keyLocal));
+                if (key > 0) {
+                    arc += weapon_part_motion_path::poseDistance(outPath.keys[key], outPath.keys[key - 1]);
+                }
+            }
+            outPath.totalArcLength = arc;
+            outPath.valid = arc > 0.0f;
+            return outPath.valid;
+        };
+
+        const RE::NiTransform weaponWorldInverse = transform_math::invertTransform(weaponNode->world);
+        for (std::uint32_t groupIndex = 0; groupIndex < drainedCount; ++groupIndex) {
+            const auto& group = drainedGroups[groupIndex];
+            const auto leaderName = providerFixedStringView(group.leaderBoneName.data(), group.leaderBoneName.size());
+            auto* leaderNode = findWeaponNodeBySourceName(weaponNode, leaderName, 32);
+            if (!leaderNode || !leaderNode->parent || !group.leaderPath.valid) {
+                // Clip does not belong to this weapon (or the rig bone is not
+                // in the assembled tree) — normal for NPC/other-race clips.
+                continue;
+            }
+            const RE::NiTransform leaderParentWeaponLocal =
+                transform_math::composeTransforms(weaponWorldInverse, leaderNode->parent->world);
+
+            // Followers convert once (leader-tail-independent): each follower
+            // stroke drives its own node in weapon-root-local space.
+            weapon_clip_stroke::AuthoredStrokeGroup converted{};
+            converted.leaderBoneName = group.leaderBoneName;
+            for (std::uint32_t follower = 0; follower < group.followerCount && follower < group.followers.size(); ++follower) {
+                const auto followerName = providerFixedStringView(
+                    group.followers[follower].boneName.data(),
+                    group.followers[follower].boneName.size());
+                auto* followerNode = findWeaponNodeBySourceName(weaponNode, followerName, 32);
+                if (!followerNode || !followerNode->parent || followerNode == leaderNode) {
+                    continue;
+                }
+                const RE::NiTransform followerParentWeaponLocal =
+                    transform_math::composeTransforms(weaponWorldInverse, followerNode->parent->world);
+                auto& slot = converted.followers[converted.followerCount];
+                slot.boneName = group.followers[follower].boneName;
+                for (std::uint32_t key = 0; key < weapon_part_motion_path::kResampledKeyCount; ++key) {
+                    slot.keys[key] = niToPose(transform_math::composeTransforms(
+                        followerParentWeaponLocal,
+                        poseToNi(group.followers[follower].keys[key])));
+                }
+                slot.restScale = transform_math::composeTransforms(weaponWorldInverse, followerNode->world).scale;
+                ++converted.followerCount;
+            }
+
+            /*
+             * The leader stroke is stored once per matching evidence part so a
+             * grip on the authored rig bone or on any collider node beneath it
+             * scrubs the same authored stroke; tail carries the evidence
+             * node's static offset inside the leader bone's frame.
+             */
+            bool storedForEvidence = false;
+            if (_boltPartCache.generationKey == currentWeaponGenerationKey) {
+                for (std::uint32_t entryIndex = 0; entryIndex < _boltPartCache.count; ++entryIndex) {
+                    const auto& entry = _boltPartCache.entries[entryIndex];
+                    if (!entry.node ||
+                        (entry.node != leaderNode && !actor_equipment_grab::nodeContainsNode(leaderNode, entry.node, 16))) {
+                        continue;
+                    }
+                    const RE::NiTransform tail = transform_math::composeTransforms(
+                        transform_math::invertTransform(leaderNode->world),
+                        entry.node->world);
+                    const RE::NiTransform* tailPtr = entry.node != leaderNode ? &tail : nullptr;
+                    if (convertLeaderPath(group, leaderParentWeaponLocal, tailPtr, converted.leaderPath)) {
+                        _weaponPartMotionLearner.storeAuthoredGroup(
+                            weaponFormId,
+                            providerFixedStringView(entry.sourceName.data(), entry.sourceName.size()),
+                            converted);
+                        storedForEvidence = true;
+                    }
+                }
+            }
+
+            if (!storedForEvidence) {
+                // No collider evidence under this bone yet; keep the stroke
+                // under the rig-bone name so future parts can find it.
+                if (convertLeaderPath(group, leaderParentWeaponLocal, nullptr, converted.leaderPath)) {
+                    _weaponPartMotionLearner.storeAuthoredGroup(weaponFormId, leaderName, converted);
+                }
+            }
         }
     }
 

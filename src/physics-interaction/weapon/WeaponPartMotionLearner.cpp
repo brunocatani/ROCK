@@ -72,6 +72,89 @@ namespace rock
         return nullptr;
     }
 
+    WeaponPartMotionLearner::GroupView WeaponPartMotionLearner::findGroup(
+        std::uint32_t weaponFormId,
+        std::string_view sourceName) const
+    {
+        for (const auto& slot : _paths) {
+            if (slot.used && slotMatches(slot.weaponFormId, slot.sourceName, weaponFormId, sourceName)) {
+                return GroupView{
+                    .leaderPath = &slot.path,
+                    .followers = slot.followers.data(),
+                    .followerCount = slot.followerCount,
+                    .authored = slot.authored,
+                };
+            }
+        }
+        return {};
+    }
+
+    void WeaponPartMotionLearner::storeAuthoredGroup(
+        std::uint32_t weaponFormId,
+        std::string_view sourceName,
+        const weapon_clip_stroke::AuthoredStrokeGroup& group)
+    {
+        if (weaponFormId == 0 || sourceName.empty() || !group.leaderPath.valid) {
+            return;
+        }
+        ++_observationCounter;
+
+        PathSlot* target = nullptr;
+        for (auto& slot : _paths) {
+            if (slot.used && slotMatches(slot.weaponFormId, slot.sourceName, weaponFormId, sourceName)) {
+                target = &slot;
+                break;
+            }
+        }
+        if (target) {
+            // Authored always beats learned; between authored strokes the
+            // largest leader stroke wins (a reload stroke beats a fire nudge).
+            if (target->authored && !weapon_part_motion_path::shouldReplacePath(target->path, group.leaderPath)) {
+                return;
+            }
+        } else {
+            for (auto& slot : _paths) {
+                if (!slot.used) {
+                    target = &slot;
+                    break;
+                }
+                // Never evict authored data for a learned path's sake; among
+                // eviction candidates prefer the stalest non-authored slot.
+                if ((!target || slot.lastUseCounter < target->lastUseCounter) && !slot.authored) {
+                    target = &slot;
+                }
+            }
+            if (!target) {
+                for (auto& slot : _paths) {
+                    if (!target || slot.lastUseCounter < target->lastUseCounter) {
+                        target = &slot;
+                    }
+                }
+            }
+        }
+        if (!target) {
+            return;
+        }
+
+        const bool replaced = target->used;
+        target->used = true;
+        target->authored = true;
+        target->weaponFormId = weaponFormId;
+        copySlotName(target->sourceName, sourceName);
+        target->lastUseCounter = _observationCounter;
+        target->path = group.leaderPath;
+        target->followerCount = (std::min)(group.followerCount, static_cast<std::uint32_t>(target->followers.size()));
+        target->followers = group.followers;
+
+        ROCK_LOG_INFO(Weapon,
+            "WeaponPartMotionLearner: {} AUTHORED stroke group for part '{}' on weapon {:08X} (leader arc {:.2f} game units, {} followers)",
+            replaced ? "updated" : "stored",
+            sourceName,
+            weaponFormId,
+            group.leaderPath.totalArcLength,
+            target->followerCount);
+    }
+
     void WeaponPartMotionLearner::reset()
     {
         _paths = {};
@@ -124,7 +207,8 @@ namespace rock
             }
         }
         if (target) {
-            if (!weapon_part_motion_path::shouldReplacePath(target->path, candidate)) {
+            // Authored clip data always outranks runtime observation.
+            if (target->authored || !weapon_part_motion_path::shouldReplacePath(target->path, candidate)) {
                 return;
             }
         } else {
@@ -133,7 +217,8 @@ namespace rock
                     target = &slot;
                     break;
                 }
-                if (!target || slot.lastUseCounter < target->lastUseCounter) {
+                // Learned paths never evict authored clip data.
+                if (!slot.authored && (!target || slot.lastUseCounter < target->lastUseCounter)) {
                     target = &slot;
                 }
             }
@@ -144,6 +229,8 @@ namespace rock
 
         const bool replaced = target->used;
         target->used = true;
+        target->authored = false;
+        target->followerCount = 0;
         target->weaponFormId = recorder.weaponFormId;
         target->sourceName = recorder.sourceName;
         target->lastUseCounter = _observationCounter;

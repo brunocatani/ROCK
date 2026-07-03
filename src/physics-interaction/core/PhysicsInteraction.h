@@ -222,6 +222,7 @@ namespace rock
 
         void refreshBoltPartCache(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
         void observeWeaponPartMotion(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
+        void drainWeaponClipHarvest(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
         void updateWeaponPartDriveSandbox(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const PhysicsFrameContext& frame);
 
         grab_locomotion_authority_bridge::Output updateGrabLocomotionAuthorityBridge(float deltaSeconds, bool worldReady);
@@ -513,6 +514,10 @@ namespace rock
         WeaponPartMotionLearner _weaponPartMotionLearner;
         WeaponPartDriveSandbox _weaponPartDriveSandbox;
         bool _weaponPartDriveSandboxWasEnabled{ false };
+        // Weapon the clip-harvest queue is currently attributed to; a form
+        // change drops pending strokes so a previous weapon's clips cannot
+        // attach to the new weapon through shared rig-bone names.
+        std::uint32_t _lastClipHarvestWeaponFormId{ 0 };
         static constexpr std::size_t kNativePlayerCollisionSuppressionBodyCapacity = 64;
         std::array<std::uint32_t, kNativePlayerCollisionSuppressionBodyCapacity> _nativePlayerCollisionSuppressedBodyIds{};
         std::uint32_t _nativePlayerCollisionSuppressedBodyCount = 0;

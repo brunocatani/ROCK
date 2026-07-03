@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string_view>
 
+#include "physics-interaction/weapon/WeaponClipStrokePolicy.h"
 #include "physics-interaction/weapon/WeaponPartMotionPathPolicy.h"
 
 namespace rock
@@ -45,16 +46,44 @@ namespace rock
             std::uint32_t weaponFormId,
             std::string_view sourceName) const;
 
+        /*
+         * Full stroke-group view for a part: the leader path plus any authored
+         * followers (assembly parts the clip moves with it). Learned paths
+         * have no followers; authored beats learned for the same key.
+         */
+        struct GroupView
+        {
+            const weapon_part_motion_path::MotionPath* leaderPath{ nullptr };
+            const weapon_clip_stroke::AuthoredFollower* followers{ nullptr };
+            std::uint32_t followerCount{ 0 };
+            bool authored{ false };
+        };
+        [[nodiscard]] GroupView findGroup(std::uint32_t weaponFormId, std::string_view sourceName) const;
+
+        /*
+         * Store a clip-harvested stroke group (already converted to
+         * weapon-root-local and mapped to the evidence source name). Authored
+         * groups always beat learned paths; between authored groups the
+         * largest leader stroke wins.
+         */
+        void storeAuthoredGroup(
+            std::uint32_t weaponFormId,
+            std::string_view sourceName,
+            const weapon_clip_stroke::AuthoredStrokeGroup& group);
+
         void reset();
 
     private:
         struct PathSlot
         {
             bool used{ false };
+            bool authored{ false };
             std::uint32_t weaponFormId{ 0 };
             std::array<char, kMaxSourceName> sourceName{};
             std::uint64_t lastUseCounter{ 0 };
             weapon_part_motion_path::MotionPath path{};
+            std::uint32_t followerCount{ 0 };
+            std::array<weapon_clip_stroke::AuthoredFollower, weapon_clip_stroke::kMaxFollowers> followers{};
         };
 
         struct RecorderSlot

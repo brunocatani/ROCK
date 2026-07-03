@@ -118,7 +118,8 @@ namespace rock
             return;
         }
 
-        std::array<::rock::provider::RockProviderWeaponPartDriveTargetV1, 2> drives{};
+        // Per hand: the gripped leader plus up to kMaxFollowers assembly parts.
+        std::array<::rock::provider::RockProviderWeaponPartDriveTargetV1, 2 * (1 + weapon_clip_stroke::kMaxFollowers)> drives{};
         std::uint32_t driveCount = 0;
 
         for (std::size_t handIndex = 0; handIndex < 2; ++handIndex) {
@@ -139,18 +140,18 @@ namespace rock
                 if (!hand.transformsValid || hand.sourceName.empty()) {
                     continue;
                 }
-                const auto* path = learner.findPath(input.weaponFormId, hand.sourceName);
-                if (!path) {
+                const auto group = learner.findGroup(input.weaponFormId, hand.sourceName);
+                if (!group.leaderPath) {
                     if (_lastNoPathGripSequence[handIndex] != hand.gripSequence) {
                         _lastNoPathGripSequence[handIndex] = hand.gripSequence;
                         ROCK_LOG_INFO(Weapon,
-                            "WeaponPartDriveSandbox: no learned motion path yet for part '{}' on weapon {:08X} — cycle the action once (fire) so the animation can be sampled",
+                            "WeaponPartDriveSandbox: no motion path yet for part '{}' on weapon {:08X} — no authored clip stroke harvested and no runtime sample learned",
                             hand.sourceName,
                             input.weaponFormId);
                     }
                     continue;
                 }
-                const auto seeded = weapon_part_motion_scrub::initialScrubPosition(*path, hand.partTranslate);
+                const auto seeded = weapon_part_motion_scrub::initialScrubPosition(*group.leaderPath, hand.partTranslate);
                 if (!seeded.valid) {
                     continue;
                 }
@@ -165,12 +166,21 @@ namespace rock
                 session.handStartTranslate = hand.handTranslate;
                 session.pathAnchorTranslate = seeded.target.translate;
                 session.partScale = hand.partScale;
+                session.followerCount = 0;
+                if (group.authored && group.followers) {
+                    session.followerCount = (std::min)(group.followerCount, static_cast<std::uint32_t>(session.followers.size()));
+                    for (std::uint32_t i = 0; i < session.followerCount; ++i) {
+                        session.followers[i] = group.followers[i];
+                    }
+                }
                 ROCK_LOG_INFO(Weapon,
-                    "WeaponPartDriveSandbox: scrub session started hand={} part='{}' arc={:.2f}/{:.2f}",
+                    "WeaponPartDriveSandbox: scrub session started hand={} part='{}' arc={:.2f}/{:.2f} source={} followers={}",
                     handIndex == 1 ? "left" : "right",
                     hand.sourceName,
                     seeded.arcPosition,
-                    path->totalArcLength);
+                    group.leaderPath->totalArcLength,
+                    group.authored ? "authored-clip" : "runtime-learned",
+                    session.followerCount);
             }
 
             if (!session.active || !hand.transformsValid) {
@@ -219,6 +229,33 @@ namespace rock
             drive.targetTransform.translate[1] = scrubbed.target.translate.y;
             drive.targetTransform.translate[2] = scrubbed.target.translate.z;
             drive.targetTransform.scale = session.partScale;
+
+            // Authored assembly followers move at the same stroke progress —
+            // driven by source name so they need no collider evidence.
+            const float keyPosition = weapon_clip_stroke::keyPositionForArc(*path, session.arcPosition);
+            for (std::uint32_t i = 0; i < session.followerCount && driveCount < drives.size(); ++i) {
+                const auto& follower = session.followers[i];
+                if (follower.boneName[0] == '\0') {
+                    continue;
+                }
+                const auto followerPose = weapon_clip_stroke::followerPoseAtKeyPosition(follower, keyPosition);
+                auto& followerDrive = drives[driveCount++];
+                followerDrive.flags = static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchSourceName);
+                followerDrive.driveSpace = ::rock::provider::RockProviderWeaponPartDriveSpaceV1::WeaponRootLocal;
+                followerDrive.weaponGenerationKey = session.weaponGenerationKey;
+                followerDrive.groupId = static_cast<std::uint32_t>(handIndex + 1);
+                followerDrive.priority = kDrivePriority;
+                followerDrive.leaseFrames = kDriveLeaseFrames;
+                std::memcpy(
+                    followerDrive.sourceName,
+                    follower.boneName.data(),
+                    (std::min)(follower.boneName.size(), sizeof(followerDrive.sourceName) - 1));
+                quatToRotateRowMajor(followerPose.rotate, followerDrive.targetTransform.rotate);
+                followerDrive.targetTransform.translate[0] = followerPose.translate.x;
+                followerDrive.targetTransform.translate[1] = followerPose.translate.y;
+                followerDrive.targetTransform.translate[2] = followerPose.translate.z;
+                followerDrive.targetTransform.scale = follower.restScale;
+            }
         }
 
         const auto* api = ::rock::provider::ROCKAPI_GetProviderApi();

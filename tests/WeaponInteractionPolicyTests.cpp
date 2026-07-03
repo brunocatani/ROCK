@@ -1,6 +1,7 @@
 #include "physics-interaction/collision/ContactPipelinePolicy.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
+#include "physics-interaction/weapon/WeaponClipStrokePolicy.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponPartMotionPathPolicy.h"
@@ -678,6 +679,73 @@ int main()
         }
         ok &= expectTrue("scrub clamps at the end of the stroke", arc <= path.totalArcLength + 0.001f);
         ok &= expectTrue("scrub reaches the end of the stroke", arc > path.totalArcLength - 0.35f);
+    }
+
+    {
+        using namespace rock::weapon_clip_stroke;
+        using rock::weapon_part_motion_path::PoseSample;
+
+        // Synthetic clip: bolt pulls 5 units along +Y (samples 8..40) and
+        // returns; a handle follows with 2 units of +Z in sync; the magazine
+        // barely trembles (below the follower threshold).
+        std::array<TrackSamples, 3> clipTracks{};
+        auto& boltTrack = clipTracks[0];
+        std::memcpy(boltTrack.boneName.data(), "WeaponBolt", 10);
+        auto& handleTrack = clipTracks[1];
+        std::memcpy(handleTrack.boneName.data(), "WeaponBoltHandle", 16);
+        auto& magTrack = clipTracks[2];
+        std::memcpy(magTrack.boneName.data(), "WeaponMagazine", 14);
+        for (std::uint32_t i = 0; i < kClipSampleCount; ++i) {
+            float phase = 0.0f;
+            if (i >= 8 && i <= 40) {
+                phase = static_cast<float>(i - 8) / 32.0f;
+            } else if (i > 40) {
+                phase = (std::max)(0.0f, 1.0f - static_cast<float>(i - 40) / 12.0f);
+            }
+            boltTrack.samples[i].translate.y = 5.0f * phase;
+            handleTrack.samples[i].translate.z = 2.0f * phase;
+            magTrack.samples[i].translate.x = 0.05f * phase;
+        }
+        boltTrack.sampleCount = kClipSampleCount;
+        handleTrack.sampleCount = kClipSampleCount;
+        magTrack.sampleCount = kClipSampleCount;
+
+        std::array<AuthoredStrokeGroup, kMaxGroupsPerClip> groups{};
+        const auto groupCount = buildAuthoredGroups(
+            clipTracks.data(),
+            static_cast<std::uint32_t>(clipTracks.size()),
+            groups.data(),
+            static_cast<std::uint32_t>(groups.size()));
+        ok &= expectEqual("both moving tracks become stroke-group leaders", groupCount, 2u);
+
+        const AuthoredStrokeGroup* boltGroup = nullptr;
+        for (std::uint32_t i = 0; i < groupCount; ++i) {
+            if (std::strcmp(groups[i].leaderBoneName.data(), "WeaponBolt") == 0) {
+                boltGroup = &groups[i];
+            }
+        }
+        ok &= expectTrue("bolt leads its own stroke group", boltGroup != nullptr);
+        if (boltGroup) {
+            ok &= expectTrue("bolt leader path is valid", boltGroup->leaderPath.valid);
+            ok &= expectTrue("bolt stroke arc covers the pull",
+                boltGroup->leaderPath.totalArcLength > 4.5f && boltGroup->leaderPath.totalArcLength < 5.5f);
+            ok &= expectEqual("bolt group carries the handle, not the still magazine",
+                boltGroup->followerCount, 1u);
+            ok &= expectTrue("bolt group follower is the handle",
+                std::strcmp(boltGroup->followers[0].boneName.data(), "WeaponBoltHandle") == 0);
+            const auto& follower = boltGroup->followers[0];
+            ok &= expectTrue("follower starts at rest", std::abs(follower.keys[0].translate.z) < 0.05f);
+            ok &= expectTrue("follower reaches its stroke end with the leader",
+                std::abs(follower.keys[rock::weapon_part_motion_path::kResampledKeyCount - 1].translate.z - 2.0f) < 0.15f);
+
+            // Half-way along the leader stroke the follower is half-way too:
+            // the whole assembly moves off one scrub parameter.
+            const float midArc = boltGroup->leaderPath.totalArcLength * 0.5f;
+            const float keyPosition = keyPositionForArc(boltGroup->leaderPath, midArc);
+            const auto midPose = followerPoseAtKeyPosition(follower, keyPosition);
+            ok &= expectTrue("follower tracks leader progress at mid-stroke",
+                std::abs(midPose.translate.z - 1.0f) < 0.25f);
+        }
     }
 
     using namespace rock::hand_collision_suppression_math;
