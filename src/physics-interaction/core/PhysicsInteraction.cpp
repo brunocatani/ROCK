@@ -2502,7 +2502,21 @@ namespace rock
                 const std::uint32_t weaponBodyId = bodyIdAtomic.exchange(INVALID_CONTACT_BODY_ID, std::memory_order_acquire);
                 if (weaponBodyId != INVALID_CONTACT_BODY_ID) {
                     missedFrames.store(0, std::memory_order_release);
-                    if (!_weaponCollision.tryGetWeaponContactAtomic(weaponBodyId, outContact)) {
+                    /*
+                     * Contact evidence only gates "the hand is touching the
+                     * weapon". The physics thread publishes last-contact-wins,
+                     * which lets a large part (receiver/handguard) mask the
+                     * tiny foregrip or bolt the palm is actually inside, so
+                     * the part itself is re-selected by the palm-ranked probe.
+                     * The touched body stays as the fallback when the ranked
+                     * scan cannot resolve a candidate.
+                     */
+                    if (weaponNode &&
+                        _weaponCollision.tryFindInteractionContactNearPoint(
+                            weaponNode, handInput.grabAnchorWorld, g_rockConfig.rockWeaponInteractionProbeRadius, outContact)) {
+                        publishWeaponProbeContact(isLeft, outContact);
+                        source = weapon_debug_notification_policy::WeaponContactSource::Contact;
+                    } else if (!_weaponCollision.tryGetWeaponContactAtomic(weaponBodyId, outContact)) {
                         clearWeaponContactForHand(isLeft);
                         outContact = {};
                         source = weapon_debug_notification_policy::WeaponContactSource::None;

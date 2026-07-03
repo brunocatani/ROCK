@@ -2103,8 +2103,9 @@ namespace rock
             return false;
         }
 
-        float bestDistanceSquared = std::numeric_limits<float>::max();
+        weapon_interaction_probe_math::ProbeCandidateRank bestRank{};
         const WeaponBodyInstance* bestInstance = nullptr;
+        int candidateCount = 0;
         const RE::NiAVObject* packageDriveRoot = resolvePackageDriveNode(activeWeaponBodies(), const_cast<RE::NiAVObject*>(weaponNode));
         if (!packageDriveRoot) {
             return false;
@@ -2130,17 +2131,37 @@ namespace rock
                 probeLocal,
                 boundsMin,
                 boundsMax);
-            if (!weapon_interaction_probe_math::isWithinProbeRadiusSquared(distanceSquared, probeRadiusGame) || distanceSquared >= bestDistanceSquared) {
+            if (!weapon_interaction_probe_math::isWithinProbeRadiusSquared(distanceSquared, probeRadiusGame)) {
                 continue;
             }
 
-            bestDistanceSquared = distanceSquared;
+            ++candidateCount;
+            const weapon_interaction_probe_math::ProbeCandidateRank rank{
+                .distanceSquaredGame = distanceSquared,
+                .aabbDiagonalSquaredGame = weapon_interaction_probe_math::aabbDiagonalSquared(boundsMin, boundsMax),
+                .semanticPriority = instance.semantic.priority,
+            };
+            if (bestInstance && !weapon_interaction_probe_math::isBetterProbeCandidate(rank, bestRank)) {
+                continue;
+            }
+
+            bestRank = rank;
             bestInstance = &instance;
         }
 
         if (!bestInstance) {
             return false;
         }
+
+        ROCK_LOG_SAMPLE_DEBUG(Weapon,
+            g_rockConfig.rockLogSampleMilliseconds,
+            "WeaponInteractionProbe ranked: part={} bodyId={} dist={:.2f} diag={:.1f} priority={} candidates={}",
+            static_cast<int>(bestInstance->semantic.partKind),
+            bestInstance->body.getBodyId().value,
+            std::sqrt(bestRank.distanceSquaredGame),
+            std::sqrt(bestRank.aabbDiagonalSquaredGame),
+            bestInstance->semantic.priority,
+            candidateCount);
 
         outContact.valid = true;
         outContact.bodyId = bestInstance->body.getBodyId().value;
@@ -2153,7 +2174,7 @@ namespace rock
         outContact.interactionRoot = const_cast<RE::NiAVObject*>(packageDriveRoot);
         outContact.sourceRoot = bestInstance->sourceNode;
         outContact.weaponGenerationKey = getCurrentWeaponGenerationKey();
-        outContact.probeDistanceGame = std::sqrt(bestDistanceSquared);
+        outContact.probeDistanceGame = std::sqrt(bestRank.distanceSquaredGame);
         return true;
     }
 

@@ -1,6 +1,7 @@
 #include "physics-interaction/collision/ContactPipelinePolicy.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
+#include "physics-interaction/weapon/WeaponGeometry.h"
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
 
@@ -98,6 +99,33 @@ int main()
     ok &= expectEqual("sidearm grab away from the firing grip takes full authority",
         resolveSidearmHybridSupportAuthorityMode(6.5f, 6.0f),
         WeaponSupportAuthorityMode::FullTwoHandedSolver);
+
+    using rock::weapon_interaction_probe_math::isBetterProbeCandidate;
+    using rock::weapon_interaction_probe_math::ProbeCandidateRank;
+    ok &= expectTrue("closer weapon part wins outside dual containment",
+        isBetterProbeCandidate(
+            ProbeCandidateRank{ .distanceSquaredGame = 4.0f, .aabbDiagonalSquaredGame = 1225.0f, .semanticPriority = 62 },
+            ProbeCandidateRank{ .distanceSquaredGame = 9.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 95 }));
+    ok &= expectFalse("farther weapon part loses outside dual containment",
+        isBetterProbeCandidate(
+            ProbeCandidateRank{ .distanceSquaredGame = 9.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 95 },
+            ProbeCandidateRank{ .distanceSquaredGame = 4.0f, .aabbDiagonalSquaredGame = 1225.0f, .semanticPriority = 62 }));
+    ok &= expectTrue("contained tiny part beats the engulfing receiver hull",
+        isBetterProbeCandidate(
+            ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 95 },
+            ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 1225.0f, .semanticPriority = 62 }));
+    ok &= expectTrue("containment tolerance lets a near-miss tiny part beat the engulfing hull",
+        isBetterProbeCandidate(
+            ProbeCandidateRank{ .distanceSquaredGame = 0.81f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 95 },
+            ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 1225.0f, .semanticPriority = 62 }));
+    ok &= expectTrue("semantic priority breaks equal-size containment ties",
+        isBetterProbeCandidate(
+            ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 95 },
+            ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 62 }));
+    ok &= expectFalse("equal candidates keep the current best",
+        isBetterProbeCandidate(
+            ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 62 },
+            ProbeCandidateRank{ .distanceSquaredGame = 0.0f, .aabbDiagonalSquaredGame = 82.0f, .semanticPriority = 62 }));
     ok &= expectEqual("support release keeps primary ownership when primary grip is held",
         resolveSupportReleaseManualAction(true, true),
         SupportReleaseManualAction::KeepPrimaryOwnership);
