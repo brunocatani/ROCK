@@ -2719,11 +2719,14 @@ namespace rock
             }
 
             /*
-             * Firing-grip reattach is an explicit grab+trigger chord. The
-             * trigger is peeked (not consumed) because the native trigger
-             * action is already suppressed while no hand holds the firing grip.
+             * Firing-grip reattach: explicit grab+trigger chord, plus the
+             * config-gated proximity path (distance/hysteresis evaluated by
+             * TwoHandedGrip). The trigger is peeked (not consumed) because the
+             * native trigger action is already suppressed while no hand holds
+             * the firing grip.
              */
             bool reattachChordPressed = false;
+            bool reattachAutoEligible = false;
             if (_twoHandedGrip.isPartCarryActive() && primaryDetachFeatureAvailable) {
                 const auto rightTriggerState = readTriggerButtonStatePeek(false);
                 reattachChordPressed = weapon_two_handed_grip_math::shouldRequestFiringGripReattach(
@@ -2736,6 +2739,13 @@ namespace rock
                         .triggerHeld = rightTriggerState.held,
                         .triggerPressed = rightTriggerState.pressed,
                     });
+                reattachAutoEligible = weapon_two_handed_grip_math::canAttemptFiringGripAutoReattach(
+                    weapon_two_handed_grip_math::FiringGripAutoReattachInput{
+                        .autoReattachEnabled = g_rockConfig.rockWeaponFiringGripAutoReattachEnabled,
+                        .partCarryActive = true,
+                        .menuInputActive = inputBlockingMenuActive,
+                        .handHoldingObject = _rightHand.isHolding(),
+                    });
             }
 
             const EquippedWeaponGripFrameInput gripFrameInput{
@@ -2743,6 +2753,7 @@ namespace rock
                 .leftHandHoldingObject = leftHandHoldingObject,
                 .rightHandHoldingObject = _rightHand.isHolding(),
                 .reattachChordPressed = reattachChordPressed,
+                .reattachAutoEligible = reattachAutoEligible,
                 .primaryGripInput = primaryGripInput,
             };
             _twoHandedGrip.update(

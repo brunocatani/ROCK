@@ -150,6 +150,49 @@ int main()
             .triggerHeld = true,
         }));
 
+    using rock::weapon_two_handed_grip_math::canAttemptFiringGripAutoReattach;
+    using rock::weapon_two_handed_grip_math::FiringGripAutoReattachInput;
+    using rock::weapon_two_handed_grip_math::shouldArmFiringGripAutoReattach;
+    using rock::weapon_two_handed_grip_math::shouldFireFiringGripAutoReattach;
+    ok &= expectTrue("auto reattach is eligible during part carry when enabled",
+        canAttemptFiringGripAutoReattach(FiringGripAutoReattachInput{
+            .autoReattachEnabled = true,
+            .partCarryActive = true,
+        }));
+    ok &= expectFalse("auto reattach requires the config toggle",
+        canAttemptFiringGripAutoReattach(FiringGripAutoReattachInput{
+            .partCarryActive = true,
+        }));
+    ok &= expectFalse("auto reattach requires part-carry state",
+        canAttemptFiringGripAutoReattach(FiringGripAutoReattachInput{
+            .autoReattachEnabled = true,
+        }));
+    ok &= expectFalse("auto reattach is blocked while a menu owns input",
+        canAttemptFiringGripAutoReattach(FiringGripAutoReattachInput{
+            .autoReattachEnabled = true,
+            .partCarryActive = true,
+            .menuInputActive = true,
+        }));
+    ok &= expectFalse("auto reattach is blocked while the hand holds an object",
+        canAttemptFiringGripAutoReattach(FiringGripAutoReattachInput{
+            .autoReattachEnabled = true,
+            .partCarryActive = true,
+            .handHoldingObject = true,
+        }));
+
+    ok &= expectTrue("auto reattach arms once the palm leaves the radius with margin",
+        shouldArmFiringGripAutoReattach(false, 4.6f, 3.0f));
+    ok &= expectFalse("auto reattach does not arm inside the arming margin",
+        shouldArmFiringGripAutoReattach(false, 4.4f, 3.0f));
+    ok &= expectFalse("auto reattach does not re-arm while already armed",
+        shouldArmFiringGripAutoReattach(true, 10.0f, 3.0f));
+    ok &= expectTrue("auto reattach fires when armed and the palm is inside the radius",
+        shouldFireFiringGripAutoReattach(true, 2.9f, 3.0f));
+    ok &= expectFalse("auto reattach never fires unarmed even inside the radius",
+        shouldFireFiringGripAutoReattach(false, 0.1f, 3.0f));
+    ok &= expectFalse("auto reattach does not fire in the hysteresis dead band",
+        shouldFireFiringGripAutoReattach(true, 3.5f, 3.0f));
+
     ok &= expectTrue("free hand part grip starts on grab press over a routed support part",
         canStartFreeHandPartGrip(true, true, false, false));
     ok &= expectFalse("free hand part grip requires a routed support-grip contact",

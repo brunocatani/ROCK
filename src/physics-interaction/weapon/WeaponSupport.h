@@ -475,14 +475,52 @@ namespace rock::weapon_two_handed_grip_math
     /*
      * Reattaching to the firing grip is an explicit grab+trigger chord. A plain
      * grab press on the free firing hand must stay available for world grabs and
-     * weapon part grips, so proximity alone must never re-take the firing grip.
-     * The chord requires both buttons held with at least one fresh press edge so
-     * merely holding both through unrelated actions cannot re-fire it.
+     * weapon part grips. The chord requires both buttons held with at least one
+     * fresh press edge so merely holding both through unrelated actions cannot
+     * re-fire it. The chord always works; proximity auto-reattach below is the
+     * config-gated buttonless alternative.
      */
     inline constexpr bool shouldRequestFiringGripReattach(const FiringGripReattachChordInput& input)
     {
         return input.partCarryActive && !input.menuInputActive && !input.handHoldingObject &&
                input.gripHeld && input.triggerHeld && (input.gripPressed || input.triggerPressed);
+    }
+
+    struct FiringGripAutoReattachInput
+    {
+        bool autoReattachEnabled{ false };
+        bool partCarryActive{ false };
+        bool menuInputActive{ false };
+        bool handHoldingObject{ false };
+    };
+
+    /*
+     * Buttonless proximity reattach eligibility. Distance and hysteresis are
+     * evaluated separately per frame; this only gates whether the free firing
+     * hand is allowed to be captured by proximity at all.
+     */
+    inline constexpr bool canAttemptFiringGripAutoReattach(const FiringGripAutoReattachInput& input)
+    {
+        return input.autoReattachEnabled && input.partCarryActive && !input.menuInputActive && !input.handHoldingObject;
+    }
+
+    /*
+     * Detaching leaves the palm exactly on the grip point, so proximity alone
+     * would instantly re-take the grip and make detach impossible. Auto
+     * reattach therefore arms only after the palm has left the radius with a
+     * margin, and fires when it comes back inside. The margin also prevents
+     * arm/fire flutter when the palm hovers at the boundary.
+     */
+    inline constexpr float kFiringGripAutoReattachArmDistanceFactor = 1.5f;
+
+    inline constexpr bool shouldArmFiringGripAutoReattach(bool armed, float palmToGripDistance, float reattachRadius)
+    {
+        return !armed && palmToGripDistance > reattachRadius * kFiringGripAutoReattachArmDistanceFactor;
+    }
+
+    inline constexpr bool shouldFireFiringGripAutoReattach(bool armed, float palmToGripDistance, float reattachRadius)
+    {
+        return armed && palmToGripDistance <= reattachRadius;
     }
 
     inline constexpr bool canStartFreeHandPartGrip(
