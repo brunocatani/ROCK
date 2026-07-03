@@ -1345,13 +1345,24 @@ namespace rock
             return candidates;
         }
 
-        std::vector<RE::NiPoint3> makeCenteredHavokPointCloud(const std::vector<RE::NiPoint3>& localPointsGame, const RE::NiPoint3& localCenterGame)
+        /*
+         * sourceScale re-bakes a source NiNode's own NiTransform::scale into
+         * the point cloud before Havok conversion. It must be 1.0 for points
+         * already expressed in a frame with no scale divided out (e.g.
+         * weapon-root-local localPointsGame under a scale=1.0 weapon root);
+         * pass the captured GeneratedHullSource::sourceNodeScale for points
+         * expressed in a source node's own local space
+         * (sourceLocalPointsGame), since Havok never re-applies NiNode scale
+         * to a built shape at runtime.
+         */
+        std::vector<RE::NiPoint3> makeCenteredHavokPointCloud(const std::vector<RE::NiPoint3>& localPointsGame, const RE::NiPoint3& localCenterGame, float sourceScale = 1.0f)
         {
             std::vector<RE::NiPoint3> result;
             result.reserve(localPointsGame.size());
+            const float scaledHavokScale = sourceScale * gameToHavokScale();
             for (const auto& point : localPointsGame) {
-                result.emplace_back((point.x - localCenterGame.x) * gameToHavokScale(), (point.y - localCenterGame.y) * gameToHavokScale(),
-                    (point.z - localCenterGame.z) * gameToHavokScale());
+                result.emplace_back((point.x - localCenterGame.x) * scaledHavokScale, (point.y - localCenterGame.y) * scaledHavokScale,
+                    (point.z - localCenterGame.z) * scaledHavokScale);
             }
             return result;
         }
@@ -3218,8 +3229,21 @@ namespace rock
         for (std::size_t i = 0; i < outSources.size(); ++i) {
             const auto& source = outSources[i];
             const auto coverage = classifyGeneratedHull(source.sourceName);
+            /*
+             * The actual Havok hull is built from sourceLocalPoints* (the
+             * source NiNode's own local space), not localPoints* (weapon-root
+             * local space) - see buildSourceShape() in
+             * createGeneratedWeaponBodiesInBankSlice. If a source node's own
+             * NiTransform::scale differs from the weapon root's, the two
+             * bounds below will diverge even though position (center) stays
+             * correct, since Havok's keyframed placement only drives
+             * rotation+translation and never re-applies node scale to an
+             * already-baked shape. Logged here to make that divergence
+             * directly visible instead of inferred.
+             */
+            const float sourceNodeScale = source.sourceRoot ? source.sourceRoot->world.scale : 1.0f;
             ROCK_LOG_TRACE(Weapon,
-                "Generated weapon mesh selected[{}]: category={} source='{}' driveRoot='{}' sourceRoot='{}' points={} center=({:.2f},{:.2f},{:.2f}) boundsMin=({:.2f},{:.2f},{:.2f}) boundsMax=({:.2f},{:.2f},{:.2f})",
+                "Generated weapon mesh selected[{}]: category={} source='{}' driveRoot='{}' sourceRoot='{}' points={} center=({:.2f},{:.2f},{:.2f}) boundsMin=({:.2f},{:.2f},{:.2f}) boundsMax=({:.2f},{:.2f},{:.2f}) sourceLocalCenter=({:.2f},{:.2f},{:.2f}) sourceLocalBoundsMin=({:.2f},{:.2f},{:.2f}) sourceLocalBoundsMax=({:.2f},{:.2f},{:.2f}) sourceNodeScale={:.4f} weaponRootScale={:.4f}",
                 i,
                 coverage.label,
                 source.sourceName,
@@ -3234,7 +3258,18 @@ namespace rock
                 source.localMinGame.z,
                 source.localMaxGame.x,
                 source.localMaxGame.y,
-                source.localMaxGame.z);
+                source.localMaxGame.z,
+                source.sourceLocalCenterGame.x,
+                source.sourceLocalCenterGame.y,
+                source.sourceLocalCenterGame.z,
+                source.sourceLocalMinGame.x,
+                source.sourceLocalMinGame.y,
+                source.sourceLocalMinGame.z,
+                source.sourceLocalMaxGame.x,
+                source.sourceLocalMaxGame.y,
+                source.sourceLocalMaxGame.z,
+                sourceNodeScale,
+                packageDriveRootTransform.scale);
         }
 
         ROCK_LOG_DEBUG(Weapon,
@@ -3398,6 +3433,7 @@ namespace rock
                 source.sourceLocalTrianglesGame = sourceLocalTriangles;
                 source.driveRoot = sourceRoot;
                 source.sourceRoot = node;
+                source.sourceNodeScale = node->world.scale;
                 source.sourceGroupId = sourceGroupId;
                 source.sourceName = safeNodeName(node);
                 if (clusters.size() > 1) {
@@ -3499,9 +3535,11 @@ namespace rock
         const std::uint32_t filterInfo = generatedWeaponCollisionFilterInfo(options.collisionEnabledOnCreate);
         auto buildSourceShape = [&](const GeneratedHullSource& source) -> RE::hknpShape* {
             if (source.childLocalPointCloudsGame.size() <= 1) {
-                const auto& sourcePoints = source.sourceLocalPointsGame.empty() ? source.localPointsGame : source.sourceLocalPointsGame;
-                const auto& sourceCenter = source.sourceLocalPointsGame.empty() ? source.localCenterGame : source.sourceLocalCenterGame;
-                auto centeredHavokPoints = makeCenteredHavokPointCloud(sourcePoints, sourceCenter);
+                const bool useSourceLocal = !source.sourceLocalPointsGame.empty();
+                const auto& sourcePoints = useSourceLocal ? source.sourceLocalPointsGame : source.localPointsGame;
+                const auto& sourceCenter = useSourceLocal ? source.sourceLocalCenterGame : source.localCenterGame;
+                const float sourceScale = useSourceLocal ? source.sourceNodeScale : 1.0f;
+                auto centeredHavokPoints = makeCenteredHavokPointCloud(sourcePoints, sourceCenter, sourceScale);
                 return havok_convex_shape_builder::buildConvexShapeFromLocalHavokPoints(centeredHavokPoints, g_rockConfig.rockWeaponCollisionConvexRadius);
             }
 

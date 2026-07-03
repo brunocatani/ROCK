@@ -154,6 +154,18 @@ namespace rock
             std::uintptr_t sourceGroupId{ 0 };
             std::string sourceName;
             WeaponPartClassification semantic{};
+            /*
+             * NiTransform::scale of sourceRoot, captured at extraction time.
+             * sourceLocalPointsGame/sourceLocalCenterGame are computed by
+             * dividing world points by this same scale, so it must be
+             * re-multiplied back in when those points are baked into a Havok
+             * shape (Havok never re-applies NiNode scale to a built shape at
+             * runtime) - otherwise a source node with scale != 1.0 produces a
+             * collider baked at (trueSize / scale). Captured here instead of
+             * re-read live at shape-build time, since body creation is staged
+             * across frames after extraction.
+             */
+            float sourceNodeScale{ 1.0f };
         };
 
         struct WeaponBodyInstance
