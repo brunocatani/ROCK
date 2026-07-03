@@ -618,7 +618,16 @@ namespace rock
         const Vector to = weaponSolverNormalize(toRaw);
         float cosTheta = (std::max)(-1.0f, (std::min)(1.0f, weaponSolverDot(from, to)));
 
-        if (cosTheta > 0.9999f) {
+        /*
+         * The parallel guard exists only to keep the cross-product axis
+         * numerically stable; it must stay far below perception. At 0.9999
+         * (0.81deg) it becomes a visible deadzone for any solve whose base
+         * transform is its own previous output: part-carry accumulated slow
+         * hand motion inside the deadzone and released it as ~1deg snaps at
+         * ~10Hz. 0.999999 (~0.08deg) still leaves sin(theta) ~1.4e-3, orders
+         * of magnitude above float32 cross-product noise.
+         */
+        if (cosTheta > 0.999999f) {
             return transform_math::makeIdentityRotation<Matrix>();
         }
 
