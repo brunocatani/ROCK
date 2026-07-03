@@ -1418,6 +1418,20 @@ namespace
         return pi->queryProviderWeaponContactAtPoint(*query, *outResult);
     }
 
+    bool ROCK_PROVIDER_CALL apiQueryEquippedWeaponClassificationV1(RockProviderWeaponClassificationV1* outResult)
+    {
+        if (!outResult || outResult->size != sizeof(RockProviderWeaponClassificationV1)) {
+            return false;
+        }
+
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!pi || !pi->isInitialized()) {
+            return false;
+        }
+
+        return pi->queryProviderEquippedWeaponClassificationV1(*outResult);
+    }
+
     std::uint32_t ROCK_PROVIDER_CALL apiGetWeaponEvidenceDetailCountV1()
     {
         auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
@@ -1560,6 +1574,7 @@ namespace
         .clearWeaponPartTargetsV1 = &apiClearWeaponPartTargetsV1,
         .setWeaponPartDriveTargetsV1 = &apiSetWeaponPartDriveTargetsV1,
         .clearWeaponPartDriveTargetsV1 = &apiClearWeaponPartDriveTargetsV1,
+        .queryEquippedWeaponClassificationV1 = &apiQueryEquippedWeaponClassificationV1,
     };
 }
 

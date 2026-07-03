@@ -72,6 +72,77 @@ namespace rock
         Heavy
     };
 
+    /*
+     * Records which signal produced a WeaponSizeClass decision. RE::WEAPON_TYPE
+     * collapses every firearm to kGun, and Fallout4.esm's WeaponType* keyword
+     * convention is author-discretion on modded weapons (verified 2026-07-03:
+     * of two installed Glock pistol mods, one tags WeaponTypePistol on every
+     * weapon, the other tags none), so classification must degrade gracefully
+     * rather than silently trusting an absent or partial signal.
+     */
+    enum class WeaponClassificationSource : std::uint8_t
+    {
+        None,
+        Keyword,
+        WeightFallback,
+        Default
+    };
+
+    /*
+     * One bit per Fallout4.esm WeaponType* keyword ROCK checks on the equipped
+     * weapon's own form (verified directly against Fallout4.esm; no OMOD/template
+     * indirection was observed for any sampled weapon). A bitmask instead of a
+     * single enum value because vanilla weapons can legitimately carry more than
+     * one bucket keyword at once (e.g. CombatShotgun carries both
+     * WeaponTypeRifle, the grip/animation category, and WeaponTypeShotgun, the
+     * specific family) - collapsing that to one value would silently discard the
+     * more specific tag that a future reload/scope consumer would want.
+     */
+    enum class WeaponKeywordFlag : std::uint64_t
+    {
+        None = 0,
+        Pistol = 1ull << 0,
+        Rifle = 1ull << 1,
+        Shotgun = 1ull << 2,
+        AssaultRifle = 1ull << 3,
+        Sniper = 1ull << 4,
+        GaussRifle = 1ull << 5,
+        LaserMusket = 1ull << 6,
+        HeavyGun = 1ull << 7,
+        HandToHand = 1ull << 8,
+        Melee1H = 1ull << 9,
+        Melee2H = 1ull << 10,
+        Unarmed = 1ull << 11,
+        Minigun = 1ull << 12,
+        Fatman = 1ull << 13,
+        MissileLauncher = 1ull << 14,
+        GatlingLaser = 1ull << 15,
+        Flamer = 1ull << 16,
+        Cryolater = 1ull << 17,
+        JunkJet = 1ull << 18,
+        RailwayRifle = 1ull << 19,
+        Broadsider = 1ull << 20,
+        Syringer = 1ull << 21,
+        FlareGun = 1ull << 22,
+        GammaGun = 1ull << 23,
+        AlienBlaster = 1ull << 24,
+        Ripper = 1ull << 25,
+        Shishkebab = 1ull << 26,
+        Laser = 1ull << 27,
+        Plasma = 1ull << 28,
+        Ballistic = 1ull << 29,
+        Thrown = 1ull << 30,
+        Grenade = 1ull << 31,
+        Mine = 1ull << 32,
+        Explosive = 1ull << 33,
+        Automatic = 1ull << 34,
+    };
+
+    [[nodiscard]] inline constexpr bool hasWeaponKeywordFlag(std::uint64_t flags, WeaponKeywordFlag flag)
+    {
+        return (flags & static_cast<std::uint64_t>(flag)) != 0;
+    }
+
     enum class WeaponReloadRole : std::uint8_t
     {
         None,

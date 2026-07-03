@@ -75,6 +75,18 @@
         return contact.valid;
     }
 
+    bool PhysicsInteraction::queryProviderEquippedWeaponClassificationV1(::rock::provider::RockProviderWeaponClassificationV1& outResult) const
+    {
+        outResult = {};
+        const auto identity = _weaponCollision.getEquippedWeaponClassification();
+        outResult.valid = identity.hasEquippedWeapon ? 1u : 0u;
+        outResult.formId = identity.formID;
+        outResult.keywordFlags = identity.keywordFlags;
+        outResult.sizeClass = static_cast<::rock::provider::RockProviderWeaponSizeClassV1>(identity.sizeClass);
+        outResult.source = static_cast<::rock::provider::RockProviderWeaponClassificationSourceV1>(identity.classificationSource);
+        return identity.hasEquippedWeapon;
+    }
+
     std::uint32_t PhysicsInteraction::getProviderWeaponEvidenceDetailCountV1() const
     {
         return static_cast<std::uint32_t>(_weaponCollision.getProfileEvidenceDescriptors().size());

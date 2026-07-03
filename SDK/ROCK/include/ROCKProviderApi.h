@@ -350,6 +350,85 @@ namespace rock::provider
         SourceParentLocal = 1,
     };
 
+    /*
+     * Coarse physical size class for the currently equipped weapon. ROCK uses
+     * this to pick a generated-collision max-distance-from-origin budget;
+     * exposed here so other providers (reload/scope logic) don't need to
+     * reimplement weapon-size classification.
+     */
+    enum class RockProviderWeaponSizeClassV1 : std::uint32_t
+    {
+        Melee = 0,
+        Pistol = 1,
+        Rifle = 2,
+        Heavy = 3,
+    };
+
+    /*
+     * Fallout4.esm's WeaponType* keyword tagging is reliable on vanilla weapons
+     * but author-discretion on mods (verified directly: of two installed real
+     * pistol mods, one tags every weapon, the other tags none). This records
+     * which signal actually produced the size class so a consumer can tell a
+     * confident keyword match from a weight-based guess.
+     */
+    enum class RockProviderWeaponClassificationSourceV1 : std::uint32_t
+    {
+        None = 0,
+        Keyword = 1,
+        WeightFallback = 2,
+        Default = 3,
+    };
+
+    /*
+     * One bit per Fallout4.esm WeaponType* keyword found on the equipped
+     * weapon's own form. A bitmask rather than a single value because vanilla
+     * weapons can legitimately carry more than one bucket keyword at once
+     * (e.g. CombatShotgun carries both Rifle, the grip/animation category, and
+     * Shotgun, the specific family) - callers that need the more specific tag
+     * (e.g. a future reload/scope mod picking a shotgun-specific animation)
+     * should prefer the most specific flag present rather than assuming
+     * mutual exclusivity.
+     */
+    enum class RockProviderWeaponKeywordFlagV1 : std::uint64_t
+    {
+        None = 0,
+        Pistol = 1ull << 0,
+        Rifle = 1ull << 1,
+        Shotgun = 1ull << 2,
+        AssaultRifle = 1ull << 3,
+        Sniper = 1ull << 4,
+        GaussRifle = 1ull << 5,
+        LaserMusket = 1ull << 6,
+        HeavyGun = 1ull << 7,
+        HandToHand = 1ull << 8,
+        Melee1H = 1ull << 9,
+        Melee2H = 1ull << 10,
+        Unarmed = 1ull << 11,
+        Minigun = 1ull << 12,
+        Fatman = 1ull << 13,
+        MissileLauncher = 1ull << 14,
+        GatlingLaser = 1ull << 15,
+        Flamer = 1ull << 16,
+        Cryolater = 1ull << 17,
+        JunkJet = 1ull << 18,
+        RailwayRifle = 1ull << 19,
+        Broadsider = 1ull << 20,
+        Syringer = 1ull << 21,
+        FlareGun = 1ull << 22,
+        GammaGun = 1ull << 23,
+        AlienBlaster = 1ull << 24,
+        Ripper = 1ull << 25,
+        Shishkebab = 1ull << 26,
+        Laser = 1ull << 27,
+        Plasma = 1ull << 28,
+        Ballistic = 1ull << 29,
+        Thrown = 1ull << 30,
+        Grenade = 1ull << 31,
+        Mine = 1ull << 32,
+        Explosive = 1ull << 33,
+        Automatic = 1ull << 34,
+    };
+
     [[nodiscard]] inline constexpr bool hasLifecycleFlag(std::uint32_t flags, RockProviderLifecycleFlag flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
@@ -377,6 +456,11 @@ namespace rock::provider
         RockProviderWeaponPartTargetFlagV1 flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
+    }
+
+    [[nodiscard]] inline constexpr bool hasWeaponKeywordFlagV1(std::uint64_t flags, RockProviderWeaponKeywordFlagV1 flag)
+    {
+        return (flags & static_cast<std::uint64_t>(flag)) != 0;
     }
 
     struct RockProviderConsumerRegistrationV1
@@ -641,6 +725,24 @@ namespace rock::provider
         std::uint32_t reserved{ 0 };
     };
 
+    /*
+     * Weapon size class plus the raw keyword bitmask it was (or wasn't) derived
+     * from. Consumers that only need the collider-style bucket can read
+     * sizeClass directly; consumers that need finer distinctions (e.g. a future
+     * reload/scope mod picking a shotgun- or minigun-specific behavior) can
+     * inspect keywordFlags with hasWeaponKeywordFlagV1.
+     */
+    struct RockProviderWeaponClassificationV1
+    {
+        std::uint32_t size{ sizeof(RockProviderWeaponClassificationV1) };
+        std::uint32_t valid{ 0 };
+        std::uint64_t keywordFlags{ 0 };
+        RockProviderWeaponSizeClassV1 sizeClass{ RockProviderWeaponSizeClassV1::Rifle };
+        RockProviderWeaponClassificationSourceV1 source{ RockProviderWeaponClassificationSourceV1::None };
+        std::uint32_t formId{ 0 };
+        std::uint32_t reserved[4]{};
+    };
+
     struct RockProviderPoint3
     {
         float x{ 0.0f };
@@ -818,6 +920,7 @@ namespace rock::provider
             const RockProviderWeaponPartDriveTargetV1* targets,
             std::uint32_t targetCount);
         RockProviderResultV1(ROCK_PROVIDER_CALL* clearWeaponPartDriveTargetsV1)(std::uint64_t ownerToken);
+        bool(ROCK_PROVIDER_CALL* queryEquippedWeaponClassificationV1)(RockProviderWeaponClassificationV1* outResult);
 
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
@@ -882,6 +985,8 @@ namespace rock::provider
         offsetof(RockProviderApi, clearHandInputSuppressionV1) + sizeof(std::declval<RockProviderApi>().clearHandInputSuppressionV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_WEAPON_PART_INTERACTION_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, clearWeaponPartDriveTargetsV1) + sizeof(std::declval<RockProviderApi>().clearWeaponPartDriveTargetsV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_WEAPON_CLASSIFICATION_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, queryEquippedWeaponClassificationV1) + sizeof(std::declval<RockProviderApi>().queryEquippedWeaponClassificationV1));
 
     [[nodiscard]] inline bool queryProviderLimitsV1(RockProviderLimitsV1& outLimits)
     {
@@ -1018,6 +1123,10 @@ namespace rock::provider
     static_assert(alignof(RockProviderWeaponPartTargetResolutionV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderWeaponPartTargetResolutionV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderWeaponPartTargetResolutionV1>);
+    static_assert(sizeof(RockProviderWeaponClassificationV1) == 48);
+    static_assert(alignof(RockProviderWeaponClassificationV1) == 8);
+    static_assert(std::is_standard_layout_v<RockProviderWeaponClassificationV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderWeaponClassificationV1>);
     static_assert(sizeof(RockProviderFrameSnapshot) == 272);
     static_assert(alignof(RockProviderFrameSnapshot) == 8);
     static_assert(sizeof(RockProviderHandFrameV1) == 112);

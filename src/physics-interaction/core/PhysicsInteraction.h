@@ -131,6 +131,7 @@ namespace rock
         std::uint32_t copyProviderBodyContacts(
             ::rock::provider::RockProviderBodyContactV1* outContacts,
             std::uint32_t maxContacts) const;
+        bool queryProviderEquippedWeaponClassificationV1(::rock::provider::RockProviderWeaponClassificationV1& outResult) const;
 
     private:
         bool validateCriticalOffsets() const;

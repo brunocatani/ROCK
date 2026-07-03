@@ -950,28 +950,165 @@ namespace rock
         }
 
         /*
-         * RE::WEAPON_TYPE collapses every firearm to kGun, so it cannot separate
-         * pistol/rifle/heavy. Item weight is the only generic per-weapon signal
-         * available for every vanilla and modded weapon without a curated
-         * per-FormID profile, so the collision-distance size class is a weight
-         * heuristic with two user-configurable breakpoints. Melee is resolved
-         * from WEAPON_TYPE directly since that data already exists.
+         * Fallout4.esm's WeaponType* keyword records, verified directly against
+         * the ESM (2026-07-03) rather than assumed from general modding
+         * knowledge. Stored directly on every sampled vanilla WEAP record's own
+         * keyword array - no OMOD/template indirection - so a direct
+         * HasKeyword() check against the equipped form is sufficient. FormIDs are
+         * master-relative (Fallout4.esm is always load-order index 0), matching
+         * the existing hardcoded-keyword-lookup precedent in
+         * hFRIK/src/FRIK.cpp (RE::TESForm::GetFormByID<RE::BGSKeyword>(0xB34A6)).
          */
-        WeaponSizeClass classifyWeaponSizeClass(const RE::TESObjectWEAP* weapon, float weightGame)
+        struct WeaponKeywordFormEntry
         {
+            std::uint32_t formId;
+            WeaponKeywordFlag flag;
+        };
+
+        constexpr WeaponKeywordFormEntry kWeaponKeywordForms[] = {
+            { 0x0004A0A0, WeaponKeywordFlag::Pistol },
+            { 0x0004A0A1, WeaponKeywordFlag::Rifle },
+            { 0x00226454, WeaponKeywordFlag::Shotgun },
+            { 0x00226455, WeaponKeywordFlag::AssaultRifle },
+            { 0x001E325D, WeaponKeywordFlag::Sniper },
+            { 0x00226456, WeaponKeywordFlag::GaussRifle },
+            { 0x00226452, WeaponKeywordFlag::LaserMusket },
+            { 0x0004A0A3, WeaponKeywordFlag::HeavyGun },
+            { 0x00226453, WeaponKeywordFlag::HandToHand },
+            { 0x0004A0A4, WeaponKeywordFlag::Melee1H },
+            { 0x0004A0A5, WeaponKeywordFlag::Melee2H },
+            { 0x0005240E, WeaponKeywordFlag::Unarmed },
+            { 0x0022575D, WeaponKeywordFlag::Minigun },
+            { 0x0022575C, WeaponKeywordFlag::Fatman },
+            { 0x0022575B, WeaponKeywordFlag::MissileLauncher },
+            { 0x0022575E, WeaponKeywordFlag::GatlingLaser },
+            { 0x00225760, WeaponKeywordFlag::Flamer },
+            { 0x0022575F, WeaponKeywordFlag::Cryolater },
+            { 0x00225763, WeaponKeywordFlag::JunkJet },
+            { 0x00225764, WeaponKeywordFlag::RailwayRifle },
+            { 0x00225766, WeaponKeywordFlag::Broadsider },
+            { 0x00225765, WeaponKeywordFlag::Syringer },
+            { 0x00225761, WeaponKeywordFlag::FlareGun },
+            { 0x00225762, WeaponKeywordFlag::GammaGun },
+            { 0x0016968B, WeaponKeywordFlag::AlienBlaster },
+            { 0x00225767, WeaponKeywordFlag::Ripper },
+            { 0x00225768, WeaponKeywordFlag::Shishkebab },
+            { 0x00092A84, WeaponKeywordFlag::Laser },
+            { 0x00092A85, WeaponKeywordFlag::Plasma },
+            { 0x00092A86, WeaponKeywordFlag::Ballistic },
+            { 0x0004A0A6, WeaponKeywordFlag::Thrown },
+            { 0x0010C415, WeaponKeywordFlag::Grenade },
+            { 0x0010C414, WeaponKeywordFlag::Mine },
+            { 0x0004C922, WeaponKeywordFlag::Explosive },
+            { 0x0004A0A2, WeaponKeywordFlag::Automatic },
+        };
+
+        struct ResolvedWeaponKeywordEntry
+        {
+            const RE::BGSKeyword* keyword{ nullptr };
+            WeaponKeywordFlag flag{ WeaponKeywordFlag::None };
+        };
+
+        const std::array<ResolvedWeaponKeywordEntry, std::size(kWeaponKeywordForms)>& resolvedWeaponKeywordForms()
+        {
+            /*
+             * Lazily resolved on first use (function-local static, thread-safe
+             * magic-static init) because RE::TESForm::GetFormByID requires the
+             * game's form table to be populated, which is not guaranteed at
+             * static-initialization time. No static initialization-order
+             * dependency: this runs on first equipped-weapon identity read,
+             * well after data load.
+             */
+            static const std::array<ResolvedWeaponKeywordEntry, std::size(kWeaponKeywordForms)> resolved = [] {
+                std::array<ResolvedWeaponKeywordEntry, std::size(kWeaponKeywordForms)> table{};
+                for (std::size_t i = 0; i < std::size(kWeaponKeywordForms); ++i) {
+                    table[i].keyword = RE::TESForm::GetFormByID<RE::BGSKeyword>(kWeaponKeywordForms[i].formId);
+                    table[i].flag = kWeaponKeywordForms[i].flag;
+                }
+                return table;
+            }();
+            return resolved;
+        }
+
+        std::uint64_t computeWeaponKeywordFlags(const RE::TESObjectWEAP* weapon)
+        {
+            std::uint64_t flags = 0;
             if (!weapon) {
-                return WeaponSizeClass::Rifle;
+                return flags;
             }
+            for (const auto& entry : resolvedWeaponKeywordForms()) {
+                if (entry.keyword && weapon->HasKeyword(entry.keyword)) {
+                    flags |= static_cast<std::uint64_t>(entry.flag);
+                }
+            }
+            return flags;
+        }
+
+        struct WeaponClassificationResult
+        {
+            WeaponSizeClass sizeClass{ WeaponSizeClass::Rifle };
+            WeaponClassificationSource source{ WeaponClassificationSource::Default };
+            std::uint64_t keywordFlags{ 0 };
+        };
+
+        /*
+         * Keyword-primary, weight-fallback: vanilla Fallout4.esm tags every
+         * sampled weapon with exactly one (occasionally two, e.g. CombatShotgun
+         * carries both Rifle and Shotgun) bucket keyword, but tagging on
+         * player-installed weapon mods is author-discretion and unreliable
+         * (verified directly: of two installed Glock pistol mods, one tags every
+         * weapon with WeaponTypePistol, the other tags none). So a bucket
+         * keyword is trusted when present; when absent, this falls back to the
+         * existing weight heuristic rather than defaulting blindly.
+         */
+        WeaponClassificationResult classifyEquippedWeapon(const RE::TESObjectWEAP* weapon, float weightGame)
+        {
+            WeaponClassificationResult result{};
+            if (!weapon) {
+                return result;
+            }
+
+            result.keywordFlags = computeWeaponKeywordFlags(weapon);
+            const auto has = [&](WeaponKeywordFlag flag) { return hasWeaponKeywordFlag(result.keywordFlags, flag); };
+
+            if (has(WeaponKeywordFlag::Melee1H) || has(WeaponKeywordFlag::Melee2H) ||
+                has(WeaponKeywordFlag::Unarmed) || has(WeaponKeywordFlag::HandToHand)) {
+                result.sizeClass = WeaponSizeClass::Melee;
+                result.source = WeaponClassificationSource::Keyword;
+                return result;
+            }
+            if (has(WeaponKeywordFlag::HeavyGun)) {
+                result.sizeClass = WeaponSizeClass::Heavy;
+                result.source = WeaponClassificationSource::Keyword;
+                return result;
+            }
+            if (has(WeaponKeywordFlag::Pistol)) {
+                result.sizeClass = WeaponSizeClass::Pistol;
+                result.source = WeaponClassificationSource::Keyword;
+                return result;
+            }
+            if (has(WeaponKeywordFlag::Rifle) || has(WeaponKeywordFlag::Shotgun) ||
+                has(WeaponKeywordFlag::AssaultRifle) || has(WeaponKeywordFlag::Sniper) ||
+                has(WeaponKeywordFlag::GaussRifle) || has(WeaponKeywordFlag::LaserMusket)) {
+                result.sizeClass = WeaponSizeClass::Rifle;
+                result.source = WeaponClassificationSource::Keyword;
+                return result;
+            }
+
             if (weapon->IsMeleeWeapon()) {
-                return WeaponSizeClass::Melee;
+                result.sizeClass = WeaponSizeClass::Melee;
+                result.source = WeaponClassificationSource::WeightFallback;
+                return result;
             }
+            result.source = WeaponClassificationSource::WeightFallback;
             if (weightGame <= g_rockConfig.rockWeaponSizeClassPistolMaxWeight) {
-                return WeaponSizeClass::Pistol;
+                result.sizeClass = WeaponSizeClass::Pistol;
+            } else if (weightGame <= g_rockConfig.rockWeaponSizeClassRifleMaxWeight) {
+                result.sizeClass = WeaponSizeClass::Rifle;
+            } else {
+                result.sizeClass = WeaponSizeClass::Heavy;
             }
-            if (weightGame <= g_rockConfig.rockWeaponSizeClassRifleMaxWeight) {
-                return WeaponSizeClass::Rifle;
-            }
-            return WeaponSizeClass::Heavy;
+            return result;
         }
 
         float resolveMaxGeneratedSourceDistanceGame(WeaponSizeClass sizeClass)
@@ -1053,7 +1190,10 @@ namespace rock
                 if (weightGame < 0.0f) {
                     weightGame = weapon->weaponData.weight;
                 }
-                identity.sizeClass = classifyWeaponSizeClass(weapon, weightGame);
+                const auto classification = classifyEquippedWeapon(weapon, weightGame);
+                identity.sizeClass = classification.sizeClass;
+                identity.classificationSource = classification.source;
+                identity.keywordFlags = classification.keywordFlags;
             } else {
                 identity.instanceContentKey = makeEquippedWeaponInstanceContentKey(nullptr, equipData->instanceData, objectInstanceExtra);
             }
@@ -2881,6 +3021,11 @@ namespace rock
         }
 
         return identityKey;
+    }
+
+    weapon_generation_identity_policy::EquippedWeaponGenerationIdentity WeaponCollision::getEquippedWeaponClassification() const
+    {
+        return readEquippedWeaponGenerationIdentity();
     }
 
     std::uint64_t WeaponCollision::getWeaponVisualCompositionKey(RE::NiAVObject* weaponNode, WeaponVisualKeyStats& stats) const
