@@ -118,6 +118,8 @@ namespace rock
 
         bool isPartCarryActive() const { return _state == TwoHandedState::PartCarry; }
 
+        bool isPrimaryOnlyActive() const { return _state == TwoHandedState::PrimaryOnly; }
+
         bool isHandPartGripping(bool isLeft) const { return partGrip(isLeft).active; }
 
         bool isFiringGripOccupied() const { return _state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryOnly; }
@@ -130,6 +132,8 @@ namespace rock
         }
 
         bool isTouching() const { return _state == TwoHandedState::Touching; }
+
+        bool isFiringHandLeft() const { return _firingHandIsLeft; }
 
         TwoHandedState getState() const { return _state; }
 

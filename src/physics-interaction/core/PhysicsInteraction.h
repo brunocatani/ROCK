@@ -353,6 +353,9 @@ namespace rock
         std::unordered_map<std::uint64_t, float> _heldImpactHapticCooldownUntil;
         std::uint64_t _grabEventFrameCounter = 0;
         std::array<shoulder_stash::RuntimeState, 2> _shoulderStashStates{};
+        // Dedicated stash detector states for the equipped-weapon carry gesture so
+        // dwell/hysteresis never mixes with a loose object held by the same hand.
+        std::array<shoulder_stash::RuntimeState, 2> _equippedWeaponStashStates{};
         std::array<mouth_consume::RuntimeState, 2> _mouthConsumeStates{};
         feedback_haptics::FeedbackHaptics _feedbackHaptics;
 

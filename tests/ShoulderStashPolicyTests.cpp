@@ -143,5 +143,15 @@ int main()
         fallbackNotification.c_str(),
         "[ROCK] Collected item 000ABCDE");
 
+    const auto stowedNotification = notifications::formatStowedNotification("10mm Pistol", 0x000ABCDEu);
+    ok &= expectString("stowed notification uses the stow verb",
+        stowedNotification.c_str(),
+        "[ROCK] Stowed 10mm Pistol");
+
+    const auto stowedFallbackNotification = notifications::formatStowedNotification({}, 0x000ABCDEu);
+    ok &= expectString("stowed notification falls back to form id",
+        stowedFallbackNotification.c_str(),
+        "[ROCK] Stowed item 000ABCDE");
+
     return ok ? 0 : 1;
 }

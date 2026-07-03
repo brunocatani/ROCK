@@ -278,6 +278,25 @@ int main()
     ok &= expectFalse("unknown release source never surrenders to VirtualHolsters",
         shouldSurrenderReleaseToVirtualHolsters(SourceHand::None, true));
 
+    ok &= expectEqual("primary-only carry stashes from the firing hand",
+        resolveEquippedWeaponStashCarryHand(true, false, false, false, false),
+        SourceHand::Right);
+    ok &= expectEqual("primary-only carry follows a left firing hand",
+        resolveEquippedWeaponStashCarryHand(true, false, false, false, true),
+        SourceHand::Left);
+    ok &= expectEqual("part carry with only the left grip stashes from the left hand",
+        resolveEquippedWeaponStashCarryHand(false, true, true, false, false),
+        SourceHand::Left);
+    ok &= expectEqual("part carry with only the right grip stashes from the right hand",
+        resolveEquippedWeaponStashCarryHand(false, true, false, true, false),
+        SourceHand::Right);
+    ok &= expectEqual("part carry with both grips has no stash carry hand",
+        resolveEquippedWeaponStashCarryHand(false, true, true, true, false),
+        SourceHand::None);
+    ok &= expectEqual("inactive grip states have no stash carry hand",
+        resolveEquippedWeaponStashCarryHand(false, false, false, false, false),
+        SourceHand::None);
+
     using namespace rock::weapon_part_runtime;
     std::array<Target, 3> weaponPartTargets{};
     weaponPartTargets[0].active = true;

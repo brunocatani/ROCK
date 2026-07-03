@@ -240,6 +240,22 @@ namespace rock
             return config;
         }
 
+        /*
+         * Equipped-weapon stash reuses the loose-object back volume so the
+         * player learns one gesture. Body-zone collider/contact evidence is
+         * disabled for this variant: the equipped weapon has no held-body
+         * contact identity, so the HMD-relative back volume (forced on) is the
+         * gesture authority for hand-carried weapons.
+         */
+        shoulder_stash::DetectorConfig makeEquippedWeaponStashDetectorConfig()
+        {
+            shoulder_stash::DetectorConfig config = makeShoulderStashDetectorConfig();
+            config.enabled = g_rockConfig.rockEquippedWeaponShoulderStashEnabled;
+            config.useBodyZoneColliders = false;
+            config.useHmdBackVolume = true;
+            return config;
+        }
+
         shoulder_stash::Probe makeShoulderStashObjectProbe(RE::hknpWorld* world, const Hand& hand, const HandFrameInput& handInput)
         {
             shoulder_stash::Probe probe{};
@@ -2735,6 +2751,66 @@ namespace rock
                     });
             }
 
+            /*
+             * Equipped-weapon shoulder stash: evaluated before update() so the
+             * frame that releases the last grip still has a fresh in-zone
+             * decision for the releasing hand (update() consumes the release
+             * and raises the drop request in the same frame). Only the single
+             * carrying hand is tracked; the idle hand's dwell state resets so a
+             * stale candidate can never confirm a later release.
+             */
+            std::array<shoulder_stash::Decision, 2> equippedWeaponStashDecisions{};
+            {
+                const auto stashCarryHand = equipped_weapon_drop_policy::resolveEquippedWeaponStashCarryHand(
+                    _twoHandedGrip.isPrimaryOnlyActive(),
+                    _twoHandedGrip.isPartCarryActive(),
+                    _twoHandedGrip.isHandPartGripping(true),
+                    _twoHandedGrip.isHandPartGripping(false),
+                    _twoHandedGrip.isFiringHandLeft());
+                const bool stashCarryEligible = g_rockConfig.rockEquippedWeaponShoulderStashEnabled &&
+                                                !inputBlockingMenuActive &&
+                                                stashCarryHand != equipped_weapon_drop_policy::SourceHand::None;
+                for (const bool stashHandIsLeft : { true, false }) {
+                    auto& stashState = _equippedWeaponStashStates[stashHandIsLeft ? 1u : 0u];
+                    if (!stashCarryEligible || equipped_weapon_drop_policy::isLeft(stashCarryHand) != stashHandIsLeft) {
+                        shoulder_stash::resetRuntime(stashState);
+                        continue;
+                    }
+
+                    const HandFrameInput& carryInput = stashHandIsLeft ? frame.left : frame.right;
+                    const auto stashDecision = shoulder_stash::evaluate(shoulder_stash::DetectorInput{
+                            .isLeftHand = stashHandIsLeft,
+                            .probe = shoulder_stash::Probe{ .pointGame = carryInput.grabAnchorWorld },
+                            .hmdProbe = makeShoulderStashHmdProbe(carryInput),
+                            .hasHmdProbe = true,
+                            .hasHmdFrame = frame.hasHmdFrame,
+                            .hmdPositionWorld = frame.hmdPositionWorld,
+                            .hmdForwardWorld = frame.hmdForwardWorld,
+                            .deltaSeconds = frame.deltaSeconds,
+                            .config = makeEquippedWeaponStashDetectorConfig(),
+                        },
+                        stashState);
+                    equippedWeaponStashDecisions[stashHandIsLeft ? 1u : 0u] = stashDecision;
+
+                    if (stashDecision.candidate && g_rockConfig.rockShoulderStashHapticsEnabled) {
+                        const bool pulseDue = _dynamicPushElapsedSeconds >= stashState.nextCandidatePulseTimeSeconds;
+                        if (stashDecision.enteredCandidate || stashDecision.changedCandidate || pulseDue) {
+                            (void)_feedbackHaptics.queue(
+                                stashHandIsLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
+                                g_rockConfig.rockShoulderStashCandidateHapticDurationSeconds,
+                                shoulder_stash_haptic_policy::computeCandidatePulseIntensity(stashDecision.confidence,
+                                    shoulder_stash_haptic_policy::CandidatePulseConfig{
+                                        .enabled = true,
+                                        .baseIntensity = g_rockConfig.rockShoulderStashCandidateHapticBaseIntensity,
+                                        .maxIntensity = g_rockConfig.rockShoulderStashCandidateHapticIntensity,
+                                    }));
+                            stashState.nextCandidatePulseTimeSeconds =
+                                _dynamicPushElapsedSeconds + (std::max)(0.02f, g_rockConfig.rockShoulderStashCandidateHapticIntervalSeconds);
+                        }
+                    }
+                }
+            }
+
             const EquippedWeaponGripFrameInput gripFrameInput{
                 .leftGripHeld = gripPressed,
                 .leftHandHoldingObject = leftHandHoldingObject,
@@ -2794,6 +2870,53 @@ namespace rock
                         dropLoc.x,
                         dropLoc.y,
                         dropLoc.z);
+                    _pendingEquippedWeaponPrimaryOnlyGripStart = false;
+                    clearEquippedWeaponPrimaryInputState();
+                } else if (sourceHandKnown &&
+                           g_rockConfig.rockEquippedWeaponShoulderStashEnabled &&
+                           equippedWeaponStashDecisions[equipped_weapon_drop_policy::isLeft(sourceHand) ? 1u : 0u].confirmedForCommit) {
+                    /*
+                     * Stash-unequip resolves before VirtualHolsters because the
+                     * holster press request has side effects and cannot be
+                     * probed. The weapon is only unequipped -- it stays in the
+                     * inventory and no world reference is created. On failure
+                     * ROCK deliberately does nothing: the weapon stays equipped
+                     * and re-attaches to the hand, which is safer than dropping
+                     * a weapon the player asked to stow.
+                     */
+                    const bool stashHandIsLeft = equipped_weapon_drop_policy::isLeft(sourceHand);
+                    const auto& stashDecision = equippedWeaponStashDecisions[stashHandIsLeft ? 1u : 0u];
+                    const auto unequipResult = weapon_equip_transfer::unequipEquippedWeaponFromPlayer(
+                        weapon_equip_transfer::EquippedUnequipInput{ .playSounds = true });
+                    if (unequipResult.success) {
+                        ROCK_LOG_INFO(Weapon,
+                            "Equipped weapon shoulder stash unequipped weapon formID={:08X} sourceHand={} zone={} confidence={:.2f} stack={} instanceMatch={}",
+                            unequipResult.formID,
+                            equipped_weapon_drop_policy::sourceHandName(sourceHand),
+                            body_zone::bodyZoneName(stashDecision.zone),
+                            stashDecision.confidence,
+                            unequipResult.stackID,
+                            unequipResult.matchedInstanceData ? "yes" : "no");
+                        if (g_rockConfig.rockShoulderStashHapticsEnabled) {
+                            (void)_feedbackHaptics.queue(
+                                stashHandIsLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
+                                g_rockConfig.rockShoulderStashCommitHapticDurationSeconds,
+                                g_rockConfig.rockShoulderStashCommitHapticIntensity);
+                        }
+                        if (g_rockConfig.rockShoulderStashShowCollectedNotifications) {
+                            f4vr::showNotification(shoulder_stash_notification_policy::formatStowedNotification(
+                                shoulderStashItemName(unequipResult.weapon),
+                                unequipResult.formID));
+                        }
+                    } else {
+                        ROCK_LOG_WARN(Weapon,
+                            "Equipped weapon shoulder stash unequip failed formID={:08X} reason={} sourceHand={} attempted={} -- weapon stays equipped",
+                            unequipResult.formID,
+                            weapon_equip_transfer::unequipReasonName(unequipResult.reason),
+                            equipped_weapon_drop_policy::sourceHandName(sourceHand),
+                            unequipResult.attempted ? "yes" : "no");
+                    }
+                    shoulder_stash::resetRuntime(_equippedWeaponStashStates[stashHandIsLeft ? 1u : 0u]);
                     _pendingEquippedWeaponPrimaryOnlyGripStart = false;
                     clearEquippedWeaponPrimaryInputState();
                 } else {

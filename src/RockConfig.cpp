@@ -192,6 +192,7 @@ namespace rock
         rockWeaponFiringGripAttachHapticIntensity = 0.85f;
         rockWeaponFiringGripDetachHapticIntensity = 0.30f;
         rockWeaponSupportGripHapticIntensity = 0.50f;
+        rockEquippedWeaponShoulderStashEnabled = true;
         rockRealisticWeaponHandlingEnabled = false;
         rockRealisticGrenadeFuseSeconds = 5.0f;
         rockGrabbedWeaponAutoEquipEnabled = false;
@@ -796,6 +797,8 @@ namespace rock
             0.50f,
             0.0f,
             1.0f);
+        rockEquippedWeaponShoulderStashEnabled =
+            ini.GetBoolValue(REALISTIC_WEAPONS_SECTION, "bEquippedWeaponShoulderStashEnabled", rockEquippedWeaponShoulderStashEnabled);
         const bool legacyPhysicsPrimaryDetachEnabled =
             ini.GetBoolValue(SECTION, "bEquippedWeaponPrimaryDetachEnabled", rockRealisticWeaponHandlingEnabled);
         const bool legacyRealisticPrimaryDetachEnabled = ini.GetBoolValue(
