@@ -15,11 +15,13 @@ namespace rock
      * Config-gated reference consumer that lets a hand scrub an animated
      * weapon part along its authored animation stroke. It exercises the
      * public provider API end-to-end from inside ROCK: it registers a real
-     * consumer, and per equipped weapon installs NonExclusive AttachOnly
-     * whitelist targets ONLY for parts with a stored motion path — authored
-     * clip strokes mapped at equip, runtime-learned paths as the fallback
-     * (MatchBodyId, generation-scoped) — every part without motion data
-     * keeps its normal authority/support grip. Gripped parts
+     * consumer, and installs a NonExclusive AttachOnly whitelist that is the
+     * union of a static classification layer (every action role and moving
+     * reload part kind, magazines included — grabbable immediately, driven
+     * once a path exists) and dynamic per-part targets (MatchBodyId,
+     * generation-scoped) for parts of the current weapon with a stored
+     * motion path regardless of classification. Every unmatched part keeps
+     * its normal authority/support grip. Gripped parts
      * are driven with setWeaponPartDriveTargetsV1 — the exact loop an
      * external reload consumer will run. Engine access stays in
      * PhysicsInteraction: this class receives plain weapon-root-local data
@@ -106,9 +108,11 @@ namespace rock
         void endSession(HandSession& session);
 
         std::uint64_t _ownerToken{ 0 };
-        // Movable-part whitelist currently installed in the provider store;
-        // compared against FrameInput to skip redundant setWeaponPartTargets
-        // calls. _installedGenerationKey 0 = nothing installed.
+        // Whitelist currently installed in the provider store; the dynamic
+        // part is compared against FrameInput to skip redundant
+        // setWeaponPartTargets calls. _staticTargetsInstalled false = no
+        // install has succeeded yet (fresh registration or after shutdown).
+        bool _staticTargetsInstalled{ false };
         std::uint64_t _installedGenerationKey{ 0 };
         std::uint32_t _installedMovableCount{ 0 };
         std::array<std::uint32_t, kMaxMovableParts> _installedMovableBodyIds{};
