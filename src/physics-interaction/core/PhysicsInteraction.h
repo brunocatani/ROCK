@@ -220,7 +220,7 @@ namespace rock
 
         void restoreExpiredProviderWeaponPartDriveNodes(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
 
-        void refreshBoltPartCache(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
+        void refreshDrivePartCache(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
         void observeWeaponPartMotion(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
         void drainWeaponClipHarvest(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
         void updateWeaponPartDriveSandbox(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const PhysicsFrameContext& frame);
@@ -493,24 +493,26 @@ namespace rock
 
         /*
          * Bolt-drive sandbox (rockBoltDriveSandboxEnabled): per-generation
-         * cache of Bolt-classified parts so the per-frame learner/sandbox path
-         * never touches the heap-allocating evidence descriptor copies.
+         * cache of drive-eligible parts (weaponPartDriveSandboxEligible) so
+         * the per-frame learner/sandbox path never touches the heap-allocating
+         * evidence descriptor copies. Action-role parts fill before Receiver
+         * parts so numerous receiver-named nodes cannot evict the bolt/slide.
          * Nodes are non-owning engine pointers valid only while the cached
          * generation key matches the current weapon generation.
          */
-        struct BoltPartCacheEntry
+        struct DrivePartCacheEntry
         {
             std::uint32_t bodyId{ 0x7FFF'FFFFu };
             RE::NiAVObject* node{ nullptr };
             std::array<char, 64> sourceName{};
         };
-        struct BoltPartCache
+        struct DrivePartCache
         {
             std::uint64_t generationKey{ 0 };
             std::uint32_t count{ 0 };
-            std::array<BoltPartCacheEntry, 4> entries{};
+            std::array<DrivePartCacheEntry, 8> entries{};
         };
-        BoltPartCache _boltPartCache{};
+        DrivePartCache _drivePartCache{};
         WeaponPartMotionLearner _weaponPartMotionLearner;
         WeaponPartDriveSandbox _weaponPartDriveSandbox;
         bool _weaponPartDriveSandboxWasEnabled{ false };

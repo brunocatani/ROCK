@@ -2883,7 +2883,7 @@ namespace rock
             } else if (_weaponPartDriveSandboxWasEnabled) {
                 _weaponPartDriveSandbox.shutdown();
                 _weaponPartMotionLearner.reset();
-                _boltPartCache = {};
+                _drivePartCache = {};
                 ::rock::weapon_clip_motion_harvest::clearPending();
                 _lastClipHarvestWeaponFormId = 0;
                 _weaponPartDriveSandboxWasEnabled = false;
@@ -5909,12 +5909,12 @@ namespace rock
         }
     }
 
-    void PhysicsInteraction::refreshBoltPartCache(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey)
+    void PhysicsInteraction::refreshDrivePartCache(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey)
     {
-        if (_boltPartCache.generationKey == currentWeaponGenerationKey) {
+        if (_drivePartCache.generationKey == currentWeaponGenerationKey) {
             return;
         }
-        _boltPartCache = {};
+        _drivePartCache = {};
         if (!weaponNode || currentWeaponGenerationKey == 0) {
             return;
         }
@@ -5923,31 +5923,41 @@ namespace rock
         // frame. The cache key is only committed once a descriptor for the
         // current generation is seen, so an early call before the evidence
         // snapshot publishes retries next frame instead of caching emptiness.
+        // Two passes: bolt/slide action parts first so weapons with many
+        // Receiver-classified nodes cannot evict the reciprocating part from
+        // the fixed-size cache.
         const auto descriptors = _weaponCollision.getProfileEvidenceDescriptors();
         bool sawCurrentGeneration = false;
-        for (const auto& descriptor : descriptors) {
-            if (!descriptor.valid || descriptor.weaponGenerationKey != currentWeaponGenerationKey) {
-                continue;
+        for (const bool receiverPass : { false, true }) {
+            for (const auto& descriptor : descriptors) {
+                if (!descriptor.valid || descriptor.weaponGenerationKey != currentWeaponGenerationKey) {
+                    continue;
+                }
+                sawCurrentGeneration = true;
+                if (!weaponPartDriveSandboxEligible(descriptor.semantic.actionRole, descriptor.semantic.partKind)) {
+                    continue;
+                }
+                const bool actionPart = descriptor.semantic.actionRole == WeaponActionRole::Bolt ||
+                                        descriptor.semantic.actionRole == WeaponActionRole::Slide;
+                if (actionPart == receiverPass) {
+                    continue;
+                }
+                auto* node = reinterpret_cast<RE::NiAVObject*>(descriptor.sourceRootAddress);
+                if (!node || descriptor.sourceName.empty() || _drivePartCache.count >= _drivePartCache.entries.size()) {
+                    continue;
+                }
+                auto& entry = _drivePartCache.entries[_drivePartCache.count++];
+                entry.bodyId = descriptor.bodyId;
+                entry.node = node;
+                entry.sourceName = {};
+                std::memcpy(
+                    entry.sourceName.data(),
+                    descriptor.sourceName.data(),
+                    (std::min)(descriptor.sourceName.size(), entry.sourceName.size() - 1));
             }
-            sawCurrentGeneration = true;
-            if (descriptor.semantic.actionRole != WeaponActionRole::Bolt) {
-                continue;
-            }
-            auto* node = reinterpret_cast<RE::NiAVObject*>(descriptor.sourceRootAddress);
-            if (!node || descriptor.sourceName.empty() || _boltPartCache.count >= _boltPartCache.entries.size()) {
-                continue;
-            }
-            auto& entry = _boltPartCache.entries[_boltPartCache.count++];
-            entry.bodyId = descriptor.bodyId;
-            entry.node = node;
-            entry.sourceName = {};
-            std::memcpy(
-                entry.sourceName.data(),
-                descriptor.sourceName.data(),
-                (std::min)(descriptor.sourceName.size(), entry.sourceName.size() - 1));
         }
         if (sawCurrentGeneration) {
-            _boltPartCache.generationKey = currentWeaponGenerationKey;
+            _drivePartCache.generationKey = currentWeaponGenerationKey;
         }
     }
 
@@ -5956,8 +5966,8 @@ namespace rock
         if (!weaponNode || currentWeaponGenerationKey == 0) {
             return;
         }
-        refreshBoltPartCache(weaponNode, currentWeaponGenerationKey);
-        if (_boltPartCache.generationKey != currentWeaponGenerationKey || _boltPartCache.count == 0) {
+        refreshDrivePartCache(weaponNode, currentWeaponGenerationKey);
+        if (_drivePartCache.generationKey != currentWeaponGenerationKey || _drivePartCache.count == 0) {
             return;
         }
         const auto weaponFormId = currentEquippedWeaponFormId();
@@ -5966,8 +5976,8 @@ namespace rock
         }
 
         const RE::NiTransform weaponWorldInverse = transform_math::invertTransform(weaponNode->world);
-        for (std::uint32_t i = 0; i < _boltPartCache.count; ++i) {
-            const auto& entry = _boltPartCache.entries[i];
+        for (std::uint32_t i = 0; i < _drivePartCache.count; ++i) {
+            const auto& entry = _drivePartCache.entries[i];
             if (!entry.node || !actor_equipment_grab::nodeContainsNode(weaponNode, entry.node, 64)) {
                 continue;
             }
@@ -6107,9 +6117,9 @@ namespace rock
              * node's static offset inside the leader bone's frame.
              */
             bool storedForEvidence = false;
-            if (_boltPartCache.generationKey == currentWeaponGenerationKey) {
-                for (std::uint32_t entryIndex = 0; entryIndex < _boltPartCache.count; ++entryIndex) {
-                    const auto& entry = _boltPartCache.entries[entryIndex];
+            if (_drivePartCache.generationKey == currentWeaponGenerationKey) {
+                for (std::uint32_t entryIndex = 0; entryIndex < _drivePartCache.count; ++entryIndex) {
+                    const auto& entry = _drivePartCache.entries[entryIndex];
                     if (!entry.node ||
                         (entry.node != leaderNode && !actor_equipment_grab::nodeContainsNode(leaderNode, entry.node, 16))) {
                         continue;
@@ -6159,7 +6169,9 @@ namespace rock
             HandGripReport report{};
             _twoHandedGrip.getHandGripReport(isLeft, report);
             if (!report.active || !report.attachOnly ||
-                static_cast<WeaponActionRole>(report.actionRole) != WeaponActionRole::Bolt ||
+                !weaponPartDriveSandboxEligible(
+                    static_cast<WeaponActionRole>(report.actionRole),
+                    static_cast<WeaponPartKind>(report.partKind)) ||
                 report.providerOwnerToken != _weaponPartDriveSandbox.ownerToken() ||
                 report.weaponGenerationKey != currentWeaponGenerationKey) {
                 continue;
@@ -6172,13 +6184,13 @@ namespace rock
             // Names and nodes come from the member cache (stable storage) so
             // the string_views handed to the sandbox outlive this scope.
             RE::NiAVObject* node = nullptr;
-            if (_boltPartCache.generationKey == currentWeaponGenerationKey) {
-                for (std::uint32_t i = 0; i < _boltPartCache.count; ++i) {
-                    if (_boltPartCache.entries[i].bodyId == report.bodyId) {
-                        node = _boltPartCache.entries[i].node;
+            if (_drivePartCache.generationKey == currentWeaponGenerationKey) {
+                for (std::uint32_t i = 0; i < _drivePartCache.count; ++i) {
+                    if (_drivePartCache.entries[i].bodyId == report.bodyId) {
+                        node = _drivePartCache.entries[i].node;
                         handInput.sourceName = providerFixedStringView(
-                            _boltPartCache.entries[i].sourceName.data(),
-                            _boltPartCache.entries[i].sourceName.size());
+                            _drivePartCache.entries[i].sourceName.data(),
+                            _drivePartCache.entries[i].sourceName.size());
                         break;
                     }
                 }
