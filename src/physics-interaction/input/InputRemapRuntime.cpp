@@ -103,7 +103,7 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_gameplayInputAllowed{ false };
         std::atomic<bool> s_weaponDrawn{ false };
         std::atomic<bool> s_rightHandHeldWeapon{ false };
-        std::array<std::atomic<bool>, 2> s_handHeldObject{};
+        std::array<std::atomic<bool>, 2> s_handInteractionEngaged{};
         std::atomic<bool> s_equippedWeaponPrimaryDetachInputActive{ false };
         std::atomic<bool> s_equippedWeaponPrimaryDetached{ false };
         std::atomic<std::uint32_t> s_pendingWeaponToggleRequests{ 0 };
@@ -917,21 +917,21 @@ namespace rock::input_remap_runtime
 
         /*
          * The pipboy trigger rides the secondary (non-primary) wand, so the
-         * suppression gate is the offhand's held-object state, not a fixed
+         * suppression gate is the offhand's engagement state, not a fixed
          * left hand. Verified in the slot-11 processor: its open path only
          * accepts events whose controller id matches the secondary wand slot
          * at player+0x8D0 (primary sits at the already-verified +0x8CC).
          */
-        [[nodiscard]] bool isPipboyHandHoldingObject()
+        [[nodiscard]] bool isPipboyHandEngaged()
         {
             const bool pipboyHandIsLeft = !f4vr::isLeftHandedMode();
-            return s_handHeldObject[pipboyHandIsLeft ? 0u : 1u].load(std::memory_order_acquire);
+            return s_handInteractionEngaged[pipboyHandIsLeft ? 0u : 1u].load(std::memory_order_acquire);
         }
 
         [[nodiscard]] bool shouldSuppressNativePipboyActionEvent(const RE::InputEvent* event)
         {
             auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressPipboyGameInputWhileHolding, eventNameMatches(event, kNativeEventPipboy));
-            input.pipboyHandHeldObject = isPipboyHandHoldingObject();
+            input.pipboyHandEngaged = isPipboyHandEngaged();
             return input_remap_policy::shouldSuppressNativePipboyAction(input);
         }
 
@@ -1102,7 +1102,7 @@ namespace rock::input_remap_runtime
                 markInputEventStopped(inputEvent);
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "Suppressed native Pipboy open/light trigger event while the pipboy hand holds a ROCK object");
+                    "Suppressed native Pipboy open/light trigger event while the pipboy hand is engaged in a ROCK interaction");
                 return;
             }
 
@@ -1451,9 +1451,9 @@ namespace rock::input_remap_runtime
         s_rightHandHeldWeapon.store(heldWeapon, std::memory_order_release);
     }
 
-    void setHandHeldObject(bool isLeft, bool heldObject)
+    void setHandInteractionEngaged(bool isLeft, bool engaged)
     {
-        s_handHeldObject[isLeft ? 0u : 1u].store(heldObject, std::memory_order_release);
+        s_handInteractionEngaged[isLeft ? 0u : 1u].store(engaged, std::memory_order_release);
     }
 
     void setEquippedWeaponPrimaryDetachInputActive(bool active)
@@ -1497,7 +1497,7 @@ namespace rock::input_remap_runtime
         }
 
         auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressPipboyGameInputWhileHolding, true);
-        input.pipboyHandHeldObject = isPipboyHandHoldingObject();
+        input.pipboyHandEngaged = isPipboyHandEngaged();
         return input_remap_policy::shouldSuppressNativePipboyAction(input);
     }
 

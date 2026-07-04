@@ -195,8 +195,8 @@ int main()
     auto pipboyIdleHand = base;
     ok &= expectFalse("matched Pipboy event with a free pipboy hand keeps native pipboy handling", shouldSuppressNativePipboyAction(pipboyIdleHand));
     auto pipboyHolding = base;
-    pipboyHolding.pipboyHandHeldObject = true;
-    ok &= expectTrue("pipboy hand holding an object suppresses native pipboy open/light", shouldSuppressNativePipboyAction(pipboyHolding));
+    pipboyHolding.pipboyHandEngaged = true;
+    ok &= expectTrue("engaged pipboy hand (hold or weapon grip) suppresses native pipboy open/light", shouldSuppressNativePipboyAction(pipboyHolding));
     auto pipboyHoldingDrawn = pipboyHolding;
     pipboyHoldingDrawn.weaponDrawn = true;
     ok &= expectTrue("weapon drawn does not gate pipboy suppression while holding", shouldSuppressNativePipboyAction(pipboyHoldingDrawn));

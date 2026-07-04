@@ -92,7 +92,7 @@ namespace rock::input_remap_policy
         bool primaryHandEvent{ false };
         bool equippedWeaponPrimaryDetachInputActive{ false };
         bool equippedWeaponPrimaryDetached{ false };
-        bool pipboyHandHeldObject{ false };
+        bool pipboyHandEngaged{ false };
         bool eventMatched{ false };
     };
 
@@ -255,7 +255,9 @@ namespace rock::input_remap_policy
      * FO4VR's PipboyHandler owns the whole pipboy-hand trigger lifecycle for
      * user event "Pipboy": press starts hold tracking, holding past the game
      * threshold toggles the pipboy light, release opens the Pip-Boy. While
-     * the pipboy hand holds a ROCK object that trigger belongs to interaction
+     * the pipboy hand is engaged in a ROCK interaction (holding an object,
+     * two-handing or supporting the equipped weapon, or carrying a part while
+     * the primary grip is detached) that trigger belongs to interaction
      * consumers (e.g. PAPER through the provider raw-button API), so both
      * native actions are suppressed together at the verified handler while
      * the raw OpenVR button stays readable. Menu input keeps native handling
@@ -264,7 +266,7 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr bool shouldSuppressNativePipboyAction(const NativeActionSuppressionInput& input)
     {
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
-               input.pipboyHandHeldObject;
+               input.pipboyHandEngaged;
     }
 
     [[nodiscard]] constexpr bool shouldInstallNativeActionSuppressionHook(bool remapEnabled, bool suppressionEnabled)

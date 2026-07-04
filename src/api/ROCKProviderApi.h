@@ -1100,11 +1100,13 @@ namespace rock::provider
         bool(ROCK_PROVIDER_CALL* getRawWandButtonStateV1)(RockProviderHand hand, std::uint32_t buttonId, RockProviderRawWandButtonStateV1* outState);
         /*
          * True while ROCK's PipboyHandler hook would swallow a "Pipboy"
-         * trigger event right now (pipboy hand holding a ROCK object, or a
-         * provider OpenVR game-input lease active). Consumers that repurpose
-         * the pipboy trigger should treat the button as theirs only while
-         * this reads true; otherwise a press will also open the Pip-Boy or
-         * toggle the flashlight.
+         * trigger event right now: the pipboy hand is engaged in a ROCK
+         * interaction (holding an object, two-handing/supporting the equipped
+         * weapon, or carrying a part while the primary grip is detached), or
+         * a provider OpenVR game-input lease is active. Consumers that
+         * repurpose the pipboy trigger should treat the button as theirs only
+         * while this reads true; otherwise a press will also open the Pip-Boy
+         * or toggle the flashlight.
          */
         bool(ROCK_PROVIDER_CALL* isNativePipboyInputSuppressedV1)();
 
