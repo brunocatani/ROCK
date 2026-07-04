@@ -4652,13 +4652,77 @@ namespace rock
             }
         }
 
+        /*
+         * Flattened-bone-tree pass. Actor skeleton roots are BSFlattenedBoneTree
+         * objects whose bones live in a flat transforms array, not as NiNode
+         * children — a part that exists only as a flattened entry (plus skinned
+         * render geometry) renders on screen while every child walk above
+         * misses it. Session 3 (2026-07-04) proved the full scene graph holds
+         * only the two incomplete instances, so this array is the remaining
+         * candidate for where the rendered copy of a missing part lives.
+         */
+        std::size_t flatMatchCount = 0;
+        struct OmodAuditFlatRoot
+        {
+            const char* label;
+            f4vr::BSFlattenedBoneTree* tree;
+        };
+        const std::array<OmodAuditFlatRoot, 2> flatRoots{ {
+            { "gameFlattenedBoneTree", f4vr::getFlattenedBoneTree() },
+            { "firstPersonBoneTree", f4vr::getFirstPersonBoneTree() },
+        } };
+        constexpr std::size_t OMOD_AUDIT_MAX_FLAT_MATCHES = 48;
+        for (const auto& flatRoot : flatRoots) {
+            if (!weaponAnimFlattenedTreeValid(flatRoot.tree)) {
+                continue;
+            }
+            for (int index = 0; index < flatRoot.tree->numTransforms && flatMatchCount < OMOD_AUDIT_MAX_FLAT_MATCHES; ++index) {
+                const auto& transform = flatRoot.tree->transforms[index];
+                const char* boneName = transform.name.c_str();
+                auto* refNode = transform.refNode;
+                const char* refNodeName = safeNodeName(refNode);
+                bool matched = omodAuditNameIsConnectPoint(boneName) || omodAuditNameIsConnectPoint(refNodeName);
+                if (!matched) {
+                    for (const auto& slot : tokenSlots) {
+                        if (slot.lowerToken.empty()) {
+                            continue;
+                        }
+                        if (omodAuditNameContainsToken(boneName, slot.lowerToken) ||
+                            omodAuditNameContainsToken(refNodeName, slot.lowerToken)) {
+                            matched = true;
+                            break;
+                        }
+                    }
+                }
+                if (!matched) {
+                    continue;
+                }
+                ++flatMatchCount;
+                ROCK_LOG_INFO(Weapon,
+                    "OMOD-AUDIT flatbone root='{}' index={} name='{}' parentIndex={} parentName='{}' refNode={:x} refNodeName='{}' refParent='{}' refVisible={} worldT=({:.2f},{:.2f},{:.2f})",
+                    flatRoot.label,
+                    index,
+                    boneName && boneName[0] != '\0' ? boneName : "(unnamed)",
+                    transform.parPos,
+                    weaponAnimFlattenedParentName(flatRoot.tree, transform.parPos),
+                    reinterpret_cast<std::uintptr_t>(refNode),
+                    refNodeName,
+                    refNode ? safeNodeName(refNode->parent) : "(null)",
+                    refNode && weaponVisualNodeVisible(refNode) ? "yes" : "no",
+                    transform.world.translate.x,
+                    transform.world.translate.y,
+                    transform.world.translate.z);
+            }
+        }
+
         ROCK_LOG_INFO(Weapon,
-            "OMOD-AUDIT end run={} bodySetKey={:016X} installedMods={} connectPoints={} weaponInstances={}",
+            "OMOD-AUDIT end run={} bodySetKey={:016X} installedMods={} connectPoints={} weaponInstances={} flatMatches={}",
             runIndex,
             _cachedWeaponBodySetKey,
             records.size(),
             connectPointMatches.size(),
-            weaponInstanceCount);
+            weaponInstanceCount,
+            flatMatchCount);
     }
 
     void WeaponCollision::publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult)
