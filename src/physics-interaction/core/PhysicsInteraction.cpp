@@ -6189,6 +6189,13 @@ namespace rock
         // graph's bindings finish loading; weapons without a behavior graph
         // (some melee) give up quietly after this.
         static constexpr std::uint32_t kClipHarvestWalkMaxAttempts = 900;
+        // Completed walks re-run at this cadence while the weapon stays
+        // equipped: clip spline payloads stream in only while a clip plays
+        // (in-game confirmed 2026-07-04 — headers resident, payload pointers
+        // null), so a reload performed in-hand makes its clips harvestable
+        // on the next pass. A pass is a few pointer-gated reads per binding;
+        // sampling happens only for clips that became resident.
+        static constexpr std::uint32_t kClipHarvestRewalkIntervalFrames = 180;
 
         if (!weaponNode || currentWeaponGenerationKey == 0) {
             return;
@@ -6201,11 +6208,22 @@ namespace rock
             _clipHarvestWalkGenerationKey = currentWeaponGenerationKey;
             _clipHarvestWalkAttempts = 0;
             _clipHarvestWalkCompleted = false;
+            _clipHarvestWalkGaveUp = false;
             _clipHarvestWalkHolderSeen = false;
             _clipHarvestWalkCandidateLogged = false;
+            _clipHarvestRewalkActive = false;
+            _clipHarvestRewalkCooldownFrames = 0;
         }
-        if (_clipHarvestWalkCompleted) {
+        if (_clipHarvestWalkGaveUp) {
             return;
+        }
+        if (_clipHarvestWalkCompleted && !_clipHarvestRewalkActive) {
+            if (++_clipHarvestRewalkCooldownFrames < kClipHarvestRewalkIntervalFrames) {
+                return;
+            }
+            _clipHarvestRewalkCooldownFrames = 0;
+            _clipHarvestRewalkActive = true;
+            ::rock::weapon_clip_motion_harvest::restartWalkPass();
         }
 
         // The walk starts only after the weapon's colliders finished creation
@@ -6218,8 +6236,10 @@ namespace rock
 
         // On the give-up frame the holder is still resolved below so the
         // one-shot chain diagnostics can dump the live pointers of the
-        // failing hop before the walk closes out.
-        const bool givingUp = ++_clipHarvestWalkAttempts > kClipHarvestWalkMaxAttempts;
+        // failing hop before the walk closes out. Re-walk passes never give
+        // up — the first pass already proved bindings exist.
+        const bool givingUp = !_clipHarvestWalkCompleted &&
+                              ++_clipHarvestWalkAttempts > kClipHarvestWalkMaxAttempts;
 
         /*
          * Weapon clips can live on several graph managers, and the copies
@@ -6306,7 +6326,7 @@ namespace rock
             // only dummy-rig copies); retry until the attempt budget runs
             // out, then dump the chain of every candidate.
             if (givingUp) {
-                _clipHarvestWalkCompleted = true;
+                _clipHarvestWalkGaveUp = true;
                 ROCK_LOG_WARN(Weapon,
                     "WeaponClipMotionHarvest: weapon {:08X} graph bindings never became available (holderSeen={} candidates={} lastStage={}); no authored strokes for this weapon",
                     weaponFormId,
@@ -6364,6 +6384,7 @@ namespace rock
                 allowedNodeNames.data(),
                 allowedNodeNameCount) == ::rock::weapon_clip_motion_harvest::StepResult::Completed) {
             _clipHarvestWalkCompleted = true;
+            _clipHarvestRewalkActive = false;
         }
     }
 

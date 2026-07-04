@@ -166,6 +166,11 @@ namespace rock::weapon_clip_motion_harvest
         // the walk pending (sets may still be filling at equip).
         std::uint32_t s_walkBindingsVisited = 0;
         bool s_walkDone = false;
+        // Pass bookkeeping for periodic re-walks (clip payloads stream in
+        // only while playing): completion is logged for the first pass and
+        // for any pass that harvested something new.
+        std::uint32_t s_walkPassIndex = 0;
+        std::uint64_t s_walkPassStartHarvested = 0;
         // Deepest chain hop reached by the most recent resolve attempt;
         // reported by the caller when a walk gives up so the failing stage
         // is visible in the log instead of a generic timeout.
@@ -318,7 +323,19 @@ namespace rock::weapon_clip_motion_harvest
                 !plausiblePointer(splineBlockOffsets) || !plausiblePointer(splineTrackOffsetsTable) ||
                 !plausiblePointer(splineDataBase)) {
                 s_bailSplineData.fetch_add(1, std::memory_order_relaxed);
-                logBindingBail("spline-data", binding, animation, duration, animationTrackCount, splineNumBlocks, splineMaxFramesPerBlock);
+                if (s_bindingDetailLogs < kMaxBindingDetailLogsPerWalk) {
+                    ++s_bindingDetailLogs;
+                    ROCK_LOG_WARN(Weapon,
+                        "WeaponClipMotionHarvest: binding bail [spline-data] anim={:#x} duration={} tracks={} blocks={} maxFrames={} blockOffsets={:#x} trackTable={:#x} dataBase={:#x}",
+                        animation,
+                        duration,
+                        animationTrackCount,
+                        splineNumBlocks,
+                        splineMaxFramesPerBlock,
+                        splineBlockOffsets,
+                        splineTrackOffsetsTable,
+                        splineDataBase);
+                }
                 return;
             }
 
@@ -673,6 +690,8 @@ namespace rock::weapon_clip_motion_harvest
             s_walkBindingsVisited = 0;
             s_walkDone = false;
             s_bindingDetailLogs = 0;
+            s_walkPassIndex = 0;
+            s_walkPassStartHarvested = s_bindingsHarvested.load(std::memory_order_relaxed);
         }
         if (s_walkDone) {
             return StepResult::Completed;
@@ -698,13 +717,19 @@ namespace rock::weapon_clip_motion_harvest
                 }
                 s_walkDone = true;
                 s_walksCompleted.fetch_add(1, std::memory_order_relaxed);
-                ROCK_LOG_INFO(Weapon,
-                    "WeaponClipMotionHarvest: walked weapon {:08X} — {} graph slot(s), {} binding(s) visited, {} harvested, {} without part tracks (cumulative)",
-                    weaponFormId,
-                    graphs.capacity,
-                    s_walkBindingsVisited,
-                    s_bindingsHarvested.load(std::memory_order_relaxed),
-                    s_bindingsNoTargets.load(std::memory_order_relaxed));
+                const auto harvested = s_bindingsHarvested.load(std::memory_order_relaxed);
+                // Periodic re-walk passes only log when something new landed.
+                if (s_walkPassIndex == 0 || harvested != s_walkPassStartHarvested) {
+                    ROCK_LOG_INFO(Weapon,
+                        "WeaponClipMotionHarvest: walked weapon {:08X} pass {} — {} graph slot(s), {} binding(s) visited, {} harvested, {} without part tracks (cumulative)",
+                        weaponFormId,
+                        s_walkPassIndex,
+                        graphs.capacity,
+                        s_walkBindingsVisited,
+                        harvested,
+                        s_bindingsNoTargets.load(std::memory_order_relaxed));
+                }
+                ++s_walkPassIndex;
                 return StepResult::Completed;
             }
 
@@ -758,6 +783,20 @@ namespace rock::weapon_clip_motion_harvest
         s_walkBindingsVisited = 0;
         s_walkDone = false;
         s_bindingDetailLogs = 0;
+        s_walkPassIndex = 0;
+        s_walkPassStartHarvested = s_bindingsHarvested.load(std::memory_order_relaxed);
+    }
+
+    void restartWalkPass()
+    {
+        s_walkGraphIndex = 0;
+        s_walkBindingIndex = 0;
+        s_walkBindingsData = 0;
+        s_walkBindingsVisited = 0;
+        s_walkDone = false;
+        s_walkPassStartHarvested = s_bindingsHarvested.load(std::memory_order_relaxed);
+        // The detail-log budget is intentionally NOT reset: bail dumps stay
+        // capped per weapon generation so periodic re-walks cannot spam.
     }
 
     std::uint32_t drainGroups(weapon_clip_stroke::AuthoredStrokeGroup* outGroups, std::uint32_t maxGroups)

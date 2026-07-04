@@ -78,6 +78,16 @@ namespace rock::weapon_clip_motion_harvest
     // Forget the walk cursor (weapon changed / sandbox disabled).
     void resetWalk();
 
+    /*
+     * Rewind the walk cursor for another pass over the same weapon
+     * generation, keeping cumulative stats and the per-generation bail-dump
+     * budget. Clip spline payloads stream in only while a clip is playing,
+     * so the walk owner re-runs completed walks periodically — a reload
+     * performed while the weapon is held makes its clips resident and the
+     * next pass harvests them.
+     */
+    void restartWalkPass();
+
     // Deepest holder-chain hop reached by the most recent resolve attempt
     // ("ok" when bindings were reachable); for give-up diagnostics.
     [[nodiscard]] const char* lastResolveStage();

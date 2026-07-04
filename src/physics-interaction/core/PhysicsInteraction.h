@@ -535,6 +535,12 @@ namespace rock
         bool _clipHarvestWalkHolderSeen{ false };
         // One-shot guard for the walking-candidate chain dump per generation.
         bool _clipHarvestWalkCandidateLogged{ false };
+        // Give-up is terminal for the generation; completion is not — clip
+        // payloads stream in only while playing, so completed walks re-run
+        // periodically (a re-walk pass in flight keeps stepping each frame).
+        bool _clipHarvestWalkGaveUp{ false };
+        bool _clipHarvestRewalkActive{ false };
+        std::uint32_t _clipHarvestRewalkCooldownFrames{ 0 };
         static constexpr std::size_t kNativePlayerCollisionSuppressionBodyCapacity = 64;
         std::array<std::uint32_t, kNativePlayerCollisionSuppressionBodyCapacity> _nativePlayerCollisionSuppressedBodyIds{};
         std::uint32_t _nativePlayerCollisionSuppressedBodyCount = 0;
