@@ -146,13 +146,24 @@ namespace rock
         target->followerCount = (std::min)(group.followerCount, static_cast<std::uint32_t>(target->followers.size()));
         target->followers = group.followers;
 
+        // Path endpoints in the stored frame: comparing these against the
+        // learner's endpoints for the same part exposes any frame mismatch
+        // between authored (rig-derived) and learned (scene-observed) data.
+        const auto& firstKey = group.leaderPath.keys.front();
+        const auto& lastKey = group.leaderPath.keys.back();
         ROCK_LOG_INFO(Weapon,
-            "WeaponPartMotionLearner: {} AUTHORED stroke group for part '{}' on weapon {:08X} (leader arc {:.2f} game units, {} followers)",
+            "WeaponPartMotionLearner: {} AUTHORED stroke group for part '{}' on weapon {:08X} (leader arc {:.2f} game units, {} followers) start=({:.2f},{:.2f},{:.2f}) end=({:.2f},{:.2f},{:.2f})",
             replaced ? "updated" : "stored",
             sourceName,
             weaponFormId,
             group.leaderPath.totalArcLength,
-            target->followerCount);
+            target->followerCount,
+            firstKey.translate.x,
+            firstKey.translate.y,
+            firstKey.translate.z,
+            lastKey.translate.x,
+            lastKey.translate.y,
+            lastKey.translate.z);
     }
 
     void WeaponPartMotionLearner::reset()
@@ -236,14 +247,24 @@ namespace rock
         target->lastUseCounter = _observationCounter;
         target->path = candidate;
 
-        // Once per completed stroke, never per frame.
+        // Once per completed stroke, never per frame. Path endpoints in the
+        // stored frame — the learned counterpart of the AUTHORED endpoint
+        // log, for frame-mismatch comparison between the two sources.
+        const auto& firstKey = candidate.keys.front();
+        const auto& lastKey = candidate.keys.back();
         ROCK_LOG_INFO(Weapon,
-            "WeaponPartMotionLearner: {} motion path for part '{}' on weapon {:08X} (stroke arc {:.2f} game units, {} keys, {} raw samples)",
+            "WeaponPartMotionLearner: {} motion path for part '{}' on weapon {:08X} (stroke arc {:.2f} game units, {} keys, {} raw samples) start=({:.2f},{:.2f},{:.2f}) end=({:.2f},{:.2f},{:.2f})",
             replaced ? "updated" : "learned",
             slotName(recorder.sourceName),
             recorder.weaponFormId,
             candidate.totalArcLength,
             weapon_part_motion_path::kResampledKeyCount,
-            recorder.state.sampleCount);
+            recorder.state.sampleCount,
+            firstKey.translate.x,
+            firstKey.translate.y,
+            firstKey.translate.z,
+            lastKey.translate.x,
+            lastKey.translate.y,
+            lastKey.translate.z);
     }
 }

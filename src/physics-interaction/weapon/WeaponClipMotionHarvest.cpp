@@ -97,6 +97,10 @@ namespace rock::weapon_clip_motion_harvest
 
         // hkaSkeleton members (bones array of 0x10-byte hkaBone entries with
         // the name char* at +0; low pointer bit is an engine flag).
+        // parentIndices (int16 per bone) sits at +0x18/+0x20, consistent
+        // with the verified bones array at +0x28.
+        constexpr std::uintptr_t kSkeletonParentIndicesOffset = 0x18;
+        constexpr std::uintptr_t kSkeletonParentIndicesCountOffset = 0x20;
         constexpr std::uintptr_t kSkeletonBonesDataOffset = 0x28;
         constexpr std::uintptr_t kSkeletonBonesCountOffset = 0x30;
         constexpr std::uintptr_t kSkeletonBoneStride = 0x10;
@@ -259,7 +263,7 @@ namespace rock::weapon_clip_motion_harvest
 
         // Detailed bail dumps per walk (main thread; reset with the cursor)
         // so a failing binding is identifiable without flooding the log.
-        constexpr std::uint32_t kMaxBindingDetailLogsPerWalk = 3;
+        constexpr std::uint32_t kMaxBindingDetailLogsPerWalk = 8;
         std::uint32_t s_bindingDetailLogs = 0;
 
         // Walk cursor (main thread only). No engine pointers are stored —
@@ -620,6 +624,47 @@ namespace rock::weapon_clip_motion_harvest
                 return false;
             }
             s_bindingsHarvested.fetch_add(1, std::memory_order_relaxed);
+
+            // Frame diagnostics (capped): the targets' rig parents plus the
+            // lead target's raw sample endpoints. Compared against the
+            // learned-path endpoints for the same part, this pins down any
+            // frame mismatch between rig-derived and scene-observed motion.
+            if (s_bindingDetailLogs < kMaxBindingDetailLogsPerWalk) {
+                ++s_bindingDetailLogs;
+                const auto parentIndicesData = *reinterpret_cast<std::uintptr_t*>(skeleton + kSkeletonParentIndicesOffset);
+                const auto parentIndicesCount = *reinterpret_cast<std::int32_t*>(skeleton + kSkeletonParentIndicesCountOffset);
+                const auto parentNameOf = [&](std::uint32_t target) -> const char* {
+                    const auto bone = trackBones[static_cast<std::size_t>(trackIndices[target])];
+                    if (!plausiblePointer(parentIndicesData) || parentIndicesCount < boneCount ||
+                        bone < 0 || bone >= boneCount) {
+                        return "?";
+                    }
+                    const auto parent = reinterpret_cast<const std::int16_t*>(parentIndicesData)[bone];
+                    if (parent < 0 || parent >= boneCount) {
+                        return "<root>";
+                    }
+                    const char* name = skeletonBoneName(skeleton, parent);
+                    return name ? name : "?";
+                };
+                const auto& rawStart = tracks[0].samples[0].translate;
+                const auto& rawEnd = tracks[0].samples[weapon_clip_stroke::kClipSampleCount - 1].translate;
+                ROCK_LOG_INFO(Weapon,
+                    "WeaponClipMotionHarvest: harvested clip duration={:.2f} targets={} lead {}(parent={}) next [{}(parent={}) {}(parent={})] lead raw start=({:.2f},{:.2f},{:.2f}) end=({:.2f},{:.2f},{:.2f})",
+                    duration,
+                    targetCount,
+                    tracks[0].boneName.data(),
+                    parentNameOf(0),
+                    targetCount > 1 ? tracks[1].boneName.data() : "",
+                    targetCount > 1 ? parentNameOf(1) : "",
+                    targetCount > 2 ? tracks[2].boneName.data() : "",
+                    targetCount > 2 ? parentNameOf(2) : "",
+                    rawStart.x,
+                    rawStart.y,
+                    rawStart.z,
+                    rawEnd.x,
+                    rawEnd.y,
+                    rawEnd.z);
+            }
 
             std::scoped_lock lock(s_queueMutex);
             for (std::uint32_t i = 0; i < groupCount; ++i) {
