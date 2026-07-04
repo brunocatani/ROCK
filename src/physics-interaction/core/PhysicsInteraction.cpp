@@ -6472,12 +6472,12 @@ namespace rock
          * rest value differs from the scene node's (in-game A/B 2026-07-04:
          * authored bolt paths started at the rig rest (0, 4.44, 0) instead
          * of the part's weapon-local rest — grabbing teleported the part).
-         * Paths are therefore REBASED onto the node's weapon-local rest
-         * with a TRANSLATION-ONLY delta: rest + R·(t_i - t_0), rotation
-         * held at rest (the clip's rotation delta swung the rest position
-         * on a lever — parts orbited a point beside the weapon, in-game
-         * confirmed twice; rotation returns as a delta about the part's
-         * own origin once this translation basis is verified).
+         * Paths are therefore REBASED onto the node's weapon-local rest:
+         * translation rest + R·(t_i - t_0), rotation as the track's key
+         * delta relative to key 0 conjugated into the scene frame and
+         * applied about the bone origin (evidence nodes offset inside the
+         * bone orbit it, which is the true motion — the earlier "orbit"
+         * bug was this lever under a WRONG basis).
          *
          * R is the fixed rig-Weapon-root → scene-weapon-node-local basis
          * rotation, calibrated 2026-07-04 from learner ground truth: the
@@ -6486,7 +6486,11 @@ namespace rock
          * P320/10mm/handmade AR), which fixes R up to a spin about the
          * pull axis; requiring the mag track (-6.61, 0, 3.88) to exit
          * DOWNWARD (-Z) pins the spin uniquely (det +1, angle-preservation
-         * then forces the mag's 34-degree back-tilt — rock-and-lock).
+         * then forces the mag's 34-degree back-tilt — rock-and-lock; the
+         * in-game 2026-07-04 retest confirmed both predictions). The
+         * rig-Y ↦ scene-X consequence also matches: the template mag
+         * track's 45-degree key rotation about rig Y becomes a rock about
+         * the weapon's lateral axis.
          * Result: scene = (rig.y, c*rig.x + s*rig.z, s*rig.x - c*rig.z)
          * with (c, s) = normalized bolt-track direction.
          */
@@ -6499,6 +6503,33 @@ namespace rock
                 kRigBasisS * dx - kRigBasisC * dz
             };
         };
+        // The same basis as a raw column-vector matrix (v_scene = B·v_rig).
+        // Stored NiMatrix3 rotations in this codebase act as the TRANSPOSE
+        // (localVectorToWorld computes Mᵀ·v), so the conjugations below keep
+        // the raw/stored distinction explicit.
+        RE::NiMatrix3 rigBasis{};
+        rigBasis.entry[0][1] = 1.0f;
+        rigBasis.entry[1][0] = kRigBasisC;
+        rigBasis.entry[1][2] = kRigBasisS;
+        rigBasis.entry[2][0] = kRigBasisS;
+        rigBasis.entry[2][2] = -kRigBasisC;
+        const RE::NiMatrix3 rigBasisTransposed = transform_math::transposeRotation(rigBasis);
+        const auto quatToStoredRotate = [](const weapon_part_motion_path::Quat& q) {
+            const float quaternion[4]{ q.x, q.y, q.z, q.w };
+            return transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(quaternion);
+        };
+        // Rotation of a track key relative to the track's key 0, mapped into
+        // the scene weapon-node frame (returned in stored-matrix form):
+        // rig delta_s = key0_sᵀ·key_s, scene delta_s = B·delta_s·Bᵀ.
+        const auto sceneRotationDelta = [&](const weapon_part_motion_path::PoseSample& key0,
+                                            const weapon_part_motion_path::PoseSample& keyN) {
+            const auto rigDelta = transform_math::multiplyStoredRotations(
+                transform_math::transposeRotation(quatToStoredRotate(key0.rotate)),
+                quatToStoredRotate(keyN.rotate));
+            return transform_math::multiplyStoredRotations(
+                transform_math::multiplyStoredRotations(rigBasis, rigDelta),
+                rigBasisTransposed);
+        };
         const auto convertLeaderPath = [&](const weapon_clip_stroke::AuthoredStrokeGroup& source,
                                            const RE::NiTransform& leaderRestWeaponLocal,
                                            const RE::NiTransform* tail,
@@ -6508,6 +6539,13 @@ namespace rock
             if (tail) {
                 anchor = transform_math::composeTransforms(anchor, *tail);
             }
+            // The track rotates its bone about the bone origin; an evidence
+            // node offset inside the bone (tail) orbits that origin.
+            const RE::NiPoint3 lever{
+                anchor.translate.x - leaderRestWeaponLocal.translate.x,
+                anchor.translate.y - leaderRestWeaponLocal.translate.y,
+                anchor.translate.z - leaderRestWeaponLocal.translate.z
+            };
             const auto& firstKey = source.leaderPath.keys[0];
             float arc = 0.0f;
             for (std::uint32_t key = 0; key < weapon_part_motion_path::kResampledKeyCount; ++key) {
@@ -6516,8 +6554,12 @@ namespace rock
                     clipKey.translate.x - firstKey.translate.x,
                     clipKey.translate.y - firstKey.translate.y,
                     clipKey.translate.z - firstKey.translate.z);
+                const auto rotationDelta = sceneRotationDelta(firstKey, clipKey);
+                const auto rotatedLever =
+                    transform_math::rotateLocalVectorToWorld<RE::NiMatrix3, RE::NiPoint3>(rotationDelta, lever);
                 RE::NiTransform keyTransform = anchor;
-                keyTransform.translate += sceneDelta;
+                keyTransform.translate = leaderRestWeaponLocal.translate + sceneDelta + rotatedLever;
+                keyTransform.rotate = transform_math::multiplyStoredRotations(anchor.rotate, rotationDelta);
                 outPath.keys[key] = niToPose(keyTransform);
                 if (key > 0) {
                     arc += weapon_part_motion_path::poseDistance(outPath.keys[key], outPath.keys[key - 1]);
@@ -6545,6 +6587,24 @@ namespace rock
             const bool templateSource =
                 leaderName.size() >= 6 &&
                 _strnicmp(leaderName.data(), "Weapon", 6) == 0;
+            /*
+             * Template-tier plausibility cap (in-game 2026-07-04): the
+             * 23-unit 'WeaponExtra2' carry track mapped onto slide stops
+             * and releases drove them sideways across the weapon. No real
+             * reciprocating part travels that far; a template stroke past
+             * this cap is helper/carry animation, not part motion. Real
+             * template part strokes top out near 9 units (bolt) plus the
+             * rotation contribution to arc length.
+             */
+            constexpr float kMaxTemplateStrokeArcGameUnits = 15.0f;
+            if (templateSource && group.leaderPath.totalArcLength > kMaxTemplateStrokeArcGameUnits) {
+                ROCK_LOG_INFO(Weapon,
+                    "WeaponClipHarvest: dropped template stroke '{}' (arc {:.1f} > {:.1f} cap)",
+                    leaderName,
+                    group.leaderPath.totalArcLength,
+                    kMaxTemplateStrokeArcGameUnits);
+                continue;
+            }
             const RE::NiTransform leaderRestWeaponLocal =
                 transform_math::composeTransforms(weaponWorldInverse, leaderNode->world);
 
@@ -6611,8 +6671,11 @@ namespace rock
                         clipKey.translate.x - followerFirstKey.translate.x,
                         clipKey.translate.y - followerFirstKey.translate.y,
                         clipKey.translate.z - followerFirstKey.translate.z);
+                    const auto rotationDelta = sceneRotationDelta(followerFirstKey, clipKey);
                     RE::NiTransform keyTransform = followerRestWeaponLocal;
                     keyTransform.translate += sceneDelta;
+                    keyTransform.rotate =
+                        transform_math::multiplyStoredRotations(followerRestWeaponLocal.rotate, rotationDelta);
                     slot.keys[key] = niToPose(keyTransform);
                 }
                 slot.restScale = followerRestWeaponLocal.scale;
@@ -6663,6 +6726,13 @@ namespace rock
                         }
                         const RE::NiTransform otherRestWeaponLocal =
                             transform_math::composeTransforms(weaponWorldInverse, other.node->world);
+                        // Rigid with the leader bone: the sibling orbits the
+                        // bone origin under the leader's rotation delta.
+                        const RE::NiPoint3 siblingLever{
+                            otherRestWeaponLocal.translate.x - leaderRestWeaponLocal.translate.x,
+                            otherRestWeaponLocal.translate.y - leaderRestWeaponLocal.translate.y,
+                            otherRestWeaponLocal.translate.z - leaderRestWeaponLocal.translate.z
+                        };
                         auto& slot = groupForEntry.followers[groupForEntry.followerCount];
                         slot = weapon_clip_stroke::AuthoredFollower{};
                         std::memcpy(
@@ -6675,8 +6745,15 @@ namespace rock
                                 clipKey.translate.x - group.leaderPath.keys[0].translate.x,
                                 clipKey.translate.y - group.leaderPath.keys[0].translate.y,
                                 clipKey.translate.z - group.leaderPath.keys[0].translate.z);
+                            const auto rotationDelta =
+                                sceneRotationDelta(group.leaderPath.keys[0], clipKey);
+                            const auto rotatedLever = transform_math::rotateLocalVectorToWorld<RE::NiMatrix3, RE::NiPoint3>(
+                                rotationDelta, siblingLever);
                             RE::NiTransform keyTransform = otherRestWeaponLocal;
-                            keyTransform.translate += sceneDelta;
+                            keyTransform.translate =
+                                leaderRestWeaponLocal.translate + sceneDelta + rotatedLever;
+                            keyTransform.rotate = transform_math::multiplyStoredRotations(
+                                otherRestWeaponLocal.rotate, rotationDelta);
                             slot.keys[key] = niToPose(keyTransform);
                         }
                         slot.restScale = otherRestWeaponLocal.scale;
