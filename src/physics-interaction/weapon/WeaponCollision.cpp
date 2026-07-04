@@ -2911,6 +2911,8 @@ namespace rock
                 return;
             }
         }
+
+        maybeRunWeaponOmodCoverageAudit(weaponNode);
     }
 
 
@@ -4140,6 +4142,454 @@ namespace rock
         std::size_t visited = 0;
         dumpOmodWeaponTreeRecursive(packageDriveNode, 0, visited, evidenceMarkers);
         ROCK_LOG_INFO(Weapon, "OMOD-DUMP end nodesLogged={}", visited);
+    }
+
+    namespace
+    {
+        constexpr std::size_t OMOD_AUDIT_MAX_MATCHES_PER_TOKEN = 8;
+        constexpr std::size_t OMOD_AUDIT_MAX_CONNECT_POINT_MATCHES = 64;
+        constexpr std::size_t OMOD_AUDIT_MAX_LOGGED_MATCHES_PER_OMOD = 3;
+
+        struct OmodAuditNodeMatch
+        {
+            RE::NiAVObject* node{ nullptr };
+            const char* rootLabel{ "" };
+        };
+
+        struct OmodAuditTokenSlot
+        {
+            std::string lowerToken;
+            std::vector<OmodAuditNodeMatch> matches;
+        };
+
+        struct OmodAuditRecord
+        {
+            std::uint32_t formId{ 0 };
+            std::uint32_t attachPointFormId{ 0 };
+            std::uint16_t attachPointIndex{ 0 };
+            std::uint32_t modIndex{ 0 };
+            std::uint32_t rank{ 0 };
+            bool disabled{ false };
+            bool resolved{ false };
+            std::string name;
+            std::string modelPath;
+        };
+
+        char omodAuditToLowerAscii(char c)
+        {
+            return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + ('a' - 'A')) : c;
+        }
+
+        /*
+         * Search token = OMOD model NIF basename without extension, lowered.
+         * Node names authored from the model file usually contain this token;
+         * mesh-internal names may not, which is why the connect-point census
+         * below exists as the structural fallback.
+         */
+        std::string makeOmodAuditModelToken(const char* modelPath)
+        {
+            if (!modelPath || modelPath[0] == '\0') {
+                return {};
+            }
+            const char* base = modelPath;
+            for (const char* cursor = modelPath; *cursor; ++cursor) {
+                if (*cursor == '\\' || *cursor == '/') {
+                    base = cursor + 1;
+                }
+            }
+            std::string token(base);
+            const auto dot = token.find_last_of('.');
+            if (dot != std::string::npos) {
+                token.resize(dot);
+            }
+            for (auto& c : token) {
+                c = omodAuditToLowerAscii(c);
+            }
+            return token;
+        }
+
+        // Allocation-free case-insensitive substring test against a pre-lowered token.
+        bool omodAuditNameContainsToken(const char* name, const std::string& lowerToken)
+        {
+            if (!name || lowerToken.empty()) {
+                return false;
+            }
+            const std::size_t tokenLength = lowerToken.size();
+            for (const char* cursor = name; *cursor; ++cursor) {
+                std::size_t i = 0;
+                while (i < tokenLength) {
+                    const char c = cursor[i];
+                    if (c == '\0' || omodAuditToLowerAscii(c) != lowerToken[i]) {
+                        break;
+                    }
+                    ++i;
+                }
+                if (i == tokenLength) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        bool omodAuditNameIsConnectPoint(const char* name)
+        {
+            return name && (name[0] == 'P' || name[0] == 'p') && name[1] == '-';
+        }
+
+        bool omodAuditMatchesContainNode(const std::vector<OmodAuditNodeMatch>& matches, const RE::NiAVObject* node)
+        {
+            for (const auto& match : matches) {
+                if (match.node == node) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /*
+         * One walk per root evaluates every OMOD token plus the P-* connect
+         * point predicate, instead of one walk per (root, token) pair. Matches
+         * deduplicate across roots by node address because the weapon subtree
+         * is reachable from several of the audited roots.
+         */
+        void scanOmodAuditTreeRecursive(
+            RE::NiAVObject* node,
+            std::uint32_t depth,
+            std::size_t& visited,
+            const char* rootLabel,
+            std::vector<OmodAuditTokenSlot>& tokenSlots,
+            std::vector<OmodAuditNodeMatch>& connectPointMatches)
+        {
+            if (!node || visited >= WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES || depth > WEAPON_ANIM_NODE_DUMP_MAX_DEPTH) {
+                return;
+            }
+            ++visited;
+
+            const char* name = node->name.c_str();
+            if (name && name[0] != '\0') {
+                if (omodAuditNameIsConnectPoint(name) &&
+                    connectPointMatches.size() < OMOD_AUDIT_MAX_CONNECT_POINT_MATCHES &&
+                    !omodAuditMatchesContainNode(connectPointMatches, node)) {
+                    connectPointMatches.push_back(OmodAuditNodeMatch{ node, rootLabel });
+                }
+                for (auto& slot : tokenSlots) {
+                    if (slot.lowerToken.empty() || slot.matches.size() >= OMOD_AUDIT_MAX_MATCHES_PER_TOKEN) {
+                        continue;
+                    }
+                    if (!omodAuditNameContainsToken(name, slot.lowerToken)) {
+                        continue;
+                    }
+                    if (!omodAuditMatchesContainNode(slot.matches, node)) {
+                        slot.matches.push_back(OmodAuditNodeMatch{ node, rootLabel });
+                    }
+                }
+            }
+
+            auto* niNode = node->IsNode();
+            if (!niNode) {
+                return;
+            }
+            const auto& children = niNode->children;
+            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
+                if (auto* child = children[i].get()) {
+                    scanOmodAuditTreeRecursive(child, depth + 1, visited, rootLabel, tokenSlots, connectPointMatches);
+                }
+            }
+        }
+
+        // Path is rebuilt from the parent chain only for matched nodes, so the
+        // scan itself stays allocation-free per visited node.
+        std::string buildOmodAuditNodePath(const RE::NiAVObject* node)
+        {
+            std::array<const char*, WEAPON_ANIM_NODE_DUMP_MAX_DEPTH + 1> names{};
+            std::size_t count = 0;
+            for (const RE::NiAVObject* cursor = node; cursor && count < names.size(); cursor = cursor->parent) {
+                const char* name = cursor->name.c_str();
+                names[count++] = name && name[0] != '\0' ? name : "(unnamed)";
+            }
+            std::string path;
+            for (std::size_t i = count; i > 0; --i) {
+                if (!path.empty()) {
+                    path += "/";
+                }
+                path += names[i - 1];
+            }
+            return path;
+        }
+
+        std::size_t countOmodAuditEvidenceSourcesInSubtree(
+            RE::NiAVObject* node,
+            const std::unordered_set<std::uintptr_t>& evidenceSourceAddresses,
+            std::size_t& visited)
+        {
+            if (!node || visited >= WEAPON_ANIM_NODE_DUMP_MAX_SUBTREE_NODES) {
+                return 0;
+            }
+            ++visited;
+            std::size_t count = evidenceSourceAddresses.count(reinterpret_cast<std::uintptr_t>(node)) != 0 ? 1 : 0;
+            auto* niNode = node->IsNode();
+            if (!niNode) {
+                return count;
+            }
+            const auto& children = niNode->children;
+            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
+                if (auto* child = children[i].get()) {
+                    count += countOmodAuditEvidenceSourcesInSubtree(child, evidenceSourceAddresses, visited);
+                }
+            }
+            return count;
+        }
+    }
+
+    /*
+     * Periodic research audit (gated on bDebugWeaponOmodCoverageAudit) that
+     * re-diffs record truth against the live scene graphs while a generated
+     * weapon body set is active. The build-time OMOD-DUMP can only show what
+     * the tree looked like when the body set was published; this audit exists
+     * to catch the missing-part failure where the engine attaches an OMOD's
+     * model subtree after ROCK's build window closed and nothing ever looks
+     * again. Per installed OMOD it reports whether a node matching the model
+     * NIF exists under any audited root, whether it is visible, and whether
+     * any generated collider evidence source lives beneath it; the P-* census
+     * covers parts whose mesh names do not contain the model basename. The
+     * visual-key drift line on each audit is the decisive signal: drift=YES
+     * with an unchanged body set means geometry arrived or changed after the
+     * build and current triggers never rescanned it.
+     */
+    void WeaponCollision::maybeRunWeaponOmodCoverageAudit(RE::NiAVObject* weaponNode)
+    {
+        if (!g_rockConfig.rockDebugWeaponOmodCoverageAudit) {
+            return;
+        }
+        if (!weaponNode || !hasWeaponBody() || _cachedWeaponBodySetKey == 0) {
+            return;
+        }
+
+        if (_omodCoverageAuditBodySetKey != _cachedWeaponBodySetKey) {
+            _omodCoverageAuditBodySetKey = _cachedWeaponBodySetKey;
+            _omodCoverageAuditFrameCounter = 0;
+            _omodCoverageAuditRunIndex = 0;
+        }
+
+        const int intervalFrames = (std::max)(30, g_rockConfig.rockDebugWeaponOmodCoverageAuditIntervalFrames);
+        // First audit fires ~1s after publication so late model streaming is
+        // observed quickly; later audits repeat at the configured interval.
+        const int dueFrames = _omodCoverageAuditRunIndex == 0 ? (std::min)(90, intervalFrames) : intervalFrames;
+        if (++_omodCoverageAuditFrameCounter < dueFrames) {
+            return;
+        }
+        _omodCoverageAuditFrameCounter = 0;
+        const std::uint32_t runIndex = _omodCoverageAuditRunIndex++;
+
+        auto* player = f4vr::getPlayer();
+        auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
+        auto* equipData = processData ? processData->equipData : nullptr;
+        auto* weaponForm = equipData ? equipData->item : nullptr;
+
+        WeaponVisualKeyStats visualStatsNow{};
+        const std::uint64_t visualKeyNow = getWeaponVisualCompositionKey(weaponNode, visualStatsNow);
+        const bool visualDrift = visualKeyNow != 0 && _cachedWeaponVisualKey != 0 && visualKeyNow != _cachedWeaponVisualKey;
+
+        ROCK_LOG_INFO(Weapon,
+            "OMOD-AUDIT begin run={} bodySetKey={:016X} weapon={:08X} '{}' bodies={} visualKeyNow={:016X} visualKeyAtBuild={:016X} drift={} visibleTriShapes={} nodes={} invisibleNodes={}",
+            runIndex,
+            _cachedWeaponBodySetKey,
+            weaponForm ? weaponForm->formID : 0u,
+            weaponForm && weaponForm->GetFullName() ? weaponForm->GetFullName() : "",
+            getWeaponBodyCount(),
+            visualKeyNow,
+            _cachedWeaponVisualKey,
+            visualDrift ? "YES" : "no",
+            visualStatsNow.visibleTriShapeCount,
+            visualStatsNow.nodeCount,
+            visualStatsNow.invisibleNodeCount);
+
+        /*
+         * Stored sourceNode pointers are compared by address during tree walks
+         * only, never dereferenced directly, matching the discipline of the
+         * build-time dump.
+         */
+        std::unordered_set<std::uintptr_t> evidenceSourceAddresses;
+        std::unordered_map<std::uint32_t, std::uint32_t> bodiesByAttachPointFormId;
+        for (const auto& instance : activeWeaponBodies()) {
+            if (!instance.body.isValid()) {
+                continue;
+            }
+            if (instance.sourceNode) {
+                evidenceSourceAddresses.insert(reinterpret_cast<std::uintptr_t>(instance.sourceNode));
+            }
+            if (instance.semantic.attachPointFormId != 0) {
+                ++bodiesByAttachPointFormId[instance.semantic.attachPointFormId];
+            }
+        }
+
+        std::vector<OmodAuditRecord> records;
+        const RE::BGSObjectInstanceExtra* objectInstanceExtra =
+            weaponForm ? findEquippedWeaponObjectInstanceExtra(player, weaponForm, equipData->instanceData) : nullptr;
+        if (objectInstanceExtra && objectInstanceExtra->values) {
+            const auto indexData = objectInstanceExtra->GetIndexData();
+            records.reserve(indexData.size());
+            for (const auto& modIndex : indexData) {
+                OmodAuditRecord record{};
+                record.modIndex = modIndex.index;
+                record.rank = modIndex.rank;
+                record.disabled = modIndex.disabled;
+                record.formId = modIndex.objectID;
+                if (auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(modIndex.objectID)) {
+                    record.resolved = true;
+                    record.formId = omod->formID;
+                    record.attachPointIndex = omod->attachPoint.keywordIndex;
+                    const RE::BGSKeyword* attachPointKeyword =
+                        RE::BGSKeyword::GetTypedKeywordByIndex(RE::KeywordType::kAttachPoint, record.attachPointIndex);
+                    record.attachPointFormId = attachPointKeyword ? attachPointKeyword->formID : 0u;
+                    record.name = omod->fullName.c_str() ? omod->fullName.c_str() : "";
+                    record.modelPath = omod->model.c_str() ? omod->model.c_str() : "";
+                }
+                records.push_back(std::move(record));
+            }
+        } else {
+            ROCK_LOG_INFO(Weapon, "OMOD-AUDIT run={} no object instance extra available", runIndex);
+        }
+
+        std::vector<OmodAuditTokenSlot> tokenSlots(records.size());
+        for (std::size_t i = 0; i < records.size(); ++i) {
+            tokenSlots[i].lowerToken = makeOmodAuditModelToken(records[i].modelPath.c_str());
+        }
+        std::vector<OmodAuditNodeMatch> connectPointMatches;
+
+        struct OmodAuditRoot
+        {
+            const char* label;
+            RE::NiAVObject* root;
+        };
+        auto* playerNodes = f4vr::getPlayerNodes();
+        std::vector<OmodAuditRoot> roots;
+        roots.reserve(6);
+        const auto addRoot = [&roots](const char* label, RE::NiAVObject* root) {
+            if (!root) {
+                return;
+            }
+            for (const auto& existing : roots) {
+                if (existing.root == root) {
+                    return;
+                }
+            }
+            roots.push_back(OmodAuditRoot{ label, root });
+        };
+        addRoot("updateWeaponNode", weaponNode);
+        addRoot("firstPersonSkeleton:Weapon", f4vr::getWeaponNode());
+        addRoot("PlayerNodes.primaryWeapontoWeaponNode", playerNodes ? playerNodes->primaryWeapontoWeaponNode : nullptr);
+        addRoot("PlayerNodes.primaryWeaponOffsetNode", playerNodes ? playerNodes->primaryWeaponOffsetNOde : nullptr);
+        addRoot("firstPersonSkeleton", f4vr::getFirstPersonSkeleton());
+        addRoot("gameRootNode", f4vr::getRootNode());
+
+        for (const auto& root : roots) {
+            std::size_t visited = 0;
+            scanOmodAuditTreeRecursive(root.root, 0, visited, root.label, tokenSlots, connectPointMatches);
+        }
+
+        for (std::size_t i = 0; i < records.size(); ++i) {
+            const auto& record = records[i];
+            const auto& slot = tokenSlots[i];
+
+            std::uint32_t pairedBodies = 0;
+            if (record.attachPointFormId != 0) {
+                const auto pairedIt = bodiesByAttachPointFormId.find(record.attachPointFormId);
+                if (pairedIt != bodiesByAttachPointFormId.end()) {
+                    pairedBodies = pairedIt->second;
+                }
+            }
+
+            std::size_t evidenceUnderMatches = 0;
+            bool anyMatchVisible = false;
+            std::size_t loggedMatches = 0;
+            for (const auto& match : slot.matches) {
+                const auto stats = summarizeWeaponAnimNodeSubtree(match.node);
+                std::size_t evidenceVisited = 0;
+                const std::size_t evidenceSources =
+                    countOmodAuditEvidenceSourcesInSubtree(match.node, evidenceSourceAddresses, evidenceVisited);
+                evidenceUnderMatches += evidenceSources;
+                const bool matchVisible = weaponVisualNodeVisible(match.node);
+                anyMatchVisible = anyMatchVisible || matchVisible || stats.visibleTriShapeCount > 0;
+                if (loggedMatches < OMOD_AUDIT_MAX_LOGGED_MATCHES_PER_OMOD) {
+                    ++loggedMatches;
+                    ROCK_LOG_INFO(Weapon,
+                        "OMOD-AUDIT match omod={:08X} root='{}' path='{}' addr={:x} visible={} flags=0x{:X} appCulled={} subtreeNodes={} triShapes={} visibleTriShapes={} hiddenFlags={} appCulledNodes={} evidenceSources={}",
+                        record.formId,
+                        match.rootLabel,
+                        buildOmodAuditNodePath(match.node),
+                        reinterpret_cast<std::uintptr_t>(match.node),
+                        matchVisible ? "yes" : "no",
+                        static_cast<std::uint32_t>(match.node->flags.flags),
+                        match.node->GetAppCulled() ? "yes" : "no",
+                        stats.nodeCount,
+                        stats.triShapeCount,
+                        stats.visibleTriShapeCount,
+                        stats.hiddenFlagCount,
+                        stats.appCulledCount,
+                        evidenceSources);
+                }
+            }
+
+            const char* verdict = nullptr;
+            if (!record.resolved) {
+                verdict = "UNRESOLVED_FORM";
+            } else if (slot.lowerToken.empty()) {
+                verdict = pairedBodies > 0 ? "OK_RECORD_PAIRED" : "NO_MODEL";
+            } else if (evidenceUnderMatches > 0) {
+                verdict = "OK";
+            } else if (pairedBodies > 0) {
+                verdict = "OK_RECORD_PAIRED";
+            } else if (!slot.matches.empty()) {
+                verdict = anyMatchVisible ? "NODE_PRESENT_NO_COLLIDER" : "NODE_HIDDEN_NO_COLLIDER";
+            } else {
+                verdict = "NODE_NOT_FOUND";
+            }
+
+            ROCK_LOG_INFO(Weapon,
+                "OMOD-AUDIT omod={:08X} '{}' index={} rank={} disabled={} attachPoint={:08X} attachPointIndex={} model='{}' token='{}' pairedBodies={} nodeMatches={} evidenceUnderMatches={} verdict={}",
+                record.formId,
+                record.name,
+                record.modIndex,
+                record.rank,
+                record.disabled,
+                record.attachPointFormId,
+                record.attachPointIndex,
+                record.modelPath,
+                slot.lowerToken,
+                pairedBodies,
+                slot.matches.size(),
+                evidenceUnderMatches,
+                verdict);
+        }
+
+        for (const auto& match : connectPointMatches) {
+            const auto stats = summarizeWeaponAnimNodeSubtree(match.node);
+            std::size_t evidenceVisited = 0;
+            const std::size_t evidenceSources =
+                countOmodAuditEvidenceSourcesInSubtree(match.node, evidenceSourceAddresses, evidenceVisited);
+            ROCK_LOG_INFO(Weapon,
+                "OMOD-AUDIT pnode name='{}' root='{}' path='{}' addr={:x} visible={} subtreeNodes={} triShapes={} visibleTriShapes={} hiddenFlags={} appCulledNodes={} evidenceSources={} childNames='{}'",
+                safeNodeName(match.node),
+                match.rootLabel,
+                buildOmodAuditNodePath(match.node),
+                reinterpret_cast<std::uintptr_t>(match.node),
+                weaponVisualNodeVisible(match.node) ? "yes" : "no",
+                stats.nodeCount,
+                stats.triShapeCount,
+                stats.visibleTriShapeCount,
+                stats.hiddenFlagCount,
+                stats.appCulledCount,
+                evidenceSources,
+                weaponAnimNodeImmediateChildNames(match.node));
+        }
+
+        ROCK_LOG_INFO(Weapon,
+            "OMOD-AUDIT end run={} bodySetKey={:016X} installedMods={} connectPoints={}",
+            runIndex,
+            _cachedWeaponBodySetKey,
+            records.size(),
+            connectPointMatches.size());
     }
 
     void WeaponCollision::publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult)

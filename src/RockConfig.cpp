@@ -302,6 +302,8 @@ namespace rock
         rockDebugShowGrabNotifications = false;
         rockDebugShowWeaponNotifications = false;
         rockDebugWeaponOmodDumpEnabled = false;
+        rockDebugWeaponOmodCoverageAudit = false;
+        rockDebugWeaponOmodCoverageAuditIntervalFrames = 450;
         rockDebugHandTransformParity = false;
         rockDebugWorldObjectOriginDiagnostics = false;
         rockDebugWorldObjectOriginLogIntervalFrames = 120;
@@ -1215,6 +1217,12 @@ namespace rock
         rockDebugShowGrabNotifications = ini.GetBoolValue(SECTION, "bDebugShowGrabNotifications", rockDebugShowGrabNotifications);
         rockDebugShowWeaponNotifications = ini.GetBoolValue(SECTION, "bDebugShowWeaponNotifications", rockDebugShowWeaponNotifications);
         rockDebugWeaponOmodDumpEnabled = ini.GetBoolValue(SECTION, "bDebugWeaponOmodDump", rockDebugWeaponOmodDumpEnabled);
+        rockDebugWeaponOmodCoverageAudit = ini.GetBoolValue(SECTION, "bDebugWeaponOmodCoverageAudit", rockDebugWeaponOmodCoverageAudit);
+        rockDebugWeaponOmodCoverageAuditIntervalFrames = static_cast<int>(
+            ini.GetLongValue(SECTION, "iDebugWeaponOmodCoverageAuditIntervalFrames", rockDebugWeaponOmodCoverageAuditIntervalFrames));
+        if (rockDebugWeaponOmodCoverageAuditIntervalFrames < 30) {
+            rockDebugWeaponOmodCoverageAuditIntervalFrames = 30;
+        }
         rockDebugHandTransformParity = ini.GetBoolValue(SECTION, "bDebugHandTransformParity", rockDebugHandTransformParity);
         rockDebugWorldObjectOriginDiagnostics =
             ini.GetBoolValue(SECTION, "bDebugWorldObjectOriginDiagnostics", rockDebugWorldObjectOriginDiagnostics);

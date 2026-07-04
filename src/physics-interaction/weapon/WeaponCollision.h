@@ -282,6 +282,7 @@ namespace rock
         std::vector<WeaponCollisionProfileEvidenceDescriptor> buildProfileEvidenceSnapshot(const WeaponBodyBank& bank) const;
         void publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult);
         void dumpEquippedWeaponOmodEvidence(const WeaponBodyBank& bank, RE::NiAVObject* packageDriveNode);
+        void maybeRunWeaponOmodCoverageAudit(RE::NiAVObject* weaponNode);
 
         std::size_t findGeneratedWeaponShapeSources(RE::NiAVObject* weaponNode, std::vector<GeneratedHullSource>& outSources, float maxSourceDistanceGame);
 
@@ -369,6 +370,15 @@ namespace rock
         std::vector<WeaponCollisionProfileEvidenceDescriptor> _profileEvidenceSnapshot;
         // Debug OMOD evidence dump fires once per weapon generation key.
         std::uint64_t _lastOmodDumpGenerationKey{ 0 };
+        /*
+         * Post-build OMOD coverage audit cadence (bDebugWeaponOmodCoverageAudit).
+         * Unlike the one-shot build-time dump, the audit re-observes the live
+         * scene graphs seconds after publication to catch part models that the
+         * engine attaches after ROCK's build window has closed.
+         */
+        std::uint64_t _omodCoverageAuditBodySetKey{ 0 };
+        int _omodCoverageAuditFrameCounter{ 0 };
+        std::uint32_t _omodCoverageAuditRunIndex{ 0 };
 
         int _posLogCounter{ 0 };
 
