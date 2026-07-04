@@ -38,7 +38,6 @@ namespace rock::weapon_clip_motion_harvest
         constexpr std::uintptr_t kManagerGraphsStorageOffset = 0x48;
         constexpr std::uintptr_t kManagerActiveGraphOffset = 0xD8;
         constexpr std::uint32_t kGraphsInlineStorageFlag = 0x8000'0000u;
-        constexpr std::uint32_t kMaxPlausibleActiveGraphIndex = 15;
 
         // BShkbAnimationGraph: hkbCharacter is INLINE at +0x1C8 — the graph
         // ctor (0x1416a3150) constructs it at this[1].field_0x50 with a
@@ -139,10 +138,16 @@ namespace rock::weapon_clip_motion_harvest
         // the chain is re-resolved from the holder on every step.
         std::uint32_t s_walkFormId = 0;
         std::uint64_t s_walkGenerationKey = 0;
+        // Cursor spans every graph in the manager's array (weapon clips do
+        // not live on the active graph).
+        std::uint32_t s_walkGraphIndex = 0;
         std::int32_t s_walkBindingIndex = 0;
         // Data pointer of the binding set the cursor indexes into; a change
-        // (graph swap / candidate switch) restarts the walk.
+        // (graph swap / candidate switch) restarts the current graph's walk.
         std::uintptr_t s_walkBindingsData = 0;
+        // Bindings visited across the whole walk; a pass that saw none keeps
+        // the walk pending (sets may still be filling at equip).
+        std::uint32_t s_walkBindingsVisited = 0;
         bool s_walkDone = false;
         // Deepest chain hop reached by the most recent resolve attempt;
         // reported by the caller when a walk gives up so the failing stage
@@ -284,9 +289,14 @@ namespace rock::weapon_clip_motion_harvest
                 return;
             }
 
+            // An EMPTY track-to-bone map is valid hkaAnimationBinding
+            // semantics: track i drives bone i (full-rig clips ship this
+            // way; only subset clips materialize the map).
             const auto trackToBoneData = *reinterpret_cast<std::uintptr_t*>(binding + kBindingTrackToBoneDataOffset);
             const auto trackToBoneCount = *reinterpret_cast<std::int32_t*>(binding + kBindingTrackToBoneCountOffset);
-            if (!plausiblePointer(trackToBoneData) || trackToBoneCount <= 0 || trackToBoneCount > kMaxPlausibleTrackCount) {
+            const bool identityMap = trackToBoneCount == 0;
+            if (!identityMap &&
+                (!plausiblePointer(trackToBoneData) || trackToBoneCount < 0 || trackToBoneCount > kMaxPlausibleTrackCount)) {
                 s_bailTrackMap.fetch_add(1, std::memory_order_relaxed);
                 logBindingBail("track-map", binding, animation, duration, animationTrackCount, trackToBoneCount, 0);
                 return;
@@ -297,15 +307,16 @@ namespace rock::weapon_clip_motion_harvest
                 logBindingBail("bone-count", binding, animation, duration, animationTrackCount, trackToBoneCount, boneCount);
                 return;
             }
-            const auto* trackToBone = reinterpret_cast<const std::int16_t*>(trackToBoneData);
+            const auto* trackToBone = identityMap ? nullptr : reinterpret_cast<const std::int16_t*>(trackToBoneData);
 
             // Collect the weapon-part tracks for this clip.
             std::array<std::int16_t, weapon_clip_stroke::kMaxTracksPerClip> trackIndices{};
             std::array<weapon_clip_stroke::TrackSamples, weapon_clip_stroke::kMaxTracksPerClip> tracks{};
             std::uint32_t targetCount = 0;
-            const auto usableTrackCount = (std::min)(trackToBoneCount, animationTrackCount);
+            const auto usableTrackCount =
+                identityMap ? animationTrackCount : (std::min)(trackToBoneCount, animationTrackCount);
             for (std::int32_t track = 0; track < usableTrackCount && targetCount < tracks.size(); ++track) {
-                const auto boneIndex = trackToBone[track];
+                const auto boneIndex = identityMap ? static_cast<std::int16_t>(track) : trackToBone[track];
                 if (boneIndex < 0 || boneIndex >= boneCount) {
                     continue;
                 }
@@ -395,9 +406,24 @@ namespace rock::weapon_clip_motion_harvest
             std::int32_t bindingCount{ 0 };
         };
 
-        bool resolveManagerBindings(const void* graphManager, ResolvedBindings& out)
+        struct GraphArrayView
         {
-            const auto manager = reinterpret_cast<std::uintptr_t>(graphManager);
+            std::uintptr_t base{ 0 };
+            std::uint32_t capacity{ 0 };
+        };
+
+        // Graph slots the walk may visit; bounded far above any real manager
+        // (the player carries two graphs: first- and third-person). Weapon
+        // clips do NOT live on the active graph — in-game diagnostics
+        // (2026-07-04) showed the player's active graph is the 94-bone body
+        // rig — so every entry is visited, gated per slot by the
+        // BShkbAnimationGraph vtable (in-game confirmed module offset) so a
+        // stale capacity slot degrades into a skip.
+        constexpr std::uint32_t kMaxWalkGraphs = 8;
+        constexpr std::uintptr_t kGraphVtableModuleOffset = 0x2E00A48;
+
+        bool resolveGraphArray(std::uintptr_t manager, GraphArrayView& out)
+        {
             s_lastResolveStage = "manager";
             if (!plausiblePointer(manager)) {
                 return false;
@@ -411,14 +437,29 @@ namespace rock::weapon_clip_motion_harvest
             if (!plausiblePointer(graphsBase)) {
                 return false;
             }
-            s_lastResolveStage = "active-index";
-            const auto activeGraphIndex = *reinterpret_cast<std::uint32_t*>(manager + kManagerActiveGraphOffset);
-            if (activeGraphIndex > kMaxPlausibleActiveGraphIndex) {
-                return false;
+            out.base = graphsBase;
+            out.capacity = (std::min)(capacityAndFlags & ~kGraphsInlineStorageFlag, kMaxWalkGraphs);
+            return true;
+        }
+
+        // Vtable-gated graphs-array entry; 0 when the slot is empty, stale,
+        // or not a BShkbAnimationGraph.
+        [[nodiscard]] std::uintptr_t graphAtIndex(const GraphArrayView& graphs, std::uint32_t index)
+        {
+            if (index >= graphs.capacity) {
+                return 0;
             }
+            const auto graph = reinterpret_cast<const std::uintptr_t*>(graphs.base)[index];
+            if (!plausiblePointer(graph) || objectVtableRel(graph) != kGraphVtableModuleOffset) {
+                return 0;
+            }
+            return graph;
+        }
+
+        bool resolveGraphBindings(std::uintptr_t graph, ResolvedBindings& out)
+        {
             s_lastResolveStage = "graph";
-            const auto graph = reinterpret_cast<const std::uintptr_t*>(graphsBase)[activeGraphIndex];
-            if (!plausiblePointer(graph)) {
+            if (!graph) {
                 return false;
             }
             s_lastResolveStage = "character-setup";
@@ -471,90 +512,116 @@ namespace rock::weapon_clip_motion_harvest
 
     bool probeBindings(const void* graphManager)
     {
-        ResolvedBindings resolved{};
-        return resolveManagerBindings(graphManager, resolved);
+        GraphArrayView graphs{};
+        if (!resolveGraphArray(reinterpret_cast<std::uintptr_t>(graphManager), graphs)) {
+            return false;
+        }
+        for (std::uint32_t i = 0; i < graphs.capacity; ++i) {
+            ResolvedBindings resolved{};
+            if (resolveGraphBindings(graphAtIndex(graphs, i), resolved)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     void logResolveDiagnostics(const void* graphManager, const char* label)
     {
-        const auto vtableRel = [](std::uintptr_t object) { return objectVtableRel(object); };
-
         const auto manager = reinterpret_cast<std::uintptr_t>(graphManager);
-        std::uintptr_t graphsBase = 0;
-        std::uintptr_t graph = 0;
-        std::uintptr_t character = 0;
-        std::uintptr_t setup = 0;
-        std::uintptr_t skeleton = 0;
-        std::uintptr_t bindingSet = 0;
-        std::uintptr_t bindingsData = 0;
         std::uint32_t capacityAndFlags = 0;
         std::uint32_t activeGraphIndex = 0;
-        std::int32_t bindingCount = -1;
-        std::int32_t boneCount = -1;
-        const char* bindingSetSource = "none";
-        std::array<const char*, 3> firstBoneNames{ "", "", "" };
-        const char* lastBoneName = "";
-
         if (plausiblePointer(manager)) {
             capacityAndFlags = *reinterpret_cast<std::uint32_t*>(manager + kManagerGraphsCapacityOffset);
-            const auto storageAddress = manager + kManagerGraphsStorageOffset;
-            graphsBase = (capacityAndFlags & kGraphsInlineStorageFlag) != 0
-                ? storageAddress
-                : *reinterpret_cast<std::uintptr_t*>(storageAddress);
             activeGraphIndex = *reinterpret_cast<std::uint32_t*>(manager + kManagerActiveGraphOffset);
         }
-        if (plausiblePointer(graphsBase) && activeGraphIndex <= kMaxPlausibleActiveGraphIndex) {
-            graph = reinterpret_cast<const std::uintptr_t*>(graphsBase)[activeGraphIndex];
-        }
-        if (plausiblePointer(graph)) {
-            character = graph + kGraphCharacterOffset;
-            setup = *reinterpret_cast<std::uintptr_t*>(character + kCharacterSetupOffset);
-            const auto overrideSet = *reinterpret_cast<std::uintptr_t*>(character + kCharacterBindingSetOverrideOffset);
-            if (plausiblePointer(overrideSet)) {
-                bindingSet = overrideSet;
-                bindingSetSource = "override";
-            } else if (plausiblePointer(setup)) {
-                bindingSet = *reinterpret_cast<std::uintptr_t*>(setup + kSetupBindingSetOffset);
-                if (plausiblePointer(bindingSet)) {
-                    bindingSetSource = "setup";
-                }
-            }
-        }
-        if (plausiblePointer(setup)) {
-            skeleton = *reinterpret_cast<std::uintptr_t*>(setup + kSetupAnimationSkeletonOffset);
-        }
-        if (plausiblePointer(skeleton)) {
-            boneCount = *reinterpret_cast<std::int32_t*>(skeleton + kSkeletonBonesCountOffset);
-            if (boneCount > 0 && boneCount <= kMaxPlausibleBoneCount) {
-                for (std::int32_t i = 0; i < boneCount && i < 3; ++i) {
-                    if (const char* name = skeletonBoneName(skeleton, i)) {
-                        firstBoneNames[static_cast<std::size_t>(i)] = name;
-                    }
-                }
-                if (const char* name = skeletonBoneName(skeleton, boneCount - 1)) {
-                    lastBoneName = name;
-                }
-            }
-        }
-        if (plausiblePointer(bindingSet)) {
-            bindingsData = *reinterpret_cast<std::uintptr_t*>(bindingSet + kBindingSetDataOffset);
-            bindingCount = *reinterpret_cast<std::int32_t*>(bindingSet + kBindingSetCountOffset);
+        GraphArrayView graphs{};
+        const bool haveArray = resolveGraphArray(manager, graphs);
+        ROCK_LOG_WARN(Weapon,
+            "WeaponClipMotionHarvest diagnostics [{}]: mgr={:#x}(vt+{:#x}) graphsFlags={:#010x} activeIdx={} slots={}",
+            label ? label : "?",
+            manager,
+            objectVtableRel(manager),
+            capacityAndFlags,
+            activeGraphIndex,
+            graphs.capacity);
+        if (!haveArray) {
+            return;
         }
 
-        ROCK_LOG_WARN(Weapon,
-            "WeaponClipMotionHarvest diagnostics [{}]: mgr={:#x}(vt+{:#x}) "
-            "graphsFlags={:#010x} activeIdx={} graph={:#x}(vt+{:#x}) charVt=+{:#x} "
-            "setup={:#x}(vt+{:#x}) skel={:#x}(vt+{:#x}) bones={} first=[{}|{}|{}] last=[{}] "
-            "setSrc={} set={:#x}(vt+{:#x}) data={:#x} count={}",
-            label ? label : "?",
-            manager, vtableRel(manager),
-            capacityAndFlags, activeGraphIndex, graph, vtableRel(graph),
-            plausiblePointer(graph) ? vtableRel(character) : 0,
-            setup, vtableRel(setup),
-            skeleton, vtableRel(skeleton),
-            boneCount, firstBoneNames[0], firstBoneNames[1], firstBoneNames[2], lastBoneName,
-            bindingSetSource, bindingSet, vtableRel(bindingSet),
-            bindingsData, bindingCount);
+        for (std::uint32_t index = 0; index < graphs.capacity; ++index) {
+            const auto rawGraph = reinterpret_cast<const std::uintptr_t*>(graphs.base)[index];
+            // Deep reads only through the vtable gate; the raw slot value and
+            // its vtable are still printed so a rejected slot is explainable.
+            const auto graph = graphAtIndex(graphs, index);
+            std::uintptr_t character = 0;
+            std::uintptr_t setup = 0;
+            std::uintptr_t skeleton = 0;
+            std::uintptr_t bindingSet = 0;
+            std::uintptr_t bindingsData = 0;
+            std::int32_t bindingCount = -1;
+            std::int32_t boneCount = -1;
+            const char* bindingSetSource = "none";
+            std::array<const char*, 3> firstBoneNames{ "", "", "" };
+            const char* lastBoneName = "";
+            if (graph != 0) {
+                character = graph + kGraphCharacterOffset;
+                setup = *reinterpret_cast<std::uintptr_t*>(character + kCharacterSetupOffset);
+                const auto overrideSet = *reinterpret_cast<std::uintptr_t*>(character + kCharacterBindingSetOverrideOffset);
+                if (plausiblePointer(overrideSet)) {
+                    bindingSet = overrideSet;
+                    bindingSetSource = "override";
+                } else if (plausiblePointer(setup)) {
+                    bindingSet = *reinterpret_cast<std::uintptr_t*>(setup + kSetupBindingSetOffset);
+                    if (plausiblePointer(bindingSet)) {
+                        bindingSetSource = "setup";
+                    }
+                }
+                if (plausiblePointer(setup)) {
+                    skeleton = *reinterpret_cast<std::uintptr_t*>(setup + kSetupAnimationSkeletonOffset);
+                }
+                if (plausiblePointer(skeleton)) {
+                    boneCount = *reinterpret_cast<std::int32_t*>(skeleton + kSkeletonBonesCountOffset);
+                    if (boneCount > 0 && boneCount <= kMaxPlausibleBoneCount) {
+                        for (std::int32_t i = 0; i < boneCount && i < 3; ++i) {
+                            if (const char* name = skeletonBoneName(skeleton, i)) {
+                                firstBoneNames[static_cast<std::size_t>(i)] = name;
+                            }
+                        }
+                        if (const char* name = skeletonBoneName(skeleton, boneCount - 1)) {
+                            lastBoneName = name;
+                        }
+                    }
+                }
+                if (plausiblePointer(bindingSet)) {
+                    bindingsData = *reinterpret_cast<std::uintptr_t*>(bindingSet + kBindingSetDataOffset);
+                    bindingCount = *reinterpret_cast<std::int32_t*>(bindingSet + kBindingSetCountOffset);
+                }
+            }
+            ROCK_LOG_WARN(Weapon,
+                "WeaponClipMotionHarvest diagnostics [{}] graph[{}]{}: graph={:#x}(vt+{:#x}) charVt=+{:#x} "
+                "setup={:#x}(vt+{:#x}) skel={:#x}(vt+{:#x}) bones={} first=[{}|{}|{}] last=[{}] "
+                "setSrc={} set={:#x}(vt+{:#x}) data={:#x} count={}",
+                label ? label : "?",
+                index,
+                index == activeGraphIndex ? "*" : "",
+                rawGraph,
+                objectVtableRel(rawGraph),
+                graph != 0 ? objectVtableRel(character) : 0,
+                setup,
+                objectVtableRel(setup),
+                skeleton,
+                objectVtableRel(skeleton),
+                boneCount,
+                firstBoneNames[0],
+                firstBoneNames[1],
+                firstBoneNames[2],
+                lastBoneName,
+                bindingSetSource,
+                bindingSet,
+                objectVtableRel(bindingSet),
+                bindingsData,
+                bindingCount);
+        }
     }
 
     StepResult stepHarvest(
@@ -567,8 +634,10 @@ namespace rock::weapon_clip_motion_harvest
         if (s_walkFormId != weaponFormId || s_walkGenerationKey != weaponGenerationKey) {
             s_walkFormId = weaponFormId;
             s_walkGenerationKey = weaponGenerationKey;
+            s_walkGraphIndex = 0;
             s_walkBindingIndex = 0;
             s_walkBindingsData = 0;
+            s_walkBindingsVisited = 0;
             s_walkDone = false;
             s_bindingDetailLogs = 0;
         }
@@ -576,24 +645,63 @@ namespace rock::weapon_clip_motion_harvest
             return StepResult::Completed;
         }
 
-        ResolvedBindings resolved{};
-        if (!resolveManagerBindings(graphManager, resolved)) {
-            // Graph or bindings not built yet; the caller retries next frame.
+        GraphArrayView graphs{};
+        if (!resolveGraphArray(reinterpret_cast<std::uintptr_t>(graphManager), graphs)) {
+            // Manager not readable yet; the caller retries next frame.
             return StepResult::Pending;
         }
-        if (resolved.bindingsData != s_walkBindingsData) {
-            // Different binding set than the cursor was walking (graph swap
-            // at equip, or the caller switched candidate managers); indices
-            // are not comparable across sets, so restart.
-            s_walkBindingsData = resolved.bindingsData;
-            s_walkBindingIndex = 0;
-        }
 
-        const auto* bindings = reinterpret_cast<const std::uintptr_t*>(resolved.bindingsData);
         std::int32_t processed = 0;
-        while (s_walkBindingIndex < resolved.bindingCount && processed < kBindingsPerStep) {
+        while (processed < kBindingsPerStep) {
+            if (s_walkGraphIndex >= graphs.capacity) {
+                if (s_walkBindingsVisited == 0) {
+                    // Every graph was empty/unresolvable this pass; the sets
+                    // may still be filling at equip — retry from the top
+                    // until the caller's attempt budget runs out.
+                    s_walkGraphIndex = 0;
+                    s_walkBindingIndex = 0;
+                    s_walkBindingsData = 0;
+                    return StepResult::Pending;
+                }
+                s_walkDone = true;
+                s_walksCompleted.fetch_add(1, std::memory_order_relaxed);
+                ROCK_LOG_INFO(Weapon,
+                    "WeaponClipMotionHarvest: walked weapon {:08X} — {} graph slot(s), {} binding(s) visited, {} harvested, {} without part tracks (cumulative)",
+                    weaponFormId,
+                    graphs.capacity,
+                    s_walkBindingsVisited,
+                    s_bindingsHarvested.load(std::memory_order_relaxed),
+                    s_bindingsNoTargets.load(std::memory_order_relaxed));
+                return StepResult::Completed;
+            }
+
+            ResolvedBindings resolved{};
+            const auto graph = graphAtIndex(graphs, s_walkGraphIndex);
+            if (!graph || !resolveGraphBindings(graph, resolved)) {
+                // Empty slot, dummy graph, or empty binding set: next graph.
+                ++s_walkGraphIndex;
+                s_walkBindingIndex = 0;
+                s_walkBindingsData = 0;
+                continue;
+            }
+            if (resolved.bindingsData != s_walkBindingsData) {
+                // Different binding set than the cursor was walking (rebuilt
+                // at equip); indices are not comparable across sets, restart
+                // this graph.
+                s_walkBindingsData = resolved.bindingsData;
+                s_walkBindingIndex = 0;
+            }
+            if (s_walkBindingIndex >= resolved.bindingCount) {
+                ++s_walkGraphIndex;
+                s_walkBindingIndex = 0;
+                s_walkBindingsData = 0;
+                continue;
+            }
+
+            const auto* bindings = reinterpret_cast<const std::uintptr_t*>(resolved.bindingsData);
             const auto bindingWithTriggers = bindings[s_walkBindingIndex++];
             ++processed;
+            ++s_walkBindingsVisited;
             if (!plausiblePointer(bindingWithTriggers)) {
                 continue;
             }
@@ -604,18 +712,6 @@ namespace rock::weapon_clip_motion_harvest
             s_bindingsSeen.fetch_add(1, std::memory_order_relaxed);
             harvestBinding(binding, resolved.skeleton, allowedNodeNames, allowedNodeNameCount);
         }
-
-        if (s_walkBindingIndex >= resolved.bindingCount) {
-            s_walkDone = true;
-            s_walksCompleted.fetch_add(1, std::memory_order_relaxed);
-            ROCK_LOG_INFO(Weapon,
-                "WeaponClipMotionHarvest: walked weapon {:08X} graph — {} binding(s), {} harvested, {} without part tracks (cumulative)",
-                weaponFormId,
-                resolved.bindingCount,
-                s_bindingsHarvested.load(std::memory_order_relaxed),
-                s_bindingsNoTargets.load(std::memory_order_relaxed));
-            return StepResult::Completed;
-        }
         return StepResult::Pending;
     }
 
@@ -623,8 +719,10 @@ namespace rock::weapon_clip_motion_harvest
     {
         s_walkFormId = 0;
         s_walkGenerationKey = 0;
+        s_walkGraphIndex = 0;
         s_walkBindingIndex = 0;
         s_walkBindingsData = 0;
+        s_walkBindingsVisited = 0;
         s_walkDone = false;
         s_bindingDetailLogs = 0;
     }
