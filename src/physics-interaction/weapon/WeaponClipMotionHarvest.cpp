@@ -91,21 +91,29 @@ namespace rock::weapon_clip_motion_harvest
         constexpr std::uintptr_t kAnimationDurationOffset = 0x14;
         constexpr std::uintptr_t kAnimationTrackCountOffset = 0x18;
 
-        // hkaSplineCompressedAnimation internals (sampler disassembly at
-        // 0x141F71A90..+0x87E and block resolver 0x142051280, driven by the
-        // 2026-07-04 in-game CTD): +0x3C numBlocks, +0x40 maxFramesPerBlock
-        // (the sampler divides by maxFramesPerBlock-1 unguarded), +0x58
-        // per-block offsets array, +0x78 per-track-per-block offsets table
-        // (the crash read: null when the clip's spline payload is not
-        // resident), +0x98 compressed data base. The engine sampler guards
-        // NONE of these — it assumes the clip is loaded because it only ever
-        // samples playing clips — so the harvest gates on all of them and a
-        // non-resident clip degrades into a counted skip.
+        // hkaSplineCompressedAnimation internals (playback sampler
+        // disassembly 0x141F71B70, block resolver 0x142051280): +0x3C
+        // numBlocks, +0x40 maxFramesPerBlock (the sampler divides by
+        // maxFramesPerBlock-1 unguarded), hkArrays m_blockOffsets (+0x58
+        // data / +0x60 count), m_floatBlockOffsets (+0x68 / +0x70 — read
+        // unconditionally by the sampler even with zero float tracks) and
+        // m_data (+0x98 / +0xA0). The sampler guards none of these — it
+        // assumes the clip is loaded because it only samples playing clips.
+        // Binding-set STUBS carry token allocations here (m_data ~0x20
+        // bytes), so residency is gated on the array SIZES: a real clip's
+        // mask stream needs at least one byte per track.
         constexpr std::uintptr_t kSplineNumBlocksOffset = 0x3C;
         constexpr std::uintptr_t kSplineMaxFramesPerBlockOffset = 0x40;
         constexpr std::uintptr_t kSplineBlockOffsetsOffset = 0x58;
-        constexpr std::uintptr_t kSplineTrackOffsetsTableOffset = 0x78;
+        constexpr std::uintptr_t kSplineBlockOffsetsCountOffset = 0x60;
+        constexpr std::uintptr_t kSplineFloatBlockOffsetsOffset = 0x68;
+        constexpr std::uintptr_t kSplineFloatBlockOffsetsCountOffset = 0x70;
         constexpr std::uintptr_t kSplineDataBaseOffset = 0x98;
+        constexpr std::uintptr_t kSplineDataSizeOffset = 0xA0;
+        // Full-pose decode buffer: covers the 95-bone player rigs with
+        // slack; targets on higher track indices are skipped rather than
+        // silently truncated.
+        constexpr std::uint32_t kSampleBufferTracks = 160;
 
         /*
          * hkbClipGenerator (0x160 bytes; clone at 0x14192d950 allocates it):
@@ -125,9 +133,16 @@ namespace rock::weapon_clip_motion_harvest
         constexpr std::uintptr_t kClipGeneratorInstallSlotOffset = 0x50;
         constexpr std::uintptr_t kClipGeneratorLoadedBindingOffset = 0xD0;
         constexpr std::uintptr_t kLoadedBindingWrapperBindingOffset = 0x38;
-        // hkaAnimation vtable slot 6: sampleIndividualTransformTracks(
-        //   float time, const int16* trackIndices, uint32 count, out*)
-        constexpr std::size_t kSampleIndividualTransformTracksSlot = 6;
+        // hkaAnimation vtable slot 5 — the engine's own playback sampler
+        // ("TtSampleSpline" profile marker, 0x141F71B70): sampleTracks(
+        //   float time, uint32 transformTracks, hkQsTransform* out,
+        //   uint32 floatTracks, float* floatsOut). Decodes tracks
+        // 0..transformTracks-1 sequentially from the per-block mask streams
+        // inside m_data. Slot 6 (per-track sampling through
+        // m_transformOffsets) is DEAD code in FO4 — that array is never
+        // populated, loaded or stub, which is what crashed the 2026-07-04
+        // session and what made every clip look non-resident.
+        constexpr std::size_t kSampleTracksSlot = 5;
 
         constexpr float kMinClipDurationSeconds = 0.01f;
         constexpr float kMaxClipDurationSeconds = 300.0f;
@@ -150,7 +165,9 @@ namespace rock::weapon_clip_motion_harvest
         };
         static_assert(sizeof(HkQsTransform) == 48);
 
-        using SampleIndividualTransformTracks_t = void (*)(void*, float, const std::int16_t*, std::uint32_t, HkQsTransform*);
+        // sampleTracks(this, time, transformTrackCount, transformsOut,
+        // floatTrackCount, floatsOut) — MSVC x64: time lands in XMM1.
+        using SampleTracks_t = void (*)(void*, float, std::uint32_t, HkQsTransform*, std::uint32_t, float*);
 
         std::mutex s_queueMutex;
         std::array<weapon_clip_stroke::AuthoredStrokeGroup, kQueueCapacity> s_queue{};
@@ -365,29 +382,37 @@ namespace rock::weapon_clip_motion_harvest
             }
 
             // The engine sampler dereferences the spline payload unguarded;
-            // clips whose compressed data is not resident (not currently
-            // playable) crash it, so they are skipped here.
+            // binding-set stubs (token allocations, tiny m_data) and
+            // anything else unloadable is skipped here. A real clip's mask
+            // stream needs at least one byte per track per block.
             const auto splineNumBlocks = *reinterpret_cast<std::int32_t*>(animation + kSplineNumBlocksOffset);
             const auto splineMaxFramesPerBlock = *reinterpret_cast<std::int32_t*>(animation + kSplineMaxFramesPerBlockOffset);
             const auto splineBlockOffsets = *reinterpret_cast<std::uintptr_t*>(animation + kSplineBlockOffsetsOffset);
-            const auto splineTrackOffsetsTable = *reinterpret_cast<std::uintptr_t*>(animation + kSplineTrackOffsetsTableOffset);
+            const auto splineBlockOffsetsCount = *reinterpret_cast<std::int32_t*>(animation + kSplineBlockOffsetsCountOffset);
+            const auto splineFloatBlockOffsets = *reinterpret_cast<std::uintptr_t*>(animation + kSplineFloatBlockOffsetsOffset);
+            const auto splineFloatBlockOffsetsCount = *reinterpret_cast<std::int32_t*>(animation + kSplineFloatBlockOffsetsCountOffset);
             const auto splineDataBase = *reinterpret_cast<std::uintptr_t*>(animation + kSplineDataBaseOffset);
+            const auto splineDataSize = *reinterpret_cast<std::int32_t*>(animation + kSplineDataSizeOffset);
             if (splineNumBlocks <= 0 || splineMaxFramesPerBlock < 2 ||
-                !plausiblePointer(splineBlockOffsets) || !plausiblePointer(splineTrackOffsetsTable) ||
-                !plausiblePointer(splineDataBase)) {
+                !plausiblePointer(splineBlockOffsets) || splineBlockOffsetsCount < splineNumBlocks ||
+                !plausiblePointer(splineFloatBlockOffsets) || splineFloatBlockOffsetsCount < splineNumBlocks ||
+                !plausiblePointer(splineDataBase) || splineDataSize < animationTrackCount) {
                 s_bailSplineData.fetch_add(1, std::memory_order_relaxed);
                 if (s_bindingDetailLogs < kMaxBindingDetailLogsPerWalk) {
                     ++s_bindingDetailLogs;
                     ROCK_LOG_WARN(Weapon,
-                        "WeaponClipMotionHarvest: binding bail [spline-data] anim={:#x} duration={} tracks={} blocks={} maxFrames={} blockOffsets={:#x} trackTable={:#x} dataBase={:#x}",
+                        "WeaponClipMotionHarvest: binding bail [spline-data] anim={:#x} duration={} tracks={} blocks={} maxFrames={} blockOffsets={:#x}({}) floatBlockOffsets={:#x}({}) data={:#x}({})",
                         animation,
                         duration,
                         animationTrackCount,
                         splineNumBlocks,
                         splineMaxFramesPerBlock,
                         splineBlockOffsets,
-                        splineTrackOffsetsTable,
-                        splineDataBase);
+                        splineBlockOffsetsCount,
+                        splineFloatBlockOffsets,
+                        splineFloatBlockOffsetsCount,
+                        splineDataBase,
+                        splineDataSize);
                 }
                 return;
             }
@@ -412,12 +437,16 @@ namespace rock::weapon_clip_motion_harvest
             }
             const auto* trackToBone = identityMap ? nullptr : reinterpret_cast<const std::int16_t*>(trackToBoneData);
 
-            // Collect the weapon-part tracks for this clip.
+            // Collect the weapon-part tracks for this clip. Tracks beyond
+            // the decode buffer cannot be sampled (slot 5 decodes
+            // sequentially from track 0) and are skipped.
             std::array<std::int16_t, weapon_clip_stroke::kMaxTracksPerClip> trackIndices{};
             std::array<weapon_clip_stroke::TrackSamples, weapon_clip_stroke::kMaxTracksPerClip> tracks{};
             std::uint32_t targetCount = 0;
-            const auto usableTrackCount =
-                identityMap ? animationTrackCount : (std::min)(trackToBoneCount, animationTrackCount);
+            std::int32_t maxTargetTrack = 0;
+            const auto usableTrackCount = (std::min)(
+                identityMap ? animationTrackCount : (std::min)(trackToBoneCount, animationTrackCount),
+                static_cast<std::int32_t>(kSampleBufferTracks));
             for (std::int32_t track = 0; track < usableTrackCount && targetCount < tracks.size(); ++track) {
                 const auto boneIndex = identityMap ? static_cast<std::int16_t>(track) : trackToBone[track];
                 if (boneIndex < 0 || boneIndex >= boneCount) {
@@ -428,6 +457,7 @@ namespace rock::weapon_clip_motion_harvest
                     continue;
                 }
                 trackIndices[targetCount] = static_cast<std::int16_t>(track);
+                maxTargetTrack = (std::max)(maxTargetTrack, track);
                 auto& samples = tracks[targetCount];
                 samples = {};
                 std::size_t nameLength = 0;
@@ -442,32 +472,36 @@ namespace rock::weapon_clip_motion_harvest
                 return;
             }
 
-            const auto sampler = reinterpret_cast<SampleIndividualTransformTracks_t>(
-                reinterpret_cast<std::uintptr_t*>(vtable)[kSampleIndividualTransformTracksSlot]);
+            const auto sampler = reinterpret_cast<SampleTracks_t>(
+                reinterpret_cast<std::uintptr_t*>(vtable)[kSampleTracksSlot]);
             if (!sampler) {
                 s_bailSampler.fetch_add(1, std::memory_order_relaxed);
                 logBindingBail("sampler", binding, animation, duration, animationTrackCount, trackToBoneCount, boneCount);
                 return;
             }
 
-            std::array<HkQsTransform, weapon_clip_stroke::kMaxTracksPerClip> sampled{};
+            // Full-pose decode: slot 5 decodes tracks 0..decodeCount-1, then
+            // the target tracks are picked out of the buffer.
+            const auto decodeCount = static_cast<std::uint32_t>(maxTargetTrack) + 1;
+            std::array<HkQsTransform, kSampleBufferTracks> sampled{};
             for (std::uint32_t step = 0; step < weapon_clip_stroke::kClipSampleCount; ++step) {
                 const float time = duration * static_cast<float>(step) /
                                    static_cast<float>(weapon_clip_stroke::kClipSampleCount - 1);
-                sampler(reinterpret_cast<void*>(animation), time, trackIndices.data(), targetCount, sampled.data());
+                sampler(reinterpret_cast<void*>(animation), time, decodeCount, sampled.data(), 0, nullptr);
                 for (std::uint32_t i = 0; i < targetCount; ++i) {
+                    const auto& decoded = sampled[static_cast<std::size_t>(trackIndices[i])];
                     auto& pose = tracks[i].samples[step];
                     pose.translate = weapon_part_motion_path::Vec3{
-                        sampled[i].translate[0],
-                        sampled[i].translate[1],
-                        sampled[i].translate[2],
+                        decoded.translate[0],
+                        decoded.translate[1],
+                        decoded.translate[2],
                     };
                     // Havok quaternion order is (x, y, z, w).
                     pose.rotate = weapon_part_motion_path::quatNormalizeOrIdentity(weapon_part_motion_path::Quat{
-                        sampled[i].rotate[3],
-                        sampled[i].rotate[0],
-                        sampled[i].rotate[1],
-                        sampled[i].rotate[2],
+                        decoded.rotate[3],
+                        decoded.rotate[0],
+                        decoded.rotate[1],
+                        decoded.rotate[2],
                     });
                 }
             }
