@@ -122,6 +122,18 @@ namespace rock::weapon_clip_motion_harvest
         std::atomic<std::uint64_t> s_groupsDropped{ 0 };
         std::atomic<std::uint64_t> s_skippedNonSpline{ 0 };
         std::atomic<std::uint64_t> s_walksCompleted{ 0 };
+        // Bail-reason counters: which harvestBinding gate rejected a binding
+        // (a binding that passes all gates lands in harvested/noTargets).
+        std::atomic<std::uint64_t> s_bailAnimationPtr{ 0 };
+        std::atomic<std::uint64_t> s_bailClipParams{ 0 };
+        std::atomic<std::uint64_t> s_bailTrackMap{ 0 };
+        std::atomic<std::uint64_t> s_bailBoneCount{ 0 };
+        std::atomic<std::uint64_t> s_bailSampler{ 0 };
+
+        // Detailed bail dumps per walk (main thread; reset with the cursor)
+        // so a failing binding is identifiable without flooding the log.
+        constexpr std::uint32_t kMaxBindingDetailLogsPerWalk = 3;
+        std::uint32_t s_bindingDetailLogs = 0;
 
         // Walk cursor (main thread only). No engine pointers are stored —
         // the chain is re-resolved from the holder on every step.
@@ -143,6 +155,46 @@ namespace rock::weapon_clip_motion_harvest
         [[nodiscard]] bool plausiblePointer(std::uintptr_t value)
         {
             return value > 0x10000 && value < 0x0000'8000'0000'0000ull;
+        }
+
+        [[nodiscard]] std::uintptr_t moduleRelative(std::uintptr_t address)
+        {
+            const auto base = REL::Module::get().base();
+            return address >= base ? address - base : address;
+        }
+
+        // Module-relative vtable of a heap object (0 when the pointer is
+        // implausible); a rebased value can be looked up directly in the
+        // binary to identify the object's real runtime type.
+        [[nodiscard]] std::uintptr_t objectVtableRel(std::uintptr_t object)
+        {
+            return plausiblePointer(object) ? moduleRelative(*reinterpret_cast<const std::uintptr_t*>(object)) : 0;
+        }
+
+        void logBindingBail(
+            const char* reason,
+            std::uintptr_t binding,
+            std::uintptr_t animation,
+            float duration,
+            std::int32_t trackCount,
+            std::int32_t trackToBoneCount,
+            std::int32_t boneCount)
+        {
+            if (s_bindingDetailLogs >= kMaxBindingDetailLogsPerWalk) {
+                return;
+            }
+            ++s_bindingDetailLogs;
+            ROCK_LOG_WARN(Weapon,
+                "WeaponClipMotionHarvest: binding bail [{}] binding={:#x}(vt+{:#x}) anim={:#x}(vt+{:#x}) duration={} trackCount={} trackToBone={} bones={}",
+                reason,
+                binding,
+                objectVtableRel(binding),
+                animation,
+                objectVtableRel(animation),
+                duration,
+                trackCount,
+                trackToBoneCount,
+                boneCount);
         }
 
         const char* skeletonBoneName(std::uintptr_t skeleton, std::int32_t boneIndex)
@@ -207,6 +259,8 @@ namespace rock::weapon_clip_motion_harvest
         {
             const auto animation = *reinterpret_cast<std::uintptr_t*>(binding + kBindingAnimationOffset);
             if (!plausiblePointer(animation)) {
+                s_bailAnimationPtr.fetch_add(1, std::memory_order_relaxed);
+                logBindingBail("animation-ptr", binding, animation, 0.0f, 0, 0, 0);
                 return;
             }
 
@@ -217,6 +271,7 @@ namespace rock::weapon_clip_motion_harvest
             const auto vtable = *reinterpret_cast<std::uintptr_t*>(animation);
             if (vtable != RE::VTABLE::hkaSplineCompressedAnimation[0].address()) {
                 s_skippedNonSpline.fetch_add(1, std::memory_order_relaxed);
+                logBindingBail("non-spline", binding, animation, 0.0f, 0, 0, 0);
                 return;
             }
 
@@ -224,16 +279,22 @@ namespace rock::weapon_clip_motion_harvest
             const auto animationTrackCount = *reinterpret_cast<std::int32_t*>(animation + kAnimationTrackCountOffset);
             if (!std::isfinite(duration) || duration < kMinClipDurationSeconds || duration > kMaxClipDurationSeconds ||
                 animationTrackCount <= 0 || animationTrackCount > kMaxPlausibleTrackCount) {
+                s_bailClipParams.fetch_add(1, std::memory_order_relaxed);
+                logBindingBail("clip-params", binding, animation, duration, animationTrackCount, 0, 0);
                 return;
             }
 
             const auto trackToBoneData = *reinterpret_cast<std::uintptr_t*>(binding + kBindingTrackToBoneDataOffset);
             const auto trackToBoneCount = *reinterpret_cast<std::int32_t*>(binding + kBindingTrackToBoneCountOffset);
             if (!plausiblePointer(trackToBoneData) || trackToBoneCount <= 0 || trackToBoneCount > kMaxPlausibleTrackCount) {
+                s_bailTrackMap.fetch_add(1, std::memory_order_relaxed);
+                logBindingBail("track-map", binding, animation, duration, animationTrackCount, trackToBoneCount, 0);
                 return;
             }
             const auto boneCount = *reinterpret_cast<std::int32_t*>(skeleton + kSkeletonBonesCountOffset);
             if (boneCount <= 0 || boneCount > kMaxPlausibleBoneCount) {
+                s_bailBoneCount.fetch_add(1, std::memory_order_relaxed);
+                logBindingBail("bone-count", binding, animation, duration, animationTrackCount, trackToBoneCount, boneCount);
                 return;
             }
             const auto* trackToBone = reinterpret_cast<const std::int16_t*>(trackToBoneData);
@@ -270,6 +331,8 @@ namespace rock::weapon_clip_motion_harvest
             const auto sampler = reinterpret_cast<SampleIndividualTransformTracks_t>(
                 reinterpret_cast<std::uintptr_t*>(vtable)[kSampleIndividualTransformTracksSlot]);
             if (!sampler) {
+                s_bailSampler.fetch_add(1, std::memory_order_relaxed);
+                logBindingBail("sampler", binding, animation, duration, animationTrackCount, trackToBoneCount, boneCount);
                 return;
             }
 
@@ -414,16 +477,7 @@ namespace rock::weapon_clip_motion_harvest
 
     void logResolveDiagnostics(const void* graphManager, const char* label)
     {
-        const auto moduleBase = REL::Module::get().base();
-        const auto rebase = [moduleBase](std::uintptr_t address) -> std::uintptr_t {
-            return address >= moduleBase ? address - moduleBase : address;
-        };
-        // Module-relative vtable of a heap object; 0 when the object pointer
-        // is implausible. The rebased value can be looked up directly in the
-        // binary to identify what type the pointer really is.
-        const auto vtableRel = [&](std::uintptr_t object) -> std::uintptr_t {
-            return plausiblePointer(object) ? rebase(*reinterpret_cast<const std::uintptr_t*>(object)) : 0;
-        };
+        const auto vtableRel = [](std::uintptr_t object) { return objectVtableRel(object); };
 
         const auto manager = reinterpret_cast<std::uintptr_t>(graphManager);
         std::uintptr_t graphsBase = 0;
@@ -516,6 +570,7 @@ namespace rock::weapon_clip_motion_harvest
             s_walkBindingIndex = 0;
             s_walkBindingsData = 0;
             s_walkDone = false;
+            s_bindingDetailLogs = 0;
         }
         if (s_walkDone) {
             return StepResult::Completed;
@@ -571,6 +626,7 @@ namespace rock::weapon_clip_motion_harvest
         s_walkBindingIndex = 0;
         s_walkBindingsData = 0;
         s_walkDone = false;
+        s_bindingDetailLogs = 0;
     }
 
     std::uint32_t drainGroups(weapon_clip_stroke::AuthoredStrokeGroup* outGroups, std::uint32_t maxGroups)
@@ -608,6 +664,11 @@ namespace rock::weapon_clip_motion_harvest
             .groupsDropped = s_groupsDropped.load(std::memory_order_relaxed),
             .skippedNonSpline = s_skippedNonSpline.load(std::memory_order_relaxed),
             .walksCompleted = s_walksCompleted.load(std::memory_order_relaxed),
+            .bailAnimationPtr = s_bailAnimationPtr.load(std::memory_order_relaxed),
+            .bailClipParams = s_bailClipParams.load(std::memory_order_relaxed),
+            .bailTrackMap = s_bailTrackMap.load(std::memory_order_relaxed),
+            .bailBoneCount = s_bailBoneCount.load(std::memory_order_relaxed),
+            .bailSampler = s_bailSampler.load(std::memory_order_relaxed),
         };
     }
 }

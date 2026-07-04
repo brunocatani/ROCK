@@ -123,6 +123,13 @@ namespace rock::weapon_clip_motion_harvest
         std::uint64_t groupsDropped{ 0 };
         std::uint64_t skippedNonSpline{ 0 };
         std::uint64_t walksCompleted{ 0 };
+        // Which harvestBinding gate rejected bindings (details are dumped,
+        // capped per walk, as "binding bail" warnings).
+        std::uint64_t bailAnimationPtr{ 0 };
+        std::uint64_t bailClipParams{ 0 };
+        std::uint64_t bailTrackMap{ 0 };
+        std::uint64_t bailBoneCount{ 0 };
+        std::uint64_t bailSampler{ 0 };
     };
     [[nodiscard]] Stats snapshotStats();
 }

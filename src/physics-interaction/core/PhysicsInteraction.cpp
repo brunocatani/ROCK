@@ -6202,6 +6202,7 @@ namespace rock
             _clipHarvestWalkAttempts = 0;
             _clipHarvestWalkCompleted = false;
             _clipHarvestWalkHolderSeen = false;
+            _clipHarvestWalkCandidateLogged = false;
         }
         if (_clipHarvestWalkCompleted) {
             return;
@@ -6280,11 +6281,24 @@ namespace rock
         }
 
         const void* chosenManager = nullptr;
+        const char* chosenLabel = "?";
         for (std::uint32_t i = 0; i < candidateCount; ++i) {
             if (::rock::weapon_clip_motion_harvest::probeBindings(candidateManagers[i])) {
                 chosenManager = candidateManagers[i];
+                chosenLabel = candidateLabels[i];
                 break;
             }
+        }
+        // One-shot chain dump of the candidate the walk locks onto, so the
+        // walked skeleton and binding-set contents are visible on success
+        // paths too (not only at give-up).
+        if (chosenManager && !_clipHarvestWalkCandidateLogged) {
+            _clipHarvestWalkCandidateLogged = true;
+            ROCK_LOG_INFO(Weapon,
+                "WeaponClipMotionHarvest: weapon {:08X} walking candidate [{}]",
+                weaponFormId,
+                chosenLabel);
+            ::rock::weapon_clip_motion_harvest::logResolveDiagnostics(chosenManager, chosenLabel);
         }
 
         if (!chosenManager) {
@@ -6373,7 +6387,7 @@ namespace rock
             // (nonSpline>0) without any per-binding hot-path logging.
             const auto stats = ::rock::weapon_clip_motion_harvest::snapshotStats();
             ROCK_LOG_INFO(Weapon,
-                "WeaponClipMotionHarvest: stats at weapon {:08X} equip: bindingsSeen={} harvested={} noTargets={} groupsQueued={} groupsDropped={} skippedNonSpline={} walksCompleted={}",
+                "WeaponClipMotionHarvest: stats at weapon {:08X} equip: bindingsSeen={} harvested={} noTargets={} groupsQueued={} groupsDropped={} skippedNonSpline={} walksCompleted={} bail=[anim={} clip={} map={} bone={} sampler={}]",
                 weaponFormId,
                 stats.bindingsSeen,
                 stats.bindingsHarvested,
@@ -6381,7 +6395,12 @@ namespace rock
                 stats.groupsQueued,
                 stats.groupsDropped,
                 stats.skippedNonSpline,
-                stats.walksCompleted);
+                stats.walksCompleted,
+                stats.bailAnimationPtr,
+                stats.bailClipParams,
+                stats.bailTrackMap,
+                stats.bailBoneCount,
+                stats.bailSampler);
             return;
         }
 

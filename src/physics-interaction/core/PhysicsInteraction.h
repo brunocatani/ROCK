@@ -533,6 +533,8 @@ namespace rock
         // once this generation; separates "holder missing" from "bindings
         // never resolved" in the give-up diagnostics.
         bool _clipHarvestWalkHolderSeen{ false };
+        // One-shot guard for the walking-candidate chain dump per generation.
+        bool _clipHarvestWalkCandidateLogged{ false };
         static constexpr std::size_t kNativePlayerCollisionSuppressionBodyCapacity = 64;
         std::array<std::uint32_t, kNativePlayerCollisionSuppressionBodyCapacity> _nativePlayerCollisionSuppressedBodyIds{};
         std::uint32_t _nativePlayerCollisionSuppressedBodyCount = 0;
