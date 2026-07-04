@@ -8,12 +8,14 @@ namespace rock::weapon_clip_motion_harvest
 {
     /*
      * Baked-animation stroke harvest. A byte-validated entry hook on
-     * hkbBehaviorLoadingUtils::assignAnimationBinding observes every animation
-     * binding the engine links while loading a behavior graph or weapon
-     * subgraph. For bindings whose tracks target Weapon* rig bones, the hook
-     * samples the clip with the engine's own hkaAnimation sampler (no
-     * playback) and reduces the tracks to authored stroke groups, queued as
-     * plain data for main-thread attribution to the equipped weapon.
+     * Bethesda's animation binding-set builder (VR 0x141783f90 — the routine
+     * that instantiates every behavior graph / weapon subgraph's clip
+     * bindings at load; the Havok SDK's assignAnimationBinding utility is
+     * dead code at runtime) walks the freshly built hkbAnimationBindingSet.
+     * For bindings whose tracks target Weapon* rig bones, the hook samples
+     * the clip with the engine's own hkaAnimation sampler (no playback) and
+     * reduces the tracks to authored stroke groups, queued as plain data for
+     * main-thread attribution to the equipped weapon.
      *
      * Everything below BSAnimationGraphManager is accessed through offsets
      * verified against the FO4VR binary — see
