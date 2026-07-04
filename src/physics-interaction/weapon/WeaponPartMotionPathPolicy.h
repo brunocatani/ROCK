@@ -233,11 +233,15 @@ namespace rock::weapon_part_motion_path
      * Reduce a completed recording to the rest→peak stroke resampled to
      * kResampledKeyCount keys uniform in arc length. Returns false (and leaves
      * outPath invalid) when the stroke is below the noise floor.
+     * `outKeySamplePositions` (optional, kResampledKeyCount floats) receives
+     * each key's fractional source-sample position so a co-recorded part can
+     * be resampled at the SAME frames (time-aligned follower extraction).
      */
     inline bool buildPathFromRecording(
         const PoseSample* samples,
         std::uint32_t sampleCount,
-        MotionPath& outPath)
+        MotionPath& outPath,
+        float* outKeySamplePositions = nullptr)
     {
         outPath = MotionPath{};
         if (!samples || sampleCount < 2) {
@@ -269,6 +273,9 @@ namespace rock::weapon_part_motion_path
         }
 
         outPath.keys[0] = samples[0];
+        if (outKeySamplePositions) {
+            outKeySamplePositions[0] = 0.0f;
+        }
         std::uint32_t segment = 1;
         float arcAtSegmentStart = 0.0f;
         float segmentLength = poseDistance(samples[1], samples[0]);
@@ -283,6 +290,9 @@ namespace rock::weapon_part_motion_path
                 ? (std::min)(1.0f, (std::max)(0.0f, (targetArc - arcAtSegmentStart) / segmentLength))
                 : 1.0f;
             outPath.keys[key] = lerpPose(samples[segment - 1], samples[segment], t);
+            if (outKeySamplePositions) {
+                outKeySamplePositions[key] = static_cast<float>(segment - 1) + t;
+            }
         }
         outPath.totalArcLength = totalArc;
         outPath.valid = true;

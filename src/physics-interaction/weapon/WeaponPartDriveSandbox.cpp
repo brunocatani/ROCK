@@ -184,7 +184,9 @@ namespace rock
                 session.pathAnchorTranslate = seeded.target.translate;
                 session.partScale = hand.partScale;
                 session.followerCount = 0;
-                if (group.authored && group.followers) {
+                // Learned groups carry co-observed followers now, not only
+                // authored clips — drive whichever source provided them.
+                if (group.followers) {
                     session.followerCount = (std::min)(group.followerCount, static_cast<std::uint32_t>(session.followers.size()));
                     for (std::uint32_t i = 0; i < session.followerCount; ++i) {
                         session.followers[i] = group.followers[i];

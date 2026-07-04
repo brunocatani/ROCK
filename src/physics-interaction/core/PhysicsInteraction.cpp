@@ -6021,6 +6021,9 @@ namespace rock
         }
 
         const RE::NiTransform weaponWorldInverse = transform_math::invertTransform(weaponNode->world);
+        // Frame-align every recorder before this frame's observations so
+        // concurrent recordings can be compared for co-movement grouping.
+        _weaponPartMotionLearner.beginObservationFrame();
         for (std::uint32_t i = 0; i < _drivePartCache.count; ++i) {
             const auto& entry = _drivePartCache.entries[i];
             if (!entry.node || !actor_equipment_grab::nodeContainsNode(weaponNode, entry.node, 64)) {

@@ -31,7 +31,9 @@ namespace rock::weapon_clip_stroke
     // carry bones for mag, bolt, slide, charging handle, hammer and more, and
     // every moving track becomes its own group leader.
     inline constexpr std::uint32_t kMaxTracksPerClip = 16;
-    inline constexpr std::uint32_t kMaxFollowers = 3;
+    // Sized for real assemblies: a magazine leads its bullet stack, a slide
+    // carries its sights and decorative riders.
+    inline constexpr std::uint32_t kMaxFollowers = 6;
     inline constexpr std::uint32_t kMaxGroupsPerClip = 8;
     inline constexpr std::size_t kMaxBoneName = 64;
     // Followers move less than leaders (an ejector nudge vs the slide stroke);

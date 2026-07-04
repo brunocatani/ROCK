@@ -24,8 +24,11 @@ namespace rock
     class WeaponPartMotionLearner
     {
     public:
-        static constexpr std::size_t kMaxStoredPaths = 16;
-        static constexpr std::size_t kMaxActiveRecorders = 2;
+        static constexpr std::size_t kMaxStoredPaths = 32;
+        // One recorder per evidence part so every mover of a reload records
+        // simultaneously — co-movement grouping (mag pulls its bullets, a
+        // slide carries its sights) needs concurrent recordings to compare.
+        static constexpr std::size_t kMaxActiveRecorders = 24;
         static constexpr std::size_t kMaxSourceName = 64;
         // A recorder whose part was not observed for this many observations is
         // stale (weapon switched / part removed) and may be reclaimed.
@@ -40,6 +43,11 @@ namespace rock
             bool trusted{ true };
         };
 
+        // Call once per frame before the frame's observe() calls: recorder
+        // samples are frame-aligned through this counter so concurrent
+        // recordings can be compared sample-for-sample.
+        void beginObservationFrame();
+
         void observe(const Observation& observation);
 
         [[nodiscard]] const weapon_part_motion_path::MotionPath* findPath(
@@ -47,9 +55,10 @@ namespace rock
             std::string_view sourceName) const;
 
         /*
-         * Full stroke-group view for a part: the leader path plus any authored
-         * followers (assembly parts the clip moves with it). Learned paths
-         * have no followers; authored beats learned for the same key.
+         * Full stroke-group view for a part: the leader path plus any
+         * followers — authored (assembly parts the clip moves with it) or
+         * learned (parts observed moving rigidly with the leader during the
+         * same stroke). Learned data outranks authored for the same key.
          */
         struct GroupView
         {
@@ -63,8 +72,8 @@ namespace rock
         /*
          * Store a clip-harvested stroke group (already converted to
          * weapon-root-local and mapped to the evidence source name). Authored
-         * groups always beat learned paths; between authored groups the
-         * largest leader stroke wins.
+         * groups only bootstrap parts without learned data; between authored
+         * groups the largest leader stroke wins.
          */
         void storeAuthoredGroup(
             std::uint32_t weaponFormId,
@@ -92,6 +101,9 @@ namespace rock
             std::uint32_t weaponFormId{ 0 };
             std::array<char, kMaxSourceName> sourceName{};
             std::uint64_t lastSeenCounter{ 0 };
+            // Frame index of buffer[1] (buffer[0] is the pre-motion rest
+            // pose); aligns concurrent recordings for co-movement checks.
+            std::uint64_t startFrame{ 0 };
             weapon_part_motion_path::RecorderState state{};
             std::array<weapon_part_motion_path::PoseSample, weapon_part_motion_path::kMaxRecordingSamples> buffer{};
         };
@@ -102,5 +114,6 @@ namespace rock
         std::array<PathSlot, kMaxStoredPaths> _paths{};
         std::array<RecorderSlot, kMaxActiveRecorders> _recorders{};
         std::uint64_t _observationCounter{ 0 };
+        std::uint64_t _frameCounter{ 0 };
     };
 }
