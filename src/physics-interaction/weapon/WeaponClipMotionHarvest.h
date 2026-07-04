@@ -103,6 +103,32 @@ namespace rock::weapon_clip_motion_harvest
     [[nodiscard]] bool probeBindings(const void* graphManager);
 
     /*
+     * FO4 streams clip spline payloads on demand: the binding-set entries
+     * are permanent stubs (headers only, no sampleable data — in-game
+     * confirmed: firing/reloading never fills them), and the loaded binding
+     * lives on the hkbClipGenerator while its clip plays. This hook swaps
+     * the hkbClipGenerator vtable's install-loaded-binding slot (an atomic
+     * pointer write) and harvests from the freshly installed binding — the
+     * one moment the payload is guaranteed resident. Idempotent; call from
+     * the main thread once the sandbox is active.
+     */
+    void ensureClipActivationHookInstalled();
+
+    /*
+     * Register what the hook may harvest: the characters of the candidate
+     * managers' graphs (the hook fires for every actor, so anything else is
+     * ignored) and the weapon's scene-node names (copied — the hook thread
+     * never touches scene-graph memory). Refresh whenever the walk steps;
+     * clear when the sandbox shuts down.
+     */
+    void setClipActivationTargets(
+        const void* const* graphManagers,
+        std::uint32_t managerCount,
+        const char* const* allowedNodeNames,
+        std::uint32_t allowedNodeNameCount);
+    void clearClipActivationTargets();
+
+    /*
      * One-shot dump of the manager→bindings chain: raw pointer of every hop,
      * each object's vtable rebased to a module offset (identifies the actual
      * runtime type in Ghidra), skeleton bone count/names, and the binding
@@ -142,6 +168,8 @@ namespace rock::weapon_clip_motion_harvest
         std::uint64_t bailSampler{ 0 };
         // Spline payload not resident (engine sampler would crash on it).
         std::uint64_t bailSplineData{ 0 };
+        // Clip-activation hook fired for a registered character.
+        std::uint64_t hookActivations{ 0 };
     };
     [[nodiscard]] Stats snapshotStats();
 }

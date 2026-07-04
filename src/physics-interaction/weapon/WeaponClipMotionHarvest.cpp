@@ -69,10 +69,17 @@ namespace rock::weapon_clip_motion_harvest
         // 0xFFFF0001 refcount pattern).
         constexpr std::uintptr_t kBindingWithTriggersBindingOffset = 0x10;
 
-        // hkaAnimationBinding members.
+        // hkaAnimationBinding members — corrected 2026-07-04 against the
+        // engine's own clip validator (hkbClipGenerator vtable slot 14,
+        // 0x14192d7a0): +0x18 animation (duration read at anim+0x14 confirms),
+        // +0x20/+0x28 transform track-to-bone shorts (the validator requires
+        // this array to be identity when partitions are used), +0x40/+0x48 is
+        // the PARTITION indices array — the earlier hook-era claim that the
+        // track map lived there was a misidentification (weapon clips showing
+        // "trackToBone=1" were reporting one partition).
         constexpr std::uintptr_t kBindingAnimationOffset = 0x18;
-        constexpr std::uintptr_t kBindingTrackToBoneDataOffset = 0x40;
-        constexpr std::uintptr_t kBindingTrackToBoneCountOffset = 0x48;
+        constexpr std::uintptr_t kBindingTrackToBoneDataOffset = 0x20;
+        constexpr std::uintptr_t kBindingTrackToBoneCountOffset = 0x28;
 
         // hkaSkeleton members (bones array of 0x10-byte hkaBone entries with
         // the name char* at +0; low pointer bit is an engine flag).
@@ -99,6 +106,25 @@ namespace rock::weapon_clip_motion_harvest
         constexpr std::uintptr_t kSplineBlockOffsetsOffset = 0x58;
         constexpr std::uintptr_t kSplineTrackOffsetsTableOffset = 0x78;
         constexpr std::uintptr_t kSplineDataBaseOffset = 0x98;
+
+        /*
+         * hkbClipGenerator (0x160 bytes; clone at 0x14192d950 allocates it):
+         * FO4 streams clip payloads on demand, so the binding-set entries
+         * stay STUBS (headers only, in-game confirmed 2026-07-04) and the
+         * fully loaded binding lives on the clip generator instead —
+         * +0xD0 is Bethesda's loaded-binding wrapper (the engine's clip
+         * validator, vtable slot 14 / 0x14192d7a0, reports "The animation
+         * has not been loaded." when it is null) and wrapper+0x38 is the
+         * loaded hkaAnimationBinding. Vtable slot 10 (0x14192d510, vtable
+         * 0x2E0FB38 + 0x50) is the install override that swaps a prepared
+         * binding in and notifies Bethesda's loading manager — the one
+         * moment the payload is guaranteed resident, so the harvest hooks
+         * that slot with an atomic pointer swap.
+         */
+        constexpr std::uintptr_t kClipGeneratorVtableModuleOffset = 0x2E0FB38;
+        constexpr std::uintptr_t kClipGeneratorInstallSlotOffset = 0x50;
+        constexpr std::uintptr_t kClipGeneratorLoadedBindingOffset = 0xD0;
+        constexpr std::uintptr_t kLoadedBindingWrapperBindingOffset = 0x38;
         // hkaAnimation vtable slot 6: sampleIndividualTransformTracks(
         //   float time, const int16* trackIndices, uint32 count, out*)
         constexpr std::size_t kSampleIndividualTransformTracksSlot = 6;
@@ -145,6 +171,26 @@ namespace rock::weapon_clip_motion_harvest
         std::atomic<std::uint64_t> s_bailBoneCount{ 0 };
         std::atomic<std::uint64_t> s_bailSampler{ 0 };
         std::atomic<std::uint64_t> s_bailSplineData{ 0 };
+        std::atomic<std::uint64_t> s_hookActivations{ 0 };
+
+        /*
+         * Clip-activation hook targets. The hook fires on the engine's graph
+         * update thread for EVERY actor's clip generators, so it harvests
+         * only when the character it receives is one of the registered
+         * candidate-graph characters, and node names are COPIED here so the
+         * hook never touches scene-graph memory. Guarded by s_hookMutex
+         * (writers: main thread, rare; reader: hook, rare — clip activations
+         * are sparse).
+         */
+        constexpr std::size_t kMaxHookCharacters = 8;
+        constexpr std::size_t kMaxHookNodeNames = 64;
+        constexpr std::size_t kMaxHookNodeNameLength = 64;
+        std::mutex s_hookMutex;
+        std::array<std::uintptr_t, kMaxHookCharacters> s_hookCharacters{};
+        std::uint32_t s_hookCharacterCount = 0;
+        std::array<std::array<char, kMaxHookNodeNameLength>, kMaxHookNodeNames> s_hookNodeNames{};
+        std::array<const char*, kMaxHookNodeNames> s_hookNodeNamePointers{};
+        std::uint32_t s_hookNodeNameCount = 0;
 
         // Detailed bail dumps per walk (main thread; reset with the cursor)
         // so a failing binding is identifiable without flooding the log.
@@ -543,6 +589,66 @@ namespace rock::weapon_clip_motion_harvest
             out.bindingCount = bindingCount;
             return true;
         }
+
+        using ClipGeneratorInstallFn = void (*)(void*, void*);
+        ClipGeneratorInstallFn s_originalClipInstall = nullptr;
+
+        /*
+         * Runs on the engine's graph-update thread right after the original
+         * install override completed, i.e. while the loaded binding at
+         * clipGenerator+0xD0 is guaranteed resident. Every read is
+         * plausibility-gated and the sampler's spline gates still apply, so
+         * an unexpected state degrades into a counted skip. The character
+         * filter keeps NPC clip activations out.
+         */
+        void harvestFromClipGenerator(void* clipGeneratorRaw, void* characterRaw)
+        {
+            const auto clipGenerator = reinterpret_cast<std::uintptr_t>(clipGeneratorRaw);
+            const auto character = reinterpret_cast<std::uintptr_t>(characterRaw);
+            if (!plausiblePointer(clipGenerator) || !plausiblePointer(character)) {
+                return;
+            }
+
+            std::scoped_lock lock(s_hookMutex);
+            bool registered = false;
+            for (std::uint32_t i = 0; i < s_hookCharacterCount; ++i) {
+                if (s_hookCharacters[i] == character) {
+                    registered = true;
+                    break;
+                }
+            }
+            if (!registered || s_hookNodeNameCount == 0) {
+                return;
+            }
+            s_hookActivations.fetch_add(1, std::memory_order_relaxed);
+
+            const auto wrapper = *reinterpret_cast<std::uintptr_t*>(clipGenerator + kClipGeneratorLoadedBindingOffset);
+            if (!plausiblePointer(wrapper)) {
+                return;
+            }
+            const auto binding = *reinterpret_cast<std::uintptr_t*>(wrapper + kLoadedBindingWrapperBindingOffset);
+            if (!plausiblePointer(binding)) {
+                return;
+            }
+            const auto setup = *reinterpret_cast<std::uintptr_t*>(character + kCharacterSetupOffset);
+            if (!plausiblePointer(setup)) {
+                return;
+            }
+            const auto skeleton = *reinterpret_cast<std::uintptr_t*>(setup + kSetupAnimationSkeletonOffset);
+            if (!plausiblePointer(skeleton)) {
+                return;
+            }
+            s_bindingsSeen.fetch_add(1, std::memory_order_relaxed);
+            harvestBinding(binding, skeleton, s_hookNodeNamePointers.data(), s_hookNodeNameCount);
+        }
+
+        void clipGeneratorInstallShim(void* clipGenerator, void* character)
+        {
+            if (s_originalClipInstall) {
+                s_originalClipInstall(clipGenerator, character);
+            }
+            harvestFromClipGenerator(clipGenerator, character);
+        }
     }
 
     const char* lastResolveStage()
@@ -558,6 +664,70 @@ namespace rock::weapon_clip_motion_harvest
         }
         const auto manager = *reinterpret_cast<std::uintptr_t*>(holder + kHolderManagerOffset);
         return plausiblePointer(manager) ? reinterpret_cast<const void*>(manager) : nullptr;
+    }
+
+    void ensureClipActivationHookInstalled()
+    {
+        static bool s_installed = false;
+        if (s_installed) {
+            return;
+        }
+        s_installed = true;
+        const auto slotAddress =
+            REL::Module::get().base() + kClipGeneratorVtableModuleOffset + kClipGeneratorInstallSlotOffset;
+        s_originalClipInstall = reinterpret_cast<ClipGeneratorInstallFn>(*reinterpret_cast<std::uintptr_t*>(slotAddress));
+        // 8-byte aligned pointer store is atomic on x64, so concurrent graph
+        // updates dispatching through the slot stay safe during the swap.
+        REL::safe_write(slotAddress, reinterpret_cast<std::uintptr_t>(&clipGeneratorInstallShim));
+        ROCK_LOG_INFO(Weapon,
+            "WeaponClipMotionHarvest: clip-activation hook installed (vtable slot +{:#x}, original +{:#x})",
+            kClipGeneratorVtableModuleOffset + kClipGeneratorInstallSlotOffset,
+            moduleRelative(reinterpret_cast<std::uintptr_t>(s_originalClipInstall)));
+    }
+
+    void setClipActivationTargets(
+        const void* const* graphManagers,
+        std::uint32_t managerCount,
+        const char* const* allowedNodeNames,
+        std::uint32_t allowedNodeNameCount)
+    {
+        std::scoped_lock lock(s_hookMutex);
+        s_hookCharacterCount = 0;
+        for (std::uint32_t m = 0; m < managerCount; ++m) {
+            GraphArrayView graphs{};
+            if (!resolveGraphArray(reinterpret_cast<std::uintptr_t>(graphManagers[m]), graphs)) {
+                continue;
+            }
+            for (std::uint32_t i = 0; i < graphs.capacity && s_hookCharacterCount < s_hookCharacters.size(); ++i) {
+                const auto graph = graphAtIndex(graphs, i);
+                if (graph != 0) {
+                    s_hookCharacters[s_hookCharacterCount++] = graph + kGraphCharacterOffset;
+                }
+            }
+        }
+        s_hookNodeNameCount = 0;
+        for (std::uint32_t i = 0; i < allowedNodeNameCount && s_hookNodeNameCount < s_hookNodeNames.size(); ++i) {
+            const char* name = allowedNodeNames[i];
+            if (!name || name[0] == '\0') {
+                continue;
+            }
+            auto& storage = s_hookNodeNames[s_hookNodeNameCount];
+            std::size_t length = 0;
+            while (length < storage.size() - 1 && name[length] != '\0') {
+                storage[length] = name[length];
+                ++length;
+            }
+            storage[length] = '\0';
+            s_hookNodeNamePointers[s_hookNodeNameCount] = storage.data();
+            ++s_hookNodeNameCount;
+        }
+    }
+
+    void clearClipActivationTargets()
+    {
+        std::scoped_lock lock(s_hookMutex);
+        s_hookCharacterCount = 0;
+        s_hookNodeNameCount = 0;
     }
 
     bool probeBindings(const void* graphManager)
@@ -840,6 +1010,7 @@ namespace rock::weapon_clip_motion_harvest
             .bailBoneCount = s_bailBoneCount.load(std::memory_order_relaxed),
             .bailSampler = s_bailSampler.load(std::memory_order_relaxed),
             .bailSplineData = s_bailSplineData.load(std::memory_order_relaxed),
+            .hookActivations = s_hookActivations.load(std::memory_order_relaxed),
         };
     }
 }

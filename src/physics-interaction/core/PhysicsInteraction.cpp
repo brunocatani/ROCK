@@ -2935,6 +2935,7 @@ namespace rock
                 _drivePartCache = {};
                 ::rock::weapon_clip_motion_harvest::clearPending();
                 ::rock::weapon_clip_motion_harvest::resetWalk();
+                ::rock::weapon_clip_motion_harvest::clearClipActivationTargets();
                 _lastClipHarvestWeaponFormId = 0;
                 _clipHarvestWalkGenerationKey = 0;
                 _clipHarvestWalkAttempts = 0;
@@ -6377,6 +6378,17 @@ namespace rock
                 32);
         }
 
+        // Streamed clips never land in the walked binding sets, so the
+        // activation hook harvests them the moment their loaded binding is
+        // installed on a clip generator of one of these graphs (a reload
+        // performed in-hand teaches the weapon its authored curves).
+        ::rock::weapon_clip_motion_harvest::ensureClipActivationHookInstalled();
+        ::rock::weapon_clip_motion_harvest::setClipActivationTargets(
+            candidateManagers.data(),
+            candidateCount,
+            allowedNodeNames.data(),
+            allowedNodeNameCount);
+
         if (::rock::weapon_clip_motion_harvest::stepHarvest(
                 chosenManager,
                 weaponFormId,
@@ -6408,7 +6420,7 @@ namespace rock
             // (nonSpline>0) without any per-binding hot-path logging.
             const auto stats = ::rock::weapon_clip_motion_harvest::snapshotStats();
             ROCK_LOG_INFO(Weapon,
-                "WeaponClipMotionHarvest: stats at weapon {:08X} equip: bindingsSeen={} harvested={} noTargets={} groupsQueued={} groupsDropped={} skippedNonSpline={} walksCompleted={} bail=[anim={} clip={} splineData={} map={} bone={} sampler={}]",
+                "WeaponClipMotionHarvest: stats at weapon {:08X} equip: bindingsSeen={} harvested={} noTargets={} groupsQueued={} groupsDropped={} skippedNonSpline={} walksCompleted={} hookActivations={} bail=[anim={} clip={} splineData={} map={} bone={} sampler={}]",
                 weaponFormId,
                 stats.bindingsSeen,
                 stats.bindingsHarvested,
@@ -6417,6 +6429,7 @@ namespace rock
                 stats.groupsDropped,
                 stats.skippedNonSpline,
                 stats.walksCompleted,
+                stats.hookActivations,
                 stats.bailAnimationPtr,
                 stats.bailClipParams,
                 stats.bailSplineData,
