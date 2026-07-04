@@ -4256,11 +4256,12 @@ namespace rock
             RE::NiAVObject* node,
             std::uint32_t depth,
             std::size_t& visited,
+            std::size_t maxVisited,
             const char* rootLabel,
             std::vector<OmodAuditTokenSlot>& tokenSlots,
             std::vector<OmodAuditNodeMatch>& connectPointMatches)
         {
-            if (!node || visited >= WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES || depth > WEAPON_ANIM_NODE_DUMP_MAX_DEPTH) {
+            if (!node || visited >= maxVisited || depth > WEAPON_ANIM_NODE_DUMP_MAX_DEPTH) {
                 return;
             }
             ++visited;
@@ -4292,7 +4293,7 @@ namespace rock
             const auto& children = niNode->children;
             for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
                 if (auto* child = children[i].get()) {
-                    scanOmodAuditTreeRecursive(child, depth + 1, visited, rootLabel, tokenSlots, connectPointMatches);
+                    scanOmodAuditTreeRecursive(child, depth + 1, visited, maxVisited, rootLabel, tokenSlots, connectPointMatches);
                 }
             }
         }
@@ -4455,17 +4456,30 @@ namespace rock
         for (std::size_t i = 0; i < records.size(); ++i) {
             tokenSlots[i].lowerToken = makeOmodAuditModelToken(records[i].modelPath.c_str());
         }
+        /*
+         * Extra census slot: assembled weapon roots are named
+         * 'Weapon  (<formID>)'. The 2026-07-04 session proved the game keeps
+         * several parallel assembled instances (different addresses, identical
+         * paths) that disagree about which OMOD subtrees exist, while the
+         * renderer displays parts absent from the instances ROCK harvests.
+         * Counting every instance across roots, with per-instance subtree
+         * stats, identifies which copy is complete.
+         */
+        if (weaponForm) {
+            tokenSlots.push_back(OmodAuditTokenSlot{ fmt::format("({:08x})", weaponForm->formID), {} });
+        }
         std::vector<OmodAuditNodeMatch> connectPointMatches;
 
         struct OmodAuditRoot
         {
             const char* label;
             RE::NiAVObject* root;
+            std::size_t maxVisited;
         };
         auto* playerNodes = f4vr::getPlayerNodes();
         std::vector<OmodAuditRoot> roots;
         roots.reserve(6);
-        const auto addRoot = [&roots](const char* label, RE::NiAVObject* root) {
+        const auto addRoot = [&roots](const char* label, RE::NiAVObject* root, std::size_t maxVisited) {
             if (!root) {
                 return;
             }
@@ -4474,18 +4488,28 @@ namespace rock
                     return;
                 }
             }
-            roots.push_back(OmodAuditRoot{ label, root });
+            roots.push_back(OmodAuditRoot{ label, root, maxVisited });
         };
-        addRoot("updateWeaponNode", weaponNode);
-        addRoot("firstPersonSkeleton:Weapon", f4vr::getWeaponNode());
-        addRoot("PlayerNodes.primaryWeapontoWeaponNode", playerNodes ? playerNodes->primaryWeapontoWeaponNode : nullptr);
-        addRoot("PlayerNodes.primaryWeaponOffsetNode", playerNodes ? playerNodes->primaryWeaponOffsetNOde : nullptr);
-        addRoot("firstPersonSkeleton", f4vr::getFirstPersonSkeleton());
-        addRoot("gameRootNode", f4vr::getRootNode());
+        // Weapon-local roots stay on the shared dump budget; the skeleton and
+        // full scene roots get a deep budget because the rendered weapon
+        // instance may sit beyond 4096 nodes (cap saturation is logged below).
+        constexpr std::size_t kOmodAuditDeepRootMaxVisited = 32768;
+        addRoot("updateWeaponNode", weaponNode, WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
+        addRoot("firstPersonSkeleton:Weapon", f4vr::getWeaponNode(), WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
+        addRoot("PlayerNodes.primaryWeapontoWeaponNode", playerNodes ? playerNodes->primaryWeapontoWeaponNode : nullptr, WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
+        addRoot("PlayerNodes.primaryWeaponOffsetNode", playerNodes ? playerNodes->primaryWeaponOffsetNOde : nullptr, WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
+        addRoot("firstPersonSkeleton", f4vr::getFirstPersonSkeleton(), kOmodAuditDeepRootMaxVisited);
+        addRoot("gameRootNode", f4vr::getRootNode(), kOmodAuditDeepRootMaxVisited);
 
         for (const auto& root : roots) {
             std::size_t visited = 0;
-            scanOmodAuditTreeRecursive(root.root, 0, visited, root.label, tokenSlots, connectPointMatches);
+            scanOmodAuditTreeRecursive(root.root, 0, visited, root.maxVisited, root.label, tokenSlots, connectPointMatches);
+            ROCK_LOG_INFO(Weapon,
+                "OMOD-AUDIT scan root='{}' addr={:x} visitedNodes={} capHit={}",
+                root.label,
+                reinterpret_cast<std::uintptr_t>(root.root),
+                visited,
+                visited >= root.maxVisited ? "YES" : "no");
         }
 
         for (std::size_t i = 0; i < records.size(); ++i) {
@@ -4584,12 +4608,41 @@ namespace rock
                 weaponAnimNodeImmediateChildNames(match.node));
         }
 
+        std::size_t weaponInstanceCount = 0;
+        if (weaponForm && tokenSlots.size() > records.size()) {
+            const auto& instanceSlot = tokenSlots.back();
+            weaponInstanceCount = instanceSlot.matches.size();
+            for (const auto& match : instanceSlot.matches) {
+                const auto stats = summarizeWeaponAnimNodeSubtree(match.node);
+                std::size_t evidenceVisited = 0;
+                const std::size_t evidenceSources =
+                    countOmodAuditEvidenceSourcesInSubtree(match.node, evidenceSourceAddresses, evidenceVisited);
+                ROCK_LOG_INFO(Weapon,
+                    "OMOD-AUDIT instance name='{}' root='{}' path='{}' addr={:x} visible={} flags=0x{:X} appCulled={} subtreeNodes={} triShapes={} visibleTriShapes={} hiddenFlags={} appCulledNodes={} evidenceSources={} childNames='{}'",
+                    safeNodeName(match.node),
+                    match.rootLabel,
+                    buildOmodAuditNodePath(match.node),
+                    reinterpret_cast<std::uintptr_t>(match.node),
+                    weaponVisualNodeVisible(match.node) ? "yes" : "no",
+                    static_cast<std::uint32_t>(match.node->flags.flags),
+                    match.node->GetAppCulled() ? "yes" : "no",
+                    stats.nodeCount,
+                    stats.triShapeCount,
+                    stats.visibleTriShapeCount,
+                    stats.hiddenFlagCount,
+                    stats.appCulledCount,
+                    evidenceSources,
+                    weaponAnimNodeImmediateChildNames(match.node));
+            }
+        }
+
         ROCK_LOG_INFO(Weapon,
-            "OMOD-AUDIT end run={} bodySetKey={:016X} installedMods={} connectPoints={}",
+            "OMOD-AUDIT end run={} bodySetKey={:016X} installedMods={} connectPoints={} weaponInstances={}",
             runIndex,
             _cachedWeaponBodySetKey,
             records.size(),
-            connectPointMatches.size());
+            connectPointMatches.size(),
+            weaponInstanceCount);
     }
 
     void WeaponCollision::publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult)
