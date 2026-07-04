@@ -7,19 +7,24 @@
 namespace rock::weapon_clip_motion_harvest
 {
     /*
-     * Baked-animation stroke harvest. FO4 animates weapon parts (bolt, slide,
-     * magazine) through the WEAPON's own behavior graph: every equipped item
-     * carries a WeaponAnimationGraphManagerHolder whose BShkbAnimationGraph
-     * runs on the weapon's rig, and that graph's hkbAnimationBindingSet holds
-     * every clip binding for the weapon. This module walks that set on the
-     * MAIN THREAD after the weapon's colliders finish creation — no hook, no
-     * animation playback — and samples each clip with the engine's own
-     * hkaAnimation sampler, reducing the tracks to authored stroke groups
-     * queued for attribution to the weapon's evidence parts.
+     * Baked-animation stroke harvest. Weapon part motion (bolt, slide,
+     * magazine) is authored as clips whose rig bone names match the weapon's
+     * scene node names ('WeaponBolt' on vanilla, 'P320_Slide' on mods). The
+     * clips' bindings live in a graph's hkbAnimationBindingSet — but which
+     * graph carries them varies: the biped-slot weapon holders were verified
+     * in-game (2026-07-04) to run one-bone 'x_bone01' dummy rigs with empty
+     * sets, so the walk is manager-based and the caller offers every
+     * candidate BSAnimationGraphManager (weapon holders and the actor's own
+     * manager, where weapon subgraphs are activated on equip). This module
+     * walks the chosen manager's active-graph binding set on the MAIN THREAD
+     * after the weapon's colliders finish creation — no hook, no animation
+     * playback — and samples each clip with the engine's own hkaAnimation
+     * sampler, reducing the tracks to authored stroke groups queued for
+     * attribution to the weapon's evidence parts.
      *
-     * Because the tracks target the weapon rig, the bone names ARE the
-     * weapon's scene node names ('WeaponBolt' on vanilla, 'P320_Slide' on
-     * mods), so every bone except the rig root is a harvest target.
+     * Tracks are kept only when their bone name matches one of the caller's
+     * weapon scene-node names, which on an actor graph filters out every
+     * body clip.
      *
      * All engine access below the holder pointer goes through offsets
      * verified against the FO4VR binary — see
@@ -44,12 +49,31 @@ namespace rock::weapon_clip_motion_harvest
     };
 
     /*
-     * Advance the walk over the equipped weapon's graph bindings.
-     * `weaponGraphHolder` is the biped slot's WeaponAnimationGraphManagerHolder
-     * (non-owning; must be the live equipped-weapon holder this frame). A
-     * change of formId/generationKey resets the cursor automatically.
+     * Resolve a WeaponAnimationGraphManagerHolder's BSAnimationGraphManager
+     * smart pointer (+0x18, plausibility-gated); null when unavailable. The
+     * walk itself is manager-based because weapon clips can live either on a
+     * weapon holder's own graph or — as in-game diagnostics showed for the
+     * biped-slot holders (one-bone 'x_bone01' dummy rigs, 2026-07-04) — on
+     * the ACTOR's graph manager after subgraph activation.
      */
-    StepResult stepHarvest(const void* weaponGraphHolder, std::uint32_t weaponFormId, std::uint64_t weaponGenerationKey);
+    [[nodiscard]] const void* managerFromWeaponHolder(const void* weaponGraphHolder);
+
+    /*
+     * Advance the walk over the manager's active graph bindings.
+     * `graphManager` is a live BSAnimationGraphManager (non-owning; must not
+     * be retained). Only clip tracks whose rig bone name matches one of
+     * `allowedNodeNames` (weapon scene-node names; ':N' instancing suffix on
+     * the node side is tolerated, comparison is case-insensitive) are
+     * harvested — on an actor graph this filters out every body clip. A
+     * change of formId/generationKey, or of the underlying binding-set data
+     * (graph swap mid-walk), resets the cursor automatically.
+     */
+    StepResult stepHarvest(
+        const void* graphManager,
+        std::uint32_t weaponFormId,
+        std::uint64_t weaponGenerationKey,
+        const char* const* allowedNodeNames,
+        std::uint32_t allowedNodeNameCount);
 
     // Forget the walk cursor (weapon changed / sandbox disabled).
     void resetWalk();
@@ -59,23 +83,25 @@ namespace rock::weapon_clip_motion_harvest
     [[nodiscard]] const char* lastResolveStage();
 
     /*
-     * Cheap pointer-walk probe: true when the holder currently exposes a
-     * non-empty binding set. Used to pick the right holder when a weapon
-     * form matches several biped slots — the third-person copy carries a
-     * one-bone dummy rig ('x_bone01') with an empty set (verified in-game
-     * 2026-07-04), so the first candidate whose set has bindings wins.
+     * Cheap pointer-walk probe: true when the manager's active graph
+     * currently exposes a non-empty binding set. Used to pick the walk
+     * target among several candidate managers — both biped-slot holder
+     * copies carry a one-bone dummy rig ('x_bone01') with an empty set
+     * (verified in-game 2026-07-04), so the first candidate whose set has
+     * bindings wins.
      */
-    [[nodiscard]] bool probeBindings(const void* weaponGraphHolder);
+    [[nodiscard]] bool probeBindings(const void* graphManager);
 
     /*
-     * One-shot dump of the holder→bindings chain: raw pointer of every hop,
+     * One-shot dump of the manager→bindings chain: raw pointer of every hop,
      * each object's vtable rebased to a module offset (identifies the actual
      * runtime type in Ghidra), skeleton bone count/names, and the binding
      * set's raw data/count. Called by the walk owner when it gives up, so a
      * failing hop can be diagnosed from the log without a debugger. Reads are
-     * plausibility-gated the same way as the resolve itself.
+     * plausibility-gated the same way as the resolve itself. `label` names
+     * the candidate in the log (e.g. "weapon-holder" / "actor").
      */
-    void logResolveDiagnostics(const void* weaponGraphHolder);
+    void logResolveDiagnostics(const void* graphManager, const char* label);
 
     // Main-thread drain of harvested stroke groups (weapon-bone local space;
     // attribution/space conversion is the caller's job). Returns the number

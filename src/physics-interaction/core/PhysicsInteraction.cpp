@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
@@ -6053,6 +6054,135 @@ namespace rock
         }
     }
 
+    namespace
+    {
+        /*
+         * Player graph-manager access, raw-disassembly verified on the FO4VR
+         * binary (2026-07-04); CommonLib headers are deliberately not trusted
+         * for any of these:
+         *  - TESObjectREFR's IAnimationGraphManagerHolder subobject sits at
+         *    +0x48 — the refr graph bootstrap (0x140419030) passes refr+0x48
+         *    to every holder helper it calls;
+         *  - holder vtable slot 4 (+0x20) is
+         *    GetAnimationGraphManagerImpl(out&), writing an add-ref'd
+         *    BSAnimationGraphManager* into the caller's pointer slot (engine
+         *    helper 0x14080d5e0; graph-swap code 0x14080dfd0 uses slots
+         *    +0x20/+0x28/+0x68 as Get/Set/PostChange);
+         *  - the reference is released by decrementing the refcount dword at
+         *    object+0x8, destroying via vtable slot 0 with argument 1 when it
+         *    reaches zero (0x14080d5e0 epilogue; matching add-ref at
+         *    0x14080e20e).
+         * The returned pointer is accepted only when its vtable equals the
+         * module's BSAnimationGraphManager vtable (+0x2E00550 — confirmed
+         * in-game by the chain diagnostics); anything else fails closed.
+         */
+        constexpr std::uintptr_t kRefrGraphHolderInterfaceOffset = 0x48;
+        constexpr std::uintptr_t kGetGraphManagerVtableSlotOffset = 0x20;
+        constexpr std::uintptr_t kGraphManagerRefCountOffset = 0x8;
+        constexpr std::uintptr_t kGraphManagerVtableModuleOffset = 0x2E00550;
+
+        // Vtables and virtual functions must live inside the loaded module
+        // image; anything else is a wrong-offset read and fails closed.
+        [[nodiscard]] bool pointerInModuleImage(std::uintptr_t value)
+        {
+            const auto base = REL::Module::get().base();
+            return value > base && value - base < 0x800'0000ull;
+        }
+
+        using GetGraphManagerFn = bool (*)(void*, void**);
+        using DestroyGraphManagerFn = void* (*)(void*, std::uint32_t);
+
+        // Add-ref'd BSAnimationGraphManager reference obtained through the
+        // refr's holder interface; releases on scope exit mirroring the
+        // engine's own release path. manager() is null (fail closed) when
+        // the interface, the call, or the runtime type gate fails.
+        class AcquiredGraphManager
+        {
+        public:
+            explicit AcquiredGraphManager(RE::TESObjectREFR* refr)
+            {
+                if (!refr) {
+                    return;
+                }
+                auto* holderInterface =
+                    reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(refr) + kRefrGraphHolderInterfaceOffset);
+                const auto vtable = *reinterpret_cast<const std::uintptr_t*>(holderInterface);
+                if (!pointerInModuleImage(vtable)) {
+                    return;
+                }
+                const auto getManager = *reinterpret_cast<const std::uintptr_t*>(vtable + kGetGraphManagerVtableSlotOffset);
+                if (!pointerInModuleImage(getManager)) {
+                    return;
+                }
+                void* raw = nullptr;
+                reinterpret_cast<GetGraphManagerFn>(getManager)(holderInterface, &raw);
+                // The reference must be released whether or not the type gate
+                // passes below.
+                _reference = raw;
+                if (!raw) {
+                    return;
+                }
+                const auto managerVtable = *reinterpret_cast<const std::uintptr_t*>(raw);
+                if (managerVtable == REL::Module::get().base() + kGraphManagerVtableModuleOffset) {
+                    _manager = raw;
+                }
+            }
+
+            AcquiredGraphManager(const AcquiredGraphManager&) = delete;
+            AcquiredGraphManager& operator=(const AcquiredGraphManager&) = delete;
+
+            ~AcquiredGraphManager()
+            {
+                if (!_reference) {
+                    return;
+                }
+                auto* refCount = reinterpret_cast<std::uint32_t*>(
+                    reinterpret_cast<std::uintptr_t>(_reference) + kGraphManagerRefCountOffset);
+                if (std::atomic_ref<std::uint32_t>{ *refCount }.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                    const auto vtable = *reinterpret_cast<const std::uintptr_t*>(_reference);
+                    if (pointerInModuleImage(vtable)) {
+                        const auto destroy = *reinterpret_cast<const std::uintptr_t*>(vtable);
+                        if (pointerInModuleImage(destroy)) {
+                            reinterpret_cast<DestroyGraphManagerFn>(destroy)(_reference, 1);
+                        }
+                    }
+                }
+            }
+
+            [[nodiscard]] const void* manager() const { return _manager; }
+
+        private:
+            void*       _reference{ nullptr };
+            const void* _manager{ nullptr };
+        };
+
+        // Collect the names of every node strictly under `root` (the root
+        // itself carries whole-weapon motion and is excluded). Non-owning
+        // pointers into the nodes' names; valid only within the frame.
+        void collectSubtreeNodeNames(
+            RE::NiAVObject* object,
+            const char** outNames,
+            std::uint32_t maxNames,
+            std::uint32_t& count,
+            int maxDepth)
+        {
+            if (!object || count >= maxNames || maxDepth < 0) {
+                return;
+            }
+            if (const char* name = object->name.c_str(); name && name[0] != '\0') {
+                outNames[count++] = name;
+            }
+            auto* node = object->IsNode();
+            if (!node) {
+                return;
+            }
+            auto& children = node->GetRuntimeData().children;
+            for (std::uint16_t i = 0; i < children.size() && count < maxNames; ++i) {
+                collectSubtreeNodeNames(children[i].get(), outNames, maxNames, count, maxDepth - 1);
+            }
+        }
+    }
+
     void PhysicsInteraction::updateWeaponClipHarvestWalk(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey)
     {
         // Bounded retry window (frames with colliders ready) while the weapon
@@ -6091,23 +6221,27 @@ namespace rock
         const bool givingUp = ++_clipHarvestWalkAttempts > kClipHarvestWalkMaxAttempts;
 
         /*
-         * The equipped weapon's own behavior graph lives on its biped slot's
-         * WeaponAnimationGraphManagerHolder, and the weapon form can match a
-         * slot on BOTH player bipeds. The copies are not equivalent: in-game
-         * chain diagnostics (2026-07-04) showed a matching holder whose graph
-         * runs a one-bone dummy rig ('x_bone01') with an empty binding set.
-         * All matching holders are therefore collected (first-person biped
-         * first — VR animates the weapon there) and the first candidate whose
-         * binding set is non-empty is walked. The slot is identified by its
-         * base form matching the equipped weapon, which is scene-tree
-         * independent. Non-owning pointers, used only within this call.
+         * Weapon clips can live on several graph managers, and the copies
+         * are not equivalent: in-game chain diagnostics (2026-07-04) showed
+         * BOTH biped-slot weapon holders running a shared one-bone dummy rig
+         * ('x_bone01') with an empty binding set, while weapon subgraphs are
+         * activated on the ACTOR's manager at equip (BSSubGraphActivationUpdate
+         * path). Every candidate manager is therefore collected — weapon
+         * holders first (a weapon with a real own graph wins), the player's
+         * manager last — and the first whose active graph has a non-empty
+         * binding set is walked. The clip-track name filter (weapon subtree
+         * node names) keeps the actor-graph walk from harvesting body clips.
+         * Non-owning pointers, used only within this call; the actor manager
+         * reference is scoped by AcquiredGraphManager.
          */
         auto* player = RE::PlayerCharacter::GetSingleton();
         if (!player) {
             return;
         }
-        std::array<const void*, 4> candidateHolders{};
+        std::array<const void*, 5> candidateManagers{};
+        std::array<const char*, 5> candidateLabels{};
         std::uint32_t candidateCount = 0;
+        bool weaponHolderFound = false;
         const auto firstWeaponSlot = static_cast<std::uint32_t>(std::to_underlying(RE::BIPED_OBJECT::kWeaponHand));
         const auto totalSlots = static_cast<std::uint32_t>(std::to_underlying(RE::BIPED_OBJECT::kTotal));
         for (const bool firstPerson : { true, false }) {
@@ -6116,64 +6250,47 @@ namespace rock
                 continue;
             }
             for (std::uint32_t slot = firstWeaponSlot;
-                 slot < totalSlots && candidateCount < candidateHolders.size();
+                 slot < totalSlots && candidateCount + 1 < candidateManagers.size();
                  ++slot) {
                 auto& bipObject = biped->object[slot];
                 const auto* itemForm = bipObject.parent.object;
                 if (!itemForm || itemForm->GetFormID() != weaponFormId) {
                     continue;
                 }
-                if (const void* holder = bipObject.objectGraphManager.get()) {
-                    candidateHolders[candidateCount++] = holder;
+                const void* holder = bipObject.objectGraphManager.get();
+                if (!holder) {
+                    continue;
+                }
+                weaponHolderFound = true;
+                if (const void* manager = ::rock::weapon_clip_motion_harvest::managerFromWeaponHolder(holder)) {
+                    candidateManagers[candidateCount] = manager;
+                    candidateLabels[candidateCount] = firstPerson ? "weapon-holder-1st" : "weapon-holder-3rd";
+                    ++candidateCount;
                 }
             }
         }
-        if (candidateCount == 0) {
-            if (givingUp) {
-                _clipHarvestWalkCompleted = true;
-                ROCK_LOG_WARN(Weapon,
-                    "WeaponClipMotionHarvest: weapon {:08X} graph bindings never became available (holderSeen={} lastStage={}); no authored strokes for this weapon",
-                    weaponFormId,
-                    _clipHarvestWalkHolderSeen,
-                    ::rock::weapon_clip_motion_harvest::lastResolveStage());
-                // One-shot slot dump so a weapon whose slot never matches the
-                // equipped form ID becomes diagnosable from the log.
-                for (const bool firstPerson : { true, false }) {
-                    auto* biped = player->GetBiped(firstPerson).get();
-                    if (!biped) {
-                        continue;
-                    }
-                    for (std::uint32_t slot = firstWeaponSlot; slot < totalSlots; ++slot) {
-                        auto& bipObject = biped->object[slot];
-                        const auto* itemForm = bipObject.parent.object;
-                        if (!itemForm) {
-                            continue;
-                        }
-                        ROCK_LOG_WARN(Weapon,
-                            "WeaponClipMotionHarvest diagnostics: biped {} slot {} form {:08X} holder={}",
-                            firstPerson ? "1st" : "3rd",
-                            slot,
-                            itemForm->GetFormID(),
-                            bipObject.objectGraphManager ? "yes" : "no");
-                    }
-                }
-            }
-            return;
+        AcquiredGraphManager actorManager{ player };
+        if (actorManager.manager()) {
+            candidateManagers[candidateCount] = actorManager.manager();
+            candidateLabels[candidateCount] = "actor";
+            ++candidateCount;
         }
-        _clipHarvestWalkHolderSeen = true;
+        if (candidateCount > 0) {
+            _clipHarvestWalkHolderSeen = true;
+        }
 
-        const void* weaponGraphHolder = nullptr;
+        const void* chosenManager = nullptr;
         for (std::uint32_t i = 0; i < candidateCount; ++i) {
-            if (::rock::weapon_clip_motion_harvest::probeBindings(candidateHolders[i])) {
-                weaponGraphHolder = candidateHolders[i];
+            if (::rock::weapon_clip_motion_harvest::probeBindings(candidateManagers[i])) {
+                chosenManager = candidateManagers[i];
                 break;
             }
         }
 
-        if (!weaponGraphHolder) {
-            // Matching holders exist but none exposes bindings (graph still
-            // loading, or only dummy-rig copies); retry until the attempt
-            // budget runs out, then dump the chain of every candidate.
+        if (!chosenManager) {
+            // No candidate exposes bindings yet (graphs still loading, or
+            // only dummy-rig copies); retry until the attempt budget runs
+            // out, then dump the chain of every candidate.
             if (givingUp) {
                 _clipHarvestWalkCompleted = true;
                 ROCK_LOG_WARN(Weapon,
@@ -6183,14 +6300,55 @@ namespace rock
                     candidateCount,
                     ::rock::weapon_clip_motion_harvest::lastResolveStage());
                 for (std::uint32_t i = 0; i < candidateCount; ++i) {
-                    ::rock::weapon_clip_motion_harvest::logResolveDiagnostics(candidateHolders[i]);
+                    ::rock::weapon_clip_motion_harvest::logResolveDiagnostics(candidateManagers[i], candidateLabels[i]);
+                }
+                if (!weaponHolderFound) {
+                    // One-shot slot dump so a weapon whose slot never matches
+                    // the equipped form ID becomes diagnosable from the log.
+                    for (const bool firstPerson : { true, false }) {
+                        auto* biped = player->GetBiped(firstPerson).get();
+                        if (!biped) {
+                            continue;
+                        }
+                        for (std::uint32_t slot = firstWeaponSlot; slot < totalSlots; ++slot) {
+                            auto& bipObject = biped->object[slot];
+                            const auto* itemForm = bipObject.parent.object;
+                            if (!itemForm) {
+                                continue;
+                            }
+                            ROCK_LOG_WARN(Weapon,
+                                "WeaponClipMotionHarvest diagnostics: biped {} slot {} form {:08X} holder={}",
+                                firstPerson ? "1st" : "3rd",
+                                slot,
+                                itemForm->GetFormID(),
+                                bipObject.objectGraphManager ? "yes" : "no");
+                        }
+                    }
                 }
             }
             return;
         }
 
-        if (::rock::weapon_clip_motion_harvest::stepHarvest(weaponGraphHolder, weaponFormId, currentWeaponGenerationKey) ==
-            ::rock::weapon_clip_motion_harvest::StepResult::Completed) {
+        // Clip tracks are matched against the weapon's scene-node names, so
+        // an actor-graph walk only ever harvests this weapon's part clips.
+        std::array<const char*, 128> allowedNodeNames{};
+        std::uint32_t allowedNodeNameCount = 0;
+        auto& weaponChildren = weaponNode->GetRuntimeData().children;
+        for (std::uint16_t i = 0; i < weaponChildren.size(); ++i) {
+            collectSubtreeNodeNames(
+                weaponChildren[i].get(),
+                allowedNodeNames.data(),
+                static_cast<std::uint32_t>(allowedNodeNames.size()),
+                allowedNodeNameCount,
+                32);
+        }
+
+        if (::rock::weapon_clip_motion_harvest::stepHarvest(
+                chosenManager,
+                weaponFormId,
+                currentWeaponGenerationKey,
+                allowedNodeNames.data(),
+                allowedNodeNameCount) == ::rock::weapon_clip_motion_harvest::StepResult::Completed) {
             _clipHarvestWalkCompleted = true;
         }
     }

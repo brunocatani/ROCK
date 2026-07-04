@@ -4,6 +4,7 @@
 
 #include <array>
 #include <atomic>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <mutex>
@@ -91,7 +92,9 @@ namespace rock::weapon_clip_motion_harvest
         constexpr float kMaxClipDurationSeconds = 300.0f;
         constexpr std::int32_t kMaxPlausibleTrackCount = 512;
         constexpr std::int32_t kMaxPlausibleBoneCount = 4096;
-        constexpr std::size_t kQueueCapacity = 32;
+        // Sized for a burst of consecutive weapon clips on an actor graph
+        // (several groups per clip between per-frame drains).
+        constexpr std::size_t kQueueCapacity = 64;
         // Bindings sampled per stepHarvest call; bounds the per-frame cost of
         // the at-equip walk (each binding = up to kMaxTracksPerClip tracks x
         // kClipSampleCount engine sampler calls).
@@ -125,6 +128,9 @@ namespace rock::weapon_clip_motion_harvest
         std::uint32_t s_walkFormId = 0;
         std::uint64_t s_walkGenerationKey = 0;
         std::int32_t s_walkBindingIndex = 0;
+        // Data pointer of the binding set the cursor indexes into; a change
+        // (graph swap / candidate switch) restarts the walk.
+        std::uintptr_t s_walkBindingsData = 0;
         bool s_walkDone = false;
         // Deepest chain hop reached by the most recent resolve attempt;
         // reported by the caller when a walk gives up so the failing stage
@@ -150,18 +156,54 @@ namespace rock::weapon_clip_motion_harvest
             return plausiblePointer(namePtr) ? reinterpret_cast<const char*>(namePtr) : nullptr;
         }
 
-        /*
-         * Every bone of the weapon rig except the root is a harvest target:
-         * the root carries recoil/aim of the whole weapon, while the child
-         * bones are the parts (their names match the weapon's scene nodes,
-         * vanilla and modded alike).
-         */
-        bool isHarvestTargetBone(std::int32_t boneIndex, const char* name)
+        // ASCII case-insensitive equality over `length` characters.
+        bool namesEqualNoCase(const char* a, const char* b, std::size_t length)
         {
-            return boneIndex > 0 && name && name[0] != '\0';
+            for (std::size_t i = 0; i < length; ++i) {
+                const auto ca = static_cast<unsigned char>(a[i]);
+                const auto cb = static_cast<unsigned char>(b[i]);
+                if (std::tolower(ca) != std::tolower(cb)) {
+                    return false;
+                }
+            }
+            return true;
         }
 
-        void harvestBinding(std::uintptr_t binding, std::uintptr_t skeleton)
+        /*
+         * A rig bone is a harvest target when it matches one of the weapon's
+         * scene-node names: exact (case-insensitive, engine names are
+         * case-insensitive) or with a ':N' instancing suffix on the node
+         * side ('Bolt_Carrier' bone vs 'Bolt_Carrier:0' node). The filter is
+         * what makes walking the ACTOR's graph safe — body-clip tracks never
+         * match a weapon node name.
+         */
+        bool isHarvestTargetBone(const char* boneName, const char* const* allowedNodeNames, std::uint32_t allowedNodeNameCount)
+        {
+            if (!boneName || boneName[0] == '\0' || !allowedNodeNames) {
+                return false;
+            }
+            const auto boneLength = std::strlen(boneName);
+            for (std::uint32_t i = 0; i < allowedNodeNameCount; ++i) {
+                const char* nodeName = allowedNodeNames[i];
+                if (!nodeName) {
+                    continue;
+                }
+                const auto nodeLength = std::strlen(nodeName);
+                if (nodeLength < boneLength || !namesEqualNoCase(boneName, nodeName, boneLength)) {
+                    continue;
+                }
+                if (nodeLength == boneLength || nodeName[boneLength] == ':') {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        void harvestBinding(
+            std::uintptr_t binding,
+            std::uintptr_t skeleton,
+            const char* const* allowedNodeNames,
+            std::uint32_t allowedNodeNameCount)
         {
             const auto animation = *reinterpret_cast<std::uintptr_t*>(binding + kBindingAnimationOffset);
             if (!plausiblePointer(animation)) {
@@ -207,7 +249,7 @@ namespace rock::weapon_clip_motion_harvest
                     continue;
                 }
                 const char* name = skeletonBoneName(skeleton, boneIndex);
-                if (!isHarvestTargetBone(boneIndex, name)) {
+                if (!isHarvestTargetBone(name, allowedNodeNames, allowedNodeNameCount)) {
                     continue;
                 }
                 trackIndices[targetCount] = static_cast<std::int16_t>(track);
@@ -290,15 +332,10 @@ namespace rock::weapon_clip_motion_harvest
             std::int32_t bindingCount{ 0 };
         };
 
-        bool resolveWeaponGraphBindings(const void* holder, ResolvedBindings& out)
+        bool resolveManagerBindings(const void* graphManager, ResolvedBindings& out)
         {
-            const auto holderAddress = reinterpret_cast<std::uintptr_t>(holder);
-            s_lastResolveStage = "holder";
-            if (!plausiblePointer(holderAddress)) {
-                return false;
-            }
+            const auto manager = reinterpret_cast<std::uintptr_t>(graphManager);
             s_lastResolveStage = "manager";
-            const auto manager = *reinterpret_cast<std::uintptr_t*>(holderAddress + kHolderManagerOffset);
             if (!plausiblePointer(manager)) {
                 return false;
             }
@@ -359,13 +396,23 @@ namespace rock::weapon_clip_motion_harvest
         return s_lastResolveStage;
     }
 
-    bool probeBindings(const void* weaponGraphHolder)
+    const void* managerFromWeaponHolder(const void* weaponGraphHolder)
     {
-        ResolvedBindings resolved{};
-        return resolveWeaponGraphBindings(weaponGraphHolder, resolved);
+        const auto holder = reinterpret_cast<std::uintptr_t>(weaponGraphHolder);
+        if (!plausiblePointer(holder)) {
+            return nullptr;
+        }
+        const auto manager = *reinterpret_cast<std::uintptr_t*>(holder + kHolderManagerOffset);
+        return plausiblePointer(manager) ? reinterpret_cast<const void*>(manager) : nullptr;
     }
 
-    void logResolveDiagnostics(const void* weaponGraphHolder)
+    bool probeBindings(const void* graphManager)
+    {
+        ResolvedBindings resolved{};
+        return resolveManagerBindings(graphManager, resolved);
+    }
+
+    void logResolveDiagnostics(const void* graphManager, const char* label)
     {
         const auto moduleBase = REL::Module::get().base();
         const auto rebase = [moduleBase](std::uintptr_t address) -> std::uintptr_t {
@@ -378,8 +425,7 @@ namespace rock::weapon_clip_motion_harvest
             return plausiblePointer(object) ? rebase(*reinterpret_cast<const std::uintptr_t*>(object)) : 0;
         };
 
-        const auto holder = reinterpret_cast<std::uintptr_t>(weaponGraphHolder);
-        std::uintptr_t manager = 0;
+        const auto manager = reinterpret_cast<std::uintptr_t>(graphManager);
         std::uintptr_t graphsBase = 0;
         std::uintptr_t graph = 0;
         std::uintptr_t character = 0;
@@ -395,9 +441,6 @@ namespace rock::weapon_clip_motion_harvest
         std::array<const char*, 3> firstBoneNames{ "", "", "" };
         const char* lastBoneName = "";
 
-        if (plausiblePointer(holder)) {
-            manager = *reinterpret_cast<std::uintptr_t*>(holder + kHolderManagerOffset);
-        }
         if (plausiblePointer(manager)) {
             capacityAndFlags = *reinterpret_cast<std::uint32_t*>(manager + kManagerGraphsCapacityOffset);
             const auto storageAddress = manager + kManagerGraphsStorageOffset;
@@ -445,11 +488,11 @@ namespace rock::weapon_clip_motion_harvest
         }
 
         ROCK_LOG_WARN(Weapon,
-            "WeaponClipMotionHarvest diagnostics: holder={:#x}(vt+{:#x}) mgr={:#x}(vt+{:#x}) "
+            "WeaponClipMotionHarvest diagnostics [{}]: mgr={:#x}(vt+{:#x}) "
             "graphsFlags={:#010x} activeIdx={} graph={:#x}(vt+{:#x}) charVt=+{:#x} "
             "setup={:#x}(vt+{:#x}) skel={:#x}(vt+{:#x}) bones={} first=[{}|{}|{}] last=[{}] "
             "setSrc={} set={:#x}(vt+{:#x}) data={:#x} count={}",
-            holder, vtableRel(holder),
+            label ? label : "?",
             manager, vtableRel(manager),
             capacityAndFlags, activeGraphIndex, graph, vtableRel(graph),
             plausiblePointer(graph) ? vtableRel(character) : 0,
@@ -460,12 +503,18 @@ namespace rock::weapon_clip_motion_harvest
             bindingsData, bindingCount);
     }
 
-    StepResult stepHarvest(const void* weaponGraphHolder, std::uint32_t weaponFormId, std::uint64_t weaponGenerationKey)
+    StepResult stepHarvest(
+        const void* graphManager,
+        std::uint32_t weaponFormId,
+        std::uint64_t weaponGenerationKey,
+        const char* const* allowedNodeNames,
+        std::uint32_t allowedNodeNameCount)
     {
         if (s_walkFormId != weaponFormId || s_walkGenerationKey != weaponGenerationKey) {
             s_walkFormId = weaponFormId;
             s_walkGenerationKey = weaponGenerationKey;
             s_walkBindingIndex = 0;
+            s_walkBindingsData = 0;
             s_walkDone = false;
         }
         if (s_walkDone) {
@@ -473,9 +522,16 @@ namespace rock::weapon_clip_motion_harvest
         }
 
         ResolvedBindings resolved{};
-        if (!resolveWeaponGraphBindings(weaponGraphHolder, resolved)) {
+        if (!resolveManagerBindings(graphManager, resolved)) {
             // Graph or bindings not built yet; the caller retries next frame.
             return StepResult::Pending;
+        }
+        if (resolved.bindingsData != s_walkBindingsData) {
+            // Different binding set than the cursor was walking (graph swap
+            // at equip, or the caller switched candidate managers); indices
+            // are not comparable across sets, so restart.
+            s_walkBindingsData = resolved.bindingsData;
+            s_walkBindingIndex = 0;
         }
 
         const auto* bindings = reinterpret_cast<const std::uintptr_t*>(resolved.bindingsData);
@@ -491,7 +547,7 @@ namespace rock::weapon_clip_motion_harvest
                 continue;
             }
             s_bindingsSeen.fetch_add(1, std::memory_order_relaxed);
-            harvestBinding(binding, resolved.skeleton);
+            harvestBinding(binding, resolved.skeleton, allowedNodeNames, allowedNodeNameCount);
         }
 
         if (s_walkBindingIndex >= resolved.bindingCount) {
@@ -513,6 +569,7 @@ namespace rock::weapon_clip_motion_harvest
         s_walkFormId = 0;
         s_walkGenerationKey = 0;
         s_walkBindingIndex = 0;
+        s_walkBindingsData = 0;
         s_walkDone = false;
     }
 
