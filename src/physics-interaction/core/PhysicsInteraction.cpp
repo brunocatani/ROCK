@@ -5923,38 +5923,28 @@ namespace rock
         // frame. The cache key is only committed once a descriptor for the
         // current generation is seen, so an early call before the evidence
         // snapshot publishes retries next frame instead of caching emptiness.
-        // Two passes: bolt/slide action parts first so weapons with many
-        // Receiver-classified nodes cannot evict the reciprocating part from
-        // the fixed-size cache.
         const auto descriptors = _weaponCollision.getProfileEvidenceDescriptors();
         bool sawCurrentGeneration = false;
-        for (const bool receiverPass : { false, true }) {
-            for (const auto& descriptor : descriptors) {
-                if (!descriptor.valid || descriptor.weaponGenerationKey != currentWeaponGenerationKey) {
-                    continue;
-                }
-                sawCurrentGeneration = true;
-                if (!weaponPartDriveSandboxEligible(descriptor.semantic.actionRole, descriptor.semantic.partKind)) {
-                    continue;
-                }
-                const bool actionPart = descriptor.semantic.actionRole == WeaponActionRole::Bolt ||
-                                        descriptor.semantic.actionRole == WeaponActionRole::Slide;
-                if (actionPart == receiverPass) {
-                    continue;
-                }
-                auto* node = reinterpret_cast<RE::NiAVObject*>(descriptor.sourceRootAddress);
-                if (!node || descriptor.sourceName.empty() || _drivePartCache.count >= _drivePartCache.entries.size()) {
-                    continue;
-                }
-                auto& entry = _drivePartCache.entries[_drivePartCache.count++];
-                entry.bodyId = descriptor.bodyId;
-                entry.node = node;
-                entry.sourceName = {};
-                std::memcpy(
-                    entry.sourceName.data(),
-                    descriptor.sourceName.data(),
-                    (std::min)(descriptor.sourceName.size(), entry.sourceName.size() - 1));
+        for (const auto& descriptor : descriptors) {
+            if (!descriptor.valid || descriptor.weaponGenerationKey != currentWeaponGenerationKey) {
+                continue;
             }
+            sawCurrentGeneration = true;
+            if (!weaponPartDriveSandboxEligible(descriptor.semantic.actionRole)) {
+                continue;
+            }
+            auto* node = reinterpret_cast<RE::NiAVObject*>(descriptor.sourceRootAddress);
+            if (!node || descriptor.sourceName.empty() || _drivePartCache.count >= _drivePartCache.entries.size()) {
+                continue;
+            }
+            auto& entry = _drivePartCache.entries[_drivePartCache.count++];
+            entry.bodyId = descriptor.bodyId;
+            entry.node = node;
+            entry.sourceName = {};
+            std::memcpy(
+                entry.sourceName.data(),
+                descriptor.sourceName.data(),
+                (std::min)(descriptor.sourceName.size(), entry.sourceName.size() - 1));
         }
         if (sawCurrentGeneration) {
             _drivePartCache.generationKey = currentWeaponGenerationKey;
@@ -6183,9 +6173,7 @@ namespace rock
             HandGripReport report{};
             _twoHandedGrip.getHandGripReport(isLeft, report);
             if (!report.active || !report.attachOnly ||
-                !weaponPartDriveSandboxEligible(
-                    static_cast<WeaponActionRole>(report.actionRole),
-                    static_cast<WeaponPartKind>(report.partKind)) ||
+                !weaponPartDriveSandboxEligible(static_cast<WeaponActionRole>(report.actionRole)) ||
                 report.providerOwnerToken != _weaponPartDriveSandbox.ownerToken() ||
                 report.weaponGenerationKey != currentWeaponGenerationKey) {
                 continue;

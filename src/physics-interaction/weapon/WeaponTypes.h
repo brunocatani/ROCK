@@ -189,16 +189,15 @@ namespace rock
     /*
      * Bolt-drive sandbox part eligibility, shared by the provider whitelist,
      * the drive part cache, and the grip-report filter so a part can never be
-     * grabbable without also being observed/scrubbed. Reciprocating action
-     * parts (bolt, pistol slide) are drivable; Receiver is included because
-     * FO4 pistol "receiver" meshes are visually the slide assembly, so on
-     * many pistols the large moving part classifies as Receiver.
+     * grabbable without also being observed/scrubbed. Only reciprocating
+     * action parts (bolt, pistol slide) are drivable; Receiver was tried and
+     * removed 2026-07-03 — it turned long-gun receiver support grips into
+     * AttachOnly glue and did not help pistols in-game.
      */
-    [[nodiscard]] inline constexpr bool weaponPartDriveSandboxEligible(WeaponActionRole actionRole, WeaponPartKind partKind)
+    [[nodiscard]] inline constexpr bool weaponPartDriveSandboxEligible(WeaponActionRole actionRole)
     {
         return actionRole == WeaponActionRole::Bolt ||
-               actionRole == WeaponActionRole::Slide ||
-               partKind == WeaponPartKind::Receiver;
+               actionRole == WeaponActionRole::Slide;
     }
 
     enum class WeaponGripPoseId : std::uint8_t

@@ -495,10 +495,9 @@ namespace rock
          * Bolt-drive sandbox (rockBoltDriveSandboxEnabled): per-generation
          * cache of drive-eligible parts (weaponPartDriveSandboxEligible) so
          * the per-frame learner/sandbox path never touches the heap-allocating
-         * evidence descriptor copies. Action-role parts fill before Receiver
-         * parts so numerous receiver-named nodes cannot evict the bolt/slide.
-         * Nodes are non-owning engine pointers valid only while the cached
-         * generation key matches the current weapon generation.
+         * evidence descriptor copies. Nodes are non-owning engine pointers
+         * valid only while the cached generation key matches the current
+         * weapon generation.
          */
         struct DrivePartCacheEntry
         {
