@@ -219,7 +219,6 @@ namespace rock
         bool rockDebugShowGrabNotifications = false;
         bool rockDebugShowWeaponNotifications = false;
         bool rockDebugWeaponOmodDumpEnabled = false;
-        bool rockBoltDriveSandboxEnabled = false;
         bool rockDebugHandTransformParity = false;
         bool rockDebugWorldObjectOriginDiagnostics = false;
         int rockDebugWorldObjectOriginLogIntervalFrames = 120;

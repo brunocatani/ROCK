@@ -702,6 +702,55 @@ namespace rock::provider
     };
 
     /*
+     * Numeric contract for the partKind / actionRole payloads that already
+     * flow through weapon evidence details, part targets, drive targets, and
+     * grip states as raw uint32 values. Values mirror ROCK's internal
+     * classification enums one-to-one (static_asserted inside ROCK, so drift
+     * breaks ROCK's build, never a consumer at runtime). External consumers
+     * use these to build part whitelists and gate grips without including
+     * ROCK internals.
+     */
+    enum class RockProviderWeaponPartKindV1 : std::uint32_t
+    {
+        Receiver = 0,
+        Barrel = 1,
+        Handguard = 2,
+        Foregrip = 3,
+        Pump = 4,
+        Stock = 5,
+        Grip = 6,
+        Magazine = 7,
+        Magwell = 8,
+        Bolt = 9,
+        Slide = 10,
+        ChargingHandle = 11,
+        BreakAction = 12,
+        Cylinder = 13,
+        Chamber = 14,
+        Shell = 15,
+        Round = 16,
+        LaserCell = 17,
+        Lever = 18,
+        Sight = 19,
+        Accessory = 20,
+        CosmeticAmmo = 21,
+        Other = 22,
+    };
+
+    enum class RockProviderWeaponActionRoleV1 : std::uint32_t
+    {
+        None = 0,
+        Bolt = 1,
+        Slide = 2,
+        ChargingHandle = 3,
+        Pump = 4,
+        BreakAction = 5,
+        Cylinder = 6,
+        Lever = 7,
+        Latch = 8,
+    };
+
+    /*
      * Per-hand grip report: which weapon part (if any) the hand is attached
      * to this frame. Polled; gripSequence increases on every fresh capture so
      * consumers detect re-grabs without frame callbacks. sourceRoot is a

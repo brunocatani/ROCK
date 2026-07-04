@@ -186,47 +186,6 @@ namespace rock
         Latch
     };
 
-    /*
-     * Bolt-drive sandbox GRAB eligibility, shared by the provider whitelist
-     * and the grip-report filter. This gates only what a hand grab treats as
-     * an AttachOnly drive part — observation is unrestricted: the drive part
-     * cache and the motion learner see EVERY evidence part (Bruno,
-     * 2026-07-04), so ungrabbable parts still record, group and follow.
-     * Grabbable: every reciprocating or hinged action part, plus the feed
-     * chain (magazine bodies, magwell/chamber sockets, shells, rounds,
-     * laser cells, cosmetic ammo). Latch stays out (no name token or
-     * motion source yet). Receiver was tried and removed 2026-07-03 — its
-     * name bucket is a catch-all ("frame"/"body"/"pistol"/"weapon") that
-     * hijacked receiver support grips into AttachOnly glue.
-     */
-    [[nodiscard]] inline constexpr bool weaponPartDriveSandboxEligible(WeaponActionRole actionRole, WeaponPartKind partKind)
-    {
-        switch (actionRole) {
-        case WeaponActionRole::Bolt:
-        case WeaponActionRole::Slide:
-        case WeaponActionRole::ChargingHandle:
-        case WeaponActionRole::Pump:
-        case WeaponActionRole::BreakAction:
-        case WeaponActionRole::Cylinder:
-        case WeaponActionRole::Lever:
-            return true;
-        default:
-            break;
-        }
-        switch (partKind) {
-        case WeaponPartKind::Magazine:
-        case WeaponPartKind::Magwell:
-        case WeaponPartKind::Chamber:
-        case WeaponPartKind::Shell:
-        case WeaponPartKind::Round:
-        case WeaponPartKind::LaserCell:
-        case WeaponPartKind::CosmeticAmmo:
-            return true;
-        default:
-            return false;
-        }
-    }
-
     enum class WeaponGripPoseId : std::uint8_t
     {
         None,

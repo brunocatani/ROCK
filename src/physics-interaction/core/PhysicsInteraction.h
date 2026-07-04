@@ -32,8 +32,6 @@
 #include "physics-interaction/weapon/TwoHandedGrip.h"
 #include "physics-interaction/weapon/WeaponCollision.h"
 #include "physics-interaction/weapon/WeaponDebug.h"
-#include "physics-interaction/weapon/WeaponPartDriveSandbox.h"
-#include "physics-interaction/weapon/WeaponPartMotionLearner.h"
 #include "api/ROCKProviderApi.h"
 
 namespace RE
@@ -219,15 +217,6 @@ namespace rock
             std::array<const RE::NiAVObject*, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1>& outDrivenSourceNodes);
 
         void restoreExpiredProviderWeaponPartDriveNodes(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
-
-        void refreshDrivePartCache(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
-        void observeWeaponPartMotion(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
-        void updateWeaponClipHarvestWalk(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
-        void drainWeaponClipHarvest(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
-        // One drained batch; returns true when the batch was full (more may
-        // be queued) so the caller can drain again within the same frame.
-        bool drainWeaponClipHarvestBatch(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
-        void updateWeaponPartDriveSandbox(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const PhysicsFrameContext& frame);
 
         grab_locomotion_authority_bridge::Output updateGrabLocomotionAuthorityBridge(float deltaSeconds, bool worldReady);
 
@@ -495,60 +484,6 @@ namespace rock
         std::array<ProviderWeaponPartDriveNodeState, ::rock::provider::ROCK_PROVIDER_MAX_WEAPON_PART_DRIVES_V1> _providerWeaponPartDriveNodeStates{};
         std::uint64_t _providerWeaponPartDriveGenerationKey{ 0 };
 
-        /*
-         * Bolt-drive sandbox (rockBoltDriveSandboxEnabled): per-generation
-         * cache of ALL evidence parts (unfiltered — the learner observes and
-         * groups everything; grabbing alone is gated by the grip-report
-         * filter and provider whitelist) so the per-frame learner/sandbox
-         * path never touches the heap-allocating evidence descriptor copies.
-         * Nodes are non-owning engine pointers valid only while the cached
-         * generation key matches the current weapon generation.
-         */
-        struct DrivePartCacheEntry
-        {
-            std::uint32_t bodyId{ 0x7FFF'FFFFu };
-            RE::NiAVObject* node{ nullptr };
-            std::array<char, 64> sourceName{};
-        };
-        struct DrivePartCache
-        {
-            std::uint64_t generationKey{ 0 };
-            std::uint32_t count{ 0 };
-            // Sized to the learner's recorder capacity: every evidence part
-            // of the weapon enters the cache, so a modded rifle with bullet
-            // stacks and accessory parts can expose dozens at once.
-            std::array<DrivePartCacheEntry, WeaponPartMotionLearner::kMaxActiveRecorders> entries{};
-        };
-        DrivePartCache _drivePartCache{};
-        // Drain scratch for harvested stroke groups (main-thread update
-        // only); 16 groups of 10 followers is too large for the stack.
-        std::array<weapon_clip_stroke::AuthoredStrokeGroup, weapon_clip_stroke::kMaxGroupsPerClip> _clipHarvestDrainGroups{};
-        WeaponPartMotionLearner _weaponPartMotionLearner;
-        WeaponPartDriveSandbox _weaponPartDriveSandbox;
-        bool _weaponPartDriveSandboxWasEnabled{ false };
-        // Weapon the clip-harvest queue is currently attributed to; a form
-        // change drops pending strokes so a previous weapon's clips cannot
-        // attach to the new weapon through shared rig-bone names.
-        std::uint32_t _lastClipHarvestWeaponFormId{ 0 };
-        // At-equip weapon-graph walk bookkeeping: one walk per weapon
-        // generation, started only after the collider evidence snapshot
-        // commits, with a bounded retry window while the weapon graph's
-        // bindings finish loading.
-        std::uint64_t _clipHarvestWalkGenerationKey{ 0 };
-        std::uint32_t _clipHarvestWalkAttempts{ 0 };
-        bool _clipHarvestWalkCompleted{ false };
-        // Whether the equipped weapon's graph holder was located at least
-        // once this generation; separates "holder missing" from "bindings
-        // never resolved" in the give-up diagnostics.
-        bool _clipHarvestWalkHolderSeen{ false };
-        // One-shot guard for the walking-candidate chain dump per generation.
-        bool _clipHarvestWalkCandidateLogged{ false };
-        // Give-up is terminal for the generation; completion is not — clip
-        // payloads stream in only while playing, so completed walks re-run
-        // periodically (a re-walk pass in flight keeps stepping each frame).
-        bool _clipHarvestWalkGaveUp{ false };
-        bool _clipHarvestRewalkActive{ false };
-        std::uint32_t _clipHarvestRewalkCooldownFrames{ 0 };
         static constexpr std::size_t kNativePlayerCollisionSuppressionBodyCapacity = 64;
         std::array<std::uint32_t, kNativePlayerCollisionSuppressionBodyCapacity> _nativePlayerCollisionSuppressedBodyIds{};
         std::uint32_t _nativePlayerCollisionSuppressedBodyCount = 0;
