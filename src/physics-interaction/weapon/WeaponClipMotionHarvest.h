@@ -59,6 +59,15 @@ namespace rock::weapon_clip_motion_harvest
     [[nodiscard]] const char* lastResolveStage();
 
     /*
+     * Cheap pointer-walk probe: true when the holder currently exposes a
+     * non-empty binding set. Used to pick the right holder when a weapon
+     * form matches several biped slots — the third-person copy carries a
+     * one-bone dummy rig ('x_bone01') with an empty set (verified in-game
+     * 2026-07-04), so the first candidate whose set has bindings wins.
+     */
+    [[nodiscard]] bool probeBindings(const void* weaponGraphHolder);
+
+    /*
      * One-shot dump of the holder→bindings chain: raw pointer of every hop,
      * each object's vtable rebased to a module offset (identifies the actual
      * runtime type in Ghidra), skeleton bone count/names, and the binding

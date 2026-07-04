@@ -359,6 +359,12 @@ namespace rock::weapon_clip_motion_harvest
         return s_lastResolveStage;
     }
 
+    bool probeBindings(const void* weaponGraphHolder)
+    {
+        ResolvedBindings resolved{};
+        return resolveWeaponGraphBindings(weaponGraphHolder, resolved);
+    }
+
     void logResolveDiagnostics(const void* weaponGraphHolder)
     {
         const auto moduleBase = REL::Module::get().base();

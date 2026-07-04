@@ -6092,37 +6092,43 @@ namespace rock
 
         /*
          * The equipped weapon's own behavior graph lives on its biped slot's
-         * WeaponAnimationGraphManagerHolder. The player carries two bipeds
-         * (third- and first-person; weapon graphs historically live on the
-         * first-person one), so both are searched. The slot is identified by
-         * its base form matching the equipped weapon, which is scene-tree
-         * independent. Non-owning pointer, used only within this call.
+         * WeaponAnimationGraphManagerHolder, and the weapon form can match a
+         * slot on BOTH player bipeds. The copies are not equivalent: in-game
+         * chain diagnostics (2026-07-04) showed a matching holder whose graph
+         * runs a one-bone dummy rig ('x_bone01') with an empty binding set.
+         * All matching holders are therefore collected (first-person biped
+         * first — VR animates the weapon there) and the first candidate whose
+         * binding set is non-empty is walked. The slot is identified by its
+         * base form matching the equipped weapon, which is scene-tree
+         * independent. Non-owning pointers, used only within this call.
          */
         auto* player = RE::PlayerCharacter::GetSingleton();
         if (!player) {
             return;
         }
-        const void* weaponGraphHolder = nullptr;
+        std::array<const void*, 4> candidateHolders{};
+        std::uint32_t candidateCount = 0;
         const auto firstWeaponSlot = static_cast<std::uint32_t>(std::to_underlying(RE::BIPED_OBJECT::kWeaponHand));
         const auto totalSlots = static_cast<std::uint32_t>(std::to_underlying(RE::BIPED_OBJECT::kTotal));
-        for (const bool firstPerson : { false, true }) {
+        for (const bool firstPerson : { true, false }) {
             auto* biped = player->GetBiped(firstPerson).get();
             if (!biped) {
                 continue;
             }
-            for (std::uint32_t slot = firstWeaponSlot; slot < totalSlots && !weaponGraphHolder; ++slot) {
+            for (std::uint32_t slot = firstWeaponSlot;
+                 slot < totalSlots && candidateCount < candidateHolders.size();
+                 ++slot) {
                 auto& bipObject = biped->object[slot];
                 const auto* itemForm = bipObject.parent.object;
                 if (!itemForm || itemForm->GetFormID() != weaponFormId) {
                     continue;
                 }
-                weaponGraphHolder = bipObject.objectGraphManager.get();
-            }
-            if (weaponGraphHolder) {
-                break;
+                if (const void* holder = bipObject.objectGraphManager.get()) {
+                    candidateHolders[candidateCount++] = holder;
+                }
             }
         }
-        if (!weaponGraphHolder) {
+        if (candidateCount == 0) {
             if (givingUp) {
                 _clipHarvestWalkCompleted = true;
                 ROCK_LOG_WARN(Weapon,
@@ -6130,19 +6136,56 @@ namespace rock
                     weaponFormId,
                     _clipHarvestWalkHolderSeen,
                     ::rock::weapon_clip_motion_harvest::lastResolveStage());
+                // One-shot slot dump so a weapon whose slot never matches the
+                // equipped form ID becomes diagnosable from the log.
+                for (const bool firstPerson : { true, false }) {
+                    auto* biped = player->GetBiped(firstPerson).get();
+                    if (!biped) {
+                        continue;
+                    }
+                    for (std::uint32_t slot = firstWeaponSlot; slot < totalSlots; ++slot) {
+                        auto& bipObject = biped->object[slot];
+                        const auto* itemForm = bipObject.parent.object;
+                        if (!itemForm) {
+                            continue;
+                        }
+                        ROCK_LOG_WARN(Weapon,
+                            "WeaponClipMotionHarvest diagnostics: biped {} slot {} form {:08X} holder={}",
+                            firstPerson ? "1st" : "3rd",
+                            slot,
+                            itemForm->GetFormID(),
+                            bipObject.objectGraphManager ? "yes" : "no");
+                    }
+                }
             }
             return;
         }
         _clipHarvestWalkHolderSeen = true;
 
-        if (givingUp) {
-            _clipHarvestWalkCompleted = true;
-            ROCK_LOG_WARN(Weapon,
-                "WeaponClipMotionHarvest: weapon {:08X} graph bindings never became available (holderSeen={} lastStage={}); no authored strokes for this weapon",
-                weaponFormId,
-                _clipHarvestWalkHolderSeen,
-                ::rock::weapon_clip_motion_harvest::lastResolveStage());
-            ::rock::weapon_clip_motion_harvest::logResolveDiagnostics(weaponGraphHolder);
+        const void* weaponGraphHolder = nullptr;
+        for (std::uint32_t i = 0; i < candidateCount; ++i) {
+            if (::rock::weapon_clip_motion_harvest::probeBindings(candidateHolders[i])) {
+                weaponGraphHolder = candidateHolders[i];
+                break;
+            }
+        }
+
+        if (!weaponGraphHolder) {
+            // Matching holders exist but none exposes bindings (graph still
+            // loading, or only dummy-rig copies); retry until the attempt
+            // budget runs out, then dump the chain of every candidate.
+            if (givingUp) {
+                _clipHarvestWalkCompleted = true;
+                ROCK_LOG_WARN(Weapon,
+                    "WeaponClipMotionHarvest: weapon {:08X} graph bindings never became available (holderSeen={} candidates={} lastStage={}); no authored strokes for this weapon",
+                    weaponFormId,
+                    _clipHarvestWalkHolderSeen,
+                    candidateCount,
+                    ::rock::weapon_clip_motion_harvest::lastResolveStage());
+                for (std::uint32_t i = 0; i < candidateCount; ++i) {
+                    ::rock::weapon_clip_motion_harvest::logResolveDiagnostics(candidateHolders[i]);
+                }
+            }
             return;
         }
 
