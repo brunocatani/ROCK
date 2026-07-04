@@ -21,10 +21,13 @@ namespace rock::weapon_clip_motion_harvest
          * → hkbCharacterSetup → { hkaSkeleton, hkbAnimationBindingSet }.
          */
 
-        // WeaponAnimationGraphManagerHolder+0x8 =
-        // BSTSmartPointer<BSAnimationGraphManager> (holder vfunc setter
-        // decompile, 0x140812ef0).
-        constexpr std::uintptr_t kHolderManagerOffset = 0x8;
+        // WeaponAnimationGraphManagerHolder (ctor disassembly, 0x140812c20):
+        // +0x00 IAnimationGraphManagerHolder vtable, +0x08 second base
+        // vtable, +0x10 refcount, +0x18 =
+        // BSTSmartPointer<BSAnimationGraphManager>. (+0x8 is a vtable
+        // pointer — plausible-looking, which is why a wrong read here fails
+        // one hop later at the graphs array.)
+        constexpr std::uintptr_t kHolderManagerOffset = 0x18;
 
         // BSAnimationGraphManager (ctor decompile, 0x14168f4f0): graphs are a
         // BSTSmallArray of BSTSmartPointer<BShkbAnimationGraph> — capacity
