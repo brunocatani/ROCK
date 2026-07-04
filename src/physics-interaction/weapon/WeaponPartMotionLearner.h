@@ -32,7 +32,14 @@ namespace rock
          * re-harvested until the graph reloads.
          */
         static constexpr std::size_t kMaxStoredPaths = 48;
-        static constexpr std::size_t kMaxActiveRecorders = 2;
+        /*
+         * One recorder per observable evidence part (matches the drive-part
+         * cache capacity). With fewer slots than observed parts, the slots
+         * are permanently claimed by whichever parts enumerate first and the
+         * actually-moving parts (slide, bolt, magazine) never learn.
+         * ~20KB per slot, ~0.5MB total, allocated once.
+         */
+        static constexpr std::size_t kMaxActiveRecorders = 24;
         static constexpr std::size_t kMaxSourceName = 64;
         // A recorder whose part was not observed for this many observations is
         // stale (weapon switched / part removed) and may be reclaimed.
