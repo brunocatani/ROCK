@@ -5985,9 +5985,11 @@ namespace rock
                 continue;
             }
             sawCurrentGeneration = true;
-            if (!weaponPartDriveSandboxEligible(descriptor.semantic.actionRole, descriptor.semantic.partKind)) {
-                continue;
-            }
+            // Unfiltered on purpose (Bruno, 2026-07-04): the learner sees and
+            // groups EVERY evidence part — bullets riding a mag, parts that
+            // only move in a later reload phase — and authored strokes map to
+            // every part. Only GRABBING stays restricted, at the grip-report
+            // filter and the provider whitelist (weaponPartDriveSandboxEligible).
             auto* node = reinterpret_cast<RE::NiAVObject*>(descriptor.sourceRootAddress);
             if (!node || descriptor.sourceName.empty() || _drivePartCache.count >= _drivePartCache.entries.size()) {
                 continue;
@@ -6443,7 +6445,7 @@ namespace rock
             return;
         }
 
-        std::array<weapon_clip_stroke::AuthoredStrokeGroup, weapon_clip_stroke::kMaxGroupsPerClip> drainedGroups{};
+        auto& drainedGroups = _clipHarvestDrainGroups;
         const auto drainedCount = ::rock::weapon_clip_motion_harvest::drainGroups(
             drainedGroups.data(),
             static_cast<std::uint32_t>(drainedGroups.size()));

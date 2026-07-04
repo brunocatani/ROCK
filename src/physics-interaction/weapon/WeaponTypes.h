@@ -187,14 +187,14 @@ namespace rock
     };
 
     /*
-     * Bolt-drive sandbox part eligibility, shared by the provider whitelist,
-     * the drive part cache, and the grip-report filter so a part can never be
-     * grabbable without also being observed/scrubbed. Every reciprocating or
-     * hinged action part is drivable, plus the whole feed chain (Bruno,
-     * 2026-07-04): magazine bodies, magwell/chamber sockets, shells, rounds,
-     * laser cells and cosmetic ammo — ammo pieces classified apart from the
-     * magazine were invisible to the learner, so AK bullets never recorded
-     * and could not follow their mag. Latch stays out (no name token or
+     * Bolt-drive sandbox GRAB eligibility, shared by the provider whitelist
+     * and the grip-report filter. This gates only what a hand grab treats as
+     * an AttachOnly drive part — observation is unrestricted: the drive part
+     * cache and the motion learner see EVERY evidence part (Bruno,
+     * 2026-07-04), so ungrabbable parts still record, group and follow.
+     * Grabbable: every reciprocating or hinged action part, plus the feed
+     * chain (magazine bodies, magwell/chamber sockets, shells, rounds,
+     * laser cells, cosmetic ammo). Latch stays out (no name token or
      * motion source yet). Receiver was tried and removed 2026-07-03 — its
      * name bucket is a catch-all ("frame"/"body"/"pistol"/"weapon") that
      * hijacked receiver support grips into AttachOnly glue.

@@ -24,11 +24,14 @@ namespace rock
     class WeaponPartMotionLearner
     {
     public:
-        static constexpr std::size_t kMaxStoredPaths = 32;
-        // One recorder per evidence part so every mover of a reload records
-        // simultaneously — co-movement grouping (mag pulls its bullets, a
-        // slide carries its sights) needs concurrent recordings to compare.
-        static constexpr std::size_t kMaxActiveRecorders = 24;
+        static constexpr std::size_t kMaxStoredPaths = 64;
+        // One recorder per evidence part — the learner observes EVERY part,
+        // unfiltered by grab eligibility, so every mover of a reload records
+        // simultaneously: co-movement grouping (mag pulls its bullets, a
+        // slide carries its sights) needs concurrent recordings to compare,
+        // and later-phase motions (mag insertion, lever-action feeding) need
+        // parts that are still at grab time to be watched too.
+        static constexpr std::size_t kMaxActiveRecorders = 48;
         static constexpr std::size_t kMaxSourceName = 64;
         // A recorder whose part was not observed for this many observations is
         // stale (weapon switched / part removed) and may be reclaimed.

@@ -190,6 +190,20 @@ namespace rock::weapon_clip_motion_harvest
         std::array<weapon_clip_stroke::AuthoredStrokeGroup, kQueueCapacity> s_queue{};
         std::uint32_t s_queueCount = 0;
 
+        /*
+         * Harvest scratch: at 32 tracks / 16 groups per clip these buffers
+         * are far too large for engine-thread stacks (the hook fires on the
+         * animation thread). Shared by the hook and walk paths and
+         * serialized by their own mutex — the hook already holds s_hookMutex
+         * through harvestBinding, the walk path does not. Lock order is
+         * always scratch → queue; neither path takes s_hookMutex while
+         * holding the scratch lock.
+         */
+        std::mutex s_harvestScratchMutex;
+        std::array<std::int16_t, weapon_clip_stroke::kMaxTracksPerClip> s_scratchTrackIndices{};
+        std::array<weapon_clip_stroke::TrackSamples, weapon_clip_stroke::kMaxTracksPerClip> s_scratchTracks{};
+        std::array<weapon_clip_stroke::AuthoredStrokeGroup, weapon_clip_stroke::kMaxGroupsPerClip> s_scratchGroups{};
+
         std::atomic<std::uint64_t> s_bindingsSeen{ 0 };
         std::atomic<std::uint64_t> s_bindingsHarvested{ 0 };
         std::atomic<std::uint64_t> s_bindingsNoTargets{ 0 };
@@ -547,8 +561,9 @@ namespace rock::weapon_clip_motion_harvest
             // Collect the weapon-part tracks for this clip. Tracks beyond
             // the decode buffer cannot be sampled (slot 5 decodes
             // sequentially from track 0) and are skipped.
-            std::array<std::int16_t, weapon_clip_stroke::kMaxTracksPerClip> trackIndices{};
-            std::array<weapon_clip_stroke::TrackSamples, weapon_clip_stroke::kMaxTracksPerClip> tracks{};
+            std::scoped_lock scratchLock(s_harvestScratchMutex);
+            auto& trackIndices = s_scratchTrackIndices;
+            auto& tracks = s_scratchTracks;
             std::uint32_t targetCount = 0;
             std::int32_t maxTargetTrack = 0;
             const auto usableTrackCount = (std::min)(mappedTrackCount, animationTrackCount);
@@ -614,7 +629,7 @@ namespace rock::weapon_clip_motion_harvest
                 tracks[i].sampleCount = weapon_clip_stroke::kClipSampleCount;
             }
 
-            std::array<weapon_clip_stroke::AuthoredStrokeGroup, weapon_clip_stroke::kMaxGroupsPerClip> groups{};
+            auto& groups = s_scratchGroups;
             const auto groupCount = weapon_clip_stroke::buildAuthoredGroups(
                 tracks.data(),
                 targetCount,

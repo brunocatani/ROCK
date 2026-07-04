@@ -494,11 +494,12 @@ namespace rock
 
         /*
          * Bolt-drive sandbox (rockBoltDriveSandboxEnabled): per-generation
-         * cache of drive-eligible parts (weaponPartDriveSandboxEligible) so
-         * the per-frame learner/sandbox path never touches the heap-allocating
-         * evidence descriptor copies. Nodes are non-owning engine pointers
-         * valid only while the cached generation key matches the current
-         * weapon generation.
+         * cache of ALL evidence parts (unfiltered — the learner observes and
+         * groups everything; grabbing alone is gated by the grip-report
+         * filter and provider whitelist) so the per-frame learner/sandbox
+         * path never touches the heap-allocating evidence descriptor copies.
+         * Nodes are non-owning engine pointers valid only while the cached
+         * generation key matches the current weapon generation.
          */
         struct DrivePartCacheEntry
         {
@@ -510,12 +511,15 @@ namespace rock
         {
             std::uint64_t generationKey{ 0 };
             std::uint32_t count{ 0 };
-            // Sized to the learner's recorder capacity: eligibility spans the
-            // whole feed chain (mag + bullets + casings + sockets), so an
-            // AK-class weapon exposes well over a dozen eligible parts at once.
+            // Sized to the learner's recorder capacity: every evidence part
+            // of the weapon enters the cache, so a modded rifle with bullet
+            // stacks and accessory parts can expose dozens at once.
             std::array<DrivePartCacheEntry, WeaponPartMotionLearner::kMaxActiveRecorders> entries{};
         };
         DrivePartCache _drivePartCache{};
+        // Drain scratch for harvested stroke groups (main-thread update
+        // only); 16 groups of 10 followers is too large for the stack.
+        std::array<weapon_clip_stroke::AuthoredStrokeGroup, weapon_clip_stroke::kMaxGroupsPerClip> _clipHarvestDrainGroups{};
         WeaponPartMotionLearner _weaponPartMotionLearner;
         WeaponPartDriveSandbox _weaponPartDriveSandbox;
         bool _weaponPartDriveSandboxWasEnabled{ false };
