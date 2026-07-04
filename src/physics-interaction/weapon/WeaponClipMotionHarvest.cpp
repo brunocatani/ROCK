@@ -39,9 +39,12 @@ namespace rock::weapon_clip_motion_harvest
         constexpr std::uint32_t kGraphsInlineStorageFlag = 0x8000'0000u;
         constexpr std::uint32_t kMaxPlausibleActiveGraphIndex = 15;
 
-        // BShkbAnimationGraph: hkbCharacter is INLINE at +0x1C0 (the engine's
-        // binding-set builder 0x141783f90 receives graph+0x1C0 as its owner).
-        constexpr std::uintptr_t kGraphCharacterOffset = 0x1C0;
+        // BShkbAnimationGraph: hkbCharacter is INLINE at +0x1C8 — the graph
+        // ctor (0x1416a3150) constructs it at this[1].field_0x50 with a
+        // 0x178-byte Ghidra struct (0x178 + 0x50), matching the binding-set
+        // builder receiving graph+0x1C8 as its owner (hkBaseObject_data base
+        // is +0x8, so its field_0x1c0 is absolute 0x1C8).
+        constexpr std::uintptr_t kGraphCharacterOffset = 0x1C8;
 
         // hkbCharacter: +0x78 hkbCharacterSetup*, +0x90 binding-set override
         // (engine getter 0x141902dc0 prefers the override).
