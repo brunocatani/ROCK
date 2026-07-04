@@ -6473,14 +6473,32 @@ namespace rock
          * authored bolt paths started at the rig rest (0, 4.44, 0) instead
          * of the part's weapon-local rest — grabbing teleported the part).
          * Paths are therefore REBASED onto the node's weapon-local rest
-         * with a TRANSLATION-ONLY delta: rest + (t_i - t_0), rotation held
-         * at rest. Including the clip's rotation delta (either composition
-         * side) swung the rest position on a lever — every part orbited a
-         * point beside the weapon (in-game confirmed twice); bolts, slides
-         * and magazines are translation-dominant, so rotation is dropped
-         * until the quaternion decode and the rig→scene basis are verified
-         * from the store-time dumps below.
+         * with a TRANSLATION-ONLY delta: rest + R·(t_i - t_0), rotation
+         * held at rest (the clip's rotation delta swung the rest position
+         * on a lever — parts orbited a point beside the weapon, in-game
+         * confirmed twice; rotation returns as a delta about the part's
+         * own origin once this translation basis is verified).
+         *
+         * R is the fixed rig-Weapon-root → scene-weapon-node-local basis
+         * rotation, calibrated 2026-07-04 from learner ground truth: the
+         * template bolt track's rig stroke (-8.05, 0, -3.88) is a straight
+         * back pull (0,-1,0) on five learned weapons (AK/hunting rifle/
+         * P320/10mm/handmade AR), which fixes R up to a spin about the
+         * pull axis; requiring the mag track (-6.61, 0, 3.88) to exit
+         * DOWNWARD (-Z) pins the spin uniquely (det +1, angle-preservation
+         * then forces the mag's 34-degree back-tilt — rock-and-lock).
+         * Result: scene = (rig.y, c*rig.x + s*rig.z, s*rig.x - c*rig.z)
+         * with (c, s) = normalized bolt-track direction.
          */
+        constexpr float kRigBasisC = 0.900823f;  // 8.05 / |(-8.05, 0, -3.88)|
+        constexpr float kRigBasisS = 0.434185f;  // 3.88 / |(-8.05, 0, -3.88)|
+        const auto rigDeltaToScene = [](float dx, float dy, float dz) {
+            return RE::NiPoint3{
+                dy,
+                kRigBasisC * dx + kRigBasisS * dz,
+                kRigBasisS * dx - kRigBasisC * dz
+            };
+        };
         const auto convertLeaderPath = [&](const weapon_clip_stroke::AuthoredStrokeGroup& source,
                                            const RE::NiTransform& leaderRestWeaponLocal,
                                            const RE::NiTransform* tail,
@@ -6494,10 +6512,12 @@ namespace rock
             float arc = 0.0f;
             for (std::uint32_t key = 0; key < weapon_part_motion_path::kResampledKeyCount; ++key) {
                 const auto& clipKey = source.leaderPath.keys[key];
+                const auto sceneDelta = rigDeltaToScene(
+                    clipKey.translate.x - firstKey.translate.x,
+                    clipKey.translate.y - firstKey.translate.y,
+                    clipKey.translate.z - firstKey.translate.z);
                 RE::NiTransform keyTransform = anchor;
-                keyTransform.translate.x += clipKey.translate.x - firstKey.translate.x;
-                keyTransform.translate.y += clipKey.translate.y - firstKey.translate.y;
-                keyTransform.translate.z += clipKey.translate.z - firstKey.translate.z;
+                keyTransform.translate += sceneDelta;
                 outPath.keys[key] = niToPose(keyTransform);
                 if (key > 0) {
                     arc += weapon_part_motion_path::poseDistance(outPath.keys[key], outPath.keys[key - 1]);
@@ -6528,16 +6548,21 @@ namespace rock
             const RE::NiTransform leaderRestWeaponLocal =
                 transform_math::composeTransforms(weaponWorldInverse, leaderNode->world);
 
-            // Basis evidence: the rig key0 orientation vs the scene node's
-            // weapon-local rest orientation. Their relative rotation IS the
-            // rig→scene basis map; if translation-only paths still move on
-            // a wrong axis, the correction rotation comes from these dumps.
+            // Basis evidence: raw rig-frame stroke vs the basis-corrected
+            // scene-frame stroke actually stored. sceneDeltaT for bolt/slide
+            // tracks must read as a straight -Y back pull, mags as -Z-biased
+            // down-and-back; any other shape means the calibration is off
+            // for this rig family.
             {
                 const auto restPose = niToPose(leaderRestWeaponLocal);
                 const auto& key0 = group.leaderPath.keys[0];
                 const auto& keyLast = group.leaderPath.keys[weapon_part_motion_path::kResampledKeyCount - 1];
+                const auto sceneDelta = rigDeltaToScene(
+                    keyLast.translate.x - key0.translate.x,
+                    keyLast.translate.y - key0.translate.y,
+                    keyLast.translate.z - key0.translate.z);
                 ROCK_LOG_INFO(Weapon,
-                    "WeaponClipHarvest basis: leader '{}' restT=({:.2f},{:.2f},{:.2f}) restQ=({:.3f},{:.3f},{:.3f},{:.3f}) key0Q=({:.3f},{:.3f},{:.3f},{:.3f}) keyLastQ=({:.3f},{:.3f},{:.3f},{:.3f}) rigDeltaT=({:.2f},{:.2f},{:.2f})",
+                    "WeaponClipHarvest basis: leader '{}' restT=({:.2f},{:.2f},{:.2f}) restQ=({:.3f},{:.3f},{:.3f},{:.3f}) key0Q=({:.3f},{:.3f},{:.3f},{:.3f}) keyLastQ=({:.3f},{:.3f},{:.3f},{:.3f}) rigDeltaT=({:.2f},{:.2f},{:.2f}) sceneDeltaT=({:.2f},{:.2f},{:.2f})",
                     leaderName,
                     restPose.translate.x,
                     restPose.translate.y,
@@ -6556,7 +6581,10 @@ namespace rock
                     keyLast.rotate.z,
                     keyLast.translate.x - key0.translate.x,
                     keyLast.translate.y - key0.translate.y,
-                    keyLast.translate.z - key0.translate.z);
+                    keyLast.translate.z - key0.translate.z,
+                    sceneDelta.x,
+                    sceneDelta.y,
+                    sceneDelta.z);
             }
 
             // Followers convert once (leader-tail-independent): each follower
@@ -6579,10 +6607,12 @@ namespace rock
                 slot.boneName = group.followers[follower].boneName;
                 for (std::uint32_t key = 0; key < weapon_part_motion_path::kResampledKeyCount; ++key) {
                     const auto& clipKey = group.followers[follower].keys[key];
+                    const auto sceneDelta = rigDeltaToScene(
+                        clipKey.translate.x - followerFirstKey.translate.x,
+                        clipKey.translate.y - followerFirstKey.translate.y,
+                        clipKey.translate.z - followerFirstKey.translate.z);
                     RE::NiTransform keyTransform = followerRestWeaponLocal;
-                    keyTransform.translate.x += clipKey.translate.x - followerFirstKey.translate.x;
-                    keyTransform.translate.y += clipKey.translate.y - followerFirstKey.translate.y;
-                    keyTransform.translate.z += clipKey.translate.z - followerFirstKey.translate.z;
+                    keyTransform.translate += sceneDelta;
                     slot.keys[key] = niToPose(keyTransform);
                 }
                 slot.restScale = followerRestWeaponLocal.scale;
