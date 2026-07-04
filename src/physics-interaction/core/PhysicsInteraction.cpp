@@ -6024,6 +6024,20 @@ namespace rock
             // shared rig-bone names (WeaponBolt) would misattribute them.
             ::rock::weapon_clip_motion_harvest::clearPending();
             _lastClipHarvestWeaponFormId = weaponFormId;
+            // Once per weapon swap: cumulative harvest counters distinguish
+            // hook-never-fired (seen=0) from bone-name-filter rejection
+            // (seen>0, harvested=0, nonSpline=0) from compression gaps
+            // (nonSpline>0) without any per-binding hot-path logging.
+            const auto stats = ::rock::weapon_clip_motion_harvest::snapshotStats();
+            ROCK_LOG_INFO(Weapon,
+                "WeaponClipMotionHarvest: stats at weapon {:08X} equip: bindingsSeen={} harvested={} groupsQueued={} groupsDropped={} skippedNonSpline={} hookInstalled={}",
+                weaponFormId,
+                stats.bindingsSeen,
+                stats.bindingsHarvested,
+                stats.groupsQueued,
+                stats.groupsDropped,
+                stats.skippedNonSpline,
+                ::rock::weapon_clip_motion_harvest::hookInstalled());
             return;
         }
 
