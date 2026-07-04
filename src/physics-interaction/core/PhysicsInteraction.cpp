@@ -6505,10 +6505,17 @@ namespace rock
                 kRigBasisS * dx - kRigBasisC * dz
             };
         };
-        // The same basis as a raw column-vector matrix (v_scene = B·v_rig).
-        // Stored NiMatrix3 rotations in this codebase act as the TRANSPOSE
-        // (localVectorToWorld computes Mᵀ·v), so the conjugations below keep
-        // the raw/stored distinction explicit.
+        /*
+         * The same basis as a raw column-vector matrix (v_scene = B·v_rig).
+         * Two matrix conventions meet here and MUST NOT be mixed (first
+         * rotation attempt mixed them — every authored rotation came out
+         * wrong): havokQuaternionToNiRows yields the standard COLUMN-vector
+         * matrix of the quaternion (M·v rotates v), while engine node
+         * matrices composed by transform_math are the TRANSPOSE of that
+         * (composeTransforms/localPointToWorld compute Mᵀ·v). All delta
+         * math below stays in column form; the transpose happens exactly
+         * once, where a delta composes onto an engine rest matrix.
+         */
         RE::NiMatrix3 rigBasis{};
         rigBasis.entry[0][1] = 1.0f;
         rigBasis.entry[1][0] = kRigBasisC;
@@ -6516,21 +6523,32 @@ namespace rock
         rigBasis.entry[2][0] = kRigBasisS;
         rigBasis.entry[2][2] = -kRigBasisC;
         const RE::NiMatrix3 rigBasisTransposed = transform_math::transposeRotation(rigBasis);
-        const auto quatToStoredRotate = [](const weapon_part_motion_path::Quat& q) {
+        const auto quatToColumnRotate = [](const weapon_part_motion_path::Quat& q) {
             const float quaternion[4]{ q.x, q.y, q.z, q.w };
             return transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(quaternion);
         };
         // Rotation of a track key relative to the track's key 0, mapped into
-        // the scene weapon-node frame (returned in stored-matrix form):
-        // rig delta_s = key0_sᵀ·key_s, scene delta_s = B·delta_s·Bᵀ.
+        // the scene weapon-node frame; column-vector form. The delta must be
+        // the PARENT-frame (left) delta key·key0ᵀ — the basis conjugation
+        // maps parent-frame rotations — not the body-frame key0ᵀ·key (key 0
+        // sits 135° from rest on the template rig, so the wrong frame is
+        // wrong by a lot, not subtly).
         const auto sceneRotationDelta = [&](const weapon_part_motion_path::PoseSample& key0,
                                             const weapon_part_motion_path::PoseSample& keyN) {
             const auto rigDelta = transform_math::multiplyStoredRotations(
-                transform_math::transposeRotation(quatToStoredRotate(key0.rotate)),
-                quatToStoredRotate(keyN.rotate));
+                quatToColumnRotate(keyN.rotate),
+                transform_math::transposeRotation(quatToColumnRotate(key0.rotate)));
             return transform_math::multiplyStoredRotations(
                 transform_math::multiplyStoredRotations(rigBasis, rigDelta),
                 rigBasisTransposed);
+        };
+        // Column-form delta applied to an engine-convention rest matrix:
+        // true result = delta·restᵀ, stored back as the transpose —
+        // rest_s·deltaᵀ.
+        const auto applyDeltaToRest = [](const RE::NiMatrix3& restStored, const RE::NiMatrix3& deltaColumn) {
+            return transform_math::multiplyStoredRotations(
+                restStored,
+                transform_math::transposeRotation(deltaColumn));
         };
         const auto convertLeaderPath = [&](const weapon_clip_stroke::AuthoredStrokeGroup& source,
                                            const RE::NiTransform& leaderRestWeaponLocal,
@@ -6557,11 +6575,13 @@ namespace rock
                     clipKey.translate.y - firstKey.translate.y,
                     clipKey.translate.z - firstKey.translate.z);
                 const auto rotationDelta = sceneRotationDelta(firstKey, clipKey);
+                // Column form: M·v — rotateWorldVectorToLocal computes
+                // exactly that on the raw entries.
                 const auto rotatedLever =
-                    transform_math::rotateLocalVectorToWorld<RE::NiMatrix3, RE::NiPoint3>(rotationDelta, lever);
+                    transform_math::rotateWorldVectorToLocal<RE::NiMatrix3, RE::NiPoint3>(rotationDelta, lever);
                 RE::NiTransform keyTransform = anchor;
                 keyTransform.translate = leaderRestWeaponLocal.translate + sceneDelta + rotatedLever;
-                keyTransform.rotate = transform_math::multiplyStoredRotations(anchor.rotate, rotationDelta);
+                keyTransform.rotate = applyDeltaToRest(anchor.rotate, rotationDelta);
                 outPath.keys[key] = niToPose(keyTransform);
                 if (key > 0) {
                     arc += weapon_part_motion_path::poseDistance(outPath.keys[key], outPath.keys[key - 1]);
@@ -6623,8 +6643,12 @@ namespace rock
                     keyLast.translate.x - key0.translate.x,
                     keyLast.translate.y - key0.translate.y,
                     keyLast.translate.z - key0.translate.z);
+                // True scene-frame rotation delta of the stroke (column
+                // matrix → standard quat extraction).
+                float sceneRotQuat[4]{};
+                transform_math::niRowsToHavokQuaternion(sceneRotationDelta(key0, keyLast), sceneRotQuat);
                 ROCK_LOG_INFO(Weapon,
-                    "WeaponClipHarvest basis: leader '{}' restT=({:.2f},{:.2f},{:.2f}) restQ=({:.3f},{:.3f},{:.3f},{:.3f}) key0Q=({:.3f},{:.3f},{:.3f},{:.3f}) keyLastQ=({:.3f},{:.3f},{:.3f},{:.3f}) rigDeltaT=({:.2f},{:.2f},{:.2f}) sceneDeltaT=({:.2f},{:.2f},{:.2f})",
+                    "WeaponClipHarvest basis: leader '{}' restT=({:.2f},{:.2f},{:.2f}) restQ=({:.3f},{:.3f},{:.3f},{:.3f}) key0Q=({:.3f},{:.3f},{:.3f},{:.3f}) keyLastQ=({:.3f},{:.3f},{:.3f},{:.3f}) rigDeltaT=({:.2f},{:.2f},{:.2f}) sceneDeltaT=({:.2f},{:.2f},{:.2f}) sceneDeltaQ=(w{:.3f},{:.3f},{:.3f},{:.3f})",
                     leaderName,
                     restPose.translate.x,
                     restPose.translate.y,
@@ -6646,7 +6670,11 @@ namespace rock
                     keyLast.translate.z - key0.translate.z,
                     sceneDelta.x,
                     sceneDelta.y,
-                    sceneDelta.z);
+                    sceneDelta.z,
+                    sceneRotQuat[3],
+                    sceneRotQuat[0],
+                    sceneRotQuat[1],
+                    sceneRotQuat[2]);
             }
 
             // Followers convert once (leader-tail-independent): each follower
@@ -6676,8 +6704,7 @@ namespace rock
                     const auto rotationDelta = sceneRotationDelta(followerFirstKey, clipKey);
                     RE::NiTransform keyTransform = followerRestWeaponLocal;
                     keyTransform.translate += sceneDelta;
-                    keyTransform.rotate =
-                        transform_math::multiplyStoredRotations(followerRestWeaponLocal.rotate, rotationDelta);
+                    keyTransform.rotate = applyDeltaToRest(followerRestWeaponLocal.rotate, rotationDelta);
                     slot.keys[key] = niToPose(keyTransform);
                 }
                 slot.restScale = followerRestWeaponLocal.scale;
@@ -6749,13 +6776,12 @@ namespace rock
                                 clipKey.translate.z - group.leaderPath.keys[0].translate.z);
                             const auto rotationDelta =
                                 sceneRotationDelta(group.leaderPath.keys[0], clipKey);
-                            const auto rotatedLever = transform_math::rotateLocalVectorToWorld<RE::NiMatrix3, RE::NiPoint3>(
+                            const auto rotatedLever = transform_math::rotateWorldVectorToLocal<RE::NiMatrix3, RE::NiPoint3>(
                                 rotationDelta, siblingLever);
                             RE::NiTransform keyTransform = otherRestWeaponLocal;
                             keyTransform.translate =
                                 leaderRestWeaponLocal.translate + sceneDelta + rotatedLever;
-                            keyTransform.rotate = transform_math::multiplyStoredRotations(
-                                otherRestWeaponLocal.rotate, rotationDelta);
+                            keyTransform.rotate = applyDeltaToRest(otherRestWeaponLocal.rotate, rotationDelta);
                             slot.keys[key] = niToPose(keyTransform);
                         }
                         slot.restScale = otherRestWeaponLocal.scale;
