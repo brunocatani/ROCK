@@ -608,34 +608,48 @@ namespace rock::weapon_clip_motion_harvest
          * an unexpected state degrades into a counted skip. The character
          * filter keeps NPC clip activations out.
          */
-        void harvestFromClipGenerator(void* clipGeneratorRaw, void* characterRaw)
+        void harvestFromClipGenerator(void* clipGeneratorRaw, void* contextRaw)
         {
             s_hookFires.fetch_add(1, std::memory_order_relaxed);
             const auto clipGenerator = reinterpret_cast<std::uintptr_t>(clipGeneratorRaw);
-            const auto character = reinterpret_cast<std::uintptr_t>(characterRaw);
-            if (!plausiblePointer(clipGenerator) || !plausiblePointer(character)) {
+            const auto context = reinterpret_cast<std::uintptr_t>(contextRaw);
+            if (!plausiblePointer(clipGenerator) || !plausiblePointer(context)) {
                 return;
             }
 
             std::scoped_lock lock(s_hookMutex);
-            bool registered = false;
-            for (std::uint32_t i = 0; i < s_hookCharacterCount; ++i) {
-                if (s_hookCharacters[i] == character) {
-                    registered = true;
-                    break;
+            /*
+             * The second argument is a stack-built hkbContext, not the
+             * character (in-game hook dumps 2026-07-04: stack-range
+             * addresses, first qword not a module vtable). The owning
+             * hkbCharacter is one of its leading pointer members, so the
+             * first few qwords are identity-matched against the registered
+             * candidate-graph characters; only the match is dereferenced.
+             */
+            std::uintptr_t character = 0;
+            std::array<std::uintptr_t, 4> contextSlots{};
+            for (std::uint32_t slot = 0; slot < contextSlots.size(); ++slot) {
+                contextSlots[slot] = *reinterpret_cast<const std::uintptr_t*>(context + slot * sizeof(std::uintptr_t));
+            }
+            for (std::uint32_t slot = 0; slot < contextSlots.size() && character == 0; ++slot) {
+                for (std::uint32_t i = 0; i < s_hookCharacterCount; ++i) {
+                    if (s_hookCharacters[i] == contextSlots[slot]) {
+                        character = contextSlots[slot];
+                        break;
+                    }
                 }
             }
-            if (!registered || s_hookNodeNameCount == 0) {
+            if (character == 0 || s_hookNodeNameCount == 0) {
                 if (s_hookCharacterCount > 0 &&
                     s_hookUnmatchedLogs.fetch_add(1, std::memory_order_relaxed) < kMaxHookUnmatchedLogs) {
-                    // Compare against the registered characters (graph+0x1C8
-                    // of the candidate graphs in the chain diagnostics).
                     ROCK_LOG_WARN(Weapon,
-                        "WeaponClipMotionHarvest: hook fired for unregistered character {:#x} (vt+{:#x}) clipGen={:#x} (vt+{:#x}); registered[0]={:#x}",
-                        character,
-                        objectVtableRel(character),
+                        "WeaponClipMotionHarvest: hook fired, no registered character in context {:#x} slots=[{:#x}|{:#x}|{:#x}|{:#x}] clipGen={:#x}; registered[0]={:#x}",
+                        context,
+                        contextSlots[0],
+                        contextSlots[1],
+                        contextSlots[2],
+                        contextSlots[3],
                         clipGenerator,
-                        objectVtableRel(clipGenerator),
                         s_hookCharacters[0]);
                 }
                 return;
@@ -662,12 +676,12 @@ namespace rock::weapon_clip_motion_harvest
             harvestBinding(binding, skeleton, s_hookNodeNamePointers.data(), s_hookNodeNameCount);
         }
 
-        void clipGeneratorInstallShim(void* clipGenerator, void* character)
+        void clipGeneratorInstallShim(void* clipGenerator, void* context)
         {
             if (s_originalClipInstall) {
-                s_originalClipInstall(clipGenerator, character);
+                s_originalClipInstall(clipGenerator, context);
             }
-            harvestFromClipGenerator(clipGenerator, character);
+            harvestFromClipGenerator(clipGenerator, context);
         }
     }
 
