@@ -6464,18 +6464,31 @@ namespace rock
             pose.translate = weapon_part_motion_path::Vec3{ transform.translate.x, transform.translate.y, transform.translate.z };
             return pose;
         };
+        /*
+         * Clip keys are RIG-bone-local: their rest value and basis differ
+         * from the scene node's (in-game A/B 2026-07-04: authored bolt paths
+         * started at the rig rest (0, 4.44, 0) instead of the part's actual
+         * weapon-local rest — grabbing teleported the part — and moved in
+         * the rig basis, turning a straight pull into an arc). Paths are
+         * therefore REBASED: only the clip's motion relative to its own
+         * first key is kept, applied in the node's local frame on top of the
+         * node's current weapon-local rest pose.
+         */
         const auto convertLeaderPath = [&](const weapon_clip_stroke::AuthoredStrokeGroup& source,
-                                           const RE::NiTransform& leaderParentWeaponLocal,
+                                           const RE::NiTransform& leaderRestWeaponLocal,
                                            const RE::NiTransform* tail,
                                            weapon_part_motion_path::MotionPath& outPath) {
             outPath = weapon_part_motion_path::MotionPath{};
+            const RE::NiTransform firstKeyInverse =
+                transform_math::invertTransform(poseToNi(source.leaderPath.keys[0]));
             float arc = 0.0f;
             for (std::uint32_t key = 0; key < weapon_part_motion_path::kResampledKeyCount; ++key) {
-                RE::NiTransform keyLocal = poseToNi(source.leaderPath.keys[key]);
+                RE::NiTransform keyDelta =
+                    transform_math::composeTransforms(firstKeyInverse, poseToNi(source.leaderPath.keys[key]));
                 if (tail) {
-                    keyLocal = transform_math::composeTransforms(keyLocal, *tail);
+                    keyDelta = transform_math::composeTransforms(keyDelta, *tail);
                 }
-                outPath.keys[key] = niToPose(transform_math::composeTransforms(leaderParentWeaponLocal, keyLocal));
+                outPath.keys[key] = niToPose(transform_math::composeTransforms(leaderRestWeaponLocal, keyDelta));
                 if (key > 0) {
                     arc += weapon_part_motion_path::poseDistance(outPath.keys[key], outPath.keys[key - 1]);
                 }
@@ -6495,11 +6508,12 @@ namespace rock
                 // in the assembled tree) — normal for NPC/other-race clips.
                 continue;
             }
-            const RE::NiTransform leaderParentWeaponLocal =
-                transform_math::composeTransforms(weaponWorldInverse, leaderNode->parent->world);
+            const RE::NiTransform leaderRestWeaponLocal =
+                transform_math::composeTransforms(weaponWorldInverse, leaderNode->world);
 
             // Followers convert once (leader-tail-independent): each follower
-            // stroke drives its own node in weapon-root-local space.
+            // stroke drives its own node in weapon-root-local space, rebased
+            // onto that node's rest pose the same way as the leader.
             weapon_clip_stroke::AuthoredStrokeGroup converted{};
             converted.leaderBoneName = group.leaderBoneName;
             for (std::uint32_t follower = 0; follower < group.followerCount && follower < group.followers.size(); ++follower) {
@@ -6510,16 +6524,20 @@ namespace rock
                 if (!followerNode || !followerNode->parent || followerNode == leaderNode) {
                     continue;
                 }
-                const RE::NiTransform followerParentWeaponLocal =
-                    transform_math::composeTransforms(weaponWorldInverse, followerNode->parent->world);
+                const RE::NiTransform followerRestWeaponLocal =
+                    transform_math::composeTransforms(weaponWorldInverse, followerNode->world);
+                const RE::NiTransform followerFirstKeyInverse =
+                    transform_math::invertTransform(poseToNi(group.followers[follower].keys[0]));
                 auto& slot = converted.followers[converted.followerCount];
                 slot.boneName = group.followers[follower].boneName;
                 for (std::uint32_t key = 0; key < weapon_part_motion_path::kResampledKeyCount; ++key) {
                     slot.keys[key] = niToPose(transform_math::composeTransforms(
-                        followerParentWeaponLocal,
-                        poseToNi(group.followers[follower].keys[key])));
+                        followerRestWeaponLocal,
+                        transform_math::composeTransforms(
+                            followerFirstKeyInverse,
+                            poseToNi(group.followers[follower].keys[key]))));
                 }
-                slot.restScale = transform_math::composeTransforms(weaponWorldInverse, followerNode->world).scale;
+                slot.restScale = followerRestWeaponLocal.scale;
                 ++converted.followerCount;
             }
 
@@ -6541,7 +6559,7 @@ namespace rock
                         transform_math::invertTransform(leaderNode->world),
                         entry.node->world);
                     const RE::NiTransform* tailPtr = entry.node != leaderNode ? &tail : nullptr;
-                    if (convertLeaderPath(group, leaderParentWeaponLocal, tailPtr, converted.leaderPath)) {
+                    if (convertLeaderPath(group, leaderRestWeaponLocal, tailPtr, converted.leaderPath)) {
                         _weaponPartMotionLearner.storeAuthoredGroup(
                             weaponFormId,
                             providerFixedStringView(entry.sourceName.data(), entry.sourceName.size()),
@@ -6554,7 +6572,7 @@ namespace rock
             if (!storedForEvidence) {
                 // No collider evidence under this bone yet; keep the stroke
                 // under the rig-bone name so future parts can find it.
-                if (convertLeaderPath(group, leaderParentWeaponLocal, nullptr, converted.leaderPath)) {
+                if (convertLeaderPath(group, leaderRestWeaponLocal, nullptr, converted.leaderPath)) {
                     _weaponPartMotionLearner.storeAuthoredGroup(weaponFormId, leaderName, converted);
                 }
             }
