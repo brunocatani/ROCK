@@ -190,11 +190,14 @@ namespace rock
      * Bolt-drive sandbox part eligibility, shared by the provider whitelist,
      * the drive part cache, and the grip-report filter so a part can never be
      * grabbable without also being observed/scrubbed. Every reciprocating or
-     * hinged action part is drivable, plus Magazine bodies for physical mag
-     * handling. Latch stays out (no name token or motion source yet).
-     * Receiver was tried and removed 2026-07-03 — its name bucket is a
-     * catch-all ("frame"/"body"/"pistol"/"weapon") that hijacked receiver
-     * support grips into AttachOnly glue.
+     * hinged action part is drivable, plus the whole feed chain (Bruno,
+     * 2026-07-04): magazine bodies, magwell/chamber sockets, shells, rounds,
+     * laser cells and cosmetic ammo — ammo pieces classified apart from the
+     * magazine were invisible to the learner, so AK bullets never recorded
+     * and could not follow their mag. Latch stays out (no name token or
+     * motion source yet). Receiver was tried and removed 2026-07-03 — its
+     * name bucket is a catch-all ("frame"/"body"/"pistol"/"weapon") that
+     * hijacked receiver support grips into AttachOnly glue.
      */
     [[nodiscard]] inline constexpr bool weaponPartDriveSandboxEligible(WeaponActionRole actionRole, WeaponPartKind partKind)
     {
@@ -210,7 +213,18 @@ namespace rock
         default:
             break;
         }
-        return partKind == WeaponPartKind::Magazine;
+        switch (partKind) {
+        case WeaponPartKind::Magazine:
+        case WeaponPartKind::Magwell:
+        case WeaponPartKind::Chamber:
+        case WeaponPartKind::Shell:
+        case WeaponPartKind::Round:
+        case WeaponPartKind::LaserCell:
+        case WeaponPartKind::CosmeticAmmo:
+            return true;
+        default:
+            return false;
+        }
     }
 
     enum class WeaponGripPoseId : std::uint8_t

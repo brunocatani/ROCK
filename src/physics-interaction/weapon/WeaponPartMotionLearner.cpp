@@ -251,7 +251,8 @@ namespace rock
         };
         std::array<FollowerCandidate, weapon_clip_stroke::kMaxFollowers> followerCandidates{};
         std::uint32_t followerCandidateCount = 0;
-        constexpr float kRigidDistanceToleranceGameUnits = 0.6f;
+        constexpr float kRigidDistanceToleranceGameUnits =
+            weapon_clip_stroke::kRigidFollowerDistanceToleranceGameUnits;
         constexpr std::int64_t kMinOverlapSamples = 8;
         for (const auto& other : _recorders) {
             if (&other == &recorder || !other.used || other.weaponFormId != recorder.weaponFormId ||

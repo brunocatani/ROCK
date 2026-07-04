@@ -6637,14 +6637,57 @@ namespace rock
                         transform_math::invertTransform(leaderNode->world),
                         entry.node->world);
                     const RE::NiTransform* tailPtr = entry.node != leaderNode ? &tail : nullptr;
-                    if (convertLeaderPath(group, leaderRestWeaponLocal, tailPtr, converted.leaderPath)) {
-                        _weaponPartMotionLearner.storeAuthoredGroup(
-                            weaponFormId,
-                            providerFixedStringView(entry.sourceName.data(), entry.sourceName.size()),
-                            converted,
-                            templateSource);
-                        storedForEvidence = true;
+                    if (!convertLeaderPath(group, leaderRestWeaponLocal, tailPtr, converted.leaderPath)) {
+                        continue;
                     }
+                    /*
+                     * Sibling evidence parts under the same rig bone are one
+                     * rigid body — a single track animates the whole subtree
+                     * (P320: slide, slide top, rear/front sights all map to
+                     * the bolt bone) — so each sibling rides this group as a
+                     * follower: the leader's key deltas rebased onto the
+                     * sibling node's own rest. Grabbing the slide then
+                     * carries its sights before the part is ever learned,
+                     * matching what the learner observes.
+                     */
+                    auto groupForEntry = converted;
+                    for (std::uint32_t otherIndex = 0;
+                         otherIndex < _drivePartCache.count &&
+                         groupForEntry.followerCount < groupForEntry.followers.size();
+                         ++otherIndex) {
+                        const auto& other = _drivePartCache.entries[otherIndex];
+                        if (otherIndex == entryIndex || !other.node || other.node == entry.node ||
+                            (other.node != leaderNode &&
+                                !actor_equipment_grab::nodeContainsNode(leaderNode, other.node, 16))) {
+                            continue;
+                        }
+                        const RE::NiTransform otherRestWeaponLocal =
+                            transform_math::composeTransforms(weaponWorldInverse, other.node->world);
+                        auto& slot = groupForEntry.followers[groupForEntry.followerCount];
+                        slot = weapon_clip_stroke::AuthoredFollower{};
+                        std::memcpy(
+                            slot.boneName.data(),
+                            other.sourceName.data(),
+                            (std::min)(slot.boneName.size() - 1, other.sourceName.size()));
+                        for (std::uint32_t key = 0; key < weapon_part_motion_path::kResampledKeyCount; ++key) {
+                            const auto& clipKey = group.leaderPath.keys[key];
+                            const auto sceneDelta = rigDeltaToScene(
+                                clipKey.translate.x - group.leaderPath.keys[0].translate.x,
+                                clipKey.translate.y - group.leaderPath.keys[0].translate.y,
+                                clipKey.translate.z - group.leaderPath.keys[0].translate.z);
+                            RE::NiTransform keyTransform = otherRestWeaponLocal;
+                            keyTransform.translate += sceneDelta;
+                            slot.keys[key] = niToPose(keyTransform);
+                        }
+                        slot.restScale = otherRestWeaponLocal.scale;
+                        ++groupForEntry.followerCount;
+                    }
+                    _weaponPartMotionLearner.storeAuthoredGroup(
+                        weaponFormId,
+                        providerFixedStringView(entry.sourceName.data(), entry.sourceName.size()),
+                        groupForEntry,
+                        templateSource);
+                    storedForEvidence = true;
                 }
             }
 

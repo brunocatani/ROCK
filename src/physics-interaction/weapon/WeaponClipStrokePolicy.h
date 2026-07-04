@@ -12,10 +12,10 @@
  * uniform clip times (the harvest hook produces them by calling the engine's
  * own track sampler). Output is one stroke group per moving "leader" track:
  * the leader's rest→peak stroke resampled exactly like learner paths (so the
- * existing scrub consumes it unchanged), plus follower tracks time-aligned to
- * the leader's keys — the whole assembly the animation moves together, driven
- * off one scrub parameter. This is what runtime observation could not give us:
- * per-bone isolated tracks and group coherence.
+ * existing scrub consumes it unchanged), plus followers — tracks that move
+ * RIGIDLY with the leader (constant pairwise distance, the learner's
+ * co-movement criterion), driven off one scrub parameter. This is what
+ * runtime observation could not give us: per-bone isolated tracks.
  */
 namespace rock::weapon_clip_stroke
 {
@@ -39,6 +39,11 @@ namespace rock::weapon_clip_stroke
     // Followers move less than leaders (an ejector nudge vs the slide stroke);
     // anything below this is sampling noise and stays undriven.
     inline constexpr float kFollowerMinExcursionGameUnits = 0.15f;
+    // A follower's distance to its leader may drift at most this much over
+    // the stroke and still count as rigid co-movement. Shared with the
+    // learner's observed co-movement grouping so authored and learned
+    // groups mean the same thing by "follower".
+    inline constexpr float kRigidFollowerDistanceToleranceGameUnits = 0.6f;
 
     struct TrackSamples
     {
@@ -154,10 +159,14 @@ namespace rock::weapon_clip_stroke
     }
 
     /*
-     * Build one stroke group per moving track (leaders), with every other
-     * moving track attached as a time-aligned follower. Both the bolt and the
-     * magazine of a reload clip become leaders of their own groups, each
-     * carrying the rest of the assembly as followers.
+     * Build one stroke group per moving track (leaders). A follower is a
+     * track that moves RIGIDLY with the leader over the leader's stroke —
+     * pairwise distance held constant (the learner's co-movement criterion),
+     * not merely co-timed. A reload clip moves the mag and the bolt in
+     * overlapping windows, but they are separate strokes: attaching one as
+     * the other's follower replayed the whole clip off a single grab
+     * (in-game 2026-07-04: pulling the AK bolt drove the mag and bullets
+     * down and out of the weapon).
      */
     inline std::uint32_t buildAuthoredGroups(
         const TrackSamples* tracks,
@@ -194,17 +203,32 @@ namespace rock::weapon_clip_stroke
                 auto& slot = group.followers[group.followerCount];
                 slot.boneName = tracks[follower].boneName;
                 bool followerMoves = false;
+                float minLeaderDistance = 0.0f;
+                float maxLeaderDistance = 0.0f;
                 for (std::uint32_t key = 0; key < kResampledKeyCount; ++key) {
                     slot.keys[key] = poseAtSamplePosition(tracks[follower], keyPositions[key]);
                     if (key > 0 && !followerMoves &&
                         poseDistance(slot.keys[key], slot.keys[0]) >= kFollowerMinExcursionGameUnits) {
                         followerMoves = true;
                     }
+                    const float leaderDistance = weapon_part_motion_path::length(weapon_part_motion_path::sub(
+                        group.leaderPath.keys[key].translate,
+                        slot.keys[key].translate));
+                    if (key == 0) {
+                        minLeaderDistance = leaderDistance;
+                        maxLeaderDistance = leaderDistance;
+                    } else {
+                        minLeaderDistance = (std::min)(minLeaderDistance, leaderDistance);
+                        maxLeaderDistance = (std::max)(maxLeaderDistance, leaderDistance);
+                    }
                 }
                 // A track can move in the clip but be still during the
                 // leader's stroke window (e.g. hammer only moves at fire);
-                // such a follower would just pin its node — drop it.
-                if (followerMoves) {
+                // such a follower would just pin its node — drop it. A track
+                // that moves but drifts relative to the leader is its own
+                // stroke, not a rider — drop it too.
+                if (followerMoves &&
+                    maxLeaderDistance - minLeaderDistance <= kRigidFollowerDistanceToleranceGameUnits) {
                     ++group.followerCount;
                 }
             }

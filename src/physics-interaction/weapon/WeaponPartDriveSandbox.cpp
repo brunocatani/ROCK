@@ -84,8 +84,8 @@ namespace rock
         // Persistent whitelist: every drive-eligible part is grabbable as an
         // AttachOnly glue on any weapon (generation key 0 = all generations).
         // Targets mirror weaponPartDriveSandboxEligible: all reciprocating/
-        // hinged action roles plus Magazine part bodies. NonExclusive keeps
-        // every other part grip on its normal behavior.
+        // hinged action roles plus the feed-chain part kinds. NonExclusive
+        // keeps every other part grip on its normal behavior.
         constexpr std::array<WeaponActionRole, 7> kDriveActionRoles{
             WeaponActionRole::Bolt,
             WeaponActionRole::Slide,
@@ -95,7 +95,16 @@ namespace rock
             WeaponActionRole::Cylinder,
             WeaponActionRole::Lever,
         };
-        std::array<::rock::provider::RockProviderWeaponPartTargetV1, kDriveActionRoles.size() + 1> targets{};
+        constexpr std::array<WeaponPartKind, 7> kDrivePartKinds{
+            WeaponPartKind::Magazine,
+            WeaponPartKind::Magwell,
+            WeaponPartKind::Chamber,
+            WeaponPartKind::Shell,
+            WeaponPartKind::Round,
+            WeaponPartKind::LaserCell,
+            WeaponPartKind::CosmeticAmmo,
+        };
+        std::array<::rock::provider::RockProviderWeaponPartTargetV1, kDriveActionRoles.size() + kDrivePartKinds.size()> targets{};
         for (auto& target : targets) {
             target.flags = static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::NonExclusive);
             target.grabMode = ::rock::provider::RockProviderWeaponPartGrabModeV1::AttachOnly;
@@ -106,8 +115,11 @@ namespace rock
             targets[i].flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchActionRole);
             targets[i].actionRole = static_cast<std::uint32_t>(kDriveActionRoles[i]);
         }
-        targets.back().flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchPartKind);
-        targets.back().partKind = static_cast<std::uint32_t>(WeaponPartKind::Magazine);
+        for (std::size_t i = 0; i < kDrivePartKinds.size(); ++i) {
+            auto& target = targets[kDriveActionRoles.size() + i];
+            target.flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchPartKind);
+            target.partKind = static_cast<std::uint32_t>(kDrivePartKinds[i]);
+        }
         const auto targetResult = api->setWeaponPartTargetsV1(_ownerToken, targets.data(), static_cast<std::uint32_t>(targets.size()));
         if (targetResult != ::rock::provider::RockProviderResultV1::Ok) {
             if (!_registrationWarned) {

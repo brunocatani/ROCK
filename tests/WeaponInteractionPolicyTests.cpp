@@ -686,15 +686,20 @@ int main()
         using rock::weapon_part_motion_path::PoseSample;
 
         // Synthetic clip: bolt pulls 5 units along +Y (samples 8..40) and
-        // returns; a handle follows with 2 units of +Z in sync; the magazine
-        // barely trembles (below the follower threshold).
-        std::array<TrackSamples, 3> clipTracks{};
+        // returns; a handle rides it rigidly (same translation from an
+        // offset rest — constant distance to the bolt); the magazine drops
+        // 3 units along -Z in the SAME window (co-timed but drifting, so
+        // NOT a follower); an ejector barely trembles (below the follower
+        // excursion floor).
+        std::array<TrackSamples, 4> clipTracks{};
         auto& boltTrack = clipTracks[0];
         std::memcpy(boltTrack.boneName.data(), "WeaponBolt", 10);
         auto& handleTrack = clipTracks[1];
         std::memcpy(handleTrack.boneName.data(), "WeaponBoltHandle", 16);
         auto& magTrack = clipTracks[2];
         std::memcpy(magTrack.boneName.data(), "WeaponMagazine", 14);
+        auto& ejectorTrack = clipTracks[3];
+        std::memcpy(ejectorTrack.boneName.data(), "WeaponEjector", 13);
         for (std::uint32_t i = 0; i < kClipSampleCount; ++i) {
             float phase = 0.0f;
             if (i >= 8 && i <= 40) {
@@ -703,12 +708,15 @@ int main()
                 phase = (std::max)(0.0f, 1.0f - static_cast<float>(i - 40) / 12.0f);
             }
             boltTrack.samples[i].translate.y = 5.0f * phase;
-            handleTrack.samples[i].translate.z = 2.0f * phase;
-            magTrack.samples[i].translate.x = 0.05f * phase;
+            handleTrack.samples[i].translate.z = 3.0f;
+            handleTrack.samples[i].translate.y = 5.0f * phase;
+            magTrack.samples[i].translate.z = -3.0f * phase;
+            ejectorTrack.samples[i].translate.x = 0.05f * phase;
         }
         boltTrack.sampleCount = kClipSampleCount;
         handleTrack.sampleCount = kClipSampleCount;
         magTrack.sampleCount = kClipSampleCount;
+        ejectorTrack.sampleCount = kClipSampleCount;
 
         std::array<AuthoredStrokeGroup, kMaxGroupsPerClip> groups{};
         const auto groupCount = buildAuthoredGroups(
@@ -716,7 +724,7 @@ int main()
             static_cast<std::uint32_t>(clipTracks.size()),
             groups.data(),
             static_cast<std::uint32_t>(groups.size()));
-        ok &= expectEqual("both moving tracks become stroke-group leaders", groupCount, 2u);
+        ok &= expectEqual("all three moving tracks become stroke-group leaders", groupCount, 3u);
 
         const AuthoredStrokeGroup* boltGroup = nullptr;
         for (std::uint32_t i = 0; i < groupCount; ++i) {
@@ -729,14 +737,14 @@ int main()
             ok &= expectTrue("bolt leader path is valid", boltGroup->leaderPath.valid);
             ok &= expectTrue("bolt stroke arc covers the pull",
                 boltGroup->leaderPath.totalArcLength > 4.5f && boltGroup->leaderPath.totalArcLength < 5.5f);
-            ok &= expectEqual("bolt group carries the handle, not the still magazine",
+            ok &= expectEqual("bolt group carries only the rigid handle — not the drifting mag or still ejector",
                 boltGroup->followerCount, 1u);
             ok &= expectTrue("bolt group follower is the handle",
                 std::strcmp(boltGroup->followers[0].boneName.data(), "WeaponBoltHandle") == 0);
             const auto& follower = boltGroup->followers[0];
-            ok &= expectTrue("follower starts at rest", std::abs(follower.keys[0].translate.z) < 0.05f);
+            ok &= expectTrue("follower starts at rest", std::abs(follower.keys[0].translate.y) < 0.05f);
             ok &= expectTrue("follower reaches its stroke end with the leader",
-                std::abs(follower.keys[rock::weapon_part_motion_path::kResampledKeyCount - 1].translate.z - 2.0f) < 0.15f);
+                std::abs(follower.keys[rock::weapon_part_motion_path::kResampledKeyCount - 1].translate.y - 5.0f) < 0.15f);
 
             // Half-way along the leader stroke the follower is half-way too:
             // the whole assembly moves off one scrub parameter.
@@ -744,7 +752,7 @@ int main()
             const float keyPosition = keyPositionForArc(boltGroup->leaderPath, midArc);
             const auto midPose = followerPoseAtKeyPosition(follower, keyPosition);
             ok &= expectTrue("follower tracks leader progress at mid-stroke",
-                std::abs(midPose.translate.z - 1.0f) < 0.25f);
+                std::abs(midPose.translate.y - 2.5f) < 0.25f);
         }
     }
 
