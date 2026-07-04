@@ -493,12 +493,12 @@ namespace rock
 
         /*
          * Bolt-drive sandbox (rockBoltDriveSandboxEnabled): per-generation
-         * cache of drive-eligible parts (weaponPartDriveSandboxEligible) so
-         * the per-frame learner/sandbox path never touches the heap-allocating
-         * evidence descriptor copies. Action-role parts fill before Receiver
-         * parts so numerous receiver-named nodes cannot evict the bolt/slide.
-         * Nodes are non-owning engine pointers valid only while the cached
-         * generation key matches the current weapon generation.
+         * cache of ALL evidence parts so the per-frame learner/sandbox path
+         * never touches the heap-allocating evidence descriptor copies. Grab
+         * eligibility is data-driven (parts with an authored stroke), so no
+         * classification filter applies here. Nodes are non-owning engine
+         * pointers valid only while the cached generation key matches the
+         * current weapon generation.
          */
         struct DrivePartCacheEntry
         {
@@ -510,9 +510,19 @@ namespace rock
         {
             std::uint64_t generationKey{ 0 };
             std::uint32_t count{ 0 };
-            std::array<DrivePartCacheEntry, 8> entries{};
+            std::array<DrivePartCacheEntry, WeaponPartDriveSandbox::kMaxMovableParts> entries{};
         };
         DrivePartCache _drivePartCache{};
+        /*
+         * Movable-part set for the current weapon: cache entries whose source
+         * name owns an authored stroke group. Recomputed only when the weapon
+         * generation or the learner's authored content changes, then handed
+         * to the sandbox, which whitelists exactly these bodies.
+         */
+        std::uint64_t _movablePartsGenerationKey{ 0 };
+        std::uint64_t _movablePartsAuthoredRevision{ 0 };
+        std::uint32_t _movablePartCount{ 0 };
+        std::array<std::uint32_t, WeaponPartDriveSandbox::kMaxMovableParts> _movableBodyIds{};
         WeaponPartMotionLearner _weaponPartMotionLearner;
         WeaponPartDriveSandbox _weaponPartDriveSandbox;
         bool _weaponPartDriveSandboxWasEnabled{ false };
@@ -520,6 +530,9 @@ namespace rock
         // change drops pending strokes so a previous weapon's clips cannot
         // attach to the new weapon through shared rig-bone names.
         std::uint32_t _lastClipHarvestWeaponFormId{ 0 };
+        // Per-weapon budget of attribution-miss log lines so silent drops in
+        // the drain path stay visible without unbounded logging.
+        std::uint32_t _clipHarvestAttributionLogBudget{ 8 };
         static constexpr std::size_t kNativePlayerCollisionSuppressionBodyCapacity = 64;
         std::array<std::uint32_t, kNativePlayerCollisionSuppressionBodyCapacity> _nativePlayerCollisionSuppressedBodyIds{};
         std::uint32_t _nativePlayerCollisionSuppressedBodyCount = 0;

@@ -24,7 +24,14 @@ namespace rock
     class WeaponPartMotionLearner
     {
     public:
-        static constexpr std::size_t kMaxStoredPaths = 16;
+        /*
+         * Sized for full-weapon part coverage (~6 moving parts per weapon,
+         * several weapons per session). Generosity matters for authored
+         * strokes: the engine caches loaded behavior graphs and never
+         * re-assigns their bindings, so an evicted authored group cannot be
+         * re-harvested until the graph reloads.
+         */
+        static constexpr std::size_t kMaxStoredPaths = 48;
         static constexpr std::size_t kMaxActiveRecorders = 2;
         static constexpr std::size_t kMaxSourceName = 64;
         // A recorder whose part was not observed for this many observations is
@@ -71,6 +78,10 @@ namespace rock
             std::string_view sourceName,
             const weapon_clip_stroke::AuthoredStrokeGroup& group);
 
+        // Bumped whenever authored content changes; lets callers rebuild
+        // derived state (the movable-part whitelist) only when needed.
+        [[nodiscard]] std::uint64_t authoredRevision() const { return _authoredRevision; }
+
         void reset();
 
     private:
@@ -102,5 +113,6 @@ namespace rock
         std::array<PathSlot, kMaxStoredPaths> _paths{};
         std::array<RecorderSlot, kMaxActiveRecorders> _recorders{};
         std::uint64_t _observationCounter{ 0 };
+        std::uint64_t _authoredRevision{ 0 };
     };
 }

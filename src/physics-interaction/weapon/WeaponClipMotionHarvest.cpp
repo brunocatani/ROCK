@@ -74,9 +74,16 @@ namespace rock::weapon_clip_motion_harvest
 
         std::atomic<std::uint64_t> s_bindingsSeen{ 0 };
         std::atomic<std::uint64_t> s_bindingsHarvested{ 0 };
+        std::atomic<std::uint64_t> s_bindingsNoTargets{ 0 };
         std::atomic<std::uint64_t> s_groupsQueued{ 0 };
         std::atomic<std::uint64_t> s_groupsDropped{ 0 };
         std::atomic<std::uint64_t> s_skippedNonSpline{ 0 };
+
+        // Bone-name dump budget for zero-target bindings (see header). Small
+        // bindings only: partial/weapon clips have few tracks, so a low track
+        // cap keeps full-body character clips out of the dump.
+        constexpr std::int32_t kMaxNoTargetDumpTracks = 24;
+        std::atomic<std::uint32_t> s_noTargetDumpBudget{ 16 };
 
         const char* skeletonBoneName(std::uintptr_t skeleton, std::int32_t boneIndex)
         {
@@ -100,6 +107,49 @@ namespace rock::weapon_clip_motion_harvest
                 return false;
             }
             return true;
+        }
+
+        void dumpNoTargetBindingNames(
+            std::uintptr_t skeleton,
+            const std::int16_t* trackToBone,
+            std::int32_t usableTrackCount,
+            std::int32_t boneCount,
+            float duration)
+        {
+            if (usableTrackCount > kMaxNoTargetDumpTracks) {
+                return;
+            }
+            auto budget = s_noTargetDumpBudget.load(std::memory_order_relaxed);
+            if (budget == 0 || !s_noTargetDumpBudget.compare_exchange_strong(budget, budget - 1, std::memory_order_relaxed)) {
+                return;
+            }
+            std::array<char, 512> names{};
+            std::size_t length = 0;
+            for (std::int32_t track = 0; track < usableTrackCount; ++track) {
+                const auto boneIndex = trackToBone[track];
+                if (boneIndex < 0 || boneIndex >= boneCount) {
+                    continue;
+                }
+                const char* name = skeletonBoneName(skeleton, boneIndex);
+                if (!name) {
+                    continue;
+                }
+                if (length > 0 && length < names.size() - 1) {
+                    names[length++] = ',';
+                }
+                while (*name != '\0' && length < names.size() - 1) {
+                    names[length++] = *name++;
+                }
+                if (length >= names.size() - 1) {
+                    break;
+                }
+            }
+            ROCK_LOG_INFO(
+                Weapon,
+                "ClipHarvest: binding dur={:.2f}s tracks={} has no Weapon* tracks; bones=[{}]",
+                duration,
+                usableTrackCount,
+                names.data());
         }
 
         void harvestBinding(std::uintptr_t binding, std::uintptr_t skeleton)
@@ -162,6 +212,8 @@ namespace rock::weapon_clip_motion_harvest
                 ++targetCount;
             }
             if (targetCount == 0) {
+                s_bindingsNoTargets.fetch_add(1, std::memory_order_relaxed);
+                dumpNoTargetBindingNames(skeleton, trackToBone, usableTrackCount, boneCount, duration);
                 return;
             }
 
@@ -281,11 +333,17 @@ namespace rock::weapon_clip_motion_harvest
         s_queueCount = 0;
     }
 
+    void armNoTargetNameDumps(std::uint32_t budget)
+    {
+        s_noTargetDumpBudget.store(budget, std::memory_order_relaxed);
+    }
+
     Stats snapshotStats()
     {
         return Stats{
             .bindingsSeen = s_bindingsSeen.load(std::memory_order_relaxed),
             .bindingsHarvested = s_bindingsHarvested.load(std::memory_order_relaxed),
+            .bindingsNoTargets = s_bindingsNoTargets.load(std::memory_order_relaxed),
             .groupsQueued = s_groupsQueued.load(std::memory_order_relaxed),
             .groupsDropped = s_groupsDropped.load(std::memory_order_relaxed),
             .skippedNonSpline = s_skippedNonSpline.load(std::memory_order_relaxed),

@@ -27,9 +27,12 @@ namespace rock::weapon_clip_stroke
     using weapon_part_motion_path::poseDistance;
 
     inline constexpr std::uint32_t kClipSampleCount = 64;
-    inline constexpr std::uint32_t kMaxTracksPerClip = 12;
+    // Sized so one reload clip can map every moving weapon part: rigs carry
+    // Weapon* bones for mag, bolt, slide, charging handle, hammer, sights
+    // and more, and every moving track becomes its own group leader.
+    inline constexpr std::uint32_t kMaxTracksPerClip = 16;
     inline constexpr std::uint32_t kMaxFollowers = 3;
-    inline constexpr std::uint32_t kMaxGroupsPerClip = 4;
+    inline constexpr std::uint32_t kMaxGroupsPerClip = 8;
     inline constexpr std::size_t kMaxBoneName = 64;
     // Followers move less than leaders (an ejector nudge vs the slide stroke);
     // anything below this is sampling noise and stays undriven.

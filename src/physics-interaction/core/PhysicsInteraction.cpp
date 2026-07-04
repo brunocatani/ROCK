@@ -2884,6 +2884,10 @@ namespace rock
                 _weaponPartDriveSandbox.shutdown();
                 _weaponPartMotionLearner.reset();
                 _drivePartCache = {};
+                _movablePartsGenerationKey = 0;
+                _movablePartsAuthoredRevision = 0;
+                _movablePartCount = 0;
+                _movableBodyIds = {};
                 ::rock::weapon_clip_motion_harvest::clearPending();
                 _lastClipHarvestWeaponFormId = 0;
                 _weaponPartDriveSandboxWasEnabled = false;
@@ -5923,38 +5927,29 @@ namespace rock
         // frame. The cache key is only committed once a descriptor for the
         // current generation is seen, so an early call before the evidence
         // snapshot publishes retries next frame instead of caching emptiness.
-        // Two passes: bolt/slide action parts first so weapons with many
-        // Receiver-classified nodes cannot evict the reciprocating part from
-        // the fixed-size cache.
+        // Every evidence part is cached regardless of classification: grab
+        // eligibility is decided by the animation data (authored strokes
+        // mapped at equip), not by part roles, so any animated part must be
+        // observable/attributable here.
         const auto descriptors = _weaponCollision.getProfileEvidenceDescriptors();
         bool sawCurrentGeneration = false;
-        for (const bool receiverPass : { false, true }) {
-            for (const auto& descriptor : descriptors) {
-                if (!descriptor.valid || descriptor.weaponGenerationKey != currentWeaponGenerationKey) {
-                    continue;
-                }
-                sawCurrentGeneration = true;
-                if (!weaponPartDriveSandboxEligible(descriptor.semantic.actionRole, descriptor.semantic.partKind)) {
-                    continue;
-                }
-                const bool actionPart = descriptor.semantic.actionRole == WeaponActionRole::Bolt ||
-                                        descriptor.semantic.actionRole == WeaponActionRole::Slide;
-                if (actionPart == receiverPass) {
-                    continue;
-                }
-                auto* node = reinterpret_cast<RE::NiAVObject*>(descriptor.sourceRootAddress);
-                if (!node || descriptor.sourceName.empty() || _drivePartCache.count >= _drivePartCache.entries.size()) {
-                    continue;
-                }
-                auto& entry = _drivePartCache.entries[_drivePartCache.count++];
-                entry.bodyId = descriptor.bodyId;
-                entry.node = node;
-                entry.sourceName = {};
-                std::memcpy(
-                    entry.sourceName.data(),
-                    descriptor.sourceName.data(),
-                    (std::min)(descriptor.sourceName.size(), entry.sourceName.size() - 1));
+        for (const auto& descriptor : descriptors) {
+            if (!descriptor.valid || descriptor.weaponGenerationKey != currentWeaponGenerationKey) {
+                continue;
             }
+            sawCurrentGeneration = true;
+            auto* node = reinterpret_cast<RE::NiAVObject*>(descriptor.sourceRootAddress);
+            if (!node || descriptor.sourceName.empty() || _drivePartCache.count >= _drivePartCache.entries.size()) {
+                continue;
+            }
+            auto& entry = _drivePartCache.entries[_drivePartCache.count++];
+            entry.bodyId = descriptor.bodyId;
+            entry.node = node;
+            entry.sourceName = {};
+            std::memcpy(
+                entry.sourceName.data(),
+                descriptor.sourceName.data(),
+                (std::min)(descriptor.sourceName.size(), entry.sourceName.size() - 1));
         }
         if (sawCurrentGeneration) {
             _drivePartCache.generationKey = currentWeaponGenerationKey;
@@ -6020,28 +6015,58 @@ namespace rock
             return;
         }
         if (weaponFormId != _lastClipHarvestWeaponFormId) {
-            // Strokes still queued belong to the previous weapon's subgraph;
-            // shared rig-bone names (WeaponBolt) would misattribute them.
-            ::rock::weapon_clip_motion_harvest::clearPending();
+            const bool firstAttribution = _lastClipHarvestWeaponFormId == 0;
             _lastClipHarvestWeaponFormId = weaponFormId;
+            _clipHarvestAttributionLogBudget = 8;
+            ::rock::weapon_clip_motion_harvest::armNoTargetNameDumps(16);
             // Once per weapon swap: cumulative harvest counters distinguish
             // hook-never-fired (seen=0) from bone-name-filter rejection
-            // (seen>0, harvested=0, nonSpline=0) from compression gaps
-            // (nonSpline>0) without any per-binding hot-path logging.
+            // (seen>0, harvested=0, nonSpline=0, noTargets>0) from
+            // compression gaps (nonSpline>0) without any per-binding
+            // hot-path logging.
             const auto stats = ::rock::weapon_clip_motion_harvest::snapshotStats();
             ROCK_LOG_INFO(Weapon,
-                "WeaponClipMotionHarvest: stats at weapon {:08X} equip: bindingsSeen={} harvested={} groupsQueued={} groupsDropped={} skippedNonSpline={} hookInstalled={}",
+                "WeaponClipMotionHarvest: stats at weapon {:08X} equip: bindingsSeen={} harvested={} noTargets={} groupsQueued={} groupsDropped={} skippedNonSpline={} hookInstalled={}",
                 weaponFormId,
                 stats.bindingsSeen,
                 stats.bindingsHarvested,
+                stats.bindingsNoTargets,
                 stats.groupsQueued,
                 stats.groupsDropped,
                 stats.skippedNonSpline,
                 ::rock::weapon_clip_motion_harvest::hookInstalled());
+            if (!firstAttribution) {
+                // Strokes still queued belong to the previous weapon's
+                // subgraph; shared rig-bone names (WeaponBolt) would
+                // misattribute them.
+                ::rock::weapon_clip_motion_harvest::clearPending();
+                return;
+            }
+            /*
+             * First observed weapon of the session: the pending queue was
+             * filled while this world loaded — including this weapon's own
+             * subgraph, whose bindings assigned before the first drain ever
+             * ran. Clearing here would permanently lose those strokes because
+             * the engine caches loaded graphs and does not re-assign bindings
+             * on re-equip. Foreign load-screen clips are filtered by the
+             * leader-node-in-tree check below instead.
+             */
+        }
+
+        /*
+         * Groups drain from the queue exactly once, and only strokes stored
+         * under evidence source names make their parts grabbable, so hold the
+         * queue until the evidence-part cache is committed for this weapon
+         * generation. Colliders publish within frames of equip; a weapon that
+         * never publishes evidence keeps its queue until the next swap clears
+         * it.
+         */
+        refreshDrivePartCache(weaponNode, currentWeaponGenerationKey);
+        if (_drivePartCache.generationKey != currentWeaponGenerationKey) {
             return;
         }
 
-        std::array<weapon_clip_stroke::AuthoredStrokeGroup, 4> drainedGroups{};
+        std::array<weapon_clip_stroke::AuthoredStrokeGroup, weapon_clip_stroke::kMaxGroupsPerClip> drainedGroups{};
         const auto drainedCount = ::rock::weapon_clip_motion_harvest::drainGroups(
             drainedGroups.data(),
             static_cast<std::uint32_t>(drainedGroups.size()));
@@ -6093,7 +6118,16 @@ namespace rock
             auto* leaderNode = findWeaponNodeBySourceName(weaponNode, leaderName, 32);
             if (!leaderNode || !leaderNode->parent || !group.leaderPath.valid) {
                 // Clip does not belong to this weapon (or the rig bone is not
-                // in the assembled tree) — normal for NPC/other-race clips.
+                // in the assembled tree) — normal for NPC/other-race clips,
+                // but logged (budgeted per weapon) so a name mismatch between
+                // the animation rig and the assembled scene tree is visible.
+                if (_clipHarvestAttributionLogBudget > 0) {
+                    --_clipHarvestAttributionLogBudget;
+                    ROCK_LOG_INFO(Weapon,
+                        "WeaponClipMotionHarvest: drained stroke leader '{}' not attributable to weapon {:08X} (node missing or path invalid)",
+                        leaderName,
+                        weaponFormId);
+                }
                 continue;
             }
             const RE::NiTransform leaderParentWeaponLocal =
@@ -6171,6 +6205,38 @@ namespace rock
         input.weaponGenerationKey = currentWeaponGenerationKey;
         input.weaponFormId = weaponNode && currentWeaponGenerationKey != 0 ? currentEquippedWeaponFormId() : 0;
 
+        /*
+         * Movable set = cached evidence parts whose source name owns an
+         * authored stroke group; the sandbox whitelists exactly these bodies
+         * for AttachOnly grabs. Recomputed only when the weapon generation or
+         * the learner's authored content changes so the per-frame cost stays
+         * at two integer compares.
+         */
+        if (input.weaponFormId != 0 && _drivePartCache.generationKey == currentWeaponGenerationKey) {
+            const auto authoredRevision = _weaponPartMotionLearner.authoredRevision();
+            if (_movablePartsGenerationKey != currentWeaponGenerationKey ||
+                _movablePartsAuthoredRevision != authoredRevision) {
+                _movablePartsGenerationKey = currentWeaponGenerationKey;
+                _movablePartsAuthoredRevision = authoredRevision;
+                _movablePartCount = 0;
+                _movableBodyIds = {};
+                for (std::uint32_t i = 0; i < _drivePartCache.count &&
+                     _movablePartCount < _movableBodyIds.size(); ++i) {
+                    const auto& entry = _drivePartCache.entries[i];
+                    const auto group = _weaponPartMotionLearner.findGroup(
+                        input.weaponFormId,
+                        providerFixedStringView(entry.sourceName.data(), entry.sourceName.size()));
+                    if (group.leaderPath && group.authored) {
+                        _movableBodyIds[_movablePartCount++] = entry.bodyId;
+                    }
+                }
+            }
+            input.movablePartCount = _movablePartCount;
+            input.movableBodyIds = _movableBodyIds;
+        } else {
+            _movablePartsGenerationKey = 0;
+        }
+
         RE::NiTransform weaponWorldInverse{};
         bool hasWeaponInverse = false;
         if (weaponNode && input.weaponFormId != 0) {
@@ -6182,10 +6248,9 @@ namespace rock
             auto& handInput = input.hands[isLeft ? 1u : 0u];
             HandGripReport report{};
             _twoHandedGrip.getHandGripReport(isLeft, report);
+            // Owner-token check is the eligibility gate: only parts the
+            // sandbox itself whitelisted (animated parts) carry its token.
             if (!report.active || !report.attachOnly ||
-                !weaponPartDriveSandboxEligible(
-                    static_cast<WeaponActionRole>(report.actionRole),
-                    static_cast<WeaponPartKind>(report.partKind)) ||
                 report.providerOwnerToken != _weaponPartDriveSandbox.ownerToken() ||
                 report.weaponGenerationKey != currentWeaponGenerationKey) {
                 continue;

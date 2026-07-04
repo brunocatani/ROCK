@@ -44,10 +44,20 @@ namespace rock::weapon_clip_motion_harvest
     // previous weapon's subgraph).
     void clearPending();
 
+    /*
+     * Diagnostic aid for weapons whose clips never yield Weapon* tracks
+     * (modded rigs with custom bone names): grants `budget` one-shot log
+     * lines that dump the bone names of small bindings with zero harvest
+     * targets. Re-armed by the drain owner on every weapon change so the
+     * next equip's bindings are captured instead of load-screen noise.
+     */
+    void armNoTargetNameDumps(std::uint32_t budget);
+
     struct Stats
     {
         std::uint64_t bindingsSeen{ 0 };
         std::uint64_t bindingsHarvested{ 0 };
+        std::uint64_t bindingsNoTargets{ 0 };
         std::uint64_t groupsQueued{ 0 };
         std::uint64_t groupsDropped{ 0 };
         std::uint64_t skippedNonSpline{ 0 };

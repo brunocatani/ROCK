@@ -12,14 +12,17 @@ namespace rock
     class WeaponPartMotionLearner;
 
     /*
-     * Config-gated reference consumer that lets a hand scrub a bolt-classified
-     * weapon part along its learned animation path. It exercises the public
-     * provider API end-to-end from inside ROCK: it registers a real consumer,
-     * installs a NonExclusive AttachOnly whitelist target for the Bolt action
-     * role (so normal support grips stay untouched), and drives the gripped
-     * part with setWeaponPartDriveTargetsV1 — the exact loop an external
-     * reload consumer will run. Engine access stays in PhysicsInteraction:
-     * this class receives plain weapon-root-local data per frame.
+     * Config-gated reference consumer that lets a hand scrub an animated
+     * weapon part along its authored animation stroke. It exercises the
+     * public provider API end-to-end from inside ROCK: it registers a real
+     * consumer, and per equipped weapon installs NonExclusive AttachOnly
+     * whitelist targets ONLY for parts that were mapped to an authored clip
+     * stroke at equip (MatchBodyId, generation-scoped) — every part without
+     * animation data keeps its normal authority/support grip. Gripped parts
+     * are driven with setWeaponPartDriveTargetsV1 — the exact loop an
+     * external reload consumer will run. Engine access stays in
+     * PhysicsInteraction: this class receives plain weapon-root-local data
+     * plus the movable-part set per frame.
      *
      * Ownership/lifetime: registration is lazy on the first enabled update and
      * torn down by shutdown() (drive + whitelist cleared, consumer
@@ -30,11 +33,14 @@ namespace rock
     {
     public:
         static constexpr std::size_t kMaxSourceName = 64;
+        // Upper bound of whitelisted movable parts per weapon; matches the
+        // caller's drive-part cache capacity.
+        static constexpr std::size_t kMaxMovableParts = 24;
 
         struct HandInput
         {
-            // Attach-only grip on a Bolt-classified part owned by this
-            // sandbox's whitelist; false ends any session for the hand.
+            // Attach-only grip on a whitelisted movable part owned by this
+            // sandbox; false ends any session for the hand.
             bool gripActive{ false };
             std::uint64_t gripSequence{ 0 };
             std::uint32_t bodyId{ 0x7FFF'FFFFu };
@@ -50,6 +56,14 @@ namespace rock
         {
             std::uint32_t weaponFormId{ 0 };
             std::uint64_t weaponGenerationKey{ 0 };
+            /*
+             * Evidence parts of the current weapon that own an authored clip
+             * stroke (mapped at equip). Only these body IDs are whitelisted
+             * for AttachOnly grabs; the set is compared against the installed
+             * targets each frame and reinstalled only when it changes.
+             */
+            std::uint32_t movablePartCount{ 0 };
+            std::array<std::uint32_t, kMaxMovableParts> movableBodyIds{};
             // Indexed [0]=right, [1]=left to match hand-state conventions.
             std::array<HandInput, 2> hands{};
         };
@@ -86,10 +100,16 @@ namespace rock
         };
 
         bool ensureRegistered();
+        void refreshMovableTargets(const FrameInput& input);
         void endSession(HandSession& session);
 
         std::uint64_t _ownerToken{ 0 };
-        bool _whitelistInstalled{ false };
+        // Movable-part whitelist currently installed in the provider store;
+        // compared against FrameInput to skip redundant setWeaponPartTargets
+        // calls. _installedGenerationKey 0 = nothing installed.
+        std::uint64_t _installedGenerationKey{ 0 };
+        std::uint32_t _installedMovableCount{ 0 };
+        std::array<std::uint32_t, kMaxMovableParts> _installedMovableBodyIds{};
         bool _sentDrivesLastUpdate{ false };
         std::uint32_t _registrationRetryCooldownFrames{ 0 };
         bool _registrationWarned{ false };

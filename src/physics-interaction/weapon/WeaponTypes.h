@@ -186,21 +186,6 @@ namespace rock
         Latch
     };
 
-    /*
-     * Bolt-drive sandbox part eligibility, shared by the provider whitelist,
-     * the drive part cache, and the grip-report filter so a part can never be
-     * grabbable without also being observed/scrubbed. Reciprocating action
-     * parts (bolt, pistol slide) are drivable; Receiver is included because
-     * FO4 pistol "receiver" meshes are visually the slide assembly, so on
-     * many pistols the large moving part classifies as Receiver.
-     */
-    [[nodiscard]] inline constexpr bool weaponPartDriveSandboxEligible(WeaponActionRole actionRole, WeaponPartKind partKind)
-    {
-        return actionRole == WeaponActionRole::Bolt ||
-               actionRole == WeaponActionRole::Slide ||
-               partKind == WeaponPartKind::Receiver;
-    }
-
     enum class WeaponGripPoseId : std::uint8_t
     {
         None,
