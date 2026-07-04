@@ -168,7 +168,9 @@ namespace rock::weapon_clip_motion_harvest
         std::uint64_t bailSampler{ 0 };
         // Spline payload not resident (engine sampler would crash on it).
         std::uint64_t bailSplineData{ 0 };
-        // Clip-activation hook fired for a registered character.
+        // Clip-activation hook: total shim entries / entries that passed the
+        // registered-character filter.
+        std::uint64_t hookFires{ 0 };
         std::uint64_t hookActivations{ 0 };
     };
     [[nodiscard]] Stats snapshotStats();

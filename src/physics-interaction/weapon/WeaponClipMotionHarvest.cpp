@@ -171,7 +171,14 @@ namespace rock::weapon_clip_motion_harvest
         std::atomic<std::uint64_t> s_bailBoneCount{ 0 };
         std::atomic<std::uint64_t> s_bailSampler{ 0 };
         std::atomic<std::uint64_t> s_bailSplineData{ 0 };
+        // Hook telemetry: every shim entry, entries passing the character
+        // filter, and entries that reached sampling. fires==0 means the
+        // engine never dispatched the hooked slot; fires>0 with matched==0
+        // means the filter rejects the characters the engine passes.
+        std::atomic<std::uint64_t> s_hookFires{ 0 };
         std::atomic<std::uint64_t> s_hookActivations{ 0 };
+        std::atomic<std::uint32_t> s_hookUnmatchedLogs{ 0 };
+        constexpr std::uint32_t kMaxHookUnmatchedLogs = 3;
 
         /*
          * Clip-activation hook targets. The hook fires on the engine's graph
@@ -603,6 +610,7 @@ namespace rock::weapon_clip_motion_harvest
          */
         void harvestFromClipGenerator(void* clipGeneratorRaw, void* characterRaw)
         {
+            s_hookFires.fetch_add(1, std::memory_order_relaxed);
             const auto clipGenerator = reinterpret_cast<std::uintptr_t>(clipGeneratorRaw);
             const auto character = reinterpret_cast<std::uintptr_t>(characterRaw);
             if (!plausiblePointer(clipGenerator) || !plausiblePointer(character)) {
@@ -618,6 +626,18 @@ namespace rock::weapon_clip_motion_harvest
                 }
             }
             if (!registered || s_hookNodeNameCount == 0) {
+                if (s_hookCharacterCount > 0 &&
+                    s_hookUnmatchedLogs.fetch_add(1, std::memory_order_relaxed) < kMaxHookUnmatchedLogs) {
+                    // Compare against the registered characters (graph+0x1C8
+                    // of the candidate graphs in the chain diagnostics).
+                    ROCK_LOG_WARN(Weapon,
+                        "WeaponClipMotionHarvest: hook fired for unregistered character {:#x} (vt+{:#x}) clipGen={:#x} (vt+{:#x}); registered[0]={:#x}",
+                        character,
+                        objectVtableRel(character),
+                        clipGenerator,
+                        objectVtableRel(clipGenerator),
+                        s_hookCharacters[0]);
+                }
                 return;
             }
             s_hookActivations.fetch_add(1, std::memory_order_relaxed);
@@ -1010,6 +1030,7 @@ namespace rock::weapon_clip_motion_harvest
             .bailBoneCount = s_bailBoneCount.load(std::memory_order_relaxed),
             .bailSampler = s_bailSampler.load(std::memory_order_relaxed),
             .bailSplineData = s_bailSplineData.load(std::memory_order_relaxed),
+            .hookFires = s_hookFires.load(std::memory_order_relaxed),
             .hookActivations = s_hookActivations.load(std::memory_order_relaxed),
         };
     }

@@ -6420,7 +6420,7 @@ namespace rock
             // (nonSpline>0) without any per-binding hot-path logging.
             const auto stats = ::rock::weapon_clip_motion_harvest::snapshotStats();
             ROCK_LOG_INFO(Weapon,
-                "WeaponClipMotionHarvest: stats at weapon {:08X} equip: bindingsSeen={} harvested={} noTargets={} groupsQueued={} groupsDropped={} skippedNonSpline={} walksCompleted={} hookActivations={} bail=[anim={} clip={} splineData={} map={} bone={} sampler={}]",
+                "WeaponClipMotionHarvest: stats at weapon {:08X} equip: bindingsSeen={} harvested={} noTargets={} groupsQueued={} groupsDropped={} skippedNonSpline={} walksCompleted={} hookFires={} hookActivations={} bail=[anim={} clip={} splineData={} map={} bone={} sampler={}]",
                 weaponFormId,
                 stats.bindingsSeen,
                 stats.bindingsHarvested,
@@ -6429,6 +6429,7 @@ namespace rock
                 stats.groupsDropped,
                 stats.skippedNonSpline,
                 stats.walksCompleted,
+                stats.hookFires,
                 stats.hookActivations,
                 stats.bailAnimationPtr,
                 stats.bailClipParams,
