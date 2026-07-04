@@ -6085,15 +6085,10 @@ namespace rock
             return;
         }
 
-        if (++_clipHarvestWalkAttempts > kClipHarvestWalkMaxAttempts) {
-            _clipHarvestWalkCompleted = true;
-            ROCK_LOG_WARN(Weapon,
-                "WeaponClipMotionHarvest: weapon {:08X} graph bindings never became available (holderSeen={} lastStage={}); no authored strokes for this weapon",
-                weaponFormId,
-                _clipHarvestWalkHolderSeen,
-                ::rock::weapon_clip_motion_harvest::lastResolveStage());
-            return;
-        }
+        // On the give-up frame the holder is still resolved below so the
+        // one-shot chain diagnostics can dump the live pointers of the
+        // failing hop before the walk closes out.
+        const bool givingUp = ++_clipHarvestWalkAttempts > kClipHarvestWalkMaxAttempts;
 
         /*
          * The equipped weapon's own behavior graph lives on its biped slot's
@@ -6128,9 +6123,28 @@ namespace rock
             }
         }
         if (!weaponGraphHolder) {
+            if (givingUp) {
+                _clipHarvestWalkCompleted = true;
+                ROCK_LOG_WARN(Weapon,
+                    "WeaponClipMotionHarvest: weapon {:08X} graph bindings never became available (holderSeen={} lastStage={}); no authored strokes for this weapon",
+                    weaponFormId,
+                    _clipHarvestWalkHolderSeen,
+                    ::rock::weapon_clip_motion_harvest::lastResolveStage());
+            }
             return;
         }
         _clipHarvestWalkHolderSeen = true;
+
+        if (givingUp) {
+            _clipHarvestWalkCompleted = true;
+            ROCK_LOG_WARN(Weapon,
+                "WeaponClipMotionHarvest: weapon {:08X} graph bindings never became available (holderSeen={} lastStage={}); no authored strokes for this weapon",
+                weaponFormId,
+                _clipHarvestWalkHolderSeen,
+                ::rock::weapon_clip_motion_harvest::lastResolveStage());
+            ::rock::weapon_clip_motion_harvest::logResolveDiagnostics(weaponGraphHolder);
+            return;
+        }
 
         if (::rock::weapon_clip_motion_harvest::stepHarvest(weaponGraphHolder, weaponFormId, currentWeaponGenerationKey) ==
             ::rock::weapon_clip_motion_harvest::StepResult::Completed) {

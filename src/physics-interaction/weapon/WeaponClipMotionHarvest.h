@@ -58,6 +58,16 @@ namespace rock::weapon_clip_motion_harvest
     // ("ok" when bindings were reachable); for give-up diagnostics.
     [[nodiscard]] const char* lastResolveStage();
 
+    /*
+     * One-shot dump of the holder→bindings chain: raw pointer of every hop,
+     * each object's vtable rebased to a module offset (identifies the actual
+     * runtime type in Ghidra), skeleton bone count/names, and the binding
+     * set's raw data/count. Called by the walk owner when it gives up, so a
+     * failing hop can be diagnosed from the log without a debugger. Reads are
+     * plausibility-gated the same way as the resolve itself.
+     */
+    void logResolveDiagnostics(const void* weaponGraphHolder);
+
     // Main-thread drain of harvested stroke groups (weapon-bone local space;
     // attribution/space conversion is the caller's job). Returns the number
     // of groups written to outGroups.

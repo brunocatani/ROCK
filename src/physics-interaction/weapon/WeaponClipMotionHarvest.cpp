@@ -359,6 +359,101 @@ namespace rock::weapon_clip_motion_harvest
         return s_lastResolveStage;
     }
 
+    void logResolveDiagnostics(const void* weaponGraphHolder)
+    {
+        const auto moduleBase = REL::Module::get().base();
+        const auto rebase = [moduleBase](std::uintptr_t address) -> std::uintptr_t {
+            return address >= moduleBase ? address - moduleBase : address;
+        };
+        // Module-relative vtable of a heap object; 0 when the object pointer
+        // is implausible. The rebased value can be looked up directly in the
+        // binary to identify what type the pointer really is.
+        const auto vtableRel = [&](std::uintptr_t object) -> std::uintptr_t {
+            return plausiblePointer(object) ? rebase(*reinterpret_cast<const std::uintptr_t*>(object)) : 0;
+        };
+
+        const auto holder = reinterpret_cast<std::uintptr_t>(weaponGraphHolder);
+        std::uintptr_t manager = 0;
+        std::uintptr_t graphsBase = 0;
+        std::uintptr_t graph = 0;
+        std::uintptr_t character = 0;
+        std::uintptr_t setup = 0;
+        std::uintptr_t skeleton = 0;
+        std::uintptr_t bindingSet = 0;
+        std::uintptr_t bindingsData = 0;
+        std::uint32_t capacityAndFlags = 0;
+        std::uint32_t activeGraphIndex = 0;
+        std::int32_t bindingCount = -1;
+        std::int32_t boneCount = -1;
+        const char* bindingSetSource = "none";
+        std::array<const char*, 3> firstBoneNames{ "", "", "" };
+        const char* lastBoneName = "";
+
+        if (plausiblePointer(holder)) {
+            manager = *reinterpret_cast<std::uintptr_t*>(holder + kHolderManagerOffset);
+        }
+        if (plausiblePointer(manager)) {
+            capacityAndFlags = *reinterpret_cast<std::uint32_t*>(manager + kManagerGraphsCapacityOffset);
+            const auto storageAddress = manager + kManagerGraphsStorageOffset;
+            graphsBase = (capacityAndFlags & kGraphsInlineStorageFlag) != 0
+                ? storageAddress
+                : *reinterpret_cast<std::uintptr_t*>(storageAddress);
+            activeGraphIndex = *reinterpret_cast<std::uint32_t*>(manager + kManagerActiveGraphOffset);
+        }
+        if (plausiblePointer(graphsBase) && activeGraphIndex <= kMaxPlausibleActiveGraphIndex) {
+            graph = reinterpret_cast<const std::uintptr_t*>(graphsBase)[activeGraphIndex];
+        }
+        if (plausiblePointer(graph)) {
+            character = graph + kGraphCharacterOffset;
+            setup = *reinterpret_cast<std::uintptr_t*>(character + kCharacterSetupOffset);
+            const auto overrideSet = *reinterpret_cast<std::uintptr_t*>(character + kCharacterBindingSetOverrideOffset);
+            if (plausiblePointer(overrideSet)) {
+                bindingSet = overrideSet;
+                bindingSetSource = "override";
+            } else if (plausiblePointer(setup)) {
+                bindingSet = *reinterpret_cast<std::uintptr_t*>(setup + kSetupBindingSetOffset);
+                if (plausiblePointer(bindingSet)) {
+                    bindingSetSource = "setup";
+                }
+            }
+        }
+        if (plausiblePointer(setup)) {
+            skeleton = *reinterpret_cast<std::uintptr_t*>(setup + kSetupAnimationSkeletonOffset);
+        }
+        if (plausiblePointer(skeleton)) {
+            boneCount = *reinterpret_cast<std::int32_t*>(skeleton + kSkeletonBonesCountOffset);
+            if (boneCount > 0 && boneCount <= kMaxPlausibleBoneCount) {
+                for (std::int32_t i = 0; i < boneCount && i < 3; ++i) {
+                    if (const char* name = skeletonBoneName(skeleton, i)) {
+                        firstBoneNames[static_cast<std::size_t>(i)] = name;
+                    }
+                }
+                if (const char* name = skeletonBoneName(skeleton, boneCount - 1)) {
+                    lastBoneName = name;
+                }
+            }
+        }
+        if (plausiblePointer(bindingSet)) {
+            bindingsData = *reinterpret_cast<std::uintptr_t*>(bindingSet + kBindingSetDataOffset);
+            bindingCount = *reinterpret_cast<std::int32_t*>(bindingSet + kBindingSetCountOffset);
+        }
+
+        ROCK_LOG_WARN(Weapon,
+            "WeaponClipMotionHarvest diagnostics: holder={:#x}(vt+{:#x}) mgr={:#x}(vt+{:#x}) "
+            "graphsFlags={:#010x} activeIdx={} graph={:#x}(vt+{:#x}) charVt=+{:#x} "
+            "setup={:#x}(vt+{:#x}) skel={:#x}(vt+{:#x}) bones={} first=[{}|{}|{}] last=[{}] "
+            "setSrc={} set={:#x}(vt+{:#x}) data={:#x} count={}",
+            holder, vtableRel(holder),
+            manager, vtableRel(manager),
+            capacityAndFlags, activeGraphIndex, graph, vtableRel(graph),
+            plausiblePointer(graph) ? vtableRel(character) : 0,
+            setup, vtableRel(setup),
+            skeleton, vtableRel(skeleton),
+            boneCount, firstBoneNames[0], firstBoneNames[1], firstBoneNames[2], lastBoneName,
+            bindingSetSource, bindingSet, vtableRel(bindingSet),
+            bindingsData, bindingCount);
+    }
+
     StepResult stepHarvest(const void* weaponGraphHolder, std::uint32_t weaponFormId, std::uint64_t weaponGenerationKey)
     {
         if (s_walkFormId != weaponFormId || s_walkGenerationKey != weaponGenerationKey) {
