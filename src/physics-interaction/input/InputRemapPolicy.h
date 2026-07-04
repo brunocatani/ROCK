@@ -252,21 +252,27 @@ namespace rock::input_remap_policy
     }
 
     /*
-     * FO4VR's PipboyHandler owns the whole pipboy-hand trigger lifecycle for
-     * user event "Pipboy": press starts hold tracking, holding past the game
-     * threshold toggles the pipboy light, release opens the Pip-Boy. While
-     * the pipboy hand is engaged in a ROCK interaction (holding an object,
-     * two-handing or supporting the equipped weapon, or carrying a part while
-     * the primary grip is detached) that trigger belongs to interaction
-     * consumers (e.g. PAPER through the provider raw-button API), so both
-     * native actions are suppressed together at the verified handler while
-     * the raw OpenVR button stays readable. Menu input keeps native handling
-     * so the trigger can still close an already-open Pip-Boy.
+     * FO4VR's PipboyHandler owns the whole pipboy-hand trigger lifecycle:
+     * press starts hold tracking, holding past the game threshold toggles the
+     * pipboy light, release opens the Pip-Boy. The VR wand trigger reaches it
+     * as user event "WandTrigger" (observed live 2026-07-04 via the hook
+     * trace); "Pipboy" covers the flat/gamepad direct bindings. Both wands'
+     * trigger events flow through the handler but it only acts on the
+     * secondary wand, so suppression must exclude primary-hand events -
+     * marking a primary WandTrigger stopped would also block downstream
+     * attack handling. While the pipboy hand is engaged in a ROCK interaction
+     * (holding an object, two-handing or supporting the equipped weapon, or
+     * carrying a part while the primary grip is detached) that trigger
+     * belongs to interaction consumers (e.g. PAPER through the provider
+     * raw-button API), so both native actions are suppressed together at the
+     * verified handler while the raw OpenVR button stays readable. Menu input
+     * keeps native handling so the trigger can still close an already-open
+     * Pip-Boy.
      */
     [[nodiscard]] constexpr bool shouldSuppressNativePipboyAction(const NativeActionSuppressionInput& input)
     {
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
-               input.pipboyHandEngaged;
+               !input.primaryHandEvent && input.pipboyHandEngaged;
     }
 
     [[nodiscard]] constexpr bool shouldInstallNativeActionSuppressionHook(bool remapEnabled, bool suppressionEnabled)

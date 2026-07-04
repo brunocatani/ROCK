@@ -51,9 +51,13 @@ namespace rock::input_remap_runtime
          * (0x1325090 region) and the slot-11 processor (0x1326D90); the same
          * function independently re-uses the already-verified player global
          * (0x5B043F0), device-to-controller-id converter (0x1BA6ED0), and
-         * action dispatcher data (0x5A3B8A0). ShouldHandleEvent (slot 1) also
-         * accepts "Pause" and the Quick* tab events, so the hook must match
-         * the "Pipboy" user event exactly and never swallow the rest.
+         * action dispatcher data (0x5A3B8A0). The VR wand trigger reaches the
+         * handler as user event "WandTrigger" from BOTH wands (observed live
+         * 2026-07-04 via the hook trace; the handler filters to the secondary
+         * wand at player+0x8D0 internally), while "Pipboy" is the flat/
+         * gamepad direct binding. ShouldHandleEvent (slot 1) additionally
+         * accepts "Pause" and the Quick* tab events, which the hook must
+         * never swallow.
          */
         constexpr std::uintptr_t kPipboyHandlerHandleEventFunctionOffset = 0x1326D90;
         constexpr std::uintptr_t kPipboyHandlerHandleEventVTableSlotOffset = 0x2DCC7D0;
@@ -939,7 +943,9 @@ namespace rock::input_remap_runtime
 
         [[nodiscard]] bool shouldSuppressNativePipboyActionEvent(const RE::InputEvent* event)
         {
-            auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressPipboyGameInputWhileHolding, eventNameMatches(event, kNativeEventPipboy));
+            // VR wand triggers arrive as "WandTrigger"; "Pipboy" covers flat/gamepad direct bindings.
+            const bool eventMatched = eventNameMatches(event, kNativeEventWandTrigger) || eventNameMatches(event, kNativeEventPipboy);
+            auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressPipboyGameInputWhileHolding, event, eventMatched);
             input.pipboyHandEngaged = isPipboyHandEngaged();
             return input_remap_policy::shouldSuppressNativePipboyAction(input);
         }

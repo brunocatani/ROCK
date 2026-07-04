@@ -212,6 +212,9 @@ int main()
     auto pipboyUnmatched = pipboyHolding;
     pipboyUnmatched.eventMatched = false;
     ok &= expectFalse("non-Pipboy event is never suppressed by the pipboy gate", shouldSuppressNativePipboyAction(pipboyUnmatched));
+    auto pipboyPrimaryHand = pipboyHolding;
+    pipboyPrimaryHand.primaryHandEvent = true;
+    ok &= expectFalse("primary-wand trigger event bypasses the pipboy gate so attack handling survives", shouldSuppressNativePipboyAction(pipboyPrimaryHand));
 
     NativeActivateReloadInput activateReload{
         .remapEnabled = true,
