@@ -4494,12 +4494,28 @@ namespace rock
         // full scene roots get a deep budget because the rendered weapon
         // instance may sit beyond 4096 nodes (cap saturation is logged below).
         constexpr std::size_t kOmodAuditDeepRootMaxVisited = 32768;
+        // 2026-07-04 session 2 proved the renderer draws a weapon copy that is
+        // in NEITHER instance reachable from the roots below (parts render
+        // while absent, and the whole weapon can vanish while both instances
+        // stay visible-flagged). The absolute scene root — reached by climbing
+        // parents from the update weapon node to the top 'WorldRoot Node' —
+        // covers everything parented into the loaded scene and gets a very
+        // deep budget to find that copy.
+        constexpr std::size_t kOmodAuditSceneRootMaxVisited = 262144;
         addRoot("updateWeaponNode", weaponNode, WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
         addRoot("firstPersonSkeleton:Weapon", f4vr::getWeaponNode(), WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
         addRoot("PlayerNodes.primaryWeapontoWeaponNode", playerNodes ? playerNodes->primaryWeapontoWeaponNode : nullptr, WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
         addRoot("PlayerNodes.primaryWeaponOffsetNode", playerNodes ? playerNodes->primaryWeaponOffsetNOde : nullptr, WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
+        addRoot("PlayerNodes.playerworldnode", playerNodes ? playerNodes->playerworldnode : nullptr, kOmodAuditDeepRootMaxVisited);
+        addRoot("PlayerNodes.roomnode", playerNodes ? playerNodes->roomnode : nullptr, WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
         addRoot("firstPersonSkeleton", f4vr::getFirstPersonSkeleton(), kOmodAuditDeepRootMaxVisited);
+        addRoot("playerFadeRootNode", f4vr::getWorldRootNode(), kOmodAuditDeepRootMaxVisited);
         addRoot("gameRootNode", f4vr::getRootNode(), kOmodAuditDeepRootMaxVisited);
+        RE::NiAVObject* absoluteSceneRoot = weaponNode;
+        for (int hop = 0; hop < 64 && absoluteSceneRoot->parent; ++hop) {
+            absoluteSceneRoot = absoluteSceneRoot->parent;
+        }
+        addRoot("absoluteSceneRoot", absoluteSceneRoot, kOmodAuditSceneRootMaxVisited);
 
         for (const auto& root : roots) {
             std::size_t visited = 0;
