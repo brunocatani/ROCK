@@ -22,6 +22,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <intrin.h>
 #include <optional>
 #include <string_view>
@@ -821,9 +822,17 @@ namespace rock::input_remap_runtime
                 return false;
             }
 
+            /*
+             * BSFixedString pools intern case-insensitively and the native
+             * handlers compare interned pointers, so the case stored in the
+             * event depends on which spelling entered the pool first (the
+             * binary carries both "Pipboy" and "PipBoy" literals). Match with
+             * the same case-insensitive semantics the engine uses.
+             */
             const auto& userEvent = event->QUserEvent();
             const auto* userEventText = userEvent.c_str();
-            return std::string_view{ userEventText ? userEventText : "", userEvent.length() } == expected;
+            const std::string_view name{ userEventText ? userEventText : "", userEvent.length() };
+            return name.length() == expected.length() && _strnicmp(name.data(), expected.data(), expected.length()) == 0;
         }
 
         [[nodiscard]] bool isPrimaryWandInputEvent(const RE::InputEvent* event)
@@ -1090,19 +1099,25 @@ namespace rock::input_remap_runtime
 
         void hookedPipboyEventHandler(void* handler, RE::InputEvent* inputEvent)
         {
-            if (isAnyProviderOpenVrGameInputSuppressed()) {
-                markInputEventStopped(inputEvent);
+            const bool providerSuppressed = isAnyProviderOpenVrGameInputSuppressed();
+            const bool suppressed = providerSuppressed || shouldSuppressNativePipboyActionEvent(inputEvent);
+
+            if (inputEvent) {
+                // Diagnostic trace for the newly hooked handler: shows the actual interned event name and every gate input.
+                const auto& userEvent = inputEvent->QUserEvent();
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "Suppressed native Pipboy input while provider OpenVR game-input suppression is active");
-                return;
+                    "Pipboy handler event '{}': engaged={} gameplay={} menuInput={} providerLease={} -> {}",
+                    userEvent.c_str() ? userEvent.c_str() : "",
+                    isPipboyHandEngaged() ? "yes" : "no",
+                    s_gameplayInputAllowed.load(std::memory_order_acquire) ? "yes" : "no",
+                    isInputBlockingMenuActive() ? "yes" : "no",
+                    providerSuppressed ? "yes" : "no",
+                    suppressed ? "suppressed" : "native");
             }
 
-            if (shouldSuppressNativePipboyActionEvent(inputEvent)) {
+            if (suppressed) {
                 markInputEventStopped(inputEvent);
-                ROCK_LOG_SAMPLE_DEBUG(Input,
-                    g_rockConfig.rockLogSampleMilliseconds,
-                    "Suppressed native Pipboy open/light trigger event while the pipboy hand is engaged in a ROCK interaction");
                 return;
             }
 
