@@ -80,6 +80,20 @@ namespace rock::weapon_clip_motion_harvest
         constexpr std::uintptr_t kBindingAnimationOffset = 0x18;
         constexpr std::uintptr_t kBindingTrackToBoneDataOffset = 0x20;
         constexpr std::uintptr_t kBindingTrackToBoneCountOffset = 0x28;
+        // Partition-mapped clips (the weapon clips: empty track map, one
+        // partition): tracks cover the bones of the listed skeleton
+        // partitions in order. Engine validator 0x141a0c4e0: binding+0x40
+        // partition indices (ushort) / +0x48 count, checked against the
+        // skeleton's partition count at skeleton+0x80 (partitions hkArray
+        // data at +0x78). Partition entry = { name*, int16 startBone,
+        // int16 numBones }, 0x10 stride.
+        constexpr std::uintptr_t kBindingPartitionIndicesOffset = 0x40;
+        constexpr std::uintptr_t kBindingPartitionCountOffset = 0x48;
+        constexpr std::uintptr_t kSkeletonPartitionsDataOffset = 0x78;
+        constexpr std::uintptr_t kSkeletonPartitionsCountOffset = 0x80;
+        constexpr std::uintptr_t kSkeletonPartitionStride = 0x10;
+        constexpr std::uintptr_t kPartitionStartBoneOffset = 0x8;
+        constexpr std::uintptr_t kPartitionNumBonesOffset = 0xA;
 
         // hkaSkeleton members (bones array of 0x10-byte hkaBone entries with
         // the name char* at +0; low pointer bit is an engine flag).
@@ -117,9 +131,8 @@ namespace rock::weapon_clip_motion_harvest
 
         /*
          * hkbClipGenerator (0x160 bytes; clone at 0x14192d950 allocates it):
-         * FO4 streams clip payloads on demand, so the binding-set entries
-         * stay STUBS (headers only, in-game confirmed 2026-07-04) and the
-         * fully loaded binding lives on the clip generator instead —
+         * clips can also stream in late, in which case the loaded binding
+         * appears on the clip generator —
          * +0xD0 is Bethesda's loaded-binding wrapper (the engine's clip
          * validator, vtable slot 14 / 0x14192d7a0, reports "The animation
          * has not been loaded." when it is null) and wrapper+0x38 is the
@@ -215,6 +228,34 @@ namespace rock::weapon_clip_motion_harvest
         std::array<std::array<char, kMaxHookNodeNameLength>, kMaxHookNodeNames> s_hookNodeNames{};
         std::array<const char*, kMaxHookNodeNames> s_hookNodeNamePointers{};
         std::uint32_t s_hookNodeNameCount = 0;
+
+        /*
+         * Bindings terminally processed this weapon generation (harvested or
+         * proven target-less): re-walk passes and repeat clip activations
+         * skip them, so a part cannot be overwritten by a different clip on
+         * every 2s pass. Bails (e.g. payload not loaded yet) are NOT marked
+         * and retry naturally. Guarded by s_hookMutex; the *Locked helpers
+         * assume the caller holds it (the hook already does).
+         */
+        std::array<std::uintptr_t, 128> s_processedBindings{};
+        std::uint32_t s_processedBindingCount = 0;
+
+        [[nodiscard]] bool bindingProcessedLocked(std::uintptr_t binding)
+        {
+            for (std::uint32_t i = 0; i < s_processedBindingCount; ++i) {
+                if (s_processedBindings[i] == binding) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        void markBindingProcessedLocked(std::uintptr_t binding)
+        {
+            if (s_processedBindingCount < s_processedBindings.size()) {
+                s_processedBindings[s_processedBindingCount++] = binding;
+            }
+        }
 
         // Detailed bail dumps per walk (main thread; reset with the cursor)
         // so a failing binding is identifiable without flooding the log.
@@ -348,7 +389,10 @@ namespace rock::weapon_clip_motion_harvest
             return false;
         }
 
-        void harvestBinding(
+        // Returns true when the binding reached a terminal outcome (harvested
+        // or target-less) and should not be revisited this generation; false
+        // on bails that may succeed later.
+        bool harvestBinding(
             std::uintptr_t binding,
             std::uintptr_t skeleton,
             const char* const* allowedNodeNames,
@@ -358,7 +402,7 @@ namespace rock::weapon_clip_motion_harvest
             if (!plausiblePointer(animation)) {
                 s_bailAnimationPtr.fetch_add(1, std::memory_order_relaxed);
                 logBindingBail("animation-ptr", binding, animation, 0.0f, 0, 0, 0);
-                return;
+                return false;
             }
 
             // Only spline-compressed clips are supported; the sampler slot is
@@ -369,7 +413,7 @@ namespace rock::weapon_clip_motion_harvest
             if (vtable != RE::VTABLE::hkaSplineCompressedAnimation[0].address()) {
                 s_skippedNonSpline.fetch_add(1, std::memory_order_relaxed);
                 logBindingBail("non-spline", binding, animation, 0.0f, 0, 0, 0);
-                return;
+                return false;
             }
 
             const float duration = *reinterpret_cast<float*>(animation + kAnimationDurationOffset);
@@ -378,7 +422,7 @@ namespace rock::weapon_clip_motion_harvest
                 animationTrackCount <= 0 || animationTrackCount > kMaxPlausibleTrackCount) {
                 s_bailClipParams.fetch_add(1, std::memory_order_relaxed);
                 logBindingBail("clip-params", binding, animation, duration, animationTrackCount, 0, 0);
-                return;
+                return false;
             }
 
             // The engine sampler dereferences the spline payload unguarded;
@@ -414,28 +458,87 @@ namespace rock::weapon_clip_motion_harvest
                         splineDataBase,
                         splineDataSize);
                 }
-                return;
+                return false;
             }
 
-            // An EMPTY track-to-bone map is valid hkaAnimationBinding
-            // semantics: track i drives bone i (full-rig clips ship this
-            // way; only subset clips materialize the map).
             const auto trackToBoneData = *reinterpret_cast<std::uintptr_t*>(binding + kBindingTrackToBoneDataOffset);
             const auto trackToBoneCount = *reinterpret_cast<std::int32_t*>(binding + kBindingTrackToBoneCountOffset);
-            const bool identityMap = trackToBoneCount == 0;
-            if (!identityMap &&
-                (!plausiblePointer(trackToBoneData) || trackToBoneCount < 0 || trackToBoneCount > kMaxPlausibleTrackCount)) {
-                s_bailTrackMap.fetch_add(1, std::memory_order_relaxed);
-                logBindingBail("track-map", binding, animation, duration, animationTrackCount, trackToBoneCount, 0);
-                return;
-            }
             const auto boneCount = *reinterpret_cast<std::int32_t*>(skeleton + kSkeletonBonesCountOffset);
             if (boneCount <= 0 || boneCount > kMaxPlausibleBoneCount) {
                 s_bailBoneCount.fetch_add(1, std::memory_order_relaxed);
                 logBindingBail("bone-count", binding, animation, duration, animationTrackCount, trackToBoneCount, boneCount);
-                return;
+                return false;
             }
-            const auto* trackToBone = identityMap ? nullptr : reinterpret_cast<const std::int16_t*>(trackToBoneData);
+
+            /*
+             * Resolve which bone each transform track drives, in priority:
+             * an explicit track-to-bone map; the flattened bone ranges of
+             * the clip's skeleton partitions (weapon clips ship this way:
+             * empty map, one partition — identity over the FULL rig would
+             * scatter the tracks onto wrong bones); identity, valid only
+             * when the clip covers the whole rig.
+             */
+            std::array<std::int16_t, kSampleBufferTracks> trackBones{};
+            std::int32_t mappedTrackCount = 0;
+            const auto partitionIndicesData = *reinterpret_cast<std::uintptr_t*>(binding + kBindingPartitionIndicesOffset);
+            const auto partitionCount = *reinterpret_cast<std::int32_t*>(binding + kBindingPartitionCountOffset);
+            if (trackToBoneCount > 0) {
+                if (!plausiblePointer(trackToBoneData) || trackToBoneCount > kMaxPlausibleTrackCount) {
+                    s_bailTrackMap.fetch_add(1, std::memory_order_relaxed);
+                    logBindingBail("track-map", binding, animation, duration, animationTrackCount, trackToBoneCount, boneCount);
+                    return false;
+                }
+                const auto* map = reinterpret_cast<const std::int16_t*>(trackToBoneData);
+                const auto count = (std::min)(trackToBoneCount, static_cast<std::int32_t>(trackBones.size()));
+                for (std::int32_t i = 0; i < count; ++i) {
+                    trackBones[static_cast<std::size_t>(i)] = map[i];
+                }
+                mappedTrackCount = count;
+            } else if (partitionCount > 0) {
+                const auto skeletonPartitionsData = *reinterpret_cast<std::uintptr_t*>(skeleton + kSkeletonPartitionsDataOffset);
+                const auto skeletonPartitionCount = *reinterpret_cast<std::int32_t*>(skeleton + kSkeletonPartitionsCountOffset);
+                if (!plausiblePointer(partitionIndicesData) || partitionCount > kMaxPlausibleTrackCount ||
+                    !plausiblePointer(skeletonPartitionsData) || skeletonPartitionCount <= 0 ||
+                    skeletonPartitionCount > kMaxPlausibleBoneCount) {
+                    s_bailTrackMap.fetch_add(1, std::memory_order_relaxed);
+                    logBindingBail("partition-map", binding, animation, duration, animationTrackCount, partitionCount, boneCount);
+                    return false;
+                }
+                const auto* partitionIndices = reinterpret_cast<const std::uint16_t*>(partitionIndicesData);
+                for (std::int32_t p = 0; p < partitionCount && mappedTrackCount < static_cast<std::int32_t>(trackBones.size()); ++p) {
+                    const auto partitionIndex = static_cast<std::int32_t>(partitionIndices[p]);
+                    if (partitionIndex >= skeletonPartitionCount) {
+                        continue;
+                    }
+                    const auto entry = skeletonPartitionsData +
+                                       static_cast<std::uintptr_t>(partitionIndex) * kSkeletonPartitionStride;
+                    const auto startBone = *reinterpret_cast<const std::int16_t*>(entry + kPartitionStartBoneOffset);
+                    const auto numBones = *reinterpret_cast<const std::int16_t*>(entry + kPartitionNumBonesOffset);
+                    if (startBone < 0 || numBones <= 0 || startBone + numBones > boneCount) {
+                        continue;
+                    }
+                    for (std::int16_t b = 0; b < numBones && mappedTrackCount < static_cast<std::int32_t>(trackBones.size()); ++b) {
+                        trackBones[static_cast<std::size_t>(mappedTrackCount++)] = static_cast<std::int16_t>(startBone + b);
+                    }
+                }
+                if (mappedTrackCount == 0) {
+                    s_bailTrackMap.fetch_add(1, std::memory_order_relaxed);
+                    logBindingBail("partition-map", binding, animation, duration, animationTrackCount, partitionCount, boneCount);
+                    return false;
+                }
+            } else if (animationTrackCount == boneCount) {
+                const auto count = (std::min)(animationTrackCount, static_cast<std::int32_t>(trackBones.size()));
+                for (std::int32_t i = 0; i < count; ++i) {
+                    trackBones[static_cast<std::size_t>(i)] = static_cast<std::int16_t>(i);
+                }
+                mappedTrackCount = count;
+            } else {
+                // No map, no partitions, and the track count does not cover
+                // the rig — identity would misattribute every track.
+                s_bailTrackMap.fetch_add(1, std::memory_order_relaxed);
+                logBindingBail("track-map", binding, animation, duration, animationTrackCount, trackToBoneCount, boneCount);
+                return false;
+            }
 
             // Collect the weapon-part tracks for this clip. Tracks beyond
             // the decode buffer cannot be sampled (slot 5 decodes
@@ -444,11 +547,9 @@ namespace rock::weapon_clip_motion_harvest
             std::array<weapon_clip_stroke::TrackSamples, weapon_clip_stroke::kMaxTracksPerClip> tracks{};
             std::uint32_t targetCount = 0;
             std::int32_t maxTargetTrack = 0;
-            const auto usableTrackCount = (std::min)(
-                identityMap ? animationTrackCount : (std::min)(trackToBoneCount, animationTrackCount),
-                static_cast<std::int32_t>(kSampleBufferTracks));
+            const auto usableTrackCount = (std::min)(mappedTrackCount, animationTrackCount);
             for (std::int32_t track = 0; track < usableTrackCount && targetCount < tracks.size(); ++track) {
-                const auto boneIndex = identityMap ? static_cast<std::int16_t>(track) : trackToBone[track];
+                const auto boneIndex = trackBones[static_cast<std::size_t>(track)];
                 if (boneIndex < 0 || boneIndex >= boneCount) {
                     continue;
                 }
@@ -469,7 +570,7 @@ namespace rock::weapon_clip_motion_harvest
             }
             if (targetCount == 0) {
                 s_bindingsNoTargets.fetch_add(1, std::memory_order_relaxed);
-                return;
+                return true;
             }
 
             const auto sampler = reinterpret_cast<SampleTracks_t>(
@@ -477,7 +578,7 @@ namespace rock::weapon_clip_motion_harvest
             if (!sampler) {
                 s_bailSampler.fetch_add(1, std::memory_order_relaxed);
                 logBindingBail("sampler", binding, animation, duration, animationTrackCount, trackToBoneCount, boneCount);
-                return;
+                return false;
             }
 
             // Full-pose decode: slot 5 decodes tracks 0..decodeCount-1, then
@@ -516,7 +617,7 @@ namespace rock::weapon_clip_motion_harvest
                 groups.data(),
                 static_cast<std::uint32_t>(groups.size()));
             if (groupCount == 0) {
-                return;
+                return false;
             }
             s_bindingsHarvested.fetch_add(1, std::memory_order_relaxed);
 
@@ -529,6 +630,7 @@ namespace rock::weapon_clip_motion_harvest
                 s_queue[s_queueCount++] = groups[i];
                 s_groupsQueued.fetch_add(1, std::memory_order_relaxed);
             }
+            return true;
         }
 
         /*
@@ -706,8 +808,13 @@ namespace rock::weapon_clip_motion_harvest
             if (!plausiblePointer(skeleton)) {
                 return;
             }
+            if (bindingProcessedLocked(binding)) {
+                return;
+            }
             s_bindingsSeen.fetch_add(1, std::memory_order_relaxed);
-            harvestBinding(binding, skeleton, s_hookNodeNamePointers.data(), s_hookNodeNameCount);
+            if (harvestBinding(binding, skeleton, s_hookNodeNamePointers.data(), s_hookNodeNameCount)) {
+                markBindingProcessedLocked(binding);
+            }
         }
 
         void clipGeneratorInstallShim(void* clipGenerator, void* context)
@@ -930,6 +1037,8 @@ namespace rock::weapon_clip_motion_harvest
             s_bindingDetailLogs = 0;
             s_walkPassIndex = 0;
             s_walkPassStartHarvested = s_bindingsHarvested.load(std::memory_order_relaxed);
+            std::scoped_lock lock(s_hookMutex);
+            s_processedBindingCount = 0;
         }
         if (s_walkDone) {
             return StepResult::Completed;
@@ -1005,8 +1114,17 @@ namespace rock::weapon_clip_motion_harvest
             if (!plausiblePointer(binding)) {
                 continue;
             }
+            {
+                std::scoped_lock lock(s_hookMutex);
+                if (bindingProcessedLocked(binding)) {
+                    continue;
+                }
+            }
             s_bindingsSeen.fetch_add(1, std::memory_order_relaxed);
-            harvestBinding(binding, resolved.skeleton, allowedNodeNames, allowedNodeNameCount);
+            if (harvestBinding(binding, resolved.skeleton, allowedNodeNames, allowedNodeNameCount)) {
+                std::scoped_lock lock(s_hookMutex);
+                markBindingProcessedLocked(binding);
+            }
         }
         return StepResult::Pending;
     }
@@ -1023,6 +1141,8 @@ namespace rock::weapon_clip_motion_harvest
         s_bindingDetailLogs = 0;
         s_walkPassIndex = 0;
         s_walkPassStartHarvested = s_bindingsHarvested.load(std::memory_order_relaxed);
+        std::scoped_lock lock(s_hookMutex);
+        s_processedBindingCount = 0;
     }
 
     void restartWalkPass()
