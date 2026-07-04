@@ -83,6 +83,22 @@ namespace rock::weapon_clip_motion_harvest
         // hkaAnimation members.
         constexpr std::uintptr_t kAnimationDurationOffset = 0x14;
         constexpr std::uintptr_t kAnimationTrackCountOffset = 0x18;
+
+        // hkaSplineCompressedAnimation internals (sampler disassembly at
+        // 0x141F71A90..+0x87E and block resolver 0x142051280, driven by the
+        // 2026-07-04 in-game CTD): +0x3C numBlocks, +0x40 maxFramesPerBlock
+        // (the sampler divides by maxFramesPerBlock-1 unguarded), +0x58
+        // per-block offsets array, +0x78 per-track-per-block offsets table
+        // (the crash read: null when the clip's spline payload is not
+        // resident), +0x98 compressed data base. The engine sampler guards
+        // NONE of these — it assumes the clip is loaded because it only ever
+        // samples playing clips — so the harvest gates on all of them and a
+        // non-resident clip degrades into a counted skip.
+        constexpr std::uintptr_t kSplineNumBlocksOffset = 0x3C;
+        constexpr std::uintptr_t kSplineMaxFramesPerBlockOffset = 0x40;
+        constexpr std::uintptr_t kSplineBlockOffsetsOffset = 0x58;
+        constexpr std::uintptr_t kSplineTrackOffsetsTableOffset = 0x78;
+        constexpr std::uintptr_t kSplineDataBaseOffset = 0x98;
         // hkaAnimation vtable slot 6: sampleIndividualTransformTracks(
         //   float time, const int16* trackIndices, uint32 count, out*)
         constexpr std::size_t kSampleIndividualTransformTracksSlot = 6;
@@ -128,6 +144,7 @@ namespace rock::weapon_clip_motion_harvest
         std::atomic<std::uint64_t> s_bailTrackMap{ 0 };
         std::atomic<std::uint64_t> s_bailBoneCount{ 0 };
         std::atomic<std::uint64_t> s_bailSampler{ 0 };
+        std::atomic<std::uint64_t> s_bailSplineData{ 0 };
 
         // Detailed bail dumps per walk (main thread; reset with the cursor)
         // so a failing binding is identifiable without flooding the log.
@@ -286,6 +303,22 @@ namespace rock::weapon_clip_motion_harvest
                 animationTrackCount <= 0 || animationTrackCount > kMaxPlausibleTrackCount) {
                 s_bailClipParams.fetch_add(1, std::memory_order_relaxed);
                 logBindingBail("clip-params", binding, animation, duration, animationTrackCount, 0, 0);
+                return;
+            }
+
+            // The engine sampler dereferences the spline payload unguarded;
+            // clips whose compressed data is not resident (not currently
+            // playable) crash it, so they are skipped here.
+            const auto splineNumBlocks = *reinterpret_cast<std::int32_t*>(animation + kSplineNumBlocksOffset);
+            const auto splineMaxFramesPerBlock = *reinterpret_cast<std::int32_t*>(animation + kSplineMaxFramesPerBlockOffset);
+            const auto splineBlockOffsets = *reinterpret_cast<std::uintptr_t*>(animation + kSplineBlockOffsetsOffset);
+            const auto splineTrackOffsetsTable = *reinterpret_cast<std::uintptr_t*>(animation + kSplineTrackOffsetsTableOffset);
+            const auto splineDataBase = *reinterpret_cast<std::uintptr_t*>(animation + kSplineDataBaseOffset);
+            if (splineNumBlocks <= 0 || splineMaxFramesPerBlock < 2 ||
+                !plausiblePointer(splineBlockOffsets) || !plausiblePointer(splineTrackOffsetsTable) ||
+                !plausiblePointer(splineDataBase)) {
+                s_bailSplineData.fetch_add(1, std::memory_order_relaxed);
+                logBindingBail("spline-data", binding, animation, duration, animationTrackCount, splineNumBlocks, splineMaxFramesPerBlock);
                 return;
             }
 
@@ -767,6 +800,7 @@ namespace rock::weapon_clip_motion_harvest
             .bailTrackMap = s_bailTrackMap.load(std::memory_order_relaxed),
             .bailBoneCount = s_bailBoneCount.load(std::memory_order_relaxed),
             .bailSampler = s_bailSampler.load(std::memory_order_relaxed),
+            .bailSplineData = s_bailSplineData.load(std::memory_order_relaxed),
         };
     }
 }

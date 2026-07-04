@@ -130,6 +130,8 @@ namespace rock::weapon_clip_motion_harvest
         std::uint64_t bailTrackMap{ 0 };
         std::uint64_t bailBoneCount{ 0 };
         std::uint64_t bailSampler{ 0 };
+        // Spline payload not resident (engine sampler would crash on it).
+        std::uint64_t bailSplineData{ 0 };
     };
     [[nodiscard]] Stats snapshotStats();
 }
