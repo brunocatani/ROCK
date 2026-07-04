@@ -107,9 +107,15 @@ namespace rock
             }
         }
         if (target) {
-            // Authored always beats learned; between authored strokes the
-            // largest leader stroke wins (a reload stroke beats a fire nudge).
-            if (target->authored && !weapon_part_motion_path::shouldReplacePath(target->path, group.leaderPath)) {
+            // LEARNER PRIORITY (Bruno, 2026-07-04): once a part has a real
+            // observed stroke, authored clip data never overwrites it — the
+            // authored path only bootstraps parts the player has not taught
+            // yet. Between authored strokes the largest leader stroke wins
+            // (a reload stroke beats a fire nudge).
+            if (!target->authored) {
+                return;
+            }
+            if (!weapon_part_motion_path::shouldReplacePath(target->path, group.leaderPath)) {
                 return;
             }
         } else {
@@ -118,17 +124,11 @@ namespace rock
                     target = &slot;
                     break;
                 }
-                // Never evict authored data for a learned path's sake; among
-                // eviction candidates prefer the stalest non-authored slot.
-                if ((!target || slot.lastUseCounter < target->lastUseCounter) && !slot.authored) {
+                // Authored data never evicts a learned stroke; among
+                // eviction candidates take the stalest authored slot, else
+                // drop this store.
+                if (slot.authored && (!target || slot.lastUseCounter < target->lastUseCounter)) {
                     target = &slot;
-                }
-            }
-            if (!target) {
-                for (auto& slot : _paths) {
-                    if (!target || slot.lastUseCounter < target->lastUseCounter) {
-                        target = &slot;
-                    }
                 }
             }
         }
@@ -218,8 +218,12 @@ namespace rock
             }
         }
         if (target) {
-            // Authored clip data always outranks runtime observation.
-            if (target->authored || !weapon_part_motion_path::shouldReplacePath(target->path, candidate)) {
+            // LEARNER PRIORITY (Bruno, 2026-07-04): a real observed stroke
+            // replaces authored clip data for its part unconditionally — the
+            // learner is the trusted ground truth; authored fills the gap
+            // until the part is taught. Between learned strokes the larger
+            // stroke still wins.
+            if (!target->authored && !weapon_part_motion_path::shouldReplacePath(target->path, candidate)) {
                 return;
             }
         } else {
@@ -228,8 +232,10 @@ namespace rock
                     target = &slot;
                     break;
                 }
-                // Learned paths never evict authored clip data.
-                if (!slot.authored && (!target || slot.lastUseCounter < target->lastUseCounter)) {
+                // Prefer evicting stale non-authored slots, but an observed
+                // stroke may take an authored slot when nothing else is free.
+                if (!target || (target->authored && !slot.authored) ||
+                    (target->authored == slot.authored && slot.lastUseCounter < target->lastUseCounter)) {
                     target = &slot;
                 }
             }
