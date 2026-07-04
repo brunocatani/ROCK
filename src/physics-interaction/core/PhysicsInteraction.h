@@ -222,6 +222,7 @@ namespace rock
 
         void refreshDrivePartCache(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
         void observeWeaponPartMotion(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
+        void updateWeaponClipHarvestWalk(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
         void drainWeaponClipHarvest(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
         void updateWeaponPartDriveSandbox(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const PhysicsFrameContext& frame);
 
@@ -521,6 +522,13 @@ namespace rock
         // change drops pending strokes so a previous weapon's clips cannot
         // attach to the new weapon through shared rig-bone names.
         std::uint32_t _lastClipHarvestWeaponFormId{ 0 };
+        // At-equip weapon-graph walk bookkeeping: one walk per weapon
+        // generation, started only after the collider evidence snapshot
+        // commits, with a bounded retry window while the weapon graph's
+        // bindings finish loading.
+        std::uint64_t _clipHarvestWalkGenerationKey{ 0 };
+        std::uint32_t _clipHarvestWalkAttempts{ 0 };
+        bool _clipHarvestWalkCompleted{ false };
         static constexpr std::size_t kNativePlayerCollisionSuppressionBodyCapacity = 64;
         std::array<std::uint32_t, kNativePlayerCollisionSuppressionBodyCapacity> _nativePlayerCollisionSuppressedBodyIds{};
         std::uint32_t _nativePlayerCollisionSuppressedBodyCount = 0;

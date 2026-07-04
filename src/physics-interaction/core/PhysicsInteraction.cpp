@@ -999,6 +999,49 @@ namespace rock
             return nullptr;
         }
 
+        // Animation rig bones carry plain names ('Bolt_Carrier') while the
+        // assembled scene tree may decorate instanced nodes with a ':N'
+        // suffix ('Bolt_Carrier:0'); a bone matches its node exactly or with
+        // that suffix.
+        bool nodeNameMatchesBoneName(const RE::NiAVObject* node, std::string_view boneName)
+        {
+            if (!node || boneName.empty()) {
+                return false;
+            }
+            const char* nodeName = node->name.c_str();
+            if (!nodeName) {
+                return false;
+            }
+            const std::string_view nodeView{ nodeName };
+            if (nodeView == boneName) {
+                return true;
+            }
+            return nodeView.size() > boneName.size() &&
+                   nodeView.compare(0, boneName.size(), boneName) == 0 &&
+                   nodeView[boneName.size()] == ':';
+        }
+
+        RE::NiAVObject* findWeaponNodeByBoneName(RE::NiAVObject* root, std::string_view boneName, int maxDepth = 32)
+        {
+            if (!root || boneName.empty() || maxDepth < 0) {
+                return nullptr;
+            }
+            if (nodeNameMatchesBoneName(root, boneName)) {
+                return root;
+            }
+            auto* node = root->IsNode();
+            if (!node) {
+                return nullptr;
+            }
+            auto& children = node->GetRuntimeData().children;
+            for (std::uint16_t i = 0; i < children.size(); ++i) {
+                if (auto* found = findWeaponNodeByBoneName(children[i].get(), boneName, maxDepth - 1)) {
+                    return found;
+                }
+            }
+            return nullptr;
+        }
+
         std::uint32_t providerHandStateFlags(const Hand& hand, bool isLeft)
         {
             std::uint32_t flags = 0;
@@ -2877,7 +2920,12 @@ namespace rock
              * consumers use.
              */
             if (g_rockConfig.rockBoltDriveSandboxEnabled) {
+                // Drain before the walk: on a weapon-change frame the drain
+                // adopts the new form ID (and clears stale groups) before the
+                // walk can queue fresh ones, so a same-frame collider commit
+                // cannot have its groups swept away.
                 drainWeaponClipHarvest(weaponNode, currentWeaponGenerationKey);
+                updateWeaponClipHarvestWalk(weaponNode, currentWeaponGenerationKey);
                 updateWeaponPartDriveSandbox(weaponNode, currentWeaponGenerationKey, frame);
                 _weaponPartDriveSandboxWasEnabled = true;
             } else if (_weaponPartDriveSandboxWasEnabled) {
@@ -2885,7 +2933,11 @@ namespace rock
                 _weaponPartMotionLearner.reset();
                 _drivePartCache = {};
                 ::rock::weapon_clip_motion_harvest::clearPending();
+                ::rock::weapon_clip_motion_harvest::resetWalk();
                 _lastClipHarvestWeaponFormId = 0;
+                _clipHarvestWalkGenerationKey = 0;
+                _clipHarvestWalkAttempts = 0;
+                _clipHarvestWalkCompleted = false;
                 _weaponPartDriveSandboxWasEnabled = false;
             }
             const auto equippedWeaponDropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
@@ -6000,6 +6052,87 @@ namespace rock
         }
     }
 
+    void PhysicsInteraction::updateWeaponClipHarvestWalk(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey)
+    {
+        // Bounded retry window (frames with colliders ready) while the weapon
+        // graph's bindings finish loading; weapons without a behavior graph
+        // (some melee) give up quietly after this.
+        static constexpr std::uint32_t kClipHarvestWalkMaxAttempts = 900;
+
+        if (!weaponNode || currentWeaponGenerationKey == 0) {
+            return;
+        }
+        const auto weaponFormId = currentEquippedWeaponFormId();
+        if (weaponFormId == 0) {
+            return;
+        }
+        if (_clipHarvestWalkGenerationKey != currentWeaponGenerationKey) {
+            _clipHarvestWalkGenerationKey = currentWeaponGenerationKey;
+            _clipHarvestWalkAttempts = 0;
+            _clipHarvestWalkCompleted = false;
+        }
+        if (_clipHarvestWalkCompleted) {
+            return;
+        }
+
+        // The walk starts only after the weapon's colliders finished creation
+        // (evidence snapshot committed for the current generation) so the
+        // drain always attributes strokes against the final part set.
+        refreshDrivePartCache(weaponNode, currentWeaponGenerationKey);
+        if (_drivePartCache.generationKey != currentWeaponGenerationKey) {
+            return;
+        }
+
+        if (++_clipHarvestWalkAttempts > kClipHarvestWalkMaxAttempts) {
+            _clipHarvestWalkCompleted = true;
+            ROCK_LOG_WARN(Weapon,
+                "WeaponClipMotionHarvest: weapon {:08X} graph bindings never became available; no authored strokes for this weapon",
+                weaponFormId);
+            return;
+        }
+
+        /*
+         * The equipped weapon's own behavior graph lives on its biped slot's
+         * WeaponAnimationGraphManagerHolder. The slot is identified by its
+         * part clone being the weapon scene tree we already operate on, so a
+         * stale slot can never be harvested. Non-owning pointer, used only
+         * within this call.
+         */
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        if (!player) {
+            return;
+        }
+        auto* biped = player->GetBiped().get();
+        if (!biped) {
+            return;
+        }
+        const void* weaponGraphHolder = nullptr;
+        const auto firstWeaponSlot = static_cast<std::uint32_t>(std::to_underlying(RE::BIPED_OBJECT::kWeaponHand));
+        const auto totalSlots = static_cast<std::uint32_t>(std::to_underlying(RE::BIPED_OBJECT::kTotal));
+        for (std::uint32_t slot = firstWeaponSlot; slot < totalSlots && !weaponGraphHolder; ++slot) {
+            auto& bipObject = biped->object[slot];
+            auto* partClone = bipObject.partClone.get();
+            if (!partClone) {
+                continue;
+            }
+            const bool matchesWeapon = partClone == weaponNode ||
+                actor_equipment_grab::nodeContainsNode(partClone, weaponNode, 16) ||
+                actor_equipment_grab::nodeContainsNode(weaponNode, partClone, 16);
+            if (!matchesWeapon) {
+                continue;
+            }
+            weaponGraphHolder = bipObject.objectGraphManager.get();
+        }
+        if (!weaponGraphHolder) {
+            return;
+        }
+
+        if (::rock::weapon_clip_motion_harvest::stepHarvest(weaponGraphHolder, weaponFormId, currentWeaponGenerationKey) ==
+            ::rock::weapon_clip_motion_harvest::StepResult::Completed) {
+            _clipHarvestWalkCompleted = true;
+        }
+    }
+
     void PhysicsInteraction::drainWeaponClipHarvest(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey)
     {
         if (!weaponNode || currentWeaponGenerationKey == 0) {
@@ -6010,28 +6143,29 @@ namespace rock
             return;
         }
         if (weaponFormId != _lastClipHarvestWeaponFormId) {
-            // Strokes still queued belong to the previous weapon's subgraph;
-            // shared rig-bone names (WeaponBolt) would misattribute them.
+            // Strokes still queued belong to the previous weapon's graph;
+            // shared bone names would misattribute them.
             ::rock::weapon_clip_motion_harvest::clearPending();
             _lastClipHarvestWeaponFormId = weaponFormId;
             // Once per weapon swap: cumulative harvest counters distinguish
-            // hook-never-fired (seen=0) from bone-name-filter rejection
+            // graph-never-walked (seen=0) from track-filter rejection
             // (seen>0, harvested=0, nonSpline=0) from compression gaps
             // (nonSpline>0) without any per-binding hot-path logging.
             const auto stats = ::rock::weapon_clip_motion_harvest::snapshotStats();
             ROCK_LOG_INFO(Weapon,
-                "WeaponClipMotionHarvest: stats at weapon {:08X} equip: bindingsSeen={} harvested={} groupsQueued={} groupsDropped={} skippedNonSpline={} hookInstalled={}",
+                "WeaponClipMotionHarvest: stats at weapon {:08X} equip: bindingsSeen={} harvested={} noTargets={} groupsQueued={} groupsDropped={} skippedNonSpline={} walksCompleted={}",
                 weaponFormId,
                 stats.bindingsSeen,
                 stats.bindingsHarvested,
+                stats.bindingsNoTargets,
                 stats.groupsQueued,
                 stats.groupsDropped,
                 stats.skippedNonSpline,
-                ::rock::weapon_clip_motion_harvest::hookInstalled());
+                stats.walksCompleted);
             return;
         }
 
-        std::array<weapon_clip_stroke::AuthoredStrokeGroup, 4> drainedGroups{};
+        std::array<weapon_clip_stroke::AuthoredStrokeGroup, weapon_clip_stroke::kMaxGroupsPerClip> drainedGroups{};
         const auto drainedCount = ::rock::weapon_clip_motion_harvest::drainGroups(
             drainedGroups.data(),
             static_cast<std::uint32_t>(drainedGroups.size()));
@@ -6080,7 +6214,7 @@ namespace rock
         for (std::uint32_t groupIndex = 0; groupIndex < drainedCount; ++groupIndex) {
             const auto& group = drainedGroups[groupIndex];
             const auto leaderName = providerFixedStringView(group.leaderBoneName.data(), group.leaderBoneName.size());
-            auto* leaderNode = findWeaponNodeBySourceName(weaponNode, leaderName, 32);
+            auto* leaderNode = findWeaponNodeByBoneName(weaponNode, leaderName, 32);
             if (!leaderNode || !leaderNode->parent || !group.leaderPath.valid) {
                 // Clip does not belong to this weapon (or the rig bone is not
                 // in the assembled tree) — normal for NPC/other-race clips.
@@ -6097,7 +6231,7 @@ namespace rock
                 const auto followerName = providerFixedStringView(
                     group.followers[follower].boneName.data(),
                     group.followers[follower].boneName.size());
-                auto* followerNode = findWeaponNodeBySourceName(weaponNode, followerName, 32);
+                auto* followerNode = findWeaponNodeByBoneName(weaponNode, followerName, 32);
                 if (!followerNode || !followerNode->parent || followerNode == leaderNode) {
                     continue;
                 }

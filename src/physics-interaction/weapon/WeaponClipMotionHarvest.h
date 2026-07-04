@@ -7,31 +7,52 @@
 namespace rock::weapon_clip_motion_harvest
 {
     /*
-     * Baked-animation stroke harvest. A byte-validated entry hook on
-     * hkbBehaviorLoadingUtils::assignAnimationBinding observes every animation
-     * binding the engine links while loading a behavior graph or weapon
-     * subgraph. For bindings whose tracks target Weapon* rig bones, the hook
-     * samples the clip with the engine's own hkaAnimation sampler (no
-     * playback) and reduces the tracks to authored stroke groups, queued as
-     * plain data for main-thread attribution to the equipped weapon.
+     * Baked-animation stroke harvest. FO4 animates weapon parts (bolt, slide,
+     * magazine) through the WEAPON's own behavior graph: every equipped item
+     * carries a WeaponAnimationGraphManagerHolder whose BShkbAnimationGraph
+     * runs on the weapon's rig, and that graph's hkbAnimationBindingSet holds
+     * every clip binding for the weapon. This module walks that set on the
+     * MAIN THREAD after the weapon's colliders finish creation — no hook, no
+     * animation playback — and samples each clip with the engine's own
+     * hkaAnimation sampler, reducing the tracks to authored stroke groups
+     * queued for attribution to the weapon's evidence parts.
      *
-     * Everything below BSAnimationGraphManager is accessed through offsets
+     * Because the tracks target the weapon rig, the bone names ARE the
+     * weapon's scene node names ('WeaponBolt' on vanilla, 'P320_Slide' on
+     * mods), so every bone except the rig root is a harvest target.
+     *
+     * All engine access below the holder pointer goes through offsets
      * verified against the FO4VR binary — see
-     * docs/research/2026-07-03-baked-animation-motion-extraction.md for the
-     * evidence trail of every constant used here.
+     * docs/research/2026-07-03-baked-animation-motion-extraction.md
+     * (Addendum 2) for the evidence trail of every constant used here.
+     * Every pointer hop passes a plausibility gate and fails closed.
      *
-     * Thread model: the hook runs on the engine's loading path (any thread);
-     * sampling happens entirely in-hook against objects that are alive for
-     * the duration of the call, so no engine pointers ever cross threads —
-     * only plain sampled data enters the mutex-guarded queue. The queue is
-     * drained on the main update thread. Fails closed at every step: any
-     * unexpected pointer, size, format, or duration skips that binding.
+     * Thread model: main thread only (PhysicsInteraction update). The walk is
+     * time-sliced (a few bindings per call) so a large clip set cannot hitch
+     * a frame; no engine pointer is retained between calls — the chain is
+     * re-resolved from the holder every step.
      */
 
-    // Installed once at plugin startup, before graphs load. The hook is inert
-    // (immediate passthrough) while the bolt-drive sandbox is disabled.
-    [[nodiscard]] bool installHook();
-    [[nodiscard]] bool hookInstalled();
+    enum class StepResult : std::uint32_t
+    {
+        // Bindings not available yet (graph still loading) or budget spent
+        // for this call; call again next frame.
+        Pending = 0,
+        // Every binding of the weapon graph has been processed for this
+        // (formId, generationKey).
+        Completed = 1,
+    };
+
+    /*
+     * Advance the walk over the equipped weapon's graph bindings.
+     * `weaponGraphHolder` is the biped slot's WeaponAnimationGraphManagerHolder
+     * (non-owning; must be the live equipped-weapon holder this frame). A
+     * change of formId/generationKey resets the cursor automatically.
+     */
+    StepResult stepHarvest(const void* weaponGraphHolder, std::uint32_t weaponFormId, std::uint64_t weaponGenerationKey);
+
+    // Forget the walk cursor (weapon changed / sandbox disabled).
+    void resetWalk();
 
     // Main-thread drain of harvested stroke groups (weapon-bone local space;
     // attribution/space conversion is the caller's job). Returns the number
@@ -41,16 +62,18 @@ namespace rock::weapon_clip_motion_harvest
         std::uint32_t maxGroups);
 
     // Drop queued groups (weapon changed; pending strokes may belong to the
-    // previous weapon's subgraph).
+    // previous weapon's graph).
     void clearPending();
 
     struct Stats
     {
         std::uint64_t bindingsSeen{ 0 };
         std::uint64_t bindingsHarvested{ 0 };
+        std::uint64_t bindingsNoTargets{ 0 };
         std::uint64_t groupsQueued{ 0 };
         std::uint64_t groupsDropped{ 0 };
         std::uint64_t skippedNonSpline{ 0 };
+        std::uint64_t walksCompleted{ 0 };
     };
     [[nodiscard]] Stats snapshotStats();
 }

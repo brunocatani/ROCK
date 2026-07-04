@@ -12,7 +12,6 @@
 #include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/native/HavokOffsets.h"
-#include "physics-interaction/weapon/WeaponClipMotionHarvest.h"
 #include "physics-interaction/native/HavokRuntime.h"
 #include "physics-interaction/input/DebugControllerRuntime.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
@@ -554,14 +553,6 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     logger::info("ROCK: Install loose grenade equip hook...");
     if (!rock::loose_grenade_runtime::installEquipHook()) {
         return false;
-    }
-
-    // Passive while bBoltDriveSandboxEnabled is false; a failed install only
-    // disables authored clip harvesting (the runtime learner still works), so
-    // it is logged but not fatal.
-    logger::info("ROCK: Install weapon clip-motion harvest hook...");
-    if (!rock::weapon_clip_motion_harvest::installHook()) {
-        logger::warn("ROCK: clip-motion harvest hook install failed; bolt-drive sandbox falls back to runtime motion learning");
     }
 
     logger::info("ROCK: Install main loop hook...");
