@@ -2885,7 +2885,7 @@ namespace rock
                 _weaponPartMotionLearner.reset();
                 _drivePartCache = {};
                 _movablePartsGenerationKey = 0;
-                _movablePartsAuthoredRevision = 0;
+                _movablePartsPathRevision = 0;
                 _movablePartCount = 0;
                 _movableBodyIds = {};
                 ::rock::weapon_clip_motion_harvest::clearPending();
@@ -6206,18 +6206,19 @@ namespace rock
         input.weaponFormId = weaponNode && currentWeaponGenerationKey != 0 ? currentEquippedWeaponFormId() : 0;
 
         /*
-         * Movable set = cached evidence parts whose source name owns an
-         * authored stroke group; the sandbox whitelists exactly these bodies
-         * for AttachOnly grabs. Recomputed only when the weapon generation or
-         * the learner's authored content changes so the per-frame cost stays
-         * at two integer compares.
+         * Movable set = cached evidence parts whose source name owns a stored
+         * motion path — authored clip strokes when the harvest delivered
+         * them, runtime-learned paths as the fallback; the sandbox whitelists
+         * exactly these bodies for AttachOnly grabs. Recomputed only when the
+         * weapon generation or the learner's stored content changes so the
+         * per-frame cost stays at two integer compares.
          */
         if (input.weaponFormId != 0 && _drivePartCache.generationKey == currentWeaponGenerationKey) {
-            const auto authoredRevision = _weaponPartMotionLearner.authoredRevision();
+            const auto pathRevision = _weaponPartMotionLearner.pathRevision();
             if (_movablePartsGenerationKey != currentWeaponGenerationKey ||
-                _movablePartsAuthoredRevision != authoredRevision) {
+                _movablePartsPathRevision != pathRevision) {
                 _movablePartsGenerationKey = currentWeaponGenerationKey;
-                _movablePartsAuthoredRevision = authoredRevision;
+                _movablePartsPathRevision = pathRevision;
                 _movablePartCount = 0;
                 _movableBodyIds = {};
                 for (std::uint32_t i = 0; i < _drivePartCache.count &&
@@ -6226,7 +6227,7 @@ namespace rock
                     const auto group = _weaponPartMotionLearner.findGroup(
                         input.weaponFormId,
                         providerFixedStringView(entry.sourceName.data(), entry.sourceName.size()));
-                    if (group.leaderPath && group.authored) {
+                    if (group.leaderPath) {
                         _movableBodyIds[_movablePartCount++] = entry.bodyId;
                     }
                 }

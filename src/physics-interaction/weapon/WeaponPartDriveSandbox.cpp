@@ -83,8 +83,9 @@ namespace rock
 
     /*
      * Install/replace the AttachOnly whitelist so it matches exactly the
-     * parts mapped to authored strokes at equip (grab-eligibility follows the
-     * animation data, not part classification). Targets are MatchBodyId and
+     * parts with motion data (authored strokes mapped at equip, or
+     * runtime-learned paths as the fallback) — grab-eligibility follows the
+     * animation data, not part classification. Targets are MatchBodyId and
      * generation-scoped, so a stale set can never match a newer weapon build;
      * NonExclusive keeps every unmatched part on its normal grip behavior.
      */

@@ -515,12 +515,13 @@ namespace rock
         DrivePartCache _drivePartCache{};
         /*
          * Movable-part set for the current weapon: cache entries whose source
-         * name owns an authored stroke group. Recomputed only when the weapon
-         * generation or the learner's authored content changes, then handed
-         * to the sandbox, which whitelists exactly these bodies.
+         * name owns a stored motion path (authored preferred, learned as the
+         * fallback). Recomputed only when the weapon generation or the
+         * learner's stored content changes, then handed to the sandbox, which
+         * whitelists exactly these bodies.
          */
         std::uint64_t _movablePartsGenerationKey{ 0 };
-        std::uint64_t _movablePartsAuthoredRevision{ 0 };
+        std::uint64_t _movablePartsPathRevision{ 0 };
         std::uint32_t _movablePartCount{ 0 };
         std::array<std::uint32_t, WeaponPartDriveSandbox::kMaxMovableParts> _movableBodyIds{};
         WeaponPartMotionLearner _weaponPartMotionLearner;

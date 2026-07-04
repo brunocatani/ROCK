@@ -78,9 +78,10 @@ namespace rock
             std::string_view sourceName,
             const weapon_clip_stroke::AuthoredStrokeGroup& group);
 
-        // Bumped whenever authored content changes; lets callers rebuild
-        // derived state (the movable-part whitelist) only when needed.
-        [[nodiscard]] std::uint64_t authoredRevision() const { return _authoredRevision; }
+        // Bumped whenever stored path content changes (authored or learned);
+        // lets callers rebuild derived state (the movable-part whitelist)
+        // only when needed.
+        [[nodiscard]] std::uint64_t pathRevision() const { return _pathRevision; }
 
         void reset();
 
@@ -113,6 +114,6 @@ namespace rock
         std::array<PathSlot, kMaxStoredPaths> _paths{};
         std::array<RecorderSlot, kMaxActiveRecorders> _recorders{};
         std::uint64_t _observationCounter{ 0 };
-        std::uint64_t _authoredRevision{ 0 };
+        std::uint64_t _pathRevision{ 0 };
     };
 }

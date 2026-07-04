@@ -16,9 +16,10 @@ namespace rock
      * weapon part along its authored animation stroke. It exercises the
      * public provider API end-to-end from inside ROCK: it registers a real
      * consumer, and per equipped weapon installs NonExclusive AttachOnly
-     * whitelist targets ONLY for parts that were mapped to an authored clip
-     * stroke at equip (MatchBodyId, generation-scoped) — every part without
-     * animation data keeps its normal authority/support grip. Gripped parts
+     * whitelist targets ONLY for parts with a stored motion path — authored
+     * clip strokes mapped at equip, runtime-learned paths as the fallback
+     * (MatchBodyId, generation-scoped) — every part without motion data
+     * keeps its normal authority/support grip. Gripped parts
      * are driven with setWeaponPartDriveTargetsV1 — the exact loop an
      * external reload consumer will run. Engine access stays in
      * PhysicsInteraction: this class receives plain weapon-root-local data
@@ -57,10 +58,11 @@ namespace rock
             std::uint32_t weaponFormId{ 0 };
             std::uint64_t weaponGenerationKey{ 0 };
             /*
-             * Evidence parts of the current weapon that own an authored clip
-             * stroke (mapped at equip). Only these body IDs are whitelisted
-             * for AttachOnly grabs; the set is compared against the installed
-             * targets each frame and reinstalled only when it changes.
+             * Evidence parts of the current weapon that own a stored motion
+             * path (authored clip stroke or runtime-learned fallback). Only
+             * these body IDs are whitelisted for AttachOnly grabs; the set is
+             * compared against the installed targets each frame and
+             * reinstalled only when it changes.
              */
             std::uint32_t movablePartCount{ 0 };
             std::array<std::uint32_t, kMaxMovableParts> movableBodyIds{};
