@@ -6602,29 +6602,32 @@ namespace rock
                 // in the assembled tree) — normal for NPC/other-race clips.
                 continue;
             }
-            // Vanilla template rig bones ('Weapon…') carry generic motions;
-            // they are stored at a lower tier so a weapon-specific track for
-            // the same part always outranks them, and they only drive weapons
-            // whose own animation actually uses the template rig.
-            const bool templateSource =
-                leaderName.size() >= 6 &&
-                _strnicmp(leaderName.data(), "Weapon", 6) == 0;
             /*
-             * Template-tier plausibility cap (in-game 2026-07-04): the
-             * 23-unit 'WeaponExtra2' carry track mapped onto slide stops
-             * and releases drove them sideways across the weapon. No real
-             * reciprocating part travels that far; a template stroke past
-             * this cap is helper/carry animation, not part motion. Real
-             * template part strokes top out near 9 units (bolt) plus the
-             * rotation contribution to arc length.
+             * Authored tier is CLIP PROVENANCE, not bone name (Bruno,
+             * 2026-07-04): modded weapons animate template-named bones with
+             * their OWN clips, so the bone-name heuristic misjudged real
+             * data as generic and let a merely-loaded shared clip drive
+             * modded parts. A stroke from a clip the weapon actually
+             * ACTIVATED is the weapon's animation; loaded-set walk strokes
+             * are fallback only, replaced the moment real data arrives.
              */
-            constexpr float kMaxTemplateStrokeArcGameUnits = 15.0f;
-            if (templateSource && group.leaderPath.totalArcLength > kMaxTemplateStrokeArcGameUnits) {
+            const bool fallbackSource = !group.activatedClip;
+            /*
+             * Fallback plausibility cap (in-game 2026-07-04): the 23-unit
+             * 'WeaponExtra2' carry track from the loaded shared clip mapped
+             * onto slide stops and drove them sideways across the weapon.
+             * No real reciprocating part travels that far; a fallback
+             * stroke past this cap is helper/carry animation, not part
+             * motion. Activated clips are the weapon's own data and are
+             * not second-guessed.
+             */
+            constexpr float kMaxFallbackStrokeArcGameUnits = 15.0f;
+            if (fallbackSource && group.leaderPath.totalArcLength > kMaxFallbackStrokeArcGameUnits) {
                 ROCK_LOG_INFO(Weapon,
-                    "WeaponClipHarvest: dropped template stroke '{}' (arc {:.1f} > {:.1f} cap)",
+                    "WeaponClipHarvest: dropped fallback stroke '{}' (arc {:.1f} > {:.1f} cap)",
                     leaderName,
                     group.leaderPath.totalArcLength,
-                    kMaxTemplateStrokeArcGameUnits);
+                    kMaxFallbackStrokeArcGameUnits);
                 continue;
             }
             const RE::NiTransform leaderRestWeaponLocal =
@@ -6648,8 +6651,10 @@ namespace rock
                 float sceneRotQuat[4]{};
                 transform_math::niRowsToHavokQuaternion(sceneRotationDelta(key0, keyLast), sceneRotQuat);
                 ROCK_LOG_INFO(Weapon,
-                    "WeaponClipHarvest basis: leader '{}' restT=({:.2f},{:.2f},{:.2f}) restQ=({:.3f},{:.3f},{:.3f},{:.3f}) key0Q=({:.3f},{:.3f},{:.3f},{:.3f}) keyLastQ=({:.3f},{:.3f},{:.3f},{:.3f}) rigDeltaT=({:.2f},{:.2f},{:.2f}) sceneDeltaT=({:.2f},{:.2f},{:.2f}) sceneDeltaQ=(w{:.3f},{:.3f},{:.3f},{:.3f})",
+                    "WeaponClipHarvest basis: leader '{}' src={} clip='{}' restT=({:.2f},{:.2f},{:.2f}) restQ=({:.3f},{:.3f},{:.3f},{:.3f}) key0Q=({:.3f},{:.3f},{:.3f},{:.3f}) keyLastQ=({:.3f},{:.3f},{:.3f},{:.3f}) rigDeltaT=({:.2f},{:.2f},{:.2f}) sceneDeltaT=({:.2f},{:.2f},{:.2f}) sceneDeltaQ=(w{:.3f},{:.3f},{:.3f},{:.3f})",
                     leaderName,
+                    group.activatedClip ? "activated" : "loaded",
+                    group.clipAnimationName.data(),
                     restPose.translate.x,
                     restPose.translate.y,
                     restPose.translate.z,
@@ -6791,7 +6796,7 @@ namespace rock
                         weaponFormId,
                         providerFixedStringView(entry.sourceName.data(), entry.sourceName.size()),
                         groupForEntry,
-                        templateSource);
+                        fallbackSource);
                     storedForEvidence = true;
                 }
             }
@@ -6800,7 +6805,7 @@ namespace rock
                 // No collider evidence under this bone yet; keep the stroke
                 // under the rig-bone name so future parts can find it.
                 if (convertLeaderPath(group, leaderRestWeaponLocal, nullptr, converted.leaderPath)) {
-                    _weaponPartMotionLearner.storeAuthoredGroup(weaponFormId, leaderName, converted, templateSource);
+                    _weaponPartMotionLearner.storeAuthoredGroup(weaponFormId, leaderName, converted, fallbackSource);
                 }
             }
         }

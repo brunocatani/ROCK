@@ -149,6 +149,10 @@ namespace rock::weapon_clip_motion_harvest
         constexpr std::uintptr_t kClipGeneratorVtableModuleOffset = 0x2E0FB38;
         constexpr std::uintptr_t kClipGeneratorInstallSlotOffset = 0x50;
         constexpr std::uintptr_t kClipGeneratorLoadedBindingOffset = 0xD0;
+        // hkbClipGenerator::m_animationName (hkStringPtr — mask low bit).
+        // Raw disassembly 0x141939911: [clip+0x90] & ~1 formatted into
+        // "Animation loaded directly from clip's animationName".
+        constexpr std::uintptr_t kClipGeneratorAnimationNameOffset = 0x90;
         constexpr std::uintptr_t kLoadedBindingWrapperBindingOffset = 0x38;
         // hkaAnimation vtable slot 5 — the engine's own playback sampler
         // ("TtSampleSpline" profile marker, 0x141F71B70): sampleTracks(
@@ -254,24 +258,42 @@ namespace rock::weapon_clip_motion_harvest
          * every 2s pass. Bails (e.g. payload not loaded yet) are NOT marked
          * and retry naturally. Guarded by s_hookMutex; the *Locked helpers
          * assume the caller holds it (the hook already does).
+         *
+         * Dedup is per PROVENANCE: a binding the walk processed from the
+         * merely-LOADED set may still be re-harvested once when the weapon
+         * actually ACTIVATES it (the hook) — activation-provenance strokes
+         * are the weapon's own animation and outrank walk fallback data, so
+         * the upgrade must not be swallowed by the walk's earlier pass. An
+         * activation-processed binding is terminal for both paths.
          */
-        std::array<std::uintptr_t, 128> s_processedBindings{};
+        struct ProcessedBinding
+        {
+            std::uintptr_t binding{ 0 };
+            bool activated{ false };
+        };
+        std::array<ProcessedBinding, 128> s_processedBindings{};
         std::uint32_t s_processedBindingCount = 0;
 
-        [[nodiscard]] bool bindingProcessedLocked(std::uintptr_t binding)
+        [[nodiscard]] bool bindingProcessedLocked(std::uintptr_t binding, bool fromActivation)
         {
             for (std::uint32_t i = 0; i < s_processedBindingCount; ++i) {
-                if (s_processedBindings[i] == binding) {
-                    return true;
+                if (s_processedBindings[i].binding == binding) {
+                    return fromActivation ? s_processedBindings[i].activated : true;
                 }
             }
             return false;
         }
 
-        void markBindingProcessedLocked(std::uintptr_t binding)
+        void markBindingProcessedLocked(std::uintptr_t binding, bool fromActivation)
         {
+            for (std::uint32_t i = 0; i < s_processedBindingCount; ++i) {
+                if (s_processedBindings[i].binding == binding) {
+                    s_processedBindings[i].activated |= fromActivation;
+                    return;
+                }
+            }
             if (s_processedBindingCount < s_processedBindings.size()) {
-                s_processedBindings[s_processedBindingCount++] = binding;
+                s_processedBindings[s_processedBindingCount++] = ProcessedBinding{ binding, fromActivation };
             }
         }
 
@@ -414,7 +436,9 @@ namespace rock::weapon_clip_motion_harvest
             std::uintptr_t binding,
             std::uintptr_t skeleton,
             const char* const* allowedNodeNames,
-            std::uint32_t allowedNodeNameCount)
+            std::uint32_t allowedNodeNameCount,
+            bool fromActivation,
+            const char* clipAnimationName)
         {
             const auto animation = *reinterpret_cast<std::uintptr_t*>(binding + kBindingAnimationOffset);
             if (!plausiblePointer(animation)) {
@@ -681,6 +705,20 @@ namespace rock::weapon_clip_motion_harvest
                     rawEnd.z);
             }
 
+            // Provenance travels with each group: activation strokes are the
+            // weapon's own animation; walk strokes are loaded-set fallback.
+            for (std::uint32_t i = 0; i < groupCount; ++i) {
+                groups[i].activatedClip = fromActivation;
+                groups[i].clipAnimationName = {};
+                if (clipAnimationName) {
+                    std::size_t length = 0;
+                    while (length < groups[i].clipAnimationName.size() - 1 && clipAnimationName[length] != '\0') {
+                        groups[i].clipAnimationName[length] = clipAnimationName[length];
+                        ++length;
+                    }
+                }
+            }
+
             std::scoped_lock lock(s_queueMutex);
             for (std::uint32_t i = 0; i < groupCount; ++i) {
                 if (s_queueCount >= s_queue.size()) {
@@ -868,12 +906,44 @@ namespace rock::weapon_clip_motion_harvest
             if (!plausiblePointer(skeleton)) {
                 return;
             }
-            if (bindingProcessedLocked(binding)) {
+            if (bindingProcessedLocked(binding, /*fromActivation=*/true)) {
                 return;
             }
             s_bindingsSeen.fetch_add(1, std::memory_order_relaxed);
-            if (harvestBinding(binding, skeleton, s_hookNodeNamePointers.data(), s_hookNodeNameCount)) {
-                markBindingProcessedLocked(binding);
+            /*
+             * hkbClipGenerator::m_animationName, hkStringPtr at +0x90.
+             * Raw-disassembly verified (FO4VR 0x141939911: RSI =
+             * [clip+0x90] & ~1 appended to "Animation loaded directly from
+             * clip's animationName"; the AND -2 is the hkStringPtr
+             * owned-bit convention). Copied under plausibility + printable
+             * gates — a bad read degrades into an unnamed harvest.
+             */
+            std::array<char, 64> animationName{};
+            const auto namePointer =
+                *reinterpret_cast<std::uintptr_t*>(clipGenerator + kClipGeneratorAnimationNameOffset) &
+                ~static_cast<std::uintptr_t>(1);
+            if (plausiblePointer(namePointer)) {
+                const char* nameChars = reinterpret_cast<const char*>(namePointer);
+                std::size_t length = 0;
+                while (length < animationName.size() - 1 && nameChars[length] != '\0') {
+                    const unsigned char c = static_cast<unsigned char>(nameChars[length]);
+                    if (c < 0x20 || c > 0x7E) {
+                        length = 0;
+                        break;
+                    }
+                    animationName[length] = nameChars[length];
+                    ++length;
+                }
+                animationName[length] = '\0';
+            }
+            if (harvestBinding(
+                    binding,
+                    skeleton,
+                    s_hookNodeNamePointers.data(),
+                    s_hookNodeNameCount,
+                    /*fromActivation=*/true,
+                    animationName.data())) {
+                markBindingProcessedLocked(binding, /*fromActivation=*/true);
             }
         }
 
@@ -1176,14 +1246,23 @@ namespace rock::weapon_clip_motion_harvest
             }
             {
                 std::scoped_lock lock(s_hookMutex);
-                if (bindingProcessedLocked(binding)) {
+                if (bindingProcessedLocked(binding, /*fromActivation=*/false)) {
                     continue;
                 }
             }
             s_bindingsSeen.fetch_add(1, std::memory_order_relaxed);
-            if (harvestBinding(binding, resolved.skeleton, allowedNodeNames, allowedNodeNameCount)) {
+            // Walk strokes come from the merely-LOADED binding set — fallback
+            // provenance; the clip name lives on the hkbClipGenerator, which
+            // only the activation hook sees.
+            if (harvestBinding(
+                    binding,
+                    resolved.skeleton,
+                    allowedNodeNames,
+                    allowedNodeNameCount,
+                    /*fromActivation=*/false,
+                    nullptr)) {
                 std::scoped_lock lock(s_hookMutex);
-                markBindingProcessedLocked(binding);
+                markBindingProcessedLocked(binding, /*fromActivation=*/false);
             }
         }
         return StepResult::Pending;

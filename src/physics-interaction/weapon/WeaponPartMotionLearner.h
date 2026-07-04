@@ -75,18 +75,19 @@ namespace rock
         /*
          * Store a clip-harvested stroke group (already converted to
          * weapon-root-local and mapped to the evidence source name). Authored
-         * groups only bootstrap parts without learned data. `templateSource`
-         * marks strokes led by a vanilla template rig bone ('Weapon…'): the
-         * data must be what THIS weapon actually uses, so a weapon-specific
-         * track always beats a template track for the same part and template
-         * data is only used when it is all the weapon provides. Within the
-         * same tier the largest leader stroke wins.
+         * groups only bootstrap parts without learned data. `fallbackSource`
+         * marks strokes from clips merely found LOADED on the graph (shared/
+         * template data): the data must be what THIS weapon actually plays,
+         * so a stroke from a clip the weapon ACTIVATED always beats a
+         * fallback stroke for the same part, and fallback data is used only
+         * when it is all that exists. Within the same tier the largest
+         * leader stroke wins.
          */
         void storeAuthoredGroup(
             std::uint32_t weaponFormId,
             std::string_view sourceName,
             const weapon_clip_stroke::AuthoredStrokeGroup& group,
-            bool templateSource);
+            bool fallbackSource);
 
         void reset();
 
@@ -95,9 +96,9 @@ namespace rock
         {
             bool used{ false };
             bool authored{ false };
-            // Authored-only: stroke led by a vanilla template rig bone;
-            // outranked by weapon-specific tracks for the same part.
-            bool templateSource{ false };
+            // Authored-only: stroke from a merely-loaded (fallback) clip;
+            // outranked by the weapon's own activated-clip strokes.
+            bool fallbackSource{ false };
             std::uint32_t weaponFormId{ 0 };
             std::array<char, kMaxSourceName> sourceName{};
             std::uint64_t lastUseCounter{ 0 };

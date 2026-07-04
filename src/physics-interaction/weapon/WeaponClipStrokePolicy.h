@@ -65,6 +65,15 @@ namespace rock::weapon_clip_stroke
     struct AuthoredStrokeGroup
     {
         std::array<char, kMaxBoneName> leaderBoneName{};
+        // Provenance: true when the stroke was harvested from a clip the
+        // weapon ACTIVATED while equipped (its own animation, via the
+        // activation hook); false for clips merely found loaded on the
+        // graph (shared/template data — fallback only, outranked by
+        // activated strokes for the same part).
+        bool activatedClip{ false };
+        // Animation name from the activating hkbClipGenerator (empty on
+        // the walk path or when the read fails); diagnostics/provenance.
+        std::array<char, kMaxBoneName> clipAnimationName{};
         MotionPath leaderPath{};
         std::uint32_t followerCount{ 0 };
         std::array<AuthoredFollower, kMaxFollowers> followers{};

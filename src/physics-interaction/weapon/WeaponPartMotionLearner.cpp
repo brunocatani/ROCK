@@ -104,7 +104,7 @@ namespace rock
         std::uint32_t weaponFormId,
         std::string_view sourceName,
         const weapon_clip_stroke::AuthoredStrokeGroup& group,
-        bool templateSource)
+        bool fallbackSource)
     {
         if (weaponFormId == 0 || sourceName.empty() || !group.leaderPath.valid) {
             return;
@@ -127,13 +127,13 @@ namespace rock
                 return;
             }
             // SOURCE TIER (Bruno, 2026-07-04): the data must be what THIS
-            // weapon actually uses — a weapon-specific track always beats a
-            // vanilla template track for the same part; template data only
-            // stands while nothing weapon-specific exists. Within the same
-            // tier the largest leader stroke wins (a reload stroke beats a
-            // fire nudge).
-            if (target->templateSource != templateSource) {
-                if (templateSource) {
+            // weapon actually plays — a stroke from a clip the weapon
+            // ACTIVATED always beats a merely-loaded fallback stroke for the
+            // same part; fallback data only stands while nothing else
+            // exists. Within the same tier the largest leader stroke wins
+            // (a reload stroke beats a fire nudge).
+            if (target->fallbackSource != fallbackSource) {
+                if (fallbackSource) {
                     return;
                 }
             } else if (!weapon_part_motion_path::shouldReplacePath(target->path, group.leaderPath)) {
@@ -160,7 +160,7 @@ namespace rock
         const bool replaced = target->used;
         target->used = true;
         target->authored = true;
-        target->templateSource = templateSource;
+        target->fallbackSource = fallbackSource;
         target->weaponFormId = weaponFormId;
         copySlotName(target->sourceName, sourceName);
         target->lastUseCounter = _observationCounter;
@@ -176,7 +176,7 @@ namespace rock
         ROCK_LOG_INFO(Weapon,
             "WeaponPartMotionLearner: {} AUTHORED [{}] stroke group for part '{}' on weapon {:08X} (leader arc {:.2f} game units, {} followers) start=({:.2f},{:.2f},{:.2f}) end=({:.2f},{:.2f},{:.2f})",
             replaced ? "updated" : "stored",
-            templateSource ? "template" : "weapon-specific",
+            fallbackSource ? "fallback-loaded" : "weapon-clip",
             sourceName,
             weaponFormId,
             group.leaderPath.totalArcLength,
