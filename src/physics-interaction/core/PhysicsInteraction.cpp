@@ -6465,14 +6465,16 @@ namespace rock
             return pose;
         };
         /*
-         * Clip keys are RIG-bone-local: their rest value and basis differ
-         * from the scene node's (in-game A/B 2026-07-04: authored bolt paths
-         * started at the rig rest (0, 4.44, 0) instead of the part's actual
-         * weapon-local rest — grabbing teleported the part — and moved in
-         * the rig basis, turning a straight pull into an arc). Paths are
-         * therefore REBASED: only the clip's motion relative to its own
-         * first key is kept, applied in the node's local frame on top of the
-         * node's current weapon-local rest pose.
+         * Clip keys are RIG-bone-local under the rig 'Weapon' bone: their
+         * rest value differs from the scene node's (in-game A/B 2026-07-04:
+         * authored bolt paths started at the rig rest (0, 4.44, 0) instead
+         * of the part's weapon-local rest — grabbing teleported the part).
+         * Paths are therefore REBASED: only the clip's motion relative to
+         * its own first key is kept, applied in the WEAPON frame (left
+         * composition — the clip keys live in the rig Weapon-bone frame,
+         * which corresponds to the scene weapon frame; composing the delta
+         * in the node's own local basis put the motion on the wrong axis,
+         * in-game confirmed) on top of the node's weapon-local rest pose.
          */
         const auto convertLeaderPath = [&](const weapon_clip_stroke::AuthoredStrokeGroup& source,
                                            const RE::NiTransform& leaderRestWeaponLocal,
@@ -6481,14 +6483,15 @@ namespace rock
             outPath = weapon_part_motion_path::MotionPath{};
             const RE::NiTransform firstKeyInverse =
                 transform_math::invertTransform(poseToNi(source.leaderPath.keys[0]));
+            RE::NiTransform anchor = leaderRestWeaponLocal;
+            if (tail) {
+                anchor = transform_math::composeTransforms(anchor, *tail);
+            }
             float arc = 0.0f;
             for (std::uint32_t key = 0; key < weapon_part_motion_path::kResampledKeyCount; ++key) {
-                RE::NiTransform keyDelta =
-                    transform_math::composeTransforms(firstKeyInverse, poseToNi(source.leaderPath.keys[key]));
-                if (tail) {
-                    keyDelta = transform_math::composeTransforms(keyDelta, *tail);
-                }
-                outPath.keys[key] = niToPose(transform_math::composeTransforms(leaderRestWeaponLocal, keyDelta));
+                const RE::NiTransform keyDelta =
+                    transform_math::composeTransforms(poseToNi(source.leaderPath.keys[key]), firstKeyInverse);
+                outPath.keys[key] = niToPose(transform_math::composeTransforms(keyDelta, anchor));
                 if (key > 0) {
                     arc += weapon_part_motion_path::poseDistance(outPath.keys[key], outPath.keys[key - 1]);
                 }
@@ -6532,10 +6535,10 @@ namespace rock
                 slot.boneName = group.followers[follower].boneName;
                 for (std::uint32_t key = 0; key < weapon_part_motion_path::kResampledKeyCount; ++key) {
                     slot.keys[key] = niToPose(transform_math::composeTransforms(
-                        followerRestWeaponLocal,
                         transform_math::composeTransforms(
-                            followerFirstKeyInverse,
-                            poseToNi(group.followers[follower].keys[key]))));
+                            poseToNi(group.followers[follower].keys[key]),
+                            followerFirstKeyInverse),
+                        followerRestWeaponLocal));
                 }
                 slot.restScale = followerRestWeaponLocal.scale;
                 ++converted.followerCount;
