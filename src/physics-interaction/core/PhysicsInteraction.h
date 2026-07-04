@@ -224,6 +224,9 @@ namespace rock
         void observeWeaponPartMotion(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
         void updateWeaponClipHarvestWalk(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
         void drainWeaponClipHarvest(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
+        // One drained batch; returns true when the batch was full (more may
+        // be queued) so the caller can drain again within the same frame.
+        bool drainWeaponClipHarvestBatch(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
         void updateWeaponPartDriveSandbox(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const PhysicsFrameContext& frame);
 
         grab_locomotion_authority_bridge::Output updateGrabLocomotionAuthorityBridge(float deltaSeconds, bool worldReady);

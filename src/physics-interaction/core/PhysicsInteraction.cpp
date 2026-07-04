@@ -6407,12 +6407,27 @@ namespace rock
 
     void PhysicsInteraction::drainWeaponClipHarvest(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey)
     {
+        /*
+         * Empty the queue every frame (bounded): an equip-time hook/walk
+         * burst queues far more than one batch, and a full queue makes the
+         * harvest drop groups (in-game 2026-07-04: one whole clip's groups —
+         * the activated-tier upgrade — lost per equip).
+         */
+        for (std::uint32_t pass = 0; pass < 8; ++pass) {
+            if (!drainWeaponClipHarvestBatch(weaponNode, currentWeaponGenerationKey)) {
+                break;
+            }
+        }
+    }
+
+    bool PhysicsInteraction::drainWeaponClipHarvestBatch(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey)
+    {
         if (!weaponNode || currentWeaponGenerationKey == 0) {
-            return;
+            return false;
         }
         const auto weaponFormId = currentEquippedWeaponFormId();
         if (weaponFormId == 0) {
-            return;
+            return false;
         }
         if (weaponFormId != _lastClipHarvestWeaponFormId) {
             // Strokes still queued belong to the previous weapon's graph;
@@ -6442,7 +6457,7 @@ namespace rock
                 stats.bailTrackMap,
                 stats.bailBoneCount,
                 stats.bailSampler);
-            return;
+            return false;
         }
 
         auto& drainedGroups = _clipHarvestDrainGroups;
@@ -6450,7 +6465,7 @@ namespace rock
             drainedGroups.data(),
             static_cast<std::uint32_t>(drainedGroups.size()));
         if (drainedCount == 0) {
-            return;
+            return false;
         }
 
         const auto poseToNi = [](const weapon_part_motion_path::PoseSample& pose) {
@@ -6550,10 +6565,22 @@ namespace rock
                 restStored,
                 transform_math::transposeRotation(deltaColumn));
         };
+        /*
+         * Rotation is honored only for ACTIVATED-clip strokes — the weapon's
+         * own animation (bolt-action rotate-then-pull) — and learned paths.
+         * Fallback strokes keep translation only: fallback is another clip's
+         * motion, and while its translation direction provably generalizes
+         * (basis calibrated against five learned weapons), its rotation
+         * provably does not (in-game 2026-07-04 twice: 45° pitch on
+         * straight-pull slides, then zero-translation optics/trigger tracks
+         * whose 90° diagonal-axis spins became "valid" strokes purely via
+         * rotation arc and drove parts around random points).
+         */
         const auto convertLeaderPath = [&](const weapon_clip_stroke::AuthoredStrokeGroup& source,
                                            const RE::NiTransform& leaderRestWeaponLocal,
                                            const RE::NiTransform* tail,
                                            weapon_part_motion_path::MotionPath& outPath) {
+            const bool applyRotation = source.activatedClip;
             outPath = weapon_part_motion_path::MotionPath{};
             RE::NiTransform anchor = leaderRestWeaponLocal;
             if (tail) {
@@ -6574,14 +6601,18 @@ namespace rock
                     clipKey.translate.x - firstKey.translate.x,
                     clipKey.translate.y - firstKey.translate.y,
                     clipKey.translate.z - firstKey.translate.z);
-                const auto rotationDelta = sceneRotationDelta(firstKey, clipKey);
-                // Column form: M·v — rotateWorldVectorToLocal computes
-                // exactly that on the raw entries.
-                const auto rotatedLever =
-                    transform_math::rotateWorldVectorToLocal<RE::NiMatrix3, RE::NiPoint3>(rotationDelta, lever);
                 RE::NiTransform keyTransform = anchor;
-                keyTransform.translate = leaderRestWeaponLocal.translate + sceneDelta + rotatedLever;
-                keyTransform.rotate = applyDeltaToRest(anchor.rotate, rotationDelta);
+                if (applyRotation) {
+                    const auto rotationDelta = sceneRotationDelta(firstKey, clipKey);
+                    // Column form: M·v — rotateWorldVectorToLocal computes
+                    // exactly that on the raw entries.
+                    const auto rotatedLever =
+                        transform_math::rotateWorldVectorToLocal<RE::NiMatrix3, RE::NiPoint3>(rotationDelta, lever);
+                    keyTransform.translate = leaderRestWeaponLocal.translate + sceneDelta + rotatedLever;
+                    keyTransform.rotate = applyDeltaToRest(anchor.rotate, rotationDelta);
+                } else {
+                    keyTransform.translate += sceneDelta;
+                }
                 outPath.keys[key] = niToPose(keyTransform);
                 if (key > 0) {
                     arc += weapon_part_motion_path::poseDistance(outPath.keys[key], outPath.keys[key - 1]);
@@ -6706,10 +6737,12 @@ namespace rock
                         clipKey.translate.x - followerFirstKey.translate.x,
                         clipKey.translate.y - followerFirstKey.translate.y,
                         clipKey.translate.z - followerFirstKey.translate.z);
-                    const auto rotationDelta = sceneRotationDelta(followerFirstKey, clipKey);
                     RE::NiTransform keyTransform = followerRestWeaponLocal;
                     keyTransform.translate += sceneDelta;
-                    keyTransform.rotate = applyDeltaToRest(followerRestWeaponLocal.rotate, rotationDelta);
+                    if (group.activatedClip) {
+                        const auto rotationDelta = sceneRotationDelta(followerFirstKey, clipKey);
+                        keyTransform.rotate = applyDeltaToRest(followerRestWeaponLocal.rotate, rotationDelta);
+                    }
                     slot.keys[key] = niToPose(keyTransform);
                 }
                 slot.restScale = followerRestWeaponLocal.scale;
@@ -6779,14 +6812,18 @@ namespace rock
                                 clipKey.translate.x - group.leaderPath.keys[0].translate.x,
                                 clipKey.translate.y - group.leaderPath.keys[0].translate.y,
                                 clipKey.translate.z - group.leaderPath.keys[0].translate.z);
-                            const auto rotationDelta =
-                                sceneRotationDelta(group.leaderPath.keys[0], clipKey);
-                            const auto rotatedLever = transform_math::rotateWorldVectorToLocal<RE::NiMatrix3, RE::NiPoint3>(
-                                rotationDelta, siblingLever);
                             RE::NiTransform keyTransform = otherRestWeaponLocal;
-                            keyTransform.translate =
-                                leaderRestWeaponLocal.translate + sceneDelta + rotatedLever;
-                            keyTransform.rotate = applyDeltaToRest(otherRestWeaponLocal.rotate, rotationDelta);
+                            if (group.activatedClip) {
+                                const auto rotationDelta =
+                                    sceneRotationDelta(group.leaderPath.keys[0], clipKey);
+                                const auto rotatedLever = transform_math::rotateWorldVectorToLocal<RE::NiMatrix3, RE::NiPoint3>(
+                                    rotationDelta, siblingLever);
+                                keyTransform.translate =
+                                    leaderRestWeaponLocal.translate + sceneDelta + rotatedLever;
+                                keyTransform.rotate = applyDeltaToRest(otherRestWeaponLocal.rotate, rotationDelta);
+                            } else {
+                                keyTransform.translate += sceneDelta;
+                            }
                             slot.keys[key] = niToPose(keyTransform);
                         }
                         slot.restScale = otherRestWeaponLocal.scale;
@@ -6809,6 +6846,9 @@ namespace rock
                 }
             }
         }
+        // A full batch may leave more groups queued; tell the caller to
+        // drain again this frame.
+        return drainedCount == static_cast<std::uint32_t>(drainedGroups.size());
     }
 
     void PhysicsInteraction::updateWeaponPartDriveSandbox(

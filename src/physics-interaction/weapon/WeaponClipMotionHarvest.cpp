@@ -722,7 +722,27 @@ namespace rock::weapon_clip_motion_harvest
             std::scoped_lock lock(s_queueMutex);
             for (std::uint32_t i = 0; i < groupCount; ++i) {
                 if (s_queueCount >= s_queue.size()) {
-                    s_groupsDropped.fetch_add(1, std::memory_order_relaxed);
+                    /*
+                     * Activated groups outrank fallback data and must not be
+                     * lost to an equip-time walk flood (in-game 2026-07-04:
+                     * groupsDropped grew by exactly one clip per equip and no
+                     * activated stroke ever reached the store): evict a queued
+                     * fallback group instead of dropping the activated one.
+                     */
+                    bool evicted = false;
+                    if (groups[i].activatedClip) {
+                        for (std::uint32_t slot = 0; slot < s_queueCount; ++slot) {
+                            if (!s_queue[slot].activatedClip) {
+                                s_queue[slot] = groups[i];
+                                s_groupsQueued.fetch_add(1, std::memory_order_relaxed);
+                                evicted = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!evicted) {
+                        s_groupsDropped.fetch_add(1, std::memory_order_relaxed);
+                    }
                     continue;
                 }
                 s_queue[s_queueCount++] = groups[i];
