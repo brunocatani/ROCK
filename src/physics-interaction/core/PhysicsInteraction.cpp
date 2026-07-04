@@ -5930,7 +5930,7 @@ namespace rock
                 continue;
             }
             sawCurrentGeneration = true;
-            if (!weaponPartDriveSandboxEligible(descriptor.semantic.actionRole)) {
+            if (!weaponPartDriveSandboxEligible(descriptor.semantic.actionRole, descriptor.semantic.partKind)) {
                 continue;
             }
             auto* node = reinterpret_cast<RE::NiAVObject*>(descriptor.sourceRootAddress);
@@ -6173,7 +6173,9 @@ namespace rock
             HandGripReport report{};
             _twoHandedGrip.getHandGripReport(isLeft, report);
             if (!report.active || !report.attachOnly ||
-                !weaponPartDriveSandboxEligible(static_cast<WeaponActionRole>(report.actionRole)) ||
+                !weaponPartDriveSandboxEligible(
+                    static_cast<WeaponActionRole>(report.actionRole),
+                    static_cast<WeaponPartKind>(report.partKind)) ||
                 report.providerOwnerToken != _weaponPartDriveSandbox.ownerToken() ||
                 report.weaponGenerationKey != currentWeaponGenerationKey) {
                 continue;

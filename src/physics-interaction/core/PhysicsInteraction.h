@@ -509,7 +509,9 @@ namespace rock
         {
             std::uint64_t generationKey{ 0 };
             std::uint32_t count{ 0 };
-            std::array<DrivePartCacheEntry, 8> entries{};
+            // Headroom for weapons that expose several eligible parts at once
+            // (bolt + charging handle + pump/lever + magazine node variants).
+            std::array<DrivePartCacheEntry, 12> entries{};
         };
         DrivePartCache _drivePartCache{};
         WeaponPartMotionLearner _weaponPartMotionLearner;

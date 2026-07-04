@@ -83,20 +83,31 @@ namespace rock
 
         // Persistent whitelist: every drive-eligible part is grabbable as an
         // AttachOnly glue on any weapon (generation key 0 = all generations).
-        // Targets mirror weaponPartDriveSandboxEligible: bolt and slide
-        // action parts. NonExclusive keeps every other part grip on its
-        // normal behavior.
-        std::array<::rock::provider::RockProviderWeaponPartTargetV1, 2> targets{};
+        // Targets mirror weaponPartDriveSandboxEligible: all reciprocating/
+        // hinged action roles plus Magazine part bodies. NonExclusive keeps
+        // every other part grip on its normal behavior.
+        constexpr std::array<WeaponActionRole, 7> kDriveActionRoles{
+            WeaponActionRole::Bolt,
+            WeaponActionRole::Slide,
+            WeaponActionRole::ChargingHandle,
+            WeaponActionRole::Pump,
+            WeaponActionRole::BreakAction,
+            WeaponActionRole::Cylinder,
+            WeaponActionRole::Lever,
+        };
+        std::array<::rock::provider::RockProviderWeaponPartTargetV1, kDriveActionRoles.size() + 1> targets{};
         for (auto& target : targets) {
-            target.flags =
-                static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchActionRole) |
-                static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::NonExclusive);
+            target.flags = static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::NonExclusive);
             target.grabMode = ::rock::provider::RockProviderWeaponPartGrabModeV1::AttachOnly;
             target.groupId = 1;
             target.priority = kDrivePriority;
         }
-        targets[0].actionRole = static_cast<std::uint32_t>(WeaponActionRole::Bolt);
-        targets[1].actionRole = static_cast<std::uint32_t>(WeaponActionRole::Slide);
+        for (std::size_t i = 0; i < kDriveActionRoles.size(); ++i) {
+            targets[i].flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchActionRole);
+            targets[i].actionRole = static_cast<std::uint32_t>(kDriveActionRoles[i]);
+        }
+        targets.back().flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchPartKind);
+        targets.back().partKind = static_cast<std::uint32_t>(WeaponPartKind::Magazine);
         const auto targetResult = api->setWeaponPartTargetsV1(_ownerToken, targets.data(), static_cast<std::uint32_t>(targets.size()));
         if (targetResult != ::rock::provider::RockProviderResultV1::Ok) {
             if (!_registrationWarned) {
@@ -107,7 +118,7 @@ namespace rock
             return false;
         }
         _whitelistInstalled = true;
-        ROCK_LOG_INFO(Weapon, "WeaponPartDriveSandbox: registered (token={}) with NonExclusive AttachOnly whitelist (bolt/slide action parts)", _ownerToken);
+        ROCK_LOG_INFO(Weapon, "WeaponPartDriveSandbox: registered (token={}) with NonExclusive AttachOnly whitelist (bolt/slide/charging/pump/break/cylinder/lever action parts + magazine)", _ownerToken);
         return true;
     }
 

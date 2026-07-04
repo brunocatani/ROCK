@@ -189,15 +189,28 @@ namespace rock
     /*
      * Bolt-drive sandbox part eligibility, shared by the provider whitelist,
      * the drive part cache, and the grip-report filter so a part can never be
-     * grabbable without also being observed/scrubbed. Only reciprocating
-     * action parts (bolt, pistol slide) are drivable; Receiver was tried and
-     * removed 2026-07-03 — it turned long-gun receiver support grips into
-     * AttachOnly glue and did not help pistols in-game.
+     * grabbable without also being observed/scrubbed. Every reciprocating or
+     * hinged action part is drivable, plus Magazine bodies for physical mag
+     * handling. Latch stays out (no name token or motion source yet).
+     * Receiver was tried and removed 2026-07-03 — its name bucket is a
+     * catch-all ("frame"/"body"/"pistol"/"weapon") that hijacked receiver
+     * support grips into AttachOnly glue.
      */
-    [[nodiscard]] inline constexpr bool weaponPartDriveSandboxEligible(WeaponActionRole actionRole)
+    [[nodiscard]] inline constexpr bool weaponPartDriveSandboxEligible(WeaponActionRole actionRole, WeaponPartKind partKind)
     {
-        return actionRole == WeaponActionRole::Bolt ||
-               actionRole == WeaponActionRole::Slide;
+        switch (actionRole) {
+        case WeaponActionRole::Bolt:
+        case WeaponActionRole::Slide:
+        case WeaponActionRole::ChargingHandle:
+        case WeaponActionRole::Pump:
+        case WeaponActionRole::BreakAction:
+        case WeaponActionRole::Cylinder:
+        case WeaponActionRole::Lever:
+            return true;
+        default:
+            break;
+        }
+        return partKind == WeaponPartKind::Magazine;
     }
 
     enum class WeaponGripPoseId : std::uint8_t
