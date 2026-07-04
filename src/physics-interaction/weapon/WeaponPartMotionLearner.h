@@ -24,22 +24,8 @@ namespace rock
     class WeaponPartMotionLearner
     {
     public:
-        /*
-         * Sized for full-weapon part coverage (~6 moving parts per weapon,
-         * several weapons per session). Generosity matters for authored
-         * strokes: the engine caches loaded behavior graphs and never
-         * re-assigns their bindings, so an evicted authored group cannot be
-         * re-harvested until the graph reloads.
-         */
-        static constexpr std::size_t kMaxStoredPaths = 48;
-        /*
-         * One recorder per observable evidence part (matches the drive-part
-         * cache capacity). With fewer slots than observed parts, the slots
-         * are permanently claimed by whichever parts enumerate first and the
-         * actually-moving parts (slide, bolt, magazine) never learn.
-         * ~20KB per slot, ~0.5MB total, allocated once.
-         */
-        static constexpr std::size_t kMaxActiveRecorders = 24;
+        static constexpr std::size_t kMaxStoredPaths = 16;
+        static constexpr std::size_t kMaxActiveRecorders = 2;
         static constexpr std::size_t kMaxSourceName = 64;
         // A recorder whose part was not observed for this many observations is
         // stale (weapon switched / part removed) and may be reclaimed.
@@ -85,11 +71,6 @@ namespace rock
             std::string_view sourceName,
             const weapon_clip_stroke::AuthoredStrokeGroup& group);
 
-        // Bumped whenever stored path content changes (authored or learned);
-        // lets callers rebuild derived state (the movable-part whitelist)
-        // only when needed.
-        [[nodiscard]] std::uint64_t pathRevision() const { return _pathRevision; }
-
         void reset();
 
     private:
@@ -121,6 +102,5 @@ namespace rock
         std::array<PathSlot, kMaxStoredPaths> _paths{};
         std::array<RecorderSlot, kMaxActiveRecorders> _recorders{};
         std::uint64_t _observationCounter{ 0 };
-        std::uint64_t _pathRevision{ 0 };
     };
 }

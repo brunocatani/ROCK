@@ -20,55 +20,14 @@ namespace rock::weapon_clip_motion_harvest
          * docs/research/2026-07-03-baked-animation-motion-extraction.md.
          */
 
-        /*
-         * Bethesda's runtime animation-binding-set builder — VR 0x141783f90
-         * (flat FO4 0x141703590, exact instruction match in the VR address
-         * library diff). Runs on every behavior graph / weapon subgraph
-         * instantiation (BehaviorGraphSwapInstanceInitializationFunctor
-         * path): it iterates the graph's clip generators, loads each
-         * animation via BSResourceAssetLoader, and appends an
-         * hkbAnimationBindingWithTriggers per clip to the owner's
-         * hkbAnimationBindingSet. The Havok SDK utility
-         * hkbBehaviorLoadingUtils::assignAnimationBinding (0x14193a9c0) is
-         * NOT on this path — a season of bindingsSeen=0 proved it dead at
-         * runtime. Entry prologue is 15 position-independent bytes.
-         */
-        constexpr std::uintptr_t kFuncBuildAnimationBindingSet = 0x1783f90;
-        constexpr std::array<std::uint8_t, 15> kBuildAnimationBindingSetExpectedPrefix{
+        // hkbBehaviorLoadingUtils::assignAnimationBinding — REL::ID 128842,
+        // VR 0x14193a9c0. Entry prologue is 15 position-independent bytes.
+        constexpr std::uintptr_t kFuncAssignAnimationBinding = 0x193a9c0;
+        constexpr std::array<std::uint8_t, 15> kAssignAnimationBindingExpectedPrefix{
             0x48, 0x89, 0x5C, 0x24, 0x08,
             0x48, 0x89, 0x6C, 0x24, 0x10,
             0x48, 0x89, 0x74, 0x24, 0x18,
         };
-
-        /*
-         * Binding-set owner (the builder's second argument) — decompile-
-         * verified layout: +0x78 hkbCharacterSetup*, +0x90 binding-set
-         * override (used by the engine's own getter before falling back to
-         * the setup's set). hkbCharacterSetup: +0x20 m_animationSkeleton
-         * (hkaSkeleton*, the skeleton the clip tracks map to), +0x38
-         * m_animationBindingSet. hkbAnimationBindingSet: +0x10 bindings
-         * data (hkbAnimationBindingWithTriggers*[]), +0x18 int count.
-         * hkbAnimationBindingWithTriggers (0x30-byte hkReferencedObject):
-         * +0x0 vftable, +0x8 memSizeAndFlags/refCount (0xFFFF0001 pattern),
-         * +0x10 hkaAnimationBinding* — crash-log verified: reading +0x8 as
-         * the binding yielded the refcount header and an AV at 0xFFFF0019.
-         */
-        constexpr std::uintptr_t kOwnerCharacterSetupOffset = 0x78;
-        constexpr std::uintptr_t kOwnerBindingSetOverrideOffset = 0x90;
-        constexpr std::uintptr_t kSetupAnimationSkeletonOffset = 0x20;
-        constexpr std::uintptr_t kSetupBindingSetOffset = 0x38;
-        constexpr std::uintptr_t kBindingSetDataOffset = 0x10;
-        constexpr std::uintptr_t kBindingSetCountOffset = 0x18;
-        constexpr std::uintptr_t kBindingWithTriggersBindingOffset = 0x10;
-        constexpr std::int32_t kMaxPlausibleBindingCount = 4096;
-
-        // Coarse pointer plausibility gate for values read out of engine
-        // objects on the loading thread; rejects null, refcount headers, and
-        // other small integers before they are dereferenced.
-        [[nodiscard]] bool plausiblePointer(std::uintptr_t value)
-        {
-            return value > 0x10000 && value < 0x0000'8000'0000'0000ull;
-        }
 
         // hkaAnimationBinding members.
         constexpr std::uintptr_t kBindingAnimationOffset = 0x18;
@@ -103,12 +62,10 @@ namespace rock::weapon_clip_motion_harvest
         };
         static_assert(sizeof(HkQsTransform) == 48);
 
-        // int32 return (a count read from the loaded graph data); five
-        // arguments, the fifth on the stack.
-        using BuildAnimationBindingSet_t = std::int32_t (*)(void*, void*, void*, void*, void*);
+        using AssignAnimationBinding_t = bool (*)(void*, void*, void*, void*);
         using SampleIndividualTransformTracks_t = void (*)(void*, float, const std::int16_t*, std::uint32_t, HkQsTransform*);
 
-        BuildAnimationBindingSet_t s_originalBuildAnimationBindingSet = nullptr;
+        AssignAnimationBinding_t s_originalAssignAnimationBinding = nullptr;
         std::atomic<bool> s_hookInstalled{ false };
 
         std::mutex s_queueMutex;
@@ -117,16 +74,9 @@ namespace rock::weapon_clip_motion_harvest
 
         std::atomic<std::uint64_t> s_bindingsSeen{ 0 };
         std::atomic<std::uint64_t> s_bindingsHarvested{ 0 };
-        std::atomic<std::uint64_t> s_bindingsNoTargets{ 0 };
         std::atomic<std::uint64_t> s_groupsQueued{ 0 };
         std::atomic<std::uint64_t> s_groupsDropped{ 0 };
         std::atomic<std::uint64_t> s_skippedNonSpline{ 0 };
-
-        // Bone-name dump budget for zero-target bindings (see header). Small
-        // bindings only: partial/weapon clips have few tracks, so a low track
-        // cap keeps full-body character clips out of the dump.
-        constexpr std::int32_t kMaxNoTargetDumpTracks = 24;
-        std::atomic<std::uint32_t> s_noTargetDumpBudget{ 16 };
 
         const char* skeletonBoneName(std::uintptr_t skeleton, std::int32_t boneIndex)
         {
@@ -152,53 +102,10 @@ namespace rock::weapon_clip_motion_harvest
             return true;
         }
 
-        void dumpNoTargetBindingNames(
-            std::uintptr_t skeleton,
-            const std::int16_t* trackToBone,
-            std::int32_t usableTrackCount,
-            std::int32_t boneCount,
-            float duration)
-        {
-            if (usableTrackCount > kMaxNoTargetDumpTracks) {
-                return;
-            }
-            auto budget = s_noTargetDumpBudget.load(std::memory_order_relaxed);
-            if (budget == 0 || !s_noTargetDumpBudget.compare_exchange_strong(budget, budget - 1, std::memory_order_relaxed)) {
-                return;
-            }
-            std::array<char, 512> names{};
-            std::size_t length = 0;
-            for (std::int32_t track = 0; track < usableTrackCount; ++track) {
-                const auto boneIndex = trackToBone[track];
-                if (boneIndex < 0 || boneIndex >= boneCount) {
-                    continue;
-                }
-                const char* name = skeletonBoneName(skeleton, boneIndex);
-                if (!name) {
-                    continue;
-                }
-                if (length > 0 && length < names.size() - 1) {
-                    names[length++] = ',';
-                }
-                while (*name != '\0' && length < names.size() - 1) {
-                    names[length++] = *name++;
-                }
-                if (length >= names.size() - 1) {
-                    break;
-                }
-            }
-            ROCK_LOG_INFO(
-                Weapon,
-                "ClipHarvest: binding dur={:.2f}s tracks={} has no Weapon* tracks; bones=[{}]",
-                duration,
-                usableTrackCount,
-                names.data());
-        }
-
         void harvestBinding(std::uintptr_t binding, std::uintptr_t skeleton)
         {
             const auto animation = *reinterpret_cast<std::uintptr_t*>(binding + kBindingAnimationOffset);
-            if (!plausiblePointer(animation)) {
+            if (animation == 0) {
                 return;
             }
 
@@ -255,8 +162,6 @@ namespace rock::weapon_clip_motion_harvest
                 ++targetCount;
             }
             if (targetCount == 0) {
-                s_bindingsNoTargets.fetch_add(1, std::memory_order_relaxed);
-                dumpNoTargetBindingNames(skeleton, trackToBone, usableTrackCount, boneCount, duration);
                 return;
             }
 
@@ -313,54 +218,15 @@ namespace rock::weapon_clip_motion_harvest
             }
         }
 
-        /*
-         * Runs after the engine finishes building a graph's binding set:
-         * every clip's binding is fully populated, and the set plus the
-         * animation skeleton stay alive on the owner for the graph's
-         * lifetime, so a synchronous in-hook walk touches only live data on
-         * the build thread. Fails closed on any null/implausible field.
-         */
-        std::int32_t hookedBuildAnimationBindingSet(void* a, void* owner, void* c, void* d, void* e)
+        bool hookedAssignAnimationBinding(void* bindingWithTriggers, void* binding, void* stringMap, void* skeleton)
         {
-            const std::int32_t result = s_originalBuildAnimationBindingSet
-                ? s_originalBuildAnimationBindingSet(a, owner, c, d, e)
-                : 0;
+            const bool result = s_originalAssignAnimationBinding
+                ? s_originalAssignAnimationBinding(bindingWithTriggers, binding, stringMap, skeleton)
+                : false;
 
-            if (!owner || !g_rockConfig.rockBoltDriveSandboxEnabled) {
-                return result;
-            }
-            const auto ownerAddress = reinterpret_cast<std::uintptr_t>(owner);
-            const auto setup = *reinterpret_cast<std::uintptr_t*>(ownerAddress + kOwnerCharacterSetupOffset);
-            if (!plausiblePointer(setup)) {
-                return result;
-            }
-            const auto skeleton = *reinterpret_cast<std::uintptr_t*>(setup + kSetupAnimationSkeletonOffset);
-            if (!plausiblePointer(skeleton)) {
-                return result;
-            }
-            auto bindingSet = *reinterpret_cast<std::uintptr_t*>(ownerAddress + kOwnerBindingSetOverrideOffset);
-            if (bindingSet == 0) {
-                bindingSet = *reinterpret_cast<std::uintptr_t*>(setup + kSetupBindingSetOffset);
-            }
-            if (!plausiblePointer(bindingSet)) {
-                return result;
-            }
-            const auto bindingsData = *reinterpret_cast<std::uintptr_t*>(bindingSet + kBindingSetDataOffset);
-            const auto bindingCount = *reinterpret_cast<std::int32_t*>(bindingSet + kBindingSetCountOffset);
-            if (!plausiblePointer(bindingsData) || bindingCount <= 0 || bindingCount > kMaxPlausibleBindingCount) {
-                return result;
-            }
-            for (std::int32_t i = 0; i < bindingCount; ++i) {
-                const auto bindingWithTriggers = reinterpret_cast<const std::uintptr_t*>(bindingsData)[i];
-                if (!plausiblePointer(bindingWithTriggers)) {
-                    continue;
-                }
-                const auto binding = *reinterpret_cast<std::uintptr_t*>(bindingWithTriggers + kBindingWithTriggersBindingOffset);
-                if (!plausiblePointer(binding)) {
-                    continue;
-                }
+            if (result && binding && skeleton && g_rockConfig.rockBoltDriveSandboxEnabled) {
                 s_bindingsSeen.fetch_add(1, std::memory_order_relaxed);
-                harvestBinding(binding, skeleton);
+                harvestBinding(reinterpret_cast<std::uintptr_t>(binding), reinterpret_cast<std::uintptr_t>(skeleton));
             }
             return result;
         }
@@ -372,16 +238,16 @@ namespace rock::weapon_clip_motion_harvest
             return true;
         }
 
-        void* original = reinterpret_cast<void*>(s_originalBuildAnimationBindingSet);
+        void* original = reinterpret_cast<void*>(s_originalAssignAnimationBinding);
         const bool installed = entry_trampoline_hook::install(
-            "animation binding-set build clip-motion harvest",
-            kFuncBuildAnimationBindingSet,
-            kBuildAnimationBindingSetExpectedPrefix.data(),
-            kBuildAnimationBindingSetExpectedPrefix.size(),
-            reinterpret_cast<void*>(&hookedBuildAnimationBindingSet),
+            "hkbBehaviorLoadingUtils::assignAnimationBinding clip-motion harvest",
+            kFuncAssignAnimationBinding,
+            kAssignAnimationBindingExpectedPrefix.data(),
+            kAssignAnimationBindingExpectedPrefix.size(),
+            reinterpret_cast<void*>(&hookedAssignAnimationBinding),
             original);
-        s_originalBuildAnimationBindingSet = reinterpret_cast<BuildAnimationBindingSet_t>(original);
-        s_hookInstalled.store(installed && s_originalBuildAnimationBindingSet != nullptr, std::memory_order_release);
+        s_originalAssignAnimationBinding = reinterpret_cast<AssignAnimationBinding_t>(original);
+        s_hookInstalled.store(installed && s_originalAssignAnimationBinding != nullptr, std::memory_order_release);
         return s_hookInstalled.load(std::memory_order_acquire);
     }
 
@@ -415,17 +281,11 @@ namespace rock::weapon_clip_motion_harvest
         s_queueCount = 0;
     }
 
-    void armNoTargetNameDumps(std::uint32_t budget)
-    {
-        s_noTargetDumpBudget.store(budget, std::memory_order_relaxed);
-    }
-
     Stats snapshotStats()
     {
         return Stats{
             .bindingsSeen = s_bindingsSeen.load(std::memory_order_relaxed),
             .bindingsHarvested = s_bindingsHarvested.load(std::memory_order_relaxed),
-            .bindingsNoTargets = s_bindingsNoTargets.load(std::memory_order_relaxed),
             .groupsQueued = s_groupsQueued.load(std::memory_order_relaxed),
             .groupsDropped = s_groupsDropped.load(std::memory_order_relaxed),
             .skippedNonSpline = s_skippedNonSpline.load(std::memory_order_relaxed),

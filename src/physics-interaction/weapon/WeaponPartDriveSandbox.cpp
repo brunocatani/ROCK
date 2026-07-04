@@ -50,7 +50,7 @@ namespace rock
 
     bool WeaponPartDriveSandbox::ensureRegistered()
     {
-        if (_ownerToken != 0) {
+        if (_ownerToken != 0 && _whitelistInstalled) {
             return true;
         }
         if (_registrationRetryCooldownFrames > 0) {
@@ -63,131 +63,55 @@ namespace rock
             return false;
         }
 
-        ::rock::provider::RockProviderConsumerRegistrationV1 registration{};
-        std::memcpy(registration.modName, kSandboxConsumerName, sizeof(kSandboxConsumerName));
-        registration.requestedCapabilities =
-            static_cast<std::uint32_t>(::rock::provider::RockProviderConsumerCapabilityV1::WeaponPartInteraction);
-        ::rock::provider::RockProviderConsumerHandleV1 handle{};
-        const auto result = api->registerConsumerV1(&registration, &handle);
-        if (result != ::rock::provider::RockProviderResultV1::Ok || handle.ownerToken == 0) {
+        if (_ownerToken == 0) {
+            ::rock::provider::RockProviderConsumerRegistrationV1 registration{};
+            std::memcpy(registration.modName, kSandboxConsumerName, sizeof(kSandboxConsumerName));
+            registration.requestedCapabilities =
+                static_cast<std::uint32_t>(::rock::provider::RockProviderConsumerCapabilityV1::WeaponPartInteraction);
+            ::rock::provider::RockProviderConsumerHandleV1 handle{};
+            const auto result = api->registerConsumerV1(&registration, &handle);
+            if (result != ::rock::provider::RockProviderResultV1::Ok || handle.ownerToken == 0) {
+                if (!_registrationWarned) {
+                    ROCK_LOG_WARN(Weapon, "WeaponPartDriveSandbox: consumer registration failed result={}", static_cast<std::uint32_t>(result));
+                    _registrationWarned = true;
+                }
+                _registrationRetryCooldownFrames = kRegistrationRetryFrames;
+                return false;
+            }
+            _ownerToken = handle.ownerToken;
+        }
+
+        // Persistent whitelist: every drive-eligible part is grabbable as an
+        // AttachOnly glue on any weapon (generation key 0 = all generations).
+        // Targets mirror weaponPartDriveSandboxEligible: bolt/slide action
+        // parts plus Receiver-classified geometry (pistol "receiver" meshes
+        // are visually the slide). NonExclusive keeps every other part grip
+        // on its normal behavior.
+        std::array<::rock::provider::RockProviderWeaponPartTargetV1, 3> targets{};
+        for (auto& target : targets) {
+            target.flags = static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::NonExclusive);
+            target.grabMode = ::rock::provider::RockProviderWeaponPartGrabModeV1::AttachOnly;
+            target.groupId = 1;
+            target.priority = kDrivePriority;
+        }
+        targets[0].flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchActionRole);
+        targets[0].actionRole = static_cast<std::uint32_t>(WeaponActionRole::Bolt);
+        targets[1].flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchActionRole);
+        targets[1].actionRole = static_cast<std::uint32_t>(WeaponActionRole::Slide);
+        targets[2].flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchPartKind);
+        targets[2].partKind = static_cast<std::uint32_t>(WeaponPartKind::Receiver);
+        const auto targetResult = api->setWeaponPartTargetsV1(_ownerToken, targets.data(), static_cast<std::uint32_t>(targets.size()));
+        if (targetResult != ::rock::provider::RockProviderResultV1::Ok) {
             if (!_registrationWarned) {
-                ROCK_LOG_WARN(Weapon, "WeaponPartDriveSandbox: consumer registration failed result={}", static_cast<std::uint32_t>(result));
+                ROCK_LOG_WARN(Weapon, "WeaponPartDriveSandbox: whitelist install failed result={}", static_cast<std::uint32_t>(targetResult));
                 _registrationWarned = true;
             }
             _registrationRetryCooldownFrames = kRegistrationRetryFrames;
             return false;
         }
-        _ownerToken = handle.ownerToken;
-        ROCK_LOG_INFO(Weapon, "WeaponPartDriveSandbox: registered (token={}); movable-part whitelist installs per weapon equip", _ownerToken);
+        _whitelistInstalled = true;
+        ROCK_LOG_INFO(Weapon, "WeaponPartDriveSandbox: registered (token={}) with NonExclusive AttachOnly whitelist (bolt/slide action parts + receiver)", _ownerToken);
         return true;
-    }
-
-    /*
-     * Install/replace the AttachOnly whitelist as the union of two layers:
-     *
-     * 1. Static classification targets (generation key 0 = every weapon):
-     *    every action role plus every part kind a reload animation moves,
-     *    magazines included. These make moving parts grabbable immediately —
-     *    the hand attaches even before a motion path exists, and the part
-     *    drives as soon as its path is harvested or learned.
-     * 2. Dynamic per-part targets (MatchBodyId, generation-scoped): parts of
-     *    the current weapon that own a stored motion path regardless of
-     *    classification (a pistol's 'Sights:0' with a learned stroke).
-     *
-     * NonExclusive keeps every unmatched part on its normal grip behavior.
-     * Reinstalled only when the dynamic set changes; the static layer is
-     * constant.
-     */
-    void WeaponPartDriveSandbox::refreshMovableTargets(const FrameInput& input)
-    {
-        const auto count = (std::min)(input.movablePartCount, static_cast<std::uint32_t>(kMaxMovableParts));
-        const auto generationKey = count > 0 ? input.weaponGenerationKey : 0;
-        const bool unchanged = _staticTargetsInstalled &&
-            generationKey == _installedGenerationKey &&
-            count == _installedMovableCount &&
-            std::equal(
-                input.movableBodyIds.begin(),
-                input.movableBodyIds.begin() + count,
-                _installedMovableBodyIds.begin());
-        if (unchanged) {
-            return;
-        }
-
-        const auto* api = ::rock::provider::ROCKAPI_GetProviderApi();
-        if (!api || !api->setWeaponPartTargetsV1) {
-            return;
-        }
-
-        constexpr std::array<WeaponActionRole, 8> kEligibleActionRoles{
-            WeaponActionRole::Bolt,
-            WeaponActionRole::Slide,
-            WeaponActionRole::ChargingHandle,
-            WeaponActionRole::Pump,
-            WeaponActionRole::BreakAction,
-            WeaponActionRole::Cylinder,
-            WeaponActionRole::Lever,
-            WeaponActionRole::Latch,
-        };
-        constexpr std::array<WeaponPartKind, 9> kEligiblePartKinds{
-            WeaponPartKind::Receiver,
-            WeaponPartKind::Magazine,
-            WeaponPartKind::Bolt,
-            WeaponPartKind::Slide,
-            WeaponPartKind::ChargingHandle,
-            WeaponPartKind::BreakAction,
-            WeaponPartKind::Cylinder,
-            WeaponPartKind::Pump,
-            WeaponPartKind::Lever,
-        };
-        std::array<
-            ::rock::provider::RockProviderWeaponPartTargetV1,
-            kEligibleActionRoles.size() + kEligiblePartKinds.size() + kMaxMovableParts>
-            targets{};
-        std::uint32_t targetCount = 0;
-        const auto initCommon = [](::rock::provider::RockProviderWeaponPartTargetV1& target) {
-            target.flags = static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::NonExclusive);
-            target.grabMode = ::rock::provider::RockProviderWeaponPartGrabModeV1::AttachOnly;
-            target.groupId = 1;
-            target.priority = kDrivePriority;
-        };
-        for (const auto actionRole : kEligibleActionRoles) {
-            auto& target = targets[targetCount++];
-            initCommon(target);
-            target.flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchActionRole);
-            target.actionRole = static_cast<std::uint32_t>(actionRole);
-        }
-        for (const auto partKind : kEligiblePartKinds) {
-            auto& target = targets[targetCount++];
-            initCommon(target);
-            target.flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchPartKind);
-            target.partKind = static_cast<std::uint32_t>(partKind);
-        }
-        for (std::uint32_t i = 0; i < count; ++i) {
-            auto& target = targets[targetCount++];
-            initCommon(target);
-            target.flags |= static_cast<std::uint32_t>(::rock::provider::RockProviderWeaponPartTargetFlagV1::MatchBodyId);
-            target.weaponGenerationKey = generationKey;
-            target.bodyId = input.movableBodyIds[i];
-        }
-        const auto result = api->setWeaponPartTargetsV1(_ownerToken, targets.data(), targetCount);
-        if (result != ::rock::provider::RockProviderResultV1::Ok) {
-            ROCK_LOG_WARN(Weapon,
-                "WeaponPartDriveSandbox: whitelist install failed result={} count={}",
-                static_cast<std::uint32_t>(result),
-                targetCount);
-            return;
-        }
-        _staticTargetsInstalled = true;
-        _installedGenerationKey = generationKey;
-        _installedMovableCount = count;
-        _installedMovableBodyIds = input.movableBodyIds;
-        if (count > 0) {
-            ROCK_LOG_INFO(Weapon,
-                "WeaponPartDriveSandbox: whitelist refreshed — {} classification targets + {} path-backed part(s) on weapon {:08X}",
-                kEligibleActionRoles.size() + kEligiblePartKinds.size(),
-                count,
-                input.weaponFormId);
-        }
     }
 
     void WeaponPartDriveSandbox::endSession(HandSession& session)
@@ -202,7 +126,6 @@ namespace rock
             _sentDrivesLastUpdate = false;
             return;
         }
-        refreshMovableTargets(input);
 
         // Per hand: the gripped leader plus up to kMaxFollowers assembly parts.
         std::array<::rock::provider::RockProviderWeaponPartDriveTargetV1, 2 * (1 + weapon_clip_stroke::kMaxFollowers)> drives{};
@@ -368,10 +291,7 @@ namespace rock
             }
         }
         _ownerToken = 0;
-        _staticTargetsInstalled = false;
-        _installedGenerationKey = 0;
-        _installedMovableCount = 0;
-        _installedMovableBodyIds = {};
+        _whitelistInstalled = false;
         _sentDrivesLastUpdate = false;
         _registrationRetryCooldownFrames = 0;
         _registrationWarned = false;

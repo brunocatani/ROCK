@@ -145,7 +145,6 @@ namespace rock
         target->path = group.leaderPath;
         target->followerCount = (std::min)(group.followerCount, static_cast<std::uint32_t>(target->followers.size()));
         target->followers = group.followers;
-        ++_pathRevision;
 
         ROCK_LOG_INFO(Weapon,
             "WeaponPartMotionLearner: {} AUTHORED stroke group for part '{}' on weapon {:08X} (leader arc {:.2f} game units, {} followers)",
@@ -161,7 +160,6 @@ namespace rock
         _paths = {};
         _recorders = {};
         _observationCounter = 0;
-        ++_pathRevision;
     }
 
     WeaponPartMotionLearner::RecorderSlot* WeaponPartMotionLearner::acquireRecorderSlot(
@@ -237,7 +235,6 @@ namespace rock
         target->sourceName = recorder.sourceName;
         target->lastUseCounter = _observationCounter;
         target->path = candidate;
-        ++_pathRevision;
 
         // Once per completed stroke, never per frame.
         ROCK_LOG_INFO(Weapon,
