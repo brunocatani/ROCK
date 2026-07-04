@@ -2938,6 +2938,7 @@ namespace rock
                 _clipHarvestWalkGenerationKey = 0;
                 _clipHarvestWalkAttempts = 0;
                 _clipHarvestWalkCompleted = false;
+                _clipHarvestWalkHolderSeen = false;
                 _weaponPartDriveSandboxWasEnabled = false;
             }
             const auto equippedWeaponDropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
@@ -6070,6 +6071,7 @@ namespace rock
             _clipHarvestWalkGenerationKey = currentWeaponGenerationKey;
             _clipHarvestWalkAttempts = 0;
             _clipHarvestWalkCompleted = false;
+            _clipHarvestWalkHolderSeen = false;
         }
         if (_clipHarvestWalkCompleted) {
             return;
@@ -6086,46 +6088,49 @@ namespace rock
         if (++_clipHarvestWalkAttempts > kClipHarvestWalkMaxAttempts) {
             _clipHarvestWalkCompleted = true;
             ROCK_LOG_WARN(Weapon,
-                "WeaponClipMotionHarvest: weapon {:08X} graph bindings never became available; no authored strokes for this weapon",
-                weaponFormId);
+                "WeaponClipMotionHarvest: weapon {:08X} graph bindings never became available (holderSeen={} lastStage={}); no authored strokes for this weapon",
+                weaponFormId,
+                _clipHarvestWalkHolderSeen,
+                ::rock::weapon_clip_motion_harvest::lastResolveStage());
             return;
         }
 
         /*
          * The equipped weapon's own behavior graph lives on its biped slot's
-         * WeaponAnimationGraphManagerHolder. The slot is identified by its
-         * part clone being the weapon scene tree we already operate on, so a
-         * stale slot can never be harvested. Non-owning pointer, used only
-         * within this call.
+         * WeaponAnimationGraphManagerHolder. The player carries two bipeds
+         * (third- and first-person; weapon graphs historically live on the
+         * first-person one), so both are searched. The slot is identified by
+         * its base form matching the equipped weapon, which is scene-tree
+         * independent. Non-owning pointer, used only within this call.
          */
         auto* player = RE::PlayerCharacter::GetSingleton();
         if (!player) {
             return;
         }
-        auto* biped = player->GetBiped().get();
-        if (!biped) {
-            return;
-        }
         const void* weaponGraphHolder = nullptr;
         const auto firstWeaponSlot = static_cast<std::uint32_t>(std::to_underlying(RE::BIPED_OBJECT::kWeaponHand));
         const auto totalSlots = static_cast<std::uint32_t>(std::to_underlying(RE::BIPED_OBJECT::kTotal));
-        for (std::uint32_t slot = firstWeaponSlot; slot < totalSlots && !weaponGraphHolder; ++slot) {
-            auto& bipObject = biped->object[slot];
-            auto* partClone = bipObject.partClone.get();
-            if (!partClone) {
+        for (const bool firstPerson : { false, true }) {
+            auto* biped = player->GetBiped(firstPerson).get();
+            if (!biped) {
                 continue;
             }
-            const bool matchesWeapon = partClone == weaponNode ||
-                actor_equipment_grab::nodeContainsNode(partClone, weaponNode, 16) ||
-                actor_equipment_grab::nodeContainsNode(weaponNode, partClone, 16);
-            if (!matchesWeapon) {
-                continue;
+            for (std::uint32_t slot = firstWeaponSlot; slot < totalSlots && !weaponGraphHolder; ++slot) {
+                auto& bipObject = biped->object[slot];
+                const auto* itemForm = bipObject.parent.object;
+                if (!itemForm || itemForm->GetFormID() != weaponFormId) {
+                    continue;
+                }
+                weaponGraphHolder = bipObject.objectGraphManager.get();
             }
-            weaponGraphHolder = bipObject.objectGraphManager.get();
+            if (weaponGraphHolder) {
+                break;
+            }
         }
         if (!weaponGraphHolder) {
             return;
         }
+        _clipHarvestWalkHolderSeen = true;
 
         if (::rock::weapon_clip_motion_harvest::stepHarvest(weaponGraphHolder, weaponFormId, currentWeaponGenerationKey) ==
             ::rock::weapon_clip_motion_harvest::StepResult::Completed) {

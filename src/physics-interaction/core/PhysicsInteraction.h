@@ -529,6 +529,10 @@ namespace rock
         std::uint64_t _clipHarvestWalkGenerationKey{ 0 };
         std::uint32_t _clipHarvestWalkAttempts{ 0 };
         bool _clipHarvestWalkCompleted{ false };
+        // Whether the equipped weapon's graph holder was located at least
+        // once this generation; separates "holder missing" from "bindings
+        // never resolved" in the give-up diagnostics.
+        bool _clipHarvestWalkHolderSeen{ false };
         static constexpr std::size_t kNativePlayerCollisionSuppressionBodyCapacity = 64;
         std::array<std::uint32_t, kNativePlayerCollisionSuppressionBodyCapacity> _nativePlayerCollisionSuppressedBodyIds{};
         std::uint32_t _nativePlayerCollisionSuppressedBodyCount = 0;

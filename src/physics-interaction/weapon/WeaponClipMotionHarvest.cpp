@@ -120,6 +120,10 @@ namespace rock::weapon_clip_motion_harvest
         std::uint64_t s_walkGenerationKey = 0;
         std::int32_t s_walkBindingIndex = 0;
         bool s_walkDone = false;
+        // Deepest chain hop reached by the most recent resolve attempt;
+        // reported by the caller when a walk gives up so the failing stage
+        // is visible in the log instead of a generic timeout.
+        const char* s_lastResolveStage = "none";
 
         // Coarse pointer plausibility gate for values read out of engine
         // objects; rejects null, refcount headers, and other small integers
@@ -283,13 +287,16 @@ namespace rock::weapon_clip_motion_harvest
         bool resolveWeaponGraphBindings(const void* holder, ResolvedBindings& out)
         {
             const auto holderAddress = reinterpret_cast<std::uintptr_t>(holder);
+            s_lastResolveStage = "holder";
             if (!plausiblePointer(holderAddress)) {
                 return false;
             }
+            s_lastResolveStage = "manager";
             const auto manager = *reinterpret_cast<std::uintptr_t*>(holderAddress + kHolderManagerOffset);
             if (!plausiblePointer(manager)) {
                 return false;
             }
+            s_lastResolveStage = "graphs-array";
             const auto capacityAndFlags = *reinterpret_cast<std::uint32_t*>(manager + kManagerGraphsCapacityOffset);
             const auto storageAddress = manager + kManagerGraphsStorageOffset;
             const auto graphsBase = (capacityAndFlags & kGraphsInlineStorageFlag) != 0
@@ -298,23 +305,28 @@ namespace rock::weapon_clip_motion_harvest
             if (!plausiblePointer(graphsBase)) {
                 return false;
             }
+            s_lastResolveStage = "active-index";
             const auto activeGraphIndex = *reinterpret_cast<std::uint32_t*>(manager + kManagerActiveGraphOffset);
             if (activeGraphIndex > kMaxPlausibleActiveGraphIndex) {
                 return false;
             }
+            s_lastResolveStage = "graph";
             const auto graph = reinterpret_cast<const std::uintptr_t*>(graphsBase)[activeGraphIndex];
             if (!plausiblePointer(graph)) {
                 return false;
             }
+            s_lastResolveStage = "character-setup";
             const auto character = graph + kGraphCharacterOffset;
             const auto setup = *reinterpret_cast<std::uintptr_t*>(character + kCharacterSetupOffset);
             if (!plausiblePointer(setup)) {
                 return false;
             }
+            s_lastResolveStage = "skeleton";
             const auto skeleton = *reinterpret_cast<std::uintptr_t*>(setup + kSetupAnimationSkeletonOffset);
             if (!plausiblePointer(skeleton)) {
                 return false;
             }
+            s_lastResolveStage = "binding-set";
             auto bindingSet = *reinterpret_cast<std::uintptr_t*>(character + kCharacterBindingSetOverrideOffset);
             if (!plausiblePointer(bindingSet)) {
                 bindingSet = *reinterpret_cast<std::uintptr_t*>(setup + kSetupBindingSetOffset);
@@ -322,16 +334,23 @@ namespace rock::weapon_clip_motion_harvest
             if (!plausiblePointer(bindingSet)) {
                 return false;
             }
+            s_lastResolveStage = "bindings";
             const auto bindingsData = *reinterpret_cast<std::uintptr_t*>(bindingSet + kBindingSetDataOffset);
             const auto bindingCount = *reinterpret_cast<std::int32_t*>(bindingSet + kBindingSetCountOffset);
             if (!plausiblePointer(bindingsData) || bindingCount <= 0 || bindingCount > kMaxPlausibleBindingCount) {
                 return false;
             }
+            s_lastResolveStage = "ok";
             out.skeleton = skeleton;
             out.bindingsData = bindingsData;
             out.bindingCount = bindingCount;
             return true;
         }
+    }
+
+    const char* lastResolveStage()
+    {
+        return s_lastResolveStage;
     }
 
     StepResult stepHarvest(const void* weaponGraphHolder, std::uint32_t weaponFormId, std::uint64_t weaponGenerationKey)

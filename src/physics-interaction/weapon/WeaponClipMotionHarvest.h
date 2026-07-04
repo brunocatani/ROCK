@@ -54,6 +54,10 @@ namespace rock::weapon_clip_motion_harvest
     // Forget the walk cursor (weapon changed / sandbox disabled).
     void resetWalk();
 
+    // Deepest holder-chain hop reached by the most recent resolve attempt
+    // ("ok" when bindings were reachable); for give-up diagnostics.
+    [[nodiscard]] const char* lastResolveStage();
+
     // Main-thread drain of harvested stroke groups (weapon-bone local space;
     // attribution/space conversion is the caller's job). Returns the number
     // of groups written to outGroups.
