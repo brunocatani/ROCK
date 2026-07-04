@@ -21,12 +21,14 @@ namespace rock::input_remap_runtime
     void setGameplayInputAllowed(bool allowed);
     void setWeaponDrawn(bool weaponDrawn);
     void setRightHandHeldWeapon(bool heldWeapon);
+    void setHandHeldObject(bool isLeft, bool heldObject);
     void setEquippedWeaponPrimaryDetachInputActive(bool active);
     void setEquippedWeaponPrimaryDetached(bool detached);
     void setProviderOpenVrGameInputSuppressed(bool isLeft, bool suppressed);
     bool isMenuInputActive();
     bool shouldDeferGrabInputForVirtualHolsters(bool isLeft, int buttonId);
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event);
+    bool isNativePipboyInputSuppressionActive();
     void processPendingWeaponToggleRequests();
 
     RawButtonState peekRawButtonState(bool isLeft, int buttonId);

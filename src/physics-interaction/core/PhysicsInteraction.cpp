@@ -6251,6 +6251,8 @@ namespace rock
         if (!runtime_state::isLocalSkeletonReady()) {
             provider::clearInteractionCommandsForProviderLossV1(provider::RockProviderInteractionFailureV1::ProviderNotReady);
             input_remap_runtime::setRightHandHeldWeapon(false);
+            input_remap_runtime::setHandHeldObject(false, false);
+            input_remap_runtime::setHandHeldObject(true, false);
             input_remap_runtime::setEquippedWeaponPrimaryDetachInputActive(false);
             input_remap_runtime::setEquippedWeaponPrimaryDetached(false);
             input_remap_runtime::setProviderOpenVrGameInputSuppressed(false, false);
@@ -6267,11 +6269,15 @@ namespace rock
         const bool equippedWeaponSupportGripActive = _twoHandedGrip.isHandPartGripping(true);
         const auto farHmdConeGate = makeFarSelectionHmdConeGate(frame);
         input_remap_runtime::setRightHandHeldWeapon(_rightHand.isHoldingLooseWeapon());
+        input_remap_runtime::setHandHeldObject(false, _rightHand.isHolding());
+        input_remap_runtime::setHandHeldObject(true, _leftHand.isHolding());
         processProviderInteractionCommands(frame);
         servicePendingLooseGrenadeEquip(frame);
         serviceEquippedWeaponDropMomentumHandoff(frame);
         updateLooseGrenadeFuses(frame);
         input_remap_runtime::setRightHandHeldWeapon(_rightHand.isHoldingLooseWeapon());
+        input_remap_runtime::setHandHeldObject(false, _rightHand.isHolding());
+        input_remap_runtime::setHandHeldObject(true, _leftHand.isHolding());
 
         auto releaseSuppressedHeldObject = [&](Hand& hand, bool isLeft, const char* reason) {
             auto* heldRef = hand.getHeldRef();

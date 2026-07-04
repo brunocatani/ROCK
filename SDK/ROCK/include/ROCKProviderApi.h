@@ -250,6 +250,8 @@ namespace rock::provider
         WeaponPartGripState = 1u << 16,
         WeaponPartRecordIdentity = 1u << 17,
         WeaponPartTargetNonExclusive = 1u << 18,
+        RawWandButtonState = 1u << 19,
+        PipboyInputSuppression = 1u << 20,
     };
 
     enum class RockProviderInteractionCommandKindV1 : std::uint32_t
@@ -613,6 +615,27 @@ namespace rock::provider
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
         std::uint32_t reserved[8]{};
+    };
+
+    /*
+     * Raw OpenVR wand button state as sampled by ROCK's controller-state hook
+     * (feature bit RawWandButtonState). Level state only: press/release edge
+     * tracking is deliberately not exposed because ROCK consumes its edge
+     * queues internally every frame (grab and trigger-equip logic); consumers
+     * derive their own edges from held transitions. available reads 0 until
+     * the hook has sampled that wand; held reads 0 while a game-stopping menu
+     * owns input, with the same release-to-rearm gating ROCK applies to its
+     * own gameplay reads. This state stays readable while ROCK suppresses the
+     * matching native game action (e.g. the pipboy trigger) - that is the
+     * point: the game action is silenced, the physical button is not.
+     */
+    struct RockProviderRawWandButtonStateV1
+    {
+        std::uint32_t size{ sizeof(RockProviderRawWandButtonStateV1) };
+        std::uint32_t version{ ROCK_PROVIDER_API_VERSION };
+        std::uint32_t available{ 0 };
+        std::uint32_t held{ 0 };
+        std::uint32_t reserved[4]{};
     };
 
     struct RockProviderWeaponPartTargetV1
@@ -1074,6 +1097,16 @@ namespace rock::provider
         RockProviderResultV1(ROCK_PROVIDER_CALL* clearWeaponPartDriveTargetsV1)(std::uint64_t ownerToken);
         bool(ROCK_PROVIDER_CALL* queryEquippedWeaponClassificationV1)(RockProviderWeaponClassificationV1* outResult);
         bool(ROCK_PROVIDER_CALL* getWeaponPartGripStateV1)(RockProviderHand hand, RockProviderWeaponPartGripStateV1* outState);
+        bool(ROCK_PROVIDER_CALL* getRawWandButtonStateV1)(RockProviderHand hand, std::uint32_t buttonId, RockProviderRawWandButtonStateV1* outState);
+        /*
+         * True while ROCK's PipboyHandler hook would swallow a "Pipboy"
+         * trigger event right now (pipboy hand holding a ROCK object, or a
+         * provider OpenVR game-input lease active). Consumers that repurpose
+         * the pipboy trigger should treat the button as theirs only while
+         * this reads true; otherwise a press will also open the Pip-Boy or
+         * toggle the flashlight.
+         */
+        bool(ROCK_PROVIDER_CALL* isNativePipboyInputSuppressedV1)();
 
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
@@ -1142,6 +1175,10 @@ namespace rock::provider
         offsetof(RockProviderApi, queryEquippedWeaponClassificationV1) + sizeof(std::declval<RockProviderApi>().queryEquippedWeaponClassificationV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_WEAPON_PART_GRIP_STATE_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, getWeaponPartGripStateV1) + sizeof(std::declval<RockProviderApi>().getWeaponPartGripStateV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_RAW_WAND_BUTTON_STATE_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, getRawWandButtonStateV1) + sizeof(std::declval<RockProviderApi>().getRawWandButtonStateV1));
+    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_PIPBOY_INPUT_SUPPRESSION_TABLE_BYTES = static_cast<std::uint32_t>(
+        offsetof(RockProviderApi, isNativePipboyInputSuppressedV1) + sizeof(std::declval<RockProviderApi>().isNativePipboyInputSuppressedV1));
 
     [[nodiscard]] inline bool queryProviderLimitsV1(RockProviderLimitsV1& outLimits)
     {
@@ -1239,6 +1276,30 @@ namespace rock::provider
         return queryProviderLimitsV1(limits) && supportsWeaponPartGripStateV1(limits);
     }
 
+    [[nodiscard]] inline bool supportsRawWandButtonStateV1(const RockProviderLimitsV1& limits)
+    {
+        return providerApiTableSupportsV1(limits, ROCK_PROVIDER_API_V1_RAW_WAND_BUTTON_STATE_TABLE_BYTES) &&
+               hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::RawWandButtonState);
+    }
+
+    [[nodiscard]] inline bool supportsRawWandButtonStateV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsRawWandButtonStateV1(limits);
+    }
+
+    [[nodiscard]] inline bool supportsPipboyInputSuppressionV1(const RockProviderLimitsV1& limits)
+    {
+        return providerApiTableSupportsV1(limits, ROCK_PROVIDER_API_V1_PIPBOY_INPUT_SUPPRESSION_TABLE_BYTES) &&
+               hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::PipboyInputSuppression);
+    }
+
+    [[nodiscard]] inline bool supportsPipboyInputSuppressionV1()
+    {
+        RockProviderLimitsV1 limits{};
+        return queryProviderLimitsV1(limits) && supportsPipboyInputSuppressionV1(limits);
+    }
+
     [[nodiscard]] inline bool supportsWeaponPartRecordIdentityV1(const RockProviderLimitsV1& limits)
     {
         return hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::WeaponPartRecordIdentity);
@@ -1284,6 +1345,10 @@ namespace rock::provider
     static_assert(alignof(RockProviderHandInputSuppressionRequestV1) == 4);
     static_assert(std::is_standard_layout_v<RockProviderHandInputSuppressionRequestV1>);
     static_assert(std::is_trivially_copyable_v<RockProviderHandInputSuppressionRequestV1>);
+    static_assert(sizeof(RockProviderRawWandButtonStateV1) == 32);
+    static_assert(alignof(RockProviderRawWandButtonStateV1) == 4);
+    static_assert(std::is_standard_layout_v<RockProviderRawWandButtonStateV1>);
+    static_assert(std::is_trivially_copyable_v<RockProviderRawWandButtonStateV1>);
     static_assert(sizeof(RockProviderWeaponPartTargetV1) == 160);
     static_assert(alignof(RockProviderWeaponPartTargetV1) == 8);
     static_assert(std::is_standard_layout_v<RockProviderWeaponPartTargetV1>);

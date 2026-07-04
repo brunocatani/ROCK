@@ -192,6 +192,27 @@ int main()
     unmatched.eventMatched = false;
     ok &= expectFalse("unmatched native event is not suppressed", shouldSuppressNativeTriggerAction(unmatched));
 
+    auto pipboyIdleHand = base;
+    ok &= expectFalse("matched Pipboy event with a free pipboy hand keeps native pipboy handling", shouldSuppressNativePipboyAction(pipboyIdleHand));
+    auto pipboyHolding = base;
+    pipboyHolding.pipboyHandHeldObject = true;
+    ok &= expectTrue("pipboy hand holding an object suppresses native pipboy open/light", shouldSuppressNativePipboyAction(pipboyHolding));
+    auto pipboyHoldingDrawn = pipboyHolding;
+    pipboyHoldingDrawn.weaponDrawn = true;
+    ok &= expectTrue("weapon drawn does not gate pipboy suppression while holding", shouldSuppressNativePipboyAction(pipboyHoldingDrawn));
+    auto pipboyMenu = pipboyHolding;
+    pipboyMenu.menuInputActive = true;
+    ok &= expectFalse("menu input keeps native pipboy handling so the trigger can close an open Pip-Boy", shouldSuppressNativePipboyAction(pipboyMenu));
+    auto pipboyDisabled = pipboyHolding;
+    pipboyDisabled.suppressionEnabled = false;
+    ok &= expectFalse("disabled pipboy suppression setting keeps native pipboy handling", shouldSuppressNativePipboyAction(pipboyDisabled));
+    auto pipboyNoGameplay = pipboyHolding;
+    pipboyNoGameplay.gameplayInputAllowed = false;
+    ok &= expectFalse("blocked gameplay input keeps native pipboy handling", shouldSuppressNativePipboyAction(pipboyNoGameplay));
+    auto pipboyUnmatched = pipboyHolding;
+    pipboyUnmatched.eventMatched = false;
+    ok &= expectFalse("non-Pipboy event is never suppressed by the pipboy gate", shouldSuppressNativePipboyAction(pipboyUnmatched));
+
     NativeActivateReloadInput activateReload{
         .remapEnabled = true,
         .gameplayInputAllowed = true,

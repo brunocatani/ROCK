@@ -19,6 +19,7 @@ namespace rock::input_remap_policy
         bool suppressRightFavoritesGameInput{ true };
         bool suppressRightTriggerGameInput{ true };
         bool suppressNativeMeleeThrowGameInput{ true };
+        bool suppressPipboyGameInputWhileHolding{ true };
         bool virtualHolstersCompatibilityEnabled{ true };
         bool virtualHolstersDeferGrabInZone{ true };
         bool virtualHolstersDeferWeaponToggleInZone{ true };
@@ -91,6 +92,7 @@ namespace rock::input_remap_policy
         bool primaryHandEvent{ false };
         bool equippedWeaponPrimaryDetachInputActive{ false };
         bool equippedWeaponPrimaryDetached{ false };
+        bool pipboyHandHeldObject{ false };
         bool eventMatched{ false };
     };
 
@@ -247,6 +249,22 @@ namespace rock::input_remap_policy
     [[nodiscard]] constexpr bool shouldSuppressNativeMeleeThrowAction(const NativeActionSuppressionInput& input)
     {
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched;
+    }
+
+    /*
+     * FO4VR's PipboyHandler owns the whole pipboy-hand trigger lifecycle for
+     * user event "Pipboy": press starts hold tracking, holding past the game
+     * threshold toggles the pipboy light, release opens the Pip-Boy. While
+     * the pipboy hand holds a ROCK object that trigger belongs to interaction
+     * consumers (e.g. PAPER through the provider raw-button API), so both
+     * native actions are suppressed together at the verified handler while
+     * the raw OpenVR button stays readable. Menu input keeps native handling
+     * so the trigger can still close an already-open Pip-Boy.
+     */
+    [[nodiscard]] constexpr bool shouldSuppressNativePipboyAction(const NativeActionSuppressionInput& input)
+    {
+        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
+               input.pipboyHandHeldObject;
     }
 
     [[nodiscard]] constexpr bool shouldInstallNativeActionSuppressionHook(bool remapEnabled, bool suppressionEnabled)

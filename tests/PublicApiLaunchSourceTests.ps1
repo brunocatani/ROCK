@@ -280,7 +280,9 @@ $expectedProviderFunctions = [string[]]@(
     'setWeaponPartDriveTargetsV1',
     'clearWeaponPartDriveTargetsV1',
     'queryEquippedWeaponClassificationV1',
-    'getWeaponPartGripStateV1'
+    'getWeaponPartGripStateV1',
+    'getRawWandButtonStateV1',
+    'isNativePipboyInputSuppressedV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 

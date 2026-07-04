@@ -12,6 +12,8 @@
 #include "physics-interaction/object/ExternalBodyRegistry.h"
 #include "physics-interaction/api/InteractionCommandQueue.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
+#include "physics-interaction/input/InputRemapPolicy.h"
+#include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/weapon/WeaponPartGripReportPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "f4vr/F4VRUtils.h"
@@ -131,7 +133,9 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartInteraction) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartGripState) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartRecordIdentity) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartTargetNonExclusive);
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartTargetNonExclusive) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::RawWandButtonState) |
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::PipboyInputSuppression);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
@@ -1613,6 +1617,33 @@ namespace
         return true;
     }
 
+    bool ROCK_PROVIDER_CALL apiGetRawWandButtonStateV1(RockProviderHand hand, std::uint32_t buttonId, RockProviderRawWandButtonStateV1* outState)
+    {
+        if (!outState || outState->size != sizeof(RockProviderRawWandButtonStateV1)) {
+            return false;
+        }
+        if (hand != RockProviderHand::Left && hand != RockProviderHand::Right) {
+            return false;
+        }
+        if (!rock::input_remap_policy::isValidButtonId(static_cast<int>(buttonId))) {
+            return false;
+        }
+
+        // Level state only by design: ROCK consumes its press/release edge queues internally each frame, so exposing them would race consumers.
+        const auto raw = rock::input_remap_runtime::peekRawButtonState(hand == RockProviderHand::Left, static_cast<int>(buttonId));
+        *outState = {};
+        outState->size = sizeof(RockProviderRawWandButtonStateV1);
+        outState->version = ROCK_PROVIDER_API_VERSION;
+        outState->available = raw.available ? 1u : 0u;
+        outState->held = raw.held ? 1u : 0u;
+        return true;
+    }
+
+    bool ROCK_PROVIDER_CALL apiIsNativePipboyInputSuppressedV1()
+    {
+        return rock::input_remap_runtime::isNativePipboyInputSuppressionActive();
+    }
+
     constexpr RockProviderApi ROCK_PROVIDER_API_FUNCTION_TABLE{
         .getVersion = &apiGetVersion,
         .getModVersion = &apiGetModVersion,
@@ -1649,6 +1680,8 @@ namespace
         .clearWeaponPartDriveTargetsV1 = &apiClearWeaponPartDriveTargetsV1,
         .queryEquippedWeaponClassificationV1 = &apiQueryEquippedWeaponClassificationV1,
         .getWeaponPartGripStateV1 = &apiGetWeaponPartGripStateV1,
+        .getRawWandButtonStateV1 = &apiGetRawWandButtonStateV1,
+        .isNativePipboyInputSuppressedV1 = &apiIsNativePipboyInputSuppressedV1,
     };
 }
 

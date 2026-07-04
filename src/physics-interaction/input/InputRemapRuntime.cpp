@@ -41,6 +41,21 @@ namespace rock::input_remap_runtime
         constexpr std::uintptr_t kFavoritesManagerHandleEventVTableSlotOffset = 0x2DC8520;
         constexpr std::uintptr_t kMeleeThrowHandlerHandleEventFunctionOffset = 0x0FC8AE0;
         constexpr std::uintptr_t kMeleeThrowHandlerHandleEventVTableSlotOffset = 0x2D8A9F0;
+        /*
+         * PipboyHandler (BSInputEventUser in the MenuControls chain, vtable
+         * 0x2DCC778) processes the pipboy-hand trigger in vtable slot 11
+         * (0x2DCC7D0): press starts hold tracking, holding past the game
+         * threshold toggles the pipboy light, release opens the Pip-Boy.
+         * Verified 2026-07-04 from raw disassembly of the constructor
+         * (0x1325090 region) and the slot-11 processor (0x1326D90); the same
+         * function independently re-uses the already-verified player global
+         * (0x5B043F0), device-to-controller-id converter (0x1BA6ED0), and
+         * action dispatcher data (0x5A3B8A0). ShouldHandleEvent (slot 1) also
+         * accepts "Pause" and the Quick* tab events, so the hook must match
+         * the "Pipboy" user event exactly and never swallow the rest.
+         */
+        constexpr std::uintptr_t kPipboyHandlerHandleEventFunctionOffset = 0x1326D90;
+        constexpr std::uintptr_t kPipboyHandlerHandleEventVTableSlotOffset = 0x2DCC7D0;
         constexpr std::uintptr_t kNativeActionDispatcherFunctionOffset = 0x0FC07E0;
         constexpr std::uintptr_t kNativeInputDeviceToControllerIdFunctionOffset = 0x1BA6ED0;
         constexpr std::uintptr_t kNativePlayerActionDispatcherDataOffset = 0x5A3B8A0;
@@ -58,6 +73,7 @@ namespace rock::input_remap_runtime
         constexpr std::string_view kNativeEventWandGrip{ "WandGrip" };
         constexpr std::string_view kNativeEventWandTrigger{ "WandTrigger" };
         constexpr std::string_view kNativeEventWandThumbClick{ "WandThumbClick" };
+        constexpr std::string_view kNativeEventPipboy{ "Pipboy" };
 
         using GetControllerState_t = bool (*)(vr::IVRSystem*, vr::TrackedDeviceIndex_t, vr::VRControllerState_t*, std::uint32_t);
         using GetControllerStateWithPose_t =
@@ -66,6 +82,8 @@ namespace rock::input_remap_runtime
         using NativeActionDispatcher_t = bool (*)(void*, int, std::uint32_t);
         using NativeInputDeviceToControllerId_t = std::int32_t (*)(std::int32_t);
         using FavoritesInputEventHandler_t = void (*)(void*, RE::InputEvent*);
+        // Verified PipboyHandler slot-11 signature: (this, event) only; no cursor/unk tail like the PlayerControls handlers.
+        using PipboyInputEventHandler_t = void (*)(void*, RE::InputEvent*);
 
         struct ControllerTracker
         {
@@ -85,6 +103,7 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_gameplayInputAllowed{ false };
         std::atomic<bool> s_weaponDrawn{ false };
         std::atomic<bool> s_rightHandHeldWeapon{ false };
+        std::array<std::atomic<bool>, 2> s_handHeldObject{};
         std::atomic<bool> s_equippedWeaponPrimaryDetachInputActive{ false };
         std::atomic<bool> s_equippedWeaponPrimaryDetached{ false };
         std::atomic<std::uint32_t> s_pendingWeaponToggleRequests{ 0 };
@@ -93,6 +112,7 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_activateEventHookInstalled{ false };
         std::atomic<bool> s_favoritesEventHookInstalled{ false };
         std::atomic<bool> s_meleeThrowEventHookInstalled{ false };
+        std::atomic<bool> s_pipboyEventHookInstalled{ false };
         std::atomic<bool> s_meleeThrowFallbackPatchesApplied{ false };
         std::atomic<bool> s_menuInputGateRegistered{ false };
         std::atomic<bool> s_menuInputActive{ false };
@@ -106,6 +126,7 @@ namespace rock::input_remap_runtime
         NativeInputEventHandler_t s_originalActivateEventHandler = nullptr;
         NativeInputEventHandler_t s_originalMeleeThrowEventHandler = nullptr;
         FavoritesInputEventHandler_t s_originalFavoritesEventHandler = nullptr;
+        PipboyInputEventHandler_t s_originalPipboyEventHandler = nullptr;
 
         /*
          * ROCK remaps right-hand grab/trigger/thumbstick only while gameplay owns controller input.
@@ -378,6 +399,7 @@ namespace rock::input_remap_runtime
                 .suppressRightFavoritesGameInput = g_rockConfig.rockSuppressRightFavoritesGameInput,
                 .suppressRightTriggerGameInput = g_rockConfig.rockSuppressNativeReadyWeaponAutoReady,
                 .suppressNativeMeleeThrowGameInput = g_rockConfig.rockSuppressNativeMeleeThrowGameInput,
+                .suppressPipboyGameInputWhileHolding = g_rockConfig.rockSuppressPipboyGameInputWhileHolding,
                 .virtualHolstersCompatibilityEnabled = g_rockConfig.rockVirtualHolstersCompatibilityEnabled,
                 .virtualHolstersDeferGrabInZone = g_rockConfig.rockVirtualHolstersDeferGrabInZone,
                 .virtualHolstersDeferWeaponToggleInZone = g_rockConfig.rockVirtualHolstersDeferWeaponToggleInZone,
@@ -893,6 +915,26 @@ namespace rock::input_remap_runtime
                 makeNativeActionSuppressionInput(g_rockConfig.rockSuppressNativeReadyWeaponAutoReady, eventNameMatches(event, kNativeEventWandTrigger)));
         }
 
+        /*
+         * The pipboy trigger rides the secondary (non-primary) wand, so the
+         * suppression gate is the offhand's held-object state, not a fixed
+         * left hand. Verified in the slot-11 processor: its open path only
+         * accepts events whose controller id matches the secondary wand slot
+         * at player+0x8D0 (primary sits at the already-verified +0x8CC).
+         */
+        [[nodiscard]] bool isPipboyHandHoldingObject()
+        {
+            const bool pipboyHandIsLeft = !f4vr::isLeftHandedMode();
+            return s_handHeldObject[pipboyHandIsLeft ? 0u : 1u].load(std::memory_order_acquire);
+        }
+
+        [[nodiscard]] bool shouldSuppressNativePipboyActionEvent(const RE::InputEvent* event)
+        {
+            auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressPipboyGameInputWhileHolding, eventNameMatches(event, kNativeEventPipboy));
+            input.pipboyHandHeldObject = isPipboyHandHoldingObject();
+            return input_remap_policy::shouldSuppressNativePipboyAction(input);
+        }
+
         [[nodiscard]] bool shouldSuppressNativeMeleeThrowAction(const RE::InputEvent* event)
         {
             // FO4VR's verified MeleeThrow handler accepts its grenade/throw action from WandGrip.
@@ -1046,6 +1088,29 @@ namespace rock::input_remap_runtime
             }
         }
 
+        void hookedPipboyEventHandler(void* handler, RE::InputEvent* inputEvent)
+        {
+            if (isAnyProviderOpenVrGameInputSuppressed()) {
+                markInputEventStopped(inputEvent);
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Suppressed native Pipboy input while provider OpenVR game-input suppression is active");
+                return;
+            }
+
+            if (shouldSuppressNativePipboyActionEvent(inputEvent)) {
+                markInputEventStopped(inputEvent);
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Suppressed native Pipboy open/light trigger event while the pipboy hand holds a ROCK object");
+                return;
+            }
+
+            if (s_originalPipboyEventHandler) {
+                s_originalPipboyEventHandler(handler, inputEvent);
+            }
+        }
+
         template <class HandlerT>
         bool installNativeActionVTableHook(
             std::uintptr_t slotOffset, std::uintptr_t expectedFunctionOffset, HandlerT hook, HandlerT& original, std::atomic<bool>& installedFlag, const char* label)
@@ -1132,6 +1197,16 @@ namespace rock::input_remap_runtime
                 s_originalMeleeThrowEventHandler,
                 s_meleeThrowEventHookInstalled,
                 "MeleeThrowHandler::HandleEvent suppression");
+        }
+
+        bool installPipboyEventSuppressionHook()
+        {
+            return installNativeActionVTableHook(kPipboyHandlerHandleEventVTableSlotOffset,
+                kPipboyHandlerHandleEventFunctionOffset,
+                &hookedPipboyEventHandler,
+                s_originalPipboyEventHandler,
+                s_pipboyEventHookInstalled,
+                "PipboyHandler::HandleButtonEvent suppression");
         }
 
         bool writeMeleeThrowFallbackBranch(std::uintptr_t siteOffset, bool suppress, const char* label)
@@ -1223,6 +1298,9 @@ namespace rock::input_remap_runtime
             }
             if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressNativeMeleeThrowGameInput)) {
                 ready = installMeleeThrowEventSuppressionHook() && ready;
+            }
+            if (input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressPipboyGameInputWhileHolding)) {
+                ready = installPipboyEventSuppressionHook() && ready;
             }
 
             const bool suppressTriggerFallbacks = input_remap_policy::shouldInstallNativeActionSuppressionHook(settings.enabled, settings.suppressRightTriggerGameInput);
@@ -1373,6 +1451,11 @@ namespace rock::input_remap_runtime
         s_rightHandHeldWeapon.store(heldWeapon, std::memory_order_release);
     }
 
+    void setHandHeldObject(bool isLeft, bool heldObject)
+    {
+        s_handHeldObject[isLeft ? 0u : 1u].store(heldObject, std::memory_order_release);
+    }
+
     void setEquippedWeaponPrimaryDetachInputActive(bool active)
     {
         s_equippedWeaponPrimaryDetachInputActive.store(active, std::memory_order_release);
@@ -1404,6 +1487,18 @@ namespace rock::input_remap_runtime
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event)
     {
         return shouldSuppressNativeTriggerActionEvent(event);
+    }
+
+    bool isNativePipboyInputSuppressionActive()
+    {
+        // Mirrors hookedPipboyEventHandler for a matched "Pipboy" event so API consumers see the live hook decision.
+        if (isAnyProviderOpenVrGameInputSuppressed()) {
+            return true;
+        }
+
+        auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressPipboyGameInputWhileHolding, true);
+        input.pipboyHandHeldObject = isPipboyHandHoldingObject();
+        return input_remap_policy::shouldSuppressNativePipboyAction(input);
     }
 
     void processPendingWeaponToggleRequests()
