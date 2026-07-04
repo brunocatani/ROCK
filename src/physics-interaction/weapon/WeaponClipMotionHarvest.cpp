@@ -48,7 +48,10 @@ namespace rock::weapon_clip_motion_harvest
          * (hkaSkeleton*, the skeleton the clip tracks map to), +0x38
          * m_animationBindingSet. hkbAnimationBindingSet: +0x10 bindings
          * data (hkbAnimationBindingWithTriggers*[]), +0x18 int count.
-         * hkbAnimationBindingWithTriggers: +0x8 hkaAnimationBinding*.
+         * hkbAnimationBindingWithTriggers (0x30-byte hkReferencedObject):
+         * +0x0 vftable, +0x8 memSizeAndFlags/refCount (0xFFFF0001 pattern),
+         * +0x10 hkaAnimationBinding* — crash-log verified: reading +0x8 as
+         * the binding yielded the refcount header and an AV at 0xFFFF0019.
          */
         constexpr std::uintptr_t kOwnerCharacterSetupOffset = 0x78;
         constexpr std::uintptr_t kOwnerBindingSetOverrideOffset = 0x90;
@@ -56,8 +59,16 @@ namespace rock::weapon_clip_motion_harvest
         constexpr std::uintptr_t kSetupBindingSetOffset = 0x38;
         constexpr std::uintptr_t kBindingSetDataOffset = 0x10;
         constexpr std::uintptr_t kBindingSetCountOffset = 0x18;
-        constexpr std::uintptr_t kBindingWithTriggersBindingOffset = 0x8;
+        constexpr std::uintptr_t kBindingWithTriggersBindingOffset = 0x10;
         constexpr std::int32_t kMaxPlausibleBindingCount = 4096;
+
+        // Coarse pointer plausibility gate for values read out of engine
+        // objects on the loading thread; rejects null, refcount headers, and
+        // other small integers before they are dereferenced.
+        [[nodiscard]] bool plausiblePointer(std::uintptr_t value)
+        {
+            return value > 0x10000 && value < 0x0000'8000'0000'0000ull;
+        }
 
         // hkaAnimationBinding members.
         constexpr std::uintptr_t kBindingAnimationOffset = 0x18;
@@ -187,7 +198,7 @@ namespace rock::weapon_clip_motion_harvest
         void harvestBinding(std::uintptr_t binding, std::uintptr_t skeleton)
         {
             const auto animation = *reinterpret_cast<std::uintptr_t*>(binding + kBindingAnimationOffset);
-            if (animation == 0) {
+            if (!plausiblePointer(animation)) {
                 return;
             }
 
@@ -320,32 +331,32 @@ namespace rock::weapon_clip_motion_harvest
             }
             const auto ownerAddress = reinterpret_cast<std::uintptr_t>(owner);
             const auto setup = *reinterpret_cast<std::uintptr_t*>(ownerAddress + kOwnerCharacterSetupOffset);
-            if (setup == 0) {
+            if (!plausiblePointer(setup)) {
                 return result;
             }
             const auto skeleton = *reinterpret_cast<std::uintptr_t*>(setup + kSetupAnimationSkeletonOffset);
-            if (skeleton == 0) {
+            if (!plausiblePointer(skeleton)) {
                 return result;
             }
             auto bindingSet = *reinterpret_cast<std::uintptr_t*>(ownerAddress + kOwnerBindingSetOverrideOffset);
             if (bindingSet == 0) {
                 bindingSet = *reinterpret_cast<std::uintptr_t*>(setup + kSetupBindingSetOffset);
             }
-            if (bindingSet == 0) {
+            if (!plausiblePointer(bindingSet)) {
                 return result;
             }
             const auto bindingsData = *reinterpret_cast<std::uintptr_t*>(bindingSet + kBindingSetDataOffset);
             const auto bindingCount = *reinterpret_cast<std::int32_t*>(bindingSet + kBindingSetCountOffset);
-            if (bindingsData == 0 || bindingCount <= 0 || bindingCount > kMaxPlausibleBindingCount) {
+            if (!plausiblePointer(bindingsData) || bindingCount <= 0 || bindingCount > kMaxPlausibleBindingCount) {
                 return result;
             }
             for (std::int32_t i = 0; i < bindingCount; ++i) {
                 const auto bindingWithTriggers = reinterpret_cast<const std::uintptr_t*>(bindingsData)[i];
-                if (bindingWithTriggers == 0) {
+                if (!plausiblePointer(bindingWithTriggers)) {
                     continue;
                 }
                 const auto binding = *reinterpret_cast<std::uintptr_t*>(bindingWithTriggers + kBindingWithTriggersBindingOffset);
-                if (binding == 0) {
+                if (!plausiblePointer(binding)) {
                     continue;
                 }
                 s_bindingsSeen.fetch_add(1, std::memory_order_relaxed);
