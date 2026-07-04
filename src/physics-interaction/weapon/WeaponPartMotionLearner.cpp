@@ -103,7 +103,8 @@ namespace rock
     void WeaponPartMotionLearner::storeAuthoredGroup(
         std::uint32_t weaponFormId,
         std::string_view sourceName,
-        const weapon_clip_stroke::AuthoredStrokeGroup& group)
+        const weapon_clip_stroke::AuthoredStrokeGroup& group,
+        bool templateSource)
     {
         if (weaponFormId == 0 || sourceName.empty() || !group.leaderPath.valid) {
             return;
@@ -121,12 +122,21 @@ namespace rock
             // LEARNER PRIORITY (Bruno, 2026-07-04): once a part has a real
             // observed stroke, authored clip data never overwrites it — the
             // authored path only bootstraps parts the player has not taught
-            // yet. Between authored strokes the largest leader stroke wins
-            // (a reload stroke beats a fire nudge).
+            // yet.
             if (!target->authored) {
                 return;
             }
-            if (!weapon_part_motion_path::shouldReplacePath(target->path, group.leaderPath)) {
+            // SOURCE TIER (Bruno, 2026-07-04): the data must be what THIS
+            // weapon actually uses — a weapon-specific track always beats a
+            // vanilla template track for the same part; template data only
+            // stands while nothing weapon-specific exists. Within the same
+            // tier the largest leader stroke wins (a reload stroke beats a
+            // fire nudge).
+            if (target->templateSource != templateSource) {
+                if (templateSource) {
+                    return;
+                }
+            } else if (!weapon_part_motion_path::shouldReplacePath(target->path, group.leaderPath)) {
                 return;
             }
         } else {
@@ -150,6 +160,7 @@ namespace rock
         const bool replaced = target->used;
         target->used = true;
         target->authored = true;
+        target->templateSource = templateSource;
         target->weaponFormId = weaponFormId;
         copySlotName(target->sourceName, sourceName);
         target->lastUseCounter = _observationCounter;
@@ -163,8 +174,9 @@ namespace rock
         const auto& firstKey = group.leaderPath.keys.front();
         const auto& lastKey = group.leaderPath.keys.back();
         ROCK_LOG_INFO(Weapon,
-            "WeaponPartMotionLearner: {} AUTHORED stroke group for part '{}' on weapon {:08X} (leader arc {:.2f} game units, {} followers) start=({:.2f},{:.2f},{:.2f}) end=({:.2f},{:.2f},{:.2f})",
+            "WeaponPartMotionLearner: {} AUTHORED [{}] stroke group for part '{}' on weapon {:08X} (leader arc {:.2f} game units, {} followers) start=({:.2f},{:.2f},{:.2f}) end=({:.2f},{:.2f},{:.2f})",
             replaced ? "updated" : "stored",
+            templateSource ? "template" : "weapon-specific",
             sourceName,
             weaponFormId,
             group.leaderPath.totalArcLength,

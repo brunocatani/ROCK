@@ -6518,6 +6518,13 @@ namespace rock
                 // in the assembled tree) — normal for NPC/other-race clips.
                 continue;
             }
+            // Vanilla template rig bones ('Weapon…') carry generic motions;
+            // they are stored at a lower tier so a weapon-specific track for
+            // the same part always outranks them, and they only drive weapons
+            // whose own animation actually uses the template rig.
+            const bool templateSource =
+                leaderName.size() >= 6 &&
+                _strnicmp(leaderName.data(), "Weapon", 6) == 0;
             const RE::NiTransform leaderRestWeaponLocal =
                 transform_math::composeTransforms(weaponWorldInverse, leaderNode->world);
 
@@ -6604,7 +6611,8 @@ namespace rock
                         _weaponPartMotionLearner.storeAuthoredGroup(
                             weaponFormId,
                             providerFixedStringView(entry.sourceName.data(), entry.sourceName.size()),
-                            converted);
+                            converted,
+                            templateSource);
                         storedForEvidence = true;
                     }
                 }
@@ -6614,7 +6622,7 @@ namespace rock
                 // No collider evidence under this bone yet; keep the stroke
                 // under the rig-bone name so future parts can find it.
                 if (convertLeaderPath(group, leaderRestWeaponLocal, nullptr, converted.leaderPath)) {
-                    _weaponPartMotionLearner.storeAuthoredGroup(weaponFormId, leaderName, converted);
+                    _weaponPartMotionLearner.storeAuthoredGroup(weaponFormId, leaderName, converted, templateSource);
                 }
             }
         }

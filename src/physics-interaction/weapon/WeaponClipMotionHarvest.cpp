@@ -364,26 +364,6 @@ namespace rock::weapon_clip_motion_harvest
         }
 
         /*
-         * Vanilla TEMPLATE rig bones ('WeaponBolt', 'WeaponMagazineChild3',
-         * 'WeaponExtra1'…) carry generic motions that never match a mod
-         * weapon's geometry — in-game calibration (2026-07-04) showed the
-         * generic mag arc cannot map onto a straight-drop magazine under any
-         * rotation. Authored data must come from the weapon's OWN clip
-         * tracks, the same custom animation the reload plays (Bruno
-         * directive), so template bones are excluded even when the scene
-         * tree carries same-named template nodes.
-         */
-        bool isGenericTemplateBone(const char* name)
-        {
-            constexpr const char kPrefix[] = "Weapon";
-            constexpr std::size_t kPrefixLength = sizeof(kPrefix) - 1;
-            if (!name || std::strlen(name) < kPrefixLength) {
-                return false;
-            }
-            return namesEqualNoCase(name, kPrefix, kPrefixLength);
-        }
-
-        /*
          * A rig bone is a harvest target when it matches one of the weapon's
          * scene-node names: exact (case-insensitive, engine names are
          * case-insensitive) or with a ':N' instancing suffix on the node
@@ -578,8 +558,7 @@ namespace rock::weapon_clip_motion_harvest
                     continue;
                 }
                 const char* name = skeletonBoneName(skeleton, boneIndex);
-                if (isGenericTemplateBone(name) ||
-                    !isHarvestTargetBone(name, allowedNodeNames, allowedNodeNameCount)) {
+                if (!isHarvestTargetBone(name, allowedNodeNames, allowedNodeNameCount)) {
                     continue;
                 }
                 trackIndices[targetCount] = static_cast<std::int16_t>(track);
