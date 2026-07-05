@@ -27,6 +27,7 @@
 #include "physics-interaction/input/GrabInputIntentPolicy.h"
 #include "physics-interaction/native/PhysicsStepDriveCoordinator.h"
 #include "physics-interaction/stash/ShoulderStashDetector.h"
+#include "physics-interaction/weapon/EquipVisualBridge.h"
 #include "physics-interaction/weapon/EquippedWeaponDropMomentum.h"
 #include "physics-interaction/weapon/EquippedWeaponDropPolicy.h"
 #include "physics-interaction/weapon/TwoHandedGrip.h"
@@ -307,6 +308,8 @@ namespace rock
         BodyBoneColliderSet _bodyBoneColliders;
 
         WeaponCollision _weaponCollision;
+
+        EquipVisualBridge _equipVisualBridge;
 
         PhysicsStepDriveCoordinator _generatedBodyStepDrive;
 

@@ -324,6 +324,15 @@ namespace rock::weapon_equip_transfer
 
         const auto expectedInstanceData = resolveReferenceInstanceData(heldRef);
         result.attempted = true;
+        /*
+         * Capture the loose 3D before ActivateRef. The pickup path detaches it
+         * from the scene graph synchronously inside this call (DetachHavok +
+         * Set3D(nullptr) via the inline-processed remove task; see
+         * docs/research/2026-07-04-loose-to-equipped-weapon-visual-gap.md),
+         * but that teardown only releases the ref's own ownership — this
+         * NiPointer keeps the assembled model alive for the visual bridge.
+         */
+        result.detachedWorldModel.reset(heldRef->Get3D());
         const bool activated = heldRef->ActivateRef(player, nullptr, result.count, false, false, false);
         if (!activated) {
             result.reason = EquipReason::ActivateRefFailed;
@@ -344,16 +353,38 @@ namespace rock::weapon_equip_transfer
         result.stackID = stack.stackID;
         result.matchedInstanceData = stack.matchedInstanceData;
         RE::BGSObjectInstance objectInstance(result.weapon, stack.instanceData.get());
-        const bool equipped = equipManager->EquipObject(player,
+        /*
+         * a_queueEquip=false takes the engine's immediate DoEquip inside this
+         * call (raw disasm: EquipObject 0x140e6fea0 stores the flag at
+         * params+0x18, 0x140e71920 branches on it). Weapons on the player
+         * otherwise always defer through the middleProcess pending-equip list,
+         * adding visible frames before the draw can start. A keyword-gated
+         * engine pre-check can veto the immediate path for special items, so
+         * fall back to the legacy queued call when the immediate one fails.
+         */
+        bool equipped = equipManager->EquipObject(player,
             objectInstance,
             stack.stackID,
             1,
             stack.equipSlot,
-            true,
+            false,
             false,
             input.playSounds,
             true,
             false);
+        result.usedImmediateEquip = equipped;
+        if (!equipped) {
+            equipped = equipManager->EquipObject(player,
+                objectInstance,
+                stack.stackID,
+                1,
+                stack.equipSlot,
+                true,
+                false,
+                input.playSounds,
+                true,
+                false);
+        }
         if (!equipped) {
             result.reason = EquipReason::EquipObjectFailed;
             return result;

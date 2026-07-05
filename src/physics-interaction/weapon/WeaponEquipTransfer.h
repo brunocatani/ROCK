@@ -2,6 +2,7 @@
 
 #include "RE/Bethesda/TESForms.h"
 #include "RE/Bethesda/TESObjectREFRs.h"
+#include "RE/NetImmerse/NiAVObject.h"
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiSmartPointer.h"
 
@@ -59,12 +60,20 @@ namespace rock::weapon_equip_transfer
         bool transferredToInventory = false;
         bool success = false;
         bool matchedInstanceData = false;
+        bool usedImmediateEquip = false;
         EquipReason reason = EquipReason::NotAttempted;
         std::int32_t count = 1;
         std::uint32_t formID = 0;
         std::uint32_t observedEquippedFormID = 0;
         std::uint32_t stackID = 0;
         RE::TESObjectWEAP* weapon = nullptr;
+        /*
+         * Loose weapon 3D captured before ActivateRef. The engine detaches it
+         * from the scene graph synchronously during pickup but only releases
+         * its own reference; this pointer keeps the assembled model alive so
+         * the caller can bridge the visual gap until the equipped 3D attaches.
+         */
+        RE::NiPointer<RE::NiAVObject> detachedWorldModel{};
     };
 
     enum class UnequipReason : std::uint8_t

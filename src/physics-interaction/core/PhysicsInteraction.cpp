@@ -3086,6 +3086,9 @@ namespace rock
         applyHeldPlayerSpaceVelocity(hknp);
 
         updateGrabInput(frame);
+        // After grab input so a bridge started by this frame's equip gets its
+        // first pose write before rendering instead of one frame late.
+        _equipVisualBridge.update(frame.deltaSeconds);
         updateFeedbackHaptics(frame.deltaSeconds);
         updateHeldMassMovementSlowdown(hknp, frame.deltaSeconds);
         synchronizeContactEvidenceOwnership(rightHandWeaponAuthorityActive, leftSupportGripActive, rightPartGripActive);
@@ -3710,6 +3713,7 @@ namespace rock
             ROCK_LOG_INFO(Init, "World stale or null — skipping Havok body destruction");
             _rightHand.abandonHavokStateAfterWorldLoss();
             _leftHand.abandonHavokStateAfterWorldLoss();
+            _equipVisualBridge.abandonSceneGraph();
             _bodyBoneColliders.reset();
             _rightDominantWeaponCollisionSuppressed.store(false, std::memory_order_release);
             _leftWeaponSupportCollisionSuppressed.store(false, std::memory_order_release);
@@ -3734,6 +3738,7 @@ namespace rock
         _shoulderStashStates = {};
         _mouthConsumeStates = {};
         _feedbackHaptics.reset();
+        _equipVisualBridge.shutdown();
         _weaponCollision.shutdown();
         _bodyBoneColliders.reset();
         _generatedBodyStepDrive.reset();
@@ -6911,6 +6916,14 @@ namespace rock
                     });
                     const bool nativeDrawRequested = equipResult.success && requestImmediateHeldWeaponNativeDraw();
                     auto* immediateWeaponNode = equipResult.success ? resolveEquippedWeaponInteractionNodeDirect() : nullptr;
+                    bool equipBridgeStarted = false;
+                    if (equipResult.success && g_rockConfig.rockGrabbedWeaponEquipBridgeEnabled) {
+                        equipBridgeStarted = _equipVisualBridge.begin(EquipVisualBridge::BeginInput{
+                            .worldModel = equipResult.detachedWorldModel,
+                            .weaponFormID = equipResult.formID,
+                            .isLeftHand = isLeft,
+                        });
+                    }
                     if (heldFormID == 0 && equipResult.formID != 0) {
                         heldFormID = equipResult.formID;
                     }
@@ -6922,7 +6935,7 @@ namespace rock
                     }
                     dispatchHeldObjectEventByFormID(GrabEventType::Released, postEquipRef, heldFormID, primaryBodyId);
                     ROCK_LOG_INFO(Hand,
-                        "{} hand {} held weapon equip formID={:08X} success={} equipReason={} count={} stack={} instanceMatch={} transferred={} observedEquipped={:08X} nativeDrawRequested={} immediateWeaponNode={}",
+                        "{} hand {} held weapon equip formID={:08X} success={} equipReason={} count={} stack={} instanceMatch={} transferred={} observedEquipped={:08X} nativeDrawRequested={} immediateWeaponNode={} immediateEquip={} visualBridge={}",
                         hand.handName(),
                         logAction ? logAction : "requested",
                         heldFormID,
@@ -6934,7 +6947,9 @@ namespace rock
                         equipResult.transferredToInventory ? "yes" : "no",
                         equipResult.observedEquippedFormID,
                         nativeDrawRequested ? "yes" : "no",
-                        immediateWeaponNode ? "yes" : "no");
+                        immediateWeaponNode ? "yes" : "no",
+                        equipResult.usedImmediateEquip ? "yes" : "no",
+                        equipBridgeStarted ? "yes" : "no");
                     if (equipResult.success && !isLeft && rawGrabInput.held) {
                         _pendingEquippedWeaponPrimaryOnlyGripStart = true;
                     }
