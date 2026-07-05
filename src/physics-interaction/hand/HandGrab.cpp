@@ -779,6 +779,20 @@ namespace rock
             return looseWeaponFormFromRef(selection.refr);
         }
 
+        bool isThrowableLooseWeapon(const RE::TESObjectWEAP* weapon)
+        {
+            if (!weapon) {
+                return false;
+            }
+            /*
+             * WEAPON_TYPE is stored as a single enum value in FO4VR. Keep this
+             * as direct equality instead of EnumSet::any so guns cannot alias
+             * thrown types through bit-style tests.
+             */
+            return weapon->weaponData.type == RE::WEAPON_TYPE::kGrenade ||
+                   weapon->weaponData.type == RE::WEAPON_TYPE::kMine;
+        }
+
         frik_visual_authority::HandPoseKind looseWeaponPrimaryAttachPoseKind(const RE::TESObjectWEAP* weapon)
         {
             return weapon && weapon->IsMeleeWeapon() ?
@@ -851,14 +865,14 @@ namespace rock
             }
             /*
              * Only programmatic arrivals snap the loose weapon to a canonical
-             * attach pose: pull catches snap the primary hand to the FRIK
-             * offset, and force grabs (menu grenade equip, provider ForceGrab)
-             * snap to the FRIK offset when one exists or to a palm-anchored
-             * pose otherwise, so the commit pose never depends on where spawn
-             * physics left the object. A close grab is a free mesh hold on
-             * either hand; the firing-grip transition happens later through
-             * the grip-zone equip path (loose_weapon_grip_zone), not by
-             * forcing the attach at grab.
+             * attach pose: non-throwable pull catches snap the primary hand to
+             * the FRIK offset, and force grabs (menu grenade equip, provider
+             * ForceGrab) snap to the FRIK offset when one exists or to a palm-
+             * anchored pose otherwise. Throwables always skip FRIK offsets, so
+             * the commit pose never depends on first-person weapon attach data.
+             * A close grab is a free mesh hold on either hand; the firing-grip
+             * transition happens later through the grip-zone equip path
+             * (loose_weapon_grip_zone), not by forcing the attach at grab.
              */
             if (!grabbedFromPullCatch && !selection.forcedArrival) {
                 frame.reason = "closeGrabFreeHold";
@@ -869,13 +883,20 @@ namespace rock
                 return frame;
             }
 
+            const auto* looseWeapon = selectedLooseWeaponForm(selection);
+            const bool throwableArrival = isThrowableLooseWeapon(looseWeapon) && (grabbedFromPullCatch || selection.forcedArrival);
             bool haveDesiredRoot = false;
             if (isPrimaryHandForWeaponAttach(isLeft)) {
-                const auto attachSource = resolveLooseWeaponPrimaryAttachSource(selectedLooseWeaponForm(selection), rootNode);
+                LooseWeaponPrimaryAttachSource attachSource{};
+                if (!isThrowableLooseWeapon(looseWeapon)) {
+                    attachSource = resolveLooseWeaponPrimaryAttachSource(looseWeapon, rootNode);
+                }
                 /*
                  * FRIK offsets are local transforms written under a live first-person
                  * attach parent. Loose refs are not equipped, so use only the current
                  * parent frame and never a stale/hidden equipped-object world transform.
+                 * Throwables deliberately skip this path: grenades and mines are
+                 * hand-thrown objects, not first-person weapon attachments.
                  */
                 if (attachSource.offset.found && attachSource.parent && isFiniteNiTransform(attachSource.parent->world)) {
                     frame.desiredRootWorld = multiplyTransforms(attachSource.parent->world, attachSource.offset.offset);
@@ -883,12 +904,16 @@ namespace rock
                     frame.reason = attachSource.offset.reason;
                     haveDesiredRoot = true;
                 } else if (!selection.forcedArrival) {
-                    frame.reason = !attachSource.offset.found       ? attachSource.offset.reason :
-                                   !attachSource.parent             ? attachSource.missingParentReason :
-                                                                      attachSource.nonFiniteParentReason;
-                    return frame;
+                    if (throwableArrival) {
+                        frame.reason = "throwableSkipsFrikOffset";
+                    } else {
+                        frame.reason = !attachSource.offset.found       ? attachSource.offset.reason :
+                                       !attachSource.parent             ? attachSource.missingParentReason :
+                                                                          attachSource.nonFiniteParentReason;
+                        return frame;
+                    }
                 }
-            } else if (!selection.forcedArrival) {
+            } else if (!selection.forcedArrival && !throwableArrival) {
                 frame.reason = "notPrimaryHand";
                 return frame;
             }

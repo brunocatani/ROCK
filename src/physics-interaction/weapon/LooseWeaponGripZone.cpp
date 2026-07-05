@@ -65,10 +65,9 @@ namespace rock::loose_weapon_grip_zone
          * world the weapon would have if attached to the hand at the offset
          * (same math as the loose-weapon primary attach frame, including the
          * root-scale override), express the live palm in that hypothetical
-         * weapon space, then map the point onto the actual held root. Grenades
-         * and other throwables resolve through the throwable offset store
-         * upstream and never reach the equip path, so only the primary weapon
-         * offset is consulted here.
+         * weapon space, then map the point onto the actual held root. Hand-
+         * thrown refs are filtered before this lookup so the FRIK primary
+         * offset remains only a gun/melee loose-weapon attach surface.
          */
         bool tryResolveGripWorld(RE::TESObjectREFR* heldRef, const RE::NiPoint3& palmWorld, HandZoneState& state)
         {
@@ -76,6 +75,16 @@ namespace rock::loose_weapon_grip_zone
             const auto* weapon = baseForm ? baseForm->As<RE::TESObjectWEAP>() : nullptr;
             if (!weapon) {
                 state.reason = "missingWeaponForm";
+                return false;
+            }
+            /*
+             * Throwables are hand-thrown refs, not first-person weapon
+             * attachments. Do not project their grip zone through FRIK primary
+             * offsets; force/pull arrivals seat them through the hand proxy.
+             */
+            if (weapon->weaponData.type == RE::WEAPON_TYPE::kGrenade ||
+                weapon->weaponData.type == RE::WEAPON_TYPE::kMine) {
+                state.reason = "throwableSkipsFrikOffset";
                 return false;
             }
 
