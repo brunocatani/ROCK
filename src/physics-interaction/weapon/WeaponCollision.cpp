@@ -4389,61 +4389,6 @@ namespace rock
             return nullptr;
         }
 
-        void collectOmodAuditSubtreeAddresses(RE::NiAVObject* node, std::unordered_set<std::uintptr_t>& outAddresses, std::size_t& visited)
-        {
-            if (!node || visited >= WEAPON_ANIM_NODE_DUMP_MAX_SUBTREE_NODES) {
-                return;
-            }
-            ++visited;
-            outAddresses.insert(reinterpret_cast<std::uintptr_t>(node));
-            auto* niNode = node->IsNode();
-            if (!niNode) {
-                return;
-            }
-            const auto& children = niNode->children;
-            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
-                if (auto* child = children[i].get()) {
-                    collectOmodAuditSubtreeAddresses(child, outAddresses, visited);
-                }
-            }
-        }
-
-        /*
-         * Hides every TOPMOST node that appeared since the pre-heal address
-         * snapshot (children of a hidden ancestor inherit renderer culling, so
-         * descending into new subtrees is unnecessary). Address diffing is the
-         * only reliable identity for healed clones: the engine's connect-point
-         * attach does not preserve the model root's name in the tree
-         * (hiddenRoots=0 across the 2026-07-04 NZ41/MK18 session proved
-         * name-based location finds nothing).
-         */
-        std::size_t hideOmodAuditNewSubtreeRoots(
-            RE::NiAVObject* node,
-            const std::unordered_set<std::uintptr_t>& preHealAddresses,
-            std::size_t& visited)
-        {
-            if (!node || visited >= WEAPON_ANIM_NODE_DUMP_MAX_SUBTREE_NODES) {
-                return 0;
-            }
-            ++visited;
-            if (preHealAddresses.count(reinterpret_cast<std::uintptr_t>(node)) == 0) {
-                node->flags.flags |= 1u;
-                return 1;
-            }
-            auto* niNode = node->IsNode();
-            if (!niNode) {
-                return 0;
-            }
-            std::size_t hidden = 0;
-            const auto& children = niNode->children;
-            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
-                if (auto* child = children[i].get()) {
-                    hidden += hideOmodAuditNewSubtreeRoots(child, preHealAddresses, visited);
-                }
-            }
-            return hidden;
-        }
-
         std::size_t countOmodAuditEvidenceSourcesInSubtree(
             RE::NiAVObject* node,
             const std::unordered_set<std::uintptr_t>& evidenceSourceAddresses,
@@ -5135,23 +5080,25 @@ namespace rock
                     }
 
                     /*
-                     * Duplicate gate. Name/word matching against the NIF
-                     * basename produced mass false NODE_NOT_FOUND on weapons
-                     * whose mesh names share nothing with the model path
-                     * (MK18/NZ41 session: whole weapons re-attached). The only
-                     * trustworthy identity is the model itself: the engine
-                     * attaches a CLONE of the template, and cloning preserves
-                     * the root node name. Demand the template (cache hit for
-                     * anything already rendered), and if a node with the
-                     * template root's exact name already exists under the
-                     * instance the part is present — skip. Unverifiable
-                     * templates (no root, empty name) skip too: never attach
-                     * what cannot be checked.
+                     * Truth gate (2026-07-05, AK-104 audit): filename-token
+                     * verdicts produce false NODE_NOT_FOUND for parts whose
+                     * geometry is present under mesh names unrelated to the
+                     * model path (grip/cover/comp on the AK-104; barrel/mag
+                     * on the NZ41) — healing those is what created the
+                     * doubled parts. Root-name matching cannot detect them
+                     * either: the engine attach does NOT preserve template
+                     * root names. What it DOES preserve are the template's
+                     * DESCENDANT names ('Pistol_Grip', 'Comp:0', 'Drum_Mag'
+                     * all appear verbatim in the assembled weapon). So:
+                     * Demand the template, collect its descendant node and
+                     * mesh names (skipping connect points and generic
+                     * helpers), and treat the part as PRESENT if any of them
+                     * already exists in the instance. Only genuinely absent
+                     * parts get attached.
                      */
                     RE::NiPointer<RE::NiNode> templateRoot;
                     ModelDbDemandArgs demandArgs{};
                     const int demandResult = demandModel(record.modelPath.c_str(), templateRoot, demandArgs);
-                    const char* templateRootName = templateRoot ? templateRoot->name.c_str() : nullptr;
                     if (demandResult != 0 || !templateRoot) {
                         ROCK_LOG_WARN(Weapon,
                             "OMOD-HEAL run={} omod={:08X} '{}' skipped: model demand failed result={} model='{}'",
@@ -5162,24 +5109,64 @@ namespace rock
                             record.modelPath);
                         continue;
                     }
-                    if (!templateRootName || templateRootName[0] == '\0') {
+
+                    std::vector<const char*> templateContentNames;
+                    templateContentNames.reserve(32);
+                    std::size_t templateNameVisited = 0;
+                    const auto collectTemplateContentNames = [&templateContentNames, &templateNameVisited](
+                                                                 RE::NiAVObject* node, const int depth, const bool isRoot, const auto& self) -> void {
+                        if (!node || depth > 10 || templateNameVisited > 256 || templateContentNames.size() >= 64) {
+                            return;
+                        }
+                        ++templateNameVisited;
+                        // The cloned ROOT is renamed by the engine, so the root
+                        // name is not evidence; connect points (P-*) can
+                        // pre-exist empty in other parts; ProjectileNode is a
+                        // universal helper. Everything else identifies content.
+                        const char* name = node->name.c_str();
+                        if (!isRoot && name && name[0] != '\0' &&
+                            !(name[0] == 'P' && name[1] == '-') && !(name[0] == 'p' && name[1] == '-') &&
+                            _stricmp(name, "ProjectileNode") != 0) {
+                            templateContentNames.push_back(name);
+                        }
+                        auto* niNode = node->IsNode();
+                        if (!niNode) {
+                            return;
+                        }
+                        const auto& children = niNode->children;
+                        for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
+                            if (auto* child = children[i].get()) {
+                                self(child, depth + 1, false, self);
+                            }
+                        }
+                    };
+                    collectTemplateContentNames(templateRoot.get(), 0, true, collectTemplateContentNames);
+
+                    if (templateContentNames.empty()) {
                         ROCK_LOG_WARN(Weapon,
-                            "OMOD-HEAL run={} omod={:08X} '{}' skipped: template root unnamed, presence unverifiable model='{}'",
+                            "OMOD-HEAL run={} omod={:08X} '{}' skipped: template has no verifiable content names model='{}'",
                             runIndex,
                             record.formId,
                             record.name,
                             record.modelPath);
                         continue;
                     }
-                    const auto presentMatches = collectWeaponAnimNodeMatches(healTargetNode, templateRootName);
-                    if (!presentMatches.empty()) {
+
+                    const char* presentName = nullptr;
+                    for (const char* contentName : templateContentNames) {
+                        if (!collectWeaponAnimNodeMatches(healTargetNode, contentName).empty()) {
+                            presentName = contentName;
+                            break;
+                        }
+                    }
+                    if (presentName) {
                         ROCK_LOG_INFO(Weapon,
-                            "OMOD-HEAL run={} omod={:08X} '{}' skipped: template root '{}' already present x{} in instance — part attached under unmatchable names",
+                            "OMOD-HEAL run={} omod={:08X} '{}' skipped: template content '{}' already present in instance ({} names checked) — token verdict was a false negative",
                             runIndex,
                             record.formId,
                             record.name,
-                            templateRootName,
-                            presentMatches.size());
+                            presentName,
+                            templateContentNames.size());
                         continue;
                     }
 
@@ -5193,35 +5180,21 @@ namespace rock
                     }
 
                     /*
-                     * The heal exists to restore COLLIDERS, never visuals: the
-                     * part the player sees renders from the engine's own copy,
-                     * so a visible healed clone shows up as a doubled part
-                     * whenever the two attach transforms differ (2026-07-04
-                     * MK18/NZ41/AK-104BG sessions). Hide the healed clone via
-                     * an address diff around the attach — renderer culling is
-                     * hierarchical so the new subtrees stop drawing, while the
-                     * generated-collision scan checks each TriShape's OWN
-                     * flags (no node-level pruning) and still harvests the
-                     * geometry beneath the hidden roots.
+                     * No post-attach hiding: the address-diff hide (5529dd3)
+                     * hid REAL rendered geometry because the engine attach can
+                     * capture/reparent existing nodes into the target. With
+                     * the truth gate above, heals only fire for parts with no
+                     * geometry anywhere in the instance, so a visible healed
+                     * clone is the part appearing — not a double.
                      */
-                    std::unordered_set<std::uintptr_t> preHealAddresses;
-                    std::size_t preHealVisited = 0;
-                    collectOmodAuditSubtreeAddresses(healTargetNode, preHealAddresses, preHealVisited);
-
                     const auto beforeStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
                     ++selfHealAttemptCount;
                     const bool attached = tryAttach3DRecurse(omod, healTargetNode, rankSuffix, equipData ? equipData->instanceData : nullptr);
                     const auto afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
                     selfHealSuccessCount += attached ? 1 : 0;
 
-                    std::size_t hiddenHealedRoots = 0;
-                    if (attached) {
-                        std::size_t hideVisited = 0;
-                        hiddenHealedRoots = hideOmodAuditNewSubtreeRoots(healTargetNode, preHealAddresses, hideVisited);
-                    }
-
                     ROCK_LOG_INFO(Weapon,
-                        "OMOD-HEAL run={} omod={:08X} '{}' model='{}' suffix='{}' target='{}'/{:x} attached={} hiddenRoots={} subtreeNodes {}->{} triShapes {}->{} visibleTriShapes {}->{}",
+                        "OMOD-HEAL run={} omod={:08X} '{}' model='{}' suffix='{}' target='{}'/{:x} attached={} subtreeNodes {}->{} triShapes {}->{} visibleTriShapes {}->{}",
                         runIndex,
                         record.formId,
                         record.name,
@@ -5230,7 +5203,6 @@ namespace rock
                         healTargetRootLabel,
                         reinterpret_cast<std::uintptr_t>(healTargetNode),
                         attached ? "YES" : "no",
-                        hiddenHealedRoots,
                         beforeStats.nodeCount,
                         afterStats.nodeCount,
                         beforeStats.triShapeCount,
