@@ -4388,6 +4388,61 @@ namespace rock
             return nullptr;
         }
 
+        void collectOmodAuditSubtreeAddresses(RE::NiAVObject* node, std::unordered_set<std::uintptr_t>& outAddresses, std::size_t& visited)
+        {
+            if (!node || visited >= WEAPON_ANIM_NODE_DUMP_MAX_SUBTREE_NODES) {
+                return;
+            }
+            ++visited;
+            outAddresses.insert(reinterpret_cast<std::uintptr_t>(node));
+            auto* niNode = node->IsNode();
+            if (!niNode) {
+                return;
+            }
+            const auto& children = niNode->children;
+            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
+                if (auto* child = children[i].get()) {
+                    collectOmodAuditSubtreeAddresses(child, outAddresses, visited);
+                }
+            }
+        }
+
+        /*
+         * Hides every TOPMOST node that appeared since the pre-heal address
+         * snapshot (children of a hidden ancestor inherit renderer culling, so
+         * descending into new subtrees is unnecessary). Address diffing is the
+         * only reliable identity for healed clones: the engine's connect-point
+         * attach does not preserve the model root's name in the tree
+         * (hiddenRoots=0 across the 2026-07-04 NZ41/MK18 session proved
+         * name-based location finds nothing).
+         */
+        std::size_t hideOmodAuditNewSubtreeRoots(
+            RE::NiAVObject* node,
+            const std::unordered_set<std::uintptr_t>& preHealAddresses,
+            std::size_t& visited)
+        {
+            if (!node || visited >= WEAPON_ANIM_NODE_DUMP_MAX_SUBTREE_NODES) {
+                return 0;
+            }
+            ++visited;
+            if (preHealAddresses.count(reinterpret_cast<std::uintptr_t>(node)) == 0) {
+                node->flags.flags |= 1u;
+                return 1;
+            }
+            auto* niNode = node->IsNode();
+            if (!niNode) {
+                return 0;
+            }
+            std::size_t hidden = 0;
+            const auto& children = niNode->children;
+            for (auto i = decltype(children.size()){ 0 }; i < children.size(); ++i) {
+                if (auto* child = children[i].get()) {
+                    hidden += hideOmodAuditNewSubtreeRoots(child, preHealAddresses, visited);
+                }
+            }
+            return hidden;
+        }
+
         std::size_t countOmodAuditEvidenceSourcesInSubtree(
             RE::NiAVObject* node,
             const std::unordered_set<std::uintptr_t>& evidenceSourceAddresses,
@@ -4947,33 +5002,32 @@ namespace rock
                         rankSuffix = rankSuffixBuffer;
                     }
 
+                    /*
+                     * The heal exists to restore COLLIDERS, never visuals: the
+                     * part the player sees renders from the engine's own copy,
+                     * so a visible healed clone shows up as a doubled part
+                     * whenever the two attach transforms differ (2026-07-04
+                     * MK18/NZ41/AK-104BG sessions). Hide the healed clone via
+                     * an address diff around the attach — renderer culling is
+                     * hierarchical so the new subtrees stop drawing, while the
+                     * generated-collision scan checks each TriShape's OWN
+                     * flags (no node-level pruning) and still harvests the
+                     * geometry beneath the hidden roots.
+                     */
+                    std::unordered_set<std::uintptr_t> preHealAddresses;
+                    std::size_t preHealVisited = 0;
+                    collectOmodAuditSubtreeAddresses(healTargetNode, preHealAddresses, preHealVisited);
+
                     const auto beforeStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
                     ++selfHealAttemptCount;
                     const bool attached = tryAttach3DRecurse(omod, healTargetNode, rankSuffix, equipData ? equipData->instanceData : nullptr);
                     const auto afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
                     selfHealSuccessCount += attached ? 1 : 0;
 
-                    /*
-                     * The heal exists to restore COLLIDERS, never visuals: the
-                     * part the player sees renders from the engine's own copy,
-                     * so a visible healed clone shows up as a doubled part
-                     * whenever the two attach transforms differ (2026-07-04
-                     * MK18/NZ41/AK-104BG sessions). Hide the healed clone
-                     * root: renderer culling is hierarchical so the subtree
-                     * stops drawing, while the generated-collision scan checks
-                     * each TriShape's OWN flags and still harvests the
-                     * geometry beneath the hidden root. The gate above
-                     * guarantees no pre-existing node carried the template
-                     * root name, so every match here is the healed clone.
-                     */
                     std::size_t hiddenHealedRoots = 0;
                     if (attached) {
-                        for (const auto& healedMatch : collectWeaponAnimNodeMatches(healTargetNode, templateRootName)) {
-                            if (healedMatch.node) {
-                                healedMatch.node->flags.flags |= 1u;
-                                ++hiddenHealedRoots;
-                            }
-                        }
+                        std::size_t hideVisited = 0;
+                        hiddenHealedRoots = hideOmodAuditNewSubtreeRoots(healTargetNode, preHealAddresses, hideVisited);
                     }
 
                     ROCK_LOG_INFO(Weapon,
