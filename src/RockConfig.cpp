@@ -178,7 +178,6 @@ namespace rock
         rockWeaponCollisionStaticWorldEnabled = true;
         rockWeaponCollisionGroupingMode = weapon_collision_grouping_policy::kDefaultWeaponCollisionGroupingMode;
         rockWeaponCollisionVisualStabilizationFrames = kDefaultWeaponCollisionVisualStabilizationFrames;
-        rockWeaponCollisionVisualDriftRescanIntervalFrames = 90;
         rockWeaponCollisionConvexRadius = 0.01f;
         rockWeaponCollisionPointDedupGrid = 0.002f;
         rockWeaponCollisionSupportFitTargetPoints = kDefaultWeaponCollisionSupportFitTargetPoints;
@@ -744,14 +743,6 @@ namespace rock
                 rockWeaponCollisionVisualStabilizationFrames,
                 kDefaultWeaponCollisionVisualStabilizationFrames);
             rockWeaponCollisionVisualStabilizationFrames = kDefaultWeaponCollisionVisualStabilizationFrames;
-        }
-        rockWeaponCollisionVisualDriftRescanIntervalFrames =
-            static_cast<int>(ini.GetLongValue(SECTION, "iWeaponCollisionVisualDriftRescanIntervalFrames", rockWeaponCollisionVisualDriftRescanIntervalFrames));
-        if (rockWeaponCollisionVisualDriftRescanIntervalFrames < 0) {
-            ROCK_LOG_WARN(Config,
-                "Invalid iWeaponCollisionVisualDriftRescanIntervalFrames={} - using 90",
-                rockWeaponCollisionVisualDriftRescanIntervalFrames);
-            rockWeaponCollisionVisualDriftRescanIntervalFrames = 90;
         }
         rockWeaponCollisionConvexRadius = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionConvexRadius", rockWeaponCollisionConvexRadius));
         rockWeaponCollisionPointDedupGrid = static_cast<float>(ini.GetDoubleValue(SECTION, "fWeaponCollisionPointDedupGrid", rockWeaponCollisionPointDedupGrid));
