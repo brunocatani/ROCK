@@ -36,6 +36,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
@@ -4159,6 +4160,15 @@ namespace rock
         struct OmodAuditTokenSlot
         {
             std::string lowerToken;
+            /*
+             * Word-set fallback: mesh authors reorder basename words
+             * ('AK74_HG_Lower.nif' vs node 'AK74_Lower_HG'), which made exact
+             * substring matching report false NODE_NOT_FOUND. A node matches
+             * when every basename word appears somewhere in its name. False
+             * NODE_NOT_FOUND must stay rare because the self-heal uses that
+             * verdict as its trigger.
+             */
+            std::vector<std::string> lowerWords;
             std::vector<OmodAuditNodeMatch> matches;
         };
 
@@ -4236,6 +4246,48 @@ namespace rock
             return name && (name[0] == 'P' || name[0] == 'p') && name[1] == '-';
         }
 
+        std::vector<std::string> makeOmodAuditTokenWords(const std::string& lowerToken)
+        {
+            std::vector<std::string> words;
+            std::string current;
+            for (const char c : lowerToken) {
+                if (c == '_' || c == '-' || c == ' ') {
+                    if (current.size() >= 2) {
+                        words.push_back(current);
+                    }
+                    current.clear();
+                } else {
+                    current += c;
+                }
+            }
+            if (current.size() >= 2) {
+                words.push_back(current);
+            }
+            // A single word degenerates to the substring test; two or more
+            // words are required for the reordered-words fallback to add
+            // signal instead of noise.
+            if (words.size() < 2) {
+                words.clear();
+            }
+            return words;
+        }
+
+        bool omodAuditNameMatchesTokenSlot(const char* name, const OmodAuditTokenSlot& slot)
+        {
+            if (omodAuditNameContainsToken(name, slot.lowerToken)) {
+                return true;
+            }
+            if (slot.lowerWords.empty()) {
+                return false;
+            }
+            for (const auto& word : slot.lowerWords) {
+                if (!omodAuditNameContainsToken(name, word)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         bool omodAuditMatchesContainNode(const std::vector<OmodAuditNodeMatch>& matches, const RE::NiAVObject* node)
         {
             for (const auto& match : matches) {
@@ -4277,7 +4329,7 @@ namespace rock
                     if (slot.lowerToken.empty() || slot.matches.size() >= OMOD_AUDIT_MAX_MATCHES_PER_TOKEN) {
                         continue;
                     }
-                    if (!omodAuditNameContainsToken(name, slot.lowerToken)) {
+                    if (!omodAuditNameMatchesTokenSlot(name, slot)) {
                         continue;
                     }
                     if (!omodAuditMatchesContainNode(slot.matches, node)) {
@@ -4455,6 +4507,7 @@ namespace rock
         std::vector<OmodAuditTokenSlot> tokenSlots(records.size());
         for (std::size_t i = 0; i < records.size(); ++i) {
             tokenSlots[i].lowerToken = makeOmodAuditModelToken(records[i].modelPath.c_str());
+            tokenSlots[i].lowerWords = makeOmodAuditTokenWords(tokenSlots[i].lowerToken);
         }
         /*
          * Extra census slot: assembled weapon roots are named
@@ -4528,6 +4581,7 @@ namespace rock
                 visited >= root.maxVisited ? "YES" : "no");
         }
 
+        std::vector<std::size_t> selfHealCandidates;
         for (std::size_t i = 0; i < records.size(); ++i) {
             const auto& record = records[i];
             const auto& slot = tokenSlots[i];
@@ -4584,6 +4638,7 @@ namespace rock
                 verdict = anyMatchVisible ? "NODE_PRESENT_NO_COLLIDER" : "NODE_HIDDEN_NO_COLLIDER";
             } else {
                 verdict = "NODE_NOT_FOUND";
+                selfHealCandidates.push_back(i);
             }
 
             ROCK_LOG_INFO(Weapon,
@@ -4715,14 +4770,130 @@ namespace rock
             }
         }
 
+        /*
+         * Self-heal (bDebugWeaponOmodSelfHeal): reattach missing OMOD models
+         * with the engine's own primitive. Ghidra-verified (raw disasm +
+         * decompiler + address database, 2026-07-04):
+         *   bool BGSMod::Attachment::Mod::TryAttach3DRecurse(
+         *       NiNode* root, char* rankSuffix, TBO_InstanceData* instData)
+         * at VR offset 0x2D9140. It demands the mod's model, deep-clones it
+         * (scale from the root's REFR), applies material swaps with the
+         * instance data, and attaches at the mod NIF's declared connect point
+         * (BSConnectPoint::Parents) or the root as fallback. Fail-closed at
+         * every hop; success requests a collider rebuild so the healed
+         * geometry gets bodies. NODE_NOT_FOUND is the trigger, so the word-set
+         * matcher above must keep false negatives rare - a heal on a part that
+         * exists under an unmatchable name would duplicate its geometry, which
+         * the once-per-instance-address guard bounds to a single attempt.
+         */
+        std::size_t selfHealAttemptCount = 0;
+        std::size_t selfHealSuccessCount = 0;
+        if (g_rockConfig.rockDebugWeaponOmodSelfHeal && !selfHealCandidates.empty()) {
+            RE::NiNode* healTargetNode = nullptr;
+            const char* healTargetRootLabel = "";
+            if (weaponForm && tokenSlots.size() > records.size()) {
+                for (const auto& match : tokenSlots.back().matches) {
+                    auto* candidateNode = match.node ? match.node->IsNode() : nullptr;
+                    if (!candidateNode) {
+                        continue;
+                    }
+                    // Prefer the instance ROCK harvests colliders from.
+                    if (!healTargetNode || std::strcmp(match.rootLabel, "updateWeaponNode") == 0) {
+                        healTargetNode = candidateNode;
+                        healTargetRootLabel = match.rootLabel;
+                    }
+                    if (std::strcmp(match.rootLabel, "updateWeaponNode") == 0) {
+                        break;
+                    }
+                }
+            }
+
+            if (!healTargetNode) {
+                ROCK_LOG_WARN(Weapon,
+                    "OMOD-HEAL run={} skipped: no weapon instance node found for {} candidate(s)",
+                    runIndex,
+                    selfHealCandidates.size());
+            } else {
+                using TryAttach3DRecurseFn = bool (*)(RE::BGSMod::Attachment::Mod*, RE::NiNode*, const char*, RE::TBO_InstanceData*);
+                static REL::Relocation<TryAttach3DRecurseFn> tryAttach3DRecurse{ REL::Offset(0x2D9140) };
+                constexpr std::size_t OMOD_SELF_HEAL_MAX_PER_AUDIT = 4;
+
+                if (_omodSelfHealAttempted.size() > 256) {
+                    _omodSelfHealAttempted.clear();
+                }
+                for (const std::size_t candidateIndex : selfHealCandidates) {
+                    if (selfHealAttemptCount >= OMOD_SELF_HEAL_MAX_PER_AUDIT) {
+                        break;
+                    }
+                    const auto& record = records[candidateIndex];
+                    const std::uint64_t attemptKey =
+                        reinterpret_cast<std::uintptr_t>(healTargetNode) ^ (static_cast<std::uint64_t>(record.formId) << 20);
+                    if (_omodSelfHealAttempted.contains(attemptKey)) {
+                        continue;
+                    }
+                    _omodSelfHealAttempted.insert(attemptKey);
+
+                    auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(record.formId);
+                    if (!omod) {
+                        ROCK_LOG_WARN(Weapon, "OMOD-HEAL run={} omod={:08X} skipped: form no longer resolves", runIndex, record.formId);
+                        continue;
+                    }
+
+                    char rankSuffixBuffer[8] = {};
+                    const char* rankSuffix = nullptr;
+                    if (record.modIndex != 0) {
+                        // Same suffix rule as the engine's own attach loop:
+                        // non-zero index entries get a "%u" node-name suffix.
+                        std::snprintf(rankSuffixBuffer, sizeof(rankSuffixBuffer), "%u", record.modIndex);
+                        rankSuffix = rankSuffixBuffer;
+                    }
+
+                    const auto beforeStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
+                    ++selfHealAttemptCount;
+                    const bool attached = tryAttach3DRecurse(omod, healTargetNode, rankSuffix, equipData ? equipData->instanceData : nullptr);
+                    const auto afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
+                    selfHealSuccessCount += attached ? 1 : 0;
+
+                    ROCK_LOG_INFO(Weapon,
+                        "OMOD-HEAL run={} omod={:08X} '{}' model='{}' suffix='{}' target='{}'/{:x} attached={} subtreeNodes {}->{} triShapes {}->{} visibleTriShapes {}->{}",
+                        runIndex,
+                        record.formId,
+                        record.name,
+                        record.modelPath,
+                        rankSuffix ? rankSuffix : "",
+                        healTargetRootLabel,
+                        reinterpret_cast<std::uintptr_t>(healTargetNode),
+                        attached ? "YES" : "no",
+                        beforeStats.nodeCount,
+                        afterStats.nodeCount,
+                        beforeStats.triShapeCount,
+                        afterStats.triShapeCount,
+                        beforeStats.visibleTriShapeCount,
+                        afterStats.visibleTriShapeCount);
+                }
+
+                if (selfHealSuccessCount > 0) {
+                    ROCK_LOG_INFO(Weapon,
+                        "OMOD-HEAL run={} healed={} of {} attempted - requesting collider rebuild",
+                        runIndex,
+                        selfHealSuccessCount,
+                        selfHealAttemptCount);
+                    requestWorkbenchExitRebuild();
+                }
+            }
+        }
+
         ROCK_LOG_INFO(Weapon,
-            "OMOD-AUDIT end run={} bodySetKey={:016X} installedMods={} connectPoints={} weaponInstances={} flatMatches={}",
+            "OMOD-AUDIT end run={} bodySetKey={:016X} installedMods={} connectPoints={} weaponInstances={} flatMatches={} healCandidates={} healAttempted={} healed={}",
             runIndex,
             _cachedWeaponBodySetKey,
             records.size(),
             connectPointMatches.size(),
             weaponInstanceCount,
-            flatMatchCount);
+            flatMatchCount,
+            selfHealCandidates.size(),
+            selfHealAttemptCount,
+            selfHealSuccessCount);
     }
 
     void WeaponCollision::publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult)

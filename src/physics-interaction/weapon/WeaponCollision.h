@@ -379,6 +379,14 @@ namespace rock
         std::uint64_t _omodCoverageAuditBodySetKey{ 0 };
         int _omodCoverageAuditFrameCounter{ 0 };
         std::uint32_t _omodCoverageAuditRunIndex{ 0 };
+        /*
+         * Self-heal attempts are keyed by (weapon instance node address ^
+         * OMOD formID): the same assembled tree is never retried (a failed or
+         * name-unmatchable heal must not stack duplicate geometry across
+         * audits), while an engine reassembly produces a new instance address
+         * and legitimately re-opens healing.
+         */
+        std::unordered_set<std::uint64_t> _omodSelfHealAttempted;
 
         int _posLogCounter{ 0 };
 
