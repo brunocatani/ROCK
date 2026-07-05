@@ -4953,8 +4953,31 @@ namespace rock
                     const auto afterStats = summarizeWeaponAnimNodeSubtree(healTargetNode);
                     selfHealSuccessCount += attached ? 1 : 0;
 
+                    /*
+                     * The heal exists to restore COLLIDERS, never visuals: the
+                     * part the player sees renders from the engine's own copy,
+                     * so a visible healed clone shows up as a doubled part
+                     * whenever the two attach transforms differ (2026-07-04
+                     * MK18/NZ41/AK-104BG sessions). Hide the healed clone
+                     * root: renderer culling is hierarchical so the subtree
+                     * stops drawing, while the generated-collision scan checks
+                     * each TriShape's OWN flags and still harvests the
+                     * geometry beneath the hidden root. The gate above
+                     * guarantees no pre-existing node carried the template
+                     * root name, so every match here is the healed clone.
+                     */
+                    std::size_t hiddenHealedRoots = 0;
+                    if (attached) {
+                        for (const auto& healedMatch : collectWeaponAnimNodeMatches(healTargetNode, templateRootName)) {
+                            if (healedMatch.node) {
+                                healedMatch.node->flags.flags |= 1u;
+                                ++hiddenHealedRoots;
+                            }
+                        }
+                    }
+
                     ROCK_LOG_INFO(Weapon,
-                        "OMOD-HEAL run={} omod={:08X} '{}' model='{}' suffix='{}' target='{}'/{:x} attached={} subtreeNodes {}->{} triShapes {}->{} visibleTriShapes {}->{}",
+                        "OMOD-HEAL run={} omod={:08X} '{}' model='{}' suffix='{}' target='{}'/{:x} attached={} hiddenRoots={} subtreeNodes {}->{} triShapes {}->{} visibleTriShapes {}->{}",
                         runIndex,
                         record.formId,
                         record.name,
@@ -4963,6 +4986,7 @@ namespace rock
                         healTargetRootLabel,
                         reinterpret_cast<std::uintptr_t>(healTargetNode),
                         attached ? "YES" : "no",
+                        hiddenHealedRoots,
                         beforeStats.nodeCount,
                         afterStats.nodeCount,
                         beforeStats.triShapeCount,
