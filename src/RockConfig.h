@@ -223,6 +223,7 @@ namespace rock
         bool rockDebugWeaponOmodCoverageAudit = false;
         int rockDebugWeaponOmodCoverageAuditIntervalFrames = 450;
         bool rockDebugWeaponOmodSelfHeal = false;
+        bool rockDebugWorkbenchWeaponReattach = false;
         bool rockDebugHandTransformParity = false;
         bool rockDebugWorldObjectOriginDiagnostics = false;
         int rockDebugWorldObjectOriginLogIntervalFrames = 120;

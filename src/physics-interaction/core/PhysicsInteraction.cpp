@@ -1489,6 +1489,7 @@ namespace rock
         }
 
         _weaponCollision.requestWorkbenchExitRebuild();
+        _weaponCollision.armWorkbenchWeaponReattach();
         ROCK_LOG_DEBUG(Weapon,
             "Weapon collision workbench-exit rebuild gate armed by {} close",
             sourceMenuName ? sourceMenuName : "<unknown>");

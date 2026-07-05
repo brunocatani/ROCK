@@ -2604,6 +2604,7 @@ namespace rock
         };
 
         maybeDumpWeaponAnimNodeDiagnostics(weaponNode, observedKey);
+        maybeFireWorkbenchWeaponReattach();
 
         if (driveRequestedRebuild) {
             ROCK_LOG_WARN(Weapon,
@@ -4851,6 +4852,20 @@ namespace rock
             } else {
                 using TryAttach3DRecurseFn = bool (*)(RE::BGSMod::Attachment::Mod*, RE::NiNode*, const char*, RE::TBO_InstanceData*);
                 static REL::Relocation<TryAttach3DRecurseFn> tryAttach3DRecurse{ REL::Offset(0x2D9140) };
+                /*
+                 * BSModelDB::Demand(char*, NiPointer<NiNode>&, ArgsType&) —
+                 * raw-disasm verified inside TryAttach3DRecurse (0x141d0dee0):
+                 * args are a zeroed 16-byte block with flag byte 0x2D at +8;
+                 * returns 0 on success with the template root in the pointer.
+                 */
+                struct ModelDbDemandArgs
+                {
+                    std::uint64_t unk00{ 0 };
+                    std::uint8_t flags{ 0x2D };
+                    std::uint8_t pad09[7]{};
+                };
+                using DemandModelFn = int (*)(const char*, RE::NiPointer<RE::NiNode>&, ModelDbDemandArgs&);
+                static REL::Relocation<DemandModelFn> demandModel{ REL::Offset(0x1D0DEE0) };
                 constexpr std::size_t OMOD_SELF_HEAL_MAX_PER_AUDIT = 4;
 
                 if (_omodSelfHealAttempted.size() > 256) {
@@ -4871,6 +4886,55 @@ namespace rock
                     auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(record.formId);
                     if (!omod) {
                         ROCK_LOG_WARN(Weapon, "OMOD-HEAL run={} omod={:08X} skipped: form no longer resolves", runIndex, record.formId);
+                        continue;
+                    }
+
+                    /*
+                     * Duplicate gate. Name/word matching against the NIF
+                     * basename produced mass false NODE_NOT_FOUND on weapons
+                     * whose mesh names share nothing with the model path
+                     * (MK18/NZ41 session: whole weapons re-attached). The only
+                     * trustworthy identity is the model itself: the engine
+                     * attaches a CLONE of the template, and cloning preserves
+                     * the root node name. Demand the template (cache hit for
+                     * anything already rendered), and if a node with the
+                     * template root's exact name already exists under the
+                     * instance the part is present — skip. Unverifiable
+                     * templates (no root, empty name) skip too: never attach
+                     * what cannot be checked.
+                     */
+                    RE::NiPointer<RE::NiNode> templateRoot;
+                    ModelDbDemandArgs demandArgs{};
+                    const int demandResult = demandModel(record.modelPath.c_str(), templateRoot, demandArgs);
+                    const char* templateRootName = templateRoot ? templateRoot->name.c_str() : nullptr;
+                    if (demandResult != 0 || !templateRoot) {
+                        ROCK_LOG_WARN(Weapon,
+                            "OMOD-HEAL run={} omod={:08X} '{}' skipped: model demand failed result={} model='{}'",
+                            runIndex,
+                            record.formId,
+                            record.name,
+                            demandResult,
+                            record.modelPath);
+                        continue;
+                    }
+                    if (!templateRootName || templateRootName[0] == '\0') {
+                        ROCK_LOG_WARN(Weapon,
+                            "OMOD-HEAL run={} omod={:08X} '{}' skipped: template root unnamed, presence unverifiable model='{}'",
+                            runIndex,
+                            record.formId,
+                            record.name,
+                            record.modelPath);
+                        continue;
+                    }
+                    const auto presentMatches = collectWeaponAnimNodeMatches(healTargetNode, templateRootName);
+                    if (!presentMatches.empty()) {
+                        ROCK_LOG_INFO(Weapon,
+                            "OMOD-HEAL run={} omod={:08X} '{}' skipped: template root '{}' already present x{} in instance — part attached under unmatchable names",
+                            runIndex,
+                            record.formId,
+                            record.name,
+                            templateRootName,
+                            presentMatches.size());
                         continue;
                     }
 
@@ -4929,6 +4993,76 @@ namespace rock
             selfHealCandidates.size(),
             selfHealAttemptCount,
             selfHealSuccessCount);
+    }
+
+    void WeaponCollision::armWorkbenchWeaponReattach()
+    {
+        if (!g_rockConfig.rockDebugWorkbenchWeaponReattach) {
+            return;
+        }
+        // ~1s at 90fps: past the engine's queued full actor 3D reset so the
+        // re-fired attach lands on the settled post-workbench state.
+        _workbenchReattachFramesRemaining.store(90, std::memory_order_release);
+    }
+
+    /*
+     * One-shot post-workbench recovery for the engine-side invisibility
+     * (bDebugWorkbenchWeaponReattach). Diagnostics proved the audited weapon
+     * instances stay fully visible, sanely posed, and in-hand while the
+     * RENDERED copy goes invisible after a workbench mod change until the
+     * player swaps weapons. The swap works because equipping re-fires the
+     * engine's equipped-weapon attach; this does the same directly.
+     *
+     * Ghidra-verified chain (2026-07-04): the WeaponAttach anim event handler
+     * calls 0x140dab8f0(manager = *0x145b279e0, actor, BGSObjectInstance*,
+     * equipIndex) — a wrapper with its own thread marshaling that queues the
+     * type-0x12 attach task (actor vfunc +0x528). Fail-closed on any missing
+     * pointer.
+     */
+    void WeaponCollision::maybeFireWorkbenchWeaponReattach()
+    {
+        if (_workbenchReattachFramesRemaining.load(std::memory_order_acquire) <= 0) {
+            return;
+        }
+        if (!g_rockConfig.rockDebugWorkbenchWeaponReattach) {
+            _workbenchReattachFramesRemaining.store(0, std::memory_order_release);
+            return;
+        }
+        if (_workbenchReattachFramesRemaining.fetch_sub(1, std::memory_order_acq_rel) != 1) {
+            return;
+        }
+
+        auto* player = f4vr::getPlayer();
+        auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
+        auto* equipData = processData ? processData->equipData : nullptr;
+        auto* weaponForm = equipData ? equipData->item : nullptr;
+        if (!weaponForm) {
+            ROCK_LOG_WARN(Weapon, "WORKBENCH-REATTACH skipped: no equipped weapon form");
+            return;
+        }
+
+        static REL::Relocation<void**> weaponAttachManager{ REL::Offset(0x5B279E0) };
+        void* manager = *weaponAttachManager;
+        if (!manager) {
+            ROCK_LOG_WARN(Weapon, "WORKBENCH-REATTACH skipped: weapon attach manager singleton is null");
+            return;
+        }
+
+        struct EquippedObjectInstance
+        {
+            RE::TESForm* object{ nullptr };
+            RE::TBO_InstanceData* instanceData{ nullptr };
+        };
+        using QueueEquippedWeaponAttachFn = std::uint64_t (*)(void*, void*, EquippedObjectInstance*, std::uint32_t);
+        static REL::Relocation<QueueEquippedWeaponAttachFn> queueEquippedWeaponAttach{ REL::Offset(0xDAB8F0) };
+
+        EquippedObjectInstance instance{ reinterpret_cast<RE::TESForm*>(weaponForm), equipData->instanceData };
+        const std::uint64_t result = queueEquippedWeaponAttach(manager, player, &instance, 0);
+        ROCK_LOG_INFO(Weapon,
+            "WORKBENCH-REATTACH fired weapon={:08X} '{}' equipIndex=0 result={:#x}",
+            weaponForm->formID,
+            weaponForm->GetFullName() ? weaponForm->GetFullName() : "",
+            result);
     }
 
     void WeaponCollision::publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult)
