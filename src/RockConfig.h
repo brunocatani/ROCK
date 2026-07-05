@@ -61,7 +61,6 @@ namespace rock
         int rockHavokTimingFixMaxSubsteps = havok_timing_fix_policy::kDefaultMaxSubsteps;
 
         bool rockInputRemapEnabled = true;
-        int rockRightWeaponReadyButtonID = 32;
         bool rockSuppressRightGrabGameInput = true;
         bool rockSuppressRightFavoritesGameInput = true;
         bool rockSuppressNativeReadyWeaponAutoReady = true;

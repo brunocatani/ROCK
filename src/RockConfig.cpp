@@ -144,7 +144,6 @@ namespace rock
         rockHavokTimingFixMaxSubsteps = havok_timing_fix_policy::kDefaultMaxSubsteps;
 
         rockInputRemapEnabled = true;
-        rockRightWeaponReadyButtonID = 32;
         rockSuppressRightGrabGameInput = true;
         rockSuppressRightFavoritesGameInput = true;
         rockSuppressNativeReadyWeaponAutoReady = true;
@@ -690,13 +689,6 @@ namespace rock
         rockHavokTimingFixMaxSubsteps = havok_timing_fix_policy::sanitizeMaxSubsteps(
             static_cast<int>(ini.GetLongValue(SECTION, "iHavokTimingFixMaxSubsteps", rockHavokTimingFixMaxSubsteps)));
         rockInputRemapEnabled = ini.GetBoolValue(SECTION, "bInputRemapEnabled", rockInputRemapEnabled);
-        rockRightWeaponReadyButtonID = static_cast<int>(ini.GetLongValue(SECTION, "iRightWeaponReadyButtonID", rockRightWeaponReadyButtonID));
-        if (rockRightWeaponReadyButtonID == input_remap_policy::kWeaponReadyButtonUnbound) {
-            ROCK_LOG_INFO(Config, "iRightWeaponReadyButtonID = -1: weapon ready/holster toggle unbound; right stick click is free for external consumers");
-        } else if (!input_remap_policy::isValidButtonId(rockRightWeaponReadyButtonID)) {
-            ROCK_LOG_WARN(Config, "iRightWeaponReadyButtonID must be -1 (unbound) or 0..63; using 32");
-            rockRightWeaponReadyButtonID = 32;
-        }
         rockSuppressRightGrabGameInput = ini.GetBoolValue(SECTION, "bSuppressRightGrabGameInput", rockSuppressRightGrabGameInput);
         rockSuppressRightFavoritesGameInput = ini.GetBoolValue(SECTION, "bSuppressRightFavoritesGameInput", rockSuppressRightFavoritesGameInput);
         rockSuppressNativeReadyWeaponAutoReady = ini.GetBoolValue(SECTION, "bSuppressNativeReadyWeaponAutoReady", rockSuppressNativeReadyWeaponAutoReady);

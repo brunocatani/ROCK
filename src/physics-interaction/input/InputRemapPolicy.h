@@ -14,7 +14,6 @@ namespace rock::input_remap_policy
     {
         bool enabled{ true };
         int grabButtonId{ 2 };
-        int weaponToggleButtonId{ 32 };
         bool suppressRightGrabGameInput{ true };
         bool suppressRightFavoritesGameInput{ true };
         bool suppressRightTriggerGameInput{ true };
@@ -43,42 +42,6 @@ namespace rock::input_remap_policy
         bool grabHeld{ false };
         bool grabPressed{ false };
         bool grabReleased{ false };
-    };
-
-    inline constexpr double kDefaultWeaponToggleMaxClickSeconds = 0.35;
-
-    /*
-     * iRightWeaponReadyButtonID sentinel: ROCK never binds the weapon
-     * ready/holster toggle to any button. buttonMask() yields 0 for it, so no
-     * toggle click is ever tracked; the physical button stays free for
-     * external consumers reading raw OpenVR state through ROCK's hook.
-     */
-    inline constexpr int kWeaponReadyButtonUnbound = -1;
-
-    struct WeaponToggleClickState
-    {
-        bool tracking{ false };
-        bool eligibleAtPress{ false };
-        bool blocked{ false };
-        double pressStartSeconds{ 0.0 };
-    };
-
-    struct WeaponToggleClickInput
-    {
-        bool enabled{ true };
-        bool gameplayInputAllowed{ true };
-        bool menuInputActive{ false };
-        bool rightHand{ true };
-        bool held{ false };
-        bool pressed{ false };
-        bool released{ false };
-        double currentTimeSeconds{ 0.0 };
-        double maxClickSeconds{ kDefaultWeaponToggleMaxClickSeconds };
-    };
-
-    struct WeaponToggleClickDecision
-    {
-        bool weaponToggleRequested{ false };
     };
 
     struct NativeActionSuppressionInput
@@ -301,52 +264,6 @@ namespace rock::input_remap_policy
             .pressedEdges = currentPressed & ~previousPressed,
             .releasedEdges = previousPressed & ~currentPressed,
         };
-    }
-
-    inline WeaponToggleClickDecision updateWeaponToggleClick(WeaponToggleClickState& state, const WeaponToggleClickInput& input)
-    {
-        WeaponToggleClickDecision decision{};
-        if (!input.enabled || !input.rightHand) {
-            state = {};
-            return decision;
-        }
-
-        const double maxClickSeconds = input.maxClickSeconds > 0.0 ? input.maxClickSeconds : kDefaultWeaponToggleMaxClickSeconds;
-        if (input.pressed) {
-            state.tracking = true;
-            state.eligibleAtPress = input.gameplayInputAllowed && !input.menuInputActive;
-            state.blocked = !state.eligibleAtPress;
-            state.pressStartSeconds = input.currentTimeSeconds;
-        }
-
-        if (!state.tracking) {
-            return decision;
-        }
-
-        if (!input.gameplayInputAllowed || input.menuInputActive) {
-            state.blocked = true;
-        }
-
-        const double elapsedSeconds = input.currentTimeSeconds >= state.pressStartSeconds ? input.currentTimeSeconds - state.pressStartSeconds : 0.0;
-        if (elapsedSeconds > maxClickSeconds) {
-            state.blocked = true;
-        }
-
-        if (input.released) {
-            decision.weaponToggleRequested = state.eligibleAtPress &&
-                                             !state.blocked &&
-                                             input.gameplayInputAllowed &&
-                                             !input.menuInputActive &&
-                                             elapsedSeconds <= maxClickSeconds;
-            state = {};
-            return decision;
-        }
-
-        if (!input.held && !input.pressed) {
-            state = {};
-        }
-
-        return decision;
     }
 
     [[nodiscard]] constexpr Decision evaluate(const Input& input, const Settings& settings)

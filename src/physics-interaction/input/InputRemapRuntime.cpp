@@ -113,10 +113,6 @@ namespace rock::input_remap_runtime
             std::atomic<std::uint64_t> releasedEdges{ 0 };
             std::atomic<std::uint64_t> rearmPressedMask{ 0 };
             std::atomic<bool> valid{ false };
-            std::atomic<bool> weaponToggleTracking{ false };
-            std::atomic<bool> weaponToggleEligibleAtPress{ false };
-            std::atomic<bool> weaponToggleBlocked{ false };
-            std::atomic<std::uint64_t> weaponTogglePressStartMs{ 0 };
         };
 
         std::array<ControllerTracker, 2> s_controllers;
@@ -126,7 +122,6 @@ namespace rock::input_remap_runtime
         std::array<std::atomic<bool>, 2> s_handInteractionEngaged{};
         std::atomic<bool> s_equippedWeaponPrimaryDetachInputActive{ false };
         std::atomic<bool> s_equippedWeaponPrimaryDetached{ false };
-        std::atomic<std::uint32_t> s_pendingWeaponToggleRequests{ 0 };
         std::atomic<bool> s_hooksInstalled{ false };
         std::atomic<bool> s_readyWeaponEventHookInstalled{ false };
         std::atomic<bool> s_activateEventHookInstalled{ false };
@@ -416,7 +411,6 @@ namespace rock::input_remap_runtime
             return input_remap_policy::Settings{
                 .enabled = g_rockConfig.rockInputRemapEnabled,
                 .grabButtonId = g_rockConfig.rockGrabButtonID,
-                .weaponToggleButtonId = g_rockConfig.rockRightWeaponReadyButtonID,
                 .suppressRightGrabGameInput = g_rockConfig.rockSuppressRightGrabGameInput,
                 .suppressRightFavoritesGameInput = g_rockConfig.rockSuppressRightFavoritesGameInput,
                 .suppressRightTriggerGameInput = g_rockConfig.rockSuppressNativeReadyWeaponAutoReady,
@@ -572,14 +566,6 @@ namespace rock::input_remap_runtime
             return defer;
         }
 
-        [[nodiscard]] bool shouldDeferWeaponToggleForVirtualHolsters()
-        {
-            return shouldDeferVirtualHolstersInput(false,
-                g_rockConfig.rockRightWeaponReadyButtonID,
-                g_rockConfig.rockVirtualHolstersDeferWeaponToggleInZone,
-                "weapon toggle");
-        }
-
         [[nodiscard]] bool resolveControllerHand(vr::TrackedDeviceIndex_t deviceIndex, input_remap_policy::Hand& outHand)
         {
             auto* system = vr::VRSystem();
@@ -654,31 +640,6 @@ namespace rock::input_remap_runtime
             return isGameStoppingMenuInputActive() || isCompatibilityConfigInputActive();
         }
 
-        [[nodiscard]] double currentTimeSeconds()
-        {
-            return static_cast<double>(GetTickCount64()) / 1000.0;
-        }
-
-        [[nodiscard]] input_remap_policy::WeaponToggleClickState loadWeaponToggleClickState(const ControllerTracker& tracker)
-        {
-            return input_remap_policy::WeaponToggleClickState{
-                .tracking = tracker.weaponToggleTracking.load(std::memory_order_acquire),
-                .eligibleAtPress = tracker.weaponToggleEligibleAtPress.load(std::memory_order_acquire),
-                .blocked = tracker.weaponToggleBlocked.load(std::memory_order_acquire),
-                .pressStartSeconds = static_cast<double>(tracker.weaponTogglePressStartMs.load(std::memory_order_acquire)) / 1000.0,
-            };
-        }
-
-        void storeWeaponToggleClickState(ControllerTracker& tracker, const input_remap_policy::WeaponToggleClickState& state)
-        {
-            tracker.weaponToggleTracking.store(state.tracking, std::memory_order_release);
-            tracker.weaponToggleEligibleAtPress.store(state.eligibleAtPress, std::memory_order_release);
-            tracker.weaponToggleBlocked.store(state.blocked, std::memory_order_release);
-            tracker.weaponTogglePressStartMs.store(
-                state.pressStartSeconds > 0.0 ? static_cast<std::uint64_t>(state.pressStartSeconds * 1000.0) : 0u,
-                std::memory_order_release);
-        }
-
         void clearButtonEdges(ControllerTracker& tracker, std::uint64_t mask)
         {
             tracker.pressedEdges.fetch_and(~mask, std::memory_order_acq_rel);
@@ -738,26 +699,6 @@ namespace rock::input_remap_runtime
                     clearButtonEdges(tracker, releasedFromRearm);
                     tracker.rearmPressedMask.fetch_and(~releasedFromRearm, std::memory_order_acq_rel);
                 }
-            }
-
-            const auto settings = makeSettings();
-            const auto weaponToggleMask = input_remap_policy::buttonMask(settings.weaponToggleButtonId);
-            auto weaponToggleClickState = loadWeaponToggleClickState(tracker);
-            const auto weaponToggleClick = input_remap_policy::updateWeaponToggleClick(weaponToggleClickState,
-                input_remap_policy::WeaponToggleClickInput{
-                    .enabled = settings.enabled,
-                    .gameplayInputAllowed = s_gameplayInputAllowed.load(std::memory_order_acquire),
-                    .menuInputActive = inputBlockingMenuActive,
-                    .rightHand = hand == input_remap_policy::Hand::Right,
-                    .held = weaponToggleMask != 0 && (rawPressed & weaponToggleMask) != 0,
-                    .pressed = hadPrevious && weaponToggleMask != 0 && (rawTransition.pressedEdges & weaponToggleMask) != 0,
-                    .released = hadPrevious && weaponToggleMask != 0 && (rawTransition.releasedEdges & weaponToggleMask) != 0,
-                    .currentTimeSeconds = currentTimeSeconds(),
-                });
-            storeWeaponToggleClickState(tracker, weaponToggleClickState);
-
-            if (weaponToggleClick.weaponToggleRequested) {
-                s_pendingWeaponToggleRequests.fetch_add(1, std::memory_order_acq_rel);
             }
         }
 
@@ -1430,35 +1371,6 @@ namespace rock::input_remap_runtime
             return result;
         }
 
-        bool refreshControllerTrackerFromOpenVr(vr::ETrackedControllerRole role)
-        {
-            auto* system = vr::VRSystem();
-            if (!system) {
-                return false;
-            }
-
-            const auto index = system->GetTrackedDeviceIndexForControllerRole(role);
-            if (index == vr::k_unTrackedDeviceIndexInvalid) {
-                return false;
-            }
-
-            vr::VRControllerState_t state{};
-            const bool ok = s_originalGetControllerState ?
-                                s_originalGetControllerState(system, index, &state, sizeof(state)) :
-                                system->GetControllerState(index, &state, sizeof(state));
-            if (!ok) {
-                return false;
-            }
-
-            captureControllerState(index, &state, sizeof(state));
-            return true;
-        }
-
-        void refreshWeaponToggleControllerTracker()
-        {
-            (void)refreshControllerTrackerFromOpenVr(vr::TrackedControllerRole_RightHand);
-        }
-
     }
 
     bool installInputRemapHooks()
@@ -1574,42 +1486,6 @@ namespace rock::input_remap_runtime
         auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressPipboyGameInputWhileHolding, true);
         input.pipboyHandEngaged = isPipboyHandEngaged();
         return input_remap_policy::shouldSuppressNativePipboyAction(input);
-    }
-
-    void processPendingWeaponToggleRequests()
-    {
-        refreshWeaponToggleControllerTracker();
-
-        const std::uint32_t requestCount = s_pendingWeaponToggleRequests.exchange(0, std::memory_order_acq_rel);
-        if (requestCount == 0) {
-            return;
-        }
-
-        if (!g_rockConfig.rockInputRemapEnabled || !s_gameplayInputAllowed.load(std::memory_order_acquire) || isInputBlockingMenuActive()) {
-            ROCK_LOG_DEBUG(Input, "Dropped {} pending weapon toggle request(s) because gameplay input is not active", requestCount);
-            return;
-        }
-
-        if (shouldDeferWeaponToggleForVirtualHolsters()) {
-            ROCK_LOG_DEBUG(Input, "Dropped {} pending weapon toggle request(s) because VirtualHolsters owns the active holster zone", requestCount);
-            return;
-        }
-
-        auto* player = RE::PlayerCharacter::GetSingleton();
-        if (!player) {
-            ROCK_LOG_WARN(Input, "Dropped {} pending weapon toggle request(s): PlayerCharacter unavailable", requestCount);
-            return;
-        }
-
-        const bool weaponDrawn = player->GetWeaponMagicDrawn();
-        const bool targetDrawn = (requestCount % 2u) == 0u ? weaponDrawn : !weaponDrawn;
-        if (targetDrawn == weaponDrawn) {
-            ROCK_LOG_DEBUG(Input, "Consumed {} weapon toggle requests with no net weapon-state change", requestCount);
-            return;
-        }
-
-        player->DrawWeaponMagicHands(targetDrawn);
-        ROCK_LOG_INFO(Input, "Right stick click requested weapon {}", targetDrawn ? "draw" : "holster");
     }
 
     RawButtonState peekRawButtonState(bool isLeft, int buttonId)

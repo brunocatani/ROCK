@@ -281,7 +281,6 @@ namespace
             !runtime.compatibilityConfigBlocking;
         input_remap_runtime::setWeaponDrawn(runtime.weaponDrawn);
         input_remap_runtime::setGameplayInputAllowed(gameplayInputAllowed);
-        input_remap_runtime::processPendingWeaponToggleRequests();
         debug_controller_runtime::update(gameplayInputAllowed, runtime.deltaSeconds);
 
         if (!g_rockConfig.rockEnabled) {

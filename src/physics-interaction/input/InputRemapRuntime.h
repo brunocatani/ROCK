@@ -29,7 +29,6 @@ namespace rock::input_remap_runtime
     bool shouldDeferGrabInputForVirtualHolsters(bool isLeft, int buttonId);
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event);
     bool isNativePipboyInputSuppressionActive();
-    void processPendingWeaponToggleRequests();
 
     RawButtonState peekRawButtonState(bool isLeft, int buttonId);
     RawButtonState consumeRawButtonState(bool isLeft, int buttonId);
