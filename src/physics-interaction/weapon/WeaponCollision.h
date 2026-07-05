@@ -402,6 +402,20 @@ namespace rock
 
         void maybeFireWorkbenchWeaponReattach();
 
+        /*
+         * Steady-state visual drift rescan: the engine can attach mod 3D after
+         * the collider harvest closed (late model streaming, workbench rebuilds
+         * landing after the workbench-exit rebuild already ran), and the drifted
+         * tree then stays stable with no rebuild trigger. Candidate key/checks
+         * implement the same-key stability debounce; the cooldown bounds refire
+         * frequency against slow animation-driven visibility flips.
+         */
+        void maybeRequestVisualDriftRebuild(RE::NiAVObject* weaponNode, bool& rebuildRequired);
+        int _visualDriftCheckFrameCounter{ 0 };
+        std::uint64_t _visualDriftCandidateKey{ 0 };
+        int _visualDriftCandidateChecks{ 0 };
+        int _visualDriftRefireCooldownFrames{ 0 };
+
         int _posLogCounter{ 0 };
 
         float _cachedConvexRadius{ -1.0f };

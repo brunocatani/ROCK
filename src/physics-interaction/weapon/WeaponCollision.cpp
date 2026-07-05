@@ -2605,6 +2605,7 @@ namespace rock
 
         maybeDumpWeaponAnimNodeDiagnostics(weaponNode, observedKey);
         maybeFireWorkbenchWeaponReattach();
+        maybeRequestVisualDriftRebuild(weaponNode, rebuildRequired);
 
         if (driveRequestedRebuild) {
             ROCK_LOG_WARN(Weapon,
@@ -4465,6 +4466,72 @@ namespace rock
             }
             return count;
         }
+    }
+
+    /*
+     * Steady-state visual drift rescan (production path, not debug-gated).
+     * 2026-07-04 audit sessions proved the engine attaches mod 3D after the
+     * collider harvest closed (late model streaming at equip: SA58 FAL; parts
+     * landing after the workbench-exit rebuild already ran: AX50, AK stock)
+     * and the drifted tree then stays stable indefinitely with no rebuild
+     * trigger, leaving rendered geometry without colliders. Fires one rebuild
+     * when a drifted visual composition key stays IDENTICAL across
+     * kRequiredStableChecks rate-limited checks. The stability requirement
+     * plus refire cooldown keeps reload/aim animation visibility flips (which
+     * the key intentionally observes) from causing rebuild storms; the walk
+     * itself is capped at 512 nodes and runs at most once per configured
+     * interval, satisfying hot-path scan limits.
+     */
+    void WeaponCollision::maybeRequestVisualDriftRebuild(RE::NiAVObject* weaponNode, bool& rebuildRequired)
+    {
+        constexpr int kRequiredStableChecks = 3;
+        constexpr int kRefireCooldownFrames = 900;
+
+        if (_visualDriftRefireCooldownFrames > 0) {
+            --_visualDriftRefireCooldownFrames;
+        }
+        const int intervalFrames = g_rockConfig.rockWeaponCollisionVisualDriftRescanIntervalFrames;
+        if (intervalFrames <= 0 || rebuildRequired || _pendingGeneratedWeaponBuild.active ||
+            !weaponNode || !hasWeaponBody() || _cachedWeaponVisualKey == 0) {
+            _visualDriftCandidateKey = 0;
+            _visualDriftCandidateChecks = 0;
+            return;
+        }
+        if (++_visualDriftCheckFrameCounter < intervalFrames) {
+            return;
+        }
+        _visualDriftCheckFrameCounter = 0;
+
+        WeaponVisualKeyStats stats{};
+        const std::uint64_t observedVisualKey = getWeaponVisualCompositionKey(weaponNode, stats);
+        if (observedVisualKey == 0 || observedVisualKey == _cachedWeaponVisualKey) {
+            _visualDriftCandidateKey = 0;
+            _visualDriftCandidateChecks = 0;
+            return;
+        }
+
+        if (observedVisualKey == _visualDriftCandidateKey) {
+            ++_visualDriftCandidateChecks;
+        } else {
+            _visualDriftCandidateKey = observedVisualKey;
+            _visualDriftCandidateChecks = 1;
+        }
+        if (_visualDriftCandidateChecks < kRequiredStableChecks || _visualDriftRefireCooldownFrames > 0) {
+            return;
+        }
+
+        ROCK_LOG_INFO(Weapon,
+            "Generated weapon visual drift stable for {} checks - requesting rebuild cachedVisualKey={:016X} observedVisualKey={:016X} visibleTriShapes={} nodes={} invisibleNodes={}",
+            _visualDriftCandidateChecks,
+            _cachedWeaponVisualKey,
+            observedVisualKey,
+            stats.visibleTriShapeCount,
+            stats.nodeCount,
+            stats.invisibleNodeCount);
+        _visualDriftCandidateKey = 0;
+        _visualDriftCandidateChecks = 0;
+        _visualDriftRefireCooldownFrames = kRefireCooldownFrames;
+        rebuildRequired = true;
     }
 
     /*
