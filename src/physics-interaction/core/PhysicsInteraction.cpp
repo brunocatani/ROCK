@@ -2861,6 +2861,18 @@ namespace rock
                     queueGripHaptic(false, g_rockConfig.rockWeaponSupportGripHapticIntensity);
                 }
             }
+            /*
+             * Continuous hover feedback while the open firing palm sits inside
+             * the reattach radius during part carry: re-queued every frame so
+             * the vibration holds until the squeeze reattaches (which flips
+             * the state and hands off to the firingGripAttached pulse above).
+             */
+            if (g_rockConfig.rockGripZoneHoverHapticsEnabled && _twoHandedGrip.isFiringGripReattachHoverInsideRadius()) {
+                (void)_feedbackHaptics.queue(
+                    _twoHandedGrip.isFiringHandLeft() ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
+                    grip_zone_hover_haptic_policy::kContinuousQueueSeconds,
+                    g_rockConfig.rockGripZoneHoverHapticIntensity);
+            }
             const auto equippedWeaponDropRequest = _twoHandedGrip.consumeEquippedWeaponDropRequest();
             if (equippedWeaponDropRequest.requested) {
                 const auto sourceHand = equippedWeaponDropRequest.sourceHand;
@@ -6830,6 +6842,37 @@ namespace rock
                 hand.getHeldRef(),
                 hand.getState() == HandState::HeldBody,
                 frame.deltaSeconds);
+
+            /*
+             * Grip-zone hover probe: while the OPEN primary hand's selection
+             * candidate is a loose weapon, feel out whether grabbing right now
+             * would land the palm inside the firing-grip zone (and therefore
+             * equip after the settle). Primary-hand-only because both the
+             * grip projection (primary weapon attach node) and the grip-zone
+             * equip policy are primary-only; grenades never reach the equip
+             * path so they never hum. Vibration stops on grab because the
+             * hover candidate goes null while holding.
+             */
+            RE::TESObjectREFR* gripZoneHoverCandidate = nullptr;
+            if (!isLeft &&
+                g_rockConfig.rockGripZoneHoverHapticsEnabled &&
+                g_rockConfig.rockGrabbedWeaponGripZoneEquipEnabled &&
+                g_rockConfig.rockInputRemapEnabled &&
+                !hand.isHolding() &&
+                hand.hasSelection() &&
+                !input_remap_runtime::isMenuInputActive()) {
+                auto* selectionRef = hand.getSelection().refr;
+                if (selectionRef && !loose_grenade_runtime::isGrenadeRef(selectionRef)) {
+                    gripZoneHoverCandidate = selectionRef;
+                }
+            }
+            loose_weapon_grip_zone::updateHoverCandidateWeapon(isLeft, gripZoneHoverCandidate);
+            if (loose_weapon_grip_zone::isGripZoneHoverInsideRadius(isLeft)) {
+                (void)_feedbackHaptics.queue(
+                    isLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
+                    grip_zone_hover_haptic_policy::kContinuousQueueSeconds,
+                    g_rockConfig.rockGripZoneHoverHapticIntensity);
+            }
 
             if (hand.isHolding()) {
                 _softContactRuntime.clearHandForStrongerOwner(isLeft, "held-object");

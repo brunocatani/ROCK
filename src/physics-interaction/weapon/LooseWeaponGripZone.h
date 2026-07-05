@@ -54,6 +54,25 @@ namespace rock::loose_weapon_grip_zone
     bool isGripZoneEquipSettled(bool isLeft);
 
     /*
+     * Hover probe for the OPEN hand: projects the same firing-grip point onto
+     * the hand's current selection candidate (not the held object) so the
+     * player can feel, before grabbing, that a grab right now would land on
+     * the firing grip and equip. Call once per frame per hand with the
+     * selection ref while the hand is not holding; pass nullptr to clear.
+     * Hand-role (primary only -- the projection runs through the primary
+     * weapon attach node), grenade exclusion, feature toggles, and menu
+     * gating are enforced by the caller.
+     */
+    void updateHoverCandidateWeapon(bool isLeft, RE::TESObjectREFR* candidateRef);
+
+    /*
+     * True while the open palm hovers inside the configured grip-zone equip
+     * radius over the current hover candidate. Continuous state, re-evaluated
+     * by updateHoverCandidateWeapon each frame.
+     */
+    bool isGripZoneHoverInsideRadius(bool isLeft);
+
+    /*
      * Read the last resolved grip zone for one hand for debug-overlay
      * publishing. Returns false when the hand has no valid state this frame.
      */

@@ -35,6 +35,11 @@ namespace rock::loose_weapon_grip_zone
 
         std::array<HandZoneState, 2> s_handStates{};
 
+        // Hover probe over the not-yet-grabbed selection candidate; fully
+        // separate from the held-weapon state so grabbing never inherits a
+        // stale hover result (and vice versa).
+        std::array<HandZoneState, 2> s_hoverStates{};
+
         std::size_t handIndex(const bool isLeft) { return isLeft ? 0u : 1u; }
 
         bool isFinitePoint(const RE::NiPoint3& point)
@@ -166,6 +171,71 @@ namespace rock::loose_weapon_grip_zone
         }
 
         state = next;
+    }
+
+    void updateHoverCandidateWeapon(const bool isLeft, RE::TESObjectREFR* candidateRef)
+    {
+        auto& state = s_hoverStates[handIndex(isLeft)];
+        if (!candidateRef) {
+            state = {};
+            return;
+        }
+
+        /*
+         * Cheap identity gate before any projection work: the hover probe is
+         * fed the raw selection candidate every frame and most selections are
+         * not weapons. Non-weapons clear silently instead of churning the
+         * unavailable-reason log the way the held path does.
+         */
+        auto* baseForm = candidateRef->GetObjectReference();
+        if (!baseForm || !baseForm->As<RE::TESObjectWEAP>()) {
+            state = {};
+            return;
+        }
+
+        HandZoneState next{};
+        RE::NiTransform palmHandWorld{};
+        next.palmValid = TwoHandedGrip::tryCaptureRootFlattenedPalmWorld(isLeft, next.palmWorld, palmHandWorld) && isFinitePoint(next.palmWorld);
+        if (!next.palmValid) {
+            next.reason = "missingPalm";
+            state = next;
+            return;
+        }
+
+        next.valid = tryResolveGripWorld(candidateRef, next.palmWorld, next);
+        if (!next.valid) {
+            if (state.reason != next.reason) {
+                ROCK_LOG_DEBUG(Hand,
+                    "{} hand loose weapon grip-zone hover unavailable: reason={} formID={:08X}",
+                    isLeft ? "left" : "right",
+                    next.reason,
+                    candidateRef->GetFormID());
+            }
+            state = next;
+            return;
+        }
+
+        next.palmToGripDistance = pointDistance(next.palmWorld, next.gripWorld);
+        next.insideRadius = next.palmToGripDistance <= g_rockConfig.rockGrabbedWeaponGripZoneEquipRadius;
+
+        if (next.insideRadius != state.insideRadius) {
+            ROCK_LOG_DEBUG(Hand,
+                "{} hand loose weapon grip-zone hover {}: palmDist={:.2f}gu radius={:.2f}gu formID={:08X} offsetSource={}",
+                isLeft ? "left" : "right",
+                next.insideRadius ? "entered" : "exited",
+                next.palmToGripDistance,
+                g_rockConfig.rockGrabbedWeaponGripZoneEquipRadius,
+                candidateRef->GetFormID(),
+                next.reason);
+        }
+
+        state = next;
+    }
+
+    bool isGripZoneHoverInsideRadius(const bool isLeft)
+    {
+        const auto& state = s_hoverStates[handIndex(isLeft)];
+        return state.valid && state.insideRadius;
     }
 
     bool isGripZoneEquipSettled(const bool isLeft)

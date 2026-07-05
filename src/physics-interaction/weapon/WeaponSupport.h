@@ -514,6 +514,17 @@ namespace rock::weapon_two_handed_grip_math
         return gripHeld && palmToGripDistance <= reattachRadius;
     }
 
+    /*
+     * Hover twin of the reattach gate: an OPEN firing palm inside the radius
+     * means a squeeze right now would re-take the firing grip, so the runtime
+     * owner drives continuous haptic feedback while this holds. A held grab
+     * is never a hover -- it is the reattach itself.
+     */
+    inline constexpr bool isFiringGripReattachHoverCandidate(bool gripHeld, float palmToGripDistance, float reattachRadius)
+    {
+        return !gripHeld && palmToGripDistance <= reattachRadius;
+    }
+
     inline constexpr bool canStartFreeHandPartGrip(
         bool routedSupportGrip,
         bool gripPressed,

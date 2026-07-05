@@ -171,6 +171,14 @@ namespace rock
 
         bool isFiringGripOccupied() const { return _state == TwoHandedState::Gripping || _state == TwoHandedState::PrimaryOnly; }
 
+        /*
+         * True while the OPEN firing palm hovers inside the reattach radius
+         * during part carry: squeezing the grab right now would re-take the
+         * firing grip. Recomputed every update(); PhysicsInteraction consumes
+         * it each frame to drive continuous hover haptics on the firing hand.
+         */
+        bool isFiringGripReattachHoverInsideRadius() const { return _firingGripReattachHoverInsideRadius; }
+
         bool canUsePrimaryDetachInput() const
         {
             return _state == TwoHandedState::Gripping ||
@@ -479,6 +487,9 @@ namespace rock
 
         EquippedWeaponManualDropRequest _equippedWeaponDropRequest{};
         TwoHandedGripHapticEvents _hapticEvents{};
+
+        // Per-frame hover state; only ever true in PartCarry (see getter).
+        bool _firingGripReattachHoverInsideRadius{ false };
     };
 
 }

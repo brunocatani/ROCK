@@ -208,6 +208,8 @@ namespace rock
         rockGrabbedWeaponGripZoneEquipEnabled = true;
         rockGrabbedWeaponGripZoneEquipRadius = 3.0f;
         rockGrabbedWeaponGripZoneEquipSettleSeconds = 0.15f;
+        rockGripZoneHoverHapticsEnabled = true;
+        rockGripZoneHoverHapticIntensity = 0.75f;
         rockGrabbedWeaponEquipBridgeEnabled = true;
         rockGrabbedWeaponEquipBridgeTimeoutSeconds = 2.0f;
         rockGrabbedWeaponEquipBridgeBlendSeconds = 0.15f;
@@ -919,6 +921,17 @@ namespace rock
             0.15f,
             0.0f,
             5.0f);
+        rockGripZoneHoverHapticsEnabled = ini.GetBoolValue(
+            REALISTIC_WEAPONS_SECTION,
+            "bGripZoneHoverHapticsEnabled",
+            rockGripZoneHoverHapticsEnabled);
+        rockGripZoneHoverHapticIntensity = readClampedFloat(ini,
+            REALISTIC_WEAPONS_SECTION,
+            "fGripZoneHoverHapticIntensity",
+            rockGripZoneHoverHapticIntensity,
+            0.75f,
+            0.0f,
+            1.0f);
         rockGrabbedWeaponEquipBridgeEnabled = ini.GetBoolValue(
             REALISTIC_WEAPONS_SECTION,
             "bGrabbedWeaponEquipBridgeEnabled",

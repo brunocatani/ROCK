@@ -125,6 +125,8 @@ namespace rock
         bool rockGrabbedWeaponGripZoneEquipEnabled = true;
         float rockGrabbedWeaponGripZoneEquipRadius = 3.0f;
         float rockGrabbedWeaponGripZoneEquipSettleSeconds = 0.15f;
+        bool rockGripZoneHoverHapticsEnabled = true;
+        float rockGripZoneHoverHapticIntensity = 0.75f;
         bool rockGrabbedWeaponEquipBridgeEnabled = true;
         float rockGrabbedWeaponEquipBridgeTimeoutSeconds = 2.0f;
         float rockGrabbedWeaponEquipBridgeBlendSeconds = 0.15f;

@@ -166,6 +166,14 @@ int main()
     ok &= expectFalse("an open hand never re-takes the firing grip",
         shouldReattachFiringGripOnGrab(false, 0.1f, 3.0f));
 
+    using rock::weapon_two_handed_grip_math::isFiringGripReattachHoverCandidate;
+    ok &= expectTrue("open palm inside the reattach radius is a hover candidate",
+        isFiringGripReattachHoverCandidate(false, 2.9f, 3.0f));
+    ok &= expectFalse("hover candidate requires the palm inside the radius",
+        isFiringGripReattachHoverCandidate(false, 3.5f, 3.0f));
+    ok &= expectFalse("a held grab is the reattach itself, never a hover",
+        isFiringGripReattachHoverCandidate(true, 2.9f, 3.0f));
+
     ok &= expectTrue("free hand part grip starts on grab press over a routed support part",
         canStartFreeHandPartGrip(true, true, false, false));
     ok &= expectFalse("free hand part grip requires a routed support-grip contact",

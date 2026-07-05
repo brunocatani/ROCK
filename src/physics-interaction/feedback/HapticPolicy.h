@@ -130,6 +130,18 @@ namespace rock::candidate_haptic_policy
     }
 }
 
+namespace rock::grip_zone_hover_haptic_policy
+{
+    /*
+     * Grip-zone hover feedback is continuous, not pulsed: the runtime owner
+     * re-queues one event every frame while the open palm stays inside the
+     * zone, and FeedbackHaptics' latest-event-wins pick keeps exactly one
+     * live event per hand. The queued duration only needs to outlive a frame
+     * so a hitch never reads as a vibration gap.
+     */
+    inline constexpr float kContinuousQueueSeconds = 0.05f;
+}
+
 namespace rock::shoulder_stash_haptic_policy
 {
     using CandidatePulseConfig = candidate_haptic_policy::CandidatePulseConfig;

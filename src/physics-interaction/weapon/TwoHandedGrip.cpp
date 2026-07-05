@@ -465,6 +465,7 @@ namespace rock
         bool primaryDetachEnabled)
     {
         _hasSolvedWeaponTransform = false;
+        _firingGripReattachHoverInsideRadius = false;
 
         if (!runtime_state::isLocalSkeletonReady() || !weaponNode) {
             if (_state != TwoHandedState::Inactive) {
@@ -602,6 +603,7 @@ namespace rock
     {
         _equippedWeaponDropRequest = {};
         _hapticEvents = {};
+        _firingGripReattachHoverInsideRadius = false;
         clearPrimaryGripPose(_firingHandIsLeft);
         clearPrimaryDetachVisualAuthority(_firingHandIsLeft);
         clearSupportGripPose(true);
@@ -1630,6 +1632,10 @@ namespace rock
             float palmToGripDistance = 0.0f;
             if (tryComputeFiringPalmToGripDistance(weaponNode, palmToGripDistance)) {
                 reattachRequested = weapon_two_handed_grip_math::shouldReattachFiringGripOnGrab(
+                    frameInput.primaryGripInput.held,
+                    palmToGripDistance,
+                    g_rockConfig.rockWeaponFiringGripReattachRadius);
+                _firingGripReattachHoverInsideRadius = weapon_two_handed_grip_math::isFiringGripReattachHoverCandidate(
                     frameInput.primaryGripInput.held,
                     palmToGripDistance,
                     g_rockConfig.rockWeaponFiringGripReattachRadius);
