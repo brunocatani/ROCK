@@ -4370,6 +4370,23 @@ namespace rock
             return path;
         }
 
+        /*
+         * Per-node visibility checks miss renders hidden by an ANCESTOR: a
+         * culled/hidden/zero-scale parent (hand bone, skeleton root) hides the
+         * whole weapon while every weapon node still reports visible=yes. The
+         * post-workbench "weapon invisible" investigation needs the first
+         * offending ancestor named explicitly.
+         */
+        const RE::NiAVObject* findOmodAuditHiddenAncestor(const RE::NiAVObject* node)
+        {
+            for (const RE::NiAVObject* cursor = node ? node->parent : nullptr; cursor; cursor = cursor->parent) {
+                if ((cursor->flags.flags & 1) != 0 || cursor->GetAppCulled() || cursor->local.scale == 0.0f) {
+                    return cursor;
+                }
+            }
+            return nullptr;
+        }
+
         std::size_t countOmodAuditEvidenceSourcesInSubtree(
             RE::NiAVObject* node,
             const std::unordered_set<std::uintptr_t>& evidenceSourceAddresses,
@@ -4443,8 +4460,10 @@ namespace rock
         const std::uint64_t visualKeyNow = getWeaponVisualCompositionKey(weaponNode, visualStatsNow);
         const bool visualDrift = visualKeyNow != 0 && _cachedWeaponVisualKey != 0 && visualKeyNow != _cachedWeaponVisualKey;
 
+        const RE::NiAVObject* rootHiddenAncestor = findOmodAuditHiddenAncestor(weaponNode);
+        const RE::NiPoint3 cameraPosition = f4vr::getCameraPosition();
         ROCK_LOG_INFO(Weapon,
-            "OMOD-AUDIT begin run={} bodySetKey={:016X} weapon={:08X} '{}' bodies={} visualKeyNow={:016X} visualKeyAtBuild={:016X} drift={} visibleTriShapes={} nodes={} invisibleNodes={}",
+            "OMOD-AUDIT begin run={} bodySetKey={:016X} weapon={:08X} '{}' bodies={} visualKeyNow={:016X} visualKeyAtBuild={:016X} drift={} visibleTriShapes={} nodes={} invisibleNodes={} rootVisible={} rootHiddenAncestor='{}' rootWorldT=({:.2f},{:.2f},{:.2f}) rootWorldScale={:.3f} cameraT=({:.2f},{:.2f},{:.2f})",
             runIndex,
             _cachedWeaponBodySetKey,
             weaponForm ? weaponForm->formID : 0u,
@@ -4455,7 +4474,16 @@ namespace rock
             visualDrift ? "YES" : "no",
             visualStatsNow.visibleTriShapeCount,
             visualStatsNow.nodeCount,
-            visualStatsNow.invisibleNodeCount);
+            visualStatsNow.invisibleNodeCount,
+            weaponVisualNodeVisible(weaponNode) ? "yes" : "no",
+            rootHiddenAncestor ? safeNodeName(const_cast<RE::NiAVObject*>(rootHiddenAncestor)) : "none",
+            weaponNode->world.translate.x,
+            weaponNode->world.translate.y,
+            weaponNode->world.translate.z,
+            weaponNode->world.scale,
+            cameraPosition.x,
+            cameraPosition.y,
+            cameraPosition.z);
 
         /*
          * Stored sourceNode pointers are compared by address during tree walks
@@ -4688,8 +4716,9 @@ namespace rock
                 std::size_t evidenceVisited = 0;
                 const std::size_t evidenceSources =
                     countOmodAuditEvidenceSourcesInSubtree(match.node, evidenceSourceAddresses, evidenceVisited);
+                const RE::NiAVObject* hiddenAncestor = findOmodAuditHiddenAncestor(match.node);
                 ROCK_LOG_INFO(Weapon,
-                    "OMOD-AUDIT instance name='{}' root='{}' path='{}' addr={:x} visible={} flags=0x{:X} appCulled={} subtreeNodes={} triShapes={} visibleTriShapes={} hiddenFlags={} appCulledNodes={} evidenceSources={} childNames='{}'",
+                    "OMOD-AUDIT instance name='{}' root='{}' path='{}' addr={:x} visible={} flags=0x{:X} appCulled={} hiddenAncestor='{}' worldT=({:.2f},{:.2f},{:.2f}) worldScale={:.3f} localScale={:.3f} subtreeNodes={} triShapes={} visibleTriShapes={} hiddenFlags={} appCulledNodes={} evidenceSources={} childNames='{}'",
                     safeNodeName(match.node),
                     match.rootLabel,
                     buildOmodAuditNodePath(match.node),
@@ -4697,6 +4726,12 @@ namespace rock
                     weaponVisualNodeVisible(match.node) ? "yes" : "no",
                     static_cast<std::uint32_t>(match.node->flags.flags),
                     match.node->GetAppCulled() ? "yes" : "no",
+                    hiddenAncestor ? safeNodeName(const_cast<RE::NiAVObject*>(hiddenAncestor)) : "none",
+                    match.node->world.translate.x,
+                    match.node->world.translate.y,
+                    match.node->world.translate.z,
+                    match.node->world.scale,
+                    match.node->local.scale,
                     stats.nodeCount,
                     stats.triShapeCount,
                     stats.visibleTriShapeCount,
