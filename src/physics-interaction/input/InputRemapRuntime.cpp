@@ -719,6 +719,18 @@ namespace rock::input_remap_runtime
             const bool inputBlockingMenuActive = isInputBlockingMenuActive();
             if (inputBlockingMenuActive) {
                 tracker.rearmPressedMask.fetch_or(rawPressed, std::memory_order_acq_rel);
+                /*
+                 * Gameplay edges must not originate inside a blocking menu.
+                 * The accumulator kept latching press edges during menus; a
+                 * grab squeezed at the workbench and still held on exit kept
+                 * its latched press (the rearm clear only fires on release),
+                 * so the first post-menu frame read held+pressed and started
+                 * a phantom primary-only grip mid weapon reassembly - the
+                 * "weapon invisible until swap" report. Rearm semantics stay:
+                 * a button held through the menu needs a full release and a
+                 * fresh gameplay press to act again.
+                 */
+                clearButtonEdges(tracker, ~0ull);
             } else {
                 const auto rearmMask = tracker.rearmPressedMask.load(std::memory_order_acquire);
                 const auto releasedFromRearm = rearmMask & ~rawPressed;
