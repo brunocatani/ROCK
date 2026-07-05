@@ -4648,11 +4648,134 @@ namespace rock
         addRoot("firstPersonSkeleton", f4vr::getFirstPersonSkeleton(), kOmodAuditDeepRootMaxVisited);
         addRoot("playerFadeRootNode", f4vr::getWorldRootNode(), kOmodAuditDeepRootMaxVisited);
         addRoot("gameRootNode", f4vr::getRootNode(), kOmodAuditDeepRootMaxVisited);
-        RE::NiAVObject* absoluteSceneRoot = weaponNode;
-        for (int hop = 0; hop < 64 && absoluteSceneRoot->parent; ++hop) {
-            absoluteSceneRoot = absoluteSceneRoot->parent;
-        }
+        const auto climbToAbsoluteRoot = [](RE::NiAVObject* node) -> RE::NiAVObject* {
+            if (!node) {
+                return nullptr;
+            }
+            for (int hop = 0; hop < 64 && node->parent; ++hop) {
+                node = node->parent;
+            }
+            return node;
+        };
+        RE::NiAVObject* absoluteSceneRoot = climbToAbsoluteRoot(weaponNode);
         addRoot("absoluteSceneRoot", absoluteSceneRoot, kOmodAuditSceneRootMaxVisited);
+        /*
+         * Scene-root topology probe (2026-07-04 session 3): the rendered
+         * weapon copy is in NEITHER census instance and the WorldRoot-wide
+         * scan never hits its cap, so the rendered copy must hang under a
+         * sibling scene root. Climb from every player/camera anchor that can
+         * live outside WorldRoot; addRoot dedup makes converging climbs free,
+         * and the topology lines below prove which anchors share a graph.
+         */
+        addRoot("fpSkeletonAbsoluteRoot", climbToAbsoluteRoot(f4vr::getFirstPersonSkeleton()), kOmodAuditSceneRootMaxVisited);
+        addRoot("playerWorldAbsoluteRoot", climbToAbsoluteRoot(playerNodes ? playerNodes->playerworldnode : nullptr), kOmodAuditSceneRootMaxVisited);
+        auto* playerCamera = f4vr::getPlayerCamera();
+        addRoot("cameraAbsoluteRoot", climbToAbsoluteRoot(playerCamera ? playerCamera->cameraNode : nullptr), kOmodAuditSceneRootMaxVisited);
+
+        /*
+         * Engine biped-slot ground truth (raw disasm 2026-07-04, two sources:
+         * caller 0x1403f1e50 + builder 0x1401c8150): Actor vtbl+0x508 =
+         * GetBiped(firstPerson), returns the ADDRESS of a refcounted
+         * container member (container = *returned). Container: 44 slots,
+         * stride 0x58, first slot at +0x10; per slot: item TESForm* +0x00,
+         * instanceData +0x08, built weapon 3D NiPointer +0x30 — the node the
+         * engine names 'Weapon %s (%08X)' (0x142c947e8), i.e. exactly what
+         * the census matches. vtbl+0x458 = Get3D(firstPerson), the root the
+         * builder attaches into. Read-only walk, per-hop gates fail closed
+         * into logged skips; runs on the frame-update thread like the engine
+         * call sites themselves.
+         */
+        const auto plausiblePointer = [](const void* pointer) {
+            const auto value = reinterpret_cast<std::uintptr_t>(pointer);
+            return value >= 0x10000 && (value & 7) == 0;
+        };
+        if (player && plausiblePointer(player)) {
+            const auto* vtbl = *reinterpret_cast<std::uintptr_t* const*>(player);
+            if (plausiblePointer(vtbl)) {
+                using GetBipedFn = void** (*)(void*, bool);
+                using Get3DFn = RE::NiAVObject* (*)(void*, bool);
+                const auto getBiped = reinterpret_cast<GetBipedFn>(vtbl[0x508 / 8]);
+                const auto get3D = reinterpret_cast<Get3DFn>(vtbl[0x458 / 8]);
+                for (const bool firstPerson : { true, false }) {
+                    const char* who = firstPerson ? "1st" : "3rd";
+                    RE::NiAVObject* actor3D = get3D ? get3D(player, firstPerson) : nullptr;
+                    RE::NiAVObject* actor3DRoot = climbToAbsoluteRoot(actor3D);
+                    ROCK_LOG_INFO(Weapon,
+                        "OMOD-AUDIT biped probe person={} get3D={:x} name='{}' absRoot='{}'/{:x}",
+                        who,
+                        reinterpret_cast<std::uintptr_t>(actor3D),
+                        actor3D ? safeNodeName(actor3D) : "null",
+                        actor3DRoot ? safeNodeName(actor3DRoot) : "null",
+                        reinterpret_cast<std::uintptr_t>(actor3DRoot));
+                    addRoot(firstPerson ? "playerGet3D-1st" : "playerGet3D-3rd", actor3DRoot, kOmodAuditSceneRootMaxVisited);
+
+                    void** bipedMember = getBiped ? getBiped(player, firstPerson) : nullptr;
+                    void* container = bipedMember && plausiblePointer(bipedMember) ? *bipedMember : nullptr;
+                    if (!container || !plausiblePointer(container)) {
+                        ROCK_LOG_INFO(Weapon, "OMOD-AUDIT biped person={} container implausible member={:x} container={:x}",
+                            who, reinterpret_cast<std::uintptr_t>(bipedMember), reinterpret_cast<std::uintptr_t>(container));
+                        continue;
+                    }
+                    const int refCount = *reinterpret_cast<const int*>(container);
+                    if (refCount <= 0 || refCount > 1000000) {
+                        ROCK_LOG_INFO(Weapon, "OMOD-AUDIT biped person={} container={:x} refCount {} implausible - skipping",
+                            who, reinterpret_cast<std::uintptr_t>(container), refCount);
+                        continue;
+                    }
+                    const auto containerBase = reinterpret_cast<std::uintptr_t>(container);
+                    for (std::uint32_t slot = 0; slot < 44; ++slot) {
+                        const std::uintptr_t slotBase = containerBase + 0x10 + slot * 0x58;
+                        auto* item = *reinterpret_cast<void* const*>(slotBase);
+                        auto* instanceData = *reinterpret_cast<void* const*>(slotBase + 0x8);
+                        auto* built3D = *reinterpret_cast<RE::NiAVObject* const*>(slotBase + 0x30);
+                        if (!item && !built3D) {
+                            continue;
+                        }
+                        const bool built3DPlausible = built3D && plausiblePointer(built3D) && plausiblePointer(*reinterpret_cast<void* const*>(built3D));
+                        RE::NiAVObject* builtRoot = built3DPlausible ? climbToAbsoluteRoot(built3D) : nullptr;
+                        ROCK_LOG_INFO(Weapon,
+                            "OMOD-AUDIT biped person={} container={:x} slot={} item={:x} itemIsEquippedWeapon={} instanceData={:x} built3D={:x} name='{}' absRoot='{}'/{:x}",
+                            who,
+                            containerBase,
+                            slot,
+                            reinterpret_cast<std::uintptr_t>(item),
+                            item == static_cast<const void*>(weaponForm) ? "YES" : "no",
+                            reinterpret_cast<std::uintptr_t>(instanceData),
+                            reinterpret_cast<std::uintptr_t>(built3D),
+                            built3DPlausible ? safeNodeName(built3D) : "implausible",
+                            builtRoot ? safeNodeName(builtRoot) : "null",
+                            reinterpret_cast<std::uintptr_t>(builtRoot));
+                        if (built3DPlausible && item == static_cast<const void*>(weaponForm)) {
+                            addRoot(firstPerson ? "bipedWeapon3D-1st" : "bipedWeapon3D-3rd", built3D, WEAPON_ANIM_NODE_DUMP_MAX_VISITED_NODES);
+                            addRoot(firstPerson ? "bipedWeapon3DRoot-1st" : "bipedWeapon3DRoot-3rd", builtRoot, kOmodAuditSceneRootMaxVisited);
+                        }
+                    }
+                }
+            }
+        }
+
+        auto* fpWeaponNode = f4vr::getWeaponNode();
+        ROCK_LOG_INFO(Weapon,
+            "OMOD-AUDIT topology run={} getWeaponNode={:x} fpSkeleton={:x} cameraNode={:x}",
+            runIndex,
+            reinterpret_cast<std::uintptr_t>(fpWeaponNode),
+            reinterpret_cast<std::uintptr_t>(f4vr::getFirstPersonSkeleton()),
+            reinterpret_cast<std::uintptr_t>(playerCamera ? playerCamera->cameraNode : nullptr));
+        for (const auto& root : roots) {
+            std::uint32_t depth = 0;
+            for (const RE::NiAVObject* node = root.root; node && node->parent && depth < 64; node = node->parent) {
+                ++depth;
+            }
+            RE::NiAVObject* absRoot = climbToAbsoluteRoot(root.root);
+            ROCK_LOG_INFO(Weapon,
+                "OMOD-AUDIT topology root='{}' addr={:x} name='{}' depth={} absRoot='{}' absAddr={:x}",
+                root.label,
+                reinterpret_cast<std::uintptr_t>(root.root),
+                safeNodeName(root.root),
+                depth,
+                safeNodeName(absRoot),
+                reinterpret_cast<std::uintptr_t>(absRoot));
+        }
 
         for (const auto& root : roots) {
             std::size_t visited = 0;
