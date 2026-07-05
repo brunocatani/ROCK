@@ -17,11 +17,18 @@ namespace RE
 
 namespace rock::loose_grenade_runtime
 {
+    enum class GrenadeDetonationMode : std::uint8_t
+    {
+        TimedFuse,
+        Impact
+    };
+
     struct GrenadeRuntimeData
     {
         RE::BGSProjectile* projectile{ nullptr };
         RE::BGSExplosion* explosion{ nullptr };
         float fuseSeconds{ 0.0f };
+        GrenadeDetonationMode detonationMode{ GrenadeDetonationMode::TimedFuse };
     };
 
     struct PendingEquipRequest
@@ -63,6 +70,7 @@ namespace rock::loose_grenade_runtime
         const RE::NiPoint3& dropLocation);
 
     [[nodiscard]] bool createExplosionAtReference(RE::TESObjectREFR* ref, RE::BGSExplosion* explosion);
+    [[nodiscard]] const char* detonationModeName(GrenadeDetonationMode mode) noexcept;
     [[nodiscard]] bool playPinPulledFeedbackAtReference(RE::TESObjectREFR* ref);
     void disableAndDeleteReference(RE::TESObjectREFR* ref);
 }

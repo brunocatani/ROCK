@@ -622,6 +622,51 @@
         const bool bodyAIsRockSource = bodyAIsRight || bodyAIsLeft || bodyAIsRightHeld || bodyAIsLeftHeld || bodyAIsWeapon || bodyAIsBody;
         const bool bodyBIsRockSource = bodyBIsRight || bodyBIsLeft || bodyBIsRightHeld || bodyBIsLeftHeld || bodyBIsWeapon || bodyBIsBody;
 
+        auto looseGrenadeImpactBodyIsWatched = [&](std::uint32_t bodyId) {
+            if (isInvalidGrabBodyId(bodyId)) {
+                return false;
+            }
+            for (const auto& watchedBodyId : _armedLooseGrenadeImpactBodyIds) {
+                if (watchedBodyId.load(std::memory_order_acquire) == bodyId) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        auto recordLooseGrenadeImpactIfArmed = [&]() {
+            auto tryRecord = [&](std::uint32_t watchedBodyId,
+                                 std::uint32_t otherBodyId,
+                                 bool watchedIsHeld,
+                                 bool otherIsRightHand,
+                                 bool otherIsLeftHand) {
+                if (!looseGrenadeImpactBodyIsWatched(watchedBodyId) || watchedIsHeld || otherIsRightHand || otherIsLeftHand ||
+                    otherBodyId == rightId || otherBodyId == leftId || isInvalidGrabBodyId(otherBodyId)) {
+                    return false;
+                }
+
+                _pendingLooseGrenadeImpactPair.store(packHeldImpactPair(watchedBodyId, otherBodyId), std::memory_order_release);
+                return true;
+            };
+
+            if (tryRecord(
+                    bodyIdA,
+                    bodyIdB,
+                    bodyAIsRightHeld || bodyAIsLeftHeld,
+                    bodyBIsRight,
+                    bodyBIsLeft)) {
+                return;
+            }
+            static_cast<void>(tryRecord(
+                bodyIdB,
+                bodyIdA,
+                bodyBIsRightHeld || bodyBIsLeftHeld,
+                bodyAIsRight,
+                bodyAIsLeft));
+        };
+
+        recordLooseGrenadeImpactIfArmed();
+
         if (contact_pipeline_policy::shouldSkipContactSignalBeforeLayerRead(contact_pipeline_policy::ContactSignalPrefilter{
                 .bodyIdA = bodyIdA,
                 .bodyIdB = bodyIdB,

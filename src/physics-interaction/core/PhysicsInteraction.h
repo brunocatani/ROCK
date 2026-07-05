@@ -209,6 +209,7 @@ namespace rock
         void serviceEquippedWeaponDropMomentumHandoff(const PhysicsFrameContext& frame);
         bool armHeldLooseGrenade(Hand& hand, const PhysicsFrameContext& frame);
         void updateLooseGrenadeFuses(const PhysicsFrameContext& frame);
+        void clearLooseGrenadeImpactWatches();
         void clearLooseGrenadeRuntimeState();
 
         std::size_t applyProviderWeaponPartDrives(
@@ -395,10 +396,13 @@ namespace rock
             std::uint32_t refFormID{ 0 };
             loose_grenade_runtime::GrenadeRuntimeData runtime{};
             float remainingSeconds{ 0.0f };
+            std::uint32_t impactBodyId{ INVALID_CONTACT_BODY_ID };
         };
         static constexpr std::size_t kArmedLooseGrenadeFuseCapacity = 4;
         PendingLooseGrenadeGrabState _pendingLooseGrenadeGrab{};
         std::array<ArmedLooseGrenadeFuseState, kArmedLooseGrenadeFuseCapacity> _armedLooseGrenadeFuses{};
+        std::array<std::atomic<std::uint32_t>, kArmedLooseGrenadeFuseCapacity> _armedLooseGrenadeImpactBodyIds{};
+        std::atomic<std::uint64_t> _pendingLooseGrenadeImpactPair{ INVALID_HELD_IMPACT_PAIR };
         /*
          * Release capture for manually carried equipped weapons: the last
          * ROCK-visible weapon pose (captured one frame ahead of the release,

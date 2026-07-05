@@ -1457,6 +1457,7 @@ namespace rock
             &PhysicsInteraction::onCustomGrabAuthorityBetweenStep,
             &PhysicsInteraction::onCustomGrabAuthorityAfterSolve,
             this);
+        clearLooseGrenadeImpactWatches();
 
         installBumpHook();
         installNativeGrabHook();
@@ -4816,10 +4817,19 @@ namespace rock
         };
     }
 
+    void PhysicsInteraction::clearLooseGrenadeImpactWatches()
+    {
+        for (auto& bodyId : _armedLooseGrenadeImpactBodyIds) {
+            bodyId.store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
+        }
+        _pendingLooseGrenadeImpactPair.store(INVALID_HELD_IMPACT_PAIR, std::memory_order_release);
+    }
+
     void PhysicsInteraction::clearLooseGrenadeRuntimeState()
     {
         _pendingLooseGrenadeGrab = {};
         _armedLooseGrenadeFuses = {};
+        clearLooseGrenadeImpactWatches();
     }
 
     void PhysicsInteraction::servicePendingLooseGrenadeEquip(const PhysicsFrameContext& frame)
@@ -5210,7 +5220,31 @@ namespace rock
             return true;
         }
 
-        for (auto& fuse : _armedLooseGrenadeFuses) {
+        std::uint32_t impactBodyId = INVALID_CONTACT_BODY_ID;
+        if (runtime.detonationMode == loose_grenade_runtime::GrenadeDetonationMode::Impact) {
+            const std::uint32_t primaryBodyId = hand.getSavedObjectState().bodyId.value;
+            if (!isInvalidGrabBodyId(primaryBodyId)) {
+                impactBodyId = primaryBodyId;
+            } else {
+                for (const auto bodyId : hand.getHeldBodyIds()) {
+                    if (!isInvalidGrabBodyId(bodyId)) {
+                        impactBodyId = bodyId;
+                        break;
+                    }
+                }
+            }
+
+            if (impactBodyId == INVALID_CONTACT_BODY_ID) {
+                ROCK_LOG_WARN(Hand,
+                    "{} hand loose Molotov trigger could not arm impact detonation because no held body id was available: ref={:08X}",
+                    hand.handName(),
+                    heldRef->GetFormID());
+                return true;
+            }
+        }
+
+        for (std::size_t slotIndex = 0; slotIndex < _armedLooseGrenadeFuses.size(); ++slotIndex) {
+            auto& fuse = _armedLooseGrenadeFuses[slotIndex];
             if (fuse.active) {
                 continue;
             }
@@ -5221,14 +5255,20 @@ namespace rock
                 .refFormID = heldRef->GetFormID(),
                 .runtime = runtime,
                 .remainingSeconds = runtime.fuseSeconds,
+                .impactBodyId = impactBodyId,
             };
+            _armedLooseGrenadeImpactBodyIds[slotIndex].store(
+                runtime.detonationMode == loose_grenade_runtime::GrenadeDetonationMode::Impact ? impactBodyId : INVALID_CONTACT_BODY_ID,
+                std::memory_order_release);
             ROCK_LOG_INFO(Hand,
-                "{} hand armed loose grenade: ref={:08X} projectile={:08X} explosion={:08X} fuse={:.3f}s frameDt={:.4f}",
+                "{} hand armed loose grenade: ref={:08X} projectile={:08X} explosion={:08X} mode={} fuse={:.3f}s impactBody={} frameDt={:.4f}",
                 hand.handName(),
                 heldRef->GetFormID(),
                 runtime.projectile ? runtime.projectile->GetFormID() : 0,
                 runtime.explosion ? runtime.explosion->GetFormID() : 0,
+                loose_grenade_runtime::detonationModeName(runtime.detonationMode),
                 runtime.fuseSeconds,
+                impactBodyId,
                 frame.deltaSeconds);
             const bool feedbackPlayed = loose_grenade_runtime::playPinPulledFeedbackAtReference(heldRef);
             ROCK_LOG_DEBUG(Hand,
@@ -5240,7 +5280,7 @@ namespace rock
         }
 
         ROCK_LOG_WARN(Hand,
-            "{} hand loose grenade trigger could not arm because fuse capacity is full: ref={:08X}",
+            "{} hand loose grenade trigger could not arm because armed grenade capacity is full: ref={:08X}",
             hand.handName(),
             heldRef->GetFormID());
         return true;
@@ -5252,6 +5292,14 @@ namespace rock
         if (deltaSeconds <= 0.0f) {
             return;
         }
+
+        std::uint32_t pendingImpactBodyId = INVALID_CONTACT_BODY_ID;
+        std::uint32_t pendingImpactOtherBodyId = INVALID_CONTACT_BODY_ID;
+        const bool pendingImpact =
+            unpackHeldImpactPair(
+                _pendingLooseGrenadeImpactPair.exchange(INVALID_HELD_IMPACT_PAIR, std::memory_order_acq_rel),
+                pendingImpactBodyId,
+                pendingImpactOtherBodyId);
 
         auto releaseHandIfHolding = [&](Hand& hand, bool isLeft, RE::TESObjectREFR* ref, std::uint32_t formID) {
             if (!ref || !hand.isHolding() || hand.getHeldRef() != ref) {
@@ -5265,7 +5313,39 @@ namespace rock
             dispatchSimpleGrabEvent(GrabEventType::Released, isLeft, ref);
         };
 
-        for (auto& fuse : _armedLooseGrenadeFuses) {
+        auto detonateLooseGrenade = [&](ArmedLooseGrenadeFuseState& fuse,
+                                        std::size_t slotIndex,
+                                        RE::TESObjectREFR* ref,
+                                        const char* reason) {
+            const std::uint32_t formID = ref ? ref->GetFormID() : fuse.refFormID;
+            releaseHandIfHolding(_rightHand, false, ref, formID);
+            releaseHandIfHolding(_leftHand, true, ref, formID);
+
+            const bool explosionCreated = loose_grenade_runtime::createExplosionAtReference(ref, fuse.runtime.explosion);
+            if (explosionCreated) {
+                loose_grenade_runtime::disableAndDeleteReference(ref);
+                ROCK_LOG_INFO(Hand,
+                    "Loose grenade detonated: ref={:08X} explosion={:08X} mode={} reason={} impactBody={} otherBody={}",
+                    formID,
+                    fuse.runtime.explosion ? fuse.runtime.explosion->GetFormID() : 0,
+                    loose_grenade_runtime::detonationModeName(fuse.runtime.detonationMode),
+                    reason ? reason : "unknown",
+                    fuse.impactBodyId,
+                    pendingImpactOtherBodyId);
+            } else {
+                ROCK_LOG_WARN(Hand,
+                    "Loose grenade detonation failed; leaving ref loose: ref={:08X} explosion={:08X} mode={} reason={}",
+                    formID,
+                    fuse.runtime.explosion ? fuse.runtime.explosion->GetFormID() : 0,
+                    loose_grenade_runtime::detonationModeName(fuse.runtime.detonationMode),
+                    reason ? reason : "unknown");
+            }
+            _armedLooseGrenadeImpactBodyIds[slotIndex].store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
+            fuse = {};
+        };
+
+        for (std::size_t slotIndex = 0; slotIndex < _armedLooseGrenadeFuses.size(); ++slotIndex) {
+            auto& fuse = _armedLooseGrenadeFuses[slotIndex];
             if (!fuse.active) {
                 continue;
             }
@@ -5277,7 +5357,27 @@ namespace rock
                     "Loose grenade fuse cleared because ref is gone: ref={:08X} remaining={:.3f}s",
                     fuse.refFormID,
                     fuse.remainingSeconds);
+                _armedLooseGrenadeImpactBodyIds[slotIndex].store(INVALID_CONTACT_BODY_ID, std::memory_order_release);
                 fuse = {};
+                continue;
+            }
+
+            if (fuse.runtime.detonationMode == loose_grenade_runtime::GrenadeDetonationMode::Impact) {
+                if (!pendingImpact || pendingImpactBodyId != fuse.impactBodyId) {
+                    continue;
+                }
+                if ((_rightHand.isHolding() && _rightHand.getHeldRef() == ref) ||
+                    (_leftHand.isHolding() && _leftHand.getHeldRef() == ref)) {
+                    ROCK_LOG_SAMPLE_DEBUG(Hand,
+                        g_rockConfig.rockLogSampleMilliseconds,
+                        "Loose Molotov impact ignored while still held: ref={:08X} impactBody={} otherBody={}",
+                        fuse.refFormID,
+                        pendingImpactBodyId,
+                        pendingImpactOtherBodyId);
+                    continue;
+                }
+
+                detonateLooseGrenade(fuse, slotIndex, ref, "impact");
                 continue;
             }
 
@@ -5286,24 +5386,7 @@ namespace rock
                 continue;
             }
 
-            const std::uint32_t formID = ref->GetFormID();
-            releaseHandIfHolding(_rightHand, false, ref, formID);
-            releaseHandIfHolding(_leftHand, true, ref, formID);
-
-            const bool explosionCreated = loose_grenade_runtime::createExplosionAtReference(ref, fuse.runtime.explosion);
-            if (explosionCreated) {
-                loose_grenade_runtime::disableAndDeleteReference(ref);
-                ROCK_LOG_INFO(Hand,
-                    "Loose grenade detonated: ref={:08X} explosion={:08X}",
-                    formID,
-                    fuse.runtime.explosion ? fuse.runtime.explosion->GetFormID() : 0);
-            } else {
-                ROCK_LOG_WARN(Hand,
-                    "Loose grenade fuse expired but explosion creation failed; leaving ref loose: ref={:08X} explosion={:08X}",
-                    formID,
-                    fuse.runtime.explosion ? fuse.runtime.explosion->GetFormID() : 0);
-            }
-            fuse = {};
+            detonateLooseGrenade(fuse, slotIndex, ref, "timed-fuse");
         }
     }
 

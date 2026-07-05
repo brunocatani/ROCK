@@ -6,6 +6,7 @@
 #include "RockConfig.h"
 
 #include "RE/Bethesda/Actor.h"
+#include "RE/Bethesda/BGSMod.h"
 #include "RE/Bethesda/BGSInventoryItem.h"
 #include "RE/Bethesda/BSExtraData.h"
 #include "RE/Bethesda/BSLock.h"
@@ -145,6 +146,143 @@ namespace rock::loose_grenade_runtime
             return instanceExtra ? instanceExtra->data : RE::BSTSmartPointer<RE::TBO_InstanceData>{};
         }
 
+        [[nodiscard]] const RE::BGSObjectInstanceExtra* resolveReferenceObjectInstanceExtra(RE::TESObjectREFR* ref) noexcept
+        {
+            if (!ref || !ref->extraList) {
+                return nullptr;
+            }
+
+            return ref->extraList->GetByType<RE::BGSObjectInstanceExtra>();
+        }
+
+        [[nodiscard]] char toLowerAscii(char value) noexcept
+        {
+            return value >= 'A' && value <= 'Z' ? static_cast<char>(value - 'A' + 'a') : value;
+        }
+
+        [[nodiscard]] bool containsMolotovToken(const char* text) noexcept
+        {
+            constexpr char kMolotovToken[] = "molotov";
+            if (!text || text[0] == '\0') {
+                return false;
+            }
+
+            for (const char* cursor = text; *cursor != '\0'; ++cursor) {
+                const char* haystack = cursor;
+                const char* needle = kMolotovToken;
+                while (*needle != '\0' && *haystack != '\0' && toLowerAscii(*haystack) == *needle) {
+                    ++haystack;
+                    ++needle;
+                }
+                if (*needle == '\0') {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        [[nodiscard]] bool keywordFormHasMolotovToken(const RE::BGSKeywordForm* keywordForm) noexcept
+        {
+            if (!keywordForm || !keywordForm->keywords) {
+                return false;
+            }
+
+            for (std::uint32_t index = 0; index < keywordForm->numKeywords; ++index) {
+                const auto* keyword = keywordForm->keywords[index];
+                if (keyword && containsMolotovToken(keyword->formEditorID.c_str())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        [[nodiscard]] bool objectInstanceExtraHasMolotovOmod(const RE::BGSObjectInstanceExtra* objectInstanceExtra) noexcept
+        {
+            if (!objectInstanceExtra || !objectInstanceExtra->values) {
+                return false;
+            }
+
+            for (const auto& modIndex : objectInstanceExtra->GetIndexData()) {
+                if (modIndex.disabled) {
+                    continue;
+                }
+
+                const auto* omod = RE::TESForm::GetFormByID<RE::BGSMod::Attachment::Mod>(modIndex.objectID);
+                if (!omod) {
+                    continue;
+                }
+                if (containsMolotovToken(omod->fullName.c_str()) || containsMolotovToken(omod->model.c_str())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        [[nodiscard]] bool isMolotovGrenade(
+            RE::TESObjectWEAP* weapon,
+            RE::TBO_InstanceData* instanceData,
+            RE::BGSProjectile* projectile,
+            const RE::BGSObjectInstanceExtra* objectInstanceExtra) noexcept
+        {
+            if (!weapon || weapon->weaponData.type != RE::WEAPON_TYPE::kGrenade) {
+                return false;
+            }
+
+            /*
+             * WEAPON_TYPE only says "grenade". Molotov identity is authored on
+             * the weapon/instance records and, for modded variants, the active
+             * OMOD list. Keep the check local and token-based so unknown
+             * records fail closed to normal timed-fuse behavior.
+             */
+            if (containsMolotovToken(weapon->fullName.c_str()) || keywordFormHasMolotovToken(weapon)) {
+                return true;
+            }
+            if (instanceData && keywordFormHasMolotovToken(instanceData->GetKeywordData())) {
+                return true;
+            }
+            if (projectile && (containsMolotovToken(projectile->fullName.c_str()) || containsMolotovToken(projectile->model.c_str()))) {
+                return true;
+            }
+            return objectInstanceExtraHasMolotovOmod(objectInstanceExtra);
+        }
+
+        [[nodiscard]] bool resolveGrenadeRuntimeDataForSources(
+            RE::TESObjectWEAP* weapon,
+            RE::TBO_InstanceData* instanceData,
+            const RE::BGSObjectInstanceExtra* objectInstanceExtra,
+            GrenadeRuntimeData& outRuntime) noexcept
+        {
+            outRuntime = {};
+            if (!weapon || weapon->weaponData.type != RE::WEAPON_TYPE::kGrenade) {
+                return false;
+            }
+
+            auto* projectile = resolveProjectile(weapon, instanceData);
+            if (!projectile || !projectile->data.explosionType) {
+                return false;
+            }
+
+            const GrenadeDetonationMode mode =
+                isMolotovGrenade(weapon, instanceData, projectile, objectInstanceExtra) ?
+                    GrenadeDetonationMode::Impact :
+                    GrenadeDetonationMode::TimedFuse;
+            const float configuredFuseSeconds = g_rockConfig.rockRealisticGrenadeFuseSeconds;
+            const float fuseSeconds = std::isfinite(configuredFuseSeconds) && configuredFuseSeconds > 0.0f ?
+                configuredFuseSeconds :
+                projectile->data.explosionTimer;
+            if (mode == GrenadeDetonationMode::TimedFuse && (!std::isfinite(fuseSeconds) || fuseSeconds <= 0.0f)) {
+                return false;
+            }
+
+            outRuntime = GrenadeRuntimeData{
+                .projectile = projectile,
+                .explosion = projectile->data.explosionType,
+                .fuseSeconds = fuseSeconds,
+                .detonationMode = mode,
+            };
+            return true;
+        }
+
         [[nodiscard]] InventoryStackMatch findInventoryStack(
             RE::PlayerCharacter* player,
             RE::TESObjectWEAP* weapon,
@@ -277,7 +415,9 @@ namespace rock::loose_grenade_runtime
             RE::TESObjectWEAP* weapon = nullptr;
             GrenadeRuntimeData runtime{};
             if (shouldInterceptEquip(actor, object, number, weapon, runtime)) {
-                if (!runtime.projectile || !runtime.explosion || !std::isfinite(runtime.fuseSeconds) || runtime.fuseSeconds <= 0.0f) {
+                if (!runtime.projectile || !runtime.explosion ||
+                    (runtime.detonationMode == GrenadeDetonationMode::TimedFuse &&
+                        (!std::isfinite(runtime.fuseSeconds) || runtime.fuseSeconds <= 0.0f))) {
                     ROCK_LOG_WARN(Hand,
                         "Blocked grenade equip because ROCK could not resolve projectile/explosion/fuse data: weapon={:08X} stack={}",
                         weapon ? weapon->GetFormID() : 0,
@@ -287,11 +427,12 @@ namespace rock::loose_grenade_runtime
 
                 if (enqueuePendingEquipRequest(weapon, object.instanceData, stackId, runtime)) {
                     ROCK_LOG_INFO(Hand,
-                        "Queued loose grenade equip interception: weapon={:08X} projectile={:08X} explosion={:08X} stack={} fuse={:.3f}s",
+                        "Queued loose grenade equip interception: weapon={:08X} projectile={:08X} explosion={:08X} stack={} mode={} fuse={:.3f}s",
                         weapon ? weapon->GetFormID() : 0,
                         runtime.projectile ? runtime.projectile->GetFormID() : 0,
                         runtime.explosion ? runtime.explosion->GetFormID() : 0,
                         stackId,
+                        detonationModeName(runtime.detonationMode),
                         runtime.fuseSeconds);
                     return true;
                 }
@@ -348,30 +489,7 @@ namespace rock::loose_grenade_runtime
 
     bool resolveGrenadeRuntimeData(RE::TESObjectWEAP* weapon, RE::TBO_InstanceData* instanceData, GrenadeRuntimeData& outRuntime) noexcept
     {
-        outRuntime = {};
-        if (!isGrenadeWeapon(weapon)) {
-            return false;
-        }
-
-        auto* projectile = resolveProjectile(weapon, instanceData);
-        if (!projectile || !projectile->data.explosionType) {
-            return false;
-        }
-
-        const float configuredFuseSeconds = g_rockConfig.rockRealisticGrenadeFuseSeconds;
-        const float fuseSeconds = std::isfinite(configuredFuseSeconds) && configuredFuseSeconds > 0.0f ?
-            configuredFuseSeconds :
-            projectile->data.explosionTimer;
-        if (!std::isfinite(fuseSeconds) || fuseSeconds <= 0.0f) {
-            return false;
-        }
-
-        outRuntime = GrenadeRuntimeData{
-            .projectile = projectile,
-            .explosion = projectile->data.explosionType,
-            .fuseSeconds = fuseSeconds,
-        };
-        return true;
+        return resolveGrenadeRuntimeDataForSources(weapon, instanceData, nullptr, outRuntime);
     }
 
     bool resolveGrenadeRuntimeDataForReference(RE::TESObjectREFR* ref, GrenadeRuntimeData& outRuntime) noexcept
@@ -380,7 +498,8 @@ namespace rock::loose_grenade_runtime
         auto* base = ref ? ref->GetObjectReference() : nullptr;
         auto* weapon = base ? base->As<RE::TESObjectWEAP>() : nullptr;
         const auto instanceData = resolveReferenceInstanceData(ref);
-        return resolveGrenadeRuntimeData(weapon, instanceData.get(), outRuntime);
+        const auto* objectInstanceExtra = resolveReferenceObjectInstanceExtra(ref);
+        return resolveGrenadeRuntimeDataForSources(weapon, instanceData.get(), objectInstanceExtra, outRuntime);
     }
 
     bool copyOldestPendingEquipRequest(PendingEquipRequest& outRequest)
@@ -488,6 +607,18 @@ namespace rock::loose_grenade_runtime
 
         const auto handle = dataHandler->CreateReferenceAtLocation(data);
         return handle.get() != nullptr;
+    }
+
+    const char* detonationModeName(GrenadeDetonationMode mode) noexcept
+    {
+        switch (mode) {
+        case GrenadeDetonationMode::TimedFuse:
+            return "timed-fuse";
+        case GrenadeDetonationMode::Impact:
+            return "impact";
+        default:
+            return "unknown";
+        }
     }
 
     bool playPinPulledFeedbackAtReference(RE::TESObjectREFR* ref)
