@@ -864,12 +864,11 @@ namespace rock
                 return frame;
             }
             /*
-             * Only programmatic arrivals snap the loose weapon to a canonical
-             * attach pose: non-throwable pull catches snap the primary hand to
-             * the FRIK offset, and force grabs (menu grenade equip, provider
-             * ForceGrab) snap to the FRIK offset when one exists or to a palm-
-             * anchored pose otherwise. Throwables always skip FRIK offsets, so
-             * the commit pose never depends on first-person weapon attach data.
+             * Only non-throwable programmatic loose-weapon arrivals snap to a
+             * canonical attach pose. Grenades, mines, and Molotov variants are
+             * hand-thrown objects: force-grab and pull-catch commits keep the
+             * normal mesh/body relation so the object is translated into the
+             * pocket without forcing a root rotation from FRIK or the live hand.
              * A close grab is a free mesh hold on either hand; the firing-grip
              * transition happens later through the grip-zone equip path
              * (loose_weapon_grip_zone), not by forcing the attach at grab.
@@ -878,25 +877,25 @@ namespace rock
                 frame.reason = "closeGrabFreeHold";
                 return frame;
             }
+            const auto* looseWeapon = selectedLooseWeaponForm(selection);
+            const bool throwableArrival = isThrowableLooseWeapon(looseWeapon) && (grabbedFromPullCatch || selection.forcedArrival);
+            if (throwableArrival) {
+                frame.reason = selection.forcedArrival ? "throwableForcedArrivalPreservePose" : "throwablePullCatchPreservePose";
+                return frame;
+            }
             if (!rootNode || !isFiniteNiTransform(rootNode->world)) {
                 frame.reason = "missingWeaponRoot";
                 return frame;
             }
 
-            const auto* looseWeapon = selectedLooseWeaponForm(selection);
-            const bool throwableArrival = isThrowableLooseWeapon(looseWeapon) && (grabbedFromPullCatch || selection.forcedArrival);
             bool haveDesiredRoot = false;
             if (isPrimaryHandForWeaponAttach(isLeft)) {
                 LooseWeaponPrimaryAttachSource attachSource{};
-                if (!isThrowableLooseWeapon(looseWeapon)) {
-                    attachSource = resolveLooseWeaponPrimaryAttachSource(looseWeapon, rootNode);
-                }
+                attachSource = resolveLooseWeaponPrimaryAttachSource(looseWeapon, rootNode);
                 /*
                  * FRIK offsets are local transforms written under a live first-person
                  * attach parent. Loose refs are not equipped, so use only the current
                  * parent frame and never a stale/hidden equipped-object world transform.
-                 * Throwables deliberately skip this path: grenades and mines are
-                 * hand-thrown objects, not first-person weapon attachments.
                  */
                 if (attachSource.offset.found && attachSource.parent && isFiniteNiTransform(attachSource.parent->world)) {
                     frame.desiredRootWorld = multiplyTransforms(attachSource.parent->world, attachSource.offset.offset);
@@ -904,24 +903,20 @@ namespace rock
                     frame.reason = attachSource.offset.reason;
                     haveDesiredRoot = true;
                 } else if (!selection.forcedArrival) {
-                    if (throwableArrival) {
-                        frame.reason = "throwableSkipsFrikOffset";
-                    } else {
-                        frame.reason = !attachSource.offset.found       ? attachSource.offset.reason :
-                                       !attachSource.parent             ? attachSource.missingParentReason :
-                                                                          attachSource.nonFiniteParentReason;
-                        return frame;
-                    }
+                    frame.reason = !attachSource.offset.found       ? attachSource.offset.reason :
+                                   !attachSource.parent             ? attachSource.missingParentReason :
+                                                                      attachSource.nonFiniteParentReason;
+                    return frame;
                 }
-            } else if (!selection.forcedArrival && !throwableArrival) {
+            } else if (!selection.forcedArrival) {
                 frame.reason = "notPrimaryHand";
                 return frame;
             }
 
             if (!haveDesiredRoot) {
                 /*
-                 * Palm-anchored fallback for forced arrivals without a usable
-                 * FRIK offset (e.g. grenades): root axes follow the live hand
+                 * Palm-anchored fallback for non-throwable forced arrivals
+                 * without a usable FRIK offset: root axes follow the live hand
                  * basis and the root origin sits on the hand grab pivot. Any
                  * fixed choice is correct here -- the goal is a deterministic
                  * commit pose, not a per-weapon tuned grip.

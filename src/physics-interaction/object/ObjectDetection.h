@@ -50,9 +50,9 @@ namespace rock
         bool pinchCloseSelectionFallback = false;
         /*
          * Programmatic arrival (force grab): the object was placed into the
-         * hand by code, not by the player reaching for a mesh point, so the
-         * grab commit snaps it to a canonical attach pose instead of
-         * preserving the incidental spawn/settle pose.
+         * hand by code, not by the player reaching for a mesh point. Consumers
+         * may use this to choose canonical attach behavior for eligible loose
+         * weapons; throwables deliberately preserve their live object rotation.
          */
         bool forcedArrival = false;
         actor_equipment_grab::ActorEquipmentSelection actorEquipment{};
