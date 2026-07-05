@@ -61,6 +61,21 @@ namespace rock::input_remap_runtime
          */
         constexpr std::uintptr_t kPipboyHandlerHandleEventFunctionOffset = 0x1326D90;
         constexpr std::uintptr_t kPipboyHandlerHandleEventVTableSlotOffset = 0x2DCC7D0;
+        /*
+         * PipboyLightHandler (PlayerControls family, vtable 0x2D8A248) owns
+         * the VR flashlight: its HandleEvent at slot offset +0x58 fires the
+         * light toggle (0xDAF090 on the global at 0x5B279E0) once per hold
+         * when heldDownSecs passes the same threshold global (0x3844EA0) the
+         * flat path uses, latched by this+0x28 until release. Verified
+         * 2026-07-04 from raw disassembly after live traces showed the
+         * PipboyHandler hook suppressing opens while the light still fired -
+         * the light-on-hold path inside PipboyHandler is flat-game only.
+         * The function checks neither event name nor device, so the hook
+         * applies the shared pipboy suppression policy (secondary-wand
+         * trigger + engaged hand) before chaining.
+         */
+        constexpr std::uintptr_t kPipboyLightHandlerHandleEventFunctionOffset = 0x0FC9170;
+        constexpr std::uintptr_t kPipboyLightHandlerHandleEventVTableSlotOffset = 0x2D8A2A0;
         constexpr std::uintptr_t kNativeActionDispatcherFunctionOffset = 0x0FC07E0;
         constexpr std::uintptr_t kNativeInputDeviceToControllerIdFunctionOffset = 0x1BA6ED0;
         constexpr std::uintptr_t kNativePlayerActionDispatcherDataOffset = 0x5A3B8A0;
@@ -118,6 +133,7 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_favoritesEventHookInstalled{ false };
         std::atomic<bool> s_meleeThrowEventHookInstalled{ false };
         std::atomic<bool> s_pipboyEventHookInstalled{ false };
+        std::atomic<bool> s_pipboyLightEventHookInstalled{ false };
         std::atomic<bool> s_meleeThrowFallbackPatchesApplied{ false };
         std::atomic<bool> s_menuInputGateRegistered{ false };
         std::atomic<bool> s_menuInputActive{ false };
@@ -132,6 +148,7 @@ namespace rock::input_remap_runtime
         NativeInputEventHandler_t s_originalMeleeThrowEventHandler = nullptr;
         FavoritesInputEventHandler_t s_originalFavoritesEventHandler = nullptr;
         PipboyInputEventHandler_t s_originalPipboyEventHandler = nullptr;
+        NativeInputEventHandler_t s_originalPipboyLightEventHandler = nullptr;
 
         /*
          * ROCK remaps right-hand grab/trigger/thumbstick only while gameplay owns controller input.
@@ -1103,17 +1120,18 @@ namespace rock::input_remap_runtime
             }
         }
 
-        void hookedPipboyEventHandler(void* handler, RE::InputEvent* inputEvent)
+        [[nodiscard]] bool decideAndTracePipboySuppression(const char* handlerLabel, const RE::InputEvent* inputEvent)
         {
             const bool providerSuppressed = isAnyProviderOpenVrGameInputSuppressed();
             const bool suppressed = providerSuppressed || shouldSuppressNativePipboyActionEvent(inputEvent);
 
             if (inputEvent) {
-                // Diagnostic trace for the newly hooked handler: shows the actual interned event name and every gate input.
+                // Diagnostic trace for the pipboy suppression hooks: shows the actual interned event name and every gate input.
                 const auto& userEvent = inputEvent->QUserEvent();
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
-                    "Pipboy handler event '{}': engaged={} gameplay={} menuInput={} providerLease={} -> {}",
+                    "{} handler event '{}': engaged={} gameplay={} menuInput={} providerLease={} -> {}",
+                    handlerLabel,
                     userEvent.c_str() ? userEvent.c_str() : "",
                     isPipboyHandEngaged() ? "yes" : "no",
                     s_gameplayInputAllowed.load(std::memory_order_acquire) ? "yes" : "no",
@@ -1122,13 +1140,30 @@ namespace rock::input_remap_runtime
                     suppressed ? "suppressed" : "native");
             }
 
-            if (suppressed) {
+            return suppressed;
+        }
+
+        void hookedPipboyEventHandler(void* handler, RE::InputEvent* inputEvent)
+        {
+            if (decideAndTracePipboySuppression("Pipboy", inputEvent)) {
                 markInputEventStopped(inputEvent);
                 return;
             }
 
             if (s_originalPipboyEventHandler) {
                 s_originalPipboyEventHandler(handler, inputEvent);
+            }
+        }
+
+        void hookedPipboyLightEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
+        {
+            if (decideAndTracePipboySuppression("PipboyLight", inputEvent)) {
+                markInputEventStopped(inputEvent);
+                return;
+            }
+
+            if (s_originalPipboyLightEventHandler) {
+                s_originalPipboyLightEventHandler(handler, inputEvent, cursor, unk);
             }
         }
 
@@ -1222,12 +1257,19 @@ namespace rock::input_remap_runtime
 
         bool installPipboyEventSuppressionHook()
         {
-            return installNativeActionVTableHook(kPipboyHandlerHandleEventVTableSlotOffset,
+            const bool openHookReady = installNativeActionVTableHook(kPipboyHandlerHandleEventVTableSlotOffset,
                 kPipboyHandlerHandleEventFunctionOffset,
                 &hookedPipboyEventHandler,
                 s_originalPipboyEventHandler,
                 s_pipboyEventHookInstalled,
                 "PipboyHandler::HandleButtonEvent suppression");
+            const bool lightHookReady = installNativeActionVTableHook(kPipboyLightHandlerHandleEventVTableSlotOffset,
+                kPipboyLightHandlerHandleEventFunctionOffset,
+                &hookedPipboyLightEventHandler,
+                s_originalPipboyLightEventHandler,
+                s_pipboyLightEventHookInstalled,
+                "PipboyLightHandler::HandleEvent suppression");
+            return openHookReady && lightHookReady;
         }
 
         bool writeMeleeThrowFallbackBranch(std::uintptr_t siteOffset, bool suppress, const char* label)
