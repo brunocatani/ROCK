@@ -517,6 +517,12 @@ namespace rock
             } else if (!providerPartAuthorityStillCurrent(partGrip(supportHandIsLeft), currentWeaponGenerationKey)) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because provider weapon-part target is no longer current");
                 transitionToInactive(false);
+            } else if (providerPartTargetNewlyMatchesGrip(partGrip(supportHandIsLeft), currentWeaponGenerationKey)) {
+                // The still-held grab recaptures next frame under the new
+                // provider resolution (e.g. an AttachOnly whitelist armed
+                // mid-hold).
+                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: releasing support grip to recapture under newly matched provider weapon-part target");
+                transitionToInactive(ownsWeaponTransform());
             } else if (!leftRuntimeState.supportGripAllowed) {
                 ROCK_LOG_INFO(Weapon, "TwoHandedGrip: clearing authority because offhand reservation disabled support grip");
                 transitionToInactive(false);
@@ -1174,6 +1180,43 @@ namespace rock
                resolution.ownerToken == grip.providerPartAuthority.ownerToken &&
                resolution.groupId == grip.providerPartAuthority.groupId &&
                static_cast<std::uint32_t>(resolution.grabMode) == grip.providerPartAuthority.grabMode;
+    }
+
+    bool TwoHandedGrip::providerPartTargetNewlyMatchesGrip(const WeaponPartGrip& grip, std::uint64_t currentWeaponGenerationKey) const
+    {
+        /*
+         * Upgrade twin of providerPartAuthorityStillCurrent: a support grip
+         * captured WITHOUT provider authority whose own part NOW resolves to
+         * a matched provider target — a consumer armed its whitelist while
+         * the hand was already holding the part (PAPER_Redux: pulling the
+         * trigger mid-hold switches an authority grab to attach-only). The
+         * caller releases the grip; the still-held grab recaptures within a
+         * couple of frames under the new resolution, through the same
+         * re-resolve path the downgrade direction uses when a target
+         * disappears mid-grip. The query is built from the grip's own
+         * captured contact identity, not the live contact, so a flickering
+         * contact cannot convert against the wrong part.
+         */
+        if (!grip.active || grip.providerPartAuthority.active) {
+            return false;
+        }
+        if (currentWeaponGenerationKey == 0 || currentWeaponGenerationKey != grip.weaponGenerationKey) {
+            return false;
+        }
+
+        ::rock::provider::RockProviderWeaponPartTargetQueryV1 query{};
+        query.weaponGenerationKey = grip.weaponGenerationKey;
+        query.bodyId = grip.contactBodyId;
+        query.partKind = static_cast<std::uint32_t>(grip.partKind);
+        query.reloadRole = static_cast<std::uint32_t>(grip.reloadRole);
+        query.supportRole = static_cast<std::uint32_t>(grip.supportRole);
+        query.socketRole = static_cast<std::uint32_t>(grip.socketRole);
+        query.actionRole = static_cast<std::uint32_t>(grip.actionRole);
+        std::memcpy(query.sourceName, grip.sourceName.data(), grip.sourceName.size());
+        query.sourceName[sizeof(query.sourceName) - 1] = '\0';
+
+        ::rock::provider::RockProviderWeaponPartTargetResolutionV1 resolution{};
+        return ::rock::provider::resolveWeaponPartTargetV1(query, resolution) && resolution.matched != 0;
     }
 
     void TwoHandedGrip::updateFullWeaponAuthorityGrip(RE::NiNode* weaponNode, float dt)

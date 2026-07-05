@@ -308,6 +308,11 @@ namespace rock
 
         bool providerPartAuthorityStillCurrent(const WeaponPartGrip& grip, std::uint64_t currentWeaponGenerationKey) const;
 
+        // Upgrade twin of the check above: a grip captured without provider
+        // authority whose part now resolves to a matched provider target
+        // (consumer armed its whitelist mid-hold) releases to recapture.
+        bool providerPartTargetNewlyMatchesGrip(const WeaponPartGrip& grip, std::uint64_t currentWeaponGenerationKey) const;
+
         void updateFullWeaponAuthorityGrip(RE::NiNode* weaponNode, float dt);
 
         void updatePartCarryGrip(
