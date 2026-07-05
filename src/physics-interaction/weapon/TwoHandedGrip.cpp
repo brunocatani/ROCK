@@ -1677,6 +1677,42 @@ namespace rock
             }
         }
 
+        /*
+         * Mid-hold conversion, part-carry flavor: a part grip captured
+         * WITHOUT provider authority whose own part now resolves to a
+         * matched provider target (consumer armed its whitelist while the
+         * hand was already holding — per-hand trigger arming) recaptures
+         * immediately under the new resolution. Gated on the OTHER grip
+         * holding carry authority: converting the last carry grip to
+         * attach-only glue would drop the weapon through the fail-closed
+         * all-grips check below. The free hand recaptures in the same
+         * update rather than release-to-recapture because its capture path
+         * is press-edged; the support hand gets the same treatment for
+         * symmetry (no one-frame glue gap).
+         */
+        if (freeHandGrip.active && !freeHandGrip.providerPartAuthority.active &&
+            rightRuntimeState.providerPartAuthority.active &&
+            rightRuntimeState.providerPartAuthority.bodyId == freeHandGrip.contactBodyId &&
+            weapon_part_grip_report_policy::partGripCountsAsCarry(supportGrip.active, supportGrip.attachOnly)) {
+            const WeaponInteractionDecision freeHandDecision = routeWeaponInteraction(firingHandContact, rightRuntimeState);
+            if (freeHandDecision.kind == WeaponInteractionKind::SupportGrip) {
+                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: recapturing free-hand part grip under newly matched provider weapon-part target");
+                releasePartGrip(firingHandIsLeft, "provider-part-target-newly-matched");
+                (void)capturePartGrip(firingHandIsLeft, weaponNode, freeHandDecision, weaponCollision, rightRuntimeState.providerPartAuthority);
+            }
+        }
+        if (supportGrip.active && !supportGrip.providerPartAuthority.active &&
+            leftRuntimeState.providerPartAuthority.active &&
+            leftRuntimeState.providerPartAuthority.bodyId == supportGrip.contactBodyId &&
+            weapon_part_grip_report_policy::partGripCountsAsCarry(freeHandGrip.active, freeHandGrip.attachOnly)) {
+            const WeaponInteractionDecision supportDecision = routeWeaponInteraction(leftWeaponContact, leftRuntimeState);
+            if (supportDecision.kind == WeaponInteractionKind::SupportGrip) {
+                ROCK_LOG_INFO(Weapon, "TwoHandedGrip: recapturing support part grip under newly matched provider weapon-part target");
+                releasePartGrip(supportHandIsLeft, "provider-part-target-newly-matched");
+                (void)capturePartGrip(supportHandIsLeft, weaponNode, supportDecision, weaponCollision, leftRuntimeState.providerPartAuthority);
+            }
+        }
+
         if (!freeHandGrip.active && frameInput.primaryGripInput.pressed) {
             const WeaponInteractionDecision freeHandDecision = routeWeaponInteraction(firingHandContact, rightRuntimeState);
             if (weapon_two_handed_grip_math::canStartFreeHandPartGrip(
