@@ -230,18 +230,6 @@ namespace rock
          */
         static bool tryCaptureRootFlattenedPalmWorld(bool isLeft, RE::NiPoint3& outPalmWorld, RE::NiTransform& outHandWorld);
 
-        /*
-         * Provider-requested hand authority for an attach-only part grip
-         * ("free carried part", PAPER_Redux magazine freedom): while set,
-         * the locked hand visual for that hand is NOT applied — the visual
-         * hand syncs back to the controller's normal IK (finger pose kept)
-         * and the consumer drives the part against the live hand frame
-         * (HandLocal drive space). Cleared automatically when the grip's
-         * visual state is released (clearSupportGripPose).
-         */
-        void setPartGripHandAuthority(bool isLeft, bool handAuthority) { _partGripHandAuthority[isLeft ? 0u : 1u] = handAuthority; }
-        [[nodiscard]] bool partGripHandAuthority(bool isLeft) const { return _partGripHandAuthority[isLeft ? 0u : 1u]; }
-
     private:
         struct LockedHandVisualLerpState
         {
@@ -451,9 +439,6 @@ namespace rock
         bool _firingHandIsLeft{ false };
 
         std::array<WeaponPartGrip, 2> _partGrips{};
-        // See setPartGripHandAuthority; same [isLeft ? 0 : 1] indexing as
-        // _partGrips.
-        std::array<bool, 2> _partGripHandAuthority{};
 
         /*
          * Monotonic capture sequences so API consumers can detect a re-grab

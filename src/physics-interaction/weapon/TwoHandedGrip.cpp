@@ -2030,8 +2030,6 @@ namespace rock
 
     void TwoHandedGrip::clearSupportGripPose(bool isLeft)
     {
-        // Consumer hand authority does not outlive the grip it was set for.
-        _partGripHandAuthority[isLeft ? 0u : 1u] = false;
         WeaponPartGrip& grip = partGrip(isLeft);
         grip.fingerPose = {};
         grip.fingerSplayRadians = {};
@@ -2087,17 +2085,6 @@ namespace rock
         }
         if (!frik_visual_authority::isAvailable()) {
             return false;
-        }
-        /*
-         * Consumer hand authority ("free carried part"): the hand syncs
-         * back to the controller's normal IK — drop only the world
-         * override, keep the finger pose. Reported as applied so sibling
-         * hands keep their locked visuals.
-         */
-        if (grip.attachOnly && partGripHandAuthority(isLeft)) {
-            (void)frik_visual_authority::clearExternalHandWorldTransform(SUPPORT_GRIP_TAG, handFromBool(isLeft));
-            grip.visualLerp = {};
-            return true;
         }
 
         const RE::NiTransform partGripHandWorld = resolvePartGripHandWorld(grip, weaponNode);
