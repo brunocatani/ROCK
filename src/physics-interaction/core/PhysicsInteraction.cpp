@@ -5079,13 +5079,6 @@ namespace rock
             ROCK_LOG_WARN(Hand, "Saved grab offset: aborted, {} hand is not holding anything", isLeft ? "left" : "right");
             return;
         }
-        if (!hand.getSavedObjectState().acquiredViaForceGrabApi) {
-            ROCK_LOG_WARN(Hand,
-                "Saved grab offset: aborted, {} hand's held object (formID={:08X}) was not acquired via the force-grab API",
-                isLeft ? "left" : "right",
-                hand.getHeldRef() ? hand.getHeldRef()->GetFormID() : 0);
-            return;
-        }
 
         auto* heldRef = hand.getHeldRef();
         auto* rootNode = heldRef ? heldRef->Get3D() : nullptr;
