@@ -160,6 +160,8 @@ namespace rock
         rockGrabInputLeewaySeconds = 0.12f;
         rockGrabInputForceSeconds = 0.08f;
 
+        rockDeveloperModeEnabled = false;
+
         rockLogLevel = logging_policy::DefaultLogLevel;
         rockLogPattern = logging_policy::DefaultLogPattern;
         rockLogSampleMilliseconds = logging_policy::DefaultLogSampleMilliseconds;
@@ -670,6 +672,7 @@ namespace rock
 
             return selection_query_policy::sanitizeFilterInfo(static_cast<std::uint32_t>(std::strtoul(hexStr, nullptr, 16)), fallback);
         };
+        rockDeveloperModeEnabled = ini.GetBoolValue(DEBUG_SECTION, "bDeveloperModeEnabled", rockDeveloperModeEnabled);
         rockLogLevel = logging_policy::clampLogLevel(static_cast<int>(ini.GetLongValue(DEBUG_SECTION, "iLogLevel", rockLogLevel)));
         rockLogPattern = ini.GetValue(DEBUG_SECTION, "sLogPattern", rockLogPattern.c_str());
         if (rockLogPattern.empty()) {

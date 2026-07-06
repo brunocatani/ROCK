@@ -33,6 +33,11 @@ namespace rock::input_remap_runtime
     bool shouldSuppressNativeTriggerAction(const RE::InputEvent* event);
     bool isNativePipboyInputSuppressionActive();
 
+    // Test-and-clear: true once for the frame after an Activate/WandAccept
+    // (A button) press fired on this hand while it was holding a ROCK
+    // object and developer mode is enabled. See saved_grab_offset feature.
+    bool consumePendingSavedGrabOffsetRequest(bool isLeft);
+
     RawButtonState peekRawButtonState(bool isLeft, int buttonId);
     RawButtonState consumeRawButtonState(bool isLeft, int buttonId);
 }

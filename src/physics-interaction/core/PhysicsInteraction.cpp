@@ -5117,50 +5117,16 @@ namespace rock
     void PhysicsInteraction::updateSavedGrabOffsetGesture(const PhysicsFrameContext& frame)
     {
         /*
-         * Right-controller-only, and must never overlap FRIK's two-stick-
-         * held-together menu gesture: the left stick's held state is checked
-         * every frame and immediately resets the hold, so a genuine dual-hold
-         * toward the FRIK menu never also accumulates toward a save.
+         * The actual press detection (developer mode, Activate/WandAccept
+         * edge, which hand is engaged) lives in InputRemapRuntime, which
+         * already tracks per-hand held-object state and native-event
+         * dispatch; this just consumes the resulting per-hand request.
          */
-        constexpr int kSavedGrabOffsetButtonId = 32;
-        constexpr float kSavedGrabOffsetHoldSeconds = 3.0f;
-
-        auto& state = _savedGrabOffsetHoldState;
-
-        const auto rightRaw = input_remap_runtime::peekRawButtonState(false, kSavedGrabOffsetButtonId);
-        const bool rightHeld = rightRaw.available ? rightRaw.held : vrcf::VRControllers.isPressHeldDown(vrcf::Hand::Right, kSavedGrabOffsetButtonId);
-
-        const auto leftRaw = input_remap_runtime::peekRawButtonState(true, kSavedGrabOffsetButtonId);
-        const bool leftHeld = leftRaw.available ? leftRaw.held : vrcf::VRControllers.isPressHeldDown(vrcf::Hand::Left, kSavedGrabOffsetButtonId);
-        const bool menuActive = input_remap_runtime::isMenuInputActive();
-
-        if (rightHeld) {
-            ROCK_LOG_SAMPLE_DEBUG(Hand,
-                g_rockConfig.rockLogSampleMilliseconds,
-                "Saved grab offset gesture: rightHeld={} rightAvailable={} leftHeld={} leftAvailable={} menuActive={} elapsed={:.2f}s fired={} holding={}",
-                rightHeld,
-                rightRaw.available,
-                leftHeld,
-                leftRaw.available,
-                menuActive,
-                state.elapsedSeconds,
-                state.fired,
-                _rightHand.isHolding());
-        }
-
-        if (!rightHeld || leftHeld || menuActive) {
-            state = {};
-            return;
-        }
-
-        if (state.fired) {
-            return;
-        }
-
-        state.elapsedSeconds += (std::max)(0.0f, frame.deltaSeconds);
-        if (state.elapsedSeconds >= kSavedGrabOffsetHoldSeconds) {
-            state.fired = true;
+        if (input_remap_runtime::consumePendingSavedGrabOffsetRequest(false)) {
             saveGrabOffsetForHand(_rightHand, false, frame.hknpWorld);
+        }
+        if (input_remap_runtime::consumePendingSavedGrabOffsetRequest(true)) {
+            saveGrabOffsetForHand(_leftHand, true, frame.hknpWorld);
         }
     }
 

@@ -157,6 +157,7 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_rightHandHeldWeapon{ false };
         std::array<std::atomic<bool>, 2> s_handInteractionEngaged{};
         std::array<std::atomic<std::uint32_t>, 2> s_heldObjectFormId{};
+        std::array<std::atomic<bool>, 2> s_pendingSavedGrabOffsetRequest{};
         std::atomic<bool> s_equippedWeaponPrimaryDetachInputActive{ false };
         std::atomic<bool> s_equippedWeaponPrimaryDetached{ false };
         std::atomic<bool> s_hooksInstalled{ false };
@@ -1174,6 +1175,37 @@ namespace rock::input_remap_runtime
             return suppress;
         }
 
+        /*
+         * Developer-mode saved-grab-offset recorder: a plain A-button
+         * (Activate/WandAccept) press on whichever hand is currently
+         * holding a ROCK object records/overwrites that object's saved
+         * grab offset for that hand. Reuses the same hand-engaged
+         * resolution as the take/equip suppression above, but does not
+         * gate on target FormType (it does not care what the wand is
+         * pointing at) and never stops the event - it is a pure
+         * side-effect tap, so native Activate/take-equip-suppression
+         * handling downstream is unaffected.
+         */
+        [[nodiscard]] bool handleSavedGrabOffsetRequestEvent(const RE::InputEvent* event)
+        {
+            if (!g_rockConfig.rockDeveloperModeEnabled || !isActivateReloadEvent(event)) {
+                return false;
+            }
+
+            const auto* button = event->As<RE::ButtonEvent>();
+            if (!button || !button->QJustPressed()) {
+                return false;
+            }
+
+            const bool primaryHandEvent = isPrimaryWandInputEvent(event);
+            if (!isTakeEquipHandEngaged(primaryHandEvent)) {
+                return false;
+            }
+
+            s_pendingSavedGrabOffsetRequest[takeEquipHandIndex(primaryHandEvent)].store(true, std::memory_order_release);
+            return true;
+        }
+
         void hookedReadyWeaponEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
         {
             if (isAnyProviderOpenVrGameInputSuppressed()) {
@@ -1221,6 +1253,12 @@ namespace rock::input_remap_runtime
                     g_rockConfig.rockLogSampleMilliseconds,
                     "Suppressed native Activate input while provider OpenVR game-input suppression is active");
                 return;
+            }
+
+            if (handleSavedGrabOffsetRequestEvent(inputEvent)) {
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Recorded a pending saved-grab-offset request from an Activate/WandAccept press");
             }
 
             if (shouldSuppressNativeTakeEquipActionEvent(inputEvent)) {
@@ -1710,6 +1748,11 @@ namespace rock::input_remap_runtime
         auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressPipboyGameInputWhileHolding, true);
         input.pipboyHandEngaged = isPipboyHandEngaged();
         return input_remap_policy::shouldSuppressNativePipboyAction(input);
+    }
+
+    bool consumePendingSavedGrabOffsetRequest(bool isLeft)
+    {
+        return s_pendingSavedGrabOffsetRequest[isLeft ? 0u : 1u].exchange(false, std::memory_order_acq_rel);
     }
 
     RawButtonState peekRawButtonState(bool isLeft, int buttonId)
