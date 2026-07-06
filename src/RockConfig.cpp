@@ -149,6 +149,8 @@ namespace rock
         rockSuppressNativeReadyWeaponAutoReady = true;
         rockSuppressNativeMeleeThrowGameInput = true;
         rockSuppressPipboyGameInputWhileHolding = true;
+        rockSuppressTakeEquipGameInputWhileHolding = true;
+        rockSuppressTakeEquipFormTypes = "WEAP,ARMO,AMMO,MISC,INGR,ALCH,BOOK,KEYM,SLGM";
         rockSuppressNativeGrabHoverHaptics = true;
         rockVirtualHolstersCompatibilityEnabled = true;
         rockVirtualHolstersDeferGrabInZone = true;
@@ -695,6 +697,9 @@ namespace rock
         rockSuppressNativeReadyWeaponAutoReady = ini.GetBoolValue(SECTION, "bSuppressNativeReadyWeaponAutoReady", rockSuppressNativeReadyWeaponAutoReady);
         rockSuppressNativeMeleeThrowGameInput = ini.GetBoolValue(SECTION, "bSuppressNativeMeleeThrowGameInput", rockSuppressNativeMeleeThrowGameInput);
         rockSuppressPipboyGameInputWhileHolding = ini.GetBoolValue(SECTION, "bSuppressPipboyGameInputWhileHolding", rockSuppressPipboyGameInputWhileHolding);
+        rockSuppressTakeEquipGameInputWhileHolding =
+            ini.GetBoolValue(SECTION, "bSuppressTakeEquipGameInputWhileHolding", rockSuppressTakeEquipGameInputWhileHolding);
+        rockSuppressTakeEquipFormTypes = ini.GetValue(SECTION, "sSuppressTakeEquipFormTypes", rockSuppressTakeEquipFormTypes.c_str());
         rockSuppressNativeGrabHoverHaptics = ini.GetBoolValue(SECTION, "bSuppressNativeGrabHoverHaptics", rockSuppressNativeGrabHoverHaptics);
         rockVirtualHolstersCompatibilityEnabled = ini.GetBoolValue(SECTION, "bVirtualHolstersCompatibilityEnabled", rockVirtualHolstersCompatibilityEnabled);
         rockVirtualHolstersDeferGrabInZone = ini.GetBoolValue(SECTION, "bVirtualHolstersDeferGrabInZone", rockVirtualHolstersDeferGrabInZone);

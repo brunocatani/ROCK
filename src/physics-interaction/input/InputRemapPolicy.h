@@ -56,6 +56,8 @@ namespace rock::input_remap_policy
         bool equippedWeaponPrimaryDetachInputActive{ false };
         bool equippedWeaponPrimaryDetached{ false };
         bool pipboyHandEngaged{ false };
+        bool takeEquipHandEngaged{ false };
+        bool takeEquipTargetEligible{ false };
         bool eventMatched{ false };
     };
 
@@ -236,6 +238,24 @@ namespace rock::input_remap_policy
     {
         return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive && input.eventMatched &&
                !input.primaryHandEvent && input.pipboyHandEngaged;
+    }
+
+    /*
+     * FO4's Activate button ("Activate"/"WandAccept") is one native event regardless of
+     * on-screen prompt text (Take/Talk/Open/Search/Read) - verified 2026-07-05 via raw
+     * disassembly of ActivateHandler::HandleEvent's call chain: there is no separate "Take"
+     * input action, the Take-vs-other outcome is decided deep inside the target ref's own
+     * per-FormType virtual Activate dispatch, not reachable as a flat branch from the input
+     * handler. ROCK does not chase that internal dispatch; it instead classifies the same wand
+     * pick-ref target the handler is about to act on by FormType (ini-configurable allowlist)
+     * and only suppresses when the SAME hand whose wand fired the press is currently holding a
+     * ROCK object, so Talk/Open/Search/Read and the opposite hand's Activate keep working on
+     * the same button.
+     */
+    [[nodiscard]] constexpr bool shouldSuppressNativeTakeEquipAction(const NativeActionSuppressionInput& input)
+    {
+        return input.remapEnabled && input.suppressionEnabled && input.gameplayInputAllowed && !input.menuInputActive &&
+               input.eventMatched && input.takeEquipHandEngaged && input.takeEquipTargetEligible;
     }
 
     [[nodiscard]] constexpr bool shouldInstallNativeActionSuppressionHook(bool remapEnabled, bool suppressionEnabled)

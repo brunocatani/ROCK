@@ -1,6 +1,7 @@
 #include "physics-interaction/input/InputRemapRuntime.h"
 
 #include "physics-interaction/input/InputRemapPolicy.h"
+#include "physics-interaction/object/FarSelectionBlacklistPolicy.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "RockConfig.h"
 
@@ -9,8 +10,10 @@
 
 #include "f4vr/F4VRUtils.h"
 #include "RE/Bethesda/PlayerCharacter.h"
+#include "RE/Bethesda/BSPointerHandle.h"
 #include "RE/Bethesda/ControlMap.h"
 #include "RE/Bethesda/InputEvent.h"
+#include "RE/Bethesda/TESObjectREFRs.h"
 #include "RE/Bethesda/UI.h"
 
 #include <REL/Relocation.h>
@@ -76,6 +79,27 @@ namespace rock::input_remap_runtime
          */
         constexpr std::uintptr_t kPipboyLightHandlerHandleEventFunctionOffset = 0x0FC9170;
         constexpr std::uintptr_t kPipboyLightHandlerHandleEventVTableSlotOffset = 0x2D8A2A0;
+        /*
+         * FO4VR's ActivateHandler resolves the wand's current "pick ref" (what it is pointing
+         * at/reaching for) from one of these two per-wand handle globals before dispatching
+         * Activate/WandAccept - there is no separate "Take" input action; Take vs Talk/Open/
+         * Search/Read is decided later, per-FormType, on whichever ref this handle names.
+         * Verified 2026-07-05 from raw disassembly of two independent functions
+         * (FUN_140FCF360/FUN_140FCB5B0 RVA, both reached from the already-hooked
+         * ActivateHandler::HandleEvent at 0xFC7F00) that each independently perform the same
+         * primary/secondary wand selection over these globals, plus an independently-named
+         * Ghidra xref symbol ("ViewCasterPrimaryWand") on the primary global's writer that
+         * corroborates it as the wand raycast/pick target rather than a decompiler artifact.
+         * Values below are RVA (Ghidra VA 0x145AC72B0/0x145AC7F10 minus the 0x140000000 image
+         * base, matching every other offset in this file). ROCK reads the raw handle value and
+         * resolves it through the already-shipped RE::ObjectRefHandle::get() (backed by
+         * BSPointerHandleManagerInterface<TESObjectREFR>::GetSmartPointer, RelocationID 967277)
+         * instead of the native handler's own raw resolve chain, so no additional unverified
+         * offset is load-bearing for the pointer resolution itself - see
+         * docs/docs/reverse-engineering/2026-07-05-take-equip-activate-classification-ghidra-findings.md.
+         */
+        constexpr std::uintptr_t kActivatePrimaryWandPickRefGlobalOffset = 0x5AC72B0;
+        constexpr std::uintptr_t kActivateSecondaryWandPickRefGlobalOffset = 0x5AC7F10;
         constexpr std::uintptr_t kNativeActionDispatcherFunctionOffset = 0x0FC07E0;
         constexpr std::uintptr_t kNativeInputDeviceToControllerIdFunctionOffset = 0x1BA6ED0;
         constexpr std::uintptr_t kNativePlayerActionDispatcherDataOffset = 0x5A3B8A0;
@@ -963,6 +987,68 @@ namespace rock::input_remap_runtime
             return nativeActionDispatcher(dispatcherObject, kNativeReloadActionId, kNativeActionPriorityQueue);
         }
 
+        /*
+         * Take/Equip suppression must gate on the SAME hand whose wand fired the Activate
+         * press, unlike Pipboy (which always rides the off-hand trigger). Both A (Activate)
+         * and B (VATS) buttons live on the primary wand in FO4VR's default VR bindings, so in
+         * practice this resolves to "is the primary hand holding a ROCK object", but the
+         * primary/secondary selection is kept generic to match the native handler's own
+         * primary/secondary wand dispatch (see kActivate*WandPickRefGlobalOffset comment).
+         */
+        [[nodiscard]] bool isTakeEquipHandEngaged(bool primaryHandEvent)
+        {
+            const bool primaryHandIsLeft = f4vr::isLeftHandedMode();
+            const bool eventHandIsLeft = primaryHandEvent ? primaryHandIsLeft : !primaryHandIsLeft;
+            return s_handInteractionEngaged[eventHandIsLeft ? 0u : 1u].load(std::memory_order_acquire);
+        }
+
+        [[nodiscard]] bool isTakeEquipTargetEligible(bool primaryHandEvent)
+        {
+            const auto globalOffset = primaryHandEvent ? kActivatePrimaryWandPickRefGlobalOffset : kActivateSecondaryWandPickRefGlobalOffset;
+            REL::Relocation<std::uint32_t*> pickRefHandleGlobal{ REL::Offset(globalOffset) };
+            const std::uint32_t handleValue = *pickRefHandleGlobal;
+            if (handleValue == 0) {
+                return false;
+            }
+
+            RE::ObjectRefHandle handle{};
+            static_assert(sizeof(handle) == sizeof(handleValue));
+            std::memcpy(&handle, &handleValue, sizeof(handle));
+
+            const auto ref = handle.get();
+            if (!ref) {
+                return false;
+            }
+
+            const auto* baseForm = ref->GetObjectReference();
+            const char* formTypeChars = baseForm ? baseForm->GetFormTypeString() : nullptr;
+            if (!formTypeChars) {
+                return false;
+            }
+
+            const bool eligible = far_selection_blacklist_policy::listContainsText(g_rockConfig.rockSuppressTakeEquipFormTypes, formTypeChars);
+            ROCK_LOG_SAMPLE_DEBUG(Input,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "Take/Equip suppression classification: pick-ref formType='{}' eligible={}",
+                formTypeChars,
+                eligible ? "yes" : "no");
+            return eligible;
+        }
+
+        [[nodiscard]] bool shouldSuppressNativeTakeEquipActionEvent(const RE::InputEvent* event)
+        {
+            const bool eventMatched = isActivateReloadEvent(event);
+            if (!eventMatched) {
+                return false;
+            }
+
+            const bool primaryHandEvent = isPrimaryWandInputEvent(event);
+            auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressTakeEquipGameInputWhileHolding, event, eventMatched);
+            input.takeEquipHandEngaged = isTakeEquipHandEngaged(primaryHandEvent);
+            input.takeEquipTargetEligible = input.takeEquipHandEngaged && isTakeEquipTargetEligible(primaryHandEvent);
+            return input_remap_policy::shouldSuppressNativeTakeEquipAction(input);
+        }
+
         void hookedReadyWeaponEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
         {
             if (isAnyProviderOpenVrGameInputSuppressed()) {
@@ -1009,6 +1095,14 @@ namespace rock::input_remap_runtime
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
                     "Suppressed native Activate input while provider OpenVR game-input suppression is active");
+                return;
+            }
+
+            if (shouldSuppressNativeTakeEquipActionEvent(inputEvent)) {
+                markInputEventStopped(inputEvent);
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Suppressed native Activate/WandAccept take/equip outcome while ROCK holds an object in the same hand");
                 return;
             }
 

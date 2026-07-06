@@ -66,6 +66,8 @@ namespace rock
         bool rockSuppressNativeReadyWeaponAutoReady = true;
         bool rockSuppressNativeMeleeThrowGameInput = true;
         bool rockSuppressPipboyGameInputWhileHolding = true;
+        bool rockSuppressTakeEquipGameInputWhileHolding = true;
+        std::string rockSuppressTakeEquipFormTypes = "WEAP,ARMO,AMMO,MISC,INGR,ALCH,BOOK,KEYM,SLGM";
         bool rockSuppressNativeGrabHoverHaptics = true;
         bool rockVirtualHolstersCompatibilityEnabled = true;
         bool rockVirtualHolstersDeferGrabInZone = true;

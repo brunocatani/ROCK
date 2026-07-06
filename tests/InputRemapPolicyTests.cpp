@@ -125,6 +125,32 @@ int main()
     pipboyPrimaryHand.primaryHandEvent = true;
     ok &= expectFalse("primary-wand trigger event bypasses the pipboy gate so attack handling survives", shouldSuppressNativePipboyAction(pipboyPrimaryHand));
 
+    auto takeEquipIdleHand = base;
+    takeEquipIdleHand.takeEquipTargetEligible = true;
+    ok &= expectFalse("free hand keeps native take/equip on an eligible target", shouldSuppressNativeTakeEquipAction(takeEquipIdleHand));
+    auto takeEquipHolding = base;
+    takeEquipHolding.takeEquipHandEngaged = true;
+    ok &= expectFalse("engaged hand does not suppress a non-eligible activate target", shouldSuppressNativeTakeEquipAction(takeEquipHolding));
+    auto takeEquipHoldingEligible = takeEquipHolding;
+    takeEquipHoldingEligible.takeEquipTargetEligible = true;
+    ok &= expectTrue("engaged hand suppresses take/equip on an eligible target",
+        shouldSuppressNativeTakeEquipAction(takeEquipHoldingEligible));
+    auto takeEquipDrawn = takeEquipHoldingEligible;
+    takeEquipDrawn.weaponDrawn = true;
+    ok &= expectTrue("weapon drawn does not gate take/equip suppression while holding", shouldSuppressNativeTakeEquipAction(takeEquipDrawn));
+    auto takeEquipMenu = takeEquipHoldingEligible;
+    takeEquipMenu.menuInputActive = true;
+    ok &= expectFalse("menu input keeps native activate handling for take/equip", shouldSuppressNativeTakeEquipAction(takeEquipMenu));
+    auto takeEquipDisabled = takeEquipHoldingEligible;
+    takeEquipDisabled.suppressionEnabled = false;
+    ok &= expectFalse("disabled take/equip suppression setting keeps native activate handling", shouldSuppressNativeTakeEquipAction(takeEquipDisabled));
+    auto takeEquipNoGameplay = takeEquipHoldingEligible;
+    takeEquipNoGameplay.gameplayInputAllowed = false;
+    ok &= expectFalse("blocked gameplay input keeps native activate handling for take/equip", shouldSuppressNativeTakeEquipAction(takeEquipNoGameplay));
+    auto takeEquipUnmatched = takeEquipHoldingEligible;
+    takeEquipUnmatched.eventMatched = false;
+    ok &= expectFalse("non-Activate event is never suppressed by the take/equip gate", shouldSuppressNativeTakeEquipAction(takeEquipUnmatched));
+
     NativeActivateReloadInput activateReload{
         .remapEnabled = true,
         .gameplayInputAllowed = true,
