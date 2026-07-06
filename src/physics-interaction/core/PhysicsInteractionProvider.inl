@@ -87,6 +87,13 @@
         }
     }
 
+    void PhysicsInteraction::setProviderPartGripHandAuthority(bool isLeft, bool handAuthority)
+    {
+        // Same-thread with the grip runtime: consumers call through the
+        // provider API from the frame callback (ROCK's frame thread).
+        _twoHandedGrip.setPartGripHandAuthority(isLeft, handAuthority);
+    }
+
     bool PhysicsInteraction::queryProviderWeaponContactAtPoint(
         const ::rock::provider::RockProviderWeaponContactQuery& query,
         ::rock::provider::RockProviderWeaponContactResult& outResult) const

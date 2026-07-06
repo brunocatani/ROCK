@@ -623,7 +623,8 @@ namespace
     bool isValidWeaponPartDriveSpace(RockProviderWeaponPartDriveSpaceV1 space)
     {
         return space == RockProviderWeaponPartDriveSpaceV1::WeaponRootLocal ||
-               space == RockProviderWeaponPartDriveSpaceV1::SourceParentLocal;
+               space == RockProviderWeaponPartDriveSpaceV1::SourceParentLocal ||
+               space == RockProviderWeaponPartDriveSpaceV1::HandLocal;
     }
 
     bool isFiniteProviderTransform(const RockProviderTransform& transform)
@@ -1644,6 +1645,21 @@ namespace
         return rock::input_remap_runtime::isNativePipboyInputSuppressionActive();
     }
 
+    bool ROCK_PROVIDER_CALL apiSetWeaponPartGripHandAuthorityV1(RockProviderHand hand, bool handAuthority)
+    {
+        if (hand != RockProviderHand::Right && hand != RockProviderHand::Left) {
+            return false;
+        }
+        // Consumers call this from the provider frame callback (ROCK's
+        // frame thread), so the write into the grip runtime is same-thread.
+        auto* pi = s_physicsInteraction.load(std::memory_order_acquire);
+        if (!pi) {
+            return false;
+        }
+        pi->setProviderPartGripHandAuthority(hand == RockProviderHand::Left, handAuthority);
+        return true;
+    }
+
     constexpr RockProviderApi ROCK_PROVIDER_API_FUNCTION_TABLE{
         .getVersion = &apiGetVersion,
         .getModVersion = &apiGetModVersion,
@@ -1682,6 +1698,7 @@ namespace
         .getWeaponPartGripStateV1 = &apiGetWeaponPartGripStateV1,
         .getRawWandButtonStateV1 = &apiGetRawWandButtonStateV1,
         .isNativePipboyInputSuppressedV1 = &apiIsNativePipboyInputSuppressedV1,
+        .setWeaponPartGripHandAuthorityV1 = &apiSetWeaponPartGripHandAuthorityV1,
     };
 }
 

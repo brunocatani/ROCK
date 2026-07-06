@@ -138,6 +138,9 @@ namespace rock
         bool queryProviderEquippedWeaponClassificationV1(::rock::provider::RockProviderWeaponClassificationV1& outResult) const;
         void fillProviderWeaponPartGripStates(
             std::array<::rock::provider::RockProviderWeaponPartGripStateV1, 2>& outStates) const;
+        // Provider API: hand authority for an attach-only part grip ("free
+        // carried part") — see TwoHandedGrip::setPartGripHandAuthority.
+        void setProviderPartGripHandAuthority(bool isLeft, bool handAuthority);
 
     private:
         bool validateCriticalOffsets() const;

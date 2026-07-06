@@ -6046,6 +6046,21 @@ namespace rock
             case ::rock::provider::RockProviderWeaponPartDriveSpaceV1::SourceParentLocal:
                 desiredWorld = transform_math::composeTransforms(sourceNode->parent->world, requestedLocal);
                 break;
+            case ::rock::provider::RockProviderWeaponPartDriveSpaceV1::HandLocal:
+                /*
+                 * Composed against the LIVE hand bone transform at apply
+                 * time — the "free carried part" drive (PAPER_Redux
+                 * magazine freedom): a weapon-root-local target is only as
+                 * fresh as the consumer's last update, so the part visibly
+                 * dragged with the weapon between consumer frames. Fails
+                 * closed while the hand bones are not ready.
+                 */
+                if (!_handBoneCache.isReady()) {
+                    continue;
+                }
+                desiredWorld = transform_math::composeTransforms(
+                    _handBoneCache.getWorldTransform(drive.driveHand == 1), requestedLocal);
+                break;
             case ::rock::provider::RockProviderWeaponPartDriveSpaceV1::WeaponRootLocal:
             default:
                 desiredWorld = transform_math::composeTransforms(weaponNode->world, requestedLocal);
