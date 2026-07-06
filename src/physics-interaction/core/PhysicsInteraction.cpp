@@ -5116,46 +5116,43 @@ namespace rock
 
         _savedGrabOffsetStore.save(file);
         ROCK_LOG_INFO(Hand, "Saved grab offset for {:08X} ({} hand)", baseForm->GetFormID(), isLeft ? "left" : "right");
+
+        const char* itemName = heldRef->GetDisplayFullName();
+        f4vr::showNotification(std::string("Saved grab offset: ") + (itemName && *itemName ? itemName : "item"));
     }
 
     void PhysicsInteraction::updateSavedGrabOffsetGesture(const PhysicsFrameContext& frame)
     {
+        /*
+         * Right-controller-only, and must never overlap FRIK's two-stick-
+         * held-together menu gesture: the left stick's held state is checked
+         * every frame and immediately resets the hold, so a genuine dual-hold
+         * toward the FRIK menu never also accumulates toward a save.
+         */
         constexpr int kSavedGrabOffsetButtonId = 32;
-        constexpr float kSavedGrabOffsetPressWindowSeconds = 0.35f;
+        constexpr float kSavedGrabOffsetHoldSeconds = 3.0f;
 
-        for (std::uint32_t handIndex = 0; handIndex < 2; ++handIndex) {
-            const bool isLeft = handIndex == 1;
-            Hand& hand = isLeft ? _leftHand : _rightHand;
-            auto& state = _savedGrabOffsetClickStates[handIndex];
+        auto& state = _savedGrabOffsetHoldState;
 
-            const auto rawState = input_remap_runtime::consumeRawButtonState(isLeft, kSavedGrabOffsetButtonId);
-            const auto vrHand = isLeft ? vrcf::Hand::Left : vrcf::Hand::Right;
-            const bool held = rawState.available ? rawState.held : vrcf::VRControllers.isPressHeldDown(vrHand, kSavedGrabOffsetButtonId);
-            const bool pressed = rawState.available ? rawState.pressed : vrcf::VRControllers.isPressed(vrHand, kSavedGrabOffsetButtonId);
-            const bool released = rawState.available ? rawState.released : vrcf::VRControllers.isReleased(vrHand, kSavedGrabOffsetButtonId);
+        const auto rightRaw = input_remap_runtime::peekRawButtonState(false, kSavedGrabOffsetButtonId);
+        const bool rightHeld = rightRaw.available ? rightRaw.held : vrcf::VRControllers.isPressHeldDown(vrcf::Hand::Right, kSavedGrabOffsetButtonId);
 
-            if (pressed) {
-                state.tracking = true;
-                state.elapsedSeconds = 0.0f;
-            }
+        const auto leftRaw = input_remap_runtime::peekRawButtonState(true, kSavedGrabOffsetButtonId);
+        const bool leftHeld = leftRaw.available ? leftRaw.held : vrcf::VRControllers.isPressHeldDown(vrcf::Hand::Left, kSavedGrabOffsetButtonId);
 
-            if (!state.tracking) {
-                continue;
-            }
+        if (!rightHeld || leftHeld || input_remap_runtime::isMenuInputActive()) {
+            state = {};
+            return;
+        }
 
-            state.elapsedSeconds += (std::max)(0.0f, frame.deltaSeconds);
+        if (state.fired) {
+            return;
+        }
 
-            if (released) {
-                if (state.elapsedSeconds <= kSavedGrabOffsetPressWindowSeconds) {
-                    saveGrabOffsetForHand(hand, isLeft, frame.hknpWorld);
-                }
-                state = {};
-                continue;
-            }
-
-            if (!held || state.elapsedSeconds > kSavedGrabOffsetPressWindowSeconds) {
-                state = {};
-            }
+        state.elapsedSeconds += (std::max)(0.0f, frame.deltaSeconds);
+        if (state.elapsedSeconds >= kSavedGrabOffsetHoldSeconds) {
+            state.fired = true;
+            saveGrabOffsetForHand(_rightHand, false, frame.hknpWorld);
         }
     }
 

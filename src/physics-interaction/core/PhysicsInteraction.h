@@ -548,12 +548,12 @@ namespace rock
         std::array<peer_held_join_retry_policy::RuntimeState, 2> _peerHeldJoinRetryStates{};
         std::array<HeldWeaponAutoEquipState, 2> _heldWeaponAutoEquipStates{};
 
-        struct SavedGrabOffsetClickState
+        struct SavedGrabOffsetHoldState
         {
-            bool tracking = false;
             float elapsedSeconds = 0.0f;
+            bool fired = false;
         };
-        std::array<SavedGrabOffsetClickState, 2> _savedGrabOffsetClickStates{};
+        SavedGrabOffsetHoldState _savedGrabOffsetHoldState{};
         saved_grab_offset::SavedGrabOffsetStore _savedGrabOffsetStore;
 
         RE::NiPoint3 _prevSmoothedPos;
