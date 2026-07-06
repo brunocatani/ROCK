@@ -4996,34 +4996,16 @@ namespace rock
                     continue;
                 }
 
-                bool repositioned = false;
-                auto* baseForm = targetRef->GetObjectReference();
-                const auto formRef = baseForm ? saved_grab_offset::SavedGrabOffsetStore::formRefFromRuntimeId(baseForm->GetFormID()) :
-                                                 saved_grab_offset::FormRef{};
-                saved_grab_offset::SavedGrabOffsetFile savedFile{};
-                if (!formRef.empty() && _savedGrabOffsetStore.load(formRef, savedFile, nullptr)) {
-                    const auto& handOffset = commit.isLeft ? savedFile.left : savedFile.right;
-                    RE::NiTransform proxyWorld{};
-                    if (handOffset.present && hand.tryComputeGrabProxyLocalPalmPocketFrameWorld(frame.hknpWorld, proxyWorld)) {
-                        RE::NiTransform objectProxyLocal = transform_math::makeIdentityTransform<RE::NiTransform>();
-                        objectProxyLocal.translate = { handOffset.translateGame[0], handOffset.translateGame[1], handOffset.translateGame[2] };
-                        for (int row = 0; row < 3; ++row) {
-                            for (int column = 0; column < 3; ++column) {
-                                objectProxyLocal.rotate.entry[row][column] = handOffset.rotate[row * 3 + column];
-                            }
-                        }
-                        const RE::NiTransform desiredWorld = grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, objectProxyLocal);
-                        repositioned = physics_recursive_wrappers::setRootNodeWorldTransform(targetRef->Get3D(), desiredWorld);
-                    }
-                }
-
-                commit.phase =
-                    repositioned ? PendingForceGrabCommitPhase::AwaitingRepositionPhysicsStep : PendingForceGrabCommitPhase::ReadyToCommit;
-            }
-
-            if (commit.phase == PendingForceGrabCommitPhase::AwaitingRepositionPhysicsStep) {
+                /*
+                 * A saved grab offset (if any exists for this object+hand) is
+                 * applied inside grabSelectedObject itself, via
+                 * resolveLooseWeaponPrimaryAttachFrame's savedOffsetSource
+                 * branch -- the same commit-time mechanism organic
+                 * pull-catch/far-grab commits use, since sel.forcedArrival is
+                 * already true for a force-grab commit and that function's
+                 * "not a close grab" gate already covers both origins.
+                 */
                 commit.phase = PendingForceGrabCommitPhase::ReadyToCommit;
-                continue;
             }
 
             const auto sharedContext = makeGrabSharedObjectContext(hand, commit.isLeft);
@@ -5091,7 +5073,7 @@ namespace rock
             return;
         }
 
-        const auto formRef = saved_grab_offset::SavedGrabOffsetStore::formRefFromRuntimeId(baseForm->GetFormID());
+        const auto formRef = saved_grab_offset::formRefFromRuntimeId(baseForm->GetFormID());
         if (formRef.empty()) {
             ROCK_LOG_WARN(Hand, "Saved grab offset: aborted, could not resolve load-order-independent identity for base form {:08X}",
                 baseForm->GetFormID());
@@ -5108,7 +5090,7 @@ namespace rock
 
         saved_grab_offset::SavedGrabOffsetFile file{};
         std::string loadError;
-        if (!_savedGrabOffsetStore.load(formRef, file, &loadError) && !loadError.empty()) {
+        if (!saved_grab_offset::load(formRef, file, &loadError) && !loadError.empty()) {
             ROCK_LOG_WARN(Hand, "Saved grab offset: existing file for {:08X} unreadable ({}), overwriting", baseForm->GetFormID(), loadError);
         }
         file.object = formRef;
@@ -5125,7 +5107,7 @@ namespace rock
             }
         }
 
-        _savedGrabOffsetStore.save(file);
+        saved_grab_offset::save(file);
         ROCK_LOG_INFO(Hand, "Saved grab offset for {:08X} ({} hand)", baseForm->GetFormID(), isLeft ? "left" : "right");
 
         const char* itemName = heldRef->GetDisplayFullName();

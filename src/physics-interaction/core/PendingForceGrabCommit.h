@@ -19,8 +19,7 @@ namespace rock
     enum class PendingForceGrabCommitPhase : std::uint8_t
     {
         WaitingForSettle = 0,
-        AwaitingRepositionPhysicsStep = 1,
-        ReadyToCommit = 2,
+        ReadyToCommit = 1,
     };
 
     /*
@@ -30,9 +29,10 @@ namespace rock
      * grab-authority relation on the same tick reads whatever hand transform
      * happens to exist that instant. This carries the request across the
      * settle delay (fForceGrabAttachSettleSeconds) so the eventual commit
-     * reads a genuinely live hand pose, and across the one extra frame a
-     * saved-offset reposition (SavedGrabOffsetStore) needs before
-     * Hand::grabSelectedObject reads the object's NiNode transform back.
+     * reads a genuinely live hand pose. A saved grab offset, if any exists
+     * for the target object+hand, is applied by grabSelectedObject itself at
+     * commit time (SelectedObject::forcedArrival already makes it eligible,
+     * same as an organic pull-catch/far-grab commit).
      */
     struct PendingForceGrabCommit
     {

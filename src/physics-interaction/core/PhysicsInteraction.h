@@ -554,7 +554,6 @@ namespace rock
             bool fired = false;
         };
         SavedGrabOffsetHoldState _savedGrabOffsetHoldState{};
-        saved_grab_offset::SavedGrabOffsetStore _savedGrabOffsetStore;
 
         RE::NiPoint3 _prevSmoothedPos;
         int _deltaLogCounter = 0;

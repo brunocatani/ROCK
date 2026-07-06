@@ -7,10 +7,14 @@
 #include "RE/Bethesda/TESForms.h"
 #include "RE/Bethesda/TESDataHandler.h"
 
+#include <condition_variable>
 #include <cstdio>
+#include <deque>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <sstream>
+#include <thread>
 
 namespace rock::saved_grab_offset
 {
@@ -36,19 +40,175 @@ namespace rock::saved_grab_offset
             }
             return out;
         }
+
+        struct PendingWrite
+        {
+            std::string path;
+            std::string content;
+        };
+
+        /*
+         * Process-lifetime store instance (Meyer's singleton: lazy-init on
+         * first use, no static-initialization-order dependency). Its
+         * destructor drains the write queue and joins the writer thread at
+         * static teardown.
+         */
+        class Store
+        {
+        public:
+            Store() :
+                _directory(resolveStoreDirectory())
+            {
+            }
+
+            ~Store()
+            {
+                shutdown();
+            }
+
+            std::string filePathForObject(const FormRef& object) const
+            {
+                char idText[16]{};
+                std::snprintf(idText, sizeof(idText), "%08X", object.localFormId);
+                return _directory + "\\" + sanitizeForFileName(object.plugin) + "_" + idText + ".json";
+            }
+
+            bool load(const FormRef& object, SavedGrabOffsetFile& out, std::string* outError) const
+            {
+                if (outError) {
+                    outError->clear();
+                }
+                if (object.empty()) {
+                    return false;
+                }
+                const auto path = filePathForObject(object);
+                std::error_code ec;
+                if (!std::filesystem::exists(path, ec)) {
+                    return false;  // absent file: normal, empty error
+                }
+                std::ifstream stream(path, std::ios::binary);
+                if (!stream) {
+                    if (outError) {
+                        *outError = "file exists but could not be opened";
+                    }
+                    return false;
+                }
+                std::ostringstream buffer;
+                buffer << stream.rdbuf();
+                return parse(buffer.str(), out, outError);
+            }
+
+            void save(const SavedGrabOffsetFile& file)
+            {
+                if (file.object.empty()) {
+                    return;
+                }
+                PendingWrite write{ filePathForObject(file.object), serialize(file) };
+                {
+                    std::lock_guard lock(_mutex);
+                    // Latest-wins per file: replace a still-pending write of
+                    // the same object instead of queueing behind it.
+                    bool replaced = false;
+                    for (auto& pending : _queue) {
+                        if (pending.path == write.path) {
+                            pending.content = std::move(write.content);
+                            replaced = true;
+                            break;
+                        }
+                    }
+                    if (!replaced) {
+                        _queue.push_back(std::move(write));
+                    }
+                }
+                ensureWriterStarted();
+                _wake.notify_one();
+            }
+
+        private:
+            void ensureWriterStarted()
+            {
+                std::lock_guard lock(_mutex);
+                if (_writerStarted) {
+                    return;
+                }
+                _writerStarted = true;
+                _stop = false;
+                _writer = std::thread([this]() { writerLoop(); });
+            }
+
+            void writerLoop()
+            {
+                for (;;) {
+                    PendingWrite write;
+                    {
+                        std::unique_lock lock(_mutex);
+                        _wake.wait(lock, [this]() { return _stop || !_queue.empty(); });
+                        if (_queue.empty()) {
+                            if (_stop) {
+                                return;
+                            }
+                            continue;
+                        }
+                        write = std::move(_queue.front());
+                        _queue.pop_front();
+                    }
+
+                    std::error_code ec;
+                    std::filesystem::create_directories(std::filesystem::path(write.path).parent_path(), ec);
+                    const auto tempPath = write.path + ".tmp";
+                    {
+                        std::ofstream stream(tempPath, std::ios::binary | std::ios::trunc);
+                        if (!stream) {
+                            ROCK_LOG_WARN(Config, "Saved grab offset: could not open '{}' for writing", tempPath);
+                            continue;
+                        }
+                        stream.write(write.content.data(), static_cast<std::streamsize>(write.content.size()));
+                        if (!stream) {
+                            ROCK_LOG_WARN(Config, "Saved grab offset: write to '{}' failed", tempPath);
+                            continue;
+                        }
+                    }
+                    std::filesystem::rename(tempPath, write.path, ec);
+                    if (ec) {
+                        ROCK_LOG_WARN(Config, "Saved grab offset: rename to '{}' failed: {}", write.path, ec.message());
+                    }
+                }
+            }
+
+            void shutdown()
+            {
+                {
+                    std::lock_guard lock(_mutex);
+                    if (!_writerStarted) {
+                        return;
+                    }
+                    _stop = true;
+                }
+                _wake.notify_one();
+                if (_writer.joinable()) {
+                    _writer.join();
+                }
+                std::lock_guard lock(_mutex);
+                _writerStarted = false;
+            }
+
+            std::string _directory;
+            std::thread _writer;
+            std::mutex _mutex;
+            std::condition_variable _wake;
+            std::deque<PendingWrite> _queue;
+            bool _stop{ false };
+            bool _writerStarted{ false };
+        };
+
+        Store& instance()
+        {
+            static Store store;
+            return store;
+        }
     }
 
-    SavedGrabOffsetStore::SavedGrabOffsetStore() :
-        _directory(resolveStoreDirectory())
-    {
-    }
-
-    SavedGrabOffsetStore::~SavedGrabOffsetStore()
-    {
-        shutdown();
-    }
-
-    FormRef SavedGrabOffsetStore::formRefFromRuntimeId(std::uint32_t runtimeFormId)
+    FormRef formRefFromRuntimeId(std::uint32_t runtimeFormId)
     {
         if (runtimeFormId == 0) {
             return {};
@@ -70,128 +230,13 @@ namespace rock::saved_grab_offset
         return ref;
     }
 
-    std::string SavedGrabOffsetStore::filePathForObject(const FormRef& object) const
+    bool load(const FormRef& object, SavedGrabOffsetFile& out, std::string* outError)
     {
-        char idText[16]{};
-        std::snprintf(idText, sizeof(idText), "%08X", object.localFormId);
-        return _directory + "\\" + sanitizeForFileName(object.plugin) + "_" + idText + ".json";
+        return instance().load(object, out, outError);
     }
 
-    bool SavedGrabOffsetStore::load(const FormRef& object, SavedGrabOffsetFile& out, std::string* outError) const
+    void save(const SavedGrabOffsetFile& file)
     {
-        if (outError) {
-            outError->clear();
-        }
-        if (object.empty()) {
-            return false;
-        }
-        const auto path = filePathForObject(object);
-        std::error_code ec;
-        if (!std::filesystem::exists(path, ec)) {
-            return false;  // absent file: normal, empty error
-        }
-        std::ifstream stream(path, std::ios::binary);
-        if (!stream) {
-            if (outError) {
-                *outError = "file exists but could not be opened";
-            }
-            return false;
-        }
-        std::ostringstream buffer;
-        buffer << stream.rdbuf();
-        return parse(buffer.str(), out, outError);
-    }
-
-    void SavedGrabOffsetStore::save(const SavedGrabOffsetFile& file)
-    {
-        if (file.object.empty()) {
-            return;
-        }
-        PendingWrite write{ filePathForObject(file.object), serialize(file) };
-        {
-            std::lock_guard lock(_mutex);
-            // Latest-wins per file: replace a still-pending write of the
-            // same object instead of queueing behind it.
-            bool replaced = false;
-            for (auto& pending : _queue) {
-                if (pending.path == write.path) {
-                    pending.content = std::move(write.content);
-                    replaced = true;
-                    break;
-                }
-            }
-            if (!replaced) {
-                _queue.push_back(std::move(write));
-            }
-        }
-        ensureWriterStarted();
-        _wake.notify_one();
-    }
-
-    void SavedGrabOffsetStore::ensureWriterStarted()
-    {
-        std::lock_guard lock(_mutex);
-        if (_writerStarted) {
-            return;
-        }
-        _writerStarted = true;
-        _stop = false;
-        _writer = std::thread([this]() { writerLoop(); });
-    }
-
-    void SavedGrabOffsetStore::writerLoop()
-    {
-        for (;;) {
-            PendingWrite write;
-            {
-                std::unique_lock lock(_mutex);
-                _wake.wait(lock, [this]() { return _stop || !_queue.empty(); });
-                if (_queue.empty()) {
-                    if (_stop) {
-                        return;
-                    }
-                    continue;
-                }
-                write = std::move(_queue.front());
-                _queue.pop_front();
-            }
-
-            std::error_code ec;
-            std::filesystem::create_directories(std::filesystem::path(write.path).parent_path(), ec);
-            const auto tempPath = write.path + ".tmp";
-            {
-                std::ofstream stream(tempPath, std::ios::binary | std::ios::trunc);
-                if (!stream) {
-                    ROCK_LOG_WARN(Config, "Saved grab offset: could not open '{}' for writing", tempPath);
-                    continue;
-                }
-                stream.write(write.content.data(), static_cast<std::streamsize>(write.content.size()));
-                if (!stream) {
-                    ROCK_LOG_WARN(Config, "Saved grab offset: write to '{}' failed", tempPath);
-                    continue;
-                }
-            }
-            std::filesystem::rename(tempPath, write.path, ec);
-            if (ec) {
-                ROCK_LOG_WARN(Config, "Saved grab offset: rename to '{}' failed: {}", write.path, ec.message());
-            }
-        }
-    }
-
-    void SavedGrabOffsetStore::shutdown()
-    {
-        {
-            std::lock_guard lock(_mutex);
-            if (!_writerStarted) {
-                return;
-            }
-            _stop = true;
-        }
-        _wake.notify_one();
-        if (_writer.joinable()) {
-            _writer.join();
-        }
-        std::lock_guard lock(_mutex);
-        _writerStarted = false;
+        instance().save(file);
     }
 }

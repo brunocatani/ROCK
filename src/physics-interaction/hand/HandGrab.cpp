@@ -13,6 +13,7 @@
 #include "physics-interaction/grab/GrabContact.h"
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
+#include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/grab/GrabFinger.h"
 #include "physics-interaction/grab/GrabMassPolicy.h"
 #include "physics-interaction/grab/GrabMotionController.h"
@@ -846,6 +847,57 @@ namespace rock
             return source;
         }
 
+        struct SavedGrabOffsetAttachSource
+        {
+            bool valid = false;
+            RE::NiTransform desiredRootWorld{};
+        };
+
+        /*
+         * proxyWorld/proxyWorldValid are resolved by the caller (a live
+         * GrabAuthorityProxy read, Hand::tryComputeGrabProxyLocalPalmPocketFrameWorld)
+         * since this file's helpers are free functions with no Hand access.
+         */
+        SavedGrabOffsetAttachSource resolveSavedGrabOffsetAttachSource(
+            const RE::NiTransform& proxyWorld,
+            bool proxyWorldValid,
+            bool isLeft,
+            RE::TESObjectREFR* refr)
+        {
+            SavedGrabOffsetAttachSource source{};
+            if (!proxyWorldValid || !refr) {
+                return source;
+            }
+            auto* baseForm = refr->GetObjectReference();
+            if (!baseForm) {
+                return source;
+            }
+            const auto formRef = saved_grab_offset::formRefFromRuntimeId(baseForm->GetFormID());
+            if (formRef.empty()) {
+                return source;
+            }
+            saved_grab_offset::SavedGrabOffsetFile file{};
+            if (!saved_grab_offset::load(formRef, file, nullptr)) {
+                return source;
+            }
+            const auto& handOffset = isLeft ? file.left : file.right;
+            if (!handOffset.present) {
+                return source;
+            }
+
+            RE::NiTransform objectProxyLocal = transform_math::makeIdentityTransform<RE::NiTransform>();
+            objectProxyLocal.translate = { handOffset.translateGame[0], handOffset.translateGame[1], handOffset.translateGame[2] };
+            for (int row = 0; row < 3; ++row) {
+                for (int column = 0; column < 3; ++column) {
+                    objectProxyLocal.rotate.entry[row][column] = handOffset.rotate[row * 3 + column];
+                }
+            }
+
+            source.desiredRootWorld = grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, objectProxyLocal);
+            source.valid = isFiniteNiTransform(source.desiredRootWorld);
+            return source;
+        }
+
         LooseWeaponPrimaryAttachFrame resolveLooseWeaponPrimaryAttachFrame(
             bool looseWeaponGrab,
             bool grabbedFromPullCatch,
@@ -856,83 +908,101 @@ namespace rock
             const RE::NiTransform& objectToBodyAtGrab,
             const RE::NiTransform& grabBodyWorldAtGrab,
             const RE::NiPoint3& grabPivotAWorld,
-            const RE::NiTransform& handWorldAtGrab)
+            const RE::NiTransform& handWorldAtGrab,
+            const SavedGrabOffsetAttachSource& savedOffsetSource)
         {
             LooseWeaponPrimaryAttachFrame frame{};
-            if (!looseWeaponGrab) {
-                frame.reason = "notLooseWeapon";
-                return frame;
-            }
             /*
-             * Only non-throwable programmatic loose-weapon arrivals snap to a
-             * canonical attach pose. Grenades, mines, and Molotov variants are
-             * hand-thrown objects: force-grab and pull-catch commits keep the
-             * normal mesh/body relation so the object is translated into the
-             * pocket without forcing a root rotation from FRIK or the live hand.
-             * A close grab is a free mesh hold on either hand; the firing-grip
-             * transition happens later through the grip-zone equip path
-             * (loose_weapon_grip_zone), not by forcing the attach at grab.
+             * A close grab is a free mesh hold on either hand regardless of
+             * source; the firing-grip transition happens later through the
+             * grip-zone equip path (loose_weapon_grip_zone), not by forcing
+             * the attach at grab.
              */
             if (!grabbedFromPullCatch && !selection.forcedArrival) {
                 frame.reason = "closeGrabFreeHold";
                 return frame;
             }
-            const auto* looseWeapon = selectedLooseWeaponForm(selection);
-            const bool throwableArrival = isThrowableLooseWeapon(looseWeapon) && (grabbedFromPullCatch || selection.forcedArrival);
-            if (throwableArrival) {
-                frame.reason = selection.forcedArrival ? "throwableForcedArrivalPreservePose" : "throwablePullCatchPreservePose";
-                return frame;
-            }
-            if (!rootNode || !isFiniteNiTransform(rootNode->world)) {
-                frame.reason = "missingWeaponRoot";
-                return frame;
-            }
 
-            bool haveDesiredRoot = false;
-            if (isPrimaryHandForWeaponAttach(isLeft)) {
-                LooseWeaponPrimaryAttachSource attachSource{};
-                attachSource = resolveLooseWeaponPrimaryAttachSource(looseWeapon, rootNode);
+            if (savedOffsetSource.valid) {
                 /*
-                 * FRIK offsets are local transforms written under a live first-person
-                 * attach parent. Loose refs are not equipped, so use only the current
-                 * parent frame and never a stale/hidden equipped-object world transform.
+                 * A user-saved grab offset always wins: it is an explicit,
+                 * per-object, per-hand tuned pose, so it overrides both the
+                 * generic FRIK weapon offset below and the throwable
+                 * live-pose default, and applies to any object (not just
+                 * loose weapons) and independently of handedness.
                  */
-                if (attachSource.offset.found && attachSource.parent && isFiniteNiTransform(attachSource.parent->world)) {
-                    frame.desiredRootWorld = multiplyTransforms(attachSource.parent->world, attachSource.offset.offset);
-                    frame.sourceVisible = f4vr::isNodeVisible(attachSource.visibilityNode);
-                    frame.reason = attachSource.offset.reason;
-                    haveDesiredRoot = true;
-                } else if (!selection.forcedArrival) {
-                    frame.reason = !attachSource.offset.found       ? attachSource.offset.reason :
-                                   !attachSource.parent             ? attachSource.missingParentReason :
-                                                                      attachSource.nonFiniteParentReason;
-                    return frame;
-                }
-            } else if (!selection.forcedArrival) {
-                frame.reason = "notPrimaryHand";
-                return frame;
-            }
-
-            if (!haveDesiredRoot) {
-                /*
-                 * Palm-anchored fallback for non-throwable forced arrivals
-                 * without a usable FRIK offset: root axes follow the live hand
-                 * basis and the root origin sits on the hand grab pivot. Any
-                 * fixed choice is correct here -- the goal is a deterministic
-                 * commit pose, not a per-weapon tuned grip.
-                 */
-                if (!isFiniteNiTransform(handWorldAtGrab)) {
-                    frame.reason = "nonFiniteHandWorld";
-                    return frame;
-                }
-                frame.desiredRootWorld.rotate = handWorldAtGrab.rotate;
-                frame.desiredRootWorld.translate = grabPivotAWorld;
+                frame.desiredRootWorld = savedOffsetSource.desiredRootWorld;
                 frame.sourceVisible = false;
-                frame.reason = "forcedArrivalPalmPose";
+                frame.reason = "savedGrabOffset";
+            } else {
+                if (!looseWeaponGrab) {
+                    frame.reason = "notLooseWeapon";
+                    return frame;
+                }
+                /*
+                 * Only non-throwable programmatic loose-weapon arrivals snap to a
+                 * canonical attach pose. Grenades, mines, and Molotov variants are
+                 * hand-thrown objects: force-grab and pull-catch commits keep the
+                 * normal mesh/body relation so the object is translated into the
+                 * pocket without forcing a root rotation from FRIK or the live hand.
+                 */
+                const auto* looseWeapon = selectedLooseWeaponForm(selection);
+                const bool throwableArrival = isThrowableLooseWeapon(looseWeapon) && (grabbedFromPullCatch || selection.forcedArrival);
+                if (throwableArrival) {
+                    frame.reason = selection.forcedArrival ? "throwableForcedArrivalPreservePose" : "throwablePullCatchPreservePose";
+                    return frame;
+                }
+                if (!rootNode || !isFiniteNiTransform(rootNode->world)) {
+                    frame.reason = "missingWeaponRoot";
+                    return frame;
+                }
+
+                bool haveDesiredRoot = false;
+                if (isPrimaryHandForWeaponAttach(isLeft)) {
+                    LooseWeaponPrimaryAttachSource attachSource{};
+                    attachSource = resolveLooseWeaponPrimaryAttachSource(looseWeapon, rootNode);
+                    /*
+                     * FRIK offsets are local transforms written under a live first-person
+                     * attach parent. Loose refs are not equipped, so use only the current
+                     * parent frame and never a stale/hidden equipped-object world transform.
+                     */
+                    if (attachSource.offset.found && attachSource.parent && isFiniteNiTransform(attachSource.parent->world)) {
+                        frame.desiredRootWorld = multiplyTransforms(attachSource.parent->world, attachSource.offset.offset);
+                        frame.sourceVisible = f4vr::isNodeVisible(attachSource.visibilityNode);
+                        frame.reason = attachSource.offset.reason;
+                        haveDesiredRoot = true;
+                    } else if (!selection.forcedArrival) {
+                        frame.reason = !attachSource.offset.found       ? attachSource.offset.reason :
+                                       !attachSource.parent             ? attachSource.missingParentReason :
+                                                                          attachSource.nonFiniteParentReason;
+                        return frame;
+                    }
+                } else if (!selection.forcedArrival) {
+                    frame.reason = "notPrimaryHand";
+                    return frame;
+                }
+
+                if (!haveDesiredRoot) {
+                    /*
+                     * Palm-anchored fallback for non-throwable forced arrivals
+                     * without a usable FRIK offset: root axes follow the live hand
+                     * basis and the root origin sits on the hand grab pivot. Any
+                     * fixed choice is correct here -- the goal is a deterministic
+                     * commit pose, not a per-weapon tuned grip.
+                     */
+                    if (!isFiniteNiTransform(handWorldAtGrab)) {
+                        frame.reason = "nonFiniteHandWorld";
+                        return frame;
+                    }
+                    frame.desiredRootWorld.rotate = handWorldAtGrab.rotate;
+                    frame.desiredRootWorld.translate = grabPivotAWorld;
+                    frame.sourceVisible = false;
+                    frame.reason = "forcedArrivalPalmPose";
+                }
             }
 
             frame.desiredRootWorld.scale =
-                std::isfinite(rootNode->world.scale) && rootNode->world.scale > 0.0001f ? rootNode->world.scale : 1.0f;
+                rootNode && std::isfinite(rootNode->world.scale) && rootNode->world.scale > 0.0001f ? rootNode->world.scale : 1.0f;
             if (!isFiniteNiTransform(frame.desiredRootWorld)) {
                 frame.reason = "nonFiniteDesiredRoot";
                 return frame;
@@ -9283,6 +9353,11 @@ namespace rock
                         grabPivotAWorld,
                         grabGripPoint);
                     desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
+                    RE::NiTransform grabProxyWorldForSavedOffset{};
+                    const bool grabProxyWorldValidForSavedOffset = (grabbedFromPullCatch || sel.forcedArrival) &&
+                                                                    tryComputeGrabProxyLocalPalmPocketFrameWorld(world, grabProxyWorldForSavedOffset);
+                    const auto savedGrabOffsetSource = resolveSavedGrabOffsetAttachSource(
+                        grabProxyWorldForSavedOffset, grabProxyWorldValidForSavedOffset, _isLeft, sel.refr);
                     const auto looseWeaponPrimaryAttachFrame = resolveLooseWeaponPrimaryAttachFrame(
                         looseWeaponGrab,
                         grabbedFromPullCatch,
@@ -9293,7 +9368,8 @@ namespace rock
                         objectToBodyAtGrab,
                         grabBodyWorldAtGrab,
                         grabPivotAWorld,
-                        handWorldTransform);
+                        handWorldTransform,
+                        savedGrabOffsetSource);
                     looseWeaponPrimaryAttachReason = looseWeaponPrimaryAttachFrame.reason;
                     if (looseWeaponPrimaryAttachFrame.valid) {
                         desiredObjectWorld = looseWeaponPrimaryAttachFrame.desiredObjectWorld;
