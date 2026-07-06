@@ -6511,6 +6511,8 @@ namespace rock
             input_remap_runtime::setRightHandHeldWeapon(false);
             input_remap_runtime::setHandInteractionEngaged(false, false);
             input_remap_runtime::setHandInteractionEngaged(true, false);
+            input_remap_runtime::setHeldObjectFormId(false, 0u);
+            input_remap_runtime::setHeldObjectFormId(true, 0u);
             input_remap_runtime::setEquippedWeaponPrimaryDetachInputActive(false);
             input_remap_runtime::setEquippedWeaponPrimaryDetached(false);
             input_remap_runtime::setProviderOpenVrGameInputSuppressed(false, false);
@@ -6530,6 +6532,8 @@ namespace rock
         // Engaged = holding a ROCK object or gripping the equipped weapon (support/two-hand, part carry while primary detached, attach-only glue).
         input_remap_runtime::setHandInteractionEngaged(false, _rightHand.isHolding() || _twoHandedGrip.isHandPartGripping(false));
         input_remap_runtime::setHandInteractionEngaged(true, _leftHand.isHolding() || _twoHandedGrip.isHandPartGripping(true));
+        input_remap_runtime::setHeldObjectFormId(false, _rightHand.isHolding() && _rightHand.getHeldRef() ? _rightHand.getHeldRef()->GetFormID() : 0u);
+        input_remap_runtime::setHeldObjectFormId(true, _leftHand.isHolding() && _leftHand.getHeldRef() ? _leftHand.getHeldRef()->GetFormID() : 0u);
         processProviderInteractionCommands(frame);
         servicePendingLooseGrenadeEquip(frame);
         servicePendingForceGrabCommits(frame);
@@ -6539,6 +6543,8 @@ namespace rock
         input_remap_runtime::setRightHandHeldWeapon(_rightHand.isHoldingLooseWeapon());
         input_remap_runtime::setHandInteractionEngaged(false, _rightHand.isHolding() || _twoHandedGrip.isHandPartGripping(false));
         input_remap_runtime::setHandInteractionEngaged(true, _leftHand.isHolding() || _twoHandedGrip.isHandPartGripping(true));
+        input_remap_runtime::setHeldObjectFormId(false, _rightHand.isHolding() && _rightHand.getHeldRef() ? _rightHand.getHeldRef()->GetFormID() : 0u);
+        input_remap_runtime::setHeldObjectFormId(true, _leftHand.isHolding() && _leftHand.getHeldRef() ? _leftHand.getHeldRef()->GetFormID() : 0u);
 
         auto releaseSuppressedHeldObject = [&](Hand& hand, bool isLeft, const char* reason) {
             auto* heldRef = hand.getHeldRef();

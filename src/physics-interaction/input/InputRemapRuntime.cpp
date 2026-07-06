@@ -144,6 +144,7 @@ namespace rock::input_remap_runtime
         std::atomic<bool> s_weaponDrawn{ false };
         std::atomic<bool> s_rightHandHeldWeapon{ false };
         std::array<std::atomic<bool>, 2> s_handInteractionEngaged{};
+        std::array<std::atomic<std::uint32_t>, 2> s_heldObjectFormId{};
         std::atomic<bool> s_equippedWeaponPrimaryDetachInputActive{ false };
         std::atomic<bool> s_equippedWeaponPrimaryDetached{ false };
         std::atomic<bool> s_hooksInstalled{ false };
@@ -995,11 +996,16 @@ namespace rock::input_remap_runtime
          * primary/secondary selection is kept generic to match the native handler's own
          * primary/secondary wand dispatch (see kActivate*WandPickRefGlobalOffset comment).
          */
-        [[nodiscard]] bool isTakeEquipHandEngaged(bool primaryHandEvent)
+        [[nodiscard]] std::size_t takeEquipHandIndex(bool primaryHandEvent)
         {
             const bool primaryHandIsLeft = f4vr::isLeftHandedMode();
             const bool eventHandIsLeft = primaryHandEvent ? primaryHandIsLeft : !primaryHandIsLeft;
-            return s_handInteractionEngaged[eventHandIsLeft ? 0u : 1u].load(std::memory_order_acquire);
+            return eventHandIsLeft ? 0u : 1u;
+        }
+
+        [[nodiscard]] bool isTakeEquipHandEngaged(bool primaryHandEvent)
+        {
+            return s_handInteractionEngaged[takeEquipHandIndex(primaryHandEvent)].load(std::memory_order_acquire);
         }
 
         [[nodiscard]] bool isTakeEquipTargetEligible(bool primaryHandEvent)
@@ -1008,6 +1014,10 @@ namespace rock::input_remap_runtime
             REL::Relocation<std::uint32_t*> pickRefHandleGlobal{ REL::Offset(globalOffset) };
             const std::uint32_t handleValue = *pickRefHandleGlobal;
             if (handleValue == 0) {
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Take/Equip classification stopped at stage=no-handle (offset=0x{:X} value=0)",
+                    globalOffset);
                 return false;
             }
 
@@ -1017,19 +1027,52 @@ namespace rock::input_remap_runtime
 
             const auto ref = handle.get();
             if (!ref) {
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Take/Equip classification stopped at stage=handle-resolve (offset=0x{:X} handleValue=0x{:X})",
+                    globalOffset,
+                    handleValue);
                 return false;
+            }
+
+            /*
+             * Priority case: the wand's pick-ref is very often the very object ROCK is already
+             * holding in this hand (it is right in front of/touching the hand). Native
+             * Activate must never take/equip an object ROCK already owns, regardless of its
+             * FormType, so an exact identity match against the hand's own held-object formID
+             * (pushed in each frame from PhysicsInteraction via setHeldObjectFormId, sourced
+             * from Hand::getHeldRef()) always suppresses - this does not depend on the
+             * FormType allowlist below at all.
+             */
+            const auto refFormId = ref->GetFormID();
+            const auto heldFormId = s_heldObjectFormId[takeEquipHandIndex(primaryHandEvent)].load(std::memory_order_acquire);
+            if (heldFormId != 0 && heldFormId == refFormId) {
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Take/Equip suppression classification: pick-ref formID=0x{:X} matches ROCK's own held object in this hand",
+                    refFormId);
+                return true;
             }
 
             const auto* baseForm = ref->GetObjectReference();
             const char* formTypeChars = baseForm ? baseForm->GetFormTypeString() : nullptr;
             if (!formTypeChars) {
+                ROCK_LOG_SAMPLE_DEBUG(Input,
+                    g_rockConfig.rockLogSampleMilliseconds,
+                    "Take/Equip classification stopped at stage=form-type (handleValue=0x{:X} refFormID=0x{:X} heldFormID=0x{:X})",
+                    handleValue,
+                    refFormId,
+                    heldFormId);
                 return false;
             }
 
             const bool eligible = far_selection_blacklist_policy::listContainsText(g_rockConfig.rockSuppressTakeEquipFormTypes, formTypeChars);
             ROCK_LOG_SAMPLE_DEBUG(Input,
                 g_rockConfig.rockLogSampleMilliseconds,
-                "Take/Equip suppression classification: pick-ref formType='{}' eligible={}",
+                "Take/Equip suppression classification: handleValue=0x{:X} refFormID=0x{:X} heldFormID=0x{:X} formType='{}' eligible={}",
+                handleValue,
+                refFormId,
+                heldFormId,
                 formTypeChars,
                 eligible ? "yes" : "no");
             return eligible;
@@ -1043,10 +1086,30 @@ namespace rock::input_remap_runtime
             }
 
             const bool primaryHandEvent = isPrimaryWandInputEvent(event);
+            const bool handEngaged = isTakeEquipHandEngaged(primaryHandEvent);
+            const bool targetEligible = handEngaged && isTakeEquipTargetEligible(primaryHandEvent);
+
             auto input = makeNativeActionSuppressionInput(g_rockConfig.rockSuppressTakeEquipGameInputWhileHolding, event, eventMatched);
-            input.takeEquipHandEngaged = isTakeEquipHandEngaged(primaryHandEvent);
-            input.takeEquipTargetEligible = input.takeEquipHandEngaged && isTakeEquipTargetEligible(primaryHandEvent);
-            return input_remap_policy::shouldSuppressNativeTakeEquipAction(input);
+            input.takeEquipHandEngaged = handEngaged;
+            input.takeEquipTargetEligible = targetEligible;
+            const bool suppress = input_remap_policy::shouldSuppressNativeTakeEquipAction(input);
+
+            // Temporary diagnostic: fires on every matched Activate/WandAccept edge so a single
+            // in-game repro shows exactly which gate (hand-engaged vs target-FormType) blocks
+            // suppression. Rate-limited like every other native-action trace in this file.
+            ROCK_LOG_SAMPLE_DEBUG(Input,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "Take/Equip gate: primaryHandEvent={} leftHandedMode={} handEngaged={} targetEligible={} suppressionEnabled={} gameplay={} menuInput={} -> {}",
+                primaryHandEvent ? "yes" : "no",
+                f4vr::isLeftHandedMode() ? "yes" : "no",
+                handEngaged ? "yes" : "no",
+                targetEligible ? "yes" : "no",
+                g_rockConfig.rockSuppressTakeEquipGameInputWhileHolding ? "yes" : "no",
+                input.gameplayInputAllowed ? "yes" : "no",
+                input.menuInputActive ? "yes" : "no",
+                suppress ? "suppress" : "native");
+
+            return suppress;
         }
 
         void hookedReadyWeaponEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)
@@ -1535,6 +1598,11 @@ namespace rock::input_remap_runtime
     void setHandInteractionEngaged(bool isLeft, bool engaged)
     {
         s_handInteractionEngaged[isLeft ? 0u : 1u].store(engaged, std::memory_order_release);
+    }
+
+    void setHeldObjectFormId(bool isLeft, std::uint32_t formId)
+    {
+        s_heldObjectFormId[isLeft ? 0u : 1u].store(formId, std::memory_order_release);
     }
 
     void setEquippedWeaponPrimaryDetachInputActive(bool active)

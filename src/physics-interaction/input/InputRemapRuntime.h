@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace RE
 {
     class InputEvent;
@@ -22,6 +24,7 @@ namespace rock::input_remap_runtime
     void setWeaponDrawn(bool weaponDrawn);
     void setRightHandHeldWeapon(bool heldWeapon);
     void setHandInteractionEngaged(bool isLeft, bool engaged);
+    void setHeldObjectFormId(bool isLeft, std::uint32_t formId);
     void setEquippedWeaponPrimaryDetachInputActive(bool active);
     void setEquippedWeaponPrimaryDetached(bool detached);
     void setProviderOpenVrGameInputSuppressed(bool isLeft, bool suppressed);
