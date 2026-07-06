@@ -5095,6 +5095,7 @@ namespace rock
         }
         file.object = formRef;
         file.objectName = heldRef->GetDisplayFullName() ? heldRef->GetDisplayFullName() : std::string{};
+        file.formatVersion = saved_grab_offset::kFormatVersion;
 
         auto& handOffset = isLeft ? file.left : file.right;
         handOffset.present = true;
@@ -5107,8 +5108,37 @@ namespace rock
             }
         }
 
+        /*
+         * Finger pose is only captured from a live organic mesh-curl grab
+         * (see Hand::tryGetLiveGrabFingerPoseSnapshot). If this hold never
+         * ran the mesh solve - e.g. re-saving position only while the object
+         * is already attached via a previously-saved offset (pull-catch/
+         * force-grab) - there is no fresh finger data this frame, so any
+         * finger pose already on disk for this hand is left untouched
+         * instead of being cleared.
+         */
+        Hand::GrabFingerPoseSnapshot fingerSnapshot{};
+        if (hand.tryGetLiveGrabFingerPoseSnapshot(fingerSnapshot)) {
+            handOffset.hasFingerPose = true;
+            handOffset.fingerValues[0] = fingerSnapshot.values[0];
+            handOffset.fingerValues[1] = fingerSnapshot.values[1];
+            handOffset.fingerValues[2] = fingerSnapshot.values[2];
+            handOffset.fingerValues[3] = fingerSnapshot.values[3];
+            handOffset.fingerValues[4] = fingerSnapshot.values[4];
+            handOffset.hasFingerJointValues = fingerSnapshot.hasJointValues;
+            if (fingerSnapshot.hasJointValues) {
+                for (std::size_t i = 0; i < fingerSnapshot.jointValues.size(); ++i) {
+                    handOffset.fingerJointValues[i] = fingerSnapshot.jointValues[i];
+                }
+            }
+        }
+
         saved_grab_offset::save(file);
-        ROCK_LOG_INFO(Hand, "Saved grab offset for {:08X} ({} hand)", baseForm->GetFormID(), isLeft ? "left" : "right");
+        ROCK_LOG_INFO(Hand,
+            "Saved grab offset for {:08X} ({} hand, finger pose {})",
+            baseForm->GetFormID(),
+            isLeft ? "left" : "right",
+            handOffset.hasFingerPose ? "captured" : "unchanged");
 
         const char* itemName = heldRef->GetDisplayFullName();
         f4vr::showNotification(std::string("Saved grab offset: ") + (itemName && *itemName ? itemName : "item"));

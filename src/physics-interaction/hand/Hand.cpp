@@ -1354,6 +1354,21 @@ namespace rock
         return true;
     }
 
+    bool Hand::tryGetLiveGrabFingerPoseSnapshot(GrabFingerPoseSnapshot& outSnapshot) const
+    {
+        outSnapshot = {};
+        if (!_hasGrabFingerPose || !_grabFingerPose.solved) {
+            return false;
+        }
+
+        outSnapshot.values = _grabFingerPose.values;
+        outSnapshot.hasJointValues = _hasGrabFingerJointPose;
+        if (_hasGrabFingerJointPose) {
+            outSnapshot.jointValues = _grabFingerJointPose;
+        }
+        return true;
+    }
+
     bool Hand::getGrabAuthorityProxyDebugSnapshot(RE::hknpWorld* world, const RE::NiTransform& rawHandWorld, GrabAuthorityProxyDebugSnapshot& out) const
     {
         /*

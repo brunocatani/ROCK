@@ -535,6 +535,25 @@ namespace rock
         RE::NiPoint3 computeGrabPivotAWorld(RE::hknpWorld* world, const RE::NiTransform& fallbackHandWorldTransform) const;
         bool tryComputeGrabProxyLocalPalmPocketFrameWorld(RE::hknpWorld* world, RE::NiTransform& outFrameWorld) const;
         bool tryComputeGrabProxyLocalPalmPocketPivotAWorld(RE::hknpWorld* world, RE::NiPoint3& outPivotWorld) const;
+
+        struct GrabFingerPoseSnapshot
+        {
+            std::array<float, 5> values{ 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+            bool hasJointValues = false;
+            std::array<float, 15> jointValues{};
+        };
+        /*
+         * Live per-finger curl for the object currently held with an organic
+         * mesh-curl grab, for the saved-grab-offset recorder (button save
+         * gesture). jointValues mirrors the actual per-frame-smoothed values
+         * last published to FRIK (_grabFingerJointPose); values is the
+         * original solved 5-finger curl, used as the fallback shape when
+         * joint-level publishing is disabled. Returns false when this hold
+         * never ran the mesh solve (e.g. a loose-weapon synthetic attach
+         * already uses a canned or previously-saved pose, so there is no
+         * live finger data to capture).
+         */
+        bool tryGetLiveGrabFingerPoseSnapshot(GrabFingerPoseSnapshot& outSnapshot) const;
         std::uint32_t getHandColliderBodyCount() const { return _boneColliders.getBodyCount(); }
         std::uint32_t getHandColliderBodyIdAtomic(std::size_t index) const { return _boneColliders.getBodyIdAtomic(index); }
         bool isHandColliderBodyId(std::uint32_t bodyId) const { return _boneColliders.isColliderBodyIdAtomic(bodyId); }

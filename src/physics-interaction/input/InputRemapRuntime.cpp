@@ -1177,14 +1177,19 @@ namespace rock::input_remap_runtime
 
         /*
          * Developer-mode saved-grab-offset recorder: a plain A-button
-         * (Activate/WandAccept) press on whichever hand is currently
-         * holding a ROCK object records/overwrites that object's saved
-         * grab offset for that hand. Reuses the same hand-engaged
-         * resolution as the take/equip suppression above, but does not
-         * gate on target FormType (it does not care what the wand is
-         * pointing at) and never stops the event - it is a pure
-         * side-effect tap, so native Activate/take-equip-suppression
-         * handling downstream is unaffected.
+         * (Activate/WandAccept) press records/overwrites the saved grab
+         * offset for whichever hand(s) currently hold a ROCK object.
+         *
+         * Activate/WandAccept is a single physical button that only ever
+         * fires from one wand (the primary, per isPrimaryWandInputEvent),
+         * so this deliberately does NOT map the event to a single target
+         * hand the way take/equip suppression does. It checks both hands'
+         * actual engaged state directly: that is what lets a left-hand-held
+         * object be saved even though the button itself lives on the
+         * (default) right/primary controller, and lets a single press save
+         * both hands as distinct offsets when each hand holds something.
+         * Never gates on target FormType and never stops the event - it is
+         * a pure side-effect tap.
          */
         [[nodiscard]] bool handleSavedGrabOffsetRequestEvent(const RE::InputEvent* event)
         {
@@ -1197,13 +1202,15 @@ namespace rock::input_remap_runtime
                 return false;
             }
 
-            const bool primaryHandEvent = isPrimaryWandInputEvent(event);
-            if (!isTakeEquipHandEngaged(primaryHandEvent)) {
-                return false;
+            bool requested = false;
+            for (const bool isLeft : { true, false }) {
+                const std::size_t handIndex = isLeft ? 0u : 1u;
+                if (s_handInteractionEngaged[handIndex].load(std::memory_order_acquire)) {
+                    s_pendingSavedGrabOffsetRequest[handIndex].store(true, std::memory_order_release);
+                    requested = true;
+                }
             }
-
-            s_pendingSavedGrabOffsetRequest[takeEquipHandIndex(primaryHandEvent)].store(true, std::memory_order_release);
-            return true;
+            return requested;
         }
 
         void hookedReadyWeaponEventHandler(void* handler, RE::InputEvent* inputEvent, void* cursor, void* unk)

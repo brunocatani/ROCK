@@ -853,6 +853,34 @@ namespace rock
             RE::NiTransform desiredRootWorld{};
         };
 
+        // Shared cache-only lookup backing both the transform and finger-pose
+        // saved-grab-offset readers below; false when no offset is saved for
+        // this object+hand (normal - most objects never had one saved).
+        bool tryLoadSavedGrabOffsetHandOffset(RE::TESObjectREFR* refr, bool isLeft, saved_grab_offset::HandOffset& out)
+        {
+            if (!refr) {
+                return false;
+            }
+            auto* baseForm = refr->GetObjectReference();
+            if (!baseForm) {
+                return false;
+            }
+            const auto formRef = saved_grab_offset::formRefFromRuntimeId(baseForm->GetFormID());
+            if (formRef.empty()) {
+                return false;
+            }
+            saved_grab_offset::SavedGrabOffsetFile file{};
+            if (!saved_grab_offset::load(formRef, file, nullptr)) {
+                return false;
+            }
+            const auto& handOffset = isLeft ? file.left : file.right;
+            if (!handOffset.present) {
+                return false;
+            }
+            out = handOffset;
+            return true;
+        }
+
         /*
          * proxyWorld/proxyWorldValid are resolved by the caller (a live
          * GrabAuthorityProxy read, Hand::tryComputeGrabProxyLocalPalmPocketFrameWorld)
@@ -865,23 +893,11 @@ namespace rock
             RE::TESObjectREFR* refr)
         {
             SavedGrabOffsetAttachSource source{};
-            if (!proxyWorldValid || !refr) {
+            if (!proxyWorldValid) {
                 return source;
             }
-            auto* baseForm = refr->GetObjectReference();
-            if (!baseForm) {
-                return source;
-            }
-            const auto formRef = saved_grab_offset::formRefFromRuntimeId(baseForm->GetFormID());
-            if (formRef.empty()) {
-                return source;
-            }
-            saved_grab_offset::SavedGrabOffsetFile file{};
-            if (!saved_grab_offset::load(formRef, file, nullptr)) {
-                return source;
-            }
-            const auto& handOffset = isLeft ? file.left : file.right;
-            if (!handOffset.present) {
+            saved_grab_offset::HandOffset handOffset{};
+            if (!tryLoadSavedGrabOffsetHandOffset(refr, isLeft, handOffset)) {
                 return source;
             }
 
@@ -895,6 +911,40 @@ namespace rock
 
             source.desiredRootWorld = grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, objectProxyLocal);
             source.valid = isFiniteNiTransform(source.desiredRootWorld);
+            return source;
+        }
+
+        struct SavedGrabOffsetFingerPoseSource
+        {
+            bool valid = false;
+            grab_finger_pose_runtime::SolvedGrabFingerPose pose{};
+        };
+
+        /*
+         * A saved grab offset's finger pose is only meaningful for the
+         * loose-weapon synthetic primary attach (pull-catch/force-grab):
+         * that path has no mesh contact to solve fingers from, so it
+         * otherwise falls back to a generic canned named pose (see
+         * publishLooseWeaponPrimaryAttachHandPose / grabSelectedObject).
+         */
+        SavedGrabOffsetFingerPoseSource resolveSavedGrabOffsetFingerPoseSource(bool isLeft, RE::TESObjectREFR* refr)
+        {
+            SavedGrabOffsetFingerPoseSource source{};
+            saved_grab_offset::HandOffset handOffset{};
+            if (!tryLoadSavedGrabOffsetHandOffset(refr, isLeft, handOffset) || !handOffset.hasFingerPose) {
+                return source;
+            }
+
+            source.pose.solved = true;
+            source.pose.values = { handOffset.fingerValues[0], handOffset.fingerValues[1], handOffset.fingerValues[2],
+                handOffset.fingerValues[3], handOffset.fingerValues[4] };
+            source.pose.hasJointValues = handOffset.hasFingerJointValues;
+            if (handOffset.hasFingerJointValues) {
+                for (std::size_t i = 0; i < source.pose.jointValues.size(); ++i) {
+                    source.pose.jointValues[i] = handOffset.fingerJointValues[i];
+                }
+            }
+            source.valid = true;
             return source;
         }
 
@@ -10483,9 +10533,39 @@ namespace rock
         _hasGrabFingerSurfaceTargetDebug = false;
         _grabFingerPosePublished = false;
         if (useLooseWeaponPrimaryAttachHandPose) {
-            _grabFingerPosePublished = publishLooseWeaponPrimaryAttachHandPose(_isLeft, sel.refr);
-            if (!_grabFingerPosePublished) {
-                ROCK_LOG_WARN(Hand, "{} hand loose weapon attach: failed to publish FRIK weapon hand pose", handName());
+            const auto savedFingerPoseSource = g_rockConfig.rockGrabMeshFingerPoseEnabled ?
+                resolveSavedGrabOffsetFingerPoseSource(_isLeft, sel.refr) :
+                SavedGrabOffsetFingerPoseSource{};
+            if (savedFingerPoseSource.valid) {
+                /*
+                 * A saved grab offset's finger pose (captured from a live
+                 * organic mesh-curl hold, see Hand::tryGetLiveGrabFingerPoseSnapshot)
+                 * takes over from the generic canned HoldingGun/HoldingMelee
+                 * pose below - this attach has no mesh contact to solve
+                 * fingers from, so without a saved snapshot it would
+                 * otherwise fall back to that canned pose. This is a
+                 * one-time publish (the synthetic attach never re-runs a
+                 * per-frame mesh resolve), so _hasGrabFingerPose deliberately
+                 * stays false: none of the mesh-resolve paths below are
+                 * meant to touch this pose.
+                 */
+                _grabFingerPose = savedFingerPoseSource.pose;
+                applyRockGrabHandPose(_isLeft,
+                    _grabFingerPose,
+                    _grabFingerJointPose,
+                    _hasGrabFingerJointPose,
+                    _grabFingerLocalTransforms,
+                    _grabFingerLocalTransformMask,
+                    _hasGrabFingerLocalTransforms,
+                    0.0f,
+                    /*publishLocalTransforms=*/false);
+                _grabFingerPosePublished = true;
+                ROCK_LOG_INFO(Hand, "{} hand loose weapon attach: applying saved finger pose", handName());
+            } else {
+                _grabFingerPosePublished = publishLooseWeaponPrimaryAttachHandPose(_isLeft, sel.refr);
+                if (!_grabFingerPosePublished) {
+                    ROCK_LOG_WARN(Hand, "{} hand loose weapon attach: failed to publish FRIK weapon hand pose", handName());
+                }
             }
         } else {
             _grabFingerPosePublished =

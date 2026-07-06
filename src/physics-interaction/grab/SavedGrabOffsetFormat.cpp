@@ -55,7 +55,43 @@ namespace rock::saved_grab_offset
             for (const float value : offset.rotate) {
                 rotate.push_back(value);
             }
-            return json{ { "translate", std::move(translate) }, { "rotate", std::move(rotate) } };
+            json j{ { "translate", std::move(translate) }, { "rotate", std::move(rotate) } };
+
+            if (offset.hasFingerPose) {
+                json fingerValues = json::array();
+                for (const float value : offset.fingerValues) {
+                    fingerValues.push_back(value);
+                }
+                json finger{ { "values", std::move(fingerValues) } };
+                if (offset.hasFingerJointValues) {
+                    json jointValues = json::array();
+                    for (const float value : offset.fingerJointValues) {
+                        jointValues.push_back(value);
+                    }
+                    finger["jointValues"] = std::move(jointValues);
+                }
+                j["finger"] = std::move(finger);
+            }
+            return j;
+        }
+
+        // Reads a fixed-size float array field; leaves out untouched and returns
+        // false on any missing/wrong-size/non-numeric entry (fail closed).
+        template <std::size_t N>
+        bool floatArrayFromJson(const json& j, const char* key, float (&out)[N])
+        {
+            if (!j.contains(key) || !j[key].is_array() || j[key].size() != N) {
+                return false;
+            }
+            for (std::size_t i = 0; i < N; ++i) {
+                if (!j[key][i].is_number()) {
+                    return false;
+                }
+            }
+            for (std::size_t i = 0; i < N; ++i) {
+                out[i] = j[key][i].get<float>();
+            }
+            return true;
         }
 
         bool handOffsetFromJson(const json& j, HandOffset& out)
@@ -77,6 +113,16 @@ namespace rock::saved_grab_offset
                 out.rotate[i] = j["rotate"][i].get<float>();
             }
             out.present = true;
+
+            out.hasFingerPose = false;
+            out.hasFingerJointValues = false;
+            if (j.contains("finger") && j["finger"].is_object()) {
+                const auto& fingerJson = j["finger"];
+                out.hasFingerPose = floatArrayFromJson(fingerJson, "values", out.fingerValues);
+                if (out.hasFingerPose && fingerJson.contains("jointValues")) {
+                    out.hasFingerJointValues = floatArrayFromJson(fingerJson, "jointValues", out.fingerJointValues);
+                }
+            }
             return true;
         }
     }
