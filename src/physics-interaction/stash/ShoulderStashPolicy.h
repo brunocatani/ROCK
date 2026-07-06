@@ -81,7 +81,7 @@ namespace rock::shoulder_stash_notification_policy
 
     [[nodiscard]] inline std::string formatCollectedNotification(std::string_view itemName, int count, std::uint32_t formID)
     {
-        std::string message = "[ROCK] Collected ";
+        std::string message = "Collected ";
         message += itemName.empty() ? fallbackItemName(formID) : std::string(itemName);
 
         const int safeCount = (std::max)(1, count);
@@ -97,7 +97,7 @@ namespace rock::shoulder_stash_notification_policy
     // and is only being unequipped, not added to the inventory.
     [[nodiscard]] inline std::string formatStowedNotification(std::string_view itemName, std::uint32_t formID)
     {
-        std::string message = "[ROCK] Stowed ";
+        std::string message = "Stowed ";
         message += itemName.empty() ? fallbackItemName(formID) : std::string(itemName);
         return message;
     }

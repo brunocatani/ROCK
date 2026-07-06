@@ -136,22 +136,22 @@ int main()
     const auto namedNotification = notifications::formatCollectedNotification("Abraxo Cleaner", 3, 0x000ABCDEu);
     ok &= expectString("collected notification includes item count",
         namedNotification.c_str(),
-        "[ROCK] Collected Abraxo Cleaner x3");
+        "Collected Abraxo Cleaner x3");
 
     const auto fallbackNotification = notifications::formatCollectedNotification({}, 1, 0x000ABCDEu);
     ok &= expectString("collected notification falls back to form id",
         fallbackNotification.c_str(),
-        "[ROCK] Collected item 000ABCDE");
+        "Collected item 000ABCDE");
 
     const auto stowedNotification = notifications::formatStowedNotification("10mm Pistol", 0x000ABCDEu);
     ok &= expectString("stowed notification uses the stow verb",
         stowedNotification.c_str(),
-        "[ROCK] Stowed 10mm Pistol");
+        "Stowed 10mm Pistol");
 
     const auto stowedFallbackNotification = notifications::formatStowedNotification({}, 0x000ABCDEu);
     ok &= expectString("stowed notification falls back to form id",
         stowedFallbackNotification.c_str(),
-        "[ROCK] Stowed item 000ABCDE");
+        "Stowed item 000ABCDE");
 
     return ok ? 0 : 1;
 }
