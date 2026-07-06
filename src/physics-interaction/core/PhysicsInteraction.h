@@ -14,6 +14,7 @@
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/grab/GrabEvent.h"
 #include "physics-interaction/grab/GrabLocomotionAuthorityBridge.h"
+#include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/contact/SoftContactRuntime.h"
 #include "physics-interaction/contact/GeneratedBodyContactRegistry.h"
@@ -21,6 +22,7 @@
 #include "physics-interaction/collision/ContactActivityTracker.h"
 #include "physics-interaction/consume/MouthConsumeDetector.h"
 #include "physics-interaction/PhysicsLog.h"
+#include "physics-interaction/core/PendingForceGrabCommit.h"
 #include "physics-interaction/core/PhysicsFrameContext.h"
 #include "physics-interaction/core/PhysicsLifecycleState.h"
 #include "physics-interaction/feedback/FeedbackHaptics.h"
@@ -200,7 +202,12 @@ namespace rock
 
         void updateGrabInput(const PhysicsFrameContext& frame);
         void processProviderInteractionCommands(const PhysicsFrameContext& frame);
+        bool canHandAcceptForceGrab(const Hand& hand, bool isLeft, bool handDisabled) const;
         void servicePendingLooseGrenadeEquip(const PhysicsFrameContext& frame);
+        void servicePendingForceGrabCommits(const PhysicsFrameContext& frame);
+        void clearPendingForceGrabCommitsForOrigin(PendingForceGrabCommitOrigin origin);
+        void updateSavedGrabOffsetGesture(const PhysicsFrameContext& frame);
+        void saveGrabOffsetForHand(Hand& hand, bool isLeft, RE::hknpWorld* hknpWorld);
         void updateEquippedWeaponReleaseCapture(const PhysicsFrameContext& frame, RE::NiNode* weaponNode);
         void armEquippedWeaponDropMomentumHandoff(
             const RE::ObjectRefHandle& handle,
@@ -381,14 +388,6 @@ namespace rock
             std::uint32_t bodyId{ INVALID_CONTACT_BODY_ID };
             float settledSeconds{ 0.0f };
         };
-        struct PendingLooseGrenadeGrabState
-        {
-            bool active{ false };
-            std::uint64_t requestId{ 0 };
-            RE::ObjectRefHandle handle{};
-            loose_grenade_runtime::GrenadeRuntimeData runtime{};
-            float elapsedSeconds{ 0.0f };
-        };
         struct ArmedLooseGrenadeFuseState
         {
             bool active{ false };
@@ -399,7 +398,7 @@ namespace rock
             std::uint32_t impactBodyId{ INVALID_CONTACT_BODY_ID };
         };
         static constexpr std::size_t kArmedLooseGrenadeFuseCapacity = 4;
-        PendingLooseGrenadeGrabState _pendingLooseGrenadeGrab{};
+        std::array<PendingForceGrabCommit, 2> _pendingForceGrabCommits{};
         std::array<ArmedLooseGrenadeFuseState, kArmedLooseGrenadeFuseCapacity> _armedLooseGrenadeFuses{};
         std::array<std::atomic<std::uint32_t>, kArmedLooseGrenadeFuseCapacity> _armedLooseGrenadeImpactBodyIds{};
         std::atomic<std::uint64_t> _pendingLooseGrenadeImpactPair{ INVALID_HELD_IMPACT_PAIR };
@@ -548,6 +547,14 @@ namespace rock
         std::array<grab_input_intent_policy::RuntimeState, 2> _grabInputIntentStates{};
         std::array<peer_held_join_retry_policy::RuntimeState, 2> _peerHeldJoinRetryStates{};
         std::array<HeldWeaponAutoEquipState, 2> _heldWeaponAutoEquipStates{};
+
+        struct SavedGrabOffsetClickState
+        {
+            bool tracking = false;
+            float elapsedSeconds = 0.0f;
+        };
+        std::array<SavedGrabOffsetClickState, 2> _savedGrabOffsetClickStates{};
+        saved_grab_offset::SavedGrabOffsetStore _savedGrabOffsetStore;
 
         RE::NiPoint3 _prevSmoothedPos;
         int _deltaLogCounter = 0;

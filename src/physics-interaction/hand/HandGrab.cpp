@@ -8053,6 +8053,7 @@ namespace rock
         _savedObjectState.bodyId = objectBodyId;
         _savedObjectState.refr = sel.refr;
         _savedObjectState.targetKind = sel.targetKind;
+        _savedObjectState.acquiredViaForceGrabApi = sel.forcedArrival;
         _savedObjectState.originalFilterInfo = preparedBody->collisionFilterInfo;
         _savedObjectState.originalMotionPropsId = selectedOriginalMotionPropsId;
         if (const auto* originalPrimaryRecord = beforePrepBodySet.findRecord(objectBodyId.value)) {

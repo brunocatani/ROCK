@@ -218,6 +218,12 @@ namespace rock
         std::int16_t savedPackedMass = 0;
         bool inertiaModified = false;
         std::vector<SavedMotionInertiaState> motionInertiaStates;
+        /*
+         * Mirrors SelectedObject::forcedArrival at commit time. Scopes the
+         * saved-grab-offset feature (button-click save/apply) to objects
+         * acquired via the force-grab API, not organic pinch/proximity holds.
+         */
+        bool acquiredViaForceGrabApi = false;
 
         bool isValid() const { return bodyId.value != 0x7FFF'FFFF && refr != nullptr; }
 
@@ -233,6 +239,7 @@ namespace rock
             savedPackedMass = 0;
             inertiaModified = false;
             motionInertiaStates.clear();
+            acquiredViaForceGrabApi = false;
         }
     };
 

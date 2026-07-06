@@ -406,6 +406,7 @@ namespace rock
 
         rockGrabConstraintMaxForce = 2000.0f;
         rockGrabMaxForceToMassRatio = 500.0f;
+        rockForceGrabAttachSettleSeconds = 0.10f;
         rockGrabEffectiveMotorMassFloorEnabled = true;
         rockGrabEffectiveMotorMassFloor = kDefaultGrabEffectiveMotorMassFloor;
         rockGrabPhysicsRateForceScalingEnabled = true;
@@ -1470,6 +1471,13 @@ namespace rock
 
         rockGrabConstraintMaxForce = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabConstraintMaxForce", rockGrabConstraintMaxForce));
         rockGrabMaxForceToMassRatio = static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabMaxForceToMassRatio", rockGrabMaxForceToMassRatio));
+        rockForceGrabAttachSettleSeconds = readClampedFloat(ini,
+            SECTION,
+            "fForceGrabAttachSettleSeconds",
+            rockForceGrabAttachSettleSeconds,
+            0.10f,
+            0.0f,
+            1.0f);
         rockGrabEffectiveMotorMassFloorEnabled =
             ini.GetBoolValue(SECTION, "bGrabEffectiveMotorMassFloorEnabled", rockGrabEffectiveMotorMassFloorEnabled);
         rockGrabEffectiveMotorMassFloor = readClampedFloat(ini,

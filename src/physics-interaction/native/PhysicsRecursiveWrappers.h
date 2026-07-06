@@ -5,6 +5,7 @@
 namespace RE
 {
     class NiAVObject;
+    class NiTransform;
     class hknpWorld;
 }
 
@@ -52,6 +53,15 @@ namespace rock::physics_recursive_wrappers
     }
 
     bool setMotionRecursive(RE::NiAVObject* root, MotionPreset preset, bool recursive, bool force, bool activate);
+
+    /*
+     * Writes rootNode->local so the engine's own transform propagation
+     * (UpdateTransforms) resolves rootNode->world to desiredWorld on this
+     * node and its children. Used to reposition a loose object's root before
+     * a force-grab commit reads its NiNode transform back (Hand::grabSelectedObject
+     * reads collidableNode->world, not the Havok body).
+     */
+    bool setRootNodeWorldTransform(RE::NiAVObject* rootNode, const RE::NiTransform& desiredWorld);
 
     bool enableCollisionRecursive(RE::NiAVObject* root, bool enable, bool recursive, bool force);
 
