@@ -15,6 +15,7 @@
 #include <mutex>
 #include <sstream>
 #include <thread>
+#include <unordered_map>
 
 namespace rock::saved_grab_offset
 {
@@ -73,6 +74,44 @@ namespace rock::saved_grab_offset
                 return _directory + "\\" + sanitizeForFileName(object.plugin) + "_" + idText + ".json";
             }
 
+            void preload()
+            {
+                std::error_code ec;
+                if (!std::filesystem::exists(_directory, ec) || !std::filesystem::is_directory(_directory, ec)) {
+                    return;
+                }
+
+                std::unordered_map<std::string, SavedGrabOffsetFile> loaded;
+                std::size_t failedCount = 0;
+                for (const auto& entry : std::filesystem::directory_iterator(_directory, ec)) {
+                    if (ec) {
+                        break;
+                    }
+                    if (!entry.is_regular_file(ec) || entry.path().extension() != ".json") {
+                        continue;
+                    }
+
+                    std::ifstream stream(entry.path(), std::ios::binary);
+                    if (!stream) {
+                        ++failedCount;
+                        continue;
+                    }
+                    std::ostringstream buffer;
+                    buffer << stream.rdbuf();
+
+                    SavedGrabOffsetFile file{};
+                    if (!parse(buffer.str(), file, nullptr)) {
+                        ++failedCount;
+                        continue;
+                    }
+                    loaded.emplace(entry.path().string(), std::move(file));
+                }
+
+                std::lock_guard lock(_mutex);
+                _cache = std::move(loaded);
+                ROCK_LOG_INFO(Config, "Loaded {} saved grab offset(s) ({} unreadable)", _cache.size(), failedCount);
+            }
+
             bool load(const FormRef& object, SavedGrabOffsetFile& out, std::string* outError) const
             {
                 if (outError) {
@@ -82,20 +121,13 @@ namespace rock::saved_grab_offset
                     return false;
                 }
                 const auto path = filePathForObject(object);
-                std::error_code ec;
-                if (!std::filesystem::exists(path, ec)) {
-                    return false;  // absent file: normal, empty error
+                std::lock_guard lock(_mutex);
+                const auto it = _cache.find(path);
+                if (it == _cache.end()) {
+                    return false;  // no saved offset for this object; normal, empty error
                 }
-                std::ifstream stream(path, std::ios::binary);
-                if (!stream) {
-                    if (outError) {
-                        *outError = "file exists but could not be opened";
-                    }
-                    return false;
-                }
-                std::ostringstream buffer;
-                buffer << stream.rdbuf();
-                return parse(buffer.str(), out, outError);
+                out = it->second;
+                return true;
             }
 
             void save(const SavedGrabOffsetFile& file)
@@ -106,6 +138,10 @@ namespace rock::saved_grab_offset
                 PendingWrite write{ filePathForObject(file.object), serialize(file) };
                 {
                     std::lock_guard lock(_mutex);
+                    // Cache first, so the very next grab of this object
+                    // (even before the writer thread finishes) sees it.
+                    _cache[write.path] = file;
+
                     // Latest-wins per file: replace a still-pending write of
                     // the same object instead of queueing behind it.
                     bool replaced = false;
@@ -194,9 +230,10 @@ namespace rock::saved_grab_offset
 
             std::string _directory;
             std::thread _writer;
-            std::mutex _mutex;
+            mutable std::mutex _mutex;
             std::condition_variable _wake;
             std::deque<PendingWrite> _queue;
+            std::unordered_map<std::string, SavedGrabOffsetFile> _cache;
             bool _stop{ false };
             bool _writerStarted{ false };
         };
@@ -228,6 +265,11 @@ namespace rock::saved_grab_offset
             return {};
         }
         return ref;
+    }
+
+    void preload()
+    {
+        instance().preload();
     }
 
     bool load(const FormRef& object, SavedGrabOffsetFile& out, std::string* outError)

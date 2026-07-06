@@ -17,6 +17,7 @@
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/core/PhysicsInteraction.h"
 #include "physics-interaction/grab/FrikWeaponOffsetCache.h"
+#include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
 #include "physics-interaction/weapon/SeeThroughScopesCompatibility.h"
@@ -449,6 +450,7 @@ namespace
 
             g_rockConfig.load();
             rock::frik_weapon_offset_cache::preload();
+            rock::saved_grab_offset::preload();
             rock::installHavokTimingFixHook();
             runtime_state::initialize();
             see_through_scopes::refreshRuntimeState();
