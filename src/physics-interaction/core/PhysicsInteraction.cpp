@@ -5071,7 +5071,19 @@ namespace rock
 
     void PhysicsInteraction::saveGrabOffsetForHand(Hand& hand, bool isLeft, RE::hknpWorld* hknpWorld)
     {
-        if (!hknpWorld || !hand.isHolding() || !hand.getSavedObjectState().acquiredViaForceGrabApi) {
+        if (!hknpWorld) {
+            ROCK_LOG_WARN(Hand, "Saved grab offset: aborted, no hknpWorld this frame ({} hand)", isLeft ? "left" : "right");
+            return;
+        }
+        if (!hand.isHolding()) {
+            ROCK_LOG_WARN(Hand, "Saved grab offset: aborted, {} hand is not holding anything", isLeft ? "left" : "right");
+            return;
+        }
+        if (!hand.getSavedObjectState().acquiredViaForceGrabApi) {
+            ROCK_LOG_WARN(Hand,
+                "Saved grab offset: aborted, {} hand's held object (formID={:08X}) was not acquired via the force-grab API",
+                isLeft ? "left" : "right",
+                hand.getHeldRef() ? hand.getHeldRef()->GetFormID() : 0);
             return;
         }
 
@@ -5079,11 +5091,17 @@ namespace rock
         auto* rootNode = heldRef ? heldRef->Get3D() : nullptr;
         auto* baseForm = heldRef ? heldRef->GetObjectReference() : nullptr;
         if (!rootNode || !baseForm) {
+            ROCK_LOG_WARN(Hand,
+                "Saved grab offset: aborted, held ref missing 3D root or base form ({} hand, refr={:08X})",
+                isLeft ? "left" : "right",
+                heldRef ? heldRef->GetFormID() : 0);
             return;
         }
 
         const auto formRef = saved_grab_offset::SavedGrabOffsetStore::formRefFromRuntimeId(baseForm->GetFormID());
         if (formRef.empty()) {
+            ROCK_LOG_WARN(Hand, "Saved grab offset: aborted, could not resolve load-order-independent identity for base form {:08X}",
+                baseForm->GetFormID());
             return;
         }
 
@@ -5139,8 +5157,23 @@ namespace rock
 
         const auto leftRaw = input_remap_runtime::peekRawButtonState(true, kSavedGrabOffsetButtonId);
         const bool leftHeld = leftRaw.available ? leftRaw.held : vrcf::VRControllers.isPressHeldDown(vrcf::Hand::Left, kSavedGrabOffsetButtonId);
+        const bool menuActive = input_remap_runtime::isMenuInputActive();
 
-        if (!rightHeld || leftHeld || input_remap_runtime::isMenuInputActive()) {
+        if (rightHeld) {
+            ROCK_LOG_SAMPLE_DEBUG(Hand,
+                g_rockConfig.rockLogSampleMilliseconds,
+                "Saved grab offset gesture: rightHeld={} rightAvailable={} leftHeld={} leftAvailable={} menuActive={} elapsed={:.2f}s fired={} holding={}",
+                rightHeld,
+                rightRaw.available,
+                leftHeld,
+                leftRaw.available,
+                menuActive,
+                state.elapsedSeconds,
+                state.fired,
+                _rightHand.isHolding());
+        }
+
+        if (!rightHeld || leftHeld || menuActive) {
             state = {};
             return;
         }
