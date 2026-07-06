@@ -177,6 +177,14 @@ Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_HAND_INPUT_SUPPRE
     'SDK must expose a table-size guard for hand input suppression slots.'
 Require-Text 'src/api/ROCKProviderApi.h' 'WeaponPartInteraction' `
     'v1 must expose weapon part interaction capability and feature names.'
+Require-Text 'src/api/ROCKProviderApi.h' 'RealisticScopesOverride' `
+    'v1 must expose the Realistic Scopes override consumer capability and feature bit.'
+Require-Text 'src/api/ROCKProviderApi.h' 'ROCK_PROVIDER_API_V1_REALISTIC_SCOPES_TABLE_BYTES' `
+    'SDK must expose a table-size guard for the Realistic Scopes override slot.'
+Require-Text 'src/api/ROCKProviderApi.h' 'supportsRealisticScopesOverrideV1' `
+    'SDK must expose safe feature/table helpers for the Realistic Scopes override.'
+Require-Text 'src/api/ROCKProviderApi.cpp' 'clearRealisticScopesOverrideForOwnerLocked' `
+    'Unregistering a consumer must release that owner Realistic Scopes override request.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderWeaponPartTargetV1' `
     'v1 must expose weapon part target registrations.'
 Require-Text 'src/api/ROCKProviderApi.h' 'RockProviderWeaponPartDriveTargetV1' `
@@ -282,7 +290,10 @@ $expectedProviderFunctions = [string[]]@(
     'queryEquippedWeaponClassificationV1',
     'getWeaponPartGripStateV1',
     'getRawWandButtonStateV1',
-    'isNativePipboyInputSuppressedV1'
+    'isNativePipboyInputSuppressedV1',
+    'setRealisticScopesOverrideV1',
+    'clearRealisticScopesOverrideV1',
+    'isRealisticScopesActiveV1'
 )
 Require-SequenceEqual 'ROCKProviderApi function pointer order' (Get-ProviderFunctionNames $providerHeader) $expectedProviderFunctions
 

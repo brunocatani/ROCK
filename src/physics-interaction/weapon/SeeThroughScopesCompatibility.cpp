@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "api/ROCKProviderApi.h"
 #include "common/CommonUtils.h"
 #include "RE/Bethesda/BSExtraData.h"
 #include "RE/Bethesda/BGSMod.h"
@@ -74,6 +75,11 @@ namespace
         bool legacyDllWarningLogged = false;
         bool overlayPatchApplied = false;
         std::vector<OverlayPatchRecord> overlayPatchRecords;
+        // Realistic Scopes mode's overlay suppression is deliberately a separate
+        // patch set from the STS-only one above: it spans every native-scope-
+        // overlay OMOD in the load order (STS-owned or not), not just STS ones.
+        bool realisticScopesOverlayPatchApplied = false;
+        std::vector<OverlayPatchRecord> realisticScopesOverlayPatchRecords;
         RE::NiPointer<RE::NiNode> reticleNode;
         RE::NiPoint3 reticleBaselineLocal = RE::NiPoint3::ZERO;
         bool reticleBaselineValid = false;
@@ -99,9 +105,24 @@ namespace
         return compatibilityConfigEnabled() && rock::g_rockConfig.rockSeeThroughScopesReticleAlignmentEnabled;
     }
 
+    /*
+     * Realistic Scopes mode is independent of the STS hybrid compatibility
+     * switch above: it must keep suppressing the game's native scope overlay
+     * even when See-Through Scopes is not installed at all, so it is checked
+     * on its own rather than folded into compatibilityConfigEnabled(). The
+     * INI flag and any external provider override (rock::provider::
+     * isRealisticScopesOverrideActive) are combined with OR - either source
+     * alone is enough to force scopes off.
+     */
+    [[nodiscard]] bool realisticScopesConfigEnabled()
+    {
+        return rock::g_rockConfig.rockEnabled &&
+               (rock::g_rockConfig.rockRealisticScopesEnabled || rock::provider::isRealisticScopesOverrideActive());
+    }
+
     [[nodiscard]] bool runtimeActive()
     {
-        return s_state.initialized && compatibilityConfigEnabled() && s_state.detected;
+        return s_state.initialized && (realisticScopesConfigEnabled() || (compatibilityConfigEnabled() && s_state.detected));
     }
 
     void logInvalidNativeNode(const char* context, const void* ptr, const char* reason)
@@ -419,6 +440,80 @@ namespace
             patchedMods);
     }
 
+    void restoreRealisticScopesOverlayPatch()
+    {
+        if (!s_state.realisticScopesOverlayPatchApplied) {
+            s_state.realisticScopesOverlayPatchRecords.clear();
+            return;
+        }
+
+        for (const auto& record : s_state.realisticScopesOverlayPatchRecords) {
+            if (record.property) {
+                std::memcpy(&record.property->data, record.originalData.data(), record.originalData.size());
+            }
+        }
+
+        ROCK_LOG_INFO(Scope, "Restored {} native scope overlay properties (Realistic Scopes mode).", s_state.realisticScopesOverlayPatchRecords.size());
+        s_state.realisticScopesOverlayPatchRecords.clear();
+        s_state.realisticScopesOverlayPatchApplied = false;
+    }
+
+    /*
+     * Realistic Scopes mode's overlay suppression, unlike applyOverlayPatch()
+     * above, is not filtered to STS-owned OMODs: it must also zero out the
+     * native scope overlay property on plain vanilla/non-STS optics, since the
+     * whole point of the mode is that no scope, of any kind, ever shows an
+     * overlay. Kept as its own function/record set (rather than an
+     * includeNonStsMods parameter on applyOverlayPatch) so the STS-only patch
+     * path used by StsPreferred is untouched and stays independently provable.
+     */
+    void applyRealisticScopesOverlayPatch()
+    {
+        if (s_state.realisticScopesOverlayPatchApplied) {
+            return;
+        }
+
+        auto* dataHandler = RE::TESDataHandler::GetSingleton();
+        if (!dataHandler) {
+            return;
+        }
+
+        std::uint32_t patchedMods = 0;
+        auto& omods = dataHandler->GetFormArray<RE::BGSMod::Attachment::Mod>();
+
+        for (auto* omod : omods) {
+            if (!omod) {
+                continue;
+            }
+
+            bool patchedThisMod = false;
+            for (auto& property : propertyModsFor(*omod)) {
+                if (property.target != rock::see_through_scopes_policy::kNativeScopeOverlayTarget) {
+                    continue;
+                }
+
+                OverlayPatchRecord record{};
+                record.property = &property;
+                std::memcpy(record.originalData.data(), &property.data, record.originalData.size());
+                s_state.realisticScopesOverlayPatchRecords.push_back(record);
+
+                setScopeOverlayPropertyFalse(property);
+                patchedThisMod = true;
+            }
+
+            if (patchedThisMod) {
+                ++patchedMods;
+            }
+        }
+
+        s_state.realisticScopesOverlayPatchApplied = true;
+        ROCK_LOG_INFO(
+            Scope,
+            "Patched {} native scope overlay properties across {} weapon attachment OMOD records (Realistic Scopes mode).",
+            s_state.realisticScopesOverlayPatchRecords.size(),
+            patchedMods);
+    }
+
     [[nodiscard]] RE::NiNode* findWeaponNode()
     {
         auto* skeleton = f4cf::f4vr::getFirstPersonSkeleton();
@@ -622,6 +717,7 @@ namespace
             .activeStsScopeMods = snapshot.activeStsScopeMods,
             .activeNativeScopeMods = snapshot.activeNativeScopeMods,
             .stsScopeMeshRenderable = snapshot.stsScopeMeshRenderable,
+            .realisticScopesForced = realisticScopesConfigEnabled(),
         });
         return snapshot;
     }
@@ -702,7 +798,8 @@ namespace
 
     void keepScopeMeshVisible(const EquippedScopeRouteSnapshot& equippedScope)
     {
-        if (equippedScope.route != EquippedScopeRoute::StsPreferred || !equippedScope.weaponDrawn) {
+        if (!equippedScope.weaponDrawn ||
+            (equippedScope.route != EquippedScopeRoute::StsPreferred && equippedScope.route != EquippedScopeRoute::Suppressed)) {
             restoreScopeMeshBaselineIfPresent();
             return;
         }
@@ -731,8 +828,15 @@ namespace
             s_state.scopeVisibilityBaselineValid = true;
         }
 
-        scopeNormalFlags |= kNodeHiddenFlag;
-        scopeAimingFlags &= ~kNodeHiddenFlag;
+        if (equippedScope.route == EquippedScopeRoute::Suppressed) {
+            // Realistic Scopes mode: hide both STS mesh states outright, since
+            // no scope glass (STS or native) is allowed to render at all.
+            scopeNormalFlags |= kNodeHiddenFlag;
+            scopeAimingFlags |= kNodeHiddenFlag;
+        } else {
+            scopeNormalFlags |= kNodeHiddenFlag;
+            scopeAimingFlags &= ~kNodeHiddenFlag;
+        }
 
         if (!writeNodeFlags(scopeNormal, scopeNormalFlags, "ScopeNormal visibility") ||
             !writeNodeFlags(scopeAiming, scopeAimingFlags, "ScopeAiming visibility")) {
@@ -916,6 +1020,7 @@ namespace rock::see_through_scopes
 
         if (!runtimeActive()) {
             restoreOverlayPatch();
+            restoreRealisticScopesOverlayPatch();
             restoreReticleBaselineIfPresent();
             restoreScopeMeshBaselineIfPresent();
             s_state.scopeRoute = {};
@@ -925,6 +1030,7 @@ namespace rock::see_through_scopes
     void resetRuntimeState()
     {
         restoreOverlayPatch();
+        restoreRealisticScopesOverlayPatch();
         restoreReticleBaselineIfPresent();
         restoreScopeMeshBaselineIfPresent();
         s_state.initialized = false;
@@ -944,6 +1050,7 @@ namespace rock::see_through_scopes
 
         if (!runtimeActive()) {
             restoreOverlayPatch();
+            restoreRealisticScopesOverlayPatch();
             restoreReticleBaselineIfPresent();
             restoreScopeMeshBaselineIfPresent();
             s_state.scopeRoute = {};
@@ -954,8 +1061,14 @@ namespace rock::see_through_scopes
         logScopeRouteIfChanged(s_state.scopeRoute);
         if (s_state.scopeRoute.route == EquippedScopeRoute::StsPreferred) {
             applyOverlayPatch();
+            restoreRealisticScopesOverlayPatch();
         } else {
             restoreOverlayPatch();
+            if (s_state.scopeRoute.route == EquippedScopeRoute::Suppressed) {
+                applyRealisticScopesOverlayPatch();
+            } else {
+                restoreRealisticScopesOverlayPatch();
+            }
         }
         alignReticle(s_state.scopeRoute);
     }

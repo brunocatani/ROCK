@@ -76,12 +76,40 @@ int main()
         }),
         EquippedScopeRoute::None);
 
+    ok &= expectRoute("Realistic Scopes suppresses STS even when its mesh is renderable",
+        chooseEquippedScopeRoute(EquippedScopeRouteInput{
+            .activeStsScopeMods = 1,
+            .activeNativeScopeMods = 0,
+            .stsScopeMeshRenderable = true,
+            .realisticScopesForced = true,
+        }),
+        EquippedScopeRoute::Suppressed);
+
+    ok &= expectRoute("Realistic Scopes suppresses native scopes too",
+        chooseEquippedScopeRoute(EquippedScopeRouteInput{
+            .activeStsScopeMods = 0,
+            .activeNativeScopeMods = 1,
+            .realisticScopesForced = true,
+        }),
+        EquippedScopeRoute::Suppressed);
+
+    ok &= expectRoute("Realistic Scopes is safe with no scope equipped at all",
+        chooseEquippedScopeRoute(EquippedScopeRouteInput{
+            .activeStsScopeMods = 0,
+            .activeNativeScopeMods = 0,
+            .realisticScopesForced = true,
+        }),
+        EquippedScopeRoute::Suppressed);
+
     ok &= expectString("route name exposes STS preference",
         equippedScopeRouteName(EquippedScopeRoute::StsPreferred),
         "sts-preferred");
     ok &= expectString("route name exposes native fallback",
         equippedScopeRouteName(EquippedScopeRoute::NativeFallback),
         "native-fallback");
+    ok &= expectString("route name exposes Realistic Scopes suppression",
+        equippedScopeRouteName(EquippedScopeRoute::Suppressed),
+        "suppressed");
 
     return ok ? 0 : 1;
 }

@@ -31,6 +31,7 @@ namespace rock::see_through_scopes_policy
         None = 0,
         NativeFallback,
         StsPreferred,
+        Suppressed,
     };
 
     struct EquippedScopeRouteInput
@@ -38,10 +39,18 @@ namespace rock::see_through_scopes_policy
         std::uint32_t activeStsScopeMods = 0;
         std::uint32_t activeNativeScopeMods = 0;
         bool stsScopeMeshRenderable = true;
+        // Realistic Scopes mode (RealisticWeapons.bRealisticScopesEnabled, or an
+        // external provider override) always wins: no scope glass, STS or
+        // native, is ever shown while it is active.
+        bool realisticScopesForced = false;
     };
 
     [[nodiscard]] constexpr EquippedScopeRoute chooseEquippedScopeRoute(EquippedScopeRouteInput input) noexcept
     {
+        if (input.realisticScopesForced) {
+            return EquippedScopeRoute::Suppressed;
+        }
+
         if (input.activeStsScopeMods > 0) {
             return input.stsScopeMeshRenderable ? EquippedScopeRoute::StsPreferred : EquippedScopeRoute::NativeFallback;
         }
@@ -60,6 +69,8 @@ namespace rock::see_through_scopes_policy
             return "sts-preferred";
         case EquippedScopeRoute::NativeFallback:
             return "native-fallback";
+        case EquippedScopeRoute::Suppressed:
+            return "suppressed";
         default:
             return "none";
         }

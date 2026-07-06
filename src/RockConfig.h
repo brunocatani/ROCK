@@ -123,6 +123,7 @@ namespace rock
         bool rockEquippedWeaponShoulderStashEnabled = true;
         bool rockRealisticWeaponHandlingEnabled = false;
         float rockRealisticGrenadeFuseSeconds = 5.0f;
+        bool rockRealisticScopesEnabled = false;
         bool rockGrabbedWeaponAutoEquipEnabled = false;
         float rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
         bool rockGrabbedWeaponGripZoneEquipEnabled = true;

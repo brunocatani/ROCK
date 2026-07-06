@@ -106,6 +106,31 @@ Require-Text `
     'ROCKSeeThroughScopesPolicyTests' `
     'STS route policy tests must be part of the policy test build.'
 
+Require-Text `
+    'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
+    'realisticScopesConfigEnabled\(\)[\s\S]*rockRealisticScopesEnabled[\s\S]*isRealisticScopesOverrideActive' `
+    'Realistic Scopes mode must combine the RealisticWeapons INI flag with the provider override using OR.'
+
+Require-Text `
+    'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
+    'realisticScopesConfigEnabled\(\) \|\| \(compatibilityConfigEnabled\(\) && s_state\.detected\)' `
+    'Realistic Scopes mode must stay active even when See-Through Scopes is not installed/detected.'
+
+Require-Text `
+    'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
+    'keepScopeMeshVisible[\s\S]*equippedScope\.route == EquippedScopeRoute::Suppressed[\s\S]*scopeNormalFlags \|= kNodeHiddenFlag;[\s\S]*scopeAimingFlags \|= kNodeHiddenFlag;' `
+    'Realistic Scopes mode must actively hide both STS scope mesh states, not just leave the STS mesh alone.'
+
+Require-Text `
+    'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
+    'if \(s_state\.scopeRoute\.route == EquippedScopeRoute::Suppressed\) \{[\s\S]*applyRealisticScopesOverlayPatch\(\);' `
+    'Realistic Scopes mode must patch out the native scope overlay for the Suppressed route.'
+
+Require-Text `
+    'src/physics-interaction/weapon/SeeThroughScopesPolicy.h' `
+    'enum\s+class\s+EquippedScopeRoute[\s\S]*NativeFallback[\s\S]*StsPreferred[\s\S]*Suppressed' `
+    'Pure scope policy must expose a Suppressed route for Realistic Scopes mode.'
+
 if ($failures.Count -gt 0) {
     Write-Host 'See-through scopes compatibility source boundary failed:' -ForegroundColor Red
     foreach ($failure in $failures) {

@@ -206,6 +206,7 @@ namespace rock
         rockEquippedWeaponShoulderStashEnabled = true;
         rockRealisticWeaponHandlingEnabled = false;
         rockRealisticGrenadeFuseSeconds = 5.0f;
+        rockRealisticScopesEnabled = false;
         rockGrabbedWeaponAutoEquipEnabled = false;
         rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
         rockGrabbedWeaponGripZoneEquipEnabled = true;
@@ -893,6 +894,10 @@ namespace rock
             5.0f,
             0.0f,
             30.0f);
+        rockRealisticScopesEnabled = ini.GetBoolValue(
+            REALISTIC_WEAPONS_SECTION,
+            "bRealisticScopesEnabled",
+            rockRealisticScopesEnabled);
         rockGrabbedWeaponAutoEquipEnabled = ini.GetBoolValue(
             REALISTIC_WEAPONS_SECTION,
             "bGrabbedWeaponAutoEquipEnabled",
