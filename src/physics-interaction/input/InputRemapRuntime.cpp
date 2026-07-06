@@ -10,6 +10,7 @@
 
 #include "f4vr/F4VRUtils.h"
 #include "RE/Bethesda/PlayerCharacter.h"
+#include "RE/Bethesda/BSLock.h"
 #include "RE/Bethesda/BSPointerHandle.h"
 #include "RE/Bethesda/ControlMap.h"
 #include "RE/Bethesda/InputEvent.h"
@@ -91,15 +92,26 @@ namespace rock::input_remap_runtime
          * Ghidra xref symbol ("ViewCasterPrimaryWand") on the primary global's writer that
          * corroborates it as the wand raycast/pick target rather than a decompiler artifact.
          * Values below are RVA (Ghidra VA 0x145AC72B0/0x145AC7F10 minus the 0x140000000 image
-         * base, matching every other offset in this file). ROCK reads the raw handle value and
-         * resolves it through the already-shipped RE::ObjectRefHandle::get() (backed by
-         * BSPointerHandleManagerInterface<TESObjectREFR>::GetSmartPointer, RelocationID 967277)
-         * instead of the native handler's own raw resolve chain, so no additional unverified
-         * offset is load-bearing for the pointer resolution itself - see
+         * base, matching every other offset in this file). Each global holds an 8-byte pointer
+         * to the wand's caster/view object, NOT a bare handle - the real ObjectRefHandle is
+         * behind a locked virtual call on that caster (see readWandPickRefHandle()). An earlier
+         * build treated the global's raw memory as the handle directly and silently never
+         * resolved anything; corrected 2026-07-05 - see
          * docs/docs/reverse-engineering/2026-07-05-take-equip-activate-classification-ghidra-findings.md.
          */
         constexpr std::uintptr_t kActivatePrimaryWandPickRefGlobalOffset = 0x5AC72B0;
         constexpr std::uintptr_t kActivateSecondaryWandPickRefGlobalOffset = 0x5AC7F10;
+        /*
+         * The wand caster object's handle accessor, verified 2026-07-05 via raw disassembly of
+         * FUN_1409D0CE0 (RVA 0x9D0CE0): lock a spinlock at caster+0x70, call the vtable
+         * function at byte offset 0x10 (slot index 2, 8-byte slots) with the caster as `this`,
+         * read the first 4 bytes of the CALL'S RETURN VALUE (not the caster) as the handle,
+         * unlock. Cross-checked against a second, already-verified caller in the native action
+         * dispatcher at 0xFC07E0.
+         */
+        using WandPickRefCasterAccessor_t = void* (*)(void*);
+        constexpr std::ptrdiff_t kWandPickRefCasterSpinLockOffset = 0x70;
+        constexpr std::size_t kWandPickRefCasterVTableSlot = 2;
         constexpr std::uintptr_t kNativeActionDispatcherFunctionOffset = 0x0FC07E0;
         constexpr std::uintptr_t kNativeInputDeviceToControllerIdFunctionOffset = 0x1BA6ED0;
         constexpr std::uintptr_t kNativePlayerActionDispatcherDataOffset = 0x5A3B8A0;
@@ -1008,11 +1020,61 @@ namespace rock::input_remap_runtime
             return s_handInteractionEngaged[takeEquipHandIndex(primaryHandEvent)].load(std::memory_order_acquire);
         }
 
+        [[nodiscard]] std::uint32_t readWandPickRefHandle(std::uintptr_t globalOffset)
+        {
+            /*
+             * The globals at kActivate*WandPickRefGlobalOffset do NOT store a bare
+             * ObjectRefHandle - each stores an 8-byte pointer to the wand's caster/view
+             * object (the primary one is FO4VR's ViewCasterPrimaryWand). The real handle is
+             * behind a locked virtual call, verified 2026-07-05 via raw disassembly of
+             * FUN_1409D0CE0 (two agreeing sources: decompile + byte-for-byte disassembly,
+             * cross-checked against a second caller in the already-verified native action
+             * dispatcher at 0xFC07E0): lock casterObj+0x70, call the vtable slot at byte
+             * offset 0x10 (index 2) with the caster as `this`, read the first 4 bytes of the
+             * RETURNED pointer (not the caster itself) as the ObjectRefHandle, unlock. An
+             * earlier build read the global's raw memory directly as the handle, which
+             * silently produced a plausible-looking-but-wrong value (0xFE3A360 observed live)
+             * and made suppression permanently a no-op - see
+             * docs/docs/reverse-engineering/2026-07-05-take-equip-activate-classification-ghidra-findings.md
+             * for full verification detail.
+             */
+            REL::Relocation<void**> casterObjectGlobal{ REL::Offset(globalOffset) };
+            void* casterObject = *casterObjectGlobal;
+            if (!casterObject) {
+                return 0;
+            }
+
+            auto* lock = reinterpret_cast<RE::BSSpinLock*>(reinterpret_cast<std::uintptr_t>(casterObject) + kWandPickRefCasterSpinLockOffset);
+            lock->lock("ROCK-take-equip-pick-ref");
+
+            std::uint32_t handleValue = 0;
+            const auto vtable = *reinterpret_cast<void***>(casterObject);
+            if (vtable) {
+                const auto accessor = reinterpret_cast<WandPickRefCasterAccessor_t>(vtable[kWandPickRefCasterVTableSlot]);
+                if (void* handleStorage = accessor(casterObject)) {
+                    handleValue = *reinterpret_cast<std::uint32_t*>(handleStorage);
+                }
+            }
+
+            lock->unlock();
+            return handleValue;
+        }
+
         [[nodiscard]] bool isTakeEquipTargetEligible(bool primaryHandEvent)
         {
             const auto globalOffset = primaryHandEvent ? kActivatePrimaryWandPickRefGlobalOffset : kActivateSecondaryWandPickRefGlobalOffset;
-            REL::Relocation<std::uint32_t*> pickRefHandleGlobal{ REL::Offset(globalOffset) };
-            const std::uint32_t handleValue = *pickRefHandleGlobal;
+            std::uint32_t handleValue = readWandPickRefHandle(globalOffset);
+            if (handleValue == 0) {
+                /*
+                 * The native dispatcher at 0xFC07E0 falls back to the other wand's caster when
+                 * the primary one resolves empty (observed for an adjacent action-id dispatch
+                 * that shares this same accessor). Mirrored defensively here - it can only
+                 * help, never misclassify, since a resolved secondary-hand target still goes
+                 * through the identical identity/FormType checks below.
+                 */
+                const auto fallbackOffset = primaryHandEvent ? kActivateSecondaryWandPickRefGlobalOffset : kActivatePrimaryWandPickRefGlobalOffset;
+                handleValue = readWandPickRefHandle(fallbackOffset);
+            }
             if (handleValue == 0) {
                 ROCK_LOG_SAMPLE_DEBUG(Input,
                     g_rockConfig.rockLogSampleMilliseconds,
