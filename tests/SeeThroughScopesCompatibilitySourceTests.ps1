@@ -131,6 +131,11 @@ Require-Text `
     'enum\s+class\s+EquippedScopeRoute[\s\S]*NativeFallback[\s\S]*StsPreferred[\s\S]*Suppressed' `
     'Pure scope policy must expose a Suppressed route for Realistic Scopes mode.'
 
+Require-Text `
+    'src/physics-interaction/weapon/SeeThroughScopesCompatibility.cpp' `
+    'const bool forced = realisticScopesConfigEnabled\(\);[\s\S]*if \(!weaponForm[\s\S]*if \(forced\) \{[\s\S]*snapshot\.route = EquippedScopeRoute::Suppressed;[\s\S]*if \(!objectInstanceExtra[\s\S]*if \(forced\) \{[\s\S]*snapshot\.route = EquippedScopeRoute::Suppressed;' `
+    'Realistic Scopes mode must force the Suppressed route at every early return in resolveEquippedScopeRoute, not only when OMOD classification succeeds - otherwise an unresolved weapon form or missing instance data silently falls back to showing scope glass.'
+
 if ($failures.Count -gt 0) {
     Write-Host 'See-through scopes compatibility source boundary failed:' -ForegroundColor Red
     foreach ($failure in $failures) {

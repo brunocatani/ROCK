@@ -672,11 +672,22 @@ namespace
             return snapshot;
         }
 
+        /*
+         * Realistic Scopes mode must win even when OMOD classification below
+         * cannot run at all (weapon form/instance data unresolved). Computed
+         * once up front and applied at every early return so a classification
+         * failure can never silently fall back to showing scope glass.
+         */
+        const bool forced = realisticScopesConfigEnabled();
+
         auto* player = f4vr::getPlayer();
         auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
         auto* equipData = processData ? processData->equipData : nullptr;
         auto* weaponForm = equipData ? equipData->item : nullptr;
         if (!weaponForm || weaponForm->formType != static_cast<std::uint8_t>(RE::ENUM_FORM_ID::kWEAP)) {
+            if (forced) {
+                snapshot.route = EquippedScopeRoute::Suppressed;
+            }
             return snapshot;
         }
 
@@ -684,6 +695,9 @@ namespace
 
         const auto* objectInstanceExtra = findEquippedWeaponObjectInstanceExtra(player, weaponForm, equipData->instanceData);
         if (!objectInstanceExtra || !objectInstanceExtra->values) {
+            if (forced) {
+                snapshot.route = EquippedScopeRoute::Suppressed;
+            }
             return snapshot;
         }
 
@@ -717,7 +731,7 @@ namespace
             .activeStsScopeMods = snapshot.activeStsScopeMods,
             .activeNativeScopeMods = snapshot.activeNativeScopeMods,
             .stsScopeMeshRenderable = snapshot.stsScopeMeshRenderable,
-            .realisticScopesForced = realisticScopesConfigEnabled(),
+            .realisticScopesForced = forced,
         });
         return snapshot;
     }
