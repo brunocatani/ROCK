@@ -663,7 +663,7 @@ namespace rock
                 isLeft ? "Left" : "Right",
                 hand_collider_semantics::roleName(role),
                 instance.body.getBodyId().value);
-            instance.body.destroy(bhkWorld);
+            instance.body.retireDeferred(bhkWorld);
             shapeRemoveRef(shape);
             clearInstance(instance, false);
             return false;
@@ -723,7 +723,7 @@ namespace rock
                 "{} palm anchor initial placement failed; destroying generated anchor bodyId={}",
                 isLeft ? "Left" : "Right",
                 palmAnchorBody.getBodyId().value);
-            palmAnchorBody.destroy(bhkWorld);
+            palmAnchorBody.retireDeferred(bhkWorld);
             return false;
         }
         initializeGeneratedKeyframedBodyDriveState(_palmAnchorDriveState, anchorFrame.transform);
@@ -781,13 +781,13 @@ namespace rock
         clearAtomicBodyIds();
         for (auto& instance : _bodies) {
             if (instance.body.isValid()) {
-                instance.body.destroy(bhkWorld ? bhkWorld : _cachedBhkWorld);
+                instance.body.retireDeferred(bhkWorld ? bhkWorld : _cachedBhkWorld);
             }
             clearInstance(instance, true);
         }
 
         if (palmAnchorBody.isValid()) {
-            palmAnchorBody.destroy(bhkWorld ? bhkWorld : _cachedBhkWorld);
+            palmAnchorBody.retireDeferred(bhkWorld ? bhkWorld : _cachedBhkWorld);
         }
 
         _created = false;

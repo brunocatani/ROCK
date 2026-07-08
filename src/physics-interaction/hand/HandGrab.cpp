@@ -5017,7 +5017,7 @@ namespace rock
     {
         auto* destroyWorld = bhkWorld ? bhkWorld : _grabAuthorityProxyBhkWorld;
         if (_grabAuthorityProxy.isValid()) {
-            _grabAuthorityProxy.destroy(destroyWorld);
+            _grabAuthorityProxy.retireDeferred(destroyWorld);
         } else {
             _grabAuthorityProxy.reset();
         }

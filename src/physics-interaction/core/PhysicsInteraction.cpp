@@ -16,6 +16,7 @@
 #include <string_view>
 #include <utility>
 
+#include "physics-interaction/native/BethesdaPhysicsBody.h"
 #include "physics-interaction/native/BodyCollisionControl.h"
 #include "physics-interaction/actor/ActorEquipmentGrab.h"
 #include "physics-interaction/api/InteractionCommandQueue.h"
@@ -4719,6 +4720,11 @@ namespace rock
         logPalmClockSampleForHand("physics-after-solve", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         serviceRetiredGrabConstraintPayloads();
         _weaponCollision.serviceRetiredWeaponBodies();
+        // Frees hand/body bone-collider and grab-authority-proxy collision objects
+        // that were world-removed on the main thread, only after the broadphase has
+        // been rebuilt by this step. Runs here so all deferred collider teardown
+        // shares the same post-solve grace cadence as weapon bodies and constraints.
+        BethesdaPhysicsBody::serviceRetiredDeferredPayloads();
     }
 
 #include "physics-interaction/core/PhysicsInteractionDebugOverlay.inl"

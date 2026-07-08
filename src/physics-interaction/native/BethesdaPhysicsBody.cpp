@@ -7,7 +7,9 @@
 
 #include "RE/Havok/hknpBody.h"
 
+#include <array>
 #include <intrin.h>
+#include <mutex>
 #include <windows.h>
 
 namespace rock
@@ -648,6 +650,105 @@ namespace rock
             releaseRefCounted(collisionObject);
         }
         payload = {};
+    }
+
+    namespace
+    {
+        struct RetiredDeferredBody
+        {
+            RetiredBethesdaPhysicsBodyPayload payload{};
+            std::uint32_t remainingPhysicsSteps = 0;
+
+            [[nodiscard]] bool occupied() const { return payload.occupied(); }
+        };
+
+        /*
+         * Grace window before a world-removed collision object is freed, in
+         * completed physics steps. Matches the weapon-body and grab-constraint
+         * queues (RETIRED_GENERATED_WEAPON_BODY_GRACE_STEPS /
+         * kRetiredGrabConstraintPayloadGraceSteps == 8): an hknp keyframed body
+         * stays reachable from the broadphase until the next step rebuilds it,
+         * so the object must outlive at least one full step after removal.
+         *
+         * The queue is a single file-local service shared by every collider
+         * class that used to free immediately (hand + body bone colliders, the
+         * grab-authority proxy). It is only touched under s_retiredDeferredBodyMutex
+         * from retireDeferred() (main thread) and serviceRetiredDeferredPayloads()
+         * (physics post-solve phase), so the two phases never race the free.
+         */
+        inline constexpr std::uint32_t kRetiredDeferredBodyGraceSteps = 8;
+        inline constexpr std::size_t kMaxRetiredDeferredBodies = 512;
+
+        std::mutex s_retiredDeferredBodyMutex;
+        std::array<RetiredDeferredBody, kMaxRetiredDeferredBodies> s_retiredDeferredBodies{};
+        std::uint32_t s_retiredDeferredBodyCount = 0;
+    }
+
+    void BethesdaPhysicsBody::retireDeferred(void* bhkWorld)
+    {
+        RetiredBethesdaPhysicsBodyPayload payload{};
+        if (!retireFromWorld(bhkWorld, payload) || !payload.occupied()) {
+            return;
+        }
+
+        std::scoped_lock lock(s_retiredDeferredBodyMutex);
+        for (auto& retired : s_retiredDeferredBodies) {
+            if (!retired.occupied()) {
+                retired.payload = payload;
+                retired.remainingPhysicsSteps = kRetiredDeferredBodyGraceSteps;
+                ++s_retiredDeferredBodyCount;
+                ROCK_LOG_SAMPLE_DEBUG(BethesdaBody,
+                    1000,
+                    "Body {} collision object retired for {} physics steps activeRetired={}",
+                    payload.bodyId,
+                    kRetiredDeferredBodyGraceSteps,
+                    s_retiredDeferredBodyCount);
+                return;
+            }
+        }
+
+        /*
+         * Queue full: leaking one collision object is strictly safer than freeing
+         * memory the native broadphase may still reference this frame. The payload
+         * has already been removed from the world, so this leaks memory only, not a
+         * live-world dangling body.
+         */
+        ROCK_LOG_ERROR(BethesdaBody,
+            "Retired deferred body queue full; intentionally leaking collision object {:p} (body {}) to avoid native use-after-free",
+            payload.collisionObject,
+            payload.bodyId);
+    }
+
+    void BethesdaPhysicsBody::serviceRetiredDeferredPayloads(std::uint32_t completedPhysicsSteps)
+    {
+        if (completedPhysicsSteps == 0) {
+            return;
+        }
+
+        std::scoped_lock lock(s_retiredDeferredBodyMutex);
+        for (auto& retired : s_retiredDeferredBodies) {
+            if (!retired.occupied()) {
+                continue;
+            }
+
+            retired.remainingPhysicsSteps =
+                retired.remainingPhysicsSteps > completedPhysicsSteps ? retired.remainingPhysicsSteps - completedPhysicsSteps : 0;
+            if (retired.remainingPhysicsSteps != 0) {
+                continue;
+            }
+
+            const auto bodyId = retired.payload.bodyId;
+            releaseRetiredPayload(retired.payload);
+            retired = {};
+            if (s_retiredDeferredBodyCount > 0) {
+                --s_retiredDeferredBodyCount;
+            }
+            ROCK_LOG_SAMPLE_DEBUG(BethesdaBody,
+                1000,
+                "Retired deferred body {} collision object reclaimed activeRetired={}",
+                bodyId,
+                s_retiredDeferredBodyCount);
+        }
     }
 
     void BethesdaPhysicsBody::reset()

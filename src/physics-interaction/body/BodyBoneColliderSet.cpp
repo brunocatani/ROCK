@@ -630,7 +630,7 @@ namespace rock
                 "Body collider initial placement failed index={} bodyId={}; destroying generated body",
                 descriptorIndex,
                 instance.body.getBodyId().value);
-            instance.body.destroy(bhkWorld);
+            instance.body.retireDeferred(bhkWorld);
             shapeRemoveRef(shape);
             clearInstance(instance, false);
             return false;
@@ -725,7 +725,7 @@ namespace rock
         clearAtomicBodyIds();
         for (auto& instance : _bodies) {
             if (instance.body.isValid()) {
-                instance.body.destroy(bhkWorld ? bhkWorld : _cachedBhkWorld);
+                instance.body.retireDeferred(bhkWorld ? bhkWorld : _cachedBhkWorld);
             }
             clearInstance(instance, true);
         }

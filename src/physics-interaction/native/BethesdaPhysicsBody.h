@@ -45,6 +45,21 @@ namespace rock
 
         bool retireFromWorld(void* bhkWorld, RetiredBethesdaPhysicsBodyPayload& outPayload);
 
+        // Removes the body from the world now but defers freeing the underlying
+        // bhkNPCollisionObject by a physics-step grace window (see .cpp). A
+        // keyframed collider stays reachable from the hknp broadphase until the
+        // next physics step rebuilds it, so freeing it in the same call — as
+        // destroy() does — lets a native broadphase reader (foot-IK raycast,
+        // navmesh obstacle manager) dereference freed memory and crash. Use this
+        // for every teardown that happens while the world is still live; keep
+        // destroy() only for world-loss/shutdown where no further step will run.
+        void retireDeferred(void* bhkWorld);
+
+        // Drains the shared deferred-retirement queue. Must be called from the
+        // physics-step (post-solve) phase, once per completed step, so the grace
+        // window is measured in real broadphase rebuilds.
+        static void serviceRetiredDeferredPayloads(std::uint32_t completedPhysicsSteps = 1);
+
         static void releaseRetiredPayload(RetiredBethesdaPhysicsBodyPayload& payload);
 
         void reset();

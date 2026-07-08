@@ -124,6 +124,23 @@ Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'retireWeaponB
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'serviceRetiredWeaponBodies[\s\S]*BethesdaPhysicsBody::releaseRetiredPayload' 'Retired generated weapon bodies must be reclaimed from an explicit service point.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'observeCustomGrabAuthorityAfterSolve[\s\S]*_weaponCollision\.serviceRetiredWeaponBodies\(\);' 'The physics after-solve callback must service retired generated weapon bodies after native readers advance.'
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'destroyWeaponBodyBank[\s\S]{0,260}instance\.body\.destroy\(_cachedBhkWorld\)' 'Generated weapon body bank teardown must not immediately destroy native wrapper bodies in the rebuild path.'
+
+# Hand/body bone colliders and the grab-authority proxy share the same
+# broadphase-lifetime hazard as weapon bodies: freeing a keyframed collision
+# object in the same call that removes it from the world lets a native reader
+# (foot-IK raycast, navmesh obstacle manager) dereference freed memory. They
+# must use the deferred grace-window retirement, never immediate destroy().
+Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.h' 'void retireDeferred\(void\* bhkWorld\)' 'Generated Bethesda bodies must expose deferred, grace-windowed retirement.'
+Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' 'retireDeferred\(void\* bhkWorld\)[\s\S]{0,600}retireFromWorld\(bhkWorld, payload\)[\s\S]{0,600}remainingPhysicsSteps = kRetiredDeferredBodyGraceSteps' 'Deferred body retirement must remove from world then hold a bounded physics-step grace before native release.'
+Require-Text 'src/physics-interaction/native/BethesdaPhysicsBody.cpp' 'serviceRetiredDeferredPayloads\(std::uint32_t completedPhysicsSteps\)[\s\S]*releaseRetiredPayload\(retired\.payload\)' 'Deferred body retirement must be reclaimed from an explicit physics-step service point.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'observeCustomGrabAuthorityAfterSolve[\s\S]*BethesdaPhysicsBody::serviceRetiredDeferredPayloads\(\);' 'The physics after-solve callback must service deferred collider retirements after native readers advance.'
+Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'instance\.body\.retireDeferred\(' 'Hand bone collider teardown must defer native release through retireDeferred.'
+Require-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'palmAnchorBody\.retireDeferred\(' 'Hand palm-anchor teardown must defer native release through retireDeferred.'
+Require-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' 'instance\.body\.retireDeferred\(' 'Body bone collider teardown must defer native release through retireDeferred.'
+Require-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabAuthorityProxy\.retireDeferred\(' 'Grab-authority proxy teardown must defer native release through retireDeferred.'
+Reject-Text 'src/physics-interaction/hand/HandBoneColliderSet.cpp' 'instance\.body\.destroy\(|palmAnchorBody\.destroy\(' 'Hand bone colliders must not immediately destroy native collision objects in the live-world teardown path.'
+Reject-Text 'src/physics-interaction/body/BodyBoneColliderSet.cpp' 'instance\.body\.destroy\(' 'Body bone colliders must not immediately destroy native collision objects in the live-world teardown path.'
+Reject-Text 'src/physics-interaction/hand/HandGrab.cpp' '_grabAuthorityProxy\.destroy\(' 'Grab-authority proxy must not immediately destroy its native collision object in the live-world teardown path.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.h' 'struct PendingGeneratedWeaponBuild' 'Weapon collision must track staged generated body creation explicitly.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'beginPendingGeneratedWeaponBuild\(' 'Generated weapon collision must queue full source sets before frame-sliced body creation.'
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'createGeneratedWeaponBodiesInBankSlice\(' 'Generated weapon collision must create native bodies through a bounded per-frame slice.'
