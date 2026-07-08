@@ -20,7 +20,6 @@
 #include "physics-interaction/grab/NearbyGrabDamping.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/RockLoggingPolicy.h"
-#include "physics-interaction/weapon/SeeThroughScopesPolicy.h"
 #include "resources.h"
 
 namespace
@@ -69,7 +68,6 @@ namespace
     constexpr float kDefaultNearCastRadiusGameUnits = 3.5f;
     constexpr float kDefaultNearCastDistanceGameUnits = 7.0f;
     const RE::NiPoint3 kDefaultPalmNormalHandspace{ 0.0f, 1.0f, 0.0f };
-    constexpr bool kDefaultSeeThroughScopesRightEyeDominant = true;
     constexpr int kDefaultHighlightIntensityMode = 3;
     constexpr const char* kDefaultHighlightColor = "orange";
 
@@ -206,7 +204,6 @@ namespace rock
         rockEquippedWeaponShoulderStashEnabled = true;
         rockRealisticWeaponHandlingEnabled = false;
         rockRealisticGrenadeFuseSeconds = 5.0f;
-        rockRealisticScopesEnabled = false;
         rockGrabbedWeaponAutoEquipEnabled = false;
         rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
         rockGrabbedWeaponGripZoneEquipEnabled = true;
@@ -222,14 +219,6 @@ namespace rock
         rockWeaponSupportGripHandLerpTimeMax = 0.20f;
         rockWeaponSupportGripHandLerpMinDistance = 1.0f;
         rockWeaponSupportGripHandLerpMaxDistance = 14.0f;
-        rockSeeThroughScopesCompatibilityEnabled = true;
-        rockSeeThroughScopesReticleAlignmentEnabled = true;
-        rockSeeThroughScopesRightEyeDominant = kDefaultSeeThroughScopesRightEyeDominant;
-        rockSeeThroughScopesEyeOffsetGameUnits = see_through_scopes_policy::kDefaultReticleEyeOffsetGameUnits;
-        rockSeeThroughScopesReticleOffsetXGameUnits = see_through_scopes_policy::kDefaultReticleOffsetXGameUnits;
-        rockSeeThroughScopesReticleOffsetZGameUnits = see_through_scopes_policy::kDefaultReticleOffsetZGameUnits;
-        rockSeeThroughScopesLookDotThreshold = see_through_scopes_policy::kDefaultReticleLookDotThreshold;
-        rockSeeThroughScopesDistanceThresholdGameUnits = see_through_scopes_policy::kDefaultReticleDistanceThresholdGameUnits;
 
         rockSoftContactWorldEnabled = true;
         rockSoftContactVisualPriority = 80;
@@ -894,10 +883,6 @@ namespace rock
             5.0f,
             0.0f,
             30.0f);
-        rockRealisticScopesEnabled = ini.GetBoolValue(
-            REALISTIC_WEAPONS_SECTION,
-            "bRealisticScopesEnabled",
-            rockRealisticScopesEnabled);
         rockGrabbedWeaponAutoEquipEnabled = ini.GetBoolValue(
             REALISTIC_WEAPONS_SECTION,
             "bGrabbedWeaponAutoEquipEnabled",
@@ -985,62 +970,6 @@ namespace rock
             14.0f,
             rockWeaponSupportGripHandLerpMinDistance,
             120.0f);
-        rockSeeThroughScopesCompatibilityEnabled =
-            ini.GetBoolValue(SECTION, "bSeeThroughScopesCompatibilityEnabled", rockSeeThroughScopesCompatibilityEnabled);
-        rockSeeThroughScopesReticleAlignmentEnabled =
-            ini.GetBoolValue(SECTION, "bSeeThroughScopesReticleAlignmentEnabled", rockSeeThroughScopesReticleAlignmentEnabled);
-        rockSeeThroughScopesRightEyeDominant =
-            ini.GetBoolValue(SECTION, "bSeeThroughScopesRightEyeDominant", rockSeeThroughScopesRightEyeDominant);
-        rockSeeThroughScopesEyeOffsetGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSeeThroughScopesEyeOffsetGameUnits", rockSeeThroughScopesEyeOffsetGameUnits));
-        if (!std::isfinite(rockSeeThroughScopesEyeOffsetGameUnits) || rockSeeThroughScopesEyeOffsetGameUnits < 0.0f) {
-            ROCK_LOG_WARN(Config,
-                "Invalid fSeeThroughScopesEyeOffsetGameUnits={} - using {:.2f}",
-                rockSeeThroughScopesEyeOffsetGameUnits,
-                see_through_scopes_policy::kDefaultReticleEyeOffsetGameUnits);
-            rockSeeThroughScopesEyeOffsetGameUnits = see_through_scopes_policy::kDefaultReticleEyeOffsetGameUnits;
-        }
-        rockSeeThroughScopesEyeOffsetGameUnits = std::clamp(rockSeeThroughScopesEyeOffsetGameUnits, 0.0f, 10.0f);
-        rockSeeThroughScopesReticleOffsetXGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSeeThroughScopesReticleOffsetXGameUnits", rockSeeThroughScopesReticleOffsetXGameUnits));
-        if (!std::isfinite(rockSeeThroughScopesReticleOffsetXGameUnits)) {
-            ROCK_LOG_WARN(Config,
-                "Invalid fSeeThroughScopesReticleOffsetXGameUnits={} - using {:.6f}",
-                rockSeeThroughScopesReticleOffsetXGameUnits,
-                see_through_scopes_policy::kDefaultReticleOffsetXGameUnits);
-            rockSeeThroughScopesReticleOffsetXGameUnits = see_through_scopes_policy::kDefaultReticleOffsetXGameUnits;
-        }
-        rockSeeThroughScopesReticleOffsetXGameUnits = std::clamp(rockSeeThroughScopesReticleOffsetXGameUnits, -10.0f, 10.0f);
-        rockSeeThroughScopesReticleOffsetZGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSeeThroughScopesReticleOffsetZGameUnits", rockSeeThroughScopesReticleOffsetZGameUnits));
-        if (!std::isfinite(rockSeeThroughScopesReticleOffsetZGameUnits)) {
-            ROCK_LOG_WARN(Config,
-                "Invalid fSeeThroughScopesReticleOffsetZGameUnits={} - using {:.6f}",
-                rockSeeThroughScopesReticleOffsetZGameUnits,
-                see_through_scopes_policy::kDefaultReticleOffsetZGameUnits);
-            rockSeeThroughScopesReticleOffsetZGameUnits = see_through_scopes_policy::kDefaultReticleOffsetZGameUnits;
-        }
-        rockSeeThroughScopesReticleOffsetZGameUnits = std::clamp(rockSeeThroughScopesReticleOffsetZGameUnits, -10.0f, 10.0f);
-        rockSeeThroughScopesLookDotThreshold =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSeeThroughScopesLookDotThreshold", rockSeeThroughScopesLookDotThreshold));
-        if (!std::isfinite(rockSeeThroughScopesLookDotThreshold)) {
-            ROCK_LOG_WARN(Config,
-                "Invalid fSeeThroughScopesLookDotThreshold={} - using {:.2f}",
-                rockSeeThroughScopesLookDotThreshold,
-                see_through_scopes_policy::kDefaultReticleLookDotThreshold);
-            rockSeeThroughScopesLookDotThreshold = see_through_scopes_policy::kDefaultReticleLookDotThreshold;
-        }
-        rockSeeThroughScopesLookDotThreshold = std::clamp(rockSeeThroughScopesLookDotThreshold, 0.0f, 1.0f);
-        rockSeeThroughScopesDistanceThresholdGameUnits =
-            static_cast<float>(ini.GetDoubleValue(SECTION, "fSeeThroughScopesDistanceThresholdGameUnits", rockSeeThroughScopesDistanceThresholdGameUnits));
-        if (!std::isfinite(rockSeeThroughScopesDistanceThresholdGameUnits) || rockSeeThroughScopesDistanceThresholdGameUnits <= 0.0f) {
-            ROCK_LOG_WARN(Config,
-                "Invalid fSeeThroughScopesDistanceThresholdGameUnits={} - using {:.2f}",
-                rockSeeThroughScopesDistanceThresholdGameUnits,
-                see_through_scopes_policy::kDefaultReticleDistanceThresholdGameUnits);
-            rockSeeThroughScopesDistanceThresholdGameUnits = see_through_scopes_policy::kDefaultReticleDistanceThresholdGameUnits;
-        }
-        rockSeeThroughScopesDistanceThresholdGameUnits = std::clamp(rockSeeThroughScopesDistanceThresholdGameUnits, 1.0f, 100.0f);
 
         rockSoftContactWorldEnabled = ini.GetBoolValue(SECTION, "bSoftContactWorldEnabled", rockSoftContactWorldEnabled);
         rockSoftContactVisualPriority = static_cast<int>(ini.GetLongValue(SECTION, "iSoftContactVisualPriority", rockSoftContactVisualPriority));

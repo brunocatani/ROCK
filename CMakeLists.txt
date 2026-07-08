@@ -458,13 +458,6 @@ if(BUILD_ROCK_TESTS)
   target_include_directories(ROCKFeedbackHapticsPolicyTests PRIVATE ${SOURCE_DIR})
   add_rock_test(ROCKFeedbackHapticsPolicyTests)
 
-  add_executable(ROCKSeeThroughScopesPolicyTests
-    "${ROOT_DIR}/tests/SeeThroughScopesPolicyTests.cpp"
-  )
-  target_compile_features(ROCKSeeThroughScopesPolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKSeeThroughScopesPolicyTests PRIVATE ${SOURCE_DIR})
-  add_rock_test(ROCKSeeThroughScopesPolicyTests)
-
   add_executable(ROCKWeaponCollisionLifecyclePolicyTests
     "${ROOT_DIR}/tests/WeaponCollisionLifecyclePolicyTests.cpp"
   )
@@ -556,7 +549,6 @@ if(BUILD_ROCK_TESTS)
     ROCKShoulderStashPolicyTests
     ROCKMouthConsumePolicyTests
     ROCKFeedbackHapticsPolicyTests
-    ROCKSeeThroughScopesPolicyTests
     ROCKWeaponCollisionLifecyclePolicyTests
     ROCKActiveGrabBodyLifecyclePolicyTests
     ROCKDynamicMovableStaticGrabPolicyTests

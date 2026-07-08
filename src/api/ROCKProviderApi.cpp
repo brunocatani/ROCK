@@ -116,8 +116,7 @@ namespace
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::OffhandReservation) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::InteractionCommands) |
         static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::HandInputSuppression) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::WeaponPartInteraction) |
-        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::RealisticScopesOverride);
+        static_cast<std::uint32_t>(RockProviderConsumerCapabilityV1::WeaponPartInteraction);
     constexpr std::uint32_t kProviderFeatureBitsV1 =
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::FrameCallbacks) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::LifecycleFields) |
@@ -137,8 +136,7 @@ namespace
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartRecordIdentity) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::WeaponPartTargetNonExclusive) |
         static_cast<std::uint32_t>(RockProviderFeatureBitV1::RawWandButtonState) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::PipboyInputSuppression) |
-        static_cast<std::uint32_t>(RockProviderFeatureBitV1::RealisticScopesOverride);
+        static_cast<std::uint32_t>(RockProviderFeatureBitV1::PipboyInputSuppression);
     constexpr std::uint32_t kImplementedForceGrabFlagsV1 =
         static_cast<std::uint32_t>(RockProviderForceGrabFlagV1::UsePreferredGrabPointGame);
     constexpr std::uint32_t kImplementedForceReleaseFlagsV1 =
@@ -211,29 +209,6 @@ namespace
 
     std::mutex s_handInputSuppressionMutex;
     std::array<HandInputSuppressionSlot, ROCK_PROVIDER_MAX_HAND_INPUT_SUPPRESSIONS_V1> s_handInputSuppressions{};
-
-    struct RealisticScopesOverrideSlot
-    {
-        bool active{ false };
-        std::uint64_t ownerToken{ 0 };
-    };
-
-    // One slot per registered consumer (bounded by the same limit as the
-    // consumer registry): each owner's request is independent, so the
-    // effective state is the OR of every active slot, not a single
-    // last-writer-wins flag - clearing one owner's request must not turn
-    // scopes back on for another owner that still wants them suppressed.
-    std::mutex s_realisticScopesOverrideMutex;
-    std::array<RealisticScopesOverrideSlot, ROCK_PROVIDER_MAX_CONSUMERS_V1> s_realisticScopesOverrides{};
-
-    void clearRealisticScopesOverrideForOwnerLocked(std::uint64_t ownerToken)
-    {
-        for (auto& slot : s_realisticScopesOverrides) {
-            if (slot.active && slot.ownerToken == ownerToken) {
-                slot = {};
-            }
-        }
-    }
 
     struct WeaponPartTargetSlot
     {
@@ -1016,8 +991,7 @@ namespace
                 s_consumerMutex,
                 s_interactionCommandMutex,
                 s_handInputSuppressionMutex,
-                s_weaponPartMutex,
-                s_realisticScopesOverrideMutex);
+                s_weaponPartMutex);
             auto* slot = findConsumerSlotLocked(ownerToken);
             if (!slot) {
                 return RockProviderResultV1::OwnerNotRegistered;
@@ -1027,7 +1001,6 @@ namespace
             clearHandInputSuppressionsForOwnerLocked(ownerToken, RockProviderHand::None);
             clearWeaponPartTargetsForOwnerLocked(ownerToken);
             clearWeaponPartDrivesForOwnerLocked(ownerToken);
-            clearRealisticScopesOverrideForOwnerLocked(ownerToken);
         }
 
         {
@@ -1676,52 +1649,6 @@ namespace
         return rock::input_remap_runtime::isNativePipboyInputSuppressionActive();
     }
 
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiSetRealisticScopesOverrideV1(std::uint64_t ownerToken, std::uint32_t enabled)
-    {
-        if (ownerToken == 0) {
-            return RockProviderResultV1::InvalidArgument;
-        }
-
-        std::scoped_lock lock(s_consumerMutex, s_realisticScopesOverrideMutex);
-        const auto ownerResult =
-            validateRegisteredOwnerCapabilityLocked(ownerToken, RockProviderConsumerCapabilityV1::RealisticScopesOverride);
-        if (ownerResult != RockProviderResultV1::Ok) {
-            return ownerResult;
-        }
-
-        if (enabled == 0) {
-            clearRealisticScopesOverrideForOwnerLocked(ownerToken);
-            return RockProviderResultV1::Ok;
-        }
-
-        for (auto& slot : s_realisticScopesOverrides) {
-            if (slot.active && slot.ownerToken == ownerToken) {
-                return RockProviderResultV1::Ok;
-            }
-        }
-        for (auto& slot : s_realisticScopesOverrides) {
-            if (!slot.active) {
-                slot = RealisticScopesOverrideSlot{ .active = true, .ownerToken = ownerToken };
-                return RockProviderResultV1::Ok;
-            }
-        }
-
-        return RockProviderResultV1::CapacityFull;
-    }
-
-    RockProviderResultV1 ROCK_PROVIDER_CALL apiClearRealisticScopesOverrideV1(std::uint64_t ownerToken)
-    {
-        return apiSetRealisticScopesOverrideV1(ownerToken, 0);
-    }
-
-    bool ROCK_PROVIDER_CALL apiIsRealisticScopesActiveV1()
-    {
-        if (rock::g_rockConfig.rockEnabled && rock::g_rockConfig.rockRealisticScopesEnabled) {
-            return true;
-        }
-        return rock::provider::isRealisticScopesOverrideActive();
-    }
-
     constexpr RockProviderApi ROCK_PROVIDER_API_FUNCTION_TABLE{
         .getVersion = &apiGetVersion,
         .getModVersion = &apiGetModVersion,
@@ -1760,9 +1687,6 @@ namespace
         .getWeaponPartGripStateV1 = &apiGetWeaponPartGripStateV1,
         .getRawWandButtonStateV1 = &apiGetRawWandButtonStateV1,
         .isNativePipboyInputSuppressedV1 = &apiIsNativePipboyInputSuppressedV1,
-        .setRealisticScopesOverrideV1 = &apiSetRealisticScopesOverrideV1,
-        .clearRealisticScopesOverrideV1 = &apiClearRealisticScopesOverrideV1,
-        .isRealisticScopesActiveV1 = &apiIsRealisticScopesActiveV1,
     };
 }
 
@@ -1771,17 +1695,6 @@ namespace rock::provider
     ROCK_PROVIDER_API const RockProviderApi* ROCK_PROVIDER_CALL ROCKAPI_GetProviderApi()
     {
         return &ROCK_PROVIDER_API_FUNCTION_TABLE;
-    }
-
-    bool isRealisticScopesOverrideActive()
-    {
-        std::scoped_lock lock(s_realisticScopesOverrideMutex);
-        for (const auto& slot : s_realisticScopesOverrides) {
-            if (slot.active) {
-                return true;
-            }
-        }
-        return false;
     }
 
     void setPhysicsInteractionInstance(rock::PhysicsInteraction* pi)

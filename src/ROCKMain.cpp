@@ -20,7 +20,6 @@
 #include "physics-interaction/grab/SavedGrabOffsetStore.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/visual/FrikVisualAuthorityBridge.h"
-#include "physics-interaction/weapon/SeeThroughScopesCompatibility.h"
 
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/TESForms.h"
@@ -264,7 +263,6 @@ namespace
         }
 
         g_rockConfig.processPendingConfigReload();
-        see_through_scopes::updateFrame();
         input_remap_runtime::installInputRemapHooks();
 
         const bool menuInputActive = input_remap_runtime::isMenuInputActive();
@@ -453,7 +451,6 @@ namespace
             rock::saved_grab_offset::preload();
             rock::installHavokTimingFixHook();
             runtime_state::initialize();
-            see_through_scopes::refreshRuntimeState();
             logger::info("ROCK: Config loaded (rockEnabled={}).", g_rockConfig.rockEnabled);
             rock::input_remap_runtime::installInputRemapHooks();
             rock::debug::Install();
@@ -482,9 +479,7 @@ namespace
             destroyPhysicsInteraction();
 
             if (s_frikAvailable) {
-                see_through_scopes::resetRuntimeState();
                 g_rockConfig.reload();
-                see_through_scopes::refreshRuntimeState();
                 logger::info("ROCK: Config reloaded for new session.");
             }
         }
@@ -558,11 +553,6 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
 
     logger::info("ROCK: Install main loop hook...");
     if (!hookMainLoop()) {
-        return false;
-    }
-
-    logger::info("ROCK: Install See-Through Scopes late culling hook...");
-    if (!rock::see_through_scopes::installLateCullingHook()) {
         return false;
     }
 

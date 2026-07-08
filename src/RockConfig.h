@@ -123,7 +123,6 @@ namespace rock
         bool rockEquippedWeaponShoulderStashEnabled = true;
         bool rockRealisticWeaponHandlingEnabled = false;
         float rockRealisticGrenadeFuseSeconds = 5.0f;
-        bool rockRealisticScopesEnabled = false;
         bool rockGrabbedWeaponAutoEquipEnabled = false;
         float rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
         bool rockGrabbedWeaponGripZoneEquipEnabled = true;
@@ -139,14 +138,6 @@ namespace rock
         float rockWeaponSupportGripHandLerpTimeMax = 0.20f;
         float rockWeaponSupportGripHandLerpMinDistance = 1.0f;
         float rockWeaponSupportGripHandLerpMaxDistance = 14.0f;
-        bool rockSeeThroughScopesCompatibilityEnabled = true;
-        bool rockSeeThroughScopesReticleAlignmentEnabled = true;
-        bool rockSeeThroughScopesRightEyeDominant = true;
-        float rockSeeThroughScopesEyeOffsetGameUnits = 2.3f;
-        float rockSeeThroughScopesReticleOffsetXGameUnits = 0.372727f;
-        float rockSeeThroughScopesReticleOffsetZGameUnits = -0.149692f;
-        float rockSeeThroughScopesLookDotThreshold = 0.98f;
-        float rockSeeThroughScopesDistanceThresholdGameUnits = 20.0f;
 
         bool rockSoftContactWorldEnabled = true;
         int rockSoftContactVisualPriority = 80;

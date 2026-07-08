@@ -228,7 +228,6 @@ namespace rock::provider
         InteractionCommands = 1u << 4,
         HandInputSuppression = 1u << 5,
         WeaponPartInteraction = 1u << 6,
-        RealisticScopesOverride = 1u << 7,
     };
 
     enum class RockProviderFeatureBitV1 : std::uint32_t
@@ -253,7 +252,6 @@ namespace rock::provider
         WeaponPartTargetNonExclusive = 1u << 18,
         RawWandButtonState = 1u << 19,
         PipboyInputSuppression = 1u << 20,
-        RealisticScopesOverride = 1u << 21,
     };
 
     enum class RockProviderInteractionCommandKindV1 : std::uint32_t
@@ -1112,21 +1110,6 @@ namespace rock::provider
          */
         bool(ROCK_PROVIDER_CALL* isNativePipboyInputSuppressedV1)();
 
-        /*
-         * Realistic Scopes mode: forces every equipped optic to show no scope
-         * glass at all - neither a See-Through Scopes mesh nor the game's
-         * native 2D scope overlay - regardless of what is installed. Additive
-         * across consumers: any one registered owner requesting enabled=true
-         * keeps the mode active until that same owner clears it (or
-         * unregisters); it never overrides another owner's request. Combined
-         * with OR against ROCK's own RealisticWeapons.bRealisticScopesEnabled
-         * INI flag, so an owner can only ever turn scopes off, never force
-         * them back on against the local INI setting.
-         */
-        RockProviderResultV1(ROCK_PROVIDER_CALL* setRealisticScopesOverrideV1)(std::uint64_t ownerToken, std::uint32_t enabled);
-        RockProviderResultV1(ROCK_PROVIDER_CALL* clearRealisticScopesOverrideV1)(std::uint64_t ownerToken);
-        bool(ROCK_PROVIDER_CALL* isRealisticScopesActiveV1)();
-
         [[nodiscard]] static int initialize(
             const std::uint32_t minVersion = ROCK_PROVIDER_API_VERSION,
             const std::uint32_t minProviderApiByteSize = 0)
@@ -1198,8 +1181,6 @@ namespace rock::provider
         offsetof(RockProviderApi, getRawWandButtonStateV1) + sizeof(std::declval<RockProviderApi>().getRawWandButtonStateV1));
     inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_PIPBOY_INPUT_SUPPRESSION_TABLE_BYTES = static_cast<std::uint32_t>(
         offsetof(RockProviderApi, isNativePipboyInputSuppressedV1) + sizeof(std::declval<RockProviderApi>().isNativePipboyInputSuppressedV1));
-    inline constexpr std::uint32_t ROCK_PROVIDER_API_V1_REALISTIC_SCOPES_TABLE_BYTES = static_cast<std::uint32_t>(
-        offsetof(RockProviderApi, isRealisticScopesActiveV1) + sizeof(std::declval<RockProviderApi>().isRealisticScopesActiveV1));
 
     [[nodiscard]] inline bool queryProviderLimitsV1(RockProviderLimitsV1& outLimits)
     {
@@ -1321,18 +1302,6 @@ namespace rock::provider
         return queryProviderLimitsV1(limits) && supportsPipboyInputSuppressionV1(limits);
     }
 
-    [[nodiscard]] inline bool supportsRealisticScopesOverrideV1(const RockProviderLimitsV1& limits)
-    {
-        return providerApiTableSupportsV1(limits, ROCK_PROVIDER_API_V1_REALISTIC_SCOPES_TABLE_BYTES) &&
-               hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::RealisticScopesOverride);
-    }
-
-    [[nodiscard]] inline bool supportsRealisticScopesOverrideV1()
-    {
-        RockProviderLimitsV1 limits{};
-        return queryProviderLimitsV1(limits) && supportsRealisticScopesOverrideV1(limits);
-    }
-
     [[nodiscard]] inline bool supportsWeaponPartRecordIdentityV1(const RockProviderLimitsV1& limits)
     {
         return hasFeatureBitV1(limits.featureBits, RockProviderFeatureBitV1::WeaponPartRecordIdentity);
@@ -1451,9 +1420,4 @@ namespace rock::provider
         RockProviderWeaponPartDriveTargetV1* outTargets,
         std::uint32_t maxTargets);
     std::uint32_t currentExternalBodyCount();
-    // True while any registered consumer has an active Realistic Scopes
-    // override request (see setRealisticScopesOverrideV1). Does not include
-    // ROCK's own RealisticWeapons.bRealisticScopesEnabled INI flag - callers
-    // that need the fully combined state should OR this with that flag.
-    bool isRealisticScopesOverrideActive();
 }
