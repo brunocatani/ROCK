@@ -919,6 +919,10 @@ namespace rock
             // read was -1, the CommonLib charController offset (0x3E0 vs verified 0x3E8) is confirmed wrong.
             const float ccSpeedGameUnits = g_probeCcSpeedGameUnits.load(std::memory_order_relaxed);
             const float ccAccessorSpeedGameUnits = g_probeCcAccessorSpeedGameUnits.load(std::memory_order_relaxed);
+            // Aligned-timing ACTUAL room speed from the ApplyMovementDelta hook (game units/sec). This is the
+            // stage-2 fix source: phase-locked to movement application, so it should track the walk smoothly
+            // (like ccVelGu) but WITHOUT ccVel's commanded transient lead. Compare against roomVelGu (aliased).
+            const float alignRoomSpeedGameUnits = getAlignedRoomSpeedGameUnits();
 
             // Endpoint divergence: what stretches the grab constraint each step (proxyVel unreliable for a
             // keyframed body, but kept for completeness).
@@ -938,7 +942,7 @@ namespace rock
 
             ROCK_LOG_INFO(Hand,
                 "LOCO_STUTTER hand={} frame={} substep={}/{} subDt={:.6f} driveDt={:.6f} gameDt={:.6f} roomVelGu={:.2f} "
-                "objBody={} proxyBody={} objVelGu={:.2f} proxyVelGu={:.2f} divergenceGu={:.2f} objResidualGu={:.2f} ccVelGu={:.2f} ccAccGu={:.2f}",
+                "objBody={} proxyBody={} objVelGu={:.2f} proxyVelGu={:.2f} divergenceGu={:.2f} objResidualGu={:.2f} ccVelGu={:.2f} ccAccGu={:.2f} alignRoomVelGu={:.2f}",
                 hand.handName(),
                 gameFrameIndex,
                 timing.substepIndex + 1,
@@ -954,7 +958,8 @@ namespace rock
                 proxyOk ? lengthGameUnits(endpointDivergenceHavok) : -1.0f,
                 lengthGameUnits(objectResidualHavok),
                 ccSpeedGameUnits,
-                ccAccessorSpeedGameUnits);
+                ccAccessorSpeedGameUnits,
+                alignRoomSpeedGameUnits);
         }
 
         float measureDirectionDeltaDegrees(const RE::NiPoint3& a, const RE::NiPoint3& b)
@@ -2080,6 +2085,12 @@ namespace rock
             ROCK_LOG_CRITICAL(Init, "Native melee suppression requested but hook installation failed; ROCK will continue without melee suppression");
         } else if (nativeMeleeSuppressionHooksInstalled) {
             enforceNativeMeleeRuntimeSuppression(true);
+        }
+
+        // Aligned-timing room-motion capture for held-object stick-locomotion compensation. Passthrough
+        // hook (always calls the original); currently only feeds the locomotion-stutter probe.
+        if (!installLocomotionAuthorityHook()) {
+            ROCK_LOG_WARN(Init, "Locomotion authority hook (ApplyMovementDelta) not installed; aligned room velocity unavailable");
         }
 
         ROCK_LOG_INFO(Init, "Initializing ROCK physics module...");

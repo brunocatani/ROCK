@@ -45,6 +45,39 @@ namespace rock
         static BhkWorldSetDeltaTime_t g_originalBhkWorldSetDeltaTime = nullptr;
         static std::atomic<bool> g_havokTimingFixMissingOriginalLogged{ false };
         static std::atomic<bool> g_havokTimingFixWriteFailureLogged{ false };
+
+        // --- Locomotion authority: PlayerCharacter::ApplyMovementDelta hook (aligned-timing room motion) ---
+        // ABI: NiPoint3A& and NiPoint3& are both passed as a pointer, so declaring the reference params as
+        // NiPoint3 is ABI-identical and avoids the NiPoint3A include; only x/y/z are read.
+        using PlayerApplyMovementDelta_t = void (*)(RE::TESObjectREFR*, float, const RE::NiPoint3&, const RE::NiPoint3&);
+        static PlayerApplyMovementDelta_t g_originalPlayerApplyMovementDelta = nullptr;
+
+        // Actual per-frame room translation speed (game units/sec) captured at the aligned movement hook.
+        // -1 when unavailable. Read by the locomotion-stutter probe; the world-space vector will drive the
+        // grab proxy in stage 2 of the stick-locomotion stutter fix.
+        std::atomic<float> g_alignedRoomSpeedGameUnits{ -1.0f };
+
+        void hookedPlayerApplyMovementDelta(RE::TESObjectREFR* refr, float timeDelta, const RE::NiPoint3& delta, const RE::NiPoint3& angleDelta)
+        {
+            if (g_originalPlayerApplyMovementDelta) {
+                g_originalPlayerApplyMovementDelta(refr, timeDelta, delta, angleDelta);
+            }
+            // Only the player dispatches here (this is the PlayerCharacter class vtable slot). |delta|/timeDelta
+            // is the ACTUAL room translation applied this frame, phase-locked to movement application -- not the
+            // render-sampled room-node delta (aliased) and not the commanded CC velocity (which leads during
+            // accel/decel). Magnitude is frame-invariant, so the local-space delta suffices for this diagnostic;
+            // stage 2 rotates delta into world space for the drive vector.
+            float speedGameUnits = -1.0f;
+            const float distance = std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
+            if (std::isfinite(distance) && std::isfinite(timeDelta) && timeDelta > 1.0e-6f) {
+                const float speed = distance / timeDelta;
+                if (std::isfinite(speed) && speed < 1.0e6f) {
+                    speedGameUnits = speed;
+                }
+            }
+            g_alignedRoomSpeedGameUnits.store(speedGameUnits, std::memory_order_relaxed);
+        }
+
         constexpr std::uintptr_t kFunc_BhkWorldSetDeltaTime = 0x1DF7120;
         constexpr std::uintptr_t kHookSite_BhkWorldSetDeltaTimeMainCall = 0x0D84BD0;
         /*
@@ -1568,6 +1601,34 @@ namespace rock
             g_rockConfig.rockNativeMeleeFullSuppression ? "yes" : "no", g_rockConfig.rockNativeMeleeSuppressWeaponSwing ? "yes" : "no",
             g_rockConfig.rockNativeMeleeSuppressHitFrame ? "yes" : "no");
         return weaponSwingInstalled && hitFrameInstalled && attackBlockInstalled && playerWeaponSwingCallbackInstalled && vrMeleeImpactInstalled;
+    }
+
+    bool installLocomotionAuthorityHook()
+    {
+        static bool applyMovementDeltaInstalled = false;
+        if (applyMovementDeltaInstalled) {
+            return true;
+        }
+
+        // Validate the PlayerCharacter vtable slot still points at ApplyMovementDelta before swapping it
+        // (same discipline as the melee vtable hooks). Player-only: this is the PlayerCharacter class vtable.
+        if (!validateNativeMeleeVtableTarget(offsets::kVtableEntry_PlayerCharacter_ApplyMovementDelta,
+                offsets::kFunc_PlayerCharacter_ApplyMovementDelta,
+                "PlayerCharacter::ApplyMovementDelta")) {
+            ROCK_LOG_ERROR(Init, "Locomotion authority hook validation failed; ApplyMovementDelta install deferred");
+            return false;
+        }
+
+        applyMovementDeltaInstalled = installNativeMeleeVtableHook(offsets::kVtableEntry_PlayerCharacter_ApplyMovementDelta,
+            &hookedPlayerApplyMovementDelta,
+            g_originalPlayerApplyMovementDelta,
+            "PlayerCharacter::ApplyMovementDelta");
+        return applyMovementDeltaInstalled;
+    }
+
+    float getAlignedRoomSpeedGameUnits()
+    {
+        return g_alignedRoomSpeedGameUnits.load(std::memory_order_relaxed);
     }
 
     using ProcessConstraints_t = void (*)(void*, void*, void*, void*);
