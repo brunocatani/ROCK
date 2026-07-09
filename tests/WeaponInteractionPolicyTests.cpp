@@ -186,10 +186,10 @@ int main()
         canStartFreeHandPartGrip(true, true, false, true));
 
     using namespace rock::equipped_weapon_manual_ownership_policy;
-    ok &= expectTrue("manual grip feature is available for active equipped weapon", featureAvailable(true, true, true, 10, 20));
-    ok &= expectFalse("manual grip feature is unavailable without active weapon node", featureAvailable(true, true, false, 10, 20));
-    ok &= expectTrue("manual primary ownership is available while colliders build", featureAvailable(true, true, true, 0, 20));
-    ok &= expectFalse("manual grip feature requires equipped identity or collision generation", featureAvailable(true, true, true, 0, 0));
+    ok &= expectTrue("manual grip feature is available for an equipped instance", featureAvailable(true, true, true, 20));
+    ok &= expectFalse("manual grip feature is unavailable without active weapon node", featureAvailable(true, true, false, 20));
+    ok &= expectTrue("manual primary ownership is available while colliders build", featureAvailable(true, true, true, 20));
+    ok &= expectFalse("manual grip feature requires an equipped instance witness", featureAvailable(true, true, true, 0));
     ok &= expectTrue("pending trigger-equip grip waits while runtime weapon is not ready",
         shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
             .pending = true,
@@ -224,15 +224,15 @@ int main()
         }));
 
     ok &= expectTrue("same equipped weapon preserves ownership across collision rebuild",
-        canPreserveAcrossCollisionGenerationChange(0xAAu, 0xAAu, 0xBBu));
+        canPreserveManualOwnership(0xAAu, 0xAAu, 0xBBu));
     ok &= expectFalse("different equipped weapon cannot inherit manual ownership",
-        canPreserveAcrossCollisionGenerationChange(0xAAu, 0xCCu, 0xBBu));
+        canPreserveManualOwnership(0xAAu, 0xCCu, 0xBBu));
     ok &= expectFalse("unpublished collision generation cannot preserve ownership",
-        canPreserveAcrossCollisionGenerationChange(0xAAu, 0xAAu, 0u));
+        canPreserveManualOwnership(0xAAu, 0xAAu, 0u));
     ok &= expectTrue("primary-only ownership survives unpublished collision generation",
-        canPreserveAcrossCollisionGenerationChange(0xAAu, 0xAAu, 0u, false));
+        canPreserveManualOwnership(0xAAu, 0xAAu, 0u, false));
     ok &= expectFalse("provisional primary-only ownership still rejects a different equipped identity",
-        canPreserveAcrossCollisionGenerationChange(0xAAu, 0xCCu, 0u, false));
+        canPreserveManualOwnership(0xAAu, 0xCCu, 0u, false));
 
     GripReleaseDebounceState primaryReleaseDebounce{};
     auto primaryReleaseDecision = debouncePrimaryGripRelease(primaryReleaseDebounce, false);
@@ -249,7 +249,7 @@ int main()
     auto manualDecision = update(manualState,
         Input{
             .weaponEquipped = true,
-            .weaponGenerationKey = 10,
+            .ownershipKey = 10,
             .startRequested = false,
             .primaryGripRetained = false,
             .supportGripRetained = false,
@@ -260,7 +260,7 @@ int main()
     manualDecision = update(manualState,
         Input{
             .weaponEquipped = true,
-            .weaponGenerationKey = 10,
+            .ownershipKey = 10,
             .startRequested = true,
             .primaryGripRetained = true,
             .supportGripRetained = false,
@@ -271,7 +271,7 @@ int main()
     manualDecision = update(manualState,
         Input{
             .weaponEquipped = true,
-            .weaponGenerationKey = 10,
+            .ownershipKey = 10,
             .startRequested = false,
             .primaryGripRetained = false,
             .supportGripRetained = false,
@@ -282,7 +282,7 @@ int main()
     manualDecision = update(manualState,
         Input{
             .weaponEquipped = true,
-            .weaponGenerationKey = 11,
+            .ownershipKey = 11,
             .startRequested = true,
             .primaryGripRetained = false,
             .supportGripRetained = true,
@@ -291,13 +291,13 @@ int main()
     manualDecision = update(manualState,
         Input{
             .weaponEquipped = true,
-            .weaponGenerationKey = 12,
+            .ownershipKey = 12,
             .startRequested = false,
             .primaryGripRetained = false,
             .supportGripRetained = false,
         });
-    ok &= expectTrue("weapon generation change clears manual ownership", manualDecision.cleared);
-    ok &= expectFalse("weapon generation change does not drop old equipped weapon", manualDecision.dropRequested);
+    ok &= expectTrue("equipped instance change clears manual ownership", manualDecision.cleared);
+    ok &= expectFalse("equipped instance change does not drop the newly equipped weapon", manualDecision.dropRequested);
 
     using namespace rock::equipped_weapon_drop_policy;
     ok &= expectEqual("support release normally drops from left hand", sourceForSupportRelease(false), SourceHand::Left);

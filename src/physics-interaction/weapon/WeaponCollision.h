@@ -110,6 +110,8 @@ namespace rock
 
         std::uint64_t getCurrentEquippedWeaponIdentityKey() const { return _observedEquippedWeaponIdentityKey; }
 
+        std::uint64_t getCurrentEquippedWeaponOwnershipKey() const { return _observedEquippedWeaponOwnershipKey; }
+
         weapon_generation_identity_policy::EquippedWeaponGenerationIdentity getEquippedWeaponClassification() const;
 
         std::uint64_t getCurrentWeaponGenerationKey() const { return _weaponBodySetKeyAtomic.load(std::memory_order_acquire); }
@@ -340,7 +342,10 @@ namespace rock
         bool pendingGeneratedWeaponBuildMatches(std::uint64_t equippedKey) const;
         void resetWeaponCollisionSettingsCache();
 
-        std::uint64_t getEquippedWeaponIdentityKey(std::uint64_t* outIdentityKey = nullptr, WeaponSizeClass* outSizeClass = nullptr) const;
+        std::uint64_t getEquippedWeaponIdentityKey(
+            std::uint64_t* outIdentityKey = nullptr,
+            std::uint64_t* outOwnershipKey = nullptr,
+            WeaponSizeClass* outSizeClass = nullptr) const;
         std::uint64_t getWeaponVisualCompositionKey(RE::NiAVObject* weaponNode, WeaponVisualKeyStats& stats) const;
 
         void maybeDumpWeaponAnimNodeDiagnostics(RE::NiAVObject* updateWeaponNode, std::uint64_t observedKey);
@@ -359,6 +364,9 @@ namespace rock
         // Available before generated bodies publish; the cached identity above
         // remains body-associated for replacement safety.
         std::uint64_t _observedEquippedWeaponIdentityKey{ 0 };
+        // Instance-bound authority witness; never substitute this for a
+        // collision generation or content-equivalence key.
+        std::uint64_t _observedEquippedWeaponOwnershipKey{ 0 };
         std::uint64_t _cachedWeaponBodySetKey{ 0 };
         std::uint64_t _weaponBodySetEpoch{ 0 };
         weapon_generated_source_completeness_policy::GeneratedSourceCompleteness _cachedGeneratedSourceCompleteness{};

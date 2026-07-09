@@ -138,7 +138,9 @@ int main()
     identity.activeModCount = 2;
     identity.displayName = "Test Weapon";
     const std::uint64_t generationKey = makeEquippedWeaponGenerationKey(0x4444, identity);
+    const std::uint64_t ownershipKey = makeEquippedWeaponOwnershipKey(identity);
     ok &= expectNonZero("equipped identity creates generation key", generationKey);
+    ok &= expectNonZero("equipped instance witnesses create ownership key", ownershipKey);
     ok &= expectSame("visual-only witness changes do not change generation key", generationKey, makeEquippedWeaponGenerationKey(0x5555, identity));
     auto pointerChurnIdentity = identity;
     pointerChurnIdentity.formAddress = 0x9000;
@@ -148,6 +150,16 @@ int main()
     pointerChurnIdentity.equippedDataAddress = 0x9004;
     pointerChurnIdentity.equippedObjectAddress = 0x9005;
     ok &= expectSame("runtime pointer churn does not change generation key", generationKey, makeEquippedWeaponGenerationKey(0x4444, pointerChurnIdentity));
+    ok &= expectDifferent("different equipped instance witnesses change ownership key", ownershipKey, makeEquippedWeaponOwnershipKey(pointerChurnIdentity));
+    auto sameInstanceContentChange = identity;
+    sameInstanceContentChange.instanceContentKey ^= 0x55;
+    ok &= expectSame("same equipped instance keeps ownership across content-key rebuilds", ownershipKey, makeEquippedWeaponOwnershipKey(sameInstanceContentChange));
+    auto missingInstanceWitness = identity;
+    missingInstanceWitness.instanceDataAddress = 0;
+    missingInstanceWitness.objectInstanceExtraAddress = 0;
+    missingInstanceWitness.equippedDataAddress = 0;
+    missingInstanceWitness.equippedObjectAddress = 0;
+    ok &= expectFalse("manual ownership fails closed without an instance witness", makeEquippedWeaponOwnershipKey(missingInstanceWitness) != 0);
     identity.instanceContentKey = 0x3334;
     ok &= expectDifferent("generation key changes with equipped instance content", generationKey, makeEquippedWeaponGenerationKey(0x4444, identity));
     identity.instanceContentKey = 0x3333;

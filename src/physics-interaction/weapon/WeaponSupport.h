@@ -354,13 +354,13 @@ namespace rock::equipped_weapon_manual_ownership_policy
     struct RuntimeState
     {
         bool active{ false };
-        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t ownershipKey{ 0 };
     };
 
     struct Input
     {
         bool weaponEquipped{ false };
-        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t ownershipKey{ 0 };
         bool startRequested{ false };
         bool primaryGripRetained{ false };
         bool supportGripRetained{ false };
@@ -387,13 +387,12 @@ namespace rock::equipped_weapon_manual_ownership_policy
         bool configEnabled,
         bool primaryPoseBlockerAvailable,
         bool weaponNodeAvailable,
-        std::uint64_t weaponGenerationKey,
-        std::uint64_t equippedWeaponIdentityKey) noexcept
+        std::uint64_t equippedWeaponOwnershipKey) noexcept
     {
         return configEnabled &&
                primaryPoseBlockerAvailable &&
                weaponNodeAvailable &&
-               (weaponGenerationKey != 0 || equippedWeaponIdentityKey != 0);
+               equippedWeaponOwnershipKey != 0;
     }
 
     [[nodiscard]] inline constexpr bool shouldKeepPendingPrimaryOnlyStart(const PendingPrimaryOnlyStartInput& input) noexcept
@@ -406,14 +405,14 @@ namespace rock::equipped_weapon_manual_ownership_policy
                !input.virtualHolstersOwnsInput;
     }
 
-    [[nodiscard]] inline constexpr bool canPreserveAcrossCollisionGenerationChange(
-        std::uint64_t activeEquippedIdentityKey,
-        std::uint64_t currentEquippedIdentityKey,
+    [[nodiscard]] inline constexpr bool canPreserveManualOwnership(
+        std::uint64_t activeEquippedOwnershipKey,
+        std::uint64_t currentEquippedOwnershipKey,
         std::uint64_t currentCollisionGenerationKey,
         bool collisionGenerationRequired = true) noexcept
     {
-        return activeEquippedIdentityKey != 0 &&
-               activeEquippedIdentityKey == currentEquippedIdentityKey &&
+        return activeEquippedOwnershipKey != 0 &&
+               activeEquippedOwnershipKey == currentEquippedOwnershipKey &&
                (!collisionGenerationRequired || currentCollisionGenerationKey != 0);
     }
 
@@ -445,20 +444,20 @@ namespace rock::equipped_weapon_manual_ownership_policy
     {
         Decision decision{};
 
-        if (!input.weaponEquipped || input.weaponGenerationKey == 0) {
+        if (!input.weaponEquipped || input.ownershipKey == 0) {
             decision.cleared = state.active;
             state = {};
             return decision;
         }
 
-        if (state.active && state.weaponGenerationKey != input.weaponGenerationKey) {
+        if (state.active && state.ownershipKey != input.ownershipKey) {
             decision.cleared = true;
             state = {};
         }
 
         if (!state.active && input.startRequested) {
             state.active = true;
-            state.weaponGenerationKey = input.weaponGenerationKey;
+            state.ownershipKey = input.ownershipKey;
             decision.started = true;
         }
 

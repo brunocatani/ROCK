@@ -521,6 +521,37 @@ namespace rock::weapon_generation_identity_policy
         return key;
     }
 
+    /*
+     * Manual ownership is instance-bound, unlike generated collision, which is
+     * intentionally content-bound so harmless runtime pointer churn does not
+     * rebuild bodies. These live equip witnesses are compared only as opaque
+     * values on the main thread; ROCK never dereferences a retained address.
+     */
+    inline std::uint64_t makeEquippedWeaponOwnershipKey(const EquippedWeaponGenerationIdentity& identity)
+    {
+        if (!identity.hasEquippedWeapon) {
+            return 0;
+        }
+
+        const bool hasInstanceWitness =
+            identity.instanceDataAddress != 0 ||
+            identity.objectInstanceExtraAddress != 0 ||
+            identity.equippedDataAddress != 0 ||
+            identity.equippedObjectAddress != 0;
+        if (!hasInstanceWitness) {
+            return 0;
+        }
+
+        std::uint64_t key = weapon_visual_composition_policy::kWeaponVisualCompositionOffset;
+        weapon_visual_composition_policy::mixString(key, "ROCKEquippedWeaponOwnershipV1");
+        weapon_visual_composition_policy::mixValue(key, identity.formID);
+        weapon_visual_composition_policy::mixValue(key, identity.instanceDataAddress);
+        weapon_visual_composition_policy::mixValue(key, identity.objectInstanceExtraAddress);
+        weapon_visual_composition_policy::mixValue(key, identity.equippedDataAddress);
+        weapon_visual_composition_policy::mixValue(key, identity.equippedObjectAddress);
+        return key;
+    }
+
     inline std::uint64_t makeEquippedWeaponGenerationKey(
         std::uint64_t visualCompositionKey,
         const EquippedWeaponGenerationIdentity& identity)

@@ -2782,7 +2782,7 @@ namespace rock
 
             const WeaponInteractionDecision leftWeaponDecision = routeWeaponInteraction(leftWeaponContact, providerInteractionState);
             const std::uint64_t currentWeaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey();
-            const std::uint64_t currentEquippedWeaponIdentityKey = _weaponCollision.getCurrentEquippedWeaponIdentityKey();
+            const std::uint64_t currentEquippedWeaponOwnershipKey = _weaponCollision.getCurrentEquippedWeaponOwnershipKey();
             const auto weaponNotificationKey = weapon_debug_notification_policy::makeWeaponNotificationKey(
                 leftWeaponContact,
                 leftWeaponDecision,
@@ -2831,8 +2831,7 @@ namespace rock
                 g_rockConfig.rockRealisticWeaponHandlingEnabled,
                 primaryPoseBlockerAvailable,
                 weaponNode != nullptr,
-                currentWeaponGenerationKey,
-                currentEquippedWeaponIdentityKey);
+                currentEquippedWeaponOwnershipKey);
             const bool inputBlockingMenuActive = input_remap_runtime::isMenuInputActive();
             const bool primaryGrabDeferredForVirtualHolsters = input_remap_runtime::shouldDeferGrabInputForVirtualHolsters(false, g_rockConfig.rockGrabButtonID);
             if (inputBlockingMenuActive) {
@@ -2874,16 +2873,14 @@ namespace rock
 
                 const bool primaryOnlyStartRequested =
                     weaponNode != nullptr &&
-                    currentEquippedWeaponIdentityKey != 0 &&
+                    currentEquippedWeaponOwnershipKey != 0 &&
                     primaryState.held &&
                     (primaryState.pressed || _pendingEquippedWeaponPrimaryOnlyGripStart);
-                const std::uint64_t primaryOwnershipGenerationKey =
-                    currentWeaponGenerationKey != 0 ? currentWeaponGenerationKey : currentEquippedWeaponIdentityKey;
                 if (primaryOnlyStartRequested &&
                     _twoHandedGrip.beginPrimaryOnlyGrip(
                         weaponNode,
-                        primaryOwnershipGenerationKey,
-                        currentEquippedWeaponIdentityKey)) {
+                        currentWeaponGenerationKey,
+                        currentEquippedWeaponOwnershipKey)) {
                     primaryOnlyGripStartedThisFrame = true;
                     _pendingEquippedWeaponPrimaryOnlyGripStart = false;
                     primaryGripInput = EquippedWeaponPrimaryGripInput{
@@ -3001,7 +2998,7 @@ namespace rock
                 gripFrameInput,
                 frame.deltaSeconds,
                 currentWeaponGenerationKey,
-                currentEquippedWeaponIdentityKey,
+                currentEquippedWeaponOwnershipKey,
                 _weaponCollision,
                 providerInteractionState,
                 rightHandInteractionState,

@@ -134,7 +134,7 @@ namespace rock
             const EquippedWeaponGripFrameInput& frameInput,
             float dt,
             std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponIdentityKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey,
             const WeaponCollision& weaponCollision,
             const WeaponInteractionRuntimeState& leftRuntimeState,
             const WeaponInteractionRuntimeState& rightRuntimeState,
@@ -204,7 +204,7 @@ namespace rock
         bool beginPrimaryOnlyGrip(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponIdentityKey);
+            std::uint64_t currentEquippedWeaponOwnershipKey);
 
         /*
          * FRIK re-attaches the weapon node to the firing hand every frame
@@ -287,8 +287,6 @@ namespace rock
             WeaponSocketRole socketRole{ WeaponSocketRole::None };
             WeaponActionRole actionRole{ WeaponActionRole::None };
             std::uint64_t weaponGenerationKey{ 0 };
-            bool generationRebindPending{ false };
-            std::uint8_t providerValidationGraceFrames{ 0 };
             std::uint64_t gripSequence{ 0 };
             std::array<char, kWeaponProviderSourceNameCapacity> sourceName{};
             // Record-authored identity from the evidence descriptor at capture.
@@ -315,7 +313,7 @@ namespace rock
             const WeaponCollision& weaponCollision,
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
             bool sidearmHybridEligible,
-            std::uint64_t currentEquippedWeaponIdentityKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey,
             const WeaponProviderPartAuthority& providerPartAuthority);
         void transitionToInactive(bool publishRestoredWeaponTransform);
 
@@ -338,7 +336,7 @@ namespace rock
             const WeaponInteractionContact& rightWeaponContact,
             const WeaponCollision& weaponCollision,
             std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponIdentityKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey,
             const WeaponInteractionRuntimeState& leftRuntimeState,
             const WeaponInteractionRuntimeState& rightRuntimeState);
 
@@ -353,13 +351,13 @@ namespace rock
         bool transitionToPrimaryOnly(
             RE::NiNode* weaponNode,
             std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponIdentityKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey,
             const char* reason);
 
         bool reconcileCollisionGeneration(
             RE::NiNode* currentWeaponNode,
             std::uint64_t currentWeaponGenerationKey,
-            std::uint64_t currentEquippedWeaponIdentityKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey,
             const WeaponCollision& weaponCollision);
 
         bool tryRebindPartGripToCurrentGeneration(
@@ -371,7 +369,7 @@ namespace rock
 
         void updatePrimaryOnlyGrip(
             RE::NiNode* weaponNode,
-            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponOwnershipKey,
             const EquippedWeaponPrimaryGripInput& primaryGripInput);
 
         bool tryReattachFiringGrip(RE::NiNode* weaponNode, const WeaponInteractionContact& firingHandWeaponContact);
@@ -505,7 +503,7 @@ namespace rock
 
         RE::NiNode* _activeWeaponNode{ nullptr };
         std::uint64_t _activeWeaponGenerationKey{ 0 };
-        std::uint64_t _activeEquippedWeaponIdentityKey{ 0 };
+        std::uint64_t _activeEquippedWeaponOwnershipKey{ 0 };
         equipped_weapon_manual_ownership_policy::GripReleaseDebounceState _primaryReleaseDebounce{};
         RE::NiTransform _weaponNodeLocalBaseline{};
         bool _hasWeaponNodeLocalBaseline{ false };
