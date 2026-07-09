@@ -134,6 +134,7 @@ namespace rock
             const EquippedWeaponGripFrameInput& frameInput,
             float dt,
             std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponIdentityKey,
             const WeaponCollision& weaponCollision,
             const WeaponInteractionRuntimeState& leftRuntimeState,
             const WeaponInteractionRuntimeState& rightRuntimeState,
@@ -200,7 +201,10 @@ namespace rock
 
         bool getDebugAuthoritySnapshot(TwoHandedGripDebugSnapshot& outSnapshot) const;
 
-        bool beginPrimaryOnlyGrip(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey);
+        bool beginPrimaryOnlyGrip(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponIdentityKey);
 
         /*
          * FRIK re-attaches the weapon node to the firing hand every frame
@@ -283,6 +287,8 @@ namespace rock
             WeaponSocketRole socketRole{ WeaponSocketRole::None };
             WeaponActionRole actionRole{ WeaponActionRole::None };
             std::uint64_t weaponGenerationKey{ 0 };
+            bool generationRebindPending{ false };
+            std::uint8_t providerValidationGraceFrames{ 0 };
             std::uint64_t gripSequence{ 0 };
             std::array<char, kWeaponProviderSourceNameCapacity> sourceName{};
             // Record-authored identity from the evidence descriptor at capture.
@@ -309,12 +315,13 @@ namespace rock
             const WeaponCollision& weaponCollision,
             weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
             bool sidearmHybridEligible,
+            std::uint64_t currentEquippedWeaponIdentityKey,
             const WeaponProviderPartAuthority& providerPartAuthority);
         void transitionToInactive(bool publishRestoredWeaponTransform);
 
         void updateGripping(RE::NiNode* weaponNode, float dt);
 
-        bool providerPartAuthorityStillCurrent(const WeaponPartGrip& grip, std::uint64_t currentWeaponGenerationKey) const;
+        bool providerPartAuthorityStillCurrent(WeaponPartGrip& grip, std::uint64_t currentWeaponGenerationKey);
 
         // Upgrade twin of the check above: a grip captured without provider
         // authority whose part now resolves to a matched provider target
@@ -331,6 +338,7 @@ namespace rock
             const WeaponInteractionContact& rightWeaponContact,
             const WeaponCollision& weaponCollision,
             std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponIdentityKey,
             const WeaponInteractionRuntimeState& leftRuntimeState,
             const WeaponInteractionRuntimeState& rightRuntimeState);
 
@@ -342,7 +350,22 @@ namespace rock
 
         bool transitionToPartCarry();
 
-        bool transitionToPrimaryOnly(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const char* reason);
+        bool transitionToPrimaryOnly(
+            RE::NiNode* weaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponIdentityKey,
+            const char* reason);
+
+        bool reconcileCollisionGeneration(
+            RE::NiNode* currentWeaponNode,
+            std::uint64_t currentWeaponGenerationKey,
+            std::uint64_t currentEquippedWeaponIdentityKey,
+            const WeaponCollision& weaponCollision);
+
+        bool tryRebindPartGripToCurrentGeneration(
+            WeaponPartGrip& grip,
+            std::uint64_t currentWeaponGenerationKey,
+            const WeaponCollision& weaponCollision);
 
         void requestEquippedWeaponDrop(const char* reason, equipped_weapon_drop_policy::SourceHand sourceHand);
 
@@ -482,6 +505,8 @@ namespace rock
 
         RE::NiNode* _activeWeaponNode{ nullptr };
         std::uint64_t _activeWeaponGenerationKey{ 0 };
+        std::uint64_t _activeEquippedWeaponIdentityKey{ 0 };
+        equipped_weapon_manual_ownership_policy::GripReleaseDebounceState _primaryReleaseDebounce{};
         RE::NiTransform _weaponNodeLocalBaseline{};
         bool _hasWeaponNodeLocalBaseline{ false };
 

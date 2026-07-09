@@ -467,6 +467,7 @@ namespace rock
         hand_collision_suppression_math::DelayedRestoreState _leftEquippedWeaponDropDelayedRestore{};
         weapon_debug_notification_policy::WeaponNotificationState _weaponDebugNotificationState{};
         bool _pendingEquippedWeaponPrimaryOnlyGripStart = false;
+        bool _equippedWeaponMenuReconcilePending = false;
         /*
          * Single-consumption snapshot of the firing hand's grab button. The
          * equipped-weapon manual ownership path consumes the raw edges once per

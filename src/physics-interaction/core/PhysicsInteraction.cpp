@@ -2236,6 +2236,7 @@ namespace rock
                 menuBlocking,
                 false,
                 false)) {
+            _equippedWeaponMenuReconcilePending = true;
             if (_initialized) {
                 _twoHandedGrip.reset();
                 _pendingEquippedWeaponPrimaryOnlyGripStart = false;
@@ -2470,6 +2471,17 @@ namespace rock
             _feedbackHaptics.reset();
             ::rock::provider::dispatchFrameCallbacks(*this);
             return;
+        }
+
+        if (_equippedWeaponMenuReconcilePending) {
+            const bool primaryGrabHeld = input_remap_runtime::isRawButtonPhysicallyHeld(false, g_rockConfig.rockGrabButtonID);
+            _pendingEquippedWeaponPrimaryOnlyGripStart =
+                g_rockConfig.rockRealisticWeaponHandlingEnabled && primaryGrabHeld;
+            _equippedWeaponMenuReconcilePending = false;
+            ROCK_LOG_DEBUG(Weapon,
+                "Equipped weapon ownership reconciled after menu: primaryGrabHeld={} pendingPrimaryOnlyStart={}",
+                primaryGrabHeld ? "yes" : "no",
+                _pendingEquippedWeaponPrimaryOnlyGripStart ? "yes" : "no");
         }
 
         if (_collisionLayerRegistered &&
@@ -2770,6 +2782,7 @@ namespace rock
 
             const WeaponInteractionDecision leftWeaponDecision = routeWeaponInteraction(leftWeaponContact, providerInteractionState);
             const std::uint64_t currentWeaponGenerationKey = _weaponCollision.getCurrentWeaponGenerationKey();
+            const std::uint64_t currentEquippedWeaponIdentityKey = _weaponCollision.getCurrentEquippedWeaponIdentityKey();
             const auto weaponNotificationKey = weapon_debug_notification_policy::makeWeaponNotificationKey(
                 leftWeaponContact,
                 leftWeaponDecision,
@@ -2797,6 +2810,10 @@ namespace rock
             auto readPrimaryGrabState = [&]() -> const GrabButtonState& {
                 if (!primaryGrabStateRead) {
                     primaryGrabState = readGrabButtonState(false, g_rockConfig.rockGrabButtonID);
+                    // Menu rearm intentionally masks gameplay edges, but
+                    // realistic weapon ownership still follows the physical
+                    // hand state after the menu closes.
+                    primaryGrabState.held = input_remap_runtime::isRawButtonPhysicallyHeld(false, g_rockConfig.rockGrabButtonID);
                     primaryGrabStateRead = true;
                     // Publish the consumed snapshot so the normal grab pipeline
                     // sees the same edges instead of re-consuming cleared ones.
@@ -2823,7 +2840,7 @@ namespace rock
                 !equipped_weapon_manual_ownership_policy::shouldKeepPendingPrimaryOnlyStart(
                     equipped_weapon_manual_ownership_policy::PendingPrimaryOnlyStartInput{
                         .pending = _pendingEquippedWeaponPrimaryOnlyGripStart,
-                        .gripHeld = readGrabButtonHeld(false, g_rockConfig.rockGrabButtonID),
+                        .gripHeld = input_remap_runtime::isRawButtonPhysicallyHeld(false, g_rockConfig.rockGrabButtonID),
                         .configEnabled = g_rockConfig.rockRealisticWeaponHandlingEnabled,
                         .primaryPoseBlockerAvailable = primaryPoseBlockerAvailable,
                         .virtualHolstersOwnsInput = primaryGrabDeferredForVirtualHolsters,
@@ -2859,7 +2876,11 @@ namespace rock
                     currentWeaponGenerationKey != 0 &&
                     primaryState.held &&
                     (primaryState.pressed || _pendingEquippedWeaponPrimaryOnlyGripStart);
-                if (primaryOnlyStartRequested && _twoHandedGrip.beginPrimaryOnlyGrip(weaponNode, currentWeaponGenerationKey)) {
+                if (primaryOnlyStartRequested &&
+                    _twoHandedGrip.beginPrimaryOnlyGrip(
+                        weaponNode,
+                        currentWeaponGenerationKey,
+                        currentEquippedWeaponIdentityKey)) {
                     primaryOnlyGripStartedThisFrame = true;
                     _pendingEquippedWeaponPrimaryOnlyGripStart = false;
                     primaryGripInput = EquippedWeaponPrimaryGripInput{
@@ -2977,6 +2998,7 @@ namespace rock
                 gripFrameInput,
                 frame.deltaSeconds,
                 currentWeaponGenerationKey,
+                currentEquippedWeaponIdentityKey,
                 _weaponCollision,
                 providerInteractionState,
                 rightHandInteractionState,
@@ -3036,109 +3058,87 @@ namespace rock
                         dropLoc.z);
                     _pendingEquippedWeaponPrimaryOnlyGripStart = false;
                     clearEquippedWeaponPrimaryInputState();
-                } else if (sourceHandKnown &&
-                           g_rockConfig.rockEquippedWeaponShoulderStashEnabled &&
-                           equippedWeaponStashDecisions[equipped_weapon_drop_policy::isLeft(sourceHand) ? 1u : 0u].confirmedForCommit) {
-                    /*
-                     * Stash-unequip resolves before VirtualHolsters because the
-                     * holster press request has side effects and cannot be
-                     * probed. The weapon is only unequipped -- it stays in the
-                     * inventory and no world reference is created. On failure
-                     * ROCK deliberately does nothing: the weapon stays equipped
-                     * and re-attaches to the hand, which is safer than dropping
-                     * a weapon the player asked to stow.
-                     */
-                    const bool stashHandIsLeft = equipped_weapon_drop_policy::isLeft(sourceHand);
-                    const auto& stashDecision = equippedWeaponStashDecisions[stashHandIsLeft ? 1u : 0u];
-                    const auto unequipResult = weapon_equip_transfer::unequipEquippedWeaponFromPlayer(
-                        weapon_equip_transfer::EquippedUnequipInput{ .playSounds = true });
-                    if (unequipResult.success) {
-                        ROCK_LOG_INFO(Weapon,
-                            "Equipped weapon shoulder stash unequipped weapon formID={:08X} sourceHand={} zone={} confidence={:.2f} stack={} instanceMatch={}",
-                            unequipResult.formID,
-                            equipped_weapon_drop_policy::sourceHandName(sourceHand),
-                            body_zone::bodyZoneName(stashDecision.zone),
-                            stashDecision.confidence,
-                            unequipResult.stackID,
-                            unequipResult.matchedInstanceData ? "yes" : "no");
-                        if (g_rockConfig.rockShoulderStashHapticsEnabled) {
-                            (void)_feedbackHaptics.queue(
-                                stashHandIsLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
-                                g_rockConfig.rockShoulderStashCommitHapticDurationSeconds,
-                                g_rockConfig.rockShoulderStashCommitHapticIntensity);
-                        }
-                        if (g_rockConfig.rockShoulderStashShowCollectedNotifications) {
-                            f4vr::showNotification(shoulder_stash_notification_policy::formatStowedNotification(
-                                shoulderStashItemName(unequipResult.weapon),
-                                unequipResult.formID));
-                        }
-                    } else {
-                        ROCK_LOG_WARN(Weapon,
-                            "Equipped weapon shoulder stash unequip failed formID={:08X} reason={} sourceHand={} attempted={} -- weapon stays equipped",
-                            unequipResult.formID,
-                            weapon_equip_transfer::unequipReasonName(unequipResult.reason),
-                            equipped_weapon_drop_policy::sourceHandName(sourceHand),
-                            unequipResult.attempted ? "yes" : "no");
-                    }
-                    shoulder_stash::resetRuntime(_equippedWeaponStashStates[stashHandIsLeft ? 1u : 0u]);
-                    _pendingEquippedWeaponPrimaryOnlyGripStart = false;
-                    clearEquippedWeaponPrimaryInputState();
                 } else {
-                    /*
-                     * Seamless drop: spawn the world ref at the weapon's last
-                     * visually-published pose (equipped and dropped weapons
-                     * share the same nif) and hand the captured release
-                     * momentum to the spawned physics bodies once they
-                     * resolve. The previous-frame capture is preferred over
-                     * the live node because the release transition restores
-                     * the weapon node to the FRIK hand baseline before this
-                     * code runs.
-                     */
-                    RE::NiPoint3 releaseLoc = dropLoc;
-                    RE::NiPoint3 releaseRot{};
-                    bool hasReleaseRot = false;
-                    if (_equippedWeaponReleaseCapture.hasWeaponWorld) {
-                        releaseLoc = _equippedWeaponReleaseCapture.weaponWorld.translate;
-                        releaseRot = grab_node_info_math::nifskopeMatrixToEulerRadians<RE::NiMatrix3, RE::NiPoint3>(
-                            _equippedWeaponReleaseCapture.weaponWorld.rotate);
-                        hasReleaseRot = true;
-                    } else if (weaponNode && finiteNiTransform(weaponNode->world)) {
-                        releaseLoc = weaponNode->world.translate;
-                        releaseRot = grab_node_info_math::nifskopeMatrixToEulerRadians<RE::NiMatrix3, RE::NiPoint3>(weaponNode->world.rotate);
-                        hasReleaseRot = true;
+                    bool stashSucceeded = false;
+                    if (sourceHandKnown && g_rockConfig.rockEquippedWeaponShoulderStashEnabled &&
+                        equippedWeaponStashDecisions[equipped_weapon_drop_policy::isLeft(sourceHand) ? 1u : 0u].confirmedForCommit) {
+                        /*
+                         * Stash-unequip resolves before VirtualHolsters because the
+                         * holster press request has side effects and cannot be
+                         * probed. The weapon is only unequipped -- it stays in the
+                         * inventory and no world reference is created. A failed
+                         * stash falls through to the physical drop requested by
+                         * the same last-grip release.
+                         */
+                        const bool stashHandIsLeft = equipped_weapon_drop_policy::isLeft(sourceHand);
+                        const auto& stashDecision = equippedWeaponStashDecisions[stashHandIsLeft ? 1u : 0u];
+                        const auto unequipResult = weapon_equip_transfer::unequipEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedUnequipInput{ .playSounds = true });
+                        if (unequipResult.success) {
+                            stashSucceeded = true;
+                            ROCK_LOG_INFO(Weapon,
+                                "Equipped weapon shoulder stash unequipped weapon formID={:08X} sourceHand={} zone={} confidence={:.2f} stack={} instanceMatch={}",
+                                unequipResult.formID, equipped_weapon_drop_policy::sourceHandName(sourceHand), body_zone::bodyZoneName(stashDecision.zone),
+                                stashDecision.confidence, unequipResult.stackID, unequipResult.matchedInstanceData ? "yes" : "no");
+                            if (g_rockConfig.rockShoulderStashHapticsEnabled) {
+                                (void)_feedbackHaptics.queue(stashHandIsLeft ? feedback_haptics::FeedbackHand::Left : feedback_haptics::FeedbackHand::Right,
+                                    g_rockConfig.rockShoulderStashCommitHapticDurationSeconds, g_rockConfig.rockShoulderStashCommitHapticIntensity);
+                            }
+                            if (g_rockConfig.rockShoulderStashShowCollectedNotifications) {
+                                f4vr::showNotification(
+                                    shoulder_stash_notification_policy::formatStowedNotification(shoulderStashItemName(unequipResult.weapon), unequipResult.formID));
+                            }
+                        } else {
+                            ROCK_LOG_WARN(Weapon,
+                                "Equipped weapon shoulder stash unequip failed formID={:08X} reason={} sourceHand={} attempted={} -- falling back to physical drop",
+                                unequipResult.formID, weapon_equip_transfer::unequipReasonName(unequipResult.reason), equipped_weapon_drop_policy::sourceHandName(sourceHand),
+                                unequipResult.attempted ? "yes" : "no");
+                        }
+                        shoulder_stash::resetRuntime(_equippedWeaponStashStates[stashHandIsLeft ? 1u : 0u]);
                     }
-                    const auto dropResult = weapon_equip_transfer::dropEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedDropInput{
-                        .dropLoc = releaseLoc,
-                        .dropRot = releaseRot,
-                        .hasDropLoc = true,
-                        .hasDropRot = hasReleaseRot,
-                    });
-                    if (dropResult.success) {
-                        armEquippedWeaponDropMomentumHandoff(dropResult.handle, dropResult.droppedFormID, sourceHand);
-                        ROCK_LOG_INFO(Weapon,
-                            "Equipped weapon manual release dropped weapon formID={:08X} dropped={:08X} sourceHand={} dropLoc=({:.1f},{:.1f},{:.1f}) poseCaptured={} stack={} instanceMatch={}",
-                            dropResult.formID,
-                            dropResult.droppedFormID,
-                            equipped_weapon_drop_policy::sourceHandName(sourceHand),
-                            releaseLoc.x,
-                            releaseLoc.y,
-                            releaseLoc.z,
-                            hasReleaseRot ? "yes" : "no",
-                            dropResult.stackID,
-                            dropResult.matchedInstanceData ? "yes" : "no");
-                    } else {
-                        ROCK_LOG_WARN(Weapon,
-                            "Equipped weapon manual release drop failed formID={:08X} reason={} sourceHand={} attempted={} stack={} instanceMatch={}",
-                            dropResult.formID,
-                            weapon_equip_transfer::dropReasonName(dropResult.reason),
-                            equipped_weapon_drop_policy::sourceHandName(sourceHand),
-                            dropResult.attempted ? "yes" : "no",
-                            dropResult.stackID,
-                            dropResult.matchedInstanceData ? "yes" : "no");
-                    }
-                    if (sourceHandKnown &&
-                        (dropResult.success || dropResult.reason == weapon_equip_transfer::DropReason::DroppedReferenceUnavailable)) {
-                        suppressHandCollisionAfterEquippedWeaponDrop(hknp, sourceHand);
+                    if (!stashSucceeded) {
+                        /*
+                         * Seamless drop: spawn the world ref at the weapon's last
+                         * visually-published pose (equipped and dropped weapons
+                         * share the same nif) and hand the captured release
+                         * momentum to the spawned physics bodies once they
+                         * resolve. The previous-frame capture is preferred over
+                         * the live node because the release transition restores
+                         * the weapon node to the FRIK hand baseline before this
+                         * code runs.
+                         */
+                        RE::NiPoint3 releaseLoc = dropLoc;
+                        RE::NiPoint3 releaseRot{};
+                        bool hasReleaseRot = false;
+                        if (_equippedWeaponReleaseCapture.hasWeaponWorld) {
+                            releaseLoc = _equippedWeaponReleaseCapture.weaponWorld.translate;
+                            releaseRot = grab_node_info_math::nifskopeMatrixToEulerRadians<RE::NiMatrix3, RE::NiPoint3>(_equippedWeaponReleaseCapture.weaponWorld.rotate);
+                            hasReleaseRot = true;
+                        } else if (weaponNode && finiteNiTransform(weaponNode->world)) {
+                            releaseLoc = weaponNode->world.translate;
+                            releaseRot = grab_node_info_math::nifskopeMatrixToEulerRadians<RE::NiMatrix3, RE::NiPoint3>(weaponNode->world.rotate);
+                            hasReleaseRot = true;
+                        }
+                        const auto dropResult = weapon_equip_transfer::dropEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedDropInput{
+                            .dropLoc = releaseLoc,
+                            .dropRot = releaseRot,
+                            .hasDropLoc = true,
+                            .hasDropRot = hasReleaseRot,
+                        });
+                        if (dropResult.success) {
+                            armEquippedWeaponDropMomentumHandoff(dropResult.handle, dropResult.droppedFormID, sourceHand);
+                            ROCK_LOG_INFO(Weapon,
+                                "Equipped weapon manual release dropped weapon formID={:08X} dropped={:08X} sourceHand={} dropLoc=({:.1f},{:.1f},{:.1f}) poseCaptured={} stack={} "
+                                "instanceMatch={}",
+                                dropResult.formID, dropResult.droppedFormID, equipped_weapon_drop_policy::sourceHandName(sourceHand), releaseLoc.x, releaseLoc.y, releaseLoc.z,
+                                hasReleaseRot ? "yes" : "no", dropResult.stackID, dropResult.matchedInstanceData ? "yes" : "no");
+                        } else {
+                            ROCK_LOG_WARN(Weapon, "Equipped weapon manual release drop failed formID={:08X} reason={} sourceHand={} attempted={} stack={} instanceMatch={}",
+                                dropResult.formID, weapon_equip_transfer::dropReasonName(dropResult.reason), equipped_weapon_drop_policy::sourceHandName(sourceHand),
+                                dropResult.attempted ? "yes" : "no", dropResult.stackID, dropResult.matchedInstanceData ? "yes" : "no");
+                        }
+                        if (sourceHandKnown && (dropResult.success || dropResult.reason == weapon_equip_transfer::DropReason::DroppedReferenceUnavailable)) {
+                            suppressHandCollisionAfterEquippedWeaponDrop(hknp, sourceHand);
+                        }
                     }
                     _pendingEquippedWeaponPrimaryOnlyGripStart = false;
                     clearEquippedWeaponPrimaryInputState();

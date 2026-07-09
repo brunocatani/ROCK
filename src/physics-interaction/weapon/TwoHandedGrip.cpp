@@ -457,6 +457,7 @@ namespace rock
         const EquippedWeaponGripFrameInput& frameInput,
         float dt,
         std::uint64_t currentWeaponGenerationKey,
+        std::uint64_t currentEquippedWeaponIdentityKey,
         const WeaponCollision& weaponCollision,
         const WeaponInteractionRuntimeState& leftRuntimeState,
         const WeaponInteractionRuntimeState& rightRuntimeState,
@@ -474,13 +475,34 @@ namespace rock
             return;
         }
 
+        EquippedWeaponGripFrameInput stableFrameInput = frameInput;
+        const auto primaryReleaseDecision = equipped_weapon_manual_ownership_policy::debouncePrimaryGripRelease(
+            _primaryReleaseDebounce,
+            frameInput.primaryGripInput.held);
+        stableFrameInput.primaryGripInput.held = primaryReleaseDecision.retained;
+        stableFrameInput.primaryGripInput.released = primaryReleaseDecision.releaseConfirmed;
+
+        if (isManualOwnershipActive() &&
+            !reconcileCollisionGeneration(
+                weaponNode,
+                currentWeaponGenerationKey,
+                currentEquippedWeaponIdentityKey,
+                weaponCollision)) {
+            ROCK_LOG_INFO(Weapon,
+                "TwoHandedGrip: clearing authority because equipped weapon identity changed active={:016X} current={:016X}",
+                _activeEquippedWeaponIdentityKey,
+                currentEquippedWeaponIdentityKey);
+            transitionToInactive(false);
+            return;
+        }
+
         const bool supportHandIsLeft = !_firingHandIsLeft;
         const WeaponInteractionDecision decision = routeWeaponInteraction(leftWeaponContact, leftRuntimeState);
         const bool leftTouchingSupport = decision.kind == WeaponInteractionKind::SupportGrip;
         RE::NiNode* interactionWeaponNode = sourceRootNodeOrFallback(decision.interactionRoot, weaponNode);
-        const bool leftGripPressed = frameInput.leftGripHeld;
-        const bool supportHandHoldingObject = frameInput.leftHandHoldingObject;
-        const EquippedWeaponPrimaryGripInput& primaryGripInput = frameInput.primaryGripInput;
+        const bool leftGripPressed = stableFrameInput.leftGripHeld;
+        const bool supportHandHoldingObject = stableFrameInput.leftHandHoldingObject;
+        const EquippedWeaponPrimaryGripInput& primaryGripInput = stableFrameInput.primaryGripInput;
 
         switch (_state) {
         case TwoHandedState::Inactive:
@@ -504,7 +526,13 @@ namespace rock
                 }
             }
             if (weapon_two_handed_grip_math::canStartSupportGrip(leftTouchingSupport, leftGripPressed, supportHandHoldingObject)) {
-                transitionToGripping(interactionWeaponNode, decision, weaponCollision, supportAuthorityMode, sidearmHybridEligible, leftRuntimeState.providerPartAuthority);
+                transitionToGripping(interactionWeaponNode,
+                    decision,
+                    weaponCollision,
+                    supportAuthorityMode,
+                    sidearmHybridEligible,
+                    currentEquippedWeaponIdentityKey,
+                    leftRuntimeState.providerPartAuthority);
             }
             break;
 
@@ -530,7 +558,11 @@ namespace rock
             } else if (!weapon_two_handed_grip_math::shouldContinueSupportGrip(leftGripPressed, supportHandHoldingObject)) {
                 const auto releaseAction = weapon_two_handed_grip_math::resolveSupportReleaseManualAction(primaryDetachEnabled, primaryGripInput.held);
                 if (releaseAction == weapon_two_handed_grip_math::SupportReleaseManualAction::KeepPrimaryOwnership) {
-                    transitionToPrimaryOnly(_activeWeaponNode, currentWeaponGenerationKey, "support-released-primary-held");
+                    transitionToPrimaryOnly(
+                        _activeWeaponNode,
+                        currentWeaponGenerationKey,
+                        currentEquippedWeaponIdentityKey,
+                        "support-released-primary-held");
                 } else if (releaseAction == weapon_two_handed_grip_math::SupportReleaseManualAction::DropEquippedWeapon) {
                     requestEquippedWeaponDrop(
                         "support-released-primary-not-held",
@@ -545,11 +577,12 @@ namespace rock
                     updatePartCarryGrip(
                         _activeWeaponNode,
                         dt,
-                        frameInput,
+                        stableFrameInput,
                         leftWeaponContact,
                         rightWeaponContact,
                         weaponCollision,
                         currentWeaponGenerationKey,
+                        currentEquippedWeaponIdentityKey,
                         leftRuntimeState,
                         rightRuntimeState);
                 }
@@ -571,11 +604,12 @@ namespace rock
                 updatePartCarryGrip(
                     _activeWeaponNode,
                     dt,
-                    frameInput,
+                    stableFrameInput,
                     leftWeaponContact,
                     rightWeaponContact,
                     weaponCollision,
                     currentWeaponGenerationKey,
+                    currentEquippedWeaponIdentityKey,
                     leftRuntimeState,
                     rightRuntimeState);
             }
@@ -591,7 +625,13 @@ namespace rock
             } else if (!primaryDetachEnabled) {
                 transitionToInactive(false);
             } else if (leftTouchingSupport && weapon_two_handed_grip_math::canStartSupportGrip(leftTouchingSupport, leftGripPressed, supportHandHoldingObject)) {
-                transitionToGripping(interactionWeaponNode, decision, weaponCollision, supportAuthorityMode, sidearmHybridEligible, leftRuntimeState.providerPartAuthority);
+                transitionToGripping(interactionWeaponNode,
+                    decision,
+                    weaponCollision,
+                    supportAuthorityMode,
+                    sidearmHybridEligible,
+                    currentEquippedWeaponIdentityKey,
+                    leftRuntimeState.providerPartAuthority);
             } else {
                 updatePrimaryOnlyGrip(_activeWeaponNode, currentWeaponGenerationKey, primaryGripInput);
             }
@@ -625,6 +665,8 @@ namespace rock
         _hasSolvedWeaponTransform = false;
         _activeWeaponNode = nullptr;
         _activeWeaponGenerationKey = 0;
+        _activeEquippedWeaponIdentityKey = 0;
+        _primaryReleaseDebounce = {};
         _weaponNodeLocalBaseline = {};
         _hasWeaponNodeLocalBaseline = false;
         _primaryHandWeaponLocal = {};
@@ -996,11 +1038,12 @@ namespace rock
         const WeaponCollision& weaponCollision,
         weapon_support_authority_policy::WeaponSupportAuthorityMode supportAuthorityMode,
         bool sidearmHybridEligible,
+        std::uint64_t currentEquippedWeaponIdentityKey,
         const WeaponProviderPartAuthority& providerPartAuthority)
     {
         performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::TwoHandedGripStart);
 
-        if (!weaponNode) {
+        if (!weaponNode || currentEquippedWeaponIdentityKey == 0) {
             transitionToInactive(false);
             return;
         }
@@ -1011,6 +1054,7 @@ namespace rock
         _authorityMode = supportAuthorityMode;
         _activeWeaponNode = weaponNode;
         _activeWeaponGenerationKey = decision.weaponGenerationKey;
+        _activeEquippedWeaponIdentityKey = currentEquippedWeaponIdentityKey;
         _weaponNodeLocalBaseline = weaponNode->local;
         _hasWeaponNodeLocalBaseline = true;
         _primaryGripConfidence = 0.0f;
@@ -1136,6 +1180,8 @@ namespace rock
         _primaryGripConfidence = 0.0f;
         _activeWeaponNode = nullptr;
         _activeWeaponGenerationKey = 0;
+        _activeEquippedWeaponIdentityKey = 0;
+        _primaryReleaseDebounce = {};
         _weaponNodeLocalBaseline = {};
         _hasWeaponNodeLocalBaseline = false;
         resetLockedHandVisualLerp();
@@ -1153,8 +1199,15 @@ namespace rock
         updateFullWeaponAuthorityGrip(weaponNode, dt);
     }
 
-    bool TwoHandedGrip::providerPartAuthorityStillCurrent(const WeaponPartGrip& grip, std::uint64_t currentWeaponGenerationKey) const
+    bool TwoHandedGrip::providerPartAuthorityStillCurrent(WeaponPartGrip& grip, std::uint64_t currentWeaponGenerationKey)
     {
+        if (grip.generationRebindPending) {
+            return true;
+        }
+        if (grip.providerValidationGraceFrames > 0) {
+            --grip.providerValidationGraceFrames;
+            return true;
+        }
         if (!grip.providerPartAuthority.active) {
             return true;
         }
@@ -1199,7 +1252,7 @@ namespace rock
          * captured contact identity, not the live contact, so a flickering
          * contact cannot convert against the wrong part.
          */
-        if (!grip.active || grip.providerPartAuthority.active) {
+        if (!grip.active || grip.generationRebindPending || grip.providerValidationGraceFrames > 0 || grip.providerPartAuthority.active) {
             return false;
         }
         if (currentWeaponGenerationKey == 0 || currentWeaponGenerationKey != grip.weaponGenerationKey) {
@@ -1219,6 +1272,126 @@ namespace rock
 
         ::rock::provider::RockProviderWeaponPartTargetResolutionV1 resolution{};
         return ::rock::provider::resolveWeaponPartTargetV1(query, resolution) && resolution.matched != 0;
+    }
+
+    bool TwoHandedGrip::tryRebindPartGripToCurrentGeneration(
+        WeaponPartGrip& grip,
+        std::uint64_t currentWeaponGenerationKey,
+        const WeaponCollision& weaponCollision)
+    {
+        if (!grip.active) {
+            return true;
+        }
+
+        WeaponCollisionProfileEvidenceDescriptor bestDescriptor{};
+        RE::NiAVObject* bestSourceNode = nullptr;
+        int bestScore = 0;
+        const std::string_view capturedSourceName{ grip.sourceName.data() };
+        const auto bodyCount = weaponCollision.getWeaponBodyCount();
+        for (std::uint32_t i = 0; i < bodyCount; ++i) {
+            const auto bodyId = weaponCollision.getWeaponBodyIdAtomic(i);
+            WeaponCollisionProfileEvidenceDescriptor descriptor{};
+            RE::NiAVObject* sourceNode = nullptr;
+            if (!weaponCollision.tryGetProfileEvidenceDescriptorForBodyId(bodyId, descriptor, sourceNode) ||
+                !descriptor.valid || descriptor.weaponGenerationKey != currentWeaponGenerationKey) {
+                continue;
+            }
+
+            int score = 0;
+            if (sourceNode && sourceNode == grip.attachmentRoot) {
+                score = 3;
+            } else if (!capturedSourceName.empty() && descriptor.sourceName == capturedSourceName) {
+                score = descriptor.semantic.partKind == grip.partKind ? 2 : 1;
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                bestDescriptor = descriptor;
+                bestSourceNode = sourceNode;
+            }
+        }
+
+        grip.weaponGenerationKey = currentWeaponGenerationKey;
+        if (bestScore == 0) {
+            grip.contactBodyId = 0x7FFF'FFFFu;
+            grip.generationRebindPending = true;
+            return false;
+        }
+
+        grip.contactBodyId = bestDescriptor.bodyId;
+        grip.attachmentRoot = bestSourceNode ? bestSourceNode : grip.attachmentRoot;
+        grip.partKind = bestDescriptor.semantic.partKind;
+        grip.reloadRole = bestDescriptor.semantic.reloadRole;
+        grip.supportRole = bestDescriptor.semantic.supportGripRole;
+        grip.socketRole = bestDescriptor.semantic.socketRole;
+        grip.actionRole = bestDescriptor.semantic.actionRole;
+        grip.omodFormId = bestDescriptor.omodFormId;
+        grip.attachPointFormId = bestDescriptor.semantic.attachPointFormId;
+        grip.classificationSource = bestDescriptor.semantic.classificationSource;
+        const auto copyLength = (std::min)(bestDescriptor.sourceName.size(), grip.sourceName.size() - 1);
+        std::memcpy(grip.sourceName.data(), bestDescriptor.sourceName.data(), copyLength);
+        grip.sourceName[copyLength] = '\0';
+        grip.generationRebindPending = false;
+
+        if (grip.providerPartAuthority.active) {
+            grip.providerValidationGraceFrames = 8;
+            grip.providerPartAuthority.weaponGenerationKey = currentWeaponGenerationKey;
+            grip.providerPartAuthority.bodyId = bestDescriptor.bodyId;
+            grip.providerPartAuthority.sourceRoot = reinterpret_cast<std::uintptr_t>(bestSourceNode);
+            grip.providerPartAuthority.partKind = static_cast<std::uint32_t>(grip.partKind);
+            grip.providerPartAuthority.reloadRole = static_cast<std::uint32_t>(grip.reloadRole);
+            grip.providerPartAuthority.supportRole = static_cast<std::uint32_t>(grip.supportRole);
+            grip.providerPartAuthority.socketRole = static_cast<std::uint32_t>(grip.socketRole);
+            grip.providerPartAuthority.actionRole = static_cast<std::uint32_t>(grip.actionRole);
+            std::memcpy(
+                grip.providerPartAuthority.sourceName.data(),
+                grip.sourceName.data(),
+                grip.providerPartAuthority.sourceName.size());
+        }
+        return true;
+    }
+
+    bool TwoHandedGrip::reconcileCollisionGeneration(
+        RE::NiNode* currentWeaponNode,
+        std::uint64_t currentWeaponGenerationKey,
+        std::uint64_t currentEquippedWeaponIdentityKey,
+        const WeaponCollision& weaponCollision)
+    {
+        if (!equipped_weapon_manual_ownership_policy::canPreserveAcrossCollisionGenerationChange(
+                _activeEquippedWeaponIdentityKey,
+                currentEquippedWeaponIdentityKey,
+                currentWeaponGenerationKey)) {
+            return false;
+        }
+
+        const bool generationChanged = _activeWeaponGenerationKey != currentWeaponGenerationKey;
+        const bool weaponRootChanged = _activeWeaponNode != currentWeaponNode;
+        if (generationChanged || weaponRootChanged) {
+            const auto previousGeneration = _activeWeaponGenerationKey;
+            _activeWeaponNode = currentWeaponNode;
+            _activeWeaponGenerationKey = currentWeaponGenerationKey;
+            if (weaponRootChanged) {
+                _weaponNodeLocalBaseline = currentWeaponNode->local;
+                _hasWeaponNodeLocalBaseline = true;
+            }
+            for (auto& grip : _partGrips) {
+                if (grip.active) {
+                    grip.generationRebindPending = true;
+                }
+            }
+            ROCK_LOG_INFO(Weapon,
+                "TwoHandedGrip: preserving manual ownership across collision rebuild oldGeneration={:016X} newGeneration={:016X} equippedIdentity={:016X} rootChanged={}",
+                previousGeneration,
+                currentWeaponGenerationKey,
+                currentEquippedWeaponIdentityKey,
+                weaponRootChanged ? "yes" : "no");
+        }
+
+        for (auto& grip : _partGrips) {
+            if (grip.active && (generationChanged || weaponRootChanged || grip.generationRebindPending)) {
+                (void)tryRebindPartGripToCurrentGeneration(grip, currentWeaponGenerationKey, weaponCollision);
+            }
+        }
+        return true;
     }
 
     void TwoHandedGrip::updateFullWeaponAuthorityGrip(RE::NiNode* weaponNode, float dt)
@@ -1348,13 +1521,20 @@ namespace rock
         return applyWeaponVisualAuthority(weaponNode, _lastSolvedWeaponTransform);
     }
 
-    bool TwoHandedGrip::beginPrimaryOnlyGrip(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey)
+    bool TwoHandedGrip::beginPrimaryOnlyGrip(
+        RE::NiNode* weaponNode,
+        std::uint64_t currentWeaponGenerationKey,
+        std::uint64_t currentEquippedWeaponIdentityKey)
     {
         if (!weaponNode || currentWeaponGenerationKey == 0 || _state != TwoHandedState::Inactive) {
             return false;
         }
 
-        if (!transitionToPrimaryOnly(weaponNode, currentWeaponGenerationKey, "primary-grip-start")) {
+        if (!transitionToPrimaryOnly(
+                weaponNode,
+                currentWeaponGenerationKey,
+                currentEquippedWeaponIdentityKey,
+                "primary-grip-start")) {
             return false;
         }
         // Only a fresh grab pulses; transitionToPrimaryOnly is also reached
@@ -1434,9 +1614,13 @@ namespace rock
         return events;
     }
 
-    bool TwoHandedGrip::transitionToPrimaryOnly(RE::NiNode* weaponNode, std::uint64_t currentWeaponGenerationKey, const char* reason)
+    bool TwoHandedGrip::transitionToPrimaryOnly(
+        RE::NiNode* weaponNode,
+        std::uint64_t currentWeaponGenerationKey,
+        std::uint64_t currentEquippedWeaponIdentityKey,
+        const char* reason)
     {
-        if (!weaponNode || currentWeaponGenerationKey == 0) {
+        if (!weaponNode || currentWeaponGenerationKey == 0 || currentEquippedWeaponIdentityKey == 0) {
             return false;
         }
 
@@ -1446,6 +1630,7 @@ namespace rock
         if (_state == TwoHandedState::Inactive) {
             _activeWeaponNode = weaponNode;
             _activeWeaponGenerationKey = currentWeaponGenerationKey;
+            _activeEquippedWeaponIdentityKey = currentEquippedWeaponIdentityKey;
             _weaponNodeLocalBaseline = weaponNode->local;
             _hasWeaponNodeLocalBaseline = true;
 
@@ -1458,6 +1643,8 @@ namespace rock
                 _primaryGripConfidence = 0.0f;
             }
         }
+        _activeWeaponGenerationKey = currentWeaponGenerationKey;
+        _activeEquippedWeaponIdentityKey = currentEquippedWeaponIdentityKey;
 
         clearPrimaryGripPose(primaryHandIsLeft);
         clearSupportGripPose(supportHandIsLeft);
@@ -1612,6 +1799,7 @@ namespace rock
         const WeaponInteractionContact& rightWeaponContact,
         const WeaponCollision& weaponCollision,
         std::uint64_t currentWeaponGenerationKey,
+        std::uint64_t currentEquippedWeaponIdentityKey,
         const WeaponInteractionRuntimeState& leftRuntimeState,
         const WeaponInteractionRuntimeState& rightRuntimeState)
     {
@@ -1647,7 +1835,11 @@ namespace rock
                 _state = TwoHandedState::Gripping;
                 updateFullWeaponAuthorityGrip(weaponNode, dt);
             } else {
-                transitionToPrimaryOnly(weaponNode, currentWeaponGenerationKey, "part-carry-reattached-firing-grip");
+                transitionToPrimaryOnly(
+                    weaponNode,
+                    currentWeaponGenerationKey,
+                    currentEquippedWeaponIdentityKey,
+                    "part-carry-reattached-firing-grip");
             }
             return;
         }

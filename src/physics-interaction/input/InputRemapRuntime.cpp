@@ -1772,4 +1772,16 @@ namespace rock::input_remap_runtime
         return readRawButtonState(isLeft, buttonId, true);
     }
 
+    bool isRawButtonPhysicallyHeld(bool isLeft, int buttonId)
+    {
+        const auto mask = input_remap_policy::buttonMask(buttonId);
+        if (mask == 0) {
+            return false;
+        }
+
+        const auto& tracker = s_controllers[isLeft ? 0u : 1u];
+        return tracker.valid.load(std::memory_order_acquire) &&
+               (tracker.rawPressed.load(std::memory_order_acquire) & mask) != 0;
+    }
+
 }

@@ -108,6 +108,8 @@ namespace rock
 
         std::uint64_t getCurrentEquippedWeaponGenerationKey() const { return _cachedWeaponKey; }
 
+        std::uint64_t getCurrentEquippedWeaponIdentityKey() const { return _cachedWeaponIdentityKey; }
+
         weapon_generation_identity_policy::EquippedWeaponGenerationIdentity getEquippedWeaponClassification() const;
 
         std::uint64_t getCurrentWeaponGenerationKey() const { return _weaponBodySetKeyAtomic.load(std::memory_order_acquire); }

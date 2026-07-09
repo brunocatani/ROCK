@@ -40,4 +40,7 @@ namespace rock::input_remap_runtime
 
     RawButtonState peekRawButtonState(bool isLeft, int buttonId);
     RawButtonState consumeRawButtonState(bool isLeft, int buttonId);
+    // Physical level only: bypasses menu edge rearming so equipped-weapon
+    // ownership can reconcile the player's actual hand state after menu exit.
+    bool isRawButtonPhysicallyHeld(bool isLeft, int buttonId);
 }

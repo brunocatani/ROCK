@@ -54,6 +54,9 @@ Require-Text 'src/physics-interaction/stash/ShoulderStashDetector.cpp' 'input\.c
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
     'makeEquippedWeaponStashDetectorConfig\(\)[\s\S]*?config\.maxSpeedGameUnitsPerSecond\s*=\s*0\.0f' `
     'Equipped-weapon stash must preserve a dwelled candidate through a fast last-grip release sample.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'shoulder stash unequip failed[\s\S]*?falling back to physical drop[\s\S]*?if\s*\(!stashSucceeded\)[\s\S]*?dropEquippedWeaponFromPlayer' `
+    'A failed equipped-weapon stash must fall through to the physical drop requested by the same release.'
 
 Require-Text 'src/RockConfig.h' `
     'rockShoulderStashHmdBackRightOffsetGameUnits\s*=\s*RE::NiPoint3\(14\.0f,\s*-18\.0f,\s*-6\.85f\)' `

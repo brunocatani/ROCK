@@ -338,6 +338,19 @@ namespace rock::weapon_support_thumb_pose_policy
 
 namespace rock::equipped_weapon_manual_ownership_policy
 {
+    inline constexpr std::uint8_t kPrimaryReleaseConfirmFrames = 2;
+
+    struct GripReleaseDebounceState
+    {
+        std::uint8_t consecutiveOpenFrames{ 0 };
+    };
+
+    struct GripReleaseDebounceDecision
+    {
+        bool retained{ false };
+        bool releaseConfirmed{ false };
+    };
+
     struct RuntimeState
     {
         bool active{ false };
@@ -390,6 +403,40 @@ namespace rock::equipped_weapon_manual_ownership_policy
                input.configEnabled &&
                input.primaryPoseBlockerAvailable &&
                !input.virtualHolstersOwnsInput;
+    }
+
+    [[nodiscard]] inline constexpr bool canPreserveAcrossCollisionGenerationChange(
+        std::uint64_t activeEquippedIdentityKey,
+        std::uint64_t currentEquippedIdentityKey,
+        std::uint64_t currentCollisionGenerationKey) noexcept
+    {
+        return activeEquippedIdentityKey != 0 &&
+               activeEquippedIdentityKey == currentEquippedIdentityKey &&
+               currentCollisionGenerationKey != 0;
+    }
+
+    [[nodiscard]] inline constexpr GripReleaseDebounceDecision debouncePrimaryGripRelease(
+        GripReleaseDebounceState& state,
+        bool physicallyHeld,
+        std::uint8_t confirmFrames = kPrimaryReleaseConfirmFrames) noexcept
+    {
+        if (physicallyHeld) {
+            state = {};
+            return GripReleaseDebounceDecision{ .retained = true };
+        }
+
+        if (confirmFrames == 0) {
+            state = {};
+            return GripReleaseDebounceDecision{ .releaseConfirmed = true };
+        }
+
+        if (state.consecutiveOpenFrames < confirmFrames) {
+            ++state.consecutiveOpenFrames;
+        }
+        return GripReleaseDebounceDecision{
+            .retained = state.consecutiveOpenFrames < confirmFrames,
+            .releaseConfirmed = state.consecutiveOpenFrames == confirmFrames,
+        };
     }
 
     inline constexpr Decision update(RuntimeState& state, const Input& input) noexcept

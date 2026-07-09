@@ -222,6 +222,24 @@ int main()
             .virtualHolstersOwnsInput = true,
         }));
 
+    ok &= expectTrue("same equipped weapon preserves ownership across collision rebuild",
+        canPreserveAcrossCollisionGenerationChange(0xAAu, 0xAAu, 0xBBu));
+    ok &= expectFalse("different equipped weapon cannot inherit manual ownership",
+        canPreserveAcrossCollisionGenerationChange(0xAAu, 0xCCu, 0xBBu));
+    ok &= expectFalse("unpublished collision generation cannot preserve ownership",
+        canPreserveAcrossCollisionGenerationChange(0xAAu, 0xAAu, 0u));
+
+    GripReleaseDebounceState primaryReleaseDebounce{};
+    auto primaryReleaseDecision = debouncePrimaryGripRelease(primaryReleaseDebounce, false);
+    ok &= expectTrue("one open primary sample retains firing grip", primaryReleaseDecision.retained);
+    ok &= expectFalse("one open primary sample does not confirm release", primaryReleaseDecision.releaseConfirmed);
+    primaryReleaseDecision = debouncePrimaryGripRelease(primaryReleaseDebounce, true);
+    ok &= expectTrue("held primary sample resets release debounce", primaryReleaseDecision.retained);
+    primaryReleaseDecision = debouncePrimaryGripRelease(primaryReleaseDebounce, false);
+    primaryReleaseDecision = debouncePrimaryGripRelease(primaryReleaseDebounce, false);
+    ok &= expectFalse("stable open primary samples release firing grip", primaryReleaseDecision.retained);
+    ok &= expectTrue("stable open primary samples confirm release", primaryReleaseDecision.releaseConfirmed);
+
     RuntimeState manualState{};
     auto manualDecision = update(manualState,
         Input{
