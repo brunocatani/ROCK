@@ -387,12 +387,13 @@ namespace rock::equipped_weapon_manual_ownership_policy
         bool configEnabled,
         bool primaryPoseBlockerAvailable,
         bool weaponNodeAvailable,
-        std::uint64_t weaponGenerationKey) noexcept
+        std::uint64_t weaponGenerationKey,
+        std::uint64_t equippedWeaponIdentityKey) noexcept
     {
         return configEnabled &&
                primaryPoseBlockerAvailable &&
                weaponNodeAvailable &&
-               weaponGenerationKey != 0;
+               (weaponGenerationKey != 0 || equippedWeaponIdentityKey != 0);
     }
 
     [[nodiscard]] inline constexpr bool shouldKeepPendingPrimaryOnlyStart(const PendingPrimaryOnlyStartInput& input) noexcept
@@ -408,11 +409,12 @@ namespace rock::equipped_weapon_manual_ownership_policy
     [[nodiscard]] inline constexpr bool canPreserveAcrossCollisionGenerationChange(
         std::uint64_t activeEquippedIdentityKey,
         std::uint64_t currentEquippedIdentityKey,
-        std::uint64_t currentCollisionGenerationKey) noexcept
+        std::uint64_t currentCollisionGenerationKey,
+        bool collisionGenerationRequired = true) noexcept
     {
         return activeEquippedIdentityKey != 0 &&
                activeEquippedIdentityKey == currentEquippedIdentityKey &&
-               currentCollisionGenerationKey != 0;
+               (!collisionGenerationRequired || currentCollisionGenerationKey != 0);
     }
 
     [[nodiscard]] inline constexpr GripReleaseDebounceDecision debouncePrimaryGripRelease(

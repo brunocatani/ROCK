@@ -1359,8 +1359,14 @@ namespace rock
         if (!equipped_weapon_manual_ownership_policy::canPreserveAcrossCollisionGenerationChange(
                 _activeEquippedWeaponIdentityKey,
                 currentEquippedWeaponIdentityKey,
-                currentWeaponGenerationKey)) {
+                currentWeaponGenerationKey,
+                _state != TwoHandedState::PrimaryOnly)) {
             return false;
+        }
+        if (currentWeaponGenerationKey == 0) {
+            // PrimaryOnly rides the native firing-hand attach and can retain
+            // ownership while the complete collider set is still building.
+            return true;
         }
 
         const bool generationChanged = _activeWeaponGenerationKey != currentWeaponGenerationKey;

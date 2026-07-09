@@ -2439,6 +2439,9 @@ namespace rock
         _cachedWeaponKey = 0;
         _cachedWeaponVisualKey = 0;
         _cachedWeaponIdentityKey = 0;
+        _observedEquippedWeaponIdentityKey = 0;
+        _omodPrebuildAuditEquippedKey = 0;
+        _omodPrebuildAuditRoot = nullptr;
         resetWeaponBodySetGeneration();
         _weaponBodySetEpoch = 0;
         clearGeneratedSourceCompletenessTracking();
@@ -2472,6 +2475,9 @@ namespace rock
         _cachedWeaponKey = 0;
         _cachedWeaponVisualKey = 0;
         _cachedWeaponIdentityKey = 0;
+        _observedEquippedWeaponIdentityKey = 0;
+        _omodPrebuildAuditEquippedKey = 0;
+        _omodPrebuildAuditRoot = nullptr;
         resetWeaponBodySetGeneration();
         _weaponBodySetEpoch = 0;
         clearGeneratedSourceCompletenessTracking();
@@ -2512,6 +2518,7 @@ namespace rock
             _cachedWeaponKey = 0;
             _cachedWeaponVisualKey = 0;
             _cachedWeaponIdentityKey = 0;
+            _observedEquippedWeaponIdentityKey = 0;
             clearGeneratedSourceCompletenessTracking();
             clearPendingWeaponVisualRebuild();
             clearGeneratedSourceCache();
@@ -2522,6 +2529,8 @@ namespace rock
             _driveRebuildRequested.store(false, std::memory_order_release);
             _workbenchExitRebuildRequested.store(false, std::memory_order_release);
             _driveFailureCount.store(0, std::memory_order_release);
+            _omodPrebuildAuditEquippedKey = 0;
+            _omodPrebuildAuditRoot = nullptr;
         };
 
         if (!g_rockConfig.rockWeaponCollisionEnabled) {
@@ -2568,6 +2577,7 @@ namespace rock
             clearCurrentWeaponState();
             return;
         }
+        _observedEquippedWeaponIdentityKey = observedIdentityKey;
 
         const bool settingsChanged = weaponCollisionSettingsChanged();
         const bool driveRequestedRebuild = _driveRebuildRequested.exchange(false, std::memory_order_acq_rel);
@@ -2676,6 +2686,31 @@ namespace rock
             const std::uint64_t observedVisualKey = getWeaponVisualCompositionKey(weaponNode, visualKeyStats);
             const bool visualKeyChanged = observedVisualKey != 0 && observedVisualKey != _cachedWeaponVisualKey;
             const bool generationDrivenRebuild = keyChanged || missingBodies;
+            const bool omodPrebuildAuditCurrent =
+                _omodPrebuildAuditEquippedKey == observedKey && _omodPrebuildAuditRoot == weaponNode;
+            if (generationDrivenRebuild && !omodPrebuildAuditCurrent &&
+                g_rockConfig.rockDebugWeaponOmodCoverageAudit && g_rockConfig.rockDebugWeaponOmodSelfHeal) {
+                const auto auditResult = maybeRunWeaponOmodCoverageAudit(weaponNode, true);
+                if (auditResult.sceneEnriched) {
+                    /*
+                     * TryAttach3DRecurse mutates the assembled tree. Let the
+                     * engine settle transforms once, then run the unchanged
+                     * full visual witness and collider builder.
+                     */
+                    clearPendingWeaponVisualRebuild();
+                    ROCK_LOG_INFO(Weapon,
+                        "Generated weapon collision pre-build OMOD enrichment completed key={:016X}; deferring source capture one frame",
+                        observedKey);
+                    return;
+                }
+                if (auditResult.ran) {
+                    // Cache only a non-mutating pass. A successful attachment
+                    // must be followed by another pre-build pass so batches
+                    // larger than the per-audit cap fully converge.
+                    _omodPrebuildAuditEquippedKey = observedKey;
+                    _omodPrebuildAuditRoot = weaponNode;
+                }
+            }
             const int requiredStableFrames = (std::max)(0, g_rockConfig.rockWeaponCollisionVisualStabilizationFrames);
             const bool stabilizeVisualRebuild = generationDrivenRebuild && requiredStableFrames > 0;
 
@@ -3786,6 +3821,9 @@ namespace rock
         _cachedWeaponKey = 0;
         _cachedWeaponVisualKey = 0;
         _cachedWeaponIdentityKey = 0;
+        _observedEquippedWeaponIdentityKey = 0;
+        _omodPrebuildAuditEquippedKey = 0;
+        _omodPrebuildAuditRoot = nullptr;
         clearGeneratedSourceCompletenessTracking();
         clearPendingWeaponVisualRebuild();
         clearGeneratedSourceCache();
@@ -4427,16 +4465,18 @@ namespace rock
      * with an unchanged body set means geometry arrived or changed after the
      * build and current triggers never rescanned it.
      */
-    void WeaponCollision::maybeRunWeaponOmodCoverageAudit(RE::NiAVObject* weaponNode)
+    WeaponCollision::OmodCoverageAuditResult WeaponCollision::maybeRunWeaponOmodCoverageAudit(
+        RE::NiAVObject* weaponNode, bool forceBeforeInitialBuild)
     {
+        OmodCoverageAuditResult result{};
         if (!g_rockConfig.rockDebugWeaponOmodCoverageAudit) {
-            return;
+            return result;
         }
-        if (!weaponNode || !hasWeaponBody() || _cachedWeaponBodySetKey == 0) {
-            return;
+        if (!weaponNode || (!forceBeforeInitialBuild && (!hasWeaponBody() || _cachedWeaponBodySetKey == 0))) {
+            return result;
         }
 
-        if (_omodCoverageAuditBodySetKey != _cachedWeaponBodySetKey) {
+        if (!forceBeforeInitialBuild && _omodCoverageAuditBodySetKey != _cachedWeaponBodySetKey) {
             _omodCoverageAuditBodySetKey = _cachedWeaponBodySetKey;
             _omodCoverageAuditFrameCounter = 0;
             _omodCoverageAuditRunIndex = 0;
@@ -4446,11 +4486,12 @@ namespace rock
         // First audit fires ~1s after publication so late model streaming is
         // observed quickly; later audits repeat at the configured interval.
         const int dueFrames = _omodCoverageAuditRunIndex == 0 ? (std::min)(90, intervalFrames) : intervalFrames;
-        if (++_omodCoverageAuditFrameCounter < dueFrames) {
-            return;
+        if (!forceBeforeInitialBuild && ++_omodCoverageAuditFrameCounter < dueFrames) {
+            return result;
         }
         _omodCoverageAuditFrameCounter = 0;
         const std::uint32_t runIndex = _omodCoverageAuditRunIndex++;
+        result.ran = true;
 
         auto* player = f4vr::getPlayer();
         auto* processData = player && player->middleProcess ? player->middleProcess->unk08 : nullptr;
@@ -5151,6 +5192,7 @@ namespace rock
                         selfHealSuccessCount,
                         selfHealAttemptCount);
                     requestWorkbenchExitRebuild();
+                    result.sceneEnriched = true;
                 }
             }
         }
@@ -5166,6 +5208,7 @@ namespace rock
             selfHealCandidates.size(),
             selfHealAttemptCount,
             selfHealSuccessCount);
+        return result;
     }
 
     void WeaponCollision::armWorkbenchWeaponReattach()

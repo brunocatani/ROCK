@@ -186,9 +186,10 @@ int main()
         canStartFreeHandPartGrip(true, true, false, true));
 
     using namespace rock::equipped_weapon_manual_ownership_policy;
-    ok &= expectTrue("manual grip feature is available for active equipped weapon", featureAvailable(true, true, true, 10));
-    ok &= expectFalse("manual grip feature is unavailable without active weapon node", featureAvailable(true, true, false, 10));
-    ok &= expectFalse("manual grip feature is unavailable without weapon generation", featureAvailable(true, true, true, 0));
+    ok &= expectTrue("manual grip feature is available for active equipped weapon", featureAvailable(true, true, true, 10, 20));
+    ok &= expectFalse("manual grip feature is unavailable without active weapon node", featureAvailable(true, true, false, 10, 20));
+    ok &= expectTrue("manual primary ownership is available while colliders build", featureAvailable(true, true, true, 0, 20));
+    ok &= expectFalse("manual grip feature requires equipped identity or collision generation", featureAvailable(true, true, true, 0, 0));
     ok &= expectTrue("pending trigger-equip grip waits while runtime weapon is not ready",
         shouldKeepPendingPrimaryOnlyStart(PendingPrimaryOnlyStartInput{
             .pending = true,
@@ -228,6 +229,10 @@ int main()
         canPreserveAcrossCollisionGenerationChange(0xAAu, 0xCCu, 0xBBu));
     ok &= expectFalse("unpublished collision generation cannot preserve ownership",
         canPreserveAcrossCollisionGenerationChange(0xAAu, 0xAAu, 0u));
+    ok &= expectTrue("primary-only ownership survives unpublished collision generation",
+        canPreserveAcrossCollisionGenerationChange(0xAAu, 0xAAu, 0u, false));
+    ok &= expectFalse("provisional primary-only ownership still rejects a different equipped identity",
+        canPreserveAcrossCollisionGenerationChange(0xAAu, 0xCCu, 0u, false));
 
     GripReleaseDebounceState primaryReleaseDebounce{};
     auto primaryReleaseDecision = debouncePrimaryGripRelease(primaryReleaseDebounce, false);

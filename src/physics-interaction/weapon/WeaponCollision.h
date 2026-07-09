@@ -108,7 +108,7 @@ namespace rock
 
         std::uint64_t getCurrentEquippedWeaponGenerationKey() const { return _cachedWeaponKey; }
 
-        std::uint64_t getCurrentEquippedWeaponIdentityKey() const { return _cachedWeaponIdentityKey; }
+        std::uint64_t getCurrentEquippedWeaponIdentityKey() const { return _observedEquippedWeaponIdentityKey; }
 
         weapon_generation_identity_policy::EquippedWeaponGenerationIdentity getEquippedWeaponClassification() const;
 
@@ -260,6 +260,12 @@ namespace rock
             weapon_generated_source_completeness_policy::GeneratedSourceCompleteness summary{};
         };
 
+        struct OmodCoverageAuditResult
+        {
+            bool ran{ false };
+            bool sceneEnriched{ false };
+        };
+
         WeaponBodyBank& activeWeaponBodies();
         const WeaponBodyBank& activeWeaponBodies() const;
         WeaponBodyBank& inactiveWeaponBodies();
@@ -294,7 +300,7 @@ namespace rock
         std::vector<WeaponCollisionProfileEvidenceDescriptor> buildProfileEvidenceSnapshot(const WeaponBodyBank& bank) const;
         void publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult);
         void dumpEquippedWeaponOmodEvidence(const WeaponBodyBank& bank, RE::NiAVObject* packageDriveNode);
-        void maybeRunWeaponOmodCoverageAudit(RE::NiAVObject* weaponNode);
+        OmodCoverageAuditResult maybeRunWeaponOmodCoverageAudit(RE::NiAVObject* weaponNode, bool forceBeforeInitialBuild = false);
 
         std::size_t findGeneratedWeaponShapeSources(RE::NiAVObject* weaponNode, std::vector<GeneratedHullSource>& outSources, float maxSourceDistanceGame);
 
@@ -350,6 +356,9 @@ namespace rock
         std::uint64_t _cachedWeaponKey{ 0 };
         std::uint64_t _cachedWeaponVisualKey{ 0 };
         std::uint64_t _cachedWeaponIdentityKey{ 0 };
+        // Available before generated bodies publish; the cached identity above
+        // remains body-associated for replacement safety.
+        std::uint64_t _observedEquippedWeaponIdentityKey{ 0 };
         std::uint64_t _cachedWeaponBodySetKey{ 0 };
         std::uint64_t _weaponBodySetEpoch{ 0 };
         weapon_generated_source_completeness_policy::GeneratedSourceCompleteness _cachedGeneratedSourceCompleteness{};
@@ -391,6 +400,10 @@ namespace rock
         std::uint64_t _omodCoverageAuditBodySetKey{ 0 };
         int _omodCoverageAuditFrameCounter{ 0 };
         std::uint32_t _omodCoverageAuditRunIndex{ 0 };
+        // Run the mutating pre-build audit once for an exact equipped identity
+        // and assembled root; the later cadence remains a safety net.
+        std::uint64_t _omodPrebuildAuditEquippedKey{ 0 };
+        RE::NiAVObject* _omodPrebuildAuditRoot{ nullptr };
         /*
          * Self-heal attempts are keyed by (weapon instance node address ^
          * OMOD formID): the same assembled tree is never retried (a failed or

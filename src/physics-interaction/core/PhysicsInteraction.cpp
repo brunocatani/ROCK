@@ -2831,7 +2831,8 @@ namespace rock
                 g_rockConfig.rockRealisticWeaponHandlingEnabled,
                 primaryPoseBlockerAvailable,
                 weaponNode != nullptr,
-                currentWeaponGenerationKey);
+                currentWeaponGenerationKey,
+                currentEquippedWeaponIdentityKey);
             const bool inputBlockingMenuActive = input_remap_runtime::isMenuInputActive();
             const bool primaryGrabDeferredForVirtualHolsters = input_remap_runtime::shouldDeferGrabInputForVirtualHolsters(false, g_rockConfig.rockGrabButtonID);
             if (inputBlockingMenuActive) {
@@ -2873,13 +2874,15 @@ namespace rock
 
                 const bool primaryOnlyStartRequested =
                     weaponNode != nullptr &&
-                    currentWeaponGenerationKey != 0 &&
+                    currentEquippedWeaponIdentityKey != 0 &&
                     primaryState.held &&
                     (primaryState.pressed || _pendingEquippedWeaponPrimaryOnlyGripStart);
+                const std::uint64_t primaryOwnershipGenerationKey =
+                    currentWeaponGenerationKey != 0 ? currentWeaponGenerationKey : currentEquippedWeaponIdentityKey;
                 if (primaryOnlyStartRequested &&
                     _twoHandedGrip.beginPrimaryOnlyGrip(
                         weaponNode,
-                        currentWeaponGenerationKey,
+                        primaryOwnershipGenerationKey,
                         currentEquippedWeaponIdentityKey)) {
                     primaryOnlyGripStartedThisFrame = true;
                     _pendingEquippedWeaponPrimaryOnlyGripStart = false;
