@@ -2,6 +2,7 @@
 #include <cstdio>
 
 #include "physics-interaction/weapon/WeaponAuthority.h"
+#include "physics-interaction/weapon/WeaponOmodAuditPolicy.h"
 
 namespace
 {
@@ -61,6 +62,7 @@ int main()
     using namespace rock::weapon_authority_lifecycle_policy;
     using namespace rock::weapon_generated_source_completeness_policy;
     using namespace rock::weapon_generation_identity_policy;
+    using namespace rock::weapon_omod_audit_policy;
     using rock::WeaponPartKind;
 
     bool ok = true;
@@ -109,6 +111,27 @@ int main()
     ok &= expectFalse("magazine is durable weapon structure", isTransientReloadPart(WeaponPartKind::Magazine));
     ok &= expectTrue("receiver is permanent gameplay-critical structure", (permanentGameplayCriticalPartMask() & partMask(WeaponPartKind::Receiver)) != 0);
     ok &= expectFalse("shell is not permanent gameplay-critical structure", (permanentGameplayCriticalPartMask() & partMask(WeaponPartKind::Shell)) != 0);
+
+    ok &= expectTrue("OMOD audit accepts body evidence from its audited equipped generation",
+        publishedBodyEvidenceMatchesAudit(0xAA, 0xAA, true));
+    ok &= expectFalse("OMOD prebuild rejects previous equipped generation body evidence",
+        publishedBodyEvidenceMatchesAudit(0xBB, 0xAA, true));
+    ok &= expectFalse("OMOD audit rejects an absent published body set",
+        publishedBodyEvidenceMatchesAudit(0xAA, 0xAA, false));
+
+    const auto enabledMissingOmod = decideCoverage(CoverageInput{
+        .resolved = true,
+        .hasModelToken = true,
+    });
+    ok &= expectTrue("enabled missing OMOD is eligible for guarded self-heal", enabledMissingOmod.selfHealCandidate);
+    const auto disabledMissingOmod = decideCoverage(CoverageInput{
+        .disabled = true,
+        .resolved = true,
+        .hasModelToken = true,
+    });
+    ok &= expectFalse("disabled missing OMOD is excluded from self-heal", disabledMissingOmod.selfHealCandidate);
+    ok &= expectTrue("disabled OMOD has an explicit audit verdict",
+        disabledMissingOmod.verdict == CoverageVerdict::Disabled);
 
     const std::uint64_t bodySetKey = makeGeneratedWeaponBodySetKey(0xABC, derivedCompact, 1);
     ok &= expectNonZero("body-set key is created for equipped source and epoch", bodySetKey);

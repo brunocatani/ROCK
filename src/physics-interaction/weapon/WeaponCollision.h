@@ -302,7 +302,10 @@ namespace rock
         std::vector<WeaponCollisionProfileEvidenceDescriptor> buildProfileEvidenceSnapshot(const WeaponBodyBank& bank) const;
         void publishSampledVelocityAtomic(std::uint32_t publicationIndex, const GeneratedKeyframedBodyDriveQueueResult& queueResult);
         void dumpEquippedWeaponOmodEvidence(const WeaponBodyBank& bank, RE::NiAVObject* packageDriveNode);
-        OmodCoverageAuditResult maybeRunWeaponOmodCoverageAudit(RE::NiAVObject* weaponNode, bool forceBeforeInitialBuild = false);
+        OmodCoverageAuditResult maybeRunWeaponOmodCoverageAudit(
+            RE::NiAVObject* weaponNode,
+            std::uint64_t auditedEquippedKey,
+            bool forceBeforeInitialBuild = false);
 
         std::size_t findGeneratedWeaponShapeSources(RE::NiAVObject* weaponNode, std::vector<GeneratedHullSource>& outSources, float maxSourceDistanceGame);
 

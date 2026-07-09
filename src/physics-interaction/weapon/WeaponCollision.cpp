@@ -10,6 +10,7 @@
 #include "RockConfig.h"
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/weapon/WeaponGeometry.h"
+#include "physics-interaction/weapon/WeaponOmodAuditPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRecordIdentityPolicy.h"
 #include "physics-interaction/weapon/WeaponSemantics.h"
 #include "physics-interaction/weapon/WeaponAuthority.h"
@@ -2695,7 +2696,7 @@ namespace rock
                 _omodPrebuildAuditEquippedKey == observedKey && _omodPrebuildAuditRoot == weaponNode;
             if (generationDrivenRebuild && !omodPrebuildAuditCurrent &&
                 g_rockConfig.rockDebugWeaponOmodCoverageAudit && g_rockConfig.rockDebugWeaponOmodSelfHeal) {
-                const auto auditResult = maybeRunWeaponOmodCoverageAudit(weaponNode, true);
+                const auto auditResult = maybeRunWeaponOmodCoverageAudit(weaponNode, observedKey, true);
                 if (auditResult.sceneEnriched) {
                     /*
                      * TryAttach3DRecurse mutates the assembled tree. Let the
@@ -2954,7 +2955,7 @@ namespace rock
             }
         }
 
-        maybeRunWeaponOmodCoverageAudit(weaponNode);
+        maybeRunWeaponOmodCoverageAudit(weaponNode, observedKey);
     }
 
 
@@ -4478,13 +4479,14 @@ namespace rock
      * build and current triggers never rescanned it.
      */
     WeaponCollision::OmodCoverageAuditResult WeaponCollision::maybeRunWeaponOmodCoverageAudit(
-        RE::NiAVObject* weaponNode, bool forceBeforeInitialBuild)
+        RE::NiAVObject* weaponNode, std::uint64_t auditedEquippedKey, bool forceBeforeInitialBuild)
     {
         OmodCoverageAuditResult result{};
         if (!g_rockConfig.rockDebugWeaponOmodCoverageAudit) {
             return result;
         }
-        if (!weaponNode || (!forceBeforeInitialBuild && (!hasWeaponBody() || _cachedWeaponBodySetKey == 0))) {
+        if (!weaponNode || auditedEquippedKey == 0 ||
+            (!forceBeforeInitialBuild && (!hasWeaponBody() || _cachedWeaponBodySetKey == 0))) {
             return result;
         }
 
@@ -4546,16 +4548,29 @@ namespace rock
          */
         std::unordered_set<std::uintptr_t> evidenceSourceAddresses;
         std::unordered_map<std::uint32_t, std::uint32_t> bodiesByAttachPointFormId;
-        for (const auto& instance : activeWeaponBodies()) {
-            if (!instance.body.isValid()) {
-                continue;
+        const bool publishedBodyEvidenceCurrent = weapon_omod_audit_policy::publishedBodyEvidenceMatchesAudit(
+            auditedEquippedKey,
+            _cachedWeaponKey,
+            hasWeaponBody() && _cachedWeaponBodySetKey != 0);
+        if (publishedBodyEvidenceCurrent) {
+            for (const auto& instance : activeWeaponBodies()) {
+                if (!instance.body.isValid()) {
+                    continue;
+                }
+                if (instance.sourceNode) {
+                    evidenceSourceAddresses.insert(reinterpret_cast<std::uintptr_t>(instance.sourceNode));
+                }
+                if (instance.semantic.attachPointFormId != 0) {
+                    ++bodiesByAttachPointFormId[instance.semantic.attachPointFormId];
+                }
             }
-            if (instance.sourceNode) {
-                evidenceSourceAddresses.insert(reinterpret_cast<std::uintptr_t>(instance.sourceNode));
-            }
-            if (instance.semantic.attachPointFormId != 0) {
-                ++bodiesByAttachPointFormId[instance.semantic.attachPointFormId];
-            }
+        } else if (hasWeaponBody()) {
+            ROCK_LOG_INFO(Weapon,
+                "OMOD-AUDIT run={} ignoring published body evidence from a different equipped generation auditedKey={:016X} publishedKey={:016X} bodySetKey={:016X}",
+                runIndex,
+                auditedEquippedKey,
+                _cachedWeaponKey,
+                _cachedWeaponBodySetKey);
         }
 
         std::vector<OmodAuditRecord> records;
@@ -4830,21 +4845,20 @@ namespace rock
                 }
             }
 
-            const char* verdict = nullptr;
-            if (!record.resolved) {
-                verdict = "UNRESOLVED_FORM";
-            } else if (slot.lowerToken.empty()) {
-                verdict = pairedBodies > 0 ? "OK_RECORD_PAIRED" : "NO_MODEL";
-            } else if (evidenceUnderMatches > 0) {
-                verdict = "OK";
-            } else if (pairedBodies > 0) {
-                verdict = "OK_RECORD_PAIRED";
-            } else if (!slot.matches.empty()) {
-                verdict = anyMatchVisible ? "NODE_PRESENT_NO_COLLIDER" : "NODE_HIDDEN_NO_COLLIDER";
-            } else {
-                verdict = "NODE_NOT_FOUND";
+            const auto coverageDecision = weapon_omod_audit_policy::decideCoverage(
+                weapon_omod_audit_policy::CoverageInput{
+                    .disabled = record.disabled,
+                    .resolved = record.resolved,
+                    .hasModelToken = !slot.lowerToken.empty(),
+                    .hasEvidenceUnderMatch = evidenceUnderMatches > 0,
+                    .hasPairedBody = pairedBodies > 0,
+                    .hasNodeMatch = !slot.matches.empty(),
+                    .anyNodeMatchVisible = anyMatchVisible,
+                });
+            if (coverageDecision.selfHealCandidate) {
                 selfHealCandidates.push_back(i);
             }
+            const char* verdict = weapon_omod_audit_policy::coverageVerdictName(coverageDecision.verdict);
 
             ROCK_LOG_INFO(Weapon,
                 "OMOD-AUDIT omod={:08X} '{}' index={} rank={} disabled={} attachPoint={:08X} attachPointIndex={} model='{}' token='{}' pairedBodies={} nodeMatches={} evidenceUnderMatches={} verdict={}",
