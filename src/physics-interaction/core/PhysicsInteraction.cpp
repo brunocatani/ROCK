@@ -836,10 +836,14 @@ namespace rock
             emit();
         }
 
-        // Character-controller stored locomotion velocity (game units/sec) = cachedLinearVelocity @ 0x250,
-        // stashed from the game frame (main thread, player reachable) because the after-solve callback that
-        // runs the probe cannot safely reach the player object. -1 when unavailable. Diagnostic only.
+        // Player locomotion speed (game units/sec), stashed from the game frame (main thread, player
+        // reachable) because the after-solve callback that runs the probe cannot safely reach the player.
+        // Two independent reads so the trace self-verifies the CC field/offset (see the game-frame block):
+        //  - g_probeCcSpeedGameUnits: raw cachedLinearVelocity @ 0x250 via Ghidra-verified pointer chain.
+        //  - g_probeCcAccessorSpeedGameUnits: the game's own GetLinearVelocity (ground-truth cross-check).
+        // -1 when unavailable. Diagnostic only.
         std::atomic<float> g_probeCcSpeedGameUnits{ -1.0f };
+        std::atomic<float> g_probeCcAccessorSpeedGameUnits{ -1.0f };
 
         /*
          * Locomotion stutter probe (diagnostic; gated by rockDebugLocomotionStutterProbe, default off).
@@ -907,11 +911,14 @@ namespace rock
                 return;
             }
 
-            // Character-controller intended locomotion speed (game units/sec), stashed from the game frame
-            // (see g_probeCcSpeedGameUnits). Unlike roomVelGu -- a per-frame room-node POSITION delta aliased
-            // by our sampling rate -- this is a stored VELOCITY, immune to that aliasing. Smooth ccVelGu +
-            // jittery roomVelGu/objVelGu == the alias confirmed.
+            // Player locomotion speed (game units/sec), stashed from the game frame. Unlike roomVelGu -- a
+            // per-frame room-node POSITION delta aliased by our sampling rate -- this is a stored VELOCITY,
+            // immune to that aliasing. Smooth ccVelGu + jittery roomVelGu/objVelGu == the alias confirmed.
+            // ccVelGu = raw cachedLinearVelocity @ 0x250 (verified pointer chain); ccAccGu = the game's own
+            // GetLinearVelocity. They should agree during a walk; if ccVelGu is valid but the CommonLib-based
+            // read was -1, the CommonLib charController offset (0x3E0 vs verified 0x3E8) is confirmed wrong.
             const float ccSpeedGameUnits = g_probeCcSpeedGameUnits.load(std::memory_order_relaxed);
+            const float ccAccessorSpeedGameUnits = g_probeCcAccessorSpeedGameUnits.load(std::memory_order_relaxed);
 
             // Endpoint divergence: what stretches the grab constraint each step (proxyVel unreliable for a
             // keyframed body, but kept for completeness).
@@ -931,7 +938,7 @@ namespace rock
 
             ROCK_LOG_INFO(Hand,
                 "LOCO_STUTTER hand={} frame={} substep={}/{} subDt={:.6f} driveDt={:.6f} gameDt={:.6f} roomVelGu={:.2f} "
-                "objBody={} proxyBody={} objVelGu={:.2f} proxyVelGu={:.2f} divergenceGu={:.2f} objResidualGu={:.2f} ccVelGu={:.2f}",
+                "objBody={} proxyBody={} objVelGu={:.2f} proxyVelGu={:.2f} divergenceGu={:.2f} objResidualGu={:.2f} ccVelGu={:.2f} ccAccGu={:.2f}",
                 hand.handName(),
                 gameFrameIndex,
                 timing.substepIndex + 1,
@@ -946,7 +953,8 @@ namespace rock
                 proxyOk ? lengthGameUnits(proxyVelocityHavok) : -1.0f,
                 proxyOk ? lengthGameUnits(endpointDivergenceHavok) : -1.0f,
                 lengthGameUnits(objectResidualHavok),
-                ccSpeedGameUnits);
+                ccSpeedGameUnits,
+                ccAccessorSpeedGameUnits);
         }
 
         float measureDirectionDeltaDegrees(const RE::NiPoint3& a, const RE::NiPoint3& b)
@@ -2395,26 +2403,28 @@ namespace rock
         _palmClockGameFrameIndex.store(runtime.frameIndex, std::memory_order_release);
         _palmClockGameDeltaSeconds.store(frame.deltaSeconds, std::memory_order_release);
         if (g_rockConfig.rockDebugLocomotionStutterProbe) {
-            // Read the CC's stored locomotion velocity here on the game frame (main thread), where the
-            // player is reachable, and stash it for the after-solve stutter probe. Field =
-            // cachedLinearVelocity @ 0x250 (NiPoint3, ALREADY game units -- no havok scale). This is the
-            // exact field PlayerCharacter::GetLinearVelocity reads on its main path; both verified against
-            // the FO4VR binary (140dc80f0 reads cc+0x250/0x254/0x258; helper 140ec70b0 resolves
-            // currentProcess->middleHigh->charController -- the same pointer resolved below). The old read
-            // used outVelocity @ 0x160, which is a sentinel-initialised, transient step OUTPUT (garbage
-            // between steps -> ccVelGu=-1); 0x250 is the persistent stored value we actually want.
-            float ccSpeedGameUnits = -1.0f;
-            if (auto* characterController = character_controller_runtime::tryGetPlayerCharacterController()) {
-                const auto* ccBytes = reinterpret_cast<const std::uint8_t*>(characterController);
-                const float vx = *reinterpret_cast<const float*>(ccBytes + 0x250);
-                const float vy = *reinterpret_cast<const float*>(ccBytes + 0x254);
-                const float vz = *reinterpret_cast<const float*>(ccBytes + 0x258);
-                const float ccSpeed = std::sqrt(vx * vx + vy * vy + vz * vz);
-                if (std::isfinite(ccSpeed) && ccSpeed < 1.0e6f) {
-                    ccSpeedGameUnits = ccSpeed;
-                }
-            }
-            g_probeCcSpeedGameUnits.store(ccSpeedGameUnits, std::memory_order_relaxed);
+            // Read the player's locomotion velocity here on the game frame (main thread), where the player
+            // is reachable, and stash it for the after-solve stutter probe. Two independent GAME-UNIT reads
+            // so tonight's trace self-verifies the CC field/offset (both from character_controller_runtime):
+            //  - raw (ccVelGu): cachedLinearVelocity @ 0x250 via the Ghidra-verified pointer chain
+            //    Actor+0x300 -> +0x08 -> +0x3E8. Independent of CommonLibF4VR, whose charController member
+            //    (0x3E0) is wrong for VR -- that bad pointer is why the earlier read logged ccVelGu=-1.
+            //  - accessor (ccAccGu): the game's own PlayerCharacter::GetLinearVelocity (vtbl 0xAC). Ground
+            //    truth. ccVelGu ~ ccAccGu during a walk confirms both 0x3E8 and 0x250.
+            const auto speedGameUnits = [](const RE::NiPoint3& v) {
+                const float s = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+                return (std::isfinite(s) && s < 1.0e6f) ? s : -1.0f;
+            };
+
+            RE::NiPoint3 ccVelocityRaw{};
+            const float ccSpeedRaw =
+                character_controller_runtime::tryGetPlayerLocomotionVelocityRawGameUnits(ccVelocityRaw) ? speedGameUnits(ccVelocityRaw) : -1.0f;
+            g_probeCcSpeedGameUnits.store(ccSpeedRaw, std::memory_order_relaxed);
+
+            RE::NiPoint3 ccVelocityAccessor{};
+            const float ccSpeedAccessor =
+                character_controller_runtime::tryGetPlayerLocomotionVelocityAccessorGameUnits(ccVelocityAccessor) ? speedGameUnits(ccVelocityAccessor) : -1.0f;
+            g_probeCcAccessorSpeedGameUnits.store(ccSpeedAccessor, std::memory_order_relaxed);
         }
 
         observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
