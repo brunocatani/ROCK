@@ -377,6 +377,19 @@ namespace rock
         // Dedicated stash detector states for the equipped-weapon carry gesture so
         // dwell/hysteresis never mixes with a loose object held by the same hand.
         std::array<shoulder_stash::RuntimeState, 2> _equippedWeaponStashStates{};
+        struct EquippedWeaponStashCommitLease
+        {
+            bool active = false;
+            std::uint64_t ownershipKey = 0;
+            std::uint8_t remainingOpenFrames = 0;
+            body_zone::BodyZoneKind zone = body_zone::BodyZoneKind::Unknown;
+            shoulder_stash::EvidenceSource source = shoulder_stash::EvidenceSource::None;
+            shoulder_stash::RuntimeState spatialState{};
+        };
+        // The lease bridges only the release debounce after a confirmed dwell.
+        // It is bound to the live equipped instance and revalidates the same
+        // spatial candidate on every open-grip frame.
+        std::array<EquippedWeaponStashCommitLease, 2> _equippedWeaponStashCommitLeases{};
         std::array<mouth_consume::RuntimeState, 2> _mouthConsumeStates{};
         feedback_haptics::FeedbackHaptics _feedbackHaptics;
 

@@ -51,12 +51,15 @@ Require-Text 'src/physics-interaction/stash/ShoulderStashDetector.cpp' 'hmdBackB
     'HMD stash detector must reject forward-side probes before sphere scoring.'
 Require-Text 'src/physics-interaction/stash/ShoulderStashDetector.cpp' 'input\.config\.hmdBackExitPaddingGameUnits\s*:\s*input\.config\.hmdBackEnterPaddingGameUnits' `
     'HMD stash detector should use HMD-specific padding rather than body-zone padding.'
+Reject-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'makeEquippedWeaponStashDetectorConfig\(\)[\s\S]*?config\.maxSpeedGameUnitsPerSecond\s*=\s*0\.0f[\s\S]*?return config' `
+    'Equipped-weapon stash candidate acquisition must retain the configured anti-throw speed gate.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'makeEquippedWeaponStashDetectorConfig\(\)[\s\S]*?config\.maxSpeedGameUnitsPerSecond\s*=\s*0\.0f' `
-    'Equipped-weapon stash must preserve a dwelled candidate through a fast last-grip release sample.'
+    'shouldArmEquippedWeaponFastReleaseCommitLease[\s\S]*?currentEquippedWeaponOwnershipKey[\s\S]*?equippedWeaponFastReleaseCommitLeaseIsUsable' `
+    'Fast release may bridge the release debounce only through an ownership-bound, spatially revalidated commit lease.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
-    'shoulder stash unequip failed[\s\S]*?falling back to physical drop[\s\S]*?if\s*\(!stashSucceeded\)[\s\S]*?dropEquippedWeaponFromPlayer' `
-    'A failed equipped-weapon stash must fall through to the physical drop requested by the same release.'
+    'shoulder stash unequip failed[\s\S]*?weapon stays equipped[\s\S]*?shouldAttemptPhysicalDrop\(stashCommitSelected\)' `
+    'A selected equipped-weapon stash must fail closed instead of falling through to a physical drop.'
 
 Require-Text 'src/RockConfig.h' `
     'rockShoulderStashHmdBackRightOffsetGameUnits\s*=\s*RE::NiPoint3\(14\.0f,\s*-18\.0f,\s*-6\.85f\)' `

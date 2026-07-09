@@ -57,4 +57,12 @@ namespace rock::equipped_weapon_drop_policy
         return SourceHand::None;
     }
 
+    [[nodiscard]] inline constexpr bool shouldAttemptPhysicalDrop(bool stashCommitSelected) noexcept
+    {
+        // A selected stash is a fail-closed inventory action. If unequip fails,
+        // restoring the equipped weapon is safer than converting the same
+        // gesture into a destructive world drop.
+        return !stashCommitSelected;
+    }
+
 }

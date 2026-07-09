@@ -256,14 +256,6 @@ namespace rock
             config.enabled = g_rockConfig.rockEquippedWeaponShoulderStashEnabled;
             config.useBodyZoneColliders = false;
             config.useHmdBackVolume = true;
-            /*
-             * A last-grip release is the equipped-weapon commit gesture. Do
-             * not let a fast controller sample on that release frame erase a
-             * back-volume candidate that already satisfied dwell. Loose-item
-             * stash retains the configured speed gate because its release is
-             * also the throw gesture and therefore needs that disambiguation.
-             */
-            config.maxSpeedGameUnitsPerSecond = 0.0f;
             return config;
         }
 
@@ -2930,7 +2922,7 @@ namespace rock
              * carrying hand is tracked; the idle hand's dwell state resets so a
              * stale candidate can never confirm a later release.
              */
-            std::array<shoulder_stash::Decision, 2> equippedWeaponStashDecisions{};
+            std::array<shoulder_stash::Decision, 2> equippedWeaponStashCommitDecisions{};
             {
                 // Carry-authority grips only: an AttachOnly glue hand cannot
                 // carry the weapon, so it can never be the stash carry hand.
@@ -2944,14 +2936,18 @@ namespace rock
                                                 !inputBlockingMenuActive &&
                                                 stashCarryHand != equipped_weapon_drop_policy::SourceHand::None;
                 for (const bool stashHandIsLeft : { true, false }) {
-                    auto& stashState = _equippedWeaponStashStates[stashHandIsLeft ? 1u : 0u];
+                    const std::size_t stashHandIndex = stashHandIsLeft ? 1u : 0u;
+                    auto& stashState = _equippedWeaponStashStates[stashHandIndex];
+                    auto& commitLease = _equippedWeaponStashCommitLeases[stashHandIndex];
                     if (!stashCarryEligible || equipped_weapon_drop_policy::isLeft(stashCarryHand) != stashHandIsLeft) {
                         shoulder_stash::resetRuntime(stashState);
+                        commitLease = {};
                         continue;
                     }
 
                     const HandFrameInput& carryInput = stashHandIsLeft ? frame.left : frame.right;
-                    const auto stashDecision = shoulder_stash::evaluate(shoulder_stash::DetectorInput{
+                    const auto stashConfig = makeEquippedWeaponStashDetectorConfig();
+                    shoulder_stash::DetectorInput stashInput{
                             .isLeftHand = stashHandIsLeft,
                             .probe = shoulder_stash::Probe{ .pointGame = carryInput.grabAnchorWorld },
                             .hmdProbe = makeShoulderStashHmdProbe(carryInput),
@@ -2960,10 +2956,73 @@ namespace rock
                             .hmdPositionWorld = frame.hmdPositionWorld,
                             .hmdForwardWorld = frame.hmdForwardWorld,
                             .deltaSeconds = frame.deltaSeconds,
-                            .config = makeEquippedWeaponStashDetectorConfig(),
-                        },
-                        stashState);
-                    equippedWeaponStashDecisions[stashHandIsLeft ? 1u : 0u] = stashDecision;
+                            .config = stashConfig,
+                        };
+                    const shoulder_stash::RuntimeState stashStateBeforeEvaluation = stashState;
+                    const auto stashDecision = shoulder_stash::evaluate(stashInput, stashState);
+                    equippedWeaponStashCommitDecisions[stashHandIndex] = stashDecision;
+
+                    const bool gripPhysicallyHeld =
+                        input_remap_runtime::isRawButtonPhysicallyHeld(stashHandIsLeft, g_rockConfig.rockGrabButtonID);
+                    if (gripPhysicallyHeld) {
+                        commitLease = {};
+                    } else if (!stashDecision.confirmedForCommit) {
+                        const bool speedLimitExceeded =
+                            shoulder_stash::exceedsShoulderStashSpeedLimit(
+                                stashDecision.speedGameUnitsPerSecond,
+                                stashConfig.maxSpeedGameUnitsPerSecond);
+                        const bool canArmFastReleaseLease = stashStateBeforeEvaluation.confirmed && speedLimitExceeded;
+                        if (commitLease.active || canArmFastReleaseLease) {
+                            /*
+                             * The normal detector remains the speed authority.
+                             * A speed-unlimited copy is used only to prove that
+                             * the already-dwelled hand stayed in the same back
+                             * volume during the two-frame physical release
+                             * debounce; it cannot acquire a new stash candidate.
+                             */
+                            auto spatialInput = stashInput;
+                            spatialInput.config.maxSpeedGameUnitsPerSecond = 0.0f;
+                            auto spatialState = commitLease.active ? commitLease.spatialState : stashStateBeforeEvaluation;
+                            const auto spatialDecision = shoulder_stash::evaluate(spatialInput, spatialState);
+                            const auto expectedZone = commitLease.active ? commitLease.zone : stashStateBeforeEvaluation.zone;
+                            const auto expectedSource = commitLease.active ? commitLease.source : stashStateBeforeEvaluation.source;
+                            const bool sameSpatialCandidate =
+                                spatialDecision.candidate &&
+                                spatialDecision.zone == expectedZone &&
+                                spatialDecision.source == expectedSource;
+
+                            if (!commitLease.active &&
+                                shoulder_stash::shouldArmEquippedWeaponFastReleaseCommitLease(
+                                    stashStateBeforeEvaluation.confirmed,
+                                    speedLimitExceeded,
+                                    gripPhysicallyHeld,
+                                    sameSpatialCandidate)) {
+                                commitLease.active = true;
+                                commitLease.ownershipKey = currentEquippedWeaponOwnershipKey;
+                                commitLease.remainingOpenFrames =
+                                    equipped_weapon_manual_ownership_policy::kPrimaryReleaseConfirmFrames;
+                                commitLease.zone = spatialDecision.zone;
+                                commitLease.source = spatialDecision.source;
+                            }
+
+                            if (shoulder_stash::equippedWeaponFastReleaseCommitLeaseIsUsable(
+                                    commitLease.active,
+                                    commitLease.ownershipKey,
+                                    currentEquippedWeaponOwnershipKey,
+                                    commitLease.remainingOpenFrames,
+                                    gripPhysicallyHeld,
+                                    sameSpatialCandidate)) {
+                                commitLease.spatialState = spatialState;
+                                equippedWeaponStashCommitDecisions[stashHandIndex] = spatialDecision;
+                                equippedWeaponStashCommitDecisions[stashHandIndex].confirmedForCommit = true;
+                                --commitLease.remainingOpenFrames;
+                            } else {
+                                commitLease = {};
+                            }
+                        }
+                    } else {
+                        commitLease = {};
+                    }
 
                     if (stashDecision.candidate && g_rockConfig.rockShoulderStashHapticsEnabled) {
                         const bool pulseDue = _dynamicPushElapsedSeconds >= stashState.nextCandidatePulseTimeSeconds;
@@ -3059,22 +3118,24 @@ namespace rock
                     _pendingEquippedWeaponPrimaryOnlyGripStart = false;
                     clearEquippedWeaponPrimaryInputState();
                 } else {
-                    bool stashSucceeded = false;
-                    if (sourceHandKnown && g_rockConfig.rockEquippedWeaponShoulderStashEnabled &&
-                        equippedWeaponStashDecisions[equipped_weapon_drop_policy::isLeft(sourceHand) ? 1u : 0u].confirmedForCommit) {
+                    const bool stashCommitSelected =
+                        sourceHandKnown &&
+                        g_rockConfig.rockEquippedWeaponShoulderStashEnabled &&
+                        equippedWeaponStashCommitDecisions[equipped_weapon_drop_policy::isLeft(sourceHand) ? 1u : 0u].confirmedForCommit;
+                    if (stashCommitSelected) {
                         /*
                          * Stash-unequip resolves before VirtualHolsters because the
                          * holster press request has side effects and cannot be
                          * probed. The weapon is only unequipped -- it stays in the
-                         * inventory and no world reference is created. A failed
-                         * stash falls through to the physical drop requested by
-                         * the same last-grip release.
+                         * inventory and no world reference is created. Once this
+                         * action is selected, failure keeps the weapon equipped;
+                         * the same gesture must never become a world drop.
                          */
                         const bool stashHandIsLeft = equipped_weapon_drop_policy::isLeft(sourceHand);
-                        const auto& stashDecision = equippedWeaponStashDecisions[stashHandIsLeft ? 1u : 0u];
+                        const std::size_t stashHandIndex = stashHandIsLeft ? 1u : 0u;
+                        const auto& stashDecision = equippedWeaponStashCommitDecisions[stashHandIndex];
                         const auto unequipResult = weapon_equip_transfer::unequipEquippedWeaponFromPlayer(weapon_equip_transfer::EquippedUnequipInput{ .playSounds = true });
                         if (unequipResult.success) {
-                            stashSucceeded = true;
                             ROCK_LOG_INFO(Weapon,
                                 "Equipped weapon shoulder stash unequipped weapon formID={:08X} sourceHand={} zone={} confidence={:.2f} stack={} instanceMatch={}",
                                 unequipResult.formID, equipped_weapon_drop_policy::sourceHandName(sourceHand), body_zone::bodyZoneName(stashDecision.zone),
@@ -3089,13 +3150,14 @@ namespace rock
                             }
                         } else {
                             ROCK_LOG_WARN(Weapon,
-                                "Equipped weapon shoulder stash unequip failed formID={:08X} reason={} sourceHand={} attempted={} -- falling back to physical drop",
+                                "Equipped weapon shoulder stash unequip failed formID={:08X} reason={} sourceHand={} attempted={} -- weapon stays equipped",
                                 unequipResult.formID, weapon_equip_transfer::unequipReasonName(unequipResult.reason), equipped_weapon_drop_policy::sourceHandName(sourceHand),
                                 unequipResult.attempted ? "yes" : "no");
                         }
-                        shoulder_stash::resetRuntime(_equippedWeaponStashStates[stashHandIsLeft ? 1u : 0u]);
+                        shoulder_stash::resetRuntime(_equippedWeaponStashStates[stashHandIndex]);
+                        _equippedWeaponStashCommitLeases[stashHandIndex] = {};
                     }
-                    if (!stashSucceeded) {
+                    if (equipped_weapon_drop_policy::shouldAttemptPhysicalDrop(stashCommitSelected)) {
                         /*
                          * Seamless drop: spawn the world ref at the weapon's last
                          * visually-published pose (equipped and dropped weapons

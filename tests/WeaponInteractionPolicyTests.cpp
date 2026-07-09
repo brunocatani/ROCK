@@ -315,6 +315,10 @@ int main()
     ok &= expectEqual("part carry with only the right grip stashes from the right hand",
         resolveEquippedWeaponStashCarryHand(false, true, false, true, false),
         SourceHand::Right);
+    ok &= expectTrue("ordinary release without a stash commit routes to physical drop",
+        shouldAttemptPhysicalDrop(false));
+    ok &= expectFalse("selected stash never falls through to physical drop",
+        shouldAttemptPhysicalDrop(true));
     ok &= expectEqual("part carry with both grips has no stash carry hand",
         resolveEquippedWeaponStashCarryHand(false, true, true, true, false),
         SourceHand::None);

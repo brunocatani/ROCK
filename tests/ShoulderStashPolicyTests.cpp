@@ -81,6 +81,24 @@ int main()
         exceedsShoulderStashSpeedLimit(140.0f, 140.0f));
     ok &= expectFalse("zero stash speed ceiling disables speed rejection",
         exceedsShoulderStashSpeedLimit(1000.0f, 0.0f));
+    ok &= expectTrue("confirmed fast open release arms equipped stash lease",
+        shouldArmEquippedWeaponFastReleaseCommitLease(true, true, false, true));
+    ok &= expectFalse("fast held motion cannot arm equipped stash lease",
+        shouldArmEquippedWeaponFastReleaseCommitLease(true, true, true, true));
+    ok &= expectFalse("unconfirmed fast entry cannot arm equipped stash lease",
+        shouldArmEquippedWeaponFastReleaseCommitLease(false, true, false, true));
+    ok &= expectFalse("leaving the confirmed volume cannot arm equipped stash lease",
+        shouldArmEquippedWeaponFastReleaseCommitLease(true, true, false, false));
+    ok &= expectTrue("matching open-frame equipped stash lease is usable",
+        equippedWeaponFastReleaseCommitLeaseIsUsable(true, 0xAAu, 0xAAu, 1, false, true));
+    ok &= expectFalse("regripping invalidates equipped stash lease",
+        equippedWeaponFastReleaseCommitLeaseIsUsable(true, 0xAAu, 0xAAu, 1, true, true));
+    ok &= expectFalse("leaving the back volume invalidates equipped stash lease",
+        equippedWeaponFastReleaseCommitLeaseIsUsable(true, 0xAAu, 0xAAu, 1, false, false));
+    ok &= expectFalse("equipped stash lease rejects a replacement weapon instance",
+        equippedWeaponFastReleaseCommitLeaseIsUsable(true, 0xAAu, 0xBBu, 1, false, true));
+    ok &= expectFalse("equipped stash lease expires after its bounded open-frame window",
+        equippedWeaponFastReleaseCommitLeaseIsUsable(true, 0xAAu, 0xAAu, 0, false, true));
 
     ok &= expectTrue("HMD primary to collider backup preserves dwell on same zone",
         shoulderStashDwellIdentityMatches(
