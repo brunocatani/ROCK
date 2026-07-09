@@ -211,6 +211,10 @@ namespace rock
         bool rockDebugGrabFrameLogging = false;
         bool rockDebugGrabTimelineTrace = false;
         bool rockDebugGrabAfterSolveAnomalySampling = false;
+        // Diagnostic (default off): while a hand is holding AND the player is locomoting, logs held object
+        // vs room-node vs character-controller velocity to localize the stick-walk held-object shake.
+        // Remove once the stutter root cause is fixed.
+        bool rockDebugLocomotionStutterProbe = false;
         bool rockDebugGrabTransformTelemetry = false;
         bool rockDebugGrabTransformTelemetryText = false;
         bool rockDebugGrabTransformTelemetryAxes = false;

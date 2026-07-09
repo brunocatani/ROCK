@@ -47,6 +47,7 @@
 #include "physics-interaction/grab/HeldPlayerSpaceRegistry.h"
 #include "physics-interaction/hand/HandLifecycle.h"
 #include "physics-interaction/native/HavokRuntime.h"
+#include "physics-interaction/native/CharacterControllerRuntime.h"
 #include "physics-interaction/input/InputRemapPolicy.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
 #include "physics-interaction/input/GrabInputIntentPolicy.h"
@@ -833,6 +834,119 @@ namespace rock
             };
 
             emit();
+        }
+
+        // Character-controller stored locomotion velocity (game units/sec) = cachedLinearVelocity @ 0x250,
+        // stashed from the game frame (main thread, player reachable) because the after-solve callback that
+        // runs the probe cannot safely reach the player object. -1 when unavailable. Diagnostic only.
+        std::atomic<float> g_probeCcSpeedGameUnits{ -1.0f };
+
+        /*
+         * Locomotion stutter probe (diagnostic; gated by rockDebugLocomotionStutterProbe, default off).
+         * The held-object shake during stick locomotion is a timing/aliasing issue: object B is dragged by
+         * the grab motor to follow keyframed proxy A, and A's target (the hand-world) picks up the game-driven
+         * room-origin translation only during stick-walk -- read per frame it is aliased by our sampling rate.
+         * This logs, per held hand while moving: the object's actual velocity, the room-node delta velocity,
+         * and the CHARACTER CONTROLLER's own stored velocity (cachedLinearVelocity @ 0x250, game units -- a
+         * stored velocity immune to our sampling aliasing). If ccVelGu stays smooth while roomVelGu/objVelGu
+         * jitter, the alias is confirmed and the fix is to drive locomotion from the CC velocity. Fires while
+         * a hand is holding and either the
+         * object or the play space is moving, so one session captures both the smooth hand-move baseline
+         * (roomVelGu ~ 0) and the stick-walk stutter (roomVelGu > 0). Remove with its config flag once fixed.
+         */
+        void logLocomotionStutterProbe(
+            RE::hknpWorld* world,
+            const Hand& hand,
+            const RE::NiPoint3& roomVelocityHavok,
+            float gameDeltaSeconds,
+            std::uint64_t gameFrameIndex,
+            const havok_physics_timing::PhysicsTimingSample& timing)
+        {
+            if (!g_rockConfig.rockDebugLocomotionStutterProbe || !world || !hand.isHoldingAtomic()) {
+                return;
+            }
+
+            const auto readLinearVelocityHavok = [&](RE::hknpBodyId bodyId, RE::NiPoint3& outVelocity) -> bool {
+                if (bodyId.value == INVALID_BODY_ID) {
+                    return false;
+                }
+                auto* body = havok_runtime::getBody(world, bodyId);
+                if (!body) {
+                    return false;
+                }
+                auto* motion = havok_runtime::getMotion(world, body->motionIndex);
+                if (!motion) {
+                    return false;
+                }
+                outVelocity = RE::NiPoint3{ motion->linearVelocity.x, motion->linearVelocity.y, motion->linearVelocity.z };
+                return true;
+            };
+
+            const RE::hknpBodyId objectBodyId{ hand.getSavedObjectState().bodyId.value };  // constraint body B (held object)
+            const RE::hknpBodyId proxyBodyId{ hand.getGrabAuthorityProxyBodyId().value };  // constraint body A (hand anchor)
+
+            RE::NiPoint3 objectVelocityHavok{};
+            RE::NiPoint3 proxyVelocityHavok{};
+            const bool objectOk = readLinearVelocityHavok(objectBodyId, objectVelocityHavok);
+            const bool proxyOk = readLinearVelocityHavok(proxyBodyId, proxyVelocityHavok);
+            if (!objectOk) {
+                return;
+            }
+
+            const float havokToGame = physics_scale::havokToGame();
+            const auto lengthGameUnits = [&](const RE::NiPoint3& v) {
+                return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z) * havokToGame;
+            };
+
+            // Fire whenever something is actually moving: the object being dragged by the hand (smooth
+            // baseline; roomVelGu ~ 0) OR the play space translating under stick locomotion (the stutter
+            // case; roomVelGu > 0). Idle-holding is skipped so one session captures both regimes.
+            const float objectSpeedGameUnits = lengthGameUnits(objectVelocityHavok);
+            const float roomSpeedGameUnits = lengthGameUnits(roomVelocityHavok);
+            if (objectSpeedGameUnits < 5.0f && roomSpeedGameUnits < 5.0f) {
+                return;
+            }
+
+            // Character-controller intended locomotion speed (game units/sec), stashed from the game frame
+            // (see g_probeCcSpeedGameUnits). Unlike roomVelGu -- a per-frame room-node POSITION delta aliased
+            // by our sampling rate -- this is a stored VELOCITY, immune to that aliasing. Smooth ccVelGu +
+            // jittery roomVelGu/objVelGu == the alias confirmed.
+            const float ccSpeedGameUnits = g_probeCcSpeedGameUnits.load(std::memory_order_relaxed);
+
+            // Endpoint divergence: what stretches the grab constraint each step (proxyVel unreliable for a
+            // keyframed body, but kept for completeness).
+            const RE::NiPoint3 endpointDivergenceHavok = proxyOk ?
+                RE::NiPoint3{
+                    objectVelocityHavok.x - proxyVelocityHavok.x,
+                    objectVelocityHavok.y - proxyVelocityHavok.y,
+                    objectVelocityHavok.z - proxyVelocityHavok.z } :
+                RE::NiPoint3{};
+            // Object velocity minus room velocity: the object's residual motion. ~0 during a clean steady
+            // walk; its frame-to-frame swing IS the shake.
+            const RE::NiPoint3 objectResidualHavok{
+                objectVelocityHavok.x - roomVelocityHavok.x,
+                objectVelocityHavok.y - roomVelocityHavok.y,
+                objectVelocityHavok.z - roomVelocityHavok.z,
+            };
+
+            ROCK_LOG_INFO(Hand,
+                "LOCO_STUTTER hand={} frame={} substep={}/{} subDt={:.6f} driveDt={:.6f} gameDt={:.6f} roomVelGu={:.2f} "
+                "objBody={} proxyBody={} objVelGu={:.2f} proxyVelGu={:.2f} divergenceGu={:.2f} objResidualGu={:.2f} ccVelGu={:.2f}",
+                hand.handName(),
+                gameFrameIndex,
+                timing.substepIndex + 1,
+                timing.substepCount,
+                timing.substepDeltaSeconds,
+                havok_physics_timing::driveDeltaSeconds(timing),
+                gameDeltaSeconds,
+                lengthGameUnits(roomVelocityHavok),
+                objectBodyId.value,
+                proxyBodyId.value,
+                lengthGameUnits(objectVelocityHavok),
+                proxyOk ? lengthGameUnits(proxyVelocityHavok) : -1.0f,
+                proxyOk ? lengthGameUnits(endpointDivergenceHavok) : -1.0f,
+                lengthGameUnits(objectResidualHavok),
+                ccSpeedGameUnits);
         }
 
         float measureDirectionDeltaDegrees(const RE::NiPoint3& a, const RE::NiPoint3& b)
@@ -2279,6 +2393,28 @@ namespace rock
         const auto frame = buildFrameContext(bhk, hknp, _deltaTime);
         _palmClockGameFrameIndex.store(runtime.frameIndex, std::memory_order_release);
         _palmClockGameDeltaSeconds.store(frame.deltaSeconds, std::memory_order_release);
+        if (g_rockConfig.rockDebugLocomotionStutterProbe) {
+            // Read the CC's stored locomotion velocity here on the game frame (main thread), where the
+            // player is reachable, and stash it for the after-solve stutter probe. Field =
+            // cachedLinearVelocity @ 0x250 (NiPoint3, ALREADY game units -- no havok scale). This is the
+            // exact field PlayerCharacter::GetLinearVelocity reads on its main path; both verified against
+            // the FO4VR binary (140dc80f0 reads cc+0x250/0x254/0x258; helper 140ec70b0 resolves
+            // currentProcess->middleHigh->charController -- the same pointer resolved below). The old read
+            // used outVelocity @ 0x160, which is a sentinel-initialised, transient step OUTPUT (garbage
+            // between steps -> ccVelGu=-1); 0x250 is the persistent stored value we actually want.
+            float ccSpeedGameUnits = -1.0f;
+            if (auto* characterController = character_controller_runtime::tryGetPlayerCharacterController()) {
+                const auto* ccBytes = reinterpret_cast<const std::uint8_t*>(characterController);
+                const float vx = *reinterpret_cast<const float*>(ccBytes + 0x250);
+                const float vy = *reinterpret_cast<const float*>(ccBytes + 0x254);
+                const float vz = *reinterpret_cast<const float*>(ccBytes + 0x258);
+                const float ccSpeed = std::sqrt(vx * vx + vy * vy + vz * vz);
+                if (std::isfinite(ccSpeed) && ccSpeed < 1.0e6f) {
+                    ccSpeedGameUnits = ccSpeed;
+                }
+            }
+            g_probeCcSpeedGameUnits.store(ccSpeedGameUnits, std::memory_order_relaxed);
+        }
 
         observeLifecycleFrame(bhk, hknp, ::rock::provider::RockProviderLifecycleReason::None);
         if (!generatedBodiesMatchLifecycle(bhk, hknp)) {
@@ -4718,6 +4854,22 @@ namespace rock
         const auto gameDeltaSeconds = _palmClockGameDeltaSeconds.load(std::memory_order_acquire);
         logPalmClockSampleForHand("physics-after-solve", _rightHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
         logPalmClockSampleForHand("physics-after-solve", _leftHand, world, nullptr, gameFrameIndex, gameDeltaSeconds, &timing);
+        // Room/player-space velocity for the stutter probe, sampled independently of
+        // bGrabPlayerSpaceCompensation (off in prod): the player-space frame is always sampled.
+        RE::NiPoint3 probeRoomVelocityHavok{};
+        if (g_rockConfig.rockDebugLocomotionStutterProbe) {
+            const auto& probePlayerSpace = runtime_state::currentFrame().playerSpace;
+            if (probePlayerSpace.valid && probePlayerSpace.moving && gameDeltaSeconds > 1.0e-6f) {
+                const float gameToHavokPerSecond = physics_scale::gameToHavok() / gameDeltaSeconds;
+                probeRoomVelocityHavok = RE::NiPoint3{
+                    probePlayerSpace.deltaGameUnits.x * gameToHavokPerSecond,
+                    probePlayerSpace.deltaGameUnits.y * gameToHavokPerSecond,
+                    probePlayerSpace.deltaGameUnits.z * gameToHavokPerSecond,
+                };
+            }
+        }
+        logLocomotionStutterProbe(world, _rightHand, probeRoomVelocityHavok, gameDeltaSeconds, gameFrameIndex, timing);
+        logLocomotionStutterProbe(world, _leftHand, probeRoomVelocityHavok, gameDeltaSeconds, gameFrameIndex, timing);
         serviceRetiredGrabConstraintPayloads();
         _weaponCollision.serviceRetiredWeaponBodies();
         // Frees hand/body bone-collider and grab-authority-proxy collision objects

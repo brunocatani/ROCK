@@ -292,6 +292,7 @@ namespace rock
         rockDebugGrabFrameLogging = false;
         rockDebugGrabTimelineTrace = false;
         rockDebugGrabAfterSolveAnomalySampling = false;
+        rockDebugLocomotionStutterProbe = false;
         rockDebugGrabTransformTelemetry = false;
         rockDebugGrabTransformTelemetryText = false;
         rockDebugGrabTransformTelemetryAxes = false;
@@ -1169,6 +1170,8 @@ namespace rock
         rockDebugGrabTimelineTrace = ini.GetBoolValue(SECTION, "bDebugGrabTimelineTrace", rockDebugGrabTimelineTrace);
         rockDebugGrabAfterSolveAnomalySampling =
             ini.GetBoolValue(SECTION, "bDebugGrabAfterSolveAnomalySampling", rockDebugGrabAfterSolveAnomalySampling);
+        rockDebugLocomotionStutterProbe =
+            ini.GetBoolValue(SECTION, "bDebugLocomotionStutterProbe", rockDebugLocomotionStutterProbe);
         rockDebugGrabTimelineTraceIntervalFrames =
             static_cast<int>(ini.GetLongValue(SECTION, "iDebugGrabTimelineTraceIntervalFrames", rockDebugGrabTimelineTraceIntervalFrames));
         if (rockDebugGrabTimelineTraceIntervalFrames < 1) {
