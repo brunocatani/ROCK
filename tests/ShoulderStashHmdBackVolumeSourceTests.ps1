@@ -51,6 +51,9 @@ Require-Text 'src/physics-interaction/stash/ShoulderStashDetector.cpp' 'hmdBackB
     'HMD stash detector must reject forward-side probes before sphere scoring.'
 Require-Text 'src/physics-interaction/stash/ShoulderStashDetector.cpp' 'input\.config\.hmdBackExitPaddingGameUnits\s*:\s*input\.config\.hmdBackEnterPaddingGameUnits' `
     'HMD stash detector should use HMD-specific padding rather than body-zone padding.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' `
+    'makeEquippedWeaponStashDetectorConfig\(\)[\s\S]*?config\.maxSpeedGameUnitsPerSecond\s*=\s*0\.0f' `
+    'Equipped-weapon stash must preserve a dwelled candidate through a fast last-grip release sample.'
 
 Require-Text 'src/RockConfig.h' `
     'rockShoulderStashHmdBackRightOffsetGameUnits\s*=\s*RE::NiPoint3\(14\.0f,\s*-18\.0f,\s*-6\.85f\)' `

@@ -144,6 +144,14 @@ namespace rock::shoulder_stash
         return hmdForwardOffsetGameUnits <= -minBehindGameUnits;
     }
 
+    [[nodiscard]] inline bool exceedsShoulderStashSpeedLimit(float speedGameUnitsPerSecond, float maxSpeedGameUnitsPerSecond) noexcept
+    {
+        return std::isfinite(speedGameUnitsPerSecond) &&
+               std::isfinite(maxSpeedGameUnitsPerSecond) &&
+               maxSpeedGameUnitsPerSecond > 0.0f &&
+               speedGameUnitsPerSecond > maxSpeedGameUnitsPerSecond;
+    }
+
     [[nodiscard]] inline bool shoulderStashDwellIdentityMatches(
         body_zone::BodyZoneKind previousZone,
         EvidenceSource previousSource,

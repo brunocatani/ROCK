@@ -75,6 +75,13 @@ int main()
     ok &= expectTrue("HMD back gate can be disabled for compatibility",
         hmdBackBehindGateAllows(1.0f, 0.0f));
 
+    ok &= expectTrue("configured stash speed ceiling rejects fast probes",
+        exceedsShoulderStashSpeedLimit(141.0f, 140.0f));
+    ok &= expectFalse("stash speed ceiling accepts the boundary",
+        exceedsShoulderStashSpeedLimit(140.0f, 140.0f));
+    ok &= expectFalse("zero stash speed ceiling disables speed rejection",
+        exceedsShoulderStashSpeedLimit(1000.0f, 0.0f));
+
     ok &= expectTrue("HMD primary to collider backup preserves dwell on same zone",
         shoulderStashDwellIdentityMatches(
             BodyZoneKind::RightShoulder,

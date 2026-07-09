@@ -256,6 +256,14 @@ namespace rock
             config.enabled = g_rockConfig.rockEquippedWeaponShoulderStashEnabled;
             config.useBodyZoneColliders = false;
             config.useHmdBackVolume = true;
+            /*
+             * A last-grip release is the equipped-weapon commit gesture. Do
+             * not let a fast controller sample on that release frame erase a
+             * back-volume candidate that already satisfied dwell. Loose-item
+             * stash retains the configured speed gate because its release is
+             * also the throw gesture and therefore needs that disambiguation.
+             */
+            config.maxSpeedGameUnitsPerSecond = 0.0f;
             return config;
         }
 

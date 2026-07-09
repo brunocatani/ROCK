@@ -430,9 +430,7 @@ namespace rock::shoulder_stash
             return decision;
         }
 
-        if (std::isfinite(input.config.maxSpeedGameUnitsPerSecond) &&
-            input.config.maxSpeedGameUnitsPerSecond > 0.0f &&
-            speed > input.config.maxSpeedGameUnitsPerSecond) {
+        if (exceedsShoulderStashSpeedLimit(speed, input.config.maxSpeedGameUnitsPerSecond)) {
             runtime.candidate = false;
             runtime.confirmed = false;
             runtime.zone = body_zone::BodyZoneKind::Unknown;
