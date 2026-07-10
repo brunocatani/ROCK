@@ -464,6 +464,12 @@ int main()
         shouldAttemptPhysicalDrop(false));
     ok &= expectFalse("selected stash never falls through to physical drop",
         shouldAttemptPhysicalDrop(true));
+    ok &= expectTrue("successful physical drop commits collider retirement",
+        physicalDropCommitted(PhysicalDropCommitInput{ .dropSucceeded = true }));
+    ok &= expectTrue("unresolved dropped reference still commits collider retirement",
+        physicalDropCommitted(PhysicalDropCommitInput{ .droppedReferenceUnavailable = true }));
+    ok &= expectFalse("failed physical drop preserves equipped collision",
+        physicalDropCommitted(PhysicalDropCommitInput{}));
     ok &= expectEqual("part carry with both grips has no stash carry hand",
         resolveEquippedWeaponStashCarryHand(false, true, true, true, false),
         SourceHand::None);

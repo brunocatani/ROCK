@@ -3255,6 +3255,23 @@ namespace rock
                             .hasDropLoc = true,
                             .hasDropRot = hasReleaseRot,
                         });
+                        const bool dropCommitted = equipped_weapon_drop_policy::physicalDropCommitted(
+                            equipped_weapon_drop_policy::PhysicalDropCommitInput{
+                                .dropSucceeded = dropResult.success,
+                                .droppedReferenceUnavailable =
+                                    dropResult.reason == weapon_equip_transfer::DropReason::DroppedReferenceUnavailable,
+                            });
+                        if (dropCommitted) {
+                            /*
+                             * RemoveItem creates the native layer-5 weapon at
+                             * the last layer-44 equipped-collider pose. Retire
+                             * ROCK's generated representation in this same
+                             * transaction so no physics step can solve the two
+                             * coincident weapon body sets before momentum is
+                             * handed to the native drop.
+                             */
+                            _weaponCollision.destroyWeaponBody(hknp);
+                        }
                         if (dropResult.success) {
                             armEquippedWeaponDropMomentumHandoff(dropResult.handle, dropResult.droppedFormID, sourceHand);
                             ROCK_LOG_INFO(Weapon,
@@ -3267,7 +3284,7 @@ namespace rock
                                 dropResult.formID, weapon_equip_transfer::dropReasonName(dropResult.reason), equipped_weapon_drop_policy::sourceHandName(sourceHand),
                                 dropResult.attempted ? "yes" : "no", dropResult.stackID, dropResult.matchedInstanceData ? "yes" : "no");
                         }
-                        if (sourceHandKnown && (dropResult.success || dropResult.reason == weapon_equip_transfer::DropReason::DroppedReferenceUnavailable)) {
+                        if (sourceHandKnown && dropCommitted) {
                             suppressHandCollisionAfterEquippedWeaponDrop(hknp, sourceHand);
                         }
                     }

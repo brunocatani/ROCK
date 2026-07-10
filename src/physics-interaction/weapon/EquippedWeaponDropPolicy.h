@@ -65,4 +65,21 @@ namespace rock::equipped_weapon_drop_policy
         return !stashCommitSelected;
     }
 
+    struct PhysicalDropCommitInput
+    {
+        bool dropSucceeded{ false };
+        bool droppedReferenceUnavailable{ false };
+    };
+
+    [[nodiscard]] inline constexpr bool physicalDropCommitted(const PhysicalDropCommitInput& input) noexcept
+    {
+        /*
+         * RemoveItem has already transferred the inventory stack once it
+         * returns a handle. The handle can be valid before its reference is
+         * immediately resolvable, so DroppedReferenceUnavailable is still a
+         * committed physical drop for collider-lifecycle cleanup.
+         */
+        return input.dropSucceeded || input.droppedReferenceUnavailable;
+    }
+
 }

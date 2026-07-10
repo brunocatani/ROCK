@@ -128,6 +128,8 @@ Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'retireWeaponB
 Require-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'serviceRetiredWeaponBodies[\s\S]*BethesdaPhysicsBody::releaseRetiredPayload' 'Retired generated weapon bodies must be reclaimed from an explicit service point.'
 Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'observeCustomGrabAuthorityAfterSolve[\s\S]*_weaponCollision\.serviceRetiredWeaponBodies\(\);' 'The physics after-solve callback must service retired generated weapon bodies after native readers advance.'
 Reject-Text 'src/physics-interaction/weapon/WeaponCollision.cpp' 'destroyWeaponBodyBank[\s\S]{0,260}instance\.body\.destroy\(_cachedBhkWorld\)' 'Generated weapon body bank teardown must not immediately destroy native wrapper bodies in the rebuild path.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'dropCommitted\s*=\s*equipped_weapon_drop_policy::physicalDropCommitted\([\s\S]{0,420}if\s*\(dropCommitted\)\s*\{[\s\S]{0,700}_weaponCollision\.destroyWeaponBody\(hknp\);[\s\S]{0,220}if\s*\(dropResult\.success\)\s*\{[\s\S]{0,180}armEquippedWeaponDropMomentumHandoff' 'A committed equipped-weapon drop must retire the coincident generated collider set before arming native drop momentum.'
+Require-Text 'src/physics-interaction/core/PhysicsInteraction.cpp' 'sourceHandKnown\s*&&\s*dropCommitted' 'Dropped-reference-unavailable commits must share the post-drop hand-collision path with immediately resolved drops.'
 
 # Hand/body bone colliders and the grab-authority proxy share the same
 # broadphase-lifetime hazard as weapon bodies: freeing a keyframed collision
