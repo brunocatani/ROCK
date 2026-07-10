@@ -214,6 +214,7 @@ namespace rock::runtime_state
         next.playerAvailable = hasPlayer();
         next.weaponDrawn = sampleWeaponDrawn();
         next.inputMenuBlocking = input.menuInputBlocking;
+        next.localScopeMenuOpen = s_menuHandlerInitialized && s_gameMenus.isInScopeMenu();
         next.localLoadingMenuOpen = s_menuHandlerInitialized && s_gameMenus.isLoadingMenuOpen();
         next.localGameStopped = s_menuHandlerInitialized && s_gameMenus.isGameStopped();
         next.localMenuBlocking = next.localGameStopped || next.inputMenuBlocking;

@@ -3089,11 +3089,34 @@ namespace rock
                 }
             }
 
+            const auto captureScopeHandDriverFrame = [](RE::NiNode* driverNode) {
+                EquippedWeaponScopeHandDriverFrame result{};
+                if (driverNode && finiteNiTransform(driverNode->world)) {
+                    result.valid = true;
+                    result.world = driverNode->world;
+                }
+                return result;
+            };
+            auto* playerNodes = f4vr::getPlayerNodes();
+            const bool leftHandedMode = f4vr::isLeftHandedMode();
+            const auto scopeHandDriverNode = [playerNodes, leftHandedMode](bool isLeft) -> RE::NiNode* {
+                if (!playerNodes) {
+                    return nullptr;
+                }
+                const bool isOffhand = leftHandedMode != isLeft;
+                return isOffhand ? playerNodes->SecondaryMeleeWeaponOffsetNode2 : playerNodes->primaryWeaponOffsetNOde;
+            };
+            const EquippedWeaponScopeHandDriverFrame leftHandDriverFrame = captureScopeHandDriverFrame(scopeHandDriverNode(true));
+            const EquippedWeaponScopeHandDriverFrame rightHandDriverFrame = captureScopeHandDriverFrame(scopeHandDriverNode(false));
+
             const EquippedWeaponGripFrameInput gripFrameInput{
                 .leftGripHeld = gripPressed,
                 .leftHandHoldingObject = leftHandHoldingObject,
                 .rightHandHoldingObject = _rightHand.isHolding(),
                 .reattachEligible = reattachEligible,
+                .scopeMenuOpen = runtime.localScopeMenuOpen,
+                .leftHandDriverFrame = leftHandDriverFrame,
+                .rightHandDriverFrame = rightHandDriverFrame,
                 .primaryGripInput = primaryGripInput,
             };
             _twoHandedGrip.update(

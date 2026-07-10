@@ -7,7 +7,9 @@
 
 // ---- WeaponAuthorityLifecyclePolicy.h ----
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstddef>
 #include <string_view>
@@ -180,6 +182,121 @@ namespace rock::native_scope_camera_follow_math
             transform_math::invertTransform(weaponWorldBefore),
             scopeCameraWorldBefore);
         return transform_math::composeTransforms(weaponWorldAfter, scopeCameraWeaponLocal);
+    }
+}
+
+// ---- ScopeSafeHandFrameMath.h ----
+
+namespace rock::scope_safe_hand_frame_math
+{
+    /*
+     * hFRIK intentionally collapses its body root while FO4VR's native
+     * ScopeMenu is open. hFRIK's damped arm-driver offset nodes remain live,
+     * so remember each authored hand frame relative to that same driver before
+     * the collapse and reconstruct it from the current driver while scoped.
+     */
+    template <class Transform>
+    [[nodiscard]] inline Transform captureDriverToHandLocal(
+        const Transform& driverWorld,
+        const Transform& handWorld)
+    {
+        return transform_math::composeTransforms(
+            transform_math::invertTransform(driverWorld),
+            handWorld);
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline Transform resolveHandWorld(
+        const Transform& driverWorld,
+        const Transform& driverToHandLocal)
+    {
+        return transform_math::composeTransforms(driverWorld, driverToHandLocal);
+    }
+
+    enum class ResolutionMode
+    {
+        RootFlattened,
+        DriverReconstructed,
+        LastKnown,
+        Unavailable,
+    };
+
+    [[nodiscard]] inline constexpr ResolutionMode resolveMode(
+        bool scopeMenuOpen,
+        bool rootHandValid,
+        bool reconstructedHandValid,
+        bool hasLastHandWorld,
+        std::uint32_t consecutiveDriverMissFrames,
+        std::uint32_t maxDriverMissGraceFrames)
+    {
+        if (!scopeMenuOpen) {
+            return rootHandValid ? ResolutionMode::RootFlattened : ResolutionMode::Unavailable;
+        }
+        if (reconstructedHandValid) {
+            return ResolutionMode::DriverReconstructed;
+        }
+        return hasLastHandWorld && consecutiveDriverMissFrames < maxDriverMissGraceFrames ?
+                   ResolutionMode::LastKnown :
+                   ResolutionMode::Unavailable;
+    }
+
+    [[nodiscard]] inline constexpr bool shouldPublishLockedHandVisualAuthority(bool scopeMenuOpen)
+    {
+        // hFRIK's hands are deliberately hidden in this state, and its arm IK
+        // rejects the collapsed skeleton. Weapon/camera authority still runs.
+        return !scopeMenuOpen;
+    }
+
+    [[nodiscard]] inline float rebaseAlpha(float elapsedSeconds, float durationSeconds)
+    {
+        if (!std::isfinite(durationSeconds) || durationSeconds <= 0.0f) {
+            return 1.0f;
+        }
+        const float elapsed = std::isfinite(elapsedSeconds) ? elapsedSeconds : durationSeconds;
+        return std::clamp(elapsed / durationSeconds, 0.0f, 1.0f);
+    }
+
+    template <class Transform>
+    [[nodiscard]] inline Transform interpolateRebaseTransform(
+        const Transform& from,
+        const Transform& to,
+        float alpha)
+    {
+        const float t = std::clamp(std::isfinite(alpha) ? alpha : 1.0f, 0.0f, 1.0f);
+        Transform result = to;
+        result.translate.x = from.translate.x + (to.translate.x - from.translate.x) * t;
+        result.translate.y = from.translate.y + (to.translate.y - from.translate.y) * t;
+        result.translate.z = from.translate.z + (to.translate.z - from.translate.z) * t;
+        result.scale = from.scale + (to.scale - from.scale) * t;
+
+        float fromQuaternion[4]{};
+        float toQuaternion[4]{};
+        transform_math::niRowsToHavokQuaternion(from.rotate, fromQuaternion);
+        transform_math::niRowsToHavokQuaternion(to.rotate, toQuaternion);
+        const float dot = fromQuaternion[0] * toQuaternion[0] +
+                          fromQuaternion[1] * toQuaternion[1] +
+                          fromQuaternion[2] * toQuaternion[2] +
+                          fromQuaternion[3] * toQuaternion[3];
+        if (dot < 0.0f) {
+            for (float& component : toQuaternion) {
+                component = -component;
+            }
+        }
+
+        float blendedQuaternion[4]{};
+        float lengthSquared = 0.0f;
+        for (std::size_t index = 0; index < 4; ++index) {
+            blendedQuaternion[index] = fromQuaternion[index] + (toQuaternion[index] - fromQuaternion[index]) * t;
+            lengthSquared += blendedQuaternion[index] * blendedQuaternion[index];
+        }
+        if (std::isfinite(lengthSquared) && lengthSquared > 0.000001f) {
+            const float inverseLength = 1.0f / std::sqrt(lengthSquared);
+            for (float& component : blendedQuaternion) {
+                component *= inverseLength;
+            }
+            result.rotate = transform_math::havokQuaternionToNiRows<decltype(result.rotate)>(blendedQuaternion);
+        }
+        return result;
     }
 }
 

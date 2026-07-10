@@ -129,6 +129,72 @@ int main()
         ok &= expectTransformNear("native scope camera preserves calibrated weapon-local frame", relativeAfter, relativeBefore);
     }
 
+    {
+        TestTransform driverBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
+        driverBefore.translate = { 10.0f, -4.0f, 7.0f };
+        TestTransform handBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
+        handBefore.translate = { 12.0f, -1.0f, 8.5f };
+
+        const TestTransform driverToHand = rock::scope_safe_hand_frame_math::captureDriverToHandLocal(
+            driverBefore,
+            handBefore);
+
+        TestTransform driverAfter = rock::transform_math::makeIdentityTransform<TestTransform>();
+        driverAfter.translate = { -3.0f, 14.0f, 11.0f };
+        driverAfter.rotate.entry[0][0] = 0.0f;
+        driverAfter.rotate.entry[0][1] = 1.0f;
+        driverAfter.rotate.entry[1][0] = -1.0f;
+        driverAfter.rotate.entry[1][1] = 0.0f;
+
+        const TestTransform handAfter = rock::scope_safe_hand_frame_math::resolveHandWorld(
+            driverAfter,
+            driverToHand);
+        const TestTransform resolvedDriverToHand = rock::transform_math::composeTransforms(
+            rock::transform_math::invertTransform(driverAfter),
+            handAfter);
+        ok &= expectTransformNear("scope-safe hand preserves hFRIK driver-local calibration", resolvedDriverToHand, driverToHand);
+        using rock::scope_safe_hand_frame_math::ResolutionMode;
+        ok &= expectEqual("visible body uses root-flattened hand authority",
+            rock::scope_safe_hand_frame_math::resolveMode(false, true, true, true, 0, 3),
+            ResolutionMode::RootFlattened);
+        ok &= expectEqual("native scope ignores even finite root data and reconstructs from the hFRIK driver",
+            rock::scope_safe_hand_frame_math::resolveMode(true, true, true, true, 0, 3),
+            ResolutionMode::DriverReconstructed);
+        ok &= expectEqual("native scope briefly freezes the last valid frame across a transient driver miss",
+            rock::scope_safe_hand_frame_math::resolveMode(true, false, false, true, 0, 3),
+            ResolutionMode::LastKnown);
+        ok &= expectEqual("native scope stops freezing after the bounded driver-miss grace",
+            rock::scope_safe_hand_frame_math::resolveMode(true, false, false, true, 3, 3),
+            ResolutionMode::Unavailable);
+        ok &= expectEqual("native scope without calibration or history fails closed",
+            rock::scope_safe_hand_frame_math::resolveMode(true, true, false, false, 0, 3),
+            ResolutionMode::Unavailable);
+        ok &= expectEqual("ordinary aiming never substitutes the scope driver for a missing canonical hand frame",
+            rock::scope_safe_hand_frame_math::resolveMode(false, false, true, true, 0, 3),
+            ResolutionMode::Unavailable);
+        ok &= expectTrue("locked hand IK publishes outside native scope",
+            rock::scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(false));
+        ok &= expectFalse("locked hand IK is suppressed while native scope hides the body",
+            rock::scope_safe_hand_frame_math::shouldPublishLockedHandVisualAuthority(true));
+
+        TestTransform rebaseStart = rock::transform_math::makeIdentityTransform<TestTransform>();
+        rebaseStart.translate = { 1.5f, -2.0f, 0.75f };
+        rebaseStart.rotate.entry[0][0] = 0.0f;
+        rebaseStart.rotate.entry[0][1] = 1.0f;
+        rebaseStart.rotate.entry[1][0] = -1.0f;
+        rebaseStart.rotate.entry[1][1] = 0.0f;
+        const TestTransform rebaseIdentity = rock::transform_math::makeIdentityTransform<TestTransform>();
+        ok &= expectTransformNear("scope-exit rebase starts at the prior ROCK hand frame",
+            rock::scope_safe_hand_frame_math::interpolateRebaseTransform(rebaseStart, rebaseIdentity, 0.0f),
+            rebaseStart);
+        ok &= expectTransformNear("scope-exit rebase finishes at the restored hFRIK root frame",
+            rock::scope_safe_hand_frame_math::interpolateRebaseTransform(rebaseStart, rebaseIdentity, 1.0f),
+            rebaseIdentity);
+        ok &= expectNear("scope-exit rebase timing clamps at completion",
+            rock::scope_safe_hand_frame_math::rebaseAlpha(0.10f, 0.075f),
+            1.0f);
+    }
+
     using namespace rock::contact_pipeline_policy;
 
     const ContactEndpoint weapon{

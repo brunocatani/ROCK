@@ -50,12 +50,21 @@ namespace rock
         bool released{ false };
     };
 
+    struct EquippedWeaponScopeHandDriverFrame
+    {
+        bool valid{ false };
+        RE::NiTransform world{};
+    };
+
     struct EquippedWeaponGripFrameInput
     {
         bool leftGripHeld{ false };
         bool leftHandHoldingObject{ false };
         bool rightHandHoldingObject{ false };
         bool reattachEligible{ false };
+        bool scopeMenuOpen{ false };
+        EquippedWeaponScopeHandDriverFrame leftHandDriverFrame{};
+        EquippedWeaponScopeHandDriverFrame rightHandDriverFrame{};
         EquippedWeaponPrimaryGripInput primaryGripInput{};
     };
 
@@ -226,11 +235,11 @@ namespace rock
         TwoHandedGripHapticEvents consumeHapticEvents();
 
         /*
-         * Shared palm capture for firing-grip math. Uses the same
-         * root-flattened bone reader and palm-pivot formula as the internal
-         * grip capture (_primaryGripLocal), so external grip-point consumers
-         * (loose_weapon_grip_zone) stay definitionally identical to the
-         * two-handed firing grip.
+         * Shared raw palm capture for external grip-point consumers. Outside
+         * ScopeMenu this uses the same root-flattened frame and palm-pivot
+         * formula as the internal grip capture. Internal two-hand authority
+         * switches to its hFRIK-arm-driver-relative cached frame while hFRIK
+         * hides that root in ScopeMenu.
          */
         static bool tryCaptureRootFlattenedPalmWorld(bool isLeft, RE::NiPoint3& outPalmWorld, RE::NiTransform& outHandWorld);
 
@@ -242,6 +251,20 @@ namespace rock
             float elapsedSeconds = 0.0f;
             float durationSeconds = 0.0f;
             float lastAlpha = 1.0f;
+        };
+
+        struct ScopeSafeHandFrameState
+        {
+            RE::NiTransform driverToHandLocal{};
+            RE::NiTransform currentHandWorld{};
+            RE::NiTransform lastHandWorld{};
+            RE::NiTransform rootRebaseLocalStart{};
+            float rootRebaseElapsedSeconds{ 0.0f };
+            std::uint32_t consecutiveDriverMissFrames{ 0 };
+            bool hasDriverToHandLocal{ false };
+            bool currentHandWorldValid{ false };
+            bool hasLastHandWorld{ false };
+            bool rootRebaseActive{ false };
         };
 
         /*
@@ -439,6 +462,8 @@ namespace rock
         RE::NiAVObject* resolveCurrentSupportAttachmentRoot(const WeaponPartGrip& grip, RE::NiNode* weaponNode) const;
 
         void resetLockedHandVisualLerp();
+        void refreshScopeSafeHandFrames(RE::NiNode* weaponNode, const EquippedWeaponGripFrameInput& frameInput, float dt);
+        bool tryGetSolverHandTransform(bool isLeft, RE::NiTransform& outTransform) const;
         RE::NiTransform resolveLockedHandVisualTarget(
             const RE::NiTransform& targetWorld,
             const RE::NiTransform* liveHandWorld,
@@ -458,6 +483,10 @@ namespace rock
          * are role-driven as well. Do not flip it in isolation.
          */
         bool _firingHandIsLeft{ false };
+
+        std::array<ScopeSafeHandFrameState, 2> _scopeSafeHandFrames{};
+        bool _scopeMenuOpenThisFrame{ false };
+        bool _scopeHandAuthorityCleanupPending{ false };
 
         std::array<WeaponPartGrip, 2> _partGrips{};
 
