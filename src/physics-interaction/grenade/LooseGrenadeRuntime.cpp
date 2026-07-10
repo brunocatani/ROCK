@@ -246,6 +246,20 @@ namespace rock::loose_grenade_runtime
             return objectInstanceExtraHasMolotovOmod(objectInstanceExtra);
         }
 
+        [[nodiscard]] GrenadeKind classifyGrenadeSources(
+            RE::TESObjectWEAP* weapon,
+            RE::TBO_InstanceData* instanceData,
+            RE::BGSProjectile* projectile,
+            const RE::BGSObjectInstanceExtra* objectInstanceExtra) noexcept
+        {
+            if (!weapon || weapon->weaponData.type != RE::WEAPON_TYPE::kGrenade) {
+                return GrenadeKind::NotGrenade;
+            }
+            return isMolotovGrenade(weapon, instanceData, projectile, objectInstanceExtra) ?
+                       GrenadeKind::Molotov :
+                       GrenadeKind::Generic;
+        }
+
         [[nodiscard]] bool resolveGrenadeRuntimeDataForSources(
             RE::TESObjectWEAP* weapon,
             RE::TBO_InstanceData* instanceData,
@@ -262,8 +276,9 @@ namespace rock::loose_grenade_runtime
                 return false;
             }
 
+            const GrenadeKind kind = classifyGrenadeSources(weapon, instanceData, projectile, objectInstanceExtra);
             const GrenadeDetonationMode mode =
-                isMolotovGrenade(weapon, instanceData, projectile, objectInstanceExtra) ?
+                kind == GrenadeKind::Molotov ?
                     GrenadeDetonationMode::Impact :
                     GrenadeDetonationMode::TimedFuse;
             const float configuredFuseSeconds = g_rockConfig.rockRealisticGrenadeFuseSeconds;
@@ -485,6 +500,20 @@ namespace rock::loose_grenade_runtime
         auto* base = ref ? ref->GetObjectReference() : nullptr;
         auto* weapon = base ? base->As<RE::TESObjectWEAP>() : nullptr;
         return isGrenadeWeapon(weapon);
+    }
+
+    GrenadeKind classifyGrenadeRef(RE::TESObjectREFR* ref) noexcept
+    {
+        auto* base = ref ? ref->GetObjectReference() : nullptr;
+        auto* weapon = base ? base->As<RE::TESObjectWEAP>() : nullptr;
+        if (!isGrenadeWeapon(weapon)) {
+            return GrenadeKind::NotGrenade;
+        }
+
+        const auto instanceData = resolveReferenceInstanceData(ref);
+        auto* projectile = resolveProjectile(weapon, instanceData.get());
+        const auto* objectInstanceExtra = resolveReferenceObjectInstanceExtra(ref);
+        return classifyGrenadeSources(weapon, instanceData.get(), projectile, objectInstanceExtra);
     }
 
     bool resolveGrenadeRuntimeData(RE::TESObjectWEAP* weapon, RE::TBO_InstanceData* instanceData, GrenadeRuntimeData& outRuntime) noexcept

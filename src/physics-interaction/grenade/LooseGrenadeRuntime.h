@@ -23,6 +23,13 @@ namespace rock::loose_grenade_runtime
         Impact
     };
 
+    enum class GrenadeKind : std::uint8_t
+    {
+        NotGrenade,
+        Generic,
+        Molotov
+    };
+
     struct GrenadeRuntimeData
     {
         RE::BGSProjectile* projectile{ nullptr };
@@ -54,6 +61,7 @@ namespace rock::loose_grenade_runtime
 
     [[nodiscard]] bool isGrenadeWeapon(const RE::TESObjectWEAP* weapon) noexcept;
     [[nodiscard]] bool isGrenadeRef(RE::TESObjectREFR* ref) noexcept;
+    [[nodiscard]] GrenadeKind classifyGrenadeRef(RE::TESObjectREFR* ref) noexcept;
     [[nodiscard]] bool resolveGrenadeRuntimeData(
         RE::TESObjectWEAP* weapon,
         RE::TBO_InstanceData* instanceData,

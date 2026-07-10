@@ -7,6 +7,8 @@
 #include "physics-interaction/grab/GrabCore.h"
 #include "physics-interaction/collision/CollisionSuppressionRegistry.h"
 #include "physics-interaction/debug/DebugMath.h"
+#include "physics-interaction/grenade/CalibratedGrenadeOffsetPolicy.h"
+#include "physics-interaction/grenade/LooseGrenadeRuntime.h"
 #include "physics-interaction/grab/GrabAuthorityProxy.h"
 #include "physics-interaction/grab/GrabConstraint.h"
 #include "physics-interaction/grab/GrabConstraintMath.h"
@@ -849,15 +851,38 @@ namespace rock
             return source;
         }
 
-        struct SavedGrabOffsetAttachSource
+        enum class GrabOffsetSourceKind : std::uint8_t
         {
-            bool valid = false;
-            RE::NiTransform desiredRootWorld{};
+            None,
+            SavedObject,
+            CalibratedGrenade,
+            CalibratedMolotov
         };
 
-        // Shared cache-only lookup backing both the transform and finger-pose
-        // saved-grab-offset readers below; false when no offset is saved for
-        // this object+hand (normal - most objects never had one saved).
+        [[nodiscard]] const char* grabOffsetSourceReason(GrabOffsetSourceKind kind) noexcept
+        {
+            switch (kind) {
+            case GrabOffsetSourceKind::SavedObject:
+                return "savedGrabOffset";
+            case GrabOffsetSourceKind::CalibratedGrenade:
+                return "calibratedGrenadeOffset";
+            case GrabOffsetSourceKind::CalibratedMolotov:
+                return "calibratedMolotovOffset";
+            case GrabOffsetSourceKind::None:
+            default:
+                return "noGrabOffset";
+            }
+        }
+
+        struct ResolvedGrabOffsetSource
+        {
+            bool valid{ false };
+            GrabOffsetSourceKind kind{ GrabOffsetSourceKind::None };
+            saved_grab_offset::HandOffset handOffset{};
+        };
+
+        // Cache-only disk lookup; false when this object+hand has no saved
+        // offset (normal - most objects never had one saved).
         bool tryLoadSavedGrabOffsetHandOffset(RE::TESObjectREFR* refr, bool isLeft, saved_grab_offset::HandOffset& out)
         {
             if (!refr) {
@@ -883,26 +908,67 @@ namespace rock
             return true;
         }
 
+        ResolvedGrabOffsetSource resolveGrabOffsetSource(bool isLeft, RE::TESObjectREFR* refr)
+        {
+            ResolvedGrabOffsetSource source{};
+            if (!refr) {
+                return source;
+            }
+
+            /*
+             * Built-in grenade calibrations deliberately win over per-form
+             * SavedGrabOffsets while enabled: the requested invariant is one
+             * Molotov pose for every Molotov variant and one generic pose for
+             * every other grenade. Disabling the flag falls through to the
+             * unchanged per-object lookup below.
+             */
+            if (g_rockConfig.rockCalibratedGrenadeOffsetsEnabled) {
+                const auto grenadeKind = loose_grenade_runtime::classifyGrenadeRef(refr);
+                const auto preset = calibrated_grenade_offset::selectPreset({
+                    .enabled = true,
+                    .isGrenade = grenadeKind != loose_grenade_runtime::GrenadeKind::NotGrenade,
+                    .isMolotov = grenadeKind == loose_grenade_runtime::GrenadeKind::Molotov,
+                });
+                if (const auto* handOffset = calibrated_grenade_offset::handOffsetForPreset(preset, isLeft)) {
+                    source.valid = true;
+                    source.kind = preset == calibrated_grenade_offset::Preset::Molotov ?
+                                      GrabOffsetSourceKind::CalibratedMolotov :
+                                      GrabOffsetSourceKind::CalibratedGrenade;
+                    source.handOffset = *handOffset;
+                    return source;
+                }
+            }
+
+            if (tryLoadSavedGrabOffsetHandOffset(refr, isLeft, source.handOffset)) {
+                source.valid = true;
+                source.kind = GrabOffsetSourceKind::SavedObject;
+            }
+            return source;
+        }
+
+        struct GrabOffsetAttachSource
+        {
+            bool valid{ false };
+            RE::NiTransform desiredRootWorld{};
+            const char* reason{ "noGrabOffset" };
+        };
+
         /*
          * proxyWorld/proxyWorldValid are resolved by the caller (a live
          * GrabAuthorityProxy read, Hand::tryComputeGrabProxyLocalPalmPocketFrameWorld)
          * since this file's helpers are free functions with no Hand access.
          */
-        SavedGrabOffsetAttachSource resolveSavedGrabOffsetAttachSource(
+        GrabOffsetAttachSource resolveGrabOffsetAttachSource(
             const RE::NiTransform& proxyWorld,
             bool proxyWorldValid,
-            bool isLeft,
-            RE::TESObjectREFR* refr)
+            const ResolvedGrabOffsetSource& resolvedOffset)
         {
-            SavedGrabOffsetAttachSource source{};
-            if (!proxyWorldValid) {
-                return source;
-            }
-            saved_grab_offset::HandOffset handOffset{};
-            if (!tryLoadSavedGrabOffsetHandOffset(refr, isLeft, handOffset)) {
+            GrabOffsetAttachSource source{};
+            if (!proxyWorldValid || !resolvedOffset.valid) {
                 return source;
             }
 
+            const auto& handOffset = resolvedOffset.handOffset;
             RE::NiTransform objectProxyLocal = transform_math::makeIdentityTransform<RE::NiTransform>();
             objectProxyLocal.translate = { handOffset.translateGame[0], handOffset.translateGame[1], handOffset.translateGame[2] };
             for (int row = 0; row < 3; ++row) {
@@ -913,30 +979,32 @@ namespace rock
 
             source.desiredRootWorld = grab_frame_math::objectFromGeneratedProxyLocalSpace(proxyWorld, objectProxyLocal);
             source.valid = isFiniteNiTransform(source.desiredRootWorld);
+            source.reason = grabOffsetSourceReason(resolvedOffset.kind);
             return source;
         }
 
-        struct SavedGrabOffsetFingerPoseSource
+        struct GrabOffsetFingerPoseSource
         {
-            bool valid = false;
+            bool valid{ false };
             grab_finger_pose_runtime::SolvedGrabFingerPose pose{};
+            const char* reason{ "noGrabOffset" };
         };
 
         /*
-         * A saved grab offset's finger pose is only meaningful for the
-         * loose-weapon synthetic primary attach (pull-catch/force-grab):
-         * that path has no mesh contact to solve fingers from, so it
-         * otherwise falls back to a generic canned named pose (see
+         * A resolved offset's finger pose is only meaningful for the loose-
+         * weapon synthetic primary attach (pull-catch/force-grab): that path
+         * has no mesh contact to solve fingers from, so it otherwise falls
+         * back to a generic canned named pose (see
          * publishLooseWeaponPrimaryAttachHandPose / grabSelectedObject).
          */
-        SavedGrabOffsetFingerPoseSource resolveSavedGrabOffsetFingerPoseSource(bool isLeft, RE::TESObjectREFR* refr)
+        GrabOffsetFingerPoseSource resolveGrabOffsetFingerPoseSource(const ResolvedGrabOffsetSource& resolvedOffset)
         {
-            SavedGrabOffsetFingerPoseSource source{};
-            saved_grab_offset::HandOffset handOffset{};
-            if (!tryLoadSavedGrabOffsetHandOffset(refr, isLeft, handOffset) || !handOffset.hasFingerPose) {
+            GrabOffsetFingerPoseSource source{};
+            if (!resolvedOffset.valid || !resolvedOffset.handOffset.hasFingerPose) {
                 return source;
             }
 
+            const auto& handOffset = resolvedOffset.handOffset;
             source.pose.solved = true;
             source.pose.values = { handOffset.fingerValues[0], handOffset.fingerValues[1], handOffset.fingerValues[2],
                 handOffset.fingerValues[3], handOffset.fingerValues[4] };
@@ -947,6 +1015,7 @@ namespace rock
                 }
             }
             source.valid = true;
+            source.reason = grabOffsetSourceReason(resolvedOffset.kind);
             return source;
         }
 
@@ -961,7 +1030,7 @@ namespace rock
             const RE::NiTransform& grabBodyWorldAtGrab,
             const RE::NiPoint3& grabPivotAWorld,
             const RE::NiTransform& handWorldAtGrab,
-            const SavedGrabOffsetAttachSource& savedOffsetSource)
+            const GrabOffsetAttachSource& grabOffsetSource)
         {
             LooseWeaponPrimaryAttachFrame frame{};
             /*
@@ -975,17 +1044,17 @@ namespace rock
                 return frame;
             }
 
-            if (savedOffsetSource.valid) {
+            if (grabOffsetSource.valid) {
                 /*
-                 * A user-saved grab offset always wins: it is an explicit,
-                 * per-object, per-hand tuned pose, so it overrides both the
-                 * generic FRIK weapon offset below and the throwable
-                 * live-pose default, and applies to any object (not just
-                 * loose weapons) and independently of handedness.
+                 * The unified resolver has already selected either the
+                 * flag-gated calibrated grenade preset or the per-object
+                 * saved offset. Either is explicit hand-placement authority,
+                 * so it overrides both the generic FRIK weapon offset and the
+                 * throwable live-pose default.
                  */
-                frame.desiredRootWorld = savedOffsetSource.desiredRootWorld;
+                frame.desiredRootWorld = grabOffsetSource.desiredRootWorld;
                 frame.sourceVisible = false;
-                frame.reason = "savedGrabOffset";
+                frame.reason = grabOffsetSource.reason;
             } else {
                 if (!looseWeaponGrab) {
                     frame.reason = "notLooseWeapon";
@@ -7160,6 +7229,7 @@ namespace rock
         const bool grabbedFromPullCatch = pullCatchIntentMatchesSelection();
         const bool looseWeaponGrab = isLooseWeaponGrabTarget(sel);
         const bool handPocketOnlyGrab = grab_target::requiresHandPocketGrab(sel.targetKind);
+        ResolvedGrabOffsetSource resolvedGrabOffsetSource{};
 
         auto objectBodyId = sel.bodyId;
         auto* rootNode = sel.refr->Get3D();
@@ -9405,11 +9475,15 @@ namespace rock
                         grabPivotAWorld,
                         grabGripPoint);
                     desiredObjectWorld = deriveNodeWorldFromBodyWorld(desiredBodyWorld, objectToBodyAtGrab);
-                    RE::NiTransform grabProxyWorldForSavedOffset{};
-                    const bool grabProxyWorldValidForSavedOffset = (grabbedFromPullCatch || sel.forcedArrival) &&
-                                                                    tryComputeGrabProxyLocalPalmPocketFrameWorld(world, grabProxyWorldForSavedOffset);
-                    const auto savedGrabOffsetSource = resolveSavedGrabOffsetAttachSource(
-                        grabProxyWorldForSavedOffset, grabProxyWorldValidForSavedOffset, _isLeft, sel.refr);
+                    const bool programmaticArrival = grabbedFromPullCatch || sel.forcedArrival;
+                    if (programmaticArrival) {
+                        resolvedGrabOffsetSource = resolveGrabOffsetSource(_isLeft, sel.refr);
+                    }
+                    RE::NiTransform grabProxyWorldForOffset{};
+                    const bool grabProxyWorldValidForOffset =
+                        programmaticArrival && tryComputeGrabProxyLocalPalmPocketFrameWorld(world, grabProxyWorldForOffset);
+                    const auto grabOffsetAttachSource = resolveGrabOffsetAttachSource(
+                        grabProxyWorldForOffset, grabProxyWorldValidForOffset, resolvedGrabOffsetSource);
                     const auto looseWeaponPrimaryAttachFrame = resolveLooseWeaponPrimaryAttachFrame(
                         looseWeaponGrab,
                         grabbedFromPullCatch,
@@ -9421,7 +9495,7 @@ namespace rock
                         grabBodyWorldAtGrab,
                         grabPivotAWorld,
                         handWorldTransform,
-                        savedGrabOffsetSource);
+                        grabOffsetAttachSource);
                     looseWeaponPrimaryAttachReason = looseWeaponPrimaryAttachFrame.reason;
                     if (looseWeaponPrimaryAttachFrame.valid) {
                         desiredObjectWorld = looseWeaponPrimaryAttachFrame.desiredObjectWorld;
@@ -10535,23 +10609,18 @@ namespace rock
         _hasGrabFingerSurfaceTargetDebug = false;
         _grabFingerPosePublished = false;
         if (useLooseWeaponPrimaryAttachHandPose) {
-            const auto savedFingerPoseSource = g_rockConfig.rockGrabMeshFingerPoseEnabled ?
-                resolveSavedGrabOffsetFingerPoseSource(_isLeft, sel.refr) :
-                SavedGrabOffsetFingerPoseSource{};
-            if (savedFingerPoseSource.valid) {
+            const auto grabOffsetFingerPoseSource = g_rockConfig.rockGrabMeshFingerPoseEnabled ?
+                resolveGrabOffsetFingerPoseSource(resolvedGrabOffsetSource) :
+                GrabOffsetFingerPoseSource{};
+            if (grabOffsetFingerPoseSource.valid) {
                 /*
-                 * A saved grab offset's finger pose (captured from a live
-                 * organic mesh-curl hold, see Hand::tryGetLiveGrabFingerPoseSnapshot)
-                 * takes over from the generic canned HoldingGun/HoldingMelee
-                 * pose below - this attach has no mesh contact to solve
-                 * fingers from, so without a saved snapshot it would
-                 * otherwise fall back to that canned pose. This is a
-                 * one-time publish (the synthetic attach never re-runs a
-                 * per-frame mesh resolve), so _hasGrabFingerPose deliberately
-                 * stays false: none of the mesh-resolve paths below are
-                 * meant to touch this pose.
+                 * Reuse the same calibrated-or-saved source that established
+                 * the object attach. This synthetic attach has no mesh contact
+                 * to solve fingers from, so without the resolved snapshot it
+                 * would fall back to a generic canned pose. This is a one-time
+                 * publish; mesh-resolve paths must not mutate it afterward.
                  */
-                _grabFingerPose = savedFingerPoseSource.pose;
+                _grabFingerPose = grabOffsetFingerPoseSource.pose;
                 applyRockGrabHandPose(_isLeft,
                     _grabFingerPose,
                     _grabFingerJointPose,
@@ -10562,7 +10631,10 @@ namespace rock
                     0.0f,
                     /*publishLocalTransforms=*/false);
                 _grabFingerPosePublished = true;
-                ROCK_LOG_INFO(Hand, "{} hand loose weapon attach: applying saved finger pose", handName());
+                ROCK_LOG_INFO(Hand,
+                    "{} hand loose weapon attach: applying {} finger pose",
+                    handName(),
+                    grabOffsetFingerPoseSource.reason);
             } else {
                 _grabFingerPosePublished = publishLooseWeaponPrimaryAttachHandPose(_isLeft, sel.refr);
                 if (!_grabFingerPosePublished) {

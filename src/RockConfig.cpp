@@ -203,6 +203,7 @@ namespace rock
         rockWeaponSupportGripHapticIntensity = 0.50f;
         rockEquippedWeaponShoulderStashEnabled = true;
         rockRealisticWeaponHandlingEnabled = false;
+        rockCalibratedGrenadeOffsetsEnabled = true;
         rockRealisticGrenadeFuseSeconds = 5.0f;
         rockGrabbedWeaponAutoEquipEnabled = false;
         rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
@@ -880,6 +881,10 @@ namespace rock
             REALISTIC_WEAPONS_SECTION,
             "bRealisticWeaponHandlingEnabled",
             legacyRealisticPrimaryDetachEnabled);
+        rockCalibratedGrenadeOffsetsEnabled = ini.GetBoolValue(
+            REALISTIC_WEAPONS_SECTION,
+            "bCalibratedGrenadeOffsetsEnabled",
+            rockCalibratedGrenadeOffsetsEnabled);
         rockRealisticGrenadeFuseSeconds = readClampedFloat(ini,
             REALISTIC_WEAPONS_SECTION,
             "fRealisticGrenadeFuseSeconds",

@@ -122,6 +122,7 @@ namespace rock
         float rockWeaponSupportGripHapticIntensity = 0.50f;
         bool rockEquippedWeaponShoulderStashEnabled = true;
         bool rockRealisticWeaponHandlingEnabled = false;
+        bool rockCalibratedGrenadeOffsetsEnabled = true;
         float rockRealisticGrenadeFuseSeconds = 5.0f;
         bool rockGrabbedWeaponAutoEquipEnabled = false;
         float rockGrabbedWeaponAutoEquipSettleSeconds = 0.75f;
