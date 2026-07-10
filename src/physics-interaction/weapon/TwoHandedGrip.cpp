@@ -132,6 +132,71 @@ namespace rock
                    std::isfinite(transform.translate.z) && std::isfinite(transform.scale);
         }
 
+        struct NativeScopeCameraFollowCapture
+        {
+            RE::NiNode* camera{ nullptr };
+            RE::NiTransform weaponWorldBefore{};
+            RE::NiTransform cameraWorldBefore{};
+            bool valid{ false };
+        };
+
+        NativeScopeCameraFollowCapture captureNativeScopeCameraFollow(const RE::NiNode* weaponNode)
+        {
+            const auto* playerNodes = f4vr::getPlayerNodes();
+            auto* scopeCamera = playerNodes ? playerNodes->primaryWeaponScopeCamera : nullptr;
+            if (!weaponNode || !scopeCamera || !isFiniteTransform(weaponNode->world)) {
+                return {};
+            }
+
+            RE::NiTransform cameraWorld = scopeCamera->world;
+            if (scopeCamera->parent) {
+                cameraWorld = transform_math::composeTransforms(scopeCamera->parent->world, scopeCamera->local);
+            }
+            if (!isFiniteTransform(cameraWorld)) {
+                return {};
+            }
+
+            return NativeScopeCameraFollowCapture{
+                .camera = scopeCamera,
+                .weaponWorldBefore = weaponNode->world,
+                .cameraWorldBefore = cameraWorld,
+                .valid = true,
+            };
+        }
+
+        void applyNativeScopeCameraFollow(
+            const NativeScopeCameraFollowCapture& capture,
+            const RE::NiTransform& weaponWorldAfter)
+        {
+            if (!capture.valid || !capture.camera || !isFiniteTransform(weaponWorldAfter)) {
+                return;
+            }
+
+            const RE::NiTransform targetCameraWorld = native_scope_camera_follow_math::followWeaponWorldChange(
+                capture.weaponWorldBefore,
+                weaponWorldAfter,
+                capture.cameraWorldBefore);
+            if (!isFiniteTransform(targetCameraWorld)) {
+                return;
+            }
+
+            auto* scopeCamera = capture.camera;
+            if (scopeCamera->parent) {
+                const RE::NiTransform targetCameraLocal = weapon_visual_authority_math::worldTargetToParentLocal(
+                    scopeCamera->parent->world,
+                    targetCameraWorld);
+                if (!isFiniteTransform(targetCameraLocal)) {
+                    return;
+                }
+                scopeCamera->local = targetCameraLocal;
+                f4vr::updateTransforms(scopeCamera);
+                return;
+            }
+
+            scopeCamera->local = targetCameraWorld;
+            scopeCamera->world = targetCameraWorld;
+        }
+
         float lengthSquared(const RE::NiPoint3& value)
         {
             return value.x * value.x + value.y * value.y + value.z * value.z;
@@ -2283,6 +2348,11 @@ namespace rock
             return false;
         }
 
+        // hFRIK has already calibrated the native activation camera for the
+        // current one-hand weapon frame. Capture that relationship before ROCK
+        // publishes its final physical grip frame, then move both together.
+        const NativeScopeCameraFollowCapture scopeCameraFollow = captureNativeScopeCameraFollow(weaponNode);
+
         if (weaponNode->parent) {
             weaponNode->local = weapon_visual_authority_math::worldTargetToParentLocal(weaponNode->parent->world, solvedWeaponWorld);
             f4vr::updateTransformsDown(weaponNode, true);
@@ -2291,6 +2361,8 @@ namespace rock
             weaponNode->world = solvedWeaponWorld;
             f4vr::updateTransformsDown(weaponNode, false);
         }
+
+        applyNativeScopeCameraFollow(scopeCameraFollow, weaponNode->world);
         return true;
     }
 

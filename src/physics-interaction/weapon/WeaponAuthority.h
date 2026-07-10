@@ -157,6 +157,32 @@ namespace rock::weapon_visual_authority_math
     }
 }
 
+// ---- NativeScopeCameraFollowMath.h ----
+
+namespace rock::native_scope_camera_follow_math
+{
+    /*
+     * FO4VR's native scope activation anchor lives outside the equipped
+     * weapon tree. hFRIK aligns that anchor to its own final one-hand weapon
+     * frame, then ROCK may replace the weapon world transform for physical
+     * firing/support grips. Preserve the already-calibrated camera-to-weapon
+     * relationship while applying the same rigid world-frame change; this
+     * keeps native scope entry at the visible optic instead of the stale
+     * one-hand pose.
+     */
+    template <class Transform>
+    [[nodiscard]] inline Transform followWeaponWorldChange(
+        const Transform& weaponWorldBefore,
+        const Transform& weaponWorldAfter,
+        const Transform& scopeCameraWorldBefore)
+    {
+        const Transform scopeCameraWeaponLocal = transform_math::composeTransforms(
+            transform_math::invertTransform(weaponWorldBefore),
+            scopeCameraWorldBefore);
+        return transform_math::composeTransforms(weaponWorldAfter, scopeCameraWeaponLocal);
+    }
+}
+
 // ---- WeaponMuzzleAuthorityMath.h ----
 
 namespace rock::weapon_muzzle_authority_math

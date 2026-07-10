@@ -6,14 +6,35 @@
 #include "physics-interaction/weapon/WeaponPartRecordIdentityPolicy.h"
 #include "physics-interaction/weapon/WeaponPartRuntime.h"
 #include "physics-interaction/weapon/WeaponSupport.h"
+#include "physics-interaction/weapon/WeaponAuthority.h"
 
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
 
 namespace
 {
+    struct TestVector3
+    {
+        float x{ 0.0f };
+        float y{ 0.0f };
+        float z{ 0.0f };
+    };
+
+    struct TestMatrix3
+    {
+        float entry[3][3]{};
+    };
+
+    struct TestTransform
+    {
+        TestMatrix3 rotate{};
+        TestVector3 translate{};
+        float scale{ 1.0f };
+    };
+
     bool expectTrue(const char* label, bool value)
     {
         if (value) {
@@ -44,11 +65,69 @@ namespace
         std::printf("%s expected %llu got %llu\n", label, static_cast<unsigned long long>(expected), static_cast<unsigned long long>(actual));
         return false;
     }
+
+    bool expectNear(const char* label, float actual, float expected, float tolerance = 0.0001f)
+    {
+        if (std::fabs(actual - expected) <= tolerance) {
+            return true;
+        }
+
+        std::printf("%s expected %.6f got %.6f\n", label, expected, actual);
+        return false;
+    }
+
+    bool expectTransformNear(const char* label, const TestTransform& actual, const TestTransform& expected)
+    {
+        bool ok = true;
+        ok &= expectNear(label, actual.translate.x, expected.translate.x);
+        ok &= expectNear(label, actual.translate.y, expected.translate.y);
+        ok &= expectNear(label, actual.translate.z, expected.translate.z);
+        ok &= expectNear(label, actual.scale, expected.scale);
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                ok &= expectNear(label, actual.rotate.entry[row][column], expected.rotate.entry[row][column]);
+            }
+        }
+        return ok;
+    }
 }
 
 int main()
 {
     bool ok = true;
+
+    {
+        TestTransform weaponBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
+        weaponBefore.translate = { 10.0f, 20.0f, 30.0f };
+        TestTransform scopeBefore = rock::transform_math::makeIdentityTransform<TestTransform>();
+        scopeBefore.translate = { 12.0f, 24.0f, 35.0f };
+        TestTransform weaponAfter = weaponBefore;
+        weaponAfter.translate = { 17.0f, 16.0f, 32.0f };
+
+        const TestTransform scopeAfter = rock::native_scope_camera_follow_math::followWeaponWorldChange(
+            weaponBefore,
+            weaponAfter,
+            scopeBefore);
+        ok &= expectNear("native scope camera follows ROCK weapon translation x", scopeAfter.translate.x, 19.0f);
+        ok &= expectNear("native scope camera follows ROCK weapon translation y", scopeAfter.translate.y, 20.0f);
+        ok &= expectNear("native scope camera follows ROCK weapon translation z", scopeAfter.translate.z, 37.0f);
+
+        weaponAfter.rotate.entry[0][0] = 0.0f;
+        weaponAfter.rotate.entry[0][1] = 1.0f;
+        weaponAfter.rotate.entry[1][0] = -1.0f;
+        weaponAfter.rotate.entry[1][1] = 0.0f;
+        const TestTransform rotatedScopeAfter = rock::native_scope_camera_follow_math::followWeaponWorldChange(
+            weaponBefore,
+            weaponAfter,
+            scopeBefore);
+        const TestTransform relativeBefore = rock::transform_math::composeTransforms(
+            rock::transform_math::invertTransform(weaponBefore),
+            scopeBefore);
+        const TestTransform relativeAfter = rock::transform_math::composeTransforms(
+            rock::transform_math::invertTransform(weaponAfter),
+            rotatedScopeAfter);
+        ok &= expectTransformNear("native scope camera preserves calibrated weapon-local frame", relativeAfter, relativeBefore);
+    }
 
     using namespace rock::contact_pipeline_policy;
 
