@@ -408,6 +408,14 @@ namespace rock
         float rockGrabLocomotionAuthoritySmoothingHz = grab_locomotion_authority_bridge::kDefaultSmoothingHz;
         float rockGrabLocomotionAuthorityMaxOffsetGameUnits = grab_locomotion_authority_bridge::kDefaultMaxOffsetGameUnits;
         float rockGrabLocomotionAuthorityResetDistanceGameUnits = grab_locomotion_authority_bridge::kDefaultResetDistanceGameUnits;
+        // Aligned-timing room compensation (held-object stick-locomotion stutter fix, stage 2). When enabled,
+        // the grab proxy target is de-aliased using the ApplyMovementDelta hook's world-space room delta: a
+        // bounded correction offset (accumulated aligned-minus-render room delta, leaked toward zero and
+        // clamped) is added to the proxy body target inside the physics flush. Default OFF (A/B against the
+        // aliased baseline); the correction is clamped small so it cannot fling or trip the deviation release.
+        bool rockGrabAlignedRoomCompensationEnabled = false;
+        float rockGrabAlignedRoomCorrectionMaxGameUnits = 2.0f;
+        float rockGrabAlignedRoomCorrectionLeak = 0.9f;
         bool rockGrabResidualVelocityDamping = true;
         bool rockGrabNearbyDampingEnabled = true;
         float rockGrabNearbyDampingRadius = 90.0f;

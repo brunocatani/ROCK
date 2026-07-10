@@ -486,6 +486,9 @@ namespace rock
         rockGrabLocomotionAuthoritySmoothingHz = grab_locomotion_authority_bridge::kDefaultSmoothingHz;
         rockGrabLocomotionAuthorityMaxOffsetGameUnits = grab_locomotion_authority_bridge::kDefaultMaxOffsetGameUnits;
         rockGrabLocomotionAuthorityResetDistanceGameUnits = grab_locomotion_authority_bridge::kDefaultResetDistanceGameUnits;
+        rockGrabAlignedRoomCompensationEnabled = false;
+        rockGrabAlignedRoomCorrectionMaxGameUnits = 2.0f;
+        rockGrabAlignedRoomCorrectionLeak = 0.9f;
         rockGrabResidualVelocityDamping = true;
         rockGrabNearbyDampingEnabled = true;
         rockGrabNearbyDampingRadius = 90.0f;
@@ -1677,6 +1680,12 @@ namespace rock
         rockGrabPlayerSpaceTransformWarpEnabled = ini.GetBoolValue(SECTION, "bGrabPlayerSpaceTransformWarpEnabled", rockGrabPlayerSpaceTransformWarpEnabled);
         rockGrabLocomotionAuthorityBridgeEnabled =
             ini.GetBoolValue(SECTION, "bGrabLocomotionAuthorityBridgeEnabled", rockGrabLocomotionAuthorityBridgeEnabled);
+        rockGrabAlignedRoomCompensationEnabled =
+            ini.GetBoolValue(SECTION, "bGrabAlignedRoomCompensationEnabled", rockGrabAlignedRoomCompensationEnabled);
+        rockGrabAlignedRoomCorrectionMaxGameUnits = static_cast<float>(
+            ini.GetDoubleValue(SECTION, "fGrabAlignedRoomCorrectionMaxGameUnits", rockGrabAlignedRoomCorrectionMaxGameUnits));
+        rockGrabAlignedRoomCorrectionLeak =
+            static_cast<float>(ini.GetDoubleValue(SECTION, "fGrabAlignedRoomCorrectionLeak", rockGrabAlignedRoomCorrectionLeak));
         rockGrabLocomotionAuthorityMaxLeadSeconds = readClampedFloat(ini,
             SECTION,
             "fGrabLocomotionAuthorityMaxLeadSeconds",

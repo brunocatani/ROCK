@@ -24,7 +24,9 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
+#include <mutex>
 #include <string_view>
 
 namespace rock
@@ -52,30 +54,79 @@ namespace rock
         using PlayerApplyMovementDelta_t = void (*)(RE::TESObjectREFR*, float, const RE::NiPoint3&, const RE::NiPoint3&);
         static PlayerApplyMovementDelta_t g_originalPlayerApplyMovementDelta = nullptr;
 
-        // Actual per-frame room translation speed (game units/sec) captured at the aligned movement hook.
-        // -1 when unavailable. Read by the locomotion-stutter probe; the world-space vector will drive the
-        // grab proxy in stage 2 of the stick-locomotion stutter fix.
-        std::atomic<float> g_alignedRoomSpeedGameUnits{ -1.0f };
+        // Aligned-timing room motion captured inside ApplyMovementDelta (game thread). All fields game units.
+        struct AlignedRoomMotionState
+        {
+            bool valid = false;               // worldDelta usable this frame (had a previous pos, no teleport)
+            float worldDeltaX = 0.0f;         // player world-position delta this frame (== room translation)
+            float worldDeltaY = 0.0f;
+            float worldDeltaZ = 0.0f;
+            float timeDelta = 0.0f;           // engine movement dt for this delta
+            float speedGameUnits = -1.0f;     // |localDelta|/timeDelta, offset-free reference; -1 if unavailable
+        };
+        std::mutex g_alignedRoomMotionMutex;
+        AlignedRoomMotionState g_alignedRoomMotion;
+        // Player world position from the previous ApplyMovementDelta call (game thread only).
+        bool g_hasPrevPlayerWorldPos = false;
+        float g_prevPlayerWorldPosX = 0.0f, g_prevPlayerWorldPosY = 0.0f, g_prevPlayerWorldPosZ = 0.0f;
+        // TESObjectREFR world position (x,y,z) at +0xD0/0xD4/0xD8. Read from raw disassembly of
+        // ApplyMovementDelta (0x0E0D9D0): it reads [player+0xD0..D8] as the position base and writes back the
+        // moved position via SetPosition. Self-validated at runtime: the probe compares |worldDelta|/dt
+        // (this) against |localDelta|/dt (the arg) -- they must match during a walk.
+        constexpr std::uintptr_t kOffset_TESObjectREFR_WorldPosition = 0xD0;
 
         void hookedPlayerApplyMovementDelta(RE::TESObjectREFR* refr, float timeDelta, const RE::NiPoint3& delta, const RE::NiPoint3& angleDelta)
         {
+            // Call original FIRST so the player world position is freshly updated before we sample it.
             if (g_originalPlayerApplyMovementDelta) {
                 g_originalPlayerApplyMovementDelta(refr, timeDelta, delta, angleDelta);
             }
-            // Only the player dispatches here (this is the PlayerCharacter class vtable slot). |delta|/timeDelta
-            // is the ACTUAL room translation applied this frame, phase-locked to movement application -- not the
-            // render-sampled room-node delta (aliased) and not the commanded CC velocity (which leads during
-            // accel/decel). Magnitude is frame-invariant, so the local-space delta suffices for this diagnostic;
-            // stage 2 rotates delta into world space for the drive vector.
-            float speedGameUnits = -1.0f;
+
+            // Only the player dispatches here (this is the PlayerCharacter class vtable slot). Two signals:
+            //  - speed = |delta|/timeDelta: the ACTUAL room translation SPEED applied this frame, phase-locked
+            //    to movement application (magnitude is frame-invariant, so the local-space arg suffices).
+            //  - worldDelta = player world-position change this frame: the room translation VECTOR (world
+            //    space) that stage 2 uses to de-alias the grab proxy target. This is NOT the render-sampled
+            //    room-node delta (aliased) and NOT the commanded CC velocity (which leads during accel/decel).
+            AlignedRoomMotionState next{};
             const float distance = std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
+            next.timeDelta = timeDelta;
             if (std::isfinite(distance) && std::isfinite(timeDelta) && timeDelta > 1.0e-6f) {
                 const float speed = distance / timeDelta;
                 if (std::isfinite(speed) && speed < 1.0e6f) {
-                    speedGameUnits = speed;
+                    next.speedGameUnits = speed;
                 }
             }
-            g_alignedRoomSpeedGameUnits.store(speedGameUnits, std::memory_order_relaxed);
+
+            if (refr) {
+                const auto* posBytes = reinterpret_cast<const std::uint8_t*>(refr) + kOffset_TESObjectREFR_WorldPosition;
+                const float px = *reinterpret_cast<const float*>(posBytes);
+                const float py = *reinterpret_cast<const float*>(posBytes + 4);
+                const float pz = *reinterpret_cast<const float*>(posBytes + 8);
+                if (std::isfinite(px) && std::isfinite(py) && std::isfinite(pz)) {
+                    if (g_hasPrevPlayerWorldPos) {
+                        const float dx = px - g_prevPlayerWorldPosX;
+                        const float dy = py - g_prevPlayerWorldPosY;
+                        const float dz = pz - g_prevPlayerWorldPosZ;
+                        // Guard against teleports / cell loads: a real locomotion step is small.
+                        if (std::abs(dx) < 512.0f && std::abs(dy) < 512.0f && std::abs(dz) < 512.0f) {
+                            next.worldDeltaX = dx;
+                            next.worldDeltaY = dy;
+                            next.worldDeltaZ = dz;
+                            next.valid = true;
+                        }
+                    }
+                    g_prevPlayerWorldPosX = px;
+                    g_prevPlayerWorldPosY = py;
+                    g_prevPlayerWorldPosZ = pz;
+                    g_hasPrevPlayerWorldPos = true;
+                }
+            }
+
+            {
+                std::scoped_lock lock(g_alignedRoomMotionMutex);
+                g_alignedRoomMotion = next;
+            }
         }
 
         constexpr std::uintptr_t kFunc_BhkWorldSetDeltaTime = 0x1DF7120;
@@ -1628,7 +1679,76 @@ namespace rock
 
     float getAlignedRoomSpeedGameUnits()
     {
-        return g_alignedRoomSpeedGameUnits.load(std::memory_order_relaxed);
+        std::scoped_lock lock(g_alignedRoomMotionMutex);
+        return g_alignedRoomMotion.speedGameUnits;
+    }
+
+    bool getAlignedRoomWorldDelta(RE::NiPoint3& outDeltaGameUnits, float& outTimeDelta, float& outSpeedGameUnits)
+    {
+        std::scoped_lock lock(g_alignedRoomMotionMutex);
+        outDeltaGameUnits.x = g_alignedRoomMotion.worldDeltaX;
+        outDeltaGameUnits.y = g_alignedRoomMotion.worldDeltaY;
+        outDeltaGameUnits.z = g_alignedRoomMotion.worldDeltaZ;
+        outTimeDelta = g_alignedRoomMotion.timeDelta;
+        outSpeedGameUnits = g_alignedRoomMotion.speedGameUnits;
+        return g_alignedRoomMotion.valid;
+    }
+
+    // --- Aligned-timing room correction offset (stick-locomotion stutter fix, stage 2) ---
+    // Drift-free correction added to the grab proxy target: accumulate the per-frame aliasing error
+    // (aligned world room delta minus ROCK's render-sampled room delta), leak toward zero, clamp small.
+    // Written once per frame on the game thread from the held update; read per substep in the physics
+    // flush, so guard with the aligned-motion mutex.
+    static RE::NiPoint3 g_alignedRoomCorrectionOffset{};
+    static std::uint64_t g_alignedRoomCorrectionFrameIndex = ~std::uint64_t{ 0 };
+
+    void updateAlignedRoomCorrectionForFrame(std::uint64_t frameIndex, const RE::NiPoint3& renderRoomDeltaGameUnits, bool renderValid)
+    {
+        // Sample the aligned world delta BEFORE taking the correction lock (getAlignedRoomWorldDelta locks
+        // the same mutex; std::mutex is not recursive).
+        RE::NiPoint3 alignedDelta{};
+        float alignedDt = 0.0f;
+        float alignedSpeed = -1.0f;
+        const bool alignedValid = getAlignedRoomWorldDelta(alignedDelta, alignedDt, alignedSpeed);
+
+        std::scoped_lock lock(g_alignedRoomMotionMutex);
+        if (frameIndex == g_alignedRoomCorrectionFrameIndex) {
+            return;  // already advanced this frame (e.g. by the other hand)
+        }
+        g_alignedRoomCorrectionFrameIndex = frameIndex;
+
+        const float leak = std::clamp(g_rockConfig.rockGrabAlignedRoomCorrectionLeak, 0.0f, 1.0f);
+        if (alignedValid && renderValid) {
+            g_alignedRoomCorrectionOffset.x = g_alignedRoomCorrectionOffset.x * leak + (alignedDelta.x - renderRoomDeltaGameUnits.x);
+            g_alignedRoomCorrectionOffset.y = g_alignedRoomCorrectionOffset.y * leak + (alignedDelta.y - renderRoomDeltaGameUnits.y);
+            g_alignedRoomCorrectionOffset.z = g_alignedRoomCorrectionOffset.z * leak + (alignedDelta.z - renderRoomDeltaGameUnits.z);
+        } else {
+            // No usable delta this frame -> relax the correction toward zero so it cannot get stuck.
+            g_alignedRoomCorrectionOffset.x *= leak;
+            g_alignedRoomCorrectionOffset.y *= leak;
+            g_alignedRoomCorrectionOffset.z *= leak;
+        }
+
+        const float maxMag = std::max(0.0f, g_rockConfig.rockGrabAlignedRoomCorrectionMaxGameUnits);
+        const float magSq = g_alignedRoomCorrectionOffset.x * g_alignedRoomCorrectionOffset.x +
+                            g_alignedRoomCorrectionOffset.y * g_alignedRoomCorrectionOffset.y +
+                            g_alignedRoomCorrectionOffset.z * g_alignedRoomCorrectionOffset.z;
+        if (std::isfinite(magSq) && magSq > maxMag * maxMag && magSq > 1.0e-12f) {
+            const float scale = maxMag / std::sqrt(magSq);
+            g_alignedRoomCorrectionOffset.x *= scale;
+            g_alignedRoomCorrectionOffset.y *= scale;
+            g_alignedRoomCorrectionOffset.z *= scale;
+        }
+        if (!std::isfinite(g_alignedRoomCorrectionOffset.x) || !std::isfinite(g_alignedRoomCorrectionOffset.y) ||
+            !std::isfinite(g_alignedRoomCorrectionOffset.z)) {
+            g_alignedRoomCorrectionOffset = RE::NiPoint3{};
+        }
+    }
+
+    RE::NiPoint3 getAlignedRoomCorrectionOffset()
+    {
+        std::scoped_lock lock(g_alignedRoomMotionMutex);
+        return g_alignedRoomCorrectionOffset;
     }
 
     using ProcessConstraints_t = void (*)(void*, void*, void*, void*);

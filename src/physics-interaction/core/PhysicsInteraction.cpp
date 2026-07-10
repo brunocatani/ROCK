@@ -923,6 +923,24 @@ namespace rock
             // stage-2 fix source: phase-locked to movement application, so it should track the walk smoothly
             // (like ccVelGu) but WITHOUT ccVel's commanded transient lead. Compare against roomVelGu (aliased).
             const float alignRoomSpeedGameUnits = getAlignedRoomSpeedGameUnits();
+            // World-space aligned room velocity (|worldDelta|/dt) validates the player+0xD0 position read: it
+            // must match alignRoomVelGu (|localDelta|/dt) during a walk. corrOffGu = current bounded room-
+            // correction offset magnitude (nonzero only when bGrabAlignedRoomCompensationEnabled is on).
+            float alignWorldSpeedGameUnits = -1.0f;
+            {
+                RE::NiPoint3 alignWorldDelta{};
+                float alignDt = 0.0f;
+                float alignSpd = -1.0f;
+                if (getAlignedRoomWorldDelta(alignWorldDelta, alignDt, alignSpd) && std::isfinite(alignDt) && alignDt > 1.0e-6f) {
+                    const float d = std::sqrt(alignWorldDelta.x * alignWorldDelta.x + alignWorldDelta.y * alignWorldDelta.y + alignWorldDelta.z * alignWorldDelta.z);
+                    if (std::isfinite(d)) {
+                        alignWorldSpeedGameUnits = d / alignDt;
+                    }
+                }
+            }
+            const RE::NiPoint3 roomCorrectionOffset = getAlignedRoomCorrectionOffset();
+            const float corrOffsetGameUnits = std::sqrt(roomCorrectionOffset.x * roomCorrectionOffset.x +
+                roomCorrectionOffset.y * roomCorrectionOffset.y + roomCorrectionOffset.z * roomCorrectionOffset.z);
 
             // Endpoint divergence: what stretches the grab constraint each step (proxyVel unreliable for a
             // keyframed body, but kept for completeness).
@@ -942,7 +960,7 @@ namespace rock
 
             ROCK_LOG_INFO(Hand,
                 "LOCO_STUTTER hand={} frame={} substep={}/{} subDt={:.6f} driveDt={:.6f} gameDt={:.6f} roomVelGu={:.2f} "
-                "objBody={} proxyBody={} objVelGu={:.2f} proxyVelGu={:.2f} divergenceGu={:.2f} objResidualGu={:.2f} ccVelGu={:.2f} ccAccGu={:.2f} alignRoomVelGu={:.2f}",
+                "objBody={} proxyBody={} objVelGu={:.2f} proxyVelGu={:.2f} divergenceGu={:.2f} objResidualGu={:.2f} ccVelGu={:.2f} ccAccGu={:.2f} alignRoomVelGu={:.2f} alignWorldVelGu={:.2f} corrOffGu={:.2f}",
                 hand.handName(),
                 gameFrameIndex,
                 timing.substepIndex + 1,
@@ -959,7 +977,9 @@ namespace rock
                 lengthGameUnits(objectResidualHavok),
                 ccSpeedGameUnits,
                 ccAccessorSpeedGameUnits,
-                alignRoomSpeedGameUnits);
+                alignRoomSpeedGameUnits,
+                alignWorldSpeedGameUnits,
+                corrOffsetGameUnits);
         }
 
         float measureDirectionDeltaDegrees(const RE::NiPoint3& a, const RE::NiPoint3& b)

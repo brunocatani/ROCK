@@ -29,6 +29,8 @@
 #include "physics-interaction/performance/PerformanceProfiler.h"
 #include "physics-interaction/hand/HandFrame.h"
 #include "physics-interaction/hand/HandVisual.h"
+#include "physics-interaction/core/PhysicsHooks.h"
+#include "physics-interaction/core/RockRuntimeState.h"
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/native/PhysicsShapeCast.h"
 #include "physics-interaction/native/PhysicsRecursiveWrappers.h"
@@ -10815,6 +10817,16 @@ namespace rock
         const HeldHandMotionSample handMotion = recordHeldControllerMotionSample(handWorldTransform, playerSpaceFrame, deltaTime);
         (void)handMotion;
 
+        // Stage 2 stick-locomotion fix: advance the drift-free room-correction offset once per frame from the
+        // aligned ApplyMovementDelta hook vs ROCK's render-sampled room delta. The offset is applied to the
+        // proxy target inside the physics flush (below). Idempotent within a frame, so calling it per holding
+        // hand is safe. Default off.
+        if (g_rockConfig.rockGrabAlignedRoomCompensationEnabled) {
+            const auto& frameSnapshot = runtime_state::currentFrame();
+            updateAlignedRoomCorrectionForFrame(
+                frameSnapshot.frameIndex, frameSnapshot.playerSpace.deltaGameUnits, frameSnapshot.playerSpace.valid);
+        }
+
         /*
          * ROCK freezes the visible object/node relation in generated/proxy
          * authority space, then composes it with the rigid-body local transform
@@ -11989,6 +12001,18 @@ namespace rock
             performance_profiler::ScopedTimer profilerTimer(performance_profiler::Scope::GrabAuthorityFlush);
 
             pending = _grabAuthorityPendingTarget;
+            // Stage 2 stick-locomotion fix: de-alias the proxy target's room component with the bounded
+            // aligned-room correction offset. Applied to the local copy only (the stored pending target stays
+            // un-offset, so resolveGrabAuthorityProxyFrame cannot double-count next frame); every downstream
+            // use of pending.proxyWorld in this flush -- keyframe drive, constraint motor target, last-applied
+            // tracking -- then sees the corrected target consistently. Position-only, clamped small -> no
+            // fling, and the game-frame deviation check only ever sees the small residual. Default off.
+            if (g_rockConfig.rockGrabAlignedRoomCompensationEnabled) {
+                const RE::NiPoint3 roomCorrection = getAlignedRoomCorrectionOffset();
+                pending.proxyWorld.translate.x += roomCorrection.x;
+                pending.proxyWorld.translate.y += roomCorrection.y;
+                pending.proxyWorld.translate.z += roomCorrection.z;
+            }
             livePalmReferenceOk = tryResolveLivePalmAnchorReference(world, livePalmReference);
             if (!livePalmReferenceOk) {
                 ++_grabAuthorityProxyFailedFlushes;
