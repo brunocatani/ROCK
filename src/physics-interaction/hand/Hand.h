@@ -528,6 +528,10 @@ namespace rock
 
         RE::hknpBodyId getCollisionBodyId() const { return _handBody.getBodyId(); }
         RE::hknpBodyId getGrabAuthorityProxyBodyId() const { return _grabAuthorityProxy.getBodyId(); }
+        // Diagnostic: magnitude of proxy A's per-frame TARGET velocity (game units/sec) from the last flush,
+        // i.e. how fast A's keyframe target itself moves. Localizes the held-object shake -- target jitter
+        // (=> smooth the sampled hand/room target) vs motor jitter (=> motor tuning). -1 when unavailable.
+        float getLastProxyTargetSpeedGameUnits() const { return _lastProxyTargetSpeedGameUnits.load(std::memory_order_relaxed); }
         bool hasCollisionBody() const { return _handBody.isValid(); }
         BethesdaPhysicsBody& getHandBody() { return _handBody; }
         const BethesdaPhysicsBody& getHandBody() const { return _handBody; }
@@ -951,6 +955,7 @@ namespace rock
         };
         GrabAuthorityProxyPendingTarget _grabAuthorityPendingTarget{};
         RE::NiTransform _lastAppliedGrabAuthorityProxyWorld{};
+        std::atomic<float> _lastProxyTargetSpeedGameUnits{ -1.0f };
         RE::NiTransform _lastAppliedGrabAuthorityRawHandWorld{};
         bool _hasLastAppliedGrabAuthorityProxyWorld = false;
         struct RagdollAngularProbePreSolve

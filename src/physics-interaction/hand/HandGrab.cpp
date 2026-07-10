@@ -12050,6 +12050,10 @@ namespace rock
             proxyLinearVelocityHavokMagnitude = std::sqrt(
                 linearVelocityHavok[0] * linearVelocityHavok[0] + linearVelocityHavok[1] * linearVelocityHavok[1] +
                 linearVelocityHavok[2] * linearVelocityHavok[2]);
+            // Diagnostic (stutter localization): publish proxy A's TARGET velocity (game units/sec) -- how
+            // fast the keyframe target itself moves this frame -- so the probe can tell target jitter from
+            // motor jitter. With the aligned-room flag off this reflects the un-corrected target.
+            _lastProxyTargetSpeedGameUnits.store(proxyLinearVelocityHavokMagnitude * physics_scale::havokToGame(), std::memory_order_relaxed);
             proxyAngularVelocityRadiansPerSecond = std::sqrt(
                 angularVelocityHavok[0] * angularVelocityHavok[0] + angularVelocityHavok[1] * angularVelocityHavok[1] +
                 angularVelocityHavok[2] * angularVelocityHavok[2]);
